@@ -269,7 +269,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			);
 			return reply
 				.status(400)
-				.send({ error: "Invalid callback parameters", details: parsed.error.flatten() });
+				.send({ error: "Invalid callback parameters" });
 		}
 
 		const { code, state } = parsed.data;

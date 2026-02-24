@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { loggers } from "../logger.js";
+import { withTimeout } from "../utils/delay.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import {
 	MAX_HUNT_DURATION_MS,
@@ -11,48 +12,12 @@ import { executeHuntWithSdk, type HuntResult } from "./hunt-executor.js";
 const log = loggers.hunting;
 
 /**
- * Run a promise and fail if it does not settle within the specified timeout.
- *
- * @param promise - The promise to race against the timeout
- * @param timeoutMs - Timeout duration in milliseconds
- * @param timeoutMessage - Error message used if the timeout elapses
- * @returns The resolved value of `promise`
- */
-async function withTimeout<T>(
-	promise: Promise<T>,
-	timeoutMs: number,
-	timeoutMessage: string,
-): Promise<T> {
-	let timeoutId: NodeJS.Timeout | undefined;
-
-	const timeoutPromise = new Promise<never>((_, reject) => {
-		timeoutId = setTimeout(() => {
-			reject(new Error(timeoutMessage));
-		}, timeoutMs);
-	});
-
-	try {
-		return await Promise.race([promise, timeoutPromise]);
-	} finally {
-		if (timeoutId) {
-			clearTimeout(timeoutId);
-		}
-	}
-}
-
-/**
  * Hunting Scheduler
  *
  * Manages automated hunt jobs for missing content and quality upgrades.
  * Uses a simple interval-based approach that can be replaced with node-cron later.
  * Enforces minimum cooldown periods to prevent overwhelming arr instances.
  */
-
-interface QueuedHunt {
-	instanceId: string;
-	type: "missing" | "upgrade";
-	queuedAt: Date;
-}
 
 // Track last hunt times per instance (in-memory for cooldown enforcement)
 interface InstanceHuntTimes {
@@ -65,7 +30,6 @@ class HuntingScheduler {
 	private app: FastifyInstance | null = null;
 	private running = false;
 	private intervalId: NodeJS.Timeout | null = null;
-	private manualQueue: QueuedHunt[] = [];
 	// In-memory cooldown tracking (supplements database timestamps)
 	private instanceHuntTimes: Map<string, InstanceHuntTimes> = new Map();
 
@@ -186,16 +150,6 @@ class HuntingScheduler {
 	}
 
 	/**
-	 * @deprecated Use triggerManualHunt instead - kept for backwards compatibility
-	 */
-	queueManualHunt(
-		instanceId: string,
-		type: "missing" | "upgrade",
-	): { queued: boolean; message: string } {
-		return this.triggerManualHunt(instanceId, type);
-	}
-
-	/**
 	 * Check if an instance is within cooldown period
 	 */
 	private checkCooldown(
@@ -268,26 +222,10 @@ class HuntingScheduler {
 		if (!this.app) return;
 
 		try {
-			// Process manual queue first
-			await this.processManualQueue();
-
-			// Then check for scheduled hunts
 			await this.processScheduledHunts();
 		} catch (error) {
 			log.error({ err: error }, "Tick error");
 		}
-	}
-
-	/**
-	 * Process manually queued hunts
-	 */
-	private async processManualQueue(): Promise<void> {
-		if (!this.app || this.manualQueue.length === 0) return;
-
-		const hunt = this.manualQueue.shift();
-		if (!hunt) return;
-
-		await this.runHunt(hunt.instanceId, hunt.type, true);
 	}
 
 	/**
@@ -297,19 +235,29 @@ class HuntingScheduler {
 		if (!this.app) return;
 
 		const now = new Date();
-		const newResetAt = new Date(now.getTime() + 60 * 60 * 1000);
+		const ONE_HOUR_MS = 60 * 60 * 1000;
 
-		// Batch reset all expired API call counters in a single query (avoids N+1)
-		await this.app.prisma.huntConfig.updateMany({
+		// Reset expired API call counters, preserving the original hourly window alignment
+		const expiredConfigs = await this.app.prisma.huntConfig.findMany({
 			where: {
 				OR: [{ huntMissingEnabled: true }, { huntUpgradesEnabled: true }],
 				apiCallsResetAt: { lt: now },
 			},
-			data: {
-				apiCallsThisHour: 0,
-				apiCallsResetAt: newResetAt,
-			},
+			select: { id: true, apiCallsResetAt: true },
 		});
+		for (const ec of expiredConfigs) {
+			// Advance from the original resetAt to avoid drift
+			let nextReset = ec.apiCallsResetAt
+				? new Date(ec.apiCallsResetAt.getTime() + ONE_HOUR_MS)
+				: new Date(now.getTime() + ONE_HOUR_MS);
+			// If still in the past (e.g., after long downtime), snap to now + 1h
+			if (nextReset <= now) nextReset = new Date(now.getTime() + ONE_HOUR_MS);
+
+			await this.app.prisma.huntConfig.update({
+				where: { id: ec.id },
+				data: { apiCallsThisHour: 0, apiCallsResetAt: nextReset },
+			});
+		}
 
 		// Get all enabled hunt configs (after reset, so counts are fresh)
 		const configs = await this.app.prisma.huntConfig.findMany({

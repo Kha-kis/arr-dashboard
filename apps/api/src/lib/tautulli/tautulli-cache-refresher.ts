@@ -14,6 +14,7 @@
 
 import type { FastifyBaseLogger } from "fastify";
 import type { PrismaClient } from "../prisma.js";
+import { delay } from "../utils/delay.js";
 import type { TautulliClient, TautulliHistoryItem } from "./tautulli-client.js";
 
 // Maximum pages of history to fetch per library (50 items per page)
@@ -61,6 +62,12 @@ export async function refreshTautulliCache(
 
 				allHistory.push(...result.data);
 				if (result.data.length < HISTORY_PAGE_SIZE) break;
+				if (page === MAX_HISTORY_PAGES - 1) {
+					log.warn(
+						{ sectionId: lib.section_id, limit: MAX_HISTORY_PAGES * HISTORY_PAGE_SIZE },
+						"Tautulli history page cap reached — watch data may be incomplete for this library",
+					);
+				}
 			}
 		}
 
@@ -112,6 +119,7 @@ export async function refreshTautulliCache(
 			}
 
 			try {
+				if (lookupCount > 0) await delay(50);
 				const metadata = await client.getMetadata(ratingKey);
 				lookupCount++;
 
@@ -121,9 +129,12 @@ export async function refreshTautulliCache(
 					guid.mediaType = info.isShow ? "series" : "movie";
 					ratingKeyToGuid.set(ratingKey, guid);
 				}
-			} catch {
+			} catch (error) {
 				errors++;
-				// Skip items whose metadata we can't fetch
+				log.warn(
+					{ err: error, ratingKey },
+					"Tautulli cache: failed to fetch metadata for item",
+				);
 			}
 		}
 
@@ -156,8 +167,12 @@ export async function refreshTautulliCache(
 					},
 				});
 				upserted++;
-			} catch {
+			} catch (error) {
 				errors++;
+				log.warn(
+					{ err: error, instanceId, tmdbId: guid.tmdbId, mediaType: guid.mediaType },
+					"Tautulli cache: failed to upsert item",
+				);
 			}
 		}
 

@@ -2,6 +2,8 @@
 
 import type { CleanupRuleResponse, CreateCleanupRule } from "@arr/shared";
 import {
+	ChevronDown,
+	ChevronUp,
 	Eraser,
 	Eye,
 	ListChecks,
@@ -12,7 +14,7 @@ import {
 	ScrollText,
 	Settings2,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
 	GlassmorphicCard,
 	GradientButton,
@@ -33,6 +35,7 @@ import {
 	useCreateCleanupRule,
 	useDeleteCleanupRule,
 	useRejectCleanupItem,
+	useReorderCleanupRules,
 	useUpdateCleanupConfig,
 	useUpdateCleanupRule,
 } from "../../../hooks/api/useLibraryCleanup";
@@ -117,14 +120,28 @@ function ConfigTab({
 	previewData?: { totalEvaluated: number; totalFlagged: number; items: unknown[] };
 	isPreviewLoading: boolean;
 	isExecuting: boolean;
-	executeResult?: { itemsRemoved: number; itemsFlagged: number; status: string };
+	executeResult?: { itemsRemoved: number; itemsFlagged: number; itemsUnmonitored?: number; itemsFilesDeleted?: number; status: string };
 }) {
 	const createRule = useCreateCleanupRule();
 	const updateRule = useUpdateCleanupRule();
 	const deleteRule = useDeleteCleanupRule();
+	const reorderRules = useReorderCleanupRules();
 
 	const [dialogOpen, setDialogOpen] = useState(false);
 	const [editingRule, setEditingRule] = useState<CleanupRuleResponse | null>(null);
+
+	const actionCounts = useMemo(() => {
+		if (!previewData?.items) return null;
+		const items = previewData.items as Array<Record<string, unknown>>;
+		const counts = { delete: 0, unmonitor: 0, delete_files: 0 };
+		for (const item of items) {
+			const action = String(item.action ?? "delete");
+			if (action === "unmonitor") counts.unmonitor++;
+			else if (action === "delete_files") counts.delete_files++;
+			else counts.delete++;
+		}
+		return counts;
+	}, [previewData]);
 
 	const handleCreate = () => {
 		setEditingRule(null);
@@ -134,6 +151,15 @@ function ConfigTab({
 	const handleEdit = (rule: CleanupRuleResponse) => {
 		setEditingRule(rule);
 		setDialogOpen(true);
+	};
+
+	const handleMoveRule = (index: number, direction: "up" | "down") => {
+		if (!config) return;
+		const ids = config.rules.map((r) => r.id);
+		const target = direction === "up" ? index - 1 : index + 1;
+		if (target < 0 || target >= ids.length) return;
+		[ids[index], ids[target]] = [ids[target]!, ids[index]!];
+		reorderRules.mutate(ids);
 	};
 
 	const handleSave = (data: CreateCleanupRule) => {
@@ -222,7 +248,7 @@ function ConfigTab({
 				{executeResult && (
 					<span className="text-sm text-muted-foreground">
 						{executeResult.status === "completed"
-							? `Done: ${executeResult.itemsFlagged} flagged, ${executeResult.itemsRemoved} removed`
+							? `Done: ${executeResult.itemsFlagged} flagged, ${executeResult.itemsRemoved} removed${executeResult.itemsUnmonitored ? `, ${executeResult.itemsUnmonitored} unmonitored` : ""}${executeResult.itemsFilesDeleted ? `, ${executeResult.itemsFilesDeleted} files deleted` : ""}`
 							: `Status: ${executeResult.status}`}
 					</span>
 				)}
@@ -235,6 +261,19 @@ function ConfigTab({
 						Preview Results ({previewData.totalFlagged} of {previewData.totalEvaluated} items
 						flagged)
 					</h4>
+					{actionCounts && previewData.items.length > 0 && (
+						<div className="flex flex-wrap gap-2 mb-3">
+							{actionCounts.delete > 0 && (
+								<StatusBadge status="error">{actionCounts.delete} Delete</StatusBadge>
+							)}
+							{actionCounts.unmonitor > 0 && (
+								<StatusBadge status="warning">{actionCounts.unmonitor} Unmonitor</StatusBadge>
+							)}
+							{actionCounts.delete_files > 0 && (
+								<StatusBadge status="info">{actionCounts.delete_files} Delete Files</StatusBadge>
+							)}
+						</div>
+					)}
 					{previewData.items.length === 0 ? (
 						<p className="text-sm text-muted-foreground">
 							No items would be flagged with current rules.
@@ -247,9 +286,16 @@ function ConfigTab({
 									className="flex items-center justify-between rounded-md bg-card/20 px-3 py-2 text-sm"
 								>
 									<span className="truncate">{String(item.title)}</span>
-									<span className="text-xs text-muted-foreground shrink-0 ml-3">
-										{String(item.matchedRuleName)}: {String(item.reason)}
-									</span>
+									<div className="flex items-center gap-2 shrink-0 ml-3">
+										{item.action != null && String(item.action) !== "delete" && (
+											<StatusBadge status={String(item.action) === "unmonitor" ? "warning" : "info"}>
+												{String(item.action) === "unmonitor" ? "Unmonitor" : "Delete Files"}
+											</StatusBadge>
+										)}
+										<span className="text-xs text-muted-foreground">
+											{String(item.matchedRuleName)}: {String(item.reason)}
+										</span>
+									</div>
 								</div>
 							))}
 						</div>
@@ -282,6 +328,26 @@ function ConfigTab({
 									animationFillMode: "backwards",
 								}}
 							>
+								<div className="flex flex-col -my-1">
+									<button
+										type="button"
+										disabled={index === 0 || reorderRules.isPending}
+										onClick={() => handleMoveRule(index, "up")}
+										className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-default transition-colors"
+										title="Move up"
+									>
+										<ChevronUp className="h-3.5 w-3.5" />
+									</button>
+									<button
+										type="button"
+										disabled={index === config.rules.length - 1 || reorderRules.isPending}
+										onClick={() => handleMoveRule(index, "down")}
+										className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-default transition-colors"
+										title="Move down"
+									>
+										<ChevronDown className="h-3.5 w-3.5" />
+									</button>
+								</div>
 								<div
 									className="h-2 w-2 rounded-full shrink-0"
 									style={{
@@ -290,13 +356,18 @@ function ConfigTab({
 								/>
 								<div className="flex-1 min-w-0">
 									<span className="font-medium text-sm">{rule.name}</span>
-									<span className="text-xs text-muted-foreground ml-2">{rule.ruleType}</span>
+									<span className="text-xs text-muted-foreground ml-2">{rule.operator ? `${rule.operator} (${(rule.conditions as unknown[])?.length ?? 0} conditions)` : rule.ruleType}</span>
 									{rule.serviceFilter && rule.serviceFilter.length > 0 && (
 										<span className="text-xs text-muted-foreground ml-2">
 											({rule.serviceFilter.join(", ")})
 										</span>
 									)}
 								</div>
+								{rule.action && rule.action !== "delete" && (
+									<StatusBadge status={rule.action === "unmonitor" ? "warning" : "info"}>
+										{rule.action === "unmonitor" ? "Unmonitor" : "Delete Files"}
+									</StatusBadge>
+								)}
 								<StatusBadge status={rule.enabled ? "success" : "default"}>
 									{rule.enabled ? "Active" : "Off"}
 								</StatusBadge>
@@ -377,6 +448,11 @@ function ApprovalsTab() {
 							<div className="flex items-center gap-2">
 								<span className="font-medium truncate">{item.title}</span>
 								{item.year && <span className="text-xs text-muted-foreground">({item.year})</span>}
+								{item.action && item.action !== "delete" && (
+									<StatusBadge status={item.action === "unmonitor" ? "warning" : "info"}>
+										{item.action === "unmonitor" ? "Unmonitor" : "Delete Files"}
+									</StatusBadge>
+								)}
 							</div>
 							<p className="text-xs text-muted-foreground mt-0.5">
 								{item.matchedRuleName}: {item.reason}
@@ -448,6 +524,8 @@ function LogsTab() {
 							<th className="px-4 py-3 text-right text-muted-foreground font-medium">Evaluated</th>
 							<th className="px-4 py-3 text-right text-muted-foreground font-medium">Flagged</th>
 							<th className="px-4 py-3 text-right text-muted-foreground font-medium">Removed</th>
+							<th className="px-4 py-3 text-right text-muted-foreground font-medium">Unmonitored</th>
+							<th className="px-4 py-3 text-right text-muted-foreground font-medium">Files Del.</th>
 							<th className="px-4 py-3 text-right text-muted-foreground font-medium">Duration</th>
 						</tr>
 					</thead>
@@ -473,6 +551,8 @@ function LogsTab() {
 								<td className="px-4 py-2.5 text-right">{log.itemsEvaluated}</td>
 								<td className="px-4 py-2.5 text-right">{log.itemsFlagged}</td>
 								<td className="px-4 py-2.5 text-right">{log.itemsRemoved}</td>
+								<td className="px-4 py-2.5 text-right">{log.itemsUnmonitored}</td>
+								<td className="px-4 py-2.5 text-right">{log.itemsFilesDeleted}</td>
 								<td className="px-4 py-2.5 text-right text-xs text-muted-foreground">
 									{log.durationMs ? `${(log.durationMs / 1000).toFixed(1)}s` : "-"}
 								</td>

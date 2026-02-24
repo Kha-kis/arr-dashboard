@@ -18,7 +18,7 @@ export type CreateServicePayload = {
 	baseUrl: string;
 	externalUrl?: string | null;
 	apiKey: string;
-	service: "sonarr" | "radarr" | "prowlarr" | "lidarr" | "readarr" | "seerr" | "tautulli";
+	service: "sonarr" | "radarr" | "prowlarr" | "lidarr" | "readarr" | "seerr" | "tautulli" | "plex";
 	enabled?: boolean;
 	isDefault?: boolean;
 	tags?: string[];
@@ -71,7 +71,7 @@ export async function testServiceConnection(id: string): Promise<TestConnectionR
 export async function testConnectionBeforeAdd(
 	baseUrl: string,
 	apiKey: string,
-	service: "sonarr" | "radarr" | "prowlarr" | "lidarr" | "readarr" | "seerr" | "tautulli",
+	service: "sonarr" | "radarr" | "prowlarr" | "lidarr" | "readarr" | "seerr" | "tautulli" | "plex",
 ): Promise<TestConnectionResponse> {
 	return await apiRequest<TestConnectionResponse>("/api/services/test-connection", {
 		method: "POST",

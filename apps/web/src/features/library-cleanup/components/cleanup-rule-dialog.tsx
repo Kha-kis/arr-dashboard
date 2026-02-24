@@ -6,7 +6,21 @@ import type {
 	CleanupRuleType,
 	CreateCleanupRule,
 } from "@arr/shared";
-import { Loader2, Save } from "lucide-react";
+import {
+	BarChart3,
+	ChevronDown,
+	Film,
+	HardDrive,
+	Loader2,
+	MessageSquare,
+	Save,
+	ShieldOff,
+	SlidersHorizontal,
+	Sparkles,
+	Target,
+	Tv,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import {
 	Dialog,
@@ -15,8 +29,12 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 import { useCleanupFieldOptions } from "@/hooks/api/useLibraryCleanup";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
+import { getServiceGradient } from "@/lib/theme-gradients";
+import { getInputStyles } from "@/lib/theme-input-styles";
+import { ConditionParamsFields } from "./condition-params-fields";
 import { MultiSelectField } from "./multi-select-field";
 
 // ============================================================================
@@ -24,7 +42,7 @@ import { MultiSelectField } from "./multi-select-field";
 // ============================================================================
 
 const RULE_TYPES: Array<{ value: CleanupRuleType; label: string; desc: string }> = [
-	{ value: "age", label: "Age", desc: "Flag items older than N days" },
+	{ value: "age", label: "Age", desc: "Flag items by age (older/newer than N days)" },
 	{ value: "size", label: "Size", desc: "Flag items based on disk size" },
 	{ value: "rating", label: "Rating", desc: "Flag items by TMDB rating" },
 	{ value: "status", label: "Status", desc: "Flag items with specific statuses" },
@@ -85,6 +103,37 @@ const RULE_TYPES: Array<{ value: CleanupRuleType; label: string; desc: string }>
 		label: "Seerr: Modified By",
 		desc: "Flag items by who last modified the request",
 	},
+	// New Phase C rules
+	{
+		value: "imdb_rating",
+		label: "IMDb Rating",
+		desc: "Flag items by IMDb rating score",
+	},
+	{
+		value: "file_path",
+		label: "File Path",
+		desc: "Flag items by file path regex pattern",
+	},
+	{
+		value: "seerr_is_requested",
+		label: "Seerr: Is Requested",
+		desc: "Flag items with or without Seerr requests",
+	},
+	{
+		value: "seerr_request_count",
+		label: "Seerr: Request Count",
+		desc: "Flag items by number of Seerr requests",
+	},
+	{
+		value: "audio_channels",
+		label: "Audio Channels",
+		desc: "Flag items by audio channel count (2, 6, 8)",
+	},
+	{
+		value: "tag_match",
+		label: "Tag Match",
+		desc: "Flag items that have specific ARR tags",
+	},
 	// Tautulli rules
 	{
 		value: "tautulli_last_watched",
@@ -101,7 +150,116 @@ const RULE_TYPES: Array<{ value: CleanupRuleType; label: string; desc: string }>
 		label: "Tautulli: Watched By",
 		desc: "Flag items by which users watched",
 	},
+	// Plex integration rules
+	{
+		value: "plex_last_watched",
+		label: "Plex: Last Watched",
+		desc: "Flag items by when last watched in Plex",
+	},
+	{
+		value: "plex_watch_count",
+		label: "Plex: Watch Count",
+		desc: "Flag items by Plex play count",
+	},
+	{
+		value: "plex_on_deck",
+		label: "Plex: On Deck",
+		desc: "Flag items on Plex Continue Watching",
+	},
+	{
+		value: "plex_user_rating",
+		label: "Plex: User Rating",
+		desc: "Flag items by user star rating in Plex",
+	},
+	{
+		value: "plex_watched_by",
+		label: "Plex: Watched By",
+		desc: "Flag items by which Plex users watched",
+	},
+	{
+		value: "plex_collection",
+		label: "Plex: Collection",
+		desc: "Flag items in specific Plex collections",
+	},
+	{
+		value: "plex_label",
+		label: "Plex: Label",
+		desc: "Flag items with specific Plex labels",
+	},
+	{
+		value: "plex_added_at",
+		label: "Plex: Added At",
+		desc: "Flag items by when added to Plex",
+	},
 ];
+
+const RULE_CATEGORIES: Array<{
+	id: string;
+	label: string;
+	icon: LucideIcon;
+	types: CleanupRuleType[];
+	requires?: "plex" | "tautulli";
+}> = [
+	{
+		id: "content",
+		label: "Content Attributes",
+		icon: Film,
+		types: ["age", "rating", "imdb_rating", "status", "unmonitored", "genre", "year_range", "language", "no_file", "tag_match"],
+	},
+	{
+		id: "quality",
+		label: "Quality & Format",
+		icon: Sparkles,
+		types: ["quality_profile", "custom_format_score"],
+	},
+	{
+		id: "file",
+		label: "File Properties",
+		icon: HardDrive,
+		types: [
+			"size",
+			"video_codec",
+			"audio_codec",
+			"audio_channels",
+			"resolution",
+			"hdr_type",
+			"runtime",
+			"release_group",
+			"file_path",
+		],
+	},
+	{
+		id: "seerr",
+		label: "Seerr Integration",
+		icon: MessageSquare,
+		types: [
+			"seerr_requested_by",
+			"seerr_request_age",
+			"seerr_request_status",
+			"seerr_is_4k",
+			"seerr_request_modified_age",
+			"seerr_modified_by",
+			"seerr_is_requested",
+			"seerr_request_count",
+		],
+	},
+	{
+		id: "tautulli",
+		label: "Tautulli Integration",
+		icon: BarChart3,
+		types: ["tautulli_last_watched", "tautulli_watch_count", "tautulli_watched_by"],
+		requires: "tautulli" as const,
+	},
+	{
+		id: "plex",
+		label: "Plex Integration",
+		icon: Tv,
+		types: ["plex_last_watched", "plex_watch_count", "plex_on_deck", "plex_user_rating", "plex_watched_by", "plex_collection", "plex_label", "plex_added_at"],
+		requires: "plex" as const,
+	},
+];
+
+const RULE_TYPE_MAP = new Map(RULE_TYPES.map((t) => [t.value, t]));
 
 // ============================================================================
 // Types
@@ -135,9 +293,11 @@ export function CleanupRuleDialog({
 	const [name, setName] = useState("");
 	const [ruleType, setRuleType] = useState<CleanupRuleType>("age");
 	const [enabled, setEnabled] = useState(true);
+	const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(["content"]));
 
 	// ── Params (varies by ruleType) ─────────────────────────────────
 	const [days, setDays] = useState(180);
+	const [ageOp, setAgeOp] = useState("older_than");
 	const [sizeGb, setSizeGb] = useState(50);
 	const [sizeOp, setSizeOp] = useState("greater_than");
 	const [score, setScore] = useState(5);
@@ -186,9 +346,56 @@ export function CleanupRuleDialog({
 	const [tautulliWatchedByOp, setTautulliWatchedByOp] = useState("includes_any");
 	const [selectedTautulliUsers, setSelectedTautulliUsers] = useState<string[]>([]);
 
+	// ── Plex params ─────────────────────────────────────────────────
+	const [plexLastWatchedOp, setPlexLastWatchedOp] = useState("older_than");
+	const [plexLastWatchedDays, setPlexLastWatchedDays] = useState(90);
+	const [plexWatchCountOp, setPlexWatchCountOp] = useState("less_than");
+	const [plexWatchCountVal, setPlexWatchCountVal] = useState(1);
+	const [plexOnDeckVal, setPlexOnDeckVal] = useState(false);
+	const [plexUserRatingOp, setPlexUserRatingOp] = useState("less_than");
+	const [plexUserRatingVal, setPlexUserRatingVal] = useState(5);
+	const [plexWatchedByOp, setPlexWatchedByOp] = useState("includes_any");
+	const [selectedPlexUsers, setSelectedPlexUsers] = useState<string[]>([]);
+
+	// ── Action (Phase A) ────────────────────────────────────────────
+	const [action, setAction] = useState<"delete" | "unmonitor" | "delete_files">("delete");
+
+	// ── Composite mode (Phase B) ────────────────────────────────────
+	const [isComposite, setIsComposite] = useState(false);
+	const [compositeOperator, setCompositeOperator] = useState<"AND" | "OR">("AND");
+	const [conditions, setConditions] = useState<
+		Array<{ id: string; ruleType: CleanupRuleType; params: Record<string, unknown> }>
+	>([]);
+
+	// ── New rule params (Phase C) ───────────────────────────────────
+	const [imdbRatingOp, setImdbRatingOp] = useState("less_than");
+	const [imdbRatingScore, setImdbRatingScore] = useState(5);
+	const [filePathOp, setFilePathOp] = useState("matches");
+	const [filePathPattern, setFilePathPattern] = useState("");
+	const [filePathField, setFilePathField] = useState("path");
+	const [seerrIsRequested, setSeerrIsRequested] = useState(true);
+	const [seerrRequestCountOp, setSeerrRequestCountOp] = useState("less_than");
+	const [seerrRequestCountVal, setSeerrRequestCountVal] = useState(1);
+	const [audioChannelsOp, setAudioChannelsOp] = useState("less_than");
+	const [audioChannelsVal, setAudioChannelsVal] = useState(6);
+	const [tagMatchOp, setTagMatchOp] = useState("includes_any");
+	const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
+
+	// ── Plex collections & labels (Phase D) ─────────────────────────
+	const [plexCollectionOp, setPlexCollectionOp] = useState("in");
+	const [selectedPlexCollections, setSelectedPlexCollections] = useState<string[]>([]);
+	const [plexLabelOp, setPlexLabelOp] = useState("has_any");
+	const [selectedPlexLabels, setSelectedPlexLabels] = useState<string[]>([]);
+	const [plexAddedAtOp, setPlexAddedAtOp] = useState("older_than");
+	const [plexAddedAtDays, setPlexAddedAtDays] = useState(90);
+
+	// ── Composite validation ────────────────────────────────────────
+	const [compositeError, setCompositeError] = useState<string | null>(null);
+
 	// ── Scope / Exclusions ──────────────────────────────────────────
 	const [serviceFilter, setServiceFilter] = useState<string[]>([]);
 	const [instanceFilter, setInstanceFilter] = useState("");
+	const [selectedPlexLibraries, setSelectedPlexLibraries] = useState<string[]>([]);
 	const [excludeTags, setExcludeTags] = useState("");
 	const [excludeTitles, setExcludeTitles] = useState("");
 
@@ -199,10 +406,28 @@ export function CleanupRuleDialog({
 			setName(editRule.name);
 			setRuleType(editRule.ruleType);
 			setEnabled(editRule.enabled);
+			setAction((editRule.action as "delete" | "unmonitor" | "delete_files") ?? "delete");
+			// Composite mode
+			if (editRule.operator && editRule.conditions) {
+				setIsComposite(true);
+				setCompositeOperator(editRule.operator as "AND" | "OR");
+				setConditions(
+					(editRule.conditions as Array<{ ruleType: CleanupRuleType; parameters: Record<string, unknown> }>).map(
+						(c, i) => ({ id: `cond-${i}`, ruleType: c.ruleType, params: c.parameters ?? {} }),
+					),
+				);
+			} else {
+				setIsComposite(false);
+				setCompositeOperator("AND");
+				setConditions([]);
+			}
+			const activeCat = RULE_CATEGORIES.find((c) => c.types.includes(editRule.ruleType));
+			setExpandedCategories(new Set([activeCat?.id ?? "content"]));
 
 			const p = editRule.parameters as Record<string, unknown>;
 			switch (editRule.ruleType) {
 				case "age":
+					setAgeOp((p.operator as string) ?? "older_than");
 					setDays((p.days as number) ?? 180);
 					break;
 				case "size":
@@ -304,10 +529,69 @@ export function CleanupRuleDialog({
 					setTautulliWatchedByOp((p.operator as string) ?? "includes_any");
 					setSelectedTautulliUsers(Array.isArray(p.userNames) ? (p.userNames as string[]) : []);
 					break;
+				// Plex rules
+				case "plex_last_watched":
+					setPlexLastWatchedOp((p.operator as string) ?? "older_than");
+					setPlexLastWatchedDays((p.days as number) ?? 90);
+					break;
+				case "plex_watch_count":
+					setPlexWatchCountOp((p.operator as string) ?? "less_than");
+					setPlexWatchCountVal((p.count as number) ?? 1);
+					break;
+				case "plex_on_deck":
+					setPlexOnDeckVal((p.isDeck as boolean) ?? false);
+					break;
+				case "plex_user_rating":
+					setPlexUserRatingOp((p.operator as string) ?? "less_than");
+					setPlexUserRatingVal((p.rating as number) ?? 5);
+					break;
+				case "plex_watched_by":
+					setPlexWatchedByOp((p.operator as string) ?? "includes_any");
+					setSelectedPlexUsers(Array.isArray(p.userNames) ? (p.userNames as string[]) : []);
+					break;
+				// Phase C: new rule types
+				case "imdb_rating":
+					setImdbRatingOp((p.operator as string) ?? "less_than");
+					setImdbRatingScore((p.score as number) ?? 5);
+					break;
+				case "file_path":
+					setFilePathOp((p.operator as string) ?? "matches");
+					setFilePathPattern((p.pattern as string) ?? "");
+					setFilePathField((p.field as string) ?? "path");
+					break;
+				case "seerr_is_requested":
+					setSeerrIsRequested((p.isRequested as boolean) ?? true);
+					break;
+				case "seerr_request_count":
+					setSeerrRequestCountOp((p.operator as string) ?? "less_than");
+					setSeerrRequestCountVal((p.count as number) ?? 1);
+					break;
+				case "audio_channels":
+					setAudioChannelsOp((p.operator as string) ?? "less_than");
+					setAudioChannelsVal((p.channels as number) ?? 6);
+					break;
+				case "tag_match":
+					setTagMatchOp((p.operator as string) ?? "includes_any");
+					setSelectedTagIds(Array.isArray(p.tagIds) ? (p.tagIds as number[]) : []);
+					break;
+				// Phase D: Plex collections & labels
+				case "plex_collection":
+					setPlexCollectionOp((p.operator as string) ?? "in");
+					setSelectedPlexCollections(Array.isArray(p.collections) ? (p.collections as string[]) : []);
+					break;
+				case "plex_label":
+					setPlexLabelOp((p.operator as string) ?? "has_any");
+					setSelectedPlexLabels(Array.isArray(p.labels) ? (p.labels as string[]) : []);
+					break;
+				case "plex_added_at":
+					setPlexAddedAtOp((p.operator as string) ?? "older_than");
+					setPlexAddedAtDays((p.days as number) ?? 90);
+					break;
 			}
 
 			setServiceFilter(editRule.serviceFilter ?? []);
 			setInstanceFilter(editRule.instanceFilter ? editRule.instanceFilter.join(", ") : "");
+			setSelectedPlexLibraries(editRule.plexLibraryFilter ?? []);
 			setExcludeTags(editRule.excludeTags ? editRule.excludeTags.join(", ") : "");
 			setExcludeTitles(editRule.excludeTitles ? editRule.excludeTitles.join(", ") : "");
 		} else {
@@ -315,7 +599,9 @@ export function CleanupRuleDialog({
 			setName("");
 			setRuleType("age");
 			setEnabled(true);
+			setExpandedCategories(new Set(["content"]));
 			setDays(180);
+			setAgeOp("older_than");
 			setSizeGb(50);
 			setSizeOp("greater_than");
 			setScore(5);
@@ -360,8 +646,45 @@ export function CleanupRuleDialog({
 			setTautulliWatchCount(1);
 			setTautulliWatchedByOp("includes_any");
 			setSelectedTautulliUsers([]);
+			// Plex defaults
+			setPlexLastWatchedOp("older_than");
+			setPlexLastWatchedDays(90);
+			setPlexWatchCountOp("less_than");
+			setPlexWatchCountVal(1);
+			setPlexOnDeckVal(false);
+			setPlexUserRatingOp("less_than");
+			setPlexUserRatingVal(5);
+			setPlexWatchedByOp("includes_any");
+			setSelectedPlexUsers([]);
+			// Phase A/B
+			setAction("delete");
+			setIsComposite(false);
+			setCompositeOperator("AND");
+			setConditions([]);
+			// Phase C
+			setImdbRatingOp("less_than");
+			setImdbRatingScore(5);
+			setFilePathOp("matches");
+			setFilePathPattern("");
+			setFilePathField("path");
+			setSeerrIsRequested(true);
+			setSeerrRequestCountOp("less_than");
+			setSeerrRequestCountVal(1);
+			setAudioChannelsOp("less_than");
+			setAudioChannelsVal(6);
+			setTagMatchOp("includes_any");
+			setSelectedTagIds([]);
+			setCompositeError(null);
+			// Phase D
+			setPlexCollectionOp("in");
+			setSelectedPlexCollections([]);
+			setPlexLabelOp("has_any");
+			setSelectedPlexLabels([]);
+			setPlexAddedAtOp("older_than");
+			setPlexAddedAtDays(90);
 			setServiceFilter([]);
 			setInstanceFilter("");
+			setSelectedPlexLibraries([]);
 			setExcludeTags("");
 			setExcludeTitles("");
 		}
@@ -371,11 +694,13 @@ export function CleanupRuleDialog({
 	const buildParams = useCallback((): Record<string, unknown> => {
 		switch (ruleType) {
 			case "age":
-				return { field: "arrAddedAt", operator: "older_than", days };
+				return { field: "arrAddedAt", operator: ageOp, days };
 			case "size":
 				return { operator: sizeOp, sizeGb };
 			case "rating":
-				return { source: "tmdb", operator: scoreOp, score };
+				return scoreOp === "unrated"
+					? { source: "tmdb", operator: "unrated" }
+					: { source: "tmdb", operator: scoreOp, score };
 			case "status":
 				return { statuses: splitCsv(statuses) };
 			case "unmonitored":
@@ -430,12 +755,50 @@ export function CleanupRuleDialog({
 				return { operator: tautulliWatchCountOp, count: tautulliWatchCount };
 			case "tautulli_watched_by":
 				return { operator: tautulliWatchedByOp, userNames: selectedTautulliUsers };
+			// Plex rules
+			case "plex_last_watched":
+				return plexLastWatchedOp === "never"
+					? { operator: "never" }
+					: { operator: plexLastWatchedOp, days: plexLastWatchedDays };
+			case "plex_watch_count":
+				return { operator: plexWatchCountOp, count: plexWatchCountVal };
+			case "plex_on_deck":
+				return { isDeck: plexOnDeckVal };
+			case "plex_user_rating":
+				return plexUserRatingOp === "unrated"
+					? { operator: "unrated" }
+					: { operator: plexUserRatingOp, rating: plexUserRatingVal };
+			case "plex_watched_by":
+				return { operator: plexWatchedByOp, userNames: selectedPlexUsers };
+			// Phase C rules
+			case "imdb_rating":
+				return imdbRatingOp === "unrated"
+					? { operator: "unrated" }
+					: { operator: imdbRatingOp, score: imdbRatingScore };
+			case "file_path":
+				return { operator: filePathOp, pattern: filePathPattern, field: filePathField };
+			case "seerr_is_requested":
+				return { isRequested: seerrIsRequested };
+			case "seerr_request_count":
+				return { operator: seerrRequestCountOp, count: seerrRequestCountVal };
+			case "audio_channels":
+				return { operator: audioChannelsOp, channels: audioChannelsVal };
+			case "tag_match":
+				return { operator: tagMatchOp, tagIds: selectedTagIds };
+			// Phase D rules
+			case "plex_collection":
+				return { operator: plexCollectionOp, collections: selectedPlexCollections };
+			case "plex_label":
+				return { operator: plexLabelOp, labels: selectedPlexLabels };
+			case "plex_added_at":
+				return { operator: plexAddedAtOp, days: plexAddedAtDays };
 			default:
 				return {};
 		}
 	}, [
 		ruleType,
 		days,
+		ageOp,
 		sizeOp,
 		sizeGb,
 		scoreOp,
@@ -477,16 +840,49 @@ export function CleanupRuleDialog({
 		tautulliWatchCount,
 		tautulliWatchedByOp,
 		selectedTautulliUsers,
+		plexLastWatchedOp,
+		plexLastWatchedDays,
+		plexWatchCountOp,
+		plexWatchCountVal,
+		plexOnDeckVal,
+		plexUserRatingOp,
+		plexUserRatingVal,
+		plexWatchedByOp,
+		selectedPlexUsers,
+		imdbRatingOp,
+		imdbRatingScore,
+		filePathOp,
+		filePathPattern,
+		filePathField,
+		seerrIsRequested,
+		seerrRequestCountOp,
+		seerrRequestCountVal,
+		audioChannelsOp,
+		audioChannelsVal,
+		tagMatchOp,
+		selectedTagIds,
+		plexCollectionOp,
+		selectedPlexCollections,
+		plexLabelOp,
+		selectedPlexLabels,
+		plexAddedAtOp,
+		plexAddedAtDays,
 	]);
 
 	const handleSubmit = (e: React.FormEvent) => {
 		e.preventDefault();
-		const data: CreateCleanupRule = {
+		if (isComposite && conditions.length === 0) {
+			setCompositeError("Composite rules must have at least one condition");
+			return;
+		}
+		setCompositeError(null);
+		const base = {
 			name,
-			ruleType,
+			ruleType: isComposite ? ("composite" as const) : ruleType,
 			enabled,
 			priority: editRule?.priority ?? 0,
-			parameters: buildParams(),
+			parameters: isComposite ? {} : buildParams(),
+			action,
 			serviceFilter: serviceFilter.length > 0 ? serviceFilter : null,
 			instanceFilter: instanceFilter.trim() ? splitCsv(instanceFilter) : null,
 			excludeTags: excludeTags.trim()
@@ -495,8 +891,18 @@ export function CleanupRuleDialog({
 						.filter((n) => !Number.isNaN(n))
 				: null,
 			excludeTitles: excludeTitles.trim() ? splitCsv(excludeTitles) : null,
+			plexLibraryFilter: selectedPlexLibraries.length > 0 ? selectedPlexLibraries : null,
+			operator: isComposite ? compositeOperator : null,
+			conditions: isComposite
+				? (conditions
+						.filter((c) => c.ruleType !== "composite")
+						.map((c) => ({
+							ruleType: c.ruleType as Exclude<CleanupRuleType, "composite">,
+							parameters: c.params,
+						})))
+				: null,
 		};
-		onSave(data);
+		onSave(base as CreateCleanupRule);
 	};
 
 	const toggleService = (service: string) => {
@@ -505,13 +911,23 @@ export function CleanupRuleDialog({
 		);
 	};
 
-	const inputClass =
-		"w-full rounded-md border border-border/50 bg-background/50 px-3 py-1.5 text-sm focus:outline-none";
+	const toggleCategory = (id: string) => {
+		setExpandedCategories((prev) => {
+			const next = new Set(prev);
+			if (next.has(id)) next.delete(id);
+			else next.add(id);
+			return next;
+		});
+	};
+
+	const inputStyles = getInputStyles(gradient);
+
+	const inputClass = `${inputStyles.base} focus:outline-hidden`;
 	const labelClass = "text-xs text-muted-foreground block mb-1";
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+			<DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
 				<DialogHeader>
 					<DialogTitle>{isEdit ? "Edit Rule" : "New Cleanup Rule"}</DialogTitle>
 					<DialogDescription>
@@ -521,9 +937,30 @@ export function CleanupRuleDialog({
 					</DialogDescription>
 				</DialogHeader>
 
-				<form onSubmit={handleSubmit} className="space-y-5 mt-2">
+				<form
+					onSubmit={handleSubmit}
+					className="space-y-5 mt-2"
+					onFocus={(e) => {
+						const t = e.target;
+						if (
+							(t instanceof HTMLInputElement && t.type !== "checkbox") ||
+							t instanceof HTMLSelectElement
+						) {
+							inputStyles.applyFocus(t);
+						}
+					}}
+					onBlur={(e) => {
+						const t = e.target;
+						if (
+							(t instanceof HTMLInputElement && t.type !== "checkbox") ||
+							t instanceof HTMLSelectElement
+						) {
+							inputStyles.removeFocus(t);
+						}
+					}}
+				>
 					{/* ── Basic Section ─────────────────────────────── */}
-					<div className="space-y-3">
+					<div className="space-y-4">
 						<label className="block">
 							<span className={labelClass}>Rule Name</span>
 							<input
@@ -536,151 +973,479 @@ export function CleanupRuleDialog({
 							/>
 						</label>
 
-						<div className="grid gap-3 sm:grid-cols-2">
-							<label className="block">
-								<span className={labelClass}>Rule Type</span>
-								<select
-									value={ruleType}
-									onChange={(e) => setRuleType(e.target.value as CleanupRuleType)}
-									className={inputClass}
-									disabled={isEdit}
-								>
-									{RULE_TYPES.map((t) => (
-										<option key={t.value} value={t.value}>
-											{t.label} — {t.desc}
-										</option>
-									))}
-								</select>
-							</label>
-
-							<label className="flex items-center gap-2 text-sm self-end pb-1">
-								<input
-									type="checkbox"
-									checked={enabled}
-									onChange={(e) => setEnabled(e.target.checked)}
-								/>
-								Enabled
-							</label>
+						<div className="flex items-center justify-between">
+							<span className="text-sm font-medium">Enabled</span>
+							<Switch
+								checked={enabled}
+								onCheckedChange={setEnabled}
+								style={enabled ? { backgroundColor: gradient.from } : undefined}
+							/>
 						</div>
-					</div>
 
-					{/* ── Parameters Section ───────────────────────── */}
-					<fieldset className="rounded-lg border border-border/30 p-3 space-y-3">
-						<legend className="text-xs font-medium text-muted-foreground px-2">Parameters</legend>
-						<ParamsFields
-							ruleType={ruleType}
-							days={days}
-							setDays={setDays}
-							sizeGb={sizeGb}
-							setSizeGb={setSizeGb}
-							sizeOp={sizeOp}
-							setSizeOp={setSizeOp}
-							score={score}
-							setScore={setScore}
-							scoreOp={scoreOp}
-							setScoreOp={setScoreOp}
-							statuses={statuses}
-							setStatuses={setStatuses}
-							genreOp={genreOp}
-							setGenreOp={setGenreOp}
-							genres={genres}
-							setGenres={setGenres}
-							yearOp={yearOp}
-							setYearOp={setYearOp}
-							year={year}
-							setYear={setYear}
-							yearFrom={yearFrom}
-							setYearFrom={setYearFrom}
-							yearTo={yearTo}
-							setYearTo={setYearTo}
-							profileNames={profileNames}
-							setProfileNames={setProfileNames}
-							langOp={langOp}
-							setLangOp={setLangOp}
-							languages={languages}
-							setLanguages={setLanguages}
-							seerrUserNames={seerrUserNames}
-							setSeerrUserNames={setSeerrUserNames}
-							seerrReqAgeOp={seerrReqAgeOp}
-							setSeerrReqAgeOp={setSeerrReqAgeOp}
-							seerrReqAgeDays={seerrReqAgeDays}
-							setSeerrReqAgeDays={setSeerrReqAgeDays}
-							seerrReqStatuses={seerrReqStatuses}
-							setSeerrReqStatuses={setSeerrReqStatuses}
-							codecOp={codecOp}
-							setCodecOp={setCodecOp}
-							selectedVideoCodecs={selectedVideoCodecs}
-							setSelectedVideoCodecs={setSelectedVideoCodecs}
-							selectedAudioCodecs={selectedAudioCodecs}
-							setSelectedAudioCodecs={setSelectedAudioCodecs}
-							resolutionOp={resolutionOp}
-							setResolutionOp={setResolutionOp}
-							selectedResolutions={selectedResolutions}
-							setSelectedResolutions={setSelectedResolutions}
-							hdrOp={hdrOp}
-							setHdrOp={setHdrOp}
-							selectedHdrTypes={selectedHdrTypes}
-							setSelectedHdrTypes={setSelectedHdrTypes}
-							cfScoreOp={cfScoreOp}
-							setCfScoreOp={setCfScoreOp}
-							cfScore={cfScore}
-							setCfScore={setCfScore}
-							runtimeOp={runtimeOp}
-							setRuntimeOp={setRuntimeOp}
-							runtimeMinutes={runtimeMinutes}
-							setRuntimeMinutes={setRuntimeMinutes}
-							releaseGroupOp={releaseGroupOp}
-							setReleaseGroupOp={setReleaseGroupOp}
-							selectedReleaseGroups={selectedReleaseGroups}
-							setSelectedReleaseGroups={setSelectedReleaseGroups}
-							seerrIs4k={seerrIs4k}
-							setSeerrIs4k={setSeerrIs4k}
-							seerrModifiedAgeOp={seerrModifiedAgeOp}
-							setSeerrModifiedAgeOp={setSeerrModifiedAgeOp}
-							seerrModifiedAgeDays={seerrModifiedAgeDays}
-							setSeerrModifiedAgeDays={setSeerrModifiedAgeDays}
-							seerrModifiedByUsers={seerrModifiedByUsers}
-							setSeerrModifiedByUsers={setSeerrModifiedByUsers}
-							tautulliLastWatchedOp={tautulliLastWatchedOp}
-							setTautulliLastWatchedOp={setTautulliLastWatchedOp}
-							tautulliLastWatchedDays={tautulliLastWatchedDays}
-							setTautulliLastWatchedDays={setTautulliLastWatchedDays}
-							tautulliWatchCountOp={tautulliWatchCountOp}
-							setTautulliWatchCountOp={setTautulliWatchCountOp}
-							tautulliWatchCount={tautulliWatchCount}
-							setTautulliWatchCount={setTautulliWatchCount}
-							tautulliWatchedByOp={tautulliWatchedByOp}
-							setTautulliWatchedByOp={setTautulliWatchedByOp}
-							selectedTautulliUsers={selectedTautulliUsers}
-							setSelectedTautulliUsers={setSelectedTautulliUsers}
-							fieldOptions={fieldOptions}
-							fieldOptionsLoading={fieldOptionsLoading}
-							inputClass={inputClass}
-							labelClass={labelClass}
-						/>
-					</fieldset>
-
-					{/* ── Scope Section ─────────────────────────────── */}
-					<fieldset className="rounded-lg border border-border/30 p-3 space-y-3">
-						<legend className="text-xs font-medium text-muted-foreground px-2">
-							Scope (optional)
-						</legend>
+						{/* ── Action when matched ───────────────────── */}
 						<div>
-							<span className={labelClass}>Service Filter</span>
-							<div className="flex gap-3 mt-1">
-								{["sonarr", "radarr"].map((svc) => (
-									<label key={svc} className="flex items-center gap-1.5 text-sm capitalize">
-										<input
-											type="checkbox"
-											checked={serviceFilter.includes(svc)}
-											onChange={() => toggleService(svc)}
-										/>
-										{svc}
-									</label>
+							<span className={labelClass}>Action when matched</span>
+							<div className="flex gap-2 mt-1.5">
+								{(["delete", "unmonitor", "delete_files"] as const).map((a) => (
+									<button
+										key={a}
+										type="button"
+										onClick={() => setAction(a)}
+										className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-all duration-200"
+										style={
+											action === a
+												? {
+														borderColor: gradient.from,
+														backgroundColor: gradient.fromLight,
+														color: gradient.from,
+													}
+												: { borderColor: "var(--color-border)" }
+										}
+									>
+										{a === "delete" ? "Delete" : a === "unmonitor" ? "Unmonitor" : "Delete Files"}
+									</button>
 								))}
 							</div>
 							<p className="text-xs text-muted-foreground mt-1">
-								Leave unchecked to apply to all services.
+								{action === "delete"
+									? "Remove the item entirely from the ARR instance."
+									: action === "unmonitor"
+										? "Set the item as unmonitored (keeps files and data)."
+										: "Delete downloaded files but keep the item in the library."}
+							</p>
+						</div>
+
+						{/* ── Rule Mode toggle ──────────────────────── */}
+						<div>
+							<span className={labelClass}>Rule Mode</span>
+							<div className="flex gap-2 mt-1.5">
+								<button
+									type="button"
+									onClick={() => { setIsComposite(false); setConditions([]); setCompositeError(null); }}
+									className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-all duration-200"
+									style={
+										!isComposite
+											? { borderColor: gradient.from, backgroundColor: gradient.fromLight, color: gradient.from }
+											: { borderColor: "var(--color-border)" }
+									}
+								>
+									Single Condition
+								</button>
+								<button
+									type="button"
+									onClick={() => setIsComposite(true)}
+									className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-all duration-200"
+									style={
+										isComposite
+											? { borderColor: gradient.from, backgroundColor: gradient.fromLight, color: gradient.from }
+											: { borderColor: "var(--color-border)" }
+									}
+								>
+									Composite Rule
+								</button>
+							</div>
+						</div>
+
+						{/* ── Rule Type Picker / Composite Builder ─── */}
+						{isComposite ? (
+							<div className="space-y-4">
+								<div>
+									<span className={labelClass}>Operator</span>
+									<div className="flex gap-2 mt-1.5">
+										{(["AND", "OR"] as const).map((op) => (
+											<button
+												key={op}
+												type="button"
+												onClick={() => setCompositeOperator(op)}
+												className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-all duration-200"
+												style={
+													compositeOperator === op
+														? { borderColor: gradient.from, backgroundColor: gradient.fromLight, color: gradient.from }
+														: { borderColor: "var(--color-border)" }
+												}
+											>
+												{op}
+											</button>
+										))}
+									</div>
+									<p className="text-xs text-muted-foreground mt-1">
+										{compositeOperator === "AND"
+											? "All conditions must match for the rule to trigger."
+											: "Any condition matching will trigger the rule."}
+									</p>
+								</div>
+								{conditions.map((cond, idx) => (
+									<div key={cond.id} className="rounded-lg border border-border/50 bg-card/20 p-3 space-y-2">
+										<div className="flex items-center justify-between">
+											<span className="text-xs font-medium text-muted-foreground">Condition {idx + 1}</span>
+											<button
+												type="button"
+												onClick={() => setConditions((prev) => prev.filter((c) => c.id !== cond.id))}
+												className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+											>
+												Remove
+											</button>
+										</div>
+										<select
+											value={cond.ruleType}
+											onChange={(e) => {
+												const newType = e.target.value as CleanupRuleType;
+												setConditions((prev) =>
+													prev.map((c) =>
+														c.id === cond.id ? { ...c, ruleType: newType, params: {} } : c,
+													),
+												);
+											}}
+											className={inputClass}
+										>
+											{RULE_TYPES.filter((rt) => rt.value !== "composite").map((rt) => (
+												<option key={rt.value} value={rt.value}>{rt.label}</option>
+											))}
+										</select>
+										<p className="text-xs text-muted-foreground">
+											{RULE_TYPE_MAP.get(cond.ruleType)?.desc ?? ""}
+										</p>
+									<ConditionParamsFields
+										ruleType={cond.ruleType}
+										params={cond.params}
+										onParamsChange={(newParams) =>
+											setConditions((prev) =>
+												prev.map((c) =>
+													c.id === cond.id ? { ...c, params: newParams } : c,
+												),
+											)
+										}
+										fieldOptions={fieldOptions}
+										fieldOptionsLoading={fieldOptionsLoading}
+										inputClass={inputClass}
+										labelClass={labelClass}
+									/>
+									</div>
+								))}
+								{compositeError && (
+									<div className="rounded-md bg-red-500/10 border border-red-500/20 px-3 py-2 text-xs text-red-400">
+										{compositeError}
+									</div>
+								)}
+								<button
+									type="button"
+									onClick={() => {
+										setConditions((prev) => [
+											...prev,
+											{ id: `cond-${Date.now()}`, ruleType: "age" as CleanupRuleType, params: {} },
+										]);
+										setCompositeError(null);
+									}}
+									className="w-full rounded-lg border border-dashed border-border/50 px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:border-border transition-colors"
+								>
+									+ Add Condition
+								</button>
+							</div>
+						) : isEdit ? (
+							<div className="flex items-center gap-2">
+								<span className="text-xs text-muted-foreground">Rule Type:</span>
+								<span
+									className="rounded-full border px-3 py-1 text-sm font-medium"
+									style={{
+										borderColor: gradient.fromMuted,
+										backgroundColor: gradient.fromLight,
+										color: gradient.from,
+									}}
+								>
+									{RULE_TYPE_MAP.get(ruleType)?.label ?? ruleType}
+								</span>
+							</div>
+						) : (
+							<div className="space-y-1.5">
+								<span className={labelClass}>Rule Type</span>
+								<div className="space-y-1.5">
+									{RULE_CATEGORIES.filter((cat) => {
+										if (cat.requires === "plex" && !fieldOptions?.hasPlex) return false;
+										if (cat.requires === "tautulli" && !fieldOptions?.hasTautulli) return false;
+										return true;
+									}).map((cat) => {
+										const CatIcon = cat.icon;
+										const isExpanded = expandedCategories.has(cat.id);
+										const hasSelected = cat.types.includes(ruleType);
+										return (
+											<div
+												key={cat.id}
+												className="rounded-lg border border-border/30 overflow-hidden"
+											>
+												<button
+													type="button"
+													onClick={() => toggleCategory(cat.id)}
+													className="flex items-center gap-2 w-full px-3 py-2 text-sm font-medium text-left hover:bg-card/50 transition-colors"
+												>
+													<CatIcon
+														className="h-4 w-4 shrink-0"
+														style={{ color: gradient.from }}
+													/>
+													<span className="flex-1">{cat.label}</span>
+													{hasSelected && (
+														<span
+															className="h-1.5 w-1.5 rounded-full"
+															style={{ backgroundColor: gradient.from }}
+														/>
+													)}
+													<ChevronDown
+														className={`h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 ${
+															isExpanded ? "" : "-rotate-90"
+														}`}
+													/>
+												</button>
+												{isExpanded && (
+													<div className="grid grid-cols-2 gap-1.5 px-2 pb-2">
+														{cat.types.map((typeValue) => {
+															const ruleInfo = RULE_TYPE_MAP.get(typeValue);
+															if (!ruleInfo) return null;
+															const isSelected = ruleType === typeValue;
+															return (
+																<button
+																	key={typeValue}
+																	type="button"
+																	onClick={() =>
+																		setRuleType(
+																			typeValue as CleanupRuleType,
+																		)
+																	}
+																	className={`text-left rounded-lg border px-2.5 py-2 transition-all duration-200 ${
+																		isSelected
+																			? ""
+																			: "border-border/30 hover:border-border/60"
+																	}`}
+																	style={
+																		isSelected
+																			? {
+																					borderColor:
+																						gradient.from,
+																					backgroundColor:
+																						gradient.fromLight,
+																					color: gradient.from,
+																				}
+																			: undefined
+																	}
+																>
+																	<div className="text-sm font-medium leading-tight">
+																		{ruleInfo.label}
+																	</div>
+																	<div
+																		className={`text-xs mt-0.5 leading-tight ${
+																			isSelected
+																				? "opacity-80"
+																				: "text-muted-foreground"
+																		}`}
+																	>
+																		{ruleInfo.desc}
+																	</div>
+																</button>
+															);
+														})}
+													</div>
+												)}
+											</div>
+										);
+									})}
+								</div>
+							</div>
+						)}
+					</div>
+
+					{/* ── Parameters Section ───────────────────────── */}
+					{!isComposite && (
+						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4 space-y-3">
+							<div className="flex items-center gap-2 mb-2">
+								<SlidersHorizontal
+									className="h-4 w-4"
+									style={{ color: gradient.from }}
+								/>
+								<span className="text-sm font-medium">Parameters</span>
+							</div>
+							<ParamsFields
+								ruleType={ruleType}
+								days={days}
+								setDays={setDays}
+								ageOp={ageOp}
+								setAgeOp={setAgeOp}
+								sizeGb={sizeGb}
+								setSizeGb={setSizeGb}
+								sizeOp={sizeOp}
+								setSizeOp={setSizeOp}
+								score={score}
+								setScore={setScore}
+								scoreOp={scoreOp}
+								setScoreOp={setScoreOp}
+								statuses={statuses}
+								setStatuses={setStatuses}
+								genreOp={genreOp}
+								setGenreOp={setGenreOp}
+								genres={genres}
+								setGenres={setGenres}
+								yearOp={yearOp}
+								setYearOp={setYearOp}
+								year={year}
+								setYear={setYear}
+								yearFrom={yearFrom}
+								setYearFrom={setYearFrom}
+								yearTo={yearTo}
+								setYearTo={setYearTo}
+								profileNames={profileNames}
+								setProfileNames={setProfileNames}
+								langOp={langOp}
+								setLangOp={setLangOp}
+								languages={languages}
+								setLanguages={setLanguages}
+								seerrUserNames={seerrUserNames}
+								setSeerrUserNames={setSeerrUserNames}
+								seerrReqAgeOp={seerrReqAgeOp}
+								setSeerrReqAgeOp={setSeerrReqAgeOp}
+								seerrReqAgeDays={seerrReqAgeDays}
+								setSeerrReqAgeDays={setSeerrReqAgeDays}
+								seerrReqStatuses={seerrReqStatuses}
+								setSeerrReqStatuses={setSeerrReqStatuses}
+								codecOp={codecOp}
+								setCodecOp={setCodecOp}
+								selectedVideoCodecs={selectedVideoCodecs}
+								setSelectedVideoCodecs={setSelectedVideoCodecs}
+								selectedAudioCodecs={selectedAudioCodecs}
+								setSelectedAudioCodecs={setSelectedAudioCodecs}
+								resolutionOp={resolutionOp}
+								setResolutionOp={setResolutionOp}
+								selectedResolutions={selectedResolutions}
+								setSelectedResolutions={setSelectedResolutions}
+								hdrOp={hdrOp}
+								setHdrOp={setHdrOp}
+								selectedHdrTypes={selectedHdrTypes}
+								setSelectedHdrTypes={setSelectedHdrTypes}
+								cfScoreOp={cfScoreOp}
+								setCfScoreOp={setCfScoreOp}
+								cfScore={cfScore}
+								setCfScore={setCfScore}
+								runtimeOp={runtimeOp}
+								setRuntimeOp={setRuntimeOp}
+								runtimeMinutes={runtimeMinutes}
+								setRuntimeMinutes={setRuntimeMinutes}
+								releaseGroupOp={releaseGroupOp}
+								setReleaseGroupOp={setReleaseGroupOp}
+								selectedReleaseGroups={selectedReleaseGroups}
+								setSelectedReleaseGroups={setSelectedReleaseGroups}
+								seerrIs4k={seerrIs4k}
+								setSeerrIs4k={setSeerrIs4k}
+								seerrModifiedAgeOp={seerrModifiedAgeOp}
+								setSeerrModifiedAgeOp={setSeerrModifiedAgeOp}
+								seerrModifiedAgeDays={seerrModifiedAgeDays}
+								setSeerrModifiedAgeDays={setSeerrModifiedAgeDays}
+								seerrModifiedByUsers={seerrModifiedByUsers}
+								setSeerrModifiedByUsers={setSeerrModifiedByUsers}
+								tautulliLastWatchedOp={tautulliLastWatchedOp}
+								setTautulliLastWatchedOp={setTautulliLastWatchedOp}
+								tautulliLastWatchedDays={tautulliLastWatchedDays}
+								setTautulliLastWatchedDays={setTautulliLastWatchedDays}
+								tautulliWatchCountOp={tautulliWatchCountOp}
+								setTautulliWatchCountOp={setTautulliWatchCountOp}
+								tautulliWatchCount={tautulliWatchCount}
+								setTautulliWatchCount={setTautulliWatchCount}
+								tautulliWatchedByOp={tautulliWatchedByOp}
+								setTautulliWatchedByOp={setTautulliWatchedByOp}
+								selectedTautulliUsers={selectedTautulliUsers}
+								setSelectedTautulliUsers={setSelectedTautulliUsers}
+								plexLastWatchedOp={plexLastWatchedOp}
+								setPlexLastWatchedOp={setPlexLastWatchedOp}
+								plexLastWatchedDays={plexLastWatchedDays}
+								setPlexLastWatchedDays={setPlexLastWatchedDays}
+								plexWatchCountOp={plexWatchCountOp}
+								setPlexWatchCountOp={setPlexWatchCountOp}
+								plexWatchCountVal={plexWatchCountVal}
+								setPlexWatchCountVal={setPlexWatchCountVal}
+								plexOnDeckVal={plexOnDeckVal}
+								setPlexOnDeckVal={setPlexOnDeckVal}
+								plexUserRatingOp={plexUserRatingOp}
+								setPlexUserRatingOp={setPlexUserRatingOp}
+								plexUserRatingVal={plexUserRatingVal}
+								setPlexUserRatingVal={setPlexUserRatingVal}
+								plexWatchedByOp={plexWatchedByOp}
+								setPlexWatchedByOp={setPlexWatchedByOp}
+								selectedPlexUsers={selectedPlexUsers}
+								setSelectedPlexUsers={setSelectedPlexUsers}
+								imdbRatingOp={imdbRatingOp}
+								setImdbRatingOp={setImdbRatingOp}
+								imdbRatingScore={imdbRatingScore}
+								setImdbRatingScore={setImdbRatingScore}
+								filePathOp={filePathOp}
+								setFilePathOp={setFilePathOp}
+								filePathPattern={filePathPattern}
+								setFilePathPattern={setFilePathPattern}
+								filePathField={filePathField}
+								setFilePathField={setFilePathField}
+								seerrIsRequested={seerrIsRequested}
+								setSeerrIsRequested={setSeerrIsRequested}
+								seerrRequestCountOp={seerrRequestCountOp}
+								setSeerrRequestCountOp={setSeerrRequestCountOp}
+								seerrRequestCountVal={seerrRequestCountVal}
+								setSeerrRequestCountVal={setSeerrRequestCountVal}
+								audioChannelsOp={audioChannelsOp}
+								setAudioChannelsOp={setAudioChannelsOp}
+								audioChannelsVal={audioChannelsVal}
+								setAudioChannelsVal={setAudioChannelsVal}
+								tagMatchOp={tagMatchOp}
+								setTagMatchOp={setTagMatchOp}
+								selectedTagIds={selectedTagIds}
+								setSelectedTagIds={setSelectedTagIds}
+								plexCollectionOp={plexCollectionOp}
+								setPlexCollectionOp={setPlexCollectionOp}
+								selectedPlexCollections={selectedPlexCollections}
+								setSelectedPlexCollections={setSelectedPlexCollections}
+								plexLabelOp={plexLabelOp}
+								setPlexLabelOp={setPlexLabelOp}
+								selectedPlexLabels={selectedPlexLabels}
+								setSelectedPlexLabels={setSelectedPlexLabels}
+								fieldOptions={fieldOptions}
+								fieldOptionsLoading={fieldOptionsLoading}
+								inputClass={inputClass}
+								labelClass={labelClass}
+							/>
+						</div>
+					)}
+
+					{/* ── Scope Section ─────────────────────────────── */}
+					<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4 space-y-3">
+						<div className="flex items-center gap-2 mb-2">
+							<Target className="h-4 w-4" style={{ color: gradient.from }} />
+							<span className="text-sm font-medium">Scope</span>
+							<span className="text-xs text-muted-foreground">(optional)</span>
+						</div>
+						<div>
+							<span className={labelClass}>Service Filter</span>
+							<div className="flex gap-2 mt-1.5">
+								{(["sonarr", "radarr"] as const).map((svc) => {
+									const svcGradient = getServiceGradient(svc);
+									const isActive = serviceFilter.includes(svc);
+									return (
+										<button
+											key={svc}
+											type="button"
+											onClick={() => toggleService(svc)}
+											className="rounded-lg border px-3 py-1.5 text-sm font-medium capitalize transition-all duration-200"
+											style={
+												isActive
+													? {
+															borderColor: svcGradient.from,
+															backgroundColor: svcGradient.from,
+															color: "#ffffff",
+														}
+													: {
+															borderColor: `${svcGradient.from}40`,
+															color: svcGradient.from,
+														}
+											}
+										>
+											{svc}
+										</button>
+									);
+								})}
+							</div>
+							<p className="text-xs text-muted-foreground mt-1.5">
+								Leave unselected to apply to all services.
 							</p>
 						</div>
 
@@ -694,13 +1459,32 @@ export function CleanupRuleDialog({
 								className={inputClass}
 							/>
 						</label>
-					</fieldset>
+
+						{fieldOptions?.plexLibraries && fieldOptions.plexLibraries.length > 0 && (
+							<div>
+								<MultiSelectField
+									label="Plex Library Filter"
+									options={fieldOptions.plexLibraries}
+									selected={selectedPlexLibraries}
+									onChange={setSelectedPlexLibraries}
+									loading={fieldOptionsLoading}
+									inputClass={inputClass}
+									labelClass={labelClass}
+								/>
+								<p className="text-xs text-muted-foreground mt-1.5">
+									Limit Plex rules to specific libraries. Leave empty for all.
+								</p>
+							</div>
+						)}
+					</div>
 
 					{/* ── Exclusions Section ────────────────────────── */}
-					<fieldset className="rounded-lg border border-border/30 p-3 space-y-3">
-						<legend className="text-xs font-medium text-muted-foreground px-2">
-							Exclusions (optional)
-						</legend>
+					<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4 space-y-3">
+						<div className="flex items-center gap-2 mb-2">
+							<ShieldOff className="h-4 w-4" style={{ color: gradient.from }} />
+							<span className="text-sm font-medium">Exclusions</span>
+							<span className="text-xs text-muted-foreground">(optional)</span>
+						</div>
 						<label className="block">
 							<span className={labelClass}>Exclude Tag IDs (comma-separated)</span>
 							<input
@@ -721,22 +1505,30 @@ export function CleanupRuleDialog({
 								className={inputClass}
 							/>
 						</label>
-					</fieldset>
+					</div>
 
 					{/* ── Actions ───────────────────────────────────── */}
-					<div className="flex justify-end gap-2 pt-1">
+					<div className="flex justify-end gap-2 pt-2">
 						<button
 							type="button"
 							onClick={() => onOpenChange(false)}
-							className="rounded-md px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+							className="rounded-lg px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
 						>
 							Cancel
 						</button>
 						<button
 							type="submit"
 							disabled={!name.trim() || isSaving}
-							className="inline-flex items-center rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50"
-							style={{ backgroundColor: gradient.from }}
+							className="inline-flex items-center rounded-lg px-4 py-2 text-sm font-medium text-white transition-all duration-200 disabled:opacity-50"
+							style={{
+								background: `linear-gradient(135deg, ${gradient.from}, ${gradient.to})`,
+							}}
+							onMouseEnter={(e) => {
+								e.currentTarget.style.boxShadow = `0 4px 15px -3px ${gradient.glow}`;
+							}}
+							onMouseLeave={(e) => {
+								e.currentTarget.style.boxShadow = "";
+							}}
 						>
 							{isSaving ? (
 								<Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -760,6 +1552,8 @@ interface ParamsFieldsProps {
 	ruleType: CleanupRuleType;
 	days: number;
 	setDays: (v: number) => void;
+	ageOp: string;
+	setAgeOp: (v: string) => void;
 	sizeGb: number;
 	setSizeGb: (v: number) => void;
 	sizeOp: string;
@@ -845,6 +1639,59 @@ interface ParamsFieldsProps {
 	setTautulliWatchedByOp: (v: string) => void;
 	selectedTautulliUsers: string[];
 	setSelectedTautulliUsers: (v: string[]) => void;
+	// Plex
+	plexLastWatchedOp: string;
+	setPlexLastWatchedOp: (v: string) => void;
+	plexLastWatchedDays: number;
+	setPlexLastWatchedDays: (v: number) => void;
+	plexWatchCountOp: string;
+	setPlexWatchCountOp: (v: string) => void;
+	plexWatchCountVal: number;
+	setPlexWatchCountVal: (v: number) => void;
+	plexOnDeckVal: boolean;
+	setPlexOnDeckVal: (v: boolean) => void;
+	plexUserRatingOp: string;
+	setPlexUserRatingOp: (v: string) => void;
+	plexUserRatingVal: number;
+	setPlexUserRatingVal: (v: number) => void;
+	plexWatchedByOp: string;
+	setPlexWatchedByOp: (v: string) => void;
+	selectedPlexUsers: string[];
+	setSelectedPlexUsers: (v: string[]) => void;
+	// Phase C
+	imdbRatingOp: string;
+	setImdbRatingOp: (v: string) => void;
+	imdbRatingScore: number;
+	setImdbRatingScore: (v: number) => void;
+	filePathOp: string;
+	setFilePathOp: (v: string) => void;
+	filePathPattern: string;
+	setFilePathPattern: (v: string) => void;
+	filePathField: string;
+	setFilePathField: (v: string) => void;
+	seerrIsRequested: boolean;
+	setSeerrIsRequested: (v: boolean) => void;
+	seerrRequestCountOp: string;
+	setSeerrRequestCountOp: (v: string) => void;
+	seerrRequestCountVal: number;
+	setSeerrRequestCountVal: (v: number) => void;
+	audioChannelsOp: string;
+	setAudioChannelsOp: (v: string) => void;
+	audioChannelsVal: number;
+	setAudioChannelsVal: (v: number) => void;
+	tagMatchOp: string;
+	setTagMatchOp: (v: string) => void;
+	selectedTagIds: number[];
+	setSelectedTagIds: (v: number[]) => void;
+	// Phase D
+	plexCollectionOp: string;
+	setPlexCollectionOp: (v: string) => void;
+	selectedPlexCollections: string[];
+	setSelectedPlexCollections: (v: string[]) => void;
+	plexLabelOp: string;
+	setPlexLabelOp: (v: string) => void;
+	selectedPlexLabels: string[];
+	setSelectedPlexLabels: (v: string[]) => void;
 	// Field options from library cache
 	fieldOptions: CleanupFieldOptionsResponse | undefined;
 	fieldOptionsLoading: boolean;
@@ -857,6 +1704,8 @@ function ParamsFields(props: ParamsFieldsProps) {
 		ruleType,
 		days,
 		setDays,
+		ageOp,
+		setAgeOp,
 		sizeGb,
 		setSizeGb,
 		sizeOp,
@@ -939,6 +1788,56 @@ function ParamsFields(props: ParamsFieldsProps) {
 		setTautulliWatchedByOp,
 		selectedTautulliUsers,
 		setSelectedTautulliUsers,
+		plexLastWatchedOp,
+		setPlexLastWatchedOp,
+		plexLastWatchedDays,
+		setPlexLastWatchedDays,
+		plexWatchCountOp,
+		setPlexWatchCountOp,
+		plexWatchCountVal,
+		setPlexWatchCountVal,
+		plexOnDeckVal,
+		setPlexOnDeckVal,
+		plexUserRatingOp,
+		setPlexUserRatingOp,
+		plexUserRatingVal,
+		setPlexUserRatingVal,
+		plexWatchedByOp,
+		setPlexWatchedByOp,
+		selectedPlexUsers,
+		setSelectedPlexUsers,
+		imdbRatingOp,
+		setImdbRatingOp,
+		imdbRatingScore,
+		setImdbRatingScore,
+		filePathOp,
+		setFilePathOp,
+		filePathPattern,
+		setFilePathPattern,
+		filePathField,
+		setFilePathField,
+		seerrIsRequested,
+		setSeerrIsRequested,
+		seerrRequestCountOp,
+		setSeerrRequestCountOp,
+		seerrRequestCountVal,
+		setSeerrRequestCountVal,
+		audioChannelsOp,
+		setAudioChannelsOp,
+		audioChannelsVal,
+		setAudioChannelsVal,
+		tagMatchOp,
+		setTagMatchOp,
+		selectedTagIds,
+		setSelectedTagIds,
+		plexCollectionOp,
+		setPlexCollectionOp,
+		selectedPlexCollections,
+		setSelectedPlexCollections,
+		plexLabelOp,
+		setPlexLabelOp,
+		selectedPlexLabels,
+		setSelectedPlexLabels,
 		fieldOptions,
 		fieldOptionsLoading,
 		inputClass,
@@ -947,16 +1846,29 @@ function ParamsFields(props: ParamsFieldsProps) {
 	switch (ruleType) {
 		case "age":
 			return (
-				<label className="block">
-					<span className={labelClass}>Older than (days)</span>
-					<input
-						type="number"
-						value={days}
-						onChange={(e) => setDays(Number(e.target.value))}
-						min={1}
-						className={inputClass}
-					/>
-				</label>
+				<div className="flex gap-2">
+					<label className="block flex-1">
+						<span className={labelClass}>Operator</span>
+						<select
+							value={ageOp}
+							onChange={(e) => setAgeOp(e.target.value)}
+							className={inputClass}
+						>
+							<option value="older_than">Older than</option>
+							<option value="newer_than">Newer than</option>
+						</select>
+					</label>
+					<label className="block w-24">
+						<span className={labelClass}>Days</span>
+						<input
+							type="number"
+							value={days}
+							onChange={(e) => setDays(Number(e.target.value))}
+							min={1}
+							className={inputClass}
+						/>
+					</label>
+				</div>
 			);
 		case "size":
 			return (
@@ -996,20 +1908,23 @@ function ParamsFields(props: ParamsFieldsProps) {
 						>
 							<option value="less_than">Less than</option>
 							<option value="greater_than">Greater than</option>
+							<option value="unrated">Unrated</option>
 						</select>
 					</label>
-					<label className="block w-24">
-						<span className={labelClass}>TMDB Score</span>
-						<input
-							type="number"
-							value={score}
-							onChange={(e) => setScore(Number(e.target.value))}
-							min={0}
-							max={10}
-							step={0.5}
-							className={inputClass}
-						/>
-					</label>
+					{scoreOp !== "unrated" && (
+						<label className="block w-24">
+							<span className={labelClass}>TMDB Score</span>
+							<input
+								type="number"
+								value={score}
+								onChange={(e) => setScore(Number(e.target.value))}
+								min={0}
+								max={10}
+								step={0.5}
+								className={inputClass}
+							/>
+						</label>
+					)}
 				</div>
 			);
 		case "status":
@@ -1559,9 +2474,460 @@ function ParamsFields(props: ParamsFieldsProps) {
 				</div>
 			);
 
+		// ── Plex Rules ──────────────────────────────────────────────
+		case "plex_last_watched":
+			return (
+				<div className="space-y-2">
+					<div className="flex gap-2">
+						<label className="block flex-1">
+							<span className={labelClass}>Operator</span>
+							<select
+								value={plexLastWatchedOp}
+								onChange={(e) => setPlexLastWatchedOp(e.target.value)}
+								className={inputClass}
+							>
+								<option value="older_than">Last watched older than</option>
+								<option value="never">Never watched</option>
+							</select>
+						</label>
+						{plexLastWatchedOp !== "never" && (
+							<label className="block w-24">
+								<span className={labelClass}>Days</span>
+								<input
+									type="number"
+									value={plexLastWatchedDays}
+									onChange={(e) => setPlexLastWatchedDays(Number(e.target.value))}
+									min={1}
+									className={inputClass}
+								/>
+							</label>
+						)}
+					</div>
+					<p className="text-xs text-muted-foreground">
+						Requires a Plex instance to be configured.
+					</p>
+				</div>
+			);
+		case "plex_watch_count":
+			return (
+				<div className="space-y-2">
+					<div className="flex gap-2">
+						<label className="block flex-1">
+							<span className={labelClass}>Operator</span>
+							<select
+								value={plexWatchCountOp}
+								onChange={(e) => setPlexWatchCountOp(e.target.value)}
+								className={inputClass}
+							>
+								<option value="less_than">Less than</option>
+								<option value="greater_than">Greater than</option>
+							</select>
+						</label>
+						<label className="block w-24">
+							<span className={labelClass}>Count</span>
+							<input
+								type="number"
+								value={plexWatchCountVal}
+								onChange={(e) => setPlexWatchCountVal(Number(e.target.value))}
+								min={0}
+								className={inputClass}
+							/>
+						</label>
+					</div>
+					<p className="text-xs text-muted-foreground">
+						Flag items by total play count from Plex.
+					</p>
+				</div>
+			);
+		case "plex_on_deck":
+			return (
+				<div className="space-y-2">
+					<label className="flex items-center gap-2 text-sm">
+						<input
+							type="checkbox"
+							checked={plexOnDeckVal}
+							onChange={(e) => setPlexOnDeckVal(e.target.checked)}
+						/>
+						Item is on Continue Watching
+					</label>
+					<p className="text-xs text-muted-foreground">
+						{plexOnDeckVal
+							? "Matches items currently on Plex's Continue Watching / On Deck."
+							: "Matches items NOT on Plex's Continue Watching / On Deck."}
+					</p>
+				</div>
+			);
+		case "plex_user_rating":
+			return (
+				<div className="space-y-2">
+					<div className="flex gap-2">
+						<label className="block flex-1">
+							<span className={labelClass}>Operator</span>
+							<select
+								value={plexUserRatingOp}
+								onChange={(e) => setPlexUserRatingOp(e.target.value)}
+								className={inputClass}
+							>
+								<option value="less_than">Less than</option>
+								<option value="greater_than">Greater than</option>
+								<option value="unrated">Unrated</option>
+							</select>
+						</label>
+						{plexUserRatingOp !== "unrated" && (
+							<label className="block w-24">
+								<span className={labelClass}>Rating</span>
+								<input
+									type="number"
+									value={plexUserRatingVal}
+									onChange={(e) => setPlexUserRatingVal(Number(e.target.value))}
+									min={0}
+									max={10}
+									step={0.5}
+									className={inputClass}
+								/>
+							</label>
+						)}
+					</div>
+					<p className="text-xs text-muted-foreground">
+						Flag items by user star rating in Plex (0-10 scale).
+					</p>
+				</div>
+			);
+		case "plex_watched_by":
+			return (
+				<div className="space-y-2">
+					<label className="block">
+						<span className={labelClass}>Operator</span>
+						<select
+							value={plexWatchedByOp}
+							onChange={(e) => setPlexWatchedByOp(e.target.value)}
+							className={inputClass}
+						>
+							<option value="includes_any">Watched by any of</option>
+							<option value="excludes_all">Not watched by any of</option>
+						</select>
+					</label>
+					<MultiSelectField
+						label="Plex Users"
+						options={fieldOptions?.plexUsers ?? []}
+						selected={selectedPlexUsers}
+						onChange={setSelectedPlexUsers}
+						loading={fieldOptionsLoading}
+						inputClass={inputClass}
+						labelClass={labelClass}
+					/>
+					<p className="text-xs text-muted-foreground">
+						Flag items based on which Plex users have watched them.
+					</p>
+				</div>
+			);
+
+		// ── Phase C: New Rule Types ──────────────────────────────────
+		case "imdb_rating":
+			return (
+				<div className="flex gap-2">
+					<label className="block flex-1">
+						<span className={labelClass}>Operator</span>
+						<select
+							value={imdbRatingOp}
+							onChange={(e) => setImdbRatingOp(e.target.value)}
+							className={inputClass}
+						>
+							<option value="less_than">Less than</option>
+							<option value="greater_than">Greater than</option>
+							<option value="unrated">Unrated</option>
+						</select>
+					</label>
+					{imdbRatingOp !== "unrated" && (
+						<label className="block w-24">
+							<span className={labelClass}>IMDb Score</span>
+							<input
+								type="number"
+								value={imdbRatingScore}
+								onChange={(e) => setImdbRatingScore(Number(e.target.value))}
+								min={0}
+								max={10}
+								step={0.1}
+								className={inputClass}
+							/>
+						</label>
+					)}
+				</div>
+			);
+		case "file_path":
+			return (
+				<div className="space-y-2">
+					<label className="block">
+						<span className={labelClass}>Operator</span>
+						<select
+							value={filePathOp}
+							onChange={(e) => setFilePathOp(e.target.value)}
+							className={inputClass}
+						>
+							<option value="matches">Matches</option>
+							<option value="not_matches">Does not match</option>
+						</select>
+					</label>
+					<label className="block">
+						<span className={labelClass}>Field</span>
+						<select
+							value={filePathField}
+							onChange={(e) => setFilePathField(e.target.value)}
+							className={inputClass}
+						>
+							<option value="path">File Path</option>
+							<option value="rootFolderPath">Root Folder Path</option>
+						</select>
+					</label>
+					<label className="block">
+						<span className={labelClass}>Regex Pattern</span>
+						<input
+							type="text"
+							value={filePathPattern}
+							onChange={(e) => setFilePathPattern(e.target.value)}
+							placeholder="/mnt/data/movies"
+							className={inputClass}
+						/>
+					</label>
+				</div>
+			);
+		case "seerr_is_requested":
+			return (
+				<div className="space-y-2">
+					<label className="flex items-center gap-2 text-sm">
+						<input
+							type="checkbox"
+							checked={seerrIsRequested}
+							onChange={(e) => setSeerrIsRequested(e.target.checked)}
+						/>
+						Has a Seerr request
+					</label>
+					<p className="text-xs text-muted-foreground">
+						{seerrIsRequested
+							? "Matches items that have at least one Seerr request."
+							: "Matches items that have no Seerr request."}
+					</p>
+				</div>
+			);
+		case "seerr_request_count":
+			return (
+				<div className="flex gap-2">
+					<label className="block flex-1">
+						<span className={labelClass}>Operator</span>
+						<select
+							value={seerrRequestCountOp}
+							onChange={(e) => setSeerrRequestCountOp(e.target.value)}
+							className={inputClass}
+						>
+							<option value="less_than">Less than</option>
+							<option value="greater_than">Greater than</option>
+							<option value="equals">Equals</option>
+						</select>
+					</label>
+					<label className="block w-24">
+						<span className={labelClass}>Count</span>
+						<input
+							type="number"
+							value={seerrRequestCountVal}
+							onChange={(e) => setSeerrRequestCountVal(Number(e.target.value))}
+							min={0}
+							className={inputClass}
+						/>
+					</label>
+				</div>
+			);
+		case "audio_channels":
+			return (
+				<div className="flex gap-2">
+					<label className="block flex-1">
+						<span className={labelClass}>Operator</span>
+						<select
+							value={audioChannelsOp}
+							onChange={(e) => setAudioChannelsOp(e.target.value)}
+							className={inputClass}
+						>
+							<option value="is">Is</option>
+							<option value="is_not">Is not</option>
+							<option value="greater_than">Greater than</option>
+							<option value="less_than">Less than</option>
+						</select>
+					</label>
+					<label className="block w-24">
+						<span className={labelClass}>Channels</span>
+						<input
+							type="number"
+							value={audioChannelsVal}
+							onChange={(e) => setAudioChannelsVal(Number(e.target.value))}
+							min={1}
+							className={inputClass}
+						/>
+					</label>
+				</div>
+			);
+		case "tag_match":
+			return (
+				<TagMatchFields
+					tagMatchOp={tagMatchOp}
+					setTagMatchOp={setTagMatchOp}
+					selectedTagIds={selectedTagIds}
+					setSelectedTagIds={setSelectedTagIds}
+					fieldOptions={fieldOptions}
+					inputClass={inputClass}
+					labelClass={labelClass}
+				/>
+			);
+
+		// ── Phase D: Plex Collections & Labels ───────────────────────
+		case "plex_collection":
+			return (
+				<div className="space-y-2">
+					<label className="block">
+						<span className={labelClass}>Operator</span>
+						<select
+							value={plexCollectionOp}
+							onChange={(e) => setPlexCollectionOp(e.target.value)}
+							className={inputClass}
+						>
+							<option value="in">In collection</option>
+							<option value="not_in">Not in collection</option>
+						</select>
+					</label>
+					<MultiSelectField
+						label="Plex Collections"
+						options={fieldOptions?.plexCollections ?? []}
+						selected={selectedPlexCollections}
+						onChange={setSelectedPlexCollections}
+						loading={fieldOptionsLoading}
+						inputClass={inputClass}
+						labelClass={labelClass}
+					/>
+				</div>
+			);
+		case "plex_label":
+			return (
+				<div className="space-y-2">
+					<label className="block">
+						<span className={labelClass}>Operator</span>
+						<select
+							value={plexLabelOp}
+							onChange={(e) => setPlexLabelOp(e.target.value)}
+							className={inputClass}
+						>
+							<option value="has_any">Has any of</option>
+							<option value="has_none">Has none of</option>
+						</select>
+					</label>
+					<MultiSelectField
+						label="Plex Labels"
+						options={fieldOptions?.plexLabels ?? []}
+						selected={selectedPlexLabels}
+						onChange={setSelectedPlexLabels}
+						loading={fieldOptionsLoading}
+						inputClass={inputClass}
+						labelClass={labelClass}
+					/>
+				</div>
+			);
+
 		default:
 			return null;
 	}
+}
+
+// ============================================================================
+// Tag Match Fields (shared by ParamsFields)
+// ============================================================================
+
+function TagMatchFields({
+	tagMatchOp,
+	setTagMatchOp,
+	selectedTagIds,
+	setSelectedTagIds,
+	fieldOptions,
+	inputClass,
+	labelClass,
+}: {
+	tagMatchOp: string;
+	setTagMatchOp: (v: string) => void;
+	selectedTagIds: number[];
+	setSelectedTagIds: (v: number[]) => void;
+	fieldOptions: CleanupFieldOptionsResponse | undefined;
+	inputClass: string;
+	labelClass: string;
+}) {
+	const { gradient } = useThemeGradient();
+	const tags = fieldOptions?.arrTags ?? [];
+
+	const toggleTag = (id: number) => {
+		setSelectedTagIds(
+			selectedTagIds.includes(id)
+				? selectedTagIds.filter((t) => t !== id)
+				: [...selectedTagIds, id],
+		);
+	};
+
+	return (
+		<div className="space-y-2">
+			<label className="block">
+				<span className={labelClass}>Operator</span>
+				<select
+					value={tagMatchOp}
+					onChange={(e) => setTagMatchOp(e.target.value)}
+					className={inputClass}
+				>
+					<option value="includes_any">Includes any of</option>
+					<option value="excludes_all">Excludes all of</option>
+				</select>
+			</label>
+			{tags.length > 0 ? (
+				<div>
+					<span className={labelClass}>Tags</span>
+					<div className="flex flex-wrap gap-1.5 mt-1.5">
+						{tags.map((tag) => {
+							const isSelected = selectedTagIds.includes(tag.id);
+							return (
+								<button
+									key={tag.id}
+									type="button"
+									onClick={() => toggleTag(tag.id)}
+									className="rounded-lg border px-2.5 py-1 text-xs font-medium transition-all duration-200"
+									style={
+										isSelected
+											? {
+													borderColor: gradient.from,
+													backgroundColor: gradient.fromLight,
+													color: gradient.from,
+												}
+											: { borderColor: "var(--color-border)" }
+									}
+								>
+									{tag.label}
+								</button>
+							);
+						})}
+					</div>
+				</div>
+			) : (
+				<label className="block">
+					<span className={labelClass}>Tag IDs (comma-separated)</span>
+					<input
+						type="text"
+						value={selectedTagIds.join(", ")}
+						onChange={(e) =>
+							setSelectedTagIds(
+								e.target.value
+									.split(",")
+									.map((s) => Number(s.trim()))
+									.filter((n) => !Number.isNaN(n) && n > 0),
+							)
+						}
+						placeholder="1, 5, 12"
+						className={inputClass}
+					/>
+				</label>
+			)}
+		</div>
+	);
 }
 
 // ============================================================================

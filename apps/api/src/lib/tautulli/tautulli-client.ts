@@ -66,11 +66,13 @@ const DEFAULT_TIMEOUT = 10_000;
 export class TautulliClient {
 	private readonly baseUrl: string;
 	private readonly apiKey: string;
+	private readonly log: FastifyBaseLogger;
 	private readonly timeout: number;
 
-	constructor(baseUrl: string, apiKey: string, _log: FastifyBaseLogger, timeout = DEFAULT_TIMEOUT) {
+	constructor(baseUrl: string, apiKey: string, log: FastifyBaseLogger, timeout = DEFAULT_TIMEOUT) {
 		this.baseUrl = baseUrl.replace(/\/$/, "");
 		this.apiKey = apiKey;
+		this.log = log;
 		this.timeout = timeout;
 	}
 
@@ -130,6 +132,7 @@ export class TautulliClient {
 		});
 
 		if (!response.ok) {
+			this.log.warn({ status: response.status, cmd }, "Tautulli API non-OK response");
 			throw new Error(`Tautulli API error: HTTP ${response.status} ${response.statusText}`);
 		}
 

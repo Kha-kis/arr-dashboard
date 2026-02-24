@@ -331,7 +331,8 @@ export type ServiceType =
 	| "lidarr"
 	| "readarr"
 	| "seerr"
-	| "tautulli";
+	| "tautulli"
+	| "plex";
 
 /**
  * Service-specific gradients for visual distinction
@@ -379,6 +380,11 @@ export const SERVICE_GRADIENTS: Record<ServiceType, ServiceGradient> = {
 		from: "#e4a50a", // amber/gold (Tautulli branding)
 		to: "#d97706", // amber-600
 		glow: "rgba(228, 165, 10, 0.4)",
+	},
+	plex: {
+		from: "#cc7b19", // burnt amber (distinct from Tautulli gold and Radarr orange)
+		to: "#e5a336", // warm amber
+		glow: "rgba(204, 123, 25, 0.35)",
 	},
 };
 

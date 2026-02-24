@@ -6,19 +6,25 @@
  * 2. Queries LibraryCache items (operating on cached data, not live API)
  * 3. Evaluates each item against rules (first match wins)
  * 4. Either flags items for approval or removes them directly
+ *
+ * Supports three actions per rule: delete, unmonitor, delete_files.
  */
 
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { LibraryCleanupConfig, LibraryCleanupRule, ServiceInstance } from "../prisma.js";
 import { SeerrClient } from "../seerr/seerr-client.js";
 import { getErrorMessage } from "../utils/error-message.js";
+import { safeJsonParse } from "../utils/json.js";
 import { evaluateItemAgainstRules, extractRating } from "./rule-evaluators.js";
 import type {
 	CacheItemForEval,
 	CleanupExecutorDeps,
 	CleanupRunResult,
+	DetailAction,
 	EvalContext,
 	FlaggedItem,
+	PlexSectionWatchInfo,
+	PlexWatchMap,
 	SeerrRequestInfo,
 	SeerrRequestMap,
 	TautulliWatchMap,
@@ -57,6 +63,8 @@ export async function executeCleanupPreview(
 			itemsEvaluated: 0,
 			itemsFlagged: 0,
 			itemsRemoved: 0,
+			itemsUnmonitored: 0,
+			itemsFilesDeleted: 0,
 			itemsSkipped: 0,
 			details: [],
 			durationMs: Date.now() - startTime,
@@ -71,7 +79,10 @@ export async function executeCleanupPreview(
 		title: f.cacheItem.title,
 		rule: f.match.ruleName,
 		reason: f.match.reason,
-		action: "flagged" as const,
+		action: f.match.action as DetailAction,
+		sizeOnDisk: f.cacheItem.sizeOnDisk.toString(),
+		year: f.cacheItem.year,
+		rating: f.rating,
 	}));
 
 	log.info({ totalEvaluated, totalFlagged: flagged.length }, "Library cleanup preview completed");
@@ -82,6 +93,8 @@ export async function executeCleanupPreview(
 		itemsEvaluated: totalEvaluated,
 		itemsFlagged: flagged.length,
 		itemsRemoved: 0,
+		itemsUnmonitored: 0,
+		itemsFilesDeleted: 0,
 		itemsSkipped: 0,
 		details,
 		durationMs: Date.now() - startTime,
@@ -96,7 +109,7 @@ export async function executeCleanupPreview(
  * Execute a full cleanup run. Depending on config:
  * - dryRunMode=true: Only log what would happen
  * - requireApproval=true: Create approval queue entries
- * - Otherwise: Delete items directly from ARR instances
+ * - Otherwise: Execute actions directly on ARR instances
  */
 export async function executeCleanupRun(
 	deps: CleanupExecutorDeps,
@@ -117,6 +130,8 @@ export async function executeCleanupRun(
 			itemsEvaluated: 0,
 			itemsFlagged: 0,
 			itemsRemoved: 0,
+			itemsUnmonitored: 0,
+			itemsFilesDeleted: 0,
 			itemsSkipped: 0,
 			details: [],
 			durationMs: Date.now() - startTime,
@@ -136,29 +151,26 @@ export async function executeCleanupRun(
 			rule: f.match.ruleName,
 			reason: f.match.reason,
 			action: "flagged" as const,
+			sizeOnDisk: f.cacheItem.sizeOnDisk.toString(),
+			year: f.cacheItem.year,
+			rating: f.rating,
 		}));
 
-		await createRunLog(prisma, config.id, {
+		const result: CleanupRunResult = {
 			isDryRun: true,
 			status: "completed",
 			itemsEvaluated: totalEvaluated,
 			itemsFlagged: limited.length,
 			itemsRemoved: 0,
-			itemsSkipped: flagged.length - limited.length,
-			details,
-			durationMs: Date.now() - startTime,
-		});
-
-		return {
-			isDryRun: true,
-			status: "completed",
-			itemsEvaluated: totalEvaluated,
-			itemsFlagged: limited.length,
-			itemsRemoved: 0,
+			itemsUnmonitored: 0,
+			itemsFilesDeleted: 0,
 			itemsSkipped: flagged.length - limited.length,
 			details,
 			durationMs: Date.now() - startTime,
 		};
+
+		await createRunLog(prisma, config.id, result);
+		return result;
 	}
 
 	// Real execution
@@ -186,6 +198,7 @@ export async function executeCleanupRun(
 
 /**
  * Execute approved items from the approval queue.
+ * Dispatches on the stored action (delete, unmonitor, delete_files).
  */
 export async function executeApprovedItems(
 	deps: CleanupExecutorDeps,
@@ -194,11 +207,24 @@ export async function executeApprovedItems(
 ): Promise<{ removed: number; failed: number; errors: string[] }> {
 	const { prisma, arrClientFactory, log } = deps;
 
-	const approvals = await prisma.libraryCleanupApproval.findMany({
+	// Atomically transition approved → executing to prevent double-execution
+	// Also enforce expiry — don't execute items past their expiration
+	const now = new Date();
+	await prisma.libraryCleanupApproval.updateMany({
 		where: {
 			id: { in: approvalIds },
 			config: { userId },
 			status: "approved",
+			expiresAt: { gt: now },
+		},
+		data: { status: "executing" },
+	});
+
+	const approvals = await prisma.libraryCleanupApproval.findMany({
+		where: {
+			id: { in: approvalIds },
+			config: { userId },
+			status: "executing",
 		},
 	});
 
@@ -222,16 +248,38 @@ export async function executeApprovedItems(
 		}
 
 		try {
-			await deleteFromArr(arrClientFactory, instance, approval.arrItemId);
+			const action = approval.action ?? "delete";
 
-			// Remove from LibraryCache
-			await prisma.libraryCache.deleteMany({
-				where: {
-					instanceId: approval.instanceId,
-					arrItemId: approval.arrItemId,
-					itemType: approval.itemType,
-				},
-			});
+			if (action === "unmonitor") {
+				await unmonitorInArr(arrClientFactory, instance, approval.arrItemId);
+				await prisma.libraryCache.updateMany({
+					where: {
+						instanceId: approval.instanceId,
+						arrItemId: approval.arrItemId,
+						itemType: approval.itemType,
+					},
+					data: { monitored: false },
+				});
+			} else if (action === "delete_files") {
+				await deleteFilesFromArr(arrClientFactory, instance, approval.arrItemId);
+				await prisma.libraryCache.updateMany({
+					where: {
+						instanceId: approval.instanceId,
+						arrItemId: approval.arrItemId,
+						itemType: approval.itemType,
+					},
+					data: { hasFile: false, sizeOnDisk: 0 },
+				});
+			} else {
+				await deleteFromArr(arrClientFactory, instance, approval.arrItemId);
+				await prisma.libraryCache.deleteMany({
+					where: {
+						instanceId: approval.instanceId,
+						arrItemId: approval.arrItemId,
+						itemType: approval.itemType,
+					},
+				});
+			}
 
 			await prisma.libraryCleanupApproval.update({
 				where: { id: approval.id },
@@ -240,17 +288,21 @@ export async function executeApprovedItems(
 
 			removed++;
 			log.info(
-				{ title: approval.title, instanceId: approval.instanceId },
-				"Approved cleanup item removed",
+				{ title: approval.title, instanceId: approval.instanceId, action },
+				"Approved cleanup item executed",
 			);
 		} catch (error) {
 			const msg = getErrorMessage(error);
-			errors.push(`Failed to remove "${approval.title}": ${msg}`);
+			errors.push(`Failed to execute "${approval.title}": ${msg}`);
 			failed++;
 			log.error(
 				{ err: error, title: approval.title, instanceId: approval.instanceId },
-				"Failed to remove approved cleanup item",
+				"Failed to execute approved cleanup item",
 			);
+			// Revert to approved so the item can be retried
+			await prisma.libraryCleanupApproval
+				.update({ where: { id: approval.id }, data: { status: "approved" } })
+				.catch(() => {});
 		}
 	}
 
@@ -260,6 +312,23 @@ export async function executeApprovedItems(
 // ============================================================================
 // Internal Helpers
 // ============================================================================
+
+/**
+ * Collect all rule types from enabled rules, including conditions inside composite rules.
+ * Used to decide which external data to prefetch (Seerr, Tautulli, Plex).
+ */
+function collectActiveRuleTypes(rules: LibraryCleanupRule[]): Set<string> {
+	const types = new Set<string>();
+	for (const r of rules) {
+		if (!r.enabled) continue;
+		types.add(r.ruleType);
+		if (r.conditions) {
+			const conds = safeJsonParse(r.conditions) as Array<{ ruleType?: string }> | null;
+			if (Array.isArray(conds)) for (const c of conds) if (c.ruleType) types.add(c.ruleType);
+		}
+	}
+	return types;
+}
 
 /**
  * Prefetch all Seerr requests and build a lookup map keyed by "movie:tmdbId" or "tv:tmdbId".
@@ -360,13 +429,17 @@ async function prefetchTautulliData(
 
 		const map: TautulliWatchMap = new Map();
 		for (const row of cacheRows) {
-			const key = `${row.mediaType}:${row.tmdbId}`;
-			const watchedByUsers = JSON.parse(row.watchedByUsers) as string[];
-			map.set(key, {
-				lastWatchedAt: row.lastWatchedAt,
-				watchCount: row.watchCount,
-				watchedByUsers,
-			});
+			try {
+				const key = `${row.mediaType}:${row.tmdbId}`;
+				const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
+				map.set(key, {
+					lastWatchedAt: row.lastWatchedAt,
+					watchCount: row.watchCount,
+					watchedByUsers,
+				});
+			} catch {
+				log.warn({ tmdbId: row.tmdbId }, "Skipping Tautulli cache row with bad data");
+			}
 		}
 
 		log.info({ totalEntries: map.size }, "Tautulli watch data prefetch complete for cleanup");
@@ -381,8 +454,115 @@ async function prefetchTautulliData(
 }
 
 /**
+ * Prefetch Plex watch data from the PlexCache table and build a lookup map.
+ * Now section-aware: each row carries sectionId/sectionTitle, and PlexWatchInfo
+ * contains both pre-computed cross-section aggregates and a per-section breakdown.
+ * Also includes collections and labels from the PlexCache table.
+ * Returns undefined if no Plex instance is configured.
+ */
+async function prefetchPlexData(
+	deps: CleanupExecutorDeps,
+	userId: string,
+): Promise<PlexWatchMap | undefined> {
+	const { prisma, log } = deps;
+
+	const plexInstances = await prisma.serviceInstance.findMany({
+		where: { userId, service: "PLEX" },
+		select: { id: true },
+	});
+
+	if (plexInstances.length === 0) return undefined;
+
+	try {
+		const cacheRows = await prisma.plexCache.findMany({
+			where: { instanceId: { in: plexInstances.map((i) => i.id) } },
+		});
+
+		const map: PlexWatchMap = new Map();
+		for (const row of cacheRows) {
+			try {
+			// Key is mediaType:tmdbId (aggregating across sections)
+			const key = `${row.mediaType}:${row.tmdbId}`;
+			const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
+			const collections = (safeJsonParse(row.collections) as string[]) ?? [];
+			const labels = (safeJsonParse(row.labels) as string[]) ?? [];
+
+			const sectionInfo: PlexSectionWatchInfo = {
+				sectionId: row.sectionId,
+				sectionTitle: row.sectionTitle,
+				lastWatchedAt: row.lastWatchedAt,
+				watchCount: row.watchCount,
+				watchedByUsers,
+				onDeck: row.onDeck,
+				userRating: row.userRating,
+				collections,
+				labels,
+				addedAt: row.addedAt,
+			};
+
+			const existing = map.get(key);
+			if (existing) {
+				existing.sections.push(sectionInfo);
+				// Update aggregates: merge across sections
+				if (row.lastWatchedAt && (!existing.lastWatchedAt || row.lastWatchedAt > existing.lastWatchedAt)) {
+					existing.lastWatchedAt = row.lastWatchedAt;
+				}
+				existing.watchCount += row.watchCount;
+				for (const user of watchedByUsers) {
+					if (!existing.watchedByUsers.includes(user)) {
+						existing.watchedByUsers.push(user);
+					}
+				}
+				existing.onDeck = existing.onDeck || row.onDeck;
+				if (row.userRating != null) {
+					existing.userRating = existing.userRating != null
+						? Math.max(existing.userRating, row.userRating)
+						: row.userRating;
+				}
+				// Merge collections and labels
+				for (const c of collections) {
+					if (!existing.collections.includes(c)) existing.collections.push(c);
+				}
+				for (const l of labels) {
+					if (!existing.labels.includes(l)) existing.labels.push(l);
+				}
+				// Merge addedAt: take earliest (first appearance in any library)
+				if (row.addedAt && (!existing.addedAt || row.addedAt < existing.addedAt)) {
+					existing.addedAt = row.addedAt;
+				}
+			} else {
+				map.set(key, {
+					lastWatchedAt: row.lastWatchedAt,
+					watchCount: row.watchCount,
+					watchedByUsers: [...watchedByUsers],
+					onDeck: row.onDeck,
+					userRating: row.userRating,
+					collections: [...collections],
+					labels: [...labels],
+					addedAt: row.addedAt,
+					sections: [sectionInfo],
+				});
+			}
+			} catch {
+				log.warn({ tmdbId: row.tmdbId }, "Skipping Plex cache row with bad data");
+			}
+		}
+
+		log.info({ totalEntries: map.size }, "Plex watch data prefetch complete for cleanup");
+		return map;
+	} catch (error) {
+		log.warn(
+			{ err: error },
+			"Failed to prefetch Plex data for cleanup — Plex rules will be skipped",
+		);
+		return undefined;
+	}
+}
+
+/**
  * Evaluate all LibraryCache items against the rule set.
  * Queries in batches to avoid memory issues with large libraries.
+ * Uses collectActiveRuleTypes() to detect rule types inside composite conditions.
  */
 async function evaluateAllItems(
 	deps: CleanupExecutorDeps,
@@ -399,6 +579,9 @@ async function evaluateAllItems(
 	});
 	const instanceServiceMap = new Map(instances.map((i) => [i.id, i.service]));
 
+	// Collect all active rule types (including inside composite conditions)
+	const activeTypes = collectActiveRuleTypes(rules);
+
 	// Prefetch Seerr requests if any Seerr rule types are active
 	const SEERR_RULE_TYPES = [
 		"seerr_requested_by",
@@ -407,8 +590,10 @@ async function evaluateAllItems(
 		"seerr_is_4k",
 		"seerr_request_modified_age",
 		"seerr_modified_by",
+		"seerr_is_requested",
+		"seerr_request_count",
 	];
-	const hasSeerrRules = rules.some((r) => r.enabled && SEERR_RULE_TYPES.includes(r.ruleType));
+	const hasSeerrRules = SEERR_RULE_TYPES.some((t) => activeTypes.has(t));
 	const seerrMap = hasSeerrRules ? await prefetchSeerrRequests(deps, config.userId) : undefined;
 
 	// Prefetch Tautulli watch data if any Tautulli rule types are active
@@ -417,13 +602,29 @@ async function evaluateAllItems(
 		"tautulli_watch_count",
 		"tautulli_watched_by",
 	];
-	const hasTautulliRules = rules.some((r) => r.enabled && TAUTULLI_RULE_TYPES.includes(r.ruleType));
+	const hasTautulliRules = TAUTULLI_RULE_TYPES.some((t) => activeTypes.has(t));
 	const tautulliMap = hasTautulliRules
 		? await prefetchTautulliData(deps, config.userId)
 		: undefined;
 
+	// Prefetch Plex watch data if any Plex rule types are active
+	const PLEX_RULE_TYPES = [
+		"plex_last_watched",
+		"plex_watch_count",
+		"plex_on_deck",
+		"plex_user_rating",
+		"plex_watched_by",
+		"plex_collection",
+		"plex_label",
+		"plex_added_at",
+	];
+	const hasPlexRules = PLEX_RULE_TYPES.some((t) => activeTypes.has(t));
+	const plexMap = hasPlexRules
+		? await prefetchPlexData(deps, config.userId)
+		: undefined;
+
 	// Build evaluation context
-	const ctx: EvalContext = { now, seerrMap, tautulliMap };
+	const ctx: EvalContext = { now, seerrMap, tautulliMap, plexMap };
 
 	const flagged: FlaggedItem[] = [];
 	let totalEvaluated = 0;
@@ -460,7 +661,8 @@ async function evaluateAllItems(
 
 		for (const item of batch) {
 			totalEvaluated++;
-			const instanceService = instanceServiceMap.get(item.instanceId) ?? "";
+			const instanceService = instanceServiceMap.get(item.instanceId);
+			if (!instanceService) continue; // Skip orphaned cache items with no matching instance
 
 			const match = evaluateItemAgainstRules(item, rules, instanceService, ctx);
 			if (match) {
@@ -481,6 +683,7 @@ async function evaluateAllItems(
 
 /**
  * Create approval queue entries for flagged items.
+ * Stores the action from each rule match on the approval record.
  */
 async function executeWithApproval(
 	deps: CleanupExecutorDeps,
@@ -532,6 +735,7 @@ async function executeWithApproval(
 					matchedRuleId: item.match.ruleId,
 					matchedRuleName: item.match.ruleName,
 					reason: item.match.reason,
+					action: item.match.action,
 					sizeOnDisk: item.cacheItem.sizeOnDisk,
 					year: item.cacheItem.year,
 					rating: item.rating,
@@ -554,6 +758,14 @@ async function executeWithApproval(
 				{ err: error, title: item.cacheItem.title },
 				"Failed to create cleanup approval entry",
 			);
+			details.push({
+				instanceId: item.cacheItem.instanceId,
+				arrItemId: item.cacheItem.arrItemId,
+				title: item.cacheItem.title,
+				rule: item.match.ruleName,
+				reason: `Failed to queue: ${getErrorMessage(error)}`,
+				action: "skipped",
+			});
 		}
 	}
 
@@ -563,6 +775,8 @@ async function executeWithApproval(
 		itemsEvaluated: totalEvaluated,
 		itemsFlagged: queued,
 		itemsRemoved: 0,
+		itemsUnmonitored: 0,
+		itemsFilesDeleted: 0,
 		itemsSkipped: totalFlaggedBeforeLimit - flagged.length,
 		details,
 		durationMs: Date.now() - startTime,
@@ -573,7 +787,8 @@ async function executeWithApproval(
 }
 
 /**
- * Directly remove flagged items from ARR instances.
+ * Directly execute flagged items on ARR instances.
+ * Dispatches on each item's action (delete, unmonitor, delete_files).
  */
 async function executeDirectRemoval(
 	deps: CleanupExecutorDeps,
@@ -595,6 +810,8 @@ async function executeDirectRemoval(
 
 	const details: CleanupRunResult["details"] = [];
 	let removed = 0;
+	let unmonitored = 0;
+	let filesDeleted = 0;
 
 	for (const item of flagged) {
 		const instance = instanceMap.get(item.cacheItem.instanceId);
@@ -610,43 +827,90 @@ async function executeDirectRemoval(
 			continue;
 		}
 
-		try {
-			await deleteFromArr(arrClientFactory, instance, item.cacheItem.arrItemId);
+		const ruleAction = item.match.action ?? "delete";
 
-			// Remove from cache
-			await prisma.libraryCache.deleteMany({
-				where: {
+		try {
+			if (ruleAction === "unmonitor") {
+				await unmonitorInArr(arrClientFactory, instance, item.cacheItem.arrItemId);
+				await prisma.libraryCache.updateMany({
+					where: {
+						instanceId: item.cacheItem.instanceId,
+						arrItemId: item.cacheItem.arrItemId,
+						itemType: item.cacheItem.itemType,
+					},
+					data: { monitored: false },
+				});
+				details.push({
 					instanceId: item.cacheItem.instanceId,
 					arrItemId: item.cacheItem.arrItemId,
-					itemType: item.cacheItem.itemType,
-				},
-			});
-
-			details.push({
-				instanceId: item.cacheItem.instanceId,
-				arrItemId: item.cacheItem.arrItemId,
-				title: item.cacheItem.title,
-				rule: item.match.ruleName,
-				reason: item.match.reason,
-				action: "removed",
-			});
-			removed++;
-
-			log.info(
-				{ title: item.cacheItem.title, instanceId: instance.id, rule: item.match.ruleName },
-				"Cleanup: removed item from ARR instance",
-			);
+					title: item.cacheItem.title,
+					rule: item.match.ruleName,
+					reason: item.match.reason,
+					action: "unmonitored",
+				});
+				unmonitored++;
+				log.info(
+					{ title: item.cacheItem.title, instanceId: instance.id, rule: item.match.ruleName },
+					"Cleanup: unmonitored item in ARR instance",
+				);
+			} else if (ruleAction === "delete_files") {
+				await deleteFilesFromArr(arrClientFactory, instance, item.cacheItem.arrItemId);
+				await prisma.libraryCache.updateMany({
+					where: {
+						instanceId: item.cacheItem.instanceId,
+						arrItemId: item.cacheItem.arrItemId,
+						itemType: item.cacheItem.itemType,
+					},
+					data: { hasFile: false, sizeOnDisk: 0 },
+				});
+				details.push({
+					instanceId: item.cacheItem.instanceId,
+					arrItemId: item.cacheItem.arrItemId,
+					title: item.cacheItem.title,
+					rule: item.match.ruleName,
+					reason: item.match.reason,
+					action: "files_deleted",
+				});
+				filesDeleted++;
+				log.info(
+					{ title: item.cacheItem.title, instanceId: instance.id, rule: item.match.ruleName },
+					"Cleanup: deleted files for item in ARR instance",
+				);
+			} else {
+				// Default: delete
+				await deleteFromArr(arrClientFactory, instance, item.cacheItem.arrItemId);
+				await prisma.libraryCache.deleteMany({
+					where: {
+						instanceId: item.cacheItem.instanceId,
+						arrItemId: item.cacheItem.arrItemId,
+						itemType: item.cacheItem.itemType,
+					},
+				});
+				details.push({
+					instanceId: item.cacheItem.instanceId,
+					arrItemId: item.cacheItem.arrItemId,
+					title: item.cacheItem.title,
+					rule: item.match.ruleName,
+					reason: item.match.reason,
+					action: "removed",
+				});
+				removed++;
+				log.info(
+					{ title: item.cacheItem.title, instanceId: instance.id, rule: item.match.ruleName },
+					"Cleanup: removed item from ARR instance",
+				);
+			}
 		} catch (error) {
 			log.error(
 				{ err: error, title: item.cacheItem.title, instanceId: instance.id },
-				"Cleanup: failed to remove item",
+				"Cleanup: failed to execute action on item",
 			);
 			details.push({
 				instanceId: item.cacheItem.instanceId,
 				arrItemId: item.cacheItem.arrItemId,
 				title: item.cacheItem.title,
 				rule: item.match.ruleName,
-				reason: `Removal failed: ${getErrorMessage(error)}`,
+				reason: `Action failed: ${getErrorMessage(error)}`,
 				action: "skipped",
 			});
 		}
@@ -658,7 +922,9 @@ async function executeDirectRemoval(
 		itemsEvaluated: totalEvaluated,
 		itemsFlagged: flagged.length,
 		itemsRemoved: removed,
-		itemsSkipped: totalFlaggedBeforeLimit - flagged.length + (flagged.length - removed),
+		itemsUnmonitored: unmonitored,
+		itemsFilesDeleted: filesDeleted,
+		itemsSkipped: totalFlaggedBeforeLimit - flagged.length + (flagged.length - removed - unmonitored - filesDeleted),
 		details,
 		durationMs: Date.now() - startTime,
 	};
@@ -666,6 +932,10 @@ async function executeDirectRemoval(
 	await createRunLog(prisma, config.id, result);
 	return result;
 }
+
+// ============================================================================
+// ARR Action Functions
+// ============================================================================
 
 /**
  * Delete an item from an ARR instance via the SDK client.
@@ -694,6 +964,74 @@ async function deleteFromArr(
 }
 
 /**
+ * Unmonitor an item in an ARR instance without deleting it.
+ * Sets monitored=false on the movie/series.
+ */
+async function unmonitorInArr(
+	arrClientFactory: CleanupExecutorDeps["arrClientFactory"],
+	instance: ServiceInstance,
+	arrItemId: number,
+): Promise<void> {
+	const client = arrClientFactory.create(instance);
+
+	switch (instance.service) {
+		case "RADARR": {
+			const radarr = client as InstanceType<typeof RadarrClient>;
+			const movie = await radarr.movie.getById(arrItemId);
+			await radarr.movie.update(arrItemId, { ...movie, id: arrItemId, monitored: false });
+			break;
+		}
+		case "SONARR": {
+			const sonarr = client as InstanceType<typeof SonarrClient>;
+			const series = await sonarr.series.getById(arrItemId);
+			await sonarr.series.update(
+				arrItemId,
+				{ ...series, id: arrItemId, monitored: false } as Parameters<typeof sonarr.series.update>[1],
+			);
+			break;
+		}
+		default:
+			throw new Error(`Unsupported service type for unmonitor: ${instance.service}`);
+	}
+}
+
+/**
+ * Delete files for an item in an ARR instance without removing the item itself.
+ * For Radarr: deletes the movie file. For Sonarr: bulk-deletes all episode files.
+ */
+async function deleteFilesFromArr(
+	arrClientFactory: CleanupExecutorDeps["arrClientFactory"],
+	instance: ServiceInstance,
+	arrItemId: number,
+): Promise<void> {
+	const client = arrClientFactory.create(instance);
+
+	switch (instance.service) {
+		case "RADARR": {
+			const radarr = client as InstanceType<typeof RadarrClient>;
+			const movie = await radarr.movie.getById(arrItemId);
+			if (movie.movieFileId && movie.movieFileId > 0) {
+				await radarr.movieFile.delete(movie.movieFileId);
+			}
+			break;
+		}
+		case "SONARR": {
+			const sonarr = client as InstanceType<typeof SonarrClient>;
+			const episodeFiles = await sonarr.episodeFile.getBySeries(arrItemId);
+			const fileIds = episodeFiles
+				.map((f) => f.id)
+				.filter((id): id is number => id != null && id > 0);
+			if (fileIds.length > 0) {
+				await sonarr.episodeFile.bulkDelete(fileIds);
+			}
+			break;
+		}
+		default:
+			throw new Error(`Unsupported service type for delete_files: ${instance.service}`);
+	}
+}
+
+/**
  * Create a cleanup run log entry.
  */
 async function createRunLog(
@@ -709,6 +1047,8 @@ async function createRunLog(
 			itemsEvaluated: result.itemsEvaluated,
 			itemsFlagged: result.itemsFlagged,
 			itemsRemoved: result.itemsRemoved,
+			itemsUnmonitored: result.itemsUnmonitored,
+			itemsFilesDeleted: result.itemsFilesDeleted,
 			itemsSkipped: result.itemsSkipped,
 			details: JSON.stringify(result.details),
 			error: result.error,

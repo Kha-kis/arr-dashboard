@@ -74,7 +74,7 @@ async function initBrowserPush(
 		const sender = createBrowserPushSender(vapidRecord.publicKey, privateKey, contactEmail);
 		dispatcher.registerSender("BROWSER_PUSH", sender);
 	} catch (error) {
-		app.log.warn(
+		app.log.error(
 			{ err: error instanceof Error ? error : new Error(String(error)) },
 			"Browser push initialization failed — push notifications will be unavailable",
 		);

@@ -16,7 +16,8 @@ export const ServiceType = {
   LIDARR: 'LIDARR',
   READARR: 'READARR',
   SEERR: 'SEERR',
-  TAUTULLI: 'TAUTULLI'
+  TAUTULLI: 'TAUTULLI',
+  PLEX: 'PLEX'
 } as const
 
 export type ServiceType = (typeof ServiceType)[keyof typeof ServiceType]

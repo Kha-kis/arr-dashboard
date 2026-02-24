@@ -34,9 +34,44 @@ export const cleanupRuleTypeSchema = z.enum([
 	"tautulli_last_watched",
 	"tautulli_watch_count",
 	"tautulli_watched_by",
+	// Plex integration rules
+	"plex_last_watched",
+	"plex_watch_count",
+	"plex_on_deck",
+	"plex_user_rating",
+	"plex_watched_by",
+	// Phase C: New rule types
+	"imdb_rating",
+	"file_path",
+	"seerr_is_requested",
+	"seerr_request_count",
+	"audio_channels",
+	"tag_match",
+	// Phase D: Plex metadata rules
+	"plex_collection",
+	"plex_label",
+	"plex_added_at",
+	// Phase B: Composite rules
+	"composite",
 ]);
 
 export type CleanupRuleType = z.infer<typeof cleanupRuleTypeSchema>;
+
+// ============================================================================
+// Action & Composite Schemas (Phase A + B)
+// ============================================================================
+
+export const cleanupActionSchema = z.enum(["delete", "unmonitor", "delete_files"]);
+export type CleanupAction = z.infer<typeof cleanupActionSchema>;
+
+export const compositeOperatorSchema = z.enum(["AND", "OR"]);
+export type CompositeOperator = z.infer<typeof compositeOperatorSchema>;
+
+export const conditionSchema = z.object({
+	ruleType: cleanupRuleTypeSchema.exclude(["composite"]),
+	parameters: z.record(z.string(), z.unknown()),
+});
+export type Condition = z.infer<typeof conditionSchema>;
 
 // ============================================================================
 // Rule Parameter Schemas
@@ -44,19 +79,19 @@ export type CleanupRuleType = z.infer<typeof cleanupRuleTypeSchema>;
 
 export const ageRuleParamsSchema = z.object({
 	field: z.enum(["arrAddedAt"]).default("arrAddedAt"),
-	operator: z.enum(["older_than"]),
+	operator: z.enum(["older_than", "newer_than"]),
 	days: z.number().int().min(1),
 });
 
 export const sizeRuleParamsSchema = z.object({
 	operator: z.enum(["greater_than", "less_than"]),
-	sizeGb: z.number().min(0),
+	sizeGb: z.number().positive(),
 });
 
 export const ratingRuleParamsSchema = z.object({
 	source: z.enum(["tmdb"]),
-	operator: z.enum(["less_than", "greater_than"]),
-	score: z.number().min(0).max(10),
+	operator: z.enum(["less_than", "greater_than", "unrated"]),
+	score: z.number().min(0).max(10).optional(),
 });
 
 export const statusRuleParamsSchema = z.object({
@@ -70,12 +105,21 @@ export const genreRuleParamsSchema = z.object({
 	genres: z.array(z.string().min(1)).min(1),
 });
 
-export const yearRangeRuleParamsSchema = z.object({
-	operator: z.enum(["before", "after", "between"]),
-	year: z.number().int().optional(),
-	yearFrom: z.number().int().optional(),
-	yearTo: z.number().int().optional(),
-});
+export const yearRangeRuleParamsSchema = z
+	.object({
+		operator: z.enum(["before", "after", "between"]),
+		year: z.number().int().optional(),
+		yearFrom: z.number().int().optional(),
+		yearTo: z.number().int().optional(),
+	})
+	.refine(
+		(data) => {
+			if (data.operator === "between")
+				return data.yearFrom != null && data.yearTo != null && data.yearFrom <= data.yearTo;
+			return data.year != null;
+		},
+		{ message: "Required fields missing for selected operator" },
+	);
 
 export const noFileRuleParamsSchema = z.object({});
 
@@ -170,6 +214,95 @@ export const tautulliWatchedByParamsSchema = z.object({
 	userNames: z.array(z.string().min(1)).min(1),
 });
 
+// ── Plex Rule Params ────────────────────────────────────────────────
+
+export const plexLastWatchedParamsSchema = z.object({
+	operator: z.enum(["older_than", "never"]),
+	days: z.number().int().min(1).optional(), // optional when operator is "never"
+});
+
+export const plexWatchCountParamsSchema = z.object({
+	operator: z.enum(["less_than", "greater_than"]),
+	count: z.number().int().min(0),
+});
+
+export const plexOnDeckParamsSchema = z.object({
+	isDeck: z.boolean(), // true = IS on deck, false = is NOT on deck
+});
+
+export const plexUserRatingParamsSchema = z.object({
+	operator: z.enum(["less_than", "greater_than", "unrated"]),
+	rating: z.number().min(0).max(10).optional(), // optional when operator is "unrated"
+});
+
+export const plexWatchedByParamsSchema = z.object({
+	operator: z.enum(["includes_any", "excludes_all"]),
+	userNames: z.array(z.string().min(1)).min(1),
+});
+
+// ── Phase C: New Rule Parameter Schemas ──────────────────────────────
+
+export const imdbRatingRuleParamsSchema = z.object({
+	operator: z.enum(["less_than", "greater_than", "unrated"]),
+	score: z.number().min(0).max(10).optional(),
+});
+
+export const filePathRuleParamsSchema = z.object({
+	operator: z.enum(["matches", "not_matches"]),
+	pattern: z
+		.string()
+		.min(1)
+		.max(200)
+		.refine(
+			(p) => {
+				try {
+					new RegExp(p);
+					return true;
+				} catch {
+					return false;
+				}
+			},
+			{ message: "Invalid regular expression" },
+		),
+	field: z.enum(["path", "rootFolderPath"]).default("path"),
+});
+
+export const seerrIsRequestedParamsSchema = z.object({
+	isRequested: z.boolean(),
+});
+
+export const seerrRequestCountParamsSchema = z.object({
+	operator: z.enum(["less_than", "greater_than", "equals"]),
+	count: z.number().int().min(0),
+});
+
+export const audioChannelsRuleParamsSchema = z.object({
+	operator: z.enum(["is", "is_not", "greater_than", "less_than"]),
+	channels: z.number().min(1).max(20),
+});
+
+export const tagMatchRuleParamsSchema = z.object({
+	operator: z.enum(["includes_any", "excludes_all"]),
+	tagIds: z.array(z.number()).min(1),
+});
+
+// ── Phase D: Plex Metadata Rule Parameter Schemas ───────────────────
+
+export const plexCollectionRuleParamsSchema = z.object({
+	operator: z.enum(["in", "not_in"]),
+	collections: z.array(z.string().min(1)).min(1),
+});
+
+export const plexLabelRuleParamsSchema = z.object({
+	operator: z.enum(["has_any", "has_none"]),
+	labels: z.array(z.string().min(1)).min(1),
+});
+
+export const plexAddedAtParamsSchema = z.object({
+	operator: z.enum(["older_than", "newer_than"]),
+	days: z.number().int().min(1),
+});
+
 // ── Type Exports ─────────────────────────────────────────────────────
 
 export type AgeRuleParams = z.infer<typeof ageRuleParamsSchema>;
@@ -198,12 +331,26 @@ export type SeerrModifiedByParams = z.infer<typeof seerrModifiedByParamsSchema>;
 export type TautulliLastWatchedParams = z.infer<typeof tautulliLastWatchedParamsSchema>;
 export type TautulliWatchCountParams = z.infer<typeof tautulliWatchCountParamsSchema>;
 export type TautulliWatchedByParams = z.infer<typeof tautulliWatchedByParamsSchema>;
+export type PlexLastWatchedParams = z.infer<typeof plexLastWatchedParamsSchema>;
+export type PlexWatchCountParams = z.infer<typeof plexWatchCountParamsSchema>;
+export type PlexOnDeckParams = z.infer<typeof plexOnDeckParamsSchema>;
+export type PlexUserRatingParams = z.infer<typeof plexUserRatingParamsSchema>;
+export type PlexWatchedByParams = z.infer<typeof plexWatchedByParamsSchema>;
+export type ImdbRatingRuleParams = z.infer<typeof imdbRatingRuleParamsSchema>;
+export type FilePathRuleParams = z.infer<typeof filePathRuleParamsSchema>;
+export type SeerrIsRequestedParams = z.infer<typeof seerrIsRequestedParamsSchema>;
+export type SeerrRequestCountParams = z.infer<typeof seerrRequestCountParamsSchema>;
+export type AudioChannelsRuleParams = z.infer<typeof audioChannelsRuleParamsSchema>;
+export type TagMatchRuleParams = z.infer<typeof tagMatchRuleParamsSchema>;
+export type PlexCollectionRuleParams = z.infer<typeof plexCollectionRuleParamsSchema>;
+export type PlexLabelRuleParams = z.infer<typeof plexLabelRuleParamsSchema>;
+export type PlexAddedAtParams = z.infer<typeof plexAddedAtParamsSchema>;
 
 // ============================================================================
 // Configuration Types
 // ============================================================================
 
-export const createCleanupRuleSchema = z.object({
+const baseCleanupRuleSchema = z.object({
 	name: z.string().min(1).max(100),
 	enabled: z.boolean().optional().default(true),
 	priority: z.number().int().optional().default(0),
@@ -213,9 +360,33 @@ export const createCleanupRuleSchema = z.object({
 	instanceFilter: z.array(z.string()).nullable().optional(),
 	excludeTags: z.array(z.number()).nullable().optional(),
 	excludeTitles: z.array(z.string()).nullable().optional(),
+	plexLibraryFilter: z.array(z.string()).nullable().optional(),
+	action: cleanupActionSchema.optional().default("delete"),
+	operator: compositeOperatorSchema.nullable().optional(),
+	conditions: z.array(conditionSchema).nullable().optional(),
 });
 
-export const updateCleanupRuleSchema = createCleanupRuleSchema.partial();
+export const createCleanupRuleSchema = baseCleanupRuleSchema.superRefine(
+	(data, ctx) => {
+		if (
+			data.operator != null &&
+			(!data.conditions || data.conditions.length === 0)
+		) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: "Composite rules must have at least one condition",
+				path: ["conditions"],
+			});
+		}
+	},
+);
+
+// .partial() must be called on the base schema (before superRefine) — Zod v4 restriction
+export const updateCleanupRuleSchema = baseCleanupRuleSchema.partial();
+
+export const reorderRulesSchema = z.object({
+	ruleIds: z.array(z.string().min(1)).min(1),
+});
 
 export const updateCleanupConfigSchema = z.object({
 	enabled: z.boolean().optional(),
@@ -258,6 +429,10 @@ export interface CleanupRuleResponse {
 	instanceFilter: string[] | null;
 	excludeTags: number[] | null;
 	excludeTitles: string[] | null;
+	plexLibraryFilter: string[] | null;
+	action: string;
+	operator: CompositeOperator | null;
+	conditions: Condition[] | null;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -283,6 +458,7 @@ export interface CleanupApprovalResponse {
 	matchedRuleId: string;
 	matchedRuleName: string;
 	reason: string;
+	action: string;
 	sizeOnDisk: string; // BigInt serialized as string
 	year: number | null;
 	rating: number | null;
@@ -300,6 +476,8 @@ export interface CleanupLogResponse {
 	itemsEvaluated: number;
 	itemsFlagged: number;
 	itemsRemoved: number;
+	itemsUnmonitored: number;
+	itemsFilesDeleted: number;
 	itemsSkipped: number;
 	details: Array<Record<string, unknown>> | null;
 	error: string | null;
@@ -316,6 +494,13 @@ export interface CleanupFieldOptionsResponse {
 	hdrTypes: string[];
 	releaseGroups: string[];
 	tautulliUsers: string[];
+	plexUsers: string[];
+	plexLibraries: string[];
+	plexCollections: string[];
+	plexLabels: string[];
+	arrTags: Array<{ id: number; label: string }>;
+	hasPlex: boolean;
+	hasTautulli: boolean;
 }
 
 /** Preview result: items that would be flagged by current rules */
@@ -327,6 +512,7 @@ export interface CleanupPreviewItem {
 	title: string;
 	matchedRuleName: string;
 	reason: string;
+	action: string;
 	sizeOnDisk: string;
 	year: number | null;
 	rating: number | null;

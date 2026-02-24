@@ -76,6 +76,16 @@ export class CleanupScheduler {
 		}
 
 		try {
+			// Expire stale pending approvals
+			await this.prisma.libraryCleanupApproval
+				.updateMany({
+					where: { status: "pending", expiresAt: { lt: new Date() } },
+					data: { status: "expired" },
+				})
+				.catch((err) => {
+					this.logger.warn({ err }, "Failed to expire stale approvals");
+				});
+
 			// Find any user's config that is enabled and due for a run.
 			// (Single-admin app, so there's at most one config.)
 			const config = await this.prisma.libraryCleanupConfig.findFirst({
@@ -118,29 +128,46 @@ export class CleanupScheduler {
 					"Scheduled library cleanup completed",
 				);
 
-				if (result.itemsFlagged > 0 || result.itemsRemoved > 0) {
-					const body =
-						result.itemsRemoved > 0
-							? `Removed ${result.itemsRemoved} items, flagged ${result.itemsFlagged}`
-							: `Flagged ${result.itemsFlagged} items for review`;
+				if (result.itemsFlagged > 0 || result.itemsRemoved > 0 || result.itemsUnmonitored > 0) {
+					const hasActions = result.itemsRemoved > 0 || result.itemsUnmonitored > 0 || result.itemsFilesDeleted > 0;
 
-					this.notifyFn?.({
-						eventType: "CLEANUP_ITEMS_FLAGGED",
-						title: "Library cleanup completed",
-						body,
-					}).catch(() => {});
+					if (hasActions) {
+						const parts: string[] = [];
+						if (result.itemsRemoved > 0) parts.push(`${result.itemsRemoved} removed`);
+						if (result.itemsUnmonitored > 0) parts.push(`${result.itemsUnmonitored} unmonitored`);
+						if (result.itemsFilesDeleted > 0) parts.push(`${result.itemsFilesDeleted} files deleted`);
+
+						this.notifyFn?.({
+							eventType: "CLEANUP_ITEMS_REMOVED",
+							title: "Library cleanup completed",
+							body: parts.join(", "),
+						}).catch((err) => {
+							this.logger.warn({ err }, "Failed to send cleanup notification");
+						});
+					} else {
+						this.notifyFn?.({
+							eventType: "CLEANUP_ITEMS_FLAGGED",
+							title: "Library cleanup completed",
+							body: `Flagged ${result.itemsFlagged} items for review`,
+						}).catch((err) => {
+							this.logger.warn({ err }, "Failed to send cleanup notification");
+						});
+					}
 				}
 			} finally {
 				this.isRunning = false;
 			}
 		} catch (error) {
+			this.isRunning = false;
 			this.logger.error({ err: error }, "Error checking/running scheduled cleanup");
 
 			this.notifyFn?.({
 				eventType: "SYSTEM_ERROR",
 				title: "Library cleanup failed",
 				body: getErrorMessage(error),
-			}).catch(() => {});
+			}).catch((err) => {
+				this.logger.warn({ err }, "Failed to send cleanup error notification");
+			});
 		}
 	}
 }

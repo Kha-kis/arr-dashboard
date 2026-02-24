@@ -3,28 +3,46 @@
  *
  * Pure functions that evaluate a single LibraryCache item against a cleanup rule.
  * Each rule type has its own evaluator that returns a reason string if matched, or null.
+ *
+ * The main entry point, evaluateRule(), supports both legacy single-condition rules
+ * and AND/OR composite rules (flat, one-level).
  */
 
 import type {
 	AgeRuleParams,
+	AudioChannelsRuleParams,
 	AudioCodecRuleParams,
+	Condition,
 	CustomFormatScoreRuleParams,
+	FilePathRuleParams,
 	GenreRuleParams,
 	HdrTypeRuleParams,
+	ImdbRatingRuleParams,
 	LanguageRuleParams,
+	PlexAddedAtParams,
+	PlexCollectionRuleParams,
+	PlexLabelRuleParams,
+	PlexLastWatchedParams,
+	PlexOnDeckParams,
+	PlexUserRatingParams,
+	PlexWatchCountParams,
+	PlexWatchedByParams,
 	QualityProfileRuleParams,
 	RatingRuleParams,
 	ReleaseGroupRuleParams,
 	ResolutionRuleParams,
 	RuntimeRuleParams,
 	SeerrIs4kParams,
+	SeerrIsRequestedParams,
 	SeerrModifiedByParams,
 	SeerrRequestAgeParams,
+	SeerrRequestCountParams,
 	SeerrRequestedByParams,
 	SeerrRequestModifiedAgeParams,
 	SeerrRequestStatusParams,
 	SizeRuleParams,
 	StatusRuleParams,
+	TagMatchRuleParams,
 	TautulliLastWatchedParams,
 	TautulliWatchCountParams,
 	TautulliWatchedByParams,
@@ -36,6 +54,9 @@ import { safeJsonParse } from "../utils/json.js";
 import type {
 	CacheItemForEval,
 	EvalContext,
+	PlexWatchInfo,
+	PlexWatchMap,
+	RuleAction,
 	RuleMatch,
 	SeerrRequestInfo,
 	SeerrRequestMap,
@@ -56,7 +77,10 @@ function evaluateAgeRule(item: CacheItemForEval, params: AgeRuleParams, now: Dat
 	const ageDays = (now.getTime() - dateField.getTime()) / (1000 * 60 * 60 * 24);
 
 	if (params.operator === "older_than" && ageDays >= params.days) {
-		return `Added ${Math.floor(ageDays)} days ago (threshold: ${params.days} days)`;
+		return `Added ${Math.floor(ageDays)} days ago (threshold: > ${params.days} days)`;
+	}
+	if (params.operator === "newer_than" && ageDays < params.days) {
+		return `Added ${Math.floor(ageDays)} days ago (threshold: < ${params.days} days)`;
 	}
 
 	return null;
@@ -83,7 +107,12 @@ function evaluateSizeRule(item: CacheItemForEval, params: SizeRuleParams): strin
  */
 function evaluateRatingRule(item: CacheItemForEval, params: RatingRuleParams): string | null {
 	const rating = extractRating(item);
-	if (rating === null) return null;
+
+	if (params.operator === "unrated") {
+		return rating === null ? "No TMDB rating" : null;
+	}
+
+	if (rating === null || params.score === undefined) return null;
 
 	if (params.operator === "less_than" && rating < params.score) {
 		return `TMDB rating: ${rating.toFixed(1)} (threshold: < ${params.score})`;
@@ -563,7 +592,7 @@ function evaluateSeerrRequestAge(
 	if (params.operator === "older_than" && ageDays >= params.days) {
 		return `Seerr request ${Math.floor(ageDays)} days old (threshold: > ${params.days} days, requested by ${oldest.requestedBy})`;
 	}
-	if (params.operator === "newer_than" && ageDays <= params.days) {
+	if (params.operator === "newer_than" && ageDays < params.days) {
 		return `Seerr request ${Math.floor(ageDays)} days old (threshold: < ${params.days} days, requested by ${oldest.requestedBy})`;
 	}
 
@@ -637,7 +666,7 @@ function evaluateSeerrRequestModifiedAge(
 	if (params.operator === "older_than" && ageDays >= params.days) {
 		return `Seerr request last modified ${Math.floor(ageDays)} days ago (threshold: > ${params.days} days)`;
 	}
-	if (params.operator === "newer_than" && ageDays <= params.days) {
+	if (params.operator === "newer_than" && ageDays < params.days) {
 		return `Seerr request last modified ${Math.floor(ageDays)} days ago (threshold: < ${params.days} days)`;
 	}
 	return null;
@@ -660,6 +689,49 @@ function evaluateSeerrModifiedBy(
 		if (req.modifiedBy && targetNames.includes(req.modifiedBy.toLowerCase())) {
 			return `Seerr request modified by "${req.modifiedBy}" (match: [${params.userNames.join(", ")}])`;
 		}
+	}
+	return null;
+}
+
+/**
+ * Seerr Is Requested: flag items based on whether they have any Seerr request.
+ */
+function evaluateSeerrIsRequested(
+	item: CacheItemForEval,
+	params: SeerrIsRequestedParams,
+	seerrMap: SeerrRequestMap | undefined,
+): string | null {
+	const requests = lookupSeerrRequests(item, seerrMap);
+	const hasRequest = requests !== null && requests.length > 0;
+
+	if (params.isRequested && hasRequest) {
+		return `Has Seerr request (${requests!.length} request(s))`;
+	}
+	if (!params.isRequested && !hasRequest) {
+		return "No Seerr request found";
+	}
+	return null;
+}
+
+/**
+ * Seerr Request Count: flag items based on number of Seerr requests.
+ */
+function evaluateSeerrRequestCount(
+	item: CacheItemForEval,
+	params: SeerrRequestCountParams,
+	seerrMap: SeerrRequestMap | undefined,
+): string | null {
+	const requests = lookupSeerrRequests(item, seerrMap);
+	const count = requests?.length ?? 0;
+
+	if (params.operator === "less_than" && count < params.count) {
+		return `Seerr request count: ${count} (threshold: < ${params.count})`;
+	}
+	if (params.operator === "greater_than" && count > params.count) {
+		return `Seerr request count: ${count} (threshold: > ${params.count})`;
+	}
+	if (params.operator === "equals" && count === params.count) {
+		return `Seerr request count: ${count} (threshold: = ${params.count})`;
 	}
 	return null;
 }
@@ -709,11 +781,26 @@ function evaluateTautulliLastWatched(
 		return null;
 	}
 
-	if (!watch || !watch.lastWatchedAt) return null;
+	if (!watch || !watch.lastWatchedAt) {
+		// Never watched — fall back to best available added date
+		if (params.operator === "older_than" && params.days) {
+			// Prefer Plex addedAt (when added to media server), then arrAddedAt (when grabbed by ARR)
+			const plexWatch = lookupPlexWatch(item, ctx.plexMap);
+			const refDate = plexWatch?.addedAt ?? item.arrAddedAt;
+			if (refDate) {
+				const addedDays = (ctx.now.getTime() - refDate.getTime()) / (1000 * 60 * 60 * 24);
+				if (addedDays >= params.days) {
+					const source = plexWatch?.addedAt ? "Plex" : "library";
+					return `Never watched per Tautulli, added to ${source} ${Math.floor(addedDays)} days ago (threshold: > ${params.days} days)`;
+				}
+			}
+		}
+		return null;
+	}
 	const ageDays = (ctx.now.getTime() - watch.lastWatchedAt.getTime()) / (1000 * 60 * 60 * 24);
 
 	if (params.operator === "older_than" && params.days && ageDays >= params.days) {
-		return `Last watched ${Math.floor(ageDays)} days ago (threshold: > ${params.days} days)`;
+		return `Last watched ${Math.floor(ageDays)} days ago per Tautulli (threshold: > ${params.days} days)`;
 	}
 	return null;
 }
@@ -727,13 +814,30 @@ function evaluateTautulliWatchCount(
 	ctx: EvalContext,
 ): string | null {
 	const watch = lookupTautulliWatch(item, ctx.tautulliMap);
-	const count = watch?.watchCount ?? 0;
+	if (!watch) {
+		// Not in Tautulli — infer 0 plays when Tautulli is configured and item has a file
+		if (
+			ctx.tautulliMap && ctx.tautulliMap.size > 0 &&
+			params.operator === "less_than" && params.count > 0 &&
+			item.hasFile && item.arrAddedAt
+		) {
+			const ageDays = Math.floor((ctx.now.getTime() - item.arrAddedAt.getTime()) / (1000 * 60 * 60 * 24));
+			return `Not tracked by Tautulli, in library for ${ageDays} days (threshold: < ${params.count} plays)`;
+		}
+		return null;
+	}
+	const count = watch.watchCount;
+
+	// Age context for low play counts
+	const ageCtx = count === 0 && item.arrAddedAt
+		? `, in library for ${Math.floor((ctx.now.getTime() - item.arrAddedAt.getTime()) / (1000 * 60 * 60 * 24))} days`
+		: "";
 
 	if (params.operator === "less_than" && count < params.count) {
-		return `Watch count: ${count} (threshold: < ${params.count})`;
+		return `Tautulli play count: ${count}${ageCtx} (threshold: < ${params.count})`;
 	}
 	if (params.operator === "greater_than" && count > params.count) {
-		return `Watch count: ${count} (threshold: > ${params.count})`;
+		return `Tautulli play count: ${count} (threshold: > ${params.count})`;
 	}
 	return null;
 }
@@ -761,6 +865,486 @@ function evaluateTautulliWatchedBy(
 		const hasNone = targetNames.every((n) => !users.includes(n));
 		if (hasNone) {
 			return `Not watched by any of: ${params.userNames.join(", ")} (watched by: ${watch.watchedByUsers.join(", ")})`;
+		}
+	}
+	return null;
+}
+
+// ============================================================================
+// Plex Rule Evaluators
+// ============================================================================
+
+/**
+ * Look up Plex watch data for a cache item via its tmdbId from the data blob.
+ * When plexLibraryFilter is set, only data from matching Plex library sections is used.
+ */
+function lookupPlexWatch(
+	item: CacheItemForEval,
+	plexMap: PlexWatchMap | undefined,
+	plexLibraryFilter?: string[] | null,
+): PlexWatchInfo | null {
+	if (!plexMap || plexMap.size === 0) return null;
+
+	const parsed = safeJsonParse(item.data);
+	if (!parsed) return null;
+	const data = parsed as Record<string, unknown>;
+
+	const remoteIds = data.remoteIds as Record<string, unknown> | undefined;
+	const tmdbId = remoteIds?.tmdbId;
+	if (!tmdbId) return null;
+
+	const mediaType = item.itemType === "movie" ? "movie" : "series";
+	const key = `${mediaType}:${tmdbId}`;
+
+	const entry = plexMap.get(key);
+	if (!entry) return null;
+
+	// If no filter, return the pre-computed aggregates (existing behavior)
+	if (!plexLibraryFilter || plexLibraryFilter.length === 0) return entry;
+
+	// Filter to matching sections only
+	const matchingSections = entry.sections.filter(
+		(s) => plexLibraryFilter.includes(s.sectionTitle),
+	);
+	if (matchingSections.length === 0) return null;
+
+	// Re-aggregate from filtered sections
+	return {
+		lastWatchedAt: matchingSections.reduce<Date | null>((latest, s) => {
+			if (!s.lastWatchedAt) return latest;
+			return !latest || s.lastWatchedAt > latest ? s.lastWatchedAt : latest;
+		}, null),
+		watchCount: matchingSections.reduce((sum, s) => sum + s.watchCount, 0),
+		watchedByUsers: [...new Set(matchingSections.flatMap((s) => s.watchedByUsers))],
+		onDeck: matchingSections.some((s) => s.onDeck),
+		userRating: matchingSections.reduce<number | null>((best, s) => {
+			if (s.userRating == null) return best;
+			return best != null ? Math.max(best, s.userRating) : s.userRating;
+		}, null),
+		collections: [...new Set(matchingSections.flatMap((s) => s.collections))],
+		labels: [...new Set(matchingSections.flatMap((s) => s.labels))],
+		addedAt: matchingSections.reduce<Date | null>((earliest, s) => {
+			if (!s.addedAt) return earliest;
+			return !earliest || s.addedAt < earliest ? s.addedAt : earliest;
+		}, null),
+		sections: matchingSections,
+	};
+}
+
+/**
+ * Plex Last Watched: flag items based on when they were last watched.
+ * "never" operator flags items that have never been watched.
+ * "older_than" uses addedAt as a fallback for never-watched items — if an item
+ * was added N+ days ago and never watched, it qualifies as "unwatched for N+ days".
+ */
+function evaluatePlexLastWatched(
+	item: CacheItemForEval,
+	params: PlexLastWatchedParams,
+	ctx: EvalContext,
+	plexLibraryFilter?: string[] | null,
+): string | null {
+	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter);
+
+	if (params.operator === "never") {
+		if (!watch || watch.lastWatchedAt === null) {
+			return "Never watched (per Plex)";
+		}
+		return null;
+	}
+
+	if (!watch) return null;
+
+	if (watch.lastWatchedAt) {
+		const ageDays = (ctx.now.getTime() - watch.lastWatchedAt.getTime()) / (1000 * 60 * 60 * 24);
+		if (params.operator === "older_than" && params.days && ageDays >= params.days) {
+			return `Last watched ${Math.floor(ageDays)} days ago in Plex (threshold: > ${params.days} days)`;
+		}
+		return null;
+	}
+
+	// Never watched — fall back to addedAt (Plex), then arrAddedAt (Sonarr/Radarr)
+	if (params.operator === "older_than" && params.days) {
+		const refDate = watch.addedAt ?? item.arrAddedAt;
+		if (refDate) {
+			const addedDays = (ctx.now.getTime() - refDate.getTime()) / (1000 * 60 * 60 * 24);
+			if (addedDays >= params.days) {
+				const source = watch.addedAt ? "Plex" : "library";
+				return `Never watched, added to ${source} ${Math.floor(addedDays)} days ago (threshold: > ${params.days} days)`;
+			}
+		}
+	}
+
+	return null;
+}
+
+/**
+ * Plex Watch Count: flag items based on play count.
+ */
+function evaluatePlexWatchCount(
+	item: CacheItemForEval,
+	params: PlexWatchCountParams,
+	ctx: EvalContext,
+	plexLibraryFilter?: string[] | null,
+): string | null {
+	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter);
+	if (!watch) {
+		// Not in Plex — infer 0 plays when Plex is configured and item has a file
+		if (
+			ctx.plexMap && ctx.plexMap.size > 0 &&
+			params.operator === "less_than" && params.count > 0 &&
+			item.hasFile && item.arrAddedAt
+		) {
+			const ageDays = Math.floor((ctx.now.getTime() - item.arrAddedAt.getTime()) / (1000 * 60 * 60 * 24));
+			return `Not tracked by Plex, in library for ${ageDays} days (threshold: < ${params.count} plays)`;
+		}
+		return null;
+	}
+	const count = watch.watchCount;
+
+	// Age context for low play counts
+	const ageCtx = count === 0 && watch.addedAt
+		? `, added ${Math.floor((ctx.now.getTime() - watch.addedAt.getTime()) / (1000 * 60 * 60 * 24))} days ago`
+		: "";
+
+	if (params.operator === "less_than" && count < params.count) {
+		return `Plex play count: ${count}${ageCtx} (threshold: < ${params.count})`;
+	}
+	if (params.operator === "greater_than" && count > params.count) {
+		return `Plex play count: ${count} (threshold: > ${params.count})`;
+	}
+	return null;
+}
+
+/**
+ * Plex On Deck: flag items based on whether they are on Plex's Continue Watching.
+ */
+function evaluatePlexOnDeck(
+	item: CacheItemForEval,
+	params: PlexOnDeckParams,
+	ctx: EvalContext,
+	plexLibraryFilter?: string[] | null,
+): string | null {
+	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter);
+	if (!watch) return null;
+	const isOnDeck = watch.onDeck;
+
+	if (params.isDeck && isOnDeck) {
+		return "Item is on Plex Continue Watching";
+	}
+	if (!params.isDeck && !isOnDeck) {
+		return "Item is not on Plex Continue Watching";
+	}
+	return null;
+}
+
+/**
+ * Plex User Rating: flag items based on the admin's star rating in Plex.
+ * "unrated" operator flags items with no rating.
+ */
+function evaluatePlexUserRating(
+	item: CacheItemForEval,
+	params: PlexUserRatingParams,
+	ctx: EvalContext,
+	plexLibraryFilter?: string[] | null,
+): string | null {
+	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter);
+
+	if (params.operator === "unrated") {
+		if (!watch || watch.userRating === null) {
+			return "Unrated in Plex";
+		}
+		return null;
+	}
+
+	if (!watch || watch.userRating === null) return null;
+
+	if (params.operator === "less_than" && params.rating !== undefined && watch.userRating < params.rating) {
+		return `Plex user rating: ${watch.userRating.toFixed(1)} (threshold: < ${params.rating})`;
+	}
+	if (params.operator === "greater_than" && params.rating !== undefined && watch.userRating > params.rating) {
+		return `Plex user rating: ${watch.userRating.toFixed(1)} (threshold: > ${params.rating})`;
+	}
+	return null;
+}
+
+/**
+ * Plex Watched By: flag items based on which Plex users have watched them.
+ */
+function evaluatePlexWatchedBy(
+	item: CacheItemForEval,
+	params: PlexWatchedByParams,
+	ctx: EvalContext,
+	plexLibraryFilter?: string[] | null,
+): string | null {
+	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter);
+	if (!watch) return null;
+	const watchedBy = watch.watchedByUsers.map((u) => u.toLowerCase());
+	const targetNames = params.userNames.map((n) => n.toLowerCase());
+
+	if (params.operator === "includes_any") {
+		const matched = targetNames.filter((n) => watchedBy.includes(n));
+		if (matched.length > 0) {
+			return `Watched by Plex user(s): ${matched.join(", ")}`;
+		}
+	} else if (params.operator === "excludes_all") {
+		const noneWatched = targetNames.every((n) => !watchedBy.includes(n));
+		if (noneWatched) {
+			return `Not watched by Plex user(s): ${params.userNames.join(", ")}`;
+		}
+	}
+
+	return null;
+}
+
+/**
+ * Plex Collection: flag items based on Plex collection membership.
+ */
+function evaluatePlexCollection(
+	item: CacheItemForEval,
+	params: PlexCollectionRuleParams,
+	ctx: EvalContext,
+	plexLibraryFilter?: string[] | null,
+): string | null {
+	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter);
+	if (!watch) return null;
+	const collections = watch.collections;
+
+	const targetLower = params.collections.map((c) => c.toLowerCase());
+	const itemLower = collections.map((c) => c.toLowerCase());
+
+	if (params.operator === "in") {
+		const matched = targetLower.filter((c) => itemLower.includes(c));
+		if (matched.length > 0) {
+			return `In Plex collection(s): ${matched.join(", ")}`;
+		}
+	} else if (params.operator === "not_in") {
+		const hasNone = targetLower.every((c) => !itemLower.includes(c));
+		if (hasNone) {
+			return `Not in Plex collection(s): ${params.collections.join(", ")}`;
+		}
+	}
+	return null;
+}
+
+/**
+ * Plex Label: flag items based on Plex label tags.
+ */
+function evaluatePlexLabel(
+	item: CacheItemForEval,
+	params: PlexLabelRuleParams,
+	ctx: EvalContext,
+	plexLibraryFilter?: string[] | null,
+): string | null {
+	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter);
+	if (!watch) return null;
+	const labels = watch.labels;
+
+	const targetLower = params.labels.map((l) => l.toLowerCase());
+	const itemLower = labels.map((l) => l.toLowerCase());
+
+	if (params.operator === "has_any") {
+		const matched = targetLower.filter((l) => itemLower.includes(l));
+		if (matched.length > 0) {
+			return `Has Plex label(s): ${matched.join(", ")}`;
+		}
+	} else if (params.operator === "has_none") {
+		const hasNone = targetLower.every((l) => !itemLower.includes(l));
+		if (hasNone) {
+			return `Does not have Plex label(s): ${params.labels.join(", ")}`;
+		}
+	}
+	return null;
+}
+
+/**
+ * Plex Added At: flag items based on when they were added to Plex.
+ * "older_than" flags items added more than N days ago.
+ * "newer_than" flags items added less than N days ago.
+ */
+function evaluatePlexAddedAt(
+	item: CacheItemForEval,
+	params: PlexAddedAtParams,
+	ctx: EvalContext,
+	plexLibraryFilter?: string[] | null,
+): string | null {
+	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter);
+	if (!watch?.addedAt) return null;
+
+	const ageDays = (ctx.now.getTime() - watch.addedAt.getTime()) / (1000 * 60 * 60 * 24);
+
+	if (params.operator === "older_than" && ageDays >= params.days) {
+		return `Added to Plex ${Math.floor(ageDays)} days ago (threshold: > ${params.days} days)`;
+	}
+	if (params.operator === "newer_than" && ageDays < params.days) {
+		return `Added to Plex ${Math.floor(ageDays)} days ago (threshold: < ${params.days} days)`;
+	}
+	return null;
+}
+
+// ============================================================================
+// Phase C: New Rule Evaluators
+// ============================================================================
+
+/**
+ * IMDb Rating rule: flag items based on IMDb rating from the data blob.
+ */
+function evaluateImdbRatingRule(item: CacheItemForEval, params: ImdbRatingRuleParams): string | null {
+	const parsed = safeJsonParse(item.data);
+	if (!parsed) return null;
+	const data = parsed as Record<string, unknown>;
+
+	// Extract IMDb rating: ratings.imdb.value
+	if (typeof data.ratings !== "object" || data.ratings === null) {
+		return params.operator === "unrated" ? "No IMDb rating" : null;
+	}
+	const ratings = data.ratings as Record<string, unknown>;
+	const imdb = ratings.imdb as Record<string, unknown> | undefined;
+	if (!imdb || typeof imdb.value !== "number") {
+		return params.operator === "unrated" ? "No IMDb rating" : null;
+	}
+
+	if (params.operator === "unrated") return null; // Has a rating, doesn't match unrated
+
+	const rating = imdb.value;
+	if (params.score === undefined) return null;
+
+	if (params.operator === "less_than" && rating < params.score) {
+		return `IMDb rating: ${rating.toFixed(1)} (threshold: < ${params.score})`;
+	}
+	if (params.operator === "greater_than" && rating > params.score) {
+		return `IMDb rating: ${rating.toFixed(1)} (threshold: > ${params.score})`;
+	}
+	return null;
+}
+
+/** Cache compiled regexes to avoid re-compiling per item */
+const regexCache = new Map<string, RegExp>();
+function getCachedRegex(pattern: string): RegExp | null {
+	let cached = regexCache.get(pattern);
+	if (cached) return cached;
+	try {
+		cached = new RegExp(pattern, "i");
+		regexCache.set(pattern, cached);
+		return cached;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * File Path rule: flag items based on file path regex matching.
+ */
+function evaluateFilePathRule(item: CacheItemForEval, params: FilePathRuleParams): string | null {
+	const parsed = safeJsonParse(item.data);
+	if (!parsed) return null;
+	const data = parsed as Record<string, unknown>;
+
+	const field = params.field ?? "path";
+	let pathValue: string | null = null;
+
+	if (field === "path") {
+		pathValue = typeof data.path === "string" ? data.path : null;
+		// Fallback to movieFile.path or folderName
+		if (!pathValue) {
+			const movieFile = data.movieFile as Record<string, unknown> | undefined;
+			if (movieFile && typeof movieFile.path === "string") pathValue = movieFile.path;
+		}
+		if (!pathValue && typeof data.folderName === "string") pathValue = data.folderName;
+	} else {
+		pathValue = typeof data.rootFolderPath === "string" ? data.rootFolderPath : null;
+	}
+
+	if (!pathValue) return null;
+
+	const regex = getCachedRegex(params.pattern);
+	if (!regex) return null;
+
+	const matches = regex.test(pathValue);
+	if (params.operator === "matches" && matches) {
+		return `Path "${pathValue}" matches pattern /${params.pattern}/`;
+	}
+	if (params.operator === "not_matches" && !matches) {
+		return `Path "${pathValue}" does not match pattern /${params.pattern}/`;
+	}
+	return null;
+}
+
+/**
+ * Audio Channels rule: flag items by audio channel count.
+ * Parses channel count from audioCodec string.
+ */
+function evaluateAudioChannelsRule(
+	item: CacheItemForEval,
+	params: AudioChannelsRuleParams,
+): string | null {
+	const meta = extractFileMetadata(item);
+	if (!meta?.audioCodec) return null;
+
+	const channels = parseAudioChannels(meta.audioCodec);
+	if (channels === null) return null;
+
+	if (params.operator === "is" && channels === params.channels) {
+		return `Audio channels: ${channels} (matches: ${params.channels})`;
+	}
+	if (params.operator === "is_not" && channels !== params.channels) {
+		return `Audio channels: ${channels} (not: ${params.channels})`;
+	}
+	if (params.operator === "greater_than" && channels > params.channels) {
+		return `Audio channels: ${channels} (threshold: > ${params.channels})`;
+	}
+	if (params.operator === "less_than" && channels < params.channels) {
+		return `Audio channels: ${channels} (threshold: < ${params.channels})`;
+	}
+	return null;
+}
+
+/**
+ * Parse audio channel count from codec string.
+ * Common patterns: "5.1" → 6, "7.1" → 8, "Stereo" → 2, "Mono" → 1, "Atmos" → 8
+ */
+function parseAudioChannels(codec: string): number | null {
+	const lower = codec.toLowerCase();
+
+	// Explicit channel patterns: "5.1", "7.1", "2.0"
+	const channelMatch = lower.match(/(\d+)\.(\d+)/);
+	if (channelMatch?.[1] && channelMatch[2]) {
+		return Number.parseInt(channelMatch[1], 10) + Number.parseInt(channelMatch[2], 10);
+	}
+
+	// Named patterns
+	if (lower.includes("mono")) return 1;
+	if (lower.includes("stereo")) return 2;
+	if (lower.includes("atmos")) return 8;
+
+	return null;
+}
+
+/**
+ * Tag Match rule: flag items based on ARR tag IDs (inclusion filter).
+ * The inverse of the exclusion filter — matches when tags ARE present.
+ */
+function evaluateTagMatchRule(item: CacheItemForEval, params: TagMatchRuleParams): string | null {
+	const parsed = safeJsonParse(item.data);
+	if (!parsed) return null;
+	const data = parsed as Record<string, unknown>;
+	const itemTags = Array.isArray(data.tags) ? data.tags : [];
+
+	if (params.operator === "includes_any") {
+		const matched: number[] = [];
+		for (const tagId of params.tagIds) {
+			if (itemTags.includes(tagId) || itemTags.includes(String(tagId))) {
+				matched.push(tagId);
+			}
+		}
+		if (matched.length > 0) {
+			return `Has tag(s): ${matched.join(", ")} (match: includes_any [${params.tagIds.join(", ")}])`;
+		}
+	} else if (params.operator === "excludes_all") {
+		const hasNone = params.tagIds.every(
+			(tagId) => !itemTags.includes(tagId) && !itemTags.includes(String(tagId)),
+		);
+		if (hasNone) {
+			return `Does not have any tag(s): [${params.tagIds.join(", ")}]`;
 		}
 	}
 	return null;
@@ -872,7 +1456,123 @@ function passesTitleExclusion(title: string, excludeTitles: string | null): bool
 }
 
 // ============================================================================
-// Main Evaluator
+// Single Condition Evaluator (extracted for composite rule support)
+// ============================================================================
+
+/**
+ * Evaluate a single condition (ruleType + params) against an item.
+ * This is the inner dispatch extracted from the old evaluateRule() switch.
+ * Returns a reason string if matched, null otherwise.
+ */
+export function evaluateSingleCondition(
+	item: CacheItemForEval,
+	ruleType: string,
+	params: Record<string, unknown>,
+	ctx: EvalContext,
+	plexLibFilter?: string[] | null,
+): string | null {
+	switch (ruleType) {
+		// ── Basic rules ─────────────────────────────────────────────
+		case "age":
+			return evaluateAgeRule(item, params as AgeRuleParams, ctx.now);
+		case "size":
+			return evaluateSizeRule(item, params as SizeRuleParams);
+		case "rating":
+			return evaluateRatingRule(item, params as RatingRuleParams);
+		case "status":
+			return evaluateStatusRule(item, params as StatusRuleParams);
+		case "unmonitored":
+			return evaluateUnmonitoredRule(item);
+		case "genre":
+			return evaluateGenreRule(item, params as GenreRuleParams);
+		case "year_range":
+			return evaluateYearRangeRule(item, params as YearRangeRuleParams);
+		case "no_file":
+			return evaluateNoFileRule(item);
+		case "quality_profile":
+			return evaluateQualityProfileRule(item, params as QualityProfileRuleParams);
+		case "language":
+			return evaluateLanguageRule(item, params as LanguageRuleParams);
+
+		// ── File metadata rules ─────────────────────────────────────
+		case "video_codec":
+			return evaluateVideoCodecRule(item, params as VideoCodecRuleParams);
+		case "audio_codec":
+			return evaluateAudioCodecRule(item, params as AudioCodecRuleParams);
+		case "resolution":
+			return evaluateResolutionRule(item, params as ResolutionRuleParams);
+		case "hdr_type":
+			return evaluateHdrTypeRule(item, params as HdrTypeRuleParams);
+		case "custom_format_score":
+			return evaluateCustomFormatScoreRule(item, params as CustomFormatScoreRuleParams);
+		case "runtime":
+			return evaluateRuntimeRule(item, params as RuntimeRuleParams);
+		case "release_group":
+			return evaluateReleaseGroupRule(item, params as ReleaseGroupRuleParams);
+
+		// ── Seerr rules ─────────────────────────────────────────────
+		case "seerr_requested_by":
+			return evaluateSeerrRequestedBy(item, params as SeerrRequestedByParams, ctx.seerrMap);
+		case "seerr_request_age":
+			return evaluateSeerrRequestAge(item, params as SeerrRequestAgeParams, ctx.seerrMap, ctx.now);
+		case "seerr_request_status":
+			return evaluateSeerrRequestStatus(item, params as SeerrRequestStatusParams, ctx.seerrMap);
+		case "seerr_is_4k":
+			return evaluateSeerrIs4k(item, params as SeerrIs4kParams, ctx.seerrMap);
+		case "seerr_request_modified_age":
+			return evaluateSeerrRequestModifiedAge(
+				item, params as SeerrRequestModifiedAgeParams, ctx.seerrMap, ctx.now,
+			);
+		case "seerr_modified_by":
+			return evaluateSeerrModifiedBy(item, params as SeerrModifiedByParams, ctx.seerrMap);
+		case "seerr_is_requested":
+			return evaluateSeerrIsRequested(item, params as SeerrIsRequestedParams, ctx.seerrMap);
+		case "seerr_request_count":
+			return evaluateSeerrRequestCount(item, params as SeerrRequestCountParams, ctx.seerrMap);
+
+		// ── Tautulli rules ──────────────────────────────────────────
+		case "tautulli_last_watched":
+			return evaluateTautulliLastWatched(item, params as TautulliLastWatchedParams, ctx);
+		case "tautulli_watch_count":
+			return evaluateTautulliWatchCount(item, params as TautulliWatchCountParams, ctx);
+		case "tautulli_watched_by":
+			return evaluateTautulliWatchedBy(item, params as TautulliWatchedByParams, ctx);
+
+		// ── Plex rules ─────────────────────────────────────────────
+		case "plex_last_watched":
+			return evaluatePlexLastWatched(item, params as PlexLastWatchedParams, ctx, plexLibFilter);
+		case "plex_watch_count":
+			return evaluatePlexWatchCount(item, params as PlexWatchCountParams, ctx, plexLibFilter);
+		case "plex_on_deck":
+			return evaluatePlexOnDeck(item, params as PlexOnDeckParams, ctx, plexLibFilter);
+		case "plex_user_rating":
+			return evaluatePlexUserRating(item, params as PlexUserRatingParams, ctx, plexLibFilter);
+		case "plex_watched_by":
+			return evaluatePlexWatchedBy(item, params as PlexWatchedByParams, ctx, plexLibFilter);
+		case "plex_collection":
+			return evaluatePlexCollection(item, params as PlexCollectionRuleParams, ctx, plexLibFilter);
+		case "plex_label":
+			return evaluatePlexLabel(item, params as PlexLabelRuleParams, ctx, plexLibFilter);
+		case "plex_added_at":
+			return evaluatePlexAddedAt(item, params as PlexAddedAtParams, ctx, plexLibFilter);
+
+		// ── Phase C: New rule types ─────────────────────────────────
+		case "imdb_rating":
+			return evaluateImdbRatingRule(item, params as ImdbRatingRuleParams);
+		case "file_path":
+			return evaluateFilePathRule(item, params as FilePathRuleParams);
+		case "audio_channels":
+			return evaluateAudioChannelsRule(item, params as AudioChannelsRuleParams);
+		case "tag_match":
+			return evaluateTagMatchRule(item, params as TagMatchRuleParams);
+
+		default:
+			return null;
+	}
+}
+
+// ============================================================================
+// Main Evaluator (supports both legacy single-condition and composite rules)
 // ============================================================================
 
 /**
@@ -882,7 +1582,8 @@ function passesTitleExclusion(title: string, excludeTitles: string | null): bool
  * This function handles:
  * 1. Rule enable check
  * 2. Service/instance/tag/title filters
- * 3. Dispatching to per-type evaluator
+ * 3. Composite AND/OR logic (when operator is set)
+ * 4. Legacy single-condition dispatch (when operator is null)
  */
 export function evaluateRule(
 	item: CacheItemForEval,
@@ -898,117 +1599,46 @@ export function evaluateRule(
 	if (!passesTagExclusion(item, rule.excludeTags)) return null;
 	if (!passesTitleExclusion(item.title, rule.excludeTitles)) return null;
 
+	// Parse Plex library filter once for all Plex evaluators
+	const plexLibFilter = safeJsonParse(rule.plexLibraryFilter) as string[] | null;
+	const action = (rule.action ?? "delete") as RuleAction;
+
+	// ── Composite rule path ────────────────────────────────────────
+	if (rule.operator && rule.conditions) {
+		const conditions = safeJsonParse(rule.conditions) as Condition[] | null;
+		if (!conditions?.length) return null;
+
+		if (rule.operator === "AND") {
+			const reasons: string[] = [];
+			for (const c of conditions) {
+				const reason = evaluateSingleCondition(
+					item, c.ruleType, c.parameters as Record<string, unknown>, ctx, plexLibFilter,
+				);
+				if (!reason) return null; // ALL must match
+				reasons.push(reason);
+			}
+			return { ruleId: rule.id, ruleName: rule.name, reason: reasons.join(" AND "), action };
+		}
+
+		if (rule.operator === "OR") {
+			for (const c of conditions) {
+				const reason = evaluateSingleCondition(
+					item, c.ruleType, c.parameters as Record<string, unknown>, ctx, plexLibFilter,
+				);
+				if (reason) {
+					return { ruleId: rule.id, ruleName: rule.name, reason, action };
+				}
+			}
+			return null; // AT LEAST ONE must match
+		}
+	}
+
+	// ── Legacy single-condition path ───────────────────────────────
 	const params = parseParams(rule);
 	if (!params) return null;
 
-	let reason: string | null = null;
-
-	switch (rule.ruleType) {
-		// ── Basic rules ─────────────────────────────────────────────
-		case "age":
-			reason = evaluateAgeRule(item, params as AgeRuleParams, ctx.now);
-			break;
-		case "size":
-			reason = evaluateSizeRule(item, params as SizeRuleParams);
-			break;
-		case "rating":
-			reason = evaluateRatingRule(item, params as RatingRuleParams);
-			break;
-		case "status":
-			reason = evaluateStatusRule(item, params as StatusRuleParams);
-			break;
-		case "unmonitored":
-			reason = evaluateUnmonitoredRule(item);
-			break;
-		case "genre":
-			reason = evaluateGenreRule(item, params as GenreRuleParams);
-			break;
-		case "year_range":
-			reason = evaluateYearRangeRule(item, params as YearRangeRuleParams);
-			break;
-		case "no_file":
-			reason = evaluateNoFileRule(item);
-			break;
-		case "quality_profile":
-			reason = evaluateQualityProfileRule(item, params as QualityProfileRuleParams);
-			break;
-		case "language":
-			reason = evaluateLanguageRule(item, params as LanguageRuleParams);
-			break;
-
-		// ── File metadata rules ─────────────────────────────────────
-		case "video_codec":
-			reason = evaluateVideoCodecRule(item, params as VideoCodecRuleParams);
-			break;
-		case "audio_codec":
-			reason = evaluateAudioCodecRule(item, params as AudioCodecRuleParams);
-			break;
-		case "resolution":
-			reason = evaluateResolutionRule(item, params as ResolutionRuleParams);
-			break;
-		case "hdr_type":
-			reason = evaluateHdrTypeRule(item, params as HdrTypeRuleParams);
-			break;
-		case "custom_format_score":
-			reason = evaluateCustomFormatScoreRule(item, params as CustomFormatScoreRuleParams);
-			break;
-		case "runtime":
-			reason = evaluateRuntimeRule(item, params as RuntimeRuleParams);
-			break;
-		case "release_group":
-			reason = evaluateReleaseGroupRule(item, params as ReleaseGroupRuleParams);
-			break;
-
-		// ── Seerr rules ─────────────────────────────────────────────
-		case "seerr_requested_by":
-			reason = evaluateSeerrRequestedBy(item, params as SeerrRequestedByParams, ctx.seerrMap);
-			break;
-		case "seerr_request_age":
-			reason = evaluateSeerrRequestAge(
-				item,
-				params as SeerrRequestAgeParams,
-				ctx.seerrMap,
-				ctx.now,
-			);
-			break;
-		case "seerr_request_status":
-			reason = evaluateSeerrRequestStatus(item, params as SeerrRequestStatusParams, ctx.seerrMap);
-			break;
-		case "seerr_is_4k":
-			reason = evaluateSeerrIs4k(item, params as SeerrIs4kParams, ctx.seerrMap);
-			break;
-		case "seerr_request_modified_age":
-			reason = evaluateSeerrRequestModifiedAge(
-				item,
-				params as SeerrRequestModifiedAgeParams,
-				ctx.seerrMap,
-				ctx.now,
-			);
-			break;
-		case "seerr_modified_by":
-			reason = evaluateSeerrModifiedBy(item, params as SeerrModifiedByParams, ctx.seerrMap);
-			break;
-
-		// ── Tautulli rules ──────────────────────────────────────────
-		case "tautulli_last_watched":
-			reason = evaluateTautulliLastWatched(item, params as TautulliLastWatchedParams, ctx);
-			break;
-		case "tautulli_watch_count":
-			reason = evaluateTautulliWatchCount(item, params as TautulliWatchCountParams, ctx);
-			break;
-		case "tautulli_watched_by":
-			reason = evaluateTautulliWatchedBy(item, params as TautulliWatchedByParams, ctx);
-			break;
-
-		default:
-			return null;
-	}
-
-	if (reason) {
-		return { ruleId: rule.id, ruleName: rule.name, reason };
-	}
-
-	return null;
+	const reason = evaluateSingleCondition(item, rule.ruleType, params, ctx, plexLibFilter);
+	return reason ? { ruleId: rule.id, ruleName: rule.name, reason, action } : null;
 }
 
 /**

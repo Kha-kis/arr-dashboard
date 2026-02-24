@@ -50,6 +50,7 @@ export type LibraryCleanupApprovalMinAggregateOutputType = {
   matchedRuleId: string | null
   matchedRuleName: string | null
   reason: string | null
+  action: string | null
   sizeOnDisk: bigint | null
   year: number | null
   rating: number | null
@@ -70,6 +71,7 @@ export type LibraryCleanupApprovalMaxAggregateOutputType = {
   matchedRuleId: string | null
   matchedRuleName: string | null
   reason: string | null
+  action: string | null
   sizeOnDisk: bigint | null
   year: number | null
   rating: number | null
@@ -90,6 +92,7 @@ export type LibraryCleanupApprovalCountAggregateOutputType = {
   matchedRuleId: number
   matchedRuleName: number
   reason: number
+  action: number
   sizeOnDisk: number
   year: number
   rating: number
@@ -126,6 +129,7 @@ export type LibraryCleanupApprovalMinAggregateInputType = {
   matchedRuleId?: true
   matchedRuleName?: true
   reason?: true
+  action?: true
   sizeOnDisk?: true
   year?: true
   rating?: true
@@ -146,6 +150,7 @@ export type LibraryCleanupApprovalMaxAggregateInputType = {
   matchedRuleId?: true
   matchedRuleName?: true
   reason?: true
+  action?: true
   sizeOnDisk?: true
   year?: true
   rating?: true
@@ -166,6 +171,7 @@ export type LibraryCleanupApprovalCountAggregateInputType = {
   matchedRuleId?: true
   matchedRuleName?: true
   reason?: true
+  action?: true
   sizeOnDisk?: true
   year?: true
   rating?: true
@@ -273,6 +279,7 @@ export type LibraryCleanupApprovalGroupByOutputType = {
   matchedRuleId: string
   matchedRuleName: string
   reason: string
+  action: string
   sizeOnDisk: bigint
   year: number | null
   rating: number | null
@@ -316,6 +323,7 @@ export type LibraryCleanupApprovalWhereInput = {
   matchedRuleId?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
   matchedRuleName?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
   reason?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
+  action?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
   sizeOnDisk?: Prisma.BigIntFilter<"LibraryCleanupApproval"> | bigint | number
   year?: Prisma.IntNullableFilter<"LibraryCleanupApproval"> | number | null
   rating?: Prisma.FloatNullableFilter<"LibraryCleanupApproval"> | number | null
@@ -337,6 +345,7 @@ export type LibraryCleanupApprovalOrderByWithRelationInput = {
   matchedRuleId?: Prisma.SortOrder
   matchedRuleName?: Prisma.SortOrder
   reason?: Prisma.SortOrder
+  action?: Prisma.SortOrder
   sizeOnDisk?: Prisma.SortOrder
   year?: Prisma.SortOrderInput | Prisma.SortOrder
   rating?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -361,6 +370,7 @@ export type LibraryCleanupApprovalWhereUniqueInput = Prisma.AtLeast<{
   matchedRuleId?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
   matchedRuleName?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
   reason?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
+  action?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
   sizeOnDisk?: Prisma.BigIntFilter<"LibraryCleanupApproval"> | bigint | number
   year?: Prisma.IntNullableFilter<"LibraryCleanupApproval"> | number | null
   rating?: Prisma.FloatNullableFilter<"LibraryCleanupApproval"> | number | null
@@ -382,6 +392,7 @@ export type LibraryCleanupApprovalOrderByWithAggregationInput = {
   matchedRuleId?: Prisma.SortOrder
   matchedRuleName?: Prisma.SortOrder
   reason?: Prisma.SortOrder
+  action?: Prisma.SortOrder
   sizeOnDisk?: Prisma.SortOrder
   year?: Prisma.SortOrderInput | Prisma.SortOrder
   rating?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -410,6 +421,7 @@ export type LibraryCleanupApprovalScalarWhereWithAggregatesInput = {
   matchedRuleId?: Prisma.StringWithAggregatesFilter<"LibraryCleanupApproval"> | string
   matchedRuleName?: Prisma.StringWithAggregatesFilter<"LibraryCleanupApproval"> | string
   reason?: Prisma.StringWithAggregatesFilter<"LibraryCleanupApproval"> | string
+  action?: Prisma.StringWithAggregatesFilter<"LibraryCleanupApproval"> | string
   sizeOnDisk?: Prisma.BigIntWithAggregatesFilter<"LibraryCleanupApproval"> | bigint | number
   year?: Prisma.IntNullableWithAggregatesFilter<"LibraryCleanupApproval"> | number | null
   rating?: Prisma.FloatNullableWithAggregatesFilter<"LibraryCleanupApproval"> | number | null
@@ -429,6 +441,7 @@ export type LibraryCleanupApprovalCreateInput = {
   matchedRuleId: string
   matchedRuleName: string
   reason: string
+  action?: string
   sizeOnDisk?: bigint | number
   year?: number | null
   rating?: number | null
@@ -450,6 +463,7 @@ export type LibraryCleanupApprovalUncheckedCreateInput = {
   matchedRuleId: string
   matchedRuleName: string
   reason: string
+  action?: string
   sizeOnDisk?: bigint | number
   year?: number | null
   rating?: number | null
@@ -469,6 +483,7 @@ export type LibraryCleanupApprovalUpdateInput = {
   matchedRuleId?: Prisma.StringFieldUpdateOperationsInput | string
   matchedRuleName?: Prisma.StringFieldUpdateOperationsInput | string
   reason?: Prisma.StringFieldUpdateOperationsInput | string
+  action?: Prisma.StringFieldUpdateOperationsInput | string
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   year?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   rating?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
@@ -490,6 +505,7 @@ export type LibraryCleanupApprovalUncheckedUpdateInput = {
   matchedRuleId?: Prisma.StringFieldUpdateOperationsInput | string
   matchedRuleName?: Prisma.StringFieldUpdateOperationsInput | string
   reason?: Prisma.StringFieldUpdateOperationsInput | string
+  action?: Prisma.StringFieldUpdateOperationsInput | string
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   year?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   rating?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
@@ -510,6 +526,7 @@ export type LibraryCleanupApprovalCreateManyInput = {
   matchedRuleId: string
   matchedRuleName: string
   reason: string
+  action?: string
   sizeOnDisk?: bigint | number
   year?: number | null
   rating?: number | null
@@ -529,6 +546,7 @@ export type LibraryCleanupApprovalUpdateManyMutationInput = {
   matchedRuleId?: Prisma.StringFieldUpdateOperationsInput | string
   matchedRuleName?: Prisma.StringFieldUpdateOperationsInput | string
   reason?: Prisma.StringFieldUpdateOperationsInput | string
+  action?: Prisma.StringFieldUpdateOperationsInput | string
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   year?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   rating?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
@@ -549,6 +567,7 @@ export type LibraryCleanupApprovalUncheckedUpdateManyInput = {
   matchedRuleId?: Prisma.StringFieldUpdateOperationsInput | string
   matchedRuleName?: Prisma.StringFieldUpdateOperationsInput | string
   reason?: Prisma.StringFieldUpdateOperationsInput | string
+  action?: Prisma.StringFieldUpdateOperationsInput | string
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   year?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   rating?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
@@ -579,6 +598,7 @@ export type LibraryCleanupApprovalCountOrderByAggregateInput = {
   matchedRuleId?: Prisma.SortOrder
   matchedRuleName?: Prisma.SortOrder
   reason?: Prisma.SortOrder
+  action?: Prisma.SortOrder
   sizeOnDisk?: Prisma.SortOrder
   year?: Prisma.SortOrder
   rating?: Prisma.SortOrder
@@ -606,6 +626,7 @@ export type LibraryCleanupApprovalMaxOrderByAggregateInput = {
   matchedRuleId?: Prisma.SortOrder
   matchedRuleName?: Prisma.SortOrder
   reason?: Prisma.SortOrder
+  action?: Prisma.SortOrder
   sizeOnDisk?: Prisma.SortOrder
   year?: Prisma.SortOrder
   rating?: Prisma.SortOrder
@@ -626,6 +647,7 @@ export type LibraryCleanupApprovalMinOrderByAggregateInput = {
   matchedRuleId?: Prisma.SortOrder
   matchedRuleName?: Prisma.SortOrder
   reason?: Prisma.SortOrder
+  action?: Prisma.SortOrder
   sizeOnDisk?: Prisma.SortOrder
   year?: Prisma.SortOrder
   rating?: Prisma.SortOrder
@@ -702,6 +724,7 @@ export type LibraryCleanupApprovalCreateWithoutConfigInput = {
   matchedRuleId: string
   matchedRuleName: string
   reason: string
+  action?: string
   sizeOnDisk?: bigint | number
   year?: number | null
   rating?: number | null
@@ -721,6 +744,7 @@ export type LibraryCleanupApprovalUncheckedCreateWithoutConfigInput = {
   matchedRuleId: string
   matchedRuleName: string
   reason: string
+  action?: string
   sizeOnDisk?: bigint | number
   year?: number | null
   rating?: number | null
@@ -769,6 +793,7 @@ export type LibraryCleanupApprovalScalarWhereInput = {
   matchedRuleId?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
   matchedRuleName?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
   reason?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
+  action?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
   sizeOnDisk?: Prisma.BigIntFilter<"LibraryCleanupApproval"> | bigint | number
   year?: Prisma.IntNullableFilter<"LibraryCleanupApproval"> | number | null
   rating?: Prisma.FloatNullableFilter<"LibraryCleanupApproval"> | number | null
@@ -788,6 +813,7 @@ export type LibraryCleanupApprovalCreateManyConfigInput = {
   matchedRuleId: string
   matchedRuleName: string
   reason: string
+  action?: string
   sizeOnDisk?: bigint | number
   year?: number | null
   rating?: number | null
@@ -807,6 +833,7 @@ export type LibraryCleanupApprovalUpdateWithoutConfigInput = {
   matchedRuleId?: Prisma.StringFieldUpdateOperationsInput | string
   matchedRuleName?: Prisma.StringFieldUpdateOperationsInput | string
   reason?: Prisma.StringFieldUpdateOperationsInput | string
+  action?: Prisma.StringFieldUpdateOperationsInput | string
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   year?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   rating?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
@@ -826,6 +853,7 @@ export type LibraryCleanupApprovalUncheckedUpdateWithoutConfigInput = {
   matchedRuleId?: Prisma.StringFieldUpdateOperationsInput | string
   matchedRuleName?: Prisma.StringFieldUpdateOperationsInput | string
   reason?: Prisma.StringFieldUpdateOperationsInput | string
+  action?: Prisma.StringFieldUpdateOperationsInput | string
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   year?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   rating?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
@@ -845,6 +873,7 @@ export type LibraryCleanupApprovalUncheckedUpdateManyWithoutConfigInput = {
   matchedRuleId?: Prisma.StringFieldUpdateOperationsInput | string
   matchedRuleName?: Prisma.StringFieldUpdateOperationsInput | string
   reason?: Prisma.StringFieldUpdateOperationsInput | string
+  action?: Prisma.StringFieldUpdateOperationsInput | string
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   year?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   rating?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
@@ -867,6 +896,7 @@ export type LibraryCleanupApprovalSelect<ExtArgs extends runtime.Types.Extension
   matchedRuleId?: boolean
   matchedRuleName?: boolean
   reason?: boolean
+  action?: boolean
   sizeOnDisk?: boolean
   year?: boolean
   rating?: boolean
@@ -888,6 +918,7 @@ export type LibraryCleanupApprovalSelectCreateManyAndReturn<ExtArgs extends runt
   matchedRuleId?: boolean
   matchedRuleName?: boolean
   reason?: boolean
+  action?: boolean
   sizeOnDisk?: boolean
   year?: boolean
   rating?: boolean
@@ -909,6 +940,7 @@ export type LibraryCleanupApprovalSelectUpdateManyAndReturn<ExtArgs extends runt
   matchedRuleId?: boolean
   matchedRuleName?: boolean
   reason?: boolean
+  action?: boolean
   sizeOnDisk?: boolean
   year?: boolean
   rating?: boolean
@@ -930,6 +962,7 @@ export type LibraryCleanupApprovalSelectScalar = {
   matchedRuleId?: boolean
   matchedRuleName?: boolean
   reason?: boolean
+  action?: boolean
   sizeOnDisk?: boolean
   year?: boolean
   rating?: boolean
@@ -940,7 +973,7 @@ export type LibraryCleanupApprovalSelectScalar = {
   expiresAt?: boolean
 }
 
-export type LibraryCleanupApprovalOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "configId" | "instanceId" | "arrItemId" | "itemType" | "title" | "matchedRuleId" | "matchedRuleName" | "reason" | "sizeOnDisk" | "year" | "rating" | "status" | "reviewedAt" | "executedAt" | "createdAt" | "expiresAt", ExtArgs["result"]["libraryCleanupApproval"]>
+export type LibraryCleanupApprovalOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "configId" | "instanceId" | "arrItemId" | "itemType" | "title" | "matchedRuleId" | "matchedRuleName" | "reason" | "action" | "sizeOnDisk" | "year" | "rating" | "status" | "reviewedAt" | "executedAt" | "createdAt" | "expiresAt", ExtArgs["result"]["libraryCleanupApproval"]>
 export type LibraryCleanupApprovalInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   config?: boolean | Prisma.LibraryCleanupConfigDefaultArgs<ExtArgs>
 }
@@ -966,6 +999,7 @@ export type $LibraryCleanupApprovalPayload<ExtArgs extends runtime.Types.Extensi
     matchedRuleId: string
     matchedRuleName: string
     reason: string
+    action: string
     sizeOnDisk: bigint
     year: number | null
     rating: number | null
@@ -1407,6 +1441,7 @@ export interface LibraryCleanupApprovalFieldRefs {
   readonly matchedRuleId: Prisma.FieldRef<"LibraryCleanupApproval", 'String'>
   readonly matchedRuleName: Prisma.FieldRef<"LibraryCleanupApproval", 'String'>
   readonly reason: Prisma.FieldRef<"LibraryCleanupApproval", 'String'>
+  readonly action: Prisma.FieldRef<"LibraryCleanupApproval", 'String'>
   readonly sizeOnDisk: Prisma.FieldRef<"LibraryCleanupApproval", 'BigInt'>
   readonly year: Prisma.FieldRef<"LibraryCleanupApproval", 'Int'>
   readonly rating: Prisma.FieldRef<"LibraryCleanupApproval", 'Float'>

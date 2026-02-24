@@ -165,4 +165,7 @@ async function analyzeStatusMessages() {
 	console.log("  3. Add more patterns to the safe list if we identify reliable ones\n");
 }
 
-analyzeStatusMessages().catch(console.error);
+// Only execute when run directly (not when imported)
+if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, "/"))) {
+	analyzeStatusMessages().catch(console.error);
+}

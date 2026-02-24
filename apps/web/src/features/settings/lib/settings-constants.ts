@@ -9,7 +9,8 @@ export type ServiceType =
 	| "lidarr"
 	| "readarr"
 	| "seerr"
-	| "tautulli";
+	| "tautulli"
+	| "plex";
 
 export const SERVICE_TYPES: ServiceType[] = [
 	"sonarr",
@@ -19,6 +20,7 @@ export const SERVICE_TYPES: ServiceType[] = [
 	"readarr",
 	"seerr",
 	"tautulli",
+	"plex",
 ];
 
 /**

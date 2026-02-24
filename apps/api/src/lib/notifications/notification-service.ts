@@ -1,4 +1,16 @@
 import type { NotificationChannelType } from "@arr/shared";
+
+const REDACTED_PLACEHOLDER = "••••••••";
+const SECRET_FIELD_NAMES = new Set(["password", "botToken", "apiToken", "userKey", "auth"]);
+
+function redactSecretFields(config: Record<string, unknown>): Record<string, unknown> {
+	return Object.fromEntries(
+		Object.entries(config).map(([key, value]) => [
+			key,
+			SECRET_FIELD_NAMES.has(key) && typeof value === "string" ? REDACTED_PLACEHOLDER : value,
+		]),
+	);
+}
 import type { Encryptor } from "../auth/encryption.js";
 import type { PrismaClient } from "../prisma.js";
 import { getErrorMessage } from "../utils/error-message.js";
@@ -68,7 +80,12 @@ export class NotificationService {
 					value: sub.channel.encryptedConfig,
 					iv: sub.channel.configIv,
 				});
-				const config = JSON.parse(decryptedJson) as Record<string, unknown>;
+				let config: Record<string, unknown>;
+				try {
+					config = JSON.parse(decryptedJson) as Record<string, unknown>;
+				} catch {
+					throw new Error(`Failed to parse config for channel "${sub.channel.name}" — config may be corrupted`);
+				}
 
 				await this.dispatcher.send(channelType, config, payload);
 				return { channelId: sub.channelId, channelType };
@@ -82,7 +99,9 @@ export class NotificationService {
 			const channelType = sub.channel.type as NotificationChannelType;
 
 			if (result.status === "fulfilled") {
-				await this.logDelivery(sub.channelId, channelType, payload, "sent").catch(() => {});
+				await this.logDelivery(sub.channelId, channelType, payload, "sent").catch((logErr) => {
+					this.logger.warn({ err: logErr, channelId: sub.channelId }, "Failed to log notification delivery");
+				});
 			} else {
 				const errorMsg = getErrorMessage(result.reason);
 				this.logger.error(
@@ -94,7 +113,9 @@ export class NotificationService {
 					`Notification delivery failed for channel ${sub.channel.name}`,
 				);
 				await this.logDelivery(sub.channelId, channelType, payload, "failed", errorMsg).catch(
-					() => {},
+					(logErr) => {
+						this.logger.warn({ err: logErr, channelId: sub.channelId }, "Failed to log notification delivery");
+					},
 				);
 			}
 		}
@@ -117,7 +138,12 @@ export class NotificationService {
 			value: channel.encryptedConfig,
 			iv: channel.configIv,
 		});
-		const config = JSON.parse(decryptedJson) as Record<string, unknown>;
+		let config: Record<string, unknown>;
+		try {
+			config = JSON.parse(decryptedJson) as Record<string, unknown>;
+		} catch {
+			throw new Error(`Failed to parse config for channel "${channel.name}" — config may be corrupted. Try re-saving the channel settings.`);
+		}
 
 		await this.dispatcher.test(channelType, config);
 
@@ -133,7 +159,8 @@ export class NotificationService {
 
 	/**
 	 * Decrypt a channel's config for reading (e.g., editing form pre-fill).
-	 * Returns full channel metadata + decrypted config so the frontend edit form can pre-populate.
+	 * Returns full channel metadata + redacted config so the frontend edit form can pre-populate.
+	 * Secret fields are replaced with a placeholder to prevent credential exposure.
 	 */
 	async getDecryptedConfig(
 		channelId: string,
@@ -159,12 +186,22 @@ export class NotificationService {
 			value: channel.encryptedConfig,
 			iv: channel.configIv,
 		});
+		let config: Record<string, unknown>;
+		try {
+			config = JSON.parse(decryptedJson) as Record<string, unknown>;
+		} catch {
+			throw new Error(`Failed to parse config for channel "${channel.name}" — config may be corrupted. Try re-saving the channel settings.`);
+		}
+
+		// Redact secret fields — frontend should only send non-placeholder values on update
+		const redacted = redactSecretFields(config);
+
 		return {
 			id: channel.id,
 			name: channel.name,
 			type: channel.type,
 			enabled: channel.enabled,
-			config: JSON.parse(decryptedJson) as Record<string, unknown>,
+			config: redacted,
 			lastTestedAt: channel.lastTestedAt,
 			lastTestResult: channel.lastTestResult,
 		};

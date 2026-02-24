@@ -694,10 +694,12 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 		async (request, reply) => {
 			const userId = request.currentUser!.id;
 
-			// Get all logs for user instances
+			// Get logs for user instances (bounded to last 90 days for performance)
+			const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
 			const allLogs = await app.prisma.queueCleanerLog.findMany({
 				where: {
 					instance: { userId },
+					startedAt: { gte: ninetyDaysAgo },
 				},
 				include: { instance: true },
 				orderBy: { startedAt: "desc" },

@@ -95,6 +95,16 @@ export function useDeleteCleanupRule() {
 	});
 }
 
+export function useReorderCleanupRules() {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: (ruleIds: string[]) => libraryCleanupApi.reorderRules(ruleIds),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: KEYS.config });
+		},
+	});
+}
+
 export function useCleanupPreview() {
 	return useMutation({
 		mutationFn: () => libraryCleanupApi.preview(),

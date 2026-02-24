@@ -299,7 +299,7 @@ export function evaluateQueueItem(
 		}
 	}
 
-	// Rule 5: Import blocked detection
+	// Rule 5: Import blocked detection (shares the importPendingEnabled flag)
 	const importBlockEnabled = (config as Record<string, unknown>).importPendingEnabled ?? true;
 	if (importBlockEnabled && trackedState === "importblocked") {
 		const importBlockResult = evaluateImportBlockState(statusTexts, config, "blocked");

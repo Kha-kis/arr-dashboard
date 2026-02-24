@@ -50,6 +50,8 @@ const SANITIZE_CONFIG = {
 	],
 	// Allow common attributes
 	ALLOWED_ATTR: ["href", "target", "rel", "class", "id", "title"],
+	// Explicitly restrict URI schemes to prevent data: and javascript: XSS
+	ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
 };
 
 /**

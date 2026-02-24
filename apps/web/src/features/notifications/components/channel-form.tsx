@@ -4,6 +4,7 @@ import { Loader2, Save, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 // GradientButton doesn't accept type="submit", so we use a styled native button
+import type { NotificationChannelType } from "@arr/shared";
 import { useCreateChannel, useUpdateChannel } from "../../../hooks/api/useNotifications";
 import { notificationsApi } from "../../../lib/api-client/notifications";
 
@@ -61,7 +62,7 @@ export function ChannelForm({ channelId, onSave, onCancel }: ChannelFormProps) {
 	const updateChannel = useUpdateChannel();
 
 	const [name, setName] = useState("");
-	const [type, setType] = useState("DISCORD");
+	const [type, setType] = useState<NotificationChannelType>("DISCORD");
 	const [enabled, setEnabled] = useState(true);
 	const [config, setConfig] = useState<Record<string, unknown>>({});
 	const [loading, setLoading] = useState(false);
@@ -145,7 +146,7 @@ export function ChannelForm({ channelId, onSave, onCancel }: ChannelFormProps) {
 						<select
 							value={type}
 							onChange={(e) => {
-								setType(e.target.value);
+								setType(e.target.value as NotificationChannelType);
 								setConfig({});
 							}}
 							className="w-full rounded-md border border-border/50 bg-background/50 px-3 py-2 text-sm"

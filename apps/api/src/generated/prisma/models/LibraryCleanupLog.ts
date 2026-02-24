@@ -30,6 +30,8 @@ export type LibraryCleanupLogAvgAggregateOutputType = {
   itemsEvaluated: number | null
   itemsFlagged: number | null
   itemsRemoved: number | null
+  itemsUnmonitored: number | null
+  itemsFilesDeleted: number | null
   itemsSkipped: number | null
   durationMs: number | null
 }
@@ -38,6 +40,8 @@ export type LibraryCleanupLogSumAggregateOutputType = {
   itemsEvaluated: number | null
   itemsFlagged: number | null
   itemsRemoved: number | null
+  itemsUnmonitored: number | null
+  itemsFilesDeleted: number | null
   itemsSkipped: number | null
   durationMs: number | null
 }
@@ -50,6 +54,8 @@ export type LibraryCleanupLogMinAggregateOutputType = {
   itemsEvaluated: number | null
   itemsFlagged: number | null
   itemsRemoved: number | null
+  itemsUnmonitored: number | null
+  itemsFilesDeleted: number | null
   itemsSkipped: number | null
   details: string | null
   error: string | null
@@ -66,6 +72,8 @@ export type LibraryCleanupLogMaxAggregateOutputType = {
   itemsEvaluated: number | null
   itemsFlagged: number | null
   itemsRemoved: number | null
+  itemsUnmonitored: number | null
+  itemsFilesDeleted: number | null
   itemsSkipped: number | null
   details: string | null
   error: string | null
@@ -82,6 +90,8 @@ export type LibraryCleanupLogCountAggregateOutputType = {
   itemsEvaluated: number
   itemsFlagged: number
   itemsRemoved: number
+  itemsUnmonitored: number
+  itemsFilesDeleted: number
   itemsSkipped: number
   details: number
   error: number
@@ -96,6 +106,8 @@ export type LibraryCleanupLogAvgAggregateInputType = {
   itemsEvaluated?: true
   itemsFlagged?: true
   itemsRemoved?: true
+  itemsUnmonitored?: true
+  itemsFilesDeleted?: true
   itemsSkipped?: true
   durationMs?: true
 }
@@ -104,6 +116,8 @@ export type LibraryCleanupLogSumAggregateInputType = {
   itemsEvaluated?: true
   itemsFlagged?: true
   itemsRemoved?: true
+  itemsUnmonitored?: true
+  itemsFilesDeleted?: true
   itemsSkipped?: true
   durationMs?: true
 }
@@ -116,6 +130,8 @@ export type LibraryCleanupLogMinAggregateInputType = {
   itemsEvaluated?: true
   itemsFlagged?: true
   itemsRemoved?: true
+  itemsUnmonitored?: true
+  itemsFilesDeleted?: true
   itemsSkipped?: true
   details?: true
   error?: true
@@ -132,6 +148,8 @@ export type LibraryCleanupLogMaxAggregateInputType = {
   itemsEvaluated?: true
   itemsFlagged?: true
   itemsRemoved?: true
+  itemsUnmonitored?: true
+  itemsFilesDeleted?: true
   itemsSkipped?: true
   details?: true
   error?: true
@@ -148,6 +166,8 @@ export type LibraryCleanupLogCountAggregateInputType = {
   itemsEvaluated?: true
   itemsFlagged?: true
   itemsRemoved?: true
+  itemsUnmonitored?: true
+  itemsFilesDeleted?: true
   itemsSkipped?: true
   details?: true
   error?: true
@@ -251,6 +271,8 @@ export type LibraryCleanupLogGroupByOutputType = {
   itemsEvaluated: number
   itemsFlagged: number
   itemsRemoved: number
+  itemsUnmonitored: number
+  itemsFilesDeleted: number
   itemsSkipped: number
   details: string | null
   error: string | null
@@ -290,6 +312,8 @@ export type LibraryCleanupLogWhereInput = {
   itemsEvaluated?: Prisma.IntFilter<"LibraryCleanupLog"> | number
   itemsFlagged?: Prisma.IntFilter<"LibraryCleanupLog"> | number
   itemsRemoved?: Prisma.IntFilter<"LibraryCleanupLog"> | number
+  itemsUnmonitored?: Prisma.IntFilter<"LibraryCleanupLog"> | number
+  itemsFilesDeleted?: Prisma.IntFilter<"LibraryCleanupLog"> | number
   itemsSkipped?: Prisma.IntFilter<"LibraryCleanupLog"> | number
   details?: Prisma.StringNullableFilter<"LibraryCleanupLog"> | string | null
   error?: Prisma.StringNullableFilter<"LibraryCleanupLog"> | string | null
@@ -307,6 +331,8 @@ export type LibraryCleanupLogOrderByWithRelationInput = {
   itemsEvaluated?: Prisma.SortOrder
   itemsFlagged?: Prisma.SortOrder
   itemsRemoved?: Prisma.SortOrder
+  itemsUnmonitored?: Prisma.SortOrder
+  itemsFilesDeleted?: Prisma.SortOrder
   itemsSkipped?: Prisma.SortOrder
   details?: Prisma.SortOrderInput | Prisma.SortOrder
   error?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -327,6 +353,8 @@ export type LibraryCleanupLogWhereUniqueInput = Prisma.AtLeast<{
   itemsEvaluated?: Prisma.IntFilter<"LibraryCleanupLog"> | number
   itemsFlagged?: Prisma.IntFilter<"LibraryCleanupLog"> | number
   itemsRemoved?: Prisma.IntFilter<"LibraryCleanupLog"> | number
+  itemsUnmonitored?: Prisma.IntFilter<"LibraryCleanupLog"> | number
+  itemsFilesDeleted?: Prisma.IntFilter<"LibraryCleanupLog"> | number
   itemsSkipped?: Prisma.IntFilter<"LibraryCleanupLog"> | number
   details?: Prisma.StringNullableFilter<"LibraryCleanupLog"> | string | null
   error?: Prisma.StringNullableFilter<"LibraryCleanupLog"> | string | null
@@ -344,6 +372,8 @@ export type LibraryCleanupLogOrderByWithAggregationInput = {
   itemsEvaluated?: Prisma.SortOrder
   itemsFlagged?: Prisma.SortOrder
   itemsRemoved?: Prisma.SortOrder
+  itemsUnmonitored?: Prisma.SortOrder
+  itemsFilesDeleted?: Prisma.SortOrder
   itemsSkipped?: Prisma.SortOrder
   details?: Prisma.SortOrderInput | Prisma.SortOrder
   error?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -368,6 +398,8 @@ export type LibraryCleanupLogScalarWhereWithAggregatesInput = {
   itemsEvaluated?: Prisma.IntWithAggregatesFilter<"LibraryCleanupLog"> | number
   itemsFlagged?: Prisma.IntWithAggregatesFilter<"LibraryCleanupLog"> | number
   itemsRemoved?: Prisma.IntWithAggregatesFilter<"LibraryCleanupLog"> | number
+  itemsUnmonitored?: Prisma.IntWithAggregatesFilter<"LibraryCleanupLog"> | number
+  itemsFilesDeleted?: Prisma.IntWithAggregatesFilter<"LibraryCleanupLog"> | number
   itemsSkipped?: Prisma.IntWithAggregatesFilter<"LibraryCleanupLog"> | number
   details?: Prisma.StringNullableWithAggregatesFilter<"LibraryCleanupLog"> | string | null
   error?: Prisma.StringNullableWithAggregatesFilter<"LibraryCleanupLog"> | string | null
@@ -383,6 +415,8 @@ export type LibraryCleanupLogCreateInput = {
   itemsEvaluated?: number
   itemsFlagged?: number
   itemsRemoved?: number
+  itemsUnmonitored?: number
+  itemsFilesDeleted?: number
   itemsSkipped?: number
   details?: string | null
   error?: string | null
@@ -400,6 +434,8 @@ export type LibraryCleanupLogUncheckedCreateInput = {
   itemsEvaluated?: number
   itemsFlagged?: number
   itemsRemoved?: number
+  itemsUnmonitored?: number
+  itemsFilesDeleted?: number
   itemsSkipped?: number
   details?: string | null
   error?: string | null
@@ -415,6 +451,8 @@ export type LibraryCleanupLogUpdateInput = {
   itemsEvaluated?: Prisma.IntFieldUpdateOperationsInput | number
   itemsFlagged?: Prisma.IntFieldUpdateOperationsInput | number
   itemsRemoved?: Prisma.IntFieldUpdateOperationsInput | number
+  itemsUnmonitored?: Prisma.IntFieldUpdateOperationsInput | number
+  itemsFilesDeleted?: Prisma.IntFieldUpdateOperationsInput | number
   itemsSkipped?: Prisma.IntFieldUpdateOperationsInput | number
   details?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -432,6 +470,8 @@ export type LibraryCleanupLogUncheckedUpdateInput = {
   itemsEvaluated?: Prisma.IntFieldUpdateOperationsInput | number
   itemsFlagged?: Prisma.IntFieldUpdateOperationsInput | number
   itemsRemoved?: Prisma.IntFieldUpdateOperationsInput | number
+  itemsUnmonitored?: Prisma.IntFieldUpdateOperationsInput | number
+  itemsFilesDeleted?: Prisma.IntFieldUpdateOperationsInput | number
   itemsSkipped?: Prisma.IntFieldUpdateOperationsInput | number
   details?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -448,6 +488,8 @@ export type LibraryCleanupLogCreateManyInput = {
   itemsEvaluated?: number
   itemsFlagged?: number
   itemsRemoved?: number
+  itemsUnmonitored?: number
+  itemsFilesDeleted?: number
   itemsSkipped?: number
   details?: string | null
   error?: string | null
@@ -463,6 +505,8 @@ export type LibraryCleanupLogUpdateManyMutationInput = {
   itemsEvaluated?: Prisma.IntFieldUpdateOperationsInput | number
   itemsFlagged?: Prisma.IntFieldUpdateOperationsInput | number
   itemsRemoved?: Prisma.IntFieldUpdateOperationsInput | number
+  itemsUnmonitored?: Prisma.IntFieldUpdateOperationsInput | number
+  itemsFilesDeleted?: Prisma.IntFieldUpdateOperationsInput | number
   itemsSkipped?: Prisma.IntFieldUpdateOperationsInput | number
   details?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -479,6 +523,8 @@ export type LibraryCleanupLogUncheckedUpdateManyInput = {
   itemsEvaluated?: Prisma.IntFieldUpdateOperationsInput | number
   itemsFlagged?: Prisma.IntFieldUpdateOperationsInput | number
   itemsRemoved?: Prisma.IntFieldUpdateOperationsInput | number
+  itemsUnmonitored?: Prisma.IntFieldUpdateOperationsInput | number
+  itemsFilesDeleted?: Prisma.IntFieldUpdateOperationsInput | number
   itemsSkipped?: Prisma.IntFieldUpdateOperationsInput | number
   details?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -505,6 +551,8 @@ export type LibraryCleanupLogCountOrderByAggregateInput = {
   itemsEvaluated?: Prisma.SortOrder
   itemsFlagged?: Prisma.SortOrder
   itemsRemoved?: Prisma.SortOrder
+  itemsUnmonitored?: Prisma.SortOrder
+  itemsFilesDeleted?: Prisma.SortOrder
   itemsSkipped?: Prisma.SortOrder
   details?: Prisma.SortOrder
   error?: Prisma.SortOrder
@@ -517,6 +565,8 @@ export type LibraryCleanupLogAvgOrderByAggregateInput = {
   itemsEvaluated?: Prisma.SortOrder
   itemsFlagged?: Prisma.SortOrder
   itemsRemoved?: Prisma.SortOrder
+  itemsUnmonitored?: Prisma.SortOrder
+  itemsFilesDeleted?: Prisma.SortOrder
   itemsSkipped?: Prisma.SortOrder
   durationMs?: Prisma.SortOrder
 }
@@ -529,6 +579,8 @@ export type LibraryCleanupLogMaxOrderByAggregateInput = {
   itemsEvaluated?: Prisma.SortOrder
   itemsFlagged?: Prisma.SortOrder
   itemsRemoved?: Prisma.SortOrder
+  itemsUnmonitored?: Prisma.SortOrder
+  itemsFilesDeleted?: Prisma.SortOrder
   itemsSkipped?: Prisma.SortOrder
   details?: Prisma.SortOrder
   error?: Prisma.SortOrder
@@ -545,6 +597,8 @@ export type LibraryCleanupLogMinOrderByAggregateInput = {
   itemsEvaluated?: Prisma.SortOrder
   itemsFlagged?: Prisma.SortOrder
   itemsRemoved?: Prisma.SortOrder
+  itemsUnmonitored?: Prisma.SortOrder
+  itemsFilesDeleted?: Prisma.SortOrder
   itemsSkipped?: Prisma.SortOrder
   details?: Prisma.SortOrder
   error?: Prisma.SortOrder
@@ -557,6 +611,8 @@ export type LibraryCleanupLogSumOrderByAggregateInput = {
   itemsEvaluated?: Prisma.SortOrder
   itemsFlagged?: Prisma.SortOrder
   itemsRemoved?: Prisma.SortOrder
+  itemsUnmonitored?: Prisma.SortOrder
+  itemsFilesDeleted?: Prisma.SortOrder
   itemsSkipped?: Prisma.SortOrder
   durationMs?: Prisma.SortOrder
 }
@@ -610,6 +666,8 @@ export type LibraryCleanupLogCreateWithoutConfigInput = {
   itemsEvaluated?: number
   itemsFlagged?: number
   itemsRemoved?: number
+  itemsUnmonitored?: number
+  itemsFilesDeleted?: number
   itemsSkipped?: number
   details?: string | null
   error?: string | null
@@ -625,6 +683,8 @@ export type LibraryCleanupLogUncheckedCreateWithoutConfigInput = {
   itemsEvaluated?: number
   itemsFlagged?: number
   itemsRemoved?: number
+  itemsUnmonitored?: number
+  itemsFilesDeleted?: number
   itemsSkipped?: number
   details?: string | null
   error?: string | null
@@ -669,6 +729,8 @@ export type LibraryCleanupLogScalarWhereInput = {
   itemsEvaluated?: Prisma.IntFilter<"LibraryCleanupLog"> | number
   itemsFlagged?: Prisma.IntFilter<"LibraryCleanupLog"> | number
   itemsRemoved?: Prisma.IntFilter<"LibraryCleanupLog"> | number
+  itemsUnmonitored?: Prisma.IntFilter<"LibraryCleanupLog"> | number
+  itemsFilesDeleted?: Prisma.IntFilter<"LibraryCleanupLog"> | number
   itemsSkipped?: Prisma.IntFilter<"LibraryCleanupLog"> | number
   details?: Prisma.StringNullableFilter<"LibraryCleanupLog"> | string | null
   error?: Prisma.StringNullableFilter<"LibraryCleanupLog"> | string | null
@@ -684,6 +746,8 @@ export type LibraryCleanupLogCreateManyConfigInput = {
   itemsEvaluated?: number
   itemsFlagged?: number
   itemsRemoved?: number
+  itemsUnmonitored?: number
+  itemsFilesDeleted?: number
   itemsSkipped?: number
   details?: string | null
   error?: string | null
@@ -699,6 +763,8 @@ export type LibraryCleanupLogUpdateWithoutConfigInput = {
   itemsEvaluated?: Prisma.IntFieldUpdateOperationsInput | number
   itemsFlagged?: Prisma.IntFieldUpdateOperationsInput | number
   itemsRemoved?: Prisma.IntFieldUpdateOperationsInput | number
+  itemsUnmonitored?: Prisma.IntFieldUpdateOperationsInput | number
+  itemsFilesDeleted?: Prisma.IntFieldUpdateOperationsInput | number
   itemsSkipped?: Prisma.IntFieldUpdateOperationsInput | number
   details?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -714,6 +780,8 @@ export type LibraryCleanupLogUncheckedUpdateWithoutConfigInput = {
   itemsEvaluated?: Prisma.IntFieldUpdateOperationsInput | number
   itemsFlagged?: Prisma.IntFieldUpdateOperationsInput | number
   itemsRemoved?: Prisma.IntFieldUpdateOperationsInput | number
+  itemsUnmonitored?: Prisma.IntFieldUpdateOperationsInput | number
+  itemsFilesDeleted?: Prisma.IntFieldUpdateOperationsInput | number
   itemsSkipped?: Prisma.IntFieldUpdateOperationsInput | number
   details?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -729,6 +797,8 @@ export type LibraryCleanupLogUncheckedUpdateManyWithoutConfigInput = {
   itemsEvaluated?: Prisma.IntFieldUpdateOperationsInput | number
   itemsFlagged?: Prisma.IntFieldUpdateOperationsInput | number
   itemsRemoved?: Prisma.IntFieldUpdateOperationsInput | number
+  itemsUnmonitored?: Prisma.IntFieldUpdateOperationsInput | number
+  itemsFilesDeleted?: Prisma.IntFieldUpdateOperationsInput | number
   itemsSkipped?: Prisma.IntFieldUpdateOperationsInput | number
   details?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -747,6 +817,8 @@ export type LibraryCleanupLogSelect<ExtArgs extends runtime.Types.Extensions.Int
   itemsEvaluated?: boolean
   itemsFlagged?: boolean
   itemsRemoved?: boolean
+  itemsUnmonitored?: boolean
+  itemsFilesDeleted?: boolean
   itemsSkipped?: boolean
   details?: boolean
   error?: boolean
@@ -764,6 +836,8 @@ export type LibraryCleanupLogSelectCreateManyAndReturn<ExtArgs extends runtime.T
   itemsEvaluated?: boolean
   itemsFlagged?: boolean
   itemsRemoved?: boolean
+  itemsUnmonitored?: boolean
+  itemsFilesDeleted?: boolean
   itemsSkipped?: boolean
   details?: boolean
   error?: boolean
@@ -781,6 +855,8 @@ export type LibraryCleanupLogSelectUpdateManyAndReturn<ExtArgs extends runtime.T
   itemsEvaluated?: boolean
   itemsFlagged?: boolean
   itemsRemoved?: boolean
+  itemsUnmonitored?: boolean
+  itemsFilesDeleted?: boolean
   itemsSkipped?: boolean
   details?: boolean
   error?: boolean
@@ -798,6 +874,8 @@ export type LibraryCleanupLogSelectScalar = {
   itemsEvaluated?: boolean
   itemsFlagged?: boolean
   itemsRemoved?: boolean
+  itemsUnmonitored?: boolean
+  itemsFilesDeleted?: boolean
   itemsSkipped?: boolean
   details?: boolean
   error?: boolean
@@ -806,7 +884,7 @@ export type LibraryCleanupLogSelectScalar = {
   completedAt?: boolean
 }
 
-export type LibraryCleanupLogOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "configId" | "isDryRun" | "status" | "itemsEvaluated" | "itemsFlagged" | "itemsRemoved" | "itemsSkipped" | "details" | "error" | "durationMs" | "startedAt" | "completedAt", ExtArgs["result"]["libraryCleanupLog"]>
+export type LibraryCleanupLogOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "configId" | "isDryRun" | "status" | "itemsEvaluated" | "itemsFlagged" | "itemsRemoved" | "itemsUnmonitored" | "itemsFilesDeleted" | "itemsSkipped" | "details" | "error" | "durationMs" | "startedAt" | "completedAt", ExtArgs["result"]["libraryCleanupLog"]>
 export type LibraryCleanupLogInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   config?: boolean | Prisma.LibraryCleanupConfigDefaultArgs<ExtArgs>
 }
@@ -830,6 +908,8 @@ export type $LibraryCleanupLogPayload<ExtArgs extends runtime.Types.Extensions.I
     itemsEvaluated: number
     itemsFlagged: number
     itemsRemoved: number
+    itemsUnmonitored: number
+    itemsFilesDeleted: number
     itemsSkipped: number
     details: string | null
     error: string | null
@@ -1267,6 +1347,8 @@ export interface LibraryCleanupLogFieldRefs {
   readonly itemsEvaluated: Prisma.FieldRef<"LibraryCleanupLog", 'Int'>
   readonly itemsFlagged: Prisma.FieldRef<"LibraryCleanupLog", 'Int'>
   readonly itemsRemoved: Prisma.FieldRef<"LibraryCleanupLog", 'Int'>
+  readonly itemsUnmonitored: Prisma.FieldRef<"LibraryCleanupLog", 'Int'>
+  readonly itemsFilesDeleted: Prisma.FieldRef<"LibraryCleanupLog", 'Int'>
   readonly itemsSkipped: Prisma.FieldRef<"LibraryCleanupLog", 'Int'>
   readonly details: Prisma.FieldRef<"LibraryCleanupLog", 'String'>
   readonly error: Prisma.FieldRef<"LibraryCleanupLog", 'String'>

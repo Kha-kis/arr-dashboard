@@ -100,9 +100,24 @@ export const registerNotificationRoutes: FastifyPluginCallback = (app, _opts, do
 		if (body.enabled !== undefined) updateData.enabled = body.enabled;
 
 		if (body.config) {
+			// Merge redacted placeholder fields with existing decrypted config
+			const REDACTED = "••••••••";
+			let mergedConfig = body.config;
+			const hasRedacted = Object.values(body.config).some((v) => v === REDACTED);
+			if (hasRedacted) {
+				const existingJson = app.encryptor.decrypt({
+					value: existing.encryptedConfig,
+					iv: existing.configIv,
+				});
+				const existingConfig = JSON.parse(existingJson) as Record<string, unknown>;
+				mergedConfig = Object.fromEntries(
+					Object.entries(body.config).map(([k, v]) => [k, v === REDACTED ? existingConfig[k] : v]),
+				);
+			}
+
 			// Validate and re-encrypt config
 			const configSchema = channelConfigSchemaMap[existing.type as NotificationChannelType];
-			const validatedConfig = validateRequest(configSchema as z.ZodType, body.config);
+			const validatedConfig = validateRequest(configSchema as z.ZodType, mergedConfig);
 			const encrypted = app.encryptor.encrypt(JSON.stringify(validatedConfig));
 			updateData.encryptedConfig = encrypted.value;
 			updateData.configIv = encrypted.iv;
@@ -144,31 +159,35 @@ export const registerNotificationRoutes: FastifyPluginCallback = (app, _opts, do
 	});
 
 	/** POST /api/notifications/channels/:id/test — Test channel delivery */
-	app.post("/channels/:id/test", async (request, reply) => {
-		const userId = request.currentUser!.id;
-		const { id } = validateRequest(idParamsSchema, request.params);
+	app.post(
+		"/channels/:id/test",
+		{ config: { rateLimit: { max: 5, timeWindow: "1 minute" } } },
+		async (request, reply) => {
+			const userId = request.currentUser!.id;
+			const { id } = validateRequest(idParamsSchema, request.params);
 
-		try {
-			await app.notificationService.testChannel(id, userId);
-			return reply.send({ success: true });
-		} catch (error) {
-			// Update test result even on failure
-			await app.prisma.notificationChannel
-				.update({
-					where: { id },
-					data: {
-						lastTestedAt: new Date(),
-						lastTestResult: `failed: ${getErrorMessage(error)}`,
-					},
-				})
-				.catch(() => {});
+			try {
+				await app.notificationService.testChannel(id, userId);
+				return reply.send({ success: true });
+			} catch (error) {
+				// Update test result even on failure
+				await app.prisma.notificationChannel
+					.updateMany({
+						where: { id, userId },
+						data: {
+							lastTestedAt: new Date(),
+							lastTestResult: `failed: ${getErrorMessage(error).replace(/[A-Za-z0-9+/]{40,}={0,2}/g, "<redacted>").slice(0, 200)}`,
+						},
+					})
+					.catch(() => {});
 
-			return reply.status(400).send({
-				error: "Test failed",
-				message: getErrorMessage(error),
-			});
-		}
-	});
+				return reply.status(400).send({
+					error: "Test failed",
+					message: getErrorMessage(error),
+				});
+			}
+		},
+	);
 
 	/** GET /api/notifications/channels/:id/config — Get decrypted config (for edit form) */
 	app.get("/channels/:id/config", async (request, reply) => {
@@ -301,10 +320,16 @@ export const registerNotificationRoutes: FastifyPluginCallback = (app, _opts, do
 			})
 		).map((ch) => ch.id);
 
-		const where = {
+		const where: Record<string, unknown> = {
 			channelId: { in: userChannelIds },
-			...(query.channelId ? { channelId: query.channelId } : {}),
 		};
+		if (query.channelId) {
+			if (userChannelIds.includes(query.channelId)) {
+				where.channelId = query.channelId;
+			} else {
+				return reply.send({ logs: [], total: 0, page: query.page, limit: query.limit });
+			}
+		}
 
 		const [logs, total] = await Promise.all([
 			app.prisma.notificationLog.findMany({
@@ -358,38 +383,42 @@ export const registerNotificationRoutes: FastifyPluginCallback = (app, _opts, do
 		};
 		const encrypted = app.encryptor.encrypt(JSON.stringify(config));
 
-		// Upsert: if a channel with the same endpoint exists, update it
-		const existingChannel = await app.prisma.notificationChannel.findFirst({
-			where: {
-				userId,
-				type: "BROWSER_PUSH",
-			},
+		// Check all existing BROWSER_PUSH channels for a matching endpoint
+		const existingChannels = await app.prisma.notificationChannel.findMany({
+			where: { userId, type: "BROWSER_PUSH" },
 		});
 
-		if (existingChannel) {
-			// Check if this is the same endpoint by decrypting
+		for (const existing of existingChannels) {
 			try {
 				const existingConfig = JSON.parse(
 					app.encryptor.decrypt({
-						value: existingChannel.encryptedConfig,
-						iv: existingChannel.configIv,
+						value: existing.encryptedConfig,
+						iv: existing.configIv,
 					}),
 				) as Record<string, unknown>;
 
 				if (existingConfig.endpoint === body.endpoint) {
 					// Same endpoint — update keys
 					await app.prisma.notificationChannel.update({
-						where: { id: existingChannel.id },
+						where: { id: existing.id },
 						data: {
 							encryptedConfig: encrypted.value,
 							configIv: encrypted.iv,
 						},
 					});
-					return reply.send({ id: existingChannel.id, updated: true });
+					return reply.send({ id: existing.id, updated: true });
 				}
 			} catch {
-				// Couldn't decrypt existing — create new
+				// Couldn't decrypt — continue checking others
 			}
+		}
+
+		// Cap browser push channels at 10 per user
+		const MAX_BROWSER_PUSH = 10;
+		if (existingChannels.length >= MAX_BROWSER_PUSH) {
+			return reply.status(400).send({
+				error: `Maximum of ${MAX_BROWSER_PUSH} browser push subscriptions reached`,
+			});
 		}
 
 		const channel = await app.prisma.notificationChannel.create({

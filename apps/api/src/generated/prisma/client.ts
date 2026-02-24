@@ -235,3 +235,8 @@ export type LibraryCleanupLog = Prisma.LibraryCleanupLogModel
  * Cached watch data from Tautulli, keyed by (instanceId, tmdbId, mediaType)
  */
 export type TautulliCache = Prisma.TautulliCacheModel
+/**
+ * Model PlexCache
+ * Cached watch data from Plex, keyed by (instanceId, tmdbId, mediaType)
+ */
+export type PlexCache = Prisma.PlexCacheModel

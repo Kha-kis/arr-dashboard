@@ -343,9 +343,9 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 		const huntType = body.type === "upgrade" ? "upgrade" : "missing";
 
-		// Queue hunt job with cooldown check
+		// Trigger hunt with cooldown check
 		const scheduler = getHuntingScheduler();
-		const result = scheduler.queueManualHunt(instanceId, huntType);
+		const result = scheduler.triggerManualHunt(instanceId, huntType);
 
 		if (!result.queued) {
 			// Return 429 Too Many Requests with cooldown message

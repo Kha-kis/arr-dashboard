@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { loggers } from "../logger.js";
+import { withTimeout } from "../utils/delay.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import {
 	type CleanerResult,
@@ -23,31 +24,6 @@ export class SchedulerNotInitializedError extends Error {
 	constructor(operation: string) {
 		super(`Queue cleaner scheduler not initialized - cannot perform ${operation}`);
 		this.name = "SchedulerNotInitializedError";
-	}
-}
-
-/**
- * Run a promise with a timeout guard.
- */
-async function withTimeout<T>(
-	promise: Promise<T>,
-	timeoutMs: number,
-	timeoutMessage: string,
-): Promise<T> {
-	let timeoutId: NodeJS.Timeout | undefined;
-
-	const timeoutPromise = new Promise<never>((_, reject) => {
-		timeoutId = setTimeout(() => {
-			reject(new Error(timeoutMessage));
-		}, timeoutMs);
-	});
-
-	try {
-		return await Promise.race([promise, timeoutPromise]);
-	} finally {
-		if (timeoutId) {
-			clearTimeout(timeoutId);
-		}
 	}
 }
 
@@ -501,38 +477,36 @@ class QueueCleanerScheduler {
 			include: { instance: true },
 		});
 
-		for (const config of configs) {
+		const dueConfigs = configs.filter((config) => {
 			const lastRun = config.lastRunAt ?? new Date(0);
 			const nextRun = new Date(lastRun.getTime() + config.intervalMins * 60 * 1000);
+			if (now < nextRun) return false;
+			if (this.cleaningInProgress.has(config.instanceId)) {
+				log.debug(
+					{ instanceId: config.instanceId },
+					"Skipping scheduled clean - already in progress",
+				);
+				return false;
+			}
+			return true;
+		});
 
-			if (now >= nextRun) {
-				// Skip if a clean is already in progress for this instance
-				// (prevents race condition with manual cleans)
-				if (this.cleaningInProgress.has(config.instanceId)) {
-					log.debug(
-						{ instanceId: config.instanceId },
-						"Skipping scheduled clean - already in progress",
-					);
-					continue;
-				}
-
-				// Mark as in-progress before starting
+		// Run due instances concurrently — cleaningInProgress prevents overlap
+		await Promise.allSettled(
+			dueConfigs.map(async (config) => {
 				this.cleaningInProgress.add(config.instanceId);
-
 				try {
 					await this.runClean(config.instanceId);
 				} catch (error) {
-					// Log but continue with remaining instances
 					log.error(
 						{ err: error, instanceId: config.instanceId },
-						"Unexpected error during scheduled clean - continuing with remaining instances",
+						"Unexpected error during scheduled clean",
 					);
 				} finally {
-					// Always clear the in-progress flag
 					this.cleaningInProgress.delete(config.instanceId);
 				}
-			}
-		}
+			}),
+		);
 	}
 
 	/**

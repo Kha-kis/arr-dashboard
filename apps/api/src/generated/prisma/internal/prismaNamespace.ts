@@ -422,7 +422,8 @@ export const ModelName = {
   LibraryCleanupRule: 'LibraryCleanupRule',
   LibraryCleanupApproval: 'LibraryCleanupApproval',
   LibraryCleanupLog: 'LibraryCleanupLog',
-  TautulliCache: 'TautulliCache'
+  TautulliCache: 'TautulliCache',
+  PlexCache: 'PlexCache'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -438,7 +439,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "notificationChannel" | "notificationSubscription" | "vapidKeys" | "notificationLog" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "tautulliCache"
+    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "notificationChannel" | "notificationSubscription" | "vapidKeys" | "notificationLog" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "tautulliCache" | "plexCache"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -3328,6 +3329,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    PlexCache: {
+      payload: Prisma.$PlexCachePayload<ExtArgs>
+      fields: Prisma.PlexCacheFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.PlexCacheFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexCachePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.PlexCacheFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexCachePayload>
+        }
+        findFirst: {
+          args: Prisma.PlexCacheFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexCachePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.PlexCacheFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexCachePayload>
+        }
+        findMany: {
+          args: Prisma.PlexCacheFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexCachePayload>[]
+        }
+        create: {
+          args: Prisma.PlexCacheCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexCachePayload>
+        }
+        createMany: {
+          args: Prisma.PlexCacheCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.PlexCacheCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexCachePayload>[]
+        }
+        delete: {
+          args: Prisma.PlexCacheDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexCachePayload>
+        }
+        update: {
+          args: Prisma.PlexCacheUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexCachePayload>
+        }
+        deleteMany: {
+          args: Prisma.PlexCacheDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.PlexCacheUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.PlexCacheUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexCachePayload>[]
+        }
+        upsert: {
+          args: Prisma.PlexCacheUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexCachePayload>
+        }
+        aggregate: {
+          args: Prisma.PlexCacheAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregatePlexCache>
+        }
+        groupBy: {
+          args: Prisma.PlexCacheGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.PlexCacheGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.PlexCacheCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.PlexCacheCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -4017,6 +4092,10 @@ export const LibraryCleanupRuleScalarFieldEnum = {
   instanceFilter: 'instanceFilter',
   excludeTags: 'excludeTags',
   excludeTitles: 'excludeTitles',
+  plexLibraryFilter: 'plexLibraryFilter',
+  action: 'action',
+  operator: 'operator',
+  conditions: 'conditions',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const
@@ -4034,6 +4113,7 @@ export const LibraryCleanupApprovalScalarFieldEnum = {
   matchedRuleId: 'matchedRuleId',
   matchedRuleName: 'matchedRuleName',
   reason: 'reason',
+  action: 'action',
   sizeOnDisk: 'sizeOnDisk',
   year: 'year',
   rating: 'rating',
@@ -4055,6 +4135,8 @@ export const LibraryCleanupLogScalarFieldEnum = {
   itemsEvaluated: 'itemsEvaluated',
   itemsFlagged: 'itemsFlagged',
   itemsRemoved: 'itemsRemoved',
+  itemsUnmonitored: 'itemsUnmonitored',
+  itemsFilesDeleted: 'itemsFilesDeleted',
   itemsSkipped: 'itemsSkipped',
   details: 'details',
   error: 'error',
@@ -4078,6 +4160,27 @@ export const TautulliCacheScalarFieldEnum = {
 } as const
 
 export type TautulliCacheScalarFieldEnum = (typeof TautulliCacheScalarFieldEnum)[keyof typeof TautulliCacheScalarFieldEnum]
+
+
+export const PlexCacheScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  tmdbId: 'tmdbId',
+  mediaType: 'mediaType',
+  sectionId: 'sectionId',
+  sectionTitle: 'sectionTitle',
+  lastWatchedAt: 'lastWatchedAt',
+  watchCount: 'watchCount',
+  watchedByUsers: 'watchedByUsers',
+  onDeck: 'onDeck',
+  userRating: 'userRating',
+  collections: 'collections',
+  labels: 'labels',
+  addedAt: 'addedAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type PlexCacheScalarFieldEnum = (typeof PlexCacheScalarFieldEnum)[keyof typeof PlexCacheScalarFieldEnum]
 
 
 export const SortOrder = {
@@ -4312,6 +4415,7 @@ export type GlobalOmitConfig = {
   libraryCleanupApproval?: Prisma.LibraryCleanupApprovalOmit
   libraryCleanupLog?: Prisma.LibraryCleanupLogOmit
   tautulliCache?: Prisma.TautulliCacheOmit
+  plexCache?: Prisma.PlexCacheOmit
 }
 
 /* Types for Logging */

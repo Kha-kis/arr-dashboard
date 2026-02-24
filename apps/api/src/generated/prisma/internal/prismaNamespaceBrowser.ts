@@ -89,7 +89,8 @@ export const ModelName = {
   LibraryCleanupRule: 'LibraryCleanupRule',
   LibraryCleanupApproval: 'LibraryCleanupApproval',
   LibraryCleanupLog: 'LibraryCleanupLog',
-  TautulliCache: 'TautulliCache'
+  TautulliCache: 'TautulliCache',
+  PlexCache: 'PlexCache'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -758,6 +759,10 @@ export const LibraryCleanupRuleScalarFieldEnum = {
   instanceFilter: 'instanceFilter',
   excludeTags: 'excludeTags',
   excludeTitles: 'excludeTitles',
+  plexLibraryFilter: 'plexLibraryFilter',
+  action: 'action',
+  operator: 'operator',
+  conditions: 'conditions',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const
@@ -775,6 +780,7 @@ export const LibraryCleanupApprovalScalarFieldEnum = {
   matchedRuleId: 'matchedRuleId',
   matchedRuleName: 'matchedRuleName',
   reason: 'reason',
+  action: 'action',
   sizeOnDisk: 'sizeOnDisk',
   year: 'year',
   rating: 'rating',
@@ -796,6 +802,8 @@ export const LibraryCleanupLogScalarFieldEnum = {
   itemsEvaluated: 'itemsEvaluated',
   itemsFlagged: 'itemsFlagged',
   itemsRemoved: 'itemsRemoved',
+  itemsUnmonitored: 'itemsUnmonitored',
+  itemsFilesDeleted: 'itemsFilesDeleted',
   itemsSkipped: 'itemsSkipped',
   details: 'details',
   error: 'error',
@@ -819,6 +827,27 @@ export const TautulliCacheScalarFieldEnum = {
 } as const
 
 export type TautulliCacheScalarFieldEnum = (typeof TautulliCacheScalarFieldEnum)[keyof typeof TautulliCacheScalarFieldEnum]
+
+
+export const PlexCacheScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  tmdbId: 'tmdbId',
+  mediaType: 'mediaType',
+  sectionId: 'sectionId',
+  sectionTitle: 'sectionTitle',
+  lastWatchedAt: 'lastWatchedAt',
+  watchCount: 'watchCount',
+  watchedByUsers: 'watchedByUsers',
+  onDeck: 'onDeck',
+  userRating: 'userRating',
+  collections: 'collections',
+  labels: 'labels',
+  addedAt: 'addedAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type PlexCacheScalarFieldEnum = (typeof PlexCacheScalarFieldEnum)[keyof typeof PlexCacheScalarFieldEnum]
 
 
 export const SortOrder = {

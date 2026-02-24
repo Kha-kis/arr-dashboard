@@ -1,6 +1,40 @@
 import { z } from "zod";
 
 // ============================================================================
+// Validation Helpers
+// ============================================================================
+
+/** Block URLs targeting private/internal networks (SSRF prevention) */
+function isPrivateUrl(rawUrl: string): boolean {
+	try {
+		const u = new URL(rawUrl);
+		const host = u.hostname.toLowerCase();
+		return (
+			host === "localhost" ||
+			host.startsWith("127.") ||
+			host.startsWith("10.") ||
+			host.startsWith("192.168.") ||
+			/^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+			host === "0.0.0.0" ||
+			host === "::1" ||
+			host === "[::1]" ||
+			host === "169.254.169.254" ||
+			host.endsWith(".local") ||
+			host.endsWith(".internal")
+		);
+	} catch {
+		return true;
+	}
+}
+
+const publicUrlSchema = z
+	.string()
+	.url()
+	.refine((url) => !isPrivateUrl(url), {
+		message: "URL must not target private or internal networks",
+	});
+
+// ============================================================================
 // Channel Types
 // ============================================================================
 
@@ -42,7 +76,7 @@ export type NotificationEventType = z.infer<typeof notificationEventTypeSchema>;
 // ============================================================================
 
 export const discordConfigSchema = z.object({
-	webhookUrl: z.string().url(),
+	webhookUrl: publicUrlSchema,
 });
 
 export const telegramConfigSchema = z.object({
@@ -56,12 +90,12 @@ export const emailConfigSchema = z.object({
 	secure: z.boolean(),
 	user: z.string().min(1),
 	password: z.string().min(1),
-	from: z.string().min(1),
-	to: z.string().min(1),
+	from: z.string().email(),
+	to: z.string().email(),
 });
 
 export const browserPushConfigSchema = z.object({
-	endpoint: z.string().url(),
+	endpoint: publicUrlSchema,
 	p256dh: z.string().min(1),
 	auth: z.string().min(1),
 });

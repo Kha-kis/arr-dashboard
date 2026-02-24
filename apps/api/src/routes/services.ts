@@ -69,7 +69,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 		if (isDefault) {
 			await app.prisma.serviceInstance.updateMany({
-				where: { service: serviceEnum },
+				where: { service: serviceEnum, userId: request.currentUser!.id },
 				data: { isDefault: false },
 			});
 		}
@@ -115,17 +115,14 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 				payload.service ?? existing.service.toLowerCase()
 			).toUpperCase() as ServiceType;
 			await app.prisma.serviceInstance.updateMany({
-				where: { service: targetService, NOT: { id } },
+				where: { service: targetService, userId, NOT: { id } },
 				data: { isDefault: false },
 			});
 		}
 
-		const _updated = await app.prisma.serviceInstance.update({
-			where: { id },
+		await app.prisma.serviceInstance.updateMany({
+			where: { id, userId },
 			data: updateData,
-			include: {
-				tags: { include: { tag: true } },
-			},
 		});
 
 		if (payload.tags) {
@@ -179,8 +176,19 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 		return reply.status(201).send({ tag });
 	});
 
-	app.delete("/tags/:id", async (_request, reply) => {
-		const { id } = (_request as { params: { id: string } }).params;
+	app.delete("/tags/:id", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const { id } = (request as { params: { id: string } }).params;
+
+		// Only delete tags that are associated with the current user's instances
+		// (ServiceTag is shared, so verify at least one of the user's instances uses it)
+		const userTag = await app.prisma.serviceInstanceTag.findFirst({
+			where: { tagId: id, instance: { userId } },
+		});
+
+		if (!userTag) {
+			return reply.status(404).send({ error: "Tag not found" });
+		}
 
 		await app.prisma.serviceTag.delete({
 			where: { id },
@@ -206,10 +214,26 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			});
 		}
 
-		if (!["sonarr", "radarr", "prowlarr", "lidarr", "readarr", "seerr", "tautulli"].includes(service)) {
+		// Validate URL scheme to prevent SSRF with non-HTTP schemes
+		try {
+			const parsed = new URL(baseUrl);
+			if (!["http:", "https:"].includes(parsed.protocol)) {
+				return reply.status(400).send({
+					error: "Invalid URL scheme",
+					details: "Base URL must use http:// or https://",
+				});
+			}
+		} catch {
+			return reply.status(400).send({
+				error: "Invalid URL",
+				details: "Base URL must be a valid URL",
+			});
+		}
+
+		if (!["sonarr", "radarr", "prowlarr", "lidarr", "readarr", "seerr", "tautulli", "plex"].includes(service)) {
 			return reply.status(400).send({
 				error: "Invalid service type",
-				details: "Service must be sonarr, radarr, prowlarr, lidarr, readarr, seerr, or tautulli",
+				details: "Service must be sonarr, radarr, prowlarr, lidarr, readarr, seerr, tautulli, or plex",
 			});
 		}
 

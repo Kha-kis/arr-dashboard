@@ -76,6 +76,40 @@ export interface TautulliWatchInfo {
  */
 export type TautulliWatchMap = Map<string, TautulliWatchInfo>;
 
+/** Per-section Plex watch data */
+export interface PlexSectionWatchInfo {
+	sectionId: string;
+	sectionTitle: string;
+	lastWatchedAt: Date | null;
+	watchCount: number;
+	watchedByUsers: string[];
+	onDeck: boolean;
+	userRating: number | null;
+	collections: string[];
+	labels: string[];
+	addedAt: Date | null;
+}
+
+/** Plex watch data for a single library item (aggregated + per-section) */
+export interface PlexWatchInfo {
+	// Pre-computed aggregates (used when no plexLibraryFilter is set)
+	lastWatchedAt: Date | null;
+	watchCount: number;
+	watchedByUsers: string[];
+	onDeck: boolean;
+	userRating: number | null;
+	collections: string[];
+	labels: string[];
+	addedAt: Date | null;
+	// Per-section breakdown (used when plexLibraryFilter is set)
+	sections: PlexSectionWatchInfo[];
+}
+
+/**
+ * Plex watch data lookup map: "movie:tmdbId" | "series:tmdbId" → PlexWatchInfo
+ */
+export type PlexWatchMap = Map<string, PlexWatchInfo>;
+
 /**
  * Context object passed to all rule evaluators.
  * Replaces the growing list of optional parameters on evaluateRule().
@@ -84,13 +118,21 @@ export interface EvalContext {
 	now: Date;
 	seerrMap?: SeerrRequestMap;
 	tautulliMap?: TautulliWatchMap;
+	plexMap?: PlexWatchMap;
 }
+
+/** Action from a rule definition (what the rule intends to do) */
+export type RuleAction = "delete" | "unmonitor" | "delete_files";
+
+/** Action recorded in execution details (what actually happened) */
+export type DetailAction = "flagged" | "removed" | "files_deleted" | "unmonitored" | "queued_for_approval" | "skipped";
 
 /** Result of evaluating a single rule against a cache item */
 export interface RuleMatch {
 	ruleId: string;
 	ruleName: string;
 	reason: string;
+	action: RuleAction;
 }
 
 /** An item flagged by the cleanup engine */
@@ -111,6 +153,8 @@ export interface CleanupRunResult {
 	itemsEvaluated: number;
 	itemsFlagged: number;
 	itemsRemoved: number;
+	itemsUnmonitored: number;
+	itemsFilesDeleted: number;
 	itemsSkipped: number;
 	details: Array<{
 		instanceId: string;
@@ -118,7 +162,10 @@ export interface CleanupRunResult {
 		title: string;
 		rule: string;
 		reason: string;
-		action: "flagged" | "removed" | "queued_for_approval" | "skipped";
+		action: DetailAction;
+		sizeOnDisk?: string;
+		year?: number | null;
+		rating?: number | null;
 	}>;
 	durationMs: number;
 	error?: string;

@@ -27,6 +27,11 @@ export async function testServiceConnection(
 			return await testTautulliConnection(normalizedBaseUrl, apiKey);
 		}
 
+		// Plex uses X-Plex-Token header auth
+		if (service === "plex") {
+			return await testPlexConnection(normalizedBaseUrl, apiKey);
+		}
+
 		// Seerr uses its own status endpoint; Prowlarr/Lidarr/Readarr use v1; Sonarr/Radarr use v3
 		const apiPath =
 			service === "seerr"
@@ -141,9 +146,11 @@ async function testTautulliConnection(
 	baseUrl: string,
 	apiKey: string,
 ): Promise<ConnectionTestResult> {
-	const testUrl = `${baseUrl}/api/v2?apikey=${encodeURIComponent(apiKey)}&cmd=get_tautulli_info`;
+	const testUrlObj = new URL(`${baseUrl}/api/v2`);
+	testUrlObj.searchParams.set("apikey", apiKey);
+	testUrlObj.searchParams.set("cmd", "get_tautulli_info");
 
-	const response = await fetch(testUrl, {
+	const response = await fetch(testUrlObj.toString(), {
 		headers: { Accept: "application/json" },
 		signal: AbortSignal.timeout(5000),
 	});
@@ -178,6 +185,58 @@ async function testTautulliConnection(
 	return {
 		success: true,
 		message: "Successfully connected to Tautulli",
+		version,
+	};
+}
+
+/**
+ * Tests connection to a Plex Media Server using X-Plex-Token auth.
+ */
+async function testPlexConnection(
+	baseUrl: string,
+	token: string,
+): Promise<ConnectionTestResult> {
+	const testUrl = `${baseUrl}/identity`;
+
+	const response = await fetch(testUrl, {
+		headers: {
+			Accept: "application/json",
+			"X-Plex-Token": token,
+		},
+		signal: AbortSignal.timeout(5000),
+	});
+
+	if (!response.ok) {
+		return handleHttpError(response, baseUrl);
+	}
+
+	const contentType = response.headers.get("content-type");
+	if (!contentType?.includes("application/json")) {
+		return {
+			success: false,
+			error: "Invalid response format",
+			details:
+				"Received HTML instead of JSON. Check if the base URL is correct (e.g., http://localhost:32400).",
+		};
+	}
+
+	const json = (await response.json()) as {
+		MediaContainer?: { friendlyName?: string; version?: string; machineIdentifier?: string };
+	};
+
+	if (!json.MediaContainer?.machineIdentifier) {
+		return {
+			success: false,
+			error: "Invalid Plex response",
+			details: "Response did not contain a machine identifier. Check the URL and token.",
+		};
+	}
+
+	const name = json.MediaContainer.friendlyName ?? "Plex";
+	const version = json.MediaContainer.version ?? "unknown";
+	return {
+		success: true,
+		message: `Successfully connected to Plex: ${name}`,
 		version,
 	};
 }

@@ -35,6 +35,8 @@ export interface ExecuteResult {
 	itemsEvaluated: number;
 	itemsFlagged: number;
 	itemsRemoved: number;
+	itemsUnmonitored: number;
+	itemsFilesDeleted: number;
 	itemsSkipped: number;
 	durationMs: number;
 }
@@ -84,6 +86,13 @@ export const libraryCleanupApi = {
 
 	async deleteRule(id: string): Promise<void> {
 		await apiRequest(`/api/library-cleanup/rules/${id}`, { method: "DELETE" });
+	},
+
+	async reorderRules(ruleIds: string[]): Promise<CleanupConfigResponse> {
+		return apiRequest<CleanupConfigResponse>("/api/library-cleanup/rules/reorder", {
+			method: "PUT",
+			json: { ruleIds },
+		});
 	},
 
 	// Preview & Execute

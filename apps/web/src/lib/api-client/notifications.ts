@@ -1,19 +1,18 @@
+import type {
+	NotificationChannelResponse,
+	NotificationChannelType,
+	NotificationEventType,
+	NotificationLogEntry as SharedNotificationLogEntry,
+	SubscriptionGrid,
+} from "@arr/shared";
 import { apiRequest } from "./base";
 
 // ============================================================================
-// Types
+// Types (extending shared types where needed)
 // ============================================================================
 
-export interface NotificationChannel {
-	id: string;
-	name: string;
-	type: string;
-	enabled: boolean;
-	lastTestedAt: string | null;
-	lastTestResult: string | null;
-	createdAt: string;
-	updatedAt: string;
-}
+/** Re-export shared channel response as the primary channel type */
+export type NotificationChannel = NotificationChannelResponse;
 
 export interface NotificationChannelWithConfig extends NotificationChannel {
 	config: Record<string, unknown>;
@@ -21,7 +20,7 @@ export interface NotificationChannelWithConfig extends NotificationChannel {
 
 export interface CreateChannelRequest {
 	name: string;
-	type: string;
+	type: NotificationChannelType;
 	enabled?: boolean;
 	config: Record<string, unknown>;
 }
@@ -32,31 +31,18 @@ export interface UpdateChannelRequest {
 	config?: Record<string, unknown>;
 }
 
-/** Matches the backend GET /subscriptions response shape */
-export interface SubscriptionGridResponse {
-	channels: Array<{ id: string; name: string; type: string }>;
-	events: string[];
-	subscriptions: Array<{ channelId: string; eventType: string }>;
-}
+/** Re-export shared subscription grid */
+export type SubscriptionGridResponse = SubscriptionGrid;
 
 /** Entry format for PUT /subscriptions */
 export interface SubscriptionUpdateEntry {
 	channelId: string;
-	eventType: string;
+	eventType: NotificationEventType;
 	enabled: boolean;
 }
 
-export interface NotificationLogEntry {
-	id: string;
-	channelId: string;
-	channelType: string;
-	eventType: string;
-	title: string;
-	body: string;
-	status: string;
-	error: string | null;
-	sentAt: string;
-}
+/** Re-export shared log entry */
+export type NotificationLogEntry = SharedNotificationLogEntry;
 
 /** Matches the backend GET /logs response shape */
 export interface PaginatedLogs {

@@ -46,6 +46,10 @@ export type LibraryCleanupRuleMinAggregateOutputType = {
   instanceFilter: string | null
   excludeTags: string | null
   excludeTitles: string | null
+  plexLibraryFilter: string | null
+  action: string | null
+  operator: string | null
+  conditions: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -62,6 +66,10 @@ export type LibraryCleanupRuleMaxAggregateOutputType = {
   instanceFilter: string | null
   excludeTags: string | null
   excludeTitles: string | null
+  plexLibraryFilter: string | null
+  action: string | null
+  operator: string | null
+  conditions: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -78,6 +86,10 @@ export type LibraryCleanupRuleCountAggregateOutputType = {
   instanceFilter: number
   excludeTags: number
   excludeTitles: number
+  plexLibraryFilter: number
+  action: number
+  operator: number
+  conditions: number
   createdAt: number
   updatedAt: number
   _all: number
@@ -104,6 +116,10 @@ export type LibraryCleanupRuleMinAggregateInputType = {
   instanceFilter?: true
   excludeTags?: true
   excludeTitles?: true
+  plexLibraryFilter?: true
+  action?: true
+  operator?: true
+  conditions?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -120,6 +136,10 @@ export type LibraryCleanupRuleMaxAggregateInputType = {
   instanceFilter?: true
   excludeTags?: true
   excludeTitles?: true
+  plexLibraryFilter?: true
+  action?: true
+  operator?: true
+  conditions?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -136,6 +156,10 @@ export type LibraryCleanupRuleCountAggregateInputType = {
   instanceFilter?: true
   excludeTags?: true
   excludeTitles?: true
+  plexLibraryFilter?: true
+  action?: true
+  operator?: true
+  conditions?: true
   createdAt?: true
   updatedAt?: true
   _all?: true
@@ -239,6 +263,10 @@ export type LibraryCleanupRuleGroupByOutputType = {
   instanceFilter: string | null
   excludeTags: string | null
   excludeTitles: string | null
+  plexLibraryFilter: string | null
+  action: string
+  operator: string | null
+  conditions: string | null
   createdAt: Date
   updatedAt: Date
   _count: LibraryCleanupRuleCountAggregateOutputType | null
@@ -278,6 +306,10 @@ export type LibraryCleanupRuleWhereInput = {
   instanceFilter?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   excludeTags?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   excludeTitles?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
+  plexLibraryFilter?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
+  action?: Prisma.StringFilter<"LibraryCleanupRule"> | string
+  operator?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
+  conditions?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   createdAt?: Prisma.DateTimeFilter<"LibraryCleanupRule"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"LibraryCleanupRule"> | Date | string
   config?: Prisma.XOR<Prisma.LibraryCleanupConfigScalarRelationFilter, Prisma.LibraryCleanupConfigWhereInput>
@@ -295,6 +327,10 @@ export type LibraryCleanupRuleOrderByWithRelationInput = {
   instanceFilter?: Prisma.SortOrderInput | Prisma.SortOrder
   excludeTags?: Prisma.SortOrderInput | Prisma.SortOrder
   excludeTitles?: Prisma.SortOrderInput | Prisma.SortOrder
+  plexLibraryFilter?: Prisma.SortOrderInput | Prisma.SortOrder
+  action?: Prisma.SortOrder
+  operator?: Prisma.SortOrderInput | Prisma.SortOrder
+  conditions?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   config?: Prisma.LibraryCleanupConfigOrderByWithRelationInput
@@ -315,6 +351,10 @@ export type LibraryCleanupRuleWhereUniqueInput = Prisma.AtLeast<{
   instanceFilter?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   excludeTags?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   excludeTitles?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
+  plexLibraryFilter?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
+  action?: Prisma.StringFilter<"LibraryCleanupRule"> | string
+  operator?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
+  conditions?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   createdAt?: Prisma.DateTimeFilter<"LibraryCleanupRule"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"LibraryCleanupRule"> | Date | string
   config?: Prisma.XOR<Prisma.LibraryCleanupConfigScalarRelationFilter, Prisma.LibraryCleanupConfigWhereInput>
@@ -332,6 +372,10 @@ export type LibraryCleanupRuleOrderByWithAggregationInput = {
   instanceFilter?: Prisma.SortOrderInput | Prisma.SortOrder
   excludeTags?: Prisma.SortOrderInput | Prisma.SortOrder
   excludeTitles?: Prisma.SortOrderInput | Prisma.SortOrder
+  plexLibraryFilter?: Prisma.SortOrderInput | Prisma.SortOrder
+  action?: Prisma.SortOrder
+  operator?: Prisma.SortOrderInput | Prisma.SortOrder
+  conditions?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   _count?: Prisma.LibraryCleanupRuleCountOrderByAggregateInput
@@ -356,6 +400,10 @@ export type LibraryCleanupRuleScalarWhereWithAggregatesInput = {
   instanceFilter?: Prisma.StringNullableWithAggregatesFilter<"LibraryCleanupRule"> | string | null
   excludeTags?: Prisma.StringNullableWithAggregatesFilter<"LibraryCleanupRule"> | string | null
   excludeTitles?: Prisma.StringNullableWithAggregatesFilter<"LibraryCleanupRule"> | string | null
+  plexLibraryFilter?: Prisma.StringNullableWithAggregatesFilter<"LibraryCleanupRule"> | string | null
+  action?: Prisma.StringWithAggregatesFilter<"LibraryCleanupRule"> | string
+  operator?: Prisma.StringNullableWithAggregatesFilter<"LibraryCleanupRule"> | string | null
+  conditions?: Prisma.StringNullableWithAggregatesFilter<"LibraryCleanupRule"> | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"LibraryCleanupRule"> | Date | string
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"LibraryCleanupRule"> | Date | string
 }
@@ -371,6 +419,10 @@ export type LibraryCleanupRuleCreateInput = {
   instanceFilter?: string | null
   excludeTags?: string | null
   excludeTitles?: string | null
+  plexLibraryFilter?: string | null
+  action?: string
+  operator?: string | null
+  conditions?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   config: Prisma.LibraryCleanupConfigCreateNestedOneWithoutRulesInput
@@ -388,6 +440,10 @@ export type LibraryCleanupRuleUncheckedCreateInput = {
   instanceFilter?: string | null
   excludeTags?: string | null
   excludeTitles?: string | null
+  plexLibraryFilter?: string | null
+  action?: string
+  operator?: string | null
+  conditions?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -403,6 +459,10 @@ export type LibraryCleanupRuleUpdateInput = {
   instanceFilter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   excludeTags?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   excludeTitles?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  plexLibraryFilter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  action?: Prisma.StringFieldUpdateOperationsInput | string
+  operator?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  conditions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   config?: Prisma.LibraryCleanupConfigUpdateOneRequiredWithoutRulesNestedInput
@@ -420,6 +480,10 @@ export type LibraryCleanupRuleUncheckedUpdateInput = {
   instanceFilter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   excludeTags?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   excludeTitles?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  plexLibraryFilter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  action?: Prisma.StringFieldUpdateOperationsInput | string
+  operator?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  conditions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -436,6 +500,10 @@ export type LibraryCleanupRuleCreateManyInput = {
   instanceFilter?: string | null
   excludeTags?: string | null
   excludeTitles?: string | null
+  plexLibraryFilter?: string | null
+  action?: string
+  operator?: string | null
+  conditions?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -451,6 +519,10 @@ export type LibraryCleanupRuleUpdateManyMutationInput = {
   instanceFilter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   excludeTags?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   excludeTitles?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  plexLibraryFilter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  action?: Prisma.StringFieldUpdateOperationsInput | string
+  operator?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  conditions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -467,6 +539,10 @@ export type LibraryCleanupRuleUncheckedUpdateManyInput = {
   instanceFilter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   excludeTags?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   excludeTitles?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  plexLibraryFilter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  action?: Prisma.StringFieldUpdateOperationsInput | string
+  operator?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  conditions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -493,6 +569,10 @@ export type LibraryCleanupRuleCountOrderByAggregateInput = {
   instanceFilter?: Prisma.SortOrder
   excludeTags?: Prisma.SortOrder
   excludeTitles?: Prisma.SortOrder
+  plexLibraryFilter?: Prisma.SortOrder
+  action?: Prisma.SortOrder
+  operator?: Prisma.SortOrder
+  conditions?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -513,6 +593,10 @@ export type LibraryCleanupRuleMaxOrderByAggregateInput = {
   instanceFilter?: Prisma.SortOrder
   excludeTags?: Prisma.SortOrder
   excludeTitles?: Prisma.SortOrder
+  plexLibraryFilter?: Prisma.SortOrder
+  action?: Prisma.SortOrder
+  operator?: Prisma.SortOrder
+  conditions?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -529,6 +613,10 @@ export type LibraryCleanupRuleMinOrderByAggregateInput = {
   instanceFilter?: Prisma.SortOrder
   excludeTags?: Prisma.SortOrder
   excludeTitles?: Prisma.SortOrder
+  plexLibraryFilter?: Prisma.SortOrder
+  action?: Prisma.SortOrder
+  operator?: Prisma.SortOrder
+  conditions?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -590,6 +678,10 @@ export type LibraryCleanupRuleCreateWithoutConfigInput = {
   instanceFilter?: string | null
   excludeTags?: string | null
   excludeTitles?: string | null
+  plexLibraryFilter?: string | null
+  action?: string
+  operator?: string | null
+  conditions?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -605,6 +697,10 @@ export type LibraryCleanupRuleUncheckedCreateWithoutConfigInput = {
   instanceFilter?: string | null
   excludeTags?: string | null
   excludeTitles?: string | null
+  plexLibraryFilter?: string | null
+  action?: string
+  operator?: string | null
+  conditions?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -649,6 +745,10 @@ export type LibraryCleanupRuleScalarWhereInput = {
   instanceFilter?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   excludeTags?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   excludeTitles?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
+  plexLibraryFilter?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
+  action?: Prisma.StringFilter<"LibraryCleanupRule"> | string
+  operator?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
+  conditions?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   createdAt?: Prisma.DateTimeFilter<"LibraryCleanupRule"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"LibraryCleanupRule"> | Date | string
 }
@@ -664,6 +764,10 @@ export type LibraryCleanupRuleCreateManyConfigInput = {
   instanceFilter?: string | null
   excludeTags?: string | null
   excludeTitles?: string | null
+  plexLibraryFilter?: string | null
+  action?: string
+  operator?: string | null
+  conditions?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -679,6 +783,10 @@ export type LibraryCleanupRuleUpdateWithoutConfigInput = {
   instanceFilter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   excludeTags?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   excludeTitles?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  plexLibraryFilter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  action?: Prisma.StringFieldUpdateOperationsInput | string
+  operator?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  conditions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -694,6 +802,10 @@ export type LibraryCleanupRuleUncheckedUpdateWithoutConfigInput = {
   instanceFilter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   excludeTags?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   excludeTitles?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  plexLibraryFilter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  action?: Prisma.StringFieldUpdateOperationsInput | string
+  operator?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  conditions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -709,6 +821,10 @@ export type LibraryCleanupRuleUncheckedUpdateManyWithoutConfigInput = {
   instanceFilter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   excludeTags?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   excludeTitles?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  plexLibraryFilter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  action?: Prisma.StringFieldUpdateOperationsInput | string
+  operator?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  conditions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -727,6 +843,10 @@ export type LibraryCleanupRuleSelect<ExtArgs extends runtime.Types.Extensions.In
   instanceFilter?: boolean
   excludeTags?: boolean
   excludeTitles?: boolean
+  plexLibraryFilter?: boolean
+  action?: boolean
+  operator?: boolean
+  conditions?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   config?: boolean | Prisma.LibraryCleanupConfigDefaultArgs<ExtArgs>
@@ -744,6 +864,10 @@ export type LibraryCleanupRuleSelectCreateManyAndReturn<ExtArgs extends runtime.
   instanceFilter?: boolean
   excludeTags?: boolean
   excludeTitles?: boolean
+  plexLibraryFilter?: boolean
+  action?: boolean
+  operator?: boolean
+  conditions?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   config?: boolean | Prisma.LibraryCleanupConfigDefaultArgs<ExtArgs>
@@ -761,6 +885,10 @@ export type LibraryCleanupRuleSelectUpdateManyAndReturn<ExtArgs extends runtime.
   instanceFilter?: boolean
   excludeTags?: boolean
   excludeTitles?: boolean
+  plexLibraryFilter?: boolean
+  action?: boolean
+  operator?: boolean
+  conditions?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   config?: boolean | Prisma.LibraryCleanupConfigDefaultArgs<ExtArgs>
@@ -778,11 +906,15 @@ export type LibraryCleanupRuleSelectScalar = {
   instanceFilter?: boolean
   excludeTags?: boolean
   excludeTitles?: boolean
+  plexLibraryFilter?: boolean
+  action?: boolean
+  operator?: boolean
+  conditions?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type LibraryCleanupRuleOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "configId" | "enabled" | "name" | "priority" | "ruleType" | "parameters" | "serviceFilter" | "instanceFilter" | "excludeTags" | "excludeTitles" | "createdAt" | "updatedAt", ExtArgs["result"]["libraryCleanupRule"]>
+export type LibraryCleanupRuleOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "configId" | "enabled" | "name" | "priority" | "ruleType" | "parameters" | "serviceFilter" | "instanceFilter" | "excludeTags" | "excludeTitles" | "plexLibraryFilter" | "action" | "operator" | "conditions" | "createdAt" | "updatedAt", ExtArgs["result"]["libraryCleanupRule"]>
 export type LibraryCleanupRuleInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   config?: boolean | Prisma.LibraryCleanupConfigDefaultArgs<ExtArgs>
 }
@@ -810,6 +942,10 @@ export type $LibraryCleanupRulePayload<ExtArgs extends runtime.Types.Extensions.
     instanceFilter: string | null
     excludeTags: string | null
     excludeTitles: string | null
+    plexLibraryFilter: string | null
+    action: string
+    operator: string | null
+    conditions: string | null
     createdAt: Date
     updatedAt: Date
   }, ExtArgs["result"]["libraryCleanupRule"]>
@@ -1247,6 +1383,10 @@ export interface LibraryCleanupRuleFieldRefs {
   readonly instanceFilter: Prisma.FieldRef<"LibraryCleanupRule", 'String'>
   readonly excludeTags: Prisma.FieldRef<"LibraryCleanupRule", 'String'>
   readonly excludeTitles: Prisma.FieldRef<"LibraryCleanupRule", 'String'>
+  readonly plexLibraryFilter: Prisma.FieldRef<"LibraryCleanupRule", 'String'>
+  readonly action: Prisma.FieldRef<"LibraryCleanupRule", 'String'>
+  readonly operator: Prisma.FieldRef<"LibraryCleanupRule", 'String'>
+  readonly conditions: Prisma.FieldRef<"LibraryCleanupRule", 'String'>
   readonly createdAt: Prisma.FieldRef<"LibraryCleanupRule", 'DateTime'>
   readonly updatedAt: Prisma.FieldRef<"LibraryCleanupRule", 'DateTime'>
 }

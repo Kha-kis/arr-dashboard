@@ -35,7 +35,7 @@ export { ArrError, NotFoundError, UnauthorizedError, ValidationError, TimeoutErr
 /**
  * Service types that have ARR SDK clients (excludes Seerr)
  */
-export type ArrServiceType = Exclude<ServiceType, "SEERR" | "TAUTULLI">;
+export type ArrServiceType = Exclude<ServiceType, "SEERR" | "TAUTULLI" | "PLEX">;
 
 /**
  * Union type of all ARR SDK clients
@@ -64,7 +64,9 @@ export type ClientForService<T extends ServiceType> = T extends "SONARR"
 						? never // Seerr uses SeerrClient (separate class), not the ARR SDK
 						: T extends "TAUTULLI"
 							? never // Tautulli uses TautulliClient (query-param auth)
-							: never;
+							: T extends "PLEX"
+								? never // Plex uses PlexClient (X-Plex-Token header auth)
+								: never;
 
 /**
  * Options for client creation
@@ -148,6 +150,10 @@ export class ArrClientFactory {
 			case "TAUTULLI":
 				throw new Error(
 					"Tautulli uses TautulliClient — use createTautulliClient() from lib/tautulli/tautulli-client",
+				);
+			case "PLEX":
+				throw new Error(
+					"Plex uses PlexClient — use createPlexClient() from lib/plex/plex-client",
 				);
 			default:
 				throw new Error(`Unknown service type: ${String(instance.service)}`);
