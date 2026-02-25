@@ -1,11 +1,14 @@
-import type { FastifyInstance, FastifyPluginOptions } from "fastify";
-import fp from "fastify-plugin";
+import type { FastifyPluginCallback } from "fastify";
 
-export const registerHealthRoutes = fp(
-	async (app: FastifyInstance, _opts: FastifyPluginOptions) => {
-		app.get("/", async () => ({ status: "ok" }));
-	},
-	{
-		name: "health-routes",
-	},
-);
+export const registerHealthRoutes: FastifyPluginCallback = (app, _opts, done) => {
+	app.get("/", async (request, reply) => {
+		try {
+			await app.prisma.$queryRaw`SELECT 1`;
+			return { status: "ok" };
+		} catch (error) {
+			request.log.error({ err: error }, "Health check failed");
+			return reply.status(503).send({ status: "error", reason: "Database unavailable" });
+		}
+	});
+	done();
+};
