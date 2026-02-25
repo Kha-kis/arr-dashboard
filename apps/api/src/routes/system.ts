@@ -6,6 +6,7 @@ import { LOG_DIR, LOG_LEVEL, LOG_MAX_FILES, LOG_MAX_SIZE } from "../lib/logger.j
 import { getAppVersion } from "../lib/utils/version.js";
 
 const RESTART_RATE_LIMIT = { max: 2, timeWindow: "5 minutes" };
+const LOGS_RATE_LIMIT = { max: 30, timeWindow: "1 minute" };
 
 /**
  * Extract a safe display identifier for the database connection.
@@ -278,7 +279,7 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * GET /system/logs
 	 * List log files with sizes and dates
 	 */
-	app.get("/logs", async (_request, reply) => {
+	app.get("/logs", { config: { rateLimit: LOGS_RATE_LIMIT } }, async (_request, reply) => {
 		try {
 			const entries = await readdir(LOG_DIR);
 			const files: { name: string; size: number; modified: string }[] = [];
@@ -320,7 +321,7 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * GET /system/logs/download/:filename
 	 * Download a specific log file
 	 */
-	app.get<{ Params: { filename: string } }>("/logs/download/:filename", async (request, reply) => {
+	app.get<{ Params: { filename: string } }>("/logs/download/:filename", { config: { rateLimit: LOGS_RATE_LIMIT } }, async (request, reply) => {
 		const { filename } = request.params;
 
 		// Path traversal protection: only allow simple filenames
