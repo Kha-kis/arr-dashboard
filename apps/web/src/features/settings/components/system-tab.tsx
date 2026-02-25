@@ -204,7 +204,7 @@ export function SystemTab() {
 		refetchInterval: 60000,
 	});
 
-	const { data: logFiles, refetch: refetchLogs } = useQuery({
+	const { data: logFiles, refetch: refetchLogs, isError: logFilesError } = useQuery({
 		queryKey: ["system-logs"],
 		queryFn: getLogFiles,
 	});
@@ -576,6 +576,10 @@ export function SystemTab() {
 										</tbody>
 									</table>
 								</div>
+							) : logFilesError ? (
+								<p className="text-sm text-destructive py-4 text-center">
+									Failed to load log files
+								</p>
 							) : (
 								<p className="text-sm text-muted-foreground py-4 text-center">
 									No log files found

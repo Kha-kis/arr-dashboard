@@ -64,7 +64,9 @@ const start = async () => {
 				title: "Arr Dashboard started",
 				body: `Server listening on ${env.API_HOST}:${portConfig.apiPort}`,
 			})
-			.catch(() => {});
+			.catch((err) => {
+				app.log.debug({ err }, "Startup notification failed (non-critical)");
+			});
 	} catch (error) {
 		app.log.error({ err: error }, "Failed to start API server");
 		process.exit(1);

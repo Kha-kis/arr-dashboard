@@ -397,7 +397,9 @@ class HuntingScheduler {
 						title: `Hunt found ${result.itemsGrabbed} item(s) on ${config.instance.label}`,
 						body: result.message,
 					})
-					.catch(() => {});
+					.catch((err) => {
+						log.debug({ err, instanceLabel: config.instance.label }, "Hunt notification dispatch failed");
+					});
 			} else if (result.status === "completed") {
 				this.app.notificationService
 					?.notify({
@@ -405,7 +407,9 @@ class HuntingScheduler {
 						title: `Hunt completed on ${config.instance.label}`,
 						body: result.message,
 					})
-					.catch(() => {});
+					.catch((err) => {
+						log.debug({ err, instanceLabel: config.instance.label }, "Hunt notification dispatch failed");
+					});
 			}
 
 			// Update config timestamps and API call count (only if we actually made API calls)
