@@ -25,10 +25,6 @@ const nextConfig = {
 				source: "/auth/:path*",
 				destination: `${apiHost}/auth/:path*`,
 			},
-			{
-				source: "/health",
-				destination: `${apiHost}/health`,
-			},
 		];
 	},
 	async headers() {
