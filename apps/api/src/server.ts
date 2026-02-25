@@ -2,7 +2,7 @@ import fastifyCors from "@fastify/cors";
 import fastifyHelmet from "@fastify/helmet";
 import fastifyRateLimit from "@fastify/rate-limit";
 import { randomBytes } from "node:crypto";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
 import { type ApiEnv, envSchema } from "./config/env.js";
 import { isArrError, arrErrorToHttpStatus } from "./lib/arr/client-factory.js";
 import { arrClientPlugin } from "./plugins/arr-client.js";
@@ -53,7 +53,9 @@ export type ServerOptions = {
 
 export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	const app = Fastify({
-		...(options.logger === false ? { logger: false } : { loggerInstance: logger }),
+		...(options.logger === false
+		? { logger: false }
+		: { loggerInstance: logger as FastifyBaseLogger }),
 		genReqId: () => randomBytes(4).toString("hex"),
 	});
 
