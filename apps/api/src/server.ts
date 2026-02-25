@@ -53,7 +53,7 @@ export type ServerOptions = {
 
 export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	const app = Fastify({
-		logger: options.logger === false ? false : logger,
+		...(options.logger === false ? { logger: false } : { loggerInstance: logger }),
 		genReqId: () => randomBytes(4).toString("hex"),
 	});
 
