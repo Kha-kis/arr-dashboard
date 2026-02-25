@@ -16,6 +16,9 @@ import {
 	Save,
 	ChevronDown,
 	Globe,
+	FileText,
+	Download,
+	ScrollText,
 } from "lucide-react";
 import { apiRequest } from "../../../lib/api-client/base";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
@@ -60,11 +63,31 @@ interface SystemInfo {
 		platform: string;
 		uptime: number;
 	};
+	logging?: {
+		level: string;
+		directory: string;
+		maxFileSize: string;
+		maxFiles: number;
+	};
 }
 
 interface SystemInfoResponse {
 	success: boolean;
 	data: SystemInfo;
+}
+
+interface LogFile {
+	name: string;
+	size: number;
+	modified: string;
+}
+
+interface LogFilesResponse {
+	success: boolean;
+	data: {
+		directory: string;
+		files: LogFile[];
+	};
 }
 
 async function getSystemSettings(): Promise<SystemSettingsResponse> {
@@ -73,6 +96,10 @@ async function getSystemSettings(): Promise<SystemSettingsResponse> {
 
 async function getSystemInfo(): Promise<SystemInfoResponse> {
 	return apiRequest<SystemInfoResponse>("/api/system/info");
+}
+
+async function getLogFiles(): Promise<LogFilesResponse> {
+	return apiRequest<LogFilesResponse>("/api/system/logs");
 }
 
 function formatUptime(seconds: number): string {
@@ -87,6 +114,12 @@ function formatUptime(seconds: number): string {
 	if (parts.length === 0) parts.push(`${seconds}s`);
 
 	return parts.join(" ");
+}
+
+function formatFileSize(bytes: number): string {
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 async function updateSystemSettings(data: {
@@ -179,6 +212,11 @@ export function SystemTab() {
 		queryKey: ["system-info"],
 		queryFn: getSystemInfo,
 		refetchInterval: 60000,
+	});
+
+	const { data: logFiles, refetch: refetchLogs } = useQuery({
+		queryKey: ["system-logs"],
+		queryFn: getLogFiles,
 	});
 
 	const updateMutation = useMutation({
@@ -392,6 +430,167 @@ export function SystemTab() {
 					</div>
 				</PremiumSection>
 			)}
+
+			{/* Logging Section */}
+			<PremiumSection
+				title="Logging"
+				description="Log file management and configuration"
+				icon={ScrollText}
+			>
+				<div className="space-y-4">
+					{/* Logging Configuration Info */}
+					{systemInfo?.data?.logging && (
+						<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+							<SystemInfoCard
+								icon={
+									<div
+										className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+										style={{
+											background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+											border: `1px solid ${themeGradient.from}30`,
+										}}
+									>
+										<FileText className="h-5 w-5" style={{ color: themeGradient.from }} />
+									</div>
+								}
+								label="Log Level"
+								value={systemInfo.data.logging.level.toUpperCase()}
+								animationDelay={0}
+							/>
+							<SystemInfoCard
+								icon={
+									<div
+										className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+										style={{
+											background: `linear-gradient(135deg, ${SEMANTIC_COLORS.info.from}20, ${SEMANTIC_COLORS.info.to}20)`,
+											border: `1px solid ${SEMANTIC_COLORS.info.from}30`,
+										}}
+									>
+										<Info className="h-5 w-5" style={{ color: SEMANTIC_COLORS.info.from }} />
+									</div>
+								}
+								label="Max File Size"
+								value={systemInfo.data.logging.maxFileSize.toUpperCase()}
+								animationDelay={50}
+							/>
+							<SystemInfoCard
+								icon={
+									<div
+										className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+										style={{
+											background: `linear-gradient(135deg, ${SEMANTIC_COLORS.success.from}20, ${SEMANTIC_COLORS.success.to}20)`,
+											border: `1px solid ${SEMANTIC_COLORS.success.from}30`,
+										}}
+									>
+										<Database className="h-5 w-5" style={{ color: SEMANTIC_COLORS.success.from }} />
+									</div>
+								}
+								label="Max Files"
+								value={String(systemInfo.data.logging.maxFiles)}
+								animationDelay={100}
+							/>
+							<SystemInfoCard
+								icon={
+									<div
+										className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+										style={{
+											background: `linear-gradient(135deg, ${SEMANTIC_COLORS.warning.from}20, ${SEMANTIC_COLORS.warning.to}20)`,
+											border: `1px solid ${SEMANTIC_COLORS.warning.from}30`,
+										}}
+									>
+										<Server className="h-5 w-5" style={{ color: SEMANTIC_COLORS.warning.from }} />
+									</div>
+								}
+								label="Log Directory"
+								value={systemInfo.data.logging.directory}
+								animationDelay={150}
+							/>
+						</div>
+					)}
+
+					{/* Log Files Table */}
+					<GlassmorphicCard padding="md">
+						<div className="space-y-3">
+							<div className="flex items-center justify-between">
+								<p className="text-sm font-semibold text-foreground">Log Files</p>
+								<Button
+									variant="ghost"
+									size="sm"
+									onClick={() => refetchLogs()}
+									className="gap-1.5 text-xs"
+								>
+									<RefreshCw className="h-3 w-3" />
+									Refresh
+								</Button>
+							</div>
+
+							{logFiles?.data?.files && logFiles.data.files.length > 0 ? (
+								<div className="rounded-lg border border-border/50 overflow-hidden">
+									<table className="w-full text-sm">
+										<thead>
+											<tr className="border-b border-border/50 bg-card/50">
+												<th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+													File
+												</th>
+												<th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+													Size
+												</th>
+												<th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+													Modified
+												</th>
+												<th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">
+													Action
+												</th>
+											</tr>
+										</thead>
+										<tbody>
+											{logFiles.data.files.map((file, index) => (
+												<tr
+													key={file.name}
+													className="border-b border-border/30 last:border-0 hover:bg-card/30 transition-colors"
+													style={{
+														animationDelay: `${index * 30}ms`,
+														animationFillMode: "backwards",
+													}}
+												>
+													<td className="px-4 py-2.5">
+														<span className="font-mono text-xs text-foreground">
+															{file.name}
+														</span>
+													</td>
+													<td className="px-4 py-2.5 text-muted-foreground text-xs">
+														{formatFileSize(file.size)}
+													</td>
+													<td className="px-4 py-2.5 text-muted-foreground text-xs">
+														{new Date(file.modified).toLocaleString()}
+													</td>
+													<td className="px-4 py-2.5 text-right">
+														<a
+															href={`/api/system/logs/download/${encodeURIComponent(file.name)}`}
+															download={file.name}
+															className={cn(
+																"inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-colors",
+																"border border-border/50 hover:border-border hover:bg-card/50 text-muted-foreground hover:text-foreground"
+															)}
+														>
+															<Download className="h-3 w-3" />
+															Download
+														</a>
+													</td>
+												</tr>
+											))}
+										</tbody>
+									</table>
+								</div>
+							) : (
+								<p className="text-sm text-muted-foreground py-4 text-center">
+									No log files found
+								</p>
+							)}
+						</div>
+					</GlassmorphicCard>
+				</div>
+			</PremiumSection>
 
 			{/* Restart Warning Banner */}
 			{requiresRestart && (

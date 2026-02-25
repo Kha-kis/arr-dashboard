@@ -1,7 +1,12 @@
+import { createReadStream } from "node:fs";
+import { readdir, stat } from "node:fs/promises";
+import { basename, join, resolve } from "node:path";
 import type { FastifyPluginCallback } from "fastify";
+import { LOG_DIR, LOG_LEVEL, LOG_MAX_FILES, LOG_MAX_SIZE } from "../lib/logger.js";
 import { getAppVersion } from "../lib/utils/version.js";
 
 const RESTART_RATE_LIMIT = { max: 2, timeWindow: "5 minutes" };
+const LOGS_RATE_LIMIT = { max: 30, timeWindow: "1 minute" };
 
 /**
  * Extract a safe display identifier for the database connection.
@@ -237,6 +242,12 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					platform,
 					uptime: Math.floor(uptime),
 				},
+				logging: {
+					level: LOG_LEVEL,
+					directory: LOG_DIR,
+					maxFileSize: LOG_MAX_SIZE,
+					maxFiles: LOG_MAX_FILES,
+				},
 			},
 		});
 	});
@@ -262,6 +273,84 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		// Initiate restart
 		await app.lifecycle.restart("manual-restart");
+	});
+
+	/**
+	 * GET /system/logs
+	 * List log files with sizes and dates
+	 */
+	app.get("/logs", { config: { rateLimit: LOGS_RATE_LIMIT } }, async (_request, reply) => {
+		try {
+			const entries = await readdir(LOG_DIR);
+			const files: { name: string; size: number; modified: string }[] = [];
+
+			for (const entry of entries) {
+				const filePath = join(LOG_DIR, entry);
+				const info = await stat(filePath);
+				if (info.isFile()) {
+					files.push({
+						name: entry,
+						size: info.size,
+						modified: info.mtime.toISOString(),
+					});
+				}
+			}
+
+			// Sort by modified date descending (newest first)
+			files.sort((a, b) => b.modified.localeCompare(a.modified));
+
+			return reply.send({
+				success: true,
+				data: {
+					directory: LOG_DIR,
+					files,
+				},
+			});
+		} catch {
+			return reply.send({
+				success: true,
+				data: {
+					directory: LOG_DIR,
+					files: [],
+				},
+			});
+		}
+	});
+
+	/**
+	 * GET /system/logs/download/:filename
+	 * Download a specific log file
+	 */
+	app.get<{ Params: { filename: string } }>("/logs/download/:filename", { config: { rateLimit: LOGS_RATE_LIMIT } }, async (request, reply) => {
+		const { filename } = request.params;
+
+		// Path traversal protection: only allow simple filenames
+		if (filename !== basename(filename) || filename.includes("..")) {
+			return reply.status(400).send({ error: "Invalid filename" });
+		}
+
+		const filePath = resolve(LOG_DIR, filename);
+
+		// Ensure the resolved path is still within the log directory
+		if (!filePath.startsWith(resolve(LOG_DIR))) {
+			return reply.status(400).send({ error: "Invalid filename" });
+		}
+
+		try {
+			const info = await stat(filePath);
+			if (!info.isFile()) {
+				return reply.status(404).send({ error: "File not found" });
+			}
+
+			const stream = createReadStream(filePath);
+			return reply
+				.header("Content-Disposition", `attachment; filename="${filename}"`)
+				.header("Content-Type", "application/octet-stream")
+				.header("Content-Length", info.size)
+				.send(stream);
+		} catch {
+			return reply.status(404).send({ error: "File not found" });
+		}
 	});
 
 	done();
