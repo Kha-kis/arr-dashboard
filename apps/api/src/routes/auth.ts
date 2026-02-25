@@ -109,6 +109,8 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				request.log.debug({ err }, "Connection warm-up wrapper error (non-critical)");
 			});
 
+			request.log.info({ username }, "User registered");
+
 			return reply.status(201).send({
 				user: {
 					id: user.id,
@@ -200,11 +202,19 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			await new Promise((resolve) => setTimeout(resolve, 200));
 
 			if (failedAttempts >= MAX_FAILED_ATTEMPTS) {
+				request.log.warn(
+					{ username: parsed.username, ip: request.ip, lockedMinutes: 15 },
+					"Account locked",
+				);
 				return reply.status(423).send({
 					error: "Too many failed attempts. Account locked for 15 minutes.",
 				});
 			}
 
+			request.log.warn(
+				{ username: parsed.username, ip: request.ip },
+				"Login failed: invalid credentials",
+			);
 			return reply.status(401).send({ error: "Invalid credentials" });
 		}
 
@@ -226,8 +236,12 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		);
 		app.sessionService.attachCookie(reply, session.token, parsed.rememberMe);
 
+		request.log.info({ username: user.username, ip: request.ip }, "User logged in");
+
 		// Pre-warm connections to ARR instances in background (don't await)
-		warmConnectionsForUser(app, user.id).catch(() => {});
+		warmConnectionsForUser(app, user.id).catch((err) => {
+			request.log.debug({ err }, "Connection warm-up error (non-critical)");
+		});
 
 		return reply.send({
 			user: {
@@ -246,6 +260,7 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		await app.sessionService.invalidateSession(request.sessionToken);
 		app.sessionService.clearCookie(reply);
+		request.log.info("User logged out");
 		return reply.status(204).send();
 	});
 
@@ -261,10 +276,6 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		const hasTmdbApiKey = !!user?.encryptedTmdbApiKey;
 		const hasPassword = !!user?.hashedPassword;
-		request.log.info(
-			{ userId: request.currentUser.id, hasTmdbApiKey, hasPassword },
-			"GET /auth/me - User status",
-		);
 
 		return reply.send({
 			user: {
@@ -324,11 +335,6 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			};
 		});
 
-		request.log.info(
-			{ userId: request.currentUser.id, sessionCount: sessions.length },
-			"GET /auth/sessions - Active sessions listed",
-		);
-
 		return reply.send({
 			totalSessions: sessions.length,
 			sessions: sessionData,
@@ -363,10 +369,7 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(404).send({ error: "Session not found" });
 		}
 
-		request.log.info(
-			{ userId: request.currentUser.id, revokedSessionId: sessionId.substring(0, 8) },
-			"Session revoked successfully",
-		);
+		request.log.info({ revokedSessionId: sessionId.substring(0, 8) }, "Session revoked");
 
 		return reply.send({ success: true, message: "Session revoked successfully" });
 	});
@@ -419,6 +422,7 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				}
 				const valid = await verifyPassword(currentPassword, user.hashedPassword);
 				if (!valid) {
+					request.log.warn("Account update failed: invalid current password");
 					return reply.status(401).send({ error: "Current password is incorrect" });
 				}
 			}
@@ -452,16 +456,11 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			updateData.hashedPassword = await hashPassword(newPassword);
 		}
 		if (tmdbApiKey !== undefined) {
-			request.log.info(
-				{ hasTmdbApiKey: !!tmdbApiKey, length: tmdbApiKey?.length },
-				"Processing TMDB API key",
-			);
 			if (tmdbApiKey) {
 				// Encrypt the TMDB API key
 				const { value, iv } = app.encryptor.encrypt(tmdbApiKey);
 				updateData.encryptedTmdbApiKey = value;
 				updateData.tmdbEncryptionIv = iv;
-				request.log.info({ hasEncrypted: !!value, hasIv: !!iv }, "Encrypted TMDB API key");
 			} else {
 				// Clear the TMDB API key if empty string provided
 				updateData.encryptedTmdbApiKey = undefined;
@@ -481,6 +480,7 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		// If password was changed, invalidate all other sessions (security best practice)
 		if (newPassword) {
+			request.log.info("Password changed");
 			if (request.sessionToken) {
 				await app.sessionService.invalidateAllUserSessions(
 					request.currentUser.id,
@@ -563,6 +563,8 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			data: { hashedPassword: null },
 		});
 
+		request.log.info("Password removed");
+
 		// Invalidate all other sessions (keep current session since user still has OIDC/passkeys)
 		if (request.sessionToken) {
 			await app.sessionService.invalidateAllUserSessions(
@@ -618,6 +620,9 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					"Cannot delete account with existing authentication methods. Please remove password, OIDC accounts, and passkeys first.",
 			});
 		}
+
+		// Log BEFORE deletion since the user record will be gone after
+		request.log.info({ username: request.currentUser!.username }, "Account deleted");
 
 		// Delete all user data (cascade will handle related records)
 		await app.prisma.user.delete({

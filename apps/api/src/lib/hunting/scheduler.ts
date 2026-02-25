@@ -379,6 +379,16 @@ class HuntingScheduler {
 				},
 			});
 
+			log.info({
+				instanceLabel: config.instance.label,
+				huntType: type,
+				status: result.status,
+				itemsSearched: result.itemsSearched,
+				itemsGrabbed: result.itemsGrabbed,
+				apiCalls: result.apiCallsMade,
+				durationMs,
+			}, "Hunt completed");
+
 			// Fire-and-forget notification for hunt results
 			if (result.itemsGrabbed > 0) {
 				this.app.notificationService

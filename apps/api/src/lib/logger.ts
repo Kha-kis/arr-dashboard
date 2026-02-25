@@ -1,8 +1,8 @@
 /**
  * Centralized logging utility using Pino
  *
- * Provides structured logging with proper log levels and context.
- * Use this instead of console.log/warn/error throughout the codebase.
+ * Dual-output: stdout (for docker logs / terminal) + rotating file (for persistence).
+ * File rotation is handled by pino-roll in a worker thread (no main-thread I/O).
  *
  * Usage:
  *   import { logger } from '@/lib/logger.js';
@@ -16,23 +16,106 @@
  *   log.info('Hunt started', { instanceId: 'abc' });
  */
 
+import { existsSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import pino from "pino";
 
 const isDev = process.env.NODE_ENV !== "production";
 
+/** Resolve the log directory — Docker uses /config/logs, dev uses ./logs */
+function resolveLogDir(): string {
+	if (process.env.LOG_DIR) return process.env.LOG_DIR;
+	const isDocker = !isDev || process.cwd().startsWith("/app");
+	return isDocker ? "/config/logs" : "./logs";
+}
+
+const VALID_LEVELS = new Set(["fatal", "error", "warn", "info", "debug", "trace"]);
+const rawLevel = process.env.LOG_LEVEL?.toLowerCase();
+export const LOG_LEVEL = rawLevel && VALID_LEVELS.has(rawLevel) ? rawLevel : isDev ? "debug" : "info";
+export const LOG_DIR = resolveLogDir();
+export const LOG_MAX_SIZE = process.env.LOG_MAX_SIZE || "10m";
+export const LOG_MAX_FILES = Number(process.env.LOG_MAX_FILES) || 10;
+
+// Ensure log directory exists before creating the transport
+try {
+	if (!existsSync(LOG_DIR)) {
+		mkdirSync(LOG_DIR, { recursive: true });
+	}
+} catch {
+	// If we can't create the directory, file logging will be skipped below
+}
+
+const logFilePath = join(LOG_DIR, "arr-dashboard.log");
+
 /**
- * Create the base logger with appropriate configuration
- *
- * In development: Human-readable output with timestamps
- * In production: JSON output for log aggregation
+ * Build dual-output transport: stdout + rotating log file.
+ * Falls back to stdout-only if the log directory is not writable.
  */
-export const logger = pino({
-	level: process.env.LOG_LEVEL || (isDev ? "debug" : "info"),
-	formatters: {
-		level: (label) => ({ level: label }),
+function buildTransport() {
+	const targets: pino.TransportTargetOptions[] = [
+		// stdout — always present (for docker logs / terminal)
+		{ target: "pino/file", options: { destination: 1 } },
+	];
+
+	// Only add file transport if the directory exists
+	if (existsSync(LOG_DIR)) {
+		targets.push({
+			target: "pino-roll",
+			options: {
+				file: logFilePath,
+				size: LOG_MAX_SIZE,
+				limit: { count: LOG_MAX_FILES },
+				mkdir: true,
+			},
+		});
+	}
+
+	return pino.transport({ targets });
+}
+
+/**
+ * Paths to redact from log output as a safety net.
+ * If someone accidentally logs an object containing these fields,
+ * Pino replaces the value with "[Redacted]" before serialization.
+ */
+const REDACT_PATHS = [
+	"password",
+	"hashedPassword",
+	"apiKey",
+	"access_token",
+	"refresh_token",
+	"id_token",
+	"token",
+	"clientSecret",
+	"encryptedApiKey",
+	"encryptionIv",
+	"cookie",
+	"authorization",
+	// Nested paths (e.g., from req.headers or response objects)
+	"req.headers.cookie",
+	"req.headers.authorization",
+	"tokenResponse.access_token",
+	"tokenResponse.refresh_token",
+	"tokenResponse.id_token",
+];
+
+/**
+ * Create the base logger with dual transport (stdout + rotating file)
+ */
+export const logger = pino(
+	{
+		level: LOG_LEVEL,
+		formatters: {
+			level: (label) => ({ level: label }),
+		},
+		timestamp: pino.stdTimeFunctions.isoTime,
+		redact: {
+			paths: REDACT_PATHS,
+			censor: "[Redacted]",
+		},
 	},
-	timestamp: pino.stdTimeFunctions.isoTime,
-});
+	buildTransport(),
+);
 
 /**
  * Pre-configured child loggers for major modules

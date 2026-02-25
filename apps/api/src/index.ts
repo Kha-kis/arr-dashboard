@@ -1,6 +1,8 @@
 import "dotenv/config";
 import { envSchema } from "./config/env.js";
 import { getPortConfig, logPortConfig } from "./lib/config/port-config.js";
+import { LOG_LEVEL, LOG_DIR } from "./lib/logger.js";
+import { getAppVersion } from "./lib/utils/version.js";
 import { buildServer } from "./server.js";
 
 // Get port configuration (env var > database > default)
@@ -43,7 +45,17 @@ const start = async () => {
 			port: portConfig.apiPort,
 			host: env.API_HOST,
 		});
-		app.log.info({ port: portConfig.apiPort, host: env.API_HOST }, "API server started");
+		const dbUrl = process.env.DATABASE_URL || "";
+		const dbType = dbUrl.startsWith("postgresql") ? "PostgreSQL" : "SQLite";
+		app.log.info({
+			version: getAppVersion(),
+			nodeVersion: process.version,
+			database: dbType,
+			logLevel: LOG_LEVEL,
+			logDir: LOG_DIR,
+			host: env.API_HOST,
+			port: portConfig.apiPort,
+		}, "Arr Dashboard started");
 
 		// Fire-and-forget startup notification
 		app.notificationService

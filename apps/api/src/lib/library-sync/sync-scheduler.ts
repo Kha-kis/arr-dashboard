@@ -248,6 +248,11 @@ class LibrarySyncScheduler {
 				instance as Parameters<typeof syncInstance>[1],
 			);
 
+			log.info(
+				{ instanceId: instance.id, instanceLabel: instance.label, success: result.success },
+				"Library sync completed",
+			);
+
 			return result;
 		} finally {
 			this.activeSyncs.delete(instance.id);

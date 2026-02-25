@@ -402,6 +402,8 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 			include: { instance: true },
 		});
 
+		request.log.info({ instanceId, instanceLabel: instance.label }, "Queue cleaner config created");
+
 		return reply.status(201).send({
 			...config,
 			instanceName: config.instance.label,
@@ -430,6 +432,8 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 			include: { instance: true },
 		});
 
+		request.log.info({ instanceId }, "Queue cleaner config updated");
+
 		return reply.send({
 			...config,
 			instanceName: config.instance.label,
@@ -454,6 +458,8 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 		await app.prisma.queueCleanerConfig.delete({
 			where: { instanceId },
 		});
+
+		request.log.info({ instanceId }, "Queue cleaner config deleted");
 
 		return reply.send({ message: "Queue cleaner config deleted" });
 	});
@@ -574,6 +580,13 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 			const scheduler = getQueueCleanerScheduler();
 			const result = await scheduler.triggerManualClean(instanceId);
 
+			if (result.triggered) {
+				request.log.info(
+					{ instanceId, instanceLabel: instance.label },
+					"Manual queue clean triggered",
+				);
+			}
+
 			if (!result.triggered) {
 				// Use standard error format per CLAUDE.md
 				return reply.status(429).send({
@@ -678,6 +691,8 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 			const result = await app.prisma.queueCleanerStrike.deleteMany({
 				where: { instanceId },
 			});
+
+			request.log.info({ instanceId, deletedCount: result.count }, "Queue cleaner strikes cleared");
 
 			return reply.send({
 				success: true,
@@ -876,7 +891,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	// Toggle scheduler
 	// Note: Auth is handled by preHandler hook - no need to check here
-	app.post("/queue-cleaner/scheduler/toggle", async (_request, reply) => {
+	app.post("/queue-cleaner/scheduler/toggle", async (request, reply) => {
 		const scheduler = getQueueCleanerScheduler();
 		const wasRunning = scheduler.isRunning();
 
@@ -885,6 +900,8 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 		} else {
 			scheduler.start(app);
 		}
+
+		request.log.info({ running: !wasRunning }, "Queue cleaner scheduler toggled");
 
 		return reply.send({ running: !wasRunning });
 	});

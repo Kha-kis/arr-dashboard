@@ -33,6 +33,12 @@ export const envSchema = z
 		APP_URL: z.string().url().default("http://localhost:3000"),
 		TMDB_BASE_URL: z.string().url().default("https://api.themoviedb.org/3"),
 		TMDB_IMAGE_BASE_URL: z.string().url().default("https://image.tmdb.org/t/p"),
+		// Logging — these are informational in the schema; the logger reads them at
+		// module load time before Zod validation runs (same pattern as LOG_LEVEL).
+		LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).optional(),
+		LOG_DIR: z.string().optional(),
+		LOG_MAX_SIZE: z.string().optional(),
+		LOG_MAX_FILES: z.coerce.number().min(1).optional(),
 	})
 	.transform((data) => {
 		// Auto-configure DATABASE_URL if not provided

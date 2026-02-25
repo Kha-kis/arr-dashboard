@@ -677,8 +677,11 @@ export class BackupService {
 
 			// Phase 4: Success - clean up backup
 			if (secretsBackedUp) {
-				await fs.unlink(secretsBackupPath).catch(() => {
-					// Ignore errors during cleanup
+				await fs.unlink(secretsBackupPath).catch((err) => {
+					log.debug(
+						{ err, path: secretsBackupPath },
+						"Failed to clean up secrets backup file (non-critical)",
+					);
 				});
 			}
 
@@ -696,8 +699,11 @@ export class BackupService {
 					const backedUpSecrets = await fs.readFile(secretsBackupPath, "utf-8");
 					await fs.writeFile(this.secretsPath, backedUpSecrets, { encoding: "utf-8", mode: 0o600 });
 					await fs.chmod(this.secretsPath, 0o600);
-					await fs.unlink(secretsBackupPath).catch(() => {
-						// Ignore errors during cleanup
+					await fs.unlink(secretsBackupPath).catch((err) => {
+						log.debug(
+							{ err, path: secretsBackupPath },
+							"Failed to clean up secrets backup during rollback (non-critical)",
+						);
 					});
 				} catch (rollbackError) {
 					// Log rollback failure but throw original error

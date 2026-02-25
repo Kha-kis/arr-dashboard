@@ -106,6 +106,9 @@ importers:
       pino:
         specifier: ^10.3.1
         version: 10.3.1
+      pino-roll:
+        specifier: ^4.0.0
+        version: 4.0.0
       prisma:
         specifier: ^7.4.0
         version: 7.4.0(@types/react@19.2.14)(better-sqlite3@12.6.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3)
@@ -4313,6 +4316,9 @@ packages:
 
   pino-abstract-transport@3.0.0:
     resolution: {integrity: sha512-wlfUczU+n7Hy/Ha5j9a/gZNy7We5+cXp8YL+X+PG8S0KXxw7n/JXA3c46Y0zQznIJ83URJiwy7Lh56WLokNuxg==}
+
+  pino-roll@4.0.0:
+    resolution: {integrity: sha512-axI1aQaIxXdw1F4OFFli1EDxIrdYNGLowkw/ZoZogX8oCSLHUghzwVVXUS8U+xD/Savwa5IXpiXmsSGKFX/7Sg==}
 
   pino-std-serializers@7.1.0:
     resolution: {integrity: sha512-BndPH67/JxGExRgiX1dX0w1FvZck5Wa4aal9198SrRhZjH3GxKQUKIBnYJTdj2HDN3UQAS06HlfcSbQj2OHmaw==}
@@ -9378,6 +9384,11 @@ snapshots:
   pino-abstract-transport@3.0.0:
     dependencies:
       split2: 4.2.0
+
+  pino-roll@4.0.0:
+    dependencies:
+      date-fns: 4.1.0
+      sonic-boom: 4.2.1
 
   pino-std-serializers@7.1.0: {}
 

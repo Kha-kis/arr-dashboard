@@ -182,6 +182,8 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 		// Schedule cleanup to prevent memory leak
 		scheduleProgressCleanup(result.syncId);
 
+		request.log.info({ templateId: body.templateId, instanceId: body.instanceId }, "Sync executed");
+
 		return reply.send(result);
 	});
 

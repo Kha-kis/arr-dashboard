@@ -63,28 +63,8 @@ export const useImportQualityProfile = () => {
 	});
 };
 
-/**
- * Hook to import quality profile with wizard selections
- */
-export const useImportQualityProfileWizard = () => {
-	const queryClient = useQueryClient();
-
-	return useMutation<
-		ImportQualityProfileResponse,
-		Error,
-		ImportQualityProfilePayload & {
-			selectedCFGroups: string[];
-			customFormatSelections: Record<string, any>;
-			customQualityConfig?: any;
-		}
-	>({
-		mutationFn: (payload) => importQualityProfile(payload),
-		onSuccess: () => {
-			// Invalidate templates query to show newly created template
-			void queryClient.invalidateQueries({ queryKey: TEMPLATES_QUERY_KEY });
-		},
-	});
-};
+/** Alias for wizard context — same behavior as useImportQualityProfile */
+export const useImportQualityProfileWizard = useImportQualityProfile;
 
 /**
  * Hook to update quality profile template with wizard selections
@@ -92,15 +72,7 @@ export const useImportQualityProfileWizard = () => {
 export const useUpdateQualityProfileTemplate = () => {
 	const queryClient = useQueryClient();
 
-	return useMutation<
-		ImportQualityProfileResponse,
-		Error,
-		UpdateQualityProfileTemplatePayload & {
-			selectedCFGroups: string[];
-			customFormatSelections: Record<string, any>;
-			customQualityConfig?: any;
-		}
-	>({
+	return useMutation<ImportQualityProfileResponse, Error, UpdateQualityProfileTemplatePayload>({
 		mutationFn: (payload) => updateQualityProfileTemplate(payload),
 		onSuccess: () => {
 			// Invalidate templates query to show updated template

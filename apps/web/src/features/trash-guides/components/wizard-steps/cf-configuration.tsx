@@ -103,6 +103,12 @@ export const CFConfiguration = ({
 			return;
 		}
 
+		// Preserve user's previous selections when navigating back to this step
+		if (Object.keys(initialSelections).length > 0) {
+			hasInitializedSelections.current = true;
+			return;
+		}
+
 		const newSelections: Record<string, any> = {};
 
 		for (const resolution of cfResolutions) {
@@ -117,11 +123,20 @@ export const CFConfiguration = ({
 
 		hasInitializedSelections.current = true;
 		setSelections(newSelections);
+		// biome-ignore lint/correctness/useExhaustiveDependencies: initialSelections is intentionally
+		// read only on first effect run to detect navigation-back state. Including it would
+		// re-trigger initialization and defeat the hasInitializedSelections guard.
 	}, [isClonedProfileMode, cfResolutions]);
 
 	// Initialize selections when data loads (one-time only) - for non-cloned profiles
 	useEffect(() => {
 		if (isClonedProfileMode || !data || hasInitializedSelections.current) {
+			return;
+		}
+
+		// Preserve user's previous selections when navigating back to this step
+		if (Object.keys(initialSelections).length > 0) {
+			hasInitializedSelections.current = true;
 			return;
 		}
 
@@ -168,6 +183,9 @@ export const CFConfiguration = ({
 
 		hasInitializedSelections.current = true;
 		setSelections(newSelections);
+		// biome-ignore lint/correctness/useExhaustiveDependencies: initialSelections is intentionally
+		// read only on first effect run to detect navigation-back state. Including it would
+		// re-trigger initialization and defeat the hasInitializedSelections guard.
 	}, [isClonedProfileMode, data]);
 
 	const toggleCF = (cfTrashId: string, _isRequired: boolean = false) => {

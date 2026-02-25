@@ -12,6 +12,7 @@ import { getErrorMessage } from "../utils/error-message.js";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
 import { getSyncMetrics } from "./sync-metrics.js";
 import type { TemplateUpdater } from "./template-updater.js";
+import { USER_CF_PREFIX } from "./user-cf-resolver.js";
 
 const log = loggers.trashGuides;
 
@@ -367,7 +368,7 @@ export class SyncEngine {
 
 						const missingFormats: string[] = [];
 						for (const cf of configData.customFormats) {
-							if (cf.trashId && !cachedTrashIds.has(cf.trashId)) {
+							if (cf.trashId && !cf.trashId.startsWith(USER_CF_PREFIX) && !cachedTrashIds.has(cf.trashId)) {
 								missingFormats.push(cf.name || cf.trashId);
 							}
 						}

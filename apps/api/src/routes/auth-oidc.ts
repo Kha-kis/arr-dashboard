@@ -217,9 +217,10 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		});
 
 		try {
+			request.log.info({ ip: request.ip }, "OIDC login initiated");
 			const authorizationUrl = await oidcProvider.getAuthorizationUrl(state, nonce, codeChallenge);
-			request.log.info(
-				{ authorizationUrl, redirectUri: dbProvider.redirectUri },
+			request.log.debug(
+				{ redirectUri: dbProvider.redirectUri },
 				"Generated OIDC authorization URL",
 			);
 			return reply.send({ authorizationUrl });
@@ -244,7 +245,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	app.get("/oidc/callback", async (request, reply) => {
 		const queryParams = request.query as Record<string, unknown>;
 		request.log.info(
-			{ hasCode: "code" in queryParams, url: request.url },
+			{ hasCode: "code" in queryParams },
 			"OIDC callback received",
 		);
 
@@ -344,7 +345,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			);
 
 			if (!tokenResponse.access_token) {
-				request.log.error({ tokenResponse }, "No access token in OIDC response");
+				request.log.error("No access token in OIDC response");
 				throw new Error("No access token received from OIDC provider");
 			}
 

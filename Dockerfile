@@ -126,8 +126,8 @@ ENV DATABASE_URL="file:/config/prod.db" \
     # Node.js memory optimization for containers (can be overridden)
     NODE_OPTIONS="--max-old-space-size=512 --dns-result-order=ipv4first"
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-    CMD wget -q --spider http://localhost:${PORT:-3000}/health || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD wget -q --spider http://127.0.0.1:${PORT:-3000}/health || exit 1
 
 # Signal for graceful shutdown (tini forwards to child processes)
 STOPSIGNAL SIGTERM
