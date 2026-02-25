@@ -1,7 +1,8 @@
 import fastifyCors from "@fastify/cors";
 import fastifyHelmet from "@fastify/helmet";
 import fastifyRateLimit from "@fastify/rate-limit";
-import Fastify, { type FastifyInstance } from "fastify";
+import { randomBytes } from "node:crypto";
+import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
 import { type ApiEnv, envSchema } from "./config/env.js";
 import { isArrError, arrErrorToHttpStatus } from "./lib/arr/client-factory.js";
 import { arrClientPlugin } from "./plugins/arr-client.js";
@@ -32,6 +33,7 @@ import { registerServiceRoutes } from "./routes/services.js";
 import { registerSystemRoutes } from "./routes/system.js";
 import { registerSeerrRoutes } from "./routes/seerr/index.js";
 import { registerTrashGuidesRoutes } from "./routes/trash-guides/index.js";
+import { logger } from "./lib/logger.js";
 
 function isPrismaKnownError(
 	error: unknown,
@@ -51,7 +53,10 @@ export type ServerOptions = {
 
 export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	const app = Fastify({
-		logger: options.logger ?? true,
+		...(options.logger === false
+		? { logger: false }
+		: { loggerInstance: logger as FastifyBaseLogger }),
+		genReqId: () => randomBytes(4).toString("hex"),
 	});
 
 	const env = options.env ?? envSchema.parse(process.env);
@@ -112,6 +117,8 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 		if (resolved) {
 			request.currentUser = resolved.session.user;
 			request.sessionToken = resolved.token;
+			// Bind userId to this request's logger — all downstream logs include it
+			request.log = request.log.child({ userId: resolved.session.user.id });
 		}
 	});
 

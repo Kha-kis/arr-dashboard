@@ -94,6 +94,8 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			},
 		});
 
+		request.log.info({ service, label: rest.label }, "Service instance added");
+
 		return reply.status(201).send({
 			service: formatServiceInstance(created),
 		});
@@ -142,6 +144,8 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(404).send({ error: "Service instance not found" });
 		}
 
+		request.log.info({ service: fresh.service, label: fresh.label, instanceId: id }, "Service instance updated");
+
 		return reply.send({
 			service: formatServiceInstance(fresh),
 		});
@@ -153,6 +157,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 		await requireInstance(app, userId, id);
 		await app.prisma.serviceInstance.delete({ where: { id, userId } });
+		request.log.info({ instanceId: id }, "Service instance deleted");
 		return reply.status(204).send();
 	});
 
@@ -211,6 +216,9 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		const result = await testServiceConnection(baseUrl, apiKey, service);
+		if (!result.success) {
+			request.log.warn({ service, baseUrl }, "Connection test failed");
+		}
 		return reply.status(200).send(result);
 	});
 

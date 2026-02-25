@@ -1,7 +1,7 @@
 import type { FastifyPluginCallback } from "fastify";
 
 export const registerHealthRoutes: FastifyPluginCallback = (app, _opts, done) => {
-	app.get("/", async (request, reply) => {
+	app.get("/", { logLevel: "silent" }, async (request, reply) => {
 		try {
 			await app.prisma.$queryRaw`SELECT 1`;
 			return { status: "ok" };

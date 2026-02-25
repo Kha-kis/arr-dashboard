@@ -36,6 +36,7 @@ echo "Setting up directories and permissions..."
 
 # Ensure config directory exists (LinuxServer convention)
 mkdir -p /config
+mkdir -p /config/logs
 
 # Validate PUID/PGID are numeric (defense-in-depth)
 case "$PUID" in

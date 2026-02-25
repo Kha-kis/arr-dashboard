@@ -6,8 +6,8 @@
  */
 
 import type { FastifyInstance } from "fastify";
-import { syncInstance, type SyncResult } from "./sync-executor.js";
 import { createLogger } from "../logger.js";
+import { type SyncResult, syncInstance } from "./sync-executor.js";
 
 const log = createLogger("library-sync");
 
@@ -246,6 +246,11 @@ class LibrarySyncScheduler {
 					log: this.app.log,
 				},
 				instance as Parameters<typeof syncInstance>[1],
+			);
+
+			log.info(
+				{ instanceId: instance.id, instanceLabel: instance.label, success: result.success },
+				"Library sync completed",
 			);
 
 			return result;

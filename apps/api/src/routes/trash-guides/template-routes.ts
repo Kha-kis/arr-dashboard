@@ -7,10 +7,10 @@
 import type { TemplateConfig } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { createTemplateService } from "../../lib/trash-guides/template-service.js";
-import { parseInstanceOverrides } from "../../lib/trash-guides/utils.js";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
 import { requireTemplate } from "../../lib/trash-guides/template-helpers.js";
+import { createTemplateService } from "../../lib/trash-guides/template-service.js";
+import { parseInstanceOverrides } from "../../lib/trash-guides/utils.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 // ============================================================================
@@ -307,6 +307,8 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 
 		const template = await templateService.createTemplate(request.currentUser!.id, body);
 
+		request.log.info({ templateName: body.name }, "Template created");
+
 		return reply.status(201).send({ template });
 	});
 
@@ -362,6 +364,8 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 			body,
 		);
 
+		request.log.info({ templateId }, "Template updated");
+
 		return reply.send({ template });
 	});
 
@@ -375,6 +379,8 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 		const { templateId } = validateRequest(getTemplateParamsSchema, request.params);
 
 		await templateService.deleteTemplate(templateId, request.currentUser!.id);
+
+		request.log.info({ templateId }, "Template deleted");
 
 		return reply.send({
 			message: "Template deleted successfully",
@@ -397,6 +403,8 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 			request.currentUser!.id,
 			newName,
 		);
+
+		request.log.info({ sourceTemplateId: templateId, newName }, "Template duplicated");
 
 		return reply.status(201).send({
 			template,
@@ -431,6 +439,8 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 		const { jsonData } = validateRequest(importTemplateSchema, request.body);
 
 		const template = await templateService.importTemplate(request.currentUser!.id, jsonData);
+
+		request.log.info("Template imported");
 
 		return reply.status(201).send({
 			template,

@@ -91,6 +91,8 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			conflictResolutions,
 		);
 
+		request.log.info({ templateId, instanceId, success: result.success }, "Deployment executed");
+
 		if (result.success) {
 			return reply.send({
 				success: true,
@@ -172,6 +174,8 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				updatedAt: new Date(),
 			},
 		});
+
+		request.log.info({ templateId, instanceId, syncStrategy }, "Sync strategy updated");
 
 		return reply.send({
 			success: true,
@@ -375,6 +379,8 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			syncStrategy,
 			instanceSyncStrategies,
 		);
+
+		request.log.info({ templateId, instanceCount: instanceIds.length }, "Bulk deployment executed");
 
 		// Derive top-level success from per-deployment statuses
 		// success: true only when all deployments succeeded

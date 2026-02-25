@@ -121,6 +121,8 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 				},
 			});
 
+			request.log.info({ displayName: data.displayName, issuer: normalizedIssuer }, "OIDC provider created");
+
 			return reply.status(201).send(toPublicProvider(provider));
 		},
 	);
@@ -211,6 +213,8 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 				where: { id: 1 },
 				data: updateData,
 			});
+
+			request.log.info({ changedFields: Object.keys(updateData) }, "OIDC provider updated");
 
 			// If critical settings changed, invalidate all sessions to force re-authentication
 			const enabledChanged = data.enabled !== undefined && data.enabled !== existing.enabled;
@@ -304,6 +308,8 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 				);
 			}
 
+			request.log.info({ lockedOutUsers: lockedOutUsers.length }, "Deleting OIDC provider");
+
 			// Delete all OIDC account links (cascade will handle this, but explicit for clarity)
 			await app.prisma.oIDCAccount.deleteMany({});
 
@@ -327,6 +333,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 				await app.prisma.session.deleteMany({});
 			}
 
+			request.log.info("OIDC provider deleted");
 			return reply.status(204).send(undefined);
 		},
 	);
