@@ -220,7 +220,9 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							lockedMinutes: 15,
 						},
 					})
-					.catch(() => {});
+					.catch((err) => {
+						request.log.debug({ err }, "Account locked notification dispatch failed");
+					});
 
 				return reply.status(423).send({
 					error: "Too many failed attempts. Account locked for 15 minutes.",
@@ -244,7 +246,9 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 						maxAttempts: MAX_FAILED_ATTEMPTS,
 					},
 				})
-				.catch(() => {});
+				.catch((err) => {
+					request.log.debug({ err }, "Login failed notification dispatch failed");
+				});
 
 			return reply.status(401).send({ error: "Invalid credentials" });
 		}

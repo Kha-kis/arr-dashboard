@@ -240,9 +240,12 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		// Read the file and send it
 		const fileBuffer = await fs.readFile(backup.path);
+		// Sanitize filename to prevent header injection (strip quotes, newlines, control chars, non-ASCII)
+		// biome-ignore lint/suspicious/noControlCharactersInRegex: intentional sanitization of control characters
+		const safeFilename = backup.filename.replace(/["\r\n\x00-\x1f\x7f-\xff]/g, "_");
 		return reply
 			.header("Content-Type", "application/octet-stream")
-			.header("Content-Disposition", `attachment; filename="${backup.filename}"`)
+			.header("Content-Disposition", `attachment; filename="${safeFilename}"`)
 			.send(fileBuffer);
 	});
 

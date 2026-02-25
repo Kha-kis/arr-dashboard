@@ -8,17 +8,20 @@ import type { PrismaClient } from "../../lib/prisma.js";
  * CSRF Protection Strategy:
  * - sameSite: "lax" provides CSRF protection for most scenarios when combined with CORS
  * - httpOnly: true prevents XSS attacks from stealing session tokens
- * - secure: true in production ensures cookies only sent over HTTPS
+ * - secure: auto-enabled when TRUST_PROXY is set (behind HTTPS-terminating reverse proxy)
  * - CORS origin restrictions limit which domains can make credentialed requests
  *
- * Note: For complete CSRF protection on state-changing requests (POST/PUT/PATCH/DELETE),
- * consider implementing CSRF tokens with @fastify/csrf-protection in the future.
+ * Cookie `secure` flag behavior:
+ * - COOKIE_SECURE=true  → always send cookies over HTTPS only
+ * - COOKIE_SECURE=false → always allow HTTP (explicit opt-out)
+ * - (not set) + TRUST_PROXY=true → secure=true (proxy implies HTTPS termination)
+ * - (not set) + TRUST_PROXY=false → secure=false (direct access, likely LAN/dev)
  */
 const BASE_COOKIE_OPTIONS = (env: ApiEnv, maxAgeSeconds?: number) => ({
 	path: "/",
 	httpOnly: true,
 	sameSite: "lax" as const,
-	secure: false, // Allow HTTP for local network access (most self-hosted deployments)
+	secure: env.COOKIE_SECURE ?? env.TRUST_PROXY,
 	maxAge: maxAgeSeconds ?? env.SESSION_TTL_HOURS * 60 * 60,
 	domain: undefined as string | undefined,
 });
@@ -75,7 +78,10 @@ export class SessionService {
 			.delete({
 				where: { id: hashedToken },
 			})
-			.catch(() => undefined);
+			.catch(() => {
+				// Best-effort: session may already be deleted or DB temporarily unavailable.
+				// The cookie is still cleared client-side, and the session expires via TTL.
+			});
 	}
 
 	async invalidateAllUserSessions(userId: string, exceptToken?: string) {
@@ -128,17 +134,18 @@ export class SessionService {
 		}
 
 		if (record.expiresAt.getTime() <= Date.now()) {
-			await this.prisma.session.delete({ where: { id: hashedToken } }).catch(() => undefined);
+			// Best-effort cleanup — expired session is already rejected regardless
+			await this.prisma.session.delete({ where: { id: hashedToken } }).catch(() => {});
 			return null;
 		}
 
-		// Update lastAccessedAt in the background (non-blocking)
+		// Update lastAccessedAt in the background (non-blocking, non-critical metadata)
 		this.prisma.session
 			.update({
 				where: { id: hashedToken },
 				data: { lastAccessedAt: new Date() },
 			})
-			.catch(() => undefined);
+			.catch(() => {});
 
 		return { session: record, token: unsigned.value };
 	}

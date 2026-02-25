@@ -446,7 +446,9 @@ export class UpdateScheduler {
 						templatesNeedingAttention,
 						qualitySizeAutoSynced,
 					},
-				}).catch(() => {});
+				}).catch((err) => {
+					this.logger.debug({ err }, "TRaSH sync notification dispatch failed");
+				});
 			}
 		} catch (error) {
 			this.logger.error(
@@ -482,7 +484,9 @@ export class UpdateScheduler {
 				title: "TRaSH Guides sync failed",
 				body: getErrorMessage(error),
 				url: "/trash-guides",
-			}).catch(() => {});
+			}).catch((err) => {
+				this.logger.debug({ err }, "TRaSH sync error notification dispatch failed");
+			});
 
 			throw error;
 		} finally {

@@ -139,7 +139,9 @@ export class BackupScheduler {
 						intervalType: settings.intervalType,
 						retentionCount: settings.retentionCount,
 					},
-				}).catch(() => {});
+				}).catch((err) => {
+					this.logger.debug({ err }, "Backup completed notification dispatch failed");
+				});
 			} finally {
 				// Always reset the running flag, even if backup fails
 				this.isRunning = false;
@@ -152,7 +154,9 @@ export class BackupScheduler {
 				title: "Scheduled backup failed",
 				body: getErrorMessage(error),
 				url: "/settings?tab=backups",
-			}).catch(() => {});
+			}).catch((err) => {
+				this.logger.debug({ err }, "Backup failed notification dispatch failed");
+			});
 		}
 	}
 

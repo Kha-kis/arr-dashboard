@@ -26,6 +26,8 @@ interface PortConfig {
 interface DbSettings {
 	apiPort: number | null;
 	webPort: number | null;
+	trustProxy: number | null; // SQLite stores booleans as 0/1
+	secureCookies: number | null;
 }
 
 const DEFAULT_API_PORT = 3001;
@@ -70,11 +72,23 @@ function getSqliteDatabasePath(): string | null {
 	return isDocker ? "/app/data/prod.db" : resolve(process.cwd(), "dev.db");
 }
 
+// Cache the database read result so getPortConfig() and getSecurityConfig()
+// don't open the same SQLite file twice at startup
+let cachedDbSettings: DbSettings | null | undefined;
+
 /**
- * Read port settings from the database.
+ * Read settings from the database (cached after first call).
  * Only works with SQLite - PostgreSQL users must use env vars or Docker's read-base-path.cjs
  */
-function readPortsFromDatabase(): DbSettings | null {
+function readSettingsFromDatabase(): DbSettings | null {
+	if (cachedDbSettings !== undefined) {
+		return cachedDbSettings;
+	}
+	cachedDbSettings = readSettingsFromDatabaseUncached();
+	return cachedDbSettings;
+}
+
+function readSettingsFromDatabaseUncached(): DbSettings | null {
 	// Skip direct DB access for PostgreSQL - it's handled by read-base-path.cjs in Docker
 	if (isPostgresDatabase()) {
 		return null;
@@ -89,9 +103,9 @@ function readPortsFromDatabase(): DbSettings | null {
 	try {
 		const db = new Database(dbPath, { readonly: true });
 
-		// Check if SystemSettings table exists
+		// Check if system_settings table exists (@@map name; SQLite is case-insensitive)
 		const tableExists = db
-			.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='SystemSettings'")
+			.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='system_settings'")
 			.get();
 
 		if (!tableExists) {
@@ -100,23 +114,35 @@ function readPortsFromDatabase(): DbSettings | null {
 		}
 
 		// Read the singleton settings row
-		const row = db.prepare("SELECT apiPort, webPort FROM SystemSettings WHERE id = 1").get() as
-			| DbSettings
+		// New columns (trustProxy, secureCookies) may not exist on older schemas — use SELECT *
+		// and access fields with fallback to handle missing columns gracefully
+		const row = db.prepare("SELECT * FROM system_settings WHERE id = 1").get() as
+			| Record<string, unknown>
 			| undefined;
 
 		db.close();
 
 		if (row) {
 			return {
-				apiPort: row.apiPort,
-				webPort: row.webPort,
+				apiPort: typeof row.apiPort === "number" ? row.apiPort : null,
+				webPort: typeof row.webPort === "number" ? row.webPort : null,
+				trustProxy: typeof row.trustProxy === "number" ? row.trustProxy : null,
+				secureCookies: typeof row.secureCookies === "number" ? row.secureCookies : null,
 			};
 		}
 
 		return null;
 	} catch (error) {
-		// Database might not exist yet or be corrupted
-		log.warn({ err: error }, "Could not read port config from database");
+		// Distinguish first-boot (no DB) from unexpected read failure
+		const dbPath = getSqliteDatabasePath();
+		if (dbPath && existsSync(dbPath)) {
+			log.error(
+				{ err: error, dbPath },
+				"Database file exists but could not be read — port and security settings falling back to defaults",
+			);
+		} else {
+			log.warn({ err: error }, "Could not read settings from database (first boot or missing file)");
+		}
 		return null;
 	}
 }
@@ -142,7 +168,7 @@ export function getPortConfig(): PortConfig {
 	}
 
 	// Try to read from database for any missing values
-	const dbSettings = readPortsFromDatabase();
+	const dbSettings = readSettingsFromDatabase();
 
 	let apiPort: number;
 	let apiSource: "env" | "database" | "default";
@@ -181,6 +207,68 @@ export function getPortConfig(): PortConfig {
 }
 
 /**
+ * Security configuration resolved at startup (before Fastify construction).
+ * Priority: Environment variable > Database setting > Default
+ */
+export interface SecurityConfig {
+	trustProxy: boolean;
+	secureCookies: boolean | undefined; // undefined = auto-detect from trustProxy
+	source: {
+		trustProxy: "env" | "database" | "default";
+		secureCookies: "env" | "database" | "default";
+	};
+}
+
+/**
+ * Get the security configuration for the application.
+ * Priority: Environment variable > Database setting > Default
+ */
+export function getSecurityConfig(): SecurityConfig {
+	const envTrustProxy = process.env.TRUST_PROXY;
+	const envCookieSecure = process.env.COOKIE_SECURE;
+
+	// Try to read from database for any missing values
+	const dbSettings = readSettingsFromDatabase();
+
+	// Resolve trustProxy
+	let trustProxy: boolean;
+	let trustProxySource: "env" | "database" | "default";
+	if (envTrustProxy !== undefined) {
+		trustProxy = ["true", "1", "yes"].includes(envTrustProxy.toLowerCase());
+		trustProxySource = "env";
+	} else if (dbSettings?.trustProxy !== null && dbSettings?.trustProxy !== undefined) {
+		trustProxy = dbSettings.trustProxy === 1;
+		trustProxySource = "database";
+	} else {
+		trustProxy = false;
+		trustProxySource = "default";
+	}
+
+	// Resolve secureCookies
+	let secureCookies: boolean | undefined;
+	let secureCookiesSource: "env" | "database" | "default";
+	if (envCookieSecure !== undefined) {
+		secureCookies = ["true", "1", "yes"].includes(envCookieSecure.toLowerCase());
+		secureCookiesSource = "env";
+	} else if (dbSettings?.secureCookies !== null && dbSettings?.secureCookies !== undefined) {
+		secureCookies = dbSettings.secureCookies === 1;
+		secureCookiesSource = "database";
+	} else {
+		secureCookies = undefined; // Auto-detect from trustProxy
+		secureCookiesSource = "default";
+	}
+
+	return {
+		trustProxy,
+		secureCookies,
+		source: {
+			trustProxy: trustProxySource,
+			secureCookies: secureCookiesSource,
+		},
+	};
+}
+
+/**
  * Log the port configuration for debugging
  */
 export function logPortConfig(config: PortConfig): void {
@@ -192,5 +280,20 @@ export function logPortConfig(config: PortConfig): void {
 			webSource: config.source.webPort,
 		},
 		"Port configuration loaded",
+	);
+}
+
+/**
+ * Log the security configuration for debugging
+ */
+export function logSecurityConfig(config: SecurityConfig): void {
+	log.info(
+		{
+			trustProxy: config.trustProxy,
+			trustProxySource: config.source.trustProxy,
+			secureCookies: config.secureCookies ?? `auto (${config.trustProxy})`,
+			secureCookiesSource: config.source.secureCookies,
+		},
+		"Security configuration loaded",
 	);
 }

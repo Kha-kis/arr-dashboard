@@ -620,7 +620,9 @@ class QueueCleanerScheduler {
 							cleanedItems: result.cleanedItems.slice(0, 5).map((i: { title?: string; rule?: string }) => `${i.title ?? "Unknown"} (${i.rule ?? ""})`),
 						},
 					})
-					.catch(() => {});
+					.catch((err) => {
+						log.debug({ err, instanceLabel: config.instance.label }, "Queue cleaner notification dispatch failed");
+					});
 			}
 			if (result.itemsWarned > 0) {
 				this.app.notificationService
@@ -636,7 +638,9 @@ class QueueCleanerScheduler {
 							warnedItems: result.warnedItems.slice(0, 5).map((i: { title?: string; rule?: string }) => `${i.title ?? "Unknown"} (${i.rule ?? ""})`),
 						},
 					})
-					.catch(() => {});
+					.catch((err) => {
+						log.debug({ err, instanceLabel: config.instance.label }, "Queue cleaner strikes notification dispatch failed");
+					});
 			}
 		} catch (error) {
 			const durationMs = Date.now() - startTime;

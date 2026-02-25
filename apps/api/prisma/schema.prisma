@@ -232,6 +232,18 @@ model SystemSettings {
   // Set explicitly when behind a reverse proxy (e.g., https://arr.example.com)
   externalUrl       String?
 
+  // Reverse proxy configuration
+  // When true, Fastify trusts X-Forwarded-For/Proto/Host headers from the proxy.
+  // Also auto-enables secure cookies (HTTPS) unless secureCookies is explicitly set.
+  // Requires restart to take effect.
+  trustProxy        Boolean   @default(false)
+
+  // Session cookie secure flag
+  // null = auto-detect from trustProxy (true when behind proxy, false otherwise)
+  // true = always send cookies over HTTPS only
+  // false = allow cookies over HTTP (for LAN deployments without HTTPS)
+  secureCookies     Boolean?
+
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 

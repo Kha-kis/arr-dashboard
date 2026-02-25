@@ -3575,6 +3575,8 @@ export const SystemSettingsScalarFieldEnum = {
   listenAddress: 'listenAddress',
   appName: 'appName',
   externalUrl: 'externalUrl',
+  trustProxy: 'trustProxy',
+  secureCookies: 'secureCookies',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const

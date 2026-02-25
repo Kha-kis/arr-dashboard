@@ -1,7 +1,12 @@
 import "dotenv/config";
 import { envSchema } from "./config/env.js";
-import { getPortConfig, logPortConfig } from "./lib/config/port-config.js";
-import { LOG_LEVEL, LOG_DIR } from "./lib/logger.js";
+import {
+	getPortConfig,
+	getSecurityConfig,
+	logPortConfig,
+	logSecurityConfig,
+} from "./lib/config/port-config.js";
+import { LOG_DIR, LOG_LEVEL } from "./lib/logger.js";
 import { getAppVersion } from "./lib/utils/version.js";
 import { buildServer } from "./server.js";
 
@@ -9,8 +14,16 @@ import { buildServer } from "./server.js";
 const portConfig = getPortConfig();
 logPortConfig(portConfig);
 
-// Override env with resolved port config so the rest of the app sees it
+// Get security configuration (env var > database > default)
+const securityConfig = getSecurityConfig();
+logSecurityConfig(securityConfig);
+
+// Override env with resolved configs so the rest of the app sees them
 process.env.API_PORT = String(portConfig.apiPort);
+process.env.TRUST_PROXY = String(securityConfig.trustProxy);
+if (securityConfig.secureCookies !== undefined) {
+	process.env.COOKIE_SECURE = String(securityConfig.secureCookies);
+}
 
 // Validate environment variables with friendly error messages
 const envResult = envSchema.safeParse(process.env);
@@ -47,15 +60,18 @@ const start = async () => {
 		});
 		const dbUrl = process.env.DATABASE_URL || "";
 		const dbType = dbUrl.startsWith("postgresql") ? "PostgreSQL" : "SQLite";
-		app.log.info({
-			version: getAppVersion(),
-			nodeVersion: process.version,
-			database: dbType,
-			logLevel: LOG_LEVEL,
-			logDir: LOG_DIR,
-			host: env.API_HOST,
-			port: portConfig.apiPort,
-		}, "Arr Dashboard started");
+		app.log.info(
+			{
+				version: getAppVersion(),
+				nodeVersion: process.version,
+				database: dbType,
+				logLevel: LOG_LEVEL,
+				logDir: LOG_DIR,
+				host: env.API_HOST,
+				port: portConfig.apiPort,
+			},
+			"Arr Dashboard started",
+		);
 
 		// Fire-and-forget startup notification
 		app.notificationService

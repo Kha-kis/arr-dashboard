@@ -48,6 +48,9 @@ const passkeyRenameSchema = z.object({
 	friendlyName: z.string().min(1).max(50),
 });
 
+const PASSKEY_LOGIN_RATE_LIMIT = { max: 10, timeWindow: "1 minute" };
+const PASSKEY_REGISTER_RATE_LIMIT = { max: 5, timeWindow: "1 minute" };
+
 const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	const passkeyService = createPasskeyService(app);
 
@@ -56,189 +59,205 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Generate registration options for creating a new passkey
 	 * User must be authenticated
 	 */
-	app.post("/passkey/register/options", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({ error: "Unauthorized" });
-		}
+	app.post(
+		"/passkey/register/options",
+		{ config: { rateLimit: PASSKEY_REGISTER_RATE_LIMIT } },
+		async (request, reply) => {
+			if (!request.currentUser) {
+				return reply.status(401).send({ error: "Unauthorized" });
+			}
 
-		// Check if OIDC provider is enabled - if so, passkey registration is disabled
-		const oidcProvider = await app.prisma.oIDCProvider.findFirst({
-			where: { enabled: true },
-		});
-
-		if (oidcProvider) {
-			return reply.status(403).send({
-				error: "Passkey authentication is disabled. Please use OIDC authentication.",
+			// Check if OIDC provider is enabled - if so, passkey registration is disabled
+			const oidcProvider = await app.prisma.oIDCProvider.findFirst({
+				where: { enabled: true },
 			});
-		}
 
-		// Check if user has a password - passkeys require password authentication
-		const user = await app.prisma.user.findUnique({
-			where: { id: request.currentUser.id },
-			select: { hashedPassword: true },
-		});
+			if (oidcProvider) {
+				return reply.status(403).send({
+					error: "Passkey authentication is disabled. Please use OIDC authentication.",
+				});
+			}
 
-		if (!user?.hashedPassword) {
-			return reply.status(403).send({
-				error: "Passkeys require password authentication. Please set up a password first.",
+			// Check if user has a password - passkeys require password authentication
+			const user = await app.prisma.user.findUnique({
+				where: { id: request.currentUser.id },
+				select: { hashedPassword: true },
 			});
-		}
 
-		validateRequest(passkeyRegisterOptionsSchema, request.body);
+			if (!user?.hashedPassword) {
+				return reply.status(403).send({
+					error: "Passkeys require password authentication. Please set up a password first.",
+				});
+			}
 
-		const options = await passkeyService.generateRegistrationOptions(
-			request.currentUser.id,
-			request.currentUser.username,
-			undefined, // email field removed from User model
-		);
+			validateRequest(passkeyRegisterOptionsSchema, request.body);
 
-		// Store challenge for verification
-		challengeStore.set(request.currentUser.id, {
-			challenge: options.challenge,
-			expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
-		});
+			const options = await passkeyService.generateRegistrationOptions(
+				request.currentUser.id,
+				request.currentUser.username,
+				undefined, // email field removed from User model
+			);
 
-		return reply.send(options);
-	});
+			// Store challenge for verification
+			challengeStore.set(request.currentUser.id, {
+				challenge: options.challenge,
+				expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
+			});
+
+			return reply.send(options);
+		},
+	);
 
 	/**
 	 * POST /auth/passkey/register/verify
 	 * Verify registration response and store new passkey
 	 * User must be authenticated
 	 */
-	app.post("/passkey/register/verify", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({ error: "Unauthorized" });
-		}
+	app.post(
+		"/passkey/register/verify",
+		{ config: { rateLimit: PASSKEY_REGISTER_RATE_LIMIT } },
+		async (request, reply) => {
+			if (!request.currentUser) {
+				return reply.status(401).send({ error: "Unauthorized" });
+			}
 
-		const parsed = validateRequest(passkeyRegisterVerifySchema, request.body);
+			const parsed = validateRequest(passkeyRegisterVerifySchema, request.body);
 
-		const storedChallenge = challengeStore.get(request.currentUser.id);
-		if (!storedChallenge) {
-			return reply.status(400).send({ error: "Challenge not found or expired" });
-		}
+			const storedChallenge = challengeStore.get(request.currentUser.id);
+			if (!storedChallenge) {
+				return reply.status(400).send({ error: "Challenge not found or expired" });
+			}
 
-		// Remove challenge to prevent replay
-		challengeStore.delete(request.currentUser.id);
+			// Remove challenge to prevent replay
+			challengeStore.delete(request.currentUser.id);
 
-		try {
-			const response = parsed.response as RegistrationResponseJSON;
-			await passkeyService.verifyRegistration(
-				request.currentUser.id,
-				response,
-				storedChallenge.challenge,
-				parsed.friendlyName,
-			);
+			try {
+				const response = parsed.response as RegistrationResponseJSON;
+				await passkeyService.verifyRegistration(
+					request.currentUser.id,
+					response,
+					storedChallenge.challenge,
+					parsed.friendlyName,
+				);
 
-			request.log.info("Passkey registered");
-			return reply.send({ success: true, message: "Passkey registered successfully" });
-		} catch (error) {
-			request.log.error({ err: error }, "Passkey registration verification failed");
-			return reply.status(400).send({ error: "Registration verification failed" });
-		}
-	});
+				request.log.info("Passkey registered");
+				return reply.send({ success: true, message: "Passkey registered successfully" });
+			} catch (error) {
+				request.log.error({ err: error }, "Passkey registration verification failed");
+				return reply.status(400).send({ error: "Registration verification failed" });
+			}
+		},
+	);
 
 	/**
 	 * POST /auth/passkey/login/options
 	 * Generate authentication options for passkey login
 	 * Public endpoint (no authentication required)
 	 */
-	app.post("/passkey/login/options", async (request, reply) => {
-		// Check if OIDC provider is enabled - if so, passkey login is disabled
-		const oidcProvider = await app.prisma.oIDCProvider.findFirst({
-			where: { enabled: true },
-		});
-
-		if (oidcProvider) {
-			return reply.status(403).send({
-				error: "Passkey authentication is disabled. Please use OIDC authentication.",
+	app.post(
+		"/passkey/login/options",
+		{ config: { rateLimit: PASSKEY_LOGIN_RATE_LIMIT } },
+		async (_request, reply) => {
+			// Check if OIDC provider is enabled - if so, passkey login is disabled
+			const oidcProvider = await app.prisma.oIDCProvider.findFirst({
+				where: { enabled: true },
 			});
-		}
 
-		const options = await passkeyService.generateAuthenticationOptions();
+			if (oidcProvider) {
+				return reply.status(403).send({
+					error: "Passkey authentication is disabled. Please use OIDC authentication.",
+				});
+			}
 
-		// Generate temporary session ID for challenge storage
-		const tempSessionId = randomBytes(32).toString("base64url");
+			const options = await passkeyService.generateAuthenticationOptions();
 
-		// Store challenge for verification
-		challengeStore.set(tempSessionId, {
-			challenge: options.challenge,
-			expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
-		});
+			// Generate temporary session ID for challenge storage
+			const tempSessionId = randomBytes(32).toString("base64url");
 
-		return reply.send({
-			options,
-			sessionId: tempSessionId, // Client must send this back
-		});
-	});
+			// Store challenge for verification
+			challengeStore.set(tempSessionId, {
+				challenge: options.challenge,
+				expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
+			});
+
+			return reply.send({
+				options,
+				sessionId: tempSessionId, // Client must send this back
+			});
+		},
+	);
 
 	/**
 	 * POST /auth/passkey/login/verify
 	 * Verify authentication response and create session
 	 * Public endpoint (no authentication required)
 	 */
-	app.post("/passkey/login/verify", async (request, reply) => {
-		const parsed = validateRequest(passkeyLoginVerifySchema, request.body);
+	app.post(
+		"/passkey/login/verify",
+		{ config: { rateLimit: PASSKEY_LOGIN_RATE_LIMIT } },
+		async (request, reply) => {
+			const parsed = validateRequest(passkeyLoginVerifySchema, request.body);
 
-		const sessionId = (request.body as { sessionId?: string }).sessionId;
-		if (!sessionId) {
-			return reply.status(400).send({ error: "Session ID required" });
-		}
+			const sessionId = (request.body as { sessionId?: string }).sessionId;
+			if (!sessionId) {
+				return reply.status(400).send({ error: "Session ID required" });
+			}
 
-		const storedChallenge = challengeStore.get(sessionId);
-		if (!storedChallenge) {
-			return reply.status(400).send({ error: "Challenge not found or expired" });
-		}
+			const storedChallenge = challengeStore.get(sessionId);
+			if (!storedChallenge) {
+				return reply.status(400).send({ error: "Challenge not found or expired" });
+			}
 
-		// Remove challenge to prevent replay
-		challengeStore.delete(sessionId);
+			// Remove challenge to prevent replay
+			challengeStore.delete(sessionId);
 
-		try {
-			const response = parsed.response as AuthenticationResponseJSON;
-			const verification = await passkeyService.verifyAuthentication(
-				response,
-				storedChallenge.challenge,
-			);
+			try {
+				const response = parsed.response as AuthenticationResponseJSON;
+				const verification = await passkeyService.verifyAuthentication(
+					response,
+					storedChallenge.challenge,
+				);
 
-			if (!verification.verified) {
-				request.log.warn({ ip: request.ip }, "Passkey login failed");
+				if (!verification.verified) {
+					request.log.warn({ ip: request.ip }, "Passkey login failed");
+					return reply.status(401).send({ error: "Authentication failed" });
+				}
+
+				// Get user details
+				const user = await app.prisma.user.findUnique({
+					where: { id: verification.userId },
+				});
+
+				if (!user) {
+					return reply.status(404).send({ error: "User not found" });
+				}
+
+				// Create session with metadata
+				const metadata = getSessionMetadata(request);
+				const session = await app.sessionService.createSession(user.id, true, metadata);
+				app.sessionService.attachCookie(reply, session.token, true);
+
+				// Pre-warm connections to ARR instances in background (don't await)
+				warmConnectionsForUser(app, user.id).catch((err) => {
+					request.log.debug({ err }, "Connection warm-up wrapper error (non-critical)");
+				});
+
+				request.log.info({ username: user.username, ip: request.ip }, "User logged in via passkey");
+
+				return reply.send({
+					user: {
+						id: user.id,
+						username: user.username,
+						mustChangePassword: user.mustChangePassword,
+						createdAt: user.createdAt,
+					},
+				});
+			} catch (error) {
+				request.log.error({ err: error }, "Passkey authentication verification failed");
 				return reply.status(401).send({ error: "Authentication failed" });
 			}
-
-			// Get user details
-			const user = await app.prisma.user.findUnique({
-				where: { id: verification.userId },
-			});
-
-			if (!user) {
-				return reply.status(404).send({ error: "User not found" });
-			}
-
-			// Create session with metadata
-			const metadata = getSessionMetadata(request);
-			const session = await app.sessionService.createSession(user.id, true, metadata);
-			app.sessionService.attachCookie(reply, session.token, true);
-
-			// Pre-warm connections to ARR instances in background (don't await)
-			warmConnectionsForUser(app, user.id).catch((err) => {
-				request.log.debug({ err }, "Connection warm-up wrapper error (non-critical)");
-			});
-
-			request.log.info({ username: user.username, ip: request.ip }, "User logged in via passkey");
-
-			return reply.send({
-				user: {
-					id: user.id,
-					username: user.username,
-					mustChangePassword: user.mustChangePassword,
-					createdAt: user.createdAt,
-				},
-			});
-		} catch (error) {
-			request.log.error({ err: error }, "Passkey authentication verification failed");
-			return reply.status(401).send({ error: "Authentication failed" });
-		}
-	});
+		},
+	);
 
 	/**
 	 * GET /auth/passkey/credentials

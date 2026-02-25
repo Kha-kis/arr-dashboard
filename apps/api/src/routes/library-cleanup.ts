@@ -268,7 +268,9 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 						seenTagIds.add(tag.id);
 					}
 				}
-			} catch { /* skip failed instances */ }
+			} catch (err) {
+				request.log.debug({ err, instanceId: inst.id }, "Failed to fetch tags from instance, skipping");
+			}
 		}
 		arrTags.sort((a, b) => a.label.localeCompare(b.label));
 

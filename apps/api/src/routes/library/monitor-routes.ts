@@ -5,7 +5,7 @@ import {
 	libraryEpisodeMonitorRequestSchema,
 	libraryToggleMonitorRequestSchema,
 } from "@arr/shared";
-import type { FastifyPluginCallback } from "fastify";
+import type { FastifyBaseLogger, FastifyPluginCallback } from "fastify";
 import {
 	getClientForInstance,
 	isLidarrClient,
@@ -25,6 +25,7 @@ async function updateCacheMonitoredStatus(
 	arrItemId: number,
 	itemType: "movie" | "series" | "artist" | "author",
 	monitored: boolean,
+	log: FastifyBaseLogger,
 ): Promise<void> {
 	try {
 		const cached = await prisma.libraryCache.findUnique({
@@ -51,9 +52,9 @@ async function updateCacheMonitoredStatus(
 				},
 			});
 		}
-	} catch {
-		// Cache update is best-effort - don't fail the request if it fails
-		// The next sync will correct any inconsistencies
+	} catch (err) {
+		// Cache update is best-effort — the next sync will correct any inconsistencies
+		log.debug({ err, instanceId, arrItemId, itemType }, "Best-effort cache update failed after monitor toggle");
 	}
 }
 
@@ -113,6 +114,7 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 					itemId,
 					"movie",
 					payload.monitored,
+					request.log,
 				);
 
 				return reply.status(204).send();
@@ -170,6 +172,7 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 					itemId,
 					"series",
 					payload.monitored,
+					request.log,
 				);
 
 				return reply.status(204).send();
@@ -192,6 +195,7 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 					itemId,
 					"artist",
 					payload.monitored,
+					request.log,
 				);
 
 				return reply.status(204).send();
@@ -214,6 +218,7 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 					itemId,
 					"author",
 					payload.monitored,
+					request.log,
 				);
 
 				return reply.status(204).send();

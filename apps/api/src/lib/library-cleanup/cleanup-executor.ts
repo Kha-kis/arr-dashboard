@@ -302,7 +302,12 @@ export async function executeApprovedItems(
 			// Revert to approved so the item can be retried
 			await prisma.libraryCleanupApproval
 				.update({ where: { id: approval.id }, data: { status: "approved" } })
-				.catch(() => {});
+				.catch((revertErr) => {
+					log.warn(
+						{ err: revertErr, approvalId: approval.id, title: approval.title },
+						"Failed to revert approval status — item may be stuck in executing state",
+					);
+				});
 		}
 	}
 

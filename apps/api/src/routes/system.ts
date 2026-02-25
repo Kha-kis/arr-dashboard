@@ -47,12 +47,16 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const effectiveApiPort = Number(process.env.API_PORT) || 3001;
 		const effectiveWebPort = Number(process.env.PORT) || 3000;
 		const effectiveListenAddress = process.env.HOST || process.env.HOSTNAME || "0.0.0.0";
+		const effectiveTrustProxy = app.config.TRUST_PROXY;
+		const effectiveSecureCookies = app.config.COOKIE_SECURE ?? app.config.TRUST_PROXY;
 
 		// Check if settings differ from what's currently running
 		const requiresRestart =
 			settings.apiPort !== effectiveApiPort ||
 			settings.webPort !== effectiveWebPort ||
-			settings.listenAddress !== effectiveListenAddress;
+			settings.listenAddress !== effectiveListenAddress ||
+			settings.trustProxy !== effectiveTrustProxy ||
+			(settings.secureCookies ?? effectiveTrustProxy) !== effectiveSecureCookies;
 
 		return reply.send({
 			success: true,
@@ -62,9 +66,13 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				listenAddress: settings.listenAddress,
 				appName: settings.appName,
 				externalUrl: settings.externalUrl,
+				trustProxy: settings.trustProxy,
+				secureCookies: settings.secureCookies,
 				effectiveApiPort,
 				effectiveWebPort,
 				effectiveListenAddress,
+				effectiveTrustProxy,
+				effectiveSecureCookies,
 				requiresRestart,
 				updatedAt: settings.updatedAt,
 			},
@@ -83,9 +91,12 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			listenAddress?: string;
 			appName?: string;
 			externalUrl?: string | null;
+			trustProxy?: boolean;
+			secureCookies?: boolean | null;
 		};
 	}>("/settings", async (request, reply) => {
-		const { apiPort, webPort, listenAddress, appName, externalUrl } = request.body;
+		const { apiPort, webPort, listenAddress, appName, externalUrl, trustProxy, secureCookies } =
+			request.body;
 
 		// Validate port numbers if provided
 		if (apiPort !== undefined) {
@@ -131,6 +142,40 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			}
 		}
 
+		// Validate security settings
+		if (trustProxy !== undefined && typeof trustProxy !== "boolean") {
+			return reply.status(400).send({
+				success: false,
+				error: "trustProxy must be a boolean",
+			});
+		}
+		if (secureCookies !== undefined && secureCookies !== null && typeof secureCookies !== "boolean") {
+			return reply.status(400).send({
+				success: false,
+				error: "secureCookies must be a boolean or null",
+			});
+		}
+
+		// Prevent lockout: secure cookies without a reverse proxy means the browser
+		// won't send the Secure cookie over plain HTTP, permanently locking out the user.
+		// Check both the request body AND existing DB value to catch cases where only
+		// trustProxy is being disabled while secureCookies remains true in the database.
+		const effectiveTrustProxy = trustProxy ?? (app.config.TRUST_PROXY || false);
+		let effectiveSecureCookies = secureCookies;
+		if (effectiveSecureCookies === undefined) {
+			const currentSettings = await app.prisma.systemSettings.findUnique({
+				where: { id: 1 },
+				select: { secureCookies: true },
+			});
+			effectiveSecureCookies = currentSettings?.secureCookies ?? null;
+		}
+		if (effectiveSecureCookies === true && !effectiveTrustProxy) {
+			return reply.status(400).send({
+				success: false,
+				error: "Cannot enable secure cookies without Trust Proxy. Secure cookies require HTTPS, which is typically provided by a reverse proxy.",
+			});
+		}
+
 		// Validate external URL if provided (not null - null means clear)
 		if (externalUrl !== undefined && externalUrl !== null && externalUrl !== "") {
 			try {
@@ -162,6 +207,8 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				...(listenAddress !== undefined && { listenAddress }),
 				...(appName !== undefined && { appName }),
 				...(externalUrl !== undefined && { externalUrl: normalizedExternalUrl }),
+				...(trustProxy !== undefined && { trustProxy }),
+				...(secureCookies !== undefined && { secureCookies }),
 			},
 			create: {
 				id: 1,
@@ -170,6 +217,8 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				listenAddress: listenAddress || "0.0.0.0",
 				appName: appName || "Arr Dashboard",
 				externalUrl: normalizedExternalUrl,
+				trustProxy: trustProxy ?? false,
+				secureCookies: secureCookies ?? null,
 			},
 		});
 
@@ -177,12 +226,16 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const currentApiPort = Number(process.env.API_PORT) || 3001;
 		const currentWebPort = Number(process.env.PORT) || 3000;
 		const currentListenAddress = process.env.HOST || process.env.HOSTNAME || "0.0.0.0";
+		const currentTrustProxy = app.config.TRUST_PROXY;
+		const currentSecureCookies = app.config.COOKIE_SECURE ?? app.config.TRUST_PROXY;
 
-		// Check if restart is needed (for port or listen address changes)
+		// Check if restart is needed (for port, listen address, or security changes)
 		const requiresRestart =
 			settings.apiPort !== currentApiPort ||
 			settings.webPort !== currentWebPort ||
-			settings.listenAddress !== currentListenAddress;
+			settings.listenAddress !== currentListenAddress ||
+			settings.trustProxy !== currentTrustProxy ||
+			(settings.secureCookies ?? currentTrustProxy) !== currentSecureCookies;
 
 		request.log.info(
 			{
@@ -191,6 +244,7 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				webPort: settings.webPort,
 				listenAddress: settings.listenAddress,
 				externalUrl: settings.externalUrl,
+				trustProxy: settings.trustProxy,
 				requiresRestart,
 			},
 			"System settings updated",
@@ -204,14 +258,18 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				listenAddress: settings.listenAddress,
 				appName: settings.appName,
 				externalUrl: settings.externalUrl,
+				trustProxy: settings.trustProxy,
+				secureCookies: settings.secureCookies,
 				effectiveApiPort: currentApiPort,
 				effectiveWebPort: currentWebPort,
 				effectiveListenAddress: currentListenAddress,
+				effectiveTrustProxy: currentTrustProxy,
+				effectiveSecureCookies: currentSecureCookies,
 				requiresRestart,
 				updatedAt: settings.updatedAt,
 			},
 			message: requiresRestart
-				? "Settings saved. Container restart required for port changes to take effect."
+				? "Settings saved. Restart required for changes to take effect."
 				: "Settings saved successfully.",
 		});
 	});
@@ -279,7 +337,7 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * GET /system/logs
 	 * List log files with sizes and dates
 	 */
-	app.get("/logs", { config: { rateLimit: LOGS_RATE_LIMIT } }, async (_request, reply) => {
+	app.get("/logs", { config: { rateLimit: LOGS_RATE_LIMIT } }, async (request, reply) => {
 		try {
 			const entries = await readdir(LOG_DIR);
 			const files: { name: string; size: number; modified: string }[] = [];
@@ -306,12 +364,14 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					files,
 				},
 			});
-		} catch {
+		} catch (error) {
+			request.log.warn({ err: error, logDir: LOG_DIR }, "Failed to list log files");
 			return reply.send({
 				success: true,
 				data: {
 					directory: LOG_DIR,
 					files: [],
+					warning: "Could not read log directory. Check permissions and path configuration.",
 				},
 			});
 		}
@@ -321,37 +381,49 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * GET /system/logs/download/:filename
 	 * Download a specific log file
 	 */
-	app.get<{ Params: { filename: string } }>("/logs/download/:filename", { config: { rateLimit: LOGS_RATE_LIMIT } }, async (request, reply) => {
-		const { filename } = request.params;
+	app.get<{ Params: { filename: string } }>(
+		"/logs/download/:filename",
+		{ config: { rateLimit: LOGS_RATE_LIMIT } },
+		async (request, reply) => {
+			const { filename } = request.params;
 
-		// Path traversal protection: only allow simple filenames
-		if (filename !== basename(filename) || filename.includes("..")) {
-			return reply.status(400).send({ error: "Invalid filename" });
-		}
-
-		const filePath = resolve(LOG_DIR, filename);
-
-		// Ensure the resolved path is still within the log directory
-		if (!filePath.startsWith(resolve(LOG_DIR))) {
-			return reply.status(400).send({ error: "Invalid filename" });
-		}
-
-		try {
-			const info = await stat(filePath);
-			if (!info.isFile()) {
-				return reply.status(404).send({ error: "File not found" });
+			// Path traversal protection: only allow simple filenames
+			if (filename !== basename(filename) || filename.includes("..")) {
+				return reply.status(400).send({ error: "Invalid filename" });
 			}
 
-			const stream = createReadStream(filePath);
-			return reply
-				.header("Content-Disposition", `attachment; filename="${filename}"`)
-				.header("Content-Type", "application/octet-stream")
-				.header("Content-Length", info.size)
-				.send(stream);
-		} catch {
-			return reply.status(404).send({ error: "File not found" });
-		}
-	});
+			const filePath = resolve(LOG_DIR, filename);
+
+			// Ensure the resolved path is still within the log directory
+			if (!filePath.startsWith(resolve(LOG_DIR))) {
+				return reply.status(400).send({ error: "Invalid filename" });
+			}
+
+			try {
+				const info = await stat(filePath);
+				if (!info.isFile()) {
+					return reply.status(404).send({ error: "File not found" });
+				}
+
+				const stream = createReadStream(filePath);
+				// Sanitize filename to prevent header injection (strip quotes, newlines, control chars, non-ASCII)
+				// biome-ignore lint/suspicious/noControlCharactersInRegex: intentional sanitization of control characters
+				const safeFilename = filename.replace(/["\r\n\x00-\x1f\x7f-\xff]/g, "_");
+				return reply
+					.header("Content-Disposition", `attachment; filename="${safeFilename}"`)
+					.header("Content-Type", "application/octet-stream")
+					.header("Content-Length", info.size)
+					.send(stream);
+			} catch (error) {
+				const code = (error as NodeJS.ErrnoException).code;
+				if (code === "ENOENT") {
+					return reply.status(404).send({ error: "File not found" });
+				}
+				request.log.error({ err: error, filename }, "Failed to download log file");
+				return reply.status(500).send({ error: "Failed to read log file" });
+			}
+		},
+	);
 
 	done();
 };

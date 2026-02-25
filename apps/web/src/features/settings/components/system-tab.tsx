@@ -7,22 +7,25 @@ import {
 	Clock,
 	Cpu,
 	Database,
+	Download,
+	FileText,
 	Globe,
 	Info,
 	Loader2,
+	Lock,
 	Network,
 	RefreshCw,
 	Save,
-	Server,
-	FileText,
-	Download,
 	ScrollText,
+	Server,
+	Shield,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { GlassmorphicCard, PremiumSection, PremiumSkeleton } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
+import { Switch } from "../../../components/ui/switch";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { apiRequest } from "../../../lib/api-client/base";
 import { getErrorMessage } from "../../../lib/error-utils";
@@ -35,9 +38,13 @@ interface SystemSettings {
 	listenAddress: string;
 	appName: string;
 	externalUrl: string | null;
+	trustProxy: boolean;
+	secureCookies: boolean | null;
 	effectiveApiPort: number;
 	effectiveWebPort: number;
 	effectiveListenAddress: string;
+	effectiveTrustProxy: boolean;
+	effectiveSecureCookies: boolean;
 	requiresRestart: boolean;
 	updatedAt: string;
 }
@@ -124,6 +131,8 @@ async function updateSystemSettings(data: {
 	listenAddress?: string;
 	appName?: string;
 	externalUrl?: string | null;
+	trustProxy?: boolean;
+	secureCookies?: boolean | null;
 }): Promise<SystemSettingsResponse> {
 	return apiRequest<SystemSettingsResponse>("/api/system/settings", {
 		method: "PUT",
@@ -190,6 +199,8 @@ export function SystemTab() {
 	const [webPort, setWebPort] = useState(3000);
 	const [listenAddress, setListenAddress] = useState("0.0.0.0");
 	const [externalUrl, setExternalUrl] = useState("");
+	const [trustProxy, setTrustProxy] = useState(false);
+	const [secureCookies, setSecureCookies] = useState<boolean | null>(null);
 	const [hasChanges, setHasChanges] = useState(false);
 	const [isDockerInfoOpen, setIsDockerInfoOpen] = useState(false);
 
@@ -204,7 +215,11 @@ export function SystemTab() {
 		refetchInterval: 60000,
 	});
 
-	const { data: logFiles, refetch: refetchLogs, isError: logFilesError } = useQuery({
+	const {
+		data: logFiles,
+		refetch: refetchLogs,
+		isError: logFilesError,
+	} = useQuery({
 		queryKey: ["system-logs"],
 		queryFn: getLogFiles,
 	});
@@ -237,6 +252,8 @@ export function SystemTab() {
 			setWebPort(settings.data.webPort);
 			setListenAddress(settings.data.listenAddress || "0.0.0.0");
 			setExternalUrl(settings.data.externalUrl || "");
+			setTrustProxy(settings.data.trustProxy);
+			setSecureCookies(settings.data.secureCookies);
 		}
 	}, [settings?.data]);
 
@@ -245,17 +262,26 @@ export function SystemTab() {
 		newWebPort: number,
 		newListenAddress: string,
 		newExternalUrl: string,
+		newTrustProxy?: boolean,
+		newSecureCookies?: boolean | null,
 	) => {
 		const originalApiPort = settings?.data?.apiPort ?? 3001;
 		const originalWebPort = settings?.data?.webPort ?? 3000;
 		const originalListenAddress = settings?.data?.listenAddress ?? "0.0.0.0";
 		const originalExternalUrl = settings?.data?.externalUrl ?? "";
+		const originalTrustProxy = settings?.data?.trustProxy ?? false;
+		const originalSecureCookies = settings?.data?.secureCookies ?? null;
+
+		const tp = newTrustProxy ?? trustProxy;
+		const sc = newSecureCookies !== undefined ? newSecureCookies : secureCookies;
 
 		setHasChanges(
 			newApiPort !== originalApiPort ||
 				newWebPort !== originalWebPort ||
 				newListenAddress !== originalListenAddress ||
-				newExternalUrl !== originalExternalUrl,
+				newExternalUrl !== originalExternalUrl ||
+				tp !== originalTrustProxy ||
+				sc !== originalSecureCookies,
 		);
 	};
 
@@ -313,6 +339,8 @@ export function SystemTab() {
 			webPort,
 			listenAddress,
 			externalUrl: externalUrl || null,
+			trustProxy,
+			secureCookies,
 		});
 	};
 
@@ -548,9 +576,7 @@ export function SystemTab() {
 													}}
 												>
 													<td className="px-4 py-2.5">
-														<span className="font-mono text-xs text-foreground">
-															{file.name}
-														</span>
+														<span className="font-mono text-xs text-foreground">{file.name}</span>
 													</td>
 													<td className="px-4 py-2.5 text-muted-foreground text-xs">
 														{formatFileSize(file.size)}
@@ -564,7 +590,7 @@ export function SystemTab() {
 															download={file.name}
 															className={cn(
 																"inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-colors",
-																"border border-border/50 hover:border-border hover:bg-card/50 text-muted-foreground hover:text-foreground"
+																"border border-border/50 hover:border-border hover:bg-card/50 text-muted-foreground hover:text-foreground",
 															)}
 														>
 															<Download className="h-3 w-3" />
@@ -581,9 +607,7 @@ export function SystemTab() {
 									Failed to load log files
 								</p>
 							) : (
-								<p className="text-sm text-muted-foreground py-4 text-center">
-									No log files found
-								</p>
+								<p className="text-sm text-muted-foreground py-4 text-center">No log files found</p>
 							)}
 						</div>
 					</GlassmorphicCard>
@@ -611,7 +635,8 @@ export function SystemTab() {
 					<div className="flex-1 min-w-0">
 						<p className="font-semibold text-foreground">Restart Required</p>
 						<p className="text-sm text-muted-foreground mt-0.5">
-							Changes to port or listen address settings require a container restart to take effect.
+							Changes to port, listen address, or proxy security settings require a restart to take
+							effect.
 						</p>
 					</div>
 					{!hasChanges && (
@@ -926,6 +951,137 @@ ports:
 									<li>Using a custom domain name</li>
 									<li>Accessing via HTTPS with SSL termination</li>
 									<li>OIDC authentication requires correct callback URLs</li>
+								</ul>
+							</div>
+						</div>
+					</GlassmorphicCard>
+				</div>
+			</PremiumSection>
+
+			{/* Reverse Proxy Security Section */}
+			<PremiumSection
+				title="Reverse Proxy Security"
+				description="Configure trust settings when running behind a reverse proxy"
+				icon={Shield}
+			>
+				<div className="space-y-6">
+					{/* Trust Proxy Toggle */}
+					<div className="flex items-start justify-between gap-6 max-w-2xl">
+						<div className="space-y-1">
+							<label htmlFor="trustProxy" className="text-sm font-medium text-foreground">
+								Trust Proxy Headers
+							</label>
+							<p className="text-xs text-muted-foreground max-w-md">
+								Enable when running behind a reverse proxy (Nginx, Traefik, Caddy). Trusts{" "}
+								<code className="px-1 py-0.5 bg-card/50 rounded font-mono text-[10px]">
+									X-Forwarded-For
+								</code>{" "}
+								and{" "}
+								<code className="px-1 py-0.5 bg-card/50 rounded font-mono text-[10px]">
+									X-Forwarded-Proto
+								</code>{" "}
+								headers for accurate client IP detection and rate limiting.
+							</p>
+						</div>
+						<Switch
+							id="trustProxy"
+							checked={trustProxy}
+							onCheckedChange={(checked) => {
+								setTrustProxy(checked);
+								// Auto-update secureCookies when trustProxy changes (if secureCookies is auto)
+								if (secureCookies === null) {
+									checkForChanges(apiPort, webPort, listenAddress, externalUrl, checked, null);
+								} else {
+									checkForChanges(apiPort, webPort, listenAddress, externalUrl, checked);
+								}
+							}}
+						/>
+					</div>
+
+					{/* Secure Cookies Toggle */}
+					<div className="flex items-start justify-between gap-6 max-w-2xl">
+						<div className="space-y-1">
+							<label htmlFor="secureCookies" className="text-sm font-medium text-foreground">
+								<Lock className="inline h-3.5 w-3.5 mr-1.5 -mt-0.5 opacity-70" />
+								Secure Cookies (HTTPS Only)
+							</label>
+							<p className="text-xs text-muted-foreground max-w-md">
+								When enabled, session cookies are only sent over HTTPS connections.
+								{secureCookies === null && (
+									<span className="block mt-1" style={{ color: themeGradient.from }}>
+										Auto-detecting from Trust Proxy setting ({trustProxy ? "enabled" : "disabled"})
+									</span>
+								)}
+							</p>
+						</div>
+						<div className="flex items-center gap-3">
+							{secureCookies !== null && (
+								<button
+									type="button"
+									className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+									onClick={() => {
+										setSecureCookies(null);
+										checkForChanges(apiPort, webPort, listenAddress, externalUrl, undefined, null);
+									}}
+								>
+									Reset to auto
+								</button>
+							)}
+							<Switch
+								id="secureCookies"
+								checked={secureCookies ?? trustProxy}
+								onCheckedChange={(checked) => {
+									setSecureCookies(checked);
+									checkForChanges(apiPort, webPort, listenAddress, externalUrl, undefined, checked);
+								}}
+							/>
+						</div>
+					</div>
+
+					{/* Current Status */}
+					<div className="grid gap-3 sm:grid-cols-2 max-w-2xl">
+						<div className="flex items-center gap-2 text-xs text-muted-foreground">
+							<Info className="h-3 w-3 shrink-0" />
+							<span>
+								Trust Proxy running:{" "}
+								<code className="px-1.5 py-0.5 bg-card/50 rounded font-mono text-foreground">
+									{settings?.data?.effectiveTrustProxy ? "enabled" : "disabled"}
+								</code>
+							</span>
+						</div>
+						<div className="flex items-center gap-2 text-xs text-muted-foreground">
+							<Info className="h-3 w-3 shrink-0" />
+							<span>
+								Secure Cookies running:{" "}
+								<code className="px-1.5 py-0.5 bg-card/50 rounded font-mono text-foreground">
+									{settings?.data?.effectiveSecureCookies ? "enabled" : "disabled"}
+								</code>
+							</span>
+						</div>
+					</div>
+
+					{/* Info Card */}
+					<GlassmorphicCard padding="md">
+						<div className="flex gap-3">
+							<div
+								className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+								style={{
+									background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+									border: `1px solid ${themeGradient.from}30`,
+								}}
+							>
+								<Shield className="h-5 w-5" style={{ color: themeGradient.from }} />
+							</div>
+							<div className="space-y-2 text-sm">
+								<p className="font-semibold text-foreground">When to enable Trust Proxy</p>
+								<ul className="text-muted-foreground space-y-1 list-disc list-inside">
+									<li>Running behind Nginx, Traefik, Caddy, or any reverse proxy</li>
+									<li>Ensures accurate client IP in logs, sessions, and rate limiting</li>
+									<li>Auto-enables secure cookies (HTTPS) for better session security</li>
+									<li>
+										<strong className="text-foreground">Do not enable</strong> if accessed directly
+										without a proxy
+									</li>
 								</ul>
 							</div>
 						</div>

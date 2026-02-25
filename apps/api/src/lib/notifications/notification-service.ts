@@ -83,8 +83,8 @@ export class NotificationService {
 				let config: Record<string, unknown>;
 				try {
 					config = JSON.parse(decryptedJson) as Record<string, unknown>;
-				} catch {
-					throw new Error(`Failed to parse config for channel "${sub.channel.name}" — config may be corrupted`);
+				} catch (parseErr) {
+					throw new Error(`Failed to parse config for channel "${sub.channel.name}" — config may be corrupted: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`);
 				}
 
 				await this.dispatcher.send(channelType, config, payload);
@@ -141,8 +141,8 @@ export class NotificationService {
 		let config: Record<string, unknown>;
 		try {
 			config = JSON.parse(decryptedJson) as Record<string, unknown>;
-		} catch {
-			throw new Error(`Failed to parse config for channel "${channel.name}" — config may be corrupted. Try re-saving the channel settings.`);
+		} catch (parseErr) {
+			throw new Error(`Failed to parse config for channel "${channel.name}" — config may be corrupted: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}. Try re-saving the channel settings.`);
 		}
 
 		await this.dispatcher.test(channelType, config);
@@ -189,8 +189,8 @@ export class NotificationService {
 		let config: Record<string, unknown>;
 		try {
 			config = JSON.parse(decryptedJson) as Record<string, unknown>;
-		} catch {
-			throw new Error(`Failed to parse config for channel "${channel.name}" — config may be corrupted. Try re-saving the channel settings.`);
+		} catch (parseErr) {
+			throw new Error(`Failed to parse config for channel "${channel.name}" — config may be corrupted: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}. Try re-saving the channel settings.`);
 		}
 
 		// Redact secret fields — frontend should only send non-placeholder values on update

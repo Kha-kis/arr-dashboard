@@ -111,7 +111,9 @@ export async function deploymentRoutes(app: FastifyInstance) {
 					templateId,
 				},
 			})
-			.catch(() => {});
+			.catch((err) => {
+				request.log.debug({ err }, "Deployment failed notification dispatch failed");
+			});
 
 		return reply.status(400).send({
 			success: false,
@@ -420,7 +422,9 @@ export async function deploymentRoutes(app: FastifyInstance) {
 						templateId,
 					},
 				})
-				.catch(() => {});
+				.catch((err) => {
+					request.log.debug({ err }, "Bulk deployment failed notification dispatch failed");
+				});
 		}
 
 		return reply.send({

@@ -2,37 +2,24 @@ import type { FastifyRequest } from "fastify";
 import type { SessionMetadata } from "./session.js";
 
 /**
- * Extract client IP address from request
- * Respects X-Forwarded-For header for proxied requests (common in Docker/reverse proxy setups)
+ * Extract client IP address from request.
  *
- * Security note: X-Forwarded-For can be spoofed, but for our use case (session identification),
- * showing the user what IP was used at login time is sufficient. The first IP in the chain
- * is generally the most trustworthy as proxies append IPs rather than prepend.
+ * When TRUST_PROXY is enabled, Fastify's `request.ip` already resolves the
+ * real client IP from X-Forwarded-For using its built-in trustProxy logic,
+ * which only trusts headers from the configured proxy hop(s).
+ *
+ * When TRUST_PROXY is disabled, we fall back to the direct connection IP.
+ * We intentionally do NOT manually read X-Forwarded-For in this case because
+ * any client can forge that header — trusting it without proxy validation
+ * allows IP spoofing in session metadata and logs.
  */
 export function getClientIp(request: FastifyRequest): string {
-	// Check X-Forwarded-For first (for reverse proxy setups)
-	const forwardedFor = request.headers["x-forwarded-for"];
-	if (forwardedFor) {
-		// X-Forwarded-For can contain multiple IPs, take the first one (original client)
-		const ips = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
-		const firstIp = ips?.split(",")[0]?.trim();
-		if (firstIp) return firstIp;
-	}
-
-	// Check X-Real-IP (used by some proxies like nginx)
-	const realIp = request.headers["x-real-ip"];
-	if (realIp) {
-		const ip = Array.isArray(realIp) ? realIp[0] : realIp;
-		if (ip) return ip;
-	}
-
-	// Fallback to direct connection IP
 	return request.ip;
 }
 
 /**
- * Extract session metadata from request for storing with the session
- * Captures user agent and IP address at login time
+ * Extract session metadata from request for storing with the session.
+ * Captures user agent and IP address at login time.
  */
 export function getSessionMetadata(request: FastifyRequest): SessionMetadata {
 	return {

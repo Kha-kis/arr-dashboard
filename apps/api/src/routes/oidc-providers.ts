@@ -79,17 +79,12 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 			}
 
 			// Auto-generate redirect URI if not provided
-			// Use the request origin to detect the correct URL (works in Docker/proxy environments)
+			// Use APP_URL (configured env var) as the trusted base URL.
+			// Only fall back to request headers when TRUST_PROXY is enabled (headers are validated by Fastify).
 			let redirectUri = data.redirectUri;
 			if (!redirectUri) {
-				const protocol = request.headers["x-forwarded-proto"] || request.protocol;
-				const host =
-					request.headers["x-forwarded-host"] || request.headers.host || "localhost:3000";
-				redirectUri = `${protocol}://${host}/auth/oidc/callback`;
-				request.log.info(
-					{ redirectUri, protocol, host },
-					"Auto-generated redirect URI from request",
-				);
+				redirectUri = `${app.config.APP_URL}/auth/oidc/callback`;
+				request.log.info({ redirectUri }, "Auto-generated redirect URI from APP_URL");
 			}
 
 			// Check if provider already exists (only one allowed)

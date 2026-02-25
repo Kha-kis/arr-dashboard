@@ -58,14 +58,15 @@ export type ServerOptions = {
 };
 
 export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
+	const env = options.env ?? envSchema.parse(process.env);
+
 	const app = Fastify({
 		...(options.logger === false
 		? { logger: false }
 		: { loggerInstance: logger as FastifyBaseLogger }),
 		genReqId: () => randomBytes(4).toString("hex"),
+		trustProxy: env.TRUST_PROXY,
 	});
-
-	const env = options.env ?? envSchema.parse(process.env);
 	app.decorate("config", env);
 
 	// Handle requests with unexpected Content-Type headers (e.g., Next.js proxy
@@ -196,10 +197,12 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 			reply.status(500);
 		}
 		const err = error instanceof Error ? error : new Error(String(error));
+		// Never leak internal error details on 5xx responses (they may contain file paths, DB info, etc.)
+		const is5xx = reply.statusCode >= 500;
 		reply.send({
 			statusCode: reply.statusCode,
-			error: err.name ?? "InternalServerError",
-			message: err.message,
+			error: is5xx ? "InternalServerError" : (err.name ?? "InternalServerError"),
+			message: is5xx ? "Internal server error" : err.message,
 		});
 	});
 

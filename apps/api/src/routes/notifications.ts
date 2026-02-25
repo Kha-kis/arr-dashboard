@@ -179,7 +179,9 @@ export const registerNotificationRoutes: FastifyPluginCallback = (app, _opts, do
 							lastTestResult: `failed: ${getErrorMessage(error).replace(/[A-Za-z0-9+/]{40,}={0,2}/g, "<redacted>").slice(0, 200)}`,
 						},
 					})
-					.catch(() => {});
+					.catch((err) => {
+						request.log.debug({ err }, "Failed to update notification test result in database");
+					});
 
 				return reply.status(400).send({
 					error: "Test failed",
@@ -197,8 +199,14 @@ export const registerNotificationRoutes: FastifyPluginCallback = (app, _opts, do
 		try {
 			const config = await app.notificationService.getDecryptedConfig(id, userId);
 			return reply.send(config);
-		} catch {
-			return reply.status(404).send({ error: "Channel not found" });
+		} catch (error) {
+			const msg = getErrorMessage(error);
+			if (msg === "Channel not found") {
+				return reply.status(404).send({ error: "Channel not found" });
+			}
+			// Config corruption or decryption failure — surface the details
+			request.log.error({ err: error, channelId: id }, "Failed to decrypt channel config");
+			return reply.status(500).send({ error: "Failed to read channel config", message: msg });
 		}
 	});
 
@@ -408,8 +416,9 @@ export const registerNotificationRoutes: FastifyPluginCallback = (app, _opts, do
 					});
 					return reply.send({ id: existing.id, updated: true });
 				}
-			} catch {
-				// Couldn't decrypt — continue checking others
+			} catch (err) {
+				// Couldn't decrypt — skip this channel and continue checking others
+				request.log.debug({ err, channelId: existing.id }, "Could not decrypt browser push channel for dedup check");
 			}
 		}
 
