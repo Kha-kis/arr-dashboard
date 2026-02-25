@@ -432,6 +432,16 @@ class HuntingScheduler {
 				},
 			});
 
+			log.info({
+				instanceLabel: config.instance.label,
+				huntType: type,
+				status: result.status,
+				itemsSearched: result.itemsSearched,
+				itemsGrabbed: result.itemsGrabbed,
+				apiCalls: result.apiCallsMade,
+				durationMs,
+			}, "Hunt completed");
+
 			// Update config timestamps and API call count (only if we actually made API calls)
 			if (result.status !== "skipped" && result.apiCallsMade > 0) {
 				const updateData: Record<string, unknown> = {

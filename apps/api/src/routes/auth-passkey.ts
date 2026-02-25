@@ -130,6 +130,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				parsed.friendlyName,
 			);
 
+			request.log.info("Passkey registered");
 			return reply.send({ success: true, message: "Passkey registered successfully" });
 		} catch (error) {
 			request.log.error({ err: error }, "Passkey registration verification failed");
@@ -200,6 +201,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			);
 
 			if (!verification.verified) {
+				request.log.warn({ ip: request.ip }, "Passkey login failed");
 				return reply.status(401).send({ error: "Authentication failed" });
 			}
 
@@ -221,6 +223,8 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			warmConnectionsForUser(app, user.id).catch((err) => {
 				request.log.debug({ err }, "Connection warm-up wrapper error (non-critical)");
 			});
+
+			request.log.info({ username: user.username, ip: request.ip }, "User logged in via passkey");
 
 			return reply.send({
 				user: {
@@ -307,6 +311,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			await app.sessionService.invalidateAllUserSessions(request.currentUser.id);
 		}
 
+		request.log.info("Passkey deleted");
 		return reply.send({ success: true, message: "Passkey deleted successfully" });
 	});
 
@@ -332,6 +337,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(404).send({ error: "Credential not found" });
 		}
 
+		request.log.info({ friendlyName: parsed.friendlyName }, "Passkey renamed");
 		return reply.send({ success: true, message: "Passkey renamed successfully" });
 	});
 

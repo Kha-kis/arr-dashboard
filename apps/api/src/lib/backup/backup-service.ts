@@ -29,14 +29,15 @@ import type {
 import type { PrismaClient } from "../../lib/prisma.js";
 import type { Encryptor } from "../auth/encryption.js";
 import { loggers } from "../logger.js";
-import { encryptBackupData, decryptBackupData } from "./backup-crypto.js";
+import { getErrorMessage } from "../utils/error-message.js";
+import { decryptBackupData, encryptBackupData } from "./backup-crypto.js";
 import { exportDatabase, restoreDatabase } from "./backup-database.js";
 import {
-	readSecrets,
-	writeSecrets,
 	ensureBackupsDirectory,
 	generateBackupId,
 	parseTimestampFromFilename,
+	readSecrets,
+	writeSecrets,
 } from "./backup-file-utils.js";
 import {
 	BACKUP_VERSION,
@@ -44,7 +45,6 @@ import {
 	isPlaintextBackup,
 	validateBackup,
 } from "./backup-validation.js";
-import { getErrorMessage } from "../utils/error-message.js";
 
 const log = loggers.backup;
 
@@ -105,7 +105,10 @@ export class BackupService {
 					});
 				} catch (error) {
 					// Log error but continue to fallback - decryption failure shouldn't block backups
-					log.error({ err: error }, "Failed to decrypt backup password from database, falling back to env var");
+					log.error(
+						{ err: error },
+						"Failed to decrypt backup password from database, falling back to env var",
+					);
 				}
 			}
 		}
@@ -187,14 +190,23 @@ export class BackupService {
 					// File disappeared, proceed with write
 				} else if (error instanceof SyntaxError && recheckContent) {
 					// Invalid JSON - try to salvage backupPassword before overwriting
-					log.warn({ file: "secrets.json" }, "secrets.json has invalid JSON, attempting to salvage backupPassword");
+					log.warn(
+						{ file: "secrets.json" },
+						"secrets.json has invalid JSON, attempting to salvage backupPassword",
+					);
 					// Use the already-read recheckContent instead of re-reading the file
 					const backupPasswordMatch = recheckContent.match(/"backupPassword"\s*:\s*"([^"]+)"/);
 					if (backupPasswordMatch?.[1]) {
-						log.warn({ file: "secrets.json" }, "Found existing backupPassword in invalid JSON, preserving it");
+						log.warn(
+							{ file: "secrets.json" },
+							"Found existing backupPassword in invalid JSON, preserving it",
+						);
 						return backupPasswordMatch[1];
 					}
-					log.warn({ file: "secrets.json" }, "Could not salvage backupPassword, existing backups may become inaccessible");
+					log.warn(
+						{ file: "secrets.json" },
+						"Could not salvage backupPassword, existing backups may become inaccessible",
+					);
 					// Proceed with write
 				} else {
 					// Unexpected error (e.g., EACCES permission denied), re-throw
@@ -293,7 +305,9 @@ export class BackupService {
 		await ensureBackupsDirectory(this.backupsDir);
 
 		// 2. Export all database data
-		const data = await exportDatabase(this.prisma, { includeTrashBackups: options.includeTrashBackups });
+		const data = await exportDatabase(this.prisma, {
+			includeTrashBackups: options.includeTrashBackups,
+		});
 
 		// 3. Read secrets file
 		const secrets = await readSecrets(this.secretsPath);
@@ -341,11 +355,17 @@ export class BackupService {
 
 		if (estimatedSizeMB > RECOMMENDED_MAX_BACKUP_SIZE_MB) {
 			const message = `Backup size estimate (${estimatedSizeMB.toFixed(2)} MB) exceeds recommended limit (${RECOMMENDED_MAX_BACKUP_SIZE_MB} MB). This may cause memory issues or timeouts. Consider implementing backup streaming or pruning old data.`;
-			log.error({ estimatedSizeMB, limitMB: RECOMMENDED_MAX_BACKUP_SIZE_MB }, "Backup size estimate exceeds recommended limit");
+			log.error(
+				{ estimatedSizeMB, limitMB: RECOMMENDED_MAX_BACKUP_SIZE_MB },
+				"Backup size estimate exceeds recommended limit",
+			);
 			throw new Error(message);
 		}
 		if (estimatedSizeMB > WARNING_BACKUP_SIZE_MB) {
-			log.warn({ estimatedSizeMB, warningThresholdMB: WARNING_BACKUP_SIZE_MB }, "Backup size estimate is large, consider monitoring memory usage");
+			log.warn(
+				{ estimatedSizeMB, warningThresholdMB: WARNING_BACKUP_SIZE_MB },
+				"Backup size estimate is large, consider monitoring memory usage",
+			);
 		}
 
 		// 6. Convert to JSON
@@ -657,8 +677,11 @@ export class BackupService {
 
 			// Phase 4: Success - clean up backup
 			if (secretsBackedUp) {
-				await fs.unlink(secretsBackupPath).catch(() => {
-					// Ignore errors during cleanup
+				await fs.unlink(secretsBackupPath).catch((err) => {
+					log.debug(
+						{ err, path: secretsBackupPath },
+						"Failed to clean up secrets backup file (non-critical)",
+					);
 				});
 			}
 
@@ -676,12 +699,18 @@ export class BackupService {
 					const backedUpSecrets = await fs.readFile(secretsBackupPath, "utf-8");
 					await fs.writeFile(this.secretsPath, backedUpSecrets, { encoding: "utf-8", mode: 0o600 });
 					await fs.chmod(this.secretsPath, 0o600);
-					await fs.unlink(secretsBackupPath).catch(() => {
-						// Ignore errors during cleanup
+					await fs.unlink(secretsBackupPath).catch((err) => {
+						log.debug(
+							{ err, path: secretsBackupPath },
+							"Failed to clean up secrets backup during rollback (non-critical)",
+						);
 					});
 				} catch (rollbackError) {
 					// Log rollback failure but throw original error
-					log.error({ err: rollbackError }, "CRITICAL: Failed to rollback secrets after restore failure");
+					log.error(
+						{ err: rollbackError },
+						"CRITICAL: Failed to rollback secrets after restore failure",
+					);
 				}
 			}
 

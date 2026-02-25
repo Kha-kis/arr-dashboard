@@ -67,7 +67,6 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			request.log.info(
 				{
-					userId: request.currentUser!.id,
 					backupId: backupInfo.id,
 					backupSize: backupInfo.size,
 					timestamp: backupInfo.timestamp,
@@ -113,6 +112,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		try {
 			const backupService = getBackupService();
+			request.log.info("Restoring backup from upload");
 
 			// Decode base64-encoded backup data from client
 			const backupJson = Buffer.from(backupData, "base64").toString("utf-8");
@@ -121,7 +121,6 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			request.log.info(
 				{
-					userId: request.currentUser!.id,
 					backupTimestamp: metadata.timestamp,
 					backupVersion: metadata.version,
 					backupAppVersion: metadata.appVersion,
@@ -169,13 +168,13 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			try {
 				const backupService = getBackupService();
+				request.log.info({ backupId }, "Restoring backup from file");
 
 				// Restore backup from filesystem
 				const metadata = await backupService.restoreBackupFromFile(backupId);
 
 				request.log.info(
 					{
-						userId: request.currentUser!.id,
 						backupId,
 						backupTimestamp: metadata.timestamp,
 						backupVersion: metadata.version,
@@ -233,7 +232,6 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		request.log.info(
 			{
-				userId: request.currentUser!.id,
 				backupId: params.id,
 				filename: backup.filename,
 			},
@@ -264,7 +262,6 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			request.log.info(
 				{
-					userId: request.currentUser!.id,
 					backupId: id,
 				},
 				"Backup deleted successfully",
@@ -362,7 +359,6 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		request.log.info(
 			{
-				userId: request.currentUser!.id,
 				settings: parsed,
 			},
 			"Backup settings updated",
@@ -416,7 +412,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			const backupService = getBackupService();
 			await backupService.setPassword(password);
 
-			request.log.info({ userId: request.currentUser!.id }, "Backup password updated");
+			request.log.info("Backup password updated");
 
 			return reply.send({ success: true, message: "Backup password updated successfully" });
 		} catch (error) {
@@ -439,10 +435,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const backupService = getBackupService();
 		await backupService.removePassword();
 
-		request.log.info(
-			{ userId: request.currentUser!.id },
-			"Backup password removed from database",
-		);
+		request.log.info("Backup password removed from database");
 
 		return reply.send({ success: true, message: "Backup password removed from database" });
 	});

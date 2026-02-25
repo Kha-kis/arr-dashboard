@@ -4,21 +4,21 @@
  * API endpoints for template synchronization to Radarr/Sonarr instances
  */
 
+import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyInstance, FastifyPluginOptions, FastifyRequest } from "fastify";
-import type { SonarrClient, RadarrClient } from "arr-sdk";
+import { z } from "zod";
+import { requireInstance } from "../../lib/arr/instance-helpers.js";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
-import { createSyncEngine } from "../../lib/trash-guides/sync-engine.js";
 import type { SyncProgress } from "../../lib/trash-guides/sync-engine.js";
+import { createSyncEngine } from "../../lib/trash-guides/sync-engine.js";
 import { getSyncMetrics } from "../../lib/trash-guides/sync-metrics.js";
 import { createTemplateUpdater } from "../../lib/trash-guides/template-updater.js";
+import { createVersionTracker } from "../../lib/trash-guides/version-tracker.js";
+import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { safeJsonParse } from "../../lib/utils/json.js";
 import { validateRequest } from "../../lib/utils/validate.js";
-import { createVersionTracker } from "../../lib/trash-guides/version-tracker.js";
-import { requireInstance } from "../../lib/arr/instance-helpers.js";
-import { z } from "zod";
-import { getErrorMessage } from "../../lib/utils/error-message.js";
 
 // ============================================================================
 // Request Schemas
@@ -181,6 +181,8 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 		progressStore.set(result.syncId, finalProgress);
 		// Schedule cleanup to prevent memory leak
 		scheduleProgressCleanup(result.syncId);
+
+		request.log.info({ templateId: body.templateId, instanceId: body.instanceId }, "Sync executed");
 
 		return reply.send(result);
 	});
@@ -546,9 +548,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 						restoredCount++;
 					}
 				} catch (error) {
-					errors.push(
-						`Failed to restore "${name}": ${getErrorMessage(error, "Unknown error")}`,
-					);
+					errors.push(`Failed to restore "${name}": ${getErrorMessage(error, "Unknown error")}`);
 					failedCount++;
 				}
 			}
@@ -561,9 +561,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 						await client.customFormat.delete(currentFormat.id);
 						deletedCount++;
 					} catch (error) {
-						errors.push(
-							`Failed to delete "${name}": ${getErrorMessage(error, "Unknown error")}`,
-						);
+						errors.push(`Failed to delete "${name}": ${getErrorMessage(error, "Unknown error")}`);
 						failedCount++;
 					}
 				}
