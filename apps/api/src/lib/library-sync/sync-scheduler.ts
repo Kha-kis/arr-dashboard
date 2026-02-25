@@ -253,6 +253,31 @@ class LibrarySyncScheduler {
 				"Library sync completed",
 			);
 
+			// Notify about newly downloaded content (hasFile: false → true transitions)
+			if (result.success && result.newDownloads.length > 0) {
+				const titles = result.newDownloads.slice(0, 5).map((d) => d.title);
+				const remaining = result.newDownloads.length - titles.length;
+
+				this.app.notificationService
+					?.notify({
+						eventType: "LIBRARY_NEW_CONTENT",
+						title: `${result.newDownloads.length} new download(s) on ${instance.label}`,
+						body: remaining > 0
+							? `${titles.join(", ")} and ${remaining} more`
+							: titles.join(", "),
+						url: "/library",
+						metadata: {
+							instance: instance.label,
+							service: instance.service,
+							itemCount: result.newDownloads.length,
+							items: titles,
+						},
+					})
+					.catch((err) => {
+						log.debug({ err, instanceLabel: instance.label }, "New content notification dispatch failed");
+					});
+			}
+
 			return result;
 		} finally {
 			this.activeSyncs.delete(instance.id);

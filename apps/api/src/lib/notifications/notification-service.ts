@@ -1,7 +1,7 @@
 import type { NotificationChannelType } from "@arr/shared";
 
 const REDACTED_PLACEHOLDER = "••••••••";
-const SECRET_FIELD_NAMES = new Set(["password", "botToken", "apiToken", "userKey", "auth"]);
+const SECRET_FIELD_NAMES = new Set(["password", "botToken", "apiToken", "appToken", "userKey", "auth"]);
 
 function redactSecretFields(config: Record<string, unknown>): Record<string, unknown> {
 	return Object.fromEntries(

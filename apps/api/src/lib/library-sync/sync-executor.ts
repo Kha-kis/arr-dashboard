@@ -17,6 +17,11 @@ import { getErrorMessage } from "../utils/error-message.js";
 // Types
 // ============================================================================
 
+export interface NewDownloadItem {
+	title: string;
+	itemType: string;
+}
+
 export interface SyncResult {
 	instanceId: string;
 	instanceName: string;
@@ -25,6 +30,8 @@ export interface SyncResult {
 	itemsAdded: number;
 	itemsUpdated: number;
 	itemsRemoved: number;
+	/** Items that transitioned from hasFile=false to hasFile=true (newly downloaded) */
+	newDownloads: NewDownloadItem[];
 	durationMs: number;
 	error?: string;
 }
@@ -111,6 +118,7 @@ export async function syncInstance(
 		itemsAdded: 0,
 		itemsUpdated: 0,
 		itemsRemoved: 0,
+		newDownloads: [],
 		durationMs: 0,
 	};
 
@@ -155,14 +163,17 @@ export async function syncInstance(
 			buildLibraryItem(instance, service, raw as Record<string, unknown>),
 		);
 
-		// Get existing cached items for this instance
+		// Get existing cached items for this instance (include hasFile for download detection)
 		const existingItems = await prisma.libraryCache.findMany({
 			where: { instanceId: instance.id },
-			select: { id: true, arrItemId: true, itemType: true },
+			select: { id: true, arrItemId: true, itemType: true, hasFile: true },
 		});
 
 		const existingMap = new Map(
-			existingItems.map((item) => [`${item.arrItemId}-${item.itemType}`, item.id]),
+			existingItems.map((item) => [
+				`${item.arrItemId}-${item.itemType}`,
+				{ id: item.id, hasFile: item.hasFile },
+			]),
 		);
 
 		// Track which items we've seen
@@ -180,13 +191,13 @@ export async function syncInstance(
 					const key = `${arrItemId}-${item.type}`;
 					seenKeys.add(key);
 
-					const existingId = existingMap.get(key);
+					const existing = existingMap.get(key);
 					const fields = extractCacheFields(item);
 
-					if (existingId) {
+					if (existing) {
 						// Update existing item
 						await tx.libraryCache.update({
-							where: { id: existingId },
+							where: { id: existing.id },
 							data: {
 								...fields,
 								data: JSON.stringify(item),
@@ -194,6 +205,11 @@ export async function syncInstance(
 							},
 						});
 						result.itemsUpdated++;
+
+						// Detect newly downloaded: hasFile went from false → true
+						if (!existing.hasFile && fields.hasFile) {
+							result.newDownloads.push({ title: item.title, itemType: item.type });
+						}
 					} else {
 						// Create new item
 						await tx.libraryCache.create({
@@ -207,17 +223,17 @@ export async function syncInstance(
 		}
 
 		// Remove items that no longer exist in ARR
-		const itemsToRemove = existingItems.filter(
-			(item) => !seenKeys.has(`${item.arrItemId}-${item.itemType}`),
-		);
+		const idsToRemove = existingItems
+			.filter((item) => !seenKeys.has(`${item.arrItemId}-${item.itemType}`))
+			.map((item) => item.id);
 
-		if (itemsToRemove.length > 0) {
+		if (idsToRemove.length > 0) {
 			await prisma.libraryCache.deleteMany({
 				where: {
-					id: { in: itemsToRemove.map((item) => item.id) },
+					id: { in: idsToRemove },
 				},
 			});
-			result.itemsRemoved = itemsToRemove.length;
+			result.itemsRemoved = idsToRemove.length;
 		}
 
 		// Update sync status

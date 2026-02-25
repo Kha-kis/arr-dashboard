@@ -1,5 +1,6 @@
 import type { DiscordConfig } from "@arr/shared";
 import type { ChannelSender, NotificationPayload } from "../types.js";
+import { extractMetadataFields } from "./format-metadata.js";
 
 const DISCORD_TIMEOUT_MS = 10000;
 
@@ -7,13 +8,20 @@ export const discordSender: ChannelSender = {
 	async send(config: Record<string, unknown>, payload: NotificationPayload): Promise<void> {
 		const { webhookUrl } = config as DiscordConfig;
 
-		const embed = {
+		const fields = extractMetadataFields(payload.metadata).map((f) => ({
+			name: f.label,
+			value: f.value,
+			inline: f.value.length < 30,
+		}));
+
+		const embed: Record<string, unknown> = {
 			title: payload.title,
 			description: payload.body,
 			color: getEventColor(payload.eventType),
 			timestamp: new Date().toISOString(),
 			...(payload.url ? { url: payload.url } : {}),
 			footer: { text: `Arr Dashboard • ${payload.eventType}` },
+			...(fields.length > 0 ? { fields } : {}),
 		};
 
 		const response = await fetch(webhookUrl, {

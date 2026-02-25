@@ -18,19 +18,33 @@ type SubsMap = Record<string, string[]>;
 
 /** Event display config — labels + grouping for the grid rows */
 const EVENT_LABELS: Record<string, string> = {
+	// Hunting
 	HUNT_CONTENT_FOUND: "Hunt: Content Found",
 	HUNT_COMPLETED: "Hunt: Completed",
+	HUNT_FAILED: "Hunt: Failed",
+	// Queue Cleaner
 	QUEUE_ITEMS_REMOVED: "Queue: Items Removed",
 	QUEUE_STRIKES_ISSUED: "Queue: Strikes Issued",
+	QUEUE_CLEANER_FAILED: "Queue: Cleaner Failed",
+	// TRaSH Guides
 	TRASH_PROFILE_UPDATED: "TRaSH: Profile Updated",
 	TRASH_SYNC_ERROR: "TRaSH: Sync Error",
+	TRASH_DEPLOY_FAILED: "TRaSH: Deploy Failed",
+	// Backup
 	BACKUP_COMPLETED: "Backup: Completed",
 	BACKUP_FAILED: "Backup: Failed",
+	// Library
 	LIBRARY_NEW_CONTENT: "Library: New Content",
-	SYSTEM_STARTUP: "System: Startup",
-	SYSTEM_ERROR: "System: Error",
 	CLEANUP_ITEMS_FLAGGED: "Cleanup: Items Flagged",
 	CLEANUP_ITEMS_REMOVED: "Cleanup: Items Removed",
+	// Security
+	ACCOUNT_LOCKED: "Security: Account Locked",
+	LOGIN_FAILED: "Security: Login Failed",
+	// Services
+	SERVICE_CONNECTION_FAILED: "Service: Connection Failed",
+	// System
+	SYSTEM_STARTUP: "System: Startup",
+	SYSTEM_ERROR: "System: Error",
 };
 
 /** Derive local map from the backend normalized response */

@@ -206,6 +206,22 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					{ username: parsed.username, ip: request.ip, lockedMinutes: 15 },
 					"Account locked",
 				);
+
+				app.notificationService
+					?.notify({
+						eventType: "ACCOUNT_LOCKED",
+						title: "Account locked",
+						body: `Account "${parsed.username}" locked after ${MAX_FAILED_ATTEMPTS} failed attempts from ${request.ip}`,
+						url: "/settings",
+						metadata: {
+							username: parsed.username,
+							ip: request.ip,
+							failedAttempts,
+							lockedMinutes: 15,
+						},
+					})
+					.catch(() => {});
+
 				return reply.status(423).send({
 					error: "Too many failed attempts. Account locked for 15 minutes.",
 				});
@@ -215,6 +231,21 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				{ username: parsed.username, ip: request.ip },
 				"Login failed: invalid credentials",
 			);
+
+			app.notificationService
+				?.notify({
+					eventType: "LOGIN_FAILED",
+					title: "Failed login attempt",
+					body: `Failed login for "${parsed.username}" from ${request.ip} (attempt ${failedAttempts}/${MAX_FAILED_ATTEMPTS})`,
+					metadata: {
+						username: parsed.username,
+						ip: request.ip,
+						failedAttempts,
+						maxAttempts: MAX_FAILED_ATTEMPTS,
+					},
+				})
+				.catch(() => {});
+
 			return reply.status(401).send({ error: "Invalid credentials" });
 		}
 

@@ -979,23 +979,38 @@ enum NotificationChannelType {
   BROWSER_PUSH
   PUSHBULLET
   PUSHOVER
+  GOTIFY
 }
 
 /// Events that can trigger notifications
 enum NotificationEventType {
+  // Hunting
   HUNT_CONTENT_FOUND
   HUNT_COMPLETED
+  HUNT_FAILED
+  // Queue Cleaner
   QUEUE_ITEMS_REMOVED
   QUEUE_STRIKES_ISSUED
+  QUEUE_CLEANER_FAILED
+  // TRaSH Guides
   TRASH_PROFILE_UPDATED
   TRASH_SYNC_ERROR
+  TRASH_DEPLOY_FAILED
+  // Backup
   BACKUP_COMPLETED
   BACKUP_FAILED
+  // Library
   LIBRARY_NEW_CONTENT
-  SYSTEM_STARTUP
-  SYSTEM_ERROR
   CLEANUP_ITEMS_FLAGGED
   CLEANUP_ITEMS_REMOVED
+  // Security
+  ACCOUNT_LOCKED
+  LOGIN_FAILED
+  // Services
+  SERVICE_CONNECTION_FAILED
+  // System
+  SYSTEM_STARTUP
+  SYSTEM_ERROR
 }
 
 /// User-configured notification delivery channels (Discord webhook, Telegram bot, etc.)

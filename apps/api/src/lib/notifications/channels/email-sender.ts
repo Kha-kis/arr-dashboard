@@ -1,6 +1,7 @@
 import type { EmailConfig } from "@arr/shared";
 import nodemailer from "nodemailer";
 import type { ChannelSender, NotificationPayload } from "../types.js";
+import { extractMetadataFields } from "./format-metadata.js";
 
 export const emailSender: ChannelSender = {
 	async send(config: Record<string, unknown>, payload: NotificationPayload): Promise<void> {
@@ -8,17 +9,38 @@ export const emailSender: ChannelSender = {
 		const transporter = createTransporter(emailConfig);
 
 		let html = `<h2>${escapeHtml(payload.title)}</h2><p>${escapeHtml(payload.body)}</p>`;
+
+		const fields = extractMetadataFields(payload.metadata);
+		if (fields.length > 0) {
+			html += '<table style="border-collapse:collapse;margin:12px 0">';
+			for (const field of fields) {
+				html += `<tr><td style="padding:3px 12px 3px 0;font-weight:bold;color:#888">${escapeHtml(field.label)}</td><td style="padding:3px 0">${escapeHtml(field.value)}</td></tr>`;
+			}
+			html += "</table>";
+		}
+
 		if (payload.url) {
 			html += `<p><a href="${escapeHtml(payload.url)}">View Details</a></p>`;
 		}
 		html += `<hr><p style="color:#888;font-size:12px">Arr Dashboard &bull; ${payload.eventType}</p>`;
+
+		let text = `${payload.title}\n\n${payload.body}`;
+		if (fields.length > 0) {
+			text += "\n";
+			for (const field of fields) {
+				text += `\n${field.label}: ${field.value}`;
+			}
+		}
+		if (payload.url) {
+			text += `\n\n${payload.url}`;
+		}
 
 		await transporter.sendMail({
 			from: emailConfig.from,
 			to: emailConfig.to,
 			subject: payload.title,
 			html,
-			text: `${payload.title}\n\n${payload.body}${payload.url ? `\n\n${payload.url}` : ""}`,
+			text,
 		});
 	},
 

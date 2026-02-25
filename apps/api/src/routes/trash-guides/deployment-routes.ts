@@ -99,6 +99,20 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				result: result,
 			});
 		}
+
+		app.notificationService
+			?.notify({
+				eventType: "TRASH_DEPLOY_FAILED",
+				title: `TRaSH deployment failed on ${result.instanceLabel}`,
+				body: result.errors?.join("; ") ?? "Deployment failed",
+				url: "/trash-guides",
+				metadata: {
+					instance: result.instanceLabel,
+					templateId,
+				},
+			})
+			.catch(() => {});
+
 		return reply.status(400).send({
 			success: false,
 			error: "Deployment failed",
@@ -387,6 +401,27 @@ export async function deploymentRoutes(app: FastifyInstance) {
 		// Check both failedInstances count and individual result.success flags
 		const hasFailures =
 			result.failedInstances > 0 || result.results.some((deployment) => !deployment.success);
+
+		if (hasFailures) {
+			const failedNames = result.results
+				.filter((r) => !r.success)
+				.map((r) => r.instanceLabel)
+				.join(", ");
+
+			app.notificationService
+				?.notify({
+					eventType: "TRASH_DEPLOY_FAILED",
+					title: `TRaSH bulk deployment had failures`,
+					body: `Failed on: ${failedNames || "unknown instances"}`,
+					url: "/trash-guides",
+					metadata: {
+						totalInstances: instanceIds.length,
+						failedInstances: result.failedInstances,
+						templateId,
+					},
+				})
+				.catch(() => {});
+		}
 
 		return reply.send({
 			success: !hasFailures,

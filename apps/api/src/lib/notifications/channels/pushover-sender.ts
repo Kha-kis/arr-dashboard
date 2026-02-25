@@ -1,5 +1,6 @@
 import type { PushoverConfig } from "@arr/shared";
 import type { ChannelSender, NotificationPayload } from "../types.js";
+import { extractMetadataFields } from "./format-metadata.js";
 
 const PUSHOVER_API = "https://api.pushover.net/1/messages.json";
 const PUSHOVER_TIMEOUT_MS = 10000;
@@ -8,11 +9,20 @@ export const pushoverSender: ChannelSender = {
 	async send(config: Record<string, unknown>, payload: NotificationPayload): Promise<void> {
 		const { userKey, apiToken } = config as PushoverConfig;
 
+		let message = payload.body;
+		const fields = extractMetadataFields(payload.metadata);
+		if (fields.length > 0) {
+			message += "\n";
+			for (const field of fields) {
+				message += `\n<b>${field.label}:</b> ${field.value}`;
+			}
+		}
+
 		const body: Record<string, string | number> = {
 			token: apiToken,
 			user: userKey,
 			title: payload.title,
-			message: payload.body,
+			message,
 			priority: getPriority(payload.eventType),
 			html: 1,
 		};

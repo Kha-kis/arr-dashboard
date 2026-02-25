@@ -1,6 +1,7 @@
 import type { NotificationChannelType } from "@arr/shared";
 import { discordSender } from "./channels/discord-sender.js";
 import { emailSender } from "./channels/email-sender.js";
+import { gotifySender } from "./channels/gotify-sender.js";
 import { pushbulletSender } from "./channels/pushbullet-sender.js";
 import { pushoverSender } from "./channels/pushover-sender.js";
 import { telegramSender } from "./channels/telegram-sender.js";
@@ -20,6 +21,7 @@ export class NotificationDispatcher {
 			["EMAIL", emailSender],
 			["PUSHBULLET", pushbulletSender],
 			["PUSHOVER", pushoverSender],
+			["GOTIFY", gotifySender],
 		]);
 	}
 

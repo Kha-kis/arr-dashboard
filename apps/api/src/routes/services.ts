@@ -245,6 +245,18 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const result = await testServiceConnection(baseUrl, apiKey, service);
 		if (!result.success) {
 			request.log.warn({ service, baseUrl }, "Connection test failed");
+
+			app.notificationService
+				?.notify({
+					eventType: "SERVICE_CONNECTION_FAILED",
+					title: `Connection test failed for ${service}`,
+					body: result.error ?? `Failed to connect to ${service} at ${baseUrl}`,
+					metadata: {
+						service,
+						baseUrl,
+					},
+				})
+				.catch(() => {});
 		}
 		return reply.status(200).send(result);
 	});

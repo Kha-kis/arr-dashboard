@@ -133,6 +133,12 @@ export class BackupScheduler {
 					eventType: "BACKUP_COMPLETED",
 					title: "Scheduled backup completed",
 					body: `Next backup at ${nextRunAt.toISOString()}`,
+					url: "/settings?tab=backups",
+					metadata: {
+						nextRunAt: nextRunAt.toISOString(),
+						intervalType: settings.intervalType,
+						retentionCount: settings.retentionCount,
+					},
 				}).catch(() => {});
 			} finally {
 				// Always reset the running flag, even if backup fails
@@ -145,6 +151,7 @@ export class BackupScheduler {
 				eventType: "BACKUP_FAILED",
 				title: "Scheduled backup failed",
 				body: getErrorMessage(error),
+				url: "/settings?tab=backups",
 			}).catch(() => {});
 		}
 	}

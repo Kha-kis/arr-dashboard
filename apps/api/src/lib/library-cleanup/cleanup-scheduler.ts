@@ -141,6 +141,12 @@ export class CleanupScheduler {
 							eventType: "CLEANUP_ITEMS_REMOVED",
 							title: "Library cleanup completed",
 							body: parts.join(", "),
+							url: "/library",
+							metadata: {
+								itemsRemoved: result.itemsRemoved,
+								itemsUnmonitored: result.itemsUnmonitored,
+								itemsFilesDeleted: result.itemsFilesDeleted,
+							},
 						}).catch((err) => {
 							this.logger.warn({ err }, "Failed to send cleanup notification");
 						});
@@ -149,6 +155,10 @@ export class CleanupScheduler {
 							eventType: "CLEANUP_ITEMS_FLAGGED",
 							title: "Library cleanup completed",
 							body: `Flagged ${result.itemsFlagged} items for review`,
+							url: "/library",
+							metadata: {
+								itemsFlagged: result.itemsFlagged,
+							},
 						}).catch((err) => {
 							this.logger.warn({ err }, "Failed to send cleanup notification");
 						});
@@ -165,6 +175,7 @@ export class CleanupScheduler {
 				eventType: "SYSTEM_ERROR",
 				title: "Library cleanup failed",
 				body: getErrorMessage(error),
+				url: "/library",
 			}).catch((err) => {
 				this.logger.warn({ err }, "Failed to send cleanup error notification");
 			});

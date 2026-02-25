@@ -32,6 +32,7 @@ export function createBrowserPushSender(
 					body: payload.body,
 					url: payload.url,
 					eventType: payload.eventType,
+					metadata: payload.metadata,
 				}),
 				{ TTL: 86400 }, // 24 hours
 			);

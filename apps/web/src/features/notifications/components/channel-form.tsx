@@ -48,6 +48,14 @@ const CHANNEL_TYPES = [
 			{ key: "apiToken", label: "API Token", type: "password" },
 		],
 	},
+	{
+		value: "GOTIFY",
+		label: "Gotify",
+		fields: [
+			{ key: "serverUrl", label: "Server URL", type: "url" },
+			{ key: "appToken", label: "App Token", type: "password" },
+		],
+	},
 ] as const;
 
 interface ChannelFormProps {

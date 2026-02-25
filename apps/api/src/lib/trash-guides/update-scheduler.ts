@@ -440,6 +440,12 @@ export class UpdateScheduler {
 					eventType: "TRASH_PROFILE_UPDATED",
 					title: `TRaSH Guides: ${templatesAutoSynced} template(s) auto-synced`,
 					body: `${templatesAutoSynced} synced, ${templatesNeedingAttention} need attention, ${qualitySizeAutoSynced} quality sizes updated`,
+					url: "/trash-guides",
+					metadata: {
+						templatesAutoSynced,
+						templatesNeedingAttention,
+						qualitySizeAutoSynced,
+					},
 				}).catch(() => {});
 			}
 		} catch (error) {
@@ -475,6 +481,7 @@ export class UpdateScheduler {
 				eventType: "TRASH_SYNC_ERROR",
 				title: "TRaSH Guides sync failed",
 				body: getErrorMessage(error),
+				url: "/trash-guides",
 			}).catch(() => {});
 
 			throw error;

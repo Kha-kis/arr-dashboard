@@ -63,6 +63,14 @@ const start = async () => {
 				eventType: "SYSTEM_STARTUP",
 				title: "Arr Dashboard started",
 				body: `Server listening on ${env.API_HOST}:${portConfig.apiPort}`,
+				url: `http://${env.API_HOST === "0.0.0.0" ? "localhost" : env.API_HOST}:${portConfig.apiPort - 1}/dashboard`,
+				metadata: {
+					version: getAppVersion(),
+					nodeVersion: process.version,
+					database: dbType,
+					host: env.API_HOST,
+					port: portConfig.apiPort,
+				},
 			})
 			.catch((err) => {
 				app.log.debug({ err }, "Startup notification failed (non-critical)");

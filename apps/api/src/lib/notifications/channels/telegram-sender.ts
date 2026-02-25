@@ -1,5 +1,6 @@
 import type { TelegramConfig } from "@arr/shared";
 import type { ChannelSender, NotificationPayload } from "../types.js";
+import { extractMetadataFields } from "./format-metadata.js";
 
 const TELEGRAM_API_BASE = "https://api.telegram.org";
 const TELEGRAM_TIMEOUT_MS = 10000;
@@ -9,6 +10,15 @@ export const telegramSender: ChannelSender = {
 		const { botToken, chatId } = config as TelegramConfig;
 
 		let text = `<b>${escapeHtml(payload.title)}</b>\n\n${escapeHtml(payload.body)}`;
+
+		const fields = extractMetadataFields(payload.metadata);
+		if (fields.length > 0) {
+			text += "\n";
+			for (const field of fields) {
+				text += `\n<b>${escapeHtml(field.label)}:</b> ${escapeHtml(field.value)}`;
+			}
+		}
+
 		if (payload.url) {
 			text += `\n\n<a href="${escapeHtml(payload.url)}">View Details</a>`;
 		}

@@ -45,6 +45,7 @@ export const notificationChannelTypeSchema = z.enum([
 	"BROWSER_PUSH",
 	"PUSHBULLET",
 	"PUSHOVER",
+	"GOTIFY",
 ]);
 
 export type NotificationChannelType = z.infer<typeof notificationChannelTypeSchema>;
@@ -54,19 +55,33 @@ export type NotificationChannelType = z.infer<typeof notificationChannelTypeSche
 // ============================================================================
 
 export const notificationEventTypeSchema = z.enum([
+	// Hunting
 	"HUNT_CONTENT_FOUND",
 	"HUNT_COMPLETED",
+	"HUNT_FAILED",
+	// Queue Cleaner
 	"QUEUE_ITEMS_REMOVED",
 	"QUEUE_STRIKES_ISSUED",
+	"QUEUE_CLEANER_FAILED",
+	// TRaSH Guides
 	"TRASH_PROFILE_UPDATED",
 	"TRASH_SYNC_ERROR",
+	"TRASH_DEPLOY_FAILED",
+	// Backup
 	"BACKUP_COMPLETED",
 	"BACKUP_FAILED",
+	// Library
 	"LIBRARY_NEW_CONTENT",
-	"SYSTEM_STARTUP",
-	"SYSTEM_ERROR",
 	"CLEANUP_ITEMS_FLAGGED",
 	"CLEANUP_ITEMS_REMOVED",
+	// Security
+	"ACCOUNT_LOCKED",
+	"LOGIN_FAILED",
+	// Services
+	"SERVICE_CONNECTION_FAILED",
+	// System
+	"SYSTEM_STARTUP",
+	"SYSTEM_ERROR",
 ]);
 
 export type NotificationEventType = z.infer<typeof notificationEventTypeSchema>;
@@ -109,12 +124,18 @@ export const pushoverConfigSchema = z.object({
 	apiToken: z.string().min(1),
 });
 
+export const gotifyConfigSchema = z.object({
+	serverUrl: z.string().url(),
+	appToken: z.string().min(1),
+});
+
 export type DiscordConfig = z.infer<typeof discordConfigSchema>;
 export type TelegramConfig = z.infer<typeof telegramConfigSchema>;
 export type EmailConfig = z.infer<typeof emailConfigSchema>;
 export type BrowserPushConfig = z.infer<typeof browserPushConfigSchema>;
 export type PushbulletConfig = z.infer<typeof pushbulletConfigSchema>;
 export type PushoverConfig = z.infer<typeof pushoverConfigSchema>;
+export type GotifyConfig = z.infer<typeof gotifyConfigSchema>;
 
 /** Union of all channel config schemas, discriminated by channel type */
 export const channelConfigSchemaMap: Record<NotificationChannelType, z.ZodType> = {
@@ -124,6 +145,7 @@ export const channelConfigSchemaMap: Record<NotificationChannelType, z.ZodType> 
 	BROWSER_PUSH: browserPushConfigSchema,
 	PUSHBULLET: pushbulletConfigSchema,
 	PUSHOVER: pushoverConfigSchema,
+	GOTIFY: gotifyConfigSchema,
 };
 
 // ============================================================================

@@ -390,12 +390,24 @@ class HuntingScheduler {
 			}, "Hunt completed");
 
 			// Fire-and-forget notification for hunt results
+			const huntMeta = {
+				instance: config.instance.label,
+				service: config.instance.service,
+				huntType: type,
+				itemsSearched: result.itemsSearched,
+				itemsGrabbed: result.itemsGrabbed,
+				apiCalls: result.apiCallsMade,
+				durationMs,
+				grabbedItems: result.grabbedItems.slice(0, 5).map((g) => g.title),
+			};
 			if (result.itemsGrabbed > 0) {
 				this.app.notificationService
 					?.notify({
 						eventType: "HUNT_CONTENT_FOUND",
 						title: `Hunt found ${result.itemsGrabbed} item(s) on ${config.instance.label}`,
 						body: result.message,
+						url: "/hunting",
+						metadata: huntMeta,
 					})
 					.catch((err) => {
 						log.debug({ err, instanceLabel: config.instance.label }, "Hunt notification dispatch failed");
@@ -406,6 +418,8 @@ class HuntingScheduler {
 						eventType: "HUNT_COMPLETED",
 						title: `Hunt completed on ${config.instance.label}`,
 						body: result.message,
+						url: "/hunting",
+						metadata: huntMeta,
 					})
 					.catch((err) => {
 						log.debug({ err, instanceLabel: config.instance.label }, "Hunt notification dispatch failed");
@@ -448,6 +462,24 @@ class HuntingScheduler {
 			});
 
 			log.error({ err: error, instanceLabel: config.instance.label }, "Hunt error");
+
+			// Fire-and-forget notification for hunt failure
+			this.app.notificationService
+				?.notify({
+					eventType: "HUNT_FAILED",
+					title: `Hunt failed on ${config.instance.label}`,
+					body: message,
+					url: "/hunting",
+					metadata: {
+						instance: config.instance.label,
+						service: config.instance.service,
+						huntType: type,
+						durationMs,
+					},
+				})
+				.catch((err) => {
+					log.debug({ err, instanceLabel: config.instance.label }, "Hunt failure notification dispatch failed");
+				});
 		}
 	}
 }

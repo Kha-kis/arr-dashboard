@@ -610,6 +610,15 @@ class QueueCleanerScheduler {
 						body:
 							result.message ??
 							`Cleaned ${result.itemsCleaned} items, skipped ${result.itemsSkipped}`,
+						url: "/settings?tab=queue-cleaner",
+						metadata: {
+							instance: config.instance.label,
+							service: config.instance.service,
+							itemsCleaned: result.itemsCleaned,
+							itemsSkipped: result.itemsSkipped,
+							durationMs,
+							cleanedItems: result.cleanedItems.slice(0, 5).map((i: { title?: string; rule?: string }) => `${i.title ?? "Unknown"} (${i.rule ?? ""})`),
+						},
 					})
 					.catch(() => {});
 			}
@@ -619,6 +628,13 @@ class QueueCleanerScheduler {
 						eventType: "QUEUE_STRIKES_ISSUED",
 						title: `Queue cleaner issued strikes on ${config.instance.label}`,
 						body: `${result.itemsWarned} item(s) received strikes`,
+						url: "/settings?tab=queue-cleaner",
+						metadata: {
+							instance: config.instance.label,
+							service: config.instance.service,
+							itemsWarned: result.itemsWarned,
+							warnedItems: result.warnedItems.slice(0, 5).map((i: { title?: string; rule?: string }) => `${i.title ?? "Unknown"} (${i.rule ?? ""})`),
+						},
 					})
 					.catch(() => {});
 			}
@@ -637,6 +653,23 @@ class QueueCleanerScheduler {
 			});
 
 			log.error({ err: error, instanceLabel: config.instance.label }, "Queue cleaner error");
+
+			// Fire-and-forget notification for queue cleaner failure
+			this.app?.notificationService
+				?.notify({
+					eventType: "QUEUE_CLEANER_FAILED",
+					title: `Queue cleaner failed on ${config.instance.label}`,
+					body: message,
+					url: "/settings?tab=queue-cleaner",
+					metadata: {
+						instance: config.instance.label,
+						service: config.instance.service,
+						durationMs,
+					},
+				})
+				.catch((err) => {
+					log.debug({ err, instanceLabel: config.instance.label }, "Queue cleaner failure notification dispatch failed");
+				});
 		}
 	}
 }

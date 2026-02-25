@@ -232,6 +232,7 @@ export type NotificationChannelWhereInput = {
   updatedAt?: Prisma.DateTimeFilter<"NotificationChannel"> | Date | string
   user?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
   subscriptions?: Prisma.NotificationSubscriptionListRelationFilter
+  logs?: Prisma.NotificationLogListRelationFilter
 }
 
 export type NotificationChannelOrderByWithRelationInput = {
@@ -248,6 +249,7 @@ export type NotificationChannelOrderByWithRelationInput = {
   updatedAt?: Prisma.SortOrder
   user?: Prisma.UserOrderByWithRelationInput
   subscriptions?: Prisma.NotificationSubscriptionOrderByRelationAggregateInput
+  logs?: Prisma.NotificationLogOrderByRelationAggregateInput
 }
 
 export type NotificationChannelWhereUniqueInput = Prisma.AtLeast<{
@@ -267,6 +269,7 @@ export type NotificationChannelWhereUniqueInput = Prisma.AtLeast<{
   updatedAt?: Prisma.DateTimeFilter<"NotificationChannel"> | Date | string
   user?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
   subscriptions?: Prisma.NotificationSubscriptionListRelationFilter
+  logs?: Prisma.NotificationLogListRelationFilter
 }, "id">
 
 export type NotificationChannelOrderByWithAggregationInput = {
@@ -316,6 +319,7 @@ export type NotificationChannelCreateInput = {
   updatedAt?: Date | string
   user: Prisma.UserCreateNestedOneWithoutNotificationChannelsInput
   subscriptions?: Prisma.NotificationSubscriptionCreateNestedManyWithoutChannelInput
+  logs?: Prisma.NotificationLogCreateNestedManyWithoutChannelInput
 }
 
 export type NotificationChannelUncheckedCreateInput = {
@@ -331,6 +335,7 @@ export type NotificationChannelUncheckedCreateInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   subscriptions?: Prisma.NotificationSubscriptionUncheckedCreateNestedManyWithoutChannelInput
+  logs?: Prisma.NotificationLogUncheckedCreateNestedManyWithoutChannelInput
 }
 
 export type NotificationChannelUpdateInput = {
@@ -346,6 +351,7 @@ export type NotificationChannelUpdateInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   user?: Prisma.UserUpdateOneRequiredWithoutNotificationChannelsNestedInput
   subscriptions?: Prisma.NotificationSubscriptionUpdateManyWithoutChannelNestedInput
+  logs?: Prisma.NotificationLogUpdateManyWithoutChannelNestedInput
 }
 
 export type NotificationChannelUncheckedUpdateInput = {
@@ -361,6 +367,7 @@ export type NotificationChannelUncheckedUpdateInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   subscriptions?: Prisma.NotificationSubscriptionUncheckedUpdateManyWithoutChannelNestedInput
+  logs?: Prisma.NotificationLogUncheckedUpdateManyWithoutChannelNestedInput
 }
 
 export type NotificationChannelCreateManyInput = {
@@ -521,6 +528,20 @@ export type NotificationChannelUpdateOneRequiredWithoutSubscriptionsNestedInput 
   update?: Prisma.XOR<Prisma.XOR<Prisma.NotificationChannelUpdateToOneWithWhereWithoutSubscriptionsInput, Prisma.NotificationChannelUpdateWithoutSubscriptionsInput>, Prisma.NotificationChannelUncheckedUpdateWithoutSubscriptionsInput>
 }
 
+export type NotificationChannelCreateNestedOneWithoutLogsInput = {
+  create?: Prisma.XOR<Prisma.NotificationChannelCreateWithoutLogsInput, Prisma.NotificationChannelUncheckedCreateWithoutLogsInput>
+  connectOrCreate?: Prisma.NotificationChannelCreateOrConnectWithoutLogsInput
+  connect?: Prisma.NotificationChannelWhereUniqueInput
+}
+
+export type NotificationChannelUpdateOneRequiredWithoutLogsNestedInput = {
+  create?: Prisma.XOR<Prisma.NotificationChannelCreateWithoutLogsInput, Prisma.NotificationChannelUncheckedCreateWithoutLogsInput>
+  connectOrCreate?: Prisma.NotificationChannelCreateOrConnectWithoutLogsInput
+  upsert?: Prisma.NotificationChannelUpsertWithoutLogsInput
+  connect?: Prisma.NotificationChannelWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.NotificationChannelUpdateToOneWithWhereWithoutLogsInput, Prisma.NotificationChannelUpdateWithoutLogsInput>, Prisma.NotificationChannelUncheckedUpdateWithoutLogsInput>
+}
+
 export type NotificationChannelCreateWithoutUserInput = {
   id?: string
   name: string
@@ -533,6 +554,7 @@ export type NotificationChannelCreateWithoutUserInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   subscriptions?: Prisma.NotificationSubscriptionCreateNestedManyWithoutChannelInput
+  logs?: Prisma.NotificationLogCreateNestedManyWithoutChannelInput
 }
 
 export type NotificationChannelUncheckedCreateWithoutUserInput = {
@@ -547,6 +569,7 @@ export type NotificationChannelUncheckedCreateWithoutUserInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   subscriptions?: Prisma.NotificationSubscriptionUncheckedCreateNestedManyWithoutChannelInput
+  logs?: Prisma.NotificationLogUncheckedCreateNestedManyWithoutChannelInput
 }
 
 export type NotificationChannelCreateOrConnectWithoutUserInput = {
@@ -603,6 +626,7 @@ export type NotificationChannelCreateWithoutSubscriptionsInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   user: Prisma.UserCreateNestedOneWithoutNotificationChannelsInput
+  logs?: Prisma.NotificationLogCreateNestedManyWithoutChannelInput
 }
 
 export type NotificationChannelUncheckedCreateWithoutSubscriptionsInput = {
@@ -617,6 +641,7 @@ export type NotificationChannelUncheckedCreateWithoutSubscriptionsInput = {
   lastTestResult?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  logs?: Prisma.NotificationLogUncheckedCreateNestedManyWithoutChannelInput
 }
 
 export type NotificationChannelCreateOrConnectWithoutSubscriptionsInput = {
@@ -647,6 +672,7 @@ export type NotificationChannelUpdateWithoutSubscriptionsInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   user?: Prisma.UserUpdateOneRequiredWithoutNotificationChannelsNestedInput
+  logs?: Prisma.NotificationLogUpdateManyWithoutChannelNestedInput
 }
 
 export type NotificationChannelUncheckedUpdateWithoutSubscriptionsInput = {
@@ -661,6 +687,83 @@ export type NotificationChannelUncheckedUpdateWithoutSubscriptionsInput = {
   lastTestResult?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  logs?: Prisma.NotificationLogUncheckedUpdateManyWithoutChannelNestedInput
+}
+
+export type NotificationChannelCreateWithoutLogsInput = {
+  id?: string
+  name: string
+  type: $Enums.NotificationChannelType
+  enabled?: boolean
+  encryptedConfig: string
+  configIv: string
+  lastTestedAt?: Date | string | null
+  lastTestResult?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  user: Prisma.UserCreateNestedOneWithoutNotificationChannelsInput
+  subscriptions?: Prisma.NotificationSubscriptionCreateNestedManyWithoutChannelInput
+}
+
+export type NotificationChannelUncheckedCreateWithoutLogsInput = {
+  id?: string
+  userId: string
+  name: string
+  type: $Enums.NotificationChannelType
+  enabled?: boolean
+  encryptedConfig: string
+  configIv: string
+  lastTestedAt?: Date | string | null
+  lastTestResult?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  subscriptions?: Prisma.NotificationSubscriptionUncheckedCreateNestedManyWithoutChannelInput
+}
+
+export type NotificationChannelCreateOrConnectWithoutLogsInput = {
+  where: Prisma.NotificationChannelWhereUniqueInput
+  create: Prisma.XOR<Prisma.NotificationChannelCreateWithoutLogsInput, Prisma.NotificationChannelUncheckedCreateWithoutLogsInput>
+}
+
+export type NotificationChannelUpsertWithoutLogsInput = {
+  update: Prisma.XOR<Prisma.NotificationChannelUpdateWithoutLogsInput, Prisma.NotificationChannelUncheckedUpdateWithoutLogsInput>
+  create: Prisma.XOR<Prisma.NotificationChannelCreateWithoutLogsInput, Prisma.NotificationChannelUncheckedCreateWithoutLogsInput>
+  where?: Prisma.NotificationChannelWhereInput
+}
+
+export type NotificationChannelUpdateToOneWithWhereWithoutLogsInput = {
+  where?: Prisma.NotificationChannelWhereInput
+  data: Prisma.XOR<Prisma.NotificationChannelUpdateWithoutLogsInput, Prisma.NotificationChannelUncheckedUpdateWithoutLogsInput>
+}
+
+export type NotificationChannelUpdateWithoutLogsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  type?: Prisma.EnumNotificationChannelTypeFieldUpdateOperationsInput | $Enums.NotificationChannelType
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  encryptedConfig?: Prisma.StringFieldUpdateOperationsInput | string
+  configIv?: Prisma.StringFieldUpdateOperationsInput | string
+  lastTestedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastTestResult?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  user?: Prisma.UserUpdateOneRequiredWithoutNotificationChannelsNestedInput
+  subscriptions?: Prisma.NotificationSubscriptionUpdateManyWithoutChannelNestedInput
+}
+
+export type NotificationChannelUncheckedUpdateWithoutLogsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  userId?: Prisma.StringFieldUpdateOperationsInput | string
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  type?: Prisma.EnumNotificationChannelTypeFieldUpdateOperationsInput | $Enums.NotificationChannelType
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  encryptedConfig?: Prisma.StringFieldUpdateOperationsInput | string
+  configIv?: Prisma.StringFieldUpdateOperationsInput | string
+  lastTestedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastTestResult?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  subscriptions?: Prisma.NotificationSubscriptionUncheckedUpdateManyWithoutChannelNestedInput
 }
 
 export type NotificationChannelCreateManyUserInput = {
@@ -688,6 +791,7 @@ export type NotificationChannelUpdateWithoutUserInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   subscriptions?: Prisma.NotificationSubscriptionUpdateManyWithoutChannelNestedInput
+  logs?: Prisma.NotificationLogUpdateManyWithoutChannelNestedInput
 }
 
 export type NotificationChannelUncheckedUpdateWithoutUserInput = {
@@ -702,6 +806,7 @@ export type NotificationChannelUncheckedUpdateWithoutUserInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   subscriptions?: Prisma.NotificationSubscriptionUncheckedUpdateManyWithoutChannelNestedInput
+  logs?: Prisma.NotificationLogUncheckedUpdateManyWithoutChannelNestedInput
 }
 
 export type NotificationChannelUncheckedUpdateManyWithoutUserInput = {
@@ -724,10 +829,12 @@ export type NotificationChannelUncheckedUpdateManyWithoutUserInput = {
 
 export type NotificationChannelCountOutputType = {
   subscriptions: number
+  logs: number
 }
 
 export type NotificationChannelCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   subscriptions?: boolean | NotificationChannelCountOutputTypeCountSubscriptionsArgs
+  logs?: boolean | NotificationChannelCountOutputTypeCountLogsArgs
 }
 
 /**
@@ -747,6 +854,13 @@ export type NotificationChannelCountOutputTypeCountSubscriptionsArgs<ExtArgs ext
   where?: Prisma.NotificationSubscriptionWhereInput
 }
 
+/**
+ * NotificationChannelCountOutputType without action
+ */
+export type NotificationChannelCountOutputTypeCountLogsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.NotificationLogWhereInput
+}
+
 
 export type NotificationChannelSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -762,6 +876,7 @@ export type NotificationChannelSelect<ExtArgs extends runtime.Types.Extensions.I
   updatedAt?: boolean
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
   subscriptions?: boolean | Prisma.NotificationChannel$subscriptionsArgs<ExtArgs>
+  logs?: boolean | Prisma.NotificationChannel$logsArgs<ExtArgs>
   _count?: boolean | Prisma.NotificationChannelCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["notificationChannel"]>
 
@@ -813,6 +928,7 @@ export type NotificationChannelOmit<ExtArgs extends runtime.Types.Extensions.Int
 export type NotificationChannelInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
   subscriptions?: boolean | Prisma.NotificationChannel$subscriptionsArgs<ExtArgs>
+  logs?: boolean | Prisma.NotificationChannel$logsArgs<ExtArgs>
   _count?: boolean | Prisma.NotificationChannelCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type NotificationChannelIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -827,6 +943,7 @@ export type $NotificationChannelPayload<ExtArgs extends runtime.Types.Extensions
   objects: {
     user: Prisma.$UserPayload<ExtArgs>
     subscriptions: Prisma.$NotificationSubscriptionPayload<ExtArgs>[]
+    logs: Prisma.$NotificationLogPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1236,6 +1353,7 @@ export interface Prisma__NotificationChannelClient<T, Null = never, ExtArgs exte
   readonly [Symbol.toStringTag]: "PrismaPromise"
   user<T extends Prisma.UserDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.UserDefaultArgs<ExtArgs>>): Prisma.Prisma__UserClient<runtime.Types.Result.GetResult<Prisma.$UserPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
   subscriptions<T extends Prisma.NotificationChannel$subscriptionsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.NotificationChannel$subscriptionsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$NotificationSubscriptionPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  logs<T extends Prisma.NotificationChannel$logsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.NotificationChannel$logsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$NotificationLogPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1691,6 +1809,30 @@ export type NotificationChannel$subscriptionsArgs<ExtArgs extends runtime.Types.
   take?: number
   skip?: number
   distinct?: Prisma.NotificationSubscriptionScalarFieldEnum | Prisma.NotificationSubscriptionScalarFieldEnum[]
+}
+
+/**
+ * NotificationChannel.logs
+ */
+export type NotificationChannel$logsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the NotificationLog
+   */
+  select?: Prisma.NotificationLogSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the NotificationLog
+   */
+  omit?: Prisma.NotificationLogOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.NotificationLogInclude<ExtArgs> | null
+  where?: Prisma.NotificationLogWhereInput
+  orderBy?: Prisma.NotificationLogOrderByWithRelationInput | Prisma.NotificationLogOrderByWithRelationInput[]
+  cursor?: Prisma.NotificationLogWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.NotificationLogScalarFieldEnum | Prisma.NotificationLogScalarFieldEnum[]
 }
 
 /**
