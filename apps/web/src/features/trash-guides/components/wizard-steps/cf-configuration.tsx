@@ -123,9 +123,7 @@ export const CFConfiguration = ({
 
 		hasInitializedSelections.current = true;
 		setSelections(newSelections);
-		// biome-ignore lint/correctness/useExhaustiveDependencies: initialSelections is intentionally
-		// read only on first effect run to detect navigation-back state. Including it would
-		// re-trigger initialization and defeat the hasInitializedSelections guard.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [isClonedProfileMode, cfResolutions]);
 
 	// Initialize selections when data loads (one-time only) - for non-cloned profiles
@@ -183,9 +181,7 @@ export const CFConfiguration = ({
 
 		hasInitializedSelections.current = true;
 		setSelections(newSelections);
-		// biome-ignore lint/correctness/useExhaustiveDependencies: initialSelections is intentionally
-		// read only on first effect run to detect navigation-back state. Including it would
-		// re-trigger initialization and defeat the hasInitializedSelections guard.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [isClonedProfileMode, data]);
 
 	const toggleCF = (cfTrashId: string, _isRequired: boolean = false) => {
