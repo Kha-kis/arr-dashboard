@@ -4,7 +4,7 @@ import * as oauth from "oauth4webapi";
 import { z } from "zod";
 import { warmConnectionsForUser } from "../lib/arr/connection-warmer.js";
 import { OIDCProvider } from "../lib/auth/oidc-provider.js";
-import { getSessionMetadata } from "../lib/auth/session-metadata.js";
+import { extractSessionMetadata } from "../lib/auth/session-metadata.js";
 import { normalizeIssuerUrl } from "../lib/auth/oidc-utils.js";
 import { validateRequest } from "../lib/utils/validate.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
@@ -93,13 +93,11 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		// Auto-generate redirect URI if not provided
-		// Use the request origin to detect the correct URL (works in Docker/proxy environments)
+		// Use APP_URL for consistent, safe redirect URI generation
 		let redirectUri = parsed.redirectUri;
 		if (!redirectUri) {
-			const protocol = request.headers["x-forwarded-proto"] || request.protocol;
-			const host = request.headers["x-forwarded-host"] || request.headers.host || "localhost:3000";
-			redirectUri = `${protocol}://${host}/auth/oidc/callback`;
-			request.log.info({ redirectUri, protocol, host }, "Auto-generated redirect URI from request");
+			redirectUri = `${app.config.APP_URL}/auth/oidc/callback`;
+			request.log.info({ redirectUri }, "Auto-generated redirect URI from APP_URL");
 		}
 
 		try {
@@ -177,7 +175,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * POST /auth/oidc/login
 	 * Initiates OIDC login flow by generating authorization URL
 	 */
-	app.post("/oidc/login", async (request, reply) => {
+	app.post("/oidc/login", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
 		// Get OIDC configuration from database
 		const dbProvider = await app.prisma.oIDCProvider.findFirst({
 			where: { enabled: true },
@@ -242,7 +240,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * GET /auth/oidc/callback
 	 * Handles OIDC callback after user authorization
 	 */
-	app.get("/oidc/callback", async (request, reply) => {
+	app.get("/oidc/callback", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
 		const queryParams = request.query as Record<string, unknown>;
 		request.log.info(
 			{ hasCode: "code" in queryParams },
@@ -439,7 +437,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			}
 
 			// Create session with metadata
-			const metadata = getSessionMetadata(request);
+			const metadata = extractSessionMetadata(request);
 			const session = await app.sessionService.createSession(user.id, true, metadata);
 			app.sessionService.attachCookie(reply, session.token, true);
 

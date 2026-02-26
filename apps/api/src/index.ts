@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { envSchema } from "./config/env.js";
-import { getPortConfig, logPortConfig } from "./lib/config/port-config.js";
-import { LOG_LEVEL, LOG_DIR } from "./lib/logger.js";
+import { getPortConfig, getSecurityConfig, logPortConfig } from "./lib/config/port-config.js";
+import { LOG_LEVEL, LOG_DIR, loggers } from "./lib/logger.js";
 import { getAppVersion } from "./lib/utils/version.js";
 import { buildServer } from "./server.js";
 
@@ -37,8 +37,13 @@ if (!envResult.success) {
 }
 const env = envResult.data;
 
+// Resolve security config (env var > database > default) before server creation
+const securityConfig = getSecurityConfig(loggers.api);
+// Resolve secureCookies: true/false override, or auto-detect from trustProxy
+const resolvedSecureCookie = securityConfig.secureCookies ?? securityConfig.trustProxy;
+
 const start = async () => {
-	const app = buildServer({ env });
+	const app = buildServer({ env, trustProxy: securityConfig.trustProxy, secureCookie: resolvedSecureCookie });
 
 	try {
 		await app.listen({

@@ -4,7 +4,7 @@ import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { warmConnectionsForUser } from "../lib/arr/connection-warmer.js";
 import { hashPassword, verifyPassword } from "../lib/auth/password.js";
-import { getSessionMetadata } from "../lib/auth/session-metadata.js";
+import { extractSessionMetadata } from "../lib/auth/session-metadata.js";
 import { parseUserAgent } from "../lib/auth/user-agent-parser.js";
 import { validateRequest } from "../lib/utils/validate.js";
 
@@ -100,7 +100,7 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			const session = await app.sessionService.createSession(
 				user.id,
 				parsed.rememberMe,
-				getSessionMetadata(request),
+				extractSessionMetadata(request),
 			);
 			app.sessionService.attachCookie(reply, session.token, parsed.rememberMe);
 
@@ -232,7 +232,7 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const session = await app.sessionService.createSession(
 			user.id,
 			parsed.rememberMe,
-			getSessionMetadata(request),
+			extractSessionMetadata(request),
 		);
 		app.sessionService.attachCookie(reply, session.token, parsed.rememberMe);
 

@@ -220,6 +220,10 @@ model SystemSettings {
   // Application metadata
   appName           String    @default("Arr Dashboard")
 
+  // Security / reverse-proxy settings
+  trustProxy    Boolean? @default(false)
+  secureCookies Boolean?
+
   // External URL configuration
   // Used for OIDC callbacks, WebAuthn origins, and external link generation
   // Leave empty to auto-detect from request origin

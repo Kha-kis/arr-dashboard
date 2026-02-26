@@ -21,6 +21,7 @@ declare module "fastify" {
 		sessionService: SessionService;
 		arrClientFactory: ArrClientFactory;
 		deploymentExecutor: DeploymentExecutorService;
+		secureCookie: boolean;
 	}
 
 	interface FastifyRequest {

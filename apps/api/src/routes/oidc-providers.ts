@@ -79,16 +79,13 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 			}
 
 			// Auto-generate redirect URI if not provided
-			// Use the request origin to detect the correct URL (works in Docker/proxy environments)
+			// Use APP_URL for consistent, safe redirect URI generation
 			let redirectUri = data.redirectUri;
 			if (!redirectUri) {
-				const protocol = request.headers["x-forwarded-proto"] || request.protocol;
-				const host =
-					request.headers["x-forwarded-host"] || request.headers.host || "localhost:3000";
-				redirectUri = `${protocol}://${host}/auth/oidc/callback`;
+				redirectUri = `${app.config.APP_URL}/auth/oidc/callback`;
 				request.log.info(
-					{ redirectUri, protocol, host },
-					"Auto-generated redirect URI from request",
+					{ redirectUri },
+					"Auto-generated redirect URI from APP_URL",
 				);
 			}
 

@@ -30,6 +30,10 @@ export const envSchema = z
 			.max(24 * 30)
 			.default(24),
 		PASSWORD_POLICY: z.enum(["strict", "relaxed"]).default("strict"),
+		TRUST_PROXY: z.string().default("false")
+			.transform((v) => ["true", "1", "yes"].includes(v.toLowerCase())),
+		COOKIE_SECURE: z.string().optional()
+			.transform((v) => v === undefined ? undefined : ["true", "1", "yes"].includes(v.toLowerCase())),
 		APP_URL: z.string().url().default("http://localhost:3000"),
 		TMDB_BASE_URL: z.string().url().default("https://api.themoviedb.org/3"),
 		TMDB_IMAGE_BASE_URL: z.string().url().default("https://image.tmdb.org/t/p"),

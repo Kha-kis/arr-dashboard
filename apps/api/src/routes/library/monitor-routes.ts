@@ -5,7 +5,7 @@ import {
 	libraryEpisodeMonitorRequestSchema,
 	libraryToggleMonitorRequestSchema,
 } from "@arr/shared";
-import type { FastifyPluginCallback } from "fastify";
+import type { FastifyBaseLogger, FastifyPluginCallback } from "fastify";
 import {
 	getClientForInstance,
 	isLidarrClient,
@@ -21,6 +21,7 @@ import { toNumber } from "../../lib/library/type-converters.js";
  */
 async function updateCacheMonitoredStatus(
 	prisma: import("../../lib/prisma.js").PrismaClientInstance,
+	log: FastifyBaseLogger,
 	instanceId: string,
 	arrItemId: number,
 	itemType: "movie" | "series" | "artist" | "author",
@@ -51,9 +52,8 @@ async function updateCacheMonitoredStatus(
 				},
 			});
 		}
-	} catch {
-		// Cache update is best-effort - don't fail the request if it fails
-		// The next sync will correct any inconsistencies
+	} catch (err) {
+		log.debug({ err, instanceId, arrItemId, itemType }, "Best-effort cache update failed after monitor toggle");
 	}
 }
 
@@ -109,6 +109,7 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 				// Optimistically update cache
 				await updateCacheMonitoredStatus(
 					app.prisma,
+					request.log,
 					payload.instanceId,
 					itemId,
 					"movie",
@@ -166,6 +167,7 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 				// Optimistically update cache
 				await updateCacheMonitoredStatus(
 					app.prisma,
+					request.log,
 					payload.instanceId,
 					itemId,
 					"series",
@@ -188,6 +190,7 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 				// Optimistically update cache
 				await updateCacheMonitoredStatus(
 					app.prisma,
+					request.log,
 					payload.instanceId,
 					itemId,
 					"artist",
@@ -210,6 +213,7 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 				// Optimistically update cache
 				await updateCacheMonitoredStatus(
 					app.prisma,
+					request.log,
 					payload.instanceId,
 					itemId,
 					"author",
