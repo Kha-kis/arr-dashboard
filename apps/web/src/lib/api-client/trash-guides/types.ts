@@ -62,6 +62,7 @@ export type QualityProfileSummary = {
 	language?: string;
 	customFormatCount: number;
 	qualityCount: number;
+	groupName?: string;
 };
 
 export type QualityProfilesResponse = {

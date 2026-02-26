@@ -145,6 +145,11 @@ export type StandaloneCFDeployment = Prisma.StandaloneCFDeploymentModel
  */
 export type QualitySizeMapping = Prisma.QualitySizeMappingModel
 /**
+ * Model NamingConfig
+ * 
+ */
+export type NamingConfig = Prisma.NamingConfigModel
+/**
  * Model HuntConfig
  * Hunt configuration per service instance (admin-only feature)
  */

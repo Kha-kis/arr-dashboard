@@ -44,6 +44,7 @@ model User {
   serviceInstances      ServiceInstance[]
   userCustomFormats     UserCustomFormat[]
   qualitySizeMappings   QualitySizeMapping[]
+  namingConfigs         NamingConfig[]
   notificationChannels  NotificationChannel[]
   libraryCleanupConfig  LibraryCleanupConfig?
 }
@@ -97,6 +98,7 @@ model ServiceInstance {
   deploymentHistory           TemplateDeploymentHistory[]
   standaloneCFDeployments     StandaloneCFDeployment[]
   qualitySizeMapping          QualitySizeMapping?
+  namingConfig                NamingConfig?
   huntConfig                  HuntConfig?
   huntLogs                    HuntLog[]
   queueCleanerConfig          QueueCleanerConfig?
@@ -225,10 +227,6 @@ model SystemSettings {
 
   // Application metadata
   appName           String    @default("Arr Dashboard")
-
-  // Security / reverse-proxy settings
-  trustProxy    Boolean? @default(false)
-  secureCookies Boolean?
 
   // External URL configuration
   // Used for OIDC callbacks, WebAuthn origins, and external link generation
@@ -586,6 +584,27 @@ model QualitySizeMapping {
   @@index([userId])
   @@index([syncStrategy])
   @@map("quality_size_mappings")
+}
+
+// Per-instance naming scheme configuration (satellite of ServiceInstance)
+// Tracks which TRaSH naming presets are selected and deployed to an instance.
+model NamingConfig {
+  id               String    @id @default(cuid())
+  instanceId       String    @unique
+  userId           String
+  serviceType      String    // "RADARR" | "SONARR"
+  selectedPresets  String    // JSON: NamingSelectedPresets blob
+  lastDeployedAt   DateTime?
+  lastDeployedHash String?   // SHA-256 of deployed payload for change detection
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([instanceId])
+  @@map("naming_configs")
 }
 
 // ============================================================================

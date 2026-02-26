@@ -23,6 +23,8 @@ export const TRASH_CONFIG_TYPES = {
 	QUALITY_PROFILES: "QUALITY_PROFILES",
 	CF_DESCRIPTIONS: "CF_DESCRIPTIONS",
 	CF_INCLUDES: "CF_INCLUDES", // MkDocs include files shared across CF descriptions
+	QUALITY_PROFILE_GROUPS: "QUALITY_PROFILE_GROUPS",
+	NAMING_PRESETS: "NAMING_PRESETS",
 } as const;
 
 export type TrashConfigType = (typeof TRASH_CONFIG_TYPES)[keyof typeof TRASH_CONFIG_TYPES];
@@ -82,6 +84,7 @@ export interface TrashCustomFormat {
 	 */
 	trash_scores?: Record<string, number>;
 	trash_description?: string;
+	trash_url?: string;
 	includeCustomFormatWhenRenaming?: boolean;
 	specifications: CustomFormatSpecification[];
 	// Optional metadata for instance-sourced CFs (not from TRaSH Guides)
@@ -210,6 +213,106 @@ export interface TrashNamingScheme {
 	season_folder?: string;
 }
 
+// ============================================================================
+// Naming Deployment Types (Feature 2)
+// ============================================================================
+
+/** Radarr naming JSON from TRaSH with synthetic discriminant injected at fetch time */
+export interface TrashRadarrNaming {
+	_service: "RADARR";
+	folder: Record<string, string>;
+	file: Record<string, string>;
+}
+
+/** Sonarr naming JSON from TRaSH with synthetic discriminant injected at fetch time */
+export interface TrashSonarrNaming {
+	_service: "SONARR";
+	season: Record<string, string>;
+	series: Record<string, string>;
+	episodes: {
+		standard: Record<string, string>;
+		daily: Record<string, string>;
+		anime: Record<string, string>;
+	};
+}
+
+/** Discriminated union — narrow with `data._service === "RADARR"` */
+export type TrashNamingData = TrashRadarrNaming | TrashSonarrNaming;
+
+export interface NamingPreset {
+	name: string;
+	formatString: string;
+}
+
+/** Radarr naming presets response */
+export interface RadarrPresetsResponse {
+	serviceType: "RADARR";
+	filePresets: NamingPreset[];
+	folderPresets: NamingPreset[];
+}
+
+/** Sonarr naming presets response */
+export interface SonarrPresetsResponse {
+	serviceType: "SONARR";
+	standardEpisodePresets: NamingPreset[];
+	dailyEpisodePresets: NamingPreset[];
+	animeEpisodePresets: NamingPreset[];
+	seriesFolderPresets: NamingPreset[];
+	seasonFolderPresets: NamingPreset[];
+}
+
+/** Discriminated union — narrow with `response.serviceType` */
+export type NamingPresetsResponse = RadarrPresetsResponse | SonarrPresetsResponse;
+
+/** Radarr selected presets */
+export interface RadarrSelectedPresets {
+	serviceType: "RADARR";
+	filePreset: string | null;
+	folderPreset: string | null;
+}
+
+/** Sonarr selected presets */
+export interface SonarrSelectedPresets {
+	serviceType: "SONARR";
+	standardEpisodePreset: string | null;
+	dailyEpisodePreset: string | null;
+	animeEpisodePreset: string | null;
+	seriesFolderPreset: string | null;
+	seasonFolderPreset: string | null;
+}
+
+/** Discriminated union — narrow with `presets.serviceType` */
+export type NamingSelectedPresets = RadarrSelectedPresets | SonarrSelectedPresets;
+
+export interface NamingFieldComparison {
+	fieldGroup: string;
+	arrApiField: string;
+	presetName: string;
+	presetValue: string;
+	currentValue: string | null;
+	changed: boolean;
+}
+
+/**
+ * Preview result with pre-computed change counts.
+ * Invariant: changedCount + unchangedCount === comparisons.length
+ */
+export interface NamingPreviewResult {
+	comparisons: NamingFieldComparison[];
+	changedCount: number;
+	unchangedCount: number;
+}
+
+export interface NamingConfigRecord {
+	instanceId: string;
+	serviceType: "RADARR" | "SONARR";
+	selectedPresets: NamingSelectedPresets;
+	lastDeployedAt: string | null;
+	lastDeployedHash: string | null;
+	createdAt: string;
+	updatedAt: string;
+}
+
 /**
  * Quality Profile from TRaSH Guides
  */
@@ -218,6 +321,8 @@ export interface TrashQualityProfile {
 	name: string;
 	trash_score_set?: string;
 	trash_description?: string;
+	trash_url?: string;
+	visible?: string;
 	group?: number;
 	upgradeAllowed: boolean;
 	cutoff: string;
@@ -256,6 +361,16 @@ export interface TrashCFInclude {
 	fetchedAt: string;
 }
 
+/**
+ * Quality Profile Group from TRaSH Guides.
+ * Fetched from docs/json/{service}/quality-profile-groups/groups.json.
+ * Groups profile trash_ids under human-readable category names.
+ */
+export interface TrashQualityProfileGroup {
+	name: string;
+	profiles: Record<string, string>;
+}
+
 // ============================================================================
 // Cache Types
 // ============================================================================
@@ -273,7 +388,9 @@ export interface TrashCacheEntry {
 		| TrashQualitySize[]
 		| TrashNamingScheme[]
 		| TrashQualityProfile[]
-		| TrashCFDescription[];
+		| TrashCFDescription[]
+		| TrashQualityProfileGroup[]
+		| TrashNamingData[];
 	version: number;
 	fetchedAt: string;
 	lastCheckedAt: string;

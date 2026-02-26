@@ -263,6 +263,7 @@ export type UserWhereInput = {
   serviceInstances?: Prisma.ServiceInstanceListRelationFilter
   userCustomFormats?: Prisma.UserCustomFormatListRelationFilter
   qualitySizeMappings?: Prisma.QualitySizeMappingListRelationFilter
+  namingConfigs?: Prisma.NamingConfigListRelationFilter
   notificationChannels?: Prisma.NotificationChannelListRelationFilter
   libraryCleanupConfig?: Prisma.XOR<Prisma.LibraryCleanupConfigNullableScalarRelationFilter, Prisma.LibraryCleanupConfigWhereInput> | null
 }
@@ -285,6 +286,7 @@ export type UserOrderByWithRelationInput = {
   serviceInstances?: Prisma.ServiceInstanceOrderByRelationAggregateInput
   userCustomFormats?: Prisma.UserCustomFormatOrderByRelationAggregateInput
   qualitySizeMappings?: Prisma.QualitySizeMappingOrderByRelationAggregateInput
+  namingConfigs?: Prisma.NamingConfigOrderByRelationAggregateInput
   notificationChannels?: Prisma.NotificationChannelOrderByRelationAggregateInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigOrderByWithRelationInput
 }
@@ -310,6 +312,7 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   serviceInstances?: Prisma.ServiceInstanceListRelationFilter
   userCustomFormats?: Prisma.UserCustomFormatListRelationFilter
   qualitySizeMappings?: Prisma.QualitySizeMappingListRelationFilter
+  namingConfigs?: Prisma.NamingConfigListRelationFilter
   notificationChannels?: Prisma.NotificationChannelListRelationFilter
   libraryCleanupConfig?: Prisma.XOR<Prisma.LibraryCleanupConfigNullableScalarRelationFilter, Prisma.LibraryCleanupConfigWhereInput> | null
 }, "id" | "username">
@@ -366,6 +369,7 @@ export type UserCreateInput = {
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigCreateNestedOneWithoutUserInput
 }
@@ -388,6 +392,7 @@ export type UserUncheckedCreateInput = {
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUncheckedCreateNestedOneWithoutUserInput
 }
@@ -410,6 +415,7 @@ export type UserUpdateInput = {
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUpdateOneWithoutUserNestedInput
 }
@@ -432,6 +438,7 @@ export type UserUncheckedUpdateInput = {
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUncheckedUpdateOneWithoutUserNestedInput
 }
@@ -639,6 +646,20 @@ export type UserUpdateOneRequiredWithoutQualitySizeMappingsNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutQualitySizeMappingsInput, Prisma.UserUpdateWithoutQualitySizeMappingsInput>, Prisma.UserUncheckedUpdateWithoutQualitySizeMappingsInput>
 }
 
+export type UserCreateNestedOneWithoutNamingConfigsInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutNamingConfigsInput, Prisma.UserUncheckedCreateWithoutNamingConfigsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutNamingConfigsInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutNamingConfigsNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutNamingConfigsInput, Prisma.UserUncheckedCreateWithoutNamingConfigsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutNamingConfigsInput
+  upsert?: Prisma.UserUpsertWithoutNamingConfigsInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutNamingConfigsInput, Prisma.UserUpdateWithoutNamingConfigsInput>, Prisma.UserUncheckedUpdateWithoutNamingConfigsInput>
+}
+
 export type UserCreateNestedOneWithoutUserCustomFormatsInput = {
   create?: Prisma.XOR<Prisma.UserCreateWithoutUserCustomFormatsInput, Prisma.UserUncheckedCreateWithoutUserCustomFormatsInput>
   connectOrCreate?: Prisma.UserCreateOrConnectWithoutUserCustomFormatsInput
@@ -698,6 +719,7 @@ export type UserCreateWithoutSessionsInput = {
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigCreateNestedOneWithoutUserInput
 }
@@ -719,6 +741,7 @@ export type UserUncheckedCreateWithoutSessionsInput = {
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUncheckedCreateNestedOneWithoutUserInput
 }
@@ -756,6 +779,7 @@ export type UserUpdateWithoutSessionsInput = {
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUpdateOneWithoutUserNestedInput
 }
@@ -777,6 +801,7 @@ export type UserUncheckedUpdateWithoutSessionsInput = {
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUncheckedUpdateOneWithoutUserNestedInput
 }
@@ -798,6 +823,7 @@ export type UserCreateWithoutServiceInstancesInput = {
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigCreateNestedOneWithoutUserInput
 }
@@ -819,6 +845,7 @@ export type UserUncheckedCreateWithoutServiceInstancesInput = {
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUncheckedCreateNestedOneWithoutUserInput
 }
@@ -856,6 +883,7 @@ export type UserUpdateWithoutServiceInstancesInput = {
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUpdateOneWithoutUserNestedInput
 }
@@ -877,6 +905,7 @@ export type UserUncheckedUpdateWithoutServiceInstancesInput = {
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUncheckedUpdateOneWithoutUserNestedInput
 }
@@ -898,6 +927,7 @@ export type UserCreateWithoutOidcAccountsInput = {
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigCreateNestedOneWithoutUserInput
 }
@@ -919,6 +949,7 @@ export type UserUncheckedCreateWithoutOidcAccountsInput = {
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUncheckedCreateNestedOneWithoutUserInput
 }
@@ -956,6 +987,7 @@ export type UserUpdateWithoutOidcAccountsInput = {
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUpdateOneWithoutUserNestedInput
 }
@@ -977,6 +1009,7 @@ export type UserUncheckedUpdateWithoutOidcAccountsInput = {
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUncheckedUpdateOneWithoutUserNestedInput
 }
@@ -998,6 +1031,7 @@ export type UserCreateWithoutWebauthnCredentialsInput = {
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigCreateNestedOneWithoutUserInput
 }
@@ -1019,6 +1053,7 @@ export type UserUncheckedCreateWithoutWebauthnCredentialsInput = {
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUncheckedCreateNestedOneWithoutUserInput
 }
@@ -1056,6 +1091,7 @@ export type UserUpdateWithoutWebauthnCredentialsInput = {
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUpdateOneWithoutUserNestedInput
 }
@@ -1077,6 +1113,7 @@ export type UserUncheckedUpdateWithoutWebauthnCredentialsInput = {
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUncheckedUpdateOneWithoutUserNestedInput
 }
@@ -1098,6 +1135,7 @@ export type UserCreateWithoutTrashSettingsInput = {
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigCreateNestedOneWithoutUserInput
 }
@@ -1119,6 +1157,7 @@ export type UserUncheckedCreateWithoutTrashSettingsInput = {
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUncheckedCreateNestedOneWithoutUserInput
 }
@@ -1156,6 +1195,7 @@ export type UserUpdateWithoutTrashSettingsInput = {
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUpdateOneWithoutUserNestedInput
 }
@@ -1177,6 +1217,7 @@ export type UserUncheckedUpdateWithoutTrashSettingsInput = {
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUncheckedUpdateOneWithoutUserNestedInput
 }
@@ -1198,6 +1239,7 @@ export type UserCreateWithoutQualitySizeMappingsInput = {
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigCreateNestedOneWithoutUserInput
 }
@@ -1219,6 +1261,7 @@ export type UserUncheckedCreateWithoutQualitySizeMappingsInput = {
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUncheckedCreateNestedOneWithoutUserInput
 }
@@ -1256,6 +1299,7 @@ export type UserUpdateWithoutQualitySizeMappingsInput = {
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUpdateOneWithoutUserNestedInput
 }
@@ -1277,6 +1321,111 @@ export type UserUncheckedUpdateWithoutQualitySizeMappingsInput = {
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  libraryCleanupConfig?: Prisma.LibraryCleanupConfigUncheckedUpdateOneWithoutUserNestedInput
+}
+
+export type UserCreateWithoutNamingConfigsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  libraryCleanupConfig?: Prisma.LibraryCleanupConfigCreateNestedOneWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutNamingConfigsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  libraryCleanupConfig?: Prisma.LibraryCleanupConfigUncheckedCreateNestedOneWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutNamingConfigsInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutNamingConfigsInput, Prisma.UserUncheckedCreateWithoutNamingConfigsInput>
+}
+
+export type UserUpsertWithoutNamingConfigsInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutNamingConfigsInput, Prisma.UserUncheckedUpdateWithoutNamingConfigsInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutNamingConfigsInput, Prisma.UserUncheckedCreateWithoutNamingConfigsInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutNamingConfigsInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutNamingConfigsInput, Prisma.UserUncheckedUpdateWithoutNamingConfigsInput>
+}
+
+export type UserUpdateWithoutNamingConfigsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  libraryCleanupConfig?: Prisma.LibraryCleanupConfigUpdateOneWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutNamingConfigsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUncheckedUpdateOneWithoutUserNestedInput
 }
@@ -1298,6 +1447,7 @@ export type UserCreateWithoutUserCustomFormatsInput = {
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigCreateNestedOneWithoutUserInput
 }
@@ -1319,6 +1469,7 @@ export type UserUncheckedCreateWithoutUserCustomFormatsInput = {
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUncheckedCreateNestedOneWithoutUserInput
 }
@@ -1356,6 +1507,7 @@ export type UserUpdateWithoutUserCustomFormatsInput = {
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUpdateOneWithoutUserNestedInput
 }
@@ -1377,6 +1529,7 @@ export type UserUncheckedUpdateWithoutUserCustomFormatsInput = {
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUncheckedUpdateOneWithoutUserNestedInput
 }
@@ -1399,6 +1552,7 @@ export type UserCreateWithoutNotificationChannelsInput = {
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigCreateNestedOneWithoutUserInput
 }
 
@@ -1420,6 +1574,7 @@ export type UserUncheckedCreateWithoutNotificationChannelsInput = {
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUncheckedCreateNestedOneWithoutUserInput
 }
 
@@ -1457,6 +1612,7 @@ export type UserUpdateWithoutNotificationChannelsInput = {
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUpdateOneWithoutUserNestedInput
 }
 
@@ -1478,6 +1634,7 @@ export type UserUncheckedUpdateWithoutNotificationChannelsInput = {
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigUncheckedUpdateOneWithoutUserNestedInput
 }
 
@@ -1499,6 +1656,7 @@ export type UserCreateWithoutLibraryCleanupConfigInput = {
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
 }
 
@@ -1520,6 +1678,7 @@ export type UserUncheckedCreateWithoutLibraryCleanupConfigInput = {
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -1557,6 +1716,7 @@ export type UserUpdateWithoutLibraryCleanupConfigInput = {
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
 }
 
@@ -1578,6 +1738,7 @@ export type UserUncheckedUpdateWithoutLibraryCleanupConfigInput = {
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
   qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -1593,6 +1754,7 @@ export type UserCountOutputType = {
   serviceInstances: number
   userCustomFormats: number
   qualitySizeMappings: number
+  namingConfigs: number
   notificationChannels: number
 }
 
@@ -1603,6 +1765,7 @@ export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.I
   serviceInstances?: boolean | UserCountOutputTypeCountServiceInstancesArgs
   userCustomFormats?: boolean | UserCountOutputTypeCountUserCustomFormatsArgs
   qualitySizeMappings?: boolean | UserCountOutputTypeCountQualitySizeMappingsArgs
+  namingConfigs?: boolean | UserCountOutputTypeCountNamingConfigsArgs
   notificationChannels?: boolean | UserCountOutputTypeCountNotificationChannelsArgs
 }
 
@@ -1661,6 +1824,13 @@ export type UserCountOutputTypeCountQualitySizeMappingsArgs<ExtArgs extends runt
 /**
  * UserCountOutputType without action
  */
+export type UserCountOutputTypeCountNamingConfigsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.NamingConfigWhereInput
+}
+
+/**
+ * UserCountOutputType without action
+ */
 export type UserCountOutputTypeCountNotificationChannelsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   where?: Prisma.NotificationChannelWhereInput
 }
@@ -1684,6 +1854,7 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   serviceInstances?: boolean | Prisma.User$serviceInstancesArgs<ExtArgs>
   userCustomFormats?: boolean | Prisma.User$userCustomFormatsArgs<ExtArgs>
   qualitySizeMappings?: boolean | Prisma.User$qualitySizeMappingsArgs<ExtArgs>
+  namingConfigs?: boolean | Prisma.User$namingConfigsArgs<ExtArgs>
   notificationChannels?: boolean | Prisma.User$notificationChannelsArgs<ExtArgs>
   libraryCleanupConfig?: boolean | Prisma.User$libraryCleanupConfigArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
@@ -1737,6 +1908,7 @@ export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
   serviceInstances?: boolean | Prisma.User$serviceInstancesArgs<ExtArgs>
   userCustomFormats?: boolean | Prisma.User$userCustomFormatsArgs<ExtArgs>
   qualitySizeMappings?: boolean | Prisma.User$qualitySizeMappingsArgs<ExtArgs>
+  namingConfigs?: boolean | Prisma.User$namingConfigsArgs<ExtArgs>
   notificationChannels?: boolean | Prisma.User$notificationChannelsArgs<ExtArgs>
   libraryCleanupConfig?: boolean | Prisma.User$libraryCleanupConfigArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
@@ -1754,6 +1926,7 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     serviceInstances: Prisma.$ServiceInstancePayload<ExtArgs>[]
     userCustomFormats: Prisma.$UserCustomFormatPayload<ExtArgs>[]
     qualitySizeMappings: Prisma.$QualitySizeMappingPayload<ExtArgs>[]
+    namingConfigs: Prisma.$NamingConfigPayload<ExtArgs>[]
     notificationChannels: Prisma.$NotificationChannelPayload<ExtArgs>[]
     libraryCleanupConfig: Prisma.$LibraryCleanupConfigPayload<ExtArgs> | null
   }
@@ -2169,6 +2342,7 @@ export interface Prisma__UserClient<T, Null = never, ExtArgs extends runtime.Typ
   serviceInstances<T extends Prisma.User$serviceInstancesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$serviceInstancesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ServiceInstancePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   userCustomFormats<T extends Prisma.User$userCustomFormatsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$userCustomFormatsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$UserCustomFormatPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   qualitySizeMappings<T extends Prisma.User$qualitySizeMappingsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$qualitySizeMappingsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$QualitySizeMappingPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  namingConfigs<T extends Prisma.User$namingConfigsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$namingConfigsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$NamingConfigPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   notificationChannels<T extends Prisma.User$notificationChannelsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$notificationChannelsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$NotificationChannelPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   libraryCleanupConfig<T extends Prisma.User$libraryCleanupConfigArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$libraryCleanupConfigArgs<ExtArgs>>): Prisma.Prisma__LibraryCleanupConfigClient<runtime.Types.Result.GetResult<Prisma.$LibraryCleanupConfigPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   /**
@@ -2756,6 +2930,30 @@ export type User$qualitySizeMappingsArgs<ExtArgs extends runtime.Types.Extension
   take?: number
   skip?: number
   distinct?: Prisma.QualitySizeMappingScalarFieldEnum | Prisma.QualitySizeMappingScalarFieldEnum[]
+}
+
+/**
+ * User.namingConfigs
+ */
+export type User$namingConfigsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the NamingConfig
+   */
+  select?: Prisma.NamingConfigSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the NamingConfig
+   */
+  omit?: Prisma.NamingConfigOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.NamingConfigInclude<ExtArgs> | null
+  where?: Prisma.NamingConfigWhereInput
+  orderBy?: Prisma.NamingConfigOrderByWithRelationInput | Prisma.NamingConfigOrderByWithRelationInput[]
+  cursor?: Prisma.NamingConfigWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.NamingConfigScalarFieldEnum | Prisma.NamingConfigScalarFieldEnum[]
 }
 
 /**

@@ -10,6 +10,7 @@ import {
 	type TemplateConfig,
 	type TrashCustomFormat,
 	type TrashQualityProfile,
+	type TrashQualityProfileGroup,
 } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
@@ -17,7 +18,10 @@ import { CacheCorruptionError, createCacheManager } from "../../lib/trash-guides
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import { createTemplateService } from "../../lib/trash-guides/template-service.js";
-import { resolveUserCustomFormats, USER_CF_PREFIX } from "../../lib/trash-guides/user-cf-resolver.js";
+import {
+	resolveUserCustomFormats,
+	USER_CF_PREFIX,
+} from "../../lib/trash-guides/user-cf-resolver.js";
 import { createVersionTracker } from "../../lib/trash-guides/version-tracker.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
@@ -144,6 +148,32 @@ export async function registerQualityProfileRoutes(
 			await cacheManager.set(serviceType, "QUALITY_PROFILES", profiles);
 		}
 
+		// Load quality profile groups for group-name enrichment (soft failure — groups are optional)
+		let profileGroupMap = new Map<string, string>(); // trash_id → group name
+		try {
+			const groups = await cacheManager.get<TrashQualityProfileGroup[]>(
+				serviceType,
+				"QUALITY_PROFILE_GROUPS",
+			);
+			if (groups) {
+				for (const group of groups) {
+					for (const trashId of Object.values(group.profiles)) {
+						profileGroupMap.set(trashId, group.name);
+					}
+				}
+			}
+		} catch (error) {
+			if (error instanceof CacheCorruptionError) {
+				request.log.warn(
+					{ serviceType },
+					"Quality profile groups cache corrupted — profiles will render ungrouped",
+				);
+				profileGroupMap = new Map();
+			} else {
+				throw error;
+			}
+		}
+
 		// Transform profiles for UI display
 		const profilesWithMeta = profiles.map((profile) => ({
 			trashId: profile.trash_id,
@@ -155,6 +185,7 @@ export async function registerQualityProfileRoutes(
 			language: profile.language,
 			customFormatCount: Object.keys(profile.formatItems || {}).length,
 			qualityCount: profile.items.length,
+			groupName: profileGroupMap.get(profile.trash_id),
 		}));
 
 		return reply.send({
@@ -468,7 +499,10 @@ export async function registerQualityProfileRoutes(
 
 		// Resolve user-created CFs from database (batched single query)
 		const userCFs = await resolveUserCustomFormats(
-			app.prisma, request.currentUser!.id, customFormatSelections, request.log,
+			app.prisma,
+			request.currentUser!.id,
+			customFormatSelections,
+			request.log,
 		);
 		templateConfig.customFormats.push(...userCFs);
 
@@ -630,7 +664,10 @@ export async function registerQualityProfileRoutes(
 
 		// Resolve user-created CFs: prefer existing template data, fall back to database
 		const userCFs = await resolveUserCustomFormats(
-			app.prisma, request.currentUser!.id, customFormatSelections, request.log,
+			app.prisma,
+			request.currentUser!.id,
+			customFormatSelections,
+			request.log,
 		);
 		for (const userCF of userCFs) {
 			const existingCF = existingCFMap.get(userCF.trashId);

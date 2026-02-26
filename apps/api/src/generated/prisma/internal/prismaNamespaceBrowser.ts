@@ -72,6 +72,7 @@ export const ModelName = {
   TemplateDeploymentHistory: 'TemplateDeploymentHistory',
   StandaloneCFDeployment: 'StandaloneCFDeployment',
   QualitySizeMapping: 'QualitySizeMapping',
+  NamingConfig: 'NamingConfig',
   HuntConfig: 'HuntConfig',
   HuntLog: 'HuntLog',
   HuntSearchHistory: 'HuntSearchHistory',
@@ -241,8 +242,6 @@ export const SystemSettingsScalarFieldEnum = {
   webPort: 'webPort',
   listenAddress: 'listenAddress',
   appName: 'appName',
-  trustProxy: 'trustProxy',
-  secureCookies: 'secureCookies',
   externalUrl: 'externalUrl',
   trustProxy: 'trustProxy',
   secureCookies: 'secureCookies',
@@ -457,6 +456,21 @@ export const QualitySizeMappingScalarFieldEnum = {
 } as const
 
 export type QualitySizeMappingScalarFieldEnum = (typeof QualitySizeMappingScalarFieldEnum)[keyof typeof QualitySizeMappingScalarFieldEnum]
+
+
+export const NamingConfigScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  userId: 'userId',
+  serviceType: 'serviceType',
+  selectedPresets: 'selectedPresets',
+  lastDeployedAt: 'lastDeployedAt',
+  lastDeployedHash: 'lastDeployedHash',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type NamingConfigScalarFieldEnum = (typeof NamingConfigScalarFieldEnum)[keyof typeof NamingConfigScalarFieldEnum]
 
 
 export const HuntConfigScalarFieldEnum = {

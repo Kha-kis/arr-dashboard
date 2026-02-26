@@ -40,12 +40,12 @@ export function extractTrashId(cf: SdkCustomFormat): string | null {
 			if (Array.isArray(spec.fields)) {
 				const trashIdField = spec.fields.find((f) => f.name === "trash_id");
 				if (trashIdField) {
-					return String(trashIdField.value);
+					return String(trashIdField.value).toLowerCase();
 				}
 			} else if (typeof spec.fields === "object") {
 				if ("trash_id" in spec.fields) {
 					// biome-ignore lint/suspicious/noExplicitAny: Dynamic specification field shape
-					return String((spec.fields as any).trash_id);
+					return String((spec.fields as any).trash_id).toLowerCase();
 				}
 			}
 		}

@@ -253,7 +253,7 @@ export class ProfileCloner {
 			if (spec.fields && Array.isArray(spec.fields)) {
 				const trashIdField = spec.fields.find((f) => f.name === "trash_id");
 				if (trashIdField) {
-					return String(trashIdField.value);
+					return String(trashIdField.value).toLowerCase();
 				}
 			}
 		}

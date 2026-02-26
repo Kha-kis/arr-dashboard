@@ -405,6 +405,7 @@ export const ModelName = {
   TemplateDeploymentHistory: 'TemplateDeploymentHistory',
   StandaloneCFDeployment: 'StandaloneCFDeployment',
   QualitySizeMapping: 'QualitySizeMapping',
+  NamingConfig: 'NamingConfig',
   HuntConfig: 'HuntConfig',
   HuntLog: 'HuntLog',
   HuntSearchHistory: 'HuntSearchHistory',
@@ -439,7 +440,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "notificationChannel" | "notificationSubscription" | "vapidKeys" | "notificationLog" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "tautulliCache" | "plexCache"
+    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "namingConfig" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "notificationChannel" | "notificationSubscription" | "vapidKeys" | "notificationLog" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "tautulliCache" | "plexCache"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -1994,6 +1995,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         count: {
           args: Prisma.QualitySizeMappingCountArgs<ExtArgs>
           result: runtime.Types.Utils.Optional<Prisma.QualitySizeMappingCountAggregateOutputType> | number
+        }
+      }
+    }
+    NamingConfig: {
+      payload: Prisma.$NamingConfigPayload<ExtArgs>
+      fields: Prisma.NamingConfigFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.NamingConfigFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NamingConfigPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.NamingConfigFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NamingConfigPayload>
+        }
+        findFirst: {
+          args: Prisma.NamingConfigFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NamingConfigPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.NamingConfigFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NamingConfigPayload>
+        }
+        findMany: {
+          args: Prisma.NamingConfigFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NamingConfigPayload>[]
+        }
+        create: {
+          args: Prisma.NamingConfigCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NamingConfigPayload>
+        }
+        createMany: {
+          args: Prisma.NamingConfigCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.NamingConfigCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NamingConfigPayload>[]
+        }
+        delete: {
+          args: Prisma.NamingConfigDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NamingConfigPayload>
+        }
+        update: {
+          args: Prisma.NamingConfigUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NamingConfigPayload>
+        }
+        deleteMany: {
+          args: Prisma.NamingConfigDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.NamingConfigUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.NamingConfigUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NamingConfigPayload>[]
+        }
+        upsert: {
+          args: Prisma.NamingConfigUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NamingConfigPayload>
+        }
+        aggregate: {
+          args: Prisma.NamingConfigAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateNamingConfig>
+        }
+        groupBy: {
+          args: Prisma.NamingConfigGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.NamingConfigGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.NamingConfigCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.NamingConfigCountAggregateOutputType> | number
         }
       }
     }
@@ -3574,8 +3649,6 @@ export const SystemSettingsScalarFieldEnum = {
   webPort: 'webPort',
   listenAddress: 'listenAddress',
   appName: 'appName',
-  trustProxy: 'trustProxy',
-  secureCookies: 'secureCookies',
   externalUrl: 'externalUrl',
   trustProxy: 'trustProxy',
   secureCookies: 'secureCookies',
@@ -3790,6 +3863,21 @@ export const QualitySizeMappingScalarFieldEnum = {
 } as const
 
 export type QualitySizeMappingScalarFieldEnum = (typeof QualitySizeMappingScalarFieldEnum)[keyof typeof QualitySizeMappingScalarFieldEnum]
+
+
+export const NamingConfigScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  userId: 'userId',
+  serviceType: 'serviceType',
+  selectedPresets: 'selectedPresets',
+  lastDeployedAt: 'lastDeployedAt',
+  lastDeployedHash: 'lastDeployedHash',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type NamingConfigScalarFieldEnum = (typeof NamingConfigScalarFieldEnum)[keyof typeof NamingConfigScalarFieldEnum]
 
 
 export const HuntConfigScalarFieldEnum = {
@@ -4401,6 +4489,7 @@ export type GlobalOmitConfig = {
   templateDeploymentHistory?: Prisma.TemplateDeploymentHistoryOmit
   standaloneCFDeployment?: Prisma.StandaloneCFDeploymentOmit
   qualitySizeMapping?: Prisma.QualitySizeMappingOmit
+  namingConfig?: Prisma.NamingConfigOmit
   huntConfig?: Prisma.HuntConfigOmit
   huntLog?: Prisma.HuntLogOmit
   huntSearchHistory?: Prisma.HuntSearchHistoryOmit

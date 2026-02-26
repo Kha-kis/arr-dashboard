@@ -624,14 +624,14 @@ export class DeploymentPreviewService {
 				if (Array.isArray(spec.fields)) {
 					const trashIdField = spec.fields.find((f) => f.name === "trash_id");
 					if (trashIdField) {
-						return String(trashIdField.value);
+						return String(trashIdField.value).toLowerCase();
 					}
 				} else if (typeof spec.fields === "object") {
 					// Check common field patterns for trash_id
 					const fields = spec.fields as Record<string, unknown>;
 					const trashIdValue = fields.trash_id || fields.trashId;
 					if (typeof trashIdValue === "string" && trashIdValue.length > 0) {
-						return trashIdValue;
+						return trashIdValue.toLowerCase();
 					}
 				}
 			}
@@ -642,7 +642,7 @@ export class DeploymentPreviewService {
 		if (cf.name) {
 			const trashIdMatch = cf.name.match(/\[([a-f0-9-]{36})\]$/i);
 			if (trashIdMatch?.[1]) {
-				return trashIdMatch[1];
+				return trashIdMatch[1].toLowerCase();
 			}
 		}
 
