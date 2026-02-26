@@ -1,4 +1,5 @@
 import {
+	LIBRARY_SERVICES_UPPER,
 	queueActionRequestSchema,
 	queueBulkActionRequestSchema,
 	queueItemSchema,
@@ -41,7 +42,7 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const response = await executeOnInstances(
 			app,
 			request.currentUser!.id,
-			{ serviceTypes: ["SONARR", "RADARR", "LIDARR", "READARR"] },
+			{ serviceTypes: [...LIBRARY_SERVICES_UPPER] },
 			async (client, instance) => {
 				const service = instance.service.toLowerCase() as QueueService;
 

@@ -1,6 +1,6 @@
 "use client";
 
-import type { LibraryItem, LibraryService, Pagination, ServiceInstanceSummary } from "@arr/shared";
+import { LIBRARY_SERVICES, type LibraryItem, type LibraryService, type Pagination, type ServiceInstanceSummary } from "@arr/shared";
 import { useMemo } from "react";
 import { useLibraryQuery, useLibrarySyncStatus } from "../../../hooks/api/useLibrary";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
@@ -182,10 +182,9 @@ export function useLibraryData(params: LibraryDataParams): LibraryData {
 	const instanceOptions = useMemo<InstanceOption[]>(() => {
 		const services = servicesQuery.data ?? [];
 		// ServiceInstanceSummary uses uppercase service names
-		const arrServices = services.filter((s) => {
-			const upper = s.service.toUpperCase();
-			return upper === "SONARR" || upper === "RADARR" || upper === "LIDARR" || upper === "READARR";
-		});
+		const arrServices = services.filter((s) =>
+			(LIBRARY_SERVICES as readonly string[]).includes(s.service.toLowerCase()),
+		);
 
 		const serviceLabels: Record<string, string> = {
 			RADARR: "Movies",

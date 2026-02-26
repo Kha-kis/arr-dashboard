@@ -1,4 +1,4 @@
-import { arrServiceTypeSchema } from "@arr/shared";
+import { ALL_SERVICES, arrServiceTypeSchema } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { requireInstance } from "../lib/arr/instance-helpers.js";
@@ -235,10 +235,10 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			});
 		}
 
-		if (!["sonarr", "radarr", "prowlarr", "lidarr", "readarr", "seerr", "tautulli", "plex"].includes(service)) {
+		if (!(ALL_SERVICES as readonly string[]).includes(service)) {
 			return reply.status(400).send({
 				error: "Invalid service type",
-				details: "Service must be sonarr, radarr, prowlarr, lidarr, readarr, seerr, tautulli, or plex",
+				details: `Service must be one of: ${ALL_SERVICES.join(", ")}`,
 			});
 		}
 

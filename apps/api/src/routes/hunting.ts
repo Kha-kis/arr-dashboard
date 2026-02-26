@@ -1,3 +1,4 @@
+import { LIBRARY_SERVICES_UPPER } from "@arr/shared";
 import { LidarrClient, RadarrClient, ReadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
@@ -82,7 +83,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const instances = await app.prisma.serviceInstance.findMany({
 			where: {
 				userId,
-				service: { in: ["SONARR", "RADARR", "LIDARR", "READARR"] },
+				service: { in: [...LIBRARY_SERVICES_UPPER] },
 			},
 			include: {
 				huntConfig: true,
@@ -151,7 +152,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const instances = await app.prisma.serviceInstance.findMany({
 			where: {
 				userId,
-				service: { in: ["SONARR", "RADARR", "LIDARR", "READARR"] },
+				service: { in: [...LIBRARY_SERVICES_UPPER] },
 			},
 			include: {
 				huntConfig: true,

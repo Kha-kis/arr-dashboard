@@ -5,6 +5,7 @@
  * with ARR instances.
  */
 
+import { LIBRARY_SERVICES_UPPER } from "@arr/shared";
 import type { FastifyInstance } from "fastify";
 import { createLogger } from "../logger.js";
 import { type SyncResult, syncInstance } from "./sync-executor.js";
@@ -121,7 +122,7 @@ class LibrarySyncScheduler {
 		}
 
 		// Skip if not a library service (only Prowlarr has no library)
-		if (!["SONARR", "RADARR", "LIDARR", "READARR"].includes(instance.service)) {
+		if (!(LIBRARY_SERVICES_UPPER as readonly string[]).includes(instance.service)) {
 			log.debug({ instanceId, service: instance.service }, "Skipping non-library instance");
 			return null;
 		}
@@ -155,7 +156,7 @@ class LibrarySyncScheduler {
 			const instances = await this.app.prisma.serviceInstance.findMany({
 				where: {
 					enabled: true,
-					service: { in: ["SONARR", "RADARR", "LIDARR", "READARR"] },
+					service: { in: [...LIBRARY_SERVICES_UPPER] },
 				},
 				include: {
 					librarySyncStatus: true,

@@ -1,4 +1,5 @@
 import {
+	LIBRARY_SERVICES_UPPER,
 	type LibraryAlbum,
 	type LibraryBook,
 	type LibraryEpisode,
@@ -54,7 +55,7 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 			where: {
 				userId,
 				enabled: true,
-				service: { in: ["SONARR", "RADARR", "LIDARR", "READARR"] },
+				service: { in: [...LIBRARY_SERVICES_UPPER] },
 			},
 			select: { id: true },
 		});

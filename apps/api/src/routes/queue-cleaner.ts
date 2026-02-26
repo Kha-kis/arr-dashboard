@@ -1,3 +1,4 @@
+import { LIBRARY_SERVICES_UPPER } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { toServiceLabel } from "../lib/arr/client-helpers.js";
@@ -286,7 +287,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const instances = await app.prisma.serviceInstance.findMany({
 			where: {
 				userId,
-				service: { in: ["SONARR", "RADARR", "LIDARR", "READARR"] },
+				service: { in: [...LIBRARY_SERVICES_UPPER] },
 			},
 			include: {
 				queueCleanerConfig: true,
@@ -349,7 +350,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const instances = await app.prisma.serviceInstance.findMany({
 			where: {
 				userId,
-				service: { in: ["SONARR", "RADARR", "LIDARR", "READARR"] },
+				service: { in: [...LIBRARY_SERVICES_UPPER] },
 			},
 			include: {
 				queueCleanerConfig: true,
@@ -724,7 +725,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 			const instances = await app.prisma.serviceInstance.findMany({
 				where: {
 					userId,
-					service: { in: ["SONARR", "RADARR", "LIDARR", "READARR"] },
+					service: { in: [...LIBRARY_SERVICES_UPPER] },
 				},
 				include: { queueCleanerConfig: true },
 			});

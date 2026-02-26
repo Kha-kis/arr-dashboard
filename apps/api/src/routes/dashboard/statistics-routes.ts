@@ -1,4 +1,4 @@
-import type { DashboardStatisticsResponse } from "@arr/shared";
+import { ARR_SERVICES_UPPER, type DashboardStatisticsResponse } from "@arr/shared";
 import { dashboardStatisticsResponseSchema } from "@arr/shared";
 import { LidarrClient, ProwlarrClient, RadarrClient, ReadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyPluginCallback } from "fastify";
@@ -33,8 +33,8 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			where: { enabled: true, userId: request.currentUser!.id },
 		});
 
-		// Filter to ARR-compatible services only (Seerr uses a separate client with no statistics API)
-		const arrInstances = instances.filter((i) => i.service !== "SEERR");
+		// Filter to ARR-compatible services only (integration services use different clients)
+		const arrInstances = instances.filter((i) => (ARR_SERVICES_UPPER as readonly string[]).includes(i.service));
 
 		// Fetch all instances in parallel for better performance
 		const fetchResults = await Promise.all(

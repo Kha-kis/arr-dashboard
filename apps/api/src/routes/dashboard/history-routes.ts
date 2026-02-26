@@ -1,5 +1,4 @@
-import type { HistoryItem } from "@arr/shared";
-import { historyItemSchema } from "@arr/shared";
+import { ARR_SERVICES_UPPER, type HistoryItem, historyItemSchema } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import {
@@ -36,7 +35,7 @@ export const historyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const response = await executeOnInstances(
 			app,
 			request.currentUser!.id,
-			{ serviceTypes: ["SONARR", "RADARR", "PROWLARR", "LIDARR", "READARR"] },
+			{ serviceTypes: [...ARR_SERVICES_UPPER] },
 			async (client, instance) => {
 				const service = instance.service.toLowerCase() as HistoryService;
 				const recordLimit = 2500;

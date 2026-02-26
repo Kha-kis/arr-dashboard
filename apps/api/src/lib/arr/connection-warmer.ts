@@ -5,6 +5,7 @@
  * This eliminates cold-start latency when users navigate to data-heavy pages.
  */
 
+import { ARR_SERVICES_UPPER } from "@arr/shared";
 import type { FastifyInstance } from "fastify";
 import type { ServiceInstance } from "../../lib/prisma.js";
 import { isProwlarrClient, isRadarrClient, isSonarrClient } from "./client-helpers.js";
@@ -22,7 +23,7 @@ export async function warmConnectionsForUser(app: FastifyInstance, userId: strin
 			where: {
 				userId,
 				enabled: true,
-				service: { not: "SEERR" },
+				service: { in: [...ARR_SERVICES_UPPER] },
 			},
 		});
 
