@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { PrismaClient } from "../../lib/prisma.js";
-import type { FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyBaseLogger, FastifyReply, FastifyRequest } from "fastify";
 import type { ApiEnv } from "../../config/env.js";
 
 /**
@@ -39,13 +39,16 @@ export interface SessionMetadata {
 
 export class SessionService {
 	private secureCookie: boolean;
+	private logger?: FastifyBaseLogger;
 
 	constructor(
 		private readonly prisma: PrismaClient,
 		private readonly env: ApiEnv,
 		secureCookie = false,
+		logger?: FastifyBaseLogger,
 	) {
 		this.secureCookie = secureCookie;
+		this.logger = logger;
 	}
 
 	/**
@@ -80,9 +83,10 @@ export class SessionService {
 			.delete({
 				where: { id: hashedToken },
 			})
-			.catch(() => {
+			.catch((err) => {
 				// Best-effort: session may already be deleted or DB temporarily unavailable.
 				// The cookie is still cleared client-side, and the session expires via TTL.
+				this.logger?.debug({ err }, "Best-effort session deletion failed during logout");
 			});
 	}
 
