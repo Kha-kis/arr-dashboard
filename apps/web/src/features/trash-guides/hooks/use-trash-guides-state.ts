@@ -11,6 +11,7 @@ export type TrashGuidesTab =
 	| "bulk-scores"
 	| "custom-formats"
 	| "quality-size"
+	| "naming"
 	| "settings";
 
 /**

@@ -30,6 +30,7 @@ export type NamingConfigMinAggregateOutputType = {
   userId: string | null
   serviceType: string | null
   selectedPresets: string | null
+  syncStrategy: string | null
   lastDeployedAt: Date | null
   lastDeployedHash: string | null
   createdAt: Date | null
@@ -42,6 +43,7 @@ export type NamingConfigMaxAggregateOutputType = {
   userId: string | null
   serviceType: string | null
   selectedPresets: string | null
+  syncStrategy: string | null
   lastDeployedAt: Date | null
   lastDeployedHash: string | null
   createdAt: Date | null
@@ -54,6 +56,7 @@ export type NamingConfigCountAggregateOutputType = {
   userId: number
   serviceType: number
   selectedPresets: number
+  syncStrategy: number
   lastDeployedAt: number
   lastDeployedHash: number
   createdAt: number
@@ -68,6 +71,7 @@ export type NamingConfigMinAggregateInputType = {
   userId?: true
   serviceType?: true
   selectedPresets?: true
+  syncStrategy?: true
   lastDeployedAt?: true
   lastDeployedHash?: true
   createdAt?: true
@@ -80,6 +84,7 @@ export type NamingConfigMaxAggregateInputType = {
   userId?: true
   serviceType?: true
   selectedPresets?: true
+  syncStrategy?: true
   lastDeployedAt?: true
   lastDeployedHash?: true
   createdAt?: true
@@ -92,6 +97,7 @@ export type NamingConfigCountAggregateInputType = {
   userId?: true
   serviceType?: true
   selectedPresets?: true
+  syncStrategy?: true
   lastDeployedAt?: true
   lastDeployedHash?: true
   createdAt?: true
@@ -177,6 +183,7 @@ export type NamingConfigGroupByOutputType = {
   userId: string
   serviceType: string
   selectedPresets: string
+  syncStrategy: string
   lastDeployedAt: Date | null
   lastDeployedHash: string | null
   createdAt: Date
@@ -210,6 +217,7 @@ export type NamingConfigWhereInput = {
   userId?: Prisma.StringFilter<"NamingConfig"> | string
   serviceType?: Prisma.StringFilter<"NamingConfig"> | string
   selectedPresets?: Prisma.StringFilter<"NamingConfig"> | string
+  syncStrategy?: Prisma.StringFilter<"NamingConfig"> | string
   lastDeployedAt?: Prisma.DateTimeNullableFilter<"NamingConfig"> | Date | string | null
   lastDeployedHash?: Prisma.StringNullableFilter<"NamingConfig"> | string | null
   createdAt?: Prisma.DateTimeFilter<"NamingConfig"> | Date | string
@@ -224,6 +232,7 @@ export type NamingConfigOrderByWithRelationInput = {
   userId?: Prisma.SortOrder
   serviceType?: Prisma.SortOrder
   selectedPresets?: Prisma.SortOrder
+  syncStrategy?: Prisma.SortOrder
   lastDeployedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   lastDeployedHash?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -241,6 +250,7 @@ export type NamingConfigWhereUniqueInput = Prisma.AtLeast<{
   userId?: Prisma.StringFilter<"NamingConfig"> | string
   serviceType?: Prisma.StringFilter<"NamingConfig"> | string
   selectedPresets?: Prisma.StringFilter<"NamingConfig"> | string
+  syncStrategy?: Prisma.StringFilter<"NamingConfig"> | string
   lastDeployedAt?: Prisma.DateTimeNullableFilter<"NamingConfig"> | Date | string | null
   lastDeployedHash?: Prisma.StringNullableFilter<"NamingConfig"> | string | null
   createdAt?: Prisma.DateTimeFilter<"NamingConfig"> | Date | string
@@ -255,6 +265,7 @@ export type NamingConfigOrderByWithAggregationInput = {
   userId?: Prisma.SortOrder
   serviceType?: Prisma.SortOrder
   selectedPresets?: Prisma.SortOrder
+  syncStrategy?: Prisma.SortOrder
   lastDeployedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   lastDeployedHash?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -273,6 +284,7 @@ export type NamingConfigScalarWhereWithAggregatesInput = {
   userId?: Prisma.StringWithAggregatesFilter<"NamingConfig"> | string
   serviceType?: Prisma.StringWithAggregatesFilter<"NamingConfig"> | string
   selectedPresets?: Prisma.StringWithAggregatesFilter<"NamingConfig"> | string
+  syncStrategy?: Prisma.StringWithAggregatesFilter<"NamingConfig"> | string
   lastDeployedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"NamingConfig"> | Date | string | null
   lastDeployedHash?: Prisma.StringNullableWithAggregatesFilter<"NamingConfig"> | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"NamingConfig"> | Date | string
@@ -283,6 +295,7 @@ export type NamingConfigCreateInput = {
   id?: string
   serviceType: string
   selectedPresets: string
+  syncStrategy?: string
   lastDeployedAt?: Date | string | null
   lastDeployedHash?: string | null
   createdAt?: Date | string
@@ -297,6 +310,7 @@ export type NamingConfigUncheckedCreateInput = {
   userId: string
   serviceType: string
   selectedPresets: string
+  syncStrategy?: string
   lastDeployedAt?: Date | string | null
   lastDeployedHash?: string | null
   createdAt?: Date | string
@@ -307,6 +321,7 @@ export type NamingConfigUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   serviceType?: Prisma.StringFieldUpdateOperationsInput | string
   selectedPresets?: Prisma.StringFieldUpdateOperationsInput | string
+  syncStrategy?: Prisma.StringFieldUpdateOperationsInput | string
   lastDeployedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   lastDeployedHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -321,6 +336,7 @@ export type NamingConfigUncheckedUpdateInput = {
   userId?: Prisma.StringFieldUpdateOperationsInput | string
   serviceType?: Prisma.StringFieldUpdateOperationsInput | string
   selectedPresets?: Prisma.StringFieldUpdateOperationsInput | string
+  syncStrategy?: Prisma.StringFieldUpdateOperationsInput | string
   lastDeployedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   lastDeployedHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -333,6 +349,7 @@ export type NamingConfigCreateManyInput = {
   userId: string
   serviceType: string
   selectedPresets: string
+  syncStrategy?: string
   lastDeployedAt?: Date | string | null
   lastDeployedHash?: string | null
   createdAt?: Date | string
@@ -343,6 +360,7 @@ export type NamingConfigUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   serviceType?: Prisma.StringFieldUpdateOperationsInput | string
   selectedPresets?: Prisma.StringFieldUpdateOperationsInput | string
+  syncStrategy?: Prisma.StringFieldUpdateOperationsInput | string
   lastDeployedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   lastDeployedHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -355,6 +373,7 @@ export type NamingConfigUncheckedUpdateManyInput = {
   userId?: Prisma.StringFieldUpdateOperationsInput | string
   serviceType?: Prisma.StringFieldUpdateOperationsInput | string
   selectedPresets?: Prisma.StringFieldUpdateOperationsInput | string
+  syncStrategy?: Prisma.StringFieldUpdateOperationsInput | string
   lastDeployedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   lastDeployedHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -382,6 +401,7 @@ export type NamingConfigCountOrderByAggregateInput = {
   userId?: Prisma.SortOrder
   serviceType?: Prisma.SortOrder
   selectedPresets?: Prisma.SortOrder
+  syncStrategy?: Prisma.SortOrder
   lastDeployedAt?: Prisma.SortOrder
   lastDeployedHash?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -394,6 +414,7 @@ export type NamingConfigMaxOrderByAggregateInput = {
   userId?: Prisma.SortOrder
   serviceType?: Prisma.SortOrder
   selectedPresets?: Prisma.SortOrder
+  syncStrategy?: Prisma.SortOrder
   lastDeployedAt?: Prisma.SortOrder
   lastDeployedHash?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -406,6 +427,7 @@ export type NamingConfigMinOrderByAggregateInput = {
   userId?: Prisma.SortOrder
   serviceType?: Prisma.SortOrder
   selectedPresets?: Prisma.SortOrder
+  syncStrategy?: Prisma.SortOrder
   lastDeployedAt?: Prisma.SortOrder
   lastDeployedHash?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -490,6 +512,7 @@ export type NamingConfigCreateWithoutUserInput = {
   id?: string
   serviceType: string
   selectedPresets: string
+  syncStrategy?: string
   lastDeployedAt?: Date | string | null
   lastDeployedHash?: string | null
   createdAt?: Date | string
@@ -502,6 +525,7 @@ export type NamingConfigUncheckedCreateWithoutUserInput = {
   instanceId: string
   serviceType: string
   selectedPresets: string
+  syncStrategy?: string
   lastDeployedAt?: Date | string | null
   lastDeployedHash?: string | null
   createdAt?: Date | string
@@ -542,6 +566,7 @@ export type NamingConfigScalarWhereInput = {
   userId?: Prisma.StringFilter<"NamingConfig"> | string
   serviceType?: Prisma.StringFilter<"NamingConfig"> | string
   selectedPresets?: Prisma.StringFilter<"NamingConfig"> | string
+  syncStrategy?: Prisma.StringFilter<"NamingConfig"> | string
   lastDeployedAt?: Prisma.DateTimeNullableFilter<"NamingConfig"> | Date | string | null
   lastDeployedHash?: Prisma.StringNullableFilter<"NamingConfig"> | string | null
   createdAt?: Prisma.DateTimeFilter<"NamingConfig"> | Date | string
@@ -552,6 +577,7 @@ export type NamingConfigCreateWithoutInstanceInput = {
   id?: string
   serviceType: string
   selectedPresets: string
+  syncStrategy?: string
   lastDeployedAt?: Date | string | null
   lastDeployedHash?: string | null
   createdAt?: Date | string
@@ -564,6 +590,7 @@ export type NamingConfigUncheckedCreateWithoutInstanceInput = {
   userId: string
   serviceType: string
   selectedPresets: string
+  syncStrategy?: string
   lastDeployedAt?: Date | string | null
   lastDeployedHash?: string | null
   createdAt?: Date | string
@@ -590,6 +617,7 @@ export type NamingConfigUpdateWithoutInstanceInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   serviceType?: Prisma.StringFieldUpdateOperationsInput | string
   selectedPresets?: Prisma.StringFieldUpdateOperationsInput | string
+  syncStrategy?: Prisma.StringFieldUpdateOperationsInput | string
   lastDeployedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   lastDeployedHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -602,6 +630,7 @@ export type NamingConfigUncheckedUpdateWithoutInstanceInput = {
   userId?: Prisma.StringFieldUpdateOperationsInput | string
   serviceType?: Prisma.StringFieldUpdateOperationsInput | string
   selectedPresets?: Prisma.StringFieldUpdateOperationsInput | string
+  syncStrategy?: Prisma.StringFieldUpdateOperationsInput | string
   lastDeployedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   lastDeployedHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -613,6 +642,7 @@ export type NamingConfigCreateManyUserInput = {
   instanceId: string
   serviceType: string
   selectedPresets: string
+  syncStrategy?: string
   lastDeployedAt?: Date | string | null
   lastDeployedHash?: string | null
   createdAt?: Date | string
@@ -623,6 +653,7 @@ export type NamingConfigUpdateWithoutUserInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   serviceType?: Prisma.StringFieldUpdateOperationsInput | string
   selectedPresets?: Prisma.StringFieldUpdateOperationsInput | string
+  syncStrategy?: Prisma.StringFieldUpdateOperationsInput | string
   lastDeployedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   lastDeployedHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -635,6 +666,7 @@ export type NamingConfigUncheckedUpdateWithoutUserInput = {
   instanceId?: Prisma.StringFieldUpdateOperationsInput | string
   serviceType?: Prisma.StringFieldUpdateOperationsInput | string
   selectedPresets?: Prisma.StringFieldUpdateOperationsInput | string
+  syncStrategy?: Prisma.StringFieldUpdateOperationsInput | string
   lastDeployedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   lastDeployedHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -646,6 +678,7 @@ export type NamingConfigUncheckedUpdateManyWithoutUserInput = {
   instanceId?: Prisma.StringFieldUpdateOperationsInput | string
   serviceType?: Prisma.StringFieldUpdateOperationsInput | string
   selectedPresets?: Prisma.StringFieldUpdateOperationsInput | string
+  syncStrategy?: Prisma.StringFieldUpdateOperationsInput | string
   lastDeployedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   lastDeployedHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -660,6 +693,7 @@ export type NamingConfigSelect<ExtArgs extends runtime.Types.Extensions.Internal
   userId?: boolean
   serviceType?: boolean
   selectedPresets?: boolean
+  syncStrategy?: boolean
   lastDeployedAt?: boolean
   lastDeployedHash?: boolean
   createdAt?: boolean
@@ -674,6 +708,7 @@ export type NamingConfigSelectCreateManyAndReturn<ExtArgs extends runtime.Types.
   userId?: boolean
   serviceType?: boolean
   selectedPresets?: boolean
+  syncStrategy?: boolean
   lastDeployedAt?: boolean
   lastDeployedHash?: boolean
   createdAt?: boolean
@@ -688,6 +723,7 @@ export type NamingConfigSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.
   userId?: boolean
   serviceType?: boolean
   selectedPresets?: boolean
+  syncStrategy?: boolean
   lastDeployedAt?: boolean
   lastDeployedHash?: boolean
   createdAt?: boolean
@@ -702,13 +738,14 @@ export type NamingConfigSelectScalar = {
   userId?: boolean
   serviceType?: boolean
   selectedPresets?: boolean
+  syncStrategy?: boolean
   lastDeployedAt?: boolean
   lastDeployedHash?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type NamingConfigOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "userId" | "serviceType" | "selectedPresets" | "lastDeployedAt" | "lastDeployedHash" | "createdAt" | "updatedAt", ExtArgs["result"]["namingConfig"]>
+export type NamingConfigOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "userId" | "serviceType" | "selectedPresets" | "syncStrategy" | "lastDeployedAt" | "lastDeployedHash" | "createdAt" | "updatedAt", ExtArgs["result"]["namingConfig"]>
 export type NamingConfigInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
@@ -734,6 +771,7 @@ export type $NamingConfigPayload<ExtArgs extends runtime.Types.Extensions.Intern
     userId: string
     serviceType: string
     selectedPresets: string
+    syncStrategy: string
     lastDeployedAt: Date | null
     lastDeployedHash: string | null
     createdAt: Date
@@ -1168,6 +1206,7 @@ export interface NamingConfigFieldRefs {
   readonly userId: Prisma.FieldRef<"NamingConfig", 'String'>
   readonly serviceType: Prisma.FieldRef<"NamingConfig", 'String'>
   readonly selectedPresets: Prisma.FieldRef<"NamingConfig", 'String'>
+  readonly syncStrategy: Prisma.FieldRef<"NamingConfig", 'String'>
   readonly lastDeployedAt: Prisma.FieldRef<"NamingConfig", 'DateTime'>
   readonly lastDeployedHash: Prisma.FieldRef<"NamingConfig", 'String'>
   readonly createdAt: Prisma.FieldRef<"NamingConfig", 'DateTime'>

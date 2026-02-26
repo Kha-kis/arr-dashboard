@@ -594,6 +594,7 @@ model NamingConfig {
   userId           String
   serviceType      String    // "RADARR" | "SONARR"
   selectedPresets  String    // JSON: NamingSelectedPresets blob
+  syncStrategy     String    @default("manual") // "auto" | "manual" | "notify"
   lastDeployedAt   DateTime?
   lastDeployedHash String?   // SHA-256 of deployed payload for change detection
   createdAt        DateTime  @default(now())

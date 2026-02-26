@@ -6,13 +6,20 @@
  */
 
 import { createHash } from "node:crypto";
-import type { TrashQualitySize, TrashRepoConfig } from "@arr/shared";
+import {
+	TRASH_CONFIG_TYPES,
+	type NamingSelectedPresets,
+	type TrashNamingData,
+	type TrashQualitySize,
+	type TrashRepoConfig,
+} from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { PrismaClient } from "../../lib/prisma.js";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { createCacheManager } from "./cache-manager.js";
 import { createTrashFetcher } from "./github-fetcher.js";
+import { computeNamingHash, resolvePayload } from "./naming-deployer.js";
 import { applyQualitySizeToDefinitions } from "./quality-size-matcher.js";
 import type {
 	ScoreConflict,
@@ -56,6 +63,8 @@ export interface SchedulerStats {
 		cachesFailed: number;
 		qualitySizeAutoSynced: number;
 		qualitySizeUpdatesPending: number;
+		namingAutoSynced: number;
+		namingUpdatesPending: number;
 		errors: string[];
 	};
 }
@@ -250,6 +259,8 @@ export class UpdateScheduler {
 		let templatesWithScoreConflicts = 0;
 		let qualitySizeAutoSynced = 0;
 		let qualitySizeUpdatesPending = 0;
+		let namingAutoSynced = 0;
+		let namingUpdatesPending = 0;
 
 		// Count templates by sync strategy (unique templates with at least one mapping of each type)
 		const [templatesWithAutoStrategy, templatesWithNotifyStrategy] = await Promise.all([
@@ -313,6 +324,14 @@ export class UpdateScheduler {
 			qualitySizeUpdatesPending = qsResult.updatesPending;
 			if (qsResult.errors.length > 0) {
 				errors.push(...qsResult.errors);
+			}
+
+			// Process naming auto-sync after caches are refreshed
+			const namingResult = await this.processNamingSync();
+			namingAutoSynced = namingResult.autoSynced;
+			namingUpdatesPending = namingResult.updatesPending;
+			if (namingResult.errors.length > 0) {
+				errors.push(...namingResult.errors);
 			}
 
 			// Get all distinct user IDs with templates to process updates per-user
@@ -393,6 +412,8 @@ export class UpdateScheduler {
 					cachesFailed: totalCacheFailed,
 					qualitySizeAutoSynced,
 					qualitySizeUpdatesPending,
+					namingAutoSynced,
+					namingUpdatesPending,
 					errors: [],
 				};
 				// Calculate next check time
@@ -423,6 +444,8 @@ export class UpdateScheduler {
 				cachesFailed: totalCacheFailed,
 				qualitySizeAutoSynced,
 				qualitySizeUpdatesPending,
+				namingAutoSynced,
+				namingUpdatesPending,
 				errors,
 			};
 
@@ -471,6 +494,8 @@ export class UpdateScheduler {
 				cachesFailed: 0,
 				qualitySizeAutoSynced: 0,
 				qualitySizeUpdatesPending: 0,
+				namingAutoSynced: 0,
+				namingUpdatesPending: 0,
 				errors,
 			};
 
@@ -650,6 +675,160 @@ export class UpdateScheduler {
 						instanceId: mapping.instanceId,
 					},
 					`Quality size sync failed for instance ${mapping.instanceId}`,
+				);
+			}
+		}
+
+		return result;
+	}
+
+	/**
+	 * Process naming auto-sync for instances with "auto" or "notify" strategy.
+	 * Compares current TRaSH naming hash to the stored lastDeployedHash and
+	 * re-applies naming presets for "auto" configs.
+	 */
+	private async processNamingSync(): Promise<{
+		autoSynced: number;
+		updatesPending: number;
+		errors: string[];
+	}> {
+		const result = { autoSynced: 0, updatesPending: 0, errors: [] as string[] };
+
+		if (!this.arrClientFactory) {
+			const configCount = await this.prisma.namingConfig.count({
+				where: { syncStrategy: { in: ["auto", "notify"] } },
+			});
+			if (configCount > 0) {
+				this.logger.warn(
+					`${configCount} naming config(s) with auto/notify strategy exist but arrClientFactory is not available — skipping sync`,
+				);
+			}
+			return result;
+		}
+
+		const configs = await this.prisma.namingConfig.findMany({
+			where: {
+				syncStrategy: { in: ["auto", "notify"] },
+				lastDeployedHash: { not: null },
+			},
+			include: {
+				instance: true,
+			},
+		});
+
+		if (configs.length === 0) return result;
+
+		const cacheManager = createCacheManager(this.prisma);
+
+		for (const config of configs) {
+			try {
+				const serviceType = config.serviceType as "RADARR" | "SONARR";
+
+				// Get latest naming data from cache (stored as array, take first item)
+				const cachedArray = await cacheManager.get<TrashNamingData[]>(
+					serviceType,
+					TRASH_CONFIG_TYPES.NAMING_PRESETS,
+				);
+				const cached = cachedArray?.[0] ?? null;
+				if (!cached) {
+					this.logger.warn(
+						`Naming cache empty for ${serviceType} — skipping sync for instance ${config.instance.label}`,
+					);
+					continue;
+				}
+
+				// Parse stored presets
+				let selectedPresets: NamingSelectedPresets;
+				try {
+					selectedPresets = JSON.parse(config.selectedPresets) as NamingSelectedPresets;
+				} catch {
+					result.errors.push(
+						`Corrupt naming config presets for instance ${config.instance.label}`,
+					);
+					continue;
+				}
+
+				// Compute current hash from resolved payload
+				const payload = resolvePayload(cached, selectedPresets);
+				const currentHash = computeNamingHash(payload);
+
+				if (currentHash === config.lastDeployedHash) {
+					continue; // No changes
+				}
+
+				if (config.syncStrategy === "notify") {
+					result.updatesPending++;
+					continue;
+				}
+
+				// Auto-sync: apply naming presets to instance
+				if (!config.instance.enabled) {
+					this.logger.debug(
+						`Skipping naming sync for disabled instance ${config.instance.label}`,
+					);
+					continue;
+				}
+
+				// Build the API URL and apply
+				const apiPath =
+					serviceType === "RADARR"
+						? "/api/v3/config/naming"
+						: "/api/v3/config/naming";
+
+				// Get current config first (need to preserve id and other fields)
+				const currentResponse = await this.arrClientFactory.rawRequest(
+					config.instance,
+					apiPath,
+					{ method: "GET" },
+				);
+				if (!currentResponse.ok) {
+					throw new Error(
+						`Failed to get current naming config: ${currentResponse.status}`,
+					);
+				}
+				const currentConfig = (await currentResponse.json()) as Record<string, unknown>;
+
+				// Merge payload onto current config
+				const mergedConfig = { ...currentConfig, ...payload };
+
+				const applyResponse = await this.arrClientFactory.rawRequest(
+					config.instance,
+					apiPath,
+					{
+						method: "PUT",
+						body: mergedConfig,
+					},
+				);
+
+				if (!applyResponse.ok) {
+					throw new Error(
+						`Failed to apply naming config: ${applyResponse.status} ${applyResponse.statusText}`,
+					);
+				}
+
+				// Update the config with new hash
+				await this.prisma.namingConfig.update({
+					where: { id: config.id },
+					data: {
+						lastDeployedHash: currentHash,
+						lastDeployedAt: new Date(),
+					},
+				});
+
+				result.autoSynced++;
+				this.logger.info(
+					`Auto-synced naming config for ${config.instance.label}`,
+				);
+			} catch (error) {
+				result.errors.push(
+					`Naming sync failed for instance ${config.instance?.label ?? config.instanceId}: ${getErrorMessage(error)}`,
+				);
+				this.logger.error(
+					{
+						err: error instanceof Error ? error : new Error(String(error)),
+						instanceId: config.instanceId,
+					},
+					`Naming sync failed for instance ${config.instanceId}`,
 				);
 			}
 		}

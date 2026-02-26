@@ -27,6 +27,7 @@ import {
 } from "../../../../components/ui";
 import { useCFConfiguration } from "../../../../hooks/api/useCFConfiguration";
 import { useThemeGradient } from "../../../../hooks/useThemeGradient";
+import { SEMANTIC_COLORS } from "../../../../lib/theme-gradients";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import { getErrorMessage } from "../../../../lib/error-utils";
 import { SanitizedHtml } from "../sanitized-html";
@@ -778,6 +779,24 @@ export const CFConfiguration = ({
 														}}
 													>
 														⚙️ Optional
+													</span>
+												)}
+												{group.quality_profiles?.score != null && (
+													<span
+														className="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium tabular-nums"
+														style={{
+															backgroundColor:
+																group.quality_profiles.score >= 0
+																	? SEMANTIC_COLORS.success.bg
+																	: SEMANTIC_COLORS.error.bg,
+															color:
+																group.quality_profiles.score >= 0
+																	? SEMANTIC_COLORS.success.text
+																	: SEMANTIC_COLORS.error.text,
+														}}
+													>
+														{group.quality_profiles.score >= 0 ? "+" : ""}
+														{group.quality_profiles.score}
 													</span>
 												)}
 											</div>

@@ -16,6 +16,7 @@ import { BulkScoreManager } from "./bulk-score-manager";
 import { CacheStatusSection } from "./cache-status-section";
 import { CustomFormatsBrowser } from "./custom-formats-browser";
 import { DeploymentHistoryTable } from "./deployment-history-table";
+import { NamingManager } from "./naming-manager";
 import { QualityProfileWizard } from "./quality-profile-wizard";
 import { QualitySizeManager } from "./quality-size-manager";
 import { RepoSettingsSection } from "./repo-settings-section";
@@ -207,6 +208,8 @@ export function TrashGuidesClient() {
 				return <CustomFormatsBrowser />;
 			case "quality-size":
 				return <QualitySizeManager />;
+			case "naming":
+				return <NamingManager />;
 			case "settings":
 				return <RepoSettingsSection />;
 			default:

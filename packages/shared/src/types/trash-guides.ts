@@ -307,6 +307,7 @@ export interface NamingConfigRecord {
 	instanceId: string;
 	serviceType: "RADARR" | "SONARR";
 	selectedPresets: NamingSelectedPresets;
+	syncStrategy: "auto" | "manual" | "notify";
 	lastDeployedAt: string | null;
 	lastDeployedHash: string | null;
 	createdAt: string;
@@ -1216,6 +1217,8 @@ export interface SchedulerStats {
 		cachesFailed: number;
 		qualitySizeAutoSynced: number;
 		qualitySizeUpdatesPending: number;
+		namingAutoSynced: number;
+		namingUpdatesPending: number;
 		errors: string[];
 	};
 }

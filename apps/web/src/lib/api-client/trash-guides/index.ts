@@ -332,6 +332,32 @@ export {
 } from "./quality-size";
 
 // ============================================================================
+// Naming Module
+// ============================================================================
+
+export type {
+	NamingApplyApiResponse,
+	NamingApplyPayload,
+	NamingConfigApiResponse,
+	NamingConfigCreatePayload,
+	NamingConfigDeleteResponse,
+	NamingConfigPatchPayload,
+	NamingConfigSaveResponse,
+	NamingPreviewApiResponse,
+	NamingPreviewPayload,
+	NamingPresetsApiResponse,
+} from "./naming";
+export {
+	applyNaming,
+	deleteNamingConfig,
+	fetchNamingConfig,
+	fetchNamingPresets,
+	getNamingPreview,
+	patchNamingConfig,
+	saveNamingConfig,
+} from "./naming";
+
+// ============================================================================
 // Settings Module
 // ============================================================================
 

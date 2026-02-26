@@ -3871,6 +3871,7 @@ export const NamingConfigScalarFieldEnum = {
   userId: 'userId',
   serviceType: 'serviceType',
   selectedPresets: 'selectedPresets',
+  syncStrategy: 'syncStrategy',
   lastDeployedAt: 'lastDeployedAt',
   lastDeployedHash: 'lastDeployedHash',
   createdAt: 'createdAt',

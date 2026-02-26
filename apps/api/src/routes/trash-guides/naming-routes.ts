@@ -71,13 +71,17 @@ const configQuerySchema = z.object({
 	instanceId: z.string().min(1),
 });
 
+const syncStrategySchema = z.enum(["auto", "manual", "notify"]).default("manual");
+
 const configBodySchema = z.object({
 	instanceId: z.string().min(1),
 	selectedPresets: selectedPresetsSchema,
+	syncStrategy: syncStrategySchema.optional(),
 });
 
 const configPatchSchema = z.object({
 	selectedPresets: selectedPresetsSchema.optional(),
+	syncStrategy: syncStrategySchema.optional(),
 });
 
 // ============================================================================
@@ -507,6 +511,7 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 					instanceId: config.instanceId,
 					serviceType: config.serviceType as "RADARR" | "SONARR",
 					selectedPresets,
+					syncStrategy: config.syncStrategy as "auto" | "manual" | "notify",
 					lastDeployedAt: config.lastDeployedAt?.toISOString() ?? null,
 					lastDeployedHash: config.lastDeployedHash,
 					createdAt: config.createdAt.toISOString(),
@@ -521,7 +526,7 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 	 * Create or update a NamingConfig (upsert by instanceId).
 	 */
 	app.post<{ Body: z.infer<typeof configBodySchema> }>("/configs", async (request, reply) => {
-		const { instanceId, selectedPresets } = validateRequest(configBodySchema, request.body);
+		const { instanceId, selectedPresets, syncStrategy } = validateRequest(configBodySchema, request.body);
 		const userId = request.currentUser!.id;
 
 		const instance = await requireInstance(app, userId, instanceId);
@@ -534,6 +539,7 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 		}
 
 		const serviceType = instance.service === "SONARR" ? "SONARR" : "RADARR";
+		const strategy = syncStrategy ?? "manual";
 
 		const config = await app.prisma.namingConfig.upsert({
 			where: { instanceId },
@@ -542,9 +548,11 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 				userId,
 				serviceType,
 				selectedPresets: JSON.stringify(selectedPresets),
+				syncStrategy: strategy,
 			},
 			update: {
 				selectedPresets: JSON.stringify(selectedPresets),
+				syncStrategy: strategy,
 			},
 		});
 
@@ -563,6 +571,7 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 				instanceId: config.instanceId,
 				serviceType: config.serviceType as "RADARR" | "SONARR",
 				selectedPresets: storedPresets ?? selectedPresets,
+				syncStrategy: config.syncStrategy as "auto" | "manual" | "notify",
 				lastDeployedAt: config.lastDeployedAt?.toISOString() ?? null,
 				lastDeployedHash: config.lastDeployedHash,
 				createdAt: config.createdAt.toISOString(),
@@ -600,6 +609,9 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 		if (body.selectedPresets) {
 			updateData.selectedPresets = JSON.stringify(body.selectedPresets);
 		}
+		if (body.syncStrategy) {
+			updateData.syncStrategy = body.syncStrategy;
+		}
 
 		const config = await app.prisma.namingConfig.update({
 			where: { instanceId },
@@ -624,6 +636,7 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 				instanceId: config.instanceId,
 				serviceType: config.serviceType as "RADARR" | "SONARR",
 				selectedPresets: storedPresets,
+				syncStrategy: config.syncStrategy as "auto" | "manual" | "notify",
 				lastDeployedAt: config.lastDeployedAt?.toISOString() ?? null,
 				lastDeployedHash: config.lastDeployedHash,
 				createdAt: config.createdAt.toISOString(),

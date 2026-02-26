@@ -4,6 +4,7 @@ import {
 	Clock,
 	Database,
 	FileText,
+	FileType,
 	History,
 	Palette,
 	Ruler,
@@ -41,6 +42,7 @@ export const TrashGuidesTabs = ({ activeTab, onTabChange }: TrashGuidesTabsProps
 		{ id: "history", label: "History", icon: History },
 		{ id: "scheduler", label: "Scheduler", icon: Clock },
 		{ id: "quality-size", label: "Quality Size", icon: Ruler },
+		{ id: "naming", label: "Naming", icon: FileType },
 		{ id: "cache", label: "Cache", icon: Database },
 		{ id: "settings", label: "Settings", icon: Settings },
 	];
