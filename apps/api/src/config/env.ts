@@ -31,9 +31,6 @@ export const envSchema = z
 			.max(24 * 30)
 			.default(24),
 		PASSWORD_POLICY: z.enum(["strict", "relaxed"]).default("strict"),
-		APP_URL: z.string().url().default("http://localhost:3000"),
-		TMDB_BASE_URL: z.string().url().default("https://api.themoviedb.org/3"),
-		TMDB_IMAGE_BASE_URL: z.string().url().default("https://image.tmdb.org/t/p"),
 		// Proxy — set to true when running behind a reverse proxy (nginx, Traefik, Caddy, etc.)
 		// Enables trustProxy on Fastify so X-Forwarded-For/Proto/Host headers are trusted.
 		// Also auto-enables secure cookies (HTTPS) unless COOKIE_SECURE is explicitly set.
@@ -46,6 +43,9 @@ export const envSchema = z
 			.string()
 			.optional()
 			.transform((v) => parseBooleanEnv(v)),
+		APP_URL: z.string().url().default("http://localhost:3000"),
+		TMDB_BASE_URL: z.string().url().default("https://api.themoviedb.org/3"),
+		TMDB_IMAGE_BASE_URL: z.string().url().default("https://image.tmdb.org/t/p"),
 		// Logging — these are informational in the schema; the logger reads them at
 		// module load time before Zod validation runs (same pattern as LOG_LEVEL).
 		LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).optional(),
