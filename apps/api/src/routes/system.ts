@@ -183,6 +183,17 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			}
 		}
 
+		// Reverse lockout prevention: disabling trustProxy when secureCookies is already true in DB
+		if (trustProxy === false) {
+			const effectiveSecureCookies = secureCookies ?? (await app.prisma.systemSettings.findUnique({ where: { id: 1 } }))?.secureCookies ?? null;
+			if (effectiveSecureCookies === true) {
+				return reply.status(400).send({
+					success: false,
+					error: "Cannot disable trustProxy while secureCookies is enabled. Disable secureCookies first or set it to Auto.",
+				});
+			}
+		}
+
 		// Normalize external URL (empty string becomes null)
 		const normalizedExternalUrl = externalUrl === "" ? null : externalUrl;
 
