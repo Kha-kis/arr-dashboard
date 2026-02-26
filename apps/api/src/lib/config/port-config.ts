@@ -34,6 +34,16 @@ const DEFAULT_API_PORT = 3001;
 const DEFAULT_WEB_PORT = 3000;
 
 /**
+ * Parse a string environment variable as a boolean.
+ * Accepts "true", "1", "yes" (case-insensitive) as truthy; everything else is falsy.
+ * Returns undefined if the value is undefined (not set).
+ */
+export function parseBooleanEnv(value: string | undefined): boolean | undefined {
+	if (value === undefined) return undefined;
+	return ["true", "1", "yes"].includes(value.toLowerCase());
+}
+
+/**
  * Check if DATABASE_URL is PostgreSQL
  */
 function isPostgresDatabase(): boolean {
@@ -234,7 +244,7 @@ export function getSecurityConfig(): SecurityConfig {
 	let trustProxy: boolean;
 	let trustProxySource: "env" | "database" | "default";
 	if (envTrustProxy !== undefined) {
-		trustProxy = ["true", "1", "yes"].includes(envTrustProxy.toLowerCase());
+		trustProxy = parseBooleanEnv(envTrustProxy) ?? false;
 		trustProxySource = "env";
 	} else if (dbSettings?.trustProxy !== null && dbSettings?.trustProxy !== undefined) {
 		trustProxy = dbSettings.trustProxy === 1;
@@ -248,7 +258,7 @@ export function getSecurityConfig(): SecurityConfig {
 	let secureCookies: boolean | undefined;
 	let secureCookiesSource: "env" | "database" | "default";
 	if (envCookieSecure !== undefined) {
-		secureCookies = ["true", "1", "yes"].includes(envCookieSecure.toLowerCase());
+		secureCookies = parseBooleanEnv(envCookieSecure) ?? false;
 		secureCookiesSource = "env";
 	} else if (dbSettings?.secureCookies !== null && dbSettings?.secureCookies !== undefined) {
 		secureCookies = dbSettings.secureCookies === 1;

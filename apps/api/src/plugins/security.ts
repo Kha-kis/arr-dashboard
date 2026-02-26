@@ -34,7 +34,7 @@ export const securityPlugin = fp(
 		const sessionService = new SessionService(app.prisma, {
 			...app.config,
 			SESSION_COOKIE_SECRET: sessionCookieSecret,
-		});
+		}, app.log);
 
 		app.decorate("encryptor", encryptor);
 		app.decorate("sessionService", sessionService);

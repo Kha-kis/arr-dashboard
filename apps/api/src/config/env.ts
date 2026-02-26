@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parseBooleanEnv } from "../lib/config/port-config.js";
 
 const corsOriginSchema = z
 	.string()
@@ -39,14 +40,12 @@ export const envSchema = z
 		TRUST_PROXY: z
 			.string()
 			.default("false")
-			.transform((v) => ["true", "1", "yes"].includes(v.toLowerCase())),
+			.transform((v) => parseBooleanEnv(v) ?? false),
 		// Cookie — override secure flag. When omitted, auto-detects from TRUST_PROXY.
 		COOKIE_SECURE: z
 			.string()
 			.optional()
-			.transform((v) =>
-				v === undefined ? undefined : ["true", "1", "yes"].includes(v.toLowerCase()),
-			),
+			.transform((v) => parseBooleanEnv(v)),
 		// Logging — these are informational in the schema; the logger reads them at
 		// module load time before Zod validation runs (same pattern as LOG_LEVEL).
 		LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).optional(),
