@@ -4,7 +4,7 @@ import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { warmConnectionsForUser } from "../lib/arr/connection-warmer.js";
 import { createPasskeyService } from "../lib/auth/passkey-service.js";
-import { getSessionMetadata } from "../lib/auth/session-metadata.js";
+import { extractSessionMetadata } from "../lib/auth/session-metadata.js";
 import { validateRequest } from "../lib/utils/validate.js";
 
 /**
@@ -56,7 +56,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Generate registration options for creating a new passkey
 	 * User must be authenticated
 	 */
-	app.post("/passkey/register/options", async (request, reply) => {
+	app.post("/passkey/register/options", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
 		if (!request.currentUser) {
 			return reply.status(401).send({ error: "Unauthorized" });
 		}
@@ -106,7 +106,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Verify registration response and store new passkey
 	 * User must be authenticated
 	 */
-	app.post("/passkey/register/verify", async (request, reply) => {
+	app.post("/passkey/register/verify", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
 		if (!request.currentUser) {
 			return reply.status(401).send({ error: "Unauthorized" });
 		}
@@ -143,7 +143,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Generate authentication options for passkey login
 	 * Public endpoint (no authentication required)
 	 */
-	app.post("/passkey/login/options", async (request, reply) => {
+	app.post("/passkey/login/options", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
 		// Check if OIDC provider is enabled - if so, passkey login is disabled
 		const oidcProvider = await app.prisma.oIDCProvider.findFirst({
 			where: { enabled: true },
@@ -177,7 +177,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Verify authentication response and create session
 	 * Public endpoint (no authentication required)
 	 */
-	app.post("/passkey/login/verify", async (request, reply) => {
+	app.post("/passkey/login/verify", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
 		const parsed = validateRequest(passkeyLoginVerifySchema, request.body);
 
 		const sessionId = (request.body as { sessionId?: string }).sessionId;
@@ -215,7 +215,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			}
 
 			// Create session with metadata
-			const metadata = getSessionMetadata(request);
+			const metadata = extractSessionMetadata(request);
 			const session = await app.sessionService.createSession(user.id, true, metadata);
 			app.sessionService.attachCookie(reply, session.token, true);
 
@@ -245,7 +245,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * List user's registered passkeys
 	 * User must be authenticated
 	 */
-	app.get("/passkey/credentials", async (request, reply) => {
+	app.get("/passkey/credentials", { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (request, reply) => {
 		if (!request.currentUser) {
 			return reply.status(401).send({ error: "Unauthorized" });
 		}
@@ -259,7 +259,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Delete a passkey credential (requires alternative auth method)
 	 * User must be authenticated
 	 */
-	app.delete("/passkey/credentials", async (request, reply) => {
+	app.delete("/passkey/credentials", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
 		if (!request.currentUser) {
 			return reply.status(401).send({ error: "Unauthorized" });
 		}
@@ -320,7 +320,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Rename a passkey credential
 	 * User must be authenticated
 	 */
-	app.patch("/passkey/credentials", async (request, reply) => {
+	app.patch("/passkey/credentials", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
 		if (!request.currentUser) {
 			return reply.status(401).send({ error: "Unauthorized" });
 		}

@@ -231,6 +231,8 @@ export const SystemSettingsScalarFieldEnum = {
   webPort: 'webPort',
   listenAddress: 'listenAddress',
   appName: 'appName',
+  trustProxy: 'trustProxy',
+  secureCookies: 'secureCookies',
   externalUrl: 'externalUrl',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'

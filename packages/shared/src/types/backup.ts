@@ -39,9 +39,12 @@ export const createBackupResponseSchema = backupFileInfoSchema;
 
 export type CreateBackupResponse = z.infer<typeof createBackupResponseSchema>;
 
+// Maximum backup data size (50MB base64-encoded)
+export const MAX_BACKUP_DATA_SIZE = 50 * 1024 * 1024; // 50MB
+
 // Restore backup request (from uploaded file)
 export const restoreBackupRequestSchema = z.object({
-	backupData: z.string(), // Base64 encoded backup JSON
+	backupData: z.string().max(MAX_BACKUP_DATA_SIZE), // Base64 encoded backup JSON
 });
 
 export type RestoreBackupRequest = z.infer<typeof restoreBackupRequestSchema>;

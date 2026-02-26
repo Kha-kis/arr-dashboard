@@ -18,7 +18,7 @@ const BASE_COOKIE_OPTIONS = (env: ApiEnv, maxAgeSeconds?: number) => ({
 	path: "/",
 	httpOnly: true,
 	sameSite: "lax" as const,
-	secure: false, // Allow HTTP for local network access (most self-hosted deployments)
+	secure: false, // Overridden at runtime by SessionService.secureCookie
 	maxAge: maxAgeSeconds ?? env.SESSION_TTL_HOURS * 60 * 60,
 	domain: undefined as string | undefined,
 });
@@ -33,15 +33,20 @@ const hashToken = (token: string) => createHash("sha256").update(token).digest("
  * Options for session creation including device/location metadata
  */
 export interface SessionMetadata {
-	userAgent?: string;
-	ipAddress?: string;
+	userAgent?: string | null;
+	ipAddress?: string | null;
 }
 
 export class SessionService {
+	private secureCookie: boolean;
+
 	constructor(
 		private readonly prisma: PrismaClient,
 		private readonly env: ApiEnv,
-	) {}
+		secureCookie = false,
+	) {
+		this.secureCookie = secureCookie;
+	}
 
 	/**
 	 * Create a new session with optional metadata
@@ -75,7 +80,10 @@ export class SessionService {
 			.delete({
 				where: { id: hashedToken },
 			})
-			.catch(() => undefined);
+			.catch(() => {
+				// Best-effort: session may already be deleted or DB temporarily unavailable.
+				// The cookie is still cleared client-side, and the session expires via TTL.
+			});
 	}
 
 	async invalidateAllUserSessions(userId: string, exceptToken?: string) {
@@ -169,6 +177,7 @@ export class SessionService {
 		const options = BASE_COOKIE_OPTIONS(this.env, maxAgeSeconds);
 		reply.setCookie(this.env.SESSION_COOKIE_NAME, token, {
 			...options,
+			secure: this.secureCookie,
 			signed: true,
 		});
 	}

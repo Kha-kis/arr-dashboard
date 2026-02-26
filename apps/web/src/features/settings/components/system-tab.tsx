@@ -19,6 +19,7 @@ import {
 	FileText,
 	Download,
 	ScrollText,
+	Shield,
 } from "lucide-react";
 import { apiRequest } from "../../../lib/api-client/base";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
@@ -39,6 +40,8 @@ interface SystemSettings {
 	listenAddress: string;
 	appName: string;
 	externalUrl: string | null;
+	trustProxy: boolean;
+	secureCookies: boolean | null;
 	effectiveApiPort: number;
 	effectiveWebPort: number;
 	effectiveListenAddress: string;
@@ -128,6 +131,8 @@ async function updateSystemSettings(data: {
 	listenAddress?: string;
 	appName?: string;
 	externalUrl?: string | null;
+	trustProxy?: boolean;
+	secureCookies?: boolean | null;
 }): Promise<SystemSettingsResponse> {
 	return apiRequest<SystemSettingsResponse>("/api/system/settings", {
 		method: "PUT",
@@ -200,6 +205,8 @@ export function SystemTab() {
 	const [webPort, setWebPort] = useState(3000);
 	const [listenAddress, setListenAddress] = useState("0.0.0.0");
 	const [externalUrl, setExternalUrl] = useState("");
+	const [trustProxy, setTrustProxy] = useState(false);
+	const [secureCookies, setSecureCookies] = useState<boolean | null>(null);
 	const [hasChanges, setHasChanges] = useState(false);
 	const [isDockerInfoOpen, setIsDockerInfoOpen] = useState(false);
 
@@ -247,6 +254,8 @@ export function SystemTab() {
 			setWebPort(settings.data.webPort);
 			setListenAddress(settings.data.listenAddress || "0.0.0.0");
 			setExternalUrl(settings.data.externalUrl || "");
+			setTrustProxy(settings.data.trustProxy ?? false);
+			setSecureCookies(settings.data.secureCookies ?? null);
 		}
 	}, [settings?.data]);
 
@@ -254,18 +263,27 @@ export function SystemTab() {
 		newApiPort: number,
 		newWebPort: number,
 		newListenAddress: string,
-		newExternalUrl: string
+		newExternalUrl: string,
+		newTrustProxy?: boolean,
+		newSecureCookies?: boolean | null,
 	) => {
 		const originalApiPort = settings?.data?.apiPort ?? 3001;
 		const originalWebPort = settings?.data?.webPort ?? 3000;
 		const originalListenAddress = settings?.data?.listenAddress ?? "0.0.0.0";
 		const originalExternalUrl = settings?.data?.externalUrl ?? "";
+		const originalTrustProxy = settings?.data?.trustProxy ?? false;
+		const originalSecureCookies = settings?.data?.secureCookies ?? null;
+
+		const effectiveTrustProxy = newTrustProxy ?? trustProxy;
+		const effectiveSecureCookies = newSecureCookies !== undefined ? newSecureCookies : secureCookies;
 
 		setHasChanges(
 			newApiPort !== originalApiPort ||
 			newWebPort !== originalWebPort ||
 			newListenAddress !== originalListenAddress ||
-			newExternalUrl !== originalExternalUrl
+			newExternalUrl !== originalExternalUrl ||
+			effectiveTrustProxy !== originalTrustProxy ||
+			effectiveSecureCookies !== originalSecureCookies
 		);
 	};
 
@@ -289,6 +307,22 @@ export function SystemTab() {
 	const handleExternalUrlChange = (value: string) => {
 		setExternalUrl(value);
 		checkForChanges(apiPort, webPort, listenAddress, value);
+	};
+
+	const handleTrustProxyChange = (value: boolean) => {
+		setTrustProxy(value);
+		// If disabling trust proxy, also reset secureCookies to auto
+		if (!value && secureCookies === true) {
+			setSecureCookies(null);
+			checkForChanges(apiPort, webPort, listenAddress, externalUrl, value, null);
+		} else {
+			checkForChanges(apiPort, webPort, listenAddress, externalUrl, value);
+		}
+	};
+
+	const handleSecureCookiesChange = (value: boolean | null) => {
+		setSecureCookies(value);
+		checkForChanges(apiPort, webPort, listenAddress, externalUrl, undefined, value);
 	};
 
 	const handleSave = () => {
@@ -323,6 +357,8 @@ export function SystemTab() {
 			webPort,
 			listenAddress,
 			externalUrl: externalUrl || null,
+			trustProxy,
+			secureCookies,
 		});
 	};
 
@@ -926,6 +962,174 @@ ports:
 									<li>Using a custom domain name</li>
 									<li>Accessing via HTTPS with SSL termination</li>
 									<li>OIDC authentication requires correct callback URLs</li>
+								</ul>
+							</div>
+						</div>
+					</GlassmorphicCard>
+				</div>
+			</PremiumSection>
+
+			{/* Reverse Proxy Section */}
+			<PremiumSection
+				title="Reverse Proxy"
+				description="Configure trust and cookie settings for reverse proxy deployments"
+				icon={Shield}
+			>
+				<div className="space-y-6">
+					{/* Trust Proxy Toggle */}
+					<div className="space-y-3">
+						<div className="flex items-center justify-between max-w-2xl">
+							<div className="space-y-1">
+								<label
+									htmlFor="trustProxy"
+									className="text-sm font-semibold text-foreground"
+								>
+									Trust Proxy
+								</label>
+								<p className="text-xs text-muted-foreground max-w-md">
+									Enable if running behind a reverse proxy (nginx, Traefik, Caddy). Required for correct IP detection and secure cookies.
+								</p>
+							</div>
+							<button
+								id="trustProxy"
+								type="button"
+								role="switch"
+								aria-checked={trustProxy}
+								onClick={() => handleTrustProxyChange(!trustProxy)}
+								className={cn(
+									"relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 shrink-0",
+									trustProxy
+										? "border-transparent"
+										: "bg-muted border border-border/50"
+								)}
+								style={
+									trustProxy
+										? {
+												background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+											}
+										: undefined
+								}
+							>
+								<span
+									className={cn(
+										"inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200",
+										trustProxy ? "translate-x-6" : "translate-x-1"
+									)}
+								/>
+							</button>
+						</div>
+					</div>
+
+					{/* Secure Cookies Select */}
+					<div className="space-y-3 max-w-2xl">
+						<div className="space-y-1">
+							<label className="text-sm font-semibold text-foreground">
+								Secure Cookies
+							</label>
+							<p className="text-xs text-muted-foreground max-w-md">
+								Controls the Secure flag on session cookies. Secure cookies are only sent over HTTPS connections.
+							</p>
+						</div>
+
+						<div className="flex flex-wrap gap-2">
+							{[
+								{
+									value: "auto" as const,
+									label: "Auto",
+									desc: "Based on Trust Proxy setting",
+									state: null as boolean | null,
+								},
+								{
+									value: "enabled" as const,
+									label: "Enabled",
+									desc: "Requires HTTPS",
+									state: true as boolean | null,
+								},
+								{
+									value: "disabled" as const,
+									label: "Disabled",
+									desc: "Not recommended",
+									state: false as boolean | null,
+								},
+							].map((option) => {
+								const isSelected = secureCookies === option.state;
+								const isDisabled = option.state === true && !trustProxy;
+								return (
+									<button
+										key={option.value}
+										type="button"
+										disabled={isDisabled}
+										onClick={() => handleSecureCookiesChange(option.state)}
+										className={cn(
+											"relative px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-300",
+											"border",
+											isDisabled
+												? "opacity-50 cursor-not-allowed text-muted-foreground border-border/30 bg-card/20"
+												: isSelected
+													? "text-foreground border-transparent"
+													: "text-muted-foreground border-border/50 bg-card/30 hover:border-border hover:text-foreground"
+										)}
+										style={
+											isSelected && !isDisabled
+												? {
+														background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+														border: `1px solid ${themeGradient.from}40`,
+													}
+												: undefined
+										}
+									>
+										{option.label}
+										<span className="ml-2 text-xs opacity-75">({option.desc})</span>
+									</button>
+								);
+							})}
+						</div>
+
+						{secureCookies === true && !trustProxy && (
+							<div
+								className="rounded-lg p-3 text-xs"
+								style={{
+									backgroundColor: SEMANTIC_COLORS.warning.bg,
+									border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
+									color: SEMANTIC_COLORS.warning.text,
+								}}
+							>
+								Secure cookies require Trust Proxy to be enabled. Without it, the server cannot detect HTTPS behind a reverse proxy.
+							</div>
+						)}
+					</div>
+
+					{/* Reverse Proxy Info Card */}
+					<GlassmorphicCard padding="md">
+						<div className="flex gap-3">
+							<div
+								className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+								style={{
+									background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+									border: `1px solid ${themeGradient.from}30`,
+								}}
+							>
+								<Info className="h-5 w-5" style={{ color: themeGradient.from }} />
+							</div>
+							<div className="space-y-2 text-sm">
+								<p className="font-semibold text-foreground">
+									How reverse proxy settings work
+								</p>
+								<ul className="text-muted-foreground space-y-1 list-disc list-inside">
+									<li>
+										<strong className="text-foreground">Trust Proxy</strong> tells the server to read{" "}
+										<code className="text-xs px-1.5 py-0.5 bg-card/50 rounded font-mono">X-Forwarded-For</code> and{" "}
+										<code className="text-xs px-1.5 py-0.5 bg-card/50 rounded font-mono">X-Forwarded-Proto</code> headers
+									</li>
+									<li>
+										<strong className="text-foreground">Secure Cookies (Auto)</strong> sets the Secure flag when Trust Proxy is enabled
+									</li>
+									<li>
+										Enable both when using HTTPS via a reverse proxy to ensure cookies and IP detection work correctly
+									</li>
+									<li>
+										These settings take effect after a <strong className="text-foreground">restart</strong>
+									</li>
 								</ul>
 							</div>
 						</div>

@@ -62,6 +62,8 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				listenAddress: settings.listenAddress,
 				appName: settings.appName,
 				externalUrl: settings.externalUrl,
+				trustProxy: settings.trustProxy ?? false,
+				secureCookies: settings.secureCookies,
 				effectiveApiPort,
 				effectiveWebPort,
 				effectiveListenAddress,
@@ -83,9 +85,11 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			listenAddress?: string;
 			appName?: string;
 			externalUrl?: string | null;
+			trustProxy?: boolean;
+			secureCookies?: boolean | null;
 		};
 	}>("/settings", async (request, reply) => {
-		const { apiPort, webPort, listenAddress, appName, externalUrl } = request.body;
+		const { apiPort, webPort, listenAddress, appName, externalUrl, trustProxy, secureCookies } = request.body;
 
 		// Validate port numbers if provided
 		if (apiPort !== undefined) {
@@ -150,6 +154,35 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			}
 		}
 
+		// Validate trustProxy if provided
+		if (trustProxy !== undefined && typeof trustProxy !== "boolean") {
+			return reply.status(400).send({
+				success: false,
+				error: "trustProxy must be a boolean",
+			});
+		}
+
+		// Validate secureCookies if provided (boolean or null)
+		if (secureCookies !== undefined && secureCookies !== null && typeof secureCookies !== "boolean") {
+			return reply.status(400).send({
+				success: false,
+				error: "secureCookies must be a boolean or null",
+			});
+		}
+
+		// Lockout prevention: secureCookies=true requires trustProxy to be enabled
+		// Without trustProxy, the server cannot detect HTTPS behind a reverse proxy,
+		// causing Secure cookies to be set over perceived HTTP, locking the user out
+		if (secureCookies === true) {
+			const effectiveTrustProxy = trustProxy ?? (await app.prisma.systemSettings.findUnique({ where: { id: 1 } }))?.trustProxy ?? false;
+			if (!effectiveTrustProxy) {
+				return reply.status(400).send({
+					success: false,
+					error: "Cannot enable secureCookies without trustProxy. Without trustProxy enabled, the server cannot detect HTTPS behind a reverse proxy, which would result in session cookies being rejected by the browser and locking you out.",
+				});
+			}
+		}
+
 		// Normalize external URL (empty string becomes null)
 		const normalizedExternalUrl = externalUrl === "" ? null : externalUrl;
 
@@ -162,6 +195,8 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				...(listenAddress !== undefined && { listenAddress }),
 				...(appName !== undefined && { appName }),
 				...(externalUrl !== undefined && { externalUrl: normalizedExternalUrl }),
+				...(trustProxy !== undefined && { trustProxy }),
+				...(secureCookies !== undefined && { secureCookies }),
 			},
 			create: {
 				id: 1,
@@ -170,6 +205,8 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				listenAddress: listenAddress || "0.0.0.0",
 				appName: appName || "Arr Dashboard",
 				externalUrl: normalizedExternalUrl,
+				trustProxy: trustProxy ?? false,
+				secureCookies: secureCookies ?? null,
 			},
 		});
 
@@ -191,6 +228,8 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				webPort: settings.webPort,
 				listenAddress: settings.listenAddress,
 				externalUrl: settings.externalUrl,
+				trustProxy: settings.trustProxy,
+				secureCookies: settings.secureCookies,
 				requiresRestart,
 			},
 			"System settings updated",
@@ -204,6 +243,8 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				listenAddress: settings.listenAddress,
 				appName: settings.appName,
 				externalUrl: settings.externalUrl,
+				trustProxy: settings.trustProxy ?? false,
+				secureCookies: settings.secureCookies,
 				effectiveApiPort: currentApiPort,
 				effectiveWebPort: currentWebPort,
 				effectiveListenAddress: currentListenAddress,
@@ -279,7 +320,7 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * GET /system/logs
 	 * List log files with sizes and dates
 	 */
-	app.get("/logs", { config: { rateLimit: LOGS_RATE_LIMIT } }, async (_request, reply) => {
+	app.get("/logs", { config: { rateLimit: LOGS_RATE_LIMIT } }, async (request, reply) => {
 		try {
 			const entries = await readdir(LOG_DIR);
 			const files: { name: string; size: number; modified: string }[] = [];
@@ -306,12 +347,14 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					files,
 				},
 			});
-		} catch {
+		} catch (err) {
+			request.log.warn({ err }, "Failed to list log files");
 			return reply.send({
 				success: true,
 				data: {
 					directory: LOG_DIR,
 					files: [],
+					warning: "Could not read log directory",
 				},
 			});
 		}
@@ -329,6 +372,9 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(400).send({ error: "Invalid filename" });
 		}
 
+		// Sanitize filename for Content-Disposition header injection prevention
+		const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+
 		const filePath = resolve(LOG_DIR, filename);
 
 		// Ensure the resolved path is still within the log directory
@@ -344,12 +390,16 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			const stream = createReadStream(filePath);
 			return reply
-				.header("Content-Disposition", `attachment; filename="${filename}"`)
+				.header("Content-Disposition", `attachment; filename="${safeFilename}"`)
 				.header("Content-Type", "application/octet-stream")
 				.header("Content-Length", info.size)
 				.send(stream);
-		} catch {
-			return reply.status(404).send({ error: "File not found" });
+		} catch (err: unknown) {
+			if (err && typeof err === "object" && "code" in err && err.code === "ENOENT") {
+				return reply.status(404).send({ error: "Log file not found" });
+			}
+			request.log.error({ err, filename: safeFilename }, "Failed to read log file");
+			return reply.status(500).send({ error: "Failed to read log file" });
 		}
 	});
 

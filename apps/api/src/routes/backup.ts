@@ -230,10 +230,13 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(404).send({ error: "Backup not found" });
 		}
 
+		// Sanitize filename for Content-Disposition header injection prevention
+		const safeFilename = backup.filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+
 		request.log.info(
 			{
 				backupId: params.id,
-				filename: backup.filename,
+				filename: safeFilename,
 			},
 			"Backup downloaded",
 		);
@@ -242,7 +245,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const fileBuffer = await fs.readFile(backup.path);
 		return reply
 			.header("Content-Type", "application/octet-stream")
-			.header("Content-Disposition", `attachment; filename="${backup.filename}"`)
+			.header("Content-Disposition", `attachment; filename="${safeFilename}"`)
 			.send(fileBuffer);
 	});
 

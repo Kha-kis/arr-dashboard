@@ -49,6 +49,8 @@ function isPrismaKnownError(
 export type ServerOptions = {
 	logger?: boolean;
 	env?: ApiEnv;
+	trustProxy?: boolean;
+	secureCookie?: boolean;
 };
 
 export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
@@ -56,11 +58,13 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 		...(options.logger === false
 		? { logger: false }
 		: { loggerInstance: logger as FastifyBaseLogger }),
+		trustProxy: options.trustProxy ?? false,
 		genReqId: () => randomBytes(4).toString("hex"),
 	});
 
 	const env = options.env ?? envSchema.parse(process.env);
 	app.decorate("config", env);
+	app.decorate("secureCookie", options.secureCookie ?? false);
 
 	// Handle requests with unexpected Content-Type headers (e.g., Next.js proxy
 	// injecting application/octet-stream on body-less DELETE requests). Without this,
@@ -182,10 +186,11 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 			reply.status(500);
 		}
 		const err = error instanceof Error ? error : new Error(String(error));
+		const is5xx = reply.statusCode >= 500;
 		reply.send({
 			statusCode: reply.statusCode,
-			error: err.name ?? "InternalServerError",
-			message: err.message,
+			error: is5xx ? "InternalServerError" : (err.name ?? "InternalServerError"),
+			message: is5xx ? "Internal server error" : err.message,
 		});
 	});
 
