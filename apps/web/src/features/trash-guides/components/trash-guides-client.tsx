@@ -1,12 +1,14 @@
 "use client";
 
-import { AlertCircle, BookOpen, Clock, HardDrive, Sparkles, Zap } from "lucide-react";
+import { AlertCircle, BookOpen, CheckCircle2, Clock, HardDrive, ShieldCheck, Sparkles, Zap } from "lucide-react";
+import { Suspense, lazy } from "react";
 import { ErrorBoundary } from "../../../components/error-boundary";
 import { PremiumEmptyState } from "../../../components/layout";
 import { useCurrentUser } from "../../../hooks/api/useAuth";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useCacheHealth } from "../../../hooks/api/useTrashCache";
 import { useTrashGuidesActions } from "../hooks/use-trash-guides-actions";
 import { useTrashGuidesData } from "../hooks/use-trash-guides-data";
 import { useTrashGuidesModals } from "../hooks/use-trash-guides-modals";
@@ -16,7 +18,9 @@ import { BulkScoreManager } from "./bulk-score-manager";
 import { CacheStatusSection } from "./cache-status-section";
 import { CustomFormatsBrowser } from "./custom-formats-browser";
 import { DeploymentHistoryTable } from "./deployment-history-table";
-import { NamingManager } from "./naming-manager";
+const NamingManager = lazy(() =>
+	import("./naming-manager").then((m) => ({ default: m.NamingManager })),
+);
 import { QualityProfileWizard } from "./quality-profile-wizard";
 import { QualitySizeManager } from "./quality-size-manager";
 import { RepoSettingsSection } from "./repo-settings-section";
@@ -83,6 +87,89 @@ function PremiumSkeleton() {
 	);
 }
 
+/**
+ * Compact validation health section for the Cache tab.
+ * Shows per-category validation results from the last cache refresh.
+ */
+function CacheValidationHealthSection() {
+	const { data: health } = useCacheHealth();
+
+	if (!health?.lastRefreshAt || health.totals.total === 0) return null;
+
+	const hasRejections = health.totals.rejected > 0;
+	const categories = Object.entries(health.categories);
+
+	return (
+		<section className="space-y-4 animate-in fade-in duration-300">
+			<div className="flex items-center gap-3">
+				<div
+					className="flex h-10 w-10 items-center justify-center rounded-xl"
+					style={{
+						background: hasRejections
+							? `${SEMANTIC_COLORS.warning.from}20`
+							: `${SEMANTIC_COLORS.success.from}20`,
+						border: `1px solid ${hasRejections ? SEMANTIC_COLORS.warning.border : SEMANTIC_COLORS.success.border}`,
+					}}
+				>
+					<ShieldCheck
+						className="h-5 w-5"
+						style={{ color: hasRejections ? SEMANTIC_COLORS.warning.from : SEMANTIC_COLORS.success.from }}
+					/>
+				</div>
+				<div>
+					<h2 className="text-lg font-bold text-foreground">Validation Health</h2>
+					<p className="text-sm text-muted-foreground">
+						{health.totals.validated}/{health.totals.total} items validated
+						{health.totals.rejected > 0 && ` (${health.totals.rejected} rejected)`}
+					</p>
+				</div>
+			</div>
+
+			<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+				{categories.map(([category, stats]) => (
+					<div
+						key={category}
+						className="rounded-xl border border-border/50 bg-card/30 p-4 transition-all hover:bg-card/50"
+					>
+						<div className="flex items-center justify-between mb-2">
+							<span className="text-sm font-medium text-foreground capitalize">
+								{category.replace(/([A-Z])/g, " $1").trim()}
+							</span>
+							{stats.rejected > 0 ? (
+								<AlertCircle
+									className="h-4 w-4"
+									style={{ color: SEMANTIC_COLORS.warning.from }}
+								/>
+							) : (
+								<CheckCircle2
+									className="h-4 w-4"
+									style={{ color: SEMANTIC_COLORS.success.from }}
+								/>
+							)}
+						</div>
+						<div className="flex items-baseline gap-1">
+							<span className="text-2xl font-bold text-foreground">{stats.validated}</span>
+							<span className="text-sm text-muted-foreground">/ {stats.total}</span>
+						</div>
+						{stats.rejected > 0 && (
+							<p
+								className="text-xs mt-1"
+								style={{ color: SEMANTIC_COLORS.warning.text }}
+							>
+								{stats.rejected} rejected
+							</p>
+						)}
+					</div>
+				))}
+			</div>
+
+			<p className="text-xs text-muted-foreground">
+				Last refresh: {new Date(health.lastRefreshAt).toLocaleString()}
+			</p>
+		</section>
+	);
+}
+
 export function TrashGuidesClient() {
 	const { gradient: themeGradient } = useThemeGradient();
 
@@ -118,6 +205,7 @@ export function TrashGuidesClient() {
 			case "cache":
 				return (
 					<div className="space-y-10">
+						<CacheValidationHealthSection />
 						<CacheStatusSection
 							serviceType="RADARR"
 							statuses={cacheStatus!.radarr}
@@ -209,7 +297,11 @@ export function TrashGuidesClient() {
 			case "quality-size":
 				return <QualitySizeManager />;
 			case "naming":
-				return <NamingManager />;
+				return (
+					<Suspense>
+						<NamingManager />
+					</Suspense>
+				);
 			case "settings":
 				return <RepoSettingsSection />;
 			default:

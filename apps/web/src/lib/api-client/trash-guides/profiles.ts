@@ -5,6 +5,7 @@
  * fetching, importing, updating, and profile cloning operations.
  */
 
+import type { NamingSelectedPresets } from "@arr/shared";
 import { apiRequest } from "../base";
 import type {
 	CustomQualityConfig,
@@ -24,6 +25,7 @@ export type ImportQualityProfilePayload = {
 	templateDescription?: string;
 	syncStrategy?: "auto" | "manual" | "notify";
 	customQualityConfig?: CustomQualityConfig;
+	namingSelection?: NamingSelectedPresets;
 	selectedCFGroups: string[];
 	customFormatSelections: Record<string, {
 		selected: boolean;
@@ -39,6 +41,7 @@ export type UpdateQualityProfileTemplatePayload = {
 	templateName: string;
 	templateDescription?: string;
 	customQualityConfig?: CustomQualityConfig;
+	namingSelection?: NamingSelectedPresets;
 	selectedCFGroups: string[];
 	customFormatSelections: Record<string, {
 		selected: boolean;

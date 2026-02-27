@@ -31,6 +31,7 @@ import {
 	trashQualityProfileGroupSchema,
 	trashQualityProfileSchema,
 	trashQualitySizeSchema,
+	recordValidationStats,
 	validateAndCollect,
 } from "./github-schemas.js";
 
@@ -536,7 +537,9 @@ export class TrashGitHubFetcher {
 
 				if (response.ok) {
 					const rawData: unknown = await response.json();
-					formats.push(...validateAndCollect(rawData, trashCustomFormatSchema, file, this.log));
+					const result = validateAndCollect(rawData, trashCustomFormatSchema, file, this.log);
+					formats.push(...result.items);
+					recordValidationStats("customFormats", result.stats);
 				}
 			} catch (error) {
 				this.log.warn({ err: error, file }, "Failed to fetch config file");
@@ -565,7 +568,9 @@ export class TrashGitHubFetcher {
 
 				if (response.ok) {
 					const rawData: unknown = await response.json();
-					groups.push(...validateAndCollect(rawData, trashCustomFormatGroupSchema, file, this.log));
+					const result = validateAndCollect(rawData, trashCustomFormatGroupSchema, file, this.log);
+					groups.push(...result.items);
+					recordValidationStats("customFormatGroups", result.stats);
 				}
 			} catch (error) {
 				this.log.warn({ err: error, file }, "Failed to fetch config file");
@@ -591,7 +596,9 @@ export class TrashGitHubFetcher {
 
 				if (response.ok) {
 					const rawData: unknown = await response.json();
-					settings.push(...validateAndCollect(rawData, trashQualitySizeSchema, file, this.log));
+					const result = validateAndCollect(rawData, trashQualitySizeSchema, file, this.log);
+					settings.push(...result.items);
+					recordValidationStats("qualitySize", result.stats);
 				}
 			} catch (error) {
 				this.log.warn({ err: error, file }, "Failed to fetch config file");
@@ -617,7 +624,9 @@ export class TrashGitHubFetcher {
 
 				if (response.ok) {
 					const rawData: unknown = await response.json();
-					schemes.push(...validateAndCollect(rawData, trashNamingSchemeSchema, file, this.log));
+					const result = validateAndCollect(rawData, trashNamingSchemeSchema, file, this.log);
+					schemes.push(...result.items);
+					recordValidationStats("namingSchemes", result.stats);
 				}
 			} catch (error) {
 				this.log.warn({ err: error, file }, "Failed to fetch config file");
@@ -643,7 +652,9 @@ export class TrashGitHubFetcher {
 
 				if (response.ok) {
 					const rawData: unknown = await response.json();
-					profiles.push(...validateAndCollect(rawData, trashQualityProfileSchema, file, this.log));
+					const result = validateAndCollect(rawData, trashQualityProfileSchema, file, this.log);
+					profiles.push(...result.items);
+					recordValidationStats("qualityProfiles", result.stats);
 				}
 			} catch (error) {
 				this.log.warn({ err: error, file }, "Failed to fetch config file");
@@ -668,7 +679,7 @@ export class TrashGitHubFetcher {
 				return [];
 			}
 			const rawData: unknown = await response.json();
-			return validateAndCollect(rawData, trashQualityProfileGroupSchema, "groups.json", this.log);
+			return validateAndCollect(rawData, trashQualityProfileGroupSchema, "groups.json", this.log).items;
 		} catch (error) {
 			this.log.error("Error fetching quality profile groups:", error);
 			return [];
@@ -694,9 +705,9 @@ export class TrashGitHubFetcher {
 					const rawData: unknown = await response.json();
 					// Branch by service type — each schema's .transform() injects the _service discriminant
 					if (serviceType === "RADARR") {
-						results.push(...validateAndCollect(rawData, radarrNamingSchema, file, this.log));
+						results.push(...validateAndCollect(rawData, radarrNamingSchema, file, this.log).items);
 					} else {
-						results.push(...validateAndCollect(rawData, sonarrNamingSchema, file, this.log));
+						results.push(...validateAndCollect(rawData, sonarrNamingSchema, file, this.log).items);
 					}
 				}
 			} catch (error) {

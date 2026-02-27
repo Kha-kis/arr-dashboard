@@ -769,11 +769,8 @@ export class UpdateScheduler {
 					continue;
 				}
 
-				// Build the API URL and apply
-				const apiPath =
-					serviceType === "RADARR"
-						? "/api/v3/config/naming"
-						: "/api/v3/config/naming";
+				// Both Radarr and Sonarr use the same naming config endpoint
+				const apiPath = "/api/v3/config/naming";
 
 				// Get current config first (need to preserve id and other fields)
 				const currentResponse = await this.arrClientFactory.rawRequest(

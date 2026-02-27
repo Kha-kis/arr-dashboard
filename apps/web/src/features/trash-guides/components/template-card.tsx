@@ -1,6 +1,6 @@
 "use client";
 
-import type { TrashTemplate } from "@arr/shared";
+import type { NamingSelectedPresets, TrashTemplate } from "@arr/shared";
 import {
 	AlertCircle,
 	Bell,
@@ -10,6 +10,7 @@ import {
 	Copy,
 	Download,
 	Edit,
+	FileType,
 	Hand,
 	History,
 	Layers,
@@ -71,6 +72,14 @@ const getSyncStrategyInfo = (strategy: "auto" | "manual" | "notify") => {
 	}
 };
 
+/** Count how many non-null presets are selected in a naming config */
+function countNamingPresets(ns: NamingSelectedPresets): number {
+	if (ns.serviceType === "RADARR") {
+		return [ns.filePreset, ns.folderPreset].filter(Boolean).length;
+	}
+	return [ns.standardEpisodePreset, ns.dailyEpisodePreset, ns.animeEpisodePreset, ns.seriesFolderPreset, ns.seasonFolderPreset].filter(Boolean).length;
+}
+
 export const TemplateCard = ({
 	template,
 	hasUpdate = false,
@@ -111,6 +120,9 @@ export const TemplateCard = ({
 
 	const formatCount = template.config.customFormats.length;
 	const groupCount = template.config.customFormatGroups.length;
+	const namingCount = template.config.namingSelection
+		? countNamingPresets(template.config.namingSelection)
+		: 0;
 	const stats = statsData?.stats;
 	const instanceCount = stats?.instances.length ?? 0;
 	const isAutoSync = stats?.isActive ?? false;
@@ -184,6 +196,15 @@ export const TemplateCard = ({
 						<>
 							<span className="text-muted-foreground/50">|</span>
 							<span>{groupCount} groups</span>
+						</>
+					)}
+					{namingCount > 0 && (
+						<>
+							<span className="text-muted-foreground/50">|</span>
+							<div className="flex items-center gap-1.5">
+								<FileType className="h-3.5 w-3.5" />
+								<span>{namingCount} naming</span>
+							</div>
 						</>
 					)}
 				</div>

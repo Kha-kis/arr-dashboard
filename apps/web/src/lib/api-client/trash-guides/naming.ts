@@ -73,10 +73,6 @@ export type NamingConfigCreatePayload = {
 	syncStrategy?: "auto" | "manual" | "notify";
 };
 
-export type NamingConfigPatchPayload = {
-	selectedPresets?: NamingSelectedPresets;
-};
-
 // ============================================================================
 // API Functions - Presets
 // ============================================================================
@@ -139,22 +135,6 @@ export async function saveNamingConfig(
 		method: "POST",
 		json: payload,
 	});
-}
-
-/**
- * Partial update of naming config for an instance
- */
-export async function patchNamingConfig(
-	instanceId: string,
-	payload: NamingConfigPatchPayload,
-): Promise<NamingConfigSaveResponse> {
-	return await apiRequest<NamingConfigSaveResponse>(
-		`/api/trash-guides/naming/configs/${instanceId}`,
-		{
-			method: "PATCH",
-			json: payload,
-		},
-	);
 }
 
 /**

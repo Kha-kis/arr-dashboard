@@ -415,6 +415,20 @@ export interface TrashCacheStatus {
 	};
 }
 
+/** Per-category validation stats from Zod schema validation */
+export interface ValidationStats {
+	total: number;
+	validated: number;
+	rejected: number;
+}
+
+/** Aggregated validation health from the last cache refresh */
+export interface CacheValidationHealth {
+	lastRefreshAt: string | null;
+	categories: Record<string, ValidationStats>;
+	totals: ValidationStats;
+}
+
 /**
  * GitHub API rate limit status
  */
@@ -676,6 +690,8 @@ export interface TemplateConfig {
 	};
 	qualitySize?: TrashQualitySize[];
 	naming?: TrashNamingScheme[];
+	/** Selected naming presets to deploy alongside this template */
+	namingSelection?: NamingSelectedPresets;
 	// Phase 5.3: Complete quality profile settings (imported from *arr instance)
 	completeQualityProfile?: CompleteQualityProfile;
 	// Sync behavior settings

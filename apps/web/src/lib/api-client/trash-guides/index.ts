@@ -56,6 +56,7 @@ export type {
 export {
 	deleteCacheEntry,
 	fetchCacheEntries,
+	fetchCacheHealth,
 	fetchCacheStatus,
 	fetchGitHubRateLimit,
 	fetchSyncMetrics,
@@ -341,7 +342,6 @@ export type {
 	NamingConfigApiResponse,
 	NamingConfigCreatePayload,
 	NamingConfigDeleteResponse,
-	NamingConfigPatchPayload,
 	NamingConfigSaveResponse,
 	NamingPreviewApiResponse,
 	NamingPreviewPayload,
@@ -353,7 +353,6 @@ export {
 	fetchNamingConfig,
 	fetchNamingPresets,
 	getNamingPreview,
-	patchNamingConfig,
 	saveNamingConfig,
 } from "./naming";
 

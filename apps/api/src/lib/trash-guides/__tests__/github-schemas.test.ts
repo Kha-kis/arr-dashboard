@@ -479,7 +479,7 @@ describe("validateAndCollect", () => {
 		const log = createMockLogger();
 		const items = [VALID_CUSTOM_FORMAT, VALID_CUSTOM_FORMAT];
 
-		const results = validateAndCollect(items, trashCustomFormatSchema, "cf/test.json", log);
+		const { items: results } = validateAndCollect(items, trashCustomFormatSchema, "cf/test.json", log);
 
 		expect(results).toHaveLength(2);
 		expect(log.warn).not.toHaveBeenCalled();
@@ -489,7 +489,7 @@ describe("validateAndCollect", () => {
 	it("should wrap single item in array", () => {
 		const log = createMockLogger();
 
-		const results = validateAndCollect(VALID_CUSTOM_FORMAT, trashCustomFormatSchema, "cf/test.json", log);
+		const { items: results } = validateAndCollect(VALID_CUSTOM_FORMAT, trashCustomFormatSchema, "cf/test.json", log);
 
 		expect(results).toHaveLength(1);
 		expect(results[0]!.name).toBe("BR-DISK");
@@ -503,7 +503,7 @@ describe("validateAndCollect", () => {
 			VALID_CUSTOM_FORMAT,
 		];
 
-		const results = validateAndCollect(items, trashCustomFormatSchema, "cf/test.json", log);
+		const { items: results } = validateAndCollect(items, trashCustomFormatSchema, "cf/test.json", log);
 
 		expect(results).toHaveLength(2);
 		expect(log.warn).toHaveBeenCalledTimes(1);
@@ -514,7 +514,7 @@ describe("validateAndCollect", () => {
 		const log = createMockLogger();
 		const items = [{ bad: true }, { also: "bad" }, { nope: 123 }];
 
-		const results = validateAndCollect(items, trashCustomFormatSchema, "cf/broken.json", log);
+		const { items: results } = validateAndCollect(items, trashCustomFormatSchema, "cf/broken.json", log);
 
 		expect(results).toHaveLength(0);
 		expect(log.error).toHaveBeenCalledTimes(1);
@@ -527,7 +527,7 @@ describe("validateAndCollect", () => {
 		const log = createMockLogger();
 		const items = [VALID_CUSTOM_FORMAT, { bad: true }, { bad: true }, { bad: true }];
 
-		const results = validateAndCollect(items, trashCustomFormatSchema, "cf/mixed.json", log);
+		const { items: results } = validateAndCollect(items, trashCustomFormatSchema, "cf/mixed.json", log);
 
 		expect(results).toHaveLength(1);
 		// 3 individual skip warnings + 1 high rejection warning
@@ -541,7 +541,7 @@ describe("validateAndCollect", () => {
 		const log = createMockLogger();
 		const items = [VALID_CUSTOM_FORMAT, VALID_CUSTOM_FORMAT, { bad: true }];
 
-		const results = validateAndCollect(items, trashCustomFormatSchema, "cf/ok.json", log);
+		const { items: results } = validateAndCollect(items, trashCustomFormatSchema, "cf/ok.json", log);
 
 		expect(results).toHaveLength(2);
 		// 1 skip warning, NO high rejection warning
@@ -552,7 +552,7 @@ describe("validateAndCollect", () => {
 	it("should handle empty array input", () => {
 		const log = createMockLogger();
 
-		const results = validateAndCollect([], trashCustomFormatSchema, "cf/empty.json", log);
+		const { items: results } = validateAndCollect([], trashCustomFormatSchema, "cf/empty.json", log);
 
 		expect(results).toHaveLength(0);
 		expect(log.warn).not.toHaveBeenCalled();
@@ -566,7 +566,7 @@ describe("validateAndCollect", () => {
 			trash_id: "ABCDEF1234567890ABCDEF1234567890",
 		};
 
-		const results = validateAndCollect([cfWithUpperId], trashCustomFormatSchema, "cf/test.json", log);
+		const { items: results } = validateAndCollect([cfWithUpperId], trashCustomFormatSchema, "cf/test.json", log);
 
 		expect(results).toHaveLength(1);
 		expect(results[0]!.trash_id).toBe("abcdef1234567890abcdef1234567890");
@@ -575,7 +575,7 @@ describe("validateAndCollect", () => {
 	it("should work with naming schemas that inject _service", () => {
 		const log = createMockLogger();
 
-		const results = validateAndCollect(VALID_RADARR_NAMING, radarrNamingSchema, "naming/radarr.json", log);
+		const { items: results } = validateAndCollect(VALID_RADARR_NAMING, radarrNamingSchema, "naming/radarr.json", log);
 
 		expect(results).toHaveLength(1);
 		expect(results[0]!._service).toBe("RADARR");

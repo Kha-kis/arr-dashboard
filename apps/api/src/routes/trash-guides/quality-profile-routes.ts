@@ -33,6 +33,24 @@ const getQualityProfilesSchema = z.object({
 	serviceType: z.enum(["RADARR", "SONARR"]),
 });
 
+const namingSelectionSchema = z
+	.discriminatedUnion("serviceType", [
+		z.object({
+			serviceType: z.literal("RADARR"),
+			filePreset: z.string().nullable().default(null),
+			folderPreset: z.string().nullable().default(null),
+		}),
+		z.object({
+			serviceType: z.literal("SONARR"),
+			standardEpisodePreset: z.string().nullable().default(null),
+			dailyEpisodePreset: z.string().nullable().default(null),
+			animeEpisodePreset: z.string().nullable().default(null),
+			seriesFolderPreset: z.string().nullable().default(null),
+			seasonFolderPreset: z.string().nullable().default(null),
+		}),
+	])
+	.optional();
+
 const importQualityProfileSchema = z.object({
 	serviceType: z.enum(["RADARR", "SONARR"]),
 	trashId: z.string(),
@@ -48,6 +66,7 @@ const importQualityProfileSchema = z.object({
 			conditionsEnabled: z.record(z.string(), z.boolean()),
 		}),
 	),
+	namingSelection: namingSelectionSchema,
 });
 
 const updateQualityProfileTemplateSchema = z.object({
@@ -65,6 +84,7 @@ const updateQualityProfileTemplateSchema = z.object({
 			conditionsEnabled: z.record(z.string(), z.boolean()),
 		}),
 	),
+	namingSelection: namingSelectionSchema,
 	// Quality configuration (optional — preserves existing when not sent)
 	customQualityConfig: z
 		.object({
@@ -404,6 +424,7 @@ export async function registerQualityProfileRoutes(
 			templateDescription,
 			selectedCFGroups,
 			customFormatSelections,
+			namingSelection,
 		} = validateRequest(importQualityProfileSchema, request.body);
 
 		// Get quality profile from cache
@@ -446,6 +467,7 @@ export async function registerQualityProfileRoutes(
 		const templateConfig: TemplateConfig = {
 			customFormats: [],
 			customFormatGroups: [],
+			...(namingSelection && { namingSelection }),
 			qualityProfile: {
 				upgradeAllowed: profile.upgradeAllowed,
 				cutoff: profile.cutoff,
@@ -560,6 +582,7 @@ export async function registerQualityProfileRoutes(
 			selectedCFGroups,
 			customFormatSelections,
 			customQualityConfig,
+			namingSelection,
 		} = validateRequest(updateQualityProfileTemplateSchema, request.body);
 
 		// Get existing template to preserve quality profile settings
@@ -594,6 +617,7 @@ export async function registerQualityProfileRoutes(
 			...existingConfig,
 			customFormats: [],
 			customFormatGroups: [],
+			...(namingSelection !== undefined && { namingSelection }),
 			...(customQualityConfig !== undefined && {
 				customQualityConfig: customQualityConfig.useCustomQualities
 					? (customQualityConfig as TemplateConfig["customQualityConfig"])

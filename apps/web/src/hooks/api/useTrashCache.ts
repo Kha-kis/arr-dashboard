@@ -1,6 +1,7 @@
 "use client";
 
 import type {
+	CacheValidationHealth,
 	GitHubRateLimitResponse,
 	SyncMetricsSnapshot,
 	TrashCacheEntry,
@@ -14,6 +15,7 @@ import type {
 import {
 	deleteCacheEntry,
 	fetchCacheEntries,
+	fetchCacheHealth,
 	fetchCacheStatus,
 	fetchGitHubRateLimit,
 	fetchSyncMetrics,
@@ -111,5 +113,17 @@ export const useSyncMetrics = (options?: { enabled?: boolean }) =>
 		queryFn: fetchSyncMetrics,
 		staleTime: 30 * 1000, // 30 seconds
 		refetchInterval: 60 * 1000, // Refetch every minute when visible
+		enabled: options?.enabled ?? true,
+	});
+
+/**
+ * Hook to fetch cache validation health stats.
+ * Shows per-category validation results from the last cache refresh.
+ */
+export const useCacheHealth = (options?: { enabled?: boolean }) =>
+	useQuery<CacheValidationHealth>({
+		queryKey: ["cache-health"],
+		queryFn: fetchCacheHealth,
+		staleTime: 5 * 60 * 1000, // 5 minutes — only changes on cache refresh
 		enabled: options?.enabled ?? true,
 	});

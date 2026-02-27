@@ -8,9 +8,11 @@ import {
 	CheckCircle2,
 	Clock,
 	Database,
+	FileType,
 	Hand,
 	Play,
 	RefreshCw,
+	SlidersHorizontal,
 	Timer,
 } from "lucide-react";
 import { useSchedulerStatus, useTriggerUpdateCheck } from "../../../hooks/api/useTemplateUpdates";
@@ -393,6 +395,101 @@ export const SchedulerStatusDashboard = () => {
 								</div>
 							</div>
 						</div>
+
+						{/* Naming & Quality Size Sync */}
+						{((schedulerData.lastCheckResult.namingAutoSynced ?? 0) > 0 ||
+							(schedulerData.lastCheckResult.namingUpdatesPending ?? 0) > 0 ||
+							(schedulerData.lastCheckResult.qualitySizeAutoSynced ?? 0) > 0 ||
+							(schedulerData.lastCheckResult.qualitySizeUpdatesPending ?? 0) > 0) && (
+							<div className="pt-4 border-t border-border/50 space-y-3">
+								<div>
+									<h5 className="text-sm font-medium text-foreground mb-1">
+										Instance Sync
+									</h5>
+									<p className="text-xs text-muted-foreground">
+										Auto-syncs naming presets and quality sizes when TRaSH data changes
+									</p>
+								</div>
+								<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+									<div className="flex items-center gap-3">
+										<div
+											className="flex h-10 w-10 items-center justify-center rounded-lg"
+											style={{ backgroundColor: `${SEMANTIC_COLORS.success.from}15` }}
+										>
+											<FileType className="h-5 w-5" style={{ color: SEMANTIC_COLORS.success.from }} />
+										</div>
+										<div>
+											<p className="text-xs text-muted-foreground">Naming Synced</p>
+											<p
+												className="text-xl font-bold"
+												style={{ color: SEMANTIC_COLORS.success.from }}
+											>
+												{schedulerData.lastCheckResult.namingAutoSynced ?? 0}
+											</p>
+										</div>
+									</div>
+									<div className="flex items-center gap-3">
+										<div
+											className="flex h-10 w-10 items-center justify-center rounded-lg"
+											style={{ backgroundColor: `${SEMANTIC_COLORS.warning.from}15` }}
+										>
+											<FileType className="h-5 w-5" style={{ color: SEMANTIC_COLORS.warning.from }} />
+										</div>
+										<div>
+											<p className="text-xs text-muted-foreground">Naming Pending</p>
+											<p
+												className="text-xl font-bold"
+												style={{
+													color: (schedulerData.lastCheckResult.namingUpdatesPending ?? 0) > 0
+														? SEMANTIC_COLORS.warning.from
+														: undefined,
+												}}
+											>
+												{schedulerData.lastCheckResult.namingUpdatesPending ?? 0}
+											</p>
+										</div>
+									</div>
+									<div className="flex items-center gap-3">
+										<div
+											className="flex h-10 w-10 items-center justify-center rounded-lg"
+											style={{ backgroundColor: `${SEMANTIC_COLORS.success.from}15` }}
+										>
+											<SlidersHorizontal className="h-5 w-5" style={{ color: SEMANTIC_COLORS.success.from }} />
+										</div>
+										<div>
+											<p className="text-xs text-muted-foreground">Quality Size Synced</p>
+											<p
+												className="text-xl font-bold"
+												style={{ color: SEMANTIC_COLORS.success.from }}
+											>
+												{schedulerData.lastCheckResult.qualitySizeAutoSynced ?? 0}
+											</p>
+										</div>
+									</div>
+									<div className="flex items-center gap-3">
+										<div
+											className="flex h-10 w-10 items-center justify-center rounded-lg"
+											style={{ backgroundColor: `${SEMANTIC_COLORS.warning.from}15` }}
+										>
+											<SlidersHorizontal className="h-5 w-5" style={{ color: SEMANTIC_COLORS.warning.from }} />
+										</div>
+										<div>
+											<p className="text-xs text-muted-foreground">Quality Size Pending</p>
+											<p
+												className="text-xl font-bold"
+												style={{
+													color: (schedulerData.lastCheckResult.qualitySizeUpdatesPending ?? 0) > 0
+														? SEMANTIC_COLORS.warning.from
+														: undefined,
+												}}
+											>
+												{schedulerData.lastCheckResult.qualitySizeUpdatesPending ?? 0}
+											</p>
+										</div>
+									</div>
+								</div>
+							</div>
+						)}
 
 						{/* Error Display */}
 						{schedulerData.lastCheckResult.errors.length > 0 && (

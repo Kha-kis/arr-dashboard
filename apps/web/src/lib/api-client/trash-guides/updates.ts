@@ -139,6 +139,10 @@ export type SchedulerStats = {
 		templatesWithNotifyStrategy: number;
 		cachesRefreshed: number;
 		cachesFailed: number;
+		qualitySizeAutoSynced: number;
+		qualitySizeUpdatesPending: number;
+		namingAutoSynced: number;
+		namingUpdatesPending: number;
 		errors: string[];
 	};
 };
@@ -163,6 +167,10 @@ export type TriggerCheckResponse = {
 		templatesWithNotifyStrategy: number;
 		cachesRefreshed: number;
 		cachesFailed: number;
+		qualitySizeAutoSynced: number;
+		qualitySizeUpdatesPending: number;
+		namingAutoSynced: number;
+		namingUpdatesPending: number;
 		errors: string[];
 	} | null;
 };

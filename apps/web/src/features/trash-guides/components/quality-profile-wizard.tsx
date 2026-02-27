@@ -1,6 +1,6 @@
 "use client";
 
-import type { CustomQualityConfig, TrashTemplate } from "@arr/shared";
+import type { CustomQualityConfig, NamingSelectedPresets, TrashTemplate } from "@arr/shared";
 import { X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
@@ -128,6 +128,8 @@ interface WizardState {
 	cfResolutions?: ResolvedCF[];
 	/** Custom quality configuration for power users */
 	customQualityConfig?: CustomQualityConfig;
+	/** Optional naming presets to deploy with this template */
+	namingSelection?: NamingSelectedPresets;
 }
 
 // Standard step order for TRaSH Guides profiles: quality config before CF config
@@ -524,6 +526,7 @@ export const QualityProfileWizard = ({
 								templateName: wizardState.templateName,
 								templateDescription: wizardState.templateDescription,
 								customQualityConfig: wizardState.customQualityConfig,
+								namingSelection: wizardState.namingSelection,
 							}}
 							templateId={wizardState.templateId} // Pass template ID for update
 							isEditMode={isEditMode}

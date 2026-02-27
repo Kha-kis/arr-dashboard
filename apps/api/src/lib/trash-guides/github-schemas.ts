@@ -177,6 +177,19 @@ interface Logger {
 	error: (msg: string | object, ...args: unknown[]) => void;
 }
 
+/** Validation stats returned alongside validated items */
+export interface ValidationStats {
+	total: number;
+	validated: number;
+	rejected: number;
+}
+
+/** Result of validateAndCollect — items array + validation stats */
+export interface ValidationResult<T> {
+	items: T[];
+	stats: ValidationStats;
+}
+
 /**
  * Validate raw GitHub JSON data against a Zod schema.
  *
@@ -189,7 +202,7 @@ export function validateAndCollect<T>(
 	schema: z.ZodType<T>,
 	fileName: string,
 	log: Logger,
-): T[] {
+): ValidationResult<T> {
 	const items = Array.isArray(rawData) ? rawData : [rawData];
 	const results: T[] = [];
 
@@ -215,5 +228,51 @@ export function validateAndCollect<T>(
 		);
 	}
 
-	return results;
+	return { items: results, stats: { total: items.length, validated: results.length, rejected } };
+}
+
+// ============================================================================
+// Validation Stats Accumulator
+// ============================================================================
+
+/** Aggregated validation health stats across all data types */
+export interface CacheValidationHealth {
+	lastRefreshAt: string | null;
+	categories: Record<string, ValidationStats>;
+	totals: ValidationStats;
+}
+
+let lastHealth: CacheValidationHealth = {
+	lastRefreshAt: null,
+	categories: {},
+	totals: { total: 0, validated: 0, rejected: 0 },
+};
+
+/** Reset stats before a new fetch cycle */
+export function resetValidationHealth(): void {
+	lastHealth = {
+		lastRefreshAt: new Date().toISOString(),
+		categories: {},
+		totals: { total: 0, validated: 0, rejected: 0 },
+	};
+}
+
+/** Record stats for a data category (e.g., "customFormats", "qualityProfiles") */
+export function recordValidationStats(category: string, stats: ValidationStats): void {
+	const existing = lastHealth.categories[category];
+	if (existing) {
+		existing.total += stats.total;
+		existing.validated += stats.validated;
+		existing.rejected += stats.rejected;
+	} else {
+		lastHealth.categories[category] = { ...stats };
+	}
+	lastHealth.totals.total += stats.total;
+	lastHealth.totals.validated += stats.validated;
+	lastHealth.totals.rejected += stats.rejected;
+}
+
+/** Get current validation health snapshot */
+export function getValidationHealth(): CacheValidationHealth {
+	return lastHealth;
 }

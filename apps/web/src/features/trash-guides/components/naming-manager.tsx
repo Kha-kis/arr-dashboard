@@ -9,11 +9,13 @@ import {
 	FileType,
 	Loader2,
 	Server,
+	Trash2,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { GlassmorphicCard, ServiceBadge } from "../../../components/layout/premium-components";
 import {
 	useApplyNaming,
+	useDeleteNamingConfig,
 	useNamingConfig,
 	useNamingPresets,
 	useNamingPreview,
@@ -112,6 +114,17 @@ function PresetSelector({
 	disabled,
 	themeGradient,
 }: PresetSelectorProps) {
+	if (presetOptions.length === 0) {
+		return (
+			<div className="space-y-2">
+				<label className="text-sm font-medium text-muted-foreground">{label}</label>
+				<p className="text-xs text-muted-foreground italic">No presets available</p>
+			</div>
+		);
+	}
+
+	const selectedFormatString = presetOptions.find((p) => p.name === selectedPreset)?.formatString;
+
 	return (
 		<div className="space-y-2">
 			<label className="text-sm font-medium text-muted-foreground">{label}</label>
@@ -145,10 +158,10 @@ function PresetSelector({
 					);
 				})}
 			</div>
-			{selectedPreset && (
-				<div className="rounded-md border border-border/30 bg-card/20 px-3 py-2">
+			{selectedFormatString && (
+				<div className="rounded-md border border-border/30 bg-card/20 px-3 py-2 max-h-24 overflow-y-auto">
 					<code className="text-xs text-muted-foreground break-all">
-						{presetOptions.find((p) => p.name === selectedPreset)?.formatString}
+						{selectedFormatString}
 					</code>
 				</div>
 			)}
@@ -279,6 +292,7 @@ export function NamingManager() {
 	const previewMutation = useNamingPreview();
 	const applyMutation = useApplyNaming();
 	const saveConfigMutation = useSaveNamingConfig();
+	const deleteConfigMutation = useDeleteNamingConfig();
 
 	const presets = presetsData?.presets ?? null;
 	const categories = serviceType === "SONARR" ? SONARR_CATEGORIES : RADARR_CATEGORIES;
@@ -303,6 +317,7 @@ export function NamingManager() {
 		setSelectedInstanceId(instance.id);
 		setSelections({});
 		setSyncStrategy("manual");
+		populatedForRef.current = null; // Allow auto-populate for new instance
 		previewMutation.reset();
 		applyMutation.reset();
 	}
@@ -369,32 +384,46 @@ export function NamingManager() {
 		}
 	}
 
-	// Initialize selections from saved config when instance changes
-	const savedPresets = configData?.config?.selectedPresets;
-	const savedInstance = configData?.config?.instanceId;
-	// Only auto-populate if we haven't already changed selections for this instance
-	const shouldAutoPopulate =
-		savedPresets &&
-		savedInstance === selectedInstanceId &&
-		Object.keys(selections).length === 0;
+	function handleDeleteConfig() {
+		if (!selectedInstanceId) return;
+		deleteConfigMutation.mutate(selectedInstanceId, {
+			onSuccess: () => {
+				setSelections({});
+				setSyncStrategy("manual");
+				populatedForRef.current = null;
+				previewMutation.reset();
+				applyMutation.reset();
+			},
+		});
+	}
 
-	if (shouldAutoPopulate && savedPresets) {
-		if (configData?.config?.syncStrategy) {
-			setSyncStrategy(configData.config.syncStrategy);
+	// Auto-populate selections from saved config when config data arrives
+	const populatedForRef = useRef<string | null>(null);
+
+	useEffect(() => {
+		const config = configData?.config;
+		if (!config || config.instanceId !== selectedInstanceId) return;
+		// Only auto-populate once per instance selection
+		if (populatedForRef.current === selectedInstanceId) return;
+		populatedForRef.current = selectedInstanceId;
+
+		if (config.syncStrategy) {
+			setSyncStrategy(config.syncStrategy);
 		}
 		const initial: Record<string, string | null> = {};
-		if (savedPresets.serviceType === "RADARR") {
-			initial.filePreset = savedPresets.filePreset;
-			initial.folderPreset = savedPresets.folderPreset;
+		const saved = config.selectedPresets;
+		if (saved.serviceType === "RADARR") {
+			initial.filePreset = saved.filePreset;
+			initial.folderPreset = saved.folderPreset;
 		} else {
-			initial.standardEpisodePreset = savedPresets.standardEpisodePreset;
-			initial.dailyEpisodePreset = savedPresets.dailyEpisodePreset;
-			initial.animeEpisodePreset = savedPresets.animeEpisodePreset;
-			initial.seriesFolderPreset = savedPresets.seriesFolderPreset;
-			initial.seasonFolderPreset = savedPresets.seasonFolderPreset;
+			initial.standardEpisodePreset = saved.standardEpisodePreset;
+			initial.dailyEpisodePreset = saved.dailyEpisodePreset;
+			initial.animeEpisodePreset = saved.animeEpisodePreset;
+			initial.seriesFolderPreset = saved.seriesFolderPreset;
+			initial.seasonFolderPreset = saved.seasonFolderPreset;
 		}
 		setSelections(initial);
-	}
+	}, [configData, selectedInstanceId]);
 
 	// ========================================================================
 	// Render
@@ -560,14 +589,30 @@ export function NamingManager() {
 				</div>
 			)}
 
-			{/* Sync Strategy */}
+			{/* Sync Strategy + Delete Config */}
 			{selectedInstance && selectedCount > 0 && (
-				<div className="max-w-lg animate-in fade-in slide-in-from-bottom-2 duration-300">
+				<div className="max-w-lg animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-3">
 					<SyncStrategyControl
 						value={syncStrategy}
 						onChange={handleSyncStrategyChange}
 						disabled={applyMutation.isPending}
 					/>
+					{configData?.config && (
+						<button
+							type="button"
+							onClick={handleDeleteConfig}
+							disabled={deleteConfigMutation.isPending}
+							className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition-all hover:brightness-110 disabled:opacity-50"
+							style={{
+								borderColor: SEMANTIC_COLORS.error.border,
+								color: SEMANTIC_COLORS.error.text,
+								backgroundColor: SEMANTIC_COLORS.error.bg,
+							}}
+						>
+							<Trash2 className="h-3.5 w-3.5" />
+							{deleteConfigMutation.isPending ? "Removing..." : "Remove Saved Config"}
+						</button>
+					)}
 				</div>
 			)}
 
