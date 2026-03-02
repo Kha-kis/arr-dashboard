@@ -173,6 +173,13 @@ if [ "$CURRENT_PROVIDER" != "$DB_PROVIDER" ]; then
         sed -i 's/provider = "sqlite"/provider = "'"$DB_PROVIDER"'"/' dist/index.js
         sed -i 's/query_compiler_fast_bg\.sqlite\./query_compiler_fast_bg.'"$DB_PROVIDER"'./g' dist/index.js
         echo "  - Bundle patched for $DB_PROVIDER"
+
+        # Verify the patch was applied correctly
+        echo "  - Verifying patch..."
+        echo "    activeProvider: $(grep -o '"activeProvider": "[^"]*"' dist/index.js)"
+        echo "    WASM paths: $(grep -c "query_compiler_fast_bg.$DB_PROVIDER." dist/index.js) references"
+        echo "    File size: $(wc -c < dist/index.js) bytes"
+        echo "    Permissions: $(ls -la dist/index.js)"
     else
         echo "WARNING: dist/index.js not found, skipping bundle patch" >&2
     fi
@@ -258,11 +265,21 @@ if ! kill -0 "$API_PID" 2>/dev/null; then
     echo ""
     echo "ERROR: API process (PID $API_PID) died during startup!" >&2
     echo "=== API startup output ===" >&2
-    cat /config/logs/api.log >&2
+    cat /config/logs/api.log >&2 2>/dev/null || echo "(empty)"
     echo "=== End API output ===" >&2
     wait "$API_PID" 2>/dev/null
     API_EXIT=$?
     echo "  API exit code: $API_EXIT" >&2
+
+    # Additional diagnostics
+    echo "=== Diagnostics ===" >&2
+    echo "  Node.js: $(node --version)" >&2
+    echo "  dist/index.js: $(ls -la dist/index.js)" >&2
+    echo "  Quick node test:" >&2
+    su-exec abc node -e "console.log('node works for abc user')" 2>&1 || echo "  FAILED: node not executable as abc" >&2
+    echo "  Import test:" >&2
+    su-exec abc node -e "import('./dist/index.js').then(() => console.log('import ok')).catch(e => console.error('IMPORT FAILED:', e.message))" 2>&1 || true
+    echo "=== End Diagnostics ===" >&2
     exit 1
 fi
 
