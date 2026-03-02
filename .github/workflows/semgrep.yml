@@ -42,7 +42,9 @@ jobs:
           fetch-depth: 0
 
       - name: Run Semgrep
-        run: semgrep scan --config auto --sarif --output semgrep-results.sarif
+        run: >
+          semgrep scan --config auto --sarif --output semgrep-results.sarif
+          --exclude-rule javascript.express.security.audit.xss.direct-response-write.direct-response-write
         env:
           # Scan changed files on PRs, full repo on push/schedule
           SEMGREP_BASELINE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}

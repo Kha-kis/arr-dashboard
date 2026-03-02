@@ -1,0 +1,27 @@
+# CodeQL configuration for arr-dashboard
+#
+# Excludes false-positive queries that don't apply to this project's architecture:
+#
+# js/missing-rate-limiting:
+#   Fastify uses { config: { rateLimit: { max, timeWindow } } } route options
+#   with @fastify/rate-limit plugin. CodeQL's heuristic expects Express-style
+#   middleware and cannot detect Fastify's declarative pattern.
+#
+# js/request-forgery (SSRF):
+#   connection-tester.ts makes HTTP requests to user-provided service URLs
+#   (Sonarr, Radarr, Plex, etc.) by design. This is a single-admin self-hosted
+#   application where the admin configures their own service endpoints.
+#
+# js/incomplete-multi-character-sanitization:
+#   description-utils.ts processes trusted TRaSH Guides markdown from GitHub
+#   for display formatting — not security-critical sanitization.
+
+name: arr-dashboard-codeql-config
+
+query-filters:
+  - exclude:
+      id: js/missing-rate-limiting
+  - exclude:
+      id: js/request-forgery
+  - exclude:
+      id: js/incomplete-multi-character-sanitization

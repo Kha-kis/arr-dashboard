@@ -1223,10 +1223,9 @@ const regexCache = new Map<string, RegExp>();
 function getCachedRegex(pattern: string): RegExp | null {
 	let cached = regexCache.get(pattern);
 	if (cached) return cached;
-	// nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
-	// Pattern is validated by isRegexSafe() before compilation to mitigate ReDoS.
 	if (!isRegexSafe(pattern)) return null;
 	try {
+		// nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
 		cached = new RegExp(pattern, "i");
 		regexCache.set(pattern, cached);
 		return cached;
@@ -1449,10 +1448,9 @@ function passesTitleExclusion(title: string, excludeTitles: string | null): bool
 	if (!patterns || patterns.length === 0) return true;
 
 	for (const pattern of patterns) {
-		// nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
-		// Pattern is validated by isRegexSafe() before compilation to mitigate ReDoS.
 		if (!isRegexSafe(pattern)) continue;
 		try {
+			// nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
 			const regex = new RegExp(pattern, "i");
 			if (regex.test(title)) return false; // excluded
 		} catch {
