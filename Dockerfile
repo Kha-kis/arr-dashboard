@@ -103,6 +103,13 @@ WORKDIR /app
 # Copy API (single layer: node_modules + dist + prisma with generated client)
 COPY --from=builder --chown=abc:abc /app/deploy-api ./api
 
+# Fix tsconfig.json for runtime Prisma config transpilation (#130)
+# The deployed tsconfig.json extends ../../tsconfig.base.json (monorepo root),
+# which doesn't exist in the container. Prisma 7 reads tsconfig.json when
+# transpiling prisma.config.ts during `prisma generate` (triggered on
+# SQLite→PostgreSQL provider switch). Replace with a standalone version.
+RUN printf '{"compilerOptions":{"target":"ES2022","module":"ESNext","moduleResolution":"Bundler","esModuleInterop":true,"skipLibCheck":true}}\n' > /app/api/tsconfig.json
+
 # Copy Web (single layer: standalone + static + public + custom server)
 COPY --from=builder --chown=abc:abc /app/apps/web/.next/standalone ./web
 COPY --from=builder --chown=abc:abc /app/apps/web/.next/static ./web/apps/web/.next/static
@@ -111,8 +118,10 @@ COPY --from=builder --chown=abc:abc /app/apps/web/public ./web/apps/web/public
 # Copy startup scripts and fix line endings (single layer)
 COPY --chown=abc:abc docker/start-combined.sh ./
 COPY --chown=abc:abc docker/read-base-path.cjs ./api/
+COPY --chown=abc:abc docker/validate-runtime.sh ./api/
 RUN sed -i 's/\r$//' ./start-combined.sh && chmod +x ./start-combined.sh \
-    && mv start-combined.sh start.sh
+    && mv start-combined.sh start.sh \
+    && chmod +x ./api/validate-runtime.sh
 
 # Configuration
 EXPOSE 3000 3001
