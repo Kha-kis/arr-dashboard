@@ -1,10 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Download, RefreshCw, Tag, Trash2, ChevronDown } from "lucide-react";
 import { cn } from "../../../lib/utils";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { QueueActionOptions } from "../../../hooks/api/useQueueActions";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export type QueueAction = "retry" | "manualImport" | "remove" | "category";
 
@@ -66,37 +72,6 @@ const RemoveActionMenu = ({
 	onSelect,
 }: RemoveMenuProps) => {
 	const [open, setOpen] = useState(false);
-	const containerRef = useRef<HTMLDivElement | null>(null);
-
-	useEffect(() => {
-		if (!open) return;
-		const handleClick = (event: MouseEvent) => {
-			const target = event.target as Node;
-			if (!containerRef.current?.contains(target)) {
-				setOpen(false);
-			}
-		};
-		document.addEventListener("mousedown", handleClick);
-		return () => document.removeEventListener("mousedown", handleClick);
-	}, [open]);
-
-	useEffect(() => {
-		if (!open) return;
-		const handleKey = (event: KeyboardEvent) => {
-			if (event.key === "Escape") setOpen(false);
-		};
-		document.addEventListener("keydown", handleKey);
-		return () => document.removeEventListener("keydown", handleKey);
-	}, [open]);
-
-	const handleSelect = (option: RemoveOption) => {
-		onSelect(option.options);
-		setOpen(false);
-	};
-
-	const toggleMenu = () => {
-		if (!disabled) setOpen((prev) => !prev);
-	};
 
 	const triggerContent = (
 		<>
@@ -107,66 +82,63 @@ const RemoveActionMenu = ({
 	);
 
 	return (
-		<div ref={containerRef} className={cn("relative", fullWidth && "w-full")}>
-			{variant === "pill" ? (
-				<button
-					type="button"
-					onClick={toggleMenu}
-					disabled={disabled}
-					className={cn(
-						"group inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium uppercase tracking-wide transition-all duration-300",
-						"border-red-500/30 text-red-400 bg-red-500/5",
-						"hover:border-red-500/50 hover:bg-red-500/10 hover:shadow-sm hover:shadow-red-500/10",
-						disabled && "cursor-not-allowed opacity-50",
-						fullWidth && "w-full justify-between",
-						buttonClassName
-					)}
-				>
-					{triggerContent}
-				</button>
-			) : (
-				<button
-					type="button"
-					onClick={toggleMenu}
-					disabled={disabled}
-					className={cn(
-						"group inline-flex h-9 items-center justify-center gap-2 rounded-full border px-4 text-xs font-medium transition-all duration-300",
-						"border-border/50 bg-card/50 text-muted-foreground backdrop-blur-xs",
-						"hover:border-red-500/30 hover:bg-red-500/5 hover:text-red-400",
-						disabled && "cursor-not-allowed opacity-50",
-						fullWidth && "w-full"
-					)}
-					aria-label="Remove"
-				>
-					{triggerContent}
-				</button>
-			)}
+		<DropdownMenu open={open} onOpenChange={setOpen}>
+			<DropdownMenuTrigger asChild disabled={disabled}>
+				{variant === "pill" ? (
+					<button
+						type="button"
+						className={cn(
+							"group inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium uppercase tracking-wide transition-all duration-300",
+							"border-red-500/30 text-red-400 bg-red-500/5",
+							"hover:border-red-500/50 hover:bg-red-500/10 hover:shadow-sm hover:shadow-red-500/10",
+							disabled && "cursor-not-allowed opacity-50",
+							fullWidth && "w-full justify-between",
+							buttonClassName
+						)}
+					>
+						{triggerContent}
+					</button>
+				) : (
+					<button
+						type="button"
+						className={cn(
+							"group inline-flex h-9 items-center justify-center gap-2 rounded-full border px-4 text-xs font-medium transition-all duration-300",
+							"border-border/50 bg-card/50 text-muted-foreground backdrop-blur-xs",
+							"hover:border-red-500/30 hover:bg-red-500/5 hover:text-red-400",
+							disabled && "cursor-not-allowed opacity-50",
+							fullWidth && "w-full"
+						)}
+						aria-label="Remove"
+					>
+						{triggerContent}
+					</button>
+				)}
+			</DropdownMenuTrigger>
 
-			{/* Dropdown menu */}
-			{open && (
-				<div className="absolute right-0 top-full z-fixed mt-2 w-80 max-w-[calc(100vw-2rem)] animate-in fade-in slide-in-from-top-2 duration-200">
-					<div className="rounded-xl border border-border/50 bg-card/95 backdrop-blur-xl p-2 shadow-xl shadow-black/20">
-						<div className="flex flex-col gap-1">
-							{REMOVE_OPTIONS.map((option) => (
-								<button
-									key={option.id}
-									type="button"
-									onClick={() => handleSelect(option)}
-									className="group w-full rounded-lg px-3 py-2.5 text-left transition-all duration-200 hover:bg-red-500/10"
-								>
-									<p className="text-sm font-medium text-foreground group-hover:text-red-400 transition-colors">
-										{option.label}
-									</p>
-									<p className="mt-0.5 text-[11px] text-muted-foreground leading-relaxed">
-										{option.description}
-									</p>
-								</button>
-							))}
+			<DropdownMenuContent
+				align="end"
+				side="bottom"
+				sideOffset={8}
+				className="w-80 max-w-[calc(100vw-2rem)] rounded-xl border-border/50 bg-card/95 backdrop-blur-xl p-2 shadow-xl shadow-black/20"
+			>
+				{REMOVE_OPTIONS.map((option) => (
+					<DropdownMenuItem
+						key={option.id}
+						onSelect={() => onSelect(option.options)}
+						className="group rounded-lg px-3 py-2.5 cursor-pointer focus:bg-red-500/10"
+					>
+						<div className="flex flex-col">
+							<p className="text-sm font-medium text-foreground group-hover:text-red-400 group-focus:text-red-400 transition-colors">
+								{option.label}
+							</p>
+							<p className="mt-0.5 text-[11px] text-muted-foreground leading-relaxed">
+								{option.description}
+							</p>
 						</div>
-					</div>
-				</div>
-			)}
-		</div>
+					</DropdownMenuItem>
+				))}
+			</DropdownMenuContent>
+		</DropdownMenu>
 	);
 };
 
