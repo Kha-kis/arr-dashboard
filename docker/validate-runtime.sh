@@ -35,8 +35,10 @@ echo "Checking Prisma files..."
 check_file "$API_DIR/prisma/schema.prisma"
 check_file "$API_DIR/prisma.config.ts"
 check_file "$API_DIR/tsconfig.json"
-check_dir  "$API_DIR/node_modules/.prisma/client"
 check_dir  "$API_DIR/node_modules/@prisma/client"
+# Note: .prisma/client is generated on-demand by `prisma generate` at runtime
+# (e.g. during SQLite→PostgreSQL provider switch). It does not need to exist
+# in the image — tsup bundles the build-time generated client into dist/.
 
 echo ""
 echo "Checking tsconfig.json does not reference missing files..."
