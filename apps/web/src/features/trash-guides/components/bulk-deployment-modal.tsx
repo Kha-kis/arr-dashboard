@@ -37,6 +37,12 @@ import {
 } from "lucide-react";
 import { useBulkDeploymentPreviews, useExecuteBulkDeployment } from "../../../hooks/api/useDeploymentPreview";
 import { cn } from "../../../lib/utils";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { InstanceQualityOverrideModal } from "./instance-quality-override-modal";
@@ -95,67 +101,54 @@ const SyncStrategySelector = ({
 	onChange: (strategy: SyncStrategy) => void;
 	disabled?: boolean;
 }) => {
-	const { gradient: themeGradient } = useThemeGradient();
-	const [isOpen, setIsOpen] = useState(false);
 	const current = syncStrategyOptions.find((opt) => opt.value === value) ?? syncStrategyOptions[0]!;
 	const Icon = current.icon;
 	const color = SEMANTIC_COLORS[current.colorKey];
 
 	return (
-		<div className="relative">
-			<button
-				type="button"
-				onClick={() => !disabled && setIsOpen(!isOpen)}
-				disabled={disabled}
-				className={cn(
-					"flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all duration-200",
-					"border-border/50 bg-card/50 backdrop-blur-xs hover:bg-card/80",
-					disabled && "opacity-50 cursor-not-allowed"
-				)}
-			>
-				<Icon className="h-3 w-3" style={{ color: color.from }} />
-				<span className="text-foreground">{current.label}</span>
-				<ChevronDown className="h-3 w-3 text-muted-foreground" />
-			</button>
+		<DropdownMenu>
+			<DropdownMenuTrigger asChild disabled={disabled}>
+				<button
+					type="button"
+					className={cn(
+						"flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all duration-200",
+						"border-border/50 bg-card/50 backdrop-blur-xs hover:bg-card/80",
+						disabled && "opacity-50 cursor-not-allowed"
+					)}
+				>
+					<Icon className="h-3 w-3" style={{ color: color.from }} />
+					<span className="text-foreground">{current.label}</span>
+					<ChevronDown className="h-3 w-3 text-muted-foreground" />
+				</button>
+			</DropdownMenuTrigger>
 
-			{isOpen && (
-				<>
-					{/* Backdrop */}
-					<div className="fixed inset-0 z-modal-backdrop" onClick={() => setIsOpen(false)} />
-					{/* Dropdown */}
-					<div
-						className="absolute right-0 top-full mt-1 z-modal rounded-xl border border-border/50 bg-card/95 backdrop-blur-xl shadow-xl min-w-[130px] overflow-hidden"
-						style={{
-							boxShadow: `0 10px 40px -10px rgba(0, 0, 0, 0.3), 0 0 0 1px ${themeGradient.from}10`,
-						}}
-					>
-						{syncStrategyOptions.map((option) => {
-							const OptionIcon = option.icon;
-							const optColor = SEMANTIC_COLORS[option.colorKey];
-							return (
-								<button
-									key={option.value}
-									type="button"
-									onClick={() => {
-										onChange(option.value);
-										setIsOpen(false);
-									}}
-									className={cn(
-										"flex w-full items-center gap-2 px-3 py-2.5 text-xs transition-colors",
-										option.value === value
-											? "bg-card/80"
-											: "hover:bg-card/50"
-									)}
-								>
-									<OptionIcon className="h-3.5 w-3.5" style={{ color: optColor.from }} />
-									<span className="text-foreground">{option.label}</span>
-								</button>
-							);
-						})}
-					</div>
-				</>
-			)}
-		</div>
+			<DropdownMenuContent
+				align="end"
+				side="bottom"
+				sideOffset={4}
+				className="min-w-[130px] rounded-xl border-border/50 bg-card/95 backdrop-blur-xl shadow-xl p-0 overflow-hidden"
+			>
+				{syncStrategyOptions.map((option) => {
+					const OptionIcon = option.icon;
+					const optColor = SEMANTIC_COLORS[option.colorKey];
+					return (
+						<DropdownMenuItem
+							key={option.value}
+							onSelect={() => onChange(option.value)}
+							className={cn(
+								"flex items-center gap-2 px-3 py-2.5 text-xs cursor-pointer",
+								option.value === value
+									? "bg-card/80"
+									: "focus:bg-card/50"
+							)}
+						>
+							<OptionIcon className="h-3.5 w-3.5" style={{ color: optColor.from }} />
+							<span className="text-foreground">{option.label}</span>
+						</DropdownMenuItem>
+					);
+				})}
+			</DropdownMenuContent>
+		</DropdownMenu>
 	);
 };
 
