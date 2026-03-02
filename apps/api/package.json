@@ -51,7 +51,7 @@
 	},
 	"devDependencies": {
 		"@types/better-sqlite3": "^7.6.13",
-		"@types/node": "^25.2.3",
+		"@types/node": "^25.3.3",
 		"@types/nodemailer": "^7.0.11",
 		"@types/pg": "^8.18.0",
 		"@types/web-push": "^3.6.4",
