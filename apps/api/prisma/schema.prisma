@@ -885,6 +885,10 @@ model QueueCleanerConfig {
   autoImportCustomPatterns      String?                   // JSON array of custom safe patterns
   autoImportNeverPatterns       String?                   // JSON array of custom never-import patterns
 
+  // Skip future episodes (Sonarr only)
+  // When enabled, Sonarr queue items for episodes that haven't aired yet are skipped
+  skipFutureEpisodes    Boolean         @default(true)
+
   // Whitelist/Ignore patterns
   whitelistEnabled      Boolean         @default(false)
   whitelistPatterns     String?                           // JSON: [{ type, pattern }]

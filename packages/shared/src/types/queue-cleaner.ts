@@ -14,6 +14,7 @@ export const cleanerRuleSchema = z.enum([
 	"import_pending",
 	"import_blocked",
 	"whitelisted",
+	"future_episode",
 ]);
 
 export type CleanerRule = z.infer<typeof cleanerRuleSchema>;
