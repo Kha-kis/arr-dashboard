@@ -110,9 +110,16 @@ export async function executeQueueCleaner(
 	}
 
 	// Fetch queue
+	// For Radarr, include items that can't be matched to a known movie —
+	// these are often the stuck import-error items users report.
+	const isRadarr = instance.service === "RADARR";
+	const queueOptions: Record<string, unknown> = { pageSize: 1000 };
+	if (isRadarr) {
+		queueOptions.includeUnknownMovieItems = true;
+	}
 	let queueRecords: RawQueueItem[];
 	try {
-		const queue = await client.queue.get({ pageSize: 1000 });
+		const queue = await (client.queue.get as (opts?: Record<string, unknown>) => Promise<{ records?: unknown[] }>)(queueOptions);
 		queueRecords = (queue.records ?? []) as RawQueueItem[];
 	} catch (error) {
 		const message = getErrorMessage(error, "Unknown error");
@@ -643,10 +650,16 @@ export async function executeEnhancedPreview(
 	}
 
 	// Try to fetch queue
+	// For Radarr, include items that can't be matched to a known movie.
+	const isRadarrPreview = instance.service === "RADARR";
+	const previewQueueOptions: Record<string, unknown> = { pageSize: 1000 };
+	if (isRadarrPreview) {
+		previewQueueOptions.includeUnknownMovieItems = true;
+	}
 	let queueRecords: RawQueueItem[];
 
 	try {
-		const queue = await client.queue.get({ pageSize: 1000 });
+		const queue = await (client.queue.get as (opts?: Record<string, unknown>) => Promise<{ records?: unknown[] }>)(previewQueueOptions);
 		queueRecords = (queue.records ?? []) as RawQueueItem[];
 	} catch (error) {
 		const errorMessage = getErrorMessage(error, "Unknown error");

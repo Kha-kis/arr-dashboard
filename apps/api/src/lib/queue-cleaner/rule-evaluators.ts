@@ -299,6 +299,33 @@ export function evaluateQueueItem(
 		if (importBlockResult) {
 			return importBlockResult;
 		}
+		// Fallback: importBlocked state is definitive — the import cannot proceed.
+		// Even if no keyword matched at the current cleanup level, flag it.
+		const statusSummary =
+			statusTexts.length > 0 ? statusTexts.slice(0, 2).join("; ") : "requires manual intervention";
+		return {
+			rule: "import_blocked",
+			reason: `Import blocked: ${statusSummary}`,
+		};
+	}
+
+	// Rule 5b: Failed-pending detection (import failures awaiting retry)
+	// These are items Radarr/Sonarr mark as failed but haven't given up on yet.
+	// Caught here so users who enable "Import Pending/Blocked" but not "Failed"
+	// still see stuck import failures.
+	if (importBlockEnabled && trackedState === "failedpending") {
+		const importBlockResult = evaluateImportBlockState(statusTexts, config, "blocked");
+		if (importBlockResult) {
+			return importBlockResult;
+		}
+		const statusSummary =
+			statusTexts.length > 0
+				? statusTexts.slice(0, 2).join("; ")
+				: "import failed, pending retry";
+		return {
+			rule: "import_blocked",
+			reason: `Import failed (pending retry): ${statusSummary}`,
+		};
 	}
 
 	// Rule 6: Estimated completion exceeded

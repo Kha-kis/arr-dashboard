@@ -80,6 +80,27 @@ export function generateDetailedReason(
 				`Source: ${indexer}`
 			);
 		}
+		case "import_blocked":
+		case "import_pending": {
+			const importStatusTexts = collectStatusTexts(item);
+			const importState = (
+				typeof item.trackedDownloadState === "string" ? item.trackedDownloadState : ""
+			).toLowerCase();
+			const statusDetail =
+				importStatusTexts.length > 0
+					? `Status: ${importStatusTexts.slice(0, 3).join(" | ")}`
+					: "No additional details available.";
+			const stateLabel =
+				importState === "importblocked" ? "blocked" :
+				importState === "failedpending" ? "failed (pending retry)" :
+				importState === "importpending" ? "pending" : importState;
+			return (
+				`Download completed but import is ${stateLabel}. ` +
+				`This item has been in the queue for ${ageMins} minutes. ` +
+				`${statusDetail} ` +
+				`Source: ${indexer}`
+			);
+		}
 		case "whitelisted":
 			return `This download matches a whitelist pattern and will be excluded from cleaning.`;
 		default:
@@ -112,7 +133,7 @@ export function calculateQueueSummary(queueRecords: RawQueueItem[]): QueueStateS
 
 		if (state.includes("failed") || status === "error") {
 			summary.failed++;
-		} else if (state === "importpending" || state === "importing") {
+		} else if (state === "importpending" || state === "importblocked" || state === "importing") {
 			summary.importPending++;
 		} else if (sizeleft === 0 || status === "seeding") {
 			summary.seeding++;
