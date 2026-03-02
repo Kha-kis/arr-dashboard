@@ -159,14 +159,19 @@ if [ "$CURRENT_PROVIDER" != "$DB_PROVIDER" ]; then
     fi
 
     # Patch the bundled dist/index.js to match the new provider.
-    # tsup inlines the Prisma-generated config (activeProvider + inlineSchema) at build time.
-    # Since the image is always built with SQLite, the bundle has "sqlite" baked in.
-    # Without this patch, the Prisma runtime generates SQLite-dialect SQL and sends it
-    # through the PostgreSQL adapter, causing a silent crash at module initialization.
+    # tsup inlines the Prisma-generated config (activeProvider, inlineSchema, and
+    # WASM query compiler import paths) at build time. Since the image always builds
+    # with SQLite, the bundle has "sqlite" baked in three places:
+    #   1. "activeProvider": "sqlite"        → Prisma runtime provider selection
+    #   2. provider = "sqlite"               → inlineSchema datasource block
+    #   3. query_compiler_fast_bg.sqlite.*   → WASM query compiler module paths
+    # Without this patch, the Prisma runtime loads the SQLite query compiler and
+    # generates SQLite-dialect SQL, causing a silent crash with PostgreSQL.
     echo "  - Patching bundled Prisma config in dist/index.js..."
     if [ -f dist/index.js ]; then
         sed -i 's/"activeProvider": "sqlite"/"activeProvider": "'"$DB_PROVIDER"'"/' dist/index.js
         sed -i 's/provider = "sqlite"/provider = "'"$DB_PROVIDER"'"/' dist/index.js
+        sed -i 's/query_compiler_fast_bg\.sqlite\./query_compiler_fast_bg.'"$DB_PROVIDER"'./g' dist/index.js
         echo "  - Bundle patched for $DB_PROVIDER"
     else
         echo "WARNING: dist/index.js not found, skipping bundle patch" >&2
