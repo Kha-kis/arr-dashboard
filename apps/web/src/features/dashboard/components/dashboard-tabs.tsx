@@ -1,16 +1,17 @@
 "use client";
 
 import { LayoutGroup, motion } from "framer-motion";
-import { LayoutGrid, ListOrdered } from "lucide-react";
+import { Activity, LayoutGrid, ListOrdered } from "lucide-react";
 import { springs } from "../../../components/motion";
 import { cn } from "../../../lib/utils";
 
-export type DashboardTab = "overview" | "queue";
+export type DashboardTab = "overview" | "queue" | "activity";
 
 interface DashboardTabsProps {
 	activeTab: DashboardTab;
 	onTabChange: (tab: DashboardTab) => void;
 	queueCount: number;
+	sessionCount?: number;
 	themeGradient?: { from: string; to: string; glow: string };
 }
 
@@ -22,6 +23,7 @@ export const DashboardTabs = ({
 	activeTab,
 	onTabChange,
 	queueCount,
+	sessionCount,
 	themeGradient,
 }: DashboardTabsProps) => {
 	const tabs: Array<{
@@ -32,6 +34,9 @@ export const DashboardTabs = ({
 	}> = [
 		{ id: "overview", label: "Overview", icon: LayoutGrid },
 		{ id: "queue", label: "Active Queue", icon: ListOrdered, badge: queueCount },
+		...(sessionCount !== undefined
+			? [{ id: "activity" as const, label: "Activity", icon: Activity, badge: sessionCount }]
+			: []),
 	];
 
 	return (

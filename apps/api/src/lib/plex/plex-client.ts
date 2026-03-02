@@ -63,6 +63,32 @@ export interface PlexOnDeckItem {
 	type: string; // "movie" | "episode"
 }
 
+export interface PlexSessionItem {
+	sessionKey: string;
+	ratingKey: string;
+	title: string;
+	grandparentTitle?: string;
+	type: string;
+	user: { id: number; title: string; thumb?: string };
+	player: { title: string; platform: string; product: string; state: string };
+	state: "playing" | "paused" | "buffering";
+	viewOffset: number;
+	duration: number;
+	videoDecision: string;
+	audioDecision: string;
+	bandwidth?: number;
+	thumb?: string;
+}
+
+export interface PlexEpisodeItem {
+	ratingKey: string;
+	title: string;
+	seasonNumber: number;
+	episodeNumber: number;
+	viewCount: number;
+	lastViewedAt?: number;
+}
+
 // ============================================================================
 // Client Implementation
 // ============================================================================
@@ -231,6 +257,105 @@ export class PlexClient {
 	}
 
 	/**
+	 * Get active sessions (currently playing).
+	 */
+	async getSessions(): Promise<PlexSessionItem[]> {
+		const data = await this.request<{
+			MediaContainer: {
+				size?: number;
+				Metadata?: Array<{
+					sessionKey: string;
+					ratingKey: string;
+					title: string;
+					grandparentTitle?: string;
+					type: string;
+					viewOffset?: number;
+					duration?: number;
+					thumb?: string;
+					User?: { id: number; title: string; thumb?: string };
+					Player?: { title: string; platform: string; product: string; state: string };
+					Session?: { id: string; bandwidth?: number };
+					TranscodeSession?: {
+						videoDecision?: string;
+						audioDecision?: string;
+					};
+				}>;
+			};
+		}>("/status/sessions");
+
+		return (data.MediaContainer.Metadata ?? []).map((m) => ({
+			sessionKey: m.sessionKey,
+			ratingKey: m.ratingKey,
+			title: m.title,
+			grandparentTitle: m.grandparentTitle,
+			type: m.type,
+			viewOffset: m.viewOffset ?? 0,
+			duration: m.duration ?? 0,
+			thumb: m.thumb,
+			user: m.User
+				? { id: m.User.id, title: m.User.title, thumb: m.User.thumb }
+				: { id: 0, title: "Unknown", thumb: undefined },
+			player: m.Player
+				? { title: m.Player.title, platform: m.Player.platform, product: m.Player.product, state: m.Player.state }
+				: { title: "Unknown", platform: "unknown", product: "unknown", state: "unknown" },
+			state: (m.Player?.state ?? "unknown") as "playing" | "paused" | "buffering",
+			videoDecision: m.TranscodeSession?.videoDecision ?? "direct play",
+			audioDecision: m.TranscodeSession?.audioDecision ?? "direct play",
+			bandwidth: m.Session?.bandwidth,
+		}));
+	}
+
+	/**
+	 * Refresh a library section (trigger scan).
+	 */
+	async refreshSection(sectionId: string): Promise<void> {
+		await this.request(`/library/sections/${sectionId}/refresh`, { method: "POST" });
+	}
+
+	/**
+	 * Get all episodes for a show (all leaves).
+	 */
+	async getEpisodes(showRatingKey: string): Promise<PlexEpisodeItem[]> {
+		const data = await this.request<{
+			MediaContainer: {
+				Metadata?: Array<{
+					ratingKey: string;
+					title: string;
+					parentIndex?: number;
+					index?: number;
+					viewCount?: number;
+					lastViewedAt?: number;
+				}>;
+			};
+		}>(`/library/metadata/${showRatingKey}/allLeaves`);
+
+		return (data.MediaContainer.Metadata ?? []).map((m) => ({
+			ratingKey: m.ratingKey,
+			title: m.title,
+			seasonNumber: m.parentIndex ?? 0,
+			episodeNumber: m.index ?? 0,
+			viewCount: m.viewCount ?? 0,
+			lastViewedAt: m.lastViewedAt,
+		}));
+	}
+
+	/**
+	 * Update metadata tags (collections, labels) on a Plex item.
+	 * Plex uses query-parameter encoding for tag updates.
+	 */
+	async updateMetadataTags(
+		ratingKey: string,
+		type: "collection" | "label",
+		action: "add" | "remove",
+		name: string,
+	): Promise<void> {
+		const tagType = type === "collection" ? "collection" : "label";
+		const suffix = action === "remove" ? "-" : "";
+		const path = `/library/metadata/${ratingKey}?${tagType}[0].tag.tag${suffix}=${encodeURIComponent(name)}`;
+		await this.request(path, { method: "PUT" });
+	}
+
+	/**
 	 * Get all user accounts on the server.
 	 */
 	async getAccounts(): Promise<PlexAccount[]> {
@@ -248,24 +373,44 @@ export class PlexClient {
 
 	/**
 	 * Execute a Plex API request with X-Plex-Token header auth.
+	 * Supports GET (default), POST, PUT via the options parameter.
 	 */
-	private async request<T>(path: string): Promise<T> {
+	async request<T>(
+		path: string,
+		options?: { method?: string; body?: Record<string, unknown> },
+	): Promise<T> {
 		const url = new URL(`${this.baseUrl}${path}`);
 
-		const response = await fetch(url.toString(), {
-			headers: {
-				Accept: "application/json",
-				"X-Plex-Token": this.token,
-			},
+		const headers: Record<string, string> = {
+			Accept: "application/json",
+			"X-Plex-Token": this.token,
+		};
+
+		const fetchOptions: RequestInit = {
+			method: options?.method ?? "GET",
+			headers,
 			signal: AbortSignal.timeout(this.timeout),
-		});
+		};
+
+		if (options?.body) {
+			headers["Content-Type"] = "application/json";
+			fetchOptions.body = JSON.stringify(options.body);
+		}
+
+		const response = await fetch(url.toString(), fetchOptions);
 
 		if (!response.ok) {
 			this.log.warn({ status: response.status, path }, "Plex API non-OK response");
 			throw new Error(`Plex API error: HTTP ${response.status} ${response.statusText}`);
 		}
 
-		return (await response.json()) as T;
+		const contentType = response.headers.get("content-type") ?? "";
+		if (contentType.includes("application/json")) {
+			return (await response.json()) as T;
+		}
+
+		// Non-JSON responses (e.g., from POST /library/sections/{id}/refresh)
+		return undefined as T;
 	}
 }
 

@@ -45,6 +45,7 @@ export type PlexCacheMinAggregateOutputType = {
   mediaType: string | null
   sectionId: string | null
   sectionTitle: string | null
+  ratingKey: string | null
   lastWatchedAt: Date | null
   watchCount: number | null
   watchedByUsers: string | null
@@ -63,6 +64,7 @@ export type PlexCacheMaxAggregateOutputType = {
   mediaType: string | null
   sectionId: string | null
   sectionTitle: string | null
+  ratingKey: string | null
   lastWatchedAt: Date | null
   watchCount: number | null
   watchedByUsers: string | null
@@ -81,6 +83,7 @@ export type PlexCacheCountAggregateOutputType = {
   mediaType: number
   sectionId: number
   sectionTitle: number
+  ratingKey: number
   lastWatchedAt: number
   watchCount: number
   watchedByUsers: number
@@ -113,6 +116,7 @@ export type PlexCacheMinAggregateInputType = {
   mediaType?: true
   sectionId?: true
   sectionTitle?: true
+  ratingKey?: true
   lastWatchedAt?: true
   watchCount?: true
   watchedByUsers?: true
@@ -131,6 +135,7 @@ export type PlexCacheMaxAggregateInputType = {
   mediaType?: true
   sectionId?: true
   sectionTitle?: true
+  ratingKey?: true
   lastWatchedAt?: true
   watchCount?: true
   watchedByUsers?: true
@@ -149,6 +154,7 @@ export type PlexCacheCountAggregateInputType = {
   mediaType?: true
   sectionId?: true
   sectionTitle?: true
+  ratingKey?: true
   lastWatchedAt?: true
   watchCount?: true
   watchedByUsers?: true
@@ -254,6 +260,7 @@ export type PlexCacheGroupByOutputType = {
   mediaType: string
   sectionId: string
   sectionTitle: string
+  ratingKey: string | null
   lastWatchedAt: Date | null
   watchCount: number
   watchedByUsers: string
@@ -295,6 +302,7 @@ export type PlexCacheWhereInput = {
   mediaType?: Prisma.StringFilter<"PlexCache"> | string
   sectionId?: Prisma.StringFilter<"PlexCache"> | string
   sectionTitle?: Prisma.StringFilter<"PlexCache"> | string
+  ratingKey?: Prisma.StringNullableFilter<"PlexCache"> | string | null
   lastWatchedAt?: Prisma.DateTimeNullableFilter<"PlexCache"> | Date | string | null
   watchCount?: Prisma.IntFilter<"PlexCache"> | number
   watchedByUsers?: Prisma.StringFilter<"PlexCache"> | string
@@ -314,6 +322,7 @@ export type PlexCacheOrderByWithRelationInput = {
   mediaType?: Prisma.SortOrder
   sectionId?: Prisma.SortOrder
   sectionTitle?: Prisma.SortOrder
+  ratingKey?: Prisma.SortOrderInput | Prisma.SortOrder
   lastWatchedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   watchCount?: Prisma.SortOrder
   watchedByUsers?: Prisma.SortOrder
@@ -337,6 +346,7 @@ export type PlexCacheWhereUniqueInput = Prisma.AtLeast<{
   mediaType?: Prisma.StringFilter<"PlexCache"> | string
   sectionId?: Prisma.StringFilter<"PlexCache"> | string
   sectionTitle?: Prisma.StringFilter<"PlexCache"> | string
+  ratingKey?: Prisma.StringNullableFilter<"PlexCache"> | string | null
   lastWatchedAt?: Prisma.DateTimeNullableFilter<"PlexCache"> | Date | string | null
   watchCount?: Prisma.IntFilter<"PlexCache"> | number
   watchedByUsers?: Prisma.StringFilter<"PlexCache"> | string
@@ -356,6 +366,7 @@ export type PlexCacheOrderByWithAggregationInput = {
   mediaType?: Prisma.SortOrder
   sectionId?: Prisma.SortOrder
   sectionTitle?: Prisma.SortOrder
+  ratingKey?: Prisma.SortOrderInput | Prisma.SortOrder
   lastWatchedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   watchCount?: Prisma.SortOrder
   watchedByUsers?: Prisma.SortOrder
@@ -382,6 +393,7 @@ export type PlexCacheScalarWhereWithAggregatesInput = {
   mediaType?: Prisma.StringWithAggregatesFilter<"PlexCache"> | string
   sectionId?: Prisma.StringWithAggregatesFilter<"PlexCache"> | string
   sectionTitle?: Prisma.StringWithAggregatesFilter<"PlexCache"> | string
+  ratingKey?: Prisma.StringNullableWithAggregatesFilter<"PlexCache"> | string | null
   lastWatchedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"PlexCache"> | Date | string | null
   watchCount?: Prisma.IntWithAggregatesFilter<"PlexCache"> | number
   watchedByUsers?: Prisma.StringWithAggregatesFilter<"PlexCache"> | string
@@ -399,6 +411,7 @@ export type PlexCacheCreateInput = {
   mediaType: string
   sectionId: string
   sectionTitle: string
+  ratingKey?: string | null
   lastWatchedAt?: Date | string | null
   watchCount?: number
   watchedByUsers?: string
@@ -418,6 +431,7 @@ export type PlexCacheUncheckedCreateInput = {
   mediaType: string
   sectionId: string
   sectionTitle: string
+  ratingKey?: string | null
   lastWatchedAt?: Date | string | null
   watchCount?: number
   watchedByUsers?: string
@@ -435,6 +449,7 @@ export type PlexCacheUpdateInput = {
   mediaType?: Prisma.StringFieldUpdateOperationsInput | string
   sectionId?: Prisma.StringFieldUpdateOperationsInput | string
   sectionTitle?: Prisma.StringFieldUpdateOperationsInput | string
+  ratingKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   watchCount?: Prisma.IntFieldUpdateOperationsInput | number
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
@@ -454,6 +469,7 @@ export type PlexCacheUncheckedUpdateInput = {
   mediaType?: Prisma.StringFieldUpdateOperationsInput | string
   sectionId?: Prisma.StringFieldUpdateOperationsInput | string
   sectionTitle?: Prisma.StringFieldUpdateOperationsInput | string
+  ratingKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   watchCount?: Prisma.IntFieldUpdateOperationsInput | number
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
@@ -472,6 +488,7 @@ export type PlexCacheCreateManyInput = {
   mediaType: string
   sectionId: string
   sectionTitle: string
+  ratingKey?: string | null
   lastWatchedAt?: Date | string | null
   watchCount?: number
   watchedByUsers?: string
@@ -489,6 +506,7 @@ export type PlexCacheUpdateManyMutationInput = {
   mediaType?: Prisma.StringFieldUpdateOperationsInput | string
   sectionId?: Prisma.StringFieldUpdateOperationsInput | string
   sectionTitle?: Prisma.StringFieldUpdateOperationsInput | string
+  ratingKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   watchCount?: Prisma.IntFieldUpdateOperationsInput | number
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
@@ -507,6 +525,7 @@ export type PlexCacheUncheckedUpdateManyInput = {
   mediaType?: Prisma.StringFieldUpdateOperationsInput | string
   sectionId?: Prisma.StringFieldUpdateOperationsInput | string
   sectionTitle?: Prisma.StringFieldUpdateOperationsInput | string
+  ratingKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   watchCount?: Prisma.IntFieldUpdateOperationsInput | number
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
@@ -542,6 +561,7 @@ export type PlexCacheCountOrderByAggregateInput = {
   mediaType?: Prisma.SortOrder
   sectionId?: Prisma.SortOrder
   sectionTitle?: Prisma.SortOrder
+  ratingKey?: Prisma.SortOrder
   lastWatchedAt?: Prisma.SortOrder
   watchCount?: Prisma.SortOrder
   watchedByUsers?: Prisma.SortOrder
@@ -566,6 +586,7 @@ export type PlexCacheMaxOrderByAggregateInput = {
   mediaType?: Prisma.SortOrder
   sectionId?: Prisma.SortOrder
   sectionTitle?: Prisma.SortOrder
+  ratingKey?: Prisma.SortOrder
   lastWatchedAt?: Prisma.SortOrder
   watchCount?: Prisma.SortOrder
   watchedByUsers?: Prisma.SortOrder
@@ -584,6 +605,7 @@ export type PlexCacheMinOrderByAggregateInput = {
   mediaType?: Prisma.SortOrder
   sectionId?: Prisma.SortOrder
   sectionTitle?: Prisma.SortOrder
+  ratingKey?: Prisma.SortOrder
   lastWatchedAt?: Prisma.SortOrder
   watchCount?: Prisma.SortOrder
   watchedByUsers?: Prisma.SortOrder
@@ -649,6 +671,7 @@ export type PlexCacheCreateWithoutInstanceInput = {
   mediaType: string
   sectionId: string
   sectionTitle: string
+  ratingKey?: string | null
   lastWatchedAt?: Date | string | null
   watchCount?: number
   watchedByUsers?: string
@@ -666,6 +689,7 @@ export type PlexCacheUncheckedCreateWithoutInstanceInput = {
   mediaType: string
   sectionId: string
   sectionTitle: string
+  ratingKey?: string | null
   lastWatchedAt?: Date | string | null
   watchCount?: number
   watchedByUsers?: string
@@ -712,6 +736,7 @@ export type PlexCacheScalarWhereInput = {
   mediaType?: Prisma.StringFilter<"PlexCache"> | string
   sectionId?: Prisma.StringFilter<"PlexCache"> | string
   sectionTitle?: Prisma.StringFilter<"PlexCache"> | string
+  ratingKey?: Prisma.StringNullableFilter<"PlexCache"> | string | null
   lastWatchedAt?: Prisma.DateTimeNullableFilter<"PlexCache"> | Date | string | null
   watchCount?: Prisma.IntFilter<"PlexCache"> | number
   watchedByUsers?: Prisma.StringFilter<"PlexCache"> | string
@@ -729,6 +754,7 @@ export type PlexCacheCreateManyInstanceInput = {
   mediaType: string
   sectionId: string
   sectionTitle: string
+  ratingKey?: string | null
   lastWatchedAt?: Date | string | null
   watchCount?: number
   watchedByUsers?: string
@@ -746,6 +772,7 @@ export type PlexCacheUpdateWithoutInstanceInput = {
   mediaType?: Prisma.StringFieldUpdateOperationsInput | string
   sectionId?: Prisma.StringFieldUpdateOperationsInput | string
   sectionTitle?: Prisma.StringFieldUpdateOperationsInput | string
+  ratingKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   watchCount?: Prisma.IntFieldUpdateOperationsInput | number
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
@@ -763,6 +790,7 @@ export type PlexCacheUncheckedUpdateWithoutInstanceInput = {
   mediaType?: Prisma.StringFieldUpdateOperationsInput | string
   sectionId?: Prisma.StringFieldUpdateOperationsInput | string
   sectionTitle?: Prisma.StringFieldUpdateOperationsInput | string
+  ratingKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   watchCount?: Prisma.IntFieldUpdateOperationsInput | number
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
@@ -780,6 +808,7 @@ export type PlexCacheUncheckedUpdateManyWithoutInstanceInput = {
   mediaType?: Prisma.StringFieldUpdateOperationsInput | string
   sectionId?: Prisma.StringFieldUpdateOperationsInput | string
   sectionTitle?: Prisma.StringFieldUpdateOperationsInput | string
+  ratingKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   watchCount?: Prisma.IntFieldUpdateOperationsInput | number
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
@@ -800,6 +829,7 @@ export type PlexCacheSelect<ExtArgs extends runtime.Types.Extensions.InternalArg
   mediaType?: boolean
   sectionId?: boolean
   sectionTitle?: boolean
+  ratingKey?: boolean
   lastWatchedAt?: boolean
   watchCount?: boolean
   watchedByUsers?: boolean
@@ -819,6 +849,7 @@ export type PlexCacheSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Ext
   mediaType?: boolean
   sectionId?: boolean
   sectionTitle?: boolean
+  ratingKey?: boolean
   lastWatchedAt?: boolean
   watchCount?: boolean
   watchedByUsers?: boolean
@@ -838,6 +869,7 @@ export type PlexCacheSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Ext
   mediaType?: boolean
   sectionId?: boolean
   sectionTitle?: boolean
+  ratingKey?: boolean
   lastWatchedAt?: boolean
   watchCount?: boolean
   watchedByUsers?: boolean
@@ -857,6 +889,7 @@ export type PlexCacheSelectScalar = {
   mediaType?: boolean
   sectionId?: boolean
   sectionTitle?: boolean
+  ratingKey?: boolean
   lastWatchedAt?: boolean
   watchCount?: boolean
   watchedByUsers?: boolean
@@ -868,7 +901,7 @@ export type PlexCacheSelectScalar = {
   updatedAt?: boolean
 }
 
-export type PlexCacheOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "tmdbId" | "mediaType" | "sectionId" | "sectionTitle" | "lastWatchedAt" | "watchCount" | "watchedByUsers" | "onDeck" | "userRating" | "collections" | "labels" | "addedAt" | "updatedAt", ExtArgs["result"]["plexCache"]>
+export type PlexCacheOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "tmdbId" | "mediaType" | "sectionId" | "sectionTitle" | "ratingKey" | "lastWatchedAt" | "watchCount" | "watchedByUsers" | "onDeck" | "userRating" | "collections" | "labels" | "addedAt" | "updatedAt", ExtArgs["result"]["plexCache"]>
 export type PlexCacheInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }
@@ -891,6 +924,7 @@ export type $PlexCachePayload<ExtArgs extends runtime.Types.Extensions.InternalA
     mediaType: string
     sectionId: string
     sectionTitle: string
+    ratingKey: string | null
     lastWatchedAt: Date | null
     watchCount: number
     watchedByUsers: string
@@ -1330,6 +1364,7 @@ export interface PlexCacheFieldRefs {
   readonly mediaType: Prisma.FieldRef<"PlexCache", 'String'>
   readonly sectionId: Prisma.FieldRef<"PlexCache", 'String'>
   readonly sectionTitle: Prisma.FieldRef<"PlexCache", 'String'>
+  readonly ratingKey: Prisma.FieldRef<"PlexCache", 'String'>
   readonly lastWatchedAt: Prisma.FieldRef<"PlexCache", 'DateTime'>
   readonly watchCount: Prisma.FieldRef<"PlexCache", 'Int'>
   readonly watchedByUsers: Prisma.FieldRef<"PlexCache", 'String'>

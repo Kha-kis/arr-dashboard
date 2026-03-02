@@ -1,6 +1,6 @@
 "use client";
 
-import type { LibraryEnrichmentItem, LibraryItem, ServiceInstanceSummary } from "@arr/shared";
+import type { LibraryEnrichmentItem, LibraryItem, ServiceInstanceSummary, WatchEnrichmentItem } from "@arr/shared";
 import { Library as LibraryIcon } from "lucide-react";
 import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
 import { Pagination } from "../../../components/ui";
@@ -27,6 +27,11 @@ interface LibraryCardProps {
 	tmdbRating?: number | null;
 	openIssueCount?: number;
 	posterPath?: string | null;
+	watchCount?: number;
+	onDeck?: boolean;
+	lastWatchedAt?: string | null;
+	watchedByUsers?: string[];
+	plexUserRating?: number | null;
 }
 
 /**
@@ -94,6 +99,8 @@ interface LibraryContentProps {
 	isSyncing?: boolean;
 	/** Seerr enrichment map keyed by "movie:{tmdbId}" or "tv:{tmdbId}" */
 	enrichmentMap?: Record<string, LibraryEnrichmentItem> | null;
+	/** Plex watch enrichment map keyed by "movie:{tmdbId}" or "series:{tmdbId}" */
+	watchEnrichmentMap?: Record<string, WatchEnrichmentItem> | null;
 }
 
 /**
@@ -135,12 +142,20 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 	LibraryCard,
 	isSyncing,
 	enrichmentMap,
+	watchEnrichmentMap,
 }) => {
 	/** Lookup enrichment for a library item by its tmdbId + type */
 	const getEnrichment = (item: LibraryItem) => {
 		if (!enrichmentMap || !item.remoteIds?.tmdbId) return undefined;
 		const key = `${item.type === "movie" ? "movie" : "tv"}:${item.remoteIds.tmdbId}`;
 		return enrichmentMap[key];
+	};
+
+	/** Lookup Plex watch enrichment for a library item */
+	const getWatchEnrichment = (item: LibraryItem) => {
+		if (!watchEnrichmentMap || !item.remoteIds?.tmdbId) return undefined;
+		const key = `${item.type === "movie" ? "movie" : "series"}:${item.remoteIds.tmdbId}`;
+		return watchEnrichmentMap[key];
 	};
 
 	const allItems = [...grouped.movies, ...grouped.series, ...grouped.artists, ...grouped.authors];
@@ -186,6 +201,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 				<div className="grid gap-4 md:grid-cols-2">
 					{allItems.map((item) => {
 						const enrichment = getEnrichment(item);
+						const watchData = getWatchEnrichment(item);
 						return (
 							<LibraryCard
 								key={`${item.instanceId}:${item.id}`}
@@ -223,6 +239,11 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 								tmdbRating={enrichment?.voteAverage}
 								openIssueCount={enrichment?.openIssueCount}
 								posterPath={enrichment?.posterPath}
+								watchCount={watchData?.watchCount}
+								onDeck={watchData?.onDeck}
+								lastWatchedAt={watchData?.lastWatchedAt}
+								watchedByUsers={watchData?.watchedByUsers}
+								plexUserRating={watchData?.userRating}
 							/>
 						);
 					})}
@@ -237,6 +258,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 							<div className="grid gap-4 md:grid-cols-2">
 								{grouped.movies.map((item) => {
 									const enrichment = getEnrichment(item);
+									const watchData = getWatchEnrichment(item);
 									return (
 										<LibraryCard
 											key={`${item.instanceId}:${item.id}`}
@@ -250,6 +272,11 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											tmdbRating={enrichment?.voteAverage}
 											openIssueCount={enrichment?.openIssueCount}
 											posterPath={enrichment?.posterPath}
+											watchCount={watchData?.watchCount}
+											onDeck={watchData?.onDeck}
+											lastWatchedAt={watchData?.lastWatchedAt}
+											watchedByUsers={watchData?.watchedByUsers}
+								plexUserRating={watchData?.userRating}
 										/>
 									);
 								})}
@@ -265,6 +292,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 							<div className="grid gap-4 md:grid-cols-2">
 								{grouped.series.map((item) => {
 									const enrichment = getEnrichment(item);
+									const watchData = getWatchEnrichment(item);
 									return (
 										<LibraryCard
 											key={`${item.instanceId}:${item.id}`}
@@ -278,6 +306,11 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											tmdbRating={enrichment?.voteAverage}
 											openIssueCount={enrichment?.openIssueCount}
 											posterPath={enrichment?.posterPath}
+											watchCount={watchData?.watchCount}
+											onDeck={watchData?.onDeck}
+											lastWatchedAt={watchData?.lastWatchedAt}
+											watchedByUsers={watchData?.watchedByUsers}
+								plexUserRating={watchData?.userRating}
 										/>
 									);
 								})}
@@ -293,6 +326,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 							<div className="grid gap-4 md:grid-cols-2">
 								{grouped.artists.map((item) => {
 									const enrichment = getEnrichment(item);
+									const watchData = getWatchEnrichment(item);
 									return (
 										<LibraryCard
 											key={`${item.instanceId}:${item.id}`}
@@ -307,6 +341,11 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											tmdbRating={enrichment?.voteAverage}
 											openIssueCount={enrichment?.openIssueCount}
 											posterPath={enrichment?.posterPath}
+											watchCount={watchData?.watchCount}
+											onDeck={watchData?.onDeck}
+											lastWatchedAt={watchData?.lastWatchedAt}
+											watchedByUsers={watchData?.watchedByUsers}
+								plexUserRating={watchData?.userRating}
 										/>
 									);
 								})}
@@ -322,6 +361,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 							<div className="grid gap-4 md:grid-cols-2">
 								{grouped.authors.map((item) => {
 									const enrichment = getEnrichment(item);
+									const watchData = getWatchEnrichment(item);
 									return (
 										<LibraryCard
 											key={`${item.instanceId}:${item.id}`}
@@ -336,6 +376,11 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											tmdbRating={enrichment?.voteAverage}
 											openIssueCount={enrichment?.openIssueCount}
 											posterPath={enrichment?.posterPath}
+											watchCount={watchData?.watchCount}
+											onDeck={watchData?.onDeck}
+											lastWatchedAt={watchData?.lastWatchedAt}
+											watchedByUsers={watchData?.watchedByUsers}
+								plexUserRating={watchData?.userRating}
 										/>
 									);
 								})}

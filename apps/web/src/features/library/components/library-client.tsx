@@ -4,6 +4,7 @@ import type { LibraryItem } from "@arr/shared";
 import React, { Suspense, useCallback, useEffect, useState } from "react";
 import { toast } from "../../../components/ui";
 import { useLibraryMonitorMutation } from "../../../hooks/api/useLibrary";
+import { useWatchEnrichment } from "../../../hooks/api/usePlex";
 import { useLibraryEnrichment } from "../../../hooks/api/useSeerr";
 import { useSeerrInstances } from "../../seerr/hooks/use-seerr-instances";
 import { useLibraryActions, useLibraryData, useLibraryFilters } from "../hooks";
@@ -59,6 +60,10 @@ export const LibraryClient: React.FC = () => {
 	// Seerr enrichment — fetch TMDB ratings + issue counts for current page items
 	const enrichmentQuery = useLibraryEnrichment(seerrInstanceId, data.items);
 	const enrichmentMap = enrichmentQuery.data?.items ?? null;
+
+	// Plex watch enrichment — fetch watch counts, on-deck status, last watched
+	const watchEnrichmentQuery = useWatchEnrichment(data.items);
+	const watchEnrichmentMap = watchEnrichmentQuery.data?.items ?? null;
 
 	// Notify user if Seerr enrichment fails (one-time per error transition)
 	useEffect(() => {
@@ -207,6 +212,7 @@ export const LibraryClient: React.FC = () => {
 					LibraryCard={LibraryCard}
 					isSyncing={data.isSyncing}
 					enrichmentMap={enrichmentMap}
+					watchEnrichmentMap={watchEnrichmentMap}
 				/>
 			</div>
 
@@ -231,6 +237,20 @@ export const LibraryClient: React.FC = () => {
 									? enrichmentMap[
 											`${itemDetail.type === "movie" ? "movie" : "tv"}:${itemDetail.remoteIds.tmdbId}`
 										]?.posterPath
+									: undefined
+							}
+							plexData={
+								watchEnrichmentMap && itemDetail.remoteIds?.tmdbId
+									? watchEnrichmentMap[
+											`${itemDetail.type === "movie" ? "movie" : "series"}:${itemDetail.remoteIds.tmdbId}`
+										]
+									: undefined
+							}
+							userRating={
+								watchEnrichmentMap && itemDetail.remoteIds?.tmdbId
+									? watchEnrichmentMap[
+											`${itemDetail.type === "movie" ? "movie" : "series"}:${itemDetail.remoteIds.tmdbId}`
+										]?.userRating
 									: undefined
 							}
 						/>

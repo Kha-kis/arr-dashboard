@@ -108,6 +108,7 @@ model ServiceInstance {
   librarySyncStatus           LibrarySyncStatus?
   tautulliCache               TautulliCache[]
   plexCaches                  PlexCache[]
+  plexEpisodeCaches           PlexEpisodeCache[]
 
   @@index([service])
   @@index([userId])
@@ -1256,6 +1257,7 @@ model PlexCache {
   mediaType       String    // "movie" | "series"
   sectionId       String    // Plex library section ID (e.g., "1", "3")
   sectionTitle    String    // Plex library section title (e.g., "Movies", "4K Movies")
+  ratingKey       String?   // Plex native ID for write-back operations (F8)
   lastWatchedAt   DateTime?
   watchCount      Int       @default(0)
   watchedByUsers  String    @default("[]") // JSON array of usernames
@@ -1272,4 +1274,30 @@ model PlexCache {
   @@index([instanceId])
   @@index([tmdbId, mediaType])
   @@map("plex_cache")
+}
+
+// ============================================================================
+// Plex Episode-Level Watch Cache (F6)
+// Per-episode watch status for series, enabling "delete watched except last N" rules
+// ============================================================================
+
+model PlexEpisodeCache {
+  id              String    @id @default(cuid())
+  instanceId      String
+  showTmdbId      Int
+  seasonNumber    Int
+  episodeNumber   Int
+  ratingKey       String
+  title           String
+  watched         Boolean   @default(false)
+  watchedByUsers  String    @default("[]") // JSON array of usernames
+  lastWatchedAt   DateTime?
+  updatedAt       DateTime  @updatedAt
+
+  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, showTmdbId, seasonNumber, episodeNumber])
+  @@index([instanceId])
+  @@index([showTmdbId])
+  @@map("plex_episode_cache")
 }

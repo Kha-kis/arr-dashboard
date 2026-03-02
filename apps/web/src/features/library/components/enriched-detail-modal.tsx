@@ -14,13 +14,14 @@
  * Falls back to ARR data if the Seerr detail fetch fails.
  */
 
-import type { LibraryItem, SeerrDiscoverResult } from "@arr/shared";
+import type { LibraryItem, PlexEpisodeStatus, SeerrDiscoverResult } from "@arr/shared";
 import {
 	AlertTriangle,
 	CheckCircle2,
 	ChevronDown,
 	ChevronRight,
 	Clock,
+	Eye,
 	FileVideo,
 	Film,
 	FolderOpen,
@@ -28,12 +29,14 @@ import {
 	Layers,
 	Loader2,
 	Search,
+	Star,
 	Tag,
 	X,
 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Button } from "../../../components/ui";
 import { useMovieFileQuery } from "../../../hooks/api/useLibrary";
+import { useEpisodeWatchStatus } from "../../../hooks/api/usePlex";
 import { useSeerrMovieDetails, useSeerrTvDetails } from "../../../hooks/api/useSeerr";
 import { useFocusTrap } from "../../../hooks/useFocusTrap";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
@@ -43,9 +46,10 @@ import {
 	getLinuxSavePath,
 	useIncognitoMode,
 } from "../../../lib/incognito";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { RATING_COLOR, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { safeOpenUrl } from "../../../lib/utils/url-validation";
 import { DiscoverCarousel } from "../../discover/components/discover-carousel";
+import { PlexTagsEditor } from "./plex-tags-editor";
 import {
 	BackdropHero,
 	CastSection,
@@ -71,6 +75,15 @@ export interface EnrichedDetailModalProps {
 	pendingSeasonAction?: string | null;
 	/** Pre-fetched TMDB poster path from enrichment — avoids ARR→TMDB flash while detail query loads */
 	enrichedPosterPath?: string | null;
+	/** Plex watch enrichment data (includes ratingKey, instanceId, collections, labels) */
+	plexData?: {
+		ratingKey: string | null;
+		instanceId: string | null;
+		collections: string[];
+		labels: string[];
+	} | null;
+	/** Plex user rating (0-10 scale, null if not rated) */
+	userRating?: number | null;
 }
 
 export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
@@ -81,6 +94,8 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 	onSearchSeason,
 	pendingSeasonAction,
 	enrichedPosterPath,
+	plexData,
+	userRating,
 }) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const focusTrapRef = useFocusTrap<HTMLDivElement>(true, onClose);
@@ -102,6 +117,20 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 	});
 	const liveMovieFile = movieFileQuery.data?.movieFile ?? null;
 	const liveQualityProfileName = movieFileQuery.data?.qualityProfileName;
+
+	// Fetch Plex episode watch status for series items
+	const episodeWatchQuery = useEpisodeWatchStatus(
+		!isMovie ? plexData?.instanceId : undefined,
+		!isMovie ? tmdbId : undefined,
+	);
+	const episodeWatchMap = useMemo(() => {
+		if (!episodeWatchQuery.data?.episodes) return null;
+		const map = new Map<string, PlexEpisodeStatus>();
+		for (const ep of episodeWatchQuery.data.episodes) {
+			map.set(`${ep.seasonNumber}:${ep.episodeNumber}`, ep);
+		}
+		return map;
+	}, [episodeWatchQuery.data]);
 
 	const details = isMovie ? movieQuery.data : tvQuery.data;
 	const isDetailsLoading = isMovie ? movieQuery.isLoading : tvQuery.isLoading;
@@ -344,6 +373,17 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 								isMovie={isMovie}
 								isAnime={isAnime}
 							/>
+
+							{/* Plex User Rating */}
+							{typeof userRating === "number" && userRating > 0 && (
+								<div className="flex items-center gap-1.5">
+									<Star className="h-4 w-4 fill-current" style={{ color: RATING_COLOR }} />
+									<span className="text-sm font-semibold" style={{ color: RATING_COLOR }}>
+										{userRating.toFixed(1)}
+									</span>
+									<span className="text-xs text-muted-foreground">Your Plex Rating</span>
+								</div>
+							)}
 
 							{/* Genre pills */}
 							{(seerrGenres.length > 0 || arrGenres.length > 0 || isAnime) && (
@@ -843,6 +883,61 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 														seriesId={item.id}
 														seasonNumber={season.seasonNumber}
 													/>
+
+													{/* Plex Watch Status */}
+													{episodeWatchMap && episodeWatchMap.size > 0 && (() => {
+														const seasonEps = [...episodeWatchMap.entries()]
+															.filter(([key]) => key.startsWith(`${season.seasonNumber}:`))
+															.sort(([a], [b]) => {
+																const aNum = Number(a.split(":")[1]);
+																const bNum = Number(b.split(":")[1]);
+																return aNum - bNum;
+															});
+														if (seasonEps.length === 0) return null;
+														const watchedCount = seasonEps.filter(([, ep]) => ep.watched).length;
+														return (
+															<div className="mt-4 pt-3 border-t border-border/20">
+																<div className="flex items-center gap-2 mb-2">
+																	<Eye className="h-3.5 w-3.5" style={{ color: SEMANTIC_COLORS.success.from }} />
+																	<span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+																		Watch Status
+																	</span>
+																	<span className="text-xs text-muted-foreground">
+																		({watchedCount}/{seasonEps.length} watched)
+																	</span>
+																</div>
+																<div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-1.5">
+																	{seasonEps.map(([key, ep]) => (
+																		<div
+																			key={key}
+																			className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-colors"
+																			style={{
+																				backgroundColor: ep.watched ? `${SEMANTIC_COLORS.success.from}08` : "transparent",
+																				border: `1px solid ${ep.watched ? `${SEMANTIC_COLORS.success.border}` : "transparent"}`,
+																			}}
+																			title={
+																				ep.watched && ep.watchedByUsers.length > 0
+																					? `Watched by: ${ep.watchedByUsers.join(", ")}${ep.lastWatchedAt ? ` — ${new Date(ep.lastWatchedAt).toLocaleDateString()}` : ""}`
+																					: undefined
+																			}
+																		>
+																			{ep.watched ? (
+																				<CheckCircle2 className="h-3.5 w-3.5 shrink-0" style={{ color: SEMANTIC_COLORS.success.from }} />
+																			) : (
+																				<div className="h-3.5 w-3.5 shrink-0 rounded-full border border-border/50" />
+																			)}
+																			<span className={ep.watched ? "text-foreground" : "text-muted-foreground/60"}>
+																				E{String(ep.episodeNumber).padStart(2, "0")}
+																			</span>
+																			<span className={`truncate ${ep.watched ? "text-foreground/70" : "text-muted-foreground/40"}`}>
+																				{ep.title}
+																			</span>
+																		</div>
+																	))}
+																</div>
+															</div>
+														);
+													})()}
 												</div>
 											)}
 										</div>
@@ -870,6 +965,16 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 								))}
 							</div>
 						</div>
+					)}
+
+					{/* Plex Collections & Labels */}
+					{plexData?.ratingKey && plexData.instanceId && (
+						<PlexTagsEditor
+							instanceId={plexData.instanceId}
+							ratingKey={plexData.ratingKey}
+							collections={plexData.collections}
+							labels={plexData.labels}
+						/>
 					)}
 
 					{/* Cast */}

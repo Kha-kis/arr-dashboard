@@ -39,6 +39,8 @@ import { registerSeerrRoutes } from "./routes/seerr/index.js";
 import { registerServiceRoutes } from "./routes/services.js";
 import { registerSystemRoutes } from "./routes/system.js";
 import { registerTrashGuidesRoutes } from "./routes/trash-guides/index.js";
+import { registerPlexRoutes } from "./routes/plex/index.js";
+import { registerTautulliRoutes } from "./routes/tautulli/index.js";
 import { logger } from "./lib/logger.js";
 
 function isPrismaKnownError(
@@ -234,6 +236,8 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 		api.register(registerQueueCleanerRoutes, { prefix: "/api" });
 		api.register(registerNotificationRoutes, { prefix: "/api/notifications" });
 		api.register(registerLibraryCleanupRoutes, { prefix: "/api" });
+		api.register(registerPlexRoutes, { prefix: "/api/plex" });
+		api.register(registerTautulliRoutes, { prefix: "/api/tautulli" });
 	});
 
 	return app;

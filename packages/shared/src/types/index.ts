@@ -11,6 +11,7 @@ export * from "./password";
 export * from "./queue-cleaner";
 export * from "./search";
 export * from "./seerr";
+export * from "./plex";
 export * from "./tautulli";
 export * from "./template-sharing";
 export * from "./trash-guides";

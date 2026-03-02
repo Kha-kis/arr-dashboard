@@ -9,6 +9,8 @@
 import type { LibraryItem } from "@arr/shared";
 import {
 	AlertTriangle,
+	Clock,
+	Eye,
 	ExternalLink,
 	Info,
 	ListTree,
@@ -17,6 +19,7 @@ import {
 	PlayCircle,
 	Search,
 	Star,
+	Tv,
 } from "lucide-react";
 import { memo } from "react";
 import { GlassmorphicCard, ServiceBadge, StatusBadge } from "../../../components/layout";
@@ -32,6 +35,18 @@ import { safeOpenUrl } from "../../../lib/utils/url-validation";
 import { formatBytes, formatRuntime } from "../lib/library-utils";
 import { LibraryBadge } from "./library-badge";
 import { PosterImage } from "./poster-image";
+
+function formatRelativeTime(isoDate: string): string {
+	const diff = Date.now() - new Date(isoDate).getTime();
+	const minutes = Math.floor(diff / 60_000);
+	if (minutes < 60) return `${minutes}m ago`;
+	const hours = Math.floor(minutes / 60);
+	if (hours < 24) return `${hours}h ago`;
+	const days = Math.floor(hours / 24);
+	if (days < 30) return `${days}d ago`;
+	const months = Math.floor(days / 30);
+	return `${months}mo ago`;
+}
 
 /**
  * Props for the LibraryCard component
@@ -73,6 +88,16 @@ interface LibraryCardProps {
 	openIssueCount?: number;
 	/** TMDB poster path from Seerr enrichment (e.g. "/xyz123.jpg") */
 	posterPath?: string | null;
+	/** Plex watch count (number of play events) */
+	watchCount?: number;
+	/** Whether the item is currently on a Plex user's On Deck list */
+	onDeck?: boolean;
+	/** Last time any user watched this item (ISO 8601) */
+	lastWatchedAt?: string | null;
+	/** Plex users who have watched this item */
+	watchedByUsers?: string[];
+	/** Plex user rating (0-10 scale) */
+	plexUserRating?: number | null;
 }
 
 /**
@@ -115,6 +140,11 @@ export const LibraryCard = memo(function LibraryCard({
 	tmdbRating,
 	openIssueCount,
 	posterPath,
+	watchCount,
+	onDeck,
+	lastWatchedAt,
+	watchedByUsers,
+	plexUserRating,
 }: LibraryCardProps) {
 	const [incognitoMode] = useIncognitoMode();
 	const monitored = item.monitored ?? false;
@@ -423,6 +453,20 @@ export const LibraryCard = memo(function LibraryCard({
 									{tmdbRating.toFixed(1)}
 								</span>
 							)}
+							{typeof plexUserRating === "number" && plexUserRating > 0 && (
+								<span
+									className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold"
+									style={{
+										backgroundColor: "rgba(251, 191, 36, 0.1)",
+										border: "1px solid rgba(251, 191, 36, 0.3)",
+										color: RATING_COLOR,
+									}}
+									title="Your Plex Rating"
+								>
+									<Star className="h-3 w-3 fill-current" />
+									{plexUserRating.toFixed(1)}
+								</span>
+							)}
 							{typeof openIssueCount === "number" && openIssueCount > 0 && (
 								<span
 									className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold"
@@ -434,6 +478,50 @@ export const LibraryCard = memo(function LibraryCard({
 								>
 									<AlertTriangle className="h-3 w-3" />
 									{openIssueCount}
+								</span>
+							)}
+							{typeof watchCount === "number" && watchCount > 0 && (
+								<span
+									className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold"
+									style={{
+										backgroundColor: SEMANTIC_COLORS.info.bg,
+										border: `1px solid ${SEMANTIC_COLORS.info.border}`,
+										color: SEMANTIC_COLORS.info.text,
+									}}
+									title={
+										watchedByUsers?.length
+											? `Watched by: ${watchedByUsers.join(", ")}`
+											: undefined
+									}
+								>
+									<Eye className="h-3 w-3" />
+									{watchCount}
+								</span>
+							)}
+							{onDeck && (
+								<span
+									className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold"
+									style={{
+										backgroundColor: SEMANTIC_COLORS.success.bg,
+										border: `1px solid ${SEMANTIC_COLORS.success.border}`,
+										color: SEMANTIC_COLORS.success.text,
+									}}
+								>
+									<Tv className="h-3 w-3" />
+									On Deck
+								</span>
+							)}
+							{lastWatchedAt && (
+								<span
+									className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs text-muted-foreground"
+									style={{
+										backgroundColor: "rgba(128,128,128,0.1)",
+										border: "1px solid rgba(128,128,128,0.2)",
+									}}
+									title={new Date(lastWatchedAt).toLocaleString()}
+								>
+									<Clock className="h-3 w-3" />
+									{formatRelativeTime(lastWatchedAt)}
 								</span>
 							)}
 						</div>

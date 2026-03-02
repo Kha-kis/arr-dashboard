@@ -1,7 +1,7 @@
 "use client";
 
-import { BarChart3, BookOpen, Film, Globe, Music, RefreshCw, Tv } from "lucide-react";
-import { useState } from "react";
+import { Activity, BarChart3, BookOpen, Film, Globe, Music, RefreshCw, Tv } from "lucide-react";
+import { useMemo, useState } from "react";
 import { PremiumSkeleton } from "../../../components/layout";
 import { Alert, AlertDescription } from "../../../components/ui";
 import { Button } from "../../../components/ui/button";
@@ -9,8 +9,10 @@ import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
 import { useStatisticsData } from "../hooks/useStatisticsData";
+import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { ArrServiceTab } from "./arr-service-tab";
 import { OverviewTab } from "./overview-tab";
+import { PlexTab } from "./plex-tab";
 import { ProwlarrTab } from "./prowlarr-tab";
 import type { StatisticsTab } from "./statistics-tabs";
 
@@ -18,6 +20,13 @@ export const StatisticsClient = () => {
 	const [activeTab, setActiveTab] = useState<StatisticsTab>("overview");
 	const [isRefreshing, setIsRefreshing] = useState(false);
 	const { gradient: themeGradient } = useThemeGradient();
+
+	// Detect Tautulli instances for Plex/Tautulli stats tab
+	const { data: services = [] } = useServicesQuery();
+	const hasTautulli = useMemo(
+		() => services.some((s) => s.service.toLowerCase() === "tautulli" && s.enabled),
+		[services],
+	);
 
 	const {
 		isLoading,
@@ -87,6 +96,16 @@ export const StatisticsClient = () => {
 			count: prowlarrRows.length,
 			gradient: SERVICE_GRADIENTS.prowlarr,
 		},
+		...(hasTautulli
+			? [
+					{
+						id: "plex" as const,
+						label: "Plex",
+						icon: Activity,
+						gradient: SERVICE_GRADIENTS.plex,
+					},
+				]
+			: []),
 	];
 
 	// Loading skeleton
@@ -299,6 +318,8 @@ export const StatisticsClient = () => {
 			{activeTab === "prowlarr" && (
 				<ProwlarrTab prowlarrTotals={prowlarrTotals} prowlarrRows={prowlarrRows} />
 			)}
+
+			{activeTab === "plex" && <PlexTab />}
 		</>
 	);
 };

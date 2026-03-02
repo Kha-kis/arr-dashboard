@@ -31,6 +31,8 @@ import {
 	Pagination,
 	Typography,
 } from "../../../components/ui";
+import { useNowPlaying } from "../../../hooks/api/usePlex";
+import { useTautulliActivity } from "../../../hooks/api/useTautulli";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
@@ -41,8 +43,10 @@ import { useDashboardData } from "../hooks/useDashboardData";
 import { useDashboardFilters } from "../hooks/useDashboardFilters";
 import { useDashboardQueue } from "../hooks/useDashboardQueue";
 import { type DashboardTab, DashboardTabs } from "./dashboard-tabs";
+import { NowPlayingWidget } from "./now-playing-widget";
 import { QueueTable } from "./queue-table";
 import { SeerrRequestsWidget } from "./seerr-requests-widget";
+import { WatchHistorySection } from "./watch-history-section";
 
 /** Map of instanceId to baseUrl for linking to instances */
 export type InstanceUrlMap = Map<string, string>;
@@ -284,6 +288,28 @@ export const DashboardClient = () => {
 		[services],
 	);
 
+	// Detect Plex/Tautulli instances for Now Playing widget
+	const hasPlexInstances = useMemo(
+		() => services.some((s) => s.service.toLowerCase() === "plex" && s.enabled),
+		[services],
+	);
+	const hasTautulliInstances = useMemo(
+		() => services.some((s) => s.service.toLowerCase() === "tautulli" && s.enabled),
+		[services],
+	);
+	const hasMediaServer = hasPlexInstances || hasTautulliInstances;
+
+	// Session count for Activity tab badge
+	const plexNowPlaying = useNowPlaying(hasPlexInstances);
+	const tautulliActivity = useTautulliActivity(hasTautulliInstances);
+	const sessionCount = useMemo(() => {
+		if (!hasMediaServer) return undefined;
+		const plexCount = plexNowPlaying.data?.sessions?.length ?? 0;
+		const tautulliCount = tautulliActivity.data?.sessions?.length ?? 0;
+		// Use max (they overlap — Tautulli monitors same Plex)
+		return Math.max(plexCount, tautulliCount);
+	}, [hasMediaServer, plexNowPlaying.data, tautulliActivity.data]);
+
 	// Build instanceId → baseUrl map
 	const instanceUrlMap = useMemo<InstanceUrlMap>(() => {
 		const map = new Map<string, string>();
@@ -469,6 +495,7 @@ export const DashboardClient = () => {
 				activeTab={activeTab}
 				onTabChange={setActiveTab}
 				queueCount={totalQueueItems}
+				sessionCount={sessionCount}
 				themeGradient={themeGradient}
 			/>
 
@@ -543,6 +570,16 @@ export const DashboardClient = () => {
 						{/* Seerr Requests Widget — only if instance configured */}
 						{seerrInstance && (
 							<SeerrRequestsWidget instanceId={seerrInstance.id} animationDelay={400} />
+						)}
+
+						{/* Now Playing Widget — compact mode on overview */}
+						{hasMediaServer && (
+							<NowPlayingWidget
+								hasPlexInstances={hasPlexInstances}
+								hasTautulliInstances={hasTautulliInstances}
+								animationDelay={450}
+								variant="compact"
+							/>
 						)}
 
 						{/* Configured Instances Section */}
@@ -710,6 +747,18 @@ export const DashboardClient = () => {
 								)}
 							</div>
 						</div>
+					</div>
+				)}
+
+				{/* Activity Tab */}
+				{activeTab === "activity" && hasMediaServer && (
+					<div className="animate-in fade-in duration-300">
+						<NowPlayingWidget
+							hasPlexInstances={hasPlexInstances}
+							hasTautulliInstances={hasTautulliInstances}
+							variant="full"
+						/>
+						<WatchHistorySection enabled={hasTautulliInstances} />
 					</div>
 				)}
 			</div>

@@ -48,6 +48,7 @@ interface ItemAggregation {
 	mediaType: "movie" | "series";
 	sectionId: string;
 	sectionTitle: string;
+	ratingKey: string | null;
 	lastWatchedAt: Date | null;
 	watchCount: number;
 	watchedByUsers: Set<string>;
@@ -94,6 +95,7 @@ export async function refreshPlexCache(
 			{
 				tmdbId: number;
 				mediaType: "movie" | "series";
+				ratingKey: string;
 				userRating: number | null;
 				sectionId: string;
 				sectionTitle: string;
@@ -114,6 +116,7 @@ export async function refreshPlexCache(
 					ratingKeyMap.set(item.ratingKey, {
 						tmdbId,
 						mediaType,
+						ratingKey: item.ratingKey,
 						userRating: item.userRating ?? null,
 						sectionId: lib.key,
 						sectionTitle: lib.title,
@@ -159,6 +162,7 @@ export async function refreshPlexCache(
 					mediaType: itemData.mediaType,
 					sectionId: itemData.sectionId,
 					sectionTitle: itemData.sectionTitle,
+					ratingKey: itemData.ratingKey,
 					lastWatchedAt: new Date(entry.viewedAt * 1000),
 					watchCount: 1,
 					watchedByUsers: new Set([username]),
@@ -180,6 +184,7 @@ export async function refreshPlexCache(
 					mediaType: itemData.mediaType,
 					sectionId: itemData.sectionId,
 					sectionTitle: itemData.sectionTitle,
+					ratingKey: itemData.ratingKey,
 					lastWatchedAt: null,
 					watchCount: 0,
 					watchedByUsers: new Set(),
@@ -233,6 +238,7 @@ export async function refreshPlexCache(
 						mediaType: agg.mediaType,
 						sectionId: agg.sectionId,
 						sectionTitle: agg.sectionTitle,
+						ratingKey: agg.ratingKey,
 						lastWatchedAt: agg.lastWatchedAt,
 						watchCount: agg.watchCount,
 						watchedByUsers: JSON.stringify([...agg.watchedByUsers]),
@@ -244,6 +250,7 @@ export async function refreshPlexCache(
 					},
 					update: {
 						sectionTitle: agg.sectionTitle,
+						ratingKey: agg.ratingKey,
 						lastWatchedAt: agg.lastWatchedAt,
 						watchCount: agg.watchCount,
 						watchedByUsers: JSON.stringify([...agg.watchedByUsers]),

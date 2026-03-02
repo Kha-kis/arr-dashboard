@@ -91,7 +91,8 @@ export const ModelName = {
   LibraryCleanupApproval: 'LibraryCleanupApproval',
   LibraryCleanupLog: 'LibraryCleanupLog',
   TautulliCache: 'TautulliCache',
-  PlexCache: 'PlexCache'
+  PlexCache: 'PlexCache',
+  PlexEpisodeCache: 'PlexEpisodeCache'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -855,6 +856,7 @@ export const PlexCacheScalarFieldEnum = {
   mediaType: 'mediaType',
   sectionId: 'sectionId',
   sectionTitle: 'sectionTitle',
+  ratingKey: 'ratingKey',
   lastWatchedAt: 'lastWatchedAt',
   watchCount: 'watchCount',
   watchedByUsers: 'watchedByUsers',
@@ -867,6 +869,23 @@ export const PlexCacheScalarFieldEnum = {
 } as const
 
 export type PlexCacheScalarFieldEnum = (typeof PlexCacheScalarFieldEnum)[keyof typeof PlexCacheScalarFieldEnum]
+
+
+export const PlexEpisodeCacheScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  showTmdbId: 'showTmdbId',
+  seasonNumber: 'seasonNumber',
+  episodeNumber: 'episodeNumber',
+  ratingKey: 'ratingKey',
+  title: 'title',
+  watched: 'watched',
+  watchedByUsers: 'watchedByUsers',
+  lastWatchedAt: 'lastWatchedAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type PlexEpisodeCacheScalarFieldEnum = (typeof PlexEpisodeCacheScalarFieldEnum)[keyof typeof PlexEpisodeCacheScalarFieldEnum]
 
 
 export const SortOrder = {

@@ -424,7 +424,8 @@ export const ModelName = {
   LibraryCleanupApproval: 'LibraryCleanupApproval',
   LibraryCleanupLog: 'LibraryCleanupLog',
   TautulliCache: 'TautulliCache',
-  PlexCache: 'PlexCache'
+  PlexCache: 'PlexCache',
+  PlexEpisodeCache: 'PlexEpisodeCache'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -440,7 +441,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "namingConfig" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "notificationChannel" | "notificationSubscription" | "vapidKeys" | "notificationLog" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "tautulliCache" | "plexCache"
+    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "namingConfig" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "notificationChannel" | "notificationSubscription" | "vapidKeys" | "notificationLog" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "tautulliCache" | "plexCache" | "plexEpisodeCache"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -3478,6 +3479,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    PlexEpisodeCache: {
+      payload: Prisma.$PlexEpisodeCachePayload<ExtArgs>
+      fields: Prisma.PlexEpisodeCacheFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.PlexEpisodeCacheFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexEpisodeCachePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.PlexEpisodeCacheFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexEpisodeCachePayload>
+        }
+        findFirst: {
+          args: Prisma.PlexEpisodeCacheFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexEpisodeCachePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.PlexEpisodeCacheFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexEpisodeCachePayload>
+        }
+        findMany: {
+          args: Prisma.PlexEpisodeCacheFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexEpisodeCachePayload>[]
+        }
+        create: {
+          args: Prisma.PlexEpisodeCacheCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexEpisodeCachePayload>
+        }
+        createMany: {
+          args: Prisma.PlexEpisodeCacheCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.PlexEpisodeCacheCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexEpisodeCachePayload>[]
+        }
+        delete: {
+          args: Prisma.PlexEpisodeCacheDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexEpisodeCachePayload>
+        }
+        update: {
+          args: Prisma.PlexEpisodeCacheUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexEpisodeCachePayload>
+        }
+        deleteMany: {
+          args: Prisma.PlexEpisodeCacheDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.PlexEpisodeCacheUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.PlexEpisodeCacheUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexEpisodeCachePayload>[]
+        }
+        upsert: {
+          args: Prisma.PlexEpisodeCacheUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexEpisodeCachePayload>
+        }
+        aggregate: {
+          args: Prisma.PlexEpisodeCacheAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregatePlexEpisodeCache>
+        }
+        groupBy: {
+          args: Prisma.PlexEpisodeCacheGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.PlexEpisodeCacheGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.PlexEpisodeCacheCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.PlexEpisodeCacheCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -4262,6 +4337,7 @@ export const PlexCacheScalarFieldEnum = {
   mediaType: 'mediaType',
   sectionId: 'sectionId',
   sectionTitle: 'sectionTitle',
+  ratingKey: 'ratingKey',
   lastWatchedAt: 'lastWatchedAt',
   watchCount: 'watchCount',
   watchedByUsers: 'watchedByUsers',
@@ -4274,6 +4350,23 @@ export const PlexCacheScalarFieldEnum = {
 } as const
 
 export type PlexCacheScalarFieldEnum = (typeof PlexCacheScalarFieldEnum)[keyof typeof PlexCacheScalarFieldEnum]
+
+
+export const PlexEpisodeCacheScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  showTmdbId: 'showTmdbId',
+  seasonNumber: 'seasonNumber',
+  episodeNumber: 'episodeNumber',
+  ratingKey: 'ratingKey',
+  title: 'title',
+  watched: 'watched',
+  watchedByUsers: 'watchedByUsers',
+  lastWatchedAt: 'lastWatchedAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type PlexEpisodeCacheScalarFieldEnum = (typeof PlexEpisodeCacheScalarFieldEnum)[keyof typeof PlexEpisodeCacheScalarFieldEnum]
 
 
 export const SortOrder = {
@@ -4510,6 +4603,7 @@ export type GlobalOmitConfig = {
   libraryCleanupLog?: Prisma.LibraryCleanupLogOmit
   tautulliCache?: Prisma.TautulliCacheOmit
   plexCache?: Prisma.PlexCacheOmit
+  plexEpisodeCache?: Prisma.PlexEpisodeCacheOmit
 }
 
 /* Types for Logging */

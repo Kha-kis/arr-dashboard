@@ -245,3 +245,8 @@ export type TautulliCache = Prisma.TautulliCacheModel
  * Cached watch data from Plex, keyed by (instanceId, tmdbId, mediaType)
  */
 export type PlexCache = Prisma.PlexCacheModel
+/**
+ * Model PlexEpisodeCache
+ * 
+ */
+export type PlexEpisodeCache = Prisma.PlexEpisodeCacheModel

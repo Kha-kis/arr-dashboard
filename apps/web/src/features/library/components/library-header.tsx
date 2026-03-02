@@ -7,13 +7,16 @@ import {
 	BookOpen,
 	Film,
 	Filter,
+	HardDriveDownload,
 	Library as LibraryIcon,
 	Music,
 	RefreshCw,
 	Tv,
 } from "lucide-react";
+import { useState } from "react";
 import { FilterSelect, GlassmorphicCard } from "../../../components/layout";
 import { Button, Input } from "../../../components/ui";
+import { usePlexScanMutation, usePlexSections } from "../../../hooks/api/usePlex";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
@@ -149,6 +152,18 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 	isSyncing,
 }) => {
 	const { gradient: themeGradient } = useThemeGradient();
+	const plexSectionsQuery = usePlexSections();
+	const plexScanMutation = usePlexScanMutation();
+	const [scanDropdownOpen, setScanDropdownOpen] = useState(false);
+
+	const plexSections = plexSectionsQuery.data?.sections ?? [];
+	const hasPlexSections = plexSections.length > 0;
+	const plexGradient = SERVICE_GRADIENTS.plex;
+
+	const handleScanSection = (instanceId: string, sectionId: string) => {
+		plexScanMutation.mutate({ instanceId, sectionId });
+		setScanDropdownOpen(false);
+	};
 
 	return (
 		<header className="space-y-6">
@@ -185,35 +200,80 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 						</p>
 					</div>
 
-					{/* Sync Status Indicator */}
-					{syncStatus && (
-						<div className="flex items-center gap-2 rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs px-4 py-2 text-sm">
-							{isSyncing ? (
-								<>
-									<RefreshCw
-										className="h-4 w-4 animate-spin"
-										style={{ color: themeGradient.from }}
-									/>
-									<span className="text-muted-foreground">Syncing...</span>
-								</>
-							) : (
-								<>
-									<RefreshCw className="h-4 w-4 text-muted-foreground" />
-									<span className="text-muted-foreground">
-										<span style={{ color: themeGradient.from }} className="font-medium">
-											{syncStatus.totalCachedItems.toLocaleString()}
-										</span>
-										{" items"}
-										{syncStatus.lastSync && (
-											<span className="text-muted-foreground/70">
-												{" • "}Updated {formatSyncTime(syncStatus.lastSync)}
-											</span>
+					<div className="flex items-center gap-3">
+						{/* Plex Scan Button */}
+						{hasPlexSections && (
+							<div className="relative">
+								<Button
+									variant="secondary"
+									size="sm"
+									onClick={() => setScanDropdownOpen(!scanDropdownOpen)}
+									disabled={plexScanMutation.isPending}
+									className="relative overflow-hidden"
+								>
+									<HardDriveDownload
+										className={cn(
+											"h-4 w-4 mr-2",
+											plexScanMutation.isPending && "animate-pulse",
 										)}
-									</span>
-								</>
-							)}
-						</div>
-					)}
+										style={{ color: plexGradient.from }}
+									/>
+									{plexScanMutation.isPending ? "Scanning..." : "Scan Plex"}
+								</Button>
+								{scanDropdownOpen && (
+									<div className="absolute right-0 top-full mt-1 z-dropdown rounded-lg border border-border/50 bg-card/95 backdrop-blur-sm shadow-lg min-w-[200px]">
+										<div className="p-1">
+											{plexSections.map((section) => (
+												<button
+													key={`${section.instanceId}:${section.sectionId}`}
+													type="button"
+													onClick={() =>
+														handleScanSection(section.instanceId, section.sectionId)
+													}
+													className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors"
+												>
+													<span className="truncate">{section.sectionTitle}</span>
+													<span className="text-xs text-muted-foreground ml-auto shrink-0">
+														{section.mediaType}
+													</span>
+												</button>
+											))}
+										</div>
+									</div>
+								)}
+							</div>
+						)}
+
+						{/* Sync Status Indicator */}
+						{syncStatus && (
+							<div className="flex items-center gap-2 rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs px-4 py-2 text-sm">
+								{isSyncing ? (
+									<>
+										<RefreshCw
+											className="h-4 w-4 animate-spin"
+											style={{ color: themeGradient.from }}
+										/>
+										<span className="text-muted-foreground">Syncing...</span>
+									</>
+								) : (
+									<>
+										<RefreshCw className="h-4 w-4 text-muted-foreground" />
+										<span className="text-muted-foreground">
+											<span style={{ color: themeGradient.from }} className="font-medium">
+												{syncStatus.totalCachedItems.toLocaleString()}
+											</span>
+											{" items"}
+											{syncStatus.lastSync && (
+												<span className="text-muted-foreground/70">
+													{" • "}Updated {formatSyncTime(syncStatus.lastSync)}
+												</span>
+											)}
+										</span>
+									</>
+								)}
+							</div>
+						)}
+					</div>
 				</div>
 			</div>
 
