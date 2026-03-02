@@ -267,8 +267,12 @@ if ! kill -0 "$API_PID" 2>/dev/null; then
     echo "=== API startup output ===" >&2
     cat /config/logs/api.log >&2 2>/dev/null || echo "(empty)"
     echo "=== End API output ===" >&2
+
+    # Temporarily disable set -e so wait's non-zero exit doesn't kill the script
+    set +e
     wait "$API_PID" 2>/dev/null
     API_EXIT=$?
+    set -e
     echo "  API exit code: $API_EXIT" >&2
 
     # Additional diagnostics
@@ -278,7 +282,7 @@ if ! kill -0 "$API_PID" 2>/dev/null; then
     echo "  Quick node test:" >&2
     su-exec abc node -e "console.log('node works for abc user')" 2>&1 || echo "  FAILED: node not executable as abc" >&2
     echo "  Import test:" >&2
-    su-exec abc node -e "import('./dist/index.js').then(() => console.log('import ok')).catch(e => console.error('IMPORT FAILED:', e.message))" 2>&1 || true
+    su-exec abc node --input-type=module -e "import('./dist/index.js').then(() => console.log('import ok')).catch(e => { console.error('IMPORT FAILED:', e.message); process.exit(0); })" 2>&1 || echo "  import() threw synchronously" >&2
     echo "=== End Diagnostics ===" >&2
     exit 1
 fi
