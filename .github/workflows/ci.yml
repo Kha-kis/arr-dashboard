@@ -248,6 +248,10 @@ jobs:
           context: .
           platforms: linux/amd64
           push: false
+          load: true
           tags: arr-dashboard:ci-test
           cache-from: type=registry,ref=${{ env.DOCKERHUB_IMAGE }}:buildcache-linux-amd64
           cache-to: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && format('type=registry,ref={0}:buildcache-linux-amd64,mode=max', env.DOCKERHUB_IMAGE) || '' }}
+
+      - name: Validate runtime file layout
+        run: docker run --rm --entrypoint sh arr-dashboard:ci-test /app/api/validate-runtime.sh

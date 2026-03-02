@@ -14,8 +14,6 @@ enum ServiceType {
   LIDARR
   READARR
   SEERR
-  TAUTULLI
-  PLEX
 }
 
 // Library item type enum - uses lowercase to match Zod schema in shared package
@@ -44,9 +42,6 @@ model User {
   serviceInstances      ServiceInstance[]
   userCustomFormats     UserCustomFormat[]
   qualitySizeMappings   QualitySizeMapping[]
-  namingConfigs         NamingConfig[]
-  notificationChannels  NotificationChannel[]
-  libraryCleanupConfig  LibraryCleanupConfig?
 }
 
 model Session {
@@ -98,7 +93,6 @@ model ServiceInstance {
   deploymentHistory           TemplateDeploymentHistory[]
   standaloneCFDeployments     StandaloneCFDeployment[]
   qualitySizeMapping          QualitySizeMapping?
-  namingConfig                NamingConfig?
   huntConfig                  HuntConfig?
   huntLogs                    HuntLog[]
   queueCleanerConfig          QueueCleanerConfig?
@@ -106,9 +100,6 @@ model ServiceInstance {
   queueCleanerStrikes         QueueCleanerStrike[]
   libraryCache                LibraryCache[]
   librarySyncStatus           LibrarySyncStatus?
-  tautulliCache               TautulliCache[]
-  plexCaches                  PlexCache[]
-  plexEpisodeCaches           PlexEpisodeCache[]
 
   @@index([service])
   @@index([userId])
@@ -229,23 +220,15 @@ model SystemSettings {
   // Application metadata
   appName           String    @default("Arr Dashboard")
 
+  // Security / reverse-proxy settings
+  trustProxy    Boolean? @default(false)
+  secureCookies Boolean?
+
   // External URL configuration
   // Used for OIDC callbacks, WebAuthn origins, and external link generation
   // Leave empty to auto-detect from request origin
   // Set explicitly when behind a reverse proxy (e.g., https://arr.example.com)
   externalUrl       String?
-
-  // Reverse proxy configuration
-  // When true, Fastify trusts X-Forwarded-For/Proto/Host headers from the proxy.
-  // Also auto-enables secure cookies (HTTPS) unless secureCookies is explicitly set.
-  // Requires restart to take effect.
-  trustProxy        Boolean   @default(false)
-
-  // Session cookie secure flag
-  // null = auto-detect from trustProxy (true when behind proxy, false otherwise)
-  // true = always send cookies over HTTPS only
-  // false = allow cookies over HTTP (for LAN deployments without HTTPS)
-  secureCookies     Boolean?
 
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
@@ -587,28 +570,6 @@ model QualitySizeMapping {
   @@map("quality_size_mappings")
 }
 
-// Per-instance naming scheme configuration (satellite of ServiceInstance)
-// Tracks which TRaSH naming presets are selected and deployed to an instance.
-model NamingConfig {
-  id               String    @id @default(cuid())
-  instanceId       String    @unique
-  userId           String
-  serviceType      String    // "RADARR" | "SONARR"
-  selectedPresets  String    // JSON: NamingSelectedPresets blob
-  syncStrategy     String    @default("manual") // "auto" | "manual" | "notify"
-  lastDeployedAt   DateTime?
-  lastDeployedHash String?   // SHA-256 of deployed payload for change detection
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-
-  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
-  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([instanceId])
-  @@map("naming_configs")
-}
-
 // ============================================================================
 // Hunting Feature Models
 // Automated discovery of missing content and quality upgrades
@@ -924,13 +885,9 @@ model QueueCleanerConfig {
   autoImportCustomPatterns      String?                   // JSON array of custom safe patterns
   autoImportNeverPatterns       String?                   // JSON array of custom never-import patterns
 
-  // Tag/profile pre-filters (skip items that don't match)
-  tagFilterEnabled      Boolean         @default(false)
-  includeTags           String?                           // JSON array of tag IDs
-  excludeTags           String?                           // JSON array of tag IDs
-  profileFilterEnabled  Boolean         @default(false)
-  includeProfiles       String?                           // JSON array of profile IDs
-  excludeProfiles       String?                           // JSON array of profile IDs
+  // Skip future episodes (Sonarr only)
+  // When enabled, Sonarr queue items for episodes that haven't aired yet are skipped
+  skipFutureEpisodes    Boolean         @default(true)
 
   // Whitelist/Ignore patterns
   whitelistEnabled      Boolean         @default(false)
@@ -1001,303 +958,4 @@ model QueueCleanerStrike {
   @@unique([instanceId, downloadId])
   @@index([instanceId, lastStrikeAt])
   @@map("queue_cleaner_strikes")
-}
-
-// ============================================================================
-// Notification System Models
-// 6-channel notification engine with event subscriptions and delivery logging
-// ============================================================================
-
-/// Notification channel types supported by the system
-enum NotificationChannelType {
-  DISCORD
-  TELEGRAM
-  EMAIL
-  BROWSER_PUSH
-  PUSHBULLET
-  PUSHOVER
-  GOTIFY
-}
-
-/// Events that can trigger notifications
-enum NotificationEventType {
-  // Hunting
-  HUNT_CONTENT_FOUND
-  HUNT_COMPLETED
-  HUNT_FAILED
-  // Queue Cleaner
-  QUEUE_ITEMS_REMOVED
-  QUEUE_STRIKES_ISSUED
-  QUEUE_CLEANER_FAILED
-  // TRaSH Guides
-  TRASH_PROFILE_UPDATED
-  TRASH_SYNC_ERROR
-  TRASH_DEPLOY_FAILED
-  // Backup
-  BACKUP_COMPLETED
-  BACKUP_FAILED
-  // Library
-  LIBRARY_NEW_CONTENT
-  CLEANUP_ITEMS_FLAGGED
-  CLEANUP_ITEMS_REMOVED
-  // Security
-  ACCOUNT_LOCKED
-  LOGIN_FAILED
-  // Services
-  SERVICE_CONNECTION_FAILED
-  // System
-  SYSTEM_STARTUP
-  SYSTEM_ERROR
-}
-
-/// User-configured notification delivery channels (Discord webhook, Telegram bot, etc.)
-model NotificationChannel {
-  id              String                  @id @default(cuid())
-  userId          String
-  name            String
-  type            NotificationChannelType
-  enabled         Boolean                 @default(true)
-  encryptedConfig String                  // AES-256-GCM encrypted JSON blob per channel type
-  configIv        String
-  lastTestedAt    DateTime?
-  lastTestResult  String?                 // "success" | "failed: <reason>"
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
-
-  user          User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subscriptions NotificationSubscription[]
-  logs          NotificationLog[]
-
-  @@index([userId])
-  @@map("notification_channels")
-}
-
-/// Maps channels to event types they should receive
-model NotificationSubscription {
-  id        String                  @id @default(cuid())
-  channelId String
-  eventType NotificationEventType
-
-  channel NotificationChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
-
-  @@unique([channelId, eventType])
-  @@map("notification_subscriptions")
-}
-
-/// VAPID keys for Web Push notifications (singleton table)
-model VapidKeys {
-  id                  Int      @id @default(1) // Singleton
-  publicKey           String
-  encryptedPrivateKey String
-  privateKeyIv        String
-  createdAt           DateTime @default(now())
-
-  @@map("vapid_keys")
-}
-
-/// Notification delivery log for audit and debugging
-model NotificationLog {
-  id          String                  @id @default(cuid())
-  channelId   String
-  channelType NotificationChannelType
-  eventType   NotificationEventType
-  title       String
-  body        String
-  status      String                  // "sent" | "failed"
-  error       String?
-  sentAt      DateTime                @default(now())
-
-  channel NotificationChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
-
-  @@index([channelId])
-  @@index([sentAt])
-  @@map("notification_logs")
-}
-
-// ============================================================================
-// Library Cleanup Feature Models
-// Maintainerr-style automated library cleanup with rule evaluation engine
-// ============================================================================
-
-/// Singleton config per user for the library cleanup scheduler
-model LibraryCleanupConfig {
-  id                String    @id @default(cuid())
-  userId            String    @unique // Singleton per user
-  enabled           Boolean   @default(false)
-  intervalHours     Int       @default(24)
-  lastRunAt         DateTime?
-  nextRunAt         DateTime?
-  dryRunMode        Boolean   @default(true)  // Safety: starts in dry-run
-  maxRemovalsPerRun Int       @default(5)
-  requireApproval   Boolean   @default(true)  // Queue items for approval vs auto-remove
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-
-  user          User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  rules         LibraryCleanupRule[]
-  approvalQueue LibraryCleanupApproval[]
-  logs          LibraryCleanupLog[]
-
-  @@map("library_cleanup_configs")
-}
-
-/// Individual cleanup rules evaluated against LibraryCache items
-model LibraryCleanupRule {
-  id             String  @id @default(cuid())
-  configId       String
-  enabled        Boolean @default(true)
-  name           String
-  priority       Int     @default(0)
-  ruleType       String  // "age" | "size" | "rating" | "status" | "unmonitored"
-  parameters     String  // JSON blob per rule type
-  serviceFilter  String? // JSON: ["SONARR", "RADARR"] or null for all
-  instanceFilter String? // JSON: ["instance-id"] or null for all
-  excludeTags    String? // JSON: [1, 5]
-  excludeTitles      String? // JSON: ["regex"]
-  plexLibraryFilter  String? // JSON: ["Movies", "4K Movies"] or null for all
-  action             String  @default("delete")  // "delete" | "unmonitor" | "delete_files"
-  operator           String?  // "AND" | "OR" | null (null = legacy single-condition)
-  conditions         String?  // JSON: [{ ruleType, parameters }, ...]
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-
-  config LibraryCleanupConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
-
-  @@index([configId])
-  @@map("library_cleanup_rules")
-}
-
-/// Items flagged by cleanup rules awaiting user approval
-model LibraryCleanupApproval {
-  id              String          @id @default(cuid())
-  configId        String
-  instanceId      String
-  arrItemId       Int
-  itemType        LibraryItemType
-  title           String
-  matchedRuleId   String
-  matchedRuleName String
-  reason          String
-  action          String          @default("delete")  // "delete" | "unmonitor" | "delete_files"
-  sizeOnDisk      BigInt          @default(0)
-  year            Int?
-  rating          Float?
-  status          String          @default("pending") // pending | approved | rejected | executed
-  reviewedAt      DateTime?
-  executedAt      DateTime?
-  createdAt       DateTime        @default(now())
-  expiresAt       DateTime
-
-  config LibraryCleanupConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
-
-  @@index([configId])
-  @@index([status])
-  @@map("library_cleanup_approvals")
-}
-
-/// Execution history for cleanup runs
-model LibraryCleanupLog {
-  id             String    @id @default(cuid())
-  configId       String
-  isDryRun       Boolean
-  status         String    // "completed" | "partial" | "error"
-  itemsEvaluated Int       @default(0)
-  itemsFlagged   Int       @default(0)
-  itemsRemoved      Int       @default(0)
-  itemsUnmonitored  Int       @default(0)
-  itemsFilesDeleted Int       @default(0)
-  itemsSkipped      Int       @default(0)
-  details        String?   // JSON array
-  error          String?
-  durationMs     Int?
-  startedAt      DateTime  @default(now())
-  completedAt    DateTime?
-
-  config LibraryCleanupConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
-
-  @@index([configId])
-  @@index([startedAt])
-  @@map("library_cleanup_logs")
-}
-
-// ============================================================================
-// Tautulli Integration Cache
-// Materialized view of Tautulli watch data for library cleanup rules
-// ============================================================================
-
-/// Cached watch data from Tautulli, keyed by (instanceId, tmdbId, mediaType)
-model TautulliCache {
-  id              String    @id @default(cuid())
-  instanceId      String
-  tmdbId          Int
-  mediaType       String    // "movie" | "series"
-  lastWatchedAt   DateTime?
-  watchCount      Int       @default(0)
-  watchedByUsers  String    @default("[]") // JSON array of usernames
-  updatedAt       DateTime  @updatedAt
-
-  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
-
-  @@unique([instanceId, tmdbId, mediaType])
-  @@index([instanceId])
-  @@map("tautulli_cache")
-}
-
-// ============================================================================
-// Plex Integration Cache
-// Materialized view of Plex watch data for library cleanup rules
-// Supports multi-user watch tracking, on-deck status, and user ratings
-// ============================================================================
-
-/// Cached watch data from Plex, keyed by (instanceId, tmdbId, mediaType)
-model PlexCache {
-  id              String    @id @default(cuid())
-  instanceId      String
-  tmdbId          Int
-  mediaType       String    // "movie" | "series"
-  sectionId       String    // Plex library section ID (e.g., "1", "3")
-  sectionTitle    String    // Plex library section title (e.g., "Movies", "4K Movies")
-  ratingKey       String?   // Plex native ID for write-back operations (F8)
-  lastWatchedAt   DateTime?
-  watchCount      Int       @default(0)
-  watchedByUsers  String    @default("[]") // JSON array of usernames
-  onDeck          Boolean   @default(false)
-  userRating      Float?    // 0-10 scale, null = unrated
-  collections     String    @default("[]")  // JSON array of collection titles
-  labels          String    @default("[]")  // JSON array of label titles
-  addedAt         DateTime?  // When item was added to this Plex library section
-  updatedAt       DateTime  @updatedAt
-
-  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
-
-  @@unique([instanceId, tmdbId, mediaType, sectionId])
-  @@index([instanceId])
-  @@index([tmdbId, mediaType])
-  @@map("plex_cache")
-}
-
-// ============================================================================
-// Plex Episode-Level Watch Cache (F6)
-// Per-episode watch status for series, enabling "delete watched except last N" rules
-// ============================================================================
-
-model PlexEpisodeCache {
-  id              String    @id @default(cuid())
-  instanceId      String
-  showTmdbId      Int
-  seasonNumber    Int
-  episodeNumber   Int
-  ratingKey       String
-  title           String
-  watched         Boolean   @default(false)
-  watchedByUsers  String    @default("[]") // JSON array of usernames
-  lastWatchedAt   DateTime?
-  updatedAt       DateTime  @updatedAt
-
-  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
-
-  @@unique([instanceId, showTmdbId, seasonNumber, episodeNumber])
-  @@index([instanceId])
-  @@index([showTmdbId])
-  @@map("plex_episode_cache")
 }

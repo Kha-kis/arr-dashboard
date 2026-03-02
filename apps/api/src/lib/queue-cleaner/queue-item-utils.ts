@@ -93,6 +93,24 @@ export function matchesKeywords(texts: string[], keywords: readonly string[]): s
 }
 
 /**
+ * Check if a Sonarr queue item is for a future episode that hasn't aired yet.
+ * Returns true if the item has an episode with airDateUtc in the future.
+ * Returns false for non-Sonarr items or items without episode air date info.
+ */
+export function isFutureEpisode(item: RawQueueItem, now: Date): boolean {
+	const episode = item.episode;
+	if (!episode || typeof episode !== "object") return false;
+
+	const airDateUtc = (episode as Record<string, unknown>).airDateUtc;
+	if (typeof airDateUtc !== "string") return false;
+
+	const airDate = parseDate(airDateUtc);
+	if (!airDate) return false;
+
+	return airDate.getTime() > now.getTime();
+}
+
+/**
  * Check if a queue item matches any whitelist pattern.
  */
 export function checkWhitelist(

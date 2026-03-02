@@ -242,6 +242,9 @@ const configUpdateSchema = z.object({
 	autoImportCustomPatterns: patternJsonSchema,
 	autoImportNeverPatterns: patternJsonSchema,
 
+	// Skip future episodes (Sonarr only)
+	skipFutureEpisodes: z.boolean().optional(),
+
 	// Whitelist
 	whitelistEnabled: z.boolean().optional(),
 	whitelistPatterns: patternJsonSchema,

@@ -25,17 +25,8 @@ import {
 	MAX_AUTO_IMPORTS_PER_RUN,
 	type WhitelistPattern,
 } from "./constants.js";
-import {
-	checkWhitelist,
-	collectStatusTexts,
-	parseDate,
-	type RawQueueItem,
-} from "./queue-item-utils.js";
-import {
-	evaluateQueueItem,
-	shouldSkipByProfileFilter,
-	shouldSkipByTagFilter,
-} from "./rule-evaluators.js";
+import { type RawQueueItem, parseDate, collectStatusTexts, checkWhitelist, isFutureEpisode } from "./queue-item-utils.js";
+import { evaluateQueueItem, shouldSkipByTagFilter, shouldSkipByProfileFilter } from "./rule-evaluators.js";
 
 const log = loggers.queueCleaner;
 
@@ -121,9 +112,16 @@ export async function executeQueueCleaner(
 	}
 
 	// Fetch queue
+	// For Radarr, include items that can't be matched to a known movie —
+	// these are often the stuck import-error items users report.
+	const isRadarr = instance.service === "RADARR";
+	const queueOptions: Record<string, unknown> = { pageSize: 1000 };
+	if (isRadarr) {
+		queueOptions.includeUnknownMovieItems = true;
+	}
 	let queueRecords: RawQueueItem[];
 	try {
-		const queue = await client.queue.get({ pageSize: 1000 });
+		const queue = await (client.queue.get as (opts?: Record<string, unknown>) => Promise<{ records?: unknown[] }>)(queueOptions);
 		queueRecords = (queue.records ?? []) as RawQueueItem[];
 	} catch (error) {
 		const message = getErrorMessage(error, "Unknown error");
@@ -158,6 +156,8 @@ export async function executeQueueCleaner(
 	const skipped: CleanerResultItem[] = [];
 	const queueItemIds = new Set<string>();
 
+	const isSonarr = instance.service === "SONARR";
+
 	for (const item of queueRecords) {
 		const id = typeof item.id === "number" ? item.id : 0;
 		const idStr = String(id);
@@ -176,6 +176,17 @@ export async function executeQueueCleaner(
 
 		// Tag/profile pre-filters (skip items that don't match)
 		if (shouldSkipByTagFilter(item, config) || shouldSkipByProfileFilter(item, config)) {
+			continue;
+		}
+
+		// Skip future episodes (Sonarr only)
+		if (isSonarr && config.skipFutureEpisodes && isFutureEpisode(item, now)) {
+			skipped.push({
+				id,
+				title,
+				reason: "Skipped: future episode (hasn't aired yet)",
+				rule: "future_episode",
+			});
 			continue;
 		}
 
@@ -685,10 +696,16 @@ export async function executeEnhancedPreview(
 	}
 
 	// Try to fetch queue
+	// For Radarr, include items that can't be matched to a known movie.
+	const isRadarrPreview = instance.service === "RADARR";
+	const previewQueueOptions: Record<string, unknown> = { pageSize: 1000 };
+	if (isRadarrPreview) {
+		previewQueueOptions.includeUnknownMovieItems = true;
+	}
 	let queueRecords: RawQueueItem[];
 
 	try {
-		const queue = await client.queue.get({ pageSize: 1000 });
+		const queue = await (client.queue.get as (opts?: Record<string, unknown>) => Promise<{ records?: unknown[] }>)(previewQueueOptions);
 		queueRecords = (queue.records ?? []) as RawQueueItem[];
 	} catch (error) {
 		const errorMessage = getErrorMessage(error, "Unknown error");
@@ -729,6 +746,7 @@ export async function executeEnhancedPreview(
 	const queueSummary = calculateQueueSummary(queueRecords);
 	const previewItems: EnhancedPreviewItem[] = [];
 	const ruleSummary: Record<string, number> = {};
+	const isSonarrPreview = instance.service === "SONARR";
 
 	const existingStrikes = await app.prisma.queueCleanerStrike.findMany({
 		where: { instanceId: instance.id },
@@ -788,6 +806,32 @@ export async function executeEnhancedPreview(
 				downloadClient: typeof item.downloadClient === "string" ? item.downloadClient : undefined,
 				status:
 					typeof item.trackedDownloadStatus === "string" ? item.trackedDownloadStatus : undefined,
+				downloadId: typeof item.downloadId === "string" ? item.downloadId : undefined,
+			});
+			continue;
+		}
+
+		// Skip future episodes (Sonarr only)
+		if (isSonarrPreview && config.skipFutureEpisodes && isFutureEpisode(item, now)) {
+			ruleSummary.future_episode = (ruleSummary.future_episode ?? 0) + 1;
+			previewItems.push({
+				id,
+				title,
+				action: "skip",
+				rule: "future_episode",
+				reason: "Future episode (hasn't aired yet)",
+				detailedReason:
+					"This download is for an episode that hasn't aired yet. " +
+					"Future episodes are skipped to prevent the cleaner from removing pre-grabbed downloads. " +
+					"Disable 'Skip future episodes' in settings to include these items.",
+				queueAge: ageMins,
+				size,
+				sizeleft,
+				progress,
+				protocol: typeof item.protocol === "string" ? item.protocol : undefined,
+				indexer: typeof item.indexer === "string" ? item.indexer : undefined,
+				downloadClient: typeof item.downloadClient === "string" ? item.downloadClient : undefined,
+				status: typeof item.trackedDownloadStatus === "string" ? item.trackedDownloadStatus : undefined,
 				downloadId: typeof item.downloadId === "string" ? item.downloadId : undefined,
 			});
 			continue;

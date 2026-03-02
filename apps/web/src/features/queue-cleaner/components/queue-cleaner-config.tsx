@@ -282,6 +282,7 @@ function configToFormData(config: QueueCleanerConfigWithInstance): QueueCleanerC
 		autoImportMaxAttempts: config.autoImportMaxAttempts,
 		autoImportCooldownMins: config.autoImportCooldownMins,
 		autoImportSafeOnly: config.autoImportSafeOnly,
+		skipFutureEpisodes: config.skipFutureEpisodes,
 		whitelistEnabled: config.whitelistEnabled,
 		whitelistPatterns: config.whitelistPatterns,
 		removeFromClient: config.removeFromClient,
@@ -436,6 +437,21 @@ const InstanceConfigCard = ({
 						max={MAX_INTERVAL_MINS}
 						suffix="minutes"
 					/>
+
+					{/* Skip Future Episodes (Sonarr only) */}
+					{config.service === "sonarr" && (
+						<div className="space-y-1">
+							<ToggleRow
+								label="Skip future episodes"
+								description="Exclude queue items for episodes that haven't aired yet from cleaner evaluation"
+								checked={formData.skipFutureEpisodes ?? true}
+								onChange={(v) => updateField("skipFutureEpisodes", v)}
+							/>
+							<p className="text-[10px] text-muted-foreground pl-8">
+								Pre-grabbed episodes waiting for their air date won&apos;t be flagged as stalled or stuck
+							</p>
+						</div>
+					)}
 
 					{/* Rule: Whitelist */}
 					<RuleSection

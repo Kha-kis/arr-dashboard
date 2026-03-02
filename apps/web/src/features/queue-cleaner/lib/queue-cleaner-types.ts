@@ -99,6 +99,8 @@ export interface QueueCleanerConfig {
 	autoImportSafeOnly: boolean;
 	autoImportCustomPatterns: string | null; // JSON array of custom safe patterns
 	autoImportNeverPatterns: string | null; // JSON array of custom never-import patterns
+	// Skip future episodes (Sonarr only)
+	skipFutureEpisodes: boolean;
 	// Whitelist
 	whitelistEnabled: boolean;
 	whitelistPatterns: string | null;
@@ -163,6 +165,8 @@ export interface QueueCleanerConfigUpdate {
 	autoImportSafeOnly?: boolean;
 	autoImportCustomPatterns?: string | null;
 	autoImportNeverPatterns?: string | null;
+	// Skip future episodes (Sonarr only)
+	skipFutureEpisodes?: boolean;
 	// Whitelist
 	whitelistEnabled?: boolean;
 	whitelistPatterns?: string | null;
