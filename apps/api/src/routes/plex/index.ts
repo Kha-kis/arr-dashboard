@@ -11,6 +11,7 @@ import { registerScanRoutes } from "./scan-routes.js";
 import { registerNowPlayingRoutes } from "./now-playing-routes.js";
 import { registerEpisodeRoutes } from "./episode-routes.js";
 import { registerCollectionRoutes } from "./collection-routes.js";
+import { registerCacheRoutes } from "./cache-routes.js";
 
 export async function registerPlexRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	app.register(registerWatchEnrichmentRoutes, { prefix: "/watch-enrichment" });
@@ -19,4 +20,5 @@ export async function registerPlexRoutes(app: FastifyInstance, _opts: FastifyPlu
 	app.register(registerNowPlayingRoutes, { prefix: "/now-playing" });
 	app.register(registerEpisodeRoutes, { prefix: "/episodes" });
 	app.register(registerCollectionRoutes);
+	app.register(registerCacheRoutes);
 }
