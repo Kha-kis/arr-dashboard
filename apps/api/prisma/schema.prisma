@@ -14,6 +14,8 @@ enum ServiceType {
   LIDARR
   READARR
   SEERR
+  TAUTULLI
+  PLEX
 }
 
 // Library item type enum - uses lowercase to match Zod schema in shared package
@@ -42,6 +44,9 @@ model User {
   serviceInstances      ServiceInstance[]
   userCustomFormats     UserCustomFormat[]
   qualitySizeMappings   QualitySizeMapping[]
+  libraryCleanupConfigs LibraryCleanupConfig[]
+  notificationChannels  NotificationChannel[]
+  namingConfigs         NamingConfig[]
 }
 
 model Session {
@@ -100,6 +105,10 @@ model ServiceInstance {
   queueCleanerStrikes         QueueCleanerStrike[]
   libraryCache                LibraryCache[]
   librarySyncStatus           LibrarySyncStatus?
+  plexCaches                  PlexCache[]
+  plexEpisodeCaches           PlexEpisodeCache[]
+  tautulliCaches              TautulliCache[]
+  namingConfig                NamingConfig?
 
   @@index([service])
   @@index([userId])
@@ -885,6 +894,16 @@ model QueueCleanerConfig {
   autoImportCustomPatterns      String?                   // JSON array of custom safe patterns
   autoImportNeverPatterns       String?                   // JSON array of custom never-import patterns
 
+  // Tag pre-filters (filter queue items before applying rules)
+  tagFilterEnabled      Boolean         @default(false)
+  includeTags           String?                           // JSON: [1, 5, 12] - only clean items with these tags
+  excludeTags           String?                           // JSON: [3, 7] - skip items with these tags
+
+  // Quality profile pre-filters
+  profileFilterEnabled  Boolean         @default(false)
+  includeProfiles       String?                           // JSON: [1, 4] - only clean items with these profiles
+  excludeProfiles       String?                           // JSON: [2] - skip items with these profiles
+
   // Skip future episodes (Sonarr only)
   // When enabled, Sonarr queue items for episodes that haven't aired yet are skipped
   skipFutureEpisodes    Boolean         @default(true)
@@ -958,4 +977,270 @@ model QueueCleanerStrike {
   @@unique([instanceId, downloadId])
   @@index([instanceId, lastStrikeAt])
   @@map("queue_cleaner_strikes")
+}
+
+// ============================================================================
+// Library Cleanup Feature Models
+// Automated cleanup of library items based on configurable rules
+// ============================================================================
+
+/// Per-user library cleanup configuration
+model LibraryCleanupConfig {
+  id                String    @id @default(cuid())
+  userId            String    @unique
+  enabled           Boolean   @default(false)
+  intervalHours     Int       @default(24)
+  lastRunAt         DateTime?
+  nextRunAt         DateTime?
+  dryRunMode        Boolean   @default(true)
+  maxRemovalsPerRun Int       @default(50)
+  requireApproval   Boolean   @default(false)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user      User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rules     LibraryCleanupRule[]
+  approvals LibraryCleanupApproval[]
+  logs      LibraryCleanupLog[]
+
+  @@map("library_cleanup_configs")
+}
+
+/// Individual cleanup rules within a configuration
+model LibraryCleanupRule {
+  id                String   @id @default(cuid())
+  configId          String
+  name              String
+  enabled           Boolean  @default(true)
+  priority          Int      @default(0)
+  ruleType          String                     // "age", "size", "plex_last_watched", etc.
+  parameters        String                     // JSON blob of rule-specific parameters
+  serviceFilter     String?                    // JSON array of service types
+  instanceFilter    String?                    // JSON array of instance IDs
+  excludeTags       String?                    // JSON array of tag names to exclude
+  excludeTitles     String?                    // JSON array of title patterns to exclude
+  plexLibraryFilter String?                    // JSON array of Plex section names
+  action            String   @default("delete") // "delete" | "unmonitor" | "delete_files"
+  operator          String?                    // "AND" | "OR" for composite rules
+  conditions        String?                    // JSON array of sub-conditions
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  config LibraryCleanupConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@index([configId])
+  @@map("library_cleanup_rules")
+}
+
+/// Pending approval items for library cleanup
+model LibraryCleanupApproval {
+  id              String    @id @default(cuid())
+  configId        String
+  instanceId      String                       // Denormalized for quick lookup
+  arrItemId       Int
+  itemType        LibraryItemType              // movie | series
+  title           String
+  matchedRuleId   String
+  matchedRuleName String                       // Denormalized
+  reason          String
+  action          String?  @default("delete")
+  sizeOnDisk      BigInt
+  year            Int?
+  rating          Float?
+  status          String   @default("pending") // "pending" | "approved" | "rejected" | "executing" | "executed" | "expired"
+  reviewedAt      DateTime?
+  executedAt      DateTime?
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+
+  config LibraryCleanupConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@index([configId, status])
+  @@index([expiresAt])
+  @@map("library_cleanup_approvals")
+}
+
+/// Library cleanup activity audit log
+model LibraryCleanupLog {
+  id                String    @id @default(cuid())
+  configId          String
+  isDryRun          Boolean
+  status            String                     // "completed" | "partial" | "error"
+  itemsEvaluated    Int
+  itemsFlagged      Int
+  itemsRemoved      Int
+  itemsUnmonitored  Int
+  itemsFilesDeleted Int
+  itemsSkipped      Int
+  details           String?                    // JSON array of detail objects
+  error             String?
+  durationMs        Int
+  startedAt         DateTime
+  completedAt       DateTime?
+
+  config LibraryCleanupConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@index([configId, startedAt])
+  @@map("library_cleanup_logs")
+}
+
+// ============================================================================
+// Notification Feature Models
+// Push notifications and channel management
+// ============================================================================
+
+/// Notification channel configuration (email, webhook, browser push, etc.)
+model NotificationChannel {
+  id               String    @id @default(cuid())
+  userId           String
+  name             String
+  type             String                      // "BROWSER_PUSH", "WEBHOOK", etc.
+  enabled          Boolean   @default(true)
+  encryptedConfig  String                      // AES-256-GCM ciphertext of JSON config
+  configIv         String                      // IV for encryptedConfig
+  lastTestedAt     DateTime?
+  lastTestResult   String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user          User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptions NotificationSubscription[]
+
+  @@index([userId])
+  @@map("notification_channels")
+}
+
+/// Event subscriptions per notification channel
+model NotificationSubscription {
+  channelId String
+  eventType String                             // "HUNT_COMPLETED", "BACKUP_FAILED", etc.
+
+  channel NotificationChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, eventType])
+  @@map("notification_subscriptions")
+}
+
+/// Notification delivery log
+model NotificationLog {
+  id          String   @id @default(cuid())
+  channelId   String
+  channelType String                           // Denormalized channel type at time of send
+  eventType   String
+  title       String
+  body        String
+  status      String                           // "sent" | "failed"
+  error       String?
+  sentAt      DateTime @default(now())
+
+  @@index([channelId])
+  @@index([sentAt])
+  @@map("notification_logs")
+}
+
+/// VAPID keys for Web Push notifications (singleton)
+model VapidKeys {
+  id                  Int    @id @default(1)   // Singleton: always 1
+  publicKey           String
+  encryptedPrivateKey String                   // AES-256-GCM encrypted
+  privateKeyIv        String                   // IV for encryptedPrivateKey
+
+  @@map("vapid_keys")
+}
+
+// ============================================================================
+// Plex Integration Models
+// Cache of Plex library and watch data for library cleanup enrichment
+// ============================================================================
+
+/// Cached Plex library items with watch/collection metadata
+model PlexCache {
+  id            String    @id @default(cuid())
+  instanceId    String
+  tmdbId        Int
+  mediaType     String                         // "movie" | "series"
+  sectionId     String                         // Plex library section key
+  sectionTitle  String
+  ratingKey     String?
+  lastWatchedAt DateTime?
+  watchCount    Int       @default(0)
+  watchedByUsers String                        // JSON array of usernames
+  onDeck        Boolean   @default(false)
+  userRating    Float?
+  collections   String                         // JSON array of collection names
+  labels        String                         // JSON array of label names
+  addedAt       DateTime?
+
+  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, tmdbId, mediaType, sectionId])
+  @@index([instanceId])
+  @@map("plex_cache")
+}
+
+/// Cached Plex episode-level watch data
+model PlexEpisodeCache {
+  id              String    @id @default(cuid())
+  instanceId      String
+  showTmdbId      Int
+  seasonNumber    Int
+  episodeNumber   Int
+  ratingKey       String
+  title           String
+  watched         Boolean
+  watchedByUsers  String                       // JSON array of usernames
+  lastWatchedAt   DateTime?
+
+  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, showTmdbId, seasonNumber, episodeNumber])
+  @@index([instanceId])
+  @@map("plex_episode_cache")
+}
+
+// ============================================================================
+// Tautulli Integration Models
+// Cache of Tautulli watch history for library cleanup enrichment
+// ============================================================================
+
+/// Cached Tautulli watch statistics per media item
+model TautulliCache {
+  id              String   @id @default(cuid())
+  instanceId      String
+  tmdbId          Int
+  mediaType       String                       // "movie" | "series"
+  lastWatchedAt   DateTime
+  watchCount      Int
+  watchedByUsers  String                       // JSON array of usernames
+
+  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, tmdbId, mediaType])
+  @@index([instanceId])
+  @@map("tautulli_cache")
+}
+
+// ============================================================================
+// TRaSH Naming Scheme Config
+// Per-instance naming scheme preferences for TRaSH Guides deployment
+// ============================================================================
+
+/// Per-instance naming config for TRaSH Guides naming schemes
+model NamingConfig {
+  id                 String    @id @default(cuid())
+  instanceId         String    @unique
+  userId             String
+  serviceType        String                    // "RADARR" | "SONARR"
+  selectedPresets    String                    // JSON: NamingSelectedPresets object
+  syncStrategy       String    @default("manual") // "auto" | "manual" | "notify"
+  lastDeployedAt     DateTime?
+  lastDeployedHash   String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("naming_configs")
 }

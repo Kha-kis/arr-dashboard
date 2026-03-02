@@ -190,3 +190,63 @@ export type QueueCleanerLog = Prisma.QueueCleanerLogModel
  * Queue cleaner strike tracking for gradual removal
  */
 export type QueueCleanerStrike = Prisma.QueueCleanerStrikeModel
+/**
+ * Model LibraryCleanupConfig
+ * Per-user library cleanup configuration
+ */
+export type LibraryCleanupConfig = Prisma.LibraryCleanupConfigModel
+/**
+ * Model LibraryCleanupRule
+ * Individual cleanup rules within a configuration
+ */
+export type LibraryCleanupRule = Prisma.LibraryCleanupRuleModel
+/**
+ * Model LibraryCleanupApproval
+ * Pending approval items for library cleanup
+ */
+export type LibraryCleanupApproval = Prisma.LibraryCleanupApprovalModel
+/**
+ * Model LibraryCleanupLog
+ * Library cleanup activity audit log
+ */
+export type LibraryCleanupLog = Prisma.LibraryCleanupLogModel
+/**
+ * Model NotificationChannel
+ * Notification channel configuration (email, webhook, browser push, etc.)
+ */
+export type NotificationChannel = Prisma.NotificationChannelModel
+/**
+ * Model NotificationSubscription
+ * Event subscriptions per notification channel
+ */
+export type NotificationSubscription = Prisma.NotificationSubscriptionModel
+/**
+ * Model NotificationLog
+ * Notification delivery log
+ */
+export type NotificationLog = Prisma.NotificationLogModel
+/**
+ * Model VapidKeys
+ * VAPID keys for Web Push notifications (singleton)
+ */
+export type VapidKeys = Prisma.VapidKeysModel
+/**
+ * Model PlexCache
+ * Cached Plex library items with watch/collection metadata
+ */
+export type PlexCache = Prisma.PlexCacheModel
+/**
+ * Model PlexEpisodeCache
+ * Cached Plex episode-level watch data
+ */
+export type PlexEpisodeCache = Prisma.PlexEpisodeCacheModel
+/**
+ * Model TautulliCache
+ * Cached Tautulli watch statistics per media item
+ */
+export type TautulliCache = Prisma.TautulliCacheModel
+/**
+ * Model NamingConfig
+ * Per-instance naming config for TRaSH Guides naming schemes
+ */
+export type NamingConfig = Prisma.NamingConfigModel
