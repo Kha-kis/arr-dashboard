@@ -248,12 +248,22 @@ echo "  - Web Port: $PORT"
 echo ""
 echo "Starting API server on $HOST:$API_PORT..."
 cd /app/api
-su-exec abc sh -c "API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node dist/index.js" &
+su-exec abc sh -c "API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node dist/index.js" 2>&1 &
 API_PID=$!
 echo "API started with PID $API_PID"
 
-# Give API a moment to start
-sleep 2
+# Give API a moment to start, then verify it's still running
+sleep 3
+if ! kill -0 "$API_PID" 2>/dev/null; then
+    echo ""
+    echo "ERROR: API process (PID $API_PID) died during startup!" >&2
+    echo "  Check the logs above for Node.js error output." >&2
+    echo "  This usually indicates a module import or Prisma initialization failure." >&2
+    wait "$API_PID" 2>/dev/null
+    API_EXIT=$?
+    echo "  API exit code: $API_EXIT" >&2
+    exit 1
+fi
 
 # ============================================
 # Start Web server (as abc user)
