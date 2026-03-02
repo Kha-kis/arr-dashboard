@@ -11,6 +11,11 @@ export interface MetadataField {
 	value: string;
 }
 
+/** Max length for a single formatted value (Discord field limit is 1024) */
+const MAX_VALUE_LENGTH = 1000;
+/** Max items to show from an array before truncating */
+const MAX_ARRAY_ITEMS = 15;
+
 /** Pretty-print labels for known metadata keys */
 const LABEL_MAP: Record<string, string> = {
 	// System
@@ -103,18 +108,27 @@ function formatValue(key: string, value: unknown): string {
 
 	if (Array.isArray(value)) {
 		if (value.length === 0) return "";
+		const totalCount = value.length;
+		const limited = value.slice(0, MAX_ARRAY_ITEMS);
+		const suffix = totalCount > MAX_ARRAY_ITEMS ? ` (+${totalCount - MAX_ARRAY_ITEMS} more)` : "";
+
+		let result: string;
 		// Handle arrays of objects with title/rule shape
-		if (typeof value[0] === "object" && value[0] !== null) {
-			return value
-				.map((item) => {
-					const obj = item as Record<string, unknown>;
-					if (obj.title && obj.rule) return `${obj.title} (${obj.rule})`;
-					if (obj.title) return String(obj.title);
-					return JSON.stringify(obj);
-				})
-				.join(", ");
+		if (typeof limited[0] === "object" && limited[0] !== null) {
+			result =
+				limited
+					.map((item) => {
+						const obj = item as Record<string, unknown>;
+						if (obj.title && obj.rule) return `${obj.title} (${obj.rule})`;
+						if (obj.title) return String(obj.title);
+						return JSON.stringify(obj);
+					})
+					.join(", ") + suffix;
+		} else {
+			result = limited.join(", ") + suffix;
 		}
-		return value.join(", ");
+
+		return truncateValue(result);
 	}
 
 	if (typeof value === "object" && value !== null) {
@@ -122,6 +136,12 @@ function formatValue(key: string, value: unknown): string {
 	}
 
 	return String(value);
+}
+
+/** Truncate a value string if it exceeds the max length */
+function truncateValue(value: string): string {
+	if (value.length <= MAX_VALUE_LENGTH) return value;
+	return `${value.slice(0, MAX_VALUE_LENGTH - 3)}...`;
 }
 
 /** Convert camelCase key to Title Case label */

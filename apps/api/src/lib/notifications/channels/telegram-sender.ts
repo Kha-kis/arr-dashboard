@@ -4,6 +4,8 @@ import { extractMetadataFields } from "./format-metadata.js";
 
 const TELEGRAM_API_BASE = "https://api.telegram.org";
 const TELEGRAM_TIMEOUT_MS = 10000;
+/** Telegram sendMessage limit is 4096 chars */
+const TELEGRAM_MAX_MESSAGE_LENGTH = 4000; // Buffer for HTML entity expansion
 
 export const telegramSender: ChannelSender = {
 	async send(config: Record<string, unknown>, payload: NotificationPayload): Promise<void> {
@@ -21,6 +23,11 @@ export const telegramSender: ChannelSender = {
 
 		if (payload.url) {
 			text += `\n\n<a href="${escapeHtml(payload.url)}">View Details</a>`;
+		}
+
+		// Truncate if exceeds Telegram's message limit
+		if (text.length > TELEGRAM_MAX_MESSAGE_LENGTH) {
+			text = `${text.slice(0, TELEGRAM_MAX_MESSAGE_LENGTH - 20)}\n\n<i>(truncated)</i>`;
 		}
 
 		await sendMessage(botToken, chatId, text);
