@@ -407,8 +407,10 @@ export type UpdateCleanupConfig = z.infer<typeof updateCleanupConfigSchema>;
 export const approvalActionSchema = z.enum(["approved", "rejected"]);
 export type ApprovalAction = z.infer<typeof approvalActionSchema>;
 
+export const BULK_APPROVAL_MAX_IDS = 100;
+
 export const bulkApprovalSchema = z.object({
-	ids: z.array(z.string()).min(1),
+	ids: z.array(z.string()).min(1).max(BULK_APPROVAL_MAX_IDS),
 	action: approvalActionSchema,
 });
 
