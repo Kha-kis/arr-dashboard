@@ -215,13 +215,17 @@ export const fetchSonarrStatisticsWithSdk = async (
 
 		const stats = entry.statistics;
 		const episodesTotal = stats?.totalEpisodeCount ?? stats?.episodeCount ?? 0;
+		// episodeCount = monitored episodes only (excludes unaired/unmonitored/specials)
+		// totalEpisodeCount = ALL episodes including unaired and unmonitored
+		// For "missing" we must use episodeCount to match Sonarr's own missing count (#131)
+		const monitoredEpisodes = stats?.episodeCount ?? episodesTotal;
 		const episodesWithFile = stats?.episodeFileCount ?? 0;
 		const sizeOnDisk = stats?.sizeOnDisk ?? 0;
 
 		totalEpisodes += episodesTotal;
 		episodeFileCount += episodesWithFile;
 		downloadedEpisodes += episodesWithFile;
-		missingEpisodes += Math.max(0, episodesTotal - episodesWithFile);
+		missingEpisodes += Math.max(0, monitoredEpisodes - episodesWithFile);
 		totalFileSize += sizeOnDisk;
 
 		if (episodesWithFile > 0) {
