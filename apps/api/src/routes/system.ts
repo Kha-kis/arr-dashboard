@@ -382,7 +382,7 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * GET /system/logs/download/:filename
 	 * Download a specific log file
 	 */
-	app.get<{ Params: { filename: string } }>(
+	app.get<{ Params: { filename: string } }>( // lgtm[js/missing-rate-limiting] -- Rate limited via Fastify plugin: LOGS_RATE_LIMIT
 		"/logs/download/:filename",
 		{ config: { rateLimit: LOGS_RATE_LIMIT } },
 		async (request, reply) => {

@@ -49,6 +49,7 @@ import type {
 	VideoCodecRuleParams,
 	YearRangeRuleParams,
 } from "@arr/shared";
+import { isRegexSafe } from "@arr/shared";
 import type { LibraryCleanupRule } from "../prisma.js";
 import { safeJsonParse } from "../utils/json.js";
 import type {
@@ -1217,11 +1218,14 @@ function evaluateImdbRatingRule(item: CacheItemForEval, params: ImdbRatingRulePa
 	return null;
 }
 
-/** Cache compiled regexes to avoid re-compiling per item */
+/** Cache compiled regexes to avoid re-compiling per item. Rejects unsafe patterns. */
 const regexCache = new Map<string, RegExp>();
 function getCachedRegex(pattern: string): RegExp | null {
 	let cached = regexCache.get(pattern);
 	if (cached) return cached;
+	// nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
+	// Pattern is validated by isRegexSafe() before compilation to mitigate ReDoS.
+	if (!isRegexSafe(pattern)) return null;
 	try {
 		cached = new RegExp(pattern, "i");
 		regexCache.set(pattern, cached);
@@ -1445,6 +1449,9 @@ function passesTitleExclusion(title: string, excludeTitles: string | null): bool
 	if (!patterns || patterns.length === 0) return true;
 
 	for (const pattern of patterns) {
+		// nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
+		// Pattern is validated by isRegexSafe() before compilation to mitigate ReDoS.
+		if (!isRegexSafe(pattern)) continue;
 		try {
 			const regex = new RegExp(pattern, "i");
 			if (regex.test(title)) return false; // excluded

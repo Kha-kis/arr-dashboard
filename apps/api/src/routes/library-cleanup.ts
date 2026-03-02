@@ -337,6 +337,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			});
 		}
 
+		// nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Fastify reply.send() serializes to JSON, not HTML
 		return reply.send(serializeConfig(config as unknown as Record<string, unknown>));
 	});
 
@@ -458,6 +459,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			data: updateData,
 		});
 
+		// nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Fastify reply.send() serializes to JSON, not HTML
 		return reply.send(serializeRule(rule as unknown as Record<string, unknown>));
 	});
 
@@ -598,6 +600,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 				[id],
 			);
 
+			// nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Fastify JSON response
 			return reply.send(result);
 		},
 	);
@@ -650,6 +653,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			ids,
 		);
 
+		// nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Fastify JSON response
 		return reply.send(result);
 	});
 

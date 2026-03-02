@@ -48,7 +48,7 @@ const passkeyRenameSchema = z.object({
 	friendlyName: z.string().min(1).max(50),
 });
 
-const PASSKEY_LOGIN_RATE_LIMIT = { max: 10, timeWindow: "1 minute" };
+const PASSKEY_LOGIN_RATE_LIMIT = { max: 5, timeWindow: "1 minute" };
 const PASSKEY_REGISTER_RATE_LIMIT = { max: 5, timeWindow: "1 minute" };
 
 const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
@@ -113,7 +113,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Verify registration response and store new passkey
 	 * User must be authenticated
 	 */
-	app.post(
+	app.post( // lgtm[js/missing-rate-limiting] -- Rate limited via Fastify plugin: PASSKEY_REGISTER_RATE_LIMIT (5/min)
 		"/passkey/register/verify",
 		{ config: { rateLimit: PASSKEY_REGISTER_RATE_LIMIT } },
 		async (request, reply) => {
@@ -154,7 +154,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Generate authentication options for passkey login
 	 * Public endpoint (no authentication required)
 	 */
-	app.post(
+	app.post( // lgtm[js/missing-rate-limiting] -- Rate limited via Fastify plugin: PASSKEY_LOGIN_RATE_LIMIT (5/min)
 		"/passkey/login/options",
 		{ config: { rateLimit: PASSKEY_LOGIN_RATE_LIMIT } },
 		async (_request, reply) => {
@@ -192,7 +192,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Verify authentication response and create session
 	 * Public endpoint (no authentication required)
 	 */
-	app.post(
+	app.post( // lgtm[js/missing-rate-limiting] -- Rate limited via Fastify plugin: PASSKEY_LOGIN_RATE_LIMIT (5/min)
 		"/passkey/login/verify",
 		{ config: { rateLimit: PASSKEY_LOGIN_RATE_LIMIT } },
 		async (request, reply) => {

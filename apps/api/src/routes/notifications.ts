@@ -200,6 +200,7 @@ export const registerNotificationRoutes: FastifyPluginCallback = (app, _opts, do
 
 		try {
 			const config = await app.notificationService.getDecryptedConfig(id, userId);
+			// nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Fastify JSON response
 			return reply.send(config);
 		} catch (error) {
 			const msg = getErrorMessage(error);

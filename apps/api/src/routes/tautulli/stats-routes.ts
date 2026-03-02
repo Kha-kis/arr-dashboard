@@ -107,6 +107,7 @@ export async function registerStatsRoutes(app: FastifyInstance, _opts: FastifyPl
 			timeRange,
 		};
 
+		// nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Fastify JSON response
 		return reply.send(response);
 	});
 
@@ -158,6 +159,7 @@ export async function registerStatsRoutes(app: FastifyInstance, _opts: FastifyPl
 			timeRange,
 		};
 
+		// nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Fastify JSON response
 		return reply.send(response);
 	});
 }
