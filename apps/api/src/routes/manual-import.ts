@@ -10,6 +10,7 @@ import {
 	setManualImportLogger,
 	submitManualImportCommandWithSdk,
 } from "./manual-import-utils.js";
+import { validateRequest } from "../lib/utils/validate.js";
 
 const manualImportQuerySchema = manualImportFetchQuerySchema.extend({
 	instanceId: z.string(),
@@ -24,7 +25,7 @@ const manualImportRoute: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.get("/manual-import", async (request, reply) => {
-		const query = manualImportQuerySchema.parse(request.query ?? {});
+		const query = validateRequest(manualImportQuerySchema, request.query ?? {});
 
 		if (!query.downloadId && !query.folder) {
 			reply.status(400);
@@ -97,7 +98,7 @@ const manualImportRoute: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.post("/manual-import", async (request, reply) => {
-		const body = manualImportSubmissionSchema.parse(request.body ?? {}) as ManualImportSubmission;
+		const body = validateRequest(manualImportSubmissionSchema, request.body ?? {}) as ManualImportSubmission;
 
 		const instance = await requireInstance(app, request.currentUser!.id, body.instanceId);
 

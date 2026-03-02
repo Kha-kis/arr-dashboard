@@ -10,6 +10,7 @@ import {
 	isSonarrClient,
 } from "../../lib/arr/client-helpers.js";
 import { type HistoryService, normalizeHistoryItem } from "../../lib/dashboard/history-utils.js";
+import { validateRequest } from "../../lib/utils/validate.js";
 
 /**
  * Query schema for history endpoint.
@@ -30,7 +31,7 @@ export const historyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Fetches download history from all enabled Sonarr, Radarr, Prowlarr, Lidarr, and Readarr instances
 	 */
 	app.get("/dashboard/history", async (request, reply) => {
-		const { startDate, endDate } = historyQuerySchema.parse(request.query ?? {});
+		const { startDate, endDate } = validateRequest(historyQuerySchema, request.query ?? {});
 
 		const response = await executeOnInstances(
 			app,

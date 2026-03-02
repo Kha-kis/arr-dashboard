@@ -2,6 +2,7 @@ import { multiInstanceSearchResponseSchema, searchRequestSchema } from "@arr/sha
 import type { FastifyPluginCallback } from "fastify";
 import { executeOnInstances, isProwlarrClient } from "../../lib/arr/client-helpers.js";
 import { performProwlarrSearchWithSdk } from "../../lib/search/prowlarr-api.js";
+import { validateRequest } from "../../lib/utils/validate.js";
 
 /**
  * Registers search query routes for Prowlarr.
@@ -16,7 +17,7 @@ export const registerQueryRoutes: FastifyPluginCallback = (app, _opts, done) => 
 	 * Supports filtering by indexer IDs and categories per instance.
 	 */
 	app.post("/search/query", async (request, _reply) => {
-		const payload = searchRequestSchema.parse(request.body ?? {});
+		const payload = validateRequest(searchRequestSchema, request.body ?? {});
 
 		// Build a map of instance-specific filters
 		const filterMap = new Map<string, { indexerIds?: number[]; categories?: number[] }>();
