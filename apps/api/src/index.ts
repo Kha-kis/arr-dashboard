@@ -7,7 +7,7 @@ import {
 	logSecurityConfig,
 } from "./lib/config/port-config.js";
 import { LOG_DIR, LOG_LEVEL } from "./lib/logger.js";
-import { getAppVersion } from "./lib/utils/version.js";
+import { getAppVersionInfo } from "./lib/utils/version.js";
 import { buildServer } from "./server.js";
 
 // Get port configuration (env var > database > default)
@@ -60,9 +60,11 @@ const start = async () => {
 		});
 		const dbUrl = process.env.DATABASE_URL || "";
 		const dbType = dbUrl.startsWith("postgresql") ? "PostgreSQL" : "SQLite";
+		const versionInfo = getAppVersionInfo();
 		app.log.info(
 			{
-				version: getAppVersion(),
+				version: versionInfo.version,
+				commit: versionInfo.commitSha,
 				nodeVersion: process.version,
 				database: dbType,
 				logLevel: LOG_LEVEL,
@@ -70,7 +72,7 @@ const start = async () => {
 				host: env.API_HOST,
 				port: portConfig.apiPort,
 			},
-			"Arr Dashboard started",
+			`arr-dashboard v${versionInfo.version} started (commit: ${versionInfo.commitSha})`,
 		);
 
 		// Fire-and-forget startup notification
@@ -81,7 +83,7 @@ const start = async () => {
 				body: `Server listening on ${env.API_HOST}:${portConfig.apiPort}`,
 				url: `http://${env.API_HOST === "0.0.0.0" ? "localhost" : env.API_HOST}:${portConfig.apiPort - 1}/dashboard`,
 				metadata: {
-					version: getAppVersion(),
+					version: versionInfo.version,
 					nodeVersion: process.version,
 					database: dbType,
 					host: env.API_HOST,

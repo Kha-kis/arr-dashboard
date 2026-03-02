@@ -3,7 +3,7 @@ import { readdir, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import type { FastifyPluginCallback } from "fastify";
 import { LOG_DIR, LOG_LEVEL, LOG_MAX_FILES, LOG_MAX_SIZE } from "../lib/logger.js";
-import { getAppVersion } from "../lib/utils/version.js";
+import { getAppVersionInfo } from "../lib/utils/version.js";
 
 const RESTART_RATE_LIMIT = { max: 2, timeWindow: "5 minutes" };
 const LOGS_RATE_LIMIT = { max: 30, timeWindow: "1 minute" };
@@ -23,10 +23,10 @@ function getDatabaseHost(dbUrl: string, provider: "sqlite" | "postgresql"): stri
 	return path.split("/").pop() || "database";
 }
 
-const APP_VERSION = getAppVersion();
+const APP_VERSION_INFO = getAppVersionInfo();
 
 const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
-	app.log.info({ version: APP_VERSION }, "App version detected");
+	app.log.info({ version: APP_VERSION_INFO.version, commit: APP_VERSION_INFO.commitSha }, "App version detected");
 	/**
 	 * GET /system/settings
 	 * Get system-wide settings (ports, listen address, app name, etc.)
@@ -290,7 +290,8 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		return reply.send({
 			success: true,
 			data: {
-				version: APP_VERSION,
+				version: APP_VERSION_INFO.version,
+				commit: APP_VERSION_INFO.commitSha,
 				database: {
 					type: dbType,
 					host: dbHost,

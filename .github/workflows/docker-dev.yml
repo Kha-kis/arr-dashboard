@@ -63,6 +63,10 @@ jobs:
           push: true
           provenance: true
           sbom: true
+          build-args: |
+            VERSION=dev
+            COMMIT_SHA=${{ github.sha }}
+            BUILD_DATE=${{ github.event.workflow_run.head_commit.timestamp || github.event.repository.updated_at }}
           tags: |
             ${{ env.DOCKERHUB_IMAGE }}:dev
             ${{ env.DOCKERHUB_IMAGE }}:${{ steps.dev-tag.outputs.tag }}

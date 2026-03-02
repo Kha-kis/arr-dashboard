@@ -5,6 +5,103 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.0] - 2026-03-02
+
+v2.9 is the largest feature release since 2.0 — adding media server awareness, a notification system, library lifecycle management, and TRaSH naming scheme deployment.
+
+### Added
+
+#### Plex Media Server Integration
+- **Now Playing Dashboard Widget** - Real-time view of active Plex streams with user avatars, media thumbnails, progress bars, transcode/direct play indicators, and bitrate/bandwidth metrics. Merges sessions from both Plex and Tautulli for enriched data
+- **Plex Statistics Tab** - Dedicated statistics view with watch history, top users, most-watched content, and library utilization
+- **Watch History Enrichment** - Library items display Plex watch status, play count, and last-watched date when a Plex server is connected
+- **Background Cache Refresh** - Scheduled polling of Plex sessions and library data with configurable intervals
+
+#### Tautulli Integration
+- **Activity Monitoring** - Real-time stream activity with bandwidth metrics (LAN/WAN breakdown)
+- **Watch Statistics** - Historical watch data aggregation surfaced in the Statistics and Library pages
+- **Session Merging** - Intelligently merges Plex and Tautulli session data for the richest possible Now Playing view
+
+#### Seerr / Jellyseerr Integration
+- **Request Management** - View, approve, and decline media requests from Seerr directly within the dashboard
+- **User Management** - Browse Seerr users with request counts and permissions
+- **Issue Tracking** - View and manage reported issues from Seerr
+- **Notification Agents** - Configure Seerr notification agents from the dashboard
+- **Library Enrichment** - Library items display Seerr request status and requester info
+- **Discover Integration** - TMDB discover page enhanced with Seerr availability data
+
+#### Notification System
+- **7 Notification Channels** - Discord (webhooks), Telegram (Bot API), Email (SMTP), Pushover, Gotify, Pushbullet, and Browser Push (Web Push API)
+- **Event Subscriptions** - Per-channel subscription grid for 12+ event types: system startup, deployment complete, sync complete, hunt complete, queue cleaner actions, backup complete, library cleanup actions, and more
+- **Rich Metadata** - All notifications include contextual metadata (instance names, affected items, durations, error details)
+- **Notification Logs** - Searchable history of all dispatched notifications with delivery status
+- **Test Send** - One-click test delivery per channel for verification during setup
+
+#### Library Cleanup
+- **Rule-Based Cleanup Engine** - Define rules to identify library items for removal based on 20+ condition types: age, size, rating, genre, tag, quality profile, watched status (via Plex/Tautulli), request status (via Seerr), monitored state, and more
+- **Approval Queue** - Dry-run mode evaluates rules and presents candidates for human review before any deletion
+- **Multi-Source Enrichment** - Rules can reference data from Plex (watch status), Tautulli (play count/last watched), and Seerr (request status) for intelligent cleanup decisions
+- **Scheduled Execution** - Automated runs with configurable intervals and approval requirements
+- **Audit Logging** - Complete history of cleanup actions with item details and rule matches
+
+#### TRaSH Guides Naming Scheme Deployment
+- **Naming Preset Selection** - Apply TRaSH-recommended naming schemes for Radarr (movie file/folder) and Sonarr (standard/daily/anime episode, season folder, series folder)
+- **Preview & Diff** - See exactly what will change before applying naming schemes
+- **Per-Instance Config** - Each instance can have independent naming configurations
+- **Auto-Sync** - Optionally keep naming schemes in sync with TRaSH updates
+
+#### TRaSH Guides Enhancements
+- **Zod Runtime Validation** - All TRaSH GitHub JSON data is now validated with Zod schemas at fetch time, replacing unsafe `as` type casts. Catches upstream format changes before they cause runtime errors
+- **Profile Groups UI** - Quality profiles organized into logical groups (Standard, Anime, French, German, SQP) for easier template building
+- **CF Group Scores** - Custom format group scores now visible and configurable in the quality profile wizard
+
+#### Health & Observability
+- **Health Check Endpoint** - `GET /health` returns database connectivity status, application version, and commit SHA. Used by Docker `HEALTHCHECK` for container orchestration
+- **Startup Banner** - Structured log line on startup: `arr-dashboard v2.9.0 started (commit: abc1234)` with database type, log level, and listen address
+- **Version in System Info** - `/api/system/info` now includes commit SHA alongside version
+
+### Changed
+
+- **Comprehensive Security Hardening** - Input sanitization, Helmet security headers (HSTS, X-Content-Type-Options, X-Frame-Options), rate limiting on new endpoints, CUID validation on route parameters, and session logout logging
+- **Service Type Taxonomy** - Centralized service type enum prevents crashes when non-ARR services (Plex, Tautulli, Seerr) are passed to ARR-only code paths
+- **Silent `.catch()` Cleanup** - Background notification dispatches now log at debug level instead of silently swallowing errors
+- **Boolean Parser Extraction** - Shared utility for parsing string booleans from query parameters, replacing ad-hoc `=== "true"` checks
+
+### Fixed
+
+- **Queue Cleaner Misses Radarr importBlocked Items** - Queue Cleaner now detects all `importBlocked` items regardless of cleanup level ([#129](https://github.com/Kha-kis/arr-dashboard/issues/129))
+- **Prisma Client Regeneration Fails on PostgreSQL in Docker** - Standalone tsconfig.json for Docker runtime ([#130](https://github.com/Kha-kis/arr-dashboard/issues/130))
+- **Sonarr Missing Episode Stats Overcount** - Uses `episodeCount` instead of `totalEpisodeCount` ([#131](https://github.com/Kha-kis/arr-dashboard/issues/131))
+- **Queue Remove Dropdown Clipped** - Replaced inline dropdowns with portaled Radix DropdownMenu ([#132](https://github.com/Kha-kis/arr-dashboard/issues/132))
+- **LOG_LEVEL Environment Variable Ignored** - Custom logger now wired into Fastify via `loggerInstance` ([#133](https://github.com/Kha-kis/arr-dashboard/issues/133))
+- **Skip Future Episodes** - Queue Cleaner can now optionally skip future (unaired) Sonarr episodes
+- **Scheduler Test Stability** - Fixed flaky scheduler tests by matching per-config reset implementation
+
+### Security
+
+- **Dependabot Alerts Resolved** - Patched minimatch (ReDoS) and ajv (prototype pollution) via version overrides
+- **Fastify Helmet** - Content Security Policy headers on all API responses
+- **Notification Channel Encryption** - All channel configurations (webhook URLs, API tokens, SMTP credentials) encrypted at rest with AES-256-GCM
+
+### Testing
+
+- **TRaSH GitHub Schema Tests** - 583 lines of validation tests ensuring upstream TRaSH JSON format compatibility
+- **Naming Deployer Tests** - 497 lines covering naming scheme application logic
+- **Sonarr Statistics Tests** - Unit tests for episode counting edge cases (from v2.8.5)
+- **Logger Level Tests** - Verification that LOG_LEVEL env var takes effect (from v2.8.5)
+
+### Upgrade Notes
+
+> **Database:** v2.9.0 adds new tables for notifications, library cleanup, Plex/Tautulli/Seerr caching, and naming configuration. These are created automatically by `prisma db push` on startup — no manual migration required.
+>
+> **Plex/Tautulli/Seerr:** These integrations are optional. If you don't configure these services in Settings, no related features will appear in the UI.
+>
+> **Notifications:** No channels are configured by default. Visit Settings → Notifications to set up your preferred channels.
+>
+> **Volume:** Ensure your `/config` volume is preserved. This directory contains `prod.db` and `secrets.json`. Standard Docker upgrades preserve this automatically.
+
+---
+
 ## [2.8.5] - 2026-03-02
 
 ### Fixed
@@ -584,6 +681,7 @@ Major dependency updates:
 
 ---
 
+[2.9.0]: https://github.com/Kha-kis/arr-dashboard/compare/v2.8.5...v2.9.0
 [2.8.5]: https://github.com/Kha-kis/arr-dashboard/compare/v2.8.4...v2.8.5
 [2.8.4]: https://github.com/Kha-kis/arr-dashboard/compare/v2.8.3...v2.8.4
 [2.8.3]: https://github.com/Kha-kis/arr-dashboard/compare/v2.8.2...v2.8.3
