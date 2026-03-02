@@ -69,11 +69,16 @@ v2.9 is the largest feature release since 2.0 — adding media server awareness,
 
 ### Fixed
 
+#### Bug Fixes (from v2.8.5, included in this release)
+
 - **Queue Cleaner Misses Radarr importBlocked Items** - Queue Cleaner now detects all `importBlocked` items regardless of cleanup level ([#129](https://github.com/Kha-kis/arr-dashboard/issues/129))
 - **Prisma Client Regeneration Fails on PostgreSQL in Docker** - Standalone tsconfig.json for Docker runtime ([#130](https://github.com/Kha-kis/arr-dashboard/issues/130))
 - **Sonarr Missing Episode Stats Overcount** - Uses `episodeCount` instead of `totalEpisodeCount` ([#131](https://github.com/Kha-kis/arr-dashboard/issues/131))
 - **Queue Remove Dropdown Clipped** - Replaced inline dropdowns with portaled Radix DropdownMenu ([#132](https://github.com/Kha-kis/arr-dashboard/issues/132))
 - **LOG_LEVEL Environment Variable Ignored** - Custom logger now wired into Fastify via `loggerInstance` ([#133](https://github.com/Kha-kis/arr-dashboard/issues/133))
+
+#### Additional Fixes
+
 - **Skip Future Episodes** - Queue Cleaner can now optionally skip future (unaired) Sonarr episodes
 - **Scheduler Test Stability** - Fixed flaky scheduler tests by matching per-config reset implementation
 
