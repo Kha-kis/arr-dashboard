@@ -123,11 +123,6 @@ export type StandaloneCFDeployment = Prisma.StandaloneCFDeploymentModel
  */
 export type QualitySizeMapping = Prisma.QualitySizeMappingModel
 /**
- * Model NamingConfig
- * 
- */
-export type NamingConfig = Prisma.NamingConfigModel
-/**
  * Model HuntConfig
  * Hunt configuration per service instance (admin-only feature)
  */
@@ -173,58 +168,3 @@ export type QueueCleanerLog = Prisma.QueueCleanerLogModel
  * Queue cleaner strike tracking for gradual removal
  */
 export type QueueCleanerStrike = Prisma.QueueCleanerStrikeModel
-/**
- * Model NotificationChannel
- * User-configured notification delivery channels (Discord webhook, Telegram bot, etc.)
- */
-export type NotificationChannel = Prisma.NotificationChannelModel
-/**
- * Model NotificationSubscription
- * Maps channels to event types they should receive
- */
-export type NotificationSubscription = Prisma.NotificationSubscriptionModel
-/**
- * Model VapidKeys
- * VAPID keys for Web Push notifications (singleton table)
- */
-export type VapidKeys = Prisma.VapidKeysModel
-/**
- * Model NotificationLog
- * Notification delivery log for audit and debugging
- */
-export type NotificationLog = Prisma.NotificationLogModel
-/**
- * Model LibraryCleanupConfig
- * Singleton config per user for the library cleanup scheduler
- */
-export type LibraryCleanupConfig = Prisma.LibraryCleanupConfigModel
-/**
- * Model LibraryCleanupRule
- * Individual cleanup rules evaluated against LibraryCache items
- */
-export type LibraryCleanupRule = Prisma.LibraryCleanupRuleModel
-/**
- * Model LibraryCleanupApproval
- * Items flagged by cleanup rules awaiting user approval
- */
-export type LibraryCleanupApproval = Prisma.LibraryCleanupApprovalModel
-/**
- * Model LibraryCleanupLog
- * Execution history for cleanup runs
- */
-export type LibraryCleanupLog = Prisma.LibraryCleanupLogModel
-/**
- * Model TautulliCache
- * Cached watch data from Tautulli, keyed by (instanceId, tmdbId, mediaType)
- */
-export type TautulliCache = Prisma.TautulliCacheModel
-/**
- * Model PlexCache
- * Cached watch data from Plex, keyed by (instanceId, tmdbId, mediaType)
- */
-export type PlexCache = Prisma.PlexCacheModel
-/**
- * Model PlexEpisodeCache
- * 
- */
-export type PlexEpisodeCache = Prisma.PlexEpisodeCacheModel

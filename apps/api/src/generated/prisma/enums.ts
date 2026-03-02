@@ -15,9 +15,7 @@ export const ServiceType = {
   PROWLARR: 'PROWLARR',
   LIDARR: 'LIDARR',
   READARR: 'READARR',
-  SEERR: 'SEERR',
-  TAUTULLI: 'TAUTULLI',
-  PLEX: 'PLEX'
+  SEERR: 'SEERR'
 } as const
 
 export type ServiceType = (typeof ServiceType)[keyof typeof ServiceType]
@@ -41,41 +39,3 @@ export const BackupIntervalType = {
 } as const
 
 export type BackupIntervalType = (typeof BackupIntervalType)[keyof typeof BackupIntervalType]
-
-
-export const NotificationChannelType = {
-  DISCORD: 'DISCORD',
-  TELEGRAM: 'TELEGRAM',
-  EMAIL: 'EMAIL',
-  BROWSER_PUSH: 'BROWSER_PUSH',
-  PUSHBULLET: 'PUSHBULLET',
-  PUSHOVER: 'PUSHOVER',
-  GOTIFY: 'GOTIFY'
-} as const
-
-export type NotificationChannelType = (typeof NotificationChannelType)[keyof typeof NotificationChannelType]
-
-
-export const NotificationEventType = {
-  HUNT_CONTENT_FOUND: 'HUNT_CONTENT_FOUND',
-  HUNT_COMPLETED: 'HUNT_COMPLETED',
-  HUNT_FAILED: 'HUNT_FAILED',
-  QUEUE_ITEMS_REMOVED: 'QUEUE_ITEMS_REMOVED',
-  QUEUE_STRIKES_ISSUED: 'QUEUE_STRIKES_ISSUED',
-  QUEUE_CLEANER_FAILED: 'QUEUE_CLEANER_FAILED',
-  TRASH_PROFILE_UPDATED: 'TRASH_PROFILE_UPDATED',
-  TRASH_SYNC_ERROR: 'TRASH_SYNC_ERROR',
-  TRASH_DEPLOY_FAILED: 'TRASH_DEPLOY_FAILED',
-  BACKUP_COMPLETED: 'BACKUP_COMPLETED',
-  BACKUP_FAILED: 'BACKUP_FAILED',
-  LIBRARY_NEW_CONTENT: 'LIBRARY_NEW_CONTENT',
-  CLEANUP_ITEMS_FLAGGED: 'CLEANUP_ITEMS_FLAGGED',
-  CLEANUP_ITEMS_REMOVED: 'CLEANUP_ITEMS_REMOVED',
-  ACCOUNT_LOCKED: 'ACCOUNT_LOCKED',
-  LOGIN_FAILED: 'LOGIN_FAILED',
-  SERVICE_CONNECTION_FAILED: 'SERVICE_CONNECTION_FAILED',
-  SYSTEM_STARTUP: 'SYSTEM_STARTUP',
-  SYSTEM_ERROR: 'SYSTEM_ERROR'
-} as const
-
-export type NotificationEventType = (typeof NotificationEventType)[keyof typeof NotificationEventType]

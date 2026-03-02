@@ -44,9 +44,9 @@ export type SystemSettingsMinAggregateOutputType = {
   webPort: number | null
   listenAddress: string | null
   appName: string | null
-  externalUrl: string | null
   trustProxy: boolean | null
   secureCookies: boolean | null
+  externalUrl: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -57,9 +57,9 @@ export type SystemSettingsMaxAggregateOutputType = {
   webPort: number | null
   listenAddress: string | null
   appName: string | null
-  externalUrl: string | null
   trustProxy: boolean | null
   secureCookies: boolean | null
+  externalUrl: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -70,9 +70,9 @@ export type SystemSettingsCountAggregateOutputType = {
   webPort: number
   listenAddress: number
   appName: number
-  externalUrl: number
   trustProxy: number
   secureCookies: number
+  externalUrl: number
   createdAt: number
   updatedAt: number
   _all: number
@@ -97,9 +97,9 @@ export type SystemSettingsMinAggregateInputType = {
   webPort?: true
   listenAddress?: true
   appName?: true
-  externalUrl?: true
   trustProxy?: true
   secureCookies?: true
+  externalUrl?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -110,9 +110,9 @@ export type SystemSettingsMaxAggregateInputType = {
   webPort?: true
   listenAddress?: true
   appName?: true
-  externalUrl?: true
   trustProxy?: true
   secureCookies?: true
+  externalUrl?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -123,9 +123,9 @@ export type SystemSettingsCountAggregateInputType = {
   webPort?: true
   listenAddress?: true
   appName?: true
-  externalUrl?: true
   trustProxy?: true
   secureCookies?: true
+  externalUrl?: true
   createdAt?: true
   updatedAt?: true
   _all?: true
@@ -223,9 +223,9 @@ export type SystemSettingsGroupByOutputType = {
   webPort: number
   listenAddress: string
   appName: string
-  externalUrl: string | null
-  trustProxy: boolean
+  trustProxy: boolean | null
   secureCookies: boolean | null
+  externalUrl: string | null
   createdAt: Date
   updatedAt: Date
   _count: SystemSettingsCountAggregateOutputType | null
@@ -259,9 +259,9 @@ export type SystemSettingsWhereInput = {
   webPort?: Prisma.IntFilter<"SystemSettings"> | number
   listenAddress?: Prisma.StringFilter<"SystemSettings"> | string
   appName?: Prisma.StringFilter<"SystemSettings"> | string
-  externalUrl?: Prisma.StringNullableFilter<"SystemSettings"> | string | null
-  trustProxy?: Prisma.BoolFilter<"SystemSettings"> | boolean
+  trustProxy?: Prisma.BoolNullableFilter<"SystemSettings"> | boolean | null
   secureCookies?: Prisma.BoolNullableFilter<"SystemSettings"> | boolean | null
+  externalUrl?: Prisma.StringNullableFilter<"SystemSettings"> | string | null
   createdAt?: Prisma.DateTimeFilter<"SystemSettings"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"SystemSettings"> | Date | string
 }
@@ -272,9 +272,9 @@ export type SystemSettingsOrderByWithRelationInput = {
   webPort?: Prisma.SortOrder
   listenAddress?: Prisma.SortOrder
   appName?: Prisma.SortOrder
-  externalUrl?: Prisma.SortOrderInput | Prisma.SortOrder
-  trustProxy?: Prisma.SortOrder
+  trustProxy?: Prisma.SortOrderInput | Prisma.SortOrder
   secureCookies?: Prisma.SortOrderInput | Prisma.SortOrder
+  externalUrl?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -288,9 +288,9 @@ export type SystemSettingsWhereUniqueInput = Prisma.AtLeast<{
   webPort?: Prisma.IntFilter<"SystemSettings"> | number
   listenAddress?: Prisma.StringFilter<"SystemSettings"> | string
   appName?: Prisma.StringFilter<"SystemSettings"> | string
-  externalUrl?: Prisma.StringNullableFilter<"SystemSettings"> | string | null
-  trustProxy?: Prisma.BoolFilter<"SystemSettings"> | boolean
+  trustProxy?: Prisma.BoolNullableFilter<"SystemSettings"> | boolean | null
   secureCookies?: Prisma.BoolNullableFilter<"SystemSettings"> | boolean | null
+  externalUrl?: Prisma.StringNullableFilter<"SystemSettings"> | string | null
   createdAt?: Prisma.DateTimeFilter<"SystemSettings"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"SystemSettings"> | Date | string
 }, "id">
@@ -301,9 +301,9 @@ export type SystemSettingsOrderByWithAggregationInput = {
   webPort?: Prisma.SortOrder
   listenAddress?: Prisma.SortOrder
   appName?: Prisma.SortOrder
-  externalUrl?: Prisma.SortOrderInput | Prisma.SortOrder
-  trustProxy?: Prisma.SortOrder
+  trustProxy?: Prisma.SortOrderInput | Prisma.SortOrder
   secureCookies?: Prisma.SortOrderInput | Prisma.SortOrder
+  externalUrl?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   _count?: Prisma.SystemSettingsCountOrderByAggregateInput
@@ -322,9 +322,9 @@ export type SystemSettingsScalarWhereWithAggregatesInput = {
   webPort?: Prisma.IntWithAggregatesFilter<"SystemSettings"> | number
   listenAddress?: Prisma.StringWithAggregatesFilter<"SystemSettings"> | string
   appName?: Prisma.StringWithAggregatesFilter<"SystemSettings"> | string
-  externalUrl?: Prisma.StringNullableWithAggregatesFilter<"SystemSettings"> | string | null
-  trustProxy?: Prisma.BoolWithAggregatesFilter<"SystemSettings"> | boolean
+  trustProxy?: Prisma.BoolNullableWithAggregatesFilter<"SystemSettings"> | boolean | null
   secureCookies?: Prisma.BoolNullableWithAggregatesFilter<"SystemSettings"> | boolean | null
+  externalUrl?: Prisma.StringNullableWithAggregatesFilter<"SystemSettings"> | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"SystemSettings"> | Date | string
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"SystemSettings"> | Date | string
 }
@@ -335,9 +335,9 @@ export type SystemSettingsCreateInput = {
   webPort?: number
   listenAddress?: string
   appName?: string
-  externalUrl?: string | null
-  trustProxy?: boolean
+  trustProxy?: boolean | null
   secureCookies?: boolean | null
+  externalUrl?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -348,9 +348,9 @@ export type SystemSettingsUncheckedCreateInput = {
   webPort?: number
   listenAddress?: string
   appName?: string
-  externalUrl?: string | null
-  trustProxy?: boolean
+  trustProxy?: boolean | null
   secureCookies?: boolean | null
+  externalUrl?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -361,9 +361,9 @@ export type SystemSettingsUpdateInput = {
   webPort?: Prisma.IntFieldUpdateOperationsInput | number
   listenAddress?: Prisma.StringFieldUpdateOperationsInput | string
   appName?: Prisma.StringFieldUpdateOperationsInput | string
-  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  trustProxy?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  trustProxy?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   secureCookies?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -374,9 +374,9 @@ export type SystemSettingsUncheckedUpdateInput = {
   webPort?: Prisma.IntFieldUpdateOperationsInput | number
   listenAddress?: Prisma.StringFieldUpdateOperationsInput | string
   appName?: Prisma.StringFieldUpdateOperationsInput | string
-  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  trustProxy?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  trustProxy?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   secureCookies?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -387,9 +387,9 @@ export type SystemSettingsCreateManyInput = {
   webPort?: number
   listenAddress?: string
   appName?: string
-  externalUrl?: string | null
-  trustProxy?: boolean
+  trustProxy?: boolean | null
   secureCookies?: boolean | null
+  externalUrl?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -400,9 +400,9 @@ export type SystemSettingsUpdateManyMutationInput = {
   webPort?: Prisma.IntFieldUpdateOperationsInput | number
   listenAddress?: Prisma.StringFieldUpdateOperationsInput | string
   appName?: Prisma.StringFieldUpdateOperationsInput | string
-  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  trustProxy?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  trustProxy?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   secureCookies?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -413,9 +413,9 @@ export type SystemSettingsUncheckedUpdateManyInput = {
   webPort?: Prisma.IntFieldUpdateOperationsInput | number
   listenAddress?: Prisma.StringFieldUpdateOperationsInput | string
   appName?: Prisma.StringFieldUpdateOperationsInput | string
-  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  trustProxy?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  trustProxy?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   secureCookies?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -426,9 +426,9 @@ export type SystemSettingsCountOrderByAggregateInput = {
   webPort?: Prisma.SortOrder
   listenAddress?: Prisma.SortOrder
   appName?: Prisma.SortOrder
-  externalUrl?: Prisma.SortOrder
   trustProxy?: Prisma.SortOrder
   secureCookies?: Prisma.SortOrder
+  externalUrl?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -445,9 +445,9 @@ export type SystemSettingsMaxOrderByAggregateInput = {
   webPort?: Prisma.SortOrder
   listenAddress?: Prisma.SortOrder
   appName?: Prisma.SortOrder
-  externalUrl?: Prisma.SortOrder
   trustProxy?: Prisma.SortOrder
   secureCookies?: Prisma.SortOrder
+  externalUrl?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -458,9 +458,9 @@ export type SystemSettingsMinOrderByAggregateInput = {
   webPort?: Prisma.SortOrder
   listenAddress?: Prisma.SortOrder
   appName?: Prisma.SortOrder
-  externalUrl?: Prisma.SortOrder
   trustProxy?: Prisma.SortOrder
   secureCookies?: Prisma.SortOrder
+  externalUrl?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -483,9 +483,9 @@ export type SystemSettingsSelect<ExtArgs extends runtime.Types.Extensions.Intern
   webPort?: boolean
   listenAddress?: boolean
   appName?: boolean
-  externalUrl?: boolean
   trustProxy?: boolean
   secureCookies?: boolean
+  externalUrl?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }, ExtArgs["result"]["systemSettings"]>
@@ -496,9 +496,9 @@ export type SystemSettingsSelectCreateManyAndReturn<ExtArgs extends runtime.Type
   webPort?: boolean
   listenAddress?: boolean
   appName?: boolean
-  externalUrl?: boolean
   trustProxy?: boolean
   secureCookies?: boolean
+  externalUrl?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }, ExtArgs["result"]["systemSettings"]>
@@ -509,9 +509,9 @@ export type SystemSettingsSelectUpdateManyAndReturn<ExtArgs extends runtime.Type
   webPort?: boolean
   listenAddress?: boolean
   appName?: boolean
-  externalUrl?: boolean
   trustProxy?: boolean
   secureCookies?: boolean
+  externalUrl?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }, ExtArgs["result"]["systemSettings"]>
@@ -522,14 +522,14 @@ export type SystemSettingsSelectScalar = {
   webPort?: boolean
   listenAddress?: boolean
   appName?: boolean
-  externalUrl?: boolean
   trustProxy?: boolean
   secureCookies?: boolean
+  externalUrl?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type SystemSettingsOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "apiPort" | "webPort" | "listenAddress" | "appName" | "externalUrl" | "trustProxy" | "secureCookies" | "createdAt" | "updatedAt", ExtArgs["result"]["systemSettings"]>
+export type SystemSettingsOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "apiPort" | "webPort" | "listenAddress" | "appName" | "trustProxy" | "secureCookies" | "externalUrl" | "createdAt" | "updatedAt", ExtArgs["result"]["systemSettings"]>
 
 export type $SystemSettingsPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "SystemSettings"
@@ -540,9 +540,9 @@ export type $SystemSettingsPayload<ExtArgs extends runtime.Types.Extensions.Inte
     webPort: number
     listenAddress: string
     appName: string
-    externalUrl: string | null
-    trustProxy: boolean
+    trustProxy: boolean | null
     secureCookies: boolean | null
+    externalUrl: string | null
     createdAt: Date
     updatedAt: Date
   }, ExtArgs["result"]["systemSettings"]>
@@ -973,9 +973,9 @@ export interface SystemSettingsFieldRefs {
   readonly webPort: Prisma.FieldRef<"SystemSettings", 'Int'>
   readonly listenAddress: Prisma.FieldRef<"SystemSettings", 'String'>
   readonly appName: Prisma.FieldRef<"SystemSettings", 'String'>
-  readonly externalUrl: Prisma.FieldRef<"SystemSettings", 'String'>
   readonly trustProxy: Prisma.FieldRef<"SystemSettings", 'Boolean'>
   readonly secureCookies: Prisma.FieldRef<"SystemSettings", 'Boolean'>
+  readonly externalUrl: Prisma.FieldRef<"SystemSettings", 'String'>
   readonly createdAt: Prisma.FieldRef<"SystemSettings", 'DateTime'>
   readonly updatedAt: Prisma.FieldRef<"SystemSettings", 'DateTime'>
 }
