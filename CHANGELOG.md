@@ -77,6 +77,16 @@ v2.9 is the largest feature release since 2.0 — adding media server awareness,
 - **Queue Remove Dropdown Clipped** - Replaced inline dropdowns with portaled Radix DropdownMenu ([#132](https://github.com/Kha-kis/arr-dashboard/issues/132))
 - **LOG_LEVEL Environment Variable Ignored** - Custom logger now wired into Fastify via `loggerInstance` ([#133](https://github.com/Kha-kis/arr-dashboard/issues/133))
 
+#### Release Hardening
+
+- **PostgreSQL Secrets Migration** - Upgrading from v2.8.x with PostgreSQL no longer silently regenerates encryption keys. The startup sequence now checks the legacy secrets path (`/app/api/data/secrets.json`) and auto-migrates to `/config/secrets.json` (#141)
+- **Library Cleanup Safety Rails** - Bulk approval capped at 100 IDs per request; "Run Now" button requires confirmation dialog with context-aware messaging (#142)
+- **Notification Payload Truncation** - Metadata arrays truncated to 15 items, Discord fields capped at 1024 chars/25 fields/5500 total, Telegram messages capped at 4000 chars. Prevents silent delivery failures (#143)
+- **Plex/Tautulli Cache Eviction** - Cache refresh now evicts stale rows for items removed from Plex or Tautulli, preventing unbounded table growth (#144)
+- **Integration Observability** - New `/api/plex/cache/:id/status` and `/api/tautulli/cache/:id/status` endpoints plus manual refresh triggers (#145)
+- **Notification Delivery Tracking** - Per-channel `lastSentAt`/`lastSendResult` fields track real delivery status alongside existing test status (#146)
+- **Cleanup Audit Transparency** - Log table rows expand to show per-item details (matched rule, reason, action, status) (#147)
+
 #### Additional Fixes
 
 - **Skip Future Episodes** - Queue Cleaner can now optionally skip future (unaired) Sonarr episodes
@@ -102,6 +112,8 @@ v2.9 is the largest feature release since 2.0 — adding media server awareness,
 > **Plex/Tautulli/Seerr:** These integrations are optional. If you don't configure these services in Settings, no related features will appear in the UI.
 >
 > **Notifications:** No channels are configured by default. Visit Settings → Notifications to set up your preferred channels.
+>
+> **PostgreSQL Users Upgrading from v2.8.x:** Your `secrets.json` was previously stored at `/app/api/data/secrets.json`. v2.9 now stores it at `/config/secrets.json`. The migration is **automatic** — existing secrets are copied on first startup. No manual action required, but the log will show: `Migrating secrets from legacy path (v2.8.x upgrade)`.
 >
 > **Volume:** Ensure your `/config` volume is preserved. This directory contains `prod.db` and `secrets.json`. Standard Docker upgrades preserve this automatically.
 
