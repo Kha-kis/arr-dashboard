@@ -39,6 +39,8 @@ export const registerNotificationRoutes: FastifyPluginCallback = (app, _opts, do
 				enabled: ch.enabled,
 				lastTestedAt: ch.lastTestedAt?.toISOString() ?? null,
 				lastTestResult: ch.lastTestResult,
+				lastSentAt: ch.lastSentAt?.toISOString() ?? null,
+				lastSendResult: ch.lastSendResult,
 				createdAt: ch.createdAt.toISOString(),
 				updatedAt: ch.updatedAt.toISOString(),
 				subscriptions: ch.subscriptions.map((s) => s.eventType),

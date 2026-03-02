@@ -173,6 +173,8 @@ export class NotificationService {
 		config: Record<string, unknown>;
 		lastTestedAt: Date | null;
 		lastTestResult: string | null;
+		lastSentAt: Date | null;
+		lastSendResult: string | null;
 	}> {
 		const channel = await this.prisma.notificationChannel.findFirst({
 			where: { id: channelId, userId },
@@ -204,6 +206,8 @@ export class NotificationService {
 			config: redacted,
 			lastTestedAt: channel.lastTestedAt,
 			lastTestResult: channel.lastTestResult,
+			lastSentAt: channel.lastSentAt,
+			lastSendResult: channel.lastSendResult,
 		};
 	}
 
@@ -214,16 +218,26 @@ export class NotificationService {
 		status: "sent" | "failed",
 		error?: string,
 	): Promise<void> {
-		await this.prisma.notificationLog.create({
-			data: {
-				channelId,
-				channelType,
-				eventType: payload.eventType,
-				title: payload.title,
-				body: payload.body,
-				status,
-				error: error ?? null,
-			},
-		});
+		await Promise.all([
+			this.prisma.notificationLog.create({
+				data: {
+					channelId,
+					channelType,
+					eventType: payload.eventType,
+					title: payload.title,
+					body: payload.body,
+					status,
+					error: error ?? null,
+				},
+			}),
+			// Update denormalized last-send status on the channel for quick lookups
+			this.prisma.notificationChannel.update({
+				where: { id: channelId },
+				data: {
+					lastSentAt: new Date(),
+					lastSendResult: status === "sent" ? "success" : (error ?? "unknown error"),
+				},
+			}),
+		]);
 	}
 }
