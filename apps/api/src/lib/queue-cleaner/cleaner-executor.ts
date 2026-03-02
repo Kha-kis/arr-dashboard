@@ -22,7 +22,7 @@ import {
 } from "./constants.js";
 import type { QueueCapableClient } from "../arr/client-factory.js";
 import { delay } from "../utils/delay.js";
-import { type RawQueueItem, parseDate, collectStatusTexts, checkWhitelist } from "./queue-item-utils.js";
+import { type RawQueueItem, parseDate, collectStatusTexts, checkWhitelist, isFutureEpisode } from "./queue-item-utils.js";
 import { evaluateQueueItem } from "./rule-evaluators.js";
 import { evaluateAutoImportEligibility, attemptAutoImport } from "./auto-import-handler.js";
 import { generateDetailedReason, calculateQueueSummary } from "./cleaner-formatters.js";
@@ -154,6 +154,8 @@ export async function executeQueueCleaner(
 	const skipped: CleanerResultItem[] = [];
 	const queueItemIds = new Set<string>();
 
+	const isSonarr = instance.service === "SONARR";
+
 	for (const item of queueRecords) {
 		const id = typeof item.id === "number" ? item.id : 0;
 		const idStr = String(id);
@@ -168,6 +170,17 @@ export async function executeQueueCleaner(
 			if (ageMins < config.minQueueAgeMins) {
 				continue;
 			}
+		}
+
+		// Skip future episodes (Sonarr only)
+		if (isSonarr && config.skipFutureEpisodes && isFutureEpisode(item, now)) {
+			skipped.push({
+				id,
+				title,
+				reason: "Skipped: future episode (hasn't aired yet)",
+				rule: "future_episode",
+			});
+			continue;
 		}
 
 		// Whitelist check
@@ -692,6 +705,7 @@ export async function executeEnhancedPreview(
 	const queueSummary = calculateQueueSummary(queueRecords);
 	const previewItems: EnhancedPreviewItem[] = [];
 	const ruleSummary: Record<string, number> = {};
+	const isSonarrPreview = instance.service === "SONARR";
 
 	const existingStrikes = await app.prisma.queueCleanerStrike.findMany({
 		where: { instanceId: instance.id },
@@ -718,6 +732,32 @@ export async function executeEnhancedPreview(
 				detailedReason:
 					`This item has only been in the queue for ${ageMins} minutes. ` +
 					`Items must be at least ${config.minQueueAgeMins} minutes old before being evaluated.`,
+				queueAge: ageMins,
+				size,
+				sizeleft,
+				progress,
+				protocol: typeof item.protocol === "string" ? item.protocol : undefined,
+				indexer: typeof item.indexer === "string" ? item.indexer : undefined,
+				downloadClient: typeof item.downloadClient === "string" ? item.downloadClient : undefined,
+				status: typeof item.trackedDownloadStatus === "string" ? item.trackedDownloadStatus : undefined,
+				downloadId: typeof item.downloadId === "string" ? item.downloadId : undefined,
+			});
+			continue;
+		}
+
+		// Skip future episodes (Sonarr only)
+		if (isSonarrPreview && config.skipFutureEpisodes && isFutureEpisode(item, now)) {
+			ruleSummary.future_episode = (ruleSummary.future_episode ?? 0) + 1;
+			previewItems.push({
+				id,
+				title,
+				action: "skip",
+				rule: "future_episode",
+				reason: "Future episode (hasn't aired yet)",
+				detailedReason:
+					"This download is for an episode that hasn't aired yet. " +
+					"Future episodes are skipped to prevent the cleaner from removing pre-grabbed downloads. " +
+					"Disable 'Skip future episodes' in settings to include these items.",
 				queueAge: ageMins,
 				size,
 				sizeleft,

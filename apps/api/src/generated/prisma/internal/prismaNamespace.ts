@@ -3206,6 +3206,7 @@ export const QueueCleanerConfigScalarFieldEnum = {
   autoImportSafeOnly: 'autoImportSafeOnly',
   autoImportCustomPatterns: 'autoImportCustomPatterns',
   autoImportNeverPatterns: 'autoImportNeverPatterns',
+  skipFutureEpisodes: 'skipFutureEpisodes',
   whitelistEnabled: 'whitelistEnabled',
   whitelistPatterns: 'whitelistPatterns',
   lastRunAt: 'lastRunAt',

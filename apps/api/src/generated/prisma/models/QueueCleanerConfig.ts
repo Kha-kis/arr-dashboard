@@ -100,6 +100,7 @@ export type QueueCleanerConfigMinAggregateOutputType = {
   autoImportSafeOnly: boolean | null
   autoImportCustomPatterns: string | null
   autoImportNeverPatterns: string | null
+  skipFutureEpisodes: boolean | null
   whitelistEnabled: boolean | null
   whitelistPatterns: string | null
   lastRunAt: Date | null
@@ -147,6 +148,7 @@ export type QueueCleanerConfigMaxAggregateOutputType = {
   autoImportSafeOnly: boolean | null
   autoImportCustomPatterns: string | null
   autoImportNeverPatterns: string | null
+  skipFutureEpisodes: boolean | null
   whitelistEnabled: boolean | null
   whitelistPatterns: string | null
   lastRunAt: Date | null
@@ -194,6 +196,7 @@ export type QueueCleanerConfigCountAggregateOutputType = {
   autoImportSafeOnly: number
   autoImportCustomPatterns: number
   autoImportNeverPatterns: number
+  skipFutureEpisodes: number
   whitelistEnabled: number
   whitelistPatterns: number
   lastRunAt: number
@@ -279,6 +282,7 @@ export type QueueCleanerConfigMinAggregateInputType = {
   autoImportSafeOnly?: true
   autoImportCustomPatterns?: true
   autoImportNeverPatterns?: true
+  skipFutureEpisodes?: true
   whitelistEnabled?: true
   whitelistPatterns?: true
   lastRunAt?: true
@@ -326,6 +330,7 @@ export type QueueCleanerConfigMaxAggregateInputType = {
   autoImportSafeOnly?: true
   autoImportCustomPatterns?: true
   autoImportNeverPatterns?: true
+  skipFutureEpisodes?: true
   whitelistEnabled?: true
   whitelistPatterns?: true
   lastRunAt?: true
@@ -373,6 +378,7 @@ export type QueueCleanerConfigCountAggregateInputType = {
   autoImportSafeOnly?: true
   autoImportCustomPatterns?: true
   autoImportNeverPatterns?: true
+  skipFutureEpisodes?: true
   whitelistEnabled?: true
   whitelistPatterns?: true
   lastRunAt?: true
@@ -507,6 +513,7 @@ export type QueueCleanerConfigGroupByOutputType = {
   autoImportSafeOnly: boolean
   autoImportCustomPatterns: string | null
   autoImportNeverPatterns: string | null
+  skipFutureEpisodes: boolean
   whitelistEnabled: boolean
   whitelistPatterns: string | null
   lastRunAt: Date | null
@@ -577,6 +584,7 @@ export type QueueCleanerConfigWhereInput = {
   autoImportSafeOnly?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   autoImportCustomPatterns?: Prisma.StringNullableFilter<"QueueCleanerConfig"> | string | null
   autoImportNeverPatterns?: Prisma.StringNullableFilter<"QueueCleanerConfig"> | string | null
+  skipFutureEpisodes?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   whitelistEnabled?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   whitelistPatterns?: Prisma.StringNullableFilter<"QueueCleanerConfig"> | string | null
   lastRunAt?: Prisma.DateTimeNullableFilter<"QueueCleanerConfig"> | Date | string | null
@@ -625,6 +633,7 @@ export type QueueCleanerConfigOrderByWithRelationInput = {
   autoImportSafeOnly?: Prisma.SortOrder
   autoImportCustomPatterns?: Prisma.SortOrderInput | Prisma.SortOrder
   autoImportNeverPatterns?: Prisma.SortOrderInput | Prisma.SortOrder
+  skipFutureEpisodes?: Prisma.SortOrder
   whitelistEnabled?: Prisma.SortOrder
   whitelistPatterns?: Prisma.SortOrderInput | Prisma.SortOrder
   lastRunAt?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -676,6 +685,7 @@ export type QueueCleanerConfigWhereUniqueInput = Prisma.AtLeast<{
   autoImportSafeOnly?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   autoImportCustomPatterns?: Prisma.StringNullableFilter<"QueueCleanerConfig"> | string | null
   autoImportNeverPatterns?: Prisma.StringNullableFilter<"QueueCleanerConfig"> | string | null
+  skipFutureEpisodes?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   whitelistEnabled?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   whitelistPatterns?: Prisma.StringNullableFilter<"QueueCleanerConfig"> | string | null
   lastRunAt?: Prisma.DateTimeNullableFilter<"QueueCleanerConfig"> | Date | string | null
@@ -724,6 +734,7 @@ export type QueueCleanerConfigOrderByWithAggregationInput = {
   autoImportSafeOnly?: Prisma.SortOrder
   autoImportCustomPatterns?: Prisma.SortOrderInput | Prisma.SortOrder
   autoImportNeverPatterns?: Prisma.SortOrderInput | Prisma.SortOrder
+  skipFutureEpisodes?: Prisma.SortOrder
   whitelistEnabled?: Prisma.SortOrder
   whitelistPatterns?: Prisma.SortOrderInput | Prisma.SortOrder
   lastRunAt?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -779,6 +790,7 @@ export type QueueCleanerConfigScalarWhereWithAggregatesInput = {
   autoImportSafeOnly?: Prisma.BoolWithAggregatesFilter<"QueueCleanerConfig"> | boolean
   autoImportCustomPatterns?: Prisma.StringNullableWithAggregatesFilter<"QueueCleanerConfig"> | string | null
   autoImportNeverPatterns?: Prisma.StringNullableWithAggregatesFilter<"QueueCleanerConfig"> | string | null
+  skipFutureEpisodes?: Prisma.BoolWithAggregatesFilter<"QueueCleanerConfig"> | boolean
   whitelistEnabled?: Prisma.BoolWithAggregatesFilter<"QueueCleanerConfig"> | boolean
   whitelistPatterns?: Prisma.StringNullableWithAggregatesFilter<"QueueCleanerConfig"> | string | null
   lastRunAt?: Prisma.DateTimeNullableWithAggregatesFilter<"QueueCleanerConfig"> | Date | string | null
@@ -825,6 +837,7 @@ export type QueueCleanerConfigCreateInput = {
   autoImportSafeOnly?: boolean
   autoImportCustomPatterns?: string | null
   autoImportNeverPatterns?: string | null
+  skipFutureEpisodes?: boolean
   whitelistEnabled?: boolean
   whitelistPatterns?: string | null
   lastRunAt?: Date | string | null
@@ -873,6 +886,7 @@ export type QueueCleanerConfigUncheckedCreateInput = {
   autoImportSafeOnly?: boolean
   autoImportCustomPatterns?: string | null
   autoImportNeverPatterns?: string | null
+  skipFutureEpisodes?: boolean
   whitelistEnabled?: boolean
   whitelistPatterns?: string | null
   lastRunAt?: Date | string | null
@@ -919,6 +933,7 @@ export type QueueCleanerConfigUpdateInput = {
   autoImportSafeOnly?: Prisma.BoolFieldUpdateOperationsInput | boolean
   autoImportCustomPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   autoImportNeverPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  skipFutureEpisodes?: Prisma.BoolFieldUpdateOperationsInput | boolean
   whitelistEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   whitelistPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastRunAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -967,6 +982,7 @@ export type QueueCleanerConfigUncheckedUpdateInput = {
   autoImportSafeOnly?: Prisma.BoolFieldUpdateOperationsInput | boolean
   autoImportCustomPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   autoImportNeverPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  skipFutureEpisodes?: Prisma.BoolFieldUpdateOperationsInput | boolean
   whitelistEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   whitelistPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastRunAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -1014,6 +1030,7 @@ export type QueueCleanerConfigCreateManyInput = {
   autoImportSafeOnly?: boolean
   autoImportCustomPatterns?: string | null
   autoImportNeverPatterns?: string | null
+  skipFutureEpisodes?: boolean
   whitelistEnabled?: boolean
   whitelistPatterns?: string | null
   lastRunAt?: Date | string | null
@@ -1060,6 +1077,7 @@ export type QueueCleanerConfigUpdateManyMutationInput = {
   autoImportSafeOnly?: Prisma.BoolFieldUpdateOperationsInput | boolean
   autoImportCustomPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   autoImportNeverPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  skipFutureEpisodes?: Prisma.BoolFieldUpdateOperationsInput | boolean
   whitelistEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   whitelistPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastRunAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -1107,6 +1125,7 @@ export type QueueCleanerConfigUncheckedUpdateManyInput = {
   autoImportSafeOnly?: Prisma.BoolFieldUpdateOperationsInput | boolean
   autoImportCustomPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   autoImportNeverPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  skipFutureEpisodes?: Prisma.BoolFieldUpdateOperationsInput | boolean
   whitelistEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   whitelistPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastRunAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -1159,6 +1178,7 @@ export type QueueCleanerConfigCountOrderByAggregateInput = {
   autoImportSafeOnly?: Prisma.SortOrder
   autoImportCustomPatterns?: Prisma.SortOrder
   autoImportNeverPatterns?: Prisma.SortOrder
+  skipFutureEpisodes?: Prisma.SortOrder
   whitelistEnabled?: Prisma.SortOrder
   whitelistPatterns?: Prisma.SortOrder
   lastRunAt?: Prisma.SortOrder
@@ -1224,6 +1244,7 @@ export type QueueCleanerConfigMaxOrderByAggregateInput = {
   autoImportSafeOnly?: Prisma.SortOrder
   autoImportCustomPatterns?: Prisma.SortOrder
   autoImportNeverPatterns?: Prisma.SortOrder
+  skipFutureEpisodes?: Prisma.SortOrder
   whitelistEnabled?: Prisma.SortOrder
   whitelistPatterns?: Prisma.SortOrder
   lastRunAt?: Prisma.SortOrder
@@ -1271,6 +1292,7 @@ export type QueueCleanerConfigMinOrderByAggregateInput = {
   autoImportSafeOnly?: Prisma.SortOrder
   autoImportCustomPatterns?: Prisma.SortOrder
   autoImportNeverPatterns?: Prisma.SortOrder
+  skipFutureEpisodes?: Prisma.SortOrder
   whitelistEnabled?: Prisma.SortOrder
   whitelistPatterns?: Prisma.SortOrder
   lastRunAt?: Prisma.SortOrder
@@ -1375,6 +1397,7 @@ export type QueueCleanerConfigCreateWithoutInstanceInput = {
   autoImportSafeOnly?: boolean
   autoImportCustomPatterns?: string | null
   autoImportNeverPatterns?: string | null
+  skipFutureEpisodes?: boolean
   whitelistEnabled?: boolean
   whitelistPatterns?: string | null
   lastRunAt?: Date | string | null
@@ -1421,6 +1444,7 @@ export type QueueCleanerConfigUncheckedCreateWithoutInstanceInput = {
   autoImportSafeOnly?: boolean
   autoImportCustomPatterns?: string | null
   autoImportNeverPatterns?: string | null
+  skipFutureEpisodes?: boolean
   whitelistEnabled?: boolean
   whitelistPatterns?: string | null
   lastRunAt?: Date | string | null
@@ -1483,6 +1507,7 @@ export type QueueCleanerConfigUpdateWithoutInstanceInput = {
   autoImportSafeOnly?: Prisma.BoolFieldUpdateOperationsInput | boolean
   autoImportCustomPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   autoImportNeverPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  skipFutureEpisodes?: Prisma.BoolFieldUpdateOperationsInput | boolean
   whitelistEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   whitelistPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastRunAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -1529,6 +1554,7 @@ export type QueueCleanerConfigUncheckedUpdateWithoutInstanceInput = {
   autoImportSafeOnly?: Prisma.BoolFieldUpdateOperationsInput | boolean
   autoImportCustomPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   autoImportNeverPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  skipFutureEpisodes?: Prisma.BoolFieldUpdateOperationsInput | boolean
   whitelistEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   whitelistPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastRunAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -1578,6 +1604,7 @@ export type QueueCleanerConfigSelect<ExtArgs extends runtime.Types.Extensions.In
   autoImportSafeOnly?: boolean
   autoImportCustomPatterns?: boolean
   autoImportNeverPatterns?: boolean
+  skipFutureEpisodes?: boolean
   whitelistEnabled?: boolean
   whitelistPatterns?: boolean
   lastRunAt?: boolean
@@ -1626,6 +1653,7 @@ export type QueueCleanerConfigSelectCreateManyAndReturn<ExtArgs extends runtime.
   autoImportSafeOnly?: boolean
   autoImportCustomPatterns?: boolean
   autoImportNeverPatterns?: boolean
+  skipFutureEpisodes?: boolean
   whitelistEnabled?: boolean
   whitelistPatterns?: boolean
   lastRunAt?: boolean
@@ -1674,6 +1702,7 @@ export type QueueCleanerConfigSelectUpdateManyAndReturn<ExtArgs extends runtime.
   autoImportSafeOnly?: boolean
   autoImportCustomPatterns?: boolean
   autoImportNeverPatterns?: boolean
+  skipFutureEpisodes?: boolean
   whitelistEnabled?: boolean
   whitelistPatterns?: boolean
   lastRunAt?: boolean
@@ -1722,6 +1751,7 @@ export type QueueCleanerConfigSelectScalar = {
   autoImportSafeOnly?: boolean
   autoImportCustomPatterns?: boolean
   autoImportNeverPatterns?: boolean
+  skipFutureEpisodes?: boolean
   whitelistEnabled?: boolean
   whitelistPatterns?: boolean
   lastRunAt?: boolean
@@ -1731,7 +1761,7 @@ export type QueueCleanerConfigSelectScalar = {
   updatedAt?: boolean
 }
 
-export type QueueCleanerConfigOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "enabled" | "intervalMins" | "stalledEnabled" | "stalledThresholdMins" | "failedEnabled" | "slowEnabled" | "slowSpeedThreshold" | "slowGracePeriodMins" | "errorPatternsEnabled" | "errorPatterns" | "removeFromClient" | "addToBlocklist" | "searchAfterRemoval" | "changeCategoryEnabled" | "dryRunMode" | "maxRemovalsPerRun" | "minQueueAgeMins" | "strikeSystemEnabled" | "maxStrikes" | "strikeDecayHours" | "seedingTimeoutEnabled" | "seedingTimeoutHours" | "estimatedCompletionEnabled" | "estimatedCompletionMultiplier" | "importPendingEnabled" | "importPendingThresholdMins" | "importBlockCleanupLevel" | "importBlockPatternMode" | "importBlockPatterns" | "autoImportEnabled" | "autoImportMaxAttempts" | "autoImportCooldownMins" | "autoImportSafeOnly" | "autoImportCustomPatterns" | "autoImportNeverPatterns" | "whitelistEnabled" | "whitelistPatterns" | "lastRunAt" | "lastRunItemsCleaned" | "lastRunItemsSkipped" | "createdAt" | "updatedAt", ExtArgs["result"]["queueCleanerConfig"]>
+export type QueueCleanerConfigOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "enabled" | "intervalMins" | "stalledEnabled" | "stalledThresholdMins" | "failedEnabled" | "slowEnabled" | "slowSpeedThreshold" | "slowGracePeriodMins" | "errorPatternsEnabled" | "errorPatterns" | "removeFromClient" | "addToBlocklist" | "searchAfterRemoval" | "changeCategoryEnabled" | "dryRunMode" | "maxRemovalsPerRun" | "minQueueAgeMins" | "strikeSystemEnabled" | "maxStrikes" | "strikeDecayHours" | "seedingTimeoutEnabled" | "seedingTimeoutHours" | "estimatedCompletionEnabled" | "estimatedCompletionMultiplier" | "importPendingEnabled" | "importPendingThresholdMins" | "importBlockCleanupLevel" | "importBlockPatternMode" | "importBlockPatterns" | "autoImportEnabled" | "autoImportMaxAttempts" | "autoImportCooldownMins" | "autoImportSafeOnly" | "autoImportCustomPatterns" | "autoImportNeverPatterns" | "skipFutureEpisodes" | "whitelistEnabled" | "whitelistPatterns" | "lastRunAt" | "lastRunItemsCleaned" | "lastRunItemsSkipped" | "createdAt" | "updatedAt", ExtArgs["result"]["queueCleanerConfig"]>
 export type QueueCleanerConfigInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }
@@ -1785,6 +1815,7 @@ export type $QueueCleanerConfigPayload<ExtArgs extends runtime.Types.Extensions.
     autoImportSafeOnly: boolean
     autoImportCustomPatterns: string | null
     autoImportNeverPatterns: string | null
+    skipFutureEpisodes: boolean
     whitelistEnabled: boolean
     whitelistPatterns: string | null
     lastRunAt: Date | null
@@ -2253,6 +2284,7 @@ export interface QueueCleanerConfigFieldRefs {
   readonly autoImportSafeOnly: Prisma.FieldRef<"QueueCleanerConfig", 'Boolean'>
   readonly autoImportCustomPatterns: Prisma.FieldRef<"QueueCleanerConfig", 'String'>
   readonly autoImportNeverPatterns: Prisma.FieldRef<"QueueCleanerConfig", 'String'>
+  readonly skipFutureEpisodes: Prisma.FieldRef<"QueueCleanerConfig", 'Boolean'>
   readonly whitelistEnabled: Prisma.FieldRef<"QueueCleanerConfig", 'Boolean'>
   readonly whitelistPatterns: Prisma.FieldRef<"QueueCleanerConfig", 'String'>
   readonly lastRunAt: Prisma.FieldRef<"QueueCleanerConfig", 'DateTime'>
