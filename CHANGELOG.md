@@ -11,10 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Sonarr Missing Episode Stats Overcount** - Statistics page now uses Sonarr's `episodeCount` (monitored episodes only) instead of `totalEpisodeCount` (all episodes including unaired, unmonitored, and specials) when calculating missing episodes. This caused inflated counts (e.g., 9,000+ shown instead of ~60 actual missing) for users with large libraries containing many unmonitored or future episodes ([#131](https://github.com/Kha-kis/arr-dashboard/issues/131))
 - **Queue Remove Dropdown Clipped** - The "Remove" dropdown menu in the Active Queue (and Hunt/Sync Strategy dropdowns elsewhere) was clipped by `overflow-hidden` on card containers. Replaced all three inline-positioned dropdowns with portaled Radix DropdownMenu for proper rendering above all ancestors ([#132](https://github.com/Kha-kis/arr-dashboard/issues/132))
+- **LOG_LEVEL Environment Variable Ignored** - The `LOG_LEVEL` env var had no effect because Fastify was creating its own default Pino logger (`logger: true`) instead of using the custom logger that reads `LOG_LEVEL`. Now wires the custom logger into Fastify via `loggerInstance`, supports all standard levels (fatal/error/warn/info/debug/trace), and includes log file rotation, sensitive field redaction, and startup banner showing effective log level ([#133](https://github.com/Kha-kis/arr-dashboard/issues/133))
 
 ### Added
 
 - **Sonarr Statistics Unit Tests** - Added comprehensive test suite for the missing episode calculation covering: unmonitored episodes, future unaired episodes, specials/season 0, edge cases (negative counts, missing fields), and multi-instance aggregation
+- **Comprehensive Structured Logging** - 35 debug-level log statements across 18 modules (auth, hunting, queue cleaner, backup, deployment, etc.) provide meaningful output when `LOG_LEVEL=debug`
 
 ---
 
