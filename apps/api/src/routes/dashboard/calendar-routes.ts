@@ -14,6 +14,7 @@ import {
 	formatDateOnly,
 	normalizeCalendarItem,
 } from "../../lib/dashboard/calendar-utils.js";
+import { validateRequest } from "../../lib/utils/validate.js";
 
 const calendarQuerySchema = z.object({
 	start: z.string().optional(),
@@ -30,7 +31,7 @@ export const calendarRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Fetches upcoming releases from all enabled Sonarr, Radarr, Lidarr, and Readarr instances
 	 */
 	app.get("/dashboard/calendar", async (request, reply) => {
-		const { start, end, unmonitored } = calendarQuerySchema.parse(request.query ?? {});
+		const { start, end, unmonitored } = validateRequest(calendarQuerySchema, request.query ?? {});
 		const now = new Date();
 		const defaultStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 

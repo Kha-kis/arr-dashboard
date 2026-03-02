@@ -20,6 +20,7 @@ import {
 	updateProwlarrIndexerWithSdk,
 } from "../../lib/search/prowlarr-api.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
+import { validateRequest } from "../../lib/utils/validate.js";
 
 /**
  * Registers indexer-related routes for Prowlarr.
@@ -135,7 +136,8 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 			});
 		}
 
-		const payload: SearchIndexerUpdateRequest = searchIndexerUpdateRequestSchema.parse(
+		const payload: SearchIndexerUpdateRequest = validateRequest(
+			searchIndexerUpdateRequestSchema,
 			request.body ?? {},
 		);
 		const instanceId = payload.instanceId ?? paramInstanceId;
@@ -188,7 +190,7 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 	 * Tests an indexer connection to verify it's working correctly.
 	 */
 	app.post("/search/indexers/test", async (request, reply) => {
-		const payload = searchIndexerTestRequestSchema.parse(request.body ?? {});
+		const payload = validateRequest(searchIndexerTestRequestSchema, request.body ?? {});
 
 		const clientResult = await getClientForInstance(app, request, payload.instanceId);
 		if (!clientResult.success) {

@@ -14,6 +14,7 @@ import {
 	isSonarrClient,
 } from "../../lib/arr/client-helpers.js";
 import { toNumber } from "../../lib/library/type-converters.js";
+import { validateRequest } from "../../lib/utils/validate.js";
 
 /**
  * Optimistically update the library cache after a monitoring change
@@ -71,7 +72,7 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 	 * Toggles monitoring status for movies, series, or specific seasons
 	 */
 	app.post("/library/monitor", async (request, reply) => {
-		const payload = libraryToggleMonitorRequestSchema.parse(request.body ?? {});
+		const payload = validateRequest(libraryToggleMonitorRequestSchema, request.body ?? {});
 
 		const clientResult = await getClientForInstance(app, request, payload.instanceId);
 		if (!clientResult.success) {
@@ -241,7 +242,7 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 	 * Toggles monitoring status for specific episodes
 	 */
 	app.post("/library/episode/monitor", async (request, reply) => {
-		const payload = libraryEpisodeMonitorRequestSchema.parse(request.body ?? {});
+		const payload = validateRequest(libraryEpisodeMonitorRequestSchema, request.body ?? {});
 
 		const clientResult = await getClientForInstance(app, request, payload.instanceId);
 		if (!clientResult.success) {
@@ -291,7 +292,7 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 	 * Toggles monitoring status for specific albums in Lidarr
 	 */
 	app.post("/library/album/monitor", async (request, reply) => {
-		const payload = libraryAlbumMonitorRequestSchema.parse(request.body ?? {});
+		const payload = validateRequest(libraryAlbumMonitorRequestSchema, request.body ?? {});
 
 		const clientResult = await getClientForInstance(app, request, payload.instanceId);
 		if (!clientResult.success) {
@@ -344,7 +345,7 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 	 * Toggles monitoring status for specific books in Readarr
 	 */
 	app.post("/library/book/monitor", async (request, reply) => {
-		const payload = libraryBookMonitorRequestSchema.parse(request.body ?? {});
+		const payload = validateRequest(libraryBookMonitorRequestSchema, request.body ?? {});
 
 		const clientResult = await getClientForInstance(app, request, payload.instanceId);
 		if (!clientResult.success) {
