@@ -1100,6 +1100,8 @@ model NotificationChannel {
   configIv         String                      // IV for encryptedConfig
   lastTestedAt     DateTime?
   lastTestResult   String?
+  lastSentAt       DateTime?
+  lastSendResult   String?                     // "success" | error message
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 

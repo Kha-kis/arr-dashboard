@@ -778,6 +778,8 @@ export const NotificationChannelScalarFieldEnum = {
   configIv: 'configIv',
   lastTestedAt: 'lastTestedAt',
   lastTestResult: 'lastTestResult',
+  lastSentAt: 'lastSentAt',
+  lastSendResult: 'lastSendResult',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const
