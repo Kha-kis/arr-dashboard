@@ -275,15 +275,13 @@ if ! kill -0 "$API_PID" 2>/dev/null; then
     set -e
     echo "  API exit code: $API_EXIT" >&2
 
-    # Additional diagnostics
-    echo "=== Diagnostics ===" >&2
-    echo "  Node.js: $(node --version)" >&2
-    echo "  dist/index.js: $(ls -la dist/index.js)" >&2
-    echo "  Quick node test:" >&2
-    su-exec abc node -e "console.log('node works for abc user')" 2>&1 || echo "  FAILED: node not executable as abc" >&2
-    echo "  Import test:" >&2
-    su-exec abc node --input-type=module -e "import('./dist/index.js').then(() => console.log('import ok')).catch(e => { console.error('IMPORT FAILED:', e.message); process.exit(0); })" 2>&1 || echo "  import() threw synchronously" >&2
-    echo "=== End Diagnostics ===" >&2
+    # Re-run the API in the foreground with a timeout to capture the actual error
+    echo "=== Re-running API in foreground (10s timeout) ===" >&2
+    set +e
+    timeout 10 su-exec abc sh -c "API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node dist/index.js" 2>&1
+    RERUN_EXIT=$?
+    set -e
+    echo "=== Foreground API exit code: $RERUN_EXIT ===" >&2
     exit 1
 fi
 
