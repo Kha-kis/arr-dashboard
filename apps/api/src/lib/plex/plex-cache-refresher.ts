@@ -221,9 +221,10 @@ export async function refreshPlexCache(
 		}
 
 		// 6. Upsert into PlexCache (per-section rows)
+		const upsertedIds: string[] = [];
 		for (const agg of aggregations.values()) {
 			try {
-				await prisma.plexCache.upsert({
+				const row = await prisma.plexCache.upsert({
 					where: {
 						instanceId_tmdbId_mediaType_sectionId: {
 							instanceId,
@@ -261,6 +262,7 @@ export async function refreshPlexCache(
 						addedAt: agg.addedAt,
 					},
 				});
+				upsertedIds.push(row.id);
 				upserted++;
 			} catch (error) {
 				errors++;
@@ -268,6 +270,16 @@ export async function refreshPlexCache(
 					{ err: error, instanceId, tmdbId: agg.tmdbId, mediaType: agg.mediaType },
 					"Plex cache: failed to upsert item",
 				);
+			}
+		}
+
+		// Evict stale rows: items that were in a previous refresh but no longer exist in Plex
+		if (upsertedIds.length > 0) {
+			const evicted = await prisma.plexCache.deleteMany({
+				where: { instanceId, id: { notIn: upsertedIds } },
+			});
+			if (evicted.count > 0) {
+				log.info({ instanceId, evicted: evicted.count }, "Plex cache: evicted stale rows");
 			}
 		}
 

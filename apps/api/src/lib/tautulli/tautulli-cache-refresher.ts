@@ -139,12 +139,13 @@ export async function refreshTautulliCache(
 		}
 
 		// 5. Upsert into TautulliCache
+		const upsertedIds: string[] = [];
 		for (const [ratingKey, info] of itemMap) {
 			const guid = ratingKeyToGuid.get(ratingKey);
 			if (!guid) continue;
 
 			try {
-				await prisma.tautulliCache.upsert({
+				const row = await prisma.tautulliCache.upsert({
 					where: {
 						instanceId_tmdbId_mediaType: {
 							instanceId,
@@ -166,6 +167,7 @@ export async function refreshTautulliCache(
 						watchedByUsers: JSON.stringify([...info.users]),
 					},
 				});
+				upsertedIds.push(row.id);
 				upserted++;
 			} catch (error) {
 				errors++;
@@ -173,6 +175,16 @@ export async function refreshTautulliCache(
 					{ err: error, instanceId, tmdbId: guid.tmdbId, mediaType: guid.mediaType },
 					"Tautulli cache: failed to upsert item",
 				);
+			}
+		}
+
+		// Evict stale rows: items that were in a previous refresh but no longer exist in Tautulli
+		if (upsertedIds.length > 0) {
+			const evicted = await prisma.tautulliCache.deleteMany({
+				where: { instanceId, id: { notIn: upsertedIds } },
+			});
+			if (evicted.count > 0) {
+				log.info({ instanceId, evicted: evicted.count }, "Tautulli cache: evicted stale rows");
 			}
 		}
 
