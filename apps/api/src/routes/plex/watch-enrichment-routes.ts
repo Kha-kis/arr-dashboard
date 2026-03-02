@@ -188,6 +188,7 @@ export async function registerWatchEnrichmentRoutes(
 		}
 
 		const response: WatchEnrichmentResponse = { items };
+		// nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Fastify JSON response
 		return reply.send(response);
 	});
 }

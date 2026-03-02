@@ -82,6 +82,7 @@ export async function registerHistoryRoutes(app: FastifyInstance, _opts: Fastify
 			totalCount: items.length,
 		};
 
+		// nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Fastify reply.send() serializes to JSON, not HTML
 		return reply.send(response);
 	});
 }

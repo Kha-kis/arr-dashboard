@@ -4,6 +4,7 @@ export * from "./backup";
 export * from "./dashboard";
 export * from "./library";
 export * from "./library-cleanup";
+export * from "./regex-safety";
 export * from "./manual-import";
 export * from "./notifications";
 export * from "./oidc-provider";

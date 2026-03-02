@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { getRegexSafetyError, REGEX_MAX_LENGTH } from "./regex-safety.js";
 
 // ============================================================================
 // Rule Types
@@ -252,18 +253,10 @@ export const filePathRuleParamsSchema = z.object({
 	pattern: z
 		.string()
 		.min(1)
-		.max(200)
-		.refine(
-			(p) => {
-				try {
-					new RegExp(p);
-					return true;
-				} catch {
-					return false;
-				}
-			},
-			{ message: "Invalid regular expression" },
-		),
+		.max(REGEX_MAX_LENGTH)
+		.refine((p) => getRegexSafetyError(p) === null, {
+			message: "Invalid or unsafe regular expression (nested quantifiers, backreferences, or excessive repetition are not allowed)",
+		}),
 	field: z.enum(["path", "rootFolderPath"]).default("path"),
 });
 
@@ -359,7 +352,14 @@ const baseCleanupRuleSchema = z.object({
 	serviceFilter: z.array(z.string()).nullable().optional(),
 	instanceFilter: z.array(z.string()).nullable().optional(),
 	excludeTags: z.array(z.number()).nullable().optional(),
-	excludeTitles: z.array(z.string()).nullable().optional(),
+	excludeTitles: z
+		.array(
+			z.string().max(REGEX_MAX_LENGTH).refine((p) => getRegexSafetyError(p) === null, {
+				message: "Invalid or unsafe regular expression pattern",
+			}),
+		)
+		.nullable()
+		.optional(),
 	plexLibraryFilter: z.array(z.string()).nullable().optional(),
 	action: cleanupActionSchema.optional().default("delete"),
 	operator: compositeOperatorSchema.nullable().optional(),
