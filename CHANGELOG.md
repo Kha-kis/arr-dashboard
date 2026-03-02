@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Sonarr Missing Episode Stats Overcount** - Statistics page now uses Sonarr's `episodeCount` (monitored episodes only) instead of `totalEpisodeCount` (all episodes including unaired, unmonitored, and specials) when calculating missing episodes. This caused inflated counts (e.g., 9,000+ shown instead of ~60 actual missing) for users with large libraries containing many unmonitored or future episodes ([#131](https://github.com/Kha-kis/arr-dashboard/issues/131))
+- **Queue Remove Dropdown Clipped** - The "Remove" dropdown menu in the Active Queue (and Hunt/Sync Strategy dropdowns elsewhere) was clipped by `overflow-hidden` on card containers. Replaced all three inline-positioned dropdowns with portaled Radix DropdownMenu for proper rendering above all ancestors ([#132](https://github.com/Kha-kis/arr-dashboard/issues/132))
 
 ### Added
 
