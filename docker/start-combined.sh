@@ -248,7 +248,7 @@ echo "  - Web Port: $PORT"
 echo ""
 echo "Starting API server on $HOST:$API_PORT..."
 cd /app/api
-su-exec abc sh -c "API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node dist/index.js" 2>&1 &
+su-exec abc sh -c "API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node dist/index.js" > /config/logs/api.log 2>&1 &
 API_PID=$!
 echo "API started with PID $API_PID"
 
@@ -257,13 +257,17 @@ sleep 3
 if ! kill -0 "$API_PID" 2>/dev/null; then
     echo ""
     echo "ERROR: API process (PID $API_PID) died during startup!" >&2
-    echo "  Check the logs above for Node.js error output." >&2
-    echo "  This usually indicates a module import or Prisma initialization failure." >&2
+    echo "=== API startup output ===" >&2
+    cat /config/logs/api.log >&2
+    echo "=== End API output ===" >&2
     wait "$API_PID" 2>/dev/null
     API_EXIT=$?
     echo "  API exit code: $API_EXIT" >&2
     exit 1
 fi
+
+# Tail the API log to container stdout so docker logs captures it
+tail -f /config/logs/api.log &
 
 # ============================================
 # Start Web server (as abc user)

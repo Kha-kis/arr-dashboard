@@ -191,28 +191,22 @@ jobs:
 
       - name: Start container (PostgreSQL)
         run: |
+          # Connect app to the same Docker network as the postgres service container
+          # so it can reach postgres via hostname. Use port mapping for external access.
+          PG_NETWORK=$(docker inspect ${{ job.services.postgres.id }} --format '{{json .NetworkSettings.Networks}}' | jq -r 'keys[0]')
+          echo "PostgreSQL service network: $PG_NETWORK"
+
           docker run -d \
             --name smoke-postgres \
-            --network host \
-            -e DATABASE_URL="postgresql://arr:arr_smoke_test@localhost:5432/arr_dashboard" \
+            --network "$PG_NETWORK" \
+            -p 3000:3000 \
+            -p 3001:3001 \
+            -e DATABASE_URL="postgresql://arr:arr_smoke_test@postgres:5432/arr_dashboard" \
             -e PUID=1000 \
             -e PGID=1000 \
             -e PORT=3000 \
             -e API_PORT=3001 \
             arr-dashboard:smoke
-
-      - name: Debug container state
-        run: |
-          echo "Waiting 15s for container startup..."
-          sleep 15
-          echo "=== Process list ==="
-          docker exec smoke-postgres ps aux 2>/dev/null || echo "Failed to exec into container"
-          echo ""
-          echo "=== Port check (inside container) ==="
-          docker exec smoke-postgres sh -c "wget -q -O- http://localhost:3001/health 2>&1 || echo 'API NOT reachable'" 2>/dev/null || true
-          echo ""
-          echo "=== Container logs (last 40 lines) ==="
-          docker logs smoke-postgres 2>&1 | tail -40
 
       - name: Wait for API health (port 3001)
         run: |
