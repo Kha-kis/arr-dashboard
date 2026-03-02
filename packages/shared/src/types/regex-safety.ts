@@ -50,7 +50,7 @@ export function isRegexSafe(pattern: string): boolean {
 
 	// Must be a valid regex
 	try {
-		new RegExp(pattern);
+		new RegExp(pattern); // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
 	} catch {
 		return false;
 	}
@@ -74,7 +74,7 @@ export function getRegexSafetyError(pattern: string): string | null {
 	}
 
 	try {
-		new RegExp(pattern);
+		new RegExp(pattern); // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
 	} catch {
 		return "Invalid regular expression syntax";
 	}

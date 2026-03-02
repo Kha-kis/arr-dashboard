@@ -194,6 +194,7 @@ export function markdownToFormattedHtml(rawMarkdown: string, titleToRemove?: str
 
 	// Remove title if provided
 	if (titleToRemove) {
+		// nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
 		const titlePattern = new RegExp(
 			`^\\s*${escapeRegExp(titleToRemove)}\\s*(\\([^)]{1,50}\\))?\\s*`,
 			"i",

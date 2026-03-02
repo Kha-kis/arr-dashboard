@@ -23,9 +23,6 @@ const prisma = new PrismaClient();
  * Reads ADMIN_USERNAME (defaults to "admin") and ADMIN_PASSWORD (defaults to "admin1234"),
  * checks for an existing user with that username, and if none is found creates a new user
  * with the password hashed. Writes the new user to the database and logs the outcome.
- *
- * The plaintext password is included in the log only when NODE_ENV is "development" or
- * DEV_SHOW_PASSWORD is set to "true"; otherwise a generic success message is logged.
  */
 async function main() {
 	const password = process.env.ADMIN_PASSWORD ?? "admin1234";
@@ -33,7 +30,7 @@ async function main() {
 
 	const existing = await prisma.user.findUnique({ where: { username } });
 	if (existing) {
-		console.log(`Admin user already exists (${username})`);
+		console.log("Admin user already exists");
 		return;
 	}
 
@@ -47,14 +44,7 @@ async function main() {
 		},
 	});
 
-	// Only show password in development or when explicitly requested
-	const showPassword =
-		process.env.NODE_ENV === "development" || process.env.DEV_SHOW_PASSWORD === "true";
-	if (showPassword) {
-		console.log(`Seeded admin user "${user.username}" (password: ${password})`);
-	} else {
-		console.log(`Seeded admin user "${user.username}" successfully`);
-	}
+	console.log(`Seeded admin user "${user.username}" successfully`);
 }
 
 main()
