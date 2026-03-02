@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.8.5** - Fix Sonarr missing episode stats overcount
+> **Version 2.8.5** - Bug fixes for queue cleaner, statistics, dropdowns, logging, and Docker PostgreSQL
 
 A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -81,7 +81,7 @@ services:
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
-| `2.8.5` | Fix Sonarr missing episode stats overcount |
+| `2.8.5` | Bug fixes: queue cleaner, statistics, dropdowns, logging, Docker PostgreSQL |
 | `2.8.4` | Harden quality definition reset with multi-strategy fallback |
 | `2.8.3` | TRaSH Guides PR #2590 compatibility (include semantics + quality ordering) |
 | `2.8.2` | Hotfix for Docker startup crash in v2.8.1 |
