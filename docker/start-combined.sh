@@ -158,6 +158,20 @@ if [ "$CURRENT_PROVIDER" != "$DB_PROVIDER" ]; then
         exit 1
     fi
 
+    # Patch the bundled dist/index.js to match the new provider.
+    # tsup inlines the Prisma-generated config (activeProvider + inlineSchema) at build time.
+    # Since the image is always built with SQLite, the bundle has "sqlite" baked in.
+    # Without this patch, the Prisma runtime generates SQLite-dialect SQL and sends it
+    # through the PostgreSQL adapter, causing a silent crash at module initialization.
+    echo "  - Patching bundled Prisma config in dist/index.js..."
+    if [ -f dist/index.js ]; then
+        sed -i 's/"activeProvider": "sqlite"/"activeProvider": "'"$DB_PROVIDER"'"/' dist/index.js
+        sed -i 's/provider = "sqlite"/provider = "'"$DB_PROVIDER"'"/' dist/index.js
+        echo "  - Bundle patched for $DB_PROVIDER"
+    else
+        echo "WARNING: dist/index.js not found, skipping bundle patch" >&2
+    fi
+
     echo "  - Provider switched successfully"
 else
     echo "  - Prisma provider already set to $DB_PROVIDER (no change needed)"
