@@ -51,7 +51,13 @@ if (!envResult.success) {
 const env = envResult.data;
 
 const start = async () => {
-	const app = buildServer({ env });
+	let app: ReturnType<typeof buildServer>;
+	try {
+		app = buildServer({ env });
+	} catch (error) {
+		console.error("Failed to build server:", error);
+		process.exit(1);
+	}
 
 	try {
 		await app.listen({
@@ -94,7 +100,11 @@ const start = async () => {
 				app.log.debug({ err }, "Startup notification failed (non-critical)");
 			});
 	} catch (error) {
+		// Log to both pino (file) and console (stderr). Pino uses an async worker
+		// thread transport, so process.exit() can kill the process before pino
+		// flushes. console.error is synchronous and guarantees visible output.
 		app.log.error({ err: error }, "Failed to start API server");
+		console.error("Failed to start API server:", error);
 		process.exit(1);
 	}
 };
