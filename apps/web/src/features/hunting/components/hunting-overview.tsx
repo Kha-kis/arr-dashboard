@@ -17,6 +17,12 @@ import {
 } from "lucide-react";
 import { Button, toast } from "../../../components/ui";
 import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
 	StatCard,
 	PremiumEmptyState,
 	PremiumSection,
@@ -133,86 +139,75 @@ interface HuntDropdownProps {
 
 const HuntDropdown = ({ instance, isTriggering, onTrigger }: HuntDropdownProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
-	const [isOpen, setIsOpen] = useState(false);
-
-	const handleSelect = (type: "missing" | "upgrade") => {
-		setIsOpen(false);
-		onTrigger(type);
-	};
 
 	return (
-		<div className="relative">
-			<Button
-				variant="secondary"
-				size="sm"
-				onClick={() => setIsOpen(!isOpen)}
-				disabled={isTriggering}
-				className="gap-2 border-border/50 bg-card/50 backdrop-blur-xs hover:bg-card/80"
+		<DropdownMenu>
+			<DropdownMenuTrigger asChild disabled={isTriggering}>
+				<Button
+					variant="secondary"
+					size="sm"
+					className="gap-2 border-border/50 bg-card/50 backdrop-blur-xs hover:bg-card/80"
+				>
+					{isTriggering ? (
+						<Loader2 className="h-4 w-4 animate-spin" />
+					) : (
+						<>
+							<Play className="h-4 w-4" />
+							Hunt
+							<ChevronDown className="h-3 w-3" />
+						</>
+					)}
+				</Button>
+			</DropdownMenuTrigger>
+
+			<DropdownMenuContent
+				align="end"
+				side="bottom"
+				sideOffset={8}
+				className="min-w-[180px] rounded-xl border-border/50 bg-card/95 backdrop-blur-xl shadow-2xl p-0 overflow-hidden"
 			>
-				{isTriggering ? (
-					<Loader2 className="h-4 w-4 animate-spin" />
-				) : (
-					<>
-						<Play className="h-4 w-4" />
-						Hunt
-						<ChevronDown className="h-3 w-3" />
-					</>
+				{instance.huntMissingEnabled && (
+					<DropdownMenuItem
+						onSelect={() => onTrigger("missing")}
+						className="flex items-center gap-3 px-4 py-3 cursor-pointer text-muted-foreground hover:text-foreground focus:text-foreground focus:bg-muted/30"
+					>
+						<div
+							className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+							style={{
+								background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+								border: `1px solid ${themeGradient.from}30`,
+							}}
+						>
+							<Search className="h-4 w-4" style={{ color: themeGradient.from }} />
+						</div>
+						<div>
+							<div className="font-medium text-foreground">Hunt Missing</div>
+							<div className="text-xs text-muted-foreground">Search for undownloaded content</div>
+						</div>
+					</DropdownMenuItem>
 				)}
-			</Button>
-
-			{isOpen && (
-				<>
-					{/* Backdrop */}
-					<div className="fixed inset-0 z-modal-backdrop" onClick={() => setIsOpen(false)} />
-
-					{/* Dropdown menu */}
-					<div className="absolute right-0 mt-2 min-w-[180px] rounded-xl border border-border/50 bg-card/95 backdrop-blur-xl shadow-2xl z-modal overflow-hidden">
-						{instance.huntMissingEnabled && (
-							<button
-								type="button"
-								className="w-full flex items-center gap-3 px-4 py-3 text-sm text-left text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
-								onClick={() => handleSelect("missing")}
-							>
-								<div
-									className="flex h-8 w-8 items-center justify-center rounded-lg"
-									style={{
-										background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
-										border: `1px solid ${themeGradient.from}30`,
-									}}
-								>
-									<Search className="h-4 w-4" style={{ color: themeGradient.from }} />
-								</div>
-								<div>
-									<div className="font-medium text-foreground">Hunt Missing</div>
-									<div className="text-xs text-muted-foreground">Search for undownloaded content</div>
-								</div>
-							</button>
-						)}
-						{instance.huntUpgradesEnabled && (
-							<button
-								type="button"
-								className="w-full flex items-center gap-3 px-4 py-3 text-sm text-left text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
-								onClick={() => handleSelect("upgrade")}
-							>
-								<div
-									className="flex h-8 w-8 items-center justify-center rounded-lg"
-									style={{
-										background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
-										border: `1px solid ${themeGradient.from}30`,
-									}}
-								>
-									<ArrowUpCircle className="h-4 w-4" style={{ color: themeGradient.from }} />
-								</div>
-								<div>
-									<div className="font-medium text-foreground">Hunt Upgrades</div>
-									<div className="text-xs text-muted-foreground">Search for better quality</div>
-								</div>
-							</button>
-						)}
-					</div>
-				</>
-			)}
-		</div>
+				{instance.huntUpgradesEnabled && (
+					<DropdownMenuItem
+						onSelect={() => onTrigger("upgrade")}
+						className="flex items-center gap-3 px-4 py-3 cursor-pointer text-muted-foreground hover:text-foreground focus:text-foreground focus:bg-muted/30"
+					>
+						<div
+							className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+							style={{
+								background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+								border: `1px solid ${themeGradient.from}30`,
+							}}
+						>
+							<ArrowUpCircle className="h-4 w-4" style={{ color: themeGradient.from }} />
+						</div>
+						<div>
+							<div className="font-medium text-foreground">Hunt Upgrades</div>
+							<div className="text-xs text-muted-foreground">Search for better quality</div>
+						</div>
+					</DropdownMenuItem>
+				)}
+			</DropdownMenuContent>
+		</DropdownMenu>
 	);
 };
 
