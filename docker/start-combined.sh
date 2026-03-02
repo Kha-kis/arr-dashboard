@@ -149,6 +149,8 @@ if [ "$CURRENT_PROVIDER" != "$DB_PROVIDER" ]; then
     [ -d "/app/api/node_modules/@prisma" ] && chown -R "${PUID}:${PGID}" "/app/api/node_modules/@prisma"
     # Ensure prisma directory is writable for any generated files
     [ -d "/app/api/node_modules/.prisma" ] && chown -R "${PUID}:${PGID}" "/app/api/node_modules/.prisma"
+    # Ensure Prisma output directory is writable (Prisma 7 generates to src/generated/prisma/)
+    [ -d "/app/api/src/generated" ] && chown -R "${PUID}:${PGID}" "/app/api/src/generated"
 
     if ! su-exec abc ./node_modules/.bin/prisma generate --schema prisma/schema.prisma; then
         echo "ERROR: Failed to regenerate Prisma client" >&2
