@@ -529,8 +529,17 @@ function ApprovalsTab() {
 // Logs Tab
 // ============================================================================
 
+interface LogDetail {
+	title: string;
+	rule: string;
+	reason: string;
+	action?: string;
+	status?: string;
+}
+
 function LogsTab() {
 	const [page] = useState(1);
+	const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
 	const { data, isLoading } = useCleanupLogs(page);
 
 	if (isLoading) {
@@ -569,34 +578,84 @@ function LogsTab() {
 						</tr>
 					</thead>
 					<tbody>
-						{data.items.map((log) => (
-							<tr key={log.id} className="border-b border-border/10 hover:bg-card/20">
-								<td className="px-4 py-2.5 text-xs whitespace-nowrap">
-									{new Date(log.startedAt).toLocaleString()}
-								</td>
-								<td className="px-4 py-2.5">
-									<StatusBadge
-										status={
-											log.status === "completed"
-												? "success"
-												: log.status === "error"
-													? "error"
-													: "warning"
-										}
+						{data.items.map((log) => {
+							const details = (Array.isArray(log.details) ? log.details : []) as unknown as LogDetail[];
+							const isExpanded = expandedLogId === log.id;
+							return (
+								<>
+									<tr
+										key={log.id}
+										className="border-b border-border/10 hover:bg-card/20 cursor-pointer"
+										onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
 									>
-										{log.isDryRun ? "dry run" : log.status}
-									</StatusBadge>
-								</td>
-								<td className="px-4 py-2.5 text-right">{log.itemsEvaluated}</td>
-								<td className="px-4 py-2.5 text-right">{log.itemsFlagged}</td>
-								<td className="px-4 py-2.5 text-right">{log.itemsRemoved}</td>
-								<td className="px-4 py-2.5 text-right">{log.itemsUnmonitored}</td>
-								<td className="px-4 py-2.5 text-right">{log.itemsFilesDeleted}</td>
-								<td className="px-4 py-2.5 text-right text-xs text-muted-foreground">
-									{log.durationMs ? `${(log.durationMs / 1000).toFixed(1)}s` : "-"}
-								</td>
-							</tr>
-						))}
+										<td className="px-4 py-2.5 text-xs whitespace-nowrap">
+											{new Date(log.startedAt).toLocaleString()}
+										</td>
+										<td className="px-4 py-2.5">
+											<StatusBadge
+												status={
+													log.status === "completed"
+														? "success"
+														: log.status === "error"
+															? "error"
+															: "warning"
+												}
+											>
+												{log.isDryRun ? "dry run" : log.status}
+											</StatusBadge>
+										</td>
+										<td className="px-4 py-2.5 text-right">{log.itemsEvaluated}</td>
+										<td className="px-4 py-2.5 text-right">{log.itemsFlagged}</td>
+										<td className="px-4 py-2.5 text-right">{log.itemsRemoved}</td>
+										<td className="px-4 py-2.5 text-right">{log.itemsUnmonitored}</td>
+										<td className="px-4 py-2.5 text-right">{log.itemsFilesDeleted}</td>
+										<td className="px-4 py-2.5 text-right text-xs text-muted-foreground">
+											{log.durationMs ? `${(log.durationMs / 1000).toFixed(1)}s` : "-"}
+										</td>
+									</tr>
+									{isExpanded && details.length > 0 && (
+										<tr key={`${log.id}-details`}>
+											<td colSpan={8} className="px-4 py-3 bg-card/10">
+												<div className="space-y-1.5 max-h-64 overflow-y-auto">
+													{details.map((d, i) => (
+														<div key={i} className="flex items-center gap-2 text-xs">
+															<span className="text-foreground font-medium truncate max-w-[200px]">
+																{d.title}
+															</span>
+															<span className="text-muted-foreground">—</span>
+															<span className="text-muted-foreground">{d.rule}</span>
+															<span className="text-muted-foreground/70 truncate">
+																{d.reason}
+															</span>
+															{d.action && d.action !== "delete" && (
+																<StatusBadge
+																	status={d.action === "unmonitor" ? "warning" : "info"}
+																>
+																	{d.action}
+																</StatusBadge>
+															)}
+															{d.status && d.status !== "pending" && (
+																<StatusBadge
+																	status={
+																		d.status === "executed" || d.status === "removed"
+																			? "success"
+																			: d.status === "error"
+																				? "error"
+																				: "info"
+																	}
+																>
+																	{d.status}
+																</StatusBadge>
+															)}
+														</div>
+													))}
+												</div>
+											</td>
+										</tr>
+									)}
+								</>
+							);
+						})}
 					</tbody>
 				</table>
 			</div>
