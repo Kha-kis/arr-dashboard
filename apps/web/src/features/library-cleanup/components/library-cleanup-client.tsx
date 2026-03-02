@@ -24,6 +24,14 @@ import {
 	PremiumTabs,
 	StatusBadge,
 } from "@/components/layout";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 import {
 	useApproveCleanupItem,
@@ -129,6 +137,7 @@ function ConfigTab({
 
 	const [dialogOpen, setDialogOpen] = useState(false);
 	const [editingRule, setEditingRule] = useState<CleanupRuleResponse | null>(null);
+	const [confirmRunOpen, setConfirmRunOpen] = useState(false);
 
 	const actionCounts = useMemo(() => {
 		if (!previewData?.items) return null;
@@ -234,7 +243,7 @@ function ConfigTab({
 				</GradientButton>
 				<GradientButton
 					variant="secondary"
-					onClick={onExecute}
+					onClick={() => setConfirmRunOpen(true)}
 					disabled={isExecuting || !config.enabled}
 				>
 					{isExecuting ? (
@@ -244,6 +253,36 @@ function ConfigTab({
 					)}
 					Run Now
 				</GradientButton>
+
+				{/* Confirmation dialog for destructive cleanup execution */}
+				<Dialog open={confirmRunOpen} onOpenChange={setConfirmRunOpen}>
+					<DialogContent className="max-w-md">
+						<DialogHeader>
+							<DialogTitle>Run Library Cleanup?</DialogTitle>
+							<DialogDescription>
+								This will evaluate your library against all enabled rules and{" "}
+								{config.dryRunMode
+									? "flag matching items (dry run mode — nothing will be removed)."
+									: config.requireApproval
+										? "queue matching items for approval."
+										: "remove or unmonitor matching items. This action cannot be undone."}
+							</DialogDescription>
+						</DialogHeader>
+						<DialogFooter>
+							<GradientButton variant="secondary" onClick={() => setConfirmRunOpen(false)}>
+								Cancel
+							</GradientButton>
+							<GradientButton
+								onClick={() => {
+									setConfirmRunOpen(false);
+									onExecute();
+								}}
+							>
+								{config.dryRunMode ? "Run Preview" : config.requireApproval ? "Run & Queue" : "Run & Execute"}
+							</GradientButton>
+						</DialogFooter>
+					</DialogContent>
+				</Dialog>
 
 				{executeResult && (
 					<span className="text-sm text-muted-foreground">
