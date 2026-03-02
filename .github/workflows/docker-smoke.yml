@@ -201,6 +201,19 @@ jobs:
             -e API_PORT=3001 \
             arr-dashboard:smoke
 
+      - name: Debug container state
+        run: |
+          echo "Waiting 15s for container startup..."
+          sleep 15
+          echo "=== Process list ==="
+          docker exec smoke-postgres ps aux 2>/dev/null || echo "Failed to exec into container"
+          echo ""
+          echo "=== Port check (inside container) ==="
+          docker exec smoke-postgres sh -c "wget -q -O- http://localhost:3001/health 2>&1 || echo 'API NOT reachable'" 2>/dev/null || true
+          echo ""
+          echo "=== Container logs (last 40 lines) ==="
+          docker logs smoke-postgres 2>&1 | tail -40
+
       - name: Wait for API health (port 3001)
         run: |
           echo "Polling API /health on port 3001 (timeout: ${SMOKE_TIMEOUT}s)..."
