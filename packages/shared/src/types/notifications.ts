@@ -79,6 +79,12 @@ export const notificationEventTypeSchema = z.enum([
 	"LOGIN_FAILED",
 	// Services
 	"SERVICE_CONNECTION_FAILED",
+	// Cache
+	"CACHE_REFRESH_STALE",
+	// Plex Analytics
+	"PLEX_CONCURRENT_PEAK",
+	"PLEX_TRANSCODE_HEAVY",
+	"PLEX_NEW_DEVICE",
 	// System
 	"SYSTEM_STARTUP",
 	"SYSTEM_ERROR",

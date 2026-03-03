@@ -4,8 +4,9 @@
  * Returns distinct library sections from PlexCache for use in cleanup rule filtering.
  */
 
-import type { PlexSection, PlexSectionsResponse } from "@arr/shared";
+import type { PlexSectionsResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
+import { mapToSections } from "./lib/section-helpers.js";
 
 export async function registerSectionRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	/**
@@ -36,13 +37,7 @@ export async function registerSectionRoutes(app: FastifyInstance, _opts: Fastify
 			},
 		});
 
-		const sections: PlexSection[] = groupedSections.map((group) => ({
-			sectionId: group.sectionId,
-			sectionTitle: group.sectionTitle,
-			mediaType: group.mediaType,
-			instanceId: group.instanceId,
-			instanceName: instanceMap.get(group.instanceId) ?? "Unknown",
-		}));
+		const sections = mapToSections(groupedSections, instanceMap);
 
 		return reply.send({ sections } satisfies PlexSectionsResponse);
 	});

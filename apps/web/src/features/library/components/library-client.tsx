@@ -1,10 +1,10 @@
 "use client";
 
 import type { LibraryItem } from "@arr/shared";
-import React, { Suspense, useCallback, useEffect, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "../../../components/ui";
 import { useLibraryMonitorMutation } from "../../../hooks/api/useLibrary";
-import { useWatchEnrichment } from "../../../hooks/api/usePlex";
+import { useSeriesProgress, useWatchEnrichment } from "../../../hooks/api/usePlex";
 import { useLibraryEnrichment } from "../../../hooks/api/useSeerr";
 import { useSeerrInstances } from "../../seerr/hooks/use-seerr-instances";
 import { useLibraryActions, useLibraryData, useLibraryFilters } from "../hooks";
@@ -64,6 +64,17 @@ export const LibraryClient: React.FC = () => {
 	// Plex watch enrichment — fetch watch counts, on-deck status, last watched
 	const watchEnrichmentQuery = useWatchEnrichment(data.items);
 	const watchEnrichmentMap = watchEnrichmentQuery.data?.items ?? null;
+
+	// Plex series progress — fetch watched/total episode counts for series items
+	const seriesTmdbIds = useMemo(
+		() =>
+			data.items
+				.filter((item) => item.type === "series" && item.remoteIds?.tmdbId)
+				.map((item) => item.remoteIds!.tmdbId!),
+		[data.items],
+	);
+	const seriesProgressQuery = useSeriesProgress(seriesTmdbIds);
+	const seriesProgressMap = seriesProgressQuery.data?.progress ?? null;
 
 	// Notify user if Seerr enrichment fails (one-time per error transition)
 	useEffect(() => {
@@ -213,6 +224,7 @@ export const LibraryClient: React.FC = () => {
 					isSyncing={data.isSyncing}
 					enrichmentMap={enrichmentMap}
 					watchEnrichmentMap={watchEnrichmentMap}
+					seriesProgressMap={seriesProgressMap}
 				/>
 			</div>
 

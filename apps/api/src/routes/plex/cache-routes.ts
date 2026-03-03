@@ -5,11 +5,13 @@
  * Enables users to see when data was last synced and trigger a refresh.
  */
 
+import type { CacheHealthResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { requirePlexClient } from "../../lib/plex/plex-helpers.js";
 import { refreshPlexCache } from "../../lib/plex/plex-cache-refresher.js";
 import { validateRequest } from "../../lib/utils/validate.js";
+import { buildCacheHealthItems } from "./lib/cache-health-helpers.js";
 
 const instanceParams = z.object({
 	instanceId: z.string().min(1),
@@ -68,4 +70,40 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 			});
 		},
 	);
+
+	/**
+	 * GET /api/plex/cache/health
+	 *
+	 * Returns cache refresh status for all of the user's Plex/Tautulli instances.
+	 * Includes a staleness flag (>12h since last refresh).
+	 */
+	app.get("/cache/health", async (request, reply) => {
+		const userId = request.currentUser!.id;
+
+		// Get all the user's Plex and Tautulli instances
+		const instances = await app.prisma.serviceInstance.findMany({
+			where: {
+				userId,
+				service: { in: ["PLEX", "TAUTULLI"] },
+				enabled: true,
+			},
+			select: { id: true, label: true },
+		});
+
+		if (instances.length === 0) {
+			const response: CacheHealthResponse = { items: [] };
+			return reply.send(response);
+		}
+
+		const instanceIds = instances.map((i) => i.id);
+		const instanceMap = new Map(instances.map((i) => [i.id, i.label]));
+
+		const statuses = await app.prisma.cacheRefreshStatus.findMany({
+			where: { instanceId: { in: instanceIds } },
+		});
+
+		const items = buildCacheHealthItems(statuses, instanceMap);
+		const response: CacheHealthResponse = { items };
+		return reply.send(response);
+	});
 }

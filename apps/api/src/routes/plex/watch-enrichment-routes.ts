@@ -5,10 +5,11 @@
  * No live API calls — reads exclusively from cached data refreshed on a 6h schedule.
  */
 
-import type { WatchEnrichmentItem, WatchEnrichmentResponse } from "@arr/shared";
+import type { WatchEnrichmentResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { validateRequest } from "../../lib/utils/validate.js";
+import { aggregateWatchEnrichment } from "./lib/watch-enrichment-helpers.js";
 
 const enrichmentQuery = z.object({
 	tmdbIds: z.string().min(1),
@@ -25,6 +26,7 @@ const enrichmentQuery = z.object({
 			}
 			return parts as ("movie" | "series")[];
 		}),
+	filterUser: z.string().max(255).optional(),
 });
 
 const MAX_BATCH_SIZE = 200;
@@ -40,7 +42,7 @@ export async function registerWatchEnrichmentRoutes(
 	 * tmdbIds and types are parallel arrays (same length, same order).
 	 */
 	app.get("/", async (request, reply) => {
-		const { tmdbIds: tmdbIdsRaw, types } = validateRequest(enrichmentQuery, request.query);
+		const { tmdbIds: tmdbIdsRaw, types, filterUser } = validateRequest(enrichmentQuery, request.query);
 		const tmdbIds = tmdbIdsRaw.split(",").map(Number);
 		const userId = request.currentUser!.id;
 
@@ -98,94 +100,14 @@ export async function registerWatchEnrichmentRoutes(
 				: [],
 		]);
 
-		// Aggregate into enrichment items
-		const items: Record<string, WatchEnrichmentItem> = {};
-
-		for (const [key, { tmdbId, mediaType }] of uniqueKeys) {
-			const plexMatches = plexEntries.filter(
-				(e) => e.tmdbId === tmdbId && e.mediaType === mediaType,
-			);
-			const tautulliMatches = tautulliEntries.filter(
-				(e) => e.tmdbId === tmdbId && e.mediaType === mediaType,
-			);
-
-			if (plexMatches.length === 0 && tautulliMatches.length === 0) continue;
-
-			// Aggregate across instances.
-			// Use max(plex, tautulli) for watchCount to avoid double-counting — both
-			// sources track the same underlying Plex server views.
-			let lastWatchedAt: Date | null = null;
-			let plexWatchCount = 0;
-			let tautulliWatchCount = 0;
-			const allUsers = new Set<string>();
-			let onDeck = false;
-			let userRating: number | null = null;
-			let ratingKey: string | null = null;
-			let instanceId: string | null = null;
-			let collections: string[] = [];
-			let labels: string[] = [];
-
-			for (const entry of plexMatches) {
-				if (entry.lastWatchedAt && (!lastWatchedAt || entry.lastWatchedAt > lastWatchedAt)) {
-					lastWatchedAt = entry.lastWatchedAt;
-				}
-				plexWatchCount += entry.watchCount;
-				if (entry.onDeck) onDeck = true;
-				if (entry.userRating != null && (userRating == null || entry.userRating > userRating)) {
-					userRating = entry.userRating;
-				}
-				// Capture ratingKey + instanceId + tags for write-back (F8)
-				if (entry.ratingKey && !ratingKey) {
-					ratingKey = entry.ratingKey;
-					instanceId = entry.instanceId;
-					try {
-						collections = JSON.parse(entry.collections) as string[];
-					} catch {
-						collections = [];
-					}
-					try {
-						labels = JSON.parse(entry.labels) as string[];
-					} catch {
-						labels = [];
-					}
-				}
-				try {
-					const users = JSON.parse(entry.watchedByUsers) as string[];
-					for (const u of users) allUsers.add(u);
-				} catch {
-					// Skip malformed JSON
-				}
-			}
-
-			for (const entry of tautulliMatches) {
-				if (entry.lastWatchedAt && (!lastWatchedAt || entry.lastWatchedAt > lastWatchedAt)) {
-					lastWatchedAt = entry.lastWatchedAt;
-				}
-				tautulliWatchCount += entry.watchCount;
-				try {
-					const users = JSON.parse(entry.watchedByUsers) as string[];
-					for (const u of users) allUsers.add(u);
-				} catch {
-					// Skip malformed JSON
-				}
-			}
-
-			const hasPlex = plexMatches.length > 0;
-			const hasTautulli = tautulliMatches.length > 0;
-
-			items[key] = {
-				lastWatchedAt: lastWatchedAt?.toISOString() ?? null,
-				watchCount: Math.max(plexWatchCount, tautulliWatchCount),
-				watchedByUsers: [...allUsers],
-				onDeck,
-				userRating,
-				source: hasPlex && hasTautulli ? "both" : hasPlex ? "plex" : "tautulli",
-				ratingKey,
-				instanceId,
-				collections,
-				labels,
-			};
-		}
+		// Aggregate into enrichment items using extracted pure helper
+		const items = aggregateWatchEnrichment(
+			uniqueKeys,
+			plexEntries,
+			tautulliEntries,
+			filterUser,
+			request.log,
+		);
 
 		const response: WatchEnrichmentResponse = { items };
 		return reply.send(response);

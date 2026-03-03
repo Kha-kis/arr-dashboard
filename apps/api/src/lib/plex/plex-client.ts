@@ -16,6 +16,8 @@ import type { Encryptor } from "../auth/encryption.js";
 export interface PlexIdentity {
 	machineIdentifier: string;
 	version: string;
+	friendlyName: string;
+	platform: string;
 }
 
 export interface PlexLibrary {
@@ -120,14 +122,41 @@ export class PlexClient {
 
 	/**
 	 * Get Plex server identity (used for connection testing).
+	 * Uses the unauthenticated /identity endpoint (no friendlyName/platform).
 	 */
 	async getIdentity(): Promise<PlexIdentity> {
 		const data = await this.request<{
-			MediaContainer: { machineIdentifier: string; version: string };
+			MediaContainer: {
+				machineIdentifier: string;
+				version: string;
+			};
 		}>("/identity");
 		return {
 			machineIdentifier: data.MediaContainer.machineIdentifier,
 			version: data.MediaContainer.version,
+			friendlyName: "",
+			platform: "",
+		};
+	}
+
+	/**
+	 * Get full server info including friendlyName and platform.
+	 * Uses the authenticated root "/" endpoint which returns richer metadata.
+	 */
+	async getServerInfo(): Promise<PlexIdentity> {
+		const data = await this.request<{
+			MediaContainer: {
+				machineIdentifier: string;
+				version: string;
+				friendlyName?: string;
+				platform?: string;
+			};
+		}>("/");
+		return {
+			machineIdentifier: data.MediaContainer.machineIdentifier,
+			version: data.MediaContainer.version,
+			friendlyName: data.MediaContainer.friendlyName ?? "",
+			platform: data.MediaContainer.platform ?? "",
 		};
 	}
 

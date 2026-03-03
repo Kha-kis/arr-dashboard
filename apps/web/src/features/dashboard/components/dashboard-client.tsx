@@ -43,8 +43,12 @@ import { useDashboardData } from "../hooks/useDashboardData";
 import { useDashboardFilters } from "../hooks/useDashboardFilters";
 import { useDashboardQueue } from "../hooks/useDashboardQueue";
 import { type DashboardTab, DashboardTabs } from "./dashboard-tabs";
+import { CacheHealthBanner } from "./cache-health-banner";
 import { NowPlayingWidget } from "./now-playing-widget";
+import { OnDeckWidget } from "./on-deck-widget";
+import { PlexServerInfoWidget } from "./plex-server-info-widget";
 import { QueueTable } from "./queue-table";
+import { RecentlyAddedWidget } from "./recently-added-widget";
 import { SeerrRequestsWidget } from "./seerr-requests-widget";
 import { WatchHistorySection } from "./watch-history-section";
 
@@ -490,6 +494,9 @@ export const DashboardClient = () => {
 				</div>
 			</header>
 
+			{/* Cache Health Banner */}
+			<CacheHealthBanner enabled={hasMediaServer} />
+
 			{/* Tabs */}
 			<DashboardTabs
 				activeTab={activeTab}
@@ -582,10 +589,23 @@ export const DashboardClient = () => {
 							/>
 						)}
 
+						{/* Plex Server Identity — compact info card */}
+						<PlexServerInfoWidget
+							enabled={hasPlexInstances}
+							animationDelay={475}
+							variant="compact"
+						/>
+
+						{/* On Deck / Continue Watching */}
+						<OnDeckWidget enabled={hasPlexInstances} animationDelay={500} />
+
+						{/* Recently Added */}
+						<RecentlyAddedWidget enabled={hasPlexInstances} animationDelay={525} />
+
 						{/* Configured Instances Section */}
 						<div
 							className="animate-in fade-in slide-in-from-bottom-4 duration-500"
-							style={{ animationDelay: "500ms", animationFillMode: "backwards" }}
+							style={{ animationDelay: "550ms", animationFillMode: "backwards" }}
 						>
 							<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs overflow-hidden">
 								<div className="flex items-center gap-3 px-6 py-4 border-b border-border/50">
@@ -752,12 +772,13 @@ export const DashboardClient = () => {
 
 				{/* Activity Tab */}
 				{activeTab === "activity" && hasMediaServer && (
-					<div className="animate-in fade-in duration-300">
+					<div className="animate-in fade-in duration-300 space-y-6">
 						<NowPlayingWidget
 							hasPlexInstances={hasPlexInstances}
 							hasTautulliInstances={hasTautulliInstances}
 							variant="full"
 						/>
+						<OnDeckWidget enabled={hasPlexInstances} animationDelay={100} />
 						<WatchHistorySection enabled={hasTautulliInstances} />
 					</div>
 				)}

@@ -224,6 +224,16 @@ export type PlexEpisodeCache = Prisma.PlexEpisodeCacheModel
  */
 export type TautulliCache = Prisma.TautulliCacheModel
 /**
+ * Model CacheRefreshStatus
+ * 
+ */
+export type CacheRefreshStatus = Prisma.CacheRefreshStatusModel
+/**
+ * Model SessionSnapshot
+ * 
+ */
+export type SessionSnapshot = Prisma.SessionSnapshotModel
+/**
  * Model NamingConfig
  * Per-instance naming config for TRaSH Guides naming schemes
  */

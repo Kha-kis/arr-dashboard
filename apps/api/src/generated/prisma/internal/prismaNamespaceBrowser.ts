@@ -92,6 +92,8 @@ export const ModelName = {
   PlexCache: 'PlexCache',
   PlexEpisodeCache: 'PlexEpisodeCache',
   TautulliCache: 'TautulliCache',
+  CacheRefreshStatus: 'CacheRefreshStatus',
+  SessionSnapshot: 'SessionSnapshot',
   NamingConfig: 'NamingConfig'
 } as const
 
@@ -827,6 +829,7 @@ export const PlexCacheScalarFieldEnum = {
   mediaType: 'mediaType',
   sectionId: 'sectionId',
   sectionTitle: 'sectionTitle',
+  title: 'title',
   ratingKey: 'ratingKey',
   lastWatchedAt: 'lastWatchedAt',
   watchCount: 'watchCount',
@@ -868,6 +871,36 @@ export const TautulliCacheScalarFieldEnum = {
 } as const
 
 export type TautulliCacheScalarFieldEnum = (typeof TautulliCacheScalarFieldEnum)[keyof typeof TautulliCacheScalarFieldEnum]
+
+
+export const CacheRefreshStatusScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  cacheType: 'cacheType',
+  lastRefreshedAt: 'lastRefreshedAt',
+  lastResult: 'lastResult',
+  lastErrorMessage: 'lastErrorMessage',
+  itemCount: 'itemCount'
+} as const
+
+export type CacheRefreshStatusScalarFieldEnum = (typeof CacheRefreshStatusScalarFieldEnum)[keyof typeof CacheRefreshStatusScalarFieldEnum]
+
+
+export const SessionSnapshotScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  capturedAt: 'capturedAt',
+  concurrentStreams: 'concurrentStreams',
+  totalBandwidth: 'totalBandwidth',
+  lanBandwidth: 'lanBandwidth',
+  wanBandwidth: 'wanBandwidth',
+  directPlayCount: 'directPlayCount',
+  transcodeCount: 'transcodeCount',
+  directStreamCount: 'directStreamCount',
+  sessionsJson: 'sessionsJson'
+} as const
+
+export type SessionSnapshotScalarFieldEnum = (typeof SessionSnapshotScalarFieldEnum)[keyof typeof SessionSnapshotScalarFieldEnum]
 
 
 export const NamingConfigScalarFieldEnum = {

@@ -9,6 +9,7 @@ import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { refreshPlexCache } from "../lib/plex/plex-cache-refresher.js";
 import { createPlexClient } from "../lib/plex/plex-client.js";
+import { getErrorMessage } from "../lib/utils/error-message.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const STARTUP_DELAY_MS = 30_000; // 30 seconds
@@ -30,7 +31,10 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 					where: { service: "PLEX", enabled: true },
 				});
 
-				if (instances.length === 0) return;
+				if (instances.length === 0) {
+					app.log.debug("Plex cache refresh: no enabled Plex instances, skipping");
+					return;
+				}
 
 				app.log.info(
 					{ count: instances.length },
@@ -50,12 +54,84 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 							{ instanceId: instance.id, label: instance.label, ...result },
 							"Plex cache refresh completed for instance",
 						);
+
+						// Track refresh status — separate try so a DB failure
+						// doesn't masquerade as a refresh failure in the outer catch
+						try {
+							await app.prisma.cacheRefreshStatus.upsert({
+								where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "plex" } },
+								create: {
+									instanceId: instance.id,
+									cacheType: "plex",
+									lastRefreshedAt: new Date(),
+									lastResult: result.errors > 0 ? "error" : "success",
+									lastErrorMessage: result.errors > 0 ? `${result.errors} item errors` : null,
+									itemCount: result.upserted,
+								},
+								update: {
+									lastRefreshedAt: new Date(),
+									lastResult: result.errors > 0 ? "error" : "success",
+									lastErrorMessage: result.errors > 0 ? `${result.errors} item errors` : null,
+									itemCount: result.upserted,
+								},
+							});
+						} catch (trackErr) {
+							app.log.warn(
+								{ err: trackErr, instanceId: instance.id },
+								"Plex cache refreshed successfully but failed to record status",
+							);
+						}
 					} catch (err) {
 						app.log.error(
 							{ err, instanceId: instance.id, label: instance.label },
 							"Plex cache refresh failed for instance",
 						);
+
+						// Track failure
+						await app.prisma.cacheRefreshStatus.upsert({
+							where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "plex" } },
+							create: {
+								instanceId: instance.id,
+								cacheType: "plex",
+								lastRefreshedAt: new Date(),
+								lastResult: "error",
+								lastErrorMessage: getErrorMessage(err, "Unknown error"),
+								itemCount: 0,
+							},
+							update: {
+								lastRefreshedAt: new Date(),
+								lastResult: "error",
+								lastErrorMessage: getErrorMessage(err, "Unknown error"),
+							},
+						}).catch((trackErr) => {
+							app.log.warn({ err: trackErr, originalErr: getErrorMessage(err, "Unknown error"), instanceId: instance.id }, "Failed to record cache refresh failure status");
+						});
 					}
+				}
+
+				// Check for stale caches (>12h since last successful refresh)
+				const staleThreshold = new Date(Date.now() - 12 * 60 * 60 * 1000);
+				const staleEntries = await app.prisma.cacheRefreshStatus.findMany({
+					where: {
+						cacheType: "plex",
+						lastRefreshedAt: { lt: staleThreshold },
+					},
+					include: { instance: { select: { label: true } } },
+				});
+				if (staleEntries.length > 0) {
+					const names = staleEntries.map((e) => e.instance.label.replace(/[<>&"']/g, "").slice(0, 50)).join(", ");
+					app.log.warn(
+						{ staleInstances: names },
+						"Plex cache data is stale (>12h since last refresh)",
+					);
+					await app.notificationService.notify({
+						eventType: "CACHE_REFRESH_STALE",
+						title: "Plex cache data is stale",
+						body: `Cache has not refreshed in over 12 hours for: ${names}`,
+						url: "/settings",
+					}).catch((notifyErr) => {
+						app.log.warn({ err: notifyErr }, "Failed to send stale-cache notification");
+					});
 				}
 			} catch (err) {
 				app.log.error({ err }, "Plex cache scheduler: failed to query instances");
@@ -89,7 +165,7 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 	},
 	{
 		name: "plex-cache-scheduler",
-		dependencies: ["prisma", "security"],
+		dependencies: ["prisma", "security", "notification-service"],
 	},
 );
 

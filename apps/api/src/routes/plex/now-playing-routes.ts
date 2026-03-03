@@ -8,6 +8,7 @@
 import type { PlexNowPlayingResponse, PlexSession } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { executeOnPlexInstances } from "../../lib/plex/plex-helpers.js";
+import { computeTotalBandwidth } from "./lib/now-playing-helpers.js";
 
 export async function registerNowPlayingRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	/**
@@ -45,10 +46,7 @@ export async function registerNowPlayingRoutes(app: FastifyInstance, _opts: Fast
 
 		// aggregated is flattened by executeOnPlexInstances (uses flatMap)
 		const sessions = result.aggregated as unknown as PlexSession[];
-		let totalBandwidth = 0;
-		for (const session of sessions) {
-			totalBandwidth += session.bandwidth ?? 0;
-		}
+		const totalBandwidth = computeTotalBandwidth(sessions);
 
 		const response: PlexNowPlayingResponse = {
 			sessions,

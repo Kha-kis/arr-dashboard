@@ -80,12 +80,12 @@ export type PrismaVersion = {
 }
 
 /**
- * Prisma Client JS version: 7.4.0
- * Query Engine version: ab56fe763f921d033a6c195e7ddeb3e255bdbb57
+ * Prisma Client JS version: 7.4.2
+ * Query Engine version: 94a226be1cf2967af2541cca5529f0f7ba866919
  */
 export const prismaVersion: PrismaVersion = {
-  client: "7.4.0",
-  engine: "ab56fe763f921d033a6c195e7ddeb3e255bdbb57"
+  client: "7.4.2",
+  engine: "94a226be1cf2967af2541cca5529f0f7ba866919"
 }
 
 /**
@@ -425,6 +425,8 @@ export const ModelName = {
   PlexCache: 'PlexCache',
   PlexEpisodeCache: 'PlexEpisodeCache',
   TautulliCache: 'TautulliCache',
+  CacheRefreshStatus: 'CacheRefreshStatus',
+  SessionSnapshot: 'SessionSnapshot',
   NamingConfig: 'NamingConfig'
 } as const
 
@@ -441,7 +443,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "plexCache" | "plexEpisodeCache" | "tautulliCache" | "namingConfig"
+    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "plexCache" | "plexEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -3479,6 +3481,154 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    CacheRefreshStatus: {
+      payload: Prisma.$CacheRefreshStatusPayload<ExtArgs>
+      fields: Prisma.CacheRefreshStatusFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.CacheRefreshStatusFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CacheRefreshStatusPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.CacheRefreshStatusFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CacheRefreshStatusPayload>
+        }
+        findFirst: {
+          args: Prisma.CacheRefreshStatusFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CacheRefreshStatusPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.CacheRefreshStatusFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CacheRefreshStatusPayload>
+        }
+        findMany: {
+          args: Prisma.CacheRefreshStatusFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CacheRefreshStatusPayload>[]
+        }
+        create: {
+          args: Prisma.CacheRefreshStatusCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CacheRefreshStatusPayload>
+        }
+        createMany: {
+          args: Prisma.CacheRefreshStatusCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.CacheRefreshStatusCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CacheRefreshStatusPayload>[]
+        }
+        delete: {
+          args: Prisma.CacheRefreshStatusDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CacheRefreshStatusPayload>
+        }
+        update: {
+          args: Prisma.CacheRefreshStatusUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CacheRefreshStatusPayload>
+        }
+        deleteMany: {
+          args: Prisma.CacheRefreshStatusDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.CacheRefreshStatusUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.CacheRefreshStatusUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CacheRefreshStatusPayload>[]
+        }
+        upsert: {
+          args: Prisma.CacheRefreshStatusUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CacheRefreshStatusPayload>
+        }
+        aggregate: {
+          args: Prisma.CacheRefreshStatusAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateCacheRefreshStatus>
+        }
+        groupBy: {
+          args: Prisma.CacheRefreshStatusGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.CacheRefreshStatusGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.CacheRefreshStatusCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.CacheRefreshStatusCountAggregateOutputType> | number
+        }
+      }
+    }
+    SessionSnapshot: {
+      payload: Prisma.$SessionSnapshotPayload<ExtArgs>
+      fields: Prisma.SessionSnapshotFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.SessionSnapshotFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SessionSnapshotPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.SessionSnapshotFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SessionSnapshotPayload>
+        }
+        findFirst: {
+          args: Prisma.SessionSnapshotFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SessionSnapshotPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.SessionSnapshotFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SessionSnapshotPayload>
+        }
+        findMany: {
+          args: Prisma.SessionSnapshotFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SessionSnapshotPayload>[]
+        }
+        create: {
+          args: Prisma.SessionSnapshotCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SessionSnapshotPayload>
+        }
+        createMany: {
+          args: Prisma.SessionSnapshotCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.SessionSnapshotCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SessionSnapshotPayload>[]
+        }
+        delete: {
+          args: Prisma.SessionSnapshotDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SessionSnapshotPayload>
+        }
+        update: {
+          args: Prisma.SessionSnapshotUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SessionSnapshotPayload>
+        }
+        deleteMany: {
+          args: Prisma.SessionSnapshotDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.SessionSnapshotUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.SessionSnapshotUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SessionSnapshotPayload>[]
+        }
+        upsert: {
+          args: Prisma.SessionSnapshotUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SessionSnapshotPayload>
+        }
+        aggregate: {
+          args: Prisma.SessionSnapshotAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateSessionSnapshot>
+        }
+        groupBy: {
+          args: Prisma.SessionSnapshotGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.SessionSnapshotGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.SessionSnapshotCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.SessionSnapshotCountAggregateOutputType> | number
+        }
+      }
+    }
     NamingConfig: {
       payload: Prisma.$NamingConfigPayload<ExtArgs>
       fields: Prisma.NamingConfigFieldRefs
@@ -4308,6 +4458,7 @@ export const PlexCacheScalarFieldEnum = {
   mediaType: 'mediaType',
   sectionId: 'sectionId',
   sectionTitle: 'sectionTitle',
+  title: 'title',
   ratingKey: 'ratingKey',
   lastWatchedAt: 'lastWatchedAt',
   watchCount: 'watchCount',
@@ -4349,6 +4500,36 @@ export const TautulliCacheScalarFieldEnum = {
 } as const
 
 export type TautulliCacheScalarFieldEnum = (typeof TautulliCacheScalarFieldEnum)[keyof typeof TautulliCacheScalarFieldEnum]
+
+
+export const CacheRefreshStatusScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  cacheType: 'cacheType',
+  lastRefreshedAt: 'lastRefreshedAt',
+  lastResult: 'lastResult',
+  lastErrorMessage: 'lastErrorMessage',
+  itemCount: 'itemCount'
+} as const
+
+export type CacheRefreshStatusScalarFieldEnum = (typeof CacheRefreshStatusScalarFieldEnum)[keyof typeof CacheRefreshStatusScalarFieldEnum]
+
+
+export const SessionSnapshotScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  capturedAt: 'capturedAt',
+  concurrentStreams: 'concurrentStreams',
+  totalBandwidth: 'totalBandwidth',
+  lanBandwidth: 'lanBandwidth',
+  wanBandwidth: 'wanBandwidth',
+  directPlayCount: 'directPlayCount',
+  transcodeCount: 'transcodeCount',
+  directStreamCount: 'directStreamCount',
+  sessionsJson: 'sessionsJson'
+} as const
+
+export type SessionSnapshotScalarFieldEnum = (typeof SessionSnapshotScalarFieldEnum)[keyof typeof SessionSnapshotScalarFieldEnum]
 
 
 export const NamingConfigScalarFieldEnum = {
@@ -4587,6 +4768,8 @@ export type GlobalOmitConfig = {
   plexCache?: Prisma.PlexCacheOmit
   plexEpisodeCache?: Prisma.PlexEpisodeCacheOmit
   tautulliCache?: Prisma.TautulliCacheOmit
+  cacheRefreshStatus?: Prisma.CacheRefreshStatusOmit
+  sessionSnapshot?: Prisma.SessionSnapshotOmit
   namingConfig?: Prisma.NamingConfigOmit
 }
 

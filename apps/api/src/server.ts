@@ -20,6 +20,8 @@ import sessionCleanupPlugin from "./plugins/session-cleanup.js";
 import trashBackupCleanupPlugin from "./plugins/trash-backup-cleanup.js";
 import plexCacheSchedulerPlugin from "./plugins/plex-cache-scheduler.js";
 import tautulliCacheSchedulerPlugin from "./plugins/tautulli-cache-scheduler.js";
+import plexEpisodeCacheSchedulerPlugin from "./plugins/plex-episode-cache-scheduler.js";
+import sessionSnapshotSchedulerPlugin from "./plugins/session-snapshot-scheduler.js";
 import trashUpdateSchedulerPlugin from "./plugins/trash-update-scheduler.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerAuthOidcRoutes } from "./routes/auth-oidc.js";
@@ -118,7 +120,9 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	app.register(queueCleanerSchedulerPlugin);
 	app.register(libraryCleanupSchedulerPlugin);
 	app.register(plexCacheSchedulerPlugin);
+	app.register(plexEpisodeCacheSchedulerPlugin);
 	app.register(tautulliCacheSchedulerPlugin);
+	app.register(sessionSnapshotSchedulerPlugin);
 
 	app.decorateRequest("currentUser", null);
 	app.decorateRequest("sessionToken", null);

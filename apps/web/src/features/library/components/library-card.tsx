@@ -98,6 +98,8 @@ interface LibraryCardProps {
 	watchedByUsers?: string[];
 	/** Plex user rating (0-10 scale) */
 	plexUserRating?: number | null;
+	/** Plex watch progress for series (watched/total episodes) */
+	seriesProgress?: { watched: number; total: number; percent: number } | null;
 }
 
 /**
@@ -145,6 +147,7 @@ export const LibraryCard = memo(function LibraryCard({
 	lastWatchedAt,
 	watchedByUsers,
 	plexUserRating,
+	seriesProgress,
 }: LibraryCardProps) {
 	const [incognitoMode] = useIncognitoMode();
 	const monitored = item.monitored ?? false;
@@ -550,6 +553,27 @@ export const LibraryCard = memo(function LibraryCard({
 							</LibraryBadge>
 						))}
 					</div>
+
+					{/* Plex watch progress bar for series */}
+					{seriesProgress && seriesProgress.total > 0 && (
+						<div
+							className="flex items-center gap-2"
+							title={`Watched ${seriesProgress.watched}/${seriesProgress.total} episodes (${seriesProgress.percent}%)`}
+						>
+							<div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+								<div
+									className="h-full rounded-full transition-all duration-500"
+									style={{
+										width: `${seriesProgress.percent}%`,
+										background: `linear-gradient(90deg, ${SEMANTIC_COLORS.info.from}, ${SEMANTIC_COLORS.success.from})`,
+									}}
+								/>
+							</div>
+							<span className="text-[10px] text-muted-foreground whitespace-nowrap">
+								{seriesProgress.watched}/{seriesProgress.total} ({seriesProgress.percent}%)
+							</span>
+						</div>
+					)}
 
 					<div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
 						{metadata.slice(0, 4).map((entry) => (

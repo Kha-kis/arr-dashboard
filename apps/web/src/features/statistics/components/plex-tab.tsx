@@ -7,45 +7,16 @@ import { PremiumSkeleton } from "../../../components/layout";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useTautulliPlaysByDate, useTautulliStats } from "../../../hooks/api/useTautulli";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
-
-// ============================================================================
-// SVG Sparkline Component
-// ============================================================================
-
-interface SparklineProps {
-	data: number[];
-	width?: number;
-	height?: number;
-	color: string;
-	fillColor?: string;
-}
-
-const Sparkline = ({ data, width = 280, height = 60, color, fillColor }: SparklineProps) => {
-	if (data.length < 2) return null;
-	const max = Math.max(...data, 1);
-	const min = Math.min(...data, 0);
-	const range = max - min || 1;
-	const padY = 4;
-	const usableH = height - padY * 2;
-
-	const points = data.map((v, i) => {
-		const x = (i / (data.length - 1)) * width;
-		const y = padY + usableH - ((v - min) / range) * usableH;
-		return `${x},${y}`;
-	});
-
-	const linePath = `M${points.join(" L")}`;
-	const areaPath = `${linePath} L${width},${height} L0,${height} Z`;
-
-	return (
-		<svg width={width} height={height} className="overflow-visible">
-			{fillColor && <path d={areaPath} fill={fillColor} opacity={0.15} />}
-			<path d={linePath} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-			{/* End dot */}
-			<circle cx={Number(points[points.length - 1]?.split(",")[0])} cy={Number(points[points.length - 1]?.split(",")[1])} r={3} fill={color} />
-		</svg>
-	);
-};
+import { Sparkline, MiniStatCard } from "./chart-primitives";
+import { TranscodeChart } from "./transcode-chart";
+import { BandwidthChart } from "./bandwidth-chart";
+import { UserAnalyticsChart } from "./user-analytics-chart";
+import { WatchHistoryWidget } from "./watch-history-widget";
+import { CodecChart } from "./codec-chart";
+import { DeviceChart } from "./device-chart";
+import { CollectionStatsChart } from "./collection-stats-chart";
+import { QualityScoreChart } from "./quality-score-chart";
+import { ForecastChart } from "./forecast-chart";
 
 // ============================================================================
 // Bar Chart Component
@@ -91,32 +62,6 @@ const BarChart = ({ items, color, maxBars = 8 }: BarChartProps) => {
 		</div>
 	);
 };
-
-// ============================================================================
-// Stat Card
-// ============================================================================
-
-interface MiniStatCardProps {
-	icon: React.ComponentType<{ className?: string }>;
-	label: string;
-	value: string | number;
-	color: string;
-}
-
-const MiniStatCard = ({ icon: Icon, label, value, color }: MiniStatCardProps) => (
-	<div className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-xs p-4">
-		<div className="flex items-center gap-2 mb-2">
-			<div
-				className="h-8 w-8 rounded-lg flex items-center justify-center"
-				style={{ backgroundColor: `${color}20` }}
-			>
-				<span style={{ color }}><Icon className="h-4 w-4" /></span>
-			</div>
-			<span className="text-xs text-muted-foreground">{label}</span>
-		</div>
-		<p className="text-xl font-bold tabular-nums">{value}</p>
-	</div>
-);
 
 // ============================================================================
 // Duration Formatter
@@ -255,6 +200,7 @@ export const PlexTab = () => {
 	}, [stats]);
 
 	const isLoading = statsQuery.isLoading || playsQuery.isLoading;
+	const isError = statsQuery.isError && playsQuery.isError;
 
 	if (isLoading) {
 		return (
@@ -275,12 +221,18 @@ export const PlexTab = () => {
 	}
 
 	const noData = !stats && !plays;
-	if (noData) {
+	if (isError || noData) {
 		return (
 			<div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
 				<Activity className="h-12 w-12 mb-4 opacity-30" />
-				<p className="text-lg font-medium">No Tautulli data available</p>
-				<p className="text-sm mt-1">Configure a Tautulli instance to see watch statistics.</p>
+				<p className="text-lg font-medium">
+					{isError ? "Failed to load Tautulli data" : "No Tautulli data available"}
+				</p>
+				<p className="text-sm mt-1">
+					{isError
+						? "Check that your Tautulli instance is running and accessible."
+						: "Configure a Tautulli instance to see watch statistics."}
+				</p>
 			</div>
 		);
 	}
@@ -432,6 +384,27 @@ export const PlexTab = () => {
 					})}
 				</div>
 			)}
+
+			{/* Session Snapshot Analytics */}
+			<TranscodeChart days={timeRange} enabled={!isLoading} />
+			<BandwidthChart days={timeRange} enabled={!isLoading} />
+
+			{/* Tier 1: User Analytics + Watch History */}
+			<UserAnalyticsChart days={timeRange} enabled={!isLoading} />
+			<WatchHistoryWidget days={timeRange} enabled={!isLoading} />
+
+			{/* Tier 1/2: Codec + Device Analytics */}
+			<div className="grid gap-6 md:grid-cols-2">
+				<CodecChart days={timeRange} enabled={!isLoading} />
+				<DeviceChart days={timeRange} enabled={!isLoading} />
+			</div>
+
+			{/* Tier 2: Collection Stats */}
+			<CollectionStatsChart enabled={!isLoading} />
+
+			{/* Tier 3: Quality Score + Forecast */}
+			<QualityScoreChart days={timeRange} enabled={!isLoading} />
+			<ForecastChart days={timeRange} enabled={!isLoading} />
 		</div>
 	);
 };

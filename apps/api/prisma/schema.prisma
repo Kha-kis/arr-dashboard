@@ -108,6 +108,8 @@ model ServiceInstance {
   plexCaches                  PlexCache[]
   plexEpisodeCaches           PlexEpisodeCache[]
   tautulliCaches              TautulliCache[]
+  cacheRefreshStatuses        CacheRefreshStatus[]
+  sessionSnapshots            SessionSnapshot[]
   namingConfig                NamingConfig?
 
   @@index([service])
@@ -1163,6 +1165,7 @@ model PlexCache {
   mediaType     String                         // "movie" | "series"
   sectionId     String                         // Plex library section key
   sectionTitle  String
+  title         String    @default("")         // Plex item title for display
   ratingKey     String?
   lastWatchedAt DateTime?
   watchCount    Int       @default(0)
@@ -1220,6 +1223,50 @@ model TautulliCache {
   @@unique([instanceId, tmdbId, mediaType])
   @@index([instanceId])
   @@map("tautulli_cache")
+}
+
+// ============================================================================
+// Cache Refresh Status
+// Tracks the last refresh result for each cache type per instance
+// ============================================================================
+
+model CacheRefreshStatus {
+  id               String    @id @default(cuid())
+  instanceId       String
+  cacheType        String    // "plex" | "tautulli" | "plex_episode"
+  lastRefreshedAt  DateTime
+  lastResult       String    // "success" | "error"
+  lastErrorMessage String?
+  itemCount        Int       @default(0)
+
+  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, cacheType])
+  @@map("cache_refresh_status")
+}
+
+// ============================================================================
+// Session Snapshots
+// Periodic snapshots of Plex session data for trend analytics
+// ============================================================================
+
+model SessionSnapshot {
+  id                String   @id @default(cuid())
+  instanceId        String
+  capturedAt        DateTime @default(now())
+  concurrentStreams Int
+  totalBandwidth    Int      @default(0)  // kbps
+  lanBandwidth      Int      @default(0)
+  wanBandwidth      Int      @default(0)
+  directPlayCount   Int      @default(0)
+  transcodeCount    Int      @default(0)
+  directStreamCount Int      @default(0)
+  sessionsJson      String   // JSON detail array
+
+  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId, capturedAt])
+  @@map("session_snapshots")
 }
 
 // ============================================================================

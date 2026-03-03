@@ -28,7 +28,9 @@ export * from "./enums"
  * Type-safe database client for TypeScript
  * @example
  * ```
- * const prisma = new PrismaClient()
+ * const prisma = new PrismaClient({
+ *   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL })
+ * })
  * // Fetch zero or more Users
  * const users = await prisma.user.findMany()
  * ```
@@ -245,6 +247,16 @@ export type PlexEpisodeCache = Prisma.PlexEpisodeCacheModel
  * Cached Tautulli watch statistics per media item
  */
 export type TautulliCache = Prisma.TautulliCacheModel
+/**
+ * Model CacheRefreshStatus
+ * 
+ */
+export type CacheRefreshStatus = Prisma.CacheRefreshStatusModel
+/**
+ * Model SessionSnapshot
+ * 
+ */
+export type SessionSnapshot = Prisma.SessionSnapshotModel
 /**
  * Model NamingConfig
  * Per-instance naming config for TRaSH Guides naming schemes

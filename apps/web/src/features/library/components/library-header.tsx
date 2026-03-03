@@ -16,7 +16,7 @@ import {
 import { useState } from "react";
 import { FilterSelect, GlassmorphicCard } from "../../../components/layout";
 import { Button, Input } from "../../../components/ui";
-import { usePlexScanMutation, usePlexSections } from "../../../hooks/api/usePlex";
+import { usePlexAccounts, usePlexScanMutation, usePlexSections } from "../../../hooks/api/usePlex";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
@@ -109,6 +109,12 @@ interface LibraryHeaderProps {
 	syncStatus: SyncStatus | null;
 	/** Whether any instance is currently syncing */
 	isSyncing: boolean;
+	/** Currently selected "watched by" filter user */
+	watchedByFilter?: string;
+	/** Handler for "watched by" filter changes */
+	onWatchedByFilterChange?: (value: string) => void;
+	/** Whether Plex instances are configured */
+	hasPlexInstances?: boolean;
 }
 
 /**
@@ -150,6 +156,9 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 	instanceOptions,
 	syncStatus,
 	isSyncing,
+	watchedByFilter = "all",
+	onWatchedByFilterChange,
+	hasPlexInstances = false,
 }) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const plexSectionsQuery = usePlexSections();
@@ -159,6 +168,8 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 	const plexSections = plexSectionsQuery.data?.sections ?? [];
 	const hasPlexSections = plexSections.length > 0;
 	const plexGradient = SERVICE_GRADIENTS.plex;
+	const plexAccountsQuery = usePlexAccounts(hasPlexInstances);
+	const plexUsers = plexAccountsQuery.data?.users ?? [];
 
 	const handleScanSection = (instanceId: string, sectionId: string) => {
 		plexScanMutation.mutate({ instanceId, sectionId });
@@ -387,6 +398,23 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 							}))}
 							className="min-w-[130px]"
 						/>
+
+						{/* Watched By filter (Plex) */}
+						{plexUsers.length > 0 && onWatchedByFilterChange && (
+							<FilterSelect
+								label="Watched by"
+								value={watchedByFilter}
+								onChange={onWatchedByFilterChange}
+								options={[
+									{ value: "all", label: "All users" },
+									...plexUsers.map((user) => ({
+										value: user,
+										label: user,
+									})),
+								]}
+								className="min-w-[140px]"
+							/>
+						)}
 
 						{/* Sort Controls */}
 						<div className="flex items-end gap-2 ml-auto">
