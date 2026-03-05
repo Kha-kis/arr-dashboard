@@ -59,7 +59,6 @@ import { safeJsonParse } from "../utils/json.js";
 import type {
 	CacheItemForEval,
 	EvalContext,
-	PlexEpisodeMap,
 	PlexWatchInfo,
 	PlexWatchMap,
 	RuleAction,

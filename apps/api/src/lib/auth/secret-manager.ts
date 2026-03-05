@@ -127,7 +127,6 @@ export class SecretManager {
 				return secrets;
 			} catch {
 				// File doesn't exist or can't be read — try next legacy path
-				continue;
 			}
 		}
 

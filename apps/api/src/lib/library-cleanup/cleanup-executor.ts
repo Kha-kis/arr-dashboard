@@ -16,7 +16,7 @@ import type { LibraryCleanupConfig, LibraryCleanupRule, ServiceInstance } from "
 import { SeerrClient } from "../seerr/seerr-client.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { safeJsonParse } from "../utils/json.js";
-import { evaluateItemAgainstRules, evaluateRule, extractRating } from "./rule-evaluators.js";
+import { evaluateItemAgainstRules, extractRating } from "./rule-evaluators.js";
 import type {
 	CacheItemForEval,
 	CleanupExecutorDeps,
@@ -26,7 +26,6 @@ import type {
 	FlaggedItem,
 	PlexSectionWatchInfo,
 	PlexEpisodeMap,
-	PlexEpisodeStats,
 	PlexWatchMap,
 	PrefetchResults,
 	SeerrRequestInfo,
