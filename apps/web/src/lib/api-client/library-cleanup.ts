@@ -1,10 +1,13 @@
 import type {
 	CleanupApprovalResponse,
 	CleanupConfigResponse,
+	CleanupExplainResponse,
 	CleanupFieldOptionsResponse,
 	CleanupLogResponse,
 	CleanupPreviewResponse,
 	CleanupRuleResponse,
+	CleanupStatisticsResponse,
+	CleanupStatusResponse,
 	CreateCleanupRule,
 	UpdateCleanupConfig,
 	UpdateCleanupRule,
@@ -138,7 +141,29 @@ export const libraryCleanupApi = {
 	},
 
 	// Logs
-	async getLogs(page = 1, pageSize = 20): Promise<PaginatedLogs> {
-		return apiRequest<PaginatedLogs>(`/api/library-cleanup/logs?page=${page}&pageSize=${pageSize}`);
+	async getLogs(page = 1, pageSize = 20, filters?: { status?: string; since?: string; until?: string }): Promise<PaginatedLogs> {
+		const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+		if (filters?.status) params.set("status", filters.status);
+		if (filters?.since) params.set("since", filters.since);
+		if (filters?.until) params.set("until", filters.until);
+		return apiRequest<PaginatedLogs>(`/api/library-cleanup/logs?${params.toString()}`);
+	},
+
+	// Health Status
+	async getStatus(): Promise<CleanupStatusResponse> {
+		return apiRequest<CleanupStatusResponse>("/api/library-cleanup/status");
+	},
+
+	// Explain
+	async explain(instanceId: string, arrItemId: number): Promise<CleanupExplainResponse> {
+		return apiRequest<CleanupExplainResponse>("/api/library-cleanup/explain", {
+			method: "POST",
+			json: { instanceId, arrItemId },
+		});
+	},
+
+	// Statistics
+	async getStatistics(days = 30): Promise<CleanupStatisticsResponse> {
+		return apiRequest<CleanupStatisticsResponse>(`/api/library-cleanup/statistics?days=${days}`);
 	},
 };

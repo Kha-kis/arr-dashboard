@@ -6,24 +6,33 @@
 
 import {
 	bulkApprovalSchema,
+	cleanupExplainRequestSchema,
 	createCleanupRuleSchema,
 	reorderRulesSchema,
+	ruleParamSchemaMap,
 	updateCleanupConfigSchema,
 	updateCleanupRuleSchema,
 } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import {
+	buildEvalContext,
 	executeApprovedItems,
 	executeCleanupPreview,
 	executeCleanupRun,
 } from "../lib/library-cleanup/cleanup-executor.js";
+import { explainItemAgainstRules } from "../lib/library-cleanup/rule-evaluators.js";
+import type { CacheItemForEval } from "../lib/library-cleanup/types.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
+import { safeJsonParse as utilSafeJsonParse } from "../lib/utils/json.js";
 import { parsePaginationQuery } from "../lib/utils/pagination.js";
 import { validateRequest } from "../lib/utils/validate.js";
 
 // Rate limits
 const PREVIEW_RATE_LIMIT = { max: 5, timeWindow: "1 minute" };
 const EXECUTE_RATE_LIMIT = { max: 3, timeWindow: "1 minute" };
+
+// In-memory guard against concurrent execute/preview overlap (single-admin app)
+let cleanupRunInProgress = false;
 
 // ============================================================================
 // Serialization helpers
@@ -60,6 +69,7 @@ function serializeRule(rule: Record<string, unknown>) {
 		action: (rule.action as string) ?? "delete",
 		operator: (rule.operator as string) ?? null,
 		conditions: safeJsonParse(rule.conditions as string | null),
+		retentionMode: rule.retentionMode ?? false,
 		createdAt: (rule.createdAt as Date).toISOString(),
 		updatedAt: (rule.updatedAt as Date).toISOString(),
 	};
@@ -100,6 +110,8 @@ function serializeLog(l: Record<string, unknown>) {
 		itemsSkipped: l.itemsSkipped,
 		details: safeJsonParse(l.details as string | null),
 		error: l.error,
+		prefetchHealth: safeJsonParse(l.prefetchHealth as string | null),
+		warnings: safeJsonParse(l.warnings as string | null),
 		durationMs: l.durationMs,
 		startedAt: (l.startedAt as Date).toISOString(),
 		completedAt: l.completedAt ? (l.completedAt as Date).toISOString() : null,
@@ -119,6 +131,10 @@ function safeJsonParse(val: string | null | undefined): unknown {
 // Routes
 // ============================================================================
 
+// Field options cache: userId → { data, expiresAt }
+const fieldOptionsCache = new Map<string, { data: unknown; expiresAt: number }>();
+const FIELD_OPTIONS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
 export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	app.addHook("preHandler", async (request, reply) => {
 		if (!request.currentUser?.id) {
@@ -130,9 +146,16 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 
 	/** GET /api/library-cleanup/field-options
 	 *  Extracts distinct values from the user's library cache for multi-select dropdowns.
+	 *  Cached for 5 minutes to avoid expensive JSON blob parsing on each dialog open.
 	 */
 	app.get("/library-cleanup/field-options", async (request, reply) => {
 		const userId = request.currentUser!.id;
+
+		// Check cache
+		const cached = fieldOptionsCache.get(userId);
+		if (cached && cached.expiresAt > Date.now()) {
+			return reply.send(cached.data);
+		}
 
 		// Get user's Sonarr + Radarr instances (full fields for client creation)
 		const instances = await app.prisma.serviceInstance.findMany({
@@ -276,7 +299,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 
 		const sorted = (s: Set<string>) => [...s].sort((a, b) => a.localeCompare(b));
 
-		return reply.send({
+		const result = {
 			videoCodecs: sorted(videoCodecs),
 			audioCodecs: sorted(audioCodecs),
 			resolutions: sorted(resolutions),
@@ -290,7 +313,12 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			arrTags,
 			hasPlex: plexInstances.length > 0,
 			hasTautulli: tautulliInstances.length > 0,
-		});
+		};
+
+		// Store in cache
+		fieldOptionsCache.set(userId, { data: result, expiresAt: Date.now() + FIELD_OPTIONS_CACHE_TTL });
+
+		return reply.send(result);
 	});
 
 	// ─── Config ───────────────────────────────────────────────────────
@@ -327,14 +355,14 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			include: { rules: { orderBy: { priority: "asc" } } },
 		});
 
-		// If enabled and no nextRunAt set, schedule first run
-		if (config.enabled && !config.nextRunAt) {
+		// Recalculate nextRunAt when enabled or intervalHours changes
+		if (config.enabled && (!config.nextRunAt || data.intervalHours != null)) {
+			const newNextRun = new Date(Date.now() + config.intervalHours * 60 * 60 * 1000);
 			await app.prisma.libraryCleanupConfig.update({
 				where: { id: config.id },
-				data: {
-					nextRunAt: new Date(Date.now() + config.intervalHours * 60 * 60 * 1000),
-				},
+				data: { nextRunAt: newNextRun },
 			});
+			(config as Record<string, unknown>).nextRunAt = newNextRun;
 		}
 
 		return reply.send(serializeConfig(config as unknown as Record<string, unknown>));
@@ -346,6 +374,12 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 	app.post("/library-cleanup/rules", async (request, reply) => {
 		const userId = request.currentUser!.id;
 		const data = validateRequest(createCleanupRuleSchema, request.body);
+
+		// Write-time parameter validation: validate params against type-specific schema
+		const paramValidationError = validateRuleParameters(data.ruleType, data.parameters, data.conditions ?? null);
+		if (paramValidationError) {
+			return reply.status(400).send({ error: paramValidationError });
+		}
 
 		const config = await app.prisma.libraryCleanupConfig.findUnique({
 			where: { userId },
@@ -372,6 +406,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 				action: data.action ?? "delete",
 				operator: data.operator ?? null,
 				conditions: data.conditions ? JSON.stringify(data.conditions) : null,
+				retentionMode: data.retentionMode ?? false,
 			},
 		});
 
@@ -391,8 +426,13 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			return reply.status(404).send({ error: "Config not found" });
 		}
 
-		// Verify all IDs belong to this config
+		// Verify all IDs belong to this config and all rules are included
 		const existingIds = new Set(config.rules.map((r) => r.id));
+		if (ruleIds.length !== existingIds.size) {
+			return reply.status(400).send({
+				error: `Expected ${existingIds.size} rule IDs but received ${ruleIds.length}`,
+			});
+		}
 		for (const id of ruleIds) {
 			if (!existingIds.has(id)) {
 				return reply.status(400).send({ error: `Rule ${id} not found in config` });
@@ -430,6 +470,17 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			return reply.status(404).send({ error: "Rule not found" });
 		}
 
+		// Write-time parameter validation (when ruleType or parameters are changed)
+		const effectiveRuleType = data.ruleType ?? existing.ruleType;
+		const effectiveParams = data.parameters ?? (utilSafeJsonParse(existing.parameters) as Record<string, unknown>);
+		const effectiveConditions = data.conditions !== undefined ? data.conditions : (utilSafeJsonParse(existing.conditions ?? "") as Array<{ ruleType: string; parameters: Record<string, unknown> }> | null);
+		if (data.ruleType !== undefined || data.parameters !== undefined || data.conditions !== undefined) {
+			const paramValidationError = validateRuleParameters(effectiveRuleType, effectiveParams ?? {}, effectiveConditions ?? null);
+			if (paramValidationError) {
+				return reply.status(400).send({ error: paramValidationError });
+			}
+		}
+
 		const updateData: Record<string, unknown> = {};
 		if (data.name !== undefined) updateData.name = data.name;
 		if (data.enabled !== undefined) updateData.enabled = data.enabled;
@@ -452,6 +503,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		if (data.operator !== undefined) updateData.operator = data.operator ?? null;
 		if (data.conditions !== undefined)
 			updateData.conditions = data.conditions ? JSON.stringify(data.conditions) : null;
+		if (data.retentionMode !== undefined) updateData.retentionMode = data.retentionMode;
 
 		const rule = await app.prisma.libraryCleanupRule.update({
 			where: { id },
@@ -486,18 +538,42 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		async (request, reply) => {
 			const userId = request.currentUser!.id;
 
+			if (cleanupRunInProgress || app.cleanupScheduler?.isRunning) {
+				return reply.status(409).send({ error: "A cleanup operation is already in progress" });
+			}
+
+			cleanupRunInProgress = true;
 			try {
 				const result = await executeCleanupPreview(
 					{ prisma: app.prisma, arrClientFactory: app.arrClientFactory, log: request.log },
 					userId,
 				);
 
-				return reply.send({
+				// Enrich with instance labels (same pattern as approval queue)
+			const distinctInstanceIds = [...new Set(result.details.map((d) => d.instanceId))];
+			const instanceLabelMap = new Map<string, string>();
+			if (distinctInstanceIds.length > 0) {
+				const instances = await app.prisma.serviceInstance.findMany({
+					where: { id: { in: distinctInstanceIds }, userId },
+					select: { id: true, label: true },
+				});
+				for (const inst of instances) {
+					if (inst.label) instanceLabelMap.set(inst.id, inst.label);
+				}
+			}
+
+			const MAX_PREVIEW_ITEMS = 200;
+			const truncated = result.details.length > MAX_PREVIEW_ITEMS;
+			const previewDetails = truncated ? result.details.slice(0, MAX_PREVIEW_ITEMS) : result.details;
+
+			return reply.send({
 					totalEvaluated: result.itemsEvaluated,
 					totalFlagged: result.itemsFlagged,
-					items: result.details.map((d) => ({
+					items: previewDetails.map((d) => ({
 						instanceId: d.instanceId,
+						instanceLabel: instanceLabelMap.get(d.instanceId) ?? null,
 						arrItemId: d.arrItemId,
+						itemType: d.itemType ?? "movie",
 						title: d.title,
 						matchedRuleName: d.rule,
 						reason: d.reason,
@@ -506,10 +582,17 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 						year: d.year ?? null,
 						rating: d.rating ?? null,
 					})),
+					prefetchHealth: result.prefetchHealth,
+					warnings: [
+						...(result.warnings ?? []),
+						...(truncated ? [`Showing ${MAX_PREVIEW_ITEMS} of ${result.details.length} flagged items`] : []),
+					],
 				});
 			} catch (error) {
 				request.log.error({ err: error }, "Cleanup preview failed");
 				return reply.status(500).send({ error: getErrorMessage(error) });
+			} finally {
+				cleanupRunInProgress = false;
 			}
 		},
 	);
@@ -521,6 +604,12 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		async (request, reply) => {
 			const userId = request.currentUser!.id;
 
+			// Prevent overlapping with a scheduled run or another manual run
+			if (cleanupRunInProgress || app.cleanupScheduler?.isRunning) {
+				return reply.status(409).send({ error: "A cleanup operation is already in progress" });
+			}
+
+			cleanupRunInProgress = true;
 			try {
 				const result = await executeCleanupRun(
 					{ prisma: app.prisma, arrClientFactory: app.arrClientFactory, log: request.log },
@@ -531,6 +620,8 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			} catch (error) {
 				request.log.error({ err: error }, "Cleanup execution failed");
 				return reply.status(500).send({ error: getErrorMessage(error) });
+			} finally {
+				cleanupRunInProgress = false;
 			}
 		},
 	);
@@ -542,7 +633,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		const userId = request.currentUser!.id;
 		const { page, pageSize } = parsePaginationQuery(request.query as Record<string, string>);
 
-		const validStatuses = ["pending", "approved", "rejected", "expired"];
+		const validStatuses = ["pending", "approved", "rejected", "expired", "executing", "executed"];
 		const rawStatus = (request.query as Record<string, string>).status || "pending";
 		const statusFilter = validStatuses.includes(rawStatus) ? rawStatus : "pending";
 
@@ -564,8 +655,24 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			}),
 		]);
 
+		// Enrich with instance labels
+		const distinctInstanceIds = [...new Set(approvals.map((a) => a.instanceId))];
+		const instanceLabelMap = new Map<string, string>();
+		if (distinctInstanceIds.length > 0) {
+			const instances = await app.prisma.serviceInstance.findMany({
+				where: { id: { in: distinctInstanceIds }, userId },
+				select: { id: true, label: true },
+			});
+			for (const inst of instances) {
+				if (inst.label) instanceLabelMap.set(inst.id, inst.label);
+			}
+		}
+
 		return reply.send({
-			items: approvals.map((a) => serializeApproval(a as unknown as Record<string, unknown>)),
+			items: approvals.map((a) => ({
+				...serializeApproval(a as unknown as Record<string, unknown>),
+				instanceLabel: instanceLabelMap.get(a.instanceId) ?? null,
+			})),
 			total,
 			page,
 			pageSize,
@@ -660,17 +767,41 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 	app.get("/library-cleanup/logs", async (request, reply) => {
 		const userId = request.currentUser!.id;
 		const { page, pageSize } = parsePaginationQuery(request.query as Record<string, string>);
+		const query = request.query as Record<string, string>;
+
+		// Optional filters
+		const statusFilter = query.status; // "completed" | "partial" | "error"
+		const sinceDate = query.since ? new Date(query.since) : undefined;
+		const untilDate = query.until ? new Date(query.until) : undefined;
+
+		// Validate date params
+		if (sinceDate && Number.isNaN(sinceDate.getTime())) {
+			return reply.status(400).send({ error: "Invalid 'since' date format" });
+		}
+		if (untilDate && Number.isNaN(untilDate.getTime())) {
+			return reply.status(400).send({ error: "Invalid 'until' date format" });
+		}
+		if (sinceDate && untilDate && sinceDate > untilDate) {
+			return reply.status(400).send({ error: "'since' must be before 'until'" });
+		}
+
+		const where: Record<string, unknown> = { config: { userId } };
+		if (statusFilter) where.status = statusFilter;
+		if (sinceDate || untilDate) {
+			const dateFilter: Record<string, Date> = {};
+			if (sinceDate) dateFilter.gte = sinceDate;
+			if (untilDate) dateFilter.lte = untilDate;
+			where.startedAt = dateFilter;
+		}
 
 		const [logs, total] = await Promise.all([
 			app.prisma.libraryCleanupLog.findMany({
-				where: { config: { userId } },
+				where,
 				orderBy: { startedAt: "desc" },
 				skip: (page - 1) * pageSize,
 				take: pageSize,
 			}),
-			app.prisma.libraryCleanupLog.count({
-				where: { config: { userId } },
-			}),
+			app.prisma.libraryCleanupLog.count({ where }),
 		]);
 
 		return reply.send({
@@ -681,5 +812,283 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		});
 	});
 
+	// ─── Health Status ────────────────────────────────────────────────
+
+	/** GET /api/library-cleanup/status
+	 *  Returns cleanup engine health: last run result, prefetch health, next run, pending approvals.
+	 */
+	app.get("/library-cleanup/status", async (request, reply) => {
+		const userId = request.currentUser!.id;
+
+		const config = await app.prisma.libraryCleanupConfig.findUnique({
+			where: { userId },
+		});
+
+		if (!config) {
+			return reply.send({
+				lastRunAt: null,
+				lastResult: null,
+				lastErrorMessage: null,
+				prefetchHealth: null,
+				nextRunAt: null,
+				enabled: false,
+				pendingApprovals: 0,
+			});
+		}
+
+		// Get the most recent log entry for last run info
+		const lastLog = await app.prisma.libraryCleanupLog.findFirst({
+			where: { configId: config.id },
+			orderBy: { startedAt: "desc" },
+			select: { status: true, error: true, prefetchHealth: true, startedAt: true },
+		});
+
+		// Count pending approvals
+		const pendingApprovals = await app.prisma.libraryCleanupApproval.count({
+			where: { configId: config.id, status: "pending", expiresAt: { gt: new Date() } },
+		});
+
+		return reply.send({
+			lastRunAt: lastLog?.startedAt ? lastLog.startedAt.toISOString() : config.lastRunAt?.toISOString() ?? null,
+			lastResult: lastLog?.status ?? null,
+			lastErrorMessage: lastLog?.error ?? null,
+			prefetchHealth: lastLog?.prefetchHealth ? safeJsonParse(lastLog.prefetchHealth) : null,
+			nextRunAt: config.nextRunAt?.toISOString() ?? null,
+			enabled: config.enabled,
+			pendingApprovals,
+		});
+	});
+
+	// ─── Explain ──────────────────────────────────────────────────────
+
+	/** POST /api/library-cleanup/explain
+	 *  Evaluates a single library item against all rules and returns per-rule breakdown.
+	 */
+	app.post("/library-cleanup/explain", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const { instanceId, arrItemId } = validateRequest(cleanupExplainRequestSchema, request.body);
+
+		// Verify instance ownership
+		const instance = await app.prisma.serviceInstance.findFirst({
+			where: { id: instanceId, userId },
+			select: { id: true, service: true },
+		});
+		if (!instance) {
+			return reply.status(404).send({ error: "Instance not found" });
+		}
+
+		// Find the cached item
+		const cacheItem = await app.prisma.libraryCache.findFirst({
+			where: { instanceId, arrItemId },
+			select: {
+				id: true, instanceId: true, arrItemId: true, itemType: true,
+				title: true, year: true, monitored: true, hasFile: true,
+				status: true, qualityProfileId: true, qualityProfileName: true,
+				sizeOnDisk: true, arrAddedAt: true, data: true,
+			},
+		});
+		if (!cacheItem) {
+			return reply.status(404).send({ error: "Item not found in library cache" });
+		}
+
+		// Load config + rules
+		const config = await app.prisma.libraryCleanupConfig.findUnique({
+			where: { userId },
+			include: { rules: { orderBy: { priority: "asc" } } },
+		});
+		if (!config || config.rules.length === 0) {
+			return reply.send({
+				item: { title: cacheItem.title, year: cacheItem.year, instanceId, itemType: cacheItem.itemType },
+				results: [],
+				retentionProtected: false,
+			});
+		}
+
+		// Build a fully-populated eval context with prefetched external data
+		const ctx = await buildEvalContext(
+			{ prisma: app.prisma, arrClientFactory: app.arrClientFactory, log: request.log },
+			userId,
+			config.rules,
+		);
+
+		const results = explainItemAgainstRules(
+			cacheItem as unknown as CacheItemForEval,
+			config.rules,
+			instance.service,
+			ctx,
+		);
+
+		// Determine if any retention rule matched
+		const retentionProtected = results.some((r) => r.retentionMode && r.matched);
+
+		return reply.send({
+			item: { title: cacheItem.title, year: cacheItem.year, instanceId, itemType: cacheItem.itemType },
+			results,
+			retentionProtected,
+		});
+	});
+
+	// ─── Statistics ──────────────────────────────────────────────────
+
+	/** GET /api/library-cleanup/statistics?days=30
+	 *  Returns aggregated cleanup statistics for the given period.
+	 */
+	app.get("/library-cleanup/statistics", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const query = request.query as Record<string, string>;
+		const days = Math.min(365, Math.max(1, Number(query.days) || 30));
+
+		const since = new Date();
+		since.setDate(since.getDate() - days);
+
+		const config = await app.prisma.libraryCleanupConfig.findUnique({
+			where: { userId },
+			select: { id: true },
+		});
+
+		if (!config) {
+			return reply.send({
+				period: { since: since.toISOString(), until: new Date().toISOString() },
+				totalRuns: 0,
+				successfulRuns: 0,
+				partialRuns: 0,
+				failedRuns: 0,
+				totalItemsEvaluated: 0,
+				totalItemsFlagged: 0,
+				totalItemsRemoved: 0,
+				totalItemsUnmonitored: 0,
+				totalFilesDeleted: 0,
+				ruleEffectiveness: [],
+				approvalFunnel: { pending: 0, approved: 0, rejected: 0, expired: 0 },
+			});
+		}
+
+		// Aggregate logs in the period
+		const logs = await app.prisma.libraryCleanupLog.findMany({
+			where: { configId: config.id, startedAt: { gte: since } },
+			select: {
+				status: true,
+				itemsEvaluated: true,
+				itemsFlagged: true,
+				itemsRemoved: true,
+				itemsUnmonitored: true,
+				itemsFilesDeleted: true,
+				details: true,
+			},
+		});
+
+		let successfulRuns = 0;
+		let partialRuns = 0;
+		let failedRuns = 0;
+		let totalItemsEvaluated = 0;
+		let totalItemsFlagged = 0;
+		let totalItemsRemoved = 0;
+		let totalItemsUnmonitored = 0;
+		let totalFilesDeleted = 0;
+		const ruleMatchCounts = new Map<string, { ruleName: string; count: number }>();
+
+		for (const log of logs) {
+			if (log.status === "completed") successfulRuns++;
+			else if (log.status === "partial") partialRuns++;
+			else failedRuns++;
+
+			totalItemsEvaluated += log.itemsEvaluated;
+			totalItemsFlagged += log.itemsFlagged;
+			totalItemsRemoved += log.itemsRemoved;
+			totalItemsUnmonitored += log.itemsUnmonitored;
+			totalFilesDeleted += log.itemsFilesDeleted;
+
+			// Parse details for rule effectiveness
+			const details = safeJsonParse(log.details as string) as Array<{ ruleId?: string; rule?: string }> | null;
+			if (Array.isArray(details)) {
+				for (const d of details) {
+					if (d.ruleId) {
+						const existing = ruleMatchCounts.get(d.ruleId);
+						if (existing) {
+							existing.count++;
+						} else {
+							ruleMatchCounts.set(d.ruleId, { ruleName: d.rule ?? d.ruleId, count: 1 });
+						}
+					}
+				}
+			}
+		}
+
+		// Approval funnel
+		const approvalCounts = await app.prisma.libraryCleanupApproval.groupBy({
+			by: ["status"],
+			where: { configId: config.id, createdAt: { gte: since } },
+			_count: { id: true },
+		});
+
+		const approvalFunnel = { pending: 0, approved: 0, rejected: 0, expired: 0 };
+		for (const a of approvalCounts) {
+			if (a.status in approvalFunnel) {
+				(approvalFunnel as Record<string, number>)[a.status] = a._count.id;
+			}
+		}
+
+		return reply.send({
+			period: { since: since.toISOString(), until: new Date().toISOString() },
+			totalRuns: logs.length,
+			successfulRuns,
+			partialRuns,
+			failedRuns,
+			totalItemsEvaluated,
+			totalItemsFlagged,
+			totalItemsRemoved,
+			totalItemsUnmonitored,
+			totalFilesDeleted,
+			ruleEffectiveness: Array.from(ruleMatchCounts.entries())
+				.map(([ruleId, { ruleName, count }]) => ({ ruleId, ruleName, matchCount: count }))
+				.sort((a, b) => b.matchCount - a.matchCount),
+			approvalFunnel,
+		});
+	});
+
 	done();
 };
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/**
+ * Validate rule parameters against the type-specific Zod schema.
+ * Also validates parameters within composite rule conditions.
+ * Returns an error message string if invalid, or null if valid.
+ */
+function validateRuleParameters(
+	ruleType: string,
+	parameters: Record<string, unknown>,
+	conditions: Array<{ ruleType: string; parameters: Record<string, unknown> }> | null,
+): string | null {
+	// For composite rules, validate each condition's parameters
+	if (ruleType === "composite" && conditions) {
+		for (let i = 0; i < conditions.length; i++) {
+			const cond = conditions[i]!;
+			const schema = ruleParamSchemaMap[cond.ruleType];
+			if (schema) {
+				const result = schema.safeParse(cond.parameters);
+				if (!result.success) {
+					const flat = result.error.flatten();
+					const msgs = Object.values(flat.fieldErrors).flat().join(", ") || flat.formErrors.join(", ");
+					return `Invalid parameters for condition[${i}] (${cond.ruleType}): ${msgs}`;
+				}
+			}
+		}
+		return null;
+	}
+
+	// For single rules, validate top-level parameters
+	const schema = ruleParamSchemaMap[ruleType];
+	if (schema) {
+		const result = schema.safeParse(parameters);
+		if (!result.success) {
+			const flat = result.error.flatten();
+			const msgs = Object.values(flat.fieldErrors).flat().join(", ") || flat.formErrors.join(", ");
+			return `Invalid parameters for rule type "${ruleType}": ${msgs}`;
+		}
+	}
+	return null;
+}

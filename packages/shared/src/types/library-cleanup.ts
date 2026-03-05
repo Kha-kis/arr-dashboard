@@ -54,6 +54,12 @@ export const cleanupRuleTypeSchema = z.enum([
 	"plex_added_at",
 	// Phase B: Composite rules
 	"composite",
+	// Phase 2: Behavior-aware rules
+	"plex_episode_completion",
+	"user_retention",
+	"staleness_score",
+	// Phase 3: Advanced automation
+	"recently_active",
 ]);
 
 export type CleanupRuleType = z.infer<typeof cleanupRuleTypeSchema>;
@@ -296,6 +302,41 @@ export const plexAddedAtParamsSchema = z.object({
 	days: z.number().int().min(1),
 });
 
+// ── Phase 2: Behavior-Aware Rule Parameter Schemas ───────────────────
+
+export const plexEpisodeCompletionParamsSchema = z.object({
+	operator: z.enum(["less_than", "greater_than"]),
+	percentage: z.number().min(0).max(100),
+	minSeason: z.number().int().min(1).optional(),
+});
+
+export const userRetentionParamsSchema = z.object({
+	operator: z.enum(["watched_by_none", "watched_by_all", "watched_by_count"]),
+	userNames: z.array(z.string().min(1)).optional(),
+	minUsers: z.number().int().min(1).optional(),
+	source: z.enum(["plex", "tautulli", "either"]).default("plex"),
+});
+
+export const stalenessScoreParamsSchema = z.object({
+	operator: z.enum(["greater_than"]),
+	threshold: z.number().min(0).max(100),
+	weights: z.object({
+		daysSinceLastWatch: z.number().min(0).max(1).default(0.30),
+		inverseWatchCount: z.number().min(0).max(1).default(0.20),
+		notOnDeck: z.number().min(0).max(1).default(0.10),
+		lowUserRating: z.number().min(0).max(1).default(0.15),
+		lowTmdbRating: z.number().min(0).max(1).default(0.15),
+		sizeOnDisk: z.number().min(0).max(1).default(0.10),
+	}).optional(),
+});
+
+// ── Phase 3: Advanced Automation Rule Parameter Schemas ──────────────
+
+export const recentlyActiveParamsSchema = z.object({
+	protectionDays: z.number().int().min(1).max(365),
+	requireActivity: z.boolean().default(true),
+});
+
 // ── Type Exports ─────────────────────────────────────────────────────
 
 export type AgeRuleParams = z.infer<typeof ageRuleParamsSchema>;
@@ -338,6 +379,10 @@ export type TagMatchRuleParams = z.infer<typeof tagMatchRuleParamsSchema>;
 export type PlexCollectionRuleParams = z.infer<typeof plexCollectionRuleParamsSchema>;
 export type PlexLabelRuleParams = z.infer<typeof plexLabelRuleParamsSchema>;
 export type PlexAddedAtParams = z.infer<typeof plexAddedAtParamsSchema>;
+export type PlexEpisodeCompletionParams = z.infer<typeof plexEpisodeCompletionParamsSchema>;
+export type UserRetentionParams = z.infer<typeof userRetentionParamsSchema>;
+export type StalenessScoreParams = z.infer<typeof stalenessScoreParamsSchema>;
+export type RecentlyActiveParams = z.infer<typeof recentlyActiveParamsSchema>;
 
 // ============================================================================
 // Configuration Types
@@ -364,6 +409,7 @@ const baseCleanupRuleSchema = z.object({
 	action: cleanupActionSchema.optional().default("delete"),
 	operator: compositeOperatorSchema.nullable().optional(),
 	conditions: z.array(conditionSchema).nullable().optional(),
+	retentionMode: z.boolean().optional().default(false),
 });
 
 export const createCleanupRuleSchema = baseCleanupRuleSchema.superRefine(
@@ -381,8 +427,20 @@ export const createCleanupRuleSchema = baseCleanupRuleSchema.superRefine(
 	},
 );
 
-// .partial() must be called on the base schema (before superRefine) — Zod v4 restriction
-export const updateCleanupRuleSchema = baseCleanupRuleSchema.partial();
+export const updateCleanupRuleSchema = baseCleanupRuleSchema.partial().superRefine(
+	(data, ctx) => {
+		if (
+			data.operator != null &&
+			(!data.conditions || data.conditions.length === 0)
+		) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: "Composite rules must have at least one condition",
+				path: ["conditions"],
+			});
+		}
+	},
+);
 
 export const reorderRulesSchema = z.object({
 	ruleIds: z.array(z.string().min(1)).min(1),
@@ -435,6 +493,7 @@ export interface CleanupRuleResponse {
 	action: string;
 	operator: CompositeOperator | null;
 	conditions: Condition[] | null;
+	retentionMode: boolean;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -454,6 +513,7 @@ export interface CleanupConfigResponse {
 export interface CleanupApprovalResponse {
 	id: string;
 	instanceId: string;
+	instanceLabel: string | null;
 	arrItemId: number;
 	itemType: string;
 	title: string;
@@ -508,7 +568,7 @@ export interface CleanupFieldOptionsResponse {
 /** Preview result: items that would be flagged by current rules */
 export interface CleanupPreviewItem {
 	instanceId: string;
-	instanceLabel: string;
+	instanceLabel: string | null;
 	arrItemId: number;
 	itemType: string;
 	title: string;
@@ -524,4 +584,174 @@ export interface CleanupPreviewResponse {
 	totalEvaluated: number;
 	totalFlagged: number;
 	items: CleanupPreviewItem[];
+	prefetchHealth?: PrefetchHealthStatus;
+	warnings?: string[];
 }
+
+// ============================================================================
+// Health & Observability Types
+// ============================================================================
+
+export type PrefetchSourceStatus = "ok" | "failed" | "skipped";
+
+export interface PrefetchHealthStatus {
+	seerr: PrefetchSourceStatus;
+	tautulli: PrefetchSourceStatus;
+	plex: PrefetchSourceStatus;
+}
+
+export interface CleanupStatusResponse {
+	lastRunAt: string | null;
+	lastResult: "completed" | "partial" | "error" | null;
+	lastErrorMessage: string | null;
+	prefetchHealth: PrefetchHealthStatus | null;
+	nextRunAt: string | null;
+	enabled: boolean;
+	pendingApprovals: number;
+}
+
+// ============================================================================
+// Explain Types
+// ============================================================================
+
+export interface CleanupExplainRequest {
+	instanceId: string;
+	arrItemId: number;
+}
+
+export const cleanupExplainRequestSchema = z.object({
+	instanceId: z.string().min(1),
+	arrItemId: z.number().int().min(1),
+});
+
+export interface CleanupExplainResult {
+	ruleId: string;
+	ruleName: string;
+	matched: boolean;
+	reason: string | null;
+	filteredBy: "service_filter" | "instance_filter" | "tag_exclusion" | "title_exclusion" | "disabled" | null;
+	retentionMode: boolean;
+}
+
+export interface CleanupExplainResponse {
+	item: {
+		title: string;
+		year: number | null;
+		instanceId: string;
+		itemType: string;
+	};
+	results: CleanupExplainResult[];
+	retentionProtected: boolean;
+}
+
+// ============================================================================
+// Statistics Types
+// ============================================================================
+
+export interface CleanupStatisticsResponse {
+	period: { since: string; until: string };
+	totalRuns: number;
+	successfulRuns: number;
+	partialRuns: number;
+	failedRuns: number;
+	totalItemsEvaluated: number;
+	totalItemsFlagged: number;
+	totalItemsRemoved: number;
+	totalItemsUnmonitored: number;
+	totalFilesDeleted: number;
+	ruleEffectiveness: Array<{
+		ruleId: string;
+		ruleName: string;
+		matchCount: number;
+	}>;
+	approvalFunnel: {
+		pending: number;
+		approved: number;
+		rejected: number;
+		expired: number;
+	};
+}
+
+// ============================================================================
+// Rule Parameter Validation Map
+// ============================================================================
+
+/** Map of rule type → its Zod parameter schema, used for write-time validation */
+export const ruleParamSchemaMap: Record<string, z.ZodType> = {
+	age: ageRuleParamsSchema,
+	size: sizeRuleParamsSchema,
+	rating: ratingRuleParamsSchema,
+	status: statusRuleParamsSchema,
+	unmonitored: unmonitoredRuleParamsSchema,
+	genre: genreRuleParamsSchema,
+	year_range: yearRangeRuleParamsSchema,
+	no_file: noFileRuleParamsSchema,
+	quality_profile: qualityProfileRuleParamsSchema,
+	language: languageRuleParamsSchema,
+	video_codec: videoCodecRuleParamsSchema,
+	audio_codec: audioCodecRuleParamsSchema,
+	resolution: resolutionRuleParamsSchema,
+	hdr_type: hdrTypeRuleParamsSchema,
+	custom_format_score: customFormatScoreRuleParamsSchema,
+	runtime: runtimeRuleParamsSchema,
+	release_group: releaseGroupRuleParamsSchema,
+	seerr_requested_by: seerrRequestedByParamsSchema,
+	seerr_request_age: seerrRequestAgeParamsSchema,
+	seerr_request_status: seerrRequestStatusParamsSchema,
+	seerr_is_4k: seerrIs4kParamsSchema,
+	seerr_request_modified_age: seerrRequestModifiedAgeParamsSchema,
+	seerr_modified_by: seerrModifiedByParamsSchema,
+	seerr_is_requested: seerrIsRequestedParamsSchema,
+	seerr_request_count: seerrRequestCountParamsSchema,
+	tautulli_last_watched: tautulliLastWatchedParamsSchema,
+	tautulli_watch_count: tautulliWatchCountParamsSchema,
+	tautulli_watched_by: tautulliWatchedByParamsSchema,
+	plex_last_watched: plexLastWatchedParamsSchema,
+	plex_watch_count: plexWatchCountParamsSchema,
+	plex_on_deck: plexOnDeckParamsSchema,
+	plex_user_rating: plexUserRatingParamsSchema,
+	plex_watched_by: plexWatchedByParamsSchema,
+	plex_collection: plexCollectionRuleParamsSchema,
+	plex_label: plexLabelRuleParamsSchema,
+	plex_added_at: plexAddedAtParamsSchema,
+	imdb_rating: imdbRatingRuleParamsSchema,
+	file_path: filePathRuleParamsSchema,
+	audio_channels: audioChannelsRuleParamsSchema,
+	tag_match: tagMatchRuleParamsSchema,
+	plex_episode_completion: plexEpisodeCompletionParamsSchema,
+	user_retention: userRetentionParamsSchema,
+	staleness_score: stalenessScoreParamsSchema,
+	recently_active: recentlyActiveParamsSchema,
+};
+
+/**
+ * Data source each rule type depends on.
+ * Rules whose data source fails should be skipped to avoid false matches.
+ */
+export type DataSourceDependency = "seerr" | "tautulli" | "plex" | null;
+
+export const ruleDataSourceMap: Record<string, DataSourceDependency> = {
+	seerr_requested_by: "seerr",
+	seerr_request_age: "seerr",
+	seerr_request_status: "seerr",
+	seerr_is_4k: "seerr",
+	seerr_request_modified_age: "seerr",
+	seerr_modified_by: "seerr",
+	seerr_is_requested: "seerr",
+	seerr_request_count: "seerr",
+	tautulli_last_watched: "tautulli",
+	tautulli_watch_count: "tautulli",
+	tautulli_watched_by: "tautulli",
+	plex_last_watched: "plex",
+	plex_watch_count: "plex",
+	plex_on_deck: "plex",
+	plex_user_rating: "plex",
+	plex_watched_by: "plex",
+	plex_collection: "plex",
+	plex_label: "plex",
+	plex_added_at: "plex",
+	plex_episode_completion: "plex",
+	user_retention: null, // Dynamic: depends on params.source (plex, tautulli, or either)
+	staleness_score: "plex", // Uses multiple sources; plex is the primary
+	recently_active: "plex", // Checks Plex on-deck/watch status
+};

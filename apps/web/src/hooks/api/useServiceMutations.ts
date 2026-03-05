@@ -11,6 +11,7 @@ import {
 } from "../../lib/api-client/services";
 
 const SERVICES_QUERY_KEY = ["services"] as const;
+const FIELD_OPTIONS_KEY = ["library-cleanup-field-options"] as const;
 
 type UpdateVariables = {
 	id: string;
@@ -28,6 +29,7 @@ export const useCreateServiceMutation = () => {
 		mutationFn: createService,
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: SERVICES_QUERY_KEY });
+			queryClient.invalidateQueries({ queryKey: FIELD_OPTIONS_KEY });
 		},
 	});
 };
@@ -52,6 +54,7 @@ export const useUpdateServiceMutation = () => {
 					return service;
 				});
 			});
+			queryClient.invalidateQueries({ queryKey: FIELD_OPTIONS_KEY });
 		},
 	});
 };
@@ -68,6 +71,7 @@ export const useDeleteServiceMutation = () => {
 				}
 				return prev.filter((service) => service.id !== id);
 			});
+			queryClient.invalidateQueries({ queryKey: FIELD_OPTIONS_KEY });
 		},
 	});
 };

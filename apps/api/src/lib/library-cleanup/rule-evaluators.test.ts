@@ -36,6 +36,7 @@ interface TestRule {
 	operator: string | null;
 	conditions: string | null;
 	configId: string;
+	retentionMode: boolean;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -105,6 +106,7 @@ function makeRule(overrides: Partial<TestRule> = {}): TestRule {
 		operator: null,
 		conditions: null,
 		configId: "config-1",
+		retentionMode: false,
 		createdAt: NOW,
 		updatedAt: NOW,
 		...overrides,

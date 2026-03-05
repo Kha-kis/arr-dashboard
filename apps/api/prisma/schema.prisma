@@ -1025,6 +1025,7 @@ model LibraryCleanupRule {
   action            String   @default("delete") // "delete" | "unmonitor" | "delete_files"
   operator          String?                    // "AND" | "OR" for composite rules
   conditions        String?                    // JSON array of sub-conditions
+  retentionMode     Boolean  @default(false)   // true = retention (protect items), false = cleanup (flag items)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -1076,6 +1077,8 @@ model LibraryCleanupLog {
   itemsSkipped      Int
   details           String?                    // JSON array of detail objects
   error             String?
+  prefetchHealth    String?                    // JSON: { seerr, tautulli, plex } status
+  warnings          String?                    // JSON array of warning strings
   durationMs        Int
   startedAt         DateTime
   completedAt       DateTime?

@@ -718,6 +718,7 @@ export const LibraryCleanupRuleScalarFieldEnum = {
   action: 'action',
   operator: 'operator',
   conditions: 'conditions',
+  retentionMode: 'retentionMode',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const
@@ -762,6 +763,8 @@ export const LibraryCleanupLogScalarFieldEnum = {
   itemsSkipped: 'itemsSkipped',
   details: 'details',
   error: 'error',
+  prefetchHealth: 'prefetchHealth',
+  warnings: 'warnings',
   durationMs: 'durationMs',
   startedAt: 'startedAt',
   completedAt: 'completedAt'
