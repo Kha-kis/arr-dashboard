@@ -26,6 +26,7 @@ import type {
 	PlexOnDeckParams,
 	PlexUserRatingParams,
 	PlexWatchCountParams,
+	PlexEpisodeCompletionParams,
 	PlexWatchedByParams,
 	QualityProfileRuleParams,
 	RatingRuleParams,
@@ -41,20 +42,24 @@ import type {
 	SeerrRequestModifiedAgeParams,
 	SeerrRequestStatusParams,
 	SizeRuleParams,
+	RecentlyActiveParams,
+	StalenessScoreParams,
 	StatusRuleParams,
 	TagMatchRuleParams,
+	UserRetentionParams,
 	TautulliLastWatchedParams,
 	TautulliWatchCountParams,
 	TautulliWatchedByParams,
 	VideoCodecRuleParams,
 	YearRangeRuleParams,
 } from "@arr/shared";
-import { isRegexSafe } from "@arr/shared";
+import { isRegexSafe, ruleDataSourceMap, type DataSourceDependency } from "@arr/shared";
 import type { LibraryCleanupRule } from "../prisma.js";
 import { safeJsonParse } from "../utils/json.js";
 import type {
 	CacheItemForEval,
 	EvalContext,
+	PlexEpisodeMap,
 	PlexWatchInfo,
 	PlexWatchMap,
 	RuleAction,
@@ -702,6 +707,8 @@ function evaluateSeerrIsRequested(
 	params: SeerrIsRequestedParams,
 	seerrMap: SeerrRequestMap | undefined,
 ): string | null {
+	// If Seerr data is unavailable, skip evaluation to avoid false "not requested" matches
+	if (!seerrMap) return null;
 	const requests = lookupSeerrRequests(item, seerrMap);
 	const hasRequest = requests !== null && requests.length > 0;
 
@@ -722,8 +729,11 @@ function evaluateSeerrRequestCount(
 	params: SeerrRequestCountParams,
 	seerrMap: SeerrRequestMap | undefined,
 ): string | null {
+	if (!seerrMap) return null;
 	const requests = lookupSeerrRequests(item, seerrMap);
-	const count = requests?.length ?? 0;
+	// If lookup returns null (no tmdbId), skip to avoid false "0 requests" matches
+	if (requests === null) return null;
+	const count = requests.length;
 
 	if (params.operator === "less_than" && count < params.count) {
 		return `Seerr request count: ${count} (threshold: < ${params.count})`;
@@ -1220,6 +1230,7 @@ function evaluateImdbRatingRule(item: CacheItemForEval, params: ImdbRatingRulePa
 
 /** Cache compiled regexes to avoid re-compiling per item. Rejects unsafe patterns. */
 const regexCache = new Map<string, RegExp>();
+const MAX_REGEX_CACHE = 200;
 function getCachedRegex(pattern: string): RegExp | null {
 	let cached = regexCache.get(pattern);
 	if (cached) return cached;
@@ -1227,6 +1238,11 @@ function getCachedRegex(pattern: string): RegExp | null {
 	try {
 		// nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
 		cached = new RegExp(pattern, "i");
+		// FIFO eviction when cache is full
+		if (regexCache.size >= MAX_REGEX_CACHE) {
+			const firstKey = regexCache.keys().next().value;
+			if (firstKey !== undefined) regexCache.delete(firstKey);
+		}
 		regexCache.set(pattern, cached);
 		return cached;
 	} catch {
@@ -1354,6 +1370,234 @@ function evaluateTagMatchRule(item: CacheItemForEval, params: TagMatchRuleParams
 }
 
 // ============================================================================
+// Phase 2: Behavior-Aware Evaluators
+// ============================================================================
+
+/**
+ * Episode completion: flag series where watched episodes are below/above a percentage.
+ * Only applies to series items (itemType === "series").
+ */
+function evaluatePlexEpisodeCompletion(
+	item: CacheItemForEval,
+	params: PlexEpisodeCompletionParams,
+	ctx: EvalContext,
+): string | null {
+	if (item.itemType !== "series") return null;
+
+	const parsed = safeJsonParse(item.data);
+	if (!parsed) return null;
+	const data = parsed as Record<string, unknown>;
+	const tmdbId = (data.remoteIds as Record<string, unknown> | undefined)?.tmdbId;
+	if (typeof tmdbId !== "number") return null;
+
+	const stats = ctx.plexEpisodeMap?.get(tmdbId);
+	if (!stats || stats.total === 0) return null;
+
+	// When minSeason is set, only count episodes from seasons >= minSeason
+	let total: number;
+	let watched: number;
+	if (params.minSeason != null && stats.seasons.size > 0) {
+		total = 0;
+		watched = 0;
+		for (const [seasonNum, seasonStats] of stats.seasons) {
+			if (seasonNum >= params.minSeason) {
+				total += seasonStats.total;
+				watched += seasonStats.watched;
+			}
+		}
+		if (total === 0) return null; // No episodes in filtered seasons
+	} else {
+		total = stats.total;
+		watched = stats.watched;
+	}
+
+	const pct = (watched / total) * 100;
+	const seasonSuffix = params.minSeason != null ? ` (seasons >= ${params.minSeason})` : "";
+
+	if (params.operator === "less_than" && pct < params.percentage) {
+		return `Episode completion ${pct.toFixed(0)}% (${watched}/${total}) < ${params.percentage}%${seasonSuffix}`;
+	}
+	if (params.operator === "greater_than" && pct > params.percentage) {
+		return `Episode completion ${pct.toFixed(0)}% (${watched}/${total}) > ${params.percentage}%${seasonSuffix}`;
+	}
+
+	return null;
+}
+
+/**
+ * User retention: flag based on which users have watched/not watched.
+ * Combines Plex and/or Tautulli user data depending on source setting.
+ */
+function evaluateUserRetention(
+	item: CacheItemForEval,
+	params: UserRetentionParams,
+	ctx: EvalContext,
+): string | null {
+	const parsed = safeJsonParse(item.data);
+	if (!parsed) return null;
+	const data = parsed as Record<string, unknown>;
+	const tmdbId = (data.remoteIds as Record<string, unknown> | undefined)?.tmdbId;
+	if (typeof tmdbId !== "number") return null;
+
+	const key = `${item.itemType}:${tmdbId}`;
+
+	// Gather users who watched from specified source(s)
+	const watchedUsers = new Set<string>();
+	const source = params.source ?? "plex";
+
+	if (source === "plex" || source === "either") {
+		const plex = ctx.plexMap?.get(key);
+		if (plex?.watchedByUsers) {
+			for (const u of plex.watchedByUsers) watchedUsers.add(u.toLowerCase());
+		}
+	}
+	if (source === "tautulli" || source === "either") {
+		const tautulli = ctx.tautulliMap?.get(key);
+		if (tautulli?.watchedByUsers) {
+			for (const u of tautulli.watchedByUsers) watchedUsers.add(u.toLowerCase());
+		}
+	}
+
+	if (params.operator === "watched_by_none") {
+		if (watchedUsers.size === 0) {
+			return `Not watched by any user (source: ${source})`;
+		}
+	} else if (params.operator === "watched_by_all") {
+		const targetUsers = params.userNames;
+		if (targetUsers && targetUsers.length > 0) {
+			const allWatched = targetUsers.every((u) => watchedUsers.has(u.toLowerCase()));
+			if (allWatched) {
+				return `Watched by all specified users: ${targetUsers.join(", ")} (source: ${source})`;
+			}
+		}
+	} else if (params.operator === "watched_by_count") {
+		const minUsers = params.minUsers ?? 1;
+		if (watchedUsers.size >= minUsers) {
+			return `Watched by ${watchedUsers.size} user(s) >= ${minUsers} (source: ${source})`;
+		}
+	}
+
+	return null;
+}
+
+/**
+ * Staleness score: weighted 0-100 score combining multiple signals.
+ * Higher = more stale. Uses Plex and item data.
+ */
+function evaluateStalenessScore(
+	item: CacheItemForEval,
+	params: StalenessScoreParams,
+	ctx: EvalContext,
+): string | null {
+	const defaults = {
+		daysSinceLastWatch: 0.30,
+		inverseWatchCount: 0.20,
+		notOnDeck: 0.10,
+		lowUserRating: 0.15,
+		lowTmdbRating: 0.15,
+		sizeOnDisk: 0.10,
+	};
+	const w = params.weights ?? defaults;
+
+	const parsed = safeJsonParse(item.data);
+	if (!parsed) return null;
+	const data = parsed as Record<string, unknown>;
+	const tmdbId = (data.remoteIds as Record<string, unknown> | undefined)?.tmdbId;
+	const key = typeof tmdbId === "number" ? `${item.itemType}:${tmdbId}` : null;
+
+	const plex = key ? ctx.plexMap?.get(key) : undefined;
+
+	// 1. Days since last watch (365+ days = 100, 0 days = 0)
+	let daysSinceScore = 100;
+	if (plex?.lastWatchedAt) {
+		const days = (ctx.now.getTime() - new Date(plex.lastWatchedAt).getTime()) / (1000 * 60 * 60 * 24);
+		daysSinceScore = Math.min(100, (days / 365) * 100);
+	}
+
+	// 2. Inverse watch count (0 plays = 100, 10+ plays = 0)
+	let watchCountScore = 100;
+	if (plex) {
+		watchCountScore = Math.max(0, 100 - (plex.watchCount * 10));
+	}
+
+	// 3. Not on deck (not on deck = 100, on deck = 0)
+	const onDeckScore = plex?.onDeck ? 0 : 100;
+
+	// 4. Low user rating (no rating or < 5 = 100, 10 = 0)
+	let userRatingScore = 100;
+	if (plex?.userRating !== null && plex?.userRating !== undefined) {
+		userRatingScore = Math.max(0, 100 - (plex.userRating * 10));
+	}
+
+	// 5. Low TMDB rating
+	let tmdbRatingScore = 100;
+	const tmdbRating = extractRating(item);
+	if (tmdbRating !== null) {
+		tmdbRatingScore = Math.max(0, 100 - (tmdbRating * 10));
+	}
+
+	// 6. Size on disk (normalized: 50GB+ = 100)
+	let sizeScore = 0;
+	if (item.sizeOnDisk) {
+		const sizeGb = Number(item.sizeOnDisk) / (1024 * 1024 * 1024);
+		sizeScore = Math.min(100, (sizeGb / 50) * 100);
+	}
+
+	const total =
+		daysSinceScore * w.daysSinceLastWatch +
+		watchCountScore * w.inverseWatchCount +
+		onDeckScore * w.notOnDeck +
+		userRatingScore * w.lowUserRating +
+		tmdbRatingScore * w.lowTmdbRating +
+		sizeScore * w.sizeOnDisk;
+
+	// Normalize by sum of weights to handle incomplete weights
+	const weightSum =
+		w.daysSinceLastWatch + w.inverseWatchCount + w.notOnDeck +
+		w.lowUserRating + w.lowTmdbRating + w.sizeOnDisk;
+	const score = weightSum > 0 ? total / weightSum : 0;
+
+	if (params.operator === "greater_than" && score > params.threshold) {
+		return `Staleness score ${score.toFixed(1)} > ${params.threshold} (watch: ${daysSinceScore.toFixed(0)}, plays: ${watchCountScore.toFixed(0)}, tmdb: ${tmdbRatingScore.toFixed(0)})`;
+	}
+
+	return null;
+}
+
+/**
+ * Recently active protection: returns a match if the item was recently added
+ * AND (optionally) has activity. Designed for retention mode — returns match
+ * for items that SHOULD be protected, not items to delete.
+ */
+function evaluateRecentlyActive(
+	item: CacheItemForEval,
+	params: RecentlyActiveParams,
+	ctx: EvalContext,
+): string | null {
+	if (!item.arrAddedAt) return null;
+
+	const ageDays = (ctx.now.getTime() - item.arrAddedAt.getTime()) / (1000 * 60 * 60 * 24);
+	if (ageDays > params.protectionDays) return null; // Outside protection window
+
+	if (params.requireActivity) {
+		// Check for activity signals from Plex
+		const parsed = safeJsonParse(item.data);
+		if (!parsed) return null;
+		const data = parsed as Record<string, unknown>;
+		const tmdbId = (data.remoteIds as Record<string, unknown> | undefined)?.tmdbId;
+		const key = typeof tmdbId === "number" ? `${item.itemType}:${tmdbId}` : null;
+		const plex = key ? ctx.plexMap?.get(key) : undefined;
+
+		const hasActivity = plex?.onDeck || (plex?.watchCount ?? 0) > 0;
+		if (!hasActivity) return null;
+
+		return `Recently added (${Math.floor(ageDays)} days) with activity (protection window: ${params.protectionDays} days)`;
+	}
+
+	return `Recently added (${Math.floor(ageDays)} days, protection window: ${params.protectionDays} days)`;
+}
+
+// ============================================================================
 // Helpers
 // ============================================================================
 
@@ -1448,14 +1692,8 @@ function passesTitleExclusion(title: string, excludeTitles: string | null): bool
 	if (!patterns || patterns.length === 0) return true;
 
 	for (const pattern of patterns) {
-		if (!isRegexSafe(pattern)) continue;
-		try {
-			// nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
-			const regex = new RegExp(pattern, "i");
-			if (regex.test(title)) return false; // excluded
-		} catch {
-			// Invalid regex — skip pattern
-		}
+		const regex = getCachedRegex(pattern);
+		if (regex?.test(title)) return false; // excluded
 	}
 	return true;
 }
@@ -1571,6 +1809,16 @@ export function evaluateSingleCondition(
 		case "tag_match":
 			return evaluateTagMatchRule(item, params as TagMatchRuleParams);
 
+		// ── Phase 2: Behavior-aware rules ────────────────────────────
+		case "plex_episode_completion":
+			return evaluatePlexEpisodeCompletion(item, params as PlexEpisodeCompletionParams, ctx);
+		case "user_retention":
+			return evaluateUserRetention(item, params as UserRetentionParams, ctx);
+		case "staleness_score":
+			return evaluateStalenessScore(item, params as StalenessScoreParams, ctx);
+		case "recently_active":
+			return evaluateRecentlyActive(item, params as RecentlyActiveParams, ctx);
+
 		default:
 			return null;
 	}
@@ -1648,17 +1896,166 @@ export function evaluateRule(
 
 /**
  * Evaluate a cache item against all rules (sorted by priority).
- * First matching rule wins.
+ *
+ * Two-phase evaluation:
+ * 1. Retention rules checked first — if ANY match, item is protected (returns null).
+ * 2. Cleanup rules checked in priority order — first match wins.
+ *
+ * When `failedSources` is provided, rules depending on unavailable data sources
+ * are skipped to prevent false matches (the C1 safety fix).
  */
 export function evaluateItemAgainstRules(
 	item: CacheItemForEval,
 	rules: LibraryCleanupRule[],
 	instanceService: string,
 	ctx: EvalContext,
+	failedSources?: Set<DataSourceDependency>,
 ): RuleMatch | null {
+	// Phase 1: Check retention rules first — any match = protected
 	for (const rule of rules) {
+		if (!rule.retentionMode) continue;
+		if (shouldSkipForFailedSource(rule, failedSources)) continue;
+		const match = evaluateRule(item, rule, instanceService, ctx);
+		if (match) return null; // Item is protected by retention rule
+	}
+
+	// Phase 2: Check cleanup rules — first match wins
+	for (const rule of rules) {
+		if (rule.retentionMode) continue;
+		if (shouldSkipForFailedSource(rule, failedSources)) continue;
 		const match = evaluateRule(item, rule, instanceService, ctx);
 		if (match) return match;
 	}
+	return null;
+}
+
+/**
+ * Explain how each rule would evaluate against a specific item.
+ * Returns per-rule breakdown for the explain endpoint.
+ */
+export function explainItemAgainstRules(
+	item: CacheItemForEval,
+	rules: LibraryCleanupRule[],
+	instanceService: string,
+	ctx: EvalContext,
+): Array<{
+	ruleId: string;
+	ruleName: string;
+	matched: boolean;
+	reason: string | null;
+	filteredBy: "service_filter" | "instance_filter" | "tag_exclusion" | "title_exclusion" | "disabled" | null;
+	retentionMode: boolean;
+}> {
+	const results: Array<{
+		ruleId: string;
+		ruleName: string;
+		matched: boolean;
+		reason: string | null;
+		filteredBy: "service_filter" | "instance_filter" | "tag_exclusion" | "title_exclusion" | "disabled" | null;
+		retentionMode: boolean;
+	}> = [];
+
+	for (const rule of rules) {
+		if (!rule.enabled) {
+			results.push({
+				ruleId: rule.id,
+				ruleName: rule.name,
+				matched: false,
+				reason: null,
+				filteredBy: "disabled",
+				retentionMode: rule.retentionMode,
+			});
+			continue;
+		}
+
+		// Check pre-filters and report which one blocked
+		const filteredBy = getFilterReason(item, rule, instanceService);
+		if (filteredBy) {
+			results.push({
+				ruleId: rule.id,
+				ruleName: rule.name,
+				matched: false,
+				reason: null,
+				filteredBy,
+				retentionMode: rule.retentionMode,
+			});
+			continue;
+		}
+
+		// Evaluate the rule
+		const match = evaluateRule(item, rule, instanceService, ctx);
+		results.push({
+			ruleId: rule.id,
+			ruleName: rule.name,
+			matched: match !== null,
+			reason: match?.reason ?? null,
+			filteredBy: null,
+			retentionMode: rule.retentionMode,
+		});
+	}
+
+	return results;
+}
+
+/**
+ * Check if a rule should be skipped because its data source failed.
+ * Examines both the top-level ruleType and composite sub-conditions.
+ */
+function shouldSkipForFailedSource(
+	rule: LibraryCleanupRule,
+	failedSources?: Set<DataSourceDependency>,
+): boolean {
+	if (!failedSources || failedSources.size === 0) return false;
+
+	// Check top-level rule type
+	if (shouldSkipRuleType(rule.ruleType, rule.parameters, failedSources)) return true;
+
+	// Check composite sub-conditions
+	if (rule.conditions) {
+		const conds = safeJsonParse(rule.conditions) as Array<{ ruleType?: string; parameters?: Record<string, unknown> }> | null;
+		if (Array.isArray(conds)) {
+			for (const c of conds) {
+				if (c.ruleType && shouldSkipRuleType(c.ruleType, c.parameters ? JSON.stringify(c.parameters) : null, failedSources)) return true;
+			}
+		}
+	}
+	return false;
+}
+
+/**
+ * Check if a single rule type should be skipped based on failed data sources.
+ * Handles dynamic dependencies like `user_retention` whose source depends on params.
+ */
+function shouldSkipRuleType(
+	ruleType: string,
+	parametersJson: string | null,
+	failedSources: Set<DataSourceDependency>,
+): boolean {
+	// Special case: user_retention depends on params.source
+	if (ruleType === "user_retention") {
+		const params = parametersJson ? safeJsonParse(parametersJson) as Record<string, unknown> | null : null;
+		const source = (params?.source as string) ?? "plex";
+		if (source === "plex") return failedSources.has("plex");
+		if (source === "tautulli") return failedSources.has("tautulli");
+		if (source === "either") return failedSources.has("plex") && failedSources.has("tautulli");
+		return false;
+	}
+
+	const dep = ruleDataSourceMap[ruleType];
+	return dep != null && failedSources.has(dep);
+}
+
+/**
+ * Determine which pre-filter (if any) would block this rule from evaluating the item.
+ */
+function getFilterReason(
+	item: CacheItemForEval,
+	rule: LibraryCleanupRule,
+	instanceService: string,
+): "service_filter" | "instance_filter" | "tag_exclusion" | "title_exclusion" | null {
+	if (!passesServiceFilter(instanceService, rule.serviceFilter)) return "service_filter";
+	if (!passesInstanceFilter(item.instanceId, rule.instanceFilter)) return "instance_filter";
+	if (!passesTagExclusion(item, rule.excludeTags)) return "tag_exclusion";
+	if (!passesTitleExclusion(item.title, rule.excludeTitles)) return "title_exclusion";
 	return null;
 }

@@ -10,12 +10,13 @@
  * Supports three actions per rule: delete, unmonitor, delete_files.
  */
 
+import { ruleDataSourceMap, type DataSourceDependency } from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { LibraryCleanupConfig, LibraryCleanupRule, ServiceInstance } from "../prisma.js";
 import { SeerrClient } from "../seerr/seerr-client.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { safeJsonParse } from "../utils/json.js";
-import { evaluateItemAgainstRules, extractRating } from "./rule-evaluators.js";
+import { evaluateItemAgainstRules, evaluateRule, extractRating } from "./rule-evaluators.js";
 import type {
 	CacheItemForEval,
 	CleanupExecutorDeps,
@@ -24,7 +25,10 @@ import type {
 	EvalContext,
 	FlaggedItem,
 	PlexSectionWatchInfo,
+	PlexEpisodeMap,
+	PlexEpisodeStats,
 	PlexWatchMap,
+	PrefetchResults,
 	SeerrRequestInfo,
 	SeerrRequestMap,
 	TautulliWatchMap,
@@ -35,6 +39,34 @@ const APPROVAL_EXPIRY_DAYS = 7;
 
 // Batch size for LibraryCache queries
 const CACHE_QUERY_BATCH_SIZE = 500;
+
+// Circuit breaker: abort after N consecutive ARR API failures
+const CIRCUIT_BREAKER_THRESHOLD = 3;
+
+// ============================================================================
+// Detail Builder Helper
+// ============================================================================
+
+/** Build a detail entry for the cleanup run log. Ensures ruleId + itemType are always present. */
+function buildDetail(
+	item: FlaggedItem,
+	action: DetailAction,
+	reasonOverride?: string,
+): CleanupRunResult["details"][number] {
+	return {
+		instanceId: item.cacheItem.instanceId,
+		arrItemId: item.cacheItem.arrItemId,
+		title: item.cacheItem.title,
+		ruleId: item.match.ruleId,
+		rule: item.match.ruleName,
+		reason: reasonOverride ?? item.match.reason,
+		action,
+		itemType: item.cacheItem.itemType,
+		sizeOnDisk: item.cacheItem.sizeOnDisk.toString(),
+		year: item.cacheItem.year,
+		rating: null,
+	};
+}
 
 // ============================================================================
 // Preview (Dry Run)
@@ -71,25 +103,28 @@ export async function executeCleanupPreview(
 		};
 	}
 
-	const { flagged, totalEvaluated } = await evaluateAllItems(deps, config, config.rules);
+	const { flagged, totalEvaluated, prefetchHealth, warnings } = await evaluateAllItems(deps, config, config.rules);
 
 	const details = flagged.map((f) => ({
 		instanceId: f.cacheItem.instanceId,
 		arrItemId: f.cacheItem.arrItemId,
 		title: f.cacheItem.title,
+		ruleId: f.match.ruleId,
 		rule: f.match.ruleName,
 		reason: f.match.reason,
 		action: f.match.action as DetailAction,
+		itemType: f.cacheItem.itemType,
 		sizeOnDisk: f.cacheItem.sizeOnDisk.toString(),
 		year: f.cacheItem.year,
 		rating: f.rating,
 	}));
 
-	log.info({ totalEvaluated, totalFlagged: flagged.length }, "Library cleanup preview completed");
+	const hasFailedPrefetch = warnings.length > 0;
+	log.info({ totalEvaluated, totalFlagged: flagged.length, hasFailedPrefetch }, "Library cleanup preview completed");
 
 	return {
 		isDryRun: true,
-		status: "completed",
+		status: hasFailedPrefetch ? "partial" as const : "completed" as const,
 		itemsEvaluated: totalEvaluated,
 		itemsFlagged: flagged.length,
 		itemsRemoved: 0,
@@ -98,6 +133,8 @@ export async function executeCleanupPreview(
 		itemsSkipped: 0,
 		details,
 		durationMs: Date.now() - startTime,
+		prefetchHealth,
+		warnings,
 	};
 }
 
@@ -116,7 +153,7 @@ export async function executeCleanupRun(
 	userId: string,
 ): Promise<CleanupRunResult> {
 	const startTime = Date.now();
-	const { prisma } = deps;
+	const { prisma, log } = deps;
 
 	const config = await prisma.libraryCleanupConfig.findUnique({
 		where: { userId },
@@ -138,19 +175,22 @@ export async function executeCleanupRun(
 		};
 	}
 
-	const { flagged, totalEvaluated } = await evaluateAllItems(deps, config, config.rules);
+	const { flagged, totalEvaluated, prefetchHealth, warnings } = await evaluateAllItems(deps, config, config.rules);
 
 	// Respect max removals per run
 	const limited = flagged.slice(0, config.maxRemovalsPerRun);
+	const hasFailedPrefetch = warnings.length > 0;
 
 	if (config.dryRunMode) {
 		const details = limited.map((f) => ({
 			instanceId: f.cacheItem.instanceId,
 			arrItemId: f.cacheItem.arrItemId,
 			title: f.cacheItem.title,
+			ruleId: f.match.ruleId,
 			rule: f.match.ruleName,
 			reason: f.match.reason,
 			action: "flagged" as const,
+			itemType: f.cacheItem.itemType,
 			sizeOnDisk: f.cacheItem.sizeOnDisk.toString(),
 			year: f.cacheItem.year,
 			rating: f.rating,
@@ -158,7 +198,7 @@ export async function executeCleanupRun(
 
 		const result: CleanupRunResult = {
 			isDryRun: true,
-			status: "completed",
+			status: hasFailedPrefetch ? "partial" : "completed",
 			itemsEvaluated: totalEvaluated,
 			itemsFlagged: limited.length,
 			itemsRemoved: 0,
@@ -167,9 +207,11 @@ export async function executeCleanupRun(
 			itemsSkipped: flagged.length - limited.length,
 			details,
 			durationMs: Date.now() - startTime,
+			prefetchHealth,
+			warnings,
 		};
 
-		await createRunLog(prisma, config.id, result);
+		await createRunLog(prisma, config.id, result, log);
 		return result;
 	}
 
@@ -182,6 +224,8 @@ export async function executeCleanupRun(
 			totalEvaluated,
 			flagged.length,
 			startTime,
+			prefetchHealth,
+			warnings,
 		);
 	}
 
@@ -193,6 +237,8 @@ export async function executeCleanupRun(
 		totalEvaluated,
 		flagged.length,
 		startTime,
+		prefetchHealth,
+		warnings,
 	);
 }
 
@@ -322,7 +368,7 @@ export async function executeApprovedItems(
  * Collect all rule types from enabled rules, including conditions inside composite rules.
  * Used to decide which external data to prefetch (Seerr, Tautulli, Plex).
  */
-function collectActiveRuleTypes(rules: LibraryCleanupRule[]): Set<string> {
+function collectActiveRuleTypes(rules: Pick<LibraryCleanupRule, "enabled" | "ruleType" | "conditions">[]): Set<string> {
 	const types = new Set<string>();
 	for (const r of rules) {
 		if (!r.enabled) continue;
@@ -565,17 +611,107 @@ async function prefetchPlexData(
 }
 
 /**
+ * Prefetch Plex episode completion data for series.
+ * Uses SQL GROUP BY on PlexEpisodeCache to avoid loading all episodes into memory.
+ * Returns a Map of showTmdbId → { total, watched }.
+ */
+async function prefetchPlexEpisodeData(
+	deps: CleanupExecutorDeps,
+	userId: string,
+): Promise<PlexEpisodeMap | undefined> {
+	const { prisma, log } = deps;
+
+	try {
+		const instances = await prisma.serviceInstance.findMany({
+			where: { userId },
+			select: { id: true },
+		});
+		const instanceIds = instances.map((i) => i.id);
+		if (instanceIds.length === 0) return new Map();
+
+		// Three groupBy queries: show-level totals, show-level watched, and per-season counts
+		const totalCounts = await prisma.plexEpisodeCache.groupBy({
+			by: ["showTmdbId"],
+			where: { instanceId: { in: instanceIds } },
+			_count: { id: true },
+		});
+
+		const watchedCounts = await prisma.plexEpisodeCache.groupBy({
+			by: ["showTmdbId"],
+			where: { instanceId: { in: instanceIds }, watched: true },
+			_count: { id: true },
+		});
+
+		// Per-season counts for minSeason filtering
+		const seasonTotals = await prisma.plexEpisodeCache.groupBy({
+			by: ["showTmdbId", "seasonNumber"],
+			where: { instanceId: { in: instanceIds } },
+			_count: { id: true },
+		});
+
+		const seasonWatched = await prisma.plexEpisodeCache.groupBy({
+			by: ["showTmdbId", "seasonNumber"],
+			where: { instanceId: { in: instanceIds }, watched: true },
+			_count: { id: true },
+		});
+
+		// Build per-season watched lookup: "showTmdbId:seasonNumber" → count
+		const seasonWatchedMap = new Map(
+			seasonWatched.map((g) => [`${g.showTmdbId}:${g.seasonNumber}`, g._count.id]),
+		);
+
+		// Build per-show season maps
+		const showSeasonsMap = new Map<number, Map<number, { total: number; watched: number }>>();
+		for (const g of seasonTotals) {
+			let seasons = showSeasonsMap.get(g.showTmdbId);
+			if (!seasons) {
+				seasons = new Map();
+				showSeasonsMap.set(g.showTmdbId, seasons);
+			}
+			seasons.set(g.seasonNumber, {
+				total: g._count.id,
+				watched: seasonWatchedMap.get(`${g.showTmdbId}:${g.seasonNumber}`) ?? 0,
+			});
+		}
+
+		const watchedMap = new Map(watchedCounts.map((g) => [g.showTmdbId, g._count.id]));
+		const map: PlexEpisodeMap = new Map();
+
+		for (const group of totalCounts) {
+			map.set(group.showTmdbId, {
+				total: group._count.id,
+				watched: watchedMap.get(group.showTmdbId) ?? 0,
+				seasons: showSeasonsMap.get(group.showTmdbId) ?? new Map(),
+			});
+		}
+
+		log.info({ totalShows: map.size }, "Plex episode data prefetch complete for cleanup");
+		return map;
+	} catch (error) {
+		log.warn(
+			{ err: error },
+			"Failed to prefetch Plex episode data for cleanup — episode completion rules will be skipped",
+		);
+		return undefined;
+	}
+}
+
+/**
  * Evaluate all LibraryCache items against the rule set.
  * Queries in batches to avoid memory issues with large libraries.
  * Uses collectActiveRuleTypes() to detect rule types inside composite conditions.
+ *
+ * Now tracks prefetch results for observability and aborts with "partial" status
+ * when a failed data source has dependent rules that could produce false matches.
  */
 async function evaluateAllItems(
 	deps: CleanupExecutorDeps,
 	config: LibraryCleanupConfig,
 	rules: LibraryCleanupRule[],
-): Promise<{ flagged: FlaggedItem[]; totalEvaluated: number }> {
-	const { prisma } = deps;
+): Promise<{ flagged: FlaggedItem[]; totalEvaluated: number; prefetchHealth: PrefetchResults; warnings: string[] }> {
+	const { prisma, log } = deps;
 	const now = new Date();
+	const warnings: string[] = [];
 
 	// Load all user instances to map instanceId → service type
 	const instances = await prisma.serviceInstance.findMany({
@@ -599,18 +735,19 @@ async function evaluateAllItems(
 		"seerr_request_count",
 	];
 	const hasSeerrRules = SEERR_RULE_TYPES.some((t) => activeTypes.has(t));
-	const seerrMap = hasSeerrRules ? await prefetchSeerrRequests(deps, config.userId) : undefined;
+	const seerrResult = hasSeerrRules ? await prefetchSeerrRequests(deps, config.userId) : undefined;
+	const seerrMap = hasSeerrRules ? seerrResult : undefined;
 
 	// Prefetch Tautulli watch data if any Tautulli rule types are active
 	const TAUTULLI_RULE_TYPES = [
 		"tautulli_last_watched",
 		"tautulli_watch_count",
 		"tautulli_watched_by",
+		"user_retention", // Can use tautulli as source
 	];
 	const hasTautulliRules = TAUTULLI_RULE_TYPES.some((t) => activeTypes.has(t));
-	const tautulliMap = hasTautulliRules
-		? await prefetchTautulliData(deps, config.userId)
-		: undefined;
+	const tautulliResult = hasTautulliRules ? await prefetchTautulliData(deps, config.userId) : undefined;
+	const tautulliMap = hasTautulliRules ? tautulliResult : undefined;
 
 	// Prefetch Plex watch data if any Plex rule types are active
 	const PLEX_RULE_TYPES = [
@@ -622,14 +759,49 @@ async function evaluateAllItems(
 		"plex_collection",
 		"plex_label",
 		"plex_added_at",
+		"plex_episode_completion",
+		"user_retention",
+		"staleness_score",
+		"recently_active",
 	];
 	const hasPlexRules = PLEX_RULE_TYPES.some((t) => activeTypes.has(t));
-	const plexMap = hasPlexRules
-		? await prefetchPlexData(deps, config.userId)
-		: undefined;
+	const plexResult = hasPlexRules ? await prefetchPlexData(deps, config.userId) : undefined;
+	const plexMap = hasPlexRules ? plexResult : undefined;
+
+	// Prefetch Plex episode data if episode completion rule is active
+	const hasEpisodeRules = activeTypes.has("plex_episode_completion");
+	const plexEpisodeMap = hasEpisodeRules ? await prefetchPlexEpisodeData(deps, config.userId) : undefined;
+
+	// Build prefetch health status
+	const prefetchHealth: PrefetchResults = {
+		seerr: hasSeerrRules ? (seerrMap ? "ok" : "failed") : "skipped",
+		tautulli: hasTautulliRules ? (tautulliMap ? "ok" : "failed") : "skipped",
+		plex: hasPlexRules ? (plexMap ? "ok" : "failed") : "skipped",
+	};
+
+	// Check for failed prefetches that have dependent rules — generate warnings
+	const failedSources = new Set<DataSourceDependency>();
+	if (prefetchHealth.seerr === "failed") failedSources.add("seerr");
+	if (prefetchHealth.tautulli === "failed") failedSources.add("tautulli");
+	if (prefetchHealth.plex === "failed") failedSources.add("plex");
+
+	if (failedSources.size > 0) {
+		for (const source of failedSources) {
+			const affectedRules = rules
+				.filter((r) => r.enabled && getRuleDataSources(r).has(source!))
+				.map((r) => r.name);
+			if (affectedRules.length > 0) {
+				warnings.push(
+					`${source} data unavailable — rules affected: ${affectedRules.join(", ")}. ` +
+					`These rules were skipped for safety to prevent false matches.`,
+				);
+			}
+		}
+		log.warn({ prefetchHealth, warnings }, "Cleanup run has failed prefetches with dependent rules");
+	}
 
 	// Build evaluation context
-	const ctx: EvalContext = { now, seerrMap, tautulliMap, plexMap };
+	const ctx: EvalContext = { now, seerrMap, tautulliMap, plexMap, plexEpisodeMap };
 
 	const flagged: FlaggedItem[] = [];
 	let totalEvaluated = 0;
@@ -669,7 +841,7 @@ async function evaluateAllItems(
 			const instanceService = instanceServiceMap.get(item.instanceId);
 			if (!instanceService) continue; // Skip orphaned cache items with no matching instance
 
-			const match = evaluateItemAgainstRules(item, rules, instanceService, ctx);
+			const match = evaluateItemAgainstRules(item, rules, instanceService, ctx, failedSources);
 			if (match) {
 				flagged.push({
 					cacheItem: item,
@@ -683,7 +855,26 @@ async function evaluateAllItems(
 		if (batch.length < CACHE_QUERY_BATCH_SIZE) break;
 	}
 
-	return { flagged, totalEvaluated };
+	return { flagged, totalEvaluated, prefetchHealth, warnings };
+}
+
+/**
+ * Get all data sources a rule depends on (including composite sub-conditions).
+ */
+function getRuleDataSources(rule: LibraryCleanupRule): Set<DataSourceDependency> {
+	const sources = new Set<DataSourceDependency>();
+	const dep = ruleDataSourceMap[rule.ruleType];
+	if (dep) sources.add(dep);
+	if (rule.conditions) {
+		const conds = safeJsonParse(rule.conditions) as Array<{ ruleType?: string }> | null;
+		if (Array.isArray(conds)) {
+			for (const c of conds) {
+				const cdep = c.ruleType ? ruleDataSourceMap[c.ruleType] : undefined;
+				if (cdep) sources.add(cdep);
+			}
+		}
+	}
+	return sources;
 }
 
 /**
@@ -697,6 +888,8 @@ async function executeWithApproval(
 	totalEvaluated: number,
 	totalFlaggedBeforeLimit: number,
 	startTime: number,
+	prefetchHealth?: PrefetchResults,
+	warnings?: string[],
 ): Promise<CleanupRunResult> {
 	const { prisma, log } = deps;
 	const now = new Date();
@@ -719,14 +912,7 @@ async function executeWithApproval(
 			});
 
 			if (existing) {
-				details.push({
-					instanceId: item.cacheItem.instanceId,
-					arrItemId: item.cacheItem.arrItemId,
-					title: item.cacheItem.title,
-					rule: item.match.ruleName,
-					reason: item.match.reason,
-					action: "skipped",
-				});
+				details.push(buildDetail(item, "skipped"));
 				continue;
 			}
 
@@ -749,34 +935,21 @@ async function executeWithApproval(
 				},
 			});
 
-			details.push({
-				instanceId: item.cacheItem.instanceId,
-				arrItemId: item.cacheItem.arrItemId,
-				title: item.cacheItem.title,
-				rule: item.match.ruleName,
-				reason: item.match.reason,
-				action: "queued_for_approval",
-			});
+			details.push(buildDetail(item, "queued_for_approval"));
 			queued++;
 		} catch (error) {
 			log.error(
 				{ err: error, title: item.cacheItem.title },
 				"Failed to create cleanup approval entry",
 			);
-			details.push({
-				instanceId: item.cacheItem.instanceId,
-				arrItemId: item.cacheItem.arrItemId,
-				title: item.cacheItem.title,
-				rule: item.match.ruleName,
-				reason: `Failed to queue: ${getErrorMessage(error)}`,
-				action: "skipped",
-			});
+			details.push(buildDetail(item, "skipped", `Failed to queue: ${getErrorMessage(error)}`));
 		}
 	}
 
+	const hasFailedPrefetch = warnings && warnings.length > 0;
 	const result: CleanupRunResult = {
 		isDryRun: false,
-		status: "completed",
+		status: hasFailedPrefetch ? "partial" : "completed",
 		itemsEvaluated: totalEvaluated,
 		itemsFlagged: queued,
 		itemsRemoved: 0,
@@ -785,9 +958,11 @@ async function executeWithApproval(
 		itemsSkipped: totalFlaggedBeforeLimit - flagged.length,
 		details,
 		durationMs: Date.now() - startTime,
+		prefetchHealth,
+		warnings,
 	};
 
-	await createRunLog(prisma, config.id, result);
+	await createRunLog(prisma, config.id, result, log);
 	return result;
 }
 
@@ -803,6 +978,8 @@ async function executeDirectRemoval(
 	totalEvaluated: number,
 	totalFlaggedBeforeLimit: number,
 	startTime: number,
+	prefetchHealth?: PrefetchResults,
+	warnings?: string[],
 ): Promise<CleanupRunResult> {
 	const { prisma, arrClientFactory, log } = deps;
 
@@ -817,18 +994,25 @@ async function executeDirectRemoval(
 	let removed = 0;
 	let unmonitored = 0;
 	let filesDeleted = 0;
+	let consecutiveFailures = 0;
+	let circuitBroken = false;
 
 	for (const item of flagged) {
+		// Circuit breaker: abort after N consecutive failures
+		if (consecutiveFailures >= CIRCUIT_BREAKER_THRESHOLD) {
+			circuitBroken = true;
+			log.error(
+				{ consecutiveFailures, remainingItems: flagged.length - details.length },
+				"Circuit breaker triggered: aborting cleanup after consecutive ARR API failures",
+			);
+			// Skip remaining items
+			details.push(buildDetail(item, "skipped", `Skipped: circuit breaker triggered after ${CIRCUIT_BREAKER_THRESHOLD} consecutive failures`));
+			continue;
+		}
+
 		const instance = instanceMap.get(item.cacheItem.instanceId);
 		if (!instance) {
-			details.push({
-				instanceId: item.cacheItem.instanceId,
-				arrItemId: item.cacheItem.arrItemId,
-				title: item.cacheItem.title,
-				rule: item.match.ruleName,
-				reason: item.match.reason,
-				action: "skipped",
-			});
+			details.push(buildDetail(item, "skipped"));
 			continue;
 		}
 
@@ -845,15 +1029,9 @@ async function executeDirectRemoval(
 					},
 					data: { monitored: false },
 				});
-				details.push({
-					instanceId: item.cacheItem.instanceId,
-					arrItemId: item.cacheItem.arrItemId,
-					title: item.cacheItem.title,
-					rule: item.match.ruleName,
-					reason: item.match.reason,
-					action: "unmonitored",
-				});
+				details.push(buildDetail(item, "unmonitored"));
 				unmonitored++;
+				consecutiveFailures = 0; // Reset on success
 				log.info(
 					{ title: item.cacheItem.title, instanceId: instance.id, rule: item.match.ruleName },
 					"Cleanup: unmonitored item in ARR instance",
@@ -868,15 +1046,9 @@ async function executeDirectRemoval(
 					},
 					data: { hasFile: false, sizeOnDisk: 0 },
 				});
-				details.push({
-					instanceId: item.cacheItem.instanceId,
-					arrItemId: item.cacheItem.arrItemId,
-					title: item.cacheItem.title,
-					rule: item.match.ruleName,
-					reason: item.match.reason,
-					action: "files_deleted",
-				});
+				details.push(buildDetail(item, "files_deleted"));
 				filesDeleted++;
+				consecutiveFailures = 0; // Reset on success
 				log.info(
 					{ title: item.cacheItem.title, instanceId: instance.id, rule: item.match.ruleName },
 					"Cleanup: deleted files for item in ARR instance",
@@ -891,39 +1063,35 @@ async function executeDirectRemoval(
 						itemType: item.cacheItem.itemType,
 					},
 				});
-				details.push({
-					instanceId: item.cacheItem.instanceId,
-					arrItemId: item.cacheItem.arrItemId,
-					title: item.cacheItem.title,
-					rule: item.match.ruleName,
-					reason: item.match.reason,
-					action: "removed",
-				});
+				details.push(buildDetail(item, "removed"));
 				removed++;
+				consecutiveFailures = 0; // Reset on success
 				log.info(
 					{ title: item.cacheItem.title, instanceId: instance.id, rule: item.match.ruleName },
 					"Cleanup: removed item from ARR instance",
 				);
 			}
 		} catch (error) {
+			consecutiveFailures++;
 			log.error(
-				{ err: error, title: item.cacheItem.title, instanceId: instance.id },
+				{ err: error, title: item.cacheItem.title, instanceId: instance.id, consecutiveFailures },
 				"Cleanup: failed to execute action on item",
 			);
-			details.push({
-				instanceId: item.cacheItem.instanceId,
-				arrItemId: item.cacheItem.arrItemId,
-				title: item.cacheItem.title,
-				rule: item.match.ruleName,
-				reason: `Action failed: ${getErrorMessage(error)}`,
-				action: "skipped",
-			});
+			details.push(buildDetail(item, "skipped", `Action failed: ${getErrorMessage(error)}`));
 		}
+	}
+
+	const hasFailedPrefetch = warnings && warnings.length > 0;
+	const allWarnings = [...(warnings ?? [])];
+	if (circuitBroken) {
+		allWarnings.push(
+			`Circuit breaker triggered after ${CIRCUIT_BREAKER_THRESHOLD} consecutive ARR API failures. Remaining items were skipped.`,
+		);
 	}
 
 	const result: CleanupRunResult = {
 		isDryRun: false,
-		status: "completed",
+		status: circuitBroken || hasFailedPrefetch ? "partial" : "completed",
 		itemsEvaluated: totalEvaluated,
 		itemsFlagged: flagged.length,
 		itemsRemoved: removed,
@@ -932,9 +1100,11 @@ async function executeDirectRemoval(
 		itemsSkipped: totalFlaggedBeforeLimit - flagged.length + (flagged.length - removed - unmonitored - filesDeleted),
 		details,
 		durationMs: Date.now() - startTime,
+		prefetchHealth,
+		warnings: allWarnings.length > 0 ? allWarnings : undefined,
 	};
 
-	await createRunLog(prisma, config.id, result);
+	await createRunLog(prisma, config.id, result, log);
 	return result;
 }
 
@@ -1037,29 +1207,71 @@ async function deleteFilesFromArr(
 }
 
 /**
+ * Build a fully-populated EvalContext by running all relevant prefetch functions.
+ * Used by the explain endpoint so it can evaluate rules with real external data
+ * rather than an empty context that always returns "not matched" for external rules.
+ */
+export async function buildEvalContext(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	rules: Array<{ enabled: boolean; ruleType: string; conditions: string | null }>,
+): Promise<EvalContext> {
+	const activeTypes = collectActiveRuleTypes(rules);
+
+	const SEERR_RULE_TYPES = [
+		"seerr_requested_by", "seerr_request_age", "seerr_request_status",
+		"seerr_is_4k", "seerr_request_modified_age", "seerr_modified_by",
+		"seerr_is_requested", "seerr_request_count",
+	];
+	const TAUTULLI_RULE_TYPES = ["tautulli_last_watched", "tautulli_watch_count", "tautulli_watched_by", "user_retention"];
+	const PLEX_RULE_TYPES_LIST = [
+		"plex_last_watched", "plex_watch_count", "plex_on_deck", "plex_user_rating",
+		"plex_watched_by", "plex_collection", "plex_label", "plex_added_at",
+		"plex_episode_completion", "user_retention", "staleness_score", "recently_active",
+	];
+
+	const [seerrMap, tautulliMap, plexMap, plexEpisodeMap] = await Promise.all([
+		SEERR_RULE_TYPES.some((t) => activeTypes.has(t)) ? prefetchSeerrRequests(deps, userId) : undefined,
+		TAUTULLI_RULE_TYPES.some((t) => activeTypes.has(t)) ? prefetchTautulliData(deps, userId) : undefined,
+		PLEX_RULE_TYPES_LIST.some((t) => activeTypes.has(t)) ? prefetchPlexData(deps, userId) : undefined,
+		activeTypes.has("plex_episode_completion") ? prefetchPlexEpisodeData(deps, userId) : undefined,
+	]);
+
+	return { now: new Date(), seerrMap: seerrMap ?? undefined, tautulliMap: tautulliMap ?? undefined, plexMap: plexMap ?? undefined, plexEpisodeMap: plexEpisodeMap ?? undefined };
+}
+
+/**
  * Create a cleanup run log entry.
+ * Failures are logged but not rethrown — the run result is more important than its log.
  */
 async function createRunLog(
 	prisma: CleanupExecutorDeps["prisma"],
 	configId: string,
 	result: Omit<CleanupRunResult, "error"> & { error?: string },
+	log?: CleanupExecutorDeps["log"],
 ): Promise<void> {
-	await prisma.libraryCleanupLog.create({
-		data: {
-			configId,
-			isDryRun: result.isDryRun,
-			status: result.status,
-			itemsEvaluated: result.itemsEvaluated,
-			itemsFlagged: result.itemsFlagged,
-			itemsRemoved: result.itemsRemoved,
-			itemsUnmonitored: result.itemsUnmonitored,
-			itemsFilesDeleted: result.itemsFilesDeleted,
-			itemsSkipped: result.itemsSkipped,
-			details: JSON.stringify(result.details),
-			error: result.error,
-			durationMs: result.durationMs,
-			startedAt: new Date(Date.now() - result.durationMs),
-			completedAt: new Date(),
-		},
-	});
+	try {
+		await prisma.libraryCleanupLog.create({
+			data: {
+				configId,
+				isDryRun: result.isDryRun,
+				status: result.status,
+				itemsEvaluated: result.itemsEvaluated,
+				itemsFlagged: result.itemsFlagged,
+				itemsRemoved: result.itemsRemoved,
+				itemsUnmonitored: result.itemsUnmonitored,
+				itemsFilesDeleted: result.itemsFilesDeleted,
+				itemsSkipped: result.itemsSkipped,
+				details: JSON.stringify(result.details),
+				error: result.error,
+				prefetchHealth: result.prefetchHealth ? JSON.stringify(result.prefetchHealth) : null,
+				warnings: result.warnings?.length ? JSON.stringify(result.warnings) : null,
+				durationMs: result.durationMs,
+				startedAt: new Date(Date.now() - result.durationMs),
+				completedAt: new Date(),
+			},
+		});
+	} catch (error) {
+		log?.warn({ err: error, configId }, "Failed to write cleanup run log — run result is still valid");
+	}
 }

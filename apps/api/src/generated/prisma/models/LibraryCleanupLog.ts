@@ -59,6 +59,8 @@ export type LibraryCleanupLogMinAggregateOutputType = {
   itemsSkipped: number | null
   details: string | null
   error: string | null
+  prefetchHealth: string | null
+  warnings: string | null
   durationMs: number | null
   startedAt: Date | null
   completedAt: Date | null
@@ -77,6 +79,8 @@ export type LibraryCleanupLogMaxAggregateOutputType = {
   itemsSkipped: number | null
   details: string | null
   error: string | null
+  prefetchHealth: string | null
+  warnings: string | null
   durationMs: number | null
   startedAt: Date | null
   completedAt: Date | null
@@ -95,6 +99,8 @@ export type LibraryCleanupLogCountAggregateOutputType = {
   itemsSkipped: number
   details: number
   error: number
+  prefetchHealth: number
+  warnings: number
   durationMs: number
   startedAt: number
   completedAt: number
@@ -135,6 +141,8 @@ export type LibraryCleanupLogMinAggregateInputType = {
   itemsSkipped?: true
   details?: true
   error?: true
+  prefetchHealth?: true
+  warnings?: true
   durationMs?: true
   startedAt?: true
   completedAt?: true
@@ -153,6 +161,8 @@ export type LibraryCleanupLogMaxAggregateInputType = {
   itemsSkipped?: true
   details?: true
   error?: true
+  prefetchHealth?: true
+  warnings?: true
   durationMs?: true
   startedAt?: true
   completedAt?: true
@@ -171,6 +181,8 @@ export type LibraryCleanupLogCountAggregateInputType = {
   itemsSkipped?: true
   details?: true
   error?: true
+  prefetchHealth?: true
+  warnings?: true
   durationMs?: true
   startedAt?: true
   completedAt?: true
@@ -276,6 +288,8 @@ export type LibraryCleanupLogGroupByOutputType = {
   itemsSkipped: number
   details: string | null
   error: string | null
+  prefetchHealth: string | null
+  warnings: string | null
   durationMs: number
   startedAt: Date
   completedAt: Date | null
@@ -317,6 +331,8 @@ export type LibraryCleanupLogWhereInput = {
   itemsSkipped?: Prisma.IntFilter<"LibraryCleanupLog"> | number
   details?: Prisma.StringNullableFilter<"LibraryCleanupLog"> | string | null
   error?: Prisma.StringNullableFilter<"LibraryCleanupLog"> | string | null
+  prefetchHealth?: Prisma.StringNullableFilter<"LibraryCleanupLog"> | string | null
+  warnings?: Prisma.StringNullableFilter<"LibraryCleanupLog"> | string | null
   durationMs?: Prisma.IntFilter<"LibraryCleanupLog"> | number
   startedAt?: Prisma.DateTimeFilter<"LibraryCleanupLog"> | Date | string
   completedAt?: Prisma.DateTimeNullableFilter<"LibraryCleanupLog"> | Date | string | null
@@ -336,6 +352,8 @@ export type LibraryCleanupLogOrderByWithRelationInput = {
   itemsSkipped?: Prisma.SortOrder
   details?: Prisma.SortOrderInput | Prisma.SortOrder
   error?: Prisma.SortOrderInput | Prisma.SortOrder
+  prefetchHealth?: Prisma.SortOrderInput | Prisma.SortOrder
+  warnings?: Prisma.SortOrderInput | Prisma.SortOrder
   durationMs?: Prisma.SortOrder
   startedAt?: Prisma.SortOrder
   completedAt?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -358,6 +376,8 @@ export type LibraryCleanupLogWhereUniqueInput = Prisma.AtLeast<{
   itemsSkipped?: Prisma.IntFilter<"LibraryCleanupLog"> | number
   details?: Prisma.StringNullableFilter<"LibraryCleanupLog"> | string | null
   error?: Prisma.StringNullableFilter<"LibraryCleanupLog"> | string | null
+  prefetchHealth?: Prisma.StringNullableFilter<"LibraryCleanupLog"> | string | null
+  warnings?: Prisma.StringNullableFilter<"LibraryCleanupLog"> | string | null
   durationMs?: Prisma.IntFilter<"LibraryCleanupLog"> | number
   startedAt?: Prisma.DateTimeFilter<"LibraryCleanupLog"> | Date | string
   completedAt?: Prisma.DateTimeNullableFilter<"LibraryCleanupLog"> | Date | string | null
@@ -377,6 +397,8 @@ export type LibraryCleanupLogOrderByWithAggregationInput = {
   itemsSkipped?: Prisma.SortOrder
   details?: Prisma.SortOrderInput | Prisma.SortOrder
   error?: Prisma.SortOrderInput | Prisma.SortOrder
+  prefetchHealth?: Prisma.SortOrderInput | Prisma.SortOrder
+  warnings?: Prisma.SortOrderInput | Prisma.SortOrder
   durationMs?: Prisma.SortOrder
   startedAt?: Prisma.SortOrder
   completedAt?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -403,6 +425,8 @@ export type LibraryCleanupLogScalarWhereWithAggregatesInput = {
   itemsSkipped?: Prisma.IntWithAggregatesFilter<"LibraryCleanupLog"> | number
   details?: Prisma.StringNullableWithAggregatesFilter<"LibraryCleanupLog"> | string | null
   error?: Prisma.StringNullableWithAggregatesFilter<"LibraryCleanupLog"> | string | null
+  prefetchHealth?: Prisma.StringNullableWithAggregatesFilter<"LibraryCleanupLog"> | string | null
+  warnings?: Prisma.StringNullableWithAggregatesFilter<"LibraryCleanupLog"> | string | null
   durationMs?: Prisma.IntWithAggregatesFilter<"LibraryCleanupLog"> | number
   startedAt?: Prisma.DateTimeWithAggregatesFilter<"LibraryCleanupLog"> | Date | string
   completedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"LibraryCleanupLog"> | Date | string | null
@@ -420,6 +444,8 @@ export type LibraryCleanupLogCreateInput = {
   itemsSkipped: number
   details?: string | null
   error?: string | null
+  prefetchHealth?: string | null
+  warnings?: string | null
   durationMs: number
   startedAt: Date | string
   completedAt?: Date | string | null
@@ -439,6 +465,8 @@ export type LibraryCleanupLogUncheckedCreateInput = {
   itemsSkipped: number
   details?: string | null
   error?: string | null
+  prefetchHealth?: string | null
+  warnings?: string | null
   durationMs: number
   startedAt: Date | string
   completedAt?: Date | string | null
@@ -456,6 +484,8 @@ export type LibraryCleanupLogUpdateInput = {
   itemsSkipped?: Prisma.IntFieldUpdateOperationsInput | number
   details?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  prefetchHealth?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  warnings?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   durationMs?: Prisma.IntFieldUpdateOperationsInput | number
   startedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -475,6 +505,8 @@ export type LibraryCleanupLogUncheckedUpdateInput = {
   itemsSkipped?: Prisma.IntFieldUpdateOperationsInput | number
   details?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  prefetchHealth?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  warnings?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   durationMs?: Prisma.IntFieldUpdateOperationsInput | number
   startedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -493,6 +525,8 @@ export type LibraryCleanupLogCreateManyInput = {
   itemsSkipped: number
   details?: string | null
   error?: string | null
+  prefetchHealth?: string | null
+  warnings?: string | null
   durationMs: number
   startedAt: Date | string
   completedAt?: Date | string | null
@@ -510,6 +544,8 @@ export type LibraryCleanupLogUpdateManyMutationInput = {
   itemsSkipped?: Prisma.IntFieldUpdateOperationsInput | number
   details?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  prefetchHealth?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  warnings?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   durationMs?: Prisma.IntFieldUpdateOperationsInput | number
   startedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -528,6 +564,8 @@ export type LibraryCleanupLogUncheckedUpdateManyInput = {
   itemsSkipped?: Prisma.IntFieldUpdateOperationsInput | number
   details?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  prefetchHealth?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  warnings?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   durationMs?: Prisma.IntFieldUpdateOperationsInput | number
   startedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -556,6 +594,8 @@ export type LibraryCleanupLogCountOrderByAggregateInput = {
   itemsSkipped?: Prisma.SortOrder
   details?: Prisma.SortOrder
   error?: Prisma.SortOrder
+  prefetchHealth?: Prisma.SortOrder
+  warnings?: Prisma.SortOrder
   durationMs?: Prisma.SortOrder
   startedAt?: Prisma.SortOrder
   completedAt?: Prisma.SortOrder
@@ -584,6 +624,8 @@ export type LibraryCleanupLogMaxOrderByAggregateInput = {
   itemsSkipped?: Prisma.SortOrder
   details?: Prisma.SortOrder
   error?: Prisma.SortOrder
+  prefetchHealth?: Prisma.SortOrder
+  warnings?: Prisma.SortOrder
   durationMs?: Prisma.SortOrder
   startedAt?: Prisma.SortOrder
   completedAt?: Prisma.SortOrder
@@ -602,6 +644,8 @@ export type LibraryCleanupLogMinOrderByAggregateInput = {
   itemsSkipped?: Prisma.SortOrder
   details?: Prisma.SortOrder
   error?: Prisma.SortOrder
+  prefetchHealth?: Prisma.SortOrder
+  warnings?: Prisma.SortOrder
   durationMs?: Prisma.SortOrder
   startedAt?: Prisma.SortOrder
   completedAt?: Prisma.SortOrder
@@ -671,6 +715,8 @@ export type LibraryCleanupLogCreateWithoutConfigInput = {
   itemsSkipped: number
   details?: string | null
   error?: string | null
+  prefetchHealth?: string | null
+  warnings?: string | null
   durationMs: number
   startedAt: Date | string
   completedAt?: Date | string | null
@@ -688,6 +734,8 @@ export type LibraryCleanupLogUncheckedCreateWithoutConfigInput = {
   itemsSkipped: number
   details?: string | null
   error?: string | null
+  prefetchHealth?: string | null
+  warnings?: string | null
   durationMs: number
   startedAt: Date | string
   completedAt?: Date | string | null
@@ -734,6 +782,8 @@ export type LibraryCleanupLogScalarWhereInput = {
   itemsSkipped?: Prisma.IntFilter<"LibraryCleanupLog"> | number
   details?: Prisma.StringNullableFilter<"LibraryCleanupLog"> | string | null
   error?: Prisma.StringNullableFilter<"LibraryCleanupLog"> | string | null
+  prefetchHealth?: Prisma.StringNullableFilter<"LibraryCleanupLog"> | string | null
+  warnings?: Prisma.StringNullableFilter<"LibraryCleanupLog"> | string | null
   durationMs?: Prisma.IntFilter<"LibraryCleanupLog"> | number
   startedAt?: Prisma.DateTimeFilter<"LibraryCleanupLog"> | Date | string
   completedAt?: Prisma.DateTimeNullableFilter<"LibraryCleanupLog"> | Date | string | null
@@ -751,6 +801,8 @@ export type LibraryCleanupLogCreateManyConfigInput = {
   itemsSkipped: number
   details?: string | null
   error?: string | null
+  prefetchHealth?: string | null
+  warnings?: string | null
   durationMs: number
   startedAt: Date | string
   completedAt?: Date | string | null
@@ -768,6 +820,8 @@ export type LibraryCleanupLogUpdateWithoutConfigInput = {
   itemsSkipped?: Prisma.IntFieldUpdateOperationsInput | number
   details?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  prefetchHealth?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  warnings?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   durationMs?: Prisma.IntFieldUpdateOperationsInput | number
   startedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -785,6 +839,8 @@ export type LibraryCleanupLogUncheckedUpdateWithoutConfigInput = {
   itemsSkipped?: Prisma.IntFieldUpdateOperationsInput | number
   details?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  prefetchHealth?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  warnings?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   durationMs?: Prisma.IntFieldUpdateOperationsInput | number
   startedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -802,6 +858,8 @@ export type LibraryCleanupLogUncheckedUpdateManyWithoutConfigInput = {
   itemsSkipped?: Prisma.IntFieldUpdateOperationsInput | number
   details?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  prefetchHealth?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  warnings?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   durationMs?: Prisma.IntFieldUpdateOperationsInput | number
   startedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -822,6 +880,8 @@ export type LibraryCleanupLogSelect<ExtArgs extends runtime.Types.Extensions.Int
   itemsSkipped?: boolean
   details?: boolean
   error?: boolean
+  prefetchHealth?: boolean
+  warnings?: boolean
   durationMs?: boolean
   startedAt?: boolean
   completedAt?: boolean
@@ -841,6 +901,8 @@ export type LibraryCleanupLogSelectCreateManyAndReturn<ExtArgs extends runtime.T
   itemsSkipped?: boolean
   details?: boolean
   error?: boolean
+  prefetchHealth?: boolean
+  warnings?: boolean
   durationMs?: boolean
   startedAt?: boolean
   completedAt?: boolean
@@ -860,6 +922,8 @@ export type LibraryCleanupLogSelectUpdateManyAndReturn<ExtArgs extends runtime.T
   itemsSkipped?: boolean
   details?: boolean
   error?: boolean
+  prefetchHealth?: boolean
+  warnings?: boolean
   durationMs?: boolean
   startedAt?: boolean
   completedAt?: boolean
@@ -879,12 +943,14 @@ export type LibraryCleanupLogSelectScalar = {
   itemsSkipped?: boolean
   details?: boolean
   error?: boolean
+  prefetchHealth?: boolean
+  warnings?: boolean
   durationMs?: boolean
   startedAt?: boolean
   completedAt?: boolean
 }
 
-export type LibraryCleanupLogOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "configId" | "isDryRun" | "status" | "itemsEvaluated" | "itemsFlagged" | "itemsRemoved" | "itemsUnmonitored" | "itemsFilesDeleted" | "itemsSkipped" | "details" | "error" | "durationMs" | "startedAt" | "completedAt", ExtArgs["result"]["libraryCleanupLog"]>
+export type LibraryCleanupLogOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "configId" | "isDryRun" | "status" | "itemsEvaluated" | "itemsFlagged" | "itemsRemoved" | "itemsUnmonitored" | "itemsFilesDeleted" | "itemsSkipped" | "details" | "error" | "prefetchHealth" | "warnings" | "durationMs" | "startedAt" | "completedAt", ExtArgs["result"]["libraryCleanupLog"]>
 export type LibraryCleanupLogInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   config?: boolean | Prisma.LibraryCleanupConfigDefaultArgs<ExtArgs>
 }
@@ -913,6 +979,8 @@ export type $LibraryCleanupLogPayload<ExtArgs extends runtime.Types.Extensions.I
     itemsSkipped: number
     details: string | null
     error: string | null
+    prefetchHealth: string | null
+    warnings: string | null
     durationMs: number
     startedAt: Date
     completedAt: Date | null
@@ -1352,6 +1420,8 @@ export interface LibraryCleanupLogFieldRefs {
   readonly itemsSkipped: Prisma.FieldRef<"LibraryCleanupLog", 'Int'>
   readonly details: Prisma.FieldRef<"LibraryCleanupLog", 'String'>
   readonly error: Prisma.FieldRef<"LibraryCleanupLog", 'String'>
+  readonly prefetchHealth: Prisma.FieldRef<"LibraryCleanupLog", 'String'>
+  readonly warnings: Prisma.FieldRef<"LibraryCleanupLog", 'String'>
   readonly durationMs: Prisma.FieldRef<"LibraryCleanupLog", 'Int'>
   readonly startedAt: Prisma.FieldRef<"LibraryCleanupLog", 'DateTime'>
   readonly completedAt: Prisma.FieldRef<"LibraryCleanupLog", 'DateTime'>

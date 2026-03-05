@@ -19,6 +19,58 @@ interface ConditionParamsFieldsProps {
 }
 
 // ============================================================================
+// Default Params (ensures all required fields are present for backend validation)
+// ============================================================================
+
+export function getDefaultConditionParams(ruleType: CleanupRuleType): Record<string, unknown> {
+	switch (ruleType) {
+		case "age": return { operator: "older_than", days: 30 };
+		case "size": return { operator: "greater_than", sizeGb: 50 };
+		case "rating": return { source: "tmdb", operator: "less_than", score: 5 };
+		case "status": return { statuses: [] };
+		case "genre": return { operator: "includes_any", genres: [] };
+		case "year_range": return { operator: "before", year: 2020 };
+		case "quality_profile": return { profileNames: [] };
+		case "language": return { operator: "includes_any", languages: [] };
+		case "seerr_requested_by": return { userNames: [] };
+		case "seerr_request_age": return { operator: "older_than", days: 90 };
+		case "seerr_request_status": return { statuses: [] };
+		case "video_codec": return { operator: "is", codecs: [] };
+		case "audio_codec": return { operator: "is", codecs: [] };
+		case "resolution": return { operator: "is", resolutions: [] };
+		case "hdr_type": return { operator: "is", types: [] };
+		case "custom_format_score": return { operator: "less_than", score: 0 };
+		case "runtime": return { operator: "greater_than", minutes: 60 };
+		case "release_group": return { operator: "is", groups: [] };
+		case "seerr_is_4k": return { is4k: true };
+		case "seerr_request_modified_age": return { operator: "older_than", days: 90 };
+		case "seerr_modified_by": return { userNames: [] };
+		case "tautulli_last_watched": return { operator: "older_than", days: 90 };
+		case "tautulli_watch_count": return { operator: "less_than", count: 1 };
+		case "tautulli_watched_by": return { operator: "includes_any", userNames: [] };
+		case "plex_last_watched": return { operator: "older_than", days: 90 };
+		case "plex_watch_count": return { operator: "less_than", count: 1 };
+		case "plex_on_deck": return { isDeck: false };
+		case "plex_user_rating": return { operator: "less_than", rating: 5 };
+		case "plex_watched_by": return { operator: "includes_any", userNames: [] };
+		case "imdb_rating": return { operator: "less_than", score: 5 };
+		case "file_path": return { operator: "matches", field: "path", pattern: "" };
+		case "seerr_is_requested": return { isRequested: true };
+		case "seerr_request_count": return { operator: "less_than", count: 1 };
+		case "audio_channels": return { operator: "less_than", channels: 6 };
+		case "tag_match": return { operator: "includes_any", tagIds: [] };
+		case "plex_collection": return { operator: "in", collections: [] };
+		case "plex_label": return { operator: "has_any", labels: [] };
+		case "plex_added_at": return { operator: "older_than", days: 90 };
+		case "plex_episode_completion": return { operator: "less_than", percentage: 10 };
+		case "user_retention": return { operator: "watched_by_none", source: "plex" };
+		case "staleness_score": return { operator: "greater_than", threshold: 70 };
+		case "recently_active": return { protectionDays: 30, requireActivity: true };
+		default: return {};
+	}
+}
+
+// ============================================================================
 // Component
 // ============================================================================
 
@@ -31,6 +83,7 @@ export function ConditionParamsFields({
 	inputClass,
 	labelClass,
 }: ConditionParamsFieldsProps) {
+	const { gradient } = useThemeGradient();
 	const get = <T,>(key: string, def: T): T => (params[key] as T) ?? def;
 	const set = (key: string, val: unknown) => onParamsChange({ ...params, [key]: val });
 
@@ -360,32 +413,42 @@ export function ConditionParamsFields({
 				</div>
 			);
 
-		case "seerr_request_status":
+		case "seerr_request_status": {
+			const SEERR_STATUSES = ["pending", "approved", "declined", "failed", "completed"] as const;
+			const selectedStatuses = get("statuses", []) as string[];
+			const toggleStatus = (s: string) => {
+				set("statuses", selectedStatuses.includes(s) ? selectedStatuses.filter((v: string) => v !== s) : [...selectedStatuses, s]);
+			};
 			return (
 				<div className="space-y-2">
-					<label className="block">
-						<span className={labelClass}>Request statuses (comma-separated)</span>
-						<input
-							type="text"
-							value={(get("statuses", []) as string[]).join(", ")}
-							onChange={(e) =>
-								set(
-									"statuses",
-									e.target.value
-										.split(",")
-										.map((s: string) => s.trim())
-										.filter(Boolean),
-								)
-							}
-							placeholder="pending, approved, declined, failed, completed"
-							className={inputClass}
-						/>
-					</label>
+					<span className={labelClass}>Request Statuses</span>
+					<div className="flex flex-wrap gap-1.5">
+						{SEERR_STATUSES.map((s) => {
+							const isSelected = selectedStatuses.includes(s);
+							return (
+								<button
+									key={s}
+									type="button"
+									onClick={() => toggleStatus(s)}
+									aria-pressed={isSelected}
+									className="rounded-lg border px-2.5 py-1 text-xs font-medium capitalize transition-all duration-200"
+									style={
+										isSelected
+											? { borderColor: gradient.from, backgroundColor: gradient.fromLight, color: gradient.from }
+											: { borderColor: "var(--color-border)" }
+									}
+								>
+									{s}
+								</button>
+							);
+						})}
+					</div>
 					<p className="text-xs text-muted-foreground">
 						Flag items whose Seerr request has one of these statuses.
 					</p>
 				</div>
 			);
+		}
 
 		case "video_codec":
 			return (
@@ -1148,6 +1211,202 @@ export function ConditionParamsFields({
 					</div>
 					<p className="text-xs text-muted-foreground">
 						Flag items by when they were added to Plex. Requires a Plex instance.
+					</p>
+				</div>
+			);
+
+		case "plex_episode_completion":
+			return (
+				<div className="space-y-2">
+					<div className="flex gap-2">
+						<label className="block flex-1">
+							<span className={labelClass}>Operator</span>
+							<select
+								value={get("operator", "less_than")}
+								onChange={(e) => set("operator", e.target.value)}
+								className={inputClass}
+							>
+								<option value="less_than">Less than</option>
+								<option value="greater_than">Greater than</option>
+							</select>
+						</label>
+						<label className="block w-24">
+							<span className={labelClass}>Percent</span>
+							<input
+								type="number"
+								value={get("percentage", 10)}
+								onChange={(e) => set("percentage", Number(e.target.value))}
+								min={0}
+								max={100}
+								className={inputClass}
+							/>
+						</label>
+						<label className="block w-28">
+							<span className={labelClass}>Min Season</span>
+							<input
+								type="number"
+								value={get("minSeason", 0)}
+								onChange={(e) => set("minSeason", Number(e.target.value))}
+								min={0}
+								placeholder="0 = all"
+								className={inputClass}
+							/>
+						</label>
+					</div>
+					<p className="text-xs text-muted-foreground">
+						Only count episodes from this season onward. 0 or empty = all seasons.
+					</p>
+				</div>
+			);
+
+		case "user_retention":
+			return (
+				<div className="space-y-3">
+					<div className="flex gap-2">
+						<label className="block flex-1">
+							<span className={labelClass}>Operator</span>
+							<select
+								value={get("operator", "watched_by_none")}
+								onChange={(e) => set("operator", e.target.value)}
+								className={inputClass}
+							>
+								<option value="watched_by_none">Watched by none</option>
+								<option value="watched_by_all">Watched by all</option>
+								<option value="watched_by_count">Watched by count</option>
+							</select>
+						</label>
+						<label className="block w-32">
+							<span className={labelClass}>Source</span>
+							<select
+								value={get("source", "plex")}
+								onChange={(e) => set("source", e.target.value)}
+								className={inputClass}
+							>
+								<option value="plex">Plex</option>
+								<option value="tautulli">Tautulli</option>
+								<option value="either">Either</option>
+							</select>
+						</label>
+					</div>
+					{get<string>("operator", "watched_by_none") === "watched_by_count" && (
+						<label className="block w-24">
+							<span className={labelClass}>Min Users</span>
+							<input
+								type="number"
+								value={get("minUsers", 1)}
+								onChange={(e) => set("minUsers", Number(e.target.value))}
+								min={1}
+								className={inputClass}
+							/>
+						</label>
+					)}
+					{get<string>("operator", "watched_by_none") === "watched_by_all" && (
+						<label className="block">
+							<span className={labelClass}>Users (comma-separated)</span>
+							<input
+								type="text"
+								value={(get("userNames", []) as string[]).join(", ")}
+								onChange={(e) =>
+									set(
+										"userNames",
+										e.target.value
+											.split(",")
+											.map((s: string) => s.trim())
+											.filter(Boolean),
+									)
+								}
+								placeholder="alice, bob"
+								className={inputClass}
+							/>
+						</label>
+					)}
+				</div>
+			);
+
+		case "staleness_score": {
+			const weights = (get("weights", {}) as Record<string, number>) ?? {};
+			const defaultWeights = {
+				daysSinceLastWatch: 0.30,
+				inverseWatchCount: 0.20,
+				notOnDeck: 0.10,
+				lowUserRating: 0.15,
+				lowTmdbRating: 0.15,
+				sizeOnDisk: 0.10,
+			};
+			const setWeight = (key: string, val: number) =>
+				set("weights", { ...defaultWeights, ...weights, [key]: val });
+			return (
+				<div className="space-y-3">
+					<div className="flex gap-2">
+						<label className="block flex-1">
+							<span className={labelClass}>Threshold (0-100)</span>
+							<input
+								type="number"
+								value={get("threshold", 70)}
+								onChange={(e) => set("threshold", Number(e.target.value))}
+								min={0}
+								max={100}
+								className={inputClass}
+							/>
+						</label>
+					</div>
+					<p className="text-xs text-muted-foreground">
+						Weighted score combining watch recency, play count, deck status, ratings, and file size. Higher = more stale.
+					</p>
+					<details className="text-xs">
+						<summary className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors">
+							Custom weights (must sum to 1.0)
+						</summary>
+						<div className="mt-2 grid grid-cols-2 gap-2">
+							{(Object.entries(defaultWeights) as [string, number][]).map(([key, def]) => (
+								<label key={key} className="block">
+									<span className={labelClass}>{key.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase())}</span>
+									<input
+										type="number"
+										value={weights[key] ?? def}
+										onChange={(e) => setWeight(key, Number(e.target.value))}
+										min={0}
+										max={1}
+										step={0.05}
+										className={inputClass}
+									/>
+								</label>
+							))}
+						</div>
+					</details>
+				</div>
+			);
+		}
+
+		case "recently_active":
+			return (
+				<div className="space-y-3">
+					<div className="flex gap-2">
+						<label className="block flex-1">
+							<span className={labelClass}>Protection Window (days)</span>
+							<input
+								type="number"
+								value={get("protectionDays", 30)}
+								onChange={(e) => set("protectionDays", Number(e.target.value))}
+								min={1}
+								max={365}
+								className={inputClass}
+							/>
+						</label>
+					</div>
+					<label className="flex items-center gap-2 cursor-pointer">
+						<input
+							type="checkbox"
+							checked={get("requireActivity", true) as boolean}
+							onChange={(e) => set("requireActivity", e.target.checked)}
+							className="rounded border-border"
+						/>
+						<span className="text-xs text-muted-foreground">
+							Require watch activity (not just recent addition)
+						</span>
+					</label>
+					<p className="text-xs text-muted-foreground">
+						Protects items with recent activity. Best used as a retention rule — items matching this rule will be shielded from cleanup.
 					</p>
 				</div>
 			);

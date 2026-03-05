@@ -110,6 +110,19 @@ export interface PlexWatchInfo {
  */
 export type PlexWatchMap = Map<string, PlexWatchInfo>;
 
+/** Aggregated episode completion data for a show */
+export interface PlexEpisodeStats {
+	total: number;
+	watched: number;
+	/** Per-season breakdown for minSeason filtering */
+	seasons: Map<number, { total: number; watched: number }>;
+}
+
+/**
+ * Plex episode completion map: showTmdbId → PlexEpisodeStats
+ */
+export type PlexEpisodeMap = Map<number, PlexEpisodeStats>;
+
 /**
  * Context object passed to all rule evaluators.
  * Replaces the growing list of optional parameters on evaluateRule().
@@ -119,6 +132,14 @@ export interface EvalContext {
 	seerrMap?: SeerrRequestMap;
 	tautulliMap?: TautulliWatchMap;
 	plexMap?: PlexWatchMap;
+	plexEpisodeMap?: PlexEpisodeMap;
+}
+
+/** Tracks the outcome of each data source prefetch */
+export interface PrefetchResults {
+	seerr: "ok" | "failed" | "skipped";
+	tautulli: "ok" | "failed" | "skipped";
+	plex: "ok" | "failed" | "skipped";
 }
 
 /** Action from a rule definition (what the rule intends to do) */
@@ -160,15 +181,19 @@ export interface CleanupRunResult {
 		instanceId: string;
 		arrItemId: number;
 		title: string;
+		ruleId: string;
 		rule: string;
 		reason: string;
 		action: DetailAction;
+		itemType?: string;
 		sizeOnDisk?: string;
 		year?: number | null;
 		rating?: number | null;
 	}>;
 	durationMs: number;
 	error?: string;
+	prefetchHealth?: PrefetchResults;
+	warnings?: string[];
 }
 
 // ============================================================================

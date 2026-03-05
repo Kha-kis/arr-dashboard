@@ -19,8 +19,13 @@ const CHECK_INTERVAL_MS = 60 * 1000; // Check every minute
 
 export class CleanupScheduler {
 	private intervalId: NodeJS.Timeout | null = null;
-	private isRunning = false;
+	private _isRunning = false;
 	private notifyFn?: (payload: NotificationPayload) => Promise<void>;
+
+	/** Whether a cleanup run is currently in progress */
+	get isRunning(): boolean {
+		return this._isRunning;
+	}
 
 	constructor(
 		private prisma: PrismaClient,
@@ -70,7 +75,7 @@ export class CleanupScheduler {
 	 * Check if a cleanup run should execute and run it.
 	 */
 	private async checkAndRun(): Promise<void> {
-		if (this.isRunning) {
+		if (this._isRunning) {
 			this.logger.debug("Cleanup already running, skipping check");
 			return;
 		}
@@ -86,6 +91,22 @@ export class CleanupScheduler {
 					this.logger.warn({ err }, "Failed to expire stale approvals");
 				});
 
+			// Recover stuck "executing" items (crash recovery: >1 hour since approval)
+			const stuckThreshold = new Date(Date.now() - 60 * 60 * 1000);
+			await this.prisma.libraryCleanupApproval
+				.updateMany({
+					where: { status: "executing", reviewedAt: { lt: stuckThreshold } },
+					data: { status: "expired" },
+				})
+				.then((result) => {
+					if (result.count > 0) {
+						this.logger.warn({ recoveredCount: result.count }, "Recovered stuck executing approval items — marked as expired");
+					}
+				})
+				.catch((err) => {
+					this.logger.warn({ err }, "Failed to recover stuck executing approvals");
+				});
+
 			// Find any user's config that is enabled and due for a run.
 			// (Single-admin app, so there's at most one config.)
 			const config = await this.prisma.libraryCleanupConfig.findFirst({
@@ -97,7 +118,7 @@ export class CleanupScheduler {
 			const now = new Date();
 			if (!config.nextRunAt || config.nextRunAt > now) return;
 
-			this.isRunning = true;
+			this._isRunning = true;
 
 			this.logger.info(
 				{ intervalHours: config.intervalHours, dryRunMode: config.dryRunMode },
@@ -165,10 +186,10 @@ export class CleanupScheduler {
 					}
 				}
 			} finally {
-				this.isRunning = false;
+				this._isRunning = false;
 			}
 		} catch (error) {
-			this.isRunning = false;
+			this._isRunning = false;
 			this.logger.error({ err: error }, "Error checking/running scheduled cleanup");
 
 			this.notifyFn?.({

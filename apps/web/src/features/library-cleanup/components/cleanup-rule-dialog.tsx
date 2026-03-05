@@ -8,6 +8,7 @@ import type {
 } from "@arr/shared";
 import {
 	BarChart3,
+	Brain,
 	ChevronDown,
 	Film,
 	HardDrive,
@@ -21,7 +22,7 @@ import {
 	Tv,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
 	Dialog,
 	DialogContent,
@@ -31,10 +32,11 @@ import {
 } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { useCleanupFieldOptions } from "@/hooks/api/useLibraryCleanup";
+import { useServicesQuery } from "@/hooks/api/useServicesQuery";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 import { getServiceGradient } from "@/lib/theme-gradients";
 import { getInputStyles } from "@/lib/theme-input-styles";
-import { ConditionParamsFields } from "./condition-params-fields";
+import { ConditionParamsFields, getDefaultConditionParams } from "./condition-params-fields";
 import { MultiSelectField } from "./multi-select-field";
 
 // ============================================================================
@@ -191,6 +193,28 @@ const RULE_TYPES: Array<{ value: CleanupRuleType; label: string; desc: string }>
 		label: "Plex: Added At",
 		desc: "Flag items by when added to Plex",
 	},
+	// Behavior-aware rules (Phase 2)
+	{
+		value: "plex_episode_completion",
+		label: "Episode Completion",
+		desc: "Flag series by % of episodes watched in Plex",
+	},
+	{
+		value: "user_retention",
+		label: "User Retention",
+		desc: "Flag items by which users have watched (none/all/count)",
+	},
+	{
+		value: "staleness_score",
+		label: "Staleness Score",
+		desc: "Weighted score combining watch activity, ratings, and size",
+	},
+	// Phase 3
+	{
+		value: "recently_active",
+		label: "Recently Active",
+		desc: "Protect items with recent activity (best used as retention rule)",
+	},
 ];
 
 const RULE_CATEGORIES: Array<{
@@ -257,6 +281,13 @@ const RULE_CATEGORIES: Array<{
 		types: ["plex_last_watched", "plex_watch_count", "plex_on_deck", "plex_user_rating", "plex_watched_by", "plex_collection", "plex_label", "plex_added_at"],
 		requires: "plex" as const,
 	},
+	{
+		id: "behavior",
+		label: "Behavior Analysis",
+		icon: Brain,
+		types: ["plex_episode_completion", "user_retention", "staleness_score", "recently_active"],
+		requires: "plex" as const,
+	},
 ];
 
 const RULE_TYPE_MAP = new Map(RULE_TYPES.map((t) => [t.value, t]));
@@ -288,6 +319,11 @@ export function CleanupRuleDialog({
 	const { gradient } = useThemeGradient();
 	const isEdit = !!editRule;
 	const { data: fieldOptions, isLoading: fieldOptionsLoading } = useCleanupFieldOptions();
+	const { data: allServices } = useServicesQuery();
+	const arrInstances = useMemo(
+		() => (allServices ?? []).filter((s) => s.service === "sonarr" || s.service === "radarr"),
+		[allServices],
+	);
 
 	// ── Basic fields ────────────────────────────────────────────────
 	const [name, setName] = useState("");
@@ -318,7 +354,8 @@ export function CleanupRuleDialog({
 	const [seerrReqStatuses, setSeerrReqStatuses] = useState("pending,declined");
 
 	// ── File metadata params (multi-select arrays) ──────────────────
-	const [codecOp, setCodecOp] = useState("is");
+	const [videoCodecOp, setVideoCodecOp] = useState("is");
+	const [audioCodecOp, setAudioCodecOp] = useState("is");
 	const [selectedVideoCodecs, setSelectedVideoCodecs] = useState<string[]>([]);
 	const [selectedAudioCodecs, setSelectedAudioCodecs] = useState<string[]>([]);
 	const [resolutionOp, setResolutionOp] = useState("is");
@@ -389,14 +426,20 @@ export function CleanupRuleDialog({
 	const [plexAddedAtOp, setPlexAddedAtOp] = useState("older_than");
 	const [plexAddedAtDays, setPlexAddedAtDays] = useState(90);
 
+	// ── Phase 2/3 behavior params (shared object pattern) ─────────
+	const [behaviorParams, setBehaviorParams] = useState<Record<string, unknown>>({});
+
+	// ── Retention mode ─────────────────────────────────────────────
+	const [retentionMode, setRetentionMode] = useState(false);
+
 	// ── Composite validation ────────────────────────────────────────
 	const [compositeError, setCompositeError] = useState<string | null>(null);
 
 	// ── Scope / Exclusions ──────────────────────────────────────────
 	const [serviceFilter, setServiceFilter] = useState<string[]>([]);
-	const [instanceFilter, setInstanceFilter] = useState("");
+	const [instanceFilter, setInstanceFilter] = useState<string[]>([]);
 	const [selectedPlexLibraries, setSelectedPlexLibraries] = useState<string[]>([]);
-	const [excludeTags, setExcludeTags] = useState("");
+	const [excludeTags, setExcludeTags] = useState<number[]>([]);
 	const [excludeTitles, setExcludeTitles] = useState("");
 
 	// ── Pre-populate on edit ────────────────────────────────────────
@@ -407,6 +450,7 @@ export function CleanupRuleDialog({
 			setRuleType(editRule.ruleType);
 			setEnabled(editRule.enabled);
 			setAction((editRule.action as "delete" | "unmonitor" | "delete_files") ?? "delete");
+			setRetentionMode(editRule.retentionMode ?? false);
 			// Composite mode
 			if (editRule.operator && editRule.conditions) {
 				setIsComposite(true);
@@ -476,11 +520,11 @@ export function CleanupRuleDialog({
 					break;
 				// File metadata rules — arrays directly
 				case "video_codec":
-					setCodecOp((p.operator as string) ?? "is");
+					setVideoCodecOp((p.operator as string) ?? "is");
 					setSelectedVideoCodecs(Array.isArray(p.codecs) ? (p.codecs as string[]) : []);
 					break;
 				case "audio_codec":
-					setCodecOp((p.operator as string) ?? "is");
+					setAudioCodecOp((p.operator as string) ?? "is");
 					setSelectedAudioCodecs(Array.isArray(p.codecs) ? (p.codecs as string[]) : []);
 					break;
 				case "resolution":
@@ -587,12 +631,19 @@ export function CleanupRuleDialog({
 					setPlexAddedAtOp((p.operator as string) ?? "older_than");
 					setPlexAddedAtDays((p.days as number) ?? 90);
 					break;
+				// Phase 2/3: Behavior analysis (delegate to behaviorParams)
+				case "plex_episode_completion":
+				case "user_retention":
+				case "staleness_score":
+				case "recently_active":
+					setBehaviorParams(p);
+					break;
 			}
 
 			setServiceFilter(editRule.serviceFilter ?? []);
-			setInstanceFilter(editRule.instanceFilter ? editRule.instanceFilter.join(", ") : "");
+			setInstanceFilter(editRule.instanceFilter ?? []);
 			setSelectedPlexLibraries(editRule.plexLibraryFilter ?? []);
-			setExcludeTags(editRule.excludeTags ? editRule.excludeTags.join(", ") : "");
+			setExcludeTags(editRule.excludeTags ?? []);
 			setExcludeTitles(editRule.excludeTitles ? editRule.excludeTitles.join(", ") : "");
 		} else {
 			// Reset to defaults for create mode
@@ -621,7 +672,8 @@ export function CleanupRuleDialog({
 			setSeerrReqAgeDays(90);
 			setSeerrReqStatuses("pending,declined");
 			// File metadata defaults
-			setCodecOp("is");
+			setVideoCodecOp("is");
+			setAudioCodecOp("is");
 			setSelectedVideoCodecs([]);
 			setSelectedAudioCodecs([]);
 			setResolutionOp("is");
@@ -658,6 +710,7 @@ export function CleanupRuleDialog({
 			setSelectedPlexUsers([]);
 			// Phase A/B
 			setAction("delete");
+			setRetentionMode(false);
 			setIsComposite(false);
 			setCompositeOperator("AND");
 			setConditions([]);
@@ -682,10 +735,11 @@ export function CleanupRuleDialog({
 			setSelectedPlexLabels([]);
 			setPlexAddedAtOp("older_than");
 			setPlexAddedAtDays(90);
+			setBehaviorParams({});
 			setServiceFilter([]);
-			setInstanceFilter("");
+			setInstanceFilter([]);
 			setSelectedPlexLibraries([]);
-			setExcludeTags("");
+			setExcludeTags([]);
 			setExcludeTitles("");
 		}
 	}, [open, editRule]);
@@ -724,9 +778,9 @@ export function CleanupRuleDialog({
 				return { statuses: splitCsv(seerrReqStatuses) };
 			// File metadata rules — use arrays directly
 			case "video_codec":
-				return { operator: codecOp, codecs: selectedVideoCodecs };
+				return { operator: videoCodecOp, codecs: selectedVideoCodecs };
 			case "audio_codec":
-				return { operator: codecOp, codecs: selectedAudioCodecs };
+				return { operator: audioCodecOp, codecs: selectedAudioCodecs };
 			case "resolution":
 				return { operator: resolutionOp, resolutions: selectedResolutions };
 			case "hdr_type":
@@ -792,6 +846,12 @@ export function CleanupRuleDialog({
 				return { operator: plexLabelOp, labels: selectedPlexLabels };
 			case "plex_added_at":
 				return { operator: plexAddedAtOp, days: plexAddedAtDays };
+			// Phase 2/3: Behavior analysis (delegate to behaviorParams)
+			case "plex_episode_completion":
+			case "user_retention":
+			case "staleness_score":
+			case "recently_active":
+				return behaviorParams;
 			default:
 				return {};
 		}
@@ -817,7 +877,8 @@ export function CleanupRuleDialog({
 		seerrReqAgeOp,
 		seerrReqAgeDays,
 		seerrReqStatuses,
-		codecOp,
+		videoCodecOp,
+		audioCodecOp,
 		selectedVideoCodecs,
 		selectedAudioCodecs,
 		resolutionOp,
@@ -867,6 +928,7 @@ export function CleanupRuleDialog({
 		selectedPlexLabels,
 		plexAddedAtOp,
 		plexAddedAtDays,
+		behaviorParams,
 	]);
 
 	const handleSubmit = (e: React.FormEvent) => {
@@ -883,13 +945,10 @@ export function CleanupRuleDialog({
 			priority: editRule?.priority ?? 0,
 			parameters: isComposite ? {} : buildParams(),
 			action,
+			retentionMode,
 			serviceFilter: serviceFilter.length > 0 ? serviceFilter : null,
-			instanceFilter: instanceFilter.trim() ? splitCsv(instanceFilter) : null,
-			excludeTags: excludeTags.trim()
-				? splitCsv(excludeTags)
-						.map(Number)
-						.filter((n) => !Number.isNaN(n))
-				: null,
+			instanceFilter: instanceFilter.length > 0 ? instanceFilter : null,
+			excludeTags: excludeTags.length > 0 ? excludeTags : null,
 			excludeTitles: excludeTitles.trim() ? splitCsv(excludeTitles) : null,
 			plexLibraryFilter: selectedPlexLibraries.length > 0 ? selectedPlexLibraries : null,
 			operator: isComposite ? compositeOperator : null,
@@ -979,6 +1038,22 @@ export function CleanupRuleDialog({
 								checked={enabled}
 								onCheckedChange={setEnabled}
 								style={enabled ? { backgroundColor: gradient.from } : undefined}
+							/>
+						</div>
+
+						{/* ── Retention Mode toggle ────────────────── */}
+						<div className="flex items-center justify-between">
+							<div className="flex items-center gap-2">
+								<ShieldOff className="h-4 w-4 text-emerald-400" />
+								<div>
+									<span className="text-sm font-medium">Retention Rule</span>
+									<p className="text-xs text-muted-foreground">Protects matching items from other rules</p>
+								</div>
+							</div>
+							<Switch
+								checked={retentionMode}
+								onCheckedChange={setRetentionMode}
+								style={retentionMode ? { backgroundColor: "rgb(16 185 129)" } : undefined}
 							/>
 						</div>
 
@@ -1092,7 +1167,7 @@ export function CleanupRuleDialog({
 												const newType = e.target.value as CleanupRuleType;
 												setConditions((prev) =>
 													prev.map((c) =>
-														c.id === cond.id ? { ...c, ruleType: newType, params: {} } : c,
+														c.id === cond.id ? { ...c, ruleType: newType, params: getDefaultConditionParams(newType) } : c,
 													),
 												);
 											}}
@@ -1132,7 +1207,7 @@ export function CleanupRuleDialog({
 									onClick={() => {
 										setConditions((prev) => [
 											...prev,
-											{ id: `cond-${Date.now()}`, ruleType: "age" as CleanupRuleType, params: {} },
+											{ id: `cond-${Date.now()}`, ruleType: "age" as CleanupRuleType, params: getDefaultConditionParams("age") },
 										]);
 										setCompositeError(null);
 									}}
@@ -1303,8 +1378,10 @@ export function CleanupRuleDialog({
 								setSeerrReqAgeDays={setSeerrReqAgeDays}
 								seerrReqStatuses={seerrReqStatuses}
 								setSeerrReqStatuses={setSeerrReqStatuses}
-								codecOp={codecOp}
-								setCodecOp={setCodecOp}
+								videoCodecOp={videoCodecOp}
+								setVideoCodecOp={setVideoCodecOp}
+								audioCodecOp={audioCodecOp}
+								setAudioCodecOp={setAudioCodecOp}
 								selectedVideoCodecs={selectedVideoCodecs}
 								setSelectedVideoCodecs={setSelectedVideoCodecs}
 								selectedAudioCodecs={selectedAudioCodecs}
@@ -1399,6 +1476,12 @@ export function CleanupRuleDialog({
 								setPlexLabelOp={setPlexLabelOp}
 								selectedPlexLabels={selectedPlexLabels}
 								setSelectedPlexLabels={setSelectedPlexLabels}
+								plexAddedAtOp={plexAddedAtOp}
+								setPlexAddedAtOp={setPlexAddedAtOp}
+								plexAddedAtDays={plexAddedAtDays}
+								setPlexAddedAtDays={setPlexAddedAtDays}
+								behaviorParams={behaviorParams}
+								setBehaviorParams={setBehaviorParams}
 								fieldOptions={fieldOptions}
 								fieldOptionsLoading={fieldOptionsLoading}
 								inputClass={inputClass}
@@ -1425,6 +1508,8 @@ export function CleanupRuleDialog({
 											key={svc}
 											type="button"
 											onClick={() => toggleService(svc)}
+											aria-pressed={isActive}
+											aria-label={`Filter by ${svc}`}
 											className="rounded-lg border px-3 py-1.5 text-sm font-medium capitalize transition-all duration-200"
 											style={
 												isActive
@@ -1449,16 +1534,48 @@ export function CleanupRuleDialog({
 							</p>
 						</div>
 
-						<label className="block">
-							<span className={labelClass}>Instance IDs (comma-separated)</span>
-							<input
-								type="text"
-								value={instanceFilter}
-								onChange={(e) => setInstanceFilter(e.target.value)}
-								placeholder="Leave empty for all instances"
-								className={inputClass}
-							/>
-						</label>
+						<div>
+							<span className={labelClass}>Instance Filter</span>
+							{arrInstances.length === 0 ? (
+								<p className="text-xs text-muted-foreground mt-1">No Sonarr/Radarr instances configured.</p>
+							) : (
+								<div className="mt-1.5 space-y-1.5">
+									{["sonarr", "radarr"].map((svc) => {
+										const instances = arrInstances.filter((i) => i.service === svc);
+										if (instances.length === 0) return null;
+										return (
+											<div key={svc}>
+												<span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium">{svc}</span>
+												<div className="flex flex-wrap gap-2 mt-1">
+													{instances.map((inst) => {
+														const selected = instanceFilter.includes(inst.id);
+														return (
+															<button
+																key={inst.id}
+																type="button"
+																onClick={() => {
+																	setInstanceFilter((prev) =>
+																		selected ? prev.filter((id) => id !== inst.id) : [...prev, inst.id],
+																	);
+																}}
+																className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors border ${
+																	selected
+																		? "bg-primary/20 text-primary border-primary/30"
+																		: "bg-card/30 text-muted-foreground hover:bg-card/50 border-border/30"
+																}`}
+															>
+																{inst.label}
+															</button>
+														);
+													})}
+												</div>
+											</div>
+										);
+									})}
+									<p className="text-xs text-muted-foreground mt-1">Leave unselected for all instances.</p>
+								</div>
+							)}
+						</div>
 
 						{fieldOptions?.plexLibraries && fieldOptions.plexLibraries.length > 0 && (
 							<div>
@@ -1485,16 +1602,13 @@ export function CleanupRuleDialog({
 							<span className="text-sm font-medium">Exclusions</span>
 							<span className="text-xs text-muted-foreground">(optional)</span>
 						</div>
-						<label className="block">
-							<span className={labelClass}>Exclude Tag IDs (comma-separated)</span>
-							<input
-								type="text"
-								value={excludeTags}
-								onChange={(e) => setExcludeTags(e.target.value)}
-								placeholder="e.g., 1, 5, 12"
-								className={inputClass}
-							/>
-						</label>
+						<ExcludeTagsPicker
+							excludeTags={excludeTags}
+							setExcludeTags={setExcludeTags}
+							fieldOptions={fieldOptions}
+							inputClass={inputClass}
+							labelClass={labelClass}
+						/>
 						<label className="block">
 							<span className={labelClass}>Exclude Titles (regex patterns, comma-separated)</span>
 							<input
@@ -1591,8 +1705,10 @@ interface ParamsFieldsProps {
 	seerrReqStatuses: string;
 	setSeerrReqStatuses: (v: string) => void;
 	// File metadata (multi-select arrays)
-	codecOp: string;
-	setCodecOp: (v: string) => void;
+	videoCodecOp: string;
+	setVideoCodecOp: (v: string) => void;
+	audioCodecOp: string;
+	setAudioCodecOp: (v: string) => void;
 	selectedVideoCodecs: string[];
 	setSelectedVideoCodecs: (v: string[]) => void;
 	selectedAudioCodecs: string[];
@@ -1692,6 +1808,14 @@ interface ParamsFieldsProps {
 	setPlexLabelOp: (v: string) => void;
 	selectedPlexLabels: string[];
 	setSelectedPlexLabels: (v: string[]) => void;
+	// Phase E: Plex added_at
+	plexAddedAtOp: string;
+	setPlexAddedAtOp: (v: string) => void;
+	plexAddedAtDays: number;
+	setPlexAddedAtDays: (v: number) => void;
+	// Phase 2/3: Behavior analysis (delegate to ConditionParamsFields)
+	behaviorParams: Record<string, unknown>;
+	setBehaviorParams: (v: Record<string, unknown>) => void;
 	// Field options from library cache
 	fieldOptions: CleanupFieldOptionsResponse | undefined;
 	fieldOptionsLoading: boolean;
@@ -1742,8 +1866,10 @@ function ParamsFields(props: ParamsFieldsProps) {
 		setSeerrReqAgeDays,
 		seerrReqStatuses,
 		setSeerrReqStatuses,
-		codecOp,
-		setCodecOp,
+		videoCodecOp,
+		setVideoCodecOp,
+		audioCodecOp,
+		setAudioCodecOp,
 		selectedVideoCodecs,
 		setSelectedVideoCodecs,
 		selectedAudioCodecs,
@@ -1838,6 +1964,12 @@ function ParamsFields(props: ParamsFieldsProps) {
 		setPlexLabelOp,
 		selectedPlexLabels,
 		setSelectedPlexLabels,
+		plexAddedAtOp,
+		setPlexAddedAtOp,
+		plexAddedAtDays,
+		setPlexAddedAtDays,
+		behaviorParams,
+		setBehaviorParams,
 		fieldOptions,
 		fieldOptionsLoading,
 		inputClass,
@@ -2141,8 +2273,8 @@ function ParamsFields(props: ParamsFieldsProps) {
 					<label className="block">
 						<span className={labelClass}>Operator</span>
 						<select
-							value={codecOp}
-							onChange={(e) => setCodecOp(e.target.value)}
+							value={videoCodecOp}
+							onChange={(e) => setVideoCodecOp(e.target.value)}
 							className={inputClass}
 						>
 							<option value="is">Is</option>
@@ -2166,8 +2298,8 @@ function ParamsFields(props: ParamsFieldsProps) {
 					<label className="block">
 						<span className={labelClass}>Operator</span>
 						<select
-							value={codecOp}
-							onChange={(e) => setCodecOp(e.target.value)}
+							value={audioCodecOp}
+							onChange={(e) => setAudioCodecOp(e.target.value)}
 							className={inputClass}
 						>
 							<option value="is">Is</option>
@@ -2829,6 +2961,51 @@ function ParamsFields(props: ParamsFieldsProps) {
 				</div>
 			);
 
+		// Phase E: Plex added_at
+		case "plex_added_at":
+			return (
+				<div className="flex gap-2">
+					<label className="block flex-1">
+						<span className={labelClass}>Operator</span>
+						<select
+							value={plexAddedAtOp}
+							onChange={(e) => setPlexAddedAtOp(e.target.value)}
+							className={inputClass}
+						>
+							<option value="older_than">Added more than</option>
+							<option value="newer_than">Added within last</option>
+						</select>
+					</label>
+					<label className="block w-24">
+						<span className={labelClass}>Days</span>
+						<input
+							type="number"
+							value={plexAddedAtDays}
+							onChange={(e) => setPlexAddedAtDays(Number(e.target.value))}
+							min={1}
+							className={inputClass}
+						/>
+					</label>
+				</div>
+			);
+
+		// Phase 2/3: Behavior analysis — delegate to ConditionParamsFields
+		case "plex_episode_completion":
+		case "user_retention":
+		case "staleness_score":
+		case "recently_active":
+			return (
+				<ConditionParamsFields
+					ruleType={ruleType}
+					params={behaviorParams}
+					onParamsChange={setBehaviorParams}
+					fieldOptions={fieldOptions}
+					fieldOptionsLoading={fieldOptionsLoading}
+					inputClass={inputClass}
+					labelClass={labelClass}
+				/>
+			);
+
 		default:
 			return null;
 	}
@@ -2926,6 +3103,86 @@ function TagMatchFields({
 					/>
 				</label>
 			)}
+		</div>
+	);
+}
+
+// ============================================================================
+// Exclude Tags Picker
+// ============================================================================
+
+function ExcludeTagsPicker({
+	excludeTags,
+	setExcludeTags,
+	fieldOptions,
+	inputClass,
+	labelClass,
+}: {
+	excludeTags: number[];
+	setExcludeTags: (v: number[]) => void;
+	fieldOptions: CleanupFieldOptionsResponse | undefined;
+	inputClass: string;
+	labelClass: string;
+}) {
+	const { gradient } = useThemeGradient();
+	const tags = fieldOptions?.arrTags ?? [];
+
+	const toggleTag = (id: number) => {
+		setExcludeTags(
+			excludeTags.includes(id) ? excludeTags.filter((t) => t !== id) : [...excludeTags, id],
+		);
+	};
+
+	if (tags.length === 0) {
+		return (
+			<label className="block">
+				<span className={labelClass}>Exclude Tag IDs (comma-separated)</span>
+				<input
+					type="text"
+					value={excludeTags.join(", ")}
+					onChange={(e) =>
+						setExcludeTags(
+							e.target.value
+								.split(",")
+								.map((s) => Number(s.trim()))
+								.filter((n) => !Number.isNaN(n) && n > 0),
+						)
+					}
+					placeholder="e.g., 1, 5, 12"
+					className={inputClass}
+				/>
+			</label>
+		);
+	}
+
+	return (
+		<div>
+			<span className={labelClass}>Exclude Tags</span>
+			<div className="flex flex-wrap gap-1.5 mt-1.5">
+				{tags.map((tag) => {
+					const isSelected = excludeTags.includes(tag.id);
+					return (
+						<button
+							key={tag.id}
+							type="button"
+							onClick={() => toggleTag(tag.id)}
+							aria-pressed={isSelected}
+							className="rounded-lg border px-2.5 py-1 text-xs font-medium transition-all duration-200"
+							style={
+								isSelected
+									? {
+											borderColor: gradient.from,
+											backgroundColor: gradient.fromLight,
+											color: gradient.from,
+										}
+									: { borderColor: "var(--color-border)" }
+							}
+						>
+							{tag.label}
+						</button>
+					);
+				})}
+			</div>
 		</div>
 	);
 }
