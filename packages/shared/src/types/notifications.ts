@@ -46,6 +46,9 @@ export const notificationChannelTypeSchema = z.enum([
 	"PUSHBULLET",
 	"PUSHOVER",
 	"GOTIFY",
+	"WEBHOOK",
+	"SLACK",
+	"NTFY",
 ]);
 
 export type NotificationChannelType = z.infer<typeof notificationChannelTypeSchema>;
@@ -131,8 +134,25 @@ export const pushoverConfigSchema = z.object({
 });
 
 export const gotifyConfigSchema = z.object({
-	serverUrl: z.string().url(),
+	serverUrl: publicUrlSchema,
 	appToken: z.string().min(1),
+});
+
+export const webhookConfigSchema = z.object({
+	url: publicUrlSchema,
+	method: z.enum(["POST", "PUT"]).default("POST"),
+	headers: z.record(z.string(), z.string()).optional(),
+	secret: z.string().optional(),
+});
+
+export const slackConfigSchema = z.object({
+	webhookUrl: publicUrlSchema,
+});
+
+export const ntfyConfigSchema = z.object({
+	serverUrl: publicUrlSchema,
+	topic: z.string().min(1),
+	token: z.string().optional(),
 });
 
 export type DiscordConfig = z.infer<typeof discordConfigSchema>;
@@ -142,6 +162,9 @@ export type BrowserPushConfig = z.infer<typeof browserPushConfigSchema>;
 export type PushbulletConfig = z.infer<typeof pushbulletConfigSchema>;
 export type PushoverConfig = z.infer<typeof pushoverConfigSchema>;
 export type GotifyConfig = z.infer<typeof gotifyConfigSchema>;
+export type WebhookConfig = z.infer<typeof webhookConfigSchema>;
+export type SlackConfig = z.infer<typeof slackConfigSchema>;
+export type NtfyConfig = z.infer<typeof ntfyConfigSchema>;
 
 /** Union of all channel config schemas, discriminated by channel type */
 export const channelConfigSchemaMap: Record<NotificationChannelType, z.ZodType> = {
@@ -152,6 +175,9 @@ export const channelConfigSchemaMap: Record<NotificationChannelType, z.ZodType> 
 	PUSHBULLET: pushbulletConfigSchema,
 	PUSHOVER: pushoverConfigSchema,
 	GOTIFY: gotifyConfigSchema,
+	WEBHOOK: webhookConfigSchema,
+	SLACK: slackConfigSchema,
+	NTFY: ntfyConfigSchema,
 };
 
 // ============================================================================
@@ -185,7 +211,7 @@ export const updateSubscriptionsSchema = z.object({
 
 /** Register a browser push subscription */
 export const pushSubscriptionSchema = z.object({
-	endpoint: z.string().url(),
+	endpoint: publicUrlSchema,
 	keys: z.object({
 		p256dh: z.string().min(1),
 		auth: z.string().min(1),
@@ -196,6 +222,100 @@ export type CreateNotificationChannel = z.infer<typeof createNotificationChannel
 export type UpdateNotificationChannel = z.infer<typeof updateNotificationChannelSchema>;
 export type UpdateSubscriptions = z.infer<typeof updateSubscriptionsSchema>;
 export type PushSubscription = z.infer<typeof pushSubscriptionSchema>;
+
+// ============================================================================
+// Notification Rules
+// ============================================================================
+
+export const ruleConditionSchema = z.object({
+	field: z.string().min(1), // "eventType", "title", "body", "metadata.*"
+	operator: z.enum(["equals", "not_equals", "contains", "greater_than", "in"]),
+	value: z.union([z.string(), z.number(), z.array(z.string())]),
+});
+
+export const createNotificationRuleSchema = z.object({
+	name: z.string().min(1).max(100),
+	enabled: z.boolean().optional().default(true),
+	priority: z.number().int().min(0).max(1000).optional().default(0),
+	action: z.enum(["suppress", "throttle", "route"]),
+	conditions: z.array(ruleConditionSchema).min(1),
+	targetChannelIds: z.array(z.string()).optional(),
+	throttleMinutes: z.number().int().min(1).max(1440).optional(),
+});
+
+export const updateNotificationRuleSchema = createNotificationRuleSchema.partial();
+
+export type RuleCondition = z.infer<typeof ruleConditionSchema>;
+export type CreateNotificationRule = z.infer<typeof createNotificationRuleSchema>;
+export type UpdateNotificationRule = z.infer<typeof updateNotificationRuleSchema>;
+
+export interface NotificationRuleResponse {
+	id: string;
+	name: string;
+	enabled: boolean;
+	priority: number;
+	action: "suppress" | "throttle" | "route";
+	conditions: RuleCondition[];
+	targetChannelIds: string[] | null;
+	throttleMinutes: number | null;
+	createdAt: string;
+	updatedAt: string;
+}
+
+// ============================================================================
+// Aggregation Config
+// ============================================================================
+
+export const updateAggregationConfigSchema = z.object({
+	configs: z.array(
+		z.object({
+			eventType: notificationEventTypeSchema,
+			windowSeconds: z.number().int().min(60).max(3600).optional().default(300),
+			maxBatchSize: z.number().int().min(2).max(100).optional().default(10),
+			enabled: z.boolean(),
+		}),
+	),
+});
+
+export type UpdateAggregationConfig = z.infer<typeof updateAggregationConfigSchema>;
+
+export interface AggregationConfigResponse {
+	eventType: NotificationEventType;
+	windowSeconds: number;
+	maxBatchSize: number;
+	enabled: boolean;
+}
+
+// ============================================================================
+// Statistics
+// ============================================================================
+
+export interface NotificationStatisticsResponse {
+	period: { days: number; since: string; until: string };
+	totals: {
+		sent: number;
+		failed: number;
+		deadLetter: number;
+		total: number;
+		successRate: number;
+	};
+	perChannel: Array<{
+		channelId: string;
+		channelType: NotificationChannelType;
+		sent: number;
+		failed: number;
+		successRate: number;
+	}>;
+	perEventType: Array<{
+		eventType: NotificationEventType;
+		count: number;
+	}>;
+	dailyTrend: Array<{
+		date: string;
+		sent: number;
+		failed: number;
+	}>;
+}
 
 // ============================================================================
 // Response Types
@@ -222,8 +342,9 @@ export interface NotificationLogEntry {
 	eventType: NotificationEventType;
 	title: string;
 	body: string;
-	status: "sent" | "failed";
+	status: "sent" | "failed" | "dead_letter";
 	error: string | null;
+	retryCount: number;
 	sentAt: string;
 }
 

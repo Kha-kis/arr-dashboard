@@ -1,6 +1,6 @@
 import type { BrowserPushConfig } from "@arr/shared";
 import webpush from "web-push";
-import type { ChannelSender, NotificationPayload } from "../types.js";
+import type { ChannelSender, NotificationPayload, SendResult } from "../types.js";
 
 /**
  * Browser Push sender using the Web Push protocol (VAPID).
@@ -14,7 +14,7 @@ export function createBrowserPushSender(
 	webpush.setVapidDetails(`mailto:${contactEmail}`, vapidPublicKey, vapidPrivateKey);
 
 	return {
-		async send(config: Record<string, unknown>, payload: NotificationPayload): Promise<void> {
+		async send(config: Record<string, unknown>, payload: NotificationPayload): Promise<SendResult> {
 			const pushConfig = config as BrowserPushConfig;
 
 			const subscription: webpush.PushSubscription = {
@@ -25,17 +25,38 @@ export function createBrowserPushSender(
 				},
 			};
 
-			await webpush.sendNotification(
-				subscription,
-				JSON.stringify({
-					title: payload.title,
-					body: payload.body,
-					url: payload.url,
-					eventType: payload.eventType,
-					metadata: payload.metadata,
-				}),
-				{ TTL: 86400 }, // 24 hours
-			);
+			try {
+				await webpush.sendNotification(
+					subscription,
+					JSON.stringify({
+						title: payload.title,
+						body: payload.body,
+						url: payload.url,
+						eventType: payload.eventType,
+						metadata: payload.metadata,
+					}),
+					{ TTL: 86400 }, // 24 hours
+				);
+				return { success: true, retryable: false };
+			} catch (err) {
+				const statusCode = (err as { statusCode?: number }).statusCode;
+				const error = err instanceof Error ? err.message : String(err);
+
+				// 410 Gone = subscription expired, not retryable
+				if (statusCode === 410) {
+					return { success: false, retryable: false, error: `Browser push subscription expired (410 Gone): ${error}` };
+				}
+				// 429 or 5xx = retryable
+				if (statusCode === 429 || (statusCode && statusCode >= 500)) {
+					return { success: false, retryable: true, error: `Browser push failed (${statusCode}): ${error}` };
+				}
+				// 4xx = not retryable
+				if (statusCode && statusCode >= 400 && statusCode < 500) {
+					return { success: false, retryable: false, error: `Browser push failed (${statusCode}): ${error}` };
+				}
+				// Network/other errors = retryable
+				return { success: false, retryable: true, error: `Browser push error: ${error}` };
+			}
 		},
 
 		async test(config: Record<string, unknown>): Promise<void> {

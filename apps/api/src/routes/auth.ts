@@ -221,7 +221,7 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 						},
 					})
 					.catch((err) => {
-						request.log.debug({ err }, "Account locked notification dispatch failed");
+						request.log.warn({ err }, "Account locked notification dispatch failed");
 					});
 
 				return reply.status(423).send({
@@ -247,7 +247,7 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					},
 				})
 				.catch((err) => {
-					request.log.debug({ err }, "Login failed notification dispatch failed");
+					request.log.warn({ err }, "Login failed notification dispatch failed");
 				});
 
 			return reply.status(401).send({ error: "Invalid credentials" });

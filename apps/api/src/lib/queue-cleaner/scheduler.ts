@@ -621,7 +621,7 @@ class QueueCleanerScheduler {
 						},
 					})
 					.catch((err) => {
-						log.debug({ err, instanceLabel: config.instance.label }, "Queue cleaner notification dispatch failed");
+						log.warn({ err, instanceLabel: config.instance.label }, "Queue cleaner notification dispatch failed");
 					});
 			}
 			if (result.itemsWarned > 0) {
@@ -639,7 +639,7 @@ class QueueCleanerScheduler {
 						},
 					})
 					.catch((err) => {
-						log.debug({ err, instanceLabel: config.instance.label }, "Queue cleaner strikes notification dispatch failed");
+						log.warn({ err, instanceLabel: config.instance.label }, "Queue cleaner strikes notification dispatch failed");
 					});
 			}
 		} catch (error) {
@@ -672,7 +672,7 @@ class QueueCleanerScheduler {
 					},
 				})
 				.catch((err) => {
-					log.debug({ err, instanceLabel: config.instance.label }, "Queue cleaner failure notification dispatch failed");
+					log.warn({ err, instanceLabel: config.instance.label }, "Queue cleaner failure notification dispatch failed");
 				});
 		}
 	}

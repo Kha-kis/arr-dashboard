@@ -275,7 +275,7 @@ class LibrarySyncScheduler {
 						},
 					})
 					.catch((err) => {
-						log.debug({ err, instanceLabel: instance.label }, "New content notification dispatch failed");
+						log.warn({ err, instanceLabel: instance.label }, "New content notification dispatch failed");
 					});
 			}
 

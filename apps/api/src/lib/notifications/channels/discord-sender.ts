@@ -1,5 +1,5 @@
 import type { DiscordConfig } from "@arr/shared";
-import type { ChannelSender, NotificationPayload } from "../types.js";
+import type { ChannelPlugin, ChannelSender, NotificationPayload, SendResult } from "../types.js";
 import { extractMetadataFields } from "./format-metadata.js";
 
 const DISCORD_TIMEOUT_MS = 10000;
@@ -9,7 +9,7 @@ const DISCORD_MAX_FIELD_VALUE = 1024;
 const DISCORD_MAX_EMBED_TOTAL = 5500; // Leave buffer under 6000
 
 export const discordSender: ChannelSender = {
-	async send(config: Record<string, unknown>, payload: NotificationPayload): Promise<void> {
+	async send(config: Record<string, unknown>, payload: NotificationPayload): Promise<SendResult> {
 		const { webhookUrl } = config as DiscordConfig;
 
 		const allFields = extractMetadataFields(payload.metadata).map((f) => ({
@@ -39,16 +39,34 @@ export const discordSender: ChannelSender = {
 			delete embed.fields;
 		}
 
-		const response = await fetch(webhookUrl, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ embeds: [embed] }),
-			signal: AbortSignal.timeout(DISCORD_TIMEOUT_MS),
-		});
+		try {
+			const response = await fetch(webhookUrl, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ embeds: [embed] }),
+				signal: AbortSignal.timeout(DISCORD_TIMEOUT_MS),
+			});
 
-		if (!response.ok) {
+			if (response.ok) {
+				return { success: true, retryable: false };
+			}
+
 			const text = await response.text().catch(() => "");
-			throw new Error(`Discord webhook failed: ${response.status} ${response.statusText} ${text}`);
+			const error = `Discord webhook failed: ${response.status} ${response.statusText} ${text}`;
+
+			if (response.status === 429) {
+				const retryAfter = response.headers.get("Retry-After");
+				const retryAfterMs = retryAfter ? Number.parseFloat(retryAfter) * 1000 : undefined;
+				return { success: false, retryable: true, retryAfterMs, error };
+			}
+			if (response.status >= 500) {
+				return { success: false, retryable: true, error };
+			}
+			return { success: false, retryable: false, error };
+		} catch (err) {
+			// Timeout or network error
+			const error = err instanceof Error ? err.message : String(err);
+			return { success: false, retryable: true, error: `Discord network error: ${error}` };
 		}
 	},
 
@@ -76,6 +94,17 @@ export const discordSender: ChannelSender = {
 			throw new Error(`Discord webhook test failed: ${response.status} ${text}`);
 		}
 	},
+};
+
+export const discordPlugin: ChannelPlugin = {
+	type: "DISCORD",
+	label: "Discord",
+	icon: "Send",
+	configSchema: "discordConfigSchema",
+	formFields: [
+		{ key: "webhookUrl", label: "Webhook URL", type: "url", required: true },
+	],
+	sender: discordSender,
 };
 
 function getEventColor(eventType: string): number {

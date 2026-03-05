@@ -47,6 +47,8 @@ model User {
   libraryCleanupConfigs LibraryCleanupConfig[]
   notificationChannels  NotificationChannel[]
   namingConfigs         NamingConfig[]
+  notificationRules            NotificationRule[]
+  notificationAggregationConfigs NotificationAggregationConfig[]
 }
 
 model Session {
@@ -234,6 +236,7 @@ model SystemSettings {
   // Security / reverse-proxy settings
   trustProxy    Boolean? @default(false)
   secureCookies Boolean?
+  notificationLogRetentionDays Int @default(90)
 
   // External URL configuration
   // Used for OIDC callbacks, WebAuthn origins, and external link generation
@@ -1119,8 +1122,8 @@ model NotificationChannel {
 
 /// Event subscriptions per notification channel
 model NotificationSubscription {
-  channelId String
-  eventType String                             // "HUNT_COMPLETED", "BACKUP_FAILED", etc.
+  channelId       String
+  eventType       String                             // "HUNT_COMPLETED", "BACKUP_FAILED", etc.
 
   channel NotificationChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
 
@@ -1136,8 +1139,9 @@ model NotificationLog {
   eventType   String
   title       String
   body        String
-  status      String                           // "sent" | "failed"
+  status      String                           // "sent" | "failed" | "dead_letter"
   error       String?
+  retryCount  Int      @default(0)
   sentAt      DateTime @default(now())
 
   @@index([channelId])
@@ -1153,6 +1157,41 @@ model VapidKeys {
   privateKeyIv        String                   // IV for encryptedPrivateKey
 
   @@map("vapid_keys")
+}
+
+/// User-defined notification rules for suppression, throttling, and routing
+model NotificationRule {
+  id               String   @id @default(cuid())
+  userId           String
+  name             String
+  enabled          Boolean  @default(true)
+  priority         Int      @default(0)          // Lower = higher priority
+  action           String                        // "suppress" | "throttle" | "route"
+  conditions       String                        // JSON: Array<{field, operator, value}>
+  targetChannelIds String?                       // JSON: string[] — for "route" action
+  throttleMinutes  Int?                          // For "throttle" action
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("notification_rules")
+}
+
+/// Per-event-type aggregation configuration
+model NotificationAggregationConfig {
+  id            String  @id @default(cuid())
+  userId        String
+  eventType     String                           // e.g., "HUNT_CONTENT_FOUND"
+  windowSeconds Int     @default(300)            // Aggregation window (5min default)
+  maxBatchSize  Int     @default(10)             // Flush threshold
+  enabled       Boolean @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventType])
+  @@map("notification_aggregation_configs")
 }
 
 // ============================================================================

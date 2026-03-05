@@ -209,6 +209,16 @@ export type NotificationLog = Prisma.NotificationLogModel
  */
 export type VapidKeys = Prisma.VapidKeysModel
 /**
+ * Model NotificationRule
+ * User-defined notification rules for suppression, throttling, and routing
+ */
+export type NotificationRule = Prisma.NotificationRuleModel
+/**
+ * Model NotificationAggregationConfig
+ * Per-event-type aggregation configuration
+ */
+export type NotificationAggregationConfig = Prisma.NotificationAggregationConfigModel
+/**
  * Model PlexCache
  * Cached Plex library items with watch/collection metadata
  */

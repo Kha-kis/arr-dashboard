@@ -3,16 +3,19 @@
 import {
 	Bell,
 	Check,
+	Globe,
+	Hash,
 	Loader2,
 	Mail,
 	Plus,
 	Send,
+	Server,
 	Settings2,
 	TestTube,
 	Trash2,
 	X,
 } from "lucide-react";
-import { useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import {
 	GlassmorphicCard,
 	GradientButton,
@@ -20,6 +23,7 @@ import {
 } from "@/components/layout/premium-components";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 import {
+	useChannelTypes,
 	useDeleteChannel,
 	useNotificationChannels,
 	useTestChannel,
@@ -29,15 +33,28 @@ import { ChannelForm } from "./channel-form";
 import { NotificationLogTable } from "./notification-log-table";
 import { SubscriptionGrid as SubscriptionGridView } from "./subscription-grid";
 
-type SubTab = "channels" | "subscriptions" | "logs";
+const NotificationRulesTab = lazy(() =>
+	import("./notification-rules-tab").then((m) => ({ default: m.NotificationRulesTab })),
+);
+const NotificationStatistics = lazy(() =>
+	import("./notification-statistics").then((m) => ({ default: m.NotificationStatistics })),
+);
+const BrowserPushCard = lazy(() =>
+	import("./browser-push-card").then((m) => ({ default: m.BrowserPushCard })),
+);
+const AggregationConfig = lazy(() =>
+	import("./aggregation-config").then((m) => ({ default: m.AggregationConfig })),
+);
 
-const CHANNEL_TYPE_LABELS: Record<string, { label: string; icon: typeof Bell }> = {
-	DISCORD: { label: "Discord", icon: Send },
-	TELEGRAM: { label: "Telegram", icon: Send },
-	EMAIL: { label: "Email", icon: Mail },
-	BROWSER_PUSH: { label: "Browser Push", icon: Bell },
-	PUSHBULLET: { label: "Pushbullet", icon: Send },
-	PUSHOVER: { label: "Pushover", icon: Send },
+type SubTab = "channels" | "subscriptions" | "logs" | "rules" | "statistics";
+
+const ICON_MAP: Record<string, typeof Bell> = {
+	Bell,
+	Globe,
+	Hash,
+	Mail,
+	Send,
+	Server,
 };
 
 export function NotificationsTab() {
@@ -47,19 +64,36 @@ export function NotificationsTab() {
 	const [editingChannel, setEditingChannel] = useState<string | null>(null);
 
 	const { data: channels = [], isLoading: channelsLoading } = useNotificationChannels();
+	const { data: channelTypes = [] } = useChannelTypes();
 	const deleteChannel = useDeleteChannel();
 	const testChannel = useTestChannel();
+
+	const channelTypeLookup = useMemo(() => {
+		const map: Record<string, { label: string; icon: typeof Bell }> = {};
+		for (const ct of channelTypes) {
+			map[ct.type] = { label: ct.label, icon: ICON_MAP[ct.icon] ?? Bell };
+		}
+		return map;
+	}, [channelTypes]);
 
 	const subTabs: { id: SubTab; label: string }[] = [
 		{ id: "channels", label: "Channels" },
 		{ id: "subscriptions", label: "Events" },
 		{ id: "logs", label: "Delivery Log" },
+		{ id: "rules", label: "Rules" },
+		{ id: "statistics", label: "Statistics" },
 	];
+
+	const lazyFallback = (
+		<div className="flex items-center justify-center py-12">
+			<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+		</div>
+	);
 
 	return (
 		<div className="space-y-6">
 			{/* Sub-tab navigation */}
-			<div className="flex gap-2">
+			<div className="flex flex-wrap gap-2">
 				{subTabs.map((tab) => (
 					<button
 						type="button"
@@ -80,6 +114,10 @@ export function NotificationsTab() {
 			{/* Channels tab */}
 			{subTab === "channels" && (
 				<div className="space-y-4">
+					<Suspense fallback={null}>
+						<BrowserPushCard />
+					</Suspense>
+
 					<div className="flex items-center justify-between">
 						<p className="text-sm text-muted-foreground">
 							Configure notification channels to receive alerts about events.
@@ -124,6 +162,7 @@ export function NotificationsTab() {
 									channel={channel}
 									index={index}
 									gradient={gradient}
+									channelTypeLookup={channelTypeLookup}
 									onEdit={() => {
 										setEditingChannel(channel.id);
 										setShowForm(true);
@@ -149,6 +188,25 @@ export function NotificationsTab() {
 
 			{/* Logs tab */}
 			{subTab === "logs" && <NotificationLogTable />}
+
+			{/* Rules tab */}
+			{subTab === "rules" && (
+				<div className="space-y-8">
+					<Suspense fallback={lazyFallback}>
+						<NotificationRulesTab />
+					</Suspense>
+					<Suspense fallback={null}>
+						<AggregationConfig />
+					</Suspense>
+				</div>
+			)}
+
+			{/* Statistics tab */}
+			{subTab === "statistics" && (
+				<Suspense fallback={lazyFallback}>
+					<NotificationStatistics />
+				</Suspense>
+			)}
 		</div>
 	);
 }
@@ -157,6 +215,7 @@ function ChannelRow({
 	channel,
 	index,
 	gradient,
+	channelTypeLookup,
 	onEdit,
 	onDelete,
 	onTest,
@@ -167,6 +226,7 @@ function ChannelRow({
 	channel: NotificationChannel;
 	index: number;
 	gradient: { from: string; fromLight: string };
+	channelTypeLookup: Record<string, { label: string; icon: typeof Bell }>;
 	onEdit: () => void;
 	onDelete: () => void;
 	onTest: () => void;
@@ -174,7 +234,24 @@ function ChannelRow({
 	isTesting: boolean;
 	testResult?: { success: boolean; error?: string };
 }) {
-	const typeInfo = CHANNEL_TYPE_LABELS[channel.type] ?? {
+	const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+	useEffect(() => {
+		if (!confirmingDelete) return;
+		const timer = setTimeout(() => setConfirmingDelete(false), 3000);
+		return () => clearTimeout(timer);
+	}, [confirmingDelete]);
+
+	const handleDelete = () => {
+		if (confirmingDelete) {
+			onDelete();
+			setConfirmingDelete(false);
+		} else {
+			setConfirmingDelete(true);
+		}
+	};
+
+	const typeInfo = channelTypeLookup[channel.type] ?? {
 		label: channel.type,
 		icon: Bell,
 	};
@@ -245,12 +322,18 @@ function ChannelRow({
 					</button>
 					<button
 						type="button"
-						onClick={onDelete}
+						onClick={handleDelete}
 						disabled={isDeleting}
-						className="rounded-md p-2 text-muted-foreground hover:text-red-400 hover:bg-card/50 transition-colors"
-						title="Delete channel"
+						className={`rounded-md p-2 text-muted-foreground hover:bg-card/50 transition-colors ${
+							confirmingDelete ? "text-red-400" : "hover:text-red-400"
+						}`}
+						title={confirmingDelete ? "Click again to confirm delete" : "Delete channel"}
 					>
-						<Trash2 className="h-4 w-4" />
+						{confirmingDelete ? (
+							<span className="text-xs font-medium">Confirm?</span>
+						) : (
+							<Trash2 className="h-4 w-4" />
+						)}
 					</button>
 				</div>
 			</div>

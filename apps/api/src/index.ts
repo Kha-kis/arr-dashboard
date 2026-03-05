@@ -97,7 +97,7 @@ const start = async () => {
 				},
 			})
 			.catch((err) => {
-				app.log.debug({ err }, "Startup notification failed (non-critical)");
+				app.log.warn({ err }, "Startup notification failed (non-critical)");
 			});
 	} catch (error) {
 		// Log to both pino (file) and console (stderr). Pino uses an async worker

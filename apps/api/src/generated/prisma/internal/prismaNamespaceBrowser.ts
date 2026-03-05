@@ -89,6 +89,8 @@ export const ModelName = {
   NotificationSubscription: 'NotificationSubscription',
   NotificationLog: 'NotificationLog',
   VapidKeys: 'VapidKeys',
+  NotificationRule: 'NotificationRule',
+  NotificationAggregationConfig: 'NotificationAggregationConfig',
   PlexCache: 'PlexCache',
   PlexEpisodeCache: 'PlexEpisodeCache',
   TautulliCache: 'TautulliCache',
@@ -247,6 +249,7 @@ export const SystemSettingsScalarFieldEnum = {
   appName: 'appName',
   trustProxy: 'trustProxy',
   secureCookies: 'secureCookies',
+  notificationLogRetentionDays: 'notificationLogRetentionDays',
   externalUrl: 'externalUrl',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
@@ -794,7 +797,8 @@ export type NotificationChannelScalarFieldEnum = (typeof NotificationChannelScal
 
 export const NotificationSubscriptionScalarFieldEnum = {
   channelId: 'channelId',
-  eventType: 'eventType'
+  eventType: 'eventType',
+  cooldownMinutes: 'cooldownMinutes'
 } as const
 
 export type NotificationSubscriptionScalarFieldEnum = (typeof NotificationSubscriptionScalarFieldEnum)[keyof typeof NotificationSubscriptionScalarFieldEnum]
@@ -809,6 +813,7 @@ export const NotificationLogScalarFieldEnum = {
   body: 'body',
   status: 'status',
   error: 'error',
+  retryCount: 'retryCount',
   sentAt: 'sentAt'
 } as const
 
@@ -823,6 +828,35 @@ export const VapidKeysScalarFieldEnum = {
 } as const
 
 export type VapidKeysScalarFieldEnum = (typeof VapidKeysScalarFieldEnum)[keyof typeof VapidKeysScalarFieldEnum]
+
+
+export const NotificationRuleScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  name: 'name',
+  enabled: 'enabled',
+  priority: 'priority',
+  action: 'action',
+  conditions: 'conditions',
+  targetChannelIds: 'targetChannelIds',
+  throttleMinutes: 'throttleMinutes',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type NotificationRuleScalarFieldEnum = (typeof NotificationRuleScalarFieldEnum)[keyof typeof NotificationRuleScalarFieldEnum]
+
+
+export const NotificationAggregationConfigScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  eventType: 'eventType',
+  windowSeconds: 'windowSeconds',
+  maxBatchSize: 'maxBatchSize',
+  enabled: 'enabled'
+} as const
+
+export type NotificationAggregationConfigScalarFieldEnum = (typeof NotificationAggregationConfigScalarFieldEnum)[keyof typeof NotificationAggregationConfigScalarFieldEnum]
 
 
 export const PlexCacheScalarFieldEnum = {

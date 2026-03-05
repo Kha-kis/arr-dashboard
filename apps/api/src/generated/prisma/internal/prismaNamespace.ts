@@ -422,6 +422,8 @@ export const ModelName = {
   NotificationSubscription: 'NotificationSubscription',
   NotificationLog: 'NotificationLog',
   VapidKeys: 'VapidKeys',
+  NotificationRule: 'NotificationRule',
+  NotificationAggregationConfig: 'NotificationAggregationConfig',
   PlexCache: 'PlexCache',
   PlexEpisodeCache: 'PlexEpisodeCache',
   TautulliCache: 'TautulliCache',
@@ -443,7 +445,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "plexCache" | "plexEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig"
+    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -3259,6 +3261,154 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    NotificationRule: {
+      payload: Prisma.$NotificationRulePayload<ExtArgs>
+      fields: Prisma.NotificationRuleFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.NotificationRuleFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NotificationRulePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.NotificationRuleFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NotificationRulePayload>
+        }
+        findFirst: {
+          args: Prisma.NotificationRuleFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NotificationRulePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.NotificationRuleFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NotificationRulePayload>
+        }
+        findMany: {
+          args: Prisma.NotificationRuleFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NotificationRulePayload>[]
+        }
+        create: {
+          args: Prisma.NotificationRuleCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NotificationRulePayload>
+        }
+        createMany: {
+          args: Prisma.NotificationRuleCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.NotificationRuleCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NotificationRulePayload>[]
+        }
+        delete: {
+          args: Prisma.NotificationRuleDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NotificationRulePayload>
+        }
+        update: {
+          args: Prisma.NotificationRuleUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NotificationRulePayload>
+        }
+        deleteMany: {
+          args: Prisma.NotificationRuleDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.NotificationRuleUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.NotificationRuleUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NotificationRulePayload>[]
+        }
+        upsert: {
+          args: Prisma.NotificationRuleUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NotificationRulePayload>
+        }
+        aggregate: {
+          args: Prisma.NotificationRuleAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateNotificationRule>
+        }
+        groupBy: {
+          args: Prisma.NotificationRuleGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.NotificationRuleGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.NotificationRuleCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.NotificationRuleCountAggregateOutputType> | number
+        }
+      }
+    }
+    NotificationAggregationConfig: {
+      payload: Prisma.$NotificationAggregationConfigPayload<ExtArgs>
+      fields: Prisma.NotificationAggregationConfigFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.NotificationAggregationConfigFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NotificationAggregationConfigPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.NotificationAggregationConfigFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NotificationAggregationConfigPayload>
+        }
+        findFirst: {
+          args: Prisma.NotificationAggregationConfigFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NotificationAggregationConfigPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.NotificationAggregationConfigFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NotificationAggregationConfigPayload>
+        }
+        findMany: {
+          args: Prisma.NotificationAggregationConfigFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NotificationAggregationConfigPayload>[]
+        }
+        create: {
+          args: Prisma.NotificationAggregationConfigCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NotificationAggregationConfigPayload>
+        }
+        createMany: {
+          args: Prisma.NotificationAggregationConfigCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.NotificationAggregationConfigCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NotificationAggregationConfigPayload>[]
+        }
+        delete: {
+          args: Prisma.NotificationAggregationConfigDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NotificationAggregationConfigPayload>
+        }
+        update: {
+          args: Prisma.NotificationAggregationConfigUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NotificationAggregationConfigPayload>
+        }
+        deleteMany: {
+          args: Prisma.NotificationAggregationConfigDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.NotificationAggregationConfigUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.NotificationAggregationConfigUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NotificationAggregationConfigPayload>[]
+        }
+        upsert: {
+          args: Prisma.NotificationAggregationConfigUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NotificationAggregationConfigPayload>
+        }
+        aggregate: {
+          args: Prisma.NotificationAggregationConfigAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateNotificationAggregationConfig>
+        }
+        groupBy: {
+          args: Prisma.NotificationAggregationConfigGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.NotificationAggregationConfigGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.NotificationAggregationConfigCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.NotificationAggregationConfigCountAggregateOutputType> | number
+        }
+      }
+    }
     PlexCache: {
       payload: Prisma.$PlexCachePayload<ExtArgs>
       fields: Prisma.PlexCacheFieldRefs
@@ -3876,6 +4026,7 @@ export const SystemSettingsScalarFieldEnum = {
   appName: 'appName',
   trustProxy: 'trustProxy',
   secureCookies: 'secureCookies',
+  notificationLogRetentionDays: 'notificationLogRetentionDays',
   externalUrl: 'externalUrl',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
@@ -4423,7 +4574,8 @@ export type NotificationChannelScalarFieldEnum = (typeof NotificationChannelScal
 
 export const NotificationSubscriptionScalarFieldEnum = {
   channelId: 'channelId',
-  eventType: 'eventType'
+  eventType: 'eventType',
+  cooldownMinutes: 'cooldownMinutes'
 } as const
 
 export type NotificationSubscriptionScalarFieldEnum = (typeof NotificationSubscriptionScalarFieldEnum)[keyof typeof NotificationSubscriptionScalarFieldEnum]
@@ -4438,6 +4590,7 @@ export const NotificationLogScalarFieldEnum = {
   body: 'body',
   status: 'status',
   error: 'error',
+  retryCount: 'retryCount',
   sentAt: 'sentAt'
 } as const
 
@@ -4452,6 +4605,35 @@ export const VapidKeysScalarFieldEnum = {
 } as const
 
 export type VapidKeysScalarFieldEnum = (typeof VapidKeysScalarFieldEnum)[keyof typeof VapidKeysScalarFieldEnum]
+
+
+export const NotificationRuleScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  name: 'name',
+  enabled: 'enabled',
+  priority: 'priority',
+  action: 'action',
+  conditions: 'conditions',
+  targetChannelIds: 'targetChannelIds',
+  throttleMinutes: 'throttleMinutes',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type NotificationRuleScalarFieldEnum = (typeof NotificationRuleScalarFieldEnum)[keyof typeof NotificationRuleScalarFieldEnum]
+
+
+export const NotificationAggregationConfigScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  eventType: 'eventType',
+  windowSeconds: 'windowSeconds',
+  maxBatchSize: 'maxBatchSize',
+  enabled: 'enabled'
+} as const
+
+export type NotificationAggregationConfigScalarFieldEnum = (typeof NotificationAggregationConfigScalarFieldEnum)[keyof typeof NotificationAggregationConfigScalarFieldEnum]
 
 
 export const PlexCacheScalarFieldEnum = {
@@ -4768,6 +4950,8 @@ export type GlobalOmitConfig = {
   notificationSubscription?: Prisma.NotificationSubscriptionOmit
   notificationLog?: Prisma.NotificationLogOmit
   vapidKeys?: Prisma.VapidKeysOmit
+  notificationRule?: Prisma.NotificationRuleOmit
+  notificationAggregationConfig?: Prisma.NotificationAggregationConfigOmit
   plexCache?: Prisma.PlexCacheOmit
   plexEpisodeCache?: Prisma.PlexEpisodeCacheOmit
   tautulliCache?: Prisma.TautulliCacheOmit

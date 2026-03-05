@@ -1,11 +1,11 @@
 import type { GotifyConfig } from "@arr/shared";
-import type { ChannelSender, NotificationPayload } from "../types.js";
+import type { ChannelPlugin, ChannelSender, NotificationPayload, SendResult } from "../types.js";
 import { extractMetadataFields } from "./format-metadata.js";
 
 const GOTIFY_TIMEOUT_MS = 10000;
 
 export const gotifySender: ChannelSender = {
-	async send(config: Record<string, unknown>, payload: NotificationPayload): Promise<void> {
+	async send(config: Record<string, unknown>, payload: NotificationPayload): Promise<SendResult> {
 		const { serverUrl, appToken } = config as GotifyConfig;
 
 		let message = payload.body;
@@ -29,24 +29,39 @@ export const gotifySender: ChannelSender = {
 			extras["client::notification"] = { click: { url: payload.url } };
 		}
 
-		const response = await fetch(`${serverUrl.replace(/\/+$/, "")}/message`, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				"X-Gotify-Key": appToken,
-			},
-			body: JSON.stringify({
-				title: payload.title,
-				message,
-				priority: getPriority(payload.eventType),
-				extras,
-			}),
-			signal: AbortSignal.timeout(GOTIFY_TIMEOUT_MS),
-		});
+		try {
+			const response = await fetch(`${serverUrl.replace(/\/+$/, "")}/message`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"X-Gotify-Key": appToken,
+				},
+				body: JSON.stringify({
+					title: payload.title,
+					message,
+					priority: getPriority(payload.eventType),
+					extras,
+				}),
+				signal: AbortSignal.timeout(GOTIFY_TIMEOUT_MS),
+			});
 
-		if (!response.ok) {
+			if (response.ok) {
+				return { success: true, retryable: false };
+			}
+
 			const text = await response.text().catch(() => "");
-			throw new Error(`Gotify API failed: ${response.status} ${text}`);
+			const error = `Gotify API failed: ${response.status} ${text}`;
+
+			if (response.status === 429) {
+				return { success: false, retryable: true, error };
+			}
+			if (response.status >= 500) {
+				return { success: false, retryable: true, error };
+			}
+			return { success: false, retryable: false, error };
+		} catch (err) {
+			const error = err instanceof Error ? err.message : String(err);
+			return { success: false, retryable: true, error: `Gotify network error: ${error}` };
 		}
 	},
 
@@ -72,6 +87,18 @@ export const gotifySender: ChannelSender = {
 			throw new Error(`Gotify test failed: ${response.status} ${text}`);
 		}
 	},
+};
+
+export const gotifyPlugin: ChannelPlugin = {
+	type: "GOTIFY",
+	label: "Gotify",
+	icon: "Server",
+	configSchema: "gotifyConfigSchema",
+	formFields: [
+		{ key: "serverUrl", label: "Server URL", type: "url", required: true },
+		{ key: "appToken", label: "Application Token", type: "password", required: true },
+	],
+	sender: gotifySender,
 };
 
 /** Map event types to Gotify priorities (0-10) */

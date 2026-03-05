@@ -1,11 +1,27 @@
 import type { NotificationChannelType } from "@arr/shared";
-import { discordSender } from "./channels/discord-sender.js";
-import { emailSender } from "./channels/email-sender.js";
-import { gotifySender } from "./channels/gotify-sender.js";
-import { pushbulletSender } from "./channels/pushbullet-sender.js";
-import { pushoverSender } from "./channels/pushover-sender.js";
-import { telegramSender } from "./channels/telegram-sender.js";
-import type { ChannelSender, NotificationPayload } from "./types.js";
+import { discordPlugin } from "./channels/discord-sender.js";
+import { emailPlugin } from "./channels/email-sender.js";
+import { gotifyPlugin } from "./channels/gotify-sender.js";
+import { ntfyPlugin } from "./channels/ntfy-sender.js";
+import { pushbulletPlugin } from "./channels/pushbullet-sender.js";
+import { pushoverPlugin } from "./channels/pushover-sender.js";
+import { slackPlugin } from "./channels/slack-sender.js";
+import { telegramPlugin } from "./channels/telegram-sender.js";
+import { webhookPlugin } from "./channels/webhook-sender.js";
+import type { ChannelFormField, ChannelPlugin, ChannelSender, NotificationPayload, SendResult } from "./types.js";
+
+/** All registered channel plugins (except BROWSER_PUSH which is lazy-loaded) */
+const ALL_PLUGINS: ChannelPlugin[] = [
+	discordPlugin,
+	telegramPlugin,
+	emailPlugin,
+	pushbulletPlugin,
+	pushoverPlugin,
+	gotifyPlugin,
+	webhookPlugin,
+	slackPlugin,
+	ntfyPlugin,
+];
 
 /**
  * Maps channel types to their sender implementations.
@@ -15,14 +31,10 @@ export class NotificationDispatcher {
 	private senders: Map<NotificationChannelType, ChannelSender>;
 
 	constructor() {
-		this.senders = new Map<NotificationChannelType, ChannelSender>([
-			["DISCORD", discordSender],
-			["TELEGRAM", telegramSender],
-			["EMAIL", emailSender],
-			["PUSHBULLET", pushbulletSender],
-			["PUSHOVER", pushoverSender],
-			["GOTIFY", gotifySender],
-		]);
+		this.senders = new Map<NotificationChannelType, ChannelSender>();
+		for (const plugin of ALL_PLUGINS) {
+			this.senders.set(plugin.type as NotificationChannelType, plugin.sender);
+		}
 	}
 
 	/**
@@ -40,12 +52,12 @@ export class NotificationDispatcher {
 		type: NotificationChannelType,
 		config: Record<string, unknown>,
 		payload: NotificationPayload,
-	): Promise<void> {
+	): Promise<SendResult> {
 		const sender = this.senders.get(type);
 		if (!sender) {
-			throw new Error(`No sender registered for channel type: ${type}`);
+			return { success: false, retryable: false, error: `No sender registered for channel type: ${type}` };
 		}
-		await sender.send(config, payload);
+		return sender.send(config, payload);
 	}
 
 	/**
@@ -61,5 +73,33 @@ export class NotificationDispatcher {
 
 	hasSender(type: NotificationChannelType): boolean {
 		return this.senders.has(type);
+	}
+
+	/**
+	 * Return plugin metadata for all registered channel types.
+	 * Used by the API route to tell the frontend what channel types are available.
+	 */
+	getPluginManifests(): Array<{ type: string; label: string; icon: string; formFields: ChannelFormField[] }> {
+		const manifests: Array<{ type: string; label: string; icon: string; formFields: ChannelFormField[] }> = [];
+		for (const plugin of ALL_PLUGINS) {
+			manifests.push({
+				type: plugin.type,
+				label: plugin.label,
+				icon: plugin.icon,
+				formFields: plugin.formFields,
+			});
+		}
+		// Add any dynamically registered senders (like BROWSER_PUSH)
+		for (const [type] of this.senders) {
+			if (!manifests.some((m) => m.type === type)) {
+				manifests.push({
+					type,
+					label: type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+					icon: "Bell",
+					formFields: [],
+				});
+			}
+		}
+		return manifests;
 	}
 }

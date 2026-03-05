@@ -20,8 +20,18 @@ export type NotificationLogModel = runtime.Types.Result.DefaultSelection<Prisma.
 
 export type AggregateNotificationLog = {
   _count: NotificationLogCountAggregateOutputType | null
+  _avg: NotificationLogAvgAggregateOutputType | null
+  _sum: NotificationLogSumAggregateOutputType | null
   _min: NotificationLogMinAggregateOutputType | null
   _max: NotificationLogMaxAggregateOutputType | null
+}
+
+export type NotificationLogAvgAggregateOutputType = {
+  retryCount: number | null
+}
+
+export type NotificationLogSumAggregateOutputType = {
+  retryCount: number | null
 }
 
 export type NotificationLogMinAggregateOutputType = {
@@ -33,6 +43,7 @@ export type NotificationLogMinAggregateOutputType = {
   body: string | null
   status: string | null
   error: string | null
+  retryCount: number | null
   sentAt: Date | null
 }
 
@@ -45,6 +56,7 @@ export type NotificationLogMaxAggregateOutputType = {
   body: string | null
   status: string | null
   error: string | null
+  retryCount: number | null
   sentAt: Date | null
 }
 
@@ -57,10 +69,19 @@ export type NotificationLogCountAggregateOutputType = {
   body: number
   status: number
   error: number
+  retryCount: number
   sentAt: number
   _all: number
 }
 
+
+export type NotificationLogAvgAggregateInputType = {
+  retryCount?: true
+}
+
+export type NotificationLogSumAggregateInputType = {
+  retryCount?: true
+}
 
 export type NotificationLogMinAggregateInputType = {
   id?: true
@@ -71,6 +92,7 @@ export type NotificationLogMinAggregateInputType = {
   body?: true
   status?: true
   error?: true
+  retryCount?: true
   sentAt?: true
 }
 
@@ -83,6 +105,7 @@ export type NotificationLogMaxAggregateInputType = {
   body?: true
   status?: true
   error?: true
+  retryCount?: true
   sentAt?: true
 }
 
@@ -95,6 +118,7 @@ export type NotificationLogCountAggregateInputType = {
   body?: true
   status?: true
   error?: true
+  retryCount?: true
   sentAt?: true
   _all?: true
 }
@@ -137,6 +161,18 @@ export type NotificationLogAggregateArgs<ExtArgs extends runtime.Types.Extension
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
    * 
+   * Select which fields to average
+  **/
+  _avg?: NotificationLogAvgAggregateInputType
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+   * 
+   * Select which fields to sum
+  **/
+  _sum?: NotificationLogSumAggregateInputType
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+   * 
    * Select which fields to find the minimum value
   **/
   _min?: NotificationLogMinAggregateInputType
@@ -167,6 +203,8 @@ export type NotificationLogGroupByArgs<ExtArgs extends runtime.Types.Extensions.
   take?: number
   skip?: number
   _count?: NotificationLogCountAggregateInputType | true
+  _avg?: NotificationLogAvgAggregateInputType
+  _sum?: NotificationLogSumAggregateInputType
   _min?: NotificationLogMinAggregateInputType
   _max?: NotificationLogMaxAggregateInputType
 }
@@ -180,8 +218,11 @@ export type NotificationLogGroupByOutputType = {
   body: string
   status: string
   error: string | null
+  retryCount: number
   sentAt: Date
   _count: NotificationLogCountAggregateOutputType | null
+  _avg: NotificationLogAvgAggregateOutputType | null
+  _sum: NotificationLogSumAggregateOutputType | null
   _min: NotificationLogMinAggregateOutputType | null
   _max: NotificationLogMaxAggregateOutputType | null
 }
@@ -213,6 +254,7 @@ export type NotificationLogWhereInput = {
   body?: Prisma.StringFilter<"NotificationLog"> | string
   status?: Prisma.StringFilter<"NotificationLog"> | string
   error?: Prisma.StringNullableFilter<"NotificationLog"> | string | null
+  retryCount?: Prisma.IntFilter<"NotificationLog"> | number
   sentAt?: Prisma.DateTimeFilter<"NotificationLog"> | Date | string
 }
 
@@ -225,6 +267,7 @@ export type NotificationLogOrderByWithRelationInput = {
   body?: Prisma.SortOrder
   status?: Prisma.SortOrder
   error?: Prisma.SortOrderInput | Prisma.SortOrder
+  retryCount?: Prisma.SortOrder
   sentAt?: Prisma.SortOrder
 }
 
@@ -240,6 +283,7 @@ export type NotificationLogWhereUniqueInput = Prisma.AtLeast<{
   body?: Prisma.StringFilter<"NotificationLog"> | string
   status?: Prisma.StringFilter<"NotificationLog"> | string
   error?: Prisma.StringNullableFilter<"NotificationLog"> | string | null
+  retryCount?: Prisma.IntFilter<"NotificationLog"> | number
   sentAt?: Prisma.DateTimeFilter<"NotificationLog"> | Date | string
 }, "id">
 
@@ -252,10 +296,13 @@ export type NotificationLogOrderByWithAggregationInput = {
   body?: Prisma.SortOrder
   status?: Prisma.SortOrder
   error?: Prisma.SortOrderInput | Prisma.SortOrder
+  retryCount?: Prisma.SortOrder
   sentAt?: Prisma.SortOrder
   _count?: Prisma.NotificationLogCountOrderByAggregateInput
+  _avg?: Prisma.NotificationLogAvgOrderByAggregateInput
   _max?: Prisma.NotificationLogMaxOrderByAggregateInput
   _min?: Prisma.NotificationLogMinOrderByAggregateInput
+  _sum?: Prisma.NotificationLogSumOrderByAggregateInput
 }
 
 export type NotificationLogScalarWhereWithAggregatesInput = {
@@ -270,6 +317,7 @@ export type NotificationLogScalarWhereWithAggregatesInput = {
   body?: Prisma.StringWithAggregatesFilter<"NotificationLog"> | string
   status?: Prisma.StringWithAggregatesFilter<"NotificationLog"> | string
   error?: Prisma.StringNullableWithAggregatesFilter<"NotificationLog"> | string | null
+  retryCount?: Prisma.IntWithAggregatesFilter<"NotificationLog"> | number
   sentAt?: Prisma.DateTimeWithAggregatesFilter<"NotificationLog"> | Date | string
 }
 
@@ -282,6 +330,7 @@ export type NotificationLogCreateInput = {
   body: string
   status: string
   error?: string | null
+  retryCount?: number
   sentAt?: Date | string
 }
 
@@ -294,6 +343,7 @@ export type NotificationLogUncheckedCreateInput = {
   body: string
   status: string
   error?: string | null
+  retryCount?: number
   sentAt?: Date | string
 }
 
@@ -306,6 +356,7 @@ export type NotificationLogUpdateInput = {
   body?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.StringFieldUpdateOperationsInput | string
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  retryCount?: Prisma.IntFieldUpdateOperationsInput | number
   sentAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -318,6 +369,7 @@ export type NotificationLogUncheckedUpdateInput = {
   body?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.StringFieldUpdateOperationsInput | string
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  retryCount?: Prisma.IntFieldUpdateOperationsInput | number
   sentAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -330,6 +382,7 @@ export type NotificationLogCreateManyInput = {
   body: string
   status: string
   error?: string | null
+  retryCount?: number
   sentAt?: Date | string
 }
 
@@ -342,6 +395,7 @@ export type NotificationLogUpdateManyMutationInput = {
   body?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.StringFieldUpdateOperationsInput | string
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  retryCount?: Prisma.IntFieldUpdateOperationsInput | number
   sentAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -354,6 +408,7 @@ export type NotificationLogUncheckedUpdateManyInput = {
   body?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.StringFieldUpdateOperationsInput | string
   error?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  retryCount?: Prisma.IntFieldUpdateOperationsInput | number
   sentAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -366,7 +421,12 @@ export type NotificationLogCountOrderByAggregateInput = {
   body?: Prisma.SortOrder
   status?: Prisma.SortOrder
   error?: Prisma.SortOrder
+  retryCount?: Prisma.SortOrder
   sentAt?: Prisma.SortOrder
+}
+
+export type NotificationLogAvgOrderByAggregateInput = {
+  retryCount?: Prisma.SortOrder
 }
 
 export type NotificationLogMaxOrderByAggregateInput = {
@@ -378,6 +438,7 @@ export type NotificationLogMaxOrderByAggregateInput = {
   body?: Prisma.SortOrder
   status?: Prisma.SortOrder
   error?: Prisma.SortOrder
+  retryCount?: Prisma.SortOrder
   sentAt?: Prisma.SortOrder
 }
 
@@ -390,7 +451,12 @@ export type NotificationLogMinOrderByAggregateInput = {
   body?: Prisma.SortOrder
   status?: Prisma.SortOrder
   error?: Prisma.SortOrder
+  retryCount?: Prisma.SortOrder
   sentAt?: Prisma.SortOrder
+}
+
+export type NotificationLogSumOrderByAggregateInput = {
+  retryCount?: Prisma.SortOrder
 }
 
 
@@ -404,6 +470,7 @@ export type NotificationLogSelect<ExtArgs extends runtime.Types.Extensions.Inter
   body?: boolean
   status?: boolean
   error?: boolean
+  retryCount?: boolean
   sentAt?: boolean
 }, ExtArgs["result"]["notificationLog"]>
 
@@ -416,6 +483,7 @@ export type NotificationLogSelectCreateManyAndReturn<ExtArgs extends runtime.Typ
   body?: boolean
   status?: boolean
   error?: boolean
+  retryCount?: boolean
   sentAt?: boolean
 }, ExtArgs["result"]["notificationLog"]>
 
@@ -428,6 +496,7 @@ export type NotificationLogSelectUpdateManyAndReturn<ExtArgs extends runtime.Typ
   body?: boolean
   status?: boolean
   error?: boolean
+  retryCount?: boolean
   sentAt?: boolean
 }, ExtArgs["result"]["notificationLog"]>
 
@@ -440,10 +509,11 @@ export type NotificationLogSelectScalar = {
   body?: boolean
   status?: boolean
   error?: boolean
+  retryCount?: boolean
   sentAt?: boolean
 }
 
-export type NotificationLogOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "channelId" | "channelType" | "eventType" | "title" | "body" | "status" | "error" | "sentAt", ExtArgs["result"]["notificationLog"]>
+export type NotificationLogOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "channelId" | "channelType" | "eventType" | "title" | "body" | "status" | "error" | "retryCount" | "sentAt", ExtArgs["result"]["notificationLog"]>
 
 export type $NotificationLogPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "NotificationLog"
@@ -457,6 +527,7 @@ export type $NotificationLogPayload<ExtArgs extends runtime.Types.Extensions.Int
     body: string
     status: string
     error: string | null
+    retryCount: number
     sentAt: Date
   }, ExtArgs["result"]["notificationLog"]>
   composites: {}
@@ -889,6 +960,7 @@ export interface NotificationLogFieldRefs {
   readonly body: Prisma.FieldRef<"NotificationLog", 'String'>
   readonly status: Prisma.FieldRef<"NotificationLog", 'String'>
   readonly error: Prisma.FieldRef<"NotificationLog", 'String'>
+  readonly retryCount: Prisma.FieldRef<"NotificationLog", 'Int'>
   readonly sentAt: Prisma.FieldRef<"NotificationLog", 'DateTime'>
 }
     

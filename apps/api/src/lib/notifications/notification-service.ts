@@ -1,7 +1,7 @@
 import type { NotificationChannelType } from "@arr/shared";
 
 const REDACTED_PLACEHOLDER = "••••••••";
-const SECRET_FIELD_NAMES = new Set(["password", "botToken", "apiToken", "appToken", "userKey", "auth"]);
+const SECRET_FIELD_NAMES = new Set(["password", "botToken", "apiToken", "appToken", "userKey", "auth", "secret", "token"]);
 
 function redactSecretFields(config: Record<string, unknown>): Record<string, unknown> {
 	return Object.fromEntries(
@@ -13,30 +13,46 @@ function redactSecretFields(config: Record<string, unknown>): Record<string, unk
 }
 import type { Encryptor } from "../auth/encryption.js";
 import type { PrismaClient } from "../prisma.js";
-import { getErrorMessage } from "../utils/error-message.js";
+import type { AggregationBuffer, AggregationConfig } from "./aggregation-buffer.js";
+import type { DedupGate } from "./dedup-gate.js";
 import type { NotificationDispatcher } from "./notification-dispatcher.js";
-import type { NotificationLogger, NotificationPayload } from "./types.js";
+import type { RetryHandler } from "./retry-handler.js";
+import type { RuleEngine } from "./rule-engine.js";
+import type { NotificationRule } from "./rule-engine.js";
+import type { ChannelFormField, NotificationLogger, NotificationPayload } from "./types.js";
 
 /**
  * Orchestrator for the notification system.
- * Resolves subscribed channels for an event → decrypts configs → dispatches → logs results.
+ * Resolves subscribed channels for an event → dedup → rules → aggregation → decrypts configs → dispatches → retries/logs results.
  */
 export class NotificationService {
 	private prisma: PrismaClient;
 	private encryptor: Encryptor;
 	private dispatcher: NotificationDispatcher;
 	private logger: NotificationLogger;
+	private dedupGate: DedupGate;
+	private retryHandler: RetryHandler;
+	private ruleEngine: RuleEngine | null;
+	private aggregationBuffer: AggregationBuffer | null;
 
 	constructor(
 		prisma: PrismaClient,
 		encryptor: Encryptor,
 		dispatcher: NotificationDispatcher,
 		logger: NotificationLogger,
+		dedupGate: DedupGate,
+		retryHandler: RetryHandler,
+		ruleEngine?: RuleEngine,
+		aggregationBuffer?: AggregationBuffer,
 	) {
 		this.prisma = prisma;
 		this.encryptor = encryptor;
 		this.dispatcher = dispatcher;
 		this.logger = logger;
+		this.dedupGate = dedupGate;
+		this.retryHandler = retryHandler;
+		this.ruleEngine = ruleEngine ?? null;
+		this.aggregationBuffer = aggregationBuffer ?? null;
 	}
 
 	/**
@@ -44,6 +60,15 @@ export class NotificationService {
 	 * Failures on individual channels are logged but do not throw.
 	 */
 	async notify(payload: NotificationPayload): Promise<void> {
+		// Dedup: skip if an identical payload was dispatched within the TTL window
+		if (this.dedupGate.isDuplicate(payload)) {
+			this.logger.debug(
+				{ eventType: payload.eventType },
+				"Duplicate notification suppressed",
+			);
+			return;
+		}
+
 		const subscriptions = await this.prisma.notificationSubscription.findMany({
 			where: { eventType: payload.eventType },
 			include: {
@@ -52,7 +77,7 @@ export class NotificationService {
 		});
 
 		// Filter to enabled channels only
-		const enabledSubs = subscriptions.filter((sub) => sub.channel.enabled);
+		let enabledSubs = subscriptions.filter((sub) => sub.channel.enabled);
 
 		if (enabledSubs.length === 0) {
 			this.logger.debug(
@@ -62,57 +87,122 @@ export class NotificationService {
 			return;
 		}
 
+		// Rule engine: evaluate user-defined rules for suppression, throttling, routing
+		const userId = enabledSubs[0]?.channel?.userId;
+		if (userId && this.ruleEngine) {
+			const rules = await this.loadRules(userId);
+			const ruleResult = this.ruleEngine.evaluate(payload, rules);
+			if (ruleResult) {
+				if (ruleResult.action === "suppress") {
+					this.logger.info(
+						{ eventType: payload.eventType, ruleId: ruleResult.ruleId },
+						"Notification suppressed by rule",
+					);
+					return;
+				}
+				if (ruleResult.action === "throttle" && ruleResult.throttleMinutes) {
+					const lastSent = await this.getLastSentTime(payload.eventType, userId);
+					if (lastSent && Date.now() - lastSent.getTime() < ruleResult.throttleMinutes * 60_000) {
+						this.logger.debug(
+							{ eventType: payload.eventType, ruleId: ruleResult.ruleId },
+							"Notification throttled by rule",
+						);
+						return;
+					}
+				}
+				if (ruleResult.action === "route" && ruleResult.targetChannelIds) {
+					const targetSet = new Set(ruleResult.targetChannelIds);
+					const routed = enabledSubs.filter((sub) => targetSet.has(sub.channelId));
+					if (routed.length > 0) {
+						enabledSubs = routed;
+					}
+				}
+			}
+		}
+
+		// Aggregation: batch high-frequency notifications into digests
+		if (userId && this.aggregationBuffer) {
+			const aggConfigs = await this.loadAggregationConfigs(userId);
+			const aggConfig = this.aggregationBuffer.hasConfig(payload.eventType, aggConfigs);
+			if (aggConfig) {
+				this.aggregationBuffer.push(payload, aggConfig);
+				this.logger.debug(
+					{ eventType: payload.eventType },
+					"Notification queued for aggregation",
+				);
+				return;
+			}
+		}
+
 		this.logger.info(
 			{ eventType: payload.eventType, channelCount: enabledSubs.length },
 			"Dispatching notification to subscribed channels",
 		);
 
-		const results = await Promise.allSettled(
-			enabledSubs.map(async (sub) => {
-				const channelType = sub.channel.type as NotificationChannelType;
+		for (const sub of enabledSubs) {
+			const channelType = sub.channel.type as NotificationChannelType;
 
-				if (!this.dispatcher.hasSender(channelType)) {
-					throw new Error(`No sender for channel type: ${channelType}`);
-				}
+			if (!this.dispatcher.hasSender(channelType)) {
+				this.logger.error(
+					{ channelId: sub.channelId, channelType },
+					`No sender for channel type: ${channelType}`,
+				);
+				await this.logDelivery(sub.channelId, channelType, payload, "failed", `No sender for channel type: ${channelType}`).catch(
+					(logErr) => {
+						this.logger.warn({ err: logErr, channelId: sub.channelId }, "Failed to log notification delivery");
+					},
+				);
+				continue;
+			}
 
-				// Decrypt channel config
+			// Decrypt channel config
+			let config: Record<string, unknown>;
+			try {
 				const decryptedJson = this.encryptor.decrypt({
 					value: sub.channel.encryptedConfig,
 					iv: sub.channel.configIv,
 				});
-				let config: Record<string, unknown>;
-				try {
-					config = JSON.parse(decryptedJson) as Record<string, unknown>;
-				} catch (parseErr) {
-					throw new Error(`Failed to parse config for channel "${sub.channel.name}" — config may be corrupted: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`);
-				}
+				config = JSON.parse(decryptedJson) as Record<string, unknown>;
+			} catch (parseErr) {
+				const error = `Failed to parse config for channel "${sub.channel.name}" — config may be corrupted: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`;
+				this.logger.error({ channelId: sub.channelId, channelType }, error);
+				await this.logDelivery(sub.channelId, channelType, payload, "failed", error).catch(
+					(logErr) => {
+						this.logger.warn({ err: logErr, channelId: sub.channelId }, "Failed to log notification delivery");
+					},
+				);
+				continue;
+			}
 
-				await this.dispatcher.send(channelType, config, payload);
-				return { channelId: sub.channelId, channelType };
-			}),
-		);
+			const result = await this.dispatcher.send(channelType, config, payload);
 
-		// Log results
-		for (let i = 0; i < results.length; i++) {
-			const result = results[i]!;
-			const sub = enabledSubs[i]!;
-			const channelType = sub.channel.type as NotificationChannelType;
-
-			if (result.status === "fulfilled") {
+			if (result.success) {
 				await this.logDelivery(sub.channelId, channelType, payload, "sent").catch((logErr) => {
 					this.logger.warn({ err: logErr, channelId: sub.channelId }, "Failed to log notification delivery");
 				});
-			} else {
-				const errorMsg = getErrorMessage(result.reason);
-				this.logger.error(
-					{
-						channelId: sub.channelId,
-						channelType,
-						err: result.reason instanceof Error ? result.reason : new Error(String(result.reason)),
+			} else if (result.retryable) {
+				this.logger.warn(
+					{ channelId: sub.channelId, channelType, error: result.error },
+					`Notification delivery failed (retryable) for channel ${sub.channel.name}`,
+				);
+				await this.logDelivery(sub.channelId, channelType, payload, "failed", result.error).catch(
+					(logErr) => {
+						this.logger.warn({ err: logErr, channelId: sub.channelId }, "Failed to log notification delivery");
 					},
+				);
+				this.retryHandler.enqueue({
+					channelId: sub.channelId,
+					channelType,
+					config,
+					payload,
+					retryAfterMs: result.retryAfterMs,
+				});
+			} else {
+				this.logger.error(
+					{ channelId: sub.channelId, channelType, error: result.error },
 					`Notification delivery failed for channel ${sub.channel.name}`,
 				);
-				await this.logDelivery(sub.channelId, channelType, payload, "failed", errorMsg).catch(
+				await this.logDelivery(sub.channelId, channelType, payload, "failed", result.error).catch(
 					(logErr) => {
 						this.logger.warn({ err: logErr, channelId: sub.channelId }, "Failed to log notification delivery");
 					},
@@ -211,12 +301,76 @@ export class NotificationService {
 		};
 	}
 
-	private async logDelivery(
+	/**
+	 * Return available channel types with form metadata for dynamic UI rendering.
+	 */
+	getChannelTypes(): Array<{ type: string; label: string; icon: string; formFields: ChannelFormField[] }> {
+		return this.dispatcher.getPluginManifests();
+	}
+
+	// ── Rule & Aggregation Helpers ─────────────────────────────────────
+
+	private async loadRules(userId: string): Promise<NotificationRule[]> {
+		const dbRules = await this.prisma.notificationRule.findMany({
+			where: { userId, enabled: true },
+			orderBy: { priority: "asc" },
+		});
+		return dbRules.map((r) => ({
+			id: r.id,
+			enabled: r.enabled,
+			priority: r.priority,
+			action: r.action as "suppress" | "throttle" | "route",
+			conditions: JSON.parse(r.conditions),
+			targetChannelIds: r.targetChannelIds ? JSON.parse(r.targetChannelIds) : null,
+			throttleMinutes: r.throttleMinutes,
+		}));
+	}
+
+	private async loadAggregationConfigs(userId: string): Promise<AggregationConfig[]> {
+		const configs = await this.prisma.notificationAggregationConfig.findMany({
+			where: { userId, enabled: true },
+		});
+		return configs.map((c) => ({
+			eventType: c.eventType,
+			windowSeconds: c.windowSeconds,
+			maxBatchSize: c.maxBatchSize,
+		}));
+	}
+
+	private async getLastSentTime(eventType: string, userId: string): Promise<Date | null> {
+		const userChannelIds = (
+			await this.prisma.notificationChannel.findMany({
+				where: { userId },
+				select: { id: true },
+			})
+		).map((ch) => ch.id);
+
+		if (userChannelIds.length === 0) return null;
+
+		const lastLog = await this.prisma.notificationLog.findFirst({
+			where: {
+				channelId: { in: userChannelIds },
+				eventType,
+				status: "sent",
+			},
+			orderBy: { sentAt: "desc" },
+			select: { sentAt: true },
+		});
+
+		return lastLog?.sentAt ?? null;
+	}
+
+	/**
+	 * Log a notification delivery attempt to the database.
+	 * Public so that RetryHandler can call it for retry/dead-letter logging.
+	 */
+	async logDelivery(
 		channelId: string,
 		channelType: NotificationChannelType,
 		payload: NotificationPayload,
-		status: "sent" | "failed",
+		status: "sent" | "failed" | "dead_letter",
 		error?: string,
+		retryCount?: number,
 	): Promise<void> {
 		await Promise.all([
 			this.prisma.notificationLog.create({
@@ -228,6 +382,7 @@ export class NotificationService {
 					body: payload.body,
 					status,
 					error: error ?? null,
+					retryCount: retryCount ?? 0,
 				},
 			}),
 			// Update denormalized last-send status on the channel for quick lookups

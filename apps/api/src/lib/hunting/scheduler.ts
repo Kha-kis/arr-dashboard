@@ -410,7 +410,7 @@ class HuntingScheduler {
 						metadata: huntMeta,
 					})
 					.catch((err) => {
-						log.debug({ err, instanceLabel: config.instance.label }, "Hunt notification dispatch failed");
+						log.warn({ err, instanceLabel: config.instance.label }, "Hunt notification dispatch failed");
 					});
 			} else if (result.status === "completed") {
 				this.app.notificationService
@@ -422,7 +422,7 @@ class HuntingScheduler {
 						metadata: huntMeta,
 					})
 					.catch((err) => {
-						log.debug({ err, instanceLabel: config.instance.label }, "Hunt notification dispatch failed");
+						log.warn({ err, instanceLabel: config.instance.label }, "Hunt notification dispatch failed");
 					});
 			}
 
@@ -478,7 +478,7 @@ class HuntingScheduler {
 					},
 				})
 				.catch((err) => {
-					log.debug({ err, instanceLabel: config.instance.label }, "Hunt failure notification dispatch failed");
+					log.warn({ err, instanceLabel: config.instance.label }, "Hunt failure notification dispatch failed");
 				});
 		}
 	}

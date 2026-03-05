@@ -5,58 +5,8 @@ import { useEffect, useState } from "react";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 // GradientButton doesn't accept type="submit", so we use a styled native button
 import type { NotificationChannelType } from "@arr/shared";
-import { useCreateChannel, useUpdateChannel } from "../../../hooks/api/useNotifications";
+import { useChannelTypes, useCreateChannel, useUpdateChannel } from "../../../hooks/api/useNotifications";
 import { notificationsApi } from "../../../lib/api-client/notifications";
-
-const CHANNEL_TYPES = [
-	{
-		value: "DISCORD",
-		label: "Discord",
-		fields: [{ key: "webhookUrl", label: "Webhook URL", type: "url" }],
-	},
-	{
-		value: "TELEGRAM",
-		label: "Telegram",
-		fields: [
-			{ key: "botToken", label: "Bot Token", type: "password" },
-			{ key: "chatId", label: "Chat ID", type: "text" },
-		],
-	},
-	{
-		value: "EMAIL",
-		label: "Email (SMTP)",
-		fields: [
-			{ key: "host", label: "SMTP Host", type: "text" },
-			{ key: "port", label: "Port", type: "number" },
-			{ key: "secure", label: "Use TLS", type: "boolean" },
-			{ key: "user", label: "Username", type: "text" },
-			{ key: "password", label: "Password", type: "password" },
-			{ key: "from", label: "From Address", type: "email" },
-			{ key: "to", label: "To Address", type: "email" },
-		],
-	},
-	{
-		value: "PUSHBULLET",
-		label: "Pushbullet",
-		fields: [{ key: "apiToken", label: "API Token", type: "password" }],
-	},
-	{
-		value: "PUSHOVER",
-		label: "Pushover",
-		fields: [
-			{ key: "userKey", label: "User Key", type: "password" },
-			{ key: "apiToken", label: "API Token", type: "password" },
-		],
-	},
-	{
-		value: "GOTIFY",
-		label: "Gotify",
-		fields: [
-			{ key: "serverUrl", label: "Server URL", type: "url" },
-			{ key: "appToken", label: "App Token", type: "password" },
-		],
-	},
-] as const;
 
 interface ChannelFormProps {
 	channelId: string | null;
@@ -68,6 +18,7 @@ export function ChannelForm({ channelId, onSave, onCancel }: ChannelFormProps) {
 	const { gradient } = useThemeGradient();
 	const createChannel = useCreateChannel();
 	const updateChannel = useUpdateChannel();
+	const { data: channelTypes = [] } = useChannelTypes();
 
 	const [name, setName] = useState("");
 	const [type, setType] = useState<NotificationChannelType>("DISCORD");
@@ -92,7 +43,7 @@ export function ChannelForm({ channelId, onSave, onCancel }: ChannelFormProps) {
 		}
 	}, [channelId]);
 
-	const typeConfig = CHANNEL_TYPES.find((t) => t.value === type);
+	const typeFields = channelTypes.find((t) => t.type === type)?.formFields ?? [];
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -159,8 +110,8 @@ export function ChannelForm({ channelId, onSave, onCancel }: ChannelFormProps) {
 							}}
 							className="w-full rounded-md border border-border/50 bg-background/50 px-3 py-2 text-sm"
 						>
-							{CHANNEL_TYPES.map((t) => (
-								<option key={t.value} value={t.value}>
+							{channelTypes.map((t) => (
+								<option key={t.type} value={t.type}>
 									{t.label}
 								</option>
 							))}
@@ -170,9 +121,9 @@ export function ChannelForm({ channelId, onSave, onCancel }: ChannelFormProps) {
 			</div>
 
 			{/* Dynamic config fields */}
-			{typeConfig && (
+			{typeFields.length > 0 && (
 				<div className="grid gap-4 sm:grid-cols-2">
-					{typeConfig.fields.map((field) =>
+					{typeFields.map((field) =>
 						field.type === "boolean" ? (
 							<label key={field.key} className="flex items-center gap-2 text-sm">
 								<input
@@ -188,6 +139,7 @@ export function ChannelForm({ channelId, onSave, onCancel }: ChannelFormProps) {
 								<input
 									type={field.type}
 									value={String(config[field.key] ?? "")}
+									placeholder={field.placeholder}
 									onChange={(e) =>
 										setConfig({
 											...config,
@@ -223,6 +175,11 @@ export function ChannelForm({ channelId, onSave, onCancel }: ChannelFormProps) {
 					{isEdit ? "Update" : "Create"}
 				</button>
 			</div>
+		{(createChannel.error || updateChannel.error) && (
+			<p className="text-sm text-red-400 mt-2">
+				{(createChannel.error || updateChannel.error)?.message || "Failed to save channel"}
+			</p>
+		)}
 		</form>
 	);
 }

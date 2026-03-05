@@ -257,7 +257,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 					},
 				})
 				.catch((err) => {
-					request.log.debug({ err }, "Service connection failed notification dispatch failed");
+					request.log.warn({ err }, "Service connection failed notification dispatch failed");
 				});
 		}
 		return reply.status(200).send(result);

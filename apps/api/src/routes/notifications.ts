@@ -1,14 +1,18 @@
 import {
 	channelConfigSchemaMap,
 	createNotificationChannelSchema,
+	createNotificationRuleSchema,
 	type NotificationChannelType,
-	type NotificationEventType,
+	notificationEventTypeSchema,
 	pushSubscriptionSchema,
+	updateAggregationConfigSchema,
 	updateNotificationChannelSchema,
+	updateNotificationRuleSchema,
 	updateSubscriptionsSchema,
 } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
+import { getDeliveryStatistics } from "../lib/notifications/statistics.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { validateRequest } from "../lib/utils/validate.js";
 
@@ -17,6 +21,13 @@ const logsQuerySchema = z.object({
 	page: z.coerce.number().int().min(1).optional().default(1),
 	limit: z.coerce.number().int().min(1).max(100).optional().default(50),
 	channelId: z.string().optional(),
+	status: z.enum(["sent", "failed", "dead_letter"]).optional(),
+	eventType: z.string().optional(),
+	since: z.string().optional(),
+	until: z.string().optional(),
+});
+const statisticsQuerySchema = z.object({
+	days: z.coerce.number().int().min(1).max(365).optional().default(30),
 });
 
 export const registerNotificationRoutes: FastifyPluginCallback = (app, _opts, done) => {
@@ -229,22 +240,8 @@ export const registerNotificationRoutes: FastifyPluginCallback = (app, _opts, do
 			select: { channelId: true, eventType: true },
 		});
 
-		// All event types from the enum
-		const events: NotificationEventType[] = [
-			"HUNT_CONTENT_FOUND",
-			"HUNT_COMPLETED",
-			"QUEUE_ITEMS_REMOVED",
-			"QUEUE_STRIKES_ISSUED",
-			"TRASH_PROFILE_UPDATED",
-			"TRASH_SYNC_ERROR",
-			"BACKUP_COMPLETED",
-			"BACKUP_FAILED",
-			"LIBRARY_NEW_CONTENT",
-			"SYSTEM_STARTUP",
-			"SYSTEM_ERROR",
-			"CLEANUP_ITEMS_FLAGGED",
-			"CLEANUP_ITEMS_REMOVED",
-		];
+		// All event types derived from the Zod enum (single source of truth)
+		const events = notificationEventTypeSchema.options;
 
 		return reply.send({
 			channels: channels.map((ch) => ({
@@ -340,6 +337,24 @@ export const registerNotificationRoutes: FastifyPluginCallback = (app, _opts, do
 				return reply.send({ logs: [], total: 0, page: query.page, limit: query.limit });
 			}
 		}
+		if (query.status) {
+			where.status = query.status;
+		}
+		if (query.eventType) {
+			where.eventType = query.eventType;
+		}
+		if (query.since) {
+			const sinceDate = new Date(query.since);
+			if (!Number.isNaN(sinceDate.getTime())) {
+				where.sentAt = { ...(where.sentAt as Record<string, unknown> ?? {}), gte: sinceDate };
+			}
+		}
+		if (query.until) {
+			const untilDate = new Date(query.until);
+			if (!Number.isNaN(untilDate.getTime())) {
+				where.sentAt = { ...(where.sentAt as Record<string, unknown> ?? {}), lte: untilDate };
+			}
+		}
 
 		const [logs, total] = await Promise.all([
 			app.prisma.notificationLog.findMany({
@@ -361,6 +376,7 @@ export const registerNotificationRoutes: FastifyPluginCallback = (app, _opts, do
 				body: log.body,
 				status: log.status,
 				error: log.error,
+				retryCount: log.retryCount,
 				sentAt: log.sentAt.toISOString(),
 			})),
 			total,
@@ -444,6 +460,193 @@ export const registerNotificationRoutes: FastifyPluginCallback = (app, _opts, do
 		});
 
 		return reply.status(201).send({ id: channel.id, updated: false });
+	});
+
+	// ── Rules CRUD ────────────────────────────────────────────────────
+
+	/** GET /api/notifications/rules — List rules */
+	app.get("/rules", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const rules = await app.prisma.notificationRule.findMany({
+			where: { userId },
+			orderBy: { priority: "asc" },
+		});
+		return reply.send(
+			rules.map((r) => ({
+				id: r.id,
+				name: r.name,
+				enabled: r.enabled,
+				priority: r.priority,
+				action: r.action,
+				conditions: JSON.parse(r.conditions),
+				targetChannelIds: r.targetChannelIds ? JSON.parse(r.targetChannelIds) : null,
+				throttleMinutes: r.throttleMinutes,
+				createdAt: r.createdAt.toISOString(),
+				updatedAt: r.updatedAt.toISOString(),
+			})),
+		);
+	});
+
+	/** POST /api/notifications/rules — Create a rule */
+	app.post("/rules", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const body = validateRequest(createNotificationRuleSchema, request.body);
+
+		const rule = await app.prisma.notificationRule.create({
+			data: {
+				userId,
+				name: body.name,
+				enabled: body.enabled,
+				priority: body.priority,
+				action: body.action,
+				conditions: JSON.stringify(body.conditions),
+				targetChannelIds: body.targetChannelIds ? JSON.stringify(body.targetChannelIds) : null,
+				throttleMinutes: body.throttleMinutes ?? null,
+			},
+		});
+
+		return reply.status(201).send({
+			id: rule.id,
+			name: rule.name,
+			enabled: rule.enabled,
+			priority: rule.priority,
+			action: rule.action,
+			conditions: body.conditions,
+			targetChannelIds: body.targetChannelIds ?? null,
+			throttleMinutes: body.throttleMinutes ?? null,
+			createdAt: rule.createdAt.toISOString(),
+			updatedAt: rule.updatedAt.toISOString(),
+		});
+	});
+
+	/** PUT /api/notifications/rules/:id — Update a rule */
+	app.put("/rules/:id", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const { id } = validateRequest(idParamsSchema, request.params);
+		const body = validateRequest(updateNotificationRuleSchema, request.body);
+
+		const existing = await app.prisma.notificationRule.findFirst({
+			where: { id, userId },
+		});
+		if (!existing) {
+			return reply.status(404).send({ error: "Rule not found" });
+		}
+
+		const updateData: Record<string, unknown> = {};
+		if (body.name !== undefined) updateData.name = body.name;
+		if (body.enabled !== undefined) updateData.enabled = body.enabled;
+		if (body.priority !== undefined) updateData.priority = body.priority;
+		if (body.action !== undefined) updateData.action = body.action;
+		if (body.conditions !== undefined) updateData.conditions = JSON.stringify(body.conditions);
+		if (body.targetChannelIds !== undefined) updateData.targetChannelIds = JSON.stringify(body.targetChannelIds);
+		if (body.throttleMinutes !== undefined) updateData.throttleMinutes = body.throttleMinutes;
+
+		const updated = await app.prisma.notificationRule.update({
+			where: { id },
+			data: updateData,
+		});
+
+		return reply.send({
+			id: updated.id,
+			name: updated.name,
+			enabled: updated.enabled,
+			priority: updated.priority,
+			action: updated.action,
+			conditions: JSON.parse(updated.conditions),
+			targetChannelIds: updated.targetChannelIds ? JSON.parse(updated.targetChannelIds) : null,
+			throttleMinutes: updated.throttleMinutes,
+			createdAt: updated.createdAt.toISOString(),
+			updatedAt: updated.updatedAt.toISOString(),
+		});
+	});
+
+	/** DELETE /api/notifications/rules/:id — Delete a rule */
+	app.delete("/rules/:id", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const { id } = validateRequest(idParamsSchema, request.params);
+
+		const existing = await app.prisma.notificationRule.findFirst({
+			where: { id, userId },
+		});
+		if (!existing) {
+			return reply.status(404).send({ error: "Rule not found" });
+		}
+
+		await app.prisma.notificationRule.delete({ where: { id } });
+		return reply.status(204).send();
+	});
+
+	// ── Aggregation Config ────────────────────────────────────────────
+
+	/** GET /api/notifications/aggregation — Get aggregation configs */
+	app.get("/aggregation", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const configs = await app.prisma.notificationAggregationConfig.findMany({
+			where: { userId },
+		});
+		return reply.send(
+			configs.map((c) => ({
+				eventType: c.eventType,
+				windowSeconds: c.windowSeconds,
+				maxBatchSize: c.maxBatchSize,
+				enabled: c.enabled,
+			})),
+		);
+	});
+
+	/** PUT /api/notifications/aggregation — Update aggregation configs */
+	app.put("/aggregation", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const body = validateRequest(updateAggregationConfigSchema, request.body);
+
+		for (const config of body.configs) {
+			await app.prisma.notificationAggregationConfig.upsert({
+				where: {
+					userId_eventType: {
+						userId,
+						eventType: config.eventType,
+					},
+				},
+				create: {
+					userId,
+					eventType: config.eventType,
+					windowSeconds: config.windowSeconds,
+					maxBatchSize: config.maxBatchSize,
+					enabled: config.enabled,
+				},
+				update: {
+					windowSeconds: config.windowSeconds,
+					maxBatchSize: config.maxBatchSize,
+					enabled: config.enabled,
+				},
+			});
+		}
+
+		return reply.send({ success: true });
+	});
+
+	// ── Statistics ─────────────────────────────────────────────────────
+
+	/** GET /api/notifications/statistics — Delivery statistics */
+	app.get("/statistics", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const { days } = validateRequest(statisticsQuerySchema, request.query);
+
+		const userChannelIds = (
+			await app.prisma.notificationChannel.findMany({
+				where: { userId },
+				select: { id: true },
+			})
+		).map((ch) => ch.id);
+
+		const stats = await getDeliveryStatistics(app.prisma, userChannelIds, days);
+		return reply.send(stats);
+	});
+
+	/** GET /api/notifications/channel-types — Available channel types with form metadata */
+	app.get("/channel-types", async (_request, reply) => {
+		const manifests = app.notificationService.getChannelTypes();
+		return reply.send(manifests);
 	});
 
 	done();
