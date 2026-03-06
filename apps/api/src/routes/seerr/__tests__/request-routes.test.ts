@@ -489,7 +489,7 @@ describe("POST /:instanceId/bulk", () => {
 			payload: { action: "approve", requestIds: [1, 2] },
 		});
 
-		expect(res.statusCode).toBe(200);
+		expect(res.statusCode).toBe(207);
 		const body = JSON.parse(res.payload);
 		expect(body.totalSuccess).toBe(1);
 		expect(body.totalFailed).toBe(1);

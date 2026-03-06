@@ -6,6 +6,7 @@ import {
 	CheckCircle2,
 	ChevronLeft,
 	ChevronRight,
+	Clock,
 	History,
 	Loader2,
 	Undo2,
@@ -21,6 +22,7 @@ import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 // ============================================================================
 
 const STATUS_CONFIG = {
+	PENDING: { label: "Pending", Icon: Clock, color: SEMANTIC_COLORS.warning },
 	SUCCESS: { label: "Success", Icon: CheckCircle2, color: SEMANTIC_COLORS.success },
 	FAILED: { label: "Failed", Icon: XCircle, color: SEMANTIC_COLORS.error },
 	ROLLED_BACK: { label: "Rolled Back", Icon: Undo2, color: SEMANTIC_COLORS.info },

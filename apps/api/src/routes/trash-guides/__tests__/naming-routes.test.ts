@@ -282,15 +282,23 @@ describe("POST /apply", () => {
 		expect(body.fieldCount).toBe(1);
 		expect(body.historyId).toBe("history-1");
 
-		// Verify history was created with snapshot
+		// Verify history was created as PENDING (two-phase: PENDING → SUCCESS)
 		expect((app as any).prisma.namingDeployHistory.create).toHaveBeenCalledWith(
 			expect.objectContaining({
 				data: expect.objectContaining({
 					instanceId: "inst-radarr",
 					userId: "user-1",
-					status: "SUCCESS",
+					status: "PENDING",
 					previousConfig: expect.any(String),
 				}),
+			}),
+		);
+
+		// Verify history was then updated to SUCCESS after PUT confirmed
+		expect((app as any).prisma.namingDeployHistory.update).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { id: "history-1" },
+				data: expect.objectContaining({ status: "SUCCESS" }),
 			}),
 		);
 	});
@@ -396,7 +404,7 @@ describe("POST /apply", () => {
 
 		expect(res.statusCode).toBe(200);
 		const body = JSON.parse(res.payload);
-		expect(body.warning).toBe("CONFIG_SAVE_FAILED");
+		expect(body.warning).toBe("BOOKKEEPING_INCOMPLETE");
 	});
 });
 

@@ -169,8 +169,8 @@ describe("getRequests", () => {
 		expect(result.results[0]!.id).toBe(1);
 	});
 
-	it("falls back to raw data with warn log on Zod validation failure", async () => {
-		// Request missing required fields — Zod safeParse will fail
+	it("throws on Zod validation failure (strict parse)", async () => {
+		// Request with wrong type — Zod .parse() will throw
 		const badResult = makePageResult([
 			{
 				id: 1,
@@ -186,14 +186,7 @@ describe("getRequests", () => {
 		]);
 		factory.rawRequest.mockResolvedValue(mockResponse(badResult));
 
-		const result = await client.getRequests();
-
-		// Should return raw data (the bad result)
-		expect(result.results[0]).toHaveProperty("status", "not_a_number");
-		expect(log.warn).toHaveBeenCalledWith(
-			expect.objectContaining({ errors: expect.any(Array) }),
-			expect.stringContaining("validation failed"),
-		);
+		await expect(client.getRequests()).rejects.toThrow();
 	});
 
 	it("constructs correct query string from params", async () => {
@@ -249,14 +242,11 @@ describe("getRequest", () => {
 		expect(result.type).toBe("movie");
 	});
 
-	it("falls back to raw data on Zod failure", async () => {
+	it("throws on Zod failure (strict parse)", async () => {
 		const badReq = makeRequest({ status: "bad" });
 		factory.rawRequest.mockResolvedValue(mockResponse(badReq));
 
-		const result = await client.getRequest(1);
-
-		expect(result.status).toBe("bad");
-		expect(log.warn).toHaveBeenCalled();
+		await expect(client.getRequest(1)).rejects.toThrow();
 	});
 
 	it("propagates error when rawRequest returns non-ok response", async () => {
