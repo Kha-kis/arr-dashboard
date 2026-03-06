@@ -7,6 +7,7 @@
 
 import {
 	TRASH_CONFIG_TYPES,
+	type NamingDeployStatus,
 	type NamingSelectedPresets,
 	type TrashNamingData,
 } from "@arr/shared";
@@ -18,6 +19,7 @@ import {
 	createCacheManager,
 } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
+import { arrNamingConfigSchema } from "../../lib/trash-guides/github-schemas.js";
 import {
 	buildPreview,
 	computeNamingHash,
@@ -26,6 +28,7 @@ import {
 	validateSelectedPresets,
 } from "../../lib/trash-guides/naming-deployer.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
+import { delay } from "../../lib/utils/delay.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
@@ -60,11 +63,23 @@ const selectedPresetsSchema = z.discriminatedUnion("serviceType", [
 const previewBodySchema = z.object({
 	instanceId: z.string().min(1),
 	selectedPresets: selectedPresetsSchema,
+	enableRename: z.boolean().optional(),
 });
 
 const applyBodySchema = z.object({
 	instanceId: z.string().min(1),
 	selectedPresets: selectedPresetsSchema,
+	enableRename: z.boolean().optional(),
+});
+
+const rollbackBodySchema = z.object({
+	historyId: z.string().min(1),
+});
+
+const historyQuerySchema = z.object({
+	instanceId: z.string().min(1),
+	limit: z.coerce.number().min(1).max(100).default(20),
+	offset: z.coerce.number().min(0).default(0),
 });
 
 const configQuerySchema = z.object({
@@ -120,18 +135,19 @@ function parseStoredPresets(
 }
 
 /**
- * Parse a response body as JSON, returning a 502 error on parse failure.
- * Handles reverse-proxy HTML error pages that aren't valid JSON.
+ * Parse a response body as JSON and validate against the ARR naming config schema.
+ * Returns null and sends 502 on parse failure or schema validation failure.
  */
-async function parseJsonResponse(
+async function parseAndValidateArrNamingConfig(
 	response: Response,
 	instanceLabel: string,
-	request: { log: PresetLogger },
+	request: { log: { warn: (obj: object, msg: string) => void } },
 	reply: { status: (code: number) => { send: (body: unknown) => unknown } },
 	instanceId: string,
 ): Promise<Record<string, unknown> | null> {
+	let rawJson: unknown;
 	try {
-		return (await response.json()) as Record<string, unknown>;
+		rawJson = await response.json();
 	} catch (error) {
 		request.log.warn(
 			{ err: error, instanceId, status: response.status },
@@ -143,6 +159,21 @@ async function parseJsonResponse(
 		});
 		return null;
 	}
+
+	const validated = arrNamingConfigSchema.safeParse(rawJson);
+	if (!validated.success) {
+		request.log.warn(
+			{ issues: validated.error.issues, instanceId },
+			"Invalid naming config response from instance",
+		);
+		reply.status(502).send({
+			success: false,
+			error: `Invalid naming config response from ${instanceLabel}. The instance may be running an incompatible version.`,
+		});
+		return null;
+	}
+
+	return validated.data as Record<string, unknown>;
 }
 
 // ============================================================================
@@ -226,7 +257,7 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 	 * Preview the diff between selected presets and the instance's current naming config.
 	 */
 	app.post<{ Body: z.infer<typeof previewBodySchema> }>("/preview", async (request, reply) => {
-		const { instanceId, selectedPresets } = validateRequest(previewBodySchema, request.body);
+		const { instanceId, selectedPresets, enableRename } = validateRequest(previewBodySchema, request.body);
 		const userId = request.currentUser!.id;
 
 		const instance = await requireInstance(app, userId, instanceId);
@@ -289,11 +320,11 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 			});
 		}
 
-		const currentConfig = await parseJsonResponse(response, instance.label, request, reply, instanceId);
-		if (!currentConfig) return; // parseJsonResponse already sent 502
+		const currentConfig = await parseAndValidateArrNamingConfig(response, instance.label, request, reply, instanceId);
+		if (!currentConfig) return;
 
 		// Build preview using discriminated union dispatch
-		const preview = buildPreview(naming, selectedPresets, currentConfig);
+		const preview = buildPreview(naming, selectedPresets, currentConfig, enableRename);
 
 		return reply.send({
 			success: true,
@@ -304,10 +335,11 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 	/**
 	 * POST /api/trash-guides/naming/apply
 	 * Apply selected naming presets to an instance.
-	 * Fetches current config, merges the patch, and PUTs it back.
+	 * Snapshots current config before applying for rollback support.
+	 * Retries once on network failure during PUT.
 	 */
 	app.post<{ Body: z.infer<typeof applyBodySchema> }>("/apply", async (request, reply) => {
-		const { instanceId, selectedPresets } = validateRequest(applyBodySchema, request.body);
+		const { instanceId, selectedPresets, enableRename } = validateRequest(applyBodySchema, request.body);
 		const userId = request.currentUser!.id;
 
 		const instance = await requireInstance(app, userId, instanceId);
@@ -349,7 +381,7 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 		}
 
 		// Resolve the payload patch using double-narrowing dispatch
-		const patch = resolvePayload(naming, selectedPresets);
+		const patch = resolvePayload(naming, selectedPresets, enableRename);
 
 		if (Object.keys(patch).length === 0) {
 			return reply.status(400).send({
@@ -358,7 +390,7 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 			});
 		}
 
-		// GET current config
+		// GET current config (pre-deploy snapshot)
 		let getResponse: Response;
 		try {
 			getResponse = await app.arrClientFactory.rawRequest(
@@ -383,13 +415,35 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 			});
 		}
 
-		const currentConfig = await parseJsonResponse(getResponse, instance.label, request, reply, instanceId);
-		if (!currentConfig) return; // parseJsonResponse already sent 502
+		const currentConfig = await parseAndValidateArrNamingConfig(getResponse, instance.label, request, reply, instanceId);
+		if (!currentConfig) return;
 
 		// Merge patch onto current config
 		const merged = { ...currentConfig, ...patch };
 
-		// PUT merged config back
+		// Compute hash and field counts before PUT
+		const deployedHash = computeNamingHash(patch);
+		const fieldCount = Object.keys(patch).filter(
+			(k) => k !== "renameMovies" && k !== "renameEpisodes",
+		).length;
+		const totalFields = Object.keys(patch).length;
+
+		// Create deploy history record as PENDING — updated to SUCCESS or FAILED after PUT
+		const historyRecord = await app.prisma.namingDeployHistory.create({
+			data: {
+				instanceId,
+				userId,
+				status: "PENDING",
+				selectedPresets: JSON.stringify(selectedPresets),
+				resolvedPayload: JSON.stringify(patch),
+				deployedHash,
+				previousConfig: JSON.stringify(currentConfig),
+				changedFields: fieldCount,
+				totalFields,
+			},
+		});
+
+		// PUT merged config back — retry once on network failure
 		let putResponse: Response;
 		try {
 			putResponse = await app.arrClientFactory.rawRequest(
@@ -397,15 +451,44 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 				"/api/v3/config/naming",
 				{ method: "PUT", body: merged },
 			);
-		} catch (error) {
-			request.log.error(
-				{ err: error, instanceId },
-				"Network error applying naming config to instance",
+		} catch (firstError) {
+			// Only retry on network errors (fetch failures, connection resets)
+			const isNetwork =
+				firstError instanceof Error &&
+				/fetch failed|econnrefused|econnreset|etimedout|enetunreach|abort/i.test(firstError.message);
+			if (!isNetwork) throw firstError;
+
+			request.log.warn(
+				{ err: firstError, instanceId },
+				"First PUT attempt failed with network error, retrying in 1s",
 			);
-			return reply.status(502).send({
-				success: false,
-				error: `Failed to connect to ${instance.label}: ${getErrorMessage(error, "Network error")}`,
-			});
+			try {
+				await delay(1000);
+				putResponse = await app.arrClientFactory.rawRequest(
+					instance,
+					"/api/v3/config/naming",
+					{ method: "PUT", body: merged },
+				);
+			} catch (retryError) {
+				request.log.error(
+					{ err: retryError, instanceId },
+					"Retry PUT also failed — marking deploy as FAILED",
+				);
+				const errorMsg = getErrorMessage(retryError, "Network error");
+				await app.prisma.namingDeployHistory.update({
+					where: { id: historyRecord.id },
+					data: { status: "FAILED", errorMessage: errorMsg },
+				});
+				await app.prisma.namingConfig.upsert({
+					where: { instanceId },
+					create: { instanceId, userId, serviceType, selectedPresets: JSON.stringify(selectedPresets), lastDeployStatus: "FAILED", lastDeployError: errorMsg },
+					update: { lastDeployStatus: "FAILED", lastDeployError: errorMsg },
+				});
+				return reply.status(502).send({
+					success: false,
+					error: `Failed to connect to ${instance.label}: ${errorMsg}`,
+				});
+			}
 		}
 
 		if (!putResponse.ok) {
@@ -414,16 +497,38 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 				{ instanceId, status: putResponse.status, errorText },
 				"Failed to apply naming config to instance",
 			);
+			const errorMsg = `HTTP ${putResponse.status}: ${errorText}`;
+			await app.prisma.namingDeployHistory.update({
+				where: { id: historyRecord.id },
+				data: { status: "FAILED", errorMessage: errorMsg },
+			});
+			await app.prisma.namingConfig.upsert({
+				where: { instanceId },
+				create: { instanceId, userId, serviceType, selectedPresets: JSON.stringify(selectedPresets), lastDeployStatus: "FAILED", lastDeployError: errorMsg },
+				update: { lastDeployStatus: "FAILED", lastDeployError: errorMsg },
+			});
 			return reply.status(502).send({
 				success: false,
 				error: `Failed to apply naming config to ${instance.label}: HTTP ${putResponse.status}`,
 			});
 		}
 
-		// Compute hash of applied payload for change detection
-		const deployedHash = computeNamingHash(patch);
+		// Mark deploy as SUCCESS now that the PUT confirmed
+		let historySaved = true;
+		try {
+			await app.prisma.namingDeployHistory.update({
+				where: { id: historyRecord.id },
+				data: { status: "SUCCESS" },
+			});
+		} catch (historyError) {
+			historySaved = false;
+			request.log.error(
+				{ err: historyError, historyId: historyRecord.id },
+				"Failed to mark deploy history as SUCCESS — record stuck at PENDING",
+			);
+		}
 
-		// Upsert NamingConfig record
+		// Upsert NamingConfig record with success status
 		let configSaved = true;
 		try {
 			await app.prisma.namingConfig.upsert({
@@ -435,16 +540,19 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 					selectedPresets: JSON.stringify(selectedPresets),
 					lastDeployedAt: new Date(),
 					lastDeployedHash: deployedHash,
+					lastDeployStatus: "SUCCESS",
+					lastDeployError: null,
 				},
 				update: {
 					selectedPresets: JSON.stringify(selectedPresets),
 					lastDeployedAt: new Date(),
 					lastDeployedHash: deployedHash,
+					lastDeployStatus: "SUCCESS",
+					lastDeployError: null,
 				},
 			});
 		} catch (configError) {
 			// P2002 = unique constraint race (concurrent upserts) — safe to swallow.
-			// All other errors (connection, timeout, auth) must propagate.
 			if ((configError as { code?: string }).code === "P2002") {
 				configSaved = false;
 				request.log.warn(
@@ -456,25 +564,204 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 			}
 		}
 
-		// Count fields that were actually set (exclude renameMovies/renameEpisodes toggle)
-		const fieldCount = Object.keys(patch).filter(
-			(k) => k !== "renameMovies" && k !== "renameEpisodes",
-		).length;
+		const bookkeepingOk = historySaved && configSaved;
 
 		app.log.info(
-			{ instanceId, serviceType, fieldCount, configSaved },
+			{ instanceId, serviceType, fieldCount, configSaved, historySaved, historyId: historyRecord.id },
 			"Applied naming presets to instance",
 		);
 
 		return reply.send({
 			success: true,
 			fieldCount,
-			message: configSaved
+			historyId: historyRecord.id,
+			message: bookkeepingOk
 				? `Applied ${fieldCount} naming format(s) to ${instance.label}`
-				: `Applied ${fieldCount} naming format(s) to ${instance.label}, but config tracking could not be saved. Re-apply to fix.`,
-			...(configSaved ? {} : { warning: "CONFIG_SAVE_FAILED" }),
+				: `Applied ${fieldCount} naming format(s) to ${instance.label}, but some tracking records could not be saved.`,
+			...(!bookkeepingOk ? { warning: "BOOKKEEPING_INCOMPLETE" } : {}),
 		});
 	});
+
+	/**
+	 * POST /api/trash-guides/naming/rollback
+	 * Restore the previous naming config from a deploy history snapshot.
+	 */
+	app.post<{ Body: z.infer<typeof rollbackBodySchema> }>("/rollback", async (request, reply) => {
+		const { historyId } = validateRequest(rollbackBodySchema, request.body);
+		const userId = request.currentUser!.id;
+
+		// Load history record with ownership check
+		const history = await app.prisma.namingDeployHistory.findFirst({
+			where: { id: historyId, userId },
+		});
+
+		if (!history) {
+			return reply.status(404).send({
+				success: false,
+				error: "Deploy history record not found",
+			});
+		}
+
+		if (!history.previousConfig) {
+			return reply.status(400).send({
+				success: false,
+				error: "No previous config snapshot available for this deploy — rollback is not possible",
+			});
+		}
+
+		if (history.rolledBack) {
+			return reply.status(400).send({
+				success: false,
+				error: "This deploy has already been rolled back",
+			});
+		}
+
+		// Load the instance
+		const instance = await requireInstance(app, userId, history.instanceId);
+
+		// Parse the previous config snapshot
+		let previousConfig: Record<string, unknown>;
+		try {
+			previousConfig = JSON.parse(history.previousConfig) as Record<string, unknown>;
+		} catch (parseErr) {
+			request.log.error(
+				{ err: parseErr, historyId },
+				"Failed to parse stored naming config snapshot for rollback",
+			);
+			return reply.status(500).send({
+				success: false,
+				error: "Stored previous config snapshot is corrupt",
+			});
+		}
+
+		// PUT the previous config back to the instance
+		let putResponse: Response;
+		try {
+			putResponse = await app.arrClientFactory.rawRequest(
+				instance,
+				"/api/v3/config/naming",
+				{ method: "PUT", body: previousConfig },
+			);
+		} catch (error) {
+			request.log.error(
+				{ err: error, historyId, instanceId: instance.id },
+				"Network error during rollback PUT",
+			);
+			return reply.status(502).send({
+				success: false,
+				error: `Failed to connect to ${instance.label}: ${getErrorMessage(error, "Network error")}`,
+			});
+		}
+
+		if (!putResponse.ok) {
+			const errorText = await putResponse.text().catch(() => "Unknown error");
+			request.log.error(
+				{ historyId, instanceId: instance.id, status: putResponse.status, errorText },
+				"Rollback PUT failed",
+			);
+			return reply.status(502).send({
+				success: false,
+				error: `Failed to restore naming config on ${instance.label}: HTTP ${putResponse.status}`,
+			});
+		}
+
+		// Record rollback in database — all three writes are bookkeeping;
+		// the actual rollback (PUT) already succeeded above.
+		let bookkeepingOk = true;
+		try {
+			await app.prisma.$transaction([
+				app.prisma.namingDeployHistory.update({
+					where: { id: historyId },
+					data: { rolledBack: true, rolledBackAt: new Date() },
+				}),
+				app.prisma.namingDeployHistory.create({
+					data: {
+						instanceId: history.instanceId,
+						userId,
+						status: "ROLLED_BACK",
+						selectedPresets: history.selectedPresets,
+						resolvedPayload: JSON.stringify(previousConfig),
+						changedFields: history.changedFields,
+						totalFields: history.totalFields,
+					},
+				}),
+				app.prisma.namingConfig.updateMany({
+					where: { instanceId: history.instanceId },
+					data: { lastDeployStatus: "ROLLED_BACK" },
+				}),
+			]);
+		} catch (dbError) {
+			bookkeepingOk = false;
+			request.log.error(
+				{ err: dbError, historyId },
+				"Rollback PUT succeeded but database bookkeeping failed",
+			);
+		}
+
+		app.log.info(
+			{ historyId, instanceId: history.instanceId, bookkeepingOk },
+			"Rolled back naming config to previous snapshot",
+		);
+
+		return reply.send({
+			success: true,
+			message: bookkeepingOk
+				? `Rolled back naming config on ${instance.label} to previous state`
+				: `Rolled back naming config on ${instance.label}, but history tracking could not be saved.`,
+			fieldCount: history.changedFields,
+			...(!bookkeepingOk ? { warning: "BOOKKEEPING_INCOMPLETE" } : {}),
+		});
+	});
+
+	/**
+	 * GET /api/trash-guides/naming/history?instanceId=xxx&limit=20&offset=0
+	 * Fetch paginated deploy history for an instance.
+	 */
+	app.get<{ Querystring: z.infer<typeof historyQuerySchema> }>(
+		"/history",
+		async (request, reply) => {
+			const { instanceId, limit, offset } = validateRequest(historyQuerySchema, request.query);
+			const userId = request.currentUser!.id;
+
+			await requireInstance(app, userId, instanceId);
+
+			const [history, total] = await Promise.all([
+				app.prisma.namingDeployHistory.findMany({
+					where: { instanceId, userId },
+					orderBy: { deployedAt: "desc" },
+					take: limit,
+					skip: offset,
+				}),
+				app.prisma.namingDeployHistory.count({
+					where: { instanceId, userId },
+				}),
+			]);
+
+			return reply.send({
+				success: true,
+				data: {
+					history: history.map((h) => ({
+						id: h.id,
+						instanceId: h.instanceId,
+						deployedAt: h.deployedAt.toISOString(),
+						status: h.status as NamingDeployStatus,
+						selectedPresets: parseStoredPresets(h.selectedPresets, request.log),
+						changedFields: h.changedFields,
+						totalFields: h.totalFields,
+						errorMessage: h.errorMessage,
+						rolledBack: h.rolledBack,
+						rolledBackAt: h.rolledBackAt?.toISOString() ?? null,
+					})),
+					pagination: {
+						total,
+						limit,
+						offset,
+						hasMore: offset + limit < total,
+					},
+				},
+			});
+		},
+	);
 
 	/**
 	 * GET /api/trash-guides/naming/configs?instanceId=xxx
@@ -502,7 +789,11 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 					{ instanceId },
 					"Stored naming config has corrupt selectedPresets JSON",
 				);
-				return reply.send({ success: true, config: null });
+				return reply.send({
+					success: true,
+					config: null,
+					warning: "CORRUPT_CONFIG",
+				});
 			}
 
 			return reply.send({
@@ -514,6 +805,8 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 					syncStrategy: config.syncStrategy as "auto" | "manual" | "notify",
 					lastDeployedAt: config.lastDeployedAt?.toISOString() ?? null,
 					lastDeployedHash: config.lastDeployedHash,
+					lastDeployStatus: config.lastDeployStatus as NamingDeployStatus | null,
+					lastDeployError: config.lastDeployError,
 					createdAt: config.createdAt.toISOString(),
 					updatedAt: config.updatedAt.toISOString(),
 				},
@@ -574,6 +867,8 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 				syncStrategy: config.syncStrategy as "auto" | "manual" | "notify",
 				lastDeployedAt: config.lastDeployedAt?.toISOString() ?? null,
 				lastDeployedHash: config.lastDeployedHash,
+				lastDeployStatus: config.lastDeployStatus as NamingDeployStatus | null,
+				lastDeployError: config.lastDeployError,
 				createdAt: config.createdAt.toISOString(),
 				updatedAt: config.updatedAt.toISOString(),
 			},
@@ -639,6 +934,8 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 				syncStrategy: config.syncStrategy as "auto" | "manual" | "notify",
 				lastDeployedAt: config.lastDeployedAt?.toISOString() ?? null,
 				lastDeployedHash: config.lastDeployedHash,
+				lastDeployStatus: config.lastDeployStatus as NamingDeployStatus | null,
+				lastDeployError: config.lastDeployError,
 				createdAt: config.createdAt.toISOString(),
 				updatedAt: config.updatedAt.toISOString(),
 			},

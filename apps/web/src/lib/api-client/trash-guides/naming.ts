@@ -7,6 +7,9 @@
 
 import type {
 	NamingConfigRecord,
+	NamingDeployHistoryPagination,
+	NamingDeployHistoryRecord,
+	NamingDeployStatus,
 	NamingPreviewResult,
 	NamingPresetsResponse,
 	NamingSelectedPresets,
@@ -15,7 +18,7 @@ import { buildQueryUrl } from "../../build-query-url";
 import { apiRequest } from "../base";
 
 // Re-export shared types for convenience
-export type { NamingPresetsResponse, NamingPreviewResult, NamingConfigRecord, NamingSelectedPresets };
+export type { NamingPresetsResponse, NamingPreviewResult, NamingConfigRecord, NamingSelectedPresets, NamingDeployStatus };
 
 // ============================================================================
 // Response Types
@@ -34,6 +37,7 @@ export type NamingPreviewApiResponse = {
 export type NamingApplyApiResponse = {
 	success: boolean;
 	fieldCount: number;
+	historyId?: string;
 	message: string;
 	warning?: string;
 };
@@ -53,6 +57,14 @@ export type NamingConfigDeleteResponse = {
 	message: string;
 };
 
+export type NamingHistoryApiResponse = {
+	success: boolean;
+	data: {
+		history: NamingDeployHistoryRecord[];
+		pagination: NamingDeployHistoryPagination;
+	};
+};
+
 // ============================================================================
 // Request Types
 // ============================================================================
@@ -60,11 +72,19 @@ export type NamingConfigDeleteResponse = {
 export type NamingPreviewPayload = {
 	instanceId: string;
 	selectedPresets: NamingSelectedPresets;
+	enableRename?: boolean;
 };
 
 export type NamingApplyPayload = {
 	instanceId: string;
 	selectedPresets: NamingSelectedPresets;
+	enableRename?: boolean;
+};
+
+export type NamingRollbackApiResponse = {
+	success: boolean;
+	message: string;
+	fieldCount: number;
 };
 
 export type NamingConfigCreatePayload = {
@@ -149,4 +169,37 @@ export async function deleteNamingConfig(
 			method: "DELETE",
 		},
 	);
+}
+
+// ============================================================================
+// API Functions - History
+// ============================================================================
+
+/**
+ * Fetch paginated naming deploy history for an instance
+ */
+export async function fetchNamingHistory(
+	instanceId: string,
+	options?: { limit?: number; offset?: number },
+): Promise<NamingHistoryApiResponse> {
+	const url = buildQueryUrl("/api/trash-guides/naming/history", {
+		instanceId,
+		...(options?.limit != null ? { limit: String(options.limit) } : {}),
+		...(options?.offset != null ? { offset: String(options.offset) } : {}),
+	});
+	return await apiRequest<NamingHistoryApiResponse>(url);
+}
+
+// ============================================================================
+// API Functions - Rollback
+// ============================================================================
+
+/**
+ * Rollback a naming deploy to its pre-deploy state
+ */
+export async function rollbackNaming(historyId: string): Promise<NamingRollbackApiResponse> {
+	return await apiRequest<NamingRollbackApiResponse>("/api/trash-guides/naming/rollback", {
+		method: "POST",
+		json: { historyId },
+	});
 }

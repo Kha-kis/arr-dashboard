@@ -4,6 +4,7 @@ import type { SeerrDiscoverResult } from "@arr/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export type DiscoverMediaType = "movie" | "tv";
+export type SearchSortOption = "popularity" | "rating" | "release_date";
 
 export interface DiscoverState {
 	mediaType: DiscoverMediaType;
@@ -21,6 +22,7 @@ export function useDiscoverState() {
 	const [requestItem, setRequestItem] = useState<SeerrDiscoverResult | null>(null);
 	const [selectedGenreId, setSelectedGenreId] = useState<number | null>(null);
 	const [hideAvailable, setHideAvailable] = useState(false);
+	const [searchSort, setSearchSort] = useState<SearchSortOption>("popularity");
 	const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
 
 	// Debounce search input by 300ms
@@ -70,7 +72,9 @@ export function useDiscoverState() {
 		requestItem,
 		selectedGenreId,
 		hideAvailable,
+		searchSort,
 		setSearchInput,
+		setSearchSort,
 		setMediaType: handleMediaTypeChange,
 		setSelectedGenreId,
 		setHideAvailable,

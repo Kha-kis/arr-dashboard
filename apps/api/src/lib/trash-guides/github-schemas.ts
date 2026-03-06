@@ -132,6 +132,35 @@ export const sonarrNamingSchema = z
 	.transform((data) => ({ ...data, _service: "SONARR" as const }));
 
 // ============================================================================
+// ARR Naming Config Response Schema (/api/v3/config/naming)
+// ============================================================================
+
+/**
+ * Validates the response from Sonarr/Radarr's /api/v3/config/naming endpoint.
+ * Uses z.looseObject() to preserve all unknown fields — critical for the
+ * merge-and-PUT pattern where we overlay our changes onto the full config.
+ *
+ * Only validates fields we actively use: `id` (required for PUT) and
+ * the optional rename toggles + format strings.
+ */
+export const arrNamingConfigSchema = z.looseObject({
+	id: z.number(),
+	// Radarr fields
+	renameMovies: z.boolean().optional(),
+	standardMovieFormat: z.string().optional(),
+	movieFolderFormat: z.string().optional(),
+	// Sonarr fields
+	renameEpisodes: z.boolean().optional(),
+	standardEpisodeFormat: z.string().optional(),
+	dailyEpisodeFormat: z.string().optional(),
+	animeEpisodeFormat: z.string().optional(),
+	seriesFolderFormat: z.string().optional(),
+	seasonFolderFormat: z.string().optional(),
+});
+
+export type ArrNamingConfig = z.infer<typeof arrNamingConfigSchema>;
+
+// ============================================================================
 // Quality Profile Schema (quality-profiles/*.json)
 // ============================================================================
 

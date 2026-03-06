@@ -29,6 +29,8 @@ import { useMemo } from "react";
 import {
 	addSeerrIssueComment,
 	approveSeerrRequest,
+	type BulkRequestResult,
+	bulkSeerrRequestAction,
 	createSeerrRequest,
 	declineSeerrRequest,
 	deleteSeerrRequest,
@@ -42,10 +44,16 @@ import {
 	fetchSeerrDiscoverTrending,
 	fetchSeerrDiscoverTv,
 	fetchSeerrDiscoverTvUpcoming,
+	clearSeerrCache,
+	fetchSeerrAuditLog,
 	fetchSeerrGenres,
+	type SeerrAuditLogEntry,
+	type SeerrHealthResponse,
+	fetchSeerrHealth,
 	fetchSeerrIssues,
 	fetchSeerrMovieDetails,
 	fetchSeerrNotifications,
+	fetchSeerrRequest,
 	fetchSeerrRequestCount,
 	fetchSeerrRequestOptions,
 	fetchSeerrRequests,
@@ -70,6 +78,8 @@ const seerrKeys = {
 	all: ["seerr"] as const,
 	requests: (instanceId: string, params?: Omit<FetchSeerrRequestsParams, "instanceId">) =>
 		["seerr", "requests", instanceId, params] as const,
+	request: (instanceId: string, requestId: number) =>
+		["seerr", "request", instanceId, requestId] as const,
 	requestCount: (instanceId: string) => ["seerr", "request-count", instanceId] as const,
 	users: (instanceId: string, params?: Omit<FetchSeerrUsersParams, "instanceId">) =>
 		["seerr", "users", instanceId, params] as const,
@@ -79,6 +89,8 @@ const seerrKeys = {
 		["seerr", "issues", instanceId, params] as const,
 	notifications: (instanceId: string) => ["seerr", "notifications", instanceId] as const,
 	status: (instanceId: string) => ["seerr", "status", instanceId] as const,
+	health: (instanceId: string) => ["seerr", "health", instanceId] as const,
+	audit: (instanceId: string) => ["seerr", "audit", instanceId] as const,
 	// Discover
 	libraryEnrichment: (instanceId: string, tmdbIdKey: string) =>
 		["seerr", "library-enrichment", instanceId, tmdbIdKey] as const,
@@ -117,6 +129,14 @@ export const useSeerrRequests = (params: FetchSeerrRequestsParams) =>
 		enabled: !!params.instanceId,
 	});
 
+export const useSeerrRequest = (instanceId: string, requestId: number) =>
+	useQuery<SeerrRequest>({
+		queryKey: seerrKeys.request(instanceId, requestId),
+		queryFn: () => fetchSeerrRequest(instanceId, requestId),
+		staleTime: 30_000,
+		enabled: !!instanceId && requestId > 0,
+	});
+
 export const useSeerrRequestCount = (instanceId: string) =>
 	useQuery<SeerrRequestCount>({
 		queryKey: seerrKeys.requestCount(instanceId),
@@ -151,6 +171,22 @@ export const useDeleteSeerrRequest = () => {
 	const queryClient = useQueryClient();
 	return useMutation<void, Error, { instanceId: string; requestId: number }>({
 		mutationFn: ({ instanceId, requestId }) => deleteSeerrRequest(instanceId, requestId),
+		onSuccess: (_, { instanceId }) => {
+			queryClient.invalidateQueries({ queryKey: ["seerr", "requests", instanceId] });
+			queryClient.invalidateQueries({ queryKey: seerrKeys.requestCount(instanceId) });
+		},
+	});
+};
+
+export const useBulkSeerrRequestAction = () => {
+	const queryClient = useQueryClient();
+	return useMutation<
+		BulkRequestResult,
+		Error,
+		{ instanceId: string; action: "approve" | "decline" | "delete"; requestIds: number[] }
+	>({
+		mutationFn: ({ instanceId, action, requestIds }) =>
+			bulkSeerrRequestAction(instanceId, action, requestIds),
 		onSuccess: (_, { instanceId }) => {
 			queryClient.invalidateQueries({ queryKey: ["seerr", "requests", instanceId] });
 			queryClient.invalidateQueries({ queryKey: seerrKeys.requestCount(instanceId) });
@@ -292,6 +328,43 @@ export const useSeerrStatus = (instanceId: string) =>
 	});
 
 // ============================================================================
+// Health Hook
+// ============================================================================
+
+export const useSeerrHealth = (instanceId: string) =>
+	useQuery<SeerrHealthResponse>({
+		queryKey: seerrKeys.health(instanceId),
+		queryFn: () => fetchSeerrHealth(instanceId),
+		refetchInterval: 5 * 60_000,
+		enabled: !!instanceId,
+		throwOnError: false,
+	});
+
+// ============================================================================
+// Audit Log Hook
+// ============================================================================
+
+export const useClearSeerrCache = () => {
+	const queryClient = useQueryClient();
+	return useMutation<{ cleared: number }, Error, { instanceId: string }>({
+		mutationFn: ({ instanceId }) => clearSeerrCache(instanceId),
+		onSuccess: (_, { instanceId }) => {
+			// Invalidate discover queries so they refetch with fresh server-side cache
+			queryClient.invalidateQueries({ queryKey: ["seerr", "discover"] });
+			queryClient.invalidateQueries({ queryKey: ["seerr", "library-enrichment", instanceId] });
+		},
+	});
+};
+
+export const useSeerrAuditLog = (instanceId: string) =>
+	useQuery<SeerrAuditLogEntry[]>({
+		queryKey: seerrKeys.audit(instanceId),
+		queryFn: () => fetchSeerrAuditLog(instanceId),
+		refetchInterval: 30_000,
+		enabled: !!instanceId,
+	});
+
+// ============================================================================
 // Discover Hooks
 // ============================================================================
 
@@ -357,12 +430,13 @@ export const useSeerrDiscoverTvUpcoming = (instanceId: string) =>
 	);
 
 export const useSeerrSearch = (instanceId: string, query: string) =>
-	useQuery<SeerrDiscoverResponse>({
-		queryKey: seerrKeys.discover.search(instanceId, query),
-		queryFn: () => fetchSeerrSearch(instanceId, query),
-		staleTime: 30_000,
-		enabled: !!instanceId && query.length > 0,
-	});
+	useInfiniteQuery(
+		discoverInfiniteOptions(
+			seerrKeys.discover.search(instanceId, query),
+			(page) => fetchSeerrSearch(instanceId, query, page),
+			!!instanceId && query.length > 0,
+		),
+	);
 
 export const useSeerrMovieDetails = (instanceId: string, tmdbId: number) =>
 	useQuery<SeerrMovieDetails>({

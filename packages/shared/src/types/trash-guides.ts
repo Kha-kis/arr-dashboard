@@ -310,8 +310,48 @@ export interface NamingConfigRecord {
 	syncStrategy: "auto" | "manual" | "notify";
 	lastDeployedAt: string | null;
 	lastDeployedHash: string | null;
+	lastDeployStatus: NamingDeployStatus | null;
+	lastDeployError: string | null;
 	createdAt: string;
 	updatedAt: string;
+}
+
+// ============================================================================
+// Naming Deploy History
+// ============================================================================
+
+export type NamingDeployStatus = "PENDING" | "SUCCESS" | "FAILED" | "ROLLED_BACK";
+
+export interface NamingDeployHistoryRecord {
+	id: string;
+	instanceId: string;
+	deployedAt: string;
+	status: NamingDeployStatus;
+	selectedPresets: NamingSelectedPresets;
+	changedFields: number;
+	totalFields: number;
+	errorMessage: string | null;
+	rolledBack: boolean;
+	rolledBackAt: string | null;
+	instanceLabel?: string;
+	serviceType?: "RADARR" | "SONARR";
+}
+
+export interface NamingDeployHistoryPagination {
+	total: number;
+	limit: number;
+	offset: number;
+	hasMore: boolean;
+}
+
+export interface NamingRollbackPayload {
+	historyId: string;
+}
+
+export interface NamingRollbackResponse {
+	success: boolean;
+	message: string;
+	fieldCount: number;
 }
 
 /**

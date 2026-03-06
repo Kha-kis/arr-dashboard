@@ -8,16 +8,20 @@ import type {
 	NamingConfigCreatePayload,
 	NamingConfigDeleteResponse,
 	NamingConfigSaveResponse,
+	NamingHistoryApiResponse,
 	NamingPreviewApiResponse,
 	NamingPreviewPayload,
 	NamingPresetsApiResponse,
+	NamingRollbackApiResponse,
 } from "../../lib/api-client/trash-guides/naming";
 import {
 	applyNaming,
 	deleteNamingConfig,
 	fetchNamingConfig,
+	fetchNamingHistory,
 	fetchNamingPresets,
 	getNamingPreview,
+	rollbackNaming,
 	saveNamingConfig,
 } from "../../lib/api-client/trash-guides/naming";
 
@@ -27,6 +31,7 @@ import {
 
 export const NAMING_PRESETS_KEY = ["naming-presets"] as const;
 export const NAMING_CONFIG_KEY = ["naming-config"] as const;
+export const NAMING_HISTORY_KEY = ["naming-history"] as const;
 
 // ============================================================================
 // Query Hooks
@@ -55,6 +60,20 @@ export const useNamingConfig = (instanceId: string | undefined, enabled = true) 
 		staleTime: 5 * 60 * 1000,
 	});
 
+/**
+ * Fetch paginated naming deploy history for an instance.
+ */
+export const useNamingHistory = (
+	instanceId: string | undefined,
+	options?: { limit?: number; offset?: number },
+) =>
+	useQuery<NamingHistoryApiResponse>({
+		queryKey: [...NAMING_HISTORY_KEY, instanceId, options?.offset ?? 0],
+		queryFn: () => fetchNamingHistory(instanceId!, options),
+		enabled: !!instanceId,
+		staleTime: 60_000,
+	});
+
 // ============================================================================
 // Mutation Hooks
 // ============================================================================
@@ -81,6 +100,9 @@ export const useApplyNaming = () => {
 		onSuccess: (_data, variables) => {
 			void queryClient.invalidateQueries({
 				queryKey: [...NAMING_CONFIG_KEY, variables.instanceId],
+			});
+			void queryClient.invalidateQueries({
+				queryKey: [...NAMING_HISTORY_KEY, variables.instanceId],
 			});
 		},
 	});
@@ -113,6 +135,26 @@ export const useDeleteNamingConfig = () => {
 		onSuccess: (_data, instanceId) => {
 			void queryClient.invalidateQueries({
 				queryKey: [...NAMING_CONFIG_KEY, instanceId],
+			});
+		},
+	});
+};
+
+/**
+ * Rollback a naming deploy to its pre-deploy state.
+ * Invalidates naming config cache on success.
+ */
+export const useRollbackNaming = () => {
+	const queryClient = useQueryClient();
+
+	return useMutation<NamingRollbackApiResponse, Error, { historyId: string; instanceId: string }>({
+		mutationFn: ({ historyId }) => rollbackNaming(historyId),
+		onSuccess: (_data, variables) => {
+			void queryClient.invalidateQueries({
+				queryKey: [...NAMING_CONFIG_KEY, variables.instanceId],
+			});
+			void queryClient.invalidateQueries({
+				queryKey: [...NAMING_HISTORY_KEY, variables.instanceId],
 			});
 		},
 	});

@@ -248,3 +248,13 @@ export type SessionSnapshot = Prisma.SessionSnapshotModel
  * Per-instance naming config for TRaSH Guides naming schemes
  */
 export type NamingConfig = Prisma.NamingConfigModel
+/**
+ * Model NamingDeployHistory
+ * 
+ */
+export type NamingDeployHistory = Prisma.NamingDeployHistoryModel
+/**
+ * Model SeerrActionLog
+ * 
+ */
+export type SeerrActionLog = Prisma.SeerrActionLogModel

@@ -20,64 +20,40 @@ export type NotificationSubscriptionModel = runtime.Types.Result.DefaultSelectio
 
 export type AggregateNotificationSubscription = {
   _count: NotificationSubscriptionCountAggregateOutputType | null
-  _avg: NotificationSubscriptionAvgAggregateOutputType | null
-  _sum: NotificationSubscriptionSumAggregateOutputType | null
   _min: NotificationSubscriptionMinAggregateOutputType | null
   _max: NotificationSubscriptionMaxAggregateOutputType | null
-}
-
-export type NotificationSubscriptionAvgAggregateOutputType = {
-  cooldownMinutes: number | null
-}
-
-export type NotificationSubscriptionSumAggregateOutputType = {
-  cooldownMinutes: number | null
 }
 
 export type NotificationSubscriptionMinAggregateOutputType = {
   channelId: string | null
   eventType: string | null
-  cooldownMinutes: number | null
 }
 
 export type NotificationSubscriptionMaxAggregateOutputType = {
   channelId: string | null
   eventType: string | null
-  cooldownMinutes: number | null
 }
 
 export type NotificationSubscriptionCountAggregateOutputType = {
   channelId: number
   eventType: number
-  cooldownMinutes: number
   _all: number
 }
 
 
-export type NotificationSubscriptionAvgAggregateInputType = {
-  cooldownMinutes?: true
-}
-
-export type NotificationSubscriptionSumAggregateInputType = {
-  cooldownMinutes?: true
-}
-
 export type NotificationSubscriptionMinAggregateInputType = {
   channelId?: true
   eventType?: true
-  cooldownMinutes?: true
 }
 
 export type NotificationSubscriptionMaxAggregateInputType = {
   channelId?: true
   eventType?: true
-  cooldownMinutes?: true
 }
 
 export type NotificationSubscriptionCountAggregateInputType = {
   channelId?: true
   eventType?: true
-  cooldownMinutes?: true
   _all?: true
 }
 
@@ -119,18 +95,6 @@ export type NotificationSubscriptionAggregateArgs<ExtArgs extends runtime.Types.
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
    * 
-   * Select which fields to average
-  **/
-  _avg?: NotificationSubscriptionAvgAggregateInputType
-  /**
-   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
-   * 
-   * Select which fields to sum
-  **/
-  _sum?: NotificationSubscriptionSumAggregateInputType
-  /**
-   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
-   * 
    * Select which fields to find the minimum value
   **/
   _min?: NotificationSubscriptionMinAggregateInputType
@@ -161,8 +125,6 @@ export type NotificationSubscriptionGroupByArgs<ExtArgs extends runtime.Types.Ex
   take?: number
   skip?: number
   _count?: NotificationSubscriptionCountAggregateInputType | true
-  _avg?: NotificationSubscriptionAvgAggregateInputType
-  _sum?: NotificationSubscriptionSumAggregateInputType
   _min?: NotificationSubscriptionMinAggregateInputType
   _max?: NotificationSubscriptionMaxAggregateInputType
 }
@@ -170,10 +132,7 @@ export type NotificationSubscriptionGroupByArgs<ExtArgs extends runtime.Types.Ex
 export type NotificationSubscriptionGroupByOutputType = {
   channelId: string
   eventType: string
-  cooldownMinutes: number
   _count: NotificationSubscriptionCountAggregateOutputType | null
-  _avg: NotificationSubscriptionAvgAggregateOutputType | null
-  _sum: NotificationSubscriptionSumAggregateOutputType | null
   _min: NotificationSubscriptionMinAggregateOutputType | null
   _max: NotificationSubscriptionMaxAggregateOutputType | null
 }
@@ -199,14 +158,12 @@ export type NotificationSubscriptionWhereInput = {
   NOT?: Prisma.NotificationSubscriptionWhereInput | Prisma.NotificationSubscriptionWhereInput[]
   channelId?: Prisma.StringFilter<"NotificationSubscription"> | string
   eventType?: Prisma.StringFilter<"NotificationSubscription"> | string
-  cooldownMinutes?: Prisma.IntFilter<"NotificationSubscription"> | number
   channel?: Prisma.XOR<Prisma.NotificationChannelScalarRelationFilter, Prisma.NotificationChannelWhereInput>
 }
 
 export type NotificationSubscriptionOrderByWithRelationInput = {
   channelId?: Prisma.SortOrder
   eventType?: Prisma.SortOrder
-  cooldownMinutes?: Prisma.SortOrder
   channel?: Prisma.NotificationChannelOrderByWithRelationInput
 }
 
@@ -217,19 +174,15 @@ export type NotificationSubscriptionWhereUniqueInput = Prisma.AtLeast<{
   NOT?: Prisma.NotificationSubscriptionWhereInput | Prisma.NotificationSubscriptionWhereInput[]
   channelId?: Prisma.StringFilter<"NotificationSubscription"> | string
   eventType?: Prisma.StringFilter<"NotificationSubscription"> | string
-  cooldownMinutes?: Prisma.IntFilter<"NotificationSubscription"> | number
   channel?: Prisma.XOR<Prisma.NotificationChannelScalarRelationFilter, Prisma.NotificationChannelWhereInput>
 }, "channelId_eventType">
 
 export type NotificationSubscriptionOrderByWithAggregationInput = {
   channelId?: Prisma.SortOrder
   eventType?: Prisma.SortOrder
-  cooldownMinutes?: Prisma.SortOrder
   _count?: Prisma.NotificationSubscriptionCountOrderByAggregateInput
-  _avg?: Prisma.NotificationSubscriptionAvgOrderByAggregateInput
   _max?: Prisma.NotificationSubscriptionMaxOrderByAggregateInput
   _min?: Prisma.NotificationSubscriptionMinOrderByAggregateInput
-  _sum?: Prisma.NotificationSubscriptionSumOrderByAggregateInput
 }
 
 export type NotificationSubscriptionScalarWhereWithAggregatesInput = {
@@ -238,48 +191,40 @@ export type NotificationSubscriptionScalarWhereWithAggregatesInput = {
   NOT?: Prisma.NotificationSubscriptionScalarWhereWithAggregatesInput | Prisma.NotificationSubscriptionScalarWhereWithAggregatesInput[]
   channelId?: Prisma.StringWithAggregatesFilter<"NotificationSubscription"> | string
   eventType?: Prisma.StringWithAggregatesFilter<"NotificationSubscription"> | string
-  cooldownMinutes?: Prisma.IntWithAggregatesFilter<"NotificationSubscription"> | number
 }
 
 export type NotificationSubscriptionCreateInput = {
   eventType: string
-  cooldownMinutes?: number
   channel: Prisma.NotificationChannelCreateNestedOneWithoutSubscriptionsInput
 }
 
 export type NotificationSubscriptionUncheckedCreateInput = {
   channelId: string
   eventType: string
-  cooldownMinutes?: number
 }
 
 export type NotificationSubscriptionUpdateInput = {
   eventType?: Prisma.StringFieldUpdateOperationsInput | string
-  cooldownMinutes?: Prisma.IntFieldUpdateOperationsInput | number
   channel?: Prisma.NotificationChannelUpdateOneRequiredWithoutSubscriptionsNestedInput
 }
 
 export type NotificationSubscriptionUncheckedUpdateInput = {
   channelId?: Prisma.StringFieldUpdateOperationsInput | string
   eventType?: Prisma.StringFieldUpdateOperationsInput | string
-  cooldownMinutes?: Prisma.IntFieldUpdateOperationsInput | number
 }
 
 export type NotificationSubscriptionCreateManyInput = {
   channelId: string
   eventType: string
-  cooldownMinutes?: number
 }
 
 export type NotificationSubscriptionUpdateManyMutationInput = {
   eventType?: Prisma.StringFieldUpdateOperationsInput | string
-  cooldownMinutes?: Prisma.IntFieldUpdateOperationsInput | number
 }
 
 export type NotificationSubscriptionUncheckedUpdateManyInput = {
   channelId?: Prisma.StringFieldUpdateOperationsInput | string
   eventType?: Prisma.StringFieldUpdateOperationsInput | string
-  cooldownMinutes?: Prisma.IntFieldUpdateOperationsInput | number
 }
 
 export type NotificationSubscriptionListRelationFilter = {
@@ -300,27 +245,16 @@ export type NotificationSubscriptionChannelIdEventTypeCompoundUniqueInput = {
 export type NotificationSubscriptionCountOrderByAggregateInput = {
   channelId?: Prisma.SortOrder
   eventType?: Prisma.SortOrder
-  cooldownMinutes?: Prisma.SortOrder
-}
-
-export type NotificationSubscriptionAvgOrderByAggregateInput = {
-  cooldownMinutes?: Prisma.SortOrder
 }
 
 export type NotificationSubscriptionMaxOrderByAggregateInput = {
   channelId?: Prisma.SortOrder
   eventType?: Prisma.SortOrder
-  cooldownMinutes?: Prisma.SortOrder
 }
 
 export type NotificationSubscriptionMinOrderByAggregateInput = {
   channelId?: Prisma.SortOrder
   eventType?: Prisma.SortOrder
-  cooldownMinutes?: Prisma.SortOrder
-}
-
-export type NotificationSubscriptionSumOrderByAggregateInput = {
-  cooldownMinutes?: Prisma.SortOrder
 }
 
 export type NotificationSubscriptionCreateNestedManyWithoutChannelInput = {
@@ -367,12 +301,10 @@ export type NotificationSubscriptionUncheckedUpdateManyWithoutChannelNestedInput
 
 export type NotificationSubscriptionCreateWithoutChannelInput = {
   eventType: string
-  cooldownMinutes?: number
 }
 
 export type NotificationSubscriptionUncheckedCreateWithoutChannelInput = {
   eventType: string
-  cooldownMinutes?: number
 }
 
 export type NotificationSubscriptionCreateOrConnectWithoutChannelInput = {
@@ -406,27 +338,22 @@ export type NotificationSubscriptionScalarWhereInput = {
   NOT?: Prisma.NotificationSubscriptionScalarWhereInput | Prisma.NotificationSubscriptionScalarWhereInput[]
   channelId?: Prisma.StringFilter<"NotificationSubscription"> | string
   eventType?: Prisma.StringFilter<"NotificationSubscription"> | string
-  cooldownMinutes?: Prisma.IntFilter<"NotificationSubscription"> | number
 }
 
 export type NotificationSubscriptionCreateManyChannelInput = {
   eventType: string
-  cooldownMinutes?: number
 }
 
 export type NotificationSubscriptionUpdateWithoutChannelInput = {
   eventType?: Prisma.StringFieldUpdateOperationsInput | string
-  cooldownMinutes?: Prisma.IntFieldUpdateOperationsInput | number
 }
 
 export type NotificationSubscriptionUncheckedUpdateWithoutChannelInput = {
   eventType?: Prisma.StringFieldUpdateOperationsInput | string
-  cooldownMinutes?: Prisma.IntFieldUpdateOperationsInput | number
 }
 
 export type NotificationSubscriptionUncheckedUpdateManyWithoutChannelInput = {
   eventType?: Prisma.StringFieldUpdateOperationsInput | string
-  cooldownMinutes?: Prisma.IntFieldUpdateOperationsInput | number
 }
 
 
@@ -434,31 +361,27 @@ export type NotificationSubscriptionUncheckedUpdateManyWithoutChannelInput = {
 export type NotificationSubscriptionSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   channelId?: boolean
   eventType?: boolean
-  cooldownMinutes?: boolean
   channel?: boolean | Prisma.NotificationChannelDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["notificationSubscription"]>
 
 export type NotificationSubscriptionSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   channelId?: boolean
   eventType?: boolean
-  cooldownMinutes?: boolean
   channel?: boolean | Prisma.NotificationChannelDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["notificationSubscription"]>
 
 export type NotificationSubscriptionSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   channelId?: boolean
   eventType?: boolean
-  cooldownMinutes?: boolean
   channel?: boolean | Prisma.NotificationChannelDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["notificationSubscription"]>
 
 export type NotificationSubscriptionSelectScalar = {
   channelId?: boolean
   eventType?: boolean
-  cooldownMinutes?: boolean
 }
 
-export type NotificationSubscriptionOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"channelId" | "eventType" | "cooldownMinutes", ExtArgs["result"]["notificationSubscription"]>
+export type NotificationSubscriptionOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"channelId" | "eventType", ExtArgs["result"]["notificationSubscription"]>
 export type NotificationSubscriptionInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   channel?: boolean | Prisma.NotificationChannelDefaultArgs<ExtArgs>
 }
@@ -477,7 +400,6 @@ export type $NotificationSubscriptionPayload<ExtArgs extends runtime.Types.Exten
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     channelId: string
     eventType: string
-    cooldownMinutes: number
   }, ExtArgs["result"]["notificationSubscription"]>
   composites: {}
 }
@@ -904,7 +826,6 @@ export interface Prisma__NotificationSubscriptionClient<T, Null = never, ExtArgs
 export interface NotificationSubscriptionFieldRefs {
   readonly channelId: Prisma.FieldRef<"NotificationSubscription", 'String'>
   readonly eventType: Prisma.FieldRef<"NotificationSubscription", 'String'>
-  readonly cooldownMinutes: Prisma.FieldRef<"NotificationSubscription", 'Int'>
 }
     
 

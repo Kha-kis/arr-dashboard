@@ -124,25 +124,25 @@ describe("extractPresets", () => {
 // ============================================================================
 
 describe("resolveRadarrPayload", () => {
-	it("should resolve file preset to standardMovieFormat", () => {
+	it("should resolve file preset to standardMovieFormat (no rename by default)", () => {
 		const selected = radarrPresets({ filePreset: "TRaSH Recommended" });
 
 		const payload = resolveRadarrPayload(RADARR_NAMING, selected);
 
 		expect(payload.standardMovieFormat).toBe("{Movie CleanTitle} {(Release Year)} {imdb-{ImdbId}}");
-		expect(payload.renameMovies).toBe(true);
+		expect(payload.renameMovies).toBeUndefined();
 	});
 
-	it("should resolve folder preset to movieFolderFormat", () => {
+	it("should resolve folder preset to movieFolderFormat (no rename by default)", () => {
 		const selected = radarrPresets({ folderPreset: "Plex" });
 
 		const payload = resolveRadarrPayload(RADARR_NAMING, selected);
 
 		expect(payload.movieFolderFormat).toBe("{Movie Title} ({Release Year})");
-		expect(payload.renameMovies).toBe(true);
+		expect(payload.renameMovies).toBeUndefined();
 	});
 
-	it("should resolve both presets together", () => {
+	it("should resolve both presets together (no rename by default)", () => {
 		const selected = radarrPresets({
 			filePreset: "TRaSH Recommended",
 			folderPreset: "TRaSH Recommended",
@@ -152,7 +152,24 @@ describe("resolveRadarrPayload", () => {
 
 		expect(payload.standardMovieFormat).toBeDefined();
 		expect(payload.movieFolderFormat).toBeDefined();
+		expect(payload.renameMovies).toBeUndefined();
+	});
+
+	it("should set renameMovies=true when enableRename is true", () => {
+		const selected = radarrPresets({ filePreset: "TRaSH Recommended" });
+
+		const payload = resolveRadarrPayload(RADARR_NAMING, selected, true);
+
+		expect(payload.standardMovieFormat).toBeDefined();
 		expect(payload.renameMovies).toBe(true);
+	});
+
+	it("should set renameMovies=false when enableRename is false", () => {
+		const selected = radarrPresets({ filePreset: "TRaSH Recommended" });
+
+		const payload = resolveRadarrPayload(RADARR_NAMING, selected, false);
+
+		expect(payload.renameMovies).toBe(false);
 	});
 
 	it("should return empty payload with no renameMovies when nothing selected", () => {
@@ -178,7 +195,7 @@ describe("resolveRadarrPayload", () => {
 // ============================================================================
 
 describe("resolveSonarrPayload", () => {
-	it("should resolve all 5 Sonarr preset fields", () => {
+	it("should resolve all 5 Sonarr preset fields (no rename by default)", () => {
 		const selected = sonarrPresets({
 			standardEpisodePreset: "Default",
 			dailyEpisodePreset: "Default",
@@ -194,17 +211,33 @@ describe("resolveSonarrPayload", () => {
 		expect(payload.animeEpisodeFormat).toBe("S{season:00}E{episode:00} - {absolute:000}");
 		expect(payload.seriesFolderFormat).toBe("{Series TitleYear}");
 		expect(payload.seasonFolderFormat).toBe("Season {season:00}");
-		expect(payload.renameEpisodes).toBe(true);
+		expect(payload.renameEpisodes).toBeUndefined();
 	});
 
-	it("should resolve partial selection (only standard episode)", () => {
+	it("should resolve partial selection (only standard episode, no rename by default)", () => {
 		const selected = sonarrPresets({ standardEpisodePreset: "Default" });
 
 		const payload = resolveSonarrPayload(SONARR_NAMING, selected);
 
 		expect(payload.standardEpisodeFormat).toBeDefined();
 		expect(payload.dailyEpisodeFormat).toBeUndefined();
+		expect(payload.renameEpisodes).toBeUndefined();
+	});
+
+	it("should set renameEpisodes=true when enableRename is true", () => {
+		const selected = sonarrPresets({ standardEpisodePreset: "Default" });
+
+		const payload = resolveSonarrPayload(SONARR_NAMING, selected, true);
+
 		expect(payload.renameEpisodes).toBe(true);
+	});
+
+	it("should set renameEpisodes=false when enableRename is false", () => {
+		const selected = sonarrPresets({ standardEpisodePreset: "Default" });
+
+		const payload = resolveSonarrPayload(SONARR_NAMING, selected, false);
+
+		expect(payload.renameEpisodes).toBe(false);
 	});
 
 	it("should return empty payload when all presets are null", () => {

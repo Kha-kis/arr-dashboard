@@ -171,27 +171,42 @@ export async function registerQualityProfileRoutes(
 		// Load quality profile groups for group-name enrichment (soft failure — groups are optional)
 		let profileGroupMap = new Map<string, string>(); // trash_id → group name
 		try {
-			const groups = await cacheManager.get<TrashQualityProfileGroup[]>(
-				serviceType,
-				"QUALITY_PROFILE_GROUPS",
-			);
-			if (groups) {
-				for (const group of groups) {
-					for (const trashId of Object.values(group.profiles)) {
-						profileGroupMap.set(trashId, group.name);
-					}
+			let groups: TrashQualityProfileGroup[] | null = null;
+			try {
+				groups = await cacheManager.get<TrashQualityProfileGroup[]>(
+					serviceType,
+					"QUALITY_PROFILE_GROUPS",
+				);
+			} catch (error) {
+				if (error instanceof CacheCorruptionError) {
+					request.log.warn(
+						{ serviceType },
+						"Quality profile groups cache corrupted — will re-fetch from GitHub",
+					);
+				} else {
+					throw error;
+				}
+			}
+
+			// Auto-fetch from GitHub on cache miss or stale (mirrors QUALITY_PROFILES pattern above)
+			if (!groups || !(await cacheManager.isFresh(serviceType, "QUALITY_PROFILE_GROUPS"))) {
+				const { fetcher } = await getServices(request.currentUser!.id);
+				groups = await fetcher.fetchQualityProfileGroups(serviceType);
+				await cacheManager.set(serviceType, "QUALITY_PROFILE_GROUPS", groups);
+			}
+
+			for (const group of groups) {
+				for (const trashId of Object.values(group.profiles)) {
+					profileGroupMap.set(trashId, group.name);
 				}
 			}
 		} catch (error) {
-			if (error instanceof CacheCorruptionError) {
-				request.log.warn(
-					{ serviceType },
-					"Quality profile groups cache corrupted — profiles will render ungrouped",
-				);
-				profileGroupMap = new Map();
-			} else {
-				throw error;
-			}
+			// Groups are optional enrichment — never a hard error
+			request.log.warn(
+				{ serviceType, err: error },
+				"Failed to load quality profile groups — profiles will render ungrouped",
+			);
+			profileGroupMap = new Map();
 		}
 
 		// Transform profiles for UI display

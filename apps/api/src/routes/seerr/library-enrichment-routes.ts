@@ -10,6 +10,7 @@ import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { requireSeerrClient } from "../../lib/seerr/seerr-client.js";
 import { validateRequest } from "../../lib/utils/validate.js";
+import { runWithConcurrency } from "./lib/enrichment-helpers.js";
 
 const instanceIdParams = z.object({ instanceId: z.string().min(1) });
 
@@ -35,34 +36,6 @@ const MAX_BATCH_SIZE = 100;
 
 /** Concurrency limit for parallel Seerr calls */
 const CONCURRENCY_LIMIT = 10;
-
-/**
- * Run an array of async functions with bounded concurrency.
- * Returns results in the same order as the input.
- */
-async function runWithConcurrency<T>(
-	tasks: (() => Promise<T>)[],
-	limit: number,
-): Promise<PromiseSettledResult<T>[]> {
-	const results: PromiseSettledResult<T>[] = new Array(tasks.length);
-	let nextIndex = 0;
-
-	async function runNext(): Promise<void> {
-		while (nextIndex < tasks.length) {
-			const index = nextIndex++;
-			try {
-				const value = await tasks[index]!();
-				results[index] = { status: "fulfilled", value };
-			} catch (reason) {
-				results[index] = { status: "rejected", reason };
-			}
-		}
-	}
-
-	const workers = Array.from({ length: Math.min(limit, tasks.length) }, () => runNext());
-	await Promise.all(workers);
-	return results;
-}
 
 export async function registerLibraryEnrichmentRoutes(
 	app: FastifyInstance,
@@ -114,9 +87,11 @@ export async function registerLibraryEnrichmentRoutes(
 
 		// Fetch open issue counts (single paginated walk)
 		let issueCounts = new Map<string, number>();
+		let issueCountsAvailable = true;
 		try {
 			issueCounts = await client.getOpenIssueCounts();
 		} catch (err) {
+			issueCountsAvailable = false;
 			request.log.warn({ err }, "Failed to fetch Seerr issue counts for library enrichment");
 		}
 
@@ -148,7 +123,11 @@ export async function registerLibraryEnrichmentRoutes(
 			);
 		}
 
-		const response: LibraryEnrichmentResponse = { items };
+		const response: LibraryEnrichmentResponse = {
+			items,
+			...(!issueCountsAvailable ? { issueCountsAvailable: false } : {}),
+			...(enrichmentFailures > 0 ? { enrichmentFailures } : {}),
+		};
 		return reply.send(response);
 	});
 }
