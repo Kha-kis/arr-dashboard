@@ -139,15 +139,12 @@ interface TestResult {
 // ============================================================================
 
 async function fetchQueue(instance: ArrInstance): Promise<QueueResponse> {
-	const response = await fetch(
-		`${instance.url}/api/${instance.apiVersion}/queue?pageSize=100`,
-		{
-			headers: {
-				"X-Api-Key": instance.apiKey,
-				Accept: "application/json",
-			},
-		}
-	);
+	const response = await fetch(`${instance.url}/api/${instance.apiVersion}/queue?pageSize=100`, {
+		headers: {
+			"X-Api-Key": instance.apiKey,
+			Accept: "application/json",
+		},
+	});
 
 	if (!response.ok) {
 		throw new Error(`${response.status} ${response.statusText}`);
@@ -170,9 +167,11 @@ async function testInstance(instance: ArrInstance): Promise<TestResult> {
 	};
 
 	// Skip if no API key provided
-	if (instance.apiKey === "YOUR_SONARR_API_KEY" ||
+	if (
+		instance.apiKey === "YOUR_SONARR_API_KEY" ||
 		instance.apiKey === "YOUR_RADARR_API_KEY" ||
-		!instance.apiKey) {
+		!instance.apiKey
+	) {
 		result.error = "API key not configured";
 		return result;
 	}
@@ -205,8 +204,8 @@ async function testInstance(instance: ArrInstance): Promise<TestResult> {
 
 				// Check auto-import eligibility
 				const allText = statusMessages.join(" ").toLowerCase();
-				const hasSafe = AUTO_IMPORT_SAFE_KEYWORDS.some(k => allText.includes(k));
-				const neverMatch = AUTO_IMPORT_NEVER_KEYWORDS.find(k => allText.includes(k));
+				const hasSafe = AUTO_IMPORT_SAFE_KEYWORDS.some((k) => allText.includes(k));
+				const neverMatch = AUTO_IMPORT_NEVER_KEYWORDS.find((k) => allText.includes(k));
 
 				let autoImportEligible = false;
 				let autoImportReason = "";
@@ -243,9 +242,14 @@ async function testInstance(instance: ArrInstance): Promise<TestResult> {
 }
 
 function printResult(result: TestResult) {
-	const emoji = result.instance.service === "sonarr" ? "📺" :
-				  result.instance.service === "radarr" ? "🎬" :
-				  result.instance.service === "lidarr" ? "🎵" : "📚";
+	const emoji =
+		result.instance.service === "sonarr"
+			? "📺"
+			: result.instance.service === "radarr"
+				? "🎬"
+				: result.instance.service === "lidarr"
+					? "🎵"
+					: "📚";
 
 	console.log(`\n${"═".repeat(70)}`);
 	console.log(`${emoji} ${result.instance.name} (${result.instance.url})`);
@@ -262,10 +266,16 @@ function printResult(result: TestResult) {
 	if (result.stateBreakdown.size > 0) {
 		console.log("\n   📊 State Breakdown:");
 		for (const [state, count] of result.stateBreakdown) {
-			const stateEmoji = state === "importPending" ? "⏳" :
-							   state === "importBlocked" ? "🚫" :
-							   state === "importFailed" ? "❌" :
-							   state === "downloading" ? "⬇️" : "📦";
+			const stateEmoji =
+				state === "importPending"
+					? "⏳"
+					: state === "importBlocked"
+						? "🚫"
+						: state === "importFailed"
+							? "❌"
+							: state === "downloading"
+								? "⬇️"
+								: "📦";
 			console.log(`      ${stateEmoji} ${state}: ${count}`);
 		}
 	}
@@ -278,7 +288,7 @@ function printResult(result: TestResult) {
 	console.log(`      ✨ Auto-Import Eligible: ${result.autoImportEligible}`);
 
 	// Show eligible items
-	const eligibleItems = result.items.filter(i => i.autoImportEligible);
+	const eligibleItems = result.items.filter((i) => i.autoImportEligible);
 	if (eligibleItems.length > 0) {
 		console.log("\n   ✨ Auto-Import Eligible Items:");
 		for (const item of eligibleItems) {
@@ -291,7 +301,7 @@ function printResult(result: TestResult) {
 
 	// Show pending/blocked items that are NOT eligible (first 3)
 	const notEligibleItems = result.items.filter(
-		i => !i.autoImportEligible && (i.state === "importPending" || i.state === "importBlocked")
+		(i) => !i.autoImportEligible && (i.state === "importPending" || i.state === "importBlocked"),
 	);
 	if (notEligibleItems.length > 0) {
 		console.log(`\n   ⚠️  Pending/Blocked but NOT eligible (${notEligibleItems.length} items):`);
@@ -347,7 +357,7 @@ async function main() {
 		}
 	}
 
-	console.log(`   Instances tested: ${results.filter(r => r.success).length}/${results.length}`);
+	console.log(`   Instances tested: ${results.filter((r) => r.success).length}/${results.length}`);
 	console.log(`   Total importPending: ${totalPending}`);
 	console.log(`   Total importBlocked: ${totalBlocked}`);
 	console.log(`   Total importFailed: ${totalFailed}`);

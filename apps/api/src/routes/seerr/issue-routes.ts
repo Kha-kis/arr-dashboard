@@ -6,11 +6,15 @@
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import { logSeerrAction } from "../../lib/seerr/seerr-action-logger.js";
 import { requireSeerrClient } from "../../lib/seerr/seerr-client.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 const instanceIdParams = z.object({ instanceId: z.string().min(1) });
-const issueIdParams = z.object({ instanceId: z.string().min(1), issueId: z.coerce.number().int().positive() });
+const issueIdParams = z.object({
+	instanceId: z.string().min(1),
+	issueId: z.coerce.number().int().positive(),
+});
 
 const listIssuesQuery = z.object({
 	take: z.coerce.number().int().min(1).max(100).default(20),
@@ -40,15 +44,44 @@ export async function registerIssueRoutes(app: FastifyInstance, _opts: FastifyPl
 	app.post("/:instanceId/:issueId/comment", async (request) => {
 		const { instanceId, issueId } = validateRequest(issueIdParams, request.params);
 		const { message } = validateRequest(addCommentBody, request.body);
-		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
-		return client.addIssueComment(issueId, message);
+		const userId = request.currentUser!.id;
+		const client = await requireSeerrClient(app, userId, instanceId);
+		try {
+			const result = await client.addIssueComment(issueId, message);
+			logSeerrAction(app, request.log, {
+				instanceId, userId, action: "add_issue_comment",
+				targetType: "issue", targetId: String(issueId),
+			});
+			return result;
+		} catch (err) {
+			logSeerrAction(app, request.log, {
+				instanceId, userId, action: "add_issue_comment",
+				targetType: "issue", targetId: String(issueId), success: false,
+			});
+			throw err;
+		}
 	});
 
 	// PUT /api/seerr/issues/:instanceId/:issueId — Update issue status
 	app.put("/:instanceId/:issueId", async (request) => {
 		const { instanceId, issueId } = validateRequest(issueIdParams, request.params);
 		const { status } = validateRequest(updateStatusBody, request.body);
-		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
-		return client.updateIssueStatus(issueId, status);
+		const userId = request.currentUser!.id;
+		const client = await requireSeerrClient(app, userId, instanceId);
+		try {
+			const result = await client.updateIssueStatus(issueId, status);
+			logSeerrAction(app, request.log, {
+				instanceId, userId, action: "update_issue_status",
+				targetType: "issue", targetId: String(issueId),
+				detail: { status },
+			});
+			return result;
+		} catch (err) {
+			logSeerrAction(app, request.log, {
+				instanceId, userId, action: "update_issue_status",
+				targetType: "issue", targetId: String(issueId), success: false,
+			});
+			throw err;
+		}
 	});
 }

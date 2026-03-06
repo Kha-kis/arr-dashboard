@@ -263,9 +263,7 @@ export function VisualConditionBuilder({ onPatternChange, onClose }: VisualCondi
 
 			// Check if any condition uses anchor-based operators (notContains, isEmpty)
 			// These cannot be wrapped in lookaheads as the anchors break
-			const hasAnchorOperators = validConditions.some((c) =>
-				ANCHOR_OPERATORS.includes(c.operator),
-			);
+			const hasAnchorOperators = validConditions.some((c) => ANCHOR_OPERATORS.includes(c.operator));
 
 			if (hasAnchorOperators) {
 				// Cannot synthesize - return a marker pattern that signals function-based matching needed
@@ -297,14 +295,13 @@ export function VisualConditionBuilder({ onPatternChange, onClose }: VisualCondi
 				hasPositionalAnd: false,
 				hasMixedCaseSensitivity: false,
 			};
-		} else {
-			// For OR, just join with pipe
-			return {
-				generatedPattern: patterns.join("|"),
-				hasPositionalAnd: false,
-				hasMixedCaseSensitivity: false,
-			};
 		}
+		// For OR, just join with pipe
+		return {
+			generatedPattern: patterns.join("|"),
+			hasPositionalAnd: false,
+			hasMixedCaseSensitivity: false,
+		};
 	}, [conditions, logicOperator]);
 
 	// Apply generated pattern
@@ -403,7 +400,9 @@ export function VisualConditionBuilder({ onPatternChange, onClose }: VisualCondi
 						<div key={condition.id} className="rounded border border-border/30 p-3 space-y-3">
 							{/* Header */}
 							<div className="flex items-center justify-between">
-								<span className="text-xs font-medium text-muted-foreground">Condition {index + 1}</span>
+								<span className="text-xs font-medium text-muted-foreground">
+									Condition {index + 1}
+								</span>
 								{conditions.length > 1 && (
 									<Button size="sm" variant="ghost" onClick={() => removeCondition(condition.id)}>
 										<Trash2 className="h-4 w-4" />
@@ -414,7 +413,9 @@ export function VisualConditionBuilder({ onPatternChange, onClose }: VisualCondi
 							{/* Field Selection */}
 							<div className="grid grid-cols-1 md:grid-cols-2 gap-3">
 								<div>
-									<label className="block text-xs font-medium text-muted-foreground mb-1">Field</label>
+									<label className="block text-xs font-medium text-muted-foreground mb-1">
+										Field
+									</label>
 									<NativeSelect
 										value={condition.field}
 										onChange={(e) => updateCondition(condition.id, { field: e.target.value })}
@@ -426,12 +427,16 @@ export function VisualConditionBuilder({ onPatternChange, onClose }: VisualCondi
 											</SelectOption>
 										))}
 									</NativeSelect>
-									{field && <p className="text-xs text-muted-foreground mt-1">{field.description}</p>}
+									{field && (
+										<p className="text-xs text-muted-foreground mt-1">{field.description}</p>
+									)}
 								</div>
 
 								{/* Operator Selection */}
 								<div>
-									<label className="block text-xs font-medium text-muted-foreground mb-1">Operator</label>
+									<label className="block text-xs font-medium text-muted-foreground mb-1">
+										Operator
+									</label>
 									<NativeSelect
 										value={condition.operator}
 										onChange={(e) => updateCondition(condition.id, { operator: e.target.value })}
@@ -449,7 +454,9 @@ export function VisualConditionBuilder({ onPatternChange, onClose }: VisualCondi
 							{/* Value Input */}
 							{showValueInput && (
 								<div>
-									<label className="block text-xs font-medium text-muted-foreground mb-1">Value</label>
+									<label className="block text-xs font-medium text-muted-foreground mb-1">
+										Value
+									</label>
 									<Input
 										type="text"
 										value={condition.value}

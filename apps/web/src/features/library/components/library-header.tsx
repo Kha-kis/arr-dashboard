@@ -7,18 +7,21 @@ import {
 	BookOpen,
 	Film,
 	Filter,
+	HardDriveDownload,
 	Library as LibraryIcon,
 	Music,
 	RefreshCw,
 	Tv,
 } from "lucide-react";
+import { useState } from "react";
+import { FilterSelect, GlassmorphicCard } from "../../../components/layout";
 import { Button, Input } from "../../../components/ui";
-import { GlassmorphicCard, FilterSelect } from "../../../components/layout";
-import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { usePlexAccounts, usePlexScanMutation, usePlexSections } from "../../../hooks/api/usePlex";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
-import type { SortByValue, SortOrderValue } from "../hooks/use-library-filters";
 import type { SyncStatus } from "../hooks/use-library-data";
+import type { SortByValue, SortOrderValue } from "../hooks/use-library-filters";
 
 /**
  * Service filter options for the library
@@ -106,6 +109,12 @@ interface LibraryHeaderProps {
 	syncStatus: SyncStatus | null;
 	/** Whether any instance is currently syncing */
 	isSyncing: boolean;
+	/** Currently selected "watched by" filter user */
+	watchedByFilter?: string;
+	/** Handler for "watched by" filter changes */
+	onWatchedByFilterChange?: (value: string) => void;
+	/** Whether Plex instances are configured */
+	hasPlexInstances?: boolean;
 }
 
 /**
@@ -147,8 +156,25 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 	instanceOptions,
 	syncStatus,
 	isSyncing,
+	watchedByFilter = "all",
+	onWatchedByFilterChange,
+	hasPlexInstances = false,
 }) => {
 	const { gradient: themeGradient } = useThemeGradient();
+	const plexSectionsQuery = usePlexSections();
+	const plexScanMutation = usePlexScanMutation();
+	const [scanDropdownOpen, setScanDropdownOpen] = useState(false);
+
+	const plexSections = plexSectionsQuery.data?.sections ?? [];
+	const hasPlexSections = plexSections.length > 0;
+	const plexGradient = SERVICE_GRADIENTS.plex;
+	const plexAccountsQuery = usePlexAccounts(hasPlexInstances);
+	const plexUsers = plexAccountsQuery.data?.users ?? [];
+
+	const handleScanSection = (instanceId: string, sectionId: string) => {
+		plexScanMutation.mutate({ instanceId, sectionId });
+		setScanDropdownOpen(false);
+	};
 
 	return (
 		<header className="space-y-6">
@@ -185,46 +211,85 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 						</p>
 					</div>
 
-					{/* Sync Status Indicator */}
-					{syncStatus && (
-						<div
-							className="flex items-center gap-2 rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs px-4 py-2 text-sm"
-						>
-							{isSyncing ? (
-								<>
-									<RefreshCw
-										className="h-4 w-4 animate-spin"
-										style={{ color: themeGradient.from }}
-									/>
-									<span className="text-muted-foreground">Syncing...</span>
-								</>
-							) : (
-								<>
-									<RefreshCw className="h-4 w-4 text-muted-foreground" />
-									<span className="text-muted-foreground">
-										<span style={{ color: themeGradient.from }} className="font-medium">
-											{syncStatus.totalCachedItems.toLocaleString()}
-										</span>
-										{" items"}
-										{syncStatus.lastSync && (
-											<span className="text-muted-foreground/70">
-												{" • "}Updated {formatSyncTime(syncStatus.lastSync)}
-											</span>
+					<div className="flex items-center gap-3">
+						{/* Plex Scan Button */}
+						{hasPlexSections && (
+							<div className="relative">
+								<Button
+									variant="secondary"
+									size="sm"
+									onClick={() => setScanDropdownOpen(!scanDropdownOpen)}
+									disabled={plexScanMutation.isPending}
+									className="relative overflow-hidden"
+								>
+									<HardDriveDownload
+										className={cn(
+											"h-4 w-4 mr-2",
+											plexScanMutation.isPending && "animate-pulse",
 										)}
-									</span>
-								</>
-							)}
-						</div>
-					)}
+										style={{ color: plexGradient.from }}
+									/>
+									{plexScanMutation.isPending ? "Scanning..." : "Scan Plex"}
+								</Button>
+								{scanDropdownOpen && (
+									<div className="absolute right-0 top-full mt-1 z-dropdown rounded-lg border border-border/50 bg-card/95 backdrop-blur-sm shadow-lg min-w-[200px]">
+										<div className="p-1">
+											{plexSections.map((section) => (
+												<button
+													key={`${section.instanceId}:${section.sectionId}`}
+													type="button"
+													onClick={() =>
+														handleScanSection(section.instanceId, section.sectionId)
+													}
+													className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors"
+												>
+													<span className="truncate">{section.sectionTitle}</span>
+													<span className="text-xs text-muted-foreground ml-auto shrink-0">
+														{section.mediaType}
+													</span>
+												</button>
+											))}
+										</div>
+									</div>
+								)}
+							</div>
+						)}
+
+						{/* Sync Status Indicator */}
+						{syncStatus && (
+							<div className="flex items-center gap-2 rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs px-4 py-2 text-sm">
+								{isSyncing ? (
+									<>
+										<RefreshCw
+											className="h-4 w-4 animate-spin"
+											style={{ color: themeGradient.from }}
+										/>
+										<span className="text-muted-foreground">Syncing...</span>
+									</>
+								) : (
+									<>
+										<RefreshCw className="h-4 w-4 text-muted-foreground" />
+										<span className="text-muted-foreground">
+											<span style={{ color: themeGradient.from }} className="font-medium">
+												{syncStatus.totalCachedItems.toLocaleString()}
+											</span>
+											{" items"}
+											{syncStatus.lastSync && (
+												<span className="text-muted-foreground/70">
+													{" • "}Updated {formatSyncTime(syncStatus.lastSync)}
+												</span>
+											)}
+										</span>
+									</>
+								)}
+							</div>
+						)}
+					</div>
 				</div>
 			</div>
 
 			{/* Filters Card */}
-			<GlassmorphicCard
-				padding="none"
-				animationDelay={100}
-				className="overflow-hidden"
-			>
+			<GlassmorphicCard padding="none" animationDelay={100} className="overflow-hidden">
 				{/* Header */}
 				<div className="flex items-center gap-3 px-6 py-4 border-b border-border/50">
 					<div
@@ -260,7 +325,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 										onClick={() => onServiceFilterChange(option.value)}
 										className={cn(
 											"relative flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all duration-300",
-											isActive ? "text-white" : "text-muted-foreground hover:text-foreground"
+											isActive ? "text-white" : "text-muted-foreground hover:text-foreground",
 										)}
 									>
 										{isActive && (
@@ -299,9 +364,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 							options={[
 								{ value: "all", label: "All instances" },
 								...instanceOptions
-									.filter(
-										(option) => serviceFilter === "all" || option.service === serviceFilter,
-									)
+									.filter((option) => serviceFilter === "all" || option.service === serviceFilter)
 									.map((option) => ({
 										value: option.id,
 										label: option.label,
@@ -335,6 +398,23 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 							}))}
 							className="min-w-[130px]"
 						/>
+
+						{/* Watched By filter (Plex) */}
+						{plexUsers.length > 0 && onWatchedByFilterChange && (
+							<FilterSelect
+								label="Watched by"
+								value={watchedByFilter}
+								onChange={onWatchedByFilterChange}
+								options={[
+									{ value: "all", label: "All users" },
+									...plexUsers.map((user) => ({
+										value: user,
+										label: user,
+									})),
+								]}
+								className="min-w-[140px]"
+							/>
+						)}
 
 						{/* Sort Controls */}
 						<div className="flex items-end gap-2 ml-auto">

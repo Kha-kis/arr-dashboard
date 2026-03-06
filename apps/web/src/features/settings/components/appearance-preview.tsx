@@ -5,9 +5,9 @@
  * Extracted from appearance-tab.tsx for maintainability.
  */
 
-import { Bell, Play, Calendar, TrendingUp } from "lucide-react";
-import { THEME_INFO, type ColorTheme } from "../../../providers/color-theme-provider";
+import { Bell, Calendar, Play, TrendingUp } from "lucide-react";
 import type { ThemeGradient } from "../../../lib/theme-gradients";
+import { type ColorTheme, THEME_INFO } from "../../../providers/color-theme-provider";
 
 interface PreviewColors {
 	background: string;
@@ -75,25 +75,27 @@ export function getPreviewColors(colorTheme: ColorTheme, isDark: boolean): Previ
 			text: "#333333",
 		};
 	}
-	return isDark ? {
-		background: "#18181b",
-		sidebar: "rgba(24, 24, 27, 0.8)",
-		sidebarBorder: "#27272a",
-		card: "rgba(39, 39, 42, 0.5)",
-		cardHover: "rgba(39, 39, 42, 0.3)",
-		border: "#27272a",
-		textMuted: "#71717a",
-		text: "#a1a1aa",
-	} : {
-		background: "#ffffff",
-		sidebar: "#fafafa",
-		sidebarBorder: "#e4e4e7",
-		card: "#f4f4f5",
-		cardHover: "#fafafa",
-		border: "#e4e4e7",
-		textMuted: "#a1a1aa",
-		text: "#71717a",
-	};
+	return isDark
+		? {
+				background: "#18181b",
+				sidebar: "rgba(24, 24, 27, 0.8)",
+				sidebarBorder: "#27272a",
+				card: "rgba(39, 39, 42, 0.5)",
+				cardHover: "rgba(39, 39, 42, 0.3)",
+				border: "#27272a",
+				textMuted: "#71717a",
+				text: "#a1a1aa",
+			}
+		: {
+				background: "#ffffff",
+				sidebar: "#fafafa",
+				sidebarBorder: "#e4e4e7",
+				card: "#f4f4f5",
+				cardHover: "#fafafa",
+				border: "#e4e4e7",
+				textMuted: "#a1a1aa",
+				text: "#71717a",
+			};
 }
 
 interface LivePreviewProps {
@@ -171,10 +173,7 @@ export const LivePreview = ({
 									className="rounded-lg p-3 transition-colors duration-500"
 									style={{ backgroundColor: previewColors.card }}
 								>
-									<Icon
-										className="h-4 w-4 mb-2"
-										style={{ color: activeGradient.from }}
-									/>
+									<Icon className="h-4 w-4 mb-2" style={{ color: activeGradient.from }} />
 									<div
 										className="h-2 w-8 rounded mb-1"
 										style={{ backgroundColor: previewColors.cardHover }}
@@ -198,9 +197,10 @@ export const LivePreview = ({
 									<div
 										className="h-8 w-8 rounded-md shrink-0"
 										style={{
-											background: i === 0
-												? `linear-gradient(135deg, ${activeGradient.from}40, ${activeGradient.to}40)`
-												: previewColors.card,
+											background:
+												i === 0
+													? `linear-gradient(135deg, ${activeGradient.from}40, ${activeGradient.to}40)`
+													: previewColors.card,
 										}}
 									/>
 									<div className="flex-1 space-y-1">
@@ -266,14 +266,9 @@ export const LivePreview = ({
 
 			{/* Current theme indicator */}
 			<div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
-				<span>
-					{theme === "system" ? "System" : theme === "dark" ? "Dark" : "Light"} mode
-				</span>
+				<span>{theme === "system" ? "System" : theme === "dark" ? "Dark" : "Light"} mode</span>
 				<span className="flex items-center gap-1.5">
-					<span
-						className="h-2 w-2 rounded-full"
-						style={{ backgroundColor: activeGradient.from }}
-					/>
+					<span className="h-2 w-2 rounded-full" style={{ backgroundColor: activeGradient.from }} />
 					{THEME_INFO[colorTheme].label} theme
 				</span>
 			</div>

@@ -1,14 +1,11 @@
 "use client";
 
-import { User, Key, Calendar, Check, AlertCircle, ExternalLink, Loader2 } from "lucide-react";
+import { AlertCircle, Calendar, Check, ExternalLink, Key, Loader2, User } from "lucide-react";
+import { GlassmorphicCard, PremiumSection } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
-import {
-	PremiumSection,
-	GlassmorphicCard,
-} from "../../../components/layout";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 /**
  * Account form state
@@ -128,7 +125,9 @@ export const AccountTab = ({
 									}))
 								}
 								placeholder={
-									currentUser?.hasTmdbApiKey ? "••••••••••••••••" : "Enter your TMDB API Read Access Token"
+									currentUser?.hasTmdbApiKey
+										? "••••••••••••••••"
+										: "Enter your TMDB API Read Access Token"
 								}
 								className="bg-card/30 border-border/50"
 							/>
@@ -140,15 +139,20 @@ export const AccountTab = ({
 									</span>
 								) : (
 									<>
-										Use the <strong className="text-foreground">API Read Access Token</strong> (not API Key) from{" "}
+										Use the <strong className="text-foreground">API Read Access Token</strong> (not
+										API Key) from{" "}
 										<a
 											href="https://www.themoviedb.org/settings/api"
 											target="_blank"
 											rel="noopener noreferrer"
 											className="inline-flex items-center gap-1 transition-colors"
 											style={{ color: themeGradient.from }}
-											onMouseEnter={(e) => { e.currentTarget.style.textDecoration = 'underline'; }}
-											onMouseLeave={(e) => { e.currentTarget.style.textDecoration = 'none'; }}
+											onMouseEnter={(e) => {
+												e.currentTarget.style.textDecoration = "underline";
+											}}
+											onMouseLeave={(e) => {
+												e.currentTarget.style.textDecoration = "none";
+											}}
 										>
 											themoviedb.org/settings/api
 											<ExternalLink className="h-3 w-3" />
@@ -184,9 +188,13 @@ export const AccountTab = ({
 							<div
 								className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm animate-in fade-in slide-in-from-bottom-2"
 								style={{
-									backgroundColor: updateResult.success ? SEMANTIC_COLORS.success.bg : SEMANTIC_COLORS.error.bg,
+									backgroundColor: updateResult.success
+										? SEMANTIC_COLORS.success.bg
+										: SEMANTIC_COLORS.error.bg,
 									border: `1px solid ${updateResult.success ? SEMANTIC_COLORS.success.border : SEMANTIC_COLORS.error.border}`,
-									color: updateResult.success ? SEMANTIC_COLORS.success.text : SEMANTIC_COLORS.error.text,
+									color: updateResult.success
+										? SEMANTIC_COLORS.success.text
+										: SEMANTIC_COLORS.error.text,
 								}}
 							>
 								{updateResult.success ? (

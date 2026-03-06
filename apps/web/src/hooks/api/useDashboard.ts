@@ -1,17 +1,17 @@
 ﻿"use client";
 
-import { useQuery } from "@tanstack/react-query";
 import type {
-	MultiInstanceQueueResponse,
-	MultiInstanceHistoryResponse,
-	MultiInstanceCalendarResponse,
 	DashboardStatisticsResponse,
+	MultiInstanceCalendarResponse,
+	MultiInstanceHistoryResponse,
+	MultiInstanceQueueResponse,
 } from "@arr/shared";
+import { useQuery } from "@tanstack/react-query";
 import {
-	fetchMultiInstanceQueue,
-	fetchMultiInstanceHistory,
-	fetchMultiInstanceCalendar,
 	fetchDashboardStatistics,
+	fetchMultiInstanceCalendar,
+	fetchMultiInstanceHistory,
+	fetchMultiInstanceQueue,
 } from "../../lib/api-client/dashboard";
 
 export const useMultiInstanceQueueQuery = () =>

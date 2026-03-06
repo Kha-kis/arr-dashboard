@@ -4,10 +4,10 @@ import * as oauth from "oauth4webapi";
 import { z } from "zod";
 import { warmConnectionsForUser } from "../lib/arr/connection-warmer.js";
 import { OIDCProvider } from "../lib/auth/oidc-provider.js";
-import { extractSessionMetadata } from "../lib/auth/session-metadata.js";
 import { normalizeIssuerUrl } from "../lib/auth/oidc-utils.js";
-import { validateRequest } from "../lib/utils/validate.js";
+import { getSessionMetadata } from "../lib/auth/session-metadata.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
+import { validateRequest } from "../lib/utils/validate.js";
 
 /**
  * In-memory storage for OIDC states and nonces (production: use Redis)
@@ -47,6 +47,9 @@ const oidcSetupSchema = z.object({
 	scopes: z.string().default("openid,email,profile"),
 });
 
+const OIDC_SETUP_RATE_LIMIT = { max: 5, timeWindow: "1 minute" };
+const OIDC_LOGIN_RATE_LIMIT = { max: 10, timeWindow: "1 minute" };
+
 const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	/**
 	 * GET /auth/oidc/providers
@@ -70,62 +73,81 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * POST /auth/oidc/setup
 	 * Configure OIDC provider during initial setup (only allowed when no users exist)
 	 */
-	app.post("/oidc/setup", async (request, reply) => {
-		const parsed = validateRequest(oidcSetupSchema, request.body);
+	app.post(
+		"/oidc/setup",
+		{ config: { rateLimit: OIDC_SETUP_RATE_LIMIT } },
+		async (request, reply) => {
+			const parsed = validateRequest(oidcSetupSchema, request.body);
 
-		const { displayName, clientId, clientSecret, scopes } = parsed;
+			const { displayName, clientId, clientSecret, scopes } = parsed;
 
-		// Normalize issuer URL to prevent discovery failures
-		let normalizedIssuer: string;
-		try {
-			normalizedIssuer = normalizeIssuerUrl(parsed.issuer);
-			if (normalizedIssuer !== parsed.issuer) {
-				request.log.info(
-					{ original: parsed.issuer, normalized: normalizedIssuer },
-					"Normalized OIDC issuer URL",
-				);
-			}
-		} catch (error) {
-			return reply.status(400).send({
-				error: "Invalid issuer URL",
-				details: getErrorMessage(error, "Could not parse issuer URL"),
-			});
-		}
-
-		// Auto-generate redirect URI if not provided
-		// Use APP_URL for consistent, safe redirect URI generation
-		let redirectUri = parsed.redirectUri;
-		if (!redirectUri) {
-			redirectUri = `${app.config.APP_URL}/auth/oidc/callback`;
-			request.log.info({ redirectUri }, "Auto-generated redirect URI from APP_URL");
-		}
-
-		try {
-			// Use transaction to atomically check user count and create provider
-			// This prevents race condition where two concurrent requests both see userCount === 0
-			const provider = await app.prisma.$transaction(async (tx) => {
-				// Check if any users exist (must be inside transaction for atomicity)
-				const userCount = await tx.user.count();
-				if (userCount > 0) {
-					throw new Error("SETUP_CLOSED");
-				}
-
-				// Encrypt client secret
-				const { value: encryptedClientSecret, iv: clientSecretIv } =
-					app.encryptor.encrypt(clientSecret);
-
-				// Check if provider already exists
-				const existing = await tx.oIDCProvider.findFirst();
-
-				if (existing) {
-					// Update existing provider instead of rejecting
-					// This allows fixing misconfigured OIDC during setup
+			// Normalize issuer URL to prevent discovery failures
+			let normalizedIssuer: string;
+			try {
+				normalizedIssuer = normalizeIssuerUrl(parsed.issuer);
+				if (normalizedIssuer !== parsed.issuer) {
 					request.log.info(
-						{ existingId: existing.id },
-						"Updating existing OIDC provider during setup",
+						{ original: parsed.issuer, normalized: normalizedIssuer },
+						"Normalized OIDC issuer URL",
 					);
-					return await tx.oIDCProvider.update({
-						where: { id: existing.id },
+				}
+			} catch (error) {
+				return reply.status(400).send({
+					error: "Invalid issuer URL",
+					details: getErrorMessage(error, "Could not parse issuer URL"),
+				});
+			}
+
+			// Auto-generate redirect URI if not provided
+			// Use APP_URL (configured env var) as the trusted base URL.
+			// Only fall back to request headers when TRUST_PROXY is enabled (headers are validated by Fastify).
+			let redirectUri = parsed.redirectUri;
+			if (!redirectUri) {
+				redirectUri = `${app.config.APP_URL}/auth/oidc/callback`;
+				request.log.info({ redirectUri }, "Auto-generated redirect URI from APP_URL");
+			}
+
+			try {
+				// Use transaction to atomically check user count and create provider
+				// This prevents race condition where two concurrent requests both see userCount === 0
+				const provider = await app.prisma.$transaction(async (tx) => {
+					// Check if any users exist (must be inside transaction for atomicity)
+					const userCount = await tx.user.count();
+					if (userCount > 0) {
+						throw new Error("SETUP_CLOSED");
+					}
+
+					// Encrypt client secret
+					const { value: encryptedClientSecret, iv: clientSecretIv } =
+						app.encryptor.encrypt(clientSecret);
+
+					// Check if provider already exists
+					const existing = await tx.oIDCProvider.findFirst();
+
+					if (existing) {
+						// Update existing provider instead of rejecting
+						// This allows fixing misconfigured OIDC during setup
+						request.log.info(
+							{ existingId: existing.id },
+							"Updating existing OIDC provider during setup",
+						);
+						return await tx.oIDCProvider.update({
+							where: { id: existing.id },
+							data: {
+								displayName,
+								clientId,
+								encryptedClientSecret,
+								clientSecretIv,
+								issuer: normalizedIssuer,
+								redirectUri,
+								scopes,
+								enabled: true,
+							},
+						});
+					}
+
+					// Create OIDC provider atomically
+					return await tx.oIDCProvider.create({
 						data: {
 							displayName,
 							clientId,
@@ -137,115 +159,106 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							enabled: true,
 						},
 					});
+				});
+
+				return reply.status(201).send({
+					success: true,
+					message: "OIDC provider configured successfully",
+					provider: { displayName: provider.displayName },
+				});
+			} catch (error: unknown) {
+				const errorMessage = getErrorMessage(error);
+				if (errorMessage === "SETUP_CLOSED") {
+					return reply.status(403).send({
+						error:
+							"OIDC setup is only allowed during initial setup. Use the admin panel to configure OIDC providers.",
+					});
 				}
-
-				// Create OIDC provider atomically
-				return await tx.oIDCProvider.create({
-					data: {
-						displayName,
-						clientId,
-						encryptedClientSecret,
-						clientSecretIv,
-						issuer: normalizedIssuer,
-						redirectUri,
-						scopes,
-						enabled: true,
-					},
-				});
-			});
-
-			return reply.status(201).send({
-				success: true,
-				message: "OIDC provider configured successfully",
-				provider: { displayName: provider.displayName },
-			});
-		} catch (error: unknown) {
-			const errorMessage = getErrorMessage(error);
-			if (errorMessage === "SETUP_CLOSED") {
-				return reply.status(403).send({
-					error:
-						"OIDC setup is only allowed during initial setup. Use the admin panel to configure OIDC providers.",
-				});
+				throw error;
 			}
-			throw error;
-		}
-	});
+		},
+	);
 
 	/**
 	 * POST /auth/oidc/login
 	 * Initiates OIDC login flow by generating authorization URL
 	 */
-	app.post("/oidc/login", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
-		// Get OIDC configuration from database
-		const dbProvider = await app.prisma.oIDCProvider.findFirst({
-			where: { enabled: true },
-		});
-
-		if (!dbProvider) {
-			return reply.status(400).send({ error: "OIDC provider not configured or disabled" });
-		}
-
-		// Decrypt client secret
-		const clientSecret = app.encryptor.decrypt({
-			value: dbProvider.encryptedClientSecret,
-			iv: dbProvider.clientSecretIv,
-		});
-
-		const oidcProvider = new OIDCProvider({
-			clientId: dbProvider.clientId,
-			clientSecret,
-			issuer: dbProvider.issuer,
-			redirectUri: dbProvider.redirectUri,
-			scopes: dbProvider.scopes,
-		});
-
-		// Generate state and nonce for CSRF protection
-		const state = randomBytes(32).toString("base64url");
-		const nonce = randomBytes(32).toString("base64url");
-
-		// Generate PKCE code verifier and challenge for authorization code flow protection
-		const codeVerifier = oauth.generateRandomCodeVerifier();
-		const codeChallenge = await oauth.calculatePKCECodeChallenge(codeVerifier);
-
-		// Store state with 15 minute expiration
-		oidcStateStore.set(state, {
-			nonce,
-			codeVerifier,
-			expiresAt: Date.now() + 15 * 60 * 1000,
-		});
-
-		try {
-			request.log.info({ ip: request.ip }, "OIDC login initiated");
-			const authorizationUrl = await oidcProvider.getAuthorizationUrl(state, nonce, codeChallenge);
-			request.log.debug(
-				{ redirectUri: dbProvider.redirectUri },
-				"Generated OIDC authorization URL",
-			);
-			return reply.send({ authorizationUrl });
-		} catch (error) {
-			const errMsg = getErrorMessage(error);
-			request.log.error(
-				{ err: error, errorMessage: errMsg },
-				"Failed to generate OIDC authorization URL",
-			);
-			return reply.status(500).send({
-				error: "Failed to initiate OIDC login",
-				details: errMsg,
-				hint: "Check the OIDC provider configuration in Settings > Authentication. Common issues: incorrect issuer URL, provider not accessible from server.",
+	app.post(
+		"/oidc/login",
+		{ config: { rateLimit: OIDC_LOGIN_RATE_LIMIT } },
+		async (request, reply) => {
+			// Get OIDC configuration from database
+			const dbProvider = await app.prisma.oIDCProvider.findFirst({
+				where: { enabled: true },
 			});
-		}
-	});
+
+			if (!dbProvider) {
+				return reply.status(400).send({ error: "OIDC provider not configured or disabled" });
+			}
+
+			// Decrypt client secret
+			const clientSecret = app.encryptor.decrypt({
+				value: dbProvider.encryptedClientSecret,
+				iv: dbProvider.clientSecretIv,
+			});
+
+			const oidcProvider = new OIDCProvider({
+				clientId: dbProvider.clientId,
+				clientSecret,
+				issuer: dbProvider.issuer,
+				redirectUri: dbProvider.redirectUri,
+				scopes: dbProvider.scopes,
+			});
+
+			// Generate state and nonce for CSRF protection
+			const state = randomBytes(32).toString("base64url");
+			const nonce = randomBytes(32).toString("base64url");
+
+			// Generate PKCE code verifier and challenge for authorization code flow protection
+			const codeVerifier = oauth.generateRandomCodeVerifier();
+			const codeChallenge = await oauth.calculatePKCECodeChallenge(codeVerifier);
+
+			// Store state with 15 minute expiration
+			oidcStateStore.set(state, {
+				nonce,
+				codeVerifier,
+				expiresAt: Date.now() + 15 * 60 * 1000,
+			});
+
+			try {
+				request.log.info({ ip: request.ip }, "OIDC login initiated");
+				const authorizationUrl = await oidcProvider.getAuthorizationUrl(
+					state,
+					nonce,
+					codeChallenge,
+				);
+				request.log.debug(
+					{ redirectUri: dbProvider.redirectUri },
+					"Generated OIDC authorization URL",
+				);
+				return reply.send({ authorizationUrl });
+			} catch (error) {
+				const errMsg = getErrorMessage(error);
+				request.log.error(
+					{ err: error, errorMessage: errMsg },
+					"Failed to generate OIDC authorization URL",
+				);
+				return reply.status(500).send({
+					error: "Failed to initiate OIDC login",
+					details: errMsg,
+					hint: "Check the OIDC provider configuration in Settings > Authentication. Common issues: incorrect issuer URL, provider not accessible from server.",
+				});
+			}
+		},
+	);
 
 	/**
 	 * GET /auth/oidc/callback
 	 * Handles OIDC callback after user authorization
 	 */
-	app.get("/oidc/callback", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
+	app.get("/oidc/callback", async (request, reply) => {
 		const queryParams = request.query as Record<string, unknown>;
-		request.log.info(
-			{ hasCode: "code" in queryParams },
-			"OIDC callback received",
-		);
+		request.log.info({ hasCode: "code" in queryParams }, "OIDC callback received");
 
 		// Check if OIDC provider returned an error
 		if (queryParams.error) {
@@ -266,9 +279,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				{ errors: parsed.error.flatten(), query: request.query },
 				"Invalid callback parameters",
 			);
-			return reply
-				.status(400)
-				.send({ error: "Invalid callback parameters", details: parsed.error.flatten() });
+			return reply.status(400).send({ error: "Invalid callback parameters" });
 		}
 
 		const { code, state } = parsed.data;
@@ -437,7 +448,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			}
 
 			// Create session with metadata
-			const metadata = extractSessionMetadata(request);
+			const metadata = getSessionMetadata(request);
 			const session = await app.sessionService.createSession(user.id, true, metadata);
 			app.sessionService.attachCookie(reply, session.token, true);
 

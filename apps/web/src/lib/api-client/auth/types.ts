@@ -1,4 +1,4 @@
-import type { CurrentUser, OIDCProvider as SharedOIDCProvider, PasswordPolicy } from "@arr/shared";
+import type { CurrentUser, PasswordPolicy, OIDCProvider as SharedOIDCProvider } from "@arr/shared";
 
 // Re-export shared types for convenience
 export type { PasswordPolicy, CurrentUser };

@@ -1,13 +1,6 @@
 "use client";
 
-import {
-	createContext,
-	useContext,
-	useEffect,
-	useState,
-	useCallback,
-	type ReactNode,
-} from "react";
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
 
 /**
  * Color Theme Provider
@@ -61,7 +54,10 @@ export function isPremiumTheme(theme: ColorTheme): boolean {
 /**
  * Premium theme info for "Coming Soon" display
  */
-export const PREMIUM_THEME_INFO: Record<PremiumThemeId, { label: string; color: string; description: string }> = {
+export const PREMIUM_THEME_INFO: Record<
+	PremiumThemeId,
+	{ label: string; color: string; description: string }
+> = {
 	arr: {
 		label: "*arr Suite",
 		color: "hsl(193 91% 58%)",
@@ -87,7 +83,10 @@ export const PREMIUM_THEME_INFO: Record<PremiumThemeId, { label: string; color: 
 /**
  * Premium theme gradient values for orb display
  */
-export const PREMIUM_GRADIENT_VALUES: Record<PremiumThemeId, { from: string; to: string; glow: string }> = {
+export const PREMIUM_GRADIENT_VALUES: Record<
+	PremiumThemeId,
+	{ from: string; to: string; glow: string }
+> = {
 	arr: {
 		from: "#35c5f4",
 		to: "#ffc230",
@@ -119,7 +118,16 @@ export const STANDARD_THEMES: ColorTheme[] = ["blue", "purple", "green", "orange
  * Immersive themes have their own dark aesthetic and don't adapt to light/dark mode.
  * They include special visual effects like scanlines, neon glow, etc.
  */
-export const IMMERSIVE_THEMES: ColorTheme[] = ["winamp", "terminal", "vaporwave", "cyber", "noir", "vhs", "synthwave", "amber"];
+export const IMMERSIVE_THEMES: ColorTheme[] = [
+	"winamp",
+	"terminal",
+	"vaporwave",
+	"cyber",
+	"noir",
+	"vhs",
+	"synthwave",
+	"amber",
+];
 
 /**
  * Check if a theme is an immersive (premium) theme
@@ -128,99 +136,100 @@ export function isImmersiveTheme(theme: ColorTheme): boolean {
 	return IMMERSIVE_THEMES.includes(theme);
 }
 
-export const THEME_INFO: Record<ColorTheme, { label: string; color: string; description: string }> = {
-	blue: {
-		label: "Blue",
-		color: "hsl(217 91% 60%)",
-		description: "Default blue theme with purple accent",
-	},
-	purple: {
-		label: "Purple",
-		color: "hsl(270 95% 60%)",
-		description: "Vibrant purple with rose accent",
-	},
-	green: {
-		label: "Green",
-		color: "hsl(142 76% 36%)",
-		description: "Natural green with teal accent",
-	},
-	orange: {
-		label: "Orange",
-		color: "hsl(25 95% 53%)",
-		description: "Warm orange with amber accent",
-	},
-	rose: {
-		label: "Rose",
-		color: "hsl(346 77% 50%)",
-		description: "Elegant rose with pink accent",
-	},
-	slate: {
-		label: "Slate",
-		color: "hsl(215 20% 45%)",
-		description: "Minimal slate for a clean look",
-	},
-	winamp: {
-		label: "Winamp",
-		color: "hsl(120 100% 50%)",
-		description: "Classic media player with neon green LEDs",
-	},
-	terminal: {
-		label: "Terminal",
-		color: "hsl(120 100% 40%)",
-		description: "Matrix-style hacker aesthetic with CRT glow",
-	},
-	vaporwave: {
-		label: "Vaporwave",
-		color: "hsl(300 100% 70%)",
-		description: "Retro 80s sunset with pink and cyan",
-	},
-	cyber: {
-		label: "Y2K Cyber",
-		color: "hsl(195 100% 50%)",
-		description: "Futuristic chrome with electric accents",
-	},
-	noir: {
-		label: "Film Noir",
-		color: "hsl(45 60% 55%)",
-		description: "1940s cinema aesthetic with dramatic shadows",
-	},
-	vhs: {
-		label: "VHS",
-		color: "hsl(200 15% 75%)",
-		description: "Analog video nostalgia with tracking artifacts",
-	},
-	synthwave: {
-		label: "Synthwave",
-		color: "hsl(320 100% 60%)",
-		description: "80s retrofuturism with neon highways",
-	},
-	amber: {
-		label: "Amber CRT",
-		color: "hsl(35 100% 50%)",
-		description: "Classic monochrome terminal with phosphor glow",
-	},
-	// Premium themes
-	arr: {
-		label: "*arr Suite",
-		color: "hsl(193 91% 58%)",
-		description: "Authentic Sonarr/Radarr dark interface aesthetic",
-	},
-	qbittorrent: {
-		label: "qBittorrent",
-		color: "hsl(210 65% 55%)",
-		description: "Classic torrent client UI with blue accents",
-	},
-	cyberpunk: {
-		label: "Cyberpunk",
-		color: "hsl(55 100% 50%)",
-		description: "Neon yellow chaos with glitch distortions",
-	},
-	midnight: {
-		label: "Midnight",
-		color: "hsl(240 80% 20%)",
-		description: "Deep space galaxy with stars and nebulae",
-	},
-};
+export const THEME_INFO: Record<ColorTheme, { label: string; color: string; description: string }> =
+	{
+		blue: {
+			label: "Blue",
+			color: "hsl(217 91% 60%)",
+			description: "Default blue theme with purple accent",
+		},
+		purple: {
+			label: "Purple",
+			color: "hsl(270 95% 60%)",
+			description: "Vibrant purple with rose accent",
+		},
+		green: {
+			label: "Green",
+			color: "hsl(142 76% 36%)",
+			description: "Natural green with teal accent",
+		},
+		orange: {
+			label: "Orange",
+			color: "hsl(25 95% 53%)",
+			description: "Warm orange with amber accent",
+		},
+		rose: {
+			label: "Rose",
+			color: "hsl(346 77% 50%)",
+			description: "Elegant rose with pink accent",
+		},
+		slate: {
+			label: "Slate",
+			color: "hsl(215 20% 45%)",
+			description: "Minimal slate for a clean look",
+		},
+		winamp: {
+			label: "Winamp",
+			color: "hsl(120 100% 50%)",
+			description: "Classic media player with neon green LEDs",
+		},
+		terminal: {
+			label: "Terminal",
+			color: "hsl(120 100% 40%)",
+			description: "Matrix-style hacker aesthetic with CRT glow",
+		},
+		vaporwave: {
+			label: "Vaporwave",
+			color: "hsl(300 100% 70%)",
+			description: "Retro 80s sunset with pink and cyan",
+		},
+		cyber: {
+			label: "Y2K Cyber",
+			color: "hsl(195 100% 50%)",
+			description: "Futuristic chrome with electric accents",
+		},
+		noir: {
+			label: "Film Noir",
+			color: "hsl(45 60% 55%)",
+			description: "1940s cinema aesthetic with dramatic shadows",
+		},
+		vhs: {
+			label: "VHS",
+			color: "hsl(200 15% 75%)",
+			description: "Analog video nostalgia with tracking artifacts",
+		},
+		synthwave: {
+			label: "Synthwave",
+			color: "hsl(320 100% 60%)",
+			description: "80s retrofuturism with neon highways",
+		},
+		amber: {
+			label: "Amber CRT",
+			color: "hsl(35 100% 50%)",
+			description: "Classic monochrome terminal with phosphor glow",
+		},
+		// Premium themes
+		arr: {
+			label: "*arr Suite",
+			color: "hsl(193 91% 58%)",
+			description: "Authentic Sonarr/Radarr dark interface aesthetic",
+		},
+		qbittorrent: {
+			label: "qBittorrent",
+			color: "hsl(210 65% 55%)",
+			description: "Classic torrent client UI with blue accents",
+		},
+		cyberpunk: {
+			label: "Cyberpunk",
+			color: "hsl(55 100% 50%)",
+			description: "Neon yellow chaos with glitch distortions",
+		},
+		midnight: {
+			label: "Midnight",
+			color: "hsl(240 80% 20%)",
+			description: "Deep space galaxy with stars and nebulae",
+		},
+	};
 
 /**
  * Get the initial theme from the DOM or localStorage.
@@ -305,11 +314,7 @@ export function ColorThemeProvider({ children }: { children: ReactNode }) {
 		themeInfo: THEME_INFO,
 	};
 
-	return (
-		<ColorThemeContext.Provider value={value}>
-			{children}
-		</ColorThemeContext.Provider>
-	);
+	return <ColorThemeContext.Provider value={value}>{children}</ColorThemeContext.Provider>;
 }
 
 export function useColorTheme() {

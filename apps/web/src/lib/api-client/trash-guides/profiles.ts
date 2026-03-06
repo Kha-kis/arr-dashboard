@@ -5,12 +5,13 @@
  * fetching, importing, updating, and profile cloning operations.
  */
 
+import type { NamingSelectedPresets } from "@arr/shared";
 import { apiRequest } from "../base";
 import type {
 	CustomQualityConfig,
-	ServiceType,
 	QualityProfileSummary,
 	QualityProfilesResponse,
+	ServiceType,
 } from "./types";
 
 // ============================================================================
@@ -24,6 +25,7 @@ export type ImportQualityProfilePayload = {
 	templateDescription?: string;
 	syncStrategy?: "auto" | "manual" | "notify";
 	customQualityConfig?: CustomQualityConfig;
+	namingSelection?: NamingSelectedPresets;
 	selectedCFGroups: string[];
 	customFormatSelections: Record<string, {
 		selected: boolean;
@@ -39,6 +41,7 @@ export type UpdateQualityProfileTemplatePayload = {
 	templateName: string;
 	templateDescription?: string;
 	customQualityConfig?: CustomQualityConfig;
+	namingSelection?: NamingSelectedPresets;
 	selectedCFGroups: string[];
 	customFormatSelections: Record<string, {
 		selected: boolean;
@@ -130,11 +133,14 @@ export type CreateClonedTemplatePayload = {
 	trashId: string;
 	templateName: string;
 	templateDescription?: string;
-	customFormatSelections: Record<string, {
-		selected: boolean;
-		scoreOverride?: number;
-		conditionsEnabled: Record<string, boolean>;
-	}>;
+	customFormatSelections: Record<
+		string,
+		{
+			selected: boolean;
+			scoreOverride?: number;
+			conditionsEnabled: Record<string, boolean>;
+		}
+	>;
 	sourceInstanceId: string;
 	sourceProfileId: number;
 	sourceProfileName: string;
@@ -407,13 +413,10 @@ export async function createClonedProfileTemplate(
 export async function validateClonedCFs(
 	payload: ValidateCFsPayload,
 ): Promise<CFValidationResponse> {
-	return await apiRequest<CFValidationResponse>(
-		"/api/trash-guides/profile-clone/validate-cfs",
-		{
-			method: "POST",
-			json: payload,
-		},
-	);
+	return await apiRequest<CFValidationResponse>("/api/trash-guides/profile-clone/validate-cfs", {
+		method: "POST",
+		json: payload,
+	});
 }
 
 /**
@@ -423,13 +426,10 @@ export async function validateClonedCFs(
 export async function matchProfileToTrash(
 	payload: MatchProfilePayload,
 ): Promise<ProfileMatchResult> {
-	return await apiRequest<ProfileMatchResult>(
-		"/api/trash-guides/profile-clone/match-profile",
-		{
-			method: "POST",
-			json: payload,
-		},
-	);
+	return await apiRequest<ProfileMatchResult>("/api/trash-guides/profile-clone/match-profile", {
+		method: "POST",
+		json: payload,
+	});
 }
 
 // Re-export types for convenience

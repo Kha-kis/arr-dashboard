@@ -1,29 +1,35 @@
 "use client";
 
-import { useState, lazy, Suspense } from "react";
+import { format } from "date-fns";
+import { lazy, Suspense, useState } from "react";
 import {
+	useDeleteDeploymentHistory,
 	useDeploymentHistory,
 	useUndeployDeployment,
-	useDeleteDeploymentHistory,
 } from "../../../hooks/api/useDeploymentHistory";
-import { format } from "date-fns";
+
 // Lazy-loaded modal — only fetched when the user opens it
-const DeploymentHistoryDetailsModal = lazy(() => import("./deployment-history-details-modal").then(m => ({ default: m.DeploymentHistoryDetailsModal })));
+const DeploymentHistoryDetailsModal = lazy(() =>
+	import("./deployment-history-details-modal").then((m) => ({
+		default: m.DeploymentHistoryDetailsModal,
+	})),
+);
+
 import {
-	Eye,
-	Undo2,
-	Trash2,
+	AlertTriangle,
+	CheckCircle2,
 	ChevronLeft,
 	ChevronRight,
-	CheckCircle2,
-	AlertTriangle,
-	XCircle,
 	Clock,
-	Loader2,
+	Eye,
 	History,
+	Loader2,
+	Trash2,
+	Undo2,
+	XCircle,
 } from "lucide-react";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 interface DeploymentHistoryTableProps {
 	templateId?: string;
@@ -68,7 +74,12 @@ const StatusBadge = ({ status }: { status: string }) => {
 	const config = statusConfig[status] || {
 		label: status,
 		icon: Clock,
-		color: { bg: "rgba(100, 116, 139, 0.1)", border: "rgba(100, 116, 139, 0.2)", text: "rgb(148, 163, 184)", from: "rgb(148, 163, 184)" },
+		color: {
+			bg: "rgba(100, 116, 139, 0.1)",
+			border: "rgba(100, 116, 139, 0.2)",
+			text: "rgb(148, 163, 184)",
+			from: "rgb(148, 163, 184)",
+		},
 	};
 
 	const Icon = config.icon;
@@ -111,7 +122,10 @@ export function DeploymentHistoryTable({
 	const undeployMutation = useUndeployDeployment();
 	const deleteMutation = useDeleteDeploymentHistory();
 
-	const { data, isLoading, error } = useDeploymentHistory(templateId, instanceId, { limit, offset });
+	const { data, isLoading, error } = useDeploymentHistory(templateId, instanceId, {
+		limit,
+		offset,
+	});
 
 	// Loading State
 	if (isLoading) {
@@ -266,12 +280,18 @@ export function DeploymentHistoryTable({
 									</td>
 									<td className="px-6 py-4 text-sm">
 										<div className="flex items-center gap-3">
-											<span className="flex items-center gap-1" style={{ color: SEMANTIC_COLORS.success.from }}>
+											<span
+												className="flex items-center gap-1"
+												style={{ color: SEMANTIC_COLORS.success.from }}
+											>
 												<CheckCircle2 className="h-3.5 w-3.5" />
 												{entry.appliedCFs}
 											</span>
 											{entry.failedCFs > 0 && (
-												<span className="flex items-center gap-1" style={{ color: SEMANTIC_COLORS.error.from }}>
+												<span
+													className="flex items-center gap-1"
+													style={{ color: SEMANTIC_COLORS.error.from }}
+												>
 													<XCircle className="h-3.5 w-3.5" />
 													{entry.failedCFs}
 												</span>
@@ -292,8 +312,8 @@ export function DeploymentHistoryTable({
 											</button>
 
 											{/* Undeploy Button */}
-											{!entry.rolledBack && (
-												undeployConfirmId === entry.id ? (
+											{!entry.rolledBack &&
+												(undeployConfirmId === entry.id ? (
 													<div className="flex items-center gap-1">
 														<button
 															type="button"
@@ -336,8 +356,7 @@ export function DeploymentHistoryTable({
 														<Undo2 className="h-3.5 w-3.5" />
 														Undeploy
 													</button>
-												)
-											)}
+												))}
 
 											{/* Undeployed Badge */}
 											{entry.rolledBack && (
@@ -400,8 +419,7 @@ export function DeploymentHistoryTable({
 			{/* Pagination */}
 			<div className="flex items-center justify-between">
 				<p className="text-sm text-muted-foreground">
-					Showing{" "}
-					<span className="font-medium text-foreground">{offset + 1}</span> to{" "}
+					Showing <span className="font-medium text-foreground">{offset + 1}</span> to{" "}
 					<span className="font-medium text-foreground">{offset + history.length}</span> of{" "}
 					<span className="font-medium text-foreground">{pagination.total}</span> deployments
 				</p>

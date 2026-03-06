@@ -1,23 +1,23 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import type { CustomQualityConfig, TrashTemplate, TemplateInstanceOverride } from "@arr/shared";
-import { Button } from "../../../components/ui";
+import type { CustomQualityConfig, TemplateInstanceOverride, TrashTemplate } from "@arr/shared";
 import {
-	Server,
-	Sliders,
+	AlertTriangle,
+	Check,
 	ChevronDown,
 	ChevronUp,
-	Settings2,
-	Check,
-	AlertTriangle,
-	Target,
-	Layers,
 	Info,
+	Layers,
+	Server,
+	Settings2,
+	Sliders,
+	Target,
 } from "lucide-react";
-import { InstanceQualityOverrideModal } from "./instance-quality-override-modal";
-import { getEffectiveQualityConfig } from "../lib/quality-config-utils";
+import { useMemo, useState } from "react";
+import { Button } from "../../../components/ui";
 import { cn } from "../../../lib/utils";
+import { getEffectiveQualityConfig } from "../lib/quality-config-utils";
+import { InstanceQualityOverrideModal } from "./instance-quality-override-modal";
 
 interface ServiceInstance {
 	id: string;
@@ -68,7 +68,7 @@ export const InstanceOverridesPanel = ({
 	const overrideStatuses = useMemo((): InstanceOverrideStatus[] => {
 		// Filter instances to only those matching the template's service type
 		const matchingInstances = instances.filter(
-			(inst) => inst.service.toUpperCase() === template.serviceType.toUpperCase()
+			(inst) => inst.service.toUpperCase() === template.serviceType.toUpperCase(),
 		);
 
 		return matchingInstances.map((inst) => {
@@ -103,7 +103,7 @@ export const InstanceOverridesPanel = ({
 	const getCutoffName = (qualityConfig?: CustomQualityConfig): string | null => {
 		if (!qualityConfig?.cutoffId || !qualityConfig.items) return null;
 		const cutoffItem = qualityConfig.items.find(
-			(e) => (e.type === "quality" ? e.item.id : e.group.id) === qualityConfig.cutoffId
+			(e) => (e.type === "quality" ? e.item.id : e.group.id) === qualityConfig.cutoffId,
 		);
 		if (!cutoffItem) return null;
 		return cutoffItem.type === "quality" ? cutoffItem.item.name : cutoffItem.group.name;
@@ -136,8 +136,8 @@ export const InstanceOverridesPanel = ({
 									<>
 										<span className="text-purple-600 dark:text-purple-400">
 											{overrideCount} instance{overrideCount !== 1 ? "s" : ""}
-										</span>
-										{" "}with custom quality config
+										</span>{" "}
+										with custom quality config
 									</>
 								)}
 							</p>
@@ -167,7 +167,9 @@ export const InstanceOverridesPanel = ({
 									{templateDefaultConfig.items.length} quality items
 									{getCutoffName(templateDefaultConfig) && (
 										<>
-											{" "}• Cutoff: <span className="text-primary">{getCutoffName(templateDefaultConfig)}</span>
+											{" "}
+											• Cutoff:{" "}
+											<span className="text-primary">{getCutoffName(templateDefaultConfig)}</span>
 										</>
 									)}
 								</div>
@@ -183,7 +185,7 @@ export const InstanceOverridesPanel = ({
 										"flex items-center justify-between gap-3 rounded-lg border p-3 transition",
 										status.hasQualityOverride
 											? "border-purple-500/30 bg-purple-500/5"
-											: "border-border bg-background"
+											: "border-border bg-background",
 									)}
 								>
 									<div className="flex items-center gap-3 min-w-0">
@@ -243,9 +245,7 @@ export const InstanceOverridesPanel = ({
 							<div className="flex items-center justify-between pt-2 border-t border-border">
 								<div className="flex items-center gap-2 text-xs text-muted-foreground">
 									<AlertTriangle className="h-3 w-3 text-amber-500" />
-									<span>
-										Instances with overrides won&apos;t receive template quality updates
-									</span>
+									<span>Instances with overrides won&apos;t receive template quality updates</span>
 								</div>
 							</div>
 						)}

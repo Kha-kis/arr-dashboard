@@ -1,30 +1,37 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { SEERR_ISSUE_STATUS, type SeerrIssueType } from "@arr/shared";
+import {
+	AlertCircle,
+	AlertTriangle,
+	CheckCircle,
+	Loader2,
+	MessageSquare,
+	Send,
+} from "lucide-react";
 import Image from "next/image";
-import { AlertCircle, AlertTriangle, CheckCircle, MessageSquare, Loader2, Send } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
 	FilterSelect,
 	GlassmorphicCard,
-	StatusBadge,
 	PremiumEmptyState,
 	PremiumSkeleton,
+	StatusBadge,
 } from "../../../components/layout";
 import { Button } from "../../../components/ui";
 import {
+	useAddSeerrIssueComment,
 	useSeerrIssues,
 	useUpdateSeerrIssueStatus,
-	useAddSeerrIssueComment,
 } from "../../../hooks/api/useSeerr";
 import {
-	getIssueTypeLabel,
+	formatRelativeTime,
 	getIssueStatusLabel,
 	getIssueStatusVariant,
-	formatRelativeTime,
+	getIssueTypeLabel,
 	getPosterUrl,
 } from "../lib/seerr-utils";
-import { SEERR_ISSUE_STATUS, type SeerrIssueType } from "@arr/shared";
 
 type IssueFilter = "all" | "open" | "resolved";
 type IssueSort = "added" | "modified";
@@ -65,7 +72,12 @@ export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 	const [sort, setSort] = useState<IssueSort>("added");
 	const [typeFilter, setTypeFilter] = useState<IssueTypeFilter>("all");
 	const [take, setTake] = useState(PAGE_SIZE);
-	const { data, isLoading, isFetching, isError } = useSeerrIssues({ instanceId, filter, sort, take });
+	const { data, isLoading, isFetching, isError } = useSeerrIssues({
+		instanceId,
+		filter,
+		sort,
+		take,
+	});
 
 	// Reset pagination when filters change
 	const prevRef = useRef({ filter, sort, typeFilter });
@@ -166,7 +178,10 @@ export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 				<div className="space-y-3">
 					{issues.map((issue, index) => {
 						const posterUrl = getPosterUrl(issue.media.posterPath);
-						const problemLocation = formatProblemLocation(issue.problemSeason, issue.problemEpisode);
+						const problemLocation = formatProblemLocation(
+							issue.problemSeason,
+							issue.problemEpisode,
+						);
 
 						return (
 							<div
@@ -253,7 +268,9 @@ export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 													<button
 														type="button"
 														onClick={() => handleSubmitComment(issue.id)}
-														disabled={!commentInput[issue.id]?.trim() || addCommentMutation.isPending}
+														disabled={
+															!commentInput[issue.id]?.trim() || addCommentMutation.isPending
+														}
 														className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/50 bg-card/30 text-muted-foreground transition-colors hover:bg-card/60 hover:text-foreground disabled:opacity-40 disabled:pointer-events-none"
 														title="Send comment"
 													>

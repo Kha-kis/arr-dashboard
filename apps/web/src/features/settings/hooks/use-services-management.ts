@@ -1,15 +1,15 @@
-import { useState } from "react";
 import type { ServiceInstanceSummary } from "@arr/shared";
-import type { UpdateServicePayload } from "../../../lib/api-client/services";
-import type { ServiceFormState } from "../lib/settings-utils";
+import { useState } from "react";
 import {
 	useCreateServiceMutation,
 	useDeleteServiceMutation,
-	useUpdateServiceMutation,
-	useTestServiceConnection,
 	useTestConnectionBeforeAdd,
+	useTestServiceConnection,
+	useUpdateServiceMutation,
 } from "../../../hooks/api/useServiceMutations";
+import type { UpdateServicePayload } from "../../../lib/api-client/services";
 import { getErrorMessage } from "../../../lib/error-utils";
+import type { ServiceFormState } from "../lib/settings-utils";
 
 /**
  * Hook for managing service instances

@@ -5,11 +5,11 @@
  * Handles retry, remove, and category change actions.
  */
 
-import { useCallback, useEffect, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import type { QueueItem } from "@arr/shared";
-import { useQueueActions } from "../../../hooks/api/useQueueActions";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useState } from "react";
 import type { QueueActionOptions } from "../../../hooks/api/useQueueActions";
+import { useQueueActions } from "../../../hooks/api/useQueueActions";
 import { fetchManualImportCandidates } from "../../../lib/api-client/dashboard";
 
 interface ManualImportContext {

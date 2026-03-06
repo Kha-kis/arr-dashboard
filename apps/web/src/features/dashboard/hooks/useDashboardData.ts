@@ -7,8 +7,8 @@
 
 import { useMemo } from "react";
 import { useCurrentUser } from "../../../hooks/api/useAuth";
-import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useMultiInstanceQueueQuery } from "../../../hooks/api/useDashboard";
+import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 
 /**
  * Hook for dashboard data management

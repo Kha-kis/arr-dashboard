@@ -1,44 +1,15 @@
 import type { FastifyInstance } from "fastify";
-import { executeHuntWithSdk, type HuntResult } from "./hunt-executor.js";
-import {
-	MIN_MANUAL_HUNT_COOLDOWN_MINS,
-	MIN_INSTANCE_COOLDOWN_MINS,
-	MAX_HUNT_DURATION_MS,
-} from "./constants.js";
 import { loggers } from "../logger.js";
+import { withTimeout } from "../utils/delay.js";
 import { getErrorMessage } from "../utils/error-message.js";
+import {
+	MAX_HUNT_DURATION_MS,
+	MIN_INSTANCE_COOLDOWN_MINS,
+	MIN_MANUAL_HUNT_COOLDOWN_MINS,
+} from "./constants.js";
+import { executeHuntWithSdk, type HuntResult } from "./hunt-executor.js";
 
 const log = loggers.hunting;
-
-/**
- * Run a promise and fail if it does not settle within the specified timeout.
- *
- * @param promise - The promise to race against the timeout
- * @param timeoutMs - Timeout duration in milliseconds
- * @param timeoutMessage - Error message used if the timeout elapses
- * @returns The resolved value of `promise`
- */
-async function withTimeout<T>(
-	promise: Promise<T>,
-	timeoutMs: number,
-	timeoutMessage: string,
-): Promise<T> {
-	let timeoutId: NodeJS.Timeout | undefined;
-
-	const timeoutPromise = new Promise<never>((_, reject) => {
-		timeoutId = setTimeout(() => {
-			reject(new Error(timeoutMessage));
-		}, timeoutMs);
-	});
-
-	try {
-		return await Promise.race([promise, timeoutPromise]);
-	} finally {
-		if (timeoutId) {
-			clearTimeout(timeoutId);
-		}
-	}
-}
 
 /**
  * Hunting Scheduler
@@ -47,12 +18,6 @@ async function withTimeout<T>(
  * Uses a simple interval-based approach that can be replaced with node-cron later.
  * Enforces minimum cooldown periods to prevent overwhelming arr instances.
  */
-
-interface QueuedHunt {
-	instanceId: string;
-	type: "missing" | "upgrade";
-	queuedAt: Date;
-}
 
 // Track last hunt times per instance (in-memory for cooldown enforcement)
 interface InstanceHuntTimes {
@@ -65,7 +30,6 @@ class HuntingScheduler {
 	private app: FastifyInstance | null = null;
 	private running = false;
 	private intervalId: NodeJS.Timeout | null = null;
-	private manualQueue: QueuedHunt[] = [];
 	// In-memory cooldown tracking (supplements database timestamps)
 	private instanceHuntTimes: Map<string, InstanceHuntTimes> = new Map();
 
@@ -186,16 +150,6 @@ class HuntingScheduler {
 	}
 
 	/**
-	 * @deprecated Use triggerManualHunt instead - kept for backwards compatibility
-	 */
-	queueManualHunt(
-		instanceId: string,
-		type: "missing" | "upgrade",
-	): { queued: boolean; message: string } {
-		return this.triggerManualHunt(instanceId, type);
-	}
-
-	/**
 	 * Check if an instance is within cooldown period
 	 */
 	private checkCooldown(
@@ -268,26 +222,10 @@ class HuntingScheduler {
 		if (!this.app) return;
 
 		try {
-			// Process manual queue first
-			await this.processManualQueue();
-
-			// Then check for scheduled hunts
 			await this.processScheduledHunts();
 		} catch (error) {
 			log.error({ err: error }, "Tick error");
 		}
-	}
-
-	/**
-	 * Process manually queued hunts
-	 */
-	private async processManualQueue(): Promise<void> {
-		if (!this.app || this.manualQueue.length === 0) return;
-
-		const hunt = this.manualQueue.shift();
-		if (!hunt) return;
-
-		await this.runHunt(hunt.instanceId, hunt.type, true);
 	}
 
 	/**
@@ -297,19 +235,29 @@ class HuntingScheduler {
 		if (!this.app) return;
 
 		const now = new Date();
-		const newResetAt = new Date(now.getTime() + 60 * 60 * 1000);
+		const ONE_HOUR_MS = 60 * 60 * 1000;
 
-		// Batch reset all expired API call counters in a single query (avoids N+1)
-		await this.app.prisma.huntConfig.updateMany({
+		// Reset expired API call counters, preserving the original hourly window alignment
+		const expiredConfigs = await this.app.prisma.huntConfig.findMany({
 			where: {
 				OR: [{ huntMissingEnabled: true }, { huntUpgradesEnabled: true }],
 				apiCallsResetAt: { lt: now },
 			},
-			data: {
-				apiCallsThisHour: 0,
-				apiCallsResetAt: newResetAt,
-			},
+			select: { id: true, apiCallsResetAt: true },
 		});
+		for (const ec of expiredConfigs) {
+			// Advance from the original resetAt to avoid drift
+			let nextReset = ec.apiCallsResetAt
+				? new Date(ec.apiCallsResetAt.getTime() + ONE_HOUR_MS)
+				: new Date(now.getTime() + ONE_HOUR_MS);
+			// If still in the past (e.g., after long downtime), snap to now + 1h
+			if (nextReset <= now) nextReset = new Date(now.getTime() + ONE_HOUR_MS);
+
+			await this.app.prisma.huntConfig.update({
+				where: { id: ec.id },
+				data: { apiCallsThisHour: 0, apiCallsResetAt: nextReset },
+			});
+		}
 
 		// Get all enabled hunt configs (after reset, so counts are fresh)
 		const configs = await this.app.prisma.huntConfig.findMany({
@@ -322,7 +270,6 @@ class HuntingScheduler {
 		});
 
 		for (const config of configs) {
-
 			// Check if we're over API cap
 			if (config.apiCallsThisHour >= config.hourlyApiCap) {
 				continue;
@@ -442,6 +389,43 @@ class HuntingScheduler {
 				durationMs,
 			}, "Hunt completed");
 
+			// Fire-and-forget notification for hunt results
+			const huntMeta = {
+				instance: config.instance.label,
+				service: config.instance.service,
+				huntType: type,
+				itemsSearched: result.itemsSearched,
+				itemsGrabbed: result.itemsGrabbed,
+				apiCalls: result.apiCallsMade,
+				durationMs,
+				grabbedItems: result.grabbedItems.slice(0, 5).map((g) => g.title),
+			};
+			if (result.itemsGrabbed > 0) {
+				this.app.notificationService
+					?.notify({
+						eventType: "HUNT_CONTENT_FOUND",
+						title: `Hunt found ${result.itemsGrabbed} item(s) on ${config.instance.label}`,
+						body: result.message,
+						url: "/hunting",
+						metadata: huntMeta,
+					})
+					.catch((err) => {
+						log.warn({ err, instanceLabel: config.instance.label }, "Hunt notification dispatch failed");
+					});
+			} else if (result.status === "completed") {
+				this.app.notificationService
+					?.notify({
+						eventType: "HUNT_COMPLETED",
+						title: `Hunt completed on ${config.instance.label}`,
+						body: result.message,
+						url: "/hunting",
+						metadata: huntMeta,
+					})
+					.catch((err) => {
+						log.warn({ err, instanceLabel: config.instance.label }, "Hunt notification dispatch failed");
+					});
+			}
+
 			// Update config timestamps and API call count (only if we actually made API calls)
 			if (result.status !== "skipped" && result.apiCallsMade > 0) {
 				const updateData: Record<string, unknown> = {
@@ -478,6 +462,24 @@ class HuntingScheduler {
 			});
 
 			log.error({ err: error, instanceLabel: config.instance.label }, "Hunt error");
+
+			// Fire-and-forget notification for hunt failure
+			this.app.notificationService
+				?.notify({
+					eventType: "HUNT_FAILED",
+					title: `Hunt failed on ${config.instance.label}`,
+					body: message,
+					url: "/hunting",
+					metadata: {
+						instance: config.instance.label,
+						service: config.instance.service,
+						huntType: type,
+						durationMs,
+					},
+				})
+				.catch((err) => {
+					log.warn({ err, instanceLabel: config.instance.label }, "Hunt failure notification dispatch failed");
+				});
 		}
 	}
 }

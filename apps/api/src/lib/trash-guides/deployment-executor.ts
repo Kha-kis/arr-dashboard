@@ -12,26 +12,28 @@
  * - template-score-utils.ts: score calculation
  */
 
+import { TRASH_CONFIG_TYPES, type CustomQualityConfig, type NamingSelectedPresets, type TrashNamingData } from "@arr/shared";
+import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { PrismaClient, ServiceType } from "../../lib/prisma.js";
-import type { SonarrClient, RadarrClient } from "arr-sdk";
 import type { ArrClientFactory } from "../arr/client-factory.js";
-import type { CustomQualityConfig } from "@arr/shared";
-import { InstanceNotFoundError, TemplateNotFoundError, AppValidationError } from "../errors.js";
-import { getSyncMetrics } from "./sync-metrics.js";
-import { calculateScoreAndSource } from "./template-score-utils.js";
-import {
-	normalizeQualityName,
-	extractQualitiesFromSchema,
-	type TemplateCF,
-} from "./quality-profile-helpers.js";
-import { createQualityProfileFromSchema } from "./profile-creation-strategies.js";
+import { AppValidationError, InstanceNotFoundError, TemplateNotFoundError } from "../errors.js";
+import { loggers } from "../logger.js";
+import { getErrorMessage } from "../utils/error-message.js";
+import { createCacheManager } from "./cache-manager.js";
+import { extractTrashId, transformFieldsToArray } from "./cf-field-utils.js";
 import {
 	finalizeDeploymentHistory,
 	finalizeDeploymentHistoryWithFailure,
 } from "./deployment-history-manager.js";
-import { transformFieldsToArray, extractTrashId } from "./cf-field-utils.js";
-import { loggers } from "../logger.js";
-import { getErrorMessage } from "../utils/error-message.js";
+import { resolvePayload } from "./naming-deployer.js";
+import { createQualityProfileFromSchema } from "./profile-creation-strategies.js";
+import {
+	extractQualitiesFromSchema,
+	normalizeQualityName,
+	type TemplateCF,
+} from "./quality-profile-helpers.js";
+import { getSyncMetrics } from "./sync-metrics.js";
+import { calculateScoreAndSource } from "./template-score-utils.js";
 
 const log = loggers.deployment;
 
@@ -370,7 +372,8 @@ export class DeploymentExecutorService {
 
 					const newCF = {
 						name: templateCF.name,
-						includeCustomFormatWhenRenaming: templateCF.originalConfig?.includeCustomFormatWhenRenaming ?? false,
+						includeCustomFormatWhenRenaming:
+							templateCF.originalConfig?.includeCustomFormatWhenRenaming ?? false,
 						specifications,
 					};
 
@@ -381,10 +384,7 @@ export class DeploymentExecutorService {
 					details.created.push(templateCF.name);
 				}
 			} catch (error) {
-				log.error(
-					{ err: error, cfName: templateCF.name },
-					"Failed to deploy custom format",
-				);
+				log.error({ err: error, cfName: templateCF.name }, "Failed to deploy custom format");
 				errors.push(
 					`Failed to deploy "${templateCF.name}": ${getErrorMessage(error, "Unknown error")}`,
 				);
@@ -571,9 +571,9 @@ export class DeploymentExecutorService {
 									groupQualities.push({
 										quality: targetQuality.quality,
 										items: [],
-										allowed: currentAllowedStates.get(
-											normalizeQualityName(subItem.name || ""),
-										) ?? subItem.allowed,
+										allowed:
+											currentAllowedStates.get(normalizeQualityName(subItem.name || "")) ??
+											subItem.allowed,
 									});
 								}
 							}
@@ -585,9 +585,9 @@ export class DeploymentExecutorService {
 								qualityItems.push({
 									name: sourceItem.name,
 									items: groupQualities,
-									allowed: currentAllowedStates.get(
-										normalizeQualityName(sourceItem.name || ""),
-									) ?? sourceItem.allowed,
+									allowed:
+										currentAllowedStates.get(normalizeQualityName(sourceItem.name || "")) ??
+										sourceItem.allowed,
 									id: newGroupId,
 								});
 							}
@@ -603,9 +603,9 @@ export class DeploymentExecutorService {
 								}
 								qualityItems.push({
 									...targetQuality,
-									allowed: currentAllowedStates.get(
-										normalizeQualityName(sourceItem.quality.name || ""),
-									) ?? sourceItem.allowed,
+									allowed:
+										currentAllowedStates.get(normalizeQualityName(sourceItem.quality.name || "")) ??
+										sourceItem.allowed,
 								});
 							}
 						}
@@ -634,7 +634,7 @@ export class DeploymentExecutorService {
 
 				// Apply instance-specific quality override (takes precedence over cloned profile settings)
 				if (effectiveQualityConfig?.useCustomQualities && effectiveQualityConfig.items.length > 0) {
-					const overrideSchema = cachedSchema ?? await client.qualityProfile.getSchema();
+					const overrideSchema = cachedSchema ?? (await client.qualityProfile.getSchema());
 					const { byName: qualitiesByName } = extractQualitiesFromSchema(
 						overrideSchema.items || [],
 					);
@@ -651,9 +651,7 @@ export class DeploymentExecutorService {
 							const groupQualities: any[] = [];
 
 							for (const quality of group.qualities) {
-								const targetQuality = qualitiesByName.get(
-									normalizeQualityName(quality.name),
-								);
+								const targetQuality = qualitiesByName.get(normalizeQualityName(quality.name));
 								if (targetQuality) {
 									groupQualities.push({
 										quality: targetQuality.quality,
@@ -680,9 +678,7 @@ export class DeploymentExecutorService {
 							}
 						} else {
 							const item = entry.item;
-							const targetQuality = qualitiesByName.get(
-								normalizeQualityName(item.name),
-							);
+							const targetQuality = qualitiesByName.get(normalizeQualityName(item.name));
 							if (targetQuality) {
 								const qualityId = targetQuality.quality?.id;
 								if (qualityId !== undefined) {
@@ -772,9 +768,7 @@ export class DeploymentExecutorService {
 			}
 		} catch (error) {
 			log.error({ err: error }, "Failed to update quality profile");
-			errors.push(
-				`Failed to update quality profile: ${getErrorMessage(error, "Unknown error")}`,
-			);
+			errors.push(`Failed to update quality profile: ${getErrorMessage(error, "Unknown error")}`);
 		}
 
 		return { errors, orphanedCFs };
@@ -798,13 +792,72 @@ export class DeploymentExecutorService {
 		}
 
 		const deploymentPromise = this.executeSingleDeployment(
-			templateId, instanceId, userId, syncStrategy, conflictResolutions,
+			templateId,
+			instanceId,
+			userId,
+			syncStrategy,
+			conflictResolutions,
 		);
 		this.activeDeployments.set(instanceId, deploymentPromise);
 		try {
 			return await deploymentPromise;
 		} finally {
 			this.activeDeployments.delete(instanceId);
+		}
+	}
+
+	/**
+	 * Deploy naming presets to an instance using the TRaSH cache data.
+	 * Resolves preset names to format strings, then PUTs the merged config.
+	 */
+	private async deployNamingPresets(
+		namingSelection: NamingSelectedPresets,
+		instance: ValidatedDeploymentData["instance"],
+	): Promise<{ fieldsApplied: number; error?: string }> {
+		try {
+			const upperService = instance.service.toUpperCase() as "RADARR" | "SONARR";
+			if (namingSelection.serviceType !== upperService) {
+				return { fieldsApplied: 0, error: `Naming selection service type mismatch: expected ${upperService}` };
+			}
+
+			const cacheManager = createCacheManager(this.prisma);
+			const namingData = (await cacheManager.get<TrashNamingData[]>(
+				upperService,
+				TRASH_CONFIG_TYPES.NAMING_PRESETS,
+			)) as TrashNamingData[] | null;
+
+			if (!namingData || namingData.length === 0) {
+				return { fieldsApplied: 0, error: "Naming data not cached — skipping naming deployment" };
+			}
+
+			const naming = namingData[0]!;
+			const patch = resolvePayload(naming, namingSelection);
+			const fieldCount = Object.keys(patch).filter((k) => k !== "renameMovies" && k !== "renameEpisodes").length;
+
+			if (fieldCount === 0) {
+				return { fieldsApplied: 0 };
+			}
+
+			// GET current config, merge, PUT back
+			const currentResponse = await this.clientFactory.rawRequest(instance, "/api/v3/config/naming");
+			if (!currentResponse.ok) {
+				return { fieldsApplied: 0, error: `Failed to read naming config: HTTP ${currentResponse.status}` };
+			}
+			const currentConfig = (await currentResponse.json()) as Record<string, unknown>;
+			const merged = { ...currentConfig, ...patch };
+
+			const putResponse = await this.clientFactory.rawRequest(instance, "/api/v3/config/naming", {
+				method: "PUT",
+				body: merged,
+			});
+			if (!putResponse.ok) {
+				return { fieldsApplied: 0, error: `Failed to apply naming config: HTTP ${putResponse.status}` };
+			}
+
+			log.info({ instanceId: instance.id, fieldsApplied: fieldCount }, "Naming presets deployed via template");
+			return { fieldsApplied: fieldCount };
+		} catch (error) {
+			return { fieldsApplied: 0, error: `Naming deployment failed: ${getErrorMessage(error, "Unknown error")}` };
 		}
 	}
 
@@ -830,9 +883,7 @@ export class DeploymentExecutorService {
 			try {
 				await client.system.get();
 			} catch (error) {
-				throw new Error(
-					`Instance unreachable: ${getErrorMessage(error, "Unknown error")}`,
-				);
+				throw new Error(`Instance unreachable: ${getErrorMessage(error, "Unknown error")}`);
 			}
 
 			// Fetch pre-deployment state for backup (both CFs and quality profile)
@@ -930,9 +981,29 @@ export class DeploymentExecutorService {
 				effectiveQualityConfig,
 			);
 
+			// Deploy naming presets if the template includes them
+			const namingSelection = templateConfig.namingSelection as
+				| NamingSelectedPresets
+				| undefined;
+			let namingWarning: string | undefined;
+			if (namingSelection) {
+				const namingResult = await this.deployNamingPresets(
+					namingSelection,
+					instance,
+				);
+				if (namingResult.error) {
+					profileResult.errors.push(namingResult.error);
+				} else if (namingResult.fieldsApplied > 0) {
+					namingWarning = `Naming presets applied (${namingResult.fieldsApplied} field(s) updated)`;
+				}
+			}
+
 			const allErrors = [...cfResult.errors, ...profileResult.errors];
 
 			const warnings: string[] = [];
+			if (namingWarning) {
+				warnings.push(namingWarning);
+			}
 			if (profileResult.orphanedCFs.length > 0) {
 				warnings.push(
 					`${profileResult.orphanedCFs.length} Custom Format(s) removed from TRaSH Guides - scores set to 0: ${profileResult.orphanedCFs.join(", ")}`,
@@ -1061,5 +1132,4 @@ export class DeploymentExecutorService {
 			results,
 		};
 	}
-
 }

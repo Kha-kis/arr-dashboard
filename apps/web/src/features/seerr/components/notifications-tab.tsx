@@ -1,20 +1,20 @@
 "use client";
 
+import type { SeerrNotificationAgent } from "@arr/shared";
+import { AlertCircle, Bell, Send, Settings, ToggleLeft, ToggleRight } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { AlertCircle, Bell, Send, Settings, ToggleLeft, ToggleRight } from "lucide-react";
-import type { SeerrNotificationAgent } from "@arr/shared";
 import {
 	GlassmorphicCard,
+	GradientButton,
 	PremiumEmptyState,
 	PremiumSkeleton,
-	GradientButton,
 } from "../../../components/layout";
 import { Button } from "../../../components/ui";
 import {
 	useSeerrNotifications,
-	useUpdateSeerrNotification,
 	useTestSeerrNotification,
+	useUpdateSeerrNotification,
 } from "../../../hooks/api/useSeerr";
 import { AGENT_FIELDS } from "../lib/notification-agent-fields";
 import { AgentConfigDialog } from "./agent-config-dialog";

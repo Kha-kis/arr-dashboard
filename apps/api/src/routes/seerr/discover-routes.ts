@@ -21,7 +21,10 @@ const tmdbIdParams = z.object({
 	tmdbId: z.coerce.number().int().positive(),
 });
 
-const languageSchema = z.string().regex(/^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$/).optional();
+const languageSchema = z
+	.string()
+	.regex(/^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$/)
+	.optional();
 
 const paginationQuery = z.object({
 	page: z.coerce.number().int().min(1).default(1),

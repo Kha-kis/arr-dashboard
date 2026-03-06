@@ -1,27 +1,27 @@
 "use client";
 
-import { useState } from "react";
 import {
 	Activity,
+	AlertTriangle,
 	ChevronDown,
 	ChevronRight,
 	Clock,
-	Trash2,
-	SkipForward,
 	Eye,
-	AlertTriangle,
+	SkipForward,
+	Trash2,
 } from "lucide-react";
+import { useState } from "react";
 import {
-	PremiumSection,
-	PremiumEmptyState,
-	ServiceBadge,
-	StatusBadge,
 	FilterSelect,
 	GlassmorphicCard,
+	PremiumEmptyState,
+	PremiumSection,
+	ServiceBadge,
+	StatusBadge,
 } from "../../../components/layout";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useQueueCleanerLogs } from "../hooks/useQueueCleanerLogs";
-import type { QueueCleanerLog, CleanerResultItem } from "../lib/queue-cleaner-types";
+import type { CleanerResultItem, QueueCleanerLog } from "../lib/queue-cleaner-types";
 
 export const QueueCleanerActivity = () => {
 	const [statusFilter, setStatusFilter] = useState("all");
@@ -79,11 +79,7 @@ export const QueueCleanerActivity = () => {
 						key={logEntry.id}
 						log={logEntry}
 						isExpanded={expandedLogId === logEntry.id}
-						onToggle={() =>
-							setExpandedLogId(
-								expandedLogId === logEntry.id ? null : logEntry.id,
-							)
-						}
+						onToggle={() => setExpandedLogId(expandedLogId === logEntry.id ? null : logEntry.id)}
 						animationDelay={index * 30}
 					/>
 				))}
@@ -131,13 +127,14 @@ const LogEntryRow = ({ log, isExpanded, onToggle, animationDelay }: LogEntryRowP
 		(log.skippedItems && log.skippedItems.length > 0) ||
 		(log.warnedItems && log.warnedItems.length > 0);
 
-	const statusType = {
-		running: "warning" as const,
-		completed: "success" as const,
-		partial: "warning" as const,
-		skipped: "info" as const,
-		error: "error" as const,
-	}[log.status] ?? ("info" as const);
+	const statusType =
+		{
+			running: "warning" as const,
+			completed: "success" as const,
+			partial: "warning" as const,
+			skipped: "info" as const,
+			error: "error" as const,
+		}[log.status] ?? ("info" as const);
 
 	const startedAt = new Date(log.startedAt);
 	const durationStr = log.durationMs ? `${(log.durationMs / 1000).toFixed(1)}s` : "-";
@@ -162,13 +159,12 @@ const LogEntryRow = ({ log, isExpanded, onToggle, animationDelay }: LogEntryRowP
 				>
 					{/* Expand chevron */}
 					<div className="flex-shrink-0 w-4">
-						{hasDetails && (
-							isExpanded ? (
+						{hasDetails &&
+							(isExpanded ? (
 								<ChevronDown className="h-4 w-4 text-muted-foreground" />
 							) : (
 								<ChevronRight className="h-4 w-4 text-muted-foreground" />
-							)
-						)}
+							))}
 					</div>
 
 					{/* Instance info */}
@@ -185,9 +181,7 @@ const LogEntryRow = ({ log, isExpanded, onToggle, animationDelay }: LogEntryRowP
 								</span>
 							)}
 						</div>
-						<p className="text-xs text-muted-foreground truncate">
-							{log.message || "No details"}
-						</p>
+						<p className="text-xs text-muted-foreground truncate">{log.message || "No details"}</p>
 					</div>
 
 					{/* Stats */}
@@ -201,7 +195,10 @@ const LogEntryRow = ({ log, isExpanded, onToggle, animationDelay }: LogEntryRowP
 						{(log.itemsWarned ?? 0) > 0 && (
 							<div className="text-center">
 								<div className="flex items-center gap-1 text-xs">
-									<AlertTriangle className="h-3 w-3" style={{ color: SEMANTIC_COLORS.warning.text }} />
+									<AlertTriangle
+										className="h-3 w-3"
+										style={{ color: SEMANTIC_COLORS.warning.text }}
+									/>
 									<span className="font-medium">{log.itemsWarned}</span>
 								</div>
 							</div>
@@ -216,9 +213,7 @@ const LogEntryRow = ({ log, isExpanded, onToggle, animationDelay }: LogEntryRowP
 							<Clock className="h-3 w-3" />
 							{durationStr}
 						</div>
-						<StatusBadge status={statusType}>
-							{log.status}
-						</StatusBadge>
+						<StatusBadge status={statusType}>{log.status}</StatusBadge>
 						{/* Data quality warning - shown when JSON parsing failed */}
 						{log.hasDataError && (
 							<span
@@ -236,9 +231,7 @@ const LogEntryRow = ({ log, isExpanded, onToggle, animationDelay }: LogEntryRowP
 					<div className="px-4 pb-4 pt-0 border-t border-border/30">
 						<div className="pt-3 space-y-3">
 							{/* Timestamp */}
-							<p className="text-xs text-muted-foreground">
-								Started: {startedAt.toLocaleString()}
-							</p>
+							<p className="text-xs text-muted-foreground">Started: {startedAt.toLocaleString()}</p>
 
 							{/* Cleaned items */}
 							{log.cleanedItems && log.cleanedItems.length > 0 && (
@@ -269,7 +262,10 @@ const LogEntryRow = ({ log, isExpanded, onToggle, animationDelay }: LogEntryRowP
 							{log.warnedItems && log.warnedItems.length > 0 && (
 								<div>
 									<h5 className="flex items-center gap-1.5 text-xs font-medium mb-2">
-										<AlertTriangle className="h-3 w-3" style={{ color: SEMANTIC_COLORS.warning.text }} />
+										<AlertTriangle
+											className="h-3 w-3"
+											style={{ color: SEMANTIC_COLORS.warning.text }}
+										/>
 										Warned ({log.warnedItems.length})
 									</h5>
 									<div className="space-y-1">
@@ -288,9 +284,7 @@ const LogEntryRow = ({ log, isExpanded, onToggle, animationDelay }: LogEntryRowP
 															Strike {item.strikeCount}/{item.maxStrikes}
 														</span>
 													)}
-													<span className="text-[10px] text-muted-foreground">
-														{item.reason}
-													</span>
+													<span className="text-[10px] text-muted-foreground">{item.reason}</span>
 												</div>
 											</div>
 										))}
@@ -302,7 +296,10 @@ const LogEntryRow = ({ log, isExpanded, onToggle, animationDelay }: LogEntryRowP
 							{log.skippedItems && log.skippedItems.length > 0 && (
 								<div>
 									<h5 className="flex items-center gap-1.5 text-xs font-medium mb-2">
-										<SkipForward className="h-3 w-3" style={{ color: SEMANTIC_COLORS.warning.text }} />
+										<SkipForward
+											className="h-3 w-3"
+											style={{ color: SEMANTIC_COLORS.warning.text }}
+										/>
 										Skipped ({log.skippedItems.length})
 									</h5>
 									<div className="space-y-1 max-h-40 overflow-y-auto">

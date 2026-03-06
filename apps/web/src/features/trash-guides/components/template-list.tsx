@@ -1,45 +1,62 @@
 "use client";
 
-import { useState, useEffect, lazy, Suspense } from "react";
 import type { TrashTemplate } from "@arr/shared";
-import {
-	useTemplates,
-	useDeleteTemplate,
-	useDuplicateTemplate,
-	TEMPLATES_QUERY_KEY,
-} from "../../../hooks/api/useTemplates";
-import { PremiumEmptyState } from "../../../components/layout";
+import { useQueryClient } from "@tanstack/react-query";
 import {
 	AlertCircle,
-	Plus,
+	ArrowUpDown,
 	Download,
 	FileText,
-	Star,
-	Search,
-	ArrowUpDown,
 	Loader2,
+	Plus,
+	Search,
+	Star,
 } from "lucide-react";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { toast } from "sonner";
+import { PremiumEmptyState } from "../../../components/layout";
 import { useUnlinkTemplateFromInstance } from "../../../hooks/api/useDeploymentPreview";
-import { useExecuteSync } from "../../../hooks/api/useSync";
-import { useTemplateUpdates } from "../../../hooks/api/useTemplateUpdates";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
+import { useExecuteSync } from "../../../hooks/api/useSync";
+import {
+	TEMPLATES_QUERY_KEY,
+	useDeleteTemplate,
+	useDuplicateTemplate,
+	useTemplates,
+} from "../../../hooks/api/useTemplates";
+import { useTemplateUpdates } from "../../../hooks/api/useTemplateUpdates";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useTemplateListModals } from "../hooks/use-template-list-modals";
 import { TemplateCardContent } from "./template-card-content";
 import { TemplateInstanceSelector } from "./template-instance-selector";
-import { useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
-import { useTemplateListModals } from "../hooks/use-template-list-modals";
 
 // Lazy-loaded modals — only fetched when the user opens them
-const SyncValidationModal = lazy(() => import("./sync-validation-modal").then(m => ({ default: m.SyncValidationModal })));
-const SyncProgressModal = lazy(() => import("./sync-progress-modal").then(m => ({ default: m.SyncProgressModal })));
-const DeploymentPreviewModal = lazy(() => import("./deployment-preview-modal").then(m => ({ default: m.DeploymentPreviewModal })));
-const BulkDeploymentModal = lazy(() => import("./bulk-deployment-modal").then(m => ({ default: m.BulkDeploymentModal })));
-const EnhancedTemplateExportModal = lazy(() => import("./enhanced-template-export-modal").then(m => ({ default: m.EnhancedTemplateExportModal })));
-const EnhancedTemplateImportModal = lazy(() => import("./enhanced-template-import-modal").then(m => ({ default: m.EnhancedTemplateImportModal })));
-import { getEffectiveQualityConfig } from "../lib/quality-config-utils";
+const SyncValidationModal = lazy(() =>
+	import("./sync-validation-modal").then((m) => ({ default: m.SyncValidationModal })),
+);
+const SyncProgressModal = lazy(() =>
+	import("./sync-progress-modal").then((m) => ({ default: m.SyncProgressModal })),
+);
+const DeploymentPreviewModal = lazy(() =>
+	import("./deployment-preview-modal").then((m) => ({ default: m.DeploymentPreviewModal })),
+);
+const BulkDeploymentModal = lazy(() =>
+	import("./bulk-deployment-modal").then((m) => ({ default: m.BulkDeploymentModal })),
+);
+const EnhancedTemplateExportModal = lazy(() =>
+	import("./enhanced-template-export-modal").then((m) => ({
+		default: m.EnhancedTemplateExportModal,
+	})),
+);
+const EnhancedTemplateImportModal = lazy(() =>
+	import("./enhanced-template-import-modal").then((m) => ({
+		default: m.EnhancedTemplateImportModal,
+	})),
+);
+
 import { getErrorMessage } from "../../../lib/error-utils";
+import { getEffectiveQualityConfig } from "../lib/quality-config-utils";
 
 interface TemplateListProps {
 	serviceType?: "RADARR" | "SONARR";
@@ -58,13 +75,21 @@ interface TemplateListProps {
  * - Staggered animations
  * - Premium action buttons
  */
-export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport: _onImport, onBrowseQualityProfiles }: TemplateListProps) => {
+export const TemplateList = ({
+	serviceType,
+	onCreateNew,
+	onEdit,
+	onImport: _onImport,
+	onBrowseQualityProfiles,
+}: TemplateListProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 
 	// Search, filter, and sort state
 	const [searchInput, setSearchInput] = useState("");
 	const [debouncedSearch, setDebouncedSearch] = useState("");
-	const [sortBy, setSortBy] = useState<"name" | "createdAt" | "updatedAt" | "usageCount">("updatedAt");
+	const [sortBy, setSortBy] = useState<"name" | "createdAt" | "updatedAt" | "usageCount">(
+		"updatedAt",
+	);
 	const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
 	// Debounce search input
@@ -164,7 +189,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport: _onIm
 				onSuccess: () => {
 					dispatch({ type: "CLOSE_UNLINK" });
 				},
-			}
+			},
 		);
 	};
 
@@ -281,9 +306,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport: _onIm
 			</div>
 
 			{/* Search and Sort Controls */}
-			<div
-				className="flex flex-col gap-4 rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-4 sm:flex-row sm:items-center sm:justify-between"
-			>
+			<div className="flex flex-col gap-4 rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-4 sm:flex-row sm:items-center sm:justify-between">
 				{/* Search Input */}
 				<div className="flex-1 max-w-md">
 					<div className="relative">
@@ -294,7 +317,12 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport: _onIm
 							value={searchInput}
 							onChange={(e) => setSearchInput(e.target.value)}
 							className="w-full rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-border focus:outline-hidden focus:ring-2 transition-all duration-200"
-							style={{ focusRing: `${themeGradient.from}40`, paddingLeft: "2.5rem" } as React.CSSProperties}
+							style={
+								{
+									focusRing: `${themeGradient.from}40`,
+									paddingLeft: "2.5rem",
+								} as React.CSSProperties
+							}
 						/>
 					</div>
 				</div>
@@ -340,7 +368,8 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport: _onIm
 					{/* Results Counter */}
 					<div className="flex items-center justify-between">
 						<p className="text-sm text-muted-foreground">
-							Showing <span className="font-medium text-foreground">{templates.length}</span> template{templates.length !== 1 ? "s" : ""}
+							Showing <span className="font-medium text-foreground">{templates.length}</span>{" "}
+							template{templates.length !== 1 ? "s" : ""}
 							{debouncedSearch && ` matching "${debouncedSearch}"`}
 						</p>
 					</div>
@@ -394,7 +423,9 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport: _onIm
 										<input
 											type="text"
 											value={modals.duplicateName}
-											onChange={(e) => dispatch({ type: "SET_DUPLICATE_NAME", name: e.target.value })}
+											onChange={(e) =>
+												dispatch({ type: "SET_DUPLICATE_NAME", name: e.target.value })
+											}
 											placeholder="New template name"
 											className="rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-border focus:outline-hidden"
 											autoFocus
@@ -426,7 +457,9 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport: _onIm
 								<TemplateCardContent
 									template={template}
 									themeGradient={themeGradient}
-									templateUpdate={updatesData?.data.templatesWithUpdates.find((u) => u.templateId === template.id)}
+									templateUpdate={updatesData?.data.templatesWithUpdates.find(
+										(u) => u.templateId === template.id,
+									)}
 									onEdit={() => onEdit(template)}
 									onDeploy={(instanceId, instanceLabel) => {
 										dispatch({
@@ -450,16 +483,29 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport: _onIm
 											},
 										});
 									}}
-									onOpenInstanceSelector={() => dispatch({
-										type: "OPEN_INSTANCE_SELECTOR",
-										data: {
+									onOpenInstanceSelector={() =>
+										dispatch({
+											type: "OPEN_INSTANCE_SELECTOR",
+											data: {
+												templateId: template.id,
+												templateName: template.name,
+												serviceType: template.serviceType,
+											},
+										})
+									}
+									onOpenDuplicate={() =>
+										dispatch({
+											type: "OPEN_DUPLICATE",
 											templateId: template.id,
-											templateName: template.name,
-											serviceType: template.serviceType,
-										},
-									})}
-									onOpenDuplicate={() => dispatch({ type: "OPEN_DUPLICATE", templateId: template.id, defaultName: `${template.name} Copy` })}
-									onOpenExport={() => dispatch({ type: "OPEN_EXPORT", data: { templateId: template.id, templateName: template.name } })}
+											defaultName: `${template.name} Copy`,
+										})
+									}
+									onOpenExport={() =>
+										dispatch({
+											type: "OPEN_EXPORT",
+											data: { templateId: template.id, templateName: template.name },
+										})
+									}
 									onOpenDelete={() => dispatch({ type: "OPEN_DELETE", templateId: template.id })}
 								/>
 							</article>
@@ -512,8 +558,10 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport: _onIm
 				<TemplateInstanceSelector
 					templateName={modals.instanceSelectorTemplate.templateName}
 					matchingInstances={(servicesData || [])
-						.filter(inst => inst.service.toUpperCase() === modals.instanceSelectorTemplate!.serviceType)
-						.map(inst => ({ id: inst.id, label: inst.label, service: inst.service }))}
+						.filter(
+							(inst) => inst.service.toUpperCase() === modals.instanceSelectorTemplate!.serviceType,
+						)
+						.map((inst) => ({ id: inst.id, label: inst.label, service: inst.service }))}
 					themeGradient={themeGradient}
 					onSelectInstance={(instanceId, instanceLabel) => {
 						dispatch({
@@ -527,9 +575,12 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport: _onIm
 						});
 					}}
 					onBulkDeploy={() => {
-						const fullTemplate = templates.find(t => t.id === modals.instanceSelectorTemplate!.templateId);
-						const instances = (servicesData || [])
-							.filter(inst => inst.service.toUpperCase() === modals.instanceSelectorTemplate!.serviceType);
+						const fullTemplate = templates.find(
+							(t) => t.id === modals.instanceSelectorTemplate!.templateId,
+						);
+						const instances = (servicesData || []).filter(
+							(inst) => inst.service.toUpperCase() === modals.instanceSelectorTemplate!.serviceType,
+						);
 						dispatch({
 							type: "INSTANCE_TO_BULK",
 							data: {
@@ -538,7 +589,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport: _onIm
 								serviceType: modals.instanceSelectorTemplate!.serviceType,
 								templateDefaultQualityConfig: getEffectiveQualityConfig(fullTemplate?.config),
 								instanceOverrides: fullTemplate?.instanceOverrides,
-								instances: instances.map(inst => ({
+								instances: instances.map((inst) => ({
 									instanceId: inst.id,
 									instanceLabel: inst.label,
 									instanceType: inst.service.toUpperCase(),
@@ -615,10 +666,12 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport: _onIm
 								Remove from Instance?
 							</h3>
 							<p className="text-sm text-muted-foreground">
-								Are you sure you want to unlink template &quot;{modals.unlinkConfirm.templateName}&quot; from instance &quot;{modals.unlinkConfirm.instanceName}&quot;?
+								Are you sure you want to unlink template &quot;{modals.unlinkConfirm.templateName}
+								&quot; from instance &quot;{modals.unlinkConfirm.instanceName}&quot;?
 							</p>
 							<p className="text-xs text-muted-foreground">
-								This will remove the deployment mapping. Custom Formats already on the instance will not be deleted.
+								This will remove the deployment mapping. Custom Formats already on the instance will
+								not be deleted.
 							</p>
 							<div className="flex gap-3 justify-center pt-2">
 								<button

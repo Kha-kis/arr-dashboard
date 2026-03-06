@@ -1,33 +1,38 @@
 "use client";
 
-import { useState } from "react";
 import type { UpdateOIDCProvider } from "@arr/shared";
 import {
-	ShieldCheck,
+	AlertCircle,
+	Check,
+	Globe,
+	Key,
+	Link,
+	Loader2,
+	Pencil,
 	Plus,
 	Settings,
-	Link,
-	Key,
-	Globe,
-	Pencil,
+	ShieldCheck,
 	Trash2,
-	Check,
 	X,
-	Loader2,
-	AlertCircle,
 } from "lucide-react";
+import { useState } from "react";
+import {
+	GlassmorphicCard,
+	PremiumEmptyState,
+	PremiumSection,
+	PremiumSkeleton,
+} from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
-import { PremiumSection, GlassmorphicCard, PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import {
-	useOIDCProvider,
 	useCreateOIDCProvider,
-	useUpdateOIDCProvider,
 	useDeleteOIDCProvider,
+	useOIDCProvider,
+	useUpdateOIDCProvider,
 } from "../../../hooks/api/useOIDCProviders";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 /**
  * Premium OIDC Provider Section
@@ -244,7 +249,9 @@ export const OIDCProviderSection = () => {
 											placeholder="e.g., Authentik SSO"
 											className="bg-card/30 border-border/50"
 										/>
-										<p className="text-xs text-muted-foreground">Friendly name shown on login page</p>
+										<p className="text-xs text-muted-foreground">
+											Friendly name shown on login page
+										</p>
 									</div>
 
 									<div className="space-y-2 sm:col-span-2">
@@ -257,7 +264,9 @@ export const OIDCProviderSection = () => {
 											placeholder="https://auth.example.com"
 											className="bg-card/30 border-border/50"
 										/>
-										<p className="text-xs text-muted-foreground">Your OIDC provider&apos;s base URL</p>
+										<p className="text-xs text-muted-foreground">
+											Your OIDC provider&apos;s base URL
+										</p>
 									</div>
 
 									<div className="space-y-2">
@@ -349,10 +358,7 @@ export const OIDCProviderSection = () => {
 											</>
 										)}
 									</Button>
-									<Button
-										variant="outline"
-										onClick={() => setShowCreateForm(false)}
-									>
+									<Button variant="outline" onClick={() => setShowCreateForm(false)}>
 										Cancel
 									</Button>
 								</div>
@@ -506,10 +512,7 @@ export const OIDCProviderSection = () => {
 											</>
 										)}
 									</Button>
-									<Button
-										variant="outline"
-										onClick={() => setIsEditing(false)}
-									>
+									<Button variant="outline" onClick={() => setIsEditing(false)}>
 										Cancel
 									</Button>
 								</div>
@@ -529,7 +532,11 @@ export const OIDCProviderSection = () => {
 										>
 											<ShieldCheck
 												className="h-5 w-5"
-												style={{ color: provider.enabled ? SEMANTIC_COLORS.success.from : SEMANTIC_COLORS.error.from }}
+												style={{
+													color: provider.enabled
+														? SEMANTIC_COLORS.success.from
+														: SEMANTIC_COLORS.error.from,
+												}}
 											/>
 										</div>
 										<div>

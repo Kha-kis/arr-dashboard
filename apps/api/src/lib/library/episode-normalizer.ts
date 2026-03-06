@@ -22,9 +22,7 @@ const normalizeEpisodeFile = (
 		releaseGroup: toStringValue(raw.releaseGroup),
 		size: toNumber(raw.size),
 		dateAdded: toStringValue(raw.dateAdded),
-		languages: languages
-			?.map((l) => toStringValue(l?.name))
-			.filter((n): n is string => !!n),
+		languages: languages?.map((l) => toStringValue(l?.name)).filter((n): n is string => !!n),
 		videoCodec: toStringValue(mediaInfo?.videoCodec),
 		audioCodec: toStringValue(mediaInfo?.audioCodec),
 		resolution: toStringValue(mediaInfo?.resolution),
@@ -59,8 +57,6 @@ export const normalizeEpisode = (
 		episodeFileId: toNumber(raw?.episodeFileId),
 		runtime: toNumber(raw?.runtime),
 		finaleType: toStringValue(raw?.finaleType),
-		episodeFile: normalizeEpisodeFile(
-			raw?.episodeFile as Record<string, unknown> | undefined,
-		),
+		episodeFile: normalizeEpisodeFile(raw?.episodeFile as Record<string, unknown> | undefined),
 	};
 };

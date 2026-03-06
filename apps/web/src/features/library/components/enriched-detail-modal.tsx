@@ -14,56 +14,57 @@
  * Falls back to ARR data if the Seerr detail fetch fails.
  */
 
-import { useCallback, useState } from "react";
-import type { LibraryItem, SeerrDiscoverResult } from "@arr/shared";
+import type { LibraryItem, PlexEpisodeStatus, SeerrDiscoverResult } from "@arr/shared";
 import {
-	X,
-	Film,
-	HardDrive,
-	Clock,
-	FolderOpen,
-	FileVideo,
-	Tag,
-	Layers,
-	Loader2,
-	ChevronDown,
-	ChevronRight,
-	Search,
 	AlertTriangle,
 	CheckCircle2,
+	ChevronDown,
+	ChevronRight,
+	Clock,
+	Eye,
+	FileVideo,
+	Film,
+	FolderOpen,
+	HardDrive,
+	Layers,
+	Loader2,
+	Search,
+	Star,
+	Tag,
+	X,
 } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
 import { Button } from "../../../components/ui";
-import {
-	useSeerrMovieDetails,
-	useSeerrTvDetails,
-} from "../../../hooks/api/useSeerr";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { useMovieFileQuery } from "../../../hooks/api/useLibrary";
+import { useEpisodeWatchStatus } from "../../../hooks/api/usePlex";
+import { useSeerrMovieDetails, useSeerrTvDetails } from "../../../hooks/api/useSeerr";
 import { useFocusTrap } from "../../../hooks/useFocusTrap";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { safeOpenUrl } from "../../../lib/utils/url-validation";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import {
-	getSeerrImageUrl,
+	getLinuxInstanceName,
+	getLinuxIsoName,
+	getLinuxSavePath,
+	useIncognitoMode,
+} from "../../../lib/incognito";
+import { RATING_COLOR, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { safeOpenUrl } from "../../../lib/utils/url-validation";
+import { DiscoverCarousel } from "../../discover/components/discover-carousel";
+import { PlexTagsEditor } from "./plex-tags-editor";
+import {
+	BackdropHero,
+	CastSection,
+	ExternalLinksSection,
+	MediaMetaRow,
+	TrailerButton,
+} from "../../discover/components/media-detail-sections";
+import {
 	getMediaStatusInfo,
+	getSeerrImageUrl,
 	isAnimeFromKeywords,
 } from "../../discover/lib/seerr-image-utils";
 import { formatBytes, formatRuntime, SERVICE_COLORS } from "../lib/library-utils";
-import { useMovieFileQuery } from "../../../hooks/api/useLibrary";
 import { PosterImage } from "./poster-image";
 import { SeasonEpisodeList } from "./season-episode-list";
-import {
-	BackdropHero,
-	MediaMetaRow,
-	CastSection,
-	TrailerButton,
-	ExternalLinksSection,
-} from "../../discover/components/media-detail-sections";
-import { DiscoverCarousel } from "../../discover/components/discover-carousel";
-import {
-	useIncognitoMode,
-	getLinuxIsoName,
-	getLinuxInstanceName,
-	getLinuxSavePath,
-} from "../../../lib/incognito";
 
 export interface EnrichedDetailModalProps {
 	item: LibraryItem;
@@ -74,6 +75,15 @@ export interface EnrichedDetailModalProps {
 	pendingSeasonAction?: string | null;
 	/** Pre-fetched TMDB poster path from enrichment — avoids ARR→TMDB flash while detail query loads */
 	enrichedPosterPath?: string | null;
+	/** Plex watch enrichment data (includes ratingKey, instanceId, collections, labels) */
+	plexData?: {
+		ratingKey: string | null;
+		instanceId: string | null;
+		collections: string[];
+		labels: string[];
+	} | null;
+	/** Plex user rating (0-10 scale, null if not rated) */
+	userRating?: number | null;
 }
 
 export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
@@ -84,6 +94,8 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 	onSearchSeason,
 	pendingSeasonAction,
 	enrichedPosterPath,
+	plexData,
+	userRating,
 }) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const focusTrapRef = useFocusTrap<HTMLDivElement>(true, onClose);
@@ -105,6 +117,20 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 	});
 	const liveMovieFile = movieFileQuery.data?.movieFile ?? null;
 	const liveQualityProfileName = movieFileQuery.data?.qualityProfileName;
+
+	// Fetch Plex episode watch status for series items
+	const episodeWatchQuery = useEpisodeWatchStatus(
+		!isMovie ? plexData?.instanceId : undefined,
+		!isMovie ? tmdbId : undefined,
+	);
+	const episodeWatchMap = useMemo(() => {
+		if (!episodeWatchQuery.data?.episodes) return null;
+		const map = new Map<string, PlexEpisodeStatus>();
+		for (const ep of episodeWatchQuery.data.episodes) {
+			map.set(`${ep.seasonNumber}:${ep.episodeNumber}`, ep);
+		}
+		return map;
+	}, [episodeWatchQuery.data]);
 
 	const details = isMovie ? movieQuery.data : tvQuery.data;
 	const isDetailsLoading = isMovie ? movieQuery.isLoading : tvQuery.isLoading;
@@ -138,9 +164,7 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 			: item.year;
 
 	// Runtime / Seasons
-	const runtime = isMovie
-		? (details as NonNullable<typeof movieQuery.data>)?.runtime
-		: undefined;
+	const runtime = isMovie ? (details as NonNullable<typeof movieQuery.data>)?.runtime : undefined;
 	const numberOfSeasons = !isMovie
 		? (details as NonNullable<typeof tvQuery.data>)?.numberOfSeasons
 		: undefined;
@@ -168,9 +192,7 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 
 	// Anime detection
 	const tvDetails = !isMovie ? (details as NonNullable<typeof tvQuery.data>) : undefined;
-	const isAnime = tvDetails?.keywords
-		? isAnimeFromKeywords(tvDetails.keywords)
-		: false;
+	const isAnime = tvDetails?.keywords ? isAnimeFromKeywords(tvDetails.keywords) : false;
 
 	// ----- ARR metadata (from the library item) -----
 	const sizeLabel = formatBytes(item.sizeOnDisk);
@@ -179,9 +201,16 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 
 	// For movies: metadata is merged into a single combined section with file details.
 	// For series: build a metadata grid (no per-file details available).
-	const seriesMetadata: Array<{ label: string; value: React.ReactNode; icon?: React.ComponentType<{ className?: string }> }> = [];
+	const seriesMetadata: Array<{
+		label: string;
+		value: React.ReactNode;
+		icon?: React.ComponentType<{ className?: string }>;
+	}> = [];
 	if (!isMovie) {
-		seriesMetadata.push({ label: "Instance", value: incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName });
+		seriesMetadata.push({
+			label: "Instance",
+			value: incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName,
+		});
 		if (resolvedQualityProfileName) {
 			seriesMetadata.push({ label: "Quality profile", value: resolvedQualityProfileName });
 		}
@@ -195,7 +224,8 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 		if (totalEpisodes > 0) {
 			seriesMetadata.push({ label: "Episodes", value: `${episodeFileCount}/${totalEpisodes}` });
 		}
-		if (runtimeLabel) seriesMetadata.push({ label: "Episode length", value: runtimeLabel, icon: Clock });
+		if (runtimeLabel)
+			seriesMetadata.push({ label: "Episode length", value: runtimeLabel, icon: Clock });
 		if (sizeLabel) seriesMetadata.push({ label: "On disk", value: sizeLabel, icon: HardDrive });
 		if (item.path) {
 			const displayPath = incognitoMode ? getLinuxSavePath(item.path) : item.path;
@@ -218,9 +248,7 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 	const mergedSeasons =
 		!isMovie && sonarrSeasons.length > 0
 			? (() => {
-					const seerrMap = new Map(
-						seerrSeasons.map((s) => [s.seasonNumber, s]),
-					);
+					const seerrMap = new Map(seerrSeasons.map((s) => [s.seasonNumber, s]));
 					return sonarrSeasons
 						.map((sonarr) => {
 							const seerr = seerrMap.get(sonarr.seasonNumber);
@@ -229,14 +257,11 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 								name:
 									seerr?.name ??
 									sonarr.title ??
-									(sonarr.seasonNumber === 0
-										? "Specials"
-										: `Season ${sonarr.seasonNumber}`),
+									(sonarr.seasonNumber === 0 ? "Specials" : `Season ${sonarr.seasonNumber}`),
 								airDate: seerr?.airDate,
 								posterPath: seerr?.posterPath,
 								episodeFileCount: sonarr.episodeFileCount ?? 0,
-								episodeCount:
-									sonarr.episodeCount ?? seerr?.episodeCount ?? 0,
+								episodeCount: sonarr.episodeCount ?? seerr?.episodeCount ?? 0,
 								monitored: sonarr.monitored ?? false,
 							};
 						})
@@ -262,9 +287,7 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 		item.statistics?.episodeFileCount ??
 		mergedSeasons.filter((s) => s.monitored).reduce((sum, s) => sum + s.episodeFileCount, 0);
 	const overallSeasonProgress =
-		totalSeasonEpisodes > 0
-			? Math.round((totalSeasonDownloaded / totalSeasonEpisodes) * 100)
-			: 0;
+		totalSeasonEpisodes > 0 ? Math.round((totalSeasonDownloaded / totalSeasonEpisodes) * 100) : 0;
 	const totalSeasonMissing = Math.max(totalSeasonEpisodes - totalSeasonDownloaded, 0);
 
 	const toggleSeasonExpanded = (seasonNumber: number) => {
@@ -280,13 +303,10 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 	};
 
 	// Handle selecting a recommendation/similar item — open in TMDB
-	const handleSelectRelated = useCallback(
-		(relatedItem: SeerrDiscoverResult) => {
-			const mediaType = relatedItem.mediaType === "movie" ? "movie" : "tv";
-			safeOpenUrl(`https://www.themoviedb.org/${mediaType}/${relatedItem.id}`);
-		},
-		[],
-	);
+	const handleSelectRelated = useCallback((relatedItem: SeerrDiscoverResult) => {
+		const mediaType = relatedItem.mediaType === "movie" ? "movie" : "tv";
+		safeOpenUrl(`https://www.themoviedb.org/${mediaType}/${relatedItem.id}`);
+	}, []);
 
 	return (
 		<div
@@ -354,6 +374,17 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 								isAnime={isAnime}
 							/>
 
+							{/* Plex User Rating */}
+							{typeof userRating === "number" && userRating > 0 && (
+								<div className="flex items-center gap-1.5">
+									<Star className="h-4 w-4 fill-current" style={{ color: RATING_COLOR }} />
+									<span className="text-sm font-semibold" style={{ color: RATING_COLOR }}>
+										{userRating.toFixed(1)}
+									</span>
+									<span className="text-xs text-muted-foreground">Your Plex Rating</span>
+								</div>
+							)}
+
 							{/* Genre pills */}
 							{(seerrGenres.length > 0 || arrGenres.length > 0 || isAnime) && (
 								<div className="flex flex-wrap gap-1.5">
@@ -403,7 +434,9 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 											? SEMANTIC_COLORS.success.bg
 											: SEMANTIC_COLORS.warning.bg,
 										border: `1px solid ${item.monitored ? SEMANTIC_COLORS.success.border : SEMANTIC_COLORS.warning.border}`,
-										color: item.monitored ? SEMANTIC_COLORS.success.from : SEMANTIC_COLORS.warning.text,
+										color: item.monitored
+											? SEMANTIC_COLORS.success.from
+											: SEMANTIC_COLORS.warning.text,
 									}}
 								>
 									{item.monitored ? "Monitored" : "Unmonitored"}
@@ -425,10 +458,7 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 					{/* Loading spinner */}
 					{isDetailsLoading && (
 						<div className="flex items-center justify-center py-8">
-							<Loader2
-								className="h-6 w-6 animate-spin"
-								style={{ color: themeGradient.from }}
-							/>
+							<Loader2 className="h-6 w-6 animate-spin" style={{ color: themeGradient.from }} />
 						</div>
 					)}
 
@@ -472,7 +502,9 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 								<div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 text-sm">
 									<div>
 										<p className="text-xs text-muted-foreground">Instance</p>
-										<p className="font-medium text-foreground">{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}</p>
+										<p className="font-medium text-foreground">
+											{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}
+										</p>
 									</div>
 									{resolvedQualityProfileName && (
 										<div>
@@ -596,7 +628,9 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 									<div key={entry.label} className="space-y-1">
 										<div className="flex items-center gap-1.5">
 											{entry.icon && <entry.icon className="h-3 w-3 text-muted-foreground" />}
-											<p className="text-xs uppercase tracking-wider text-muted-foreground">{entry.label}</p>
+											<p className="text-xs uppercase tracking-wider text-muted-foreground">
+												{entry.label}
+											</p>
 										</div>
 										<p className="text-sm font-medium text-foreground">{entry.value}</p>
 									</div>
@@ -616,7 +650,8 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 									</h3>
 									<div className="flex items-center gap-2">
 										<span className="text-xs text-muted-foreground">
-											{totalSeasonDownloaded}/{totalSeasonEpisodes} episodes ({overallSeasonProgress}%)
+											{totalSeasonDownloaded}/{totalSeasonEpisodes} episodes (
+											{overallSeasonProgress}%)
 										</span>
 										{totalSeasonMissing > 0 ? (
 											<span
@@ -664,57 +699,37 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 								{mergedSeasons.map((season) => {
 									const total = season.episodeCount;
 									const downloaded = season.episodeFileCount;
-									const missing = !season.monitored
-										? 0
-										: Math.max(total - downloaded, 0);
-									const percent =
-										total > 0
-											? Math.round((downloaded / total) * 100)
-											: 0;
+									const missing = !season.monitored ? 0 : Math.max(total - downloaded, 0);
+									const percent = total > 0 ? Math.round((downloaded / total) * 100) : 0;
 									const isComplete = downloaded >= total && total > 0;
 									const airYear = season.airDate
 										? new Date(season.airDate).getFullYear()
 										: undefined;
-									const seasonPoster = getSeerrImageUrl(
-										season.posterPath,
-										"w92",
-									);
-									const isExpanded = expandedSeasons.has(
-										season.seasonNumber,
-									);
+									const seasonPoster = getSeerrImageUrl(season.posterPath, "w92");
+									const isExpanded = expandedSeasons.has(season.seasonNumber);
 									const seasonKey = `${item.instanceId}:${item.id}:${season.seasonNumber}`;
-									const monitorPending =
-										pendingSeasonAction === `monitor:${seasonKey}`;
-									const searchPending =
-										pendingSeasonAction === `search:${seasonKey}`;
+									const monitorPending = pendingSeasonAction === `monitor:${seasonKey}`;
+									const searchPending = pendingSeasonAction === `search:${seasonKey}`;
 
 									return (
 										<div
 											key={season.seasonNumber}
 											className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs overflow-hidden transition-all duration-300 hover:border-border/80"
-											style={
-												isExpanded
-													? { borderColor: `${themeGradient.from}40` }
-													: undefined
-											}
+											style={isExpanded ? { borderColor: `${themeGradient.from}40` } : undefined}
 										>
 											<div className="px-4 py-3">
 												<div className="flex flex-wrap items-center justify-between gap-3">
 													{/* Expand/collapse + poster + name */}
 													<button
 														type="button"
-														onClick={() =>
-															toggleSeasonExpanded(season.seasonNumber)
-														}
+														onClick={() => toggleSeasonExpanded(season.seasonNumber)}
 														aria-expanded={isExpanded}
 														className="flex items-center gap-2 text-left hover:text-foreground transition-colors group"
 													>
 														<div
 															className="flex h-6 w-6 items-center justify-center rounded-md transition-colors"
 															style={{
-																background: isExpanded
-																	? `${themeGradient.from}20`
-																	: "transparent",
+																background: isExpanded ? `${themeGradient.from}20` : "transparent",
 															}}
 														>
 															{isExpanded ? (
@@ -739,13 +754,9 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 															</div>
 														)}
 														<div>
-															<p className="text-sm font-medium text-foreground">
-																{season.name}
-															</p>
+															<p className="text-sm font-medium text-foreground">{season.name}</p>
 															{airYear && (
-																<p className="text-xs text-muted-foreground">
-																	{airYear}
-																</p>
+																<p className="text-xs text-muted-foreground">{airYear}</p>
 															)}
 														</div>
 													</button>
@@ -772,8 +783,7 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 															<span
 																className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
 																style={{
-																	backgroundColor:
-																		SEMANTIC_COLORS.error.bg,
+																	backgroundColor: SEMANTIC_COLORS.error.bg,
 																	border: `1px solid ${SEMANTIC_COLORS.error.border}`,
 																	color: SEMANTIC_COLORS.error.text,
 																}}
@@ -799,10 +809,7 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 																	className="gap-1.5"
 																	disabled={monitorPending}
 																	onClick={() =>
-																		onToggleSeason(
-																			season.seasonNumber,
-																			!season.monitored,
-																		)
+																		onToggleSeason(season.seasonNumber, !season.monitored)
 																	}
 																>
 																	{monitorPending ? (
@@ -820,11 +827,7 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 																	size="sm"
 																	className="gap-1.5"
 																	disabled={searchPending}
-																	onClick={() =>
-																		onSearchSeason(
-																			season.seasonNumber,
-																		)
-																	}
+																	onClick={() => onSearchSeason(season.seasonNumber)}
 																	style={{
 																		background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
 																		boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,
@@ -846,12 +849,8 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 												{total > 0 && (
 													<div className="mt-3 space-y-1">
 														<div className="flex items-center justify-between text-xs">
-															<span className="text-muted-foreground">
-																Progress
-															</span>
-															<span className="font-medium text-foreground">
-																{percent}%
-															</span>
+															<span className="text-muted-foreground">Progress</span>
+															<span className="font-medium text-foreground">{percent}%</span>
 														</div>
 														<div className="h-1.5 rounded-full bg-muted/30 overflow-hidden">
 															<div
@@ -884,6 +883,61 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 														seriesId={item.id}
 														seasonNumber={season.seasonNumber}
 													/>
+
+													{/* Plex Watch Status */}
+													{episodeWatchMap && episodeWatchMap.size > 0 && (() => {
+														const seasonEps = [...episodeWatchMap.entries()]
+															.filter(([key]) => key.startsWith(`${season.seasonNumber}:`))
+															.sort(([a], [b]) => {
+																const aNum = Number(a.split(":")[1]);
+																const bNum = Number(b.split(":")[1]);
+																return aNum - bNum;
+															});
+														if (seasonEps.length === 0) return null;
+														const watchedCount = seasonEps.filter(([, ep]) => ep.watched).length;
+														return (
+															<div className="mt-4 pt-3 border-t border-border/20">
+																<div className="flex items-center gap-2 mb-2">
+																	<Eye className="h-3.5 w-3.5" style={{ color: SEMANTIC_COLORS.success.from }} />
+																	<span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+																		Watch Status
+																	</span>
+																	<span className="text-xs text-muted-foreground">
+																		({watchedCount}/{seasonEps.length} watched)
+																	</span>
+																</div>
+																<div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-1.5">
+																	{seasonEps.map(([key, ep]) => (
+																		<div
+																			key={key}
+																			className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-colors"
+																			style={{
+																				backgroundColor: ep.watched ? `${SEMANTIC_COLORS.success.from}08` : "transparent",
+																				border: `1px solid ${ep.watched ? `${SEMANTIC_COLORS.success.border}` : "transparent"}`,
+																			}}
+																			title={
+																				ep.watched && ep.watchedByUsers.length > 0
+																					? `Watched by: ${ep.watchedByUsers.join(", ")}${ep.lastWatchedAt ? ` — ${new Date(ep.lastWatchedAt).toLocaleDateString()}` : ""}`
+																					: undefined
+																			}
+																		>
+																			{ep.watched ? (
+																				<CheckCircle2 className="h-3.5 w-3.5 shrink-0" style={{ color: SEMANTIC_COLORS.success.from }} />
+																			) : (
+																				<div className="h-3.5 w-3.5 shrink-0 rounded-full border border-border/50" />
+																			)}
+																			<span className={ep.watched ? "text-foreground" : "text-muted-foreground/60"}>
+																				E{String(ep.episodeNumber).padStart(2, "0")}
+																			</span>
+																			<span className={`truncate ${ep.watched ? "text-foreground/70" : "text-muted-foreground/40"}`}>
+																				{ep.title}
+																			</span>
+																		</div>
+																	))}
+																</div>
+															</div>
+														);
+													})()}
 												</div>
 											)}
 										</div>
@@ -913,6 +967,16 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 						</div>
 					)}
 
+					{/* Plex Collections & Labels */}
+					{plexData?.ratingKey && plexData.instanceId && (
+						<PlexTagsEditor
+							instanceId={plexData.instanceId}
+							ratingKey={plexData.ratingKey}
+							collections={plexData.collections}
+							labels={plexData.labels}
+						/>
+					)}
+
 					{/* Cast */}
 					{cast.length > 0 && <CastSection cast={cast} />}
 
@@ -938,11 +1002,7 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 
 					{/* Similar */}
 					{similar.length > 0 && (
-						<DiscoverCarousel
-							title="Similar"
-							items={similar}
-							onSelectItem={handleSelectRelated}
-						/>
+						<DiscoverCarousel title="Similar" items={similar} onSelectItem={handleSelectRelated} />
 					)}
 				</div>
 			</div>

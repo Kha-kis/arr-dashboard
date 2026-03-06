@@ -2,24 +2,21 @@
 
 import type { ServiceInstanceSummary } from "@arr/shared";
 import {
+	AlertCircle,
 	Check,
+	ExternalLink,
+	Loader2,
 	Pencil,
 	Power,
 	Star,
 	Trash2,
 	Zap,
-	Loader2,
-	AlertCircle,
-	ExternalLink,
 } from "lucide-react";
+import { ServiceBadge, StatusBadge } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
-import {
-	ServiceBadge,
-	StatusBadge,
-} from "../../../components/layout";
-import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { useIncognitoMode, getLinuxUrl } from "../../../lib/incognito";
+import { getLinuxUrl, useIncognitoMode } from "../../../lib/incognito";
+import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
 
 /**
@@ -94,7 +91,7 @@ export const ServiceInstanceCard = ({
 				"animate-in fade-in slide-in-from-bottom-2",
 				instance.enabled
 					? "border-border/50 bg-card/30 backdrop-blur-xs hover:border-border/80"
-					: "border-border/30 bg-card/20 opacity-60"
+					: "border-border/30 bg-card/20 opacity-60",
 			)}
 			style={{
 				animationDelay: `${animationDelay}ms`,
@@ -131,9 +128,7 @@ export const ServiceInstanceCard = ({
 									Default
 								</div>
 							)}
-							{!instance.enabled && (
-								<StatusBadge status="default">Disabled</StatusBadge>
-							)}
+							{!instance.enabled && <StatusBadge status="default">Disabled</StatusBadge>}
 						</div>
 
 						{/* URL */}
@@ -184,12 +179,7 @@ export const ServiceInstanceCard = ({
 						</Button>
 
 						{/* Edit button */}
-						<Button
-							variant="ghost"
-							size="sm"
-							onClick={() => onEdit(instance)}
-							className="gap-1.5"
-						>
+						<Button variant="ghost" size="sm" onClick={() => onEdit(instance)} className="gap-1.5">
 							<Pencil className="h-3.5 w-3.5" />
 							<span className="hidden sm:inline">Edit</span>
 						</Button>

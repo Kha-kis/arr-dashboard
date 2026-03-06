@@ -1,10 +1,10 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { cn } from "../../lib/utils";
-import { getServiceGradient, SEMANTIC_COLORS } from "../../lib/theme-gradients";
-import { useThemeGradient } from "../../hooks/useThemeGradient";
 import type { LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
+import { useThemeGradient } from "../../hooks/useThemeGradient";
+import { getServiceGradient, SEMANTIC_COLORS } from "../../lib/theme-gradients";
+import { cn } from "../../lib/utils";
 
 /* =============================================================================
    PREMIUM TABLE
@@ -21,7 +21,7 @@ export const PremiumTable = ({ children, className }: PremiumTableProps) => {
 		<div
 			className={cn(
 				"rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs overflow-x-auto",
-				className
+				className,
 			)}
 		>
 			{children}
@@ -36,9 +36,7 @@ interface PremiumTableHeaderProps {
 
 export const PremiumTableHeader = ({ children, className }: PremiumTableHeaderProps) => {
 	return (
-		<thead className={cn("border-b border-border/50 bg-muted/30", className)}>
-			{children}
-		</thead>
+		<thead className={cn("border-b border-border/50 bg-muted/30", className)}>{children}</thead>
 	);
 };
 
@@ -58,7 +56,7 @@ export const PremiumTableRow = ({
 			className={cn(
 				"border-b border-border/30 last:border-0",
 				isHoverable && "hover:bg-muted/20 transition-colors",
-				className
+				className,
 			)}
 		>
 			{children}
@@ -83,7 +81,7 @@ export const ServiceBadge = ({ service, className }: ServiceBadgeProps) => {
 		<span
 			className={cn(
 				"inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium capitalize",
-				className
+				className,
 			)}
 			style={{
 				backgroundColor: `${gradient.from}20`,
@@ -140,7 +138,7 @@ export const StatusBadge = ({ status, children, icon: Icon, className }: StatusB
 		<span
 			className={cn(
 				"inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium",
-				className
+				className,
 			)}
 			style={{
 				backgroundColor: colors.bg,

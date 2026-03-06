@@ -1,27 +1,28 @@
 import {
+	LIBRARY_SERVICES_UPPER,
 	queueActionRequestSchema,
 	queueBulkActionRequestSchema,
 	queueItemSchema,
 } from "@arr/shared";
+import type { LidarrClient, RadarrClient, ReadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyPluginCallback } from "fastify";
-import type { SonarrClient, RadarrClient, LidarrClient, ReadarrClient } from "arr-sdk";
 import {
 	executeOnInstances,
 	getClientForInstance,
-	isSonarrClient,
-	isRadarrClient,
 	isLidarrClient,
+	isRadarrClient,
 	isReadarrClient,
+	isSonarrClient,
 } from "../../lib/arr/client-helpers.js";
 import {
 	normalizeQueueItem,
 	parseQueueId,
-	triggerQueueSearchWithSdk,
-	type QueueService,
 	type QueueClient,
+	type QueueService,
+	triggerQueueSearchWithSdk,
 } from "../../lib/dashboard/queue-utils.js";
-import { autoImportByDownloadIdWithSdk, setManualImportLogger } from "../manual-import-utils.js";
 import { validateRequest } from "../../lib/utils/validate.js";
+import { autoImportByDownloadIdWithSdk, setManualImportLogger } from "../manual-import-utils.js";
 
 /**
  * Queue-related routes for the dashboard
@@ -41,7 +42,7 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const response = await executeOnInstances(
 			app,
 			request.currentUser!.id,
-			{ serviceTypes: ["SONARR", "RADARR", "LIDARR", "READARR"] },
+			{ serviceTypes: [...LIBRARY_SERVICES_UPPER] },
 			async (client, instance) => {
 				const service = instance.service.toLowerCase() as QueueService;
 

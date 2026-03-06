@@ -1,20 +1,14 @@
 "use client";
 
 import type { ProwlarrIndexerField } from "@arr/shared";
-import { formatFieldValue, isApiKeyRelatedField } from "../lib/indexers-utils";
 import { Settings } from "lucide-react";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { formatFieldValue, isApiKeyRelatedField } from "../lib/indexers-utils";
 
 /**
  * Premium Configuration Field Card
  */
-const FieldCard = ({
-	field,
-	index,
-}: {
-	field: ProwlarrIndexerField;
-	index: number;
-}) => {
+const FieldCard = ({ field, index }: { field: ProwlarrIndexerField; index: number }) => {
 	const { gradient: _themeGradient } = useThemeGradient();
 
 	return (
@@ -32,9 +26,7 @@ const FieldCard = ({
 				{formatFieldValue(field.name, field.value)}
 			</p>
 			{field.helpText && (
-				<p className="mt-2 text-xs text-muted-foreground/80 leading-relaxed">
-					{field.helpText}
-				</p>
+				<p className="mt-2 text-xs text-muted-foreground/80 leading-relaxed">{field.helpText}</p>
 			)}
 		</div>
 	);
@@ -49,11 +41,7 @@ const FieldCard = ({
  * - API key field filtering
  * - Help text support
  */
-export const IndexerConfigurationFields = ({
-	fields,
-}: {
-	fields: ProwlarrIndexerField[];
-}) => {
+export const IndexerConfigurationFields = ({ fields }: { fields: ProwlarrIndexerField[] }) => {
 	const { gradient: themeGradient } = useThemeGradient();
 
 	const filteredFields = fields.filter((field) => !isApiKeyRelatedField(field));
@@ -75,11 +63,7 @@ export const IndexerConfigurationFields = ({
 			{/* Fields Grid */}
 			<div className="grid gap-3 sm:grid-cols-2">
 				{filteredFields.slice(0, 10).map((field, index) => (
-					<FieldCard
-						key={field.name}
-						field={field}
-						index={index}
-					/>
+					<FieldCard key={field.name} field={field} index={index} />
 				))}
 			</div>
 

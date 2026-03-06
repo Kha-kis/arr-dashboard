@@ -1,18 +1,18 @@
 "use client";
 
-import type { ReactNode } from "react";
-import Image from "next/image";
-import type { SeerrRequest, SeerrSeason, SeerrMediaStatus } from "@arr/shared";
-import { SEERR_REQUEST_STATUS, SEERR_MEDIA_STATUS } from "@arr/shared";
+import type { SeerrMediaStatus, SeerrRequest, SeerrSeason } from "@arr/shared";
+import { SEERR_MEDIA_STATUS, SEERR_REQUEST_STATUS } from "@arr/shared";
 import { Film, Tv, User } from "lucide-react";
+import Image from "next/image";
+import type { ReactNode } from "react";
 import { GlassmorphicCard, StatusBadge } from "../../../components/layout";
 import {
-	getRequestStatusLabel,
-	getRequestStatusVariant,
+	formatRelativeTime,
 	getMediaStatusLabel,
 	getMediaStatusVariant,
-	formatRelativeTime,
 	getPosterUrl,
+	getRequestStatusLabel,
+	getRequestStatusVariant,
 } from "../lib/seerr-utils";
 
 interface RequestCardProps {
@@ -54,9 +54,7 @@ function formatSeasons(seasons?: SeerrSeason[]): ReactNode | null {
 			</span>
 		);
 	}
-	const availableCount = seasons.filter(
-		(s) => s.status === SEERR_MEDIA_STATUS.AVAILABLE,
-	).length;
+	const availableCount = seasons.filter((s) => s.status === SEERR_MEDIA_STATUS.AVAILABLE).length;
 	if (availableCount > 0 && availableCount < seasons.length) {
 		return `${seasons.length} seasons (${availableCount} available)`;
 	}
@@ -87,7 +85,16 @@ export const RequestCard = ({ request, actions, index = 0, onClick }: RequestCar
 			className={`animate-in fade-in slide-in-from-bottom-2 duration-300${onClick ? " cursor-pointer" : ""}`}
 			style={{ animationDelay: `${index * 30}ms`, animationFillMode: "backwards" }}
 			onClick={onClick}
-			onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } } : undefined}
+			onKeyDown={
+				onClick
+					? (e) => {
+							if (e.key === "Enter" || e.key === " ") {
+								e.preventDefault();
+								onClick();
+							}
+						}
+					: undefined
+			}
 			role={onClick ? "button" : undefined}
 			tabIndex={onClick ? 0 : undefined}
 		>
@@ -112,7 +119,8 @@ export const RequestCard = ({ request, actions, index = 0, onClick }: RequestCar
 					<div className="min-w-0 flex-1">
 						<div className="flex items-center gap-2 flex-wrap">
 							<h3 className="truncate text-sm font-semibold text-foreground">
-								{request.media.title ?? `${request.type === "movie" ? "Movie" : "Series"} #${request.media.tmdbId}`}
+								{request.media.title ??
+									`${request.type === "movie" ? "Movie" : "Series"} #${request.media.tmdbId}`}
 							</h3>
 							<StatusBadge status={getRequestStatusVariant(request.status)}>
 								{getRequestStatusLabel(request.status)}
@@ -150,7 +158,15 @@ export const RequestCard = ({ request, actions, index = 0, onClick }: RequestCar
 					</div>
 
 					{/* Action buttons */}
-					{actions && <div className="flex shrink-0 items-center gap-2" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>{actions}</div>}
+					{actions && (
+						<div
+							className="flex shrink-0 items-center gap-2"
+							onClick={(e) => e.stopPropagation()}
+							onKeyDown={(e) => e.stopPropagation()}
+						>
+							{actions}
+						</div>
+					)}
 				</div>
 			</GlassmorphicCard>
 		</div>

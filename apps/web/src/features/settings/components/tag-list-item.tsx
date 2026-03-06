@@ -1,6 +1,6 @@
 "use client";
 
-import { Tag, X, Loader2 } from "lucide-react";
+import { Loader2, Tag, X } from "lucide-react";
 import { Button } from "../../../components/ui/button";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 

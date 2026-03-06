@@ -43,7 +43,7 @@ function sanitizeErrorMessage(message: string | undefined | null): string {
 		// Scrub patterns that might leak sensitive info
 		const scrubPatterns: [RegExp, string][] = [
 			// URLs (http, https, ftp, ws, wss)
-			[/\b(https?|ftp|wss?):\/\/[^\s<>"{}|\\^`\[\]]+/gi, "[URL]"],
+			[/\b(https?|ftp|wss?):\/\/[^\s<>"{}|\\^`[\]]+/gi, "[URL]"],
 			// File system paths (Unix and Windows)
 			[/\b(?:\/(?:[\w.-]+\/)+[\w.-]*|[A-Za-z]:\\(?:[\w.-]+\\)+[\w.-]*)/g, "[PATH]"],
 			// Long hex strings (32+ chars, likely tokens/hashes)

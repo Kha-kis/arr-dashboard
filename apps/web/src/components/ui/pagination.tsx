@@ -56,7 +56,7 @@ export const Pagination = ({
 
 		const half = Math.floor(maxPageButtons / 2);
 		let start = Math.max(1, currentPage - half);
-		let end = Math.min(totalPages, start + maxPageButtons - 1);
+		const end = Math.min(totalPages, start + maxPageButtons - 1);
 
 		// Adjust if we're near the end
 		if (end - start < maxPageButtons - 1) {
@@ -144,9 +144,7 @@ export const Pagination = ({
 						>
 							1
 						</Button>
-						{(pageNumbers[0] ?? 1) > 2 && (
-							<span className="px-2 text-white/50">...</span>
-						)}
+						{(pageNumbers[0] ?? 1) > 2 && <span className="px-2 text-white/50">...</span>}
 					</>
 				)}
 

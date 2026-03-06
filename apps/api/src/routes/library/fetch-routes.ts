@@ -1,11 +1,11 @@
 import {
+	LIBRARY_SERVICES_UPPER,
 	type LibraryAlbum,
 	type LibraryBook,
 	type LibraryEpisode,
 	type LibraryItem,
 	type LibraryService,
 	type LibraryTrack,
-	type PaginatedLibraryResponse,
 	libraryAlbumsRequestSchema,
 	libraryAlbumsResponseSchema,
 	libraryBooksRequestSchema,
@@ -16,9 +16,9 @@ import {
 	libraryMovieFileResponseSchema,
 	libraryTracksRequestSchema,
 	libraryTracksResponseSchema,
+	type PaginatedLibraryResponse,
 	paginatedLibraryResponseSchema,
 } from "@arr/shared";
-import type { Prisma, LibraryItemType as PrismaLibraryItemType } from "../../lib/prisma.js";
 import type { FastifyPluginCallback } from "fastify";
 import {
 	getClientForInstance,
@@ -34,6 +34,8 @@ import { buildMovieFile } from "../../lib/library/movie-normalizer.js";
 import { normalizeTrack } from "../../lib/library/track-normalizer.js";
 import { libraryQuerySchema } from "../../lib/library/validation-schemas.js";
 import { getLibrarySyncScheduler } from "../../lib/library-sync/index.js";
+import { validateRequest } from "../../lib/utils/validate.js";
+import type { Prisma, LibraryItemType as PrismaLibraryItemType } from "../../lib/prisma.js";
 
 /**
  * Register data fetching routes for library
@@ -46,7 +48,7 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 	 * Fetches library items from cache with server-side pagination, search, and filtering
 	 */
 	app.get("/library", async (request, reply) => {
-		const parsed = libraryQuerySchema.parse(request.query ?? {});
+		const parsed = validateRequest(libraryQuerySchema, request.query ?? {});
 		const userId = request.currentUser!.id;
 
 		// Get user's instances to filter cache by
@@ -54,7 +56,7 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 			where: {
 				userId,
 				enabled: true,
-				service: { in: ["SONARR", "RADARR", "LIDARR", "READARR"] },
+				service: { in: [...LIBRARY_SERVICES_UPPER] },
 			},
 			select: { id: true },
 		});
@@ -163,7 +165,10 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 		if (parsed.search) {
 			where.title =
 				app.dbProvider === "postgresql"
-					? ({ contains: parsed.search, mode: "insensitive" } as unknown as Prisma.StringFilter<"LibraryCache">)
+					? ({
+							contains: parsed.search,
+							mode: "insensitive",
+						} as unknown as Prisma.StringFilter<"LibraryCache">)
 					: { contains: parsed.search };
 		}
 
@@ -228,10 +233,12 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 		const cachedItems = await app.prisma.libraryCache.findMany({
 			where,
 			orderBy,
-			...(fetchAll ? {} : {
-				skip: (parsed.page - 1) * parsed.limit,
-				take: parsed.limit,
-			}),
+			...(fetchAll
+				? {}
+				: {
+						skip: (parsed.page - 1) * parsed.limit,
+						take: parsed.limit,
+					}),
 		});
 
 		// Parse JSON data back to LibraryItem
@@ -326,7 +333,7 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 	 * Note: Episodes are NOT cached - fetched directly from ARR
 	 */
 	app.get("/library/episodes", async (request, reply) => {
-		const parsed = libraryEpisodesRequestSchema.parse(request.query ?? {});
+		const parsed = validateRequest(libraryEpisodesRequestSchema, request.query ?? {});
 
 		const clientResult = await getClientForInstance(app, request, parsed.instanceId);
 		if (!clientResult.success) {
@@ -375,7 +382,7 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 	 * the Radarr version — we merge the richest data from both responses.
 	 */
 	app.get("/library/movie-file", async (request, reply) => {
-		const parsed = libraryMovieFileRequestSchema.parse(request.query ?? {});
+		const parsed = validateRequest(libraryMovieFileRequestSchema, request.query ?? {});
 
 		const clientResult = await getClientForInstance(app, request, parsed.instanceId);
 		if (!clientResult.success) {
@@ -419,15 +426,21 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 			});
 		}
 
-		const movieRaw = (movieResult.status === "fulfilled" ? movieResult.value : null) as Record<string, unknown> | null;
+		const movieRaw = (movieResult.status === "fulfilled" ? movieResult.value : null) as Record<
+			string,
+			unknown
+		> | null;
 		const embeddedFile = movieRaw?.movieFile as Record<string, unknown> | undefined;
-		const standaloneFile = (filesResult.status === "fulfilled" ? filesResult.value[0] : null) as Record<string, unknown> | null;
+		const standaloneFile = (
+			filesResult.status === "fulfilled" ? filesResult.value[0] : null
+		) as Record<string, unknown> | null;
 
 		// Prefer the source that has custom formats; fall back to whichever is available
-		const bestRawFile =
-			standaloneFile?.customFormats ? standaloneFile
-				: embeddedFile?.customFormats ? embeddedFile
-				: standaloneFile ?? embeddedFile;
+		const bestRawFile = standaloneFile?.customFormats
+			? standaloneFile
+			: embeddedFile?.customFormats
+				? embeddedFile
+				: (standaloneFile ?? embeddedFile);
 
 		const movieFile = bestRawFile ? buildMovieFile(bestRawFile) : null;
 
@@ -447,7 +460,7 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 	 * Note: Albums are NOT cached - fetched directly from ARR
 	 */
 	app.get("/library/albums", async (request, reply) => {
-		const parsed = libraryAlbumsRequestSchema.parse(request.query ?? {});
+		const parsed = validateRequest(libraryAlbumsRequestSchema, request.query ?? {});
 
 		const clientResult = await getClientForInstance(app, request, parsed.instanceId);
 		if (!clientResult.success) {
@@ -488,7 +501,7 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 	 * Note: Books are NOT cached - fetched directly from ARR
 	 */
 	app.get("/library/books", async (request, reply) => {
-		const parsed = libraryBooksRequestSchema.parse(request.query ?? {});
+		const parsed = validateRequest(libraryBooksRequestSchema, request.query ?? {});
 
 		const clientResult = await getClientForInstance(app, request, parsed.instanceId);
 		if (!clientResult.success) {
@@ -529,7 +542,7 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 	 * Note: Tracks are NOT cached - fetched directly from ARR
 	 */
 	app.get("/library/tracks", async (request, reply) => {
-		const parsed = libraryTracksRequestSchema.parse(request.query ?? {});
+		const parsed = validateRequest(libraryTracksRequestSchema, request.query ?? {});
 
 		const clientResult = await getClientForInstance(app, request, parsed.instanceId);
 		if (!clientResult.success) {

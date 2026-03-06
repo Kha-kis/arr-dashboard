@@ -1,67 +1,67 @@
 "use client";
 
+import {
+	ArrowUpCircle,
+	Gauge,
+	Package,
+	Pause,
+	Play,
+	Power,
+	RotateCcw,
+	Save,
+	Search,
+	Settings,
+	Trash2,
+	Zap,
+} from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
-	Settings,
-	Save,
-	RotateCcw,
-	Play,
-	Pause,
-	Power,
-	Zap,
-	Search,
-	ArrowUpCircle,
-	Gauge,
-	Trash2,
-	Package,
-} from "lucide-react";
-import { Button, Switch, Alert, AlertDescription } from "../../../components/ui";
+	ConfigInput,
+	ConfigSection,
+	GlassmorphicCard,
+	GradientButton,
+	PremiumCard,
+	PremiumEmptyState,
+	PremiumSection,
+	PremiumSkeleton,
+	ServiceBadge,
+	StatusBadge,
+} from "../../../components/layout";
+import { Alert, AlertDescription, Button, Switch } from "../../../components/ui";
 import {
 	Dialog,
 	DialogContent,
-	DialogHeader,
-	DialogTitle,
 	DialogDescription,
 	DialogFooter,
+	DialogHeader,
+	DialogTitle,
 } from "../../../components/ui/dialog";
-import {
-	PremiumSection,
-	PremiumEmptyState,
-	PremiumCard,
-	ServiceBadge,
-	StatusBadge,
-	GlassmorphicCard,
-	GradientButton,
-	PremiumSkeleton,
-	ConfigSection,
-	ConfigInput,
-} from "../../../components/layout";
-import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getErrorMessage } from "../../../lib/error-utils";
+import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import {
-	useHuntingConfigs,
-	useUpdateHuntConfig,
-	useToggleScheduler,
 	useClearSearchHistory,
+	useHuntingConfigs,
+	useToggleScheduler,
+	useUpdateHuntConfig,
 } from "../hooks/useHuntingConfig";
 import { useHuntingStatus } from "../hooks/useHuntingStatus";
 import { useManualHunt } from "../hooks/useManualHunt";
-import { HuntingFilters } from "./hunting-filters";
-import type { HuntConfigWithInstance, HuntConfigUpdate } from "../lib/hunting-types";
 import {
-	MIN_MISSING_INTERVAL_MINS,
-	MIN_UPGRADE_INTERVAL_MINS,
-	MAX_INTERVAL_MINS,
-	MIN_BATCH_SIZE,
+	DEFAULT_RESEARCH_AFTER_DAYS,
 	MAX_BATCH_SIZE,
-	MIN_HOURLY_API_CAP,
 	MAX_HOURLY_API_CAP,
+	MAX_INTERVAL_MINS,
 	MAX_QUEUE_THRESHOLD,
 	MAX_RESEARCH_AFTER_DAYS,
-	DEFAULT_RESEARCH_AFTER_DAYS,
+	MIN_BATCH_SIZE,
+	MIN_HOURLY_API_CAP,
+	MIN_MISSING_INTERVAL_MINS,
+	MIN_UPGRADE_INTERVAL_MINS,
 } from "../lib/constants";
-import { getErrorMessage } from "../../../lib/error-utils";
+import type { HuntConfigUpdate, HuntConfigWithInstance } from "../lib/hunting-types";
+import { HuntingFilters } from "./hunting-filters";
 
 /**
  * Premium Hunting Configuration
@@ -135,16 +135,13 @@ export const HuntingConfig = () => {
 
 	const configuredInstances = configs.filter((c) => c !== null);
 	const unconfiguredInstances = instances.filter(
-		(inst) => !configs.some((c) => c?.instanceId === inst.id)
+		(inst) => !configs.some((c) => c?.instanceId === inst.id),
 	);
 
 	return (
 		<div className="flex flex-col gap-8">
 			{/* Global Automation Control */}
-			<GlassmorphicCard
-				padding="none"
-				className={schedulerRunning ? "border-green-500/30" : ""}
-			>
+			<GlassmorphicCard padding="none" className={schedulerRunning ? "border-green-500/30" : ""}>
 				{/* Status accent line */}
 				<div
 					className="h-1 rounded-t-2xl"
@@ -172,9 +169,7 @@ export const HuntingConfig = () => {
 								<Power
 									className="h-6 w-6"
 									style={{
-										color: schedulerRunning
-											? SEMANTIC_COLORS.success.from
-											: themeGradient.from,
+										color: schedulerRunning ? SEMANTIC_COLORS.success.from : themeGradient.from,
 									}}
 								/>
 							</div>
@@ -214,11 +209,7 @@ export const HuntingConfig = () => {
 
 			{/* Configured Instances */}
 			{configuredInstances.length > 0 && (
-				<PremiumSection
-					title="Configured Instances"
-					icon={Settings}
-					animationDelay={100}
-				>
+				<PremiumSection title="Configured Instances" icon={Settings} animationDelay={100}>
 					<div className="space-y-4">
 						{configuredInstances.map(
 							(config, index) =>
@@ -229,7 +220,7 @@ export const HuntingConfig = () => {
 										onSaved={refetch}
 										animationDelay={150 + index * 50}
 									/>
-								)
+								),
 						)}
 					</div>
 				</PremiumSection>
@@ -428,9 +419,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 					title="Hunt Missing Content"
 					description="Search for undownloaded episodes/movies"
 					enabled={formState.huntMissingEnabled ?? false}
-					onToggle={(checked) =>
-						setFormState((prev) => ({ ...prev, huntMissingEnabled: checked }))
-					}
+					onToggle={(checked) => setFormState((prev) => ({ ...prev, huntMissingEnabled: checked }))}
 				>
 					<div className="grid grid-cols-2 gap-4">
 						<ConfigInput
@@ -440,9 +429,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 							min={MIN_BATCH_SIZE}
 							max={MAX_BATCH_SIZE}
 							value={formState.missingBatchSize ?? 5}
-							onChange={(value) =>
-								setFormState((prev) => ({ ...prev, missingBatchSize: value }))
-							}
+							onChange={(value) => setFormState((prev) => ({ ...prev, missingBatchSize: value }))}
 						/>
 						<ConfigInput
 							label={`Hunt Every (min ${MIN_MISSING_INTERVAL_MINS})`}
@@ -477,9 +464,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 							min={MIN_BATCH_SIZE}
 							max={MAX_BATCH_SIZE}
 							value={formState.upgradeBatchSize ?? 3}
-							onChange={(value) =>
-								setFormState((prev) => ({ ...prev, upgradeBatchSize: value }))
-							}
+							onChange={(value) => setFormState((prev) => ({ ...prev, upgradeBatchSize: value }))}
 						/>
 						<ConfigInput
 							label={`Hunt Every (min ${MIN_UPGRADE_INTERVAL_MINS})`}
@@ -534,9 +519,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 							min={MIN_HOURLY_API_CAP}
 							max={MAX_HOURLY_API_CAP}
 							value={formState.hourlyApiCap ?? 100}
-							onChange={(value) =>
-								setFormState((prev) => ({ ...prev, hourlyApiCap: value }))
-							}
+							onChange={(value) => setFormState((prev) => ({ ...prev, hourlyApiCap: value }))}
 						/>
 						<ConfigInput
 							label="Queue Threshold"
@@ -545,9 +528,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 							min={0}
 							max={MAX_QUEUE_THRESHOLD}
 							value={formState.queueThreshold ?? 25}
-							onChange={(value) =>
-								setFormState((prev) => ({ ...prev, queueThreshold: value }))
-							}
+							onChange={(value) => setFormState((prev) => ({ ...prev, queueThreshold: value }))}
 						/>
 					</div>
 					<div className="grid grid-cols-2 gap-4 mt-4">
@@ -558,9 +539,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 							min={0}
 							max={MAX_RESEARCH_AFTER_DAYS}
 							value={formState.researchAfterDays ?? DEFAULT_RESEARCH_AFTER_DAYS}
-							onChange={(value) =>
-								setFormState((prev) => ({ ...prev, researchAfterDays: value }))
-							}
+							onChange={(value) => setFormState((prev) => ({ ...prev, researchAfterDays: value }))}
 						/>
 					</div>
 				</div>
@@ -682,7 +661,6 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 		</PremiumCard>
 	);
 };
-
 
 /* =============================================================================
    UNCONFIGURED INSTANCE CARD

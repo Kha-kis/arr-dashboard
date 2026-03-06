@@ -3,7 +3,7 @@
  */
 
 import type { QueueItem } from "@arr/shared";
-import type { MessageTone, IssueSummary } from "../components/queue-issue-badge";
+import type { IssueSummary, MessageTone } from "../components/queue-issue-badge";
 
 /**
  * Status line representing a single message with tone
@@ -82,7 +82,13 @@ export const deriveTitle = (items: QueueItem[]): string => {
 		return "Queue group";
 	}
 	return (
-		first.series?.title || first.movie?.title || first.artist?.name || first.author?.name || first.title || first.instanceName || "Queue group"
+		first.series?.title ||
+		first.movie?.title ||
+		first.artist?.name ||
+		first.author?.name ||
+		first.title ||
+		first.instanceName ||
+		"Queue group"
 	);
 };
 
@@ -212,7 +218,10 @@ export const summarizeLines = (lines: StatusLine[]): CompactLine[] => {
 		}
 
 		const normalized = trimmed.toLowerCase();
-		const looksLikeFile = /\.(mkv|mp4|avi|m4v|ts|rar|zip|7z|flac|mp3|ogg|aac|wav|wma|opus|m4a|alac|epub|mobi|azw3|pdf|cbr|cbz)$/i.test(normalized);
+		const looksLikeFile =
+			/\.(mkv|mp4|avi|m4v|ts|rar|zip|7z|flac|mp3|ogg|aac|wav|wma|opus|m4a|alac|epub|mobi|azw3|pdf|cbr|cbz)$/i.test(
+				normalized,
+			);
 		if (looksLikeFile || looksLikeReleaseName(trimmed)) {
 			return;
 		}
@@ -281,13 +290,13 @@ export const formatSizeGB = (bytes?: number): string | null => {
  * Issue types that can be detected in queue items
  */
 export type ProblematicIssueType =
-	| "failed_import"      // Manual import required
-	| "stalled"            // Download has stalled
-	| "download_error"     // Download client reported error
-	| "import_error"       // Import failed with error
-	| "warning"            // Has warnings but not critical
-	| "timeout"            // Connection/timeout issues
-	| "missing_files";     // No files found for import
+	| "failed_import" // Manual import required
+	| "stalled" // Download has stalled
+	| "download_error" // Download client reported error
+	| "import_error" // Import failed with error
+	| "warning" // Has warnings but not critical
+	| "timeout" // Connection/timeout issues
+	| "missing_files"; // No files found for import
 
 /**
  * Result of analyzing a queue item for problems
@@ -318,13 +327,7 @@ const MANUAL_IMPORT_KEYWORDS = [
 /**
  * Keywords indicating stalled downloads
  */
-const STALLED_KEYWORDS = [
-	"stalled",
-	"stuck",
-	"no active peers",
-	"not downloading",
-	"paused",
-];
+const STALLED_KEYWORDS = ["stalled", "stuck", "no active peers", "not downloading", "paused"];
 
 /**
  * Keywords indicating errors
@@ -343,13 +346,7 @@ const ERROR_KEYWORDS = [
 /**
  * Keywords indicating timeout/connection issues
  */
-const TIMEOUT_KEYWORDS = [
-	"timeout",
-	"timed out",
-	"connection",
-	"network",
-	"unreachable",
-];
+const TIMEOUT_KEYWORDS = ["timeout", "timed out", "connection", "network", "unreachable"];
 
 /**
  * Analyze a queue item for problems
@@ -399,7 +396,7 @@ export const analyzeQueueItem = (item: QueueItem): ProblematicAnalysis => {
 
 	// Check for stalled
 	const statusLower = (item.status ?? "").toLowerCase();
-	if (statusLower.includes("stalled") || STALLED_KEYWORDS.some(kw => combinedText.includes(kw))) {
+	if (statusLower.includes("stalled") || STALLED_KEYWORDS.some((kw) => combinedText.includes(kw))) {
 		issueTypes.push("stalled");
 		canRetry = true;
 		if (severity === "info") severity = "warning";
@@ -413,7 +410,7 @@ export const analyzeQueueItem = (item: QueueItem): ProblematicAnalysis => {
 		trackedState === "importpending" ||
 		trackedState === "import pending" ||
 		trackedStatus.includes("warning") ||
-		MANUAL_IMPORT_KEYWORDS.some(kw => combinedText.includes(kw))
+		MANUAL_IMPORT_KEYWORDS.some((kw) => combinedText.includes(kw))
 	) {
 		issueTypes.push("failed_import");
 		canManualImport = Boolean(item.downloadId);
@@ -427,7 +424,7 @@ export const analyzeQueueItem = (item: QueueItem): ProblematicAnalysis => {
 	}
 
 	// Check for timeout issues
-	if (TIMEOUT_KEYWORDS.some(kw => combinedText.includes(kw))) {
+	if (TIMEOUT_KEYWORDS.some((kw) => combinedText.includes(kw))) {
 		issueTypes.push("timeout");
 		canRetry = true;
 		if (severity === "info") severity = "warning";
@@ -441,22 +438,19 @@ export const analyzeQueueItem = (item: QueueItem): ProblematicAnalysis => {
 	}
 
 	// Check for import errors
-	if (combinedText.includes("import") && ERROR_KEYWORDS.some(kw => combinedText.includes(kw))) {
+	if (combinedText.includes("import") && ERROR_KEYWORDS.some((kw) => combinedText.includes(kw))) {
 		issueTypes.push("import_error");
 		severity = "error";
 	}
 
 	// Check for general warnings
-	if (
-		trackedStatus.includes("warning") &&
-		!issueTypes.includes("failed_import")
-	) {
+	if (trackedStatus.includes("warning") && !issueTypes.includes("failed_import")) {
 		issueTypes.push("warning");
 		if (severity === "info") severity = "warning";
 	}
 
 	// Check for general errors in combined text
-	if (issueTypes.length === 0 && ERROR_KEYWORDS.some(kw => combinedText.includes(kw))) {
+	if (issueTypes.length === 0 && ERROR_KEYWORDS.some((kw) => combinedText.includes(kw))) {
 		issueTypes.push("download_error");
 		canRetry = true;
 		if (severity === "info") severity = "warning";
@@ -470,7 +464,12 @@ export const analyzeQueueItem = (item: QueueItem): ProblematicAnalysis => {
 	if (isProblematic) {
 		if (canManualImport && (primaryIssue === "failed_import" || primaryIssue === "import_error")) {
 			recommendedAction = "manual_import";
-		} else if (canRetry && (primaryIssue === "stalled" || primaryIssue === "timeout" || primaryIssue === "download_error")) {
+		} else if (
+			canRetry &&
+			(primaryIssue === "stalled" ||
+				primaryIssue === "timeout" ||
+				primaryIssue === "download_error")
+		) {
 			recommendedAction = "retry";
 		} else if (primaryIssue === "missing_files" || severity === "error") {
 			recommendedAction = "blocklist";
@@ -494,7 +493,7 @@ export const analyzeQueueItem = (item: QueueItem): ProblematicAnalysis => {
  * Filter queue items to only include problematic ones
  */
 export const filterProblematicItems = (items: QueueItem[]): QueueItem[] => {
-	return items.filter(item => analyzeQueueItem(item).isProblematic);
+	return items.filter((item) => analyzeQueueItem(item).isProblematic);
 };
 
 /**
@@ -538,5 +537,5 @@ export const ISSUE_TYPE_LABELS: Record<ProblematicIssueType, string> = {
  * Get total count of problematic items
  */
 export const getProblematicCount = (items: QueueItem[]): number => {
-	return items.filter(item => analyzeQueueItem(item).isProblematic).length;
+	return items.filter((item) => analyzeQueueItem(item).isProblematic).length;
 };

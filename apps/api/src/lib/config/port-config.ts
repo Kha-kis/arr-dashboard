@@ -1,16 +1,15 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 /**
- * Port & Security Configuration Reader
+ * Port Configuration Reader
  *
- * Reads configuration at startup before Prisma is initialized.
+ * Reads port configuration at startup before Prisma is initialized.
  * Priority: Environment variable > Database setting > Default
  *
  * Note: Direct database reading only works with SQLite. For PostgreSQL,
  * settings are read via Prisma in docker/read-base-path.cjs at container startup.
  */
 import Database from "better-sqlite3";
-import type { FastifyBaseLogger } from "fastify";
 import { loggers } from "../logger.js";
 
 const log = loggers.api;
@@ -27,12 +26,9 @@ interface PortConfig {
 interface DbSettings {
 	apiPort: number | null;
 	webPort: number | null;
-	listenAddress: string;
-	trustProxy: boolean;
-	secureCookies: boolean | null;
+	trustProxy: number | null; // SQLite stores booleans as 0/1
+	secureCookies: number | null;
 }
-
-let cachedDbSettings: DbSettings | null | undefined;
 
 const DEFAULT_API_PORT = 3001;
 const DEFAULT_WEB_PORT = 3000;
@@ -86,11 +82,23 @@ function getSqliteDatabasePath(): string | null {
 	return isDocker ? "/app/data/prod.db" : resolve(process.cwd(), "dev.db");
 }
 
+// Cache the database read result so getPortConfig() and getSecurityConfig()
+// don't open the same SQLite file twice at startup
+let cachedDbSettings: DbSettings | null | undefined;
+
 /**
- * Read settings from the database (uncached).
+ * Read settings from the database (cached after first call).
  * Only works with SQLite - PostgreSQL users must use env vars or Docker's read-base-path.cjs
  */
-function readSettingsFromDatabaseUncached(logger: FastifyBaseLogger): DbSettings | null {
+function readSettingsFromDatabase(): DbSettings | null {
+	if (cachedDbSettings !== undefined) {
+		return cachedDbSettings;
+	}
+	cachedDbSettings = readSettingsFromDatabaseUncached();
+	return cachedDbSettings;
+}
+
+function readSettingsFromDatabaseUncached(): DbSettings | null {
 	// Skip direct DB access for PostgreSQL - it's handled by read-base-path.cjs in Docker
 	if (isPostgresDatabase()) {
 		return null;
@@ -105,7 +113,7 @@ function readSettingsFromDatabaseUncached(logger: FastifyBaseLogger): DbSettings
 	try {
 		const db = new Database(dbPath, { readonly: true });
 
-		// Check if system_settings table exists (@@map name)
+		// Check if system_settings table exists (@@map name; SQLite is case-insensitive)
 		const tableExists = db
 			.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='system_settings'")
 			.get();
@@ -116,42 +124,37 @@ function readSettingsFromDatabaseUncached(logger: FastifyBaseLogger): DbSettings
 		}
 
 		// Read the singleton settings row
-		const row = db.prepare("SELECT apiPort, webPort, listenAddress, trustProxy, secureCookies FROM system_settings WHERE id = 1").get() as
-			| { apiPort: number | null; webPort: number | null; listenAddress: string | null; trustProxy: number | null; secureCookies: number | null }
+		// New columns (trustProxy, secureCookies) may not exist on older schemas — use SELECT *
+		// and access fields with fallback to handle missing columns gracefully
+		const row = db.prepare("SELECT * FROM system_settings WHERE id = 1").get() as
+			| Record<string, unknown>
 			| undefined;
 
 		db.close();
 
 		if (row) {
 			return {
-				apiPort: row.apiPort,
-				webPort: row.webPort,
-				listenAddress: row.listenAddress ?? "0.0.0.0",
-				trustProxy: row.trustProxy === 1,
-				secureCookies: row.secureCookies === null ? null : row.secureCookies === 1,
+				apiPort: typeof row.apiPort === "number" ? row.apiPort : null,
+				webPort: typeof row.webPort === "number" ? row.webPort : null,
+				trustProxy: typeof row.trustProxy === "number" ? row.trustProxy : null,
+				secureCookies: typeof row.secureCookies === "number" ? row.secureCookies : null,
 			};
 		}
 
 		return null;
 	} catch (error) {
+		// Distinguish first-boot (no DB) from unexpected read failure
+		const dbPath = getSqliteDatabasePath();
 		if (dbPath && existsSync(dbPath)) {
-			// DB file exists but we can't read it — security-critical, log at error level
-			logger.error({ err: error }, "Database exists but settings could not be read — falling back to defaults");
+			log.error(
+				{ err: error, dbPath },
+				"Database file exists but could not be read — port and security settings falling back to defaults",
+			);
 		} else {
-			logger.warn("No database found yet, using default settings");
+			log.warn({ err: error }, "Could not read settings from database (first boot or missing file)");
 		}
 		return null;
 	}
-}
-
-/**
- * Read settings from the database with caching.
- * Results are cached for the lifetime of the process since these settings require a restart.
- */
-function readSettingsFromDatabase(logger: FastifyBaseLogger): DbSettings | null {
-	if (cachedDbSettings !== undefined) return cachedDbSettings;
-	cachedDbSettings = readSettingsFromDatabaseUncached(logger);
-	return cachedDbSettings;
 }
 
 /**
@@ -175,7 +178,7 @@ export function getPortConfig(): PortConfig {
 	}
 
 	// Try to read from database for any missing values
-	const dbSettings = readSettingsFromDatabase(log);
+	const dbSettings = readSettingsFromDatabase();
 
 	let apiPort: number;
 	let apiSource: "env" | "database" | "default";
@@ -214,26 +217,93 @@ export function getPortConfig(): PortConfig {
 }
 
 /**
- * Get security configuration (trustProxy and secureCookies).
+ * Security configuration resolved at startup (before Fastify construction).
  * Priority: Environment variable > Database setting > Default
  */
-export function getSecurityConfig(logger: FastifyBaseLogger): { trustProxy: boolean; secureCookies: boolean | undefined } {
-	// Env vars take precedence (uses shared parser to stay in sync with env.ts Zod transforms)
-	const trustProxyEnv = parseBooleanEnv(process.env.TRUST_PROXY);
-	const secureCookiesEnv = parseBooleanEnv(process.env.COOKIE_SECURE);
+export interface SecurityConfig {
+	trustProxy: boolean;
+	secureCookies: boolean | undefined; // undefined = auto-detect from trustProxy
+	source: {
+		trustProxy: "env" | "database" | "default";
+		secureCookies: "env" | "database" | "default";
+	};
+}
 
-	const dbSettings = readSettingsFromDatabase(logger);
+/**
+ * Get the security configuration for the application.
+ * Priority: Environment variable > Database setting > Default
+ */
+export function getSecurityConfig(): SecurityConfig {
+	const envTrustProxy = process.env.TRUST_PROXY;
+	const envCookieSecure = process.env.COOKIE_SECURE;
 
-	const trustProxy = trustProxyEnv ?? dbSettings?.trustProxy ?? false;
-	// secureCookies: env > db > undefined (auto-detect from trustProxy)
-	const secureCookies = secureCookiesEnv ?? (dbSettings?.secureCookies ?? undefined);
+	// Try to read from database for any missing values
+	const dbSettings = readSettingsFromDatabase();
 
-	return { trustProxy, secureCookies };
+	// Resolve trustProxy
+	let trustProxy: boolean;
+	let trustProxySource: "env" | "database" | "default";
+	if (envTrustProxy !== undefined) {
+		trustProxy = parseBooleanEnv(envTrustProxy) ?? false;
+		trustProxySource = "env";
+	} else if (dbSettings?.trustProxy !== null && dbSettings?.trustProxy !== undefined) {
+		trustProxy = dbSettings.trustProxy === 1;
+		trustProxySource = "database";
+	} else {
+		trustProxy = false;
+		trustProxySource = "default";
+	}
+
+	// Resolve secureCookies
+	let secureCookies: boolean | undefined;
+	let secureCookiesSource: "env" | "database" | "default";
+	if (envCookieSecure !== undefined) {
+		secureCookies = parseBooleanEnv(envCookieSecure) ?? false;
+		secureCookiesSource = "env";
+	} else if (dbSettings?.secureCookies !== null && dbSettings?.secureCookies !== undefined) {
+		secureCookies = dbSettings.secureCookies === 1;
+		secureCookiesSource = "database";
+	} else {
+		secureCookies = undefined; // Auto-detect from trustProxy
+		secureCookiesSource = "default";
+	}
+
+	return {
+		trustProxy,
+		secureCookies,
+		source: {
+			trustProxy: trustProxySource,
+			secureCookies: secureCookiesSource,
+		},
+	};
 }
 
 /**
  * Log the port configuration for debugging
  */
 export function logPortConfig(config: PortConfig): void {
-	log.info({ apiPort: config.apiPort, apiSource: config.source.apiPort, webPort: config.webPort, webSource: config.source.webPort }, "Port configuration loaded");
+	log.info(
+		{
+			apiPort: config.apiPort,
+			apiSource: config.source.apiPort,
+			webPort: config.webPort,
+			webSource: config.source.webPort,
+		},
+		"Port configuration loaded",
+	);
+}
+
+/**
+ * Log the security configuration for debugging
+ */
+export function logSecurityConfig(config: SecurityConfig): void {
+	log.info(
+		{
+			trustProxy: config.trustProxy,
+			trustProxySource: config.source.trustProxy,
+			secureCookies: config.secureCookies ?? `auto (${config.trustProxy})`,
+			secureCookiesSource: config.source.secureCookies,
+		},
+		"Security configuration loaded",
+	);
 }

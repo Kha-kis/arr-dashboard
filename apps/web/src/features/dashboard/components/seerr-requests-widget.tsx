@@ -1,10 +1,10 @@
 "use client";
 
+import { Check, CheckCircle, ChevronRight, Clock, Film, Inbox, Loader2, Tv, X } from "lucide-react";
 import Link from "next/link";
-import { Inbox, ChevronRight, Clock, Check, X, Film, Tv, Loader2, CheckCircle } from "lucide-react";
 import { GlassmorphicCard } from "../../../components/layout";
 import { useSeerrRequestCount } from "../../../hooks/api/useSeerr";
-import { SERVICE_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 
 interface SeerrRequestsWidgetProps {
 	instanceId: string;
@@ -66,7 +66,12 @@ export const SeerrRequestsWidget = ({
 	const mediaStats = [
 		{ icon: Film, label: "Movies", value: counts.movie },
 		{ icon: Tv, label: "TV", value: counts.tv },
-		{ icon: CheckCircle, label: "Available", value: counts.available, color: SEMANTIC_COLORS.success.text },
+		{
+			icon: CheckCircle,
+			label: "Available",
+			value: counts.available,
+			color: SEMANTIC_COLORS.success.text,
+		},
 	];
 
 	return (

@@ -1,18 +1,11 @@
 "use client";
 
+import { CheckCircle2, Download, Globe, Rss, Search, Wifi } from "lucide-react";
+import { GlassmorphicCard } from "../../../components/layout";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { PROTOCOL_COLORS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import type { IndexerStats } from "../lib/indexers-utils";
 import { numberFormatter } from "../lib/indexers-utils";
-import {
-	Globe,
-	CheckCircle2,
-	Download,
-	Rss,
-	Search,
-	Wifi,
-} from "lucide-react";
-import { SEMANTIC_COLORS, PROTOCOL_COLORS } from "../../../lib/theme-gradients";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { GlassmorphicCard } from "../../../components/layout";
 
 /**
  * Premium Stat Card Component
@@ -52,10 +45,7 @@ const StatCard = ({
 					</div>
 					<p className="text-sm font-medium text-muted-foreground">{label}</p>
 				</div>
-				<p
-					className="text-2xl font-bold"
-					style={{ color: displayColor }}
-				>
+				<p className="text-2xl font-bold" style={{ color: displayColor }}>
 					{numberFormatter.format(value)}
 				</p>
 			</div>
@@ -79,12 +69,7 @@ export const IndexerStatsGrid = ({ stats }: { stats: IndexerStats }) => {
 		<div className="space-y-4">
 			{/* Primary Stats */}
 			<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-				<StatCard
-					icon={Globe}
-					label="Total indexers"
-					value={stats.total}
-					index={0}
-				/>
+				<StatCard icon={Globe} label="Total indexers" value={stats.total} index={0} />
 				<StatCard
 					icon={CheckCircle2}
 					label="Enabled"
@@ -110,18 +95,8 @@ export const IndexerStatsGrid = ({ stats }: { stats: IndexerStats }) => {
 
 			{/* Secondary Stats */}
 			<div className="grid gap-4 sm:grid-cols-2">
-				<StatCard
-					icon={Search}
-					label="Search capable"
-					value={stats.search}
-					index={4}
-				/>
-				<StatCard
-					icon={Rss}
-					label="RSS capable"
-					value={stats.rss}
-					index={5}
-				/>
+				<StatCard icon={Search} label="Search capable" value={stats.search} index={4} />
+				<StatCard icon={Rss} label="RSS capable" value={stats.rss} index={5} />
 			</div>
 		</div>
 	);

@@ -1,19 +1,20 @@
 "use client";
 
-import React, { Suspense, useCallback, useEffect, useState } from "react";
 import type { LibraryItem } from "@arr/shared";
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "../../../components/ui";
 import { useLibraryMonitorMutation } from "../../../hooks/api/useLibrary";
+import { useSeriesProgress, useWatchEnrichment } from "../../../hooks/api/usePlex";
 import { useLibraryEnrichment } from "../../../hooks/api/useSeerr";
 import { useSeerrInstances } from "../../seerr/hooks/use-seerr-instances";
-import { useLibraryFilters, useLibraryData, useLibraryActions } from "../hooks";
-import { LibraryHeader } from "./library-header";
-import { LibraryContent } from "./library-content";
-import { LibraryCard } from "./library-card";
-import { ItemDetailsModal } from "./item-details-modal";
+import { useLibraryActions, useLibraryData, useLibraryFilters } from "../hooks";
+import { buildLibraryExternalLink } from "../lib/library-utils";
 import { AlbumBreakdownModal } from "./album-breakdown-modal";
 import { BookBreakdownModal } from "./book-breakdown-modal";
-import { buildLibraryExternalLink } from "../lib/library-utils";
+import { ItemDetailsModal } from "./item-details-modal";
+import { LibraryCard } from "./library-card";
+import { LibraryContent } from "./library-content";
+import { LibraryHeader } from "./library-header";
 
 const EnrichedDetailModal = React.lazy(() =>
 	import("./enriched-detail-modal").then((m) => ({ default: m.EnrichedDetailModal })),
@@ -59,6 +60,21 @@ export const LibraryClient: React.FC = () => {
 	// Seerr enrichment — fetch TMDB ratings + issue counts for current page items
 	const enrichmentQuery = useLibraryEnrichment(seerrInstanceId, data.items);
 	const enrichmentMap = enrichmentQuery.data?.items ?? null;
+
+	// Plex watch enrichment — fetch watch counts, on-deck status, last watched
+	const watchEnrichmentQuery = useWatchEnrichment(data.items);
+	const watchEnrichmentMap = watchEnrichmentQuery.data?.items ?? null;
+
+	// Plex series progress — fetch watched/total episode counts for series items
+	const seriesTmdbIds = useMemo(
+		() =>
+			data.items
+				.filter((item) => item.type === "series" && item.remoteIds?.tmdbId)
+				.map((item) => item.remoteIds!.tmdbId!),
+		[data.items],
+	);
+	const seriesProgressQuery = useSeriesProgress(seriesTmdbIds);
+	const seriesProgressMap = seriesProgressQuery.data?.progress ?? null;
 
 	// Notify user if Seerr enrichment fails (one-time per error transition)
 	useEffect(() => {
@@ -140,14 +156,17 @@ export const LibraryClient: React.FC = () => {
 	const handleCloseBookDetail = useCallback(() => setBookDetail(null), []);
 
 	// Item monitoring handler (memoized)
-	const handleToggleMonitor = useCallback((item: LibraryItem) => {
-		monitorMutation.mutate({
-			instanceId: item.instanceId,
-			service: item.service,
-			itemId: item.id,
-			monitored: !(item.monitored ?? false),
-		});
-	}, [monitorMutation]);
+	const handleToggleMonitor = useCallback(
+		(item: LibraryItem) => {
+			monitorMutation.mutate({
+				instanceId: item.instanceId,
+				service: item.service,
+				itemId: item.id,
+				monitored: !(item.monitored ?? false),
+			});
+		},
+		[monitorMutation],
+	);
 
 	return (
 		<>
@@ -204,11 +223,15 @@ export const LibraryClient: React.FC = () => {
 					LibraryCard={LibraryCard}
 					isSyncing={data.isSyncing}
 					enrichmentMap={enrichmentMap}
+					watchEnrichmentMap={watchEnrichmentMap}
+					seriesProgressMap={seriesProgressMap}
 				/>
 			</div>
 
-			{itemDetail && (
-				seerrInstanceId && (itemDetail.service === "sonarr" || itemDetail.service === "radarr") && itemDetail.remoteIds?.tmdbId ? (
+			{itemDetail &&
+				(seerrInstanceId &&
+				(itemDetail.service === "sonarr" || itemDetail.service === "radarr") &&
+				itemDetail.remoteIds?.tmdbId ? (
 					<Suspense>
 						<EnrichedDetailModal
 							item={itemDetail}
@@ -223,15 +246,30 @@ export const LibraryClient: React.FC = () => {
 							pendingSeasonAction={actions.pendingSeasonAction}
 							enrichedPosterPath={
 								enrichmentMap && itemDetail.remoteIds?.tmdbId
-									? enrichmentMap[`${itemDetail.type === "movie" ? "movie" : "tv"}:${itemDetail.remoteIds.tmdbId}`]?.posterPath
+									? enrichmentMap[
+											`${itemDetail.type === "movie" ? "movie" : "tv"}:${itemDetail.remoteIds.tmdbId}`
+										]?.posterPath
+									: undefined
+							}
+							plexData={
+								watchEnrichmentMap && itemDetail.remoteIds?.tmdbId
+									? watchEnrichmentMap[
+											`${itemDetail.type === "movie" ? "movie" : "series"}:${itemDetail.remoteIds.tmdbId}`
+										]
+									: undefined
+							}
+							userRating={
+								watchEnrichmentMap && itemDetail.remoteIds?.tmdbId
+									? watchEnrichmentMap[
+											`${itemDetail.type === "movie" ? "movie" : "series"}:${itemDetail.remoteIds.tmdbId}`
+										]?.userRating
 									: undefined
 							}
 						/>
 					</Suspense>
 				) : (
 					<ItemDetailsModal item={itemDetail} onClose={handleCloseItemDetail} />
-				)
-			)}
+				))}
 
 			{albumDetail && (
 				<AlbumBreakdownModal

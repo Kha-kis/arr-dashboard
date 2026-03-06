@@ -1,12 +1,12 @@
 "use client";
 
+import { Loader2, Upload } from "lucide-react";
 import { useState } from "react";
-import { Upload, Loader2 } from "lucide-react";
-import { Button, Input, toast } from "../../../components/ui";
 import { GlassmorphicCard } from "../../../components/layout";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useRestoreBackup, useReadBackupFile } from "../../../hooks/api/useBackup";
+import { Button, Input, toast } from "../../../components/ui";
+import { useReadBackupFile, useRestoreBackup } from "../../../hooks/api/useBackup";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 interface BackupRestoreCardProps {
 	onRestoreComplete: (willRestart: boolean) => void;
@@ -35,7 +35,9 @@ export const BackupRestoreCard = ({ onRestoreComplete }: BackupRestoreCardProps)
 			if (willAutoRestart) {
 				onRestoreComplete(true);
 			} else {
-				toast.success(`Backup restored from ${new Date(response.metadata.timestamp).toLocaleString()}`);
+				toast.success(
+					`Backup restored from ${new Date(response.metadata.timestamp).toLocaleString()}`,
+				);
 				onRestoreComplete(false);
 			}
 		} catch (error: unknown) {
@@ -83,7 +85,9 @@ export const BackupRestoreCard = ({ onRestoreComplete }: BackupRestoreCardProps)
 							}}
 						>
 							<p className="font-medium mb-1">Warning: Destructive Operation</p>
-							<p className="text-xs">This will replace all current data with the backup contents.</p>
+							<p className="text-xs">
+								This will replace all current data with the backup contents.
+							</p>
 						</div>
 
 						<div className="space-y-2">

@@ -1,19 +1,20 @@
-import { calendarItemSchema } from "@arr/shared";
+import { LIBRARY_SERVICES_UPPER, calendarItemSchema } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import {
 	executeOnInstances,
-	isSonarrClient,
-	isRadarrClient,
 	isLidarrClient,
+	isRadarrClient,
 	isReadarrClient,
+	isSonarrClient,
 } from "../../lib/arr/client-helpers.js";
 import {
+	type CalendarService,
+	compareCalendarItems,
 	formatDateOnly,
 	normalizeCalendarItem,
-	compareCalendarItems,
-	type CalendarService,
 } from "../../lib/dashboard/calendar-utils.js";
+import { validateRequest } from "../../lib/utils/validate.js";
 
 const calendarQuerySchema = z.object({
 	start: z.string().optional(),
@@ -30,7 +31,7 @@ export const calendarRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Fetches upcoming releases from all enabled Sonarr, Radarr, Lidarr, and Readarr instances
 	 */
 	app.get("/dashboard/calendar", async (request, reply) => {
-		const { start, end, unmonitored } = calendarQuerySchema.parse(request.query ?? {});
+		const { start, end, unmonitored } = validateRequest(calendarQuerySchema, request.query ?? {});
 		const now = new Date();
 		const defaultStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 
@@ -58,7 +59,7 @@ export const calendarRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const response = await executeOnInstances(
 			app,
 			request.currentUser!.id,
-			{ serviceTypes: ["SONARR", "RADARR", "LIDARR", "READARR"] },
+			{ serviceTypes: [...LIBRARY_SERVICES_UPPER] },
 			async (client, instance) => {
 				const service = instance.service.toLowerCase() as CalendarService;
 

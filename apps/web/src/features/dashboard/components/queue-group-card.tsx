@@ -7,19 +7,19 @@
 
 import type { QueueItem } from "@arr/shared";
 import { ChevronDown, Layers } from "lucide-react";
-import { cn } from "../../../lib/utils";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { QueueActionOptions } from "../../../hooks/api/useQueueActions";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
+import { cn } from "../../../lib/utils";
+import { buildKey, collectStatusLines } from "../lib/queue-utils";
 import type { InstanceUrlMap } from "./dashboard-client";
 import type { QueueAction } from "./queue-action-buttons";
 import { QueueActionButtons } from "./queue-action-buttons";
 import type { IssueSummary } from "./queue-issue-badge";
 import { QueueIssueBadge } from "./queue-issue-badge";
-import { QueueProgress } from "./queue-progress";
 import { QueueItemCard } from "./queue-item-card";
 import { QueueItemMetadata } from "./queue-item-metadata";
-import { buildKey, collectStatusLines } from "../lib/queue-utils";
-import { useIncognitoMode, getLinuxIsoName } from "../../../lib/incognito";
+import { QueueProgress } from "./queue-progress";
 
 interface QueueGroupCardProps {
 	groupKey: string;
@@ -164,9 +164,11 @@ export const QueueGroupCard = ({
 							</div>
 							<span
 								className="font-semibold text-foreground transition-colors duration-300"
-								style={{
-									// Hover color handled by group
-								}}
+								style={
+									{
+										// Hover color handled by group
+									}
+								}
 							>
 								{incognitoMode ? getLinuxIsoName(title) : title}
 							</span>
@@ -182,7 +184,12 @@ export const QueueGroupCard = ({
 								<span>{groupCount}</span>
 							</div>
 						</button>
-						<QueueItemMetadata item={metadataItem} instanceUrl={instanceUrl} showGroupCount groupCount={groupCount} />
+						<QueueItemMetadata
+							item={metadataItem}
+							instanceUrl={instanceUrl}
+							showGroupCount
+							groupCount={groupCount}
+						/>
 					</div>
 				</div>
 
@@ -230,7 +237,9 @@ export const QueueGroupCard = ({
 									pending={pending}
 									showChangeCategory={showChangeCategory}
 									onToggleSelect={() => onToggleItemSelect(item)}
-									onAction={(action, actionOptions) => void onItemAction(item, action, actionOptions)}
+									onAction={(action, actionOptions) =>
+										void onItemAction(item, action, actionOptions)
+									}
 									onPrefetchManualImport={onPrefetchManualImport}
 								/>
 							</div>

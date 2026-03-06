@@ -1,5 +1,5 @@
-import { PrismaClient } from "../generated/prisma/client.js";
 import fp from "fastify-plugin";
+import { PrismaClient } from "../generated/prisma/client.js";
 
 type DbProvider = "sqlite" | "postgresql";
 
@@ -32,7 +32,9 @@ export const prismaPlugin = fp(
 		const databaseUrl = app.config.DATABASE_URL!;
 		const provider = detectDbProvider(databaseUrl);
 
-		let adapter: ConstructorParameters<typeof PrismaClient>[0] extends { adapter?: infer A } ? A : never;
+		let adapter: ConstructorParameters<typeof PrismaClient>[0] extends { adapter?: infer A }
+			? A
+			: never;
 		let pgPool: import("pg").Pool | null = null;
 
 		if (provider === "postgresql") {
@@ -44,8 +46,8 @@ export const prismaPlugin = fp(
 			} catch {
 				throw new Error(
 					"PostgreSQL was detected from DATABASE_URL but the required packages " +
-					"(@prisma/adapter-pg, pg) are not installed. " +
-					"Install them with: pnpm add @prisma/adapter-pg pg",
+						"(@prisma/adapter-pg, pg) are not installed. " +
+						"Install them with: pnpm add @prisma/adapter-pg pg",
 				);
 			}
 			pgPool = new pg.default.Pool({ connectionString: databaseUrl });

@@ -115,9 +115,7 @@ export async function updateTrashSettings(
 /**
  * Test if a custom repository is valid and has the expected structure
  */
-export async function testCustomRepo(
-	payload: TestRepoPayload,
-): Promise<TestRepoResponse> {
+export async function testCustomRepo(payload: TestRepoPayload): Promise<TestRepoResponse> {
 	return await apiRequest<TestRepoResponse>("/api/trash-guides/settings/test-repo", {
 		method: "POST",
 		json: payload,

@@ -4,38 +4,71 @@
  * Typed wrapper around ArrClientFactory.rawRequest() for Seerr's REST API (v1).
  * Seerr (merged Jellyseerr + Overseerr) uses `/api/v1/*` endpoints with
  * `X-Api-Key` header authentication — same auth pattern as *arr apps.
+ *
+ * Resilience layers:
+ * 1. Circuit breaker — fail-fast when instance is unreachable
+ * 2. Retry with exponential backoff — handles transient 5xx / 429 / network errors
+ * 3. Structured errors (SeerrApiError) — typed status codes and retry metadata
  */
 
+import {
+	type SeerrCreateRequestPayload,
+	type SeerrCreateRequestResponse,
+	type SeerrDiscoverParams,
+	type SeerrDiscoverResponse,
+	type SeerrGenre,
+	type SeerrIssue,
+	type SeerrIssueComment,
+	type SeerrIssueParams,
+	type SeerrMovieDetails,
+	type SeerrNotificationAgent,
+	type SeerrPageResult,
+	type SeerrQuota,
+	type SeerrRequest,
+	type SeerrRequestCount,
+	type SeerrRequestOptions,
+	type SeerrRequestParams,
+	type SeerrSearchParams,
+	type SeerrServerWithDetails,
+	type SeerrServiceServer,
+	type SeerrStatus,
+	type SeerrTvDetails,
+	type SeerrUser,
+	type SeerrUserParams,
+	type SeerrUserUpdateData,
+	seerrDiscoverResponseSchema,
+	seerrPageResultSchema,
+	seerrRequestCountSchema,
+	seerrRequestSchema,
+	seerrStatusSchema,
+	seerrUserSchema,
+} from "@arr/shared";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import type { ArrClientFactory, ClientInstanceData } from "../arr/client-factory.js";
 import { requireInstance } from "../arr/instance-helpers.js";
-import { AppValidationError } from "../errors.js";
-import type {
-	SeerrCreateRequestPayload,
-	SeerrCreateRequestResponse,
-	SeerrDiscoverParams,
-	SeerrDiscoverResponse,
-	SeerrGenre,
-	SeerrIssue,
-	SeerrIssueComment,
-	SeerrIssueParams,
-	SeerrMovieDetails,
-	SeerrNotificationAgent,
-	SeerrPageResult,
-	SeerrQuota,
-	SeerrRequest,
-	SeerrRequestCount,
-	SeerrRequestOptions,
-	SeerrRequestParams,
-	SeerrSearchParams,
-	SeerrServerWithDetails,
-	SeerrServiceServer,
-	SeerrStatus,
-	SeerrTvDetails,
-	SeerrUser,
-	SeerrUserParams,
-	SeerrUserUpdateData,
-} from "@arr/shared";
+import { AppValidationError, SeerrApiError } from "../errors.js";
+import {
+	type SeerrCache,
+	GENRE_TTL_MS,
+	ISSUE_COUNT_TTL_MS,
+	genreCacheKey,
+	issueCountCacheKey,
+} from "./seerr-cache.js";
+import type { SeerrCircuitBreaker } from "./seerr-circuit-breaker.js";
+import { withSeerrRetry } from "./seerr-retry.js";
+
+// ============================================================================
+// Timeout Constants (milliseconds)
+// ============================================================================
+
+/** Interactive queries — status, lists, users, issues, notification agents */
+const TIMEOUT_INTERACTIVE = 10_000;
+
+/** User-triggered actions — approve, decline, retry, delete, comment, status update */
+const TIMEOUT_ACTION = 10_000;
+
+/** TMDB media detail lookups */
+const TIMEOUT_MEDIA_DETAIL = 10_000;
 
 // ============================================================================
 // Known Notification Agents
@@ -79,11 +112,21 @@ export class SeerrClient {
 	private readonly factory: ArrClientFactory;
 	private readonly instance: ClientInstanceData;
 	private readonly log: FastifyBaseLogger;
+	private readonly circuitBreaker?: SeerrCircuitBreaker;
+	private readonly cache?: SeerrCache;
 
-	constructor(factory: ArrClientFactory, instance: ClientInstanceData, log: FastifyBaseLogger) {
+	constructor(
+		factory: ArrClientFactory,
+		instance: ClientInstanceData,
+		log: FastifyBaseLogger,
+		circuitBreaker?: SeerrCircuitBreaker,
+		cache?: SeerrCache,
+	) {
 		this.factory = factory;
 		this.instance = instance;
 		this.log = log;
+		this.circuitBreaker = circuitBreaker;
+		this.cache = cache;
 	}
 
 	// --- Private HTTP helpers ---
@@ -97,125 +140,193 @@ export class SeerrClient {
 		return body ? ` — ${body.slice(0, 500)}` : "";
 	}
 
-	private async get<T>(path: string): Promise<T> {
-		const response = await this.factory.rawRequest(this.instance, path);
-		if (!response.ok) {
-			const detail = await this.readErrorBody(response);
-			throw new Error(
-				`Seerr GET ${path} failed: ${response.status} ${response.statusText}${detail}`,
-			);
+	/** Parse Retry-After header (supports delta-seconds and HTTP-date formats) */
+	private parseRetryAfter(response: Response): number | undefined {
+		const header = response.headers.get("retry-after");
+		if (!header) return undefined;
+
+		// Try as integer (seconds)
+		const seconds = Number.parseInt(header, 10);
+		if (!Number.isNaN(seconds) && seconds > 0) {
+			return seconds * 1000;
 		}
-		return (await response.json()) as T;
+
+		// Try as HTTP-date
+		const date = Date.parse(header);
+		if (!Number.isNaN(date)) {
+			const ms = date - Date.now();
+			return ms > 0 ? ms : undefined;
+		}
+
+		return undefined;
 	}
 
-	private async post<T>(path: string, body?: unknown): Promise<T> {
-		const response = await this.factory.rawRequest(this.instance, path, {
-			method: "POST",
-			body,
-		});
-		if (!response.ok) {
-			const detail = await this.readErrorBody(response);
-			throw new Error(
-				`Seerr POST ${path} failed: ${response.status} ${response.statusText}${detail}`,
-			);
+	/**
+	 * Core HTTP request method with circuit breaker, retry, and structured errors.
+	 * All public methods delegate to this via get/post/put/del helpers.
+	 */
+	private async request<T>(
+		method: string,
+		path: string,
+		opts?: { body?: unknown; timeout?: number; parseBody?: boolean },
+	): Promise<T> {
+		const timeout = opts?.timeout ?? TIMEOUT_INTERACTIVE;
+		const parseBody = opts?.parseBody ?? true;
+		const instanceId = this.instance.id;
+
+		// Circuit breaker check (throws CircuitBreakerOpenError if open)
+		this.circuitBreaker?.check(instanceId);
+
+		const execute = async (): Promise<T> => {
+			let response: Response;
+			try {
+				response = await this.factory.rawRequest(this.instance, path, {
+					method,
+					body: opts?.body,
+					timeout,
+				});
+			} catch (error) {
+				// Network / timeout errors from rawRequest
+				if (error instanceof Error) {
+					const msg = error.message.toLowerCase();
+					if (msg.includes("abort") || msg.includes("timeout")) {
+						throw SeerrApiError.timeout(
+							`Seerr ${method} ${path} timed out after ${timeout}ms`,
+						);
+					}
+					throw SeerrApiError.network(
+						`Seerr ${method} ${path} network error: ${error.message}`,
+					);
+				}
+				throw error;
+			}
+
+			if (!response.ok) {
+				const detail = await this.readErrorBody(response);
+				const retryAfterMs = this.parseRetryAfter(response);
+				throw new SeerrApiError(
+					`Seerr ${method} ${path} failed: ${response.status} ${response.statusText}${detail}`,
+					{ seerrStatus: response.status, retryAfterMs },
+				);
+			}
+
+			if (!parseBody) return undefined as T;
+			return (await response.json()) as T;
+		};
+
+		try {
+			const result = await withSeerrRetry(execute);
+			this.circuitBreaker?.reportSuccess(instanceId);
+			return result;
+		} catch (error) {
+			// Report failure to circuit breaker for retryable or unknown errors
+			if (error instanceof SeerrApiError) {
+				if (error.retryable) {
+					this.circuitBreaker?.reportFailure(instanceId);
+				}
+			} else {
+				// Unknown error type (not classified as SeerrApiError) — treat as failure
+				this.circuitBreaker?.reportFailure(instanceId);
+			}
+			throw error;
 		}
-		return (await response.json()) as T;
 	}
 
-	private async postNoContent(path: string, body?: unknown): Promise<void> {
-		const response = await this.factory.rawRequest(this.instance, path, {
-			method: "POST",
-			body,
-		});
-		if (!response.ok) {
-			const detail = await this.readErrorBody(response);
-			throw new Error(
-				`Seerr POST ${path} failed: ${response.status} ${response.statusText}${detail}`,
-			);
-		}
+	private get<T>(path: string, timeout?: number): Promise<T> {
+		return this.request("GET", path, { timeout });
 	}
 
-	private async put<T>(path: string, body?: unknown): Promise<T> {
-		const response = await this.factory.rawRequest(this.instance, path, {
-			method: "PUT",
-			body,
-		});
-		if (!response.ok) {
-			const detail = await this.readErrorBody(response);
-			throw new Error(
-				`Seerr PUT ${path} failed: ${response.status} ${response.statusText}${detail}`,
-			);
-		}
-		return (await response.json()) as T;
+	private post<T>(path: string, body?: unknown, timeout?: number): Promise<T> {
+		return this.request("POST", path, { body, timeout });
 	}
 
-	private async del(path: string): Promise<void> {
-		const response = await this.factory.rawRequest(this.instance, path, {
-			method: "DELETE",
-		});
-		if (!response.ok) {
-			const detail = await this.readErrorBody(response);
-			throw new Error(
-				`Seerr DELETE ${path} failed: ${response.status} ${response.statusText}${detail}`,
-			);
-		}
+	private postNoContent(path: string, body?: unknown, timeout?: number): Promise<void> {
+		return this.request("POST", path, { body, timeout, parseBody: false });
+	}
+
+	private put<T>(path: string, body?: unknown, timeout?: number): Promise<T> {
+		return this.request("PUT", path, { body, timeout });
+	}
+
+	private del(path: string, timeout?: number): Promise<void> {
+		return this.request("DELETE", path, { timeout, parseBody: false });
 	}
 
 	// --- Requests ---
 
 	async getRequests(params?: SeerrRequestParams): Promise<SeerrPageResult<SeerrRequest>> {
 		const qs = buildQueryString(params);
-		return this.get(`/api/v1/request${qs}`);
+		const raw = await this.get<SeerrPageResult<SeerrRequest>>(
+			`/api/v1/request${qs}`,
+			TIMEOUT_INTERACTIVE,
+		);
+		return seerrPageResultSchema(seerrRequestSchema).parse(raw) as SeerrPageResult<SeerrRequest>;
 	}
 
 	async getRequestCount(): Promise<SeerrRequestCount> {
-		return this.get("/api/v1/request/count");
+		const raw = await this.get<SeerrRequestCount>(
+			"/api/v1/request/count",
+			TIMEOUT_INTERACTIVE,
+		);
+		return seerrRequestCountSchema.parse(raw);
+	}
+
+	async getRequest(requestId: number): Promise<SeerrRequest> {
+		const raw = await this.get<SeerrRequest>(
+			`/api/v1/request/${requestId}`,
+			TIMEOUT_INTERACTIVE,
+		);
+		return seerrRequestSchema.parse(raw) as SeerrRequest;
 	}
 
 	async approveRequest(requestId: number): Promise<SeerrRequest> {
-		return this.post(`/api/v1/request/${requestId}/approve`);
+		return this.post(`/api/v1/request/${requestId}/approve`, undefined, TIMEOUT_ACTION);
 	}
 
 	async declineRequest(requestId: number): Promise<SeerrRequest> {
-		return this.post(`/api/v1/request/${requestId}/decline`);
+		return this.post(`/api/v1/request/${requestId}/decline`, undefined, TIMEOUT_ACTION);
 	}
 
 	async deleteRequest(requestId: number): Promise<void> {
-		return this.del(`/api/v1/request/${requestId}`);
+		return this.del(`/api/v1/request/${requestId}`, TIMEOUT_ACTION);
 	}
 
 	async retryRequest(requestId: number): Promise<SeerrRequest> {
-		return this.post(`/api/v1/request/${requestId}/retry`);
+		return this.post(`/api/v1/request/${requestId}/retry`, undefined, TIMEOUT_ACTION);
 	}
 
 	// --- Users ---
 
 	async getUsers(params?: SeerrUserParams): Promise<SeerrPageResult<SeerrUser>> {
 		const qs = buildQueryString(params);
-		return this.get(`/api/v1/user${qs}`);
+		const raw = await this.get<SeerrPageResult<SeerrUser>>(
+			`/api/v1/user${qs}`,
+			TIMEOUT_INTERACTIVE,
+		);
+		return seerrPageResultSchema(seerrUserSchema).parse(raw) as SeerrPageResult<SeerrUser>;
 	}
 
 	async getUserQuota(userId: number): Promise<SeerrQuota> {
-		return this.get(`/api/v1/user/${userId}/quota`);
+		return this.get(`/api/v1/user/${userId}/quota`, TIMEOUT_INTERACTIVE);
 	}
 
 	async updateUser(userId: number, data: SeerrUserUpdateData): Promise<SeerrUser> {
-		return this.put(`/api/v1/user/${userId}`, data);
+		return this.put(`/api/v1/user/${userId}`, data, TIMEOUT_ACTION);
 	}
 
 	// --- Issues ---
 
 	async getIssues(params?: SeerrIssueParams): Promise<SeerrPageResult<SeerrIssue>> {
 		const qs = buildQueryString(params);
-		return this.get(`/api/v1/issue${qs}`);
+		return this.get(`/api/v1/issue${qs}`, TIMEOUT_INTERACTIVE);
 	}
 
 	async addIssueComment(issueId: number, message: string): Promise<SeerrIssueComment> {
-		return this.post(`/api/v1/issue/${issueId}/comment`, { message });
+		return this.post(`/api/v1/issue/${issueId}/comment`, { message }, TIMEOUT_ACTION);
 	}
 
 	async updateIssueStatus(issueId: number, status: "open" | "resolved"): Promise<SeerrIssue> {
-		return this.post(`/api/v1/issue/${issueId}/${status}`);
+		return this.post(`/api/v1/issue/${issueId}/${status}`, undefined, TIMEOUT_ACTION);
 	}
 
 	// --- Notifications ---
@@ -225,6 +336,7 @@ export class SeerrClient {
 			KNOWN_NOTIFICATION_AGENTS.map(({ id, name }) =>
 				this.get<{ enabled: boolean; types: number; options: Record<string, unknown> }>(
 					`/api/v1/settings/notifications/${id}`,
+					TIMEOUT_INTERACTIVE,
 				).then((data) => ({ id, name, ...data })),
 			),
 		);
@@ -236,7 +348,8 @@ export class SeerrClient {
 				agents.push(result.value);
 			} else {
 				// 404 = agent not supported by this Seerr version, skip silently
-				const is404 = result.reason instanceof Error && result.reason.message.includes(" 404 ");
+				const is404 =
+					result.reason instanceof SeerrApiError && result.reason.seerrStatus === 404;
 				if (!is404) {
 					const agentName = KNOWN_NOTIFICATION_AGENTS[i]!.name;
 					this.log.warn(
@@ -246,6 +359,13 @@ export class SeerrClient {
 				}
 			}
 		}
+		const failures = settled.length - agents.length;
+		if (failures > 0) {
+			this.log.info(
+				{ loaded: agents.length, total: settled.length, failures },
+				"Seerr: notification agents loaded (some may be unsupported or failed)",
+			);
+		}
 		return agents;
 	}
 
@@ -253,22 +373,32 @@ export class SeerrClient {
 		agentId: string,
 		config: Partial<SeerrNotificationAgent>,
 	): Promise<SeerrNotificationAgent> {
-		return this.post(`/api/v1/settings/notifications/${agentId}`, config);
+		return this.post(`/api/v1/settings/notifications/${agentId}`, config, TIMEOUT_ACTION);
 	}
 
 	async testNotificationAgent(agentId: string): Promise<void> {
-		await this.postNoContent(`/api/v1/settings/notifications/${agentId}/test`);
+		await this.postNoContent(
+			`/api/v1/settings/notifications/${agentId}/test`,
+			undefined,
+			TIMEOUT_ACTION,
+		);
 	}
 
 	// --- TMDB Media Lookups (for enriching requests with poster/title) ---
 
 	async getMovieDetails(tmdbId: number): Promise<{ posterPath?: string; title?: string }> {
-		const data = await this.get<{ posterPath?: string; title?: string }>(`/api/v1/movie/${tmdbId}`);
+		const data = await this.get<{ posterPath?: string; title?: string }>(
+			`/api/v1/movie/${tmdbId}`,
+			TIMEOUT_MEDIA_DETAIL,
+		);
 		return { posterPath: data.posterPath, title: data.title };
 	}
 
 	async getTvDetails(tmdbId: number): Promise<{ posterPath?: string; title?: string }> {
-		const data = await this.get<{ posterPath?: string; name?: string }>(`/api/v1/tv/${tmdbId}`);
+		const data = await this.get<{ posterPath?: string; name?: string }>(
+			`/api/v1/tv/${tmdbId}`,
+			TIMEOUT_MEDIA_DETAIL,
+		);
 		return { posterPath: data.posterPath, title: data.name };
 	}
 
@@ -343,27 +473,27 @@ export class SeerrClient {
 
 	async discoverMovies(params?: SeerrDiscoverParams): Promise<SeerrDiscoverResponse> {
 		const qs = buildQueryString(params);
-		return this.get(`/api/v1/discover/movies${qs}`);
+		return this.getDiscover(`/api/v1/discover/movies${qs}`);
 	}
 
 	async discoverTv(params?: SeerrDiscoverParams): Promise<SeerrDiscoverResponse> {
 		const qs = buildQueryString(params);
-		return this.get(`/api/v1/discover/tv${qs}`);
+		return this.getDiscover(`/api/v1/discover/tv${qs}`);
 	}
 
 	async discoverTrending(params?: SeerrDiscoverParams): Promise<SeerrDiscoverResponse> {
 		const qs = buildQueryString(params);
-		return this.get(`/api/v1/discover/trending${qs}`);
+		return this.getDiscover(`/api/v1/discover/trending${qs}`);
 	}
 
 	async discoverMoviesUpcoming(params?: SeerrDiscoverParams): Promise<SeerrDiscoverResponse> {
 		const qs = buildQueryString(params);
-		return this.get(`/api/v1/discover/movies/upcoming${qs}`);
+		return this.getDiscover(`/api/v1/discover/movies/upcoming${qs}`);
 	}
 
 	async discoverTvUpcoming(params?: SeerrDiscoverParams): Promise<SeerrDiscoverResponse> {
 		const qs = buildQueryString(params);
-		return this.get(`/api/v1/discover/tv/upcoming${qs}`);
+		return this.getDiscover(`/api/v1/discover/tv/upcoming${qs}`);
 	}
 
 	async discoverMoviesByGenre(
@@ -371,7 +501,7 @@ export class SeerrClient {
 		params?: SeerrDiscoverParams,
 	): Promise<SeerrDiscoverResponse> {
 		const qs = buildQueryString(params);
-		return this.get(`/api/v1/discover/movies/genre/${genreId}${qs}`);
+		return this.getDiscover(`/api/v1/discover/movies/genre/${genreId}${qs}`);
 	}
 
 	async discoverTvByGenre(
@@ -379,53 +509,69 @@ export class SeerrClient {
 		params?: SeerrDiscoverParams,
 	): Promise<SeerrDiscoverResponse> {
 		const qs = buildQueryString(params);
-		return this.get(`/api/v1/discover/tv/genre/${genreId}${qs}`);
+		return this.getDiscover(`/api/v1/discover/tv/genre/${genreId}${qs}`);
+	}
+
+	/** Shared discover fetch with schema validation */
+	private async getDiscover(path: string): Promise<SeerrDiscoverResponse> {
+		const raw = await this.get<SeerrDiscoverResponse>(path, TIMEOUT_INTERACTIVE);
+		return seerrDiscoverResponseSchema.parse(raw) as SeerrDiscoverResponse;
 	}
 
 	// --- Search ---
 
 	async search(params: SeerrSearchParams): Promise<SeerrDiscoverResponse> {
 		const qs = buildQueryString(params);
-		return this.get(`/api/v1/search${qs}`);
+		return this.getDiscover(`/api/v1/search${qs}`);
 	}
 
 	// --- Full Details (with credits, recommendations, etc.) ---
 
 	async getMovieDetailsFull(tmdbId: number): Promise<SeerrMovieDetails> {
-		return this.get(`/api/v1/movie/${tmdbId}`);
+		return this.get(`/api/v1/movie/${tmdbId}`, TIMEOUT_MEDIA_DETAIL);
 	}
 
 	async getTvDetailsFull(tmdbId: number): Promise<SeerrTvDetails> {
-		return this.get(`/api/v1/tv/${tmdbId}`);
+		return this.get(`/api/v1/tv/${tmdbId}`, TIMEOUT_MEDIA_DETAIL);
 	}
 
 	// --- Genres ---
 
 	async getMovieGenres(): Promise<SeerrGenre[]> {
-		return this.get("/api/v1/genres/movie");
+		const cacheKey = genreCacheKey(this.instance.id, "movie");
+		const cached = this.cache?.get<SeerrGenre[]>(cacheKey);
+		if (cached) return cached;
+		const genres = await this.get<SeerrGenre[]>("/api/v1/genres/movie", TIMEOUT_INTERACTIVE);
+		this.cache?.set(cacheKey, genres, GENRE_TTL_MS);
+		return genres;
 	}
 
 	async getTvGenres(): Promise<SeerrGenre[]> {
-		return this.get("/api/v1/genres/tv");
+		const cacheKey = genreCacheKey(this.instance.id, "tv");
+		const cached = this.cache?.get<SeerrGenre[]>(cacheKey);
+		if (cached) return cached;
+		const genres = await this.get<SeerrGenre[]>("/api/v1/genres/tv", TIMEOUT_INTERACTIVE);
+		this.cache?.set(cacheKey, genres, GENRE_TTL_MS);
+		return genres;
 	}
 
 	// --- Create Request ---
 
 	async createRequest(payload: SeerrCreateRequestPayload): Promise<SeerrCreateRequestResponse> {
-		return this.post("/api/v1/request", payload);
+		return this.post("/api/v1/request", payload, TIMEOUT_ACTION);
 	}
 
 	// --- Service Servers (for request options) ---
 
 	async getServiceServers(serviceType: "radarr" | "sonarr"): Promise<SeerrServiceServer[]> {
-		return this.get(`/api/v1/service/${serviceType}`);
+		return this.get(`/api/v1/service/${serviceType}`, TIMEOUT_INTERACTIVE);
 	}
 
 	async getServerDetails(
 		serviceType: "radarr" | "sonarr",
 		serverId: number,
 	): Promise<SeerrServerWithDetails> {
-		return this.get(`/api/v1/service/${serviceType}/${serverId}`);
+		return this.get(`/api/v1/service/${serviceType}/${serverId}`, TIMEOUT_INTERACTIVE);
 	}
 
 	async getRequestOptions(mediaType: "movie" | "tv"): Promise<SeerrRequestOptions> {
@@ -463,10 +609,16 @@ export class SeerrClient {
 	async getMediaSummary(
 		type: "movie" | "tv",
 		tmdbId: number,
-	): Promise<{ voteAverage: number | null; backdropPath: string | null; posterPath: string | null }> {
-		const data = await this.get<{ voteAverage?: number; backdropPath?: string; posterPath?: string }>(
-			`/api/v1/${type}/${tmdbId}`,
-		);
+	): Promise<{
+		voteAverage: number | null;
+		backdropPath: string | null;
+		posterPath: string | null;
+	}> {
+		const data = await this.get<{
+			voteAverage?: number;
+			backdropPath?: string;
+			posterPath?: string;
+		}>(`/api/v1/${type}/${tmdbId}`, TIMEOUT_MEDIA_DETAIL);
 		return {
 			voteAverage: data.voteAverage ?? null,
 			backdropPath: data.backdropPath ?? null,
@@ -482,6 +634,10 @@ export class SeerrClient {
 	 * We paginate up to 500 open issues (25 pages) to cover typical usage.
 	 */
 	async getOpenIssueCounts(): Promise<Map<string, number>> {
+		const cacheKey = issueCountCacheKey(this.instance.id);
+		const cached = this.cache?.get<Map<string, number>>(cacheKey);
+		if (cached) return cached;
+
 		const counts = new Map<string, number>();
 		const take = 20;
 		let skip = 0;
@@ -501,18 +657,17 @@ export class SeerrClient {
 			skip += take;
 		}
 
+		this.cache?.set(cacheKey, counts, ISSUE_COUNT_TTL_MS);
 		return counts;
 	}
 
 	// --- System ---
 
 	async getStatus(): Promise<SeerrStatus> {
-		return this.get("/api/v1/status");
+		const raw = await this.get<SeerrStatus>("/api/v1/status", TIMEOUT_INTERACTIVE);
+		return seerrStatusSchema.parse(raw);
 	}
 
-	async getAbout(): Promise<{ version: string; totalRequests: number; totalMediaItems: number }> {
-		return this.get("/api/v1/status/appdata");
-	}
 }
 
 // ============================================================================
@@ -545,5 +700,11 @@ export async function requireSeerrClient(
 	if (instance.service !== "SEERR") {
 		throw new AppValidationError("Instance is not a Seerr service");
 	}
-	return new SeerrClient(app.arrClientFactory, instance, app.log);
+	return new SeerrClient(
+		app.arrClientFactory,
+		instance,
+		app.log,
+		app.seerrCircuitBreaker,
+		app.seerrCache,
+	);
 }

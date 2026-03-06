@@ -80,7 +80,25 @@ export const ModelName = {
   UserCustomFormat: 'UserCustomFormat',
   QueueCleanerConfig: 'QueueCleanerConfig',
   QueueCleanerLog: 'QueueCleanerLog',
-  QueueCleanerStrike: 'QueueCleanerStrike'
+  QueueCleanerStrike: 'QueueCleanerStrike',
+  LibraryCleanupConfig: 'LibraryCleanupConfig',
+  LibraryCleanupRule: 'LibraryCleanupRule',
+  LibraryCleanupApproval: 'LibraryCleanupApproval',
+  LibraryCleanupLog: 'LibraryCleanupLog',
+  NotificationChannel: 'NotificationChannel',
+  NotificationSubscription: 'NotificationSubscription',
+  NotificationLog: 'NotificationLog',
+  VapidKeys: 'VapidKeys',
+  NotificationRule: 'NotificationRule',
+  NotificationAggregationConfig: 'NotificationAggregationConfig',
+  PlexCache: 'PlexCache',
+  PlexEpisodeCache: 'PlexEpisodeCache',
+  TautulliCache: 'TautulliCache',
+  CacheRefreshStatus: 'CacheRefreshStatus',
+  SessionSnapshot: 'SessionSnapshot',
+  NamingConfig: 'NamingConfig',
+  NamingDeployHistory: 'NamingDeployHistory',
+  SeerrActionLog: 'SeerrActionLog'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -233,6 +251,7 @@ export const SystemSettingsScalarFieldEnum = {
   appName: 'appName',
   trustProxy: 'trustProxy',
   secureCookies: 'secureCookies',
+  notificationLogRetentionDays: 'notificationLogRetentionDays',
   externalUrl: 'externalUrl',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
@@ -613,6 +632,12 @@ export const QueueCleanerConfigScalarFieldEnum = {
   autoImportSafeOnly: 'autoImportSafeOnly',
   autoImportCustomPatterns: 'autoImportCustomPatterns',
   autoImportNeverPatterns: 'autoImportNeverPatterns',
+  tagFilterEnabled: 'tagFilterEnabled',
+  includeTags: 'includeTags',
+  excludeTags: 'excludeTags',
+  profileFilterEnabled: 'profileFilterEnabled',
+  includeProfiles: 'includeProfiles',
+  excludeProfiles: 'excludeProfiles',
   skipFutureEpisodes: 'skipFutureEpisodes',
   whitelistEnabled: 'whitelistEnabled',
   whitelistPatterns: 'whitelistPatterns',
@@ -663,6 +688,310 @@ export const QueueCleanerStrikeScalarFieldEnum = {
 } as const
 
 export type QueueCleanerStrikeScalarFieldEnum = (typeof QueueCleanerStrikeScalarFieldEnum)[keyof typeof QueueCleanerStrikeScalarFieldEnum]
+
+
+export const LibraryCleanupConfigScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  enabled: 'enabled',
+  intervalHours: 'intervalHours',
+  lastRunAt: 'lastRunAt',
+  nextRunAt: 'nextRunAt',
+  dryRunMode: 'dryRunMode',
+  maxRemovalsPerRun: 'maxRemovalsPerRun',
+  requireApproval: 'requireApproval',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type LibraryCleanupConfigScalarFieldEnum = (typeof LibraryCleanupConfigScalarFieldEnum)[keyof typeof LibraryCleanupConfigScalarFieldEnum]
+
+
+export const LibraryCleanupRuleScalarFieldEnum = {
+  id: 'id',
+  configId: 'configId',
+  name: 'name',
+  enabled: 'enabled',
+  priority: 'priority',
+  ruleType: 'ruleType',
+  parameters: 'parameters',
+  serviceFilter: 'serviceFilter',
+  instanceFilter: 'instanceFilter',
+  excludeTags: 'excludeTags',
+  excludeTitles: 'excludeTitles',
+  plexLibraryFilter: 'plexLibraryFilter',
+  action: 'action',
+  operator: 'operator',
+  conditions: 'conditions',
+  retentionMode: 'retentionMode',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type LibraryCleanupRuleScalarFieldEnum = (typeof LibraryCleanupRuleScalarFieldEnum)[keyof typeof LibraryCleanupRuleScalarFieldEnum]
+
+
+export const LibraryCleanupApprovalScalarFieldEnum = {
+  id: 'id',
+  configId: 'configId',
+  instanceId: 'instanceId',
+  arrItemId: 'arrItemId',
+  itemType: 'itemType',
+  title: 'title',
+  matchedRuleId: 'matchedRuleId',
+  matchedRuleName: 'matchedRuleName',
+  reason: 'reason',
+  action: 'action',
+  sizeOnDisk: 'sizeOnDisk',
+  year: 'year',
+  rating: 'rating',
+  status: 'status',
+  reviewedAt: 'reviewedAt',
+  executedAt: 'executedAt',
+  expiresAt: 'expiresAt',
+  createdAt: 'createdAt'
+} as const
+
+export type LibraryCleanupApprovalScalarFieldEnum = (typeof LibraryCleanupApprovalScalarFieldEnum)[keyof typeof LibraryCleanupApprovalScalarFieldEnum]
+
+
+export const LibraryCleanupLogScalarFieldEnum = {
+  id: 'id',
+  configId: 'configId',
+  isDryRun: 'isDryRun',
+  status: 'status',
+  itemsEvaluated: 'itemsEvaluated',
+  itemsFlagged: 'itemsFlagged',
+  itemsRemoved: 'itemsRemoved',
+  itemsUnmonitored: 'itemsUnmonitored',
+  itemsFilesDeleted: 'itemsFilesDeleted',
+  itemsSkipped: 'itemsSkipped',
+  details: 'details',
+  error: 'error',
+  prefetchHealth: 'prefetchHealth',
+  warnings: 'warnings',
+  durationMs: 'durationMs',
+  startedAt: 'startedAt',
+  completedAt: 'completedAt'
+} as const
+
+export type LibraryCleanupLogScalarFieldEnum = (typeof LibraryCleanupLogScalarFieldEnum)[keyof typeof LibraryCleanupLogScalarFieldEnum]
+
+
+export const NotificationChannelScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  name: 'name',
+  type: 'type',
+  enabled: 'enabled',
+  encryptedConfig: 'encryptedConfig',
+  configIv: 'configIv',
+  lastTestedAt: 'lastTestedAt',
+  lastTestResult: 'lastTestResult',
+  lastSentAt: 'lastSentAt',
+  lastSendResult: 'lastSendResult',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type NotificationChannelScalarFieldEnum = (typeof NotificationChannelScalarFieldEnum)[keyof typeof NotificationChannelScalarFieldEnum]
+
+
+export const NotificationSubscriptionScalarFieldEnum = {
+  channelId: 'channelId',
+  eventType: 'eventType'
+} as const
+
+export type NotificationSubscriptionScalarFieldEnum = (typeof NotificationSubscriptionScalarFieldEnum)[keyof typeof NotificationSubscriptionScalarFieldEnum]
+
+
+export const NotificationLogScalarFieldEnum = {
+  id: 'id',
+  channelId: 'channelId',
+  channelType: 'channelType',
+  eventType: 'eventType',
+  title: 'title',
+  body: 'body',
+  status: 'status',
+  error: 'error',
+  retryCount: 'retryCount',
+  sentAt: 'sentAt'
+} as const
+
+export type NotificationLogScalarFieldEnum = (typeof NotificationLogScalarFieldEnum)[keyof typeof NotificationLogScalarFieldEnum]
+
+
+export const VapidKeysScalarFieldEnum = {
+  id: 'id',
+  publicKey: 'publicKey',
+  encryptedPrivateKey: 'encryptedPrivateKey',
+  privateKeyIv: 'privateKeyIv'
+} as const
+
+export type VapidKeysScalarFieldEnum = (typeof VapidKeysScalarFieldEnum)[keyof typeof VapidKeysScalarFieldEnum]
+
+
+export const NotificationRuleScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  name: 'name',
+  enabled: 'enabled',
+  priority: 'priority',
+  action: 'action',
+  conditions: 'conditions',
+  targetChannelIds: 'targetChannelIds',
+  throttleMinutes: 'throttleMinutes',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type NotificationRuleScalarFieldEnum = (typeof NotificationRuleScalarFieldEnum)[keyof typeof NotificationRuleScalarFieldEnum]
+
+
+export const NotificationAggregationConfigScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  eventType: 'eventType',
+  windowSeconds: 'windowSeconds',
+  maxBatchSize: 'maxBatchSize',
+  enabled: 'enabled'
+} as const
+
+export type NotificationAggregationConfigScalarFieldEnum = (typeof NotificationAggregationConfigScalarFieldEnum)[keyof typeof NotificationAggregationConfigScalarFieldEnum]
+
+
+export const PlexCacheScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  tmdbId: 'tmdbId',
+  mediaType: 'mediaType',
+  sectionId: 'sectionId',
+  sectionTitle: 'sectionTitle',
+  title: 'title',
+  ratingKey: 'ratingKey',
+  lastWatchedAt: 'lastWatchedAt',
+  watchCount: 'watchCount',
+  watchedByUsers: 'watchedByUsers',
+  onDeck: 'onDeck',
+  userRating: 'userRating',
+  collections: 'collections',
+  labels: 'labels',
+  addedAt: 'addedAt'
+} as const
+
+export type PlexCacheScalarFieldEnum = (typeof PlexCacheScalarFieldEnum)[keyof typeof PlexCacheScalarFieldEnum]
+
+
+export const PlexEpisodeCacheScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  showTmdbId: 'showTmdbId',
+  seasonNumber: 'seasonNumber',
+  episodeNumber: 'episodeNumber',
+  ratingKey: 'ratingKey',
+  title: 'title',
+  watched: 'watched',
+  watchedByUsers: 'watchedByUsers',
+  lastWatchedAt: 'lastWatchedAt'
+} as const
+
+export type PlexEpisodeCacheScalarFieldEnum = (typeof PlexEpisodeCacheScalarFieldEnum)[keyof typeof PlexEpisodeCacheScalarFieldEnum]
+
+
+export const TautulliCacheScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  tmdbId: 'tmdbId',
+  mediaType: 'mediaType',
+  lastWatchedAt: 'lastWatchedAt',
+  watchCount: 'watchCount',
+  watchedByUsers: 'watchedByUsers'
+} as const
+
+export type TautulliCacheScalarFieldEnum = (typeof TautulliCacheScalarFieldEnum)[keyof typeof TautulliCacheScalarFieldEnum]
+
+
+export const CacheRefreshStatusScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  cacheType: 'cacheType',
+  lastRefreshedAt: 'lastRefreshedAt',
+  lastResult: 'lastResult',
+  lastErrorMessage: 'lastErrorMessage',
+  itemCount: 'itemCount'
+} as const
+
+export type CacheRefreshStatusScalarFieldEnum = (typeof CacheRefreshStatusScalarFieldEnum)[keyof typeof CacheRefreshStatusScalarFieldEnum]
+
+
+export const SessionSnapshotScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  capturedAt: 'capturedAt',
+  concurrentStreams: 'concurrentStreams',
+  totalBandwidth: 'totalBandwidth',
+  lanBandwidth: 'lanBandwidth',
+  wanBandwidth: 'wanBandwidth',
+  directPlayCount: 'directPlayCount',
+  transcodeCount: 'transcodeCount',
+  directStreamCount: 'directStreamCount',
+  sessionsJson: 'sessionsJson'
+} as const
+
+export type SessionSnapshotScalarFieldEnum = (typeof SessionSnapshotScalarFieldEnum)[keyof typeof SessionSnapshotScalarFieldEnum]
+
+
+export const NamingConfigScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  userId: 'userId',
+  serviceType: 'serviceType',
+  selectedPresets: 'selectedPresets',
+  syncStrategy: 'syncStrategy',
+  lastDeployedAt: 'lastDeployedAt',
+  lastDeployedHash: 'lastDeployedHash',
+  lastDeployStatus: 'lastDeployStatus',
+  lastDeployError: 'lastDeployError',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type NamingConfigScalarFieldEnum = (typeof NamingConfigScalarFieldEnum)[keyof typeof NamingConfigScalarFieldEnum]
+
+
+export const NamingDeployHistoryScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  userId: 'userId',
+  deployedAt: 'deployedAt',
+  status: 'status',
+  selectedPresets: 'selectedPresets',
+  resolvedPayload: 'resolvedPayload',
+  deployedHash: 'deployedHash',
+  previousConfig: 'previousConfig',
+  changedFields: 'changedFields',
+  totalFields: 'totalFields',
+  errorMessage: 'errorMessage',
+  rolledBack: 'rolledBack',
+  rolledBackAt: 'rolledBackAt'
+} as const
+
+export type NamingDeployHistoryScalarFieldEnum = (typeof NamingDeployHistoryScalarFieldEnum)[keyof typeof NamingDeployHistoryScalarFieldEnum]
+
+
+export const SeerrActionLogScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  userId: 'userId',
+  action: 'action',
+  targetType: 'targetType',
+  targetId: 'targetId',
+  detail: 'detail',
+  success: 'success',
+  createdAt: 'createdAt'
+} as const
+
+export type SeerrActionLogScalarFieldEnum = (typeof SeerrActionLogScalarFieldEnum)[keyof typeof SeerrActionLogScalarFieldEnum]
 
 
 export const SortOrder = {

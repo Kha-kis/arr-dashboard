@@ -1,9 +1,9 @@
 "use client";
 
-import { Input } from "../../../components/ui/input";
 import { CheckCircle2, Hash } from "lucide-react";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { Input } from "../../../components/ui/input";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 /**
  * Premium Indexer Edit Form
@@ -35,9 +35,7 @@ export const IndexerEditForm = ({
 					onClick={() => onEnableChange(!formEnable)}
 					className="flex h-6 w-6 items-center justify-center rounded-lg transition-all duration-200"
 					style={{
-						backgroundColor: formEnable
-							? SEMANTIC_COLORS.success.from
-							: "rgba(var(--muted), 0.3)",
+						backgroundColor: formEnable ? SEMANTIC_COLORS.success.from : "rgba(var(--muted), 0.3)",
 						border: `1px solid ${formEnable ? SEMANTIC_COLORS.success.from : "rgba(var(--border), 0.5)"}`,
 					}}
 				>

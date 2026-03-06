@@ -2,20 +2,20 @@ import fs from "node:fs/promises";
 import {
 	type BackupFileInfo,
 	type BackupSettings,
-	type ListBackupsResponse,
-	type RestoreBackupResponse,
 	createBackupRequestSchema,
 	deleteBackupRequestSchema,
+	type ListBackupsResponse,
+	type RestoreBackupResponse,
 	restoreBackupFromFileRequestSchema,
 	restoreBackupRequestSchema,
 	updateBackupSettingsRequestSchema,
 } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { BackupService } from "../lib/backup/backup-service.js";
-import { validateRequest } from "../lib/utils/validate.js";
-import { resolveSecretsPath } from "../lib/utils/secrets-path.js";
-import { getAppVersion } from "../lib/utils/version.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
+import { resolveSecretsPath } from "../lib/utils/secrets-path.js";
+import { validateRequest } from "../lib/utils/validate.js";
+import { getAppVersion } from "../lib/utils/version.js";
 
 const BACKUP_RATE_LIMIT = { max: 3, timeWindow: "5 minutes" };
 const RESTORE_RATE_LIMIT = { max: 2, timeWindow: "5 minutes" };

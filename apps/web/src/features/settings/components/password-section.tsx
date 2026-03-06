@@ -1,20 +1,24 @@
 "use client";
 
+import type { CurrentUser } from "@arr/shared";
+import { useQuery } from "@tanstack/react-query";
+import { AlertTriangle, Check, Key, Loader2, Lock, Shield, Trash2, X } from "lucide-react";
 import { useState } from "react";
-import { Key, Lock, Shield, Trash2, AlertTriangle, Check, Loader2, X } from "lucide-react";
+import { GlassmorphicCard, PremiumSection } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { PasswordInput } from "../../../components/ui/password-input";
-import { PremiumSection, GlassmorphicCard } from "../../../components/layout";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { useUpdateAccountMutation, useRemovePasswordMutation, useSetupRequired } from "../../../hooks/api/useAuth";
+import {
+	useRemovePasswordMutation,
+	useSetupRequired,
+	useUpdateAccountMutation,
+} from "../../../hooks/api/useAuth";
 import { useOIDCProviders } from "../../../hooks/api/useOIDCProviders";
-import { useQuery } from "@tanstack/react-query";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getPasskeyCredentials } from "../../../lib/api-client/auth";
-import { validatePassword } from "../lib/settings-utils";
-import type { CurrentUser } from "@arr/shared";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { validatePassword } from "../lib/settings-utils";
 
 interface PasswordSectionProps {
 	currentUser?: CurrentUser | null;
@@ -36,7 +40,9 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 	const [currentPassword, setCurrentPassword] = useState("");
 	const [newPassword, setNewPassword] = useState("");
 	const [confirmPassword, setConfirmPassword] = useState("");
-	const [updateResult, setUpdateResult] = useState<{ success: boolean; message: string } | null>(null);
+	const [updateResult, setUpdateResult] = useState<{ success: boolean; message: string } | null>(
+		null,
+	);
 
 	// Password removal state
 	const [removePasswordValue, setRemovePasswordValue] = useState("");
@@ -115,7 +121,9 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 			await updateAccountMutation.mutateAsync(payload);
 			setUpdateResult({
 				success: true,
-				message: currentUser?.hasPassword ? "Password changed successfully" : "Password added successfully",
+				message: currentUser?.hasPassword
+					? "Password changed successfully"
+					: "Password added successfully",
 			});
 			setCurrentPassword("");
 			setNewPassword("");
@@ -146,9 +154,7 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 			setRemovePasswordValue("");
 			setShowRemovePassword(false);
 		} catch (error) {
-			setRemovePasswordError(
-				getErrorMessage(error, "Failed to remove password")
-			);
+			setRemovePasswordError(getErrorMessage(error, "Failed to remove password"));
 		}
 	};
 
@@ -182,7 +188,8 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 								</h3>
 								{!currentUser?.hasPassword && (
 									<p className="text-xs text-muted-foreground">
-										Your account uses passwordless authentication. Add a password for additional options.
+										Your account uses passwordless authentication. Add a password for additional
+										options.
 									</p>
 								)}
 							</div>
@@ -227,7 +234,9 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 								<PasswordInput
 									value={confirmPassword}
 									onChange={(e) => setConfirmPassword(e.target.value)}
-									placeholder={currentUser?.hasPassword ? "Re-enter new password" : "Re-enter password"}
+									placeholder={
+										currentUser?.hasPassword ? "Re-enter new password" : "Re-enter password"
+									}
 									className="bg-card/30 border-border/50"
 								/>
 							</div>
@@ -259,9 +268,13 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 							<div
 								className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm animate-in fade-in slide-in-from-bottom-2"
 								style={{
-									backgroundColor: updateResult.success ? SEMANTIC_COLORS.success.bg : SEMANTIC_COLORS.error.bg,
+									backgroundColor: updateResult.success
+										? SEMANTIC_COLORS.success.bg
+										: SEMANTIC_COLORS.error.bg,
 									border: `1px solid ${updateResult.success ? SEMANTIC_COLORS.success.border : SEMANTIC_COLORS.error.border}`,
-									color: updateResult.success ? SEMANTIC_COLORS.success.text : SEMANTIC_COLORS.error.text,
+									color: updateResult.success
+										? SEMANTIC_COLORS.success.text
+										: SEMANTIC_COLORS.error.text,
 								}}
 							>
 								{updateResult.success ? (
@@ -310,13 +323,19 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 											Alternative authentication methods available:
 											{hasOIDC && (
 												<span className="ml-2 inline-flex items-center gap-1 text-foreground">
-													<Check className="h-3 w-3" style={{ color: SEMANTIC_COLORS.success.from }} />
+													<Check
+														className="h-3 w-3"
+														style={{ color: SEMANTIC_COLORS.success.from }}
+													/>
 													OIDC provider
 												</span>
 											)}
 											{hasPasskeys && (
 												<span className="ml-2 inline-flex items-center gap-1 text-foreground">
-													<Check className="h-3 w-3" style={{ color: SEMANTIC_COLORS.success.from }} />
+													<Check
+														className="h-3 w-3"
+														style={{ color: SEMANTIC_COLORS.success.from }}
+													/>
 													Passkeys
 												</span>
 											)}
@@ -361,7 +380,8 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 													}}
 												>
 													<AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-													This action cannot be undone. You will only be able to sign in using OIDC or passkeys.
+													This action cannot be undone. You will only be able to sign in using OIDC
+													or passkeys.
 												</div>
 											</div>
 
@@ -439,9 +459,13 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 										border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
 									}}
 								>
-									<AlertTriangle className="h-5 w-5 shrink-0" style={{ color: SEMANTIC_COLORS.warning.from }} />
+									<AlertTriangle
+										className="h-5 w-5 shrink-0"
+										style={{ color: SEMANTIC_COLORS.warning.from }}
+									/>
 									<p className="text-muted-foreground">
-										Cannot remove password without alternative authentication method. Please add an OIDC provider or passkey first.
+										Cannot remove password without alternative authentication method. Please add an
+										OIDC provider or passkey first.
 									</p>
 								</div>
 							)}

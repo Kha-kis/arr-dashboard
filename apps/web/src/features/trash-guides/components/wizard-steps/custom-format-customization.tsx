@@ -1,25 +1,28 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Alert, AlertDescription } from "../../../../components/ui";
+import { ChevronLeft, ChevronRight, Info, Settings } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { PremiumSkeleton } from "../../../../components/layout/premium-components";
-import { ChevronRight, ChevronLeft, Info, Settings } from "lucide-react";
+import { Alert, AlertDescription } from "../../../../components/ui";
 import { useThemeGradient } from "../../../../hooks/useThemeGradient";
-import { SanitizedHtml } from "../sanitized-html";
-import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import { apiRequest } from "../../../../lib/api-client/base";
+import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import { getErrorMessage } from "../../../../lib/error-utils";
+import { SanitizedHtml } from "../sanitized-html";
 
 interface CustomFormatCustomizationProps {
 	serviceType: "RADARR" | "SONARR";
 	qualityProfile: QualityProfileSummary;
 	selectedCFGroups: Set<string>;
-	initialSelections: Record<string, {
-		selected: boolean;
-		scoreOverride?: number;
-		conditionsEnabled: Record<string, boolean>;
-	}>;
+	initialSelections: Record<
+		string,
+		{
+			selected: boolean;
+			scoreOverride?: number;
+			conditionsEnabled: Record<string, boolean>;
+		}
+	>;
 	onNext: (selections: Record<string, any>) => void;
 	onBack: () => void;
 }
@@ -52,7 +55,7 @@ export const CustomFormatCustomization = ({
 		if (!data) return;
 
 		// Create a key based on data identity and selectedCFGroups
-		const selectedGroupsKey = Array.from(selectedCFGroups).sort().join(',');
+		const selectedGroupsKey = Array.from(selectedCFGroups).sort().join(",");
 		const currentKey = `${qualityProfile.trashId}:${selectedGroupsKey}`;
 
 		// Skip if already initialized for this key
@@ -67,7 +70,7 @@ export const CustomFormatCustomization = ({
 			if (selectedCFGroups.has(group.trash_id)) {
 				if (Array.isArray(group.custom_formats)) {
 					for (const cf of group.custom_formats) {
-						const cfTrashId = typeof cf === 'string' ? cf : cf.trash_id;
+						const cfTrashId = typeof cf === "string" ? cf : cf.trash_id;
 						// Store the CF with its required flag from the group
 						allCFs.set(cfTrashId, cf);
 					}
@@ -89,7 +92,10 @@ export const CustomFormatCustomization = ({
 			: [];
 
 		for (const [cfTrashId, cf] of allCFs) {
-			const cfData = typeof cf === 'string' ? data.directCustomFormats.find((c: any) => c.trash_id === cfTrashId) : cf;
+			const cfData =
+				typeof cf === "string"
+					? data.directCustomFormats.find((c: any) => c.trash_id === cfTrashId)
+					: cf;
 
 			if (cfData) {
 				const conditionsEnabled: Record<string, boolean> = {};
@@ -102,7 +108,7 @@ export const CustomFormatCustomization = ({
 				// Auto-select if:
 				// 1. Marked as required in CF Group, OR
 				// 2. Present in the quality profile's formatItems
-				const isRequired = typeof cf === 'object' && cf.required === true;
+				const isRequired = typeof cf === "object" && cf.required === true;
 				const isInProfile = profileFormatIds.includes(cfTrashId);
 
 				newSelections[cfTrashId] = {
@@ -186,11 +192,11 @@ export const CustomFormatCustomization = ({
 		if (selectedCFGroups.has(group.trash_id)) {
 			if (Array.isArray(group.custom_formats)) {
 				for (const cf of group.custom_formats) {
-					const cfTrashId = typeof cf === 'string' ? cf : cf.trash_id;
+					const cfTrashId = typeof cf === "string" ? cf : cf.trash_id;
 					const cfData = customFormats.find((c: any) => c.trash_id === cfTrashId);
 					if (cfData) {
 						// Preserve the 'required' flag from the CF Group
-						const isRequired = typeof cf === 'object' && cf.required === true;
+						const isRequired = typeof cf === "object" && cf.required === true;
 						allCFs.set(cfTrashId, { ...cfData, isRequired });
 					}
 				}
@@ -206,7 +212,7 @@ export const CustomFormatCustomization = ({
 	}
 
 	const cfList = Array.from(allCFs.values());
-	const selectedCount = Object.values(selections).filter(s => s?.selected).length;
+	const selectedCount = Object.values(selections).filter((s) => s?.selected).length;
 
 	return (
 		<div className="space-y-6">
@@ -220,15 +226,29 @@ export const CustomFormatCustomization = ({
 			>
 				<h4 className="font-medium text-foreground mb-2">⚙️ Review & Customize Formats</h4>
 				<p className="text-sm text-foreground/70 mb-3">
-					TRaSH Guides recommends specific Custom Formats for this profile. <strong className="text-foreground">Pre-selected formats are based on the quality profile&apos;s configuration</strong>. You can adjust as needed:
+					TRaSH Guides recommends specific Custom Formats for this profile.{" "}
+					<strong className="text-foreground">
+						Pre-selected formats are based on the quality profile&apos;s configuration
+					</strong>
+					. You can adjust as needed:
 				</p>
 				<div className="space-y-2 text-sm text-foreground/70 ml-4 mb-3">
-					<div>• <strong className="text-foreground">Pre-selected</strong> - Recommended by TRaSH for this profile</div>
-					<div>• <strong className="text-foreground">Unselected</strong> - Optional, choose based on your preferences</div>
-					<div>• <strong className="text-foreground">Score overrides</strong> - Click gear icon to customize priority/conditions</div>
+					<div>
+						• <strong className="text-foreground">Pre-selected</strong> - Recommended by TRaSH for
+						this profile
+					</div>
+					<div>
+						• <strong className="text-foreground">Unselected</strong> - Optional, choose based on
+						your preferences
+					</div>
+					<div>
+						• <strong className="text-foreground">Score overrides</strong> - Click gear icon to
+						customize priority/conditions
+					</div>
 				</div>
 				<p className="text-xs text-foreground/60 italic">
-					💡 Tip: The defaults are carefully chosen for this quality profile. Only change if you have specific requirements.
+					💡 Tip: The defaults are carefully chosen for this quality profile. Only change if you
+					have specific requirements.
 				</p>
 			</div>
 
@@ -258,9 +278,7 @@ export const CustomFormatCustomization = ({
 						<div
 							key={cf.trash_id}
 							className={`rounded-xl border ${
-								isSelected
-									? "border-primary/50 bg-primary/5"
-									: "border-border bg-card"
+								isSelected ? "border-primary/50 bg-primary/5" : "border-border bg-card"
 							}`}
 						>
 							<div className="flex items-start gap-4 p-6">

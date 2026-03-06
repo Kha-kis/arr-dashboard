@@ -14,6 +14,7 @@ import {
 	isSonarrClient,
 } from "../../lib/arr/client-helpers.js";
 import { toNumber } from "../../lib/library/type-converters.js";
+import { validateRequest } from "../../lib/utils/validate.js";
 
 /**
  * Optimistically update the library cache after a monitoring change
@@ -21,11 +22,11 @@ import { toNumber } from "../../lib/library/type-converters.js";
  */
 async function updateCacheMonitoredStatus(
 	prisma: import("../../lib/prisma.js").PrismaClientInstance,
-	log: FastifyBaseLogger,
 	instanceId: string,
 	arrItemId: number,
 	itemType: "movie" | "series" | "artist" | "author",
 	monitored: boolean,
+	log: FastifyBaseLogger,
 ): Promise<void> {
 	try {
 		const cached = await prisma.libraryCache.findUnique({
@@ -53,6 +54,7 @@ async function updateCacheMonitoredStatus(
 			});
 		}
 	} catch (err) {
+		// Cache update is best-effort — the next sync will correct any inconsistencies
 		log.debug({ err, instanceId, arrItemId, itemType }, "Best-effort cache update failed after monitor toggle");
 	}
 }
@@ -70,7 +72,7 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 	 * Toggles monitoring status for movies, series, or specific seasons
 	 */
 	app.post("/library/monitor", async (request, reply) => {
-		const payload = libraryToggleMonitorRequestSchema.parse(request.body ?? {});
+		const payload = validateRequest(libraryToggleMonitorRequestSchema, request.body ?? {});
 
 		const clientResult = await getClientForInstance(app, request, payload.instanceId);
 		if (!clientResult.success) {
@@ -109,11 +111,11 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 				// Optimistically update cache
 				await updateCacheMonitoredStatus(
 					app.prisma,
-					request.log,
 					payload.instanceId,
 					itemId,
 					"movie",
 					payload.monitored,
+					request.log,
 				);
 
 				return reply.status(204).send();
@@ -167,11 +169,11 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 				// Optimistically update cache
 				await updateCacheMonitoredStatus(
 					app.prisma,
-					request.log,
 					payload.instanceId,
 					itemId,
 					"series",
 					payload.monitored,
+					request.log,
 				);
 
 				return reply.status(204).send();
@@ -190,11 +192,11 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 				// Optimistically update cache
 				await updateCacheMonitoredStatus(
 					app.prisma,
-					request.log,
 					payload.instanceId,
 					itemId,
 					"artist",
 					payload.monitored,
+					request.log,
 				);
 
 				return reply.status(204).send();
@@ -213,11 +215,11 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 				// Optimistically update cache
 				await updateCacheMonitoredStatus(
 					app.prisma,
-					request.log,
 					payload.instanceId,
 					itemId,
 					"author",
 					payload.monitored,
+					request.log,
 				);
 
 				return reply.status(204).send();
@@ -240,7 +242,7 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 	 * Toggles monitoring status for specific episodes
 	 */
 	app.post("/library/episode/monitor", async (request, reply) => {
-		const payload = libraryEpisodeMonitorRequestSchema.parse(request.body ?? {});
+		const payload = validateRequest(libraryEpisodeMonitorRequestSchema, request.body ?? {});
 
 		const clientResult = await getClientForInstance(app, request, payload.instanceId);
 		if (!clientResult.success) {
@@ -290,7 +292,7 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 	 * Toggles monitoring status for specific albums in Lidarr
 	 */
 	app.post("/library/album/monitor", async (request, reply) => {
-		const payload = libraryAlbumMonitorRequestSchema.parse(request.body ?? {});
+		const payload = validateRequest(libraryAlbumMonitorRequestSchema, request.body ?? {});
 
 		const clientResult = await getClientForInstance(app, request, payload.instanceId);
 		if (!clientResult.success) {
@@ -343,7 +345,7 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 	 * Toggles monitoring status for specific books in Readarr
 	 */
 	app.post("/library/book/monitor", async (request, reply) => {
-		const payload = libraryBookMonitorRequestSchema.parse(request.body ?? {});
+		const payload = validateRequest(libraryBookMonitorRequestSchema, request.body ?? {});
 
 		const clientResult = await getClientForInstance(app, request, payload.instanceId);
 		if (!clientResult.success) {

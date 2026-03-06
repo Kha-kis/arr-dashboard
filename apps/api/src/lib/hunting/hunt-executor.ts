@@ -8,24 +8,17 @@
  * extracted into separate modules for maintainability.
  */
 
-import type { HuntConfig, ServiceInstance } from "../../lib/prisma.js";
-import type { FastifyInstance } from "fastify";
-import type { SonarrClient } from "arr-sdk/sonarr";
-import type { RadarrClient } from "arr-sdk/radarr";
 import type { LidarrClient } from "arr-sdk/lidarr";
+import type { RadarrClient } from "arr-sdk/radarr";
 import type { ReadarrClient } from "arr-sdk/readarr";
+import type { SonarrClient } from "arr-sdk/sonarr";
+import type { FastifyInstance } from "fastify";
+import type { HuntConfig, ServiceInstance } from "../../lib/prisma.js";
 import type { QueueCapableClient } from "../arr/client-factory.js";
-import { SEASON_SEARCH_THRESHOLD, SEARCH_DELAY_MS } from "./constants.js";
-import {
-	createSearchHistoryManager,
-	type SearchHistoryManager,
-	type SearchedItem,
-} from "./search-history.js";
 import { delay } from "../utils/delay.js";
-import { fetchWantedWithWrapAround, type ApiCallCounter } from "./pagination-helpers.js";
-
-// Extracted modules
-import { shuffleArray, isContentReleased } from "./hunt-utils.js";
+import { getErrorMessage } from "../utils/error-message.js";
+import { SEARCH_DELAY_MS, SEASON_SEARCH_THRESHOLD } from "./constants.js";
+import { detectGrabbedItemsFromHistoryWithSdk, type GrabbedItem } from "./grab-detector.js";
 import {
 	type HuntLogger,
 	type HuntService,
@@ -33,11 +26,14 @@ import {
 	parseFilters,
 	passesFilters,
 } from "./hunt-filters.js";
+// Extracted modules
+import { isContentReleased, shuffleArray } from "./hunt-utils.js";
+import { type ApiCallCounter, fetchWantedWithWrapAround } from "./pagination-helpers.js";
 import {
-	type GrabbedItem,
-	detectGrabbedItemsFromHistoryWithSdk,
-} from "./grab-detector.js";
-import { getErrorMessage } from "../utils/error-message.js";
+	createSearchHistoryManager,
+	type SearchedItem,
+	type SearchHistoryManager,
+} from "./search-history.js";
 
 // Re-export for external consumers
 export type { GrabbedItem } from "./grab-detector.js";
@@ -236,10 +232,13 @@ async function executeSonarrHuntWithSdk(
 
 		const records = await fetchWantedWithWrapAround(
 			(page) => {
-				const params = { page, pageSize: fetchSize, sortKey: "airDateUtc" as const, sortDirection: "descending" as const };
-				return type === "missing"
-					? client.wanted.missing(params)
-					: client.wanted.cutoff(params);
+				const params = {
+					page,
+					pageSize: fetchSize,
+					sortKey: "airDateUtc" as const,
+					sortDirection: "descending" as const,
+				};
+				return type === "missing" ? client.wanted.missing(params) : client.wanted.cutoff(params);
 			},
 			{ recentSearchCount: historyManager.getRecentSearchCount(), fetchSize, counter, logger },
 		);
@@ -521,10 +520,13 @@ async function executeRadarrHuntWithSdk(
 
 		const movies = await fetchWantedWithWrapAround(
 			(page) => {
-				const params = { page, pageSize: fetchSize, sortKey: "digitalRelease" as const, sortDirection: "descending" as const };
-				return type === "missing"
-					? client.wanted.missing(params)
-					: client.wanted.cutoff(params);
+				const params = {
+					page,
+					pageSize: fetchSize,
+					sortKey: "digitalRelease" as const,
+					sortDirection: "descending" as const,
+				};
+				return type === "missing" ? client.wanted.missing(params) : client.wanted.cutoff(params);
 			},
 			{ recentSearchCount: historyManager.getRecentSearchCount(), fetchSize, counter, logger },
 		);
@@ -693,7 +695,12 @@ async function executeLidarrHuntWithSdk(
 
 		const albums = await fetchWantedWithWrapAround(
 			(page) => {
-				const params = { page, pageSize: fetchSize, sortKey: "releaseDate" as const, sortDirection: "descending" as const };
+				const params = {
+					page,
+					pageSize: fetchSize,
+					sortKey: "releaseDate" as const,
+					sortDirection: "descending" as const,
+				};
 				return type === "missing"
 					? client.wanted.getMissing(params)
 					: client.wanted.getCutoffUnmet(params);
@@ -757,7 +764,9 @@ async function executeLidarrHuntWithSdk(
 
 		const notRecentlySearched = historyManager.filterRecentlySearched(eligibleAlbums, (album) => {
 			const albumAny = album as Record<string, unknown>;
-			const artist = artistMap.get((albumAny.artistId as number) ?? 0) as Record<string, unknown> | undefined;
+			const artist = artistMap.get((albumAny.artistId as number) ?? 0) as
+				| Record<string, unknown>
+				| undefined;
 			const artistName = (artist?.artistName as string) ?? "Unknown Artist";
 			return {
 				mediaType: "album",
@@ -784,7 +793,9 @@ async function executeLidarrHuntWithSdk(
 		const albumsToSearch = notRecentlySearched.slice(0, batchSize);
 		const searchedItemNames = albumsToSearch.map((album) => {
 			const albumAny = album as Record<string, unknown>;
-			const artist = artistMap.get((albumAny.artistId as number) ?? 0) as Record<string, unknown> | undefined;
+			const artist = artistMap.get((albumAny.artistId as number) ?? 0) as
+				| Record<string, unknown>
+				| undefined;
 			const artistName = (artist?.artistName as string) ?? "Unknown Artist";
 			return `${artistName} - ${album.title}`;
 		});
@@ -806,17 +817,16 @@ async function executeLidarrHuntWithSdk(
 				});
 			} catch (error) {
 				searchErrors++;
-				logger.error(
-					{ err: error, title: album.title },
-					"Failed to execute album search",
-				);
+				logger.error({ err: error, title: album.title }, "Failed to execute album search");
 			}
 		}
 
 		await historyManager.recordSearches(
 			albumsToSearch.map((album) => {
 				const albumAny = album as Record<string, unknown>;
-				const artist = artistMap.get((albumAny.artistId as number) ?? 0) as Record<string, unknown> | undefined;
+				const artist = artistMap.get((albumAny.artistId as number) ?? 0) as
+					| Record<string, unknown>
+					| undefined;
 				const artistName = (artist?.artistName as string) ?? "Unknown Artist";
 				return {
 					mediaType: "album" as const,
@@ -872,7 +882,12 @@ async function executeReadarrHuntWithSdk(
 
 		const books = await fetchWantedWithWrapAround(
 			(page) => {
-				const params = { page, pageSize: fetchSize, sortKey: "releaseDate" as const, sortDirection: "descending" as const };
+				const params = {
+					page,
+					pageSize: fetchSize,
+					sortKey: "releaseDate" as const,
+					sortDirection: "descending" as const,
+				};
 				return type === "missing"
 					? client.wanted.getMissing(params)
 					: client.wanted.getCutoffUnmet(params);
@@ -936,7 +951,9 @@ async function executeReadarrHuntWithSdk(
 
 		const notRecentlySearched = historyManager.filterRecentlySearched(eligibleBooks, (book) => {
 			const bookAny = book as Record<string, unknown>;
-			const author = authorMap.get((bookAny.authorId as number) ?? 0) as Record<string, unknown> | undefined;
+			const author = authorMap.get((bookAny.authorId as number) ?? 0) as
+				| Record<string, unknown>
+				| undefined;
 			const authorName = (author?.authorName as string) ?? "Unknown Author";
 			return {
 				mediaType: "book",
@@ -963,7 +980,9 @@ async function executeReadarrHuntWithSdk(
 		const booksToSearch = notRecentlySearched.slice(0, batchSize);
 		const searchedItemNames = booksToSearch.map((book) => {
 			const bookAny = book as Record<string, unknown>;
-			const author = authorMap.get((bookAny.authorId as number) ?? 0) as Record<string, unknown> | undefined;
+			const author = authorMap.get((bookAny.authorId as number) ?? 0) as
+				| Record<string, unknown>
+				| undefined;
 			const authorName = (author?.authorName as string) ?? "Unknown Author";
 			return `${authorName} - ${book.title}`;
 		});
@@ -985,17 +1004,16 @@ async function executeReadarrHuntWithSdk(
 				});
 			} catch (error) {
 				searchErrors++;
-				logger.error(
-					{ err: error, title: book.title },
-					"Failed to execute book search",
-				);
+				logger.error({ err: error, title: book.title }, "Failed to execute book search");
 			}
 		}
 
 		await historyManager.recordSearches(
 			booksToSearch.map((book) => {
 				const bookAny = book as Record<string, unknown>;
-				const author = authorMap.get((bookAny.authorId as number) ?? 0) as Record<string, unknown> | undefined;
+				const author = authorMap.get((bookAny.authorId as number) ?? 0) as
+					| Record<string, unknown>
+					| undefined;
 				const authorName = (author?.authorName as string) ?? "Unknown Author";
 				return {
 					mediaType: "book" as const,

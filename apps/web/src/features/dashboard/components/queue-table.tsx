@@ -1,21 +1,21 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
 import type { QueueItem } from "@arr/shared";
 import { Inbox, Loader2 } from "lucide-react";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { useCallback, useMemo } from "react";
 import type { QueueActionOptions } from "../../../hooks/api/useQueueActions";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import {
+	filterItemsForAction,
+	type SummaryRow,
+	useQueueExpansion,
+	useQueueSelection,
+} from "../hooks";
 import type { InstanceUrlMap } from "./dashboard-client";
 import type { QueueAction } from "./queue-action-buttons";
 import { QueueGroupCard } from "./queue-group-card";
 import { QueueItemCard } from "./queue-item-card";
 import { QueueSelectionToolbar } from "./queue-selection-toolbar";
-import {
-	useQueueSelection,
-	useQueueExpansion,
-	filterItemsForAction,
-	type SummaryRow,
-} from "../hooks";
 
 type QueueActionHandler = (
 	items: QueueItem[],
@@ -88,41 +88,39 @@ export const QueueTable = ({
 	);
 
 	// Action handlers for rows (groups or items) — memoized for stable references
-	const handleRowAction = useCallback(async (
-		rowItems: QueueItem[],
-		action: QueueAction,
-		actionOptions?: QueueActionOptions,
-	) => {
-		const actionableItems = filterItemsForAction(rowItems, action);
-		if (actionableItems.length === 0) {
-			return;
-		}
+	const handleRowAction = useCallback(
+		async (rowItems: QueueItem[], action: QueueAction, actionOptions?: QueueActionOptions) => {
+			const actionableItems = filterItemsForAction(rowItems, action);
+			if (actionableItems.length === 0) {
+				return;
+			}
 
-		if (action === "retry" && onRetry) {
-			await onRetry(actionableItems);
-		}
+			if (action === "retry" && onRetry) {
+				await onRetry(actionableItems);
+			}
 
-		if (action === "manualImport" && onManualImport) {
-			await onManualImport(actionableItems);
-		}
+			if (action === "manualImport" && onManualImport) {
+				await onManualImport(actionableItems);
+			}
 
-		if (action === "remove" && onRemove) {
-			await onRemove(actionableItems, actionOptions);
-		}
+			if (action === "remove" && onRemove) {
+				await onRemove(actionableItems, actionOptions);
+			}
 
-		if (action === "category" && onChangeCategory) {
-			await onChangeCategory(actionableItems);
-		}
-	}, [onRetry, onManualImport, onRemove, onChangeCategory]);
+			if (action === "category" && onChangeCategory) {
+				await onChangeCategory(actionableItems);
+			}
+		},
+		[onRetry, onManualImport, onRemove, onChangeCategory],
+	);
 
 	// Action handler for individual items — memoized
-	const handleItemAction = useCallback(async (
-		item: QueueItem,
-		action: QueueAction,
-		actionOptions?: QueueActionOptions,
-	) => {
-		await handleRowAction([item], action, actionOptions);
-	}, [handleRowAction]);
+	const handleItemAction = useCallback(
+		async (item: QueueItem, action: QueueAction, actionOptions?: QueueActionOptions) => {
+			await handleRowAction([item], action, actionOptions);
+		},
+		[handleRowAction],
+	);
 
 	// Loading state with premium styling
 	if (loading) {
@@ -147,10 +145,7 @@ export const QueueTable = ({
 							background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
 						}}
 					>
-						<Loader2
-							className="h-6 w-6 animate-spin"
-							style={{ color: themeGradient.from }}
-						/>
+						<Loader2 className="h-6 w-6 animate-spin" style={{ color: themeGradient.from }} />
 					</div>
 					<p className="text-sm text-muted-foreground">Fetching queue items...</p>
 				</div>
@@ -181,10 +176,7 @@ export const QueueTable = ({
 							background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
 						}}
 					>
-						<Inbox
-							className="h-6 w-6"
-							style={{ color: themeGradient.from }}
-						/>
+						<Inbox className="h-6 w-6" style={{ color: themeGradient.from }} />
 					</div>
 					<p className="text-sm text-muted-foreground">
 						{emptyMessage ?? "Queue is empty across all instances."}

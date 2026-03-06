@@ -6,8 +6,8 @@
  */
 
 import type { TrashConfigType, TrashCustomFormat } from "@arr/shared";
-import type { PrismaClient } from "../../lib/prisma.js";
 import { dequal as deepEqual } from "dequal";
+import type { PrismaClient } from "../../lib/prisma.js";
 import { createCacheManager } from "./cache-manager.js";
 
 // ============================================================================
@@ -408,12 +408,7 @@ export class CFMatcher {
 		const results: CFMatchResult[] = [];
 
 		for (const instanceCF of instanceCFs) {
-			const result = this.matchSingleCFWithMaps(
-				instanceCF,
-				trashByTrashId,
-				trashByName,
-				scoreSet,
-			);
+			const result = this.matchSingleCFWithMaps(instanceCF, trashByTrashId, trashByName, scoreSet);
 			results.push(result);
 		}
 
@@ -466,7 +461,7 @@ export class CFMatcher {
 	private extractTrashId(cf: InstanceCustomFormat): string | null {
 		// Strategy 1: Direct property
 		if (cf.trash_id && cf.trash_id.length > 0) {
-			return cf.trash_id;
+			return cf.trash_id.toLowerCase();
 		}
 
 		// Strategy 2: Check specifications for trash_id in fields
@@ -476,7 +471,7 @@ export class CFMatcher {
 				if (Array.isArray(spec.fields)) {
 					const trashIdField = spec.fields.find((f) => f.name === "trash_id");
 					if (trashIdField && typeof trashIdField.value === "string") {
-						return trashIdField.value;
+						return trashIdField.value.toLowerCase();
 					}
 				}
 				// Handle object format
@@ -484,7 +479,7 @@ export class CFMatcher {
 					const fields = spec.fields as Record<string, unknown>;
 					const trashIdValue = fields.trash_id || fields.trashId;
 					if (typeof trashIdValue === "string" && trashIdValue.length > 0) {
-						return trashIdValue;
+						return trashIdValue.toLowerCase();
 					}
 				}
 			}
@@ -493,7 +488,7 @@ export class CFMatcher {
 		// Strategy 3: Check for TRaSH ID pattern in CF name
 		const trashIdMatch = cf.name.match(/\[([a-f0-9-]{36})\]$/i);
 		if (trashIdMatch?.[1]) {
-			return trashIdMatch[1];
+			return trashIdMatch[1].toLowerCase();
 		}
 
 		return null;

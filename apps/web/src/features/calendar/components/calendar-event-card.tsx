@@ -165,9 +165,14 @@ export const CalendarEventCard = ({
 		>
 			<div className="flex flex-wrap items-start justify-between gap-3">
 				<div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-					<span className="rounded-full bg-background px-2 py-0.5 text-muted-foreground">{serviceLabel}</span>
+					<span className="rounded-full bg-background px-2 py-0.5 text-muted-foreground">
+						{serviceLabel}
+					</span>
 					{instancesDisplay && (
-						<span className="text-muted-foreground" title={hasMultipleInstances ? "Present in multiple instances" : undefined}>
+						<span
+							className="text-muted-foreground"
+							title={hasMultipleInstances ? "Present in multiple instances" : undefined}
+						>
 							{instancesDisplay}
 							{hasMultipleInstances && (
 								<span className="ml-1" style={{ color: themeGradient.from }}>

@@ -50,7 +50,9 @@ export const TemplateInstanceSelector = ({
 						<Rocket className="h-5 w-5" style={{ color: themeGradient.from }} />
 					</div>
 					<div>
-						<h2 id="deploy-template-title" className="text-lg font-semibold text-foreground">Deploy Template</h2>
+						<h2 id="deploy-template-title" className="text-lg font-semibold text-foreground">
+							Deploy Template
+						</h2>
 						<p className="text-sm text-muted-foreground">{templateName}</p>
 					</div>
 				</div>
@@ -97,9 +99,7 @@ export const TemplateInstanceSelector = ({
 									<div className="font-medium text-foreground group-hover:text-foreground transition-colors">
 										{instance.label}
 									</div>
-									<div className="text-sm text-muted-foreground mt-1">
-										{instance.service}
-									</div>
+									<div className="text-sm text-muted-foreground mt-1">{instance.service}</div>
 								</div>
 								<Rocket
 									className="h-5 w-5 transition-transform group-hover:scale-110"

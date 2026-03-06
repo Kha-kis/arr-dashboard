@@ -9,8 +9,8 @@ import { promisify } from "node:util";
 import { gunzip, gzip } from "node:zlib";
 import type { TrashCacheStatus, TrashConfigType } from "@arr/shared";
 import type { PrismaClient } from "../../lib/prisma.js";
-import { safeJsonParse } from "./utils.js";
 import { loggers } from "../logger.js";
+import { safeJsonParse } from "./utils.js";
 
 const log = loggers.trashGuides;
 
@@ -156,7 +156,10 @@ export class TrashCacheManager {
 		} catch (error) {
 			if (error instanceof CacheCorruptionError) throw error;
 			// Handle decompression or parsing errors
-			log.error({ err: error, serviceType, configType, dataSize: cacheEntry.data.length }, "Failed to retrieve cache");
+			log.error(
+				{ err: error, serviceType, configType, dataSize: cacheEntry.data.length },
+				"Failed to retrieve cache",
+			);
 			// Invalidate corrupted cache entry and signal the error
 			await this.delete(serviceType, configType);
 			throw new CacheCorruptionError(serviceType, configType);
@@ -287,7 +290,10 @@ export class TrashCacheManager {
 			sourceBreakdown = countSourceBreakdown(data);
 		} catch (error) {
 			// Handle decompression errors
-			log.error({ err: error, serviceType, configType, dataSize: cacheEntry.data.length }, "Failed to get cache status");
+			log.error(
+				{ err: error, serviceType, configType, dataSize: cacheEntry.data.length },
+				"Failed to get cache status",
+			);
 			await this.delete(serviceType, configType);
 			return null;
 		}
@@ -340,7 +346,10 @@ export class TrashCacheManager {
 				sourceBreakdown = countSourceBreakdown(data);
 			} catch (error) {
 				// Handle decompression errors - mark for deletion
-				log.error({ err: error, serviceType, configType: entry.configType, dataSize: entry.data.length }, "Failed to get cache status");
+				log.error(
+					{ err: error, serviceType, configType: entry.configType, dataSize: entry.data.length },
+					"Failed to get cache status",
+				);
 				entriesToDelete.push(entry.configType);
 				continue;
 			}

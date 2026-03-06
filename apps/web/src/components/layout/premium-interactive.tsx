@@ -1,9 +1,9 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { cn } from "../../lib/utils";
-import { useThemeGradient } from "../../hooks/useThemeGradient";
 import type { LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
+import { useThemeGradient } from "../../hooks/useThemeGradient";
+import { cn } from "../../lib/utils";
 
 /* =============================================================================
    PREMIUM TABS
@@ -33,7 +33,7 @@ export const PremiumTabs = ({ tabs, activeTab, onTabChange, className }: Premium
 		<div
 			className={cn(
 				"inline-flex rounded-xl bg-card/30 backdrop-blur-xs border border-border/50 p-1.5",
-				className
+				className,
 			)}
 		>
 			{tabs.map((tab) => {
@@ -48,9 +48,7 @@ export const PremiumTabs = ({ tabs, activeTab, onTabChange, className }: Premium
 						onClick={() => onTabChange(tab.id)}
 						className={cn(
 							"relative flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-all duration-300",
-							isActive
-								? "text-white"
-								: "text-muted-foreground hover:text-foreground"
+							isActive ? "text-white" : "text-muted-foreground hover:text-foreground",
 						)}
 					>
 						{/* Active background */}
@@ -65,14 +63,7 @@ export const PremiumTabs = ({ tabs, activeTab, onTabChange, className }: Premium
 						)}
 
 						{/* Icon */}
-						{Icon && (
-							<Icon
-								className={cn(
-									"h-4 w-4 relative z-10",
-									!isActive && "opacity-70"
-								)}
-							/>
-						)}
+						{Icon && <Icon className={cn("h-4 w-4 relative z-10", !isActive && "opacity-70")} />}
 
 						{/* Label */}
 						<span className="relative z-10">{tab.label}</span>
@@ -82,9 +73,7 @@ export const PremiumTabs = ({ tabs, activeTab, onTabChange, className }: Premium
 							<span
 								className={cn(
 									"relative z-10 min-w-[20px] px-1.5 py-0.5 text-xs font-medium rounded-full text-center",
-									isActive
-										? "bg-white/20 text-white"
-										: "bg-muted text-muted-foreground"
+									isActive ? "bg-white/20 text-white" : "bg-muted text-muted-foreground",
 								)}
 							>
 								{tab.badge}
@@ -110,13 +99,7 @@ interface FilterSelectProps {
 	className?: string;
 }
 
-export const FilterSelect = ({
-	value,
-	onChange,
-	options,
-	label,
-	className,
-}: FilterSelectProps) => {
+export const FilterSelect = ({ value, onChange, options, label, className }: FilterSelectProps) => {
 	return (
 		<div className={cn("flex flex-col gap-1.5", className)}>
 			{label && (
@@ -187,7 +170,7 @@ export const GradientButton = ({
 					"disabled:opacity-50 disabled:cursor-not-allowed",
 					"hover:scale-[1.02] hover:shadow-lg active:scale-[0.98]",
 					sizeClasses,
-					className
+					className,
 				)}
 				style={{
 					background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
@@ -213,7 +196,7 @@ export const GradientButton = ({
 					"disabled:opacity-50 disabled:cursor-not-allowed",
 					"hover:border-border hover:bg-card/80",
 					sizeClasses,
-					className
+					className,
 				)}
 			>
 				{Icon && <Icon className={iconSizes} />}
@@ -234,7 +217,7 @@ export const GradientButton = ({
 				"disabled:opacity-50 disabled:cursor-not-allowed",
 				"hover:text-foreground hover:bg-muted/50",
 				sizeClasses,
-				className
+				className,
 			)}
 		>
 			{Icon && <Icon className={iconSizes} />}
@@ -258,41 +241,14 @@ export const PremiumSkeleton = ({ className, variant = "line", style }: PremiumS
 	const baseClass = "bg-muted/50 animate-pulse";
 
 	if (variant === "card") {
-		return (
-			<div
-				className={cn(
-					baseClass,
-					"rounded-2xl h-48",
-					className
-				)}
-				style={style}
-			/>
-		);
+		return <div className={cn(baseClass, "rounded-2xl h-48", className)} style={style} />;
 	}
 
 	if (variant === "circle") {
-		return (
-			<div
-				className={cn(
-					baseClass,
-					"rounded-full h-12 w-12",
-					className
-				)}
-				style={style}
-			/>
-		);
+		return <div className={cn(baseClass, "rounded-full h-12 w-12", className)} style={style} />;
 	}
 
-	return (
-		<div
-			className={cn(
-				baseClass,
-				"rounded-lg h-4",
-				className
-			)}
-			style={style}
-		/>
-	);
+	return <div className={cn(baseClass, "rounded-lg h-4", className)} style={style} />;
 };
 
 /* =============================================================================
@@ -317,7 +273,12 @@ export const PremiumPageLoading = ({
 					<PremiumSkeleton className="h-10 w-64" />
 				</div>
 			)}
-			<div className={cn("grid gap-4", cardCount <= 2 ? "md:grid-cols-2" : "md:grid-cols-2 xl:grid-cols-4")}>
+			<div
+				className={cn(
+					"grid gap-4",
+					cardCount <= 2 ? "md:grid-cols-2" : "md:grid-cols-2 xl:grid-cols-4",
+				)}
+			>
 				{Array.from({ length: cardCount }).map((_, i) => (
 					<PremiumSkeleton
 						key={i}

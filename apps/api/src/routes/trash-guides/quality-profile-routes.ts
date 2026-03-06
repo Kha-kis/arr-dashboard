@@ -5,19 +5,23 @@
  */
 
 import {
-	isCFGroupApplicableToProfile,
 	type GroupCustomFormat,
+	isCFGroupApplicableToProfile,
 	type TemplateConfig,
 	type TrashCustomFormat,
 	type TrashQualityProfile,
+	type TrashQualityProfileGroup,
 } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { createCacheManager, CacheCorruptionError } from "../../lib/trash-guides/cache-manager.js";
+import { CacheCorruptionError, createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import { createTemplateService } from "../../lib/trash-guides/template-service.js";
-import { resolveUserCustomFormats, USER_CF_PREFIX } from "../../lib/trash-guides/user-cf-resolver.js";
+import {
+	resolveUserCustomFormats,
+	USER_CF_PREFIX,
+} from "../../lib/trash-guides/user-cf-resolver.js";
 import { createVersionTracker } from "../../lib/trash-guides/version-tracker.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
@@ -28,6 +32,24 @@ import { validateRequest } from "../../lib/utils/validate.js";
 const getQualityProfilesSchema = z.object({
 	serviceType: z.enum(["RADARR", "SONARR"]),
 });
+
+const namingSelectionSchema = z
+	.discriminatedUnion("serviceType", [
+		z.object({
+			serviceType: z.literal("RADARR"),
+			filePreset: z.string().nullable().default(null),
+			folderPreset: z.string().nullable().default(null),
+		}),
+		z.object({
+			serviceType: z.literal("SONARR"),
+			standardEpisodePreset: z.string().nullable().default(null),
+			dailyEpisodePreset: z.string().nullable().default(null),
+			animeEpisodePreset: z.string().nullable().default(null),
+			seriesFolderPreset: z.string().nullable().default(null),
+			seasonFolderPreset: z.string().nullable().default(null),
+		}),
+	])
+	.optional();
 
 const importQualityProfileSchema = z.object({
 	serviceType: z.enum(["RADARR", "SONARR"]),
@@ -44,6 +66,7 @@ const importQualityProfileSchema = z.object({
 			conditionsEnabled: z.record(z.string(), z.boolean()),
 		}),
 	),
+	namingSelection: namingSelectionSchema,
 });
 
 const updateQualityProfileTemplateSchema = z.object({
@@ -61,6 +84,7 @@ const updateQualityProfileTemplateSchema = z.object({
 			conditionsEnabled: z.record(z.string(), z.boolean()),
 		}),
 	),
+	namingSelection: namingSelectionSchema,
 	// Quality configuration (optional — preserves existing when not sent)
 	customQualityConfig: z
 		.object({
@@ -82,11 +106,13 @@ const updateQualityProfileTemplateSchema = z.object({
 							id: z.string(),
 							name: z.string(),
 							allowed: z.boolean(),
-							qualities: z.array(z.looseObject({
-								name: z.string(),
-								source: z.string().optional(),
-								resolution: z.number().optional(),
-							})),
+							qualities: z.array(
+								z.looseObject({
+									name: z.string(),
+									source: z.string().optional(),
+									resolution: z.number().optional(),
+								}),
+							),
 						}),
 					}),
 				]),
@@ -142,6 +168,47 @@ export async function registerQualityProfileRoutes(
 			await cacheManager.set(serviceType, "QUALITY_PROFILES", profiles);
 		}
 
+		// Load quality profile groups for group-name enrichment (soft failure — groups are optional)
+		let profileGroupMap = new Map<string, string>(); // trash_id → group name
+		try {
+			let groups: TrashQualityProfileGroup[] | null = null;
+			try {
+				groups = await cacheManager.get<TrashQualityProfileGroup[]>(
+					serviceType,
+					"QUALITY_PROFILE_GROUPS",
+				);
+			} catch (error) {
+				if (error instanceof CacheCorruptionError) {
+					request.log.warn(
+						{ serviceType },
+						"Quality profile groups cache corrupted — will re-fetch from GitHub",
+					);
+				} else {
+					throw error;
+				}
+			}
+
+			// Auto-fetch from GitHub on cache miss or stale (mirrors QUALITY_PROFILES pattern above)
+			if (!groups || !(await cacheManager.isFresh(serviceType, "QUALITY_PROFILE_GROUPS"))) {
+				const { fetcher } = await getServices(request.currentUser!.id);
+				groups = await fetcher.fetchQualityProfileGroups(serviceType);
+				await cacheManager.set(serviceType, "QUALITY_PROFILE_GROUPS", groups);
+			}
+
+			for (const group of groups) {
+				for (const trashId of Object.values(group.profiles)) {
+					profileGroupMap.set(trashId, group.name);
+				}
+			}
+		} catch (error) {
+			// Groups are optional enrichment — never a hard error
+			request.log.warn(
+				{ serviceType, err: error },
+				"Failed to load quality profile groups — profiles will render ungrouped",
+			);
+			profileGroupMap = new Map();
+		}
+
 		// Transform profiles for UI display
 		const profilesWithMeta = profiles.map((profile) => ({
 			trashId: profile.trash_id,
@@ -153,6 +220,7 @@ export async function registerQualityProfileRoutes(
 			language: profile.language,
 			customFormatCount: Object.keys(profile.formatItems || {}).length,
 			qualityCount: profile.items.length,
+			groupName: profileGroupMap.get(profile.trash_id),
 		}));
 
 		return reply.send({
@@ -371,6 +439,7 @@ export async function registerQualityProfileRoutes(
 			templateDescription,
 			selectedCFGroups,
 			customFormatSelections,
+			namingSelection,
 		} = validateRequest(importQualityProfileSchema, request.body);
 
 		// Get quality profile from cache
@@ -413,6 +482,7 @@ export async function registerQualityProfileRoutes(
 		const templateConfig: TemplateConfig = {
 			customFormats: [],
 			customFormatGroups: [],
+			...(namingSelection && { namingSelection }),
 			qualityProfile: {
 				upgradeAllowed: profile.upgradeAllowed,
 				cutoff: profile.cutoff,
@@ -466,7 +536,10 @@ export async function registerQualityProfileRoutes(
 
 		// Resolve user-created CFs from database (batched single query)
 		const userCFs = await resolveUserCustomFormats(
-			app.prisma, request.currentUser!.id, customFormatSelections, request.log,
+			app.prisma,
+			request.currentUser!.id,
+			customFormatSelections,
+			request.log,
 		);
 		templateConfig.customFormats.push(...userCFs);
 
@@ -524,13 +597,11 @@ export async function registerQualityProfileRoutes(
 			selectedCFGroups,
 			customFormatSelections,
 			customQualityConfig,
+			namingSelection,
 		} = validateRequest(updateQualityProfileTemplateSchema, request.body);
 
 		// Get existing template to preserve quality profile settings
-		const existingTemplate = await templateService.getTemplate(
-			templateId,
-			request.currentUser!.id,
-		);
+		const existingTemplate = await templateService.getTemplate(templateId, request.currentUser!.id);
 
 		if (!existingTemplate) {
 			return reply.status(404).send({
@@ -561,6 +632,7 @@ export async function registerQualityProfileRoutes(
 			...existingConfig,
 			customFormats: [],
 			customFormatGroups: [],
+			...(namingSelection !== undefined && { namingSelection }),
 			...(customQualityConfig !== undefined && {
 				customQualityConfig: customQualityConfig.useCustomQualities
 					? (customQualityConfig as TemplateConfig["customQualityConfig"])
@@ -631,7 +703,10 @@ export async function registerQualityProfileRoutes(
 
 		// Resolve user-created CFs: prefer existing template data, fall back to database
 		const userCFs = await resolveUserCustomFormats(
-			app.prisma, request.currentUser!.id, customFormatSelections, request.log,
+			app.prisma,
+			request.currentUser!.id,
+			customFormatSelections,
+			request.log,
 		);
 		for (const userCF of userCFs) {
 			const existingCF = existingCFMap.get(userCF.trashId);

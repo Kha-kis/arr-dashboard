@@ -1,28 +1,22 @@
 "use client";
 
+import { Globe, Search, Settings } from "lucide-react";
 import Link from "next/link";
-import { useSearchIndexersQuery } from "../../../hooks/api/useSearch";
-import {
-	Button,
-	Alert,
-	AlertTitle,
-	AlertDescription,
-	Pagination,
-} from "../../../components/ui";
 import { PremiumCard, PremiumSkeleton } from "../../../components/layout";
-import { SearchResultsTable } from "./search-results-table";
-import { IndexerSelector } from "./indexer-selector";
-import { SearchForm } from "./search-form";
-import { FilterControls } from "./filter-controls";
-import { SortControls } from "./sort-controls";
-import { ResultsSummary } from "./results-summary";
-import { useSearchState } from "../hooks/use-search-state";
-import { useSearchData } from "../hooks/use-search-data";
-import { useSearchPagination } from "../hooks/use-search-pagination";
-import { useSearchActions } from "../hooks/use-search-actions";
-import { useSearchIndexers } from "../hooks/use-search-indexers";
+import { Alert, AlertDescription, AlertTitle, Button, Pagination } from "../../../components/ui";
+import { useSearchIndexersQuery } from "../../../hooks/api/useSearch";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { Search, Settings, Globe } from "lucide-react";
+import { useSearchActions } from "../hooks/use-search-actions";
+import { useSearchData } from "../hooks/use-search-data";
+import { useSearchIndexers } from "../hooks/use-search-indexers";
+import { useSearchPagination } from "../hooks/use-search-pagination";
+import { useSearchState } from "../hooks/use-search-state";
+import { FilterControls } from "./filter-controls";
+import { IndexerSelector } from "./indexer-selector";
+import { ResultsSummary } from "./results-summary";
+import { SearchForm } from "./search-form";
+import { SearchResultsTable } from "./search-results-table";
+import { SortControls } from "./sort-controls";
 
 /**
  * Main search client component for manual indexer searches.
@@ -69,8 +63,9 @@ export const SearchClient = () => {
 	});
 
 	// Pagination
-	const { page, pageSize, paginatedResults, setPage, setPageSize } =
-		useSearchPagination(processed.results);
+	const { page, pageSize, paginatedResults, setPage, setPageSize } = useSearchPagination(
+		processed.results,
+	);
 
 	// Loading skeleton
 	if (indexersQuery.isLoading) {
@@ -78,12 +73,24 @@ export const SearchClient = () => {
 			<div className="space-y-8 animate-in fade-in duration-500">
 				<div className="space-y-4">
 					<PremiumSkeleton variant="line" className="h-8 w-48" />
-					<PremiumSkeleton variant="line" className="h-10 w-64" style={{ animationDelay: "50ms" }} />
+					<PremiumSkeleton
+						variant="line"
+						className="h-10 w-64"
+						style={{ animationDelay: "50ms" }}
+					/>
 				</div>
 				<div className="rounded-2xl border border-border/30 bg-card/30 p-6">
 					<div className="space-y-4">
-						<PremiumSkeleton variant="card" className="h-10 w-full" style={{ animationDelay: "100ms" }} />
-						<PremiumSkeleton variant="card" className="h-32 w-full" style={{ animationDelay: "150ms" }} />
+						<PremiumSkeleton
+							variant="card"
+							className="h-10 w-full"
+							style={{ animationDelay: "100ms" }}
+						/>
+						<PremiumSkeleton
+							variant="card"
+							className="h-32 w-full"
+							style={{ animationDelay: "150ms" }}
+						/>
 					</div>
 				</div>
 			</div>

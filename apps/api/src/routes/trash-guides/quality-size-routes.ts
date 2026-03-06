@@ -7,15 +7,15 @@
 
 import { createHash } from "node:crypto";
 import { TRASH_CONFIG_TYPES, type TrashQualitySize } from "@arr/shared";
-import type { SonarrClient, RadarrClient } from "arr-sdk";
+import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import {
-	buildQualitySizeComparison,
 	applyQualitySizeToDefinitions,
+	buildQualitySizeComparison,
 } from "../../lib/trash-guides/quality-size-matcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import { validateRequest } from "../../lib/utils/validate.js";
@@ -105,7 +105,10 @@ export async function qualitySizeRoutes(app: FastifyInstance, _opts: FastifyPlug
 	/**
 	 * Fetch quality size presets from cache, auto-refreshing if stale.
 	 */
-	async function getPresets(userId: string, serviceType: "RADARR" | "SONARR"): Promise<TrashQualitySize[]> {
+	async function getPresets(
+		userId: string,
+		serviceType: "RADARR" | "SONARR",
+	): Promise<TrashQualitySize[]> {
 		const configType = TRASH_CONFIG_TYPES.QUALITY_SIZE;
 		const isFresh = await cacheManager.isFresh(serviceType, configType);
 
@@ -172,67 +175,64 @@ export async function qualitySizeRoutes(app: FastifyInstance, _opts: FastifyPlug
 	 * POST /api/trash-guides/quality-size/preview
 	 * Preview the diff between a TRaSH preset and the instance's current quality definitions.
 	 */
-	app.post<{ Body: z.infer<typeof previewBodySchema> }>(
-		"/preview",
-		async (request, reply) => {
-			const { instanceId, presetTrashId } = validateRequest(previewBodySchema, request.body);
-			const userId = request.currentUser!.id;
+	app.post<{ Body: z.infer<typeof previewBodySchema> }>("/preview", async (request, reply) => {
+		const { instanceId, presetTrashId } = validateRequest(previewBodySchema, request.body);
+		const userId = request.currentUser!.id;
 
-			// Verify ownership + get instance
-			const instance = await requireInstance(app, userId, instanceId);
+		// Verify ownership + get instance
+		const instance = await requireInstance(app, userId, instanceId);
 
-			if (instance.service !== "SONARR" && instance.service !== "RADARR") {
-				return reply.status(400).send({
-					success: false,
-					error: `Quality size presets are not supported for ${instance.service} instances`,
-				});
-			}
-
-			// Fetch presets from cache
-			const serviceType = instance.service === "SONARR" ? "SONARR" : "RADARR";
-			const presets = await getPresets(userId, serviceType);
-			const preset = presets.find((p) => p.trash_id === presetTrashId);
-
-			if (!preset) {
-				return reply.status(404).send({
-					success: false,
-					error: `Preset "${presetTrashId}" not found for ${serviceType}`,
-				});
-			}
-
-			// Get current quality definitions from instance
-			const client = app.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
-			const instanceDefs = await client.qualityDefinition.getAll();
-
-			// Build comparison
-			const preview = buildQualitySizeComparison(preset.qualities, instanceDefs);
-
-			// Fetch existing mapping if any
-			const existingMapping = await app.prisma.qualitySizeMapping.findUnique({
-				where: { instanceId },
+		if (instance.service !== "SONARR" && instance.service !== "RADARR") {
+			return reply.status(400).send({
+				success: false,
+				error: `Quality size presets are not supported for ${instance.service} instances`,
 			});
+		}
 
-			return reply.send({
-				success: true,
-				preset: { trashId: preset.trash_id, type: preset.type },
-				comparisons: preview.comparisons,
-				summary: {
-					matched: preview.matchedCount,
-					changed: preview.changedCount,
-					unmatched: preview.unmatchedCount,
-					total: preset.qualities.length,
-				},
-				existingMapping: existingMapping
-					? {
-							presetTrashId: existingMapping.presetTrashId,
-							presetType: existingMapping.presetType,
-							syncStrategy: existingMapping.syncStrategy,
-							lastAppliedAt: existingMapping.lastAppliedAt.toISOString(),
-						}
-					: null,
+		// Fetch presets from cache
+		const serviceType = instance.service === "SONARR" ? "SONARR" : "RADARR";
+		const presets = await getPresets(userId, serviceType);
+		const preset = presets.find((p) => p.trash_id === presetTrashId);
+
+		if (!preset) {
+			return reply.status(404).send({
+				success: false,
+				error: `Preset "${presetTrashId}" not found for ${serviceType}`,
 			});
-		},
-	);
+		}
+
+		// Get current quality definitions from instance
+		const client = app.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
+		const instanceDefs = await client.qualityDefinition.getAll();
+
+		// Build comparison
+		const preview = buildQualitySizeComparison(preset.qualities, instanceDefs);
+
+		// Fetch existing mapping if any
+		const existingMapping = await app.prisma.qualitySizeMapping.findUnique({
+			where: { instanceId },
+		});
+
+		return reply.send({
+			success: true,
+			preset: { trashId: preset.trash_id, type: preset.type },
+			comparisons: preview.comparisons,
+			summary: {
+				matched: preview.matchedCount,
+				changed: preview.changedCount,
+				unmatched: preview.unmatchedCount,
+				total: preset.qualities.length,
+			},
+			existingMapping: existingMapping
+				? {
+						presetTrashId: existingMapping.presetTrashId,
+						presetType: existingMapping.presetType,
+						syncStrategy: existingMapping.syncStrategy,
+						lastAppliedAt: existingMapping.lastAppliedAt.toISOString(),
+					}
+				: null,
+		});
+	});
 
 	/**
 	 * POST /api/trash-guides/quality-size/apply
@@ -240,121 +240,118 @@ export async function qualitySizeRoutes(app: FastifyInstance, _opts: FastifyPlug
 	 * Always resets to factory defaults first, then applies the preset on top.
 	 * If presetTrashId is "default", only resets (no preset applied).
 	 */
-	app.post<{ Body: z.infer<typeof applyBodySchema> }>(
-		"/apply",
-		async (request, reply) => {
-			const { instanceId, presetTrashId, syncStrategy } = validateRequest(applyBodySchema, request.body);
-			const userId = request.currentUser!.id;
+	app.post<{ Body: z.infer<typeof applyBodySchema> }>("/apply", async (request, reply) => {
+		const { instanceId, presetTrashId, syncStrategy } = validateRequest(
+			applyBodySchema,
+			request.body,
+		);
+		const userId = request.currentUser!.id;
 
-			const instance = await requireInstance(app, userId, instanceId);
+		const instance = await requireInstance(app, userId, instanceId);
 
-			if (instance.service !== "SONARR" && instance.service !== "RADARR") {
-				return reply.status(400).send({
-					success: false,
-					error: `Quality size presets are not supported for ${instance.service} instances`,
-				});
-			}
+		if (instance.service !== "SONARR" && instance.service !== "RADARR") {
+			return reply.status(400).send({
+				success: false,
+				error: `Quality size presets are not supported for ${instance.service} instances`,
+			});
+		}
 
-			// Handle "default" — queue reset command, remove mapping, done.
-			// The reset executes asynchronously on the Sonarr/Radarr instance.
-			if (presetTrashId === DEFAULT_PRESET_ID) {
-				await resetQualityDefinitions(instance);
-				await app.prisma.qualitySizeMapping.deleteMany({
-					where: { instanceId },
-				});
+		// Handle "default" — queue reset command, remove mapping, done.
+		// The reset executes asynchronously on the Sonarr/Radarr instance.
+		if (presetTrashId === DEFAULT_PRESET_ID) {
+			await resetQualityDefinitions(instance);
+			await app.prisma.qualitySizeMapping.deleteMany({
+				where: { instanceId },
+			});
 
-				app.log.info(
-					{ instanceId },
-					"Queued quality size reset to factory defaults",
-				);
-
-				return reply.send({
-					success: true,
-					appliedCount: 0,
-					totalQualities: 0,
-					message: `Reset quality sizes to factory defaults on ${instance.label}`,
-				});
-			}
-
-			// Validate preset exists before applying
-			const serviceType = instance.service === "SONARR" ? "SONARR" : "RADARR";
-			const presets = await getPresets(userId, serviceType);
-			const preset = presets.find((p) => p.trash_id === presetTrashId);
-
-			if (!preset) {
-				return reply.status(404).send({
-					success: false,
-					error: `Preset "${presetTrashId}" not found for ${serviceType}`,
-				});
-			}
-
-			// Apply TRaSH preset values directly on top of current definitions.
-			// No reset needed — applyQualitySizeToDefinitions maps by quality name.
-			const client = app.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
-			const instanceDefs = await client.qualityDefinition.getAll();
-			const result = applyQualitySizeToDefinitions(preset.qualities, instanceDefs);
-			const appliedCount = result.appliedCount;
-
-			try {
-				// biome-ignore lint/suspicious/noExplicitAny: arr-sdk types are loosely typed from OpenAPI specs
-				await client.qualityDefinition.updateAll(result.updated as any[]);
-			} catch (error) {
-				request.log.error(
-					{ err: error, instanceId, presetTrashId, appliedCount: result.appliedCount },
-					"Quality size apply failed — instance may have partial updates",
-				);
-				throw error;
-			}
-
-			// Upsert the mapping record — this is metadata, not the destructive operation.
-			// If it fails, the instance was still modified successfully.
-			const dataHash = computeQualitiesHash(preset.qualities);
-			let mappingSaved = true;
-			try {
-				await app.prisma.qualitySizeMapping.upsert({
-					where: { instanceId },
-					create: {
-						instanceId,
-						userId,
-						presetTrashId: preset.trash_id,
-						presetType: preset.type,
-						serviceType,
-						syncStrategy,
-						appliedDataHash: dataHash,
-						lastAppliedAt: new Date(),
-					},
-					update: {
-						presetTrashId: preset.trash_id,
-						presetType: preset.type,
-						syncStrategy,
-						appliedDataHash: dataHash,
-						lastAppliedAt: new Date(),
-					},
-				});
-			} catch (mappingError) {
-				mappingSaved = false;
-				request.log.error(
-					{ err: mappingError, instanceId, presetTrashId },
-					"Quality size preset applied successfully but mapping record save failed — sync tracking will not work",
-				);
-			}
-
-			app.log.info(
-				{ instanceId, presetTrashId, appliedCount, serviceType, mappingSaved },
-				"Applied quality size preset to instance (reset + apply)",
-			);
+			app.log.info({ instanceId }, "Queued quality size reset to factory defaults");
 
 			return reply.send({
 				success: true,
-				appliedCount,
-				totalQualities: preset.qualities.length,
-				message: mappingSaved
-					? `Applied ${appliedCount} quality size definitions to ${instance.label}`
-					: `Applied ${appliedCount} quality size definitions to ${instance.label}, but sync tracking could not be saved. Re-apply to fix.`,
-				...(mappingSaved ? {} : { warning: "MAPPING_SAVE_FAILED" }),
+				appliedCount: 0,
+				totalQualities: 0,
+				message: `Reset quality sizes to factory defaults on ${instance.label}`,
 			});
-		},
-	);
+		}
+
+		// Validate preset exists before applying
+		const serviceType = instance.service === "SONARR" ? "SONARR" : "RADARR";
+		const presets = await getPresets(userId, serviceType);
+		const preset = presets.find((p) => p.trash_id === presetTrashId);
+
+		if (!preset) {
+			return reply.status(404).send({
+				success: false,
+				error: `Preset "${presetTrashId}" not found for ${serviceType}`,
+			});
+		}
+
+		// Apply TRaSH preset values directly on top of current definitions.
+		// No reset needed — applyQualitySizeToDefinitions maps by quality name.
+		const client = app.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
+		const instanceDefs = await client.qualityDefinition.getAll();
+		const result = applyQualitySizeToDefinitions(preset.qualities, instanceDefs);
+		const appliedCount = result.appliedCount;
+
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: arr-sdk types are loosely typed from OpenAPI specs
+			await client.qualityDefinition.updateAll(result.updated as any[]);
+		} catch (error) {
+			request.log.error(
+				{ err: error, instanceId, presetTrashId, appliedCount: result.appliedCount },
+				"Quality size apply failed — instance may have partial updates",
+			);
+			throw error;
+		}
+
+		// Upsert the mapping record — this is metadata, not the destructive operation.
+		// If it fails, the instance was still modified successfully.
+		const dataHash = computeQualitiesHash(preset.qualities);
+		let mappingSaved = true;
+		try {
+			await app.prisma.qualitySizeMapping.upsert({
+				where: { instanceId },
+				create: {
+					instanceId,
+					userId,
+					presetTrashId: preset.trash_id,
+					presetType: preset.type,
+					serviceType,
+					syncStrategy,
+					appliedDataHash: dataHash,
+					lastAppliedAt: new Date(),
+				},
+				update: {
+					presetTrashId: preset.trash_id,
+					presetType: preset.type,
+					syncStrategy,
+					appliedDataHash: dataHash,
+					lastAppliedAt: new Date(),
+				},
+			});
+		} catch (mappingError) {
+			mappingSaved = false;
+			request.log.error(
+				{ err: mappingError, instanceId, presetTrashId },
+				"Quality size preset applied successfully but mapping record save failed — sync tracking will not work",
+			);
+		}
+
+		app.log.info(
+			{ instanceId, presetTrashId, appliedCount, serviceType, mappingSaved },
+			"Applied quality size preset to instance (reset + apply)",
+		);
+
+		return reply.send({
+			success: true,
+			appliedCount,
+			totalQualities: preset.qualities.length,
+			message: mappingSaved
+				? `Applied ${appliedCount} quality size definitions to ${instance.label}`
+				: `Applied ${appliedCount} quality size definitions to ${instance.label}, but sync tracking could not be saved. Re-apply to fix.`,
+			...(mappingSaved ? {} : { warning: "MAPPING_SAVE_FAILED" }),
+		});
+	});
 
 	/**
 	 * PATCH /api/trash-guides/quality-size/sync-strategy

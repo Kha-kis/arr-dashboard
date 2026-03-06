@@ -1,15 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
-import Link from "next/link";
 import { startAuthentication } from "@simplewebauthn/browser";
 import { useQueryClient } from "@tanstack/react-query";
-import { KeyRound, Zap, Lock, Loader2 } from "lucide-react";
-import { useSetupRequired, useLoginMutation } from "../../../hooks/api/useAuth";
+import { KeyRound, Loader2, Lock, Zap } from "lucide-react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { Alert, AlertDescription } from "../../../components/ui";
 import { Button } from "../../../components/ui/button";
-import { Input } from "../../../components/ui/input";
-import { PasswordInput } from "../../../components/ui/password-input";
 import {
 	Card,
 	CardContent,
@@ -17,16 +15,18 @@ import {
 	CardHeader,
 	CardTitle,
 } from "../../../components/ui/card";
-import { Alert, AlertDescription } from "../../../components/ui";
+import { Input } from "../../../components/ui/input";
+import { PasswordInput } from "../../../components/ui/password-input";
+import { useLoginMutation, useSetupRequired } from "../../../hooks/api/useAuth";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import {
 	getOIDCProvider,
-	initiateOIDCLogin,
 	getPasskeyLoginOptions,
+	initiateOIDCLogin,
 	verifyPasskeyLogin,
 } from "../../../lib/api-client/auth";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 const DEFAULT_REDIRECT = "/dashboard";
 
@@ -60,7 +60,10 @@ export const LoginForm = () => {
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
 	// OIDC and Passkey state
-	const [oidcProvider, setOIDCProvider] = useState<{ displayName: string; enabled: boolean } | null>(null);
+	const [oidcProvider, setOIDCProvider] = useState<{
+		displayName: string;
+		enabled: boolean;
+	} | null>(null);
 	const [oidcLoading, setOIDCLoading] = useState(false);
 	const [passkeyLoading, setPasskeyLoading] = useState(false);
 
@@ -109,8 +112,10 @@ export const LoginForm = () => {
 			// Use full page navigation to ensure cookie is sent
 			window.location.href = redirectTarget;
 		} catch (error) {
-			const message =
-				getErrorMessage(error, "Unable to sign in. Please verify your credentials and try again.");
+			const message = getErrorMessage(
+				error,
+				"Unable to sign in. Please verify your credentials and try again.",
+			);
 			setErrorMessage(message);
 		}
 	};
@@ -124,8 +129,7 @@ export const LoginForm = () => {
 			// Redirect to OIDC provider
 			window.location.href = authUrl;
 		} catch (error) {
-			const message =
-				getErrorMessage(error, "Failed to initiate OIDC login");
+			const message = getErrorMessage(error, "Failed to initiate OIDC login");
 			setErrorMessage(message);
 			setOIDCLoading(false);
 		}
@@ -151,8 +155,10 @@ export const LoginForm = () => {
 			// Use full page navigation to ensure cookie is sent
 			window.location.href = redirectTarget;
 		} catch (error) {
-			const message =
-				getErrorMessage(error, "Passkey authentication failed. Please try again or use password.");
+			const message = getErrorMessage(
+				error,
+				"Passkey authentication failed. Please try again or use password.",
+			);
 			setErrorMessage(message);
 			setPasskeyLoading(false);
 		}
@@ -168,7 +174,7 @@ export const LoginForm = () => {
 			<div className="flex min-h-[60vh] flex-col items-center justify-center">
 				<div
 					className="h-10 w-10 animate-spin rounded-full border-4 border-t-transparent"
-					style={{ borderColor: `${themeGradient.from}30`, borderTopColor: 'transparent' }}
+					style={{ borderColor: `${themeGradient.from}30`, borderTopColor: "transparent" }}
 				/>
 			</div>
 		);
@@ -180,7 +186,9 @@ export const LoginForm = () => {
 		return (
 			<div className="flex min-h-[60vh] flex-col items-center justify-center gap-6">
 				<div className="text-center">
-					<p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Arr Control Center</p>
+					<p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
+						Arr Control Center
+					</p>
 					<h1 className="mt-2 text-3xl font-semibold text-foreground">Connection Error</h1>
 				</div>
 
@@ -197,7 +205,12 @@ export const LoginForm = () => {
 							style={{ color: SEMANTIC_COLORS.error.from }}
 						>
 							<svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+								<path
+									strokeLinecap="round"
+									strokeLinejoin="round"
+									strokeWidth={2}
+									d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+								/>
 							</svg>
 							{isNetworkError ? "Cannot Connect to API" : "Server Error"}
 						</CardTitle>
@@ -224,7 +237,12 @@ export const LoginForm = () => {
 							onClick={() => window.location.reload()}
 						>
 							<svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+								<path
+									strokeLinecap="round"
+									strokeLinejoin="round"
+									strokeWidth={2}
+									d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+								/>
 							</svg>
 							Retry Connection
 						</Button>
@@ -243,7 +261,9 @@ export const LoginForm = () => {
 		<div className="flex min-h-[60vh] flex-col items-center justify-center gap-6">
 			{/* Header */}
 			<div className="text-center">
-				<p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Arr Control Center</p>
+				<p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
+					Arr Control Center
+				</p>
 				<h1
 					className="mt-2 text-3xl font-bold tracking-tight"
 					style={{

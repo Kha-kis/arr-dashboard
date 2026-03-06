@@ -4,35 +4,48 @@ import fastifyRateLimit from "@fastify/rate-limit";
 import { randomBytes } from "node:crypto";
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
 import { type ApiEnv, envSchema } from "./config/env.js";
-import { isArrError, arrErrorToHttpStatus } from "./lib/arr/client-factory.js";
+import { arrErrorToHttpStatus, isArrError } from "./lib/arr/client-factory.js";
 import { arrClientPlugin } from "./plugins/arr-client.js";
 import backupSchedulerPlugin from "./plugins/backup-scheduler.js";
 import deploymentExecutorPlugin from "./plugins/deployment-executor.js";
 import huntingSchedulerPlugin from "./plugins/hunting-scheduler.js";
-import queueCleanerSchedulerPlugin from "./plugins/queue-cleaner-scheduler.js";
+import libraryCleanupSchedulerPlugin from "./plugins/library-cleanup-scheduler.js";
 import librarySyncSchedulerPlugin from "./plugins/library-sync-scheduler.js";
 import lifecyclePlugin from "./plugins/lifecycle.js";
+import notificationServicePlugin from "./plugins/notification-service.js";
 import { prismaPlugin } from "./plugins/prisma.js";
+import queueCleanerSchedulerPlugin from "./plugins/queue-cleaner-scheduler.js";
 import { securityPlugin } from "./plugins/security.js";
+import seerrCachePlugin from "./plugins/seerr-cache.js";
+import seerrCircuitBreakerPlugin from "./plugins/seerr-circuit-breaker.js";
+import seerrHealthSchedulerPlugin from "./plugins/seerr-health-scheduler.js";
 import sessionCleanupPlugin from "./plugins/session-cleanup.js";
 import trashBackupCleanupPlugin from "./plugins/trash-backup-cleanup.js";
+import plexCacheSchedulerPlugin from "./plugins/plex-cache-scheduler.js";
+import tautulliCacheSchedulerPlugin from "./plugins/tautulli-cache-scheduler.js";
+import plexEpisodeCacheSchedulerPlugin from "./plugins/plex-episode-cache-scheduler.js";
+import sessionSnapshotSchedulerPlugin from "./plugins/session-snapshot-scheduler.js";
 import trashUpdateSchedulerPlugin from "./plugins/trash-update-scheduler.js";
+import { registerAuthRoutes } from "./routes/auth.js";
 import { registerAuthOidcRoutes } from "./routes/auth-oidc.js";
 import { registerAuthPasskeyRoutes } from "./routes/auth-passkey.js";
-import { registerAuthRoutes } from "./routes/auth.js";
 import { registerBackupRoutes } from "./routes/backup.js";
 import { registerDashboardRoutes } from "./routes/dashboard.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerHuntingRoutes } from "./routes/hunting.js";
-import { registerQueueCleanerRoutes } from "./routes/queue-cleaner.js";
 import { registerLibraryRoutes } from "./routes/library.js";
+import { registerLibraryCleanupRoutes } from "./routes/library-cleanup.js";
 import { registerManualImportRoutes } from "./routes/manual-import.js";
+import { registerNotificationRoutes } from "./routes/notifications.js";
 import oidcProvidersRoutes from "./routes/oidc-providers.js";
+import { registerQueueCleanerRoutes } from "./routes/queue-cleaner.js";
 import { registerSearchRoutes } from "./routes/search.js";
+import { registerSeerrRoutes } from "./routes/seerr/index.js";
 import { registerServiceRoutes } from "./routes/services.js";
 import { registerSystemRoutes } from "./routes/system.js";
-import { registerSeerrRoutes } from "./routes/seerr/index.js";
 import { registerTrashGuidesRoutes } from "./routes/trash-guides/index.js";
+import { registerPlexRoutes } from "./routes/plex/index.js";
+import { registerTautulliRoutes } from "./routes/tautulli/index.js";
 import { logger } from "./lib/logger.js";
 
 function isPrismaKnownError(
@@ -49,22 +62,19 @@ function isPrismaKnownError(
 export type ServerOptions = {
 	logger?: boolean;
 	env?: ApiEnv;
-	trustProxy?: boolean;
-	secureCookie?: boolean;
 };
 
 export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
+	const env = options.env ?? envSchema.parse(process.env);
+
 	const app = Fastify({
 		...(options.logger === false
 		? { logger: false }
 		: { loggerInstance: logger as FastifyBaseLogger }),
-		trustProxy: options.trustProxy ?? false,
 		genReqId: () => randomBytes(4).toString("hex"),
+		trustProxy: env.TRUST_PROXY,
 	});
-
-	const env = options.env ?? envSchema.parse(process.env);
 	app.decorate("config", env);
-	app.decorate("secureCookie", options.secureCookie ?? false);
 
 	// Handle requests with unexpected Content-Type headers (e.g., Next.js proxy
 	// injecting application/octet-stream on body-less DELETE requests). Without this,
@@ -101,7 +111,10 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	app.register(prismaPlugin);
 	app.register(securityPlugin);
 	app.register(arrClientPlugin);
+	app.register(seerrCircuitBreakerPlugin);
+	app.register(seerrCachePlugin);
 	app.register(deploymentExecutorPlugin);
+	app.register(notificationServicePlugin);
 	app.register(lifecyclePlugin);
 	app.register(backupSchedulerPlugin);
 	app.register(librarySyncSchedulerPlugin);
@@ -110,6 +123,12 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	app.register(trashUpdateSchedulerPlugin);
 	app.register(huntingSchedulerPlugin);
 	app.register(queueCleanerSchedulerPlugin);
+	app.register(libraryCleanupSchedulerPlugin);
+	app.register(plexCacheSchedulerPlugin);
+	app.register(plexEpisodeCacheSchedulerPlugin);
+	app.register(tautulliCacheSchedulerPlugin);
+	app.register(sessionSnapshotSchedulerPlugin);
+	app.register(seerrHealthSchedulerPlugin);
 
 	app.decorateRequest("currentUser", null);
 	app.decorateRequest("sessionToken", null);
@@ -142,7 +161,11 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 		// === Known application errors (statusCode convention) ===
 		// ZodValidationError, InstanceNotFoundError, TemplateNotFoundError,
 		// ConflictError, AppValidationError, ManualImportError, SchedulerNotInitializedError
-		if (error instanceof Error && "statusCode" in error && typeof (error as Record<string, unknown>).statusCode === "number") {
+		if (
+			error instanceof Error &&
+			"statusCode" in error &&
+			typeof (error as Record<string, unknown>).statusCode === "number"
+		) {
 			const statusCode = (error as Record<string, unknown>).statusCode as number;
 			if (statusCode >= 500) {
 				request.log.error({ err: error }, "application error");
@@ -186,6 +209,7 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 			reply.status(500);
 		}
 		const err = error instanceof Error ? error : new Error(String(error));
+		// Never leak internal error details on 5xx responses (they may contain file paths, DB info, etc.)
 		const is5xx = reply.statusCode >= 500;
 		reply.send({
 			statusCode: reply.statusCode,
@@ -220,6 +244,10 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 		api.register(registerSeerrRoutes, { prefix: "/api/seerr" });
 		api.register(registerHuntingRoutes, { prefix: "/api" });
 		api.register(registerQueueCleanerRoutes, { prefix: "/api" });
+		api.register(registerNotificationRoutes, { prefix: "/api/notifications" });
+		api.register(registerLibraryCleanupRoutes, { prefix: "/api" });
+		api.register(registerPlexRoutes, { prefix: "/api/plex" });
+		api.register(registerTautulliRoutes, { prefix: "/api/tautulli" });
 	});
 
 	return app;

@@ -1,30 +1,30 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
 import {
-	GitBranch,
+	AlertCircle,
 	CheckCircle2,
-	XCircle,
+	ChevronRight,
+	FileSearch,
+	FlaskConical,
+	GitBranch,
+	Globe,
+	Link,
 	Loader2,
 	RotateCcw,
 	Save,
-	FlaskConical,
-	Globe,
-	AlertCircle,
-	Link,
-	FileSearch,
-	ChevronRight,
+	XCircle,
 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import {
-	useTrashSettings,
-	useUpdateTrashSettings,
-	useTestCustomRepo,
 	useResetToOfficialRepo,
 	useSupplementaryReport,
+	useTestCustomRepo,
+	useTrashSettings,
+	useUpdateTrashSettings,
 } from "../../../hooks/api/useTrashSettings";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 // ============================================================================
 // URL Parsing Utilities
@@ -109,14 +109,21 @@ export const RepoSettingsSection = () => {
 				setRepoUrl("");
 			}
 			setBranch(s.customRepoBranch ?? settingsData.defaultRepo?.branch ?? "master");
-			setMode((s.customRepoMode === "supplementary" ? "supplementary" : "fork") as "fork" | "supplementary");
+			setMode(
+				(s.customRepoMode === "supplementary" ? "supplementary" : "fork") as
+					| "fork"
+					| "supplementary",
+			);
 		}
 	}, [settingsData]);
 
 	const isCustom = !!settingsData?.settings?.customRepoOwner;
-	const currentOwner = settingsData?.settings?.customRepoOwner ?? settingsData?.defaultRepo?.owner ?? "TRaSH-Guides";
-	const currentName = settingsData?.settings?.customRepoName ?? settingsData?.defaultRepo?.name ?? "Guides";
-	const currentBranch = settingsData?.settings?.customRepoBranch ?? settingsData?.defaultRepo?.branch ?? "master";
+	const currentOwner =
+		settingsData?.settings?.customRepoOwner ?? settingsData?.defaultRepo?.owner ?? "TRaSH-Guides";
+	const currentName =
+		settingsData?.settings?.customRepoName ?? settingsData?.defaultRepo?.name ?? "Guides";
+	const currentBranch =
+		settingsData?.settings?.customRepoBranch ?? settingsData?.defaultRepo?.branch ?? "master";
 
 	const validateAndParse = useCallback(() => {
 		const parsed = parseGitHubUrl(repoUrl);
@@ -212,8 +219,8 @@ export const RepoSettingsSection = () => {
 							Repository Source
 						</h3>
 						<p className="text-muted-foreground mt-1">
-							Configure which GitHub repository to use for TRaSH Guides data. Forks maintain the same directory
-							structure, so all parsing works automatically.
+							Configure which GitHub repository to use for TRaSH Guides data. Forks maintain the
+							same directory structure, so all parsing works automatically.
 						</p>
 
 						{/* Current repo badge(s) */}
@@ -282,7 +289,9 @@ export const RepoSettingsSection = () => {
 								<div
 									className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium"
 									style={{
-										backgroundColor: isCustom ? `${themeGradient.from}15` : "rgba(255,255,255,0.05)",
+										backgroundColor: isCustom
+											? `${themeGradient.from}15`
+											: "rgba(255,255,255,0.05)",
 										border: `1px solid ${isCustom ? themeGradient.from : "var(--border)"}40`,
 										color: isCustom ? themeGradient.from : "var(--foreground)",
 									}}
@@ -321,8 +330,8 @@ export const RepoSettingsSection = () => {
 								Override Report
 							</h4>
 							<p className="text-sm text-muted-foreground mt-1">
-								Compare your custom repo against official TRaSH Guides to see which entries
-								are overrides vs new additions.
+								Compare your custom repo against official TRaSH Guides to see which entries are
+								overrides vs new additions.
 							</p>
 						</div>
 						<div className="flex items-center gap-2 shrink-0">
@@ -338,9 +347,14 @@ export const RepoSettingsSection = () => {
 										}}
 										className="rounded-md px-2.5 py-1 text-xs font-medium transition-all duration-200"
 										style={{
-											backgroundColor: reportServiceType === svc ? `${themeGradient.from}15` : "transparent",
-											color: reportServiceType === svc ? themeGradient.from : "var(--muted-foreground)",
-											border: reportServiceType === svc ? `1px solid ${themeGradient.from}40` : "1px solid transparent",
+											backgroundColor:
+												reportServiceType === svc ? `${themeGradient.from}15` : "transparent",
+											color:
+												reportServiceType === svc ? themeGradient.from : "var(--muted-foreground)",
+											border:
+												reportServiceType === svc
+													? `1px solid ${themeGradient.from}40`
+													: "1px solid transparent",
 										}}
 									>
 										{svc === "RADARR" ? "Radarr" : "Sonarr"}
@@ -383,7 +397,10 @@ export const RepoSettingsSection = () => {
 							}}
 						>
 							<div className="flex items-center gap-2">
-								<AlertCircle className="h-4 w-4 shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
+								<AlertCircle
+									className="h-4 w-4 shrink-0"
+									style={{ color: SEMANTIC_COLORS.error.from }}
+								/>
 								<p style={{ color: SEMANTIC_COLORS.error.from }}>
 									{getErrorMessage(reportQuery.error, "Failed to generate report")}
 								</p>
@@ -397,11 +414,12 @@ export const RepoSettingsSection = () => {
 							{(["CUSTOM_FORMATS", "CF_GROUPS", "QUALITY_PROFILES"] as const).map((configType) => {
 								const entry = reportQuery.data.configTypes[configType];
 								if (!entry) return null;
-								const label = configType === "CUSTOM_FORMATS"
-									? "Custom Formats"
-									: configType === "CF_GROUPS"
-										? "CF Groups"
-										: "Quality Profiles";
+								const label =
+									configType === "CUSTOM_FORMATS"
+										? "Custom Formats"
+										: configType === "CF_GROUPS"
+											? "CF Groups"
+											: "Quality Profiles";
 								const hasItems = entry.overrides.length > 0 || entry.additions.length > 0;
 
 								return (
@@ -429,16 +447,24 @@ export const RepoSettingsSection = () => {
 											<div className="mt-2 space-y-1.5">
 												{entry.overrides.length > 0 && (
 													<details className="group">
-														<summary className="cursor-pointer text-xs font-medium flex items-center gap-1" style={{ color: themeGradient.from }}>
+														<summary
+															className="cursor-pointer text-xs font-medium flex items-center gap-1"
+															style={{ color: themeGradient.from }}
+														>
 															<ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
 															Overrides ({entry.overrides.length})
 														</summary>
 														<ul className="mt-1 ml-4 space-y-0.5 text-xs text-muted-foreground">
 															{entry.overrides.map((item) => (
 																<li key={item.trash_id} className="flex items-center gap-1.5">
-																	<span className="h-1 w-1 rounded-full shrink-0" style={{ backgroundColor: themeGradient.from }} />
+																	<span
+																		className="h-1 w-1 rounded-full shrink-0"
+																		style={{ backgroundColor: themeGradient.from }}
+																	/>
 																	{item.name}
-																	<code className="text-[10px] opacity-60 font-mono">{item.trash_id.slice(0, 8)}</code>
+																	<code className="text-[10px] opacity-60 font-mono">
+																		{item.trash_id.slice(0, 8)}
+																	</code>
 																</li>
 															))}
 														</ul>
@@ -446,16 +472,24 @@ export const RepoSettingsSection = () => {
 												)}
 												{entry.additions.length > 0 && (
 													<details className="group">
-														<summary className="cursor-pointer text-xs font-medium flex items-center gap-1" style={{ color: SEMANTIC_COLORS.success.from }}>
+														<summary
+															className="cursor-pointer text-xs font-medium flex items-center gap-1"
+															style={{ color: SEMANTIC_COLORS.success.from }}
+														>
 															<ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
 															Additions ({entry.additions.length})
 														</summary>
 														<ul className="mt-1 ml-4 space-y-0.5 text-xs text-muted-foreground">
 															{entry.additions.map((item) => (
 																<li key={item.trash_id} className="flex items-center gap-1.5">
-																	<span className="h-1 w-1 rounded-full shrink-0" style={{ backgroundColor: SEMANTIC_COLORS.success.from }} />
+																	<span
+																		className="h-1 w-1 rounded-full shrink-0"
+																		style={{ backgroundColor: SEMANTIC_COLORS.success.from }}
+																	/>
 																	{item.name}
-																	<code className="text-[10px] opacity-60 font-mono">{item.trash_id.slice(0, 8)}</code>
+																	<code className="text-[10px] opacity-60 font-mono">
+																		{item.trash_id.slice(0, 8)}
+																	</code>
 																</li>
 															))}
 														</ul>
@@ -473,10 +507,12 @@ export const RepoSettingsSection = () => {
 
 			{/* Configure Custom Repository Form */}
 			<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6">
-				<h4 className="text-base font-semibold text-foreground mb-1">Configure Custom Repository</h4>
+				<h4 className="text-base font-semibold text-foreground mb-1">
+					Configure Custom Repository
+				</h4>
 				<p className="text-sm text-muted-foreground mb-5">
-					Paste the GitHub URL of a TRaSH Guides fork to use custom formats and configurations
-					not available in the official repo.
+					Paste the GitHub URL of a TRaSH Guides fork to use custom formats and configurations not
+					available in the official repo.
 				</p>
 
 				<div className="space-y-4">
@@ -486,7 +522,7 @@ export const RepoSettingsSection = () => {
 							Repository Mode
 						</label>
 						<div className="inline-flex rounded-lg border border-border/50 bg-card/50 p-1">
-							{([
+							{[
 								{
 									value: "fork" as const,
 									label: "Full Fork",
@@ -497,16 +533,20 @@ export const RepoSettingsSection = () => {
 									label: "Supplementary",
 									desc: "Merged with official guides (custom overrides matching entries)",
 								},
-							]).map((option) => (
+							].map((option) => (
 								<button
 									key={option.value}
 									type="button"
 									onClick={() => setMode(option.value)}
 									className="relative rounded-md px-4 py-2 text-sm font-medium transition-all duration-200"
 									style={{
-										backgroundColor: mode === option.value ? `${themeGradient.from}15` : "transparent",
+										backgroundColor:
+											mode === option.value ? `${themeGradient.from}15` : "transparent",
 										color: mode === option.value ? themeGradient.from : "var(--muted-foreground)",
-										border: mode === option.value ? `1px solid ${themeGradient.from}40` : "1px solid transparent",
+										border:
+											mode === option.value
+												? `1px solid ${themeGradient.from}40`
+												: "1px solid transparent",
 									}}
 								>
 									{option.label}
@@ -535,35 +575,46 @@ export const RepoSettingsSection = () => {
 								value={repoUrl}
 								onChange={(e) => handleUrlChange(e.target.value)}
 								onBlur={(e) => {
-								e.currentTarget.style.borderColor = "";
-								e.currentTarget.style.boxShadow = "";
-								validateAndParse();
-							}}
+									e.currentTarget.style.borderColor = "";
+									e.currentTarget.style.boxShadow = "";
+									validateAndParse();
+								}}
 								placeholder="https://github.com/owner/Guides"
 								className="w-full rounded-lg border border-border/50 bg-card/50 pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-hidden transition-all duration-200"
 								onFocus={(e) => {
-									e.currentTarget.style.borderColor = urlError ? SEMANTIC_COLORS.error.from : themeGradient.from;
+									e.currentTarget.style.borderColor = urlError
+										? SEMANTIC_COLORS.error.from
+										: themeGradient.from;
 									e.currentTarget.style.boxShadow = `0 0 0 2px ${urlError ? `${SEMANTIC_COLORS.error.from}20` : themeGradient.fromLight}`;
 								}}
 								style={urlError ? { borderColor: SEMANTIC_COLORS.error.from } : undefined}
 							/>
 						</div>
 						{urlError && (
-							<p className="mt-1.5 text-xs flex items-center gap-1" style={{ color: SEMANTIC_COLORS.error.from }}>
+							<p
+								className="mt-1.5 text-xs flex items-center gap-1"
+								style={{ color: SEMANTIC_COLORS.error.from }}
+							>
 								<AlertCircle className="h-3 w-3" />
 								{urlError}
 							</p>
 						)}
 						{parsedUrl && !urlError && repoUrl.trim() && (
 							<p className="mt-1.5 text-xs text-muted-foreground">
-								Parsed: <span className="font-mono">{parsedUrl.owner}/{parsedUrl.name}</span>
+								Parsed:{" "}
+								<span className="font-mono">
+									{parsedUrl.owner}/{parsedUrl.name}
+								</span>
 							</p>
 						)}
 					</div>
 
 					{/* Branch */}
 					<div className="max-w-xs">
-						<label htmlFor="repo-branch" className="block text-sm font-medium text-foreground mb-1.5">
+						<label
+							htmlFor="repo-branch"
+							className="block text-sm font-medium text-foreground mb-1.5"
+						>
 							Branch <span className="text-muted-foreground font-normal">(optional)</span>
 						</label>
 						<input
@@ -606,9 +657,15 @@ export const RepoSettingsSection = () => {
 					>
 						<div className="flex items-start gap-2">
 							{testMutation.data.valid ? (
-								<CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" style={{ color: SEMANTIC_COLORS.success.from }} />
+								<CheckCircle2
+									className="h-4 w-4 mt-0.5 shrink-0"
+									style={{ color: SEMANTIC_COLORS.success.from }}
+								/>
 							) : (
-								<XCircle className="h-4 w-4 mt-0.5 shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
+								<XCircle
+									className="h-4 w-4 mt-0.5 shrink-0"
+									style={{ color: SEMANTIC_COLORS.error.from }}
+								/>
 							)}
 							<div>
 								{testMutation.data.valid ? (
@@ -618,10 +675,14 @@ export const RepoSettingsSection = () => {
 										</p>
 										{testMutation.data.structure && (
 											<p className="text-muted-foreground mt-0.5">
-												Found: {[
+												Found:{" "}
+												{[
 													testMutation.data.structure.hasRadarr && "Radarr",
 													testMutation.data.structure.hasSonarr && "Sonarr",
-												].filter(Boolean).join(", ")} configurations
+												]
+													.filter(Boolean)
+													.join(", ")}{" "}
+												configurations
 												{testMutation.data.structure.directoriesFound.length > 0 && (
 													<span className="text-xs ml-1">
 														({testMutation.data.structure.directoriesFound.length} directories)
@@ -636,7 +697,8 @@ export const RepoSettingsSection = () => {
 											Validation failed
 										</p>
 										<p className="text-muted-foreground mt-0.5">
-											{testMutation.data.error || "Repository does not have the expected TRaSH Guides structure."}
+											{testMutation.data.error ||
+												"Repository does not have the expected TRaSH Guides structure."}
 										</p>
 										{testMutation.data.suggestedBranch && (
 											<button
@@ -667,7 +729,10 @@ export const RepoSettingsSection = () => {
 						}}
 					>
 						<div className="flex items-center gap-2">
-							<AlertCircle className="h-4 w-4 shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
+							<AlertCircle
+								className="h-4 w-4 shrink-0"
+								style={{ color: SEMANTIC_COLORS.error.from }}
+							/>
 							<p style={{ color: SEMANTIC_COLORS.error.from }}>
 								{getErrorMessage(testMutation.error, "Failed to test repository")}
 							</p>
@@ -739,10 +804,15 @@ export const RepoSettingsSection = () => {
 				<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6 animate-in fade-in duration-300">
 					<div className="flex items-start justify-between gap-4">
 						<div>
-							<h4 className="text-base font-semibold text-foreground">Reset to Official Repository</h4>
+							<h4 className="text-base font-semibold text-foreground">
+								Reset to Official Repository
+							</h4>
 							<p className="text-sm text-muted-foreground mt-1">
-								Switch back to the official <code className="font-mono text-xs bg-muted/30 px-1 py-0.5 rounded">TRaSH-Guides/Guides</code> repository.
-								This will clear your custom repo configuration and all cached data.
+								Switch back to the official{" "}
+								<code className="font-mono text-xs bg-muted/30 px-1 py-0.5 rounded">
+									TRaSH-Guides/Guides
+								</code>{" "}
+								repository. This will clear your custom repo configuration and all cached data.
 							</p>
 						</div>
 						<button

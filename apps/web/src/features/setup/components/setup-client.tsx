@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import { KeyRound, Lock, Zap } from "lucide-react";
+import { useState } from "react";
 import { Button } from "../../../components/ui/button";
 import {
 	Card,
@@ -10,12 +10,12 @@ import {
 	CardHeader,
 	CardTitle,
 } from "../../../components/ui/card";
+import { useSetupRequired } from "../../../hooks/api/useAuth";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { cn } from "../../../lib/utils";
-import { PasswordSetup } from "./password-setup";
 import { OIDCSetup } from "./oidc-setup";
 import { PasskeySetup } from "./passkey-setup";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { useSetupRequired } from "../../../hooks/api/useAuth";
+import { PasswordSetup } from "./password-setup";
 
 type SetupMethod = "password" | "oidc" | "passkey";
 
@@ -35,7 +35,9 @@ export const SetupClient = () => {
 		<div className="w-full max-w-2xl space-y-6">
 			{/* Header */}
 			<div className="text-center space-y-2">
-				<p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Arr Control Center</p>
+				<p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
+					Arr Control Center
+				</p>
 				<h1
 					className="text-3xl font-bold tracking-tight"
 					style={{
@@ -74,9 +76,7 @@ export const SetupClient = () => {
 									onClick={() => setActiveMethod(method.id)}
 									className={cn(
 										"flex-1 gap-2 rounded-xl transition-all duration-200",
-										isActive
-											? "text-foreground"
-											: "text-muted-foreground hover:text-foreground",
+										isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground",
 									)}
 									style={
 										isActive

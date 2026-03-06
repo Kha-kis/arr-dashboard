@@ -1,24 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import type { ProwlarrIndexer, ProwlarrIndexerDetails } from "@arr/shared";
+import { AlertCircle, Info, Loader2, Pencil, RefreshCw, Save, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { PremiumSkeleton } from "../../../components/layout/premium-components";
 import { useIndexerDetailsQuery } from "../../../hooks/api/useSearch";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { IndexerConfigurationFields } from "./indexer-configuration-fields";
 import { IndexerDetailsInfo } from "./indexer-details-info";
 import { IndexerEditForm } from "./indexer-edit-form";
-import { IndexerConfigurationFields } from "./indexer-configuration-fields";
-import {
-	RefreshCw,
-	Loader2,
-	AlertCircle,
-	Pencil,
-	X,
-	Save,
-	Info,
-} from "lucide-react";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { PremiumSkeleton } from "../../../components/layout/premium-components";
-import { getErrorMessage } from "../../../lib/error-utils";
 
 /**
  * Premium Indexer Details Panel
@@ -94,8 +86,7 @@ export const IndexerDetailsPanel = ({
 		return null;
 	}
 
-	const detailError =
-		error ? getErrorMessage(error, "Unable to load indexer settings.") : null;
+	const detailError = error ? getErrorMessage(error, "Unable to load indexer settings.") : null;
 	const isLoadingState = isLoading && !detail.fields && !detail.stats;
 
 	const handleStartEditing = () => {
@@ -154,11 +145,23 @@ export const IndexerDetailsPanel = ({
 						<div className="space-y-3 flex-1">
 							<div className="flex items-center gap-3">
 								<PremiumSkeleton variant="line" className="h-5 w-32" />
-								<PremiumSkeleton variant="line" className="h-5 w-24" style={{ animationDelay: "50ms" }} />
+								<PremiumSkeleton
+									variant="line"
+									className="h-5 w-24"
+									style={{ animationDelay: "50ms" }}
+								/>
 							</div>
-							<PremiumSkeleton variant="line" className="h-4 w-48" style={{ animationDelay: "100ms" }} />
+							<PremiumSkeleton
+								variant="line"
+								className="h-4 w-48"
+								style={{ animationDelay: "100ms" }}
+							/>
 						</div>
-						<PremiumSkeleton variant="line" className="h-9 w-24" style={{ animationDelay: "150ms" }} />
+						<PremiumSkeleton
+							variant="line"
+							className="h-9 w-24"
+							style={{ animationDelay: "150ms" }}
+						/>
 					</div>
 					{/* Details grid skeleton */}
 					<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -182,7 +185,10 @@ export const IndexerDetailsPanel = ({
 					}}
 				>
 					<div className="flex items-start gap-3">
-						<AlertCircle className="h-5 w-5 shrink-0 mt-0.5" style={{ color: SEMANTIC_COLORS.error.from }} />
+						<AlertCircle
+							className="h-5 w-5 shrink-0 mt-0.5"
+							style={{ color: SEMANTIC_COLORS.error.from }}
+						/>
 						<div className="flex-1">
 							<p className="font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
 								{detailError}

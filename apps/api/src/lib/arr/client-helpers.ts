@@ -5,17 +5,13 @@
  * All operations are request-scoped and follow security best practices.
  */
 
-import type { ServiceInstance, ServiceType } from "../../lib/prisma.js";
+import { LidarrClient, ProwlarrClient, RadarrClient, ReadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import {
-	type ArrClient,
-	ArrError,
-	arrErrorToHttpStatus,
-} from "./client-factory.js";
+import type { ServiceInstance, ServiceType } from "../../lib/prisma.js";
 import { InstanceNotFoundError } from "../errors.js";
-import { requireEnabledInstance } from "./instance-helpers.js";
-import { SonarrClient, RadarrClient, ProwlarrClient, LidarrClient, ReadarrClient } from "arr-sdk";
 import { getErrorMessage } from "../utils/error-message.js";
+import { type ArrClient, ArrError, arrErrorToHttpStatus } from "./client-factory.js";
+import { requireEnabledInstance } from "./instance-helpers.js";
 
 // ============================================================================
 // Types

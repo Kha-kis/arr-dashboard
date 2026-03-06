@@ -22,6 +22,8 @@ import type {
 	TrashQualityProfile,
 } from "@arr/shared";
 import { dequal as deepEqual } from "dequal";
+import { loggers } from "../logger.js";
+import { getErrorMessage } from "../utils/error-message.js";
 import type { TrashCacheManager } from "./cache-manager.js";
 import type { TrashGitHubFetcher } from "./github-fetcher.js";
 import {
@@ -29,8 +31,6 @@ import {
 	getRecommendedScore,
 	type TrashCFWithScores,
 } from "./template-score-utils.js";
-import { loggers } from "../logger.js";
-import { getErrorMessage } from "../utils/error-message.js";
 
 const log = loggers.trashGuides;
 
@@ -427,10 +427,7 @@ function getRecentAutoSyncEntry(
 		const parsed = JSON.parse(changeLogJson);
 		changeLog = Array.isArray(parsed) ? parsed : [];
 	} catch (parseError) {
-		log.warn(
-			{ err: parseError },
-			"Failed to parse changeLog in getRecentAutoSyncEntry",
-		);
+		log.warn({ err: parseError }, "Failed to parse changeLog in getRecentAutoSyncEntry");
 		return null;
 	}
 
