@@ -294,7 +294,6 @@ export type NamingDeployHistoryWhereInput = {
   rolledBackAt?: Prisma.DateTimeNullableFilter<"NamingDeployHistory"> | Date | string | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
   user?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
-  namingConfig?: Prisma.XOR<Prisma.NamingConfigNullableScalarRelationFilter, Prisma.NamingConfigWhereInput> | null
 }
 
 export type NamingDeployHistoryOrderByWithRelationInput = {
@@ -314,7 +313,6 @@ export type NamingDeployHistoryOrderByWithRelationInput = {
   rolledBackAt?: Prisma.SortOrderInput | Prisma.SortOrder
   instance?: Prisma.ServiceInstanceOrderByWithRelationInput
   user?: Prisma.UserOrderByWithRelationInput
-  namingConfig?: Prisma.NamingConfigOrderByWithRelationInput
 }
 
 export type NamingDeployHistoryWhereUniqueInput = Prisma.AtLeast<{
@@ -337,7 +335,6 @@ export type NamingDeployHistoryWhereUniqueInput = Prisma.AtLeast<{
   rolledBackAt?: Prisma.DateTimeNullableFilter<"NamingDeployHistory"> | Date | string | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
   user?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
-  namingConfig?: Prisma.XOR<Prisma.NamingConfigNullableScalarRelationFilter, Prisma.NamingConfigWhereInput> | null
 }, "id">
 
 export type NamingDeployHistoryOrderByWithAggregationInput = {
@@ -397,7 +394,6 @@ export type NamingDeployHistoryCreateInput = {
   rolledBackAt?: Date | string | null
   instance: Prisma.ServiceInstanceCreateNestedOneWithoutNamingDeployHistoryInput
   user: Prisma.UserCreateNestedOneWithoutNamingDeployHistoryInput
-  namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutDeployHistoryInput
 }
 
 export type NamingDeployHistoryUncheckedCreateInput = {
@@ -432,7 +428,6 @@ export type NamingDeployHistoryUpdateInput = {
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutNamingDeployHistoryNestedInput
   user?: Prisma.UserUpdateOneRequiredWithoutNamingDeployHistoryNestedInput
-  namingConfig?: Prisma.NamingConfigUpdateOneWithoutDeployHistoryNestedInput
 }
 
 export type NamingDeployHistoryUncheckedUpdateInput = {
@@ -656,48 +651,6 @@ export type NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput = {
   deleteMany?: Prisma.NamingDeployHistoryScalarWhereInput | Prisma.NamingDeployHistoryScalarWhereInput[]
 }
 
-export type NamingDeployHistoryCreateNestedManyWithoutNamingConfigInput = {
-  create?: Prisma.XOR<Prisma.NamingDeployHistoryCreateWithoutNamingConfigInput, Prisma.NamingDeployHistoryUncheckedCreateWithoutNamingConfigInput> | Prisma.NamingDeployHistoryCreateWithoutNamingConfigInput[] | Prisma.NamingDeployHistoryUncheckedCreateWithoutNamingConfigInput[]
-  connectOrCreate?: Prisma.NamingDeployHistoryCreateOrConnectWithoutNamingConfigInput | Prisma.NamingDeployHistoryCreateOrConnectWithoutNamingConfigInput[]
-  createMany?: Prisma.NamingDeployHistoryCreateManyNamingConfigInputEnvelope
-  connect?: Prisma.NamingDeployHistoryWhereUniqueInput | Prisma.NamingDeployHistoryWhereUniqueInput[]
-}
-
-export type NamingDeployHistoryUncheckedCreateNestedManyWithoutNamingConfigInput = {
-  create?: Prisma.XOR<Prisma.NamingDeployHistoryCreateWithoutNamingConfigInput, Prisma.NamingDeployHistoryUncheckedCreateWithoutNamingConfigInput> | Prisma.NamingDeployHistoryCreateWithoutNamingConfigInput[] | Prisma.NamingDeployHistoryUncheckedCreateWithoutNamingConfigInput[]
-  connectOrCreate?: Prisma.NamingDeployHistoryCreateOrConnectWithoutNamingConfigInput | Prisma.NamingDeployHistoryCreateOrConnectWithoutNamingConfigInput[]
-  createMany?: Prisma.NamingDeployHistoryCreateManyNamingConfigInputEnvelope
-  connect?: Prisma.NamingDeployHistoryWhereUniqueInput | Prisma.NamingDeployHistoryWhereUniqueInput[]
-}
-
-export type NamingDeployHistoryUpdateManyWithoutNamingConfigNestedInput = {
-  create?: Prisma.XOR<Prisma.NamingDeployHistoryCreateWithoutNamingConfigInput, Prisma.NamingDeployHistoryUncheckedCreateWithoutNamingConfigInput> | Prisma.NamingDeployHistoryCreateWithoutNamingConfigInput[] | Prisma.NamingDeployHistoryUncheckedCreateWithoutNamingConfigInput[]
-  connectOrCreate?: Prisma.NamingDeployHistoryCreateOrConnectWithoutNamingConfigInput | Prisma.NamingDeployHistoryCreateOrConnectWithoutNamingConfigInput[]
-  upsert?: Prisma.NamingDeployHistoryUpsertWithWhereUniqueWithoutNamingConfigInput | Prisma.NamingDeployHistoryUpsertWithWhereUniqueWithoutNamingConfigInput[]
-  createMany?: Prisma.NamingDeployHistoryCreateManyNamingConfigInputEnvelope
-  set?: Prisma.NamingDeployHistoryWhereUniqueInput | Prisma.NamingDeployHistoryWhereUniqueInput[]
-  disconnect?: Prisma.NamingDeployHistoryWhereUniqueInput | Prisma.NamingDeployHistoryWhereUniqueInput[]
-  delete?: Prisma.NamingDeployHistoryWhereUniqueInput | Prisma.NamingDeployHistoryWhereUniqueInput[]
-  connect?: Prisma.NamingDeployHistoryWhereUniqueInput | Prisma.NamingDeployHistoryWhereUniqueInput[]
-  update?: Prisma.NamingDeployHistoryUpdateWithWhereUniqueWithoutNamingConfigInput | Prisma.NamingDeployHistoryUpdateWithWhereUniqueWithoutNamingConfigInput[]
-  updateMany?: Prisma.NamingDeployHistoryUpdateManyWithWhereWithoutNamingConfigInput | Prisma.NamingDeployHistoryUpdateManyWithWhereWithoutNamingConfigInput[]
-  deleteMany?: Prisma.NamingDeployHistoryScalarWhereInput | Prisma.NamingDeployHistoryScalarWhereInput[]
-}
-
-export type NamingDeployHistoryUncheckedUpdateManyWithoutNamingConfigNestedInput = {
-  create?: Prisma.XOR<Prisma.NamingDeployHistoryCreateWithoutNamingConfigInput, Prisma.NamingDeployHistoryUncheckedCreateWithoutNamingConfigInput> | Prisma.NamingDeployHistoryCreateWithoutNamingConfigInput[] | Prisma.NamingDeployHistoryUncheckedCreateWithoutNamingConfigInput[]
-  connectOrCreate?: Prisma.NamingDeployHistoryCreateOrConnectWithoutNamingConfigInput | Prisma.NamingDeployHistoryCreateOrConnectWithoutNamingConfigInput[]
-  upsert?: Prisma.NamingDeployHistoryUpsertWithWhereUniqueWithoutNamingConfigInput | Prisma.NamingDeployHistoryUpsertWithWhereUniqueWithoutNamingConfigInput[]
-  createMany?: Prisma.NamingDeployHistoryCreateManyNamingConfigInputEnvelope
-  set?: Prisma.NamingDeployHistoryWhereUniqueInput | Prisma.NamingDeployHistoryWhereUniqueInput[]
-  disconnect?: Prisma.NamingDeployHistoryWhereUniqueInput | Prisma.NamingDeployHistoryWhereUniqueInput[]
-  delete?: Prisma.NamingDeployHistoryWhereUniqueInput | Prisma.NamingDeployHistoryWhereUniqueInput[]
-  connect?: Prisma.NamingDeployHistoryWhereUniqueInput | Prisma.NamingDeployHistoryWhereUniqueInput[]
-  update?: Prisma.NamingDeployHistoryUpdateWithWhereUniqueWithoutNamingConfigInput | Prisma.NamingDeployHistoryUpdateWithWhereUniqueWithoutNamingConfigInput[]
-  updateMany?: Prisma.NamingDeployHistoryUpdateManyWithWhereWithoutNamingConfigInput | Prisma.NamingDeployHistoryUpdateManyWithWhereWithoutNamingConfigInput[]
-  deleteMany?: Prisma.NamingDeployHistoryScalarWhereInput | Prisma.NamingDeployHistoryScalarWhereInput[]
-}
-
 export type NamingDeployHistoryCreateWithoutUserInput = {
   id?: string
   deployedAt?: Date | string
@@ -712,7 +665,6 @@ export type NamingDeployHistoryCreateWithoutUserInput = {
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
   instance: Prisma.ServiceInstanceCreateNestedOneWithoutNamingDeployHistoryInput
-  namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutDeployHistoryInput
 }
 
 export type NamingDeployHistoryUncheckedCreateWithoutUserInput = {
@@ -790,7 +742,6 @@ export type NamingDeployHistoryCreateWithoutInstanceInput = {
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
   user: Prisma.UserCreateNestedOneWithoutNamingDeployHistoryInput
-  namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutDeployHistoryInput
 }
 
 export type NamingDeployHistoryUncheckedCreateWithoutInstanceInput = {
@@ -834,64 +785,6 @@ export type NamingDeployHistoryUpdateManyWithWhereWithoutInstanceInput = {
   data: Prisma.XOR<Prisma.NamingDeployHistoryUpdateManyMutationInput, Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceInput>
 }
 
-export type NamingDeployHistoryCreateWithoutNamingConfigInput = {
-  id?: string
-  deployedAt?: Date | string
-  status: string
-  selectedPresets: string
-  resolvedPayload: string
-  deployedHash?: string | null
-  previousConfig?: string | null
-  changedFields: number
-  totalFields: number
-  errorMessage?: string | null
-  rolledBack?: boolean
-  rolledBackAt?: Date | string | null
-  instance: Prisma.ServiceInstanceCreateNestedOneWithoutNamingDeployHistoryInput
-  user: Prisma.UserCreateNestedOneWithoutNamingDeployHistoryInput
-}
-
-export type NamingDeployHistoryUncheckedCreateWithoutNamingConfigInput = {
-  id?: string
-  userId: string
-  deployedAt?: Date | string
-  status: string
-  selectedPresets: string
-  resolvedPayload: string
-  deployedHash?: string | null
-  previousConfig?: string | null
-  changedFields: number
-  totalFields: number
-  errorMessage?: string | null
-  rolledBack?: boolean
-  rolledBackAt?: Date | string | null
-}
-
-export type NamingDeployHistoryCreateOrConnectWithoutNamingConfigInput = {
-  where: Prisma.NamingDeployHistoryWhereUniqueInput
-  create: Prisma.XOR<Prisma.NamingDeployHistoryCreateWithoutNamingConfigInput, Prisma.NamingDeployHistoryUncheckedCreateWithoutNamingConfigInput>
-}
-
-export type NamingDeployHistoryCreateManyNamingConfigInputEnvelope = {
-  data: Prisma.NamingDeployHistoryCreateManyNamingConfigInput | Prisma.NamingDeployHistoryCreateManyNamingConfigInput[]
-}
-
-export type NamingDeployHistoryUpsertWithWhereUniqueWithoutNamingConfigInput = {
-  where: Prisma.NamingDeployHistoryWhereUniqueInput
-  update: Prisma.XOR<Prisma.NamingDeployHistoryUpdateWithoutNamingConfigInput, Prisma.NamingDeployHistoryUncheckedUpdateWithoutNamingConfigInput>
-  create: Prisma.XOR<Prisma.NamingDeployHistoryCreateWithoutNamingConfigInput, Prisma.NamingDeployHistoryUncheckedCreateWithoutNamingConfigInput>
-}
-
-export type NamingDeployHistoryUpdateWithWhereUniqueWithoutNamingConfigInput = {
-  where: Prisma.NamingDeployHistoryWhereUniqueInput
-  data: Prisma.XOR<Prisma.NamingDeployHistoryUpdateWithoutNamingConfigInput, Prisma.NamingDeployHistoryUncheckedUpdateWithoutNamingConfigInput>
-}
-
-export type NamingDeployHistoryUpdateManyWithWhereWithoutNamingConfigInput = {
-  where: Prisma.NamingDeployHistoryScalarWhereInput
-  data: Prisma.XOR<Prisma.NamingDeployHistoryUpdateManyMutationInput, Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutNamingConfigInput>
-}
-
 export type NamingDeployHistoryCreateManyUserInput = {
   id?: string
   instanceId: string
@@ -922,7 +815,6 @@ export type NamingDeployHistoryUpdateWithoutUserInput = {
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutNamingDeployHistoryNestedInput
-  namingConfig?: Prisma.NamingConfigUpdateOneWithoutDeployHistoryNestedInput
 }
 
 export type NamingDeployHistoryUncheckedUpdateWithoutUserInput = {
@@ -987,7 +879,6 @@ export type NamingDeployHistoryUpdateWithoutInstanceInput = {
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   user?: Prisma.UserUpdateOneRequiredWithoutNamingDeployHistoryNestedInput
-  namingConfig?: Prisma.NamingConfigUpdateOneWithoutDeployHistoryNestedInput
 }
 
 export type NamingDeployHistoryUncheckedUpdateWithoutInstanceInput = {
@@ -1022,71 +913,6 @@ export type NamingDeployHistoryUncheckedUpdateManyWithoutInstanceInput = {
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
 
-export type NamingDeployHistoryCreateManyNamingConfigInput = {
-  id?: string
-  userId: string
-  deployedAt?: Date | string
-  status: string
-  selectedPresets: string
-  resolvedPayload: string
-  deployedHash?: string | null
-  previousConfig?: string | null
-  changedFields: number
-  totalFields: number
-  errorMessage?: string | null
-  rolledBack?: boolean
-  rolledBackAt?: Date | string | null
-}
-
-export type NamingDeployHistoryUpdateWithoutNamingConfigInput = {
-  id?: Prisma.StringFieldUpdateOperationsInput | string
-  deployedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  status?: Prisma.StringFieldUpdateOperationsInput | string
-  selectedPresets?: Prisma.StringFieldUpdateOperationsInput | string
-  resolvedPayload?: Prisma.StringFieldUpdateOperationsInput | string
-  deployedHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  previousConfig?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  changedFields?: Prisma.IntFieldUpdateOperationsInput | number
-  totalFields?: Prisma.IntFieldUpdateOperationsInput | number
-  errorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
-  instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutNamingDeployHistoryNestedInput
-  user?: Prisma.UserUpdateOneRequiredWithoutNamingDeployHistoryNestedInput
-}
-
-export type NamingDeployHistoryUncheckedUpdateWithoutNamingConfigInput = {
-  id?: Prisma.StringFieldUpdateOperationsInput | string
-  userId?: Prisma.StringFieldUpdateOperationsInput | string
-  deployedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  status?: Prisma.StringFieldUpdateOperationsInput | string
-  selectedPresets?: Prisma.StringFieldUpdateOperationsInput | string
-  resolvedPayload?: Prisma.StringFieldUpdateOperationsInput | string
-  deployedHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  previousConfig?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  changedFields?: Prisma.IntFieldUpdateOperationsInput | number
-  totalFields?: Prisma.IntFieldUpdateOperationsInput | number
-  errorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
-}
-
-export type NamingDeployHistoryUncheckedUpdateManyWithoutNamingConfigInput = {
-  id?: Prisma.StringFieldUpdateOperationsInput | string
-  userId?: Prisma.StringFieldUpdateOperationsInput | string
-  deployedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  status?: Prisma.StringFieldUpdateOperationsInput | string
-  selectedPresets?: Prisma.StringFieldUpdateOperationsInput | string
-  resolvedPayload?: Prisma.StringFieldUpdateOperationsInput | string
-  deployedHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  previousConfig?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  changedFields?: Prisma.IntFieldUpdateOperationsInput | number
-  totalFields?: Prisma.IntFieldUpdateOperationsInput | number
-  errorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
-}
-
 
 
 export type NamingDeployHistorySelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -1106,7 +932,6 @@ export type NamingDeployHistorySelect<ExtArgs extends runtime.Types.Extensions.I
   rolledBackAt?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
-  namingConfig?: boolean | Prisma.NamingDeployHistory$namingConfigArgs<ExtArgs>
 }, ExtArgs["result"]["namingDeployHistory"]>
 
 export type NamingDeployHistorySelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -1126,7 +951,6 @@ export type NamingDeployHistorySelectCreateManyAndReturn<ExtArgs extends runtime
   rolledBackAt?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
-  namingConfig?: boolean | Prisma.NamingDeployHistory$namingConfigArgs<ExtArgs>
 }, ExtArgs["result"]["namingDeployHistory"]>
 
 export type NamingDeployHistorySelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -1146,7 +970,6 @@ export type NamingDeployHistorySelectUpdateManyAndReturn<ExtArgs extends runtime
   rolledBackAt?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
-  namingConfig?: boolean | Prisma.NamingDeployHistory$namingConfigArgs<ExtArgs>
 }, ExtArgs["result"]["namingDeployHistory"]>
 
 export type NamingDeployHistorySelectScalar = {
@@ -1170,17 +993,14 @@ export type NamingDeployHistoryOmit<ExtArgs extends runtime.Types.Extensions.Int
 export type NamingDeployHistoryInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
-  namingConfig?: boolean | Prisma.NamingDeployHistory$namingConfigArgs<ExtArgs>
 }
 export type NamingDeployHistoryIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
-  namingConfig?: boolean | Prisma.NamingDeployHistory$namingConfigArgs<ExtArgs>
 }
 export type NamingDeployHistoryIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
-  namingConfig?: boolean | Prisma.NamingDeployHistory$namingConfigArgs<ExtArgs>
 }
 
 export type $NamingDeployHistoryPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -1188,7 +1008,6 @@ export type $NamingDeployHistoryPayload<ExtArgs extends runtime.Types.Extensions
   objects: {
     instance: Prisma.$ServiceInstancePayload<ExtArgs>
     user: Prisma.$UserPayload<ExtArgs>
-    namingConfig: Prisma.$NamingConfigPayload<ExtArgs> | null
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1601,7 +1420,6 @@ export interface Prisma__NamingDeployHistoryClient<T, Null = never, ExtArgs exte
   readonly [Symbol.toStringTag]: "PrismaPromise"
   instance<T extends Prisma.ServiceInstanceDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstanceDefaultArgs<ExtArgs>>): Prisma.Prisma__ServiceInstanceClient<runtime.Types.Result.GetResult<Prisma.$ServiceInstancePayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
   user<T extends Prisma.UserDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.UserDefaultArgs<ExtArgs>>): Prisma.Prisma__UserClient<runtime.Types.Result.GetResult<Prisma.$UserPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
-  namingConfig<T extends Prisma.NamingDeployHistory$namingConfigArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.NamingDeployHistory$namingConfigArgs<ExtArgs>>): Prisma.Prisma__NamingConfigClient<runtime.Types.Result.GetResult<Prisma.$NamingConfigPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -2036,25 +1854,6 @@ export type NamingDeployHistoryDeleteManyArgs<ExtArgs extends runtime.Types.Exte
    * Limit how many NamingDeployHistories to delete.
    */
   limit?: number
-}
-
-/**
- * NamingDeployHistory.namingConfig
- */
-export type NamingDeployHistory$namingConfigArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
-  /**
-   * Select specific fields to fetch from the NamingConfig
-   */
-  select?: Prisma.NamingConfigSelect<ExtArgs> | null
-  /**
-   * Omit specific fields from the NamingConfig
-   */
-  omit?: Prisma.NamingConfigOmit<ExtArgs> | null
-  /**
-   * Choose, which related nodes to fetch as well
-   */
-  include?: Prisma.NamingConfigInclude<ExtArgs> | null
-  where?: Prisma.NamingConfigWhereInput
 }
 
 /**

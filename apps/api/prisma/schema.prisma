@@ -1334,9 +1334,8 @@ model NamingConfig {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  instance      ServiceInstance        @relation(fields: [instanceId], references: [id], onDelete: Cascade)
-  user          User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  deployHistory NamingDeployHistory[]
+  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("naming_configs")
@@ -1363,9 +1362,8 @@ model NamingDeployHistory {
   rolledBack       Boolean   @default(false)
   rolledBackAt     DateTime?
 
-  instance     ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
-  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  namingConfig NamingConfig?   @relation(fields: [instanceId], references: [instanceId])
+  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([instanceId, deployedAt])
   @@index([userId])
