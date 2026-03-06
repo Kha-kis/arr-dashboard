@@ -107,26 +107,27 @@ function requirePresetValue(
 /**
  * Resolve selected presets into a partial Radarr naming API payload.
  * Throws if a selected preset name is not found in the naming data.
+ *
+ * @param enableRename - When true, sets renameMovies=true. When false, sets renameMovies=false.
+ *   When undefined, omits the field (preserving the instance's current value).
  */
 export function resolveRadarrPayload(
 	naming: TrashRadarrNaming,
 	selected: RadarrSelectedPresets,
+	enableRename?: boolean,
 ): Partial<RadarrNamingPayload> {
 	const payload: Partial<RadarrNamingPayload> = {};
-	let hasField = false;
 
 	if (selected.filePreset) {
 		payload.standardMovieFormat = requirePresetValue(naming.file, selected.filePreset, "file");
-		hasField = true;
 	}
 
 	if (selected.folderPreset) {
 		payload.movieFolderFormat = requirePresetValue(naming.folder, selected.folderPreset, "folder");
-		hasField = true;
 	}
 
-	if (hasField) {
-		payload.renameMovies = true;
+	if (enableRename !== undefined) {
+		payload.renameMovies = enableRename;
 	}
 
 	return payload;
@@ -135,13 +136,16 @@ export function resolveRadarrPayload(
 /**
  * Resolve selected presets into a partial Sonarr naming API payload.
  * Throws if a selected preset name is not found in the naming data.
+ *
+ * @param enableRename - When true, sets renameEpisodes=true. When false, sets renameEpisodes=false.
+ *   When undefined, omits the field (preserving the instance's current value).
  */
 export function resolveSonarrPayload(
 	naming: TrashSonarrNaming,
 	selected: SonarrSelectedPresets,
+	enableRename?: boolean,
 ): Partial<SonarrNamingPayload> {
 	const payload: Partial<SonarrNamingPayload> = {};
-	let hasField = false;
 
 	if (selected.standardEpisodePreset) {
 		payload.standardEpisodeFormat = requirePresetValue(
@@ -149,7 +153,6 @@ export function resolveSonarrPayload(
 			selected.standardEpisodePreset,
 			"standard episode",
 		);
-		hasField = true;
 	}
 
 	if (selected.dailyEpisodePreset) {
@@ -158,7 +161,6 @@ export function resolveSonarrPayload(
 			selected.dailyEpisodePreset,
 			"daily episode",
 		);
-		hasField = true;
 	}
 
 	if (selected.animeEpisodePreset) {
@@ -167,7 +169,6 @@ export function resolveSonarrPayload(
 			selected.animeEpisodePreset,
 			"anime episode",
 		);
-		hasField = true;
 	}
 
 	if (selected.seriesFolderPreset) {
@@ -176,7 +177,6 @@ export function resolveSonarrPayload(
 			selected.seriesFolderPreset,
 			"series folder",
 		);
-		hasField = true;
 	}
 
 	if (selected.seasonFolderPreset) {
@@ -185,11 +185,10 @@ export function resolveSonarrPayload(
 			selected.seasonFolderPreset,
 			"season folder",
 		);
-		hasField = true;
 	}
 
-	if (hasField) {
-		payload.renameEpisodes = true;
+	if (enableRename !== undefined) {
+		payload.renameEpisodes = enableRename;
 	}
 
 	return payload;
@@ -204,12 +203,13 @@ export function resolveSonarrPayload(
 export function resolvePayload(
 	naming: TrashNamingData,
 	selected: NamingSelectedPresets,
+	enableRename?: boolean,
 ): Partial<RadarrNamingPayload | SonarrNamingPayload> {
 	if (naming._service === "RADARR" && selected.serviceType === "RADARR") {
-		return resolveRadarrPayload(naming, selected);
+		return resolveRadarrPayload(naming, selected, enableRename);
 	}
 	if (naming._service === "SONARR" && selected.serviceType === "SONARR") {
-		return resolveSonarrPayload(naming, selected);
+		return resolveSonarrPayload(naming, selected, enableRename);
 	}
 	throw new Error(
 		`Service mismatch: naming data is ${naming._service} but presets are for ${selected.serviceType}`,
@@ -337,6 +337,7 @@ export function buildPreview(
 	naming: TrashNamingData,
 	selected: NamingSelectedPresets,
 	currentConfig: Record<string, unknown>,
+	enableRename?: boolean,
 ): NamingPreviewResult {
 	let fieldMappings: FieldMapping[];
 
@@ -348,6 +349,41 @@ export function buildPreview(
 		throw new Error(
 			`Service mismatch: naming data is ${naming._service} but presets are for ${selected.serviceType}`,
 		);
+	}
+
+	// If enableRename is explicitly set, include it in the preview
+	if (enableRename !== undefined) {
+		const renameField =
+			naming._service === "RADARR" ? "renameMovies" : "renameEpisodes";
+		const renameLabel =
+			naming._service === "RADARR" ? "Rename Movies" : "Rename Episodes";
+		const currentValue = currentConfig[renameField];
+
+		fieldMappings.push({
+			fieldGroup: renameLabel,
+			arrApiField: renameField,
+			presetName: enableRename ? "Enabled" : "Disabled",
+			presetValue: String(enableRename),
+		});
+
+		// Override the presetValue check in buildPreviewFromMappings by
+		// injecting the boolean comparison directly
+		const boolChanged = currentValue !== enableRename;
+		const result = buildPreviewFromMappings(fieldMappings.slice(0, -1), currentConfig);
+		result.comparisons.push({
+			fieldGroup: renameLabel,
+			arrApiField: renameField,
+			presetName: enableRename ? "Enabled" : "Disabled",
+			presetValue: String(enableRename),
+			currentValue: currentValue != null ? String(currentValue) : null,
+			changed: boolChanged,
+		});
+		if (boolChanged) {
+			result.changedCount++;
+		} else {
+			result.unchangedCount++;
+		}
+		return result;
 	}
 
 	return buildPreviewFromMappings(fieldMappings, currentConfig);

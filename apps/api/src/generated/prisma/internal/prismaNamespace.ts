@@ -429,7 +429,9 @@ export const ModelName = {
   TautulliCache: 'TautulliCache',
   CacheRefreshStatus: 'CacheRefreshStatus',
   SessionSnapshot: 'SessionSnapshot',
-  NamingConfig: 'NamingConfig'
+  NamingConfig: 'NamingConfig',
+  NamingDeployHistory: 'NamingDeployHistory',
+  SeerrActionLog: 'SeerrActionLog'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -445,7 +447,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig"
+    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -3853,6 +3855,154 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    NamingDeployHistory: {
+      payload: Prisma.$NamingDeployHistoryPayload<ExtArgs>
+      fields: Prisma.NamingDeployHistoryFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.NamingDeployHistoryFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NamingDeployHistoryPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.NamingDeployHistoryFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NamingDeployHistoryPayload>
+        }
+        findFirst: {
+          args: Prisma.NamingDeployHistoryFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NamingDeployHistoryPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.NamingDeployHistoryFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NamingDeployHistoryPayload>
+        }
+        findMany: {
+          args: Prisma.NamingDeployHistoryFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NamingDeployHistoryPayload>[]
+        }
+        create: {
+          args: Prisma.NamingDeployHistoryCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NamingDeployHistoryPayload>
+        }
+        createMany: {
+          args: Prisma.NamingDeployHistoryCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.NamingDeployHistoryCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NamingDeployHistoryPayload>[]
+        }
+        delete: {
+          args: Prisma.NamingDeployHistoryDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NamingDeployHistoryPayload>
+        }
+        update: {
+          args: Prisma.NamingDeployHistoryUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NamingDeployHistoryPayload>
+        }
+        deleteMany: {
+          args: Prisma.NamingDeployHistoryDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.NamingDeployHistoryUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.NamingDeployHistoryUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NamingDeployHistoryPayload>[]
+        }
+        upsert: {
+          args: Prisma.NamingDeployHistoryUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$NamingDeployHistoryPayload>
+        }
+        aggregate: {
+          args: Prisma.NamingDeployHistoryAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateNamingDeployHistory>
+        }
+        groupBy: {
+          args: Prisma.NamingDeployHistoryGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.NamingDeployHistoryGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.NamingDeployHistoryCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.NamingDeployHistoryCountAggregateOutputType> | number
+        }
+      }
+    }
+    SeerrActionLog: {
+      payload: Prisma.$SeerrActionLogPayload<ExtArgs>
+      fields: Prisma.SeerrActionLogFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.SeerrActionLogFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SeerrActionLogPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.SeerrActionLogFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SeerrActionLogPayload>
+        }
+        findFirst: {
+          args: Prisma.SeerrActionLogFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SeerrActionLogPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.SeerrActionLogFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SeerrActionLogPayload>
+        }
+        findMany: {
+          args: Prisma.SeerrActionLogFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SeerrActionLogPayload>[]
+        }
+        create: {
+          args: Prisma.SeerrActionLogCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SeerrActionLogPayload>
+        }
+        createMany: {
+          args: Prisma.SeerrActionLogCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.SeerrActionLogCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SeerrActionLogPayload>[]
+        }
+        delete: {
+          args: Prisma.SeerrActionLogDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SeerrActionLogPayload>
+        }
+        update: {
+          args: Prisma.SeerrActionLogUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SeerrActionLogPayload>
+        }
+        deleteMany: {
+          args: Prisma.SeerrActionLogDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.SeerrActionLogUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.SeerrActionLogUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SeerrActionLogPayload>[]
+        }
+        upsert: {
+          args: Prisma.SeerrActionLogUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SeerrActionLogPayload>
+        }
+        aggregate: {
+          args: Prisma.SeerrActionLogAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateSeerrActionLog>
+        }
+        groupBy: {
+          args: Prisma.SeerrActionLogGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.SeerrActionLogGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.SeerrActionLogCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.SeerrActionLogCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -4574,8 +4724,7 @@ export type NotificationChannelScalarFieldEnum = (typeof NotificationChannelScal
 
 export const NotificationSubscriptionScalarFieldEnum = {
   channelId: 'channelId',
-  eventType: 'eventType',
-  cooldownMinutes: 'cooldownMinutes'
+  eventType: 'eventType'
 } as const
 
 export type NotificationSubscriptionScalarFieldEnum = (typeof NotificationSubscriptionScalarFieldEnum)[keyof typeof NotificationSubscriptionScalarFieldEnum]
@@ -4726,11 +4875,48 @@ export const NamingConfigScalarFieldEnum = {
   syncStrategy: 'syncStrategy',
   lastDeployedAt: 'lastDeployedAt',
   lastDeployedHash: 'lastDeployedHash',
+  lastDeployStatus: 'lastDeployStatus',
+  lastDeployError: 'lastDeployError',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const
 
 export type NamingConfigScalarFieldEnum = (typeof NamingConfigScalarFieldEnum)[keyof typeof NamingConfigScalarFieldEnum]
+
+
+export const NamingDeployHistoryScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  userId: 'userId',
+  deployedAt: 'deployedAt',
+  status: 'status',
+  selectedPresets: 'selectedPresets',
+  resolvedPayload: 'resolvedPayload',
+  deployedHash: 'deployedHash',
+  previousConfig: 'previousConfig',
+  changedFields: 'changedFields',
+  totalFields: 'totalFields',
+  errorMessage: 'errorMessage',
+  rolledBack: 'rolledBack',
+  rolledBackAt: 'rolledBackAt'
+} as const
+
+export type NamingDeployHistoryScalarFieldEnum = (typeof NamingDeployHistoryScalarFieldEnum)[keyof typeof NamingDeployHistoryScalarFieldEnum]
+
+
+export const SeerrActionLogScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  userId: 'userId',
+  action: 'action',
+  targetType: 'targetType',
+  targetId: 'targetId',
+  detail: 'detail',
+  success: 'success',
+  createdAt: 'createdAt'
+} as const
+
+export type SeerrActionLogScalarFieldEnum = (typeof SeerrActionLogScalarFieldEnum)[keyof typeof SeerrActionLogScalarFieldEnum]
 
 
 export const SortOrder = {
@@ -4958,6 +5144,8 @@ export type GlobalOmitConfig = {
   cacheRefreshStatus?: Prisma.CacheRefreshStatusOmit
   sessionSnapshot?: Prisma.SessionSnapshotOmit
   namingConfig?: Prisma.NamingConfigOmit
+  namingDeployHistory?: Prisma.NamingDeployHistoryOmit
+  seerrActionLog?: Prisma.SeerrActionLogOmit
 }
 
 /* Types for Logging */

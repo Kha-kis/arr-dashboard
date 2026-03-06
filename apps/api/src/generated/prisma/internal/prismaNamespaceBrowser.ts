@@ -96,7 +96,9 @@ export const ModelName = {
   TautulliCache: 'TautulliCache',
   CacheRefreshStatus: 'CacheRefreshStatus',
   SessionSnapshot: 'SessionSnapshot',
-  NamingConfig: 'NamingConfig'
+  NamingConfig: 'NamingConfig',
+  NamingDeployHistory: 'NamingDeployHistory',
+  SeerrActionLog: 'SeerrActionLog'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -797,8 +799,7 @@ export type NotificationChannelScalarFieldEnum = (typeof NotificationChannelScal
 
 export const NotificationSubscriptionScalarFieldEnum = {
   channelId: 'channelId',
-  eventType: 'eventType',
-  cooldownMinutes: 'cooldownMinutes'
+  eventType: 'eventType'
 } as const
 
 export type NotificationSubscriptionScalarFieldEnum = (typeof NotificationSubscriptionScalarFieldEnum)[keyof typeof NotificationSubscriptionScalarFieldEnum]
@@ -949,11 +950,48 @@ export const NamingConfigScalarFieldEnum = {
   syncStrategy: 'syncStrategy',
   lastDeployedAt: 'lastDeployedAt',
   lastDeployedHash: 'lastDeployedHash',
+  lastDeployStatus: 'lastDeployStatus',
+  lastDeployError: 'lastDeployError',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const
 
 export type NamingConfigScalarFieldEnum = (typeof NamingConfigScalarFieldEnum)[keyof typeof NamingConfigScalarFieldEnum]
+
+
+export const NamingDeployHistoryScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  userId: 'userId',
+  deployedAt: 'deployedAt',
+  status: 'status',
+  selectedPresets: 'selectedPresets',
+  resolvedPayload: 'resolvedPayload',
+  deployedHash: 'deployedHash',
+  previousConfig: 'previousConfig',
+  changedFields: 'changedFields',
+  totalFields: 'totalFields',
+  errorMessage: 'errorMessage',
+  rolledBack: 'rolledBack',
+  rolledBackAt: 'rolledBackAt'
+} as const
+
+export type NamingDeployHistoryScalarFieldEnum = (typeof NamingDeployHistoryScalarFieldEnum)[keyof typeof NamingDeployHistoryScalarFieldEnum]
+
+
+export const SeerrActionLogScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  userId: 'userId',
+  action: 'action',
+  targetType: 'targetType',
+  targetId: 'targetId',
+  detail: 'detail',
+  success: 'success',
+  createdAt: 'createdAt'
+} as const
+
+export type SeerrActionLogScalarFieldEnum = (typeof SeerrActionLogScalarFieldEnum)[keyof typeof SeerrActionLogScalarFieldEnum]
 
 
 export const SortOrder = {

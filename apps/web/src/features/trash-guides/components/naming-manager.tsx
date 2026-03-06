@@ -7,11 +7,13 @@ import {
 	AlertTriangle,
 	CheckCircle2,
 	FileType,
+	History,
 	Loader2,
 	Server,
+	Settings2,
 	Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { GlassmorphicCard, ServiceBadge } from "../../../components/layout/premium-components";
 import {
 	useApplyNaming,
@@ -25,6 +27,10 @@ import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { SyncStrategyControl } from "./sync-strategy-control";
+
+const NamingHistoryTable = lazy(() =>
+	import("./naming-history-table").then((m) => ({ default: m.NamingHistoryTable })),
+);
 
 // ============================================================================
 // Types
@@ -268,10 +274,15 @@ export function NamingManager() {
 	const { gradient: themeGradient } = useThemeGradient();
 	const { data: services, isLoading: servicesLoading, error: servicesError } = useServicesQuery();
 
+	// View toggle
+	const [namingView, setNamingView] = useState<"configure" | "history">("configure");
+
 	// Phase state
 	const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
 	const [selections, setSelections] = useState<Record<string, string | null>>({});
 	const [syncStrategy, setSyncStrategy] = useState<"auto" | "manual" | "notify">("manual");
+	const [enableRename, setEnableRename] = useState<boolean | undefined>(undefined);
+	const [showConfirmApply, setShowConfirmApply] = useState(false);
 
 	// Derived
 	const selectedInstance = services?.find((s) => s.id === selectedInstanceId) ?? null;
@@ -317,6 +328,8 @@ export function NamingManager() {
 		setSelectedInstanceId(instance.id);
 		setSelections({});
 		setSyncStrategy("manual");
+		setEnableRename(undefined);
+		setShowConfirmApply(false);
 		populatedForRef.current = null; // Allow auto-populate for new instance
 		previewMutation.reset();
 		applyMutation.reset();
@@ -324,6 +337,7 @@ export function NamingManager() {
 
 	function handlePresetChange(categoryKey: string, presetName: string | null) {
 		setSelections((prev) => ({ ...prev, [categoryKey]: presetName }));
+		setShowConfirmApply(false);
 		previewMutation.reset();
 		applyMutation.reset();
 	}
@@ -351,14 +365,16 @@ export function NamingManager() {
 		previewMutation.mutate({
 			instanceId: selectedInstanceId,
 			selectedPresets: buildSelectedPresets(),
+			enableRename,
 		});
 	}
 
 	function handleApply() {
 		if (!selectedInstanceId || !serviceType || selectedCount === 0) return;
+		setShowConfirmApply(false);
 		const presets = buildSelectedPresets();
 		applyMutation.mutate(
-			{ instanceId: selectedInstanceId, selectedPresets: presets },
+			{ instanceId: selectedInstanceId, selectedPresets: presets, enableRename },
 			{
 				onSuccess: () => {
 					// Save config with sync strategy after successful apply
@@ -432,20 +448,62 @@ export function NamingManager() {
 	return (
 		<div className="space-y-8">
 			{/* Section Header */}
-			<div className="flex items-center gap-3">
-				<div
-					className="flex h-10 w-10 items-center justify-center rounded-xl"
-					style={{
-						background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
-					}}
-				>
-					<FileType className="h-5 w-5" style={{ color: themeGradient.from }} />
+			<div className="flex items-center justify-between">
+				<div className="flex items-center gap-3">
+					<div
+						className="flex h-10 w-10 items-center justify-center rounded-xl"
+						style={{
+							background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+						}}
+					>
+						<FileType className="h-5 w-5" style={{ color: themeGradient.from }} />
+					</div>
+					<div>
+						<h2 className="text-lg font-semibold">Naming Schemes</h2>
+						<p className="text-sm text-muted-foreground">
+							Apply TRaSH Guides naming presets to your instances
+						</p>
+					</div>
 				</div>
-				<div>
-					<h2 className="text-lg font-semibold">Naming Schemes</h2>
-					<p className="text-sm text-muted-foreground">
-						Apply TRaSH Guides naming presets to your instances
-					</p>
+
+				{/* View Toggle */}
+				<div className="inline-flex rounded-xl bg-card/20 p-1 gap-1">
+					<button
+						type="button"
+						onClick={() => setNamingView("configure")}
+						className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all"
+						style={
+							namingView === "configure"
+								? {
+										background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+										color: "white",
+									}
+								: {
+										color: "var(--muted-foreground)",
+									}
+						}
+					>
+						<Settings2 className="h-3.5 w-3.5" />
+						Configure
+					</button>
+					<button
+						type="button"
+						onClick={() => setNamingView("history")}
+						className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all"
+						style={
+							namingView === "history"
+								? {
+										background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+										color: "white",
+									}
+								: {
+										color: "var(--muted-foreground)",
+									}
+						}
+					>
+						<History className="h-3.5 w-3.5" />
+						History
+					</button>
 				</div>
 			</div>
 
@@ -526,188 +584,275 @@ export function NamingManager() {
 				)}
 			</div>
 
-			{/* Phase 2: Preset Selection */}
-			{selectedInstance && serviceType && (
-				<div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-					<h3 className="text-sm font-medium text-muted-foreground">
-						Configure Naming Presets
-					</h3>
-					{presetsError ? (
-						<ErrorBanner
-							message={`Failed to load presets: ${presetsError.message}`}
-						/>
-					) : presetsLoading || !presets ? (
-						<div className="flex items-center gap-2 text-sm text-muted-foreground">
-							<Loader2 className="h-4 w-4 animate-spin" />
-							Loading presets...
-						</div>
-					) : (
-						<GlassmorphicCard padding="md">
-							<div className="space-y-5">
-								{categories.map((cat) => (
-									<PresetSelector
-										key={cat.key}
-										label={cat.label}
-										presetOptions={getPresetsForCategory(
-											presets,
-											cat.key,
+			{/* Configure View */}
+			{namingView === "configure" && (
+				<>
+					{/* Phase 2: Preset Selection */}
+					{selectedInstance && serviceType && (
+						<div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+							<h3 className="text-sm font-medium text-muted-foreground">
+								Configure Naming Presets
+							</h3>
+							{presetsError ? (
+								<ErrorBanner
+									message={`Failed to load presets: ${presetsError.message}`}
+								/>
+							) : presetsLoading || !presets ? (
+								<div className="flex items-center gap-2 text-sm text-muted-foreground">
+									<Loader2 className="h-4 w-4 animate-spin" />
+									Loading presets...
+								</div>
+							) : (
+								<GlassmorphicCard padding="md">
+									<div className="space-y-5">
+										{categories.map((cat) => (
+											<PresetSelector
+												key={cat.key}
+												label={cat.label}
+												presetOptions={getPresetsForCategory(
+													presets,
+													cat.key,
+												)}
+												selectedPreset={
+													(selections[cat.key] as string | undefined) ?? null
+												}
+												onSelect={(name) =>
+													handlePresetChange(cat.key, name)
+												}
+												disabled={applyMutation.isPending}
+												themeGradient={themeGradient}
+											/>
+										))}
+									</div>
+								</GlassmorphicCard>
+							)}
+
+							{/* Preview Button */}
+							{selectedCount > 0 && (
+								<div className="flex items-center gap-3">
+									<button
+										type="button"
+										onClick={handlePreview}
+										disabled={previewMutation.isPending}
+										className="rounded-xl border border-border/50 bg-card/30 px-5 py-2.5 text-sm font-medium transition-all hover:border-border/80 hover:bg-card/50 disabled:opacity-50"
+									>
+										{previewMutation.isPending ? (
+											<span className="flex items-center gap-2">
+												<Loader2 className="h-4 w-4 animate-spin" />
+												Loading preview...
+											</span>
+										) : (
+											`Preview Changes (${selectedCount} ${selectedCount === 1 ? "field" : "fields"})`
 										)}
-										selectedPreset={
-											(selections[cat.key] as string | undefined) ?? null
-										}
-										onSelect={(name) =>
-											handlePresetChange(cat.key, name)
-										}
-										disabled={applyMutation.isPending}
-										themeGradient={themeGradient}
-									/>
-								))}
-							</div>
-						</GlassmorphicCard>
-					)}
-
-					{/* Preview Button */}
-					{selectedCount > 0 && (
-						<div className="flex items-center gap-3">
-							<button
-								type="button"
-								onClick={handlePreview}
-								disabled={previewMutation.isPending}
-								className="rounded-xl border border-border/50 bg-card/30 px-5 py-2.5 text-sm font-medium transition-all hover:border-border/80 hover:bg-card/50 disabled:opacity-50"
-							>
-								{previewMutation.isPending ? (
-									<span className="flex items-center gap-2">
-										<Loader2 className="h-4 w-4 animate-spin" />
-										Loading preview...
-									</span>
-								) : (
-									`Preview Changes (${selectedCount} ${selectedCount === 1 ? "field" : "fields"})`
-								)}
-							</button>
-						</div>
-					)}
-				</div>
-			)}
-
-			{/* Sync Strategy + Delete Config */}
-			{selectedInstance && selectedCount > 0 && (
-				<div className="max-w-lg animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-3">
-					<SyncStrategyControl
-						value={syncStrategy}
-						onChange={handleSyncStrategyChange}
-						disabled={applyMutation.isPending}
-					/>
-					{configData?.config && (
-						<button
-							type="button"
-							onClick={handleDeleteConfig}
-							disabled={deleteConfigMutation.isPending}
-							className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition-all hover:brightness-110 disabled:opacity-50"
-							style={{
-								borderColor: SEMANTIC_COLORS.error.border,
-								color: SEMANTIC_COLORS.error.text,
-								backgroundColor: SEMANTIC_COLORS.error.bg,
-							}}
-						>
-							<Trash2 className="h-3.5 w-3.5" />
-							{deleteConfigMutation.isPending ? "Removing..." : "Remove Saved Config"}
-						</button>
-					)}
-				</div>
-			)}
-
-			{/* Phase 3: Preview Results */}
-			{previewMutation.data?.preview && (
-				<div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-					<div className="flex items-center justify-between">
-						<h3 className="text-sm font-medium text-muted-foreground">
-							Preview Changes
-						</h3>
-						<div className="flex items-center gap-4 text-xs text-muted-foreground">
-							<span className="flex items-center gap-1">
-								<CheckCircle2
-									className="h-3.5 w-3.5"
-									style={{ color: SEMANTIC_COLORS.success.text }}
-								/>
-								{previewMutation.data.preview.unchangedCount} unchanged
-							</span>
-							<span className="flex items-center gap-1">
-								<AlertTriangle
-									className="h-3.5 w-3.5"
-									style={{ color: SEMANTIC_COLORS.warning.text }}
-								/>
-								{previewMutation.data.preview.changedCount} changed
-							</span>
-						</div>
-					</div>
-
-					<PreviewTable
-						comparisons={previewMutation.data.preview.comparisons}
-						themeGradient={themeGradient}
-					/>
-
-					{/* Apply Button */}
-					<div className="space-y-3">
-						<div className="flex items-center gap-4">
-							<button
-								type="button"
-								onClick={handleApply}
-								disabled={
-									applyMutation.isPending ||
-									previewMutation.data.preview.changedCount === 0
-								}
-								className="rounded-xl px-6 py-2.5 text-sm font-medium text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110"
-								style={{
-									background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
-								}}
-							>
-								{applyMutation.isPending ? (
-									<span className="flex items-center gap-2">
-										<Loader2 className="h-4 w-4 animate-spin" />
-										Applying...
-									</span>
-								) : (
-									`Apply to ${selectedInstance?.label ?? "Instance"}`
-								)}
-							</button>
-							{previewMutation.data.preview.changedCount === 0 && (
-								<span className="text-sm text-muted-foreground">
-									All naming fields already match — no changes needed
-								</span>
+									</button>
+								</div>
 							)}
 						</div>
-						{applyMutation.isError && (
-							<ErrorBanner
-								message={`Apply failed: ${applyMutation.error.message}`}
+					)}
+
+					{/* Sync Strategy + Delete Config */}
+					{selectedInstance && selectedCount > 0 && (
+						<div className="max-w-lg animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-3">
+							<SyncStrategyControl
+								value={syncStrategy}
+								onChange={handleSyncStrategyChange}
+								disabled={applyMutation.isPending}
 							/>
-						)}
-						{applyMutation.isSuccess && (
-							<div
-								className="flex items-center gap-2 rounded-lg border px-4 py-3 text-sm"
-								style={{
-									borderColor: SEMANTIC_COLORS.success.border,
-									backgroundColor: SEMANTIC_COLORS.success.bg,
-									color: SEMANTIC_COLORS.success.text,
-								}}
-							>
-								<CheckCircle2 className="h-4 w-4 shrink-0" />
-								{applyMutation.data?.message ?? "Naming presets applied successfully."}
-								{applyMutation.data?.warning && (
-									<span className="ml-2 text-xs opacity-80">
-										{applyMutation.data.warning}
+							{configData?.config && (
+								<button
+									type="button"
+									onClick={handleDeleteConfig}
+									disabled={deleteConfigMutation.isPending}
+									className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition-all hover:brightness-110 disabled:opacity-50"
+									style={{
+										borderColor: SEMANTIC_COLORS.error.border,
+										color: SEMANTIC_COLORS.error.text,
+										backgroundColor: SEMANTIC_COLORS.error.bg,
+									}}
+								>
+									<Trash2 className="h-3.5 w-3.5" />
+									{deleteConfigMutation.isPending ? "Removing..." : "Remove Saved Config"}
+								</button>
+							)}
+						</div>
+					)}
+
+					{/* Phase 3: Preview Results */}
+					{previewMutation.data?.preview && (
+						<div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+							<div className="flex items-center justify-between">
+								<h3 className="text-sm font-medium text-muted-foreground">
+									Preview Changes
+								</h3>
+								<div className="flex items-center gap-4 text-xs text-muted-foreground">
+									<span className="flex items-center gap-1">
+										<CheckCircle2
+											className="h-3.5 w-3.5"
+											style={{ color: SEMANTIC_COLORS.success.text }}
+										/>
+										{previewMutation.data.preview.unchangedCount} unchanged
 									</span>
+									<span className="flex items-center gap-1">
+										<AlertTriangle
+											className="h-3.5 w-3.5"
+											style={{ color: SEMANTIC_COLORS.warning.text }}
+										/>
+										{previewMutation.data.preview.changedCount} changed
+									</span>
+								</div>
+							</div>
+
+							{/* Rename Toggle */}
+							<GlassmorphicCard padding="sm">
+								<label className="flex items-center gap-3 cursor-pointer">
+									<input
+										type="checkbox"
+										checked={enableRename ?? (previewMutation.data.preview.comparisons.some(
+											(c) => c.arrApiField === "renameMovies" || c.arrApiField === "renameEpisodes"
+												? c.currentValue === "true"
+												: false
+										))}
+										onChange={(e) => setEnableRename(e.target.checked)}
+										className="h-4 w-4 rounded border-border/50 accent-current"
+										style={{ accentColor: themeGradient.from }}
+										disabled={applyMutation.isPending}
+									/>
+									<div>
+										<span className="text-sm font-medium">
+											Enable file renaming
+										</span>
+										<p className="text-xs text-muted-foreground">
+											{serviceType === "RADARR"
+												? "Sets renameMovies — allows Radarr to rename movie files"
+												: "Sets renameEpisodes — allows Sonarr to rename episode files"}
+										</p>
+									</div>
+								</label>
+							</GlassmorphicCard>
+
+							<PreviewTable
+								comparisons={previewMutation.data.preview.comparisons}
+								themeGradient={themeGradient}
+							/>
+
+							{/* Apply Button + Confirmation */}
+							<div className="space-y-3">
+								<div className="flex items-center gap-4">
+									{!showConfirmApply ? (
+										<button
+											type="button"
+											onClick={() => setShowConfirmApply(true)}
+											disabled={
+												applyMutation.isPending ||
+												previewMutation.data.preview.changedCount === 0
+											}
+											className="rounded-xl px-6 py-2.5 text-sm font-medium text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110"
+											style={{
+												background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+											}}
+										>
+											{`Apply to ${selectedInstance?.label ?? "Instance"}`}
+										</button>
+									) : (
+										<div
+											className="flex items-center gap-3 rounded-xl border px-4 py-3 animate-in fade-in duration-200"
+											style={{
+												borderColor: SEMANTIC_COLORS.warning.border,
+												backgroundColor: SEMANTIC_COLORS.warning.bg,
+											}}
+										>
+											<AlertTriangle
+												className="h-4 w-4 shrink-0"
+												style={{ color: SEMANTIC_COLORS.warning.text }}
+											/>
+											<span className="text-sm">
+												Apply {previewMutation.data.preview.changedCount} naming change(s) to{" "}
+												<strong>{selectedInstance?.label}</strong>? This will overwrite the current naming config.
+											</span>
+											<button
+												type="button"
+												onClick={() => setShowConfirmApply(false)}
+												className="rounded-lg border border-border/50 px-3 py-1.5 text-xs font-medium transition-all hover:bg-card/50"
+											>
+												Cancel
+											</button>
+											<button
+												type="button"
+												onClick={handleApply}
+												disabled={applyMutation.isPending}
+												className="rounded-lg px-3 py-1.5 text-xs font-medium text-white transition-all hover:brightness-110 disabled:opacity-50"
+												style={{
+													background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+												}}
+											>
+												{applyMutation.isPending ? (
+													<span className="flex items-center gap-1">
+														<Loader2 className="h-3 w-3 animate-spin" />
+														Applying...
+													</span>
+												) : (
+													"Confirm Apply"
+												)}
+											</button>
+										</div>
+									)}
+									{previewMutation.data.preview.changedCount === 0 && (
+										<span className="text-sm text-muted-foreground">
+											All naming fields already match — no changes needed
+										</span>
+									)}
+								</div>
+								{applyMutation.isError && (
+									<ErrorBanner
+										message={`Apply failed: ${applyMutation.error.message}`}
+									/>
+								)}
+								{applyMutation.isSuccess && (
+									<div
+										className="flex items-center gap-2 rounded-lg border px-4 py-3 text-sm"
+										style={{
+											borderColor: SEMANTIC_COLORS.success.border,
+											backgroundColor: SEMANTIC_COLORS.success.bg,
+											color: SEMANTIC_COLORS.success.text,
+										}}
+									>
+										<CheckCircle2 className="h-4 w-4 shrink-0" />
+										{applyMutation.data?.message ?? "Naming presets applied successfully."}
+										{applyMutation.data?.warning && (
+											<span className="ml-2 text-xs opacity-80">
+												{applyMutation.data.warning}
+											</span>
+										)}
+									</div>
 								)}
 							</div>
-						)}
-					</div>
-				</div>
+						</div>
+					)}
+
+					{/* Preview error */}
+					{previewMutation.isError && (
+						<ErrorBanner
+							message={`Preview failed: ${previewMutation.error.message}`}
+						/>
+					)}
+				</>
 			)}
 
-			{/* Preview error */}
-			{previewMutation.isError && (
-				<ErrorBanner
-					message={`Preview failed: ${previewMutation.error.message}`}
-				/>
+			{/* History View */}
+			{namingView === "history" && (
+				selectedInstanceId ? (
+					<Suspense>
+						<NamingHistoryTable instanceId={selectedInstanceId} />
+					</Suspense>
+				) : (
+					<div className="rounded-2xl border border-dashed border-border/50 bg-card/20 backdrop-blur-xs p-12 text-center">
+						<History className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+						<p className="text-lg font-medium text-foreground mb-2">Select an instance</p>
+						<p className="text-sm text-muted-foreground">
+							Choose an instance above to view its naming deployment history
+						</p>
+					</div>
+				)
 			)}
 		</div>
 	);

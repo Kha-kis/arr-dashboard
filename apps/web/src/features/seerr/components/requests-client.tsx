@@ -1,7 +1,16 @@
 "use client";
 
 import type { SeerrRequest } from "@arr/shared";
-import { AlertTriangle, Bell, ClipboardList, Inbox, RefreshCw, Users } from "lucide-react";
+import {
+	AlertTriangle,
+	Bell,
+	ClipboardList,
+	History,
+	Inbox,
+	RefreshCw,
+	Users,
+	WifiOff,
+} from "lucide-react";
 import { lazy, Suspense, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -14,6 +23,7 @@ import {
 import { Button } from "../../../components/ui";
 import {
 	useApproveSeerrRequest,
+	useClearSeerrCache,
 	useDeclineSeerrRequest,
 	useDeleteSeerrRequest,
 	useRetrySeerrRequest,
@@ -22,6 +32,7 @@ import {
 } from "../../../hooks/api/useSeerr";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useSeerrInstances } from "../hooks/use-seerr-instances";
+import { isSeerrCircuitBreakerError } from "../lib/seerr-utils";
 import { ApprovalQueueTab } from "./approval-queue-tab";
 import { InstanceSelector } from "./instance-selector";
 import { IssuesTab } from "./issues-tab";
@@ -33,7 +44,11 @@ const RequestDetailModal = lazy(() =>
 	import("./request-detail-modal").then((m) => ({ default: m.RequestDetailModal })),
 );
 
-export type RequestsTab = "approval" | "all" | "users" | "issues" | "notifications";
+const AuditLogTab = lazy(() =>
+	import("./audit-log-tab").then((m) => ({ default: m.AuditLogTab })),
+);
+
+export type RequestsTab = "approval" | "all" | "users" | "issues" | "notifications" | "history";
 
 export const RequestsClient = () => {
 	const { gradient: _themeGradient } = useThemeGradient();
@@ -47,7 +62,12 @@ export const RequestsClient = () => {
 	const currentInstance = seerrInstances.find((s) => s.id === currentInstanceId) ?? null;
 
 	// Fetch request counts for badge
-	const { data: counts, refetch: refetchCounts } = useSeerrRequestCount(currentInstanceId);
+	const {
+		data: counts,
+		refetch: refetchCounts,
+		error: countsError,
+	} = useSeerrRequestCount(currentInstanceId);
+	const isCircuitBreakerError = isSeerrCircuitBreakerError(countsError);
 	const { data: seerrStatus } = useSeerrStatus(currentInstanceId);
 
 	// Mutation hooks for modal actions
@@ -55,6 +75,7 @@ export const RequestsClient = () => {
 	const declineMutation = useDeclineSeerrRequest();
 	const deleteMutation = useDeleteSeerrRequest();
 	const retryMutation = useRetrySeerrRequest();
+	const clearCacheMutation = useClearSeerrCache();
 
 	if (isLoading) {
 		return <PremiumPageLoading showHeader cardCount={4} />;
@@ -98,6 +119,7 @@ export const RequestsClient = () => {
 		{ id: "users", label: "Users", icon: Users },
 		{ id: "issues", label: "Issues", icon: AlertTriangle },
 		{ id: "notifications", label: "Notifications", icon: Bell },
+		{ id: "history", label: "History", icon: History },
 	];
 
 	return (
@@ -131,6 +153,33 @@ export const RequestsClient = () => {
 						)}
 						<Button
 							variant="secondary"
+							onClick={() => {
+								clearCacheMutation.mutate(
+									{ instanceId: currentInstanceId },
+									{
+										onSuccess: (result) =>
+											toast.success(
+												result.cleared > 0
+													? `Cleared ${result.cleared} cached item${result.cleared !== 1 ? "s" : ""}`
+													: "Cache already empty",
+											),
+										onError: () => toast.error("Failed to clear cache"),
+									},
+								);
+							}}
+							disabled={clearCacheMutation.isPending}
+							className="gap-2 border-border/50 bg-card/50 backdrop-blur-xs hover:bg-card/80 hidden sm:flex"
+							title="Clear server-side cache (genres, issue counts)"
+						>
+							{clearCacheMutation.isPending ? (
+								<RefreshCw className="h-4 w-4 animate-spin" />
+							) : (
+								<RefreshCw className="h-4 w-4" />
+							)}
+							<span className="hidden lg:inline">Clear Cache</span>
+						</Button>
+						<Button
+							variant="secondary"
 							onClick={() => void refetchCounts()}
 							className="gap-2 border-border/50 bg-card/50 backdrop-blur-xs hover:bg-card/80"
 						>
@@ -156,7 +205,13 @@ export const RequestsClient = () => {
 				className="animate-in fade-in slide-in-from-bottom-4 duration-500"
 				style={{ animationDelay: "200ms", animationFillMode: "backwards" }}
 			>
-				{currentInstance && (
+				{currentInstance && isCircuitBreakerError ? (
+					<PremiumEmptyState
+						icon={WifiOff}
+						title="Seerr Instance Unreachable"
+						description="The circuit breaker has opened because the Seerr instance is not responding. The dashboard will retry automatically."
+					/>
+				) : currentInstance ? (
 					<>
 						{activeTab === "approval" && (
 							<ApprovalQueueTab
@@ -173,8 +228,13 @@ export const RequestsClient = () => {
 						{activeTab === "users" && <UsersTab instanceId={currentInstanceId} />}
 						{activeTab === "issues" && <IssuesTab instanceId={currentInstanceId} />}
 						{activeTab === "notifications" && <NotificationsTab instanceId={currentInstanceId} />}
+						{activeTab === "history" && (
+							<Suspense>
+								<AuditLogTab instanceId={currentInstanceId} />
+							</Suspense>
+						)}
 					</>
-				)}
+				) : null}
 			</div>
 
 			{/* Detail modal — lazy loaded on first click */}

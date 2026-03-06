@@ -16,6 +16,9 @@ import notificationServicePlugin from "./plugins/notification-service.js";
 import { prismaPlugin } from "./plugins/prisma.js";
 import queueCleanerSchedulerPlugin from "./plugins/queue-cleaner-scheduler.js";
 import { securityPlugin } from "./plugins/security.js";
+import seerrCachePlugin from "./plugins/seerr-cache.js";
+import seerrCircuitBreakerPlugin from "./plugins/seerr-circuit-breaker.js";
+import seerrHealthSchedulerPlugin from "./plugins/seerr-health-scheduler.js";
 import sessionCleanupPlugin from "./plugins/session-cleanup.js";
 import trashBackupCleanupPlugin from "./plugins/trash-backup-cleanup.js";
 import plexCacheSchedulerPlugin from "./plugins/plex-cache-scheduler.js";
@@ -108,6 +111,8 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	app.register(prismaPlugin);
 	app.register(securityPlugin);
 	app.register(arrClientPlugin);
+	app.register(seerrCircuitBreakerPlugin);
+	app.register(seerrCachePlugin);
 	app.register(deploymentExecutorPlugin);
 	app.register(notificationServicePlugin);
 	app.register(lifecyclePlugin);
@@ -123,6 +128,7 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	app.register(plexEpisodeCacheSchedulerPlugin);
 	app.register(tautulliCacheSchedulerPlugin);
 	app.register(sessionSnapshotSchedulerPlugin);
+	app.register(seerrHealthSchedulerPlugin);
 
 	app.decorateRequest("currentUser", null);
 	app.decorateRequest("sessionToken", null);

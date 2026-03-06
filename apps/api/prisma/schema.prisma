@@ -47,6 +47,7 @@ model User {
   libraryCleanupConfigs LibraryCleanupConfig[]
   notificationChannels  NotificationChannel[]
   namingConfigs         NamingConfig[]
+  namingDeployHistory   NamingDeployHistory[]
   notificationRules            NotificationRule[]
   notificationAggregationConfigs NotificationAggregationConfig[]
 }
@@ -113,6 +114,8 @@ model ServiceInstance {
   cacheRefreshStatuses        CacheRefreshStatus[]
   sessionSnapshots            SessionSnapshot[]
   namingConfig                NamingConfig?
+  namingDeployHistory         NamingDeployHistory[]
+  seerrActionLogs             SeerrActionLog[]
 
   @@index([service])
   @@index([userId])
@@ -1326,12 +1329,69 @@ model NamingConfig {
   syncStrategy       String    @default("manual") // "auto" | "manual" | "notify"
   lastDeployedAt     DateTime?
   lastDeployedHash   String?
+  lastDeployStatus   String?                   // "SUCCESS" | "FAILED" | "ROLLED_BACK"
+  lastDeployError    String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
-  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  instance      ServiceInstance        @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  user          User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deployHistory NamingDeployHistory[]
 
   @@index([userId])
   @@map("naming_configs")
+}
+
+// ============================================================================
+// Naming Deploy History
+// Audit trail for naming config deployments with pre-deploy snapshots for rollback.
+// ============================================================================
+
+model NamingDeployHistory {
+  id               String    @id @default(cuid())
+  instanceId       String
+  userId           String
+  deployedAt       DateTime  @default(now())
+  status           String                        // "SUCCESS" | "FAILED" | "ROLLED_BACK"
+  selectedPresets  String                        // JSON: NamingSelectedPresets
+  resolvedPayload  String                        // JSON: the patch sent to the instance
+  deployedHash     String?
+  previousConfig   String?                       // JSON: full pre-deploy snapshot for rollback
+  changedFields    Int
+  totalFields      Int
+  errorMessage     String?
+  rolledBack       Boolean   @default(false)
+  rolledBackAt     DateTime?
+
+  instance     ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  namingConfig NamingConfig?   @relation(fields: [instanceId], references: [instanceId])
+
+  @@index([instanceId, deployedAt])
+  @@index([userId])
+  @@map("naming_deploy_history")
+}
+
+// ============================================================================
+// Seerr Action Audit Log
+// Tracks user actions performed via the Seerr integration (approve, decline, etc.)
+// ============================================================================
+
+model SeerrActionLog {
+  id          String   @id @default(cuid())
+  instanceId  String
+  userId      String
+  action      String   // "approve_request" | "decline_request" | "delete_request" | "retry_request" | "update_issue_status" | "add_issue_comment"
+  targetType  String   // "request" | "issue"
+  targetId    String   // The Seerr resource ID
+  detail      String?  // JSON: additional context
+  success     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId, createdAt])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("seerr_action_logs")
 }

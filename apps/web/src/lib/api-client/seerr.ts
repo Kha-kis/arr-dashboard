@@ -49,6 +49,13 @@ export async function fetchSeerrRequestCount(instanceId: string): Promise<SeerrR
 	return apiRequest(`/api/seerr/requests/${instanceId}/count`);
 }
 
+export async function fetchSeerrRequest(
+	instanceId: string,
+	requestId: number,
+): Promise<SeerrRequest> {
+	return apiRequest(`/api/seerr/requests/${instanceId}/${requestId}`);
+}
+
 export async function approveSeerrRequest(
 	instanceId: string,
 	requestId: number,
@@ -72,6 +79,27 @@ export async function retrySeerrRequest(
 	requestId: number,
 ): Promise<SeerrRequest> {
 	return apiRequest(`/api/seerr/requests/${instanceId}/${requestId}/retry`, { method: "POST" });
+}
+
+// ============================================================================
+// Bulk Actions
+// ============================================================================
+
+export interface BulkRequestResult {
+	results: { requestId: number; success: boolean; error?: string }[];
+	totalSuccess: number;
+	totalFailed: number;
+}
+
+export async function bulkSeerrRequestAction(
+	instanceId: string,
+	action: "approve" | "decline" | "delete",
+	requestIds: number[],
+): Promise<BulkRequestResult> {
+	return apiRequest(`/api/seerr/requests/${instanceId}/bulk`, {
+		method: "POST",
+		json: { action, requestIds },
+	});
 }
 
 // ============================================================================
@@ -176,6 +204,37 @@ export async function testSeerrNotification(instanceId: string, agentId: string)
 
 export async function fetchSeerrStatus(instanceId: string): Promise<SeerrStatus> {
 	return apiRequest(`/api/seerr/status/${instanceId}`);
+}
+
+export interface SeerrHealthResponse {
+	status: "healthy" | "error" | "unknown";
+	lastCheckedAt: string | null;
+	error: string | null;
+}
+
+export async function fetchSeerrHealth(instanceId: string): Promise<SeerrHealthResponse> {
+	return apiRequest(`/api/seerr/status/${instanceId}/health`);
+}
+
+export interface SeerrAuditLogEntry {
+	id: string;
+	action: string;
+	targetType: string;
+	targetId: string;
+	detail: Record<string, unknown> | null;
+	success: boolean;
+	createdAt: string;
+}
+
+export async function clearSeerrCache(instanceId: string): Promise<{ cleared: number }> {
+	return apiRequest(`/api/seerr/status/${instanceId}/cache/clear`, { method: "POST" });
+}
+
+export async function fetchSeerrAuditLog(
+	instanceId: string,
+	limit = 50,
+): Promise<SeerrAuditLogEntry[]> {
+	return apiRequest(`/api/seerr/status/${instanceId}/audit?limit=${limit}`);
 }
 
 // ============================================================================

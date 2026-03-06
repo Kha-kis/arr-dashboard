@@ -3,6 +3,7 @@
 import { SEERR_MEDIA_STATUS, type SeerrDiscoverResult } from "@arr/shared";
 import { Clock, Compass, Eye, EyeOff, Film, Tag, TrendingUp, Tv } from "lucide-react";
 import { lazy, Suspense, useCallback, useMemo, useState } from "react";
+import { PremiumSkeleton } from "../../../components/layout";
 import {
 	useSeerrDiscoverByGenre,
 	useSeerrDiscoverMovies,
@@ -44,7 +45,9 @@ export const DiscoverClient = () => {
 		requestItem,
 		selectedGenreId,
 		hideAvailable,
+		searchSort,
 		setSearchInput,
+		setSearchSort,
 		setMediaType,
 		setSelectedGenreId,
 		setHideAvailable,
@@ -124,8 +127,43 @@ export const DiscoverClient = () => {
 		[genreQuery.data, filterAvailable],
 	);
 
+	// Page loading skeleton
+	if (isLoadingInstances) {
+		return (
+			<div className="space-y-8">
+				<PageHeader themeGradient={themeGradient} />
+				<div
+					className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500"
+					style={{ animationDelay: "100ms", animationFillMode: "backwards" }}
+				>
+					<PremiumSkeleton className="h-12 w-full rounded-xl" />
+				</div>
+				{Array.from({ length: 3 }).map((_, i) => (
+					<div
+						key={i}
+						className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300"
+						style={{ animationDelay: `${(i + 1) * 100}ms`, animationFillMode: "backwards" }}
+					>
+						<PremiumSkeleton className="h-6 w-48" />
+						<div className="flex gap-4 overflow-hidden">
+							{Array.from({ length: 7 }).map((_, j) => (
+								<div key={j} className="shrink-0 w-[160px]">
+									<PremiumSkeleton
+										variant="card"
+										className="aspect-2/3 rounded-xl"
+										style={{ animationDelay: `${j * 30}ms` }}
+									/>
+								</div>
+							))}
+						</div>
+					</div>
+				))}
+			</div>
+		);
+	}
+
 	// No instance configured
-	if (!isLoadingInstances && seerrInstances.length === 0) {
+	if (seerrInstances.length === 0) {
 		return (
 			<div className="space-y-8">
 				<PageHeader themeGradient={themeGradient} />
@@ -209,8 +247,14 @@ export const DiscoverClient = () => {
 				<DiscoverSearchResults
 					data={searchQuery.data}
 					isLoading={searchQuery.isLoading}
+					isError={searchQuery.isError}
+					isFetchingNextPage={searchQuery.isFetchingNextPage}
+					hasNextPage={searchQuery.hasNextPage}
+					onLoadMore={() => searchQuery.fetchNextPage()}
 					onSelectItem={selectItem}
 					query={debouncedQuery}
+					sort={searchSort}
+					onSortChange={setSearchSort}
 				/>
 			) : isBrowsingGenre ? (
 				/* Genre browsing mode */
