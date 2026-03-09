@@ -115,6 +115,7 @@ interface ValidationHealthResponse {
 		integrations: Record<string, IntegrationHealth>;
 		overallTotals: ValidationStats;
 		validationModes: Record<string, string>;
+		resetAt: string | null;
 	};
 }
 
@@ -132,6 +133,10 @@ async function getLogFiles(): Promise<LogFilesResponse> {
 
 async function getValidationHealth(): Promise<ValidationHealthResponse> {
 	return apiRequest<ValidationHealthResponse>("/api/system/validation-health");
+}
+
+async function resetValidationHealth(): Promise<ValidationHealthResponse> {
+	return apiRequest<ValidationHealthResponse>("/api/system/validation-health", { method: "DELETE" });
 }
 
 function formatUptime(seconds: number): string {
@@ -221,11 +226,15 @@ function SystemInfoCard({ icon, label, value, subtitle, animationDelay = 0 }: Sy
 function ValidationHealthSection({
 	data,
 	themeGradient,
+	onReset,
+	isResetting,
 }: {
 	data: ValidationHealthResponse["data"];
 	themeGradient: { from: string; to: string; glow: string };
+	onReset: () => void;
+	isResetting: boolean;
 }) {
-	const { overallTotals, integrations, validationModes } = data;
+	const { overallTotals, integrations, validationModes, resetAt } = data;
 	const integrationNames = Object.keys(integrations);
 	const rejectionRate =
 		overallTotals.total > 0
@@ -252,6 +261,29 @@ function ValidationHealthSection({
 			icon={ShieldAlert}
 		>
 			<div className="space-y-4">
+				{/* Reset Controls */}
+				<div className="flex items-center justify-between">
+					<p className="text-xs text-muted-foreground">
+						{resetAt
+							? `Stats since: ${new Date(resetAt).toLocaleString()}`
+							: "Stats since app start"}
+					</p>
+					<Button
+						variant="outline"
+						size="sm"
+						onClick={onReset}
+						disabled={isResetting || overallTotals.total === 0}
+						className="h-7 text-xs gap-1.5"
+					>
+						{isResetting ? (
+							<Loader2 className="h-3 w-3 animate-spin" />
+						) : (
+							<RefreshCw className="h-3 w-3" />
+						)}
+						Reset Stats
+					</Button>
+				</div>
+
 				{/* Summary Cards */}
 				<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 					<SystemInfoCard
@@ -463,6 +495,17 @@ export function SystemTab() {
 		queryKey: ["validation-health"],
 		queryFn: getValidationHealth,
 		refetchInterval: 60000,
+	});
+
+	const resetHealthMutation = useMutation({
+		mutationFn: resetValidationHealth,
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["validation-health"] });
+			toast.success("Validation health stats reset");
+		},
+		onError: (error) => {
+			toast.error(getErrorMessage(error, "Failed to reset validation health"));
+		},
 	});
 
 	const updateMutation = useMutation({
@@ -699,6 +742,8 @@ export function SystemTab() {
 				<ValidationHealthSection
 					data={validationHealth.data}
 					themeGradient={themeGradient}
+					onReset={() => resetHealthMutation.mutate()}
+					isResetting={resetHealthMutation.isPending}
 				/>
 			)}
 
