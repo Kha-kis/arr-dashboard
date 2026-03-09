@@ -51,6 +51,9 @@ export {
 	type Logger,
 } from "./validate-batch.js";
 
+// --- Quarantine ---
+export { validationQuarantine, type QuarantinedItem } from "./validation-quarantine.js";
+
 // --- Health observability ---
 export { integrationHealth, type IntegrationHealth, type AllIntegrationHealth, type HealthState } from "./integration-health.js";
 export { schemaFingerprints, type DriftReport, type CategoryFingerprint, type SchemaFingerprint } from "./schema-fingerprint.js";

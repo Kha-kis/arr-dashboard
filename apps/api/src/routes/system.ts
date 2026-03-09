@@ -8,6 +8,7 @@ import { integrationHealth } from "../lib/validation/integration-health.js";
 import { schemaFingerprints } from "../lib/validation/schema-fingerprint.js";
 import { KNOWN_INTEGRATIONS } from "../lib/validation/index.js";
 import { type ValidationMode, getAllValidationModes, setValidationMode } from "../lib/validation/validate-batch.js";
+import { validationQuarantine } from "../lib/validation/validation-quarantine.js";
 
 const RESTART_RATE_LIMIT = { max: 2, timeWindow: "5 minutes" };
 const LOGS_RATE_LIMIT = { max: 30, timeWindow: "1 minute" };
@@ -495,6 +496,36 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				...integrationHealth.getAll(),
 				fingerprints: schemaFingerprints.getAll(),
 				validationModes: getAllValidationModes(),
+			},
+		});
+	});
+
+	/**
+	 * GET /system/validation-quarantine
+	 * Returns quarantined (rejected) validation items for inspection.
+	 */
+	app.get("/validation-quarantine", async (_request, reply) => {
+		return reply.send({
+			success: true,
+			data: {
+				items: validationQuarantine.getAll(),
+				totalCount: validationQuarantine.count,
+			},
+		});
+	});
+
+	/**
+	 * DELETE /system/validation-quarantine
+	 * Clear all quarantined items.
+	 */
+	app.delete("/validation-quarantine", async (request, reply) => {
+		validationQuarantine.clear();
+		request.log.info("Validation quarantine cleared");
+		return reply.send({
+			success: true,
+			data: {
+				items: {},
+				totalCount: 0,
 			},
 		});
 	});
