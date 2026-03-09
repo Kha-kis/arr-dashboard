@@ -23,6 +23,7 @@ import type { FastifyBaseLogger } from "fastify";
 import DOMPurify from "isomorphic-dompurify";
 import { z } from "zod";
 import { marked } from "marked";
+import { parseUpstreamOrThrow, UpstreamValidationError } from "../validation/parse-upstream.js";
 import {
 	radarrNamingSchema,
 	sonarrNamingSchema,
@@ -242,11 +243,12 @@ interface FetchOptions {
 	repoConfig?: TrashRepoConfig;
 }
 
-interface TrashMetadata {
-	version?: string;
-	lastUpdated?: string;
-	[key: string]: unknown;
-}
+/** Schema for TRaSH Guides metadata file */
+export const trashMetadataSchema = z.looseObject({
+	version: z.string().optional(),
+	lastUpdated: z.string().optional(),
+});
+type TrashMetadata = z.infer<typeof trashMetadataSchema>;
 
 // ============================================================================
 // Helper Functions
@@ -533,7 +535,10 @@ export class TrashGitHubFetcher {
 			throw new Error(`Failed to fetch metadata: ${response.statusText}`);
 		}
 
-		return (await response.json()) as TrashMetadata;
+		const raw = await response.json();
+		return parseUpstreamOrThrow(raw, trashMetadataSchema, {
+			integration: "trash-guides", category: "metadata",
+		});
 	}
 
 	/**
@@ -807,7 +812,11 @@ export class TrashGitHubFetcher {
 				return [];
 			}
 
-			const files = z.array(githubDirectoryEntrySchema).parse(await response.json());
+			const files = parseUpstreamOrThrow(
+				await response.json(),
+				z.array(githubDirectoryEntrySchema),
+				{ integration: "trash-guides", category: "directory-listing" },
+			);
 
 			// Filter for .md files only
 			const mdFiles = files
@@ -833,7 +842,12 @@ export class TrashGitHubFetcher {
 
 			return descriptions;
 		} catch (error) {
-			this.log.error("Failed to fetch CF descriptions:", error);
+			if (error instanceof UpstreamValidationError) {
+				this.log.warn({ integration: error.integration, issues: error.issues },
+					"GitHub directory listing schema drift");
+			} else {
+				this.log.error("Failed to fetch CF descriptions:", error);
+			}
 			return [];
 		}
 	}
@@ -870,7 +884,11 @@ export class TrashGitHubFetcher {
 				return [];
 			}
 
-			const files = z.array(githubDirectoryEntrySchema).parse(await response.json());
+			const files = parseUpstreamOrThrow(
+				await response.json(),
+				z.array(githubDirectoryEntrySchema),
+				{ integration: "trash-guides", category: "directory-listing" },
+			);
 
 			// Filter for .md files that match known include patterns
 			const includeFiles = files
@@ -926,7 +944,12 @@ export class TrashGitHubFetcher {
 			this.log.debug?.(`Fetched ${includes.length} CF include files`);
 			return includes;
 		} catch (error) {
-			this.log.error("Failed to fetch CF includes:", error);
+			if (error instanceof UpstreamValidationError) {
+				this.log.warn({ integration: error.integration, issues: error.issues },
+					"GitHub directory listing schema drift");
+			} else {
+				this.log.error("Failed to fetch CF includes:", error);
+			}
 			return [];
 		}
 	}
@@ -1009,7 +1032,11 @@ export class TrashGitHubFetcher {
 				return [];
 			}
 
-			const files = z.array(githubDirectoryEntrySchema).parse(await response.json());
+			const files = parseUpstreamOrThrow(
+				await response.json(),
+				z.array(githubDirectoryEntrySchema),
+				{ integration: "trash-guides", category: "directory-listing" },
+			);
 
 			// Filter for .json files only
 			const jsonFiles = files
@@ -1022,7 +1049,12 @@ export class TrashGitHubFetcher {
 
 			return jsonFiles;
 		} catch (error) {
-			this.log.error(`Failed to discover config files at ${baseUrl}:`, error);
+			if (error instanceof UpstreamValidationError) {
+				this.log.warn({ integration: error.integration, issues: error.issues },
+					"GitHub directory listing schema drift");
+			} else {
+				this.log.error(`Failed to discover config files at ${baseUrl}:`, error);
+			}
 			return [];
 		}
 	}
