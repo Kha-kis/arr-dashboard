@@ -259,7 +259,7 @@ export class TautulliClient {
 		// Validate wrapper structure
 		const wrapper = parseUpstreamOrThrow(raw, tautulliResponseWrapperSchema, {
 			integration: "tautulli",
-			category: `${cmd}/wrapper`,
+			category: cmd,
 		});
 
 		if (wrapper.response.result !== "success") {

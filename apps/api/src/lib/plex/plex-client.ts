@@ -384,6 +384,9 @@ export class PlexClient {
 				const category = path.split("?")[0] ?? path;
 				return parseUpstreamOrThrow(raw, options.schema, { integration: "plex", category });
 			}
+			if (raw !== null && typeof raw === "object" && Object.keys(raw as Record<string, unknown>).length > 0) {
+				this.log.debug({ path }, "Plex returned JSON but no schema was provided for validation");
+			}
 			return raw as T;
 		}
 
