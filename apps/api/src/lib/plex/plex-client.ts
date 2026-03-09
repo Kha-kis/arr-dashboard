@@ -6,8 +6,21 @@
  */
 
 import type { FastifyBaseLogger } from "fastify";
+import type { z } from "zod";
 import type { ClientInstanceData } from "../arr/client-factory.js";
 import type { Encryptor } from "../auth/encryption.js";
+import { parseUpstreamOrThrow } from "../validation/parse-upstream.js";
+import {
+	plexAccountsResponseSchema,
+	plexEpisodesResponseSchema,
+	plexHistoryResponseSchema,
+	plexIdentityResponseSchema,
+	plexLibraryItemsResponseSchema,
+	plexOnDeckResponseSchema,
+	plexSectionsResponseSchema,
+	plexServerInfoResponseSchema,
+	plexSessionsResponseSchema,
+} from "./plex-schemas.js";
 
 // ============================================================================
 // Response Types
@@ -125,12 +138,9 @@ export class PlexClient {
 	 * Uses the unauthenticated /identity endpoint (no friendlyName/platform).
 	 */
 	async getIdentity(): Promise<PlexIdentity> {
-		const data = await this.request<{
-			MediaContainer: {
-				machineIdentifier: string;
-				version: string;
-			};
-		}>("/identity");
+		const data = await this.request("/identity", {
+			schema: plexIdentityResponseSchema,
+		});
 		return {
 			machineIdentifier: data.MediaContainer.machineIdentifier,
 			version: data.MediaContainer.version,
@@ -144,14 +154,9 @@ export class PlexClient {
 	 * Uses the authenticated root "/" endpoint which returns richer metadata.
 	 */
 	async getServerInfo(): Promise<PlexIdentity> {
-		const data = await this.request<{
-			MediaContainer: {
-				machineIdentifier: string;
-				version: string;
-				friendlyName?: string;
-				platform?: string;
-			};
-		}>("/");
+		const data = await this.request("/", {
+			schema: plexServerInfoResponseSchema,
+		});
 		return {
 			machineIdentifier: data.MediaContainer.machineIdentifier,
 			version: data.MediaContainer.version,
@@ -164,9 +169,9 @@ export class PlexClient {
 	 * Get all library sections.
 	 */
 	async getLibrarySections(): Promise<PlexLibrary[]> {
-		const data = await this.request<{
-			MediaContainer: { Directory?: Array<{ key: string; title: string; type: string }> };
-		}>("/library/sections");
+		const data = await this.request("/library/sections", {
+			schema: plexSectionsResponseSchema,
+		});
 		return (data.MediaContainer.Directory ?? []).map((d) => ({
 			key: d.key,
 			title: d.title,
@@ -178,21 +183,10 @@ export class PlexClient {
 	 * Get all items from a library section.
 	 */
 	async getLibraryItems(sectionId: string): Promise<PlexLibraryItem[]> {
-		const data = await this.request<{
-			MediaContainer: {
-				Metadata?: Array<{
-					ratingKey: string;
-					title: string;
-					type: string;
-					year?: number;
-					userRating?: number;
-					addedAt?: number;
-					Guid?: Array<{ id: string }>;
-					Collection?: Array<{ tag: string }>;
-					Label?: Array<{ tag: string }>;
-				}>;
-			};
-		}>(`/library/sections/${sectionId}/all?includeGuids=1&includeCollections=1&includeLabels=1`);
+		const data = await this.request(
+			`/library/sections/${sectionId}/all?includeGuids=1&includeCollections=1&includeLabels=1`,
+			{ schema: plexLibraryItemsResponseSchema },
+		);
 
 		return (data.MediaContainer.Metadata ?? []).map((m) => ({
 			ratingKey: m.ratingKey,
@@ -223,23 +217,10 @@ export class PlexClient {
 			const remaining = maxResults - allItems.length;
 			const take = Math.min(pageSize, remaining);
 
-			const data = await this.request<{
-				MediaContainer: {
-					size?: number;
-					Metadata?: Array<{
-						ratingKey: string;
-						parentRatingKey?: string;
-						parentKey?: string;
-						grandparentRatingKey?: string;
-						grandparentKey?: string;
-						title: string;
-						grandparentTitle?: string;
-						type: string;
-						viewedAt: number;
-						accountID: number;
-					}>;
-				};
-			}>(`/status/sessions/history/all?sort=viewedAt:desc&X-Plex-Container-Start=${offset}&X-Plex-Container-Size=${take}`);
+			const data = await this.request(
+				`/status/sessions/history/all?sort=viewedAt:desc&X-Plex-Container-Start=${offset}&X-Plex-Container-Size=${take}`,
+				{ schema: plexHistoryResponseSchema },
+			);
 
 			const items = data.MediaContainer.Metadata ?? [];
 			for (const item of items) {
@@ -266,16 +247,9 @@ export class PlexClient {
 	 * Get on-deck (continue watching) items.
 	 */
 	async getOnDeck(): Promise<PlexOnDeckItem[]> {
-		const data = await this.request<{
-			MediaContainer: {
-				Metadata?: Array<{
-					ratingKey: string;
-					parentRatingKey?: string;
-					grandparentRatingKey?: string;
-					type: string;
-				}>;
-			};
-		}>("/library/onDeck");
+		const data = await this.request("/library/onDeck", {
+			schema: plexOnDeckResponseSchema,
+		});
 
 		return (data.MediaContainer.Metadata ?? []).map((m) => ({
 			ratingKey: m.ratingKey,
@@ -289,28 +263,9 @@ export class PlexClient {
 	 * Get active sessions (currently playing).
 	 */
 	async getSessions(): Promise<PlexSessionItem[]> {
-		const data = await this.request<{
-			MediaContainer: {
-				size?: number;
-				Metadata?: Array<{
-					sessionKey: string;
-					ratingKey: string;
-					title: string;
-					grandparentTitle?: string;
-					type: string;
-					viewOffset?: number;
-					duration?: number;
-					thumb?: string;
-					User?: { id: number; title: string; thumb?: string };
-					Player?: { title: string; platform: string; product: string; state: string };
-					Session?: { id: string; bandwidth?: number };
-					TranscodeSession?: {
-						videoDecision?: string;
-						audioDecision?: string;
-					};
-				}>;
-			};
-		}>("/status/sessions");
+		const data = await this.request("/status/sessions", {
+			schema: plexSessionsResponseSchema,
+		});
 
 		return (data.MediaContainer.Metadata ?? []).map((m) => ({
 			sessionKey: m.sessionKey,
@@ -345,18 +300,9 @@ export class PlexClient {
 	 * Get all episodes for a show (all leaves).
 	 */
 	async getEpisodes(showRatingKey: string): Promise<PlexEpisodeItem[]> {
-		const data = await this.request<{
-			MediaContainer: {
-				Metadata?: Array<{
-					ratingKey: string;
-					title: string;
-					parentIndex?: number;
-					index?: number;
-					viewCount?: number;
-					lastViewedAt?: number;
-				}>;
-			};
-		}>(`/library/metadata/${showRatingKey}/allLeaves`);
+		const data = await this.request(`/library/metadata/${showRatingKey}/allLeaves`, {
+			schema: plexEpisodesResponseSchema,
+		});
 
 		return (data.MediaContainer.Metadata ?? []).map((m) => ({
 			ratingKey: m.ratingKey,
@@ -388,11 +334,9 @@ export class PlexClient {
 	 * Get all user accounts on the server.
 	 */
 	async getAccounts(): Promise<PlexAccount[]> {
-		const data = await this.request<{
-			MediaContainer: {
-				Account?: Array<{ id: number; name: string }>;
-			};
-		}>("/accounts");
+		const data = await this.request("/accounts", {
+			schema: plexAccountsResponseSchema,
+		});
 
 		return (data.MediaContainer.Account ?? []).map((a) => ({
 			id: a.id,
@@ -406,7 +350,7 @@ export class PlexClient {
 	 */
 	async request<T>(
 		path: string,
-		options?: { method?: string; body?: Record<string, unknown> },
+		options?: { method?: string; body?: Record<string, unknown>; schema?: z.ZodType<T> },
 	): Promise<T> {
 		const url = new URL(`${this.baseUrl}${path}`);
 
@@ -435,7 +379,11 @@ export class PlexClient {
 
 		const contentType = response.headers.get("content-type") ?? "";
 		if (contentType.includes("application/json")) {
-			return (await response.json()) as T;
+			const raw = await response.json();
+			if (options?.schema) {
+				return parseUpstreamOrThrow(raw, options.schema, { integration: "plex", category: path });
+			}
+			return raw as T;
 		}
 
 		// Non-JSON responses (e.g., from POST /library/sections/{id}/refresh)

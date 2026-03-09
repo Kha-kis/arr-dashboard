@@ -36,17 +36,29 @@ import {
 	type SeerrUser,
 	type SeerrUserParams,
 	type SeerrUserUpdateData,
+	seerrCreateRequestResponseSchema,
 	seerrDiscoverResponseSchema,
+	seerrGenreSchema,
+	seerrIssueCommentSchema,
+	seerrIssueSchema,
+	seerrMediaSummarySchema,
+	seerrMovieDetailsSchema,
 	seerrPageResultSchema,
+	seerrQuotaSchema,
 	seerrRequestCountSchema,
 	seerrRequestSchema,
+	seerrServerWithDetailsSchema,
+	seerrServiceServerSchema,
 	seerrStatusSchema,
+	seerrTvDetailsSchema,
 	seerrUserSchema,
 } from "@arr/shared";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
+import { z } from "zod";
 import type { ArrClientFactory, ClientInstanceData } from "../arr/client-factory.js";
 import { requireInstance } from "../arr/instance-helpers.js";
 import { AppValidationError, SeerrApiError } from "../errors.js";
+import { parseUpstreamOrThrow } from "../validation/parse-upstream.js";
 import {
 	type SeerrCache,
 	GENRE_TTL_MS,
@@ -105,6 +117,24 @@ const KNOWN_NOTIFICATION_AGENTS: readonly { id: KnownNotificationAgentId; name: 
 ] as const;
 
 // ============================================================================
+// Lightweight Schemas (client-internal, not shared)
+// ============================================================================
+
+/** Schema for the raw notification agent response from Seerr's API (before id/name are injected) */
+const seerrNotificationAgentRawSchema = z.looseObject({
+	enabled: z.boolean(),
+	types: z.number(),
+	options: z.record(z.string(), z.unknown()),
+});
+
+/** Schema for TMDB media detail lookups — only validates the fields we extract */
+const seerrMediaDetailSchema = z.looseObject({
+	posterPath: z.string().nullable().optional(),
+	title: z.string().optional(),
+	name: z.string().optional(),
+});
+
+// ============================================================================
 // Client Implementation
 // ============================================================================
 
@@ -127,6 +157,14 @@ export class SeerrClient {
 		this.log = log;
 		this.circuitBreaker = circuitBreaker;
 		this.cache = cache;
+	}
+
+	// --- Private Validation Helper ---
+
+	/** Parse raw data with a Zod schema and record validation health.
+	 *  Uses explicit return type `T` to handle z.looseObject() index signature mismatches. */
+	private parseAndRecord<T>(raw: unknown, schema: z.ZodType, category: string): T {
+		return parseUpstreamOrThrow(raw, schema, { integration: "seerr", category }) as T;
 	}
 
 	// --- Private HTTP helpers ---
@@ -260,7 +298,7 @@ export class SeerrClient {
 			`/api/v1/request${qs}`,
 			TIMEOUT_INTERACTIVE,
 		);
-		return seerrPageResultSchema(seerrRequestSchema).parse(raw) as SeerrPageResult<SeerrRequest>;
+		return this.parseAndRecord(raw, seerrPageResultSchema(seerrRequestSchema), "getRequests");
 	}
 
 	async getRequestCount(): Promise<SeerrRequestCount> {
@@ -268,7 +306,7 @@ export class SeerrClient {
 			"/api/v1/request/count",
 			TIMEOUT_INTERACTIVE,
 		);
-		return seerrRequestCountSchema.parse(raw);
+		return this.parseAndRecord(raw, seerrRequestCountSchema, "getRequestCount");
 	}
 
 	async getRequest(requestId: number): Promise<SeerrRequest> {
@@ -276,15 +314,17 @@ export class SeerrClient {
 			`/api/v1/request/${requestId}`,
 			TIMEOUT_INTERACTIVE,
 		);
-		return seerrRequestSchema.parse(raw) as SeerrRequest;
+		return this.parseAndRecord(raw, seerrRequestSchema, "getRequest");
 	}
 
 	async approveRequest(requestId: number): Promise<SeerrRequest> {
-		return this.post(`/api/v1/request/${requestId}/approve`, undefined, TIMEOUT_ACTION);
+		const raw = await this.post(`/api/v1/request/${requestId}/approve`, undefined, TIMEOUT_ACTION);
+		return this.parseAndRecord(raw, seerrRequestSchema, "approveRequest");
 	}
 
 	async declineRequest(requestId: number): Promise<SeerrRequest> {
-		return this.post(`/api/v1/request/${requestId}/decline`, undefined, TIMEOUT_ACTION);
+		const raw = await this.post(`/api/v1/request/${requestId}/decline`, undefined, TIMEOUT_ACTION);
+		return this.parseAndRecord(raw, seerrRequestSchema, "declineRequest");
 	}
 
 	async deleteRequest(requestId: number): Promise<void> {
@@ -292,7 +332,8 @@ export class SeerrClient {
 	}
 
 	async retryRequest(requestId: number): Promise<SeerrRequest> {
-		return this.post(`/api/v1/request/${requestId}/retry`, undefined, TIMEOUT_ACTION);
+		const raw = await this.post(`/api/v1/request/${requestId}/retry`, undefined, TIMEOUT_ACTION);
+		return this.parseAndRecord(raw, seerrRequestSchema, "retryRequest");
 	}
 
 	// --- Users ---
@@ -303,30 +344,35 @@ export class SeerrClient {
 			`/api/v1/user${qs}`,
 			TIMEOUT_INTERACTIVE,
 		);
-		return seerrPageResultSchema(seerrUserSchema).parse(raw) as SeerrPageResult<SeerrUser>;
+		return this.parseAndRecord(raw, seerrPageResultSchema(seerrUserSchema), "getUsers");
 	}
 
 	async getUserQuota(userId: number): Promise<SeerrQuota> {
-		return this.get(`/api/v1/user/${userId}/quota`, TIMEOUT_INTERACTIVE);
+		const raw = await this.get(`/api/v1/user/${userId}/quota`, TIMEOUT_INTERACTIVE);
+		return this.parseAndRecord(raw, seerrQuotaSchema, "getUserQuota");
 	}
 
 	async updateUser(userId: number, data: SeerrUserUpdateData): Promise<SeerrUser> {
-		return this.put(`/api/v1/user/${userId}`, data, TIMEOUT_ACTION);
+		const raw = await this.put(`/api/v1/user/${userId}`, data, TIMEOUT_ACTION);
+		return this.parseAndRecord(raw, seerrUserSchema, "updateUser");
 	}
 
 	// --- Issues ---
 
 	async getIssues(params?: SeerrIssueParams): Promise<SeerrPageResult<SeerrIssue>> {
 		const qs = buildQueryString(params);
-		return this.get(`/api/v1/issue${qs}`, TIMEOUT_INTERACTIVE);
+		const raw = await this.get(`/api/v1/issue${qs}`, TIMEOUT_INTERACTIVE);
+		return this.parseAndRecord(raw, seerrPageResultSchema(seerrIssueSchema), "getIssues");
 	}
 
 	async addIssueComment(issueId: number, message: string): Promise<SeerrIssueComment> {
-		return this.post(`/api/v1/issue/${issueId}/comment`, { message }, TIMEOUT_ACTION);
+		const raw = await this.post(`/api/v1/issue/${issueId}/comment`, { message }, TIMEOUT_ACTION);
+		return this.parseAndRecord(raw, seerrIssueCommentSchema, "addIssueComment");
 	}
 
 	async updateIssueStatus(issueId: number, status: "open" | "resolved"): Promise<SeerrIssue> {
-		return this.post(`/api/v1/issue/${issueId}/${status}`, undefined, TIMEOUT_ACTION);
+		const raw = await this.post(`/api/v1/issue/${issueId}/${status}`, undefined, TIMEOUT_ACTION);
+		return this.parseAndRecord(raw, seerrIssueSchema, "updateIssueStatus");
 	}
 
 	// --- Notifications ---
@@ -334,10 +380,15 @@ export class SeerrClient {
 	async getNotificationAgents(): Promise<SeerrNotificationAgent[]> {
 		const settled = await Promise.allSettled(
 			KNOWN_NOTIFICATION_AGENTS.map(({ id, name }) =>
-				this.get<{ enabled: boolean; types: number; options: Record<string, unknown> }>(
+				this.get<unknown>(
 					`/api/v1/settings/notifications/${id}`,
 					TIMEOUT_INTERACTIVE,
-				).then((data) => ({ id, name, ...data })),
+				).then((raw) => {
+					const data = this.parseAndRecord<{ enabled: boolean; types: number; options: Record<string, unknown> }>(
+						raw, seerrNotificationAgentRawSchema, "getNotificationAgents",
+					);
+					return { id, name, ...data };
+				}),
 			),
 		);
 
@@ -373,7 +424,13 @@ export class SeerrClient {
 		agentId: string,
 		config: Partial<SeerrNotificationAgent>,
 	): Promise<SeerrNotificationAgent> {
-		return this.post(`/api/v1/settings/notifications/${agentId}`, config, TIMEOUT_ACTION);
+		const raw = await this.post<unknown>(`/api/v1/settings/notifications/${agentId}`, config, TIMEOUT_ACTION);
+		const data = this.parseAndRecord<{ enabled: boolean; types: number; options: Record<string, unknown> }>(
+			raw, seerrNotificationAgentRawSchema, "updateNotificationAgent",
+		);
+		// Inject the known id/name back since the API only returns enabled/types/options
+		const agent = KNOWN_NOTIFICATION_AGENTS.find((a) => a.id === agentId);
+		return { id: agentId, name: agent?.name ?? agentId, ...data };
 	}
 
 	async testNotificationAgent(agentId: string): Promise<void> {
@@ -387,17 +444,17 @@ export class SeerrClient {
 	// --- TMDB Media Lookups (for enriching requests with poster/title) ---
 
 	async getMovieDetails(tmdbId: number): Promise<{ posterPath?: string; title?: string }> {
-		const data = await this.get<{ posterPath?: string; title?: string }>(
-			`/api/v1/movie/${tmdbId}`,
-			TIMEOUT_MEDIA_DETAIL,
+		const raw = await this.get<unknown>(`/api/v1/movie/${tmdbId}`, TIMEOUT_MEDIA_DETAIL);
+		const data = this.parseAndRecord<{ posterPath?: string; title?: string }>(
+			raw, seerrMediaDetailSchema, "getMovieDetails",
 		);
 		return { posterPath: data.posterPath, title: data.title };
 	}
 
 	async getTvDetails(tmdbId: number): Promise<{ posterPath?: string; title?: string }> {
-		const data = await this.get<{ posterPath?: string; name?: string }>(
-			`/api/v1/tv/${tmdbId}`,
-			TIMEOUT_MEDIA_DETAIL,
+		const raw = await this.get<unknown>(`/api/v1/tv/${tmdbId}`, TIMEOUT_MEDIA_DETAIL);
+		const data = this.parseAndRecord<{ posterPath?: string; name?: string }>(
+			raw, seerrMediaDetailSchema, "getTvDetails",
 		);
 		return { posterPath: data.posterPath, title: data.name };
 	}
@@ -515,7 +572,7 @@ export class SeerrClient {
 	/** Shared discover fetch with schema validation */
 	private async getDiscover(path: string): Promise<SeerrDiscoverResponse> {
 		const raw = await this.get<SeerrDiscoverResponse>(path, TIMEOUT_INTERACTIVE);
-		return seerrDiscoverResponseSchema.parse(raw) as SeerrDiscoverResponse;
+		return this.parseAndRecord<SeerrDiscoverResponse>(raw, seerrDiscoverResponseSchema, "discover");
 	}
 
 	// --- Search ---
@@ -528,11 +585,13 @@ export class SeerrClient {
 	// --- Full Details (with credits, recommendations, etc.) ---
 
 	async getMovieDetailsFull(tmdbId: number): Promise<SeerrMovieDetails> {
-		return this.get(`/api/v1/movie/${tmdbId}`, TIMEOUT_MEDIA_DETAIL);
+		const raw = await this.get(`/api/v1/movie/${tmdbId}`, TIMEOUT_MEDIA_DETAIL);
+		return this.parseAndRecord<SeerrMovieDetails>(raw, seerrMovieDetailsSchema, "getMovieDetailsFull");
 	}
 
 	async getTvDetailsFull(tmdbId: number): Promise<SeerrTvDetails> {
-		return this.get(`/api/v1/tv/${tmdbId}`, TIMEOUT_MEDIA_DETAIL);
+		const raw = await this.get(`/api/v1/tv/${tmdbId}`, TIMEOUT_MEDIA_DETAIL);
+		return this.parseAndRecord<SeerrTvDetails>(raw, seerrTvDetailsSchema, "getTvDetailsFull");
 	}
 
 	// --- Genres ---
@@ -541,7 +600,8 @@ export class SeerrClient {
 		const cacheKey = genreCacheKey(this.instance.id, "movie");
 		const cached = this.cache?.get<SeerrGenre[]>(cacheKey);
 		if (cached) return cached;
-		const genres = await this.get<SeerrGenre[]>("/api/v1/genres/movie", TIMEOUT_INTERACTIVE);
+		const raw = await this.get("/api/v1/genres/movie", TIMEOUT_INTERACTIVE);
+		const genres = this.parseAndRecord<SeerrGenre[]>(raw, z.array(seerrGenreSchema), "getMovieGenres");
 		this.cache?.set(cacheKey, genres, GENRE_TTL_MS);
 		return genres;
 	}
@@ -550,7 +610,8 @@ export class SeerrClient {
 		const cacheKey = genreCacheKey(this.instance.id, "tv");
 		const cached = this.cache?.get<SeerrGenre[]>(cacheKey);
 		if (cached) return cached;
-		const genres = await this.get<SeerrGenre[]>("/api/v1/genres/tv", TIMEOUT_INTERACTIVE);
+		const raw = await this.get("/api/v1/genres/tv", TIMEOUT_INTERACTIVE);
+		const genres = this.parseAndRecord<SeerrGenre[]>(raw, z.array(seerrGenreSchema), "getTvGenres");
 		this.cache?.set(cacheKey, genres, GENRE_TTL_MS);
 		return genres;
 	}
@@ -558,20 +619,23 @@ export class SeerrClient {
 	// --- Create Request ---
 
 	async createRequest(payload: SeerrCreateRequestPayload): Promise<SeerrCreateRequestResponse> {
-		return this.post("/api/v1/request", payload, TIMEOUT_ACTION);
+		const raw = await this.post("/api/v1/request", payload, TIMEOUT_ACTION);
+		return this.parseAndRecord<SeerrCreateRequestResponse>(raw, seerrCreateRequestResponseSchema, "createRequest");
 	}
 
 	// --- Service Servers (for request options) ---
 
 	async getServiceServers(serviceType: "radarr" | "sonarr"): Promise<SeerrServiceServer[]> {
-		return this.get(`/api/v1/service/${serviceType}`, TIMEOUT_INTERACTIVE);
+		const raw = await this.get(`/api/v1/service/${serviceType}`, TIMEOUT_INTERACTIVE);
+		return this.parseAndRecord<SeerrServiceServer[]>(raw, z.array(seerrServiceServerSchema), "getServiceServers");
 	}
 
 	async getServerDetails(
 		serviceType: "radarr" | "sonarr",
 		serverId: number,
 	): Promise<SeerrServerWithDetails> {
-		return this.get(`/api/v1/service/${serviceType}/${serverId}`, TIMEOUT_INTERACTIVE);
+		const raw = await this.get(`/api/v1/service/${serviceType}/${serverId}`, TIMEOUT_INTERACTIVE);
+		return this.parseAndRecord<SeerrServerWithDetails>(raw, seerrServerWithDetailsSchema, "getServerDetails");
 	}
 
 	async getRequestOptions(mediaType: "movie" | "tv"): Promise<SeerrRequestOptions> {
@@ -614,11 +678,8 @@ export class SeerrClient {
 		backdropPath: string | null;
 		posterPath: string | null;
 	}> {
-		const data = await this.get<{
-			voteAverage?: number;
-			backdropPath?: string;
-			posterPath?: string;
-		}>(`/api/v1/${type}/${tmdbId}`, TIMEOUT_MEDIA_DETAIL);
+		const raw = await this.get(`/api/v1/${type}/${tmdbId}`, TIMEOUT_MEDIA_DETAIL);
+		const data = this.parseAndRecord<{ voteAverage?: number; backdropPath?: string; posterPath?: string }>(raw, seerrMediaSummarySchema, "getMediaSummary");
 		return {
 			voteAverage: data.voteAverage ?? null,
 			backdropPath: data.backdropPath ?? null,
@@ -665,7 +726,7 @@ export class SeerrClient {
 
 	async getStatus(): Promise<SeerrStatus> {
 		const raw = await this.get<SeerrStatus>("/api/v1/status", TIMEOUT_INTERACTIVE);
-		return seerrStatusSchema.parse(raw);
+		return this.parseAndRecord<SeerrStatus>(raw, seerrStatusSchema, "getStatus");
 	}
 
 }

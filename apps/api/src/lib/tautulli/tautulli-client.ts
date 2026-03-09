@@ -6,8 +6,21 @@
  */
 
 import type { FastifyBaseLogger } from "fastify";
+import { z } from "zod";
 import type { ClientInstanceData } from "../arr/client-factory.js";
 import type { Encryptor } from "../auth/encryption.js";
+import { parseUpstreamOrThrow } from "../validation/parse-upstream.js";
+import {
+	tautulliActivityDataSchema,
+	tautulliHistoryDataSchema,
+	tautulliHomeStatSchema,
+	tautulliInfoSchema,
+	tautulliLibrarySchema,
+	tautulliMetadataSchema,
+	tautulliPlaysByDateDataSchema,
+	tautulliResponseWrapperSchema,
+	tautulliUserWatchTimeStatsSchema,
+} from "./tautulli-schemas.js";
 
 // ============================================================================
 // Response Types
@@ -140,14 +153,14 @@ export class TautulliClient {
 	 * Get Tautulli server info (used for connection testing).
 	 */
 	async getInfo(): Promise<TautulliInfo> {
-		return this.command<TautulliInfo>("get_tautulli_info");
+		return this.command("get_tautulli_info", undefined, tautulliInfoSchema);
 	}
 
 	/**
 	 * Get all Tautulli libraries.
 	 */
 	async getLibraries(): Promise<TautulliLibrary[]> {
-		return this.command<TautulliLibrary[]>("get_libraries");
+		return this.command("get_libraries", undefined, z.array(tautulliLibrarySchema));
 	}
 
 	/**
@@ -159,55 +172,59 @@ export class TautulliClient {
 		start?: number;
 		section_id?: string;
 	}): Promise<TautulliHistoryData> {
-		return this.command<TautulliHistoryData>("get_history", params);
+		return this.command("get_history", params, tautulliHistoryDataSchema);
 	}
 
 	/**
 	 * Get current activity (active sessions).
 	 */
 	async getActivity(): Promise<TautulliActivityData> {
-		return this.command<TautulliActivityData>("get_activity");
+		return this.command("get_activity", undefined, tautulliActivityDataSchema);
 	}
 
 	/**
 	 * Get play counts by date for time-series charts.
 	 */
 	async getPlaysByDate(timeRange?: number): Promise<TautulliPlaysByDateData> {
-		return this.command<TautulliPlaysByDateData>("get_plays_by_date", {
+		return this.command("get_plays_by_date", {
 			time_range: timeRange ?? 30,
-		});
+		}, tautulliPlaysByDateDataSchema);
 	}
 
 	/**
 	 * Get watch time statistics per user.
 	 */
 	async getUserWatchTimeStats(userId?: string): Promise<TautulliUserWatchTimeStats[]> {
-		return this.command<TautulliUserWatchTimeStats[]>("get_user_watch_time_stats", {
+		return this.command("get_user_watch_time_stats", {
 			user_id: userId,
-		});
+		}, z.array(tautulliUserWatchTimeStatsSchema));
 	}
 
 	/**
 	 * Get home statistics (most watched, top users, top platforms).
 	 */
 	async getHomeStats(timeRange?: number): Promise<TautulliHomeStat[]> {
-		return this.command<TautulliHomeStat[]>("get_home_stats", {
+		return this.command("get_home_stats", {
 			time_range: timeRange ?? 30,
-		});
+		}, z.array(tautulliHomeStatSchema));
 	}
 
 	/**
 	 * Get metadata for a specific item, including GUIDs (TMDB, IMDB, etc.).
 	 */
 	async getMetadata(ratingKey: string): Promise<TautulliMetadata> {
-		return this.command<TautulliMetadata>("get_metadata", { rating_key: ratingKey });
+		return this.command("get_metadata", { rating_key: ratingKey }, tautulliMetadataSchema);
 	}
 
 	/**
 	 * Execute a Tautulli API command.
 	 * Tautulli API format: GET /api/v2?apikey=KEY&cmd=COMMAND&param1=val1
 	 */
-	private async command<T>(cmd: string, params?: Record<string, unknown>): Promise<T> {
+	private async command<T>(
+		cmd: string,
+		params?: Record<string, unknown>,
+		schema?: z.ZodType<T>,
+	): Promise<T> {
 		const url = new URL(`${this.baseUrl}/api/v2`);
 		url.searchParams.set("apikey", this.apiKey);
 		url.searchParams.set("cmd", cmd);
@@ -237,13 +254,20 @@ export class TautulliClient {
 			throw new Error(`Tautulli API error: HTTP ${response.status} ${response.statusText}`);
 		}
 
-		const json = (await response.json()) as TautulliResponse<T>;
+		const raw = await response.json();
 
-		if (json.response.result !== "success") {
-			throw new Error(`Tautulli API error: ${json.response.message ?? "Unknown error"}`);
+		// Validate wrapper structure
+		const wrapper = tautulliResponseWrapperSchema.parse(raw);
+
+		if (wrapper.response.result !== "success") {
+			throw new Error(`Tautulli API error: ${wrapper.response.message ?? "Unknown error"}`);
 		}
 
-		return json.response.data;
+		// Validate inner data if schema provided
+		if (schema) {
+			return parseUpstreamOrThrow(wrapper.response.data, schema, { integration: "tautulli", category: cmd });
+		}
+		return wrapper.response.data as T;
 	}
 }
 
