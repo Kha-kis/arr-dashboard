@@ -68,6 +68,14 @@ const notificationServicePlugin = fastifyPlugin(
 
 		app.decorate("notificationService", service);
 
+		// Wire validation health degradation notifications
+		const { integrationHealth } = await import("../lib/validation/integration-health.js");
+		integrationHealth.setNotifyFn((payload) => {
+			service.notify(payload as Parameters<typeof service.notify>[0]).catch((err: unknown) =>
+				app.log.warn({ err }, "Failed to send validation health notification"),
+			);
+		});
+
 		// Log retention: purge old logs every 6 hours
 		const LOG_RETENTION_INTERVAL_MS = 6 * 60 * 60 * 1000;
 		let logRetentionInterval: ReturnType<typeof setInterval> | null = null;

@@ -76,6 +76,12 @@ const LABEL_MAP: Record<string, string> = {
 	templateId: "Template",
 	totalInstances: "Total Instances",
 	failedInstances: "Failed",
+
+	// Validation Health
+	integration: "Integration",
+	failureCount: "Failure Count",
+	lastError: "Last Error",
+	affectedCategories: "Affected Categories",
 };
 
 /**

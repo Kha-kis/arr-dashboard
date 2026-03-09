@@ -91,6 +91,7 @@ export const notificationEventTypeSchema = z.enum([
 	// System
 	"SYSTEM_STARTUP",
 	"SYSTEM_ERROR",
+	"VALIDATION_HEALTH_DEGRADED",
 ]);
 
 export type NotificationEventType = z.infer<typeof notificationEventTypeSchema>;
