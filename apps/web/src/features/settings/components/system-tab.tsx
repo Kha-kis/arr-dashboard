@@ -2,7 +2,9 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+	Activity,
 	AlertTriangle,
+	CheckCircle,
 	ChevronDown,
 	Clock,
 	Cpu,
@@ -19,6 +21,8 @@ import {
 	ScrollText,
 	Server,
 	Shield,
+	ShieldAlert,
+	XCircle,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -93,6 +97,27 @@ interface LogFilesResponse {
 	};
 }
 
+interface ValidationStats {
+	total: number;
+	validated: number;
+	rejected: number;
+}
+
+interface IntegrationHealth {
+	lastRefreshAt: string | null;
+	categories: Record<string, ValidationStats>;
+	totals: ValidationStats;
+}
+
+interface ValidationHealthResponse {
+	success: boolean;
+	data: {
+		integrations: Record<string, IntegrationHealth>;
+		overallTotals: ValidationStats;
+		validationModes: Record<string, string>;
+	};
+}
+
 async function getSystemSettings(): Promise<SystemSettingsResponse> {
 	return apiRequest<SystemSettingsResponse>("/api/system/settings");
 }
@@ -103,6 +128,10 @@ async function getSystemInfo(): Promise<SystemInfoResponse> {
 
 async function getLogFiles(): Promise<LogFilesResponse> {
 	return apiRequest<LogFilesResponse>("/api/system/logs");
+}
+
+async function getValidationHealth(): Promise<ValidationHealthResponse> {
+	return apiRequest<ValidationHealthResponse>("/api/system/validation-health");
 }
 
 function formatUptime(seconds: number): string {
@@ -184,6 +213,207 @@ function SystemInfoCard({ icon, label, value, subtitle, animationDelay = 0 }: Sy
 }
 
 /**
+ * Validation Health Section
+ *
+ * Displays per-integration validation statistics from the
+ * IntegrationHealthRegistry with summary cards and a per-integration breakdown.
+ */
+function ValidationHealthSection({
+	data,
+	themeGradient,
+}: {
+	data: ValidationHealthResponse["data"];
+	themeGradient: { from: string; to: string; glow: string };
+}) {
+	const { overallTotals, integrations, validationModes } = data;
+	const integrationNames = Object.keys(integrations);
+	const rejectionRate =
+		overallTotals.total > 0
+			? ((overallTotals.rejected / overallTotals.total) * 100).toFixed(1)
+			: "0.0";
+	const healthStatus =
+		overallTotals.rejected === 0
+			? "healthy"
+			: Number(rejectionRate) < 5
+				? "warning"
+				: "error";
+
+	const statusColors = {
+		healthy: SEMANTIC_COLORS.success,
+		warning: SEMANTIC_COLORS.warning,
+		error: SEMANTIC_COLORS.error,
+	};
+	const statusColor = statusColors[healthStatus];
+
+	return (
+		<PremiumSection
+			title="Validation Health"
+			description="Upstream data validation statistics across all integrations"
+			icon={ShieldAlert}
+		>
+			<div className="space-y-4">
+				{/* Summary Cards */}
+				<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+					<SystemInfoCard
+						icon={
+							<div
+								className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+								style={{
+									background: `linear-gradient(135deg, ${statusColor.from}20, ${statusColor.to}20)`,
+									border: `1px solid ${statusColor.from}30`,
+								}}
+							>
+								{healthStatus === "healthy" ? (
+									<CheckCircle className="h-5 w-5" style={{ color: statusColor.from }} />
+								) : (
+									<XCircle className="h-5 w-5" style={{ color: statusColor.from }} />
+								)}
+							</div>
+						}
+						label="Status"
+						value={healthStatus === "healthy" ? "Healthy" : healthStatus === "warning" ? "Degraded" : "Unhealthy"}
+						animationDelay={0}
+					/>
+					<SystemInfoCard
+						icon={
+							<div
+								className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+								style={{
+									background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+									border: `1px solid ${themeGradient.from}30`,
+								}}
+							>
+								<Activity className="h-5 w-5" style={{ color: themeGradient.from }} />
+							</div>
+						}
+						label="Total Validated"
+						value={overallTotals.validated.toLocaleString()}
+						subtitle={`of ${overallTotals.total.toLocaleString()} total`}
+						animationDelay={50}
+					/>
+					<SystemInfoCard
+						icon={
+							<div
+								className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+								style={{
+									background: `linear-gradient(135deg, ${SEMANTIC_COLORS.error.from}20, ${SEMANTIC_COLORS.error.to}20)`,
+									border: `1px solid ${SEMANTIC_COLORS.error.from}30`,
+								}}
+							>
+								<XCircle className="h-5 w-5" style={{ color: SEMANTIC_COLORS.error.from }} />
+							</div>
+						}
+						label="Rejected"
+						value={overallTotals.rejected.toLocaleString()}
+						subtitle={`${rejectionRate}% rejection rate`}
+						animationDelay={100}
+					/>
+					<SystemInfoCard
+						icon={
+							<div
+								className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+								style={{
+									background: `linear-gradient(135deg, ${SEMANTIC_COLORS.info.from}20, ${SEMANTIC_COLORS.info.to}20)`,
+									border: `1px solid ${SEMANTIC_COLORS.info.from}30`,
+								}}
+							>
+								<Server className="h-5 w-5" style={{ color: SEMANTIC_COLORS.info.from }} />
+							</div>
+						}
+						label="Integrations"
+						value={integrationNames.length.toString()}
+						subtitle={integrationNames.join(", ") || "none"}
+						animationDelay={150}
+					/>
+				</div>
+
+				{/* Per-Integration Breakdown */}
+				{integrationNames.length > 0 && (
+					<GlassmorphicCard padding="none">
+						<div className="overflow-x-auto">
+							<table className="w-full text-sm">
+								<thead>
+									<tr className="border-b border-border/50">
+										<th className="text-left p-3 font-medium text-muted-foreground uppercase text-xs tracking-wide">Integration</th>
+										<th className="text-right p-3 font-medium text-muted-foreground uppercase text-xs tracking-wide">Total</th>
+										<th className="text-right p-3 font-medium text-muted-foreground uppercase text-xs tracking-wide">Valid</th>
+										<th className="text-right p-3 font-medium text-muted-foreground uppercase text-xs tracking-wide">Rejected</th>
+										<th className="text-left p-3 font-medium text-muted-foreground uppercase text-xs tracking-wide">Mode</th>
+										<th className="text-left p-3 font-medium text-muted-foreground uppercase text-xs tracking-wide">Last Seen</th>
+									</tr>
+								</thead>
+								<tbody>
+									{integrationNames.map((name, i) => {
+										const health = integrations[name]!;
+										const mode = validationModes[name] ?? "tolerant";
+										const intRejRate = health.totals.total > 0
+											? ((health.totals.rejected / health.totals.total) * 100).toFixed(1)
+											: "0.0";
+										return (
+											<tr
+												key={name}
+												className="border-b border-border/30 last:border-b-0 hover:bg-card/50 transition-colors animate-in fade-in slide-in-from-bottom-1 duration-200"
+												style={{
+													animationDelay: `${i * 30}ms`,
+													animationFillMode: "backwards",
+												}}
+											>
+												<td className="p-3">
+													<span className="font-medium text-foreground">{name}</span>
+													{Object.keys(health.categories).length > 1 && (
+														<span className="ml-2 text-xs text-muted-foreground">
+															({Object.keys(health.categories).length} categories)
+														</span>
+													)}
+												</td>
+												<td className="p-3 text-right font-mono text-foreground">{health.totals.total.toLocaleString()}</td>
+												<td className="p-3 text-right font-mono" style={{ color: SEMANTIC_COLORS.success.from }}>{health.totals.validated.toLocaleString()}</td>
+												<td className="p-3 text-right font-mono">
+													<span style={{ color: health.totals.rejected > 0 ? SEMANTIC_COLORS.error.from : SEMANTIC_COLORS.success.from }}>
+														{health.totals.rejected.toLocaleString()}
+													</span>
+													{health.totals.rejected > 0 && (
+														<span className="text-xs text-muted-foreground ml-1">({intRejRate}%)</span>
+													)}
+												</td>
+												<td className="p-3">
+													<span
+														className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+														style={{
+															backgroundColor:
+																mode === "strict" ? `${SEMANTIC_COLORS.error.from}20`
+																: mode === "disabled" ? `${SEMANTIC_COLORS.warning.from}20`
+																: mode === "log-only" ? `${SEMANTIC_COLORS.info.from}20`
+																: `${SEMANTIC_COLORS.success.from}20`,
+															color:
+																mode === "strict" ? SEMANTIC_COLORS.error.from
+																: mode === "disabled" ? SEMANTIC_COLORS.warning.from
+																: mode === "log-only" ? SEMANTIC_COLORS.info.from
+																: SEMANTIC_COLORS.success.from,
+														}}
+													>
+														{mode}
+													</span>
+												</td>
+												<td className="p-3 text-xs text-muted-foreground font-mono">
+													{health.lastRefreshAt
+														? new Date(health.lastRefreshAt).toLocaleTimeString()
+														: "—"}
+												</td>
+											</tr>
+										);
+									})}
+								</tbody>
+							</table>
+						</div>
+					</GlassmorphicCard>
+				)}
+			</div>
+		</PremiumSection>
+	);
+}
+
+/**
  * Premium System Tab
  *
  * System configuration with:
@@ -222,6 +452,12 @@ export function SystemTab() {
 	} = useQuery({
 		queryKey: ["system-logs"],
 		queryFn: getLogFiles,
+	});
+
+	const { data: validationHealth } = useQuery({
+		queryKey: ["validation-health"],
+		queryFn: getValidationHealth,
+		refetchInterval: 60000,
 	});
 
 	const updateMutation = useMutation({
@@ -451,6 +687,14 @@ export function SystemTab() {
 						/>
 					</div>
 				</PremiumSection>
+			)}
+
+			{/* Validation Health Section */}
+			{validationHealth?.data && (
+				<ValidationHealthSection
+					data={validationHealth.data}
+					themeGradient={themeGradient}
+				/>
 			)}
 
 			{/* Logging Section */}
