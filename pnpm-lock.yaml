@@ -19,8 +19,8 @@ importers:
   .:
     devDependencies:
       '@biomejs/biome':
-        specifier: ^2.4.2
-        version: 2.4.2
+        specifier: ^2.4.6
+        version: 2.4.6
       '@playwright/test':
         specifier: ^1.58.2
         version: 1.58.2
@@ -125,8 +125,8 @@ importers:
         specifier: ^7.6.13
         version: 7.6.13
       '@types/node':
-        specifier: ^25.2.3
-        version: 25.2.3
+        specifier: ^25.3.5
+        version: 25.3.5
       '@types/pg':
         specifier: ^8.11.14
         version: 8.16.0
@@ -141,7 +141,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^4.0.18
-        version: 4.0.18(@types/node@25.2.3)(jiti@2.6.1)(jsdom@28.1.0)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2)
+        version: 4.0.18(@types/node@25.3.5)(jiti@2.6.1)(jsdom@28.1.0)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2)
 
   apps/web:
     dependencies:
@@ -279,8 +279,8 @@ importers:
         specifier: ^16.3.2
         version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@types/node':
-        specifier: ^25.2.3
-        version: 25.2.3
+        specifier: ^25.3.5
+        version: 25.3.5
       '@types/react':
         specifier: ^19.2.14
         version: 19.2.14
@@ -295,7 +295,7 @@ importers:
         version: 8.56.0(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3)
       '@vitejs/plugin-react':
         specifier: ^5.1.4
-        version: 5.1.4(vite@7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2))
+        version: 5.1.4(vite@7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2))
       eslint:
         specifier: ^9.39.2
         version: 9.39.2(jiti@2.6.1)
@@ -325,7 +325,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^4.0.18
-        version: 4.0.18(@types/node@25.2.3)(jiti@2.6.1)(jsdom@27.4.0)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2)
+        version: 4.0.18(@types/node@25.3.5)(jiti@2.6.1)(jsdom@27.4.0)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2)
 
   packages/shared:
     dependencies:
@@ -344,7 +344,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^4.0.18
-        version: 4.0.18(@types/node@25.2.3)(jiti@2.6.1)(jsdom@28.1.0)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2)
+        version: 4.0.18(@types/node@25.3.5)(jiti@2.6.1)(jsdom@28.1.0)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2)
 
 packages:
 
@@ -485,55 +485,55 @@ packages:
     resolution: {integrity: sha512-LwdZHpScM4Qz8Xw2iKSzS+cfglZzJGvofQICy7W7v4caru4EaAmyUuO6BGrbyQ2mYV11W0U8j5mBhd14dd3B0A==}
     engines: {node: '>=6.9.0'}
 
-  '@biomejs/biome@2.4.2':
-    resolution: {integrity: sha512-vVE/FqLxNLbvYnFDYg3Xfrh1UdFhmPT5i+yPT9GE2nTUgI4rkqo5krw5wK19YHBd7aE7J6r91RRmb8RWwkjy6w==}
+  '@biomejs/biome@2.4.6':
+    resolution: {integrity: sha512-QnHe81PMslpy3mnpL8DnO2M4S4ZnYPkjlGCLWBZT/3R9M6b5daArWMMtEfP52/n174RKnwRIf3oT8+wc9ihSfQ==}
     engines: {node: '>=14.21.3'}
     hasBin: true
 
-  '@biomejs/cli-darwin-arm64@2.4.2':
-    resolution: {integrity: sha512-3pEcKCP/1POKyaZZhXcxFl3+d9njmeAihZ17k8lL/1vk+6e0Cbf0yPzKItFiT+5Yh6TQA4uKvnlqe0oVZwRxCA==}
+  '@biomejs/cli-darwin-arm64@2.4.6':
+    resolution: {integrity: sha512-NW18GSyxr+8sJIqgoGwVp5Zqm4SALH4b4gftIA0n62PTuBs6G2tHlwNAOj0Vq0KKSs7Sf88VjjmHh0O36EnzrQ==}
     engines: {node: '>=14.21.3'}
     cpu: [arm64]
     os: [darwin]
 
-  '@biomejs/cli-darwin-x64@2.4.2':
-    resolution: {integrity: sha512-P7hK1jLVny+0R9UwyGcECxO6sjETxfPyBm/1dmFjnDOHgdDPjPqozByunrwh4xPKld8sxOr5eAsSqal5uKgeBg==}
+  '@biomejs/cli-darwin-x64@2.4.6':
+    resolution: {integrity: sha512-4uiE/9tuI7cnjtY9b07RgS7gGyYOAfIAGeVJWEfeCnAarOAS7qVmuRyX6d7JTKw28/mt+rUzMasYeZ+0R/U1Mw==}
     engines: {node: '>=14.21.3'}
     cpu: [x64]
     os: [darwin]
 
-  '@biomejs/cli-linux-arm64-musl@2.4.2':
-    resolution: {integrity: sha512-/x04YK9+7erw6tYEcJv9WXoBHcULI/wMOvNdAyE9S3JStZZ9yJyV67sWAI+90UHuDo/BDhq0d96LDqGlSVv7WA==}
+  '@biomejs/cli-linux-arm64-musl@2.4.6':
+    resolution: {integrity: sha512-F/JdB7eN22txiTqHM5KhIVt0jVkzZwVYrdTR1O3Y4auBOQcXxHK4dxULf4z43QyZI5tsnQJrRBHZy7wwtL+B3A==}
     engines: {node: '>=14.21.3'}
     cpu: [arm64]
     os: [linux]
 
-  '@biomejs/cli-linux-arm64@2.4.2':
-    resolution: {integrity: sha512-DI3Mi7GT2zYNgUTDEbSjl3e1KhoP76OjQdm8JpvZYZWtVDRyLd3w8llSr2TWk1z+U3P44kUBWY3X7H9MD1/DGQ==}
+  '@biomejs/cli-linux-arm64@2.4.6':
+    resolution: {integrity: sha512-kMLaI7OF5GN1Q8Doymjro1P8rVEoy7BKQALNz6fiR8IC1WKduoNyteBtJlHT7ASIL0Cx2jR6VUOBIbcB1B8pew==}
     engines: {node: '>=14.21.3'}
     cpu: [arm64]
     os: [linux]
 
-  '@biomejs/cli-linux-x64-musl@2.4.2':
-    resolution: {integrity: sha512-wbBmTkeAoAYbOQ33f6sfKG7pcRSydQiF+dTYOBjJsnXO2mWEOQHllKlC2YVnedqZFERp2WZhFUoO7TNRwnwEHQ==}
+  '@biomejs/cli-linux-x64-musl@2.4.6':
+    resolution: {integrity: sha512-C9s98IPDu7DYarjlZNuzJKTjVHN03RUnmHV5htvqsx6vEUXCDSJ59DNwjKVD5XYoSS4N+BYhq3RTBAL8X6svEg==}
     engines: {node: '>=14.21.3'}
     cpu: [x64]
     os: [linux]
 
-  '@biomejs/cli-linux-x64@2.4.2':
-    resolution: {integrity: sha512-GK2ErnrKpWFigYP68cXiCHK4RTL4IUWhK92AFS3U28X/nuAL5+hTuy6hyobc8JZRSt+upXt1nXChK+tuHHx4mA==}
+  '@biomejs/cli-linux-x64@2.4.6':
+    resolution: {integrity: sha512-oHXmUFEoH8Lql1xfc3QkFLiC1hGR7qedv5eKNlC185or+o4/4HiaU7vYODAH3peRCfsuLr1g6v2fK9dFFOYdyw==}
     engines: {node: '>=14.21.3'}
     cpu: [x64]
     os: [linux]
 
-  '@biomejs/cli-win32-arm64@2.4.2':
-    resolution: {integrity: sha512-k2uqwLYrNNxnaoiW3RJxoMGnbKda8FuCmtYG3cOtVljs3CzWxaTR+AoXwKGHscC9thax9R4kOrtWqWN0+KdPTw==}
+  '@biomejs/cli-win32-arm64@2.4.6':
+    resolution: {integrity: sha512-xzThn87Pf3YrOGTEODFGONmqXpTwUNxovQb72iaUOdcw8sBSY3+3WD8Hm9IhMYLnPi0n32s3L3NWU6+eSjfqFg==}
     engines: {node: '>=14.21.3'}
     cpu: [arm64]
     os: [win32]
 
-  '@biomejs/cli-win32-x64@2.4.2':
-    resolution: {integrity: sha512-9ma7C4g8Sq3cBlRJD2yrsHXB1mnnEBdpy7PhvFrylQWQb4PoyCmPucdX7frvsSBQuFtIiKCrolPl/8tCZrKvgQ==}
+  '@biomejs/cli-win32-x64@2.4.6':
+    resolution: {integrity: sha512-7++XhnsPlr1HDbor5amovPjOH6vsrFOCdp93iKXhFn6bcMUI6soodj3WWKfgEO6JosKU1W5n3uky3WW9RlRjTg==}
     engines: {node: '>=14.21.3'}
     cpu: [x64]
     os: [win32]
@@ -2290,8 +2290,8 @@ packages:
   '@types/json5@0.0.29':
     resolution: {integrity: sha512-dRLjCWHYg4oaA77cxO64oO+7JwCwnIzkZPdrrC71jQmQtlhM556pwKo5bUzqvZndkVbeFLIIi+9TC40JNF5hNQ==}
 
-  '@types/node@25.2.3':
-    resolution: {integrity: sha512-m0jEgYlYz+mDJZ2+F4v8D1AyQb+QzsNqRuI7xg1VQX/KlKS0qT9r1Mo16yo5F/MtifXFgaofIFsdFMox2SxIbQ==}
+  '@types/node@25.3.5':
+    resolution: {integrity: sha512-oX8xrhvpiyRCQkG1MFchB09f+cXftgIXb3a7UUa4Y3wpmZPw5tyZGTLWhlESOLq1Rq6oDlc8npVU2/9xiCuXMA==}
 
   '@types/pg@8.16.0':
     resolution: {integrity: sha512-RmhMd/wD+CF8Dfo+cVIy3RR5cl8CyfXQ0tGgW6XBL8L4LM/UTEbNXYRbLwU6w+CgrKBNbrQWt4FUtTfaU5jSYQ==}
@@ -4234,6 +4234,7 @@ packages:
   prebuild-install@7.1.3:
     resolution: {integrity: sha512-8Mf2cbV7x1cXPUILADGI3wuhfqWvtiLA1iclTDbFRZkgRQS0NqsPZphna9V+HyTEadheuPmjaJMsbzKQFOzLug==}
     engines: {node: '>=10'}
+    deprecated: No longer maintained. Please contact the author of the relevant native addon; alternatives are available.
     hasBin: true
 
   prelude-ls@1.2.1:
@@ -4866,8 +4867,8 @@ packages:
     resolution: {integrity: sha512-nWJ91DjeOkej/TA8pXQ3myruKpKEYgqvpw9lz4OPHj/NWFNluYrjbz9j01CJ8yKQd2g4jFoOkINCTW2I5LEEyw==}
     engines: {node: '>= 0.4'}
 
-  undici-types@7.16.0:
-    resolution: {integrity: sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw==}
+  undici-types@7.18.2:
+    resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
 
   undici@7.22.0:
     resolution: {integrity: sha512-RqslV2Us5BrllB+JeiZnK4peryVTndy9Dnqq62S3yYRRTj0tFQCwEniUy2167skdGOy3vqRzEvl1Dm4sV2ReDg==}
@@ -5346,39 +5347,39 @@ snapshots:
       '@babel/helper-string-parser': 7.27.1
       '@babel/helper-validator-identifier': 7.28.5
 
-  '@biomejs/biome@2.4.2':
+  '@biomejs/biome@2.4.6':
     optionalDependencies:
-      '@biomejs/cli-darwin-arm64': 2.4.2
-      '@biomejs/cli-darwin-x64': 2.4.2
-      '@biomejs/cli-linux-arm64': 2.4.2
-      '@biomejs/cli-linux-arm64-musl': 2.4.2
-      '@biomejs/cli-linux-x64': 2.4.2
-      '@biomejs/cli-linux-x64-musl': 2.4.2
-      '@biomejs/cli-win32-arm64': 2.4.2
-      '@biomejs/cli-win32-x64': 2.4.2
+      '@biomejs/cli-darwin-arm64': 2.4.6
+      '@biomejs/cli-darwin-x64': 2.4.6
+      '@biomejs/cli-linux-arm64': 2.4.6
+      '@biomejs/cli-linux-arm64-musl': 2.4.6
+      '@biomejs/cli-linux-x64': 2.4.6
+      '@biomejs/cli-linux-x64-musl': 2.4.6
+      '@biomejs/cli-win32-arm64': 2.4.6
+      '@biomejs/cli-win32-x64': 2.4.6
 
-  '@biomejs/cli-darwin-arm64@2.4.2':
+  '@biomejs/cli-darwin-arm64@2.4.6':
     optional: true
 
-  '@biomejs/cli-darwin-x64@2.4.2':
+  '@biomejs/cli-darwin-x64@2.4.6':
     optional: true
 
-  '@biomejs/cli-linux-arm64-musl@2.4.2':
+  '@biomejs/cli-linux-arm64-musl@2.4.6':
     optional: true
 
-  '@biomejs/cli-linux-arm64@2.4.2':
+  '@biomejs/cli-linux-arm64@2.4.6':
     optional: true
 
-  '@biomejs/cli-linux-x64-musl@2.4.2':
+  '@biomejs/cli-linux-x64-musl@2.4.6':
     optional: true
 
-  '@biomejs/cli-linux-x64@2.4.2':
+  '@biomejs/cli-linux-x64@2.4.6':
     optional: true
 
-  '@biomejs/cli-win32-arm64@2.4.2':
+  '@biomejs/cli-win32-arm64@2.4.6':
     optional: true
 
-  '@biomejs/cli-win32-x64@2.4.2':
+  '@biomejs/cli-win32-x64@2.4.6':
     optional: true
 
   '@bramus/specificity@2.4.2':
@@ -6941,7 +6942,7 @@ snapshots:
 
   '@types/better-sqlite3@7.6.13':
     dependencies:
-      '@types/node': 25.2.3
+      '@types/node': 25.3.5
 
   '@types/chai@5.2.3':
     dependencies:
@@ -6956,13 +6957,13 @@ snapshots:
 
   '@types/json5@0.0.29': {}
 
-  '@types/node@25.2.3':
+  '@types/node@25.3.5':
     dependencies:
-      undici-types: 7.16.0
+      undici-types: 7.18.2
 
   '@types/pg@8.16.0':
     dependencies:
-      '@types/node': 25.2.3
+      '@types/node': 25.3.5
       pg-protocol: 1.11.0
       pg-types: 2.2.0
 
@@ -7127,7 +7128,7 @@ snapshots:
   '@unrs/resolver-binding-win32-x64-msvc@1.11.1':
     optional: true
 
-  '@vitejs/plugin-react@5.1.4(vite@7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2))':
+  '@vitejs/plugin-react@5.1.4(vite@7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2))':
     dependencies:
       '@babel/core': 7.29.0
       '@babel/plugin-transform-react-jsx-self': 7.27.1(@babel/core@7.29.0)
@@ -7135,7 +7136,7 @@ snapshots:
       '@rolldown/pluginutils': 1.0.0-rc.3
       '@types/babel__core': 7.20.5
       react-refresh: 0.18.0
-      vite: 7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2)
+      vite: 7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2)
     transitivePeerDependencies:
       - supports-color
 
@@ -7148,13 +7149,13 @@ snapshots:
       chai: 6.2.2
       tinyrainbow: 3.0.3
 
-  '@vitest/mocker@4.0.18(vite@7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2))':
+  '@vitest/mocker@4.0.18(vite@7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2))':
     dependencies:
       '@vitest/spy': 4.0.18
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2)
+      vite: 7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2)
 
   '@vitest/pretty-format@4.0.18':
     dependencies:
@@ -9894,7 +9895,7 @@ snapshots:
       has-symbols: 1.1.0
       which-boxed-primitive: 1.1.1
 
-  undici-types@7.16.0: {}
+  undici-types@7.18.2: {}
 
   undici@7.22.0: {}
 
@@ -9962,7 +9963,7 @@ snapshots:
     optionalDependencies:
       typescript: 5.9.3
 
-  vite@7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2):
+  vite@7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2):
     dependencies:
       esbuild: 0.27.3
       fdir: 6.5.0(picomatch@4.0.3)
@@ -9971,17 +9972,17 @@ snapshots:
       rollup: 4.59.0
       tinyglobby: 0.2.15
     optionalDependencies:
-      '@types/node': 25.2.3
+      '@types/node': 25.3.5
       fsevents: 2.3.3
       jiti: 2.6.1
       lightningcss: 1.31.1
       tsx: 4.21.0
       yaml: 2.8.2
 
-  vitest@4.0.18(@types/node@25.2.3)(jiti@2.6.1)(jsdom@27.4.0)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2):
+  vitest@4.0.18(@types/node@25.3.5)(jiti@2.6.1)(jsdom@27.4.0)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2):
     dependencies:
       '@vitest/expect': 4.0.18
-      '@vitest/mocker': 4.0.18(vite@7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2))
+      '@vitest/mocker': 4.0.18(vite@7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2))
       '@vitest/pretty-format': 4.0.18
       '@vitest/runner': 4.0.18
       '@vitest/snapshot': 4.0.18
@@ -9998,10 +9999,10 @@ snapshots:
       tinyexec: 1.0.2
       tinyglobby: 0.2.15
       tinyrainbow: 3.0.3
-      vite: 7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2)
+      vite: 7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2)
       why-is-node-running: 2.3.0
     optionalDependencies:
-      '@types/node': 25.2.3
+      '@types/node': 25.3.5
       jsdom: 27.4.0
     transitivePeerDependencies:
       - jiti
@@ -10016,10 +10017,10 @@ snapshots:
       - tsx
       - yaml
 
-  vitest@4.0.18(@types/node@25.2.3)(jiti@2.6.1)(jsdom@28.1.0)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2):
+  vitest@4.0.18(@types/node@25.3.5)(jiti@2.6.1)(jsdom@28.1.0)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2):
     dependencies:
       '@vitest/expect': 4.0.18
-      '@vitest/mocker': 4.0.18(vite@7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2))
+      '@vitest/mocker': 4.0.18(vite@7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2))
       '@vitest/pretty-format': 4.0.18
       '@vitest/runner': 4.0.18
       '@vitest/snapshot': 4.0.18
@@ -10036,10 +10037,10 @@ snapshots:
       tinyexec: 1.0.2
       tinyglobby: 0.2.15
       tinyrainbow: 3.0.3
-      vite: 7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2)
+      vite: 7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2)
       why-is-node-running: 2.3.0
     optionalDependencies:
-      '@types/node': 25.2.3
+      '@types/node': 25.3.5
       jsdom: 28.1.0
     transitivePeerDependencies:
       - jiti
