@@ -235,6 +235,10 @@ export function recordValidationStats(category: string, stats: ValidationStats):
 export function getValidationHealth(): CacheValidationHealth {
 	return integrationHealth.getByIntegration(TRASH_INTEGRATION) ?? {
 		lastRefreshAt: null,
+		lastSuccessAt: null,
+		lastFailureAt: null,
+		consecutiveFailures: 0,
+		state: "healthy" as const,
 		categories: {},
 		totals: { total: 0, validated: 0, rejected: 0 },
 	};

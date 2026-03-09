@@ -24,6 +24,7 @@
 
 import type { z } from "zod";
 import { integrationHealth } from "./integration-health.js";
+import { schemaFingerprints } from "./schema-fingerprint.js";
 
 // ============================================================================
 // Types
@@ -104,6 +105,11 @@ export function parseUpstream<T>(
 			validated: 1,
 			rejected: 0,
 		});
+
+		// Record fingerprint for drift detection (silent — no log spam per request)
+		const silentLogger = { warn: () => {}, error: () => {} };
+		schemaFingerprints.record(source.integration, source.category, [result.data], silentLogger);
+
 		return { success: true, data: result.data };
 	}
 
