@@ -8,6 +8,7 @@
 import { promisify } from "node:util";
 import { gunzip, gzip } from "node:zlib";
 import type { TrashCacheStatus, TrashConfigType } from "@arr/shared";
+import type { z } from "zod";
 import type { PrismaClient } from "../../lib/prisma.js";
 import { loggers } from "../logger.js";
 import { safeJsonParse } from "./utils.js";
@@ -31,14 +32,23 @@ async function compressData(data: unknown): Promise<string> {
 }
 
 /**
- * Decompress gzip data to JSON
- * @throws Error if decompression or parsing fails
+ * Decompress gzip data to JSON, with optional schema validation.
+ * When a schema is provided, the parsed JSON is validated against it —
+ * this catches cache corruption after upgrades or schema changes.
+ * @throws Error if decompression, parsing, or validation fails
  */
-async function decompressData<T = unknown>(compressedData: string): Promise<T> {
+async function decompressData<T = unknown>(
+	compressedData: string,
+	schema?: z.ZodType<T>,
+): Promise<T> {
 	const buffer = Buffer.from(compressedData, "base64");
 	const decompressed = await gunzipAsync(buffer);
 	const jsonString = decompressed.toString("utf-8");
-	return JSON.parse(jsonString) as T;
+	const parsed = JSON.parse(jsonString);
+	if (schema) {
+		return schema.parse(parsed);
+	}
+	return parsed as T;
 }
 
 // ============================================================================

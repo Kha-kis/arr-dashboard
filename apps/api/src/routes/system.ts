@@ -4,6 +4,9 @@ import { basename, join, resolve } from "node:path";
 import type { FastifyPluginCallback } from "fastify";
 import { LOG_DIR, LOG_LEVEL, LOG_MAX_FILES, LOG_MAX_SIZE } from "../lib/logger.js";
 import { getAppVersionInfo } from "../lib/utils/version.js";
+import { integrationHealth } from "../lib/validation/integration-health.js";
+import { schemaFingerprints } from "../lib/validation/schema-fingerprint.js";
+import { type ValidationMode, getAllValidationModes, setValidationMode } from "../lib/validation/validate-batch.js";
 
 const RESTART_RATE_LIMIT = { max: 2, timeWindow: "5 minutes" };
 const LOGS_RATE_LIMIT = { max: 30, timeWindow: "1 minute" };
@@ -425,6 +428,52 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			}
 		},
 	);
+
+	/**
+	 * GET /system/validation-health
+	 * Aggregate validation stats across all integrations (TRaSH, Seerr, Plex, Tautulli).
+	 * Includes schema fingerprints for drift detection and per-integration validation modes.
+	 */
+	app.get("/validation-health", async (_request, reply) => {
+		return reply.send({
+			success: true,
+			data: {
+				...integrationHealth.getAll(),
+				fingerprints: schemaFingerprints.getAll(),
+				validationModes: getAllValidationModes(),
+			},
+		});
+	});
+
+	/**
+	 * PUT /system/validation-modes
+	 * Update validation mode for a specific integration.
+	 */
+	app.put<{
+		Body: { integration: string; mode: string };
+	}>("/validation-modes", async (request, reply) => {
+		const { integration, mode } = request.body;
+
+		if (!integration || typeof integration !== "string") {
+			return reply.status(400).send({ error: "integration is required and must be a string" });
+		}
+
+		const validModes: ValidationMode[] = ["strict", "tolerant", "log-only", "disabled"];
+		if (!validModes.includes(mode as ValidationMode)) {
+			return reply.status(400).send({
+				error: `Invalid mode "${mode}". Must be one of: ${validModes.join(", ")}`,
+			});
+		}
+
+		setValidationMode(integration, mode as ValidationMode);
+
+		request.log.info({ integration, mode }, "Validation mode updated");
+
+		return reply.send({
+			success: true,
+			data: getAllValidationModes(),
+		});
+	});
 
 	done();
 };
