@@ -2,9 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-	Activity,
 	AlertTriangle,
-	CheckCircle,
 	ChevronDown,
 	Clock,
 	Cpu,
@@ -21,8 +19,6 @@ import {
 	ScrollText,
 	Server,
 	Shield,
-	ShieldAlert,
-	XCircle,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";

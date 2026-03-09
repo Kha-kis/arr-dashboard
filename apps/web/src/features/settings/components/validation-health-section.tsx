@@ -1,5 +1,6 @@
 "use client";
 
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	Activity,
 	CheckCircle,
@@ -8,11 +9,15 @@ import {
 	RefreshCw,
 	Server,
 	ShieldAlert,
+	Trash2,
 	XCircle,
 } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import { GlassmorphicCard, PremiumSection } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
+import { apiRequest } from "../../../lib/api-client/base";
+import { getErrorMessage } from "../../../lib/error-utils";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 // ============================================================================
@@ -53,6 +58,23 @@ interface CategoryFingerprint {
 	baseline: SchemaFingerprint;
 	latest: SchemaFingerprint;
 	drift: DriftReport;
+	fieldMissCounts: Record<string, number>;
+}
+
+interface QuarantinedItem {
+	raw: unknown;
+	errors: string[];
+	integration: string;
+	category: string;
+	timestamp: string;
+}
+
+interface QuarantineResponse {
+	success: boolean;
+	data: {
+		items: Record<string, QuarantinedItem[]>;
+		totalCount: number;
+	};
 }
 
 export interface ValidationHealthResponse {
@@ -422,6 +444,9 @@ export function ValidationHealthSection({
 				{fingerprints && (
 					<SchemaDriftSection fingerprints={fingerprints} hasDrift={hasDrift} />
 				)}
+
+				{/* Quarantine Section */}
+				<QuarantineSection />
 			</div>
 		</PremiumSection>
 	);
@@ -502,45 +527,272 @@ function SchemaDriftSection({
 									<p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
 										{integration}
 									</p>
-									{driftingCategories.map(([category, fp]) => (
-										<div
-											key={`${integration}:${category}`}
-											className="rounded-lg border border-border/30 bg-card/20 p-3 space-y-2"
-										>
-											<p className="text-sm font-mono text-foreground">{category}</p>
-											<div className="flex flex-wrap gap-1.5">
-												{fp.drift.newFields.map((field) => (
-													<span
-														key={field}
-														className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono"
-														style={{
-															backgroundColor: `${SEMANTIC_COLORS.success.from}15`,
-															color: SEMANTIC_COLORS.success.from,
-															border: `1px solid ${SEMANTIC_COLORS.success.from}30`,
-														}}
-													>
-														+ {field}
-													</span>
-												))}
-												{fp.drift.missingFields.map((field) => (
-													<span
-														key={field}
-														className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono"
-														style={{
-															backgroundColor: `${SEMANTIC_COLORS.error.from}15`,
-															color: SEMANTIC_COLORS.error.from,
-															border: `1px solid ${SEMANTIC_COLORS.error.from}30`,
-														}}
-													>
-														- {field}
-													</span>
-												))}
+									{driftingCategories.map(([category, fp]) => {
+										// Fields with 1-2 misses (intermittent, not yet flagged as missing)
+										const intermittentFields = Object.entries(fp.fieldMissCounts ?? {})
+											.filter(([, count]) => count >= 1 && count < 3)
+											.map(([field]) => field)
+											.sort();
+
+										return (
+											<div
+												key={`${integration}:${category}`}
+												className="rounded-lg border border-border/30 bg-card/20 p-3 space-y-2"
+											>
+												<p className="text-sm font-mono text-foreground">{category}</p>
+												<div className="flex flex-wrap gap-1.5">
+													{fp.drift.newFields.map((field) => (
+														<span
+															key={field}
+															className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono"
+															style={{
+																backgroundColor: `${SEMANTIC_COLORS.success.from}15`,
+																color: SEMANTIC_COLORS.success.from,
+																border: `1px solid ${SEMANTIC_COLORS.success.from}30`,
+															}}
+														>
+															+ {field}
+														</span>
+													))}
+													{intermittentFields.map((field) => (
+														<span
+															key={field}
+															className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono"
+															style={{
+																backgroundColor: `${SEMANTIC_COLORS.warning.from}15`,
+																color: SEMANTIC_COLORS.warning.from,
+																border: `1px solid ${SEMANTIC_COLORS.warning.from}30`,
+															}}
+														>
+															~ {field}
+														</span>
+													))}
+													{fp.drift.missingFields.map((field) => (
+														<span
+															key={field}
+															className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono"
+															style={{
+																backgroundColor: `${SEMANTIC_COLORS.error.from}15`,
+																color: SEMANTIC_COLORS.error.from,
+																border: `1px solid ${SEMANTIC_COLORS.error.from}30`,
+															}}
+														>
+															- {field}
+														</span>
+													))}
+												</div>
 											</div>
-										</div>
-									))}
+										);
+									})}
 								</div>
 							);
 						})
+					)}
+				</div>
+			)}
+		</GlassmorphicCard>
+	);
+}
+
+// ============================================================================
+// Quarantine Section
+// ============================================================================
+
+function QuarantineSection() {
+	const queryClient = useQueryClient();
+	const [isOpen, setIsOpen] = useState(false);
+	const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+	const [filterIntegration, setFilterIntegration] = useState<string>("all");
+
+	const { data: quarantine } = useQuery<QuarantineResponse>({
+		queryKey: ["validation-quarantine"],
+		queryFn: () => apiRequest<QuarantineResponse>("/api/system/validation-quarantine"),
+		refetchInterval: 60_000,
+	});
+
+	const clearMutation = useMutation({
+		mutationFn: () => apiRequest("/api/system/validation-quarantine", { method: "DELETE" }),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["validation-quarantine"] });
+			toast.success("Quarantine cleared");
+		},
+		onError: (err) => {
+			toast.error(`Failed to clear quarantine: ${getErrorMessage(err)}`);
+		},
+	});
+
+	const totalCount = quarantine?.data?.totalCount ?? 0;
+	const itemsByIntegration = quarantine?.data?.items ?? {};
+	const integrationNames = Object.keys(itemsByIntegration).sort();
+
+	const filteredItems: QuarantinedItem[] =
+		filterIntegration === "all"
+			? integrationNames.flatMap((name) => itemsByIntegration[name] ?? [])
+			: itemsByIntegration[filterIntegration] ?? [];
+
+	const toggleItem = (id: string) => {
+		setExpandedItems((prev) => {
+			const next = new Set(prev);
+			if (next.has(id)) {
+				next.delete(id);
+			} else {
+				next.add(id);
+			}
+			return next;
+		});
+	};
+
+	return (
+		<GlassmorphicCard padding="none">
+			<button
+				type="button"
+				onClick={() => setIsOpen(!isOpen)}
+				className="flex items-center justify-between w-full p-3 text-left hover:bg-card/50 transition-colors"
+			>
+				<div className="flex items-center gap-2">
+					<ChevronRight
+						className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
+					/>
+					<span className="text-sm font-medium text-foreground">Quarantine</span>
+					{totalCount > 0 ? (
+						<span
+							className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+							style={{
+								backgroundColor: `${SEMANTIC_COLORS.error.from}20`,
+								color: SEMANTIC_COLORS.error.from,
+							}}
+						>
+							{totalCount} item{totalCount !== 1 ? "s" : ""}
+						</span>
+					) : (
+						<span
+							className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+							style={{
+								backgroundColor: `${SEMANTIC_COLORS.success.from}20`,
+								color: SEMANTIC_COLORS.success.from,
+							}}
+						>
+							Empty
+						</span>
+					)}
+				</div>
+				<span className="text-xs text-muted-foreground">
+					Rejected items held for inspection
+				</span>
+			</button>
+
+			{isOpen && (
+				<div className="border-t border-border/30 p-3 space-y-3">
+					{totalCount === 0 ? (
+						<p className="text-sm text-muted-foreground text-center py-2">
+							No quarantined items — all validated data passed successfully.
+						</p>
+					) : (
+						<>
+							{/* Controls */}
+							<div className="flex items-center justify-between gap-2">
+								<select
+									value={filterIntegration}
+									onChange={(e) => setFilterIntegration(e.target.value)}
+									className="text-xs rounded-md border border-border/50 bg-card/30 px-2 py-1 text-foreground"
+								>
+									<option value="all">All integrations</option>
+									{integrationNames.map((name) => (
+										<option key={name} value={name}>
+											{name} ({(itemsByIntegration[name] ?? []).length})
+										</option>
+									))}
+								</select>
+								<Button
+									variant="outline"
+									size="sm"
+									onClick={() => clearMutation.mutate()}
+									disabled={clearMutation.isPending}
+									className="h-7 text-xs gap-1.5"
+								>
+									{clearMutation.isPending ? (
+										<Loader2 className="h-3 w-3 animate-spin" />
+									) : (
+										<Trash2 className="h-3 w-3" />
+									)}
+									Clear All
+								</Button>
+							</div>
+
+							{/* Quarantine table */}
+							<div className="overflow-x-auto">
+								<table className="w-full text-sm">
+									<thead>
+										<tr className="border-b border-border/50">
+											<th className="text-left p-2 font-medium text-muted-foreground uppercase text-xs tracking-wide w-8" />
+											<th className="text-left p-2 font-medium text-muted-foreground uppercase text-xs tracking-wide">Time</th>
+											<th className="text-left p-2 font-medium text-muted-foreground uppercase text-xs tracking-wide">Integration</th>
+											<th className="text-left p-2 font-medium text-muted-foreground uppercase text-xs tracking-wide">Category</th>
+											<th className="text-left p-2 font-medium text-muted-foreground uppercase text-xs tracking-wide">Error</th>
+										</tr>
+									</thead>
+									<tbody>
+										{filteredItems.map((item, i) => {
+											const itemId = `${item.integration}:${item.category}:${item.timestamp}:${i}`;
+											const isExpanded = expandedItems.has(itemId);
+											const firstError = item.errors[0] ?? "Unknown error";
+
+											return (
+												<>
+													<tr
+														key={itemId}
+														className="border-b border-border/20 last:border-b-0 cursor-pointer hover:bg-card/50 transition-colors"
+														onClick={() => toggleItem(itemId)}
+													>
+														<td className="p-2 text-center">
+															<ChevronRight
+																className={`h-3 w-3 text-muted-foreground transition-transform duration-200 ${isExpanded ? "rotate-90" : ""}`}
+															/>
+														</td>
+														<td className="p-2 text-xs text-muted-foreground font-mono whitespace-nowrap">
+															{new Date(item.timestamp).toLocaleTimeString()}
+														</td>
+														<td className="p-2 text-xs font-medium text-foreground">{item.integration}</td>
+														<td className="p-2 text-xs font-mono text-muted-foreground">{item.category}</td>
+														<td className="p-2 text-xs text-muted-foreground truncate max-w-[300px]">
+															{firstError}
+														</td>
+													</tr>
+													{isExpanded && (
+														<tr key={`${itemId}-detail`} className="border-b border-border/20 bg-card/20">
+															<td colSpan={5} className="p-3">
+																<div className="space-y-2">
+																	<div>
+																		<p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+																			Errors ({item.errors.length})
+																		</p>
+																		<ul className="space-y-1">
+																			{item.errors.map((err, ei) => (
+																				<li key={ei} className="text-xs font-mono text-red-400">
+																					{err}
+																				</li>
+																			))}
+																		</ul>
+																	</div>
+																	<div>
+																		<p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+																			Raw Data
+																		</p>
+																		<pre className="text-xs font-mono text-muted-foreground bg-black/20 rounded p-2 overflow-auto max-h-40">
+																			{JSON.stringify(item.raw, null, 2)?.slice(0, 2000)}
+																		</pre>
+																	</div>
+																</div>
+															</td>
+														</tr>
+													)}
+												</>
+											);
+										})}
+									</tbody>
+								</table>
+							</div>
+						</>
 					)}
 				</div>
 			)}
