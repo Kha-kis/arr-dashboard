@@ -77,11 +77,11 @@ export function validateAndCollect<T>(
 	const mode = options?.mode ?? getValidationMode(options?.integration);
 	const items = Array.isArray(rawData) ? rawData : [rawData];
 
-	// Disabled mode: skip validation entirely
+	// Disabled mode: skip validation entirely (stats reflect no validation occurred)
 	if (mode === "disabled") {
 		return {
 			items: items as T[],
-			stats: { total: items.length, validated: items.length, rejected: 0 },
+			stats: { total: items.length, validated: 0, rejected: 0 },
 		};
 	}
 

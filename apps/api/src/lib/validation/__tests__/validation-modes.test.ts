@@ -93,7 +93,7 @@ describe("Validation Modes", () => {
 			const result = validateAndCollect(data, schema, "test", mockLog, { mode: "disabled" });
 
 			expect(result.items).toHaveLength(3);
-			expect(result.stats.validated).toBe(3);
+			expect(result.stats.validated).toBe(0); // disabled mode: nothing was actually validated
 			expect(result.stats.rejected).toBe(0);
 		});
 	});

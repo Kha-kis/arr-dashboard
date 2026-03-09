@@ -6,6 +6,7 @@ import { LOG_DIR, LOG_LEVEL, LOG_MAX_FILES, LOG_MAX_SIZE } from "../lib/logger.j
 import { getAppVersionInfo } from "../lib/utils/version.js";
 import { integrationHealth } from "../lib/validation/integration-health.js";
 import { schemaFingerprints } from "../lib/validation/schema-fingerprint.js";
+import { KNOWN_INTEGRATIONS } from "../lib/validation/index.js";
 import { type ValidationMode, getAllValidationModes, setValidationMode } from "../lib/validation/validate-batch.js";
 
 const RESTART_RATE_LIMIT = { max: 2, timeWindow: "5 minutes" };
@@ -456,6 +457,12 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		if (!integration || typeof integration !== "string") {
 			return reply.status(400).send({ error: "integration is required and must be a string" });
+		}
+
+		if (!KNOWN_INTEGRATIONS.includes(integration as (typeof KNOWN_INTEGRATIONS)[number])) {
+			return reply.status(400).send({
+				error: `Unknown integration "${integration}". Valid integrations: ${KNOWN_INTEGRATIONS.join(", ")}`,
+			});
 		}
 
 		const validModes: ValidationMode[] = ["strict", "tolerant", "log-only", "disabled"];

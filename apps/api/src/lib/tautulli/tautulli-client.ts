@@ -257,7 +257,10 @@ export class TautulliClient {
 		const raw = await response.json();
 
 		// Validate wrapper structure
-		const wrapper = tautulliResponseWrapperSchema.parse(raw);
+		const wrapper = parseUpstreamOrThrow(raw, tautulliResponseWrapperSchema, {
+			integration: "tautulli",
+			category: `${cmd}/wrapper`,
+		});
 
 		if (wrapper.response.result !== "success") {
 			throw new Error(`Tautulli API error: ${wrapper.response.message ?? "Unknown error"}`);
