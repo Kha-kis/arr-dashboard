@@ -21,6 +21,8 @@ export interface IntegrationHealth {
 export interface AllIntegrationHealth {
 	integrations: Record<string, IntegrationHealth>;
 	overallTotals: ValidationStats;
+	/** ISO timestamp of the last reset (null = never reset, stats since app start) */
+	resetAt: string | null;
 }
 
 // ============================================================================
@@ -29,6 +31,7 @@ export interface AllIntegrationHealth {
 
 class IntegrationHealthRegistry {
 	private readonly data = new Map<string, IntegrationHealth>();
+	private _resetAt: string | null = null;
 
 	/** Record validation stats for a specific integration + category */
 	record(integration: string, category: string, stats: ValidationStats): void {
@@ -75,7 +78,7 @@ class IntegrationHealthRegistry {
 			overallTotals.rejected += health.totals.rejected;
 		}
 
-		return { integrations, overallTotals };
+		return { integrations, overallTotals, resetAt: this._resetAt };
 	}
 
 	/** Reset stats for a specific integration */
@@ -83,8 +86,9 @@ class IntegrationHealthRegistry {
 		this.data.delete(integration);
 	}
 
-	/** Reset all stats */
+	/** Reset all stats and record the reset timestamp */
 	reset(): void {
+		this._resetAt = new Date().toISOString();
 		this.data.clear();
 	}
 }

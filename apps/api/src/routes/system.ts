@@ -482,6 +482,23 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		});
 	});
 
+	/**
+	 * DELETE /system/validation-health
+	 * Reset all validation health stats. Returns the new (empty) state with resetAt timestamp.
+	 */
+	app.delete("/validation-health", async (request, reply) => {
+		integrationHealth.reset();
+		request.log.info("Validation health stats reset");
+		return reply.send({
+			success: true,
+			data: {
+				...integrationHealth.getAll(),
+				fingerprints: schemaFingerprints.getAll(),
+				validationModes: getAllValidationModes(),
+			},
+		});
+	});
+
 	done();
 };
 
