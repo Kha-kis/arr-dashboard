@@ -21,6 +21,7 @@ import type {
 import { DEFAULT_TRASH_REPO } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
 import DOMPurify from "isomorphic-dompurify";
+import { z } from "zod";
 import { marked } from "marked";
 import {
 	radarrNamingSchema,
@@ -34,6 +35,27 @@ import {
 	recordValidationStats,
 	validateAndCollect,
 } from "./github-schemas.js";
+
+// ============================================================================
+// GitHub API Schemas
+// ============================================================================
+
+/** Schema for GitHub Contents API directory listing entries */
+export const githubDirectoryEntrySchema = z.looseObject({
+	name: z.string(),
+	type: z.string(),
+	download_url: z.string().nullable().optional(),
+});
+
+/** Schema for GitHub repo info (used by custom-repo validation) */
+export const githubRepoInfoSchema = z.looseObject({
+	default_branch: z.string().optional(),
+});
+
+/** Schema for GitHub API error bodies */
+export const githubErrorBodySchema = z.looseObject({
+	message: z.string().optional(),
+});
 
 // ============================================================================
 // Logger Interface
@@ -537,7 +559,7 @@ export class TrashGitHubFetcher {
 
 				if (response.ok) {
 					const rawData: unknown = await response.json();
-					const result = validateAndCollect(rawData, trashCustomFormatSchema, file, this.log);
+					const result = validateAndCollect(rawData, trashCustomFormatSchema, file, this.log, { integration: "trash-guides", category: "customFormats" });
 					formats.push(...result.items);
 					recordValidationStats("customFormats", result.stats);
 				}
@@ -568,7 +590,7 @@ export class TrashGitHubFetcher {
 
 				if (response.ok) {
 					const rawData: unknown = await response.json();
-					const result = validateAndCollect(rawData, trashCustomFormatGroupSchema, file, this.log);
+					const result = validateAndCollect(rawData, trashCustomFormatGroupSchema, file, this.log, { integration: "trash-guides", category: "customFormatGroups" });
 					groups.push(...result.items);
 					recordValidationStats("customFormatGroups", result.stats);
 				}
@@ -596,7 +618,7 @@ export class TrashGitHubFetcher {
 
 				if (response.ok) {
 					const rawData: unknown = await response.json();
-					const result = validateAndCollect(rawData, trashQualitySizeSchema, file, this.log);
+					const result = validateAndCollect(rawData, trashQualitySizeSchema, file, this.log, { integration: "trash-guides", category: "qualitySize" });
 					settings.push(...result.items);
 					recordValidationStats("qualitySize", result.stats);
 				}
@@ -624,7 +646,7 @@ export class TrashGitHubFetcher {
 
 				if (response.ok) {
 					const rawData: unknown = await response.json();
-					const result = validateAndCollect(rawData, trashNamingSchemeSchema, file, this.log);
+					const result = validateAndCollect(rawData, trashNamingSchemeSchema, file, this.log, { integration: "trash-guides", category: "namingSchemes" });
 					schemes.push(...result.items);
 					recordValidationStats("namingSchemes", result.stats);
 				}
@@ -652,7 +674,7 @@ export class TrashGitHubFetcher {
 
 				if (response.ok) {
 					const rawData: unknown = await response.json();
-					const result = validateAndCollect(rawData, trashQualityProfileSchema, file, this.log);
+					const result = validateAndCollect(rawData, trashQualityProfileSchema, file, this.log, { integration: "trash-guides", category: "qualityProfiles" });
 					profiles.push(...result.items);
 					recordValidationStats("qualityProfiles", result.stats);
 				}
@@ -679,7 +701,7 @@ export class TrashGitHubFetcher {
 				return [];
 			}
 			const rawData: unknown = await response.json();
-			return validateAndCollect(rawData, trashQualityProfileGroupSchema, "groups.json", this.log).items;
+			return validateAndCollect(rawData, trashQualityProfileGroupSchema, "groups.json", this.log, { integration: "trash-guides", category: "qualityProfileGroups" }).items;
 		} catch (error) {
 			this.log.error("Error fetching quality profile groups:", error);
 			return [];
@@ -705,9 +727,9 @@ export class TrashGitHubFetcher {
 					const rawData: unknown = await response.json();
 					// Branch by service type — each schema's .transform() injects the _service discriminant
 					if (serviceType === "RADARR") {
-						results.push(...validateAndCollect(rawData, radarrNamingSchema, file, this.log).items);
+						results.push(...validateAndCollect(rawData, radarrNamingSchema, file, this.log, { integration: "trash-guides", category: "namingPresets" }).items);
 					} else {
-						results.push(...validateAndCollect(rawData, sonarrNamingSchema, file, this.log).items);
+						results.push(...validateAndCollect(rawData, sonarrNamingSchema, file, this.log, { integration: "trash-guides", category: "namingPresets" }).items);
 					}
 				}
 			} catch (error) {
@@ -785,10 +807,7 @@ export class TrashGitHubFetcher {
 				return [];
 			}
 
-			const files = (await response.json()) as Array<{
-				name: string;
-				type: string;
-			}>;
+			const files = z.array(githubDirectoryEntrySchema).parse(await response.json());
 
 			// Filter for .md files only
 			const mdFiles = files
@@ -851,10 +870,7 @@ export class TrashGitHubFetcher {
 				return [];
 			}
 
-			const files = (await response.json()) as Array<{
-				name: string;
-				type: string;
-			}>;
+			const files = z.array(githubDirectoryEntrySchema).parse(await response.json());
 
 			// Filter for .md files that match known include patterns
 			const includeFiles = files
@@ -993,11 +1009,7 @@ export class TrashGitHubFetcher {
 				return [];
 			}
 
-			const files = (await response.json()) as Array<{
-				name: string;
-				type: string;
-				download_url: string | null;
-			}>;
+			const files = z.array(githubDirectoryEntrySchema).parse(await response.json());
 
 			// Filter for .json files only
 			const jsonFiles = files

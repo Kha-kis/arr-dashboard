@@ -8,6 +8,19 @@
 
 import { z } from "zod";
 
+// Re-export for backward compatibility — existing callers import from here
+export {
+	validateAndCollect,
+	type ValidationResult,
+	type ValidationStats,
+	type ValidationMode,
+	type ValidateOptions,
+	type Logger,
+} from "../validation/validate-batch.js";
+
+// Local import for use in this file
+import type { ValidationStats } from "../validation/validate-batch.js";
+
 // ============================================================================
 // Shared Primitives
 // ============================================================================
@@ -198,110 +211,31 @@ export const trashQualityProfileGroupSchema = z.looseObject({
 });
 
 // ============================================================================
-// Validation Helper
+// Validation Stats Accumulator (delegates to IntegrationHealthRegistry)
 // ============================================================================
 
-interface Logger {
-	warn: (msg: string | object, ...args: unknown[]) => void;
-	error: (msg: string | object, ...args: unknown[]) => void;
-}
+import { integrationHealth, type IntegrationHealth } from "../validation/integration-health.js";
 
-/** Validation stats returned alongside validated items */
-export interface ValidationStats {
-	total: number;
-	validated: number;
-	rejected: number;
-}
-
-/** Result of validateAndCollect — items array + validation stats */
-export interface ValidationResult<T> {
-	items: T[];
-	stats: ValidationStats;
-}
-
-/**
- * Validate raw GitHub JSON data against a Zod schema.
- *
- * Handles both single-item and array responses (flattens to array).
- * Invalid items are logged and skipped — one bad item doesn't break the batch.
- * Escalates to error-level when all items fail or rejection rate exceeds 50%.
- */
-export function validateAndCollect<T>(
-	rawData: unknown,
-	schema: z.ZodType<T>,
-	fileName: string,
-	log: Logger,
-): ValidationResult<T> {
-	const items = Array.isArray(rawData) ? rawData : [rawData];
-	const results: T[] = [];
-
-	for (let i = 0; i < items.length; i++) {
-		const result = schema.safeParse(items[i]);
-		if (result.success) {
-			results.push(result.data);
-		} else {
-			log.warn(
-				`Skipping invalid item ${i} in ${fileName}: ${result.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join(", ")}`,
-			);
-		}
-	}
-
-	const rejected = items.length - results.length;
-	if (items.length > 0 && results.length === 0) {
-		log.error(
-			`All ${items.length} items failed validation in ${fileName} — upstream schema may have changed`,
-		);
-	} else if (items.length > 1 && rejected > items.length / 2) {
-		log.warn(
-			`High rejection rate in ${fileName}: ${rejected}/${items.length} items failed validation`,
-		);
-	}
-
-	return { items: results, stats: { total: items.length, validated: results.length, rejected } };
-}
-
-// ============================================================================
-// Validation Stats Accumulator
-// ============================================================================
+const TRASH_INTEGRATION = "trash-guides";
 
 /** Aggregated validation health stats across all data types */
-export interface CacheValidationHealth {
-	lastRefreshAt: string | null;
-	categories: Record<string, ValidationStats>;
-	totals: ValidationStats;
-}
-
-let lastHealth: CacheValidationHealth = {
-	lastRefreshAt: null,
-	categories: {},
-	totals: { total: 0, validated: 0, rejected: 0 },
-};
+export type CacheValidationHealth = IntegrationHealth;
 
 /** Reset stats before a new fetch cycle */
 export function resetValidationHealth(): void {
-	lastHealth = {
-		lastRefreshAt: new Date().toISOString(),
-		categories: {},
-		totals: { total: 0, validated: 0, rejected: 0 },
-	};
+	integrationHealth.resetIntegration(TRASH_INTEGRATION);
 }
 
 /** Record stats for a data category (e.g., "customFormats", "qualityProfiles") */
 export function recordValidationStats(category: string, stats: ValidationStats): void {
-	const existing = lastHealth.categories[category];
-	if (existing) {
-		existing.total += stats.total;
-		existing.validated += stats.validated;
-		existing.rejected += stats.rejected;
-	} else {
-		lastHealth.categories[category] = { ...stats };
-	}
-	lastHealth.totals.total += stats.total;
-	lastHealth.totals.validated += stats.validated;
-	lastHealth.totals.rejected += stats.rejected;
+	integrationHealth.record(TRASH_INTEGRATION, category, stats);
 }
 
 /** Get current validation health snapshot */
 export function getValidationHealth(): CacheValidationHealth {
-	return lastHealth;
+	return integrationHealth.getByIntegration(TRASH_INTEGRATION) ?? {
+		lastRefreshAt: null,
+		categories: {},
+		totals: { total: 0, validated: 0, rejected: 0 },
+	};
 }

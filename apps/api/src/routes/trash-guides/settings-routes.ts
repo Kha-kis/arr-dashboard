@@ -43,7 +43,7 @@ import { z } from "zod";
 import type { TrashCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import type { TrashGitHubFetcher } from "../../lib/trash-guides/github-fetcher.js";
-import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
+import { createTrashFetcher, githubDirectoryEntrySchema, githubRepoInfoSchema, githubErrorBodySchema } from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
@@ -284,7 +284,7 @@ export async function registerSettingsRoutes(app: FastifyInstance, _opts: Fastif
 			clearTimeout(timeoutId);
 
 			if (response.ok) {
-				const contents = (await response.json()) as Array<{ name: string; type: string }>;
+				const contents = z.array(githubDirectoryEntrySchema).parse(await response.json());
 				const hasRadarr = contents.some((f) => f.name === "radarr" && f.type === "dir");
 				const hasSonarr = contents.some((f) => f.name === "sonarr" && f.type === "dir");
 
@@ -306,7 +306,7 @@ export async function registerSettingsRoutes(app: FastifyInstance, _opts: Fastif
 					const repoInfoUrl = `https://api.github.com/repos/${owner}/${name}`;
 					const repoResponse = await fetch(repoInfoUrl, { headers });
 					if (repoResponse.ok) {
-						const repoInfo = (await repoResponse.json()) as { default_branch?: string };
+						const repoInfo = githubRepoInfoSchema.parse(await repoResponse.json());
 						if (repoInfo.default_branch && repoInfo.default_branch !== branch) {
 							return reply.send({
 								valid: false,
@@ -344,7 +344,7 @@ export async function registerSettingsRoutes(app: FastifyInstance, _opts: Fastif
 				// Not rate limited — likely access denied or private repo
 				let detail = "";
 				try {
-					const body = (await response.json()) as { message?: string };
+					const body = githubErrorBodySchema.parse(await response.json());
 					if (body.message) detail = `: ${body.message}`;
 				} catch {
 					// Ignore parse errors
@@ -358,7 +358,7 @@ export async function registerSettingsRoutes(app: FastifyInstance, _opts: Fastif
 			// Other HTTP errors
 			let statusDetail = "";
 			try {
-				const body = (await response.json()) as { message?: string };
+				const body = githubErrorBodySchema.parse(await response.json());
 				if (body.message) statusDetail = ` — ${body.message}`;
 			} catch {
 				// Ignore parse errors

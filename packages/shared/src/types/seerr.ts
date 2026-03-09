@@ -601,6 +601,239 @@ export const seerrDiscoverResponseSchema = z.looseObject({
 });
 
 // ============================================================================
+// Additional Schemas (Phase 1B — gap closure for unvalidated endpoints)
+// ============================================================================
+
+/** Mirrors SeerrIssueComment */
+export const seerrIssueCommentSchema = z.looseObject({
+	id: z.number(),
+	message: z.string(),
+	createdAt: z.string(),
+	user: seerrUserSchema,
+});
+
+/** Mirrors SeerrIssue — issueType 1-4 matches SeerrIssueType, status 1-2 matches SeerrIssueStatus */
+export const seerrIssueSchema = z.looseObject({
+	id: z.number(),
+	issueType: z.number().int().min(1).max(4),
+	status: z.number().int().min(1).max(2),
+	problemSeason: z.number(),
+	problemEpisode: z.number(),
+	createdAt: z.string(),
+	updatedAt: z.string(),
+	createdBy: seerrUserSchema,
+	comments: z.array(seerrIssueCommentSchema),
+	media: seerrMediaInfoSchema.extend({
+		posterPath: z.string().optional(),
+		title: z.string().optional(),
+	}),
+});
+
+/** Mirrors SeerrQuota */
+export const seerrQuotaSchema = z.looseObject({
+	movie: z.looseObject({
+		used: z.number(),
+		remaining: z.number(),
+		restricted: z.boolean(),
+		limit: z.number(),
+		days: z.number(),
+	}),
+	tv: z.looseObject({
+		used: z.number(),
+		remaining: z.number(),
+		restricted: z.boolean(),
+		limit: z.number(),
+		days: z.number(),
+	}),
+});
+
+/** Mirrors SeerrGenre */
+export const seerrGenreSchema = z.looseObject({
+	id: z.number(),
+	name: z.string(),
+});
+
+/** Mirrors SeerrCastMember */
+const seerrCastMemberSchema = z.looseObject({
+	id: z.number(),
+	name: z.string(),
+	character: z.string().optional(),
+	profilePath: z.string().nullable().optional(),
+	order: z.number().optional(),
+});
+
+/** Mirrors SeerrCrewMember */
+const seerrCrewMemberSchema = z.looseObject({
+	id: z.number(),
+	name: z.string(),
+	job: z.string().optional(),
+	department: z.string().optional(),
+	profilePath: z.string().nullable().optional(),
+});
+
+/** Mirrors SeerrCredits */
+const seerrCreditsSchema = z.looseObject({
+	cast: z.array(seerrCastMemberSchema),
+	crew: z.array(seerrCrewMemberSchema),
+});
+
+/** Mirrors SeerrVideo */
+const seerrVideoSchema = z.looseObject({
+	key: z.string(),
+	name: z.string().optional(),
+	site: z.string(),
+	type: z.string().optional(),
+	size: z.number().optional(),
+});
+
+/** Mirrors SeerrExternalIds */
+const seerrExternalIdsSchema = z.looseObject({
+	imdbId: z.string().optional(),
+	tvdbId: z.number().optional(),
+	facebookId: z.string().optional(),
+	instagramId: z.string().optional(),
+	twitterId: z.string().optional(),
+});
+
+/** Mirrors SeerrMovieDetails */
+export const seerrMovieDetailsSchema = z.looseObject({
+	id: z.number(),
+	title: z.string(),
+	originalTitle: z.string().optional(),
+	overview: z.string().optional(),
+	posterPath: z.string().nullable().optional(),
+	backdropPath: z.string().nullable().optional(),
+	releaseDate: z.string().optional(),
+	runtime: z.number().optional(),
+	budget: z.number().optional(),
+	revenue: z.number().optional(),
+	voteAverage: z.number().optional(),
+	voteCount: z.number().optional(),
+	popularity: z.number().optional(),
+	status: z.string().optional(),
+	originalLanguage: z.string().optional(),
+	genres: z.array(seerrGenreSchema),
+	productionCompanies: z.array(z.looseObject({
+		id: z.number(),
+		name: z.string(),
+		logoPath: z.string().nullable().optional(),
+	})).optional(),
+	credits: seerrCreditsSchema,
+	relatedVideos: z.array(seerrVideoSchema).optional(),
+	mediaInfo: seerrMediaInfoSchema.optional(),
+	externalIds: seerrExternalIdsSchema.optional(),
+	recommendations: seerrDiscoverResponseSchema,
+	similar: seerrDiscoverResponseSchema,
+});
+
+/** Mirrors SeerrSeasonSummary */
+const seerrSeasonSummarySchema = z.looseObject({
+	id: z.number(),
+	seasonNumber: z.number(),
+	name: z.string().optional(),
+	overview: z.string().optional(),
+	episodeCount: z.number(),
+	airDate: z.string().optional(),
+	posterPath: z.string().nullable().optional(),
+});
+
+/** Mirrors SeerrTvDetails */
+export const seerrTvDetailsSchema = z.looseObject({
+	id: z.number(),
+	name: z.string(),
+	originalName: z.string().optional(),
+	overview: z.string().optional(),
+	posterPath: z.string().nullable().optional(),
+	backdropPath: z.string().nullable().optional(),
+	firstAirDate: z.string().optional(),
+	lastAirDate: z.string().optional(),
+	numberOfSeasons: z.number().optional(),
+	numberOfEpisodes: z.number().optional(),
+	episodeRunTime: z.array(z.number()).optional(),
+	voteAverage: z.number().optional(),
+	voteCount: z.number().optional(),
+	popularity: z.number().optional(),
+	status: z.string().optional(),
+	originalLanguage: z.string().optional(),
+	genres: z.array(seerrGenreSchema),
+	networks: z.array(z.looseObject({
+		id: z.number(),
+		name: z.string(),
+		logoPath: z.string().nullable().optional(),
+	})).optional(),
+	credits: seerrCreditsSchema,
+	relatedVideos: z.array(seerrVideoSchema).optional(),
+	mediaInfo: seerrMediaInfoSchema.optional(),
+	externalIds: seerrExternalIdsSchema.optional(),
+	keywords: z.array(z.looseObject({ id: z.number(), name: z.string() })),
+	seasons: z.array(seerrSeasonSummarySchema),
+	recommendations: seerrDiscoverResponseSchema,
+	similar: seerrDiscoverResponseSchema,
+});
+
+/** Lightweight schema for getMediaSummary — only validates fields we extract */
+export const seerrMediaSummarySchema = z.looseObject({
+	voteAverage: z.number().optional(),
+	backdropPath: z.string().nullable().optional(),
+	posterPath: z.string().nullable().optional(),
+});
+
+/** Mirrors SeerrCreateRequestResponse */
+export const seerrCreateRequestResponseSchema = z.looseObject({
+	id: z.number(),
+	status: z.number().int().min(1).max(5),
+	type: z.enum(["movie", "tv"]),
+	media: seerrMediaInfoSchema,
+	createdAt: z.string(),
+	is4k: z.boolean(),
+	seasons: z.array(seerrSeasonSchema).optional(),
+});
+
+/** Mirrors SeerrServiceServer */
+export const seerrServiceServerSchema = z.looseObject({
+	id: z.number(),
+	name: z.string(),
+	is4k: z.boolean(),
+	isDefault: z.boolean(),
+	activeProfileId: z.number(),
+	activeDirectory: z.string(),
+	activeLanguageProfileId: z.number().optional(),
+	activeAnimeProfileId: z.number().optional(),
+	activeAnimeDirectory: z.string().optional(),
+	activeAnimeLanguageProfileId: z.number().optional(),
+	activeTags: z.array(z.number()),
+});
+
+/** Mirrors SeerrQualityProfile */
+const seerrQualityProfileSchema = z.looseObject({
+	id: z.number(),
+	name: z.string(),
+});
+
+/** Mirrors SeerrRootFolder */
+const seerrRootFolderSchema = z.looseObject({
+	id: z.number(),
+	path: z.string(),
+	freeSpace: z.number().optional(),
+	totalSpace: z.number().optional(),
+});
+
+/** Mirrors SeerrTag */
+const seerrTagSchema = z.looseObject({
+	id: z.number(),
+	label: z.string(),
+});
+
+/** Mirrors SeerrServerWithDetails */
+export const seerrServerWithDetailsSchema = z.looseObject({
+	server: seerrServiceServerSchema,
+	profiles: z.array(seerrQualityProfileSchema),
+	rootFolders: z.array(seerrRootFolderSchema),
+	languageProfiles: z.array(z.looseObject({ id: z.number(), name: z.string() })).optional(),
+	tags: z.array(seerrTagSchema),
+});
+
+// ============================================================================
 // Library Enrichment Types
 // ============================================================================
 

@@ -129,22 +129,6 @@ export const toNumber = (value: unknown): number | undefined => {
 // ============================================================================
 
 /**
- * Safely makes a request and parses JSON, returning undefined on error
- */
-export const safeRequestJson = async <T>(
-	fetcher: (path: string, init?: RequestInit) => Promise<Response>,
-	path: string,
-	init?: RequestInit,
-): Promise<T | undefined> => {
-	try {
-		const response = await fetcher(path, init);
-		return (await response.json()) as T;
-	} catch {
-		return undefined;
-	}
-};
-
-/**
  * Safely execute an SDK call and return undefined on error
  */
 export const safeRequest = async <T>(operation: () => Promise<T>): Promise<T | undefined> => {

@@ -5,6 +5,7 @@
  * the ARR API. No side effects, no external dependencies.
  */
 
+import { z } from "zod";
 import type { WhitelistPattern } from "./constants.js";
 
 /**
@@ -31,6 +32,15 @@ export interface RawQueueItem {
 	/** Allow other properties we don't explicitly handle */
 	[key: string]: unknown;
 }
+
+/**
+ * Zod schema for raw queue items from the ARR API.
+ * Validates that each item is a plain object — the individual fields are all
+ * `unknown` and are type-checked at point-of-use throughout the codebase.
+ * This catches non-object values (strings, numbers, null) that would cause
+ * runtime errors in property access code.
+ */
+export const rawQueueItemSchema = z.record(z.string(), z.unknown());
 
 /**
  * Safely parse a date value from unknown, returning null if invalid.

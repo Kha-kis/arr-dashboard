@@ -25,7 +25,8 @@ import {
 	MAX_AUTO_IMPORTS_PER_RUN,
 	type WhitelistPattern,
 } from "./constants.js";
-import { type RawQueueItem, parseDate, collectStatusTexts, checkWhitelist, isFutureEpisode } from "./queue-item-utils.js";
+import { type RawQueueItem, rawQueueItemSchema, parseDate, collectStatusTexts, checkWhitelist, isFutureEpisode } from "./queue-item-utils.js";
+import { validateAndCollect } from "../validation/validate-batch.js";
 import { evaluateQueueItem, shouldSkipByTagFilter, shouldSkipByProfileFilter } from "./rule-evaluators.js";
 
 const log = loggers.queueCleaner;
@@ -122,7 +123,9 @@ export async function executeQueueCleaner(
 	let queueRecords: RawQueueItem[];
 	try {
 		const queue = await (client.queue.get as (opts?: Record<string, unknown>) => Promise<{ records?: unknown[] }>)(queueOptions);
-		queueRecords = (queue.records ?? []) as RawQueueItem[];
+		const rawRecords = queue.records ?? [];
+		const { items: validatedRecords } = validateAndCollect(rawRecords, rawQueueItemSchema, `queue/${instance.service}`, log, { integration: "queue-cleaner", category: "queue-items" });
+		queueRecords = validatedRecords as RawQueueItem[];
 	} catch (error) {
 		const message = getErrorMessage(error, "Unknown error");
 		return {
@@ -706,7 +709,8 @@ export async function executeEnhancedPreview(
 
 	try {
 		const queue = await (client.queue.get as (opts?: Record<string, unknown>) => Promise<{ records?: unknown[] }>)(previewQueueOptions);
-		queueRecords = (queue.records ?? []) as RawQueueItem[];
+		const { items: previewValidated } = validateAndCollect(queue.records ?? [], rawQueueItemSchema, `queue-preview/${instance.service}`, log, { integration: "queue-cleaner", category: "queue-items" });
+		queueRecords = previewValidated as RawQueueItem[];
 	} catch (error) {
 		const errorMessage = getErrorMessage(error, "Unknown error");
 		log.warn(
