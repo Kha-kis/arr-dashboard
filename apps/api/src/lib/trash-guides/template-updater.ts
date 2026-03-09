@@ -21,6 +21,8 @@ import type {
 	TrashCustomFormatGroup,
 	TrashQualityProfile,
 } from "@arr/shared";
+import { z } from "zod";
+import { trashCustomFormatGroupSchema, trashCustomFormatSchema } from "./github-schemas.js";
 import type { PrismaClient } from "../../lib/prisma.js";
 import { TemplateNotFoundError } from "../errors.js";
 import { loggers } from "../logger.js";
@@ -153,8 +155,8 @@ export class TemplateUpdater {
 					if (!cacheByServiceType.has(serviceType)) {
 						try {
 							const [cfGroups, customFormats] = await Promise.all([
-								this.cacheManager.get<TrashCustomFormatGroup[]>(serviceType, "CF_GROUPS"),
-								this.cacheManager.get<TrashCustomFormat[]>(serviceType, "CUSTOM_FORMATS"),
+								this.cacheManager.get<TrashCustomFormatGroup[]>(serviceType, "CF_GROUPS", z.array(trashCustomFormatGroupSchema)),
+								this.cacheManager.get<TrashCustomFormat[]>(serviceType, "CUSTOM_FORMATS", z.array(trashCustomFormatSchema)),
 							]);
 							cacheByServiceType.set(serviceType, {
 								cfGroups: cfGroups ?? [],
@@ -682,8 +684,8 @@ export class TemplateUpdater {
 	}> {
 		try {
 			const [cfCache, groupCache, cacheCommitHash] = await Promise.all([
-				this.cacheManager.get<TrashCustomFormat[]>(serviceType, "CUSTOM_FORMATS"),
-				this.cacheManager.get<TrashCustomFormatGroup[]>(serviceType, "CF_GROUPS"),
+				this.cacheManager.get<TrashCustomFormat[]>(serviceType, "CUSTOM_FORMATS", z.array(trashCustomFormatSchema)),
+				this.cacheManager.get<TrashCustomFormatGroup[]>(serviceType, "CF_GROUPS", z.array(trashCustomFormatGroupSchema)),
 				this.cacheManager.getCommitHash(serviceType, "CUSTOM_FORMATS"),
 			]);
 

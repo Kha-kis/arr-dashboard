@@ -13,6 +13,8 @@ import {
 	type TrashQualitySize,
 	type TrashRepoConfig,
 } from "@arr/shared";
+import { z } from "zod";
+import { trashQualitySizeSchema } from "./github-schemas.js";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { PrismaClient } from "../../lib/prisma.js";
 import type { ArrClientFactory } from "../arr/client-factory.js";
@@ -562,6 +564,7 @@ export class UpdateScheduler {
 				const cached = await cacheManager.get<TrashQualitySize[]>(
 					mapping.serviceType as "RADARR" | "SONARR",
 					"QUALITY_SIZE",
+					z.array(trashQualitySizeSchema),
 				);
 				if (!cached) {
 					this.logger.warn(
