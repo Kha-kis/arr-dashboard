@@ -6,6 +6,8 @@
  */
 
 import type { TrashConfigType, TrashCustomFormat } from "@arr/shared";
+import { z } from "zod";
+import { trashCustomFormatSchema } from "./github-schemas.js";
 import { dequal as deepEqual } from "dequal";
 import type { PrismaClient } from "../../lib/prisma.js";
 import { createCacheManager } from "./cache-manager.js";
@@ -233,6 +235,7 @@ export class CFMatcher {
 		const trashCFs = await cacheManager.get<TrashCustomFormat[]>(
 			serviceType,
 			"CUSTOM_FORMATS" as TrashConfigType,
+			z.array(trashCustomFormatSchema),
 		);
 
 		const result = trashCFs || [];

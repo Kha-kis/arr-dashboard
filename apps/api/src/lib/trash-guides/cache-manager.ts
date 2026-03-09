@@ -130,6 +130,7 @@ export class TrashCacheManager {
 	async get<T = unknown>(
 		serviceType: "RADARR" | "SONARR",
 		configType: TrashConfigType,
+		schema?: z.ZodType<T>,
 	): Promise<T | null> {
 		const cacheEntry = await this.prisma.trashCache.findUnique({
 			where: {
@@ -150,7 +151,7 @@ export class TrashCacheManager {
 		// Decompress and return data
 		try {
 			if (this.options.compressionEnabled) {
-				return await decompressData<T>(cacheEntry.data);
+				return await decompressData<T>(cacheEntry.data, schema);
 			}
 
 			const parsed = safeJsonParse<T>(cacheEntry.data, {
