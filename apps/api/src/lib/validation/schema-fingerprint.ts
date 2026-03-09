@@ -4,18 +4,27 @@
  * Tracks the set of field names seen in validated upstream data and detects
  * when the shape of that data changes (new fields added, existing fields removed).
  *
- * How it works:
+ * **Union strategy** — the baseline grows to include all fields ever observed.
+ * This reduces false-positive drift from optional upstream fields:
+ *
  * 1. On each validation run, collect top-level field names from validated items
- * 2. First run for a category → store as "baseline"
- * 3. Subsequent runs → compare against baseline, log drift
- * 4. New fields = info (forward-compatible, expected from z.looseObject)
- * 5. Missing fields = warn (potential breaking change upstream)
+ * 2. New fields are added to the baseline union immediately (reported as newFields)
+ * 3. Missing fields increment a per-field miss counter
+ * 4. A field is only reported as "missing" after 3+ consecutive absences
+ * 5. When a field reappears, its miss counter resets to 0
  *
  * All state is in-memory — baselines reset on app restart, and the first
  * validation run after restart re-establishes them.
  */
 
 import type { Logger } from "./validate-batch.js";
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+/** Number of consecutive misses before a field is flagged as missing */
+const MISSING_THRESHOLD = 3;
 
 // ============================================================================
 // Types
@@ -33,7 +42,7 @@ export interface SchemaFingerprint {
 export interface DriftReport {
 	/** Fields present in current data but not in the baseline */
 	newFields: string[];
-	/** Fields present in baseline but missing from current data */
+	/** Fields in baseline that have been missing for 3+ consecutive observations */
 	missingFields: string[];
 	/** Whether any drift was detected */
 	hasDrift: boolean;
@@ -43,6 +52,8 @@ export interface CategoryFingerprint {
 	baseline: SchemaFingerprint;
 	latest: SchemaFingerprint;
 	drift: DriftReport;
+	/** Per-field consecutive miss counts (only for fields that have been absent) */
+	fieldMissCounts: Record<string, number>;
 }
 
 // ============================================================================
@@ -63,10 +74,10 @@ class SchemaFingerprintRegistry {
 	 */
 	record(integration: string, category: string, items: unknown[], log: Logger): DriftReport {
 		const key = `${integration}:${category}`;
-		const fields = this.extractFields(items);
+		const currentFields = this.extractFields(items);
 		const now = new Date().toISOString();
 		const fingerprint: SchemaFingerprint = {
-			fields,
+			fields: currentFields,
 			recordedAt: now,
 			sampleCount: items.length,
 		};
@@ -76,12 +87,54 @@ class SchemaFingerprintRegistry {
 		if (!existing) {
 			// First observation — establish baseline
 			const drift: DriftReport = { newFields: [], missingFields: [], hasDrift: false };
-			this.data.set(key, { baseline: fingerprint, latest: fingerprint, drift });
+			this.data.set(key, {
+				baseline: fingerprint,
+				latest: fingerprint,
+				drift,
+				fieldMissCounts: {},
+			});
 			return drift;
 		}
 
-		// Compare against baseline
-		const drift = this.computeDrift(existing.baseline, fingerprint);
+		const currentSet = new Set(currentFields);
+		const baselineSet = new Set(existing.baseline.fields);
+
+		// Detect new fields (in current but not in baseline union)
+		const newFields = currentFields.filter((f) => !baselineSet.has(f));
+
+		// Grow baseline union with new fields
+		if (newFields.length > 0) {
+			const mergedFields = new Set([...existing.baseline.fields, ...newFields]);
+			existing.baseline = {
+				...existing.baseline,
+				fields: [...mergedFields].sort(),
+			};
+		}
+
+		// Update miss counters for all baseline fields
+		const missCounts = { ...existing.fieldMissCounts };
+		for (const field of existing.baseline.fields) {
+			if (currentSet.has(field)) {
+				// Present — reset miss counter
+				delete missCounts[field];
+			} else {
+				// Absent — increment miss counter
+				missCounts[field] = (missCounts[field] ?? 0) + 1;
+			}
+		}
+		existing.fieldMissCounts = missCounts;
+
+		// Only flag as missing if miss count >= threshold
+		const missingFields = Object.entries(missCounts)
+			.filter(([, count]) => count >= MISSING_THRESHOLD)
+			.map(([field]) => field)
+			.sort();
+
+		const drift: DriftReport = {
+			newFields,
+			missingFields,
+			hasDrift: newFields.length > 0 || missingFields.length > 0,
+		};
 
 		// Update latest + drift
 		existing.latest = fingerprint;
@@ -95,7 +148,7 @@ class SchemaFingerprintRegistry {
 		}
 		if (drift.missingFields.length > 0) {
 			log.warn(
-				`[schema-drift] ${key}: missing fields: ${drift.missingFields.join(", ")} — potential breaking change upstream`,
+				`[schema-drift] ${key}: missing fields (${MISSING_THRESHOLD}+ consecutive absences): ${drift.missingFields.join(", ")} — potential breaking change upstream`,
 			);
 		}
 
@@ -164,21 +217,6 @@ class SchemaFingerprintRegistry {
 			}
 		}
 		return [...fieldSet].sort();
-	}
-
-	/** Compare current fingerprint against baseline to find drift */
-	private computeDrift(baseline: SchemaFingerprint, current: SchemaFingerprint): DriftReport {
-		const baselineSet = new Set(baseline.fields);
-		const currentSet = new Set(current.fields);
-
-		const newFields = current.fields.filter((f) => !baselineSet.has(f));
-		const missingFields = baseline.fields.filter((f) => !currentSet.has(f));
-
-		return {
-			newFields,
-			missingFields,
-			hasDrift: newFields.length > 0 || missingFields.length > 0,
-		};
 	}
 }
 
