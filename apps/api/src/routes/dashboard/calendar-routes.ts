@@ -15,6 +15,7 @@ import {
 	normalizeCalendarItem,
 } from "../../lib/dashboard/calendar-utils.js";
 import { validateRequest } from "../../lib/utils/validate.js";
+import { validateAndCollect } from "../../lib/validation/validate-batch.js";
 
 const calendarQuerySchema = z.object({
 	start: z.string().optional(),
@@ -95,15 +96,19 @@ export const calendarRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					});
 				}
 
-				// Normalize and enrich items
-				const items = rawItems.map((raw) => {
-					const normalized = normalizeCalendarItem(raw, service);
-					return calendarItemSchema.parse({
-						...normalized,
-						instanceId: instance.id,
-						instanceName: instance.label,
-					});
-				});
+				// Normalize and enrich items, then validate in tolerant mode
+				const normalized = rawItems.map((raw) => ({
+					...normalizeCalendarItem(raw, service),
+					instanceId: instance.id,
+					instanceName: instance.label,
+				}));
+				const { items } = validateAndCollect(
+					normalized,
+					calendarItemSchema,
+					`dashboard/calendar/${service}`,
+					request.log,
+					{ integration: "dashboard", category: "calendar", mode: "tolerant" },
+				);
 
 				// Sort by date
 				items.sort(compareCalendarItems);
