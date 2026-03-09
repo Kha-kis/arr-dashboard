@@ -22,6 +22,7 @@ import {
 	triggerQueueSearchWithSdk,
 } from "../../lib/dashboard/queue-utils.js";
 import { validateRequest } from "../../lib/utils/validate.js";
+import { validateAndCollect } from "../../lib/validation/validate-batch.js";
 import { autoImportByDownloadIdWithSdk, setManualImportLogger } from "../manual-import-utils.js";
 
 /**
@@ -75,15 +76,21 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					return [];
 				}
 
-				// Normalize and enrich items
-				return rawItems.map((raw) => {
-					const normalized = normalizeQueueItem(raw, service);
-					return queueItemSchema.parse({
-						...normalized,
-						instanceId: instance.id,
-						instanceName: instance.label,
-					});
-				});
+				// Normalize and enrich items, then validate in tolerant mode
+				// so one malformed item doesn't break the entire queue response
+				const normalized = rawItems.map((raw) => ({
+					...normalizeQueueItem(raw, service),
+					instanceId: instance.id,
+					instanceName: instance.label,
+				}));
+				const { items } = validateAndCollect(
+					normalized,
+					queueItemSchema,
+					`dashboard/queue/${service}`,
+					request.log,
+					{ integration: "dashboard", category: "queue", mode: "tolerant" },
+				);
+				return items;
 			},
 		);
 

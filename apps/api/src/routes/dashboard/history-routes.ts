@@ -11,6 +11,7 @@ import {
 } from "../../lib/arr/client-helpers.js";
 import { type HistoryService, normalizeHistoryItem } from "../../lib/dashboard/history-utils.js";
 import { validateRequest } from "../../lib/utils/validate.js";
+import { validateAndCollect } from "../../lib/validation/validate-batch.js";
 
 /**
  * Query schema for history endpoint.
@@ -100,15 +101,19 @@ export const historyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					totalRecords = result.totalRecords ?? rawRecords.length;
 				}
 
-				// Normalize and enrich items
-				const items = rawRecords.map((raw) => {
-					const normalized = normalizeHistoryItem(raw, service);
-					return historyItemSchema.parse({
-						...normalized,
-						instanceId: instance.id,
-						instanceName: instance.label,
-					});
-				});
+				// Normalize and enrich items, then validate in tolerant mode
+				const normalized = rawRecords.map((raw) => ({
+					...normalizeHistoryItem(raw, service),
+					instanceId: instance.id,
+					instanceName: instance.label,
+				}));
+				const { items } = validateAndCollect(
+					normalized,
+					historyItemSchema,
+					`dashboard/history/${service}`,
+					request.log,
+					{ integration: "dashboard", category: "history", mode: "tolerant" },
+				);
 
 				return {
 					items,
