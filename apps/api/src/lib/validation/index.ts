@@ -52,8 +52,8 @@ export {
 } from "./validate-batch.js";
 
 // --- Health observability ---
-export { integrationHealth, type IntegrationHealth, type AllIntegrationHealth } from "./integration-health.js";
-export { schemaFingerprints } from "./schema-fingerprint.js";
+export { integrationHealth, type IntegrationHealth, type AllIntegrationHealth, type HealthState } from "./integration-health.js";
+export { schemaFingerprints, type DriftReport, type CategoryFingerprint, type SchemaFingerprint } from "./schema-fingerprint.js";
 
 // --- Known integrations ---
 

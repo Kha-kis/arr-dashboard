@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { integrationHealth } from "../integration-health.js";
 
 describe("IntegrationHealthRegistry", () => {
@@ -71,7 +71,6 @@ describe("IntegrationHealthRegistry", () => {
 	});
 
 	it("records success pattern (validated: 1, rejected: 0)", () => {
-		// Simulates what plex-client/tautulli-client/seerr-client do on parse success
 		integrationHealth.record("plex", "/identity", { total: 1, validated: 1, rejected: 0 });
 
 		const health = integrationHealth.getByIntegration("plex");
@@ -80,11 +79,147 @@ describe("IntegrationHealthRegistry", () => {
 	});
 
 	it("records failure pattern (validated: 0, rejected: 1)", () => {
-		// Simulates what plex-client/tautulli-client/seerr-client do on parse failure
 		integrationHealth.record("plex", "/identity", { total: 1, validated: 0, rejected: 1 });
 
 		const health = integrationHealth.getByIntegration("plex");
 		expect(health!.totals.validated).toBe(0);
 		expect(health!.totals.rejected).toBe(1);
+	});
+});
+
+describe("Health state tracking", () => {
+	beforeEach(() => {
+		integrationHealth.reset();
+	});
+
+	it("starts as healthy with zero consecutive failures", () => {
+		integrationHealth.record("plex", "sessions", { total: 1, validated: 1, rejected: 0 });
+
+		const health = integrationHealth.getByIntegration("plex")!;
+		expect(health.state).toBe("healthy");
+		expect(health.consecutiveFailures).toBe(0);
+		expect(health.lastSuccessAt).toBeDefined();
+		expect(health.lastFailureAt).toBeNull();
+	});
+
+	it("transitions to degraded after 1 consecutive failure", () => {
+		integrationHealth.record("plex", "sessions", { total: 1, validated: 0, rejected: 1 });
+
+		const health = integrationHealth.getByIntegration("plex")!;
+		expect(health.state).toBe("degraded");
+		expect(health.consecutiveFailures).toBe(1);
+		expect(health.lastFailureAt).toBeDefined();
+	});
+
+	it("stays degraded at 2 consecutive failures", () => {
+		integrationHealth.record("plex", "a", { total: 1, validated: 0, rejected: 1 });
+		integrationHealth.record("plex", "b", { total: 1, validated: 0, rejected: 1 });
+
+		const health = integrationHealth.getByIntegration("plex")!;
+		expect(health.state).toBe("degraded");
+		expect(health.consecutiveFailures).toBe(2);
+	});
+
+	it("transitions to failing after 3+ consecutive failures", () => {
+		integrationHealth.record("plex", "a", { total: 1, validated: 0, rejected: 1 });
+		integrationHealth.record("plex", "b", { total: 1, validated: 0, rejected: 1 });
+		integrationHealth.record("plex", "c", { total: 1, validated: 0, rejected: 1 });
+
+		const health = integrationHealth.getByIntegration("plex")!;
+		expect(health.state).toBe("failing");
+		expect(health.consecutiveFailures).toBe(3);
+	});
+
+	it("resets to healthy on success after failures", () => {
+		integrationHealth.record("plex", "a", { total: 1, validated: 0, rejected: 1 });
+		integrationHealth.record("plex", "b", { total: 1, validated: 0, rejected: 1 });
+		integrationHealth.record("plex", "c", { total: 1, validated: 0, rejected: 1 });
+		expect(integrationHealth.getByIntegration("plex")!.state).toBe("failing");
+
+		integrationHealth.record("plex", "d", { total: 1, validated: 1, rejected: 0 });
+
+		const health = integrationHealth.getByIntegration("plex")!;
+		expect(health.state).toBe("healthy");
+		expect(health.consecutiveFailures).toBe(0);
+		expect(health.lastSuccessAt).toBeDefined();
+	});
+
+	it("does not count mixed results as failure", () => {
+		// rejected > 0 but validated > 0 too — this is a partial success, not all-rejection
+		integrationHealth.record("plex", "a", { total: 2, validated: 1, rejected: 1 });
+
+		const health = integrationHealth.getByIntegration("plex")!;
+		expect(health.state).toBe("healthy");
+		expect(health.consecutiveFailures).toBe(0);
+	});
+});
+
+describe("Health degradation notifications", () => {
+	beforeEach(() => {
+		integrationHealth.reset();
+	});
+
+	it("fires notification on healthy → degraded transition", () => {
+		const notifyFn = vi.fn();
+		integrationHealth.setNotifyFn(notifyFn);
+
+		integrationHealth.record("plex", "sessions", { total: 1, validated: 0, rejected: 1 });
+
+		expect(notifyFn).toHaveBeenCalledOnce();
+		expect(notifyFn).toHaveBeenCalledWith(
+			expect.objectContaining({
+				eventType: "VALIDATION_HEALTH_DEGRADED",
+				title: expect.stringContaining("plex"),
+				metadata: expect.objectContaining({
+					integration: "plex",
+					failureCount: "1",
+				}),
+			}),
+		);
+	});
+
+	it("does NOT fire on degraded → degraded (no re-fire)", () => {
+		const notifyFn = vi.fn();
+		integrationHealth.setNotifyFn(notifyFn);
+
+		integrationHealth.record("plex", "a", { total: 1, validated: 0, rejected: 1 });
+		expect(notifyFn).toHaveBeenCalledOnce();
+
+		integrationHealth.record("plex", "b", { total: 1, validated: 0, rejected: 1 });
+		// Should not fire again — only fires on healthy → degraded/failing
+		expect(notifyFn).toHaveBeenCalledOnce();
+	});
+
+	it("throttles: second degradation within 1 hour is suppressed", () => {
+		const notifyFn = vi.fn();
+		integrationHealth.setNotifyFn(notifyFn);
+
+		// First degradation
+		integrationHealth.record("plex", "a", { total: 1, validated: 0, rejected: 1 });
+		expect(notifyFn).toHaveBeenCalledOnce();
+
+		// Recovery
+		integrationHealth.record("plex", "b", { total: 1, validated: 1, rejected: 0 });
+
+		// Second degradation within same hour — should be throttled
+		integrationHealth.record("plex", "c", { total: 1, validated: 0, rejected: 1 });
+		expect(notifyFn).toHaveBeenCalledOnce(); // Still only 1
+	});
+
+	it("does not fire when notifyFn is not set", () => {
+		// No setNotifyFn called — should not throw
+		expect(() => {
+			integrationHealth.record("plex", "a", { total: 1, validated: 0, rejected: 1 });
+		}).not.toThrow();
+	});
+
+	it("includes affected categories in metadata", () => {
+		const notifyFn = vi.fn();
+		integrationHealth.setNotifyFn(notifyFn);
+
+		integrationHealth.record("plex", "sessions", { total: 1, validated: 0, rejected: 1 });
+
+		const call = notifyFn.mock.calls[0]![0];
+		expect(call.metadata.affectedCategories).toContain("sessions");
 	});
 });

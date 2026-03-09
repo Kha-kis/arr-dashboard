@@ -9,7 +9,7 @@
  */
 
 import type { z } from "zod";
-import { schemaFingerprints } from "./schema-fingerprint.js";
+import { type DriftReport, schemaFingerprints } from "./schema-fingerprint.js";
 
 // ============================================================================
 // Types
@@ -27,10 +27,11 @@ export interface ValidationStats {
 	rejected: number;
 }
 
-/** Result of validateAndCollect — items array + validation stats */
+/** Result of validateAndCollect — items array + validation stats + optional drift */
 export interface ValidationResult<T> {
 	items: T[];
 	stats: ValidationStats;
+	drift?: DriftReport;
 }
 
 /**
@@ -128,11 +129,12 @@ export function validateAndCollect<T>(
 	}
 
 	// Schema fingerprinting (when integration + category are specified and items exist)
+	let drift: DriftReport | undefined;
 	if (options?.integration && options?.category && results.length > 0) {
-		schemaFingerprints.record(options.integration, options.category, results, log);
+		drift = schemaFingerprints.record(options.integration, options.category, results, log);
 	}
 
-	return { items: results, stats: { total: items.length, validated: results.length, rejected } };
+	return { items: results, stats: { total: items.length, validated: results.length, rejected }, drift };
 }
 
 // ============================================================================
