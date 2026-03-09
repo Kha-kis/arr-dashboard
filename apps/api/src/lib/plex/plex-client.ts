@@ -380,14 +380,11 @@ export class PlexClient {
 		const contentType = response.headers.get("content-type") ?? "";
 		if (contentType.includes("application/json")) {
 			const raw = await response.json();
-			if (options?.schema) {
-				const category = path.split("?")[0] ?? path;
-				return parseUpstreamOrThrow(raw, options.schema, { integration: "plex", category });
+			if (!options?.schema) {
+				throw new Error(`Plex API: schema required for JSON responses (path: ${path})`);
 			}
-			if (raw !== null && typeof raw === "object" && Object.keys(raw as Record<string, unknown>).length > 0) {
-				this.log.debug({ path }, "Plex returned JSON but no schema was provided for validation");
-			}
-			return raw as T;
+			const category = path.split("?")[0] ?? path;
+			return parseUpstreamOrThrow(raw, options.schema, { integration: "plex", category });
 		}
 
 		// Non-JSON responses (e.g., from POST /library/sections/{id}/refresh)

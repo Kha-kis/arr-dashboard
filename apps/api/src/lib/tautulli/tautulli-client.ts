@@ -266,11 +266,11 @@ export class TautulliClient {
 			throw new Error(`Tautulli API error: ${wrapper.response.message ?? "Unknown error"}`);
 		}
 
-		// Validate inner data if schema provided
-		if (schema) {
-			return parseUpstreamOrThrow(wrapper.response.data, schema, { integration: "tautulli", category: cmd });
+		// Validate inner data — schema is required for all Tautulli commands
+		if (!schema) {
+			throw new Error(`Tautulli API: schema required for command responses (cmd: ${cmd})`);
 		}
-		return wrapper.response.data as T;
+		return parseUpstreamOrThrow(wrapper.response.data, schema, { integration: "tautulli", category: cmd });
 	}
 }
 
