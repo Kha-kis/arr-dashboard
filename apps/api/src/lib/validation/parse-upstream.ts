@@ -25,6 +25,7 @@
 import type { z } from "zod";
 import { integrationHealth } from "./integration-health.js";
 import { schemaFingerprints } from "./schema-fingerprint.js";
+import { validationQuarantine } from "./validation-quarantine.js";
 
 // ============================================================================
 // Types
@@ -121,6 +122,15 @@ export function parseUpstream<T>(
 		total: 1,
 		validated: 0,
 		rejected: 1,
+	});
+
+	// Quarantine rejected item for later inspection
+	validationQuarantine.push({
+		raw,
+		errors: issues,
+		integration: source.integration,
+		category: source.category,
+		timestamp: new Date().toISOString(),
 	});
 
 	return {

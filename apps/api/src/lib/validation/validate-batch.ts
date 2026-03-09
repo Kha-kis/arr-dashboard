@@ -10,6 +10,7 @@
 
 import type { z } from "zod";
 import { type DriftReport, schemaFingerprints } from "./schema-fingerprint.js";
+import { validationQuarantine } from "./validation-quarantine.js";
 
 // ============================================================================
 // Types
@@ -110,6 +111,17 @@ export function validateAndCollect<T>(
 				// tolerant: skip invalid items
 				log.warn(`Skipping invalid item ${i} in ${fileName}: ${detail}`);
 				issues.push(detail);
+
+				// Quarantine rejected items when integration/category are known
+				if (options?.integration && options?.category) {
+					validationQuarantine.push({
+						raw: items[i],
+						errors: [detail],
+						integration: options.integration,
+						category: options.category,
+						timestamp: new Date().toISOString(),
+					});
+				}
 			}
 		}
 	}
