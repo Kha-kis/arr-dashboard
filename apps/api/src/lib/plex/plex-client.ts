@@ -381,7 +381,8 @@ export class PlexClient {
 		if (contentType.includes("application/json")) {
 			const raw = await response.json();
 			if (options?.schema) {
-				return parseUpstreamOrThrow(raw, options.schema, { integration: "plex", category: path });
+				const category = path.split("?")[0] ?? path;
+				return parseUpstreamOrThrow(raw, options.schema, { integration: "plex", category });
 			}
 			return raw as T;
 		}

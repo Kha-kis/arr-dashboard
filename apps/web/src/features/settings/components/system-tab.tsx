@@ -328,6 +328,11 @@ function ValidationHealthSection({
 				</div>
 
 				{/* Per-Integration Breakdown */}
+				{integrationNames.length === 0 && (
+					<p className="text-sm text-muted-foreground text-center py-4">
+						No validation data yet — stats appear after the first API call to each integration.
+					</p>
+				)}
 				{integrationNames.length > 0 && (
 					<GlassmorphicCard padding="none">
 						<div className="overflow-x-auto">
