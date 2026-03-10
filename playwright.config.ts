@@ -79,6 +79,8 @@ export default defineConfig({
     timeout: isCI ? 8000 : 10000,
   },
 
-  /* Exclude Pocket ID tests in CI (requires external Pocket ID server) */
-  testIgnore: isCI ? ['**/pocket-id-test/**'] : [],
+  /* Exclude tests that require external services (Docker Compose stacks) */
+  testIgnore: isCI
+    ? ['**/pocket-id-test/**', '**/integration/**']
+    : ['**/integration/**'],
 });
