@@ -35,13 +35,13 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -49,7 +49,7 @@ jobs:
 
       - name: Log in to Docker Hub
         if: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -68,7 +68,7 @@ jobs:
 
       - name: Build and push by digest (GHCR)
         id: build-ghcr
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: ${{ matrix.platform }}
@@ -94,7 +94,7 @@ jobs:
           touch "/tmp/digests-ghcr/${DIGEST#sha256:}"
 
       - name: Upload GHCR digest
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: digests-ghcr-${{ steps.meta.outputs.platform_slug }}
           path: /tmp/digests-ghcr/*
@@ -117,7 +117,7 @@ jobs:
       - name: Build and push by digest (DockerHub)
         id: build-dockerhub
         if: steps.dockerhub-check.outputs.available == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: ${{ matrix.platform }}
@@ -145,7 +145,7 @@ jobs:
 
       - name: Upload DockerHub digest
         if: steps.dockerhub-check.outputs.available == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: digests-dockerhub-${{ steps.meta.outputs.platform_slug }}
           path: /tmp/digests-dockerhub/*
@@ -170,10 +170,10 @@ jobs:
           echo "short_sha=${FULL_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -181,14 +181,14 @@ jobs:
 
       - name: Log in to Docker Hub
         if: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # ── GHCR manifest ──
       - name: Download GHCR digests
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: /tmp/digests-ghcr
           pattern: digests-ghcr-*
@@ -224,7 +224,7 @@ jobs:
 
       - name: Download DockerHub digests
         if: steps.dockerhub-check.outputs.available == 'true'
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: /tmp/digests-dockerhub
           pattern: digests-dockerhub-*
@@ -257,7 +257,7 @@ jobs:
 
     steps:
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
