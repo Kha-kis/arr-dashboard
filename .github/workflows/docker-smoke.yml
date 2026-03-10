@@ -78,7 +78,7 @@ jobs:
 
     steps:
       - name: Download image artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: smoke-image
           path: /tmp
@@ -181,7 +181,7 @@ jobs:
 
     steps:
       - name: Download image artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: smoke-image
           path: /tmp
