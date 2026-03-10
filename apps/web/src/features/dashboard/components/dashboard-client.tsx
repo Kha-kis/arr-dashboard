@@ -67,6 +67,15 @@ const SERVICE_CONFIG = {
 	readarr: { ...SERVICE_GRADIENTS.readarr, icon: BookOpen, label: "Readarr" },
 } as const;
 
+/** Descriptions for each service type shown on stat cards */
+const SERVICE_DESCRIPTIONS: Record<keyof typeof SERVICE_CONFIG, string> = {
+	sonarr: "Active TV show instances",
+	radarr: "Active movie instances",
+	lidarr: "Active music instances",
+	readarr: "Active book instances",
+	prowlarr: "Indexer management instances",
+};
+
 /**
  * Animated Service Stat Card
  * Premium stat card with service-specific or theme-based styling
@@ -268,6 +277,7 @@ export const DashboardClient = () => {
 		userLoading: _userLoading,
 		userError,
 		services,
+		enabledServices,
 		servicesRefetch,
 		groupedByService,
 		queueAggregated,
@@ -422,13 +432,8 @@ export const DashboardClient = () => {
 		);
 	}
 
-	// Calculate total instances
-	const totalInstances =
-		(groupedByService.sonarr ?? 0) +
-		(groupedByService.radarr ?? 0) +
-		(groupedByService.prowlarr ?? 0) +
-		(groupedByService.lidarr ?? 0) +
-		(groupedByService.readarr ?? 0);
+	// Calculate total enabled instances
+	const totalInstances = enabledServices.length;
 
 	return (
 		<>
@@ -456,8 +461,8 @@ export const DashboardClient = () => {
 							</span>
 						</h1>
 						<p className="text-muted-foreground max-w-xl">
-							Your media server command center. {totalInstances} instance
-							{totalInstances !== 1 ? "s" : ""} configured
+							Your media server command center. {totalInstances} active instance
+							{totalInstances !== 1 ? "s" : ""}{totalInstances === 0 && services.length > 0 ? ` (${services.length} disabled)` : ""}
 							{totalQueueItems > 0 && (
 								<span className="font-medium" style={{ color: themeGradient.from }}>
 									{" "}
@@ -511,65 +516,26 @@ export const DashboardClient = () => {
 				{/* Overview Tab */}
 				{activeTab === "overview" && (
 					<div className="flex flex-col gap-10 animate-in fade-in duration-300">
-						{/* Service Stats Grid */}
-						<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7">
-							<ServiceStatCard
-								service="sonarr"
-								value={groupedByService.sonarr ?? 0}
-								description={
-									(groupedByService.sonarr ?? 0) === 0
-										? "No instances configured yet"
-										: "Active TV show instances"
-								}
-								animationDelay={100}
-							/>
-							<ServiceStatCard
-								service="radarr"
-								value={groupedByService.radarr ?? 0}
-								description={
-									(groupedByService.radarr ?? 0) === 0
-										? "No instances configured yet"
-										: "Active movie instances"
-								}
-								animationDelay={150}
-							/>
-							<ServiceStatCard
-								service="lidarr"
-								value={groupedByService.lidarr ?? 0}
-								description={
-									(groupedByService.lidarr ?? 0) === 0
-										? "No instances configured yet"
-										: "Active music instances"
-								}
-								animationDelay={200}
-							/>
-							<ServiceStatCard
-								service="readarr"
-								value={groupedByService.readarr ?? 0}
-								description={
-									(groupedByService.readarr ?? 0) === 0
-										? "No instances configured yet"
-										: "Active book instances"
-								}
-								animationDelay={250}
-							/>
-							<ServiceStatCard
-								service="prowlarr"
-								value={groupedByService.prowlarr ?? 0}
-								description={
-									(groupedByService.prowlarr ?? 0) === 0
-										? "No instances configured yet"
-										: "Indexer management instances"
-								}
-								animationDelay={300}
-							/>
+						{/* Service Stats Grid — only shows service types with enabled instances */}
+						<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+							{(Object.keys(SERVICE_CONFIG) as (keyof typeof SERVICE_CONFIG)[])
+								.filter((key) => (groupedByService[key] ?? 0) > 0)
+								.map((key, index) => (
+									<ServiceStatCard
+										key={key}
+										service={key}
+										value={groupedByService[key] ?? 0}
+										description={SERVICE_DESCRIPTIONS[key]}
+										animationDelay={100 + index * 50}
+									/>
+								))}
 							<ServiceStatCard
 								service="queue"
 								value={totalQueueItems}
 								description="Items across all queues"
 								onClick={() => setActiveTab("queue")}
 								isQueue
-								animationDelay={350}
+								animationDelay={100 + Object.keys(groupedByService).length * 50}
 								themeGradient={themeGradient}
 							/>
 						</div>
@@ -621,15 +587,17 @@ export const DashboardClient = () => {
 									<div>
 										<h2 className="text-lg font-semibold">Configured Instances</h2>
 										<p className="text-sm text-muted-foreground">
-											{services.length === 0
-												? "Add your first instance to get started"
-												: `${services.length} connected service${services.length !== 1 ? "s" : ""}`}
+											{enabledServices.length > 0
+												? `${enabledServices.length} active service${enabledServices.length !== 1 ? "s" : ""}`
+												: services.length > 0
+													? `${services.length} instance${services.length !== 1 ? "s" : ""} disabled`
+													: "Add your first instance to get started"}
 										</p>
 									</div>
 								</div>
 
 								<div className="p-6">
-									{services.length === 0 ? (
+									{enabledServices.length === 0 ? (
 										<div className="text-center py-12">
 											<div
 												className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full"
@@ -639,14 +607,27 @@ export const DashboardClient = () => {
 											>
 												<Zap className="h-8 w-8" style={{ color: themeGradient.from }} />
 											</div>
-											<h3 className="text-lg font-medium mb-1">No instances configured</h3>
-											<p className="text-sm text-muted-foreground max-w-sm mx-auto">
-												Add a Sonarr, Radarr, Lidarr, Readarr, or Prowlarr instance from the
-												Settings page to begin monitoring.
-											</p>
+											{services.length > 0 ? (
+												<>
+													<h3 className="text-lg font-medium mb-1">All instances disabled</h3>
+													<p className="text-sm text-muted-foreground max-w-sm mx-auto">
+														Enable instances from the{" "}
+														<Link href="/settings" className="underline hover:text-foreground transition-colors">Settings</Link>{" "}
+														page to see them here.
+													</p>
+												</>
+											) : (
+												<>
+													<h3 className="text-lg font-medium mb-1">No instances configured</h3>
+													<p className="text-sm text-muted-foreground max-w-sm mx-auto">
+														Add a Sonarr, Radarr, Lidarr, Readarr, or Prowlarr instance from the
+														Settings page to begin monitoring.
+													</p>
+												</>
+											)}
 										</div>
 									) : (
-										<ServiceInstancesTable instances={services} incognitoMode={incognitoMode} />
+										<ServiceInstancesTable instances={enabledServices} incognitoMode={incognitoMode} />
 									)}
 								</div>
 							</div>

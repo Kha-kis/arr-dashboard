@@ -40,14 +40,20 @@ export const useDashboardData = () => {
 	// This prevents showing "0 instances" during the auth check
 	const isLoading = userLoading || servicesLoading;
 
-	// Group services by type for summary cards
+	// Filter to enabled instances for dashboard display
+	const enabledServices = useMemo(
+		() => services.filter((s) => s.enabled),
+		[services],
+	);
+
+	// Group enabled services by type for summary cards
 	const groupedByService = useMemo(() => {
 		const groups: Record<string, number> = {};
-		for (const instance of services) {
+		for (const instance of enabledServices) {
 			groups[instance.service] = (groups[instance.service] ?? 0) + 1;
 		}
 		return groups;
-	}, [services]);
+	}, [enabledServices]);
 
 	// Extract unique instances from queue for filter options
 	const instanceOptions = useMemo(() => {
@@ -85,6 +91,7 @@ export const useDashboardData = () => {
 
 		// Services state
 		services,
+		enabledServices,
 		servicesLoading,
 		servicesRefetch: servicesQuery.refetch,
 		groupedByService,
