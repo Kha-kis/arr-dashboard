@@ -34,7 +34,7 @@ const isSameMonth = (a: Date, b: Date): boolean =>
 	a.getUTCFullYear() === b.getUTCFullYear() && a.getUTCMonth() === b.getUTCMonth();
 
 const formatDayNumber = (date: Date): string =>
-	new Intl.DateTimeFormat(undefined, { day: "numeric" }).format(date);
+	new Intl.DateTimeFormat(undefined, { day: "numeric", timeZone: "UTC" }).format(date);
 
 export const CalendarGrid = ({
 	days,
