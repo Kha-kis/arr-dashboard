@@ -188,7 +188,7 @@ jobs:
 
       # ── GHCR manifest ──
       - name: Download GHCR digests
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v7
         with:
           path: /tmp/digests-ghcr
           pattern: digests-ghcr-*
@@ -224,7 +224,7 @@ jobs:
 
       - name: Download DockerHub digests
         if: steps.dockerhub-check.outputs.available == 'true'
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v7
         with:
           path: /tmp/digests-dockerhub
           pattern: digests-dockerhub-*
