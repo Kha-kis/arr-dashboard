@@ -19,6 +19,7 @@ import {
 	Zap,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 import { PremiumSkeleton } from "../../../components/layout/premium-components";
 import { springs } from "../../../components/motion";
@@ -32,9 +33,9 @@ import {
 	Pagination,
 	Typography,
 } from "../../../components/ui";
+import { useDashboardStatisticsQuery } from "../../../hooks/api/useDashboard";
 import { useNowPlaying } from "../../../hooks/api/usePlex";
 import { useTautulliActivity } from "../../../hooks/api/useTautulli";
-import { useDashboardStatisticsQuery } from "../../../hooks/api/useDashboard";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
@@ -44,8 +45,9 @@ import { useQueueGrouping } from "../hooks";
 import { useDashboardData } from "../hooks/useDashboardData";
 import { useDashboardFilters } from "../hooks/useDashboardFilters";
 import { useDashboardQueue } from "../hooks/useDashboardQueue";
-import { type DashboardTab, DashboardTabs } from "./dashboard-tabs";
 import { CacheHealthBanner } from "./cache-health-banner";
+import { type DashboardTab, DashboardTabs } from "./dashboard-tabs";
+import { DiskUsageWidget } from "./disk-usage-widget";
 import { NowPlayingWidget } from "./now-playing-widget";
 import { OnDeckWidget } from "./on-deck-widget";
 import { PlexServerInfoWidget } from "./plex-server-info-widget";
@@ -69,7 +71,6 @@ const SERVICE_CONFIG = {
 	readarr: { ...SERVICE_GRADIENTS.readarr, icon: BookOpen, label: "Readarr" },
 } as const;
 
-
 /**
  * Animated Service Stat Card
  * Premium stat card with service-specific or theme-based styling
@@ -80,6 +81,8 @@ const ServiceStatCard = ({
 	description,
 	subtitle,
 	detail,
+	warningLine,
+	healthIssues,
 	onClick,
 	isQueue = false,
 	animationDelay = 0,
@@ -90,6 +93,8 @@ const ServiceStatCard = ({
 	description: string;
 	subtitle?: string;
 	detail?: string;
+	warningLine?: string;
+	healthIssues?: number;
 	onClick?: () => void;
 	isQueue?: boolean;
 	animationDelay?: number;
@@ -170,17 +175,33 @@ const ServiceStatCard = ({
 			<div className="relative">
 				{/* Icon with gradient background */}
 				<div className="mb-4 flex items-center justify-between">
-					<div
-						className={cn(
-							"flex h-12 w-12 items-center justify-center rounded-xl transition-all duration-300",
-							onClick && "group-hover:scale-110",
+					<div className="relative">
+						<div
+							className={cn(
+								"flex h-12 w-12 items-center justify-center rounded-xl transition-all duration-300",
+								onClick && "group-hover:scale-110",
+							)}
+							style={{
+								background: `linear-gradient(135deg, ${config.from}, ${config.to})`,
+								boxShadow: `0 8px 24px -8px ${config.glow}`,
+							}}
+						>
+							<Icon className="h-6 w-6 text-white" />
+						</div>
+
+						{/* Health issue badge */}
+						{healthIssues != null && healthIssues > 0 && (
+							<div
+								className="absolute -top-1.5 -right-1.5 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white shadow-sm"
+								style={{
+									backgroundColor: SEMANTIC_COLORS.error.text,
+									boxShadow: `0 0 8px ${SEMANTIC_COLORS.error.glow}`,
+								}}
+								title={`${healthIssues} health issue${healthIssues !== 1 ? "s" : ""}`}
+							>
+								{healthIssues}
+							</div>
 						)}
-						style={{
-							background: `linear-gradient(135deg, ${config.from}, ${config.to})`,
-							boxShadow: `0 8px 24px -8px ${config.glow}`,
-						}}
-					>
-						<Icon className="h-6 w-6 text-white" />
 					</div>
 
 					{/* Arrow indicator for clickable cards */}
@@ -221,14 +242,17 @@ const ServiceStatCard = ({
 				<p className="mt-1 text-xs text-muted-foreground">{description}</p>
 
 				{/* Subtitle — stat detail line */}
-				{subtitle && (
-					<p className="mt-1 text-xs text-muted-foreground/80">{subtitle}</p>
+				{subtitle && <p className="mt-1 text-xs text-muted-foreground/80">{subtitle}</p>}
+
+				{/* Warning line — missing items indicator */}
+				{warningLine && (
+					<p className="mt-1 text-xs font-medium" style={{ color: SEMANTIC_COLORS.warning.text }}>
+						{warningLine}
+					</p>
 				)}
 
 				{/* Detail — instance count note */}
-				{detail && (
-					<p className="mt-1.5 text-xs text-muted-foreground/50">{detail}</p>
-				)}
+				{detail && <p className="mt-1.5 text-xs text-muted-foreground/50">{detail}</p>}
 
 				{/* Active indicator line */}
 				<div
@@ -276,6 +300,7 @@ export const DashboardClient = () => {
 	const [activeTab, setActiveTab] = useState<DashboardTab>("overview");
 	const [isRefreshing, setIsRefreshing] = useState(false);
 	const [instancesExpanded, setInstancesExpanded] = useState(false);
+	const router = useRouter();
 
 	// Get the user's selected color theme
 	const { gradient: themeGradient } = useThemeGradient();
@@ -540,32 +565,77 @@ export const DashboardClient = () => {
 									let statValue = instanceCount;
 									let description = "";
 									let subtitle: string | undefined;
+									let warningLine: string | undefined;
+									let healthIssues: number | undefined;
+									let cardOnClick: (() => void) | undefined;
 
 									if (key === "sonarr" && stats?.sonarr?.aggregate) {
 										const agg = stats.sonarr.aggregate;
 										statValue = agg.totalSeries;
 										description = "TV series";
-										subtitle = `${agg.monitoredSeries} monitored · ${Math.round(agg.downloadedPercentage)}% downloaded`;
+										const parts = [
+											`${agg.monitoredSeries} monitored`,
+											`${Math.round(agg.downloadedPercentage)}% downloaded`,
+										];
+										if (agg.recentlyAdded7Days)
+											parts.push(`${agg.recentlyAdded7Days} new this week`);
+										subtitle = parts.join(" · ");
+										if (agg.missingEpisodes > 0)
+											warningLine = `${agg.missingEpisodes} missing episode${agg.missingEpisodes !== 1 ? "s" : ""}`;
+										healthIssues = agg.healthIssues ?? 0;
+										cardOnClick = () => router.push("/library?service=sonarr");
 									} else if (key === "radarr" && stats?.radarr?.aggregate) {
 										const agg = stats.radarr.aggregate;
 										statValue = agg.totalMovies;
 										description = "Movies";
-										subtitle = `${agg.monitoredMovies} monitored · ${Math.round(agg.downloadedPercentage)}% downloaded`;
+										const parts = [
+											`${agg.monitoredMovies} monitored`,
+											`${Math.round(agg.downloadedPercentage)}% downloaded`,
+										];
+										if (agg.recentlyAdded7Days)
+											parts.push(`${agg.recentlyAdded7Days} new this week`);
+										subtitle = parts.join(" · ");
+										if (agg.missingMovies > 0)
+											warningLine = `${agg.missingMovies} missing movie${agg.missingMovies !== 1 ? "s" : ""}`;
+										healthIssues = agg.healthIssues ?? 0;
+										cardOnClick = () => router.push("/library?service=radarr");
 									} else if (key === "prowlarr" && stats?.prowlarr?.aggregate) {
 										const agg = stats.prowlarr.aggregate;
 										statValue = agg.totalIndexers;
 										description = "Indexers";
 										subtitle = `${agg.activeIndexers} active · ${agg.pausedIndexers} paused`;
+										healthIssues = agg.healthIssues ?? 0;
+										cardOnClick = () => router.push("/indexers");
 									} else if (key === "lidarr" && stats?.lidarr?.aggregate) {
 										const agg = stats.lidarr.aggregate;
 										statValue = agg.totalArtists;
 										description = "Artists";
-										subtitle = `${agg.monitoredArtists} monitored · ${Math.round(agg.downloadedPercentage)}% downloaded`;
+										const parts = [
+											`${agg.monitoredArtists} monitored`,
+											`${Math.round(agg.downloadedPercentage)}% downloaded`,
+										];
+										if (agg.recentlyAdded7Days)
+											parts.push(`${agg.recentlyAdded7Days} new this week`);
+										subtitle = parts.join(" · ");
+										if (agg.missingTracks > 0)
+											warningLine = `${agg.missingTracks} missing track${agg.missingTracks !== 1 ? "s" : ""}`;
+										healthIssues = agg.healthIssues ?? 0;
+										cardOnClick = () => router.push("/library?service=lidarr");
 									} else if (key === "readarr" && stats?.readarr?.aggregate) {
 										const agg = stats.readarr.aggregate;
 										statValue = agg.totalAuthors;
 										description = "Authors";
-										subtitle = `${agg.monitoredAuthors} monitored · ${Math.round(agg.downloadedPercentage)}% downloaded`;
+										const parts = [
+											`${agg.monitoredAuthors} monitored`,
+											`${Math.round(agg.downloadedPercentage)}% downloaded`,
+										];
+										if (agg.recentlyAdded7Days)
+											parts.push(`${agg.recentlyAdded7Days} new this week`);
+										subtitle = parts.join(" · ");
+										if (agg.missingBooks > 0)
+											warningLine = `${agg.missingBooks} missing book${agg.missingBooks !== 1 ? "s" : ""}`;
+										healthIssues = agg.healthIssues ?? 0;
+										cardOnClick = () => router.push("/library?service=readarr");
 									} else {
 										const fallbacks: Record<keyof typeof SERVICE_CONFIG, string> = {
 											sonarr: "Active TV show instances",
@@ -584,7 +654,10 @@ export const DashboardClient = () => {
 											value={statValue}
 											description={description}
 											subtitle={subtitle}
+											warningLine={warningLine}
+											healthIssues={healthIssues}
 											detail={instanceNote}
+											onClick={cardOnClick}
 											animationDelay={100 + index * 50}
 										/>
 									);
@@ -600,8 +673,8 @@ export const DashboardClient = () => {
 							/>
 						</div>
 
-						{/* Two-column widget grid for media widgets */}
-						{(seerrInstance || hasMediaServer) && (
+						{/* Two-column widget grid for media widgets + storage */}
+						{(seerrInstance || hasMediaServer || stats?.combinedDisk) && (
 							<div className="grid gap-6 lg:grid-cols-2">
 								{/* Left column */}
 								<div className="space-y-6">
@@ -619,6 +692,7 @@ export const DashboardClient = () => {
 								</div>
 								{/* Right column */}
 								<div className="space-y-6">
+									<DiskUsageWidget combinedDisk={stats?.combinedDisk} animationDelay={425} />
 									<PlexServerInfoWidget
 										enabled={hasPlexInstances}
 										animationDelay={475}
@@ -657,8 +731,15 @@ export const DashboardClient = () => {
 											<h2 className="text-lg font-semibold">Configured Instances</h2>
 											{!instancesExpanded && enabledServices.length > 0 ? (
 												<p className="text-sm text-muted-foreground">
-													{enabledServices.length} active service{enabledServices.length !== 1 ? "s" : ""} across{" "}
-													{[...new Set(enabledServices.map((s) => s.service.charAt(0).toUpperCase() + s.service.slice(1)))].join(", ")}
+													{enabledServices.length} active service
+													{enabledServices.length !== 1 ? "s" : ""} across{" "}
+													{[
+														...new Set(
+															enabledServices.map(
+																(s) => s.service.charAt(0).toUpperCase() + s.service.slice(1),
+															),
+														),
+													].join(", ")}
 												</p>
 											) : (
 												<p className="text-sm text-muted-foreground">

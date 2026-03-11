@@ -1,11 +1,13 @@
 "use client";
 
 import type { LibraryItem } from "@arr/shared";
-import React, { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "../../../components/ui";
 import { useLibraryMonitorMutation } from "../../../hooks/api/useLibrary";
 import { useSeriesProgress, useWatchEnrichment } from "../../../hooks/api/usePlex";
 import { useLibraryEnrichment } from "../../../hooks/api/useSeerr";
+import { fetchLibraryItemByTmdbId } from "../../../lib/api-client/library";
 import { useSeerrInstances } from "../../seerr/hooks/use-seerr-instances";
 import { useLibraryActions, useLibraryData, useLibraryFilters } from "../hooks";
 import { buildLibraryExternalLink } from "../lib/library-utils";
@@ -37,6 +39,23 @@ export const LibraryClient: React.FC = () => {
 	const [itemDetail, setItemDetail] = useState<LibraryItem | null>(null);
 	const [albumDetail, setAlbumDetail] = useState<LibraryItem | null>(null);
 	const [bookDetail, setBookDetail] = useState<LibraryItem | null>(null);
+
+	// Deep link: auto-open detail modal when ?tmdbId= is in the URL
+	const searchParams = useSearchParams();
+	const deepLinkTmdbId = searchParams.get("tmdbId");
+	const deepLinkHandled = useRef<string | null>(null);
+
+	useEffect(() => {
+		if (!deepLinkTmdbId || deepLinkHandled.current === deepLinkTmdbId) return;
+		deepLinkHandled.current = deepLinkTmdbId;
+
+		const tmdbId = Number(deepLinkTmdbId);
+		if (!Number.isFinite(tmdbId) || tmdbId <= 0) return;
+
+		fetchLibraryItemByTmdbId(tmdbId).then((item) => {
+			if (item) setItemDetail(item);
+		});
+	}, [deepLinkTmdbId]);
 
 	// Seerr integration — detect if any Seerr instance is configured
 	const { defaultInstance: seerrInstance } = useSeerrInstances();

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { ChevronLeft, ChevronRight, Film, PlayCircle, Tv } from "lucide-react";
 import Link from "next/link";
-import { ExternalLink, Film, PlayCircle, Tv } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { GlassmorphicCard } from "../../../components/layout";
 import { useOnDeck } from "../../../hooks/api/usePlex";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
@@ -22,6 +22,31 @@ interface OnDeckWidgetProps {
 export const OnDeckWidget = ({ enabled, animationDelay = 0 }: OnDeckWidgetProps) => {
 	const { data, isLoading, isError } = useOnDeck(enabled);
 	const [failedThumbs, setFailedThumbs] = useState<Set<string>>(new Set());
+	const scrollRef = useRef<HTMLDivElement>(null);
+	const [canScrollLeft, setCanScrollLeft] = useState(false);
+	const [canScrollRight, setCanScrollRight] = useState(false);
+
+	const updateScrollState = useCallback(() => {
+		const el = scrollRef.current;
+		if (!el) return;
+		setCanScrollLeft(el.scrollLeft > 4);
+		setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+	}, []);
+
+	useEffect(() => {
+		updateScrollState();
+		const el = scrollRef.current;
+		if (!el) return;
+		const observer = new ResizeObserver(updateScrollState);
+		observer.observe(el);
+		return () => observer.disconnect();
+	}, [updateScrollState, data]);
+
+	const scrollBy = useCallback((direction: "left" | "right") => {
+		const el = scrollRef.current;
+		if (!el) return;
+		el.scrollBy({ left: direction === "left" ? -300 : 300, behavior: "smooth" });
+	}, []);
 
 	if (!enabled || isLoading || isError || !data?.items?.length) return null;
 
@@ -58,64 +83,52 @@ export const OnDeckWidget = ({ enabled, animationDelay = 0 }: OnDeckWidgetProps)
 					</div>
 				</div>
 
-				<div className="overflow-x-auto">
-					<div className="flex gap-3 p-4 min-w-min">
-						{displayItems.map((item, index) => {
-							const MediaIcon = item.mediaType === "movie" ? Film : Tv;
-							const bgGradient =
-								item.mediaType === "movie"
-									? "linear-gradient(160deg, #92400e 0%, #f59e0b 100%)"
-									: "linear-gradient(160deg, #164e63 0%, #06b6d4 100%)";
-							const tmdbPath =
-								item.mediaType === "movie" ? "movie" : "tv";
-							const thumbKey = `${item.instanceId}-${item.tmdbId}`;
-							const hasThumb = item.thumb && !failedThumbs.has(thumbKey);
+				<div className="relative group/scroll">
+					<div
+						ref={scrollRef}
+						className="overflow-x-auto scrollbar-thin"
+						onScroll={updateScrollState}
+					>
+						<div className="flex gap-3 p-4 min-w-min">
+							{displayItems.map((item, index) => {
+								const MediaIcon = item.mediaType === "movie" ? Film : Tv;
+								const bgGradient =
+									item.mediaType === "movie"
+										? "linear-gradient(160deg, #92400e 0%, #f59e0b 100%)"
+										: "linear-gradient(160deg, #164e63 0%, #06b6d4 100%)";
+								const thumbKey = `${item.instanceId}-${item.tmdbId}`;
+								const hasThumb = item.thumb && !failedThumbs.has(thumbKey);
+								const libraryHref = item.tmdbId ? `/library?tmdbId=${item.tmdbId}` : "/library";
 
-							return (
-								<div
-									key={`${item.instanceId}-${item.tmdbId}-${item.mediaType}`}
-									className="flex-shrink-0 w-[140px] group animate-in fade-in slide-in-from-bottom-2 duration-300"
-									style={{
-										animationDelay: `${index * 30}ms`,
-										animationFillMode: "backwards",
-									}}
-								>
-									<div
-										className="relative aspect-[2/3] rounded-lg overflow-hidden mb-2 transition-transform duration-200 group-hover:scale-[1.03]"
+								return (
+									<Link
+										key={`${item.instanceId}-${item.tmdbId}-${item.mediaType}`}
+										href={libraryHref}
+										className="flex-shrink-0 w-[140px] group animate-in fade-in slide-in-from-bottom-2 duration-300"
 										style={{
-											background: bgGradient,
-											boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
+											animationDelay: `${index * 30}ms`,
+											animationFillMode: "backwards",
 										}}
 									>
-										{hasThumb ? (
-											<img
-												src={getPlexThumbUrl(item.instanceId, item.thumb!)}
-												alt={item.title}
-												className="absolute inset-0 w-full h-full object-cover"
-												loading="lazy"
-												onError={() => setFailedThumbs((prev) => new Set(prev).add(thumbKey))}
-											/>
-										) : (
-											<MediaIcon className="absolute inset-0 m-auto h-10 w-10 text-white/30" />
-										)}
-										<div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors duration-200 flex items-center justify-center">
-											{item.tmdbId ? (
-												<a
-													href={`https://www.themoviedb.org/${tmdbPath}/${item.tmdbId}`}
-													target="_blank"
-													rel="noopener noreferrer"
-													onClick={(e) => e.stopPropagation()}
-													className="opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-												>
-													<ExternalLink className="h-5 w-5 text-white drop-shadow" />
-												</a>
-											) : null}
+										<div
+											className="relative aspect-[2/3] rounded-lg overflow-hidden mb-2 transition-transform duration-200 group-hover:scale-[1.03]"
+											style={{
+												background: bgGradient,
+												boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
+											}}
+										>
+											{hasThumb ? (
+												<img
+													src={getPlexThumbUrl(item.instanceId, item.thumb!)}
+													alt={item.title}
+													className="absolute inset-0 w-full h-full object-cover"
+													loading="lazy"
+													onError={() => setFailedThumbs((prev) => new Set(prev).add(thumbKey))}
+												/>
+											) : (
+												<MediaIcon className="absolute inset-0 m-auto h-10 w-10 text-white/30" />
+											)}
 										</div>
-									</div>
-									<Link
-										href={item.tmdbId ? `/library?tmdbId=${item.tmdbId}` : "/library"}
-										className="block"
-									>
 										<p
 											className="text-sm font-medium text-foreground line-clamp-2 leading-snug mb-0.5"
 											title={item.title}
@@ -126,15 +139,43 @@ export const OnDeckWidget = ({ enabled, animationDelay = 0 }: OnDeckWidgetProps)
 											{item.sectionTitle}
 										</span>
 									</Link>
+								);
+							})}
+							{remaining > 0 && (
+								<div className="flex-shrink-0 w-[140px] flex items-center justify-center">
+									<span className="text-sm text-muted-foreground">+{remaining} more</span>
 								</div>
-							);
-						})}
-						{remaining > 0 && (
-							<div className="flex-shrink-0 w-[140px] flex items-center justify-center">
-								<span className="text-sm text-muted-foreground">+{remaining} more</span>
-							</div>
-						)}
+							)}
+						</div>
 					</div>
+
+					{/* Scroll fade indicators */}
+					{canScrollLeft && (
+						<div className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-card/80 to-transparent pointer-events-none z-[1] rounded-bl-xl" />
+					)}
+					{canScrollRight && (
+						<div className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-card/80 to-transparent pointer-events-none z-[1] rounded-br-xl" />
+					)}
+
+					{/* Scroll arrow buttons */}
+					{canScrollLeft && (
+						<button
+							type="button"
+							onClick={() => scrollBy("left")}
+							className="absolute left-2 top-1/2 -translate-y-1/2 z-[2] flex h-8 w-8 items-center justify-center rounded-full bg-card/90 border border-border/50 text-muted-foreground hover:text-foreground hover:border-border transition-all opacity-0 group-hover/scroll:opacity-100 duration-200 shadow-lg backdrop-blur-sm"
+						>
+							<ChevronLeft className="h-4 w-4" />
+						</button>
+					)}
+					{canScrollRight && (
+						<button
+							type="button"
+							onClick={() => scrollBy("right")}
+							className="absolute right-2 top-1/2 -translate-y-1/2 z-[2] flex h-8 w-8 items-center justify-center rounded-full bg-card/90 border border-border/50 text-muted-foreground hover:text-foreground hover:border-border transition-all opacity-0 group-hover/scroll:opacity-100 duration-200 shadow-lg backdrop-blur-sm"
+						>
+							<ChevronRight className="h-4 w-4" />
+						</button>
+					)}
 				</div>
 			</GlassmorphicCard>
 		</div>

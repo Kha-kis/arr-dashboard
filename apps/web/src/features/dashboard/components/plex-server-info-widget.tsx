@@ -7,6 +7,21 @@ import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 
 const plexGradient = SERVICE_GRADIENTS.plex;
 
+/**
+ * Parse Plex version string (e.g. "1.42.2.10156-f737b826c") into
+ * a clean display version ("1.42.2") and optional build metadata.
+ */
+function parsePlexVersion(raw: string): { display: string; build: string | null } {
+	// Strip commit hash suffix (e.g. "-f737b826c")
+	const withoutHash = raw.split("-")[0] ?? raw;
+	// Split into segments: ["1", "42", "2", "10156"]
+	const parts = withoutHash.split(".");
+	// First 3 parts are the semantic version, 4th is internal build number
+	const display = parts.slice(0, 3).join(".");
+	const build = parts[3] ?? null;
+	return { display: display || raw, build };
+}
+
 interface PlexServerInfoWidgetProps {
 	enabled: boolean;
 	animationDelay?: number;
@@ -45,18 +60,20 @@ export const PlexServerInfoWidget = ({
 						>
 							<Server className="h-4 w-4" style={{ color: plexGradient.from }} />
 						</div>
-						<div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-							{data.servers.map((server) => (
-								<div key={server.instanceId} className="flex items-center gap-2">
-									<span className="text-sm font-medium text-foreground">
-										{server.friendlyName || server.instanceName}
-									</span>
-									<span className="text-xs text-muted-foreground">v{server.version}</span>
-									{server.platform && (
-										<span className="text-xs text-muted-foreground/70">({server.platform})</span>
-									)}
-								</div>
-							))}
+						<div className="min-w-0">
+							<h3 className="text-sm font-semibold text-foreground">Plex Server</h3>
+							<div className="flex flex-wrap items-center gap-x-4 gap-y-0.5">
+								{data.servers.map((server) => {
+									const ver = parsePlexVersion(server.version);
+									return (
+										<p key={server.instanceId} className="text-xs text-muted-foreground">
+											{server.friendlyName || server.instanceName}
+											{" · "}v{ver.display}
+											{server.platform && ` · ${server.platform}`}
+										</p>
+									);
+								})}
+							</div>
 						</div>
 					</div>
 				</GlassmorphicCard>
@@ -96,30 +113,34 @@ export const PlexServerInfoWidget = ({
 				</div>
 
 				<div className="divide-y divide-border/50">
-					{data.servers.map((server, index) => (
-						<div
-							key={server.instanceId}
-							className="flex items-center gap-4 px-6 py-3 animate-in fade-in slide-in-from-bottom-2 duration-300"
-							style={{
-								animationDelay: `${index * 50}ms`,
-								animationFillMode: "backwards",
-							}}
-						>
-							<HardDrive className="h-5 w-5 text-muted-foreground" />
-							<div className="flex-1 min-w-0">
-								<p className="text-sm font-medium text-foreground truncate">
-									{server.friendlyName || server.instanceName}
-								</p>
-								<p className="text-xs text-muted-foreground">
-									{server.instanceName} — v{server.version}
-									{server.platform && ` — ${server.platform}`}
-								</p>
+					{data.servers.map((server, index) => {
+						const ver = parsePlexVersion(server.version);
+						return (
+							<div
+								key={server.instanceId}
+								className="flex items-center gap-4 px-6 py-3 animate-in fade-in slide-in-from-bottom-2 duration-300"
+								style={{
+									animationDelay: `${index * 50}ms`,
+									animationFillMode: "backwards",
+								}}
+							>
+								<HardDrive className="h-5 w-5 text-muted-foreground" />
+								<div className="flex-1 min-w-0">
+									<p className="text-sm font-medium text-foreground truncate">
+										{server.friendlyName || server.instanceName}
+									</p>
+									<p className="text-xs text-muted-foreground">
+										v{ver.display}
+										{ver.build && ` (build ${ver.build})`}
+										{server.platform && ` · ${server.platform}`}
+									</p>
+								</div>
+								<span className="text-xs text-muted-foreground font-mono">
+									{server.machineId.slice(0, 8)}
+								</span>
 							</div>
-							<span className="text-xs text-muted-foreground font-mono">
-								{server.machineId.slice(0, 8)}
-							</span>
-						</div>
-					))}
+						);
+					})}
 				</div>
 			</GlassmorphicCard>
 		</div>
