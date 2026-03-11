@@ -259,15 +259,17 @@ const ServiceStatCard = ({
 					</p>
 				)}
 
-				{/* Health warning — service issues */}
+				{/* Health warning — links to /statistics for full details */}
 				{healthWarning && (
-					<p
-						className="mt-1 flex items-center gap-1 text-xs font-medium"
+					<Link
+						href="/statistics"
+						onClick={(e) => e.stopPropagation()}
+						className="mt-1 flex items-center gap-1 text-xs font-medium hover:underline"
 						style={{ color: SEMANTIC_COLORS.error.text }}
 					>
 						<AlertTriangle className="h-3 w-3 flex-shrink-0" />
 						{healthWarning}
-					</p>
+					</Link>
 				)}
 
 				{/* Detail — instance count note */}
