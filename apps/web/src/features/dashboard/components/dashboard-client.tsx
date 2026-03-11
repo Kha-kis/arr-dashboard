@@ -1,6 +1,6 @@
 "use client";
 
-import type { QueueItem } from "@arr/shared";
+import type { HealthIssue, QueueItem } from "@arr/shared";
 import { motion } from "framer-motion";
 import {
 	Activity,
@@ -71,6 +71,17 @@ const SERVICE_CONFIG = {
 	readarr: { ...SERVICE_GRADIENTS.readarr, icon: BookOpen, label: "Readarr" },
 } as const;
 
+/** Build a human-readable health warning string from the issues list */
+function formatHealthWarning(
+	count: number | undefined,
+	issues: HealthIssue[] | undefined,
+): string | undefined {
+	if (!count) return undefined;
+	const first = issues?.[0];
+	if (count === 1 && first) return first.message;
+	return `${count} health issue${count !== 1 ? "s" : ""}`;
+}
+
 /**
  * Animated Service Stat Card
  * Premium stat card with service-specific or theme-based styling
@@ -82,7 +93,7 @@ const ServiceStatCard = ({
 	subtitle,
 	detail,
 	warningLine,
-	healthIssues,
+	healthWarning,
 	onClick,
 	isQueue = false,
 	animationDelay = 0,
@@ -94,7 +105,7 @@ const ServiceStatCard = ({
 	subtitle?: string;
 	detail?: string;
 	warningLine?: string;
-	healthIssues?: number;
+	healthWarning?: string;
 	onClick?: () => void;
 	isQueue?: boolean;
 	animationDelay?: number;
@@ -189,18 +200,15 @@ const ServiceStatCard = ({
 							<Icon className="h-6 w-6 text-white" />
 						</div>
 
-						{/* Health issue badge */}
-						{healthIssues != null && healthIssues > 0 && (
+						{/* Health issue dot indicator */}
+						{healthWarning && (
 							<div
-								className="absolute -top-1.5 -right-1.5 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white shadow-sm"
+								className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full"
 								style={{
 									backgroundColor: SEMANTIC_COLORS.error.text,
-									boxShadow: `0 0 8px ${SEMANTIC_COLORS.error.glow}`,
+									boxShadow: `0 0 6px ${SEMANTIC_COLORS.error.glow}`,
 								}}
-								title={`${healthIssues} health issue${healthIssues !== 1 ? "s" : ""}`}
-							>
-								{healthIssues}
-							</div>
+							/>
 						)}
 					</div>
 
@@ -248,6 +256,17 @@ const ServiceStatCard = ({
 				{warningLine && (
 					<p className="mt-1 text-xs font-medium" style={{ color: SEMANTIC_COLORS.warning.text }}>
 						{warningLine}
+					</p>
+				)}
+
+				{/* Health warning — service issues */}
+				{healthWarning && (
+					<p
+						className="mt-1 flex items-center gap-1 text-xs font-medium"
+						style={{ color: SEMANTIC_COLORS.error.text }}
+					>
+						<AlertTriangle className="h-3 w-3 flex-shrink-0" />
+						{healthWarning}
 					</p>
 				)}
 
@@ -566,7 +585,7 @@ export const DashboardClient = () => {
 									let description = "";
 									let subtitle: string | undefined;
 									let warningLine: string | undefined;
-									let healthIssues: number | undefined;
+									let healthWarning: string | undefined;
 									let cardOnClick: (() => void) | undefined;
 
 									if (key === "sonarr" && stats?.sonarr?.aggregate) {
@@ -582,7 +601,7 @@ export const DashboardClient = () => {
 										subtitle = parts.join(" · ");
 										if (agg.missingEpisodes > 0)
 											warningLine = `${agg.missingEpisodes} missing episode${agg.missingEpisodes !== 1 ? "s" : ""}`;
-										healthIssues = agg.healthIssues ?? 0;
+										healthWarning = formatHealthWarning(agg.healthIssues, agg.healthIssuesList);
 										cardOnClick = () => router.push("/library?service=sonarr");
 									} else if (key === "radarr" && stats?.radarr?.aggregate) {
 										const agg = stats.radarr.aggregate;
@@ -597,14 +616,14 @@ export const DashboardClient = () => {
 										subtitle = parts.join(" · ");
 										if (agg.missingMovies > 0)
 											warningLine = `${agg.missingMovies} missing movie${agg.missingMovies !== 1 ? "s" : ""}`;
-										healthIssues = agg.healthIssues ?? 0;
+										healthWarning = formatHealthWarning(agg.healthIssues, agg.healthIssuesList);
 										cardOnClick = () => router.push("/library?service=radarr");
 									} else if (key === "prowlarr" && stats?.prowlarr?.aggregate) {
 										const agg = stats.prowlarr.aggregate;
 										statValue = agg.totalIndexers;
 										description = "Indexers";
 										subtitle = `${agg.activeIndexers} active · ${agg.pausedIndexers} paused`;
-										healthIssues = agg.healthIssues ?? 0;
+										healthWarning = formatHealthWarning(agg.healthIssues, agg.healthIssuesList);
 										cardOnClick = () => router.push("/indexers");
 									} else if (key === "lidarr" && stats?.lidarr?.aggregate) {
 										const agg = stats.lidarr.aggregate;
@@ -619,7 +638,7 @@ export const DashboardClient = () => {
 										subtitle = parts.join(" · ");
 										if (agg.missingTracks > 0)
 											warningLine = `${agg.missingTracks} missing track${agg.missingTracks !== 1 ? "s" : ""}`;
-										healthIssues = agg.healthIssues ?? 0;
+										healthWarning = formatHealthWarning(agg.healthIssues, agg.healthIssuesList);
 										cardOnClick = () => router.push("/library?service=lidarr");
 									} else if (key === "readarr" && stats?.readarr?.aggregate) {
 										const agg = stats.readarr.aggregate;
@@ -634,7 +653,7 @@ export const DashboardClient = () => {
 										subtitle = parts.join(" · ");
 										if (agg.missingBooks > 0)
 											warningLine = `${agg.missingBooks} missing book${agg.missingBooks !== 1 ? "s" : ""}`;
-										healthIssues = agg.healthIssues ?? 0;
+										healthWarning = formatHealthWarning(agg.healthIssues, agg.healthIssuesList);
 										cardOnClick = () => router.push("/library?service=readarr");
 									} else {
 										const fallbacks: Record<keyof typeof SERVICE_CONFIG, string> = {
@@ -655,7 +674,7 @@ export const DashboardClient = () => {
 											description={description}
 											subtitle={subtitle}
 											warningLine={warningLine}
-											healthIssues={healthIssues}
+											healthWarning={healthWarning}
 											detail={instanceNote}
 											onClick={cardOnClick}
 											animationDelay={100 + index * 50}
