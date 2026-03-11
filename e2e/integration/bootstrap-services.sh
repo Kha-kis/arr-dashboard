@@ -104,6 +104,8 @@ log ""
 # 1. Extract API keys from each *arr container
 SONARR_API_KEY=$(extract_api_key "e2e-sonarr" "$CONFIG_TIMEOUT")
 RADARR_API_KEY=$(extract_api_key "e2e-radarr" "$CONFIG_TIMEOUT")
+LIDARR_API_KEY=$(extract_api_key "e2e-lidarr" "$CONFIG_TIMEOUT")
+READARR_API_KEY=$(extract_api_key "e2e-readarr" "$CONFIG_TIMEOUT")
 PROWLARR_API_KEY=$(extract_api_key "e2e-prowlarr" "$CONFIG_TIMEOUT")
 
 log ""
@@ -114,6 +116,10 @@ docker exec e2e-sonarr mkdir -p /config/media/tv
 docker exec e2e-sonarr chown -R abc:abc /config/media
 docker exec e2e-radarr mkdir -p /config/media/movies
 docker exec e2e-radarr chown -R abc:abc /config/media
+docker exec e2e-lidarr mkdir -p /config/media/music
+docker exec e2e-lidarr chown -R abc:abc /config/media
+docker exec e2e-readarr mkdir -p /config/media/books
+docker exec e2e-readarr chown -R abc:abc /config/media
 log "  Media directories created"
 
 log ""
@@ -140,6 +146,16 @@ RADARR_API_KEY=${RADARR_API_KEY}
 RADARR_URL=http://radarr:7878
 RADARR_EXTERNAL_URL=http://localhost:7878
 
+# Lidarr
+LIDARR_API_KEY=${LIDARR_API_KEY}
+LIDARR_URL=http://lidarr:8686
+LIDARR_EXTERNAL_URL=http://localhost:8686
+
+# Readarr
+READARR_API_KEY=${READARR_API_KEY}
+READARR_URL=http://readarr:8787
+READARR_EXTERNAL_URL=http://localhost:8787
+
 # Prowlarr
 PROWLARR_API_KEY=${PROWLARR_API_KEY}
 PROWLARR_URL=http://prowlarr:9696
@@ -148,6 +164,10 @@ PROWLARR_EXTERNAL_URL=http://localhost:9696
 # Dashboard
 DASHBOARD_URL=http://localhost:3000
 DASHBOARD_API_URL=http://localhost:3001
+
+# Webhook receiver (for notification testing)
+WEBHOOK_RECEIVER_URL=http://webhook-receiver:80
+WEBHOOK_RECEIVER_EXTERNAL_URL=http://localhost:9999
 EOF
 
 log "Wrote ${ENV_FILE}"

@@ -1,6 +1,6 @@
 # Docker Compose for E2E integration testing with real *arr services.
-# Provides Sonarr, Radarr, and Prowlarr instances alongside arr-dashboard
-# so Playwright can test against live data flowing through real APIs.
+# Provides Sonarr, Radarr, Lidarr, Readarr, and Prowlarr instances alongside
+# arr-dashboard so Playwright can test against live data flowing through real APIs.
 #
 # Usage:
 #   docker compose up -d --build          # Start all services
@@ -50,6 +50,47 @@ services:
       retries: 30
       start_period: 15s
 
+  lidarr:
+    image: linuxserver/lidarr:latest
+    container_name: e2e-lidarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    volumes:
+      - lidarr-config:/config
+    ports:
+      - "8686:8686"
+    networks:
+      - e2e-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8686/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+  readarr:
+    # Pinned: linuxserver/readarr:develop dropped amd64 manifests after 0.4.10
+    image: lscr.io/linuxserver/readarr:0.4.10-develop
+    container_name: e2e-readarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    volumes:
+      - readarr-config:/config
+    ports:
+      - "8787:8787"
+    networks:
+      - e2e-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8787/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
   prowlarr:
     image: linuxserver/prowlarr:latest
     container_name: e2e-prowlarr
@@ -69,6 +110,17 @@ services:
       timeout: 5s
       retries: 30
       start_period: 15s
+
+  # ── Webhook receiver for notification testing ──────────────────────
+  # Accepts any HTTP request and returns 200 — used to verify webhook delivery
+
+  webhook-receiver:
+    image: traefik/whoami:latest
+    container_name: e2e-webhook-receiver
+    ports:
+      - "9999:80"
+    networks:
+      - e2e-net
 
   # ── arr-dashboard (built from local source) ─────────────────────────
 
@@ -99,6 +151,10 @@ services:
         condition: service_healthy
       radarr:
         condition: service_healthy
+      lidarr:
+        condition: service_healthy
+      readarr:
+        condition: service_healthy
       prowlarr:
         condition: service_healthy
     healthcheck:
@@ -111,6 +167,8 @@ services:
 volumes:
   sonarr-config:
   radarr-config:
+  lidarr-config:
+  readarr-config:
   prowlarr-config:
   dashboard-config:
 

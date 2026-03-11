@@ -4,7 +4,7 @@
  * Runs before all integration specs to:
  * 1. Register an admin user on the fresh arr-dashboard instance
  * 2. Log in and save auth state for subsequent tests
- * 3. Add Sonarr, Radarr, and Prowlarr as service instances
+ * 3. Add Sonarr, Radarr, Lidarr, Readarr, and Prowlarr as service instances
  * 4. Verify each service connection succeeds
  *
  * Follows the same pattern as e2e/auth.setup.ts but adds service registration.
@@ -34,6 +34,18 @@ const SERVICES = [
 		service: "radarr",
 		baseUrl: process.env.RADARR_URL || "http://radarr:7878",
 		apiKey: process.env.RADARR_API_KEY || "",
+	},
+	{
+		label: "E2E Lidarr",
+		service: "lidarr",
+		baseUrl: process.env.LIDARR_URL || "http://lidarr:8686",
+		apiKey: process.env.LIDARR_API_KEY || "",
+	},
+	{
+		label: "E2E Readarr",
+		service: "readarr",
+		baseUrl: process.env.READARR_URL || "http://readarr:8787",
+		apiKey: process.env.READARR_API_KEY || "",
 	},
 	{
 		label: "E2E Prowlarr",
