@@ -28,7 +28,9 @@ export * from "./enums"
  * Type-safe database client for TypeScript
  * @example
  * ```
- * const prisma = new PrismaClient()
+ * const prisma = new PrismaClient({
+ *   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL })
+ * })
  * // Fetch zero or more Users
  * const users = await prisma.user.findMany()
  * ```
@@ -190,3 +192,93 @@ export type QueueCleanerLog = Prisma.QueueCleanerLogModel
  * Queue cleaner strike tracking for gradual removal
  */
 export type QueueCleanerStrike = Prisma.QueueCleanerStrikeModel
+/**
+ * Model LibraryCleanupConfig
+ * Per-user library cleanup configuration
+ */
+export type LibraryCleanupConfig = Prisma.LibraryCleanupConfigModel
+/**
+ * Model LibraryCleanupRule
+ * Individual cleanup rules within a configuration
+ */
+export type LibraryCleanupRule = Prisma.LibraryCleanupRuleModel
+/**
+ * Model LibraryCleanupApproval
+ * Pending approval items for library cleanup
+ */
+export type LibraryCleanupApproval = Prisma.LibraryCleanupApprovalModel
+/**
+ * Model LibraryCleanupLog
+ * Library cleanup activity audit log
+ */
+export type LibraryCleanupLog = Prisma.LibraryCleanupLogModel
+/**
+ * Model NotificationChannel
+ * Notification channel configuration (email, webhook, browser push, etc.)
+ */
+export type NotificationChannel = Prisma.NotificationChannelModel
+/**
+ * Model NotificationSubscription
+ * Event subscriptions per notification channel
+ */
+export type NotificationSubscription = Prisma.NotificationSubscriptionModel
+/**
+ * Model NotificationLog
+ * Notification delivery log
+ */
+export type NotificationLog = Prisma.NotificationLogModel
+/**
+ * Model VapidKeys
+ * VAPID keys for Web Push notifications (singleton)
+ */
+export type VapidKeys = Prisma.VapidKeysModel
+/**
+ * Model NotificationRule
+ * User-defined notification rules for suppression, throttling, and routing
+ */
+export type NotificationRule = Prisma.NotificationRuleModel
+/**
+ * Model NotificationAggregationConfig
+ * Per-event-type aggregation configuration
+ */
+export type NotificationAggregationConfig = Prisma.NotificationAggregationConfigModel
+/**
+ * Model PlexCache
+ * Cached Plex library items with watch/collection metadata
+ */
+export type PlexCache = Prisma.PlexCacheModel
+/**
+ * Model PlexEpisodeCache
+ * Cached Plex episode-level watch data
+ */
+export type PlexEpisodeCache = Prisma.PlexEpisodeCacheModel
+/**
+ * Model TautulliCache
+ * Cached Tautulli watch statistics per media item
+ */
+export type TautulliCache = Prisma.TautulliCacheModel
+/**
+ * Model CacheRefreshStatus
+ * 
+ */
+export type CacheRefreshStatus = Prisma.CacheRefreshStatusModel
+/**
+ * Model SessionSnapshot
+ * 
+ */
+export type SessionSnapshot = Prisma.SessionSnapshotModel
+/**
+ * Model NamingConfig
+ * Per-instance naming config for TRaSH Guides naming schemes
+ */
+export type NamingConfig = Prisma.NamingConfigModel
+/**
+ * Model NamingDeployHistory
+ * 
+ */
+export type NamingDeployHistory = Prisma.NamingDeployHistoryModel
+/**
+ * Model SeerrActionLog
+ * 
+ */
+export type SeerrActionLog = Prisma.SeerrActionLogModel

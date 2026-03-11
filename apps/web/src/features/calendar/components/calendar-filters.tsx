@@ -1,9 +1,9 @@
 "use client";
 
+import { Filter, RotateCcw } from "lucide-react";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { Filter, RotateCcw } from "lucide-react";
 import type { ServiceFilterValue } from "../hooks/use-calendar-state";
 
 const SERVICE_FILTERS = [

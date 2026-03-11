@@ -1,25 +1,25 @@
-import { useQuery, useMutation, useQueryClient, useQueries } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { TEMPLATES_QUERY_KEY } from "./useTemplates";
 import {
-	getDeploymentPreview,
-	executeDeployment,
-	executeBulkDeployment,
-	updateSyncStrategy,
-	bulkUpdateSyncStrategy,
-	unlinkTemplateFromInstance,
-	type DeploymentPreviewResponse,
-	type ExecuteDeploymentPayload,
-	type ExecuteDeploymentResponse,
-	type ExecuteBulkDeploymentPayload,
-	type ExecuteBulkDeploymentResponse,
-	type UpdateSyncStrategyPayload,
-	type UpdateSyncStrategyResponse,
 	type BulkUpdateSyncStrategyPayload,
 	type BulkUpdateSyncStrategyResponse,
+	bulkUpdateSyncStrategy,
+	type DeploymentPreviewResponse,
+	type ExecuteBulkDeploymentPayload,
+	type ExecuteBulkDeploymentResponse,
+	type ExecuteDeploymentPayload,
+	type ExecuteDeploymentResponse,
+	executeBulkDeployment,
+	executeDeployment,
+	getDeploymentPreview,
 	type UnlinkTemplatePayload,
 	type UnlinkTemplateResponse,
+	type UpdateSyncStrategyPayload,
+	type UpdateSyncStrategyResponse,
+	unlinkTemplateFromInstance,
+	updateSyncStrategy,
 } from "../../lib/api-client/trash-guides";
+import { TEMPLATES_QUERY_KEY } from "./useTemplates";
 
 export type InstancePreviewResult = {
 	instanceId: string;
@@ -32,10 +32,7 @@ export type InstancePreviewResult = {
 /**
  * Hook to fetch deployment preview for template → instance
  */
-export function useDeploymentPreview(
-	templateId: string | null,
-	instanceId: string | null,
-) {
+export function useDeploymentPreview(templateId: string | null, instanceId: string | null) {
 	return useQuery<DeploymentPreviewResponse>({
 		queryKey: ["trash-guides", "deployment", "preview", templateId, instanceId],
 		queryFn: () => getDeploymentPreview(templateId!, instanceId!),

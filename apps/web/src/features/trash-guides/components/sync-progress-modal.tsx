@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
-import { CheckCircle2, XCircle, Loader2, AlertCircle, RefreshCw } from "lucide-react";
-import { useSyncProgress } from "../../../hooks/api/useSync";
-import type { SyncProgressStatus } from "../../../lib/api-client/trash-guides";
+import { AlertCircle, CheckCircle2, Loader2, RefreshCw, XCircle } from "lucide-react";
+import { useCallback, useEffect, useRef } from "react";
 import { Button } from "../../../components/ui";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useSyncProgress } from "../../../hooks/api/useSync";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import type { SyncProgressStatus } from "../../../lib/api-client/trash-guides";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 const FOCUSABLE_SELECTOR =
 	'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
@@ -82,7 +82,8 @@ export const SyncProgressModal = ({
 
 			// Focus trap: cycle focus within modal
 			if (event.key === "Tab" && dialogRef.current) {
-				const focusableElements = dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
+				const focusableElements =
+					dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
 				const firstElement = focusableElements[0];
 				const lastElement = focusableElements[focusableElements.length - 1];
 
@@ -97,7 +98,7 @@ export const SyncProgressModal = ({
 				}
 			}
 		},
-		[onClose, progress?.status]
+		[onClose, progress?.status],
 	);
 
 	// Focus management: save previous focus, set initial focus, restore on close
@@ -116,7 +117,10 @@ export const SyncProgressModal = ({
 		return () => {
 			document.removeEventListener("keydown", handleKeyDown);
 			// Restore focus to previously focused element on unmount
-			if (previousActiveElementRef.current && typeof previousActiveElementRef.current.focus === "function") {
+			if (
+				previousActiveElementRef.current &&
+				typeof previousActiveElementRef.current.focus === "function"
+			) {
 				previousActiveElementRef.current.focus();
 			}
 		};
@@ -142,9 +146,8 @@ export const SyncProgressModal = ({
 	const currentStage = progress?.status || "INITIALIZING";
 	const rawStageIndex = STAGE_ORDER.indexOf(currentStage);
 	// Handle FAILED status which is not in STAGE_ORDER - clamp to valid range
-	const currentStageIndex = currentStage === "FAILED"
-		? STAGE_ORDER.length - 1
-		: Math.max(0, rawStageIndex);
+	const currentStageIndex =
+		currentStage === "FAILED" ? STAGE_ORDER.length - 1 : Math.max(0, rawStageIndex);
 	const isFailed = currentStage === "FAILED";
 	const isCompleted = currentStage === "COMPLETED";
 
@@ -234,7 +237,9 @@ export const SyncProgressModal = ({
 						<div className="flex items-center justify-center py-12">
 							<div
 								className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
-								style={{ borderColor: `${themeGradient.from} transparent ${themeGradient.from} ${themeGradient.from}` }}
+								style={{
+									borderColor: `${themeGradient.from} transparent ${themeGradient.from} ${themeGradient.from}`,
+								}}
 							/>
 							<span className="ml-3 text-muted-foreground">Connecting...</span>
 						</div>
@@ -281,13 +286,24 @@ export const SyncProgressModal = ({
 														}}
 													>
 														{isCurrentFailed ? (
-															<XCircle className="h-5 w-5" style={{ color: SEMANTIC_COLORS.error.from }} />
+															<XCircle
+																className="h-5 w-5"
+																style={{ color: SEMANTIC_COLORS.error.from }}
+															/>
 														) : isPast || isCompleted ? (
-															<CheckCircle2 className="h-5 w-5" style={{ color: SEMANTIC_COLORS.success.from }} />
+															<CheckCircle2
+																className="h-5 w-5"
+																style={{ color: SEMANTIC_COLORS.success.from }}
+															/>
 														) : isActive ? (
-															<Loader2 className="h-5 w-5 animate-spin" style={{ color: themeGradient.from }} />
+															<Loader2
+																className="h-5 w-5 animate-spin"
+																style={{ color: themeGradient.from }}
+															/>
 														) : (
-															<span className="text-sm font-medium text-muted-foreground">{index + 1}</span>
+															<span className="text-sm font-medium text-muted-foreground">
+																{index + 1}
+															</span>
 														)}
 													</div>
 													<span
@@ -304,9 +320,10 @@ export const SyncProgressModal = ({
 													<div
 														className="mx-2 h-0.5 flex-1 transition-all duration-500"
 														style={{
-															backgroundColor: isPast || isCompleted
-																? SEMANTIC_COLORS.success.from
-																: "rgba(var(--border))",
+															backgroundColor:
+																isPast || isCompleted
+																	? SEMANTIC_COLORS.success.from
+																	: "rgba(var(--border))",
 														}}
 													/>
 												)}
@@ -359,8 +376,13 @@ export const SyncProgressModal = ({
 										border: `1px solid ${SEMANTIC_COLORS.success.border}`,
 									}}
 								>
-									<p className="text-sm" style={{ color: SEMANTIC_COLORS.success.text }}>Applied</p>
-									<p className="mt-1 text-2xl font-bold" style={{ color: SEMANTIC_COLORS.success.from }}>
+									<p className="text-sm" style={{ color: SEMANTIC_COLORS.success.text }}>
+										Applied
+									</p>
+									<p
+										className="mt-1 text-2xl font-bold"
+										style={{ color: SEMANTIC_COLORS.success.from }}
+									>
 										{progress.appliedConfigs}
 									</p>
 								</div>
@@ -371,8 +393,13 @@ export const SyncProgressModal = ({
 										border: `1px solid ${SEMANTIC_COLORS.error.border}`,
 									}}
 								>
-									<p className="text-sm" style={{ color: SEMANTIC_COLORS.error.text }}>Failed</p>
-									<p className="mt-1 text-2xl font-bold" style={{ color: SEMANTIC_COLORS.error.from }}>
+									<p className="text-sm" style={{ color: SEMANTIC_COLORS.error.text }}>
+										Failed
+									</p>
+									<p
+										className="mt-1 text-2xl font-bold"
+										style={{ color: SEMANTIC_COLORS.error.from }}
+									>
 										{progress.failedConfigs}
 									</p>
 								</div>
@@ -397,10 +424,14 @@ export const SyncProgressModal = ({
 												{progress.errors.length} Error{progress.errors.length !== 1 ? "s" : ""}{" "}
 												Occurred
 											</h3>
-											<ul className="mt-2 space-y-1 text-sm" style={{ color: SEMANTIC_COLORS.error.text }}>
+											<ul
+												className="mt-2 space-y-1 text-sm"
+												style={{ color: SEMANTIC_COLORS.error.text }}
+											>
 												{progress.errors.map((errItem, index) => (
 													<li key={index}>
-														<span className="font-medium">{errItem.configName}:</span> {errItem.error}
+														<span className="font-medium">{errItem.configName}:</span>{" "}
+														{errItem.error}
 														{errItem.retryable && (
 															<span className="ml-2 text-xs opacity-70">(retryable)</span>
 														)}
@@ -428,13 +459,19 @@ export const SyncProgressModal = ({
 												background: `linear-gradient(135deg, ${SEMANTIC_COLORS.success.from}30, ${SEMANTIC_COLORS.success.to}30)`,
 											}}
 										>
-											<CheckCircle2 className="h-5 w-5" style={{ color: SEMANTIC_COLORS.success.from }} />
+											<CheckCircle2
+												className="h-5 w-5"
+												style={{ color: SEMANTIC_COLORS.success.from }}
+											/>
 										</div>
 										<div>
 											<h3 className="font-semibold" style={{ color: SEMANTIC_COLORS.success.text }}>
 												Sync Completed Successfully
 											</h3>
-											<p className="mt-0.5 text-sm opacity-80" style={{ color: SEMANTIC_COLORS.success.text }}>
+											<p
+												className="mt-0.5 text-sm opacity-80"
+												style={{ color: SEMANTIC_COLORS.success.text }}
+											>
 												All configurations have been applied to {instanceName}
 											</p>
 										</div>
@@ -473,11 +510,7 @@ export const SyncProgressModal = ({
 				{/* Footer */}
 				<div className="flex items-center justify-end gap-3 border-t border-border/30 p-6">
 					{(isCompleted || isFailed) && (
-						<Button
-							variant="outline"
-							onClick={onClose}
-							className="gap-2"
-						>
+						<Button variant="outline" onClick={onClose} className="gap-2">
 							Close
 						</Button>
 					)}

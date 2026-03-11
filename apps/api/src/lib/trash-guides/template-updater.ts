@@ -21,14 +21,17 @@ import type {
 	TrashCustomFormatGroup,
 	TrashQualityProfile,
 } from "@arr/shared";
+import { z } from "zod";
+import { trashCustomFormatGroupSchema, trashCustomFormatSchema } from "./github-schemas.js";
 import type { PrismaClient } from "../../lib/prisma.js";
+import { TemplateNotFoundError } from "../errors.js";
+import { loggers } from "../logger.js";
 import { CacheCorruptionError, type TrashCacheManager } from "./cache-manager.js";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
 import type { TrashGitHubFetcher } from "./github-fetcher.js";
-import { TemplateNotFoundError } from "../errors.js";
-import { loggers } from "../logger.js";
 
 const log = loggers.trashGuides;
+
 import { getSyncMetrics } from "./sync-metrics.js";
 import { computeTemplateDiff } from "./template-differ.js";
 import { mergeTemplateConfig, validateMergedConfig } from "./template-merger.js";
@@ -46,14 +49,13 @@ export type {
 	UpdateCheckResult,
 } from "./template-updater-types.js";
 
+import { getErrorMessage } from "../utils/error-message.js";
 import type {
 	PendingCFGroupAddition,
 	SyncResult,
 	TemplateUpdateInfo,
 	UpdateCheckResult,
 } from "./template-updater-types.js";
-
-import { getErrorMessage } from "../utils/error-message.js";
 
 // ============================================================================
 // Template Updater Class
@@ -153,8 +155,16 @@ export class TemplateUpdater {
 					if (!cacheByServiceType.has(serviceType)) {
 						try {
 							const [cfGroups, customFormats] = await Promise.all([
-								this.cacheManager.get<TrashCustomFormatGroup[]>(serviceType, "CF_GROUPS"),
-								this.cacheManager.get<TrashCustomFormat[]>(serviceType, "CUSTOM_FORMATS"),
+								this.cacheManager.get<TrashCustomFormatGroup[]>(
+									serviceType,
+									"CF_GROUPS",
+									z.array(trashCustomFormatGroupSchema),
+								),
+								this.cacheManager.get<TrashCustomFormat[]>(
+									serviceType,
+									"CUSTOM_FORMATS",
+									z.array(trashCustomFormatSchema),
+								),
 							]);
 							cacheByServiceType.set(serviceType, {
 								cfGroups: cfGroups ?? [],
@@ -433,7 +443,12 @@ export class TemplateUpdater {
 
 			if (fetchResult.cacheCommitHash && fetchResult.cacheCommitHash !== targetCommit.commitHash) {
 				log.info(
-					{ cacheCommit: fetchResult.cacheCommitHash, targetCommit: targetCommit.commitHash, templateId, serviceType },
+					{
+						cacheCommit: fetchResult.cacheCommitHash,
+						targetCommit: targetCommit.commitHash,
+						templateId,
+						serviceType,
+					},
 					"Cache/version mismatch — auto-refreshing cache",
 				);
 
@@ -514,7 +529,10 @@ export class TemplateUpdater {
 					if (config.trash_id && config.name) {
 						filteredCustomFormats.push(config as TrashCustomFormat);
 					} else {
-						log.warn({ cfName: cf.name, trashId: cf.trashId }, "Skipping CF: originalConfig is missing required fields (trash_id or name)");
+						log.warn(
+							{ cfName: cf.name, trashId: cf.trashId },
+							"Skipping CF: originalConfig is missing required fields (trash_id or name)",
+						);
 					}
 				}
 			}
@@ -534,7 +552,10 @@ export class TemplateUpdater {
 					if (config.trash_id && config.name) {
 						filteredCFGroups.push(config as TrashCustomFormatGroup);
 					} else {
-						log.warn({ groupName: group.name, trashId: group.trashId }, "Skipping CF group: originalConfig is missing required fields (trash_id or name)");
+						log.warn(
+							{ groupName: group.name, trashId: group.trashId },
+							"Skipping CF group: originalConfig is missing required fields (trash_id or name)",
+						);
 					}
 				}
 			}
@@ -611,7 +632,10 @@ export class TemplateUpdater {
 					const parsed = JSON.parse(template.changeLog);
 					existingChangeLog = Array.isArray(parsed) ? parsed : [];
 				} catch (parseError) {
-					log.warn({ err: parseError, templateId }, "Failed to parse changeLog for template, resetting to empty array");
+					log.warn(
+						{ err: parseError, templateId },
+						"Failed to parse changeLog for template, resetting to empty array",
+					);
 					existingChangeLog = [];
 				}
 			}
@@ -668,8 +692,16 @@ export class TemplateUpdater {
 	}> {
 		try {
 			const [cfCache, groupCache, cacheCommitHash] = await Promise.all([
-				this.cacheManager.get<TrashCustomFormat[]>(serviceType, "CUSTOM_FORMATS"),
-				this.cacheManager.get<TrashCustomFormatGroup[]>(serviceType, "CF_GROUPS"),
+				this.cacheManager.get<TrashCustomFormat[]>(
+					serviceType,
+					"CUSTOM_FORMATS",
+					z.array(trashCustomFormatSchema),
+				),
+				this.cacheManager.get<TrashCustomFormatGroup[]>(
+					serviceType,
+					"CF_GROUPS",
+					z.array(trashCustomFormatGroupSchema),
+				),
 				this.cacheManager.getCommitHash(serviceType, "CUSTOM_FORMATS"),
 			]);
 
@@ -749,13 +781,14 @@ export class TemplateUpdater {
 				try {
 					await this.deployToMappedInstances(template.templateId);
 				} catch (error) {
-					log.error({ err: error, templateId: template.templateId }, "Auto-deploy failed for template");
+					log.error(
+						{ err: error, templateId: template.templateId },
+						"Auto-deploy failed for template",
+					);
 					if (!result.errors) {
 						result.errors = [];
 					}
-					result.errors.push(
-						`Auto-deploy failed: ${getErrorMessage(error)}`,
-					);
+					result.errors.push(`Auto-deploy failed: ${getErrorMessage(error)}`);
 				}
 			} else {
 				failed++;
@@ -815,7 +848,12 @@ export class TemplateUpdater {
 
 				if (!result.success) {
 					log.error(
-						{ templateId, templateName: template.name, instanceLabel: mapping.instance.label, errors: result.errors },
+						{
+							templateId,
+							templateName: template.name,
+							instanceLabel: mapping.instance.label,
+							errors: result.errors,
+						},
 						"Failed to auto-deploy template to instance",
 					);
 				}

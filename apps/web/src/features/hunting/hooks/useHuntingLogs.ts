@@ -32,7 +32,9 @@ async function fetchHuntingLogs(params: UseHuntingLogsParams): Promise<HuntingLo
 	if (params.pageSize) searchParams.set("pageSize", params.pageSize.toString());
 
 	const queryString = searchParams.toString();
-	return apiRequest<HuntingLogsResponse>(`/api/hunting/logs${queryString ? `?${queryString}` : ""}`);
+	return apiRequest<HuntingLogsResponse>(
+		`/api/hunting/logs${queryString ? `?${queryString}` : ""}`,
+	);
 }
 
 /**
@@ -59,7 +61,7 @@ export function useHuntingLogs(params: UseHuntingLogsParams = {}) {
 
 	// Check if any logs are currently running
 	const logs = query.data?.logs ?? [];
-	const hasRunning = logs.some(log => log.status === "running");
+	const hasRunning = logs.some((log) => log.status === "running");
 
 	return {
 		logs,

@@ -10,10 +10,7 @@
  * 3. Text placeholder when no image is available
  */
 
-import {
-	getSeerrImageUrl,
-	type PosterSize,
-} from "../../discover/lib/seerr-image-utils";
+import { getSeerrImageUrl, type PosterSize } from "../../discover/lib/seerr-image-utils";
 
 interface PosterImageProps {
 	/** TMDB poster path from Seerr enrichment (e.g. "/xyz123.jpg") */
@@ -43,11 +40,7 @@ export function PosterImage({
 	if (resolvedUrl) {
 		return (
 			/* eslint-disable-next-line @next/next/no-img-element -- External poster from TMDB or arr instance */
-			<img
-				src={resolvedUrl}
-				alt={alt}
-				className={imgClassName}
-			/>
+			<img src={resolvedUrl} alt={alt} className={imgClassName} />
 		);
 	}
 

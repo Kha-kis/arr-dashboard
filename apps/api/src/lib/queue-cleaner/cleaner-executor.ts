@@ -9,36 +9,48 @@
  */
 
 import type { FastifyInstance } from "fastify";
+import type { QueueCapableClient } from "../arr/client-factory.js";
 import { loggers } from "../logger.js";
 import type { QueueCleanerConfig, ServiceInstance } from "../prisma.js";
+import { delay } from "../utils/delay.js";
+import { getErrorMessage } from "../utils/error-message.js";
+import { attemptAutoImport, evaluateAutoImportEligibility } from "./auto-import-handler.js";
+import { calculateQueueSummary, generateDetailedReason } from "./cleaner-formatters.js";
 import {
 	AUTO_IMPORT_DELAY_MS,
-	MAX_AUTO_IMPORTS_PER_RUN,
-	type WhitelistPattern,
+	type CleanerResult,
 	type CleanerResultItem,
 	type EnhancedPreviewItem,
-	type CleanerResult,
 	type EnhancedPreviewResult,
+	MAX_AUTO_IMPORTS_PER_RUN,
+	type WhitelistPattern,
 } from "./constants.js";
-import type { QueueCapableClient } from "../arr/client-factory.js";
-import { delay } from "../utils/delay.js";
-import { type RawQueueItem, parseDate, collectStatusTexts, checkWhitelist, isFutureEpisode } from "./queue-item-utils.js";
-import { evaluateQueueItem } from "./rule-evaluators.js";
-import { evaluateAutoImportEligibility, attemptAutoImport } from "./auto-import-handler.js";
-import { generateDetailedReason, calculateQueueSummary } from "./cleaner-formatters.js";
-import { getErrorMessage } from "../utils/error-message.js";
+import {
+	type RawQueueItem,
+	rawQueueItemSchema,
+	parseDate,
+	collectStatusTexts,
+	checkWhitelist,
+	isFutureEpisode,
+} from "./queue-item-utils.js";
+import { validateAndCollect } from "../validation/validate-batch.js";
+import {
+	evaluateQueueItem,
+	shouldSkipByTagFilter,
+	shouldSkipByProfileFilter,
+} from "./rule-evaluators.js";
 
 const log = loggers.queueCleaner;
 
 // Re-export types for external use
 export type {
-	CleanerRule,
-	PreviewRule,
-	CleanerResultItem,
-	EnhancedPreviewItem,
-	QueueStateSummary,
 	CleanerResult,
+	CleanerResultItem,
+	CleanerRule,
+	EnhancedPreviewItem,
 	EnhancedPreviewResult,
+	PreviewRule,
+	QueueStateSummary,
 } from "./constants.js";
 
 /**
@@ -78,7 +90,8 @@ export async function executeQueueCleaner(
 				warnedItems: [],
 				isDryRun: config.dryRunMode,
 				status: "error",
-				message: "Whitelist configuration is invalid. Please fix whitelist patterns before running.",
+				message:
+					"Whitelist configuration is invalid. Please fix whitelist patterns before running.",
 			};
 		}
 	}
@@ -104,7 +117,8 @@ export async function executeQueueCleaner(
 				warnedItems: [],
 				isDryRun: config.dryRunMode,
 				status: "error",
-				message: "Error patterns configuration is invalid. Please fix error patterns before running.",
+				message:
+					"Error patterns configuration is invalid. Please fix error patterns before running.",
 			};
 		}
 	}
@@ -119,8 +133,18 @@ export async function executeQueueCleaner(
 	}
 	let queueRecords: RawQueueItem[];
 	try {
-		const queue = await (client.queue.get as (opts?: Record<string, unknown>) => Promise<{ records?: unknown[] }>)(queueOptions);
-		queueRecords = (queue.records ?? []) as RawQueueItem[];
+		const queue = await (
+			client.queue.get as (opts?: Record<string, unknown>) => Promise<{ records?: unknown[] }>
+		)(queueOptions);
+		const rawRecords = queue.records ?? [];
+		const { items: validatedRecords } = validateAndCollect(
+			rawRecords,
+			rawQueueItemSchema,
+			`queue/${instance.service}`,
+			log,
+			{ integration: "queue-cleaner", category: "queue-items" },
+		);
+		queueRecords = validatedRecords as RawQueueItem[];
 	} catch (error) {
 		const message = getErrorMessage(error, "Unknown error");
 		return {
@@ -170,6 +194,11 @@ export async function executeQueueCleaner(
 			if (ageMins < config.minQueueAgeMins) {
 				continue;
 			}
+		}
+
+		// Tag/profile pre-filters (skip items that don't match)
+		if (shouldSkipByTagFilter(item, config) || shouldSkipByProfileFilter(item, config)) {
+			continue;
 		}
 
 		// Skip future episodes (Sonarr only)
@@ -467,7 +496,9 @@ export async function executeQueueCleaner(
 							data: {
 								importAttempts: existingStrike.importAttempts + 1,
 								lastImportAttempt: now,
-								lastImportError: importResult.success ? null : (importResult.error ?? "Unknown error"),
+								lastImportError: importResult.success
+									? null
+									: (importResult.error ?? "Unknown error"),
 							},
 						});
 					} else {
@@ -481,7 +512,9 @@ export async function executeQueueCleaner(
 								lastReason: item.reason,
 								importAttempts: 1,
 								lastImportAttempt: now,
-								lastImportError: importResult.success ? null : (importResult.error ?? "Unknown error"),
+								lastImportError: importResult.success
+									? null
+									: (importResult.error ?? "Unknown error"),
 							},
 						});
 					}
@@ -500,10 +533,10 @@ export async function executeQueueCleaner(
 					});
 					continue;
 				}
-					log.info(
-						{ instanceId: instance.id, downloadId, error: importResult.error },
-						"Auto-import failed, falling back to removal",
-					);
+				log.info(
+					{ instanceId: instance.id, downloadId, error: importResult.error },
+					"Auto-import failed, falling back to removal",
+				);
 			} else {
 				log.debug(
 					{ instanceId: instance.id, downloadId, reason: eligibility.reason },
@@ -592,7 +625,11 @@ export async function executeEnhancedPreview(
 ): Promise<EnhancedPreviewResult> {
 	const client = app.arrClientFactory.create(instance) as QueueCapableClient;
 	const now = new Date();
-	const instanceService = instance.service.toLowerCase() as "sonarr" | "radarr" | "lidarr" | "readarr";
+	const instanceService = instance.service.toLowerCase() as
+		| "sonarr"
+		| "radarr"
+		| "lidarr"
+		| "readarr";
 
 	// Parse whitelist patterns
 	let whitelistPatterns: WhitelistPattern[] = [];
@@ -609,8 +646,17 @@ export async function executeEnhancedPreview(
 				instanceLabel: instance.label,
 				instanceService,
 				instanceReachable: true,
-				errorMessage: "Whitelist configuration is invalid. Please fix whitelist patterns in settings.",
-				queueSummary: { totalItems: 0, downloading: 0, paused: 0, queued: 0, seeding: 0, importPending: 0, failed: 0 },
+				errorMessage:
+					"Whitelist configuration is invalid. Please fix whitelist patterns in settings.",
+				queueSummary: {
+					totalItems: 0,
+					downloading: 0,
+					paused: 0,
+					queued: 0,
+					seeding: 0,
+					importPending: 0,
+					failed: 0,
+				},
 				wouldRemove: 0,
 				wouldWarn: 0,
 				wouldSkip: 0,
@@ -644,8 +690,17 @@ export async function executeEnhancedPreview(
 				instanceLabel: instance.label,
 				instanceService,
 				instanceReachable: true,
-				errorMessage: "Error patterns configuration is invalid. Please fix error patterns in settings.",
-				queueSummary: { totalItems: 0, downloading: 0, paused: 0, queued: 0, seeding: 0, importPending: 0, failed: 0 },
+				errorMessage:
+					"Error patterns configuration is invalid. Please fix error patterns in settings.",
+				queueSummary: {
+					totalItems: 0,
+					downloading: 0,
+					paused: 0,
+					queued: 0,
+					seeding: 0,
+					importPending: 0,
+					failed: 0,
+				},
 				wouldRemove: 0,
 				wouldWarn: 0,
 				wouldSkip: 0,
@@ -672,8 +727,17 @@ export async function executeEnhancedPreview(
 	let queueRecords: RawQueueItem[];
 
 	try {
-		const queue = await (client.queue.get as (opts?: Record<string, unknown>) => Promise<{ records?: unknown[] }>)(previewQueueOptions);
-		queueRecords = (queue.records ?? []) as RawQueueItem[];
+		const queue = await (
+			client.queue.get as (opts?: Record<string, unknown>) => Promise<{ records?: unknown[] }>
+		)(previewQueueOptions);
+		const { items: previewValidated } = validateAndCollect(
+			queue.records ?? [],
+			rawQueueItemSchema,
+			`queue-preview/${instance.service}`,
+			log,
+			{ integration: "queue-cleaner", category: "queue-items" },
+		);
+		queueRecords = previewValidated as RawQueueItem[];
 	} catch (error) {
 		const errorMessage = getErrorMessage(error, "Unknown error");
 		log.warn(
@@ -686,7 +750,15 @@ export async function executeEnhancedPreview(
 			instanceService,
 			instanceReachable: false,
 			errorMessage,
-			queueSummary: { totalItems: 0, downloading: 0, paused: 0, queued: 0, seeding: 0, importPending: 0, failed: 0 },
+			queueSummary: {
+				totalItems: 0,
+				downloading: 0,
+				paused: 0,
+				queued: 0,
+				seeding: 0,
+				importPending: 0,
+				failed: 0,
+			},
 			wouldRemove: 0,
 			wouldWarn: 0,
 			wouldSkip: 0,
@@ -739,7 +811,32 @@ export async function executeEnhancedPreview(
 				protocol: typeof item.protocol === "string" ? item.protocol : undefined,
 				indexer: typeof item.indexer === "string" ? item.indexer : undefined,
 				downloadClient: typeof item.downloadClient === "string" ? item.downloadClient : undefined,
-				status: typeof item.trackedDownloadStatus === "string" ? item.trackedDownloadStatus : undefined,
+				status:
+					typeof item.trackedDownloadStatus === "string" ? item.trackedDownloadStatus : undefined,
+				downloadId: typeof item.downloadId === "string" ? item.downloadId : undefined,
+			});
+			continue;
+		}
+
+		// Tag/profile pre-filters (skip items that don't match)
+		if (shouldSkipByTagFilter(item, config) || shouldSkipByProfileFilter(item, config)) {
+			previewItems.push({
+				id,
+				title,
+				action: "skip",
+				rule: "healthy",
+				reason: "Excluded by tag/profile filter",
+				detailedReason:
+					"This item was excluded from evaluation because it does not match the configured tag or quality profile filters.",
+				queueAge: ageMins,
+				size,
+				sizeleft,
+				progress,
+				protocol: typeof item.protocol === "string" ? item.protocol : undefined,
+				indexer: typeof item.indexer === "string" ? item.indexer : undefined,
+				downloadClient: typeof item.downloadClient === "string" ? item.downloadClient : undefined,
+				status:
+					typeof item.trackedDownloadStatus === "string" ? item.trackedDownloadStatus : undefined,
 				downloadId: typeof item.downloadId === "string" ? item.downloadId : undefined,
 			});
 			continue;
@@ -765,7 +862,8 @@ export async function executeEnhancedPreview(
 				protocol: typeof item.protocol === "string" ? item.protocol : undefined,
 				indexer: typeof item.indexer === "string" ? item.indexer : undefined,
 				downloadClient: typeof item.downloadClient === "string" ? item.downloadClient : undefined,
-				status: typeof item.trackedDownloadStatus === "string" ? item.trackedDownloadStatus : undefined,
+				status:
+					typeof item.trackedDownloadStatus === "string" ? item.trackedDownloadStatus : undefined,
 				downloadId: typeof item.downloadId === "string" ? item.downloadId : undefined,
 			});
 			continue;
@@ -790,7 +888,8 @@ export async function executeEnhancedPreview(
 					protocol: typeof item.protocol === "string" ? item.protocol : undefined,
 					indexer: typeof item.indexer === "string" ? item.indexer : undefined,
 					downloadClient: typeof item.downloadClient === "string" ? item.downloadClient : undefined,
-					status: typeof item.trackedDownloadStatus === "string" ? item.trackedDownloadStatus : undefined,
+					status:
+						typeof item.trackedDownloadStatus === "string" ? item.trackedDownloadStatus : undefined,
 					downloadId: typeof item.downloadId === "string" ? item.downloadId : undefined,
 				});
 				continue;
@@ -837,7 +936,8 @@ export async function executeEnhancedPreview(
 				protocol: typeof item.protocol === "string" ? item.protocol : undefined,
 				indexer: typeof item.indexer === "string" ? item.indexer : undefined,
 				downloadClient: typeof item.downloadClient === "string" ? item.downloadClient : undefined,
-				status: typeof item.trackedDownloadStatus === "string" ? item.trackedDownloadStatus : undefined,
+				status:
+					typeof item.trackedDownloadStatus === "string" ? item.trackedDownloadStatus : undefined,
 				downloadId: typeof item.downloadId === "string" ? item.downloadId : undefined,
 				strikeInfo: config.strikeSystemEnabled
 					? {
@@ -865,7 +965,8 @@ export async function executeEnhancedPreview(
 				protocol: typeof item.protocol === "string" ? item.protocol : undefined,
 				indexer: typeof item.indexer === "string" ? item.indexer : undefined,
 				downloadClient: typeof item.downloadClient === "string" ? item.downloadClient : undefined,
-				status: typeof item.trackedDownloadStatus === "string" ? item.trackedDownloadStatus : undefined,
+				status:
+					typeof item.trackedDownloadStatus === "string" ? item.trackedDownloadStatus : undefined,
 				downloadId: typeof item.downloadId === "string" ? item.downloadId : undefined,
 			});
 		}

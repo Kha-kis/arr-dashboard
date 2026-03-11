@@ -10,15 +10,8 @@
  * - Visual builder for non-technical users
  */
 
+import { AlertCircle, CheckCircle, Eye, EyeOff, Settings, TestTube } from "lucide-react";
 import { useState } from "react";
-import {
-	Settings,
-	TestTube,
-	Eye,
-	EyeOff,
-	CheckCircle,
-	AlertCircle,
-} from "lucide-react";
 import { Button } from "../../../components/ui";
 import { PatternTester } from "./pattern-tester";
 
@@ -47,15 +40,15 @@ export function ConditionEditor({
 	readonly = false,
 }: ConditionEditorProps) {
 	const [specifications, setSpecifications] = useState<Specification[]>(
-		initialSpecs.map(spec => ({
+		initialSpecs.map((spec) => ({
 			...spec,
 			enabled: spec.enabled ?? true, // Default to enabled
-		}))
+		})),
 	);
 	const [editingSpec, setEditingSpec] = useState<number | null>(null);
 	const [testingSpec, setTestingSpec] = useState<number | null>(null);
 
-	const enabledCount = specifications.filter(s => s.enabled).length;
+	const enabledCount = specifications.filter((s) => s.enabled).length;
 	const totalCount = specifications.length;
 
 	// Toggle specification on/off
@@ -175,9 +168,7 @@ export function ConditionEditor({
 								{/* Name and Badges */}
 								<div className="flex-1 min-w-0">
 									<div className="flex items-center gap-2">
-										<span className="font-medium text-foregroundtext-sm">
-											{spec.name}
-										</span>
+										<span className="font-medium text-foregroundtext-sm">{spec.name}</span>
 										{spec.required && (
 											<span className="inline-flex items-center rounded bg-red-500/20 px-1.5 py-0.5 text-xs font-medium text-red-300">
 												Required
@@ -247,7 +238,8 @@ export function ConditionEditor({
 										placeholder="Enter regex pattern..."
 									/>
 									<p className="text-xs text-muted-foreground mt-2">
-										Use <code className="px-1 py-0.5 rounded bg-card/60">\b</code> for word boundaries,
+										Use <code className="px-1 py-0.5 rounded bg-card/60">\b</code> for word
+										boundaries,
 										<code className="px-1 py-0.5 rounded bg-card/60">.*</code> for any characters,
 										<code className="px-1 py-0.5 rounded bg-card/60">|</code> for OR
 									</p>
@@ -279,7 +271,8 @@ export function ConditionEditor({
 							<span className="text-red-400">All conditions disabled</span>
 						) : (
 							<span>
-								<span className="font-medium text-foreground">{enabledCount}</span> / {totalCount} enabled
+								<span className="font-medium text-foreground">{enabledCount}</span> / {totalCount}{" "}
+								enabled
 							</span>
 						)}
 					</div>
@@ -289,7 +282,7 @@ export function ConditionEditor({
 							variant="secondary"
 							size="sm"
 							onClick={() => {
-								const updated = specifications.map(s => ({ ...s, enabled: true }));
+								const updated = specifications.map((s) => ({ ...s, enabled: true }));
 								setSpecifications(updated);
 								onChange(updated);
 							}}
@@ -300,8 +293,8 @@ export function ConditionEditor({
 							variant="secondary"
 							size="sm"
 							onClick={() => {
-								const updated = specifications.map(s =>
-									s.required ? s : { ...s, enabled: false }
+								const updated = specifications.map((s) =>
+									s.required ? s : { ...s, enabled: false },
 								);
 								setSpecifications(updated);
 								onChange(updated);

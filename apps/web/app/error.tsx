@@ -1,7 +1,7 @@
 "use client";
 
+import { AlertTriangle, Home, RefreshCw } from "lucide-react";
 import { useEffect } from "react";
-import { AlertTriangle, RefreshCw, Home } from "lucide-react";
 
 interface ErrorProps {
 	error: Error & { digest?: string };
@@ -37,9 +37,7 @@ const ErrorBoundary = ({ error, reset }: ErrorProps) => {
 						<p className="mb-2 text-xs font-medium uppercase text-red-400">Error Details</p>
 						<p className="font-mono text-xs text-red-300 break-all">{error.message}</p>
 						{error.digest && (
-							<p className="mt-2 font-mono text-xs text-fg-muted">
-								Digest: {error.digest}
-							</p>
+							<p className="mt-2 font-mono text-xs text-fg-muted">Digest: {error.digest}</p>
 						)}
 					</div>
 				)}

@@ -1,12 +1,8 @@
 "use client";
 
-import { Server } from "lucide-react";
 import type { ServiceInstanceSummary } from "@arr/shared";
-import {
-	PremiumSection,
-	PremiumEmptyState,
-	PremiumSkeleton,
-} from "../../../components/layout";
+import { Server } from "lucide-react";
+import { PremiumEmptyState, PremiumSection, PremiumSkeleton } from "../../../components/layout";
 import { ServiceInstanceCard } from "./service-instance-card";
 
 /**

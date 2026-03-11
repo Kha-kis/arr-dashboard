@@ -9,41 +9,41 @@
  * - Glassmorphic content cards
  */
 
-import { useState, useMemo } from "react";
-import {
-	LegacyDialog,
-	LegacyDialogHeader,
-	LegacyDialogTitle,
-	LegacyDialogDescription,
-	LegacyDialogContent,
-	LegacyDialogFooter,
-	LegacyDialogClose,
-} from "../../../components/ui";
-import { Button } from "../../../components/ui";
-import { PremiumSkeleton } from "../../../components/layout/premium-components";
 import {
 	AlertCircle,
-	Plus,
-	Minus,
-	Edit,
 	Check,
-	GitCompare,
 	ChevronDown,
 	ChevronRight,
-	Lightbulb,
-	TrendingUp,
-	History,
 	Clock,
-	Loader2,
 	Code,
+	Edit,
+	GitCompare,
+	History,
+	Lightbulb,
 	List,
+	Loader2,
+	Minus,
+	Plus,
+	TrendingUp,
 } from "lucide-react";
-import { useTemplateDiff, useSyncTemplate } from "../../../hooks/api/useTemplateUpdates";
-import { cn } from "../../../lib/utils";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { PremiumSkeleton } from "../../../components/layout/premium-components";
+import {
+	Button,
+	LegacyDialog,
+	LegacyDialogClose,
+	LegacyDialogContent,
+	LegacyDialogDescription,
+	LegacyDialogFooter,
+	LegacyDialogHeader,
+	LegacyDialogTitle,
+} from "../../../components/ui";
+import { useSyncTemplate, useTemplateDiff } from "../../../hooks/api/useTemplateUpdates";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { cn } from "../../../lib/utils";
 
 /**
  * Helper component to display specifications in a more navigable format
@@ -120,11 +120,7 @@ function SpecificationDisplay({ specifications, label, color }: SpecificationDis
 			>
 				<Code className="h-3 w-3" />
 				{showFullJson ? "Hide" : "Show"} full JSON
-				{showFullJson ? (
-					<ChevronDown className="h-3 w-3" />
-				) : (
-					<ChevronRight className="h-3 w-3" />
-				)}
+				{showFullJson ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
 			</button>
 
 			{/* Full JSON with constrained height */}
@@ -203,7 +199,8 @@ export const TemplateDiffModal = ({
 			if (stats) {
 				const changes: string[] = [];
 				if (stats.customFormatsAdded > 0) changes.push(`${stats.customFormatsAdded} CFs added`);
-				if (stats.customFormatsUpdated > 0) changes.push(`${stats.customFormatsUpdated} CFs updated`);
+				if (stats.customFormatsUpdated > 0)
+					changes.push(`${stats.customFormatsUpdated} CFs updated`);
 				if (stats.scoresUpdated > 0) changes.push(`${stats.scoresUpdated} scores updated`);
 
 				toast.success("Template synced", {
@@ -346,7 +343,11 @@ export const TemplateDiffModal = ({
 				{isLoading && (
 					<div className="space-y-4">
 						<PremiumSkeleton variant="card" className="h-24 w-full rounded-xl" />
-						<PremiumSkeleton variant="card" className="h-48 w-full rounded-xl" style={{ animationDelay: "50ms" }} />
+						<PremiumSkeleton
+							variant="card"
+							className="h-48 w-full rounded-xl"
+							style={{ animationDelay: "50ms" }}
+						/>
 					</div>
 				)}
 
@@ -367,7 +368,10 @@ export const TemplateDiffModal = ({
 								<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
 									Failed to load diff
 								</p>
-								<p className="text-sm mt-1 opacity-80" style={{ color: SEMANTIC_COLORS.error.text }}>
+								<p
+									className="text-sm mt-1 opacity-80"
+									style={{ color: SEMANTIC_COLORS.error.text }}
+								>
 									{getErrorMessage(error, "Please try again")}
 								</p>
 							</div>
@@ -387,13 +391,23 @@ export const TemplateDiffModal = ({
 								}}
 							>
 								<div className="flex items-center gap-2">
-									<History className="h-4 w-4 shrink-0" style={{ color: SEMANTIC_COLORS.success.from }} />
-									<span className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.success.text }}>
+									<History
+										className="h-4 w-4 shrink-0"
+										style={{ color: SEMANTIC_COLORS.success.from }}
+									/>
+									<span
+										className="text-sm font-medium"
+										style={{ color: SEMANTIC_COLORS.success.text }}
+									>
 										These changes were already applied via auto-sync
 									</span>
 								</div>
-								<p className="text-xs mt-1 ml-6 opacity-80" style={{ color: SEMANTIC_COLORS.success.text }}>
-									This is a historical view of changes that were synced automatically. No further action is needed.
+								<p
+									className="text-xs mt-1 ml-6 opacity-80"
+									style={{ color: SEMANTIC_COLORS.success.text }}
+								>
+									This is a historical view of changes that were synced automatically. No further
+									action is needed.
 								</p>
 							</div>
 						)}
@@ -409,42 +423,63 @@ export const TemplateDiffModal = ({
 									</p>
 								</div>
 								<div className="space-y-1">
-									<p className="text-xs" style={{ color: SEMANTIC_COLORS.success.text }}>Added</p>
-									<p className="text-2xl font-semibold" style={{ color: SEMANTIC_COLORS.success.from }}>
+									<p className="text-xs" style={{ color: SEMANTIC_COLORS.success.text }}>
+										Added
+									</p>
+									<p
+										className="text-2xl font-semibold"
+										style={{ color: SEMANTIC_COLORS.success.from }}
+									>
 										{data.data.summary.addedCFs}
 									</p>
 								</div>
 								<div className="space-y-1">
-									<p className="text-xs" style={{ color: SEMANTIC_COLORS.warning.text }}>Modified</p>
-									<p className="text-2xl font-semibold" style={{ color: SEMANTIC_COLORS.warning.from }}>
+									<p className="text-xs" style={{ color: SEMANTIC_COLORS.warning.text }}>
+										Modified
+									</p>
+									<p
+										className="text-2xl font-semibold"
+										style={{ color: SEMANTIC_COLORS.warning.from }}
+									>
 										{data.data.summary.modifiedCFs}
 									</p>
 								</div>
 								<div className="space-y-1">
-									<p className="text-xs" style={{ color: SEMANTIC_COLORS.error.text }}>Removed</p>
-									<p className="text-2xl font-semibold" style={{ color: SEMANTIC_COLORS.error.from }}>
+									<p className="text-xs" style={{ color: SEMANTIC_COLORS.error.text }}>
+										Removed
+									</p>
+									<p
+										className="text-2xl font-semibold"
+										style={{ color: SEMANTIC_COLORS.error.from }}
+									>
 										{data.data.summary.removedCFs}
 									</p>
 								</div>
 							</div>
 
 							{/* Suggestions Row */}
-							{(data.data.suggestedAdditions?.length || data.data.suggestedScoreChanges?.length) && (
+							{(data.data.suggestedAdditions?.length ||
+								data.data.suggestedScoreChanges?.length) && (
 								<div className="mt-3 pt-3 border-t border-border/30">
 									<div className="grid grid-cols-2 gap-4">
 										{data.data.suggestedAdditions?.length ? (
 											<div className="flex items-center gap-2 text-sm">
 												<Lightbulb className="h-4 w-4" style={{ color: themeGradient.from }} />
 												<span className="text-muted-foreground">
-													{data.data.suggestedAdditions.length} suggested addition{data.data.suggestedAdditions.length !== 1 ? 's' : ''}
+													{data.data.suggestedAdditions.length} suggested addition
+													{data.data.suggestedAdditions.length !== 1 ? "s" : ""}
 												</span>
 											</div>
 										) : null}
 										{data.data.suggestedScoreChanges?.length ? (
 											<div className="flex items-center gap-2 text-sm">
-												<TrendingUp className="h-4 w-4" style={{ color: SEMANTIC_COLORS.info.from }} />
+												<TrendingUp
+													className="h-4 w-4"
+													style={{ color: SEMANTIC_COLORS.info.from }}
+												/>
 												<span className="text-muted-foreground">
-													{data.data.suggestedScoreChanges.length} score update{data.data.suggestedScoreChanges.length !== 1 ? 's' : ''}
+													{data.data.suggestedScoreChanges.length} score update
+													{data.data.suggestedScoreChanges.length !== 1 ? "s" : ""}
 												</span>
 											</div>
 										) : null}
@@ -455,7 +490,10 @@ export const TemplateDiffModal = ({
 							{data.data.hasUserModifications && (
 								<div className="mt-3 pt-3 border-t border-border/30">
 									<div className="flex items-center gap-2 text-sm">
-										<AlertCircle className="h-4 w-4" style={{ color: SEMANTIC_COLORS.warning.from }} />
+										<AlertCircle
+											className="h-4 w-4"
+											style={{ color: SEMANTIC_COLORS.warning.from }}
+										/>
 										<span className="text-muted-foreground">
 											This template has custom modifications
 										</span>
@@ -477,15 +515,18 @@ export const TemplateDiffModal = ({
 												onClick={() => setSelectedStrategy(strategy)}
 												className="text-left rounded-xl border p-4 transition-all"
 												style={{
-													borderColor: selectedStrategy === strategy
-														? themeGradient.from
-														: "hsl(var(--border) / 0.5)",
-													backgroundColor: selectedStrategy === strategy
-														? `${themeGradient.from}10`
-														: "transparent",
-													boxShadow: selectedStrategy === strategy
-														? `0 0 0 1px ${themeGradient.from}`
-														: undefined,
+													borderColor:
+														selectedStrategy === strategy
+															? themeGradient.from
+															: "hsl(var(--border) / 0.5)",
+													backgroundColor:
+														selectedStrategy === strategy
+															? `${themeGradient.from}10`
+															: "transparent",
+													boxShadow:
+														selectedStrategy === strategy
+															? `0 0 0 1px ${themeGradient.from}`
+															: undefined,
 												}}
 											>
 												<div className="flex items-start gap-3">
@@ -493,7 +534,9 @@ export const TemplateDiffModal = ({
 														{selectedStrategy === strategy ? (
 															<div
 																className="h-5 w-5 rounded-full flex items-center justify-center"
-																style={{ background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})` }}
+																style={{
+																	background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+																}}
 															>
 																<Check className="h-3 w-3 text-white" />
 															</div>
@@ -521,13 +564,15 @@ export const TemplateDiffModal = ({
 						{data.data.customFormatDiffs.length > 0 && (
 							<div className="space-y-3">
 								<h3 className="text-sm font-semibold text-foreground">
-									Custom Format Changes ({data.data.customFormatDiffs.filter(d => d.changeType !== "unchanged").length})
+									Custom Format Changes (
+									{data.data.customFormatDiffs.filter((d) => d.changeType !== "unchanged").length})
 								</h3>
 								<div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
 									{data.data.customFormatDiffs
 										.filter((diff) => diff.changeType !== "unchanged")
 										.map((diff) => {
-											const hasDetails = diff.hasSpecificationChanges ||
+											const hasDetails =
+												diff.hasSpecificationChanges ||
 												diff.currentSpecifications ||
 												diff.newSpecifications ||
 												diff.currentScore !== undefined ||
@@ -549,33 +594,49 @@ export const TemplateDiffModal = ({
 														onClick={() => hasDetails && toggleExpanded(diff.trashId)}
 														className={cn(
 															"w-full text-left p-3",
-															hasDetails && "cursor-pointer hover:opacity-80"
+															hasDetails && "cursor-pointer hover:opacity-80",
 														)}
 														disabled={!hasDetails}
 													>
 														<div className="flex items-center justify-between gap-3">
 															<div className="flex items-center gap-2 flex-1 min-w-0">
 																{getChangeTypeIcon(diff.changeType)}
-																<span className="text-sm font-medium truncate" style={{ color: styles.color }}>
+																<span
+																	className="text-sm font-medium truncate"
+																	style={{ color: styles.color }}
+																>
 																	{diff.name}
 																</span>
 																{diff.currentScore !== undefined &&
 																	diff.changeType !== "added" &&
-																	!(diff.changeType === "modified" && diff.currentScore !== diff.newScore) && (
-																	<span className="text-xs opacity-70 shrink-0" style={{ color: styles.color }}>
-																		Score: {diff.currentScore}
-																	</span>
-																)}
+																	!(
+																		diff.changeType === "modified" &&
+																		diff.currentScore !== diff.newScore
+																	) && (
+																		<span
+																			className="text-xs opacity-70 shrink-0"
+																			style={{ color: styles.color }}
+																		>
+																			Score: {diff.currentScore}
+																		</span>
+																	)}
 																{diff.newScore !== undefined && diff.changeType === "added" && (
-																	<span className="text-xs opacity-70 shrink-0" style={{ color: styles.color }}>
+																	<span
+																		className="text-xs opacity-70 shrink-0"
+																		style={{ color: styles.color }}
+																	>
 																		Score: {diff.newScore}
 																	</span>
 																)}
-																{diff.changeType === "modified" && diff.currentScore !== diff.newScore && (
-																	<span className="text-xs opacity-70 shrink-0" style={{ color: styles.color }}>
-																		{diff.currentScore} → {diff.newScore}
-																	</span>
-																)}
+																{diff.changeType === "modified" &&
+																	diff.currentScore !== diff.newScore && (
+																		<span
+																			className="text-xs opacity-70 shrink-0"
+																			style={{ color: styles.color }}
+																		>
+																			{diff.currentScore} → {diff.newScore}
+																		</span>
+																	)}
 															</div>
 															{hasDetails && (
 																<span className="shrink-0" style={{ color: styles.color }}>
@@ -663,12 +724,15 @@ export const TemplateDiffModal = ({
 								</div>
 								<div className="space-y-1">
 									<p className="text-xs text-muted-foreground">
-										Score set: <span className="font-mono text-xs">{data.data.suggestedScoreChanges[0]?.scoreSet || "default"}</span>
+										Score set:{" "}
+										<span className="font-mono text-xs">
+											{data.data.suggestedScoreChanges[0]?.scoreSet || "default"}
+										</span>
 									</p>
-									{data.data.suggestedScoreChanges.every(c => c.currentScore === 0) && (
+									{data.data.suggestedScoreChanges.every((c) => c.currentScore === 0) && (
 										<p className="text-xs text-amber-600 dark:text-amber-400">
-											⚠️ All current scores show 0 - this template may predate TRaSH&apos;s profile-specific scores.
-											Syncing will add the recommended scores.
+											⚠️ All current scores show 0 - this template may predate TRaSH&apos;s
+											profile-specific scores. Syncing will add the recommended scores.
 										</p>
 									)}
 								</div>
@@ -676,19 +740,24 @@ export const TemplateDiffModal = ({
 						)}
 
 						{/* No Changes Message */}
-						{data.data.summary.totalChanges === 0 && !data.data.suggestedAdditions?.length && !data.data.suggestedScoreChanges?.length && (
-							<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-8 text-center">
-								<Check className="h-12 w-12 mx-auto mb-3" style={{ color: SEMANTIC_COLORS.success.from }} />
-								<p className="text-sm font-medium text-foreground">
-									{isHistorical ? "No changes recorded" : "Template is up to date"}
-								</p>
-								<p className="text-xs text-muted-foreground mt-1">
-									{isHistorical
-										? "No detailed change information is available for this sync operation"
-										: "No changes between your template and latest TRaSH Guides"}
-								</p>
-							</div>
-						)}
+						{data.data.summary.totalChanges === 0 &&
+							!data.data.suggestedAdditions?.length &&
+							!data.data.suggestedScoreChanges?.length && (
+								<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-8 text-center">
+									<Check
+										className="h-12 w-12 mx-auto mb-3"
+										style={{ color: SEMANTIC_COLORS.success.from }}
+									/>
+									<p className="text-sm font-medium text-foreground">
+										{isHistorical ? "No changes recorded" : "Template is up to date"}
+									</p>
+									<p className="text-xs text-muted-foreground mt-1">
+										{isHistorical
+											? "No detailed change information is available for this sync operation"
+											: "No changes between your template and latest TRaSH Guides"}
+									</p>
+								</div>
+							)}
 
 						{/* Suggested Additions Section */}
 						{data.data.suggestedAdditions && data.data.suggestedAdditions.length > 0 && (
@@ -700,8 +769,8 @@ export const TemplateDiffModal = ({
 									</h3>
 								</div>
 								<p className="text-xs text-muted-foreground">
-									These Custom Formats are available in your CF Groups or Quality Profile but not yet in your template.
-									Edit the template to add them if desired.
+									These Custom Formats are available in your CF Groups or Quality Profile but not
+									yet in your template. Edit the template to add them if desired.
 								</p>
 								<div className="space-y-2 max-h-60 overflow-y-auto pr-1">
 									{data.data.suggestedAdditions.map((suggestion) => (
@@ -715,11 +784,20 @@ export const TemplateDiffModal = ({
 										>
 											<div className="flex items-center justify-between gap-3">
 												<div className="flex items-center gap-2 flex-1 min-w-0">
-													<Plus className="h-4 w-4 shrink-0" style={{ color: themeGradient.from }} />
-													<span className="text-sm font-medium truncate" style={{ color: themeGradient.from }}>
+													<Plus
+														className="h-4 w-4 shrink-0"
+														style={{ color: themeGradient.from }}
+													/>
+													<span
+														className="text-sm font-medium truncate"
+														style={{ color: themeGradient.from }}
+													>
 														{suggestion.name}
 													</span>
-													<span className="text-xs shrink-0 opacity-70" style={{ color: themeGradient.from }}>
+													<span
+														className="text-xs shrink-0 opacity-70"
+														style={{ color: themeGradient.from }}
+													>
 														Score: {suggestion.recommendedScore}
 													</span>
 												</div>
@@ -768,8 +846,8 @@ export const TemplateDiffModal = ({
 								Syncing...
 							</>
 						) : data?.data?.summary.totalChanges === 0 &&
-						  !data?.data?.suggestedScoreChanges?.length &&
-						  !data?.data?.suggestedAdditions?.length ? (
+							!data?.data?.suggestedScoreChanges?.length &&
+							!data?.data?.suggestedAdditions?.length ? (
 							"Mark as Current"
 						) : (
 							`Sync with ${selectedStrategy.replace(/_/g, " ")}`

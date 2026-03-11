@@ -1,27 +1,21 @@
 "use client";
 
 import type { ProwlarrIndexer, ProwlarrIndexerDetails } from "@arr/shared";
-import { DetailStat } from "./detail-stat";
+import { Tag, Zap } from "lucide-react";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { PROTOCOL_COLORS } from "../../../lib/theme-gradients";
 import {
 	formatDateTime,
 	formatResponseTime,
 	formatSuccessRate,
 	protocolLabel,
 } from "../lib/indexers-utils";
-import { Zap, Tag } from "lucide-react";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { PROTOCOL_COLORS } from "../../../lib/theme-gradients";
+import { DetailStat } from "./detail-stat";
 
 /**
  * Premium Capability/Category Badge
  */
-const PremiumBadge = ({
-	label,
-	color,
-}: {
-	label: string;
-	color: string;
-}) => (
+const PremiumBadge = ({ label, color }: { label: string; color: string }) => (
 	<span
 		className="rounded-full px-3 py-1 text-xs font-medium transition-transform duration-200 hover:scale-105"
 		style={{
@@ -56,7 +50,10 @@ export const IndexerDetailsInfo = ({
 	const categories = detail.categories ?? [];
 
 	// Protocol-based colors
-	const protocolColor = (detail.protocol ?? indexer.protocol) === "torrent" ? PROTOCOL_COLORS.torrent : PROTOCOL_COLORS.usenet;
+	const protocolColor =
+		(detail.protocol ?? indexer.protocol) === "torrent"
+			? PROTOCOL_COLORS.torrent
+			: PROTOCOL_COLORS.usenet;
 
 	return (
 		<div className="space-y-5 flex-1">

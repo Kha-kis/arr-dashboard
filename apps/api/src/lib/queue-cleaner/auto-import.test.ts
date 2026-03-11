@@ -5,11 +5,8 @@
  * Run with: npx vitest run auto-import.test.ts
  */
 
-import { describe, it, expect } from "vitest";
-import {
-	AUTO_IMPORT_SAFE_KEYWORDS,
-	AUTO_IMPORT_NEVER_KEYWORDS,
-} from "./constants.js";
+import { describe, expect, it } from "vitest";
+import { AUTO_IMPORT_NEVER_KEYWORDS, AUTO_IMPORT_SAFE_KEYWORDS } from "./constants.js";
 
 // Helper to simulate the eligibility check logic
 function evaluateAutoImportEligibility(
@@ -34,7 +31,10 @@ function evaluateAutoImportEligibility(
 	// Check max attempts
 	const attempts = existingStrike?.importAttempts ?? 0;
 	if (attempts >= config.autoImportMaxAttempts) {
-		return { eligible: false, reason: `Max attempts reached (${attempts}/${config.autoImportMaxAttempts})` };
+		return {
+			eligible: false,
+			reason: `Max attempts reached (${attempts}/${config.autoImportMaxAttempts})`,
+		};
 	}
 
 	// Check cooldown period

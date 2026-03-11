@@ -1,4 +1,10 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import {
+	createCipheriv,
+	createDecipheriv,
+	createHash,
+	randomBytes,
+	timingSafeEqual,
+} from "node:crypto";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;

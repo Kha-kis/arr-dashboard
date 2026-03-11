@@ -4,24 +4,24 @@
  * Provides bulk operations for managing custom format scores across multiple templates
  */
 
-import type { Prisma, PrismaClient } from "../../lib/prisma.js";
 import type {
-	CustomFormatScoreEntry,
-	BulkScoreFilters,
-	BulkScoreUpdate,
 	BulkScoreCopy,
-	BulkScoreReset,
 	BulkScoreExport,
+	BulkScoreFilters,
 	BulkScoreImport,
 	BulkScoreManagementResponse,
+	BulkScoreReset,
+	BulkScoreUpdate,
+	CustomFormatScoreEntry,
 	TemplateConfig,
 	TemplateScore,
 } from "@arr/shared";
-import type { SonarrClient, RadarrClient } from "arr-sdk";
+import type { RadarrClient, SonarrClient } from "arr-sdk";
+import type { Prisma, PrismaClient } from "../../lib/prisma.js";
 import type { ArrClientFactory } from "../arr/client-factory.js";
-import { safeJsonParse } from "../utils/json.js";
 import { loggers } from "../logger.js";
 import { getErrorMessage } from "../utils/error-message.js";
+import { safeJsonParse } from "../utils/json.js";
 
 const log = loggers.trashGuides;
 
@@ -99,7 +99,10 @@ export class BulkScoreManager {
 			try {
 				qualityProfiles = await client.qualityProfile.getAll();
 			} catch (error) {
-				log.error({ err: error, instanceId: instance.id, instanceLabel: instance.label }, "Failed to fetch quality profiles from instance");
+				log.error(
+					{ err: error, instanceId: instance.id, instanceLabel: instance.label },
+					"Failed to fetch quality profiles from instance",
+				);
 				continue; // Skip this instance if it fails
 			}
 
@@ -229,7 +232,10 @@ export class BulkScoreManager {
 			try {
 				customFormats = await client.customFormat.getAll();
 			} catch (error) {
-				log.error({ err: error, instanceId: instance.id, instanceLabel: instance.label }, "Failed to fetch custom formats from instance");
+				log.error(
+					{ err: error, instanceId: instance.id, instanceLabel: instance.label },
+					"Failed to fetch custom formats from instance",
+				);
 				continue;
 			}
 
@@ -239,7 +245,10 @@ export class BulkScoreManager {
 			try {
 				qualityProfiles = await client.qualityProfile.getAll();
 			} catch (error) {
-				log.error({ err: error, instanceId: instance.id, instanceLabel: instance.label }, "Failed to fetch quality profiles from instance");
+				log.error(
+					{ err: error, instanceId: instance.id, instanceLabel: instance.label },
+					"Failed to fetch quality profiles from instance",
+				);
 				continue;
 			}
 

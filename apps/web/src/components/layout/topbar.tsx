@@ -1,8 +1,8 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
-import { EyeOff, Eye } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
 import { useCurrentUser, useLogoutMutation } from "../../hooks/api/useAuth";
 import { useIncognitoMode } from "../../lib/incognito";
 import { Button } from "../ui/button";
@@ -33,7 +33,9 @@ export const TopBar = () => {
 		<header className="flex items-center justify-between border-b border-border/30 bg-background/80 backdrop-blur-xl px-6 py-4 shadow-sm">
 			<div>
 				<h2 className="text-lg font-semibold text-foreground">Arr Control Center</h2>
-				<p className="text-sm text-muted-foreground">Manage Sonarr, Radarr, and Prowlarr from one place.</p>
+				<p className="text-sm text-muted-foreground">
+					Manage Sonarr, Radarr, and Prowlarr from one place.
+				</p>
 			</div>
 			<div className="flex items-center gap-3">
 				{showLoginCta ? (
@@ -49,11 +51,7 @@ export const TopBar = () => {
 							title={incognitoMode ? "Show real data" : "Hide sensitive data"}
 							className="relative h-9 w-9 p-0"
 						>
-							{incognitoMode ? (
-								<EyeOff className="h-4 w-4" />
-							) : (
-								<Eye className="h-4 w-4" />
-							)}
+							{incognitoMode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
 						</Button>
 						<div className="group relative flex items-center gap-3 px-3 py-2 rounded-lg bg-card/40 backdrop-blur-xs border border-border/50 hover:border-primary/30 transition-all duration-200 cursor-pointer">
 							<div className="absolute inset-0 rounded-lg bg-linear-to-r from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />

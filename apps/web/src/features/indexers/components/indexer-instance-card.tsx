@@ -1,11 +1,11 @@
 "use client";
 
 import type { ProwlarrIndexer, ProwlarrIndexerDetails } from "@arr/shared";
-import { IndexerRow } from "./indexer-row";
-import { useIncognitoMode, getLinuxInstanceName } from "../../../lib/incognito";
-import { Server, Globe, Hash } from "lucide-react";
+import { Globe, Hash, Server } from "lucide-react";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { IndexerRow } from "./indexer-row";
 
 // Use centralized Prowlarr color
 const PROWLARR_COLOR = SERVICE_GRADIENTS.prowlarr.from;
@@ -68,10 +68,7 @@ export const IndexerInstanceCard = ({
 							<Server className="h-6 w-6" style={{ color: PROWLARR_COLOR }} />
 						</div>
 						<div>
-							<h2
-								className="text-xl font-bold"
-								style={{ color: PROWLARR_COLOR }}
-							>
+							<h2 className="text-xl font-bold" style={{ color: PROWLARR_COLOR }}>
 								{incognitoMode ? getLinuxInstanceName(instanceName) : instanceName}
 							</h2>
 							<div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">

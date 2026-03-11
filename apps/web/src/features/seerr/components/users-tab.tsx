@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
-import Image from "next/image";
-import { AlertCircle, Users, Settings, Loader2 } from "lucide-react";
 import type { SeerrUser } from "@arr/shared";
+import { AlertCircle, Loader2, Settings, Users } from "lucide-react";
+import Image from "next/image";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
 	FilterSelect,
 	GlassmorphicCard,
@@ -12,7 +12,7 @@ import {
 	PremiumSkeleton,
 } from "../../../components/layout";
 import { Button } from "../../../components/ui";
-import { useSeerrUsers, useSeerrUserQuota } from "../../../hooks/api/useSeerr";
+import { useSeerrUserQuota, useSeerrUsers } from "../../../hooks/api/useSeerr";
 import { UserSettingsDialog } from "./user-settings-dialog";
 
 type UserSort = "displayname" | "created" | "updated" | "requests";
@@ -31,7 +31,10 @@ function getUserTypeBadge(userType: number): { label: string; className: string 
 		case 2:
 			return { label: "Plex", className: "bg-amber-500/10 text-amber-400 border-amber-500/20" };
 		case 3:
-			return { label: "Jellyfin", className: "bg-purple-500/10 text-purple-400 border-purple-500/20" };
+			return {
+				label: "Jellyfin",
+				className: "bg-purple-500/10 text-purple-400 border-purple-500/20",
+			};
 		default:
 			return null;
 	}

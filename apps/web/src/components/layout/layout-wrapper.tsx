@@ -1,12 +1,12 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
-import { Sidebar } from "./sidebar";
-import { TopBar } from "./topbar";
-import { CommandPalette, useCommandPalette } from "./command-palette";
+import { useEffect, useState } from "react";
 import { useThemeGradient } from "../../hooks/useThemeGradient";
 import { useColorTheme } from "../../providers/color-theme-provider";
+import { CommandPalette, useCommandPalette } from "./command-palette";
+import { Sidebar } from "./sidebar";
+import { TopBar } from "./topbar";
 
 const ROUTES_WITHOUT_LAYOUT = new Set(["/login", "/setup"]);
 

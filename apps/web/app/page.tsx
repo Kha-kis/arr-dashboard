@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useSetupRequired, useCurrentUser } from "../src/hooks/api/useAuth";
+import { useEffect } from "react";
 import { Skeleton } from "../src/components/ui";
+import { useCurrentUser, useSetupRequired } from "../src/hooks/api/useAuth";
 
 const HomePage = () => {
 	const router = useRouter();

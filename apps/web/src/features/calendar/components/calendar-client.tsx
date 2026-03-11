@@ -1,21 +1,18 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
+import { GlassmorphicCard, PremiumSkeleton } from "../../../components/layout";
+import { Alert, AlertDescription } from "../../../components/ui";
 import { useMultiInstanceCalendarQuery } from "../../../hooks/api/useDashboard";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
-import { Alert, AlertDescription } from "../../../components/ui";
 import { safeOpenUrl } from "../../../lib/utils/url-validation";
-import { formatDateOnly } from "../lib/calendar-formatters";
-import { useCalendarState } from "../hooks/use-calendar-state";
 import { useCalendarData } from "../hooks/use-calendar-data";
-import { CalendarHeader } from "./calendar-header";
+import { useCalendarState } from "../hooks/use-calendar-state";
+import { formatDateOnly } from "../lib/calendar-formatters";
+import { CalendarEventList } from "./calendar-event-list";
 import { CalendarFilters } from "./calendar-filters";
 import { CalendarGrid } from "./calendar-grid";
-import { CalendarEventList } from "./calendar-event-list";
-import {
-	PremiumSkeleton,
-	GlassmorphicCard,
-} from "../../../components/layout";
+import { CalendarHeader } from "./calendar-header";
 
 export const CalendarClient = () => {
 	const calendarState = useCalendarState();
@@ -59,11 +56,7 @@ export const CalendarClient = () => {
 				<GlassmorphicCard padding="md">
 					<div className="grid grid-cols-7 gap-2">
 						{Array.from({ length: 35 }).map((_, i) => (
-							<PremiumSkeleton
-								key={i}
-								className="h-20"
-								style={{ animationDelay: `${i * 20}ms` }}
-							/>
+							<PremiumSkeleton key={i} className="h-20" style={{ animationDelay: `${i * 20}ms` }} />
 						))}
 					</div>
 				</GlassmorphicCard>

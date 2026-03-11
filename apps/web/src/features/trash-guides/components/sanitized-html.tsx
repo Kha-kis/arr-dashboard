@@ -16,9 +16,5 @@ interface SanitizedHtmlProps {
  */
 export const SanitizedHtml = ({ html, className, style }: SanitizedHtmlProps) => (
 	// Security: Content is sanitized via DOMPurify wrapper (createSanitizedHtml)
-	<div
-		className={className}
-		style={style}
-		dangerouslySetInnerHTML={createSanitizedHtml(html)}
-	/>
+	<div className={className} style={style} dangerouslySetInnerHTML={createSanitizedHtml(html)} />
 );

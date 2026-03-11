@@ -1,34 +1,26 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { AlertCircle, Check, FileJson, Loader2, Plus, Server, Upload } from "lucide-react";
+import { useCallback, useState } from "react";
+import { PremiumTabs } from "../../../components/layout/premium-components";
+import { Button } from "../../../components/ui";
 import {
 	Dialog,
 	DialogContent,
+	DialogDescription,
 	DialogHeader,
 	DialogTitle,
-	DialogDescription,
 } from "../../../components/ui/dialog";
-import { Button } from "../../../components/ui";
-import { PremiumTabs } from "../../../components/layout/premium-components";
-import {
-	Plus,
-	FileJson,
-	Server,
-	Loader2,
-	Check,
-	AlertCircle,
-	Upload,
-} from "lucide-react";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
-import {
-	useCreateUserCustomFormat,
-	useImportUserCFFromJson,
-	useImportUserCFFromInstance,
-} from "../hooks/use-custom-formats";
-import { SpecificationBuilder, type SpecificationData } from "./specification-builder";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { apiRequest } from "../../../lib/api-client/base";
 import { getErrorMessage } from "../../../lib/error-utils";
+import {
+	useCreateUserCustomFormat,
+	useImportUserCFFromInstance,
+	useImportUserCFFromJson,
+} from "../hooks/use-custom-formats";
+import { SpecificationBuilder, type SpecificationData } from "./specification-builder";
 
 interface UserCFImportDialogProps {
 	open: boolean;
@@ -83,10 +75,7 @@ export function UserCFImportDialog({
 						/>
 					)}
 					{activeTab === "instance" && (
-						<InstanceImportTab
-							onSuccess={() => onOpenChange(false)}
-							gradient={gradient}
-						/>
+						<InstanceImportTab onSuccess={() => onOpenChange(false)} gradient={gradient} />
 					)}
 				</div>
 			</DialogContent>
@@ -199,10 +188,7 @@ function CreateTab({
 			</div>
 
 			{/* Specifications */}
-			<SpecificationBuilder
-				specifications={specifications}
-				onChange={setSpecifications}
-			/>
+			<SpecificationBuilder specifications={specifications} onChange={setSpecifications} />
 
 			{/* Error */}
 			{createMutation.isError && (
@@ -269,14 +255,10 @@ function JsonImportTab({
 			const cfs = Array.isArray(parsed) ? parsed : [parsed];
 
 			// Validate basic structure
-			const valid = cfs.filter(
-				(cf: any) => cf.name && typeof cf.name === "string",
-			);
+			const valid = cfs.filter((cf: any) => cf.name && typeof cf.name === "string");
 
 			if (valid.length === 0) {
-				setParseError(
-					"No valid custom formats found. Each must have at least a 'name' field.",
-				);
+				setParseError("No valid custom formats found. Each must have at least a 'name' field.");
 				return;
 			}
 
@@ -338,11 +320,10 @@ function JsonImportTab({
 
 			{/* JSON Input */}
 			<div>
-				<label className="text-sm font-medium text-foreground">
-					Paste Custom Format JSON
-				</label>
+				<label className="text-sm font-medium text-foreground">Paste Custom Format JSON</label>
 				<p className="text-xs text-muted-foreground mt-0.5 mb-1">
-					Export a custom format from Sonarr/Radarr (Settings → Custom Formats → Export) and paste it here.
+					Export a custom format from Sonarr/Radarr (Settings → Custom Formats → Export) and paste
+					it here.
 				</p>
 				<textarea
 					value={jsonInput}
@@ -400,9 +381,7 @@ function JsonImportTab({
 			{importMutation.isSuccess && importMutation.data && (
 				<div className="rounded-lg bg-green-500/10 p-3 space-y-1 text-sm">
 					{importMutation.data.created.length > 0 && (
-						<p className="text-green-400">
-							✓ Created: {importMutation.data.created.join(", ")}
-						</p>
+						<p className="text-green-400">✓ Created: {importMutation.data.created.join(", ")}</p>
 					)}
 					{importMutation.data.skipped.length > 0 && (
 						<p className="text-amber-400">
@@ -502,9 +481,7 @@ function InstanceImportTab({
 				})),
 			);
 		} catch (error) {
-			setLoadError(
-				getErrorMessage(error, "Failed to load custom formats"),
-			);
+			setLoadError(getErrorMessage(error, "Failed to load custom formats"));
 		} finally {
 			setLoading(false);
 		}
@@ -639,14 +616,10 @@ function InstanceImportTab({
 			{importMutation.isSuccess && importMutation.data && (
 				<div className="rounded-lg bg-green-500/10 p-3 space-y-1 text-sm">
 					{importMutation.data.created.length > 0 && (
-						<p className="text-green-400">
-							✓ Created: {importMutation.data.created.join(", ")}
-						</p>
+						<p className="text-green-400">✓ Created: {importMutation.data.created.join(", ")}</p>
 					)}
 					{importMutation.data.skipped.length > 0 && (
-						<p className="text-amber-400">
-							⊘ Skipped: {importMutation.data.skipped.join(", ")}
-						</p>
+						<p className="text-amber-400">⊘ Skipped: {importMutation.data.skipped.join(", ")}</p>
 					)}
 				</div>
 			)}

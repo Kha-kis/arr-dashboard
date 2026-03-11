@@ -20,14 +20,38 @@ let hooksInitialized = false;
 const SANITIZE_CONFIG = {
 	// Allow common HTML tags for descriptions
 	ALLOWED_TAGS: [
-		"p", "br", "b", "i", "strong", "em", "a", "ul", "ol", "li",
-		"code", "pre", "blockquote", "h1", "h2", "h3", "h4", "h5", "h6",
-		"span", "div", "table", "thead", "tbody", "tr", "th", "td",
+		"p",
+		"br",
+		"b",
+		"i",
+		"strong",
+		"em",
+		"a",
+		"ul",
+		"ol",
+		"li",
+		"code",
+		"pre",
+		"blockquote",
+		"h1",
+		"h2",
+		"h3",
+		"h4",
+		"h5",
+		"h6",
+		"span",
+		"div",
+		"table",
+		"thead",
+		"tbody",
+		"tr",
+		"th",
+		"td",
 	],
 	// Allow common attributes
-	ALLOWED_ATTR: [
-		"href", "target", "rel", "class", "id", "title",
-	],
+	ALLOWED_ATTR: ["href", "target", "rel", "class", "id", "title"],
+	// Explicitly restrict URI schemes to prevent data: and javascript: XSS
+	ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
 };
 
 /**

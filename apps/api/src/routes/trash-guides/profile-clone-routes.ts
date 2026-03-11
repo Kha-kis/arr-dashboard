@@ -4,29 +4,30 @@
  * Routes for importing complete quality profiles from *arr instances
  */
 
-import type { FastifyPluginCallback } from "fastify";
-import { createProfileCloner } from "../../lib/trash-guides/profile-cloner.js";
-import { SonarrClient, RadarrClient } from "arr-sdk";
-import { createCFMatcher, type InstanceCustomFormat } from "../../lib/trash-guides/cf-matcher.js";
-import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
-import { createTemplateService } from "../../lib/trash-guides/template-service.js";
-import { findCutoffQualityName } from "../../lib/utils/quality-utils.js";
-import { requireInstance } from "../../lib/arr/instance-helpers.js";
-import {
-	matchProfileToTrash,
-	buildCFRecommendations,
-	buildCustomFormatsConfig,
-	buildCompleteQualityProfile,
-	type ArrQualityProfileResponse,
-} from "../../lib/trash-guides/profile-matcher.js";
-import type { TrashCFWithScores } from "../../lib/trash-guides/template-score-utils.js";
 import type {
 	CompleteQualityProfile,
-	TrashQualityProfile,
-	TrashCustomFormatGroup,
-	TrashCustomFormat,
 	TemplateConfig,
+	TrashCustomFormat,
+	TrashCustomFormatGroup,
+	TrashQualityProfile,
 } from "@arr/shared";
+import { RadarrClient, SonarrClient } from "arr-sdk";
+import type { FastifyPluginCallback } from "fastify";
+import { requireInstance } from "../../lib/arr/instance-helpers.js";
+import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
+import { createCFMatcher, type InstanceCustomFormat } from "../../lib/trash-guides/cf-matcher.js";
+import { createProfileCloner } from "../../lib/trash-guides/profile-cloner.js";
+import {
+	type ArrQualityProfileResponse,
+	buildCFRecommendations,
+	buildCompleteQualityProfile,
+	buildCustomFormatsConfig,
+	matchProfileToTrash,
+} from "../../lib/trash-guides/profile-matcher.js";
+import type { TrashCFWithScores } from "../../lib/trash-guides/template-score-utils.js";
+import { createTemplateService } from "../../lib/trash-guides/template-service.js";
+import { findCutoffQualityName } from "../../lib/utils/quality-utils.js";
+
 // ============================================================================
 // Routes
 // ============================================================================
@@ -585,11 +586,12 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			sourceInstanceId,
 		);
 
-		const completeQualityProfile = buildCompleteQualityProfile(
-			fullProfile,
-			profileConfig,
-			{ sourceInstanceId, sourceInstanceLabel, sourceProfileId, sourceProfileName },
-		);
+		const completeQualityProfile = buildCompleteQualityProfile(fullProfile, profileConfig, {
+			sourceInstanceId,
+			sourceInstanceLabel,
+			sourceProfileId,
+			sourceProfileName,
+		});
 
 		// Debug: Log the built completeQualityProfile items
 		app.log.info(
@@ -640,12 +642,10 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				template,
 				stats: {
 					customFormatsCount: customFormatsConfig.length,
-					trashLinkedCount: customFormatsConfig.filter(
-						(cf) => !cf.trashId.startsWith("instance-"),
-					).length,
-					instanceOnlyCount: customFormatsConfig.filter((cf) =>
-						cf.trashId.startsWith("instance-"),
-					).length,
+					trashLinkedCount: customFormatsConfig.filter((cf) => !cf.trashId.startsWith("instance-"))
+						.length,
+					instanceOnlyCount: customFormatsConfig.filter((cf) => cf.trashId.startsWith("instance-"))
+						.length,
 				},
 			},
 		});

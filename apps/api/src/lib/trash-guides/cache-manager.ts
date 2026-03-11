@@ -8,9 +8,10 @@
 import { promisify } from "node:util";
 import { gunzip, gzip } from "node:zlib";
 import type { TrashCacheStatus, TrashConfigType } from "@arr/shared";
+import type { z } from "zod";
 import type { PrismaClient } from "../../lib/prisma.js";
-import { safeJsonParse } from "./utils.js";
 import { loggers } from "../logger.js";
+import { safeJsonParse } from "./utils.js";
 
 const log = loggers.trashGuides;
 
@@ -31,14 +32,23 @@ async function compressData(data: unknown): Promise<string> {
 }
 
 /**
- * Decompress gzip data to JSON
- * @throws Error if decompression or parsing fails
+ * Decompress gzip data to JSON, with optional schema validation.
+ * When a schema is provided, the parsed JSON is validated against it —
+ * this catches cache corruption after upgrades or schema changes.
+ * @throws Error if decompression, parsing, or validation fails
  */
-async function decompressData<T = unknown>(compressedData: string): Promise<T> {
+async function decompressData<T = unknown>(
+	compressedData: string,
+	schema?: z.ZodType<T>,
+): Promise<T> {
 	const buffer = Buffer.from(compressedData, "base64");
 	const decompressed = await gunzipAsync(buffer);
 	const jsonString = decompressed.toString("utf-8");
-	return JSON.parse(jsonString) as T;
+	const parsed = JSON.parse(jsonString);
+	if (schema) {
+		return schema.parse(parsed);
+	}
+	return parsed as T;
 }
 
 // ============================================================================
@@ -120,6 +130,7 @@ export class TrashCacheManager {
 	async get<T = unknown>(
 		serviceType: "RADARR" | "SONARR",
 		configType: TrashConfigType,
+		schema?: z.ZodType<T>,
 	): Promise<T | null> {
 		const cacheEntry = await this.prisma.trashCache.findUnique({
 			where: {
@@ -140,7 +151,7 @@ export class TrashCacheManager {
 		// Decompress and return data
 		try {
 			if (this.options.compressionEnabled) {
-				return await decompressData<T>(cacheEntry.data);
+				return await decompressData<T>(cacheEntry.data, schema);
 			}
 
 			const parsed = safeJsonParse<T>(cacheEntry.data, {
@@ -156,7 +167,10 @@ export class TrashCacheManager {
 		} catch (error) {
 			if (error instanceof CacheCorruptionError) throw error;
 			// Handle decompression or parsing errors
-			log.error({ err: error, serviceType, configType, dataSize: cacheEntry.data.length }, "Failed to retrieve cache");
+			log.error(
+				{ err: error, serviceType, configType, dataSize: cacheEntry.data.length },
+				"Failed to retrieve cache",
+			);
 			// Invalidate corrupted cache entry and signal the error
 			await this.delete(serviceType, configType);
 			throw new CacheCorruptionError(serviceType, configType);
@@ -287,7 +301,10 @@ export class TrashCacheManager {
 			sourceBreakdown = countSourceBreakdown(data);
 		} catch (error) {
 			// Handle decompression errors
-			log.error({ err: error, serviceType, configType, dataSize: cacheEntry.data.length }, "Failed to get cache status");
+			log.error(
+				{ err: error, serviceType, configType, dataSize: cacheEntry.data.length },
+				"Failed to get cache status",
+			);
 			await this.delete(serviceType, configType);
 			return null;
 		}
@@ -340,7 +357,10 @@ export class TrashCacheManager {
 				sourceBreakdown = countSourceBreakdown(data);
 			} catch (error) {
 				// Handle decompression errors - mark for deletion
-				log.error({ err: error, serviceType, configType: entry.configType, dataSize: entry.data.length }, "Failed to get cache status");
+				log.error(
+					{ err: error, serviceType, configType: entry.configType, dataSize: entry.data.length },
+					"Failed to get cache status",
+				);
 				entriesToDelete.push(entry.configType);
 				continue;
 			}

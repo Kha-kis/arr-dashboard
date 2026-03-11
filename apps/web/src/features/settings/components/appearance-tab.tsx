@@ -1,15 +1,25 @@
 "use client";
 
+import { Crown, Lock, Monitor, Moon, Smartphone, Sparkles, Sun, Zap } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useColorTheme, STANDARD_THEMES, IMMERSIVE_THEMES, THEME_INFO, isImmersiveTheme, isPremiumUnlocked, isPremiumTheme, PREMIUM_THEME_IDS, type ColorTheme } from "../../../providers/color-theme-provider";
-import { THEME_GRADIENT_VALUES } from "../../../lib/theme-gradients";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { useEffect, useRef, useState } from "react";
 import { useOLEDMode } from "../../../hooks/useOLEDMode";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { THEME_GRADIENT_VALUES } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
-import { useEffect, useState, useRef } from "react";
-import { Sun, Moon, Monitor, Sparkles, Smartphone, Zap, Lock, Crown } from "lucide-react";
+import {
+	type ColorTheme,
+	IMMERSIVE_THEMES,
+	isImmersiveTheme,
+	isPremiumTheme,
+	isPremiumUnlocked,
+	PREMIUM_THEME_IDS,
+	STANDARD_THEMES,
+	THEME_INFO,
+	useColorTheme,
+} from "../../../providers/color-theme-provider";
+import { getPreviewColors, LivePreview } from "./appearance-preview";
 import { ThemeOrbButton } from "./theme-orb";
-import { LivePreview, getPreviewColors } from "./appearance-preview";
 
 /**
  * Premium Appearance Tab
@@ -87,12 +97,8 @@ export function AppearanceTab() {
 							<Sparkles className="h-5 w-5 text-white" />
 						</div>
 						<div>
-							<h2 className="text-xl font-semibold tracking-tight text-foreground">
-								Appearance
-							</h2>
-							<p className="text-sm text-muted-foreground">
-								Make it yours
-							</p>
+							<h2 className="text-xl font-semibold tracking-tight text-foreground">Appearance</h2>
+							<p className="text-sm text-muted-foreground">Make it yours</p>
 						</div>
 					</div>
 				</div>
@@ -106,10 +112,12 @@ export function AppearanceTab() {
 							className="animate-in fade-in slide-in-from-bottom-4 duration-500"
 							style={{ animationDelay: "100ms" }}
 						>
-							<div className={cn(
-								"rounded-2xl border border-border/50 bg-card/50 backdrop-blur-xs p-6 transition-opacity duration-300",
-								isImmersive && "opacity-60"
-							)}>
+							<div
+								className={cn(
+									"rounded-2xl border border-border/50 bg-card/50 backdrop-blur-xs p-6 transition-opacity duration-300",
+									isImmersive && "opacity-60",
+								)}
+							>
 								<h3 className="text-sm font-medium text-foreground mb-4 flex items-center gap-2">
 									<span className="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
 									Color Scheme
@@ -155,16 +163,17 @@ export function AppearanceTab() {
 													"relative flex-1 flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-medium transition-all duration-300",
 													theme === value
 														? "text-foreground"
-														: "text-muted-foreground hover:text-foreground"
+														: "text-muted-foreground hover:text-foreground",
 												)}
 											>
 												{theme === value && (
 													<span
 														className="absolute inset-0 rounded-lg bg-background shadow-sm transition-all duration-300"
 														style={{
-															boxShadow: theme === value
-																? `0 2px 8px -2px ${activeGradient.glow}`
-																: undefined,
+															boxShadow:
+																theme === value
+																	? `0 2px 8px -2px ${activeGradient.glow}`
+																	: undefined,
 														}}
 													/>
 												)}
@@ -174,7 +183,7 @@ export function AppearanceTab() {
 															"h-4 w-4 transition-transform duration-300",
 															theme === value && value === "light" && "text-amber-500",
 															theme === value && value === "dark" && "text-indigo-400",
-															theme === value && "scale-110"
+															theme === value && "scale-110",
 														)}
 													/>
 													{label}
@@ -233,16 +242,20 @@ export function AppearanceTab() {
 													? isOLED
 														? "bg-primary"
 														: "bg-muted"
-													: "bg-muted/50 cursor-not-allowed"
+													: "bg-muted/50 cursor-not-allowed",
 											)}
-											style={isOLED && isDark ? {
-												background: `linear-gradient(135deg, ${activeGradient.from}, ${activeGradient.to})`,
-											} : undefined}
+											style={
+												isOLED && isDark
+													? {
+															background: `linear-gradient(135deg, ${activeGradient.from}, ${activeGradient.to})`,
+														}
+													: undefined
+											}
 										>
 											<span
 												className={cn(
 													"absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-300",
-													isOLED && isDark && "translate-x-5"
+													isOLED && isDark && "translate-x-5",
 												)}
 											/>
 										</button>
@@ -292,22 +305,28 @@ export function AppearanceTab() {
 							<div className="rounded-2xl border border-border/50 bg-card/50 backdrop-blur-xs p-6 relative overflow-hidden">
 								{/* Subtle background effect for immersive section */}
 								<div className="absolute inset-0 opacity-[0.03] pointer-events-none">
-									<div className="absolute inset-0" style={{
-										backgroundImage: `repeating-linear-gradient(
+									<div
+										className="absolute inset-0"
+										style={{
+											backgroundImage: `repeating-linear-gradient(
 											0deg,
 											transparent,
 											transparent 2px,
 											currentColor 2px,
 											currentColor 3px
 										)`,
-									}} />
+										}}
+									/>
 								</div>
 
 								<div className="relative">
 									<h3 className="text-sm font-medium text-foreground mb-2 flex items-center gap-2">
-										<span className="inline-block h-1.5 w-1.5 rounded-full" style={{
-											background: "linear-gradient(135deg, #ff00ff, #00ffff)",
-										}} />
+										<span
+											className="inline-block h-1.5 w-1.5 rounded-full"
+											style={{
+												background: "linear-gradient(135deg, #ff00ff, #00ffff)",
+											}}
+										/>
 										Immersive Themes
 										<span className="ml-auto text-[10px] font-medium px-2 py-0.5 rounded-full bg-linear-to-r from-purple-500/20 to-cyan-500/20 text-muted-foreground border border-purple-500/20">
 											<Zap className="inline h-3 w-3 mr-1 -mt-0.5" />
@@ -338,9 +357,16 @@ export function AppearanceTab() {
 									{/* Info note about immersive themes */}
 									{isImmersive && (
 										<div className="mt-5 flex items-start gap-3 p-3 rounded-lg bg-muted/30 border border-border/30 animate-in fade-in slide-in-from-bottom-2 duration-300">
-											<Zap className="h-4 w-4 mt-0.5 shrink-0" style={{ color: activeGradient.from }} />
+											<Zap
+												className="h-4 w-4 mt-0.5 shrink-0"
+												style={{ color: activeGradient.from }}
+											/>
 											<div className="text-xs text-muted-foreground">
-												<span className="font-medium text-foreground">{THEME_INFO[colorTheme].label}</span> includes special visual effects like scanlines and neon glow. Light/dark mode and OLED options are not available with immersive themes.
+												<span className="font-medium text-foreground">
+													{THEME_INFO[colorTheme].label}
+												</span>{" "}
+												includes special visual effects like scanlines and neon glow. Light/dark
+												mode and OLED options are not available with immersive themes.
 											</div>
 										</div>
 									)}
@@ -453,7 +479,8 @@ export function AppearanceTab() {
 															<div
 																className="absolute inset-0 rounded-full opacity-40"
 																style={{
-																	background: "linear-gradient(135deg, rgba(255,255,255,0.3) 0%, transparent 50%)",
+																	background:
+																		"linear-gradient(135deg, rgba(255,255,255,0.3) 0%, transparent 50%)",
 																}}
 															/>
 
@@ -478,14 +505,18 @@ export function AppearanceTab() {
 										<div className="mt-5 flex items-start gap-3 p-3 rounded-lg bg-green-500/5 border border-green-500/20">
 											<Zap className="h-4 w-4 mt-0.5 shrink-0 text-green-500" />
 											<div className="text-xs text-muted-foreground">
-												<span className="font-medium text-foreground">Developer mode</span> — Premium themes are unlocked for testing. CSS effects may still be in development.
+												<span className="font-medium text-foreground">Developer mode</span> —
+												Premium themes are unlocked for testing. CSS effects may still be in
+												development.
 											</div>
 										</div>
 									) : (
 										<div className="mt-5 flex items-start gap-3 p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
 											<Crown className="h-4 w-4 mt-0.5 shrink-0 text-amber-500" />
 											<div className="text-xs text-muted-foreground">
-												<span className="font-medium text-foreground">Premium themes</span> will feature our most advanced visual effects and exclusive designs. Stay tuned for the release!
+												<span className="font-medium text-foreground">Premium themes</span> will
+												feature our most advanced visual effects and exclusive designs. Stay tuned
+												for the release!
 											</div>
 										</div>
 									)}

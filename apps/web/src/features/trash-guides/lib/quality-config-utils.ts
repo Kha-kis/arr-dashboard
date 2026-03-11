@@ -4,10 +4,10 @@
 
 import type {
 	CustomQualityConfig,
-	TemplateQualityEntry,
-	TemplateQualityItem,
-	TemplateQualityGroup,
 	TemplateConfig,
+	TemplateQualityEntry,
+	TemplateQualityGroup,
+	TemplateQualityItem,
 } from "@arr/shared";
 
 /**
@@ -19,16 +19,14 @@ const generateId = () => `q-${Date.now()}-${Math.random().toString(36).slice(2, 
  * Convert a template's qualityProfile to CustomQualityConfig format
  * This allows the quality editor to display and edit the template's quality settings
  */
-export function convertQualityProfileToConfig(
-	qualityProfile?: {
-		items?: Array<{
-			name: string;
-			allowed: boolean;
-			items?: string[]; // Nested quality names for groups
-		}>;
-		cutoff?: string;
-	}
-): CustomQualityConfig | undefined {
+export function convertQualityProfileToConfig(qualityProfile?: {
+	items?: Array<{
+		name: string;
+		allowed: boolean;
+		items?: string[]; // Nested quality names for groups
+	}>;
+	cutoff?: string;
+}): CustomQualityConfig | undefined {
 	if (!qualityProfile?.items || qualityProfile.items.length === 0) {
 		return undefined;
 	}
@@ -44,7 +42,7 @@ export function convertQualityProfileToConfig(
 				id: groupId,
 				name: item.name,
 				allowed: item.allowed,
-				qualities: item.items.map(name => ({ name })),
+				qualities: item.items.map((name) => ({ name })),
 			};
 			entries.push({ type: "group", group });
 
@@ -82,7 +80,7 @@ export function convertQualityProfileToConfig(
  * Returns customQualityConfig if it has items, otherwise converts from qualityProfile
  */
 export function getEffectiveQualityConfig(
-	config?: TemplateConfig
+	config?: TemplateConfig,
 ): CustomQualityConfig | undefined {
 	if (!config) return undefined;
 

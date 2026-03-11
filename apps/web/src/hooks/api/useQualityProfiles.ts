@@ -1,25 +1,25 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
-	QualityProfilesResponse,
+	CFValidationResponse,
+	CreateClonedTemplatePayload,
 	ImportQualityProfilePayload,
 	ImportQualityProfileResponse,
-	UpdateQualityProfileTemplatePayload,
-	CreateClonedTemplatePayload,
-	ValidateCFsPayload,
-	CFValidationResponse,
 	MatchProfilePayload,
 	ProfileMatchResult,
+	QualityProfilesResponse,
+	UpdateQualityProfileTemplatePayload,
+	ValidateCFsPayload,
 } from "../../lib/api-client/trash-guides";
 import {
-	fetchQualityProfiles,
-	fetchQualityProfileDetails,
-	importQualityProfile,
-	updateQualityProfileTemplate,
 	createClonedProfileTemplate,
-	validateClonedCFs,
+	fetchQualityProfileDetails,
+	fetchQualityProfiles,
+	importQualityProfile,
 	matchProfileToTrash,
+	updateQualityProfileTemplate,
+	validateClonedCFs,
 } from "../../lib/api-client/trash-guides";
 import { TEMPLATES_QUERY_KEY } from "./useTemplates";
 

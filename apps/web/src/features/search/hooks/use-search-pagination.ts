@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
 import type { SearchResult } from "@arr/shared";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 /**
  * Hook for managing search results pagination.

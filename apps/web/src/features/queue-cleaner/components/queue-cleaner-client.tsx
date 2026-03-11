@@ -1,20 +1,20 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
-import { Trash2, Activity, Settings, RefreshCw, BarChart3 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Button, Alert, AlertDescription, toast } from "../../../components/ui";
+import { Activity, BarChart3, RefreshCw, Settings, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
 	PremiumPageHeader,
-	PremiumTabs,
 	PremiumPageLoading,
 	type PremiumTab,
+	PremiumTabs,
 } from "../../../components/layout";
-import { QueueCleanerOverview } from "./queue-cleaner-overview";
+import { Alert, AlertDescription, Button, toast } from "../../../components/ui";
+import { useQueueCleanerStatus } from "../hooks/useQueueCleanerStatus";
 import { QueueCleanerActivity } from "./queue-cleaner-activity";
 import { QueueCleanerConfig } from "./queue-cleaner-config";
+import { QueueCleanerOverview } from "./queue-cleaner-overview";
 import { QueueCleanerStatistics } from "./queue-cleaner-statistics";
-import { useQueueCleanerStatus } from "../hooks/useQueueCleanerStatus";
 
 export type CleanerTab = "overview" | "activity" | "statistics" | "config";
 
@@ -96,7 +96,9 @@ export const QueueCleanerClient = () => {
 						disabled={isRefreshing}
 						className="gap-2 border-border/50 bg-card/50 backdrop-blur-xs hover:bg-card/80"
 					>
-						<RefreshCw className={`h-4 w-4 transition-transform ${isRefreshing ? "animate-spin" : ""}`} />
+						<RefreshCw
+							className={`h-4 w-4 transition-transform ${isRefreshing ? "animate-spin" : ""}`}
+						/>
 						Refresh
 					</Button>
 				}

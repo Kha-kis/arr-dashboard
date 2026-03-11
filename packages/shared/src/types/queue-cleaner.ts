@@ -245,6 +245,28 @@ export const DEFAULT_IMPORT_PENDING_MINS = 60;
 export const DEFAULT_IMPORT_BLOCK_CLEANUP_LEVEL: ImportBlockCleanupLevel = "safe";
 export const DEFAULT_IMPORT_BLOCK_PATTERN_MODE: ImportBlockPatternMode = "defaults";
 
+// ============================================================================
+// Tag/Profile Pre-filter Types
+// ============================================================================
+
+/** Config fields for tag-based queue item filtering */
+export const tagFilterConfigSchema = z.object({
+	tagFilterEnabled: z.boolean(),
+	includeTags: z.string().nullable().optional(),
+	excludeTags: z.string().nullable().optional(),
+});
+
+export type TagFilterConfig = z.infer<typeof tagFilterConfigSchema>;
+
+/** Config fields for quality-profile-based queue item filtering */
+export const profileFilterConfigSchema = z.object({
+	profileFilterEnabled: z.boolean(),
+	includeProfiles: z.string().nullable().optional(),
+	excludeProfiles: z.string().nullable().optional(),
+});
+
+export type ProfileFilterConfig = z.infer<typeof profileFilterConfigSchema>;
+
 // Auto-import limits
 export const MIN_AUTO_IMPORT_ATTEMPTS = 1;
 export const MAX_AUTO_IMPORT_ATTEMPTS = 5;

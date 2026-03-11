@@ -1,9 +1,9 @@
 "use client";
 
-import { Server, Settings, ArrowRight } from "lucide-react";
+import { ArrowRight, Server, Settings } from "lucide-react";
+import Link from "next/link";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
-import Link from "next/link";
 
 // Use centralized Prowlarr color
 const PROWLARR_COLOR = SERVICE_GRADIENTS.prowlarr.from;
@@ -33,17 +33,14 @@ export const EmptyIndexersCard = () => {
 			</div>
 
 			{/* Title */}
-			<h2
-				className="text-xl font-bold mb-2"
-				style={{ color: PROWLARR_COLOR }}
-			>
+			<h2 className="text-xl font-bold mb-2" style={{ color: PROWLARR_COLOR }}>
 				No Prowlarr Instances Configured
 			</h2>
 
 			{/* Description */}
 			<p className="text-sm text-muted-foreground max-w-md mx-auto mb-6">
-				Add a Prowlarr service in Settings to manage indexers from this dashboard.
-				Once a Prowlarr instance is enabled, its indexers will appear here automatically.
+				Add a Prowlarr service in Settings to manage indexers from this dashboard. Once a Prowlarr
+				instance is enabled, its indexers will appear here automatically.
 			</p>
 
 			{/* CTA Button */}

@@ -1,13 +1,9 @@
 "use client";
 
-import { Tags, Plus, Loader2 } from "lucide-react";
+import { Loader2, Plus, Tags } from "lucide-react";
+import { GlassmorphicCard, PremiumEmptyState, PremiumSection } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
-import {
-	PremiumSection,
-	PremiumEmptyState,
-	GlassmorphicCard,
-} from "../../../components/layout";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { TagListItem } from "./tag-list-item";
 
@@ -67,7 +63,9 @@ export const TagsTab = ({
 						</div>
 						<div>
 							<h3 className="font-semibold text-foreground">Create Tag</h3>
-							<p className="text-xs text-muted-foreground">Organize instances by environment, location, or owner</p>
+							<p className="text-xs text-muted-foreground">
+								Organize instances by environment, location, or owner
+							</p>
 						</div>
 					</div>
 

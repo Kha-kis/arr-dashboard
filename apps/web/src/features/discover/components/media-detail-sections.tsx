@@ -8,11 +8,11 @@
  * - EnrichedDetailModal (library feature)
  */
 
-import { useRef } from "react";
-import { Star, Clock, Calendar, Film, Tv, Layers, Play, ExternalLink } from "lucide-react";
 import type { SeerrCastMember } from "@arr/shared";
+import { Calendar, Clock, ExternalLink, Film, Layers, Play, Star, Tv } from "lucide-react";
+import { useRef } from "react";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { RATING_COLOR, SEMANTIC_COLORS, BRAND_COLORS } from "../../../lib/theme-gradients";
+import { BRAND_COLORS, RATING_COLOR, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { safeOpenUrl } from "../../../lib/utils/url-validation";
 import { getSeerrImageUrl, isValidYoutubeKey } from "../lib/seerr-image-utils";
 
@@ -130,9 +130,7 @@ export const CastSection: React.FC<CastSectionProps> = ({ cast }) => {
 
 	return (
 		<div className="space-y-2">
-			<h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-				Cast
-			</h3>
+			<h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Cast</h3>
 			<div
 				ref={scrollRef}
 				className="flex gap-3 overflow-x-auto pb-2 scrollbar-none"
@@ -250,7 +248,8 @@ export const ExternalLinksSection: React.FC<ExternalLinksSectionProps> = ({
 
 	if (!tmdbId && !imdbId && !tvdbId) return null;
 
-	const btnClass = "inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:opacity-80";
+	const btnClass =
+		"inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:opacity-80";
 
 	return (
 		<div className="space-y-2">

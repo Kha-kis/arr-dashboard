@@ -1,24 +1,16 @@
 "use client";
 
+import { Film, HardDrive, Loader2, PauseCircle, PlayCircle, Search } from "lucide-react";
 import { useState } from "react";
-import {
-	Film,
-	HardDrive,
-	Loader2,
-	PauseCircle,
-	PlayCircle,
-	Search,
-} from "lucide-react";
-import { Button } from "../../../components/ui";
-import { toast } from "../../../components/ui";
+import { Button, toast } from "../../../components/ui";
 import {
 	useEpisodesQuery,
 	useLibraryEpisodeMonitorMutation,
 	useLibraryEpisodeSearchMutation,
 } from "../../../hooks/api/useLibrary";
-import { LibraryBadge } from "./library-badge";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { formatBytes } from "../lib/library-utils";
+import { LibraryBadge } from "./library-badge";
 
 /**
  * Props for the SeasonEpisodeList component
@@ -144,9 +136,7 @@ export const SeasonEpisodeList = ({
 										</span>
 									)}
 									{episode.runtime != null && episode.runtime > 0 && (
-										<span className="text-xs text-muted-foreground">
-											{episode.runtime}m
-										</span>
+										<span className="text-xs text-muted-foreground">{episode.runtime}m</span>
 									)}
 								</div>
 							</div>
@@ -203,9 +193,7 @@ export const SeasonEpisodeList = ({
 										<Film className="h-3 w-3 text-cyan-400/70" />
 										<span className="text-foreground/80">{ef.quality}</span>
 										{ef.releaseGroup && (
-											<span className="text-muted-foreground/70">
-												— {ef.releaseGroup}
-											</span>
+											<span className="text-muted-foreground/70">— {ef.releaseGroup}</span>
 										)}
 									</span>
 								)}
@@ -231,9 +219,7 @@ export const SeasonEpisodeList = ({
 
 								{/* Languages */}
 								{ef.languages && ef.languages.length > 0 && (
-									<span className="text-muted-foreground/70">
-										{ef.languages.join(", ")}
-									</span>
+									<span className="text-muted-foreground/70">{ef.languages.join(", ")}</span>
 								)}
 
 								{/* File size */}

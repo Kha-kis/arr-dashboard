@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { AlertCircle, Bell, Calendar, Check, Clock, Loader2, Power, X, Zap } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui";
-import { Clock, X, Calendar, AlertCircle, Loader2, Check, Bell, Zap, Power } from "lucide-react";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 interface TemplateScheduleModalProps {
 	open: boolean;
@@ -51,7 +51,7 @@ export const TemplateScheduleModal = ({
 	onSave,
 }: TemplateScheduleModalProps) => {
 	const [frequency, setFrequency] = useState<"DAILY" | "WEEKLY" | "MONTHLY">(
-		existingSchedule?.frequency || "WEEKLY"
+		existingSchedule?.frequency || "WEEKLY",
 	);
 	const [enabled, setEnabled] = useState(existingSchedule?.enabled ?? true);
 	const [autoApply, setAutoApply] = useState(existingSchedule?.autoApply ?? false);
@@ -105,7 +105,7 @@ export const TemplateScheduleModal = ({
 			// Focus trap
 			if (e.key === "Tab" && modalRef.current) {
 				const focusableElements = modalRef.current.querySelectorAll<HTMLElement>(
-					'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+					'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
 				);
 				const firstElement = focusableElements[0];
 				const lastElement = focusableElements[focusableElements.length - 1];
@@ -227,7 +227,10 @@ export const TemplateScheduleModal = ({
 								border: `1px solid ${SEMANTIC_COLORS.error.border}`,
 							}}
 						>
-							<AlertCircle className="h-4 w-4 mt-0.5 shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
+							<AlertCircle
+								className="h-4 w-4 mt-0.5 shrink-0"
+								style={{ color: SEMANTIC_COLORS.error.from }}
+							/>
 							<div style={{ color: SEMANTIC_COLORS.error.text }}>
 								<p className="font-medium">Error</p>
 								<p className="text-sm opacity-90">{error}</p>
@@ -249,11 +252,14 @@ export const TemplateScheduleModal = ({
 									onClick={() => setFrequency(option.value)}
 									className="relative rounded-xl border p-4 text-center transition-all duration-200"
 									style={{
-										borderColor: frequency === option.value ? themeGradient.from : "hsl(var(--border) / 0.5)",
-										background: frequency === option.value
-											? `linear-gradient(135deg, ${themeGradient.from}10, ${themeGradient.to}10)`
-											: "hsl(var(--card) / 0.3)",
-										boxShadow: frequency === option.value ? `0 0 0 1px ${themeGradient.from}` : undefined,
+										borderColor:
+											frequency === option.value ? themeGradient.from : "hsl(var(--border) / 0.5)",
+										background:
+											frequency === option.value
+												? `linear-gradient(135deg, ${themeGradient.from}10, ${themeGradient.to}10)`
+												: "hsl(var(--card) / 0.3)",
+										boxShadow:
+											frequency === option.value ? `0 0 0 1px ${themeGradient.from}` : undefined,
 									}}
 								>
 									{frequency === option.value && (
@@ -295,7 +301,10 @@ export const TemplateScheduleModal = ({
 										background: enabled ? `${themeGradient.from}20` : "hsl(var(--muted) / 0.3)",
 									}}
 								>
-									<Power className="h-4 w-4" style={{ color: enabled ? themeGradient.from : "hsl(var(--muted-foreground))" }} />
+									<Power
+										className="h-4 w-4"
+										style={{ color: enabled ? themeGradient.from : "hsl(var(--muted-foreground))" }}
+									/>
 								</div>
 								<div>
 									<span className="text-sm font-medium text-foreground">Enable Schedule</span>
@@ -335,7 +344,12 @@ export const TemplateScheduleModal = ({
 										background: autoApply ? `${themeGradient.from}20` : "hsl(var(--muted) / 0.3)",
 									}}
 								>
-									<Zap className="h-4 w-4" style={{ color: autoApply ? themeGradient.from : "hsl(var(--muted-foreground))" }} />
+									<Zap
+										className="h-4 w-4"
+										style={{
+											color: autoApply ? themeGradient.from : "hsl(var(--muted-foreground))",
+										}}
+									/>
 								</div>
 								<div>
 									<span className="text-sm font-medium text-foreground">Auto-Apply Changes</span>
@@ -375,7 +389,12 @@ export const TemplateScheduleModal = ({
 										background: notifyUser ? `${themeGradient.from}20` : "hsl(var(--muted) / 0.3)",
 									}}
 								>
-									<Bell className="h-4 w-4" style={{ color: notifyUser ? themeGradient.from : "hsl(var(--muted-foreground))" }} />
+									<Bell
+										className="h-4 w-4"
+										style={{
+											color: notifyUser ? themeGradient.from : "hsl(var(--muted-foreground))",
+										}}
+									/>
 								</div>
 								<div>
 									<span className="text-sm font-medium text-foreground">Notify on Sync</span>

@@ -1,22 +1,15 @@
 import nextPlugin from "@next/eslint-plugin-next";
+import tseslint from "@typescript-eslint/eslint-plugin";
+import tsParser from "@typescript-eslint/parser";
 import reactPlugin from "eslint-plugin-react";
 import hooksPlugin from "eslint-plugin-react-hooks";
 import unusedImports from "eslint-plugin-unused-imports";
-import tseslint from "@typescript-eslint/eslint-plugin";
-import tsParser from "@typescript-eslint/parser";
 import globals from "globals";
 
 /** @type {import('eslint').Linter.Config[]} */
 const eslintConfig = [
 	{
-		ignores: [
-			"node_modules/**",
-			".next/**",
-			"out/**",
-			"build/**",
-			"coverage/**",
-			"next-env.d.ts",
-		],
+		ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "coverage/**", "next-env.d.ts"],
 	},
 	{
 		files: ["**/*.{js,jsx,ts,tsx}"],

@@ -1,19 +1,19 @@
 "use client";
 
+import { Activity, RefreshCw, Settings, Target } from "lucide-react";
 import { useState } from "react";
-import { Target, Activity, Settings, RefreshCw } from "lucide-react";
-import { Button, Alert, AlertDescription } from "../../../components/ui";
 import {
 	PremiumPageHeader,
-	PremiumTabs,
 	PremiumPageLoading,
 	type PremiumTab,
+	PremiumTabs,
 } from "../../../components/layout";
+import { Alert, AlertDescription, Button } from "../../../components/ui";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { HuntingOverview } from "./hunting-overview";
+import { useHuntingStatus } from "../hooks/useHuntingStatus";
 import { HuntingActivity } from "./hunting-activity";
 import { HuntingConfig } from "./hunting-config";
-import { useHuntingStatus } from "../hooks/useHuntingStatus";
+import { HuntingOverview } from "./hunting-overview";
 
 export type HuntingTab = "overview" | "activity" | "config";
 
@@ -60,9 +60,7 @@ export const HuntingClient = () => {
 	if (error) {
 		return (
 			<Alert variant="danger">
-				<AlertDescription>
-					Failed to load hunting status. Please try again later.
-				</AlertDescription>
+				<AlertDescription>Failed to load hunting status. Please try again later.</AlertDescription>
 			</Alert>
 		);
 	}
@@ -105,9 +103,7 @@ export const HuntingClient = () => {
 				className="animate-in fade-in slide-in-from-bottom-4 duration-500"
 				style={{ animationDelay: "200ms", animationFillMode: "backwards" }}
 			>
-				{activeTab === "overview" && (
-					<HuntingOverview status={status} onRefresh={refetch} />
-				)}
+				{activeTab === "overview" && <HuntingOverview status={status} onRefresh={refetch} />}
 				{activeTab === "activity" && <HuntingActivity />}
 				{activeTab === "config" && <HuntingConfig />}
 			</div>

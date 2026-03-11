@@ -3,11 +3,11 @@
 import { useState } from "react";
 import { GlassmorphicCard } from "../../../components/layout";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { BackupEncryptionSection } from "./backup-encryption-section";
-import { BackupScheduleSection } from "./backup-schedule-section";
 import { BackupCreateCard } from "./backup-create-card";
-import { BackupRestoreCard } from "./backup-restore-card";
+import { BackupEncryptionSection } from "./backup-encryption-section";
 import { BackupListSection } from "./backup-list-section";
+import { BackupRestoreCard } from "./backup-restore-card";
+import { BackupScheduleSection } from "./backup-schedule-section";
 
 export const BackupTab = () => {
 	const { gradient: themeGradient } = useThemeGradient();
@@ -72,7 +72,12 @@ export const BackupTab = () => {
 								style={{ borderColor: themeGradient.from }}
 							/>
 							<div>
-								<h3 id="server-restarting-title" className="text-lg font-semibold mb-2 text-foreground">Server Restarting</h3>
+								<h3
+									id="server-restarting-title"
+									className="text-lg font-semibold mb-2 text-foreground"
+								>
+									Server Restarting
+								</h3>
 								<p className="text-sm text-muted-foreground">
 									Backup restored successfully. The server is restarting...
 								</p>

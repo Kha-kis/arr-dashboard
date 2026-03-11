@@ -9,18 +9,18 @@
  */
 
 import {
-	SonarrClient,
-	RadarrClient,
-	ProwlarrClient,
-	LidarrClient,
-	ReadarrClient,
-	type ClientConfig,
 	ArrError,
+	type ClientConfig,
+	LidarrClient,
+	NetworkError,
 	NotFoundError,
+	ProwlarrClient,
+	RadarrClient,
+	ReadarrClient,
+	SonarrClient,
+	TimeoutError,
 	UnauthorizedError,
 	ValidationError,
-	TimeoutError,
-	NetworkError,
 } from "arr-sdk";
 import type { ServiceInstance, ServiceType } from "../../lib/prisma.js";
 import type { Encryptor } from "../auth/encryption.js";
@@ -35,7 +35,7 @@ export { ArrError, NotFoundError, UnauthorizedError, ValidationError, TimeoutErr
 /**
  * Service types that have ARR SDK clients (excludes Seerr)
  */
-export type ArrServiceType = Exclude<ServiceType, "SEERR">;
+export type ArrServiceType = Exclude<ServiceType, "SEERR" | "TAUTULLI" | "PLEX">;
 
 /**
  * Union type of all ARR SDK clients
@@ -62,7 +62,11 @@ export type ClientForService<T extends ServiceType> = T extends "SONARR"
 					? ReadarrClient
 					: T extends "SEERR"
 						? never // Seerr uses SeerrClient (separate class), not the ARR SDK
-						: never;
+						: T extends "TAUTULLI"
+							? never // Tautulli uses TautulliClient (query-param auth)
+							: T extends "PLEX"
+								? never // Plex uses PlexClient (X-Plex-Token header auth)
+								: never;
 
 /**
  * Options for client creation
@@ -140,7 +144,15 @@ export class ArrClientFactory {
 			case "READARR":
 				return new ReadarrClient(config) as ClientForService<T>;
 			case "SEERR":
-				throw new Error("Seerr uses SeerrClient — use createSeerrClient() from lib/seerr/seerr-client");
+				throw new Error(
+					"Seerr uses SeerrClient — use createSeerrClient() from lib/seerr/seerr-client",
+				);
+			case "TAUTULLI":
+				throw new Error(
+					"Tautulli uses TautulliClient — use createTautulliClient() from lib/tautulli/tautulli-client",
+				);
+			case "PLEX":
+				throw new Error("Plex uses PlexClient — use createPlexClient() from lib/plex/plex-client");
 			default:
 				throw new Error(`Unknown service type: ${String(instance.service)}`);
 		}

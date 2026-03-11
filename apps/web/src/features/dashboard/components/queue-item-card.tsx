@@ -7,20 +7,20 @@
  * Wrapped with React.memo for list performance optimization.
  */
 
-import { memo } from "react";
 import type { QueueItem } from "@arr/shared";
-import { cn } from "../../../lib/utils";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { memo } from "react";
 import type { QueueActionOptions } from "../../../hooks/api/useQueueActions";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
+import { cn } from "../../../lib/utils";
+import type { StatusLine } from "../lib/queue-utils";
+import { computeProgressValue, summarizeIssueCounts } from "../lib/queue-utils";
 import type { QueueAction } from "./queue-action-buttons";
 import { QueueActionButtons } from "./queue-action-buttons";
 import { QueueIssueBadge } from "./queue-issue-badge";
-import { QueueProgress } from "./queue-progress";
 import { QueueItemMetadata } from "./queue-item-metadata";
+import { QueueProgress } from "./queue-progress";
 import { QueueStatusMessages } from "./queue-status-messages";
-import type { StatusLine } from "../lib/queue-utils";
-import { summarizeIssueCounts, computeProgressValue } from "../lib/queue-utils";
-import { useIncognitoMode, getLinuxIsoName } from "../../../lib/incognito";
 
 export interface QueueItemCardProps {
 	item: QueueItem;
@@ -131,9 +131,11 @@ export const QueueItemCard = memo(function QueueItemCard({
 						<div>
 							<p
 								className="font-medium leading-tight transition-colors duration-300 group-hover:text-primary"
-								style={{
-									// Theme-aware hover color via CSS variable
-								}}
+								style={
+									{
+										// Theme-aware hover color via CSS variable
+									}
+								}
 							>
 								{incognitoMode
 									? getLinuxIsoName(item.title ?? "Unnamed item")

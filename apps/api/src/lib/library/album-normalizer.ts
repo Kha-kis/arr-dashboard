@@ -19,14 +19,6 @@ export const normalizeAlbum = (
 	const stats = (raw?.statistics ?? {}) as Record<string, unknown>;
 	const images = (raw?.images ?? []) as Array<Record<string, unknown>>;
 
-	// Find cover image
-	const coverImage = images.find(
-		(img) => img?.coverType === "cover" || img?.coverType === "disc",
-	);
-
-	// Construct full image URL - prefer remoteUrl (publicly accessible) over local url
-	const coverUrl = resolveImageUrl(coverImage?.remoteUrl ?? coverImage?.url, baseUrl);
-
 	return {
 		id: toNumber(raw?.id) ?? 0,
 		artistId,
@@ -59,4 +51,3 @@ const normalizeGenresArray = (genres: unknown): string[] | undefined => {
 	if (!Array.isArray(genres)) return undefined;
 	return genres.filter((g): g is string => typeof g === "string");
 };
-

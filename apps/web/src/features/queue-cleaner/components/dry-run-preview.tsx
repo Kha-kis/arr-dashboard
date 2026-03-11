@@ -11,8 +11,8 @@ import {
 	Package,
 	Play,
 	Shield,
-	Trash2,
 	Sparkles,
+	Trash2,
 	Wifi,
 	WifiOff,
 	X,
@@ -22,8 +22,8 @@ import { GlassmorphicCard, ServiceBadge } from "../../../components/layout";
 import { Button, toast } from "../../../components/ui";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { DEFAULT_RULE_COLOR, RULE_COLORS, RULE_LABELS } from "../lib/constants";
 import type { EnhancedPreviewItem, EnhancedPreviewResult } from "../lib/queue-cleaner-types";
-import { RULE_LABELS, RULE_COLORS, DEFAULT_RULE_COLOR } from "../lib/constants";
 
 interface EnhancedDryRunPreviewProps {
 	result: EnhancedPreviewResult;

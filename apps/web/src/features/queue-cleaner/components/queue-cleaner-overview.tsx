@@ -1,32 +1,32 @@
 "use client";
 
-import { useState } from "react";
 import {
-	Trash2,
-	Play,
-	Eye,
 	CheckCircle2,
+	Eye,
 	Loader2,
-	Zap,
+	Play,
 	ShieldAlert,
 	SkipForward,
 	Sparkles,
+	Trash2,
+	Zap,
 } from "lucide-react";
-import { Button, toast } from "../../../components/ui";
+import { useState } from "react";
 import {
-	StatCard,
+	GlassmorphicCard,
 	PremiumEmptyState,
 	PremiumSection,
 	ServiceBadge,
+	StatCard,
 	StatusBadge,
-	GlassmorphicCard,
 } from "../../../components/layout";
-import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import type { QueueCleanerStatus, InstanceCleanerStatus } from "../lib/queue-cleaner-types";
-import { useManualClean } from "../hooks/useManualClean";
-import { useEnhancedPreview } from "../hooks/useDryRun";
-import { EnhancedDryRunPreview } from "./dry-run-preview";
+import { Button, toast } from "../../../components/ui";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useEnhancedPreview } from "../hooks/useDryRun";
+import { useManualClean } from "../hooks/useManualClean";
+import type { InstanceCleanerStatus, QueueCleanerStatus } from "../lib/queue-cleaner-types";
+import { EnhancedDryRunPreview } from "./dry-run-preview";
 
 interface OverviewProps {
 	status: QueueCleanerStatus | null;
@@ -34,7 +34,6 @@ interface OverviewProps {
 }
 
 export const QueueCleanerOverview = ({ status, onRefresh }: OverviewProps) => {
-
 	if (!status || status.instances.length === 0) {
 		return (
 			<PremiumEmptyState
@@ -112,21 +111,11 @@ interface InstanceStatusCardProps {
 	animationDelay: number;
 }
 
-const InstanceStatusCard = ({
-	instance,
-	onRefresh,
-	animationDelay,
-}: InstanceStatusCardProps) => {
+const InstanceStatusCard = ({ instance, onRefresh, animationDelay }: InstanceStatusCardProps) => {
 	const serviceGradient = getServiceGradient(instance.service);
 	const { triggerClean, isTriggering, isCooldownError } = useManualClean();
-	const {
-		runPreview,
-		runClean,
-		previewResult,
-		isLoadingPreview,
-		isRunningClean,
-		resetPreview,
-	} = useEnhancedPreview();
+	const { runPreview, runClean, previewResult, isLoadingPreview, isRunningClean, resetPreview } =
+		useEnhancedPreview();
 	const [showPreview, setShowPreview] = useState(false);
 
 	const handleManualClean = async () => {
@@ -158,9 +147,7 @@ const InstanceStatusCard = ({
 	};
 
 	const lastRunDate = instance.lastRunAt ? new Date(instance.lastRunAt) : null;
-	const lastRunAgo = lastRunDate
-		? getTimeAgo(lastRunDate)
-		: "Never";
+	const lastRunAgo = lastRunDate ? getTimeAgo(lastRunDate) : "Never";
 
 	return (
 		<>
@@ -188,15 +175,10 @@ const InstanceStatusCard = ({
 										border: `1px solid ${serviceGradient.from}30`,
 									}}
 								>
-									<Sparkles
-										className="h-4 w-4"
-										style={{ color: serviceGradient.from }}
-									/>
+									<Sparkles className="h-4 w-4" style={{ color: serviceGradient.from }} />
 								</div>
 								<div>
-									<h4 className="font-medium text-foreground">
-										{instance.instanceName}
-									</h4>
+									<h4 className="font-medium text-foreground">{instance.instanceName}</h4>
 									<div className="flex items-center gap-2 mt-0.5">
 										<ServiceBadge service={instance.service} />
 										{instance.dryRunMode && instance.hasConfig && (
@@ -217,21 +199,15 @@ const InstanceStatusCard = ({
 						<div className="grid grid-cols-3 gap-3 mb-4">
 							<div className="rounded-lg bg-card/50 p-2.5 text-center">
 								<div className="text-xs text-muted-foreground">Cleaned</div>
-								<div className="text-lg font-semibold text-foreground">
-									{instance.cleanedToday}
-								</div>
+								<div className="text-lg font-semibold text-foreground">{instance.cleanedToday}</div>
 							</div>
 							<div className="rounded-lg bg-card/50 p-2.5 text-center">
 								<div className="text-xs text-muted-foreground">Skipped</div>
-								<div className="text-lg font-semibold text-foreground">
-									{instance.skippedToday}
-								</div>
+								<div className="text-lg font-semibold text-foreground">{instance.skippedToday}</div>
 							</div>
 							<div className="rounded-lg bg-card/50 p-2.5 text-center">
 								<div className="text-xs text-muted-foreground">Last Run</div>
-								<div className="text-xs font-medium text-foreground mt-1">
-									{lastRunAgo}
-								</div>
+								<div className="text-xs font-medium text-foreground mt-1">{lastRunAgo}</div>
 							</div>
 						</div>
 

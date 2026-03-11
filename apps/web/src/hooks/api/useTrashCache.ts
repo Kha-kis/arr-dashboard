@@ -1,9 +1,26 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { TrashCacheEntry, TrashConfigType, GitHubRateLimitResponse, SyncMetricsSnapshot } from "@arr/shared";
-import type { TrashCacheStatusResponse, RefreshCachePayload } from "../../lib/api-client/trash-guides";
-import { fetchCacheStatus, fetchCacheEntries, refreshCache, deleteCacheEntry, fetchGitHubRateLimit, fetchSyncMetrics } from "../../lib/api-client/trash-guides";
+import type {
+	CacheValidationHealth,
+	GitHubRateLimitResponse,
+	SyncMetricsSnapshot,
+	TrashCacheEntry,
+	TrashConfigType,
+} from "@arr/shared";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type {
+	RefreshCachePayload,
+	TrashCacheStatusResponse,
+} from "../../lib/api-client/trash-guides";
+import {
+	deleteCacheEntry,
+	fetchCacheEntries,
+	fetchCacheHealth,
+	fetchCacheStatus,
+	fetchGitHubRateLimit,
+	fetchSyncMetrics,
+	refreshCache,
+} from "../../lib/api-client/trash-guides";
 
 /**
  * Hook to fetch TRaSH Guides cache status
@@ -96,5 +113,17 @@ export const useSyncMetrics = (options?: { enabled?: boolean }) =>
 		queryFn: fetchSyncMetrics,
 		staleTime: 30 * 1000, // 30 seconds
 		refetchInterval: 60 * 1000, // Refetch every minute when visible
+		enabled: options?.enabled ?? true,
+	});
+
+/**
+ * Hook to fetch cache validation health stats.
+ * Shows per-category validation results from the last cache refresh.
+ */
+export const useCacheHealth = (options?: { enabled?: boolean }) =>
+	useQuery<CacheValidationHealth>({
+		queryKey: ["cache-health"],
+		queryFn: fetchCacheHealth,
+		staleTime: 5 * 60 * 1000, // 5 minutes — only changes on cache refresh
 		enabled: options?.enabled ?? true,
 	});

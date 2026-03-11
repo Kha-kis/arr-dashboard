@@ -1,33 +1,24 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
 import type { CustomQualityConfig } from "@arr/shared";
+import { AlertCircle, Check, Info, Loader2, RotateCcw, Save, Server, Sliders } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Button } from "../../../components/ui";
 import {
 	Dialog,
 	DialogContent,
-	DialogHeader,
-	DialogTitle,
 	DialogDescription,
 	DialogFooter,
+	DialogHeader,
+	DialogTitle,
 } from "../../../components/ui/dialog";
-import { Button } from "../../../components/ui";
-import {
-	Server,
-	Sliders,
-	RotateCcw,
-	Save,
-	AlertCircle,
-	Check,
-	Loader2,
-	Info,
-} from "lucide-react";
-import { QualityGroupEditor } from "./quality-group-editor";
 import {
 	getInstanceOverrides,
 	updateInstanceOverrides,
 } from "../../../lib/api-client/trash-guides";
-import { cn } from "../../../lib/utils";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { cn } from "../../../lib/utils";
+import { QualityGroupEditor } from "./quality-group-editor";
 
 interface InstanceQualityOverrideModalProps {
 	open: boolean;
@@ -86,11 +77,13 @@ export const InstanceQualityOverrideModal = ({
 				setMode("override");
 			} else {
 				// No override - use template default
-				setConfig(templateDefaultConfig ?? {
-					useCustomQualities: false,
-					items: [],
-					cutoffId: undefined,
-				});
+				setConfig(
+					templateDefaultConfig ?? {
+						useCustomQualities: false,
+						items: [],
+						cutoffId: undefined,
+					},
+				);
 				setHasOverride(false);
 				setMode("default");
 			}
@@ -125,11 +118,13 @@ export const InstanceQualityOverrideModal = ({
 				qualityConfigOverride: null, // Clear the override
 			});
 
-			setConfig(templateDefaultConfig ?? {
-				useCustomQualities: false,
-				items: [],
-				cutoffId: undefined,
-			});
+			setConfig(
+				templateDefaultConfig ?? {
+					useCustomQualities: false,
+					items: [],
+					cutoffId: undefined,
+				},
+			);
 			setHasOverride(false);
 			setMode("default");
 			setHasChanges(false);
@@ -181,7 +176,8 @@ export const InstanceQualityOverrideModal = ({
 	}, [templateDefaultConfig]);
 
 	// Check if template has quality config to override
-	const hasTemplateQualityConfig = templateDefaultConfig?.useCustomQualities &&
+	const hasTemplateQualityConfig =
+		templateDefaultConfig?.useCustomQualities &&
 		templateDefaultConfig?.items &&
 		templateDefaultConfig.items.length > 0;
 
@@ -194,8 +190,9 @@ export const InstanceQualityOverrideModal = ({
 						Quality Settings for {instanceLabel}
 					</DialogTitle>
 					<DialogDescription>
-						Customize quality settings for <strong className="text-foreground">{instanceLabel}</strong> only.
-						Other instances using &ldquo;{templateName}&rdquo; will not be affected.
+						Customize quality settings for{" "}
+						<strong className="text-foreground">{instanceLabel}</strong> only. Other instances using
+						&ldquo;{templateName}&rdquo; will not be affected.
 					</DialogDescription>
 				</DialogHeader>
 
@@ -229,7 +226,8 @@ export const InstanceQualityOverrideModal = ({
 												This template doesn&apos;t have a default quality configuration.
 											</p>
 											<p className="text-xs text-muted-foreground">
-												You can still set up quality settings for this instance by loading from its current profile.
+												You can still set up quality settings for this instance by loading from its
+												current profile.
 											</p>
 										</div>
 									</div>
@@ -273,19 +271,23 @@ export const InstanceQualityOverrideModal = ({
 												"flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition",
 												mode === "default"
 													? "border-primary bg-primary/5 ring-1 ring-primary/30"
-													: "border-border bg-background hover:border-border/80 hover:bg-card"
+													: "border-border bg-background hover:border-border/80 hover:bg-card",
 											)}
 										>
 											<div className="flex items-center gap-2">
-												<div className={cn(
-													"flex h-5 w-5 items-center justify-center rounded-full border-2",
-													mode === "default"
-														? "border-primary bg-primary text-white"
-														: "border-border"
-												)}>
+												<div
+													className={cn(
+														"flex h-5 w-5 items-center justify-center rounded-full border-2",
+														mode === "default"
+															? "border-primary bg-primary text-white"
+															: "border-border",
+													)}
+												>
 													{mode === "default" && <Check className="h-3 w-3" />}
 												</div>
-												<span className="text-sm font-medium text-foreground">Use Template Default</span>
+												<span className="text-sm font-medium text-foreground">
+													Use Template Default
+												</span>
 											</div>
 											<p className="text-xs text-muted-foreground pl-7">
 												Same as other instances using this template.
@@ -301,19 +303,23 @@ export const InstanceQualityOverrideModal = ({
 												"flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition",
 												mode === "override"
 													? "border-purple-500 bg-purple-500/5 ring-1 ring-purple-500/30"
-													: "border-border bg-background hover:border-border/80 hover:bg-card"
+													: "border-border bg-background hover:border-border/80 hover:bg-card",
 											)}
 										>
 											<div className="flex items-center gap-2">
-												<div className={cn(
-													"flex h-5 w-5 items-center justify-center rounded-full border-2",
-													mode === "override"
-														? "border-purple-500 bg-purple-500 text-white"
-														: "border-border"
-												)}>
+												<div
+													className={cn(
+														"flex h-5 w-5 items-center justify-center rounded-full border-2",
+														mode === "override"
+															? "border-purple-500 bg-purple-500 text-white"
+															: "border-border",
+													)}
+												>
 													{mode === "override" && <Check className="h-3 w-3" />}
 												</div>
-												<span className="text-sm font-medium text-foreground">Customize for This Instance</span>
+												<span className="text-sm font-medium text-foreground">
+													Customize for This Instance
+												</span>
 											</div>
 											<p className="text-xs text-muted-foreground pl-7">
 												Different settings just for {instanceLabel}.
@@ -361,9 +367,7 @@ export const InstanceQualityOverrideModal = ({
 					<div className="flex items-center justify-between w-full">
 						<div className="flex items-center gap-2">
 							{hasChanges && (
-								<span className="text-xs text-amber-600 dark:text-amber-400">
-									Unsaved changes
-								</span>
+								<span className="text-xs text-amber-600 dark:text-amber-400">Unsaved changes</span>
 							)}
 						</div>
 						<div className="flex items-center gap-2">
@@ -382,7 +386,8 @@ export const InstanceQualityOverrideModal = ({
 								Cancel
 							</Button>
 							{/* Show save when: override mode with template config, OR no template config but has items */}
-							{((mode === "override" && hasTemplateQualityConfig) || (!hasTemplateQualityConfig && config.items.length > 0)) && (
+							{((mode === "override" && hasTemplateQualityConfig) ||
+								(!hasTemplateQualityConfig && config.items.length > 0)) && (
 								<Button
 									variant="primary"
 									onClick={saveOverride}

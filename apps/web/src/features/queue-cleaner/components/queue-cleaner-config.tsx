@@ -1,74 +1,81 @@
 "use client";
 
-import { useState, useCallback } from "react";
 import {
-	Settings,
-	Power,
-	ShieldAlert,
-	Pause,
-	XCircle,
-	Snail,
 	AlertTriangle,
-	Trash2,
-	Plus,
-	Save,
-	RotateCcw,
+	ArrowRight,
+	Clock,
+	FileText,
 	Loader2,
+	Pause,
+	Plus,
+	Power,
+	RotateCcw,
+	Save,
+	Settings,
+	ShieldAlert,
+	ShieldCheck,
+	Snail,
+	Sparkles,
 	Target,
 	Timer,
-	ShieldCheck,
-	Clock,
+	Trash2,
 	TrendingUp,
-	FileText,
-	ArrowRight,
-	Sparkles,
+	XCircle,
 } from "lucide-react";
-import { Button, toast } from "../../../components/ui";
+import { useCallback, useState } from "react";
 import {
-	PremiumSection,
-	PremiumEmptyState,
-	ServiceBadge,
 	GlassmorphicCard,
+	PremiumEmptyState,
+	PremiumSection,
+	ServiceBadge,
 } from "../../../components/layout";
-import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { Button, toast } from "../../../components/ui";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getErrorMessage } from "../../../lib/error-utils";
+import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import {
 	useQueueCleanerConfigs,
-	useUpdateQueueCleanerConfig,
 	useToggleCleanerScheduler,
+	useUpdateQueueCleanerConfig,
 } from "../hooks/useQueueCleanerConfig";
-import type {
-	QueueCleanerConfigWithInstance,
-	QueueCleanerConfigUpdate,
-	InstanceSummary,
-} from "../lib/queue-cleaner-types";
 import {
-	MIN_INTERVAL_MINS,
-	MAX_INTERVAL_MINS,
-	MIN_STALLED_THRESHOLD_MINS,
-	MAX_STALLED_THRESHOLD_MINS,
-	MIN_SLOW_SPEED_THRESHOLD,
-	MAX_SLOW_SPEED_THRESHOLD,
-	MIN_SLOW_GRACE_PERIOD_MINS,
-	MAX_SLOW_GRACE_PERIOD_MINS,
-	MIN_MAX_REMOVALS,
-	MAX_MAX_REMOVALS,
-	MIN_QUEUE_AGE_MINS,
-	MAX_QUEUE_AGE_MINS,
-	MIN_MAX_STRIKES,
-	MAX_MAX_STRIKES,
-	MIN_STRIKE_DECAY_HOURS,
-	MAX_STRIKE_DECAY_HOURS,
-	MIN_SEEDING_TIMEOUT_HOURS,
-	MAX_SEEDING_TIMEOUT_HOURS,
-	MIN_ESTIMATED_MULTIPLIER,
 	MAX_ESTIMATED_MULTIPLIER,
-	MIN_IMPORT_PENDING_MINS,
 	MAX_IMPORT_PENDING_MINS,
+	MAX_INTERVAL_MINS,
+	MAX_MAX_REMOVALS,
+	MAX_MAX_STRIKES,
+	MAX_QUEUE_AGE_MINS,
+	MAX_SEEDING_TIMEOUT_HOURS,
+	MAX_SLOW_GRACE_PERIOD_MINS,
+	MAX_SLOW_SPEED_THRESHOLD,
+	MAX_STALLED_THRESHOLD_MINS,
+	MAX_STRIKE_DECAY_HOURS,
+	MIN_ESTIMATED_MULTIPLIER,
+	MIN_IMPORT_PENDING_MINS,
+	MIN_INTERVAL_MINS,
+	MIN_MAX_REMOVALS,
+	MIN_MAX_STRIKES,
+	MIN_QUEUE_AGE_MINS,
+	MIN_SEEDING_TIMEOUT_HOURS,
+	MIN_SLOW_GRACE_PERIOD_MINS,
+	MIN_SLOW_SPEED_THRESHOLD,
+	MIN_STALLED_THRESHOLD_MINS,
+	MIN_STRIKE_DECAY_HOURS,
 } from "../lib/constants";
-import { ToggleSwitch, ToggleRow, RuleSection, ConfigInput, WhitelistEditor, Tooltip } from "./queue-cleaner-config-ui";
+import type {
+	InstanceSummary,
+	QueueCleanerConfigUpdate,
+	QueueCleanerConfigWithInstance,
+} from "../lib/queue-cleaner-types";
 import { AutoImportSection } from "./auto-import-section";
-import { getErrorMessage } from "../../../lib/error-utils";
+import {
+	ConfigInput,
+	RuleSection,
+	ToggleRow,
+	ToggleSwitch,
+	Tooltip,
+	WhitelistEditor,
+} from "./queue-cleaner-config-ui";
 
 export const QueueCleanerConfig = () => {
 	const { gradient: themeGradient } = useThemeGradient();
@@ -79,9 +86,7 @@ export const QueueCleanerConfig = () => {
 	const handleToggleScheduler = async () => {
 		try {
 			const result = await toggleScheduler();
-			toast.success(
-				result.running ? "Scheduler started" : "Scheduler stopped",
-			);
+			toast.success(result.running ? "Scheduler started" : "Scheduler stopped");
 		} catch {
 			toast.error("Failed to toggle scheduler");
 		}
@@ -92,9 +97,7 @@ export const QueueCleanerConfig = () => {
 			await createConfig(instanceId);
 			toast.success("Queue cleaner config created");
 		} catch (error) {
-			toast.error(
-				getErrorMessage(error, "Failed to create config"),
-			);
+			toast.error(getErrorMessage(error, "Failed to create config"));
 		}
 	};
 
@@ -305,15 +308,14 @@ const InstanceConfigCard = ({
 	const serviceGradient = getServiceGradient(config.service);
 	const { updateConfig, deleteConfig, isUpdating, isDeleting } = useUpdateQueueCleanerConfig();
 
-	const [formData, setFormData] = useState<QueueCleanerConfigUpdate>(() => configToFormData(config));
+	const [formData, setFormData] = useState<QueueCleanerConfigUpdate>(() =>
+		configToFormData(config),
+	);
 	const [isDirty, setIsDirty] = useState(false);
 	const [confirmDelete, setConfirmDelete] = useState(false);
 
 	const updateField = useCallback(
-		<K extends keyof QueueCleanerConfigUpdate>(
-			field: K,
-			value: QueueCleanerConfigUpdate[K],
-		) => {
+		<K extends keyof QueueCleanerConfigUpdate>(field: K, value: QueueCleanerConfigUpdate[K]) => {
 			setFormData((prev) => ({ ...prev, [field]: value }));
 			setIsDirty(true);
 		},
@@ -326,9 +328,7 @@ const InstanceConfigCard = ({
 			setIsDirty(false);
 			toast.success(`Config updated for ${config.instanceName}`);
 		} catch (error) {
-			toast.error(
-				getErrorMessage(error, "Failed to update config"),
-			);
+			toast.error(getErrorMessage(error, "Failed to update config"));
 		}
 	};
 
@@ -395,14 +395,20 @@ const InstanceConfigCard = ({
 					<div
 						className="flex items-center justify-between rounded-lg p-3"
 						style={{
-							backgroundColor: formData.dryRunMode ? SEMANTIC_COLORS.warning.bg : SEMANTIC_COLORS.error.bg,
+							backgroundColor: formData.dryRunMode
+								? SEMANTIC_COLORS.warning.bg
+								: SEMANTIC_COLORS.error.bg,
 							border: `1px solid ${formData.dryRunMode ? SEMANTIC_COLORS.warning.border : SEMANTIC_COLORS.error.border}`,
 						}}
 					>
 						<div className="flex items-center gap-2">
 							<ShieldAlert
 								className="h-4 w-4"
-								style={{ color: formData.dryRunMode ? SEMANTIC_COLORS.warning.text : SEMANTIC_COLORS.error.text }}
+								style={{
+									color: formData.dryRunMode
+										? SEMANTIC_COLORS.warning.text
+										: SEMANTIC_COLORS.error.text,
+								}}
 							/>
 							<div>
 								<span className="text-sm font-medium text-foreground">
@@ -442,7 +448,8 @@ const InstanceConfigCard = ({
 								onChange={(v) => updateField("skipFutureEpisodes", v)}
 							/>
 							<p className="text-[10px] text-muted-foreground pl-8">
-								Pre-grabbed episodes waiting for their air date won&apos;t be flagged as stalled or stuck
+								Pre-grabbed episodes waiting for their air date won&apos;t be flagged as stalled or
+								stuck
 							</p>
 						</div>
 					)}
@@ -516,7 +523,8 @@ const InstanceConfigCard = ({
 							suffix="hours"
 						/>
 						<div className="text-xs text-muted-foreground p-2 rounded-md bg-card/30 border border-border/30">
-							Items receive strikes instead of immediate removal. After reaching max strikes, they are removed. Strikes decay after the specified period of no new issues.
+							Items receive strikes instead of immediate removal. After reaching max strikes, they
+							are removed. Strikes decay after the specified period of no new issues.
 						</div>
 					</RuleSection>
 
@@ -558,12 +566,21 @@ const InstanceConfigCard = ({
 					>
 						<div className="text-xs p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 mb-3">
 							<p className="text-muted-foreground">
-								<span className="font-medium text-red-400">For broken downloads</span> — matches error messages like &quot;disk space&quot;, &quot;permission denied&quot;, &quot;connection failed&quot;.
-								<span className="text-muted-foreground/70"> (Different from Import Blocked which handles completed downloads that ARR won&apos;t import)</span>
+								<span className="font-medium text-red-400">For broken downloads</span> — matches
+								error messages like &quot;disk space&quot;, &quot;permission denied&quot;,
+								&quot;connection failed&quot;.
+								<span className="text-muted-foreground/70">
+									{" "}
+									(Different from Import Blocked which handles completed downloads that ARR
+									won&apos;t import)
+								</span>
 							</p>
 						</div>
 						<div>
-							<label htmlFor="error-patterns-textarea" className="text-xs font-medium text-foreground block mb-1.5">
+							<label
+								htmlFor="error-patterns-textarea"
+								className="text-xs font-medium text-foreground block mb-1.5"
+							>
 								Custom error patterns (one per line)
 							</label>
 							<textarea
@@ -581,13 +598,8 @@ const InstanceConfigCard = ({
 									}
 								})()}
 								onChange={(e) => {
-									const lines = e.target.value
-										.split("\n")
-										.filter((l) => l.trim());
-									updateField(
-										"errorPatterns",
-										lines.length > 0 ? JSON.stringify(lines) : null,
-									);
+									const lines = e.target.value.split("\n").filter((l) => l.trim());
+									updateField("errorPatterns", lines.length > 0 ? JSON.stringify(lines) : null);
 								}}
 							/>
 							<p className="text-[10px] text-muted-foreground mt-1">
@@ -614,7 +626,8 @@ const InstanceConfigCard = ({
 							suffix="hours"
 						/>
 						<div className="text-xs text-muted-foreground p-2 rounded-md bg-card/30 border border-border/30">
-							Completed downloads that have been seeding longer than the timeout will be removed. Useful for cleaning up finished torrents.
+							Completed downloads that have been seeding longer than the timeout will be removed.
+							Useful for cleaning up finished torrents.
 						</div>
 					</RuleSection>
 
@@ -636,8 +649,9 @@ const InstanceConfigCard = ({
 							suffix="x"
 						/>
 						<div className="text-xs text-muted-foreground p-2 rounded-md bg-card/30 border border-border/30">
-							Uses the ETA from your download client. If a download was estimated to complete in 1 hour
-							but is still downloading after 2 hours (2x multiplier), it will be flagged as stalled.
+							Uses the ETA from your download client. If a download was estimated to complete in 1
+							hour but is still downloading after 2 hours (2x multiplier), it will be flagged as
+							stalled.
 						</div>
 					</RuleSection>
 
@@ -656,26 +670,44 @@ const InstanceConfigCard = ({
 								What this handles:
 							</div>
 							<p className="text-muted-foreground">
-								Downloads that <span className="text-emerald-400 font-medium">finished successfully</span> but are stuck because ARR won&apos;t import them — duplicates, wrong quality, sample files, etc.
-								<span className="text-muted-foreground/70"> (Different from Download Errors which handles broken/failed transfers)</span>
+								Downloads that{" "}
+								<span className="text-emerald-400 font-medium">finished successfully</span> but are
+								stuck because ARR won&apos;t import them — duplicates, wrong quality, sample files,
+								etc.
+								<span className="text-muted-foreground/70">
+									{" "}
+									(Different from Download Errors which handles broken/failed transfers)
+								</span>
 							</p>
 							<div className="flex items-center gap-1.5 text-muted-foreground flex-wrap pt-1">
-								<span className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/30 text-emerald-400">Download complete</span>
+								<span className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/30 text-emerald-400">
+									Download complete
+								</span>
 								<ArrowRight className="h-3 w-3 text-muted-foreground/50" />
-								<span className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/30 text-amber-400">ARR blocks import</span>
+								<span className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/30 text-amber-400">
+									ARR blocks import
+								</span>
 								<ArrowRight className="h-3 w-3 text-muted-foreground/50" />
-								<span className="px-2 py-0.5 rounded bg-card/50 border border-border/30">Wait timeout</span>
+								<span className="px-2 py-0.5 rounded bg-card/50 border border-border/30">
+									Wait timeout
+								</span>
 								<ArrowRight className="h-3 w-3 text-muted-foreground/50" />
-								<span className="px-2 py-0.5 rounded bg-blue-500/20 border border-blue-500/30 text-blue-400">Try import?</span>
+								<span className="px-2 py-0.5 rounded bg-blue-500/20 border border-blue-500/30 text-blue-400">
+									Try import?
+								</span>
 								<ArrowRight className="h-3 w-3 text-muted-foreground/50" />
-								<span className="px-2 py-0.5 rounded bg-red-500/20 border border-red-500/30 text-red-400">Remove</span>
+								<span className="px-2 py-0.5 rounded bg-red-500/20 border border-red-500/30 text-red-400">
+									Remove
+								</span>
 							</div>
 						</div>
 
 						{/* Step 1: Timeout */}
 						<div className="space-y-2 pt-2">
 							<div className="flex items-center gap-2">
-								<span className="flex items-center justify-center h-5 w-5 rounded-full bg-blue-500/20 text-blue-400 text-[10px] font-bold">1</span>
+								<span className="flex items-center justify-center h-5 w-5 rounded-full bg-blue-500/20 text-blue-400 text-[10px] font-bold">
+									1
+								</span>
 								<span className="text-xs font-medium text-foreground">Wait Period</span>
 								<Tooltip text="How long to wait before taking action. Gives time for temporary issues to resolve (e.g., files still being extracted)." />
 							</div>
@@ -693,13 +725,20 @@ const InstanceConfigCard = ({
 						{/* Step 2: Pattern Matching */}
 						<div className="space-y-3 pt-3 border-t border-border/30">
 							<div className="flex items-center gap-2">
-								<span className="flex items-center justify-center h-5 w-5 rounded-full bg-blue-500/20 text-blue-400 text-[10px] font-bold">2</span>
+								<span className="flex items-center justify-center h-5 w-5 rounded-full bg-blue-500/20 text-blue-400 text-[10px] font-bold">
+									2
+								</span>
 								<span className="text-xs font-medium text-foreground">Decide What to Clean</span>
 								<Tooltip text="Controls which blocked items get removed. Items not matching the criteria are left alone." />
 							</div>
 
 							<div className="space-y-2">
-								<label htmlFor="cleanup-aggressiveness-select" className="text-xs text-muted-foreground">Cleanup Level</label>
+								<label
+									htmlFor="cleanup-aggressiveness-select"
+									className="text-xs text-muted-foreground"
+								>
+									Cleanup Level
+								</label>
 								<select
 									id="cleanup-aggressiveness-select"
 									value={formData.importBlockCleanupLevel ?? "safe"}
@@ -725,11 +764,15 @@ const InstanceConfigCard = ({
 											Duplicates, already exists, quality rejected, sample files, no video files
 										</p>
 										<p>
-											<span className="inline-block w-20 font-medium text-amber-400">Moderate:</span>
+											<span className="inline-block w-20 font-medium text-amber-400">
+												Moderate:
+											</span>
 											+ manual import required, missing expected files
 										</p>
 										<p>
-											<span className="inline-block w-20 font-medium text-red-400">Aggressive:</span>
+											<span className="inline-block w-20 font-medium text-red-400">
+												Aggressive:
+											</span>
 											+ password protected, unpack/RAR issues
 										</p>
 									</div>
@@ -762,7 +805,10 @@ const InstanceConfigCard = ({
 									{(formData.importBlockPatternMode === "include" ||
 										formData.importBlockPatternMode === "exclude") && (
 										<div className="space-y-1.5 pt-2">
-											<label htmlFor="import-block-patterns-textarea" className="text-muted-foreground">
+											<label
+												htmlFor="import-block-patterns-textarea"
+												className="text-muted-foreground"
+											>
 												{formData.importBlockPatternMode === "include"
 													? "Only clean items with these status messages:"
 													: "Never clean items with these status messages:"}
@@ -806,21 +852,25 @@ const InstanceConfigCard = ({
 						{/* Step 3: Auto-Import (Optional) */}
 						<div className="space-y-2 pt-3 border-t border-border/30">
 							<div className="flex items-center gap-2">
-								<span className="flex items-center justify-center h-5 w-5 rounded-full bg-amber-500/20 text-amber-400 text-[10px] font-bold">3</span>
-								<span className="text-xs font-medium text-foreground">Before Removing: Try Import?</span>
-								<span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">Optional</span>
+								<span className="flex items-center justify-center h-5 w-5 rounded-full bg-amber-500/20 text-amber-400 text-[10px] font-bold">
+									3
+								</span>
+								<span className="text-xs font-medium text-foreground">
+									Before Removing: Try Import?
+								</span>
+								<span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
+									Optional
+								</span>
 							</div>
 							<p className="text-[11px] text-muted-foreground pl-7">
-								When enabled, attempts to import stuck downloads via ARR&apos;s API before removing them.
-								If import succeeds, the item is saved. If it fails, removal continues as normal.
+								When enabled, attempts to import stuck downloads via ARR&apos;s API before removing
+								them. If import succeeds, the item is saved. If it fails, removal continues as
+								normal.
 							</p>
 						</div>
 
 						{/* Auto-Import Sub-Feature */}
-						<AutoImportSection
-							formData={formData}
-							updateField={updateField}
-						/>
+						<AutoImportSection formData={formData} updateField={updateField} />
 					</RuleSection>
 
 					{/* Removal Options */}

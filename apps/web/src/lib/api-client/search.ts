@@ -1,12 +1,12 @@
 import type {
-	SearchIndexersResponse,
 	MultiInstanceSearchResponse,
-	SearchRequest,
+	ProwlarrIndexerDetails,
 	SearchGrabRequest,
+	SearchIndexerDetailsResponse,
+	SearchIndexersResponse,
 	SearchIndexerTestRequest,
 	SearchIndexerTestResponse,
-	SearchIndexerDetailsResponse,
-	ProwlarrIndexerDetails,
+	SearchRequest,
 } from "@arr/shared";
 import { apiRequest, UnauthorizedError } from "./base";
 

@@ -193,8 +193,7 @@ export const tmdbKeys = {
 		["tmdb", "search", "infinite", mediaType, query, year] as const,
 	credits: (mediaType: string, tmdbId: number, aggregate?: boolean) =>
 		["tmdb", "credits", mediaType, tmdbId, aggregate] as const,
-	videos: (mediaType: string, tmdbId: number) =>
-		["tmdb", "videos", mediaType, tmdbId] as const,
+	videos: (mediaType: string, tmdbId: number) => ["tmdb", "videos", mediaType, tmdbId] as const,
 	watchProviders: (mediaType: string, tmdbId: number, region?: string) =>
 		["tmdb", "watch-providers", mediaType, tmdbId, region] as const,
 };
@@ -208,8 +207,7 @@ export const discoverKeys = {
 	search: (query: string, type: string) => ["discover", "search", { query, type }] as const,
 	options: (instanceId: string, type: string) =>
 		["discover", "options", { instanceId, type }] as const,
-	testOptions: (request: Record<string, unknown>) =>
-		["discover", "test-options", request] as const,
+	testOptions: (request: Record<string, unknown>) => ["discover", "test-options", request] as const,
 	recommendations: (type: string, mediaType: string) =>
 		["recommendations", type, mediaType] as const,
 	recommendationsInfinite: (type: string, mediaType: string) =>

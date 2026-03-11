@@ -11,31 +11,37 @@
 
 "use client";
 
-import { useState, useMemo, useEffect, useCallback } from "react";
-import {
-	Search,
-	Save,
-	X,
-	RotateCcw,
-	SlidersHorizontal,
-	ChevronDown,
-	CheckSquare,
-	Square,
-	AlertCircle,
-	Loader2,
-	Filter,
-	Sparkles,
-} from "lucide-react";
-import { toast } from "sonner";
 import type { CustomFormatScoreEntry } from "@arr/shared";
-import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
-import { useDeleteOverride, useBulkDeleteOverrides } from "../../../hooks/api/useQualityProfileOverrides";
-import { useBulkUpdateScores, type BulkScoreUpdateEntry } from "../../../hooks/api/useQualityProfileScores";
-import { useBulkScores } from "../../../hooks/api/useBulkScores";
 import { useQueryClient } from "@tanstack/react-query";
-import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import {
+	AlertCircle,
+	CheckSquare,
+	ChevronDown,
+	Filter,
+	Loader2,
+	RotateCcw,
+	Save,
+	Search,
+	SlidersHorizontal,
+	Sparkles,
+	Square,
+	X,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { useBulkScores } from "../../../hooks/api/useBulkScores";
+import {
+	useBulkDeleteOverrides,
+	useDeleteOverride,
+} from "../../../hooks/api/useQualityProfileOverrides";
+import {
+	type BulkScoreUpdateEntry,
+	useBulkUpdateScores,
+} from "../../../hooks/api/useQualityProfileScores";
+import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 
 /**
  * Service-specific colors for Radarr/Sonarr identification
@@ -53,10 +59,7 @@ interface BulkScoreManagerProps {
 	onOperationComplete?: () => void;
 }
 
-export function BulkScoreManager({
-	userId: _userId,
-	onOperationComplete,
-}: BulkScoreManagerProps) {
+export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkScoreManagerProps) {
 	const { gradient: themeGradient } = useThemeGradient();
 	const queryClient = useQueryClient();
 
@@ -69,7 +72,7 @@ export function BulkScoreManager({
 	const [modifiedOnly, setModifiedOnly] = useState(false);
 
 	// Get selected instance for service color
-	const selectedInstance = instances.find(i => i.id === instanceId);
+	const selectedInstance = instances.find((i) => i.id === instanceId);
 	const _serviceColor = selectedInstance?.service
 		? SERVICE_COLORS[selectedInstance.service as keyof typeof SERVICE_COLORS]
 		: null;
@@ -99,7 +102,9 @@ export function BulkScoreManager({
 
 	// Track quality profile IDs and their overrides
 	const [qualityProfileIds, setQualityProfileIds] = useState<number[]>([]);
-	const [allOverrides, setAllOverrides] = useState<Map<string, { customFormatId: number; score: number }>>(new Map());
+	const [allOverrides, setAllOverrides] = useState<
+		Map<string, { customFormatId: number; score: number }>
+	>(new Map());
 
 	// Create override map for quick lookups: `${profileId}-${cfId}` → has override
 	const overrideMap = useMemo(() => {
@@ -111,47 +116,53 @@ export function BulkScoreManager({
 	}, [allOverrides]);
 
 	// Fetch overrides for multiple quality profiles using bulk API
-	const fetchOverridesForProfiles = useCallback(async (profileIds: number[], signal?: AbortSignal) => {
-		if (!instanceId || profileIds.length === 0) return;
+	const fetchOverridesForProfiles = useCallback(
+		async (profileIds: number[], signal?: AbortSignal) => {
+			if (!instanceId || profileIds.length === 0) return;
 
-		try {
-			const response = await fetch(`/api/trash-guides/instances/${instanceId}/quality-profiles/bulk-overrides`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ profileIds }),
-				signal,
-			});
+			try {
+				const response = await fetch(
+					`/api/trash-guides/instances/${instanceId}/quality-profiles/bulk-overrides`,
+					{
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ profileIds }),
+						signal,
+					},
+				);
 
-			if (!response.ok) {
-				throw new Error(`Failed to fetch bulk overrides: ${response.status}`);
-			}
+				if (!response.ok) {
+					throw new Error(`Failed to fetch bulk overrides: ${response.status}`);
+				}
 
-			const data = await response.json();
+				const data = await response.json();
 
-			const newOverrides = new Map<string, { customFormatId: number; score: number }>();
+				const newOverrides = new Map<string, { customFormatId: number; score: number }>();
 
-			if (data?.success && data.overridesByProfile) {
-				for (const [profileIdStr, overrides] of Object.entries(data.overridesByProfile)) {
-					const profileId = parseInt(profileIdStr);
-					for (const override of overrides as Array<{ customFormatId: number; score: number }>) {
-						const key = `${profileId}-${override.customFormatId}`;
-						newOverrides.set(key, {
-							customFormatId: override.customFormatId,
-							score: override.score,
-						});
+				if (data?.success && data.overridesByProfile) {
+					for (const [profileIdStr, overrides] of Object.entries(data.overridesByProfile)) {
+						const profileId = parseInt(profileIdStr);
+						for (const override of overrides as Array<{ customFormatId: number; score: number }>) {
+							const key = `${profileId}-${override.customFormatId}`;
+							newOverrides.set(key, {
+								customFormatId: override.customFormatId,
+								score: override.score,
+							});
+						}
 					}
 				}
-			}
 
-			setAllOverrides(newOverrides);
-		} catch (error) {
-			if (error instanceof Error && error.name === 'AbortError') {
-				return;
+				setAllOverrides(newOverrides);
+			} catch (error) {
+				if (error instanceof Error && error.name === "AbortError") {
+					return;
+				}
+				console.error("Error fetching bulk overrides:", error);
+				toast.error("Failed to fetch quality profile overrides");
 			}
-			console.error("Error fetching bulk overrides:", error);
-			toast.error("Failed to fetch quality profile overrides");
-		}
-	}, [instanceId]);
+		},
+		[instanceId],
+	);
 
 	// Sync scores from query data and fetch overrides
 	useEffect(() => {
@@ -162,7 +173,7 @@ export function BulkScoreManager({
 			const profileIds = new Set<number>();
 			for (const score of queryScores) {
 				for (const templateScore of score.templateScores) {
-					const raw = templateScore.templateId.split('-').pop() || '';
+					const raw = templateScore.templateId.split("-").pop() || "";
 					const profileId = parseInt(raw, 10);
 					if (Number.isFinite(profileId) && profileId > 0) {
 						profileIds.add(profileId);
@@ -218,7 +229,7 @@ export function BulkScoreManager({
 					};
 				}
 				return score;
-			})
+			}),
 		);
 	};
 
@@ -253,7 +264,7 @@ export function BulkScoreManager({
 					instanceId,
 					changes,
 				};
-			}
+			},
 		);
 
 		try {
@@ -279,20 +290,24 @@ export function BulkScoreManager({
 	const handleDeleteOverride = async (
 		templateId: string,
 		customFormatId: number,
-		customFormatName: string
+		customFormatName: string,
 	) => {
 		if (!instanceId) {
 			toast.error("No instance selected");
 			return;
 		}
 
-		const profileId = parseInt(templateId.split('-').pop() || '0');
+		const profileId = parseInt(templateId.split("-").pop() || "0");
 		if (profileId === 0) {
 			toast.error("Invalid quality profile ID");
 			return;
 		}
 
-		if (!confirm(`Remove override for "${customFormatName}"?\n\nScore will revert to template/default value.`)) {
+		if (
+			!confirm(
+				`Remove override for "${customFormatName}"?\n\nScore will revert to template/default value.`,
+			)
+		) {
 			return;
 		}
 
@@ -322,7 +337,7 @@ export function BulkScoreManager({
 		const profileToCFs = new Map<number, Set<number>>();
 
 		for (const trashId of selectedCFs) {
-			const cfId = parseInt(trashId.replace('cf-', ''));
+			const cfId = parseInt(trashId.replace("cf-", ""));
 			if (isNaN(cfId)) continue;
 
 			for (const profileId of qualityProfileIds) {
@@ -337,15 +352,21 @@ export function BulkScoreManager({
 		}
 
 		if (profileToCFs.size === 0) {
-			toast.error("No instance-level overrides found for the selected custom formats. They are already using template defaults.");
+			toast.error(
+				"No instance-level overrides found for the selected custom formats. They are already using template defaults.",
+			);
 			return;
 		}
 
 		const profileCount = profileToCFs.size;
-		const totalOverrides = Array.from(profileToCFs.values()).reduce((sum, cfs) => sum + cfs.size, 0);
-		const confirmMessage = profileCount === 1
-			? `Reset ${totalOverrides} override(s) to template defaults?\n\nThis will remove instance-level overrides.`
-			: `Reset ${totalOverrides} override(s) across ${profileCount} quality profiles to template defaults?\n\nThis will remove instance-level overrides for the selected custom formats in all affected profiles.`;
+		const totalOverrides = Array.from(profileToCFs.values()).reduce(
+			(sum, cfs) => sum + cfs.size,
+			0,
+		);
+		const confirmMessage =
+			profileCount === 1
+				? `Reset ${totalOverrides} override(s) to template defaults?\n\nThis will remove instance-level overrides.`
+				: `Reset ${totalOverrides} override(s) across ${profileCount} quality profiles to template defaults?\n\nThis will remove instance-level overrides for the selected custom formats in all affected profiles.`;
 
 		if (!confirm(confirmMessage)) {
 			return;
@@ -357,24 +378,28 @@ export function BulkScoreManager({
 					instanceId,
 					qualityProfileId: profileId,
 					payload: { customFormatIds: Array.from(cfIds) },
-				})
+				}),
 			);
 
 			const results = await Promise.all(resetPromises);
 			const totalDeleted = results.reduce((sum, r) => sum + (r.deletedCount || 0), 0);
 
 			setSelectedCFs(new Set());
-			toast.success(`Successfully reset ${totalDeleted} override${totalDeleted === 1 ? "" : "s"} to template defaults`);
+			toast.success(
+				`Successfully reset ${totalDeleted} override${totalDeleted === 1 ? "" : "s"} to template defaults`,
+			);
 		} catch (error) {
 			console.error("Failed to bulk reset:", error);
 			const errorMessage = getErrorMessage(error, "Unknown error occurred");
-			toast.error(`Failed to reset overrides: ${errorMessage}. Some overrides may have been reset. Please refresh to see the current state.`);
+			toast.error(
+				`Failed to reset overrides: ${errorMessage}. Some overrides may have been reset. Please refresh to see the current state.`,
+			);
 		}
 	};
 
 	// Toggle CF selection
 	const toggleCFSelection = (cfTrashId: string) => {
-		setSelectedCFs(prev => {
+		setSelectedCFs((prev) => {
 			const newSet = new Set(prev);
 			if (newSet.has(cfTrashId)) {
 				newSet.delete(cfTrashId);
@@ -390,7 +415,7 @@ export function BulkScoreManager({
 		if (selectedCFs.size === filteredScores.length) {
 			setSelectedCFs(new Set());
 		} else {
-			setSelectedCFs(new Set(filteredScores.map(s => s.trashId)));
+			setSelectedCFs(new Set(filteredScores.map((s) => s.trashId)));
 		}
 	};
 
@@ -450,7 +475,9 @@ export function BulkScoreManager({
 						>
 							<option value="">Select Instance</option>
 							{instances
-								.filter((instance) => instance.service === "radarr" || instance.service === "sonarr")
+								.filter(
+									(instance) => instance.service === "radarr" || instance.service === "sonarr",
+								)
 								.map((instance) => (
 									<option key={instance.id} value={instance.id}>
 										{instance.label} ({instance.service.toUpperCase()})
@@ -479,7 +506,9 @@ export function BulkScoreManager({
 						onClick={() => setModifiedOnly(!modifiedOnly)}
 						className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all duration-200 border"
 						style={{
-							backgroundColor: modifiedOnly ? `${SEMANTIC_COLORS.warning.from}15` : "rgba(var(--card), 0.5)",
+							backgroundColor: modifiedOnly
+								? `${SEMANTIC_COLORS.warning.from}15`
+								: "rgba(var(--card), 0.5)",
 							borderColor: modifiedOnly ? SEMANTIC_COLORS.warning.from : "rgba(var(--border), 0.5)",
 							color: modifiedOnly ? SEMANTIC_COLORS.warning.from : undefined,
 						}}
@@ -521,7 +550,7 @@ export function BulkScoreManager({
 							</div>
 							<div>
 								<p className="font-medium text-foreground">
-									{modifiedScores.size} custom format{modifiedScores.size === 1 ? '' : 's'} modified
+									{modifiedScores.size} custom format{modifiedScores.size === 1 ? "" : "s"} modified
 								</p>
 								<p className="text-xs text-muted-foreground">Changes are not saved yet</p>
 							</div>
@@ -584,9 +613,11 @@ export function BulkScoreManager({
 							</div>
 							<div>
 								<p className="font-medium text-foreground">
-									{selectedCFs.size} custom format{selectedCFs.size === 1 ? '' : 's'} selected
+									{selectedCFs.size} custom format{selectedCFs.size === 1 ? "" : "s"} selected
 								</p>
-								<p className="text-xs text-muted-foreground">Select formats to reset their overrides</p>
+								<p className="text-xs text-muted-foreground">
+									Select formats to reset their overrides
+								</p>
 							</div>
 						</div>
 						<button
@@ -615,12 +646,17 @@ export function BulkScoreManager({
 									<button
 										type="button"
 										onClick={toggleSelectAll}
-										aria-label={filteredScores.length > 0 && selectedCFs.size === filteredScores.length ? "Deselect all custom formats" : "Select all custom formats"}
+										aria-label={
+											filteredScores.length > 0 && selectedCFs.size === filteredScores.length
+												? "Deselect all custom formats"
+												: "Select all custom formats"
+										}
 										className="flex h-6 w-6 mx-auto items-center justify-center rounded-lg transition-all duration-200"
 										style={{
-											backgroundColor: filteredScores.length > 0 && selectedCFs.size === filteredScores.length
-												? themeGradient.from
-												: "rgba(var(--muted), 0.3)",
+											backgroundColor:
+												filteredScores.length > 0 && selectedCFs.size === filteredScores.length
+													? themeGradient.from
+													: "rgba(var(--muted), 0.3)",
 											border: `1px solid ${filteredScores.length > 0 && selectedCFs.size === filteredScores.length ? themeGradient.from : "rgba(var(--border), 0.5)"}`,
 										}}
 									>
@@ -659,12 +695,16 @@ export function BulkScoreManager({
 											{instanceId ? (
 												<>
 													<AlertCircle className="h-10 w-10 text-muted-foreground" />
-													<p className="text-muted-foreground">No scores found for this instance.</p>
+													<p className="text-muted-foreground">
+														No scores found for this instance.
+													</p>
 												</>
 											) : (
 												<>
 													<SlidersHorizontal className="h-10 w-10 text-muted-foreground" />
-													<p className="text-muted-foreground">Select an instance to view scores.</p>
+													<p className="text-muted-foreground">
+														Select an instance to view scores.
+													</p>
 												</>
 											)}
 										</div>
@@ -684,7 +724,11 @@ export function BulkScoreManager({
 											<button
 												type="button"
 												onClick={() => toggleCFSelection(score.trashId)}
-												aria-label={selectedCFs.has(score.trashId) ? `Deselect ${score.name}` : `Select ${score.name}`}
+												aria-label={
+													selectedCFs.has(score.trashId)
+														? `Deselect ${score.name}`
+														: `Select ${score.name}`
+												}
 												className="flex h-6 w-6 mx-auto items-center justify-center rounded-lg transition-all duration-200"
 												style={{
 													backgroundColor: selectedCFs.has(score.trashId)
@@ -712,17 +756,20 @@ export function BulkScoreManager({
 														}}
 														title="Has modifications"
 													>
-														<Sparkles className="h-3 w-3" style={{ color: SEMANTIC_COLORS.warning.from }} />
+														<Sparkles
+															className="h-3 w-3"
+															style={{ color: SEMANTIC_COLORS.warning.from }}
+														/>
 													</span>
 												)}
 											</div>
 										</td>
 										{/* Editable score cells for each template */}
 										{score.templateScores.map((templateScore) => {
-											const cfId = parseInt(score.trashId.replace('cf-', ''));
-											const parts = templateScore.templateId.split('-');
+											const cfId = parseInt(score.trashId.replace("cf-", ""));
+											const parts = templateScore.templateId.split("-");
 											const lastPart = parts[parts.length - 1];
-											const profileId = parseInt(lastPart || '0');
+											const profileId = parseInt(lastPart || "0");
 
 											const overrideKey = `${profileId}-${cfId}`;
 											const hasOverride = overrideMap.has(overrideKey);
@@ -736,41 +783,47 @@ export function BulkScoreManager({
 															value={templateScore.currentScore}
 															onChange={(e) => {
 																const newScore = parseInt(e.target.value) || 0;
-																handleScoreChange(score.trashId, templateScore.templateId, newScore);
+																handleScoreChange(
+																	score.trashId,
+																	templateScore.templateId,
+																	newScore,
+																);
 															}}
 															className="w-full rounded-xl border px-3 py-2 text-center text-sm font-medium transition-all duration-200 focus:outline-hidden focus:ring-2"
 															style={{
 																borderColor: showOverrideUI
 																	? themeGradient.from
 																	: templateScore.isModified
-																	? SEMANTIC_COLORS.warning.border
-																	: "rgba(var(--border), 0.5)",
+																		? SEMANTIC_COLORS.warning.border
+																		: "rgba(var(--border), 0.5)",
 																backgroundColor: showOverrideUI
 																	? `${themeGradient.from}15`
 																	: templateScore.isModified
-																	? SEMANTIC_COLORS.warning.bg
-																	: "rgba(var(--card), 0.5)",
+																		? SEMANTIC_COLORS.warning.bg
+																		: "rgba(var(--card), 0.5)",
 																color: showOverrideUI
 																	? themeGradient.from
 																	: templateScore.isModified
-																	? SEMANTIC_COLORS.warning.text
-																	: undefined,
+																		? SEMANTIC_COLORS.warning.text
+																		: undefined,
 																["--tw-ring-color" as string]: themeGradient.from,
 															}}
 															title={
 																showOverrideUI
 																	? "Template-managed profile with instance override (persists across syncs)"
 																	: !templateScore.isTemplateManaged
-																	? "User-created profile (not managed by template)"
-																	: templateScore.isModified
-																	? `Modified from default (${templateScore.defaultScore})`
-																	: `Default: ${templateScore.defaultScore}`
+																		? "User-created profile (not managed by template)"
+																		: templateScore.isModified
+																			? `Modified from default (${templateScore.defaultScore})`
+																			: `Default: ${templateScore.defaultScore}`
 															}
 														/>
 														{showOverrideUI && (
 															<button
 																type="button"
-																onClick={() => handleDeleteOverride(templateScore.templateId, cfId, score.name)}
+																onClick={() =>
+																	handleDeleteOverride(templateScore.templateId, cfId, score.name)
+																}
 																className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full text-white transition-all duration-200 hover:scale-110"
 																style={{
 																	background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
@@ -797,12 +850,14 @@ export function BulkScoreManager({
 			{/* Summary Footer */}
 			<div className="flex items-center justify-between text-sm text-muted-foreground">
 				<span>
-					Showing <span className="font-medium text-foreground">{filteredScores.length}</span> custom format{filteredScores.length === 1 ? '' : 's'}
+					Showing <span className="font-medium text-foreground">{filteredScores.length}</span>{" "}
+					custom format{filteredScores.length === 1 ? "" : "s"}
 				</span>
 				{modifiedScores.size > 0 && (
 					<span className="flex items-center gap-2">
 						<Sparkles className="h-4 w-4" style={{ color: SEMANTIC_COLORS.warning.from }} />
-						<span className="font-medium text-foreground">{modifiedScores.size}</span> unsaved change{modifiedScores.size === 1 ? '' : 's'}
+						<span className="font-medium text-foreground">{modifiedScores.size}</span> unsaved
+						change{modifiedScores.size === 1 ? "" : "s"}
 					</span>
 				)}
 			</div>

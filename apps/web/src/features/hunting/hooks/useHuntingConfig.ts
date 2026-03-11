@@ -1,6 +1,10 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "../../../lib/api-client/base";
-import type { HuntConfigWithInstance, HuntConfigUpdate, InstanceSummary } from "../lib/hunting-types";
+import type {
+	HuntConfigUpdate,
+	HuntConfigWithInstance,
+	InstanceSummary,
+} from "../lib/hunting-types";
 
 interface HuntingConfigsResponse {
 	configs: (HuntConfigWithInstance | null)[];
@@ -23,7 +27,10 @@ async function fetchHuntingConfigs(): Promise<HuntingConfigsResponse> {
  * @param data - Partial hunt configuration fields to apply to the instance
  * @returns The updated hunt configuration including instance metadata
  */
-async function updateHuntConfig(instanceId: string, data: HuntConfigUpdate): Promise<HuntConfigWithInstance> {
+async function updateHuntConfig(
+	instanceId: string,
+	data: HuntConfigUpdate,
+): Promise<HuntConfigWithInstance> {
 	return apiRequest<HuntConfigWithInstance>(`/api/hunting/configs/${instanceId}`, {
 		method: "PATCH",
 		json: data,

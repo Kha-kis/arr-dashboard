@@ -1,9 +1,9 @@
 "use client";
 
 import type { TrashConfigType } from "@arr/shared";
-import { RefreshCw, Database, Clock, AlertTriangle, Package } from "lucide-react";
-import { SEMANTIC_COLORS, getServiceGradient } from "../../../lib/theme-gradients";
+import { AlertTriangle, Clock, Database, Package, RefreshCw } from "lucide-react";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 interface CacheStatusEntry {
 	serviceType: string;
@@ -113,7 +113,8 @@ const CacheStatusCard = ({
 				<div className="flex items-center gap-2.5 text-sm">
 					<Clock className="h-4 w-4 text-muted-foreground" />
 					<span className="text-muted-foreground">
-						Last fetched: <span className="text-foreground">{new Date(lastFetched).toLocaleString()}</span>
+						Last fetched:{" "}
+						<span className="text-foreground">{new Date(lastFetched).toLocaleString()}</span>
 					</span>
 				</div>
 			</div>
@@ -162,10 +163,7 @@ export const CacheStatusSection = ({
 						<Database className="h-5 w-5" style={{ color: serviceColor }} />
 					</div>
 					<div>
-						<h2
-							className="text-xl font-bold"
-							style={{ color: serviceColor }}
-						>
+						<h2 className="text-xl font-bold" style={{ color: serviceColor }}>
 							{serviceType}
 						</h2>
 						<p className="text-sm text-muted-foreground">

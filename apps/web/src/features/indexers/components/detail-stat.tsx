@@ -27,13 +27,8 @@ export const DetailStat = ({
 
 	return (
 		<div className="space-y-1.5">
-			<p className="text-xs uppercase tracking-wider font-medium text-muted-foreground">
-				{label}
-			</p>
-			<p
-				className="text-sm font-semibold"
-				style={{ color: color || "inherit" }}
-			>
+			<p className="text-xs uppercase tracking-wider font-medium text-muted-foreground">{label}</p>
+			<p className="text-sm font-semibold" style={{ color: color || "inherit" }}>
 				{value}
 			</p>
 		</div>

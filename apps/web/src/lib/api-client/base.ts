@@ -63,7 +63,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 	} catch (error) {
 		// Network error (API unreachable, CORS, etc.)
 		throw new NetworkError(
-			`Cannot connect to API server: ${getErrorMessage(error, "unknown error")}`
+			`Cannot connect to API server: ${getErrorMessage(error, "unknown error")}`,
 		);
 	}
 

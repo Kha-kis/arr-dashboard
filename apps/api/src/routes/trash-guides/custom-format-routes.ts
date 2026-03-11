@@ -5,16 +5,16 @@
  * Deploys custom formats directly without affecting quality profiles
  */
 
+import type { CustomFormatSpecification, TrashCustomFormat } from "@arr/shared";
+import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
+import { z } from "zod";
+import { requireInstance } from "../../lib/arr/instance-helpers.js";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
-import type { TrashCustomFormat, CustomFormatSpecification } from "@arr/shared";
-import type { SonarrClient, RadarrClient } from "arr-sdk";
-import { requireInstance } from "../../lib/arr/instance-helpers.js";
-import { validateRequest } from "../../lib/utils/validate.js";
-import { z } from "zod";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
+import { validateRequest } from "../../lib/utils/validate.js";
 
 // ============================================================================
 // Validation Schemas
@@ -80,7 +80,10 @@ export async function registerCustomFormatRoutes(
 		Body: z.infer<typeof deployMultipleSchema>;
 	}>("/deploy-multiple", async (request, reply) => {
 		// Validate request body
-		const { trashIds, instanceId, serviceType } = validateRequest(deployMultipleSchema, request.body);
+		const { trashIds, instanceId, serviceType } = validateRequest(
+			deployMultipleSchema,
+			request.body,
+		);
 
 		const instance = await requireInstance(app, request.currentUser!.id, instanceId);
 
@@ -186,8 +189,7 @@ export async function registerCustomFormatRoutes(
 					// Using double type assertion to bridge the gap between TRaSH format and SDK types
 					const newCF = {
 						name: customFormat.name,
-						includeCustomFormatWhenRenaming:
-							customFormat.includeCustomFormatWhenRenaming ?? false,
+						includeCustomFormatWhenRenaming: customFormat.includeCustomFormatWhenRenaming ?? false,
 						specifications,
 					};
 					await client.customFormat.create(

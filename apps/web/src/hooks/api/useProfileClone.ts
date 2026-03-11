@@ -2,8 +2,8 @@
  * API hooks for Quality Profile Clone operations
  */
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CompleteQualityProfile } from "@arr/shared";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 // ============================================================================
 // Types
@@ -74,9 +74,7 @@ export function useInstanceProfiles(instanceId: string | null) {
 		queryFn: async () => {
 			if (!instanceId) return [];
 
-			const response = await fetch(
-				`/api/trash-guides/profile-clone/profiles/${instanceId}`,
-			);
+			const response = await fetch(`/api/trash-guides/profile-clone/profiles/${instanceId}`);
 
 			if (!response.ok) {
 				let errorMessage = "Failed to fetch profiles";
@@ -104,14 +102,11 @@ export function useImportProfile() {
 
 	return useMutation({
 		mutationFn: async (request: ImportProfileRequest) => {
-			const response = await fetch(
-				"/api/trash-guides/profile-clone/import",
-				{
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify(request),
-				},
-			);
+			const response = await fetch("/api/trash-guides/profile-clone/import", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(request),
+			});
 
 			if (!response.ok) {
 				let errorMessage = "Failed to import profile";
@@ -145,14 +140,11 @@ export function useImportProfile() {
 export function usePreviewProfileDeployment() {
 	return useMutation({
 		mutationFn: async (request: PreviewProfileRequest) => {
-			const response = await fetch(
-				"/api/trash-guides/profile-clone/preview",
-				{
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify(request),
-				},
-			);
+			const response = await fetch("/api/trash-guides/profile-clone/preview", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(request),
+			});
 
 			if (!response.ok) {
 				let errorMessage = "Failed to preview deployment";
@@ -179,14 +171,11 @@ export function useDeployProfile() {
 
 	return useMutation({
 		mutationFn: async (request: DeployProfileRequest) => {
-			const response = await fetch(
-				"/api/trash-guides/profile-clone/deploy",
-				{
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify(request),
-				},
-			);
+			const response = await fetch("/api/trash-guides/profile-clone/deploy", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(request),
+			});
 
 			if (!response.ok) {
 				let errorMessage = "Failed to deploy profile";

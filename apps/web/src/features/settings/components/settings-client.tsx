@@ -1,44 +1,36 @@
 "use client";
 
+import { Archive, Bell, Cpu, Palette, Server, Settings, Shield, Tags, User } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
-	Settings,
-	Server,
-	Tags,
-	User,
-	Shield,
-	Palette,
-	Archive,
-	Cpu,
-} from "lucide-react";
-import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
-import { useTagsQuery } from "../../../hooks/api/useTags";
-import { useCurrentUser } from "../../../hooks/api/useAuth";
-import {
 	PremiumPageHeader,
-	PremiumTabs,
 	PremiumPageLoading,
 	type PremiumTab,
+	PremiumTabs,
 } from "../../../components/layout";
+import { useCurrentUser } from "../../../hooks/api/useAuth";
+import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
+import { useTagsQuery } from "../../../hooks/api/useTags";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { type TabType } from "../lib/settings-constants";
+import { NotificationsTab } from "../../notifications/components/notifications-tab";
 import {
+	useAccountManagement,
 	useServiceFormState,
 	useServicesManagement,
 	useTagsManagement,
-	useAccountManagement,
 } from "../hooks";
-import { ServicesTab } from "./services-tab";
-import { ServiceForm } from "./service-form";
-import { TagsTab } from "./tags-tab";
+import type { TabType } from "../lib/settings-constants";
 import { AccountTab } from "./account-tab";
+import { AppearanceTab } from "./appearance-tab";
+import { BackupTab } from "./backup-tab";
 import { OIDCProviderSection } from "./oidc-provider-section";
 import { PasskeySection } from "./passkey-section";
 import { PasswordSection } from "./password-section";
+import { ServiceForm } from "./service-form";
+import { ServicesTab } from "./services-tab";
 import { SessionsSection } from "./sessions-section";
-import { AppearanceTab } from "./appearance-tab";
-import { BackupTab } from "./backup-tab";
 import { SystemTab } from "./system-tab";
+import { TagsTab } from "./tags-tab";
 
 /**
  * Premium Settings Client
@@ -98,6 +90,7 @@ export const SettingsClient = () => {
 		{ id: "authentication", label: "Auth", icon: Shield },
 		{ id: "appearance", label: "Appearance", icon: Palette },
 		{ id: "backup", label: "Backup", icon: Archive },
+		{ id: "notifications", label: "Notifications", icon: Bell },
 		{ id: "system", label: "System", icon: Cpu },
 	];
 
@@ -175,11 +168,7 @@ export const SettingsClient = () => {
 
 				{/* Tags tab */}
 				{activeTab === "tags" && (
-					<div
-						role="tabpanel"
-						id="settings-panel-tags"
-						aria-labelledby="settings-tab-tags"
-					>
+					<div role="tabpanel" id="settings-panel-tags" aria-labelledby="settings-tab-tags">
 						<TagsTab
 							tags={tags}
 							newTagName={tagsManagement.newTagName}
@@ -194,11 +183,7 @@ export const SettingsClient = () => {
 
 				{/* Account tab */}
 				{activeTab === "account" && (
-					<div
-						role="tabpanel"
-						id="settings-panel-account"
-						aria-labelledby="settings-tab-account"
-					>
+					<div role="tabpanel" id="settings-panel-account" aria-labelledby="settings-tab-account">
 						<AccountTab
 							currentUser={currentUser}
 							accountForm={accountManagement.accountForm}
@@ -238,22 +223,25 @@ export const SettingsClient = () => {
 
 				{/* Backup tab */}
 				{activeTab === "backup" && (
+					<div role="tabpanel" id="settings-panel-backup" aria-labelledby="settings-tab-backup">
+						<BackupTab />
+					</div>
+				)}
+
+				{/* Notifications tab */}
+				{activeTab === "notifications" && (
 					<div
 						role="tabpanel"
-						id="settings-panel-backup"
-						aria-labelledby="settings-tab-backup"
+						id="settings-panel-notifications"
+						aria-labelledby="settings-tab-notifications"
 					>
-						<BackupTab />
+						<NotificationsTab />
 					</div>
 				)}
 
 				{/* System tab */}
 				{activeTab === "system" && (
-					<div
-						role="tabpanel"
-						id="settings-panel-system"
-						aria-labelledby="settings-tab-system"
-					>
+					<div role="tabpanel" id="settings-panel-system" aria-labelledby="settings-tab-system">
 						<SystemTab />
 					</div>
 				)}

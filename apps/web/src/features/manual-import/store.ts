@@ -1,11 +1,11 @@
 import { create } from "zustand";
+import { candidateKey } from "./helpers";
 import type {
 	ManualImportCandidateUnion,
 	ManualImportSelection,
 	ManualImportService,
 	ManualImportSubmissionFile,
 } from "./types";
-import { candidateKey } from "./helpers";
 
 type ManualImportUIState = {
 	selections: Record<string, ManualImportSelection>;
@@ -101,11 +101,16 @@ export const hasValidSelections = (
 		}
 
 		if (selection.service === "lidarr") {
-			return typeof selection.values.artistId === "number" && typeof selection.values.albumId === "number";
+			return (
+				typeof selection.values.artistId === "number" &&
+				typeof selection.values.albumId === "number"
+			);
 		}
 
 		if (selection.service === "readarr") {
-			return typeof selection.values.authorId === "number" && typeof selection.values.bookId === "number";
+			return (
+				typeof selection.values.authorId === "number" && typeof selection.values.bookId === "number"
+			);
 		}
 
 		return false;

@@ -64,7 +64,7 @@ export const HuntingOverview = ({ status, onRefresh }: HuntingOverviewProps) => 
 	}
 
 	const activeInstances = status.instances.filter(
-		(i) => i.huntMissingEnabled || i.huntUpgradesEnabled
+		(i) => i.huntMissingEnabled || i.huntUpgradesEnabled,
 	);
 	const totalSearchesToday = status.instances.reduce((sum, i) => sum + i.searchesToday, 0);
 	const totalItemsFound = status.instances.reduce((sum, i) => sum + i.itemsFoundToday, 0);
@@ -222,7 +222,11 @@ interface InstanceStatusCardProps {
 	animationDelay?: number;
 }
 
-const InstanceStatusCard = ({ instance, onRefresh, animationDelay = 0 }: InstanceStatusCardProps) => {
+const InstanceStatusCard = ({
+	instance,
+	onRefresh,
+	animationDelay = 0,
+}: InstanceStatusCardProps) => {
 	const { gradient: _themeGradient } = useThemeGradient();
 
 	const isActive = instance.huntMissingEnabled || instance.huntUpgradesEnabled;
@@ -316,20 +320,17 @@ const InstanceStatusCard = ({ instance, onRefresh, animationDelay = 0 }: Instanc
 			{/* Today's Stats */}
 			<div className="flex justify-between text-sm pt-3 border-t border-border/30">
 				<div className="text-muted-foreground">
-					<span className="font-semibold text-foreground">{instance.searchesToday}</span>{" "}
-					searches today
+					<span className="font-semibold text-foreground">{instance.searchesToday}</span> searches
+					today
 				</div>
 				<div className="text-muted-foreground">
-					<span className="font-semibold text-foreground">{instance.itemsFoundToday}</span>{" "}
-					items found
+					<span className="font-semibold text-foreground">{instance.itemsFoundToday}</span> items
+					found
 				</div>
 			</div>
 
 			{/* API Usage Indicator */}
-			<ApiUsageIndicator
-				current={instance.apiCallsThisHour}
-				max={instance.hourlyApiCap}
-			/>
+			<ApiUsageIndicator current={instance.apiCallsThisHour} max={instance.hourlyApiCap} />
 		</InstanceCard>
 	);
 };

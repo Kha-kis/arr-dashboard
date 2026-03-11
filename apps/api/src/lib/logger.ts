@@ -31,7 +31,8 @@ function resolveLogDir(): string {
 
 const VALID_LEVELS = new Set(["fatal", "error", "warn", "info", "debug", "trace"]);
 const rawLevel = process.env.LOG_LEVEL?.toLowerCase();
-export const LOG_LEVEL = rawLevel && VALID_LEVELS.has(rawLevel) ? rawLevel : isDev ? "debug" : "info";
+export const LOG_LEVEL =
+	rawLevel && VALID_LEVELS.has(rawLevel) ? rawLevel : isDev ? "debug" : "info";
 export const LOG_DIR = resolveLogDir();
 export const LOG_MAX_SIZE = process.env.LOG_MAX_SIZE || "10m";
 export const LOG_MAX_FILES = Number(process.env.LOG_MAX_FILES) || 10;

@@ -1,39 +1,77 @@
 "use client";
 
-import { useState, lazy, Suspense } from "react";
-import { useTemplateStats, useTemplate } from "../../../hooks/api/useTemplates";
-import { ChevronDown, ChevronUp, Calendar, Package, Activity, Rocket, Layers, History, SlidersHorizontal, Unlink2, RefreshCw, Bell, Hand, Sliders } from "lucide-react";
+import {
+	Activity,
+	Bell,
+	Calendar,
+	ChevronDown,
+	ChevronUp,
+	Hand,
+	History,
+	Layers,
+	Package,
+	RefreshCw,
+	Rocket,
+	Sliders,
+	SlidersHorizontal,
+	Unlink2,
+} from "lucide-react";
+import { lazy, Suspense, useState } from "react";
+import { useTemplate, useTemplateStats } from "../../../hooks/api/useTemplates";
 import { DeploymentHistoryTable } from "./deployment-history-table";
 import { InstanceOverrideEditor } from "./instance-override-editor";
 
 // Lazy-loaded modals — only fetched when the user opens them
-const BulkDeploymentModal = lazy(() => import("./bulk-deployment-modal").then(m => ({ default: m.BulkDeploymentModal })));
-const InstanceQualityOverrideModal = lazy(() => import("./instance-quality-override-modal").then(m => ({ default: m.InstanceQualityOverrideModal })));
-import { getEffectiveQualityConfig } from "../lib/quality-config-utils";
-import { LegacyDropdownMenu, LegacyDropdownMenuItem, Badge, Button } from "../../../components/ui";
+const BulkDeploymentModal = lazy(() =>
+	import("./bulk-deployment-modal").then((m) => ({ default: m.BulkDeploymentModal })),
+);
+const InstanceQualityOverrideModal = lazy(() =>
+	import("./instance-quality-override-modal").then((m) => ({
+		default: m.InstanceQualityOverrideModal,
+	})),
+);
+
+import { toast } from "sonner";
 import {
+	Badge,
+	Button,
 	LegacyDialog,
+	LegacyDialogContent,
+	LegacyDialogDescription,
+	LegacyDialogFooter,
 	LegacyDialogHeader,
 	LegacyDialogTitle,
-	LegacyDialogDescription,
-	LegacyDialogContent,
-	LegacyDialogFooter,
+	LegacyDropdownMenu,
+	LegacyDropdownMenuItem,
 } from "../../../components/ui";
-import { useUpdateSyncStrategy, useBulkUpdateSyncStrategy } from "../../../hooks/api/useDeploymentPreview";
-import { cn } from "../../../lib/utils";
+import {
+	useBulkUpdateSyncStrategy,
+	useUpdateSyncStrategy,
+} from "../../../hooks/api/useDeploymentPreview";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { toast } from "sonner";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { cn } from "../../../lib/utils";
+import { getEffectiveQualityConfig } from "../lib/quality-config-utils";
 
 // Helper to get sync strategy display info - color is handled dynamically for notify
 const getSyncStrategyInfo = (strategy: "auto" | "manual" | "notify") => {
 	switch (strategy) {
 		case "auto":
-			return { label: "Auto-sync", icon: RefreshCw, variant: "success" as const, colorClass: "text-green-500" };
+			return {
+				label: "Auto-sync",
+				icon: RefreshCw,
+				variant: "success" as const,
+				colorClass: "text-green-500",
+			};
 		case "notify":
 			return { label: "Notify", icon: Bell, variant: "info" as const, colorClass: null }; // Theme color
 		case "manual":
-			return { label: "Manual", icon: Hand, variant: "warning" as const, colorClass: "text-amber-500" };
+			return {
+				label: "Manual",
+				icon: Hand,
+				variant: "warning" as const,
+				colorClass: "text-amber-500",
+			};
 	}
 };
 
@@ -44,7 +82,12 @@ interface TemplateStatsProps {
 	onUnlinkInstance?: (instanceId: string, instanceName: string) => void;
 }
 
-export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInstance }: TemplateStatsProps) => {
+export const TemplateStats = ({
+	templateId,
+	templateName,
+	onDeploy,
+	onUnlinkInstance,
+}: TemplateStatsProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const [expanded, setExpanded] = useState(false);
 	const [showBulkDeployment, setShowBulkDeployment] = useState(false);
@@ -76,11 +119,14 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 				onError: (error) => {
 					toast.error(`Failed to update sync strategy: ${getErrorMessage(error, "Unknown error")}`);
 				},
-			}
+			},
 		);
 	};
 
-	const handleSyncStrategyChange = (instanceId: string, newStrategy: "auto" | "manual" | "notify") => {
+	const handleSyncStrategyChange = (
+		instanceId: string,
+		newStrategy: "auto" | "manual" | "notify",
+	) => {
 		const strategyLabel = getSyncStrategyInfo(newStrategy).label;
 		setUpdatingStrategyInstanceId(instanceId);
 		updateSyncStrategyMutation.mutate(
@@ -93,13 +139,13 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 					toast.error(`Failed to update sync strategy: ${getErrorMessage(error, "Unknown error")}`);
 				},
 				onSettled: () => setUpdatingStrategyInstanceId(null),
-			}
+			},
 		);
 	};
 
 	// Fetch template data when expanded or modal is open (to show quality override button and modal content)
 	const { data: templateData, isLoading: templateLoading } = useTemplate(
-		expanded || overrideModal || qualityOverrideModal ? templateId : null
+		expanded || overrideModal || qualityOverrideModal ? templateId : null,
 	);
 
 	const { data, isLoading } = useTemplateStats(templateId);
@@ -190,7 +236,9 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 					{stats.instances.length > 0 && (
 						<div className="space-y-2">
 							<div className="flex flex-col items-center gap-2">
-								<h4 className="text-sm font-medium text-muted-foreground">Instances Using This Template</h4>
+								<h4 className="text-sm font-medium text-muted-foreground">
+									Instances Using This Template
+								</h4>
 								{stats.instances.length > 1 && (
 									<div className="flex items-center gap-2">
 										<button
@@ -211,7 +259,8 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 												<div
 													className={cn(
 														"flex items-center gap-1 rounded border border-border bg-card px-2 py-1 text-xs font-medium text-muted-foreground transition hover:bg-card/80 cursor-pointer",
-														bulkUpdateSyncStrategyMutation.isPending && "opacity-50 pointer-events-none"
+														bulkUpdateSyncStrategyMutation.isPending &&
+															"opacity-50 pointer-events-none",
 													)}
 													title="Set sync strategy for all instances"
 												>
@@ -257,127 +306,151 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 									const isUpdating = updatingStrategyInstanceId === instance.instanceId;
 
 									return (
-									<div
-										key={instance.instanceId}
-										className="flex flex-col gap-2 rounded border border-border bg-card p-2"
-									>
-										{/* Top: Instance name + strategy badge */}
-										<div className="flex items-center justify-center gap-2">
-											<span className="text-sm font-medium text-foreground">{instance.instanceName}</span>
-											<Badge variant={strategyInfo.variant} className="text-[10px] px-1.5 py-0 flex items-center gap-1">
-												<StrategyIcon className={cn("h-2.5 w-2.5", isUpdating && "animate-spin")} />
-												{strategyInfo.label}
-											</Badge>
-										</div>
+										<div
+											key={instance.instanceId}
+											className="flex flex-col gap-2 rounded border border-border bg-card p-2"
+										>
+											{/* Top: Instance name + strategy badge */}
+											<div className="flex items-center justify-center gap-2">
+												<span className="text-sm font-medium text-foreground">
+													{instance.instanceName}
+												</span>
+												<Badge
+													variant={strategyInfo.variant}
+													className="text-[10px] px-1.5 py-0 flex items-center gap-1"
+												>
+													<StrategyIcon
+														className={cn("h-2.5 w-2.5", isUpdating && "animate-spin")}
+													/>
+													{strategyInfo.label}
+												</Badge>
+											</div>
 
-										{/* Bottom: Actions */}
-										<div className="flex items-center justify-center gap-1">
-											{onDeploy && (
+											{/* Bottom: Actions */}
+											<div className="flex items-center justify-center gap-1">
+												{onDeploy && (
+													<button
+														type="button"
+														onClick={(e) => {
+															e.stopPropagation();
+															onDeploy(instance.instanceId, instance.instanceName);
+														}}
+														className="flex items-center justify-center rounded bg-green-500/20 p-1.5 text-green-400 transition hover:bg-green-500/30"
+														title="Deploy template to this instance"
+													>
+														<Rocket className="h-3.5 w-3.5" />
+													</button>
+												)}
+												{/* Sync Strategy Dropdown - only enabled for mapped instances */}
+												{instance.hasMapping ? (
+													<LegacyDropdownMenu
+														trigger={
+															<div
+																className="flex items-center justify-center rounded border border-border bg-card p-1.5 text-muted-foreground transition hover:bg-card/80 cursor-pointer"
+																title="Change sync strategy"
+															>
+																<StrategyIcon
+																	className={cn(
+																		"h-3.5 w-3.5",
+																		strategyInfo.colorClass,
+																		isUpdating && "animate-spin",
+																	)}
+																/>
+															</div>
+														}
+														align="right"
+													>
+														<LegacyDropdownMenuItem
+															icon={<RefreshCw className="h-4 w-4 text-green-500" />}
+															onClick={() => handleSyncStrategyChange(instance.instanceId, "auto")}
+															disabled={isUpdating || instance.syncStrategy === "auto"}
+														>
+															Auto-sync
+														</LegacyDropdownMenuItem>
+														<LegacyDropdownMenuItem
+															icon={
+																<Bell className="h-4 w-4" style={{ color: themeGradient.from }} />
+															}
+															onClick={() =>
+																handleSyncStrategyChange(instance.instanceId, "notify")
+															}
+															disabled={isUpdating || instance.syncStrategy === "notify"}
+														>
+															Notify Only
+														</LegacyDropdownMenuItem>
+														<LegacyDropdownMenuItem
+															icon={<Hand className="h-4 w-4 text-amber-500" />}
+															onClick={() =>
+																handleSyncStrategyChange(instance.instanceId, "manual")
+															}
+															disabled={isUpdating || instance.syncStrategy === "manual"}
+														>
+															Manual
+														</LegacyDropdownMenuItem>
+													</LegacyDropdownMenu>
+												) : (
+													<div
+														className="flex items-center justify-center rounded border border-border bg-card p-1.5 text-muted-foreground/50 cursor-not-allowed"
+														title="Re-deploy template to change sync strategy"
+													>
+														<StrategyIcon className="h-3.5 w-3.5 text-muted-foreground/50" />
+													</div>
+												)}
 												<button
 													type="button"
 													onClick={(e) => {
 														e.stopPropagation();
-														onDeploy(instance.instanceId, instance.instanceName);
+														setOverrideModal({
+															instanceId: instance.instanceId,
+															instanceName: instance.instanceName,
+														});
 													}}
-													className="flex items-center justify-center rounded bg-green-500/20 p-1.5 text-green-400 transition hover:bg-green-500/30"
-													title="Deploy template to this instance"
+													className="flex items-center justify-center rounded border border-border bg-card p-1.5 text-muted-foreground transition hover:bg-card/80"
+													title="Manage instance score overrides"
 												>
-													<Rocket className="h-3.5 w-3.5" />
+													<SlidersHorizontal className="h-3.5 w-3.5" />
 												</button>
-											)}
-											{/* Sync Strategy Dropdown - only enabled for mapped instances */}
-											{instance.hasMapping ? (
-												<LegacyDropdownMenu
-													trigger={
-														<div className="flex items-center justify-center rounded border border-border bg-card p-1.5 text-muted-foreground transition hover:bg-card/80 cursor-pointer" title="Change sync strategy">
-															<StrategyIcon className={cn("h-3.5 w-3.5", strategyInfo.colorClass, isUpdating && "animate-spin")} />
-														</div>
-													}
-													align="right"
-												>
-													<LegacyDropdownMenuItem
-														icon={<RefreshCw className="h-4 w-4 text-green-500" />}
-														onClick={() => handleSyncStrategyChange(instance.instanceId, "auto")}
-														disabled={isUpdating || instance.syncStrategy === "auto"}
-													>
-														Auto-sync
-													</LegacyDropdownMenuItem>
-													<LegacyDropdownMenuItem
-														icon={<Bell className="h-4 w-4" style={{ color: themeGradient.from }} />}
-														onClick={() => handleSyncStrategyChange(instance.instanceId, "notify")}
-														disabled={isUpdating || instance.syncStrategy === "notify"}
-													>
-														Notify Only
-													</LegacyDropdownMenuItem>
-													<LegacyDropdownMenuItem
-														icon={<Hand className="h-4 w-4 text-amber-500" />}
-														onClick={() => handleSyncStrategyChange(instance.instanceId, "manual")}
-														disabled={isUpdating || instance.syncStrategy === "manual"}
-													>
-														Manual
-													</LegacyDropdownMenuItem>
-												</LegacyDropdownMenu>
-											) : (
-												<div
-													className="flex items-center justify-center rounded border border-border bg-card p-1.5 text-muted-foreground/50 cursor-not-allowed"
-													title="Re-deploy template to change sync strategy"
-												>
-													<StrategyIcon className="h-3.5 w-3.5 text-muted-foreground/50" />
-												</div>
-											)}
-											<button
-												type="button"
-												onClick={(e) => {
-													e.stopPropagation();
-													setOverrideModal({
-														instanceId: instance.instanceId,
-														instanceName: instance.instanceName,
-													});
-												}}
-												className="flex items-center justify-center rounded border border-border bg-card p-1.5 text-muted-foreground transition hover:bg-card/80"
-												title="Manage instance score overrides"
-											>
-												<SlidersHorizontal className="h-3.5 w-3.5" />
-											</button>
-											{/* Quality Override Button - configure instance-specific quality settings */}
-											<button
-												type="button"
-												onClick={(e) => {
-													e.stopPropagation();
-													setQualityOverrideModal({
-														instanceId: instance.instanceId,
-														instanceName: instance.instanceName,
-													});
-												}}
-												className="flex items-center justify-center rounded border border-purple-500/30 bg-purple-500/10 p-1.5 text-purple-500 transition hover:bg-purple-500/20"
-												title="Configure quality settings for this instance"
-											>
-												<Sliders className="h-3.5 w-3.5" />
-											</button>
-											{onUnlinkInstance && (
+												{/* Quality Override Button - configure instance-specific quality settings */}
 												<button
 													type="button"
 													onClick={(e) => {
 														e.stopPropagation();
-														onUnlinkInstance(instance.instanceId, instance.instanceName);
+														setQualityOverrideModal({
+															instanceId: instance.instanceId,
+															instanceName: instance.instanceName,
+														});
 													}}
-													className="flex items-center justify-center rounded bg-red-500/20 p-1.5 text-red-400 transition hover:bg-red-500/30"
-													title="Remove template from this instance"
+													className="flex items-center justify-center rounded border border-purple-500/30 bg-purple-500/10 p-1.5 text-purple-500 transition hover:bg-purple-500/20"
+													title="Configure quality settings for this instance"
 												>
-													<Unlink2 className="h-3.5 w-3.5" />
+													<Sliders className="h-3.5 w-3.5" />
 												</button>
-											)}
+												{onUnlinkInstance && (
+													<button
+														type="button"
+														onClick={(e) => {
+															e.stopPropagation();
+															onUnlinkInstance(instance.instanceId, instance.instanceName);
+														}}
+														className="flex items-center justify-center rounded bg-red-500/20 p-1.5 text-red-400 transition hover:bg-red-500/30"
+														title="Remove template from this instance"
+													>
+														<Unlink2 className="h-3.5 w-3.5" />
+													</button>
+												)}
+											</div>
 										</div>
-									</div>
-								);
-							})}
+									);
+								})}
 							</div>
 						</div>
 					)}
 
 					{stats.instances.length === 0 && (
 						<div className="rounded border border-border bg-card p-4 text-center">
-							<p className="text-sm text-muted-foreground">No instances have used this template yet.</p>
+							<p className="text-sm text-muted-foreground">
+								No instances have used this template yet.
+							</p>
 						</div>
 					)}
 				</div>
@@ -415,9 +488,7 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 							Deployment History
 						</div>
 					</LegacyDialogTitle>
-					<LegacyDialogDescription>
-						{templateName}
-					</LegacyDialogDescription>
+					<LegacyDialogDescription>{templateName}</LegacyDialogDescription>
 				</LegacyDialogHeader>
 
 				<LegacyDialogContent>
@@ -460,7 +531,9 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 							let defaultScore = 0;
 
 							// Cast originalConfig to access trash_scores (actual TRaSH API data has this)
-							const originalConfig = cf.originalConfig as { trash_scores?: Record<string, number>; score?: number } | undefined;
+							const originalConfig = cf.originalConfig as
+								| { trash_scores?: Record<string, number>; score?: number }
+								| undefined;
 
 							// Priority 1: User's score override
 							if (cf.scoreOverride !== undefined && cf.scoreOverride !== null) {
@@ -503,7 +576,12 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 						templateName={templateName}
 						instanceId={qualityOverrideModal.instanceId}
 						instanceLabel={qualityOverrideModal.instanceName}
-						serviceType={(templateData?.template?.serviceType ?? stats?.instances.find(i => i.instanceId === qualityOverrideModal.instanceId)?.instanceType ?? "RADARR") as "RADARR" | "SONARR"}
+						serviceType={
+							(templateData?.template?.serviceType ??
+								stats?.instances.find((i) => i.instanceId === qualityOverrideModal.instanceId)
+									?.instanceType ??
+								"RADARR") as "RADARR" | "SONARR"
+						}
 						templateDefaultConfig={getEffectiveQualityConfig(templateData?.template?.config)}
 						onSaved={() => {
 							// Optionally refresh data

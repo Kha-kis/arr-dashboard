@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
-import type { LucideIcon } from "lucide-react";
-import { Loader2, ChevronLeft, ChevronRight, AlertCircle } from "lucide-react";
 import type { SeerrDiscoverResult } from "@arr/shared";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import type { LucideIcon } from "lucide-react";
+import { AlertCircle, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PremiumSkeleton } from "../../../components/layout";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { DiscoverPosterCard } from "./discover-poster-card";
 
 // ============================================================================
@@ -212,8 +212,7 @@ export const DiscoverCarousel: React.FC<DiscoverCarouselProps> = ({
 					ref={scrollContainerRef}
 					className="flex gap-4 overflow-x-auto pb-4 scrollbar-none"
 					style={{
-						maskImage:
-							"linear-gradient(to right, transparent, black 1%, black 99%, transparent)",
+						maskImage: "linear-gradient(to right, transparent, black 1%, black 99%, transparent)",
 						WebkitMaskImage:
 							"linear-gradient(to right, transparent, black 1%, black 99%, transparent)",
 					}}
@@ -236,10 +235,7 @@ export const DiscoverCarousel: React.FC<DiscoverCarouselProps> = ({
 									border: `1px solid ${themeGradient.from}30`,
 								}}
 							>
-								<Loader2
-									className="h-5 w-5 animate-spin"
-									style={{ color: themeGradient.from }}
-								/>
+								<Loader2 className="h-5 w-5 animate-spin" style={{ color: themeGradient.from }} />
 							</div>
 						</div>
 					)}

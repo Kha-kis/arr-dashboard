@@ -1,14 +1,14 @@
 import type {
 	ManualImportCandidate,
-	ManualImportCandidateRadarr,
-	ManualImportCandidateSonarr,
 	ManualImportCandidateLidarr,
+	ManualImportCandidateRadarr,
 	ManualImportCandidateReadarr,
-	ManualImportSubmissionFile,
+	ManualImportCandidateSonarr,
 	ManualImportServiceType,
+	ManualImportSubmissionFile,
 } from "@arr/shared";
 import { manualImportCandidateListSchema, manualImportCandidateSchema } from "@arr/shared";
-import type { SonarrClient, RadarrClient, LidarrClient, ReadarrClient } from "arr-sdk";
+import type { LidarrClient, RadarrClient, ReadarrClient, SonarrClient } from "arr-sdk";
 import { toNumber, toStringValue } from "../lib/data/values.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 
@@ -394,7 +394,9 @@ export const collectAutoManualImportFiles = (
 
 		if (service === "sonarr") {
 			if (candidate.service !== "sonarr") {
-				skipped.push(`${humanName}: service type mismatch (expected sonarr, got ${candidate.service})`);
+				skipped.push(
+					`${humanName}: service type mismatch (expected sonarr, got ${candidate.service})`,
+				);
 				continue;
 			}
 
@@ -425,7 +427,9 @@ export const collectAutoManualImportFiles = (
 			});
 		} else if (service === "radarr") {
 			if (candidate.service !== "radarr") {
-				skipped.push(`${humanName}: service type mismatch (expected radarr, got ${candidate.service})`);
+				skipped.push(
+					`${humanName}: service type mismatch (expected radarr, got ${candidate.service})`,
+				);
 				continue;
 			}
 
@@ -450,7 +454,9 @@ export const collectAutoManualImportFiles = (
 			});
 		} else if (service === "lidarr") {
 			if (candidate.service !== "lidarr") {
-				skipped.push(`${humanName}: service type mismatch (expected lidarr, got ${candidate.service})`);
+				skipped.push(
+					`${humanName}: service type mismatch (expected lidarr, got ${candidate.service})`,
+				);
 				continue;
 			}
 
@@ -477,7 +483,9 @@ export const collectAutoManualImportFiles = (
 			});
 		} else if (service === "readarr") {
 			if (candidate.service !== "readarr") {
-				skipped.push(`${humanName}: service type mismatch (expected readarr, got ${candidate.service})`);
+				skipped.push(
+					`${humanName}: service type mismatch (expected readarr, got ${candidate.service})`,
+				);
 				continue;
 			}
 
@@ -549,7 +557,9 @@ const buildCommandFiles = (
 		if (service === "radarr") {
 			const movieId = file.movieId;
 			if (typeof movieId !== "number") {
-				throw new ManualImportError(`File at index ${index} is missing movie selection for Radarr.`);
+				throw new ManualImportError(
+					`File at index ${index} is missing movie selection for Radarr.`,
+				);
 			}
 
 			const commandFile: Record<string, unknown> = {

@@ -1,14 +1,20 @@
 "use client";
 
+import {
+	LIBRARY_SERVICES,
+	type LibraryItem,
+	type LibraryService,
+	type Pagination,
+	type ServiceInstanceSummary,
+} from "@arr/shared";
 import { useMemo } from "react";
-import type { LibraryItem, LibraryService, ServiceInstanceSummary, Pagination } from "@arr/shared";
 import { useLibraryQuery, useLibrarySyncStatus } from "../../../hooks/api/useLibrary";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import type {
-	StatusFilterValue,
 	FileFilterValue,
 	SortByValue,
 	SortOrderValue,
+	StatusFilterValue,
 } from "./use-library-filters";
 
 /**
@@ -109,8 +115,7 @@ export function useLibraryData(params: LibraryDataParams): LibraryData {
 	// Convert filter values to API format
 	const monitoredFilter =
 		statusFilter === "all" ? "all" : statusFilter === "monitored" ? "true" : "false";
-	const hasFileFilter =
-		fileFilter === "all" ? "all" : fileFilter === "has-file" ? "true" : "false";
+	const hasFileFilter = fileFilter === "all" ? "all" : fileFilter === "has-file" ? "true" : "false";
 
 	// Fetch library data with server-side pagination
 	const libraryQuery = useLibraryQuery({
@@ -164,9 +169,7 @@ export function useLibraryData(params: LibraryDataParams): LibraryData {
 	// Check if any instance is currently syncing
 	const isSyncing = useMemo(() => {
 		if (syncStatus?.syncInProgress) return true;
-		return (
-			syncStatusQuery.data?.instances.some((inst) => inst.syncStatus.syncInProgress) ?? false
-		);
+		return syncStatusQuery.data?.instances.some((inst) => inst.syncStatus.syncInProgress) ?? false;
 	}, [syncStatus, syncStatusQuery.data]);
 
 	// Create service lookup map for external links
@@ -185,11 +188,8 @@ export function useLibraryData(params: LibraryDataParams): LibraryData {
 	const instanceOptions = useMemo<InstanceOption[]>(() => {
 		const services = servicesQuery.data ?? [];
 		// ServiceInstanceSummary uses uppercase service names
-		const arrServices = services.filter(
-			(s) => {
-				const upper = s.service.toUpperCase();
-				return upper === "SONARR" || upper === "RADARR" || upper === "LIDARR" || upper === "READARR";
-			},
+		const arrServices = services.filter((s) =>
+			(LIBRARY_SERVICES as readonly string[]).includes(s.service.toLowerCase()),
 		);
 
 		const serviceLabels: Record<string, string> = {

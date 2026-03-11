@@ -1,7 +1,7 @@
 "use client";
 
+import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { Plus, Trash2, ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "../../../components/ui";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
@@ -63,9 +63,7 @@ export function SpecificationBuilder({ specifications, onChange }: Specification
 	};
 
 	const updateSpecification = (index: number, updates: Partial<SpecificationData>) => {
-		const updated = specifications.map((spec, i) =>
-			i === index ? { ...spec, ...updates } : spec,
-		);
+		const updated = specifications.map((spec, i) => (i === index ? { ...spec, ...updates } : spec));
 		onChange(updated);
 	};
 
@@ -102,12 +100,7 @@ export function SpecificationBuilder({ specifications, onChange }: Specification
 				<label className="text-sm font-medium text-foreground">
 					Specifications ({specifications.length})
 				</label>
-				<Button
-					variant="outline"
-					size="sm"
-					onClick={addSpecification}
-					className="gap-1.5"
-				>
+				<Button variant="outline" size="sm" onClick={addSpecification} className="gap-1.5">
 					<Plus className="h-3.5 w-3.5" />
 					Add Spec
 				</Button>
@@ -143,7 +136,8 @@ export function SpecificationBuilder({ specifications, onChange }: Specification
 									{spec.name || `Specification ${index + 1}`}
 								</span>
 								<span className="text-xs text-muted-foreground shrink-0">
-									{IMPLEMENTATION_TYPES.find(t => t.value === spec.implementation)?.label || spec.implementation}
+									{IMPLEMENTATION_TYPES.find((t) => t.value === spec.implementation)?.label ||
+										spec.implementation}
 								</span>
 								{spec.negate && (
 									<span className="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] font-medium text-red-400">
@@ -199,7 +193,7 @@ export function SpecificationBuilder({ specifications, onChange }: Specification
 												</option>
 											))}
 											{/* Allow custom implementation types not in our list */}
-											{!IMPLEMENTATION_TYPES.some(t => t.value === spec.implementation) && (
+											{!IMPLEMENTATION_TYPES.some((t) => t.value === spec.implementation) && (
 												<option value={spec.implementation}>{spec.implementation}</option>
 											)}
 										</select>
@@ -211,9 +205,7 @@ export function SpecificationBuilder({ specifications, onChange }: Specification
 											<input
 												type="checkbox"
 												checked={spec.negate}
-												onChange={(e) =>
-													updateSpecification(index, { negate: e.target.checked })
-												}
+												onChange={(e) => updateSpecification(index, { negate: e.target.checked })}
 												className="h-4 w-4 rounded border-border bg-muted text-primary focus:ring-primary"
 											/>
 											<span className="text-foreground">Negate</span>
@@ -222,9 +214,7 @@ export function SpecificationBuilder({ specifications, onChange }: Specification
 											<input
 												type="checkbox"
 												checked={spec.required}
-												onChange={(e) =>
-													updateSpecification(index, { required: e.target.checked })
-												}
+												onChange={(e) => updateSpecification(index, { required: e.target.checked })}
 												className="h-4 w-4 rounded border-border bg-muted text-primary focus:ring-primary"
 											/>
 											<span className="text-foreground">Required</span>
