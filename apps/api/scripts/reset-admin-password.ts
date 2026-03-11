@@ -3,7 +3,7 @@
 import "dotenv/config";
 import * as readline from "node:readline";
 import { PrismaClient } from "@prisma/client";
-import { hashPassword } from "../src/utils/password.js";
+import { hashPassword } from "../src/lib/auth/password.js";
 
 const prisma = new PrismaClient();
 

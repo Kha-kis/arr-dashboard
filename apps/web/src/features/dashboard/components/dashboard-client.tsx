@@ -7,6 +7,7 @@ import {
 	AlertCircle,
 	AlertTriangle,
 	BookOpen,
+	ChevronDown,
 	ChevronRight,
 	Film,
 	ListOrdered,
@@ -33,6 +34,7 @@ import {
 } from "../../../components/ui";
 import { useNowPlaying } from "../../../hooks/api/usePlex";
 import { useTautulliActivity } from "../../../hooks/api/useTautulli";
+import { useDashboardStatisticsQuery } from "../../../hooks/api/useDashboard";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
@@ -67,14 +69,6 @@ const SERVICE_CONFIG = {
 	readarr: { ...SERVICE_GRADIENTS.readarr, icon: BookOpen, label: "Readarr" },
 } as const;
 
-/** Descriptions for each service type shown on stat cards */
-const SERVICE_DESCRIPTIONS: Record<keyof typeof SERVICE_CONFIG, string> = {
-	sonarr: "Active TV show instances",
-	radarr: "Active movie instances",
-	lidarr: "Active music instances",
-	readarr: "Active book instances",
-	prowlarr: "Indexer management instances",
-};
 
 /**
  * Animated Service Stat Card
@@ -84,6 +78,8 @@ const ServiceStatCard = ({
 	service,
 	value,
 	description,
+	subtitle,
+	detail,
 	onClick,
 	isQueue = false,
 	animationDelay = 0,
@@ -92,6 +88,8 @@ const ServiceStatCard = ({
 	service: keyof typeof SERVICE_CONFIG | "queue";
 	value: number;
 	description: string;
+	subtitle?: string;
+	detail?: string;
 	onClick?: () => void;
 	isQueue?: boolean;
 	animationDelay?: number;
@@ -222,6 +220,16 @@ const ServiceStatCard = ({
 				{/* Description */}
 				<p className="mt-1 text-xs text-muted-foreground">{description}</p>
 
+				{/* Subtitle — stat detail line */}
+				{subtitle && (
+					<p className="mt-1 text-xs text-muted-foreground/80">{subtitle}</p>
+				)}
+
+				{/* Detail — instance count note */}
+				{detail && (
+					<p className="mt-1.5 text-xs text-muted-foreground/50">{detail}</p>
+				)}
+
 				{/* Active indicator line */}
 				<div
 					className={cn(
@@ -267,9 +275,14 @@ export const DashboardClient = () => {
 	const [incognitoMode] = useIncognitoMode();
 	const [activeTab, setActiveTab] = useState<DashboardTab>("overview");
 	const [isRefreshing, setIsRefreshing] = useState(false);
+	const [instancesExpanded, setInstancesExpanded] = useState(false);
 
 	// Get the user's selected color theme
 	const { gradient: themeGradient } = useThemeGradient();
+
+	// Statistics data
+	const statsQuery = useDashboardStatisticsQuery();
+	const stats = statsQuery.data;
 
 	// Data hooks
 	const {
@@ -517,19 +530,65 @@ export const DashboardClient = () => {
 				{/* Overview Tab */}
 				{activeTab === "overview" && (
 					<div className="flex flex-col gap-10 animate-in fade-in duration-300">
-						{/* Service Stats Grid — only shows service types with enabled instances */}
+						{/* Service Stats Grid — enriched with real statistics */}
 						<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
 							{(Object.keys(SERVICE_CONFIG) as (keyof typeof SERVICE_CONFIG)[])
 								.filter((key) => (groupedByService[key] ?? 0) > 0)
-								.map((key, index) => (
-									<ServiceStatCard
-										key={key}
-										service={key}
-										value={groupedByService[key] ?? 0}
-										description={SERVICE_DESCRIPTIONS[key]}
-										animationDelay={100 + index * 50}
-									/>
-								))}
+								.map((key, index) => {
+									const instanceCount = groupedByService[key] ?? 0;
+									const instanceNote = `${instanceCount} instance${instanceCount !== 1 ? "s" : ""}`;
+									let statValue = instanceCount;
+									let description = "";
+									let subtitle: string | undefined;
+
+									if (key === "sonarr" && stats?.sonarr?.aggregate) {
+										const agg = stats.sonarr.aggregate;
+										statValue = agg.totalSeries;
+										description = "TV series";
+										subtitle = `${agg.monitoredSeries} monitored · ${Math.round(agg.downloadedPercentage)}% downloaded`;
+									} else if (key === "radarr" && stats?.radarr?.aggregate) {
+										const agg = stats.radarr.aggregate;
+										statValue = agg.totalMovies;
+										description = "Movies";
+										subtitle = `${agg.monitoredMovies} monitored · ${Math.round(agg.downloadedPercentage)}% downloaded`;
+									} else if (key === "prowlarr" && stats?.prowlarr?.aggregate) {
+										const agg = stats.prowlarr.aggregate;
+										statValue = agg.totalIndexers;
+										description = "Indexers";
+										subtitle = `${agg.activeIndexers} active · ${agg.pausedIndexers} paused`;
+									} else if (key === "lidarr" && stats?.lidarr?.aggregate) {
+										const agg = stats.lidarr.aggregate;
+										statValue = agg.totalArtists;
+										description = "Artists";
+										subtitle = `${agg.monitoredArtists} monitored · ${Math.round(agg.downloadedPercentage)}% downloaded`;
+									} else if (key === "readarr" && stats?.readarr?.aggregate) {
+										const agg = stats.readarr.aggregate;
+										statValue = agg.totalAuthors;
+										description = "Authors";
+										subtitle = `${agg.monitoredAuthors} monitored · ${Math.round(agg.downloadedPercentage)}% downloaded`;
+									} else {
+										const fallbacks: Record<keyof typeof SERVICE_CONFIG, string> = {
+											sonarr: "Active TV show instances",
+											radarr: "Active movie instances",
+											lidarr: "Active music instances",
+											readarr: "Active book instances",
+											prowlarr: "Indexer management instances",
+										};
+										description = fallbacks[key];
+									}
+
+									return (
+										<ServiceStatCard
+											key={key}
+											service={key}
+											value={statValue}
+											description={description}
+											subtitle={subtitle}
+											detail={instanceNote}
+											animationDelay={100 + index * 50}
+										/>
+									);
+								})}
 							<ServiceStatCard
 								service="queue"
 								value={totalQueueItems}
@@ -541,104 +600,131 @@ export const DashboardClient = () => {
 							/>
 						</div>
 
-						{/* Seerr Requests Widget — only if instance configured */}
-						{seerrInstance && (
-							<SeerrRequestsWidget instanceId={seerrInstance.id} animationDelay={400} />
+						{/* Two-column widget grid for media widgets */}
+						{(seerrInstance || hasMediaServer) && (
+							<div className="grid gap-6 lg:grid-cols-2">
+								{/* Left column */}
+								<div className="space-y-6">
+									{seerrInstance && (
+										<SeerrRequestsWidget instanceId={seerrInstance.id} animationDelay={400} />
+									)}
+									{hasMediaServer && sessionCount !== undefined && sessionCount > 0 && (
+										<NowPlayingWidget
+											hasPlexInstances={hasPlexInstances}
+											hasTautulliInstances={hasTautulliInstances}
+											animationDelay={450}
+											variant="compact"
+										/>
+									)}
+								</div>
+								{/* Right column */}
+								<div className="space-y-6">
+									<PlexServerInfoWidget
+										enabled={hasPlexInstances}
+										animationDelay={475}
+										variant="compact"
+									/>
+								</div>
+							</div>
 						)}
 
-						{/* Now Playing Widget — compact mode on overview */}
-						{hasMediaServer && (
-							<NowPlayingWidget
-								hasPlexInstances={hasPlexInstances}
-								hasTautulliInstances={hasTautulliInstances}
-								animationDelay={450}
-								variant="compact"
-							/>
-						)}
-
-						{/* Plex Server Identity — compact info card */}
-						<PlexServerInfoWidget
-							enabled={hasPlexInstances}
-							animationDelay={475}
-							variant="compact"
-						/>
-
-						{/* On Deck / Continue Watching */}
+						{/* Full-width media carousels */}
 						<OnDeckWidget enabled={hasPlexInstances} animationDelay={500} />
-
-						{/* Recently Added */}
 						<RecentlyAddedWidget enabled={hasPlexInstances} animationDelay={525} />
 
-						{/* Configured Instances Section */}
+						{/* Configured Instances Section — collapsible */}
 						<div
 							className="animate-in fade-in slide-in-from-bottom-4 duration-500"
 							style={{ animationDelay: "550ms", animationFillMode: "backwards" }}
 						>
 							<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs overflow-hidden">
-								<div className="flex items-center gap-3 px-6 py-4 border-b border-border/50">
-									<div
-										className="flex h-10 w-10 items-center justify-center rounded-xl"
-										style={{
-											background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
-											border: `1px solid ${themeGradient.from}30`,
-										}}
-									>
-										<Server className="h-5 w-5" style={{ color: themeGradient.from }} />
-									</div>
-									<div>
-										<h2 className="text-lg font-semibold">Configured Instances</h2>
-										<p className="text-sm text-muted-foreground">
-											{enabledServices.length > 0
-												? `${enabledServices.length} active service${enabledServices.length !== 1 ? "s" : ""}`
-												: services.length > 0
-													? `${services.length} instance${services.length !== 1 ? "s" : ""} disabled`
-													: "Add your first instance to get started"}
-										</p>
-									</div>
-								</div>
-
-								<div className="p-6">
-									{enabledServices.length === 0 ? (
-										<div className="text-center py-12">
-											<div
-												className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full"
-												style={{
-													background: `linear-gradient(135deg, ${themeGradient.from}10, ${themeGradient.to}10)`,
-												}}
-											>
-												<Zap className="h-8 w-8" style={{ color: themeGradient.from }} />
-											</div>
-											{services.length > 0 ? (
-												<>
-													<h3 className="text-lg font-medium mb-1">All instances disabled</h3>
-													<p className="text-sm text-muted-foreground max-w-sm mx-auto">
-														Enable instances from the{" "}
-														<Link
-															href="/settings"
-															className="underline hover:text-foreground transition-colors"
-														>
-															Settings
-														</Link>{" "}
-														page to see them here.
-													</p>
-												</>
+								<button
+									type="button"
+									onClick={() => setInstancesExpanded((v) => !v)}
+									className="w-full flex items-center justify-between gap-3 px-6 py-4 hover:bg-card/50 transition-colors duration-200"
+								>
+									<div className="flex items-center gap-3">
+										<div
+											className="flex h-10 w-10 items-center justify-center rounded-xl"
+											style={{
+												background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+												border: `1px solid ${themeGradient.from}30`,
+											}}
+										>
+											<Server className="h-5 w-5" style={{ color: themeGradient.from }} />
+										</div>
+										<div className="text-left">
+											<h2 className="text-lg font-semibold">Configured Instances</h2>
+											{!instancesExpanded && enabledServices.length > 0 ? (
+												<p className="text-sm text-muted-foreground">
+													{enabledServices.length} active service{enabledServices.length !== 1 ? "s" : ""} across{" "}
+													{[...new Set(enabledServices.map((s) => s.service.charAt(0).toUpperCase() + s.service.slice(1)))].join(", ")}
+												</p>
 											) : (
-												<>
-													<h3 className="text-lg font-medium mb-1">No instances configured</h3>
-													<p className="text-sm text-muted-foreground max-w-sm mx-auto">
-														Add a Sonarr, Radarr, Lidarr, Readarr, or Prowlarr instance from the
-														Settings page to begin monitoring.
-													</p>
-												</>
+												<p className="text-sm text-muted-foreground">
+													{enabledServices.length > 0
+														? `${enabledServices.length} active service${enabledServices.length !== 1 ? "s" : ""}`
+														: services.length > 0
+															? `${services.length} instance${services.length !== 1 ? "s" : ""} disabled`
+															: "Add your first instance to get started"}
+												</p>
 											)}
 										</div>
-									) : (
-										<ServiceInstancesTable
-											instances={enabledServices}
-											incognitoMode={incognitoMode}
-										/>
-									)}
-								</div>
+									</div>
+									<ChevronDown
+										className={cn(
+											"h-5 w-5 text-muted-foreground transition-transform duration-300",
+											instancesExpanded && "rotate-180",
+										)}
+									/>
+								</button>
+
+								{instancesExpanded && (
+									<div className="border-t border-border/50">
+										<div className="p-6">
+											{enabledServices.length === 0 ? (
+												<div className="text-center py-12">
+													<div
+														className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full"
+														style={{
+															background: `linear-gradient(135deg, ${themeGradient.from}10, ${themeGradient.to}10)`,
+														}}
+													>
+														<Zap className="h-8 w-8" style={{ color: themeGradient.from }} />
+													</div>
+													{services.length > 0 ? (
+														<>
+															<h3 className="text-lg font-medium mb-1">All instances disabled</h3>
+															<p className="text-sm text-muted-foreground max-w-sm mx-auto">
+																Enable instances from the{" "}
+																<Link
+																	href="/settings"
+																	className="underline hover:text-foreground transition-colors"
+																>
+																	Settings
+																</Link>{" "}
+																page to see them here.
+															</p>
+														</>
+													) : (
+														<>
+															<h3 className="text-lg font-medium mb-1">No instances configured</h3>
+															<p className="text-sm text-muted-foreground max-w-sm mx-auto">
+																Add a Sonarr, Radarr, Lidarr, Readarr, or Prowlarr instance from the
+																Settings page to begin monitoring.
+															</p>
+														</>
+													)}
+												</div>
+											) : (
+												<ServiceInstancesTable
+													instances={enabledServices}
+													incognitoMode={incognitoMode}
+												/>
+											)}
+										</div>
+									</div>
+								)}
 							</div>
 						</div>
 					</div>

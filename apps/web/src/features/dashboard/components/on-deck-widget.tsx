@@ -1,11 +1,13 @@
 "use client";
 
-import { Film, PlayCircle, Tv } from "lucide-react";
+import Link from "next/link";
+import { ExternalLink, Film, PlayCircle, Tv } from "lucide-react";
 import { GlassmorphicCard } from "../../../components/layout";
 import { useOnDeck } from "../../../hooks/api/usePlex";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 
 const plexGradient = SERVICE_GRADIENTS.plex;
+const MAX_DISPLAY = 10;
 
 interface OnDeckWidgetProps {
 	enabled: boolean;
@@ -16,6 +18,9 @@ export const OnDeckWidget = ({ enabled, animationDelay = 0 }: OnDeckWidgetProps)
 	const { data, isLoading, isError } = useOnDeck(enabled);
 
 	if (!enabled || isLoading || isError || !data?.items?.length) return null;
+
+	const displayItems = data.items.slice(0, MAX_DISPLAY);
+	const remaining = data.items.length - MAX_DISPLAY;
 
 	return (
 		<div
@@ -49,33 +54,68 @@ export const OnDeckWidget = ({ enabled, animationDelay = 0 }: OnDeckWidgetProps)
 
 				<div className="overflow-x-auto">
 					<div className="flex gap-3 p-4 min-w-min">
-						{data.items.map((item, index) => {
+						{displayItems.map((item, index) => {
 							const MediaIcon = item.mediaType === "movie" ? Film : Tv;
+							const bgGradient =
+								item.mediaType === "movie"
+									? "linear-gradient(160deg, #92400e 0%, #f59e0b 100%)"
+									: "linear-gradient(160deg, #164e63 0%, #06b6d4 100%)";
+							const tmdbPath =
+								item.mediaType === "movie" ? "movie" : "tv";
+
 							return (
 								<div
 									key={`${item.instanceId}-${item.tmdbId}-${item.mediaType}`}
-									className="flex-shrink-0 w-40 rounded-lg border border-border/50 bg-card/50 p-3 transition-colors hover:border-border/80 animate-in fade-in slide-in-from-bottom-2 duration-300"
+									className="flex-shrink-0 w-[140px] group animate-in fade-in slide-in-from-bottom-2 duration-300"
 									style={{
 										animationDelay: `${index * 30}ms`,
 										animationFillMode: "backwards",
 									}}
 								>
-									<div className="flex items-center gap-1.5 mb-2">
-										<MediaIcon
-											className="h-3.5 w-3.5 flex-shrink-0"
-											style={{ color: plexGradient.from }}
-										/>
-										<span className="text-xs font-medium text-muted-foreground truncate">
+									<div
+										className="relative aspect-[2/3] rounded-lg overflow-hidden mb-2 transition-transform duration-200 group-hover:scale-[1.03]"
+										style={{
+											background: bgGradient,
+											boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
+										}}
+									>
+										<MediaIcon className="absolute inset-0 m-auto h-10 w-10 text-white/30" />
+										<div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors duration-200 flex items-center justify-center">
+											{item.tmdbId ? (
+												<a
+													href={`https://www.themoviedb.org/${tmdbPath}/${item.tmdbId}`}
+													target="_blank"
+													rel="noopener noreferrer"
+													onClick={(e) => e.stopPropagation()}
+													className="opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+												>
+													<ExternalLink className="h-5 w-5 text-white drop-shadow" />
+												</a>
+											) : null}
+										</div>
+									</div>
+									<Link
+										href={item.tmdbId ? `/library?tmdbId=${item.tmdbId}` : "/library"}
+										className="block"
+									>
+										<p
+											className="text-sm font-medium text-foreground line-clamp-2 leading-snug mb-0.5"
+											title={item.title}
+										>
+											{item.title}
+										</p>
+										<span className="text-xs text-muted-foreground truncate block">
 											{item.sectionTitle}
 										</span>
-									</div>
-									<p className="text-sm font-medium text-foreground truncate" title={item.title}>
-										{item.title}
-									</p>
-									<p className="text-xs text-muted-foreground truncate mt-1">{item.instanceName}</p>
+									</Link>
 								</div>
 							);
 						})}
+						{remaining > 0 && (
+							<div className="flex-shrink-0 w-[140px] flex items-center justify-center">
+								<span className="text-sm text-muted-foreground">+{remaining} more</span>
+							</div>
+						)}
 					</div>
 				</div>
 			</GlassmorphicCard>
