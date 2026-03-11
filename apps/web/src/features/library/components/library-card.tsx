@@ -100,6 +100,8 @@ interface LibraryCardProps {
 	plexUserRating?: number | null;
 	/** Plex watch progress for series (watched/total episodes) */
 	seriesProgress?: { watched: number; total: number; percent: number } | null;
+	/** Plex deep link URL for "Watch in Plex" */
+	plexUrl?: string | null;
 }
 
 /**
@@ -148,6 +150,7 @@ export const LibraryCard = memo(function LibraryCard({
 	watchedByUsers,
 	plexUserRating,
 	seriesProgress,
+	plexUrl,
 }: LibraryCardProps) {
 	const [incognitoMode] = useIncognitoMode();
 	const monitored = item.monitored ?? false;
@@ -364,6 +367,12 @@ export const LibraryCard = memo(function LibraryCard({
 	const externalLinks: Array<{ label: string; onClick: () => void }> = [];
 	if (externalLink) {
 		externalLinks.push({ label: serviceLabel, onClick: handleOpenExternal });
+	}
+	if (plexUrl) {
+		externalLinks.push({
+			label: "Plex",
+			onClick: () => safeOpenUrl(plexUrl),
+		});
 	}
 	if (item.remoteIds?.tmdbId) {
 		const tmdbType = item.type === "movie" ? "movie" : "tv";

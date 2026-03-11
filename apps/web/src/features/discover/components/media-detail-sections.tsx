@@ -231,6 +231,7 @@ interface ExternalLinksSectionProps {
 	imdbId?: string | null;
 	tvdbId?: number | string | null;
 	mediaType: "movie" | "tv";
+	plexUrl?: string | null;
 }
 
 /**
@@ -243,10 +244,11 @@ export const ExternalLinksSection: React.FC<ExternalLinksSectionProps> = ({
 	imdbId,
 	tvdbId,
 	mediaType,
+	plexUrl,
 }) => {
 	const { gradient: themeGradient } = useThemeGradient();
 
-	if (!tmdbId && !imdbId && !tvdbId) return null;
+	if (!tmdbId && !imdbId && !tvdbId && !plexUrl) return null;
 
 	const btnClass =
 		"inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:opacity-80";
@@ -300,6 +302,21 @@ export const ExternalLinksSection: React.FC<ExternalLinksSectionProps> = ({
 					>
 						<ExternalLink className="h-3.5 w-3.5" />
 						TVDB
+					</button>
+				)}
+				{plexUrl && (
+					<button
+						type="button"
+						className={btnClass}
+						style={{
+							backgroundColor: "rgba(229, 160, 13, 0.1)",
+							border: "1px solid rgba(229, 160, 13, 0.3)",
+							color: "#e5a00d",
+						}}
+						onClick={() => safeOpenUrl(plexUrl)}
+					>
+						<ExternalLink className="h-3.5 w-3.5" />
+						Watch in Plex
 					</button>
 				)}
 			</div>

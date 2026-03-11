@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Loader2, RefreshCw } from "lucide-react";
+import { AlertTriangle, Loader2, RefreshCw, X } from "lucide-react";
 import { useState } from "react";
 import { Alert, AlertDescription } from "../../../components/ui";
 import { useCacheHealth, useCacheRefreshMutation } from "../../../hooks/api/usePlex";
@@ -13,8 +13,9 @@ export const CacheHealthBanner = ({ enabled }: CacheHealthBannerProps) => {
 	const { data, isError } = useCacheHealth(enabled);
 	const refreshMutation = useCacheRefreshMutation();
 	const [isRefreshing, setIsRefreshing] = useState(false);
+	const [dismissed, setDismissed] = useState(false);
 
-	if (isError || !data?.items?.length) return null;
+	if (dismissed || isError || !data?.items?.length) return null;
 
 	const staleItems = data.items.filter((item) => item.isStale);
 	const errorItems = data.items.filter((item) => item.lastResult === "error" && !item.isStale);
@@ -79,6 +80,14 @@ export const CacheHealthBanner = ({ enabled }: CacheHealthBannerProps) => {
 				{refreshableInstanceIds.length === 0 && (
 					<RefreshCw className="h-3.5 w-3.5 text-muted-foreground" />
 				)}
+				<button
+					type="button"
+					onClick={() => setDismissed(true)}
+					className="flex-shrink-0 rounded-md p-1 hover:bg-muted/50 transition-colors"
+					title="Dismiss"
+				>
+					<X className="h-3.5 w-3.5 text-muted-foreground" />
+				</button>
 			</div>
 		</Alert>
 	);

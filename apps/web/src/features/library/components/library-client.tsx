@@ -5,12 +5,12 @@ import { useSearchParams } from "next/navigation";
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "../../../components/ui";
 import { useLibraryMonitorMutation } from "../../../hooks/api/useLibrary";
-import { useSeriesProgress, useWatchEnrichment } from "../../../hooks/api/usePlex";
+import { usePlexIdentity, useSeriesProgress, useWatchEnrichment } from "../../../hooks/api/usePlex";
 import { useLibraryEnrichment } from "../../../hooks/api/useSeerr";
 import { fetchLibraryItemByTmdbId } from "../../../lib/api-client/library";
 import { useSeerrInstances } from "../../seerr/hooks/use-seerr-instances";
 import { useLibraryActions, useLibraryData, useLibraryFilters } from "../hooks";
-import { buildLibraryExternalLink } from "../lib/library-utils";
+import { buildLibraryExternalLink, buildPlexUrl } from "../lib/library-utils";
 import { AlbumBreakdownModal } from "./album-breakdown-modal";
 import { BookBreakdownModal } from "./book-breakdown-modal";
 import { ItemDetailsModal } from "./item-details-modal";
@@ -83,6 +83,18 @@ export const LibraryClient: React.FC = () => {
 	// Plex watch enrichment — fetch watch counts, on-deck status, last watched
 	const watchEnrichmentQuery = useWatchEnrichment(data.items);
 	const watchEnrichmentMap = watchEnrichmentQuery.data?.items ?? null;
+
+	// Plex identity — needed to build "Watch in Plex" deep links
+	const plexIdentityQuery = usePlexIdentity();
+	const plexMachineIdMap = useMemo(() => {
+		const map = new Map<string, string>();
+		if (plexIdentityQuery.data?.servers) {
+			for (const server of plexIdentityQuery.data.servers) {
+				map.set(server.instanceId, server.machineId);
+			}
+		}
+		return map;
+	}, [plexIdentityQuery.data]);
 
 	// Plex series progress — fetch watched/total episode counts for series items
 	const seriesTmdbIds = useMemo(
@@ -187,6 +199,17 @@ export const LibraryClient: React.FC = () => {
 		[monitorMutation],
 	);
 
+	// Compute Plex URL for the detail modal item
+	const modalPlexUrl = useMemo(() => {
+		if (!itemDetail || !watchEnrichmentMap || !itemDetail.remoteIds?.tmdbId) return undefined;
+		const key = `${itemDetail.type === "movie" ? "movie" : "series"}:${itemDetail.remoteIds.tmdbId}`;
+		const wd = watchEnrichmentMap[key];
+		if (!wd?.ratingKey || !wd.instanceId) return undefined;
+		const machineId = plexMachineIdMap.get(wd.instanceId);
+		if (!machineId) return undefined;
+		return buildPlexUrl(machineId, wd.ratingKey);
+	}, [itemDetail, watchEnrichmentMap, plexMachineIdMap]);
+
 	return (
 		<>
 			<LibraryHeader
@@ -244,6 +267,7 @@ export const LibraryClient: React.FC = () => {
 					enrichmentMap={enrichmentMap}
 					watchEnrichmentMap={watchEnrichmentMap}
 					seriesProgressMap={seriesProgressMap}
+					plexMachineIdMap={plexMachineIdMap}
 				/>
 			</div>
 
@@ -284,6 +308,7 @@ export const LibraryClient: React.FC = () => {
 										]?.userRating
 									: undefined
 							}
+							plexUrl={modalPlexUrl}
 						/>
 					</Suspense>
 				) : (
