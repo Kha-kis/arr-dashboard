@@ -62,7 +62,14 @@ interface NowPlayingWidgetProps {
 // ============================================================================
 
 function normalizePlexSession(s: PlexSession): NowPlayingSession {
-	const mediaType = s.type === "movie" ? "movie" : s.type === "episode" ? "episode" : s.type === "track" ? "track" : "unknown";
+	const mediaType =
+		s.type === "movie"
+			? "movie"
+			: s.type === "episode"
+				? "episode"
+				: s.type === "track"
+					? "track"
+					: "unknown";
 	return {
 		key: `plex:${s.instanceId}:${s.sessionKey}`,
 		title: s.grandparentTitle ? `${s.grandparentTitle} — ${s.title}` : s.title,
@@ -85,7 +92,14 @@ function normalizePlexSession(s: PlexSession): NowPlayingSession {
 }
 
 function normalizeTautulliSession(s: TautulliSession): NowPlayingSession {
-	const mediaType = s.mediaType === "movie" ? "movie" : s.mediaType === "episode" ? "episode" : s.mediaType === "track" ? "track" : "unknown";
+	const mediaType =
+		s.mediaType === "movie"
+			? "movie"
+			: s.mediaType === "episode"
+				? "episode"
+				: s.mediaType === "track"
+					? "track"
+					: "unknown";
 	return {
 		key: `tautulli:${s.instanceId}:${s.sessionKey}`,
 		title: s.grandparentTitle ? `${s.grandparentTitle} — ${s.title}` : s.title,
@@ -126,7 +140,9 @@ function mergeSessions(
 	// Add Plex sessions not covered by Tautulli
 	for (const s of plexSessions) {
 		// Match by ratingKey within the same logical server (Tautulli monitors one Plex)
-		const hasMatch = tautulliSessions.some((t) => t.ratingKey === s.ratingKey && t.sessionKey === s.sessionKey);
+		const hasMatch = tautulliSessions.some(
+			(t) => t.ratingKey === s.ratingKey && t.sessionKey === s.sessionKey,
+		);
 		if (!hasMatch) {
 			merged.push(normalizePlexSession(s));
 		}
@@ -149,7 +165,13 @@ function formatBandwidth(kbps: number): string {
 }
 
 function getMediaIcon(mediaType: NowPlayingSession["mediaType"]) {
-	return mediaType === "movie" ? Film : mediaType === "episode" ? Tv : mediaType === "track" ? Headphones : Film;
+	return mediaType === "movie"
+		? Film
+		: mediaType === "episode"
+			? Tv
+			: mediaType === "track"
+				? Headphones
+				: Film;
 }
 
 const plexGradient = SERVICE_GRADIENTS.plex;
@@ -168,13 +190,18 @@ const SessionBadges = ({
 	const videoDecisionLower = session.videoDecision.toLowerCase();
 	const isDirectPlay = videoDecisionLower.includes("direct");
 	const isCopy = videoDecisionLower === "copy";
-	const transcodeColor = (isDirectPlay || isCopy) ? SEMANTIC_COLORS.success : SEMANTIC_COLORS.warning;
-	const transcodeLabel = isDirectPlay ? "Direct Play" : isCopy ? "Direct Stream" : session.videoDecision || "Transcode";
+	const transcodeColor = isDirectPlay || isCopy ? SEMANTIC_COLORS.success : SEMANTIC_COLORS.warning;
+	const transcodeLabel = isDirectPlay
+		? "Direct Play"
+		: isCopy
+			? "Direct Stream"
+			: session.videoDecision || "Transcode";
 	const MediaIcon = getMediaIcon(session.mediaType);
 
-	const badgeClass = size === "sm"
-		? "inline-flex items-center gap-0.5 rounded-full px-1.5 py-px text-[9px] font-medium"
-		: "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium";
+	const badgeClass =
+		size === "sm"
+			? "inline-flex items-center gap-0.5 rounded-full px-1.5 py-px text-[9px] font-medium"
+			: "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium";
 	const iconClass = size === "sm" ? "h-2 w-2" : "h-2.5 w-2.5";
 
 	return (
@@ -207,28 +234,34 @@ const SessionBadges = ({
 			</span>
 
 			{/* Audio codec + decision */}
-			{session.audioCodec && (() => {
-				const audioLower = session.audioDecision.toLowerCase();
-				const isAudioDirect = audioLower.includes("direct") || audioLower === "copy";
-				const audioColor = isAudioDirect ? undefined : SEMANTIC_COLORS.warning;
-				return (
-					<span
-						className={audioColor
-							? badgeClass
-							: `${badgeClass} bg-muted/30 border border-border/50 text-muted-foreground`
-						}
-						style={audioColor ? {
-							backgroundColor: audioColor.bg,
-							border: `1px solid ${audioColor.border}`,
-							color: audioColor.text,
-						} : undefined}
-					>
-						{size === "md" && <Headphones className={iconClass} />}
-						{session.audioCodec.toUpperCase()}
-						{!isAudioDirect && " (Transcode)"}
-					</span>
-				);
-			})()}
+			{session.audioCodec &&
+				(() => {
+					const audioLower = session.audioDecision.toLowerCase();
+					const isAudioDirect = audioLower.includes("direct") || audioLower === "copy";
+					const audioColor = isAudioDirect ? undefined : SEMANTIC_COLORS.warning;
+					return (
+						<span
+							className={
+								audioColor
+									? badgeClass
+									: `${badgeClass} bg-muted/30 border border-border/50 text-muted-foreground`
+							}
+							style={
+								audioColor
+									? {
+											backgroundColor: audioColor.bg,
+											border: `1px solid ${audioColor.border}`,
+											color: audioColor.text,
+										}
+									: undefined
+							}
+						>
+							{size === "md" && <Headphones className={iconClass} />}
+							{session.audioCodec.toUpperCase()}
+							{!isAudioDirect && " (Transcode)"}
+						</span>
+					);
+				})()}
 
 			{/* Bandwidth */}
 			{session.bandwidth != null && session.bandwidth > 0 && (
@@ -250,9 +283,13 @@ const SessionBadges = ({
 				<span
 					className={badgeClass}
 					style={{
-						backgroundColor: session.location === "lan" ? SEMANTIC_COLORS.success.bg : SEMANTIC_COLORS.warning.bg,
+						backgroundColor:
+							session.location === "lan" ? SEMANTIC_COLORS.success.bg : SEMANTIC_COLORS.warning.bg,
 						border: `1px solid ${session.location === "lan" ? SEMANTIC_COLORS.success.border : SEMANTIC_COLORS.warning.border}`,
-						color: session.location === "lan" ? SEMANTIC_COLORS.success.text : SEMANTIC_COLORS.warning.text,
+						color:
+							session.location === "lan"
+								? SEMANTIC_COLORS.success.text
+								: SEMANTIC_COLORS.warning.text,
 					}}
 				>
 					{size === "md" && <Globe className={iconClass} />}
@@ -372,7 +409,9 @@ export const NowPlayingWidget = ({
 											)}
 											<span className="text-foreground font-medium truncate">{session.user}</span>
 											<span className="text-muted-foreground truncate">
-												{session.subtitle ? `${session.subtitle} — ${session.title}` : session.title}
+												{session.subtitle
+													? `${session.subtitle} — ${session.title}`
+													: session.title}
 											</span>
 											<span className="text-muted-foreground/60 ml-auto shrink-0">
 												{session.progress}%

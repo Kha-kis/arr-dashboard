@@ -41,10 +41,7 @@ export const useDashboardData = () => {
 	const isLoading = userLoading || servicesLoading;
 
 	// Filter to enabled instances for dashboard display
-	const enabledServices = useMemo(
-		() => services.filter((s) => s.enabled),
-		[services],
-	);
+	const enabledServices = useMemo(() => services.filter((s) => s.enabled), [services]);
 
 	// Group enabled services by type for summary cards
 	const groupedByService = useMemo(() => {

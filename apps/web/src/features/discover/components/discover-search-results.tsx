@@ -45,10 +45,7 @@ export const DiscoverSearchResults: React.FC<DiscoverSearchResultsProps> = ({
 }) => {
 	const { gradient: themeGradient } = useThemeGradient();
 
-	const flatResults = useMemo(
-		() => data?.pages.flatMap((p) => p.results) ?? [],
-		[data],
-	);
+	const flatResults = useMemo(() => data?.pages.flatMap((p) => p.results) ?? [], [data]);
 
 	const sortedResults = useMemo(() => {
 		if (sort === "popularity") return flatResults; // API default order

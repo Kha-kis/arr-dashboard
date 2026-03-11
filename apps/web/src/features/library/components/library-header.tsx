@@ -223,10 +223,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 									className="relative overflow-hidden"
 								>
 									<HardDriveDownload
-										className={cn(
-											"h-4 w-4 mr-2",
-											plexScanMutation.isPending && "animate-pulse",
-										)}
+										className={cn("h-4 w-4 mr-2", plexScanMutation.isPending && "animate-pulse")}
 										style={{ color: plexGradient.from }}
 									/>
 									{plexScanMutation.isPending ? "Scanning..." : "Scan Plex"}
@@ -238,9 +235,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 												<button
 													key={`${section.instanceId}:${section.sectionId}`}
 													type="button"
-													onClick={() =>
-														handleScanSection(section.instanceId, section.sectionId)
-													}
+													onClick={() => handleScanSection(section.instanceId, section.sectionId)}
 													className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors"
 												>
 													<span className="truncate">{section.sectionTitle}</span>

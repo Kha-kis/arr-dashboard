@@ -92,9 +92,7 @@ export const ApprovalQueueTab = ({ instanceId, onSelectRequest }: ApprovalQueueT
 								`${action === "approve" ? "Approved" : action === "decline" ? "Declined" : "Deleted"} ${result.totalSuccess} request${result.totalSuccess !== 1 ? "s" : ""}`,
 							);
 						} else {
-							toast.warning(
-								`${result.totalSuccess} succeeded, ${result.totalFailed} failed`,
-							);
+							toast.warning(`${result.totalSuccess} succeeded, ${result.totalFailed} failed`);
 						}
 					},
 					onError: () => toast.error(`Failed to ${action} requests`),

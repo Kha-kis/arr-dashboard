@@ -58,9 +58,15 @@ export async function registerWatchHistoryRoutes(
 			take: 50000,
 		});
 
-		const { events, parseFailures, totalSnapshots, failedPreviews } = deduplicateWatchEvents(snapshots, limit);
+		const { events, parseFailures, totalSnapshots, failedPreviews } = deduplicateWatchEvents(
+			snapshots,
+			limit,
+		);
 		if (parseFailures > 0) {
-			request.log.warn({ parseFailures, totalSnapshots, failedPreviews, route: "watch-history" }, "Session snapshot JSON parse failures detected");
+			request.log.warn(
+				{ parseFailures, totalSnapshots, failedPreviews, route: "watch-history" },
+				"Session snapshot JSON parse failures detected",
+			);
 		}
 		return reply.send({ events });
 	});

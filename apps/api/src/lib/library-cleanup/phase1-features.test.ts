@@ -14,10 +14,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { CacheItemForEval, EvalContext, PlexWatchInfo, SeerrRequestInfo } from "./types.js";
-import {
-	evaluateItemAgainstRules,
-	explainItemAgainstRules,
-} from "./rule-evaluators.js";
+import { evaluateItemAgainstRules, explainItemAgainstRules } from "./rule-evaluators.js";
 import { ruleParamSchemaMap } from "@arr/shared";
 
 // ---------------------------------------------------------------------------
@@ -126,16 +123,18 @@ function baseCtx(overrides: Partial<EvalContext> = {}): EvalContext {
 
 describe("retention rules", () => {
 	const seerrMap = new Map<string, SeerrRequestInfo[]>();
-	seerrMap.set("movie:12345", [{
-		requestId: 1,
-		status: 5, // completed
-		requestedBy: "alice",
-		requestedByUserId: 10,
-		createdAt: "2025-06-01T00:00:00Z",
-		updatedAt: "2025-06-15T00:00:00Z",
-		modifiedBy: null,
-		is4k: false,
-	}]);
+	seerrMap.set("movie:12345", [
+		{
+			requestId: 1,
+			status: 5, // completed
+			requestedBy: "alice",
+			requestedByUserId: 10,
+			createdAt: "2025-06-01T00:00:00Z",
+			updatedAt: "2025-06-15T00:00:00Z",
+			modifiedBy: null,
+			is4k: false,
+		},
+	]);
 
 	const plexMap = new Map<string, PlexWatchInfo>();
 	plexMap.set("movie:12345", {
@@ -418,9 +417,7 @@ describe("explainItemAgainstRules", () => {
 	});
 
 	it("reports disabled rules with filteredBy=disabled", () => {
-		const rules = [
-			makeRule({ id: "r-disabled", name: "Disabled Rule", enabled: false }),
-		] as any[];
+		const rules = [makeRule({ id: "r-disabled", name: "Disabled Rule", enabled: false })] as any[];
 		const results = explainItemAgainstRules(makeCacheItem(), rules, "RADARR", ctx);
 		expect(results[0]!.filteredBy).toBe("disabled");
 		expect(results[0]!.matched).toBe(false);
@@ -558,8 +555,12 @@ describe("circuit breaker logic", () => {
 
 	it("resets counter on success", () => {
 		const result = simulateCircuitBreaker([
-			"failure", "failure", "success", // counter resets
-			"failure", "failure", "success", // counter resets again
+			"failure",
+			"failure",
+			"success", // counter resets
+			"failure",
+			"failure",
+			"success", // counter resets again
 		]);
 		expect(result.circuitBroken).toBe(false);
 		expect(result.processed).toBe(6);
@@ -568,7 +569,12 @@ describe("circuit breaker logic", () => {
 
 	it("does not trip with intermittent failures", () => {
 		const result = simulateCircuitBreaker([
-			"failure", "success", "failure", "success", "failure", "success",
+			"failure",
+			"success",
+			"failure",
+			"success",
+			"failure",
+			"success",
 		]);
 		expect(result.circuitBroken).toBe(false);
 		expect(result.processed).toBe(6);
@@ -576,9 +582,13 @@ describe("circuit breaker logic", () => {
 
 	it("trips exactly at threshold", () => {
 		const result = simulateCircuitBreaker([
-			"success", "success",
-			"failure", "failure", "failure", // trips here
-			"success", "success",
+			"success",
+			"success",
+			"failure",
+			"failure",
+			"failure", // trips here
+			"success",
+			"success",
 		]);
 		expect(result.circuitBroken).toBe(true);
 		expect(result.processed).toBe(5); // 2 success + 3 failures

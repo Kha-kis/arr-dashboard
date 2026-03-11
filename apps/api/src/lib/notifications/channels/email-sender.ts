@@ -4,7 +4,13 @@ import type { ChannelPlugin, ChannelSender, NotificationPayload, SendResult } fr
 import { extractMetadataFields } from "./format-metadata.js";
 
 /** Connection errors that are worth retrying */
-const RETRYABLE_CODES = new Set(["ECONNREFUSED", "ETIMEDOUT", "ENOTFOUND", "ESOCKET", "ECONNRESET"]);
+const RETRYABLE_CODES = new Set([
+	"ECONNREFUSED",
+	"ETIMEDOUT",
+	"ENOTFOUND",
+	"ESOCKET",
+	"ECONNRESET",
+]);
 
 /** Pooled transporter cache keyed by host:port:user */
 const transportPool = new Map<string, nodemailer.Transporter>();

@@ -44,9 +44,7 @@ export const CacheHealthBanner = ({ enabled }: CacheHealthBannerProps) => {
 		setIsRefreshing(true);
 		try {
 			await Promise.allSettled(
-				refreshableInstanceIds.map((instanceId) =>
-					refreshMutation.mutateAsync({ instanceId }),
-				),
+				refreshableInstanceIds.map((instanceId) => refreshMutation.mutateAsync({ instanceId })),
 			);
 		} finally {
 			setIsRefreshing(false);

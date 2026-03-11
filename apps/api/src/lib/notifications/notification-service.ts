@@ -1,7 +1,16 @@
 import type { NotificationChannelType } from "@arr/shared";
 
 const REDACTED_PLACEHOLDER = "••••••••";
-const SECRET_FIELD_NAMES = new Set(["password", "botToken", "apiToken", "appToken", "userKey", "auth", "secret", "token"]);
+const SECRET_FIELD_NAMES = new Set([
+	"password",
+	"botToken",
+	"apiToken",
+	"appToken",
+	"userKey",
+	"auth",
+	"secret",
+	"token",
+]);
 
 function redactSecretFields(config: Record<string, unknown>): Record<string, unknown> {
 	return Object.fromEntries(
@@ -62,10 +71,7 @@ export class NotificationService {
 	async notify(payload: NotificationPayload): Promise<void> {
 		// Dedup: skip if an identical payload was dispatched within the TTL window
 		if (this.dedupGate.isDuplicate(payload)) {
-			this.logger.debug(
-				{ eventType: payload.eventType },
-				"Duplicate notification suppressed",
-			);
+			this.logger.debug({ eventType: payload.eventType }, "Duplicate notification suppressed");
 			return;
 		}
 
@@ -126,10 +132,7 @@ export class NotificationService {
 			const aggConfig = this.aggregationBuffer.hasConfig(payload.eventType, aggConfigs);
 			if (aggConfig) {
 				this.aggregationBuffer.push(payload, aggConfig);
-				this.logger.debug(
-					{ eventType: payload.eventType },
-					"Notification queued for aggregation",
-				);
+				this.logger.debug({ eventType: payload.eventType }, "Notification queued for aggregation");
 				return;
 			}
 		}
@@ -147,11 +150,18 @@ export class NotificationService {
 					{ channelId: sub.channelId, channelType },
 					`No sender for channel type: ${channelType}`,
 				);
-				await this.logDelivery(sub.channelId, channelType, payload, "failed", `No sender for channel type: ${channelType}`).catch(
-					(logErr) => {
-						this.logger.warn({ err: logErr, channelId: sub.channelId }, "Failed to log notification delivery");
-					},
-				);
+				await this.logDelivery(
+					sub.channelId,
+					channelType,
+					payload,
+					"failed",
+					`No sender for channel type: ${channelType}`,
+				).catch((logErr) => {
+					this.logger.warn(
+						{ err: logErr, channelId: sub.channelId },
+						"Failed to log notification delivery",
+					);
+				});
 				continue;
 			}
 
@@ -168,7 +178,10 @@ export class NotificationService {
 				this.logger.error({ channelId: sub.channelId, channelType }, error);
 				await this.logDelivery(sub.channelId, channelType, payload, "failed", error).catch(
 					(logErr) => {
-						this.logger.warn({ err: logErr, channelId: sub.channelId }, "Failed to log notification delivery");
+						this.logger.warn(
+							{ err: logErr, channelId: sub.channelId },
+							"Failed to log notification delivery",
+						);
 					},
 				);
 				continue;
@@ -178,7 +191,10 @@ export class NotificationService {
 
 			if (result.success) {
 				await this.logDelivery(sub.channelId, channelType, payload, "sent").catch((logErr) => {
-					this.logger.warn({ err: logErr, channelId: sub.channelId }, "Failed to log notification delivery");
+					this.logger.warn(
+						{ err: logErr, channelId: sub.channelId },
+						"Failed to log notification delivery",
+					);
 				});
 			} else if (result.retryable) {
 				this.logger.warn(
@@ -187,7 +203,10 @@ export class NotificationService {
 				);
 				await this.logDelivery(sub.channelId, channelType, payload, "failed", result.error).catch(
 					(logErr) => {
-						this.logger.warn({ err: logErr, channelId: sub.channelId }, "Failed to log notification delivery");
+						this.logger.warn(
+							{ err: logErr, channelId: sub.channelId },
+							"Failed to log notification delivery",
+						);
 					},
 				);
 				this.retryHandler.enqueue({
@@ -204,7 +223,10 @@ export class NotificationService {
 				);
 				await this.logDelivery(sub.channelId, channelType, payload, "failed", result.error).catch(
 					(logErr) => {
-						this.logger.warn({ err: logErr, channelId: sub.channelId }, "Failed to log notification delivery");
+						this.logger.warn(
+							{ err: logErr, channelId: sub.channelId },
+							"Failed to log notification delivery",
+						);
 					},
 				);
 			}
@@ -232,7 +254,9 @@ export class NotificationService {
 		try {
 			config = JSON.parse(decryptedJson) as Record<string, unknown>;
 		} catch (parseErr) {
-			throw new Error(`Failed to parse config for channel "${channel.name}" — config may be corrupted: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}. Try re-saving the channel settings.`);
+			throw new Error(
+				`Failed to parse config for channel "${channel.name}" — config may be corrupted: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}. Try re-saving the channel settings.`,
+			);
 		}
 
 		await this.dispatcher.test(channelType, config);
@@ -282,7 +306,9 @@ export class NotificationService {
 		try {
 			config = JSON.parse(decryptedJson) as Record<string, unknown>;
 		} catch (parseErr) {
-			throw new Error(`Failed to parse config for channel "${channel.name}" — config may be corrupted: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}. Try re-saving the channel settings.`);
+			throw new Error(
+				`Failed to parse config for channel "${channel.name}" — config may be corrupted: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}. Try re-saving the channel settings.`,
+			);
 		}
 
 		// Redact secret fields — frontend should only send non-placeholder values on update
@@ -304,7 +330,12 @@ export class NotificationService {
 	/**
 	 * Return available channel types with form metadata for dynamic UI rendering.
 	 */
-	getChannelTypes(): Array<{ type: string; label: string; icon: string; formFields: ChannelFormField[] }> {
+	getChannelTypes(): Array<{
+		type: string;
+		label: string;
+		icon: string;
+		formFields: ChannelFormField[];
+	}> {
 		return this.dispatcher.getPluginManifests();
 	}
 
@@ -315,15 +346,23 @@ export class NotificationService {
 			where: { userId, enabled: true },
 			orderBy: { priority: "asc" },
 		});
-		return dbRules.map((r) => ({
-			id: r.id,
-			enabled: r.enabled,
-			priority: r.priority,
-			action: r.action as "suppress" | "throttle" | "route",
-			conditions: JSON.parse(r.conditions),
-			targetChannelIds: r.targetChannelIds ? JSON.parse(r.targetChannelIds) : null,
-			throttleMinutes: r.throttleMinutes,
-		}));
+		const rules: NotificationRule[] = [];
+		for (const r of dbRules) {
+			try {
+				rules.push({
+					id: r.id,
+					enabled: r.enabled,
+					priority: r.priority,
+					action: r.action as "suppress" | "throttle" | "route",
+					conditions: JSON.parse(r.conditions),
+					targetChannelIds: r.targetChannelIds ? JSON.parse(r.targetChannelIds) : null,
+					throttleMinutes: r.throttleMinutes,
+				});
+			} catch (err) {
+				this.logger.error({ err, ruleId: r.id }, "Skipping notification rule with corrupted JSON");
+			}
+		}
+		return rules;
 	}
 
 	private async loadAggregationConfigs(userId: string): Promise<AggregationConfig[]> {

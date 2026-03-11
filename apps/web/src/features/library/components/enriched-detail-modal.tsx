@@ -885,59 +885,77 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 													/>
 
 													{/* Plex Watch Status */}
-													{episodeWatchMap && episodeWatchMap.size > 0 && (() => {
-														const seasonEps = [...episodeWatchMap.entries()]
-															.filter(([key]) => key.startsWith(`${season.seasonNumber}:`))
-															.sort(([a], [b]) => {
-																const aNum = Number(a.split(":")[1]);
-																const bNum = Number(b.split(":")[1]);
-																return aNum - bNum;
-															});
-														if (seasonEps.length === 0) return null;
-														const watchedCount = seasonEps.filter(([, ep]) => ep.watched).length;
-														return (
-															<div className="mt-4 pt-3 border-t border-border/20">
-																<div className="flex items-center gap-2 mb-2">
-																	<Eye className="h-3.5 w-3.5" style={{ color: SEMANTIC_COLORS.success.from }} />
-																	<span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-																		Watch Status
-																	</span>
-																	<span className="text-xs text-muted-foreground">
-																		({watchedCount}/{seasonEps.length} watched)
-																	</span>
+													{episodeWatchMap &&
+														episodeWatchMap.size > 0 &&
+														(() => {
+															const seasonEps = [...episodeWatchMap.entries()]
+																.filter(([key]) => key.startsWith(`${season.seasonNumber}:`))
+																.sort(([a], [b]) => {
+																	const aNum = Number(a.split(":")[1]);
+																	const bNum = Number(b.split(":")[1]);
+																	return aNum - bNum;
+																});
+															if (seasonEps.length === 0) return null;
+															const watchedCount = seasonEps.filter(([, ep]) => ep.watched).length;
+															return (
+																<div className="mt-4 pt-3 border-t border-border/20">
+																	<div className="flex items-center gap-2 mb-2">
+																		<Eye
+																			className="h-3.5 w-3.5"
+																			style={{ color: SEMANTIC_COLORS.success.from }}
+																		/>
+																		<span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+																			Watch Status
+																		</span>
+																		<span className="text-xs text-muted-foreground">
+																			({watchedCount}/{seasonEps.length} watched)
+																		</span>
+																	</div>
+																	<div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-1.5">
+																		{seasonEps.map(([key, ep]) => (
+																			<div
+																				key={key}
+																				className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-colors"
+																				style={{
+																					backgroundColor: ep.watched
+																						? `${SEMANTIC_COLORS.success.from}08`
+																						: "transparent",
+																					border: `1px solid ${ep.watched ? `${SEMANTIC_COLORS.success.border}` : "transparent"}`,
+																				}}
+																				title={
+																					ep.watched && ep.watchedByUsers.length > 0
+																						? `Watched by: ${ep.watchedByUsers.join(", ")}${ep.lastWatchedAt ? ` — ${new Date(ep.lastWatchedAt).toLocaleDateString()}` : ""}`
+																						: undefined
+																				}
+																			>
+																				{ep.watched ? (
+																					<CheckCircle2
+																						className="h-3.5 w-3.5 shrink-0"
+																						style={{ color: SEMANTIC_COLORS.success.from }}
+																					/>
+																				) : (
+																					<div className="h-3.5 w-3.5 shrink-0 rounded-full border border-border/50" />
+																				)}
+																				<span
+																					className={
+																						ep.watched
+																							? "text-foreground"
+																							: "text-muted-foreground/60"
+																					}
+																				>
+																					E{String(ep.episodeNumber).padStart(2, "0")}
+																				</span>
+																				<span
+																					className={`truncate ${ep.watched ? "text-foreground/70" : "text-muted-foreground/40"}`}
+																				>
+																					{ep.title}
+																				</span>
+																			</div>
+																		))}
+																	</div>
 																</div>
-																<div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-1.5">
-																	{seasonEps.map(([key, ep]) => (
-																		<div
-																			key={key}
-																			className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-colors"
-																			style={{
-																				backgroundColor: ep.watched ? `${SEMANTIC_COLORS.success.from}08` : "transparent",
-																				border: `1px solid ${ep.watched ? `${SEMANTIC_COLORS.success.border}` : "transparent"}`,
-																			}}
-																			title={
-																				ep.watched && ep.watchedByUsers.length > 0
-																					? `Watched by: ${ep.watchedByUsers.join(", ")}${ep.lastWatchedAt ? ` — ${new Date(ep.lastWatchedAt).toLocaleDateString()}` : ""}`
-																					: undefined
-																			}
-																		>
-																			{ep.watched ? (
-																				<CheckCircle2 className="h-3.5 w-3.5 shrink-0" style={{ color: SEMANTIC_COLORS.success.from }} />
-																			) : (
-																				<div className="h-3.5 w-3.5 shrink-0 rounded-full border border-border/50" />
-																			)}
-																			<span className={ep.watched ? "text-foreground" : "text-muted-foreground/60"}>
-																				E{String(ep.episodeNumber).padStart(2, "0")}
-																			</span>
-																			<span className={`truncate ${ep.watched ? "text-foreground/70" : "text-muted-foreground/40"}`}>
-																				{ep.title}
-																			</span>
-																		</div>
-																	))}
-																</div>
-															</div>
-														);
-													})()}
+															);
+														})()}
 												</div>
 											)}
 										</div>

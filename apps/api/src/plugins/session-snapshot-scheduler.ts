@@ -19,8 +19,14 @@ import fastifyPlugin from "fastify-plugin";
 import type { TautulliSessionItem } from "../lib/tautulli/tautulli-client.js";
 import { createPlexClient } from "../lib/plex/plex-client.js";
 import { createTautulliClient } from "../lib/tautulli/tautulli-client.js";
-import { classifySessionDecisions, computeLanWanAttribution } from "./lib/session-snapshot-helpers.js";
-import { buildTautulliSessionMap, enrichSessionsWithTautulli } from "./lib/session-enrichment-helpers.js";
+import {
+	classifySessionDecisions,
+	computeLanWanAttribution,
+} from "./lib/session-snapshot-helpers.js";
+import {
+	buildTautulliSessionMap,
+	enrichSessionsWithTautulli,
+} from "./lib/session-enrichment-helpers.js";
 
 const INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const STARTUP_DELAY_MS = 60_000; // 60 seconds
@@ -54,35 +60,56 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 
 			// PLEX_CONCURRENT_PEAK: concurrent streams exceed threshold
 			if (totalConcurrent >= CONCURRENT_PEAK_THRESHOLD) {
-				await app.notificationService.notify({
-					eventType: "PLEX_CONCURRENT_PEAK",
-					title: "High concurrent streams detected",
-					body: `${totalConcurrent} concurrent streams active (threshold: ${CONCURRENT_PEAK_THRESHOLD}).`,
-					url: "/statistics",
-				}).catch((err) => app.log.warn({ err, eventType: "PLEX_CONCURRENT_PEAK" }, "Non-fatal: notification delivery failed"));
+				await app.notificationService
+					.notify({
+						eventType: "PLEX_CONCURRENT_PEAK",
+						title: "High concurrent streams detected",
+						body: `${totalConcurrent} concurrent streams active (threshold: ${CONCURRENT_PEAK_THRESHOLD}).`,
+						url: "/statistics",
+					})
+					.catch((err) =>
+						app.log.warn(
+							{ err, eventType: "PLEX_CONCURRENT_PEAK" },
+							"Non-fatal: notification delivery failed",
+						),
+					);
 			}
 
 			// PLEX_TRANSCODE_HEAVY: transcode ratio exceeds threshold
 			if (totalSessions > 0 && totalTranscode / totalSessions > TRANSCODE_HEAVY_RATIO) {
 				const pct = Math.round((totalTranscode / totalSessions) * 100);
-				await app.notificationService.notify({
-					eventType: "PLEX_TRANSCODE_HEAVY",
-					title: "Heavy transcoding detected",
-					body: `${pct}% of active streams are transcoding (${totalTranscode}/${totalSessions}).`,
-					url: "/statistics",
-				}).catch((err) => app.log.warn({ err, eventType: "PLEX_TRANSCODE_HEAVY" }, "Non-fatal: notification delivery failed"));
+				await app.notificationService
+					.notify({
+						eventType: "PLEX_TRANSCODE_HEAVY",
+						title: "Heavy transcoding detected",
+						body: `${pct}% of active streams are transcoding (${totalTranscode}/${totalSessions}).`,
+						url: "/statistics",
+					})
+					.catch((err) =>
+						app.log.warn(
+							{ err, eventType: "PLEX_TRANSCODE_HEAVY" },
+							"Non-fatal: notification delivery failed",
+						),
+					);
 			}
 
 			// PLEX_NEW_DEVICE: platform not seen in recent snapshots
 			for (const platform of enrichedPlatforms) {
 				if (!knownPlatforms.has(platform)) {
 					const safePlatform = platform.replace(/[<>&"']/g, "").slice(0, 50);
-					await app.notificationService.notify({
-						eventType: "PLEX_NEW_DEVICE",
-						title: "New device detected",
-						body: `A new platform "${safePlatform}" was seen streaming for the first time in ${NEW_DEVICE_LOOKBACK_DAYS} days.`,
-						url: "/statistics",
-					}).catch((err) => app.log.warn({ err, eventType: "PLEX_NEW_DEVICE" }, "Non-fatal: notification delivery failed"));
+					await app.notificationService
+						.notify({
+							eventType: "PLEX_NEW_DEVICE",
+							title: "New device detected",
+							body: `A new platform "${safePlatform}" was seen streaming for the first time in ${NEW_DEVICE_LOOKBACK_DAYS} days.`,
+							url: "/statistics",
+						})
+						.catch((err) =>
+							app.log.warn(
+								{ err, eventType: "PLEX_NEW_DEVICE" },
+								"Non-fatal: notification delivery failed",
+							),
+						);
 				}
 			}
 		}
@@ -121,7 +148,10 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 						allTautulliSessions.push(...activity.sessions);
 					} catch (err) {
 						tautulliFetchFailures++;
-						app.log.warn({ err, instanceId: ti.id }, "Failed to fetch Tautulli activity for LAN/WAN");
+						app.log.warn(
+							{ err, instanceId: ti.id },
+							"Failed to fetch Tautulli activity for LAN/WAN",
+						);
 					}
 				}
 
@@ -146,7 +176,9 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 				// so the new-device check isn't polluted by this tick's data
 				const knownPlatforms = new Set<string>();
 				try {
-					const platformCutoff = new Date(Date.now() - NEW_DEVICE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+					const platformCutoff = new Date(
+						Date.now() - NEW_DEVICE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
+					);
 					const recentSnapshots = await app.prisma.sessionSnapshot.findMany({
 						where: { capturedAt: { gte: platformCutoff } },
 						select: { sessionsJson: true },
@@ -172,7 +204,10 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 						);
 					}
 				} catch (err) {
-					app.log.warn({ err }, "Session snapshot: failed to query known platforms for new-device check");
+					app.log.warn(
+						{ err },
+						"Session snapshot: failed to query known platforms for new-device check",
+					);
 				}
 
 				// Track totals across all instances for notification checks
@@ -195,7 +230,10 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 						// Attribute LAN/WAN to only one snapshot per tick to prevent
 						// double-counting when analytics routes aggregate across instances
 						const lanWan = computeLanWanAttribution(
-							hasCompleteTautulliData, lanWanAttributed, aggLanBandwidth, aggWanBandwidth,
+							hasCompleteTautulliData,
+							lanWanAttributed,
+							aggLanBandwidth,
+							aggWanBandwidth,
 						);
 						// Mark attribution BEFORE the DB write to prevent
 						// double-counting if the write fails and the next instance retries
@@ -236,8 +274,13 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 
 				// Fire smart notifications (non-fatal)
 				if (tickTotalSessions > 0) {
-					checkPlexNotifications(tickTotalConcurrent, tickTotalTranscode, tickTotalSessions, tickPlatforms, knownPlatforms)
-						.catch((err) => app.log.warn({ err }, "Session snapshot: notification check failed"));
+					checkPlexNotifications(
+						tickTotalConcurrent,
+						tickTotalTranscode,
+						tickTotalSessions,
+						tickPlatforms,
+						knownPlatforms,
+					).catch((err) => app.log.warn({ err }, "Session snapshot: notification check failed"));
 				}
 			} catch (err) {
 				app.log.error({ err }, "Session snapshot scheduler: failed to query instances");

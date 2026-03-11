@@ -1,6 +1,15 @@
 "use client";
 
-import { AlertCircle, BookOpen, CheckCircle2, Clock, HardDrive, ShieldCheck, Sparkles, Zap } from "lucide-react";
+import {
+	AlertCircle,
+	BookOpen,
+	CheckCircle2,
+	Clock,
+	HardDrive,
+	ShieldCheck,
+	Sparkles,
+	Zap,
+} from "lucide-react";
 import { Suspense, lazy } from "react";
 import { ErrorBoundary } from "../../../components/error-boundary";
 import { PremiumEmptyState } from "../../../components/layout";
@@ -113,7 +122,9 @@ function CacheValidationHealthSection() {
 				>
 					<ShieldCheck
 						className="h-5 w-5"
-						style={{ color: hasRejections ? SEMANTIC_COLORS.warning.from : SEMANTIC_COLORS.success.from }}
+						style={{
+							color: hasRejections ? SEMANTIC_COLORS.warning.from : SEMANTIC_COLORS.success.from,
+						}}
 					/>
 				</div>
 				<div>
@@ -136,15 +147,9 @@ function CacheValidationHealthSection() {
 								{category.replace(/([A-Z])/g, " $1").trim()}
 							</span>
 							{stats.rejected > 0 ? (
-								<AlertCircle
-									className="h-4 w-4"
-									style={{ color: SEMANTIC_COLORS.warning.from }}
-								/>
+								<AlertCircle className="h-4 w-4" style={{ color: SEMANTIC_COLORS.warning.from }} />
 							) : (
-								<CheckCircle2
-									className="h-4 w-4"
-									style={{ color: SEMANTIC_COLORS.success.from }}
-								/>
+								<CheckCircle2 className="h-4 w-4" style={{ color: SEMANTIC_COLORS.success.from }} />
 							)}
 						</div>
 						<div className="flex items-baseline gap-1">
@@ -152,10 +157,7 @@ function CacheValidationHealthSection() {
 							<span className="text-sm text-muted-foreground">/ {stats.total}</span>
 						</div>
 						{stats.rejected > 0 && (
-							<p
-								className="text-xs mt-1"
-								style={{ color: SEMANTIC_COLORS.warning.text }}
-							>
+							<p className="text-xs mt-1" style={{ color: SEMANTIC_COLORS.warning.text }}>
 								{stats.rejected} rejected
 							</p>
 						)}

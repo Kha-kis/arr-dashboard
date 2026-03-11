@@ -47,9 +47,13 @@ export async function registerQualityScoreRoutes(
 			take: 50000,
 		});
 
-		const { parseFailures, totalSnapshots, failedPreviews, ...analytics } = computeQualityScore(snapshots);
+		const { parseFailures, totalSnapshots, failedPreviews, ...analytics } =
+			computeQualityScore(snapshots);
 		if (parseFailures > 0) {
-			request.log.warn({ parseFailures, totalSnapshots, failedPreviews, route: "quality-score" }, "Session snapshot JSON parse failures detected");
+			request.log.warn(
+				{ parseFailures, totalSnapshots, failedPreviews, route: "quality-score" },
+				"Session snapshot JSON parse failures detected",
+			);
 		}
 		return reply.send(analytics);
 	});

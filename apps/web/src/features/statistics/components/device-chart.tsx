@@ -87,11 +87,13 @@ export const DeviceChart = ({ days, enabled }: DeviceChartProps) => {
 
 	const platformSegments = useMemo((): DonutSegment[] => {
 		if (!data?.platforms) return [];
-		return data.platforms.slice(0, 6).map((p: { platform: string; sessions: number }, i: number) => ({
-			label: p.platform,
-			value: p.sessions,
-			color: DONUT_COLORS[i % DONUT_COLORS.length]!,
-		}));
+		return data.platforms
+			.slice(0, 6)
+			.map((p: { platform: string; sessions: number }, i: number) => ({
+				label: p.platform,
+				value: p.sessions,
+				color: DONUT_COLORS[i % DONUT_COLORS.length]!,
+			}));
 	}, [data]);
 
 	if (isLoading) {
@@ -143,7 +145,10 @@ export const DeviceChart = ({ days, enabled }: DeviceChartProps) => {
 					<div className="space-y-1.5">
 						{platformSegments.map((seg) => (
 							<div key={seg.label} className="flex items-center gap-2 text-xs">
-								<div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: seg.color }} />
+								<div
+									className="h-2.5 w-2.5 rounded-full shrink-0"
+									style={{ backgroundColor: seg.color }}
+								/>
 								<span className="text-muted-foreground flex-1">{seg.label}</span>
 								<span className="font-medium tabular-nums">{seg.value.toLocaleString()}</span>
 							</div>
@@ -155,24 +160,34 @@ export const DeviceChart = ({ days, enabled }: DeviceChartProps) => {
 				<div>
 					<h4 className="text-xs text-muted-foreground mb-3">Top Players</h4>
 					<div className="space-y-2">
-						{topPlayers.map((player: { player: string; platform: string; sessions: number }, i: number) => (
-							<div key={`${player.player}-${player.platform}`} className="flex items-center gap-3 text-xs">
-								<span className="w-24 truncate text-muted-foreground text-right" title={player.player}>
-									{player.player}
-								</span>
-								<div className="flex-1 h-4 rounded-full bg-muted/30 overflow-hidden">
-									<div
-										className="h-full rounded-full transition-all duration-500"
-										style={{
-											width: `${(player.sessions / maxSessions) * 100}%`,
-											background: `linear-gradient(90deg, ${gradient.from}, ${gradient.from}bb)`,
-											animationDelay: `${i * 50}ms`,
-										}}
-									/>
+						{topPlayers.map(
+							(player: { player: string; platform: string; sessions: number }, i: number) => (
+								<div
+									key={`${player.player}-${player.platform}`}
+									className="flex items-center gap-3 text-xs"
+								>
+									<span
+										className="w-24 truncate text-muted-foreground text-right"
+										title={player.player}
+									>
+										{player.player}
+									</span>
+									<div className="flex-1 h-4 rounded-full bg-muted/30 overflow-hidden">
+										<div
+											className="h-full rounded-full transition-all duration-500"
+											style={{
+												width: `${(player.sessions / maxSessions) * 100}%`,
+												background: `linear-gradient(90deg, ${gradient.from}, ${gradient.from}bb)`,
+												animationDelay: `${i * 50}ms`,
+											}}
+										/>
+									</div>
+									<span className="w-10 text-right font-medium tabular-nums">
+										{player.sessions}
+									</span>
 								</div>
-								<span className="w-10 text-right font-medium tabular-nums">{player.sessions}</span>
-							</div>
-						))}
+							),
+						)}
 					</div>
 				</div>
 			</div>

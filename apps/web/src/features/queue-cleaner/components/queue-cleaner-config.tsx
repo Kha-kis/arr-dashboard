@@ -448,7 +448,8 @@ const InstanceConfigCard = ({
 								onChange={(v) => updateField("skipFutureEpisodes", v)}
 							/>
 							<p className="text-[10px] text-muted-foreground pl-8">
-								Pre-grabbed episodes waiting for their air date won&apos;t be flagged as stalled or stuck
+								Pre-grabbed episodes waiting for their air date won&apos;t be flagged as stalled or
+								stuck
 							</p>
 						</div>
 					)}

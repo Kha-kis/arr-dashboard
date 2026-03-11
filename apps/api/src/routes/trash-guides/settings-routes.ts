@@ -43,7 +43,12 @@ import { z } from "zod";
 import type { TrashCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import type { TrashGitHubFetcher } from "../../lib/trash-guides/github-fetcher.js";
-import { createTrashFetcher, githubDirectoryEntrySchema, githubRepoInfoSchema, githubErrorBodySchema } from "../../lib/trash-guides/github-fetcher.js";
+import {
+	createTrashFetcher,
+	githubDirectoryEntrySchema,
+	githubRepoInfoSchema,
+	githubErrorBodySchema,
+} from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";

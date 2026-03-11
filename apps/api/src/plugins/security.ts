@@ -31,10 +31,14 @@ export const securityPlugin = fp(
 		});
 
 		const encryptor = new Encryptor(encryptionKey);
-		const sessionService = new SessionService(app.prisma, {
-			...app.config,
-			SESSION_COOKIE_SECRET: sessionCookieSecret,
-		}, app.log);
+		const sessionService = new SessionService(
+			app.prisma,
+			{
+				...app.config,
+				SESSION_COOKIE_SECRET: sessionCookieSecret,
+			},
+			app.log,
+		);
 
 		app.decorate("encryptor", encryptor);
 		app.decorate("sessionService", sessionService);

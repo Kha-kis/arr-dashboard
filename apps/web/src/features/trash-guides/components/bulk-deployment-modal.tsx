@@ -35,7 +35,10 @@ import {
 	Loader2,
 	Sliders,
 } from "lucide-react";
-import { useBulkDeploymentPreviews, useExecuteBulkDeployment } from "../../../hooks/api/useDeploymentPreview";
+import {
+	useBulkDeploymentPreviews,
+	useExecuteBulkDeployment,
+} from "../../../hooks/api/useDeploymentPreview";
 import { cn } from "../../../lib/utils";
 import {
 	DropdownMenu,
@@ -85,7 +88,12 @@ interface BulkDeploymentModalProps {
 	onDeploySuccess?: () => void;
 }
 
-const syncStrategyOptions: Array<{ value: SyncStrategy; label: string; icon: typeof RefreshCw; colorKey: keyof typeof SEMANTIC_COLORS }> = [
+const syncStrategyOptions: Array<{
+	value: SyncStrategy;
+	label: string;
+	icon: typeof RefreshCw;
+	colorKey: keyof typeof SEMANTIC_COLORS;
+}> = [
 	{ value: "auto", label: "Auto-sync", icon: RefreshCw, colorKey: "success" },
 	{ value: "notify", label: "Notify", icon: Bell, colorKey: "info" },
 	{ value: "manual", label: "Manual", icon: Hand, colorKey: "warning" },
@@ -113,7 +121,7 @@ const SyncStrategySelector = ({
 					className={cn(
 						"flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all duration-200",
 						"border-border/50 bg-card/50 backdrop-blur-xs hover:bg-card/80",
-						disabled && "opacity-50 cursor-not-allowed"
+						disabled && "opacity-50 cursor-not-allowed",
 					)}
 				>
 					<Icon className="h-3 w-3" style={{ color: color.from }} />
@@ -137,9 +145,7 @@ const SyncStrategySelector = ({
 							onSelect={() => onChange(option.value)}
 							className={cn(
 								"flex items-center gap-2 px-3 py-2.5 text-xs cursor-pointer",
-								option.value === value
-									? "bg-card/80"
-									: "focus:bg-card/50"
+								option.value === value ? "bg-card/80" : "focus:bg-card/50",
 							)}
 						>
 							<OptionIcon className="h-3.5 w-3.5" style={{ color: optColor.from }} />
@@ -315,7 +321,9 @@ export const BulkDeploymentModal = ({
 	const allPreviewsLoaded =
 		selectedCount > 0 &&
 		instancePreviews.filter((inst) => inst.selected).every((inst) => inst.preview && !inst.loading);
-	const deployableCount = instancePreviews.filter((inst) => inst.selected && inst.preview?.canDeploy).length;
+	const deployableCount = instancePreviews.filter(
+		(inst) => inst.selected && inst.preview?.canDeploy,
+	).length;
 
 	const totalChanges = instancePreviews
 		.filter((inst) => inst.selected && inst.preview)
@@ -394,7 +402,9 @@ export const BulkDeploymentModal = ({
 								key={inst.instanceId}
 								className="flex items-center gap-3 p-3 rounded-xl border transition-all duration-200"
 								style={{
-									borderColor: inst.selected ? `${themeGradient.from}40` : "hsl(var(--border) / 0.5)",
+									borderColor: inst.selected
+										? `${themeGradient.from}40`
+										: "hsl(var(--border) / 0.5)",
 									backgroundColor: inst.selected ? `${themeGradient.from}08` : "transparent",
 								}}
 							>
@@ -416,32 +426,37 @@ export const BulkDeploymentModal = ({
 								{templateDefaultQualityConfig?.useCustomQualities && templateId && serviceType && (
 									<button
 										type="button"
-										onClick={() => setEditingQualityOverride({
-											instanceId: inst.instanceId,
-											instanceLabel: inst.instanceLabel,
-										})}
+										onClick={() =>
+											setEditingQualityOverride({
+												instanceId: inst.instanceId,
+												instanceLabel: inst.instanceLabel,
+											})
+										}
 										className={cn(
 											"flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium shrink-0 transition-colors",
 											instanceOverrides?.[inst.instanceId]?.qualityConfigOverride
 												? "bg-purple-500/10 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20"
-												: "bg-card border border-dashed border-border text-muted-foreground hover:bg-muted hover:border-primary/30"
+												: "bg-card border border-dashed border-border text-muted-foreground hover:bg-muted hover:border-primary/30",
 										)}
-										title={instanceOverrides?.[inst.instanceId]?.qualityConfigOverride
-											? "Click to edit custom quality configuration"
-											: "Click to customize quality configuration for this instance"
+										title={
+											instanceOverrides?.[inst.instanceId]?.qualityConfigOverride
+												? "Click to edit custom quality configuration"
+												: "Click to customize quality configuration for this instance"
 										}
 									>
 										<Sliders className="h-3 w-3" />
 										{instanceOverrides?.[inst.instanceId]?.qualityConfigOverride
 											? "Custom Quality"
-											: "Customize"
-										}
+											: "Customize"}
 									</button>
 								)}
 
 								{/* Preview status */}
 								{inst.loading && (
-									<Loader2 className="h-4 w-4 animate-spin shrink-0" style={{ color: themeGradient.from }} />
+									<Loader2
+										className="h-4 w-4 animate-spin shrink-0"
+										style={{ color: themeGradient.from }}
+									/>
 								)}
 
 								{inst.preview && (
@@ -464,7 +479,9 @@ export const BulkDeploymentModal = ({
 								)}
 
 								{inst.error && (
-									<span className="text-xs shrink-0" style={{ color: SEMANTIC_COLORS.error.text }}>Error</span>
+									<span className="text-xs shrink-0" style={{ color: SEMANTIC_COLORS.error.text }}>
+										Error
+									</span>
 								)}
 
 								{/* Per-instance sync strategy selector */}
@@ -494,25 +511,26 @@ export const BulkDeploymentModal = ({
 								<p className="text-2xl font-semibold text-foreground">{totalChanges}</p>
 							</div>
 							<div className="space-y-1">
-								<p className="text-xs" style={{ color: SEMANTIC_COLORS.success.text }}>New CFs</p>
-								<p className="text-2xl font-semibold" style={{ color: SEMANTIC_COLORS.success.from }}>
+								<p className="text-xs" style={{ color: SEMANTIC_COLORS.success.text }}>
+									New CFs
+								</p>
+								<p
+									className="text-2xl font-semibold"
+									style={{ color: SEMANTIC_COLORS.success.from }}
+								>
 									{instancePreviews
 										.filter((inst) => inst.selected && inst.preview)
-										.reduce(
-											(sum, inst) => sum + (inst.preview?.newCustomFormats || 0),
-											0,
-										)}
+										.reduce((sum, inst) => sum + (inst.preview?.newCustomFormats || 0), 0)}
 								</p>
 							</div>
 							<div className="space-y-1">
-								<p className="text-xs" style={{ color: themeGradient.from }}>Updates</p>
+								<p className="text-xs" style={{ color: themeGradient.from }}>
+									Updates
+								</p>
 								<p className="text-2xl font-semibold" style={{ color: themeGradient.from }}>
 									{instancePreviews
 										.filter((inst) => inst.selected && inst.preview)
-										.reduce(
-											(sum, inst) => sum + (inst.preview?.updatedCustomFormats || 0),
-											0,
-										)}
+										.reduce((sum, inst) => sum + (inst.preview?.updatedCustomFormats || 0), 0)}
 								</p>
 							</div>
 						</div>
@@ -522,7 +540,10 @@ export const BulkDeploymentModal = ({
 								className="mt-3 pt-3 border-t border-border/30 flex items-center gap-2 text-sm"
 								style={{ color: SEMANTIC_COLORS.warning.text }}
 							>
-								<AlertTriangle className="h-4 w-4" style={{ color: SEMANTIC_COLORS.warning.from }} />
+								<AlertTriangle
+									className="h-4 w-4"
+									style={{ color: SEMANTIC_COLORS.warning.from }}
+								/>
 								<span>Some instances have conflicts or are unreachable</span>
 							</div>
 						)}
@@ -539,9 +560,14 @@ export const BulkDeploymentModal = ({
 							border: `1px solid ${SEMANTIC_COLORS.error.border}`,
 						}}
 					>
-						<AlertCircle className="h-5 w-5 mt-0.5 shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
+						<AlertCircle
+							className="h-5 w-5 mt-0.5 shrink-0"
+							style={{ color: SEMANTIC_COLORS.error.from }}
+						/>
 						<div>
-							<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>Deployment Failed</p>
+							<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
+								Deployment Failed
+							</p>
 							<p className="text-sm mt-1 opacity-80" style={{ color: SEMANTIC_COLORS.error.text }}>
 								{bulkDeployMutation.error?.message ?? "Failed to execute bulk deployment"}
 							</p>
@@ -556,9 +582,14 @@ export const BulkDeploymentModal = ({
 							border: `1px solid ${SEMANTIC_COLORS.error.border}`,
 						}}
 					>
-						<AlertCircle className="h-5 w-5 mt-0.5 shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
+						<AlertCircle
+							className="h-5 w-5 mt-0.5 shrink-0"
+							style={{ color: SEMANTIC_COLORS.error.from }}
+						/>
 						<div>
-							<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>Deployment Partially Failed</p>
+							<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
+								Deployment Partially Failed
+							</p>
 							<p className="text-sm mt-1 opacity-80" style={{ color: SEMANTIC_COLORS.error.text }}>
 								{bulkDeployMutation.data?.result.failedInstances} of{" "}
 								{bulkDeployMutation.data?.result.totalInstances} deployments failed
@@ -574,10 +605,20 @@ export const BulkDeploymentModal = ({
 							border: `1px solid ${SEMANTIC_COLORS.success.border}`,
 						}}
 					>
-						<CheckCircle2 className="h-5 w-5 mt-0.5 shrink-0" style={{ color: SEMANTIC_COLORS.success.from }} />
+						<CheckCircle2
+							className="h-5 w-5 mt-0.5 shrink-0"
+							style={{ color: SEMANTIC_COLORS.success.from }}
+						/>
 						<div>
-							<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.success.text }}>Deployment Successful</p>
-							<p className="text-sm mt-1 opacity-80" style={{ color: SEMANTIC_COLORS.success.text }}>Custom Formats deployed to all selected instances</p>
+							<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.success.text }}>
+								Deployment Successful
+							</p>
+							<p
+								className="text-sm mt-1 opacity-80"
+								style={{ color: SEMANTIC_COLORS.success.text }}
+							>
+								Custom Formats deployed to all selected instances
+							</p>
 						</div>
 					</div>
 				)}

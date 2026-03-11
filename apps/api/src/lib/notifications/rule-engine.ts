@@ -33,9 +33,7 @@ export interface RuleResult {
 
 export class RuleEngine {
 	evaluate(payload: NotificationPayload, rules: NotificationRule[]): RuleResult | null {
-		const sorted = [...rules]
-			.filter((r) => r.enabled)
-			.sort((a, b) => a.priority - b.priority);
+		const sorted = [...rules].filter((r) => r.enabled).sort((a, b) => a.priority - b.priority);
 
 		for (const rule of sorted) {
 			if (this.matchesAllConditions(payload, rule.conditions)) {

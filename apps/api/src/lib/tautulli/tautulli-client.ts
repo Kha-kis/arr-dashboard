@@ -186,27 +186,39 @@ export class TautulliClient {
 	 * Get play counts by date for time-series charts.
 	 */
 	async getPlaysByDate(timeRange?: number): Promise<TautulliPlaysByDateData> {
-		return this.command("get_plays_by_date", {
-			time_range: timeRange ?? 30,
-		}, tautulliPlaysByDateDataSchema);
+		return this.command(
+			"get_plays_by_date",
+			{
+				time_range: timeRange ?? 30,
+			},
+			tautulliPlaysByDateDataSchema,
+		);
 	}
 
 	/**
 	 * Get watch time statistics per user.
 	 */
 	async getUserWatchTimeStats(userId?: string): Promise<TautulliUserWatchTimeStats[]> {
-		return this.command("get_user_watch_time_stats", {
-			user_id: userId,
-		}, z.array(tautulliUserWatchTimeStatsSchema));
+		return this.command(
+			"get_user_watch_time_stats",
+			{
+				user_id: userId,
+			},
+			z.array(tautulliUserWatchTimeStatsSchema),
+		);
 	}
 
 	/**
 	 * Get home statistics (most watched, top users, top platforms).
 	 */
 	async getHomeStats(timeRange?: number): Promise<TautulliHomeStat[]> {
-		return this.command("get_home_stats", {
-			time_range: timeRange ?? 30,
-		}, z.array(tautulliHomeStatSchema));
+		return this.command(
+			"get_home_stats",
+			{
+				time_range: timeRange ?? 30,
+			},
+			z.array(tautulliHomeStatSchema),
+		);
 	}
 
 	/**
@@ -246,7 +258,9 @@ export class TautulliClient {
 		} catch (err) {
 			// Sanitize error to avoid leaking API key from URL in error messages
 			const message = err instanceof Error ? err.message : String(err);
-			throw new Error(`Tautulli API connection error for cmd=${cmd}: ${message.replace(/apikey=[^&]+/, "apikey=***")}`);
+			throw new Error(
+				`Tautulli API connection error for cmd=${cmd}: ${message.replace(/apikey=[^&]+/, "apikey=***")}`,
+			);
 		}
 
 		if (!response.ok) {
@@ -254,7 +268,12 @@ export class TautulliClient {
 			throw new Error(`Tautulli API error: HTTP ${response.status} ${response.statusText}`);
 		}
 
-		const raw = await response.json();
+		let raw: unknown;
+		try {
+			raw = await response.json();
+		} catch {
+			throw new Error(`Tautulli API: invalid JSON response for cmd=${cmd}`);
+		}
 
 		// Validate wrapper structure
 		const wrapper = parseUpstreamOrThrow(raw, tautulliResponseWrapperSchema, {
@@ -270,7 +289,10 @@ export class TautulliClient {
 		if (!schema) {
 			throw new Error(`Tautulli API: schema required for command responses (cmd: ${cmd})`);
 		}
-		return parseUpstreamOrThrow(wrapper.response.data, schema, { integration: "tautulli", category: cmd });
+		return parseUpstreamOrThrow(wrapper.response.data, schema, {
+			integration: "tautulli",
+			category: cmd,
+		});
 	}
 }
 

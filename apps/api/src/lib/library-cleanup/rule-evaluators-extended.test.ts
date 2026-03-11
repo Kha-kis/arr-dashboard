@@ -8,7 +8,13 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type { CacheItemForEval, EvalContext, PlexWatchInfo, SeerrRequestInfo, TautulliWatchInfo } from "./types.js";
+import type {
+	CacheItemForEval,
+	EvalContext,
+	PlexWatchInfo,
+	SeerrRequestInfo,
+	TautulliWatchInfo,
+} from "./types.js";
 import { evaluateSingleCondition } from "./rule-evaluators.js";
 
 // ---------------------------------------------------------------------------
@@ -69,7 +75,9 @@ function baseCtx(overrides: Partial<EvalContext> = {}): EvalContext {
 // Seerr test data factory
 // ---------------------------------------------------------------------------
 
-function makeSeerrMap(entries?: Record<string, SeerrRequestInfo[]>): Map<string, SeerrRequestInfo[]> {
+function makeSeerrMap(
+	entries?: Record<string, SeerrRequestInfo[]>,
+): Map<string, SeerrRequestInfo[]> {
 	const map = new Map<string, SeerrRequestInfo[]>();
 	if (entries) {
 		for (const [key, val] of Object.entries(entries)) {
@@ -208,22 +216,12 @@ describe("no_file rule", () => {
 	const ctx = baseCtx();
 
 	it("matches when item has no file", () => {
-		const result = evaluateSingleCondition(
-			makeCacheItem({ hasFile: false }),
-			"no_file",
-			{},
-			ctx,
-		);
+		const result = evaluateSingleCondition(makeCacheItem({ hasFile: false }), "no_file", {}, ctx);
 		expect(result).toContain("no file");
 	});
 
 	it("does not match when item has a file", () => {
-		const result = evaluateSingleCondition(
-			makeCacheItem({ hasFile: true }),
-			"no_file",
-			{},
-			ctx,
-		);
+		const result = evaluateSingleCondition(makeCacheItem({ hasFile: true }), "no_file", {}, ctx);
 		expect(result).toBeNull();
 	});
 });
@@ -358,17 +356,32 @@ describe("video_codec rule", () => {
 	const ctx = baseCtx();
 
 	it("'is' matches when codec is in the list", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "video_codec", { operator: "is", codecs: ["h265", "av1"] }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"video_codec",
+			{ operator: "is", codecs: ["h265", "av1"] },
+			ctx,
+		);
 		expect(result).toContain("h265");
 	});
 
 	it("'is_not' matches when codec is NOT in the list", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "video_codec", { operator: "is_not", codecs: ["h264"] }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"video_codec",
+			{ operator: "is_not", codecs: ["h264"] },
+			ctx,
+		);
 		expect(result).toContain("not in");
 	});
 
 	it("does not match when codec matches is_not list", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "video_codec", { operator: "is_not", codecs: ["h265"] }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"video_codec",
+			{ operator: "is_not", codecs: ["h265"] },
+			ctx,
+		);
 		expect(result).toBeNull();
 	});
 
@@ -387,12 +400,22 @@ describe("audio_codec rule", () => {
 	const ctx = baseCtx();
 
 	it("'is' matches when codec is in the list", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "audio_codec", { operator: "is", codecs: ["eac3 5.1"] }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"audio_codec",
+			{ operator: "is", codecs: ["eac3 5.1"] },
+			ctx,
+		);
 		expect(result).toContain("EAC3 5.1");
 	});
 
 	it("'is_not' matches when codec is NOT in the list", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "audio_codec", { operator: "is_not", codecs: ["aac"] }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"audio_codec",
+			{ operator: "is_not", codecs: ["aac"] },
+			ctx,
+		);
 		expect(result).toContain("not in");
 	});
 });
@@ -401,17 +424,32 @@ describe("resolution rule", () => {
 	const ctx = baseCtx();
 
 	it("'is' matches when resolution is in the list", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "resolution", { operator: "is", resolutions: ["R1080p", "R2160p"] }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"resolution",
+			{ operator: "is", resolutions: ["R1080p", "R2160p"] },
+			ctx,
+		);
 		expect(result).toContain("R1080p");
 	});
 
 	it("'is_not' matches when resolution is NOT in the list", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "resolution", { operator: "is_not", resolutions: ["R720p"] }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"resolution",
+			{ operator: "is_not", resolutions: ["R720p"] },
+			ctx,
+		);
 		expect(result).toContain("not in");
 	});
 
 	it("does not match when resolution is in the is_not list", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "resolution", { operator: "is_not", resolutions: ["R1080p"] }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"resolution",
+			{ operator: "is_not", resolutions: ["R1080p"] },
+			ctx,
+		);
 		expect(result).toBeNull();
 	});
 });
@@ -420,17 +458,30 @@ describe("hdr_type rule", () => {
 	const ctx = baseCtx();
 
 	it("'is' matches when HDR type is in the list", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "hdr_type", { operator: "is", types: ["HDR", "Dolby Vision"] }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"hdr_type",
+			{ operator: "is", types: ["HDR", "Dolby Vision"] },
+			ctx,
+		);
 		expect(result).toContain("HDR");
 	});
 
 	it("'is_not' matches when HDR type is NOT in the list", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "hdr_type", { operator: "is_not", types: ["Dolby Vision"] }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"hdr_type",
+			{ operator: "is_not", types: ["Dolby Vision"] },
+			ctx,
+		);
 		expect(result).toContain("not in");
 	});
 
 	it("'none' matches when no HDR is present", () => {
-		const data = { ...DEFAULT_DATA, movieFile: { ...DEFAULT_DATA.movieFile, videoDynamicRange: "" } };
+		const data = {
+			...DEFAULT_DATA,
+			movieFile: { ...DEFAULT_DATA.movieFile, videoDynamicRange: "" },
+		};
 		const result = evaluateSingleCondition(
 			makeCacheItem({ data: JSON.stringify(data) }),
 			"hdr_type",
@@ -450,13 +501,21 @@ describe("custom_format_score rule", () => {
 	const ctx = baseCtx();
 
 	it("matches when score is greater than threshold", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "custom_format_score", { operator: "greater_than", score: 50 }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"custom_format_score",
+			{ operator: "greater_than", score: 50 },
+			ctx,
+		);
 		expect(result).toContain("85");
 		expect(result).toContain("> 50");
 	});
 
 	it("matches when score is less than threshold", () => {
-		const data = { ...DEFAULT_DATA, movieFile: { ...DEFAULT_DATA.movieFile, customFormatScore: 10 } };
+		const data = {
+			...DEFAULT_DATA,
+			movieFile: { ...DEFAULT_DATA.movieFile, customFormatScore: 10 },
+		};
 		const result = evaluateSingleCondition(
 			makeCacheItem({ data: JSON.stringify(data) }),
 			"custom_format_score",
@@ -468,7 +527,12 @@ describe("custom_format_score rule", () => {
 	});
 
 	it("does not match when score is within threshold", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "custom_format_score", { operator: "less_than", score: 50 }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"custom_format_score",
+			{ operator: "less_than", score: 50 },
+			ctx,
+		);
 		expect(result).toBeNull();
 	});
 });
@@ -477,7 +541,12 @@ describe("runtime rule", () => {
 	const ctx = baseCtx();
 
 	it("matches when runtime is greater than threshold", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "runtime", { operator: "greater_than", minutes: 120 }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"runtime",
+			{ operator: "greater_than", minutes: 120 },
+			ctx,
+		);
 		expect(result).toContain("142 min");
 		expect(result).toContain("> 120");
 	});
@@ -494,7 +563,12 @@ describe("runtime rule", () => {
 	});
 
 	it("does not match when runtime is within threshold", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "runtime", { operator: "less_than", minutes: 120 }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"runtime",
+			{ operator: "less_than", minutes: 120 },
+			ctx,
+		);
 		expect(result).toBeNull();
 	});
 });
@@ -503,17 +577,32 @@ describe("release_group rule", () => {
 	const ctx = baseCtx();
 
 	it("'is' matches when group is in the list", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "release_group", { operator: "is", groups: ["SPARKS", "FGT"] }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"release_group",
+			{ operator: "is", groups: ["SPARKS", "FGT"] },
+			ctx,
+		);
 		expect(result).toContain("SPARKS");
 	});
 
 	it("'is_not' matches when group is NOT in the list", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "release_group", { operator: "is_not", groups: ["YTS"] }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"release_group",
+			{ operator: "is_not", groups: ["YTS"] },
+			ctx,
+		);
 		expect(result).toContain("not in");
 	});
 
 	it("does not match when group is in is_not list", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "release_group", { operator: "is_not", groups: ["SPARKS"] }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"release_group",
+			{ operator: "is_not", groups: ["SPARKS"] },
+			ctx,
+		);
 		expect(result).toBeNull();
 	});
 });
@@ -527,12 +616,20 @@ describe("audio_channels rule", () => {
 
 	it("parses 5.1 from audioCodec and matches 'is' 6", () => {
 		// "EAC3 5.1" → 5+1 = 6 channels
-		const result = evaluateSingleCondition(makeCacheItem(), "audio_channels", { operator: "is", channels: 6 }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"audio_channels",
+			{ operator: "is", channels: 6 },
+			ctx,
+		);
 		expect(result).toContain("6");
 	});
 
 	it("'greater_than' matches when channels exceed threshold", () => {
-		const data = { ...DEFAULT_DATA, movieFile: { ...DEFAULT_DATA.movieFile, audioCodec: "TrueHD 7.1" } };
+		const data = {
+			...DEFAULT_DATA,
+			movieFile: { ...DEFAULT_DATA.movieFile, audioCodec: "TrueHD 7.1" },
+		};
 		const result = evaluateSingleCondition(
 			makeCacheItem({ data: JSON.stringify(data) }),
 			"audio_channels",
@@ -544,7 +641,10 @@ describe("audio_channels rule", () => {
 	});
 
 	it("'less_than' matches when channels are below threshold", () => {
-		const data = { ...DEFAULT_DATA, movieFile: { ...DEFAULT_DATA.movieFile, audioCodec: "AAC Stereo" } };
+		const data = {
+			...DEFAULT_DATA,
+			movieFile: { ...DEFAULT_DATA.movieFile, audioCodec: "AAC Stereo" },
+		};
 		const result = evaluateSingleCondition(
 			makeCacheItem({ data: JSON.stringify(data) }),
 			"audio_channels",
@@ -555,7 +655,10 @@ describe("audio_channels rule", () => {
 	});
 
 	it("parses Atmos as 8 channels", () => {
-		const data = { ...DEFAULT_DATA, movieFile: { ...DEFAULT_DATA.movieFile, audioCodec: "TrueHD Atmos" } };
+		const data = {
+			...DEFAULT_DATA,
+			movieFile: { ...DEFAULT_DATA.movieFile, audioCodec: "TrueHD Atmos" },
+		};
 		const result = evaluateSingleCondition(
 			makeCacheItem({ data: JSON.stringify(data) }),
 			"audio_channels",
@@ -566,7 +669,12 @@ describe("audio_channels rule", () => {
 	});
 
 	it("does not match when channels differ for 'is'", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "audio_channels", { operator: "is", channels: 8 }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"audio_channels",
+			{ operator: "is", channels: 8 },
+			ctx,
+		);
 		expect(result).toBeNull();
 	});
 });
@@ -619,22 +727,42 @@ describe("tag_match rule", () => {
 	const ctx = baseCtx();
 
 	it("'includes_any' matches when item has any target tag", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "tag_match", { operator: "includes_any", tagIds: [1, 5] }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"tag_match",
+			{ operator: "includes_any", tagIds: [1, 5] },
+			ctx,
+		);
 		expect(result).toContain("1");
 	});
 
 	it("'excludes_all' matches when item has none of the target tags", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "tag_match", { operator: "excludes_all", tagIds: [5, 10] }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"tag_match",
+			{ operator: "excludes_all", tagIds: [5, 10] },
+			ctx,
+		);
 		expect(result).toContain("Does not have");
 	});
 
 	it("does not match 'includes_any' when no tags overlap", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "tag_match", { operator: "includes_any", tagIds: [99] }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"tag_match",
+			{ operator: "includes_any", tagIds: [99] },
+			ctx,
+		);
 		expect(result).toBeNull();
 	});
 
 	it("does not match 'excludes_all' when item has a target tag", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "tag_match", { operator: "excludes_all", tagIds: [1] }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"tag_match",
+			{ operator: "excludes_all", tagIds: [1] },
+			ctx,
+		);
 		expect(result).toBeNull();
 	});
 });
@@ -659,7 +787,12 @@ describe("imdb_rating rule", () => {
 	});
 
 	it("matches when IMDb rating is above threshold", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "imdb_rating", { operator: "greater_than", score: 6 }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"imdb_rating",
+			{ operator: "greater_than", score: 6 },
+			ctx,
+		);
 		expect(result).toContain("7.2");
 		expect(result).toContain("> 6");
 	});
@@ -676,7 +809,12 @@ describe("imdb_rating rule", () => {
 	});
 
 	it("'unrated' does not match when rating exists", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "imdb_rating", { operator: "unrated" }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"imdb_rating",
+			{ operator: "unrated" },
+			ctx,
+		);
 		expect(result).toBeNull();
 	});
 });
@@ -689,12 +827,22 @@ describe("seerr_requested_by rule", () => {
 	const ctx = baseCtx({ seerrMap: makeSeerrMap() });
 
 	it("matches when requested by target user", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "seerr_requested_by", { userNames: ["alice"] }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"seerr_requested_by",
+			{ userNames: ["alice"] },
+			ctx,
+		);
 		expect(result).toContain("alice");
 	});
 
 	it("does not match when not requested by target user", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "seerr_requested_by", { userNames: ["charlie"] }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"seerr_requested_by",
+			{ userNames: ["charlie"] },
+			ctx,
+		);
 		expect(result).toBeNull();
 	});
 });
@@ -704,19 +852,34 @@ describe("seerr_request_age rule", () => {
 
 	it("matches when oldest request is older than threshold", () => {
 		// Oldest request: 2025-06-01 → ~274 days before NOW
-		const result = evaluateSingleCondition(makeCacheItem(), "seerr_request_age", { operator: "older_than", days: 200 }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"seerr_request_age",
+			{ operator: "older_than", days: 200 },
+			ctx,
+		);
 		expect(result).toContain("days old");
 		expect(result).toContain("> 200 days");
 	});
 
 	it("matches 'newer_than' when request is recent", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "seerr_request_age", { operator: "newer_than", days: 365 }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"seerr_request_age",
+			{ operator: "newer_than", days: 365 },
+			ctx,
+		);
 		expect(result).toContain("days old");
 		expect(result).toContain("< 365 days");
 	});
 
 	it("does not match when request is too recent for older_than", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "seerr_request_age", { operator: "older_than", days: 365 }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"seerr_request_age",
+			{ operator: "older_than", days: 365 },
+			ctx,
+		);
 		expect(result).toBeNull();
 	});
 });
@@ -765,12 +928,22 @@ describe("seerr_modified_by rule", () => {
 	const ctx = baseCtx({ seerrMap: makeSeerrMap() });
 
 	it("matches when request was modified by target user", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "seerr_modified_by", { userNames: ["admin"] }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"seerr_modified_by",
+			{ userNames: ["admin"] },
+			ctx,
+		);
 		expect(result).toContain("admin");
 	});
 
 	it("does not match when modified by someone else", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "seerr_modified_by", { userNames: ["charlie"] }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"seerr_modified_by",
+			{ userNames: ["charlie"] },
+			ctx,
+		);
 		expect(result).toBeNull();
 	});
 });
@@ -779,7 +952,12 @@ describe("seerr_is_requested rule", () => {
 	const ctx = baseCtx({ seerrMap: makeSeerrMap() });
 
 	it("matches when item has a request and isRequested=true", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "seerr_is_requested", { isRequested: true }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"seerr_is_requested",
+			{ isRequested: true },
+			ctx,
+		);
 		expect(result).toContain("Seerr request");
 	});
 
@@ -795,7 +973,12 @@ describe("seerr_is_requested rule", () => {
 	});
 
 	it("does not match when request exists and isRequested=false", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "seerr_is_requested", { isRequested: false }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"seerr_is_requested",
+			{ isRequested: false },
+			ctx,
+		);
 		expect(result).toBeNull();
 	});
 });
@@ -805,13 +988,23 @@ describe("seerr_request_count rule", () => {
 
 	it("matches 'greater_than' when count exceeds threshold", () => {
 		// Item has 2 requests
-		const result = evaluateSingleCondition(makeCacheItem(), "seerr_request_count", { operator: "greater_than", count: 1 }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"seerr_request_count",
+			{ operator: "greater_than", count: 1 },
+			ctx,
+		);
 		expect(result).toContain("2");
 		expect(result).toContain("> 1");
 	});
 
 	it("matches 'equals' when count matches exactly", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "seerr_request_count", { operator: "equals", count: 2 }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"seerr_request_count",
+			{ operator: "equals", count: 2 },
+			ctx,
+		);
 		expect(result).toContain("2");
 	});
 
@@ -827,7 +1020,12 @@ describe("seerr_request_count rule", () => {
 	});
 
 	it("does not match when count is equal for less_than", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "seerr_request_count", { operator: "less_than", count: 2 }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"seerr_request_count",
+			{ operator: "less_than", count: 2 },
+			ctx,
+		);
 		expect(result).toBeNull();
 	});
 });
@@ -984,7 +1182,12 @@ describe("plex_user_rating rule", () => {
 	});
 
 	it("'unrated' does not match when rating exists", () => {
-		const result = evaluateSingleCondition(makeCacheItem(), "plex_user_rating", { operator: "unrated" }, ctx);
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"plex_user_rating",
+			{ operator: "unrated" },
+			ctx,
+		);
 		expect(result).toBeNull();
 	});
 });
@@ -1107,7 +1310,9 @@ describe("plex_added_at rule", () => {
 	});
 
 	it("matches 'newer_than' when added to Plex recently", () => {
-		const plexMap = makePlexMap(makePlexEntry({ addedAt: new Date(NOW.getTime() - 5 * 24 * 60 * 60 * 1000) }));
+		const plexMap = makePlexMap(
+			makePlexEntry({ addedAt: new Date(NOW.getTime() - 5 * 24 * 60 * 60 * 1000) }),
+		);
 		const result = evaluateSingleCondition(
 			makeCacheItem(),
 			"plex_added_at",

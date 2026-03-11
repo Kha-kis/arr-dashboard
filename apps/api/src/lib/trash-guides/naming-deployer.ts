@@ -304,11 +304,7 @@ function buildFieldMappingsSonarr(
 			fieldGroup: "Series Folder",
 			arrApiField: "seriesFolderFormat",
 			presetName: selected.seriesFolderPreset,
-			presetValue: requirePresetValue(
-				naming.series,
-				selected.seriesFolderPreset,
-				"series folder",
-			),
+			presetValue: requirePresetValue(naming.series, selected.seriesFolderPreset, "series folder"),
 		});
 	}
 
@@ -317,11 +313,7 @@ function buildFieldMappingsSonarr(
 			fieldGroup: "Season Folder",
 			arrApiField: "seasonFolderFormat",
 			presetName: selected.seasonFolderPreset,
-			presetValue: requirePresetValue(
-				naming.season,
-				selected.seasonFolderPreset,
-				"season folder",
-			),
+			presetValue: requirePresetValue(naming.season, selected.seasonFolderPreset, "season folder"),
 		});
 	}
 
@@ -353,10 +345,8 @@ export function buildPreview(
 
 	// If enableRename is explicitly set, include it in the preview
 	if (enableRename !== undefined) {
-		const renameField =
-			naming._service === "RADARR" ? "renameMovies" : "renameEpisodes";
-		const renameLabel =
-			naming._service === "RADARR" ? "Rename Movies" : "Rename Episodes";
+		const renameField = naming._service === "RADARR" ? "renameMovies" : "renameEpisodes";
+		const renameLabel = naming._service === "RADARR" ? "Rename Movies" : "Rename Episodes";
 		const currentValue = currentConfig[renameField];
 
 		fieldMappings.push({

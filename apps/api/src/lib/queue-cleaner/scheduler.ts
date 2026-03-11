@@ -617,11 +617,19 @@ class QueueCleanerScheduler {
 							itemsCleaned: result.itemsCleaned,
 							itemsSkipped: result.itemsSkipped,
 							durationMs,
-							cleanedItems: result.cleanedItems.slice(0, 5).map((i: { title?: string; rule?: string }) => `${i.title ?? "Unknown"} (${i.rule ?? ""})`),
+							cleanedItems: result.cleanedItems
+								.slice(0, 5)
+								.map(
+									(i: { title?: string; rule?: string }) =>
+										`${i.title ?? "Unknown"} (${i.rule ?? ""})`,
+								),
 						},
 					})
 					.catch((err) => {
-						log.warn({ err, instanceLabel: config.instance.label }, "Queue cleaner notification dispatch failed");
+						log.warn(
+							{ err, instanceLabel: config.instance.label },
+							"Queue cleaner notification dispatch failed",
+						);
 					});
 			}
 			if (result.itemsWarned > 0) {
@@ -635,11 +643,19 @@ class QueueCleanerScheduler {
 							instance: config.instance.label,
 							service: config.instance.service,
 							itemsWarned: result.itemsWarned,
-							warnedItems: result.warnedItems.slice(0, 5).map((i: { title?: string; rule?: string }) => `${i.title ?? "Unknown"} (${i.rule ?? ""})`),
+							warnedItems: result.warnedItems
+								.slice(0, 5)
+								.map(
+									(i: { title?: string; rule?: string }) =>
+										`${i.title ?? "Unknown"} (${i.rule ?? ""})`,
+								),
 						},
 					})
 					.catch((err) => {
-						log.warn({ err, instanceLabel: config.instance.label }, "Queue cleaner strikes notification dispatch failed");
+						log.warn(
+							{ err, instanceLabel: config.instance.label },
+							"Queue cleaner strikes notification dispatch failed",
+						);
 					});
 			}
 		} catch (error) {
@@ -672,7 +688,10 @@ class QueueCleanerScheduler {
 					},
 				})
 				.catch((err) => {
-					log.warn({ err, instanceLabel: config.instance.label }, "Queue cleaner failure notification dispatch failed");
+					log.warn(
+						{ err, instanceLabel: config.instance.label },
+						"Queue cleaner failure notification dispatch failed",
+					);
 				});
 		}
 	}

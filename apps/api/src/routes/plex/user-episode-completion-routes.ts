@@ -13,14 +13,12 @@ import { aggregateUserEpisodeCompletion } from "./lib/user-episode-helpers.js";
 const MAX_BATCH_SIZE = 200;
 
 const episodeCompletionQuery = z.object({
-	tmdbIds: z
-		.string()
-		.transform((val) =>
-			val
-				.split(",")
-				.map((s) => Number.parseInt(s.trim(), 10))
-				.filter((n) => Number.isFinite(n) && n > 0),
-		),
+	tmdbIds: z.string().transform((val) =>
+		val
+			.split(",")
+			.map((s) => Number.parseInt(s.trim(), 10))
+			.filter((n) => Number.isFinite(n) && n > 0),
+	),
 });
 
 export async function registerUserEpisodeCompletionRoutes(
@@ -60,9 +58,13 @@ export async function registerUserEpisodeCompletionRoutes(
 			select: { showTmdbId: true, watched: true, watchedByUsers: true },
 		});
 
-		const { parseFailures, totalEpisodes, failedPreviews, ...completion } = aggregateUserEpisodeCompletion(episodes);
+		const { parseFailures, totalEpisodes, failedPreviews, ...completion } =
+			aggregateUserEpisodeCompletion(episodes);
 		if (parseFailures > 0) {
-			request.log.warn({ parseFailures, totalEpisodes, failedPreviews, route: "user-episode-completion" }, "Episode cache JSON parse failures detected");
+			request.log.warn(
+				{ parseFailures, totalEpisodes, failedPreviews, route: "user-episode-completion" },
+				"Episode cache JSON parse failures detected",
+			);
 		}
 		return reply.send(completion);
 	});

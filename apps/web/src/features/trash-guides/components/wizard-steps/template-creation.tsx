@@ -591,46 +591,46 @@ export const TemplateCreation = ({
 					)}
 
 					{/* Naming Presets */}
-					{wizardState.namingSelection && (() => {
-						const ns = wizardState.namingSelection;
-						const entries: Array<{ label: string; value: string | null }> =
-							ns.serviceType === "RADARR"
-								? [
-									{ label: "File Naming", value: ns.filePreset },
-									{ label: "Folder Format", value: ns.folderPreset },
-								]
-								: [
-									{ label: "Standard Episode", value: ns.standardEpisodePreset },
-									{ label: "Daily Episode", value: ns.dailyEpisodePreset },
-									{ label: "Anime Episode", value: ns.animeEpisodePreset },
-									{ label: "Series Folder", value: ns.seriesFolderPreset },
-									{ label: "Season Folder", value: ns.seasonFolderPreset },
-								];
-						const configured = entries.filter((e) => e.value != null);
-						if (configured.length === 0) return null;
-						return (
-							<div className="rounded-lg border border-border bg-card p-4">
-								<div className="flex items-center gap-2 text-sm font-medium text-foreground">
-									<FileType className="h-4 w-4 text-green-400" />
-									Naming Presets ({configured.length})
+					{wizardState.namingSelection &&
+						(() => {
+							const ns = wizardState.namingSelection;
+							const entries: Array<{ label: string; value: string | null }> =
+								ns.serviceType === "RADARR"
+									? [
+											{ label: "File Naming", value: ns.filePreset },
+											{ label: "Folder Format", value: ns.folderPreset },
+										]
+									: [
+											{ label: "Standard Episode", value: ns.standardEpisodePreset },
+											{ label: "Daily Episode", value: ns.dailyEpisodePreset },
+											{ label: "Anime Episode", value: ns.animeEpisodePreset },
+											{ label: "Series Folder", value: ns.seriesFolderPreset },
+											{ label: "Season Folder", value: ns.seasonFolderPreset },
+										];
+							const configured = entries.filter((e) => e.value != null);
+							if (configured.length === 0) return null;
+							return (
+								<div className="rounded-lg border border-border bg-card p-4">
+									<div className="flex items-center gap-2 text-sm font-medium text-foreground">
+										<FileType className="h-4 w-4 text-green-400" />
+										Naming Presets ({configured.length})
+									</div>
+									<div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+										{configured.map((entry) => (
+											<div
+												key={entry.label}
+												className="text-sm text-foreground/70 flex items-start gap-2"
+											>
+												<span className="text-green-400 mt-0.5">•</span>
+												<span>
+													<span className="text-foreground/50">{entry.label}:</span> {entry.value}
+												</span>
+											</div>
+										))}
+									</div>
 								</div>
-								<div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
-									{configured.map((entry) => (
-										<div
-											key={entry.label}
-											className="text-sm text-foreground/70 flex items-start gap-2"
-										>
-											<span className="text-green-400 mt-0.5">•</span>
-											<span>
-												<span className="text-foreground/50">{entry.label}:</span>{" "}
-												{entry.value}
-											</span>
-										</div>
-									))}
-								</div>
-							</div>
-						);
-					})()}
+							);
+						})()}
 
 					{/* Custom Formats Breakdown */}
 					<div className="rounded-lg border border-border bg-card p-4">

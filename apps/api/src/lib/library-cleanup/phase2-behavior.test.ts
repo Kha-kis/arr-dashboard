@@ -17,9 +17,7 @@ import type {
 	PlexWatchInfo,
 	TautulliWatchInfo,
 } from "./types.js";
-import {
-	evaluateSingleCondition,
-} from "./rule-evaluators.js";
+import { evaluateSingleCondition } from "./rule-evaluators.js";
 
 // ---------------------------------------------------------------------------
 // Factories

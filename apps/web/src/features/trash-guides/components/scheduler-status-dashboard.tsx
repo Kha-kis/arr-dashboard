@@ -403,9 +403,7 @@ export const SchedulerStatusDashboard = () => {
 							(schedulerData.lastCheckResult.qualitySizeUpdatesPending ?? 0) > 0) && (
 							<div className="pt-4 border-t border-border/50 space-y-3">
 								<div>
-									<h5 className="text-sm font-medium text-foreground mb-1">
-										Instance Sync
-									</h5>
+									<h5 className="text-sm font-medium text-foreground mb-1">Instance Sync</h5>
 									<p className="text-xs text-muted-foreground">
 										Auto-syncs naming presets and quality sizes when TRaSH data changes
 									</p>
@@ -416,7 +414,10 @@ export const SchedulerStatusDashboard = () => {
 											className="flex h-10 w-10 items-center justify-center rounded-lg"
 											style={{ backgroundColor: `${SEMANTIC_COLORS.success.from}15` }}
 										>
-											<FileType className="h-5 w-5" style={{ color: SEMANTIC_COLORS.success.from }} />
+											<FileType
+												className="h-5 w-5"
+												style={{ color: SEMANTIC_COLORS.success.from }}
+											/>
 										</div>
 										<div>
 											<p className="text-xs text-muted-foreground">Naming Synced</p>
@@ -433,16 +434,20 @@ export const SchedulerStatusDashboard = () => {
 											className="flex h-10 w-10 items-center justify-center rounded-lg"
 											style={{ backgroundColor: `${SEMANTIC_COLORS.warning.from}15` }}
 										>
-											<FileType className="h-5 w-5" style={{ color: SEMANTIC_COLORS.warning.from }} />
+											<FileType
+												className="h-5 w-5"
+												style={{ color: SEMANTIC_COLORS.warning.from }}
+											/>
 										</div>
 										<div>
 											<p className="text-xs text-muted-foreground">Naming Pending</p>
 											<p
 												className="text-xl font-bold"
 												style={{
-													color: (schedulerData.lastCheckResult.namingUpdatesPending ?? 0) > 0
-														? SEMANTIC_COLORS.warning.from
-														: undefined,
+													color:
+														(schedulerData.lastCheckResult.namingUpdatesPending ?? 0) > 0
+															? SEMANTIC_COLORS.warning.from
+															: undefined,
 												}}
 											>
 												{schedulerData.lastCheckResult.namingUpdatesPending ?? 0}
@@ -454,7 +459,10 @@ export const SchedulerStatusDashboard = () => {
 											className="flex h-10 w-10 items-center justify-center rounded-lg"
 											style={{ backgroundColor: `${SEMANTIC_COLORS.success.from}15` }}
 										>
-											<SlidersHorizontal className="h-5 w-5" style={{ color: SEMANTIC_COLORS.success.from }} />
+											<SlidersHorizontal
+												className="h-5 w-5"
+												style={{ color: SEMANTIC_COLORS.success.from }}
+											/>
 										</div>
 										<div>
 											<p className="text-xs text-muted-foreground">Quality Size Synced</p>
@@ -471,16 +479,20 @@ export const SchedulerStatusDashboard = () => {
 											className="flex h-10 w-10 items-center justify-center rounded-lg"
 											style={{ backgroundColor: `${SEMANTIC_COLORS.warning.from}15` }}
 										>
-											<SlidersHorizontal className="h-5 w-5" style={{ color: SEMANTIC_COLORS.warning.from }} />
+											<SlidersHorizontal
+												className="h-5 w-5"
+												style={{ color: SEMANTIC_COLORS.warning.from }}
+											/>
 										</div>
 										<div>
 											<p className="text-xs text-muted-foreground">Quality Size Pending</p>
 											<p
 												className="text-xl font-bold"
 												style={{
-													color: (schedulerData.lastCheckResult.qualitySizeUpdatesPending ?? 0) > 0
-														? SEMANTIC_COLORS.warning.from
-														: undefined,
+													color:
+														(schedulerData.lastCheckResult.qualitySizeUpdatesPending ?? 0) > 0
+															? SEMANTIC_COLORS.warning.from
+															: undefined,
 												}}
 											>
 												{schedulerData.lastCheckResult.qualitySizeUpdatesPending ?? 0}

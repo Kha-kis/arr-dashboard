@@ -166,9 +166,7 @@ function PresetSelector({
 			</div>
 			{selectedFormatString && (
 				<div className="rounded-md border border-border/30 bg-card/20 px-3 py-2 max-h-24 overflow-y-auto">
-					<code className="text-xs text-muted-foreground break-all">
-						{selectedFormatString}
-					</code>
+					<code className="text-xs text-muted-foreground break-all">{selectedFormatString}</code>
 				</div>
 			)}
 		</div>
@@ -192,21 +190,12 @@ function PreviewTable({
 				<table className="w-full text-sm">
 					<thead>
 						<tr className="border-b border-border/50">
-							<th className="px-4 py-3 text-left font-medium text-muted-foreground">
-								Field
-							</th>
-							<th className="px-4 py-3 text-left font-medium text-muted-foreground">
-								Current
-							</th>
-							<th
-								className="px-4 py-3 text-left font-medium"
-								style={{ color: themeGradient.from }}
-							>
+							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Field</th>
+							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Current</th>
+							<th className="px-4 py-3 text-left font-medium" style={{ color: themeGradient.from }}>
 								TRaSH Preset
 							</th>
-							<th className="px-4 py-3 text-center font-medium text-muted-foreground">
-								Status
-							</th>
+							<th className="px-4 py-3 text-center font-medium text-muted-foreground">Status</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -222,9 +211,7 @@ function PreviewTable({
 								<td className="px-4 py-2.5">
 									<div>
 										<div className="font-medium">{row.fieldGroup}</div>
-										<div className="text-xs text-muted-foreground">
-											{row.presetName}
-										</div>
+										<div className="text-xs text-muted-foreground">{row.presetName}</div>
 									</div>
 								</td>
 								<td className="px-4 py-2.5">
@@ -235,11 +222,7 @@ function PreviewTable({
 								<td className="px-4 py-2.5">
 									<code
 										className="text-xs break-all font-medium"
-										style={
-											row.changed
-												? { color: SEMANTIC_COLORS.warning.text }
-												: undefined
-										}
+										style={row.changed ? { color: SEMANTIC_COLORS.warning.text } : undefined}
 									>
 										{row.presetValue}
 									</code>
@@ -299,7 +282,10 @@ export function NamingManager() {
 		isLoading: presetsLoading,
 		error: presetsError,
 	} = useNamingPresets(serviceType ?? "RADARR", !!serviceType);
-	const { data: configData } = useNamingConfig(selectedInstanceId ?? undefined, !!selectedInstanceId);
+	const { data: configData } = useNamingConfig(
+		selectedInstanceId ?? undefined,
+		!!selectedInstanceId,
+	);
 	const previewMutation = useNamingPreview();
 	const applyMutation = useApplyNaming();
 	const saveConfigMutation = useSaveNamingConfig();
@@ -315,9 +301,7 @@ export function NamingManager() {
 	);
 
 	const arrInstances =
-		services?.filter(
-			(s) => (s.service === "radarr" || s.service === "sonarr") && s.enabled,
-		) ?? [];
+		services?.filter((s) => (s.service === "radarr" || s.service === "sonarr") && s.enabled) ?? [];
 
 	// ========================================================================
 	// Handlers
@@ -520,8 +504,7 @@ export function NamingManager() {
 				) : arrInstances.length === 0 ? (
 					<GlassmorphicCard padding="md">
 						<p className="text-sm text-muted-foreground">
-							No Radarr or Sonarr instances configured. Add an instance in Settings
-							first.
+							No Radarr or Sonarr instances configured. Add an instance in Settings first.
 						</p>
 					</GlassmorphicCard>
 				) : (
@@ -529,8 +512,7 @@ export function NamingManager() {
 						{arrInstances.map((instance, index) => {
 							const isSelected = selectedInstanceId === instance.id;
 							const gradient = getServiceGradient(instance.service);
-							const hasSavedConfig =
-								configData?.config?.instanceId === instance.id;
+							const hasSavedConfig = configData?.config?.instanceId === instance.id;
 
 							return (
 								<button
@@ -558,22 +540,16 @@ export function NamingManager() {
 										<Server
 											className="h-5 w-5 shrink-0"
 											style={{
-												color: isSelected
-													? themeGradient.from
-													: gradient.from,
+												color: isSelected ? themeGradient.from : gradient.from,
 											}}
 										/>
 										<div className="min-w-0 flex-1">
 											<div className="flex items-center gap-2">
-												<span className="text-sm font-medium truncate">
-													{instance.label}
-												</span>
+												<span className="text-sm font-medium truncate">{instance.label}</span>
 												<ServiceBadge service={instance.service} />
 											</div>
 											{hasSavedConfig && (
-												<span className="text-xs text-muted-foreground">
-													Naming configured
-												</span>
+												<span className="text-xs text-muted-foreground">Naming configured</span>
 											)}
 										</div>
 									</div>
@@ -594,9 +570,7 @@ export function NamingManager() {
 								Configure Naming Presets
 							</h3>
 							{presetsError ? (
-								<ErrorBanner
-									message={`Failed to load presets: ${presetsError.message}`}
-								/>
+								<ErrorBanner message={`Failed to load presets: ${presetsError.message}`} />
 							) : presetsLoading || !presets ? (
 								<div className="flex items-center gap-2 text-sm text-muted-foreground">
 									<Loader2 className="h-4 w-4 animate-spin" />
@@ -609,16 +583,9 @@ export function NamingManager() {
 											<PresetSelector
 												key={cat.key}
 												label={cat.label}
-												presetOptions={getPresetsForCategory(
-													presets,
-													cat.key,
-												)}
-												selectedPreset={
-													(selections[cat.key] as string | undefined) ?? null
-												}
-												onSelect={(name) =>
-													handlePresetChange(cat.key, name)
-												}
+												presetOptions={getPresetsForCategory(presets, cat.key)}
+												selectedPreset={(selections[cat.key] as string | undefined) ?? null}
+												onSelect={(name) => handlePresetChange(cat.key, name)}
 												disabled={applyMutation.isPending}
 												themeGradient={themeGradient}
 											/>
@@ -681,9 +648,7 @@ export function NamingManager() {
 					{previewMutation.data?.preview && (
 						<div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
 							<div className="flex items-center justify-between">
-								<h3 className="text-sm font-medium text-muted-foreground">
-									Preview Changes
-								</h3>
+								<h3 className="text-sm font-medium text-muted-foreground">Preview Changes</h3>
 								<div className="flex items-center gap-4 text-xs text-muted-foreground">
 									<span className="flex items-center gap-1">
 										<CheckCircle2
@@ -707,20 +672,21 @@ export function NamingManager() {
 								<label className="flex items-center gap-3 cursor-pointer">
 									<input
 										type="checkbox"
-										checked={enableRename ?? (previewMutation.data.preview.comparisons.some(
-											(c) => c.arrApiField === "renameMovies" || c.arrApiField === "renameEpisodes"
-												? c.currentValue === "true"
-												: false
-										))}
+										checked={
+											enableRename ??
+											previewMutation.data.preview.comparisons.some((c) =>
+												c.arrApiField === "renameMovies" || c.arrApiField === "renameEpisodes"
+													? c.currentValue === "true"
+													: false,
+											)
+										}
 										onChange={(e) => setEnableRename(e.target.checked)}
 										className="h-4 w-4 rounded border-border/50 accent-current"
 										style={{ accentColor: themeGradient.from }}
 										disabled={applyMutation.isPending}
 									/>
 									<div>
-										<span className="text-sm font-medium">
-											Enable file renaming
-										</span>
+										<span className="text-sm font-medium">Enable file renaming</span>
 										<p className="text-xs text-muted-foreground">
 											{serviceType === "RADARR"
 												? "Sets renameMovies — allows Radarr to rename movie files"
@@ -743,8 +709,7 @@ export function NamingManager() {
 											type="button"
 											onClick={() => setShowConfirmApply(true)}
 											disabled={
-												applyMutation.isPending ||
-												previewMutation.data.preview.changedCount === 0
+												applyMutation.isPending || previewMutation.data.preview.changedCount === 0
 											}
 											className="rounded-xl px-6 py-2.5 text-sm font-medium text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110"
 											style={{
@@ -767,7 +732,8 @@ export function NamingManager() {
 											/>
 											<span className="text-sm">
 												Apply {previewMutation.data.preview.changedCount} naming change(s) to{" "}
-												<strong>{selectedInstance?.label}</strong>? This will overwrite the current naming config.
+												<strong>{selectedInstance?.label}</strong>? This will overwrite the current
+												naming config.
 											</span>
 											<button
 												type="button"
@@ -803,9 +769,7 @@ export function NamingManager() {
 									)}
 								</div>
 								{applyMutation.isError && (
-									<ErrorBanner
-										message={`Apply failed: ${applyMutation.error.message}`}
-									/>
+									<ErrorBanner message={`Apply failed: ${applyMutation.error.message}`} />
 								)}
 								{applyMutation.isSuccess && (
 									<div
@@ -819,9 +783,7 @@ export function NamingManager() {
 										<CheckCircle2 className="h-4 w-4 shrink-0" />
 										{applyMutation.data?.message ?? "Naming presets applied successfully."}
 										{applyMutation.data?.warning && (
-											<span className="ml-2 text-xs opacity-80">
-												{applyMutation.data.warning}
-											</span>
+											<span className="ml-2 text-xs opacity-80">{applyMutation.data.warning}</span>
 										)}
 									</div>
 								)}
@@ -831,16 +793,14 @@ export function NamingManager() {
 
 					{/* Preview error */}
 					{previewMutation.isError && (
-						<ErrorBanner
-							message={`Preview failed: ${previewMutation.error.message}`}
-						/>
+						<ErrorBanner message={`Preview failed: ${previewMutation.error.message}`} />
 					)}
 				</>
 			)}
 
 			{/* History View */}
-			{namingView === "history" && (
-				selectedInstanceId ? (
+			{namingView === "history" &&
+				(selectedInstanceId ? (
 					<Suspense>
 						<NamingHistoryTable instanceId={selectedInstanceId} />
 					</Suspense>
@@ -852,8 +812,7 @@ export function NamingManager() {
 							Choose an instance above to view its naming deployment history
 						</p>
 					</div>
-				)
-			)}
+				))}
 		</div>
 	);
 }

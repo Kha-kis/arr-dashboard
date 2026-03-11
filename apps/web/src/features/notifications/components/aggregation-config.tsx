@@ -3,10 +3,7 @@
 import { Clock, Loader2, Layers } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { NotificationEventType } from "@arr/shared";
-import {
-	GlassmorphicCard,
-	GradientButton,
-} from "@/components/layout/premium-components";
+import { GlassmorphicCard, GradientButton } from "@/components/layout/premium-components";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 import {
 	useAggregationConfigs,
@@ -84,15 +81,12 @@ export function AggregationConfig() {
 		setIsDirty(false);
 	}, [configs]);
 
-	const updateLocal = useCallback(
-		(eventType: string, patch: Partial<LocalConfig>) => {
-			setLocalConfigs((prev) =>
-				prev.map((c) => (c.eventType === eventType ? { ...c, ...patch } : c)),
-			);
-			setIsDirty(true);
-		},
-		[],
-	);
+	const updateLocal = useCallback((eventType: string, patch: Partial<LocalConfig>) => {
+		setLocalConfigs((prev) =>
+			prev.map((c) => (c.eventType === eventType ? { ...c, ...patch } : c)),
+		);
+		setIsDirty(true);
+	}, []);
 
 	const handleSave = () => {
 		const enabled = localConfigs.filter((c) => c.enabled);
@@ -129,7 +123,8 @@ export function AggregationConfig() {
 						Event Aggregation
 					</h3>
 					<p className="mt-0.5 text-xs text-muted-foreground">
-						Batch high-frequency events into digest notifications instead of sending each one individually.
+						Batch high-frequency events into digest notifications instead of sending each one
+						individually.
 					</p>
 				</div>
 				{isDirty && (
@@ -168,7 +163,9 @@ export function AggregationConfig() {
 
 							{/* Label */}
 							<div className="min-w-0 flex-1">
-								<span className={`text-sm ${config.enabled ? "text-foreground" : "text-muted-foreground"}`}>
+								<span
+									className={`text-sm ${config.enabled ? "text-foreground" : "text-muted-foreground"}`}
+								>
 									{EVENT_LABELS[config.eventType] ?? config.eventType}
 								</span>
 							</div>

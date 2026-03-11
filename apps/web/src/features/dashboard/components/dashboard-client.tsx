@@ -462,7 +462,8 @@ export const DashboardClient = () => {
 						</h1>
 						<p className="text-muted-foreground max-w-xl">
 							Your media server command center. {totalInstances} active instance
-							{totalInstances !== 1 ? "s" : ""}{totalInstances === 0 && services.length > 0 ? ` (${services.length} disabled)` : ""}
+							{totalInstances !== 1 ? "s" : ""}
+							{totalInstances === 0 && services.length > 0 ? ` (${services.length} disabled)` : ""}
 							{totalQueueItems > 0 && (
 								<span className="font-medium" style={{ color: themeGradient.from }}>
 									{" "}
@@ -612,7 +613,12 @@ export const DashboardClient = () => {
 													<h3 className="text-lg font-medium mb-1">All instances disabled</h3>
 													<p className="text-sm text-muted-foreground max-w-sm mx-auto">
 														Enable instances from the{" "}
-														<Link href="/settings" className="underline hover:text-foreground transition-colors">Settings</Link>{" "}
+														<Link
+															href="/settings"
+															className="underline hover:text-foreground transition-colors"
+														>
+															Settings
+														</Link>{" "}
 														page to see them here.
 													</p>
 												</>
@@ -627,7 +633,10 @@ export const DashboardClient = () => {
 											)}
 										</div>
 									) : (
-										<ServiceInstancesTable instances={enabledServices} incognitoMode={incognitoMode} />
+										<ServiceInstancesTable
+											instances={enabledServices}
+											incognitoMode={incognitoMode}
+										/>
 									)}
 								</div>
 							</div>

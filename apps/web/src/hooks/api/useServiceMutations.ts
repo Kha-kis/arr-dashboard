@@ -96,7 +96,15 @@ export const useTestConnectionBeforeAdd = () => {
 		{
 			baseUrl: string;
 			apiKey: string;
-			service: "sonarr" | "radarr" | "prowlarr" | "lidarr" | "readarr" | "seerr" | "tautulli" | "plex";
+			service:
+				| "sonarr"
+				| "radarr"
+				| "prowlarr"
+				| "lidarr"
+				| "readarr"
+				| "seerr"
+				| "tautulli"
+				| "plex";
 		}
 	>({
 		mutationFn: ({ baseUrl, apiKey, service }) => testConnectionBeforeAdd(baseUrl, apiKey, service),

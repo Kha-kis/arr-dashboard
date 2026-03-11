@@ -41,9 +41,13 @@ export async function registerUserAnalyticsRoutes(
 			take: 50000,
 		});
 
-		const { parseFailures, totalSnapshots, failedPreviews, ...analytics } = aggregateUserAnalytics(snapshots);
+		const { parseFailures, totalSnapshots, failedPreviews, ...analytics } =
+			aggregateUserAnalytics(snapshots);
 		if (parseFailures > 0) {
-			request.log.warn({ parseFailures, totalSnapshots, failedPreviews, route: "user-analytics" }, "Session snapshot JSON parse failures detected");
+			request.log.warn(
+				{ parseFailures, totalSnapshots, failedPreviews, route: "user-analytics" },
+				"Session snapshot JSON parse failures detected",
+			);
 		}
 		return reply.send(analytics);
 	});

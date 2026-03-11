@@ -27,14 +27,22 @@ export interface BandwidthAggregationResult extends BandwidthAnalytics {
  *
  * Uses pre-computed columns (no JSON parsing), so parseFailures is always 0.
  */
-export function aggregateBandwidthAnalytics(snapshots: SnapshotForBandwidth[]): BandwidthAggregationResult {
+export function aggregateBandwidthAnalytics(
+	snapshots: SnapshotForBandwidth[],
+): BandwidthAggregationResult {
 	let peakConcurrent = 0;
 	let peakBandwidth = 0;
 	let totalBandwidthSum = 0;
 
 	const dailyMap = new Map<
 		string,
-		{ concurrent: number; bandwidth: number; lanBandwidth: number; wanBandwidth: number; count: number }
+		{
+			concurrent: number;
+			bandwidth: number;
+			lanBandwidth: number;
+			wanBandwidth: number;
+			count: number;
+		}
 	>();
 
 	for (const snap of snapshots) {

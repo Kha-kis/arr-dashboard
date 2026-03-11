@@ -228,7 +228,18 @@ const RULE_CATEGORIES: Array<{
 		id: "content",
 		label: "Content Attributes",
 		icon: Film,
-		types: ["age", "rating", "imdb_rating", "status", "unmonitored", "genre", "year_range", "language", "no_file", "tag_match"],
+		types: [
+			"age",
+			"rating",
+			"imdb_rating",
+			"status",
+			"unmonitored",
+			"genre",
+			"year_range",
+			"language",
+			"no_file",
+			"tag_match",
+		],
 	},
 	{
 		id: "quality",
@@ -278,7 +289,16 @@ const RULE_CATEGORIES: Array<{
 		id: "plex",
 		label: "Plex Integration",
 		icon: Tv,
-		types: ["plex_last_watched", "plex_watch_count", "plex_on_deck", "plex_user_rating", "plex_watched_by", "plex_collection", "plex_label", "plex_added_at"],
+		types: [
+			"plex_last_watched",
+			"plex_watch_count",
+			"plex_on_deck",
+			"plex_user_rating",
+			"plex_watched_by",
+			"plex_collection",
+			"plex_label",
+			"plex_added_at",
+		],
 		requires: "plex" as const,
 	},
 	{
@@ -456,9 +476,12 @@ export function CleanupRuleDialog({
 				setIsComposite(true);
 				setCompositeOperator(editRule.operator as "AND" | "OR");
 				setConditions(
-					(editRule.conditions as Array<{ ruleType: CleanupRuleType; parameters: Record<string, unknown> }>).map(
-						(c, i) => ({ id: `cond-${i}`, ruleType: c.ruleType, params: c.parameters ?? {} }),
-					),
+					(
+						editRule.conditions as Array<{
+							ruleType: CleanupRuleType;
+							parameters: Record<string, unknown>;
+						}>
+					).map((c, i) => ({ id: `cond-${i}`, ruleType: c.ruleType, params: c.parameters ?? {} })),
 				);
 			} else {
 				setIsComposite(false);
@@ -621,7 +644,9 @@ export function CleanupRuleDialog({
 				// Phase D: Plex collections & labels
 				case "plex_collection":
 					setPlexCollectionOp((p.operator as string) ?? "in");
-					setSelectedPlexCollections(Array.isArray(p.collections) ? (p.collections as string[]) : []);
+					setSelectedPlexCollections(
+						Array.isArray(p.collections) ? (p.collections as string[]) : [],
+					);
 					break;
 				case "plex_label":
 					setPlexLabelOp((p.operator as string) ?? "has_any");
@@ -953,12 +978,12 @@ export function CleanupRuleDialog({
 			plexLibraryFilter: selectedPlexLibraries.length > 0 ? selectedPlexLibraries : null,
 			operator: isComposite ? compositeOperator : null,
 			conditions: isComposite
-				? (conditions
+				? conditions
 						.filter((c) => c.ruleType !== "composite")
 						.map((c) => ({
 							ruleType: c.ruleType as Exclude<CleanupRuleType, "composite">,
 							parameters: c.params,
-						})))
+						}))
 				: null,
 		};
 		onSave(base as CreateCleanupRule);
@@ -1047,7 +1072,9 @@ export function CleanupRuleDialog({
 								<ShieldOff className="h-4 w-4 text-emerald-400" />
 								<div>
 									<span className="text-sm font-medium">Retention Rule</span>
-									<p className="text-xs text-muted-foreground">Protects matching items from other rules</p>
+									<p className="text-xs text-muted-foreground">
+										Protects matching items from other rules
+									</p>
 								</div>
 							</div>
 							<Switch
@@ -1096,11 +1123,19 @@ export function CleanupRuleDialog({
 							<div className="flex gap-2 mt-1.5">
 								<button
 									type="button"
-									onClick={() => { setIsComposite(false); setConditions([]); setCompositeError(null); }}
+									onClick={() => {
+										setIsComposite(false);
+										setConditions([]);
+										setCompositeError(null);
+									}}
 									className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-all duration-200"
 									style={
 										!isComposite
-											? { borderColor: gradient.from, backgroundColor: gradient.fromLight, color: gradient.from }
+											? {
+													borderColor: gradient.from,
+													backgroundColor: gradient.fromLight,
+													color: gradient.from,
+												}
 											: { borderColor: "var(--color-border)" }
 									}
 								>
@@ -1112,7 +1147,11 @@ export function CleanupRuleDialog({
 									className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-all duration-200"
 									style={
 										isComposite
-											? { borderColor: gradient.from, backgroundColor: gradient.fromLight, color: gradient.from }
+											? {
+													borderColor: gradient.from,
+													backgroundColor: gradient.fromLight,
+													color: gradient.from,
+												}
 											: { borderColor: "var(--color-border)" }
 									}
 								>
@@ -1135,7 +1174,11 @@ export function CleanupRuleDialog({
 												className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-all duration-200"
 												style={
 													compositeOperator === op
-														? { borderColor: gradient.from, backgroundColor: gradient.fromLight, color: gradient.from }
+														? {
+																borderColor: gradient.from,
+																backgroundColor: gradient.fromLight,
+																color: gradient.from,
+															}
 														: { borderColor: "var(--color-border)" }
 												}
 											>
@@ -1150,12 +1193,19 @@ export function CleanupRuleDialog({
 									</p>
 								</div>
 								{conditions.map((cond, idx) => (
-									<div key={cond.id} className="rounded-lg border border-border/50 bg-card/20 p-3 space-y-2">
+									<div
+										key={cond.id}
+										className="rounded-lg border border-border/50 bg-card/20 p-3 space-y-2"
+									>
 										<div className="flex items-center justify-between">
-											<span className="text-xs font-medium text-muted-foreground">Condition {idx + 1}</span>
+											<span className="text-xs font-medium text-muted-foreground">
+												Condition {idx + 1}
+											</span>
 											<button
 												type="button"
-												onClick={() => setConditions((prev) => prev.filter((c) => c.id !== cond.id))}
+												onClick={() =>
+													setConditions((prev) => prev.filter((c) => c.id !== cond.id))
+												}
 												className="text-xs text-muted-foreground hover:text-destructive transition-colors"
 											>
 												Remove
@@ -1167,34 +1217,40 @@ export function CleanupRuleDialog({
 												const newType = e.target.value as CleanupRuleType;
 												setConditions((prev) =>
 													prev.map((c) =>
-														c.id === cond.id ? { ...c, ruleType: newType, params: getDefaultConditionParams(newType) } : c,
+														c.id === cond.id
+															? {
+																	...c,
+																	ruleType: newType,
+																	params: getDefaultConditionParams(newType),
+																}
+															: c,
 													),
 												);
 											}}
 											className={inputClass}
 										>
 											{RULE_TYPES.filter((rt) => rt.value !== "composite").map((rt) => (
-												<option key={rt.value} value={rt.value}>{rt.label}</option>
+												<option key={rt.value} value={rt.value}>
+													{rt.label}
+												</option>
 											))}
 										</select>
 										<p className="text-xs text-muted-foreground">
 											{RULE_TYPE_MAP.get(cond.ruleType)?.desc ?? ""}
 										</p>
-									<ConditionParamsFields
-										ruleType={cond.ruleType}
-										params={cond.params}
-										onParamsChange={(newParams) =>
-											setConditions((prev) =>
-												prev.map((c) =>
-													c.id === cond.id ? { ...c, params: newParams } : c,
-												),
-											)
-										}
-										fieldOptions={fieldOptions}
-										fieldOptionsLoading={fieldOptionsLoading}
-										inputClass={inputClass}
-										labelClass={labelClass}
-									/>
+										<ConditionParamsFields
+											ruleType={cond.ruleType}
+											params={cond.params}
+											onParamsChange={(newParams) =>
+												setConditions((prev) =>
+													prev.map((c) => (c.id === cond.id ? { ...c, params: newParams } : c)),
+												)
+											}
+											fieldOptions={fieldOptions}
+											fieldOptionsLoading={fieldOptionsLoading}
+											inputClass={inputClass}
+											labelClass={labelClass}
+										/>
 									</div>
 								))}
 								{compositeError && (
@@ -1207,7 +1263,11 @@ export function CleanupRuleDialog({
 									onClick={() => {
 										setConditions((prev) => [
 											...prev,
-											{ id: `cond-${Date.now()}`, ruleType: "age" as CleanupRuleType, params: getDefaultConditionParams("age") },
+											{
+												id: `cond-${Date.now()}`,
+												ruleType: "age" as CleanupRuleType,
+												params: getDefaultConditionParams("age"),
+											},
 										]);
 										setCompositeError(null);
 									}}
@@ -1252,10 +1312,7 @@ export function CleanupRuleDialog({
 													onClick={() => toggleCategory(cat.id)}
 													className="flex items-center gap-2 w-full px-3 py-2 text-sm font-medium text-left hover:bg-card/50 transition-colors"
 												>
-													<CatIcon
-														className="h-4 w-4 shrink-0"
-														style={{ color: gradient.from }}
-													/>
+													<CatIcon className="h-4 w-4 shrink-0" style={{ color: gradient.from }} />
 													<span className="flex-1">{cat.label}</span>
 													{hasSelected && (
 														<span
@@ -1279,23 +1336,15 @@ export function CleanupRuleDialog({
 																<button
 																	key={typeValue}
 																	type="button"
-																	onClick={() =>
-																		setRuleType(
-																			typeValue as CleanupRuleType,
-																		)
-																	}
+																	onClick={() => setRuleType(typeValue as CleanupRuleType)}
 																	className={`text-left rounded-lg border px-2.5 py-2 transition-all duration-200 ${
-																		isSelected
-																			? ""
-																			: "border-border/30 hover:border-border/60"
+																		isSelected ? "" : "border-border/30 hover:border-border/60"
 																	}`}
 																	style={
 																		isSelected
 																			? {
-																					borderColor:
-																						gradient.from,
-																					backgroundColor:
-																						gradient.fromLight,
+																					borderColor: gradient.from,
+																					backgroundColor: gradient.fromLight,
 																					color: gradient.from,
 																				}
 																			: undefined
@@ -1306,9 +1355,7 @@ export function CleanupRuleDialog({
 																	</div>
 																	<div
 																		className={`text-xs mt-0.5 leading-tight ${
-																			isSelected
-																				? "opacity-80"
-																				: "text-muted-foreground"
+																			isSelected ? "opacity-80" : "text-muted-foreground"
 																		}`}
 																	>
 																		{ruleInfo.desc}
@@ -1330,10 +1377,7 @@ export function CleanupRuleDialog({
 					{!isComposite && (
 						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4 space-y-3">
 							<div className="flex items-center gap-2 mb-2">
-								<SlidersHorizontal
-									className="h-4 w-4"
-									style={{ color: gradient.from }}
-								/>
+								<SlidersHorizontal className="h-4 w-4" style={{ color: gradient.from }} />
 								<span className="text-sm font-medium">Parameters</span>
 							</div>
 							<ParamsFields
@@ -1537,7 +1581,9 @@ export function CleanupRuleDialog({
 						<div>
 							<span className={labelClass}>Instance Filter</span>
 							{arrInstances.length === 0 ? (
-								<p className="text-xs text-muted-foreground mt-1">No Sonarr/Radarr instances configured.</p>
+								<p className="text-xs text-muted-foreground mt-1">
+									No Sonarr/Radarr instances configured.
+								</p>
 							) : (
 								<div className="mt-1.5 space-y-1.5">
 									{["sonarr", "radarr"].map((svc) => {
@@ -1545,7 +1591,9 @@ export function CleanupRuleDialog({
 										if (instances.length === 0) return null;
 										return (
 											<div key={svc}>
-												<span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium">{svc}</span>
+												<span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium">
+													{svc}
+												</span>
 												<div className="flex flex-wrap gap-2 mt-1">
 													{instances.map((inst) => {
 														const selected = instanceFilter.includes(inst.id);
@@ -1555,7 +1603,9 @@ export function CleanupRuleDialog({
 																type="button"
 																onClick={() => {
 																	setInstanceFilter((prev) =>
-																		selected ? prev.filter((id) => id !== inst.id) : [...prev, inst.id],
+																		selected
+																			? prev.filter((id) => id !== inst.id)
+																			: [...prev, inst.id],
 																	);
 																}}
 																className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors border ${
@@ -1572,7 +1622,9 @@ export function CleanupRuleDialog({
 											</div>
 										);
 									})}
-									<p className="text-xs text-muted-foreground mt-1">Leave unselected for all instances.</p>
+									<p className="text-xs text-muted-foreground mt-1">
+										Leave unselected for all instances.
+									</p>
 								</div>
 							)}
 						</div>
@@ -1981,11 +2033,7 @@ function ParamsFields(props: ParamsFieldsProps) {
 				<div className="flex gap-2">
 					<label className="block flex-1">
 						<span className={labelClass}>Operator</span>
-						<select
-							value={ageOp}
-							onChange={(e) => setAgeOp(e.target.value)}
-							className={inputClass}
-						>
+						<select value={ageOp} onChange={(e) => setAgeOp(e.target.value)} className={inputClass}>
 							<option value="older_than">Older than</option>
 							<option value="newer_than">Newer than</option>
 						</select>
@@ -2666,9 +2714,7 @@ function ParamsFields(props: ParamsFieldsProps) {
 							/>
 						</label>
 					</div>
-					<p className="text-xs text-muted-foreground">
-						Flag items by total play count from Plex.
-					</p>
+					<p className="text-xs text-muted-foreground">Flag items by total play count from Plex.</p>
 				</div>
 			);
 		case "plex_on_deck":

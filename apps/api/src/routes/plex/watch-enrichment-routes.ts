@@ -42,7 +42,11 @@ export async function registerWatchEnrichmentRoutes(
 	 * tmdbIds and types are parallel arrays (same length, same order).
 	 */
 	app.get("/", async (request, reply) => {
-		const { tmdbIds: tmdbIdsRaw, types, filterUser } = validateRequest(enrichmentQuery, request.query);
+		const {
+			tmdbIds: tmdbIdsRaw,
+			types,
+			filterUser,
+		} = validateRequest(enrichmentQuery, request.query);
 		const tmdbIds = tmdbIdsRaw.split(",").map(Number);
 		const userId = request.currentUser!.id;
 

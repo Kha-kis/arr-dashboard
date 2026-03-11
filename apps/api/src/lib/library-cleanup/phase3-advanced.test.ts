@@ -9,14 +9,8 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type {
-	CacheItemForEval,
-	EvalContext,
-	PlexWatchInfo,
-} from "./types.js";
-import {
-	evaluateSingleCondition,
-} from "./rule-evaluators.js";
+import type { CacheItemForEval, EvalContext, PlexWatchInfo } from "./types.js";
+import { evaluateSingleCondition } from "./rule-evaluators.js";
 
 // ---------------------------------------------------------------------------
 // Factories
@@ -216,10 +210,42 @@ function aggregateStats(logs: LogEntry[]) {
 describe("statistics aggregation", () => {
 	it("counts run statuses correctly", () => {
 		const logs: LogEntry[] = [
-			{ status: "completed", itemsEvaluated: 100, itemsFlagged: 5, itemsRemoved: 3, itemsUnmonitored: 1, itemsFilesDeleted: 1, details: null },
-			{ status: "completed", itemsEvaluated: 100, itemsFlagged: 2, itemsRemoved: 2, itemsUnmonitored: 0, itemsFilesDeleted: 0, details: null },
-			{ status: "partial", itemsEvaluated: 50, itemsFlagged: 0, itemsRemoved: 0, itemsUnmonitored: 0, itemsFilesDeleted: 0, details: null },
-			{ status: "error", itemsEvaluated: 0, itemsFlagged: 0, itemsRemoved: 0, itemsUnmonitored: 0, itemsFilesDeleted: 0, details: null },
+			{
+				status: "completed",
+				itemsEvaluated: 100,
+				itemsFlagged: 5,
+				itemsRemoved: 3,
+				itemsUnmonitored: 1,
+				itemsFilesDeleted: 1,
+				details: null,
+			},
+			{
+				status: "completed",
+				itemsEvaluated: 100,
+				itemsFlagged: 2,
+				itemsRemoved: 2,
+				itemsUnmonitored: 0,
+				itemsFilesDeleted: 0,
+				details: null,
+			},
+			{
+				status: "partial",
+				itemsEvaluated: 50,
+				itemsFlagged: 0,
+				itemsRemoved: 0,
+				itemsUnmonitored: 0,
+				itemsFilesDeleted: 0,
+				details: null,
+			},
+			{
+				status: "error",
+				itemsEvaluated: 0,
+				itemsFlagged: 0,
+				itemsRemoved: 0,
+				itemsUnmonitored: 0,
+				itemsFilesDeleted: 0,
+				details: null,
+			},
 		];
 
 		const stats = aggregateStats(logs);
@@ -235,7 +261,12 @@ describe("statistics aggregation", () => {
 	it("extracts rule effectiveness from log details", () => {
 		const logs: LogEntry[] = [
 			{
-				status: "completed", itemsEvaluated: 100, itemsFlagged: 3, itemsRemoved: 3, itemsUnmonitored: 0, itemsFilesDeleted: 0,
+				status: "completed",
+				itemsEvaluated: 100,
+				itemsFlagged: 3,
+				itemsRemoved: 3,
+				itemsUnmonitored: 0,
+				itemsFilesDeleted: 0,
 				details: JSON.stringify([
 					{ ruleId: "rule-1", rule: "Old Movies" },
 					{ ruleId: "rule-1", rule: "Old Movies" },
@@ -243,18 +274,29 @@ describe("statistics aggregation", () => {
 				]),
 			},
 			{
-				status: "completed", itemsEvaluated: 100, itemsFlagged: 1, itemsRemoved: 1, itemsUnmonitored: 0, itemsFilesDeleted: 0,
-				details: JSON.stringify([
-					{ ruleId: "rule-1", rule: "Old Movies" },
-				]),
+				status: "completed",
+				itemsEvaluated: 100,
+				itemsFlagged: 1,
+				itemsRemoved: 1,
+				itemsUnmonitored: 0,
+				itemsFilesDeleted: 0,
+				details: JSON.stringify([{ ruleId: "rule-1", rule: "Old Movies" }]),
 			},
 		];
 
 		const stats = aggregateStats(logs);
 		expect(stats.ruleEffectiveness).toHaveLength(2);
 		// Sorted by match count descending
-		expect(stats.ruleEffectiveness[0]).toEqual({ ruleId: "rule-1", ruleName: "Old Movies", matchCount: 3 });
-		expect(stats.ruleEffectiveness[1]).toEqual({ ruleId: "rule-2", ruleName: "Low Rating", matchCount: 1 });
+		expect(stats.ruleEffectiveness[0]).toEqual({
+			ruleId: "rule-1",
+			ruleName: "Old Movies",
+			matchCount: 3,
+		});
+		expect(stats.ruleEffectiveness[1]).toEqual({
+			ruleId: "rule-2",
+			ruleName: "Low Rating",
+			matchCount: 1,
+		});
 	});
 
 	it("handles empty logs", () => {
@@ -266,8 +308,24 @@ describe("statistics aggregation", () => {
 
 	it("handles malformed details gracefully", () => {
 		const logs: LogEntry[] = [
-			{ status: "completed", itemsEvaluated: 50, itemsFlagged: 1, itemsRemoved: 1, itemsUnmonitored: 0, itemsFilesDeleted: 0, details: "not valid json{{{" },
-			{ status: "completed", itemsEvaluated: 50, itemsFlagged: 0, itemsRemoved: 0, itemsUnmonitored: 0, itemsFilesDeleted: 0, details: null },
+			{
+				status: "completed",
+				itemsEvaluated: 50,
+				itemsFlagged: 1,
+				itemsRemoved: 1,
+				itemsUnmonitored: 0,
+				itemsFilesDeleted: 0,
+				details: "not valid json{{{",
+			},
+			{
+				status: "completed",
+				itemsEvaluated: 50,
+				itemsFlagged: 0,
+				itemsRemoved: 0,
+				itemsUnmonitored: 0,
+				itemsFilesDeleted: 0,
+				details: null,
+			},
 		];
 
 		const stats = aggregateStats(logs);

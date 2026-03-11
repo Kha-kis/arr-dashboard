@@ -17,7 +17,15 @@ interface BarItem {
 	secondaryLabel?: string;
 }
 
-const HorizontalBarChart = ({ items, color, maxBars = 10 }: { items: BarItem[]; color: string; maxBars?: number }) => {
+const HorizontalBarChart = ({
+	items,
+	color,
+	maxBars = 10,
+}: {
+	items: BarItem[];
+	color: string;
+	maxBars?: number;
+}) => {
 	const visible = items.slice(0, maxBars);
 	const max = Math.max(...visible.map((i) => i.value), 1);
 
@@ -120,7 +128,10 @@ const UserDailySparkline = ({
 			<div className="flex flex-wrap gap-3 mt-2">
 				{topUsers.map((user, i) => (
 					<div key={user} className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-						<div className="h-2 w-2 rounded-full" style={{ backgroundColor: colors[i % colors.length] }} />
+						<div
+							className="h-2 w-2 rounded-full"
+							style={{ backgroundColor: colors[i % colors.length] }}
+						/>
 						{user}
 					</div>
 				))}
@@ -155,20 +166,31 @@ export const UserAnalyticsChart = ({ days, enabled }: UserAnalyticsChartProps) =
 	const { data, isLoading, isError } = useUserAnalytics(days, enabled);
 
 	const userColors = useMemo(
-		() => [gradient.from, gradient.to, SERVICE_GRADIENTS.plex.from, SERVICE_GRADIENTS.sonarr.from, SERVICE_GRADIENTS.radarr.from],
+		() => [
+			gradient.from,
+			gradient.to,
+			SERVICE_GRADIENTS.plex.from,
+			SERVICE_GRADIENTS.sonarr.from,
+			SERVICE_GRADIENTS.radarr.from,
+		],
 		[gradient.from, gradient.to],
 	);
 
 	const barItems = useMemo((): BarItem[] => {
 		if (!data?.users) return [];
-		return data.users.map((u: { username: string; totalSessions: number; estimatedWatchTimeMinutes: number }) => ({
-			label: u.username,
-			value: u.totalSessions,
-			secondaryLabel: formatWatchTime(u.estimatedWatchTimeMinutes),
-		}));
+		return data.users.map(
+			(u: { username: string; totalSessions: number; estimatedWatchTimeMinutes: number }) => ({
+				label: u.username,
+				value: u.totalSessions,
+				secondaryLabel: formatWatchTime(u.estimatedWatchTimeMinutes),
+			}),
+		);
 	}, [data]);
 
-	const topUsers = useMemo(() => data?.users.slice(0, 5).map((u: { username: string }) => u.username) ?? [], [data]);
+	const topUsers = useMemo(
+		() => data?.users.slice(0, 5).map((u: { username: string }) => u.username) ?? [],
+		[data],
+	);
 
 	if (isLoading) {
 		return (
@@ -217,7 +239,14 @@ export const UserAnalyticsChart = ({ days, enabled }: UserAnalyticsChartProps) =
 				</span>
 				<span className="flex items-center gap-1">
 					<Clock className="h-3 w-3" />
-					{formatWatchTime(data.users.reduce((s: number, u: { estimatedWatchTimeMinutes: number }) => s + u.estimatedWatchTimeMinutes, 0))} total
+					{formatWatchTime(
+						data.users.reduce(
+							(s: number, u: { estimatedWatchTimeMinutes: number }) =>
+								s + u.estimatedWatchTimeMinutes,
+							0,
+						),
+					)}{" "}
+					total
 				</span>
 			</div>
 

@@ -37,8 +37,20 @@ export const Sparkline = ({ data, width = 280, height = 60, color, fillColor }: 
 	return (
 		<svg width={width} height={height} className="overflow-visible">
 			{fillColor && <path d={areaPath} fill={fillColor} opacity={0.15} />}
-			<path d={linePath} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-			<circle cx={Number(points[points.length - 1]?.split(",")[0])} cy={Number(points[points.length - 1]?.split(",")[1])} r={3} fill={color} />
+			<path
+				d={linePath}
+				fill="none"
+				stroke={color}
+				strokeWidth={2}
+				strokeLinecap="round"
+				strokeLinejoin="round"
+			/>
+			<circle
+				cx={Number(points[points.length - 1]?.split(",")[0])}
+				cy={Number(points[points.length - 1]?.split(",")[1])}
+				r={3}
+				fill={color}
+			/>
 		</svg>
 	);
 };
@@ -61,7 +73,9 @@ export const MiniStatCard = ({ icon: Icon, label, value, color }: MiniStatCardPr
 				className="h-8 w-8 rounded-lg flex items-center justify-center"
 				style={{ backgroundColor: `${color}20` }}
 			>
-				<span style={{ color }}><Icon className="h-4 w-4" /></span>
+				<span style={{ color }}>
+					<Icon className="h-4 w-4" />
+				</span>
 			</div>
 			<span className="text-xs text-muted-foreground">{label}</span>
 		</div>

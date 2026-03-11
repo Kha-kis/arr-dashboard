@@ -368,7 +368,11 @@ export class SyncEngine {
 
 						const missingFormats: string[] = [];
 						for (const cf of configData.customFormats) {
-							if (cf.trashId && !cf.trashId.startsWith(USER_CF_PREFIX) && !cachedTrashIds.has(cf.trashId)) {
+							if (
+								cf.trashId &&
+								!cf.trashId.startsWith(USER_CF_PREFIX) &&
+								!cachedTrashIds.has(cf.trashId)
+							) {
 								missingFormats.push(cf.name || cf.trashId);
 							}
 						}

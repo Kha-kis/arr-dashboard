@@ -225,7 +225,12 @@ describe("rating rule", () => {
 		const item = makeCacheItem({
 			data: JSON.stringify({ ...DEFAULT_DATA, ratings: { tmdb: { value: 3.2 } } }),
 		});
-		const result = evaluateSingleCondition(item, "rating", { operator: "less_than", score: 5 }, ctx);
+		const result = evaluateSingleCondition(
+			item,
+			"rating",
+			{ operator: "less_than", score: 5 },
+			ctx,
+		);
 		expect(result).toContain("TMDB rating: 3.2");
 	});
 

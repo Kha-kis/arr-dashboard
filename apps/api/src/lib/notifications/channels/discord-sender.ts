@@ -14,7 +14,10 @@ export const discordSender: ChannelSender = {
 
 		const allFields = extractMetadataFields(payload.metadata).map((f) => ({
 			name: f.label,
-			value: f.value.length > DISCORD_MAX_FIELD_VALUE ? `${f.value.slice(0, DISCORD_MAX_FIELD_VALUE - 3)}...` : f.value,
+			value:
+				f.value.length > DISCORD_MAX_FIELD_VALUE
+					? `${f.value.slice(0, DISCORD_MAX_FIELD_VALUE - 3)}...`
+					: f.value,
 			inline: f.value.length < 30,
 		}));
 		// Discord allows max 25 fields per embed
@@ -101,9 +104,7 @@ export const discordPlugin: ChannelPlugin = {
 	label: "Discord",
 	icon: "Send",
 	configSchema: "discordConfigSchema",
-	formFields: [
-		{ key: "webhookUrl", label: "Webhook URL", type: "url", required: true },
-	],
+	formFields: [{ key: "webhookUrl", label: "Webhook URL", type: "url", required: true }],
 	sender: discordSender,
 };
 

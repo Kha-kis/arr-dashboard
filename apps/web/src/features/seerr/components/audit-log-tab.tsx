@@ -52,10 +52,18 @@ export const AuditLogTab = ({ instanceId }: AuditLogTabProps) => {
 		<PremiumTable>
 			<PremiumTableHeader>
 				<tr>
-					<th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Time</th>
-					<th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Action</th>
-					<th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Target</th>
-					<th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Status</th>
+					<th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+						Time
+					</th>
+					<th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+						Action
+					</th>
+					<th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+						Target
+					</th>
+					<th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+						Status
+					</th>
 				</tr>
 			</PremiumTableHeader>
 			<tbody>

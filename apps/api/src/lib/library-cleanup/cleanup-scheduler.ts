@@ -100,7 +100,10 @@ export class CleanupScheduler {
 				})
 				.then((result) => {
 					if (result.count > 0) {
-						this.logger.warn({ recoveredCount: result.count }, "Recovered stuck executing approval items — marked as expired");
+						this.logger.warn(
+							{ recoveredCount: result.count },
+							"Recovered stuck executing approval items — marked as expired",
+						);
 					}
 				})
 				.catch((err) => {
@@ -150,13 +153,15 @@ export class CleanupScheduler {
 				);
 
 				if (result.itemsFlagged > 0 || result.itemsRemoved > 0 || result.itemsUnmonitored > 0) {
-					const hasActions = result.itemsRemoved > 0 || result.itemsUnmonitored > 0 || result.itemsFilesDeleted > 0;
+					const hasActions =
+						result.itemsRemoved > 0 || result.itemsUnmonitored > 0 || result.itemsFilesDeleted > 0;
 
 					if (hasActions) {
 						const parts: string[] = [];
 						if (result.itemsRemoved > 0) parts.push(`${result.itemsRemoved} removed`);
 						if (result.itemsUnmonitored > 0) parts.push(`${result.itemsUnmonitored} unmonitored`);
-						if (result.itemsFilesDeleted > 0) parts.push(`${result.itemsFilesDeleted} files deleted`);
+						if (result.itemsFilesDeleted > 0)
+							parts.push(`${result.itemsFilesDeleted} files deleted`);
 
 						this.notifyFn?.({
 							eventType: "CLEANUP_ITEMS_REMOVED",

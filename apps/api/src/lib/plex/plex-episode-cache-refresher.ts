@@ -138,7 +138,12 @@ export async function refreshPlexEpisodeCache(
 					errors++;
 					if (errors <= 3) {
 						log.warn(
-							{ err, instanceId, tmdbId, episode: `S${episode.seasonNumber}E${episode.episodeNumber}` },
+							{
+								err,
+								instanceId,
+								tmdbId,
+								episode: `S${episode.seasonNumber}E${episode.episodeNumber}`,
+							},
 							"Failed to upsert episode cache entry",
 						);
 					}
@@ -146,10 +151,7 @@ export async function refreshPlexEpisodeCache(
 			}
 		} catch (err) {
 			errors++;
-			log.warn(
-				{ err, instanceId, tmdbId, showRatingKey },
-				"Failed to fetch episodes for show",
-			);
+			log.warn({ err, instanceId, tmdbId, showRatingKey }, "Failed to fetch episodes for show");
 		}
 	}
 

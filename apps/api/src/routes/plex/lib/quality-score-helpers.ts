@@ -22,10 +22,13 @@ export interface SnapshotForQuality {
 
 // Resolution → score mapping (higher resolution = better score)
 const RESOLUTION_SCORES: Record<string, number> = {
-	"4k": 100, "2160": 100,
+	"4k": 100,
+	"2160": 100,
 	"1080": 75,
 	"720": 50,
-	"576": 35, "480": 25, "sd": 25,
+	"576": 35,
+	"480": 25,
+	sd: 25,
 };
 
 function getResolutionScore(resolution: string | null | undefined): number {
@@ -123,7 +126,9 @@ export function computeQualityScore(snapshots: SnapshotForQuality[]): QualitySco
 	const directPlayScore = Math.round((totalDirectPlay / totalSessions) * 100);
 	const resolutionScore = Math.round(totalResolutionScore / totalSessions);
 	const transcodeScore = Math.round((1 - totalTranscode / totalSessions) * 100);
-	const overallScore = Math.round(directPlayScore * 0.4 + resolutionScore * 0.3 + transcodeScore * 0.3);
+	const overallScore = Math.round(
+		directPlayScore * 0.4 + resolutionScore * 0.3 + transcodeScore * 0.3,
+	);
 
 	function computeScore(dp: number, tc: number, resScore: number, count: number): number {
 		if (count === 0) return 0;

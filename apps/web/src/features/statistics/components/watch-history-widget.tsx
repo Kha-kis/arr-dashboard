@@ -39,7 +39,12 @@ export const WatchHistoryWidget = ({ days, enabled }: WatchHistoryWidgetProps) =
 				<PremiumSkeleton variant="line" className="h-5 w-40 mb-4" />
 				<div className="space-y-3">
 					{[0, 1, 2].map((i) => (
-						<PremiumSkeleton key={i} variant="line" className="h-12" style={{ animationDelay: `${i * 50}ms` }} />
+						<PremiumSkeleton
+							key={i}
+							variant="line"
+							className="h-12"
+							style={{ animationDelay: `${i * 50}ms` }}
+						/>
 					))}
 				</div>
 			</div>
@@ -74,49 +79,60 @@ export const WatchHistoryWidget = ({ days, enabled }: WatchHistoryWidgetProps) =
 			</h3>
 
 			<div className="space-y-1">
-				{data.events.map((event: { user: string; title: string; timestamp: string; platform: string | null; videoDecision: string | null }, i: number) => (
-					<div
-						key={`${event.user}-${event.title}-${event.timestamp}`}
-						className="flex items-center gap-3 py-2 px-2 rounded-lg hover:bg-muted/20 transition-colors animate-in fade-in slide-in-from-bottom-1 duration-200"
-						style={{ animationDelay: `${i * 30}ms`, animationFillMode: "backwards" }}
-					>
-						{/* User avatar placeholder */}
+				{data.events.map(
+					(
+						event: {
+							user: string;
+							title: string;
+							timestamp: string;
+							platform: string | null;
+							videoDecision: string | null;
+						},
+						i: number,
+					) => (
 						<div
-							className="h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-							style={{ backgroundColor: `${gradient.from}20`, color: gradient.from }}
+							key={`${event.user}-${event.title}-${event.timestamp}`}
+							className="flex items-center gap-3 py-2 px-2 rounded-lg hover:bg-muted/20 transition-colors animate-in fade-in slide-in-from-bottom-1 duration-200"
+							style={{ animationDelay: `${i * 30}ms`, animationFillMode: "backwards" }}
 						>
-							{event.user.charAt(0).toUpperCase()}
-						</div>
+							{/* User avatar placeholder */}
+							<div
+								className="h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+								style={{ backgroundColor: `${gradient.from}20`, color: gradient.from }}
+							>
+								{event.user.charAt(0).toUpperCase()}
+							</div>
 
-						{/* Content */}
-						<div className="flex-1 min-w-0">
-							<p className="text-sm font-medium truncate">{event.title}</p>
-							<p className="text-[10px] text-muted-foreground flex items-center gap-2">
-								<span>{event.user}</span>
-								{event.platform && (
-									<>
-										<span className="text-border">·</span>
-										<span>{event.platform}</span>
-									</>
-								)}
-								{event.videoDecision && (
-									<>
-										<span className="text-border">·</span>
-										<span className="flex items-center gap-0.5">
-											<MonitorPlay className="h-2.5 w-2.5" />
-											{event.videoDecision}
-										</span>
-									</>
-								)}
-							</p>
-						</div>
+							{/* Content */}
+							<div className="flex-1 min-w-0">
+								<p className="text-sm font-medium truncate">{event.title}</p>
+								<p className="text-[10px] text-muted-foreground flex items-center gap-2">
+									<span>{event.user}</span>
+									{event.platform && (
+										<>
+											<span className="text-border">·</span>
+											<span>{event.platform}</span>
+										</>
+									)}
+									{event.videoDecision && (
+										<>
+											<span className="text-border">·</span>
+											<span className="flex items-center gap-0.5">
+												<MonitorPlay className="h-2.5 w-2.5" />
+												{event.videoDecision}
+											</span>
+										</>
+									)}
+								</p>
+							</div>
 
-						{/* Timestamp */}
-						<span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">
-							{formatRelativeTime(event.timestamp)}
-						</span>
-					</div>
-				))}
+							{/* Timestamp */}
+							<span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">
+								{formatRelativeTime(event.timestamp)}
+							</span>
+						</div>
+					),
+				)}
 			</div>
 		</div>
 	);

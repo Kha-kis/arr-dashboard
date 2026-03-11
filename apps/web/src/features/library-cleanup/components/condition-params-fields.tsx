@@ -24,49 +24,92 @@ interface ConditionParamsFieldsProps {
 
 export function getDefaultConditionParams(ruleType: CleanupRuleType): Record<string, unknown> {
 	switch (ruleType) {
-		case "age": return { operator: "older_than", days: 30 };
-		case "size": return { operator: "greater_than", sizeGb: 50 };
-		case "rating": return { source: "tmdb", operator: "less_than", score: 5 };
-		case "status": return { statuses: [] };
-		case "genre": return { operator: "includes_any", genres: [] };
-		case "year_range": return { operator: "before", year: 2020 };
-		case "quality_profile": return { profileNames: [] };
-		case "language": return { operator: "includes_any", languages: [] };
-		case "seerr_requested_by": return { userNames: [] };
-		case "seerr_request_age": return { operator: "older_than", days: 90 };
-		case "seerr_request_status": return { statuses: [] };
-		case "video_codec": return { operator: "is", codecs: [] };
-		case "audio_codec": return { operator: "is", codecs: [] };
-		case "resolution": return { operator: "is", resolutions: [] };
-		case "hdr_type": return { operator: "is", types: [] };
-		case "custom_format_score": return { operator: "less_than", score: 0 };
-		case "runtime": return { operator: "greater_than", minutes: 60 };
-		case "release_group": return { operator: "is", groups: [] };
-		case "seerr_is_4k": return { is4k: true };
-		case "seerr_request_modified_age": return { operator: "older_than", days: 90 };
-		case "seerr_modified_by": return { userNames: [] };
-		case "tautulli_last_watched": return { operator: "older_than", days: 90 };
-		case "tautulli_watch_count": return { operator: "less_than", count: 1 };
-		case "tautulli_watched_by": return { operator: "includes_any", userNames: [] };
-		case "plex_last_watched": return { operator: "older_than", days: 90 };
-		case "plex_watch_count": return { operator: "less_than", count: 1 };
-		case "plex_on_deck": return { isDeck: false };
-		case "plex_user_rating": return { operator: "less_than", rating: 5 };
-		case "plex_watched_by": return { operator: "includes_any", userNames: [] };
-		case "imdb_rating": return { operator: "less_than", score: 5 };
-		case "file_path": return { operator: "matches", field: "path", pattern: "" };
-		case "seerr_is_requested": return { isRequested: true };
-		case "seerr_request_count": return { operator: "less_than", count: 1 };
-		case "audio_channels": return { operator: "less_than", channels: 6 };
-		case "tag_match": return { operator: "includes_any", tagIds: [] };
-		case "plex_collection": return { operator: "in", collections: [] };
-		case "plex_label": return { operator: "has_any", labels: [] };
-		case "plex_added_at": return { operator: "older_than", days: 90 };
-		case "plex_episode_completion": return { operator: "less_than", percentage: 10 };
-		case "user_retention": return { operator: "watched_by_none", source: "plex" };
-		case "staleness_score": return { operator: "greater_than", threshold: 70 };
-		case "recently_active": return { protectionDays: 30, requireActivity: true };
-		default: return {};
+		case "age":
+			return { operator: "older_than", days: 30 };
+		case "size":
+			return { operator: "greater_than", sizeGb: 50 };
+		case "rating":
+			return { source: "tmdb", operator: "less_than", score: 5 };
+		case "status":
+			return { statuses: [] };
+		case "genre":
+			return { operator: "includes_any", genres: [] };
+		case "year_range":
+			return { operator: "before", year: 2020 };
+		case "quality_profile":
+			return { profileNames: [] };
+		case "language":
+			return { operator: "includes_any", languages: [] };
+		case "seerr_requested_by":
+			return { userNames: [] };
+		case "seerr_request_age":
+			return { operator: "older_than", days: 90 };
+		case "seerr_request_status":
+			return { statuses: [] };
+		case "video_codec":
+			return { operator: "is", codecs: [] };
+		case "audio_codec":
+			return { operator: "is", codecs: [] };
+		case "resolution":
+			return { operator: "is", resolutions: [] };
+		case "hdr_type":
+			return { operator: "is", types: [] };
+		case "custom_format_score":
+			return { operator: "less_than", score: 0 };
+		case "runtime":
+			return { operator: "greater_than", minutes: 60 };
+		case "release_group":
+			return { operator: "is", groups: [] };
+		case "seerr_is_4k":
+			return { is4k: true };
+		case "seerr_request_modified_age":
+			return { operator: "older_than", days: 90 };
+		case "seerr_modified_by":
+			return { userNames: [] };
+		case "tautulli_last_watched":
+			return { operator: "older_than", days: 90 };
+		case "tautulli_watch_count":
+			return { operator: "less_than", count: 1 };
+		case "tautulli_watched_by":
+			return { operator: "includes_any", userNames: [] };
+		case "plex_last_watched":
+			return { operator: "older_than", days: 90 };
+		case "plex_watch_count":
+			return { operator: "less_than", count: 1 };
+		case "plex_on_deck":
+			return { isDeck: false };
+		case "plex_user_rating":
+			return { operator: "less_than", rating: 5 };
+		case "plex_watched_by":
+			return { operator: "includes_any", userNames: [] };
+		case "imdb_rating":
+			return { operator: "less_than", score: 5 };
+		case "file_path":
+			return { operator: "matches", field: "path", pattern: "" };
+		case "seerr_is_requested":
+			return { isRequested: true };
+		case "seerr_request_count":
+			return { operator: "less_than", count: 1 };
+		case "audio_channels":
+			return { operator: "less_than", channels: 6 };
+		case "tag_match":
+			return { operator: "includes_any", tagIds: [] };
+		case "plex_collection":
+			return { operator: "in", collections: [] };
+		case "plex_label":
+			return { operator: "has_any", labels: [] };
+		case "plex_added_at":
+			return { operator: "older_than", days: 90 };
+		case "plex_episode_completion":
+			return { operator: "less_than", percentage: 10 };
+		case "user_retention":
+			return { operator: "watched_by_none", source: "plex" };
+		case "staleness_score":
+			return { operator: "greater_than", threshold: 70 };
+		case "recently_active":
+			return { protectionDays: 30, requireActivity: true };
+		default:
+			return {};
 	}
 }
 
@@ -417,7 +460,12 @@ export function ConditionParamsFields({
 			const SEERR_STATUSES = ["pending", "approved", "declined", "failed", "completed"] as const;
 			const selectedStatuses = get("statuses", []) as string[];
 			const toggleStatus = (s: string) => {
-				set("statuses", selectedStatuses.includes(s) ? selectedStatuses.filter((v: string) => v !== s) : [...selectedStatuses, s]);
+				set(
+					"statuses",
+					selectedStatuses.includes(s)
+						? selectedStatuses.filter((v: string) => v !== s)
+						: [...selectedStatuses, s],
+				);
 			};
 			return (
 				<div className="space-y-2">
@@ -434,7 +482,11 @@ export function ConditionParamsFields({
 									className="rounded-lg border px-2.5 py-1 text-xs font-medium capitalize transition-all duration-200"
 									style={
 										isSelected
-											? { borderColor: gradient.from, backgroundColor: gradient.fromLight, color: gradient.from }
+											? {
+													borderColor: gradient.from,
+													backgroundColor: gradient.fromLight,
+													color: gradient.from,
+												}
 											: { borderColor: "var(--color-border)" }
 									}
 								>
@@ -643,11 +695,7 @@ export function ConditionParamsFields({
 			return (
 				<div className="space-y-2">
 					<label className="flex items-center gap-2 text-sm">
-						<input
-							type="checkbox"
-							checked={is4k}
-							onChange={(e) => set("is4k", e.target.checked)}
-						/>
+						<input type="checkbox" checked={is4k} onChange={(e) => set("is4k", e.target.checked)} />
 						Flag 4K requests
 					</label>
 					<p className="text-xs text-muted-foreground">
@@ -877,9 +925,7 @@ export function ConditionParamsFields({
 							/>
 						</label>
 					</div>
-					<p className="text-xs text-muted-foreground">
-						Flag items by total play count from Plex.
-					</p>
+					<p className="text-xs text-muted-foreground">Flag items by total play count from Plex.</p>
 				</div>
 			);
 
@@ -1326,12 +1372,12 @@ export function ConditionParamsFields({
 		case "staleness_score": {
 			const weights = (get("weights", {}) as Record<string, number>) ?? {};
 			const defaultWeights = {
-				daysSinceLastWatch: 0.30,
-				inverseWatchCount: 0.20,
-				notOnDeck: 0.10,
+				daysSinceLastWatch: 0.3,
+				inverseWatchCount: 0.2,
+				notOnDeck: 0.1,
 				lowUserRating: 0.15,
 				lowTmdbRating: 0.15,
-				sizeOnDisk: 0.10,
+				sizeOnDisk: 0.1,
 			};
 			const setWeight = (key: string, val: number) =>
 				set("weights", { ...defaultWeights, ...weights, [key]: val });
@@ -1351,7 +1397,8 @@ export function ConditionParamsFields({
 						</label>
 					</div>
 					<p className="text-xs text-muted-foreground">
-						Weighted score combining watch recency, play count, deck status, ratings, and file size. Higher = more stale.
+						Weighted score combining watch recency, play count, deck status, ratings, and file size.
+						Higher = more stale.
 					</p>
 					<details className="text-xs">
 						<summary className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors">
@@ -1360,7 +1407,9 @@ export function ConditionParamsFields({
 						<div className="mt-2 grid grid-cols-2 gap-2">
 							{(Object.entries(defaultWeights) as [string, number][]).map(([key, def]) => (
 								<label key={key} className="block">
-									<span className={labelClass}>{key.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase())}</span>
+									<span className={labelClass}>
+										{key.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase())}
+									</span>
 									<input
 										type="number"
 										value={weights[key] ?? def}
@@ -1406,7 +1455,8 @@ export function ConditionParamsFields({
 						</span>
 					</label>
 					<p className="text-xs text-muted-foreground">
-						Protects items with recent activity. Best used as a retention rule — items matching this rule will be shielded from cleanup.
+						Protects items with recent activity. Best used as a retention rule — items matching this
+						rule will be shielded from cleanup.
 					</p>
 				</div>
 			);
@@ -1443,9 +1493,7 @@ function ConditionTagMatchFields({
 	const toggleTag = (id: number) => {
 		set(
 			"tagIds",
-			selectedIds.includes(id)
-				? selectedIds.filter((t) => t !== id)
-				: [...selectedIds, id],
+			selectedIds.includes(id) ? selectedIds.filter((t) => t !== id) : [...selectedIds, id],
 		);
 	};
 

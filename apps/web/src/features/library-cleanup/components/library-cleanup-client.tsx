@@ -1,6 +1,11 @@
 "use client";
 
-import type { CleanupExplainResponse, CleanupPreviewResponse, CleanupRuleResponse, CreateCleanupRule } from "@arr/shared";
+import type {
+	CleanupExplainResponse,
+	CleanupPreviewResponse,
+	CleanupRuleResponse,
+	CreateCleanupRule,
+} from "@arr/shared";
 import {
 	AlertTriangle,
 	BarChart3,
@@ -115,7 +120,11 @@ export function LibraryCleanupClient() {
 				onTabChange={(id) => setActiveTab(id as Tab)}
 			/>
 
-			{healthStatus && <div className="mt-4"><CleanupHealthBanner status={healthStatus} /></div>}
+			{healthStatus && (
+				<div className="mt-4">
+					<CleanupHealthBanner status={healthStatus} />
+				</div>
+			)}
 
 			<div className="mt-6 space-y-6">
 				{activeTab === "config" && config && (
@@ -202,7 +211,13 @@ function ConfigTab({
 	previewData?: CleanupPreviewResponse;
 	isPreviewLoading: boolean;
 	isExecuting: boolean;
-	executeResult?: { itemsRemoved: number; itemsFlagged: number; itemsUnmonitored?: number; itemsFilesDeleted?: number; status: string };
+	executeResult?: {
+		itemsRemoved: number;
+		itemsFlagged: number;
+		itemsUnmonitored?: number;
+		itemsFilesDeleted?: number;
+		status: string;
+	};
 	previewError?: Error | null;
 	executeError?: Error | null;
 	onExplain: (target: ExplainTarget) => void;
@@ -220,8 +235,12 @@ function ConfigTab({
 	// Local state for numeric inputs (onBlur commit pattern — F7)
 	const [localInterval, setLocalInterval] = useState(String(config.intervalHours));
 	const [localMaxRemovals, setLocalMaxRemovals] = useState(String(config.maxRemovalsPerRun ?? 50));
-	useEffect(() => { setLocalInterval(String(config.intervalHours)); }, [config.intervalHours]);
-	useEffect(() => { setLocalMaxRemovals(String(config.maxRemovalsPerRun ?? 50)); }, [config.maxRemovalsPerRun]);
+	useEffect(() => {
+		setLocalInterval(String(config.intervalHours));
+	}, [config.intervalHours]);
+	useEffect(() => {
+		setLocalMaxRemovals(String(config.maxRemovalsPerRun ?? 50));
+	}, [config.maxRemovalsPerRun]);
 
 	const actionCounts = useMemo(() => {
 		if (!previewData?.items) return null;
@@ -321,7 +340,12 @@ function ConfigTab({
 							onChange={(e) => setLocalMaxRemovals(e.target.value)}
 							onBlur={() => {
 								const v = Number(localMaxRemovals);
-								if (!Number.isNaN(v) && v >= 1 && v <= 100 && v !== (config.maxRemovalsPerRun ?? 50)) {
+								if (
+									!Number.isNaN(v) &&
+									v >= 1 &&
+									v <= 100 &&
+									v !== (config.maxRemovalsPerRun ?? 50)
+								) {
 									onUpdateConfig({ maxRemovalsPerRun: v });
 								} else {
 									setLocalMaxRemovals(String(config.maxRemovalsPerRun ?? 50));
@@ -388,7 +412,11 @@ function ConfigTab({
 									onExecute();
 								}}
 							>
-								{config.dryRunMode ? "Run Preview" : config.requireApproval ? "Run & Queue" : "Run & Execute"}
+								{config.dryRunMode
+									? "Run Preview"
+									: config.requireApproval
+										? "Run & Queue"
+										: "Run & Execute"}
 							</GradientButton>
 						</DialogFooter>
 					</DialogContent>
@@ -422,20 +450,24 @@ function ConfigTab({
 						Preview Results ({previewData.totalFlagged} of {previewData.totalEvaluated} items
 						flagged)
 					</h4>
-					{previewData.prefetchHealth && Object.entries(previewData.prefetchHealth).some(([, s]) => s === "failed") && (
-						<div className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
-							<span className="font-medium">Data source issues:</span>{" "}
-							{Object.entries(previewData.prefetchHealth)
-								.filter(([, s]) => s === "failed")
-								.map(([k]) => k)
-								.join(", ")}{" "}
-							failed to load. Some rules may have been skipped.
-						</div>
-					)}
+					{previewData.prefetchHealth &&
+						Object.entries(previewData.prefetchHealth).some(([, s]) => s === "failed") && (
+							<div className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
+								<span className="font-medium">Data source issues:</span>{" "}
+								{Object.entries(previewData.prefetchHealth)
+									.filter(([, s]) => s === "failed")
+									.map(([k]) => k)
+									.join(", ")}{" "}
+								failed to load. Some rules may have been skipped.
+							</div>
+						)}
 					{previewData.warnings && previewData.warnings.length > 0 && (
 						<div className="mb-3 space-y-1">
 							{previewData.warnings.map((w, i) => (
-								<div key={i} className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
+								<div
+									key={i}
+									className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400"
+								>
 									{w}
 								</div>
 							))}
@@ -471,11 +503,13 @@ function ConfigTab({
 										<div className="flex items-center gap-2 shrink-0 ml-3">
 											<button
 												type="button"
-												onClick={() => onExplain({
-													instanceId: item.instanceId,
-													arrItemId: item.arrItemId,
-													title: item.title,
-												})}
+												onClick={() =>
+													onExplain({
+														instanceId: item.instanceId,
+														arrItemId: item.arrItemId,
+														title: item.title,
+													})
+												}
 												className="rounded-md p-1 text-muted-foreground hover:text-foreground transition-colors"
 												title="Explain why this item was flagged"
 											>
@@ -566,7 +600,11 @@ function ConfigTab({
 								/>
 								<div className="flex-1 min-w-0">
 									<span className="font-medium text-sm">{rule.name}</span>
-									<span className="text-xs text-muted-foreground ml-2">{rule.operator ? `${rule.operator} (${(rule.conditions as unknown[])?.length ?? 0} conditions)` : rule.ruleType}</span>
+									<span className="text-xs text-muted-foreground ml-2">
+										{rule.operator
+											? `${rule.operator} (${(rule.conditions as unknown[])?.length ?? 0} conditions)`
+											: rule.ruleType}
+									</span>
 									{rule.serviceFilter && rule.serviceFilter.length > 0 && (
 										<span className="text-xs text-muted-foreground ml-2">
 											({rule.serviceFilter.join(", ")})
@@ -600,7 +638,10 @@ function ConfigTab({
 										<span className="text-xs text-muted-foreground">Confirm?</span>
 										<button
 											type="button"
-											onClick={() => { deleteRule.mutate(rule.id); setDeleteTarget(null); }}
+											onClick={() => {
+												deleteRule.mutate(rule.id);
+												setDeleteTarget(null);
+											}}
 											className="text-xs font-medium text-red-400 hover:text-red-300 transition-colors"
 										>
 											Yes
@@ -679,15 +720,24 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 		});
 	}, [data]);
 
-	const handleBulkAction = useCallback((action: "approved" | "rejected") => {
-		const ids = [...selectedIds];
-		bulkAction.mutate({ ids, action }, {
-			onSuccess: () => setSelectedIds(new Set()),
-		});
-	}, [selectedIds, bulkAction]);
+	const handleBulkAction = useCallback(
+		(action: "approved" | "rejected") => {
+			const ids = [...selectedIds];
+			bulkAction.mutate(
+				{ ids, action },
+				{
+					onSuccess: () => setSelectedIds(new Set()),
+				},
+			);
+		},
+		[selectedIds, bulkAction],
+	);
 
 	const showCheckboxes = statusFilter === "pending" && data && data.items.length > 0;
-	const allSelected = showCheckboxes && data ? selectedIds.size === data.items.length && data.items.length > 0 : false;
+	const allSelected =
+		showCheckboxes && data
+			? selectedIds.size === data.items.length && data.items.length > 0
+			: false;
 
 	return (
 		<div className="space-y-4">
@@ -698,7 +748,10 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 						<button
 							key={s}
 							type="button"
-							onClick={() => { setStatusFilter(s); setPage(1); }}
+							onClick={() => {
+								setStatusFilter(s);
+								setPage(1);
+							}}
 							aria-pressed={statusFilter === s}
 							className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
 								statusFilter === s
@@ -719,11 +772,11 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 						onClick={toggleAll}
 						className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors ml-auto"
 					>
-						<div className={`h-4 w-4 rounded border flex items-center justify-center transition-colors ${
-							allSelected
-								? "border-primary bg-primary/20"
-								: "border-border/50 bg-card/30"
-						}`}>
+						<div
+							className={`h-4 w-4 rounded border flex items-center justify-center transition-colors ${
+								allSelected ? "border-primary bg-primary/20" : "border-border/50 bg-card/30"
+							}`}
+						>
 							{allSelected && <Check className="h-3 w-3 text-primary" />}
 						</div>
 						Select all
@@ -750,7 +803,9 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 				<GlassmorphicCard padding="lg">
 					<div className="text-center py-8">
 						<AlertTriangle className="mx-auto mb-3 h-10 w-10 text-amber-400/50" />
-						<p className="text-muted-foreground mb-3">Failed to load approval queue. Please try again.</p>
+						<p className="text-muted-foreground mb-3">
+							Failed to load approval queue. Please try again.
+						</p>
 						<button
 							type="button"
 							onClick={() => refetch()}
@@ -790,11 +845,13 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 											onClick={() => toggleItem(item.id)}
 											className="shrink-0"
 										>
-											<div className={`h-4 w-4 rounded border flex items-center justify-center transition-colors ${
-												selectedIds.has(item.id)
-													? "border-primary bg-primary/20"
-													: "border-border/50 bg-card/30 hover:border-border"
-											}`}>
+											<div
+												className={`h-4 w-4 rounded border flex items-center justify-center transition-colors ${
+													selectedIds.has(item.id)
+														? "border-primary bg-primary/20"
+														: "border-border/50 bg-card/30 hover:border-border"
+												}`}
+											>
 												{selectedIds.has(item.id) && <Check className="h-3 w-3 text-primary" />}
 											</div>
 										</button>
@@ -807,7 +864,9 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 												<Film className="h-3.5 w-3.5 text-orange-400 shrink-0" aria-label="Movie" />
 											)}
 											<span className="font-medium truncate">{item.title}</span>
-											{item.year && <span className="text-xs text-muted-foreground">({item.year})</span>}
+											{item.year && (
+												<span className="text-xs text-muted-foreground">({item.year})</span>
+											)}
 											{item.instanceLabel && (
 												<span className="inline-flex rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground border border-border/30">
 													{item.instanceLabel}
@@ -829,11 +888,13 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 									{/* Why? button */}
 									<button
 										type="button"
-										onClick={() => onExplain({
-											instanceId: item.instanceId,
-											arrItemId: item.arrItemId,
-											title: item.title,
-										})}
+										onClick={() =>
+											onExplain({
+												instanceId: item.instanceId,
+												arrItemId: item.arrItemId,
+												title: item.title,
+											})
+										}
 										className="rounded-md p-1 text-muted-foreground hover:text-foreground transition-colors shrink-0"
 										title="Explain why this item was flagged"
 									>
@@ -933,7 +994,10 @@ function LogsTab() {
 						<button
 							key={s ?? "all"}
 							type="button"
-							onClick={() => { setLogStatusFilter(s); setPage(1); }}
+							onClick={() => {
+								setLogStatusFilter(s);
+								setPage(1);
+							}}
 							aria-pressed={logStatusFilter === s}
 							className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
 								logStatusFilter === s
@@ -947,29 +1011,39 @@ function LogsTab() {
 				</div>
 				<div className="flex items-center gap-2">
 					<div className="flex flex-col gap-1">
-						<label htmlFor="log-since" className="text-[10px] text-muted-foreground">From</label>
+						<label htmlFor="log-since" className="text-[10px] text-muted-foreground">
+							From
+						</label>
 						<Input
 							id="log-since"
 							type="date"
 							value={sinceFilter}
-							onChange={(e) => { setSinceFilter(e.target.value); setPage(1); }}
+							onChange={(e) => {
+								setSinceFilter(e.target.value);
+								setPage(1);
+							}}
 							className="h-8 w-[140px] bg-background/50 border-border/50 text-xs"
 						/>
 					</div>
 					<div className="flex flex-col gap-1">
-						<label htmlFor="log-until" className="text-[10px] text-muted-foreground">To</label>
+						<label htmlFor="log-until" className="text-[10px] text-muted-foreground">
+							To
+						</label>
 						<Input
 							id="log-until"
 							type="date"
 							value={untilFilter}
-							onChange={(e) => { setUntilFilter(e.target.value); setPage(1); }}
+							onChange={(e) => {
+								setUntilFilter(e.target.value);
+								setPage(1);
+							}}
 							className="h-8 w-[140px] bg-background/50 border-border/50 text-xs"
 						/>
 					</div>
 				</div>
 			</div>
 
-		{isLoading ? (
+			{isLoading ? (
 				<div className="flex items-center justify-center py-12">
 					<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
 				</div>
@@ -977,7 +1051,9 @@ function LogsTab() {
 				<GlassmorphicCard padding="lg">
 					<div className="text-center py-8">
 						<AlertTriangle className="mx-auto mb-3 h-10 w-10 text-amber-400/50" />
-						<p className="text-muted-foreground mb-3">Failed to load activity logs. Please try again.</p>
+						<p className="text-muted-foreground mb-3">
+							Failed to load activity logs. Please try again.
+						</p>
 						<button
 							type="button"
 							onClick={() => refetch()}
@@ -997,139 +1073,155 @@ function LogsTab() {
 				</GlassmorphicCard>
 			) : (
 				<>
-				<GlassmorphicCard padding="none">
-			<div className="overflow-x-auto">
-				<table className="w-full text-sm">
-					<thead>
-						<tr className="border-b border-border/30">
-							<th className="px-4 py-3 text-left text-muted-foreground font-medium">Date</th>
-							<th className="px-4 py-3 text-left text-muted-foreground font-medium">Status</th>
-							<th className="px-4 py-3 text-right text-muted-foreground font-medium">Evaluated</th>
-							<th className="px-4 py-3 text-right text-muted-foreground font-medium">Flagged</th>
-							<th className="px-4 py-3 text-right text-muted-foreground font-medium">Removed</th>
-							<th className="px-4 py-3 text-right text-muted-foreground font-medium">Unmonitored</th>
-							<th className="px-4 py-3 text-right text-muted-foreground font-medium">Files Del.</th>
-							<th className="px-4 py-3 text-right text-muted-foreground font-medium">Duration</th>
-						</tr>
-					</thead>
-					<tbody>
-						{data.items.map((log) => {
-							const details = (Array.isArray(log.details) ? log.details : []) as unknown as LogDetail[];
-							const isExpanded = expandedLogId === log.id;
-							return (
-								<React.Fragment key={log.id}>
-									<tr
-										role="button"
-										tabIndex={0}
-										aria-expanded={isExpanded}
-										className="border-b border-border/10 hover:bg-card/20 cursor-pointer"
-										onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
-										onKeyDown={(e) => {
-											if (e.key === "Enter" || e.key === " ") {
-												e.preventDefault();
-												setExpandedLogId(isExpanded ? null : log.id);
-											}
-										}}
-									>
-										<td className="px-4 py-2.5 text-xs whitespace-nowrap">
-											{new Date(log.startedAt).toLocaleString()}
-										</td>
-										<td className="px-4 py-2.5">
-											<StatusBadge
-												status={
-													log.status === "completed"
-														? "success"
-														: log.status === "error"
-															? "error"
-															: "warning"
-												}
-											>
-												{log.isDryRun ? "dry run" : log.status}
-											</StatusBadge>
-										</td>
-										<td className="px-4 py-2.5 text-right">{log.itemsEvaluated}</td>
-										<td className="px-4 py-2.5 text-right">{log.itemsFlagged}</td>
-										<td className="px-4 py-2.5 text-right">{log.itemsRemoved}</td>
-										<td className="px-4 py-2.5 text-right">{log.itemsUnmonitored}</td>
-										<td className="px-4 py-2.5 text-right">{log.itemsFilesDeleted}</td>
-										<td className="px-4 py-2.5 text-right text-xs text-muted-foreground">
-											{log.durationMs ? `${(log.durationMs / 1000).toFixed(1)}s` : "-"}
-										</td>
+					<GlassmorphicCard padding="none">
+						<div className="overflow-x-auto">
+							<table className="w-full text-sm">
+								<thead>
+									<tr className="border-b border-border/30">
+										<th className="px-4 py-3 text-left text-muted-foreground font-medium">Date</th>
+										<th className="px-4 py-3 text-left text-muted-foreground font-medium">
+											Status
+										</th>
+										<th className="px-4 py-3 text-right text-muted-foreground font-medium">
+											Evaluated
+										</th>
+										<th className="px-4 py-3 text-right text-muted-foreground font-medium">
+											Flagged
+										</th>
+										<th className="px-4 py-3 text-right text-muted-foreground font-medium">
+											Removed
+										</th>
+										<th className="px-4 py-3 text-right text-muted-foreground font-medium">
+											Unmonitored
+										</th>
+										<th className="px-4 py-3 text-right text-muted-foreground font-medium">
+											Files Del.
+										</th>
+										<th className="px-4 py-3 text-right text-muted-foreground font-medium">
+											Duration
+										</th>
 									</tr>
-									{isExpanded && details.length > 0 && (
-										<tr key={`${log.id}-details`}>
-											<td colSpan={8} className="px-4 py-3 bg-card/10">
-												<div className="space-y-1.5 max-h-64 overflow-y-auto">
-													{details.map((d, i) => (
-														<div key={i} className="flex items-center gap-2 text-xs">
-															<span className="text-foreground font-medium truncate max-w-[200px]">
-																{d.title}
-															</span>
-															<span className="text-muted-foreground">—</span>
-															<span className="text-muted-foreground">{d.rule}</span>
-															<span className="text-muted-foreground/70 truncate">
-																{d.reason}
-															</span>
-															{d.action && d.action !== "delete" && (
-																<StatusBadge
-																	status={d.action === "unmonitor" ? "warning" : "info"}
-																>
-																	{d.action}
-																</StatusBadge>
-															)}
-															{d.status && d.status !== "pending" && (
-																<StatusBadge
-																	status={
-																		d.status === "executed" || d.status === "removed"
-																			? "success"
-																			: d.status === "error"
-																				? "error"
-																				: "info"
-																	}
-																>
-																	{d.status}
-																</StatusBadge>
-															)}
-														</div>
-													))}
-												</div>
-											</td>
-										</tr>
-									)}
-								</React.Fragment>
-							);
-						})}
-					</tbody>
-				</table>
-			</div>
-		</GlassmorphicCard>
+								</thead>
+								<tbody>
+									{data.items.map((log) => {
+										const details = (Array.isArray(log.details)
+											? log.details
+											: []) as unknown as LogDetail[];
+										const isExpanded = expandedLogId === log.id;
+										return (
+											<React.Fragment key={log.id}>
+												<tr
+													role="button"
+													tabIndex={0}
+													aria-expanded={isExpanded}
+													className="border-b border-border/10 hover:bg-card/20 cursor-pointer"
+													onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
+													onKeyDown={(e) => {
+														if (e.key === "Enter" || e.key === " ") {
+															e.preventDefault();
+															setExpandedLogId(isExpanded ? null : log.id);
+														}
+													}}
+												>
+													<td className="px-4 py-2.5 text-xs whitespace-nowrap">
+														{new Date(log.startedAt).toLocaleString()}
+													</td>
+													<td className="px-4 py-2.5">
+														<StatusBadge
+															status={
+																log.status === "completed"
+																	? "success"
+																	: log.status === "error"
+																		? "error"
+																		: "warning"
+															}
+														>
+															{log.isDryRun ? "dry run" : log.status}
+														</StatusBadge>
+													</td>
+													<td className="px-4 py-2.5 text-right">{log.itemsEvaluated}</td>
+													<td className="px-4 py-2.5 text-right">{log.itemsFlagged}</td>
+													<td className="px-4 py-2.5 text-right">{log.itemsRemoved}</td>
+													<td className="px-4 py-2.5 text-right">{log.itemsUnmonitored}</td>
+													<td className="px-4 py-2.5 text-right">{log.itemsFilesDeleted}</td>
+													<td className="px-4 py-2.5 text-right text-xs text-muted-foreground">
+														{log.durationMs ? `${(log.durationMs / 1000).toFixed(1)}s` : "-"}
+													</td>
+												</tr>
+												{isExpanded && details.length > 0 && (
+													<tr key={`${log.id}-details`}>
+														<td colSpan={8} className="px-4 py-3 bg-card/10">
+															<div className="space-y-1.5 max-h-64 overflow-y-auto">
+																{details.map((d, i) => (
+																	<div key={i} className="flex items-center gap-2 text-xs">
+																		<span className="text-foreground font-medium truncate max-w-[200px]">
+																			{d.title}
+																		</span>
+																		<span className="text-muted-foreground">—</span>
+																		<span className="text-muted-foreground">{d.rule}</span>
+																		<span className="text-muted-foreground/70 truncate">
+																			{d.reason}
+																		</span>
+																		{d.action && d.action !== "delete" && (
+																			<StatusBadge
+																				status={d.action === "unmonitor" ? "warning" : "info"}
+																			>
+																				{d.action}
+																			</StatusBadge>
+																		)}
+																		{d.status && d.status !== "pending" && (
+																			<StatusBadge
+																				status={
+																					d.status === "executed" || d.status === "removed"
+																						? "success"
+																						: d.status === "error"
+																							? "error"
+																							: "info"
+																				}
+																			>
+																				{d.status}
+																			</StatusBadge>
+																		)}
+																	</div>
+																))}
+															</div>
+														</td>
+													</tr>
+												)}
+											</React.Fragment>
+										);
+									})}
+								</tbody>
+							</table>
+						</div>
+					</GlassmorphicCard>
 
-			{totalPages > 1 && (
-				<div className="flex items-center justify-between pt-2">
-					<span className="text-xs text-muted-foreground">
-						Page {page} of {totalPages}
-					</span>
-					<div className="flex items-center gap-2">
-						<button
-							type="button"
-							onClick={() => setPage((p) => Math.max(1, p - 1))}
-							disabled={page <= 1}
-							className="rounded-md p-1.5 border border-border/30 bg-card/30 text-muted-foreground hover:bg-card/50 disabled:opacity-40"
-						>
-							<ChevronLeft className="h-4 w-4" />
-						</button>
-						<button
-							type="button"
-							onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-							disabled={page >= totalPages}
-							className="rounded-md p-1.5 border border-border/30 bg-card/30 text-muted-foreground hover:bg-card/50 disabled:opacity-40"
-						>
-							<ChevronRight className="h-4 w-4" />
-						</button>
-					</div>
-				</div>
-			)}
-			</>
+					{totalPages > 1 && (
+						<div className="flex items-center justify-between pt-2">
+							<span className="text-xs text-muted-foreground">
+								Page {page} of {totalPages}
+							</span>
+							<div className="flex items-center gap-2">
+								<button
+									type="button"
+									onClick={() => setPage((p) => Math.max(1, p - 1))}
+									disabled={page <= 1}
+									className="rounded-md p-1.5 border border-border/30 bg-card/30 text-muted-foreground hover:bg-card/50 disabled:opacity-40"
+								>
+									<ChevronLeft className="h-4 w-4" />
+								</button>
+								<button
+									type="button"
+									onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+									disabled={page >= totalPages}
+									className="rounded-md p-1.5 border border-border/30 bg-card/30 text-muted-foreground hover:bg-card/50 disabled:opacity-40"
+								>
+									<ChevronRight className="h-4 w-4" />
+								</button>
+							</div>
+						</div>
+					)}
+				</>
 			)}
 		</div>
 	);
@@ -1318,7 +1410,9 @@ function FunnelChip({
 	};
 
 	return (
-		<span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border ${styles[color]}`}>
+		<span
+			className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border ${styles[color]}`}
+		>
 			{label}
 			<span className="font-bold">{count}</span>
 		</span>
@@ -1405,13 +1499,16 @@ function ExplainDialog({
 	onClose: () => void;
 }) {
 	return (
-		<Dialog open={target !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
+		<Dialog
+			open={target !== null}
+			onOpenChange={(open) => {
+				if (!open) onClose();
+			}}
+		>
 			<DialogContent className="max-w-lg">
 				<DialogHeader>
 					<DialogTitle>Rule Evaluation — {target?.title}</DialogTitle>
-					<DialogDescription>
-						How each cleanup rule evaluated this item.
-					</DialogDescription>
+					<DialogDescription>How each cleanup rule evaluated this item.</DialogDescription>
 				</DialogHeader>
 
 				{isPending ? (
@@ -1427,7 +1524,9 @@ function ExplainDialog({
 							>
 								{r.filteredBy ? (
 									<>
-										<span className="text-muted-foreground/50 font-medium truncate">{r.ruleName}</span>
+										<span className="text-muted-foreground/50 font-medium truncate">
+											{r.ruleName}
+										</span>
 										<span className="ml-auto shrink-0 inline-flex items-center rounded-full bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground border border-border/30">
 											Skipped: {r.filteredBy.replace(/_/g, " ")}
 										</span>
@@ -1435,7 +1534,9 @@ function ExplainDialog({
 								) : (
 									<>
 										<span className="font-medium truncate">{r.ruleName}</span>
-										{r.retentionMode && <Shield className="h-3.5 w-3.5 text-emerald-400 shrink-0" />}
+										{r.retentionMode && (
+											<Shield className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+										)}
 										<span className="ml-auto shrink-0">
 											{r.matched ? (
 												<span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400 border border-emerald-500/20">
@@ -1453,11 +1554,13 @@ function ExplainDialog({
 						))}
 						{data.results.length > 0 && data.results.some((r) => r.matched && r.reason) && (
 							<div className="mt-2 space-y-1">
-								{data.results.filter((r) => r.matched && r.reason).map((r) => (
-									<p key={r.ruleId} className="text-xs text-muted-foreground">
-										<span className="font-medium">{r.ruleName}:</span> {r.reason}
-									</p>
-								))}
+								{data.results
+									.filter((r) => r.matched && r.reason)
+									.map((r) => (
+										<p key={r.ruleId} className="text-xs text-muted-foreground">
+											<span className="font-medium">{r.ruleName}:</span> {r.reason}
+										</p>
+									))}
 							</div>
 						)}
 						{data.retentionProtected && (

@@ -155,8 +155,16 @@ export class TemplateUpdater {
 					if (!cacheByServiceType.has(serviceType)) {
 						try {
 							const [cfGroups, customFormats] = await Promise.all([
-								this.cacheManager.get<TrashCustomFormatGroup[]>(serviceType, "CF_GROUPS", z.array(trashCustomFormatGroupSchema)),
-								this.cacheManager.get<TrashCustomFormat[]>(serviceType, "CUSTOM_FORMATS", z.array(trashCustomFormatSchema)),
+								this.cacheManager.get<TrashCustomFormatGroup[]>(
+									serviceType,
+									"CF_GROUPS",
+									z.array(trashCustomFormatGroupSchema),
+								),
+								this.cacheManager.get<TrashCustomFormat[]>(
+									serviceType,
+									"CUSTOM_FORMATS",
+									z.array(trashCustomFormatSchema),
+								),
 							]);
 							cacheByServiceType.set(serviceType, {
 								cfGroups: cfGroups ?? [],
@@ -684,8 +692,16 @@ export class TemplateUpdater {
 	}> {
 		try {
 			const [cfCache, groupCache, cacheCommitHash] = await Promise.all([
-				this.cacheManager.get<TrashCustomFormat[]>(serviceType, "CUSTOM_FORMATS", z.array(trashCustomFormatSchema)),
-				this.cacheManager.get<TrashCustomFormatGroup[]>(serviceType, "CF_GROUPS", z.array(trashCustomFormatGroupSchema)),
+				this.cacheManager.get<TrashCustomFormat[]>(
+					serviceType,
+					"CUSTOM_FORMATS",
+					z.array(trashCustomFormatSchema),
+				),
+				this.cacheManager.get<TrashCustomFormatGroup[]>(
+					serviceType,
+					"CF_GROUPS",
+					z.array(trashCustomFormatGroupSchema),
+				),
 				this.cacheManager.getCommitHash(serviceType, "CUSTOM_FORMATS"),
 			]);
 

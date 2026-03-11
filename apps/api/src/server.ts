@@ -69,8 +69,8 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 
 	const app = Fastify({
 		...(options.logger === false
-		? { logger: false }
-		: { loggerInstance: logger as FastifyBaseLogger }),
+			? { logger: false }
+			: { loggerInstance: logger as FastifyBaseLogger }),
 		genReqId: () => randomBytes(4).toString("hex"),
 		trustProxy: env.TRUST_PROXY,
 	});

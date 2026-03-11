@@ -198,7 +198,8 @@ export const TranscodeChart = ({ days, enabled }: TranscodeChartProps) => {
 		);
 	}
 
-	const dpPercent = data.totalSessions > 0 ? Math.round((data.directPlay / data.totalSessions) * 100) : 0;
+	const dpPercent =
+		data.totalSessions > 0 ? Math.round((data.directPlay / data.totalSessions) * 100) : 0;
 
 	return (
 		<div className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-xs p-6 space-y-5">
@@ -215,8 +216,18 @@ export const TranscodeChart = ({ days, enabled }: TranscodeChartProps) => {
 				<div className="flex-1 space-y-3">
 					{[
 						{ icon: Play, label: "Direct Play", value: data.directPlay, color: colors.directPlay },
-						{ icon: Radio, label: "Direct Stream", value: data.directStream, color: colors.directStream },
-						{ icon: MonitorPlay, label: "Transcode", value: data.transcode, color: colors.transcode },
+						{
+							icon: Radio,
+							label: "Direct Stream",
+							value: data.directStream,
+							color: colors.directStream,
+						},
+						{
+							icon: MonitorPlay,
+							label: "Transcode",
+							value: data.transcode,
+							color: colors.transcode,
+						},
 					].map((item) => {
 						const Icon = item.icon;
 						return (
@@ -227,7 +238,9 @@ export const TranscodeChart = ({ days, enabled }: TranscodeChartProps) => {
 								/>
 								<Icon className="h-3.5 w-3.5 text-muted-foreground" />
 								<span className="text-sm text-muted-foreground flex-1">{item.label}</span>
-								<span className="text-sm font-medium tabular-nums">{item.value.toLocaleString()}</span>
+								<span className="text-sm font-medium tabular-nums">
+									{item.value.toLocaleString()}
+								</span>
 							</div>
 						);
 					})}

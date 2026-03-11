@@ -53,12 +53,7 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 
 			const { client } = await requireTautulliClient(app, userId, instanceId);
 
-			const result = await refreshTautulliCache(
-				client,
-				app.prisma,
-				instanceId,
-				request.log,
-			);
+			const result = await refreshTautulliCache(client, app.prisma, instanceId, request.log);
 
 			return reply.send({
 				success: true,

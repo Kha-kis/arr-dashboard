@@ -9,7 +9,13 @@ import { Grid3X3 } from "lucide-react";
 // Completion Bar
 // ============================================================================
 
-const CompletionBar = ({ username, watched, total, percent, color }: {
+const CompletionBar = ({
+	username,
+	watched,
+	total,
+	percent,
+	color,
+}: {
 	username: string;
 	watched: number;
 	total: number;
@@ -38,9 +44,7 @@ const CompletionBar = ({ username, watched, total, percent, color }: {
 		<span className="w-16 text-right font-medium tabular-nums text-muted-foreground">
 			{watched}/{total}
 		</span>
-		<span className="w-10 text-right font-medium tabular-nums">
-			{percent}%
-		</span>
+		<span className="w-10 text-right font-medium tabular-nums">{percent}%</span>
 	</div>
 );
 
@@ -87,21 +91,24 @@ export const UserEpisodeMatrix = ({ tmdbIds, enabled }: UserEpisodeMatrixProps) 
 				Episode Completion by User
 			</h3>
 
-			{data.shows.map((show: { tmdbId: number; users: Array<{ username: string; watched: number; total: number; percent: number }> }) => (
-				<div key={show.tmdbId} className="space-y-2">
-					{show.users.length > 0 ? (
-						show.users.map((user: { username: string; watched: number; total: number; percent: number }) => (
-							<CompletionBar
-								key={user.username}
-								{...user}
-								color={gradient.from}
-							/>
-						))
-					) : (
-						<p className="text-xs text-muted-foreground italic">No watch data for this show</p>
-					)}
-				</div>
-			))}
+			{data.shows.map(
+				(show: {
+					tmdbId: number;
+					users: Array<{ username: string; watched: number; total: number; percent: number }>;
+				}) => (
+					<div key={show.tmdbId} className="space-y-2">
+						{show.users.length > 0 ? (
+							show.users.map(
+								(user: { username: string; watched: number; total: number; percent: number }) => (
+									<CompletionBar key={user.username} {...user} color={gradient.from} />
+								),
+							)
+						) : (
+							<p className="text-xs text-muted-foreground italic">No watch data for this show</p>
+						)}
+					</div>
+				),
+			)}
 		</div>
 	);
 };

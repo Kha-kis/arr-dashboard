@@ -146,7 +146,13 @@ export interface PrefetchResults {
 export type RuleAction = "delete" | "unmonitor" | "delete_files";
 
 /** Action recorded in execution details (what actually happened) */
-export type DetailAction = "flagged" | "removed" | "files_deleted" | "unmonitored" | "queued_for_approval" | "skipped";
+export type DetailAction =
+	| "flagged"
+	| "removed"
+	| "files_deleted"
+	| "unmonitored"
+	| "queued_for_approval"
+	| "skipped";
 
 /** Result of evaluating a single rule against a cache item */
 export interface RuleMatch {

@@ -12,9 +12,20 @@ const SLACK_MAX_TEXT = 3000;
 
 /** Map event type prefixes to Slack attachment colors */
 function getSlackColor(eventType: string): string {
-	if (eventType.includes("FAILED") || eventType.includes("ERROR") || eventType.includes("LOCKED")) return "#e74c3c";
-	if (eventType.includes("COMPLETED") || eventType.includes("FOUND") || eventType.includes("STARTUP")) return "#2ecc71";
-	if (eventType.includes("REMOVED") || eventType.includes("FLAGGED") || eventType.includes("STRIKES")) return "#f39c12";
+	if (eventType.includes("FAILED") || eventType.includes("ERROR") || eventType.includes("LOCKED"))
+		return "#e74c3c";
+	if (
+		eventType.includes("COMPLETED") ||
+		eventType.includes("FOUND") ||
+		eventType.includes("STARTUP")
+	)
+		return "#2ecc71";
+	if (
+		eventType.includes("REMOVED") ||
+		eventType.includes("FLAGGED") ||
+		eventType.includes("STRIKES")
+	)
+		return "#f39c12";
 	return "#3498db";
 }
 
@@ -110,7 +121,11 @@ export const slackSender: ChannelSender = {
 			if (err instanceof Error && err.name === "TimeoutError") {
 				return { success: false, retryable: true, error: "Request timed out" };
 			}
-			return { success: false, retryable: true, error: err instanceof Error ? err.message : String(err) };
+			return {
+				success: false,
+				retryable: true,
+				error: err instanceof Error ? err.message : String(err),
+			};
 		}
 	},
 
@@ -131,8 +146,6 @@ export const slackPlugin: ChannelPlugin = {
 	label: "Slack",
 	icon: "Hash",
 	configSchema: "slackConfigSchema",
-	formFields: [
-		{ key: "webhookUrl", label: "Webhook URL", type: "url", required: true },
-	],
+	formFields: [{ key: "webhookUrl", label: "Webhook URL", type: "url", required: true }],
 	sender: slackSender,
 };

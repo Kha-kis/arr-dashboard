@@ -44,15 +44,27 @@ export function createBrowserPushSender(
 
 				// 410 Gone = subscription expired, not retryable
 				if (statusCode === 410) {
-					return { success: false, retryable: false, error: `Browser push subscription expired (410 Gone): ${error}` };
+					return {
+						success: false,
+						retryable: false,
+						error: `Browser push subscription expired (410 Gone): ${error}`,
+					};
 				}
 				// 429 or 5xx = retryable
 				if (statusCode === 429 || (statusCode && statusCode >= 500)) {
-					return { success: false, retryable: true, error: `Browser push failed (${statusCode}): ${error}` };
+					return {
+						success: false,
+						retryable: true,
+						error: `Browser push failed (${statusCode}): ${error}`,
+					};
 				}
 				// 4xx = not retryable
 				if (statusCode && statusCode >= 400 && statusCode < 500) {
-					return { success: false, retryable: false, error: `Browser push failed (${statusCode}): ${error}` };
+					return {
+						success: false,
+						retryable: false,
+						error: `Browser push failed (${statusCode}): ${error}`,
+					};
 				}
 				// Network/other errors = retryable
 				return { success: false, retryable: true, error: `Browser push error: ${error}` };

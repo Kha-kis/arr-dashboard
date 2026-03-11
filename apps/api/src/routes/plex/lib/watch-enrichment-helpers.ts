@@ -55,9 +55,7 @@ export function aggregateWatchEnrichment(
 	const items: Record<string, WatchEnrichmentItem> = {};
 
 	for (const [key, { tmdbId, mediaType }] of uniqueKeys) {
-		const plexMatches = plexEntries.filter(
-			(e) => e.tmdbId === tmdbId && e.mediaType === mediaType,
-		);
+		const plexMatches = plexEntries.filter((e) => e.tmdbId === tmdbId && e.mediaType === mediaType);
 		const tautulliMatches = tautulliEntries.filter(
 			(e) => e.tmdbId === tmdbId && e.mediaType === mediaType,
 		);
@@ -90,13 +88,19 @@ export function aggregateWatchEnrichment(
 				try {
 					collections = JSON.parse(entry.collections) as string[];
 				} catch {
-					logger.warn({ instanceId: entry.instanceId, tmdbId: entry.tmdbId, field: "collections" }, "Skipping malformed JSON in PlexCache field");
+					logger.warn(
+						{ instanceId: entry.instanceId, tmdbId: entry.tmdbId, field: "collections" },
+						"Skipping malformed JSON in PlexCache field",
+					);
 					collections = [];
 				}
 				try {
 					labels = JSON.parse(entry.labels) as string[];
 				} catch {
-					logger.warn({ instanceId: entry.instanceId, tmdbId: entry.tmdbId, field: "labels" }, "Skipping malformed JSON in PlexCache field");
+					logger.warn(
+						{ instanceId: entry.instanceId, tmdbId: entry.tmdbId, field: "labels" },
+						"Skipping malformed JSON in PlexCache field",
+					);
 					labels = [];
 				}
 			}
@@ -104,7 +108,10 @@ export function aggregateWatchEnrichment(
 				const users = JSON.parse(entry.watchedByUsers) as string[];
 				for (const u of users) allUsers.add(u);
 			} catch {
-				logger.warn({ instanceId: entry.instanceId, tmdbId: entry.tmdbId, field: "watchedByUsers" }, "Skipping malformed JSON in PlexCache field");
+				logger.warn(
+					{ instanceId: entry.instanceId, tmdbId: entry.tmdbId, field: "watchedByUsers" },
+					"Skipping malformed JSON in PlexCache field",
+				);
 			}
 		}
 
@@ -117,7 +124,10 @@ export function aggregateWatchEnrichment(
 				const users = JSON.parse(entry.watchedByUsers) as string[];
 				for (const u of users) allUsers.add(u);
 			} catch {
-				logger.warn({ instanceId: entry.instanceId, tmdbId: entry.tmdbId, field: "watchedByUsers" }, "Skipping malformed JSON in TautulliCache field");
+				logger.warn(
+					{ instanceId: entry.instanceId, tmdbId: entry.tmdbId, field: "watchedByUsers" },
+					"Skipping malformed JSON in TautulliCache field",
+				);
 			}
 		}
 

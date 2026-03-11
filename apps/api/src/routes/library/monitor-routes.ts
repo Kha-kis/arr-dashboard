@@ -55,7 +55,10 @@ async function updateCacheMonitoredStatus(
 		}
 	} catch (err) {
 		// Cache update is best-effort — the next sync will correct any inconsistencies
-		log.debug({ err, instanceId, arrItemId, itemType }, "Best-effort cache update failed after monitor toggle");
+		log.debug(
+			{ err, instanceId, arrItemId, itemType },
+			"Best-effort cache update failed after monitor toggle",
+		);
 	}
 }
 

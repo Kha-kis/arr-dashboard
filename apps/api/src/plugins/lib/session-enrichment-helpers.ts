@@ -65,9 +65,7 @@ export function enrichSessionsWithTautulli(
 
 		return {
 			user: s.user.title,
-			title: s.grandparentTitle
-				? `${s.grandparentTitle} - ${s.title}`
-				: s.title,
+			title: s.grandparentTitle ? `${s.grandparentTitle} - ${s.title}` : s.title,
 			videoDecision: s.videoDecision,
 			bandwidth: s.bandwidth ?? 0,
 			state: s.state,

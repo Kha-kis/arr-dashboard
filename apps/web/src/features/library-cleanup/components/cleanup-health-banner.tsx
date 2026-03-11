@@ -9,10 +9,14 @@ interface CleanupHealthBannerProps {
 
 function sourceLabel(source: string): string {
 	switch (source) {
-		case "seerr": return "Seerr";
-		case "tautulli": return "Tautulli";
-		case "plex": return "Plex";
-		default: return source;
+		case "seerr":
+			return "Seerr";
+		case "tautulli":
+			return "Tautulli";
+		case "plex":
+			return "Plex";
+		default:
+			return source;
 	}
 }
 
@@ -40,11 +44,7 @@ export function CleanupHealthBanner({ status }: CleanupHealthBannerProps) {
 			? "bg-amber-500/10 border-amber-500/20"
 			: "bg-emerald-500/10 border-emerald-500/20";
 
-	const textClass = isError
-		? "text-red-400"
-		: isPartial
-			? "text-amber-400"
-			: "text-emerald-400";
+	const textClass = isError ? "text-red-400" : isPartial ? "text-amber-400" : "text-emerald-400";
 
 	return (
 		<div className={`rounded-lg border px-4 py-3 ${bgClass}`}>
@@ -60,7 +60,11 @@ export function CleanupHealthBanner({ status }: CleanupHealthBannerProps) {
 				<div className="flex-1 min-w-0">
 					<div className="flex items-center gap-2 flex-wrap">
 						<span className={`text-sm font-medium ${textClass}`}>
-							{isError ? "Last run failed" : isPartial ? "Last run completed with warnings" : "Last run successful"}
+							{isError
+								? "Last run failed"
+								: isPartial
+									? "Last run completed with warnings"
+									: "Last run successful"}
 						</span>
 						{!status.enabled && (
 							<span className="text-xs px-1.5 py-0.5 rounded bg-muted/30 text-muted-foreground">
@@ -97,14 +101,20 @@ export function CleanupHealthBanner({ status }: CleanupHealthBannerProps) {
 					{status.prefetchHealth && (
 						<div className="flex items-center gap-3 mt-2">
 							<span className="text-xs text-muted-foreground">Data sources:</span>
-							{(Object.entries(status.prefetchHealth) as Array<[string, PrefetchSourceStatus]>).map(([source, sourceStatus]) => (
-								<span key={source} className="flex items-center gap-1 text-xs">
-									{sourceStatusIcon(sourceStatus)}
-									<span className={sourceStatus === "failed" ? "text-red-400" : "text-muted-foreground"}>
-										{sourceLabel(source)}
+							{(Object.entries(status.prefetchHealth) as Array<[string, PrefetchSourceStatus]>).map(
+								([source, sourceStatus]) => (
+									<span key={source} className="flex items-center gap-1 text-xs">
+										{sourceStatusIcon(sourceStatus)}
+										<span
+											className={
+												sourceStatus === "failed" ? "text-red-400" : "text-muted-foreground"
+											}
+										>
+											{sourceLabel(source)}
+										</span>
 									</span>
-								</span>
-							))}
+								),
+							)}
 						</div>
 					)}
 				</div>

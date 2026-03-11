@@ -13,7 +13,10 @@ const BATCH_SIZE = 1000;
  * Delete notification logs older than the retention period.
  * Returns the number of rows deleted.
  */
-export async function purgeOldLogs(prisma: PrismaClientInstance, retentionDays: number): Promise<number> {
+export async function purgeOldLogs(
+	prisma: PrismaClientInstance,
+	retentionDays: number,
+): Promise<number> {
 	const cutoff = new Date();
 	cutoff.setDate(cutoff.getDate() - retentionDays);
 
@@ -30,7 +33,10 @@ export async function purgeOldLogs(prisma: PrismaClientInstance, retentionDays: 
  * Batched purge — deletes in chunks to avoid long-running transactions.
  * Returns total number of rows deleted.
  */
-export async function purgeOldLogsBatched(prisma: PrismaClientInstance, retentionDays: number): Promise<number> {
+export async function purgeOldLogsBatched(
+	prisma: PrismaClientInstance,
+	retentionDays: number,
+): Promise<number> {
 	const cutoff = new Date();
 	cutoff.setDate(cutoff.getDate() - retentionDays);
 

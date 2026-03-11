@@ -76,7 +76,11 @@ export const webhookSender: ChannelSender = {
 				return { success: false, retryable: true, error: `Server error (${response.status})` };
 			}
 
-			return { success: false, retryable: false, error: `HTTP ${response.status}: ${response.statusText}` };
+			return {
+				success: false,
+				retryable: false,
+				error: `HTTP ${response.status}: ${response.statusText}`,
+			};
 		} catch (err) {
 			if (err instanceof Error && err.name === "TimeoutError") {
 				return { success: false, retryable: true, error: "Request timed out" };

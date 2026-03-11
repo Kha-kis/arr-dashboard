@@ -114,12 +114,8 @@ export async function executeOnPlexInstances<T>(
 		}),
 	);
 
-	const successfulResults = results.filter(
-		(r): r is PlexInstanceResult<T> => r.success,
-	);
-	const aggregated = successfulResults.flatMap((r) =>
-		Array.isArray(r.data) ? r.data : [r.data],
-	);
+	const successfulResults = results.filter((r): r is PlexInstanceResult<T> => r.success);
+	const aggregated = successfulResults.flatMap((r) => (Array.isArray(r.data) ? r.data : [r.data]));
 	const errorCount = results.filter((r) => !r.success).length;
 
 	return {

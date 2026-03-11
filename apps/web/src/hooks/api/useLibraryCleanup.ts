@@ -1,4 +1,9 @@
-import type { CleanupExplainResponse, CreateCleanupRule, UpdateCleanupConfig, UpdateCleanupRule } from "@arr/shared";
+import type {
+	CleanupExplainResponse,
+	CreateCleanupRule,
+	UpdateCleanupConfig,
+	UpdateCleanupRule,
+} from "@arr/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	type ApprovalExecuteResult,
@@ -15,8 +20,10 @@ const KEYS = {
 	config: ["library-cleanup-config"] as const,
 	status: ["library-cleanup-status"] as const,
 	statistics: (days: number) => ["library-cleanup-statistics", days] as const,
-	approvalQueue: (page: number, status?: string) => ["library-cleanup-approvals", page, status] as const,
-	logs: (page: number, filters?: Record<string, string>) => ["library-cleanup-logs", page, filters] as const,
+	approvalQueue: (page: number, status?: string) =>
+		["library-cleanup-approvals", page, status] as const,
+	logs: (page: number, filters?: Record<string, string>) =>
+		["library-cleanup-logs", page, filters] as const,
 };
 
 // ============================================================================
@@ -61,7 +68,11 @@ export function useCleanupApprovalQueue(page = 1, pageSize = 20, statusFilter = 
 	});
 }
 
-export function useCleanupLogs(page = 1, pageSize = 20, filters?: { status?: string; since?: string; until?: string }) {
+export function useCleanupLogs(
+	page = 1,
+	pageSize = 20,
+	filters?: { status?: string; since?: string; until?: string },
+) {
 	return useQuery({
 		queryKey: KEYS.logs(page, filters as Record<string, string> | undefined),
 		queryFn: () => libraryCleanupApi.getLogs(page, pageSize, filters),
@@ -70,8 +81,13 @@ export function useCleanupLogs(page = 1, pageSize = 20, filters?: { status?: str
 
 export function useCleanupExplain() {
 	return useMutation({
-		mutationFn: ({ instanceId, arrItemId }: { instanceId: string; arrItemId: number }): Promise<CleanupExplainResponse> =>
-			libraryCleanupApi.explain(instanceId, arrItemId),
+		mutationFn: ({
+			instanceId,
+			arrItemId,
+		}: {
+			instanceId: string;
+			arrItemId: number;
+		}): Promise<CleanupExplainResponse> => libraryCleanupApi.explain(instanceId, arrItemId),
 	});
 }
 

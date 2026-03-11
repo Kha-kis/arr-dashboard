@@ -40,7 +40,8 @@ export function aggregateCollectionStats(entries: PlexCacheEntry[]): CollectionS
 			if (Array.isArray(parsed)) collections = parsed;
 		} catch {
 			parseFailures++;
-			if (failedPreviews.length < 5) failedPreviews.push(`collections: ${entry.collections.slice(0, 80)}`);
+			if (failedPreviews.length < 5)
+				failedPreviews.push(`collections: ${entry.collections.slice(0, 80)}`);
 		}
 
 		for (const name of collections) {

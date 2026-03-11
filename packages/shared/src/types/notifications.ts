@@ -8,17 +8,30 @@ import { z } from "zod";
 function isPrivateUrl(rawUrl: string): boolean {
 	try {
 		const u = new URL(rawUrl);
+
+		// Only allow http/https — blocks file://, ftp://, data://, javascript://, etc.
+		if (u.protocol !== "http:" && u.protocol !== "https:") return true;
+
 		const host = u.hostname.toLowerCase();
 		return (
 			host === "localhost" ||
 			host.startsWith("127.") ||
+			host.startsWith("0.") ||
 			host.startsWith("10.") ||
+			host.startsWith("100.") ||
 			host.startsWith("192.168.") ||
 			/^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
 			host === "0.0.0.0" ||
 			host === "::1" ||
 			host === "[::1]" ||
+			host.startsWith("fc") ||
+			host.startsWith("fd") ||
+			host.startsWith("fe80") ||
+			host.startsWith("[fc") ||
+			host.startsWith("[fd") ||
+			host.startsWith("[fe80") ||
 			host === "169.254.169.254" ||
+			host.startsWith("169.254.") ||
 			host.endsWith(".local") ||
 			host.endsWith(".internal")
 		);
@@ -31,7 +44,7 @@ const publicUrlSchema = z
 	.string()
 	.url()
 	.refine((url) => !isPrivateUrl(url), {
-		message: "URL must not target private or internal networks",
+		message: "URL must use http/https and not target private or internal networks",
 	});
 
 // ============================================================================

@@ -228,13 +228,9 @@ export class SeerrClient {
 				if (error instanceof Error) {
 					const msg = error.message.toLowerCase();
 					if (msg.includes("abort") || msg.includes("timeout")) {
-						throw SeerrApiError.timeout(
-							`Seerr ${method} ${path} timed out after ${timeout}ms`,
-						);
+						throw SeerrApiError.timeout(`Seerr ${method} ${path} timed out after ${timeout}ms`);
 					}
-					throw SeerrApiError.network(
-						`Seerr ${method} ${path} network error: ${error.message}`,
-					);
+					throw SeerrApiError.network(`Seerr ${method} ${path} network error: ${error.message}`);
 				}
 				throw error;
 			}
@@ -302,18 +298,12 @@ export class SeerrClient {
 	}
 
 	async getRequestCount(): Promise<SeerrRequestCount> {
-		const raw = await this.get<SeerrRequestCount>(
-			"/api/v1/request/count",
-			TIMEOUT_INTERACTIVE,
-		);
+		const raw = await this.get<SeerrRequestCount>("/api/v1/request/count", TIMEOUT_INTERACTIVE);
 		return this.parseAndRecord(raw, seerrRequestCountSchema, "getRequestCount");
 	}
 
 	async getRequest(requestId: number): Promise<SeerrRequest> {
-		const raw = await this.get<SeerrRequest>(
-			`/api/v1/request/${requestId}`,
-			TIMEOUT_INTERACTIVE,
-		);
+		const raw = await this.get<SeerrRequest>(`/api/v1/request/${requestId}`, TIMEOUT_INTERACTIVE);
 		return this.parseAndRecord(raw, seerrRequestSchema, "getRequest");
 	}
 
@@ -380,15 +370,16 @@ export class SeerrClient {
 	async getNotificationAgents(): Promise<SeerrNotificationAgent[]> {
 		const settled = await Promise.allSettled(
 			KNOWN_NOTIFICATION_AGENTS.map(({ id, name }) =>
-				this.get<unknown>(
-					`/api/v1/settings/notifications/${id}`,
-					TIMEOUT_INTERACTIVE,
-				).then((raw) => {
-					const data = this.parseAndRecord<{ enabled: boolean; types: number; options: Record<string, unknown> }>(
-						raw, seerrNotificationAgentRawSchema, "getNotificationAgents",
-					);
-					return { id, name, ...data };
-				}),
+				this.get<unknown>(`/api/v1/settings/notifications/${id}`, TIMEOUT_INTERACTIVE).then(
+					(raw) => {
+						const data = this.parseAndRecord<{
+							enabled: boolean;
+							types: number;
+							options: Record<string, unknown>;
+						}>(raw, seerrNotificationAgentRawSchema, "getNotificationAgents");
+						return { id, name, ...data };
+					},
+				),
 			),
 		);
 
@@ -399,8 +390,7 @@ export class SeerrClient {
 				agents.push(result.value);
 			} else {
 				// 404 = agent not supported by this Seerr version, skip silently
-				const is404 =
-					result.reason instanceof SeerrApiError && result.reason.seerrStatus === 404;
+				const is404 = result.reason instanceof SeerrApiError && result.reason.seerrStatus === 404;
 				if (!is404) {
 					const agentName = KNOWN_NOTIFICATION_AGENTS[i]!.name;
 					this.log.warn(
@@ -424,10 +414,16 @@ export class SeerrClient {
 		agentId: string,
 		config: Partial<SeerrNotificationAgent>,
 	): Promise<SeerrNotificationAgent> {
-		const raw = await this.post<unknown>(`/api/v1/settings/notifications/${agentId}`, config, TIMEOUT_ACTION);
-		const data = this.parseAndRecord<{ enabled: boolean; types: number; options: Record<string, unknown> }>(
-			raw, seerrNotificationAgentRawSchema, "updateNotificationAgent",
+		const raw = await this.post<unknown>(
+			`/api/v1/settings/notifications/${agentId}`,
+			config,
+			TIMEOUT_ACTION,
 		);
+		const data = this.parseAndRecord<{
+			enabled: boolean;
+			types: number;
+			options: Record<string, unknown>;
+		}>(raw, seerrNotificationAgentRawSchema, "updateNotificationAgent");
 		// Inject the known id/name back since the API only returns enabled/types/options
 		const agent = KNOWN_NOTIFICATION_AGENTS.find((a) => a.id === agentId);
 		return { id: agentId, name: agent?.name ?? agentId, ...data };
@@ -446,7 +442,9 @@ export class SeerrClient {
 	async getMovieDetails(tmdbId: number): Promise<{ posterPath?: string; title?: string }> {
 		const raw = await this.get<unknown>(`/api/v1/movie/${tmdbId}`, TIMEOUT_MEDIA_DETAIL);
 		const data = this.parseAndRecord<{ posterPath?: string; title?: string }>(
-			raw, seerrMediaDetailSchema, "getMovieDetails",
+			raw,
+			seerrMediaDetailSchema,
+			"getMovieDetails",
 		);
 		return { posterPath: data.posterPath, title: data.title };
 	}
@@ -454,7 +452,9 @@ export class SeerrClient {
 	async getTvDetails(tmdbId: number): Promise<{ posterPath?: string; title?: string }> {
 		const raw = await this.get<unknown>(`/api/v1/tv/${tmdbId}`, TIMEOUT_MEDIA_DETAIL);
 		const data = this.parseAndRecord<{ posterPath?: string; name?: string }>(
-			raw, seerrMediaDetailSchema, "getTvDetails",
+			raw,
+			seerrMediaDetailSchema,
+			"getTvDetails",
 		);
 		return { posterPath: data.posterPath, title: data.name };
 	}
@@ -586,7 +586,11 @@ export class SeerrClient {
 
 	async getMovieDetailsFull(tmdbId: number): Promise<SeerrMovieDetails> {
 		const raw = await this.get(`/api/v1/movie/${tmdbId}`, TIMEOUT_MEDIA_DETAIL);
-		return this.parseAndRecord<SeerrMovieDetails>(raw, seerrMovieDetailsSchema, "getMovieDetailsFull");
+		return this.parseAndRecord<SeerrMovieDetails>(
+			raw,
+			seerrMovieDetailsSchema,
+			"getMovieDetailsFull",
+		);
 	}
 
 	async getTvDetailsFull(tmdbId: number): Promise<SeerrTvDetails> {
@@ -601,7 +605,11 @@ export class SeerrClient {
 		const cached = this.cache?.get<SeerrGenre[]>(cacheKey);
 		if (cached) return cached;
 		const raw = await this.get("/api/v1/genres/movie", TIMEOUT_INTERACTIVE);
-		const genres = this.parseAndRecord<SeerrGenre[]>(raw, z.array(seerrGenreSchema), "getMovieGenres");
+		const genres = this.parseAndRecord<SeerrGenre[]>(
+			raw,
+			z.array(seerrGenreSchema),
+			"getMovieGenres",
+		);
 		this.cache?.set(cacheKey, genres, GENRE_TTL_MS);
 		return genres;
 	}
@@ -620,14 +628,22 @@ export class SeerrClient {
 
 	async createRequest(payload: SeerrCreateRequestPayload): Promise<SeerrCreateRequestResponse> {
 		const raw = await this.post("/api/v1/request", payload, TIMEOUT_ACTION);
-		return this.parseAndRecord<SeerrCreateRequestResponse>(raw, seerrCreateRequestResponseSchema, "createRequest");
+		return this.parseAndRecord<SeerrCreateRequestResponse>(
+			raw,
+			seerrCreateRequestResponseSchema,
+			"createRequest",
+		);
 	}
 
 	// --- Service Servers (for request options) ---
 
 	async getServiceServers(serviceType: "radarr" | "sonarr"): Promise<SeerrServiceServer[]> {
 		const raw = await this.get(`/api/v1/service/${serviceType}`, TIMEOUT_INTERACTIVE);
-		return this.parseAndRecord<SeerrServiceServer[]>(raw, z.array(seerrServiceServerSchema), "getServiceServers");
+		return this.parseAndRecord<SeerrServiceServer[]>(
+			raw,
+			z.array(seerrServiceServerSchema),
+			"getServiceServers",
+		);
 	}
 
 	async getServerDetails(
@@ -635,7 +651,11 @@ export class SeerrClient {
 		serverId: number,
 	): Promise<SeerrServerWithDetails> {
 		const raw = await this.get(`/api/v1/service/${serviceType}/${serverId}`, TIMEOUT_INTERACTIVE);
-		return this.parseAndRecord<SeerrServerWithDetails>(raw, seerrServerWithDetailsSchema, "getServerDetails");
+		return this.parseAndRecord<SeerrServerWithDetails>(
+			raw,
+			seerrServerWithDetailsSchema,
+			"getServerDetails",
+		);
 	}
 
 	async getRequestOptions(mediaType: "movie" | "tv"): Promise<SeerrRequestOptions> {
@@ -679,7 +699,11 @@ export class SeerrClient {
 		posterPath: string | null;
 	}> {
 		const raw = await this.get(`/api/v1/${type}/${tmdbId}`, TIMEOUT_MEDIA_DETAIL);
-		const data = this.parseAndRecord<{ voteAverage?: number; backdropPath?: string; posterPath?: string }>(raw, seerrMediaSummarySchema, "getMediaSummary");
+		const data = this.parseAndRecord<{
+			voteAverage?: number;
+			backdropPath?: string;
+			posterPath?: string;
+		}>(raw, seerrMediaSummarySchema, "getMediaSummary");
 		return {
 			voteAverage: data.voteAverage ?? null,
 			backdropPath: data.backdropPath ?? null,
@@ -728,7 +752,6 @@ export class SeerrClient {
 		const raw = await this.get<SeerrStatus>("/api/v1/status", TIMEOUT_INTERACTIVE);
 		return this.parseAndRecord<SeerrStatus>(raw, seerrStatusSchema, "getStatus");
 	}
-
 }
 
 // ============================================================================

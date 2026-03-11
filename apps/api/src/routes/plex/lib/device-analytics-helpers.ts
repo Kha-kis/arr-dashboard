@@ -75,5 +75,12 @@ export function aggregateDeviceAnalytics(snapshots: SnapshotForDevice[]): Device
 		}))
 		.sort((a, b) => b.sessions - a.sessions);
 
-	return { platforms, players: playersFixed, totalSessions, parseFailures, totalSnapshots: snapshots.length, failedPreviews };
+	return {
+		platforms,
+		players: playersFixed,
+		totalSessions,
+		parseFailures,
+		totalSnapshots: snapshots.length,
+		failedPreviews,
+	};
 }

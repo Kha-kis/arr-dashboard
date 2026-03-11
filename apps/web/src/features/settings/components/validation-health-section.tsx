@@ -146,10 +146,7 @@ function HealthStateBadge({ state }: { state: HealthState }) {
 				color: color.from,
 			}}
 		>
-			<span
-				className="h-1.5 w-1.5 rounded-full"
-				style={{ backgroundColor: color.from }}
-			/>
+			<span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color.from }} />
 			{labels[state]}
 		</span>
 	);
@@ -177,11 +174,7 @@ export function ValidationHealthSection({
 			? ((overallTotals.rejected / overallTotals.total) * 100).toFixed(1)
 			: "0.0";
 	const healthStatus =
-		overallTotals.rejected === 0
-			? "healthy"
-			: Number(rejectionRate) < 5
-				? "warning"
-				: "error";
+		overallTotals.rejected === 0 ? "healthy" : Number(rejectionRate) < 5 ? "warning" : "error";
 
 	const statusColors = {
 		healthy: SEMANTIC_COLORS.success,
@@ -258,7 +251,13 @@ export function ValidationHealthSection({
 							</div>
 						}
 						label="Status"
-						value={healthStatus === "healthy" ? "Healthy" : healthStatus === "warning" ? "Degraded" : "Unhealthy"}
+						value={
+							healthStatus === "healthy"
+								? "Healthy"
+								: healthStatus === "warning"
+									? "Degraded"
+									: "Unhealthy"
+						}
 						animationDelay={0}
 					/>
 					<SystemInfoCard
@@ -327,22 +326,37 @@ export function ValidationHealthSection({
 								<thead>
 									<tr className="border-b border-border/50">
 										<th className="text-left p-3 font-medium text-muted-foreground uppercase text-xs tracking-wide w-8" />
-										<th className="text-left p-3 font-medium text-muted-foreground uppercase text-xs tracking-wide">Integration</th>
-										<th className="text-center p-3 font-medium text-muted-foreground uppercase text-xs tracking-wide">State</th>
-										<th className="text-right p-3 font-medium text-muted-foreground uppercase text-xs tracking-wide">Total</th>
-										<th className="text-right p-3 font-medium text-muted-foreground uppercase text-xs tracking-wide">Valid</th>
-										<th className="text-right p-3 font-medium text-muted-foreground uppercase text-xs tracking-wide">Rejected</th>
-										<th className="text-left p-3 font-medium text-muted-foreground uppercase text-xs tracking-wide">Mode</th>
-										<th className="text-left p-3 font-medium text-muted-foreground uppercase text-xs tracking-wide">Last Seen</th>
+										<th className="text-left p-3 font-medium text-muted-foreground uppercase text-xs tracking-wide">
+											Integration
+										</th>
+										<th className="text-center p-3 font-medium text-muted-foreground uppercase text-xs tracking-wide">
+											State
+										</th>
+										<th className="text-right p-3 font-medium text-muted-foreground uppercase text-xs tracking-wide">
+											Total
+										</th>
+										<th className="text-right p-3 font-medium text-muted-foreground uppercase text-xs tracking-wide">
+											Valid
+										</th>
+										<th className="text-right p-3 font-medium text-muted-foreground uppercase text-xs tracking-wide">
+											Rejected
+										</th>
+										<th className="text-left p-3 font-medium text-muted-foreground uppercase text-xs tracking-wide">
+											Mode
+										</th>
+										<th className="text-left p-3 font-medium text-muted-foreground uppercase text-xs tracking-wide">
+											Last Seen
+										</th>
 									</tr>
 								</thead>
 								<tbody>
 									{integrationNames.map((name, i) => {
 										const health = integrations[name]!;
 										const mode = validationModes[name] ?? "tolerant";
-										const intRejRate = health.totals.total > 0
-											? ((health.totals.rejected / health.totals.total) * 100).toFixed(1)
-											: "0.0";
+										const intRejRate =
+											health.totals.total > 0
+												? ((health.totals.rejected / health.totals.total) * 100).toFixed(1)
+												: "0.0";
 										const categoryCount = Object.keys(health.categories).length;
 										const isExpandable = categoryCount > 1;
 										const isExpanded = expandedIntegrations.has(name);
@@ -376,14 +390,30 @@ export function ValidationHealthSection({
 													<td className="p-3 text-center">
 														<HealthStateBadge state={health.state} />
 													</td>
-													<td className="p-3 text-right font-mono text-foreground">{health.totals.total.toLocaleString()}</td>
-													<td className="p-3 text-right font-mono" style={{ color: SEMANTIC_COLORS.success.from }}>{health.totals.validated.toLocaleString()}</td>
+													<td className="p-3 text-right font-mono text-foreground">
+														{health.totals.total.toLocaleString()}
+													</td>
+													<td
+														className="p-3 text-right font-mono"
+														style={{ color: SEMANTIC_COLORS.success.from }}
+													>
+														{health.totals.validated.toLocaleString()}
+													</td>
 													<td className="p-3 text-right font-mono">
-														<span style={{ color: health.totals.rejected > 0 ? SEMANTIC_COLORS.error.from : SEMANTIC_COLORS.success.from }}>
+														<span
+															style={{
+																color:
+																	health.totals.rejected > 0
+																		? SEMANTIC_COLORS.error.from
+																		: SEMANTIC_COLORS.success.from,
+															}}
+														>
 															{health.totals.rejected.toLocaleString()}
 														</span>
 														{health.totals.rejected > 0 && (
-															<span className="text-xs text-muted-foreground ml-1">({intRejRate}%)</span>
+															<span className="text-xs text-muted-foreground ml-1">
+																({intRejRate}%)
+															</span>
 														)}
 													</td>
 													<td className="p-3">
@@ -391,15 +421,21 @@ export function ValidationHealthSection({
 															className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
 															style={{
 																backgroundColor:
-																	mode === "strict" ? `${SEMANTIC_COLORS.error.from}20`
-																	: mode === "disabled" ? `${SEMANTIC_COLORS.warning.from}20`
-																	: mode === "log-only" ? `${SEMANTIC_COLORS.info.from}20`
-																	: `${SEMANTIC_COLORS.success.from}20`,
+																	mode === "strict"
+																		? `${SEMANTIC_COLORS.error.from}20`
+																		: mode === "disabled"
+																			? `${SEMANTIC_COLORS.warning.from}20`
+																			: mode === "log-only"
+																				? `${SEMANTIC_COLORS.info.from}20`
+																				: `${SEMANTIC_COLORS.success.from}20`,
 																color:
-																	mode === "strict" ? SEMANTIC_COLORS.error.from
-																	: mode === "disabled" ? SEMANTIC_COLORS.warning.from
-																	: mode === "log-only" ? SEMANTIC_COLORS.info.from
-																	: SEMANTIC_COLORS.success.from,
+																	mode === "strict"
+																		? SEMANTIC_COLORS.error.from
+																		: mode === "disabled"
+																			? SEMANTIC_COLORS.warning.from
+																			: mode === "log-only"
+																				? SEMANTIC_COLORS.info.from
+																				: SEMANTIC_COLORS.success.from,
 															}}
 														>
 															{mode}
@@ -412,25 +448,42 @@ export function ValidationHealthSection({
 													</td>
 												</tr>
 												{/* Category drill-down */}
-												{isExpanded && Object.entries(health.categories).map(([cat, stats]) => (
-													<tr
-														key={`${name}:${cat}`}
-														className="border-b border-border/20 last:border-b-0 bg-card/20"
-													>
-														<td className="p-2" />
-														<td className="p-2 pl-8 text-xs text-muted-foreground font-mono">{cat}</td>
-														<td className="p-2" />
-														<td className="p-2 text-right font-mono text-xs text-muted-foreground">{stats.total.toLocaleString()}</td>
-														<td className="p-2 text-right font-mono text-xs" style={{ color: SEMANTIC_COLORS.success.from }}>{stats.validated.toLocaleString()}</td>
-														<td className="p-2 text-right font-mono text-xs">
-															<span style={{ color: stats.rejected > 0 ? SEMANTIC_COLORS.error.from : SEMANTIC_COLORS.success.from }}>
-																{stats.rejected.toLocaleString()}
-															</span>
-														</td>
-														<td className="p-2" />
-														<td className="p-2" />
-													</tr>
-												))}
+												{isExpanded &&
+													Object.entries(health.categories).map(([cat, stats]) => (
+														<tr
+															key={`${name}:${cat}`}
+															className="border-b border-border/20 last:border-b-0 bg-card/20"
+														>
+															<td className="p-2" />
+															<td className="p-2 pl-8 text-xs text-muted-foreground font-mono">
+																{cat}
+															</td>
+															<td className="p-2" />
+															<td className="p-2 text-right font-mono text-xs text-muted-foreground">
+																{stats.total.toLocaleString()}
+															</td>
+															<td
+																className="p-2 text-right font-mono text-xs"
+																style={{ color: SEMANTIC_COLORS.success.from }}
+															>
+																{stats.validated.toLocaleString()}
+															</td>
+															<td className="p-2 text-right font-mono text-xs">
+																<span
+																	style={{
+																		color:
+																			stats.rejected > 0
+																				? SEMANTIC_COLORS.error.from
+																				: SEMANTIC_COLORS.success.from,
+																	}}
+																>
+																	{stats.rejected.toLocaleString()}
+																</span>
+															</td>
+															<td className="p-2" />
+															<td className="p-2" />
+														</tr>
+													))}
 											</>
 										);
 									})}
@@ -441,9 +494,7 @@ export function ValidationHealthSection({
 				)}
 
 				{/* Schema Drift Section */}
-				{fingerprints && (
-					<SchemaDriftSection fingerprints={fingerprints} hasDrift={hasDrift} />
-				)}
+				{fingerprints && <SchemaDriftSection fingerprints={fingerprints} hasDrift={hasDrift} />}
 
 				{/* Quarantine Section */}
 				<QuarantineSection />
@@ -628,7 +679,7 @@ function QuarantineSection() {
 	const filteredItems: QuarantinedItem[] =
 		filterIntegration === "all"
 			? integrationNames.flatMap((name) => itemsByIntegration[name] ?? [])
-			: itemsByIntegration[filterIntegration] ?? [];
+			: (itemsByIntegration[filterIntegration] ?? []);
 
 	const toggleItem = (id: string) => {
 		setExpandedItems((prev) => {
@@ -676,9 +727,7 @@ function QuarantineSection() {
 						</span>
 					)}
 				</div>
-				<span className="text-xs text-muted-foreground">
-					Rejected items held for inspection
-				</span>
+				<span className="text-xs text-muted-foreground">Rejected items held for inspection</span>
 			</button>
 
 			{isOpen && (
@@ -725,10 +774,18 @@ function QuarantineSection() {
 									<thead>
 										<tr className="border-b border-border/50">
 											<th className="text-left p-2 font-medium text-muted-foreground uppercase text-xs tracking-wide w-8" />
-											<th className="text-left p-2 font-medium text-muted-foreground uppercase text-xs tracking-wide">Time</th>
-											<th className="text-left p-2 font-medium text-muted-foreground uppercase text-xs tracking-wide">Integration</th>
-											<th className="text-left p-2 font-medium text-muted-foreground uppercase text-xs tracking-wide">Category</th>
-											<th className="text-left p-2 font-medium text-muted-foreground uppercase text-xs tracking-wide">Error</th>
+											<th className="text-left p-2 font-medium text-muted-foreground uppercase text-xs tracking-wide">
+												Time
+											</th>
+											<th className="text-left p-2 font-medium text-muted-foreground uppercase text-xs tracking-wide">
+												Integration
+											</th>
+											<th className="text-left p-2 font-medium text-muted-foreground uppercase text-xs tracking-wide">
+												Category
+											</th>
+											<th className="text-left p-2 font-medium text-muted-foreground uppercase text-xs tracking-wide">
+												Error
+											</th>
 										</tr>
 									</thead>
 									<tbody>
@@ -752,14 +809,21 @@ function QuarantineSection() {
 														<td className="p-2 text-xs text-muted-foreground font-mono whitespace-nowrap">
 															{new Date(item.timestamp).toLocaleTimeString()}
 														</td>
-														<td className="p-2 text-xs font-medium text-foreground">{item.integration}</td>
-														<td className="p-2 text-xs font-mono text-muted-foreground">{item.category}</td>
+														<td className="p-2 text-xs font-medium text-foreground">
+															{item.integration}
+														</td>
+														<td className="p-2 text-xs font-mono text-muted-foreground">
+															{item.category}
+														</td>
 														<td className="p-2 text-xs text-muted-foreground truncate max-w-[300px]">
 															{firstError}
 														</td>
 													</tr>
 													{isExpanded && (
-														<tr key={`${itemId}-detail`} className="border-b border-border/20 bg-card/20">
+														<tr
+															key={`${itemId}-detail`}
+															className="border-b border-border/20 bg-card/20"
+														>
 															<td colSpan={5} className="p-3">
 																<div className="space-y-2">
 																	<div>

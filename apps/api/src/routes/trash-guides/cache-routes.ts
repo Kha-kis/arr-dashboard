@@ -10,7 +10,10 @@ import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { CacheCorruptionError, createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher, getRateLimitState } from "../../lib/trash-guides/github-fetcher.js";
-import { getValidationHealth, resetValidationHealth } from "../../lib/trash-guides/github-schemas.js";
+import {
+	getValidationHealth,
+	resetValidationHealth,
+} from "../../lib/trash-guides/github-schemas.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";

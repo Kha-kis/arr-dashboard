@@ -25,15 +25,9 @@ export const BandwidthChart = ({ days, enabled }: BandwidthChartProps) => {
 	const { gradient } = useThemeGradient();
 	const { data, isLoading, isError } = useBandwidthAnalytics(days, enabled);
 
-	const bandwidthSeries = useMemo(
-		() => data?.timeSeries.map((d) => d.bandwidth) ?? [],
-		[data],
-	);
+	const bandwidthSeries = useMemo(() => data?.timeSeries.map((d) => d.bandwidth) ?? [], [data]);
 
-	const concurrentSeries = useMemo(
-		() => data?.timeSeries.map((d) => d.concurrent) ?? [],
-		[data],
-	);
+	const concurrentSeries = useMemo(() => data?.timeSeries.map((d) => d.concurrent) ?? [], [data]);
 
 	const hasLanWan = useMemo(
 		() => data?.timeSeries.some((d) => d.lanBandwidth > 0 || d.wanBandwidth > 0) ?? false,
@@ -41,12 +35,12 @@ export const BandwidthChart = ({ days, enabled }: BandwidthChartProps) => {
 	);
 
 	const lanSeries = useMemo(
-		() => (hasLanWan ? data?.timeSeries.map((d) => d.lanBandwidth) ?? [] : []),
+		() => (hasLanWan ? (data?.timeSeries.map((d) => d.lanBandwidth) ?? []) : []),
 		[data, hasLanWan],
 	);
 
 	const wanSeries = useMemo(
-		() => (hasLanWan ? data?.timeSeries.map((d) => d.wanBandwidth) ?? [] : []),
+		() => (hasLanWan ? (data?.timeSeries.map((d) => d.wanBandwidth) ?? []) : []),
 		[data, hasLanWan],
 	);
 
@@ -56,7 +50,12 @@ export const BandwidthChart = ({ days, enabled }: BandwidthChartProps) => {
 				<PremiumSkeleton variant="line" className="h-5 w-40 mb-4" />
 				<div className="grid gap-4 md:grid-cols-3 mb-4">
 					{[0, 1, 2].map((i) => (
-						<PremiumSkeleton key={i} variant="line" className="h-20" style={{ animationDelay: `${i * 50}ms` }} />
+						<PremiumSkeleton
+							key={i}
+							variant="line"
+							className="h-20"
+							style={{ animationDelay: `${i * 50}ms` }}
+						/>
 					))}
 				</div>
 				<PremiumSkeleton variant="line" className="h-[60px] w-full" />

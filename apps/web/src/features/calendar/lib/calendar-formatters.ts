@@ -19,7 +19,9 @@ export const createMonthDate = (year: number, month: number): Date =>
  * Formats a date as "Month Year" (e.g., "January 2024")
  */
 export const formatMonthLabel = (date: Date): string =>
-	new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric", timeZone: "UTC" }).format(date);
+	new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric", timeZone: "UTC" }).format(
+		date,
+	);
 
 /**
  * Formats a time string to localized time format

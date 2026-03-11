@@ -130,9 +130,7 @@ export function BrowserPushCard() {
 					<div className="flex items-center gap-2">
 						<span className="font-medium">Browser Push Notifications</span>
 						<StatusBadge
-							status={
-								state === "enabled" ? "success" : state === "denied" ? "error" : "info"
-							}
+							status={state === "enabled" ? "success" : state === "denied" ? "error" : "info"}
 						>
 							{state === "enabled"
 								? "Active"

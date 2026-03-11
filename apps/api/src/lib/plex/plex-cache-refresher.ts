@@ -86,9 +86,7 @@ export async function refreshPlexCache(
 
 		// 2. Get library sections (movie and show only)
 		const sections = await client.getLibrarySections();
-		const mediaLibs = sections.filter(
-			(s) => s.type === "movie" || s.type === "show",
-		);
+		const mediaLibs = sections.filter((s) => s.type === "movie" || s.type === "show");
 
 		// 3. Build ratingKey → item data (TMDB ID, media type, rating, section)
 		const ratingKeyMap = new Map<
@@ -129,7 +127,10 @@ export async function refreshPlexCache(
 					});
 				}
 			} catch (err) {
-				log.warn({ err, sectionId: lib.key, sectionTitle: lib.title }, "Failed to fetch Plex library items");
+				log.warn(
+					{ err, sectionId: lib.key, sectionTitle: lib.title },
+					"Failed to fetch Plex library items",
+				);
 				errors++;
 			}
 		}

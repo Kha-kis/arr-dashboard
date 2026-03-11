@@ -141,7 +141,11 @@ export const libraryCleanupApi = {
 	},
 
 	// Logs
-	async getLogs(page = 1, pageSize = 20, filters?: { status?: string; since?: string; until?: string }): Promise<PaginatedLogs> {
+	async getLogs(
+		page = 1,
+		pageSize = 20,
+		filters?: { status?: string; since?: string; until?: string },
+	): Promise<PaginatedLogs> {
 		const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
 		if (filters?.status) params.set("status", filters.status);
 		if (filters?.since) params.set("since", filters.since);

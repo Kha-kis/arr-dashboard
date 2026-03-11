@@ -4,10 +4,7 @@
  * Watch trends, per-user stats, and leaderboards from Tautulli.
  */
 
-import type {
-	TautulliPlaysByDateResponse,
-	TautulliStatsResponse,
-} from "@arr/shared";
+import type { TautulliPlaysByDateResponse, TautulliStatsResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { executeOnTautulliInstances } from "../../lib/tautulli/tautulli-helpers.js";
@@ -42,9 +39,28 @@ export async function registerStatsRoutes(app: FastifyInstance, _opts: FastifyPl
 		});
 
 		// Merge home stats by statId (same stat from multiple instances → merge rows)
-		const homeStatsMap = new Map<string, { statTitle: string; rows: Map<string, { title: string; friendlyName?: string; totalPlays: number; totalDuration: number; platform?: string; thumb?: string }> }>();
+		const homeStatsMap = new Map<
+			string,
+			{
+				statTitle: string;
+				rows: Map<
+					string,
+					{
+						title: string;
+						friendlyName?: string;
+						totalPlays: number;
+						totalDuration: number;
+						platform?: string;
+						thumb?: string;
+					}
+				>;
+			}
+		>();
 		// Merge user stats by userId (sum plays/duration across instances)
-		const userStatsMap = new Map<number, { friendlyName: string; totalPlays: number; totalDuration: number }>();
+		const userStatsMap = new Map<
+			number,
+			{ friendlyName: string; totalPlays: number; totalDuration: number }
+		>();
 
 		for (const instanceResult of result.instances) {
 			if (!instanceResult.success) continue;

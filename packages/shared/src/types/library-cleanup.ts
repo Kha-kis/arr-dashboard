@@ -261,7 +261,8 @@ export const filePathRuleParamsSchema = z.object({
 		.min(1)
 		.max(REGEX_MAX_LENGTH)
 		.refine((p) => getRegexSafetyError(p) === null, {
-			message: "Invalid or unsafe regular expression (nested quantifiers, backreferences, or excessive repetition are not allowed)",
+			message:
+				"Invalid or unsafe regular expression (nested quantifiers, backreferences, or excessive repetition are not allowed)",
 		}),
 	field: z.enum(["path", "rootFolderPath"]).default("path"),
 });
@@ -320,14 +321,16 @@ export const userRetentionParamsSchema = z.object({
 export const stalenessScoreParamsSchema = z.object({
 	operator: z.enum(["greater_than"]),
 	threshold: z.number().min(0).max(100),
-	weights: z.object({
-		daysSinceLastWatch: z.number().min(0).max(1).default(0.30),
-		inverseWatchCount: z.number().min(0).max(1).default(0.20),
-		notOnDeck: z.number().min(0).max(1).default(0.10),
-		lowUserRating: z.number().min(0).max(1).default(0.15),
-		lowTmdbRating: z.number().min(0).max(1).default(0.15),
-		sizeOnDisk: z.number().min(0).max(1).default(0.10),
-	}).optional(),
+	weights: z
+		.object({
+			daysSinceLastWatch: z.number().min(0).max(1).default(0.3),
+			inverseWatchCount: z.number().min(0).max(1).default(0.2),
+			notOnDeck: z.number().min(0).max(1).default(0.1),
+			lowUserRating: z.number().min(0).max(1).default(0.15),
+			lowTmdbRating: z.number().min(0).max(1).default(0.15),
+			sizeOnDisk: z.number().min(0).max(1).default(0.1),
+		})
+		.optional(),
 });
 
 // ── Phase 3: Advanced Automation Rule Parameter Schemas ──────────────
@@ -399,9 +402,12 @@ const baseCleanupRuleSchema = z.object({
 	excludeTags: z.array(z.number()).nullable().optional(),
 	excludeTitles: z
 		.array(
-			z.string().max(REGEX_MAX_LENGTH).refine((p) => getRegexSafetyError(p) === null, {
-				message: "Invalid or unsafe regular expression pattern",
-			}),
+			z
+				.string()
+				.max(REGEX_MAX_LENGTH)
+				.refine((p) => getRegexSafetyError(p) === null, {
+					message: "Invalid or unsafe regular expression pattern",
+				}),
 		)
 		.nullable()
 		.optional(),
@@ -412,35 +418,25 @@ const baseCleanupRuleSchema = z.object({
 	retentionMode: z.boolean().optional().default(false),
 });
 
-export const createCleanupRuleSchema = baseCleanupRuleSchema.superRefine(
-	(data, ctx) => {
-		if (
-			data.operator != null &&
-			(!data.conditions || data.conditions.length === 0)
-		) {
-			ctx.addIssue({
-				code: z.ZodIssueCode.custom,
-				message: "Composite rules must have at least one condition",
-				path: ["conditions"],
-			});
-		}
-	},
-);
+export const createCleanupRuleSchema = baseCleanupRuleSchema.superRefine((data, ctx) => {
+	if (data.operator != null && (!data.conditions || data.conditions.length === 0)) {
+		ctx.addIssue({
+			code: z.ZodIssueCode.custom,
+			message: "Composite rules must have at least one condition",
+			path: ["conditions"],
+		});
+	}
+});
 
-export const updateCleanupRuleSchema = baseCleanupRuleSchema.partial().superRefine(
-	(data, ctx) => {
-		if (
-			data.operator != null &&
-			(!data.conditions || data.conditions.length === 0)
-		) {
-			ctx.addIssue({
-				code: z.ZodIssueCode.custom,
-				message: "Composite rules must have at least one condition",
-				path: ["conditions"],
-			});
-		}
-	},
-);
+export const updateCleanupRuleSchema = baseCleanupRuleSchema.partial().superRefine((data, ctx) => {
+	if (data.operator != null && (!data.conditions || data.conditions.length === 0)) {
+		ctx.addIssue({
+			code: z.ZodIssueCode.custom,
+			message: "Composite rules must have at least one condition",
+			path: ["conditions"],
+		});
+	}
+});
 
 export const reorderRulesSchema = z.object({
 	ruleIds: z.array(z.string().min(1)).min(1),
@@ -629,7 +625,13 @@ export interface CleanupExplainResult {
 	ruleName: string;
 	matched: boolean;
 	reason: string | null;
-	filteredBy: "service_filter" | "instance_filter" | "tag_exclusion" | "title_exclusion" | "disabled" | null;
+	filteredBy:
+		| "service_filter"
+		| "instance_filter"
+		| "tag_exclusion"
+		| "title_exclusion"
+		| "disabled"
+		| null;
 	retentionMode: boolean;
 }
 

@@ -104,8 +104,14 @@ export const CollectionStatsChart = ({ enabled }: CollectionStatsChartProps) => 
 
 	const topCollections = data.collections.slice(0, 10);
 	const topLabels = data.labels.slice(0, 10);
-	const maxCollectionItems = Math.max(...topCollections.map((c: { totalItems: number }) => c.totalItems), 1);
-	const maxLabelItems = topLabels.length > 0 ? Math.max(...topLabels.map((l: { totalItems: number }) => l.totalItems), 1) : 1;
+	const maxCollectionItems = Math.max(
+		...topCollections.map((c: { totalItems: number }) => c.totalItems),
+		1,
+	);
+	const maxLabelItems =
+		topLabels.length > 0
+			? Math.max(...topLabels.map((l: { totalItems: number }) => l.totalItems), 1)
+			: 1;
 
 	return (
 		<div className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-xs p-6 space-y-5">
@@ -117,7 +123,10 @@ export const CollectionStatsChart = ({ enabled }: CollectionStatsChartProps) => 
 			{/* Legend */}
 			<div className="flex gap-4 text-[10px] text-muted-foreground">
 				<span className="flex items-center gap-1.5">
-					<div className="h-2 w-4 rounded-sm" style={{ backgroundColor: SEMANTIC_COLORS.success.text }} />
+					<div
+						className="h-2 w-4 rounded-sm"
+						style={{ backgroundColor: SEMANTIC_COLORS.success.text }}
+					/>
 					Watched
 				</span>
 				<span className="flex items-center gap-1.5">
@@ -131,16 +140,21 @@ export const CollectionStatsChart = ({ enabled }: CollectionStatsChartProps) => 
 				<div>
 					<h4 className="text-xs text-muted-foreground mb-3">Top Collections</h4>
 					<div className="space-y-2">
-						{topCollections.map((c: { name: string; totalItems: number; watchedItems: number; watchPercent: number }, i: number) => (
-							<CollectionBar
-								key={c.name}
-								{...c}
-								maxItems={maxCollectionItems}
-								color={gradient.from}
-								watchedColor={SEMANTIC_COLORS.success.text}
-								index={i}
-							/>
-						))}
+						{topCollections.map(
+							(
+								c: { name: string; totalItems: number; watchedItems: number; watchPercent: number },
+								i: number,
+							) => (
+								<CollectionBar
+									key={c.name}
+									{...c}
+									maxItems={maxCollectionItems}
+									color={gradient.from}
+									watchedColor={SEMANTIC_COLORS.success.text}
+									index={i}
+								/>
+							),
+						)}
 					</div>
 				</div>
 			)}
@@ -150,16 +164,21 @@ export const CollectionStatsChart = ({ enabled }: CollectionStatsChartProps) => 
 				<div>
 					<h4 className="text-xs text-muted-foreground mb-3">Labels</h4>
 					<div className="space-y-2">
-						{topLabels.map((l: { name: string; totalItems: number; watchedItems: number; watchPercent: number }, i: number) => (
-							<CollectionBar
-								key={l.name}
-								{...l}
-								maxItems={maxLabelItems}
-								color={gradient.to}
-								watchedColor={SEMANTIC_COLORS.success.text}
-								index={i}
-							/>
-						))}
+						{topLabels.map(
+							(
+								l: { name: string; totalItems: number; watchedItems: number; watchPercent: number },
+								i: number,
+							) => (
+								<CollectionBar
+									key={l.name}
+									{...l}
+									maxItems={maxLabelItems}
+									color={gradient.to}
+									watchedColor={SEMANTIC_COLORS.success.text}
+									index={i}
+								/>
+							),
+						)}
 					</div>
 				</div>
 			)}

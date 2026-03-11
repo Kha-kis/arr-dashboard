@@ -189,7 +189,9 @@ export const registerNotificationRoutes: FastifyPluginCallback = (app, _opts, do
 						where: { id, userId },
 						data: {
 							lastTestedAt: new Date(),
-							lastTestResult: `failed: ${getErrorMessage(error).replace(/[A-Za-z0-9+/]{40,}={0,2}/g, "<redacted>").slice(0, 200)}`,
+							lastTestResult: `failed: ${getErrorMessage(error)
+								.replace(/[A-Za-z0-9+/]{40,}={0,2}/g, "<redacted>")
+								.slice(0, 200)}`,
 						},
 					})
 					.catch((err) => {
@@ -346,13 +348,13 @@ export const registerNotificationRoutes: FastifyPluginCallback = (app, _opts, do
 		if (query.since) {
 			const sinceDate = new Date(query.since);
 			if (!Number.isNaN(sinceDate.getTime())) {
-				where.sentAt = { ...(where.sentAt as Record<string, unknown> ?? {}), gte: sinceDate };
+				where.sentAt = { ...((where.sentAt as Record<string, unknown>) ?? {}), gte: sinceDate };
 			}
 		}
 		if (query.until) {
 			const untilDate = new Date(query.until);
 			if (!Number.isNaN(untilDate.getTime())) {
-				where.sentAt = { ...(where.sentAt as Record<string, unknown> ?? {}), lte: untilDate };
+				where.sentAt = { ...((where.sentAt as Record<string, unknown>) ?? {}), lte: untilDate };
 			}
 		}
 
@@ -436,7 +438,10 @@ export const registerNotificationRoutes: FastifyPluginCallback = (app, _opts, do
 				}
 			} catch (err) {
 				// Couldn't decrypt — skip this channel and continue checking others
-				request.log.debug({ err, channelId: existing.id }, "Could not decrypt browser push channel for dedup check");
+				request.log.debug(
+					{ err, channelId: existing.id },
+					"Could not decrypt browser push channel for dedup check",
+				);
 			}
 		}
 
@@ -538,7 +543,8 @@ export const registerNotificationRoutes: FastifyPluginCallback = (app, _opts, do
 		if (body.priority !== undefined) updateData.priority = body.priority;
 		if (body.action !== undefined) updateData.action = body.action;
 		if (body.conditions !== undefined) updateData.conditions = JSON.stringify(body.conditions);
-		if (body.targetChannelIds !== undefined) updateData.targetChannelIds = JSON.stringify(body.targetChannelIds);
+		if (body.targetChannelIds !== undefined)
+			updateData.targetChannelIds = JSON.stringify(body.targetChannelIds);
 		if (body.throttleMinutes !== undefined) updateData.throttleMinutes = body.throttleMinutes;
 
 		const updated = await app.prisma.notificationRule.update({

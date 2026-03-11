@@ -18,7 +18,13 @@ import { buildQueryUrl } from "../../build-query-url";
 import { apiRequest } from "../base";
 
 // Re-export shared types for convenience
-export type { NamingPresetsResponse, NamingPreviewResult, NamingConfigRecord, NamingSelectedPresets, NamingDeployStatus };
+export type {
+	NamingPresetsResponse,
+	NamingPreviewResult,
+	NamingConfigRecord,
+	NamingSelectedPresets,
+	NamingDeployStatus,
+};
 
 // ============================================================================
 // Response Types
@@ -160,9 +166,7 @@ export async function saveNamingConfig(
 /**
  * Delete naming config for an instance
  */
-export async function deleteNamingConfig(
-	instanceId: string,
-): Promise<NamingConfigDeleteResponse> {
+export async function deleteNamingConfig(instanceId: string): Promise<NamingConfigDeleteResponse> {
 	return await apiRequest<NamingConfigDeleteResponse>(
 		`/api/trash-guides/naming/configs/${instanceId}`,
 		{

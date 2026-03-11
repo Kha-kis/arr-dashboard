@@ -116,7 +116,10 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 				},
 			});
 
-			request.log.info({ displayName: data.displayName, issuer: normalizedIssuer }, "OIDC provider created");
+			request.log.info(
+				{ displayName: data.displayName, issuer: normalizedIssuer },
+				"OIDC provider created",
+			);
 
 			return reply.status(201).send(toPublicProvider(provider));
 		},

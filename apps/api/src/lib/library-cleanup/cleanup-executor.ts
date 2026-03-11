@@ -102,7 +102,11 @@ export async function executeCleanupPreview(
 		};
 	}
 
-	const { flagged, totalEvaluated, prefetchHealth, warnings } = await evaluateAllItems(deps, config, config.rules);
+	const { flagged, totalEvaluated, prefetchHealth, warnings } = await evaluateAllItems(
+		deps,
+		config,
+		config.rules,
+	);
 
 	const details = flagged.map((f) => ({
 		instanceId: f.cacheItem.instanceId,
@@ -119,11 +123,14 @@ export async function executeCleanupPreview(
 	}));
 
 	const hasFailedPrefetch = warnings.length > 0;
-	log.info({ totalEvaluated, totalFlagged: flagged.length, hasFailedPrefetch }, "Library cleanup preview completed");
+	log.info(
+		{ totalEvaluated, totalFlagged: flagged.length, hasFailedPrefetch },
+		"Library cleanup preview completed",
+	);
 
 	return {
 		isDryRun: true,
-		status: hasFailedPrefetch ? "partial" as const : "completed" as const,
+		status: hasFailedPrefetch ? ("partial" as const) : ("completed" as const),
 		itemsEvaluated: totalEvaluated,
 		itemsFlagged: flagged.length,
 		itemsRemoved: 0,
@@ -174,7 +181,11 @@ export async function executeCleanupRun(
 		};
 	}
 
-	const { flagged, totalEvaluated, prefetchHealth, warnings } = await evaluateAllItems(deps, config, config.rules);
+	const { flagged, totalEvaluated, prefetchHealth, warnings } = await evaluateAllItems(
+		deps,
+		config,
+		config.rules,
+	);
 
 	// Respect max removals per run
 	const limited = flagged.slice(0, config.maxRemovalsPerRun);
@@ -367,7 +378,9 @@ export async function executeApprovedItems(
  * Collect all rule types from enabled rules, including conditions inside composite rules.
  * Used to decide which external data to prefetch (Seerr, Tautulli, Plex).
  */
-function collectActiveRuleTypes(rules: Pick<LibraryCleanupRule, "enabled" | "ruleType" | "conditions">[]): Set<string> {
+function collectActiveRuleTypes(
+	rules: Pick<LibraryCleanupRule, "enabled" | "ruleType" | "conditions">[],
+): Set<string> {
 	const types = new Set<string>();
 	for (const r of rules) {
 		if (!r.enabled) continue;
@@ -487,8 +500,8 @@ async function prefetchTautulliData(
 					watchCount: row.watchCount,
 					watchedByUsers,
 				});
-			} catch {
-				log.warn({ tmdbId: row.tmdbId }, "Skipping Tautulli cache row with bad data");
+			} catch (rowErr) {
+				log.warn({ err: rowErr, tmdbId: row.tmdbId }, "Skipping Tautulli cache row with bad data");
 			}
 		}
 
@@ -531,70 +544,74 @@ async function prefetchPlexData(
 		const map: PlexWatchMap = new Map();
 		for (const row of cacheRows) {
 			try {
-			// Key is mediaType:tmdbId (aggregating across sections)
-			const key = `${row.mediaType}:${row.tmdbId}`;
-			const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
-			const collections = (safeJsonParse(row.collections) as string[]) ?? [];
-			const labels = (safeJsonParse(row.labels) as string[]) ?? [];
+				// Key is mediaType:tmdbId (aggregating across sections)
+				const key = `${row.mediaType}:${row.tmdbId}`;
+				const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
+				const collections = (safeJsonParse(row.collections) as string[]) ?? [];
+				const labels = (safeJsonParse(row.labels) as string[]) ?? [];
 
-			const sectionInfo: PlexSectionWatchInfo = {
-				sectionId: row.sectionId,
-				sectionTitle: row.sectionTitle,
-				lastWatchedAt: row.lastWatchedAt,
-				watchCount: row.watchCount,
-				watchedByUsers,
-				onDeck: row.onDeck,
-				userRating: row.userRating,
-				collections,
-				labels,
-				addedAt: row.addedAt,
-			};
-
-			const existing = map.get(key);
-			if (existing) {
-				existing.sections.push(sectionInfo);
-				// Update aggregates: merge across sections
-				if (row.lastWatchedAt && (!existing.lastWatchedAt || row.lastWatchedAt > existing.lastWatchedAt)) {
-					existing.lastWatchedAt = row.lastWatchedAt;
-				}
-				existing.watchCount += row.watchCount;
-				for (const user of watchedByUsers) {
-					if (!existing.watchedByUsers.includes(user)) {
-						existing.watchedByUsers.push(user);
-					}
-				}
-				existing.onDeck = existing.onDeck || row.onDeck;
-				if (row.userRating != null) {
-					existing.userRating = existing.userRating != null
-						? Math.max(existing.userRating, row.userRating)
-						: row.userRating;
-				}
-				// Merge collections and labels
-				for (const c of collections) {
-					if (!existing.collections.includes(c)) existing.collections.push(c);
-				}
-				for (const l of labels) {
-					if (!existing.labels.includes(l)) existing.labels.push(l);
-				}
-				// Merge addedAt: take earliest (first appearance in any library)
-				if (row.addedAt && (!existing.addedAt || row.addedAt < existing.addedAt)) {
-					existing.addedAt = row.addedAt;
-				}
-			} else {
-				map.set(key, {
+				const sectionInfo: PlexSectionWatchInfo = {
+					sectionId: row.sectionId,
+					sectionTitle: row.sectionTitle,
 					lastWatchedAt: row.lastWatchedAt,
 					watchCount: row.watchCount,
-					watchedByUsers: [...watchedByUsers],
+					watchedByUsers,
 					onDeck: row.onDeck,
 					userRating: row.userRating,
-					collections: [...collections],
-					labels: [...labels],
+					collections,
+					labels,
 					addedAt: row.addedAt,
-					sections: [sectionInfo],
-				});
-			}
-			} catch {
-				log.warn({ tmdbId: row.tmdbId }, "Skipping Plex cache row with bad data");
+				};
+
+				const existing = map.get(key);
+				if (existing) {
+					existing.sections.push(sectionInfo);
+					// Update aggregates: merge across sections
+					if (
+						row.lastWatchedAt &&
+						(!existing.lastWatchedAt || row.lastWatchedAt > existing.lastWatchedAt)
+					) {
+						existing.lastWatchedAt = row.lastWatchedAt;
+					}
+					existing.watchCount += row.watchCount;
+					for (const user of watchedByUsers) {
+						if (!existing.watchedByUsers.includes(user)) {
+							existing.watchedByUsers.push(user);
+						}
+					}
+					existing.onDeck = existing.onDeck || row.onDeck;
+					if (row.userRating != null) {
+						existing.userRating =
+							existing.userRating != null
+								? Math.max(existing.userRating, row.userRating)
+								: row.userRating;
+					}
+					// Merge collections and labels
+					for (const c of collections) {
+						if (!existing.collections.includes(c)) existing.collections.push(c);
+					}
+					for (const l of labels) {
+						if (!existing.labels.includes(l)) existing.labels.push(l);
+					}
+					// Merge addedAt: take earliest (first appearance in any library)
+					if (row.addedAt && (!existing.addedAt || row.addedAt < existing.addedAt)) {
+						existing.addedAt = row.addedAt;
+					}
+				} else {
+					map.set(key, {
+						lastWatchedAt: row.lastWatchedAt,
+						watchCount: row.watchCount,
+						watchedByUsers: [...watchedByUsers],
+						onDeck: row.onDeck,
+						userRating: row.userRating,
+						collections: [...collections],
+						labels: [...labels],
+						addedAt: row.addedAt,
+						sections: [sectionInfo],
+					});
+				}
+			} catch (rowErr) {
+				log.warn({ err: rowErr, tmdbId: row.tmdbId }, "Skipping Plex cache row with bad data");
 			}
 		}
 
@@ -707,7 +724,12 @@ async function evaluateAllItems(
 	deps: CleanupExecutorDeps,
 	config: LibraryCleanupConfig,
 	rules: LibraryCleanupRule[],
-): Promise<{ flagged: FlaggedItem[]; totalEvaluated: number; prefetchHealth: PrefetchResults; warnings: string[] }> {
+): Promise<{
+	flagged: FlaggedItem[];
+	totalEvaluated: number;
+	prefetchHealth: PrefetchResults;
+	warnings: string[];
+}> {
 	const { prisma, log } = deps;
 	const now = new Date();
 	const warnings: string[] = [];
@@ -745,7 +767,9 @@ async function evaluateAllItems(
 		"user_retention", // Can use tautulli as source
 	];
 	const hasTautulliRules = TAUTULLI_RULE_TYPES.some((t) => activeTypes.has(t));
-	const tautulliResult = hasTautulliRules ? await prefetchTautulliData(deps, config.userId) : undefined;
+	const tautulliResult = hasTautulliRules
+		? await prefetchTautulliData(deps, config.userId)
+		: undefined;
 	const tautulliMap = hasTautulliRules ? tautulliResult : undefined;
 
 	// Prefetch Plex watch data if any Plex rule types are active
@@ -769,7 +793,9 @@ async function evaluateAllItems(
 
 	// Prefetch Plex episode data if episode completion rule is active
 	const hasEpisodeRules = activeTypes.has("plex_episode_completion");
-	const plexEpisodeMap = hasEpisodeRules ? await prefetchPlexEpisodeData(deps, config.userId) : undefined;
+	const plexEpisodeMap = hasEpisodeRules
+		? await prefetchPlexEpisodeData(deps, config.userId)
+		: undefined;
 
 	// Build prefetch health status
 	const prefetchHealth: PrefetchResults = {
@@ -792,11 +818,14 @@ async function evaluateAllItems(
 			if (affectedRules.length > 0) {
 				warnings.push(
 					`${source} data unavailable — rules affected: ${affectedRules.join(", ")}. ` +
-					`These rules were skipped for safety to prevent false matches.`,
+						`These rules were skipped for safety to prevent false matches.`,
 				);
 			}
 		}
-		log.warn({ prefetchHealth, warnings }, "Cleanup run has failed prefetches with dependent rules");
+		log.warn(
+			{ prefetchHealth, warnings },
+			"Cleanup run has failed prefetches with dependent rules",
+		);
 	}
 
 	// Build evaluation context
@@ -1005,7 +1034,13 @@ async function executeDirectRemoval(
 				"Circuit breaker triggered: aborting cleanup after consecutive ARR API failures",
 			);
 			// Skip remaining items
-			details.push(buildDetail(item, "skipped", `Skipped: circuit breaker triggered after ${CIRCUIT_BREAKER_THRESHOLD} consecutive failures`));
+			details.push(
+				buildDetail(
+					item,
+					"skipped",
+					`Skipped: circuit breaker triggered after ${CIRCUIT_BREAKER_THRESHOLD} consecutive failures`,
+				),
+			);
 			continue;
 		}
 
@@ -1020,14 +1055,21 @@ async function executeDirectRemoval(
 		try {
 			if (ruleAction === "unmonitor") {
 				await unmonitorInArr(arrClientFactory, instance, item.cacheItem.arrItemId);
-				await prisma.libraryCache.updateMany({
-					where: {
-						instanceId: item.cacheItem.instanceId,
-						arrItemId: item.cacheItem.arrItemId,
-						itemType: item.cacheItem.itemType,
-					},
-					data: { monitored: false },
-				});
+				try {
+					await prisma.libraryCache.updateMany({
+						where: {
+							instanceId: item.cacheItem.instanceId,
+							arrItemId: item.cacheItem.arrItemId,
+							itemType: item.cacheItem.itemType,
+						},
+						data: { monitored: false },
+					});
+				} catch (cacheErr) {
+					log.error(
+						{ err: cacheErr, title: item.cacheItem.title, instanceId: instance.id },
+						"Cleanup: ARR action succeeded but cache update failed — cache is now stale",
+					);
+				}
 				details.push(buildDetail(item, "unmonitored"));
 				unmonitored++;
 				consecutiveFailures = 0; // Reset on success
@@ -1037,14 +1079,21 @@ async function executeDirectRemoval(
 				);
 			} else if (ruleAction === "delete_files") {
 				await deleteFilesFromArr(arrClientFactory, instance, item.cacheItem.arrItemId);
-				await prisma.libraryCache.updateMany({
-					where: {
-						instanceId: item.cacheItem.instanceId,
-						arrItemId: item.cacheItem.arrItemId,
-						itemType: item.cacheItem.itemType,
-					},
-					data: { hasFile: false, sizeOnDisk: 0 },
-				});
+				try {
+					await prisma.libraryCache.updateMany({
+						where: {
+							instanceId: item.cacheItem.instanceId,
+							arrItemId: item.cacheItem.arrItemId,
+							itemType: item.cacheItem.itemType,
+						},
+						data: { hasFile: false, sizeOnDisk: 0 },
+					});
+				} catch (cacheErr) {
+					log.error(
+						{ err: cacheErr, title: item.cacheItem.title, instanceId: instance.id },
+						"Cleanup: ARR action succeeded but cache update failed — cache is now stale",
+					);
+				}
 				details.push(buildDetail(item, "files_deleted"));
 				filesDeleted++;
 				consecutiveFailures = 0; // Reset on success
@@ -1055,13 +1104,20 @@ async function executeDirectRemoval(
 			} else {
 				// Default: delete
 				await deleteFromArr(arrClientFactory, instance, item.cacheItem.arrItemId);
-				await prisma.libraryCache.deleteMany({
-					where: {
-						instanceId: item.cacheItem.instanceId,
-						arrItemId: item.cacheItem.arrItemId,
-						itemType: item.cacheItem.itemType,
-					},
-				});
+				try {
+					await prisma.libraryCache.deleteMany({
+						where: {
+							instanceId: item.cacheItem.instanceId,
+							arrItemId: item.cacheItem.arrItemId,
+							itemType: item.cacheItem.itemType,
+						},
+					});
+				} catch (cacheErr) {
+					log.error(
+						{ err: cacheErr, title: item.cacheItem.title, instanceId: instance.id },
+						"Cleanup: ARR delete succeeded but cache cleanup failed — cache is now stale",
+					);
+				}
 				details.push(buildDetail(item, "removed"));
 				removed++;
 				consecutiveFailures = 0; // Reset on success
@@ -1096,7 +1152,10 @@ async function executeDirectRemoval(
 		itemsRemoved: removed,
 		itemsUnmonitored: unmonitored,
 		itemsFilesDeleted: filesDeleted,
-		itemsSkipped: totalFlaggedBeforeLimit - flagged.length + (flagged.length - removed - unmonitored - filesDeleted),
+		itemsSkipped:
+			totalFlaggedBeforeLimit -
+			flagged.length +
+			(flagged.length - removed - unmonitored - filesDeleted),
 		details,
 		durationMs: Date.now() - startTime,
 		prefetchHealth,
@@ -1158,10 +1217,11 @@ async function unmonitorInArr(
 		case "SONARR": {
 			const sonarr = client as InstanceType<typeof SonarrClient>;
 			const series = await sonarr.series.getById(arrItemId);
-			await sonarr.series.update(
-				arrItemId,
-				{ ...series, id: arrItemId, monitored: false } as Parameters<typeof sonarr.series.update>[1],
-			);
+			await sonarr.series.update(arrItemId, {
+				...series,
+				id: arrItemId,
+				monitored: false,
+			} as Parameters<typeof sonarr.series.update>[1]);
 			break;
 		}
 		default:
@@ -1218,25 +1278,56 @@ export async function buildEvalContext(
 	const activeTypes = collectActiveRuleTypes(rules);
 
 	const SEERR_RULE_TYPES = [
-		"seerr_requested_by", "seerr_request_age", "seerr_request_status",
-		"seerr_is_4k", "seerr_request_modified_age", "seerr_modified_by",
-		"seerr_is_requested", "seerr_request_count",
+		"seerr_requested_by",
+		"seerr_request_age",
+		"seerr_request_status",
+		"seerr_is_4k",
+		"seerr_request_modified_age",
+		"seerr_modified_by",
+		"seerr_is_requested",
+		"seerr_request_count",
 	];
-	const TAUTULLI_RULE_TYPES = ["tautulli_last_watched", "tautulli_watch_count", "tautulli_watched_by", "user_retention"];
+	const TAUTULLI_RULE_TYPES = [
+		"tautulli_last_watched",
+		"tautulli_watch_count",
+		"tautulli_watched_by",
+		"user_retention",
+	];
 	const PLEX_RULE_TYPES_LIST = [
-		"plex_last_watched", "plex_watch_count", "plex_on_deck", "plex_user_rating",
-		"plex_watched_by", "plex_collection", "plex_label", "plex_added_at",
-		"plex_episode_completion", "user_retention", "staleness_score", "recently_active",
+		"plex_last_watched",
+		"plex_watch_count",
+		"plex_on_deck",
+		"plex_user_rating",
+		"plex_watched_by",
+		"plex_collection",
+		"plex_label",
+		"plex_added_at",
+		"plex_episode_completion",
+		"user_retention",
+		"staleness_score",
+		"recently_active",
 	];
 
 	const [seerrMap, tautulliMap, plexMap, plexEpisodeMap] = await Promise.all([
-		SEERR_RULE_TYPES.some((t) => activeTypes.has(t)) ? prefetchSeerrRequests(deps, userId) : undefined,
-		TAUTULLI_RULE_TYPES.some((t) => activeTypes.has(t)) ? prefetchTautulliData(deps, userId) : undefined,
-		PLEX_RULE_TYPES_LIST.some((t) => activeTypes.has(t)) ? prefetchPlexData(deps, userId) : undefined,
+		SEERR_RULE_TYPES.some((t) => activeTypes.has(t))
+			? prefetchSeerrRequests(deps, userId)
+			: undefined,
+		TAUTULLI_RULE_TYPES.some((t) => activeTypes.has(t))
+			? prefetchTautulliData(deps, userId)
+			: undefined,
+		PLEX_RULE_TYPES_LIST.some((t) => activeTypes.has(t))
+			? prefetchPlexData(deps, userId)
+			: undefined,
 		activeTypes.has("plex_episode_completion") ? prefetchPlexEpisodeData(deps, userId) : undefined,
 	]);
 
-	return { now: new Date(), seerrMap: seerrMap ?? undefined, tautulliMap: tautulliMap ?? undefined, plexMap: plexMap ?? undefined, plexEpisodeMap: plexEpisodeMap ?? undefined };
+	return {
+		now: new Date(),
+		seerrMap: seerrMap ?? undefined,
+		tautulliMap: tautulliMap ?? undefined,
+		plexMap: plexMap ?? undefined,
+		plexEpisodeMap: plexEpisodeMap ?? undefined,
+	};
 }
 
 /**
@@ -1271,6 +1362,9 @@ async function createRunLog(
 			},
 		});
 	} catch (error) {
-		log?.warn({ err: error, configId }, "Failed to write cleanup run log — run result is still valid");
+		log?.warn(
+			{ err: error, configId },
+			"Failed to write cleanup run log — run result is still valid",
+		);
 	}
 }

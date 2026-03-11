@@ -14,10 +14,7 @@ import {
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
-import {
-	CacheCorruptionError,
-	createCacheManager,
-} from "../../lib/trash-guides/cache-manager.js";
+import { CacheCorruptionError, createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { arrNamingConfigSchema } from "../../lib/trash-guides/github-schemas.js";
 import {
@@ -112,24 +109,15 @@ interface PresetLogger {
  * Returns null if the stored data is corrupt or doesn't match the expected shape.
  * Logs validation details when a logger is provided.
  */
-function parseStoredPresets(
-	raw: string,
-	log?: PresetLogger,
-): NamingSelectedPresets | null {
+function parseStoredPresets(raw: string, log?: PresetLogger): NamingSelectedPresets | null {
 	try {
 		const parsed: unknown = JSON.parse(raw);
 		const result = selectedPresetsSchema.safeParse(parsed);
 		if (result.success) return result.data;
-		log?.warn(
-			{ issues: result.error.issues },
-			"Stored naming presets failed schema validation",
-		);
+		log?.warn({ issues: result.error.issues }, "Stored naming presets failed schema validation");
 		return null;
 	} catch (error) {
-		log?.warn(
-			{ err: error },
-			"Stored naming presets JSON is unparseable",
-		);
+		log?.warn({ err: error }, "Stored naming presets JSON is unparseable");
 		return null;
 	}
 }
@@ -257,7 +245,10 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 	 * Preview the diff between selected presets and the instance's current naming config.
 	 */
 	app.post<{ Body: z.infer<typeof previewBodySchema> }>("/preview", async (request, reply) => {
-		const { instanceId, selectedPresets, enableRename } = validateRequest(previewBodySchema, request.body);
+		const { instanceId, selectedPresets, enableRename } = validateRequest(
+			previewBodySchema,
+			request.body,
+		);
 		const userId = request.currentUser!.id;
 
 		const instance = await requireInstance(app, userId, instanceId);
@@ -320,7 +311,13 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 			});
 		}
 
-		const currentConfig = await parseAndValidateArrNamingConfig(response, instance.label, request, reply, instanceId);
+		const currentConfig = await parseAndValidateArrNamingConfig(
+			response,
+			instance.label,
+			request,
+			reply,
+			instanceId,
+		);
 		if (!currentConfig) return;
 
 		// Build preview using discriminated union dispatch
@@ -339,7 +336,10 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 	 * Retries once on network failure during PUT.
 	 */
 	app.post<{ Body: z.infer<typeof applyBodySchema> }>("/apply", async (request, reply) => {
-		const { instanceId, selectedPresets, enableRename } = validateRequest(applyBodySchema, request.body);
+		const { instanceId, selectedPresets, enableRename } = validateRequest(
+			applyBodySchema,
+			request.body,
+		);
 		const userId = request.currentUser!.id;
 
 		const instance = await requireInstance(app, userId, instanceId);
@@ -393,10 +393,7 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 		// GET current config (pre-deploy snapshot)
 		let getResponse: Response;
 		try {
-			getResponse = await app.arrClientFactory.rawRequest(
-				instance,
-				"/api/v3/config/naming",
-			);
+			getResponse = await app.arrClientFactory.rawRequest(instance, "/api/v3/config/naming");
 		} catch (error) {
 			request.log.error(
 				{ err: error, instanceId },
@@ -415,7 +412,13 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 			});
 		}
 
-		const currentConfig = await parseAndValidateArrNamingConfig(getResponse, instance.label, request, reply, instanceId);
+		const currentConfig = await parseAndValidateArrNamingConfig(
+			getResponse,
+			instance.label,
+			request,
+			reply,
+			instanceId,
+		);
 		if (!currentConfig) return;
 
 		// Merge patch onto current config
@@ -446,16 +449,17 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 		// PUT merged config back — retry once on network failure
 		let putResponse: Response;
 		try {
-			putResponse = await app.arrClientFactory.rawRequest(
-				instance,
-				"/api/v3/config/naming",
-				{ method: "PUT", body: merged },
-			);
+			putResponse = await app.arrClientFactory.rawRequest(instance, "/api/v3/config/naming", {
+				method: "PUT",
+				body: merged,
+			});
 		} catch (firstError) {
 			// Only retry on network errors (fetch failures, connection resets)
 			const isNetwork =
 				firstError instanceof Error &&
-				/fetch failed|econnrefused|econnreset|etimedout|enetunreach|abort/i.test(firstError.message);
+				/fetch failed|econnrefused|econnreset|etimedout|enetunreach|abort/i.test(
+					firstError.message,
+				);
 			if (!isNetwork) throw firstError;
 
 			request.log.warn(
@@ -464,11 +468,10 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 			);
 			try {
 				await delay(1000);
-				putResponse = await app.arrClientFactory.rawRequest(
-					instance,
-					"/api/v3/config/naming",
-					{ method: "PUT", body: merged },
-				);
+				putResponse = await app.arrClientFactory.rawRequest(instance, "/api/v3/config/naming", {
+					method: "PUT",
+					body: merged,
+				});
 			} catch (retryError) {
 				request.log.error(
 					{ err: retryError, instanceId },
@@ -481,7 +484,14 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 				});
 				await app.prisma.namingConfig.upsert({
 					where: { instanceId },
-					create: { instanceId, userId, serviceType, selectedPresets: JSON.stringify(selectedPresets), lastDeployStatus: "FAILED", lastDeployError: errorMsg },
+					create: {
+						instanceId,
+						userId,
+						serviceType,
+						selectedPresets: JSON.stringify(selectedPresets),
+						lastDeployStatus: "FAILED",
+						lastDeployError: errorMsg,
+					},
 					update: { lastDeployStatus: "FAILED", lastDeployError: errorMsg },
 				});
 				return reply.status(502).send({
@@ -504,7 +514,14 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 			});
 			await app.prisma.namingConfig.upsert({
 				where: { instanceId },
-				create: { instanceId, userId, serviceType, selectedPresets: JSON.stringify(selectedPresets), lastDeployStatus: "FAILED", lastDeployError: errorMsg },
+				create: {
+					instanceId,
+					userId,
+					serviceType,
+					selectedPresets: JSON.stringify(selectedPresets),
+					lastDeployStatus: "FAILED",
+					lastDeployError: errorMsg,
+				},
 				update: { lastDeployStatus: "FAILED", lastDeployError: errorMsg },
 			});
 			return reply.status(502).send({
@@ -567,7 +584,14 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 		const bookkeepingOk = historySaved && configSaved;
 
 		app.log.info(
-			{ instanceId, serviceType, fieldCount, configSaved, historySaved, historyId: historyRecord.id },
+			{
+				instanceId,
+				serviceType,
+				fieldCount,
+				configSaved,
+				historySaved,
+				historyId: historyRecord.id,
+			},
 			"Applied naming presets to instance",
 		);
 
@@ -637,11 +661,10 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 		// PUT the previous config back to the instance
 		let putResponse: Response;
 		try {
-			putResponse = await app.arrClientFactory.rawRequest(
-				instance,
-				"/api/v3/config/naming",
-				{ method: "PUT", body: previousConfig },
-			);
+			putResponse = await app.arrClientFactory.rawRequest(instance, "/api/v3/config/naming", {
+				method: "PUT",
+				body: previousConfig,
+			});
 		} catch (error) {
 			request.log.error(
 				{ err: error, historyId, instanceId: instance.id },
@@ -785,10 +808,7 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 
 			const selectedPresets = parseStoredPresets(config.selectedPresets, request.log);
 			if (!selectedPresets) {
-				request.log.warn(
-					{ instanceId },
-					"Stored naming config has corrupt selectedPresets JSON",
-				);
+				request.log.warn({ instanceId }, "Stored naming config has corrupt selectedPresets JSON");
 				return reply.send({
 					success: true,
 					config: null,
@@ -819,7 +839,10 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 	 * Create or update a NamingConfig (upsert by instanceId).
 	 */
 	app.post<{ Body: z.infer<typeof configBodySchema> }>("/configs", async (request, reply) => {
-		const { instanceId, selectedPresets, syncStrategy } = validateRequest(configBodySchema, request.body);
+		const { instanceId, selectedPresets, syncStrategy } = validateRequest(
+			configBodySchema,
+			request.body,
+		);
 		const userId = request.currentUser!.id;
 
 		const instance = await requireInstance(app, userId, instanceId);
@@ -946,33 +969,30 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 	 * DELETE /api/trash-guides/naming/configs/:instanceId
 	 * Delete a NamingConfig.
 	 */
-	app.delete<{ Params: { instanceId: string } }>(
-		"/configs/:instanceId",
-		async (request, reply) => {
-			const instanceId = request.params.instanceId;
-			const userId = request.currentUser!.id;
+	app.delete<{ Params: { instanceId: string } }>("/configs/:instanceId", async (request, reply) => {
+		const instanceId = request.params.instanceId;
+		const userId = request.currentUser!.id;
 
-			await requireInstance(app, userId, instanceId);
+		await requireInstance(app, userId, instanceId);
 
-			try {
-				await app.prisma.namingConfig.delete({
-					where: { instanceId },
-				});
-			} catch (error) {
-				// P2025 = record not found — expected when config doesn't exist
-				if ((error as { code?: string }).code === "P2025") {
-					return reply.status(404).send({
-						success: false,
-						error: "No naming config exists for this instance",
-					});
-				}
-				throw error;
-			}
-
-			return reply.send({
-				success: true,
-				message: "Naming config deleted",
+		try {
+			await app.prisma.namingConfig.delete({
+				where: { instanceId },
 			});
-		},
-	);
+		} catch (error) {
+			// P2025 = record not found — expected when config doesn't exist
+			if ((error as { code?: string }).code === "P2025") {
+				return reply.status(404).send({
+					success: false,
+					error: "No naming config exists for this instance",
+				});
+			}
+			throw error;
+		}
+
+		return reply.send({
+			success: true,
+			message: "Naming config deleted",
+		});
+	});
 }

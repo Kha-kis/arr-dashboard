@@ -17,15 +17,21 @@ export const INTEGRATION_SERVICES = ["seerr", "tautulli", "plex"] as const;
 export const ALL_SERVICES = [...ARR_SERVICES, ...INTEGRATION_SERVICES] as const;
 
 /** Uppercase variants for Prisma enum matching */
-export const ARR_SERVICES_UPPER = ARR_SERVICES.map((s) => s.toUpperCase()) as unknown as readonly ["SONARR", "RADARR", "PROWLARR", "LIDARR", "READARR"];
-export const LIBRARY_SERVICES_UPPER = LIBRARY_SERVICES.map((s) => s.toUpperCase()) as unknown as readonly ["SONARR", "RADARR", "LIDARR", "READARR"];
+export const ARR_SERVICES_UPPER = ARR_SERVICES.map((s) => s.toUpperCase()) as unknown as readonly [
+	"SONARR",
+	"RADARR",
+	"PROWLARR",
+	"LIDARR",
+	"READARR",
+];
+export const LIBRARY_SERVICES_UPPER = LIBRARY_SERVICES.map((s) =>
+	s.toUpperCase(),
+) as unknown as readonly ["SONARR", "RADARR", "LIDARR", "READARR"];
 
 export type ArrService = (typeof ARR_SERVICES)[number];
 export type IntegrationService = (typeof INTEGRATION_SERVICES)[number];
 
-export const arrServiceTypeSchema = z
-	.enum([...ALL_SERVICES])
-	.describe("Supported service types");
+export const arrServiceTypeSchema = z.enum([...ALL_SERVICES]).describe("Supported service types");
 
 export type ArrServiceType = z.infer<typeof arrServiceTypeSchema>;
 

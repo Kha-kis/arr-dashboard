@@ -713,11 +713,15 @@ export const seerrMovieDetailsSchema = z.looseObject({
 	status: z.string().optional(),
 	originalLanguage: z.string().optional(),
 	genres: z.array(seerrGenreSchema),
-	productionCompanies: z.array(z.looseObject({
-		id: z.number(),
-		name: z.string(),
-		logoPath: z.string().nullable().optional(),
-	})).optional(),
+	productionCompanies: z
+		.array(
+			z.looseObject({
+				id: z.number(),
+				name: z.string(),
+				logoPath: z.string().nullable().optional(),
+			}),
+		)
+		.optional(),
 	credits: seerrCreditsSchema,
 	relatedVideos: z.array(seerrVideoSchema).optional(),
 	mediaInfo: seerrMediaInfoSchema.optional(),
@@ -756,11 +760,15 @@ export const seerrTvDetailsSchema = z.looseObject({
 	status: z.string().optional(),
 	originalLanguage: z.string().optional(),
 	genres: z.array(seerrGenreSchema),
-	networks: z.array(z.looseObject({
-		id: z.number(),
-		name: z.string(),
-		logoPath: z.string().nullable().optional(),
-	})).optional(),
+	networks: z
+		.array(
+			z.looseObject({
+				id: z.number(),
+				name: z.string(),
+				logoPath: z.string().nullable().optional(),
+			}),
+		)
+		.optional(),
 	credits: seerrCreditsSchema,
 	relatedVideos: z.array(seerrVideoSchema).optional(),
 	mediaInfo: seerrMediaInfoSchema.optional(),

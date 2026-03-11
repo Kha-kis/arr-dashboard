@@ -205,9 +205,7 @@ export class PlexClient {
 	 * Get watch history across all users.
 	 * Uses /status/sessions/history/all for multi-user history.
 	 */
-	async getHistory(options?: {
-		maxResults?: number;
-	}): Promise<PlexHistoryItem[]> {
+	async getHistory(options?: { maxResults?: number }): Promise<PlexHistoryItem[]> {
 		const allItems: PlexHistoryItem[] = [];
 		const pageSize = 200;
 		const maxResults = options?.maxResults ?? 5000;
@@ -280,7 +278,12 @@ export class PlexClient {
 				? { id: m.User.id, title: m.User.title, thumb: m.User.thumb }
 				: { id: 0, title: "Unknown", thumb: undefined },
 			player: m.Player
-				? { title: m.Player.title, platform: m.Player.platform, product: m.Player.product, state: m.Player.state }
+				? {
+						title: m.Player.title,
+						platform: m.Player.platform,
+						product: m.Player.product,
+						state: m.Player.state,
+					}
 				: { title: "Unknown", platform: "unknown", product: "unknown", state: "unknown" },
 			state: (m.Player?.state ?? "unknown") as "playing" | "paused" | "buffering",
 			videoDecision: m.TranscodeSession?.videoDecision ?? "direct play",
@@ -379,7 +382,14 @@ export class PlexClient {
 
 		const contentType = response.headers.get("content-type") ?? "";
 		if (contentType.includes("application/json")) {
-			const raw = await response.json();
+			let raw: unknown;
+			try {
+				raw = await response.json();
+			} catch {
+				throw new Error(
+					`Plex API: invalid JSON response (path: ${path}, status: ${response.status})`,
+				);
+			}
 			if (!options?.schema) {
 				throw new Error(`Plex API: schema required for JSON responses (path: ${path})`);
 			}
@@ -388,6 +398,9 @@ export class PlexClient {
 		}
 
 		// Non-JSON responses (e.g., from POST /library/sections/{id}/refresh)
+		if (options?.schema) {
+			throw new Error(`Plex API: expected JSON response but got ${contentType} (path: ${path})`);
+		}
 		return undefined as T;
 	}
 }

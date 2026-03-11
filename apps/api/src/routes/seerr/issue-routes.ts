@@ -49,14 +49,21 @@ export async function registerIssueRoutes(app: FastifyInstance, _opts: FastifyPl
 		try {
 			const result = await client.addIssueComment(issueId, message);
 			logSeerrAction(app, request.log, {
-				instanceId, userId, action: "add_issue_comment",
-				targetType: "issue", targetId: String(issueId),
+				instanceId,
+				userId,
+				action: "add_issue_comment",
+				targetType: "issue",
+				targetId: String(issueId),
 			});
 			return result;
 		} catch (err) {
 			logSeerrAction(app, request.log, {
-				instanceId, userId, action: "add_issue_comment",
-				targetType: "issue", targetId: String(issueId), success: false,
+				instanceId,
+				userId,
+				action: "add_issue_comment",
+				targetType: "issue",
+				targetId: String(issueId),
+				success: false,
 			});
 			throw err;
 		}
@@ -71,15 +78,22 @@ export async function registerIssueRoutes(app: FastifyInstance, _opts: FastifyPl
 		try {
 			const result = await client.updateIssueStatus(issueId, status);
 			logSeerrAction(app, request.log, {
-				instanceId, userId, action: "update_issue_status",
-				targetType: "issue", targetId: String(issueId),
+				instanceId,
+				userId,
+				action: "update_issue_status",
+				targetType: "issue",
+				targetId: String(issueId),
 				detail: { status },
 			});
 			return result;
 		} catch (err) {
 			logSeerrAction(app, request.log, {
-				instanceId, userId, action: "update_issue_status",
-				targetType: "issue", targetId: String(issueId), success: false,
+				instanceId,
+				userId,
+				action: "update_issue_status",
+				targetType: "issue",
+				targetId: String(issueId),
+				success: false,
 			});
 			throw err;
 		}

@@ -71,9 +71,11 @@ const notificationServicePlugin = fastifyPlugin(
 		// Wire validation health degradation notifications
 		const { integrationHealth } = await import("../lib/validation/integration-health.js");
 		integrationHealth.setNotifyFn((payload) => {
-			service.notify(payload as Parameters<typeof service.notify>[0]).catch((err: unknown) =>
-				app.log.warn({ err }, "Failed to send validation health notification"),
-			);
+			service
+				.notify(payload as Parameters<typeof service.notify>[0])
+				.catch((err: unknown) =>
+					app.log.warn({ err }, "Failed to send validation health notification"),
+				);
 		});
 
 		// Log retention: purge old logs every 6 hours
@@ -109,7 +111,10 @@ const notificationServicePlugin = fastifyPlugin(
 			dedupGate.destroy();
 			closeAllTransports();
 			app.log.info(
-				{ pendingRetries: retryHandler.pendingCount, pendingAggregation: aggregationBuffer.pendingCount },
+				{
+					pendingRetries: retryHandler.pendingCount,
+					pendingAggregation: aggregationBuffer.pendingCount,
+				},
 				"Notification service shut down",
 			);
 		});

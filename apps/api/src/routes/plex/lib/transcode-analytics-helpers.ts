@@ -26,12 +26,17 @@ export interface TranscodeAggregationResult extends TranscodeAnalytics {
  *
  * Uses pre-computed columns (no JSON parsing), so parseFailures is always 0.
  */
-export function aggregateTranscodeAnalytics(snapshots: SnapshotForTranscode[]): TranscodeAggregationResult {
+export function aggregateTranscodeAnalytics(
+	snapshots: SnapshotForTranscode[],
+): TranscodeAggregationResult {
 	let directPlay = 0;
 	let transcode = 0;
 	let directStream = 0;
 
-	const dailyMap = new Map<string, { directPlay: number; transcode: number; directStream: number }>();
+	const dailyMap = new Map<
+		string,
+		{ directPlay: number; transcode: number; directStream: number }
+	>();
 
 	for (const snap of snapshots) {
 		directPlay += snap.directPlayCount;

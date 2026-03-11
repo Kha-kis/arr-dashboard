@@ -34,12 +34,17 @@ export interface AggregationMeta {
 	failedPreviews: string[];
 }
 
-export function aggregateUserAnalytics(snapshots: SnapshotWithSessions[]): UserAnalytics & AggregationMeta {
-	const userMap = new Map<string, {
-		totalSessions: number;
-		totalBandwidth: number;
-		mostRecentActivity: Date;
-	}>();
+export function aggregateUserAnalytics(
+	snapshots: SnapshotWithSessions[],
+): UserAnalytics & AggregationMeta {
+	const userMap = new Map<
+		string,
+		{
+			totalSessions: number;
+			totalBandwidth: number;
+			mostRecentActivity: Date;
+		}
+	>();
 
 	const dailyMap = new Map<string, Map<string, number>>();
 	let parseFailures = 0;

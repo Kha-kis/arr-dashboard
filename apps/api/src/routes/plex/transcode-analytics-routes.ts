@@ -60,7 +60,10 @@ export async function registerTranscodeAnalyticsRoutes(
 
 		const { parseFailures, totalSnapshots, ...analytics } = aggregateTranscodeAnalytics(snapshots);
 		if (parseFailures > 0) {
-			request.log.warn({ parseFailures, totalSnapshots, route: "transcode-analytics" }, "Session snapshot parse failures detected");
+			request.log.warn(
+				{ parseFailures, totalSnapshots, route: "transcode-analytics" },
+				"Session snapshot parse failures detected",
+			);
 		}
 		return reply.send(analytics);
 	});

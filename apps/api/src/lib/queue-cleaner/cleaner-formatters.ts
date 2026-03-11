@@ -91,9 +91,13 @@ export function generateDetailedReason(
 					? `Status: ${importStatusTexts.slice(0, 3).join(" | ")}`
 					: "No additional details available.";
 			const stateLabel =
-				importState === "importblocked" ? "blocked" :
-				importState === "failedpending" ? "failed (pending retry)" :
-				importState === "importpending" ? "pending" : importState;
+				importState === "importblocked"
+					? "blocked"
+					: importState === "failedpending"
+						? "failed (pending retry)"
+						: importState === "importpending"
+							? "pending"
+							: importState;
 			return (
 				`Download completed but import is ${stateLabel}. ` +
 				`This item has been in the queue for ${ageMins} minutes. ` +

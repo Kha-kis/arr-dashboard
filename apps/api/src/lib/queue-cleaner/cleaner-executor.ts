@@ -25,9 +25,20 @@ import {
 	MAX_AUTO_IMPORTS_PER_RUN,
 	type WhitelistPattern,
 } from "./constants.js";
-import { type RawQueueItem, rawQueueItemSchema, parseDate, collectStatusTexts, checkWhitelist, isFutureEpisode } from "./queue-item-utils.js";
+import {
+	type RawQueueItem,
+	rawQueueItemSchema,
+	parseDate,
+	collectStatusTexts,
+	checkWhitelist,
+	isFutureEpisode,
+} from "./queue-item-utils.js";
 import { validateAndCollect } from "../validation/validate-batch.js";
-import { evaluateQueueItem, shouldSkipByTagFilter, shouldSkipByProfileFilter } from "./rule-evaluators.js";
+import {
+	evaluateQueueItem,
+	shouldSkipByTagFilter,
+	shouldSkipByProfileFilter,
+} from "./rule-evaluators.js";
 
 const log = loggers.queueCleaner;
 
@@ -122,9 +133,17 @@ export async function executeQueueCleaner(
 	}
 	let queueRecords: RawQueueItem[];
 	try {
-		const queue = await (client.queue.get as (opts?: Record<string, unknown>) => Promise<{ records?: unknown[] }>)(queueOptions);
+		const queue = await (
+			client.queue.get as (opts?: Record<string, unknown>) => Promise<{ records?: unknown[] }>
+		)(queueOptions);
 		const rawRecords = queue.records ?? [];
-		const { items: validatedRecords } = validateAndCollect(rawRecords, rawQueueItemSchema, `queue/${instance.service}`, log, { integration: "queue-cleaner", category: "queue-items" });
+		const { items: validatedRecords } = validateAndCollect(
+			rawRecords,
+			rawQueueItemSchema,
+			`queue/${instance.service}`,
+			log,
+			{ integration: "queue-cleaner", category: "queue-items" },
+		);
 		queueRecords = validatedRecords as RawQueueItem[];
 	} catch (error) {
 		const message = getErrorMessage(error, "Unknown error");
@@ -708,8 +727,16 @@ export async function executeEnhancedPreview(
 	let queueRecords: RawQueueItem[];
 
 	try {
-		const queue = await (client.queue.get as (opts?: Record<string, unknown>) => Promise<{ records?: unknown[] }>)(previewQueueOptions);
-		const { items: previewValidated } = validateAndCollect(queue.records ?? [], rawQueueItemSchema, `queue-preview/${instance.service}`, log, { integration: "queue-cleaner", category: "queue-items" });
+		const queue = await (
+			client.queue.get as (opts?: Record<string, unknown>) => Promise<{ records?: unknown[] }>
+		)(previewQueueOptions);
+		const { items: previewValidated } = validateAndCollect(
+			queue.records ?? [],
+			rawQueueItemSchema,
+			`queue-preview/${instance.service}`,
+			log,
+			{ integration: "queue-cleaner", category: "queue-items" },
+		);
 		queueRecords = previewValidated as RawQueueItem[];
 	} catch (error) {
 		const errorMessage = getErrorMessage(error, "Unknown error");
@@ -835,7 +862,8 @@ export async function executeEnhancedPreview(
 				protocol: typeof item.protocol === "string" ? item.protocol : undefined,
 				indexer: typeof item.indexer === "string" ? item.indexer : undefined,
 				downloadClient: typeof item.downloadClient === "string" ? item.downloadClient : undefined,
-				status: typeof item.trackedDownloadStatus === "string" ? item.trackedDownloadStatus : undefined,
+				status:
+					typeof item.trackedDownloadStatus === "string" ? item.trackedDownloadStatus : undefined,
 				downloadId: typeof item.downloadId === "string" ? item.downloadId : undefined,
 			});
 			continue;

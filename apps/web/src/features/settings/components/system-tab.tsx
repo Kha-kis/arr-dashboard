@@ -31,7 +31,10 @@ import { apiRequest } from "../../../lib/api-client/base";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
-import { type ValidationHealthResponse, ValidationHealthSection } from "./validation-health-section";
+import {
+	type ValidationHealthResponse,
+	ValidationHealthSection,
+} from "./validation-health-section";
 
 interface SystemSettings {
 	apiPort: number;
@@ -69,7 +72,7 @@ interface SystemInfo {
 	};
 	logging?: {
 		level: string;
-		directory: string;
+		logFileEnabled: boolean;
 		maxFileSize: string;
 		maxFiles: number;
 	};
@@ -94,7 +97,6 @@ interface LogFilesResponse {
 	};
 }
 
-
 async function getSystemSettings(): Promise<SystemSettingsResponse> {
 	return apiRequest<SystemSettingsResponse>("/api/system/settings");
 }
@@ -112,7 +114,9 @@ async function getValidationHealth(): Promise<ValidationHealthResponse> {
 }
 
 async function resetValidationHealth(): Promise<ValidationHealthResponse> {
-	return apiRequest<ValidationHealthResponse>("/api/system/validation-health", { method: "DELETE" });
+	return apiRequest<ValidationHealthResponse>("/api/system/validation-health", {
+		method: "DELETE",
+	});
 }
 function formatUptime(seconds: number): string {
 	const days = Math.floor(seconds / 86400);
@@ -559,8 +563,8 @@ export function SystemTab() {
 										<Server className="h-5 w-5" style={{ color: SEMANTIC_COLORS.warning.from }} />
 									</div>
 								}
-								label="Log Directory"
-								value={systemInfo.data.logging.directory}
+								label="Log Files"
+								value={systemInfo.data.logging.logFileEnabled ? "Enabled" : "Disabled"}
 								animationDelay={150}
 							/>
 						</div>

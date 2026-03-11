@@ -98,7 +98,10 @@ const manualImportRoute: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.post("/manual-import", async (request, reply) => {
-		const body = validateRequest(manualImportSubmissionSchema, request.body ?? {}) as ManualImportSubmission;
+		const body = validateRequest(
+			manualImportSubmissionSchema,
+			request.body ?? {},
+		) as ManualImportSubmission;
 
 		const instance = await requireInstance(app, request.currentUser!.id, body.instanceId);
 

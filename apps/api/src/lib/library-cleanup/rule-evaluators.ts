@@ -827,11 +827,16 @@ function evaluateTautulliWatchCount(
 	if (!watch) {
 		// Not in Tautulli — infer 0 plays when Tautulli is configured and item has a file
 		if (
-			ctx.tautulliMap && ctx.tautulliMap.size > 0 &&
-			params.operator === "less_than" && params.count > 0 &&
-			item.hasFile && item.arrAddedAt
+			ctx.tautulliMap &&
+			ctx.tautulliMap.size > 0 &&
+			params.operator === "less_than" &&
+			params.count > 0 &&
+			item.hasFile &&
+			item.arrAddedAt
 		) {
-			const ageDays = Math.floor((ctx.now.getTime() - item.arrAddedAt.getTime()) / (1000 * 60 * 60 * 24));
+			const ageDays = Math.floor(
+				(ctx.now.getTime() - item.arrAddedAt.getTime()) / (1000 * 60 * 60 * 24),
+			);
 			return `Not tracked by Tautulli, in library for ${ageDays} days (threshold: < ${params.count} plays)`;
 		}
 		return null;
@@ -839,9 +844,10 @@ function evaluateTautulliWatchCount(
 	const count = watch.watchCount;
 
 	// Age context for low play counts
-	const ageCtx = count === 0 && item.arrAddedAt
-		? `, in library for ${Math.floor((ctx.now.getTime() - item.arrAddedAt.getTime()) / (1000 * 60 * 60 * 24))} days`
-		: "";
+	const ageCtx =
+		count === 0 && item.arrAddedAt
+			? `, in library for ${Math.floor((ctx.now.getTime() - item.arrAddedAt.getTime()) / (1000 * 60 * 60 * 24))} days`
+			: "";
 
 	if (params.operator === "less_than" && count < params.count) {
 		return `Tautulli play count: ${count}${ageCtx} (threshold: < ${params.count})`;
@@ -913,9 +919,7 @@ function lookupPlexWatch(
 	if (!plexLibraryFilter || plexLibraryFilter.length === 0) return entry;
 
 	// Filter to matching sections only
-	const matchingSections = entry.sections.filter(
-		(s) => plexLibraryFilter.includes(s.sectionTitle),
-	);
+	const matchingSections = entry.sections.filter((s) => plexLibraryFilter.includes(s.sectionTitle));
 	if (matchingSections.length === 0) return null;
 
 	// Re-aggregate from filtered sections
@@ -1000,11 +1004,16 @@ function evaluatePlexWatchCount(
 	if (!watch) {
 		// Not in Plex — infer 0 plays when Plex is configured and item has a file
 		if (
-			ctx.plexMap && ctx.plexMap.size > 0 &&
-			params.operator === "less_than" && params.count > 0 &&
-			item.hasFile && item.arrAddedAt
+			ctx.plexMap &&
+			ctx.plexMap.size > 0 &&
+			params.operator === "less_than" &&
+			params.count > 0 &&
+			item.hasFile &&
+			item.arrAddedAt
 		) {
-			const ageDays = Math.floor((ctx.now.getTime() - item.arrAddedAt.getTime()) / (1000 * 60 * 60 * 24));
+			const ageDays = Math.floor(
+				(ctx.now.getTime() - item.arrAddedAt.getTime()) / (1000 * 60 * 60 * 24),
+			);
 			return `Not tracked by Plex, in library for ${ageDays} days (threshold: < ${params.count} plays)`;
 		}
 		return null;
@@ -1012,9 +1021,10 @@ function evaluatePlexWatchCount(
 	const count = watch.watchCount;
 
 	// Age context for low play counts
-	const ageCtx = count === 0 && watch.addedAt
-		? `, added ${Math.floor((ctx.now.getTime() - watch.addedAt.getTime()) / (1000 * 60 * 60 * 24))} days ago`
-		: "";
+	const ageCtx =
+		count === 0 && watch.addedAt
+			? `, added ${Math.floor((ctx.now.getTime() - watch.addedAt.getTime()) / (1000 * 60 * 60 * 24))} days ago`
+			: "";
 
 	if (params.operator === "less_than" && count < params.count) {
 		return `Plex play count: ${count}${ageCtx} (threshold: < ${params.count})`;
@@ -1068,10 +1078,18 @@ function evaluatePlexUserRating(
 
 	if (!watch || watch.userRating === null) return null;
 
-	if (params.operator === "less_than" && params.rating !== undefined && watch.userRating < params.rating) {
+	if (
+		params.operator === "less_than" &&
+		params.rating !== undefined &&
+		watch.userRating < params.rating
+	) {
 		return `Plex user rating: ${watch.userRating.toFixed(1)} (threshold: < ${params.rating})`;
 	}
-	if (params.operator === "greater_than" && params.rating !== undefined && watch.userRating > params.rating) {
+	if (
+		params.operator === "greater_than" &&
+		params.rating !== undefined &&
+		watch.userRating > params.rating
+	) {
 		return `Plex user rating: ${watch.userRating.toFixed(1)} (threshold: > ${params.rating})`;
 	}
 	return null;
@@ -1198,7 +1216,10 @@ function evaluatePlexAddedAt(
 /**
  * IMDb Rating rule: flag items based on IMDb rating from the data blob.
  */
-function evaluateImdbRatingRule(item: CacheItemForEval, params: ImdbRatingRuleParams): string | null {
+function evaluateImdbRatingRule(
+	item: CacheItemForEval,
+	params: ImdbRatingRuleParams,
+): string | null {
 	const parsed = safeJsonParse(item.data);
 	if (!parsed) return null;
 	const data = parsed as Record<string, unknown>;
@@ -1489,12 +1510,12 @@ function evaluateStalenessScore(
 	ctx: EvalContext,
 ): string | null {
 	const defaults = {
-		daysSinceLastWatch: 0.30,
-		inverseWatchCount: 0.20,
-		notOnDeck: 0.10,
+		daysSinceLastWatch: 0.3,
+		inverseWatchCount: 0.2,
+		notOnDeck: 0.1,
 		lowUserRating: 0.15,
 		lowTmdbRating: 0.15,
-		sizeOnDisk: 0.10,
+		sizeOnDisk: 0.1,
 	};
 	const w = params.weights ?? defaults;
 
@@ -1509,14 +1530,15 @@ function evaluateStalenessScore(
 	// 1. Days since last watch (365+ days = 100, 0 days = 0)
 	let daysSinceScore = 100;
 	if (plex?.lastWatchedAt) {
-		const days = (ctx.now.getTime() - new Date(plex.lastWatchedAt).getTime()) / (1000 * 60 * 60 * 24);
+		const days =
+			(ctx.now.getTime() - new Date(plex.lastWatchedAt).getTime()) / (1000 * 60 * 60 * 24);
 		daysSinceScore = Math.min(100, (days / 365) * 100);
 	}
 
 	// 2. Inverse watch count (0 plays = 100, 10+ plays = 0)
 	let watchCountScore = 100;
 	if (plex) {
-		watchCountScore = Math.max(0, 100 - (plex.watchCount * 10));
+		watchCountScore = Math.max(0, 100 - plex.watchCount * 10);
 	}
 
 	// 3. Not on deck (not on deck = 100, on deck = 0)
@@ -1525,14 +1547,14 @@ function evaluateStalenessScore(
 	// 4. Low user rating (no rating or < 5 = 100, 10 = 0)
 	let userRatingScore = 100;
 	if (plex?.userRating !== null && plex?.userRating !== undefined) {
-		userRatingScore = Math.max(0, 100 - (plex.userRating * 10));
+		userRatingScore = Math.max(0, 100 - plex.userRating * 10);
 	}
 
 	// 5. Low TMDB rating
 	let tmdbRatingScore = 100;
 	const tmdbRating = extractRating(item);
 	if (tmdbRating !== null) {
-		tmdbRatingScore = Math.max(0, 100 - (tmdbRating * 10));
+		tmdbRatingScore = Math.max(0, 100 - tmdbRating * 10);
 	}
 
 	// 6. Size on disk (normalized: 50GB+ = 100)
@@ -1552,8 +1574,12 @@ function evaluateStalenessScore(
 
 	// Normalize by sum of weights to handle incomplete weights
 	const weightSum =
-		w.daysSinceLastWatch + w.inverseWatchCount + w.notOnDeck +
-		w.lowUserRating + w.lowTmdbRating + w.sizeOnDisk;
+		w.daysSinceLastWatch +
+		w.inverseWatchCount +
+		w.notOnDeck +
+		w.lowUserRating +
+		w.lowTmdbRating +
+		w.sizeOnDisk;
 	const score = weightSum > 0 ? total / weightSum : 0;
 
 	if (params.operator === "greater_than" && score > params.threshold) {
@@ -1763,7 +1789,10 @@ export function evaluateSingleCondition(
 			return evaluateSeerrIs4k(item, params as SeerrIs4kParams, ctx.seerrMap);
 		case "seerr_request_modified_age":
 			return evaluateSeerrRequestModifiedAge(
-				item, params as SeerrRequestModifiedAgeParams, ctx.seerrMap, ctx.now,
+				item,
+				params as SeerrRequestModifiedAgeParams,
+				ctx.seerrMap,
+				ctx.now,
 			);
 		case "seerr_modified_by":
 			return evaluateSeerrModifiedBy(item, params as SeerrModifiedByParams, ctx.seerrMap);
@@ -1864,7 +1893,11 @@ export function evaluateRule(
 			const reasons: string[] = [];
 			for (const c of conditions) {
 				const reason = evaluateSingleCondition(
-					item, c.ruleType, c.parameters as Record<string, unknown>, ctx, plexLibFilter,
+					item,
+					c.ruleType,
+					c.parameters as Record<string, unknown>,
+					ctx,
+					plexLibFilter,
 				);
 				if (!reason) return null; // ALL must match
 				reasons.push(reason);
@@ -1875,7 +1908,11 @@ export function evaluateRule(
 		if (rule.operator === "OR") {
 			for (const c of conditions) {
 				const reason = evaluateSingleCondition(
-					item, c.ruleType, c.parameters as Record<string, unknown>, ctx, plexLibFilter,
+					item,
+					c.ruleType,
+					c.parameters as Record<string, unknown>,
+					ctx,
+					plexLibFilter,
 				);
 				if (reason) {
 					return { ruleId: rule.id, ruleName: rule.name, reason, action };
@@ -1942,7 +1979,13 @@ export function explainItemAgainstRules(
 	ruleName: string;
 	matched: boolean;
 	reason: string | null;
-	filteredBy: "service_filter" | "instance_filter" | "tag_exclusion" | "title_exclusion" | "disabled" | null;
+	filteredBy:
+		| "service_filter"
+		| "instance_filter"
+		| "tag_exclusion"
+		| "title_exclusion"
+		| "disabled"
+		| null;
 	retentionMode: boolean;
 }> {
 	const results: Array<{
@@ -1950,7 +1993,13 @@ export function explainItemAgainstRules(
 		ruleName: string;
 		matched: boolean;
 		reason: string | null;
-		filteredBy: "service_filter" | "instance_filter" | "tag_exclusion" | "title_exclusion" | "disabled" | null;
+		filteredBy:
+			| "service_filter"
+			| "instance_filter"
+			| "tag_exclusion"
+			| "title_exclusion"
+			| "disabled"
+			| null;
 		retentionMode: boolean;
 	}> = [];
 
@@ -2011,10 +2060,21 @@ function shouldSkipForFailedSource(
 
 	// Check composite sub-conditions
 	if (rule.conditions) {
-		const conds = safeJsonParse(rule.conditions) as Array<{ ruleType?: string; parameters?: Record<string, unknown> }> | null;
+		const conds = safeJsonParse(rule.conditions) as Array<{
+			ruleType?: string;
+			parameters?: Record<string, unknown>;
+		}> | null;
 		if (Array.isArray(conds)) {
 			for (const c of conds) {
-				if (c.ruleType && shouldSkipRuleType(c.ruleType, c.parameters ? JSON.stringify(c.parameters) : null, failedSources)) return true;
+				if (
+					c.ruleType &&
+					shouldSkipRuleType(
+						c.ruleType,
+						c.parameters ? JSON.stringify(c.parameters) : null,
+						failedSources,
+					)
+				)
+					return true;
 			}
 		}
 	}
@@ -2032,7 +2092,9 @@ function shouldSkipRuleType(
 ): boolean {
 	// Special case: user_retention depends on params.source
 	if (ruleType === "user_retention") {
-		const params = parametersJson ? safeJsonParse(parametersJson) as Record<string, unknown> | null : null;
+		const params = parametersJson
+			? (safeJsonParse(parametersJson) as Record<string, unknown> | null)
+			: null;
 		const source = (params?.source as string) ?? "plex";
 		if (source === "plex") return failedSources.has("plex");
 		if (source === "tautulli") return failedSources.has("tautulli");

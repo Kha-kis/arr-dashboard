@@ -151,7 +151,10 @@ function readSettingsFromDatabaseUncached(): DbSettings | null {
 				"Database file exists but could not be read — port and security settings falling back to defaults",
 			);
 		} else {
-			log.warn({ err: error }, "Could not read settings from database (first boot or missing file)");
+			log.warn(
+				{ err: error },
+				"Could not read settings from database (first boot or missing file)",
+			);
 		}
 		return null;
 	}

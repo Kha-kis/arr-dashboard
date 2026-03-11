@@ -263,9 +263,7 @@ class LibrarySyncScheduler {
 					?.notify({
 						eventType: "LIBRARY_NEW_CONTENT",
 						title: `${result.newDownloads.length} new download(s) on ${instance.label}`,
-						body: remaining > 0
-							? `${titles.join(", ")} and ${remaining} more`
-							: titles.join(", "),
+						body: remaining > 0 ? `${titles.join(", ")} and ${remaining} more` : titles.join(", "),
 						url: "/library",
 						metadata: {
 							instance: instance.label,
@@ -275,7 +273,10 @@ class LibrarySyncScheduler {
 						},
 					})
 					.catch((err) => {
-						log.warn({ err, instanceLabel: instance.label }, "New content notification dispatch failed");
+						log.warn(
+							{ err, instanceLabel: instance.label },
+							"New content notification dispatch failed",
+						);
 					});
 			}
 

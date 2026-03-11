@@ -30,9 +30,7 @@ export interface TautulliInstanceError {
 	error: string;
 }
 
-export type TautulliInstanceOperationResult<T> =
-	| TautulliInstanceResult<T>
-	| TautulliInstanceError;
+export type TautulliInstanceOperationResult<T> = TautulliInstanceResult<T> | TautulliInstanceError;
 
 export interface TautulliMultiInstanceResponse<T> {
 	instances: Array<TautulliInstanceOperationResult<T>>;
@@ -116,12 +114,8 @@ export async function executeOnTautulliInstances<T>(
 		}),
 	);
 
-	const successfulResults = results.filter(
-		(r): r is TautulliInstanceResult<T> => r.success,
-	);
-	const aggregated = successfulResults.flatMap((r) =>
-		Array.isArray(r.data) ? r.data : [r.data],
-	);
+	const successfulResults = results.filter((r): r is TautulliInstanceResult<T> => r.success);
+	const aggregated = successfulResults.flatMap((r) => (Array.isArray(r.data) ? r.data : [r.data]));
 	const errorCount = results.filter((r) => !r.success).length;
 
 	return {

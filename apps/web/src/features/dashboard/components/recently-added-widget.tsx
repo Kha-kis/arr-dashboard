@@ -22,10 +22,7 @@ interface RecentlyAddedWidgetProps {
 	animationDelay?: number;
 }
 
-export const RecentlyAddedWidget = ({
-	enabled,
-	animationDelay = 0,
-}: RecentlyAddedWidgetProps) => {
+export const RecentlyAddedWidget = ({ enabled, animationDelay = 0 }: RecentlyAddedWidgetProps) => {
 	const { data, isLoading, isError } = useRecentlyAdded(20, enabled);
 
 	if (!enabled || isLoading || isError || !data?.items?.length) return null;
@@ -80,7 +77,10 @@ export const RecentlyAddedWidget = ({
 											{item.sectionTitle}
 										</span>
 									</div>
-									<p className="text-sm font-medium text-foreground truncate mb-1.5" title={item.title}>
+									<p
+										className="text-sm font-medium text-foreground truncate mb-1.5"
+										title={item.title}
+									>
 										{item.title}
 									</p>
 									<div className="flex items-center gap-1 text-xs text-muted-foreground">

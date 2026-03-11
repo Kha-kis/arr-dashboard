@@ -63,8 +63,8 @@ export class SeerrApiError extends Error {
 		this.name = "SeerrApiError";
 		this.seerrStatus = opts.seerrStatus;
 		this.retryAfterMs = opts.retryAfterMs;
-		this.retryable = opts.retryableOverride
-			?? (opts.seerrStatus === 429 || opts.seerrStatus >= 500);
+		this.retryable =
+			opts.retryableOverride ?? (opts.seerrStatus === 429 || opts.seerrStatus >= 500);
 
 		// Map Seerr's HTTP status to our client-facing status
 		if (opts.statusCodeOverride !== undefined) {

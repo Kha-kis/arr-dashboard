@@ -5,7 +5,11 @@ import { useEffect, useState } from "react";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 // GradientButton doesn't accept type="submit", so we use a styled native button
 import type { NotificationChannelType } from "@arr/shared";
-import { useChannelTypes, useCreateChannel, useUpdateChannel } from "../../../hooks/api/useNotifications";
+import {
+	useChannelTypes,
+	useCreateChannel,
+	useUpdateChannel,
+} from "../../../hooks/api/useNotifications";
 import { notificationsApi } from "../../../lib/api-client/notifications";
 
 interface ChannelFormProps {
@@ -175,11 +179,11 @@ export function ChannelForm({ channelId, onSave, onCancel }: ChannelFormProps) {
 					{isEdit ? "Update" : "Create"}
 				</button>
 			</div>
-		{(createChannel.error || updateChannel.error) && (
-			<p className="text-sm text-red-400 mt-2">
-				{(createChannel.error || updateChannel.error)?.message || "Failed to save channel"}
-			</p>
-		)}
+			{(createChannel.error || updateChannel.error) && (
+				<p className="text-sm text-red-400 mt-2">
+					{(createChannel.error || updateChannel.error)?.message || "Failed to save channel"}
+				</p>
+			)}
 		</form>
 	);
 }

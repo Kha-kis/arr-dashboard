@@ -49,11 +49,7 @@ export async function registerHistoryRoutes(app: FastifyInstance, _opts: Fastify
 
 			for (const raw of historyItems) {
 				const mediaType =
-					raw.media_type === "movie"
-						? "movie"
-						: raw.media_type === "episode"
-							? "episode"
-							: "track";
+					raw.media_type === "movie" ? "movie" : raw.media_type === "episode" ? "episode" : "track";
 
 				items.push({
 					title: raw.title,

@@ -96,21 +96,9 @@ export function NotificationStatistics() {
 
 			{/* Summary cards */}
 			<div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-				<SummaryCard
-					label="Total Sent"
-					value={totals.sent}
-					color="text-emerald-400"
-				/>
-				<SummaryCard
-					label="Failed"
-					value={totals.failed}
-					color="text-red-400"
-				/>
-				<SummaryCard
-					label="Dead Letter"
-					value={totals.deadLetter}
-					color="text-amber-400"
-				/>
+				<SummaryCard label="Total Sent" value={totals.sent} color="text-emerald-400" />
+				<SummaryCard label="Failed" value={totals.failed} color="text-red-400" />
+				<SummaryCard label="Dead Letter" value={totals.deadLetter} color="text-amber-400" />
 				<SummaryCard
 					label="Success Rate"
 					value={`${totals.successRate.toFixed(1)}%`}
@@ -242,8 +230,7 @@ export function NotificationStatistics() {
 							</thead>
 							<tbody>
 								{perEventType.map((row) => {
-									const share =
-										totals.total > 0 ? (row.count / totals.total) * 100 : 0;
+									const share = totals.total > 0 ? (row.count / totals.total) * 100 : 0;
 									return (
 										<tr key={row.eventType} className="border-b border-border/10 hover:bg-card/20">
 											<td className="px-4 py-2.5">

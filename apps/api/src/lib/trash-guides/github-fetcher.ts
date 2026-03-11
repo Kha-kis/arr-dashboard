@@ -78,7 +78,8 @@ interface Logger {
  */
 const fallbackLogger: Logger = {
 	warn: (msg: string | object, ...args: unknown[]) => console.warn("[TrashFetcher]", msg, ...args),
-	error: (msg: string | object, ...args: unknown[]) => console.error("[TrashFetcher]", msg, ...args),
+	error: (msg: string | object, ...args: unknown[]) =>
+		console.error("[TrashFetcher]", msg, ...args),
 	debug: () => {},
 };
 
@@ -537,7 +538,8 @@ export class TrashGitHubFetcher {
 
 		const raw = await response.json();
 		return parseUpstreamOrThrow(raw, trashMetadataSchema, {
-			integration: "trash-guides", category: "metadata",
+			integration: "trash-guides",
+			category: "metadata",
 		});
 	}
 
@@ -564,7 +566,10 @@ export class TrashGitHubFetcher {
 
 				if (response.ok) {
 					const rawData: unknown = await response.json();
-					const result = validateAndCollect(rawData, trashCustomFormatSchema, file, this.log, { integration: "trash-guides", category: "customFormats" });
+					const result = validateAndCollect(rawData, trashCustomFormatSchema, file, this.log, {
+						integration: "trash-guides",
+						category: "customFormats",
+					});
 					formats.push(...result.items);
 					recordValidationStats("customFormats", result.stats);
 				}
@@ -595,7 +600,10 @@ export class TrashGitHubFetcher {
 
 				if (response.ok) {
 					const rawData: unknown = await response.json();
-					const result = validateAndCollect(rawData, trashCustomFormatGroupSchema, file, this.log, { integration: "trash-guides", category: "customFormatGroups" });
+					const result = validateAndCollect(rawData, trashCustomFormatGroupSchema, file, this.log, {
+						integration: "trash-guides",
+						category: "customFormatGroups",
+					});
 					groups.push(...result.items);
 					recordValidationStats("customFormatGroups", result.stats);
 				}
@@ -623,7 +631,10 @@ export class TrashGitHubFetcher {
 
 				if (response.ok) {
 					const rawData: unknown = await response.json();
-					const result = validateAndCollect(rawData, trashQualitySizeSchema, file, this.log, { integration: "trash-guides", category: "qualitySize" });
+					const result = validateAndCollect(rawData, trashQualitySizeSchema, file, this.log, {
+						integration: "trash-guides",
+						category: "qualitySize",
+					});
 					settings.push(...result.items);
 					recordValidationStats("qualitySize", result.stats);
 				}
@@ -651,7 +662,10 @@ export class TrashGitHubFetcher {
 
 				if (response.ok) {
 					const rawData: unknown = await response.json();
-					const result = validateAndCollect(rawData, trashNamingSchemeSchema, file, this.log, { integration: "trash-guides", category: "namingSchemes" });
+					const result = validateAndCollect(rawData, trashNamingSchemeSchema, file, this.log, {
+						integration: "trash-guides",
+						category: "namingSchemes",
+					});
 					schemes.push(...result.items);
 					recordValidationStats("namingSchemes", result.stats);
 				}
@@ -679,7 +693,10 @@ export class TrashGitHubFetcher {
 
 				if (response.ok) {
 					const rawData: unknown = await response.json();
-					const result = validateAndCollect(rawData, trashQualityProfileSchema, file, this.log, { integration: "trash-guides", category: "qualityProfiles" });
+					const result = validateAndCollect(rawData, trashQualityProfileSchema, file, this.log, {
+						integration: "trash-guides",
+						category: "qualityProfiles",
+					});
 					profiles.push(...result.items);
 					recordValidationStats("qualityProfiles", result.stats);
 				}
@@ -706,7 +723,10 @@ export class TrashGitHubFetcher {
 				return [];
 			}
 			const rawData: unknown = await response.json();
-			return validateAndCollect(rawData, trashQualityProfileGroupSchema, "groups.json", this.log, { integration: "trash-guides", category: "qualityProfileGroups" }).items;
+			return validateAndCollect(rawData, trashQualityProfileGroupSchema, "groups.json", this.log, {
+				integration: "trash-guides",
+				category: "qualityProfileGroups",
+			}).items;
 		} catch (error) {
 			this.log.error("Error fetching quality profile groups:", error);
 			return [];
@@ -732,9 +752,19 @@ export class TrashGitHubFetcher {
 					const rawData: unknown = await response.json();
 					// Branch by service type — each schema's .transform() injects the _service discriminant
 					if (serviceType === "RADARR") {
-						results.push(...validateAndCollect(rawData, radarrNamingSchema, file, this.log, { integration: "trash-guides", category: "namingPresets" }).items);
+						results.push(
+							...validateAndCollect(rawData, radarrNamingSchema, file, this.log, {
+								integration: "trash-guides",
+								category: "namingPresets",
+							}).items,
+						);
 					} else {
-						results.push(...validateAndCollect(rawData, sonarrNamingSchema, file, this.log, { integration: "trash-guides", category: "namingPresets" }).items);
+						results.push(
+							...validateAndCollect(rawData, sonarrNamingSchema, file, this.log, {
+								integration: "trash-guides",
+								category: "namingPresets",
+							}).items,
+						);
 					}
 				}
 			} catch (error) {
@@ -843,8 +873,10 @@ export class TrashGitHubFetcher {
 			return descriptions;
 		} catch (error) {
 			if (error instanceof UpstreamValidationError) {
-				this.log.warn({ integration: error.integration, issues: error.issues },
-					"GitHub directory listing schema drift");
+				this.log.warn(
+					{ integration: error.integration, issues: error.issues },
+					"GitHub directory listing schema drift",
+				);
 			} else {
 				this.log.error("Failed to fetch CF descriptions:", error);
 			}
@@ -945,8 +977,10 @@ export class TrashGitHubFetcher {
 			return includes;
 		} catch (error) {
 			if (error instanceof UpstreamValidationError) {
-				this.log.warn({ integration: error.integration, issues: error.issues },
-					"GitHub directory listing schema drift");
+				this.log.warn(
+					{ integration: error.integration, issues: error.issues },
+					"GitHub directory listing schema drift",
+				);
 			} else {
 				this.log.error("Failed to fetch CF includes:", error);
 			}
@@ -1050,8 +1084,10 @@ export class TrashGitHubFetcher {
 			return jsonFiles;
 		} catch (error) {
 			if (error instanceof UpstreamValidationError) {
-				this.log.warn({ integration: error.integration, issues: error.issues },
-					"GitHub directory listing schema drift");
+				this.log.warn(
+					{ integration: error.integration, issues: error.issues },
+					"GitHub directory listing schema drift",
+				);
 			} else {
 				this.log.error(`Failed to discover config files at ${baseUrl}:`, error);
 			}

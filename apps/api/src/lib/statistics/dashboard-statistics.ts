@@ -271,7 +271,7 @@ export const fetchSonarrStatisticsWithSdk = async (
 		integration: "dashboard",
 		category: "statistics/sonarr",
 	});
-	return validated.success ? validated.data : constructed as SonarrStatistics;
+	return validated.success ? validated.data : (constructed as SonarrStatistics);
 };
 
 // ============================================================================
@@ -361,7 +361,7 @@ export const fetchRadarrStatisticsWithSdk = async (
 		integration: "dashboard",
 		category: "statistics/radarr",
 	});
-	return validated.success ? validated.data : constructed as RadarrStatistics;
+	return validated.success ? validated.data : (constructed as RadarrStatistics);
 };
 
 // ============================================================================
@@ -459,7 +459,7 @@ export const fetchProwlarrStatisticsWithSdk = async (
 		integration: "dashboard",
 		category: "statistics/prowlarr",
 	});
-	return validated.success ? validated.data : constructed as ProwlarrStatistics;
+	return validated.success ? validated.data : (constructed as ProwlarrStatistics);
 };
 
 // ============================================================================
@@ -564,7 +564,7 @@ export const fetchLidarrStatisticsWithSdk = async (
 		integration: "dashboard",
 		category: "statistics/lidarr",
 	});
-	return validated.success ? validated.data : constructed as LidarrStatistics;
+	return validated.success ? validated.data : (constructed as LidarrStatistics);
 };
 
 // ============================================================================
@@ -667,7 +667,7 @@ export const fetchReadarrStatisticsWithSdk = async (
 		integration: "dashboard",
 		category: "statistics/readarr",
 	});
-	return validated.success ? validated.data : constructed as ReadarrStatistics;
+	return validated.success ? validated.data : (constructed as ReadarrStatistics);
 };
 
 // ============================================================================
@@ -768,7 +768,7 @@ export const aggregateSonarrStatistics = (
 		integration: "dashboard",
 		category: "statistics/sonarr",
 	});
-	return validated.success ? validated.data : constructed as SonarrStatistics;
+	return validated.success ? validated.data : (constructed as SonarrStatistics);
 };
 
 export const aggregateRadarrStatistics = (
@@ -856,7 +856,7 @@ export const aggregateRadarrStatistics = (
 		integration: "dashboard",
 		category: "statistics/radarr",
 	});
-	return validated.success ? validated.data : constructed as RadarrStatistics;
+	return validated.success ? validated.data : (constructed as RadarrStatistics);
 };
 
 export const aggregateProwlarrStatistics = (
@@ -958,7 +958,7 @@ export const aggregateProwlarrStatistics = (
 		integration: "dashboard",
 		category: "statistics/prowlarr",
 	});
-	return validated.success ? validated.data : constructed as ProwlarrStatistics;
+	return validated.success ? validated.data : (constructed as ProwlarrStatistics);
 };
 
 export const aggregateLidarrStatistics = (
@@ -1050,7 +1050,7 @@ export const aggregateLidarrStatistics = (
 		integration: "dashboard",
 		category: "statistics/lidarr",
 	});
-	return validated.success ? validated.data : constructed as LidarrStatistics;
+	return validated.success ? validated.data : (constructed as LidarrStatistics);
 };
 
 export const aggregateReadarrStatistics = (
@@ -1141,5 +1141,5 @@ export const aggregateReadarrStatistics = (
 		integration: "dashboard",
 		category: "statistics/readarr",
 	});
-	return validated.success ? validated.data : constructed as ReadarrStatistics;
+	return validated.success ? validated.data : (constructed as ReadarrStatistics);
 };

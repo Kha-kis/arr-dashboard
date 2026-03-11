@@ -81,11 +81,10 @@ export async function qualitySizeRoutes(app: FastifyInstance, _opts: FastifyPlug
 		instance: Parameters<typeof app.arrClientFactory.rawRequest>[0],
 	): Promise<void> {
 		// Strategy 1: Command API (Sonarr v4.0.8+)
-		const cmdResponse = await app.arrClientFactory.rawRequest(
-			instance,
-			"/api/v3/command",
-			{ method: "POST", body: { name: "ResetQualityDefinitions" } },
-		);
+		const cmdResponse = await app.arrClientFactory.rawRequest(instance, "/api/v3/command", {
+			method: "POST",
+			body: { name: "ResetQualityDefinitions" },
+		});
 		if (cmdResponse.ok) return;
 
 		// Strategy 2: Direct reset endpoint (some *arr builds)

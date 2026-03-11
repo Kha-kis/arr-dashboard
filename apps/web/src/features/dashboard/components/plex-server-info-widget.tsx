@@ -115,7 +115,9 @@ export const PlexServerInfoWidget = ({
 									{server.platform && ` — ${server.platform}`}
 								</p>
 							</div>
-							<span className="text-xs text-muted-foreground font-mono">{server.machineId.slice(0, 8)}</span>
+							<span className="text-xs text-muted-foreground font-mono">
+								{server.machineId.slice(0, 8)}
+							</span>
 						</div>
 					))}
 				</div>

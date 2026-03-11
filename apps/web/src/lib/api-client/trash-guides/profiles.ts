@@ -27,11 +27,14 @@ export type ImportQualityProfilePayload = {
 	customQualityConfig?: CustomQualityConfig;
 	namingSelection?: NamingSelectedPresets;
 	selectedCFGroups: string[];
-	customFormatSelections: Record<string, {
-		selected: boolean;
-		scoreOverride?: number;
-		conditionsEnabled: Record<string, boolean>;
-	}>;
+	customFormatSelections: Record<
+		string,
+		{
+			selected: boolean;
+			scoreOverride?: number;
+			conditionsEnabled: Record<string, boolean>;
+		}
+	>;
 };
 
 export type UpdateQualityProfileTemplatePayload = {
@@ -43,11 +46,14 @@ export type UpdateQualityProfileTemplatePayload = {
 	customQualityConfig?: CustomQualityConfig;
 	namingSelection?: NamingSelectedPresets;
 	selectedCFGroups: string[];
-	customFormatSelections: Record<string, {
-		selected: boolean;
-		scoreOverride?: number;
-		conditionsEnabled: Record<string, boolean>;
-	}>;
+	customFormatSelections: Record<
+		string,
+		{
+			selected: boolean;
+			scoreOverride?: number;
+			conditionsEnabled: Record<string, boolean>;
+		}
+	>;
 };
 
 export type ImportQualityProfileResponse = {

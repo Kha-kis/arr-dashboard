@@ -36,20 +36,12 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 					return;
 				}
 
-				app.log.info(
-					{ count: instances.length },
-					"Starting Plex cache refresh for all instances",
-				);
+				app.log.info({ count: instances.length }, "Starting Plex cache refresh for all instances");
 
 				for (const instance of instances) {
 					try {
 						const client = createPlexClient(app.encryptor, instance, app.log);
-						const result = await refreshPlexCache(
-							client,
-							app.prisma,
-							instance.id,
-							app.log,
-						);
+						const result = await refreshPlexCache(client, app.prisma, instance.id, app.log);
 						app.log.info(
 							{ instanceId: instance.id, label: instance.label, ...result },
 							"Plex cache refresh completed for instance",
@@ -88,24 +80,33 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 						);
 
 						// Track failure
-						await app.prisma.cacheRefreshStatus.upsert({
-							where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "plex" } },
-							create: {
-								instanceId: instance.id,
-								cacheType: "plex",
-								lastRefreshedAt: new Date(),
-								lastResult: "error",
-								lastErrorMessage: getErrorMessage(err, "Unknown error"),
-								itemCount: 0,
-							},
-							update: {
-								lastRefreshedAt: new Date(),
-								lastResult: "error",
-								lastErrorMessage: getErrorMessage(err, "Unknown error"),
-							},
-						}).catch((trackErr) => {
-							app.log.warn({ err: trackErr, originalErr: getErrorMessage(err, "Unknown error"), instanceId: instance.id }, "Failed to record cache refresh failure status");
-						});
+						await app.prisma.cacheRefreshStatus
+							.upsert({
+								where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "plex" } },
+								create: {
+									instanceId: instance.id,
+									cacheType: "plex",
+									lastRefreshedAt: new Date(),
+									lastResult: "error",
+									lastErrorMessage: getErrorMessage(err, "Unknown error"),
+									itemCount: 0,
+								},
+								update: {
+									lastRefreshedAt: new Date(),
+									lastResult: "error",
+									lastErrorMessage: getErrorMessage(err, "Unknown error"),
+								},
+							})
+							.catch((trackErr) => {
+								app.log.warn(
+									{
+										err: trackErr,
+										originalErr: getErrorMessage(err, "Unknown error"),
+										instanceId: instance.id,
+									},
+									"Failed to record cache refresh failure status",
+								);
+							});
 					}
 				}
 
@@ -119,19 +120,23 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 					include: { instance: { select: { label: true } } },
 				});
 				if (staleEntries.length > 0) {
-					const names = staleEntries.map((e) => e.instance.label.replace(/[<>&"']/g, "").slice(0, 50)).join(", ");
+					const names = staleEntries
+						.map((e) => e.instance.label.replace(/[<>&"']/g, "").slice(0, 50))
+						.join(", ");
 					app.log.warn(
 						{ staleInstances: names },
 						"Plex cache data is stale (>12h since last refresh)",
 					);
-					await app.notificationService.notify({
-						eventType: "CACHE_REFRESH_STALE",
-						title: "Plex cache data is stale",
-						body: `Cache has not refreshed in over 12 hours for: ${names}`,
-						url: "/settings",
-					}).catch((notifyErr) => {
-						app.log.warn({ err: notifyErr }, "Failed to send stale-cache notification");
-					});
+					await app.notificationService
+						.notify({
+							eventType: "CACHE_REFRESH_STALE",
+							title: "Plex cache data is stale",
+							body: `Cache has not refreshed in over 12 hours for: ${names}`,
+							url: "/settings",
+						})
+						.catch((notifyErr) => {
+							app.log.warn({ err: notifyErr }, "Failed to send stale-cache notification");
+						});
 				}
 			} catch (err) {
 				app.log.error({ err }, "Plex cache scheduler: failed to query instances");

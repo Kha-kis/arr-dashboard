@@ -1149,6 +1149,8 @@ model NotificationLog {
 
   @@index([channelId])
   @@index([sentAt])
+  @@index([eventType])
+  @@index([channelId, eventType, status, sentAt])
   @@map("notification_logs")
 }
 
@@ -1259,7 +1261,7 @@ model TautulliCache {
   instanceId      String
   tmdbId          Int
   mediaType       String                       // "movie" | "series"
-  lastWatchedAt   DateTime
+  lastWatchedAt   DateTime?
   watchCount      Int
   watchedByUsers  String                       // JSON array of usernames
 

@@ -1,6 +1,12 @@
 "use client";
 
-import { LIBRARY_SERVICES, type LibraryItem, type LibraryService, type Pagination, type ServiceInstanceSummary } from "@arr/shared";
+import {
+	LIBRARY_SERVICES,
+	type LibraryItem,
+	type LibraryService,
+	type Pagination,
+	type ServiceInstanceSummary,
+} from "@arr/shared";
 import { useMemo } from "react";
 import { useLibraryQuery, useLibrarySyncStatus } from "../../../hooks/api/useLibrary";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";

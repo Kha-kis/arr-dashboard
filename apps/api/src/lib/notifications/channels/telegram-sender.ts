@@ -77,12 +77,17 @@ async function sendMessage(botToken: string, chatId: string, text: string): Prom
 			return { success: true, retryable: false };
 		}
 
-		const body = (await response.json().catch(() => ({}))) as { description?: string; parameters?: { retry_after?: number } };
+		const body = (await response.json().catch(() => ({}))) as {
+			description?: string;
+			parameters?: { retry_after?: number };
+		};
 		const desc = body.description ?? response.statusText;
 		const error = `Telegram API failed: ${response.status} ${desc}`;
 
 		if (response.status === 429) {
-			const retryAfterMs = body.parameters?.retry_after ? body.parameters.retry_after * 1000 : undefined;
+			const retryAfterMs = body.parameters?.retry_after
+				? body.parameters.retry_after * 1000
+				: undefined;
 			return { success: false, retryable: true, retryAfterMs, error };
 		}
 		if (response.status >= 500) {

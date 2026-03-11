@@ -34,7 +34,9 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		});
 
 		// Filter to ARR-compatible services only (integration services use different clients)
-		const arrInstances = instances.filter((i) => (ARR_SERVICES_UPPER as readonly string[]).includes(i.service));
+		const arrInstances = instances.filter((i) =>
+			(ARR_SERVICES_UPPER as readonly string[]).includes(i.service),
+		);
 
 		// Fetch all instances in parallel for better performance
 		const fetchResults = await Promise.all(

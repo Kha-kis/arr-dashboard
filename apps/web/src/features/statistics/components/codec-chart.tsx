@@ -26,7 +26,15 @@ const DONUT_COLORS = [
 	SERVICE_GRADIENTS.radarr.from,
 ];
 
-const DonutChart = ({ segments, size = 120, label }: { segments: DonutSegment[]; size?: number; label: string }) => {
+const DonutChart = ({
+	segments,
+	size = 120,
+	label,
+}: {
+	segments: DonutSegment[];
+	size?: number;
+	label: string;
+}) => {
 	const total = segments.reduce((sum, s) => sum + s.value, 0);
 	if (total === 0) return null;
 
@@ -95,7 +103,13 @@ const SegmentLegend = ({ segments }: { segments: DonutSegment[] }) => (
 // Resolution Bars
 // ============================================================================
 
-const ResolutionBars = ({ resolutions, color }: { resolutions: Array<{ resolution: string; count: number; percent: number }>; color: string }) => {
+const ResolutionBars = ({
+	resolutions,
+	color,
+}: {
+	resolutions: Array<{ resolution: string; count: number; percent: number }>;
+	color: string;
+}) => {
 	const max = Math.max(...resolutions.map((r) => r.count), 1);
 
 	return (

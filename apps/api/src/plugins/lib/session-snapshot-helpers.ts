@@ -35,7 +35,11 @@ export function classifySessionDecisions(sessions: SessionInput[]): SessionClass
 		const videoDecision = session.videoDecision?.toLowerCase() ?? "direct play";
 		if (videoDecision === "transcode") {
 			transcodeCount++;
-		} else if (videoDecision === "copy" || videoDecision === "directstream" || videoDecision === "direct stream") {
+		} else if (
+			videoDecision === "copy" ||
+			videoDecision === "directstream" ||
+			videoDecision === "direct stream"
+		) {
 			directStreamCount++;
 		} else {
 			directPlayCount++;

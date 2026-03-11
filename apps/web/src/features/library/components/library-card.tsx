@@ -492,9 +492,7 @@ export const LibraryCard = memo(function LibraryCard({
 										color: SEMANTIC_COLORS.info.text,
 									}}
 									title={
-										watchedByUsers?.length
-											? `Watched by: ${watchedByUsers.join(", ")}`
-											: undefined
+										watchedByUsers?.length ? `Watched by: ${watchedByUsers.join(", ")}` : undefined
 									}
 								>
 									<Eye className="h-3 w-3" />

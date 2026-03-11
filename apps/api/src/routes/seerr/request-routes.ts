@@ -68,14 +68,21 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 		try {
 			const result = await client.approveRequest(requestId);
 			logSeerrAction(app, request.log, {
-				instanceId, userId, action: "approve_request",
-				targetType: "request", targetId: String(requestId),
+				instanceId,
+				userId,
+				action: "approve_request",
+				targetType: "request",
+				targetId: String(requestId),
 			});
 			return result;
 		} catch (err) {
 			logSeerrAction(app, request.log, {
-				instanceId, userId, action: "approve_request",
-				targetType: "request", targetId: String(requestId), success: false,
+				instanceId,
+				userId,
+				action: "approve_request",
+				targetType: "request",
+				targetId: String(requestId),
+				success: false,
 			});
 			throw err;
 		}
@@ -89,14 +96,21 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 		try {
 			const result = await client.declineRequest(requestId);
 			logSeerrAction(app, request.log, {
-				instanceId, userId, action: "decline_request",
-				targetType: "request", targetId: String(requestId),
+				instanceId,
+				userId,
+				action: "decline_request",
+				targetType: "request",
+				targetId: String(requestId),
 			});
 			return result;
 		} catch (err) {
 			logSeerrAction(app, request.log, {
-				instanceId, userId, action: "decline_request",
-				targetType: "request", targetId: String(requestId), success: false,
+				instanceId,
+				userId,
+				action: "decline_request",
+				targetType: "request",
+				targetId: String(requestId),
+				success: false,
 			});
 			throw err;
 		}
@@ -110,14 +124,21 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 		try {
 			await client.deleteRequest(requestId);
 			logSeerrAction(app, request.log, {
-				instanceId, userId, action: "delete_request",
-				targetType: "request", targetId: String(requestId),
+				instanceId,
+				userId,
+				action: "delete_request",
+				targetType: "request",
+				targetId: String(requestId),
 			});
 			return reply.status(204).send();
 		} catch (err) {
 			logSeerrAction(app, request.log, {
-				instanceId, userId, action: "delete_request",
-				targetType: "request", targetId: String(requestId), success: false,
+				instanceId,
+				userId,
+				action: "delete_request",
+				targetType: "request",
+				targetId: String(requestId),
+				success: false,
 			});
 			throw err;
 		}
@@ -131,14 +152,21 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 		try {
 			const result = await client.retryRequest(requestId);
 			logSeerrAction(app, request.log, {
-				instanceId, userId, action: "retry_request",
-				targetType: "request", targetId: String(requestId),
+				instanceId,
+				userId,
+				action: "retry_request",
+				targetType: "request",
+				targetId: String(requestId),
 			});
 			return result;
 		} catch (err) {
 			logSeerrAction(app, request.log, {
-				instanceId, userId, action: "retry_request",
-				targetType: "request", targetId: String(requestId), success: false,
+				instanceId,
+				userId,
+				action: "retry_request",
+				targetType: "request",
+				targetId: String(requestId),
+				success: false,
 			});
 			throw err;
 		}
@@ -162,15 +190,22 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 					await client.deleteRequest(reqId);
 				}
 				logSeerrAction(app, request.log, {
-					instanceId, userId, action: `bulk_${action}_request`,
-					targetType: "request", targetId: String(reqId),
+					instanceId,
+					userId,
+					action: `bulk_${action}_request`,
+					targetType: "request",
+					targetId: String(reqId),
 				});
 				results.push({ requestId: reqId, success: true });
 			} catch (err) {
 				const errorMessage = getErrorMessage(err, "Unknown error");
 				logSeerrAction(app, request.log, {
-					instanceId, userId, action: `bulk_${action}_request`,
-					targetType: "request", targetId: String(reqId), success: false,
+					instanceId,
+					userId,
+					action: `bulk_${action}_request`,
+					targetType: "request",
+					targetId: String(reqId),
+					success: false,
 				});
 				results.push({ requestId: reqId, success: false, error: errorMessage });
 			}

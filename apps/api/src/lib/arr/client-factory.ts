@@ -152,9 +152,7 @@ export class ArrClientFactory {
 					"Tautulli uses TautulliClient — use createTautulliClient() from lib/tautulli/tautulli-client",
 				);
 			case "PLEX":
-				throw new Error(
-					"Plex uses PlexClient — use createPlexClient() from lib/plex/plex-client",
-				);
+				throw new Error("Plex uses PlexClient — use createPlexClient() from lib/plex/plex-client");
 			default:
 				throw new Error(`Unknown service type: ${String(instance.service)}`);
 		}

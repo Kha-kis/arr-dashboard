@@ -1,11 +1,5 @@
 import { randomBytes } from "node:crypto";
-import {
-	copyFileSync,
-	mkdirSync,
-	readFileSync,
-	renameSync,
-	writeFileSync,
-} from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { loggers } from "../logger.js";
 
@@ -109,10 +103,7 @@ export class SecretManager {
 				const secrets = JSON.parse(content) as Secrets;
 
 				if (!this.isValidSecrets(secrets)) {
-					log.warn(
-						{ legacyPath },
-						"Found legacy secrets file but format is invalid, skipping",
-					);
+					log.warn({ legacyPath }, "Found legacy secrets file but format is invalid, skipping");
 					continue;
 				}
 

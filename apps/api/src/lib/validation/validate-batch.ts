@@ -95,12 +95,12 @@ export function validateAndCollect<T>(
 		if (result.success) {
 			results.push(result.data);
 		} else {
-			const detail = result.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join(", ");
+			const detail = result.error.issues
+				.map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+				.join(", ");
 
 			if (mode === "strict") {
-				throw new ValidationError(
-					`Validation failed for item ${i} in ${fileName}: ${detail}`,
-				);
+				throw new ValidationError(`Validation failed for item ${i} in ${fileName}: ${detail}`);
 			}
 
 			if (mode === "log-only") {
@@ -146,7 +146,11 @@ export function validateAndCollect<T>(
 		drift = schemaFingerprints.record(options.integration, options.category, results, log);
 	}
 
-	return { items: results, stats: { total: items.length, validated: results.length, rejected }, drift };
+	return {
+		items: results,
+		stats: { total: items.length, validated: results.length, rejected },
+		drift,
+	};
 }
 
 // ============================================================================

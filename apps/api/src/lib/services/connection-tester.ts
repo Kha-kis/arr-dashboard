@@ -192,10 +192,7 @@ async function testTautulliConnection(
 /**
  * Tests connection to a Plex Media Server using X-Plex-Token auth.
  */
-async function testPlexConnection(
-	baseUrl: string,
-	token: string,
-): Promise<ConnectionTestResult> {
+async function testPlexConnection(baseUrl: string, token: string): Promise<ConnectionTestResult> {
 	const testUrl = `${baseUrl}/identity`;
 
 	const response = await fetch(testUrl, {
@@ -267,7 +264,11 @@ function handleConnectionError(error: unknown): ConnectionTestResult {
 			errorMessage = "Host not found";
 			details =
 				"Could not resolve the hostname. Check that the base URL is correct and the DNS name is reachable from this server.";
-		} else if (err.code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE" || err.code === "CERT_HAS_EXPIRED" || err.code === "DEPTH_ZERO_SELF_SIGNED_CERT") {
+		} else if (
+			err.code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE" ||
+			err.code === "CERT_HAS_EXPIRED" ||
+			err.code === "DEPTH_ZERO_SELF_SIGNED_CERT"
+		) {
 			errorMessage = "TLS/SSL error";
 			details =
 				"Certificate verification failed. If using a self-signed certificate, try using HTTP instead of HTTPS, or configure your system to trust the certificate.";

@@ -28,8 +28,8 @@ const seerrHealthSchedulerPlugin = fp(
 			isRunning = true;
 			try {
 				// System-level scheduler: queries ALL enabled Seerr instances (no userId filter)
-			// because health checks run as a background system task, not per-user.
-			const instances = await app.prisma.serviceInstance.findMany({
+				// because health checks run as a background system task, not per-user.
+				const instances = await app.prisma.serviceInstance.findMany({
 					where: { service: "SEERR", enabled: true },
 				});
 

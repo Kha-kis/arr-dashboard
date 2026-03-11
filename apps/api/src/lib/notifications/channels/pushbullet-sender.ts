@@ -87,8 +87,6 @@ export const pushbulletPlugin: ChannelPlugin = {
 	label: "Pushbullet",
 	icon: "Send",
 	configSchema: "pushbulletConfigSchema",
-	formFields: [
-		{ key: "apiToken", label: "API Token", type: "password", required: true },
-	],
+	formFields: [{ key: "apiToken", label: "API Token", type: "password", required: true }],
 	sender: pushbulletSender,
 };

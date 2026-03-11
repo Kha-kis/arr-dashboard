@@ -8,7 +8,13 @@ import { pushoverPlugin } from "./channels/pushover-sender.js";
 import { slackPlugin } from "./channels/slack-sender.js";
 import { telegramPlugin } from "./channels/telegram-sender.js";
 import { webhookPlugin } from "./channels/webhook-sender.js";
-import type { ChannelFormField, ChannelPlugin, ChannelSender, NotificationPayload, SendResult } from "./types.js";
+import type {
+	ChannelFormField,
+	ChannelPlugin,
+	ChannelSender,
+	NotificationPayload,
+	SendResult,
+} from "./types.js";
 
 /** All registered channel plugins (except BROWSER_PUSH which is lazy-loaded) */
 const ALL_PLUGINS: ChannelPlugin[] = [
@@ -55,7 +61,11 @@ export class NotificationDispatcher {
 	): Promise<SendResult> {
 		const sender = this.senders.get(type);
 		if (!sender) {
-			return { success: false, retryable: false, error: `No sender registered for channel type: ${type}` };
+			return {
+				success: false,
+				retryable: false,
+				error: `No sender registered for channel type: ${type}`,
+			};
 		}
 		return sender.send(config, payload);
 	}
@@ -79,8 +89,18 @@ export class NotificationDispatcher {
 	 * Return plugin metadata for all registered channel types.
 	 * Used by the API route to tell the frontend what channel types are available.
 	 */
-	getPluginManifests(): Array<{ type: string; label: string; icon: string; formFields: ChannelFormField[] }> {
-		const manifests: Array<{ type: string; label: string; icon: string; formFields: ChannelFormField[] }> = [];
+	getPluginManifests(): Array<{
+		type: string;
+		label: string;
+		icon: string;
+		formFields: ChannelFormField[];
+	}> {
+		const manifests: Array<{
+			type: string;
+			label: string;
+			icon: string;
+			formFields: ChannelFormField[];
+		}> = [];
 		for (const plugin of ALL_PLUGINS) {
 			manifests.push({
 				type: plugin.type,

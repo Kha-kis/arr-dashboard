@@ -1,7 +1,18 @@
 "use client";
 
 import type { TautulliHomeStat, TautulliHomeStatRow } from "@arr/shared";
-import { Activity, Clock, Film, Laptop, Music, Play, TrendingUp, Tv, User, Users } from "lucide-react";
+import {
+	Activity,
+	Clock,
+	Film,
+	Laptop,
+	Music,
+	Play,
+	TrendingUp,
+	Tv,
+	User,
+	Users,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { PremiumSkeleton } from "../../../components/layout";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
@@ -83,7 +94,10 @@ function formatDuration(seconds: number): string {
 // Per-Media Sparkline Colors
 // ============================================================================
 
-const MEDIA_TYPE_COLORS: Record<string, { color: string; icon: React.ComponentType<{ className?: string }>; label: string }> = {
+const MEDIA_TYPE_COLORS: Record<
+	string,
+	{ color: string; icon: React.ComponentType<{ className?: string }>; label: string }
+> = {
 	TV: { color: SERVICE_GRADIENTS.sonarr.from, icon: Tv, label: "TV Shows" },
 	Movies: { color: SERVICE_GRADIENTS.radarr.from, icon: Film, label: "Movies" },
 	Music: { color: SERVICE_GRADIENTS.lidarr.from, icon: Music, label: "Music" },
@@ -108,7 +122,11 @@ export const PlexTab = () => {
 	// Aggregate totals from plays-by-date
 	const totalPlays = useMemo((): number => {
 		if (!plays?.series) return 0;
-		return plays.series.reduce((acc: number, s: { data: number[] }) => acc + s.data.reduce((a: number, b: number) => a + b, 0), 0);
+		return plays.series.reduce(
+			(acc: number, s: { data: number[] }) =>
+				acc + s.data.reduce((a: number, b: number) => a + b, 0),
+			0,
+		);
 	}, [plays]);
 
 	// Combined time series (all media types summed per day)
@@ -143,7 +161,10 @@ export const PlexTab = () => {
 	// Total watch time from user stats
 	const totalDuration = useMemo((): number => {
 		if (!stats?.userStats) return 0;
-		return stats.userStats.reduce((acc: number, u: { totalDuration: number }) => acc + u.totalDuration, 0);
+		return stats.userStats.reduce(
+			(acc: number, u: { totalDuration: number }) => acc + u.totalDuration,
+			0,
+		);
 	}, [stats]);
 
 	// Top users by plays
@@ -165,7 +186,13 @@ export const PlexTab = () => {
 		if (!stats?.homeStats) return [];
 
 		// Map statId patterns to icons and colors for visual clarity
-		const STAT_STYLE: Record<string, { icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>; color: string }> = {
+		const STAT_STYLE: Record<
+			string,
+			{
+				icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
+				color: string;
+			}
+		> = {
 			movie: { icon: Film, color: SERVICE_GRADIENTS.radarr.from },
 			tv: { icon: Tv, color: SERVICE_GRADIENTS.sonarr.from },
 			music: { icon: Music, color: SERVICE_GRADIENTS.lidarr.from },
@@ -191,7 +218,7 @@ export const PlexTab = () => {
 					icon: style.icon,
 					color: style.color,
 					items: s.rows.map((r: TautulliHomeStatRow) => ({
-						label: isPlatform ? (r.platform || r.title) : r.title,
+						label: isPlatform ? r.platform || r.title : r.title,
 						value: r.totalPlays,
 						secondaryLabel: r.totalDuration > 0 ? formatDuration(r.totalDuration) : undefined,
 					})),
@@ -208,8 +235,16 @@ export const PlexTab = () => {
 				<div className="grid gap-4 md:grid-cols-4">
 					{[0, 1, 2, 3].map((i) => (
 						<div key={i} className="rounded-xl border border-border/30 bg-card/30 p-4">
-							<PremiumSkeleton variant="line" className="h-8 w-16 mb-2" style={{ animationDelay: `${i * 50}ms` }} />
-							<PremiumSkeleton variant="line" className="h-5 w-24" style={{ animationDelay: `${i * 50 + 25}ms` }} />
+							<PremiumSkeleton
+								variant="line"
+								className="h-8 w-16 mb-2"
+								style={{ animationDelay: `${i * 50}ms` }}
+							/>
+							<PremiumSkeleton
+								variant="line"
+								className="h-5 w-24"
+								style={{ animationDelay: `${i * 50 + 25}ms` }}
+							/>
 						</div>
 					))}
 				</div>

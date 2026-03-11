@@ -154,11 +154,7 @@ export const PlexTagsEditor = ({
 					name={name}
 					type="collection"
 					color={gradient.from}
-					onRemove={
-						readOnly
-							? undefined
-							: () => handleTagAction("collection", "remove", name)
-					}
+					onRemove={readOnly ? undefined : () => handleTagAction("collection", "remove", name)}
 				/>
 			))}
 
@@ -169,11 +165,7 @@ export const PlexTagsEditor = ({
 					name={name}
 					type="label"
 					color={gradient.to}
-					onRemove={
-						readOnly
-							? undefined
-							: () => handleTagAction("label", "remove", name)
-					}
+					onRemove={readOnly ? undefined : () => handleTagAction("label", "remove", name)}
 				/>
 			))}
 

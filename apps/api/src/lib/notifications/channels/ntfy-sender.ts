@@ -11,7 +11,8 @@ const NTFY_TIMEOUT_MS = 10000;
 
 /** Map event types to ntfy priority levels (1-5) */
 function getNtfyPriority(eventType: string): string {
-	if (eventType.includes("FAILED") || eventType.includes("ERROR") || eventType.includes("LOCKED")) return "4"; // high
+	if (eventType.includes("FAILED") || eventType.includes("ERROR") || eventType.includes("LOCKED"))
+		return "4"; // high
 	if (eventType.includes("COMPLETED") || eventType.includes("STARTUP")) return "3"; // default
 	if (eventType.includes("REMOVED") || eventType.includes("FLAGGED")) return "3";
 	return "3"; // default
@@ -67,12 +68,20 @@ export const ntfySender: ChannelSender = {
 				return { success: false, retryable: true, error: `Server error (${response.status})` };
 			}
 
-			return { success: false, retryable: false, error: `HTTP ${response.status}: ${response.statusText}` };
+			return {
+				success: false,
+				retryable: false,
+				error: `HTTP ${response.status}: ${response.statusText}`,
+			};
 		} catch (err) {
 			if (err instanceof Error && err.name === "TimeoutError") {
 				return { success: false, retryable: true, error: "Request timed out" };
 			}
-			return { success: false, retryable: true, error: err instanceof Error ? err.message : String(err) };
+			return {
+				success: false,
+				retryable: true,
+				error: err instanceof Error ? err.message : String(err),
+			};
 		}
 	},
 
@@ -94,7 +103,13 @@ export const ntfyPlugin: ChannelPlugin = {
 	icon: "Bell",
 	configSchema: "ntfyConfigSchema",
 	formFields: [
-		{ key: "serverUrl", label: "Server URL", type: "url", required: true, placeholder: "https://ntfy.sh" },
+		{
+			key: "serverUrl",
+			label: "Server URL",
+			type: "url",
+			required: true,
+			placeholder: "https://ntfy.sh",
+		},
 		{ key: "topic", label: "Topic", type: "text", required: true },
 		{ key: "token", label: "Access Token", type: "password" },
 	],

@@ -60,7 +60,10 @@ export async function registerBandwidthAnalyticsRoutes(
 
 		const { parseFailures, totalSnapshots, ...analytics } = aggregateBandwidthAnalytics(snapshots);
 		if (parseFailures > 0) {
-			request.log.warn({ parseFailures, totalSnapshots, route: "bandwidth-analytics" }, "Session snapshot parse failures detected");
+			request.log.warn(
+				{ parseFailures, totalSnapshots, route: "bandwidth-analytics" },
+				"Session snapshot parse failures detected",
+			);
 		}
 		return reply.send(analytics);
 	});

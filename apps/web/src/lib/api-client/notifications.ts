@@ -71,7 +71,13 @@ export interface PaginatedLogs {
 }
 
 // Re-export shared types for convenience
-export type { NotificationRuleResponse, CreateNotificationRule, UpdateNotificationRule, NotificationStatisticsResponse, AggregationConfigResponse };
+export type {
+	NotificationRuleResponse,
+	CreateNotificationRule,
+	UpdateNotificationRule,
+	NotificationStatisticsResponse,
+	AggregationConfigResponse,
+};
 
 // ============================================================================
 // API Client

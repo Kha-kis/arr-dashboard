@@ -132,9 +132,7 @@ export function NamingHistoryTable({ instanceId }: NamingHistoryTableProps) {
 			<div className="rounded-2xl border border-dashed border-border/50 bg-card/20 backdrop-blur-xs p-12 text-center">
 				<History className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
 				<p className="text-lg font-medium text-foreground mb-2">No deployment history</p>
-				<p className="text-sm text-muted-foreground">
-					Deploy naming presets to see history here
-				</p>
+				<p className="text-sm text-muted-foreground">Deploy naming presets to see history here</p>
 			</div>
 		);
 	}
@@ -288,14 +286,11 @@ export function NamingHistoryTable({ instanceId }: NamingHistoryTableProps) {
 			{pagination && pagination.total > PAGE_SIZE && (
 				<div className="flex items-center justify-between">
 					<p className="text-sm text-muted-foreground">
-						Showing{" "}
-						<span className="font-medium text-foreground">{offset + 1}</span> to{" "}
+						Showing <span className="font-medium text-foreground">{offset + 1}</span> to{" "}
 						<span className="font-medium text-foreground">
 							{Math.min(offset + history.length, pagination.total)}
 						</span>{" "}
-						of{" "}
-						<span className="font-medium text-foreground">{pagination.total}</span>{" "}
-						deployments
+						of <span className="font-medium text-foreground">{pagination.total}</span> deployments
 					</p>
 					<div className="flex items-center gap-2">
 						<button

@@ -36,10 +36,7 @@ const plexGradient = SERVICE_GRADIENTS.plex;
 // History Item Row
 // ============================================================================
 
-const HistoryRow = ({
-	item,
-	index,
-}: { item: TautulliWatchHistoryItem; index: number }) => {
+const HistoryRow = ({ item, index }: { item: TautulliWatchHistoryItem; index: number }) => {
 	const Icon = MEDIA_ICONS[item.mediaType] ?? Film;
 	const displayTitle = item.grandparentTitle
 		? `${item.grandparentTitle} — ${item.title}`
@@ -111,7 +108,12 @@ export const WatchHistorySection = ({ enabled }: WatchHistorySectionProps) => {
 					<span className="text-sm font-semibold text-foreground">Recent Watch History</span>
 				</div>
 				{[0, 1, 2].map((i) => (
-					<PremiumSkeleton key={i} variant="line" className="h-14 w-full" style={{ animationDelay: `${i * 50}ms` }} />
+					<PremiumSkeleton
+						key={i}
+						variant="line"
+						className="h-14 w-full"
+						style={{ animationDelay: `${i * 50}ms` }}
+					/>
 				))}
 			</div>
 		);
@@ -126,9 +128,7 @@ export const WatchHistorySection = ({ enabled }: WatchHistorySectionProps) => {
 					<History className="h-4 w-4" style={{ color: plexGradient.from }} />
 					<span className="text-sm font-semibold text-foreground">Recent Watch History</span>
 					{totalCount > 0 && (
-						<span className="text-xs text-muted-foreground">
-							({totalCount} total)
-						</span>
+						<span className="text-xs text-muted-foreground">({totalCount} total)</span>
 					)}
 				</div>
 				{query.isRefetching && (
@@ -148,12 +148,7 @@ export const WatchHistorySection = ({ enabled }: WatchHistorySectionProps) => {
 
 			{totalCount > pageSize && (
 				<div className="flex justify-center mt-3">
-					<Button
-						variant="secondary"
-						size="sm"
-						onClick={() => query.refetch()}
-						className="text-xs"
-					>
+					<Button variant="secondary" size="sm" onClick={() => query.refetch()} className="text-xs">
 						Showing {items.length} of {totalCount}
 					</Button>
 				</div>

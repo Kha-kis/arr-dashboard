@@ -56,12 +56,7 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 
 			const { client } = await requirePlexClient(app, userId, instanceId);
 
-			const result = await refreshPlexCache(
-				client,
-				app.prisma,
-				instanceId,
-				request.log,
-			);
+			const result = await refreshPlexCache(client, app.prisma, instanceId, request.log);
 
 			return reply.send({
 				success: true,

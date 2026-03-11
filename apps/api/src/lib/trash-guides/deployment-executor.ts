@@ -12,7 +12,12 @@
  * - template-score-utils.ts: score calculation
  */
 
-import { TRASH_CONFIG_TYPES, type CustomQualityConfig, type NamingSelectedPresets, type TrashNamingData } from "@arr/shared";
+import {
+	TRASH_CONFIG_TYPES,
+	type CustomQualityConfig,
+	type NamingSelectedPresets,
+	type TrashNamingData,
+} from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { PrismaClient, ServiceType } from "../../lib/prisma.js";
 import type { ArrClientFactory } from "../arr/client-factory.js";
@@ -817,7 +822,10 @@ export class DeploymentExecutorService {
 		try {
 			const upperService = instance.service.toUpperCase() as "RADARR" | "SONARR";
 			if (namingSelection.serviceType !== upperService) {
-				return { fieldsApplied: 0, error: `Naming selection service type mismatch: expected ${upperService}` };
+				return {
+					fieldsApplied: 0,
+					error: `Naming selection service type mismatch: expected ${upperService}`,
+				};
 			}
 
 			const cacheManager = createCacheManager(this.prisma);
@@ -832,16 +840,24 @@ export class DeploymentExecutorService {
 
 			const naming = namingData[0]!;
 			const patch = resolvePayload(naming, namingSelection);
-			const fieldCount = Object.keys(patch).filter((k) => k !== "renameMovies" && k !== "renameEpisodes").length;
+			const fieldCount = Object.keys(patch).filter(
+				(k) => k !== "renameMovies" && k !== "renameEpisodes",
+			).length;
 
 			if (fieldCount === 0) {
 				return { fieldsApplied: 0 };
 			}
 
 			// GET current config, merge, PUT back
-			const currentResponse = await this.clientFactory.rawRequest(instance, "/api/v3/config/naming");
+			const currentResponse = await this.clientFactory.rawRequest(
+				instance,
+				"/api/v3/config/naming",
+			);
 			if (!currentResponse.ok) {
-				return { fieldsApplied: 0, error: `Failed to read naming config: HTTP ${currentResponse.status}` };
+				return {
+					fieldsApplied: 0,
+					error: `Failed to read naming config: HTTP ${currentResponse.status}`,
+				};
 			}
 			const currentConfig = (await currentResponse.json()) as Record<string, unknown>;
 			const merged = { ...currentConfig, ...patch };
@@ -851,13 +867,22 @@ export class DeploymentExecutorService {
 				body: merged,
 			});
 			if (!putResponse.ok) {
-				return { fieldsApplied: 0, error: `Failed to apply naming config: HTTP ${putResponse.status}` };
+				return {
+					fieldsApplied: 0,
+					error: `Failed to apply naming config: HTTP ${putResponse.status}`,
+				};
 			}
 
-			log.info({ instanceId: instance.id, fieldsApplied: fieldCount }, "Naming presets deployed via template");
+			log.info(
+				{ instanceId: instance.id, fieldsApplied: fieldCount },
+				"Naming presets deployed via template",
+			);
 			return { fieldsApplied: fieldCount };
 		} catch (error) {
-			return { fieldsApplied: 0, error: `Naming deployment failed: ${getErrorMessage(error, "Unknown error")}` };
+			return {
+				fieldsApplied: 0,
+				error: `Naming deployment failed: ${getErrorMessage(error, "Unknown error")}`,
+			};
 		}
 	}
 
@@ -982,15 +1007,10 @@ export class DeploymentExecutorService {
 			);
 
 			// Deploy naming presets if the template includes them
-			const namingSelection = templateConfig.namingSelection as
-				| NamingSelectedPresets
-				| undefined;
+			const namingSelection = templateConfig.namingSelection as NamingSelectedPresets | undefined;
 			let namingWarning: string | undefined;
 			if (namingSelection) {
-				const namingResult = await this.deployNamingPresets(
-					namingSelection,
-					instance,
-				);
+				const namingResult = await this.deployNamingPresets(namingSelection, instance);
 				if (namingResult.error) {
 					profileResult.errors.push(namingResult.error);
 				} else if (namingResult.fieldsApplied > 0) {

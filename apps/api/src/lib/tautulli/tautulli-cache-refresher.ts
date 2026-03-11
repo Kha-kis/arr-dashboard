@@ -131,10 +131,7 @@ export async function refreshTautulliCache(
 				}
 			} catch (error) {
 				errors++;
-				log.warn(
-					{ err: error, ratingKey },
-					"Tautulli cache: failed to fetch metadata for item",
-				);
+				log.warn({ err: error, ratingKey }, "Tautulli cache: failed to fetch metadata for item");
 			}
 		}
 

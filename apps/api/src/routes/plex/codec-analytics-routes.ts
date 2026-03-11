@@ -24,7 +24,12 @@ export async function registerCodecAnalyticsRoutes(
 		});
 
 		if (plexInstances.length === 0) {
-			const response: CodecAnalytics = { videoCodecs: [], audioCodecs: [], resolutions: [], totalSessions: 0 };
+			const response: CodecAnalytics = {
+				videoCodecs: [],
+				audioCodecs: [],
+				resolutions: [],
+				totalSessions: 0,
+			};
 			return reply.send(response);
 		}
 
@@ -41,9 +46,13 @@ export async function registerCodecAnalyticsRoutes(
 			take: 50000,
 		});
 
-		const { parseFailures, totalSnapshots, failedPreviews, ...analytics } = aggregateCodecAnalytics(snapshots);
+		const { parseFailures, totalSnapshots, failedPreviews, ...analytics } =
+			aggregateCodecAnalytics(snapshots);
 		if (parseFailures > 0) {
-			request.log.warn({ parseFailures, totalSnapshots, failedPreviews, route: "codec-analytics" }, "Session snapshot JSON parse failures detected");
+			request.log.warn(
+				{ parseFailures, totalSnapshots, failedPreviews, route: "codec-analytics" },
+				"Session snapshot JSON parse failures detected",
+			);
 		}
 		return reply.send(analytics);
 	});

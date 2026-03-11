@@ -114,9 +114,7 @@ export async function updatePlexTag(
 // ============================================================================
 
 /** Fetch recently added items from Plex library cache. */
-export async function fetchRecentlyAdded(
-	limit = 20,
-): Promise<PlexRecentlyAddedResponse> {
+export async function fetchRecentlyAdded(limit = 20): Promise<PlexRecentlyAddedResponse> {
 	return apiRequest(`/api/plex/recently-added?limit=${limit}`);
 }
 
@@ -168,9 +166,7 @@ export async function triggerCacheRefresh(
 // ============================================================================
 
 /** Fetch per-series watched/total episode progress from PlexEpisodeCache. */
-export async function fetchSeriesProgress(
-	tmdbIds: number[],
-): Promise<SeriesProgressResponse> {
+export async function fetchSeriesProgress(tmdbIds: number[]): Promise<SeriesProgressResponse> {
 	const params = new URLSearchParams({ tmdbIds: tmdbIds.join(",") });
 	return apiRequest(`/api/plex/series-progress?${params.toString()}`);
 }
@@ -180,9 +176,7 @@ export async function fetchSeriesProgress(
 // ============================================================================
 
 /** Fetch transcode decision analytics from SessionSnapshot data. */
-export async function fetchTranscodeAnalytics(
-	days = 30,
-): Promise<TranscodeAnalytics> {
+export async function fetchTranscodeAnalytics(days = 30): Promise<TranscodeAnalytics> {
 	return apiRequest(`/api/plex/analytics/transcode?days=${days}`);
 }
 
@@ -191,9 +185,7 @@ export async function fetchTranscodeAnalytics(
 // ============================================================================
 
 /** Fetch bandwidth analytics (LAN/WAN) from SessionSnapshot data. */
-export async function fetchBandwidthAnalytics(
-	days = 30,
-): Promise<BandwidthAnalytics> {
+export async function fetchBandwidthAnalytics(days = 30): Promise<BandwidthAnalytics> {
 	return apiRequest(`/api/plex/analytics/bandwidth?days=${days}`);
 }
 
@@ -247,7 +239,9 @@ export async function fetchCollectionStats(): Promise<CollectionStats> {
 // ============================================================================
 
 /** Fetch per-user episode completion for specified shows. */
-export async function fetchUserEpisodeCompletion(tmdbIds: number[]): Promise<UserEpisodeCompletion> {
+export async function fetchUserEpisodeCompletion(
+	tmdbIds: number[],
+): Promise<UserEpisodeCompletion> {
 	return apiRequest(`/api/plex/analytics/episode-completion?tmdbIds=${tmdbIds.join(",")}`);
 }
 

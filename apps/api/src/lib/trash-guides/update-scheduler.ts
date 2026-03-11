@@ -745,9 +745,7 @@ export class UpdateScheduler {
 				try {
 					selectedPresets = JSON.parse(config.selectedPresets) as NamingSelectedPresets;
 				} catch {
-					result.errors.push(
-						`Corrupt naming config presets for instance ${config.instance.label}`,
-					);
+					result.errors.push(`Corrupt naming config presets for instance ${config.instance.label}`);
 					continue;
 				}
 
@@ -766,9 +764,7 @@ export class UpdateScheduler {
 
 				// Auto-sync: apply naming presets to instance
 				if (!config.instance.enabled) {
-					this.logger.debug(
-						`Skipping naming sync for disabled instance ${config.instance.label}`,
-					);
+					this.logger.debug(`Skipping naming sync for disabled instance ${config.instance.label}`);
 					continue;
 				}
 
@@ -776,29 +772,21 @@ export class UpdateScheduler {
 				const apiPath = "/api/v3/config/naming";
 
 				// Get current config first (need to preserve id and other fields)
-				const currentResponse = await this.arrClientFactory.rawRequest(
-					config.instance,
-					apiPath,
-					{ method: "GET" },
-				);
+				const currentResponse = await this.arrClientFactory.rawRequest(config.instance, apiPath, {
+					method: "GET",
+				});
 				if (!currentResponse.ok) {
-					throw new Error(
-						`Failed to get current naming config: ${currentResponse.status}`,
-					);
+					throw new Error(`Failed to get current naming config: ${currentResponse.status}`);
 				}
 				const currentConfig = (await currentResponse.json()) as Record<string, unknown>;
 
 				// Merge payload onto current config
 				const mergedConfig = { ...currentConfig, ...payload };
 
-				const applyResponse = await this.arrClientFactory.rawRequest(
-					config.instance,
-					apiPath,
-					{
-						method: "PUT",
-						body: mergedConfig,
-					},
-				);
+				const applyResponse = await this.arrClientFactory.rawRequest(config.instance, apiPath, {
+					method: "PUT",
+					body: mergedConfig,
+				});
 
 				if (!applyResponse.ok) {
 					throw new Error(
@@ -816,9 +804,7 @@ export class UpdateScheduler {
 				});
 
 				result.autoSynced++;
-				this.logger.info(
-					`Auto-synced naming config for ${config.instance.label}`,
-				);
+				this.logger.info(`Auto-synced naming config for ${config.instance.label}`);
 			} catch (error) {
 				result.errors.push(
 					`Naming sync failed for instance ${config.instance?.label ?? config.instanceId}: ${getErrorMessage(error)}`,

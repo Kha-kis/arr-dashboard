@@ -49,7 +49,8 @@ export function aggregateUserEpisodeCompletion(
 				if (Array.isArray(parsed)) users = parsed;
 			} catch {
 				parseFailures++;
-				if (failedPreviews.length < 5) failedPreviews.push(`watchedByUsers: ${ep.watchedByUsers.slice(0, 80)}`);
+				if (failedPreviews.length < 5)
+					failedPreviews.push(`watchedByUsers: ${ep.watchedByUsers.slice(0, 80)}`);
 			}
 
 			for (const user of users) {

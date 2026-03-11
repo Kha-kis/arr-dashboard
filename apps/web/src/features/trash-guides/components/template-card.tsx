@@ -77,7 +77,13 @@ function countNamingPresets(ns: NamingSelectedPresets): number {
 	if (ns.serviceType === "RADARR") {
 		return [ns.filePreset, ns.folderPreset].filter(Boolean).length;
 	}
-	return [ns.standardEpisodePreset, ns.dailyEpisodePreset, ns.animeEpisodePreset, ns.seriesFolderPreset, ns.seasonFolderPreset].filter(Boolean).length;
+	return [
+		ns.standardEpisodePreset,
+		ns.dailyEpisodePreset,
+		ns.animeEpisodePreset,
+		ns.seriesFolderPreset,
+		ns.seasonFolderPreset,
+	].filter(Boolean).length;
 }
 
 export const TemplateCard = ({

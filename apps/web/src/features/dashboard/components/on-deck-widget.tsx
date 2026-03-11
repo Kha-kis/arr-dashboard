@@ -12,10 +12,7 @@ interface OnDeckWidgetProps {
 	animationDelay?: number;
 }
 
-export const OnDeckWidget = ({
-	enabled,
-	animationDelay = 0,
-}: OnDeckWidgetProps) => {
+export const OnDeckWidget = ({ enabled, animationDelay = 0 }: OnDeckWidgetProps) => {
 	const { data, isLoading, isError } = useOnDeck(enabled);
 
 	if (!enabled || isLoading || isError || !data?.items?.length) return null;
@@ -75,9 +72,7 @@ export const OnDeckWidget = ({
 									<p className="text-sm font-medium text-foreground truncate" title={item.title}>
 										{item.title}
 									</p>
-									<p className="text-xs text-muted-foreground truncate mt-1">
-										{item.instanceName}
-									</p>
+									<p className="text-xs text-muted-foreground truncate mt-1">{item.instanceName}</p>
 								</div>
 							);
 						})}

@@ -326,9 +326,7 @@ export function evaluateQueueItem(
 			return importBlockResult;
 		}
 		const statusSummary =
-			statusTexts.length > 0
-				? statusTexts.slice(0, 2).join("; ")
-				: "import failed, pending retry";
+			statusTexts.length > 0 ? statusTexts.slice(0, 2).join("; ") : "import failed, pending retry";
 		return {
 			rule: "import_blocked",
 			reason: `Import failed (pending retry): ${statusSummary}`,

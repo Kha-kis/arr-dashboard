@@ -28,7 +28,10 @@ export async function registerSeriesProgressRoutes(
 	 */
 	app.get("/", async (request, reply) => {
 		const { tmdbIds: tmdbIdsRaw } = validateRequest(progressQuery, request.query);
-		const tmdbIds = tmdbIdsRaw.split(",").map(Number).filter((id) => Number.isFinite(id) && id > 0);
+		const tmdbIds = tmdbIdsRaw
+			.split(",")
+			.map(Number)
+			.filter((id) => Number.isFinite(id) && id > 0);
 		const userId = request.currentUser!.id;
 
 		if (tmdbIds.length === 0) {

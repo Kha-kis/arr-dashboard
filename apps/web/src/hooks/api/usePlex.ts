@@ -104,10 +104,7 @@ export const useWatchEnrichment = (items: LibraryItem[]) => {
 		const tmdbIds: number[] = [];
 		const types: string[] = [];
 		for (const item of items) {
-			if (
-				(item.service === "sonarr" || item.service === "radarr") &&
-				item.remoteIds?.tmdbId
-			) {
+			if ((item.service === "sonarr" || item.service === "radarr") && item.remoteIds?.tmdbId) {
 				tmdbIds.push(item.remoteIds.tmdbId);
 				types.push(item.type === "movie" ? "movie" : "series");
 			}
@@ -199,9 +196,12 @@ export const usePlexTags = (instanceId: string | null | undefined) => {
 
 export const usePlexTagMutation = () => {
 	const queryClient = useQueryClient();
-	return useMutation<void, Error, { instanceId: string; ratingKey: string; update: PlexTagUpdateRequest }>({
-		mutationFn: ({ instanceId, ratingKey, update }) =>
-			updatePlexTag(instanceId, ratingKey, update),
+	return useMutation<
+		void,
+		Error,
+		{ instanceId: string; ratingKey: string; update: PlexTagUpdateRequest }
+	>({
+		mutationFn: ({ instanceId, ratingKey, update }) => updatePlexTag(instanceId, ratingKey, update),
 		onSuccess: (_data, variables) => {
 			queryClient.invalidateQueries({ queryKey: plexKeys.tags(variables.instanceId) });
 		},

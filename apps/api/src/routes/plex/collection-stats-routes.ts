@@ -33,9 +33,13 @@ export async function registerCollectionStatsRoutes(
 			take: 10000,
 		});
 
-		const { parseFailures, totalEntries, failedPreviews, ...stats } = aggregateCollectionStats(entries);
+		const { parseFailures, totalEntries, failedPreviews, ...stats } =
+			aggregateCollectionStats(entries);
 		if (parseFailures > 0) {
-			request.log.warn({ parseFailures, totalEntries, failedPreviews, route: "collection-stats" }, "PlexCache JSON parse failures detected");
+			request.log.warn(
+				{ parseFailures, totalEntries, failedPreviews, route: "collection-stats" },
+				"PlexCache JSON parse failures detected",
+			);
 		}
 		return reply.send(stats);
 	});

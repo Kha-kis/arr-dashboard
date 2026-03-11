@@ -49,11 +49,25 @@ function computeState(consecutiveFailures: number): HealthState {
 class IntegrationHealthRegistry {
 	private readonly data = new Map<string, IntegrationHealth>();
 	private _resetAt: string | null = null;
-	private _notifyFn: ((payload: { eventType: string; title: string; body: string; metadata: Record<string, string> }) => void) | null = null;
+	private _notifyFn:
+		| ((payload: {
+				eventType: string;
+				title: string;
+				body: string;
+				metadata: Record<string, string>;
+		  }) => void)
+		| null = null;
 	private readonly _lastNotifiedAt = new Map<string, number>();
 
 	/** Set a callback for health degradation notifications */
-	setNotifyFn(fn: (payload: { eventType: string; title: string; body: string; metadata: Record<string, string> }) => void): void {
+	setNotifyFn(
+		fn: (payload: {
+			eventType: string;
+			title: string;
+			body: string;
+			metadata: Record<string, string>;
+		}) => void,
+	): void {
 		this._notifyFn = fn;
 	}
 
@@ -103,7 +117,10 @@ class IntegrationHealthRegistry {
 		health.state = computeState(health.consecutiveFailures);
 
 		// Notify on state degradation
-		if (previousState === "healthy" && (health.state === "degraded" || health.state === "failing")) {
+		if (
+			previousState === "healthy" &&
+			(health.state === "degraded" || health.state === "failing")
+		) {
 			this.maybeNotify(integration, health);
 		}
 	}

@@ -144,7 +144,10 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(404).send({ error: "Service instance not found" });
 		}
 
-		request.log.info({ service: fresh.service, label: fresh.label, instanceId: id }, "Service instance updated");
+		request.log.info(
+			{ service: fresh.service, label: fresh.label, instanceId: id },
+			"Service instance updated",
+		);
 
 		return reply.send({
 			service: formatServiceInstance(fresh),

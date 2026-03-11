@@ -75,7 +75,12 @@ const EVENT_GROUPS: Array<{ label: string; events: NotificationEventType[] }> = 
 	},
 	{
 		label: "Cache & Plex",
-		events: ["CACHE_REFRESH_STALE", "PLEX_CONCURRENT_PEAK", "PLEX_TRANSCODE_HEAVY", "PLEX_NEW_DEVICE"],
+		events: [
+			"CACHE_REFRESH_STALE",
+			"PLEX_CONCURRENT_PEAK",
+			"PLEX_TRANSCODE_HEAVY",
+			"PLEX_NEW_DEVICE",
+		],
 	},
 	{
 		label: "System",
@@ -244,10 +249,7 @@ export function SubscriptionGrid() {
 										className="border-b border-border/20 bg-card/20 cursor-pointer select-none"
 										onClick={() => toggleGroup(group.label)}
 									>
-										<td
-											colSpan={channels.length + 1}
-											className="px-4 py-2"
-										>
+										<td colSpan={channels.length + 1} className="px-4 py-2">
 											<div className="flex items-center gap-2">
 												{isCollapsed ? (
 													<ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
@@ -269,56 +271,47 @@ export function SubscriptionGrid() {
 									// Event rows (hidden when collapsed)
 									...(!isCollapsed
 										? groupEvents.map((event) => (
-											<tr
-												key={event}
-												className="border-b border-border/10 hover:bg-card/20"
-											>
-												<td className="px-4 py-2.5 pl-9">
-													<span className="text-foreground">
-														{EVENT_LABELS[event] ?? event}
-													</span>
-												</td>
-												{channels.map((ch) => {
-													const isChecked = (localSubs[event] ?? []).includes(ch.id);
-													return (
-														<td key={ch.id} className="px-3 py-2.5 text-center">
-															<button
-																type="button"
-																onClick={() => toggleSubscription(event, ch.id)}
-																className={`h-5 w-5 rounded border transition-colors ${
-																	isChecked
-																		? "border-transparent"
-																		: "border-border/50 bg-background/30"
-																}`}
-																style={
-																	isChecked
-																		? { backgroundColor: gradient.from }
-																		: undefined
-																}
-																aria-label={`${isChecked ? "Unsubscribe" : "Subscribe"} ${ch.name} from ${EVENT_LABELS[event] ?? event}`}
-															>
-																{isChecked && (
-																	<svg
-																		className="h-5 w-5 text-white"
-																		fill="none"
-																		viewBox="0 0 24 24"
-																		stroke="currentColor"
-																		strokeWidth={3}
-																		aria-hidden="true"
-																	>
-																		<path
-																			strokeLinecap="round"
-																			strokeLinejoin="round"
-																			d="M5 13l4 4L19 7"
-																		/>
-																	</svg>
-																)}
-															</button>
-														</td>
-													);
-												})}
-											</tr>
-										))
+												<tr key={event} className="border-b border-border/10 hover:bg-card/20">
+													<td className="px-4 py-2.5 pl-9">
+														<span className="text-foreground">{EVENT_LABELS[event] ?? event}</span>
+													</td>
+													{channels.map((ch) => {
+														const isChecked = (localSubs[event] ?? []).includes(ch.id);
+														return (
+															<td key={ch.id} className="px-3 py-2.5 text-center">
+																<button
+																	type="button"
+																	onClick={() => toggleSubscription(event, ch.id)}
+																	className={`h-5 w-5 rounded border transition-colors ${
+																		isChecked
+																			? "border-transparent"
+																			: "border-border/50 bg-background/30"
+																	}`}
+																	style={isChecked ? { backgroundColor: gradient.from } : undefined}
+																	aria-label={`${isChecked ? "Unsubscribe" : "Subscribe"} ${ch.name} from ${EVENT_LABELS[event] ?? event}`}
+																>
+																	{isChecked && (
+																		<svg
+																			className="h-5 w-5 text-white"
+																			fill="none"
+																			viewBox="0 0 24 24"
+																			stroke="currentColor"
+																			strokeWidth={3}
+																			aria-hidden="true"
+																		>
+																			<path
+																				strokeLinecap="round"
+																				strokeLinejoin="round"
+																				d="M5 13l4 4L19 7"
+																			/>
+																		</svg>
+																	)}
+																</button>
+															</td>
+														);
+													})}
+												</tr>
+											))
 										: []),
 								];
 							})}

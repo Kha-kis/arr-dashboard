@@ -1,4 +1,4 @@
-import { createReadStream } from "node:fs";
+import { createReadStream, existsSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import type { FastifyPluginCallback } from "fastify";
@@ -7,7 +7,11 @@ import { getAppVersionInfo } from "../lib/utils/version.js";
 import { integrationHealth } from "../lib/validation/integration-health.js";
 import { schemaFingerprints } from "../lib/validation/schema-fingerprint.js";
 import { KNOWN_INTEGRATIONS } from "../lib/validation/index.js";
-import { type ValidationMode, getAllValidationModes, setValidationMode } from "../lib/validation/validate-batch.js";
+import {
+	type ValidationMode,
+	getAllValidationModes,
+	setValidationMode,
+} from "../lib/validation/validate-batch.js";
 import { validationQuarantine } from "../lib/validation/validation-quarantine.js";
 
 const RESTART_RATE_LIMIT = { max: 2, timeWindow: "5 minutes" };
@@ -31,7 +35,10 @@ function getDatabaseHost(dbUrl: string, provider: "sqlite" | "postgresql"): stri
 const APP_VERSION_INFO = getAppVersionInfo();
 
 const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
-	app.log.info({ version: APP_VERSION_INFO.version, commit: APP_VERSION_INFO.commitSha }, "App version detected");
+	app.log.info(
+		{ version: APP_VERSION_INFO.version, commit: APP_VERSION_INFO.commitSha },
+		"App version detected",
+	);
 	/**
 	 * GET /system/settings
 	 * Get system-wide settings (ports, listen address, app name, etc.)
@@ -154,7 +161,11 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				error: "trustProxy must be a boolean",
 			});
 		}
-		if (secureCookies !== undefined && secureCookies !== null && typeof secureCookies !== "boolean") {
+		if (
+			secureCookies !== undefined &&
+			secureCookies !== null &&
+			typeof secureCookies !== "boolean"
+		) {
 			return reply.status(400).send({
 				success: false,
 				error: "secureCookies must be a boolean or null",
@@ -177,7 +188,8 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		if (effectiveSecureCookies === true && !effectiveTrustProxy) {
 			return reply.status(400).send({
 				success: false,
-				error: "Cannot enable secure cookies without Trust Proxy. Secure cookies require HTTPS, which is typically provided by a reverse proxy.",
+				error:
+					"Cannot enable secure cookies without Trust Proxy. Secure cookies require HTTPS, which is typically provided by a reverse proxy.",
 			});
 		}
 
@@ -308,7 +320,7 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				},
 				logging: {
 					level: LOG_LEVEL,
-					directory: LOG_DIR,
+					logFileEnabled: existsSync(LOG_DIR),
 					maxFileSize: LOG_MAX_SIZE,
 					maxFiles: LOG_MAX_FILES,
 				},
@@ -505,10 +517,19 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Returns quarantined (rejected) validation items for inspection.
 	 */
 	app.get("/validation-quarantine", async (_request, reply) => {
+		// Strip raw payloads — may contain tokens or PII from upstream APIs
+		const allItems = validationQuarantine.getAll();
+		const sanitized: Record<
+			string,
+			Array<{ errors: string[]; integration: string; category: string; timestamp: string }>
+		> = {};
+		for (const [key, items] of Object.entries(allItems)) {
+			sanitized[key] = items.map(({ raw: _raw, ...rest }) => rest);
+		}
 		return reply.send({
 			success: true,
 			data: {
-				items: validationQuarantine.getAll(),
+				items: sanitized,
 				totalCount: validationQuarantine.count,
 			},
 		});

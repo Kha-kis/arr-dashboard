@@ -160,7 +160,14 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		// Get user's Sonarr + Radarr instances (full fields for client creation)
 		const instances = await app.prisma.serviceInstance.findMany({
 			where: { userId, service: { in: ["SONARR", "RADARR"] } },
-			select: { id: true, baseUrl: true, encryptedApiKey: true, encryptionIv: true, service: true, label: true },
+			select: {
+				id: true,
+				baseUrl: true,
+				encryptedApiKey: true,
+				encryptionIv: true,
+				service: true,
+				label: true,
+			},
 		});
 		const instanceIds = instances.map((i) => i.id);
 
@@ -292,7 +299,10 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 					}
 				}
 			} catch (err) {
-				request.log.debug({ err, instanceId: inst.id }, "Failed to fetch tags from instance, skipping");
+				request.log.debug(
+					{ err, instanceId: inst.id },
+					"Failed to fetch tags from instance, skipping",
+				);
 			}
 		}
 		arrTags.sort((a, b) => a.label.localeCompare(b.label));
@@ -316,7 +326,10 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		};
 
 		// Store in cache
-		fieldOptionsCache.set(userId, { data: result, expiresAt: Date.now() + FIELD_OPTIONS_CACHE_TTL });
+		fieldOptionsCache.set(userId, {
+			data: result,
+			expiresAt: Date.now() + FIELD_OPTIONS_CACHE_TTL,
+		});
 
 		return reply.send(result);
 	});
@@ -376,7 +389,11 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		const data = validateRequest(createCleanupRuleSchema, request.body);
 
 		// Write-time parameter validation: validate params against type-specific schema
-		const paramValidationError = validateRuleParameters(data.ruleType, data.parameters, data.conditions ?? null);
+		const paramValidationError = validateRuleParameters(
+			data.ruleType,
+			data.parameters,
+			data.conditions ?? null,
+		);
 		if (paramValidationError) {
 			return reply.status(400).send({ error: paramValidationError });
 		}
@@ -400,9 +417,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 				instanceFilter: data.instanceFilter ? JSON.stringify(data.instanceFilter) : null,
 				excludeTags: data.excludeTags ? JSON.stringify(data.excludeTags) : null,
 				excludeTitles: data.excludeTitles ? JSON.stringify(data.excludeTitles) : null,
-				plexLibraryFilter: data.plexLibraryFilter
-					? JSON.stringify(data.plexLibraryFilter)
-					: null,
+				plexLibraryFilter: data.plexLibraryFilter ? JSON.stringify(data.plexLibraryFilter) : null,
 				action: data.action ?? "delete",
 				operator: data.operator ?? null,
 				conditions: data.conditions ? JSON.stringify(data.conditions) : null,
@@ -472,10 +487,25 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 
 		// Write-time parameter validation (when ruleType or parameters are changed)
 		const effectiveRuleType = data.ruleType ?? existing.ruleType;
-		const effectiveParams = data.parameters ?? (utilSafeJsonParse(existing.parameters) as Record<string, unknown>);
-		const effectiveConditions = data.conditions !== undefined ? data.conditions : (utilSafeJsonParse(existing.conditions ?? "") as Array<{ ruleType: string; parameters: Record<string, unknown> }> | null);
-		if (data.ruleType !== undefined || data.parameters !== undefined || data.conditions !== undefined) {
-			const paramValidationError = validateRuleParameters(effectiveRuleType, effectiveParams ?? {}, effectiveConditions ?? null);
+		const effectiveParams =
+			data.parameters ?? (utilSafeJsonParse(existing.parameters) as Record<string, unknown>);
+		const effectiveConditions =
+			data.conditions !== undefined
+				? data.conditions
+				: (utilSafeJsonParse(existing.conditions ?? "") as Array<{
+						ruleType: string;
+						parameters: Record<string, unknown>;
+					}> | null);
+		if (
+			data.ruleType !== undefined ||
+			data.parameters !== undefined ||
+			data.conditions !== undefined
+		) {
+			const paramValidationError = validateRuleParameters(
+				effectiveRuleType,
+				effectiveParams ?? {},
+				effectiveConditions ?? null,
+			);
 			if (paramValidationError) {
 				return reply.status(400).send({ error: paramValidationError });
 			}
@@ -550,23 +580,25 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 				);
 
 				// Enrich with instance labels (same pattern as approval queue)
-			const distinctInstanceIds = [...new Set(result.details.map((d) => d.instanceId))];
-			const instanceLabelMap = new Map<string, string>();
-			if (distinctInstanceIds.length > 0) {
-				const instances = await app.prisma.serviceInstance.findMany({
-					where: { id: { in: distinctInstanceIds }, userId },
-					select: { id: true, label: true },
-				});
-				for (const inst of instances) {
-					if (inst.label) instanceLabelMap.set(inst.id, inst.label);
+				const distinctInstanceIds = [...new Set(result.details.map((d) => d.instanceId))];
+				const instanceLabelMap = new Map<string, string>();
+				if (distinctInstanceIds.length > 0) {
+					const instances = await app.prisma.serviceInstance.findMany({
+						where: { id: { in: distinctInstanceIds }, userId },
+						select: { id: true, label: true },
+					});
+					for (const inst of instances) {
+						if (inst.label) instanceLabelMap.set(inst.id, inst.label);
+					}
 				}
-			}
 
-			const MAX_PREVIEW_ITEMS = 200;
-			const truncated = result.details.length > MAX_PREVIEW_ITEMS;
-			const previewDetails = truncated ? result.details.slice(0, MAX_PREVIEW_ITEMS) : result.details;
+				const MAX_PREVIEW_ITEMS = 200;
+				const truncated = result.details.length > MAX_PREVIEW_ITEMS;
+				const previewDetails = truncated
+					? result.details.slice(0, MAX_PREVIEW_ITEMS)
+					: result.details;
 
-			return reply.send({
+				return reply.send({
 					totalEvaluated: result.itemsEvaluated,
 					totalFlagged: result.itemsFlagged,
 					items: previewDetails.map((d) => ({
@@ -585,7 +617,9 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 					prefetchHealth: result.prefetchHealth,
 					warnings: [
 						...(result.warnings ?? []),
-						...(truncated ? [`Showing ${MAX_PREVIEW_ITEMS} of ${result.details.length} flagged items`] : []),
+						...(truncated
+							? [`Showing ${MAX_PREVIEW_ITEMS} of ${result.details.length} flagged items`]
+							: []),
 					],
 				});
 			} catch (error) {
@@ -849,7 +883,9 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		});
 
 		return reply.send({
-			lastRunAt: lastLog?.startedAt ? lastLog.startedAt.toISOString() : config.lastRunAt?.toISOString() ?? null,
+			lastRunAt: lastLog?.startedAt
+				? lastLog.startedAt.toISOString()
+				: (config.lastRunAt?.toISOString() ?? null),
 			lastResult: lastLog?.status ?? null,
 			lastErrorMessage: lastLog?.error ?? null,
 			prefetchHealth: lastLog?.prefetchHealth ? safeJsonParse(lastLog.prefetchHealth) : null,
@@ -881,10 +917,20 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		const cacheItem = await app.prisma.libraryCache.findFirst({
 			where: { instanceId, arrItemId },
 			select: {
-				id: true, instanceId: true, arrItemId: true, itemType: true,
-				title: true, year: true, monitored: true, hasFile: true,
-				status: true, qualityProfileId: true, qualityProfileName: true,
-				sizeOnDisk: true, arrAddedAt: true, data: true,
+				id: true,
+				instanceId: true,
+				arrItemId: true,
+				itemType: true,
+				title: true,
+				year: true,
+				monitored: true,
+				hasFile: true,
+				status: true,
+				qualityProfileId: true,
+				qualityProfileName: true,
+				sizeOnDisk: true,
+				arrAddedAt: true,
+				data: true,
 			},
 		});
 		if (!cacheItem) {
@@ -898,7 +944,12 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		});
 		if (!config || config.rules.length === 0) {
 			return reply.send({
-				item: { title: cacheItem.title, year: cacheItem.year, instanceId, itemType: cacheItem.itemType },
+				item: {
+					title: cacheItem.title,
+					year: cacheItem.year,
+					instanceId,
+					itemType: cacheItem.itemType,
+				},
 				results: [],
 				retentionProtected: false,
 			});
@@ -922,7 +973,12 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		const retentionProtected = results.some((r) => r.retentionMode && r.matched);
 
 		return reply.send({
-			item: { title: cacheItem.title, year: cacheItem.year, instanceId, itemType: cacheItem.itemType },
+			item: {
+				title: cacheItem.title,
+				year: cacheItem.year,
+				instanceId,
+				itemType: cacheItem.itemType,
+			},
 			results,
 			retentionProtected,
 		});
@@ -999,7 +1055,10 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			totalFilesDeleted += log.itemsFilesDeleted;
 
 			// Parse details for rule effectiveness
-			const details = safeJsonParse(log.details as string) as Array<{ ruleId?: string; rule?: string }> | null;
+			const details = safeJsonParse(log.details as string) as Array<{
+				ruleId?: string;
+				rule?: string;
+			}> | null;
 			if (Array.isArray(details)) {
 				for (const d of details) {
 					if (d.ruleId) {
@@ -1072,7 +1131,8 @@ function validateRuleParameters(
 				const result = schema.safeParse(cond.parameters);
 				if (!result.success) {
 					const flat = result.error.flatten();
-					const msgs = Object.values(flat.fieldErrors).flat().join(", ") || flat.formErrors.join(", ");
+					const msgs =
+						Object.values(flat.fieldErrors).flat().join(", ") || flat.formErrors.join(", ");
 					return `Invalid parameters for condition[${i}] (${cond.ruleType}): ${msgs}`;
 				}
 			}

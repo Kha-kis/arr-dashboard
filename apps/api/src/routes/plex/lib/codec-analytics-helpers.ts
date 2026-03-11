@@ -70,9 +70,29 @@ export function aggregateCodecAnalytics(snapshots: SnapshotForCodec[]): CodecAgg
 			}))
 			.sort((a, b) => b.count - a.count);
 
-	const videoCodecs = toSorted(videoCodecMap).map(({ key, count, percent }) => ({ codec: key, count, percent }));
-	const audioCodecs = toSorted(audioCodecMap).map(({ key, count, percent }) => ({ codec: key, count, percent }));
-	const resolutions = toSorted(resolutionMap).map(({ key, count, percent }) => ({ resolution: key, count, percent }));
+	const videoCodecs = toSorted(videoCodecMap).map(({ key, count, percent }) => ({
+		codec: key,
+		count,
+		percent,
+	}));
+	const audioCodecs = toSorted(audioCodecMap).map(({ key, count, percent }) => ({
+		codec: key,
+		count,
+		percent,
+	}));
+	const resolutions = toSorted(resolutionMap).map(({ key, count, percent }) => ({
+		resolution: key,
+		count,
+		percent,
+	}));
 
-	return { videoCodecs, audioCodecs, resolutions, totalSessions, parseFailures, totalSnapshots: snapshots.length, failedPreviews };
+	return {
+		videoCodecs,
+		audioCodecs,
+		resolutions,
+		totalSessions,
+		parseFailures,
+		totalSnapshots: snapshots.length,
+		failedPreviews,
+	};
 }

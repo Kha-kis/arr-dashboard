@@ -44,9 +44,7 @@ const RequestDetailModal = lazy(() =>
 	import("./request-detail-modal").then((m) => ({ default: m.RequestDetailModal })),
 );
 
-const AuditLogTab = lazy(() =>
-	import("./audit-log-tab").then((m) => ({ default: m.AuditLogTab })),
-);
+const AuditLogTab = lazy(() => import("./audit-log-tab").then((m) => ({ default: m.AuditLogTab })));
 
 export type RequestsTab = "approval" | "all" | "users" | "issues" | "notifications" | "history";
 

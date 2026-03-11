@@ -114,9 +114,7 @@ export function parseUpstream<T>(
 		return { success: true, data: result.data };
 	}
 
-	const issues = result.error.issues.map(
-		(issue) => `${issue.path.join(".")}: ${issue.message}`,
-	);
+	const issues = result.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`);
 
 	integrationHealth.record(source.integration, source.category, {
 		total: 1,

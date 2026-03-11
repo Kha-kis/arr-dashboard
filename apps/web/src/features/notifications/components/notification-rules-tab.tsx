@@ -119,10 +119,7 @@ export function NotificationRulesTab() {
 		if (!payload.name) return;
 
 		if (editingRule) {
-			updateRule.mutate(
-				{ id: editingRule.id, data: payload },
-				{ onSuccess: cancelForm },
-			);
+			updateRule.mutate({ id: editingRule.id, data: payload }, { onSuccess: cancelForm });
 		} else {
 			createRule.mutate(payload, { onSuccess: cancelForm });
 		}
@@ -233,9 +230,7 @@ export function NotificationRulesTab() {
 									min={0}
 									max={1000}
 									value={formData.priority}
-									onChange={(e) =>
-										setFormData((p) => ({ ...p, priority: Number(e.target.value) }))
-									}
+									onChange={(e) => setFormData((p) => ({ ...p, priority: Number(e.target.value) }))}
 									className={inputClass}
 									onFocus={(e) => (e.target.style.borderColor = gradient.from)}
 									onBlur={(e) => (e.target.style.borderColor = "")}
@@ -260,9 +255,7 @@ export function NotificationRulesTab() {
 												: "text-muted-foreground border-border/50 bg-card/30 hover:text-foreground"
 										}`}
 										style={
-											formData.action === action
-												? { backgroundColor: gradient.from }
-												: undefined
+											formData.action === action ? { backgroundColor: gradient.from } : undefined
 										}
 									>
 										{ACTION_LABELS[action]}
@@ -459,9 +452,7 @@ export function NotificationRulesTab() {
 										>
 											{ACTION_LABELS[rule.action]}
 										</span>
-										<span className="text-xs text-muted-foreground">
-											Priority {rule.priority}
-										</span>
+										<span className="text-xs text-muted-foreground">Priority {rule.priority}</span>
 									</div>
 									<p className="text-xs text-muted-foreground">
 										{rule.conditions.length} condition
@@ -504,11 +495,7 @@ export function NotificationRulesTab() {
 										className={`rounded-md p-2 text-muted-foreground hover:bg-card/50 transition-colors ${
 											confirmDeleteId === rule.id ? "text-red-400" : "hover:text-red-400"
 										}`}
-										title={
-											confirmDeleteId === rule.id
-												? "Click again to confirm"
-												: "Delete rule"
-										}
+										title={confirmDeleteId === rule.id ? "Click again to confirm" : "Delete rule"}
 									>
 										{confirmDeleteId === rule.id ? (
 											<span className="text-xs font-medium">Confirm?</span>

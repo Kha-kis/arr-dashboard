@@ -53,7 +53,13 @@ const ForecastLine = ({
 		<svg width={width} height={height} className="overflow-visible">
 			{/* Historical area + line */}
 			<path d={histArea} fill={historicalColor} opacity={0.1} />
-			<path d={`M${histLine}`} fill="none" stroke={historicalColor} strokeWidth={2} strokeLinecap="round" />
+			<path
+				d={`M${histLine}`}
+				fill="none"
+				stroke={historicalColor}
+				strokeWidth={2}
+				strokeLinecap="round"
+			/>
 			{/* Forecast dashed line */}
 			{forePoints.length > 1 && (
 				<path
@@ -67,10 +73,20 @@ const ForecastLine = ({
 			)}
 			{/* End dots */}
 			{histPoints.length > 0 && (
-				<circle cx={histPoints[histPoints.length - 1]!.x} cy={histPoints[histPoints.length - 1]!.y} r={3} fill={historicalColor} />
+				<circle
+					cx={histPoints[histPoints.length - 1]!.x}
+					cy={histPoints[histPoints.length - 1]!.y}
+					r={3}
+					fill={historicalColor}
+				/>
 			)}
 			{forePoints.length > 0 && (
-				<circle cx={forePoints[forePoints.length - 1]!.x} cy={forePoints[forePoints.length - 1]!.y} r={3} fill={forecastColor} />
+				<circle
+					cx={forePoints[forePoints.length - 1]!.x}
+					cy={forePoints[forePoints.length - 1]!.y}
+					r={3}
+					fill={forecastColor}
+				/>
 			)}
 		</svg>
 	);
@@ -187,7 +203,10 @@ export const ForecastChart = ({ days, enabled }: ForecastChartProps) => {
 		);
 	}
 
-	const allDates = [...data.historicalDaily.map((d: { date: string }) => d.date), ...data.forecast.map((d: { date: string }) => d.date)];
+	const allDates = [
+		...data.historicalDaily.map((d: { date: string }) => d.date),
+		...data.forecast.map((d: { date: string }) => d.date),
+	];
 
 	return (
 		<div className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-xs p-6 space-y-5">
@@ -208,11 +227,17 @@ export const ForecastChart = ({ days, enabled }: ForecastChartProps) => {
 			<div>
 				<div className="flex gap-4 text-[10px] text-muted-foreground mb-2">
 					<span className="flex items-center gap-1.5">
-						<div className="h-0.5 w-4 rounded-full" style={{ backgroundColor: SERVICE_GRADIENTS.plex.from }} />
+						<div
+							className="h-0.5 w-4 rounded-full"
+							style={{ backgroundColor: SERVICE_GRADIENTS.plex.from }}
+						/>
 						Historical Peak
 					</span>
 					<span className="flex items-center gap-1.5">
-						<div className="h-0.5 w-4 rounded-full border-dashed border-t-2" style={{ borderColor: SEMANTIC_COLORS.info.text }} />
+						<div
+							className="h-0.5 w-4 rounded-full border-dashed border-t-2"
+							style={{ borderColor: SEMANTIC_COLORS.info.text }}
+						/>
 						Projected
 					</span>
 				</div>

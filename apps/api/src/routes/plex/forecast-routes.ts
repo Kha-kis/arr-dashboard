@@ -11,10 +11,7 @@ import { validateRequest } from "../../lib/utils/validate.js";
 import { analyticsQuery } from "./analytics-schemas.js";
 import { computeForecast } from "./lib/forecast-helpers.js";
 
-export async function registerForecastRoutes(
-	app: FastifyInstance,
-	_opts: FastifyPluginOptions,
-) {
+export async function registerForecastRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	app.get("/", async (request, reply) => {
 		const { days } = validateRequest(analyticsQuery, request.query);
 		const userId = request.currentUser!.id;

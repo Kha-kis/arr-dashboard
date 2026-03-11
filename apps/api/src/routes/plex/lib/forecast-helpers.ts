@@ -15,7 +15,10 @@ export interface SnapshotForForecast {
 }
 
 /** Simple linear regression on (x, y) data points */
-export function linearRegression(points: Array<{ x: number; y: number }>): { slope: number; intercept: number } {
+export function linearRegression(points: Array<{ x: number; y: number }>): {
+	slope: number;
+	intercept: number;
+} {
 	const n = points.length;
 	if (n < 2) return { slope: 0, intercept: points[0]?.y ?? 0 };
 
@@ -122,9 +125,10 @@ export function computeForecast(
 		}));
 
 	// Determine trend from slope
-	const avgPeak = historicalDaily.length > 0
-		? historicalDaily.reduce((s, d) => s + d.peakBandwidth, 0) / historicalDaily.length
-		: 0;
+	const avgPeak =
+		historicalDaily.length > 0
+			? historicalDaily.reduce((s, d) => s + d.peakBandwidth, 0) / historicalDaily.length
+			: 0;
 	// If slope > 5% of average per day, it's increasing; < -5% is decreasing
 	const threshold = avgPeak * 0.05;
 	const trend: BandwidthForecast["trend"] =

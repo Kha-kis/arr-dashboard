@@ -41,9 +41,13 @@ export async function registerDeviceAnalyticsRoutes(
 			take: 50000,
 		});
 
-		const { parseFailures, totalSnapshots, failedPreviews, ...analytics } = aggregateDeviceAnalytics(snapshots);
+		const { parseFailures, totalSnapshots, failedPreviews, ...analytics } =
+			aggregateDeviceAnalytics(snapshots);
 		if (parseFailures > 0) {
-			request.log.warn({ parseFailures, totalSnapshots, failedPreviews, route: "device-analytics" }, "Session snapshot JSON parse failures detected");
+			request.log.warn(
+				{ parseFailures, totalSnapshots, failedPreviews, route: "device-analytics" },
+				"Session snapshot JSON parse failures detected",
+			);
 		}
 		return reply.send(analytics);
 	});

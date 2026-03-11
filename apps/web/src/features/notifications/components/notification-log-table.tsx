@@ -88,9 +88,7 @@ export function NotificationLogTable() {
 									? "text-white"
 									: "text-muted-foreground hover:text-foreground bg-card/30 border border-border/50"
 							}`}
-							style={
-								filters.status === opt.value ? { backgroundColor: gradient.from } : undefined
-							}
+							style={filters.status === opt.value ? { backgroundColor: gradient.from } : undefined}
 						>
 							{opt.label}
 						</button>
@@ -144,21 +142,15 @@ export function NotificationLogTable() {
 							<table className="w-full text-sm">
 								<thead>
 									<tr className="border-b border-border/30">
-										<th className="px-4 py-3 text-left text-muted-foreground font-medium">
-											Event
-										</th>
-										<th className="px-4 py-3 text-left text-muted-foreground font-medium">
-											Title
-										</th>
+										<th className="px-4 py-3 text-left text-muted-foreground font-medium">Event</th>
+										<th className="px-4 py-3 text-left text-muted-foreground font-medium">Title</th>
 										<th className="px-4 py-3 text-left text-muted-foreground font-medium">
 											Channel
 										</th>
 										<th className="px-4 py-3 text-left text-muted-foreground font-medium">
 											Status
 										</th>
-										<th className="px-4 py-3 text-left text-muted-foreground font-medium">
-											Sent
-										</th>
+										<th className="px-4 py-3 text-left text-muted-foreground font-medium">Sent</th>
 									</tr>
 								</thead>
 								<tbody>

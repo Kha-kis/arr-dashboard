@@ -36,14 +36,22 @@ const CircularGauge = ({
 				<svg width={size} height={size} className="-rotate-90">
 					{/* Background track */}
 					<circle
-						cx={cx} cy={cy} r={radius}
-						fill="none" stroke="currentColor" strokeWidth={strokeWidth}
+						cx={cx}
+						cy={cy}
+						r={radius}
+						fill="none"
+						stroke="currentColor"
+						strokeWidth={strokeWidth}
 						className="text-muted/20"
 					/>
 					{/* Progress arc */}
 					<circle
-						cx={cx} cy={cy} r={radius}
-						fill="none" stroke={color} strokeWidth={strokeWidth}
+						cx={cx}
+						cy={cy}
+						r={radius}
+						fill="none"
+						stroke={color}
+						strokeWidth={strokeWidth}
 						strokeDasharray={`${dashLength} ${circumference - dashLength}`}
 						strokeLinecap="round"
 						className="transition-all duration-700"
@@ -63,7 +71,12 @@ const CircularGauge = ({
 // Sparkline for daily trend
 // ============================================================================
 
-const TrendSparkline = ({ data, width = 600, height = 50, color }: {
+const TrendSparkline = ({
+	data,
+	width = 600,
+	height = 50,
+	color,
+}: {
 	data: Array<{ date: string; score: number }>;
 	width?: number;
 	height?: number;
@@ -89,7 +102,14 @@ const TrendSparkline = ({ data, width = 600, height = 50, color }: {
 	return (
 		<svg width={width} height={height} className="overflow-visible">
 			<path d={areaPath} fill={color} opacity={0.15} />
-			<path d={linePath} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+			<path
+				d={linePath}
+				fill="none"
+				stroke={color}
+				strokeWidth={2}
+				strokeLinecap="round"
+				strokeLinejoin="round"
+			/>
 			<circle
 				cx={Number(points[points.length - 1]?.split(",")[0])}
 				cy={Number(points[points.length - 1]?.split(",")[1])}
@@ -205,32 +225,37 @@ export const QualityScoreChart = ({ days, enabled }: QualityScoreChartProps) => 
 				<div>
 					<h4 className="text-xs text-muted-foreground mb-3">Per-User Quality</h4>
 					<div className="space-y-2">
-						{data.perUser.slice(0, 8).map((user: { username: string; score: number; sessions: number }) => (
-							<div key={user.username} className="flex items-center gap-3 text-xs">
-								<div
-									className="h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
-									style={{ backgroundColor: `${gradient.from}20`, color: gradient.from }}
-								>
-									{user.username.charAt(0).toUpperCase()}
-								</div>
-								<span className="w-20 truncate text-muted-foreground">{user.username}</span>
-								<div className="flex-1 h-3 rounded-full bg-muted/30 overflow-hidden">
+						{data.perUser
+							.slice(0, 8)
+							.map((user: { username: string; score: number; sessions: number }) => (
+								<div key={user.username} className="flex items-center gap-3 text-xs">
 									<div
-										className="h-full rounded-full transition-all duration-500"
-										style={{
-											width: `${user.score}%`,
-											backgroundColor: user.score >= 80
-												? SEMANTIC_COLORS.success.text
-												: user.score >= 50
-													? SEMANTIC_COLORS.warning.text
-													: SEMANTIC_COLORS.error.text,
-										}}
-									/>
+										className="h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
+										style={{ backgroundColor: `${gradient.from}20`, color: gradient.from }}
+									>
+										{user.username.charAt(0).toUpperCase()}
+									</div>
+									<span className="w-20 truncate text-muted-foreground">{user.username}</span>
+									<div className="flex-1 h-3 rounded-full bg-muted/30 overflow-hidden">
+										<div
+											className="h-full rounded-full transition-all duration-500"
+											style={{
+												width: `${user.score}%`,
+												backgroundColor:
+													user.score >= 80
+														? SEMANTIC_COLORS.success.text
+														: user.score >= 50
+															? SEMANTIC_COLORS.warning.text
+															: SEMANTIC_COLORS.error.text,
+											}}
+										/>
+									</div>
+									<span className="w-8 text-right font-medium tabular-nums">{user.score}</span>
+									<span className="w-12 text-right text-muted-foreground tabular-nums">
+										{user.sessions}s
+									</span>
 								</div>
-								<span className="w-8 text-right font-medium tabular-nums">{user.score}</span>
-								<span className="w-12 text-right text-muted-foreground tabular-nums">{user.sessions}s</span>
-							</div>
-						))}
+							))}
 					</div>
 				</div>
 			)}

@@ -200,7 +200,7 @@ export type TautulliCacheGroupByOutputType = {
   instanceId: string
   tmdbId: number
   mediaType: string
-  lastWatchedAt: Date
+  lastWatchedAt: Date | null
   watchCount: number
   watchedByUsers: string
   _count: TautulliCacheCountAggregateOutputType | null
@@ -233,7 +233,7 @@ export type TautulliCacheWhereInput = {
   instanceId?: Prisma.StringFilter<"TautulliCache"> | string
   tmdbId?: Prisma.IntFilter<"TautulliCache"> | number
   mediaType?: Prisma.StringFilter<"TautulliCache"> | string
-  lastWatchedAt?: Prisma.DateTimeFilter<"TautulliCache"> | Date | string
+  lastWatchedAt?: Prisma.DateTimeNullableFilter<"TautulliCache"> | Date | string | null
   watchCount?: Prisma.IntFilter<"TautulliCache"> | number
   watchedByUsers?: Prisma.StringFilter<"TautulliCache"> | string
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
@@ -244,7 +244,7 @@ export type TautulliCacheOrderByWithRelationInput = {
   instanceId?: Prisma.SortOrder
   tmdbId?: Prisma.SortOrder
   mediaType?: Prisma.SortOrder
-  lastWatchedAt?: Prisma.SortOrder
+  lastWatchedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   watchCount?: Prisma.SortOrder
   watchedByUsers?: Prisma.SortOrder
   instance?: Prisma.ServiceInstanceOrderByWithRelationInput
@@ -259,7 +259,7 @@ export type TautulliCacheWhereUniqueInput = Prisma.AtLeast<{
   instanceId?: Prisma.StringFilter<"TautulliCache"> | string
   tmdbId?: Prisma.IntFilter<"TautulliCache"> | number
   mediaType?: Prisma.StringFilter<"TautulliCache"> | string
-  lastWatchedAt?: Prisma.DateTimeFilter<"TautulliCache"> | Date | string
+  lastWatchedAt?: Prisma.DateTimeNullableFilter<"TautulliCache"> | Date | string | null
   watchCount?: Prisma.IntFilter<"TautulliCache"> | number
   watchedByUsers?: Prisma.StringFilter<"TautulliCache"> | string
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
@@ -270,7 +270,7 @@ export type TautulliCacheOrderByWithAggregationInput = {
   instanceId?: Prisma.SortOrder
   tmdbId?: Prisma.SortOrder
   mediaType?: Prisma.SortOrder
-  lastWatchedAt?: Prisma.SortOrder
+  lastWatchedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   watchCount?: Prisma.SortOrder
   watchedByUsers?: Prisma.SortOrder
   _count?: Prisma.TautulliCacheCountOrderByAggregateInput
@@ -288,7 +288,7 @@ export type TautulliCacheScalarWhereWithAggregatesInput = {
   instanceId?: Prisma.StringWithAggregatesFilter<"TautulliCache"> | string
   tmdbId?: Prisma.IntWithAggregatesFilter<"TautulliCache"> | number
   mediaType?: Prisma.StringWithAggregatesFilter<"TautulliCache"> | string
-  lastWatchedAt?: Prisma.DateTimeWithAggregatesFilter<"TautulliCache"> | Date | string
+  lastWatchedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"TautulliCache"> | Date | string | null
   watchCount?: Prisma.IntWithAggregatesFilter<"TautulliCache"> | number
   watchedByUsers?: Prisma.StringWithAggregatesFilter<"TautulliCache"> | string
 }
@@ -297,7 +297,7 @@ export type TautulliCacheCreateInput = {
   id?: string
   tmdbId: number
   mediaType: string
-  lastWatchedAt: Date | string
+  lastWatchedAt?: Date | string | null
   watchCount: number
   watchedByUsers: string
   instance: Prisma.ServiceInstanceCreateNestedOneWithoutTautulliCachesInput
@@ -308,7 +308,7 @@ export type TautulliCacheUncheckedCreateInput = {
   instanceId: string
   tmdbId: number
   mediaType: string
-  lastWatchedAt: Date | string
+  lastWatchedAt?: Date | string | null
   watchCount: number
   watchedByUsers: string
 }
@@ -317,7 +317,7 @@ export type TautulliCacheUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   tmdbId?: Prisma.IntFieldUpdateOperationsInput | number
   mediaType?: Prisma.StringFieldUpdateOperationsInput | string
-  lastWatchedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   watchCount?: Prisma.IntFieldUpdateOperationsInput | number
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
   instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutTautulliCachesNestedInput
@@ -328,7 +328,7 @@ export type TautulliCacheUncheckedUpdateInput = {
   instanceId?: Prisma.StringFieldUpdateOperationsInput | string
   tmdbId?: Prisma.IntFieldUpdateOperationsInput | number
   mediaType?: Prisma.StringFieldUpdateOperationsInput | string
-  lastWatchedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   watchCount?: Prisma.IntFieldUpdateOperationsInput | number
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
 }
@@ -338,7 +338,7 @@ export type TautulliCacheCreateManyInput = {
   instanceId: string
   tmdbId: number
   mediaType: string
-  lastWatchedAt: Date | string
+  lastWatchedAt?: Date | string | null
   watchCount: number
   watchedByUsers: string
 }
@@ -347,7 +347,7 @@ export type TautulliCacheUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   tmdbId?: Prisma.IntFieldUpdateOperationsInput | number
   mediaType?: Prisma.StringFieldUpdateOperationsInput | string
-  lastWatchedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   watchCount?: Prisma.IntFieldUpdateOperationsInput | number
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
 }
@@ -357,7 +357,7 @@ export type TautulliCacheUncheckedUpdateManyInput = {
   instanceId?: Prisma.StringFieldUpdateOperationsInput | string
   tmdbId?: Prisma.IntFieldUpdateOperationsInput | number
   mediaType?: Prisma.StringFieldUpdateOperationsInput | string
-  lastWatchedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   watchCount?: Prisma.IntFieldUpdateOperationsInput | number
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
 }
@@ -464,7 +464,7 @@ export type TautulliCacheCreateWithoutInstanceInput = {
   id?: string
   tmdbId: number
   mediaType: string
-  lastWatchedAt: Date | string
+  lastWatchedAt?: Date | string | null
   watchCount: number
   watchedByUsers: string
 }
@@ -473,7 +473,7 @@ export type TautulliCacheUncheckedCreateWithoutInstanceInput = {
   id?: string
   tmdbId: number
   mediaType: string
-  lastWatchedAt: Date | string
+  lastWatchedAt?: Date | string | null
   watchCount: number
   watchedByUsers: string
 }
@@ -511,7 +511,7 @@ export type TautulliCacheScalarWhereInput = {
   instanceId?: Prisma.StringFilter<"TautulliCache"> | string
   tmdbId?: Prisma.IntFilter<"TautulliCache"> | number
   mediaType?: Prisma.StringFilter<"TautulliCache"> | string
-  lastWatchedAt?: Prisma.DateTimeFilter<"TautulliCache"> | Date | string
+  lastWatchedAt?: Prisma.DateTimeNullableFilter<"TautulliCache"> | Date | string | null
   watchCount?: Prisma.IntFilter<"TautulliCache"> | number
   watchedByUsers?: Prisma.StringFilter<"TautulliCache"> | string
 }
@@ -520,7 +520,7 @@ export type TautulliCacheCreateManyInstanceInput = {
   id?: string
   tmdbId: number
   mediaType: string
-  lastWatchedAt: Date | string
+  lastWatchedAt?: Date | string | null
   watchCount: number
   watchedByUsers: string
 }
@@ -529,7 +529,7 @@ export type TautulliCacheUpdateWithoutInstanceInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   tmdbId?: Prisma.IntFieldUpdateOperationsInput | number
   mediaType?: Prisma.StringFieldUpdateOperationsInput | string
-  lastWatchedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   watchCount?: Prisma.IntFieldUpdateOperationsInput | number
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
 }
@@ -538,7 +538,7 @@ export type TautulliCacheUncheckedUpdateWithoutInstanceInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   tmdbId?: Prisma.IntFieldUpdateOperationsInput | number
   mediaType?: Prisma.StringFieldUpdateOperationsInput | string
-  lastWatchedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   watchCount?: Prisma.IntFieldUpdateOperationsInput | number
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
 }
@@ -547,7 +547,7 @@ export type TautulliCacheUncheckedUpdateManyWithoutInstanceInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   tmdbId?: Prisma.IntFieldUpdateOperationsInput | number
   mediaType?: Prisma.StringFieldUpdateOperationsInput | string
-  lastWatchedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   watchCount?: Prisma.IntFieldUpdateOperationsInput | number
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
 }
@@ -618,7 +618,7 @@ export type $TautulliCachePayload<ExtArgs extends runtime.Types.Extensions.Inter
     instanceId: string
     tmdbId: number
     mediaType: string
-    lastWatchedAt: Date
+    lastWatchedAt: Date | null
     watchCount: number
     watchedByUsers: string
   }, ExtArgs["result"]["tautulliCache"]>

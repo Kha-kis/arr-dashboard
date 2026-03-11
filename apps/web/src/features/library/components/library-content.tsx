@@ -1,6 +1,12 @@
 "use client";
 
-import type { LibraryEnrichmentItem, LibraryItem, SeriesProgressItem, ServiceInstanceSummary, WatchEnrichmentItem } from "@arr/shared";
+import type {
+	LibraryEnrichmentItem,
+	LibraryItem,
+	SeriesProgressItem,
+	ServiceInstanceSummary,
+	WatchEnrichmentItem,
+} from "@arr/shared";
 import { Library as LibraryIcon } from "lucide-react";
 import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
 import { Pagination } from "../../../components/ui";
