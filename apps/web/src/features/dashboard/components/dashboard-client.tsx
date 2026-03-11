@@ -47,7 +47,6 @@ import { useDashboardFilters } from "../hooks/useDashboardFilters";
 import { useDashboardQueue } from "../hooks/useDashboardQueue";
 import { CacheHealthBanner } from "./cache-health-banner";
 import { type DashboardTab, DashboardTabs } from "./dashboard-tabs";
-import { DiskUsageWidget } from "./disk-usage-widget";
 import { NowPlayingWidget } from "./now-playing-widget";
 import { OnDeckWidget } from "./on-deck-widget";
 import { PlexServerInfoWidget } from "./plex-server-info-widget";
@@ -713,7 +712,6 @@ export const DashboardClient = () => {
 								</div>
 								{/* Right column */}
 								<div className="space-y-6">
-									<DiskUsageWidget combinedDisk={stats?.combinedDisk} animationDelay={425} />
 									<PlexServerInfoWidget
 										enabled={hasPlexInstances}
 										animationDelay={475}
