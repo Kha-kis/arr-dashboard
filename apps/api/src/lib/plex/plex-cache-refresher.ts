@@ -58,6 +58,7 @@ interface ItemAggregation {
 	collections: string[];
 	labels: string[];
 	addedAt: Date | null;
+	thumb: string | null;
 }
 
 // ============================================================================
@@ -102,6 +103,7 @@ export async function refreshPlexCache(
 				collections: string[];
 				labels: string[];
 				addedAt: number | null;
+				thumb: string | null;
 			}
 		>();
 
@@ -124,6 +126,7 @@ export async function refreshPlexCache(
 						collections: item.Collection?.map((c) => c.tag) ?? [],
 						labels: item.Label?.map((l) => l.tag) ?? [],
 						addedAt: item.addedAt ?? null,
+						thumb: item.thumb ?? null,
 					});
 				}
 			} catch (err) {
@@ -176,6 +179,7 @@ export async function refreshPlexCache(
 					collections: itemData.collections,
 					labels: itemData.labels,
 					addedAt: itemData.addedAt ? new Date(itemData.addedAt * 1000) : null,
+					thumb: itemData.thumb,
 				});
 			}
 		}
@@ -199,6 +203,7 @@ export async function refreshPlexCache(
 					collections: itemData.collections,
 					labels: itemData.labels,
 					addedAt: itemData.addedAt ? new Date(itemData.addedAt * 1000) : null,
+					thumb: itemData.thumb,
 				});
 			}
 		}
@@ -255,6 +260,7 @@ export async function refreshPlexCache(
 						collections: JSON.stringify(agg.collections),
 						labels: JSON.stringify(agg.labels),
 						addedAt: agg.addedAt,
+						thumb: agg.thumb,
 					},
 					update: {
 						sectionTitle: agg.sectionTitle,
@@ -268,6 +274,7 @@ export async function refreshPlexCache(
 						collections: JSON.stringify(agg.collections),
 						labels: JSON.stringify(agg.labels),
 						addedAt: agg.addedAt,
+						thumb: agg.thumb,
 					},
 				});
 				upsertedIds.push(row.id);

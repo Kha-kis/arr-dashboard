@@ -55,6 +55,7 @@ export type PlexCacheMinAggregateOutputType = {
   collections: string | null
   labels: string | null
   addedAt: Date | null
+  thumb: string | null
 }
 
 export type PlexCacheMaxAggregateOutputType = {
@@ -74,6 +75,7 @@ export type PlexCacheMaxAggregateOutputType = {
   collections: string | null
   labels: string | null
   addedAt: Date | null
+  thumb: string | null
 }
 
 export type PlexCacheCountAggregateOutputType = {
@@ -93,6 +95,7 @@ export type PlexCacheCountAggregateOutputType = {
   collections: number
   labels: number
   addedAt: number
+  thumb: number
   _all: number
 }
 
@@ -126,6 +129,7 @@ export type PlexCacheMinAggregateInputType = {
   collections?: true
   labels?: true
   addedAt?: true
+  thumb?: true
 }
 
 export type PlexCacheMaxAggregateInputType = {
@@ -145,6 +149,7 @@ export type PlexCacheMaxAggregateInputType = {
   collections?: true
   labels?: true
   addedAt?: true
+  thumb?: true
 }
 
 export type PlexCacheCountAggregateInputType = {
@@ -164,6 +169,7 @@ export type PlexCacheCountAggregateInputType = {
   collections?: true
   labels?: true
   addedAt?: true
+  thumb?: true
   _all?: true
 }
 
@@ -270,6 +276,7 @@ export type PlexCacheGroupByOutputType = {
   collections: string
   labels: string
   addedAt: Date | null
+  thumb: string | null
   _count: PlexCacheCountAggregateOutputType | null
   _avg: PlexCacheAvgAggregateOutputType | null
   _sum: PlexCacheSumAggregateOutputType | null
@@ -312,6 +319,7 @@ export type PlexCacheWhereInput = {
   collections?: Prisma.StringFilter<"PlexCache"> | string
   labels?: Prisma.StringFilter<"PlexCache"> | string
   addedAt?: Prisma.DateTimeNullableFilter<"PlexCache"> | Date | string | null
+  thumb?: Prisma.StringNullableFilter<"PlexCache"> | string | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
 }
 
@@ -332,6 +340,7 @@ export type PlexCacheOrderByWithRelationInput = {
   collections?: Prisma.SortOrder
   labels?: Prisma.SortOrder
   addedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  thumb?: Prisma.SortOrderInput | Prisma.SortOrder
   instance?: Prisma.ServiceInstanceOrderByWithRelationInput
 }
 
@@ -356,6 +365,7 @@ export type PlexCacheWhereUniqueInput = Prisma.AtLeast<{
   collections?: Prisma.StringFilter<"PlexCache"> | string
   labels?: Prisma.StringFilter<"PlexCache"> | string
   addedAt?: Prisma.DateTimeNullableFilter<"PlexCache"> | Date | string | null
+  thumb?: Prisma.StringNullableFilter<"PlexCache"> | string | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
 }, "id" | "instanceId_tmdbId_mediaType_sectionId">
 
@@ -376,6 +386,7 @@ export type PlexCacheOrderByWithAggregationInput = {
   collections?: Prisma.SortOrder
   labels?: Prisma.SortOrder
   addedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  thumb?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.PlexCacheCountOrderByAggregateInput
   _avg?: Prisma.PlexCacheAvgOrderByAggregateInput
   _max?: Prisma.PlexCacheMaxOrderByAggregateInput
@@ -403,6 +414,7 @@ export type PlexCacheScalarWhereWithAggregatesInput = {
   collections?: Prisma.StringWithAggregatesFilter<"PlexCache"> | string
   labels?: Prisma.StringWithAggregatesFilter<"PlexCache"> | string
   addedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"PlexCache"> | Date | string | null
+  thumb?: Prisma.StringNullableWithAggregatesFilter<"PlexCache"> | string | null
 }
 
 export type PlexCacheCreateInput = {
@@ -421,6 +433,7 @@ export type PlexCacheCreateInput = {
   collections: string
   labels: string
   addedAt?: Date | string | null
+  thumb?: string | null
   instance: Prisma.ServiceInstanceCreateNestedOneWithoutPlexCachesInput
 }
 
@@ -441,6 +454,7 @@ export type PlexCacheUncheckedCreateInput = {
   collections: string
   labels: string
   addedAt?: Date | string | null
+  thumb?: string | null
 }
 
 export type PlexCacheUpdateInput = {
@@ -459,6 +473,7 @@ export type PlexCacheUpdateInput = {
   collections?: Prisma.StringFieldUpdateOperationsInput | string
   labels?: Prisma.StringFieldUpdateOperationsInput | string
   addedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  thumb?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutPlexCachesNestedInput
 }
 
@@ -479,6 +494,7 @@ export type PlexCacheUncheckedUpdateInput = {
   collections?: Prisma.StringFieldUpdateOperationsInput | string
   labels?: Prisma.StringFieldUpdateOperationsInput | string
   addedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  thumb?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type PlexCacheCreateManyInput = {
@@ -498,6 +514,7 @@ export type PlexCacheCreateManyInput = {
   collections: string
   labels: string
   addedAt?: Date | string | null
+  thumb?: string | null
 }
 
 export type PlexCacheUpdateManyMutationInput = {
@@ -516,6 +533,7 @@ export type PlexCacheUpdateManyMutationInput = {
   collections?: Prisma.StringFieldUpdateOperationsInput | string
   labels?: Prisma.StringFieldUpdateOperationsInput | string
   addedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  thumb?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type PlexCacheUncheckedUpdateManyInput = {
@@ -535,6 +553,7 @@ export type PlexCacheUncheckedUpdateManyInput = {
   collections?: Prisma.StringFieldUpdateOperationsInput | string
   labels?: Prisma.StringFieldUpdateOperationsInput | string
   addedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  thumb?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type PlexCacheListRelationFilter = {
@@ -571,6 +590,7 @@ export type PlexCacheCountOrderByAggregateInput = {
   collections?: Prisma.SortOrder
   labels?: Prisma.SortOrder
   addedAt?: Prisma.SortOrder
+  thumb?: Prisma.SortOrder
 }
 
 export type PlexCacheAvgOrderByAggregateInput = {
@@ -596,6 +616,7 @@ export type PlexCacheMaxOrderByAggregateInput = {
   collections?: Prisma.SortOrder
   labels?: Prisma.SortOrder
   addedAt?: Prisma.SortOrder
+  thumb?: Prisma.SortOrder
 }
 
 export type PlexCacheMinOrderByAggregateInput = {
@@ -615,6 +636,7 @@ export type PlexCacheMinOrderByAggregateInput = {
   collections?: Prisma.SortOrder
   labels?: Prisma.SortOrder
   addedAt?: Prisma.SortOrder
+  thumb?: Prisma.SortOrder
 }
 
 export type PlexCacheSumOrderByAggregateInput = {
@@ -681,6 +703,7 @@ export type PlexCacheCreateWithoutInstanceInput = {
   collections: string
   labels: string
   addedAt?: Date | string | null
+  thumb?: string | null
 }
 
 export type PlexCacheUncheckedCreateWithoutInstanceInput = {
@@ -699,6 +722,7 @@ export type PlexCacheUncheckedCreateWithoutInstanceInput = {
   collections: string
   labels: string
   addedAt?: Date | string | null
+  thumb?: string | null
 }
 
 export type PlexCacheCreateOrConnectWithoutInstanceInput = {
@@ -746,6 +770,7 @@ export type PlexCacheScalarWhereInput = {
   collections?: Prisma.StringFilter<"PlexCache"> | string
   labels?: Prisma.StringFilter<"PlexCache"> | string
   addedAt?: Prisma.DateTimeNullableFilter<"PlexCache"> | Date | string | null
+  thumb?: Prisma.StringNullableFilter<"PlexCache"> | string | null
 }
 
 export type PlexCacheCreateManyInstanceInput = {
@@ -764,6 +789,7 @@ export type PlexCacheCreateManyInstanceInput = {
   collections: string
   labels: string
   addedAt?: Date | string | null
+  thumb?: string | null
 }
 
 export type PlexCacheUpdateWithoutInstanceInput = {
@@ -782,6 +808,7 @@ export type PlexCacheUpdateWithoutInstanceInput = {
   collections?: Prisma.StringFieldUpdateOperationsInput | string
   labels?: Prisma.StringFieldUpdateOperationsInput | string
   addedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  thumb?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type PlexCacheUncheckedUpdateWithoutInstanceInput = {
@@ -800,6 +827,7 @@ export type PlexCacheUncheckedUpdateWithoutInstanceInput = {
   collections?: Prisma.StringFieldUpdateOperationsInput | string
   labels?: Prisma.StringFieldUpdateOperationsInput | string
   addedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  thumb?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type PlexCacheUncheckedUpdateManyWithoutInstanceInput = {
@@ -818,6 +846,7 @@ export type PlexCacheUncheckedUpdateManyWithoutInstanceInput = {
   collections?: Prisma.StringFieldUpdateOperationsInput | string
   labels?: Prisma.StringFieldUpdateOperationsInput | string
   addedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  thumb?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 
@@ -839,6 +868,7 @@ export type PlexCacheSelect<ExtArgs extends runtime.Types.Extensions.InternalArg
   collections?: boolean
   labels?: boolean
   addedAt?: boolean
+  thumb?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["plexCache"]>
 
@@ -859,6 +889,7 @@ export type PlexCacheSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Ext
   collections?: boolean
   labels?: boolean
   addedAt?: boolean
+  thumb?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["plexCache"]>
 
@@ -879,6 +910,7 @@ export type PlexCacheSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Ext
   collections?: boolean
   labels?: boolean
   addedAt?: boolean
+  thumb?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["plexCache"]>
 
@@ -899,9 +931,10 @@ export type PlexCacheSelectScalar = {
   collections?: boolean
   labels?: boolean
   addedAt?: boolean
+  thumb?: boolean
 }
 
-export type PlexCacheOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "tmdbId" | "mediaType" | "sectionId" | "sectionTitle" | "title" | "ratingKey" | "lastWatchedAt" | "watchCount" | "watchedByUsers" | "onDeck" | "userRating" | "collections" | "labels" | "addedAt", ExtArgs["result"]["plexCache"]>
+export type PlexCacheOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "tmdbId" | "mediaType" | "sectionId" | "sectionTitle" | "title" | "ratingKey" | "lastWatchedAt" | "watchCount" | "watchedByUsers" | "onDeck" | "userRating" | "collections" | "labels" | "addedAt" | "thumb", ExtArgs["result"]["plexCache"]>
 export type PlexCacheInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }
@@ -934,6 +967,7 @@ export type $PlexCachePayload<ExtArgs extends runtime.Types.Extensions.InternalA
     collections: string
     labels: string
     addedAt: Date | null
+    thumb: string | null
   }, ExtArgs["result"]["plexCache"]>
   composites: {}
 }
@@ -1374,6 +1408,7 @@ export interface PlexCacheFieldRefs {
   readonly collections: Prisma.FieldRef<"PlexCache", 'String'>
   readonly labels: Prisma.FieldRef<"PlexCache", 'String'>
   readonly addedAt: Prisma.FieldRef<"PlexCache", 'DateTime'>
+  readonly thumb: Prisma.FieldRef<"PlexCache", 'String'>
 }
     
 

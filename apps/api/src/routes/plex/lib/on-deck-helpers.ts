@@ -14,6 +14,7 @@ export interface PlexCacheOnDeckEntry {
 	sectionTitle: string;
 	instanceId: string;
 	ratingKey: string | null;
+	thumb: string | null;
 }
 
 /**
@@ -31,5 +32,6 @@ export function mapToOnDeckItems(
 		instanceId: entry.instanceId,
 		instanceName: instanceNameMap.get(entry.instanceId) ?? "Unknown",
 		ratingKey: entry.ratingKey,
+		thumb: entry.thumb,
 	}));
 }

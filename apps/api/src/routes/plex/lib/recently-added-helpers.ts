@@ -14,6 +14,7 @@ export interface PlexCacheRecentEntry {
 	sectionTitle: string;
 	addedAt: Date | null;
 	ratingKey: string | null;
+	thumb: string | null;
 	instanceId: string;
 }
 
@@ -31,6 +32,7 @@ export function mapToRecentlyAddedItems(
 		sectionTitle: entry.sectionTitle,
 		addedAt: entry.addedAt!.toISOString(),
 		ratingKey: entry.ratingKey,
+		thumb: entry.thumb,
 		instanceId: entry.instanceId,
 		instanceName: instanceNameMap.get(entry.instanceId) ?? "Unknown",
 	}));

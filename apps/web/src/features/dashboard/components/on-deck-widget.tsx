@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { ExternalLink, Film, PlayCircle, Tv } from "lucide-react";
 import { GlassmorphicCard } from "../../../components/layout";
@@ -9,6 +10,10 @@ import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 const plexGradient = SERVICE_GRADIENTS.plex;
 const MAX_DISPLAY = 10;
 
+function getPlexThumbUrl(instanceId: string, thumb: string): string {
+	return `/api/plex/thumb/${instanceId}?path=${encodeURIComponent(thumb)}`;
+}
+
 interface OnDeckWidgetProps {
 	enabled: boolean;
 	animationDelay?: number;
@@ -16,6 +21,7 @@ interface OnDeckWidgetProps {
 
 export const OnDeckWidget = ({ enabled, animationDelay = 0 }: OnDeckWidgetProps) => {
 	const { data, isLoading, isError } = useOnDeck(enabled);
+	const [failedThumbs, setFailedThumbs] = useState<Set<string>>(new Set());
 
 	if (!enabled || isLoading || isError || !data?.items?.length) return null;
 
@@ -62,6 +68,8 @@ export const OnDeckWidget = ({ enabled, animationDelay = 0 }: OnDeckWidgetProps)
 									: "linear-gradient(160deg, #164e63 0%, #06b6d4 100%)";
 							const tmdbPath =
 								item.mediaType === "movie" ? "movie" : "tv";
+							const thumbKey = `${item.instanceId}-${item.tmdbId}`;
+							const hasThumb = item.thumb && !failedThumbs.has(thumbKey);
 
 							return (
 								<div
@@ -79,7 +87,17 @@ export const OnDeckWidget = ({ enabled, animationDelay = 0 }: OnDeckWidgetProps)
 											boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
 										}}
 									>
-										<MediaIcon className="absolute inset-0 m-auto h-10 w-10 text-white/30" />
+										{hasThumb ? (
+											<img
+												src={getPlexThumbUrl(item.instanceId, item.thumb!)}
+												alt={item.title}
+												className="absolute inset-0 w-full h-full object-cover"
+												loading="lazy"
+												onError={() => setFailedThumbs((prev) => new Set(prev).add(thumbKey))}
+											/>
+										) : (
+											<MediaIcon className="absolute inset-0 m-auto h-10 w-10 text-white/30" />
+										)}
 										<div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors duration-200 flex items-center justify-center">
 											{item.tmdbId ? (
 												<a

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { ExternalLink, Film, Plus, Tv } from "lucide-react";
 import { GlassmorphicCard } from "../../../components/layout";
@@ -19,6 +20,10 @@ function timeAgo(dateString: string): string {
 	return `${Math.floor(days / 7)}w ago`;
 }
 
+function getPlexThumbUrl(instanceId: string, thumb: string): string {
+	return `/api/plex/thumb/${instanceId}?path=${encodeURIComponent(thumb)}`;
+}
+
 interface RecentlyAddedWidgetProps {
 	enabled: boolean;
 	animationDelay?: number;
@@ -26,6 +31,7 @@ interface RecentlyAddedWidgetProps {
 
 export const RecentlyAddedWidget = ({ enabled, animationDelay = 0 }: RecentlyAddedWidgetProps) => {
 	const { data, isLoading, isError } = useRecentlyAdded(20, enabled);
+	const [failedThumbs, setFailedThumbs] = useState<Set<string>>(new Set());
 
 	if (!enabled || isLoading || isError || !data?.items?.length) return null;
 
@@ -70,6 +76,8 @@ export const RecentlyAddedWidget = ({ enabled, animationDelay = 0 }: RecentlyAdd
 									: "linear-gradient(160deg, #164e63 0%, #06b6d4 100%)";
 							const tmdbPath =
 								item.mediaType === "movie" ? "movie" : "tv";
+							const thumbKey = `${item.instanceId}-${item.tmdbId}`;
+							const hasThumb = item.thumb && !failedThumbs.has(thumbKey);
 
 							return (
 								<div
@@ -87,7 +95,17 @@ export const RecentlyAddedWidget = ({ enabled, animationDelay = 0 }: RecentlyAdd
 											boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
 										}}
 									>
-										<MediaIcon className="absolute inset-0 m-auto h-10 w-10 text-white/30" />
+										{hasThumb ? (
+											<img
+												src={getPlexThumbUrl(item.instanceId, item.thumb!)}
+												alt={item.title}
+												className="absolute inset-0 w-full h-full object-cover"
+												loading="lazy"
+												onError={() => setFailedThumbs((prev) => new Set(prev).add(thumbKey))}
+											/>
+										) : (
+											<MediaIcon className="absolute inset-0 m-auto h-10 w-10 text-white/30" />
+										)}
 										<div className="absolute top-2 right-2 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white/90 leading-tight">
 											{timeAgo(item.addedAt)}
 										</div>

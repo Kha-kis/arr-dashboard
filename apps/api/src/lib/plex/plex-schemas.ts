@@ -52,6 +52,7 @@ export const plexLibraryItemsResponseSchema = z.looseObject({
 					year: z.number().optional(),
 					userRating: z.number().optional(),
 					addedAt: z.number().optional(),
+					thumb: z.string().optional(),
 					Guid: z.array(z.looseObject({ id: z.string() })).optional(),
 					Collection: z.array(z.looseObject({ tag: z.string() })).optional(),
 					Label: z.array(z.looseObject({ tag: z.string() })).optional(),
