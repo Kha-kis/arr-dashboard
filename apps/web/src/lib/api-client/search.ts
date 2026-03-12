@@ -1,6 +1,7 @@
 import type {
 	MultiInstanceSearchResponse,
 	ProwlarrIndexerDetails,
+	ProwlarrIndexerHealth,
 	SearchGrabRequest,
 	SearchIndexerDetailsResponse,
 	SearchIndexersResponse,
@@ -36,10 +37,13 @@ export async function fetchSearchIndexers(): Promise<SearchIndexersResponse> {
 export async function fetchSearchIndexerDetails(
 	instanceId: string,
 	indexerId: number,
+	health?: ProwlarrIndexerHealth,
 ): Promise<ProwlarrIndexerDetails> {
 	try {
+		// Pass pre-fetched health data as query param to skip redundant stats API call
+		const params = health ? `?health=${encodeURIComponent(JSON.stringify(health))}` : "";
 		const data = await apiRequest<SearchIndexerDetailsResponse>(
-			`/api/search/indexers/${instanceId}/${indexerId}`,
+			`/api/search/indexers/${instanceId}/${indexerId}${params}`,
 		);
 		return data.indexer;
 	} catch (error) {

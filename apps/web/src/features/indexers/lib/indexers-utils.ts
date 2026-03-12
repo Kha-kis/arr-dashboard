@@ -24,6 +24,9 @@ export interface IndexerStats {
 	usenet: number;
 	search: number;
 	rss: number;
+	healthy: number;
+	degraded: number;
+	failing: number;
 }
 
 /**
@@ -35,6 +38,20 @@ export const computeStats = (indexers: ProwlarrIndexer[]): IndexerStats => {
 	const enabled = indexers.filter((indexer) => indexer.enable);
 	const torrent = enabled.filter((indexer) => indexer.protocol === "torrent");
 	const usenet = enabled.filter((indexer) => indexer.protocol === "usenet");
+
+	// Health classification from inline health data
+	let healthy = 0;
+	let degraded = 0;
+	let failing = 0;
+	for (const indexer of enabled) {
+		const rate = indexer.health?.successRate;
+		if (rate === undefined) continue;
+		const normalized = rate > 1 ? rate / 100 : rate;
+		if (normalized >= 0.9) healthy++;
+		else if (normalized >= 0.5) degraded++;
+		else failing++;
+	}
+
 	return {
 		total: indexers.length,
 		enabled: enabled.length,
@@ -43,6 +60,9 @@ export const computeStats = (indexers: ProwlarrIndexer[]): IndexerStats => {
 		usenet: usenet.length,
 		search: enabled.filter((indexer) => indexer.supportsSearch).length,
 		rss: enabled.filter((indexer) => indexer.supportsRss).length,
+		healthy,
+		degraded,
+		failing,
 	};
 };
 
@@ -62,23 +82,46 @@ export const protocolLabel = (protocol: ProwlarrIndexer["protocol"]): string => 
 	}
 };
 
+/** Prowlarr field types that indicate sensitive/non-displayable content */
+const SENSITIVE_FIELD_TYPES = new Set(["password", "hidden"]);
+
+/** Field name patterns that indicate credentials or private tracker identifiers */
+const SENSITIVE_NAME_PATTERNS = [
+	"apikey",
+	"api_key",
+	"passkey",
+	"cookie",
+	"password",
+	"secret",
+	"token",
+] as const;
+
+/** Exact field names that are credentials (private tracker IDs, user secrets, etc.) */
+const SENSITIVE_FIELD_NAMES = new Set(["mamId", "pid", "rsskey", "uid", "userId", "userPasskey"]);
+
 /**
- * Determines if a field is related to API key configuration
+ * Determines if a field contains sensitive data (API keys, credentials,
+ * private tracker identifiers) that should not be displayed by default.
  * @param field - Indexer field object
- * @returns True if field is API key related
+ * @returns True if field is sensitive
  */
-export const isApiKeyRelatedField = (field: ProwlarrIndexerField): boolean => {
+export const isSensitiveField = (field: ProwlarrIndexerField): boolean => {
 	const name = (field.name ?? "").toLowerCase();
 	const label = (field.label ?? "").toLowerCase();
+	const type = (field.type ?? "").toLowerCase();
 
-	if (name.includes("apikey") || name.includes("api_key")) {
-		return true;
+	// Type-based: Prowlarr marks sensitive fields as password/hidden
+	if (SENSITIVE_FIELD_TYPES.has(type)) return true;
+
+	// Exact name match (case-insensitive via the Set check on original casing)
+	if (SENSITIVE_FIELD_NAMES.has(field.name)) return true;
+
+	// Pattern match on name or label
+	for (const pattern of SENSITIVE_NAME_PATTERNS) {
+		if (name.includes(pattern) || label.includes(pattern)) return true;
 	}
 
-	if (label.includes("api key")) {
-		return true;
-	}
-
+	// "about api" info fields
 	if (
 		(name.includes("about") && name.includes("api")) ||
 		(label.includes("about") && label.includes("api"))
@@ -95,7 +138,7 @@ export const isApiKeyRelatedField = (field: ProwlarrIndexerField): boolean => {
  * @param value - Field value (any type)
  * @returns Formatted string
  */
-export const formatFieldValue = (name: string, value: unknown): string => {
+export const formatFieldValue = (_name: string, value: unknown): string => {
 	if (value === null || typeof value === "undefined") {
 		return "Not configured";
 	}

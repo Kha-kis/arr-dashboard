@@ -2,6 +2,7 @@ import type {
 	ProwlarrIndexer,
 	ProwlarrIndexerDetails,
 	ProwlarrIndexerField,
+	ProwlarrIndexerHealth,
 	ProwlarrIndexerStats,
 	SearchResult,
 } from "@arr/shared";
@@ -363,6 +364,7 @@ export const normalizeIndexer = (
 	instanceId: string,
 	instanceName: string,
 	instanceUrl: string,
+	stats?: Record<string, unknown> | null,
 ): ProwlarrIndexer | null => {
 	if (!indexer) {
 		return null;
@@ -372,6 +374,59 @@ export const normalizeIndexer = (
 	const name = toStringValue(indexer.name) ?? toStringValue(indexer.title) ?? "Indexer";
 	if (typeof id !== "number") {
 		return null;
+	}
+
+	// Build lightweight health summary from stats
+	let health:
+		| {
+				successRate?: number;
+				averageResponseTime?: number;
+				grabs?: number;
+				fails?: number;
+				lastCheck?: string;
+				lastFailure?: string;
+		  }
+		| undefined;
+
+	if (stats) {
+		// Map SDK field names: numberOfGrabs → grabs, numberOfQueries → compute successRate
+		const avgResponse =
+			toNumber(stats.averageResponseTime) ?? toNumber(stats.averageGrabResponseTime);
+		const grabs = toNumber(stats.grabs) ?? toNumber(stats.numberOfGrabs);
+		const totalQueries = toNumber(stats.numberOfQueries);
+		const failedQueries = toNumber(stats.numberOfFailedQueries);
+		const failedGrabs = toNumber(stats.numberOfFailedGrabs);
+		const fails =
+			toNumber(stats.fails ?? stats.failures) ??
+			(typeof failedQueries === "number" ? failedQueries + (failedGrabs ?? 0) : undefined);
+
+		// Compute successRate from query counts if not provided directly
+		let successRate = toNumber(stats.successRate);
+		if (successRate === undefined && typeof totalQueries === "number" && totalQueries > 0) {
+			const failed = failedQueries ?? 0;
+			successRate = (totalQueries - failed) / totalQueries;
+		}
+
+		const lastCheck = toStringValue(stats.lastCheck) ?? toStringValue(stats.lastExecution);
+		const lastFailure = toStringValue(stats.lastFailure);
+
+		if (
+			successRate !== undefined ||
+			avgResponse !== undefined ||
+			grabs !== undefined ||
+			fails !== undefined ||
+			lastCheck ||
+			lastFailure
+		) {
+			health = {
+				successRate,
+				averageResponseTime: avgResponse,
+				grabs,
+				fails,
+				lastCheck,
+				lastFailure,
+			};
+		}
 	}
 
 	const result = prowlarrIndexerSchema.safeParse({
@@ -398,6 +453,7 @@ export const normalizeIndexer = (
 		instanceId,
 		instanceName,
 		instanceUrl,
+		health,
 	});
 
 	if (!result.success) {
@@ -446,12 +502,33 @@ export const normalizeIndexerField = (
 		value = undefined;
 	}
 
+	// Parse selectOptions for dropdown fields
+	const rawOptions = field.selectOptions ?? field.selectOption ?? field.options;
+	let selectOptions: Array<{ value: string | number; name: string; hint?: string }> | undefined;
+	if (Array.isArray(rawOptions)) {
+		const parsed: Array<{ value: string | number; name: string; hint?: string }> = [];
+		for (const rawOpt of rawOptions) {
+			if (rawOpt == null || typeof rawOpt !== "object") continue;
+			const opt = rawOpt as Record<string, unknown>;
+			const optValue = opt.value ?? opt.id ?? opt.key;
+			const optName = toStringValue(opt.name ?? opt.label ?? opt.text ?? opt.value);
+			if ((typeof optValue !== "string" && typeof optValue !== "number") || !optName) continue;
+			parsed.push({
+				value: optValue,
+				name: optName,
+				hint: toStringValue(opt.hint) ?? undefined,
+			});
+		}
+		selectOptions = parsed.length > 0 ? parsed : undefined;
+	}
+
 	return {
 		name,
 		label: toStringValue(field.label) ?? undefined,
 		helpText: toStringValue(field.helpText ?? field.helptext) ?? undefined,
 		type: toStringValue(field.type ?? field.inputType) ?? undefined,
 		value,
+		selectOptions,
 	};
 };
 
@@ -465,14 +542,31 @@ export const normalizeIndexerStats = (
 		return undefined;
 	}
 
+	// Map SDK field names to our schema
+	const totalQueries = toNumber(stats.numberOfQueries);
+	const failedQueries = toNumber(stats.numberOfFailedQueries);
+	const failedGrabs = toNumber(stats.numberOfFailedGrabs);
+
+	// Compute successRate from query counts if not provided directly
+	let successRate = toNumber(stats.successRate);
+	if (successRate === undefined && typeof totalQueries === "number" && totalQueries > 0) {
+		const failed = failedQueries ?? 0;
+		successRate = (totalQueries - failed) / totalQueries;
+	}
+
+	const fails =
+		toNumber(stats.fails ?? stats.failures) ??
+		(typeof failedQueries === "number" ? failedQueries + (failedGrabs ?? 0) : undefined);
+
 	const parsed = prowlarrIndexerStatsSchema.safeParse({
 		status: toStringValue(stats.status) ?? toStringValue(stats.state) ?? undefined,
 		message: toStringValue(stats.message) ?? undefined,
-		successRate: toNumber(stats.successRate) ?? undefined,
-		averageResponseTime: toNumber(stats.averageResponseTime) ?? undefined,
+		successRate: successRate ?? undefined,
+		averageResponseTime:
+			toNumber(stats.averageResponseTime) ?? toNumber(stats.averageGrabResponseTime) ?? undefined,
 		responseTime: toNumber(stats.responseTime) ?? undefined,
-		grabs: toNumber(stats.grabs) ?? undefined,
-		fails: toNumber(stats.fails ?? stats.failures) ?? undefined,
+		grabs: toNumber(stats.grabs) ?? toNumber(stats.numberOfGrabs) ?? undefined,
+		fails: fails ?? undefined,
 		lastCheck: toStringValue(stats.lastCheck) ?? toStringValue(stats.lastExecution) ?? undefined,
 		lastFailure: toStringValue(stats.lastFailure) ?? undefined,
 	});
@@ -481,12 +575,20 @@ export const normalizeIndexerStats = (
 
 /**
  * Normalizes detailed indexer information from Prowlarr into a consistent format.
+ *
+ * @param raw - Raw indexer data from the SDK
+ * @param stats - Raw stats from indexerStats API (can be null if pre-fetched health is provided)
+ * @param instance - The service instance
+ * @param indexerId - The indexer ID
+ * @param prefetchedHealth - Optional health data already fetched by the list endpoint,
+ *   used to avoid a redundant indexerStats API call when expanding details.
  */
 export const normalizeIndexerDetails = (
 	raw: Record<string, unknown> | null | undefined,
 	stats: Record<string, unknown> | null | undefined,
 	instance: ServiceInstance,
 	indexerId: number,
+	prefetchedHealth?: ProwlarrIndexerHealth | null,
 ): ProwlarrIndexerDetails | null => {
 	if (!raw) {
 		return null;
@@ -494,6 +596,20 @@ export const normalizeIndexerDetails = (
 
 	const id = toNumber(raw.id) ?? indexerId;
 	const name = toStringValue(raw.name) ?? toStringValue(raw.title) ?? `Indexer ${indexerId}`;
+
+	// Use freshly-fetched stats if available, otherwise convert pre-fetched health data
+	const resolvedStats = stats
+		? normalizeIndexerStats(stats)
+		: prefetchedHealth
+			? {
+					successRate: prefetchedHealth.successRate,
+					averageResponseTime: prefetchedHealth.averageResponseTime,
+					grabs: prefetchedHealth.grabs,
+					fails: prefetchedHealth.fails,
+					lastCheck: prefetchedHealth.lastCheck,
+					lastFailure: prefetchedHealth.lastFailure,
+				}
+			: undefined;
 
 	const detail = {
 		id,
@@ -520,7 +636,7 @@ export const normalizeIndexerDetails = (
 					.map((field) => normalizeIndexerField(field as Record<string, unknown>))
 					.filter((field): field is ProwlarrIndexerField => Boolean(field))
 			: undefined,
-		stats: normalizeIndexerStats(stats),
+		stats: resolvedStats,
 	};
 
 	const parsed = prowlarrIndexerDetailsSchema.safeParse(detail);
