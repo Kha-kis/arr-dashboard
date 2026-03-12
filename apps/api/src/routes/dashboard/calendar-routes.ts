@@ -20,7 +20,10 @@ import { validateAndCollect } from "../../lib/validation/validate-batch.js";
 const calendarQuerySchema = z.object({
 	start: z.string().optional(),
 	end: z.string().optional(),
-	unmonitored: z.coerce.boolean().optional(),
+	unmonitored: z.preprocess(
+		(val) => val === true || val === "true" || val === "1",
+		z.boolean(),
+	).optional(),
 });
 
 /**
