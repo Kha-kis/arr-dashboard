@@ -12,6 +12,7 @@ interface CalendarEventListProps {
 	selectedEvents: DeduplicatedCalendarItem[];
 	serviceMap: Map<string, ServiceInstanceSummary>;
 	onOpenExternal: (href: string) => void;
+	plexUrlMap: Map<string, string>;
 }
 
 export const CalendarEventList = ({
@@ -19,6 +20,7 @@ export const CalendarEventList = ({
 	selectedEvents,
 	serviceMap,
 	onOpenExternal,
+	plexUrlMap,
 }: CalendarEventListProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 
@@ -98,6 +100,7 @@ export const CalendarEventList = ({
 								event={event}
 								serviceMap={serviceMap}
 								onOpenExternal={onOpenExternal}
+								plexUrlMap={plexUrlMap}
 								index={index}
 							/>
 						))}

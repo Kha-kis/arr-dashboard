@@ -1,9 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useWatchHistory } from "../../../hooks/api/usePlex";
 import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
-import { Clock, MonitorPlay } from "lucide-react";
+import { ChevronDown, ChevronUp, Clock, MonitorPlay } from "lucide-react";
 
 // ============================================================================
 // Time Formatting
@@ -24,6 +25,8 @@ function formatRelativeTime(isoDate: string): string {
 // Watch History Widget
 // ============================================================================
 
+const INITIAL_VISIBLE = 5;
+
 interface WatchHistoryWidgetProps {
 	days: number;
 	enabled: boolean;
@@ -32,6 +35,7 @@ interface WatchHistoryWidgetProps {
 export const WatchHistoryWidget = ({ days, enabled }: WatchHistoryWidgetProps) => {
 	const { gradient } = useThemeGradient();
 	const { data, isLoading, isError } = useWatchHistory(days, 20, enabled);
+	const [expanded, setExpanded] = useState(false);
 
 	if (isLoading) {
 		return (
@@ -71,15 +75,26 @@ export const WatchHistoryWidget = ({ days, enabled }: WatchHistoryWidgetProps) =
 		);
 	}
 
+	const totalEvents = data.events.length;
+	const hasMore = totalEvents > INITIAL_VISIBLE;
+	const visibleEvents = expanded ? data.events : data.events.slice(0, INITIAL_VISIBLE);
+
 	return (
 		<div className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-xs p-6 space-y-4">
-			<h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-				<Clock className="h-4 w-4" style={{ color: gradient.from }} />
-				Recent Watch History
-			</h3>
+			<div className="flex items-center justify-between">
+				<h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+					<Clock className="h-4 w-4" style={{ color: gradient.from }} />
+					Recent Watch History
+				</h3>
+				{hasMore && (
+					<span className="text-[10px] text-muted-foreground/40 tabular-nums">
+						{expanded ? totalEvents : INITIAL_VISIBLE} of {totalEvents}
+					</span>
+				)}
+			</div>
 
 			<div className="space-y-1">
-				{data.events.map(
+				{visibleEvents.map(
 					(
 						event: {
 							user: string;
@@ -134,6 +149,27 @@ export const WatchHistoryWidget = ({ days, enabled }: WatchHistoryWidgetProps) =
 					),
 				)}
 			</div>
+
+			{/* Show more / less toggle */}
+			{hasMore && (
+				<button
+					type="button"
+					onClick={() => setExpanded(!expanded)}
+					className="w-full flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-muted-foreground/50 hover:text-muted-foreground transition-colors rounded-lg hover:bg-muted/10"
+				>
+					{expanded ? (
+						<>
+							Show less
+							<ChevronUp className="h-3.5 w-3.5" />
+						</>
+					) : (
+						<>
+							Show {totalEvents - INITIAL_VISIBLE} more
+							<ChevronDown className="h-3.5 w-3.5" />
+						</>
+					)}
+				</button>
+			)}
 		</div>
 	);
 };

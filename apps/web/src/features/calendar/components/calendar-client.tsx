@@ -7,6 +7,7 @@ import { useMultiInstanceCalendarQuery } from "../../../hooks/api/useDashboard";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { safeOpenUrl } from "../../../lib/utils/url-validation";
 import { useCalendarData } from "../hooks/use-calendar-data";
+import { useCalendarPlexLinks } from "../hooks/use-calendar-plex-links";
 import { useCalendarState } from "../hooks/use-calendar-state";
 import { formatDateOnly } from "../lib/calendar-formatters";
 import { CalendarEventList } from "./calendar-event-list";
@@ -33,7 +34,14 @@ export const CalendarClient = () => {
 	const { data: services } = useServicesQuery();
 
 	const calendarData = useCalendarData(data, services, filters);
-	const { eventsByDate, serviceMap, instanceOptions } = calendarData;
+	const { eventsByDate, serviceMap, instanceOptions, filteredEvents } = calendarData;
+
+	// Plex deep links — only fetched when Plex is configured
+	const hasPlex = useMemo(
+		() => services?.some((s) => s.service === "plex") ?? false,
+		[services],
+	);
+	const plexUrlMap = useCalendarPlexLinks(filteredEvents, hasPlex);
 
 	const handleOpenExternal = useCallback((href: string) => {
 		if (!href) return;
@@ -194,6 +202,7 @@ export const CalendarClient = () => {
 							selectedEvents={selectedEvents}
 							serviceMap={serviceMap}
 							onOpenExternal={handleOpenExternal}
+							plexUrlMap={plexUrlMap}
 						/>
 					</div>
 				</div>

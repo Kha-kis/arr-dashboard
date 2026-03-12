@@ -271,6 +271,7 @@ export const StatisticsClient = () => {
 					lidarrTotals={lidarrTotals}
 					readarrTotals={readarrTotals}
 					prowlarrTotals={prowlarrTotals}
+					hasTautulli={hasTautulli}
 					onSwitchTab={setActiveTab}
 				/>
 			)}

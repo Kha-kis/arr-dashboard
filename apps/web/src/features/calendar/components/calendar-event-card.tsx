@@ -12,7 +12,7 @@ import {
 	HardDrive,
 	Tv,
 } from "lucide-react";
-import { BRAND_COLORS, getServiceGradient } from "../../../lib/theme-gradients";
+import { BRAND_COLORS, SERVICE_GRADIENTS, getServiceGradient } from "../../../lib/theme-gradients";
 import type { DeduplicatedCalendarItem } from "../hooks/use-calendar-data";
 import {
 	buildExternalLink,
@@ -26,6 +26,7 @@ interface CalendarEventCardProps {
 	event: DeduplicatedCalendarItem;
 	serviceMap: Map<string, ServiceInstanceSummary>;
 	onOpenExternal: (href: string) => void;
+	plexUrlMap: Map<string, string>;
 	index?: number;
 }
 
@@ -104,6 +105,7 @@ export const CalendarEventCard = ({
 	event,
 	serviceMap,
 	onOpenExternal,
+	plexUrlMap,
 	index = 0,
 }: CalendarEventCardProps) => {
 	const instance = serviceMap.get(event.instanceId);
@@ -113,6 +115,14 @@ export const CalendarEventCard = ({
 	const serviceGradient = getServiceGradient(event.service);
 	const serviceLabel = SERVICE_LABELS[event.service] ?? event.service;
 	const TypeIcon = TYPE_ICONS[event.type] ?? Film;
+
+	// Plex deep link — lookup by "type:tmdbId" key
+	const plexUrl =
+		event.tmdbId != null && (event.service === "sonarr" || event.service === "radarr")
+			? plexUrlMap.get(
+					`${event.service === "radarr" ? "movie" : "series"}:${event.tmdbId}`,
+				)
+			: undefined;
 
 	const episodeCode =
 		event.type === "episode"
@@ -124,6 +134,8 @@ export const CalendarEventCard = ({
 		? event.allInstances.map((inst) => inst.instanceName).join(", ")
 		: event.instanceName;
 
+	const hasPoster = !!event.posterUrl;
+
 	return (
 		<div
 			className="group relative rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-[1px] hover:shadow-lg hover:shadow-black/10 animate-in fade-in slide-in-from-bottom-1 duration-300"
@@ -133,14 +145,6 @@ export const CalendarEventCard = ({
 				animationFillMode: "backwards",
 			}}
 		>
-			{/* Service gradient accent — left bar with gradient fade */}
-			<div
-				className="absolute left-0 top-0 bottom-0 w-[3px]"
-				style={{
-					background: `linear-gradient(180deg, ${serviceGradient.from}, ${serviceGradient.to}70)`,
-				}}
-			/>
-
 			{/* Service-tinted background with diagonal gradient */}
 			<div
 				className="absolute inset-0 pointer-events-none"
@@ -157,177 +161,216 @@ export const CalendarEventCard = ({
 				}}
 			/>
 
-			<div className="relative pl-5 pr-4 py-3.5">
-				{/* Top row: service + instance + time + action */}
-				<div className="flex items-center justify-between gap-2 mb-2">
-					<div className="flex items-center gap-2 min-w-0">
-						{/* Service pill with glow */}
-						<span
-							className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider shrink-0"
-							style={{
-								backgroundColor: `${serviceGradient.from}12`,
-								color: serviceGradient.from,
-								boxShadow: `0 0 10px ${serviceGradient.from}08`,
-							}}
-						>
-							<TypeIcon className="h-2.5 w-2.5" />
-							{serviceLabel}
-						</span>
+			<div className="relative flex">
+				{/* Service accent bar */}
+				<div
+					className="absolute left-0 top-0 bottom-0 w-[3px]"
+					style={{
+						background: `linear-gradient(180deg, ${serviceGradient.from}, ${serviceGradient.to}70)`,
+					}}
+				/>
 
-						{/* Instance name */}
-						<span
-							className="text-[10px] text-muted-foreground/35 truncate"
-							title={
-								hasMultipleInstances
-									? `In ${event.allInstances.length} instances: ${instancesDisplay}`
-									: undefined
-							}
-						>
-							{instancesDisplay}
-							{hasMultipleInstances && (
-								<span
-									className="ml-1 font-bold"
-									style={{ color: serviceGradient.from }}
-								>
-									({event.allInstances.length})
-								</span>
-							)}
-						</span>
+				{/* Content */}
+				<div className="flex-1 min-w-0 pr-4 py-3.5 pl-5">
+					{/* Top row: service + instance + time + action */}
+					<div className="flex items-center justify-between gap-2 mb-2">
+						<div className="flex items-center gap-2 min-w-0">
+							{/* Service pill with glow */}
+							<span
+								className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider shrink-0"
+								style={{
+									backgroundColor: `${serviceGradient.from}12`,
+									color: serviceGradient.from,
+									boxShadow: `0 0 10px ${serviceGradient.from}08`,
+								}}
+							>
+								<TypeIcon className="h-2.5 w-2.5" />
+								{serviceLabel}
+							</span>
 
-						{/* Separator dot */}
-						<span
-							className="h-[3px] w-[3px] rounded-full shrink-0"
-							style={{
-								backgroundColor: `${serviceGradient.from}30`,
-							}}
-						/>
+							{/* Instance name */}
+							<span
+								className="text-[10px] text-muted-foreground/35 truncate"
+								title={
+									hasMultipleInstances
+										? `In ${event.allInstances.length} instances: ${instancesDisplay}`
+										: undefined
+								}
+							>
+								{instancesDisplay}
+								{hasMultipleInstances && (
+									<span
+										className="ml-1 font-bold"
+										style={{ color: serviceGradient.from }}
+									>
+										({event.allInstances.length})
+									</span>
+								)}
+							</span>
 
-						{/* Time */}
-						<MetaChip icon={Clock}>
-							{formatTime(
-								event.airDateUtc ??
-									event.airDate ??
-									event.releaseDate,
-							)}
-						</MetaChip>
-					</div>
-
-					{/* Open in service — hover reveal */}
-					{externalLink && (
-						<button
-							type="button"
-							onClick={() => onOpenExternal(externalLink)}
-							className="shrink-0 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-semibold transition-all opacity-0 group-hover:opacity-100 hover:bg-white/[0.06]"
-							style={{ color: serviceGradient.from }}
-						>
-							Open
-							<ExternalLink className="h-2.5 w-2.5" />
-						</button>
-					)}
-				</div>
-
-				{/* Title + episode badge */}
-				<h3 className="text-[14px] font-semibold text-foreground leading-snug">
-					{title}
-					{episodeCode && (
-						<span
-							className="inline-flex ml-2 px-1.5 py-[1px] text-[10px] font-mono font-bold rounded-[4px] align-middle"
-							style={{
-								backgroundColor: `${serviceGradient.from}12`,
-								color: `${serviceGradient.from}`,
-							}}
-						>
-							{episodeCode}
-						</span>
-					)}
-				</h3>
-
-				{/* Overview */}
-				{event.overview && (
-					<p className="mt-1.5 text-[11.5px] leading-relaxed text-muted-foreground/45 line-clamp-2">
-						{event.overview}
-					</p>
-				)}
-
-				{/* Metadata row */}
-				<div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
-					{details.runtime && (
-						<MetaChip icon={Clock}>{details.runtime} min</MetaChip>
-					)}
-					{details.network && <MetaChip>{details.network}</MetaChip>}
-					{details.status && <MetaChip>{details.status}</MetaChip>}
-					{details.monitoring !== undefined && (
-						<MetaChip
-							icon={
-								details.monitoring === "Monitored" ? Eye : EyeOff
-							}
-							variant={
-								details.monitoring === "Monitored"
-									? "default"
-									: "muted"
-							}
-						>
-							{details.monitoring}
-						</MetaChip>
-					)}
-					{details.library !== undefined && (
-						<MetaChip
-							icon={HardDrive}
-							variant={
-								details.library === "In library"
-									? "default"
-									: "muted"
-							}
-						>
-							{details.library}
-						</MetaChip>
-					)}
-					{details.genres && <MetaChip>{details.genres}</MetaChip>}
-					{details.albumType && (
-						<MetaChip>{details.albumType}</MetaChip>
-					)}
-				</div>
-
-				{/* External links */}
-				{(details.tmdbLink ||
-					details.imdbLink ||
-					details.musicBrainzLink ||
-					details.goodreadsLink) && (
-					<div className="flex items-center gap-1.5 mt-2.5">
-						{details.tmdbLink && details.tmdbId && (
-							<ExternalBadge
-								label="TMDB"
-								href={details.tmdbLink}
-								color={BRAND_COLORS.tmdb.border}
-								textColor={BRAND_COLORS.tmdb.text}
+							{/* Separator dot */}
+							<span
+								className="h-[3px] w-[3px] rounded-full shrink-0"
+								style={{
+									backgroundColor: `${serviceGradient.from}30`,
+								}}
 							/>
-						)}
-						{details.imdbLink && details.imdbId && (
-							<ExternalBadge
-								label="IMDb"
-								href={details.imdbLink}
-								color={BRAND_COLORS.imdb.border}
-								textColor={BRAND_COLORS.imdb.text}
-							/>
-						)}
-						{details.musicBrainzLink && details.musicBrainzId && (
-							<ExternalBadge
-								label="MusicBrainz"
-								href={details.musicBrainzLink}
-								color="#ba478f"
-								textColor="#ba478f"
-							/>
-						)}
-						{details.goodreadsLink && details.goodreadsId && (
-							<ExternalBadge
-								label="Goodreads"
-								href={details.goodreadsLink}
-								color="#553b08"
-								textColor="#8b6914"
-							/>
+
+							{/* Time */}
+							<MetaChip icon={Clock}>
+								{formatTime(
+									event.airDateUtc ??
+										event.airDate ??
+										event.releaseDate,
+								)}
+							</MetaChip>
+						</div>
+
+						{/* Open in service — hover reveal */}
+						{externalLink && (
+							<button
+								type="button"
+								onClick={() => onOpenExternal(externalLink)}
+								className="shrink-0 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-semibold transition-all opacity-0 group-hover:opacity-100 hover:bg-white/[0.06]"
+								style={{ color: serviceGradient.from }}
+							>
+								Open
+								<ExternalLink className="h-2.5 w-2.5" />
+							</button>
 						)}
 					</div>
-				)}
+
+					{/* Title row with poster thumbnail */}
+					<div className="flex items-start gap-3">
+						{hasPoster && (
+							<div
+								className="shrink-0 w-[44px] h-[64px] rounded-md overflow-hidden shadow-md shadow-black/20 ring-1 ring-white/[0.06]"
+								style={{
+									boxShadow: `0 2px 8px ${serviceGradient.from}10, 0 4px 12px rgba(0,0,0,0.2)`,
+								}}
+							>
+								{/* eslint-disable-next-line @next/next/no-img-element -- Remote poster from arr instance */}
+								<img
+									src={event.posterUrl}
+									alt=""
+									className="h-full w-full object-cover"
+								/>
+							</div>
+						)}
+						<div className="flex-1 min-w-0">
+							<h3 className="text-[14px] font-semibold text-foreground leading-snug">
+								{title}
+								{episodeCode && (
+									<span
+										className="inline-flex ml-2 px-1.5 py-[1px] text-[10px] font-mono font-bold rounded-[4px] align-middle"
+										style={{
+											backgroundColor: `${serviceGradient.from}12`,
+											color: `${serviceGradient.from}`,
+										}}
+									>
+										{episodeCode}
+									</span>
+								)}
+							</h3>
+
+							{/* Overview */}
+							{event.overview && (
+								<p className="mt-1.5 text-[11.5px] leading-relaxed text-muted-foreground/45 line-clamp-2">
+									{event.overview}
+								</p>
+							)}
+						</div>
+					</div>
+
+					{/* Metadata row */}
+					<div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
+						{details.runtime && (
+							<MetaChip icon={Clock}>{details.runtime} min</MetaChip>
+						)}
+						{details.network && <MetaChip>{details.network}</MetaChip>}
+						{details.status && <MetaChip>{details.status}</MetaChip>}
+						{details.monitoring !== undefined && (
+							<MetaChip
+								icon={
+									details.monitoring === "Monitored" ? Eye : EyeOff
+								}
+								variant={
+									details.monitoring === "Monitored"
+										? "default"
+										: "muted"
+								}
+							>
+								{details.monitoring}
+							</MetaChip>
+						)}
+						{details.library !== undefined && (
+							<MetaChip
+								icon={HardDrive}
+								variant={
+									details.library === "In library"
+										? "default"
+										: "muted"
+								}
+							>
+								{details.library}
+							</MetaChip>
+						)}
+						{details.genres && <MetaChip>{details.genres}</MetaChip>}
+						{details.albumType && (
+							<MetaChip>{details.albumType}</MetaChip>
+						)}
+					</div>
+
+					{/* External links */}
+					{(details.tmdbLink ||
+						details.imdbLink ||
+						details.musicBrainzLink ||
+						details.goodreadsLink ||
+						plexUrl) && (
+						<div className="flex items-center gap-1.5 mt-2.5">
+							{plexUrl && (
+								<ExternalBadge
+									label="Plex"
+									href={plexUrl}
+									color={SERVICE_GRADIENTS.plex.from}
+									textColor={SERVICE_GRADIENTS.plex.from}
+								/>
+							)}
+							{details.tmdbLink && details.tmdbId && (
+								<ExternalBadge
+									label="TMDB"
+									href={details.tmdbLink}
+									color={BRAND_COLORS.tmdb.border}
+									textColor={BRAND_COLORS.tmdb.text}
+								/>
+							)}
+							{details.imdbLink && details.imdbId && (
+								<ExternalBadge
+									label="IMDb"
+									href={details.imdbLink}
+									color={BRAND_COLORS.imdb.border}
+									textColor={BRAND_COLORS.imdb.text}
+								/>
+							)}
+							{details.musicBrainzLink && details.musicBrainzId && (
+								<ExternalBadge
+									label="MusicBrainz"
+									href={details.musicBrainzLink}
+									color="#ba478f"
+									textColor="#ba478f"
+								/>
+							)}
+							{details.goodreadsLink && details.goodreadsId && (
+								<ExternalBadge
+									label="Goodreads"
+									href={details.goodreadsLink}
+									color="#553b08"
+									textColor="#8b6914"
+								/>
+							)}
+						</div>
+					)}
+				</div>
 			</div>
 		</div>
 	);
