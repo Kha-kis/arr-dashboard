@@ -2,7 +2,7 @@
 import { CalendarClient } from "../../src/features/calendar/components/calendar-client";
 
 const CalendarPage = () => (
-	<PageLayout>
+	<PageLayout gap="6" className="max-w-[1600px]">
 		<CalendarClient />
 	</PageLayout>
 );

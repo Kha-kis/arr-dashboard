@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import { GlassmorphicCard, PremiumSkeleton } from "../../../components/layout";
+import { PremiumSkeleton } from "../../../components/layout";
 import { Alert, AlertDescription } from "../../../components/ui";
 import { useMultiInstanceCalendarQuery } from "../../../hooks/api/useDashboard";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
@@ -36,36 +36,97 @@ export const CalendarClient = () => {
 	const { eventsByDate, serviceMap, instanceOptions } = calendarData;
 
 	const handleOpenExternal = useCallback((href: string) => {
-		if (!href) {
-			return;
-		}
+		if (!href) return;
 		safeOpenUrl(href);
 	}, []);
 
 	const selectedKey = selectedDate ? formatDateOnly(selectedDate) : undefined;
 	const selectedEvents = selectedKey ? (eventsByDate.get(selectedKey) ?? []) : [];
 
-	// Loading skeleton
+	// Loading skeleton mirroring the side-by-side layout
 	if (isLoading) {
 		return (
-			<div className="space-y-8 animate-in fade-in duration-500">
-				<div className="space-y-4">
-					<PremiumSkeleton className="h-8 w-48" />
-					<PremiumSkeleton className="h-10 w-64" />
+			<div className="space-y-5 animate-in fade-in duration-500">
+				{/* Header skeleton */}
+				<div className="flex items-center gap-5">
+					<PremiumSkeleton className="h-7 w-24 rounded-lg" />
+					<PremiumSkeleton
+						className="h-5 w-px"
+						style={{ animationDelay: "30ms" }}
+					/>
+					<PremiumSkeleton
+						className="h-7 w-44 rounded-lg"
+						style={{ animationDelay: "50ms" }}
+					/>
 				</div>
-				<GlassmorphicCard padding="md">
-					<div className="grid grid-cols-7 gap-2">
-						{Array.from({ length: 35 }).map((_, i) => (
-							<PremiumSkeleton key={i} className="h-20" style={{ animationDelay: `${i * 20}ms` }} />
-						))}
+
+				{/* Filter skeleton */}
+				<div className="flex gap-2">
+					<PremiumSkeleton
+						className="h-9 w-60 rounded-xl"
+						style={{ animationDelay: "80ms" }}
+					/>
+					<PremiumSkeleton
+						className="h-8 w-[140px] rounded-xl"
+						style={{ animationDelay: "100ms" }}
+					/>
+				</div>
+
+				{/* Side-by-side skeleton */}
+				<div className="xl:flex xl:gap-6 xl:items-start">
+					{/* Grid skeleton */}
+					<div className="xl:flex-1 xl:min-w-0">
+						<div className="grid grid-cols-7 gap-px mb-1.5">
+							{Array.from({ length: 7 }).map((_, i) => (
+								<PremiumSkeleton
+									key={i}
+									className="h-4 mx-auto w-7 rounded"
+									style={{
+										animationDelay: `${120 + i * 12}ms`,
+									}}
+								/>
+							))}
+						</div>
+						<div className="grid grid-cols-7 gap-px rounded-2xl overflow-hidden border border-border/10">
+							{Array.from({ length: 35 }).map((_, i) => (
+								<PremiumSkeleton
+									key={i}
+									className="h-[115px] lg:h-[130px]"
+									style={{
+										animationDelay: `${150 + i * 10}ms`,
+									}}
+								/>
+							))}
+						</div>
 					</div>
-				</GlassmorphicCard>
+
+					{/* Panel skeleton */}
+					<div className="mt-6 xl:mt-0 xl:w-[380px] xl:shrink-0">
+						<div className="rounded-2xl border border-border/10 overflow-hidden">
+							<PremiumSkeleton
+								className="h-16"
+								style={{ animationDelay: "520ms" }}
+							/>
+							<div className="p-4 space-y-2.5">
+								{Array.from({ length: 3 }).map((_, i) => (
+									<PremiumSkeleton
+										key={i}
+										className="h-24 rounded-xl"
+										style={{
+											animationDelay: `${560 + i * 40}ms`,
+										}}
+									/>
+								))}
+							</div>
+						</div>
+					</div>
+				</div>
 			</div>
 		);
 	}
 
 	return (
-		<>
+		<div className="space-y-5">
 			{/* Header with navigation */}
 			<CalendarHeader
 				monthStart={monthStart}
@@ -94,35 +155,49 @@ export const CalendarClient = () => {
 			{error && (
 				<Alert variant="danger">
 					<AlertDescription>
-						Unable to load calendar data. Please refresh and try again.
+						Unable to load calendar data. Please refresh and try
+						again.
 					</AlertDescription>
 				</Alert>
 			)}
 
-			{/* Calendar Grid */}
-			<GlassmorphicCard padding="sm" animationDelay={200}>
-				<CalendarGrid
-					days={daysInView}
-					currentMonth={monthStart}
-					selectedDate={selectedDate}
-					onSelectDate={calendarState.setSelectedDate}
-					eventsByDate={eventsByDate}
-					className="min-h-[520px]"
-				/>
-			</GlassmorphicCard>
+			{/* Content: Grid + Detail Panel — side-by-side on xl+ screens */}
+			<div className="xl:flex xl:gap-6 xl:items-start">
+				{/* Calendar Grid */}
+				<div
+					className="xl:flex-1 xl:min-w-0 animate-in fade-in slide-in-from-bottom-2 duration-400"
+					style={{
+						animationDelay: "150ms",
+						animationFillMode: "backwards",
+					}}
+				>
+					<CalendarGrid
+						days={daysInView}
+						currentMonth={monthStart}
+						selectedDate={selectedDate}
+						onSelectDate={calendarState.setSelectedDate}
+						eventsByDate={eventsByDate}
+					/>
+				</div>
 
-			{/* Event List */}
-			<div
-				className="animate-in fade-in slide-in-from-bottom-4 duration-500"
-				style={{ animationDelay: "300ms", animationFillMode: "backwards" }}
-			>
-				<CalendarEventList
-					selectedDate={selectedDate}
-					selectedEvents={selectedEvents}
-					serviceMap={serviceMap}
-					onOpenExternal={handleOpenExternal}
-				/>
+				{/* Event Detail Panel — sticky sidebar on xl+ */}
+				<div
+					className="mt-6 xl:mt-0 xl:w-[380px] xl:shrink-0 animate-in fade-in slide-in-from-bottom-2 duration-400"
+					style={{
+						animationDelay: "250ms",
+						animationFillMode: "backwards",
+					}}
+				>
+					<div className="xl:sticky xl:top-6 xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto xl:[&::-webkit-scrollbar]:w-1 xl:[&::-webkit-scrollbar-thumb]:rounded-full xl:[&::-webkit-scrollbar-thumb]:bg-white/10">
+						<CalendarEventList
+							selectedDate={selectedDate}
+							selectedEvents={selectedEvents}
+							serviceMap={serviceMap}
+							onOpenExternal={handleOpenExternal}
+						/>
+					</div>
+				</div>
 			</div>
-		</>
+		</div>
 	);
 };
