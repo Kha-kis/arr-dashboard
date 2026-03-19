@@ -76,74 +76,12 @@ jobs:
       - name: Run tests
         run: pnpm run test
 
-  # Build shared artifacts for E2E shards (setup once, reuse across shards)
-  e2e-setup:
-    name: E2E Setup
-    runs-on: ubuntu-latest
-    needs: [lint-and-test]
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "pnpm"
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Generate Prisma Client
-        run: cd apps/api && pnpm exec prisma generate
-
-      - name: Build shared package
-        run: pnpm --filter @arr/shared run build
-
-      - name: Build web for production
-        run: pnpm --filter @arr/web run build
-
-      - name: Setup database
-        run: cd apps/api && pnpm exec prisma db push
-        env:
-          DATABASE_URL: file:./test.db
-
-      - name: Cache Playwright Browsers
-        uses: actions/cache@v5
-        id: playwright-cache
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-
-      - name: Install Playwright Browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: pnpm exec playwright install --with-deps chromium
-
-      - name: Install Playwright System Dependencies
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: pnpm exec playwright install-deps chromium
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: e2e-build
-          path: |
-            apps/web/.next/
-            apps/api/src/generated/
-            apps/api/test.db
-            packages/shared/dist/
-          retention-days: 1
-
   # End-to-End Tests with Playwright (sharded for parallelism)
-  # Uses pre-built artifacts from e2e-setup and production web server
+  # 3 shards for better load balancing across 13 spec files
   e2e:
     name: E2E Tests (${{ matrix.shardIndex }}/${{ matrix.shardTotal }})
     runs-on: ubuntu-latest
-    needs: [e2e-setup]
+    needs: [lint-and-test]
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -164,16 +102,22 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
 
+      - name: Cache Turbo build
+        uses: actions/cache@v5
+        with:
+          path: node_modules/.cache/turbo
+          key: turbo-e2e-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            turbo-e2e-${{ runner.os }}-
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Generate Prisma Client
         run: cd apps/api && pnpm exec prisma generate
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v7
-        with:
-          name: e2e-build
+      - name: Build shared package
+        run: pnpm --filter @arr/shared run build
 
       - name: Cache Playwright Browsers
         uses: actions/cache@v5
@@ -182,8 +126,18 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
 
+      - name: Install Playwright Browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: pnpm exec playwright install --with-deps chromium
+
       - name: Install Playwright System Dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: pnpm exec playwright install-deps chromium
+
+      - name: Setup database
+        run: cd apps/api && pnpm exec prisma db push
+        env:
+          DATABASE_URL: file:./test.db
 
       - name: Run E2E tests
         run: |
@@ -191,8 +145,8 @@ jobs:
           (cd apps/api && DATABASE_URL=file:./test.db API_RATE_LIMIT_MAX=10000 LOG_LEVEL=warn pnpm run dev) &
           API_PID=$!
 
-          # Start Web server in production mode (pre-compiled, no per-page compilation delay)
-          (cd apps/web && pnpm run start) &
+          # Start Web server in background
+          (cd apps/web && pnpm run dev) &
           WEB_PID=$!
 
           # Wait for servers with faster polling
