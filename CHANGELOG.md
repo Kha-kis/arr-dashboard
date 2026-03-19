@@ -5,7 +5,7 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.9.0] - 2026-03-02
+## [2.9.0] - 2026-03-19
 
 v2.9 is the largest feature release since 2.0 — adding media server awareness, a notification system, library lifecycle management, and TRaSH naming scheme deployment.
 
@@ -60,6 +60,29 @@ v2.9 is the largest feature release since 2.0 — adding media server awareness,
 - **Startup Banner** - Structured log line on startup: `arr-dashboard v2.9.0 started (commit: abc1234)` with database type, log level, and listen address
 - **Version in System Info** - `/api/system/info` now includes commit SHA alongside version
 
+#### Hunting Overhaul (#187)
+- **Full Wanted List Pagination** - Hunting now fetches the complete wanted list (up to 10K items at pageSize=500) instead of a single page with a calculated offset, guaranteeing every item is reachable across multiple hunt cycles
+- **Upgrade Search All Toggle** - New opt-in "Include all monitored items" toggle re-searches all monitored items with files, catching items Arr doesn't flag after quality profile changes
+- **Diagnostic Funnel Messages** - Hunt results now show exactly where items were eliminated: "Fetched 500 → 320 passed filters → all 320 recently searched"
+
+#### UI Consistency Overhaul
+- **Backdrop Blur Cleanup** - Removed decorative `backdrop-blur` from ~40 static containers while preserving it on functional overlays (modals, dropdowns)
+- **Three-Tier Card System** - Formalized Light (`bg-muted/10`), Elevated (`bg-card/50`), and Floating (`bg-card/30 + blur`) container tiers
+- **Light/OLED Mode Fix** - Replaced `bg-card/10` with `bg-muted/10` across 53 files for visibility on white/black backgrounds
+- **Form Input Standardization** - Migrated inline input styles to `INPUT_BASE_CLASSES` from `theme-input-styles.ts`
+
+#### Performance Optimizations
+- **Batched Plex Cache Upserts** - Transactions of 100 items instead of individual upserts (10-50x faster on RPi/NAS)
+- **SessionSnapshot Index** - Added standalone `capturedAt` index for analytics queries
+- **Known-Platforms Cache** - 6-hour in-memory cache eliminates 10K-row fetch every 5 minutes
+- **Seerr Notification Agents Cache** - 5-minute TTL with invalidation on update
+- **Dashboard Polling** - Disabled media polling on inactive tabs (60s vs 15s), queue polling reduced to 30s
+- **ColorThemeProvider Memoization** - Prevents 355 subscriber re-renders on provider mount
+- **NavContent Module Scope** - Prevents nav tree remounts on sidebar state changes
+- **ManualImportModal Lazy Loading** - Deferred chunk load until modal opens
+- **Schema Fingerprinting** - Only runs on first item per category (was every validated item)
+- **next/image for Plex Posters** - Layout shift prevention with width/height on poster thumbnails
+
 ### Changed
 
 - **Comprehensive Security Hardening** - Input sanitization, Helmet security headers (HSTS, X-Content-Type-Options, X-Frame-Options), rate limiting on new endpoints, CUID validation on route parameters, and session logout logging
@@ -89,21 +112,33 @@ v2.9 is the largest feature release since 2.0 — adding media server awareness,
 
 #### Additional Fixes
 
+- **Plex/Tautulli Schema Hardening** - Zod schemas updated for nullable `title`, `ratingKey`, `guids`, `media_type` fields; `rating_key` uses `z.coerce.string()` for numeric values from Tautulli
+- **Cache Refresh Error Messages** - Schedulers now store actual error text (first 3 messages, truncated to 200 chars) instead of generic "N item errors"
+- **Lidarr/Readarr Dedup Fix** - Hunting dedup maps skip records with undefined IDs instead of collapsing them to key `0`
+- **Seerr Issue Pagination** - Increased page size from 20 to 100 (5x fewer serial API calls)
+- **Calendar E2E Tests** - Updated selectors for v2.9 calendar redesign (heading, filters, navigation)
+- **Seerr Test Assertions** - Fixed 4 broken tests that checked `mock.calls[0]` instead of `mock.calls[1]` due to CSRF prefetch
 - **Skip Future Episodes** - Queue Cleaner can now optionally skip future (unaired) Sonarr episodes
 - **Scheduler Test Stability** - Fixed flaky scheduler tests by matching per-config reset implementation
 
 ### Security
 
+- **Dependency Updates** - Updated next (16.1.7), undici (7.24.0), flatted (3.4.0) resolving 11 CVEs including HTTP smuggling, CSRF bypasses, WebSocket DoS, and CRLF injection
+- **SSRF Prevention** - Plex image proxy rejects paths containing `..` to prevent path traversal past the `/library/metadata/` prefix
+- **CSRF Retry Fix** - Seerr client now throws the actual retry error instead of silently discarding it and re-throwing the stale 403
+- **Silent Failure Fixes** - Added logging to 6 previously silent catch blocks: `safeRequest`, notification retry handler, cache-manager delete, template-updater corrupt JSON, aggregation buffer flush, Plex cache eviction skip
 - **Dependabot Alerts Resolved** - Patched minimatch (ReDoS) and ajv (prototype pollution) via version overrides
 - **Fastify Helmet** - Content Security Policy headers on all API responses
 - **Notification Channel Encryption** - All channel configurations (webhook URLs, API tokens, SMTP credentials) encrypted at rest with AES-256-GCM
 
 ### Testing
 
+- **1073 Unit Tests** - All passing (0 failures), covering notification system, Seerr integration, validation system, cleanup rule evaluators, and Plex route helpers
+- **E2E Integration Suite** - 18 specs covering all features, 3 shards for parallel execution
+- **CI Pipeline Optimized** - Merged lint+test job, Docker build parallel with E2E, cancel-in-progress on new push
 - **TRaSH GitHub Schema Tests** - 583 lines of validation tests ensuring upstream TRaSH JSON format compatibility
 - **Naming Deployer Tests** - 497 lines covering naming scheme application logic
-- **Sonarr Statistics Tests** - Unit tests for episode counting edge cases (from v2.8.5)
-- **Logger Level Tests** - Verification that LOG_LEVEL env var takes effect (from v2.8.5)
+- **Database Upgrade Tested** - Verified SQLite and PostgreSQL v2.8→v2.9 upgrade path with data preservation
 
 ### Upgrade Notes
 
