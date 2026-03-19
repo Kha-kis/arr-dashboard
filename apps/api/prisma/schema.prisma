@@ -644,6 +644,9 @@ model HuntConfig {
   // Season pack preference (Sonarr only)
   preferSeasonPacks     Boolean         @default(false)  // Always search full seasons to catch season packs
 
+  // Upgrade source mode
+  upgradeSourceMode     String          @default("wanted")  // "wanted" | "monitored" | "both"
+
   // Re-search settings
   researchAfterDays     Int             @default(7)      // Re-search items after X days (0 = never re-search)
 

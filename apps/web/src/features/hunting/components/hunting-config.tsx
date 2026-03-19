@@ -297,6 +297,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 		yearMax: config.yearMax,
 		ageThresholdDays: config.ageThresholdDays,
 		preferSeasonPacks: config.preferSeasonPacks,
+		upgradeSourceMode: config.upgradeSourceMode,
 	});
 
 	const { updateConfig, isUpdating, error } = useUpdateHuntConfig();
@@ -367,6 +368,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 			yearMax: config.yearMax,
 			ageThresholdDays: config.ageThresholdDays,
 			preferSeasonPacks: config.preferSeasonPacks,
+			upgradeSourceMode: config.upgradeSourceMode,
 			researchAfterDays: config.researchAfterDays,
 		});
 
@@ -477,6 +479,28 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 							}
 							suffix="minutes"
 						/>
+					</div>
+					<div className="mt-4">
+						<label className="block text-sm font-medium text-foreground mb-1">
+							Upgrade Source
+						</label>
+						<p className="text-xs text-muted-foreground mb-2">
+							Where to find items eligible for quality upgrades
+						</p>
+						<select
+							value={formState.upgradeSourceMode ?? "wanted"}
+							onChange={(e) =>
+								setFormState((prev) => ({
+									...prev,
+									upgradeSourceMode: e.target.value as "wanted" | "monitored" | "both",
+								}))
+							}
+							className="w-full rounded-lg border border-border/50 bg-card/50 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
+						>
+							<option value="wanted">Wanted Cutoff Only</option>
+							<option value="monitored">All Monitored with Files</option>
+							<option value="both">Both (Wanted + Monitored)</option>
+						</select>
 					</div>
 				</ConfigSection>
 
