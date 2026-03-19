@@ -49,4 +49,3 @@ const normalizeGenresArray = (genres: unknown): string[] | undefined => {
 	if (!Array.isArray(genres)) return undefined;
 	return genres.filter((g): g is string => typeof g === "string");
 };
-

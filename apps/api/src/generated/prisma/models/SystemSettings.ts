@@ -30,12 +30,14 @@ export type SystemSettingsAvgAggregateOutputType = {
   id: number | null
   apiPort: number | null
   webPort: number | null
+  notificationLogRetentionDays: number | null
 }
 
 export type SystemSettingsSumAggregateOutputType = {
   id: number | null
   apiPort: number | null
   webPort: number | null
+  notificationLogRetentionDays: number | null
 }
 
 export type SystemSettingsMinAggregateOutputType = {
@@ -46,6 +48,7 @@ export type SystemSettingsMinAggregateOutputType = {
   appName: string | null
   trustProxy: boolean | null
   secureCookies: boolean | null
+  notificationLogRetentionDays: number | null
   externalUrl: string | null
   createdAt: Date | null
   updatedAt: Date | null
@@ -59,6 +62,7 @@ export type SystemSettingsMaxAggregateOutputType = {
   appName: string | null
   trustProxy: boolean | null
   secureCookies: boolean | null
+  notificationLogRetentionDays: number | null
   externalUrl: string | null
   createdAt: Date | null
   updatedAt: Date | null
@@ -72,6 +76,7 @@ export type SystemSettingsCountAggregateOutputType = {
   appName: number
   trustProxy: number
   secureCookies: number
+  notificationLogRetentionDays: number
   externalUrl: number
   createdAt: number
   updatedAt: number
@@ -83,12 +88,14 @@ export type SystemSettingsAvgAggregateInputType = {
   id?: true
   apiPort?: true
   webPort?: true
+  notificationLogRetentionDays?: true
 }
 
 export type SystemSettingsSumAggregateInputType = {
   id?: true
   apiPort?: true
   webPort?: true
+  notificationLogRetentionDays?: true
 }
 
 export type SystemSettingsMinAggregateInputType = {
@@ -99,6 +106,7 @@ export type SystemSettingsMinAggregateInputType = {
   appName?: true
   trustProxy?: true
   secureCookies?: true
+  notificationLogRetentionDays?: true
   externalUrl?: true
   createdAt?: true
   updatedAt?: true
@@ -112,6 +120,7 @@ export type SystemSettingsMaxAggregateInputType = {
   appName?: true
   trustProxy?: true
   secureCookies?: true
+  notificationLogRetentionDays?: true
   externalUrl?: true
   createdAt?: true
   updatedAt?: true
@@ -125,6 +134,7 @@ export type SystemSettingsCountAggregateInputType = {
   appName?: true
   trustProxy?: true
   secureCookies?: true
+  notificationLogRetentionDays?: true
   externalUrl?: true
   createdAt?: true
   updatedAt?: true
@@ -225,6 +235,7 @@ export type SystemSettingsGroupByOutputType = {
   appName: string
   trustProxy: boolean | null
   secureCookies: boolean | null
+  notificationLogRetentionDays: number
   externalUrl: string | null
   createdAt: Date
   updatedAt: Date
@@ -261,6 +272,7 @@ export type SystemSettingsWhereInput = {
   appName?: Prisma.StringFilter<"SystemSettings"> | string
   trustProxy?: Prisma.BoolNullableFilter<"SystemSettings"> | boolean | null
   secureCookies?: Prisma.BoolNullableFilter<"SystemSettings"> | boolean | null
+  notificationLogRetentionDays?: Prisma.IntFilter<"SystemSettings"> | number
   externalUrl?: Prisma.StringNullableFilter<"SystemSettings"> | string | null
   createdAt?: Prisma.DateTimeFilter<"SystemSettings"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"SystemSettings"> | Date | string
@@ -274,6 +286,7 @@ export type SystemSettingsOrderByWithRelationInput = {
   appName?: Prisma.SortOrder
   trustProxy?: Prisma.SortOrderInput | Prisma.SortOrder
   secureCookies?: Prisma.SortOrderInput | Prisma.SortOrder
+  notificationLogRetentionDays?: Prisma.SortOrder
   externalUrl?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
@@ -290,6 +303,7 @@ export type SystemSettingsWhereUniqueInput = Prisma.AtLeast<{
   appName?: Prisma.StringFilter<"SystemSettings"> | string
   trustProxy?: Prisma.BoolNullableFilter<"SystemSettings"> | boolean | null
   secureCookies?: Prisma.BoolNullableFilter<"SystemSettings"> | boolean | null
+  notificationLogRetentionDays?: Prisma.IntFilter<"SystemSettings"> | number
   externalUrl?: Prisma.StringNullableFilter<"SystemSettings"> | string | null
   createdAt?: Prisma.DateTimeFilter<"SystemSettings"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"SystemSettings"> | Date | string
@@ -303,6 +317,7 @@ export type SystemSettingsOrderByWithAggregationInput = {
   appName?: Prisma.SortOrder
   trustProxy?: Prisma.SortOrderInput | Prisma.SortOrder
   secureCookies?: Prisma.SortOrderInput | Prisma.SortOrder
+  notificationLogRetentionDays?: Prisma.SortOrder
   externalUrl?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
@@ -324,6 +339,7 @@ export type SystemSettingsScalarWhereWithAggregatesInput = {
   appName?: Prisma.StringWithAggregatesFilter<"SystemSettings"> | string
   trustProxy?: Prisma.BoolNullableWithAggregatesFilter<"SystemSettings"> | boolean | null
   secureCookies?: Prisma.BoolNullableWithAggregatesFilter<"SystemSettings"> | boolean | null
+  notificationLogRetentionDays?: Prisma.IntWithAggregatesFilter<"SystemSettings"> | number
   externalUrl?: Prisma.StringNullableWithAggregatesFilter<"SystemSettings"> | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"SystemSettings"> | Date | string
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"SystemSettings"> | Date | string
@@ -337,6 +353,7 @@ export type SystemSettingsCreateInput = {
   appName?: string
   trustProxy?: boolean | null
   secureCookies?: boolean | null
+  notificationLogRetentionDays?: number
   externalUrl?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -350,6 +367,7 @@ export type SystemSettingsUncheckedCreateInput = {
   appName?: string
   trustProxy?: boolean | null
   secureCookies?: boolean | null
+  notificationLogRetentionDays?: number
   externalUrl?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -363,6 +381,7 @@ export type SystemSettingsUpdateInput = {
   appName?: Prisma.StringFieldUpdateOperationsInput | string
   trustProxy?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   secureCookies?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  notificationLogRetentionDays?: Prisma.IntFieldUpdateOperationsInput | number
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -376,6 +395,7 @@ export type SystemSettingsUncheckedUpdateInput = {
   appName?: Prisma.StringFieldUpdateOperationsInput | string
   trustProxy?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   secureCookies?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  notificationLogRetentionDays?: Prisma.IntFieldUpdateOperationsInput | number
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -389,6 +409,7 @@ export type SystemSettingsCreateManyInput = {
   appName?: string
   trustProxy?: boolean | null
   secureCookies?: boolean | null
+  notificationLogRetentionDays?: number
   externalUrl?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -402,6 +423,7 @@ export type SystemSettingsUpdateManyMutationInput = {
   appName?: Prisma.StringFieldUpdateOperationsInput | string
   trustProxy?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   secureCookies?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  notificationLogRetentionDays?: Prisma.IntFieldUpdateOperationsInput | number
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -415,6 +437,7 @@ export type SystemSettingsUncheckedUpdateManyInput = {
   appName?: Prisma.StringFieldUpdateOperationsInput | string
   trustProxy?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   secureCookies?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  notificationLogRetentionDays?: Prisma.IntFieldUpdateOperationsInput | number
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -428,6 +451,7 @@ export type SystemSettingsCountOrderByAggregateInput = {
   appName?: Prisma.SortOrder
   trustProxy?: Prisma.SortOrder
   secureCookies?: Prisma.SortOrder
+  notificationLogRetentionDays?: Prisma.SortOrder
   externalUrl?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
@@ -437,6 +461,7 @@ export type SystemSettingsAvgOrderByAggregateInput = {
   id?: Prisma.SortOrder
   apiPort?: Prisma.SortOrder
   webPort?: Prisma.SortOrder
+  notificationLogRetentionDays?: Prisma.SortOrder
 }
 
 export type SystemSettingsMaxOrderByAggregateInput = {
@@ -447,6 +472,7 @@ export type SystemSettingsMaxOrderByAggregateInput = {
   appName?: Prisma.SortOrder
   trustProxy?: Prisma.SortOrder
   secureCookies?: Prisma.SortOrder
+  notificationLogRetentionDays?: Prisma.SortOrder
   externalUrl?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
@@ -460,6 +486,7 @@ export type SystemSettingsMinOrderByAggregateInput = {
   appName?: Prisma.SortOrder
   trustProxy?: Prisma.SortOrder
   secureCookies?: Prisma.SortOrder
+  notificationLogRetentionDays?: Prisma.SortOrder
   externalUrl?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
@@ -469,6 +496,7 @@ export type SystemSettingsSumOrderByAggregateInput = {
   id?: Prisma.SortOrder
   apiPort?: Prisma.SortOrder
   webPort?: Prisma.SortOrder
+  notificationLogRetentionDays?: Prisma.SortOrder
 }
 
 export type NullableBoolFieldUpdateOperationsInput = {
@@ -485,6 +513,7 @@ export type SystemSettingsSelect<ExtArgs extends runtime.Types.Extensions.Intern
   appName?: boolean
   trustProxy?: boolean
   secureCookies?: boolean
+  notificationLogRetentionDays?: boolean
   externalUrl?: boolean
   createdAt?: boolean
   updatedAt?: boolean
@@ -498,6 +527,7 @@ export type SystemSettingsSelectCreateManyAndReturn<ExtArgs extends runtime.Type
   appName?: boolean
   trustProxy?: boolean
   secureCookies?: boolean
+  notificationLogRetentionDays?: boolean
   externalUrl?: boolean
   createdAt?: boolean
   updatedAt?: boolean
@@ -511,6 +541,7 @@ export type SystemSettingsSelectUpdateManyAndReturn<ExtArgs extends runtime.Type
   appName?: boolean
   trustProxy?: boolean
   secureCookies?: boolean
+  notificationLogRetentionDays?: boolean
   externalUrl?: boolean
   createdAt?: boolean
   updatedAt?: boolean
@@ -524,12 +555,13 @@ export type SystemSettingsSelectScalar = {
   appName?: boolean
   trustProxy?: boolean
   secureCookies?: boolean
+  notificationLogRetentionDays?: boolean
   externalUrl?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type SystemSettingsOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "apiPort" | "webPort" | "listenAddress" | "appName" | "trustProxy" | "secureCookies" | "externalUrl" | "createdAt" | "updatedAt", ExtArgs["result"]["systemSettings"]>
+export type SystemSettingsOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "apiPort" | "webPort" | "listenAddress" | "appName" | "trustProxy" | "secureCookies" | "notificationLogRetentionDays" | "externalUrl" | "createdAt" | "updatedAt", ExtArgs["result"]["systemSettings"]>
 
 export type $SystemSettingsPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "SystemSettings"
@@ -542,6 +574,7 @@ export type $SystemSettingsPayload<ExtArgs extends runtime.Types.Extensions.Inte
     appName: string
     trustProxy: boolean | null
     secureCookies: boolean | null
+    notificationLogRetentionDays: number
     externalUrl: string | null
     createdAt: Date
     updatedAt: Date
@@ -975,6 +1008,7 @@ export interface SystemSettingsFieldRefs {
   readonly appName: Prisma.FieldRef<"SystemSettings", 'String'>
   readonly trustProxy: Prisma.FieldRef<"SystemSettings", 'Boolean'>
   readonly secureCookies: Prisma.FieldRef<"SystemSettings", 'Boolean'>
+  readonly notificationLogRetentionDays: Prisma.FieldRef<"SystemSettings", 'Int'>
   readonly externalUrl: Prisma.FieldRef<"SystemSettings", 'String'>
   readonly createdAt: Prisma.FieldRef<"SystemSettings", 'DateTime'>
   readonly updatedAt: Prisma.FieldRef<"SystemSettings", 'DateTime'>

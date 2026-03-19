@@ -1,5 +1,5 @@
-import { useState, useCallback } from "react";
 import type { TrashTemplate } from "@arr/shared";
+import { useCallback, useState } from "react";
 
 type ServiceType = "RADARR" | "SONARR";
 

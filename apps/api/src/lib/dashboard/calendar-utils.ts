@@ -1,5 +1,6 @@
 import type { CalendarItem } from "@arr/shared";
 import { toBoolean, toNumber, toStringArray, toStringValue } from "../data/values.js";
+import { normalizeImages } from "../library/image-normalizer.js";
 
 /** Service types that support calendar functionality */
 export type CalendarService = "sonarr" | "radarr" | "lidarr" | "readarr";
@@ -110,10 +111,7 @@ const extractCalendarTitle = (anyItem: UnknownRecord, service: CalendarService):
  * Normalizes a raw calendar item from the ARR API into a consistent format
  * Supports Sonarr (episodes), Radarr (movies), Lidarr (albums), and Readarr (books)
  */
-export const normalizeCalendarItem = (
-	item: unknown,
-	service: CalendarService,
-): CalendarItem => {
+export const normalizeCalendarItem = (item: unknown, service: CalendarService): CalendarItem => {
 	const anyItem = item as UnknownRecord;
 	const rawId =
 		anyItem.id ??
@@ -168,8 +166,7 @@ export const normalizeCalendarItem = (
 		service === "lidarr"
 			? toStringValue(anyItem.artist?.artistName ?? anyItem.artistName)
 			: undefined;
-	const albumTitle =
-		service === "lidarr" ? toStringValue(anyItem.title) : undefined;
+	const albumTitle = service === "lidarr" ? toStringValue(anyItem.title) : undefined;
 	const artistId =
 		service === "lidarr" ? toNumber(anyItem.artistId ?? anyItem.artist?.id) : undefined;
 	const albumId = service === "lidarr" ? toNumber(anyItem.albumId ?? anyItem.id) : undefined;
@@ -179,8 +176,7 @@ export const normalizeCalendarItem = (
 		service === "readarr"
 			? toStringValue(anyItem.author?.authorName ?? anyItem.authorName)
 			: undefined;
-	const bookTitle =
-		service === "readarr" ? toStringValue(anyItem.title) : undefined;
+	const bookTitle = service === "readarr" ? toStringValue(anyItem.title) : undefined;
 	const authorId =
 		service === "readarr" ? toNumber(anyItem.authorId ?? anyItem.author?.id) : undefined;
 	const bookId = service === "readarr" ? toNumber(anyItem.bookId ?? anyItem.id) : undefined;
@@ -202,10 +198,20 @@ export const normalizeCalendarItem = (
 	);
 
 	const status = toStringValue(
-		anyItem.status ?? anyItem.movie?.status ?? anyItem.series?.status ?? anyItem.artist?.status ?? anyItem.author?.status,
+		anyItem.status ??
+			anyItem.movie?.status ??
+			anyItem.series?.status ??
+			anyItem.artist?.status ??
+			anyItem.author?.status,
 	);
 
 	const title = extractCalendarTitle(anyItem, service);
+
+	// Extract poster from series/movie/artist/author images
+	const imageSource =
+		anyItem.series?.images ?? anyItem.movie?.images ?? anyItem.images ??
+		anyItem.artist?.images ?? anyItem.author?.images;
+	const { poster: posterUrl } = normalizeImages(imageSource);
 
 	return {
 		id: normalizedId,
@@ -246,10 +252,20 @@ export const normalizeCalendarItem = (
 		runtime: toNumber(anyItem.runtime ?? anyItem.series?.runtime),
 		network: toStringValue(anyItem.series?.network ?? anyItem.network),
 		studio: toStringValue(anyItem.studio ?? anyItem.artist?.disambiguation),
-		overview: toStringValue(anyItem.overview ?? anyItem.series?.overview ?? anyItem.artist?.overview ?? anyItem.author?.overview),
-		genres: toStringArray(anyItem.genres) ?? toStringArray(anyItem.series?.genres) ?? toStringArray(anyItem.artist?.genres) ?? toStringArray(anyItem.author?.genres),
+		overview: toStringValue(
+			anyItem.overview ??
+				anyItem.series?.overview ??
+				anyItem.artist?.overview ??
+				anyItem.author?.overview,
+		),
+		genres:
+			toStringArray(anyItem.genres) ??
+			toStringArray(anyItem.series?.genres) ??
+			toStringArray(anyItem.artist?.genres) ??
+			toStringArray(anyItem.author?.genres),
 		monitored: toBoolean(anyItem.monitored),
 		hasFile: toBoolean(anyItem.hasFile),
+		posterUrl,
 		instanceId: "",
 		instanceName: "",
 	};

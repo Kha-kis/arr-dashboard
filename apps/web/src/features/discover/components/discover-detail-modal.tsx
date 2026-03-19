@@ -1,40 +1,23 @@
 "use client";
 
-import { useCallback } from "react";
-import {
-	X,
-	Star,
-	Clock,
-	Calendar,
-	Film,
-	Tv,
-	Send,
-	Loader2,
-	Layers,
-} from "lucide-react";
 import type { SeerrDiscoverResult } from "@arr/shared";
 import { SEERR_MEDIA_STATUS } from "@arr/shared";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { Calendar, Clock, Film, Layers, Loader2, Send, Star, Tv, X } from "lucide-react";
+import { useCallback } from "react";
+import { useSeerrMovieDetails, useSeerrTvDetails } from "../../../hooks/api/useSeerr";
 import { useFocusTrap } from "../../../hooks/useFocusTrap";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { RATING_COLOR } from "../../../lib/theme-gradients";
 import {
-	useSeerrMovieDetails,
-	useSeerrTvDetails,
-} from "../../../hooks/api/useSeerr";
-import {
-	getSeerrImageUrl,
-	getMediaStatusInfo,
 	getDisplayTitle,
+	getMediaStatusInfo,
 	getReleaseYear,
+	getSeerrImageUrl,
 	isAnimeFromKeywords,
 	isLikelyAnime,
 } from "../lib/seerr-image-utils";
 import { DiscoverCarousel } from "./discover-carousel";
-import {
-	CastSection,
-	TrailerButton,
-	ExternalLinksSection,
-} from "./media-detail-sections";
+import { CastSection, ExternalLinksSection, TrailerButton } from "./media-detail-sections";
 
 interface DiscoverDetailModalProps {
 	item: SeerrDiscoverResult;
@@ -68,24 +51,23 @@ export const DiscoverDetailModal: React.FC<DiscoverDetailModalProps> = ({
 		: getDisplayTitle(item);
 	const year = getReleaseYear(
 		isMovie
-			? { releaseDate: (details as NonNullable<typeof movieQuery.data>)?.releaseDate ?? item.releaseDate }
-			: { firstAirDate: (details as NonNullable<typeof tvQuery.data>)?.firstAirDate ?? item.firstAirDate },
+			? {
+					releaseDate:
+						(details as NonNullable<typeof movieQuery.data>)?.releaseDate ?? item.releaseDate,
+				}
+			: {
+					firstAirDate:
+						(details as NonNullable<typeof tvQuery.data>)?.firstAirDate ?? item.firstAirDate,
+				},
 	);
-	const backdropUrl = getSeerrImageUrl(
-		details?.backdropPath ?? item.backdropPath,
-		"w1280",
-	);
-	const posterUrl = getSeerrImageUrl(
-		details?.posterPath ?? item.posterPath,
-		"w342",
-	);
+	const backdropUrl = getSeerrImageUrl(details?.backdropPath ?? item.backdropPath, "w1280");
+	const posterUrl = getSeerrImageUrl(details?.posterPath ?? item.posterPath, "w342");
 
 	const mediaStatus = details?.mediaInfo?.status ?? item.mediaInfo?.status;
 	const statusInfo = getMediaStatusInfo(mediaStatus);
 	const isAvailable = mediaStatus === SEERR_MEDIA_STATUS.AVAILABLE;
 	const hasRequest =
-		mediaStatus === SEERR_MEDIA_STATUS.PENDING ||
-		mediaStatus === SEERR_MEDIA_STATUS.PROCESSING;
+		mediaStatus === SEERR_MEDIA_STATUS.PENDING || mediaStatus === SEERR_MEDIA_STATUS.PROCESSING;
 
 	// Recommendations and similar from details
 	const recommendations = details?.recommendations?.results ?? [];
@@ -95,9 +77,7 @@ export const DiscoverDetailModal: React.FC<DiscoverDetailModalProps> = ({
 	const cast = (details?.credits?.cast ?? []).slice(0, 12);
 
 	// Runtime
-	const runtime = isMovie
-		? (details as NonNullable<typeof movieQuery.data>)?.runtime
-		: undefined;
+	const runtime = isMovie ? (details as NonNullable<typeof movieQuery.data>)?.runtime : undefined;
 	const numberOfSeasons = !isMovie
 		? (details as NonNullable<typeof tvQuery.data>)?.numberOfSeasons
 		: undefined;
@@ -164,11 +144,7 @@ export const DiscoverDetailModal: React.FC<DiscoverDetailModalProps> = ({
 				<div className="relative h-[250px] sm:h-[300px] overflow-hidden">
 					{backdropUrl ? (
 						/* eslint-disable-next-line @next/next/no-img-element */
-						<img
-							src={backdropUrl}
-							alt={title}
-							className="h-full w-full object-cover"
-						/>
+						<img src={backdropUrl} alt={title} className="h-full w-full object-cover" />
 					) : (
 						<div
 							className="h-full w-full"
@@ -294,10 +270,7 @@ export const DiscoverDetailModal: React.FC<DiscoverDetailModalProps> = ({
 					{/* Loading state for details */}
 					{isDetailsLoading && (
 						<div className="flex items-center justify-center py-8">
-							<Loader2
-								className="h-6 w-6 animate-spin"
-								style={{ color: themeGradient.from }}
-							/>
+							<Loader2 className="h-6 w-6 animate-spin" style={{ color: themeGradient.from }} />
 						</div>
 					)}
 
@@ -307,9 +280,7 @@ export const DiscoverDetailModal: React.FC<DiscoverDetailModalProps> = ({
 							<h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
 								Overview
 							</h3>
-							<p className="text-sm text-foreground/80 leading-relaxed">
-								{details.overview}
-							</p>
+							<p className="text-sm text-foreground/80 leading-relaxed">{details.overview}</p>
 						</div>
 					)}
 
@@ -365,15 +336,10 @@ export const DiscoverDetailModal: React.FC<DiscoverDetailModalProps> = ({
 
 					{/* Similar */}
 					{similar.length > 0 && (
-						<DiscoverCarousel
-							title="Similar"
-							items={similar}
-							onSelectItem={handleSelectRelated}
-						/>
+						<DiscoverCarousel title="Similar" items={similar} onSelectItem={handleSelectRelated} />
 					)}
 				</div>
 			</div>
 		</div>
 	);
 };
-

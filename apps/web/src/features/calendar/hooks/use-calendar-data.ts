@@ -1,5 +1,5 @@
-import { useMemo } from "react";
 import type { CalendarItem, ServiceInstanceSummary } from "@arr/shared";
+import { useMemo } from "react";
 import type { CalendarFilters } from "./use-calendar-state";
 
 /**

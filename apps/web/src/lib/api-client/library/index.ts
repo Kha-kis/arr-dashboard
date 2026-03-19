@@ -10,11 +10,12 @@ import type {
 	LibraryEpisodeMonitorRequest,
 	LibraryEpisodeSearchRequest,
 	LibraryEpisodesResponse,
+	LibraryItem,
 	LibraryMovieFileResponse,
-	LibraryToggleMonitorRequest,
-	LibrarySeasonSearchRequest,
 	LibraryMovieSearchRequest,
+	LibrarySeasonSearchRequest,
 	LibrarySeriesSearchRequest,
+	LibraryToggleMonitorRequest,
 	LibraryTracksResponse,
 	PaginatedLibraryResponse,
 } from "@arr/shared";
@@ -184,9 +185,7 @@ export async function searchLibraryAlbum(payload: LibraryAlbumSearchRequest): Pr
 	});
 }
 
-export async function toggleAlbumMonitoring(
-	payload: LibraryAlbumMonitorRequest,
-): Promise<void> {
+export async function toggleAlbumMonitoring(payload: LibraryAlbumMonitorRequest): Promise<void> {
 	await apiRequest<void>("/api/library/album/monitor", {
 		method: "POST",
 		json: payload,
@@ -220,9 +219,7 @@ export async function searchLibraryBook(payload: LibraryBookSearchRequest): Prom
 	});
 }
 
-export async function toggleBookMonitoring(
-	payload: LibraryBookMonitorRequest,
-): Promise<void> {
+export async function toggleBookMonitoring(payload: LibraryBookMonitorRequest): Promise<void> {
 	await apiRequest<void>("/api/library/book/monitor", {
 		method: "POST",
 		json: payload,
@@ -254,4 +251,13 @@ export async function updateLibrarySyncSettings(
 		`/api/library/sync/${instanceId}`,
 		{ method: "PATCH", json: settings },
 	);
+}
+
+export async function fetchLibraryItemByTmdbId(tmdbId: number): Promise<LibraryItem | null> {
+	try {
+		const result = await apiRequest<{ item: LibraryItem }>(`/api/library/by-tmdb/${tmdbId}`);
+		return result.item;
+	} catch {
+		return null;
+	}
 }

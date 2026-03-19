@@ -1,6 +1,6 @@
-import { useEffect } from "react";
-import type { UseQueryResult } from "@tanstack/react-query";
 import type { SearchIndexersResponse } from "@arr/shared";
+import type { UseQueryResult } from "@tanstack/react-query";
+import { useEffect } from "react";
 import type { SearchStateActions } from "./use-search-state";
 
 /**

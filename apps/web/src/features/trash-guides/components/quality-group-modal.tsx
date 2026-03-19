@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
 import type { TemplateQualityItem } from "@arr/shared";
+import { Check, FolderPlus, Layers, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { Button, Input } from "../../../components/ui";
-import { FolderPlus, X, Check, Layers } from "lucide-react";
 
 interface QualityGroupModalProps {
 	/** Whether the modal is open */
@@ -82,13 +82,8 @@ export const QualityGroupModal = ({
 				<div className="flex items-center justify-between mb-4">
 					<div className="flex items-center gap-2">
 						<FolderPlus className="h-5 w-5 text-primary" />
-						<h3
-							id="group-modal-title"
-							className="text-lg font-medium text-foreground"
-						>
-							{editingGroupId
-								? "Edit Quality Group"
-								: "Create Quality Group"}
+						<h3 id="group-modal-title" className="text-lg font-medium text-foreground">
+							{editingGroupId ? "Edit Quality Group" : "Create Quality Group"}
 						</h3>
 					</div>
 					<Button
@@ -104,16 +99,13 @@ export const QualityGroupModal = ({
 
 				{/* Instructions */}
 				<p className="text-sm text-muted-foreground mb-4">
-					Select 2 or more qualities to group together. Grouped
-					qualities are treated as equivalent - Radarr/Sonarr
-					won&apos;t upgrade between them.
+					Select 2 or more qualities to group together. Grouped qualities are treated as equivalent
+					- Radarr/Sonarr won&apos;t upgrade between them.
 				</p>
 
 				{/* Group Name Input */}
 				<div className="mb-4">
-					<label className="block text-sm font-medium text-foreground mb-1">
-						Group Name
-					</label>
+					<label className="block text-sm font-medium text-foreground mb-1">Group Name</label>
 					<Input
 						type="text"
 						value={groupModalName}
@@ -131,43 +123,33 @@ export const QualityGroupModal = ({
 					<div className="max-h-64 overflow-y-auto rounded-lg border border-border">
 						{ungroupedQualities.length === 0 ? (
 							<p className="p-4 text-sm text-muted-foreground text-center">
-								No ungrouped qualities available. Ungroup
-								existing groups first.
+								No ungrouped qualities available. Ungroup existing groups first.
 							</p>
 						) : (
 							ungroupedQualities.map((quality) => {
-								const isSelected =
-									groupModalSelection.has(quality.id);
+								const isSelected = groupModalSelection.has(quality.id);
 								return (
 									<label
 										key={quality.id}
 										className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors ${
-											isSelected
-												? "bg-primary/10"
-												: "hover:bg-card"
+											isSelected ? "bg-primary/10" : "hover:bg-card"
 										} border-b border-border last:border-b-0`}
 									>
 										<input
 											type="checkbox"
 											checked={isSelected}
-											onChange={() =>
-												toggleModalSelection(quality.id)
-											}
+											onChange={() => toggleModalSelection(quality.id)}
 											className="h-4 w-4 rounded border-border bg-card text-primary focus:ring-primary"
 										/>
 										<div className="flex-1">
-											<span className="text-sm font-medium text-foreground">
-												{quality.name}
-											</span>
+											<span className="text-sm font-medium text-foreground">{quality.name}</span>
 											{quality.resolution && (
 												<span className="ml-2 text-xs text-muted-foreground">
 													({quality.resolution}p)
 												</span>
 											)}
 										</div>
-										{isSelected && (
-											<Check className="h-4 w-4 text-primary" />
-										)}
+										{isSelected && <Check className="h-4 w-4 text-primary" />}
 									</label>
 								);
 							})
@@ -178,14 +160,10 @@ export const QualityGroupModal = ({
 				{/* Preview */}
 				{groupModalSelection.size >= 2 && groupModalName.trim() && (
 					<div className="mb-4 p-3 rounded-lg bg-primary/5 border border-primary/20">
-						<div className="text-xs font-medium text-primary mb-1">
-							Preview:
-						</div>
+						<div className="text-xs font-medium text-primary mb-1">Preview:</div>
 						<div className="flex items-center gap-2">
 							<Layers className="h-4 w-4 text-primary" />
-							<span className="text-sm font-medium text-foreground">
-								{groupModalName}
-							</span>
+							<span className="text-sm font-medium text-foreground">{groupModalName}</span>
 							<span className="text-xs text-muted-foreground">
 								({groupModalSelection.size} qualities)
 							</span>
@@ -201,10 +179,7 @@ export const QualityGroupModal = ({
 					<Button
 						variant="primary"
 						onClick={handleSave}
-						disabled={
-							groupModalSelection.size < 2 ||
-							!groupModalName.trim()
-						}
+						disabled={groupModalSelection.size < 2 || !groupModalName.trim()}
 					>
 						{editingGroupId ? "Update Group" : "Create Group"}
 					</Button>

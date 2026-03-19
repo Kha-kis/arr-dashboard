@@ -1,13 +1,9 @@
 "use client";
 
-import type { ReactNode } from "react";
-import {
-	Sparkles,
-	ChevronUp,
-	ChevronDown,
-} from "lucide-react";
-import type { ProfileMatchResult } from "../../../../lib/api-client/trash-guides";
 import type { LucideIcon } from "lucide-react";
+import { ChevronDown, ChevronUp, Sparkles } from "lucide-react";
+import type { ReactNode } from "react";
+import type { ProfileMatchResult } from "../../../../lib/api-client/trash-guides";
 
 // ---------- Profile Match Banner ----------
 
@@ -38,28 +34,36 @@ export const ProfileMatchBanner = ({
 	if (!profileMatchData) return null;
 
 	return (
-		<div className={`rounded-xl border p-4 ${
-			profileMatchData.matched
-				? "border-purple-500/30 bg-purple-500/5"
-				: "border-gray-500/20 bg-gray-500/5"
-		}`}>
+		<div
+			className={`rounded-xl border p-4 ${
+				profileMatchData.matched
+					? "border-purple-500/30 bg-purple-500/5"
+					: "border-gray-500/20 bg-gray-500/5"
+			}`}
+		>
 			<div className="flex items-start justify-between gap-4">
 				<div className="flex items-start gap-3">
-					<Sparkles className={`h-5 w-5 mt-0.5 shrink-0 ${
-						profileMatchData.matched ? "text-purple-400" : "text-gray-400"
-					}`} />
+					<Sparkles
+						className={`h-5 w-5 mt-0.5 shrink-0 ${
+							profileMatchData.matched ? "text-purple-400" : "text-gray-400"
+						}`}
+					/>
 					<div>
 						{profileMatchData.matched ? (
 							<>
 								<h5 className="font-medium text-foreground mb-1">
-									Matched to TRaSH Profile: <span className="text-purple-300">{profileMatchData.matchedProfile?.name}</span>
+									Matched to TRaSH Profile:{" "}
+									<span className="text-purple-300">{profileMatchData.matchedProfile?.name}</span>
 								</h5>
 								<p className="text-xs text-foreground/70 mb-2">
 									{profileMatchData.matchType === "exact" && "Exact name match"}
 									{profileMatchData.matchType === "fuzzy" && "Fuzzy name match"}
 									{profileMatchData.matchType === "partial" && "Partial name match"}
 									{profileMatchData.matchedProfile?.description && (
-										<span className="text-foreground/50"> — {profileMatchData.matchedProfile.description}</span>
+										<span className="text-foreground/50">
+											{" "}
+											— {profileMatchData.matchedProfile.description}
+										</span>
 									)}
 								</p>
 								{profileMatchData.recommendations && (
@@ -84,7 +88,8 @@ export const ProfileMatchBanner = ({
 									No matching TRaSH Profile found
 								</h5>
 								<p className="text-xs text-foreground/60">
-									{profileMatchData.reason || "Profile name doesn't match any TRaSH Guides quality profiles"}
+									{profileMatchData.reason ||
+										"Profile name doesn't match any TRaSH Guides quality profiles"}
 								</p>
 							</>
 						)}
@@ -93,7 +98,10 @@ export const ProfileMatchBanner = ({
 				{/* Toggle for recommendations */}
 				{profileMatchData.matched && profileMatchData.recommendations && (
 					<div className="flex items-center gap-2 shrink-0">
-						<label htmlFor="use-recommendations" className="text-xs text-foreground/70 cursor-pointer">
+						<label
+							htmlFor="use-recommendations"
+							className="text-xs text-foreground/70 cursor-pointer"
+						>
 							Auto-exclude non-recommended
 						</label>
 						<button
@@ -141,7 +149,9 @@ export const ResolutionStatistics = ({ matchStats }: ResolutionStatisticsProps) 
 	<div className="space-y-3">
 		{/* Row 1: Template Summary - What will actually happen */}
 		<div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
-			<div className="text-xs text-primary/70 uppercase tracking-wide mb-3 text-center">Template Summary</div>
+			<div className="text-xs text-primary/70 uppercase tracking-wide mb-3 text-center">
+				Template Summary
+			</div>
 			<div className="grid grid-cols-3 gap-4">
 				<div className="text-center">
 					<div className="text-3xl font-bold text-foreground">{matchStats.totalInTemplate}</div>
@@ -181,7 +191,9 @@ export const ResolutionStatistics = ({ matchStats }: ResolutionStatisticsProps) 
 				<div className="text-xs text-amber-300/60">
 					Excluded
 					{matchStats.excludedByScore > 0 && matchStats.excludedByRec > 0 ? (
-						<span className="text-gray-400 ml-1">({matchStats.excludedByScore} score, {matchStats.excludedByRec} rec)</span>
+						<span className="text-gray-400 ml-1">
+							({matchStats.excludedByScore} score, {matchStats.excludedByRec} rec)
+						</span>
 					) : matchStats.excludedByScore > 0 ? (
 						<span className="text-gray-400 ml-1">({matchStats.excludedByScore} score)</span>
 					) : matchStats.excludedByRec > 0 ? (

@@ -19,7 +19,9 @@ export const createMonthDate = (year: number, month: number): Date =>
  * Formats a date as "Month Year" (e.g., "January 2024")
  */
 export const formatMonthLabel = (date: Date): string =>
-	new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(date);
+	new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric", timeZone: "UTC" }).format(
+		date,
+	);
 
 /**
  * Formats a time string to localized time format
@@ -42,7 +44,13 @@ export const formatTime = (value?: string): string => {
  * Formats a date as full date string (e.g., "Monday, January 1, 2024")
  */
 export const formatLongDate = (value: Date): string =>
-	new Intl.DateTimeFormat(undefined, { dateStyle: "full" }).format(value);
+	new Intl.DateTimeFormat(undefined, {
+		weekday: "long",
+		month: "long",
+		day: "numeric",
+		year: "numeric",
+		timeZone: "UTC",
+	}).format(value);
 
 /**
  * Formats a datetime string to medium date and short time

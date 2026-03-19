@@ -1,5 +1,11 @@
+import {
+	extractDownloadId,
+	isLidarrCandidate,
+	isRadarrCandidate,
+	isReadarrCandidate,
+	isSonarrCandidate,
+} from "../helpers";
 import type { ManualImportCandidateUnion, ManualImportSubmissionFile } from "../types";
-import { extractDownloadId, isSonarrCandidate, isRadarrCandidate, isLidarrCandidate, isReadarrCandidate } from "../helpers";
 
 /**
  * Builds default submission values for a candidate

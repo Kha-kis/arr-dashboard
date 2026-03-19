@@ -1,11 +1,9 @@
 "use client";
 
-import { Button } from "../../../components/ui/button";
-import { formatMonthLabel } from "../lib/calendar-formatters";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { Calendar, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
-import { cn } from "../../../lib/utils";
+import { ChevronLeft, ChevronRight, Dot, RefreshCw } from "lucide-react";
 import { useState } from "react";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { formatMonthLabel } from "../lib/calendar-formatters";
 
 interface CalendarHeaderProps {
 	monthStart: Date;
@@ -33,108 +31,93 @@ export const CalendarHeader = ({
 		setTimeout(() => setIsRefreshing(false), 500);
 	};
 
+	const label = formatMonthLabel(monthStart);
+
 	return (
 		<header
-			className="relative animate-in fade-in slide-in-from-bottom-4 duration-500"
+			className="animate-in fade-in slide-in-from-bottom-2 duration-400"
 			style={{ animationFillMode: "backwards" }}
 		>
-			<div className="flex items-start justify-between gap-4">
-				<div className="space-y-1">
-					{/* Label with icon */}
-					<div className="flex items-center gap-2 text-sm text-muted-foreground">
-						<Calendar className="h-4 w-4" />
-						<span>Schedule</span>
+			<div className="flex items-center justify-between gap-4">
+				{/* Left: Title + Month Navigation */}
+				<div className="flex items-center gap-5">
+					{/* Title with ambient glow */}
+					<div className="relative">
+						<h1 className="text-[22px] font-bold tracking-tight relative z-10">
+							<span
+								style={{
+									background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+									WebkitBackgroundClip: "text",
+									WebkitTextFillColor: "transparent",
+									backgroundClip: "text",
+								}}
+							>
+								Calendar
+							</span>
+						</h1>
+						{/* Ambient radial glow */}
+						<div
+							className="absolute -inset-6 -z-10 blur-2xl rounded-full"
+							style={{
+								background: `radial-gradient(circle, ${themeGradient.from}12, transparent 70%)`,
+							}}
+						/>
 					</div>
 
-					{/* Gradient title */}
-					<h1 className="text-3xl font-bold tracking-tight">
-						<span
-							style={{
-								background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
-								WebkitBackgroundClip: "text",
-								WebkitTextFillColor: "transparent",
-								backgroundClip: "text",
-							}}
-						>
-							Upcoming Releases
-						</span>
-					</h1>
+					{/* Separator */}
+					<span className="w-px h-7 bg-border/15" />
 
-					{/* Description */}
-					<p className="text-muted-foreground max-w-xl">
-						Combined calendar view for Sonarr and Radarr instances
-					</p>
-				</div>
-
-				{/* Navigation Controls */}
-				<div className="flex items-center gap-2">
-					{/* Month navigation group */}
-					<div
-						className="flex items-center rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs overflow-hidden"
-					>
-						<Button
-							variant="ghost"
-							size="sm"
+					{/* Month nav */}
+					<div className="flex items-center gap-0.5">
+						<button
+							type="button"
 							onClick={onPreviousMonth}
-							className="rounded-none border-r border-border/50 px-3"
+							className="rounded-lg p-1.5 text-muted-foreground/35 hover:text-foreground hover:bg-white/[0.04] transition-all"
 							aria-label="Previous month"
 						>
 							<ChevronLeft className="h-4 w-4" />
-						</Button>
-						<span
-							className="min-w-[140px] px-4 py-2 text-center text-sm font-medium"
-							style={{ color: themeGradient.from }}
-						>
-							{formatMonthLabel(monthStart)}
+						</button>
+
+						<span className="min-w-[155px] text-center text-[15px] font-semibold text-foreground tracking-tight">
+							{label}
 						</span>
-						<Button
-							variant="ghost"
-							size="sm"
+
+						<button
+							type="button"
 							onClick={onNextMonth}
-							className="rounded-none border-l border-border/50 px-3"
+							className="rounded-lg p-1.5 text-muted-foreground/35 hover:text-foreground hover:bg-white/[0.04] transition-all"
 							aria-label="Next month"
 						>
 							<ChevronRight className="h-4 w-4" />
-						</Button>
+						</button>
 					</div>
+				</div>
 
-					{/* Today button */}
-					<Button
-						variant="ghost"
-						size="sm"
+				{/* Right: Actions */}
+				<div className="flex items-center gap-1">
+					<button
+						type="button"
 						onClick={onGoToday}
-						className="border border-border/50 bg-card/30 backdrop-blur-xs"
+						className="rounded-lg px-3 py-1.5 text-xs font-semibold transition-all hover:bg-white/[0.04]"
+						style={{
+							color: themeGradient.from,
+						}}
 					>
+						<Dot className="h-4 w-4 inline -ml-1 -mr-0.5" />
 						Today
-					</Button>
+					</button>
 
-					{/* Refresh button */}
-					<Button
-						variant="secondary"
-						size="sm"
+					<button
+						type="button"
 						onClick={handleRefresh}
 						disabled={isLoading}
+						className="rounded-lg p-1.5 text-muted-foreground/35 hover:text-foreground hover:bg-white/[0.04] transition-all disabled:opacity-30"
 						aria-label="Refresh calendar"
-						className={cn(
-							"relative overflow-hidden transition-all duration-300",
-							isRefreshing && "pointer-events-none"
-						)}
 					>
 						<RefreshCw
-							className={cn(
-								"h-4 w-4 transition-transform duration-500",
-								isRefreshing && "animate-spin"
-							)}
+							className={`h-3.5 w-3.5 transition-transform duration-500 ${isRefreshing ? "animate-spin" : ""}`}
 						/>
-						{isRefreshing && (
-							<div
-								className="absolute inset-0 animate-shimmer"
-								style={{
-									background: `linear-gradient(90deg, transparent, ${themeGradient.glow}, transparent)`,
-								}}
-							/>
-						)}
-					</Button>
+					</button>
 				</div>
 			</div>
 		</header>

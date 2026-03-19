@@ -10,9 +10,9 @@
 
 "use client";
 
-import { useState, useMemo } from "react";
+import { AlertCircle, AlertTriangle, CheckCircle, Info, XCircle } from "lucide-react";
+import { useMemo, useState } from "react";
 import { Alert, AlertDescription, Button } from "../../../components/ui";
-import { CheckCircle, XCircle, Info, AlertTriangle, AlertCircle } from "lucide-react";
 import { getErrorMessage } from "../../../lib/error-utils";
 
 interface PatternTesterProps {
@@ -55,11 +55,7 @@ const COMMON_TEST_CASES = {
 	],
 };
 
-export function PatternTester({
-	pattern,
-	negate = false,
-	onClose,
-}: PatternTesterProps) {
+export function PatternTester({ pattern, negate = false, onClose }: PatternTesterProps) {
 	const [testText, setTestText] = useState("");
 	const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
 
@@ -127,9 +123,7 @@ export function PatternTester({
 				{!testResult.valid && (
 					<Alert variant="danger" className="mt-3">
 						<AlertTriangle className="h-4 w-4" />
-						<AlertDescription className="text-xs">
-							{testResult.error}
-						</AlertDescription>
+						<AlertDescription className="text-xs">{testResult.error}</AlertDescription>
 					</Alert>
 				)}
 			</div>
@@ -183,80 +177,81 @@ export function PatternTester({
 				<div className="space-y-3">
 					<h5 className="text-sm font-medium text-foreground">Results</h5>
 
-					{testText.split("\n").filter(Boolean).map((line, index) => {
-						try {
-							const regex = new RegExp(pattern, "i");
-							const lineMatches = regex.test(line);
-							const finalMatch = negate ? !lineMatches : lineMatches;
-							const exec = regex.exec(line);
+					{testText
+						.split("\n")
+						.filter(Boolean)
+						.map((line, index) => {
+							try {
+								const regex = new RegExp(pattern, "i");
+								const lineMatches = regex.test(line);
+								const finalMatch = negate ? !lineMatches : lineMatches;
+								const exec = regex.exec(line);
 
-							return (
-								<div
-									key={index}
-									className={`rounded border p-3 ${
-										finalMatch
-											? "border-green-500/30 bg-green-500/10"
-											: "border-red-500/30 bg-red-500/10"
-									}`}
-								>
-									<div className="flex items-start gap-3">
-										{finalMatch ? (
-											<CheckCircle className="h-5 w-5 text-green-400 shrink-0 mt-0.5" />
-										) : (
-											<XCircle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
-										)}
-
-										<div className="flex-1 min-w-0">
-											<code className="text-xs font-mono text-foregroundbreak-all">
-												{line}
-											</code>
-
-											{exec && exec.length > 1 && finalMatch && (
-												<div className="mt-2 space-y-1">
-													<p className="text-xs text-muted-foreground">Captured groups:</p>
-													{exec.slice(1).map((group, groupIndex) => (
-														<div key={groupIndex} className="text-xs">
-															<span className="text-muted-foreground">Group {groupIndex + 1}:</span>{" "}
-															<code className="text-foreground">{group}</code>
-														</div>
-													))}
-												</div>
-											)}
-										</div>
-
-										<div className="text-xs font-medium shrink-0">
+								return (
+									<div
+										key={index}
+										className={`rounded border p-3 ${
+											finalMatch
+												? "border-green-500/30 bg-green-500/10"
+												: "border-red-500/30 bg-red-500/10"
+										}`}
+									>
+										<div className="flex items-start gap-3">
 											{finalMatch ? (
-												<span className="text-green-400">Match</span>
+												<CheckCircle className="h-5 w-5 text-green-400 shrink-0 mt-0.5" />
 											) : (
-												<span className="text-red-400">No Match</span>
+												<XCircle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
 											)}
+
+											<div className="flex-1 min-w-0">
+												<code className="text-xs font-mono text-foregroundbreak-all">{line}</code>
+
+												{exec && exec.length > 1 && finalMatch && (
+													<div className="mt-2 space-y-1">
+														<p className="text-xs text-muted-foreground">Captured groups:</p>
+														{exec.slice(1).map((group, groupIndex) => (
+															<div key={groupIndex} className="text-xs">
+																<span className="text-muted-foreground">
+																	Group {groupIndex + 1}:
+																</span>{" "}
+																<code className="text-foreground">{group}</code>
+															</div>
+														))}
+													</div>
+												)}
+											</div>
+
+											<div className="text-xs font-medium shrink-0">
+												{finalMatch ? (
+													<span className="text-green-400">Match</span>
+												) : (
+													<span className="text-red-400">No Match</span>
+												)}
+											</div>
 										</div>
 									</div>
-								</div>
-							);
-						} catch (error) {
-							// Show error indicator for lines that failed regex execution
-							console.error(`Regex execution error for line "${line}":`, error);
-							return (
-								<div
-									key={index}
-									className="rounded border border-amber-500/30 bg-amber-500/10 p-3"
-								>
-									<div className="flex items-start gap-3">
-										<AlertCircle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
-										<div className="flex-1 min-w-0">
-											<code className="text-xs font-mono text-foregroundbreak-all">
-												{line}
-											</code>
-											<p className="text-xs text-amber-300 mt-1">
-												Error testing this line - check pattern syntax
-											</p>
+								);
+							} catch (error) {
+								// Show error indicator for lines that failed regex execution
+								console.error(`Regex execution error for line "${line}":`, error);
+								return (
+									<div
+										key={index}
+										className="rounded border border-amber-500/30 bg-amber-500/10 p-3"
+									>
+										<div className="flex items-start gap-3">
+											<AlertCircle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+											<div className="flex-1 min-w-0">
+												<code className="text-xs font-mono text-foregroundbreak-all">{line}</code>
+												<p className="text-xs text-amber-300 mt-1">
+													Error testing this line - check pattern syntax
+												</p>
+											</div>
 										</div>
 									</div>
-								</div>
-							);
-						}
-					})}
+								);
+							}
+						})}
 				</div>
 			)}
 
@@ -269,11 +264,25 @@ export function PatternTester({
 					</p>
 					<ul className="list-disc list-inside space-y-1 ml-2">
 						<li>Patterns are case-insensitive by default</li>
-						<li>Use <code className="px-1 py-0.5 rounded bg-card/60">\b</code> for word boundaries</li>
-						<li>Use <code className="px-1 py-0.5 rounded bg-card/60">|</code> for OR (e.g., <code className="px-1 py-0.5 rounded bg-card/60">2160p|4320p</code>)</li>
-						<li>Use <code className="px-1 py-0.5 rounded bg-card/60">.*</code> to match any characters</li>
-						<li>Use <code className="px-1 py-0.5 rounded bg-card/60">[...]</code> for character sets (e.g., <code className="px-1 py-0.5 rounded bg-card/60">[0-9]</code>)</li>
-						{negate && <li className="text-amber-300"><strong>Negated mode:</strong> Pattern must NOT match for condition to pass</li>}
+						<li>
+							Use <code className="px-1 py-0.5 rounded bg-card/60">\b</code> for word boundaries
+						</li>
+						<li>
+							Use <code className="px-1 py-0.5 rounded bg-card/60">|</code> for OR (e.g.,{" "}
+							<code className="px-1 py-0.5 rounded bg-card/60">2160p|4320p</code>)
+						</li>
+						<li>
+							Use <code className="px-1 py-0.5 rounded bg-card/60">.*</code> to match any characters
+						</li>
+						<li>
+							Use <code className="px-1 py-0.5 rounded bg-card/60">[...]</code> for character sets
+							(e.g., <code className="px-1 py-0.5 rounded bg-card/60">[0-9]</code>)
+						</li>
+						{negate && (
+							<li className="text-amber-300">
+								<strong>Negated mode:</strong> Pattern must NOT match for condition to pass
+							</li>
+						)}
 					</ul>
 				</AlertDescription>
 			</Alert>

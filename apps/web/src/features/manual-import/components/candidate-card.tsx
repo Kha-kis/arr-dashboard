@@ -1,22 +1,22 @@
 import { Button } from "../../../components/ui/button";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import type { ManualImportCandidateUnion } from "../types";
+import { cn } from "../../../lib/utils";
 import {
 	candidateDisplayPath,
 	candidateKey,
 	describeCandidate,
-	describeRejections,
-	describeQuality,
+	describeEpisode,
 	describeLanguages,
+	describeQuality,
+	describeRejections,
 	extractDownloadId,
 	formatFileSize,
-	isSonarrCandidate,
-	isRadarrCandidate,
 	isLidarrCandidate,
+	isRadarrCandidate,
 	isReadarrCandidate,
-	describeEpisode,
+	isSonarrCandidate,
 } from "../helpers";
-import { cn } from "../../../lib/utils";
+import type { ManualImportCandidateUnion } from "../types";
 
 interface CandidateCardProps {
 	candidate: ManualImportCandidateUnion;
@@ -82,12 +82,26 @@ export const CandidateCard = ({
 	} else if (selected && isRadarrCandidate(candidate) && candidate.movie?.id === undefined) {
 		statusTone = "warning";
 		statusText = "Movie mapping is missing.";
-	} else if (selected && isLidarrCandidate(candidate) && (candidate.artist?.id === undefined || candidate.album?.id === undefined)) {
+	} else if (
+		selected &&
+		isLidarrCandidate(candidate) &&
+		(candidate.artist?.id === undefined || candidate.album?.id === undefined)
+	) {
 		statusTone = "warning";
-		statusText = candidate.artist?.id === undefined ? "Artist mapping is missing." : "Album mapping is missing.";
-	} else if (selected && isReadarrCandidate(candidate) && (candidate.author?.id === undefined || candidate.book?.id === undefined)) {
+		statusText =
+			candidate.artist?.id === undefined
+				? "Artist mapping is missing."
+				: "Album mapping is missing.";
+	} else if (
+		selected &&
+		isReadarrCandidate(candidate) &&
+		(candidate.author?.id === undefined || candidate.book?.id === undefined)
+	) {
 		statusTone = "warning";
-		statusText = candidate.author?.id === undefined ? "Author mapping is missing." : "Book mapping is missing.";
+		statusText =
+			candidate.author?.id === undefined
+				? "Author mapping is missing."
+				: "Book mapping is missing.";
 	}
 
 	const chips = [qualityLabel, sizeLabel, languageLabel, releaseGroup].filter(
@@ -118,7 +132,9 @@ export const CandidateCard = ({
 					<div className="min-w-0 space-y-2">
 						<div className="space-y-1">
 							<p className="font-medium text-foreground">{describeCandidate(candidate)}</p>
-							<p className="wrap-break-word text-xs text-muted-foreground">{candidateDisplayPath(candidate)}</p>
+							<p className="wrap-break-word text-xs text-muted-foreground">
+								{candidateDisplayPath(candidate)}
+							</p>
 						</div>
 						{chips.length > 0 && (
 							<div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
@@ -202,7 +218,9 @@ export const CandidateCard = ({
 								})}
 							</div>
 							{!selected && (
-								<p className="text-xs text-muted-foreground/70 italic">Select file to enable episode selection</p>
+								<p className="text-xs text-muted-foreground/70 italic">
+									Select file to enable episode selection
+								</p>
 							)}
 						</div>
 					)}

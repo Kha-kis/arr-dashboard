@@ -3,20 +3,22 @@
 import { formatDistanceToNow } from "date-fns";
 import {
 	AlertCircle,
+	AlertTriangle,
+	Bell,
 	CheckCircle2,
 	Clock,
+	Database,
+	FileType,
+	Hand,
 	Play,
 	RefreshCw,
-	Bell,
-	Hand,
-	Database,
-	AlertTriangle,
+	SlidersHorizontal,
 	Timer,
 } from "lucide-react";
 import { useSchedulerStatus, useTriggerUpdateCheck } from "../../../hooks/api/useTemplateUpdates";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 /**
  * Safely formats a date value as relative time (e.g., "5 minutes ago").
@@ -53,7 +55,11 @@ const StatCard = ({
 
 	return (
 		<div
-			className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4 transition-all duration-300 hover:bg-card/50"
+			className="rounded-xl p-4 transition-all duration-200 hover:-translate-y-[1px] hover:shadow-lg hover:shadow-black/10"
+			style={{
+				backgroundColor: `${displayColor}05`,
+				border: `1px solid ${displayColor}12`,
+			}}
 		>
 			<div className="flex items-center gap-2 mb-3">
 				<div
@@ -67,9 +73,7 @@ const StatCard = ({
 				</span>
 			</div>
 			<p className="text-2xl font-bold text-foreground">{value}</p>
-			{subtext && (
-				<p className="text-xs text-muted-foreground mt-1">{subtext}</p>
-			)}
+			{subtext && <p className="text-xs text-muted-foreground mt-1">{subtext}</p>}
 		</div>
 	);
 };
@@ -110,7 +114,7 @@ export const SchedulerStatusDashboard = () => {
 	// Loading State
 	if (isLoading) {
 		return (
-			<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-8 animate-pulse">
+			<div className="rounded-xl border border-border/30 bg-muted/10 p-8 animate-pulse">
 				<div className="space-y-6">
 					<div className="flex items-center justify-between">
 						<div className="space-y-2">
@@ -178,8 +182,19 @@ export const SchedulerStatusDashboard = () => {
 	}
 
 	return (
-		<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-			<div className="space-y-6">
+		<div
+			className="relative rounded-xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500"
+			style={{ border: `1px solid ${themeGradient.from}10` }}
+		>
+			<div
+				className="absolute inset-0 pointer-events-none"
+				style={{ background: `linear-gradient(135deg, ${themeGradient.from}04, transparent 60%)` }}
+			/>
+			<div
+				className="absolute left-0 top-0 bottom-0 w-[3px]"
+				style={{ background: `linear-gradient(180deg, ${themeGradient.from}, ${themeGradient.fromLight})` }}
+			/>
+			<div className="relative p-6 space-y-6">
 				{/* Header */}
 				<div className="flex items-start justify-between gap-4 flex-wrap">
 					<div className="flex items-center gap-4">
@@ -193,6 +208,13 @@ export const SchedulerStatusDashboard = () => {
 							<Timer className="h-6 w-6" style={{ color: themeGradient.from }} />
 						</div>
 						<div>
+							<span
+								className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider mb-1"
+								style={{ backgroundColor: `${themeGradient.from}12`, color: themeGradient.from }}
+							>
+								<Timer className="h-2.5 w-2.5" />
+								Scheduler
+							</span>
 							<h3
 								className="text-xl font-bold"
 								style={{
@@ -261,27 +283,37 @@ export const SchedulerStatusDashboard = () => {
 						icon={AlertTriangle}
 						label="Outdated"
 						value={schedulerData.lastCheckResult?.templatesOutdated ?? 0}
-						color={schedulerData.lastCheckResult?.templatesOutdated ? SEMANTIC_COLORS.warning.from : undefined}
+						color={
+							schedulerData.lastCheckResult?.templatesOutdated
+								? SEMANTIC_COLORS.warning.from
+								: undefined
+						}
 					/>
 				</div>
 
 				{/* Last Check Results */}
 				{schedulerData.lastCheckResult && (
-					<div className="rounded-xl border border-border/50 bg-card/20 p-5 space-y-5">
+					<div className="rounded-xl border border-border/30 bg-muted/10 p-5 space-y-5">
 						<h4 className="font-semibold text-foreground">Last Check Results</h4>
 
 						{/* Template Version Check Results */}
 						<div className="space-y-3">
 							<div>
-								<h5 className="text-sm font-medium text-foreground mb-1">Template Version Updates</h5>
+								<h5 className="text-sm font-medium text-foreground mb-1">
+									Template Version Updates
+								</h5>
 								<p className="text-xs text-muted-foreground">
-									Compares templates against latest TRaSH Guides commits. Auto-sync templates update automatically.
+									Compares templates against latest TRaSH Guides commits. Auto-sync templates update
+									automatically.
 								</p>
 							</div>
 							<div className="grid gap-4 grid-cols-2 md:grid-cols-5">
 								<div className="space-y-1">
 									<div className="flex items-center gap-1.5">
-										<RefreshCw className="h-3.5 w-3.5" style={{ color: SEMANTIC_COLORS.success.from }} />
+										<RefreshCw
+											className="h-3.5 w-3.5"
+											style={{ color: SEMANTIC_COLORS.success.from }}
+										/>
 										<span className="text-xs text-muted-foreground">Auto-Sync</span>
 									</div>
 									<p className="text-lg font-bold" style={{ color: SEMANTIC_COLORS.success.from }}>
@@ -313,14 +345,17 @@ export const SchedulerStatusDashboard = () => {
 											0,
 											schedulerData.lastCheckResult.templatesChecked -
 												(schedulerData.lastCheckResult.templatesWithAutoStrategy ?? 0) -
-												(schedulerData.lastCheckResult.templatesWithNotifyStrategy ?? 0)
+												(schedulerData.lastCheckResult.templatesWithNotifyStrategy ?? 0),
 										)}
 									</p>
 									<p className="text-xs text-muted-foreground">Excluded from checks</p>
 								</div>
 								<div className="space-y-1">
 									<div className="flex items-center gap-1.5">
-										<AlertTriangle className="h-3.5 w-3.5" style={{ color: SEMANTIC_COLORS.warning.from }} />
+										<AlertTriangle
+											className="h-3.5 w-3.5"
+											style={{ color: SEMANTIC_COLORS.warning.from }}
+										/>
 										<span className="text-xs text-muted-foreground">Needs Attention</span>
 									</div>
 									<p className="text-lg font-bold" style={{ color: SEMANTIC_COLORS.warning.from }}>
@@ -329,7 +364,10 @@ export const SchedulerStatusDashboard = () => {
 								</div>
 								<div className="space-y-1">
 									<div className="flex items-center gap-1.5">
-										<AlertCircle className="h-3.5 w-3.5" style={{ color: SEMANTIC_COLORS.error.from }} />
+										<AlertCircle
+											className="h-3.5 w-3.5"
+											style={{ color: SEMANTIC_COLORS.error.from }}
+										/>
 										<span className="text-xs text-muted-foreground">Errors</span>
 									</div>
 									<p className="text-lg font-bold" style={{ color: SEMANTIC_COLORS.error.from }}>
@@ -342,9 +380,12 @@ export const SchedulerStatusDashboard = () => {
 						{/* Cache Refresh Results */}
 						<div className="pt-4 border-t border-border/50 space-y-3">
 							<div>
-								<h5 className="text-sm font-medium text-foreground mb-1">TRaSH Guides Data Cache</h5>
+								<h5 className="text-sm font-medium text-foreground mb-1">
+									TRaSH Guides Data Cache
+								</h5>
 								<p className="text-xs text-muted-foreground">
-									Refreshes cached quality profiles, naming formats, and custom formats from repository
+									Refreshes cached quality profiles, naming formats, and custom formats from
+									repository
 								</p>
 							</div>
 							<div className="grid gap-4 md:grid-cols-2">
@@ -357,15 +398,16 @@ export const SchedulerStatusDashboard = () => {
 									</div>
 									<div>
 										<p className="text-xs text-muted-foreground">Caches Refreshed</p>
-										<p className="text-xl font-bold" style={{ color: SEMANTIC_COLORS.success.from }}>
+										<p
+											className="text-xl font-bold"
+											style={{ color: SEMANTIC_COLORS.success.from }}
+										>
 											{schedulerData.lastCheckResult.cachesRefreshed ?? 0}
 										</p>
 									</div>
 								</div>
 								<div className="flex items-center gap-3">
-									<div
-										className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted/10"
-									>
+									<div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted/10">
 										<AlertCircle className="h-5 w-5 text-muted-foreground" />
 									</div>
 									<div>
@@ -377,6 +419,113 @@ export const SchedulerStatusDashboard = () => {
 								</div>
 							</div>
 						</div>
+
+						{/* Naming & Quality Size Sync */}
+						{((schedulerData.lastCheckResult.namingAutoSynced ?? 0) > 0 ||
+							(schedulerData.lastCheckResult.namingUpdatesPending ?? 0) > 0 ||
+							(schedulerData.lastCheckResult.qualitySizeAutoSynced ?? 0) > 0 ||
+							(schedulerData.lastCheckResult.qualitySizeUpdatesPending ?? 0) > 0) && (
+							<div className="pt-4 border-t border-border/50 space-y-3">
+								<div>
+									<h5 className="text-sm font-medium text-foreground mb-1">Instance Sync</h5>
+									<p className="text-xs text-muted-foreground">
+										Auto-syncs naming presets and quality sizes when TRaSH data changes
+									</p>
+								</div>
+								<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+									<div className="flex items-center gap-3">
+										<div
+											className="flex h-10 w-10 items-center justify-center rounded-lg"
+											style={{ backgroundColor: `${SEMANTIC_COLORS.success.from}15` }}
+										>
+											<FileType
+												className="h-5 w-5"
+												style={{ color: SEMANTIC_COLORS.success.from }}
+											/>
+										</div>
+										<div>
+											<p className="text-xs text-muted-foreground">Naming Synced</p>
+											<p
+												className="text-xl font-bold"
+												style={{ color: SEMANTIC_COLORS.success.from }}
+											>
+												{schedulerData.lastCheckResult.namingAutoSynced ?? 0}
+											</p>
+										</div>
+									</div>
+									<div className="flex items-center gap-3">
+										<div
+											className="flex h-10 w-10 items-center justify-center rounded-lg"
+											style={{ backgroundColor: `${SEMANTIC_COLORS.warning.from}15` }}
+										>
+											<FileType
+												className="h-5 w-5"
+												style={{ color: SEMANTIC_COLORS.warning.from }}
+											/>
+										</div>
+										<div>
+											<p className="text-xs text-muted-foreground">Naming Pending</p>
+											<p
+												className="text-xl font-bold"
+												style={{
+													color:
+														(schedulerData.lastCheckResult.namingUpdatesPending ?? 0) > 0
+															? SEMANTIC_COLORS.warning.from
+															: undefined,
+												}}
+											>
+												{schedulerData.lastCheckResult.namingUpdatesPending ?? 0}
+											</p>
+										</div>
+									</div>
+									<div className="flex items-center gap-3">
+										<div
+											className="flex h-10 w-10 items-center justify-center rounded-lg"
+											style={{ backgroundColor: `${SEMANTIC_COLORS.success.from}15` }}
+										>
+											<SlidersHorizontal
+												className="h-5 w-5"
+												style={{ color: SEMANTIC_COLORS.success.from }}
+											/>
+										</div>
+										<div>
+											<p className="text-xs text-muted-foreground">Quality Size Synced</p>
+											<p
+												className="text-xl font-bold"
+												style={{ color: SEMANTIC_COLORS.success.from }}
+											>
+												{schedulerData.lastCheckResult.qualitySizeAutoSynced ?? 0}
+											</p>
+										</div>
+									</div>
+									<div className="flex items-center gap-3">
+										<div
+											className="flex h-10 w-10 items-center justify-center rounded-lg"
+											style={{ backgroundColor: `${SEMANTIC_COLORS.warning.from}15` }}
+										>
+											<SlidersHorizontal
+												className="h-5 w-5"
+												style={{ color: SEMANTIC_COLORS.warning.from }}
+											/>
+										</div>
+										<div>
+											<p className="text-xs text-muted-foreground">Quality Size Pending</p>
+											<p
+												className="text-xl font-bold"
+												style={{
+													color:
+														(schedulerData.lastCheckResult.qualitySizeUpdatesPending ?? 0) > 0
+															? SEMANTIC_COLORS.warning.from
+															: undefined,
+												}}
+											>
+												{schedulerData.lastCheckResult.qualitySizeUpdatesPending ?? 0}
+											</p>
+										</div>
+									</div>
+								</div>
+							</div>
+						)}
 
 						{/* Error Display */}
 						{schedulerData.lastCheckResult.errors.length > 0 && (

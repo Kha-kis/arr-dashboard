@@ -1,14 +1,13 @@
-import type { FastifyPluginCallback } from "fastify";
-import type {
-	SearchIndexerUpdateRequest,
-} from "@arr/shared";
+import type { ProwlarrIndexerHealth, SearchIndexerUpdateRequest } from "@arr/shared";
 import {
+	prowlarrIndexerHealthSchema,
 	searchIndexerDetailsResponseSchema,
+	searchIndexersResponseSchema,
 	searchIndexerTestRequestSchema,
 	searchIndexerTestResponseSchema,
 	searchIndexerUpdateRequestSchema,
-	searchIndexersResponseSchema,
 } from "@arr/shared";
+import type { FastifyPluginCallback } from "fastify";
 import {
 	executeOnInstances,
 	getClientForInstance,
@@ -16,12 +15,13 @@ import {
 } from "../../lib/arr/client-helpers.js";
 import {
 	buildIndexerDetailsFallback,
-	fetchProwlarrIndexersWithSdk,
 	fetchProwlarrIndexerDetailsWithSdk,
-	updateProwlarrIndexerWithSdk,
+	fetchProwlarrIndexersWithSdk,
 	testProwlarrIndexerWithSdk,
+	updateProwlarrIndexerWithSdk,
 } from "../../lib/search/prowlarr-api.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
+import { validateRequest } from "../../lib/utils/validate.js";
 
 /**
  * Registers indexer-related routes for Prowlarr.
@@ -103,7 +103,26 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 			});
 		}
 
-		const details = await fetchProwlarrIndexerDetailsWithSdk(client, instance, indexerId);
+		// Parse pre-fetched health data from query params to skip redundant stats API call
+		let prefetchedHealth: ProwlarrIndexerHealth | null = null;
+		const query = request.query as Record<string, unknown>;
+		if (typeof query.health === "string") {
+			try {
+				const parsed = prowlarrIndexerHealthSchema.safeParse(JSON.parse(query.health));
+				if (parsed.success) {
+					prefetchedHealth = parsed.data;
+				}
+			} catch {
+				// Invalid JSON — fall through to full fetch
+			}
+		}
+
+		const details = await fetchProwlarrIndexerDetailsWithSdk(
+			client,
+			instance,
+			indexerId,
+			prefetchedHealth,
+		);
 		if (!details) {
 			reply.status(502);
 			return searchIndexerDetailsResponseSchema.parse({
@@ -137,7 +156,8 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 			});
 		}
 
-		const payload: SearchIndexerUpdateRequest = searchIndexerUpdateRequestSchema.parse(
+		const payload: SearchIndexerUpdateRequest = validateRequest(
+			searchIndexerUpdateRequestSchema,
 			request.body ?? {},
 		);
 		const instanceId = payload.instanceId ?? paramInstanceId;
@@ -190,7 +210,7 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 	 * Tests an indexer connection to verify it's working correctly.
 	 */
 	app.post("/search/indexers/test", async (request, reply) => {
-		const payload = searchIndexerTestRequestSchema.parse(request.body ?? {});
+		const payload = validateRequest(searchIndexerTestRequestSchema, request.body ?? {});
 
 		const clientResult = await getClientForInstance(app, request, payload.instanceId);
 		if (!clientResult.success) {

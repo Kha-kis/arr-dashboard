@@ -119,10 +119,16 @@ async function testLidarrIntegration() {
 	// Print state breakdown
 	console.log("\n📊 Queue State Breakdown:");
 	for (const [state, count] of stateMap) {
-		const emoji = state === "importPending" ? "⏳" :
-					  state === "importBlocked" ? "🚫" :
-					  state === "importFailed" ? "❌" :
-					  state === "downloading" ? "⬇️" : "📦";
+		const emoji =
+			state === "importPending"
+				? "⏳"
+				: state === "importBlocked"
+					? "🚫"
+					: state === "importFailed"
+						? "❌"
+						: state === "downloading"
+							? "⬇️"
+							: "📦";
 		console.log(`   ${emoji} ${state}: ${count}`);
 	}
 
@@ -138,7 +144,9 @@ async function testLidarrIntegration() {
 		console.log("   Auto-import targets these states specifically.");
 		console.log("");
 		if (importFailedCount > 0) {
-			console.log(`   The ${importFailedCount} item(s) with importFailed state would be handled by`);
+			console.log(
+				`   The ${importFailedCount} item(s) with importFailed state would be handled by`,
+			);
 			console.log("   the 'Failed Downloads' rule instead of auto-import.");
 		}
 	} else {
@@ -151,8 +159,8 @@ async function testLidarrIntegration() {
 		console.log("─".repeat(60));
 
 		for (const item of importItems) {
-			const stateEmoji = item.state === "importPending" ? "⏳" :
-							   item.state === "importBlocked" ? "🚫" : "❌";
+			const stateEmoji =
+				item.state === "importPending" ? "⏳" : item.state === "importBlocked" ? "🚫" : "❌";
 
 			console.log(`\n${stateEmoji} [${item.state}] ${item.title.substring(0, 50)}...`);
 			console.log(`   ID: ${item.id} | Status: ${item.status}`);
@@ -169,8 +177,8 @@ async function testLidarrIntegration() {
 
 			// Check auto-import eligibility
 			const allText = item.statusMessages.join(" ").toLowerCase();
-			const hasSafe = AUTO_IMPORT_SAFE_KEYWORDS.some(k => allText.includes(k));
-			const neverMatch = AUTO_IMPORT_NEVER_KEYWORDS.find(k => allText.includes(k));
+			const hasSafe = AUTO_IMPORT_SAFE_KEYWORDS.some((k) => allText.includes(k));
+			const neverMatch = AUTO_IMPORT_NEVER_KEYWORDS.find((k) => allText.includes(k));
 
 			if (item.state === "importPending" || item.state === "importBlocked") {
 				if (neverMatch) {
@@ -201,8 +209,8 @@ async function testLidarrIntegration() {
 		} else if (item.state === "importPending" || item.state === "importBlocked") {
 			// Check auto-import eligibility
 			const allText = item.statusMessages.join(" ").toLowerCase();
-			const hasSafe = AUTO_IMPORT_SAFE_KEYWORDS.some(k => allText.includes(k));
-			const neverMatch = AUTO_IMPORT_NEVER_KEYWORDS.find(k => allText.includes(k));
+			const hasSafe = AUTO_IMPORT_SAFE_KEYWORDS.some((k) => allText.includes(k));
+			const neverMatch = AUTO_IMPORT_NEVER_KEYWORDS.find((k) => allText.includes(k));
 
 			if (neverMatch) {
 				console.log(`\n   🚫 Would REMOVE (blocked): ${item.title.substring(0, 40)}...`);

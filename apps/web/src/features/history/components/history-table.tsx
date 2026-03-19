@@ -1,43 +1,40 @@
 "use client";
 
 import type { HistoryItem, ServiceInstanceSummary } from "@arr/shared";
-import { ExternalLink, History, ArrowRight } from "lucide-react";
+import { ArrowRight, ExternalLink, History } from "lucide-react";
 import {
-	useIncognitoMode,
-	getLinuxIsoName,
-	getLinuxIndexer,
-	getLinuxDownloadClient,
-	getLinuxInstanceName,
-} from "../../../lib/incognito";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { getServiceGradient } from "../../../lib/theme-gradients";
-import {
-	buildHistoryExternalLink,
-	getDisplayTitle,
-	formatBytes,
-	getEventTypeStatusBadge,
-	detectLifecycleStages,
-	getSourceClient,
-	getSourceClientKind,
-} from "../lib/history-utils";
-import {
-	formatCompactRelativeTime,
-	formatAbsoluteDateTime,
-} from "../lib/date-utils";
-import {
+	PremiumEmptyState,
+	PremiumSkeleton,
 	PremiumTable,
 	PremiumTableHeader,
 	PremiumTableRow,
-	PremiumEmptyState,
-	PremiumSkeleton,
 	StatusBadge,
 } from "../../../components/layout";
 import {
 	Tooltip,
-	TooltipTrigger,
 	TooltipContent,
 	TooltipProvider,
+	TooltipTrigger,
 } from "../../../components/ui/tooltip";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import {
+	getLinuxDownloadClient,
+	getLinuxIndexer,
+	getLinuxInstanceName,
+	getLinuxIsoName,
+	useIncognitoMode,
+} from "../../../lib/incognito";
+import { getServiceGradient } from "../../../lib/theme-gradients";
+import { formatAbsoluteDateTime, formatCompactRelativeTime } from "../lib/date-utils";
+import {
+	buildHistoryExternalLink,
+	detectLifecycleStages,
+	formatBytes,
+	getDisplayTitle,
+	getEventTypeStatusBadge,
+	getSourceClient,
+	getSourceClientKind,
+} from "../lib/history-utils";
 
 interface HistoryGroup {
 	downloadId?: string;
@@ -96,7 +93,9 @@ export const HistoryTable = ({
 							const isGrouped = groupingEnabled && group.items.length > 1;
 							const isRssGroup = group.groupType === "rss";
 							const firstItem = group.items[0];
-							const serviceColor = firstItem ? getServiceGradient(firstItem.service).from : undefined;
+							const serviceColor = firstItem
+								? getServiceGradient(firstItem.service).from
+								: undefined;
 							const lifecycleStages = isGrouped ? detectLifecycleStages(group.items) : [];
 
 							// For RSS groups, only show a summary row
@@ -106,10 +105,7 @@ export const HistoryTable = ({
 
 								return (
 									<PremiumTableRow key={key}>
-										<td
-											className="px-4 py-3"
-											style={{ borderLeft: `3px solid ${serviceColor}` }}
-										>
+										<td className="px-4 py-3" style={{ borderLeft: `3px solid ${serviceColor}` }}>
 											<div className="flex flex-col gap-1">
 												<div
 													className="mb-1 text-xs font-semibold"
@@ -119,8 +115,12 @@ export const HistoryTable = ({
 												</div>
 												<StatusBadge status="info">indexerRss</StatusBadge>
 												{(() => {
-													const instance = firstItem ? serviceMap.get(firstItem.instanceId) : undefined;
-													const externalLink = firstItem ? buildHistoryExternalLink(firstItem, instance) : null;
+													const instance = firstItem
+														? serviceMap.get(firstItem.instanceId)
+														: undefined;
+													const externalLink = firstItem
+														? buildHistoryExternalLink(firstItem, instance)
+														: null;
 													const displayName = firstItem?.instanceName
 														? incognitoMode
 															? getLinuxInstanceName(firstItem.instanceName)
@@ -166,9 +166,7 @@ export const HistoryTable = ({
 														{formatCompactRelativeTime(firstItem?.date)}
 													</span>
 												</TooltipTrigger>
-												<TooltipContent>
-													{formatAbsoluteDateTime(firstItem?.date)}
-												</TooltipContent>
+												<TooltipContent>{formatAbsoluteDateTime(firstItem?.date)}</TooltipContent>
 											</Tooltip>
 										</td>
 									</PremiumTableRow>
@@ -179,7 +177,9 @@ export const HistoryTable = ({
 								const key = `${item.service}:${item.instanceId}:${String(item.id)}`;
 								const eventType = item.eventType ?? item.status ?? "Unknown";
 								const displayTitle = getDisplayTitle(item);
-								const anonymizedTitle = incognitoMode ? getLinuxIsoName(displayTitle) : displayTitle;
+								const anonymizedTitle = incognitoMode
+									? getLinuxIsoName(displayTitle)
+									: displayTitle;
 								const itemServiceColor = getServiceGradient(item.service).from;
 
 								// Determine what to show in Source/Client column
@@ -187,11 +187,12 @@ export const HistoryTable = ({
 								let sourceClient = rawSourceClient || "-";
 								if (incognitoMode && rawSourceClient) {
 									const kind = getSourceClientKind(item);
-									sourceClient = kind === "indexer"
-										? getLinuxIndexer(rawSourceClient)
-										: kind === "client"
-											? getLinuxDownloadClient(rawSourceClient)
-											: rawSourceClient;
+									sourceClient =
+										kind === "indexer"
+											? getLinuxIndexer(rawSourceClient)
+											: kind === "client"
+												? getLinuxDownloadClient(rawSourceClient)
+												: rawSourceClient;
 								}
 
 								const isFirstInGroup = itemIndex === 0;
@@ -204,7 +205,9 @@ export const HistoryTable = ({
 									>
 										<td
 											className={`px-4 py-3 ${isGrouped && !isFirstInGroup ? "pl-8" : ""}`}
-											style={!isGrouped ? { borderLeft: `3px solid ${itemServiceColor}` } : undefined}
+											style={
+												!isGrouped ? { borderLeft: `3px solid ${itemServiceColor}` } : undefined
+											}
 										>
 											<div className="flex flex-col gap-1">
 												{isFirstInGroup && isGrouped && (
@@ -223,10 +226,10 @@ export const HistoryTable = ({
 													<div className="flex items-center gap-1 flex-wrap mt-1">
 														{lifecycleStages.map((stage, i) => (
 															<div key={stage.stage} className="flex items-center gap-1">
-																{i > 0 && <ArrowRight className="h-3 w-3 text-muted-foreground/50" />}
-																<StatusBadge status={stage.color}>
-																	{stage.label}
-																</StatusBadge>
+																{i > 0 && (
+																	<ArrowRight className="h-3 w-3 text-muted-foreground/50" />
+																)}
+																<StatusBadge status={stage.color}>{stage.label}</StatusBadge>
 															</div>
 														))}
 													</div>
@@ -288,7 +291,9 @@ export const HistoryTable = ({
 											{(item.quality as { quality?: { name?: string } })?.quality?.name ?? "-"}
 										</td>
 										<td className="px-4 py-3 text-muted-foreground">{sourceClient}</td>
-										<td className="px-4 py-3 text-right text-muted-foreground">{formatBytes(item.size)}</td>
+										<td className="px-4 py-3 text-right text-muted-foreground">
+											{formatBytes(item.size)}
+										</td>
 										<td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
 											<Tooltip>
 												<TooltipTrigger asChild>
@@ -296,9 +301,7 @@ export const HistoryTable = ({
 														{formatCompactRelativeTime(item.date)}
 													</span>
 												</TooltipTrigger>
-												<TooltipContent>
-													{formatAbsoluteDateTime(item.date)}
-												</TooltipContent>
+												<TooltipContent>{formatAbsoluteDateTime(item.date)}</TooltipContent>
 											</Tooltip>
 										</td>
 									</PremiumTableRow>

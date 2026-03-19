@@ -5,14 +5,15 @@
  * status checking, refreshing, and GitHub rate limit monitoring.
  */
 
+import type { CacheValidationHealth } from "@arr/shared";
 import { apiRequest } from "../base";
 import type {
-	TrashCacheStatus,
-	TrashCacheEntry,
-	TrashConfigType,
 	GitHubRateLimitResponse,
-	SyncMetricsSnapshot,
 	ServiceType,
+	SyncMetricsSnapshot,
+	TrashCacheEntry,
+	TrashCacheStatus,
+	TrashConfigType,
 } from "./types";
 
 // ============================================================================
@@ -88,12 +89,17 @@ export async function fetchSyncMetrics(): Promise<SyncMetricsSnapshot> {
 /**
  * Fetch cache entries with data
  */
-export async function fetchCacheEntries(
-	serviceType: ServiceType,
-): Promise<TrashCacheEntry[]> {
+export async function fetchCacheEntries(serviceType: ServiceType): Promise<TrashCacheEntry[]> {
 	return await apiRequest<TrashCacheEntry[]>(
 		`/api/trash-guides/cache/entries?serviceType=${serviceType}`,
 	);
+}
+
+/**
+ * Fetch cache validation health stats from the last refresh
+ */
+export async function fetchCacheHealth(): Promise<CacheValidationHealth> {
+	return await apiRequest<CacheValidationHealth>("/api/trash-guides/cache/health");
 }
 
 /**

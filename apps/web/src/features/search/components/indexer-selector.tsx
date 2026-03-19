@@ -2,8 +2,8 @@
 
 import type { SearchIndexersResponse } from "@arr/shared";
 import { Button } from "../../../components/ui";
-import { useIncognitoMode, getLinuxIndexer, getLinuxInstanceName } from "../../../lib/incognito";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getLinuxIndexer, getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 
 interface IndexerSelectorProps {
 	/**
@@ -47,10 +47,7 @@ export const IndexerSelector = ({
 				const everySelected = allIds.length > 0 && allIds.every((id) => ids.includes(id));
 
 				return (
-					<div
-						key={instance.instanceId}
-						className="rounded-xl border border-border bg-card p-4"
-					>
+					<div key={instance.instanceId} className="rounded-xl border border-border bg-card p-4">
 						<div className="mb-3 flex flex-wrap items-center justify-between gap-2">
 							<div>
 								<p className="text-sm font-semibold text-foreground">

@@ -6,42 +6,44 @@
  */
 
 import {
+	type LidarrStatistics,
+	lidarrStatisticsSchema,
 	type ProwlarrIndexerStat,
 	type ProwlarrStatistics,
-	type RadarrStatistics,
-	type SonarrStatistics,
-	type LidarrStatistics,
-	type ReadarrStatistics,
 	prowlarrIndexerStatSchema,
 	prowlarrStatisticsSchema,
+	type RadarrStatistics,
+	type ReadarrStatistics,
 	radarrStatisticsSchema,
-	sonarrStatisticsSchema,
-	lidarrStatisticsSchema,
 	readarrStatisticsSchema,
+	type SonarrStatistics,
+	sonarrStatisticsSchema,
 } from "@arr/shared";
-import type { SonarrClient } from "arr-sdk/sonarr";
-import type { RadarrClient } from "arr-sdk/radarr";
-import type { ProwlarrClient } from "arr-sdk/prowlarr";
 import type { LidarrClient } from "arr-sdk/lidarr";
+import type { ProwlarrClient } from "arr-sdk/prowlarr";
+import type { RadarrClient } from "arr-sdk/radarr";
 import type { ReadarrClient } from "arr-sdk/readarr";
+import type { SonarrClient } from "arr-sdk/sonarr";
+
+import { parseUpstream } from "../validation/parse-upstream.js";
 
 import {
-	type InstanceInfo,
-	type HealthIssue,
-	clampPercentage,
-	toNumber,
-	safeRequest,
 	buildProfileIdToNameMap,
 	buildTagIdToLabelMap,
-	getTimeThresholds,
-	checkRecentlyAdded,
 	calculateDiskTotals,
-	processHealthIssues,
-	updateTagBreakdown,
-	updateQualityBreakdown,
-	finalizeDiskStats,
+	checkRecentlyAdded,
+	clampPercentage,
 	finalizeBreakdown,
+	finalizeDiskStats,
+	getTimeThresholds,
+	type HealthIssue,
+	type InstanceInfo,
 	mergeBreakdown,
+	processHealthIssues,
+	safeRequest,
+	toNumber,
+	updateQualityBreakdown,
+	updateTagBreakdown,
 } from "./statistics-utils.js";
 
 // ============================================================================
@@ -229,14 +231,19 @@ export const fetchSonarrStatisticsWithSdk = async (
 		totalFileSize += sizeOnDisk;
 
 		if (episodesWithFile > 0) {
-			updateQualityBreakdown(entry.qualityProfileId, profileIdToName, episodesWithFile, qualityBreakdown);
+			updateQualityBreakdown(
+				entry.qualityProfileId,
+				profileIdToName,
+				episodesWithFile,
+				qualityBreakdown,
+			);
 		}
 	}
 
 	const diskTotals = calculateDiskTotals(diskspace);
 	const healthIssuesList = processHealthIssues(health, instanceInfo, "sonarr");
 
-	return sonarrStatisticsSchema.parse({
+	const constructed = {
 		totalSeries,
 		monitoredSeries,
 		continuingSeries,
@@ -245,7 +252,8 @@ export const fetchSonarrStatisticsWithSdk = async (
 		episodeFileCount,
 		downloadedEpisodes,
 		missingEpisodes,
-		downloadedPercentage: totalEpisodes > 0 ? clampPercentage((downloadedEpisodes / totalEpisodes) * 100) : 0,
+		downloadedPercentage:
+			totalEpisodes > 0 ? clampPercentage((downloadedEpisodes / totalEpisodes) * 100) : 0,
 		cutoffUnmetCount: cutoffUnmet?.totalRecords ?? 0,
 		qualityBreakdown,
 		tagBreakdown,
@@ -258,7 +266,12 @@ export const fetchSonarrStatisticsWithSdk = async (
 		diskUsagePercent: diskTotals.usagePercent,
 		healthIssues: healthIssuesList.length,
 		healthIssuesList,
+	};
+	const validated = parseUpstream(constructed, sonarrStatisticsSchema, {
+		integration: "dashboard",
+		category: "statistics/sonarr",
 	});
+	return validated.success ? validated.data : (constructed as SonarrStatistics);
 };
 
 // ============================================================================
@@ -323,12 +336,13 @@ export const fetchRadarrStatisticsWithSdk = async (
 	const diskTotals = calculateDiskTotals(diskspace);
 	const healthIssuesList = processHealthIssues(health, instanceInfo, "radarr");
 
-	return radarrStatisticsSchema.parse({
+	const constructed = {
 		totalMovies,
 		monitoredMovies,
 		downloadedMovies,
 		missingMovies: Math.max(0, monitoredMovies - downloadedMovies),
-		downloadedPercentage: monitoredMovies > 0 ? clampPercentage((downloadedMovies / monitoredMovies) * 100) : 0,
+		downloadedPercentage:
+			monitoredMovies > 0 ? clampPercentage((downloadedMovies / monitoredMovies) * 100) : 0,
 		cutoffUnmetCount: cutoffUnmet?.totalRecords ?? 0,
 		qualityBreakdown,
 		tagBreakdown,
@@ -342,7 +356,12 @@ export const fetchRadarrStatisticsWithSdk = async (
 		diskUsagePercent: diskTotals.usagePercent,
 		healthIssues: healthIssuesList.length,
 		healthIssuesList,
+	};
+	const validated = parseUpstream(constructed, radarrStatisticsSchema, {
+		integration: "dashboard",
+		category: "statistics/radarr",
 	});
+	return validated.success ? validated.data : (constructed as RadarrStatistics);
 };
 
 // ============================================================================
@@ -409,7 +428,8 @@ export const fetchProwlarrStatisticsWithSdk = async (
 					name: entry.indexerName ?? "Unknown",
 					queries,
 					grabs,
-					successRate: totalAttempts > 0 ? clampPercentage((totalSuccessful / totalAttempts) * 100) : 100,
+					successRate:
+						totalAttempts > 0 ? clampPercentage((totalSuccessful / totalAttempts) * 100) : 100,
 				}),
 			);
 		}
@@ -418,7 +438,7 @@ export const fetchProwlarrStatisticsWithSdk = async (
 	const healthIssuesList = processHealthIssues(health, instanceInfo, "prowlarr");
 	const topIndexers = normalizedStats.sort((a, b) => b.queries - a.queries).slice(0, 10);
 
-	return prowlarrStatisticsSchema.parse({
+	const constructed = {
 		totalIndexers,
 		activeIndexers,
 		pausedIndexers: totalIndexers - activeIndexers,
@@ -429,11 +449,17 @@ export const fetchProwlarrStatisticsWithSdk = async (
 		successfulGrabs,
 		failedGrabs,
 		grabRate: totalQueries > 0 ? clampPercentage((totalGrabs / totalQueries) * 100) : 0,
-		averageResponseTime: responseTimeCount > 0 ? Math.round(totalResponseTime / responseTimeCount) : undefined,
+		averageResponseTime:
+			responseTimeCount > 0 ? Math.round(totalResponseTime / responseTimeCount) : undefined,
 		healthIssues: healthIssuesList.length,
 		healthIssuesList,
 		indexers: topIndexers,
+	};
+	const validated = parseUpstream(constructed, prowlarrStatisticsSchema, {
+		integration: "dashboard",
+		category: "statistics/prowlarr",
 	});
+	return validated.success ? validated.data : (constructed as ProwlarrStatistics);
 };
 
 // ============================================================================
@@ -498,7 +524,12 @@ export const fetchLidarrStatisticsWithSdk = async (
 		totalFileSize += sizeOnDisk;
 
 		if (trackFileCount > 0) {
-			updateQualityBreakdown(artist.qualityProfileId, profileIdToName, trackFileCount, qualityBreakdown);
+			updateQualityBreakdown(
+				artist.qualityProfileId,
+				profileIdToName,
+				trackFileCount,
+				qualityBreakdown,
+			);
 		}
 	}
 
@@ -506,7 +537,7 @@ export const fetchLidarrStatisticsWithSdk = async (
 	const diskTotals = calculateDiskTotals(diskspace);
 	const healthIssuesList = processHealthIssues(health, instanceInfo, "lidarr");
 
-	return lidarrStatisticsSchema.parse({
+	const constructed = {
 		totalArtists,
 		monitoredArtists,
 		totalAlbums,
@@ -514,7 +545,8 @@ export const fetchLidarrStatisticsWithSdk = async (
 		totalTracks,
 		downloadedTracks,
 		missingTracks,
-		downloadedPercentage: totalTracks > 0 ? clampPercentage((downloadedTracks / totalTracks) * 100) : 0,
+		downloadedPercentage:
+			totalTracks > 0 ? clampPercentage((downloadedTracks / totalTracks) * 100) : 0,
 		cutoffUnmetCount: toNumber(cutoffUnmet?.totalRecords) ?? 0,
 		qualityBreakdown,
 		tagBreakdown: finalizeBreakdown(tagBreakdown),
@@ -527,7 +559,12 @@ export const fetchLidarrStatisticsWithSdk = async (
 		diskUsagePercent: diskTotals.usagePercent,
 		healthIssues: healthIssuesList.length,
 		healthIssuesList,
+	};
+	const validated = parseUpstream(constructed, lidarrStatisticsSchema, {
+		integration: "dashboard",
+		category: "statistics/lidarr",
 	});
+	return validated.success ? validated.data : (constructed as LidarrStatistics);
 };
 
 // ============================================================================
@@ -592,21 +629,27 @@ export const fetchReadarrStatisticsWithSdk = async (
 		if (author.monitored !== false) monitoredBooks += bookCount;
 
 		if (bookFileCount > 0) {
-			updateQualityBreakdown(author.qualityProfileId, profileIdToName, bookFileCount, qualityBreakdown);
+			updateQualityBreakdown(
+				author.qualityProfileId,
+				profileIdToName,
+				bookFileCount,
+				qualityBreakdown,
+			);
 		}
 	}
 
 	const diskTotals = calculateDiskTotals(diskspace);
 	const healthIssuesList = processHealthIssues(health, instanceInfo, "readarr");
 
-	return readarrStatisticsSchema.parse({
+	const constructed = {
 		totalAuthors,
 		monitoredAuthors,
 		totalBooks,
 		monitoredBooks,
 		downloadedBooks,
 		missingBooks,
-		downloadedPercentage: monitoredBooks > 0 ? clampPercentage((downloadedBooks / monitoredBooks) * 100) : 0,
+		downloadedPercentage:
+			monitoredBooks > 0 ? clampPercentage((downloadedBooks / monitoredBooks) * 100) : 0,
 		cutoffUnmetCount: toNumber(cutoffUnmet?.totalRecords) ?? 0,
 		qualityBreakdown,
 		tagBreakdown: finalizeBreakdown(tagBreakdown),
@@ -619,7 +662,12 @@ export const fetchReadarrStatisticsWithSdk = async (
 		diskUsagePercent: diskTotals.usagePercent,
 		healthIssues: healthIssuesList.length,
 		healthIssuesList,
+	};
+	const validated = parseUpstream(constructed, readarrStatisticsSchema, {
+		integration: "dashboard",
+		category: "statistics/readarr",
 	});
+	return validated.success ? validated.data : (constructed as ReadarrStatistics);
 };
 
 // ============================================================================
@@ -693,7 +741,7 @@ export const aggregateSonarrStatistics = (
 
 	const diskStats = finalizeDiskStats(acc);
 
-	return sonarrStatisticsSchema.parse({
+	const constructed = {
 		totalSeries: acc.totalSeries,
 		monitoredSeries: acc.monitoredSeries,
 		continuingSeries: acc.continuingSeries,
@@ -702,7 +750,10 @@ export const aggregateSonarrStatistics = (
 		episodeFileCount: acc.episodeFileCount,
 		downloadedEpisodes: acc.downloadedEpisodes,
 		missingEpisodes: acc.missingEpisodes,
-		downloadedPercentage: acc.totalEpisodes > 0 ? clampPercentage((acc.downloadedEpisodes / acc.totalEpisodes) * 100) : 0,
+		downloadedPercentage:
+			acc.totalEpisodes > 0
+				? clampPercentage((acc.downloadedEpisodes / acc.totalEpisodes) * 100)
+				: 0,
 		cutoffUnmetCount: acc.cutoffUnmetCount,
 		qualityBreakdown: acc.qualityBreakdown,
 		tagBreakdown: finalizeBreakdown(acc.tagBreakdown),
@@ -712,7 +763,12 @@ export const aggregateSonarrStatistics = (
 		...diskStats,
 		healthIssues: acc.healthIssues,
 		healthIssuesList: acc.healthIssuesList,
+	};
+	const validated = parseUpstream(constructed, sonarrStatisticsSchema, {
+		integration: "dashboard",
+		category: "statistics/sonarr",
 	});
+	return validated.success ? validated.data : (constructed as SonarrStatistics);
 };
 
 export const aggregateRadarrStatistics = (
@@ -776,12 +832,15 @@ export const aggregateRadarrStatistics = (
 
 	const diskStats = finalizeDiskStats(acc);
 
-	return radarrStatisticsSchema.parse({
+	const constructed = {
 		totalMovies: acc.totalMovies,
 		monitoredMovies: acc.monitoredMovies,
 		downloadedMovies: acc.downloadedMovies,
 		missingMovies: acc.missingMovies,
-		downloadedPercentage: acc.monitoredMovies > 0 ? clampPercentage((acc.downloadedMovies / acc.monitoredMovies) * 100) : 0,
+		downloadedPercentage:
+			acc.monitoredMovies > 0
+				? clampPercentage((acc.downloadedMovies / acc.monitoredMovies) * 100)
+				: 0,
 		cutoffUnmetCount: acc.cutoffUnmetCount,
 		qualityBreakdown: acc.qualityBreakdown,
 		tagBreakdown: finalizeBreakdown(acc.tagBreakdown),
@@ -792,7 +851,12 @@ export const aggregateRadarrStatistics = (
 		...diskStats,
 		healthIssues: acc.healthIssues,
 		healthIssuesList: acc.healthIssuesList,
+	};
+	const validated = parseUpstream(constructed, radarrStatisticsSchema, {
+		integration: "dashboard",
+		category: "statistics/radarr",
 	});
+	return validated.success ? validated.data : (constructed as RadarrStatistics);
 };
 
 export const aggregateProwlarrStatistics = (
@@ -836,7 +900,10 @@ export const aggregateProwlarrStatistics = (
 	}
 
 	// Aggregate indexers by name (case-insensitive)
-	const indexerMap = new Map<string, { displayName: string; queries: number; grabs: number; successRateSum: number; count: number }>();
+	const indexerMap = new Map<
+		string,
+		{ displayName: string; queries: number; grabs: number; successRateSum: number; count: number }
+	>();
 	for (const entry of acc.indexers) {
 		const key = (entry.name.trim() || "indexer").toLowerCase();
 		const existing = indexerMap.get(key);
@@ -857,16 +924,18 @@ export const aggregateProwlarrStatistics = (
 	}
 
 	const aggregatedIndexers = Array.from(indexerMap.values())
-		.map((agg) => prowlarrIndexerStatSchema.parse({
-			name: agg.displayName,
-			queries: agg.queries,
-			grabs: agg.grabs,
-			successRate: clampPercentage(agg.successRateSum / Math.max(agg.count, 1)),
-		}))
+		.map((agg) =>
+			prowlarrIndexerStatSchema.parse({
+				name: agg.displayName,
+				queries: agg.queries,
+				grabs: agg.grabs,
+				successRate: clampPercentage(agg.successRateSum / Math.max(agg.count, 1)),
+			}),
+		)
 		.sort((a, b) => b.queries - a.queries)
 		.slice(0, 10);
 
-	return prowlarrStatisticsSchema.parse({
+	const constructed = {
 		totalIndexers: acc.totalIndexers,
 		activeIndexers: acc.activeIndexers,
 		pausedIndexers: acc.pausedIndexers,
@@ -877,13 +946,19 @@ export const aggregateProwlarrStatistics = (
 		successfulGrabs: acc.successfulGrabs,
 		failedGrabs: acc.failedGrabs,
 		grabRate: acc.totalQueries > 0 ? clampPercentage((acc.totalGrabs / acc.totalQueries) * 100) : 0,
-		averageResponseTime: acc.responseTimes.length > 0
-			? acc.responseTimes.reduce((sum, v) => sum + v, 0) / acc.responseTimes.length
-			: undefined,
+		averageResponseTime:
+			acc.responseTimes.length > 0
+				? acc.responseTimes.reduce((sum, v) => sum + v, 0) / acc.responseTimes.length
+				: undefined,
 		healthIssues: acc.healthIssues,
 		healthIssuesList: acc.healthIssuesList,
 		indexers: aggregatedIndexers,
+	};
+	const validated = parseUpstream(constructed, prowlarrStatisticsSchema, {
+		integration: "dashboard",
+		category: "statistics/prowlarr",
 	});
+	return validated.success ? validated.data : (constructed as ProwlarrStatistics);
 };
 
 export const aggregateLidarrStatistics = (
@@ -951,7 +1026,7 @@ export const aggregateLidarrStatistics = (
 
 	const diskStats = finalizeDiskStats(acc);
 
-	return lidarrStatisticsSchema.parse({
+	const constructed = {
 		totalArtists: acc.totalArtists,
 		monitoredArtists: acc.monitoredArtists,
 		totalAlbums: acc.totalAlbums,
@@ -959,7 +1034,8 @@ export const aggregateLidarrStatistics = (
 		totalTracks: acc.totalTracks,
 		downloadedTracks: acc.downloadedTracks,
 		missingTracks: acc.missingTracks,
-		downloadedPercentage: acc.totalTracks > 0 ? clampPercentage((acc.downloadedTracks / acc.totalTracks) * 100) : 0,
+		downloadedPercentage:
+			acc.totalTracks > 0 ? clampPercentage((acc.downloadedTracks / acc.totalTracks) * 100) : 0,
 		cutoffUnmetCount: acc.cutoffUnmetCount,
 		qualityBreakdown: acc.qualityBreakdown,
 		tagBreakdown: finalizeBreakdown(acc.tagBreakdown),
@@ -969,7 +1045,12 @@ export const aggregateLidarrStatistics = (
 		...diskStats,
 		healthIssues: acc.healthIssues,
 		healthIssuesList: acc.healthIssuesList,
+	};
+	const validated = parseUpstream(constructed, lidarrStatisticsSchema, {
+		integration: "dashboard",
+		category: "statistics/lidarr",
 	});
+	return validated.success ? validated.data : (constructed as LidarrStatistics);
 };
 
 export const aggregateReadarrStatistics = (
@@ -1035,14 +1116,17 @@ export const aggregateReadarrStatistics = (
 
 	const diskStats = finalizeDiskStats(acc);
 
-	return readarrStatisticsSchema.parse({
+	const constructed = {
 		totalAuthors: acc.totalAuthors,
 		monitoredAuthors: acc.monitoredAuthors,
 		totalBooks: acc.totalBooks,
 		monitoredBooks: acc.monitoredBooks,
 		downloadedBooks: acc.downloadedBooks,
 		missingBooks: acc.missingBooks,
-		downloadedPercentage: acc.monitoredBooks > 0 ? clampPercentage((acc.downloadedBooks / acc.monitoredBooks) * 100) : 0,
+		downloadedPercentage:
+			acc.monitoredBooks > 0
+				? clampPercentage((acc.downloadedBooks / acc.monitoredBooks) * 100)
+				: 0,
 		cutoffUnmetCount: acc.cutoffUnmetCount,
 		qualityBreakdown: acc.qualityBreakdown,
 		tagBreakdown: finalizeBreakdown(acc.tagBreakdown),
@@ -1052,5 +1136,10 @@ export const aggregateReadarrStatistics = (
 		...diskStats,
 		healthIssues: acc.healthIssues,
 		healthIssuesList: acc.healthIssuesList,
+	};
+	const validated = parseUpstream(constructed, readarrStatisticsSchema, {
+		integration: "dashboard",
+		category: "statistics/readarr",
 	});
+	return validated.success ? validated.data : (constructed as ReadarrStatistics);
 };

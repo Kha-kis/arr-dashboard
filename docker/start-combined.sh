@@ -149,11 +149,39 @@ if [ "$CURRENT_PROVIDER" != "$DB_PROVIDER" ]; then
     [ -d "/app/api/node_modules/@prisma" ] && chown -R "${PUID}:${PGID}" "/app/api/node_modules/@prisma"
     # Ensure prisma directory is writable for any generated files
     [ -d "/app/api/node_modules/.prisma" ] && chown -R "${PUID}:${PGID}" "/app/api/node_modules/.prisma"
+    # Ensure Prisma output directory is writable (Prisma 7 generates to src/generated/prisma/)
+    [ -d "/app/api/src/generated" ] && chown -R "${PUID}:${PGID}" "/app/api/src/generated"
 
     if ! su-exec abc ./node_modules/.bin/prisma generate --schema prisma/schema.prisma; then
         echo "ERROR: Failed to regenerate Prisma client" >&2
         echo "  Check that /app/api has correct permissions for PUID:$PUID PGID:$PGID" >&2
         exit 1
+    fi
+
+    # Patch the bundled dist/index.js to match the new provider.
+    # tsup inlines the Prisma-generated config (activeProvider, inlineSchema, and
+    # WASM query compiler import paths) at build time. Since the image always builds
+    # with SQLite, the bundle has "sqlite" baked in three places:
+    #   1. "activeProvider": "sqlite"        → Prisma runtime provider selection
+    #   2. provider = "sqlite"               → inlineSchema datasource block
+    #   3. query_compiler_fast_bg.sqlite.*   → WASM query compiler module paths
+    # Without this patch, the Prisma runtime loads the SQLite query compiler and
+    # generates SQLite-dialect SQL, causing a silent crash with PostgreSQL.
+    echo "  - Patching bundled Prisma config in dist/index.js..."
+    if [ -f dist/index.js ]; then
+        sed -i 's/"activeProvider": "sqlite"/"activeProvider": "'"$DB_PROVIDER"'"/' dist/index.js
+        sed -i 's/provider = "sqlite"/provider = "'"$DB_PROVIDER"'"/' dist/index.js
+        sed -i 's/query_compiler_fast_bg\.sqlite\./query_compiler_fast_bg.'"$DB_PROVIDER"'./g' dist/index.js
+        echo "  - Bundle patched for $DB_PROVIDER"
+
+        # Verify the patch was applied correctly
+        echo "  - Verifying patch..."
+        echo "    activeProvider: $(grep -o '"activeProvider": "[^"]*"' dist/index.js)"
+        echo "    WASM paths: $(grep -c "query_compiler_fast_bg.$DB_PROVIDER." dist/index.js) references"
+        echo "    File size: $(wc -c < dist/index.js) bytes"
+        echo "    Permissions: $(ls -la dist/index.js)"
+    else
+        echo "WARNING: dist/index.js not found, skipping bundle patch" >&2
     fi
 
     echo "  - Provider switched successfully"
@@ -227,12 +255,38 @@ echo "  - Web Port: $PORT"
 echo ""
 echo "Starting API server on $HOST:$API_PORT..."
 cd /app/api
-su-exec abc sh -c "API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node dist/index.js" &
+su-exec abc sh -c "API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node dist/index.js" > /config/logs/api.log 2>&1 &
 API_PID=$!
 echo "API started with PID $API_PID"
 
-# Give API a moment to start
-sleep 2
+# Give API a moment to start, then verify it's still running
+sleep 3
+if ! kill -0 "$API_PID" 2>/dev/null; then
+    echo ""
+    echo "ERROR: API process (PID $API_PID) died during startup!" >&2
+    echo "=== API startup output ===" >&2
+    cat /config/logs/api.log >&2 2>/dev/null || echo "(empty)"
+    echo "=== End API output ===" >&2
+
+    # Temporarily disable set -e so wait's non-zero exit doesn't kill the script
+    set +e
+    wait "$API_PID" 2>/dev/null
+    API_EXIT=$?
+    set -e
+    echo "  API exit code: $API_EXIT" >&2
+
+    # Re-run the API in the foreground with a timeout to capture the actual error
+    echo "=== Re-running API in foreground (10s timeout) ===" >&2
+    set +e
+    timeout 10 su-exec abc sh -c "API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node dist/index.js" 2>&1
+    RERUN_EXIT=$?
+    set -e
+    echo "=== Foreground API exit code: $RERUN_EXIT ===" >&2
+    exit 1
+fi
+
+# Tail the API log to container stdout so docker logs captures it
+tail -f /config/logs/api.log &
 
 # ============================================
 # Start Web server (as abc user)

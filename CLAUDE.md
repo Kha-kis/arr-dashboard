@@ -24,16 +24,21 @@ pnpm install && pnpm run dev  # Starts API (3001) + Web (3000)
 
 ## Project Overview
 
-Unified dashboard for managing multiple **Sonarr**, **Radarr**, and **Prowlarr** instances with:
+Unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, **Lidarr**, **Readarr**, **Plex**, **Tautulli**, and **Jellyseerr/Overseerr** instances with:
 
 - Multi-instance aggregation (queue, calendar, history, library)
 - Global indexer search via Prowlarr
-- TRaSH Guides integration for quality profile management
+- TRaSH Guides integration for quality profiles and naming schemes
 - Automated hunting for missing content and upgrades
 - TMDB discovery and recommendations
 - Multi-auth: Password, OIDC (Authelia/Authentik), Passkeys (WebAuthn)
 - Encrypted API keys with zero-config secret generation
 - Automated backup system
+- Library cleanup with rule-based evaluation and approval workflow
+- Notification system (Discord, Slack, Telegram, Email, Gotify, Ntfy, Pushover, Webhooks)
+- Plex/Tautulli media server analytics (now playing, watch history, on-deck)
+- Jellyseerr/Overseerr request management
+- Runtime validation health monitoring with drift detection
 
 **Architecture**: Single-admin, self-hosted application optimized for home server deployment.
 
@@ -61,7 +66,7 @@ arr-dashboard/
 | Layer | Technology | Notes |
 |-------|------------|-------|
 | **Backend** | Fastify 4, Prisma, Zod | Session-based auth (NOT JWT) |
-| **Frontend** | Next.js 14 App Router, React 18 | Server Components default |
+| **Frontend** | Next.js 16 App Router, React 18 | Server Components default |
 | **UI** | TailwindCSS, shadcn/ui | Dark mode via next-themes |
 | **Data** | Tanstack Query | 25+ custom hooks |
 | **Database** | SQLite (default) | PostgreSQL/MySQL supported |
@@ -74,7 +79,7 @@ arr-dashboard/
 |-------|------|---------|
 | `User` | schema.prisma:1-15 | Single admin (no roles) |
 | `Session` | schema.prisma:17-23 | Hashed tokens with expiry |
-| `ServiceInstance` | schema.prisma:25-40 | Sonarr/Radarr/Prowlarr connections |
+| `ServiceInstance` | schema.prisma:25-40 | Sonarr/Radarr/Prowlarr/Lidarr/Readarr/Plex/Tautulli/Seerr connections |
 | `ServiceTag` | schema.prisma:42-48 | Instance organization |
 
 #### Authentication Models
@@ -95,6 +100,40 @@ arr-dashboard/
 | `HuntLog` | Hunt activity log |
 | `BackupSettings` | Singleton backup config |
 | `SystemSettings` | Singleton system config |
+
+#### Library Cleanup Models
+| Model | Purpose |
+|-------|---------|
+| `LibraryCleanupConfig` | Per-instance cleanup configuration |
+| `LibraryCleanupRule` | Individual cleanup rule definitions |
+| `LibraryCleanupApproval` | Items pending user approval |
+| `LibraryCleanupLog` | Cleanup execution audit log |
+
+#### Notification Models
+| Model | Purpose |
+|-------|---------|
+| `NotificationChannel` | Channel config (Discord, Slack, etc.) |
+| `NotificationSubscription` | Event → channel subscriptions |
+| `NotificationLog` | Delivery audit log |
+| `NotificationRule` | Advanced routing rules |
+| `NotificationAggregationConfig` | Batching settings |
+| `VapidKeys` | Web push VAPID keys |
+
+#### Media Server Models
+| Model | Purpose |
+|-------|---------|
+| `PlexCache` | Cached Plex library metadata |
+| `PlexEpisodeCache` | Episode-level Plex data |
+| `TautulliCache` | Watch history and activity data |
+| `CacheRefreshStatus` | Cache health tracking |
+| `SessionSnapshot` | Now-playing session snapshots |
+| `SeerrActionLog` | Jellyseerr/Overseerr request actions |
+
+#### Naming & Validation Models
+| Model | Purpose |
+|-------|---------|
+| `NamingConfig` | Per-instance naming scheme config |
+| `NamingDeployHistory` | Naming deployment audit log |
 
 ---
 
@@ -334,6 +373,12 @@ All routes in `apps/api/src/routes/`. Protected routes use preHandler authentica
 | `/api/backup` | Backup management |
 | `/api/system` | System settings and info |
 | `/api/oidc-providers` | OIDC admin config |
+| `/api/library-cleanup` | Cleanup rules, approvals, execution |
+| `/api/notifications` | Channels, subscriptions, delivery |
+| `/api/plex` | Now playing, on-deck, watch history, analytics |
+| `/api/tautulli` | Activity, watch history enrichment |
+| `/api/seerr` | Jellyseerr/Overseerr request management |
+| `/api/validation` | Runtime validation health and drift |
 
 #### System Routes (`/api/system`)
 | Method | Route | Purpose |
@@ -416,8 +461,11 @@ All pages in `apps/web/app/`. Protected routes require session cookie.
 | `/history` | Protected | Download history |
 | `/statistics` | Protected | Detailed statistics |
 | `/hunting` | Protected | Manual import hunting |
-| `/settings` | Protected | User/service settings |
-| `/trash-guides` | Protected | Quality profile wizard |
+| `/queue-cleaner` | Protected | Queue issue management |
+| `/library-cleanup` | Protected | Rule-based library cleanup |
+| `/requests` | Protected | Jellyseerr/Overseerr requests |
+| `/settings` | Protected | User/service/notification settings |
+| `/trash-guides` | Protected | Quality profiles and naming wizard |
 
 ### Data Fetching
 
@@ -788,7 +836,7 @@ Custom text utilities from Tailwind preset:
 
 ### TRaSH Guides Integration
 
-**Purpose**: Apply TRaSH Guides quality profiles to Sonarr/Radarr instances.
+**Purpose**: Apply TRaSH Guides quality profiles and naming schemes to Sonarr/Radarr instances.
 
 **Key Files:**
 - Routes: `apps/api/src/routes/trash-guides/` (13 modules)
@@ -804,6 +852,81 @@ Custom text utilities from Tailwind preset:
 - `TrashTemplate` - User templates with version history
 - `TrashBackup` - Pre-deployment snapshots
 - `TrashSyncHistory` - Audit log
+- `NamingConfig` - Per-instance naming scheme settings
+- `NamingDeployHistory` - Naming deployment audit log
+
+### Library Cleanup
+
+**Purpose**: Rule-based library cleanup with approval workflow.
+
+**Key Files:**
+- Routes: `apps/api/src/routes/library-cleanup.ts`
+- Frontend: `apps/web/src/features/library-cleanup/`
+
+**Workflow:**
+1. Configure cleanup rules per instance (size, quality, age, codec filters)
+2. Run evaluation → items matching rules enter approval queue
+3. Review and approve/reject items
+4. Execute cleanup on approved items
+
+**Models:** `LibraryCleanupConfig`, `LibraryCleanupRule`, `LibraryCleanupApproval`, `LibraryCleanupLog`
+
+### Notification System
+
+**Purpose**: Multi-channel notifications for system events.
+
+**Key Files:**
+- Routes: `apps/api/src/routes/notifications.ts`
+- Frontend: `apps/web/src/features/notifications/`
+
+**Channels:** Discord, Slack, Telegram, Email (SMTP), Gotify, Ntfy, Pushover, Webhooks
+
+**Configuration:**
+- Per-channel setup with test-send
+- Event subscriptions (hunt complete, cleanup done, validation degraded, etc.)
+- Delivery status tracking per channel
+
+### Plex/Tautulli Integration
+
+**Purpose**: Media server analytics — now playing, watch history, library stats.
+
+**Key Files:**
+- Routes: `apps/api/src/routes/plex/` (20+ modules)
+- Frontend: `apps/web/src/features/dashboard/components/now-playing-widget.tsx`, `watch-history-section.tsx`, etc.
+
+**Features:**
+- Now Playing with live session monitoring
+- On Deck / Continue Watching
+- Watch history with Tautulli enrichment
+- Recently Added media
+- Plex server identity and cache health
+
+### Jellyseerr/Overseerr Integration
+
+**Purpose**: Media request management from the dashboard.
+
+**Key Files:**
+- Routes: `apps/api/src/routes/seerr.ts`
+- Frontend: `apps/web/src/features/seerr/`
+
+**Features:**
+- View pending/approved/declined requests
+- Approve/deny requests directly from dashboard
+- Request history and action logging
+
+### Validation Health System
+
+**Purpose**: Runtime Zod validation monitoring with drift detection.
+
+**Key Files:**
+- Routes: `apps/api/src/routes/validation.ts`
+- Frontend: `apps/web/src/features/settings/` (validation health tab)
+
+**Features:**
+- Tracks parse success/failure rates per upstream API
+- Schema drift detection with field-level fingerprinting
+- Quarantine ring buffer for rejected items
+- VALIDATION_HEALTH_DEGRADED notification event
 
 ### Hunting/Auto-Search
 
@@ -1048,7 +1171,7 @@ app.config            // Environment config
 
 ---
 
-**Last Updated:** 2026-02-23
-**Version:** 2.8.5
+**Last Updated:** 2026-03-10
+**Version:** 2.9.0
 **Node:** 22+
 **pnpm:** 10+

@@ -1,7 +1,7 @@
 import { useCallback } from "react";
-import type { ManualImportCandidateUnion } from "../types";
 import { isSonarrCandidate } from "../helpers";
 import { useManualImportStore } from "../store";
+import type { ManualImportCandidateUnion } from "../types";
 
 /**
  * Hook for managing episode selection within a candidate

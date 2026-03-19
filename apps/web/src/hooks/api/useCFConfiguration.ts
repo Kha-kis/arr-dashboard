@@ -6,7 +6,7 @@ import type { QualityProfileSummary } from "../../lib/api-client/trash-guides";
  * Wizard-specific profile type that allows undefined trashId for edit mode.
  * In edit mode, templates don't persist the original TRaSH profile ID.
  */
-type WizardSelectedProfile = Omit<QualityProfileSummary, 'trashId'> & {
+type WizardSelectedProfile = Omit<QualityProfileSummary, "trashId"> & {
 	trashId?: string;
 };
 
@@ -66,7 +66,12 @@ function parseClonedProfileId(trashId: string): { instanceId: string; profileId:
 		const timestampPart = uuidParts2[0];
 		const randomPart = uuidParts2[1];
 
-		if (timestampPart && randomPart && /^\d+$/.test(timestampPart) && /^[a-z0-9]+$/i.test(randomPart)) {
+		if (
+			timestampPart &&
+			randomPart &&
+			/^\d+$/.test(timestampPart) &&
+			/^[a-z0-9]+$/i.test(randomPart)
+		) {
 			// Fallback 2-part format detected
 			profileIdIndex = parts.length - 3; // profileId is third-to-last before 2-part ID
 		} else {
@@ -212,7 +217,7 @@ async function fetchCFDescriptionMap(serviceType: string): Promise<{
 	const byDisplayName = new Map<string, DescEntry>();
 	try {
 		const res = await apiRequest<any>(
-			`/api/trash-guides/cache/cf-descriptions/list?serviceType=${serviceType}`
+			`/api/trash-guides/cache/cf-descriptions/list?serviceType=${serviceType}`,
 		);
 		const serviceKey = serviceType.toLowerCase();
 		const descriptions: any[] = res?.[serviceKey] || [];
@@ -240,7 +245,10 @@ async function fetchCFDescriptionMap(serviceType: string): Promise<{
  * Matches the server-side logic: lowercase → spaces to hyphens → strip non-alphanumeric.
  */
 function cfNameToSlug(name: string): string {
-	return name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+	return name
+		.toLowerCase()
+		.replace(/\s+/g, "-")
+		.replace(/[^a-z0-9-]/g, "");
 }
 
 /**
@@ -357,7 +365,7 @@ async function fetchClonedProfileData(trashId: string) {
 
 	// Fetch profile details from the source instance
 	const response = await apiRequest<any>(
-		`/api/trash-guides/profile-clone/profile-details/${instanceId}/${profileId}`
+		`/api/trash-guides/profile-clone/profile-details/${instanceId}/${profileId}`,
 	);
 
 	if (!response.success || !response.data) {
@@ -410,14 +418,15 @@ async function fetchClonedProfileData(trashId: string) {
 	});
 
 	// Extract quality items from cloned profile
-	const qualityItems = profile.items?.map((item: any) => ({
-		name: item.name || item.quality?.name,
-		allowed: item.allowed ?? true,
-		source: item.quality?.source,
-		resolution: item.quality?.resolution,
-		// Group items contain nested quality names
-		items: item.items?.map((q: any) => typeof q === 'string' ? q : q.name || q.quality?.name),
-	})) || [];
+	const qualityItems =
+		profile.items?.map((item: any) => ({
+			name: item.name || item.quality?.name,
+			allowed: item.allowed ?? true,
+			source: item.quality?.source,
+			resolution: item.quality?.resolution,
+			// Group items contain nested quality names
+			items: item.items?.map((q: any) => (typeof q === "string" ? q : q.name || q.quality?.name)),
+		})) || [];
 
 	return {
 		cfGroups: [], // Cloned profiles don't have CF groups
@@ -439,17 +448,16 @@ async function fetchClonedProfileData(trashId: string) {
 	};
 }
 
-async function fetchNormalModeData(
-	serviceType: string,
-	trashId: string
-) {
+async function fetchNormalModeData(serviceType: string, trashId: string) {
 	const profileData = await apiRequest<any>(
-		`/api/trash-guides/quality-profiles/${serviceType}/${trashId}`
+		`/api/trash-guides/quality-profiles/${serviceType}/${trashId}`,
 	);
 
 	// Check for error response (quality profile route returns { statusCode, error, message } on error)
 	if (profileData.statusCode || profileData.error) {
-		throw new Error(profileData.message || profileData.error || "Failed to fetch quality profile details");
+		throw new Error(
+			profileData.message || profileData.error || "Failed to fetch quality profile details",
+		);
 	}
 
 	const availableFormats = await fetchAvailableFormats(serviceType);
@@ -494,7 +502,7 @@ async function fetchAvailableFormats(
 	existingDescMap?: { bySlug: Map<string, DescEntry>; byDisplayName: Map<string, DescEntry> },
 ) {
 	const customFormatsRes = await apiRequest<any>(
-		`/api/trash-guides/cache/entries?serviceType=${serviceType}&configType=CUSTOM_FORMATS`
+		`/api/trash-guides/cache/entries?serviceType=${serviceType}&configType=CUSTOM_FORMATS`,
 	);
 
 	const customFormatsCacheEntry = Array.isArray(customFormatsRes)
@@ -504,7 +512,7 @@ async function fetchAvailableFormats(
 	const allCustomFormats = customFormatsCacheEntry?.data || [];
 
 	// Fetch descriptions if not already provided by caller
-	const descMap = existingDescMap ?? await fetchCFDescriptionMap(serviceType);
+	const descMap = existingDescMap ?? (await fetchCFDescriptionMap(serviceType));
 
 	// Note: We include originalConfig which contains trash_scores.
 	// The component resolves the actual score using the profile's scoreSet.
@@ -523,7 +531,7 @@ async function fetchAvailableFormats(
 	// Also fetch user custom formats and merge them in
 	try {
 		const userCFsRes = await apiRequest<any>(
-			`/api/trash-guides/user-custom-formats?serviceType=${serviceType}`
+			`/api/trash-guides/user-custom-formats?serviceType=${serviceType}`,
 		);
 		const userCFs = userCFsRes?.customFormats || [];
 

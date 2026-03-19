@@ -5,13 +5,13 @@
  */
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
+import { z } from "zod";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import { createTemplateUpdater } from "../../lib/trash-guides/template-updater.js";
 import { createVersionTracker } from "../../lib/trash-guides/version-tracker.js";
 import { validateRequest } from "../../lib/utils/validate.js";
-import { z } from "zod";
 
 // ============================================================================
 // Validation Schemas

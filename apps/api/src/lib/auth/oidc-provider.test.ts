@@ -5,8 +5,8 @@
  * compatibility with various OIDC providers (Pocket ID, Authelia, Authentik, etc.)
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as oauth from "oauth4webapi";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OIDCProvider } from "./oidc-provider.js";
 
 // Mock oauth4webapi
@@ -43,9 +43,7 @@ describe("OIDCProvider", () => {
 
 	describe("Token endpoint auth method auto-detection", () => {
 		// Helper to create a mock authorization server response
-		const createMockAuthServer = (
-			tokenEndpointAuthMethods?: string[],
-		): oauth.AuthorizationServer =>
+		const createMockAuthServer = (tokenEndpointAuthMethods?: string[]): oauth.AuthorizationServer =>
 			({
 				issuer: "https://auth.example.com",
 				authorization_endpoint: "https://auth.example.com/authorize",

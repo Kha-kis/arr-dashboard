@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest, ApiError } from "../../../lib/api-client/base";
+import { ApiError, apiRequest } from "../../../lib/api-client/base";
 
 interface TriggerCleanResponse {
 	message: string;
@@ -7,10 +7,9 @@ interface TriggerCleanResponse {
 }
 
 async function triggerClean(instanceId: string): Promise<TriggerCleanResponse> {
-	return apiRequest<TriggerCleanResponse>(
-		`/api/queue-cleaner/trigger/${instanceId}`,
-		{ method: "POST" },
-	);
+	return apiRequest<TriggerCleanResponse>(`/api/queue-cleaner/trigger/${instanceId}`, {
+		method: "POST",
+	});
 }
 
 export function useManualClean() {

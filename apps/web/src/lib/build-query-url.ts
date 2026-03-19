@@ -22,10 +22,7 @@ type ParamValue = string | number | boolean | undefined | null;
  * buildQueryUrl("/api/dashboard/queue", {})
  * // → "/api/dashboard/queue"
  */
-export function buildQueryUrl(
-	basePath: string,
-	params: Record<string, ParamValue>,
-): string {
+export function buildQueryUrl(basePath: string, params: Record<string, ParamValue>): string {
 	const searchParams = new URLSearchParams();
 	for (const [key, value] of Object.entries(params)) {
 		if (value != null && value !== "") {

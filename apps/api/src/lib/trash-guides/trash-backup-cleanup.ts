@@ -12,8 +12,8 @@
  * - Orphaned backups (no references) older than 7 days are also cleaned up
  */
 
-import type { PrismaClient } from "../../lib/prisma.js";
 import type { FastifyBaseLogger } from "fastify";
+import type { PrismaClient } from "../../lib/prisma.js";
 
 // Run cleanup every hour
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;

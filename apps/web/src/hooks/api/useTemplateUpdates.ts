@@ -1,21 +1,21 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { TEMPLATES_QUERY_KEY } from "./useTemplates";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+	type AttentionResponse,
 	checkForUpdates,
-	getTemplatesNeedingAttention,
-	syncTemplate,
-	processAutoUpdates,
 	getLatestVersion,
 	getSchedulerStatus,
-	triggerUpdateCheck,
 	getTemplateDiff,
-	type SyncTemplatePayload,
-	type UpdateCheckResponse,
-	type AttentionResponse,
+	getTemplatesNeedingAttention,
 	type LatestVersionResponse,
+	processAutoUpdates,
 	type SchedulerStatusResponse,
+	type SyncTemplatePayload,
+	syncTemplate,
 	type TemplateDiffResponse,
+	triggerUpdateCheck,
+	type UpdateCheckResponse,
 } from "../../lib/api-client/trash-guides";
+import { TEMPLATES_QUERY_KEY } from "./useTemplates";
 
 /**
  * Hook to check for available template updates
@@ -70,13 +70,8 @@ export function useSyncTemplate() {
 	const queryClient = useQueryClient();
 
 	return useMutation({
-		mutationFn: ({
-			templateId,
-			payload,
-		}: {
-			templateId: string;
-			payload?: SyncTemplatePayload;
-		}) => syncTemplate(templateId, payload),
+		mutationFn: ({ templateId, payload }: { templateId: string; payload?: SyncTemplatePayload }) =>
+			syncTemplate(templateId, payload),
 		onSuccess: () => {
 			// Invalidate relevant queries
 			queryClient.invalidateQueries({ queryKey: ["trash-guides", "updates"] });

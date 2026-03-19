@@ -33,3 +33,66 @@ export class AppValidationError extends Error {
 		this.name = "AppValidationError";
 	}
 }
+
+/**
+ * Thrown when a Seerr API call fails.
+ * - `seerrStatus`: the HTTP status returned by the Seerr instance
+ * - `retryable`: true for 429 and 5xx; false for 4xx
+ * - `retryAfterMs`: parsed Retry-After value (only on 429)
+ * - `statusCode`: the HTTP status to return to *our* client
+ *   (401/403/404/429 pass-through; 5xx → 502 Bad Gateway; timeout → 504)
+ */
+export class SeerrApiError extends Error {
+	readonly statusCode: number;
+	readonly seerrStatus: number;
+	readonly retryable: boolean;
+	readonly retryAfterMs?: number;
+
+	constructor(
+		message: string,
+		opts: {
+			seerrStatus: number;
+			retryAfterMs?: number;
+			/** Override the computed client-facing status code */
+			statusCodeOverride?: number;
+			/** Override the computed retryable flag */
+			retryableOverride?: boolean;
+		},
+	) {
+		super(message);
+		this.name = "SeerrApiError";
+		this.seerrStatus = opts.seerrStatus;
+		this.retryAfterMs = opts.retryAfterMs;
+		this.retryable =
+			opts.retryableOverride ?? (opts.seerrStatus === 429 || opts.seerrStatus >= 500);
+
+		// Map Seerr's HTTP status to our client-facing status
+		if (opts.statusCodeOverride !== undefined) {
+			this.statusCode = opts.statusCodeOverride;
+		} else if ([401, 403, 404, 429].includes(opts.seerrStatus)) {
+			this.statusCode = opts.seerrStatus;
+		} else if (opts.seerrStatus >= 500) {
+			this.statusCode = 502; // Bad Gateway
+		} else {
+			this.statusCode = opts.seerrStatus; // Other 4xx pass-through
+		}
+	}
+
+	/** Factory for timeout errors (no Seerr status available) */
+	static timeout(message: string): SeerrApiError {
+		return new SeerrApiError(message, {
+			seerrStatus: 0,
+			statusCodeOverride: 504,
+			retryableOverride: true,
+		});
+	}
+
+	/** Factory for network errors (no Seerr status available) */
+	static network(message: string): SeerrApiError {
+		return new SeerrApiError(message, {
+			seerrStatus: 0,
+			statusCodeOverride: 502,
+			retryableOverride: true,
+		});
+	}
+}

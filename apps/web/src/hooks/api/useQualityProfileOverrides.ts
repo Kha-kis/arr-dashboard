@@ -1,15 +1,15 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { TEMPLATES_QUERY_KEY } from "./useTemplates";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-	getQualityProfileOverrides,
-	promoteOverrideToTemplate,
-	deleteQualityProfileOverride,
-	bulkDeleteQualityProfileOverrides,
-	type GetOverridesResponse,
-	type PromoteOverridePayload,
 	type BulkDeleteOverridesPayload,
+	bulkDeleteQualityProfileOverrides,
+	deleteQualityProfileOverride,
+	type GetOverridesResponse,
+	getQualityProfileOverrides,
+	type PromoteOverridePayload,
+	promoteOverrideToTemplate,
 } from "../../lib/api-client/trash-guides";
+import { TEMPLATES_QUERY_KEY } from "./useTemplates";
 
 /**
  * Hook to fetch quality profile score overrides for an instance

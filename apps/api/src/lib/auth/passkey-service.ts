@@ -2,12 +2,12 @@ import { webcrypto } from "node:crypto";
 import {
 	type AuthenticationResponseJSON,
 	type AuthenticatorTransportFuture,
+	generateAuthenticationOptions,
+	generateRegistrationOptions,
 	type PublicKeyCredentialCreationOptionsJSON,
 	type PublicKeyCredentialRequestOptionsJSON,
 	type RegistrationResponseJSON,
 	type VerifiedRegistrationResponse,
-	generateAuthenticationOptions,
-	generateRegistrationOptions,
 	verifyAuthenticationResponse,
 	verifyRegistrationResponse,
 } from "@simplewebauthn/server";

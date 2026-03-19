@@ -1,7 +1,7 @@
 "use client";
 
-import { cn } from "../../../lib/utils";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { cn } from "../../../lib/utils";
 
 export interface LibraryBadgeProps {
 	children: React.ReactNode;

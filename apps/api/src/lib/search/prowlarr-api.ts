@@ -1,15 +1,16 @@
 import type {
 	ProwlarrIndexer,
 	ProwlarrIndexerDetails,
+	ProwlarrIndexerHealth,
 	SearchGrabRequest,
 	SearchRequest,
 	SearchResult,
 } from "@arr/shared";
 import { prowlarrIndexerDetailsSchema } from "@arr/shared";
-import type { ServiceInstance } from "../../lib/prisma.js";
 import type { ProwlarrClient } from "arr-sdk/prowlarr";
-import { normalizeIndexer, normalizeIndexerDetails, normalizeSearchResult } from "./normalizers.js";
+import type { ServiceInstance } from "../../lib/prisma.js";
 import { loggers } from "../logger.js";
+import { normalizeIndexer, normalizeIndexerDetails, normalizeSearchResult } from "./normalizers.js";
 
 const log = loggers.api;
 
@@ -101,16 +102,37 @@ export const fetchProwlarrIndexersWithSdk = async (
 	client: ProwlarrClient,
 	instance: ServiceInstance,
 ): Promise<ProwlarrIndexer[]> => {
-	const rawIndexers = await client.indexer.getAll();
+	// Fetch indexers and stats in parallel for inline health indicators
+	const [rawIndexers, allStats] = await Promise.all([
+		client.indexer.getAll(),
+		client.indexerStats.get({}).catch(() => null),
+	]);
+
+	// Build a map of indexerId → stats for efficient joining
+	const statsMap = new Map<number, Record<string, unknown>>();
+	if (allStats?.indexers && Array.isArray(allStats.indexers)) {
+		for (const stat of allStats.indexers) {
+			const record = stat as Record<string, unknown>;
+			const indexerId = typeof record.indexerId === "number" ? record.indexerId : undefined;
+			if (typeof indexerId === "number") {
+				statsMap.set(indexerId, record);
+			}
+		}
+	}
 
 	const items: ProwlarrIndexer[] = [];
 
 	for (const record of rawIndexers) {
+		const raw = record as Record<string, unknown>;
+		const id = typeof raw.id === "number" ? raw.id : undefined;
+		const stat = typeof id === "number" ? statsMap.get(id) : undefined;
+
 		const normalized = normalizeIndexer(
-			record as Record<string, unknown>,
+			raw,
 			instance.id,
 			instance.label,
 			instance.baseUrl,
+			stat ?? null,
 		);
 
 		if (normalized) {
@@ -123,20 +145,36 @@ export const fetchProwlarrIndexersWithSdk = async (
 
 /**
  * Fetches detailed indexer information from Prowlarr using the SDK.
- * Note: Per-indexer stats are not directly available in SDK, so we fetch global stats.
+ *
+ * When `prefetchedHealth` is provided (from the list endpoint), the redundant
+ * indexerStats API call is skipped — only the indexer config/fields are fetched.
+ * This cuts the Prowlarr round-trips from 2 to 1 when expanding details.
  */
 export const fetchProwlarrIndexerDetailsWithSdk = async (
 	client: ProwlarrClient,
 	instance: ServiceInstance,
 	indexerId: number,
+	prefetchedHealth?: ProwlarrIndexerHealth | null,
 ): Promise<ProwlarrIndexerDetails | null> => {
 	try {
+		if (prefetchedHealth) {
+			// Fast path: stats already available from list endpoint, only fetch config
+			const indexer = await client.indexer.getById(indexerId);
+			return normalizeIndexerDetails(
+				indexer as Record<string, unknown>,
+				null,
+				instance,
+				indexerId,
+				prefetchedHealth,
+			);
+		}
+
+		// Fallback path: fetch both config and stats in parallel
 		const [indexer, stats] = await Promise.all([
 			client.indexer.getById(indexerId),
 			client.indexerStats.get({ indexers: [indexerId] }).catch(() => null),
 		]);
 
-		// Find stats for this specific indexer if available
 		const indexerStats = stats?.indexers?.find(
 			(s: Record<string, unknown>) => s.indexerId === indexerId,
 		);

@@ -2,19 +2,19 @@
  * Hook for grouping queue items
  */
 
-import { useMemo } from "react";
 import type { QueueItem } from "@arr/shared";
+import { useMemo } from "react";
 import type { QueueAction } from "../components/queue-action-buttons";
 import type { IssueSummary } from "../components/queue-issue-badge";
 import {
-	buildKey,
-	getGroupKey,
-	deriveTitle,
-	collectStatusLines,
-	summarizeIssueCounts,
-	computeProgressValue,
-	type StatusLine,
 	type ActionCounts,
+	buildKey,
+	collectStatusLines,
+	computeProgressValue,
+	deriveTitle,
+	getGroupKey,
+	type StatusLine,
+	summarizeIssueCounts,
 } from "../lib/queue-utils";
 
 /**

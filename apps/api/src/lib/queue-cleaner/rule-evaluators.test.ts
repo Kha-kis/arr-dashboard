@@ -8,7 +8,11 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { evaluateQueueItem, evaluateImportBlockState, matchesCustomImportBlockPatterns } from "./rule-evaluators.js";
+import {
+	evaluateQueueItem,
+	evaluateImportBlockState,
+	matchesCustomImportBlockPatterns,
+} from "./rule-evaluators.js";
 import { collectStatusTexts, type RawQueueItem } from "./queue-item-utils.js";
 import { calculateQueueSummary } from "./cleaner-formatters.js";
 import type { QueueCleanerConfig } from "../prisma.js";
@@ -431,10 +435,7 @@ describe("matchesCustomImportBlockPatterns", () => {
 	});
 
 	it("returns false when no patterns match", () => {
-		const result = matchesCustomImportBlockPatterns(
-			["Some status text"],
-			["completely different"],
-		);
+		const result = matchesCustomImportBlockPatterns(["Some status text"], ["completely different"]);
 		expect(result.matched).toBe(false);
 	});
 });
@@ -446,9 +447,18 @@ describe("matchesCustomImportBlockPatterns", () => {
 describe("calculateQueueSummary", () => {
 	it("counts importBlocked items under importPending", () => {
 		const records: RawQueueItem[] = [
-			makeQueueItem({ id: 1, trackedDownloadState: "importBlocked", trackedDownloadStatus: "warning" }),
+			makeQueueItem({
+				id: 1,
+				trackedDownloadState: "importBlocked",
+				trackedDownloadStatus: "warning",
+			}),
 			makeQueueItem({ id: 2, trackedDownloadState: "importPending", trackedDownloadStatus: "ok" }),
-			makeQueueItem({ id: 3, trackedDownloadState: "downloading", trackedDownloadStatus: "ok", sizeleft: 1000 }),
+			makeQueueItem({
+				id: 3,
+				trackedDownloadState: "downloading",
+				trackedDownloadStatus: "ok",
+				sizeleft: 1000,
+			}),
 		];
 		const summary = calculateQueueSummary(records);
 		expect(summary.totalItems).toBe(3);
@@ -458,7 +468,11 @@ describe("calculateQueueSummary", () => {
 
 	it("counts failedPending items under failed", () => {
 		const records: RawQueueItem[] = [
-			makeQueueItem({ id: 1, trackedDownloadState: "failedPending", trackedDownloadStatus: "warning" }),
+			makeQueueItem({
+				id: 1,
+				trackedDownloadState: "failedPending",
+				trackedDownloadStatus: "warning",
+			}),
 			makeQueueItem({ id: 2, trackedDownloadState: "failed", trackedDownloadStatus: "error" }),
 		];
 		const summary = calculateQueueSummary(records);
@@ -520,7 +534,8 @@ describe("real-world Radarr queue scenarios", () => {
 			trackedDownloadStatus: "warning",
 			statusMessages: [
 				{
-					title: "No video files were found. If using a download client, ensure the download completed.",
+					title:
+						"No video files were found. If using a download client, ensure the download completed.",
 					messages: ["No video files found in '/downloads/completed/Test.Movie.2024.1080p'"],
 				},
 			],

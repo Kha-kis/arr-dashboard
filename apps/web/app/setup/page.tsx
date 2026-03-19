@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useSetupRequired } from "../../src/hooks/api/useAuth";
-import { SetupClient } from "../../src/features/setup/components/setup-client";
+import { useEffect } from "react";
 import { Skeleton } from "../../src/components/ui";
+import { SetupClient } from "../../src/features/setup/components/setup-client";
+import { useSetupRequired } from "../../src/hooks/api/useAuth";
 
 const SetupPage = () => {
 	const router = useRouter();

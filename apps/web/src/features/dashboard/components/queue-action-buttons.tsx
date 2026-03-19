@@ -77,7 +77,9 @@ const RemoveActionMenu = ({
 		<>
 			<Trash2 className="h-4 w-4" />
 			<span>{label}</span>
-			<ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200", open && "rotate-180")} />
+			<ChevronDown
+				className={cn("h-3.5 w-3.5 transition-transform duration-200", open && "rotate-180")}
+			/>
 		</>
 	);
 
@@ -93,7 +95,7 @@ const RemoveActionMenu = ({
 							"hover:border-red-500/50 hover:bg-red-500/10 hover:shadow-sm hover:shadow-red-500/10",
 							disabled && "cursor-not-allowed opacity-50",
 							fullWidth && "w-full justify-between",
-							buttonClassName
+							buttonClassName,
 						)}
 					>
 						{triggerContent}
@@ -106,7 +108,7 @@ const RemoveActionMenu = ({
 							"border-border/50 bg-card/50 text-muted-foreground backdrop-blur-xs",
 							"hover:border-red-500/30 hover:bg-red-500/5 hover:text-red-400",
 							disabled && "cursor-not-allowed opacity-50",
-							fullWidth && "w-full"
+							fullWidth && "w-full",
 						)}
 						aria-label="Remove"
 					>
@@ -168,7 +170,7 @@ export const QueueActionButtons = ({
 		"inline-flex h-9 items-center justify-center gap-2 rounded-full border px-4 text-xs font-medium transition-all duration-300",
 		"border-border/50 bg-card/50 text-muted-foreground backdrop-blur-xs",
 		"hover:border-border hover:bg-card hover:text-foreground",
-		fullWidth && "w-full"
+		fullWidth && "w-full",
 	);
 
 	return (
@@ -182,11 +184,13 @@ export const QueueActionButtons = ({
 					className={cn(
 						"group inline-flex h-9 items-center justify-center gap-2 rounded-full px-4 text-xs font-medium text-white transition-all duration-300",
 						"disabled:cursor-not-allowed disabled:opacity-50",
-						fullWidth && "w-full"
+						fullWidth && "w-full",
 					)}
 					style={{
 						background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
-						boxShadow: !(disabled || primaryDisabled) ? `0 4px 12px -2px ${themeGradient.glow}` : undefined,
+						boxShadow: !(disabled || primaryDisabled)
+							? `0 4px 12px -2px ${themeGradient.glow}`
+							: undefined,
 					}}
 					aria-label={primaryAction === "manualImport" ? "Manual import" : "Retry"}
 				>

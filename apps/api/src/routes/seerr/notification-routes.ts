@@ -6,7 +6,7 @@
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { requireSeerrClient, KNOWN_NOTIFICATION_AGENT_IDS } from "../../lib/seerr/seerr-client.js";
+import { KNOWN_NOTIFICATION_AGENT_IDS, requireSeerrClient } from "../../lib/seerr/seerr-client.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 const instanceIdParams = z.object({ instanceId: z.string().min(1) });

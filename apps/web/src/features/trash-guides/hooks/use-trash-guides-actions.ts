@@ -1,6 +1,10 @@
-import { useState, useCallback } from "react";
-import { useRefreshTrashCache, useDeleteTrashCacheEntry, type DeleteCachePayload } from "../../../hooks/api/useTrashCache";
+import { useCallback, useState } from "react";
 import { toast } from "sonner";
+import {
+	type DeleteCachePayload,
+	useDeleteTrashCacheEntry,
+	useRefreshTrashCache,
+} from "../../../hooks/api/useTrashCache";
 import { getErrorMessage } from "../../../lib/error-utils";
 
 type ServiceType = "RADARR" | "SONARR";

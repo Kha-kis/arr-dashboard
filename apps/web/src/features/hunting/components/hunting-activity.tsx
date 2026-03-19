@@ -1,33 +1,31 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import {
 	Activity,
-	Search,
+	AlertCircle,
 	ArrowUpCircle,
 	CheckCircle2,
-	AlertCircle,
-	Clock,
-	ListChecks,
-	Loader2,
-	Download,
-	HardDrive,
 	ChevronDown,
 	ChevronUp,
+	Clock,
+	Download,
+	HardDrive,
+	ListChecks,
+	Loader2,
 	type LucideIcon,
+	Search,
 } from "lucide-react";
-import { Pagination } from "../../../components/ui";
+import { useEffect, useState } from "react";
 import {
-	PremiumSection,
-	PremiumEmptyState,
-	GlassmorphicCard,
 	FilterSelect,
+	PremiumEmptyState,
+	PremiumSection,
+	PremiumSkeleton,
 	ServiceBadge,
 	StatusBadge,
-	PremiumSkeleton,
 } from "../../../components/layout";
+import { Pagination } from "../../../components/ui";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useHuntingLogs } from "../hooks/useHuntingLogs";
 import type { HuntLog } from "../lib/hunting-types";
 
@@ -41,8 +39,6 @@ import type { HuntLog } from "../lib/hunting-types";
  * - Theme-aware status badges
  */
 export const HuntingActivity = () => {
-	const { gradient: _themeGradient } = useThemeGradient();
-
 	const [typeFilter, setTypeFilter] = useState<string>("all");
 	const [statusFilter, setStatusFilter] = useState<string>("all");
 	const [page, setPage] = useState(1);
@@ -126,7 +122,7 @@ export const HuntingActivity = () => {
 			icon={Activity}
 		>
 			{/* Filters */}
-			<GlassmorphicCard padding="md" className="mb-6">
+			<div className="rounded-xl border border-border/30 bg-muted/10 p-4 mb-6">
 				<div className="flex flex-wrap gap-4">
 					<FilterSelect
 						label="Type"
@@ -147,7 +143,7 @@ export const HuntingActivity = () => {
 						options={statusOptions}
 					/>
 				</div>
-			</GlassmorphicCard>
+			</div>
 
 			{/* Activity List */}
 			{logs.length === 0 ? (
@@ -160,11 +156,7 @@ export const HuntingActivity = () => {
 				<>
 					<div className="space-y-3">
 						{logs.map((log, index) => (
-							<ActivityLogEntry
-								key={log.id}
-								log={log}
-								animationDelay={index * 30}
-							/>
+							<ActivityLogEntry key={log.id} log={log} animationDelay={index * 30} />
 						))}
 					</div>
 
@@ -197,7 +189,6 @@ interface ActivityLogEntryProps {
 }
 
 const ActivityLogEntry = ({ log, animationDelay = 0 }: ActivityLogEntryProps) => {
-	const { gradient: themeGradient } = useThemeGradient();
 	const [expanded, setExpanded] = useState(false);
 
 	const Icon = log.huntType === "missing" ? Search : ArrowUpCircle;
@@ -216,103 +207,134 @@ const ActivityLogEntry = ({ log, animationDelay = 0 }: ActivityLogEntryProps) =>
 	const statusInfo = statusConfig[log.status] ?? statusConfig.error!;
 	const StatusIcon = statusInfo.icon;
 
-	// Get service gradient
-	const _serviceGradient = getServiceGradient(log.service);
+	// Get service gradient for accent bar
+	const serviceGradient = getServiceGradient(log.service);
 
 	return (
 		<div
-			className="group rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs overflow-hidden
-				animate-in fade-in slide-in-from-bottom-2 duration-300 hover:border-border/80 transition-colors"
+			className="group relative rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-[1px] hover:shadow-lg hover:shadow-black/10 animate-in fade-in slide-in-from-bottom-1 duration-300"
 			style={{
+				border: `1px solid ${serviceGradient.from}10`,
 				animationDelay: `${animationDelay}ms`,
 				animationFillMode: "backwards",
 			}}
 		>
+			{/* Background gradient */}
+			<div
+				className="absolute inset-0 pointer-events-none"
+				style={{
+					background: `linear-gradient(135deg, ${serviceGradient.from}05, transparent 60%)`,
+				}}
+			/>
+
+			{/* Hover glow */}
+			<div
+				className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+				style={{
+					background: `radial-gradient(ellipse at top left, ${serviceGradient.from}08, transparent 50%)`,
+				}}
+			/>
+
+			{/* Service accent bar */}
+			<div
+				className="absolute left-0 top-0 bottom-0 w-[3px]"
+				style={{
+					background: `linear-gradient(180deg, ${serviceGradient.from}, ${serviceGradient.to}70)`,
+				}}
+			/>
+
 			{/* Header */}
 			<button
 				type="button"
 				onClick={() => setExpanded(!expanded)}
-				className="w-full px-4 py-4 flex items-center justify-between hover:bg-muted/20 transition-colors"
+				className="relative w-full py-3.5 pl-5 pr-4 flex items-center justify-between transition-colors"
 			>
-				<div className="flex items-center gap-4">
-					{/* Icon with gradient */}
-					<div
-						className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+				<div className="flex items-center gap-3 min-w-0">
+					{/* Hunt type pill */}
+					<span
+						className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider shrink-0"
 						style={{
-							background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
-							border: `1px solid ${themeGradient.from}30`,
+							backgroundColor: `${serviceGradient.from}12`,
+							color: serviceGradient.from,
 						}}
 					>
-						<Icon className="h-5 w-5" style={{ color: themeGradient.from }} />
-					</div>
+						<Icon className="h-2.5 w-2.5" />
+						{log.huntType === "missing" ? "Missing" : "Upgrade"}
+					</span>
 
 					{/* Info */}
-					<div className="text-left">
+					<div className="text-left min-w-0">
 						<div className="flex items-center gap-2 flex-wrap">
-							<span className="font-semibold text-foreground">{log.instanceName}</span>
+							<span className="font-semibold text-[14px] text-foreground leading-snug">
+								{log.instanceName}
+							</span>
 							<ServiceBadge service={log.service} />
 							<StatusBadge status={statusInfo.status} icon={StatusIcon}>
 								{isRunning ? "In Progress" : log.status}
 							</StatusBadge>
 						</div>
-						<div className="text-xs text-muted-foreground mt-0.5">
-							{log.huntType === "missing" ? "Missing content search" : "Quality upgrade search"}
-						</div>
 					</div>
 				</div>
 
 				{/* Right side stats */}
-				<div className="flex items-center gap-4 text-sm text-muted-foreground">
+				<div className="flex items-center gap-4 text-sm text-muted-foreground shrink-0">
 					<div className="flex items-center gap-3">
 						{isRunning ? (
 							<div className="flex items-center gap-1">
-								<Loader2 className="h-3 w-3 animate-spin" style={{ color: themeGradient.from }} />
+								<Loader2
+									className="h-3 w-3 animate-spin"
+									style={{ color: serviceGradient.from }}
+								/>
 								<span>Searching...</span>
 							</div>
 						) : (
 							<>
-								<div className="flex items-center gap-1" title="Items searched">
-									<ListChecks className="h-3.5 w-3.5" />
-									<span>{log.itemsSearched} searched</span>
-								</div>
-								<div
-									className={`flex items-center gap-1 ${log.itemsGrabbed > 0 ? "text-green-500" : ""}`}
-									title={log.itemsGrabbed > 0 ? "Items grabbed" : "No releases grabbed"}
+								<span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/50">
+									<ListChecks className="h-3 w-3 shrink-0" />
+									{log.itemsSearched} searched
+								</span>
+								<span
+									className={`inline-flex items-center gap-1 text-[11px] ${log.itemsGrabbed > 0 ? "" : "text-muted-foreground/50"}`}
+									style={
+										log.itemsGrabbed > 0
+											? { color: SEMANTIC_COLORS.success.text }
+											: undefined
+									}
 								>
-									<Download className="h-3.5 w-3.5" />
-									<span>{log.itemsGrabbed} grabbed</span>
-								</div>
+									<Download className="h-3 w-3 shrink-0" />
+									{log.itemsGrabbed} grabbed
+								</span>
 							</>
 						)}
 					</div>
-					<div className="text-xs">
+					<span className="text-[11px] text-muted-foreground/40">
 						{isRunning ? (
-							<span style={{ color: themeGradient.from }}>
+							<span style={{ color: serviceGradient.from }}>
 								Started {formatTime(log.startedAt)}
 							</span>
 						) : (
 							formatTime(log.startedAt)
 						)}
-					</div>
+					</span>
 					{/* Expand indicator */}
 					{expanded ? (
-						<ChevronUp className="h-4 w-4 text-muted-foreground" />
+						<ChevronUp className="h-4 w-4 text-muted-foreground/40" />
 					) : (
-						<ChevronDown className="h-4 w-4 text-muted-foreground" />
+						<ChevronDown className="h-4 w-4 text-muted-foreground/40" />
 					)}
 				</div>
 			</button>
 
 			{/* Expanded Details */}
 			{expanded && (
-				<div className="px-4 py-4 border-t border-border/30 bg-muted/10 text-sm space-y-4">
+				<div className="relative px-5 py-4 border-t border-border/20 text-sm space-y-4">
 					{/* Message */}
 					{log.message && (
-						<p className="text-muted-foreground">{log.message}</p>
+						<p className="text-[11.5px] text-muted-foreground/50">{log.message}</p>
 					)}
 
 					{/* Metadata */}
-					<div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+					<div className="flex flex-wrap gap-4 text-xs text-muted-foreground/40">
 						{log.durationMs && (
 							<span className="flex items-center gap-1">
 								<Clock className="h-3 w-3" />
@@ -345,9 +367,7 @@ const ActivityLogEntry = ({ log, animationDelay = 0 }: ActivityLogEntryProps) =>
 											border: `1px solid ${SEMANTIC_COLORS.success.border}`,
 										}}
 									>
-										<span className="font-medium text-foreground flex-1">
-											{item.title}
-										</span>
+										<span className="font-medium text-foreground flex-1">{item.title}</span>
 										{item.quality && (
 											<StatusBadge status="success">{item.quality}</StatusBadge>
 										)}
@@ -363,7 +383,7 @@ const ActivityLogEntry = ({ log, animationDelay = 0 }: ActivityLogEntryProps) =>
 									</div>
 								))}
 								{log.grabbedItems.length > 10 && (
-									<div className="text-xs text-muted-foreground pl-3">
+									<div className="text-xs text-muted-foreground/40 pl-3">
 										+{log.grabbedItems.length - 10} more grabbed
 									</div>
 								)}
@@ -374,20 +394,30 @@ const ActivityLogEntry = ({ log, animationDelay = 0 }: ActivityLogEntryProps) =>
 					{/* Searched Items */}
 					{log.searchedItems && log.searchedItems.length > 0 && (
 						<div>
-							<h4 className="text-xs font-semibold text-muted-foreground mb-2">
+							<h4 className="text-xs font-semibold text-muted-foreground/50 mb-2">
 								Searched Items:
 							</h4>
 							<div className="flex flex-wrap gap-1.5">
 								{log.searchedItems.slice(0, 10).map((item, i) => (
 									<span
 										key={i}
-										className="text-xs px-2 py-1 rounded-md bg-muted/50 text-muted-foreground"
+										className="text-xs px-2 py-1 rounded-md text-muted-foreground/50"
+										style={{
+											backgroundColor: `${serviceGradient.from}08`,
+											border: `1px solid ${serviceGradient.from}10`,
+										}}
 									>
 										{item}
 									</span>
 								))}
 								{log.searchedItems.length > 10 && (
-									<span className="text-xs px-2 py-1 rounded-md bg-muted/50 text-muted-foreground">
+									<span
+										className="text-xs px-2 py-1 rounded-md text-muted-foreground/40"
+										style={{
+											backgroundColor: `${serviceGradient.from}08`,
+											border: `1px solid ${serviceGradient.from}10`,
+										}}
+									>
 										+{log.searchedItems.length - 10} more
 									</span>
 								)}
@@ -420,5 +450,5 @@ function formatSize(bytes: number): string {
 	const k = 1024;
 	const sizes = ["B", "KB", "MB", "GB", "TB"];
 	const i = Math.floor(Math.log(bytes) / Math.log(k));
-	return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+	return `${parseFloat((bytes / k ** i).toFixed(1))} ${sizes[i]}`;
 }

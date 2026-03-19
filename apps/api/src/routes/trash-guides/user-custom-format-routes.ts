@@ -5,17 +5,17 @@
  * Users can create CFs from scratch, import from JSON, or import from connected instances.
  */
 
-import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import {
 	createUserCustomFormatSchema,
-	updateUserCustomFormatSchema,
-	importUserCFFromJsonSchema,
 	importUserCFFromInstanceSchema,
+	importUserCFFromJsonSchema,
+	updateUserCustomFormatSchema,
 } from "@arr/shared";
-import type { SonarrClient, RadarrClient } from "arr-sdk";
+import type { RadarrClient, SonarrClient } from "arr-sdk";
+import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
-import { validateRequest } from "../../lib/utils/validate.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
+import { validateRequest } from "../../lib/utils/validate.js";
 
 // ============================================================================
 // Helper Functions
@@ -83,8 +83,14 @@ export async function registerUserCustomFormatRoutes(
 	 */
 	app.post("/", async (request, reply) => {
 		const userId = request.currentUser!.id;
-		const { name, serviceType, description, includeCustomFormatWhenRenaming, specifications, defaultScore } =
-			validateRequest(createUserCustomFormatSchema, request.body);
+		const {
+			name,
+			serviceType,
+			description,
+			includeCustomFormatWhenRenaming,
+			specifications,
+			defaultScore,
+		} = validateRequest(createUserCustomFormatSchema, request.body);
 
 		// Check for duplicate name
 		const existing = await app.prisma.userCustomFormat.findFirst({
@@ -146,8 +152,10 @@ export async function registerUserCustomFormatRoutes(
 		if (parsed.name !== undefined) data.name = parsed.name;
 		if (parsed.serviceType !== undefined) data.serviceType = parsed.serviceType;
 		if (parsed.description !== undefined) data.description = parsed.description;
-		if (parsed.includeCustomFormatWhenRenaming !== undefined) data.includeCustomFormatWhenRenaming = parsed.includeCustomFormatWhenRenaming;
-		if (parsed.specifications !== undefined) data.specifications = JSON.stringify(parsed.specifications);
+		if (parsed.includeCustomFormatWhenRenaming !== undefined)
+			data.includeCustomFormatWhenRenaming = parsed.includeCustomFormatWhenRenaming;
+		if (parsed.specifications !== undefined)
+			data.specifications = JSON.stringify(parsed.specifications);
 		if (parsed.defaultScore !== undefined) data.defaultScore = parsed.defaultScore;
 
 		// Check name uniqueness if name or serviceType changed
@@ -219,8 +227,10 @@ export async function registerUserCustomFormatRoutes(
 	 */
 	app.post("/import-json", async (request, reply) => {
 		const userId = request.currentUser!.id;
-		const { serviceType, customFormats, defaultScore } =
-			validateRequest(importUserCFFromJsonSchema, request.body);
+		const { serviceType, customFormats, defaultScore } = validateRequest(
+			importUserCFFromJsonSchema,
+			request.body,
+		);
 
 		const results = {
 			created: [] as string[],
@@ -282,8 +292,10 @@ export async function registerUserCustomFormatRoutes(
 	 */
 	app.post("/import-from-instance", async (request, reply) => {
 		const userId = request.currentUser!.id;
-		const { instanceId, cfIds, defaultScore } =
-			validateRequest(importUserCFFromInstanceSchema, request.body);
+		const { instanceId, cfIds, defaultScore } = validateRequest(
+			importUserCFFromInstanceSchema,
+			request.body,
+		);
 
 		const instance = await requireInstance(app, userId, instanceId);
 

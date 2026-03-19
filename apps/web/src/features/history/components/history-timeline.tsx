@@ -1,43 +1,39 @@
 "use client";
 
-import { useState } from "react";
 import type { ServiceInstanceSummary } from "@arr/shared";
-import { History, ArrowRight, ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
-import {
-	useIncognitoMode,
-	getLinuxIsoName,
-	getLinuxIndexer,
-	getLinuxDownloadClient,
-	getLinuxInstanceName,
-} from "../../../lib/incognito";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { getServiceGradient } from "../../../lib/theme-gradients";
-import {
-	PremiumEmptyState,
-	ServiceBadge,
-	StatusBadge,
-} from "../../../components/layout";
+import { ArrowRight, ChevronDown, ChevronUp, ExternalLink, History } from "lucide-react";
+import { useState } from "react";
+import { PremiumEmptyState, ServiceBadge, StatusBadge } from "../../../components/layout";
 import {
 	Tooltip,
-	TooltipTrigger,
 	TooltipContent,
 	TooltipProvider,
+	TooltipTrigger,
 } from "../../../components/ui/tooltip";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import {
-	type HistoryGroup,
-	getDisplayTitle,
-	formatBytes,
-	getEventTypeStatusBadge,
-	detectLifecycleStages,
+	getLinuxDownloadClient,
+	getLinuxIndexer,
+	getLinuxInstanceName,
+	getLinuxIsoName,
+	useIncognitoMode,
+} from "../../../lib/incognito";
+import { getServiceGradient } from "../../../lib/theme-gradients";
+import {
+	type DayGroup,
+	formatAbsoluteDateTime,
+	formatCompactRelativeTime,
+} from "../lib/date-utils";
+import {
 	buildHistoryExternalLink,
+	detectLifecycleStages,
+	formatBytes,
+	getDisplayTitle,
+	getEventTypeStatusBadge,
 	getSourceClient,
 	getSourceClientKind,
+	type HistoryGroup,
 } from "../lib/history-utils";
-import {
-	formatCompactRelativeTime,
-	formatAbsoluteDateTime,
-	type DayGroup,
-} from "../lib/date-utils";
 
 interface HistoryTimelineProps {
 	readonly groupedByDay: DayGroup<HistoryGroup>[];
@@ -146,11 +142,12 @@ const HistoryTimelineCard = ({
 	let sourceClient = rawSourceClient;
 	if (incognitoMode && rawSourceClient) {
 		const kind = getSourceClientKind(firstItem);
-		sourceClient = kind === "indexer"
-			? getLinuxIndexer(rawSourceClient)
-			: kind === "client"
-				? getLinuxDownloadClient(rawSourceClient)
-				: rawSourceClient;
+		sourceClient =
+			kind === "indexer"
+				? getLinuxIndexer(rawSourceClient)
+				: kind === "client"
+					? getLinuxDownloadClient(rawSourceClient)
+					: rawSourceClient;
 	}
 
 	const instance = serviceMap.get(firstItem.instanceId);
@@ -161,22 +158,30 @@ const HistoryTimelineCard = ({
 
 	return (
 		<div
-			className="group relative rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs overflow-hidden transition-all duration-200 hover:border-border/80 hover:bg-card/40 animate-in fade-in slide-in-from-bottom-2 duration-300"
+			className="group relative rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-[1px] hover:shadow-lg hover:shadow-black/10 animate-in fade-in slide-in-from-bottom-2 duration-300"
 			style={{
-				borderLeftWidth: "3px",
-				borderLeftColor: serviceGradient.from,
+				border: `1px solid ${serviceGradient.from}10`,
 				animationDelay: `${Math.min(animationIndex * 30, 300)}ms`,
 				animationFillMode: "backwards",
 			}}
 		>
-			<div className="p-4 space-y-2">
+			<div
+				className="absolute inset-0 pointer-events-none"
+				style={{ background: `linear-gradient(135deg, ${serviceGradient.from}04, transparent 60%)` }}
+			/>
+			<div
+				className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+				style={{ background: `radial-gradient(ellipse at top left, ${serviceGradient.from}06, transparent 50%)` }}
+			/>
+			<div
+				className="absolute left-0 top-0 bottom-0 w-[3px]"
+				style={{ background: `linear-gradient(180deg, ${serviceGradient.from}, ${serviceGradient.to}70)` }}
+			/>
+			<div className="relative p-4 space-y-2">
 				{/* Header: Title + Relative Time */}
 				<div className="flex items-start justify-between gap-3">
 					<div className="flex-1 min-w-0">
-						<h4
-							className="text-sm font-medium text-foreground truncate"
-							title={anonymizedTitle}
-						>
+						<h4 className="text-sm font-medium text-foreground truncate" title={anonymizedTitle}>
 							{anonymizedTitle}
 						</h4>
 					</div>
@@ -186,18 +191,14 @@ const HistoryTimelineCard = ({
 								{formatCompactRelativeTime(firstItem.date)}
 							</span>
 						</TooltipTrigger>
-						<TooltipContent>
-							{formatAbsoluteDateTime(firstItem.date)}
-						</TooltipContent>
+						<TooltipContent>{formatAbsoluteDateTime(firstItem.date)}</TooltipContent>
 					</Tooltip>
 				</div>
 
 				{/* Subtitle: Service badge + Instance name */}
 				<div className="flex items-center gap-2 flex-wrap">
 					<ServiceBadge service={firstItem.service} />
-					<StatusBadge status={getEventTypeStatusBadge(eventType)}>
-						{eventType}
-					</StatusBadge>
+					<StatusBadge status={getEventTypeStatusBadge(eventType)}>{eventType}</StatusBadge>
 					{externalLink ? (
 						<a
 							href={externalLink}
@@ -219,11 +220,7 @@ const HistoryTimelineCard = ({
 							style={{ color: themeGradient.from }}
 						>
 							{group.items.length} events
-							{expanded ? (
-								<ChevronUp className="h-3 w-3" />
-							) : (
-								<ChevronDown className="h-3 w-3" />
-							)}
+							{expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
 						</button>
 					)}
 				</div>
@@ -234,9 +231,7 @@ const HistoryTimelineCard = ({
 						{lifecycleStages.map((stage, i) => (
 							<div key={stage.stage} className="flex items-center gap-1">
 								{i > 0 && <ArrowRight className="h-3 w-3 text-muted-foreground/50" />}
-								<StatusBadge status={stage.color}>
-									{stage.label}
-								</StatusBadge>
+								<StatusBadge status={stage.color}>{stage.label}</StatusBadge>
 							</div>
 						))}
 					</div>
@@ -268,12 +263,8 @@ const HistoryTimelineCard = ({
 
 				{/* Metadata Row */}
 				<div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-					{quality && (
-						<span className="rounded bg-muted/30 px-1.5 py-0.5">{quality}</span>
-					)}
-					{firstItem.size && firstItem.size > 0 && (
-						<span>{formatBytes(firstItem.size)}</span>
-					)}
+					{quality && <span className="rounded bg-muted/30 px-1.5 py-0.5">{quality}</span>}
+					{firstItem.size && firstItem.size > 0 && <span>{formatBytes(firstItem.size)}</span>}
 					{sourceClient && <span>{sourceClient}</span>}
 				</div>
 			</div>
@@ -311,11 +302,12 @@ const SubEventRow = ({ item, serviceMap, incognitoMode }: SubEventRowProps) => {
 	let sourceClient = rawSourceClient;
 	if (incognitoMode && rawSourceClient) {
 		const kind = getSourceClientKind(item);
-		sourceClient = kind === "indexer"
-			? getLinuxIndexer(rawSourceClient)
-			: kind === "client"
-				? getLinuxDownloadClient(rawSourceClient)
-				: rawSourceClient;
+		sourceClient =
+			kind === "indexer"
+				? getLinuxIndexer(rawSourceClient)
+				: kind === "client"
+					? getLinuxDownloadClient(rawSourceClient)
+					: rawSourceClient;
 	}
 
 	const instance = serviceMap.get(item.instanceId);
@@ -324,15 +316,11 @@ const SubEventRow = ({ item, serviceMap, incognitoMode }: SubEventRowProps) => {
 	return (
 		<div className="flex items-center gap-3 px-4 py-2.5 border-b border-border/20 last:border-0 text-xs">
 			<div className="w-1 h-1 rounded-full bg-muted-foreground/30 shrink-0" />
-			<StatusBadge status={getEventTypeStatusBadge(eventType)}>
-				{eventType}
-			</StatusBadge>
+			<StatusBadge status={getEventTypeStatusBadge(eventType)}>{eventType}</StatusBadge>
 			<span className="text-muted-foreground truncate flex-1" title={anonymizedTitle}>
 				{anonymizedTitle}
 			</span>
-			{quality && (
-				<span className="text-muted-foreground/70 hidden sm:inline">{quality}</span>
-			)}
+			{quality && <span className="text-muted-foreground/70 hidden sm:inline">{quality}</span>}
 			{item.size && item.size > 0 && (
 				<span className="text-muted-foreground/70 hidden sm:inline">{formatBytes(item.size)}</span>
 			)}
@@ -345,9 +333,7 @@ const SubEventRow = ({ item, serviceMap, incognitoMode }: SubEventRowProps) => {
 						{formatCompactRelativeTime(item.date)}
 					</span>
 				</TooltipTrigger>
-				<TooltipContent>
-					{formatAbsoluteDateTime(item.date)}
-				</TooltipContent>
+				<TooltipContent>{formatAbsoluteDateTime(item.date)}</TooltipContent>
 			</Tooltip>
 			{externalLink && (
 				<a

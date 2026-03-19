@@ -21,343 +21,359 @@
 // ============================================================================
 
 export type {
-	// Core types from @arr/shared
-	TrashCacheStatus,
-	TrashCacheEntry,
-	CustomQualityConfig,
-	TrashConfigType,
-	GitHubRateLimitResponse,
-	SyncMetricsSnapshot,
-	DeploymentPreview,
-	CustomFormatDeploymentItem,
-	CustomFormatConflict,
-	DeploymentAction,
-	ConflictType,
+	CommitInfo,
 	ConflictResolution,
-	TemplateImportOptions,
-	TrashTemplate,
-	// Common types
-	ServiceType,
-	SyncStrategy,
+	ConflictType,
+	CustomFormatConflict,
+	CustomFormatDeploymentItem,
+	CustomQualityConfig,
+	DeploymentAction,
+	DeploymentPreview,
+	GitHubRateLimitResponse,
 	QualityProfileSummary,
 	QualityProfilesResponse,
-	CommitInfo,
+	// Common types
+	ServiceType,
+	SyncMetricsSnapshot,
+	SyncStrategy,
+	TemplateImportOptions,
+	TrashCacheEntry,
+	// Core types from @arr/shared
+	TrashCacheStatus,
+	TrashConfigType,
+	TrashTemplate,
 } from "./types";
 
 // ============================================================================
 // Cache Module
 // ============================================================================
 
-export {
-	fetchCacheStatus,
-	refreshCache,
-	fetchGitHubRateLimit,
-	fetchSyncMetrics,
-	fetchCacheEntries,
-	deleteCacheEntry,
-} from "./cache";
-
 export type {
-	TrashCacheStatusResponse,
 	RefreshCachePayload,
 	RefreshCacheResponse,
+	TrashCacheStatusResponse,
+} from "./cache";
+export {
+	deleteCacheEntry,
+	fetchCacheEntries,
+	fetchCacheHealth,
+	fetchCacheStatus,
+	fetchGitHubRateLimit,
+	fetchSyncMetrics,
+	refreshCache,
 } from "./cache";
 
 // ============================================================================
 // Profiles Module
 // ============================================================================
 
-export {
-	// Quality profile operations
-	fetchQualityProfiles,
-	fetchQualityProfileDetails,
-	importQualityProfile,
-	updateQualityProfileTemplate,
-	// Instance override operations
-	getQualityProfileOverrides,
-	promoteOverrideToTemplate,
-	deleteQualityProfileOverride,
-	bulkDeleteQualityProfileOverrides,
-	updateQualityProfileScores,
-	// Cloned profile operations
-	createClonedProfileTemplate,
-	validateClonedCFs,
-	matchProfileToTrash,
-} from "./profiles";
-
 export type {
+	BulkDeleteOverridesPayload,
+	BulkDeleteOverridesResponse,
+	CFMatchDetails,
+	CFMatchResult,
+	CFValidationResponse,
+	CFValidationSummary,
+	// Cloned profile types
+	CreateClonedTemplatePayload,
+	DeleteOverrideResponse,
+	GetOverridesResponse,
 	// Import/export types
 	ImportQualityProfilePayload,
-	UpdateQualityProfileTemplatePayload,
 	ImportQualityProfileResponse,
 	// Instance override types
 	InstanceOverride,
-	GetOverridesResponse,
+	// CF validation types
+	MatchConfidence,
+	MatchProfilePayload,
+	ProfileMatchResult,
 	PromoteOverridePayload,
 	PromoteOverrideResponse,
-	DeleteOverrideResponse,
-	BulkDeleteOverridesPayload,
-	BulkDeleteOverridesResponse,
+	// Profile matching types
+	RecommendedCF,
 	// Score update types
 	ScoreUpdate,
 	UpdateProfileScoresPayload,
 	UpdateProfileScoresResponse,
-	// Cloned profile types
-	CreateClonedTemplatePayload,
-	// CF validation types
-	MatchConfidence,
-	CFMatchDetails,
-	CFMatchResult,
-	CFValidationSummary,
-	CFValidationResponse,
+	UpdateQualityProfileTemplatePayload,
 	ValidateCFsPayload,
-	// Profile matching types
-	RecommendedCF,
-	ProfileMatchResult,
-	MatchProfilePayload,
+} from "./profiles";
+export {
+	bulkDeleteQualityProfileOverrides,
+	// Cloned profile operations
+	createClonedProfileTemplate,
+	deleteQualityProfileOverride,
+	fetchQualityProfileDetails,
+	// Quality profile operations
+	fetchQualityProfiles,
+	// Instance override operations
+	getQualityProfileOverrides,
+	importQualityProfile,
+	matchProfileToTrash,
+	promoteOverrideToTemplate,
+	updateQualityProfileScores,
+	updateQualityProfileTemplate,
+	validateClonedCFs,
 } from "./profiles";
 
 // ============================================================================
 // Updates Module
 // ============================================================================
 
-export {
-	checkForUpdates,
-	getTemplatesNeedingAttention,
-	syncTemplate,
-	processAutoUpdates,
-	getLatestVersion,
-	getSchedulerStatus,
-	triggerUpdateCheck,
-	getTemplateDiff,
-} from "./updates";
-
 export type {
-	// Template update types
-	TemplateUpdateInfo,
-	UpdateCheckResponse,
-	TemplateAttention,
 	AttentionResponse,
-	// Sync types
-	SyncTemplatePayload,
-	SyncMergeStats,
-	SyncScoreConflict,
-	SyncTemplateResponse,
-	ProcessAutoUpdatesResponse,
+	CustomFormatDiffItem,
+	CustomFormatGroupDiffItem,
 	LatestVersionResponse,
+	ProcessAutoUpdatesResponse,
 	// Scheduler types
 	SchedulerStats,
 	SchedulerStatusResponse,
-	TriggerCheckResponse,
-	// Diff types
-	TemplateDiffSummary,
-	CustomFormatDiffItem,
-	CustomFormatGroupDiffItem,
 	SuggestedCFAddition,
 	SuggestedScoreChange,
-	TemplateDiffResult,
+	SyncMergeStats,
+	SyncScoreConflict,
+	// Sync types
+	SyncTemplatePayload,
+	SyncTemplateResponse,
+	TemplateAttention,
 	TemplateDiffResponse,
+	TemplateDiffResult,
+	// Diff types
+	TemplateDiffSummary,
+	// Template update types
+	TemplateUpdateInfo,
+	TriggerCheckResponse,
+	UpdateCheckResponse,
+} from "./updates";
+export {
+	checkForUpdates,
+	getLatestVersion,
+	getSchedulerStatus,
+	getTemplateDiff,
+	getTemplatesNeedingAttention,
+	processAutoUpdates,
+	syncTemplate,
+	triggerUpdateCheck,
 } from "./updates";
 
 // ============================================================================
 // Deployment Module
 // ============================================================================
 
-export {
-	// Preview & overrides
-	getDeploymentPreview,
-	getInstanceOverrides,
-	updateInstanceOverrides,
-	deleteInstanceOverrides,
-	// Deployment execution
-	executeDeployment,
-	executeBulkDeployment,
-	// Sync strategy
-	updateSyncStrategy,
-	bulkUpdateSyncStrategy,
-	// Unlink
-	unlinkTemplateFromInstance,
-	// History
-	getAllDeploymentHistory,
-	getTemplateDeploymentHistory,
-	getInstanceDeploymentHistory,
-	getDeploymentHistoryDetail,
-	undeployDeployment,
-	deleteDeploymentHistory,
-	// Enhanced import
-	importEnhancedTemplate,
-} from "./deployment";
-
 export type {
-	// Preview types
-	DeploymentPreviewResponse,
-	DeploymentPreviewRequest,
-	// Override types
-	InstanceOverrides,
-	InstanceOverridesResponse,
-	UpdateInstanceOverridesPayload,
-	TemplateInstanceOverride,
-	UpdateInstanceOverridesResponse,
-	GetInstanceOverridesResponse,
-	// Execution types
-	DeploymentResult,
 	BulkDeploymentResult,
-	ExecuteDeploymentPayload,
-	ExecuteDeploymentResponse,
-	ExecuteBulkDeploymentPayload,
-	ExecuteBulkDeploymentResponse,
-	// Sync strategy types
-	UpdateSyncStrategyPayload,
-	UpdateSyncStrategyResponse,
 	BulkUpdateSyncStrategyPayload,
 	BulkUpdateSyncStrategyResponse,
-	// Unlink types
-	UnlinkTemplatePayload,
-	UnlinkTemplateResponse,
+	DeploymentHistoryDetailResponse,
 	// History types
 	DeploymentHistoryEntry,
 	DeploymentHistoryResponse,
-	DeploymentHistoryDetailResponse,
-	UndeployResponse,
+	DeploymentPreviewRequest,
+	// Preview types
+	DeploymentPreviewResponse,
+	// Execution types
+	DeploymentResult,
 	// Enhanced import types
 	EnhancedImportTemplatePayload,
 	EnhancedImportTemplateResponse,
+	ExecuteBulkDeploymentPayload,
+	ExecuteBulkDeploymentResponse,
+	ExecuteDeploymentPayload,
+	ExecuteDeploymentResponse,
+	GetInstanceOverridesResponse,
+	// Override types
+	InstanceOverrides,
+	InstanceOverridesResponse,
+	TemplateInstanceOverride,
+	UndeployResponse,
+	// Unlink types
+	UnlinkTemplatePayload,
+	UnlinkTemplateResponse,
+	UpdateInstanceOverridesPayload,
+	UpdateInstanceOverridesResponse,
+	// Sync strategy types
+	UpdateSyncStrategyPayload,
+	UpdateSyncStrategyResponse,
+} from "./deployment";
+export {
+	bulkUpdateSyncStrategy,
+	deleteDeploymentHistory,
+	deleteInstanceOverrides,
+	executeBulkDeployment,
+	// Deployment execution
+	executeDeployment,
+	// History
+	getAllDeploymentHistory,
+	getDeploymentHistoryDetail,
+	// Preview & overrides
+	getDeploymentPreview,
+	getInstanceDeploymentHistory,
+	getInstanceOverrides,
+	getTemplateDeploymentHistory,
+	// Enhanced import
+	importEnhancedTemplate,
+	undeployDeployment,
+	// Unlink
+	unlinkTemplateFromInstance,
+	updateInstanceOverrides,
+	// Sync strategy
+	updateSyncStrategy,
 } from "./deployment";
 
 // ============================================================================
 // Custom Formats Module
 // ============================================================================
 
-export {
-	fetchCustomFormatsList,
-	fetchCFDescriptionsList,
-	fetchCFIncludesList,
-	deployCustomFormat,
-	deployMultipleCustomFormats,
-	fetchUserCustomFormats,
-	createUserCustomFormat,
-	updateUserCustomFormat,
-	deleteUserCustomFormat,
-	importUserCFsFromJson,
-	importUserCFsFromInstance,
-	deployUserCustomFormats,
-} from "./custom-formats";
-
 export type {
-	CustomFormat,
 	CFDescription,
-	CustomFormatsListResponse,
 	CFDescriptionsListResponse,
 	CFInclude,
 	CFIncludesListResponse,
+	CreateUserCFRequest,
+	CustomFormat,
+	CustomFormatsListResponse,
 	DeployCustomFormatRequest,
-	DeployMultipleCustomFormatsRequest,
 	DeployCustomFormatResponse,
+	DeployMultipleCustomFormatsRequest,
 	DeployMultipleCustomFormatsResponse,
+	DeployUserCFsRequest,
+	ImportUserCFFromInstanceRequest,
+	ImportUserCFFromJsonRequest,
+	UserCFImportResponse,
 	UserCustomFormat,
 	UserCustomFormatsResponse,
-	UserCFImportResponse,
-	CreateUserCFRequest,
-	ImportUserCFFromJsonRequest,
-	ImportUserCFFromInstanceRequest,
-	DeployUserCFsRequest,
+} from "./custom-formats";
+export {
+	createUserCustomFormat,
+	deleteUserCustomFormat,
+	deployCustomFormat,
+	deployMultipleCustomFormats,
+	deployUserCustomFormats,
+	fetchCFDescriptionsList,
+	fetchCFIncludesList,
+	fetchCustomFormatsList,
+	fetchUserCustomFormats,
+	importUserCFsFromInstance,
+	importUserCFsFromJson,
+	updateUserCustomFormat,
 } from "./custom-formats";
 
 // ============================================================================
 // Sync Module
 // ============================================================================
 
-export {
-	validateSync,
-	executeSync,
-	getSyncProgress,
-	getSyncHistory,
-	getSyncDetail,
-	rollbackSync,
-	createSyncProgressStream,
-} from "./sync";
-
 export type {
-	SyncValidationRequest,
 	ConflictInfo,
-	ValidationResult,
-	SyncExecuteRequest,
+	RollbackResult,
+	SyncDetail,
 	SyncError,
-	SyncResult,
-	SyncProgressStatus,
-	SyncProgress,
+	SyncExecuteRequest,
 	SyncHistoryItem,
 	SyncHistoryResponse,
-	SyncDetail,
-	RollbackResult,
+	SyncProgress,
+	SyncProgressStatus,
+	SyncResult,
+	SyncValidationRequest,
+	ValidationResult,
+} from "./sync";
+export {
+	createSyncProgressStream,
+	executeSync,
+	getSyncDetail,
+	getSyncHistory,
+	getSyncProgress,
+	rollbackSync,
+	validateSync,
 } from "./sync";
 
 // ============================================================================
 // Templates Module
 // ============================================================================
 
+export type {
+	DeleteTemplateResponse,
+	TemplateInstanceInfo,
+	TemplateListResponse,
+	TemplateResponse,
+	TemplateStatsResponse,
+} from "./templates";
 export {
-	fetchTemplates,
-	fetchTemplate,
 	createTemplate,
-	updateTemplate,
 	deleteTemplate,
 	duplicateTemplate,
 	exportTemplate,
-	importTemplate,
+	fetchTemplate,
 	fetchTemplateStats,
-} from "./templates";
-
-export type {
-	TemplateListResponse,
-	TemplateResponse,
-	TemplateInstanceInfo,
-	TemplateStatsResponse,
-	DeleteTemplateResponse,
+	fetchTemplates,
+	importTemplate,
+	updateTemplate,
 } from "./templates";
 
 // ============================================================================
 // Quality Size Module
 // ============================================================================
 
-export {
-	fetchQualitySizePresets,
-	getQualitySizePreview,
-	fetchQualitySizeMapping,
-	applyQualitySize,
-	updateQualitySizeSyncStrategy,
-} from "./quality-size";
-
 export type {
-	QualitySizePresetsResponse,
-	QualitySizeComparison,
-	QualitySizePreviewResponse,
-	QualitySizeMappingResponse,
 	ApplyQualitySizePayload,
 	ApplyQualitySizeResponse,
+	QualitySizeComparison,
+	QualitySizeMappingResponse,
+	QualitySizePresetsResponse,
+	QualitySizePreviewResponse,
 	UpdateSyncStrategyPayload as QualitySizeUpdateSyncStrategyPayload,
 	UpdateSyncStrategyResponse as QualitySizeUpdateSyncStrategyResponse,
 } from "./quality-size";
+export {
+	applyQualitySize,
+	fetchQualitySizeMapping,
+	fetchQualitySizePresets,
+	getQualitySizePreview,
+	updateQualitySizeSyncStrategy,
+} from "./quality-size";
+
+// ============================================================================
+// Naming Module
+// ============================================================================
+
+export type {
+	NamingApplyApiResponse,
+	NamingApplyPayload,
+	NamingConfigApiResponse,
+	NamingConfigCreatePayload,
+	NamingConfigDeleteResponse,
+	NamingConfigSaveResponse,
+	NamingPreviewApiResponse,
+	NamingPreviewPayload,
+	NamingPresetsApiResponse,
+} from "./naming";
+export {
+	applyNaming,
+	deleteNamingConfig,
+	fetchNamingConfig,
+	fetchNamingPresets,
+	getNamingPreview,
+	saveNamingConfig,
+} from "./naming";
 
 // ============================================================================
 // Settings Module
 // ============================================================================
 
-export {
-	fetchTrashSettings,
-	updateTrashSettings,
-	testCustomRepo,
-	resetToOfficialRepo,
-	fetchSupplementaryReport,
-} from "./settings";
-
 export type {
+	ResetRepoResponse,
+	SupplementaryReportConfigEntry,
+	SupplementaryReportResponse,
+	TestRepoPayload,
+	TestRepoResponse,
 	TrashSettingsResponse,
 	UpdateTrashSettingsPayload,
 	UpdateTrashSettingsResponse,
-	TestRepoPayload,
-	TestRepoResponse,
-	ResetRepoResponse,
-	SupplementaryReportResponse,
-	SupplementaryReportConfigEntry,
+} from "./settings";
+export {
+	fetchSupplementaryReport,
+	fetchTrashSettings,
+	resetToOfficialRepo,
+	testCustomRepo,
+	updateTrashSettings,
 } from "./settings";

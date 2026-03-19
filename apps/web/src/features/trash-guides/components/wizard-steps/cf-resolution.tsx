@@ -1,28 +1,32 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
-import { useClonedCFValidation, useProfileMatch } from "../../../../hooks/api/useQualityProfiles";
-import { Alert, AlertDescription } from "../../../../components/ui";
-import { PremiumSkeleton } from "../../../../components/layout/premium-components";
 import {
+	AlertTriangle,
+	CheckCircle,
 	ChevronLeft,
 	ChevronRight,
-	CheckCircle,
-	Link2,
-	Unlink,
-	RotateCcw,
-	Info,
 	Filter,
-	Search,
-	AlertTriangle,
+	Info,
+	Link2,
 	Plus,
+	RotateCcw,
+	Search,
 	Sparkles,
+	Unlink,
 } from "lucide-react";
-import type { CFMatchResult } from "../../../../lib/api-client/trash-guides";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { PremiumSkeleton } from "../../../../components/layout/premium-components";
+import { Alert, AlertDescription } from "../../../../components/ui";
+import { useClonedCFValidation, useProfileMatch } from "../../../../hooks/api/useQualityProfiles";
 import { useThemeGradient } from "../../../../hooks/useThemeGradient";
-import { CFResolutionItem, ExcludedCFItem } from "./cf-resolution-items";
-import { ProfileMatchBanner, ResolutionStatistics, CollapsibleCFSection } from "./cf-resolution-panels";
+import type { CFMatchResult } from "../../../../lib/api-client/trash-guides";
 import { getErrorMessage } from "../../../../lib/error-utils";
+import { CFResolutionItem, ExcludedCFItem } from "./cf-resolution-items";
+import {
+	CollapsibleCFSection,
+	ProfileMatchBanner,
+	ResolutionStatistics,
+} from "./cf-resolution-panels";
 
 /**
  * User's decision for a matched CF
@@ -140,11 +144,7 @@ export const CFResolution = ({
 	const [useRecommendations, setUseRecommendations] = useState(true);
 
 	// Fetch CF validation data
-	const { data, isLoading, error } = useClonedCFValidation(
-		instanceId,
-		profileId,
-		serviceType,
-	);
+	const { data, isLoading, error } = useClonedCFValidation(instanceId, profileId, serviceType);
 
 	// Fetch profile match data for recommendations
 	const { data: profileMatchData, isLoading: isLoadingMatch } = useProfileMatch(
@@ -162,21 +162,24 @@ export const CFResolution = ({
 	}, [profileMatchData]);
 
 	// Determine if a CF should be excluded (combines score logic and recommendation logic)
-	const shouldBeExcluded = useCallback((result: CFMatchResult): { excluded: boolean; reason: "score" | "recommendation" | null } => {
-		// First check score-based exclusion
-		if (shouldBeExcludedByScore(result)) {
-			return { excluded: true, reason: "score" };
-		}
-
-		// Then check recommendation-based exclusion (only if user enabled it and we have recommendations)
-		if (useRecommendations && recommendedTrashIds) {
-			if (shouldBeExcludedByRecommendations(result, recommendedTrashIds)) {
-				return { excluded: true, reason: "recommendation" };
+	const shouldBeExcluded = useCallback(
+		(result: CFMatchResult): { excluded: boolean; reason: "score" | "recommendation" | null } => {
+			// First check score-based exclusion
+			if (shouldBeExcludedByScore(result)) {
+				return { excluded: true, reason: "score" };
 			}
-		}
 
-		return { excluded: false, reason: null };
-	}, [useRecommendations, recommendedTrashIds]);
+			// Then check recommendation-based exclusion (only if user enabled it and we have recommendations)
+			if (useRecommendations && recommendedTrashIds) {
+				if (shouldBeExcludedByRecommendations(result, recommendedTrashIds)) {
+					return { excluded: true, reason: "recommendation" };
+				}
+			}
+
+			return { excluded: false, reason: null };
+		},
+		[useRecommendations, recommendedTrashIds],
+	);
 
 	// Initialize decisions from initial resolutions or default based on match confidence
 	useEffect(() => {
@@ -211,12 +214,13 @@ export const CFResolution = ({
 	// Takes into account: auto-excluded (score/recommendation logic), manually excluded, and manually included
 	// Also tracks exclusion reasons for display
 	const { activeCFs, recommendedCFs, excludedCFs, exclusionReasons } = useMemo(() => {
-		if (!data?.results) return {
-			activeCFs: [],
-			recommendedCFs: [],
-			excludedCFs: [],
-			exclusionReasons: {} as Record<number, "score" | "recommendation" | "manual">
-		};
+		if (!data?.results)
+			return {
+				activeCFs: [],
+				recommendedCFs: [],
+				excludedCFs: [],
+				exclusionReasons: {} as Record<number, "score" | "recommendation" | "manual">,
+			};
 
 		const active: CFMatchResult[] = [];
 		const recommended: CFMatchResult[] = [];
@@ -259,7 +263,12 @@ export const CFResolution = ({
 			}
 		}
 
-		return { activeCFs: active, recommendedCFs: recommended, excludedCFs: excluded, exclusionReasons: reasons };
+		return {
+			activeCFs: active,
+			recommendedCFs: recommended,
+			excludedCFs: excluded,
+			exclusionReasons: reasons,
+		};
 	}, [data, includedExcluded, manuallyExcluded, shouldBeExcluded]);
 
 	// Filter and search results (applies to active CFs only for the main list)
@@ -415,7 +424,16 @@ export const CFResolution = ({
 			willKeepInstance,
 			totalInTemplate,
 		};
-	}, [data, decisions, activeCFs, recommendedCFs, excludedCFs, manuallyExcluded, includedExcluded, exclusionReasons]);
+	}, [
+		data,
+		decisions,
+		activeCFs,
+		recommendedCFs,
+		excludedCFs,
+		manuallyExcluded,
+		includedExcluded,
+		exclusionReasons,
+	]);
 
 	const handleDecisionChange = (cfId: number, decision: CFResolutionDecision) => {
 		setDecisions((prev) => ({ ...prev, [cfId]: decision }));
@@ -424,7 +442,11 @@ export const CFResolution = ({
 	// Toggle a CF between active and excluded
 	// For auto-excluded CFs: toggle includedExcluded set
 	// For manually excluded CFs: toggle manuallyExcluded set
-	const handleToggleExclusion = (cfId: number, isCurrentlyExcluded: boolean, isAutoExcluded: boolean) => {
+	const handleToggleExclusion = (
+		cfId: number,
+		isCurrentlyExcluded: boolean,
+		isAutoExcluded: boolean,
+	) => {
 		if (isAutoExcluded) {
 			// This CF was auto-excluded by score logic
 			setIncludedExcluded((prev) => {
@@ -614,13 +636,19 @@ export const CFResolution = ({
 			>
 				<h4 className="font-medium text-foreground mb-2">🔗 Link Custom Formats to TRaSH Guides</h4>
 				<p className="text-sm text-foreground/70">
-					We found <span className="font-medium text-foreground">{matchStats?.matched || 0}</span> Custom Formats in &quot;{profileName}&quot; that match TRaSH Guides entries.
+					We found <span className="font-medium text-foreground">{matchStats?.matched || 0}</span>{" "}
+					Custom Formats in &quot;{profileName}&quot; that match TRaSH Guides entries.
 					{matchStats && matchStats.excludedCount > 0 && (
-						<> (<span className="text-amber-400">{matchStats.excludedCount}</span> auto-excluded based on scores/recommendations)</>
+						<>
+							{" "}
+							(<span className="text-amber-400">{matchStats.excludedCount}</span> auto-excluded
+							based on scores/recommendations)
+						</>
 					)}
 				</p>
 				<p className="text-sm text-foreground/60 mt-1">
-					Choose which CFs to include in your template and whether to link them (for automatic updates) or keep instance versions.
+					Choose which CFs to include in your template and whether to link them (for automatic
+					updates) or keep instance versions.
 				</p>
 			</div>
 
@@ -710,8 +738,16 @@ export const CFResolution = ({
 								key={result.instanceCF.id}
 								result={result}
 								decision={decisions[result.instanceCF.id] || "keep_instance"}
-								onDecisionChange={(decision) => handleDecisionChange(result.instanceCF.id, decision)}
-								onExclude={() => handleToggleExclusion(result.instanceCF.id, false, shouldBeExcluded(result).excluded)}
+								onDecisionChange={(decision) =>
+									handleDecisionChange(result.instanceCF.id, decision)
+								}
+								onExclude={() =>
+									handleToggleExclusion(
+										result.instanceCF.id,
+										false,
+										shouldBeExcluded(result).excluded,
+									)
+								}
 							/>
 						))
 					)}
@@ -732,8 +768,10 @@ export const CFResolution = ({
 							<Info className="h-4 w-4 text-purple-400 mt-0.5 shrink-0" />
 							<div className="text-xs text-purple-200/80">
 								<p>
-									These Custom Formats exist in your instance but have a <span className="font-medium text-foreground">score of 0</span> in this profile.
-									TRaSH Guides recommends enabling them. They will be included in your template with TRaSH&apos;s recommended scores.
+									These Custom Formats exist in your instance but have a{" "}
+									<span className="font-medium text-foreground">score of 0</span> in this profile.
+									TRaSH Guides recommends enabling them. They will be included in your template with
+									TRaSH&apos;s recommended scores.
 								</p>
 							</div>
 						</div>
@@ -745,7 +783,9 @@ export const CFResolution = ({
 								key={result.instanceCF.id}
 								result={result}
 								decision={decisions[result.instanceCF.id] || "use_trash"}
-								onDecisionChange={(decision) => handleDecisionChange(result.instanceCF.id, decision)}
+								onDecisionChange={(decision) =>
+									handleDecisionChange(result.instanceCF.id, decision)
+								}
 								onExclude={() => handleToggleExclusion(result.instanceCF.id, false, false)}
 								isRecommended
 							/>
@@ -763,27 +803,34 @@ export const CFResolution = ({
 					colorScheme="amber"
 					isExpanded={excludedExpanded}
 					onToggle={() => setExcludedExpanded(!excludedExpanded)}
-					extraBadge={includedExcluded.size > 0 ? (
-						<span className="text-xs bg-green-500/20 text-green-300 px-2 py-0.5 rounded">
-							{includedExcluded.size} included
-						</span>
-					) : undefined}
+					extraBadge={
+						includedExcluded.size > 0 ? (
+							<span className="text-xs bg-green-500/20 text-green-300 px-2 py-0.5 rounded">
+								{includedExcluded.size} included
+							</span>
+						) : undefined
+					}
 					infoBanner={
 						<div className="flex items-start gap-2 rounded-lg bg-amber-500/10 p-3 mb-3">
 							<Info className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
 							<div className="text-xs text-amber-200/80 space-y-1">
 								{matchStats && matchStats.excludedByScore > 0 && (
 									<p>
-										<span className="font-medium text-amber-300">Score-excluded:</span> CFs with a score of 0 in the source profile
-										and TRaSH also recommends a score of 0 (not used for this profile type).
+										<span className="font-medium text-amber-300">Score-excluded:</span> CFs with a
+										score of 0 in the source profile and TRaSH also recommends a score of 0 (not
+										used for this profile type).
 									</p>
 								)}
-								{useRecommendations && profileMatchData?.matched && matchStats && matchStats.excludedByRec > 0 && (
-									<p>
-										<span className="font-medium text-purple-300">Recommendation-excluded:</span> CFs not in the recommended list
-										for the matched &quot;{profileMatchData.matchedProfile?.name}&quot; profile.
-									</p>
-								)}
+								{useRecommendations &&
+									profileMatchData?.matched &&
+									matchStats &&
+									matchStats.excludedByRec > 0 && (
+										<p>
+											<span className="font-medium text-purple-300">Recommendation-excluded:</span>{" "}
+											CFs not in the recommended list for the matched &quot;
+											{profileMatchData.matchedProfile?.name}&quot; profile.
+										</p>
+									)}
 								<p className="text-foreground/60">
 									Click <Plus className="h-3 w-3 inline" /> to include any CF in your template.
 								</p>
@@ -816,9 +863,11 @@ export const CFResolution = ({
 				<div className="flex items-start gap-2 rounded-lg border border-border bg-card p-3">
 					<Info className="h-4 w-4 text-foreground/60 mt-0.5 shrink-0" />
 					<div className="text-xs text-foreground/60">
-						<span className="font-medium text-foreground/80">{matchStats.unmatched} Custom Format{matchStats.unmatched > 1 ? "s" : ""}</span> couldn&apos;t be matched to TRaSH Guides.
-						These are likely custom formats you created or from a different source.
-						They will be included in the template as-is.
+						<span className="font-medium text-foreground/80">
+							{matchStats.unmatched} Custom Format{matchStats.unmatched > 1 ? "s" : ""}
+						</span>{" "}
+						couldn&apos;t be matched to TRaSH Guides. These are likely custom formats you created or
+						from a different source. They will be included in the template as-is.
 					</div>
 				</div>
 			)}

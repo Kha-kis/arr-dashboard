@@ -1,6 +1,6 @@
 "use client";
 
-import { Input, Button } from "../../../components/ui";
+import { Button, Input } from "../../../components/ui";
 import { SEARCH_TYPES } from "../lib/search-utils";
 
 interface SearchFormProps {

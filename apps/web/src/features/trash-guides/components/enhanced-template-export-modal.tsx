@@ -9,21 +9,21 @@
 
 "use client";
 
-import { useState } from "react";
-import { Button, Input } from "../../../components/ui";
+import type { TemplateExportOptions } from "@arr/shared";
 import {
 	Download,
-	Info,
 	FileJson,
-	Settings2,
-	User,
-	Tag,
-	Folder,
 	FileText,
+	Folder,
+	Info,
 	Loader2,
+	Settings2,
+	Tag,
+	User,
 	X,
 } from "lucide-react";
-import type { TemplateExportOptions } from "@arr/shared";
+import { useState } from "react";
+import { Button, Input } from "../../../components/ui";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 interface EnhancedTemplateExportModalProps {
@@ -72,7 +72,10 @@ export function EnhancedTemplateExportModal({
 				author: author || undefined,
 				category: (category as TemplateExportOptions["category"]) || undefined,
 				tags: tags
-					? tags.split(",").map((t) => t.trim()).filter(Boolean)
+					? tags
+							.split(",")
+							.map((t) => t.trim())
+							.filter(Boolean)
 					: undefined,
 				notes: notes || undefined,
 			};
@@ -158,8 +161,8 @@ export function EnhancedTemplateExportModal({
 			>
 				<Info className="h-4 w-4 mt-0.5 shrink-0" style={{ color: themeGradient.from }} />
 				<p className="text-sm text-muted-foreground">
-					Export &quot;{templateName}&quot; with metadata and filtering options for sharing
-					or backup.
+					Export &quot;{templateName}&quot; with metadata and filtering options for sharing or
+					backup.
 				</p>
 			</div>
 
@@ -197,9 +200,7 @@ export function EnhancedTemplateExportModal({
 							type="checkbox"
 							className="sr-only"
 							checked={options.includeQualitySettings}
-							onChange={(e) =>
-								setOptions({ ...options, includeQualitySettings: e.target.checked })
-							}
+							onChange={(e) => setOptions({ ...options, includeQualitySettings: e.target.checked })}
 						/>
 					</label>
 
@@ -261,9 +262,7 @@ export function EnhancedTemplateExportModal({
 							type="checkbox"
 							className="sr-only"
 							checked={options.includeMetadata}
-							onChange={(e) =>
-								setOptions({ ...options, includeMetadata: e.target.checked })
-							}
+							onChange={(e) => setOptions({ ...options, includeMetadata: e.target.checked })}
 						/>
 					</label>
 				</div>
@@ -294,7 +293,8 @@ export function EnhancedTemplateExportModal({
 								className="w-full rounded-xl"
 								style={{
 									borderColor: focusedField === "author" ? themeGradient.from : undefined,
-									boxShadow: focusedField === "author" ? `0 0 0 1px ${themeGradient.from}` : undefined,
+									boxShadow:
+										focusedField === "author" ? `0 0 0 1px ${themeGradient.from}` : undefined,
 								}}
 							/>
 						</label>
@@ -312,8 +312,10 @@ export function EnhancedTemplateExportModal({
 								onBlur={() => setFocusedField(null)}
 								className="w-full rounded-lg border bg-card/50 backdrop-blur-xs px-3 py-2 text-sm text-foreground transition-all duration-200 focus:outline-hidden appearance-none cursor-pointer"
 								style={{
-									borderColor: focusedField === "category" ? themeGradient.from : "hsl(var(--border) / 0.5)",
-									boxShadow: focusedField === "category" ? `0 0 0 1px ${themeGradient.from}` : undefined,
+									borderColor:
+										focusedField === "category" ? themeGradient.from : "hsl(var(--border) / 0.5)",
+									boxShadow:
+										focusedField === "category" ? `0 0 0 1px ${themeGradient.from}` : undefined,
 								}}
 							>
 								<option value="">Select a category...</option>
@@ -341,7 +343,8 @@ export function EnhancedTemplateExportModal({
 								className="w-full rounded-xl"
 								style={{
 									borderColor: focusedField === "tags" ? themeGradient.from : undefined,
-									boxShadow: focusedField === "tags" ? `0 0 0 1px ${themeGradient.from}` : undefined,
+									boxShadow:
+										focusedField === "tags" ? `0 0 0 1px ${themeGradient.from}` : undefined,
 								}}
 							/>
 						</label>
@@ -361,8 +364,10 @@ export function EnhancedTemplateExportModal({
 								rows={3}
 								className="w-full rounded-xl border bg-card/50 backdrop-blur-xs px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/60 transition-all duration-200 focus:outline-hidden resize-none"
 								style={{
-									borderColor: focusedField === "notes" ? themeGradient.from : "hsl(var(--border) / 0.5)",
-									boxShadow: focusedField === "notes" ? `0 0 0 1px ${themeGradient.from}` : undefined,
+									borderColor:
+										focusedField === "notes" ? themeGradient.from : "hsl(var(--border) / 0.5)",
+									boxShadow:
+										focusedField === "notes" ? `0 0 0 1px ${themeGradient.from}` : undefined,
 								}}
 							/>
 						</label>

@@ -10,6 +10,53 @@ export interface ConnectionTestResult {
 	details?: string;
 }
 
+// Known auth proxy session cookie name patterns
+const AUTH_PROXY_COOKIE_PATTERNS = [
+	"authelia_session",
+	"authentik_session",
+	"_oauth2_proxy",
+	"_vouch",
+	"_forward_auth",
+	"organizr_token",
+] as const;
+
+/**
+ * Detect if a response was intercepted by an authentication proxy.
+ * Common in self-hosted setups (Authelia, Authentik, Traefik Forward Auth).
+ */
+function detectAuthProxy(response: Response, requestUrl: string): string | null {
+	const finalUrl = response.url;
+
+	// Request was redirected to a different host (auth proxy redirect)
+	if (finalUrl && finalUrl !== requestUrl) {
+		const requestHost = new URL(requestUrl).hostname;
+		try {
+			const responseHost = new URL(finalUrl).hostname;
+			if (responseHost !== requestHost) {
+				return `Request was redirected to ${responseHost}, which appears to be an authentication proxy.`;
+			}
+		} catch {
+			// Invalid URL in response, skip check
+		}
+	}
+
+	// Check for auth proxy session cookies
+	const setCookie = response.headers.get("set-cookie")?.toLowerCase() ?? "";
+	for (const pattern of AUTH_PROXY_COOKIE_PATTERNS) {
+		if (setCookie.includes(pattern)) {
+			return `Detected authentication proxy in response (${pattern} cookie).`;
+		}
+	}
+
+	return null;
+}
+
+const AUTH_PROXY_ADVICE =
+	"Your reverse proxy's authentication is intercepting API requests before they reach the service. " +
+	"To fix this, either:\n" +
+	"• Use the service's internal/LAN URL (e.g., http://192.168.1.x:PORT or http://container-name:PORT) instead of the public URL\n" +
+	"• Configure your auth proxy to bypass authentication for the service's API paths";
+
 /**
  * Tests connection to a service instance using the system/status endpoint.
  * This is the standard approach used by most *arr integration tools.
@@ -20,6 +67,18 @@ export async function testServiceConnection(
 	service: string,
 ): Promise<ConnectionTestResult> {
 	try {
+		const normalizedBaseUrl = baseUrl.replace(/\/$/, "");
+
+		// Tautulli uses query-param auth instead of X-Api-Key header
+		if (service === "tautulli") {
+			return await testTautulliConnection(normalizedBaseUrl, apiKey);
+		}
+
+		// Plex uses X-Plex-Token header auth
+		if (service === "plex") {
+			return await testPlexConnection(normalizedBaseUrl, apiKey);
+		}
+
 		// Seerr uses its own status endpoint; Prowlarr/Lidarr/Readarr use v1; Sonarr/Radarr use v3
 		const apiPath =
 			service === "seerr"
@@ -27,7 +86,6 @@ export async function testServiceConnection(
 				: ["prowlarr", "lidarr", "readarr"].includes(service)
 					? "/api/v1/system/status"
 					: "/api/v3/system/status";
-		const normalizedBaseUrl = baseUrl.replace(/\/$/, "");
 		const testUrl = `${normalizedBaseUrl}${apiPath}`;
 
 		const response = await fetch(testUrl, {
@@ -37,6 +95,16 @@ export async function testServiceConnection(
 			},
 			signal: AbortSignal.timeout(5000),
 		});
+
+		// Check for auth proxy interception (redirected to login, proxy cookies, etc.)
+		const proxyDetected = detectAuthProxy(response, testUrl);
+		if (proxyDetected) {
+			return {
+				success: false,
+				error: "Authentication proxy detected",
+				details: `${proxyDetected}\n\n${AUTH_PROXY_ADVICE}`,
+			};
+		}
 
 		if (!response.ok) {
 			return handleHttpError(response, normalizedBaseUrl);
@@ -48,7 +116,7 @@ export async function testServiceConnection(
 				success: false,
 				error: "Invalid response format",
 				details:
-					"Received HTML instead of JSON. Check if the base URL is correct and includes any URL base if configured in the service (e.g., http://localhost:7878 for root, or http://localhost/radarr if using a URL base).",
+					"Received HTML instead of JSON. Check if the base URL is correct and includes any URL base if configured in the service (e.g., http://localhost:7878 for root, or http://localhost/radarr if using a URL base). If this service is behind a reverse proxy with authentication (Authelia, Authentik, etc.), use the internal/LAN URL instead.",
 			};
 		}
 
@@ -78,16 +146,25 @@ function handleHttpError(response: Response, baseUrl: string): ConnectionTestRes
 			success: false,
 			error: "Authentication failed (401)",
 			details:
-				"Invalid API key, or a reverse proxy is blocking the request. Verify the API key is correct and check any forward auth settings.",
+				"Invalid API key, or a reverse proxy is blocking the request. Verify the API key is correct. If this service is behind an auth proxy (Authelia, Authentik, etc.), use the service's internal/LAN URL instead of the public URL.",
 		};
 	}
 
 	if (status === 403) {
+		// Check if this looks like a CSRF or auth proxy issue
+		const isHtml = contentType?.includes("text/html");
+		if (isHtml) {
+			return {
+				success: false,
+				error: "Access blocked by proxy (403)",
+				details: AUTH_PROXY_ADVICE,
+			};
+		}
 		return {
 			success: false,
 			error: "Access forbidden (403)",
 			details:
-				"The API key may lack permissions, or a reverse proxy is denying access. Check your reverse proxy configuration if using one.",
+				"The API key may lack permissions, or a reverse proxy is denying access. If this service is behind an auth proxy (Authelia, Authentik, etc.), use the service's internal/LAN URL instead of the public URL.",
 		};
 	}
 
@@ -129,19 +206,137 @@ function handleHttpError(response: Response, baseUrl: string): ConnectionTestRes
 }
 
 /**
+ * Tests connection to a Tautulli instance using query-param auth.
+ */
+async function testTautulliConnection(
+	baseUrl: string,
+	apiKey: string,
+): Promise<ConnectionTestResult> {
+	const testUrlObj = new URL(`${baseUrl}/api/v2`);
+	testUrlObj.searchParams.set("apikey", apiKey);
+	testUrlObj.searchParams.set("cmd", "get_tautulli_info");
+
+	const tautulliUrl = testUrlObj.toString();
+	const response = await fetch(tautulliUrl, {
+		headers: { Accept: "application/json" },
+		signal: AbortSignal.timeout(5000),
+	});
+
+	const proxyDetected = detectAuthProxy(response, tautulliUrl);
+	if (proxyDetected) {
+		return {
+			success: false,
+			error: "Authentication proxy detected",
+			details: `${proxyDetected}\n\n${AUTH_PROXY_ADVICE}`,
+		};
+	}
+
+	if (!response.ok) {
+		return handleHttpError(response, baseUrl);
+	}
+
+	const contentType = response.headers.get("content-type");
+	if (!contentType?.includes("application/json")) {
+		return {
+			success: false,
+			error: "Invalid response format",
+			details:
+				"Received HTML instead of JSON. Check if the base URL is correct (e.g., http://localhost:8181). If behind an auth proxy, use the internal/LAN URL.",
+		};
+	}
+
+	const json = (await response.json()) as {
+		response?: { result?: string; data?: { tautulli_version?: string } };
+	};
+
+	if (json.response?.result !== "success") {
+		return {
+			success: false,
+			error: "Tautulli API returned an error",
+			details: "Check that the API key is correct and Tautulli is running.",
+		};
+	}
+
+	const version = json.response.data?.tautulli_version ?? "unknown";
+	return {
+		success: true,
+		message: "Successfully connected to Tautulli",
+		version,
+	};
+}
+
+/**
+ * Tests connection to a Plex Media Server using X-Plex-Token auth.
+ */
+async function testPlexConnection(baseUrl: string, token: string): Promise<ConnectionTestResult> {
+	const testUrl = `${baseUrl}/identity`;
+
+	const response = await fetch(testUrl, {
+		headers: {
+			Accept: "application/json",
+			"X-Plex-Token": token,
+		},
+		signal: AbortSignal.timeout(5000),
+	});
+
+	const proxyDetected = detectAuthProxy(response, testUrl);
+	if (proxyDetected) {
+		return {
+			success: false,
+			error: "Authentication proxy detected",
+			details: `${proxyDetected}\n\n${AUTH_PROXY_ADVICE}`,
+		};
+	}
+
+	if (!response.ok) {
+		return handleHttpError(response, baseUrl);
+	}
+
+	const contentType = response.headers.get("content-type");
+	if (!contentType?.includes("application/json")) {
+		return {
+			success: false,
+			error: "Invalid response format",
+			details:
+				"Received HTML instead of JSON. Check if the base URL is correct (e.g., http://localhost:32400). If behind an auth proxy, use the internal/LAN URL.",
+		};
+	}
+
+	const json = (await response.json()) as {
+		MediaContainer?: { friendlyName?: string; version?: string; machineIdentifier?: string };
+	};
+
+	if (!json.MediaContainer?.machineIdentifier) {
+		return {
+			success: false,
+			error: "Invalid Plex response",
+			details: "Response did not contain a machine identifier. Check the URL and token.",
+		};
+	}
+
+	const name = json.MediaContainer.friendlyName ?? "Plex";
+	const version = json.MediaContainer.version ?? "unknown";
+	return {
+		success: true,
+		message: `Successfully connected to Plex: ${name}`,
+		version,
+	};
+}
+
+/**
  * Handles connection errors and returns appropriate error result
  */
 function handleConnectionError(error: unknown): ConnectionTestResult {
 	let errorMessage = "Connection failed";
 	let details = "Unknown error";
 
-	if (
-		error &&
-		typeof error === "object" &&
-		("name" in error || "code" in error || "message" in error)
-	) {
-		const err = error as { name?: string; code?: string; message?: string };
+	// Node.js fetch wraps real errors in TypeError with message "fetch failed" —
+	// the actual cause (ECONNREFUSED, ENOTFOUND, etc.) is in error.cause
+	const raw = error as { cause?: unknown; name?: string; code?: string; message?: string };
+	const cause = raw?.cause as { name?: string; code?: string; message?: string } | undefined;
+	const err = cause?.code || cause?.name ? cause : raw;
 
+	if (err && typeof err === "object") {
 		if (err.name === "TimeoutError" || err.code === "ETIMEDOUT") {
 			errorMessage = "Connection timeout";
 			details =
@@ -150,8 +345,22 @@ function handleConnectionError(error: unknown): ConnectionTestResult {
 			errorMessage = "Connection refused";
 			details =
 				"Could not connect to the service. Verify the base URL and that the service is running.";
-		} else if (err.message) {
+		} else if (err.code === "ENOTFOUND") {
+			errorMessage = "Host not found";
+			details =
+				"Could not resolve the hostname. Check that the base URL is correct and the DNS name is reachable from this server.";
+		} else if (
+			err.code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE" ||
+			err.code === "CERT_HAS_EXPIRED" ||
+			err.code === "DEPTH_ZERO_SELF_SIGNED_CERT"
+		) {
+			errorMessage = "TLS/SSL error";
+			details =
+				"Certificate verification failed. If using a self-signed certificate, try using HTTP instead of HTTPS, or configure your system to trust the certificate.";
+		} else if (err.message && err.message !== "fetch failed") {
 			details = err.message;
+		} else if (cause?.message) {
+			details = cause.message;
 		}
 	}
 

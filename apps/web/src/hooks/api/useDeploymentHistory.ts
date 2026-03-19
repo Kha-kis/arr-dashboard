@@ -1,14 +1,14 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-	getAllDeploymentHistory,
-	getTemplateDeploymentHistory,
-	getInstanceDeploymentHistory,
-	getDeploymentHistoryDetail,
-	undeployDeployment,
-	deleteDeploymentHistory,
-	type DeploymentHistoryResponse,
 	type DeploymentHistoryDetailResponse,
+	type DeploymentHistoryResponse,
+	deleteDeploymentHistory,
+	getAllDeploymentHistory,
+	getDeploymentHistoryDetail,
+	getInstanceDeploymentHistory,
+	getTemplateDeploymentHistory,
 	type UndeployResponse,
+	undeployDeployment,
 } from "../../lib/api-client/trash-guides";
 
 /**

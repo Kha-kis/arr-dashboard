@@ -1,27 +1,26 @@
 "use client";
 
-import { useState } from "react";
 import {
 	Activity,
+	AlertTriangle,
 	ChevronDown,
 	ChevronRight,
 	Clock,
-	Trash2,
-	SkipForward,
 	Eye,
-	AlertTriangle,
+	SkipForward,
+	Trash2,
 } from "lucide-react";
+import { useState } from "react";
 import {
-	PremiumSection,
+	FilterSelect,
 	PremiumEmptyState,
+	PremiumSection,
 	ServiceBadge,
 	StatusBadge,
-	FilterSelect,
-	GlassmorphicCard,
 } from "../../../components/layout";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useQueueCleanerLogs } from "../hooks/useQueueCleanerLogs";
-import type { QueueCleanerLog, CleanerResultItem } from "../lib/queue-cleaner-types";
+import type { CleanerResultItem, QueueCleanerLog } from "../lib/queue-cleaner-types";
 
 export const QueueCleanerActivity = () => {
 	const [statusFilter, setStatusFilter] = useState("all");
@@ -79,11 +78,7 @@ export const QueueCleanerActivity = () => {
 						key={logEntry.id}
 						log={logEntry}
 						isExpanded={expandedLogId === logEntry.id}
-						onToggle={() =>
-							setExpandedLogId(
-								expandedLogId === logEntry.id ? null : logEntry.id,
-							)
-						}
+						onToggle={() => setExpandedLogId(expandedLogId === logEntry.id ? null : logEntry.id)}
 						animationDelay={index * 30}
 					/>
 				))}
@@ -131,206 +126,251 @@ const LogEntryRow = ({ log, isExpanded, onToggle, animationDelay }: LogEntryRowP
 		(log.skippedItems && log.skippedItems.length > 0) ||
 		(log.warnedItems && log.warnedItems.length > 0);
 
-	const statusType = {
-		running: "warning" as const,
-		completed: "success" as const,
-		partial: "warning" as const,
-		skipped: "info" as const,
-		error: "error" as const,
-	}[log.status] ?? ("info" as const);
+	const statusType =
+		{
+			running: "warning" as const,
+			completed: "success" as const,
+			partial: "warning" as const,
+			skipped: "info" as const,
+			error: "error" as const,
+		}[log.status] ?? ("info" as const);
 
 	const startedAt = new Date(log.startedAt);
 	const durationStr = log.durationMs ? `${(log.durationMs / 1000).toFixed(1)}s` : "-";
 
 	return (
 		<div
-			className="animate-in fade-in slide-in-from-bottom-1 duration-200"
-			style={{ animationDelay: `${animationDelay}ms`, animationFillMode: "backwards" }}
+			className="group relative rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-[1px] hover:shadow-lg hover:shadow-black/10 animate-in fade-in slide-in-from-bottom-1 duration-300"
+			style={{
+				border: `1px solid ${serviceGradient.from}10`,
+				animationDelay: `${animationDelay}ms`,
+				animationFillMode: "backwards",
+			}}
 		>
-			<GlassmorphicCard>
-				{/* Accent line */}
-				<div
-					className="absolute top-0 left-0 w-0.5 h-full rounded-l-xl"
-					style={{ backgroundColor: serviceGradient.from }}
-				/>
+			{/* Background gradient */}
+			<div
+				className="absolute inset-0 pointer-events-none"
+				style={{
+					background: `linear-gradient(135deg, ${serviceGradient.from}05, transparent 60%)`,
+				}}
+			/>
 
-				{/* Main row */}
-				<button
-					type="button"
-					className="w-full p-4 text-left flex items-center gap-3"
-					onClick={hasDetails ? onToggle : undefined}
-				>
-					{/* Expand chevron */}
-					<div className="flex-shrink-0 w-4">
-						{hasDetails && (
-							isExpanded ? (
-								<ChevronDown className="h-4 w-4 text-muted-foreground" />
-							) : (
-								<ChevronRight className="h-4 w-4 text-muted-foreground" />
-							)
-						)}
-					</div>
+			{/* Hover glow */}
+			<div
+				className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+				style={{
+					background: `radial-gradient(ellipse at top left, ${serviceGradient.from}08, transparent 50%)`,
+				}}
+			/>
 
-					{/* Instance info */}
-					<div className="flex-1 min-w-0">
-						<div className="flex items-center gap-2 mb-0.5">
-							<span className="text-sm font-medium text-foreground truncate">
-								{log.instanceName}
+			{/* Service accent bar */}
+			<div
+				className="absolute left-0 top-0 bottom-0 w-[3px]"
+				style={{
+					background: `linear-gradient(180deg, ${serviceGradient.from}, ${serviceGradient.to}70)`,
+				}}
+			/>
+
+			{/* Main row */}
+			<button
+				type="button"
+				className="relative w-full py-3.5 pl-5 pr-4 text-left flex items-center gap-3"
+				onClick={hasDetails ? onToggle : undefined}
+			>
+				{/* Expand chevron */}
+				<div className="flex-shrink-0 w-4">
+					{hasDetails &&
+						(isExpanded ? (
+							<ChevronDown className="h-4 w-4 text-muted-foreground/40" />
+						) : (
+							<ChevronRight className="h-4 w-4 text-muted-foreground/40" />
+						))}
+				</div>
+
+				{/* Instance info */}
+				<div className="flex-1 min-w-0">
+					<div className="flex items-center gap-2 mb-0.5">
+						<span
+							className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider shrink-0"
+							style={{
+								backgroundColor: `${serviceGradient.from}12`,
+								color: serviceGradient.from,
+							}}
+						>
+							<Trash2 className="h-2.5 w-2.5" />
+							Clean
+						</span>
+						<span className="text-[14px] font-semibold text-foreground truncate leading-snug">
+							{log.instanceName}
+						</span>
+						<ServiceBadge service={log.service} />
+						{log.isDryRun && (
+							<span className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-400 border border-amber-500/15">
+								<Eye className="h-2.5 w-2.5" />
+								DRY
 							</span>
-							<ServiceBadge service={log.service} />
-							{log.isDryRun && (
-								<span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-400">
-									<Eye className="h-2.5 w-2.5" />
-									DRY
-								</span>
-							)}
-						</div>
-						<p className="text-xs text-muted-foreground truncate">
-							{log.message || "No details"}
-						</p>
-					</div>
-
-					{/* Stats */}
-					<div className="flex items-center gap-4 flex-shrink-0">
-						<div className="text-center">
-							<div className="flex items-center gap-1 text-xs">
-								<Trash2 className="h-3 w-3" style={{ color: SEMANTIC_COLORS.error.text }} />
-								<span className="font-medium">{log.itemsCleaned}</span>
-							</div>
-						</div>
-						{(log.itemsWarned ?? 0) > 0 && (
-							<div className="text-center">
-								<div className="flex items-center gap-1 text-xs">
-									<AlertTriangle className="h-3 w-3" style={{ color: SEMANTIC_COLORS.warning.text }} />
-									<span className="font-medium">{log.itemsWarned}</span>
-								</div>
-							</div>
 						)}
-						<div className="text-center">
-							<div className="flex items-center gap-1 text-xs">
-								<SkipForward className="h-3 w-3" style={{ color: SEMANTIC_COLORS.warning.text }} />
-								<span className="font-medium">{log.itemsSkipped}</span>
-							</div>
-						</div>
-						<div className="text-xs text-muted-foreground flex items-center gap-1 min-w-[60px]">
-							<Clock className="h-3 w-3" />
-							{durationStr}
-						</div>
-						<StatusBadge status={statusType}>
-							{log.status}
-						</StatusBadge>
-						{/* Data quality warning - shown when JSON parsing failed */}
 						{log.hasDataError && (
 							<span
-								className="inline-flex items-center rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-400"
+								className="inline-flex items-center rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-400"
 								title="Some item details may be incomplete due to data corruption"
 							>
 								<AlertTriangle className="h-2.5 w-2.5" />
 							</span>
 						)}
 					</div>
-				</button>
+					<p className="text-[11px] text-muted-foreground/40 truncate">
+						{log.message || "No details"}
+					</p>
+				</div>
 
-				{/* Expanded details */}
-				{isExpanded && hasDetails && (
-					<div className="px-4 pb-4 pt-0 border-t border-border/30">
-						<div className="pt-3 space-y-3">
-							{/* Timestamp */}
-							<p className="text-xs text-muted-foreground">
-								Started: {startedAt.toLocaleString()}
-							</p>
+				{/* Stats */}
+				<div className="flex items-center gap-4 flex-shrink-0">
+					<span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/50">
+						<Trash2 className="h-3 w-3" style={{ color: SEMANTIC_COLORS.error.text }} />
+						{log.itemsCleaned}
+					</span>
+					{(log.itemsWarned ?? 0) > 0 && (
+						<span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/50">
+							<AlertTriangle
+								className="h-3 w-3"
+								style={{ color: SEMANTIC_COLORS.warning.text }}
+							/>
+							{log.itemsWarned}
+						</span>
+					)}
+					<span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/50">
+						<SkipForward className="h-3 w-3" />
+						{log.itemsSkipped}
+					</span>
+					<span className="text-[11px] text-muted-foreground/40 flex items-center gap-1 min-w-[60px]">
+						<Clock className="h-3 w-3" />
+						{durationStr}
+					</span>
+					<StatusBadge status={statusType}>{log.status}</StatusBadge>
+				</div>
+			</button>
 
-							{/* Cleaned items */}
-							{log.cleanedItems && log.cleanedItems.length > 0 && (
-								<div>
-									<h5 className="flex items-center gap-1.5 text-xs font-medium mb-2">
-										<Trash2 className="h-3 w-3" style={{ color: SEMANTIC_COLORS.error.text }} />
-										Removed ({log.cleanedItems.length})
-									</h5>
-									<div className="space-y-1">
-										{log.cleanedItems.map((item: CleanerResultItem) => (
-											<div
-												key={item.id}
-												className="flex items-center justify-between rounded bg-card/50 px-2.5 py-1.5"
-											>
-												<span className="text-xs text-foreground truncate flex-1">
-													{item.title}
-												</span>
-												<span className="text-[10px] text-muted-foreground ml-2 shrink-0">
-													{item.reason}
-												</span>
-											</div>
-										))}
-									</div>
+			{/* Expanded details */}
+			{isExpanded && hasDetails && (
+				<div className="relative px-5 pb-4 pt-0 border-t border-border/20">
+					<div className="pt-3 space-y-3">
+						{/* Timestamp */}
+						<p className="text-xs text-muted-foreground/40">
+							Started: {startedAt.toLocaleString()}
+						</p>
+
+						{/* Cleaned items */}
+						{log.cleanedItems && log.cleanedItems.length > 0 && (
+							<div>
+								<h5 className="flex items-center gap-1.5 text-xs font-medium mb-2">
+									<Trash2
+										className="h-3 w-3"
+										style={{ color: SEMANTIC_COLORS.error.text }}
+									/>
+									Removed ({log.cleanedItems.length})
+								</h5>
+								<div className="space-y-1">
+									{log.cleanedItems.map((item: CleanerResultItem) => (
+										<div
+											key={item.id}
+											className="flex items-center justify-between rounded-lg px-3 py-2"
+											style={{
+												backgroundColor: SEMANTIC_COLORS.error.bg,
+												border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+											}}
+										>
+											<span className="text-xs text-foreground truncate flex-1">
+												{item.title}
+											</span>
+											<span className="text-[10px] text-muted-foreground ml-2 shrink-0">
+												{item.reason}
+											</span>
+										</div>
+									))}
 								</div>
-							)}
+							</div>
+						)}
 
-							{/* Warned items (strike system) */}
-							{log.warnedItems && log.warnedItems.length > 0 && (
-								<div>
-									<h5 className="flex items-center gap-1.5 text-xs font-medium mb-2">
-										<AlertTriangle className="h-3 w-3" style={{ color: SEMANTIC_COLORS.warning.text }} />
-										Warned ({log.warnedItems.length})
-									</h5>
-									<div className="space-y-1">
-										{log.warnedItems.map((item: CleanerResultItem) => (
-											<div
-												key={item.id}
-												className="flex items-center justify-between rounded px-2.5 py-1.5"
-												style={{ backgroundColor: SEMANTIC_COLORS.warning.bg }}
-											>
-												<span className="text-xs text-foreground truncate flex-1">
-													{item.title}
-												</span>
-												<div className="flex items-center gap-2 ml-2 shrink-0">
-													{item.strikeCount !== undefined && item.maxStrikes !== undefined && (
-														<span className="inline-flex items-center rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-medium text-amber-400">
+						{/* Warned items (strike system) */}
+						{log.warnedItems && log.warnedItems.length > 0 && (
+							<div>
+								<h5 className="flex items-center gap-1.5 text-xs font-medium mb-2">
+									<AlertTriangle
+										className="h-3 w-3"
+										style={{ color: SEMANTIC_COLORS.warning.text }}
+									/>
+									Warned ({log.warnedItems.length})
+								</h5>
+								<div className="space-y-1">
+									{log.warnedItems.map((item: CleanerResultItem) => (
+										<div
+											key={item.id}
+											className="flex items-center justify-between rounded-lg px-3 py-2"
+											style={{
+												backgroundColor: SEMANTIC_COLORS.warning.bg,
+												border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
+											}}
+										>
+											<span className="text-xs text-foreground truncate flex-1">
+												{item.title}
+											</span>
+											<div className="flex items-center gap-2 ml-2 shrink-0">
+												{item.strikeCount !== undefined &&
+													item.maxStrikes !== undefined && (
+														<span className="inline-flex items-center rounded-md bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-medium text-amber-400">
 															Strike {item.strikeCount}/{item.maxStrikes}
 														</span>
 													)}
-													<span className="text-[10px] text-muted-foreground">
-														{item.reason}
-													</span>
-												</div>
-											</div>
-										))}
-									</div>
-								</div>
-							)}
-
-							{/* Skipped items */}
-							{log.skippedItems && log.skippedItems.length > 0 && (
-								<div>
-									<h5 className="flex items-center gap-1.5 text-xs font-medium mb-2">
-										<SkipForward className="h-3 w-3" style={{ color: SEMANTIC_COLORS.warning.text }} />
-										Skipped ({log.skippedItems.length})
-									</h5>
-									<div className="space-y-1 max-h-40 overflow-y-auto">
-										{log.skippedItems.slice(0, 10).map((item: CleanerResultItem) => (
-											<div
-												key={item.id}
-												className="flex items-center justify-between rounded bg-card/50 px-2.5 py-1.5"
-											>
-												<span className="text-xs text-foreground truncate flex-1">
-													{item.title}
-												</span>
-												<span className="text-[10px] text-muted-foreground ml-2 shrink-0">
+												<span className="text-[10px] text-muted-foreground">
 													{item.reason}
 												</span>
 											</div>
-										))}
-										{log.skippedItems.length > 10 && (
-											<p className="text-[10px] text-muted-foreground text-center py-1">
-												...and {log.skippedItems.length - 10} more
-											</p>
-										)}
-									</div>
+										</div>
+									))}
 								</div>
-							)}
-						</div>
+							</div>
+						)}
+
+						{/* Skipped items */}
+						{log.skippedItems && log.skippedItems.length > 0 && (
+							<div>
+								<h5 className="flex items-center gap-1.5 text-xs font-medium mb-2">
+									<SkipForward
+										className="h-3 w-3"
+										style={{ color: SEMANTIC_COLORS.warning.text }}
+									/>
+									Skipped ({log.skippedItems.length})
+								</h5>
+								<div className="space-y-1 max-h-40 overflow-y-auto">
+									{log.skippedItems.slice(0, 10).map((item: CleanerResultItem) => (
+										<div
+											key={item.id}
+											className="flex items-center justify-between rounded-lg px-3 py-2"
+											style={{
+												backgroundColor: `${serviceGradient.from}06`,
+												border: `1px solid ${serviceGradient.from}10`,
+											}}
+										>
+											<span className="text-xs text-foreground truncate flex-1">
+												{item.title}
+											</span>
+											<span className="text-[10px] text-muted-foreground ml-2 shrink-0">
+												{item.reason}
+											</span>
+										</div>
+									))}
+									{log.skippedItems.length > 10 && (
+										<p className="text-[10px] text-muted-foreground/40 text-center py-1">
+											...and {log.skippedItems.length - 10} more
+										</p>
+									)}
+								</div>
+							</div>
+						)}
 					</div>
-				)}
-			</GlassmorphicCard>
+				</div>
+			)}
 		</div>
 	);
 };

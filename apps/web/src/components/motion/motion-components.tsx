@@ -1,6 +1,6 @@
 "use client";
 
-import { motion, type HTMLMotionProps, type Variants } from "framer-motion";
+import { type HTMLMotionProps, motion, type Variants } from "framer-motion";
 import { forwardRef } from "react";
 import { cn } from "../../lib/utils";
 
@@ -68,7 +68,7 @@ export const MotionCard = forwardRef<HTMLDivElement, MotionCardProps>(
 			tapScaleValue = 0.98,
 			...props
 		},
-		ref
+		ref,
 	) => {
 		return (
 			<motion.div
@@ -80,7 +80,7 @@ export const MotionCard = forwardRef<HTMLDivElement, MotionCardProps>(
 								y: -4,
 								scale: hoverScale,
 								transition: springs.soft,
-						  }
+							}
 						: undefined
 				}
 				whileTap={
@@ -88,7 +88,7 @@ export const MotionCard = forwardRef<HTMLDivElement, MotionCardProps>(
 						? {
 								scale: tapScaleValue,
 								transition: springs.quick,
-						  }
+							}
 						: undefined
 				}
 				{...props}
@@ -96,7 +96,7 @@ export const MotionCard = forwardRef<HTMLDivElement, MotionCardProps>(
 				{children}
 			</motion.div>
 		);
-	}
+	},
 );
 MotionCard.displayName = "MotionCard";
 
@@ -130,7 +130,7 @@ export const MotionButton = forwardRef<HTMLButtonElement, MotionButtonProps>(
 						? {
 								scale: 1.02,
 								transition: springs.soft,
-						  }
+							}
 						: undefined
 				}
 				whileTap={
@@ -138,7 +138,7 @@ export const MotionButton = forwardRef<HTMLButtonElement, MotionButtonProps>(
 						? {
 								scale: 0.97,
 								transition: springs.quick,
-						  }
+							}
 						: undefined
 				}
 				{...props}
@@ -146,7 +146,7 @@ export const MotionButton = forwardRef<HTMLButtonElement, MotionButtonProps>(
 				{children}
 			</motion.button>
 		);
-	}
+	},
 );
 MotionButton.displayName = "MotionButton";
 
@@ -177,16 +177,8 @@ interface MotionFadeProps extends HTMLMotionProps<"div"> {
  */
 export const MotionFade = forwardRef<HTMLDivElement, MotionFadeProps>(
 	(
-		{
-			children,
-			className,
-			direction = "up",
-			distance = 20,
-			delay = 0,
-			duration = 0.4,
-			...props
-		},
-		ref
+		{ children, className, direction = "up", distance = 20, delay = 0, duration = 0.4, ...props },
+		ref,
 	) => {
 		const getInitialPosition = () => {
 			switch (direction) {
@@ -219,7 +211,7 @@ export const MotionFade = forwardRef<HTMLDivElement, MotionFadeProps>(
 				{children}
 			</motion.div>
 		);
-	}
+	},
 );
 MotionFade.displayName = "MotionFade";
 
@@ -275,7 +267,7 @@ export const MotionList = forwardRef<HTMLDivElement, MotionListProps>(
 				{children}
 			</motion.div>
 		);
-	}
+	},
 );
 MotionList.displayName = "MotionList";
 
@@ -342,7 +334,7 @@ export const MotionListItem = forwardRef<HTMLDivElement, MotionListItemProps>(
 				{children}
 			</motion.div>
 		);
-	}
+	},
 );
 MotionListItem.displayName = "MotionListItem";
 
@@ -384,7 +376,7 @@ export const MotionScale = forwardRef<HTMLDivElement, MotionScaleProps>(
 				{children}
 			</motion.div>
 		);
-	}
+	},
 );
 MotionScale.displayName = "MotionScale";
 
@@ -410,7 +402,10 @@ interface MotionGlowProps extends HTMLMotionProps<"div"> {
  * ```
  */
 export const MotionGlow = forwardRef<HTMLDivElement, MotionGlowProps>(
-	({ children, className, glowColor = "rgba(59, 130, 246, 0.3)", glowIntensity = 20, ...props }, ref) => {
+	(
+		{ children, className, glowColor = "rgba(59, 130, 246, 0.3)", glowIntensity = 20, ...props },
+		ref,
+	) => {
 		return (
 			<motion.div
 				ref={ref}
@@ -424,7 +419,7 @@ export const MotionGlow = forwardRef<HTMLDivElement, MotionGlowProps>(
 				{children}
 			</motion.div>
 		);
-	}
+	},
 );
 MotionGlow.displayName = "MotionGlow";
 

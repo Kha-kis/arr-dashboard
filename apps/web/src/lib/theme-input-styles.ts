@@ -132,7 +132,7 @@ export const getToggleButtonStyles = (gradient: ThemeGradient, isActive: boolean
 				borderColor: gradient.from,
 				backgroundColor: gradient.fromLight,
 				color: gradient.from,
-		  }
+			}
 		: undefined,
 
 	/**
@@ -158,16 +158,20 @@ export const getChipStyles = (gradient: ThemeGradient, _isActive: boolean = fals
  */
 export const INPUT_BASE_CLASSES = {
 	/** Standard text input */
-	input: "w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground transition-all duration-200 focus:outline-hidden",
+	input:
+		"w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground transition-all duration-200 focus:outline-hidden",
 
 	/** Select/dropdown */
-	select: "w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground transition-all duration-200 cursor-pointer focus:outline-hidden",
+	select:
+		"w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground transition-all duration-200 cursor-pointer focus:outline-hidden",
 
 	/** Textarea */
-	textarea: "w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground transition-all duration-200 resize-none focus:outline-hidden",
+	textarea:
+		"w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground transition-all duration-200 resize-none focus:outline-hidden",
 
 	/** Checkbox/Radio */
-	checkbox: "h-4 w-4 rounded border-2 transition-all duration-200 cursor-pointer border-border/50 bg-card/50 focus:ring-2 focus:ring-offset-0",
+	checkbox:
+		"h-4 w-4 rounded border-2 transition-all duration-200 cursor-pointer border-border/50 bg-card/50 focus:ring-2 focus:ring-offset-0",
 };
 
 /**

@@ -16,9 +16,9 @@
  * ```
  */
 
-import { useColorTheme } from "../providers/color-theme-provider";
 import { THEME_GRADIENTS, type ThemeGradient } from "../lib/theme-gradients";
 import type { ColorTheme } from "../providers/color-theme-provider";
+import { useColorTheme } from "../providers/color-theme-provider";
 
 interface UseThemeGradientReturn {
 	/** The current theme gradient colors */

@@ -1,16 +1,16 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Lock, Loader2 } from "lucide-react";
-import { apiRequest } from "../../../lib/api-client/base";
 import type { CurrentUser } from "@arr/shared";
+import { Loader2, Lock } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { Alert, AlertDescription } from "../../../components/ui";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { PasswordInput } from "../../../components/ui/password-input";
-import { Alert, AlertDescription } from "../../../components/ui";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { PasswordPolicy } from "../../../lib/api-client/auth";
+import { apiRequest } from "../../../lib/api-client/base";
 import { validatePassword } from "../../settings/lib/settings-utils";
 
 interface RegisterResponse {
@@ -106,7 +106,9 @@ export const PasswordSetup = ({ passwordPolicy = "strict" }: PasswordSetupProps)
 				<p className="text-xs text-muted-foreground">{passwordHint}</p>
 			</div>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-muted-foreground font-medium">Confirm Password</label>
+				<label className="text-xs uppercase text-muted-foreground font-medium">
+					Confirm Password
+				</label>
 				<PasswordInput
 					value={formState.confirmPassword}
 					onChange={(e) =>

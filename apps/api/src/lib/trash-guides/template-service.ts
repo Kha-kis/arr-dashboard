@@ -10,12 +10,16 @@ import type {
 	TrashTemplate,
 	UpdateTemplateRequest,
 } from "@arr/shared";
-import type { Prisma, PrismaClient, TrashTemplate as PrismaTrashTemplate } from "../../lib/prisma.js";
 import { z } from "zod";
-import { TemplateNotFoundError, ConflictError, AppValidationError } from "../errors.js";
-import { safeJsonParse } from "./utils.js";
+import type {
+	Prisma,
+	PrismaClient,
+	TrashTemplate as PrismaTrashTemplate,
+} from "../../lib/prisma.js";
+import { AppValidationError, ConflictError, TemplateNotFoundError } from "../errors.js";
 import { loggers } from "../logger.js";
 import { getErrorMessage } from "../utils/error-message.js";
+import { safeJsonParse } from "./utils.js";
 
 const log = loggers.trashGuides;
 
@@ -198,13 +202,20 @@ export class TemplateService {
 			whereClause.OR =
 				this.dbProvider === "postgresql"
 					? [
-							{ name: { contains: options.search, mode: "insensitive" } as unknown as Prisma.StringFilter<"TrashTemplate"> },
-							{ description: { contains: options.search, mode: "insensitive" } as unknown as Prisma.StringNullableFilter<"TrashTemplate"> },
+							{
+								name: {
+									contains: options.search,
+									mode: "insensitive",
+								} as unknown as Prisma.StringFilter<"TrashTemplate">,
+							},
+							{
+								description: {
+									contains: options.search,
+									mode: "insensitive",
+								} as unknown as Prisma.StringNullableFilter<"TrashTemplate">,
+							},
 						]
-					: [
-							{ name: { contains: options.search } },
-							{ description: { contains: options.search } },
-						];
+					: [{ name: { contains: options.search } }, { description: { contains: options.search } }];
 		}
 
 		// Determine if we need to include schedules (for active filter or sorting by usage)
@@ -454,9 +465,7 @@ export class TemplateService {
 		try {
 			rawData = JSON.parse(jsonData);
 		} catch (parseError) {
-			throw new AppValidationError(
-				`Invalid JSON format: ${getErrorMessage(parseError)}`,
-			);
+			throw new AppValidationError(`Invalid JSON format: ${getErrorMessage(parseError)}`);
 		}
 
 		// Validate with Zod schema
@@ -733,6 +742,9 @@ export class TemplateService {
 /**
  * Create a template service instance
  */
-export function createTemplateService(prisma: PrismaClient, dbProvider: "sqlite" | "postgresql" = "sqlite"): TemplateService {
+export function createTemplateService(
+	prisma: PrismaClient,
+	dbProvider: "sqlite" | "postgresql" = "sqlite",
+): TemplateService {
 	return new TemplateService(prisma, dbProvider);
 }

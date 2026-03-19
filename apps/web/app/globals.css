@@ -1,4 +1,4 @@
-@import 'tailwindcss';
+@import "tailwindcss";
 
 @config '../tailwind.config.ts';
 
@@ -11,13 +11,13 @@
   color utility to any element that depends on these defaults.
 */
 @layer base {
-  *,
-  ::after,
-  ::before,
-  ::backdrop,
-  ::file-selector-button {
-    border-color: var(--color-gray-200, currentcolor);
-  }
+	*,
+	::after,
+	::before,
+	::backdrop,
+	::file-selector-button {
+		border-color: var(--color-gray-200, currentcolor);
+	}
 }
 
 @layer base {
@@ -1034,8 +1034,8 @@
 		--chart-1: 210 65% 55%; /* Blue - downloading */
 		--chart-2: 26 100% 45%; /* Orange - seeding */
 		--chart-3: 110 94% 27%; /* Green - completed */
-		--chart-4: 0 100% 65%;  /* Red - error */
-		--chart-5: 0 0% 60%;    /* Gray - paused */
+		--chart-4: 0 100% 65%; /* Red - error */
+		--chart-5: 0 0% 60%; /* Gray - paused */
 
 		/* Radius: qBittorrent uses very minimal radius (3px) */
 		--radius: 0.1875rem;
@@ -1100,10 +1100,10 @@
 
 		/* Chart colors - qBittorrent style */
 		--chart-1: 210 42% 48%; /* Blue - downloading */
-		--chart-2: 26 65% 70%;  /* Orange - seeding */
+		--chart-2: 26 65% 70%; /* Orange - seeding */
 		--chart-3: 110 94% 27%; /* Green - completed */
-		--chart-4: 0 80% 55%;   /* Red - error */
-		--chart-5: 0 0% 50%;    /* Gray - paused */
+		--chart-4: 0 80% 55%; /* Red - error */
+		--chart-5: 0 0% 50%; /* Gray - paused */
 
 		/* Radius: qBittorrent uses very minimal radius (3px) */
 		--radius: 0.1875rem;
@@ -1276,8 +1276,12 @@
 	}
 
 	@keyframes scanlines {
-		0% { background-position: 0 0; }
-		100% { background-position: 0 4px; }
+		0% {
+			background-position: 0 0;
+		}
+		100% {
+			background-position: 0 4px;
+		}
 	}
 
 	/* Terminal - CRT screen glow/bloom */
@@ -1300,7 +1304,9 @@
 	[data-theme="terminal"] h2,
 	[data-theme="terminal"] h3,
 	[data-theme="terminal"] .gradient-text {
-		text-shadow: 0 0 10px hsl(120 100% 50% / 0.8), 0 0 20px hsl(120 100% 50% / 0.4);
+		text-shadow:
+			0 0 10px hsl(120 100% 50% / 0.8),
+			0 0 20px hsl(120 100% 50% / 0.4);
 	}
 
 	/* Winamp Theme - LED glow effect */
@@ -1308,15 +1314,22 @@
 	[data-theme="winamp"] h2,
 	[data-theme="winamp"] h3,
 	[data-theme="winamp"] .gradient-text {
-		text-shadow: 0 0 8px hsl(120 100% 50% / 0.9), 0 0 16px hsl(120 100% 50% / 0.5);
+		text-shadow:
+			0 0 8px hsl(120 100% 50% / 0.9),
+			0 0 16px hsl(120 100% 50% / 0.5);
 	}
 
 	/* Winamp - Brushed metal effect on cards */
 	[data-theme="winamp"] .glass,
 	[data-theme="winamp"] [class*="rounded"][class*="border"][class*="bg-card"] {
 		background-image:
-			linear-gradient(135deg, rgba(255,255,255,0.03) 0%, transparent 50%, rgba(0,0,0,0.05) 100%),
-			linear-gradient(to bottom, rgba(255,255,255,0.02) 0%, transparent 100%);
+			linear-gradient(
+				135deg,
+				rgba(255, 255, 255, 0.03) 0%,
+				transparent 50%,
+				rgba(0, 0, 0, 0.05) 100%
+			),
+			linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 0%, transparent 100%);
 		border-color: hsl(120 50% 25% / 0.5);
 	}
 
@@ -1403,19 +1416,24 @@
 	}
 
 	@keyframes chrome-shine {
-		0%, 100% { background-position: 0% 50%; }
-		50% { background-position: 100% 50%; }
+		0%,
+		100% {
+			background-position: 0% 50%;
+		}
+		50% {
+			background-position: 100% 50%;
+		}
 	}
 
 	/* Y2K Cyber - Holographic card effect */
 	[data-theme="cyber"] .glass,
 	[data-theme="cyber"] [class*="rounded"][class*="border"][class*="bg-card"] {
-		background-image:
-			linear-gradient(135deg,
-				hsl(195 100% 50% / 0.05) 0%,
-				hsl(300 100% 50% / 0.05) 50%,
-				hsl(195 100% 50% / 0.05) 100%
-			);
+		background-image: linear-gradient(
+			135deg,
+			hsl(195 100% 50% / 0.05) 0%,
+			hsl(300 100% 50% / 0.05) 50%,
+			hsl(195 100% 50% / 0.05) 100%
+		);
 		border-color: hsl(195 80% 40% / 0.4);
 	}
 
@@ -1436,8 +1454,13 @@
 	}
 
 	@keyframes grain-drift {
-		0%, 100% { transform: translate(0, 0); }
-		50% { transform: translate(-2%, -2%); }
+		0%,
+		100% {
+			transform: translate(0, 0);
+		}
+		50% {
+			transform: translate(-2%, -2%);
+		}
 	}
 
 	/* Film Noir - Cinematic vignette effect */
@@ -1510,9 +1533,17 @@
 	}
 
 	@keyframes vhs-flicker {
-		0%, 90%, 100% { opacity: 0.03; }
-		92% { opacity: 0.05; }
-		94% { opacity: 0.02; }
+		0%,
+		90%,
+		100% {
+			opacity: 0.03;
+		}
+		92% {
+			opacity: 0.05;
+		}
+		94% {
+			opacity: 0.02;
+		}
 	}
 
 	/* VHS - RGB color fringe/chromatic aberration on text */
@@ -1618,7 +1649,9 @@
 			hsl(180 100% 50% / 0.05) 100%
 		);
 		border-color: hsl(320 80% 50% / 0.4);
-		box-shadow: 0 0 20px hsl(320 100% 60% / 0.1), inset 0 0 20px hsl(320 100% 60% / 0.02);
+		box-shadow:
+			0 0 20px hsl(320 100% 60% / 0.1),
+			inset 0 0 20px hsl(320 100% 60% / 0.02);
 	}
 
 	/* ========================================
@@ -1672,13 +1705,11 @@
 	/* Amber CRT - Monochrome amber styling on cards */
 	[data-theme="amber"] .glass,
 	[data-theme="amber"] [class*="rounded"][class*="border"][class*="bg-card"] {
-		background-image: linear-gradient(
-			180deg,
-			hsl(35 100% 50% / 0.03) 0%,
-			transparent 100%
-		);
+		background-image: linear-gradient(180deg, hsl(35 100% 50% / 0.03) 0%, transparent 100%);
 		border-color: hsl(35 80% 40% / 0.4);
-		box-shadow: 0 0 15px hsl(35 100% 50% / 0.05), inset 0 0 10px hsl(35 100% 50% / 0.02);
+		box-shadow:
+			0 0 15px hsl(35 100% 50% / 0.05),
+			inset 0 0 10px hsl(35 100% 50% / 0.02);
 	}
 
 	/* ========================================
@@ -1697,7 +1728,8 @@
 
 	/* Cyberpunk - Keyframe Animations */
 	@keyframes cyberpunk-glitch {
-		0%, 100% {
+		0%,
+		100% {
 			clip-path: inset(0 0 0 0);
 			transform: translate(0);
 		}
@@ -1721,14 +1753,16 @@
 			clip-path: inset(5% 0 85% 0);
 			transform: translate(-3px, -1px) skewX(1deg);
 		}
-		12%, 100% {
+		12%,
+		100% {
 			clip-path: inset(0 0 0 0);
 			transform: translate(0);
 		}
 	}
 
 	@keyframes cyberpunk-chromatic {
-		0%, 100% {
+		0%,
+		100% {
 			text-shadow:
 				-2px 0 #ff2a6d,
 				2px 0 #05d9e8,
@@ -1763,41 +1797,94 @@
 	}
 
 	@keyframes cyberpunk-flicker {
-		0%, 100% { opacity: 1; }
-		2% { opacity: 0.85; }
-		4% { opacity: 1; }
-		5% { opacity: 0.9; }
-		6% { opacity: 1; }
-		41% { opacity: 1; }
-		42% { opacity: 0.88; }
-		43% { opacity: 1; }
-		77% { opacity: 1; }
-		78% { opacity: 0.92; }
-		79% { opacity: 1; }
-		80% { opacity: 0.85; }
-		81% { opacity: 1; }
+		0%,
+		100% {
+			opacity: 1;
+		}
+		2% {
+			opacity: 0.85;
+		}
+		4% {
+			opacity: 1;
+		}
+		5% {
+			opacity: 0.9;
+		}
+		6% {
+			opacity: 1;
+		}
+		41% {
+			opacity: 1;
+		}
+		42% {
+			opacity: 0.88;
+		}
+		43% {
+			opacity: 1;
+		}
+		77% {
+			opacity: 1;
+		}
+		78% {
+			opacity: 0.92;
+		}
+		79% {
+			opacity: 1;
+		}
+		80% {
+			opacity: 0.85;
+		}
+		81% {
+			opacity: 1;
+		}
 	}
 
 	@keyframes cyberpunk-scanline-move {
-		0% { transform: translateY(-100%); }
-		100% { transform: translateY(100vh); }
+		0% {
+			transform: translateY(-100%);
+		}
+		100% {
+			transform: translateY(100vh);
+		}
 	}
 
 	@keyframes cyberpunk-noise {
-		0%, 100% { background-position: 0 0; }
-		10% { background-position: -5% -10%; }
-		20% { background-position: -15% 5%; }
-		30% { background-position: 7% -25%; }
-		40% { background-position: 20% 15%; }
-		50% { background-position: -25% 10%; }
-		60% { background-position: 15% 5%; }
-		70% { background-position: 0% 15%; }
-		80% { background-position: 25% 35%; }
-		90% { background-position: -10% 10%; }
+		0%,
+		100% {
+			background-position: 0 0;
+		}
+		10% {
+			background-position: -5% -10%;
+		}
+		20% {
+			background-position: -15% 5%;
+		}
+		30% {
+			background-position: 7% -25%;
+		}
+		40% {
+			background-position: 20% 15%;
+		}
+		50% {
+			background-position: -25% 10%;
+		}
+		60% {
+			background-position: 15% 5%;
+		}
+		70% {
+			background-position: 0% 15%;
+		}
+		80% {
+			background-position: 25% 35%;
+		}
+		90% {
+			background-position: -10% 10%;
+		}
 	}
 
 	@keyframes cyberpunk-border-pulse {
-		0%, 100% {
+		0%,
+		100% {
 			box-shadow:
 				0 0 5px #ff2a6d,
 				0 0 10px #ff2a6d88,
@@ -1814,13 +1901,21 @@
 	}
 
 	@keyframes cyberpunk-data-stream {
-		0% { background-position: 0 0; }
-		100% { background-position: 0 200px; }
+		0% {
+			background-position: 0 0;
+		}
+		100% {
+			background-position: 0 200px;
+		}
 	}
 
 	@keyframes cyberpunk-holo-shimmer {
-		0% { background-position: -200% 0; }
-		100% { background-position: 200% 0; }
+		0% {
+			background-position: -200% 0;
+		}
+		100% {
+			background-position: 200% 0;
+		}
 	}
 
 	@keyframes cyberpunk-pulse-ring {
@@ -1836,8 +1931,13 @@
 	}
 
 	@keyframes cyberpunk-warning-blink {
-		0%, 100% { opacity: 1; }
-		50% { opacity: 0.5; }
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.5;
+		}
 	}
 
 	/* Cyberpunk - Digital noise/static overlay (static - no animation) */
@@ -1862,12 +1962,7 @@
 		height: 2px;
 		pointer-events: none;
 		z-index: 50; /* Decorative overlay - below interactive UI */
-		background: linear-gradient(
-			90deg,
-			#ff2a6d 0%,
-			#05d9e8 50%,
-			#ff2a6d 100%
-		);
+		background: linear-gradient(90deg, #ff2a6d 0%, #05d9e8 50%, #ff2a6d 100%);
 		box-shadow:
 			0 0 10px #05d9e8,
 			0 0 20px #ff2a6d66;
@@ -1965,9 +2060,11 @@
 			0 0 5px #ff2a6d44,
 			0 0 10px #05d9e822,
 			inset 0 0 5px #ff2a6d11;
-		transition: box-shadow 0.3s ease, border-color 0.3s ease;
+		transition:
+			box-shadow 0.3s ease,
+			border-color 0.3s ease;
+		/* Top-left corner reticle */
 		background-image:
-			/* Top-left corner reticle */
 			linear-gradient(to right, #05d9e8 0, #05d9e8 20px, transparent 20px),
 			linear-gradient(to bottom, #05d9e8 0, #05d9e8 20px, transparent 20px),
 			/* Top-right corner reticle */
@@ -1982,16 +2079,24 @@
 			/* Diagonal tech lines */
 			linear-gradient(135deg, #ff2a6d08 0%, transparent 30%, transparent 70%, #05d9e808 100%);
 		background-size:
-			20px 2px, 2px 20px,
-			20px 2px, 2px 20px,
-			20px 2px, 2px 20px,
-			20px 2px, 2px 20px,
+			20px 2px,
+			2px 20px,
+			20px 2px,
+			2px 20px,
+			20px 2px,
+			2px 20px,
+			20px 2px,
+			2px 20px,
 			100% 100%;
 		background-position:
-			top left, top left,
-			top right, top right,
-			bottom left, bottom left,
-			bottom right, bottom right,
+			top left,
+			top left,
+			top right,
+			top right,
+			bottom left,
+			bottom left,
+			bottom right,
+			bottom right,
 			0 0;
 		background-repeat: no-repeat;
 		position: relative;
@@ -2023,7 +2128,9 @@
 			0 0 40px #ff2a6d33,
 			inset 0 1px 0 #ff6b9d44;
 		/* Removed constant pulse-ring animation */
-		transition: box-shadow 0.3s ease, transform 0.2s ease;
+		transition:
+			box-shadow 0.3s ease,
+			transform 0.2s ease;
 		position: relative;
 		overflow: hidden;
 	}
@@ -2037,12 +2144,7 @@
 		left: -100%;
 		width: 100%;
 		height: 100%;
-		background: linear-gradient(
-			90deg,
-			transparent 0%,
-			#ffffff33 50%,
-			transparent 100%
-		);
+		background: linear-gradient(90deg, transparent 0%, #ffffff33 50%, transparent 100%);
 		/* Animation only on hover */
 	}
 
@@ -2091,11 +2193,7 @@
 	/* Cyberpunk - Neon badges (static gradient, no constant shimmer) */
 	[data-theme="cyberpunk"] [class*="badge"],
 	[data-theme="cyberpunk"] [class*="Badge"] {
-		background: linear-gradient(
-			90deg,
-			#ff2a6d 0%,
-			#05d9e8 100%
-		) !important;
+		background: linear-gradient(90deg, #ff2a6d 0%, #05d9e8 100%) !important;
 		color: #000 !important;
 		font-weight: 700;
 		border: 1px solid #ffffff55;
@@ -2130,8 +2228,8 @@
 	/* Cyberpunk - Sidebar with tech lines (static, no data stream animation) */
 	[data-theme="cyberpunk"] aside,
 	[data-theme="cyberpunk"] [class*="sidebar"] {
+		/* Vertical data lines */
 		background-image:
-			/* Vertical data lines */
 			repeating-linear-gradient(
 				0deg,
 				transparent 0px,
@@ -2342,12 +2440,7 @@
 	/* Cyberpunk - Skeleton loading with scan effect */
 	[data-theme="cyberpunk"] [class*="skeleton"],
 	[data-theme="cyberpunk"] [class*="Skeleton"] {
-		background: linear-gradient(
-			90deg,
-			#1a0a14 0%,
-			#ff2a6d22 50%,
-			#1a0a14 100%
-		) !important;
+		background: linear-gradient(90deg, #1a0a14 0%, #ff2a6d22 50%, #1a0a14 100%) !important;
 		/* Static gradient - removed shimmer animation */
 	}
 
@@ -2358,7 +2451,8 @@
 
 	/* Cyberpunk - Sporadic glitch animation (rare bursts, not constant) */
 	@keyframes cyberpunk-sporadic-glitch {
-		0%, 95% {
+		0%,
+		95% {
 			transform: translate(0);
 			text-shadow:
 				-2px 0 #ff2a6d,
@@ -2393,7 +2487,8 @@
 				2px 0 #05d9e8,
 				0 0 20px #ff2a6d;
 		}
-		97.5%, 100% {
+		97.5%,
+		100% {
 			transform: translate(0);
 			text-shadow:
 				-2px 0 #ff2a6d,
@@ -2409,13 +2504,15 @@
 		50% {
 			background-position: 200% 0;
 		}
-		50.01%, 100% {
+		50.01%,
+		100% {
 			background-position: -200% 0;
 		}
 	}
 
 	@keyframes cyberpunk-skyline-glow {
-		0%, 100% {
+		0%,
+		100% {
 			filter: drop-shadow(0 0 10px #ff2a6d66) drop-shadow(0 0 20px #05d9e833);
 		}
 		50% {
@@ -2424,7 +2521,8 @@
 	}
 
 	@keyframes cyberpunk-bracket-pulse {
-		0%, 100% {
+		0%,
+		100% {
 			opacity: 0.7;
 		}
 		50% {
@@ -2552,7 +2650,7 @@
 		position: fixed;
 		bottom: 20px;
 		left: 80px;
-		font-family: 'Courier New', monospace;
+		font-family: "Courier New", monospace;
 		font-size: 10px;
 		letter-spacing: 0.15em;
 		color: #05d9e888;
@@ -2614,7 +2712,7 @@
 
 	/* *arr Suite - Typography: Roboto font stack from Sonarr */
 	[data-theme="arr"] {
-		font-family: 'Roboto', 'Open Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+		font-family: "Roboto", "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
 		font-size: 14px;
 		line-height: 1.528571429;
 	}
@@ -2653,7 +2751,10 @@
 		border-radius: 4px;
 		font-weight: 400;
 		font-size: 14px;
-		transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+		transition:
+			background-color 0.15s ease-in-out,
+			border-color 0.15s ease-in-out,
+			box-shadow 0.15s ease-in-out;
 	}
 
 	/* *arr Suite - Default button (Sonarr style) */
@@ -2745,7 +2846,9 @@
 		background-color: hsl(var(--input));
 		font-size: 14px;
 		color: hsl(var(--foreground));
-		transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+		transition:
+			border-color 0.15s ease-in-out,
+			box-shadow 0.15s ease-in-out;
 	}
 
 	[data-theme="arr"] textarea {
@@ -2759,7 +2862,9 @@
 	[data-theme="arr"] select:focus {
 		outline: none;
 		border-color: #66afe9;
-		box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075), 0 0 8px rgba(102, 175, 233, 0.6);
+		box-shadow:
+			inset 0 1px 1px rgba(0, 0, 0, 0.075),
+			0 0 8px rgba(102, 175, 233, 0.6);
 	}
 
 	/* *arr Suite - Input error state */
@@ -2837,7 +2942,10 @@
 		color: hsl(var(--sidebar-foreground));
 		padding: 12px 24px;
 		border-left: 3px solid transparent;
-		transition: color 0.3s ease-in-out, border-color 0.3s ease-in-out, background-color 0.3s ease-in-out;
+		transition:
+			color 0.3s ease-in-out,
+			border-color 0.3s ease-in-out,
+			background-color 0.3s ease-in-out;
 	}
 
 	/* *arr Suite - Sidebar hover (themeBlue on hover) */
@@ -3268,9 +3376,10 @@
 	   - Elements inside buttons (interactive orbs)
 	   - Gradient text (elements with background-clip: text)
 	   Using :not() with :where() for broader exclusions */
-	[data-theme="qbittorrent"] [style*="gradient"]:where(
-		:not(.pointer-events-none):not(.fixed):not([data-appearance-settings] *)
-	):not([style*="background-clip"]):not([style*="BackgroundClip"]) {
+	[data-theme="qbittorrent"]
+		[style*="gradient"]:where(
+			:not(.pointer-events-none):not(.fixed):not([data-appearance-settings] *)
+		):not([style*="background-clip"]):not([style*="BackgroundClip"]) {
 		background: transparent !important;
 	}
 
@@ -4010,33 +4119,51 @@
 	}
 
 	/* Reset inner content padding for cards in tabpanels */
-	[data-theme="qbittorrent"] [role="tabpanel"] [class*="backdrop-blur"][class*="rounded-2xl"] > .p-4,
+	[data-theme="qbittorrent"]
+		[role="tabpanel"]
+		[class*="backdrop-blur"][class*="rounded-2xl"]
+		> .p-4,
 	[data-theme="qbittorrent"] [role="tabpanel"] [class*="backdrop-blur"][class*="rounded-2xl"] .p-4 {
 		padding: 16px !important;
 		display: block !important;
 	}
 
 	/* Reset flex containers inside tabpanel cards */
-	[data-theme="qbittorrent"] [role="tabpanel"] [class*="backdrop-blur"][class*="rounded-2xl"] .flex {
+	[data-theme="qbittorrent"]
+		[role="tabpanel"]
+		[class*="backdrop-blur"][class*="rounded-2xl"]
+		.flex {
 		flex-direction: row !important;
 	}
 
-	[data-theme="qbittorrent"] [role="tabpanel"] [class*="backdrop-blur"][class*="rounded-2xl"] .flex-col {
+	[data-theme="qbittorrent"]
+		[role="tabpanel"]
+		[class*="backdrop-blur"][class*="rounded-2xl"]
+		.flex-col {
 		flex-direction: column !important;
 	}
 
 	/* Ensure all content is visible in tabpanel cards (undo display:none rules) */
 	/* NOTE: Exclude .grid elements so theme selectors maintain grid layout */
-	[data-theme="qbittorrent"] [role="tabpanel"] [class*="backdrop-blur"][class*="rounded-2xl"] *:not(.grid) {
+	[data-theme="qbittorrent"]
+		[role="tabpanel"]
+		[class*="backdrop-blur"][class*="rounded-2xl"]
+		*:not(.grid) {
 		display: revert !important;
 	}
 
 	/* Re-apply flex where needed */
-	[data-theme="qbittorrent"] [role="tabpanel"] [class*="backdrop-blur"][class*="rounded-2xl"] .flex {
+	[data-theme="qbittorrent"]
+		[role="tabpanel"]
+		[class*="backdrop-blur"][class*="rounded-2xl"]
+		.flex {
 		display: flex !important;
 	}
 
-	[data-theme="qbittorrent"] [role="tabpanel"] [class*="backdrop-blur"][class*="rounded-2xl"] .hidden {
+	[data-theme="qbittorrent"]
+		[role="tabpanel"]
+		[class*="backdrop-blur"][class*="rounded-2xl"]
+		.hidden {
 		display: none !important;
 	}
 
@@ -4048,7 +4175,11 @@
 	/* Force grid containers to single column FIRST - ONLY for MEDIA CARDS (Library/Discover) */
 	/* NOTE: Must exclude tabpanels (settings) and grids containing articles (TRaSH templates) */
 	/* Only target grids with media cards that have poster thumbnails (h-36 class) */
-	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)):has([class*="backdrop-blur"][class*="rounded-2xl"] [class*="h-36"]) {
+	[data-theme="qbittorrent"]
+		main
+		[class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)):has(
+			[class*="backdrop-blur"][class*="rounded-2xl"] [class*="h-36"]
+		) {
 		display: flex !important;
 		flex-direction: column !important;
 		gap: 0 !important;
@@ -4057,7 +4188,12 @@
 	/* Target GlassmorphicCard elements ONLY within grids - for library/media pages */
 	/* IMPORTANT: Exclude button elements, standard Card components, tabpanels, and articles (TRaSH templates) */
 	/* NOTE: Must exclude both [role="tabpanel"] itself AND descendants */
-	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) > [class*="backdrop-blur"][class*="rounded-2xl"]:not(button):not([class*="text-card-foreground"]):not(article) {
+	[data-theme="qbittorrent"]
+		main
+		[class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article))
+		> [class*="backdrop-blur"][class*="rounded-2xl"]:not(button):not(
+			[class*="text-card-foreground"]
+		):not(article) {
 		display: flex !important;
 		flex-direction: row !important;
 		align-items: center !important;
@@ -4077,18 +4213,32 @@
 	}
 
 	/* Alternating row colors - only for direct grid children (library cards, NOT articles) */
-	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) > [class*="backdrop-blur"][class*="rounded-2xl"]:nth-child(odd) {
+	[data-theme="qbittorrent"]
+		main
+		[class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article))
+		> [class*="backdrop-blur"][class*="rounded-2xl"]:nth-child(odd) {
 		background: hsl(var(--muted) / 0.2) !important;
 	}
 
 	/* Row hover - qBittorrent selection blue - only for direct grid children */
-	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) > [class*="backdrop-blur"][class*="rounded-2xl"]:hover {
+	[data-theme="qbittorrent"]
+		main
+		[class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article))
+		> [class*="backdrop-blur"][class*="rounded-2xl"]:hover {
 		background: hsl(210 65% 55% / 0.2) !important;
 	}
 
 	/* Poster/thumbnail - smaller (ONLY for media cards with posters - library/discover pages) */
-	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] [class*="h-36"],
-	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] [class*="w-24"] {
+	[data-theme="qbittorrent"]
+		main
+		[class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article))
+		[class*="backdrop-blur"][class*="rounded-2xl"]
+		[class*="h-36"],
+	[data-theme="qbittorrent"]
+		main
+		[class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article))
+		[class*="backdrop-blur"][class*="rounded-2xl"]
+		[class*="w-24"] {
 		width: 32px !important;
 		height: 48px !important;
 		min-width: 32px !important;
@@ -4097,7 +4247,11 @@
 	}
 
 	/* Inner content - horizontal flow (ONLY for media cards - exclude articles) */
-	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] > .flex {
+	[data-theme="qbittorrent"]
+		main
+		[class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article))
+		[class*="backdrop-blur"][class*="rounded-2xl"]
+		> .flex {
 		flex-direction: row !important;
 		align-items: center !important;
 		flex: 1 !important;
@@ -4106,7 +4260,11 @@
 	}
 
 	/* Title container (ONLY for media cards - exclude articles) */
-	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] .flex-1.min-w-0 {
+	[data-theme="qbittorrent"]
+		main
+		[class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article))
+		[class*="backdrop-blur"][class*="rounded-2xl"]
+		.flex-1.min-w-0 {
 		display: flex !important;
 		flex-direction: row !important;
 		flex-wrap: wrap !important;
@@ -4116,7 +4274,11 @@
 	}
 
 	/* Title - compact (ONLY for media cards - exclude articles) */
-	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] h3 {
+	[data-theme="qbittorrent"]
+		main
+		[class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article))
+		[class*="backdrop-blur"][class*="rounded-2xl"]
+		h3 {
 		font-size: 12px !important;
 		font-weight: 500 !important;
 		white-space: nowrap !important;
@@ -4126,51 +4288,96 @@
 	}
 
 	/* Hide space-y vertical gaps (ONLY for media cards - exclude articles) */
-	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] .space-y-2 {
+	[data-theme="qbittorrent"]
+		main
+		[class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article))
+		[class*="backdrop-blur"][class*="rounded-2xl"]
+		.space-y-2 {
 		display: contents !important;
 	}
 
-	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] .space-y-2 > * {
+	[data-theme="qbittorrent"]
+		main
+		[class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article))
+		[class*="backdrop-blur"][class*="rounded-2xl"]
+		.space-y-2
+		> * {
 		margin-top: 0 !important;
 	}
 
 	/* HIDE: Description/overview (ONLY for media cards - exclude articles) */
-	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] [class*="line-clamp"],
-	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] p[class*="leading-relaxed"] {
+	[data-theme="qbittorrent"]
+		main
+		[class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article))
+		[class*="backdrop-blur"][class*="rounded-2xl"]
+		[class*="line-clamp"],
+	[data-theme="qbittorrent"]
+		main
+		[class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article))
+		[class*="backdrop-blur"][class*="rounded-2xl"]
+		p[class*="leading-relaxed"] {
 		display: none !important;
 	}
 
 	/* HIDE: Read more button and its container (ONLY for media cards - exclude articles) */
-	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] .group.relative {
+	[data-theme="qbittorrent"]
+		main
+		[class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article))
+		[class*="backdrop-blur"][class*="rounded-2xl"]
+		.group.relative {
 		display: none !important;
 	}
 
 	/* HIDE: Genres row (has text-xs class, unlike action button group) (ONLY for media cards) */
-	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] [class*="gap-1.5"][class*="flex-wrap"][class*="text-xs"] {
+	[data-theme="qbittorrent"]
+		main
+		[class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article))
+		[class*="backdrop-blur"][class*="rounded-2xl"]
+		[class*="gap-1.5"][class*="flex-wrap"][class*="text-xs"] {
 		display: none !important;
 	}
 
 	/* Keep status badges visible but compact (ONLY for media cards - exclude articles) */
-	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] .gap-2:has(.rounded-full) {
+	[data-theme="qbittorrent"]
+		main
+		[class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article))
+		[class*="backdrop-blur"][class*="rounded-2xl"]
+		.gap-2:has(.rounded-full) {
 		gap: 4px !important;
 		flex-wrap: nowrap !important;
 	}
 
-	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] .rounded-full {
+	[data-theme="qbittorrent"]
+		main
+		[class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article))
+		[class*="backdrop-blur"][class*="rounded-2xl"]
+		.rounded-full {
 		padding: 1px 5px !important;
 		font-size: 9px !important;
 	}
 
 	/* Metadata row - inline (ONLY for media cards - exclude articles) */
-	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] [class*="gap-x-4"] {
+	[data-theme="qbittorrent"]
+		main
+		[class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article))
+		[class*="backdrop-blur"][class*="rounded-2xl"]
+		[class*="gap-x-4"] {
 		gap: 10px !important;
 		flex-wrap: nowrap !important;
 		font-size: 10px !important;
 	}
 
 	/* Action buttons container - positioned right (ONLY for media cards - exclude articles) */
-	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] > .flex.items-center.justify-between,
-	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] > div:last-child:has(button) {
+	[data-theme="qbittorrent"]
+		main
+		[class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article))
+		[class*="backdrop-blur"][class*="rounded-2xl"]
+		> .flex.items-center.justify-between,
+	[data-theme="qbittorrent"]
+		main
+		[class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article))
+		[class*="backdrop-blur"][class*="rounded-2xl"]
+		> div:last-child:has(button) {
 		position: absolute !important;
 		right: 10px !important;
 		top: 50% !important;
@@ -4184,7 +4391,11 @@
 	}
 
 	/* Buttons - compact (ONLY for media cards - exclude articles) */
-	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] button {
+	[data-theme="qbittorrent"]
+		main
+		[class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article))
+		[class*="backdrop-blur"][class*="rounded-2xl"]
+		button {
 		padding: 3px 6px !important;
 		font-size: 10px !important;
 		min-height: 22px !important;
@@ -4192,14 +4403,27 @@
 		border-radius: 2px !important;
 	}
 
-	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] button svg {
+	[data-theme="qbittorrent"]
+		main
+		[class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article))
+		[class*="backdrop-blur"][class*="rounded-2xl"]
+		button
+		svg {
 		width: 12px !important;
 		height: 12px !important;
 	}
 
 	/* HIDE: Ghost buttons (TMDB, IMDB, TVDB links) (ONLY for media cards - exclude articles) */
-	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] button[class*="text-fg-muted"],
-	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] button[class*="ghost"] {
+	[data-theme="qbittorrent"]
+		main
+		[class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article))
+		[class*="backdrop-blur"][class*="rounded-2xl"]
+		button[class*="text-fg-muted"],
+	[data-theme="qbittorrent"]
+		main
+		[class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article))
+		[class*="backdrop-blur"][class*="rounded-2xl"]
+		button[class*="ghost"] {
 		display: none !important;
 	}
 
@@ -4241,8 +4465,13 @@
 
 	/* Premium shimmer for locked themes */
 	@keyframes premium-shimmer {
-		0%, 100% { background-position: 0% 50%; }
-		50% { background-position: 100% 50%; }
+		0%,
+		100% {
+			background-position: 0% 50%;
+		}
+		50% {
+			background-position: 100% 50%;
+		}
 	}
 
 	/* Glow pulse effect */
@@ -4379,7 +4608,9 @@
 
 	/* Premium hover lift effect */
 	.hover-lift {
-		transition: transform 0.3s var(--ease-out), box-shadow 0.3s var(--ease-out);
+		transition:
+			transform 0.3s var(--ease-out),
+			box-shadow 0.3s var(--ease-out);
 	}
 
 	.hover-lift:hover {
@@ -4418,20 +4649,42 @@
 	/* Focus ring with theme color */
 	.focus-ring-premium:focus-visible {
 		outline: none;
-		box-shadow: 0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--primary));
+		box-shadow:
+			0 0 0 2px hsl(var(--background)),
+			0 0 0 4px hsl(var(--primary));
 	}
 
 	/* Animation delay utilities for staggered reveals */
-	.animate-delay-1 { animation-delay: 50ms; }
-	.animate-delay-2 { animation-delay: 100ms; }
-	.animate-delay-3 { animation-delay: 150ms; }
-	.animate-delay-4 { animation-delay: 200ms; }
-	.animate-delay-5 { animation-delay: 250ms; }
-	.animate-delay-6 { animation-delay: 300ms; }
-	.animate-delay-7 { animation-delay: 350ms; }
-	.animate-delay-8 { animation-delay: 400ms; }
-	.animate-delay-9 { animation-delay: 450ms; }
-	.animate-delay-10 { animation-delay: 500ms; }
+	.animate-delay-1 {
+		animation-delay: 50ms;
+	}
+	.animate-delay-2 {
+		animation-delay: 100ms;
+	}
+	.animate-delay-3 {
+		animation-delay: 150ms;
+	}
+	.animate-delay-4 {
+		animation-delay: 200ms;
+	}
+	.animate-delay-5 {
+		animation-delay: 250ms;
+	}
+	.animate-delay-6 {
+		animation-delay: 300ms;
+	}
+	.animate-delay-7 {
+		animation-delay: 350ms;
+	}
+	.animate-delay-8 {
+		animation-delay: 400ms;
+	}
+	.animate-delay-9 {
+		animation-delay: 450ms;
+	}
+	.animate-delay-10 {
+		animation-delay: 500ms;
+	}
 
 	/* ========================================
 	 * REDUCED MOTION SUPPORT

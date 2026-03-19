@@ -1,9 +1,9 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { cn } from "../../lib/utils";
-import { useThemeGradient } from "../../hooks/useThemeGradient";
 import type { LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
+import { useThemeGradient } from "../../hooks/useThemeGradient";
+import { cn } from "../../lib/utils";
 
 interface PremiumPageHeaderProps {
 	/** Small label above the title (e.g., "Activity", "Media Library") */
@@ -66,10 +66,7 @@ export const PremiumPageHeader = ({
 
 	return (
 		<header
-			className={cn(
-				"relative animate-in fade-in slide-in-from-bottom-4 duration-500",
-				className
-			)}
+			className={cn("relative animate-in fade-in slide-in-from-bottom-4 duration-500", className)}
 			style={{
 				animationDelay: `${animationDelay}ms`,
 				animationFillMode: "backwards",
@@ -86,7 +83,7 @@ export const PremiumPageHeader = ({
 					)}
 
 					{/* Title - optionally with gradient */}
-					<h1 className="text-3xl font-bold tracking-tight">
+					<h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
 						{gradientTitle ? (
 							<span
 								style={{
@@ -108,10 +105,7 @@ export const PremiumPageHeader = ({
 						<p className="text-muted-foreground max-w-xl">
 							{description}
 							{highlightStat && (
-								<span
-									className="font-medium"
-									style={{ color: themeGradient.from }}
-								>
+								<span className="font-medium" style={{ color: themeGradient.from }}>
 									{description ? " " : ""}
 									{highlightStat.value} {highlightStat.label}
 								</span>
@@ -121,11 +115,7 @@ export const PremiumPageHeader = ({
 				</div>
 
 				{/* Actions */}
-				{actions && (
-					<div className="flex items-center gap-2">
-						{actions}
-					</div>
-				)}
+				{actions && <div className="flex items-center gap-2">{actions}</div>}
 			</div>
 		</header>
 	);
@@ -171,7 +161,7 @@ export const PremiumCard = ({
 			className={cn(
 				"rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs overflow-hidden",
 				"animate-in fade-in slide-in-from-bottom-4 duration-500",
-				className
+				className,
 			)}
 			style={{
 				animationDelay: `${animationDelay}ms`,
@@ -183,13 +173,17 @@ export const PremiumCard = ({
 					{Icon && (
 						<div
 							className="flex h-10 w-10 items-center justify-center rounded-xl"
-							style={gradientIcon ? {
-								background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
-								boxShadow: `0 8px 24px -8px ${themeGradient.glow}`,
-							} : {
-								background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
-								border: `1px solid ${themeGradient.from}30`,
-							}}
+							style={
+								gradientIcon
+									? {
+											background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+											boxShadow: `0 8px 24px -8px ${themeGradient.glow}`,
+										}
+									: {
+											background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+											border: `1px solid ${themeGradient.from}30`,
+										}
+							}
 						>
 							<Icon
 								className="h-5 w-5"
@@ -200,17 +194,13 @@ export const PremiumCard = ({
 					{(title || description) && (
 						<div>
 							{title && <h2 className="text-lg font-semibold">{title}</h2>}
-							{description && (
-								<p className="text-sm text-muted-foreground">{description}</p>
-							)}
+							{description && <p className="text-sm text-muted-foreground">{description}</p>}
 						</div>
 					)}
 				</div>
 			)}
 
-			<div className={cn(showHeader && (title || Icon) ? "p-6" : "p-0")}>
-				{children}
-			</div>
+			<div className={cn(showHeader && (title || Icon) ? "p-6" : "p-0")}>{children}</div>
 		</div>
 	);
 };
@@ -258,7 +248,7 @@ export const StatCard = ({
 				"group relative overflow-hidden rounded-2xl border border-border/50 bg-card/50 backdrop-blur-xs p-6 text-left transition-all duration-500",
 				"animate-in fade-in slide-in-from-bottom-4",
 				onClick && "cursor-pointer hover:border-border hover:shadow-lg",
-				!onClick && "cursor-default"
+				!onClick && "cursor-default",
 			)}
 			style={{
 				animationDelay: `${animationDelay}ms`,
@@ -269,7 +259,7 @@ export const StatCard = ({
 			<div
 				className={cn(
 					"pointer-events-none absolute -inset-4 opacity-0 blur-2xl transition-opacity duration-500",
-					onClick && "group-hover:opacity-40"
+					onClick && "group-hover:opacity-40",
 				)}
 				style={{ backgroundColor: themeGradient.glow }}
 			/>
@@ -281,7 +271,7 @@ export const StatCard = ({
 						<div
 							className={cn(
 								"flex h-12 w-12 items-center justify-center rounded-xl transition-all duration-300",
-								onClick && "group-hover:scale-110"
+								onClick && "group-hover:scale-110",
 							)}
 							style={{
 								background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
@@ -298,7 +288,7 @@ export const StatCard = ({
 					<span
 						className={cn(
 							"text-4xl font-bold tracking-tight transition-all duration-300",
-							onClick && "group-hover:translate-x-1"
+							onClick && "group-hover:translate-x-1",
 						)}
 						style={{
 							background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
@@ -312,22 +302,16 @@ export const StatCard = ({
 				</div>
 
 				{/* Label */}
-				<p className="text-sm font-medium text-foreground uppercase tracking-wide">
-					{label}
-				</p>
+				<p className="text-sm font-medium text-foreground uppercase tracking-wide">{label}</p>
 
 				{/* Description */}
-				{description && (
-					<p className="mt-1 text-xs text-muted-foreground">
-						{description}
-					</p>
-				)}
+				{description && <p className="mt-1 text-xs text-muted-foreground">{description}</p>}
 
 				{/* Active indicator line */}
 				<div
 					className={cn(
 						"absolute bottom-0 left-0 h-0.5 transition-all duration-500",
-						onClick ? "w-0 group-hover:w-full" : "w-8"
+						onClick ? "w-0 group-hover:w-full" : "w-8",
 					)}
 					style={{
 						background: `linear-gradient(90deg, ${themeGradient.from}, ${themeGradient.to})`,

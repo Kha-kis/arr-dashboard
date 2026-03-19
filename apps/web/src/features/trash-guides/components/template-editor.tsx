@@ -1,18 +1,34 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import type { TrashTemplate, TemplateConfig, TrashCustomFormat, TrashCustomFormatGroup, CustomQualityConfig } from "@arr/shared";
-import { QualityGroupEditor } from "./quality-group-editor";
+import type {
+	CustomQualityConfig,
+	TemplateConfig,
+	TrashCustomFormat,
+	TrashCustomFormatGroup,
+	TrashTemplate,
+} from "@arr/shared";
+import {
+	AlertTriangle,
+	Gauge,
+	Minus,
+	Save,
+	Settings,
+	Shield,
+	Sliders,
+	Trash2,
+	X,
+} from "lucide-react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { Alert, AlertDescription, Button, Input } from "../../../components/ui";
+import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useCreateTemplate, useUpdateTemplate } from "../../../hooks/api/useTemplates";
 import { useTrashCacheEntries } from "../../../hooks/api/useTrashCache";
-import { Alert, AlertDescription, Input, Button } from "../../../components/ui";
-import { X, Save, Minus, Settings, AlertTriangle, Trash2, Shield, Gauge, Sliders } from "lucide-react";
-import { toast } from "sonner";
+import { getErrorMessage } from "../../../lib/error-utils";
+import { getEffectiveQualityConfig } from "../lib/quality-config-utils";
 import { ConditionEditor } from "./condition-editor";
 import { InstanceOverridesPanel } from "./instance-overrides-panel";
-import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
-import { getEffectiveQualityConfig } from "../lib/quality-config-utils";
-import { getErrorMessage } from "../../../lib/error-utils";
+import { QualityGroupEditor } from "./quality-group-editor";
 
 /** Specification type from TrashCustomFormat with enabled flag for UI */
 type SpecificationWithEnabled = TrashCustomFormat["specifications"][number] & { enabled: boolean };
@@ -27,10 +43,15 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 	const [name, setName] = useState("");
 	const [description, setDescription] = useState("");
 	const [serviceType, setServiceType] = useState<"RADARR" | "SONARR">("RADARR");
-	const [selectedFormats, setSelectedFormats] = useState<Map<string, {
-		scoreOverride?: number;
-		conditionsEnabled: Record<string, boolean>;
-	}>>(new Map());
+	const [selectedFormats, setSelectedFormats] = useState<
+		Map<
+			string,
+			{
+				scoreOverride?: number;
+				conditionsEnabled: Record<string, boolean>;
+			}
+		>
+	>(new Map());
 	const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
 	const [conditionEditorFormat, setConditionEditorFormat] = useState<{
 		trashId: string;
@@ -79,10 +100,12 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 
 			// Initialize quality configuration - use effective config from template
 			// (considers both customQualityConfig and qualityProfile)
-			setCustomQualityConfig(getEffectiveQualityConfig(template.config) ?? {
-				useCustomQualities: false,
-				items: [],
-			});
+			setCustomQualityConfig(
+				getEffectiveQualityConfig(template.config) ?? {
+					useCustomQualities: false,
+					items: [],
+				},
+			);
 		} else {
 			// Reset for new template
 			setName("");
@@ -104,13 +127,13 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 		if (!name.trim()) return;
 
 		// Get cache entries for the selected service type
-		const customFormatsCache = cacheEntries?.find(e => e.configType === "CUSTOM_FORMATS");
-		const groupsCache = cacheEntries?.find(e => e.configType === "CF_GROUPS");
+		const customFormatsCache = cacheEntries?.find((e) => e.configType === "CUSTOM_FORMATS");
+		const groupsCache = cacheEntries?.find((e) => e.configType === "CF_GROUPS");
 
 		// Build lookup maps from existing template data
 		// These are used for EXISTING items - we preserve their stored data and only apply user's changes
-		const existingCfMap = new Map<string, TemplateConfig['customFormats'][number]>();
-		const existingGroupMap = new Map<string, TemplateConfig['customFormatGroups'][number]>();
+		const existingCfMap = new Map<string, TemplateConfig["customFormats"][number]>();
+		const existingGroupMap = new Map<string, TemplateConfig["customFormatGroups"][number]>();
 		if (template) {
 			for (const cf of template.config.customFormats) {
 				existingCfMap.set(cf.trashId, cf);
@@ -134,9 +157,7 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 			},
 			// Explicitly set: when disabled, override the base spread's value
 			// with undefined so it doesn't resurrect a stale customQualityConfig
-			customQualityConfig: customQualityConfig.useCustomQualities
-				? customQualityConfig
-				: undefined,
+			customQualityConfig: customQualityConfig.useCustomQualities ? customQualityConfig : undefined,
 		};
 
 		// Track items that couldn't be resolved (new items not in cache)
@@ -166,7 +187,7 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 				});
 			} else {
 				// NEW CF: Look up from cache (this is what cache is for - discovering new items)
-				const cacheFormat = formats.find(f => f.trash_id === trashId);
+				const cacheFormat = formats.find((f) => f.trash_id === trashId);
 				if (cacheFormat) {
 					config.customFormats.push({
 						trashId,
@@ -206,7 +227,7 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 				});
 			} else {
 				// NEW GROUP: Look up from cache
-				const cacheGroup = groups.find(g => g.trash_id === trashId);
+				const cacheGroup = groups.find((g) => g.trash_id === trashId);
 				if (cacheGroup) {
 					config.customFormatGroups.push({
 						trashId,
@@ -296,22 +317,24 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 		setSelectedGroups(newSet);
 	};
 
-	const customFormatsCache = cacheEntries?.find(e => e.configType === "CUSTOM_FORMATS");
-	const groupsCache = cacheEntries?.find(e => e.configType === "CF_GROUPS");
+	const customFormatsCache = cacheEntries?.find((e) => e.configType === "CUSTOM_FORMATS");
+	const groupsCache = cacheEntries?.find((e) => e.configType === "CF_GROUPS");
 	const availableFormats = (customFormatsCache?.data as TrashCustomFormat[]) || [];
 	const availableGroups = (groupsCache?.data as TrashCustomFormatGroup[]) || [];
 
 	// Find deprecated CFs (in template but not in cache)
-	const availableFormatIds = new Set(availableFormats.map(f => f.trash_id));
-	const deprecatedCFs = template?.config.customFormats.filter(
-		cf => cf.deprecated || !availableFormatIds.has(cf.trashId)
-	) || [];
+	const availableFormatIds = new Set(availableFormats.map((f) => f.trash_id));
+	const deprecatedCFs =
+		template?.config.customFormats.filter(
+			(cf) => cf.deprecated || !availableFormatIds.has(cf.trashId),
+		) || [];
 
 	// Find deprecated CF groups
-	const availableGroupIds = new Set(availableGroups.map(g => g.trash_id));
-	const _deprecatedGroups = template?.config.customFormatGroups.filter(
-		g => g.deprecated || !availableGroupIds.has(g.trashId)
-	) || [];
+	const availableGroupIds = new Set(availableGroups.map((g) => g.trash_id));
+	const _deprecatedGroups =
+		template?.config.customFormatGroups.filter(
+			(g) => g.deprecated || !availableGroupIds.has(g.trashId),
+		) || [];
 
 	const mutation = template ? updateMutation : createMutation;
 
@@ -328,12 +351,7 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 					<h2 id="template-editor-title" className="text-2xl font-semibold text-foreground">
 						{template ? "Edit Template" : "Create Template"}
 					</h2>
-					<Button
-						variant="ghost"
-						size="sm"
-						onClick={onClose}
-						aria-label="Close editor"
-					>
+					<Button variant="ghost" size="sm" onClick={onClose} aria-label="Close editor">
 						<X className="h-5 w-5" />
 					</Button>
 				</div>
@@ -351,7 +369,9 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 					{/* Basic Info */}
 					<div className="space-y-4">
 						<div>
-							<label className="mb-2 block text-sm font-medium text-foreground">Template Name</label>
+							<label className="mb-2 block text-sm font-medium text-foreground">
+								Template Name
+							</label>
 							<Input
 								type="text"
 								value={name}
@@ -362,7 +382,9 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 						</div>
 
 						<div>
-							<label className="mb-2 block text-sm font-medium text-foreground">Description (Optional)</label>
+							<label className="mb-2 block text-sm font-medium text-foreground">
+								Description (Optional)
+							</label>
 							<textarea
 								value={description}
 								onChange={(e) => setDescription(e.target.value)}
@@ -374,7 +396,9 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 
 						{!template && (
 							<div>
-								<label className="mb-2 block text-sm font-medium text-foreground">Service Type</label>
+								<label className="mb-2 block text-sm font-medium text-foreground">
+									Service Type
+								</label>
 								<div className="flex gap-4">
 									<Button
 										variant={serviceType === "RADARR" ? "primary" : "secondary"}
@@ -411,19 +435,25 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 									className="mt-1 h-4 w-4 rounded border-border bg-card text-primary focus:ring-primary"
 								/>
 								<div className="flex-1">
-									<label htmlFor="deleteRemovedCFs" className="flex items-center gap-2 text-sm font-medium text-foreground cursor-pointer">
+									<label
+										htmlFor="deleteRemovedCFs"
+										className="flex items-center gap-2 text-sm font-medium text-foreground cursor-pointer"
+									>
 										<Trash2 className="h-4 w-4 text-red-500" />
 										Delete removed Custom Formats during sync
 									</label>
 									<p className="mt-1 text-xs text-muted-foreground">
-										When TRaSH Guides removes a Custom Format, delete it from this template instead of marking it as deprecated.
+										When TRaSH Guides removes a Custom Format, delete it from this template instead
+										of marking it as deprecated.
 									</p>
 								</div>
 							</div>
 							<div className="flex items-start gap-2 rounded-lg border border-blue-500/20 bg-blue-500/5 p-3">
 								<Shield className="h-4 w-4 text-blue-400 mt-0.5 shrink-0" />
 								<div className="text-xs text-muted-foreground">
-									<span className="font-medium text-blue-400">Note:</span> Custom Formats you manually add (marked as &ldquo;User Added&rdquo;) are always preserved regardless of this setting.
+									<span className="font-medium text-blue-400">Note:</span> Custom Formats you
+									manually add (marked as &ldquo;User Added&rdquo;) are always preserved regardless
+									of this setting.
 								</div>
 							</div>
 						</div>
@@ -450,14 +480,16 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 						<div className="space-y-3">
 							<div className="flex items-center gap-2">
 								<Sliders className="h-5 w-5 text-purple-500" />
-								<h3 className="text-lg font-medium text-foreground">Per-Instance Quality Overrides</h3>
+								<h3 className="text-lg font-medium text-foreground">
+									Per-Instance Quality Overrides
+								</h3>
 								<span className="rounded bg-purple-500/20 px-2 py-0.5 text-xs text-purple-400">
 									Optional
 								</span>
 							</div>
 							<InstanceOverridesPanel
 								template={template}
-								instances={servicesData.map(s => ({
+								instances={servicesData.map((s) => ({
 									id: s.id,
 									label: s.label,
 									service: s.service,
@@ -470,7 +502,9 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 					<div className="space-y-3">
 						<h3 className="text-lg font-medium text-foreground">Custom Formats</h3>
 						{availableFormats.length === 0 ? (
-							<p className="text-sm text-muted-foreground">No custom formats available in cache. Refresh cache first.</p>
+							<p className="text-sm text-muted-foreground">
+								No custom formats available in cache. Refresh cache first.
+							</p>
 						) : (
 							<div className="space-y-2 max-h-64 overflow-y-auto rounded border border-border bg-card/50 p-4">
 								{availableFormats.map((format) => {
@@ -478,7 +512,10 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 									const settings = selectedFormats.get(format.trash_id);
 
 									return (
-										<div key={format.trash_id} className="space-y-2 rounded border border-border bg-card/50 p-3">
+										<div
+											key={format.trash_id}
+											className="space-y-2 rounded border border-border bg-card/50 p-3"
+										>
 											<div className="flex items-center justify-between">
 												<label className="flex items-center gap-2">
 													<input
@@ -507,7 +544,12 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 														<input
 															type="number"
 															value={settings?.scoreOverride ?? ""}
-															onChange={(e) => handleScoreChange(format.trash_id, e.target.value ? Number(e.target.value) : undefined)}
+															onChange={(e) =>
+																handleScoreChange(
+																	format.trash_id,
+																	e.target.value ? Number(e.target.value) : undefined,
+																)
+															}
 															placeholder="Default"
 															className="w-20 rounded border border-border bg-card px-2 py-1 text-xs text-foreground"
 														/>
@@ -562,7 +604,10 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 							</p>
 							<div className="space-y-2 max-h-48 overflow-y-auto rounded border border-amber-500/30 bg-amber-500/5 p-4">
 								{deprecatedCFs.map((cf) => (
-									<div key={cf.trashId} className="flex items-center justify-between rounded border border-border bg-card/50 p-3">
+									<div
+										key={cf.trashId}
+										className="flex items-center justify-between rounded border border-border bg-card/50 p-3"
+									>
 										<div className="flex items-center gap-2">
 											<input
 												type="checkbox"
@@ -581,7 +626,9 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 												}}
 												className="h-4 w-4 rounded border-border bg-card text-primary focus:ring-primary"
 											/>
-											<span className="text-sm font-medium text-foreground opacity-70">{cf.name}</span>
+											<span className="text-sm font-medium text-foreground opacity-70">
+												{cf.name}
+											</span>
 											<span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-xs text-amber-500">
 												Deprecated
 											</span>
@@ -616,7 +663,9 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 											className="h-4 w-4 rounded border-border bg-card text-primary focus:ring-primary"
 										/>
 										<span className="text-sm text-foreground">{group.name}</span>
-										<span className="text-xs text-muted-foreground">({group.custom_formats.length} formats)</span>
+										<span className="text-xs text-muted-foreground">
+											({group.custom_formats.length} formats)
+										</span>
 									</label>
 								))}
 							</div>
@@ -641,59 +690,60 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 				</div>
 
 				{/* Condition Editor Modal */}
-				{conditionEditorFormat && (() => {
-					const settings = selectedFormats.get(conditionEditorFormat.trashId);
-					const specificationsWithEnabled: SpecificationWithEnabled[] = conditionEditorFormat.format.specifications.map((spec) => ({
-						...spec,
-						enabled: settings?.conditionsEnabled[spec.name] !== false,
-					}));
+				{conditionEditorFormat &&
+					(() => {
+						const settings = selectedFormats.get(conditionEditorFormat.trashId);
+						const specificationsWithEnabled: SpecificationWithEnabled[] =
+							conditionEditorFormat.format.specifications.map((spec) => ({
+								...spec,
+								enabled: settings?.conditionsEnabled[spec.name] !== false,
+							}));
 
-					return (
-						<div
-							className="fixed inset-0 z-popover flex items-center justify-center bg-black/80 backdrop-blur-xs"
-							role="dialog"
-							aria-modal="true"
-							aria-label="Condition Editor"
-						>
-							<div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-card p-6">
-								{/* Close button */}
-								<Button
-									variant="ghost"
-									size="sm"
-									onClick={() => setConditionEditorFormat(null)}
-									aria-label="Close condition editor"
-									className="absolute top-4 right-4"
-								>
-									<X className="h-5 w-5" />
-								</Button>
+						return (
+							<div
+								className="fixed inset-0 z-popover flex items-center justify-center bg-black/80 backdrop-blur-xs"
+								role="dialog"
+								aria-modal="true"
+								aria-label="Condition Editor"
+							>
+								<div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-card p-6">
+									{/* Close button */}
+									<Button
+										variant="ghost"
+										size="sm"
+										onClick={() => setConditionEditorFormat(null)}
+										aria-label="Close condition editor"
+										className="absolute top-4 right-4"
+									>
+										<X className="h-5 w-5" />
+									</Button>
 
-								<ConditionEditor
-									customFormatId={conditionEditorFormat.trashId}
-									customFormatName={conditionEditorFormat.format.name}
-									specifications={specificationsWithEnabled}
-									onChange={(updatedSpecs) => {
-										const newMap = new Map(selectedFormats);
-										const current = newMap.get(conditionEditorFormat.trashId);
-										if (current) {
-											const conditionsEnabled: Record<string, boolean> = {};
-											for (const spec of updatedSpecs) {
-												conditionsEnabled[spec.name] = spec.enabled !== false;
+									<ConditionEditor
+										customFormatId={conditionEditorFormat.trashId}
+										customFormatName={conditionEditorFormat.format.name}
+										specifications={specificationsWithEnabled}
+										onChange={(updatedSpecs) => {
+											const newMap = new Map(selectedFormats);
+											const current = newMap.get(conditionEditorFormat.trashId);
+											if (current) {
+												const conditionsEnabled: Record<string, boolean> = {};
+												for (const spec of updatedSpecs) {
+													conditionsEnabled[spec.name] = spec.enabled !== false;
+												}
+												newMap.set(conditionEditorFormat.trashId, {
+													...current,
+													conditionsEnabled,
+												});
+												setSelectedFormats(newMap);
 											}
-											newMap.set(conditionEditorFormat.trashId, {
-												...current,
-												conditionsEnabled,
-											});
-											setSelectedFormats(newMap);
-										}
-										// Don't close modal on every change - let user close explicitly
-									}}
-								/>
+											// Don't close modal on every change - let user close explicitly
+										}}
+									/>
+								</div>
 							</div>
-						</div>
-					);
-				})()}
+						);
+					})()}
 			</div>
 		</div>
 	);
 };
-

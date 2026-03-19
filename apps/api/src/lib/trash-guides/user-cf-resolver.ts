@@ -53,7 +53,11 @@ export async function resolveUserCustomFormats(
 ): Promise<TemplateCustomFormat[]> {
 	const userCFEntries = Object.entries(selections)
 		.filter(([trashId, sel]) => sel.selected && trashId.startsWith(USER_CF_PREFIX))
-		.map(([trashId, sel]) => ({ trashId, dbId: trashId.slice(USER_CF_PREFIX.length), selection: sel }));
+		.map(([trashId, sel]) => ({
+			trashId,
+			dbId: trashId.slice(USER_CF_PREFIX.length),
+			selection: sel,
+		}));
 
 	if (userCFEntries.length === 0) return [];
 
@@ -114,7 +118,12 @@ export async function resolveUserCustomFormats(
 
 		if (specs.length < rawParsed.length) {
 			log.warn(
-				{ userCFId: userCF.id, userCFName: userCF.name, totalSpecs: rawParsed.length, validSpecs: specs.length },
+				{
+					userCFId: userCF.id,
+					userCFName: userCF.name,
+					totalSpecs: rawParsed.length,
+					validSpecs: specs.length,
+				},
 				"Some specifications in user custom format failed validation and were dropped",
 			);
 		}

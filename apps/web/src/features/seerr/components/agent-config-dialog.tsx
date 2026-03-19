@@ -1,22 +1,22 @@
 "use client";
 
-import { useState, useEffect, useId } from "react";
-import { Settings, Loader2 } from "lucide-react";
-import { toast } from "sonner";
 import type { SeerrNotificationAgent } from "@arr/shared";
+import { Loader2, Settings } from "lucide-react";
+import { useEffect, useId, useState } from "react";
+import { toast } from "sonner";
+import { GradientButton } from "../../../components/layout/premium-components";
 import {
+	Input,
 	LegacyDialog,
+	LegacyDialogClose,
+	LegacyDialogContent,
+	LegacyDialogDescription,
+	LegacyDialogFooter,
 	LegacyDialogHeader,
 	LegacyDialogTitle,
-	LegacyDialogDescription,
-	LegacyDialogContent,
-	LegacyDialogFooter,
-	LegacyDialogClose,
-	Input,
 	Switch,
 } from "../../../components/ui";
 import { SimpleFormField } from "../../../components/ui/simple-form-field";
-import { GradientButton } from "../../../components/layout/premium-components";
 import { useUpdateSeerrNotification } from "../../../hooks/api/useSeerr";
 import { AGENT_FIELDS, type AgentField } from "../lib/notification-agent-fields";
 
@@ -27,7 +27,12 @@ interface AgentConfigDialogProps {
 	onOpenChange: (open: boolean) => void;
 }
 
-export const AgentConfigDialog = ({ agent, instanceId, open, onOpenChange }: AgentConfigDialogProps) => {
+export const AgentConfigDialog = ({
+	agent,
+	instanceId,
+	open,
+	onOpenChange,
+}: AgentConfigDialogProps) => {
 	const formId = useId();
 	const [draft, setDraft] = useState<Record<string, unknown>>({});
 	const updateMutation = useUpdateSeerrNotification();
@@ -68,7 +73,8 @@ export const AgentConfigDialog = ({ agent, instanceId, open, onOpenChange }: Age
 			{ instanceId, agentId: String(agent.id), config: { enabled: !agent.enabled } },
 			{
 				onSuccess: () => toast.success(`${agent.name} ${agent.enabled ? "disabled" : "enabled"}`),
-				onError: () => toast.error(`Failed to ${agent.enabled ? "disable" : "enable"} ${agent.name}`),
+				onError: () =>
+					toast.error(`Failed to ${agent.enabled ? "disable" : "enable"} ${agent.name}`),
 			},
 		);
 	};
@@ -93,7 +99,9 @@ export const AgentConfigDialog = ({ agent, instanceId, open, onOpenChange }: Age
 					<div>
 						<p className="text-sm font-medium text-foreground">Enable Agent</p>
 						<p className="text-xs text-muted-foreground">
-							{agent.enabled ? "This agent is active and sending notifications" : "Enable to start receiving notifications"}
+							{agent.enabled
+								? "This agent is active and sending notifications"
+								: "Enable to start receiving notifications"}
 						</p>
 					</div>
 					<Switch
@@ -149,16 +157,19 @@ const AgentFieldInput = ({ field, value, onChange, formId }: AgentFieldInputProp
 				<label htmlFor={inputId} className="text-sm font-medium text-foreground">
 					{field.label}
 				</label>
-				<Switch
-					id={inputId}
-					checked={!!value}
-					onCheckedChange={(checked) => onChange(checked)}
-				/>
+				<Switch id={inputId} checked={!!value} onCheckedChange={(checked) => onChange(checked)} />
 			</div>
 		);
 	}
 
-	const inputType = field.type === "url" ? "url" : field.type === "number" ? "number" : field.type === "password" ? "password" : "text";
+	const inputType =
+		field.type === "url"
+			? "url"
+			: field.type === "number"
+				? "number"
+				: field.type === "password"
+					? "password"
+					: "text";
 
 	return (
 		<SimpleFormField label={field.label} htmlFor={inputId}>

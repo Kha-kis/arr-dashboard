@@ -10,26 +10,23 @@
 
 "use client";
 
-import { useState } from "react";
 import {
-	ChevronUp,
-	CheckCircle,
 	AlertCircle,
-	Link2,
-	Unlink,
-	ArrowRight,
-	GitCompare,
 	AlertTriangle,
-	Plus,
+	ArrowRight,
+	CheckCircle,
+	ChevronUp,
+	GitCompare,
+	Link2,
 	Minus,
+	Plus,
 	Sparkles,
+	Unlink,
 	X,
 } from "lucide-react";
-import type {
-	CFMatchResult,
-	MatchConfidence,
-} from "../../../../lib/api-client/trash-guides";
+import { useState } from "react";
 import { useThemeGradient } from "../../../../hooks/useThemeGradient";
+import type { CFMatchResult, MatchConfidence } from "../../../../lib/api-client/trash-guides";
 import type { CFResolutionDecision } from "./cf-resolution";
 
 function getConfidenceBadge(confidence: MatchConfidence) {
@@ -89,7 +86,13 @@ interface CFComparisonViewProps {
 	scoreSet?: string;
 }
 
-export const CFComparisonView = ({ instanceCF, trashCF, matchDetails, recommendedScore, scoreSet }: CFComparisonViewProps) => {
+export const CFComparisonView = ({
+	instanceCF,
+	trashCF,
+	matchDetails,
+	recommendedScore,
+	scoreSet,
+}: CFComparisonViewProps) => {
 	const instanceSpecs = instanceCF.specifications || [];
 	const trashSpecs = trashCF?.specifications || [];
 
@@ -100,18 +103,25 @@ export const CFComparisonView = ({ instanceCF, trashCF, matchDetails, recommende
 				<div className="bg-amber-500/10 rounded-lg p-2.5 border border-amber-500/20">
 					<p className="font-semibold text-amber-600 dark:text-amber-400 mb-1.5">Instance:</p>
 					<div className="text-foreground">
-						<div>Score: <span className="font-bold">{instanceCF.score ?? "Not set"}</span></div>
-						<div className="text-foreground/60">{instanceSpecs.length} specification{instanceSpecs.length !== 1 ? "s" : ""}</div>
+						<div>
+							Score: <span className="font-bold">{instanceCF.score ?? "Not set"}</span>
+						</div>
+						<div className="text-foreground/60">
+							{instanceSpecs.length} specification{instanceSpecs.length !== 1 ? "s" : ""}
+						</div>
 					</div>
 				</div>
 				<div className="bg-green-500/10 rounded-lg p-2.5 border border-green-500/20">
 					<p className="font-semibold text-green-600 dark:text-green-400 mb-1.5">TRaSH Guides:</p>
 					<div className="text-foreground">
 						<div>
-							Score: <span className="font-bold">{recommendedScore ?? trashCF?.score ?? "N/A"}</span>
+							Score:{" "}
+							<span className="font-bold">{recommendedScore ?? trashCF?.score ?? "N/A"}</span>
 							{scoreSet && <span className="text-foreground/60 ml-1">({scoreSet})</span>}
 						</div>
-						<div className="text-foreground/60">{trashSpecs.length} specification{trashSpecs.length !== 1 ? "s" : ""}</div>
+						<div className="text-foreground/60">
+							{trashSpecs.length} specification{trashSpecs.length !== 1 ? "s" : ""}
+						</div>
 					</div>
 					{trashCF?.trash_scores && Object.keys(trashCF.trash_scores).length > 1 && (
 						<details className="mt-2">
@@ -144,7 +154,9 @@ export const CFComparisonView = ({ instanceCF, trashCF, matchDetails, recommende
 							</pre>
 						</div>
 						<div className="bg-green-500/10 rounded-lg p-2.5 border border-green-500/20">
-							<p className="font-semibold text-green-600 dark:text-green-400 mb-1.5">TRaSH Guides:</p>
+							<p className="font-semibold text-green-600 dark:text-green-400 mb-1.5">
+								TRaSH Guides:
+							</p>
 							<pre className="p-2 rounded bg-black/20 overflow-auto max-h-48 whitespace-pre-wrap wrap-break-word text-foreground/70 font-mono text-[10px]">
 								{trashSpecs.length > 0
 									? JSON.stringify(trashSpecs, null, 2)
@@ -157,11 +169,18 @@ export const CFComparisonView = ({ instanceCF, trashCF, matchDetails, recommende
 
 			{/* Match Details Summary - only show meaningful comparisons for instance imports */}
 			<div className="flex flex-wrap gap-2 pt-2 border-t border-border">
-				<span className={`rounded px-2 py-1 ${matchDetails.nameMatch ? "bg-green-500/20 text-green-300" : "bg-yellow-500/20 text-yellow-300"}`}>
+				<span
+					className={`rounded px-2 py-1 ${matchDetails.nameMatch ? "bg-green-500/20 text-green-300" : "bg-yellow-500/20 text-yellow-300"}`}
+				>
 					Name: {matchDetails.nameMatch ? "Matched" : "Similar"}
 				</span>
-				<span className={`rounded px-2 py-1 ${matchDetails.specsMatch ? "bg-green-500/20 text-green-300" : "bg-yellow-500/20 text-yellow-300"}`}>
-					Specs: {matchDetails.specsMatch ? "Identical" : `${matchDetails.specsDiffer?.length || 0} differences`}
+				<span
+					className={`rounded px-2 py-1 ${matchDetails.specsMatch ? "bg-green-500/20 text-green-300" : "bg-yellow-500/20 text-yellow-300"}`}
+				>
+					Specs:{" "}
+					{matchDetails.specsMatch
+						? "Identical"
+						: `${matchDetails.specsDiffer?.length || 0} differences`}
 				</span>
 			</div>
 		</div>
@@ -178,20 +197,28 @@ interface CFResolutionItemProps {
 	isRecommended?: boolean;
 }
 
-export const CFResolutionItem = ({ result, decision, onDecisionChange, onExclude, isRecommended }: CFResolutionItemProps) => {
+export const CFResolutionItem = ({
+	result,
+	decision,
+	onDecisionChange,
+	onExclude,
+	isRecommended,
+}: CFResolutionItemProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const [isExpanded, setIsExpanded] = useState(false);
 	const badge = getConfidenceBadge(result.confidence);
 	const BadgeIcon = badge.icon;
 	const hasMatch = result.confidence !== "no_match";
-	const scoreDiff = result.recommendedScore !== undefined && result.instanceCF.score !== undefined
-		? result.recommendedScore - result.instanceCF.score
-		: null;
+	const scoreDiff =
+		result.recommendedScore !== undefined && result.instanceCF.score !== undefined
+			? result.recommendedScore - result.instanceCF.score
+			: null;
 
 	// Check if we have spec data to compare
 	const instanceSpecs = (result.instanceCF as any).specifications || [];
 	const trashSpecs = (result.trashCF as any)?.specifications || [];
-	const hasSpecsDiff = result.matchDetails.specsDiffer && result.matchDetails.specsDiffer.length > 0;
+	const hasSpecsDiff =
+		result.matchDetails.specsDiffer && result.matchDetails.specsDiffer.length > 0;
 	const hasComparableData = hasMatch && (instanceSpecs.length > 0 || trashSpecs.length > 0);
 
 	// Determine spec status for display
@@ -218,7 +245,9 @@ export const CFResolutionItem = ({ result, decision, onDecisionChange, onExclude
 					<div className="flex-1 min-w-0">
 						<div className="flex items-center gap-2 flex-wrap">
 							<span className="font-medium text-foreground truncate">{result.instanceCF.name}</span>
-							<span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs ${badge.className}`}>
+							<span
+								className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs ${badge.className}`}
+							>
 								<BadgeIcon className="h-3 w-3" />
 								{badge.label}
 							</span>
@@ -230,8 +259,9 @@ export const CFResolutionItem = ({ result, decision, onDecisionChange, onExclude
 								</span>
 							)}
 							{/* Show specs status badge for all matched CFs */}
-							{hasMatch && !isRecommended && (
-								hasSpecsDiff ? (
+							{hasMatch &&
+								!isRecommended &&
+								(hasSpecsDiff ? (
 									<span className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs bg-yellow-500/20 text-yellow-300 border-yellow-500/30">
 										<AlertCircle className="h-3 w-3" />
 										Specs Differ
@@ -241,11 +271,11 @@ export const CFResolutionItem = ({ result, decision, onDecisionChange, onExclude
 										<CheckCircle className="h-3 w-3" />
 										Specs Match
 									</span>
-								) : null
-							)}
+								) : null)}
 							{/* Show score status badge */}
-							{hasMatch && scoreDiff !== null && (
-								isRecommended ? (
+							{hasMatch &&
+								scoreDiff !== null &&
+								(isRecommended ? (
 									<span className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs bg-purple-500/20 text-purple-300 border-purple-500/30">
 										0 → {result.recommendedScore} (TRaSH)
 									</span>
@@ -256,27 +286,34 @@ export const CFResolutionItem = ({ result, decision, onDecisionChange, onExclude
 								) : (
 									<span
 										className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs"
-										style={scoreDiff > 0 ? {
-											backgroundColor: themeGradient.fromLight,
-											color: themeGradient.from,
-											borderColor: themeGradient.fromMuted,
-										} : {
-											backgroundColor: "rgb(249 115 22 / 0.2)",
-											color: "rgb(253 186 116)",
-											borderColor: "rgb(249 115 22 / 0.3)",
-										}}
+										style={
+											scoreDiff > 0
+												? {
+														backgroundColor: themeGradient.fromLight,
+														color: themeGradient.from,
+														borderColor: themeGradient.fromMuted,
+													}
+												: {
+														backgroundColor: "rgb(249 115 22 / 0.2)",
+														color: "rgb(253 186 116)",
+														borderColor: "rgb(249 115 22 / 0.3)",
+													}
+										}
 									>
-										{result.instanceCF.score} → {result.recommendedScore} ({scoreDiff > 0 ? "+" : ""}{scoreDiff})
+										{result.instanceCF.score} → {result.recommendedScore} (
+										{scoreDiff > 0 ? "+" : ""}
+										{scoreDiff})
 									</span>
-								)
-							)}
+								))}
 						</div>
 
 						{/* Match details */}
 						{hasMatch && result.trashCF && (
 							<div className="mt-1 flex items-center gap-1 text-xs text-foreground/60">
 								<ArrowRight className="h-3 w-3" />
-								<span>TRaSH: <span className="text-foreground/80">{result.trashCF.name}</span></span>
+								<span>
+									TRaSH: <span className="text-foreground/80">{result.trashCF.name}</span>
+								</span>
 							</div>
 						)}
 
@@ -288,7 +325,8 @@ export const CFResolutionItem = ({ result, decision, onDecisionChange, onExclude
 								className="mt-1 text-xs text-yellow-400/80 hover:text-yellow-300 flex items-center gap-1"
 							>
 								<GitCompare className="h-3 w-3" />
-								View {result.matchDetails.specsDiffer?.length} specification difference{result.matchDetails.specsDiffer?.length !== 1 ? "s" : ""}
+								View {result.matchDetails.specsDiffer?.length} specification difference
+								{result.matchDetails.specsDiffer?.length !== 1 ? "s" : ""}
 							</button>
 						)}
 					</div>
@@ -301,16 +339,24 @@ export const CFResolutionItem = ({ result, decision, onDecisionChange, onExclude
 								type="button"
 								onClick={() => setIsExpanded(!isExpanded)}
 								className="rounded px-2 py-1 text-xs transition"
-								style={isExpanded ? {
-									backgroundColor: themeGradient.fromMedium,
-									color: themeGradient.from,
-								} : {
-									backgroundColor: "var(--color-bg-subtle)",
-									color: "var(--color-fg-60)",
-								}}
+								style={
+									isExpanded
+										? {
+												backgroundColor: themeGradient.fromMedium,
+												color: themeGradient.from,
+											}
+										: {
+												backgroundColor: "var(--color-bg-subtle)",
+												color: "var(--color-fg-60)",
+											}
+								}
 								title={isExpanded ? "Hide comparison" : "View detailed comparison"}
 							>
-								{isExpanded ? <ChevronUp className="h-3 w-3" /> : <GitCompare className="h-3 w-3" />}
+								{isExpanded ? (
+									<ChevronUp className="h-3 w-3" />
+								) : (
+									<GitCompare className="h-3 w-3" />
+								)}
 							</button>
 						)}
 
@@ -408,7 +454,8 @@ export const ExcludedCFItem = ({
 	// Check if we have spec data to compare
 	const instanceSpecs = (result.instanceCF as any).specifications || [];
 	const trashSpecs = (result.trashCF as any)?.specifications || [];
-	const hasSpecsDiff = result.matchDetails.specsDiffer && result.matchDetails.specsDiffer.length > 0;
+	const hasSpecsDiff =
+		result.matchDetails.specsDiffer && result.matchDetails.specsDiffer.length > 0;
 	const hasComparableData = instanceSpecs.length > 0 || trashSpecs.length > 0;
 
 	// Determine spec status for display
@@ -442,18 +489,22 @@ export const ExcludedCFItem = ({
 	};
 
 	return (
-		<div className={`rounded-lg border transition ${
-			exclusionReason === "recommendation"
-				? "border-purple-500/20 bg-purple-500/5"
-				: "border-amber-500/20 bg-amber-500/5"
-		}`}>
+		<div
+			className={`rounded-lg border transition ${
+				exclusionReason === "recommendation"
+					? "border-purple-500/20 bg-purple-500/5"
+					: "border-amber-500/20 bg-amber-500/5"
+			}`}
+		>
 			<div className="p-3">
 				<div className="flex items-start gap-3">
 					{/* CF Info */}
 					<div className="flex-1 min-w-0">
 						<div className="flex items-center gap-2 flex-wrap">
 							<span className="font-medium text-foreground truncate">{result.instanceCF.name}</span>
-							<span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs ${badge.className}`}>
+							<span
+								className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs ${badge.className}`}
+							>
 								<BadgeIcon className="h-3 w-3" />
 								{badge.label}
 							</span>
@@ -477,7 +528,9 @@ export const ExcludedCFItem = ({
 						{result.trashCF && (
 							<div className="mt-1 flex items-center gap-1 text-xs text-foreground/60">
 								<ArrowRight className="h-3 w-3" />
-								<span>TRaSH: <span className="text-foreground/80">{result.trashCF.name}</span></span>
+								<span>
+									TRaSH: <span className="text-foreground/80">{result.trashCF.name}</span>
+								</span>
 							</div>
 						)}
 
@@ -489,7 +542,8 @@ export const ExcludedCFItem = ({
 								className="mt-1 text-xs text-yellow-400/80 hover:text-yellow-300 flex items-center gap-1"
 							>
 								<GitCompare className="h-3 w-3" />
-								View {result.matchDetails.specsDiffer?.length} specification difference{result.matchDetails.specsDiffer?.length !== 1 ? "s" : ""}
+								View {result.matchDetails.specsDiffer?.length} specification difference
+								{result.matchDetails.specsDiffer?.length !== 1 ? "s" : ""}
 							</button>
 						)}
 					</div>
@@ -502,16 +556,24 @@ export const ExcludedCFItem = ({
 								type="button"
 								onClick={() => setIsExpanded(!isExpanded)}
 								className="rounded px-2 py-1 text-xs transition"
-								style={isExpanded ? {
-									backgroundColor: themeGradient.fromMedium,
-									color: themeGradient.from,
-								} : {
-									backgroundColor: "var(--color-bg-subtle)",
-									color: "var(--color-fg-60)",
-								}}
+								style={
+									isExpanded
+										? {
+												backgroundColor: themeGradient.fromMedium,
+												color: themeGradient.from,
+											}
+										: {
+												backgroundColor: "var(--color-bg-subtle)",
+												color: "var(--color-fg-60)",
+											}
+								}
 								title={isExpanded ? "Hide comparison" : "View detailed comparison"}
 							>
-								{isExpanded ? <ChevronUp className="h-3 w-3" /> : <GitCompare className="h-3 w-3" />}
+								{isExpanded ? (
+									<ChevronUp className="h-3 w-3" />
+								) : (
+									<GitCompare className="h-3 w-3" />
+								)}
 							</button>
 						)}
 

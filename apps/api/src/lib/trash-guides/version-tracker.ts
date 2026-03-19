@@ -5,8 +5,8 @@
  * Fetches latest commit hashes to detect when new updates are available.
  */
 
-import { DEFAULT_TRASH_REPO } from "@arr/shared";
 import type { TrashRepoConfig } from "@arr/shared";
+import { DEFAULT_TRASH_REPO } from "@arr/shared";
 
 // ============================================================================
 // Constants

@@ -38,9 +38,7 @@ export async function createOIDCProvider(data: CreateOIDCProvider): Promise<OIDC
 /**
  * Update the OIDC provider (admin only, singleton)
  */
-export async function updateOIDCProvider(
-	data: UpdateOIDCProvider,
-): Promise<OIDCProvider> {
+export async function updateOIDCProvider(data: UpdateOIDCProvider): Promise<OIDCProvider> {
 	return apiRequest<OIDCProvider>("/api/oidc-providers", {
 		method: "PUT",
 		json: data,

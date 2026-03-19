@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest, ApiError } from "../../../lib/api-client/base";
+import { ApiError, apiRequest } from "../../../lib/api-client/base";
 
 interface TriggerHuntResponse {
 	message: string;
@@ -13,7 +13,10 @@ interface TriggerHuntResponse {
  * @param type - The hunt type: `"missing"` to find missing items or `"upgrade"` to find available upgrades
  * @returns The API response containing a `message` and a `queued` flag indicating whether the hunt was accepted
  */
-async function triggerHunt(instanceId: string, type: "missing" | "upgrade"): Promise<TriggerHuntResponse> {
+async function triggerHunt(
+	instanceId: string,
+	type: "missing" | "upgrade",
+): Promise<TriggerHuntResponse> {
 	return apiRequest<TriggerHuntResponse>(`/api/hunting/trigger/${instanceId}`, {
 		method: "POST",
 		json: { type },
@@ -41,7 +44,10 @@ export function useManualHunt() {
 	});
 
 	return {
-		triggerHunt: async (instanceId: string, type: "missing" | "upgrade"): Promise<TriggerHuntResponse> => {
+		triggerHunt: async (
+			instanceId: string,
+			type: "missing" | "upgrade",
+		): Promise<TriggerHuntResponse> => {
 			try {
 				return await mutation.mutateAsync({ instanceId, type });
 			} catch (error) {

@@ -18,8 +18,10 @@ export function resolveSecretsPath(databaseUrl: string): string {
 		const dbDir = path.dirname(dbPath);
 		secretsPath = path.join(dbDir, "secrets.json");
 	} else {
-		// For non-SQLite databases (PostgreSQL, MySQL), use default path
-		secretsPath = "./data/secrets.json";
+		// For non-SQLite databases (PostgreSQL, MySQL), store secrets in /config
+		// (the LinuxServer Docker convention). Falls back to ./data/ for non-Docker dev.
+		const isDocker = process.env.NODE_ENV === "production" || process.cwd().startsWith("/app");
+		secretsPath = isDocker ? "/config/secrets.json" : "./data/secrets.json";
 	}
 
 	// Resolve to absolute path to avoid issues with relative paths

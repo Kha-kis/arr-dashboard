@@ -4,18 +4,18 @@
  * Routes for managing custom format scores across multiple templates
  */
 
-import type { FastifyPluginCallback } from "fastify";
-import { createBulkScoreManager } from "../../lib/trash-guides/bulk-score-manager.js";
-import { validateRequest } from "../../lib/utils/validate.js";
-import { z } from "zod";
 import type {
-	BulkScoreFilters,
-	BulkScoreUpdate,
 	BulkScoreCopy,
-	BulkScoreReset,
+	BulkScoreFilters,
 	BulkScoreImport,
+	BulkScoreReset,
+	BulkScoreUpdate,
 } from "@arr/shared";
+import type { FastifyPluginCallback } from "fastify";
+import { z } from "zod";
+import { createBulkScoreManager } from "../../lib/trash-guides/bulk-score-manager.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
+import { validateRequest } from "../../lib/utils/validate.js";
 
 // ============================================================================
 // Validation Schemas

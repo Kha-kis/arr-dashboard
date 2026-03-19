@@ -62,7 +62,7 @@ export function BentoGrid({
 				columns.xl === 4 && "xl:grid-cols-4",
 				columns.xl === 5 && "xl:grid-cols-5",
 				columns.xl === 6 && "xl:grid-cols-6",
-				className
+				className,
 			)}
 		>
 			{children}
@@ -139,7 +139,7 @@ export function BentoCard({
 				"transition-colors duration-300",
 				interactive && "cursor-pointer hover:border-border",
 				sizeClasses,
-				className
+				className,
 			)}
 			initial={{ opacity: 0, y: 20, scale: 0.95 }}
 			animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -174,7 +174,7 @@ export function BentoCard({
 				<div
 					className={cn(
 						"pointer-events-none absolute -inset-4 opacity-0 blur-2xl transition-opacity duration-500",
-						interactive && "group-hover:opacity-30"
+						interactive && "group-hover:opacity-30",
 					)}
 					style={{ backgroundColor: gradient.glow }}
 				/>
@@ -206,11 +206,7 @@ export function BentoCardHeader({
 	children: ReactNode;
 	className?: string;
 }) {
-	return (
-		<div className={cn("flex items-center gap-3 mb-4", className)}>
-			{children}
-		</div>
-	);
+	return <div className={cn("flex items-center gap-3 mb-4", className)}>{children}</div>;
 }
 
 /**
@@ -230,7 +226,7 @@ export function BentoCardIcon({
 			className={cn(
 				"flex h-10 w-10 items-center justify-center rounded-xl",
 				!gradient && "bg-muted",
-				className
+				className,
 			)}
 			style={
 				gradient
@@ -256,11 +252,7 @@ export function BentoCardTitle({
 	children: ReactNode;
 	className?: string;
 }) {
-	return (
-		<h3 className={cn("text-lg font-semibold text-foreground", className)}>
-			{children}
-		</h3>
-	);
+	return <h3 className={cn("text-lg font-semibold text-foreground", className)}>{children}</h3>;
 }
 
 /**
@@ -273,9 +265,7 @@ export function BentoCardDescription({
 	children: ReactNode;
 	className?: string;
 }) {
-	return (
-		<p className={cn("text-sm text-muted-foreground", className)}>{children}</p>
-	);
+	return <p className={cn("text-sm text-muted-foreground", className)}>{children}</p>;
 }
 
 /**

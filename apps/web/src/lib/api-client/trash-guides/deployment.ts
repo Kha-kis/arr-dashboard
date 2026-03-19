@@ -5,16 +5,16 @@
  * previews, execution, history, and rollback operations.
  */
 
-import { apiRequest } from "../base";
 import { buildQueryUrl } from "../../build-query-url";
+import { apiRequest } from "../base";
 import type {
-	CustomQualityConfig,
-	DeploymentPreview,
-	CustomFormatDeploymentItem,
-	CustomFormatConflict,
-	DeploymentAction,
-	ConflictType,
 	ConflictResolution,
+	ConflictType,
+	CustomFormatConflict,
+	CustomFormatDeploymentItem,
+	CustomQualityConfig,
+	DeploymentAction,
+	DeploymentPreview,
 	SyncStrategy,
 	TemplateImportOptions,
 	TrashTemplate,
@@ -302,13 +302,10 @@ export async function getDeploymentPreview(
 	templateId: string,
 	instanceId: string,
 ): Promise<DeploymentPreviewResponse> {
-	return await apiRequest<DeploymentPreviewResponse>(
-		"/api/trash-guides/deployment/preview",
-		{
-			method: "POST",
-			json: { templateId, instanceId },
-		},
-	);
+	return await apiRequest<DeploymentPreviewResponse>("/api/trash-guides/deployment/preview", {
+		method: "POST",
+		json: { templateId, instanceId },
+	});
 }
 
 /**
@@ -355,7 +352,6 @@ export async function deleteInstanceOverrides(
 	);
 }
 
-
 // ============================================================================
 // API Functions - Deployment Execution
 // ============================================================================
@@ -363,13 +359,10 @@ export async function deleteInstanceOverrides(
 export async function executeDeployment(
 	payload: ExecuteDeploymentPayload,
 ): Promise<ExecuteDeploymentResponse> {
-	return await apiRequest<ExecuteDeploymentResponse>(
-		"/api/trash-guides/deployment/execute",
-		{
-			method: "POST",
-			json: payload,
-		},
-	);
+	return await apiRequest<ExecuteDeploymentResponse>("/api/trash-guides/deployment/execute", {
+		method: "POST",
+		json: payload,
+	});
 }
 
 export async function executeBulkDeployment(
@@ -429,13 +422,10 @@ export async function bulkUpdateSyncStrategy(
 export async function unlinkTemplateFromInstance(
 	payload: UnlinkTemplatePayload,
 ): Promise<UnlinkTemplateResponse> {
-	return await apiRequest<UnlinkTemplateResponse>(
-		"/api/trash-guides/deployment/unlink",
-		{
-			method: "DELETE",
-			json: payload,
-		},
-	);
+	return await apiRequest<UnlinkTemplateResponse>("/api/trash-guides/deployment/unlink", {
+		method: "DELETE",
+		json: payload,
+	});
 }
 
 // ============================================================================
@@ -445,9 +435,10 @@ export async function unlinkTemplateFromInstance(
 /**
  * Get all deployment history (global view)
  */
-export async function getAllDeploymentHistory(
-	options?: { limit?: number; offset?: number },
-): Promise<DeploymentHistoryResponse> {
+export async function getAllDeploymentHistory(options?: {
+	limit?: number;
+	offset?: number;
+}): Promise<DeploymentHistoryResponse> {
 	const url = buildQueryUrl("/api/trash-guides/deployment/history", {
 		limit: options?.limit,
 		offset: options?.offset,
@@ -498,9 +489,7 @@ export async function getDeploymentHistoryDetail(
  * Undeploy - remove Custom Formats deployed by a specific deployment
  * Only removes CFs unique to this template (not shared with other templates)
  */
-export async function undeployDeployment(
-	historyId: string,
-): Promise<UndeployResponse> {
+export async function undeployDeployment(historyId: string): Promise<UndeployResponse> {
 	return await apiRequest<UndeployResponse>(
 		`/api/trash-guides/deployment/history/${historyId}/undeploy`,
 		{
@@ -533,11 +522,8 @@ export async function deleteDeploymentHistory(
 export async function importEnhancedTemplate(
 	payload: EnhancedImportTemplatePayload,
 ): Promise<EnhancedImportTemplateResponse> {
-	return await apiRequest<EnhancedImportTemplateResponse>(
-		"/api/trash-guides/sharing/import",
-		{
-			method: "POST",
-			json: payload,
-		},
-	);
+	return await apiRequest<EnhancedImportTemplateResponse>("/api/trash-guides/sharing/import", {
+		method: "POST",
+		json: payload,
+	});
 }

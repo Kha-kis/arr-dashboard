@@ -53,7 +53,7 @@ export type ManualImportCandidateRow = {
 	rejectionReason?: string;
 };
 
-export {
+export type {
 	ManualImportCandidate,
 	ManualImportCandidateLidarr,
 	ManualImportCandidateReadarr,

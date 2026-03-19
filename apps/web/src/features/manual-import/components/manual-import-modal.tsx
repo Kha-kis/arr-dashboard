@@ -1,23 +1,32 @@
 "use client";
 
+import {
+	AlertTriangle,
+	CheckSquare,
+	Download,
+	Filter,
+	FolderOpen,
+	Loader2,
+	X,
+	XSquare,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useFocusTrap } from "../../../hooks/useFocusTrap";
-import { X, Loader2, FolderOpen, Download, CheckSquare, XSquare, Filter, AlertTriangle } from "lucide-react";
+import { useShallow } from "zustand/shallow";
 import { PremiumSkeleton } from "../../../components/layout/premium-components";
 import { Button } from "../../../components/ui/button";
-import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useManualImportQuery } from "../../../hooks/api/useManualImport";
-import type { ManualImportModalProps, ManualImportCandidateUnion } from "../types";
-import { candidateKey, describeRejections } from "../helpers";
-import { useShallow } from "zustand/shallow";
-import { useManualImportStore, getSelectionForCandidate } from "../store";
-import { buildSubmissionDefaults } from "../lib/submission-builder";
-import { useEpisodeSelection } from "../hooks/use-episode-selection";
-import { useAutoSelection } from "../hooks/use-auto-selection";
-import { useImportSubmission } from "../hooks/use-import-submission";
-import { CandidateCard } from "./candidate-card";
+import { useFocusTrap } from "../../../hooks/useFocusTrap";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { candidateKey, describeRejections } from "../helpers";
+import { useAutoSelection } from "../hooks/use-auto-selection";
+import { useEpisodeSelection } from "../hooks/use-episode-selection";
+import { useImportSubmission } from "../hooks/use-import-submission";
+import { buildSubmissionDefaults } from "../lib/submission-builder";
+import { getSelectionForCandidate, useManualImportStore } from "../store";
+import type { ManualImportCandidateUnion, ManualImportModalProps } from "../types";
+import { CandidateCard } from "./candidate-card";
 
 const importModeOptions = [
 	{ value: "auto", label: "Auto (match ARR settings)" },
@@ -271,8 +280,7 @@ export const ManualImportModal = ({
 						>
 							<AlertTriangle className="h-4 w-4 shrink-0" />
 							<span>
-								Failed to fetch manual import candidates.{" "}
-								{getErrorMessage(query.error, "")}
+								Failed to fetch manual import candidates. {getErrorMessage(query.error, "")}
 							</span>
 						</div>
 					)}

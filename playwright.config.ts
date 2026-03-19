@@ -27,7 +27,7 @@ export default defineConfig({
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: isCI ? [['list'], ['html', { open: 'never' }]] : [['html'], ['list']],
   /* Global timeout for each test - reduced for CI efficiency */
-  timeout: isCI ? 30000 : 60000,
+  timeout: isCI ? 20000 : 60000,
   /* Shared settings for all the projects below. */
   use: {
     /* Base URL to use in actions like `await page.goto('')`. */
@@ -79,6 +79,8 @@ export default defineConfig({
     timeout: isCI ? 8000 : 10000,
   },
 
-  /* Exclude Pocket ID tests in CI (requires external Pocket ID server) */
-  testIgnore: isCI ? ['**/pocket-id-test/**'] : [],
+  /* Exclude tests that require external services (Docker Compose stacks) */
+  testIgnore: isCI
+    ? ['**/pocket-id-test/**', '**/integration/**']
+    : ['**/integration/**'],
 });

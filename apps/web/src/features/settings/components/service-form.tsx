@@ -1,22 +1,22 @@
 "use client";
 
 import type { ServiceInstanceSummary } from "@arr/shared";
-import type { ServiceFormState } from "../lib/settings-utils";
 import {
-	Button,
-	Input,
-	Card,
-	CardContent,
-	CardHeader,
-	CardTitle,
-	CardDescription,
 	Alert,
 	AlertDescription,
+	Button,
+	Card,
+	CardContent,
+	CardDescription,
+	CardHeader,
+	CardTitle,
+	Input,
 	SimpleFormField,
 } from "../../../components/ui";
-import { cn } from "../../../lib/utils";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { cn } from "../../../lib/utils";
 import { SERVICE_TYPES } from "../lib/settings-constants";
+import type { ServiceFormState } from "../lib/settings-utils";
 import { getServicePlaceholders } from "../lib/settings-utils";
 
 /**
@@ -106,7 +106,7 @@ export const ServiceForm = ({
 													borderColor: themeGradient.from,
 													backgroundColor: themeGradient.fromLight,
 													color: themeGradient.from,
-											  }
+												}
 											: undefined
 									}
 								>
@@ -184,7 +184,9 @@ export const ServiceForm = ({
 					<SimpleFormField
 						label="API Key"
 						htmlFor="service-apikey"
-						hint={selectedService ? "Leave empty to keep current key" : "Found in Settings > General"}
+						hint={
+							selectedService ? "Leave empty to keep current key" : "Found in Settings > General"
+						}
 						required={!selectedService}
 					>
 						<Input

@@ -8,18 +8,18 @@
  * 3. Custom config (user-defined quality item ordering)
  */
 
-import type { SonarrClient, RadarrClient } from "arr-sdk";
 import type { CustomQualityConfig } from "@arr/shared";
-import {
-	normalizeQualityName,
-	extractQualitiesFromSchema,
-	applyCustomFormatScores,
-	submitNewProfile,
-	reverseQualityItemsIfNeeded,
-	type TemplateCF,
-} from "./quality-profile-helpers.js";
+import type { RadarrClient, SonarrClient } from "arr-sdk";
 import { loggers } from "../logger.js";
 import { getErrorMessage } from "../utils/error-message.js";
+import {
+	applyCustomFormatScores,
+	extractQualitiesFromSchema,
+	normalizeQualityName,
+	reverseQualityItemsIfNeeded,
+	submitNewProfile,
+	type TemplateCF,
+} from "./quality-profile-helpers.js";
 
 const log = loggers.deployment;
 

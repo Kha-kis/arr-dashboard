@@ -17,6 +17,7 @@ import {
 	isReadarrClient,
 	isSonarrClient,
 } from "../../lib/arr/client-helpers.js";
+import { validateRequest } from "../../lib/utils/validate.js";
 
 /**
  * Register search operation routes for library
@@ -35,7 +36,7 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 	 * Queues a season search in Sonarr
 	 */
 	app.post("/library/season/search", async (request, reply) => {
-		const payload = librarySeasonSearchRequestSchema.parse(request.body ?? {});
+		const payload = validateRequest(librarySeasonSearchRequestSchema, request.body ?? {});
 
 		const clientResult = await getClientForInstance(app, request, payload.instanceId);
 		if (!clientResult.success) {
@@ -83,7 +84,7 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 	 * Queues a series search in Sonarr
 	 */
 	app.post("/library/series/search", async (request, reply) => {
-		const payload = librarySeriesSearchRequestSchema.parse(request.body ?? {});
+		const payload = validateRequest(librarySeriesSearchRequestSchema, request.body ?? {});
 
 		const clientResult = await getClientForInstance(app, request, payload.instanceId);
 		if (!clientResult.success) {
@@ -123,7 +124,7 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 	 * Queues a movie search in Radarr
 	 */
 	app.post("/library/movie/search", async (request, reply) => {
-		const payload = libraryMovieSearchRequestSchema.parse(request.body ?? {});
+		const payload = validateRequest(libraryMovieSearchRequestSchema, request.body ?? {});
 
 		const clientResult = await getClientForInstance(app, request, payload.instanceId);
 		if (!clientResult.success) {
@@ -163,7 +164,7 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 	 * Queues an episode search in Sonarr
 	 */
 	app.post("/library/episode/search", async (request, reply) => {
-		const payload = libraryEpisodeSearchRequestSchema.parse(request.body ?? {});
+		const payload = validateRequest(libraryEpisodeSearchRequestSchema, request.body ?? {});
 
 		const clientResult = await getClientForInstance(app, request, payload.instanceId);
 		if (!clientResult.success) {
@@ -202,7 +203,7 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 	 * Queues an artist search in Lidarr
 	 */
 	app.post("/library/artist/search", async (request, reply) => {
-		const payload = libraryArtistSearchRequestSchema.parse(request.body ?? {});
+		const payload = validateRequest(libraryArtistSearchRequestSchema, request.body ?? {});
 
 		const clientResult = await getClientForInstance(app, request, payload.instanceId);
 		if (!clientResult.success) {
@@ -242,7 +243,7 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 	 * Queues an album search in Lidarr
 	 */
 	app.post("/library/album/search", async (request, reply) => {
-		const payload = libraryAlbumSearchRequestSchema.parse(request.body ?? {});
+		const payload = validateRequest(libraryAlbumSearchRequestSchema, request.body ?? {});
 
 		const clientResult = await getClientForInstance(app, request, payload.instanceId);
 		if (!clientResult.success) {
@@ -281,7 +282,7 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 	 * Queues an author search in Readarr
 	 */
 	app.post("/library/author/search", async (request, reply) => {
-		const payload = libraryAuthorSearchRequestSchema.parse(request.body ?? {});
+		const payload = validateRequest(libraryAuthorSearchRequestSchema, request.body ?? {});
 
 		const clientResult = await getClientForInstance(app, request, payload.instanceId);
 		if (!clientResult.success) {
@@ -321,7 +322,7 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 	 * Queues a book search in Readarr
 	 */
 	app.post("/library/book/search", async (request, reply) => {
-		const payload = libraryBookSearchRequestSchema.parse(request.body ?? {});
+		const payload = validateRequest(libraryBookSearchRequestSchema, request.body ?? {});
 
 		const clientResult = await getClientForInstance(app, request, payload.instanceId);
 		if (!clientResult.success) {

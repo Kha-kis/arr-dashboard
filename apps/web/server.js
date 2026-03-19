@@ -57,7 +57,9 @@ if (nextConfig._originalRewrites) {
 		});
 	};
 
-	nextConfig._originalRewrites.beforeFiles = patchRewrites(nextConfig._originalRewrites.beforeFiles);
+	nextConfig._originalRewrites.beforeFiles = patchRewrites(
+		nextConfig._originalRewrites.beforeFiles,
+	);
 	nextConfig._originalRewrites.afterFiles = patchRewrites(nextConfig._originalRewrites.afterFiles);
 	nextConfig._originalRewrites.fallback = patchRewrites(nextConfig._originalRewrites.fallback);
 }

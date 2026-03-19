@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.8.5** - Bug fixes for queue cleaner, statistics, dropdowns, logging, and Docker PostgreSQL
+> **Version 2.9.0** - Plex/Tautulli/Seerr integration, notification system, library cleanup, TRaSH naming deployment
 
 A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances. Consolidate your media automation management into a single, secure, and powerful interface.
 

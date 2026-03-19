@@ -1,5 +1,5 @@
 import type { CurrentUser, CurrentUserResponse } from "@arr/shared";
-import { ApiError, NetworkError, UnauthorizedError, apiRequest } from "../base";
+import { ApiError, apiRequest, NetworkError, UnauthorizedError } from "../base";
 import type {
 	OIDCLoginResponse,
 	OIDCProviderResponse,

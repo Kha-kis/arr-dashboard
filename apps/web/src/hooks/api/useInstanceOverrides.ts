@@ -1,19 +1,16 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-	getInstanceOverrides,
-	updateInstanceOverrides,
 	deleteInstanceOverrides,
 	type GetInstanceOverridesResponse,
+	getInstanceOverrides,
 	type UpdateInstanceOverridesPayload,
+	updateInstanceOverrides,
 } from "../../lib/api-client/trash-guides";
 
 /**
  * Hook to fetch instance-specific overrides for a template
  */
-export function useInstanceOverrides(
-	templateId: string | null,
-	instanceId: string | null,
-) {
+export function useInstanceOverrides(templateId: string | null, instanceId: string | null) {
 	return useQuery<GetInstanceOverridesResponse>({
 		queryKey: ["trash-guides", "instance-overrides", templateId, instanceId],
 		queryFn: () => getInstanceOverrides(templateId!, instanceId!),
@@ -69,13 +66,8 @@ export function useDeleteInstanceOverrides() {
 	const queryClient = useQueryClient();
 
 	return useMutation({
-		mutationFn: ({
-			templateId,
-			instanceId,
-		}: {
-			templateId: string;
-			instanceId: string;
-		}) => deleteInstanceOverrides(templateId, instanceId),
+		mutationFn: ({ templateId, instanceId }: { templateId: string; instanceId: string }) =>
+			deleteInstanceOverrides(templateId, instanceId),
 		onSuccess: (_, variables) => {
 			// Invalidate instance overrides query
 			queryClient.invalidateQueries({

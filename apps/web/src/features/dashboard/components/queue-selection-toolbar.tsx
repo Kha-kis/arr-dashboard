@@ -6,10 +6,10 @@
  */
 
 import type { QueueItem } from "@arr/shared";
-import { Download, RefreshCw, Tag, CheckCircle2 } from "lucide-react";
-import { cn } from "../../../lib/utils";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { CheckCircle2, Download, RefreshCw, Tag } from "lucide-react";
 import type { QueueActionOptions } from "../../../hooks/api/useQueueActions";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { cn } from "../../../lib/utils";
 import { RemoveActionMenu } from "./queue-action-buttons";
 
 interface QueueSelectionToolbarProps {
@@ -74,10 +74,7 @@ export const QueueSelectionToolbar = ({
 							background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
 						}}
 					>
-						<CheckCircle2
-							className="h-3.5 w-3.5"
-							style={{ color: themeGradient.from }}
-						/>
+						<CheckCircle2 className="h-3.5 w-3.5" style={{ color: themeGradient.from }} />
 					</div>
 					<span className="text-sm font-medium text-foreground">
 						{selectedItems.length} item{selectedItems.length === 1 ? "" : "s"} selected

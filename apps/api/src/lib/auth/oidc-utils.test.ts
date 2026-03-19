@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { normalizeIssuerUrl } from "./oidc-utils.js";
 
 describe("normalizeIssuerUrl", () => {

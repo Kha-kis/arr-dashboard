@@ -46,8 +46,8 @@ const GlobalError = ({ error, reset }: GlobalErrorProps) => {
 						<div className="space-y-2">
 							<h1 className="text-2xl font-semibold">Application Error</h1>
 							<p className="text-sm text-slate-400">
-								A critical error occurred. Please refresh the page or contact support if the
-								problem persists.
+								A critical error occurred. Please refresh the page or contact support if the problem
+								persists.
 							</p>
 						</div>
 
@@ -56,9 +56,7 @@ const GlobalError = ({ error, reset }: GlobalErrorProps) => {
 								<p className="mb-2 text-xs font-medium uppercase text-red-400">Error Details</p>
 								<p className="font-mono text-xs text-red-300 break-all">{error.message}</p>
 								{error.digest && (
-									<p className="mt-2 font-mono text-xs text-slate-500">
-										Digest: {error.digest}
-									</p>
+									<p className="mt-2 font-mono text-xs text-slate-500">Digest: {error.digest}</p>
 								)}
 							</div>
 						)}

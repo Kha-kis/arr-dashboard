@@ -1,10 +1,10 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { cn } from "../../lib/utils";
-import { getServiceGradient } from "../../lib/theme-gradients";
-import { useThemeGradient } from "../../hooks/useThemeGradient";
 import type { LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
+import { useThemeGradient } from "../../hooks/useThemeGradient";
+import { getServiceGradient } from "../../lib/theme-gradients";
+import { cn } from "../../lib/utils";
 import { ServiceBadge } from "./premium-data-display";
 
 /* =============================================================================
@@ -34,7 +34,7 @@ export const PremiumEmptyState = ({
 			className={cn(
 				"flex flex-col items-center justify-center py-16 px-8 text-center",
 				"rounded-2xl border-2 border-dashed border-border/50 bg-card/20",
-				className
+				className,
 			)}
 		>
 			{/* Icon with gradient background */}
@@ -52,9 +52,7 @@ export const PremiumEmptyState = ({
 			<h3 className="text-xl font-semibold mb-2">{title}</h3>
 
 			{/* Description */}
-			{description && (
-				<p className="text-muted-foreground max-w-md mb-6">{description}</p>
-			)}
+			{description && <p className="text-muted-foreground max-w-md mb-6">{description}</p>}
 
 			{/* Action */}
 			{action}
@@ -90,10 +88,7 @@ export const PremiumSection = ({
 
 	return (
 		<section
-			className={cn(
-				"animate-in fade-in slide-in-from-bottom-4 duration-500",
-				className
-			)}
+			className={cn("animate-in fade-in slide-in-from-bottom-4 duration-500", className)}
 			style={{
 				animationDelay: `${animationDelay}ms`,
 				animationFillMode: "backwards",
@@ -115,12 +110,8 @@ export const PremiumSection = ({
 						)}
 						{(title || description) && (
 							<div>
-								{title && (
-									<h3 className="font-semibold text-foreground">{title}</h3>
-								)}
-								{description && (
-									<p className="text-sm text-muted-foreground">{description}</p>
-								)}
+								{title && <h3 className="font-semibold text-foreground">{title}</h3>}
+								{description && <p className="text-sm text-muted-foreground">{description}</p>}
 							</div>
 						)}
 					</div>
@@ -165,7 +156,7 @@ export const GlassmorphicCard = ({
 				"rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs",
 				"animate-in fade-in slide-in-from-bottom-4 duration-500",
 				paddingClass,
-				className
+				className,
 			)}
 			style={{
 				animationDelay: style?.animationDelay ?? `${animationDelay}ms`,
@@ -214,7 +205,7 @@ export const InstanceCard = ({
 				"group relative overflow-hidden rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs",
 				"transition-all duration-300 hover:border-border hover:shadow-lg",
 				"animate-in fade-in slide-in-from-bottom-4 duration-500",
-				className
+				className,
 			)}
 			style={{
 				animationDelay: `${animationDelay}ms`,
@@ -250,18 +241,10 @@ export const InstanceCard = ({
 			</div>
 
 			{/* Stats */}
-			{stats && (
-				<div className="relative px-4 py-3 border-t border-border/30">
-					{stats}
-				</div>
-			)}
+			{stats && <div className="relative px-4 py-3 border-t border-border/30">{stats}</div>}
 
 			{/* Custom content */}
-			{children && (
-				<div className="relative px-4 pb-4">
-					{children}
-				</div>
-			)}
+			{children && <div className="relative px-4 pb-4">{children}</div>}
 		</div>
 	);
 };

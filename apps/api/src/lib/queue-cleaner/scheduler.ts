@@ -1,13 +1,18 @@
 import type { FastifyInstance } from "fastify";
+import { loggers } from "../logger.js";
+import { withTimeout } from "../utils/delay.js";
+import { getErrorMessage } from "../utils/error-message.js";
 import {
-	executeQueueCleaner,
-	executeEnhancedPreview,
 	type CleanerResult,
 	type EnhancedPreviewResult,
+	executeEnhancedPreview,
+	executeQueueCleaner,
 } from "./cleaner-executor.js";
-import { MANUAL_CLEAN_COOLDOWN_MINS, MAX_CLEAN_DURATION_MS, SCHEDULER_TICK_MS } from "./constants.js";
-import { loggers } from "../logger.js";
-import { getErrorMessage } from "../utils/error-message.js";
+import {
+	MANUAL_CLEAN_COOLDOWN_MINS,
+	MAX_CLEAN_DURATION_MS,
+	SCHEDULER_TICK_MS,
+} from "./constants.js";
 
 const log = loggers.scheduler;
 
@@ -19,31 +24,6 @@ export class SchedulerNotInitializedError extends Error {
 	constructor(operation: string) {
 		super(`Queue cleaner scheduler not initialized - cannot perform ${operation}`);
 		this.name = "SchedulerNotInitializedError";
-	}
-}
-
-/**
- * Run a promise with a timeout guard.
- */
-async function withTimeout<T>(
-	promise: Promise<T>,
-	timeoutMs: number,
-	timeoutMessage: string,
-): Promise<T> {
-	let timeoutId: NodeJS.Timeout | undefined;
-
-	const timeoutPromise = new Promise<never>((_, reject) => {
-		timeoutId = setTimeout(() => {
-			reject(new Error(timeoutMessage));
-		}, timeoutMs);
-	});
-
-	try {
-		return await Promise.race([promise, timeoutPromise]);
-	} finally {
-		if (timeoutId) {
-			clearTimeout(timeoutId);
-		}
 	}
 }
 
@@ -195,7 +175,9 @@ class QueueCleanerScheduler {
 
 		// Check for stuck logs cleanup failure (Issue 3: stale UI entries)
 		if (this.stuckLogsCleanupFailed) {
-			warnings.push("Stuck log cleanup failed on startup - Activity tab may show stale 'running' entries.");
+			warnings.push(
+				"Stuck log cleanup failed on startup - Activity tab may show stale 'running' entries.",
+			);
 		}
 
 		// Check for orphan clean attempts (Issue 6: invisible skipped cleans)
@@ -232,9 +214,7 @@ class QueueCleanerScheduler {
 	 * Creates a log entry first, then runs asynchronously.
 	 * Failures are recorded in the log entry for user visibility in the Activity tab.
 	 */
-	async triggerManualClean(
-		instanceId: string,
-	): Promise<{ triggered: boolean; message: string }> {
+	async triggerManualClean(instanceId: string): Promise<{ triggered: boolean; message: string }> {
 		// Check if clean is already in progress (prevents race condition)
 		if (this.cleaningInProgress.has(instanceId)) {
 			return { triggered: false, message: "Clean already in progress for this instance" };
@@ -497,38 +477,36 @@ class QueueCleanerScheduler {
 			include: { instance: true },
 		});
 
-		for (const config of configs) {
+		const dueConfigs = configs.filter((config) => {
 			const lastRun = config.lastRunAt ?? new Date(0);
 			const nextRun = new Date(lastRun.getTime() + config.intervalMins * 60 * 1000);
+			if (now < nextRun) return false;
+			if (this.cleaningInProgress.has(config.instanceId)) {
+				log.debug(
+					{ instanceId: config.instanceId },
+					"Skipping scheduled clean - already in progress",
+				);
+				return false;
+			}
+			return true;
+		});
 
-			if (now >= nextRun) {
-				// Skip if a clean is already in progress for this instance
-				// (prevents race condition with manual cleans)
-				if (this.cleaningInProgress.has(config.instanceId)) {
-					log.debug(
-						{ instanceId: config.instanceId },
-						"Skipping scheduled clean - already in progress",
-					);
-					continue;
-				}
-
-				// Mark as in-progress before starting
+		// Run due instances concurrently — cleaningInProgress prevents overlap
+		await Promise.allSettled(
+			dueConfigs.map(async (config) => {
 				this.cleaningInProgress.add(config.instanceId);
-
 				try {
 					await this.runClean(config.instanceId);
 				} catch (error) {
-					// Log but continue with remaining instances
 					log.error(
 						{ err: error, instanceId: config.instanceId },
-						"Unexpected error during scheduled clean - continuing with remaining instances",
+						"Unexpected error during scheduled clean",
 					);
 				} finally {
-					// Always clear the in-progress flag
 					this.cleaningInProgress.delete(config.instanceId);
 				}
-			}
-		}
+			}),
+		);
 	}
 
 	/**
@@ -556,13 +534,17 @@ class QueueCleanerScheduler {
 					data: {
 						instanceId,
 						status: "skipped",
-						message: "Clean skipped - no configuration found for instance (config may have been deleted)",
+						message:
+							"Clean skipped - no configuration found for instance (config may have been deleted)",
 						completedAt: new Date(),
 						isDryRun: false,
 					},
 				});
 			} catch (logErr) {
-				log.warn({ err: logErr, instanceId }, "Failed to create skipped log entry for orphan config");
+				log.warn(
+					{ err: logErr, instanceId },
+					"Failed to create skipped log entry for orphan config",
+				);
 			}
 			return;
 		}
@@ -596,8 +578,10 @@ class QueueCleanerScheduler {
 						itemsSkipped: result.itemsSkipped,
 						itemsWarned: result.itemsWarned,
 						isDryRun: result.isDryRun,
-						cleanedItems: result.cleanedItems.length > 0 ? JSON.stringify(result.cleanedItems) : null,
-						skippedItems: result.skippedItems.length > 0 ? JSON.stringify(result.skippedItems) : null,
+						cleanedItems:
+							result.cleanedItems.length > 0 ? JSON.stringify(result.cleanedItems) : null,
+						skippedItems:
+							result.skippedItems.length > 0 ? JSON.stringify(result.skippedItems) : null,
 						warnedItems: result.warnedItems.length > 0 ? JSON.stringify(result.warnedItems) : null,
 						status: result.status,
 						message: result.message,
@@ -616,6 +600,64 @@ class QueueCleanerScheduler {
 					},
 				});
 			});
+
+			// Fire-and-forget notifications for clean results
+			if (result.itemsCleaned > 0 && !result.isDryRun) {
+				this.app.notificationService
+					?.notify({
+						eventType: "QUEUE_ITEMS_REMOVED",
+						title: `Queue cleaner removed ${result.itemsCleaned} item(s) on ${config.instance.label}`,
+						body:
+							result.message ??
+							`Cleaned ${result.itemsCleaned} items, skipped ${result.itemsSkipped}`,
+						url: "/settings?tab=queue-cleaner",
+						metadata: {
+							instance: config.instance.label,
+							service: config.instance.service,
+							itemsCleaned: result.itemsCleaned,
+							itemsSkipped: result.itemsSkipped,
+							durationMs,
+							cleanedItems: result.cleanedItems
+								.slice(0, 5)
+								.map(
+									(i: { title?: string; rule?: string }) =>
+										`${i.title ?? "Unknown"} (${i.rule ?? ""})`,
+								),
+						},
+					})
+					.catch((err) => {
+						log.warn(
+							{ err, instanceLabel: config.instance.label },
+							"Queue cleaner notification dispatch failed",
+						);
+					});
+			}
+			if (result.itemsWarned > 0) {
+				this.app.notificationService
+					?.notify({
+						eventType: "QUEUE_STRIKES_ISSUED",
+						title: `Queue cleaner issued strikes on ${config.instance.label}`,
+						body: `${result.itemsWarned} item(s) received strikes`,
+						url: "/settings?tab=queue-cleaner",
+						metadata: {
+							instance: config.instance.label,
+							service: config.instance.service,
+							itemsWarned: result.itemsWarned,
+							warnedItems: result.warnedItems
+								.slice(0, 5)
+								.map(
+									(i: { title?: string; rule?: string }) =>
+										`${i.title ?? "Unknown"} (${i.rule ?? ""})`,
+								),
+						},
+					})
+					.catch((err) => {
+						log.warn(
+							{ err, instanceLabel: config.instance.label },
+							"Queue cleaner strikes notification dispatch failed",
+						);
+					});
+			}
 		} catch (error) {
 			const durationMs = Date.now() - startTime;
 			const message = getErrorMessage(error, "Unknown error");
@@ -630,10 +672,27 @@ class QueueCleanerScheduler {
 				},
 			});
 
-			log.error(
-				{ err: error, instanceLabel: config.instance.label },
-				"Queue cleaner error",
-			);
+			log.error({ err: error, instanceLabel: config.instance.label }, "Queue cleaner error");
+
+			// Fire-and-forget notification for queue cleaner failure
+			this.app?.notificationService
+				?.notify({
+					eventType: "QUEUE_CLEANER_FAILED",
+					title: `Queue cleaner failed on ${config.instance.label}`,
+					body: message,
+					url: "/settings?tab=queue-cleaner",
+					metadata: {
+						instance: config.instance.label,
+						service: config.instance.service,
+						durationMs,
+					},
+				})
+				.catch((err) => {
+					log.warn(
+						{ err, instanceLabel: config.instance.label },
+						"Queue cleaner failure notification dispatch failed",
+					);
+				});
 		}
 	}
 }

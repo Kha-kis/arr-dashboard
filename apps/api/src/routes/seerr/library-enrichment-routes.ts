@@ -5,26 +5,30 @@
  * Used by the frontend to enrich library cards with Seerr data.
  */
 
+import type { LibraryEnrichmentItem, LibraryEnrichmentResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { requireSeerrClient } from "../../lib/seerr/seerr-client.js";
 import { validateRequest } from "../../lib/utils/validate.js";
-import type { LibraryEnrichmentItem, LibraryEnrichmentResponse } from "@arr/shared";
+import { runWithConcurrency } from "./lib/enrichment-helpers.js";
 
 const instanceIdParams = z.object({ instanceId: z.string().min(1) });
 
 const enrichmentQuery = z.object({
 	tmdbIds: z.string().min(1),
-	types: z.string().min(1).transform((val, ctx) => {
-		const parts = val.split(",");
-		for (const t of parts) {
-			if (t !== "movie" && t !== "tv") {
-				ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Invalid type: ${t}` });
-				return z.NEVER;
+	types: z
+		.string()
+		.min(1)
+		.transform((val, ctx) => {
+			const parts = val.split(",");
+			for (const t of parts) {
+				if (t !== "movie" && t !== "tv") {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Invalid type: ${t}` });
+					return z.NEVER;
+				}
 			}
-		}
-		return parts as ("movie" | "tv")[];
-	}),
+			return parts as ("movie" | "tv")[];
+		}),
 });
 
 /** Max items per batch request */
@@ -32,34 +36,6 @@ const MAX_BATCH_SIZE = 100;
 
 /** Concurrency limit for parallel Seerr calls */
 const CONCURRENCY_LIMIT = 10;
-
-/**
- * Run an array of async functions with bounded concurrency.
- * Returns results in the same order as the input.
- */
-async function runWithConcurrency<T>(
-	tasks: (() => Promise<T>)[],
-	limit: number,
-): Promise<PromiseSettledResult<T>[]> {
-	const results: PromiseSettledResult<T>[] = new Array(tasks.length);
-	let nextIndex = 0;
-
-	async function runNext(): Promise<void> {
-		while (nextIndex < tasks.length) {
-			const index = nextIndex++;
-			try {
-				const value = await tasks[index]!();
-				results[index] = { status: "fulfilled", value };
-			} catch (reason) {
-				results[index] = { status: "rejected", reason };
-			}
-		}
-	}
-
-	const workers = Array.from({ length: Math.min(limit, tasks.length) }, () => runNext());
-	await Promise.all(workers);
-	return results;
-}
 
 export async function registerLibraryEnrichmentRoutes(
 	app: FastifyInstance,
@@ -73,10 +49,7 @@ export async function registerLibraryEnrichmentRoutes(
 	 */
 	app.get("/:instanceId", async (request, reply) => {
 		const { instanceId } = validateRequest(instanceIdParams, request.params);
-		const { tmdbIds: tmdbIdsRaw, types } = validateRequest(
-			enrichmentQuery,
-			request.query,
-		);
+		const { tmdbIds: tmdbIdsRaw, types } = validateRequest(enrichmentQuery, request.query);
 
 		const tmdbIds = tmdbIdsRaw.split(",").map(Number);
 
@@ -104,15 +77,21 @@ export async function registerLibraryEnrichmentRoutes(
 		// Fetch media summaries in parallel with concurrency limit
 		const entries = [...uniqueItems.entries()];
 		const summaryResults = await runWithConcurrency(
-			entries.map(([, { type, tmdbId }]) => () => client.getMediaSummary(type, tmdbId)),
+			entries.map(
+				([, { type, tmdbId }]) =>
+					() =>
+						client.getMediaSummary(type, tmdbId),
+			),
 			CONCURRENCY_LIMIT,
 		);
 
 		// Fetch open issue counts (single paginated walk)
 		let issueCounts = new Map<string, number>();
+		let issueCountsAvailable = true;
 		try {
 			issueCounts = await client.getOpenIssueCounts();
 		} catch (err) {
+			issueCountsAvailable = false;
 			request.log.warn({ err }, "Failed to fetch Seerr issue counts for library enrichment");
 		}
 
@@ -144,7 +123,11 @@ export async function registerLibraryEnrichmentRoutes(
 			);
 		}
 
-		const response: LibraryEnrichmentResponse = { items };
+		const response: LibraryEnrichmentResponse = {
+			items,
+			...(!issueCountsAvailable ? { issueCountsAvailable: false } : {}),
+			...(enrichmentFailures > 0 ? { enrichmentFailures } : {}),
+		};
 		return reply.send(response);
 	});
 }

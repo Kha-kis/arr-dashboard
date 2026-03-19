@@ -1,7 +1,7 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import type { BulkScoreFilters, CustomFormatScoreEntry } from "@arr/shared";
+import { useQuery } from "@tanstack/react-query";
 
 interface BulkScoresResponse {
 	success: boolean;
@@ -21,10 +21,13 @@ interface UseBulkScoresFilters {
  */
 async function fetchBulkScores(filters: BulkScoreFilters): Promise<BulkScoresResponse> {
 	const params = new URLSearchParams(
-		Object.entries(filters).reduce((acc, [key, value]) => {
-			if (value !== undefined) acc[key] = String(value);
-			return acc;
-		}, {} as Record<string, string>)
+		Object.entries(filters).reduce(
+			(acc, [key, value]) => {
+				if (value !== undefined) acc[key] = String(value);
+				return acc;
+			},
+			{} as Record<string, string>,
+		),
 	);
 
 	const response = await fetch(`/api/trash-guides/bulk-scores?${params}`, {

@@ -24,6 +24,7 @@ RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
 # ===== BUILD STAGE =====
 FROM build-base AS builder
 WORKDIR /app
+ARG COMMIT_SHA=unknown
 
 # Copy dependencies and source code
 COPY --from=deps /app ./
@@ -47,7 +48,7 @@ RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     cd /app/deploy-api && \
     cp -r /app/apps/api/dist ./dist && \
     cp -r /app/apps/api/prisma ./prisma && \
-    node -e "const p=require('/app/package.json'); console.log(JSON.stringify({version:p.version,name:p.name}))" > ./version.json && \
+    node -e "const p=require('/app/package.json'); console.log(JSON.stringify({version:p.version,name:p.name,commitSha:process.env.COMMIT_SHA||'unknown'}))" > ./version.json && \
     # Remove non-Linux native module prebuilds to reduce image size (~1MB)
     find node_modules -type d -name "prebuilds" -exec sh -c 'cd "{}" && rm -rf darwin-* win32-* freebsd-*' \; 2>/dev/null || true
 

@@ -31,9 +31,17 @@ export const envSchema = z
 			.max(24 * 30)
 			.default(24),
 		PASSWORD_POLICY: z.enum(["strict", "relaxed"]).default("strict"),
-		TRUST_PROXY: z.string().default("false")
+		// Proxy — set to true when running behind a reverse proxy (nginx, Traefik, Caddy, etc.)
+		// Enables trustProxy on Fastify so X-Forwarded-For/Proto/Host headers are trusted.
+		// Also auto-enables secure cookies (HTTPS) unless COOKIE_SECURE is explicitly set.
+		TRUST_PROXY: z
+			.string()
+			.default("false")
 			.transform((v) => parseBooleanEnv(v) ?? false),
-		COOKIE_SECURE: z.string().optional()
+		// Cookie — override secure flag. When omitted, auto-detects from TRUST_PROXY.
+		COOKIE_SECURE: z
+			.string()
+			.optional()
 			.transform((v) => parseBooleanEnv(v)),
 		APP_URL: z.string().url().default("http://localhost:3000"),
 		TMDB_BASE_URL: z.string().url().default("https://api.themoviedb.org/3"),

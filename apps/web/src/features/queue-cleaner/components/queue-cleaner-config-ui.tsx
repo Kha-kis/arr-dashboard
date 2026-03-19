@@ -12,7 +12,13 @@ import { WHITELIST_TYPES } from "../lib/constants";
 import type { WhitelistPattern } from "../lib/queue-cleaner-types";
 
 // Re-export shared primitives for backward compatibility
-export { Tooltip, ToggleSwitch, ToggleRow, ConfigInput, ConfigSection } from "../../../components/layout/config-primitives";
+export {
+	ConfigInput,
+	ConfigSection,
+	ToggleRow,
+	ToggleSwitch,
+	Tooltip,
+} from "../../../components/layout/config-primitives";
 
 // ============================================================================
 // RuleSection (domain-specific — uses ToggleSwitch + plain styling)
@@ -35,19 +41,47 @@ export const RuleSection = ({
 	onToggle: (value: boolean) => void;
 	children?: React.ReactNode;
 }) => (
-	<div className="space-y-3">
-		<div className="flex items-center justify-between">
-			<div className="flex items-center gap-2.5">
-				<Icon className="h-4 w-4 text-muted-foreground" />
+	<div
+		className="rounded-xl overflow-hidden transition-all duration-200"
+		style={{
+			border: enabled ? "1px solid rgba(255,255,255,0.06)" : "1px solid transparent",
+			backgroundColor: enabled ? "rgba(255,255,255,0.02)" : "transparent",
+		}}
+	>
+		<div
+			className="flex items-center justify-between px-4 py-3"
+			style={{
+				backgroundColor: enabled ? "rgba(255,255,255,0.015)" : "transparent",
+			}}
+		>
+			<div className="flex items-center gap-3">
+				<div
+					className="flex h-7 w-7 items-center justify-center rounded-lg shrink-0 transition-colors duration-200"
+					style={{
+						backgroundColor: enabled
+							? "rgba(74, 222, 128, 0.1)"
+							: "rgba(148, 163, 184, 0.08)",
+						border: enabled
+							? "1px solid rgba(74, 222, 128, 0.15)"
+							: "1px solid rgba(148, 163, 184, 0.1)",
+					}}
+				>
+					<Icon
+						className="h-3.5 w-3.5 transition-colors duration-200"
+						style={{
+							color: enabled ? "rgb(74, 222, 128)" : "rgb(148, 163, 184)",
+						}}
+					/>
+				</div>
 				<div>
-					<h5 className="text-sm font-medium text-foreground">{title}</h5>
-					<p className="text-xs text-muted-foreground">{description}</p>
+					<h5 className="text-sm font-medium text-foreground leading-snug">{title}</h5>
+					<p className="text-[11px] text-muted-foreground/60">{description}</p>
 				</div>
 			</div>
 			<ToggleSwitch checked={enabled} onChange={onToggle} label={title} />
 		</div>
 		{enabled && children && (
-			<div className="pl-7 space-y-3 border-l-2 border-border/30 ml-2">
+			<div className="px-4 pb-4 pt-1 space-y-3 ml-[22px] border-l-2 border-border/20">
 				{children}
 			</div>
 		)}
@@ -78,10 +112,7 @@ export const WhitelistEditor = ({
 	const addPattern = () => {
 		// Generate unique ID for stable React key (prevents reconciliation issues)
 		const id = `wp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-		const newPatterns = [
-			...parsedPatterns,
-			{ type: "tracker" as const, pattern: "", id },
-		];
+		const newPatterns = [...parsedPatterns, { type: "tracker" as const, pattern: "", id }];
 		onChange(JSON.stringify(newPatterns));
 	};
 
@@ -136,18 +167,13 @@ export const WhitelistEditor = ({
 					</button>
 				</div>
 			))}
-			<Button
-				type="button"
-				variant="secondary"
-				size="sm"
-				className="gap-1.5"
-				onClick={addPattern}
-			>
+			<Button type="button" variant="secondary" size="sm" className="gap-1.5" onClick={addPattern}>
 				<Plus className="h-3.5 w-3.5" />
 				Add Pattern
 			</Button>
 			<p className="text-[10px] text-muted-foreground">
-				Items matching any pattern will be excluded from queue cleaning. Patterns are case-insensitive substring matches.
+				Items matching any pattern will be excluded from queue cleaning. Patterns are
+				case-insensitive substring matches.
 			</p>
 		</div>
 	);

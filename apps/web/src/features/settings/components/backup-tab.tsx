@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { GlassmorphicCard } from "../../../components/layout";
+
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { BackupEncryptionSection } from "./backup-encryption-section";
-import { BackupScheduleSection } from "./backup-schedule-section";
 import { BackupCreateCard } from "./backup-create-card";
-import { BackupRestoreCard } from "./backup-restore-card";
+import { BackupEncryptionSection } from "./backup-encryption-section";
 import { BackupListSection } from "./backup-list-section";
+import { BackupRestoreCard } from "./backup-restore-card";
+import { BackupScheduleSection } from "./backup-schedule-section";
 
 export const BackupTab = () => {
 	const { gradient: themeGradient } = useThemeGradient();
@@ -65,14 +65,19 @@ export const BackupTab = () => {
 					aria-modal="true"
 					aria-labelledby="server-restarting-title"
 				>
-					<GlassmorphicCard padding="lg" className="w-full max-w-md m-4">
+					<div className="rounded-xl border border-border/30 bg-muted/10 p-6 w-full max-w-md m-4">
 						<div className="flex flex-col items-center text-center space-y-4 py-4">
 							<div
 								className="animate-spin rounded-full h-12 w-12 border-b-2"
 								style={{ borderColor: themeGradient.from }}
 							/>
 							<div>
-								<h3 id="server-restarting-title" className="text-lg font-semibold mb-2 text-foreground">Server Restarting</h3>
+								<h3
+									id="server-restarting-title"
+									className="text-lg font-semibold mb-2 text-foreground"
+								>
+									Server Restarting
+								</h3>
 								<p className="text-sm text-muted-foreground">
 									Backup restored successfully. The server is restarting...
 								</p>
@@ -81,7 +86,7 @@ export const BackupTab = () => {
 								</p>
 							</div>
 						</div>
-					</GlassmorphicCard>
+					</div>
 				</div>
 			)}
 		</div>

@@ -80,7 +80,9 @@ class SyncMetricsService {
 	/**
 	 * Record the start of an operation. Returns a function to call when operation completes.
 	 */
-	startOperation(type: OperationType): () => { recordSuccess: () => void; recordFailure: (error?: string) => void } {
+	startOperation(
+		type: OperationType,
+	): () => { recordSuccess: () => void; recordFailure: (error?: string) => void } {
 		const startTime = Date.now();
 
 		return () => ({

@@ -6,12 +6,12 @@
  * the instance's history API first, falling back to queue scanning.
  */
 
-import type { SonarrClient } from "arr-sdk/sonarr";
 import type { RadarrClient } from "arr-sdk/radarr";
-import type { ApiCallCounter } from "./pagination-helpers.js";
-import { GRAB_CHECK_DELAY_MS } from "./constants.js";
+import type { SonarrClient } from "arr-sdk/sonarr";
 import { delay } from "../utils/delay.js";
+import { GRAB_CHECK_DELAY_MS } from "./constants.js";
 import type { HuntLogger } from "./hunt-filters.js";
+import type { ApiCallCounter } from "./pagination-helpers.js";
 
 export interface GrabbedItem {
 	title: string;

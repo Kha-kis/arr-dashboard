@@ -1,14 +1,15 @@
 "use client";
 
-import { Star } from "lucide-react";
 import type { SeerrDiscoverResult } from "@arr/shared";
-import { RATING_COLOR } from "../../../lib/theme-gradients";
+import { Film, Star, Tv } from "lucide-react";
+import { useState } from "react";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { RATING_COLOR } from "../../../lib/theme-gradients";
 import {
-	getSeerrImageUrl,
-	getMediaStatusInfo,
 	getDisplayTitle,
+	getMediaStatusInfo,
 	getReleaseYear,
+	getSeerrImageUrl,
 	isLikelyAnime,
 } from "../lib/seerr-image-utils";
 
@@ -18,17 +19,15 @@ interface DiscoverPosterCardProps {
 	index: number;
 }
 
-export const DiscoverPosterCard: React.FC<DiscoverPosterCardProps> = ({
-	item,
-	onClick,
-	index,
-}) => {
+export const DiscoverPosterCard: React.FC<DiscoverPosterCardProps> = ({ item, onClick, index }) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const posterUrl = getSeerrImageUrl(item.posterPath, "w300");
 	const title = getDisplayTitle(item);
 	const year = getReleaseYear(item);
 	const statusInfo = getMediaStatusInfo(item.mediaInfo?.status);
 	const anime = isLikelyAnime(item);
+	const [imgError, setImgError] = useState(false);
+	const MediaIcon = item.mediaType === "movie" ? Film : Tv;
 
 	return (
 		<div
@@ -51,17 +50,24 @@ export const DiscoverPosterCard: React.FC<DiscoverPosterCardProps> = ({
 			<div className="relative rounded-xl border border-border/50 bg-card/80 backdrop-blur-xs overflow-hidden group-hover:border-transparent transition-colors duration-300">
 				{/* Poster */}
 				<div className="relative aspect-2/3 w-full overflow-hidden bg-linear-to-br from-slate-800 to-slate-900">
-					{posterUrl ? (
+					{posterUrl && !imgError ? (
 						/* eslint-disable-next-line @next/next/no-img-element */
 						<img
 							src={posterUrl}
 							alt={title}
 							className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
 							loading="lazy"
+							onError={() => setImgError(true)}
 						/>
 					) : (
-						<div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-							No poster
+						<div className="flex h-full flex-col items-center justify-center gap-2 px-3">
+							<MediaIcon
+								className="h-10 w-10"
+								style={{ color: themeGradient.from, opacity: 0.4 }}
+							/>
+							<p className="text-center text-xs font-medium text-muted-foreground/70 line-clamp-2">
+								{title}
+							</p>
 						</div>
 					)}
 

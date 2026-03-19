@@ -18,7 +18,12 @@ import { Button } from "../../../components/ui";
 import { useValidateSync } from "../../../hooks/api/useSync";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { ValidationResult } from "../../../lib/api-client/trash-guides";
-import { detectErrorTypes, type ErrorType, type ValidationTiming, type RetryProgress } from "../lib/sync-validation-utils";
+import {
+	detectErrorTypes,
+	type ErrorType,
+	type RetryProgress,
+	type ValidationTiming,
+} from "../lib/sync-validation-utils";
 import { SyncDebugPanel } from "./sync-debug-panel";
 import {
 	MutationErrorPanel,
@@ -239,7 +244,7 @@ export const SyncValidationModal = ({
 		if (retryCount < MAX_MANUAL_RETRIES) {
 			setRetryCount((prev) => prev + 1);
 			setValidation(null);
-			const delay = Math.pow(2, retryCount) * 1000;
+			const delay = 2 ** retryCount * 1000;
 			handleRetryTimeoutRef.current = setTimeout(runValidation, delay);
 		} else {
 			setValidation(null);
@@ -337,15 +342,12 @@ export const SyncValidationModal = ({
 							<RefreshCw className="h-6 w-6" style={{ color: themeGradient.from }} />
 						</div>
 						<div>
-							<h2
-								id="sync-validation-title"
-								className="text-xl font-bold text-foreground"
-							>
+							<h2 id="sync-validation-title" className="text-xl font-bold text-foreground">
 								Validate Sync
 							</h2>
 							<p className="mt-1 text-sm text-muted-foreground">
-								Template: <span className="font-medium text-foreground">{templateName}</span> → Instance:{" "}
-								<span className="font-medium text-foreground">{instanceName}</span>
+								Template: <span className="font-medium text-foreground">{templateName}</span> →
+								Instance: <span className="font-medium text-foreground">{instanceName}</span>
 							</p>
 						</div>
 					</div>
@@ -447,14 +449,22 @@ export const SyncValidationModal = ({
 														<div className="flex items-center justify-between">
 															<div className="flex-1">
 																<p className="font-medium text-foreground">{conflict.configName}</p>
-																<p className="mt-0.5 text-xs text-muted-foreground">{conflict.reason}</p>
+																<p className="mt-0.5 text-xs text-muted-foreground">
+																	{conflict.reason}
+																</p>
 															</div>
 
 															<div className="flex gap-2">
 																<Button
 																	size="sm"
-																	variant={resolutions[conflict.configName] === "REPLACE" ? "default" : "outline"}
-																	onClick={() => handleResolutionChange(conflict.configName, "REPLACE")}
+																	variant={
+																		resolutions[conflict.configName] === "REPLACE"
+																			? "default"
+																			: "outline"
+																	}
+																	onClick={() =>
+																		handleResolutionChange(conflict.configName, "REPLACE")
+																	}
 																	className="rounded-xl"
 																	style={
 																		resolutions[conflict.configName] === "REPLACE"
@@ -468,8 +478,14 @@ export const SyncValidationModal = ({
 																</Button>
 																<Button
 																	size="sm"
-																	variant={resolutions[conflict.configName] === "SKIP" ? "default" : "outline"}
-																	onClick={() => handleResolutionChange(conflict.configName, "SKIP")}
+																	variant={
+																		resolutions[conflict.configName] === "SKIP"
+																			? "default"
+																			: "outline"
+																	}
+																	onClick={() =>
+																		handleResolutionChange(conflict.configName, "SKIP")
+																	}
 																	className="rounded-xl"
 																	style={
 																		resolutions[conflict.configName] === "SKIP"

@@ -7,20 +7,20 @@
 
 // Re-export shared types for convenience
 export type {
-	CleanerRule,
-	PreviewStatusRule,
-	PreviewRule,
-	ImportBlockCleanupLevel,
-	ImportBlockPatternMode,
-	WhitelistType,
-	WhitelistPattern,
-	CleanerResultItem,
-	StrikeInfo,
 	CleanerResult,
+	CleanerResultItem,
+	CleanerRule,
 	// Preview types - imported from shared to avoid duplication
 	EnhancedPreviewItem,
-	QueueStateSummary,
 	EnhancedPreviewResult,
+	ImportBlockCleanupLevel,
+	ImportBlockPatternMode,
+	PreviewRule,
+	PreviewStatusRule,
+	QueueStateSummary,
+	StrikeInfo,
+	WhitelistPattern,
+	WhitelistType,
 } from "@arr/shared";
 
 // Import types we need to reference in this file

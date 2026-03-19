@@ -1,5 +1,5 @@
 import type { QueueActionCapabilities, QueueItem } from "@arr/shared";
-import type { SonarrClient, RadarrClient, LidarrClient, ReadarrClient } from "arr-sdk";
+import type { LidarrClient, RadarrClient, ReadarrClient, SonarrClient } from "arr-sdk";
 import { toNumber, toStringValue } from "../data/values.js";
 
 /** Service types that support queue functionality */
@@ -213,9 +213,17 @@ const extractQueueItemTitle = (anyItem: UnknownRecord, service: QueueService): s
 		case "radarr":
 			return toStringValue(anyItem.movie?.title) ?? "Untitled";
 		case "lidarr":
-			return toStringValue(anyItem.artist?.artistName) ?? toStringValue(anyItem.album?.title) ?? "Untitled";
+			return (
+				toStringValue(anyItem.artist?.artistName) ??
+				toStringValue(anyItem.album?.title) ??
+				"Untitled"
+			);
 		case "readarr":
-			return toStringValue(anyItem.author?.authorName) ?? toStringValue(anyItem.book?.title) ?? "Untitled";
+			return (
+				toStringValue(anyItem.author?.authorName) ??
+				toStringValue(anyItem.book?.title) ??
+				"Untitled"
+			);
 		default:
 			return "Untitled";
 	}

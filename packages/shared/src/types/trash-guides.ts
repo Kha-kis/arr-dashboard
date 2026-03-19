@@ -23,6 +23,8 @@ export const TRASH_CONFIG_TYPES = {
 	QUALITY_PROFILES: "QUALITY_PROFILES",
 	CF_DESCRIPTIONS: "CF_DESCRIPTIONS",
 	CF_INCLUDES: "CF_INCLUDES", // MkDocs include files shared across CF descriptions
+	QUALITY_PROFILE_GROUPS: "QUALITY_PROFILE_GROUPS",
+	NAMING_PRESETS: "NAMING_PRESETS",
 } as const;
 
 export type TrashConfigType = (typeof TRASH_CONFIG_TYPES)[keyof typeof TRASH_CONFIG_TYPES];
@@ -82,6 +84,7 @@ export interface TrashCustomFormat {
 	 */
 	trash_scores?: Record<string, number>;
 	trash_description?: string;
+	trash_url?: string;
 	includeCustomFormatWhenRenaming?: boolean;
 	specifications: CustomFormatSpecification[];
 	// Optional metadata for instance-sourced CFs (not from TRaSH Guides)
@@ -150,7 +153,7 @@ export interface TrashCustomFormatGroup {
  */
 export function isCFGroupApplicableToProfile(
 	group: TrashCustomFormatGroup,
-	profileTrashId: string
+	profileTrashId: string,
 ): boolean {
 	const qualityProfiles = group.quality_profiles;
 
@@ -210,6 +213,147 @@ export interface TrashNamingScheme {
 	season_folder?: string;
 }
 
+// ============================================================================
+// Naming Deployment Types (Feature 2)
+// ============================================================================
+
+/** Radarr naming JSON from TRaSH with synthetic discriminant injected at fetch time */
+export interface TrashRadarrNaming {
+	_service: "RADARR";
+	folder: Record<string, string>;
+	file: Record<string, string>;
+}
+
+/** Sonarr naming JSON from TRaSH with synthetic discriminant injected at fetch time */
+export interface TrashSonarrNaming {
+	_service: "SONARR";
+	season: Record<string, string>;
+	series: Record<string, string>;
+	episodes: {
+		standard: Record<string, string>;
+		daily: Record<string, string>;
+		anime: Record<string, string>;
+	};
+}
+
+/** Discriminated union — narrow with `data._service === "RADARR"` */
+export type TrashNamingData = TrashRadarrNaming | TrashSonarrNaming;
+
+export interface NamingPreset {
+	name: string;
+	formatString: string;
+}
+
+/** Radarr naming presets response */
+export interface RadarrPresetsResponse {
+	serviceType: "RADARR";
+	filePresets: NamingPreset[];
+	folderPresets: NamingPreset[];
+}
+
+/** Sonarr naming presets response */
+export interface SonarrPresetsResponse {
+	serviceType: "SONARR";
+	standardEpisodePresets: NamingPreset[];
+	dailyEpisodePresets: NamingPreset[];
+	animeEpisodePresets: NamingPreset[];
+	seriesFolderPresets: NamingPreset[];
+	seasonFolderPresets: NamingPreset[];
+}
+
+/** Discriminated union — narrow with `response.serviceType` */
+export type NamingPresetsResponse = RadarrPresetsResponse | SonarrPresetsResponse;
+
+/** Radarr selected presets */
+export interface RadarrSelectedPresets {
+	serviceType: "RADARR";
+	filePreset: string | null;
+	folderPreset: string | null;
+}
+
+/** Sonarr selected presets */
+export interface SonarrSelectedPresets {
+	serviceType: "SONARR";
+	standardEpisodePreset: string | null;
+	dailyEpisodePreset: string | null;
+	animeEpisodePreset: string | null;
+	seriesFolderPreset: string | null;
+	seasonFolderPreset: string | null;
+}
+
+/** Discriminated union — narrow with `presets.serviceType` */
+export type NamingSelectedPresets = RadarrSelectedPresets | SonarrSelectedPresets;
+
+export interface NamingFieldComparison {
+	fieldGroup: string;
+	arrApiField: string;
+	presetName: string;
+	presetValue: string;
+	currentValue: string | null;
+	changed: boolean;
+}
+
+/**
+ * Preview result with pre-computed change counts.
+ * Invariant: changedCount + unchangedCount === comparisons.length
+ */
+export interface NamingPreviewResult {
+	comparisons: NamingFieldComparison[];
+	changedCount: number;
+	unchangedCount: number;
+}
+
+export interface NamingConfigRecord {
+	instanceId: string;
+	serviceType: "RADARR" | "SONARR";
+	selectedPresets: NamingSelectedPresets;
+	syncStrategy: "auto" | "manual" | "notify";
+	lastDeployedAt: string | null;
+	lastDeployedHash: string | null;
+	lastDeployStatus: NamingDeployStatus | null;
+	lastDeployError: string | null;
+	createdAt: string;
+	updatedAt: string;
+}
+
+// ============================================================================
+// Naming Deploy History
+// ============================================================================
+
+export type NamingDeployStatus = "PENDING" | "SUCCESS" | "FAILED" | "ROLLED_BACK";
+
+export interface NamingDeployHistoryRecord {
+	id: string;
+	instanceId: string;
+	deployedAt: string;
+	status: NamingDeployStatus;
+	selectedPresets: NamingSelectedPresets;
+	changedFields: number;
+	totalFields: number;
+	errorMessage: string | null;
+	rolledBack: boolean;
+	rolledBackAt: string | null;
+	instanceLabel?: string;
+	serviceType?: "RADARR" | "SONARR";
+}
+
+export interface NamingDeployHistoryPagination {
+	total: number;
+	limit: number;
+	offset: number;
+	hasMore: boolean;
+}
+
+export interface NamingRollbackPayload {
+	historyId: string;
+}
+
+export interface NamingRollbackResponse {
+	success: boolean;
+	message: string;
+	fieldCount: number;
+}
+
 /**
  * Quality Profile from TRaSH Guides
  */
@@ -218,6 +362,8 @@ export interface TrashQualityProfile {
 	name: string;
 	trash_score_set?: string;
 	trash_description?: string;
+	trash_url?: string;
+	visible?: string;
 	group?: number;
 	upgradeAllowed: boolean;
 	cutoff: string;
@@ -256,6 +402,16 @@ export interface TrashCFInclude {
 	fetchedAt: string;
 }
 
+/**
+ * Quality Profile Group from TRaSH Guides.
+ * Fetched from docs/json/{service}/quality-profile-groups/groups.json.
+ * Groups profile trash_ids under human-readable category names.
+ */
+export interface TrashQualityProfileGroup {
+	name: string;
+	profiles: Record<string, string>;
+}
+
 // ============================================================================
 // Cache Types
 // ============================================================================
@@ -267,7 +423,15 @@ export interface TrashCacheEntry {
 	id: string;
 	serviceType: "RADARR" | "SONARR";
 	configType: TrashConfigType;
-	data: TrashCustomFormat[] | TrashCustomFormatGroup[] | TrashQualitySize[] | TrashNamingScheme[] | TrashQualityProfile[] | TrashCFDescription[];
+	data:
+		| TrashCustomFormat[]
+		| TrashCustomFormatGroup[]
+		| TrashQualitySize[]
+		| TrashNamingScheme[]
+		| TrashQualityProfile[]
+		| TrashCFDescription[]
+		| TrashQualityProfileGroup[]
+		| TrashNamingData[];
 	version: number;
 	fetchedAt: string;
 	lastCheckedAt: string;
@@ -289,6 +453,20 @@ export interface TrashCacheStatus {
 		official: number;
 		custom: number;
 	};
+}
+
+/** Per-category validation stats from Zod schema validation */
+export interface ValidationStats {
+	total: number;
+	validated: number;
+	rejected: number;
+}
+
+/** Aggregated validation health from the last cache refresh */
+export interface CacheValidationHealth {
+	lastRefreshAt: string | null;
+	categories: Record<string, ValidationStats>;
+	totals: ValidationStats;
 }
 
 /**
@@ -552,6 +730,8 @@ export interface TemplateConfig {
 	};
 	qualitySize?: TrashQualitySize[];
 	naming?: TrashNamingScheme[];
+	/** Selected naming presets to deploy alongside this template */
+	namingSelection?: NamingSelectedPresets;
 	// Phase 5.3: Complete quality profile settings (imported from *arr instance)
 	completeQualityProfile?: CompleteQualityProfile;
 	// Sync behavior settings
@@ -734,7 +914,7 @@ export interface InstanceQualityOverrideStatus {
  */
 export function getEffectiveQualityConfig(
 	template: TrashTemplate,
-	instanceId: string
+	instanceId: string,
 ): { config: CustomQualityConfig | undefined; source: "template_default" | "instance_override" } {
 	const override = template.instanceOverrides?.[instanceId]?.qualityConfigOverride;
 	if (override) {
@@ -997,9 +1177,9 @@ export interface UpdateScheduleRequest {
  *   (custom overrides official when `trash_id` matches)
  */
 export interface TrashRepoConfig {
-	owner: string;   // GitHub owner, e.g., "TRaSH-Guides"
-	name: string;    // Repository name, e.g., "Guides"
-	branch: string;  // Branch name, e.g., "master" or "main"
+	owner: string; // GitHub owner, e.g., "TRaSH-Guides"
+	name: string; // Repository name, e.g., "Guides"
+	branch: string; // Branch name, e.g., "master" or "main"
 	mode?: "fork" | "supplementary"; // default: "fork"
 }
 
@@ -1093,6 +1273,8 @@ export interface SchedulerStats {
 		cachesFailed: number;
 		qualitySizeAutoSynced: number;
 		qualitySizeUpdatesPending: number;
+		namingAutoSynced: number;
+		namingUpdatesPending: number;
 		errors: string[];
 	};
 }
@@ -1549,13 +1731,17 @@ export const createUserCustomFormatSchema = z.object({
 	serviceType: z.enum(["RADARR", "SONARR"]),
 	description: z.string().max(2000).optional(),
 	includeCustomFormatWhenRenaming: z.boolean().default(false),
-	specifications: z.array(z.object({
-		name: z.string().min(1),
-		implementation: z.string().min(1),
-		negate: z.boolean().default(false),
-		required: z.boolean().default(false),
-		fields: z.record(z.string(), z.unknown()).default({}),
-	})).min(1, "At least one specification is required"),
+	specifications: z
+		.array(
+			z.object({
+				name: z.string().min(1),
+				implementation: z.string().min(1),
+				negate: z.boolean().default(false),
+				required: z.boolean().default(false),
+				fields: z.record(z.string(), z.unknown()).default({}),
+			}),
+		)
+		.min(1, "At least one specification is required"),
 	defaultScore: z.number().int().default(0),
 });
 
@@ -1575,20 +1761,30 @@ export type UpdateUserCustomFormatInput = z.infer<typeof updateUserCustomFormatS
  */
 export const importUserCFFromJsonSchema = z.object({
 	serviceType: z.enum(["RADARR", "SONARR"]),
-	customFormats: z.array(z.object({
-		name: z.string().min(1),
-		includeCustomFormatWhenRenaming: z.boolean().optional(),
-		specifications: z.array(z.object({
-			name: z.string(),
-			implementation: z.string(),
-			negate: z.boolean().optional(),
-			required: z.boolean().optional(),
-			fields: z.union([
-				z.record(z.string(), z.unknown()),
-				z.array(z.object({ name: z.string(), value: z.unknown() })),
-			]).optional(),
-		})).optional(),
-	})).min(1, "At least one custom format is required"),
+	customFormats: z
+		.array(
+			z.object({
+				name: z.string().min(1),
+				includeCustomFormatWhenRenaming: z.boolean().optional(),
+				specifications: z
+					.array(
+						z.object({
+							name: z.string(),
+							implementation: z.string(),
+							negate: z.boolean().optional(),
+							required: z.boolean().optional(),
+							fields: z
+								.union([
+									z.record(z.string(), z.unknown()),
+									z.array(z.object({ name: z.string(), value: z.unknown() })),
+								])
+								.optional(),
+						}),
+					)
+					.optional(),
+			}),
+		)
+		.min(1, "At least one custom format is required"),
 	defaultScore: z.number().int().optional().default(0),
 });
 

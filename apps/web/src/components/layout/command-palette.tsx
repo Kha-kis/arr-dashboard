@@ -1,55 +1,95 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { Command } from "cmdk";
 import {
-	LayoutDashboard,
-	Compass,
-	Library,
-	Search,
-	Globe,
-	Calendar,
 	BarChart3,
-	Target,
-	History,
-	Sparkles,
-	Settings,
-	Sun,
-	Moon,
-	Monitor,
-	Smartphone,
-	Palette,
-	LogOut,
-	User,
-	RefreshCw,
+	Calendar,
+	Compass,
 	FileText,
+	Globe,
+	History,
+	LayoutDashboard,
+	Library,
+	LogOut,
+	Monitor,
+	Moon,
+	Palette,
+	RefreshCw,
+	Search,
+	Settings,
+	Smartphone,
+	Sparkles,
+	Sun,
+	Target,
+	User,
 	Zap,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { useThemeGradient } from "../../hooks/useThemeGradient";
+import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useOLEDMode } from "../../hooks/useOLEDMode";
-import { useColorTheme, type ColorTheme } from "../../providers/color-theme-provider";
-import { cn } from "../../lib/utils";
+import { useThemeGradient } from "../../hooks/useThemeGradient";
 import { logout } from "../../lib/api-client/auth";
-import { useQueryClient } from "@tanstack/react-query";
+import { cn } from "../../lib/utils";
+import { type ColorTheme, useColorTheme } from "../../providers/color-theme-provider";
 
 /**
  * Navigation items matching sidebar
  */
 const NAV_ITEMS = [
-	{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, keywords: ["home", "overview", "queue"] },
-	{ href: "/discover", label: "Discover", icon: Compass, keywords: ["tmdb", "trending", "popular", "movies", "shows"] },
-	{ href: "/library", label: "Library", icon: Library, keywords: ["movies", "series", "collection"] },
+	{
+		href: "/dashboard",
+		label: "Dashboard",
+		icon: LayoutDashboard,
+		keywords: ["home", "overview", "queue"],
+	},
+	{
+		href: "/discover",
+		label: "Discover",
+		icon: Compass,
+		keywords: ["tmdb", "trending", "popular", "movies", "shows"],
+	},
+	{
+		href: "/library",
+		label: "Library",
+		icon: Library,
+		keywords: ["movies", "series", "collection"],
+	},
 	{ href: "/search", label: "Search", icon: Search, keywords: ["find", "prowlarr", "indexers"] },
-	{ href: "/indexers", label: "Indexers", icon: Globe, keywords: ["prowlarr", "torrent", "usenet"] },
-	{ href: "/calendar", label: "Calendar", icon: Calendar, keywords: ["upcoming", "releases", "schedule"] },
-	{ href: "/statistics", label: "Statistics", icon: BarChart3, keywords: ["stats", "analytics", "graphs"] },
+	{
+		href: "/indexers",
+		label: "Indexers",
+		icon: Globe,
+		keywords: ["prowlarr", "torrent", "usenet"],
+	},
+	{
+		href: "/calendar",
+		label: "Calendar",
+		icon: Calendar,
+		keywords: ["upcoming", "releases", "schedule"],
+	},
+	{
+		href: "/statistics",
+		label: "Statistics",
+		icon: BarChart3,
+		keywords: ["stats", "analytics", "graphs"],
+	},
 	{ href: "/hunting", label: "Hunting", icon: Target, keywords: ["missing", "upgrade", "auto"] },
 	{ href: "/history", label: "History", icon: History, keywords: ["downloads", "log", "activity"] },
-	{ href: "/trash-guides", label: "TRaSH Guides", icon: Sparkles, keywords: ["quality", "profiles", "custom formats"] },
-	{ href: "/settings", label: "Settings", icon: Settings, keywords: ["config", "preferences", "account"] },
+	{
+		href: "/trash-guides",
+		label: "TRaSH Guides",
+		icon: Sparkles,
+		keywords: ["quality", "profiles", "custom formats"],
+	},
+	{
+		href: "/settings",
+		label: "Settings",
+		icon: Settings,
+		keywords: ["config", "preferences", "account"],
+	},
 ];
 
 /**
@@ -107,7 +147,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 			onOpenChange(false);
 			command();
 		},
-		[onOpenChange]
+		[onOpenChange],
 	);
 
 	const handleLogout = useCallback(async () => {
@@ -143,7 +183,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 				className={cn(
 					"relative w-full max-w-2xl overflow-hidden rounded-2xl border border-border/50",
 					"bg-card/95 backdrop-blur-xl shadow-2xl",
-					"animate-in zoom-in-95 slide-in-from-top-4 duration-200"
+					"animate-in zoom-in-95 slide-in-from-top-4 duration-200",
 				)}
 				style={{
 					boxShadow: `0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px ${themeGradient.from}15`,
@@ -165,13 +205,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 						placeholder="Type a command or search..."
 						className={cn(
 							"flex h-14 w-full bg-transparent py-4 text-base outline-hidden",
-							"placeholder:text-muted-foreground"
+							"placeholder:text-muted-foreground",
 						)}
 						autoFocus
 					/>
-					<kbd
-						className="hidden sm:inline-flex items-center gap-1 rounded-md border border-border/50 bg-muted/30 px-2 py-1 text-xs text-muted-foreground"
-					>
+					<kbd className="hidden sm:inline-flex items-center gap-1 rounded-md border border-border/50 bg-muted/30 px-2 py-1 text-xs text-muted-foreground">
 						ESC
 					</kbd>
 				</div>
@@ -200,7 +238,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 									onSelect={() => runCommand(() => router.push(item.href))}
 									className={cn(
 										"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
-										"aria-selected:bg-muted/50"
+										"aria-selected:bg-muted/50",
 									)}
 								>
 									<div
@@ -234,7 +272,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 							onSelect={() => runCommand(() => setTheme("light"))}
 							className={cn(
 								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
-								"aria-selected:bg-muted/50"
+								"aria-selected:bg-muted/50",
 							)}
 						>
 							<div
@@ -256,7 +294,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 							onSelect={() => runCommand(() => setTheme("dark"))}
 							className={cn(
 								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
-								"aria-selected:bg-muted/50"
+								"aria-selected:bg-muted/50",
 							)}
 						>
 							<div
@@ -278,7 +316,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 							onSelect={() => runCommand(() => setTheme("system"))}
 							className={cn(
 								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
-								"aria-selected:bg-muted/50"
+								"aria-selected:bg-muted/50",
 							)}
 						>
 							<div
@@ -301,22 +339,23 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 							className={cn(
 								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
 								"aria-selected:bg-muted/50",
-								!isDarkMode && "opacity-50"
+								!isDarkMode && "opacity-50",
 							)}
 						>
 							<div
 								className="flex h-8 w-8 items-center justify-center rounded-lg"
-								style={{ background: isOLED && isDarkMode ? themeGradient.from : `${themeGradient.from}15` }}
+								style={{
+									background: isOLED && isDarkMode ? themeGradient.from : `${themeGradient.from}15`,
+								}}
 							>
-								<Smartphone className="h-4 w-4" style={{ color: isOLED && isDarkMode ? "#fff" : themeGradient.from }} />
+								<Smartphone
+									className="h-4 w-4"
+									style={{ color: isOLED && isDarkMode ? "#fff" : themeGradient.from }}
+								/>
 							</div>
 							<span className="flex-1 text-foreground">OLED Mode (Pure Black)</span>
 							<span className="text-xs text-muted-foreground">
-								{!isDarkMode
-									? "Requires dark mode"
-									: isOLED
-										? "On"
-										: "Off"}
+								{!isDarkMode ? "Requires dark mode" : isOLED ? "On" : "Off"}
 							</span>
 						</Command.Item>
 					</Command.Group>
@@ -337,7 +376,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 								onSelect={() => runCommand(() => setColorTheme(option.name))}
 								className={cn(
 									"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
-									"aria-selected:bg-muted/50"
+									"aria-selected:bg-muted/50",
 								)}
 							>
 								<div
@@ -371,7 +410,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 							onSelect={() => runCommand(handleRefreshData)}
 							className={cn(
 								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
-								"aria-selected:bg-muted/50"
+								"aria-selected:bg-muted/50",
 							)}
 						>
 							<div
@@ -388,7 +427,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 							onSelect={() => runCommand(() => router.push("/settings"))}
 							className={cn(
 								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
-								"aria-selected:bg-muted/50"
+								"aria-selected:bg-muted/50",
 							)}
 						>
 							<div
@@ -407,7 +446,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 							}
 							className={cn(
 								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
-								"aria-selected:bg-muted/50"
+								"aria-selected:bg-muted/50",
 							)}
 						>
 							<div
@@ -424,7 +463,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 							onSelect={() => runCommand(handleLogout)}
 							className={cn(
 								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
-								"aria-selected:bg-muted/50"
+								"aria-selected:bg-muted/50",
 							)}
 						>
 							<div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-500/15">
@@ -463,7 +502,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 				</div>
 			</Command>
 		</div>,
-		document.body
+		document.body,
 	);
 }
 

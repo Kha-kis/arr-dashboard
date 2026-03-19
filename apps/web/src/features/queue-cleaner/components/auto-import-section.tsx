@@ -8,35 +8,38 @@
 
 "use client";
 
-import { useState } from "react";
 import {
-	Plus,
-	Sparkles,
+	Ban,
+	CheckCircle2,
 	ChevronDown,
 	ChevronUp,
-	CheckCircle2,
-	Ban,
 	FileText,
+	Plus,
+	Sparkles,
 	X,
 } from "lucide-react";
+import { useState } from "react";
 import { Button } from "../../../components/ui";
 import {
-	MIN_AUTO_IMPORT_ATTEMPTS,
-	MAX_AUTO_IMPORT_ATTEMPTS,
-	MIN_AUTO_IMPORT_COOLDOWN_MINS,
-	MAX_AUTO_IMPORT_COOLDOWN_MINS,
-	AUTO_IMPORT_SAFE_PATTERNS,
 	AUTO_IMPORT_NEVER_PATTERNS,
+	AUTO_IMPORT_SAFE_PATTERNS,
+	MAX_AUTO_IMPORT_ATTEMPTS,
+	MAX_AUTO_IMPORT_COOLDOWN_MINS,
+	MIN_AUTO_IMPORT_ATTEMPTS,
+	MIN_AUTO_IMPORT_COOLDOWN_MINS,
 } from "../lib/constants";
 import type { QueueCleanerConfigUpdate } from "../lib/queue-cleaner-types";
-import { ToggleRow, ConfigInput } from "./queue-cleaner-config-ui";
+import { ConfigInput, ToggleRow } from "./queue-cleaner-config-ui";
 
 export const AutoImportSection = ({
 	formData,
 	updateField,
 }: {
 	formData: QueueCleanerConfigUpdate;
-	updateField: <K extends keyof QueueCleanerConfigUpdate>(key: K, value: QueueCleanerConfigUpdate[K]) => void;
+	updateField: <K extends keyof QueueCleanerConfigUpdate>(
+		key: K,
+		value: QueueCleanerConfigUpdate[K],
+	) => void;
 }) => {
 	const [showSafePatterns, setShowSafePatterns] = useState(false);
 	const [showNeverPatterns, setShowNeverPatterns] = useState(false);
@@ -75,7 +78,11 @@ export const AutoImportSection = ({
 
 	const addCustomSafePattern = (pattern: string) => {
 		const trimmed = pattern.trim().toLowerCase();
-		if (trimmed && !customSafePatterns.includes(trimmed) && !AUTO_IMPORT_SAFE_PATTERNS.includes(trimmed as typeof AUTO_IMPORT_SAFE_PATTERNS[number])) {
+		if (
+			trimmed &&
+			!customSafePatterns.includes(trimmed) &&
+			!AUTO_IMPORT_SAFE_PATTERNS.includes(trimmed as (typeof AUTO_IMPORT_SAFE_PATTERNS)[number])
+		) {
 			updateCustomSafePatterns([...customSafePatterns, trimmed]);
 		}
 	};
@@ -86,7 +93,11 @@ export const AutoImportSection = ({
 
 	const addCustomNeverPattern = (pattern: string) => {
 		const trimmed = pattern.trim().toLowerCase();
-		if (trimmed && !customNeverPatterns.includes(trimmed) && !AUTO_IMPORT_NEVER_PATTERNS.includes(trimmed as typeof AUTO_IMPORT_NEVER_PATTERNS[number])) {
+		if (
+			trimmed &&
+			!customNeverPatterns.includes(trimmed) &&
+			!AUTO_IMPORT_NEVER_PATTERNS.includes(trimmed as (typeof AUTO_IMPORT_NEVER_PATTERNS)[number])
+		) {
 			updateCustomNeverPatterns([...customNeverPatterns, trimmed]);
 		}
 	};
@@ -118,7 +129,7 @@ export const AutoImportSection = ({
 						<ToggleRow
 							label="Safe patterns only"
 							description={
-								formData.autoImportSafeOnly ?? true
+								(formData.autoImportSafeOnly ?? true)
 									? "ON: Only imports items matching safe patterns below (recommended)"
 									: "OFF: Attempts import on ANY pending/blocked item (use with caution)"
 							}
@@ -150,12 +161,15 @@ export const AutoImportSection = ({
 						{showSafePatterns && (
 							<div className="p-2.5 space-y-3 border-t border-border/20 bg-card/20">
 								<p className="text-[10px] text-muted-foreground">
-									Items matching these patterns CAN be auto-imported. Built-in patterns are based on common ARR status messages.
+									Items matching these patterns CAN be auto-imported. Built-in patterns are based on
+									common ARR status messages.
 								</p>
 
 								{/* Built-in patterns */}
 								<div className="space-y-1">
-									<span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Built-in</span>
+									<span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+										Built-in
+									</span>
 									<div className="flex flex-wrap gap-1">
 										{AUTO_IMPORT_SAFE_PATTERNS.map((pattern) => (
 											<span
@@ -170,7 +184,9 @@ export const AutoImportSection = ({
 
 								{/* Custom patterns */}
 								<div className="space-y-1.5">
-									<span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Custom</span>
+									<span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+										Custom
+									</span>
 									{customSafePatterns.length > 0 ? (
 										<div className="flex flex-wrap gap-1">
 											{customSafePatterns.map((pattern, index) => (
@@ -190,7 +206,9 @@ export const AutoImportSection = ({
 											))}
 										</div>
 									) : (
-										<p className="text-[10px] text-muted-foreground/50 italic">No custom patterns added</p>
+										<p className="text-[10px] text-muted-foreground/50 italic">
+											No custom patterns added
+										</p>
 									)}
 
 									{/* Add custom pattern input */}
@@ -251,12 +269,15 @@ export const AutoImportSection = ({
 						{showNeverPatterns && (
 							<div className="p-2.5 space-y-3 border-t border-border/20 bg-card/20">
 								<p className="text-[10px] text-muted-foreground">
-									Items matching these patterns are BLOCKED from auto-import. These will never be attempted.
+									Items matching these patterns are BLOCKED from auto-import. These will never be
+									attempted.
 								</p>
 
 								{/* Built-in never patterns */}
 								<div className="space-y-1">
-									<span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Built-in</span>
+									<span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+										Built-in
+									</span>
 									<div className="flex flex-wrap gap-1">
 										{AUTO_IMPORT_NEVER_PATTERNS.map((pattern) => (
 											<span
@@ -271,7 +292,9 @@ export const AutoImportSection = ({
 
 								{/* Custom never patterns */}
 								<div className="space-y-1.5">
-									<span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Custom</span>
+									<span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+										Custom
+									</span>
 									{customNeverPatterns.length > 0 ? (
 										<div className="flex flex-wrap gap-1">
 											{customNeverPatterns.map((pattern, index) => (
@@ -291,7 +314,9 @@ export const AutoImportSection = ({
 											))}
 										</div>
 									) : (
-										<p className="text-[10px] text-muted-foreground/50 italic">No custom patterns added</p>
+										<p className="text-[10px] text-muted-foreground/50 italic">
+											No custom patterns added
+										</p>
 									)}
 
 									{/* Add custom never pattern input */}
