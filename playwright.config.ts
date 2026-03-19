@@ -27,7 +27,7 @@ export default defineConfig({
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: isCI ? [['list'], ['html', { open: 'never' }]] : [['html'], ['list']],
   /* Global timeout for each test - reduced for CI efficiency */
-  timeout: isCI ? 30000 : 60000,
+  timeout: isCI ? 20000 : 60000,
   /* Shared settings for all the projects below. */
   use: {
     /* Base URL to use in actions like `await page.goto('')`. */

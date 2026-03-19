@@ -108,17 +108,17 @@ jobs:
         run: pnpm run test
 
   # End-to-End Tests with Playwright (sharded for parallelism)
-  # Reduced to 2 shards - balances parallelism vs startup overhead
+  # 3 shards for better load balancing - balances parallelism vs startup overhead
   e2e:
     name: E2E Tests (${{ matrix.shardIndex }}/${{ matrix.shardTotal }})
     runs-on: ubuntu-latest
     needs: [lint]
-    timeout-minutes: 12
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        shardIndex: [1, 2]
-        shardTotal: [2]
+        shardIndex: [1, 2, 3]
+        shardTotal: [3]
 
     steps:
       - name: Checkout code
