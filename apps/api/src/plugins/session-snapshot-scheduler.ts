@@ -45,6 +45,11 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 		let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
 		let isRunning = false;
 
+		// Cache known platforms to avoid fetching 10K+ snapshots every 5-min tick
+		let cachedKnownPlatforms: Set<string> | null = null;
+		let platformCacheBuiltAt = 0;
+		const PLATFORM_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // Rebuild every 6 hours
+
 		/**
 		 * Check smart notification thresholds after each snapshot capture.
 		 * Fires PLEX_CONCURRENT_PEAK, PLEX_TRANSCODE_HEAVY, PLEX_NEW_DEVICE events.
@@ -172,43 +177,46 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 				// to avoid double-counting across multiple Plex instances
 				let lanWanAttributed = false;
 
-				// Pre-fetch known platforms BEFORE writing new snapshots,
-				// so the new-device check isn't polluted by this tick's data
-				const knownPlatforms = new Set<string>();
-				try {
-					const platformCutoff = new Date(
-						Date.now() - NEW_DEVICE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
-					);
-					const recentSnapshots = await app.prisma.sessionSnapshot.findMany({
-						where: { capturedAt: { gte: platformCutoff } },
-						select: { sessionsJson: true },
-						orderBy: { capturedAt: "desc" },
-						take: 10000,
-					});
-
-					let platformParseFailures = 0;
-					for (const snap of recentSnapshots) {
-						try {
-							const sessions: Array<{ platform?: string }> = JSON.parse(snap.sessionsJson);
-							for (const s of sessions) {
-								if (s.platform) knownPlatforms.add(s.platform);
-							}
-						} catch {
-							platformParseFailures++;
-						}
-					}
-					if (platformParseFailures > 0) {
-						app.log.warn(
-							{ parseFailures: platformParseFailures, totalSnapshots: recentSnapshots.length },
-							"Failed to parse sessionsJson for new-device check — possible data corruption",
+				// Use cached known platforms (rebuilt every 6 hours instead of every 5-min tick)
+				if (!cachedKnownPlatforms || Date.now() - platformCacheBuiltAt > PLATFORM_CACHE_TTL_MS) {
+					try {
+						const platformCutoff = new Date(
+							Date.now() - NEW_DEVICE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
 						);
+						const recentSnapshots = await app.prisma.sessionSnapshot.findMany({
+							where: { capturedAt: { gte: platformCutoff } },
+							select: { sessionsJson: true },
+							orderBy: { capturedAt: "desc" },
+							take: 10000,
+						});
+
+						const platforms = new Set<string>();
+						let platformParseFailures = 0;
+						for (const snap of recentSnapshots) {
+							try {
+								const sessions: Array<{ platform?: string }> = JSON.parse(snap.sessionsJson);
+								for (const s of sessions) {
+									if (s.platform) platforms.add(s.platform);
+								}
+							} catch {
+								platformParseFailures++;
+							}
+						}
+						if (platformParseFailures > 0) {
+							app.log.warn(
+								{ parseFailures: platformParseFailures, totalSnapshots: recentSnapshots.length },
+								"Failed to parse sessionsJson during platform cache rebuild — possible data corruption",
+							);
+						}
+						cachedKnownPlatforms = platforms;
+						platformCacheBuiltAt = Date.now();
+						app.log.debug({ platformCount: platforms.size }, "Rebuilt known-platforms cache");
+					} catch (err) {
+						app.log.warn({ err }, "Session snapshot: failed to rebuild known-platforms cache");
+						if (!cachedKnownPlatforms) cachedKnownPlatforms = new Set();
 					}
-				} catch (err) {
-					app.log.warn(
-						{ err },
-						"Session snapshot: failed to query known platforms for new-device check",
-					);
 				}
+				const knownPlatforms = cachedKnownPlatforms;
 
 				// Track totals across all instances for notification checks
 				let tickTotalConcurrent = 0;
@@ -281,6 +289,13 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 						tickPlatforms,
 						knownPlatforms,
 					).catch((err) => app.log.warn({ err }, "Session snapshot: notification check failed"));
+
+					// Merge current tick's platforms into cache to prevent repeat new-device notifications
+					if (cachedKnownPlatforms) {
+						for (const p of tickPlatforms) {
+							cachedKnownPlatforms.add(p);
+						}
+					}
 				}
 			} catch (err) {
 				app.log.error({ err }, "Session snapshot scheduler: failed to query instances");

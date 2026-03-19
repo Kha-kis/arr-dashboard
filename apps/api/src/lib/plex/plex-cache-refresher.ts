@@ -232,59 +232,108 @@ export async function refreshPlexCache(
 			log.warn({ err }, "Failed to fetch Plex on-deck items");
 		}
 
-		// 6. Upsert into PlexCache (per-section rows)
+		// 6. Upsert into PlexCache in batches (reduces 2000 transactions to ~20)
+		const BATCH_SIZE = 100;
 		const upsertedIds: string[] = [];
-		for (const agg of aggregations.values()) {
+		const aggregationsArray = [...aggregations.values()];
+
+		for (let i = 0; i < aggregationsArray.length; i += BATCH_SIZE) {
+			const chunk = aggregationsArray.slice(i, i + BATCH_SIZE);
 			try {
-				const row = await prisma.plexCache.upsert({
-					where: {
-						instanceId_tmdbId_mediaType_sectionId: {
-							instanceId,
-							tmdbId: agg.tmdbId,
-							mediaType: agg.mediaType,
-							sectionId: agg.sectionId,
-						},
-					},
-					create: {
-						instanceId,
-						tmdbId: agg.tmdbId,
-						mediaType: agg.mediaType,
-						sectionId: agg.sectionId,
-						sectionTitle: agg.sectionTitle,
-						title: agg.title,
-						ratingKey: agg.ratingKey,
-						lastWatchedAt: agg.lastWatchedAt,
-						watchCount: agg.watchCount,
-						watchedByUsers: JSON.stringify([...agg.watchedByUsers]),
-						onDeck: agg.onDeck,
-						userRating: agg.userRating,
-						collections: JSON.stringify(agg.collections),
-						labels: JSON.stringify(agg.labels),
-						addedAt: agg.addedAt,
-						thumb: agg.thumb,
-					},
-					update: {
-						sectionTitle: agg.sectionTitle,
-						title: agg.title,
-						ratingKey: agg.ratingKey,
-						lastWatchedAt: agg.lastWatchedAt,
-						watchCount: agg.watchCount,
-						watchedByUsers: JSON.stringify([...agg.watchedByUsers]),
-						onDeck: agg.onDeck,
-						userRating: agg.userRating,
-						collections: JSON.stringify(agg.collections),
-						labels: JSON.stringify(agg.labels),
-						addedAt: agg.addedAt,
-						thumb: agg.thumb,
-					},
-				});
-				upsertedIds.push(row.id);
-				upserted++;
+				const results = await prisma.$transaction(
+					chunk.map((agg) =>
+						prisma.plexCache.upsert({
+							where: {
+								instanceId_tmdbId_mediaType_sectionId: {
+									instanceId,
+									tmdbId: agg.tmdbId,
+									mediaType: agg.mediaType,
+									sectionId: agg.sectionId,
+								},
+							},
+							create: {
+								instanceId,
+								tmdbId: agg.tmdbId,
+								mediaType: agg.mediaType,
+								sectionId: agg.sectionId,
+								sectionTitle: agg.sectionTitle,
+								title: agg.title,
+								ratingKey: agg.ratingKey,
+								lastWatchedAt: agg.lastWatchedAt,
+								watchCount: agg.watchCount,
+								watchedByUsers: JSON.stringify([...agg.watchedByUsers]),
+								onDeck: agg.onDeck,
+								userRating: agg.userRating,
+								collections: JSON.stringify(agg.collections),
+								labels: JSON.stringify(agg.labels),
+								addedAt: agg.addedAt,
+								thumb: agg.thumb,
+							},
+							update: {
+								sectionTitle: agg.sectionTitle,
+								title: agg.title,
+								ratingKey: agg.ratingKey,
+								lastWatchedAt: agg.lastWatchedAt,
+								watchCount: agg.watchCount,
+								watchedByUsers: JSON.stringify([...agg.watchedByUsers]),
+								onDeck: agg.onDeck,
+								userRating: agg.userRating,
+								collections: JSON.stringify(agg.collections),
+								labels: JSON.stringify(agg.labels),
+								addedAt: agg.addedAt,
+								thumb: agg.thumb,
+							},
+						}),
+					),
+				);
+				for (const row of results) {
+					upsertedIds.push(row.id);
+					upserted++;
+				}
 			} catch (error) {
-				const msg = `Failed to upsert ${agg.mediaType} tmdb:${agg.tmdbId}: ${getErrorMessage(error)}`;
-				errors++;
-				errorMessages.push(msg);
-				log.warn({ err: error, instanceId, tmdbId: agg.tmdbId, mediaType: agg.mediaType }, msg);
+				// If a batch fails, fall back to individual upserts for that chunk
+				for (const agg of chunk) {
+					try {
+						const row = await prisma.plexCache.upsert({
+							where: {
+								instanceId_tmdbId_mediaType_sectionId: {
+									instanceId,
+									tmdbId: agg.tmdbId,
+									mediaType: agg.mediaType,
+									sectionId: agg.sectionId,
+								},
+							},
+							create: {
+								instanceId, tmdbId: agg.tmdbId, mediaType: agg.mediaType,
+								sectionId: agg.sectionId, sectionTitle: agg.sectionTitle,
+								title: agg.title, ratingKey: agg.ratingKey,
+								lastWatchedAt: agg.lastWatchedAt, watchCount: agg.watchCount,
+								watchedByUsers: JSON.stringify([...agg.watchedByUsers]),
+								onDeck: agg.onDeck, userRating: agg.userRating,
+								collections: JSON.stringify(agg.collections),
+								labels: JSON.stringify(agg.labels),
+								addedAt: agg.addedAt, thumb: agg.thumb,
+							},
+							update: {
+								sectionTitle: agg.sectionTitle, title: agg.title,
+								ratingKey: agg.ratingKey, lastWatchedAt: agg.lastWatchedAt,
+								watchCount: agg.watchCount,
+								watchedByUsers: JSON.stringify([...agg.watchedByUsers]),
+								onDeck: agg.onDeck, userRating: agg.userRating,
+								collections: JSON.stringify(agg.collections),
+								labels: JSON.stringify(agg.labels),
+								addedAt: agg.addedAt, thumb: agg.thumb,
+							},
+						});
+						upsertedIds.push(row.id);
+						upserted++;
+					} catch (itemError) {
+						const msg = `Failed to upsert ${agg.mediaType} tmdb:${agg.tmdbId}: ${getErrorMessage(itemError)}`;
+						errors++;
+						errorMessages.push(msg);
+						log.warn({ err: itemError, instanceId, tmdbId: agg.tmdbId, mediaType: agg.mediaType }, msg);
+					}
+				}
 			}
 		}
 

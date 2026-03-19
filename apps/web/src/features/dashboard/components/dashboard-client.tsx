@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useMemo, useState } from "react";
 import { PremiumSkeleton } from "../../../components/layout/premium-components";
 import { springs } from "../../../components/motion";
 import { QueueFilters, ServiceInstancesTable } from "../../../components/presentational";
@@ -40,7 +40,7 @@ import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
-import ManualImportModal from "../../manual-import/components/manual-import-modal";
+const ManualImportModal = lazy(() => import("../../manual-import/components/manual-import-modal"));
 import { useQueueGrouping } from "../hooks";
 import { useDashboardData } from "../hooks/useDashboardData";
 import { useDashboardFilters } from "../hooks/useDashboardFilters";
@@ -372,8 +372,9 @@ export const DashboardClient = () => {
 	const hasMediaServer = hasPlexInstances || hasTautulliInstances;
 
 	// Session count for Activity tab badge
-	const plexNowPlaying = useNowPlaying(hasPlexInstances);
-	const tautulliActivity = useTautulliActivity(hasTautulliInstances);
+	const isMediaTab = activeTab === "overview" || activeTab === "activity";
+	const plexNowPlaying = useNowPlaying(hasPlexInstances, isMediaTab ? 15_000 : 60_000);
+	const tautulliActivity = useTautulliActivity(hasTautulliInstances, isMediaTab ? 15_000 : 60_000);
 	const sessionCount = useMemo(() => {
 		if (!hasMediaServer) return undefined;
 		const plexCount = plexNowPlaying.data?.sessions?.length ?? 0;
@@ -960,15 +961,19 @@ export const DashboardClient = () => {
 				)}
 			</div>
 
-			<ManualImportModal
-				instanceId={manualImportContext.instanceId}
-				instanceName={manualImportContext.instanceName}
-				service={manualImportContext.service}
-				downloadId={manualImportContext.downloadId}
-				open={manualImportContext.open}
-				onOpenChange={handleManualImportOpenChange}
-				onCompleted={handleManualImportCompleted}
-			/>
+			{manualImportContext.open && (
+				<Suspense fallback={null}>
+					<ManualImportModal
+						instanceId={manualImportContext.instanceId}
+						instanceName={manualImportContext.instanceName}
+						service={manualImportContext.service}
+						downloadId={manualImportContext.downloadId}
+						open={manualImportContext.open}
+						onOpenChange={handleManualImportOpenChange}
+						onCompleted={handleManualImportCompleted}
+					/>
+				</Suspense>
+			)}
 		</>
 	);
 };

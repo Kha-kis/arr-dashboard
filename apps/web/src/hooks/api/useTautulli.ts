@@ -34,11 +34,11 @@ export const tautulliKeys = {
 // Activity (F5)
 // ============================================================================
 
-export const useTautulliActivity = (enabled = true) => {
+export const useTautulliActivity = (enabled = true, refetchInterval = 15_000) => {
 	return useQuery<TautulliActivityResponse>({
 		queryKey: tautulliKeys.activity(),
 		queryFn: fetchTautulliActivity,
-		refetchInterval: 15_000,
+		refetchInterval,
 		enabled,
 	});
 };

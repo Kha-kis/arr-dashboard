@@ -1317,6 +1317,7 @@ model SessionSnapshot {
   instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
 
   @@index([instanceId, capturedAt])
+  @@index([capturedAt])
   @@map("session_snapshots")
 }
 

@@ -45,29 +45,14 @@ const NAV_ITEMS = [
 	{ href: "/settings", label: "Settings", icon: Settings },
 ];
 
-export const Sidebar = () => {
-	const pathname = usePathname();
-	const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-	const [mounted, setMounted] = useState(false);
-	const { gradient: themeGradient } = useThemeGradient();
-	const { colorTheme } = useColorTheme();
+interface NavContentProps {
+	useFlatStyling: boolean;
+	themeGradient: { from: string; to: string; glow: string };
+	pathname: string;
+	setMobileMenuOpen: (open: boolean) => void;
+}
 
-	// Handle hydration - only check theme after mount to avoid SSR mismatch
-	useEffect(() => {
-		setMounted(true);
-	}, []);
-
-	// *arr Suite and qBittorrent themes use flat styling, not gradients
-	// Default to false (show gradient) until mounted to avoid hydration issues
-	const isArrTheme = mounted && colorTheme === "arr";
-	const isQbittorrentTheme = mounted && colorTheme === "qbittorrent";
-	const useFlatStyling = isArrTheme || isQbittorrentTheme;
-
-	if (pathname === "/login" || pathname === "/setup") {
-		return null;
-	}
-
-	const NavContent = () => (
+const NavContent = ({ useFlatStyling, themeGradient, pathname, setMobileMenuOpen }: NavContentProps) => (
 		<>
 			{/* Logo/Brand */}
 			<div className="mb-8 relative z-10">
@@ -214,7 +199,29 @@ export const Sidebar = () => {
 				/>
 			</div>
 		</>
-	);
+);
+
+export const Sidebar = () => {
+	const pathname = usePathname();
+	const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+	const [mounted, setMounted] = useState(false);
+	const { gradient: themeGradient } = useThemeGradient();
+	const { colorTheme } = useColorTheme();
+
+	// Handle hydration - only check theme after mount to avoid SSR mismatch
+	useEffect(() => {
+		setMounted(true);
+	}, []);
+
+	// *arr Suite and qBittorrent themes use flat styling, not gradients
+	// Default to false (show gradient) until mounted to avoid hydration issues
+	const isArrTheme = mounted && colorTheme === "arr";
+	const isQbittorrentTheme = mounted && colorTheme === "qbittorrent";
+	const useFlatStyling = isArrTheme || isQbittorrentTheme;
+
+	if (pathname === "/login" || pathname === "/setup") {
+		return null;
+	}
 
 	return (
 		<>
@@ -298,7 +305,7 @@ export const Sidebar = () => {
 							}}
 						/>
 
-						<NavContent />
+						<NavContent useFlatStyling={useFlatStyling} themeGradient={themeGradient} pathname={pathname} setMobileMenuOpen={setMobileMenuOpen} />
 					</motion.aside>
 				)}
 			</AnimatePresence>
@@ -317,7 +324,7 @@ export const Sidebar = () => {
 					}}
 				/>
 
-				<NavContent />
+				<NavContent useFlatStyling={useFlatStyling} themeGradient={themeGradient} pathname={pathname} setMobileMenuOpen={setMobileMenuOpen} />
 			</aside>
 		</>
 	);

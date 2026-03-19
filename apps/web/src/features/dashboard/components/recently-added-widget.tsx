@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, Film, Plus, Tv } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRecentlyAdded } from "../../../hooks/api/usePlex";
@@ -125,11 +126,12 @@ export const RecentlyAddedWidget = ({ enabled, animationDelay = 0 }: RecentlyAdd
 											}}
 										>
 											{hasThumb ? (
-												<img
+												<Image
 													src={getPlexThumbUrl(item.instanceId, item.thumb!)}
 													alt={item.title}
+													width={140}
+													height={210}
 													className="absolute inset-0 w-full h-full object-cover"
-													loading="lazy"
 													onError={() => setFailedThumbs((prev) => new Set(prev).add(thumbKey))}
 												/>
 											) : (
