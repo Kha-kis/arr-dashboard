@@ -337,7 +337,7 @@ async function executeSonarrHuntWithSdk(
 				itemsGrabbed: 0,
 				searchedItems: [],
 				grabbedItems: [],
-				message: "No episodes match the current filters",
+				message: `Fetched ${records.length} episodes, ${records.length - filteredEpisodes.length} filtered out by release date/filters — 0 eligible`,
 				status: "completed",
 			};
 		}
@@ -440,8 +440,8 @@ async function executeSonarrHuntWithSdk(
 				grabbedItems: [],
 				message:
 					skippedCount > 0
-						? `All ${skippedCount} eligible items were recently searched`
-						: "No episodes match the current filters",
+						? `Fetched ${records.length} episodes → ${eligibleEpisodes.length} passed filters → all ${skippedCount} recently searched`
+						: `Fetched ${records.length} episodes → 0 passed filters`,
 				status: "completed",
 			};
 		}
@@ -735,7 +735,7 @@ async function executeRadarrHuntWithSdk(
 				itemsGrabbed: 0,
 				searchedItems: [],
 				grabbedItems: [],
-				message: "No movies match the current filters",
+				message: `Fetched ${movies.length} movies, ${movies.length - eligibleMovies.length} filtered out — 0 eligible`,
 				status: "completed",
 			};
 		}
@@ -755,8 +755,8 @@ async function executeRadarrHuntWithSdk(
 				grabbedItems: [],
 				message:
 					skippedCount > 0
-						? `All ${skippedCount} eligible movies were recently searched`
-						: "No movies match the current filters",
+						? `Fetched ${movies.length} movies → ${eligibleMovies.length} passed filters → all ${skippedCount} recently searched`
+						: `Fetched ${movies.length} movies → 0 passed filters`,
 				status: "completed",
 			};
 		}
@@ -956,7 +956,7 @@ async function executeLidarrHuntWithSdk(
 				itemsGrabbed: 0,
 				searchedItems: [],
 				grabbedItems: [],
-				message: "No albums match the current filters",
+				message: `Fetched ${albums.length} albums, ${albums.length - eligibleAlbums.length} filtered out — 0 eligible`,
 				status: "completed",
 			};
 		}
@@ -983,8 +983,8 @@ async function executeLidarrHuntWithSdk(
 				grabbedItems: [],
 				message:
 					skippedCount > 0
-						? `All ${skippedCount} eligible albums were recently searched`
-						: "No albums match the current filters",
+						? `Fetched ${albums.length} albums → ${eligibleAlbums.length} passed filters → all ${skippedCount} recently searched`
+						: `Fetched ${albums.length} albums → 0 passed filters`,
 				status: "completed",
 			};
 		}
@@ -1180,7 +1180,7 @@ async function executeReadarrHuntWithSdk(
 				itemsGrabbed: 0,
 				searchedItems: [],
 				grabbedItems: [],
-				message: "No books match the current filters",
+				message: `Fetched ${books.length} books, ${books.length - eligibleBooks.length} filtered out — 0 eligible`,
 				status: "completed",
 			};
 		}
@@ -1207,8 +1207,8 @@ async function executeReadarrHuntWithSdk(
 				grabbedItems: [],
 				message:
 					skippedCount > 0
-						? `All ${skippedCount} eligible books were recently searched`
-						: "No books match the current filters",
+						? `Fetched ${books.length} books → ${eligibleBooks.length} passed filters → all ${skippedCount} recently searched`
+						: `Fetched ${books.length} books → 0 passed filters`,
 				status: "completed",
 			};
 		}
