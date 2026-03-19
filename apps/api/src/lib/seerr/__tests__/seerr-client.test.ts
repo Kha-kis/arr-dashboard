@@ -270,7 +270,8 @@ describe("approveRequest", () => {
 		const result = await client.approveRequest(1);
 
 		expect(result.status).toBe(2);
-		const call = factory.rawRequest.mock.calls[0]!;
+		// calls[0] is the CSRF prefetch to /api/v1/status, calls[1] is the actual request
+		const call = factory.rawRequest.mock.calls[1]!;
 		expect(call[1]).toBe("/api/v1/request/1/approve");
 		expect(call[2]).toMatchObject({ method: "POST" });
 	});
@@ -294,7 +295,7 @@ describe("declineRequest", () => {
 		const result = await client.declineRequest(1);
 
 		expect(result.status).toBe(3);
-		const call = factory.rawRequest.mock.calls[0]!;
+		const call = factory.rawRequest.mock.calls[1]!;
 		expect(call[1]).toBe("/api/v1/request/1/decline");
 	});
 });
@@ -310,7 +311,7 @@ describe("deleteRequest", () => {
 
 		await expect(client.deleteRequest(1)).resolves.toBeUndefined();
 
-		const call = factory.rawRequest.mock.calls[0]!;
+		const call = factory.rawRequest.mock.calls[1]!;
 		expect(call[1]).toBe("/api/v1/request/1");
 		expect(call[2]).toMatchObject({ method: "DELETE" });
 	});
@@ -334,7 +335,7 @@ describe("retryRequest", () => {
 		const result = await client.retryRequest(1);
 
 		expect(result.status).toBe(2);
-		const call = factory.rawRequest.mock.calls[0]!;
+		const call = factory.rawRequest.mock.calls[1]!;
 		expect(call[1]).toBe("/api/v1/request/1/retry");
 	});
 });
