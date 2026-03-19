@@ -414,7 +414,11 @@ export class TrashCacheManager {
 				},
 			});
 			return true;
-		} catch {
+		} catch (err) {
+			// Log unexpected DB errors (P2025 = record not found is expected)
+			if ((err as { code?: string }).code !== "P2025") {
+				console.warn("[cache-manager] delete failed:", err instanceof Error ? err.message : err);
+			}
 			return false;
 		}
 	}

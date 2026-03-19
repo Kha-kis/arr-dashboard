@@ -129,12 +129,19 @@ export const toNumber = (value: unknown): number | undefined => {
 // ============================================================================
 
 /**
- * Safely execute an SDK call and return undefined on error
+ * Safely execute an SDK call and return undefined on error.
+ * Logs failures so silent data gaps on the statistics page are diagnosable.
  */
-export const safeRequest = async <T>(operation: () => Promise<T>): Promise<T | undefined> => {
+export const safeRequest = async <T>(
+	operation: () => Promise<T>,
+	context?: string,
+): Promise<T | undefined> => {
 	try {
 		return await operation();
-	} catch {
+	} catch (err) {
+		if (context) {
+			console.warn(`[statistics] ${context} failed:`, err instanceof Error ? err.message : err);
+		}
 		return undefined;
 	}
 };

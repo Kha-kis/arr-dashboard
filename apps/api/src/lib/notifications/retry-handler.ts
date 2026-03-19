@@ -129,7 +129,11 @@ export class RetryHandler {
 					).catch(() => {});
 					this.queue.delete(key);
 				}
-			} catch {
+			} catch (retryErr) {
+				this.logger.warn(
+					{ err: retryErr, channelId: item.channelId, attempt: item.attempt + 1 },
+					"Notification retry threw unexpected error, re-queuing",
+				);
 				this.scheduleRetry(key, { ...item, attempt: item.attempt + 1 });
 			}
 		}, backoffMs);

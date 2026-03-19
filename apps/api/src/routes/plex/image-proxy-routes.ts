@@ -16,7 +16,10 @@ const thumbParams = z.object({
 });
 
 const thumbQuery = z.object({
-	path: z.string().startsWith("/library/metadata/"),
+	path: z
+		.string()
+		.startsWith("/library/metadata/")
+		.refine((p) => !p.includes(".."), "Path traversal not allowed"),
 });
 
 export async function registerImageProxyRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {

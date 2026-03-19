@@ -114,9 +114,12 @@ export function parseUpstream<T>(
 			rejected: 0,
 		});
 
-		// Record fingerprint for drift detection (silent — no log spam per request)
-		const silentLogger = { warn: () => {}, error: () => {} };
-		schemaFingerprints.record(source.integration, source.category, [result.data], silentLogger);
+		// Record fingerprint for drift detection — only if no baseline exists yet
+		// (avoids per-item Object.keys + Set operations on hot paths like 5000-item Plex refreshes)
+		if (!schemaFingerprints.get(source.integration, source.category)) {
+			const silentLogger = { warn: () => {}, error: () => {} };
+			schemaFingerprints.record(source.integration, source.category, [result.data], silentLogger);
+		}
 
 		return { success: true, data: result.data };
 	}
