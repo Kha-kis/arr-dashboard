@@ -57,13 +57,13 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 									cacheType: "plex",
 									lastRefreshedAt: new Date(),
 									lastResult: result.errors > 0 ? "error" : "success",
-									lastErrorMessage: result.errors > 0 ? `${result.errors} item errors` : null,
+									lastErrorMessage: result.errorMessages.length > 0 ? result.errorMessages.slice(0, 3).join("; ").slice(0, 200) : null,
 									itemCount: result.upserted,
 								},
 								update: {
 									lastRefreshedAt: new Date(),
 									lastResult: result.errors > 0 ? "error" : "success",
-									lastErrorMessage: result.errors > 0 ? `${result.errors} item errors` : null,
+									lastErrorMessage: result.errorMessages.length > 0 ? result.errorMessages.slice(0, 3).join("; ").slice(0, 200) : null,
 									itemCount: result.upserted,
 								},
 							});

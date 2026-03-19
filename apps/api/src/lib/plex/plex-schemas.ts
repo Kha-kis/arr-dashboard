@@ -32,7 +32,7 @@ export const plexSectionsResponseSchema = z.looseObject({
 			.array(
 				z.looseObject({
 					key: z.string(),
-					title: z.string(),
+					title: z.string().optional().default(""),
 					type: z.string(),
 				}),
 			)
@@ -47,7 +47,7 @@ export const plexLibraryItemsResponseSchema = z.looseObject({
 			.array(
 				z.looseObject({
 					ratingKey: z.string(),
-					title: z.string(),
+					title: z.string().optional().default(""),
 					type: z.string(),
 					year: z.number().optional(),
 					userRating: z.number().optional(),
@@ -69,12 +69,12 @@ export const plexHistoryResponseSchema = z.looseObject({
 		Metadata: z
 			.array(
 				z.looseObject({
-					ratingKey: z.string(),
+					ratingKey: z.string().optional().default(""),
 					parentRatingKey: z.string().optional(),
 					parentKey: z.string().optional(),
 					grandparentRatingKey: z.string().optional(),
 					grandparentKey: z.string().optional(),
-					title: z.string(),
+					title: z.string().optional().default(""),
 					grandparentTitle: z.string().optional(),
 					type: z.string(),
 					viewedAt: z.number(),
@@ -110,7 +110,7 @@ export const plexSessionsResponseSchema = z.looseObject({
 				z.looseObject({
 					sessionKey: z.string(),
 					ratingKey: z.string(),
-					title: z.string(),
+					title: z.string().optional().default(""),
 					grandparentTitle: z.string().optional(),
 					type: z.string(),
 					viewOffset: z.number().optional(),
@@ -119,13 +119,13 @@ export const plexSessionsResponseSchema = z.looseObject({
 					User: z
 						.looseObject({
 							id: z.number(),
-							title: z.string(),
+							title: z.string().optional().default(""),
 							thumb: z.string().optional(),
 						})
 						.optional(),
 					Player: z
 						.looseObject({
-							title: z.string(),
+							title: z.string().optional().default(""),
 							platform: z.string(),
 							product: z.string(),
 							state: z.string(),
@@ -156,7 +156,7 @@ export const plexEpisodesResponseSchema = z.looseObject({
 			.array(
 				z.looseObject({
 					ratingKey: z.string(),
-					title: z.string(),
+					title: z.string().optional().default(""),
 					parentIndex: z.number().optional(),
 					index: z.number().optional(),
 					viewCount: z.number().optional(),
