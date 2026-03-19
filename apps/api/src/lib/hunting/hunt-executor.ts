@@ -891,7 +891,7 @@ async function executeLidarrHuntWithSdk(
 
 			// Merge and deduplicate
 			const albumMap = new Map<number, LidarrAlbumRecord>();
-			for (const a of wantedAlbums) albumMap.set((a as Record<string, unknown>).id as number ?? 0, a);
+			for (const a of wantedAlbums) { const id = (a as Record<string, unknown>).id as number | undefined; if (id != null) albumMap.set(id, a); }
 			for (const a of monitoredAlbums) {
 				const id = (a as Record<string, unknown>).id as number ?? 0;
 				if (!albumMap.has(id)) albumMap.set(id, a);
@@ -1114,7 +1114,7 @@ async function executeReadarrHuntWithSdk(
 
 			// Merge and deduplicate
 			const bookMap = new Map<number, ReadarrBookRecord>();
-			for (const b of wantedBooks) bookMap.set((b as Record<string, unknown>).id as number ?? 0, b);
+			for (const b of wantedBooks) { const id = (b as Record<string, unknown>).id as number | undefined; if (id != null) bookMap.set(id, b); }
 			for (const b of monitoredBooks) {
 				const id = (b as Record<string, unknown>).id as number ?? 0;
 				if (!bookMap.has(id)) bookMap.set(id, b);

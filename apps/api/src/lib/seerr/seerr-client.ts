@@ -372,8 +372,14 @@ export class SeerrClient {
 						const retryResult = await execute();
 						this.circuitBreaker?.reportSuccess(instanceId);
 						return retryResult;
-					} catch {
-						// Fall through to original error handling
+					} catch (retryError) {
+						// Report retry failure to circuit breaker and throw the retry error (not the original 403)
+						if (retryError instanceof SeerrApiError && retryError.retryable) {
+							this.circuitBreaker?.reportFailure(instanceId);
+						} else if (!(retryError instanceof SeerrApiError)) {
+							this.circuitBreaker?.reportFailure(instanceId);
+						}
+						throw retryError;
 					}
 				}
 			}
@@ -841,7 +847,7 @@ export class SeerrClient {
 	 * Returns a Map<string, number> keyed by "movie:{tmdbId}" or "tv:{tmdbId}".
 	 *
 	 * Seerr's issue API only returns 20 items per page by default.
-	 * We paginate up to 500 open issues (25 pages) to cover typical usage.
+	 * We paginate up to 500 open issues (5 pages of 100) to cover typical usage.
 	 */
 	async getOpenIssueCounts(): Promise<Map<string, number>> {
 		const cacheKey = issueCountCacheKey(this.instance.id);
@@ -849,9 +855,9 @@ export class SeerrClient {
 		if (cached) return cached;
 
 		const counts = new Map<string, number>();
-		const take = 20;
+		const take = 100;
 		let skip = 0;
-		const maxPages = 25;
+		const maxPages = 5;
 
 		for (let page = 0; page < maxPages; page++) {
 			const result = await this.getIssues({ filter: "open", take, skip });

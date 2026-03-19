@@ -296,6 +296,11 @@ export async function refreshPlexCache(
 			if (evicted.count > 0) {
 				log.info({ instanceId, evicted: evicted.count }, "Plex cache: evicted stale rows");
 			}
+		} else if (aggregations.size > 0) {
+			log.warn(
+				{ instanceId, aggregationSize: aggregations.size, errors },
+				"Plex cache: skipping eviction — all upserts failed, stale rows may accumulate",
+			);
 		}
 
 		log.info(

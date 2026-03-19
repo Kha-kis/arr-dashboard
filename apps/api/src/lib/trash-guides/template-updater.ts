@@ -294,7 +294,8 @@ export class TemplateUpdater {
 		let config: TemplateConfig;
 		try {
 			config = JSON.parse(configDataJson) as TemplateConfig;
-		} catch {
+		} catch (err) {
+			console.warn("[template-updater] Corrupt configDataJson, skipping CF group detection:", err instanceof Error ? err.message : err);
 			return pending;
 		}
 

@@ -76,8 +76,8 @@ export class AggregationBuffer {
 		this.buckets.delete(key);
 
 		const digest = this.buildDigest(bucket.items, key);
-		this.flushCallback(digest).catch(() => {
-			// Flush errors are logged by the service, not here
+		this.flushCallback(digest).catch((err) => {
+			console.warn("[aggregation] Flush failed — batched notifications may be lost:", err instanceof Error ? err.message : err);
 		});
 	}
 
