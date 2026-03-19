@@ -35,14 +35,14 @@ const MAX_PAGES = 20;
  * @param fetcher  - Calls the appropriate wanted endpoint for a given page/pageSize
  * @param opts.counter  - API call counter (incremented per fetch)
  * @param opts.logger   - Structured logger
- * @param opts.fetchSize - Override page size (default 250)
+ * @param opts.fetchSize - Override page size (default 500)
  * @returns All records from the wanted endpoint
  */
 export async function fetchWantedWithWrapAround<T>(
 	fetcher: (page: number, pageSize: number) => Promise<{ records?: T[] | null; totalRecords?: number | null }>,
 	opts: {
 		recentSearchCount?: number; // kept for backward compat, no longer used
-		fetchSize?: number; // now used as override, defaults to 250
+		fetchSize?: number; // now used as override, defaults to 500
 		counter: ApiCallCounter;
 		logger: FastifyBaseLogger;
 	},

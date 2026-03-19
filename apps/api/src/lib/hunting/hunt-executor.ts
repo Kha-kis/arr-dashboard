@@ -387,6 +387,7 @@ async function executeSonarrHuntWithSdk(
 
 		// Use threshold of 1 when preferSeasonPacks is enabled, otherwise use default (3)
 		const seasonThreshold = preferSeasonPacks ? 1 : SEASON_SEARCH_THRESHOLD;
+		const seriesLevelSearchIds = new Set(seriesLevelSearches.map((s) => s.seriesId));
 
 		for (const [, episodes] of seasonGroups) {
 			if (episodes.length >= seasonThreshold) {
@@ -396,7 +397,7 @@ async function executeSonarrHuntWithSdk(
 				const title = series?.title ?? "Unknown";
 
 				// Skip if we already have a series-level search for this series
-				if (seriesLevelSearches.some((s) => s.seriesId === (firstEp.seriesId ?? 0))) continue;
+				if (seriesLevelSearchIds.has(firstEp.seriesId ?? 0)) continue;
 
 				const wasSearched = historyManager.wasRecentlySearched({
 					mediaType: "season",
@@ -416,7 +417,7 @@ async function executeSonarrHuntWithSdk(
 			} else {
 				for (const ep of episodes) {
 					// Skip if we already have a series-level search for this series
-					if (seriesLevelSearches.some((s) => s.seriesId === (ep.seriesId ?? 0))) continue;
+					if (seriesLevelSearchIds.has(ep.seriesId ?? 0)) continue;
 
 					const series = seriesMap.get(ep.seriesId ?? 0);
 					const wasSearched = historyManager.wasRecentlySearched({
@@ -706,7 +707,7 @@ async function executeRadarrHuntWithSdk(
 
 		const filteredMovies = movies.filter((movie) => {
 			const releaseDate = movie.digitalRelease || movie.physicalRelease || movie.inCinemas;
-			if (!isContentReleased(releaseDate)) return false;
+			if (!isContentReleased(releaseDate) && !(movie.hasFile ?? false)) return false;
 
 			return passesFilters(
 				{
@@ -922,7 +923,9 @@ async function executeLidarrHuntWithSdk(
 		const filteredAlbums = albums.filter((album) => {
 			const albumAny = album as Record<string, unknown>;
 			const releaseDate = albumAny.releaseDate as string | undefined;
-			if (!isContentReleased(releaseDate)) return false;
+			const stats = (album as Record<string, unknown>).statistics as Record<string, unknown> | undefined;
+			const hasFiles = ((stats?.trackFileCount as number) ?? 0) > 0;
+			if (!isContentReleased(releaseDate) && !hasFiles) return false;
 
 			const artist = artistMap.get((albumAny.artistId as number) ?? 0);
 			if (!artist) return false;
@@ -1146,7 +1149,9 @@ async function executeReadarrHuntWithSdk(
 		const filteredBooks = books.filter((book) => {
 			const bookAny = book as Record<string, unknown>;
 			const releaseDate = bookAny.releaseDate as string | undefined;
-			if (!isContentReleased(releaseDate)) return false;
+			const bookStats = (book as Record<string, unknown>).statistics as Record<string, unknown> | undefined;
+			const bookHasFiles = ((bookStats?.bookFileCount as number) ?? 0) > 0;
+			if (!isContentReleased(releaseDate) && !bookHasFiles) return false;
 
 			const author = authorMap.get((bookAny.authorId as number) ?? 0);
 			if (!author) return false;
