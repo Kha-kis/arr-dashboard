@@ -125,6 +125,7 @@ export const OnDeckWidget = ({ enabled, animationDelay = 0 }: OnDeckWidgetProps)
 													height={210}
 													className="absolute inset-0 w-full h-full object-cover"
 													onError={() => setFailedThumbs((prev) => new Set(prev).add(thumbKey))}
+											unoptimized
 												/>
 											) : (
 												<MediaIcon className="absolute inset-0 m-auto h-10 w-10 text-white/30" />
