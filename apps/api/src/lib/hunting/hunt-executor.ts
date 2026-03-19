@@ -365,7 +365,7 @@ async function executeSonarrHuntWithSdk(
 		}[] = [];
 		const individualEpisodes: typeof realEpisodeRecords = [];
 
-		// Process synthetic series-level records (from "monitored"/"both" upgrade source)
+		// Process synthetic series-level records (from upgradeSearchAll mode)
 		for (const rec of syntheticSeriesRecords) {
 			const series = seriesMap.get(rec.seriesId ?? 0);
 			const title = series?.title ?? "Unknown";
@@ -456,7 +456,7 @@ async function executeSonarrHuntWithSdk(
 		const searchedSeriesIds: number[] = [];
 		const searchedEpisodeIds: number[] = [];
 
-		// Series-level searches first (from monitored upgrade source)
+		// Series-level searches first (from upgradeSearchAll mode)
 		for (const seriesSearch of seriesLevelSearches) {
 			if (remainingBudget <= 0) break;
 			seriesSearchesToExecute.push(seriesSearch);

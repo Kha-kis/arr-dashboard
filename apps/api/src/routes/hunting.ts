@@ -56,7 +56,7 @@ const huntConfigUpdateSchema = z.object({
 	ageThresholdDays: z.number().int().min(0).max(365).nullable().optional(),
 	// Season pack preference (Sonarr only)
 	preferSeasonPacks: z.boolean().optional(),
-	// Upgrade source mode
+	// Re-search all monitored items (not just cutoff list)
 	upgradeSearchAll: z.boolean().optional(),
 	// Re-search settings (0 = never re-search already searched items)
 	researchAfterDays: z.number().int().min(0).max(MAX_RESEARCH_AFTER_DAYS).optional(),

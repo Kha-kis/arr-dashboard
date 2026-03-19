@@ -534,10 +534,14 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 
 				{/* Search Cooldown */}
 				<div className="pt-4 border-t border-border/30">
+					<div className="flex items-center gap-2 mb-4">
+						<RotateCcw className="h-5 w-5" style={{ color: themeGradient.from }} />
+						<h4 className="font-semibold">Search Cooldown</h4>
+					</div>
 					<div className="grid grid-cols-2 gap-4">
 						<ConfigInput
 							label="Re-search After (days)"
-							description="Skip items searched within this period. Items become eligible again after this many days. (0 = never re-search)"
+							description="Items become eligible again after this many days (0 = never re-search)"
 							type="number"
 							min={0}
 							max={MAX_RESEARCH_AFTER_DAYS}
@@ -589,7 +593,9 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 								Run Upgrade Hunt
 							</Button>
 						)}
-						<div className="w-px h-6 bg-border/30 mx-1" />
+						{(formState.huntMissingEnabled || formState.huntUpgradesEnabled) && (
+							<div className="w-px self-stretch bg-border/50 mx-1" />
+						)}
 						<Button
 							variant="ghost"
 							size="sm"

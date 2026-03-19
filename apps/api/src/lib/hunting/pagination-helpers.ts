@@ -41,7 +41,6 @@ const MAX_PAGES = 20;
 export async function fetchWantedWithWrapAround<T>(
 	fetcher: (page: number, pageSize: number) => Promise<{ records?: T[] | null; totalRecords?: number | null }>,
 	opts: {
-		recentSearchCount?: number; // kept for backward compat, no longer used
 		fetchSize?: number; // now used as override, defaults to 500
 		counter: ApiCallCounter;
 		logger: FastifyBaseLogger;
