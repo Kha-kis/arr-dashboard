@@ -644,6 +644,9 @@ model HuntConfig {
   // Season pack preference (Sonarr only)
   preferSeasonPacks     Boolean         @default(false)  // Always search full seasons to catch season packs
 
+  // Upgrade: re-search all monitored items with files (not just cutoff list)
+  upgradeSearchAll      Boolean         @default(false)  // Re-search all monitored items with files, not just cutoff-unmet
+
   // Re-search settings
   researchAfterDays     Int             @default(7)      // Re-search items after X days (0 = never re-search)
 

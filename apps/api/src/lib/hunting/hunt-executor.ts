@@ -106,6 +106,7 @@ export async function executeHuntWithSdk(
 	);
 
 	const batchSize = type === "missing" ? config.missingBatchSize : config.upgradeBatchSize;
+	const upgradeSearchAll = config.upgradeSearchAll ?? false;
 
 	if (service === "sonarr") {
 		const result = await executeSonarrHuntWithSdk(
@@ -117,6 +118,7 @@ export async function executeHuntWithSdk(
 			apiCallCounter,
 			logger,
 			config.preferSeasonPacks,
+			upgradeSearchAll,
 		);
 		return { ...result, apiCallsMade: apiCallCounter.count };
 	}
@@ -129,6 +131,7 @@ export async function executeHuntWithSdk(
 			historyManager,
 			apiCallCounter,
 			logger,
+			upgradeSearchAll,
 		);
 		return { ...result, apiCallsMade: apiCallCounter.count };
 	}
@@ -141,6 +144,7 @@ export async function executeHuntWithSdk(
 			historyManager,
 			apiCallCounter,
 			logger,
+			upgradeSearchAll,
 		);
 		return { ...result, apiCallsMade: apiCallCounter.count };
 	}
@@ -153,6 +157,7 @@ export async function executeHuntWithSdk(
 			historyManager,
 			apiCallCounter,
 			logger,
+			upgradeSearchAll,
 		);
 		return { ...result, apiCallsMade: apiCallCounter.count };
 	}
@@ -220,6 +225,7 @@ async function executeSonarrHuntWithSdk(
 	counter: ApiCallCounter,
 	logger: HuntLogger,
 	preferSeasonPacks: boolean,
+	upgradeSearchAll = false,
 ): Promise<HuntResultWithoutApiCount> {
 	try {
 		// First, get all series to have filter data available
@@ -228,20 +234,64 @@ async function executeSonarrHuntWithSdk(
 		const seriesMap = new Map(allSeries.map((s) => [s.id ?? 0, s]));
 
 		// Get wanted episodes with page rotation
-		const fetchSize = Math.max(batchSize * 5, 50);
+		// Fetch missing/cutoff records — the SDK Episode type is inferred via the generic fetcher
+		const fetchSonarrWanted = (endpoint: "missing" | "cutoff") =>
+			fetchWantedWithWrapAround(
+				(page, pageSize) => {
+					const params = {
+						page,
+						pageSize,
+						sortKey: "airDateUtc" as const,
+						sortDirection: "descending" as const,
+					};
+					return endpoint === "missing" ? client.wanted.missing(params) : client.wanted.cutoff(params);
+				},
+				{ counter, logger },
+			);
 
-		const records = await fetchWantedWithWrapAround(
-			(page) => {
-				const params = {
-					page,
-					pageSize: fetchSize,
-					sortKey: "airDateUtc" as const,
-					sortDirection: "descending" as const,
-				};
-				return type === "missing" ? client.wanted.missing(params) : client.wanted.cutoff(params);
-			},
-			{ recentSearchCount: historyManager.getRecentSearchCount(), fetchSize, counter, logger },
-		);
+		type SonarrEpisodeRecord = Awaited<ReturnType<typeof fetchSonarrWanted>>[number];
+
+		let records: SonarrEpisodeRecord[];
+
+		if (type === "missing") {
+			records = await fetchSonarrWanted("missing");
+		} else {
+			// Upgrade mode — include monitored items if upgradeSearchAll is enabled
+			const wantedRecords = await fetchSonarrWanted("cutoff");
+
+			if (upgradeSearchAll) {
+				// When upgradeSearchAll is enabled: identify monitored series with episode files
+				// and trigger series-level searches for them (Sonarr will re-evaluate all episodes)
+				const monitoredSeriesWithFiles = allSeries.filter(
+					(s) =>
+						(s.monitored ?? false) &&
+						((s.statistics as Record<string, unknown> | undefined)?.episodeFileCount as number ?? 0) > 0,
+				);
+
+				// Build synthetic episode-like records from monitored series so they flow through
+				// the same filter/batch pipeline. We use one record per series.
+				const syntheticRecords: SonarrEpisodeRecord[] = monitoredSeriesWithFiles.map((s) => ({
+					id: s.id ?? 0,
+					seriesId: s.id ?? 0,
+					seasonNumber: -1, // sentinel: means "search entire series"
+					episodeNumber: 0,
+					title: s.title ?? "Unknown",
+					airDateUtc: undefined as string | undefined,
+					monitored: s.monitored ?? false,
+					hasFile: true,
+				} as SonarrEpisodeRecord));
+
+				// Merge and deduplicate — for "both" mode, wanted records take priority per seriesId
+				const seenSeriesIds = new Set(wantedRecords.map((r) => r.seriesId ?? 0));
+				const merged: SonarrEpisodeRecord[] = [
+					...wantedRecords,
+					...syntheticRecords.filter((s) => !seenSeriesIds.has(s.seriesId ?? 0)),
+				];
+				records = merged;
+			} else {
+				records = wantedRecords;
+			}
+		}
 
 		if (records.length === 0) {
 			return {
@@ -255,8 +305,10 @@ async function executeSonarrHuntWithSdk(
 		}
 
 		// Apply all filters
+		// Synthetic series-level records (seasonNumber === -1) skip airDateUtc check
 		const filteredEpisodes = records.filter((ep) => {
-			if (!isContentReleased(ep.airDateUtc)) return false;
+			const isSyntheticSeriesRecord = (ep.seasonNumber ?? 0) === -1;
+			if (!isSyntheticSeriesRecord && !isContentReleased(ep.airDateUtc)) return false;
 
 			const series = seriesMap.get(ep.seriesId ?? 0);
 			if (!series) return false;
@@ -268,7 +320,7 @@ async function executeSonarrHuntWithSdk(
 					status: series.status ?? "",
 					year: series.year ?? 0,
 					monitored: (ep.monitored ?? false) && (series.monitored ?? false),
-					releaseDate: ep.airDateUtc ?? undefined,
+					releaseDate: isSyntheticSeriesRecord ? undefined : (ep.airDateUtc ?? undefined),
 				},
 				filters,
 			);
@@ -282,31 +334,57 @@ async function executeSonarrHuntWithSdk(
 				itemsGrabbed: 0,
 				searchedItems: [],
 				grabbedItems: [],
-				message: "No episodes match the current filters",
+				message: `Fetched ${records.length} episodes, ${records.length - filteredEpisodes.length} filtered out by release date/filters — 0 eligible`,
 				status: "completed",
 			};
 		}
 
-		// Group episodes by series + season
-		const seasonGroups = new Map<string, typeof eligibleEpisodes>();
-		for (const ep of eligibleEpisodes) {
+		// Separate synthetic series-level records from real episode records
+		const syntheticSeriesRecords = eligibleEpisodes.filter((ep) => (ep.seasonNumber ?? 0) === -1);
+		const realEpisodeRecords = eligibleEpisodes.filter((ep) => (ep.seasonNumber ?? 0) !== -1);
+
+		// Group real episodes by series + season
+		const seasonGroups = new Map<string, typeof realEpisodeRecords>();
+		for (const ep of realEpisodeRecords) {
 			const key = `${ep.seriesId}-${ep.seasonNumber}`;
 			const group = seasonGroups.get(key) ?? [];
 			group.push(ep);
 			seasonGroups.set(key, group);
 		}
 
-		// Separate into season searches and individual episode searches
+		// Separate into series-level searches, season searches, and individual episode searches
+		const seriesLevelSearches: {
+			seriesId: number;
+			title: string;
+		}[] = [];
 		const seasonSearches: {
 			seriesId: number;
 			seasonNumber: number;
 			episodeCount: number;
 			title: string;
 		}[] = [];
-		const individualEpisodes: typeof eligibleEpisodes = [];
+		const individualEpisodes: typeof realEpisodeRecords = [];
+
+		// Process synthetic series-level records (from upgradeSearchAll mode)
+		for (const rec of syntheticSeriesRecords) {
+			const series = seriesMap.get(rec.seriesId ?? 0);
+			const title = series?.title ?? "Unknown";
+			const wasSearched = historyManager.wasRecentlySearched({
+				mediaType: "series",
+				mediaId: rec.seriesId ?? 0,
+				title,
+			});
+			if (!wasSearched) {
+				seriesLevelSearches.push({
+					seriesId: rec.seriesId ?? 0,
+					title,
+				});
+			}
+		}
 
 		// Use threshold of 1 when preferSeasonPacks is enabled, otherwise use default (3)
 		const seasonThreshold = preferSeasonPacks ? 1 : SEASON_SEARCH_THRESHOLD;
+		const seriesLevelSearchIds = new Set(seriesLevelSearches.map((s) => s.seriesId));
 
 		for (const [, episodes] of seasonGroups) {
 			if (episodes.length >= seasonThreshold) {
@@ -314,6 +392,9 @@ async function executeSonarrHuntWithSdk(
 				if (!firstEp) continue;
 				const series = seriesMap.get(firstEp.seriesId ?? 0);
 				const title = series?.title ?? "Unknown";
+
+				// Skip if we already have a series-level search for this series
+				if (seriesLevelSearchIds.has(firstEp.seriesId ?? 0)) continue;
 
 				const wasSearched = historyManager.wasRecentlySearched({
 					mediaType: "season",
@@ -332,6 +413,9 @@ async function executeSonarrHuntWithSdk(
 				}
 			} else {
 				for (const ep of episodes) {
+					// Skip if we already have a series-level search for this series
+					if (seriesLevelSearchIds.has(ep.seriesId ?? 0)) continue;
+
 					const series = seriesMap.get(ep.seriesId ?? 0);
 					const wasSearched = historyManager.wasRecentlySearched({
 						mediaType: "episode",
@@ -345,7 +429,7 @@ async function executeSonarrHuntWithSdk(
 			}
 		}
 
-		if (seasonSearches.length === 0 && individualEpisodes.length === 0) {
+		if (seriesLevelSearches.length === 0 && seasonSearches.length === 0 && individualEpisodes.length === 0) {
 			const skippedCount = historyManager.getFilteredCount();
 			return {
 				itemsSearched: 0,
@@ -354,8 +438,8 @@ async function executeSonarrHuntWithSdk(
 				grabbedItems: [],
 				message:
 					skippedCount > 0
-						? `All ${skippedCount} eligible items were recently searched`
-						: "No episodes match the current filters",
+						? `Fetched ${records.length} episodes → ${eligibleEpisodes.length} passed filters → all ${skippedCount} recently searched`
+						: `Fetched ${records.length} episodes → 0 passed filters`,
 				status: "completed",
 			};
 		}
@@ -364,12 +448,27 @@ async function executeSonarrHuntWithSdk(
 
 		// Apply batch size limit
 		let remainingBudget = batchSize;
+		const seriesSearchesToExecute: typeof seriesLevelSearches = [];
 		const seasonSearchesToExecute: typeof seasonSearches = [];
 		const episodesToSearch: typeof individualEpisodes = [];
 		const searchedItemNames: string[] = [];
 		const searchedHistoryItems: SearchedItem[] = [];
 		const searchedSeriesIds: number[] = [];
 		const searchedEpisodeIds: number[] = [];
+
+		// Series-level searches first (from upgradeSearchAll mode)
+		for (const seriesSearch of seriesLevelSearches) {
+			if (remainingBudget <= 0) break;
+			seriesSearchesToExecute.push(seriesSearch);
+			remainingBudget--; // Count as 1 search command
+			searchedItemNames.push(`${seriesSearch.title} (all episodes)`);
+			searchedSeriesIds.push(seriesSearch.seriesId);
+			searchedHistoryItems.push({
+				mediaType: "series",
+				mediaId: seriesSearch.seriesId,
+				title: seriesSearch.title,
+			});
+		}
 
 		for (const seasonSearch of seasonSearches) {
 			if (remainingBudget <= 0) break;
@@ -407,14 +506,38 @@ async function executeSonarrHuntWithSdk(
 
 		// Execute searches
 		let searchErrors = 0;
+		let commandIndex = 0;
+
+		// Series-level searches (SeriesSearch command)
+		for (const seriesSearch of seriesSearchesToExecute) {
+			if (commandIndex > 0) {
+				await delay(SEARCH_DELAY_MS);
+			}
+			commandIndex++;
+
+			try {
+				counter.count++;
+				await client.command.execute({
+					name: "SeriesSearch",
+					seriesId: seriesSearch.seriesId,
+				});
+			} catch (error) {
+				searchErrors++;
+				logger.error(
+					{ err: error, title: seriesSearch.title },
+					"Failed to execute series search",
+				);
+			}
+		}
 
 		for (let i = 0; i < seasonSearchesToExecute.length; i++) {
 			const seasonSearch = seasonSearchesToExecute[i];
 			if (!seasonSearch) continue;
 
-			if (i > 0) {
+			if (commandIndex > 0) {
 				await delay(SEARCH_DELAY_MS);
 			}
+			commandIndex++;
 
 			try {
 				counter.count++;
@@ -436,9 +559,10 @@ async function executeSonarrHuntWithSdk(
 			const ep = episodesToSearch[i];
 			if (!ep) continue;
 
-			if (i > 0 || seasonSearchesToExecute.length > 0) {
+			if (commandIndex > 0) {
 				await delay(SEARCH_DELAY_MS);
 			}
+			commandIndex++;
 
 			try {
 				counter.count++;
@@ -469,8 +593,13 @@ async function executeSonarrHuntWithSdk(
 		);
 
 		const totalSearched =
-			seasonSearchesToExecute.reduce((sum, s) => sum + s.episodeCount, 0) + episodesToSearch.length;
+			seriesSearchesToExecute.length +
+			seasonSearchesToExecute.reduce((sum, s) => sum + s.episodeCount, 0) +
+			episodesToSearch.length;
 		const searchSummary = [];
+		if (seriesSearchesToExecute.length > 0) {
+			searchSummary.push(`${seriesSearchesToExecute.length} series`);
+		}
 		if (seasonSearchesToExecute.length > 0) {
 			searchSummary.push(`${seasonSearchesToExecute.length} season(s)`);
 		}
@@ -514,22 +643,50 @@ async function executeRadarrHuntWithSdk(
 	historyManager: SearchHistoryManager,
 	counter: ApiCallCounter,
 	logger: HuntLogger,
+	upgradeSearchAll = false,
 ): Promise<HuntResultWithoutApiCount> {
 	try {
-		const fetchSize = Math.max(batchSize * 5, 50);
+		const fetchRadarrWanted = (endpoint: "missing" | "cutoff") =>
+			fetchWantedWithWrapAround(
+				(page, pageSize) => {
+					const params = {
+						page,
+						pageSize,
+						sortKey: "digitalRelease" as const,
+						sortDirection: "descending" as const,
+					};
+					return endpoint === "missing" ? client.wanted.missing(params) : client.wanted.cutoff(params);
+				},
+				{ counter, logger },
+			);
 
-		const movies = await fetchWantedWithWrapAround(
-			(page) => {
-				const params = {
-					page,
-					pageSize: fetchSize,
-					sortKey: "digitalRelease" as const,
-					sortDirection: "descending" as const,
-				};
-				return type === "missing" ? client.wanted.missing(params) : client.wanted.cutoff(params);
-			},
-			{ recentSearchCount: historyManager.getRecentSearchCount(), fetchSize, counter, logger },
-		);
+		type RadarrMovieRecord = Awaited<ReturnType<typeof fetchRadarrWanted>>[number];
+
+		let movies: RadarrMovieRecord[];
+
+		if (type === "missing") {
+			movies = await fetchRadarrWanted("missing");
+		} else {
+			// Upgrade mode — include monitored items if upgradeSearchAll is enabled
+			const wantedMovies = await fetchRadarrWanted("cutoff");
+
+			let monitoredMovies: RadarrMovieRecord[] = [];
+			if (upgradeSearchAll) {
+				counter.count++;
+				const allMovies = await client.movie.getAll();
+				monitoredMovies = allMovies.filter(
+					(m) => (m.monitored ?? false) && (m.hasFile ?? false),
+				) as RadarrMovieRecord[];
+			}
+
+			// Merge and deduplicate by movie ID
+			const movieMap = new Map<number, RadarrMovieRecord>();
+			for (const m of wantedMovies) movieMap.set(m.id ?? 0, m);
+			for (const m of monitoredMovies) {
+				if (!movieMap.has(m.id ?? 0)) movieMap.set(m.id ?? 0, m);
+			}
+			movies = [...movieMap.values()];
+		}
 
 		if (movies.length === 0) {
 			return {
@@ -544,7 +701,7 @@ async function executeRadarrHuntWithSdk(
 
 		const filteredMovies = movies.filter((movie) => {
 			const releaseDate = movie.digitalRelease || movie.physicalRelease || movie.inCinemas;
-			if (!isContentReleased(releaseDate)) return false;
+			if (!isContentReleased(releaseDate) && !(movie.hasFile ?? false)) return false;
 
 			return passesFilters(
 				{
@@ -573,7 +730,7 @@ async function executeRadarrHuntWithSdk(
 				itemsGrabbed: 0,
 				searchedItems: [],
 				grabbedItems: [],
-				message: "No movies match the current filters",
+				message: `Fetched ${movies.length} movies, ${movies.length - eligibleMovies.length} filtered out — 0 eligible`,
 				status: "completed",
 			};
 		}
@@ -593,8 +750,8 @@ async function executeRadarrHuntWithSdk(
 				grabbedItems: [],
 				message:
 					skippedCount > 0
-						? `All ${skippedCount} eligible movies were recently searched`
-						: "No movies match the current filters",
+						? `Fetched ${movies.length} movies → ${eligibleMovies.length} passed filters → all ${skippedCount} recently searched`
+						: `Fetched ${movies.length} movies → 0 passed filters`,
 				status: "completed",
 			};
 		}
@@ -684,6 +841,7 @@ async function executeLidarrHuntWithSdk(
 	historyManager: SearchHistoryManager,
 	counter: ApiCallCounter,
 	logger: HuntLogger,
+	upgradeSearchAll = false,
 ): Promise<HuntResultWithoutApiCount> {
 	try {
 		// First, get all artists to have filter data available
@@ -691,22 +849,55 @@ async function executeLidarrHuntWithSdk(
 		const allArtists = await client.artist.getAll();
 		const artistMap = new Map(allArtists.map((a) => [(a as { id?: number }).id ?? 0, a]));
 
-		const fetchSize = Math.max(batchSize * 5, 50);
+		const fetchLidarrWanted = (endpoint: "missing" | "cutoff") =>
+			fetchWantedWithWrapAround(
+				(page, pageSize) => {
+					const params = {
+						page,
+						pageSize,
+						sortKey: "releaseDate" as const,
+						sortDirection: "descending" as const,
+					};
+					return endpoint === "missing"
+						? client.wanted.getMissing(params)
+						: client.wanted.getCutoffUnmet(params);
+				},
+				{ counter, logger },
+			);
 
-		const albums = await fetchWantedWithWrapAround(
-			(page) => {
-				const params = {
-					page,
-					pageSize: fetchSize,
-					sortKey: "releaseDate" as const,
-					sortDirection: "descending" as const,
-				};
-				return type === "missing"
-					? client.wanted.getMissing(params)
-					: client.wanted.getCutoffUnmet(params);
-			},
-			{ recentSearchCount: historyManager.getRecentSearchCount(), fetchSize, counter, logger },
-		);
+		type LidarrAlbumRecord = Awaited<ReturnType<typeof fetchLidarrWanted>>[number];
+
+		let albums: LidarrAlbumRecord[];
+
+		if (type === "missing") {
+			albums = await fetchLidarrWanted("missing");
+		} else {
+			// Upgrade mode — include monitored items if upgradeSearchAll is enabled
+			const wantedAlbums = await fetchLidarrWanted("cutoff");
+
+			let monitoredAlbums: LidarrAlbumRecord[] = [];
+			if (upgradeSearchAll) {
+				counter.count++;
+				const allAlbums = await client.album.getAll();
+				monitoredAlbums = allAlbums.filter((a) => {
+					const albumAny = a as Record<string, unknown>;
+					const stats = albumAny.statistics as Record<string, unknown> | undefined;
+					return (
+						Boolean(albumAny.monitored) &&
+						((stats?.trackFileCount as number) ?? 0) > 0
+					);
+				}) as LidarrAlbumRecord[];
+			}
+
+			// Merge and deduplicate
+			const albumMap = new Map<number, LidarrAlbumRecord>();
+			for (const a of wantedAlbums) albumMap.set((a as Record<string, unknown>).id as number ?? 0, a);
+			for (const a of monitoredAlbums) {
+				const id = (a as Record<string, unknown>).id as number ?? 0;
+				if (!albumMap.has(id)) albumMap.set(id, a);
+			}
+			albums = [...albumMap.values()];
+		}
 
 		if (albums.length === 0) {
 			return {
@@ -723,7 +914,9 @@ async function executeLidarrHuntWithSdk(
 		const filteredAlbums = albums.filter((album) => {
 			const albumAny = album as Record<string, unknown>;
 			const releaseDate = albumAny.releaseDate as string | undefined;
-			if (!isContentReleased(releaseDate)) return false;
+			const stats = (album as Record<string, unknown>).statistics as Record<string, unknown> | undefined;
+			const hasFiles = ((stats?.trackFileCount as number) ?? 0) > 0;
+			if (!isContentReleased(releaseDate) && !hasFiles) return false;
 
 			const artist = artistMap.get((albumAny.artistId as number) ?? 0);
 			if (!artist) return false;
@@ -757,7 +950,7 @@ async function executeLidarrHuntWithSdk(
 				itemsGrabbed: 0,
 				searchedItems: [],
 				grabbedItems: [],
-				message: "No albums match the current filters",
+				message: `Fetched ${albums.length} albums, ${albums.length - eligibleAlbums.length} filtered out — 0 eligible`,
 				status: "completed",
 			};
 		}
@@ -784,8 +977,8 @@ async function executeLidarrHuntWithSdk(
 				grabbedItems: [],
 				message:
 					skippedCount > 0
-						? `All ${skippedCount} eligible albums were recently searched`
-						: "No albums match the current filters",
+						? `Fetched ${albums.length} albums → ${eligibleAlbums.length} passed filters → all ${skippedCount} recently searched`
+						: `Fetched ${albums.length} albums → 0 passed filters`,
 				status: "completed",
 			};
 		}
@@ -871,6 +1064,7 @@ async function executeReadarrHuntWithSdk(
 	historyManager: SearchHistoryManager,
 	counter: ApiCallCounter,
 	logger: HuntLogger,
+	upgradeSearchAll = false,
 ): Promise<HuntResultWithoutApiCount> {
 	try {
 		// First, get all authors to have filter data available
@@ -878,22 +1072,55 @@ async function executeReadarrHuntWithSdk(
 		const allAuthors = await client.author.getAll();
 		const authorMap = new Map(allAuthors.map((a) => [(a as { id?: number }).id ?? 0, a]));
 
-		const fetchSize = Math.max(batchSize * 5, 50);
+		const fetchReadarrWanted = (endpoint: "missing" | "cutoff") =>
+			fetchWantedWithWrapAround(
+				(page, pageSize) => {
+					const params = {
+						page,
+						pageSize,
+						sortKey: "releaseDate" as const,
+						sortDirection: "descending" as const,
+					};
+					return endpoint === "missing"
+						? client.wanted.getMissing(params)
+						: client.wanted.getCutoffUnmet(params);
+				},
+				{ counter, logger },
+			);
 
-		const books = await fetchWantedWithWrapAround(
-			(page) => {
-				const params = {
-					page,
-					pageSize: fetchSize,
-					sortKey: "releaseDate" as const,
-					sortDirection: "descending" as const,
-				};
-				return type === "missing"
-					? client.wanted.getMissing(params)
-					: client.wanted.getCutoffUnmet(params);
-			},
-			{ recentSearchCount: historyManager.getRecentSearchCount(), fetchSize, counter, logger },
-		);
+		type ReadarrBookRecord = Awaited<ReturnType<typeof fetchReadarrWanted>>[number];
+
+		let books: ReadarrBookRecord[];
+
+		if (type === "missing") {
+			books = await fetchReadarrWanted("missing");
+		} else {
+			// Upgrade mode — include monitored items if upgradeSearchAll is enabled
+			const wantedBooks = await fetchReadarrWanted("cutoff");
+
+			let monitoredBooks: ReadarrBookRecord[] = [];
+			if (upgradeSearchAll) {
+				counter.count++;
+				const allBooks = await client.book.getAll();
+				monitoredBooks = allBooks.filter((b) => {
+					const bookAny = b as Record<string, unknown>;
+					const stats = bookAny.statistics as Record<string, unknown> | undefined;
+					return (
+						Boolean(bookAny.monitored) &&
+						((stats?.bookFileCount as number) ?? 0) > 0
+					);
+				}) as ReadarrBookRecord[];
+			}
+
+			// Merge and deduplicate
+			const bookMap = new Map<number, ReadarrBookRecord>();
+			for (const b of wantedBooks) bookMap.set((b as Record<string, unknown>).id as number ?? 0, b);
+			for (const b of monitoredBooks) {
+				const id = (b as Record<string, unknown>).id as number ?? 0;
+				if (!bookMap.has(id)) bookMap.set(id, b);
+			}
+			books = [...bookMap.values()];
+		}
 
 		if (books.length === 0) {
 			return {
@@ -910,7 +1137,9 @@ async function executeReadarrHuntWithSdk(
 		const filteredBooks = books.filter((book) => {
 			const bookAny = book as Record<string, unknown>;
 			const releaseDate = bookAny.releaseDate as string | undefined;
-			if (!isContentReleased(releaseDate)) return false;
+			const bookStats = (book as Record<string, unknown>).statistics as Record<string, unknown> | undefined;
+			const bookHasFiles = ((bookStats?.bookFileCount as number) ?? 0) > 0;
+			if (!isContentReleased(releaseDate) && !bookHasFiles) return false;
 
 			const author = authorMap.get((bookAny.authorId as number) ?? 0);
 			if (!author) return false;
@@ -944,7 +1173,7 @@ async function executeReadarrHuntWithSdk(
 				itemsGrabbed: 0,
 				searchedItems: [],
 				grabbedItems: [],
-				message: "No books match the current filters",
+				message: `Fetched ${books.length} books, ${books.length - eligibleBooks.length} filtered out — 0 eligible`,
 				status: "completed",
 			};
 		}
@@ -971,8 +1200,8 @@ async function executeReadarrHuntWithSdk(
 				grabbedItems: [],
 				message:
 					skippedCount > 0
-						? `All ${skippedCount} eligible books were recently searched`
-						: "No books match the current filters",
+						? `Fetched ${books.length} books → ${eligibleBooks.length} passed filters → all ${skippedCount} recently searched`
+						: `Fetched ${books.length} books → 0 passed filters`,
 				status: "completed",
 			};
 		}

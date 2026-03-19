@@ -49,6 +49,8 @@ export interface HuntConfig {
 	ageThresholdDays: number | null;
 	// Season pack preference (Sonarr only)
 	preferSeasonPacks: boolean;
+	// Re-search all monitored items (not just cutoff list)
+	upgradeSearchAll: boolean;
 	// Re-search settings
 	researchAfterDays: number;
 	// State tracking
@@ -90,6 +92,8 @@ export interface HuntConfigUpdate {
 	ageThresholdDays?: number | null;
 	// Season pack preference (Sonarr only)
 	preferSeasonPacks?: boolean;
+	// Re-search all monitored items (not just cutoff list)
+	upgradeSearchAll?: boolean;
 	// Re-search settings
 	researchAfterDays?: number;
 }

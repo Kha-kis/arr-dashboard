@@ -3,7 +3,6 @@
 import {
 	ArrowUpCircle,
 	Gauge,
-	Package,
 	Pause,
 	Play,
 	Power,
@@ -26,8 +25,9 @@ import {
 	PremiumSkeleton,
 	ServiceBadge,
 	StatusBadge,
+	ToggleRow,
 } from "../../../components/layout";
-import { Alert, AlertDescription, Button, Switch } from "../../../components/ui";
+import { Alert, AlertDescription, Button } from "../../../components/ui";
 import {
 	Dialog,
 	DialogContent,
@@ -297,6 +297,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 		yearMax: config.yearMax,
 		ageThresholdDays: config.ageThresholdDays,
 		preferSeasonPacks: config.preferSeasonPacks,
+		upgradeSearchAll: config.upgradeSearchAll,
 	});
 
 	const { updateConfig, isUpdating, error } = useUpdateHuntConfig();
@@ -367,6 +368,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 			yearMax: config.yearMax,
 			ageThresholdDays: config.ageThresholdDays,
 			preferSeasonPacks: config.preferSeasonPacks,
+			upgradeSearchAll: config.upgradeSearchAll,
 			researchAfterDays: config.researchAfterDays,
 		});
 
@@ -478,30 +480,28 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 							suffix="minutes"
 						/>
 					</div>
+					<div className="pt-3 border-t border-border/20">
+						<ToggleRow
+							label="Include all monitored items"
+							description="Re-search all monitored items with files, not just those below the quality cutoff. Useful after changing quality profiles."
+							checked={formState.upgradeSearchAll ?? false}
+							onChange={(checked) =>
+								setFormState((prev) => ({ ...prev, upgradeSearchAll: checked }))
+							}
+						/>
+					</div>
 				</ConfigSection>
 
 				{/* Season Pack Preference - Sonarr Only */}
 				{config.service === "sonarr" && (
-					<div className="rounded-lg border border-border/30 bg-muted/10 p-4">
-						<div className="flex items-center justify-between">
-							<div className="flex items-center gap-3">
-								<Package className="h-5 w-5 text-muted-foreground" />
-								<div>
-									<p className="font-medium">Prefer Season Packs</p>
-									<p className="text-sm text-muted-foreground">
-										Always search for full seasons to catch season pack releases, even when only 1-2
-										episodes are missing
-									</p>
-								</div>
-							</div>
-							<Switch
-								checked={formState.preferSeasonPacks ?? false}
-								onCheckedChange={(checked) =>
-									setFormState((prev) => ({ ...prev, preferSeasonPacks: checked }))
-								}
-							/>
-						</div>
-					</div>
+					<ToggleRow
+						label="Prefer Season Packs"
+						description="Always search for full seasons to catch season pack releases, even when only 1-2 episodes are missing"
+						checked={formState.preferSeasonPacks ?? false}
+						onChange={(checked) =>
+							setFormState((prev) => ({ ...prev, preferSeasonPacks: checked }))
+						}
+					/>
 				)}
 
 				{/* Rate Limiting */}
@@ -530,10 +530,18 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 							onChange={(value) => setFormState((prev) => ({ ...prev, queueThreshold: value }))}
 						/>
 					</div>
-					<div className="grid grid-cols-2 gap-4 mt-4">
+				</div>
+
+				{/* Search Cooldown */}
+				<div className="pt-4 border-t border-border/30">
+					<div className="flex items-center gap-2 mb-4">
+						<RotateCcw className="h-5 w-5" style={{ color: themeGradient.from }} />
+						<h4 className="font-semibold">Search Cooldown</h4>
+					</div>
+					<div className="grid grid-cols-2 gap-4">
 						<ConfigInput
 							label="Re-search After (days)"
-							description="Skip items searched within this period (0 = never)"
+							description="Items become eligible again after this many days (0 = never re-search)"
 							type="number"
 							min={0}
 							max={MAX_RESEARCH_AFTER_DAYS}
@@ -585,13 +593,16 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 								Run Upgrade Hunt
 							</Button>
 						)}
+						{(formState.huntMissingEnabled || formState.huntUpgradesEnabled) && (
+							<div className="w-px self-stretch bg-border/50 mx-1" />
+						)}
 						<Button
 							variant="ghost"
 							size="sm"
 							onClick={() => setShowResetConfirm(true)}
 							disabled={isClearing}
 							className="gap-2 text-muted-foreground hover:text-foreground"
-							title="Reset search history to start from page 1"
+							title="Clear all search history — items will be eligible for searching again"
 						>
 							{isClearing ? (
 								<RotateCcw className="h-4 w-4 animate-spin" />
