@@ -499,6 +499,11 @@ export class SeerrClient {
 	// --- Notifications ---
 
 	async getNotificationAgents(): Promise<SeerrNotificationAgent[]> {
+		// Cache notification agents — config changes very rarely
+		const cacheKey = `notification-agents:${this.instance.id}`;
+		const cached = this.cache?.get<SeerrNotificationAgent[]>(cacheKey);
+		if (cached) return cached;
+
 		const settled = await Promise.allSettled(
 			KNOWN_NOTIFICATION_AGENTS.map(({ id, name }) =>
 				this.get<unknown>(`/api/v1/settings/notifications/${id}`, TIMEOUT_INTERACTIVE).then(
@@ -538,6 +543,7 @@ export class SeerrClient {
 				"Seerr: notification agents loaded (some may be unsupported or failed)",
 			);
 		}
+		this.cache?.set(cacheKey, agents, 5 * 60 * 1000); // 5-minute TTL
 		return agents;
 	}
 
@@ -556,6 +562,10 @@ export class SeerrClient {
 			options: Record<string, unknown>;
 		}>(raw, seerrNotificationAgentRawSchema, "updateNotificationAgent");
 		// Inject the known id/name back since the API only returns enabled/types/options
+		// Invalidate cached agent list so next read reflects the update
+		const cacheKey = `notification-agents:${this.instance.id}`;
+		this.cache?.invalidate(cacheKey);
+
 		const agent = KNOWN_NOTIFICATION_AGENTS.find((a) => a.id === agentId);
 		return { id: agentId, name: agent?.name ?? agentId, ...data };
 	}

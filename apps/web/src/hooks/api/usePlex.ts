@@ -147,11 +147,11 @@ export const usePlexScanMutation = () => {
 // Now Playing (F4)
 // ============================================================================
 
-export const useNowPlaying = (enabled = true) => {
+export const useNowPlaying = (enabled = true, refetchInterval = 15_000) => {
 	return useQuery<PlexNowPlayingResponse>({
 		queryKey: plexKeys.nowPlaying(),
 		queryFn: fetchNowPlaying,
-		refetchInterval: 15_000,
+		refetchInterval,
 		enabled,
 	});
 };

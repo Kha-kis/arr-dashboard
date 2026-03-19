@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, type ReactNode, useCallback, useMemo, useContext, useEffect, useState } from "react";
 
 /**
  * Color Theme Provider
@@ -307,12 +307,10 @@ export function ColorThemeProvider({ children }: { children: ReactNode }) {
 		setColorThemeState(theme);
 	}, []);
 
-	const value: ColorThemeContextValue = {
-		colorTheme,
-		setColorTheme,
-		themes: COLOR_THEMES,
-		themeInfo: THEME_INFO,
-	};
+	const value = useMemo<ColorThemeContextValue>(
+		() => ({ colorTheme, setColorTheme, themes: COLOR_THEMES, themeInfo: THEME_INFO }),
+		[colorTheme, setColorTheme],
+	);
 
 	return <ColorThemeContext.Provider value={value}>{children}</ColorThemeContext.Provider>;
 }
