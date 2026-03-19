@@ -7,6 +7,7 @@
  */
 
 import type { FastifyBaseLogger } from "fastify";
+import { getErrorMessage } from "../utils/error-message.js";
 import type { PrismaClientInstance } from "../prisma.js";
 import type { PlexClient } from "./plex-client.js";
 
@@ -26,9 +27,10 @@ export async function refreshPlexEpisodeCache(
 	prisma: PrismaClientInstance,
 	instanceId: string,
 	log: FastifyBaseLogger,
-): Promise<{ upserted: number; errors: number }> {
+): Promise<{ upserted: number; errors: number; errorMessages: string[] }> {
 	let upserted = 0;
 	let errors = 0;
+	const errorMessages: string[] = [];
 
 	// Find shows with recent watch activity (have a ratingKey and non-zero watchCount)
 	const recentlyWatchedShows = await prisma.plexCache.findMany({
@@ -48,7 +50,7 @@ export async function refreshPlexEpisodeCache(
 
 	if (recentlyWatchedShows.length === 0) {
 		log.debug({ instanceId }, "No recently watched shows to refresh episodes for");
-		return { upserted, errors };
+		return { upserted, errors, errorMessages };
 	}
 
 	// Deduplicate by tmdbId (same show may appear in multiple sections)
@@ -86,7 +88,8 @@ export async function refreshPlexEpisodeCache(
 		}
 	} catch (err) {
 		log.warn({ err, instanceId }, "Failed to fetch history for episode cache refresh");
-		return { upserted, errors: 1 };
+		errorMessages.push(`Failed to fetch history: ${getErrorMessage(err)}`);
+		return { upserted, errors: 1, errorMessages };
 	}
 
 	// Process each show
@@ -147,11 +150,17 @@ export async function refreshPlexEpisodeCache(
 							"Failed to upsert episode cache entry",
 						);
 					}
+					if (errorMessages.length < 5) {
+						errorMessages.push(`Failed to upsert S${episode.seasonNumber}E${episode.episodeNumber}: ${getErrorMessage(err)}`);
+					}
 				}
 			}
 		} catch (err) {
 			errors++;
 			log.warn({ err, instanceId, tmdbId, showRatingKey }, "Failed to fetch episodes for show");
+			if (errorMessages.length < 5) {
+				errorMessages.push(`Failed to fetch episodes for show tmdb:${tmdbId}: ${getErrorMessage(err)}`);
+			}
 		}
 	}
 
@@ -160,5 +169,5 @@ export async function refreshPlexEpisodeCache(
 		"Plex episode cache refresh completed",
 	);
 
-	return { upserted, errors };
+	return { upserted, errors, errorMessages };
 }
