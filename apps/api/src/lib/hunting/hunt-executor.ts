@@ -106,7 +106,7 @@ export async function executeHuntWithSdk(
 	);
 
 	const batchSize = type === "missing" ? config.missingBatchSize : config.upgradeBatchSize;
-	const upgradeSourceMode = (config.upgradeSourceMode ?? "wanted") as "wanted" | "monitored" | "both";
+	const upgradeSearchAll = config.upgradeSearchAll ?? false;
 
 	if (service === "sonarr") {
 		const result = await executeSonarrHuntWithSdk(
@@ -118,7 +118,7 @@ export async function executeHuntWithSdk(
 			apiCallCounter,
 			logger,
 			config.preferSeasonPacks,
-			upgradeSourceMode,
+			upgradeSearchAll,
 		);
 		return { ...result, apiCallsMade: apiCallCounter.count };
 	}
@@ -131,7 +131,7 @@ export async function executeHuntWithSdk(
 			historyManager,
 			apiCallCounter,
 			logger,
-			upgradeSourceMode,
+			upgradeSearchAll,
 		);
 		return { ...result, apiCallsMade: apiCallCounter.count };
 	}
@@ -144,7 +144,7 @@ export async function executeHuntWithSdk(
 			historyManager,
 			apiCallCounter,
 			logger,
-			upgradeSourceMode,
+			upgradeSearchAll,
 		);
 		return { ...result, apiCallsMade: apiCallCounter.count };
 	}
@@ -157,7 +157,7 @@ export async function executeHuntWithSdk(
 			historyManager,
 			apiCallCounter,
 			logger,
-			upgradeSourceMode,
+			upgradeSearchAll,
 		);
 		return { ...result, apiCallsMade: apiCallCounter.count };
 	}
@@ -225,7 +225,7 @@ async function executeSonarrHuntWithSdk(
 	counter: ApiCallCounter,
 	logger: HuntLogger,
 	preferSeasonPacks: boolean,
-	upgradeSourceMode: "wanted" | "monitored" | "both" = "wanted",
+	upgradeSearchAll = false,
 ): Promise<HuntResultWithoutApiCount> {
 	try {
 		// First, get all series to have filter data available
@@ -256,14 +256,11 @@ async function executeSonarrHuntWithSdk(
 		if (type === "missing") {
 			records = await fetchSonarrWanted("missing");
 		} else {
-			// Upgrade mode — source depends on upgradeSourceMode
-			const wantedRecords: SonarrEpisodeRecord[] =
-				upgradeSourceMode !== "monitored"
-					? await fetchSonarrWanted("cutoff")
-					: [];
+			// Upgrade mode — include monitored items if upgradeSearchAll is enabled
+			const wantedRecords = await fetchSonarrWanted("cutoff");
 
-			if (upgradeSourceMode !== "wanted") {
-				// For "monitored" or "both": identify monitored series with episode files
+			if (upgradeSearchAll) {
+				// When upgradeSearchAll is enabled: identify monitored series with episode files
 				// and trigger series-level searches for them (Sonarr will re-evaluate all episodes)
 				const monitoredSeriesWithFiles = allSeries.filter(
 					(s) =>
@@ -646,7 +643,7 @@ async function executeRadarrHuntWithSdk(
 	historyManager: SearchHistoryManager,
 	counter: ApiCallCounter,
 	logger: HuntLogger,
-	upgradeSourceMode: "wanted" | "monitored" | "both" = "wanted",
+	upgradeSearchAll = false,
 ): Promise<HuntResultWithoutApiCount> {
 	try {
 		const fetchRadarrWanted = (endpoint: "missing" | "cutoff") =>
@@ -670,14 +667,11 @@ async function executeRadarrHuntWithSdk(
 		if (type === "missing") {
 			movies = await fetchRadarrWanted("missing");
 		} else {
-			// Upgrade mode — source depends on upgradeSourceMode
-			const wantedMovies: RadarrMovieRecord[] =
-				upgradeSourceMode !== "monitored"
-					? await fetchRadarrWanted("cutoff")
-					: [];
+			// Upgrade mode — include monitored items if upgradeSearchAll is enabled
+			const wantedMovies = await fetchRadarrWanted("cutoff");
 
 			let monitoredMovies: RadarrMovieRecord[] = [];
-			if (upgradeSourceMode !== "wanted") {
+			if (upgradeSearchAll) {
 				counter.count++;
 				const allMovies = await client.movie.getAll();
 				monitoredMovies = allMovies.filter(
@@ -847,7 +841,7 @@ async function executeLidarrHuntWithSdk(
 	historyManager: SearchHistoryManager,
 	counter: ApiCallCounter,
 	logger: HuntLogger,
-	upgradeSourceMode: "wanted" | "monitored" | "both" = "wanted",
+	upgradeSearchAll = false,
 ): Promise<HuntResultWithoutApiCount> {
 	try {
 		// First, get all artists to have filter data available
@@ -878,14 +872,11 @@ async function executeLidarrHuntWithSdk(
 		if (type === "missing") {
 			albums = await fetchLidarrWanted("missing");
 		} else {
-			// Upgrade mode — source depends on upgradeSourceMode
-			const wantedAlbums: LidarrAlbumRecord[] =
-				upgradeSourceMode !== "monitored"
-					? await fetchLidarrWanted("cutoff")
-					: [];
+			// Upgrade mode — include monitored items if upgradeSearchAll is enabled
+			const wantedAlbums = await fetchLidarrWanted("cutoff");
 
 			let monitoredAlbums: LidarrAlbumRecord[] = [];
-			if (upgradeSourceMode !== "wanted") {
+			if (upgradeSearchAll) {
 				counter.count++;
 				const allAlbums = await client.album.getAll();
 				monitoredAlbums = allAlbums.filter((a) => {
@@ -1073,7 +1064,7 @@ async function executeReadarrHuntWithSdk(
 	historyManager: SearchHistoryManager,
 	counter: ApiCallCounter,
 	logger: HuntLogger,
-	upgradeSourceMode: "wanted" | "monitored" | "both" = "wanted",
+	upgradeSearchAll = false,
 ): Promise<HuntResultWithoutApiCount> {
 	try {
 		// First, get all authors to have filter data available
@@ -1104,14 +1095,11 @@ async function executeReadarrHuntWithSdk(
 		if (type === "missing") {
 			books = await fetchReadarrWanted("missing");
 		} else {
-			// Upgrade mode — source depends on upgradeSourceMode
-			const wantedBooks: ReadarrBookRecord[] =
-				upgradeSourceMode !== "monitored"
-					? await fetchReadarrWanted("cutoff")
-					: [];
+			// Upgrade mode — include monitored items if upgradeSearchAll is enabled
+			const wantedBooks = await fetchReadarrWanted("cutoff");
 
 			let monitoredBooks: ReadarrBookRecord[] = [];
-			if (upgradeSourceMode !== "wanted") {
+			if (upgradeSearchAll) {
 				counter.count++;
 				const allBooks = await client.book.getAll();
 				monitoredBooks = allBooks.filter((b) => {

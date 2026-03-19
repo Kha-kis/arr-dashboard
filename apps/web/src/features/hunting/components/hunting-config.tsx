@@ -297,7 +297,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 		yearMax: config.yearMax,
 		ageThresholdDays: config.ageThresholdDays,
 		preferSeasonPacks: config.preferSeasonPacks,
-		upgradeSourceMode: config.upgradeSourceMode,
+		upgradeSearchAll: config.upgradeSearchAll,
 	});
 
 	const { updateConfig, isUpdating, error } = useUpdateHuntConfig();
@@ -368,7 +368,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 			yearMax: config.yearMax,
 			ageThresholdDays: config.ageThresholdDays,
 			preferSeasonPacks: config.preferSeasonPacks,
-			upgradeSourceMode: config.upgradeSourceMode,
+			upgradeSearchAll: config.upgradeSearchAll,
 			researchAfterDays: config.researchAfterDays,
 		});
 
@@ -480,27 +480,40 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 							suffix="minutes"
 						/>
 					</div>
-					<div className="mt-4">
-						<label className="block text-sm font-medium text-foreground mb-1">
-							Upgrade Source
-						</label>
-						<p className="text-xs text-muted-foreground mb-2">
-							Where to find items eligible for quality upgrades
-						</p>
-						<select
-							value={formState.upgradeSourceMode ?? "wanted"}
-							onChange={(e) =>
+					<div className="mt-4 flex items-start gap-3">
+						<button
+							type="button"
+							role="switch"
+							aria-checked={formState.upgradeSearchAll ?? false}
+							onClick={() =>
 								setFormState((prev) => ({
 									...prev,
-									upgradeSourceMode: e.target.value as "wanted" | "monitored" | "both",
+									upgradeSearchAll: !prev.upgradeSearchAll,
 								}))
 							}
-							className="w-full rounded-lg border border-border/50 bg-card/50 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
+							className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
+								formState.upgradeSearchAll ? "" : "bg-border/50"
+							}`}
+							style={
+								formState.upgradeSearchAll
+									? { background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})` }
+									: undefined
+							}
 						>
-							<option value="wanted">Wanted Cutoff Only</option>
-							<option value="monitored">All Monitored with Files</option>
-							<option value="both">Both (Wanted + Monitored)</option>
-						</select>
+							<span
+								className={`block h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+									formState.upgradeSearchAll ? "translate-x-5" : "translate-x-0.5"
+								}`}
+							/>
+						</button>
+						<div>
+							<p className="text-sm font-medium text-foreground">
+								Include all monitored items
+							</p>
+							<p className="text-xs text-muted-foreground">
+								Re-search all monitored items with files, not just those below the quality cutoff. Useful after changing quality profiles.
+							</p>
+						</div>
 					</div>
 				</ConfigSection>
 

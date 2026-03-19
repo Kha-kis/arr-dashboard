@@ -49,8 +49,8 @@ export interface HuntConfig {
 	ageThresholdDays: number | null;
 	// Season pack preference (Sonarr only)
 	preferSeasonPacks: boolean;
-	// Upgrade source mode
-	upgradeSourceMode: "wanted" | "monitored" | "both";
+	// Re-search all monitored items (not just cutoff list)
+	upgradeSearchAll: boolean;
 	// Re-search settings
 	researchAfterDays: number;
 	// State tracking
@@ -92,8 +92,8 @@ export interface HuntConfigUpdate {
 	ageThresholdDays?: number | null;
 	// Season pack preference (Sonarr only)
 	preferSeasonPacks?: boolean;
-	// Upgrade source mode
-	upgradeSourceMode?: "wanted" | "monitored" | "both";
+	// Re-search all monitored items (not just cutoff list)
+	upgradeSearchAll?: boolean;
 	// Re-search settings
 	researchAfterDays?: number;
 }
