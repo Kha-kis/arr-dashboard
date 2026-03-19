@@ -15,6 +15,7 @@
  */
 
 import type { FastifyBaseLogger } from "fastify";
+import { getErrorMessage } from "../utils/error-message.js";
 import type { PrismaClient } from "../prisma.js";
 import type { PlexClient } from "./plex-client.js";
 
@@ -73,9 +74,10 @@ export async function refreshPlexCache(
 	prisma: PrismaClient,
 	instanceId: string,
 	log: FastifyBaseLogger,
-): Promise<{ upserted: number; errors: number }> {
+): Promise<{ upserted: number; errors: number; errorMessages: string[] }> {
 	let upserted = 0;
 	let errors = 0;
+	const errorMessages: string[] = [];
 
 	try {
 		// 1. Build accountId → username map
@@ -130,11 +132,10 @@ export async function refreshPlexCache(
 					});
 				}
 			} catch (err) {
-				log.warn(
-					{ err, sectionId: lib.key, sectionTitle: lib.title },
-					"Failed to fetch Plex library items",
-				);
+				const msg = `Failed to fetch library "${lib.title}": ${getErrorMessage(err)}`;
+				log.warn({ err, sectionId: lib.key, sectionTitle: lib.title }, msg);
 				errors++;
+				errorMessages.push(msg);
 			}
 		}
 
@@ -280,11 +281,10 @@ export async function refreshPlexCache(
 				upsertedIds.push(row.id);
 				upserted++;
 			} catch (error) {
+				const msg = `Failed to upsert ${agg.mediaType} tmdb:${agg.tmdbId}: ${getErrorMessage(error)}`;
 				errors++;
-				log.warn(
-					{ err: error, instanceId, tmdbId: agg.tmdbId, mediaType: agg.mediaType },
-					"Plex cache: failed to upsert item",
-				);
+				errorMessages.push(msg);
+				log.warn({ err: error, instanceId, tmdbId: agg.tmdbId, mediaType: agg.mediaType }, msg);
 			}
 		}
 
@@ -310,9 +310,11 @@ export async function refreshPlexCache(
 			"Plex cache refresh complete",
 		);
 	} catch (error) {
-		log.error({ err: error, instanceId }, "Plex cache refresh failed");
+		const msg = `Plex cache refresh failed: ${getErrorMessage(error)}`;
+		log.error({ err: error, instanceId }, msg);
 		errors++;
+		errorMessages.push(msg);
 	}
 
-	return { upserted, errors };
+	return { upserted, errors, errorMessages };
 }

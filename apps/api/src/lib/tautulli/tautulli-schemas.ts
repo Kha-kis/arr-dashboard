@@ -34,9 +34,9 @@ export const tautulliLibrarySchema = z.looseObject({
 export const tautulliHistoryDataSchema = z.looseObject({
 	data: z.array(
 		z.looseObject({
-			rating_key: z.string(),
-			parent_rating_key: z.string(),
-			grandparent_rating_key: z.string(),
+			rating_key: z.coerce.string(),
+			parent_rating_key: z.coerce.string(),
+			grandparent_rating_key: z.coerce.string(),
 			title: z.string(),
 			grandparent_title: z.string(),
 			media_type: z.string(),
@@ -54,7 +54,7 @@ export const tautulliActivityDataSchema = z.looseObject({
 	sessions: z.array(
 		z.looseObject({
 			session_key: z.string(),
-			rating_key: z.string(),
+			rating_key: z.coerce.string(),
 			title: z.string(),
 			grandparent_title: z.string().optional(),
 			media_type: z.string(),
@@ -119,8 +119,8 @@ export const tautulliUserWatchTimeStatsSchema = z.looseObject({
 
 /** get_metadata — inner data */
 export const tautulliMetadataSchema = z.looseObject({
-	guids: z.array(z.string()),
-	media_type: z.string(),
-	title: z.string(),
-	rating_key: z.string(),
+	guids: z.preprocess(v => v ?? [], z.array(z.string())),
+	media_type: z.preprocess(v => v ?? "unknown", z.string()),
+	title: z.preprocess(v => v ?? "", z.string()),
+	rating_key: z.coerce.string(),
 });

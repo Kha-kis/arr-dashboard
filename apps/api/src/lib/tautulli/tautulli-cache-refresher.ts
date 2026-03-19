@@ -13,6 +13,7 @@
  */
 
 import type { FastifyBaseLogger } from "fastify";
+import { getErrorMessage } from "../utils/error-message.js";
 import type { PrismaClient } from "../prisma.js";
 import { delay } from "../utils/delay.js";
 import type { TautulliClient, TautulliHistoryItem } from "./tautulli-client.js";
@@ -39,9 +40,10 @@ export async function refreshTautulliCache(
 	prisma: PrismaClient,
 	instanceId: string,
 	log: FastifyBaseLogger,
-): Promise<{ upserted: number; errors: number }> {
+): Promise<{ upserted: number; errors: number; errorMessages: string[] }> {
 	let upserted = 0;
 	let errors = 0;
+	const errorMessages: string[] = [];
 
 	try {
 		// 1. Get libraries to iterate over
@@ -132,6 +134,9 @@ export async function refreshTautulliCache(
 			} catch (error) {
 				errors++;
 				log.warn({ err: error, ratingKey }, "Tautulli cache: failed to fetch metadata for item");
+				if (errorMessages.length < 5) {
+					errorMessages.push(`Failed to fetch metadata for ratingKey ${ratingKey}: ${getErrorMessage(error)}`);
+				}
 			}
 		}
 
@@ -172,6 +177,9 @@ export async function refreshTautulliCache(
 					{ err: error, instanceId, tmdbId: guid.tmdbId, mediaType: guid.mediaType },
 					"Tautulli cache: failed to upsert item",
 				);
+				if (errorMessages.length < 5) {
+					errorMessages.push(`Failed to upsert tmdb:${guid.tmdbId} (${guid.mediaType}): ${getErrorMessage(error)}`);
+				}
 			}
 		}
 
@@ -198,9 +206,10 @@ export async function refreshTautulliCache(
 	} catch (error) {
 		log.error({ err: error, instanceId }, "Tautulli cache refresh failed");
 		errors++;
+		errorMessages.push(`Tautulli cache refresh failed: ${getErrorMessage(error)}`);
 	}
 
-	return { upserted, errors };
+	return { upserted, errors, errorMessages };
 }
 
 /**
