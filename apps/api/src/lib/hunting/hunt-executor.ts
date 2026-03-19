@@ -228,19 +228,18 @@ async function executeSonarrHuntWithSdk(
 		const seriesMap = new Map(allSeries.map((s) => [s.id ?? 0, s]));
 
 		// Get wanted episodes with page rotation
-		const fetchSize = Math.max(batchSize * 5, 50);
 
 		const records = await fetchWantedWithWrapAround(
-			(page) => {
+			(page, pageSize) => {
 				const params = {
 					page,
-					pageSize: fetchSize,
+					pageSize,
 					sortKey: "airDateUtc" as const,
 					sortDirection: "descending" as const,
 				};
 				return type === "missing" ? client.wanted.missing(params) : client.wanted.cutoff(params);
 			},
-			{ recentSearchCount: historyManager.getRecentSearchCount(), fetchSize, counter, logger },
+			{ counter, logger },
 		);
 
 		if (records.length === 0) {
@@ -516,19 +515,18 @@ async function executeRadarrHuntWithSdk(
 	logger: HuntLogger,
 ): Promise<HuntResultWithoutApiCount> {
 	try {
-		const fetchSize = Math.max(batchSize * 5, 50);
 
 		const movies = await fetchWantedWithWrapAround(
-			(page) => {
+			(page, pageSize) => {
 				const params = {
 					page,
-					pageSize: fetchSize,
+					pageSize,
 					sortKey: "digitalRelease" as const,
 					sortDirection: "descending" as const,
 				};
 				return type === "missing" ? client.wanted.missing(params) : client.wanted.cutoff(params);
 			},
-			{ recentSearchCount: historyManager.getRecentSearchCount(), fetchSize, counter, logger },
+			{ counter, logger },
 		);
 
 		if (movies.length === 0) {
@@ -691,13 +689,12 @@ async function executeLidarrHuntWithSdk(
 		const allArtists = await client.artist.getAll();
 		const artistMap = new Map(allArtists.map((a) => [(a as { id?: number }).id ?? 0, a]));
 
-		const fetchSize = Math.max(batchSize * 5, 50);
 
 		const albums = await fetchWantedWithWrapAround(
-			(page) => {
+			(page, pageSize) => {
 				const params = {
 					page,
-					pageSize: fetchSize,
+					pageSize,
 					sortKey: "releaseDate" as const,
 					sortDirection: "descending" as const,
 				};
@@ -705,7 +702,7 @@ async function executeLidarrHuntWithSdk(
 					? client.wanted.getMissing(params)
 					: client.wanted.getCutoffUnmet(params);
 			},
-			{ recentSearchCount: historyManager.getRecentSearchCount(), fetchSize, counter, logger },
+			{ counter, logger },
 		);
 
 		if (albums.length === 0) {
@@ -878,13 +875,12 @@ async function executeReadarrHuntWithSdk(
 		const allAuthors = await client.author.getAll();
 		const authorMap = new Map(allAuthors.map((a) => [(a as { id?: number }).id ?? 0, a]));
 
-		const fetchSize = Math.max(batchSize * 5, 50);
 
 		const books = await fetchWantedWithWrapAround(
-			(page) => {
+			(page, pageSize) => {
 				const params = {
 					page,
-					pageSize: fetchSize,
+					pageSize,
 					sortKey: "releaseDate" as const,
 					sortDirection: "descending" as const,
 				};
@@ -892,7 +888,7 @@ async function executeReadarrHuntWithSdk(
 					? client.wanted.getMissing(params)
 					: client.wanted.getCutoffUnmet(params);
 			},
-			{ recentSearchCount: historyManager.getRecentSearchCount(), fetchSize, counter, logger },
+			{ counter, logger },
 		);
 
 		if (books.length === 0) {
