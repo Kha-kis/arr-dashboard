@@ -204,7 +204,7 @@ export const StatisticsClient = () => {
 				className="animate-in fade-in slide-in-from-bottom-4 duration-500"
 				style={{ animationDelay: "100ms", animationFillMode: "backwards" }}
 			>
-				<div className="inline-flex rounded-xl bg-card/30 backdrop-blur-xs border border-border/50 p-1.5">
+				<div className="inline-flex rounded-xl bg-card/30 border border-border/50 p-1.5">
 					{tabs.map((tab) => {
 						const Icon = tab.icon;
 						const isActive = activeTab === tab.id;
@@ -271,6 +271,7 @@ export const StatisticsClient = () => {
 					lidarrTotals={lidarrTotals}
 					readarrTotals={readarrTotals}
 					prowlarrTotals={prowlarrTotals}
+					hasTautulli={hasTautulli}
 					onSwitchTab={setActiveTab}
 				/>
 			)}

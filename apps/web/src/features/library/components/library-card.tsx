@@ -22,7 +22,7 @@ import {
 	Tv,
 } from "lucide-react";
 import { memo } from "react";
-import { GlassmorphicCard, ServiceBadge, StatusBadge } from "../../../components/layout";
+import { ServiceBadge, StatusBadge } from "../../../components/layout";
 import { Button } from "../../../components/ui";
 import {
 	getLinuxInstanceName,
@@ -100,6 +100,8 @@ interface LibraryCardProps {
 	plexUserRating?: number | null;
 	/** Plex watch progress for series (watched/total episodes) */
 	seriesProgress?: { watched: number; total: number; percent: number } | null;
+	/** Plex deep link URL for "Watch in Plex" */
+	plexUrl?: string | null;
 }
 
 /**
@@ -148,6 +150,7 @@ export const LibraryCard = memo(function LibraryCard({
 	watchedByUsers,
 	plexUserRating,
 	seriesProgress,
+	plexUrl,
 }: LibraryCardProps) {
 	const [incognitoMode] = useIncognitoMode();
 	const monitored = item.monitored ?? false;
@@ -365,6 +368,12 @@ export const LibraryCard = memo(function LibraryCard({
 	if (externalLink) {
 		externalLinks.push({ label: serviceLabel, onClick: handleOpenExternal });
 	}
+	if (plexUrl) {
+		externalLinks.push({
+			label: "Plex",
+			onClick: () => safeOpenUrl(plexUrl),
+		});
+	}
 	if (item.remoteIds?.tmdbId) {
 		const tmdbType = item.type === "movie" ? "movie" : "tv";
 		const tmdbId = item.remoteIds.tmdbId;
@@ -403,7 +412,7 @@ export const LibraryCard = memo(function LibraryCard({
 	}
 
 	return (
-		<GlassmorphicCard padding="md" className="flex flex-col gap-3">
+		<div className="rounded-xl border border-border/30 bg-muted/10 p-4 flex flex-col gap-3">
 			<div className="flex gap-3">
 				<button
 					type="button"
@@ -756,6 +765,6 @@ export const LibraryCard = memo(function LibraryCard({
 					</div>
 				)}
 			</div>
-		</GlassmorphicCard>
+		</div>
 	);
 });

@@ -1222,6 +1222,7 @@ model PlexCache {
   collections   String                         // JSON array of collection names
   labels        String                         // JSON array of label names
   addedAt       DateTime?
+  thumb         String?                          // Plex thumbnail path for poster art
 
   instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
 

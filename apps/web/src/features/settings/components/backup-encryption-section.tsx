@@ -2,7 +2,7 @@
 
 import { AlertCircle, AlertTriangle, CheckCircle2, Key, Loader2, Shield } from "lucide-react";
 import { useState } from "react";
-import { GlassmorphicCard, PremiumSection } from "../../../components/layout";
+import { PremiumSection } from "../../../components/layout";
 import { Button, Input, toast } from "../../../components/ui";
 import {
 	useBackupPasswordStatus,
@@ -144,7 +144,7 @@ export const BackupEncryptionSection = () => {
 						{passwordStatus?.configured ? "Change Password" : "Set Password"}
 					</Button>
 				) : (
-					<GlassmorphicCard padding="md">
+					<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
 						<form onSubmit={handleSetPassword} className="space-y-4">
 							<div className="space-y-2">
 								<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -211,7 +211,7 @@ export const BackupEncryptionSection = () => {
 								</Button>
 							</div>
 						</form>
-					</GlassmorphicCard>
+					</div>
 				)}
 
 				{/* Important notice */}

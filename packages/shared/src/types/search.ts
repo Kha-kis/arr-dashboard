@@ -4,6 +4,18 @@ export const searchTypeSchema = z.enum(["all", "movie", "tv", "music", "book"]);
 
 export const searchProtocolSchema = z.enum(["torrent", "usenet", "unknown"]);
 
+/** Lightweight health summary attached to each indexer in list responses */
+export const prowlarrIndexerHealthSchema = z.object({
+	successRate: z.number().optional(),
+	averageResponseTime: z.number().optional(),
+	grabs: z.number().optional(),
+	fails: z.number().optional(),
+	lastCheck: z.string().optional(),
+	lastFailure: z.string().optional(),
+});
+
+export type ProwlarrIndexerHealth = z.infer<typeof prowlarrIndexerHealthSchema>;
+
 export const prowlarrIndexerSchema = z.object({
 	id: z.number().int().nonnegative(),
 	name: z.string(),
@@ -19,9 +31,20 @@ export const prowlarrIndexerSchema = z.object({
 	instanceId: z.string(),
 	instanceName: z.string(),
 	instanceUrl: z.string().optional(),
+	health: prowlarrIndexerHealthSchema.optional(),
 });
 
 export type ProwlarrIndexer = z.infer<typeof prowlarrIndexerSchema>;
+
+export const prowlarrIndexerFieldSelectOptionSchema = z.object({
+	value: z.union([z.string(), z.number()]),
+	name: z.string(),
+	hint: z.string().optional(),
+});
+
+export type ProwlarrIndexerFieldSelectOption = z.infer<
+	typeof prowlarrIndexerFieldSelectOptionSchema
+>;
 
 export const prowlarrIndexerFieldSchema = z.object({
 	name: z.string(),
@@ -29,6 +52,7 @@ export const prowlarrIndexerFieldSchema = z.object({
 	helpText: z.string().optional(),
 	value: z.union([z.string(), z.number(), z.boolean()]).nullable().optional(),
 	type: z.string().optional(),
+	selectOptions: z.array(prowlarrIndexerFieldSelectOptionSchema).optional(),
 });
 
 export type ProwlarrIndexerField = z.infer<typeof prowlarrIndexerFieldSchema>;

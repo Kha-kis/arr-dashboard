@@ -63,6 +63,8 @@ export type UpstreamParseResult<T> = UpstreamParseSuccess<T> | UpstreamParseFail
  */
 export class UpstreamValidationError extends Error {
 	override readonly name = "UpstreamValidationError";
+	/** HTTP 502 — the upstream service returned structurally invalid data */
+	readonly statusCode = 502;
 
 	constructor(
 		message: string,
@@ -74,6 +76,11 @@ export class UpstreamValidationError extends Error {
 		readonly issues: string[],
 	) {
 		super(message);
+	}
+
+	/** Expose validation details for the error handler's `details` extraction */
+	get details() {
+		return { integration: this.integration, category: this.category, issues: this.issues };
 	}
 }
 

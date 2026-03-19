@@ -90,7 +90,7 @@ export const ServiceInstanceCard = ({
 				"group relative rounded-2xl border overflow-hidden transition-all duration-300",
 				"animate-in fade-in slide-in-from-bottom-2",
 				instance.enabled
-					? "border-border/50 bg-card/30 backdrop-blur-xs hover:border-border/80"
+					? "border-border/30 bg-muted/10 hover:border-border/80"
 					: "border-border/30 bg-card/20 opacity-60",
 			)}
 			style={{

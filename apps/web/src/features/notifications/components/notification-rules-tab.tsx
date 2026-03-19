@@ -4,11 +4,11 @@ import { ChevronDown, ChevronUp, Loader2, Minus, Plus, Shield, Trash2 } from "lu
 import { useState } from "react";
 import type { RuleCondition } from "@arr/shared";
 import {
-	GlassmorphicCard,
 	GradientButton,
 	StatusBadge,
 } from "@/components/layout/premium-components";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
+import { INPUT_BASE_CLASSES } from "@/lib/theme-input-styles";
 import {
 	useCreateRule,
 	useDeleteRule,
@@ -171,8 +171,7 @@ export function NotificationRulesTab() {
 
 	const isSaving = createRule.isPending || updateRule.isPending;
 
-	const inputClass =
-		"w-full bg-background/50 border border-border/50 rounded-lg px-3 py-2 text-sm focus:outline-none transition-colors";
+	const inputClass = INPUT_BASE_CLASSES.input;
 
 	if (isLoading) {
 		return (
@@ -198,7 +197,7 @@ export function NotificationRulesTab() {
 
 			{/* Inline form */}
 			{showForm && (
-				<GlassmorphicCard padding="md">
+				<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
 					<div className="space-y-5">
 						<h3 className="font-semibold text-foreground">
 							{editingRule ? "Edit Rule" : "New Rule"}
@@ -408,12 +407,12 @@ export function NotificationRulesTab() {
 							</button>
 						</div>
 					</div>
-				</GlassmorphicCard>
+				</div>
 			)}
 
 			{/* Rules list */}
 			{rules.length === 0 && !showForm ? (
-				<GlassmorphicCard padding="lg">
+				<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
 					<div className="text-center py-8">
 						<Shield className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" />
 						<p className="text-muted-foreground">No notification rules configured yet.</p>
@@ -421,11 +420,11 @@ export function NotificationRulesTab() {
 							Rules let you suppress, throttle, or route notifications.
 						</p>
 					</div>
-				</GlassmorphicCard>
+				</div>
 			) : (
 				<div className="space-y-3">
 					{rules.map((rule, index) => (
-						<GlassmorphicCard key={rule.id} padding="sm">
+						<div key={rule.id} className="rounded-xl border border-border/30 bg-muted/10 p-3">
 							<div
 								className="flex items-start gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300"
 								style={{ animationDelay: `${index * 30}ms`, animationFillMode: "backwards" }}
@@ -505,7 +504,7 @@ export function NotificationRulesTab() {
 									</button>
 								</div>
 							</div>
-						</GlassmorphicCard>
+						</div>
 					))}
 				</div>
 			)}

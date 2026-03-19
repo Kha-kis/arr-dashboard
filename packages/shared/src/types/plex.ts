@@ -144,6 +144,7 @@ export interface PlexRecentlyAddedItem {
 	sectionTitle: string;
 	addedAt: string;
 	ratingKey: string | null;
+	thumb: string | null;
 	instanceId: string;
 	instanceName: string;
 }
@@ -181,6 +182,7 @@ export interface PlexOnDeckItem {
 	instanceId: string;
 	instanceName: string;
 	ratingKey: string | null;
+	thumb: string | null;
 }
 
 export interface PlexOnDeckResponse {

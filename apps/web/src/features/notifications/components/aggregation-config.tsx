@@ -3,8 +3,9 @@
 import { Clock, Loader2, Layers } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { NotificationEventType } from "@arr/shared";
-import { GlassmorphicCard, GradientButton } from "@/components/layout/premium-components";
+import { GradientButton } from "@/components/layout/premium-components";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
+import { INPUT_BASE_CLASSES } from "@/lib/theme-input-styles";
 import {
 	useAggregationConfigs,
 	useUpdateAggregationConfigs,
@@ -101,8 +102,7 @@ export function AggregationConfig() {
 		);
 	};
 
-	const inputClass =
-		"w-full bg-background/50 border border-border/50 rounded-lg px-3 py-2 text-sm focus:outline-none transition-colors";
+	const inputClass = INPUT_BASE_CLASSES.input;
 
 	if (isLoading) {
 		return (
@@ -143,7 +143,7 @@ export function AggregationConfig() {
 
 			<div className="grid gap-2">
 				{localConfigs.map((config) => (
-					<GlassmorphicCard key={config.eventType} padding="sm">
+					<div key={config.eventType} className="rounded-xl border border-border/30 bg-muted/10 p-3">
 						<div className="flex items-center gap-4">
 							{/* Toggle */}
 							<button
@@ -215,7 +215,7 @@ export function AggregationConfig() {
 								</div>
 							)}
 						</div>
-					</GlassmorphicCard>
+					</div>
 				))}
 			</div>
 		</div>

@@ -3,7 +3,7 @@
 import type { TautulliWatchHistoryItem } from "@arr/shared";
 import { Clock, Film, Headphones, History, Tv } from "lucide-react";
 import { useState } from "react";
-import { GlassmorphicCard, PremiumSkeleton } from "../../../components/layout";
+import { PremiumSkeleton } from "../../../components/layout";
 import { Button } from "../../../components/ui";
 import { useWatchHistory } from "../../../hooks/api/useTautulli";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
@@ -136,7 +136,7 @@ export const WatchHistorySection = ({ enabled }: WatchHistorySectionProps) => {
 				)}
 			</div>
 
-			<GlassmorphicCard padding="none" className="divide-y divide-border/30 overflow-hidden">
+			<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10 divide-y divide-border/30">
 				{items.map((item, index) => (
 					<HistoryRow
 						key={`${item.ratingKey}:${item.watchedAt}:${index}`}
@@ -144,7 +144,7 @@ export const WatchHistorySection = ({ enabled }: WatchHistorySectionProps) => {
 						index={index}
 					/>
 				))}
-			</GlassmorphicCard>
+			</div>
 
 			{totalCount > pageSize && (
 				<div className="flex justify-center mt-3">

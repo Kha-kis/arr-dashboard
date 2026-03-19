@@ -435,7 +435,7 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 	return (
 		<div className="space-y-6 animate-in fade-in duration-300">
 			{/* Header */}
-			<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6">
+			<div className="rounded-2xl border border-border/30 bg-muted/10 p-6">
 				<div className="flex items-center gap-4 mb-6">
 					<div
 						className="flex h-12 w-12 items-center justify-center rounded-xl shrink-0"
@@ -637,7 +637,7 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 			)}
 
 			{/* Scores Table */}
-			<div className="overflow-hidden rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs">
+			<div className="overflow-hidden rounded-2xl border border-border/30 bg-muted/10">
 				<div className="overflow-x-auto">
 					<table className="w-full table-fixed">
 						<thead>

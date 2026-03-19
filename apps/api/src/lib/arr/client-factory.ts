@@ -226,7 +226,7 @@ export class ArrClientFactory {
 	async rawRequest(
 		instance: ClientInstanceData,
 		path: string,
-		options?: { method?: string; body?: unknown; timeout?: number },
+		options?: { method?: string; body?: unknown; timeout?: number; headers?: Record<string, string> },
 	): Promise<Response> {
 		const instanceLabel = instance.label ?? instance.id;
 		let apiKey: string;
@@ -242,7 +242,7 @@ export class ArrClientFactory {
 		}
 		const baseUrl = instance.baseUrl.replace(/\/$/, "");
 		const url = `${baseUrl}${path}`;
-		const headers: Record<string, string> = { "X-Api-Key": apiKey };
+		const headers: Record<string, string> = { "X-Api-Key": apiKey, ...options?.headers };
 		let body: string | undefined;
 		if (options?.body !== undefined) {
 			headers["Content-Type"] = "application/json";

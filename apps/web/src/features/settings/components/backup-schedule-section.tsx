@@ -9,6 +9,7 @@ import { useBackupSettings, useUpdateBackupSettings } from "../../../hooks/api/u
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { ToggleRow } from "../../../components/layout/config-primitives";
 
 export const BackupScheduleSection = () => {
 	const { gradient: themeGradient } = useThemeGradient();
@@ -134,28 +135,14 @@ export const BackupScheduleSection = () => {
 					</div>
 				)}
 
-				{/* Include TRaSH Backups checkbox */}
-				<div className="flex items-start gap-3 p-4 rounded-xl border border-border/50 bg-card/20">
-					<input
-						type="checkbox"
-						id="includeTrashBackups"
+				{/* Include TRaSH Backups */}
+				<div className="p-4 rounded-xl border border-border/30 bg-muted/10">
+					<ToggleRow
+						label="Include TRaSH Guides instance backups"
+						description="When enabled, backups will include ARR config snapshots from the last 7 days."
 						checked={includeTrashBackups}
-						onChange={(e) => setIncludeTrashBackups(e.target.checked)}
-						disabled={settingsLoading || updateSettingsMutation.isPending}
-						className="h-4 w-4 rounded mt-0.5"
-						style={{ accentColor: themeGradient.from }}
+						onChange={(v) => setIncludeTrashBackups(v)}
 					/>
-					<div>
-						<label
-							htmlFor="includeTrashBackups"
-							className="text-sm font-medium text-foreground cursor-pointer"
-						>
-							Include TRaSH Guides instance backups
-						</label>
-						<p className="text-xs text-muted-foreground mt-1">
-							When enabled, backups will include ARR config snapshots from the last 7 days.
-						</p>
-					</div>
 				</div>
 
 				<div className="flex gap-2">

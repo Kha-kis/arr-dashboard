@@ -19,7 +19,6 @@ import { toast } from "sonner";
 import {
 	ConfigInput,
 	ConfigSection,
-	GlassmorphicCard,
 	GradientButton,
 	PremiumCard,
 	PremiumEmptyState,
@@ -141,7 +140,7 @@ export const HuntingConfig = () => {
 	return (
 		<div className="flex flex-col gap-8">
 			{/* Global Automation Control */}
-			<GlassmorphicCard padding="none" className={schedulerRunning ? "border-green-500/30" : ""}>
+			<div className={`overflow-hidden rounded-xl border border-border/30 bg-muted/10 ${schedulerRunning ? "border-green-500/30" : ""}`}>
 				{/* Status accent line */}
 				<div
 					className="h-1 rounded-t-2xl"
@@ -205,7 +204,7 @@ export const HuntingConfig = () => {
 						</Button>
 					</div>
 				</div>
-			</GlassmorphicCard>
+			</div>
 
 			{/* Configured Instances */}
 			{configuredInstances.length > 0 && (
@@ -483,7 +482,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 
 				{/* Season Pack Preference - Sonarr Only */}
 				{config.service === "sonarr" && (
-					<div className="rounded-lg border border-border/50 bg-card/30 p-4">
+					<div className="rounded-lg border border-border/30 bg-muted/10 p-4">
 						<div className="flex items-center justify-between">
 							<div className="flex items-center gap-3">
 								<Package className="h-5 w-5 text-muted-foreground" />
@@ -560,7 +559,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 								size="sm"
 								onClick={() => void handleRunNow("missing")}
 								disabled={isTriggering}
-								className="gap-2 border-border/50 bg-card/50 backdrop-blur-xs"
+								className="gap-2 border-border/50 bg-card/50"
 							>
 								{isTriggering ? (
 									<RotateCcw className="h-4 w-4 animate-spin" />
@@ -576,7 +575,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 								size="sm"
 								onClick={() => void handleRunNow("upgrade")}
 								disabled={isTriggering}
-								className="gap-2 border-border/50 bg-card/50 backdrop-blur-xs"
+								className="gap-2 border-border/50 bg-card/50"
 							>
 								{isTriggering ? (
 									<RotateCcw className="h-4 w-4 animate-spin" />
@@ -682,8 +681,8 @@ const UnconfiguredInstanceCard = ({
 	onConfigure,
 	animationDelay = 0,
 }: UnconfiguredInstanceCardProps) => {
-	const { gradient: themeGradient } = useThemeGradient();
 	const { createConfig, isCreating } = useUpdateHuntConfig();
+	const serviceGradient = getServiceGradient(service);
 
 	const handleConfigure = async () => {
 		try {
@@ -697,46 +696,74 @@ const UnconfiguredInstanceCard = ({
 
 	return (
 		<div
-			className="group rounded-2xl border-2 border-dashed border-border/50 bg-card/20 p-6
-				flex items-center justify-between hover:border-border hover:bg-card/30 transition-all
-				animate-in fade-in slide-in-from-bottom-4 duration-500"
+			className="group relative rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-[1px] hover:shadow-lg hover:shadow-black/10 animate-in fade-in slide-in-from-bottom-1 duration-300"
 			style={{
+				border: `1px solid ${serviceGradient.from}10`,
 				animationDelay: `${animationDelay}ms`,
 				animationFillMode: "backwards",
 			}}
 		>
-			<div className="flex items-center gap-3">
-				<div
-					className="flex h-10 w-10 items-center justify-center rounded-xl"
-					style={{
-						background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
-						border: `1px solid ${themeGradient.from}30`,
-					}}
-				>
-					<Settings className="h-5 w-5" style={{ color: themeGradient.from }} />
-				</div>
-				<div>
-					<div className="flex items-center gap-2">
-						<span className="font-semibold">{instanceName}</span>
-						<ServiceBadge service={service} />
+			{/* Background gradient */}
+			<div
+				className="absolute inset-0 pointer-events-none"
+				style={{
+					background: `linear-gradient(135deg, ${serviceGradient.from}04, transparent 60%)`,
+				}}
+			/>
+
+			{/* Hover glow */}
+			<div
+				className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+				style={{
+					background: `radial-gradient(ellipse at top left, ${serviceGradient.from}06, transparent 50%)`,
+				}}
+			/>
+
+			{/* Service accent bar */}
+			<div
+				className="absolute left-0 top-0 bottom-0 w-[3px]"
+				style={{
+					background: `linear-gradient(180deg, ${serviceGradient.from}60, ${serviceGradient.to}30)`,
+				}}
+			/>
+
+			<div className="relative flex items-center justify-between py-3.5 pl-5 pr-4">
+				<div className="flex items-center gap-3">
+					<span
+						className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider shrink-0"
+						style={{
+							backgroundColor: `${serviceGradient.from}12`,
+							color: serviceGradient.from,
+						}}
+					>
+						<Settings className="h-2.5 w-2.5" />
+						New
+					</span>
+					<div>
+						<div className="flex items-center gap-2">
+							<span className="font-semibold text-[14px] text-foreground">{instanceName}</span>
+							<ServiceBadge service={service} />
+						</div>
+						<p className="text-[11px] text-muted-foreground/40 mt-0.5">
+							Click to enable hunting
+						</p>
 					</div>
-					<p className="text-sm text-muted-foreground">Click to enable hunting</p>
 				</div>
+				<Button
+					variant="secondary"
+					size="sm"
+					onClick={() => void handleConfigure()}
+					disabled={isCreating}
+					className="gap-1.5 border-border/50 bg-card/50 text-xs opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+				>
+					{isCreating ? (
+						<RotateCcw className="h-3 w-3 animate-spin" />
+					) : (
+						<Settings className="h-3 w-3" />
+					)}
+					Configure
+				</Button>
 			</div>
-			<Button
-				variant="secondary"
-				size="sm"
-				onClick={() => void handleConfigure()}
-				disabled={isCreating}
-				className="gap-2 border-border/50 bg-card/50 backdrop-blur-xs"
-			>
-				{isCreating ? (
-					<RotateCcw className="h-4 w-4 animate-spin" />
-				) : (
-					<Settings className="h-4 w-4" />
-				)}
-				Configure
-			</Button>
 		</div>
 	);
 };

@@ -10,6 +10,53 @@ export interface ConnectionTestResult {
 	details?: string;
 }
 
+// Known auth proxy session cookie name patterns
+const AUTH_PROXY_COOKIE_PATTERNS = [
+	"authelia_session",
+	"authentik_session",
+	"_oauth2_proxy",
+	"_vouch",
+	"_forward_auth",
+	"organizr_token",
+] as const;
+
+/**
+ * Detect if a response was intercepted by an authentication proxy.
+ * Common in self-hosted setups (Authelia, Authentik, Traefik Forward Auth).
+ */
+function detectAuthProxy(response: Response, requestUrl: string): string | null {
+	const finalUrl = response.url;
+
+	// Request was redirected to a different host (auth proxy redirect)
+	if (finalUrl && finalUrl !== requestUrl) {
+		const requestHost = new URL(requestUrl).hostname;
+		try {
+			const responseHost = new URL(finalUrl).hostname;
+			if (responseHost !== requestHost) {
+				return `Request was redirected to ${responseHost}, which appears to be an authentication proxy.`;
+			}
+		} catch {
+			// Invalid URL in response, skip check
+		}
+	}
+
+	// Check for auth proxy session cookies
+	const setCookie = response.headers.get("set-cookie")?.toLowerCase() ?? "";
+	for (const pattern of AUTH_PROXY_COOKIE_PATTERNS) {
+		if (setCookie.includes(pattern)) {
+			return `Detected authentication proxy in response (${pattern} cookie).`;
+		}
+	}
+
+	return null;
+}
+
+const AUTH_PROXY_ADVICE =
+	"Your reverse proxy's authentication is intercepting API requests before they reach the service. " +
+	"To fix this, either:\n" +
+	"• Use the service's internal/LAN URL (e.g., http://192.168.1.x:PORT or http://container-name:PORT) instead of the public URL\n" +
+	"• Configure your auth proxy to bypass authentication for the service's API paths";
+
 /**
  * Tests connection to a service instance using the system/status endpoint.
  * This is the standard approach used by most *arr integration tools.
@@ -49,6 +96,16 @@ export async function testServiceConnection(
 			signal: AbortSignal.timeout(5000),
 		});
 
+		// Check for auth proxy interception (redirected to login, proxy cookies, etc.)
+		const proxyDetected = detectAuthProxy(response, testUrl);
+		if (proxyDetected) {
+			return {
+				success: false,
+				error: "Authentication proxy detected",
+				details: `${proxyDetected}\n\n${AUTH_PROXY_ADVICE}`,
+			};
+		}
+
 		if (!response.ok) {
 			return handleHttpError(response, normalizedBaseUrl);
 		}
@@ -59,7 +116,7 @@ export async function testServiceConnection(
 				success: false,
 				error: "Invalid response format",
 				details:
-					"Received HTML instead of JSON. Check if the base URL is correct and includes any URL base if configured in the service (e.g., http://localhost:7878 for root, or http://localhost/radarr if using a URL base).",
+					"Received HTML instead of JSON. Check if the base URL is correct and includes any URL base if configured in the service (e.g., http://localhost:7878 for root, or http://localhost/radarr if using a URL base). If this service is behind a reverse proxy with authentication (Authelia, Authentik, etc.), use the internal/LAN URL instead.",
 			};
 		}
 
@@ -89,16 +146,25 @@ function handleHttpError(response: Response, baseUrl: string): ConnectionTestRes
 			success: false,
 			error: "Authentication failed (401)",
 			details:
-				"Invalid API key, or a reverse proxy is blocking the request. Verify the API key is correct and check any forward auth settings.",
+				"Invalid API key, or a reverse proxy is blocking the request. Verify the API key is correct. If this service is behind an auth proxy (Authelia, Authentik, etc.), use the service's internal/LAN URL instead of the public URL.",
 		};
 	}
 
 	if (status === 403) {
+		// Check if this looks like a CSRF or auth proxy issue
+		const isHtml = contentType?.includes("text/html");
+		if (isHtml) {
+			return {
+				success: false,
+				error: "Access blocked by proxy (403)",
+				details: AUTH_PROXY_ADVICE,
+			};
+		}
 		return {
 			success: false,
 			error: "Access forbidden (403)",
 			details:
-				"The API key may lack permissions, or a reverse proxy is denying access. Check your reverse proxy configuration if using one.",
+				"The API key may lack permissions, or a reverse proxy is denying access. If this service is behind an auth proxy (Authelia, Authentik, etc.), use the service's internal/LAN URL instead of the public URL.",
 		};
 	}
 
@@ -150,10 +216,20 @@ async function testTautulliConnection(
 	testUrlObj.searchParams.set("apikey", apiKey);
 	testUrlObj.searchParams.set("cmd", "get_tautulli_info");
 
-	const response = await fetch(testUrlObj.toString(), {
+	const tautulliUrl = testUrlObj.toString();
+	const response = await fetch(tautulliUrl, {
 		headers: { Accept: "application/json" },
 		signal: AbortSignal.timeout(5000),
 	});
+
+	const proxyDetected = detectAuthProxy(response, tautulliUrl);
+	if (proxyDetected) {
+		return {
+			success: false,
+			error: "Authentication proxy detected",
+			details: `${proxyDetected}\n\n${AUTH_PROXY_ADVICE}`,
+		};
+	}
 
 	if (!response.ok) {
 		return handleHttpError(response, baseUrl);
@@ -165,7 +241,7 @@ async function testTautulliConnection(
 			success: false,
 			error: "Invalid response format",
 			details:
-				"Received HTML instead of JSON. Check if the base URL is correct (e.g., http://localhost:8181).",
+				"Received HTML instead of JSON. Check if the base URL is correct (e.g., http://localhost:8181). If behind an auth proxy, use the internal/LAN URL.",
 		};
 	}
 
@@ -203,6 +279,15 @@ async function testPlexConnection(baseUrl: string, token: string): Promise<Conne
 		signal: AbortSignal.timeout(5000),
 	});
 
+	const proxyDetected = detectAuthProxy(response, testUrl);
+	if (proxyDetected) {
+		return {
+			success: false,
+			error: "Authentication proxy detected",
+			details: `${proxyDetected}\n\n${AUTH_PROXY_ADVICE}`,
+		};
+	}
+
 	if (!response.ok) {
 		return handleHttpError(response, baseUrl);
 	}
@@ -213,7 +298,7 @@ async function testPlexConnection(baseUrl: string, token: string): Promise<Conne
 			success: false,
 			error: "Invalid response format",
 			details:
-				"Received HTML instead of JSON. Check if the base URL is correct (e.g., http://localhost:32400).",
+				"Received HTML instead of JSON. Check if the base URL is correct (e.g., http://localhost:32400). If behind an auth proxy, use the internal/LAN URL.",
 		};
 	}
 

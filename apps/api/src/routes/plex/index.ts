@@ -27,6 +27,7 @@ import { registerCollectionStatsRoutes } from "./collection-stats-routes.js";
 import { registerUserEpisodeCompletionRoutes } from "./user-episode-completion-routes.js";
 import { registerQualityScoreRoutes } from "./quality-score-routes.js";
 import { registerForecastRoutes } from "./forecast-routes.js";
+import { registerImageProxyRoutes } from "./image-proxy-routes.js";
 
 export async function registerPlexRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	app.register(registerWatchEnrichmentRoutes, { prefix: "/watch-enrichment" });
@@ -51,4 +52,5 @@ export async function registerPlexRoutes(app: FastifyInstance, _opts: FastifyPlu
 	app.register(registerUserEpisodeCompletionRoutes, { prefix: "/analytics/episode-completion" });
 	app.register(registerQualityScoreRoutes, { prefix: "/analytics/quality-score" });
 	app.register(registerForecastRoutes, { prefix: "/analytics/forecast" });
+	app.register(registerImageProxyRoutes, { prefix: "/thumb" });
 }

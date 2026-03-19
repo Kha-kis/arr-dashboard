@@ -144,6 +144,8 @@ export class SeerrClient {
 	private readonly log: FastifyBaseLogger;
 	private readonly circuitBreaker?: SeerrCircuitBreaker;
 	private readonly cache?: SeerrCache;
+	/** Cached CSRF cookies and header token for mutating requests */
+	private csrfData: { cookies: string; xsrfToken: string } | null = null;
 
 	constructor(
 		factory: ArrClientFactory,
@@ -200,6 +202,79 @@ export class SeerrClient {
 	}
 
 	/**
+	 * Fetch CSRF credentials from Jellyseerr/Overseerr by making a lightweight GET.
+	 *
+	 * Seerr uses the `csurf` middleware which sets two cookies:
+	 * - `_csrf` — server-side secret (HttpOnly)
+	 * - `XSRF-TOKEN` — the token to send back as `x-xsrf-token` header
+	 *
+	 * Both cookies must be sent back on mutating requests, plus the XSRF-TOKEN
+	 * value goes in the `x-xsrf-token` header.
+	 */
+	private async fetchCsrfData(): Promise<{ cookies: string; xsrfToken: string } | null> {
+		try {
+			const response = await this.factory.rawRequest(this.instance, "/api/v1/status", {
+				method: "GET",
+				timeout: TIMEOUT_INTERACTIVE,
+			});
+
+			// Collect all Set-Cookie headers
+			const setCookies = response.headers.getSetCookie?.() ?? [];
+			// Fallback: some runtimes don't support getSetCookie
+			if (setCookies.length === 0) {
+				const raw = response.headers.get("set-cookie") ?? "";
+				if (raw) setCookies.push(...raw.split(/,(?=\s*\w+=)/));
+			}
+
+			if (setCookies.length === 0) {
+				this.log.debug("No Set-Cookie headers in Seerr response");
+				return null;
+			}
+
+			// Extract all cookie name=value pairs for the Cookie header
+			const cookiePairs: string[] = [];
+			let xsrfToken: string | null = null;
+
+			for (const cookie of setCookies) {
+				const match = cookie.match(/^([^=]+)=([^;]*)/);
+				if (!match?.[1] || match[2] === undefined) continue;
+
+				const name = match[1].trim();
+				const value = match[2].trim();
+				cookiePairs.push(`${name}=${value}`);
+
+				// XSRF-TOKEN is the value we send as the header
+				if (name.toUpperCase() === "XSRF-TOKEN") {
+					xsrfToken = decodeURIComponent(value);
+				}
+			}
+
+			if (!xsrfToken) {
+				this.log.debug(
+					{ cookies: cookiePairs.map((c) => c.split("=")[0]) },
+					"No XSRF-TOKEN cookie found in Seerr response",
+				);
+				return null;
+			}
+
+			this.log.debug("Fetched CSRF credentials from Seerr");
+			return { cookies: cookiePairs.join("; "), xsrfToken };
+		} catch (err) {
+			this.log.debug({ err }, "Failed to fetch CSRF credentials from Seerr");
+		}
+		return null;
+	}
+
+	/**
+	 * Ensure we have CSRF credentials for mutating requests.
+	 * Only fetches once per client instance — cached in memory.
+	 */
+	private async ensureCsrfData(): Promise<void> {
+		if (this.csrfData) return;
+		this.csrfData = await this.fetchCsrfData();
+	}
+
+	/**
 	 * Core HTTP request method with circuit breaker, retry, and structured errors.
 	 * All public methods delegate to this via get/post/put/del helpers.
 	 */
@@ -215,13 +290,27 @@ export class SeerrClient {
 		// Circuit breaker check (throws CircuitBreakerOpenError if open)
 		this.circuitBreaker?.check(instanceId);
 
+		// For mutating requests, ensure we have a CSRF token
+		const isMutating = method !== "GET";
+		if (isMutating) {
+			await this.ensureCsrfData();
+		}
+
 		const execute = async (): Promise<T> => {
+			// Build extra headers for CSRF if needed
+			const extraHeaders: Record<string, string> = {};
+			if (isMutating && this.csrfData) {
+				extraHeaders["x-xsrf-token"] = this.csrfData.xsrfToken;
+				extraHeaders["Cookie"] = this.csrfData.cookies;
+			}
+
 			let response: Response;
 			try {
 				response = await this.factory.rawRequest(this.instance, path, {
 					method,
 					body: opts?.body,
 					timeout,
+					headers: Object.keys(extraHeaders).length > 0 ? extraHeaders : undefined,
 				});
 			} catch (error) {
 				// Network / timeout errors from rawRequest
@@ -233,6 +322,22 @@ export class SeerrClient {
 					throw SeerrApiError.network(`Seerr ${method} ${path} network error: ${error.message}`);
 				}
 				throw error;
+			}
+
+			// Detect auth proxy interception (Authelia, Authentik, etc.)
+			// These proxies redirect API requests to a login page, returning HTML instead of JSON
+			if (response.redirected || response.headers.get("content-type")?.includes("text/html")) {
+				const baseUrl = this.instance.baseUrl;
+				const responseUrl = response.url;
+				const redirectedAway = responseUrl && !responseUrl.startsWith(baseUrl);
+				if (redirectedAway || response.headers.get("content-type")?.includes("text/html")) {
+					throw new SeerrApiError(
+						`Seerr ${method} ${path} blocked by authentication proxy. ` +
+							"Use the service's internal/LAN URL instead of the public URL, " +
+							"or configure your auth proxy to bypass the service's API paths.",
+						{ seerrStatus: 403, retryableOverride: false },
+					);
+				}
 			}
 
 			if (!response.ok) {
@@ -253,6 +358,26 @@ export class SeerrClient {
 			this.circuitBreaker?.reportSuccess(instanceId);
 			return result;
 		} catch (error) {
+			// On 403 for mutating requests, try refreshing the CSRF token once
+			if (
+				isMutating &&
+				error instanceof SeerrApiError &&
+				error.seerrStatus === 403
+			) {
+				this.log.debug("Got 403 on mutating request, refreshing CSRF token and retrying");
+				this.csrfData = null;
+				await this.ensureCsrfData();
+				if (this.csrfData) {
+					try {
+						const retryResult = await execute();
+						this.circuitBreaker?.reportSuccess(instanceId);
+						return retryResult;
+					} catch {
+						// Fall through to original error handling
+					}
+				}
+			}
+
 			// Report failure to circuit breaker for retryable or unknown errors
 			if (error instanceof SeerrApiError) {
 				if (error.retryable) {

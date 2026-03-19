@@ -502,17 +502,17 @@ export const seerrRequestCountSchema = z.looseObject({
 /** Mirrors SeerrUser */
 export const seerrUserSchema = z.looseObject({
 	id: z.number(),
-	email: z.string().optional(),
+	email: z.string().nullable().optional(),
 	displayName: z.string(),
-	avatar: z.string().optional(),
+	avatar: z.string().nullable().optional(),
 	createdAt: z.string(),
 	updatedAt: z.string(),
 	permissions: z.number(),
 	requestCount: z.number(),
-	movieQuotaLimit: z.number().optional(),
-	movieQuotaDays: z.number().optional(),
-	tvQuotaLimit: z.number().optional(),
-	tvQuotaDays: z.number().optional(),
+	movieQuotaLimit: z.number().nullable().optional(),
+	movieQuotaDays: z.number().nullable().optional(),
+	tvQuotaLimit: z.number().nullable().optional(),
+	tvQuotaDays: z.number().nullable().optional(),
 	userType: z.number(),
 });
 
@@ -520,7 +520,7 @@ export const seerrUserSchema = z.looseObject({
 const seerrMediaInfoSchema = z.looseObject({
 	id: z.number(),
 	tmdbId: z.number(),
-	tvdbId: z.number().optional(),
+	tvdbId: z.number().nullable().optional(),
 	mediaType: z.enum(["movie", "tv"]).optional(),
 	status: z.number().int().min(1).max(7),
 	createdAt: z.string(),
@@ -540,22 +540,22 @@ export const seerrRequestSchema = z.looseObject({
 	status: z.number().int().min(1).max(5),
 	type: z.enum(["movie", "tv"]),
 	media: seerrMediaInfoSchema.extend({
-		posterPath: z.string().optional(),
-		title: z.string().optional(),
-		originalTitle: z.string().optional(),
-		overview: z.string().optional(),
+		posterPath: z.string().nullable().optional(),
+		title: z.string().nullable().optional(),
+		originalTitle: z.string().nullable().optional(),
+		overview: z.string().nullable().optional(),
 	}),
 	createdAt: z.string(),
 	updatedAt: z.string(),
 	requestedBy: seerrUserSchema,
-	modifiedBy: seerrUserSchema.optional(),
+	modifiedBy: seerrUserSchema.nullable().optional(),
 	is4k: z.boolean(),
-	serverId: z.number().optional(),
-	profileId: z.number().optional(),
-	rootFolder: z.string().optional(),
-	languageProfileId: z.number().optional(),
-	tags: z.array(z.number()).optional(),
-	seasons: z.array(seerrSeasonSchema).optional(),
+	serverId: z.number().nullable().optional(),
+	profileId: z.number().nullable().optional(),
+	rootFolder: z.string().nullable().optional(),
+	languageProfileId: z.number().nullable().optional(),
+	tags: z.array(z.number()).nullable().optional(),
+	seasons: z.array(seerrSeasonSchema).nullable().optional(),
 });
 
 export function seerrPageResultSchema<T extends z.ZodTypeAny>(itemSchema: T) {
@@ -688,11 +688,11 @@ const seerrVideoSchema = z.looseObject({
 
 /** Mirrors SeerrExternalIds */
 const seerrExternalIdsSchema = z.looseObject({
-	imdbId: z.string().optional(),
-	tvdbId: z.number().optional(),
-	facebookId: z.string().optional(),
-	instagramId: z.string().optional(),
-	twitterId: z.string().optional(),
+	imdbId: z.string().nullable().optional(),
+	tvdbId: z.number().nullable().optional(),
+	facebookId: z.string().nullable().optional(),
+	instagramId: z.string().nullable().optional(),
+	twitterId: z.string().nullable().optional(),
 });
 
 /** Mirrors SeerrMovieDetails */
@@ -726,8 +726,8 @@ export const seerrMovieDetailsSchema = z.looseObject({
 	relatedVideos: z.array(seerrVideoSchema).optional(),
 	mediaInfo: seerrMediaInfoSchema.optional(),
 	externalIds: seerrExternalIdsSchema.optional(),
-	recommendations: seerrDiscoverResponseSchema,
-	similar: seerrDiscoverResponseSchema,
+	recommendations: seerrDiscoverResponseSchema.optional(),
+	similar: seerrDiscoverResponseSchema.optional(),
 });
 
 /** Mirrors SeerrSeasonSummary */
@@ -737,7 +737,7 @@ const seerrSeasonSummarySchema = z.looseObject({
 	name: z.string().optional(),
 	overview: z.string().optional(),
 	episodeCount: z.number(),
-	airDate: z.string().optional(),
+	airDate: z.string().nullable().optional(),
 	posterPath: z.string().nullable().optional(),
 });
 
@@ -775,8 +775,8 @@ export const seerrTvDetailsSchema = z.looseObject({
 	externalIds: seerrExternalIdsSchema.optional(),
 	keywords: z.array(z.looseObject({ id: z.number(), name: z.string() })),
 	seasons: z.array(seerrSeasonSummarySchema),
-	recommendations: seerrDiscoverResponseSchema,
-	similar: seerrDiscoverResponseSchema,
+	recommendations: seerrDiscoverResponseSchema.optional(),
+	similar: seerrDiscoverResponseSchema.optional(),
 });
 
 /** Lightweight schema for getMediaSummary — only validates fields we extract */

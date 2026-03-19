@@ -253,6 +253,7 @@ export const calendarItemSchema = z.object({
 	genres: z.array(z.string()).optional(),
 	monitored: z.boolean().optional(),
 	hasFile: z.boolean().optional(),
+	posterUrl: z.string().optional(),
 	instanceId: z.string(),
 	instanceName: z.string(),
 });

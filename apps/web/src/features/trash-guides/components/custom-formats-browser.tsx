@@ -422,7 +422,7 @@ export const CustomFormatsBrowser = () => {
 		return (
 			<div className="space-y-6 animate-in fade-in duration-300">
 				{/* Header Skeleton */}
-				<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6">
+				<div className="rounded-2xl border border-border/30 bg-muted/10 p-6">
 					<div className="space-y-4">
 						<div className="flex items-center gap-4">
 							<PremiumSkeleton variant="card" className="h-12 w-12 rounded-xl" />
@@ -504,7 +504,7 @@ export const CustomFormatsBrowser = () => {
 	return (
 		<div className="space-y-6 animate-in fade-in duration-300">
 			{/* Header and Controls */}
-			<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6">
+			<div className="rounded-2xl border border-border/30 bg-muted/10 p-6">
 				<div className="space-y-5">
 					{/* Title */}
 					<div className="flex items-center gap-4">
@@ -611,7 +611,7 @@ export const CustomFormatsBrowser = () => {
 
 			{/* My Custom Formats Section */}
 			{userCustomFormats.length > 0 && (
-				<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs overflow-hidden">
+				<div className="rounded-2xl border border-border/30 bg-muted/10 overflow-hidden">
 					<div className="p-5 border-b border-border/30">
 						<div className="flex items-center justify-between">
 							<div className="flex items-center gap-3">
@@ -808,7 +808,7 @@ export const CustomFormatsBrowser = () => {
 
 			{/* TRaSH Custom Formats Grid */}
 			{customFormats.length === 0 ? (
-				<div className="rounded-2xl border border-dashed border-border/50 bg-card/20 backdrop-blur-xs p-12 text-center">
+				<div className="rounded-2xl border border-dashed border-border/30 bg-muted/10 p-12 text-center">
 					<Package className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
 					<p className="text-lg font-medium text-foreground mb-2">No custom formats found</p>
 					<p className="text-sm text-muted-foreground">

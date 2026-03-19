@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { GlassmorphicCard } from "../../../components/layout";
+
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { BackupCreateCard } from "./backup-create-card";
 import { BackupEncryptionSection } from "./backup-encryption-section";
@@ -65,7 +65,7 @@ export const BackupTab = () => {
 					aria-modal="true"
 					aria-labelledby="server-restarting-title"
 				>
-					<GlassmorphicCard padding="lg" className="w-full max-w-md m-4">
+					<div className="rounded-xl border border-border/30 bg-muted/10 p-6 w-full max-w-md m-4">
 						<div className="flex flex-col items-center text-center space-y-4 py-4">
 							<div
 								className="animate-spin rounded-full h-12 w-12 border-b-2"
@@ -86,7 +86,7 @@ export const BackupTab = () => {
 								</p>
 							</div>
 						</div>
-					</GlassmorphicCard>
+					</div>
 				</div>
 			)}
 		</div>

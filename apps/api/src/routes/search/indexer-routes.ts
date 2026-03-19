@@ -1,5 +1,6 @@
-import type { SearchIndexerUpdateRequest } from "@arr/shared";
+import type { ProwlarrIndexerHealth, SearchIndexerUpdateRequest } from "@arr/shared";
 import {
+	prowlarrIndexerHealthSchema,
 	searchIndexerDetailsResponseSchema,
 	searchIndexersResponseSchema,
 	searchIndexerTestRequestSchema,
@@ -102,7 +103,26 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 			});
 		}
 
-		const details = await fetchProwlarrIndexerDetailsWithSdk(client, instance, indexerId);
+		// Parse pre-fetched health data from query params to skip redundant stats API call
+		let prefetchedHealth: ProwlarrIndexerHealth | null = null;
+		const query = request.query as Record<string, unknown>;
+		if (typeof query.health === "string") {
+			try {
+				const parsed = prowlarrIndexerHealthSchema.safeParse(JSON.parse(query.health));
+				if (parsed.success) {
+					prefetchedHealth = parsed.data;
+				}
+			} catch {
+				// Invalid JSON — fall through to full fetch
+			}
+		}
+
+		const details = await fetchProwlarrIndexerDetailsWithSdk(
+			client,
+			instance,
+			indexerId,
+			prefetchedHealth,
+		);
 		if (!details) {
 			reply.status(502);
 			return searchIndexerDetailsResponseSchema.parse({

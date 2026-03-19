@@ -54,7 +54,13 @@ const StatCard = ({
 	const displayColor = color || themeGradient.from;
 
 	return (
-		<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4 transition-all duration-300 hover:bg-card/50">
+		<div
+			className="rounded-xl p-4 transition-all duration-200 hover:-translate-y-[1px] hover:shadow-lg hover:shadow-black/10"
+			style={{
+				backgroundColor: `${displayColor}05`,
+				border: `1px solid ${displayColor}12`,
+			}}
+		>
 			<div className="flex items-center gap-2 mb-3">
 				<div
 					className="flex h-8 w-8 items-center justify-center rounded-lg"
@@ -108,7 +114,7 @@ export const SchedulerStatusDashboard = () => {
 	// Loading State
 	if (isLoading) {
 		return (
-			<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-8 animate-pulse">
+			<div className="rounded-xl border border-border/30 bg-muted/10 p-8 animate-pulse">
 				<div className="space-y-6">
 					<div className="flex items-center justify-between">
 						<div className="space-y-2">
@@ -176,8 +182,19 @@ export const SchedulerStatusDashboard = () => {
 	}
 
 	return (
-		<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-			<div className="space-y-6">
+		<div
+			className="relative rounded-xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500"
+			style={{ border: `1px solid ${themeGradient.from}10` }}
+		>
+			<div
+				className="absolute inset-0 pointer-events-none"
+				style={{ background: `linear-gradient(135deg, ${themeGradient.from}04, transparent 60%)` }}
+			/>
+			<div
+				className="absolute left-0 top-0 bottom-0 w-[3px]"
+				style={{ background: `linear-gradient(180deg, ${themeGradient.from}, ${themeGradient.fromLight})` }}
+			/>
+			<div className="relative p-6 space-y-6">
 				{/* Header */}
 				<div className="flex items-start justify-between gap-4 flex-wrap">
 					<div className="flex items-center gap-4">
@@ -191,6 +208,13 @@ export const SchedulerStatusDashboard = () => {
 							<Timer className="h-6 w-6" style={{ color: themeGradient.from }} />
 						</div>
 						<div>
+							<span
+								className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider mb-1"
+								style={{ backgroundColor: `${themeGradient.from}12`, color: themeGradient.from }}
+							>
+								<Timer className="h-2.5 w-2.5" />
+								Scheduler
+							</span>
 							<h3
 								className="text-xl font-bold"
 								style={{
@@ -269,7 +293,7 @@ export const SchedulerStatusDashboard = () => {
 
 				{/* Last Check Results */}
 				{schedulerData.lastCheckResult && (
-					<div className="rounded-xl border border-border/50 bg-card/20 p-5 space-y-5">
+					<div className="rounded-xl border border-border/30 bg-muted/10 p-5 space-y-5">
 						<h4 className="font-semibold text-foreground">Last Check Results</h4>
 
 						{/* Template Version Check Results */}

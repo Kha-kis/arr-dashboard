@@ -84,6 +84,8 @@ export interface EnrichedDetailModalProps {
 	} | null;
 	/** Plex user rating (0-10 scale, null if not rated) */
 	userRating?: number | null;
+	/** Plex deep link URL for "Watch in Plex" */
+	plexUrl?: string | null;
 }
 
 export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
@@ -96,6 +98,7 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 	enrichedPosterPath,
 	plexData,
 	userRating,
+	plexUrl,
 }) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const focusTrapRef = useFocusTrap<HTMLDivElement>(true, onClose);
@@ -1007,6 +1010,7 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 						imdbId={item.remoteIds?.imdbId}
 						tvdbId={item.remoteIds?.tvdbId}
 						mediaType={isMovie ? "movie" : "tv"}
+						plexUrl={plexUrl}
 					/>
 
 					{/* Recommendations */}

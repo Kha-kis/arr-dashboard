@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { GlassmorphicCard, PremiumSection, PremiumSkeleton } from "../../../components/layout";
+import { PremiumSection, PremiumSkeleton } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Switch } from "../../../components/ui/switch";
@@ -178,7 +178,7 @@ interface SystemInfoCardProps {
 function SystemInfoCard({ icon, label, value, subtitle, animationDelay = 0 }: SystemInfoCardProps) {
 	return (
 		<div
-			className="flex items-start gap-3 p-4 rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs transition-all duration-300 hover:border-border/80 animate-in fade-in slide-in-from-bottom-2"
+			className="flex items-start gap-3 p-4 rounded-xl border border-border/30 bg-muted/10 transition-all duration-300 hover:border-border/80 animate-in fade-in slide-in-from-bottom-2"
 			style={{
 				animationDelay: `${animationDelay}ms`,
 				animationFillMode: "backwards",
@@ -571,7 +571,7 @@ export function SystemTab() {
 					)}
 
 					{/* Log Files Table */}
-					<GlassmorphicCard padding="md">
+					<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
 						<div className="space-y-3">
 							<div className="flex items-center justify-between">
 								<p className="text-sm font-semibold text-foreground">Log Files</p>
@@ -650,7 +650,7 @@ export function SystemTab() {
 								<p className="text-sm text-muted-foreground py-4 text-center">No log files found</p>
 							)}
 						</div>
-					</GlassmorphicCard>
+					</div>
 				</div>
 			</PremiumSection>
 
@@ -758,7 +758,7 @@ export function SystemTab() {
 					</div>
 
 					{/* Port Info Card */}
-					<GlassmorphicCard padding="md">
+					<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
 						<div className="flex gap-3">
 							<div
 								className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
@@ -821,7 +821,7 @@ ports:
 								)}
 							</div>
 						</div>
-					</GlassmorphicCard>
+					</div>
 				</div>
 			</PremiumSection>
 
@@ -973,7 +973,7 @@ ports:
 						</p>
 					</div>
 
-					<GlassmorphicCard padding="md">
+					<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
 						<div className="flex gap-3">
 							<div
 								className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
@@ -994,7 +994,7 @@ ports:
 								</ul>
 							</div>
 						</div>
-					</GlassmorphicCard>
+					</div>
 				</div>
 			</PremiumSection>
 
@@ -1101,7 +1101,7 @@ ports:
 					</div>
 
 					{/* Info Card */}
-					<GlassmorphicCard padding="md">
+					<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
 						<div className="flex gap-3">
 							<div
 								className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
@@ -1125,7 +1125,7 @@ ports:
 								</ul>
 							</div>
 						</div>
-					</GlassmorphicCard>
+					</div>
 				</div>
 			</PremiumSection>
 

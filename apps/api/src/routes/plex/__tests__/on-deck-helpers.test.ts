@@ -20,6 +20,7 @@ describe("mapToOnDeckItems", () => {
 				sectionTitle: "Movies",
 				instanceId: "inst-1",
 				ratingKey: "12345",
+				thumb: "/library/metadata/12345/thumb/1234567890",
 			},
 		];
 		const instanceMap = new Map([["inst-1", "My Plex Server"]]);
@@ -35,6 +36,7 @@ describe("mapToOnDeckItems", () => {
 				instanceId: "inst-1",
 				instanceName: "My Plex Server",
 				ratingKey: "12345",
+				thumb: "/library/metadata/12345/thumb/1234567890",
 			},
 		]);
 	});
@@ -48,6 +50,7 @@ describe("mapToOnDeckItems", () => {
 				sectionTitle: "Movies",
 				instanceId: "unknown-id",
 				ratingKey: "99999",
+				thumb: null,
 			},
 		];
 		const instanceMap = new Map<string, string>();
@@ -71,6 +74,7 @@ describe("mapToOnDeckItems", () => {
 				sectionTitle: "TV Shows",
 				instanceId: "a",
 				ratingKey: "r1",
+				thumb: "/library/metadata/1/thumb/111",
 			},
 			{
 				tmdbId: 2,
@@ -79,6 +83,7 @@ describe("mapToOnDeckItems", () => {
 				sectionTitle: "Anime",
 				instanceId: "b",
 				ratingKey: "r2",
+				thumb: null,
 			},
 		];
 		const instanceMap = new Map([

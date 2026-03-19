@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import {
-	GlassmorphicCard,
 	PremiumEmptyState,
 	PremiumSection,
 	PremiumSkeleton,
@@ -219,7 +218,7 @@ export const SessionsSection = () => {
 				)}
 
 				{/* Session Count Summary */}
-				<GlassmorphicCard padding="md">
+				<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
 					<div className="flex items-center gap-4">
 						<div
 							className="flex h-14 w-14 items-center justify-center rounded-2xl shrink-0"
@@ -246,10 +245,10 @@ export const SessionsSection = () => {
 							</p>
 						</div>
 					</div>
-				</GlassmorphicCard>
+				</div>
 
 				{/* Session List */}
-				<GlassmorphicCard padding="lg">
+				<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
 					<div className="space-y-4">
 						<div className="flex items-center gap-3">
 							<div
@@ -424,10 +423,10 @@ export const SessionsSection = () => {
 							/>
 						)}
 					</div>
-				</GlassmorphicCard>
+				</div>
 
 				{/* Info Box */}
-				<GlassmorphicCard padding="md">
+				<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
 					<div className="flex gap-3">
 						<div
 							className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
@@ -447,7 +446,7 @@ export const SessionsSection = () => {
 							</p>
 						</div>
 					</div>
-				</GlassmorphicCard>
+				</div>
 			</div>
 		</PremiumSection>
 	);

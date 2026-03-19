@@ -3,6 +3,7 @@
 import type {
 	MultiInstanceSearchResponse,
 	ProwlarrIndexerDetails,
+	ProwlarrIndexerHealth,
 	SearchGrabRequest,
 	SearchIndexersResponse,
 	SearchIndexerTestRequest,
@@ -52,10 +53,11 @@ export const useIndexerDetailsQuery = (
 	instanceId: string | null,
 	indexerId: number | null,
 	enabled = false,
+	health?: ProwlarrIndexerHealth,
 ) =>
 	useQuery<ProwlarrIndexerDetails>({
 		queryKey: ["search", "indexers", "details", instanceId, indexerId],
-		queryFn: () => fetchSearchIndexerDetails(instanceId!, indexerId!),
+		queryFn: () => fetchSearchIndexerDetails(instanceId!, indexerId!, health),
 		enabled: Boolean(enabled && instanceId && indexerId !== null),
 		staleTime: 60 * 1000,
 	});

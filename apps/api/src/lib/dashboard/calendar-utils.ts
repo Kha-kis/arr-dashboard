@@ -1,5 +1,6 @@
 import type { CalendarItem } from "@arr/shared";
 import { toBoolean, toNumber, toStringArray, toStringValue } from "../data/values.js";
+import { normalizeImages } from "../library/image-normalizer.js";
 
 /** Service types that support calendar functionality */
 export type CalendarService = "sonarr" | "radarr" | "lidarr" | "readarr";
@@ -206,6 +207,12 @@ export const normalizeCalendarItem = (item: unknown, service: CalendarService): 
 
 	const title = extractCalendarTitle(anyItem, service);
 
+	// Extract poster from series/movie/artist/author images
+	const imageSource =
+		anyItem.series?.images ?? anyItem.movie?.images ?? anyItem.images ??
+		anyItem.artist?.images ?? anyItem.author?.images;
+	const { poster: posterUrl } = normalizeImages(imageSource);
+
 	return {
 		id: normalizedId,
 		title,
@@ -258,6 +265,7 @@ export const normalizeCalendarItem = (item: unknown, service: CalendarService): 
 			toStringArray(anyItem.author?.genres),
 		monitored: toBoolean(anyItem.monitored),
 		hasFile: toBoolean(anyItem.hasFile),
+		posterUrl,
 		instanceId: "",
 		instanceName: "",
 	};

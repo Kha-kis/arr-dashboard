@@ -328,6 +328,48 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 	});
 
 	/**
+	 * GET /library/by-tmdb/:tmdbId
+	 * Looks up a single library item by TMDB ID from the cache.
+	 * Used for deep linking from dashboard widgets.
+	 */
+	app.get("/library/by-tmdb/:tmdbId", async (request, reply) => {
+		const tmdbId = Number((request.params as { tmdbId: string }).tmdbId);
+		if (!Number.isFinite(tmdbId) || tmdbId <= 0) {
+			return reply.status(400).send({ error: "Invalid tmdbId" });
+		}
+
+		const userId = request.currentUser!.id;
+		const userInstances = await app.prisma.serviceInstance.findMany({
+			where: { userId, enabled: true, service: { in: [...LIBRARY_SERVICES_UPPER] } },
+			select: { id: true },
+		});
+		const instanceIds = userInstances.map((i) => i.id);
+		if (instanceIds.length === 0) {
+			return reply.status(404).send({ error: "Item not found" });
+		}
+
+		// Use json_extract for SQLite, JSON path for PostgreSQL
+		const placeholders = instanceIds.map(() => "?").join(", ");
+		const jsonExtract =
+			app.dbProvider === "postgresql"
+				? `CAST("data"::json->>'remoteIds'->>'tmdbId' AS INTEGER) = ?`
+				: `CAST(json_extract(data, '$.remoteIds.tmdbId') AS INTEGER) = ?`;
+
+		const rows = await app.prisma.$queryRawUnsafe<Array<{ data: string }>>(
+			`SELECT data FROM library_cache WHERE "instanceId" IN (${placeholders}) AND ${jsonExtract} LIMIT 1`,
+			...instanceIds,
+			tmdbId,
+		);
+
+		if (!rows[0]) {
+			return reply.status(404).send({ error: "Item not found" });
+		}
+
+		const item = JSON.parse(rows[0].data) as LibraryItem;
+		return reply.send({ item });
+	});
+
+	/**
 	 * GET /library/episodes
 	 * Fetches episodes for a specific series from a Sonarr instance
 	 * Note: Episodes are NOT cached - fetched directly from ARR

@@ -20,6 +20,7 @@ describe("mapToRecentlyAddedItems", () => {
 				sectionTitle: "Movies",
 				addedAt: new Date("2025-06-15T10:30:00.000Z"),
 				ratingKey: "12345",
+				thumb: "/library/metadata/12345/thumb/1234567890",
 				instanceId: "inst-1",
 			},
 		];
@@ -35,6 +36,7 @@ describe("mapToRecentlyAddedItems", () => {
 				sectionTitle: "Movies",
 				addedAt: "2025-06-15T10:30:00.000Z",
 				ratingKey: "12345",
+				thumb: "/library/metadata/12345/thumb/1234567890",
 				instanceId: "inst-1",
 				instanceName: "My Plex Server",
 			},
@@ -51,6 +53,7 @@ describe("mapToRecentlyAddedItems", () => {
 				sectionTitle: "Movies",
 				addedAt: date,
 				ratingKey: "r1",
+				thumb: null,
 				instanceId: "a",
 			},
 		];
@@ -71,6 +74,7 @@ describe("mapToRecentlyAddedItems", () => {
 				sectionTitle: "Movies",
 				addedAt: new Date(),
 				ratingKey: "r1",
+				thumb: null,
 				instanceId: "missing-id",
 			},
 		];

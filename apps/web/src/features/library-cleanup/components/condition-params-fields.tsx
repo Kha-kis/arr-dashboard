@@ -1,6 +1,7 @@
 "use client";
 
 import type { CleanupFieldOptionsResponse, CleanupRuleType } from "@arr/shared";
+import { ToggleSwitch } from "@/components/layout/config-primitives";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 import { MultiSelectField } from "./multi-select-field";
 
@@ -694,10 +695,11 @@ export function ConditionParamsFields({
 			const is4k = get("is4k", true);
 			return (
 				<div className="space-y-2">
-					<label className="flex items-center gap-2 text-sm">
-						<input type="checkbox" checked={is4k} onChange={(e) => set("is4k", e.target.checked)} />
-						Flag 4K requests
-					</label>
+					<ToggleSwitch
+						label="Flag 4K requests"
+						checked={is4k}
+						onChange={(v) => set("is4k", v)}
+					/>
 					<p className="text-xs text-muted-foreground">
 						{is4k
 							? "Matches items with 4K Seerr requests."
@@ -933,14 +935,11 @@ export function ConditionParamsFields({
 			const isDeck = get("isDeck", false);
 			return (
 				<div className="space-y-2">
-					<label className="flex items-center gap-2 text-sm">
-						<input
-							type="checkbox"
-							checked={isDeck}
-							onChange={(e) => set("isDeck", e.target.checked)}
-						/>
-						Item is on Continue Watching
-					</label>
+					<ToggleSwitch
+						label="Item is on Continue Watching"
+						checked={isDeck}
+						onChange={(v) => set("isDeck", v)}
+					/>
 					<p className="text-xs text-muted-foreground">
 						{isDeck
 							? "Matches items currently on Plex's Continue Watching / On Deck."
@@ -1092,14 +1091,11 @@ export function ConditionParamsFields({
 			const isRequested = get("isRequested", true);
 			return (
 				<div className="space-y-2">
-					<label className="flex items-center gap-2 text-sm">
-						<input
-							type="checkbox"
-							checked={isRequested}
-							onChange={(e) => set("isRequested", e.target.checked)}
-						/>
-						Has a Seerr request
-					</label>
+					<ToggleSwitch
+						label="Has a Seerr request"
+						checked={isRequested}
+						onChange={(v) => set("isRequested", v)}
+					/>
 					<p className="text-xs text-muted-foreground">
 						{isRequested
 							? "Matches items that have at least one Seerr request."

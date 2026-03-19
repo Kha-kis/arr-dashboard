@@ -126,7 +126,7 @@ export const QueueTable = ({
 	if (loading) {
 		return (
 			<div
-				className="relative overflow-hidden rounded-xl border border-border/50 bg-card/50 backdrop-blur-xs p-8 text-center"
+				className="relative overflow-hidden rounded-xl border border-border/50 bg-card/50 p-8 text-center"
 				style={{
 					boxShadow: `0 4px 20px -4px ${themeGradient.glow}`,
 				}}
@@ -157,7 +157,7 @@ export const QueueTable = ({
 	if (items.length === 0) {
 		return (
 			<div
-				className="relative overflow-hidden rounded-xl border border-border/50 bg-card/50 backdrop-blur-xs p-8 text-center"
+				className="relative overflow-hidden rounded-xl border border-border/50 bg-card/50 p-8 text-center"
 				style={{
 					boxShadow: `0 4px 20px -4px ${themeGradient.glow}`,
 				}}

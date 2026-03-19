@@ -14,7 +14,6 @@ import {
 	Tv,
 	Wifi,
 } from "lucide-react";
-import { GlassmorphicCard } from "../../../components/layout";
 import { useNowPlaying } from "../../../hooks/api/usePlex";
 import { useTautulliActivity } from "../../../hooks/api/useTautulli";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
@@ -333,7 +332,7 @@ export const NowPlayingWidget = ({
 				className="animate-in fade-in slide-in-from-bottom-4 duration-500"
 				style={{ animationDelay: `${animationDelay}ms`, animationFillMode: "backwards" }}
 			>
-				<GlassmorphicCard padding="none" className="group transition-all hover:border-border/80">
+				<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10 group transition-all hover:border-border/80">
 					<div
 						className="h-0.5 w-full rounded-t-xl"
 						style={{
@@ -355,7 +354,7 @@ export const NowPlayingWidget = ({
 							<p className="text-xs text-muted-foreground">Could not load session data</p>
 						</div>
 					</div>
-				</GlassmorphicCard>
+				</div>
 			</div>
 		);
 	}
@@ -366,7 +365,7 @@ export const NowPlayingWidget = ({
 				className="animate-in fade-in slide-in-from-bottom-4 duration-500"
 				style={{ animationDelay: `${animationDelay}ms`, animationFillMode: "backwards" }}
 			>
-				<GlassmorphicCard padding="none" className="group transition-all hover:border-border/80">
+				<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10 group transition-all hover:border-border/80">
 					<div
 						className="h-0.5 w-full rounded-t-xl"
 						style={{
@@ -431,7 +430,7 @@ export const NowPlayingWidget = ({
 							</div>
 						)}
 					</div>
-				</GlassmorphicCard>
+				</div>
 			</div>
 		);
 	}
@@ -466,11 +465,11 @@ export const NowPlayingWidget = ({
 			</div>
 
 			{sessions.length === 0 && (
-				<GlassmorphicCard padding="md">
+				<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
 					<p className="text-sm text-muted-foreground text-center py-4">
 						No active streams right now
 					</p>
-				</GlassmorphicCard>
+				</div>
 			)}
 
 			{sessions.map((session, index) => {
@@ -483,7 +482,7 @@ export const NowPlayingWidget = ({
 							animationFillMode: "backwards",
 						}}
 					>
-						<GlassmorphicCard padding="md">
+						<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
 							<div className="flex items-start gap-3">
 								{/* State icon */}
 								<div
@@ -564,7 +563,7 @@ export const NowPlayingWidget = ({
 									</div>
 								</div>
 							</div>
-						</GlassmorphicCard>
+						</div>
 					</div>
 				);
 			})}

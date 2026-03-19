@@ -17,7 +17,6 @@ import {
 } from "lucide-react";
 import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import {
-	GlassmorphicCard,
 	GradientButton,
 	StatusBadge,
 } from "@/components/layout/premium-components";
@@ -134,13 +133,13 @@ export function NotificationsTab() {
 					</div>
 
 					{showForm && (
-						<GlassmorphicCard padding="md">
+						<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
 							<ChannelForm
 								channelId={editingChannel}
 								onSave={() => setShowForm(false)}
 								onCancel={() => setShowForm(false)}
 							/>
-						</GlassmorphicCard>
+						</div>
 					)}
 
 					{channelsLoading ? (
@@ -148,12 +147,12 @@ export function NotificationsTab() {
 							<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
 						</div>
 					) : channels.length === 0 ? (
-						<GlassmorphicCard padding="lg">
+						<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
 							<div className="text-center py-8">
 								<Bell className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" />
 								<p className="text-muted-foreground">No notification channels configured yet.</p>
 							</div>
-						</GlassmorphicCard>
+						</div>
 					) : (
 						<div className="space-y-3">
 							{channels.map((channel, index) => (
@@ -258,7 +257,7 @@ function ChannelRow({
 	const Icon = typeInfo.icon;
 
 	return (
-		<GlassmorphicCard padding="sm">
+		<div className="rounded-xl border border-border/30 bg-muted/10 p-3">
 			<div
 				className="flex items-center gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300"
 				style={{
@@ -337,6 +336,6 @@ function ChannelRow({
 					</button>
 				</div>
 			</div>
-		</GlassmorphicCard>
+		</div>
 	);
 }

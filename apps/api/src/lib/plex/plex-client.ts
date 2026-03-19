@@ -50,6 +50,7 @@ export interface PlexLibraryItem {
 	year?: number;
 	userRating?: number; // 0-10 scale
 	addedAt?: number; // Unix timestamp
+	thumb?: string; // Plex thumbnail path
 	Guid?: PlexGuid[];
 	Collection?: Array<{ tag: string }>;
 	Label?: Array<{ tag: string }>;
@@ -195,6 +196,7 @@ export class PlexClient {
 			year: m.year,
 			userRating: m.userRating,
 			addedAt: m.addedAt,
+			thumb: m.thumb,
 			Guid: m.Guid?.map((g) => ({ id: g.id })),
 			Collection: m.Collection?.map((c) => ({ tag: c.tag })),
 			Label: m.Label?.map((l) => ({ tag: l.tag })),
@@ -345,6 +347,22 @@ export class PlexClient {
 			id: a.id,
 			name: a.name,
 		}));
+	}
+
+	/**
+	 * Fetch a raw image from Plex (e.g., poster thumbnails).
+	 * Returns the raw Response for streaming to the client.
+	 */
+	async fetchImage(path: string): Promise<Response> {
+		const url = new URL(`${this.baseUrl}${path}`);
+		const response = await fetch(url.toString(), {
+			headers: { "X-Plex-Token": this.token },
+			signal: AbortSignal.timeout(this.timeout),
+		});
+		if (!response.ok) {
+			throw new Error(`Plex image fetch failed: HTTP ${response.status}`);
+		}
+		return response;
 	}
 
 	/**

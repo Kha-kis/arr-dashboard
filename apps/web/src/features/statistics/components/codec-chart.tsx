@@ -169,7 +169,7 @@ export const CodecChart = ({ days, enabled }: CodecChartProps) => {
 
 	if (isLoading) {
 		return (
-			<div className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-xs p-6">
+			<div className="rounded-xl border border-border/30 bg-card/30 p-6">
 				<PremiumSkeleton variant="line" className="h-5 w-40 mb-4" />
 				<div className="flex gap-8">
 					<PremiumSkeleton variant="line" className="h-[120px] w-[120px] rounded-full" />
@@ -200,7 +200,7 @@ export const CodecChart = ({ days, enabled }: CodecChartProps) => {
 	}
 
 	return (
-		<div className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-xs p-6 space-y-5">
+		<div className="rounded-xl border border-border/30 bg-card/30 p-6 space-y-5">
 			<h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
 				<FileVideo className="h-4 w-4" style={{ color: gradient.from }} />
 				Codec &amp; Resolution

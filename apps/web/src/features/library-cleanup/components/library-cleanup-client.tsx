@@ -33,7 +33,6 @@ import {
 } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-	GlassmorphicCard,
 	GradientButton,
 	PremiumPageHeader,
 	PremiumPageLoading,
@@ -43,6 +42,7 @@ import {
 	PremiumTabs,
 	StatusBadge,
 } from "@/components/layout";
+import { ToggleRow } from "@/components/layout/config-primitives";
 import { Input } from "@/components/ui/input";
 import {
 	Dialog,
@@ -53,6 +53,7 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
+import { INPUT_BASE_CLASSES } from "@/lib/theme-input-styles";
 import {
 	useApproveCleanupItem,
 	useBulkCleanupAction,
@@ -286,84 +287,101 @@ function ConfigTab({
 	return (
 		<div className="space-y-6">
 			{/* Global settings */}
-			<GlassmorphicCard padding="md">
-				<h3 className="text-h4 mb-4">Settings</h3>
-				<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-					<label className="flex items-center gap-2 text-sm">
-						<input
-							type="checkbox"
-							checked={config.enabled}
-							onChange={(e) => onUpdateConfig({ enabled: e.target.checked })}
-						/>
-						Enabled
-					</label>
-					<label className="flex items-center gap-2 text-sm">
-						<input
-							type="checkbox"
-							checked={config.dryRunMode}
-							onChange={(e) => onUpdateConfig({ dryRunMode: e.target.checked })}
-						/>
-						Dry Run Mode
-					</label>
-					<label className="flex items-center gap-2 text-sm">
-						<input
-							type="checkbox"
-							checked={config.requireApproval}
-							onChange={(e) => onUpdateConfig({ requireApproval: e.target.checked })}
-						/>
-						Require Approval
-					</label>
-					<label className="block">
-						<span className="text-xs text-muted-foreground block mb-1">Interval (hours)</span>
-						<input
-							type="number"
-							value={localInterval}
-							onChange={(e) => setLocalInterval(e.target.value)}
-							onBlur={() => {
-								const v = Number(localInterval);
-								if (!Number.isNaN(v) && v >= 1 && v <= 168 && v !== config.intervalHours) {
-									onUpdateConfig({ intervalHours: v });
-								} else {
-									setLocalInterval(String(config.intervalHours));
-								}
-							}}
-							min={1}
-							max={168}
-							className="w-full rounded-md border border-border/50 bg-background/50 px-3 py-1.5 text-sm"
-						/>
-					</label>
-					<label className="block">
-						<span className="text-xs text-muted-foreground block mb-1">Max Removals / Run</span>
-						<input
-							type="number"
-							value={localMaxRemovals}
-							onChange={(e) => setLocalMaxRemovals(e.target.value)}
-							onBlur={() => {
-								const v = Number(localMaxRemovals);
-								if (
-									!Number.isNaN(v) &&
-									v >= 1 &&
-									v <= 100 &&
-									v !== (config.maxRemovalsPerRun ?? 50)
-								) {
-									onUpdateConfig({ maxRemovalsPerRun: v });
-								} else {
-									setLocalMaxRemovals(String(config.maxRemovalsPerRun ?? 50));
-								}
-							}}
-							min={1}
-							max={100}
-							className="w-full rounded-md border border-border/50 bg-background/50 px-3 py-1.5 text-sm"
-						/>
-					</label>
-				</div>
-
-				{config.dryRunMode && (
-					<div className="mt-3 rounded-md bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-xs text-amber-400">
-						Dry run mode is active. No items will be removed.
+			<div
+				className="relative rounded-xl overflow-hidden"
+				style={{ border: `1px solid ${gradient.from}10` }}
+			>
+				<div
+					className="absolute inset-0 pointer-events-none"
+					style={{ background: `linear-gradient(135deg, ${gradient.from}04, transparent 60%)` }}
+				/>
+				<div
+					className="absolute left-0 top-0 bottom-0 w-[3px]"
+					style={{ background: `linear-gradient(180deg, ${gradient.from}, ${gradient.fromLight})` }}
+				/>
+				<div className="relative p-5">
+					<div className="flex items-center gap-2 mb-4">
+						<span
+							className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
+							style={{ backgroundColor: `${gradient.from}12`, color: gradient.from }}
+						>
+							<Settings2 className="h-2.5 w-2.5" />
+							Settings
+						</span>
 					</div>
-				)}
-			</GlassmorphicCard>
+					<div className="space-y-3">
+						<ToggleRow
+							label="Enabled"
+							description="Enable automated library cleanup"
+							checked={config.enabled}
+							onChange={(v) => onUpdateConfig({ enabled: v })}
+						/>
+						<ToggleRow
+							label="Dry Run Mode"
+							description="Preview changes without removing anything"
+							checked={config.dryRunMode}
+							onChange={(v) => onUpdateConfig({ dryRunMode: v })}
+						/>
+						<ToggleRow
+							label="Require Approval"
+							description="Items must be approved before removal"
+							checked={config.requireApproval}
+							onChange={(v) => onUpdateConfig({ requireApproval: v })}
+						/>
+					</div>
+					<div className="grid gap-4 sm:grid-cols-2 mt-4">
+						<label className="block">
+							<span className="text-xs text-muted-foreground block mb-1">Interval (hours)</span>
+							<input
+								type="number"
+								value={localInterval}
+								onChange={(e) => setLocalInterval(e.target.value)}
+								onBlur={() => {
+									const v = Number(localInterval);
+									if (!Number.isNaN(v) && v >= 1 && v <= 168 && v !== config.intervalHours) {
+										onUpdateConfig({ intervalHours: v });
+									} else {
+										setLocalInterval(String(config.intervalHours));
+									}
+								}}
+								min={1}
+								max={168}
+								className={`${INPUT_BASE_CLASSES.input} py-1.5`}
+							/>
+						</label>
+						<label className="block">
+							<span className="text-xs text-muted-foreground block mb-1">Max Removals / Run</span>
+							<input
+								type="number"
+								value={localMaxRemovals}
+								onChange={(e) => setLocalMaxRemovals(e.target.value)}
+								onBlur={() => {
+									const v = Number(localMaxRemovals);
+									if (
+										!Number.isNaN(v) &&
+										v >= 1 &&
+										v <= 100 &&
+										v !== (config.maxRemovalsPerRun ?? 50)
+									) {
+										onUpdateConfig({ maxRemovalsPerRun: v });
+									} else {
+										setLocalMaxRemovals(String(config.maxRemovalsPerRun ?? 50));
+									}
+								}}
+								min={1}
+								max={100}
+								className={`${INPUT_BASE_CLASSES.input} py-1.5`}
+							/>
+						</label>
+					</div>
+
+					{config.dryRunMode && (
+						<div className="mt-3 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-xs text-amber-400">
+							Dry run mode is active. No items will be removed.
+						</div>
+					)}
+				</div>
+			</div>
 
 			{/* Actions */}
 			<div className="flex items-center gap-3">
@@ -445,7 +463,19 @@ function ConfigTab({
 
 			{/* Preview results */}
 			{previewData && (
-				<GlassmorphicCard padding="md">
+				<div
+					className="relative rounded-xl overflow-hidden"
+					style={{ border: `1px solid ${gradient.from}10` }}
+				>
+					<div
+						className="absolute inset-0 pointer-events-none"
+						style={{ background: `linear-gradient(135deg, ${gradient.from}04, transparent 60%)` }}
+					/>
+					<div
+						className="absolute left-0 top-0 bottom-0 w-[3px]"
+						style={{ background: `linear-gradient(180deg, ${gradient.from}, ${gradient.fromLight})` }}
+					/>
+					<div className="relative p-5">
 					<h4 className="text-h4 mb-3">
 						Preview Results ({previewData.totalFlagged} of {previewData.totalEvaluated} items
 						flagged)
@@ -544,11 +574,24 @@ function ConfigTab({
 							})}
 						</div>
 					)}
-				</GlassmorphicCard>
+				</div>
+				</div>
 			)}
 
 			{/* Rules */}
-			<GlassmorphicCard padding="md">
+			<div
+				className="relative rounded-xl overflow-hidden"
+				style={{ border: `1px solid ${gradient.from}10` }}
+			>
+				<div
+					className="absolute inset-0 pointer-events-none"
+					style={{ background: `linear-gradient(135deg, ${gradient.from}04, transparent 60%)` }}
+				/>
+				<div
+					className="absolute left-0 top-0 bottom-0 w-[3px]"
+					style={{ background: `linear-gradient(180deg, ${gradient.from}, ${gradient.fromLight})` }}
+				/>
+				<div className="relative p-5">
 				<div className="flex items-center justify-between mb-4">
 					<h3 className="text-h4">Cleanup Rules</h3>
 					<GradientButton onClick={handleCreate}>
@@ -668,7 +711,8 @@ function ConfigTab({
 						))}
 					</div>
 				)}
-			</GlassmorphicCard>
+			</div>
+			</div>
 
 			{/* Rule Dialog */}
 			<CleanupRuleDialog
@@ -800,7 +844,7 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 					<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
 				</div>
 			) : isError ? (
-				<GlassmorphicCard padding="lg">
+				<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
 					<div className="text-center py-8">
 						<AlertTriangle className="mx-auto mb-3 h-10 w-10 text-amber-400/50" />
 						<p className="text-muted-foreground mb-3">
@@ -815,25 +859,41 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 							Retry
 						</button>
 					</div>
-				</GlassmorphicCard>
+				</div>
 			) : !data || data.items.length === 0 ? (
-				<GlassmorphicCard padding="lg">
+				<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
 					<div className="text-center py-8">
 						<ListChecks className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" />
 						<p className="text-muted-foreground">No {statusFilter} approvals.</p>
 					</div>
-				</GlassmorphicCard>
+				</div>
 			) : (
 				<>
 					<div className="space-y-3">
 						{data.items.map((item, index) => (
-							<GlassmorphicCard key={item.id} padding="sm">
+							<div
+								key={item.id}
+								className="group relative rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-[1px] hover:shadow-lg hover:shadow-black/10 animate-in fade-in slide-in-from-bottom-1 duration-300"
+								style={{
+									border: `1px solid ${gradient.from}10`,
+									animationDelay: `${index * 30}ms`,
+									animationFillMode: "backwards",
+								}}
+							>
 								<div
-									className="flex items-center gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300"
-									style={{
-										animationDelay: `${index * 30}ms`,
-										animationFillMode: "backwards",
-									}}
+									className="absolute inset-0 pointer-events-none"
+									style={{ background: `linear-gradient(135deg, ${gradient.from}04, transparent 60%)` }}
+								/>
+								<div
+									className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+									style={{ background: `radial-gradient(ellipse at top left, ${gradient.from}06, transparent 50%)` }}
+								/>
+								<div
+									className="absolute left-0 top-0 bottom-0 w-[3px]"
+									style={{ background: `linear-gradient(180deg, ${gradient.from}, ${gradient.fromLight})` }}
+								/>
+								<div
+									className="relative flex items-center gap-4 py-3 pl-5 pr-4"
 								>
 									{/* Checkbox (pending only) */}
 									{showCheckboxes && (
@@ -921,7 +981,7 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 										</div>
 									)}
 								</div>
-							</GlassmorphicCard>
+							</div>
 						))}
 					</div>
 
@@ -1048,7 +1108,7 @@ function LogsTab() {
 					<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
 				</div>
 			) : isError ? (
-				<GlassmorphicCard padding="lg">
+				<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
 					<div className="text-center py-8">
 						<AlertTriangle className="mx-auto mb-3 h-10 w-10 text-amber-400/50" />
 						<p className="text-muted-foreground mb-3">
@@ -1063,17 +1123,17 @@ function LogsTab() {
 							Retry
 						</button>
 					</div>
-				</GlassmorphicCard>
+				</div>
 			) : !data || data.items.length === 0 ? (
-				<GlassmorphicCard padding="lg">
+				<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
 					<div className="text-center py-8">
 						<ScrollText className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" />
 						<p className="text-muted-foreground">No cleanup runs yet.</p>
 					</div>
-				</GlassmorphicCard>
+				</div>
 			) : (
 				<>
-					<GlassmorphicCard padding="none">
+					<div className="rounded-xl border border-border/20 bg-card/5 overflow-hidden">
 						<div className="overflow-x-auto">
 							<table className="w-full text-sm">
 								<thead>
@@ -1194,7 +1254,7 @@ function LogsTab() {
 								</tbody>
 							</table>
 						</div>
-					</GlassmorphicCard>
+					</div>
 
 					{totalPages > 1 && (
 						<div className="flex items-center justify-between pt-2">
@@ -1253,7 +1313,7 @@ function StatisticsTab() {
 
 	if (isError) {
 		return (
-			<GlassmorphicCard padding="lg">
+			<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
 				<div className="text-center py-8">
 					<AlertTriangle className="mx-auto mb-3 h-10 w-10 text-amber-400/50" />
 					<p className="text-muted-foreground mb-3">Failed to load statistics. Please try again.</p>
@@ -1266,18 +1326,18 @@ function StatisticsTab() {
 						Retry
 					</button>
 				</div>
-			</GlassmorphicCard>
+			</div>
 		);
 	}
 
 	if (!stats) {
 		return (
-			<GlassmorphicCard padding="lg">
+			<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
 				<div className="text-center py-8">
 					<BarChart3 className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" />
 					<p className="text-muted-foreground">No statistics available yet.</p>
 				</div>
-			</GlassmorphicCard>
+			</div>
 		);
 	}
 
@@ -1383,13 +1443,22 @@ function StatCard({
 	sub?: string;
 }) {
 	return (
-		<GlassmorphicCard padding="md">
-			<p className="text-xs text-muted-foreground mb-1">{label}</p>
-			<p className="text-2xl font-bold" style={{ color: gradient.from }}>
-				{value.toLocaleString()}
-			</p>
-			{sub && <p className="text-[10px] text-muted-foreground mt-1">{sub}</p>}
-		</GlassmorphicCard>
+		<div
+			className="relative rounded-xl overflow-hidden p-4"
+			style={{ border: `1px solid ${gradient.from}10` }}
+		>
+			<div
+				className="absolute inset-0 pointer-events-none"
+				style={{ background: `linear-gradient(135deg, ${gradient.from}05, transparent 60%)` }}
+			/>
+			<div className="relative">
+				<p className="text-xs text-muted-foreground mb-1">{label}</p>
+				<p className="text-2xl font-bold" style={{ color: gradient.from }}>
+					{value.toLocaleString()}
+				</p>
+				{sub && <p className="text-[10px] text-muted-foreground/60 mt-1">{sub}</p>}
+			</div>
+		</div>
 	);
 }
 

@@ -10,6 +10,7 @@ import type {
 import { Library as LibraryIcon } from "lucide-react";
 import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
 import { Pagination } from "../../../components/ui";
+import { buildPlexUrl } from "../lib/library-utils";
 
 /**
  * Props for LibraryCard component (passthrough)
@@ -39,6 +40,7 @@ interface LibraryCardProps {
 	watchedByUsers?: string[];
 	plexUserRating?: number | null;
 	seriesProgress?: { watched: number; total: number; percent: number } | null;
+	plexUrl?: string | null;
 }
 
 /**
@@ -110,6 +112,8 @@ interface LibraryContentProps {
 	watchEnrichmentMap?: Record<string, WatchEnrichmentItem> | null;
 	/** Plex series progress map keyed by TMDB ID */
 	seriesProgressMap?: Record<number, SeriesProgressItem> | null;
+	/** Map of Plex instanceId → machineId for building deep links */
+	plexMachineIdMap?: Map<string, string>;
 }
 
 /**
@@ -153,6 +157,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 	enrichmentMap,
 	watchEnrichmentMap,
 	seriesProgressMap,
+	plexMachineIdMap,
 }) => {
 	/** Lookup enrichment for a library item by its tmdbId + type */
 	const getEnrichment = (item: LibraryItem) => {
@@ -166,6 +171,16 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 		if (!watchEnrichmentMap || !item.remoteIds?.tmdbId) return undefined;
 		const key = `${item.type === "movie" ? "movie" : "series"}:${item.remoteIds.tmdbId}`;
 		return watchEnrichmentMap[key];
+	};
+
+	/** Build a Plex deep link URL for a library item (if Plex data available) */
+	const getPlexUrl = (item: LibraryItem): string | null => {
+		if (!plexMachineIdMap || plexMachineIdMap.size === 0) return null;
+		const watchData = getWatchEnrichment(item);
+		if (!watchData?.ratingKey || !watchData.instanceId) return null;
+		const machineId = plexMachineIdMap.get(watchData.instanceId);
+		if (!machineId) return null;
+		return buildPlexUrl(machineId, watchData.ratingKey);
 	};
 
 	/** Lookup Plex series progress for a library item */
@@ -261,6 +276,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 								watchedByUsers={watchData?.watchedByUsers}
 								plexUserRating={watchData?.userRating}
 								seriesProgress={getSeriesProgress(item)}
+								plexUrl={getPlexUrl(item)}
 							/>
 						);
 					})}
@@ -295,6 +311,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											watchedByUsers={watchData?.watchedByUsers}
 											plexUserRating={watchData?.userRating}
 											seriesProgress={getSeriesProgress(item)}
+											plexUrl={getPlexUrl(item)}
 										/>
 									);
 								})}
@@ -330,6 +347,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											watchedByUsers={watchData?.watchedByUsers}
 											plexUserRating={watchData?.userRating}
 											seriesProgress={getSeriesProgress(item)}
+											plexUrl={getPlexUrl(item)}
 										/>
 									);
 								})}
@@ -366,6 +384,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											watchedByUsers={watchData?.watchedByUsers}
 											plexUserRating={watchData?.userRating}
 											seriesProgress={getSeriesProgress(item)}
+											plexUrl={getPlexUrl(item)}
 										/>
 									);
 								})}
@@ -402,6 +421,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											watchedByUsers={watchData?.watchedByUsers}
 											plexUserRating={watchData?.userRating}
 											seriesProgress={getSeriesProgress(item)}
+											plexUrl={getPlexUrl(item)}
 										/>
 									);
 								})}

@@ -4,7 +4,7 @@ import type { CurrentUser } from "@arr/shared";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Check, Key, Loader2, Lock, Shield, Trash2, X } from "lucide-react";
 import { useState } from "react";
-import { GlassmorphicCard, PremiumSection } from "../../../components/layout";
+import { PremiumSection } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { PasswordInput } from "../../../components/ui/password-input";
@@ -170,7 +170,7 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 		>
 			<div className="space-y-6">
 				{/* Add/Change Password Form */}
-				<GlassmorphicCard padding="lg">
+				<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
 					<form onSubmit={handlePasswordUpdate} className="space-y-6">
 						<div className="flex items-center gap-3">
 							<div
@@ -286,11 +286,11 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 							</div>
 						)}
 					</form>
-				</GlassmorphicCard>
+				</div>
 
 				{/* Remove Password Section */}
 				{currentUser?.hasPassword && (
-					<GlassmorphicCard padding="lg">
+					<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
 						<div className="space-y-4">
 							<div className="flex items-center gap-3">
 								<div
@@ -470,7 +470,7 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 								</div>
 							)}
 						</div>
-					</GlassmorphicCard>
+					</div>
 				)}
 			</div>
 		</PremiumSection>

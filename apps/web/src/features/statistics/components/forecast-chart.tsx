@@ -176,7 +176,7 @@ export const ForecastChart = ({ days, enabled }: ForecastChartProps) => {
 
 	if (isLoading) {
 		return (
-			<div className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-xs p-6">
+			<div className="rounded-xl border border-border/30 bg-card/30 p-6">
 				<PremiumSkeleton variant="line" className="h-5 w-40 mb-4" />
 				<PremiumSkeleton variant="line" className="h-[80px] w-full" />
 			</div>
@@ -209,7 +209,7 @@ export const ForecastChart = ({ days, enabled }: ForecastChartProps) => {
 	];
 
 	return (
-		<div className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-xs p-6 space-y-5">
+		<div className="rounded-xl border border-border/30 bg-card/30 p-6 space-y-5">
 			<div className="flex items-center justify-between">
 				<h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
 					<TrendingUp className="h-4 w-4" style={{ color: gradient.from }} />

@@ -151,7 +151,7 @@ export function ConditionEditor({
 							className={`rounded border transition-all ${
 								spec.enabled
 									? "border-border/40 bg-card/20"
-									: "border-border/20 bg-card/10 opacity-50"
+									: "border-border/30 bg-muted/10 opacity-50"
 							}`}
 						>
 							{/* Main Row */}

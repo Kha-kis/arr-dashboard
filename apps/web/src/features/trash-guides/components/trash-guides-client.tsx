@@ -6,6 +6,7 @@ import {
 	CheckCircle2,
 	Clock,
 	HardDrive,
+	History,
 	ShieldCheck,
 	Sparkles,
 	Zap,
@@ -137,10 +138,16 @@ function CacheValidationHealthSection() {
 			</div>
 
 			<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-				{categories.map(([category, stats]) => (
+				{categories.map(([category, stats]) => {
+					const cardColor = stats.rejected > 0 ? SEMANTIC_COLORS.warning.from : SEMANTIC_COLORS.success.from;
+					return (
 					<div
 						key={category}
-						className="rounded-xl border border-border/50 bg-card/30 p-4 transition-all hover:bg-card/50"
+						className="rounded-xl p-4 transition-all duration-200 hover:-translate-y-[1px] hover:shadow-lg hover:shadow-black/10"
+						style={{
+							backgroundColor: `${cardColor}05`,
+							border: `1px solid ${cardColor}12`,
+						}}
 					>
 						<div className="flex items-center justify-between mb-2">
 							<span className="text-sm font-medium text-foreground capitalize">
@@ -162,7 +169,8 @@ function CacheValidationHealthSection() {
 							</p>
 						)}
 					</div>
-				))}
+					);
+				})}
 			</div>
 
 			<p className="text-xs text-muted-foreground">
@@ -239,32 +247,54 @@ export function TrashGuidesClient() {
 			case "history":
 				return (
 					<div className="space-y-6">
-						<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6">
-							<div className="flex items-start gap-4">
-								<div
-									className="flex h-12 w-12 items-center justify-center rounded-xl shrink-0"
-									style={{
-										background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
-										border: `1px solid ${themeGradient.from}30`,
-									}}
-								>
-									<Zap className="h-6 w-6" style={{ color: themeGradient.from }} />
-								</div>
-								<div>
-									<h3
-										className="text-lg font-semibold"
+						<div
+							className="group relative rounded-xl overflow-hidden"
+							style={{ border: `1px solid ${themeGradient.from}10` }}
+						>
+							<div
+								className="absolute inset-0 pointer-events-none"
+								style={{ background: `linear-gradient(135deg, ${themeGradient.from}04, transparent 60%)` }}
+							/>
+							<div
+								className="absolute left-0 top-0 bottom-0 w-[3px]"
+								style={{ background: `linear-gradient(180deg, ${themeGradient.from}, ${themeGradient.fromLight})` }}
+							/>
+							<div className="relative p-6">
+								<div className="flex items-start gap-4">
+									<div
+										className="flex h-12 w-12 items-center justify-center rounded-xl shrink-0"
 										style={{
-											background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
-											WebkitBackgroundClip: "text",
-											WebkitTextFillColor: "transparent",
+											background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+											border: `1px solid ${themeGradient.from}30`,
 										}}
 									>
-										Deployment History
-									</h3>
-									<p className="text-muted-foreground mt-1">
-										View all template deployments across your instances. Track deployment status,
-										review applied configurations, and undeploy when needed.
-									</p>
+										<Zap className="h-6 w-6" style={{ color: themeGradient.from }} />
+									</div>
+									<div>
+										<div className="flex items-center gap-2 mb-1">
+											<span
+												className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
+												style={{ backgroundColor: `${themeGradient.from}12`, color: themeGradient.from }}
+											>
+												<History className="h-2.5 w-2.5" />
+												History
+											</span>
+										</div>
+										<h3
+											className="text-lg font-semibold"
+											style={{
+												background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+												WebkitBackgroundClip: "text",
+												WebkitTextFillColor: "transparent",
+											}}
+										>
+											Deployment History
+										</h3>
+										<p className="text-muted-foreground mt-1">
+											View all template deployments across your instances. Track deployment status,
+											review applied configurations, and undeploy when needed.
+										</p>
+									</div>
 								</div>
 							</div>
 						</div>
@@ -273,25 +303,45 @@ export function TrashGuidesClient() {
 				);
 			case "bulk-scores":
 				return (
-					<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6">
-						{isAuthLoading ? (
-							<div className="flex items-center justify-center py-12">
-								<div
-									className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
-									style={{ borderColor: `${themeGradient.from}40`, borderTopColor: "transparent" }}
+					<div
+						className="relative rounded-xl overflow-hidden"
+						style={{ border: `1px solid ${themeGradient.from}10` }}
+					>
+						<div
+							className="absolute inset-0 pointer-events-none"
+							style={{ background: `linear-gradient(135deg, ${themeGradient.from}04, transparent 60%)` }}
+						/>
+						<div
+							className="absolute left-0 top-0 bottom-0 w-[3px]"
+							style={{ background: `linear-gradient(180deg, ${themeGradient.from}, ${themeGradient.fromLight})` }}
+						/>
+						<div className="relative p-6 space-y-4">
+							<span
+								className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
+								style={{ backgroundColor: `${themeGradient.from}12`, color: themeGradient.from }}
+							>
+								<Sparkles className="h-2.5 w-2.5" />
+								Bulk Scores
+							</span>
+							{isAuthLoading ? (
+								<div className="flex items-center justify-center py-12">
+									<div
+										className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
+										style={{ borderColor: `${themeGradient.from}40`, borderTopColor: "transparent" }}
+									/>
+								</div>
+							) : currentUser?.id ? (
+								<BulkScoreManager
+									userId={currentUser.id}
+									onOperationComplete={() => refetchCache()}
 								/>
-							</div>
-						) : currentUser?.id ? (
-							<BulkScoreManager
-								userId={currentUser.id}
-								onOperationComplete={() => refetchCache()}
-							/>
-						) : (
-							<div className="text-center py-12">
-								<Sparkles className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-								<p className="text-muted-foreground">Please log in to manage bulk scores</p>
-							</div>
-						)}
+							) : (
+								<div className="text-center py-12">
+									<Sparkles className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+									<p className="text-muted-foreground">Please log in to manage bulk scores</p>
+								</div>
+							)}
+						</div>
 					</div>
 				);
 			case "custom-formats":

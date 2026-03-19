@@ -4801,7 +4801,8 @@ export const PlexCacheScalarFieldEnum = {
   userRating: 'userRating',
   collections: 'collections',
   labels: 'labels',
-  addedAt: 'addedAt'
+  addedAt: 'addedAt',
+  thumb: 'thumb'
 } as const
 
 export type PlexCacheScalarFieldEnum = (typeof PlexCacheScalarFieldEnum)[keyof typeof PlexCacheScalarFieldEnum]

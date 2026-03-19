@@ -3,7 +3,7 @@
 import { ChevronDown, ChevronRight, Loader2, Save } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { NotificationEventType } from "@arr/shared";
-import { GlassmorphicCard, GradientButton } from "@/components/layout/premium-components";
+import { GradientButton } from "@/components/layout/premium-components";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 import {
 	useNotificationSubscriptions,
@@ -192,11 +192,11 @@ export function SubscriptionGrid() {
 
 	if (channels.length === 0) {
 		return (
-			<GlassmorphicCard padding="lg">
+			<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
 				<p className="text-center text-muted-foreground py-8">
 					Create at least one notification channel before configuring event subscriptions.
 				</p>
-			</GlassmorphicCard>
+			</div>
 		);
 	}
 
@@ -218,7 +218,7 @@ export function SubscriptionGrid() {
 				)}
 			</div>
 
-			<GlassmorphicCard padding="none">
+			<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10">
 				<div className="overflow-x-auto">
 					<table className="w-full text-sm">
 						<thead>
@@ -318,7 +318,7 @@ export function SubscriptionGrid() {
 						</tbody>
 					</table>
 				</div>
-			</GlassmorphicCard>
+			</div>
 		</div>
 	);
 }

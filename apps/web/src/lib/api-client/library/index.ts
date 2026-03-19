@@ -10,6 +10,7 @@ import type {
 	LibraryEpisodeMonitorRequest,
 	LibraryEpisodeSearchRequest,
 	LibraryEpisodesResponse,
+	LibraryItem,
 	LibraryMovieFileResponse,
 	LibraryMovieSearchRequest,
 	LibrarySeasonSearchRequest,
@@ -250,4 +251,13 @@ export async function updateLibrarySyncSettings(
 		`/api/library/sync/${instanceId}`,
 		{ method: "PATCH", json: settings },
 	);
+}
+
+export async function fetchLibraryItemByTmdbId(tmdbId: number): Promise<LibraryItem | null> {
+	try {
+		const result = await apiRequest<{ item: LibraryItem }>(`/api/library/by-tmdb/${tmdbId}`);
+		return result.item;
+	} catch {
+		return null;
+	}
 }
