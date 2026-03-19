@@ -140,7 +140,7 @@ export const safeRequest = async <T>(
 		return await operation();
 	} catch (err) {
 		if (context) {
-			console.warn(`[statistics] ${context} failed:`, err instanceof Error ? err.message : err);
+			console.warn('[statistics] %s failed:', context, err instanceof Error ? err.message : err);
 		}
 		return undefined;
 	}
