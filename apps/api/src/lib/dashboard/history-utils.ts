@@ -22,10 +22,7 @@ export const historyApiPath = (service: HistoryService) =>
  * Normalizes a raw history item from the ARR API into a consistent format
  * Supports Sonarr (episodes), Radarr (movies), Prowlarr (indexer), Lidarr (albums/tracks), and Readarr (books)
  */
-export const normalizeHistoryItem = (
-	item: unknown,
-	service: HistoryService,
-): HistoryItem => {
+export const normalizeHistoryItem = (item: unknown, service: HistoryService): HistoryItem => {
 	const anyItem = item as UnknownRecord;
 	const rawId =
 		anyItem.id ??
@@ -124,8 +121,8 @@ export const normalizeHistoryItem = (
 		data: typeof anyItem.data === "object" ? anyItem.data : undefined,
 		customFormats: Array.isArray(anyItem.customFormats)
 			? anyItem.customFormats
-				.filter((cf: unknown) => cf && typeof cf === "object" && "id" in cf && "name" in cf)
-				.map((cf: UnknownRecord) => ({ id: Number(cf.id), name: String(cf.name) }))
+					.filter((cf: unknown) => cf && typeof cf === "object" && "id" in cf && "name" in cf)
+					.map((cf: UnknownRecord) => ({ id: Number(cf.id), name: String(cf.name) }))
 			: undefined,
 		customFormatScore: toNumber(anyItem.customFormatScore),
 		instanceId: "",

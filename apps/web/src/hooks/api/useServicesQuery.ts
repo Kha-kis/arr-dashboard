@@ -1,7 +1,7 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import type { ServiceInstanceSummary } from "@arr/shared";
+import { useQuery } from "@tanstack/react-query";
 import { fetchServices } from "../../lib/api-client/services";
 
 interface ServicesQueryOptions {

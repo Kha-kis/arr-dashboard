@@ -1,16 +1,17 @@
 ﻿"use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ServiceInstanceSummary } from "@arr/shared";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-	createService,
-	updateService,
-	removeService,
 	type CreateServicePayload,
+	createService,
+	removeService,
 	type UpdateServicePayload,
+	updateService,
 } from "../../lib/api-client/services";
 
 const SERVICES_QUERY_KEY = ["services"] as const;
+const FIELD_OPTIONS_KEY = ["library-cleanup-field-options"] as const;
 
 type UpdateVariables = {
 	id: string;
@@ -28,6 +29,7 @@ export const useCreateServiceMutation = () => {
 		mutationFn: createService,
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: SERVICES_QUERY_KEY });
+			queryClient.invalidateQueries({ queryKey: FIELD_OPTIONS_KEY });
 		},
 	});
 };
@@ -52,6 +54,7 @@ export const useUpdateServiceMutation = () => {
 					return service;
 				});
 			});
+			queryClient.invalidateQueries({ queryKey: FIELD_OPTIONS_KEY });
 		},
 	});
 };
@@ -68,15 +71,16 @@ export const useDeleteServiceMutation = () => {
 				}
 				return prev.filter((service) => service.id !== id);
 			});
+			queryClient.invalidateQueries({ queryKey: FIELD_OPTIONS_KEY });
 		},
 	});
 };
 
 // Service Connection Testing
 import {
-	testServiceConnection,
-	testConnectionBeforeAdd,
 	type TestConnectionResponse,
+	testConnectionBeforeAdd,
+	testServiceConnection,
 } from "../../lib/api-client/services";
 
 export const useTestServiceConnection = () => {
@@ -89,7 +93,19 @@ export const useTestConnectionBeforeAdd = () => {
 	return useMutation<
 		TestConnectionResponse,
 		Error,
-		{ baseUrl: string; apiKey: string; service: "sonarr" | "radarr" | "prowlarr" | "lidarr" | "readarr" | "seerr" }
+		{
+			baseUrl: string;
+			apiKey: string;
+			service:
+				| "sonarr"
+				| "radarr"
+				| "prowlarr"
+				| "lidarr"
+				| "readarr"
+				| "seerr"
+				| "tautulli"
+				| "plex";
+		}
 	>({
 		mutationFn: ({ baseUrl, apiKey, service }) => testConnectionBeforeAdd(baseUrl, apiKey, service),
 	});

@@ -1,7 +1,7 @@
 "use client";
 
-import { RefreshCw } from "lucide-react";
 import type { TrashConfigType } from "@arr/shared";
+import { RefreshCw } from "lucide-react";
 import { CacheStatusCard } from "./cache-status-card";
 
 interface CacheStatusEntry {
@@ -102,15 +102,9 @@ export const CacheStatusSection = ({
 								lastFetched={status.lastFetched}
 								isStale={status.isStale}
 								onRefresh={
-									onRefreshEntry
-										? () => onRefreshEntry(serviceType, status.configType)
-										: undefined
+									onRefreshEntry ? () => onRefreshEntry(serviceType, status.configType) : undefined
 								}
-								onDelete={
-									onDelete
-										? () => onDelete(serviceType, status.configType)
-										: undefined
-								}
+								onDelete={onDelete ? () => onDelete(serviceType, status.configType) : undefined}
 								isRefreshing={isRefreshingThis}
 								isDeletePending={isDeletePending}
 							/>

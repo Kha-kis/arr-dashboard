@@ -1,19 +1,19 @@
 "use client";
 
-import { useParams, useRouter } from "next/navigation";
 import {
+	AlertCircle,
 	ArrowLeft,
 	Calendar,
-	Clock,
 	CheckCircle2,
-	XCircle,
-	AlertCircle,
+	Clock,
 	Database,
 	RotateCcw,
+	XCircle,
 } from "lucide-react";
-import { useSyncDetail, useRollbackSync } from "../../../../../hooks/api/useSync";
-import { useState, useRef, useEffect } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { useRollbackSync, useSyncDetail } from "../../../../../hooks/api/useSync";
 
 const STATUS_ICONS = {
 	SUCCESS: CheckCircle2,
@@ -37,7 +37,7 @@ export default function SyncDetailPage() {
 	const rollbackMutation = useRollbackSync();
 
 	const [showRollbackConfirm, setShowRollbackConfirm] = useState(false);
-	
+
 	// Accessibility refs for modal
 	const modalRef = useRef<HTMLDivElement>(null);
 	const titleRef = useRef<HTMLHeadingElement>(null);
@@ -90,13 +90,13 @@ export default function SyncDetailPage() {
 		const getFocusableElements = (): HTMLElement[] => {
 			if (!modalRef.current) return [];
 			const focusableSelectors = [
-				'button:not([disabled])',
-				'[href]',
-				'input:not([disabled])',
-				'select:not([disabled])',
-				'textarea:not([disabled])',
+				"button:not([disabled])",
+				"[href]",
+				"input:not([disabled])",
+				"select:not([disabled])",
+				"textarea:not([disabled])",
 				'[tabindex]:not([tabindex="-1"])',
-			].join(', ');
+			].join(", ");
 			return Array.from(modalRef.current.querySelectorAll<HTMLElement>(focusableSelectors));
 		};
 
@@ -137,7 +137,7 @@ export default function SyncDetailPage() {
 		return () => {
 			document.removeEventListener("keydown", handleKeyDown);
 			document.body.style.overflow = "";
-			
+
 			// Restore focus to the element that had focus before opening
 			if (previousActiveElementRef.current) {
 				previousActiveElementRef.current.focus();
@@ -356,12 +356,9 @@ export default function SyncDetailPage() {
 						>
 							Confirm Rollback
 						</h3>
-						<p
-							id="rollback-confirm-description"
-							className="mt-2 text-sm text-muted-foreground"
-						>
-							This will restore the instance to its state before this sync operation. All configurations
-							applied during this sync will be removed.
+						<p id="rollback-confirm-description" className="mt-2 text-sm text-muted-foreground">
+							This will restore the instance to its state before this sync operation. All
+							configurations applied during this sync will be removed.
 						</p>
 						<div className="mt-6 flex justify-end gap-3">
 							<button
@@ -392,7 +389,10 @@ export default function SyncDetailPage() {
 							</button>
 						</div>
 						{rollbackMutation.error && (
-							<div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 p-3" role="alert">
+							<div
+								className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 p-3"
+								role="alert"
+							>
 								<p className="text-sm text-red-300">{rollbackMutation.error.message}</p>
 							</div>
 						)}

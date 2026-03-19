@@ -2,23 +2,23 @@
 
 import type { LibraryItem } from "@arr/shared";
 import {
-	X,
-	Film,
-	Tv,
 	Calendar,
-	HardDrive,
 	Clock,
-	FolderOpen,
 	FileVideo,
-	Tag,
+	Film,
+	FolderOpen,
+	HardDrive,
 	Layers,
+	Tag,
+	Tv,
+	X,
 } from "lucide-react";
+import { useMovieFileQuery } from "../../../hooks/api/useLibrary";
+import { useFocusTrap } from "../../../hooks/useFocusTrap";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { ExternalLinksSection } from "../../discover/components/media-detail-sections";
 import { formatBytes, formatRuntime, SERVICE_COLORS } from "../lib/library-utils";
 import { PosterImage } from "./poster-image";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { useFocusTrap } from "../../../hooks/useFocusTrap";
-import { useMovieFileQuery } from "../../../hooks/api/useLibrary";
-import { ExternalLinksSection } from "../../discover/components/media-detail-sections";
 
 export interface ItemDetailsModalProps {
 	item: LibraryItem;
@@ -91,7 +91,11 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 	// For series/other: build a metadata grid.
 	const mf = isMovie ? (liveMovieFile ?? item.movieFile) : null;
 
-	const seriesMetadata: Array<{ label: string; value: React.ReactNode; icon?: React.ComponentType<{ className?: string }> }> = [];
+	const seriesMetadata: Array<{
+		label: string;
+		value: React.ReactNode;
+		icon?: React.ComponentType<{ className?: string }>;
+	}> = [];
 	if (!isMovie) {
 		seriesMetadata.push({ label: "Instance", value: item.instanceName });
 		seriesMetadata.push({ label: "Service", value: serviceLabel });
@@ -167,11 +171,7 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 					<div className="flex gap-5">
 						{item.poster && (
 							<div className="h-48 w-32 overflow-hidden rounded-xl border border-border/50 shadow-lg shrink-0">
-								<PosterImage
-									arrPosterUrl={item.poster}
-									size="w342"
-									alt={item.title}
-								/>
+								<PosterImage arrPosterUrl={item.poster} size="w342" alt={item.title} />
 							</div>
 						)}
 						<div className="flex-1 min-w-0">
@@ -197,7 +197,9 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 								</span>
 							</div>
 
-							<h2 id="item-details-title" className="text-2xl font-bold text-foreground mb-1">{item.title}</h2>
+							<h2 id="item-details-title" className="text-2xl font-bold text-foreground mb-1">
+								{item.title}
+							</h2>
 
 							<div className="flex items-center gap-3 text-sm text-muted-foreground">
 								{item.year && item.type === "movie" && (
@@ -423,7 +425,6 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 							</div>
 						</div>
 					)}
-
 				</div>
 			</div>
 		</div>

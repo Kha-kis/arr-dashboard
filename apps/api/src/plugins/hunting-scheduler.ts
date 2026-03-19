@@ -37,17 +37,16 @@ const huntingSchedulerPlugin = fastifyPlugin(
 						`Hunting scheduler started (${enabledCount} instance(s) with hunting enabled)`,
 					);
 				} else {
-					app.log.info("Hunting scheduler initialized but not started (no instances with hunting enabled)");
+					app.log.info(
+						"Hunting scheduler initialized but not started (no instances with hunting enabled)",
+					);
 				}
 
 				// Mark feature as enabled only after successful initialization
 				app.huntingSchedulerEnabled = true;
 			} catch (error) {
 				const errorMsg = getErrorMessage(error, "Unknown initialization error");
-				app.log.error(
-					{ err: error },
-					"Failed to initialize hunting scheduler - feature disabled",
-				);
+				app.log.error({ err: error }, "Failed to initialize hunting scheduler - feature disabled");
 				// Store error for user visibility in 503 responses
 				app.decorate("huntingSchedulerInitError", errorMsg);
 				// huntingSchedulerEnabled remains false - routes will return 503

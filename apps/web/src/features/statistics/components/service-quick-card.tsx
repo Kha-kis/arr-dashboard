@@ -32,10 +32,12 @@ export const ServiceQuickCard = ({
 	onViewDetails,
 }: ServiceQuickCardProps) => {
 	return (
-		<div className="group relative rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6 overflow-hidden transition-all duration-300 hover:border-border">
+		<div className="group relative rounded-2xl border border-border/30 bg-muted/10 p-6 overflow-hidden transition-all duration-300 hover:border-border">
 			<div
 				className="absolute inset-0 opacity-0 group-hover:opacity-20 transition-opacity duration-500"
-				style={{ background: `radial-gradient(circle at 50% 0%, ${gradient.glow}, transparent 70%)` }}
+				style={{
+					background: `radial-gradient(circle at 50% 0%, ${gradient.glow}, transparent 70%)`,
+				}}
 			/>
 			<div className="relative">
 				<div className="flex items-center gap-3 mb-4">

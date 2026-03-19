@@ -5,13 +5,13 @@
  */
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
-import { registerRequestRoutes } from "./request-routes.js";
-import { registerUserRoutes } from "./user-routes.js";
-import { registerIssueRoutes } from "./issue-routes.js";
-import { registerNotificationRoutes } from "./notification-routes.js";
-import { registerStatusRoutes } from "./status-routes.js";
 import { registerDiscoverRoutes } from "./discover-routes.js";
+import { registerIssueRoutes } from "./issue-routes.js";
 import { registerLibraryEnrichmentRoutes } from "./library-enrichment-routes.js";
+import { registerNotificationRoutes } from "./notification-routes.js";
+import { registerRequestRoutes } from "./request-routes.js";
+import { registerStatusRoutes } from "./status-routes.js";
+import { registerUserRoutes } from "./user-routes.js";
 
 export async function registerSeerrRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	app.register(registerRequestRoutes, { prefix: "/requests" });

@@ -44,7 +44,10 @@ const queueCleanerSchedulerPlugin = fastifyPlugin(
 				app.log.info("Queue cleaner scheduler started successfully");
 			} catch (error) {
 				const errorMsg = getErrorMessage(error, "Unknown initialization error");
-				app.log.error({ err: error }, "Failed to initialize queue cleaner scheduler - feature disabled");
+				app.log.error(
+					{ err: error },
+					"Failed to initialize queue cleaner scheduler - feature disabled",
+				);
 				// Store error for user visibility in 503 responses
 				app.decorate("queueCleanerInitError", errorMsg);
 				// queueCleanerEnabled remains false - routes will return 503

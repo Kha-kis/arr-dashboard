@@ -1,15 +1,15 @@
 ﻿import type {
-	MultiInstanceQueueResponse,
-	QueueActionRequest,
-	QueueBulkActionRequest,
-	MultiInstanceHistoryResponse,
-	MultiInstanceCalendarResponse,
 	DashboardStatisticsResponse,
 	ManualImportCandidate,
 	ManualImportSubmission,
+	MultiInstanceCalendarResponse,
+	MultiInstanceHistoryResponse,
+	MultiInstanceQueueResponse,
+	QueueActionRequest,
+	QueueBulkActionRequest,
 } from "@arr/shared";
-import { apiRequest, UnauthorizedError } from "./base";
 import { buildQueryUrl } from "../build-query-url";
+import { apiRequest, UnauthorizedError } from "./base";
 
 export async function fetchMultiInstanceQueue(): Promise<MultiInstanceQueueResponse> {
 	try {

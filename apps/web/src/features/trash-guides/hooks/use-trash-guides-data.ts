@@ -1,5 +1,5 @@
-import { useTrashCacheStatus } from "../../../hooks/api/useTrashCache";
 import { useTemplates } from "../../../hooks/api/useTemplates";
+import { useTrashCacheStatus } from "../../../hooks/api/useTrashCache";
 
 /**
  * Hook for managing TRaSH Guides data fetching and aggregation.

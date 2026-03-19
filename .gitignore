@@ -95,6 +95,7 @@ lerna-debug.log*
 /.playwright/
 /.playwright-auth/
 /.playwright-mcp/
+/.playwright-cli/
 
 # Sensitive data - must never be committed
 secrets.json

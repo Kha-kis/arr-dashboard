@@ -1,11 +1,11 @@
-import { useMemo } from "react";
 import type { SearchResult } from "@arr/shared";
+import { useMemo } from "react";
 import {
 	compareBySortKey,
 	getAgeHours,
+	type ProtocolFilter,
 	parseNumberInput,
 	type SortKey,
-	type ProtocolFilter,
 } from "../lib/search-utils";
 
 export interface SearchDataFilters {

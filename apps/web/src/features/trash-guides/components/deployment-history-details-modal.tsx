@@ -1,20 +1,20 @@
 "use client";
 
-import { useDeploymentHistoryDetail } from "../../../hooks/api/useDeploymentHistory";
 import { format } from "date-fns";
-import { History, AlertCircle, CheckCircle2, XCircle } from "lucide-react";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { AlertCircle, CheckCircle2, History, XCircle } from "lucide-react";
+import { PremiumSkeleton } from "../../../components/layout/premium-components";
 import {
+	Button,
 	LegacyDialog,
+	LegacyDialogContent,
+	LegacyDialogDescription,
+	LegacyDialogFooter,
 	LegacyDialogHeader,
 	LegacyDialogTitle,
-	LegacyDialogDescription,
-	LegacyDialogContent,
-	LegacyDialogFooter,
 } from "../../../components/ui";
-import { Button } from "../../../components/ui";
-import { PremiumSkeleton } from "../../../components/layout/premium-components";
+import { useDeploymentHistoryDetail } from "../../../hooks/api/useDeploymentHistory";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 interface DeploymentHistoryDetailsModalProps {
 	historyId: string;
@@ -37,9 +37,7 @@ export function DeploymentHistoryDetailsModal({
 			>
 				<div>
 					<LegacyDialogTitle>Deployment Details</LegacyDialogTitle>
-					<LegacyDialogDescription>
-						View details of this deployment
-					</LegacyDialogDescription>
+					<LegacyDialogDescription>View details of this deployment</LegacyDialogDescription>
 				</div>
 			</LegacyDialogHeader>
 
@@ -47,8 +45,16 @@ export function DeploymentHistoryDetailsModal({
 				{isLoading && (
 					<div className="space-y-4">
 						<PremiumSkeleton variant="card" className="h-24 w-full" />
-						<PremiumSkeleton variant="card" className="h-32 w-full" style={{ animationDelay: "50ms" }} />
-						<PremiumSkeleton variant="card" className="h-48 w-full" style={{ animationDelay: "100ms" }} />
+						<PremiumSkeleton
+							variant="card"
+							className="h-32 w-full"
+							style={{ animationDelay: "50ms" }}
+						/>
+						<PremiumSkeleton
+							variant="card"
+							className="h-48 w-full"
+							style={{ animationDelay: "100ms" }}
+						/>
 					</div>
 				)}
 
@@ -83,16 +89,11 @@ export function DeploymentHistoryDetailsModal({
 							<div className="grid grid-cols-2 gap-4">
 								<InfoField
 									label="Deployed At"
-									value={format(
-										new Date(data.data.deployedAt),
-										"MMM d, yyyy 'at' h:mm a",
-									)}
+									value={format(new Date(data.data.deployedAt), "MMM d, yyyy 'at' h:mm a")}
 								/>
 								<InfoField
 									label="Duration"
-									value={
-										data.data.duration ? `${data.data.duration} seconds` : "N/A"
-									}
+									value={data.data.duration ? `${data.data.duration} seconds` : "N/A"}
 								/>
 								<InfoField label="Status" value={data.data.status} />
 								<InfoField label="Deployed By" value={data.data.deployedBy} />
@@ -101,10 +102,7 @@ export function DeploymentHistoryDetailsModal({
 										label="Rolled Back"
 										value={
 											data.data.rolledBackAt
-												? format(
-														new Date(data.data.rolledBackAt),
-														"MMM d, yyyy 'at' h:mm a",
-													)
+												? format(new Date(data.data.rolledBackAt), "MMM d, yyyy 'at' h:mm a")
 												: "Yes"
 										}
 									/>
@@ -114,35 +112,21 @@ export function DeploymentHistoryDetailsModal({
 
 						{/* Instance & Template Section */}
 						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">
-							<h3 className="text-sm font-medium text-foreground mb-3">
-								Instance & Template
-							</h3>
+							<h3 className="text-sm font-medium text-foreground mb-3">Instance & Template</h3>
 							<div className="grid grid-cols-2 gap-4">
 								{data.data.instance && (
 									<>
-										<InfoField
-											label="Instance"
-											value={data.data.instance.label}
-										/>
-										<InfoField
-											label="Instance Service"
-											value={data.data.instance.service}
-										/>
+										<InfoField label="Instance" value={data.data.instance.label} />
+										<InfoField label="Instance Service" value={data.data.instance.service} />
 									</>
 								)}
 								{data.data.template && (
 									<>
 										<InfoField label="Template" value={data.data.template.name} />
-										<InfoField
-											label="Template Type"
-											value={data.data.template.serviceType}
-										/>
+										<InfoField label="Template Type" value={data.data.template.serviceType} />
 										{data.data.template.description && (
 											<div className="col-span-2">
-												<InfoField
-													label="Description"
-													value={data.data.template.description}
-												/>
+												<InfoField label="Description" value={data.data.template.description} />
 											</div>
 										)}
 									</>
@@ -155,19 +139,31 @@ export function DeploymentHistoryDetailsModal({
 							<h3 className="text-sm font-medium text-foreground mb-3">Results</h3>
 							<div className="grid grid-cols-3 gap-4">
 								<div className="space-y-1">
-									<p className="text-xs" style={{ color: SEMANTIC_COLORS.success.text }}>Applied</p>
-									<p className="text-2xl font-semibold" style={{ color: SEMANTIC_COLORS.success.from }}>
+									<p className="text-xs" style={{ color: SEMANTIC_COLORS.success.text }}>
+										Applied
+									</p>
+									<p
+										className="text-2xl font-semibold"
+										style={{ color: SEMANTIC_COLORS.success.from }}
+									>
 										{data.data.appliedCFs}
 									</p>
 								</div>
 								<div className="space-y-1">
-									<p className="text-xs" style={{ color: SEMANTIC_COLORS.error.text }}>Failed</p>
-									<p className="text-2xl font-semibold" style={{ color: SEMANTIC_COLORS.error.from }}>
+									<p className="text-xs" style={{ color: SEMANTIC_COLORS.error.text }}>
+										Failed
+									</p>
+									<p
+										className="text-2xl font-semibold"
+										style={{ color: SEMANTIC_COLORS.error.from }}
+									>
 										{data.data.failedCFs}
 									</p>
 								</div>
 								<div className="space-y-1">
-									<p className="text-xs" style={{ color: themeGradient.from }}>Total</p>
+									<p className="text-xs" style={{ color: themeGradient.from }}>
+										Total
+									</p>
 									<p className="text-2xl font-semibold" style={{ color: themeGradient.from }}>
 										{data.data.totalCFs}
 									</p>
@@ -197,7 +193,10 @@ export function DeploymentHistoryDetailsModal({
 											}}
 										>
 											<div className="flex items-center gap-2">
-												<CheckCircle2 className="h-3.5 w-3.5" style={{ color: SEMANTIC_COLORS.success.from }} />
+												<CheckCircle2
+													className="h-3.5 w-3.5"
+													style={{ color: SEMANTIC_COLORS.success.from }}
+												/>
 												<span className="text-foreground">{config.name}</span>
 											</div>
 											<span
@@ -237,11 +236,21 @@ export function DeploymentHistoryDetailsModal({
 											}}
 										>
 											<div className="flex items-center gap-2">
-												<XCircle className="h-3.5 w-3.5 shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
-												<span className="font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>{config.name}</span>
+												<XCircle
+													className="h-3.5 w-3.5 shrink-0"
+													style={{ color: SEMANTIC_COLORS.error.from }}
+												/>
+												<span className="font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
+													{config.name}
+												</span>
 											</div>
 											{config.error && (
-												<div className="text-xs mt-1 ml-5.5" style={{ color: SEMANTIC_COLORS.error.from }}>{config.error}</div>
+												<div
+													className="text-xs mt-1 ml-5.5"
+													style={{ color: SEMANTIC_COLORS.error.from }}
+												>
+													{config.error}
+												</div>
 											)}
 										</div>
 									))}
@@ -309,10 +318,7 @@ export function DeploymentHistoryDetailsModal({
 								<h3 className="text-sm font-medium text-foreground mb-3">Backup</h3>
 								<InfoField
 									label="Backup Created"
-									value={format(
-										new Date(data.data.backup.createdAt),
-										"MMM d, yyyy 'at' h:mm a",
-									)}
+									value={format(new Date(data.data.backup.createdAt), "MMM d, yyyy 'at' h:mm a")}
 								/>
 								<p className="text-xs text-muted-foreground mt-2">
 									A backup was created before this deployment.
@@ -327,21 +333,19 @@ export function DeploymentHistoryDetailsModal({
 				<Button variant="ghost" onClick={onClose} className="rounded-xl">
 					Close
 				</Button>
-				{data?.data &&
-					!data.data.rolledBack &&
-					onUndeploy && (
-						<Button
-							className="gap-2 rounded-xl font-medium"
-							style={{
-								backgroundColor: SEMANTIC_COLORS.error.from,
-								color: "white",
-							}}
-							onClick={() => onUndeploy(historyId)}
-							title="Remove Custom Formats deployed by this template (shared CFs will be kept)"
-						>
-							Undeploy
-						</Button>
-					)}
+				{data?.data && !data.data.rolledBack && onUndeploy && (
+					<Button
+						className="gap-2 rounded-xl font-medium"
+						style={{
+							backgroundColor: SEMANTIC_COLORS.error.from,
+							color: "white",
+						}}
+						onClick={() => onUndeploy(historyId)}
+						title="Remove Custom Formats deployed by this template (shared CFs will be kept)"
+					>
+						Undeploy
+					</Button>
+				)}
 			</LegacyDialogFooter>
 		</LegacyDialog>
 	);

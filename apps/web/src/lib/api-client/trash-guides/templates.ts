@@ -1,8 +1,4 @@
-import type {
-	TrashTemplate,
-	CreateTemplateRequest,
-	UpdateTemplateRequest,
-} from "@arr/shared";
+import type { CreateTemplateRequest, TrashTemplate, UpdateTemplateRequest } from "@arr/shared";
 import { apiRequest } from "../base";
 
 // ============================================================================
@@ -106,9 +102,7 @@ export async function fetchTemplate(templateId: string): Promise<TemplateRespons
 /**
  * Create a new template
  */
-export async function createTemplate(
-	payload: CreateTemplateRequest,
-): Promise<TemplateResponse> {
+export async function createTemplate(payload: CreateTemplateRequest): Promise<TemplateResponse> {
 	return await apiRequest<TemplateResponse>("/api/trash-guides/templates", {
 		method: "POST",
 		json: payload,

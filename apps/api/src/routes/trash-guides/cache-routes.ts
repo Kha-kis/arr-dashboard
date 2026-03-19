@@ -4,15 +4,19 @@
  * Endpoints for fetching, refreshing, and managing TRaSH Guides cache.
  */
 
-import { TRASH_CONFIG_TYPES } from "@arr/shared";
 import type { TrashConfigType } from "@arr/shared";
-import type { FastifyInstance, FastifyPluginOptions, } from "fastify";
+import { TRASH_CONFIG_TYPES } from "@arr/shared";
+import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { createCacheManager, CacheCorruptionError } from "../../lib/trash-guides/cache-manager.js";
+import { CacheCorruptionError, createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher, getRateLimitState } from "../../lib/trash-guides/github-fetcher.js";
+import {
+	getValidationHealth,
+	resetValidationHealth,
+} from "../../lib/trash-guides/github-schemas.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
-import { validateRequest } from "../../lib/utils/validate.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
+import { validateRequest } from "../../lib/utils/validate.js";
 
 // ============================================================================
 // Constants
@@ -33,9 +37,11 @@ const getCacheParamsSchema = z.object({
 		"CF_GROUPS",
 		"QUALITY_SIZE",
 		"NAMING",
+		"NAMING_PRESETS",
 		"QUALITY_PROFILES",
 		"CF_DESCRIPTIONS",
 		"CF_INCLUDES",
+		"QUALITY_PROFILE_GROUPS",
 	]),
 });
 
@@ -47,9 +53,11 @@ const refreshCacheBodySchema = z.object({
 			"CF_GROUPS",
 			"QUALITY_SIZE",
 			"NAMING",
+			"NAMING_PRESETS",
 			"QUALITY_PROFILES",
 			"CF_DESCRIPTIONS",
 			"CF_INCLUDES",
+			"QUALITY_PROFILE_GROUPS",
 		])
 		.optional(),
 	force: z.boolean().optional().default(false),
@@ -128,7 +136,10 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 	app.post<{
 		Body: z.infer<typeof refreshCacheBodySchema>;
 	}>("/refresh", async (request, reply) => {
-		const { serviceType, configType, force } = validateRequest(refreshCacheBodySchema, request.body);
+		const { serviceType, configType, force } = validateRequest(
+			refreshCacheBodySchema,
+			request.body,
+		);
 
 		const results: Record<string, unknown> = {};
 
@@ -176,6 +187,7 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 		);
 
 		const fetcher = await getFetcher(request.currentUser!.id);
+		resetValidationHealth(); // Reset before accumulating new stats
 
 		for (const type of configTypes) {
 			try {
@@ -436,6 +448,14 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 						? `Rate limit running low (${state.remaining} remaining)`
 						: `Rate limit healthy (${state.remaining}/${state.limit} remaining)`,
 		});
+	});
+
+	/**
+	 * GET /api/trash-guides/cache/health
+	 * Get validation health stats from the last cache refresh.
+	 */
+	app.get("/health", async (_request, reply) => {
+		return reply.send(getValidationHealth());
 	});
 
 	/**

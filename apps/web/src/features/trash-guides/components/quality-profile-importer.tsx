@@ -9,18 +9,18 @@
 
 "use client";
 
-import { useState } from "react";
-import { Button, Alert, AlertDescription, NativeSelect, SelectOption } from "../../../components/ui";
-import { useInstanceProfiles, useImportProfile } from "../../../hooks/api/useProfileClone";
-import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import type { CompleteQualityProfile } from "@arr/shared";
+import { AlertCircle, CheckCircle, ChevronRight, Download, Info } from "lucide-react";
+import { useState } from "react";
 import {
-	Download,
-	CheckCircle,
-	AlertCircle,
-	ChevronRight,
-	Info,
-} from "lucide-react";
+	Alert,
+	AlertDescription,
+	Button,
+	NativeSelect,
+	SelectOption,
+} from "../../../components/ui";
+import { useImportProfile, useInstanceProfiles } from "../../../hooks/api/useProfileClone";
+import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { getErrorMessage } from "../../../lib/error-utils";
 
 interface QualityProfileImporterProps {
@@ -34,22 +34,16 @@ export function QualityProfileImporter({
 	onImportComplete,
 	onClose,
 }: QualityProfileImporterProps) {
-	const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(
-		null,
-	);
-	const [selectedProfileId, setSelectedProfileId] = useState<number | null>(
-		null,
-	);
-	const [importedProfile, setImportedProfile] =
-		useState<CompleteQualityProfile | null>(null);
+	const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
+	const [selectedProfileId, setSelectedProfileId] = useState<number | null>(null);
+	const [importedProfile, setImportedProfile] = useState<CompleteQualityProfile | null>(null);
 
 	// Fetch instances and filter by service type (compare case-insensitively)
 	const { data: allInstances, isLoading: loadingInstances } = useServicesQuery();
 	const instances = allInstances?.filter((i) => i.service.toUpperCase() === serviceType);
 
 	// Fetch profiles for selected instance
-	const { data: profiles, isLoading: loadingProfiles } =
-		useInstanceProfiles(selectedInstanceId);
+	const { data: profiles, isLoading: loadingProfiles } = useInstanceProfiles(selectedInstanceId);
 
 	// Import mutation
 	const importMutation = useImportProfile();
@@ -97,9 +91,7 @@ export function QualityProfileImporter({
 	return (
 		<div className="space-y-4">
 			<div className="flex items-center justify-between">
-				<h3 className="text-lg font-semibold text-foreground">
-					Import Quality Profile
-				</h3>
+				<h3 className="text-lg font-semibold text-foreground">Import Quality Profile</h3>
 				{onClose && (
 					<Button size="sm" variant="ghost" onClick={onClose}>
 						Close
@@ -110,17 +102,14 @@ export function QualityProfileImporter({
 			<Alert>
 				<Info className="h-4 w-4" />
 				<AlertDescription className="text-xs">
-					Import a complete quality profile from an *arr instance. This will
-					capture all quality definitions, cutoffs, upgrade settings, and custom
-					format scores.
+					Import a complete quality profile from an *arr instance. This will capture all quality
+					definitions, cutoffs, upgrade settings, and custom format scores.
 				</AlertDescription>
 			</Alert>
 
 			{/* Step 1: Select Instance */}
 			<div className="space-y-2">
-				<label className="block text-sm font-medium text-foreground">
-					Step 1: Select Instance
-				</label>
+				<label className="block text-sm font-medium text-foreground">Step 1: Select Instance</label>
 				<NativeSelect
 					value={selectedInstanceId || ""}
 					onChange={(e) => handleInstanceSelect(e.target.value)}
@@ -160,10 +149,9 @@ export function QualityProfileImporter({
 										<div className="flex-1">
 											<div className="font-medium text-foreground">{profile.name}</div>
 											<div className="text-xs text-muted-foreground mt-1">
-												Cutoff: {profile.cutoffQuality?.name || "Unknown"} •
-												Upgrade: {profile.upgradeAllowed ? "Yes" : "No"} • Min
-												Score: {profile.minFormatScore} •{" "}
-												{profile.formatItemsCount} Custom Formats
+												Cutoff: {profile.cutoffQuality?.name || "Unknown"} • Upgrade:{" "}
+												{profile.upgradeAllowed ? "Yes" : "No"} • Min Score:{" "}
+												{profile.minFormatScore} • {profile.formatItemsCount} Custom Formats
 											</div>
 										</div>
 										{selectedProfileId === profile.id && (
@@ -187,11 +175,7 @@ export function QualityProfileImporter({
 			{/* Step 3: Import */}
 			{selectedProfileId !== null && !importedProfile && (
 				<div className="flex justify-end pt-2 border-t border-border/30">
-					<Button
-						onClick={handleImport}
-						disabled={importMutation.isPending}
-						className="gap-2"
-					>
+					<Button onClick={handleImport} disabled={importMutation.isPending} className="gap-2">
 						<Download className="h-4 w-4" />
 						{importMutation.isPending ? "Importing..." : "Import Profile"}
 					</Button>
@@ -226,9 +210,7 @@ export function QualityProfileImporter({
 							</div>
 							<div>
 								<span className="text-muted-foreground">Source Instance:</span>
-								<div className="font-medium text-foreground">
-									{selectedInstance?.label}
-								</div>
+								<div className="font-medium text-foreground">{selectedInstance?.label}</div>
 							</div>
 							<div>
 								<span className="text-muted-foreground">Upgrade Allowed:</span>
@@ -250,9 +232,7 @@ export function QualityProfileImporter({
 							</div>
 							<div>
 								<span className="text-muted-foreground">Min Format Score:</span>
-								<div className="font-medium text-foreground">
-									{importedProfile.minFormatScore}
-								</div>
+								<div className="font-medium text-foreground">{importedProfile.minFormatScore}</div>
 							</div>
 						</div>
 					</div>

@@ -1,4 +1,4 @@
-import { Database, Clock, Trash2, RefreshCw } from "lucide-react";
+import { Clock, Database, RefreshCw, Trash2 } from "lucide-react";
 
 interface CacheStatusCardProps {
 	configTypeLabel: string;

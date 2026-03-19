@@ -1,14 +1,8 @@
 "use client";
 
-import {
-	Download,
-	X,
-	ChevronDown,
-	AlertCircle,
-	Loader2,
-} from "lucide-react";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { AlertCircle, ChevronDown, Download, Loader2, X } from "lucide-react";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 interface InstanceOption {
 	id: string;
@@ -70,7 +64,9 @@ const DeployCFModal = ({
 							<Download className="h-5 w-5" style={{ color: themeGradient.from }} />
 						</div>
 						<div>
-							<h3 id="deploy-cf-title" className="text-lg font-bold text-foreground">Deploy Custom Formats</h3>
+							<h3 id="deploy-cf-title" className="text-lg font-bold text-foreground">
+								Deploy Custom Formats
+							</h3>
 							<p className="text-sm text-muted-foreground">
 								{selectedCount} format{selectedCount !== 1 ? "s" : ""} selected
 							</p>
@@ -98,7 +94,10 @@ const DeployCFModal = ({
 							}}
 						>
 							<div className="flex items-start gap-3">
-								<AlertCircle className="h-5 w-5 mt-0.5" style={{ color: SEMANTIC_COLORS.warning.from }} />
+								<AlertCircle
+									className="h-5 w-5 mt-0.5"
+									style={{ color: SEMANTIC_COLORS.warning.from }}
+								/>
 								<div>
 									<p className="font-medium text-foreground">No instances configured</p>
 									<p className="text-sm text-muted-foreground mt-1">
@@ -116,11 +115,15 @@ const DeployCFModal = ({
 							}}
 						>
 							<div className="flex items-start gap-3">
-								<AlertCircle className="h-5 w-5 mt-0.5" style={{ color: SEMANTIC_COLORS.warning.from }} />
+								<AlertCircle
+									className="h-5 w-5 mt-0.5"
+									style={{ color: SEMANTIC_COLORS.warning.from }}
+								/>
 								<div>
 									<p className="font-medium text-foreground">No compatible instances</p>
 									<p className="text-sm text-muted-foreground mt-1">
-										Selected formats are from different services. Please select formats from only one service type.
+										Selected formats are from different services. Please select formats from only
+										one service type.
 									</p>
 								</div>
 							</div>

@@ -1,6 +1,6 @@
-import type { Prisma, ServiceInstance } from "../prisma.js";
 import type { FastifyInstance } from "fastify";
 import { InstanceNotFoundError } from "../errors.js";
+import type { Prisma, ServiceInstance } from "../prisma.js";
 
 type ServiceInstanceFindFirstArgs = Prisma.ServiceInstanceFindFirstArgs;
 

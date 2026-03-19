@@ -9,11 +9,7 @@ interface SyncStrategyControlProps {
 	disabled?: boolean;
 }
 
-export const SyncStrategyControl = ({
-	value,
-	onChange,
-	disabled,
-}: SyncStrategyControlProps) => {
+export const SyncStrategyControl = ({ value, onChange, disabled }: SyncStrategyControlProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 
 	// Strategy definitions - notify uses theme colors (applied via inline style)
@@ -21,7 +17,8 @@ export const SyncStrategyControl = ({
 		{
 			value: "auto" as const,
 			label: "Auto-sync",
-			description: "Automatically sync when updates are available (only if no custom modifications)",
+			description:
+				"Automatically sync when updates are available (only if no custom modifications)",
 			colorClass: "text-green-600 dark:text-green-400",
 			bgClass: "bg-green-500/10",
 			borderClass: "border-green-500/30",
@@ -50,9 +47,7 @@ export const SyncStrategyControl = ({
 	return (
 		<div className="space-y-3">
 			<div className="flex items-center gap-2">
-				<label className="text-sm font-medium text-foreground">
-					TRaSH Guides Sync Strategy
-				</label>
+				<label className="text-sm font-medium text-foreground">TRaSH Guides Sync Strategy</label>
 				<button
 					type="button"
 					className="group relative"
@@ -65,13 +60,9 @@ export const SyncStrategyControl = ({
 						role="tooltip"
 						className="invisible group-hover:visible group-focus:visible absolute left-0 top-6 z-10 w-64 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-background p-3 text-xs text-muted-foreground shadow-lg"
 					>
-						<p>
-							Controls how this template handles TRaSH Guides updates from
-							GitHub.
-						</p>
+						<p>Controls how this template handles TRaSH Guides updates from GitHub.</p>
 						<p className="mt-2">
-							Note: Auto-sync will only work if the template has no custom
-							modifications.
+							Note: Auto-sync will only work if the template has no custom modifications.
 						</p>
 					</div>
 				</button>
@@ -94,32 +85,36 @@ export const SyncStrategyControl = ({
 								isSelected && !strategy.useTheme
 									? `${strategy.borderClass} ${strategy.bgClass}`
 									: !isSelected
-									? "border-border bg-card hover:border-primary/50 hover:bg-muted"
-									: ""
+										? "border-border bg-card hover:border-primary/50 hover:bg-muted"
+										: ""
 							}`}
-							style={useThemeStyle ? {
-								borderColor: themeGradient.fromMuted,
-								backgroundColor: themeGradient.fromLight,
-							} : undefined}
+							style={
+								useThemeStyle
+									? {
+											borderColor: themeGradient.fromMuted,
+											backgroundColor: themeGradient.fromLight,
+										}
+									: undefined
+							}
 						>
 							<div className="flex items-start justify-between gap-3">
 								<div className="flex-1 min-w-0">
 									<div className="flex items-center gap-2">
 										<span
 											className={`text-sm font-medium ${
-												isSelected && !strategy.useTheme ? strategy.colorClass : !isSelected ? "text-foreground" : ""
+												isSelected && !strategy.useTheme
+													? strategy.colorClass
+													: !isSelected
+														? "text-foreground"
+														: ""
 											}`}
 											style={useThemeStyle ? { color: themeGradient.from } : undefined}
 										>
 											{strategy.label}
 										</span>
-										{isSelected && (
-											<span className="text-xs text-muted-foreground">(Current)</span>
-										)}
+										{isSelected && <span className="text-xs text-muted-foreground">(Current)</span>}
 									</div>
-									<p className="text-xs text-muted-foreground mt-1">
-										{strategy.description}
-									</p>
+									<p className="text-xs text-muted-foreground mt-1">{strategy.description}</p>
 								</div>
 								<span
 									aria-hidden="true"
@@ -127,17 +122,19 @@ export const SyncStrategyControl = ({
 										isSelected && !strategy.useTheme
 											? "border-current bg-current"
 											: !isSelected
-											? "border-fg-muted"
-											: ""
+												? "border-fg-muted"
+												: ""
 									}`}
-									style={useThemeStyle ? {
-										borderColor: themeGradient.from,
-										backgroundColor: themeGradient.from,
-									} : undefined}
+									style={
+										useThemeStyle
+											? {
+													borderColor: themeGradient.from,
+													backgroundColor: themeGradient.from,
+												}
+											: undefined
+									}
 								>
-									{isSelected && (
-										<span className="h-1.5 w-1.5 rounded-full bg-background" />
-									)}
+									{isSelected && <span className="h-1.5 w-1.5 rounded-full bg-background" />}
 								</span>
 							</div>
 						</button>

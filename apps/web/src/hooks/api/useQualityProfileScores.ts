@@ -1,9 +1,9 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-	updateQualityProfileScores,
 	type UpdateProfileScoresPayload,
 	type UpdateProfileScoresResponse,
+	updateQualityProfileScores,
 } from "../../lib/api-client/trash-guides";
 
 /**

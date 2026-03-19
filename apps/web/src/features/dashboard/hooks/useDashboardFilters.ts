@@ -9,8 +9,8 @@
  * cards (groups/items) are displayed per page.
  */
 
-import { useMemo, useState } from "react";
 import type { QueueItem } from "@arr/shared";
+import { useMemo, useState } from "react";
 import { analyzeQueueItem, getProblematicCount } from "../lib/queue-utils";
 
 const SERVICE_FILTERS = [
@@ -128,10 +128,7 @@ export const useDashboardFilters = (queueItems: QueueItem[]) => {
 	}, [queueItems, serviceFilter, instanceFilter, statusFilter, sortBy]);
 
 	// Count of problematic items (for badge display)
-	const problematicCount = useMemo(
-		() => getProblematicCount(queueItems),
-		[queueItems]
-	);
+	const problematicCount = useMemo(() => getProblematicCount(queueItems), [queueItems]);
 
 	// Status summary for filtered items
 	const statusSummary = useMemo(() => {
@@ -144,7 +141,10 @@ export const useDashboardFilters = (queueItems: QueueItem[]) => {
 	}, [filteredItems]);
 
 	const filtersActive =
-		serviceFilter !== "all" || instanceFilter !== "all" || statusFilter !== "all" || sortBy !== "default";
+		serviceFilter !== "all" ||
+		instanceFilter !== "all" ||
+		statusFilter !== "all" ||
+		sortBy !== "default";
 
 	const emptyMessage =
 		filteredItems.length === 0 && queueItems.length > 0

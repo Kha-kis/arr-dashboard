@@ -1,23 +1,23 @@
 "use client";
 
-import { useState } from "react";
-import { useFocusTrap } from "../../../hooks/useFocusTrap";
-import type { LibraryItem, LibraryBook } from "@arr/shared";
+import type { LibraryBook, LibraryItem } from "@arr/shared";
 import {
+	AlertTriangle,
 	BookOpen,
+	CheckCircle2,
 	ChevronDown,
 	ChevronRight,
+	HardDrive,
 	Loader2,
 	Search,
 	X,
-	AlertTriangle,
-	CheckCircle2,
-	HardDrive,
 } from "lucide-react";
+import { useState } from "react";
 import { Button } from "../../../components/ui";
-import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useBooksQuery } from "../../../hooks/api/useLibrary";
+import { useFocusTrap } from "../../../hooks/useFocusTrap";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { formatBytes } from "../lib/library-utils";
 
 // ============================================================================
@@ -170,7 +170,9 @@ export const BookBreakdownModal = ({
 							<BookOpen className="h-6 w-6" style={{ color: READARR_COLOR }} />
 						</div>
 						<div className="flex-1 min-w-0">
-							<h2 id="book-breakdown-title" className="text-xl font-bold text-foreground">{item.title}</h2>
+							<h2 id="book-breakdown-title" className="text-xl font-bold text-foreground">
+								{item.title}
+							</h2>
 							<div className="flex flex-wrap items-center gap-3 mt-1 text-sm text-muted-foreground">
 								<span>{item.instanceName}</span>
 								<span>•</span>
@@ -178,8 +180,8 @@ export const BookBreakdownModal = ({
 									<BookOpen className="h-3.5 w-3.5" />
 									{isLoading ? "..." : `${books.length} book${books.length !== 1 ? "s" : ""}`}
 								</span>
-								{!isLoading && (
-									missingBooks > 0 ? (
+								{!isLoading &&
+									(missingBooks > 0 ? (
 										<BookBadge tone="warning">
 											<AlertTriangle className="h-3 w-3" />
 											{missingBooks} missing book{missingBooks !== 1 ? "s" : ""}
@@ -189,8 +191,7 @@ export const BookBreakdownModal = ({
 											<CheckCircle2 className="h-3 w-3" />
 											Complete
 										</BookBadge>
-									) : null
-								)}
+									) : null)}
 							</div>
 
 							{/* Overall Progress */}
@@ -237,7 +238,10 @@ export const BookBreakdownModal = ({
 								border: `1px solid ${SEMANTIC_COLORS.error.border}`,
 							}}
 						>
-							<AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" style={{ color: SEMANTIC_COLORS.error.from }} />
+							<AlertTriangle
+								className="h-4 w-4 shrink-0 mt-0.5"
+								style={{ color: SEMANTIC_COLORS.error.from }}
+							/>
 							<p className="text-xs" style={{ color: SEMANTIC_COLORS.error.text }}>
 								Failed to load books. Please try closing and reopening the modal.
 							</p>
@@ -284,7 +288,14 @@ interface BookRowProps {
 	onToggleBook: (bookId: number, nextMonitored: boolean) => void;
 	onSearchBook: (bookIds: number[]) => void;
 	pendingActionKey: string | null;
-	themeGradient: { from: string; to: string; glow: string; fromLight: string; fromMedium: string; fromMuted: string };
+	themeGradient: {
+		from: string;
+		to: string;
+		glow: string;
+		fromLight: string;
+		fromMedium: string;
+		fromMuted: string;
+	};
 }
 
 const BookRow = ({
@@ -308,7 +319,9 @@ const BookRow = ({
 	const sizeLabel = book.statistics?.sizeOnDisk ? formatBytes(book.statistics.sizeOnDisk) : null;
 
 	// Get cover image URL
-	const coverImage = book.images?.find((img) => img.coverType === "cover" || img.coverType === "poster")?.url;
+	const coverImage = book.images?.find(
+		(img) => img.coverType === "cover" || img.coverType === "poster",
+	)?.url;
 
 	return (
 		<div
@@ -432,14 +445,30 @@ const BookRow = ({
 								<div
 									className="rounded-lg p-3"
 									style={{
-										backgroundColor: book.hasFile ? SEMANTIC_COLORS.success.bg : SEMANTIC_COLORS.error.bg,
+										backgroundColor: book.hasFile
+											? SEMANTIC_COLORS.success.bg
+											: SEMANTIC_COLORS.error.bg,
 										border: `1px solid ${book.hasFile ? SEMANTIC_COLORS.success.border : SEMANTIC_COLORS.error.border}`,
 									}}
 								>
-									<p className="text-xs" style={{ color: book.hasFile ? SEMANTIC_COLORS.success.text : SEMANTIC_COLORS.error.text }}>
+									<p
+										className="text-xs"
+										style={{
+											color: book.hasFile
+												? SEMANTIC_COLORS.success.text
+												: SEMANTIC_COLORS.error.text,
+										}}
+									>
 										File Status
 									</p>
-									<p className="mt-1 text-sm font-semibold" style={{ color: book.hasFile ? SEMANTIC_COLORS.success.from : SEMANTIC_COLORS.error.from }}>
+									<p
+										className="mt-1 text-sm font-semibold"
+										style={{
+											color: book.hasFile
+												? SEMANTIC_COLORS.success.from
+												: SEMANTIC_COLORS.error.from,
+										}}
+									>
 										{book.hasFile ? "Downloaded" : "Missing"}
 									</p>
 								</div>
@@ -462,7 +491,9 @@ const BookRow = ({
 
 							{/* Overview */}
 							{book.overview && (
-								<p className="text-xs leading-relaxed text-muted-foreground line-clamp-4">{book.overview}</p>
+								<p className="text-xs leading-relaxed text-muted-foreground line-clamp-4">
+									{book.overview}
+								</p>
 							)}
 
 							{/* Genre tags */}

@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../../../lib/api-client/base";
-import type { QueueCleanerStatus } from "../lib/queue-cleaner-types";
 import { STATUS_REFRESH_INTERVAL } from "../lib/constants";
+import type { QueueCleanerStatus } from "../lib/queue-cleaner-types";
 
 async function fetchStatus(): Promise<QueueCleanerStatus> {
 	return apiRequest<QueueCleanerStatus>("/api/queue-cleaner/status");

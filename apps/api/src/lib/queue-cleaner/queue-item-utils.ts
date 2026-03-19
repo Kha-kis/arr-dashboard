@@ -5,6 +5,7 @@
  * the ARR API. No side effects, no external dependencies.
  */
 
+import { z } from "zod";
 import type { WhitelistPattern } from "./constants.js";
 
 /**
@@ -31,6 +32,31 @@ export interface RawQueueItem {
 	/** Allow other properties we don't explicitly handle */
 	[key: string]: unknown;
 }
+
+/**
+ * Zod schema for raw queue items from the ARR API.
+ * Declares expected field names with `z.unknown()` for schema fingerprinting
+ * and drift detection, while `.passthrough()` preserves any new fields the
+ * ARR API may add. Individual fields are type-checked at point-of-use.
+ */
+export const rawQueueItemSchema = z.looseObject({
+	id: z.unknown(),
+	title: z.unknown().optional(),
+	added: z.unknown().optional(),
+	size: z.unknown().optional(),
+	sizeleft: z.unknown().optional(),
+	estimatedCompletionTime: z.unknown().optional(),
+	trackedDownloadStatus: z.unknown().optional(),
+	trackedDownloadState: z.unknown().optional(),
+	statusMessages: z.unknown().optional(),
+	errorMessage: z.unknown().optional(),
+	indexer: z.unknown().optional(),
+	protocol: z.unknown().optional(),
+	downloadClient: z.unknown().optional(),
+	downloadId: z.unknown().optional(),
+	tags: z.unknown().optional(),
+	status: z.unknown().optional(),
+});
 
 /**
  * Safely parse a date value from unknown, returning null if invalid.

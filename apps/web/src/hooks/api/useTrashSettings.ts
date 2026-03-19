@@ -1,22 +1,22 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
+	ResetRepoResponse,
+	SupplementaryReportResponse,
+	TestRepoPayload,
+	TestRepoResponse,
 	TrashSettingsResponse,
 	UpdateTrashSettingsPayload,
 	UpdateTrashSettingsResponse,
-	TestRepoPayload,
-	TestRepoResponse,
-	ResetRepoResponse,
-	SupplementaryReportResponse,
 } from "../../lib/api-client/trash-guides";
 import {
-	fetchTrashSettings,
-	updateTrashSettings,
-	testCustomRepo,
-	resetToOfficialRepo,
 	fetchSupplementaryReport,
+	fetchTrashSettings,
+	resetToOfficialRepo,
+	testCustomRepo,
+	updateTrashSettings,
 } from "../../lib/api-client/trash-guides";
 
 /**
@@ -105,10 +105,7 @@ export function useResetToOfficialRepo() {
  * Hook to fetch the supplementary report comparing custom repo against official.
  * Uses `enabled` flag so the query only fires when the user explicitly requests it.
  */
-export function useSupplementaryReport(
-	serviceType: "RADARR" | "SONARR",
-	enabled: boolean,
-) {
+export function useSupplementaryReport(serviceType: "RADARR" | "SONARR", enabled: boolean) {
 	return useQuery<SupplementaryReportResponse>({
 		queryKey: ["supplementary-report", serviceType],
 		queryFn: () => fetchSupplementaryReport(serviceType),

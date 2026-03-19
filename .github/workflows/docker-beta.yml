@@ -1,0 +1,339 @@
+name: Build and Push Beta Docker Image
+
+on:
+  push:
+    branches:
+      - "feat/v2.9"
+  workflow_dispatch:
+
+# Cancel in-progress runs when a new push arrives
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GHCR_IMAGE: ghcr.io/kha-kis/arr-dashboard
+  DOCKERHUB_IMAGE: khak1s/arr-dashboard
+
+jobs:
+  # ── Build each platform in parallel ────────────────────────────────
+  build:
+    name: Build (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - linux/amd64
+          - linux/arm64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check DockerHub credentials
+        id: dockerhub-creds
+        env:
+          HAS_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          HAS_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [[ -n "$HAS_USERNAME" && -n "$HAS_TOKEN" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log in to Docker Hub
+        if: steps.dockerhub-creds.outputs.available == 'true'
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Prepare build metadata
+        id: meta
+        env:
+          FULL_SHA: ${{ github.sha }}
+          PLATFORM: ${{ matrix.platform }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          echo "short_sha=${FULL_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          echo "version=2.9.0-beta.${RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "platform_slug=${PLATFORM//\//-}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push by digest (GHCR)
+        id: build-ghcr
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          provenance: true
+          sbom: true
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            COMMIT_SHA=${{ github.sha }}
+            BUILD_DATE=${{ steps.meta.outputs.build_date }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/Kha-kis/arr-dashboard
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ steps.meta.outputs.build_date }}
+          outputs: type=image,name=${{ env.GHCR_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache-beta-${{ steps.meta.outputs.platform_slug }}
+          cache-to: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache-beta-${{ steps.meta.outputs.platform_slug }},mode=max
+
+      - name: Export GHCR digest
+        env:
+          DIGEST: ${{ steps.build-ghcr.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests-ghcr
+          touch "/tmp/digests-ghcr/${DIGEST#sha256:}"
+
+      - name: Upload GHCR digest
+        uses: actions/upload-artifact@v7
+        with:
+          name: digests-ghcr-${{ steps.meta.outputs.platform_slug }}
+          path: /tmp/digests-ghcr/*
+          if-no-files-found: error
+          retention-days: 1
+
+      # DockerHub: only build if secrets are available
+      - name: Check DockerHub credentials
+        id: dockerhub-check
+        env:
+          HAS_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          HAS_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [[ -n "$HAS_USERNAME" && -n "$HAS_TOKEN" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push by digest (DockerHub)
+        id: build-dockerhub
+        if: steps.dockerhub-check.outputs.available == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          provenance: true
+          sbom: true
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            COMMIT_SHA=${{ github.sha }}
+            BUILD_DATE=${{ steps.meta.outputs.build_date }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/Kha-kis/arr-dashboard
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ steps.meta.outputs.build_date }}
+          outputs: type=image,name=${{ env.DOCKERHUB_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=registry,ref=${{ env.DOCKERHUB_IMAGE }}:buildcache-beta-${{ steps.meta.outputs.platform_slug }}
+          cache-to: type=registry,ref=${{ env.DOCKERHUB_IMAGE }}:buildcache-beta-${{ steps.meta.outputs.platform_slug }},mode=max
+
+      - name: Export DockerHub digest
+        if: steps.dockerhub-check.outputs.available == 'true'
+        env:
+          DIGEST: ${{ steps.build-dockerhub.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests-dockerhub
+          touch "/tmp/digests-dockerhub/${DIGEST#sha256:}"
+
+      - name: Upload DockerHub digest
+        if: steps.dockerhub-check.outputs.available == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: digests-dockerhub-${{ steps.meta.outputs.platform_slug }}
+          path: /tmp/digests-dockerhub/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # ── Merge platform images into multi-arch manifests ────────────────
+  merge:
+    name: Create Multi-Arch Manifests
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Prepare tag metadata
+        id: tags
+        env:
+          FULL_SHA: ${{ github.sha }}
+        run: |
+          echo "short_sha=${FULL_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check DockerHub credentials
+        id: dockerhub-check
+        env:
+          HAS_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          HAS_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [[ -n "$HAS_USERNAME" && -n "$HAS_TOKEN" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log in to Docker Hub
+        if: steps.dockerhub-check.outputs.available == 'true'
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # ── GHCR manifest ──
+      - name: Download GHCR digests
+        uses: actions/download-artifact@v8
+        with:
+          path: /tmp/digests-ghcr
+          pattern: digests-ghcr-*
+          merge-multiple: true
+
+      - name: Create and push GHCR manifest
+        working-directory: /tmp/digests-ghcr
+        env:
+          SHORT_SHA: ${{ steps.tags.outputs.short_sha }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          TAGS=(
+            "-t" "${GHCR_IMAGE}:v2.9-beta"
+            "-t" "${GHCR_IMAGE}:feat-v2.9"
+            "-t" "${GHCR_IMAGE}:sha-${SHORT_SHA}"
+            "-t" "${GHCR_IMAGE}:build-${RUN_NUMBER}"
+          )
+          docker buildx imagetools create "${TAGS[@]}" \
+            $(printf "${GHCR_IMAGE}@sha256:%s " *)
+
+      # ── DockerHub manifest (optional) ──
+      - name: Download DockerHub digests
+        if: steps.dockerhub-check.outputs.available == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          path: /tmp/digests-dockerhub
+          pattern: digests-dockerhub-*
+          merge-multiple: true
+
+      - name: Create and push DockerHub manifest
+        if: steps.dockerhub-check.outputs.available == 'true'
+        working-directory: /tmp/digests-dockerhub
+        env:
+          SHORT_SHA: ${{ steps.tags.outputs.short_sha }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          TAGS=(
+            "-t" "${DOCKERHUB_IMAGE}:v2.9-beta"
+            "-t" "${DOCKERHUB_IMAGE}:feat-v2.9"
+            "-t" "${DOCKERHUB_IMAGE}:sha-${SHORT_SHA}"
+            "-t" "${DOCKERHUB_IMAGE}:build-${RUN_NUMBER}"
+          )
+          docker buildx imagetools create "${TAGS[@]}" \
+            $(printf "${DOCKERHUB_IMAGE}@sha256:%s " *)
+
+  # ── Smoke verification (amd64 only) ───────────────────────────────
+  verify:
+    name: Verify /health
+    runs-on: ubuntu-latest
+    needs: merge
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull beta image
+        run: docker pull "${GHCR_IMAGE}:v2.9-beta"
+
+      - name: Start container
+        run: |
+          docker run -d \
+            --name beta-verify \
+            -p 3001:3001 \
+            -e PUID=1000 \
+            -e PGID=1000 \
+            "${GHCR_IMAGE}:v2.9-beta"
+
+      - name: Wait for /health and validate
+        run: |
+          echo "Polling /health on port 3001 (timeout: 90s)..."
+          elapsed=0
+          while [ "$elapsed" -lt 90 ]; do
+            response=$(curl -sf http://localhost:3001/health 2>/dev/null || echo "")
+            if [ -n "$response" ]; then
+              status=$(echo "$response" | jq -r '.status // empty')
+              version=$(echo "$response" | jq -r '.version // empty')
+              commit=$(echo "$response" | jq -r '.commit // empty')
+
+              if [ "$status" = "ok" ]; then
+                echo ""
+                echo "=== /health response ==="
+                echo "$response" | jq .
+
+                # Fail if commit is unknown/empty
+                if [ -z "$commit" ] || [ "$commit" = "unknown" ] || [ "$commit" = "null" ]; then
+                  echo "::error::commit is '${commit}' — COMMIT_SHA build arg not wired correctly"
+                  exit 1
+                fi
+
+                # Fail if version is empty
+                if [ -z "$version" ]; then
+                  echo "::error::version is empty — VERSION build arg not passed"
+                  exit 1
+                fi
+
+                echo ""
+                echo "=== Verification PASSED ==="
+                echo "version=${version}  commit=${commit}"
+                exit 0
+              fi
+            fi
+            echo "  [${elapsed}s] not ready..."
+            sleep 3
+            elapsed=$((elapsed + 3))
+          done
+
+          echo "::error::Health check did not pass within 90 seconds"
+          docker logs beta-verify 2>&1 || true
+          exit 1
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker logs beta-verify 2>&1
+
+      - name: Cleanup
+        if: always()
+        run: docker rm -f beta-verify 2>/dev/null || true

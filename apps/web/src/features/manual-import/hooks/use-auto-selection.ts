@@ -1,9 +1,9 @@
-import { useEffect } from "react";
 import type { ManualImportSubmissionFile } from "@arr/shared";
-import type { ManualImportCandidateUnion, ManualImportSelection } from "../types";
+import { useEffect } from "react";
 import { describeRejections } from "../helpers";
-import { getSelectionForCandidate } from "../store";
 import { buildSubmissionDefaults } from "../lib/submission-builder";
+import { getSelectionForCandidate } from "../store";
+import type { ManualImportCandidateUnion, ManualImportSelection } from "../types";
 
 /**
  * Hook that auto-selects a single available candidate on mount

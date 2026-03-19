@@ -1,33 +1,37 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import {
+	AlertCircle,
+	Check,
+	Clock,
+	Info,
+	Loader2,
 	Monitor,
+	RefreshCw,
+	Shield,
 	Smartphone,
 	Tablet,
-	RefreshCw,
-	Clock,
 	Wifi,
-	AlertCircle,
-	Shield,
-	Check,
 	X,
-	Loader2,
-	Info,
 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import {
+	PremiumEmptyState,
+	PremiumSection,
+	PremiumSkeleton,
+} from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
-import { PremiumSection, GlassmorphicCard, PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import {
 	type DeviceType,
-	type SessionInfo,
-	type SessionsResponse,
 	getSessions,
 	revokeSession,
+	type SessionInfo,
+	type SessionsResponse,
 } from "../../../lib/api-client/auth";
-import { cn } from "../../../lib/utils";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { cn } from "../../../lib/utils";
 
 /**
  * Device type icon component using lucide-react
@@ -214,7 +218,7 @@ export const SessionsSection = () => {
 				)}
 
 				{/* Session Count Summary */}
-				<GlassmorphicCard padding="md">
+				<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
 					<div className="flex items-center gap-4">
 						<div
 							className="flex h-14 w-14 items-center justify-center rounded-2xl shrink-0"
@@ -241,10 +245,10 @@ export const SessionsSection = () => {
 							</p>
 						</div>
 					</div>
-				</GlassmorphicCard>
+				</div>
 
 				{/* Session List */}
-				<GlassmorphicCard padding="lg">
+				<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
 					<div className="space-y-4">
 						<div className="flex items-center gap-3">
 							<div
@@ -279,7 +283,7 @@ export const SessionsSection = () => {
 													? "border-transparent"
 													: isExpired
 														? "border-transparent"
-														: "border-border/50 bg-card/30 hover:border-border/80"
+														: "border-border/50 bg-card/30 hover:border-border/80",
 											)}
 											style={{
 												animationDelay: `${index * 50}ms`,
@@ -378,7 +382,7 @@ export const SessionsSection = () => {
 													<p
 														className={cn(
 															"text-sm font-medium",
-															isExpired ? "text-destructive" : "text-muted-foreground"
+															isExpired ? "text-destructive" : "text-muted-foreground",
 														)}
 													>
 														{getTimeRemaining(session.expiresAt)}
@@ -419,10 +423,10 @@ export const SessionsSection = () => {
 							/>
 						)}
 					</div>
-				</GlassmorphicCard>
+				</div>
 
 				{/* Info Box */}
-				<GlassmorphicCard padding="md">
+				<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
 					<div className="flex gap-3">
 						<div
 							className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
@@ -442,7 +446,7 @@ export const SessionsSection = () => {
 							</p>
 						</div>
 					</div>
-				</GlassmorphicCard>
+				</div>
 			</div>
 		</PremiumSection>
 	);

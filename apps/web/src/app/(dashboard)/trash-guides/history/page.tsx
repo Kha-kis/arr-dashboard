@@ -1,10 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
-import { Calendar, Clock, CheckCircle2, XCircle, AlertCircle, ChevronRight, ChevronLeft } from "lucide-react";
+import {
+	AlertCircle,
+	Calendar,
+	CheckCircle2,
+	ChevronLeft,
+	ChevronRight,
+	Clock,
+	XCircle,
+} from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { Badge, Button } from "../../../../components/ui";
 import { useSyncHistory } from "../../../../hooks/api/useSync";
-import { Button, Badge } from "../../../../components/ui";
 
 const STATUS_ICONS = {
 	SUCCESS: CheckCircle2,
@@ -64,7 +72,9 @@ export default function SyncHistoryPage() {
 				<div className="text-center">
 					<AlertCircle className="mx-auto h-12 w-12 text-yellow-400" />
 					<h2 className="mt-4 text-xl font-semibold text-foreground">No Instance Selected</h2>
-					<p className="mt-2 text-muted-foreground">Please select an instance to view sync history</p>
+					<p className="mt-2 text-muted-foreground">
+						Please select an instance to view sync history
+					</p>
 				</div>
 			</div>
 		);
@@ -134,8 +144,11 @@ export default function SyncHistoryPage() {
 						</thead>
 						<tbody className="divide-y divide-border">
 							{data.syncs.map((sync) => {
-								const StatusIcon = STATUS_ICONS[sync.status as keyof typeof STATUS_ICONS] || AlertCircle;
-								const statusVariant = STATUS_BADGE_VARIANTS[sync.status as keyof typeof STATUS_BADGE_VARIANTS] || "default";
+								const StatusIcon =
+									STATUS_ICONS[sync.status as keyof typeof STATUS_ICONS] || AlertCircle;
+								const statusVariant =
+									STATUS_BADGE_VARIANTS[sync.status as keyof typeof STATUS_BADGE_VARIANTS] ||
+									"default";
 
 								return (
 									<tr

@@ -2,13 +2,12 @@
 
 import { Compass, ExternalLink } from "lucide-react";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { GlassmorphicCard } from "../../../components/layout";
 
 export const DiscoverEmptyState: React.FC = () => {
 	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
-		<GlassmorphicCard padding="lg" className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+		<div className="rounded-xl border border-border/30 bg-muted/10 p-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
 			<div className="flex flex-col items-center justify-center py-12 text-center space-y-6">
 				<div
 					className="flex h-16 w-16 items-center justify-center rounded-2xl"
@@ -25,9 +24,8 @@ export const DiscoverEmptyState: React.FC = () => {
 						Connect Seerr to Discover Content
 					</h2>
 					<p className="text-sm text-muted-foreground leading-relaxed">
-						Add a Jellyseerr or Overseerr instance in your settings to browse trending
-						movies and TV shows, see what&apos;s available in your library, and submit
-						requests.
+						Add a Jellyseerr or Overseerr instance in your settings to browse trending movies and TV
+						shows, see what&apos;s available in your library, and submit requests.
 					</p>
 				</div>
 
@@ -43,6 +41,6 @@ export const DiscoverEmptyState: React.FC = () => {
 					<ExternalLink className="h-4 w-4" />
 				</a>
 			</div>
-		</GlassmorphicCard>
+		</div>
 	);
 };

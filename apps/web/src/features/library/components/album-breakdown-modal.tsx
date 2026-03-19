@@ -1,26 +1,26 @@
 "use client";
 
-import { useState } from "react";
-import { useFocusTrap } from "../../../hooks/useFocusTrap";
-import type { LibraryItem, LibraryAlbum } from "@arr/shared";
+import type { LibraryAlbum, LibraryItem } from "@arr/shared";
 import {
+	AlertTriangle,
+	CheckCircle2,
 	ChevronDown,
 	ChevronRight,
 	Disc3,
+	HardDrive,
 	Loader2,
 	Music,
 	Search,
 	X,
-	AlertTriangle,
-	CheckCircle2,
-	HardDrive,
 } from "lucide-react";
+import { useState } from "react";
 import { Button } from "../../../components/ui";
-import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useAlbumsQuery } from "../../../hooks/api/useLibrary";
-import { AlbumTrackList } from "./album-track-list";
+import { useFocusTrap } from "../../../hooks/useFocusTrap";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { formatBytes } from "../lib/library-utils";
+import { AlbumTrackList } from "./album-track-list";
 
 // ============================================================================
 // Types
@@ -143,7 +143,10 @@ export const AlbumBreakdownModal = ({
 	};
 
 	// Compute overall stats from fetched albums
-	const totalTracks = albums.reduce((sum, a) => sum + (a.statistics?.totalTrackCount ?? a.statistics?.trackCount ?? 0), 0);
+	const totalTracks = albums.reduce(
+		(sum, a) => sum + (a.statistics?.totalTrackCount ?? a.statistics?.trackCount ?? 0),
+		0,
+	);
 	const downloadedTracks = albums.reduce((sum, a) => sum + (a.statistics?.trackFileCount ?? 0), 0);
 	const totalMissing = Math.max(totalTracks - downloadedTracks, 0);
 	const overallProgress = totalTracks > 0 ? Math.round((downloadedTracks / totalTracks) * 100) : 0;
@@ -196,7 +199,9 @@ export const AlbumBreakdownModal = ({
 							<Music className="h-6 w-6" style={{ color: LIDARR_COLOR }} />
 						</div>
 						<div className="flex-1 min-w-0">
-							<h2 id="album-breakdown-title" className="text-xl font-bold text-foreground">{item.title}</h2>
+							<h2 id="album-breakdown-title" className="text-xl font-bold text-foreground">
+								{item.title}
+							</h2>
 							<div className="flex flex-wrap items-center gap-3 mt-1 text-sm text-muted-foreground">
 								<span>{item.instanceName}</span>
 								<span>•</span>
@@ -204,8 +209,8 @@ export const AlbumBreakdownModal = ({
 									<Disc3 className="h-3.5 w-3.5" />
 									{isLoading ? "..." : `${albums.length} album${albums.length !== 1 ? "s" : ""}`}
 								</span>
-								{!isLoading && (
-									totalMissing > 0 ? (
+								{!isLoading &&
+									(totalMissing > 0 ? (
 										<AlbumBadge tone="warning">
 											<AlertTriangle className="h-3 w-3" />
 											{totalMissing} missing track{totalMissing !== 1 ? "s" : ""}
@@ -215,8 +220,7 @@ export const AlbumBreakdownModal = ({
 											<CheckCircle2 className="h-3 w-3" />
 											Complete
 										</AlbumBadge>
-									) : null
-								)}
+									) : null)}
 							</div>
 
 							{/* Overall Progress */}
@@ -263,7 +267,10 @@ export const AlbumBreakdownModal = ({
 								border: `1px solid ${SEMANTIC_COLORS.error.border}`,
 							}}
 						>
-							<AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" style={{ color: SEMANTIC_COLORS.error.from }} />
+							<AlertTriangle
+								className="h-4 w-4 shrink-0 mt-0.5"
+								style={{ color: SEMANTIC_COLORS.error.from }}
+							/>
 							<p className="text-xs" style={{ color: SEMANTIC_COLORS.error.text }}>
 								Failed to load albums. Please try closing and reopening the modal.
 							</p>
@@ -310,7 +317,14 @@ interface AlbumRowProps {
 	onToggleAlbum: (albumId: number, nextMonitored: boolean) => void;
 	onSearchAlbum: (albumIds: number[]) => void;
 	pendingActionKey: string | null;
-	themeGradient: { from: string; to: string; glow: string; fromLight: string; fromMedium: string; fromMuted: string };
+	themeGradient: {
+		from: string;
+		to: string;
+		glow: string;
+		fromLight: string;
+		fromMedium: string;
+		fromMuted: string;
+	};
 }
 
 const AlbumRow = ({
@@ -327,7 +341,9 @@ const AlbumRow = ({
 	const trackTotal = album.statistics?.totalTrackCount ?? album.statistics?.trackCount ?? 0;
 	const trackDownloaded = album.statistics?.trackFileCount ?? 0;
 	const trackMissing = album.monitored !== false ? Math.max(trackTotal - trackDownloaded, 0) : 0;
-	const percentComplete = album.statistics?.percentOfTracks ?? (trackTotal > 0 ? Math.round((trackDownloaded / trackTotal) * 100) : 0);
+	const percentComplete =
+		album.statistics?.percentOfTracks ??
+		(trackTotal > 0 ? Math.round((trackDownloaded / trackTotal) * 100) : 0);
 
 	const albumKey = `${item.instanceId}:${item.id}:${album.id}`;
 	const monitorKey = `monitor:${albumKey}`;
@@ -494,8 +510,15 @@ const AlbumRow = ({
 										border: `1px solid ${SEMANTIC_COLORS.success.border}`,
 									}}
 								>
-									<p className="text-xs" style={{ color: SEMANTIC_COLORS.success.text }}>Downloaded</p>
-									<p className="mt-1 text-lg font-semibold" style={{ color: SEMANTIC_COLORS.success.from }}>{trackDownloaded}</p>
+									<p className="text-xs" style={{ color: SEMANTIC_COLORS.success.text }}>
+										Downloaded
+									</p>
+									<p
+										className="mt-1 text-lg font-semibold"
+										style={{ color: SEMANTIC_COLORS.success.from }}
+									>
+										{trackDownloaded}
+									</p>
 								</div>
 								{trackMissing > 0 && (
 									<div
@@ -505,8 +528,15 @@ const AlbumRow = ({
 											border: `1px solid ${SEMANTIC_COLORS.error.border}`,
 										}}
 									>
-										<p className="text-xs" style={{ color: SEMANTIC_COLORS.error.text }}>Missing</p>
-										<p className="mt-1 text-lg font-semibold" style={{ color: SEMANTIC_COLORS.error.from }}>{trackMissing}</p>
+										<p className="text-xs" style={{ color: SEMANTIC_COLORS.error.text }}>
+											Missing
+										</p>
+										<p
+											className="mt-1 text-lg font-semibold"
+											style={{ color: SEMANTIC_COLORS.error.from }}
+										>
+											{trackMissing}
+										</p>
 									</div>
 								)}
 								{sizeLabel && (

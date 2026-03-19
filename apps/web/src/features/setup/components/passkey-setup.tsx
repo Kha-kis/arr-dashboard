@@ -1,15 +1,15 @@
 "use client";
 
-import { useState } from "react";
-import { startRegistration } from "@simplewebauthn/browser";
-import { useRouter } from "next/navigation";
-import { KeyRound, Loader2 } from "lucide-react";
-import { apiRequest } from "../../../lib/api-client/base";
 import type { CurrentUser } from "@arr/shared";
+import { startRegistration } from "@simplewebauthn/browser";
+import { KeyRound, Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { Alert, AlertDescription } from "../../../components/ui";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
-import { Alert, AlertDescription } from "../../../components/ui";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { apiRequest } from "../../../lib/api-client/base";
 
 interface RegisterResponse {
 	user: CurrentUser;
@@ -142,7 +142,9 @@ export const PasskeySetup = () => {
 				/>
 			</div>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-muted-foreground font-medium">Password (Fallback)</label>
+				<label className="text-xs uppercase text-muted-foreground font-medium">
+					Password (Fallback)
+				</label>
 				<Input
 					type="password"
 					value={formState.password}
@@ -153,11 +155,14 @@ export const PasskeySetup = () => {
 					className="rounded-xl"
 				/>
 				<p className="text-xs text-muted-foreground">
-					Required as a backup login method. Must include uppercase, lowercase, number, and special character.
+					Required as a backup login method. Must include uppercase, lowercase, number, and special
+					character.
 				</p>
 			</div>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-muted-foreground font-medium">Confirm Password</label>
+				<label className="text-xs uppercase text-muted-foreground font-medium">
+					Confirm Password
+				</label>
 				<Input
 					type="password"
 					value={formState.confirmPassword}
@@ -168,7 +173,9 @@ export const PasskeySetup = () => {
 				/>
 			</div>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-muted-foreground font-medium">Passkey Name (Optional)</label>
+				<label className="text-xs uppercase text-muted-foreground font-medium">
+					Passkey Name (Optional)
+				</label>
 				<Input
 					value={formState.passkeyName}
 					onChange={(e) => setFormState((prev) => ({ ...prev, passkeyName: e.target.value }))}
@@ -207,8 +214,8 @@ export const PasskeySetup = () => {
 				)}
 			</Button>
 			<p className="text-xs text-muted-foreground text-center">
-				You&apos;ll be prompted to register a passkey using your device&apos;s biometrics or security key.
-				The password serves as a backup login method if passkey authentication fails.
+				You&apos;ll be prompted to register a passkey using your device&apos;s biometrics or
+				security key. The password serves as a backup login method if passkey authentication fails.
 			</p>
 		</form>
 	);

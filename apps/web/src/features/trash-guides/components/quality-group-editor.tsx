@@ -1,28 +1,28 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
 import type {
-	TemplateQualityEntry,
-	TemplateQualityItem,
-	TemplateQualityGroup,
 	CustomQualityConfig,
+	TemplateQualityEntry,
+	TemplateQualityGroup,
+	TemplateQualityItem,
 } from "@arr/shared";
-import { Button } from "../../../components/ui";
 import {
-	GripVertical,
-	Trash2,
+	ArrowUp,
+	Check,
 	ChevronDown,
 	ChevronRight,
-	Check,
-	Target,
-	Layers,
-	Ungroup,
-	FolderPlus,
-	HelpCircle,
-	ArrowUp,
-	Info,
 	Edit3,
+	FolderPlus,
+	GripVertical,
+	HelpCircle,
+	Info,
+	Layers,
+	Target,
+	Trash2,
+	Ungroup,
 } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { Button } from "../../../components/ui";
 import { QualityGroupModal } from "./quality-group-modal";
 
 interface QualityGroupEditorProps {
@@ -79,13 +79,16 @@ export const QualityGroupEditor = ({
 	}, [config.items]);
 
 	// Get priority number for an item (1 = highest priority)
-	const getPriority = useCallback((id: string) => {
-		const index = config.items.findIndex(
-			(e) => (e.type === "quality" ? e.item.id : e.group.id) === id
-		);
-		// Higher index = higher priority, so invert for display
-		return config.items.length - index;
-	}, [config.items]);
+	const getPriority = useCallback(
+		(id: string) => {
+			const index = config.items.findIndex(
+				(e) => (e.type === "quality" ? e.item.id : e.group.id) === id,
+			);
+			// Higher index = higher priority, so invert for display
+			return config.items.length - index;
+		},
+		[config.items],
+	);
 
 	// Toggle expanded state for a group
 	const toggleExpanded = (id: string) => {
@@ -123,7 +126,7 @@ export const QualityGroupEditor = ({
 				customizedAt: new Date().toISOString(),
 			});
 		},
-		[config, onChange]
+		[config, onChange],
 	);
 
 	// Set cutoff quality/group
@@ -135,14 +138,14 @@ export const QualityGroupEditor = ({
 				customizedAt: new Date().toISOString(),
 			});
 		},
-		[config, onChange]
+		[config, onChange],
 	);
 
 	// Move item up in priority (which means moving DOWN in the internal array)
 	const moveUpPriority = useCallback(
 		(id: string) => {
 			const index = config.items.findIndex(
-				(e) => (e.type === "quality" ? e.item.id : e.group.id) === id
+				(e) => (e.type === "quality" ? e.item.id : e.group.id) === id,
 			);
 			if (index === -1 || index >= config.items.length - 1) return;
 
@@ -157,14 +160,14 @@ export const QualityGroupEditor = ({
 				customizedAt: new Date().toISOString(),
 			});
 		},
-		[config, onChange]
+		[config, onChange],
 	);
 
 	// Move item down in priority (which means moving UP in the internal array)
 	const moveDownPriority = useCallback(
 		(id: string) => {
 			const index = config.items.findIndex(
-				(e) => (e.type === "quality" ? e.item.id : e.group.id) === id
+				(e) => (e.type === "quality" ? e.item.id : e.group.id) === id,
 			);
 			if (index <= 0) return;
 
@@ -179,7 +182,7 @@ export const QualityGroupEditor = ({
 				customizedAt: new Date().toISOString(),
 			});
 		},
-		[config, onChange]
+		[config, onChange],
 	);
 
 	// Open group creation modal
@@ -191,125 +194,125 @@ export const QualityGroupEditor = ({
 	}, []);
 
 	// Open group edit modal
-	const openEditGroupModal = useCallback((groupId: string) => {
-		const groupEntry = config.items.find(
-			(e) => e.type === "group" && e.group.id === groupId
-		);
-		if (!groupEntry || groupEntry.type !== "group") return;
+	const openEditGroupModal = useCallback(
+		(groupId: string) => {
+			const groupEntry = config.items.find((e) => e.type === "group" && e.group.id === groupId);
+			if (!groupEntry || groupEntry.type !== "group") return;
 
-		const group = groupEntry.group;
-		// Pre-select the qualities that are in this group (by name matching)
-		const selectedIds = new Set<string>();
-		for (const q of ungroupedQualities) {
-			if (group.qualities.some((gq) => gq.name === q.name)) {
-				selectedIds.add(q.id);
+			const group = groupEntry.group;
+			// Pre-select the qualities that are in this group (by name matching)
+			const selectedIds = new Set<string>();
+			for (const q of ungroupedQualities) {
+				if (group.qualities.some((gq) => gq.name === q.name)) {
+					selectedIds.add(q.id);
+				}
 			}
-		}
 
-		setEditingGroupId(groupId);
-		setEditingGroupName(group.name);
-		setEditingGroupQualityIds(selectedIds);
-		setShowGroupModal(true);
-	}, [config.items, ungroupedQualities]);
+			setEditingGroupId(groupId);
+			setEditingGroupName(group.name);
+			setEditingGroupQualityIds(selectedIds);
+			setShowGroupModal(true);
+		},
+		[config.items, ungroupedQualities],
+	);
 
 	// Create/update group from modal save
-	const handleGroupSave = useCallback((name: string, selectedIds: Set<string>) => {
-		if (selectedIds.size < 2 || !name) return;
+	const handleGroupSave = useCallback(
+		(name: string, selectedIds: Set<string>) => {
+			if (selectedIds.size < 2 || !name) return;
 
-		// Get selected qualities
-		const selectedQualities: TemplateQualityItem[] = [];
-		const remainingItems: TemplateQualityEntry[] = [];
+			// Get selected qualities
+			const selectedQualities: TemplateQualityItem[] = [];
+			const remainingItems: TemplateQualityEntry[] = [];
 
-		for (const entry of config.items) {
-			if (entry.type === "quality" && selectedIds.has(entry.item.id)) {
-				selectedQualities.push(entry.item);
-			} else if (entry.type === "group" && entry.group.id === editingGroupId) {
-				// Skip the group being edited (we'll replace it)
-				continue;
+			for (const entry of config.items) {
+				if (entry.type === "quality" && selectedIds.has(entry.item.id)) {
+					selectedQualities.push(entry.item);
+				} else if (entry.type === "group" && entry.group.id === editingGroupId) {
+				} else {
+					remainingItems.push(entry);
+				}
+			}
+
+			if (selectedQualities.length < 2) {
+				return;
+			}
+
+			// Create new group
+			const newGroup: TemplateQualityGroup = {
+				id: editingGroupId || generateId(),
+				name,
+				allowed: selectedQualities.some((q) => q.allowed),
+				qualities: selectedQualities.map((q) => ({
+					name: q.name,
+					source: q.source,
+					resolution: q.resolution,
+				})),
+			};
+
+			// Find position: if editing, use old position; otherwise use first selected item's position
+			let insertIndex: number;
+			if (editingGroupId) {
+				const oldIndex = config.items.findIndex(
+					(e) => e.type === "group" && e.group.id === editingGroupId,
+				);
+				insertIndex = oldIndex >= 0 ? oldIndex : remainingItems.length;
 			} else {
-				remainingItems.push(entry);
+				const firstSelectedIndex = config.items.findIndex(
+					(e) => e.type === "quality" && selectedIds.has(e.item.id),
+				);
+				insertIndex = firstSelectedIndex >= 0 ? firstSelectedIndex : remainingItems.length;
 			}
-		}
 
-		if (selectedQualities.length < 2) {
-			return;
-		}
-
-		// Create new group
-		const newGroup: TemplateQualityGroup = {
-			id: editingGroupId || generateId(),
-			name,
-			allowed: selectedQualities.some((q) => q.allowed),
-			qualities: selectedQualities.map((q) => ({
-				name: q.name,
-				source: q.source,
-				resolution: q.resolution,
-			})),
-		};
-
-		// Find position: if editing, use old position; otherwise use first selected item's position
-		let insertIndex: number;
-		if (editingGroupId) {
-			const oldIndex = config.items.findIndex(
-				(e) => e.type === "group" && e.group.id === editingGroupId
-			);
-			insertIndex = oldIndex >= 0 ? oldIndex : remainingItems.length;
-		} else {
-			const firstSelectedIndex = config.items.findIndex(
-				(e) => e.type === "quality" && selectedIds.has(e.item.id)
-			);
-			insertIndex = firstSelectedIndex >= 0 ? firstSelectedIndex : remainingItems.length;
-		}
-
-		// Adjust insertIndex for remaining items
-		let adjustedIndex = 0;
-		for (let i = 0; i < insertIndex && adjustedIndex < remainingItems.length; i++) {
-			const original = config.items[i];
-			if (original) {
-				const inRemaining = remainingItems.some((r) => {
-					if (r.type === "quality" && original.type === "quality") {
-						return r.item.id === original.item.id;
-					}
-					if (r.type === "group" && original.type === "group") {
-						return r.group.id === original.group.id;
-					}
-					return false;
-				});
-				if (inRemaining) adjustedIndex++;
+			// Adjust insertIndex for remaining items
+			let adjustedIndex = 0;
+			for (let i = 0; i < insertIndex && adjustedIndex < remainingItems.length; i++) {
+				const original = config.items[i];
+				if (original) {
+					const inRemaining = remainingItems.some((r) => {
+						if (r.type === "quality" && original.type === "quality") {
+							return r.item.id === original.item.id;
+						}
+						if (r.type === "group" && original.type === "group") {
+							return r.group.id === original.group.id;
+						}
+						return false;
+					});
+					if (inRemaining) adjustedIndex++;
+				}
 			}
-		}
 
-		// Build new items array
-		const newItems: TemplateQualityEntry[] = [
-			...remainingItems.slice(0, adjustedIndex),
-			{ type: "group", group: newGroup },
-			...remainingItems.slice(adjustedIndex),
-		];
+			// Build new items array
+			const newItems: TemplateQualityEntry[] = [
+				...remainingItems.slice(0, adjustedIndex),
+				{ type: "group", group: newGroup },
+				...remainingItems.slice(adjustedIndex),
+			];
 
-		// Update cutoff if needed
-		let newCutoffId = config.cutoffId;
-		if (editingGroupId && config.cutoffId === editingGroupId) {
-			newCutoffId = newGroup.id;
-		}
+			// Update cutoff if needed
+			let newCutoffId = config.cutoffId;
+			if (editingGroupId && config.cutoffId === editingGroupId) {
+				newCutoffId = newGroup.id;
+			}
 
-		onChange({
-			...config,
-			items: newItems,
-			cutoffId: newCutoffId,
-			customizedAt: new Date().toISOString(),
-		});
+			onChange({
+				...config,
+				items: newItems,
+				cutoffId: newCutoffId,
+				customizedAt: new Date().toISOString(),
+			});
 
-		// Close modal
-		setShowGroupModal(false);
-		setEditingGroupId(null);
-	}, [config, onChange, editingGroupId]);
+			// Close modal
+			setShowGroupModal(false);
+			setEditingGroupId(null);
+		},
+		[config, onChange, editingGroupId],
+	);
 
 	// Ungroup a quality group back to individual qualities
 	const ungroupQualities = useCallback(
 		(groupId: string) => {
-			const groupEntry = config.items.find(
-				(e) => e.type === "group" && e.group.id === groupId
-			);
+			const groupEntry = config.items.find((e) => e.type === "group" && e.group.id === groupId);
 			if (!groupEntry || groupEntry.type !== "group") return;
 
 			const group = groupEntry.group;
@@ -350,14 +353,14 @@ export const QualityGroupEditor = ({
 				customizedAt: new Date().toISOString(),
 			});
 		},
-		[config, onChange]
+		[config, onChange],
 	);
 
 	// Delete a quality or group
 	const deleteItem = useCallback(
 		(id: string) => {
 			const newItems = config.items.filter(
-				(e) => (e.type === "quality" ? e.item.id : e.group.id) !== id
+				(e) => (e.type === "quality" ? e.item.id : e.group.id) !== id,
 			);
 
 			let newCutoffId = config.cutoffId;
@@ -372,7 +375,7 @@ export const QualityGroupEditor = ({
 				customizedAt: new Date().toISOString(),
 			});
 		},
-		[config, onChange]
+		[config, onChange],
 	);
 
 	// Handle drag start
@@ -386,10 +389,10 @@ export const QualityGroupEditor = ({
 		if (!draggedItemId || draggedItemId === targetId) return;
 
 		const draggedIndex = config.items.findIndex(
-			(e) => (e.type === "quality" ? e.item.id : e.group.id) === draggedItemId
+			(e) => (e.type === "quality" ? e.item.id : e.group.id) === draggedItemId,
 		);
 		const targetIndex = config.items.findIndex(
-			(e) => (e.type === "quality" ? e.item.id : e.group.id) === targetId
+			(e) => (e.type === "quality" ? e.item.id : e.group.id) === targetId,
 		);
 
 		if (draggedIndex === -1 || targetIndex === -1) return;
@@ -420,7 +423,7 @@ export const QualityGroupEditor = ({
 	const cutoffName = useMemo(() => {
 		if (!config.cutoffId) return null;
 		const item = config.items.find(
-			(e) => (e.type === "quality" ? e.item.id : e.group.id) === config.cutoffId
+			(e) => (e.type === "quality" ? e.item.id : e.group.id) === config.cutoffId,
 		);
 		if (!item) return null;
 		return item.type === "quality" ? item.item.name : item.group.name;
@@ -445,14 +448,12 @@ export const QualityGroupEditor = ({
 					isDragging
 						? "border-primary bg-primary/10 opacity-50"
 						: isCutoff
-						? "border-primary bg-primary/5 ring-1 ring-primary/30"
-						: "border-border bg-card/50 hover:border-border/80"
+							? "border-primary bg-primary/5 ring-1 ring-primary/30"
+							: "border-border bg-card/50 hover:border-border/80"
 				}`}
 			>
 				{/* Priority number */}
-				<div className="w-6 text-center text-xs font-medium text-muted-foreground">
-					#{priority}
-				</div>
+				<div className="w-6 text-center text-xs font-medium text-muted-foreground">#{priority}</div>
 
 				{/* Drag handle */}
 				<div className="cursor-grab text-muted-foreground hover:text-foreground">
@@ -470,7 +471,9 @@ export const QualityGroupEditor = ({
 
 				{/* Quality name */}
 				<div className="flex-1">
-					<span className={`text-sm font-medium ${item.allowed ? "text-foreground" : "text-muted-foreground line-through"}`}>
+					<span
+						className={`text-sm font-medium ${item.allowed ? "text-foreground" : "text-muted-foreground line-through"}`}
+					>
 						{item.name}
 					</span>
 					{item.resolution && (
@@ -557,8 +560,8 @@ export const QualityGroupEditor = ({
 					isDragging
 						? "border-primary bg-primary/10 opacity-50"
 						: isCutoff
-						? "border-primary bg-primary/5 ring-1 ring-primary/30"
-						: "border-border bg-card/50"
+							? "border-primary bg-primary/5 ring-1 ring-primary/30"
+							: "border-border bg-card/50"
 				}`}
 			>
 				{/* Group header */}
@@ -600,7 +603,9 @@ export const QualityGroupEditor = ({
 					{/* Group icon and name */}
 					<Layers className="h-4 w-4 text-primary" />
 					<div className="flex-1">
-						<span className={`text-sm font-medium ${group.allowed ? "text-foreground" : "text-muted-foreground line-through"}`}>
+						<span
+							className={`text-sm font-medium ${group.allowed ? "text-foreground" : "text-muted-foreground line-through"}`}
+						>
 							{group.name}
 						</span>
 						<span className="ml-2 text-xs text-muted-foreground">
@@ -698,9 +703,7 @@ export const QualityGroupEditor = ({
 								>
 									<Check className="h-3 w-3 text-green-500" />
 									<span>{quality.name}</span>
-									{quality.resolution && (
-										<span className="text-xs">({quality.resolution}p)</span>
-									)}
+									{quality.resolution && <span className="text-xs">({quality.resolution}p)</span>}
 								</div>
 							))}
 						</div>
@@ -732,10 +735,26 @@ export const QualityGroupEditor = ({
 					<div className="flex items-start gap-2">
 						<Info className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
 						<div className="space-y-2 text-sm text-muted-foreground">
-							<p><strong className="text-foreground">Priority Order:</strong> Items at the top have higher priority. Radarr/Sonarr will prefer higher priority qualities when downloading.</p>
-							<p><strong className="text-foreground">Cutoff:</strong> The quality level where upgrades stop. Once you have a file at cutoff quality or higher, no more upgrades will be searched.</p>
-							<p><strong className="text-foreground">Groups:</strong> Qualities in the same group are treated as equivalent. Use groups for qualities you consider interchangeable (e.g., &quot;WEB-DL 1080p&quot; and &quot;WEBRip 1080p&quot;). Click &quot;Create Group&quot; to make one.</p>
-							<p><strong className="text-foreground">Scope:</strong> This configuration is saved with the template and applied to all instances that use this template.</p>
+							<p>
+								<strong className="text-foreground">Priority Order:</strong> Items at the top have
+								higher priority. Radarr/Sonarr will prefer higher priority qualities when
+								downloading.
+							</p>
+							<p>
+								<strong className="text-foreground">Cutoff:</strong> The quality level where
+								upgrades stop. Once you have a file at cutoff quality or higher, no more upgrades
+								will be searched.
+							</p>
+							<p>
+								<strong className="text-foreground">Groups:</strong> Qualities in the same group are
+								treated as equivalent. Use groups for qualities you consider interchangeable (e.g.,
+								&quot;WEB-DL 1080p&quot; and &quot;WEBRip 1080p&quot;). Click &quot;Create
+								Group&quot; to make one.
+							</p>
+							<p>
+								<strong className="text-foreground">Scope:</strong> This configuration is saved with
+								the template and applied to all instances that use this template.
+							</p>
 						</div>
 					</div>
 				</div>
@@ -763,12 +782,12 @@ export const QualityGroupEditor = ({
 							{cutoffName ? (
 								<span className="text-sm text-primary">{cutoffName}</span>
 							) : (
-								<span className="text-sm text-muted-foreground italic">Not set - click target icon on any quality</span>
+								<span className="text-sm text-muted-foreground italic">
+									Not set - click target icon on any quality
+								</span>
 							)}
 						</div>
-						<div className="text-xs text-muted-foreground">
-							Upgrades stop at this quality
-						</div>
+						<div className="text-xs text-muted-foreground">Upgrades stop at this quality</div>
 					</div>
 
 					{/* Toolbar */}
@@ -784,7 +803,11 @@ export const QualityGroupEditor = ({
 								onClick={openGroupModal}
 								disabled={ungroupedQualities.length < 2}
 								className="gap-1"
-								title={ungroupedQualities.length < 2 ? "Need at least 2 ungrouped qualities" : "Create a quality group"}
+								title={
+									ungroupedQualities.length < 2
+										? "Need at least 2 ungrouped qualities"
+										: "Create a quality group"
+								}
 							>
 								<FolderPlus className="h-4 w-4" />
 								Create Group
@@ -806,7 +829,7 @@ export const QualityGroupEditor = ({
 						{displayItems.map((entry, index) =>
 							entry.type === "quality"
 								? renderQualityItem(entry.item, index)
-								: renderQualityGroup(entry.group, index)
+								: renderQualityGroup(entry.group, index),
 						)}
 					</div>
 

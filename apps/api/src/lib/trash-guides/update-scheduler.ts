@@ -6,20 +6,37 @@
  */
 
 import { createHash } from "node:crypto";
-import type { SonarrClient, RadarrClient } from "arr-sdk";
-import type { TrashQualitySize } from "@arr/shared";
+import {
+	TRASH_CONFIG_TYPES,
+	type NamingSelectedPresets,
+	type TrashNamingData,
+	type TrashQualitySize,
+	type TrashRepoConfig,
+} from "@arr/shared";
+import { z } from "zod";
+import { trashQualitySizeSchema } from "./github-schemas.js";
+import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { PrismaClient } from "../../lib/prisma.js";
 import type { ArrClientFactory } from "../arr/client-factory.js";
+import { getErrorMessage } from "../utils/error-message.js";
+import { createCacheManager } from "./cache-manager.js";
+import { createTrashFetcher } from "./github-fetcher.js";
+import { computeNamingHash, resolvePayload } from "./naming-deployer.js";
+import { applyQualitySizeToDefinitions } from "./quality-size-matcher.js";
 import type {
 	ScoreConflict,
 	SyncResult,
 	TemplateUpdateInfo,
 	TemplateUpdater,
 } from "./template-updater.js";
-import { applyQualitySizeToDefinitions } from "./quality-size-matcher.js";
-import type { VersionTracker } from "./version-tracker.js";
-import { createCacheManager } from "./cache-manager.js";
-import { getErrorMessage } from "../utils/error-message.js";
+import { createTemplateUpdater } from "./template-updater.js";
+import { createVersionTracker, type VersionTracker } from "./version-tracker.js";
+
+/**
+ * Function that resolves the current repo config from the database.
+ * Called on each scheduler tick so config changes take effect without restart.
+ */
+export type RepoConfigResolver = () => Promise<TrashRepoConfig>;
 
 // ============================================================================
 // Types
@@ -48,6 +65,8 @@ export interface SchedulerStats {
 		cachesFailed: number;
 		qualitySizeAutoSynced: number;
 		qualitySizeUpdatesPending: number;
+		namingAutoSynced: number;
+		namingUpdatesPending: number;
 		errors: string[];
 	};
 }
@@ -74,6 +93,14 @@ export class UpdateScheduler {
 	private stats: SchedulerStats = { isRunning: false };
 	private isCheckInProgress = false;
 
+	// Lazy config resolution: rebuild repo-dependent services when config changes
+	private repoConfigResolver?: RepoConfigResolver;
+	private cachedRepoConfigKey?: string;
+	private deploymentExecutor?: import("./deployment-executor.js").DeploymentExecutorService;
+	private notifyFn?: (
+		payload: import("../notifications/types.js").NotificationPayload,
+	) => Promise<void>;
+
 	constructor(
 		config: SchedulerConfig,
 		templateUpdater: TemplateUpdater,
@@ -81,6 +108,13 @@ export class UpdateScheduler {
 		prisma: PrismaClient,
 		logger: Logger,
 		arrClientFactory?: ArrClientFactory,
+		options?: {
+			repoConfigResolver?: RepoConfigResolver;
+			deploymentExecutor?: import("./deployment-executor.js").DeploymentExecutorService;
+			notifyFn?: (
+				payload: import("../notifications/types.js").NotificationPayload,
+			) => Promise<void>;
+		},
 	) {
 		this.config = {
 			enabled: config.enabled,
@@ -92,6 +126,41 @@ export class UpdateScheduler {
 		this.prisma = prisma;
 		this.logger = logger;
 		this.arrClientFactory = arrClientFactory;
+		this.repoConfigResolver = options?.repoConfigResolver;
+		this.deploymentExecutor = options?.deploymentExecutor;
+		this.notifyFn = options?.notifyFn;
+	}
+
+	/**
+	 * Resolve the current repo config and rebuild services if it changed.
+	 * Called at the start of each tick so settings changes take effect without restart.
+	 */
+	private async refreshRepoConfigIfNeeded(): Promise<void> {
+		if (!this.repoConfigResolver) return;
+
+		const repoConfig = await this.repoConfigResolver();
+		const configKey = JSON.stringify(repoConfig);
+
+		if (configKey === this.cachedRepoConfigKey) return;
+
+		this.logger.info(
+			{ repoOwner: repoConfig.owner, repoName: repoConfig.name, repoBranch: repoConfig.branch },
+			"Repository configuration changed, rebuilding services",
+		);
+
+		const cacheManager = createCacheManager(this.prisma);
+		this.versionTracker = createVersionTracker(repoConfig);
+		// biome-ignore lint/suspicious/noExplicitAny: Logger interface is structurally compatible but nominally different
+		const githubFetcher = createTrashFetcher({ repoConfig, logger: this.logger as any });
+		this.templateUpdater = createTemplateUpdater(
+			this.prisma,
+			this.versionTracker,
+			cacheManager,
+			githubFetcher,
+			this.deploymentExecutor,
+		);
+
+		this.cachedRepoConfigKey = configKey;
 	}
 
 	/**
@@ -114,14 +183,20 @@ export class UpdateScheduler {
 
 		// Run immediately on start
 		this.checkForUpdates().catch((error) => {
-			this.logger.error({ err: error instanceof Error ? error : new Error(String(error)) }, "Initial update check failed");
+			this.logger.error(
+				{ err: error instanceof Error ? error : new Error(String(error)) },
+				"Initial update check failed",
+			);
 		});
 
 		// Schedule periodic checks
 		const intervalMs = this.config.intervalHours * 60 * 60 * 1000;
 		this.intervalId = setInterval(() => {
 			this.checkForUpdates().catch((error) => {
-				this.logger.error({ err: error instanceof Error ? error : new Error(String(error)) }, "Scheduled update check failed");
+				this.logger.error(
+					{ err: error instanceof Error ? error : new Error(String(error)) },
+					"Scheduled update check failed",
+				);
 			});
 		}, intervalMs);
 
@@ -173,6 +248,10 @@ export class UpdateScheduler {
 
 		this.isCheckInProgress = true;
 		const startTime = Date.now();
+
+		// Re-read repo config and rebuild services if the user changed settings
+		await this.refreshRepoConfigIfNeeded();
+
 		this.logger.info("Checking for TRaSH Guides updates...");
 
 		const errors: string[] = [];
@@ -182,6 +261,8 @@ export class UpdateScheduler {
 		let templatesWithScoreConflicts = 0;
 		let qualitySizeAutoSynced = 0;
 		let qualitySizeUpdatesPending = 0;
+		let namingAutoSynced = 0;
+		let namingUpdatesPending = 0;
 
 		// Count templates by sync strategy (unique templates with at least one mapping of each type)
 		const [templatesWithAutoStrategy, templatesWithNotifyStrategy] = await Promise.all([
@@ -245,6 +326,14 @@ export class UpdateScheduler {
 			qualitySizeUpdatesPending = qsResult.updatesPending;
 			if (qsResult.errors.length > 0) {
 				errors.push(...qsResult.errors);
+			}
+
+			// Process naming auto-sync after caches are refreshed
+			const namingResult = await this.processNamingSync();
+			namingAutoSynced = namingResult.autoSynced;
+			namingUpdatesPending = namingResult.updatesPending;
+			if (namingResult.errors.length > 0) {
+				errors.push(...namingResult.errors);
 			}
 
 			// Get all distinct user IDs with templates to process updates per-user
@@ -325,6 +414,8 @@ export class UpdateScheduler {
 					cachesFailed: totalCacheFailed,
 					qualitySizeAutoSynced,
 					qualitySizeUpdatesPending,
+					namingAutoSynced,
+					namingUpdatesPending,
 					errors: [],
 				};
 				// Calculate next check time
@@ -355,6 +446,8 @@ export class UpdateScheduler {
 				cachesFailed: totalCacheFailed,
 				qualitySizeAutoSynced,
 				qualitySizeUpdatesPending,
+				namingAutoSynced,
+				namingUpdatesPending,
 				errors,
 			};
 
@@ -365,6 +458,23 @@ export class UpdateScheduler {
 			this.logger.info(
 				`Update check completed in ${duration}ms. Next check at ${this.stats.nextCheckAt.toISOString()}`,
 			);
+
+			// Notify about auto-sync results
+			if (templatesAutoSynced > 0) {
+				this.notifyFn?.({
+					eventType: "TRASH_PROFILE_UPDATED",
+					title: `TRaSH Guides: ${templatesAutoSynced} template(s) auto-synced`,
+					body: `${templatesAutoSynced} synced, ${templatesNeedingAttention} need attention, ${qualitySizeAutoSynced} quality sizes updated`,
+					url: "/trash-guides",
+					metadata: {
+						templatesAutoSynced,
+						templatesNeedingAttention,
+						qualitySizeAutoSynced,
+					},
+				}).catch((err) => {
+					this.logger.debug({ err }, "TRaSH sync notification dispatch failed");
+				});
+			}
 		} catch (error) {
 			this.logger.error(
 				{ err: error instanceof Error ? error : new Error(String(error)) },
@@ -386,12 +496,24 @@ export class UpdateScheduler {
 				cachesFailed: 0,
 				qualitySizeAutoSynced: 0,
 				qualitySizeUpdatesPending: 0,
+				namingAutoSynced: 0,
+				namingUpdatesPending: 0,
 				errors,
 			};
 
 			// Calculate next check time
 			const intervalMs = this.config.intervalHours * 60 * 60 * 1000;
 			this.stats.nextCheckAt = new Date(Date.now() + intervalMs);
+
+			// Notify about sync failure
+			this.notifyFn?.({
+				eventType: "TRASH_SYNC_ERROR",
+				title: "TRaSH Guides sync failed",
+				body: getErrorMessage(error),
+				url: "/trash-guides",
+			}).catch((err) => {
+				this.logger.debug({ err }, "TRaSH sync error notification dispatch failed");
+			});
 
 			throw error;
 		} finally {
@@ -442,6 +564,7 @@ export class UpdateScheduler {
 				const cached = await cacheManager.get<TrashQualitySize[]>(
 					mapping.serviceType as "RADARR" | "SONARR",
 					"QUALITY_SIZE",
+					z.array(trashQualitySizeSchema),
 				);
 				if (!cached) {
 					this.logger.warn(
@@ -526,16 +649,21 @@ export class UpdateScheduler {
 					// Reset succeeded but apply failed — instance is at factory defaults.
 					// Null out the hash so the next run detects the mismatch and retries.
 					let hashCleanupFailed = false;
-					await this.prisma.qualitySizeMapping.update({
-						where: { id: mapping.id },
-						data: { appliedDataHash: null },
-					}).catch((cleanupErr) => {
-						hashCleanupFailed = true;
-						this.logger.warn(
-							{ err: cleanupErr instanceof Error ? cleanupErr : new Error(String(cleanupErr)), mappingId: mapping.id },
-							"Failed to null appliedDataHash after apply failure — retry logic may be impaired",
-						);
-					});
+					await this.prisma.qualitySizeMapping
+						.update({
+							where: { id: mapping.id },
+							data: { appliedDataHash: null },
+						})
+						.catch((cleanupErr) => {
+							hashCleanupFailed = true;
+							this.logger.warn(
+								{
+									err: cleanupErr instanceof Error ? cleanupErr : new Error(String(cleanupErr)),
+									mappingId: mapping.id,
+								},
+								"Failed to null appliedDataHash after apply failure — retry logic may be impaired",
+							);
+						});
 					throw new Error(
 						`Apply failed after reset (instance at factory defaults)${hashCleanupFailed ? " [hash cleanup also failed, auto-retry may not work]" : ""}: ${getErrorMessage(applyError)}`,
 					);
@@ -545,8 +673,148 @@ export class UpdateScheduler {
 					`Quality size sync failed for instance ${mapping.instance?.label ?? mapping.instanceId}: ${getErrorMessage(error)}`,
 				);
 				this.logger.error(
-					{ err: error instanceof Error ? error : new Error(String(error)), instanceId: mapping.instanceId },
+					{
+						err: error instanceof Error ? error : new Error(String(error)),
+						instanceId: mapping.instanceId,
+					},
 					`Quality size sync failed for instance ${mapping.instanceId}`,
+				);
+			}
+		}
+
+		return result;
+	}
+
+	/**
+	 * Process naming auto-sync for instances with "auto" or "notify" strategy.
+	 * Compares current TRaSH naming hash to the stored lastDeployedHash and
+	 * re-applies naming presets for "auto" configs.
+	 */
+	private async processNamingSync(): Promise<{
+		autoSynced: number;
+		updatesPending: number;
+		errors: string[];
+	}> {
+		const result = { autoSynced: 0, updatesPending: 0, errors: [] as string[] };
+
+		if (!this.arrClientFactory) {
+			const configCount = await this.prisma.namingConfig.count({
+				where: { syncStrategy: { in: ["auto", "notify"] } },
+			});
+			if (configCount > 0) {
+				this.logger.warn(
+					`${configCount} naming config(s) with auto/notify strategy exist but arrClientFactory is not available — skipping sync`,
+				);
+			}
+			return result;
+		}
+
+		const configs = await this.prisma.namingConfig.findMany({
+			where: {
+				syncStrategy: { in: ["auto", "notify"] },
+				lastDeployedHash: { not: null },
+			},
+			include: {
+				instance: true,
+			},
+		});
+
+		if (configs.length === 0) return result;
+
+		const cacheManager = createCacheManager(this.prisma);
+
+		for (const config of configs) {
+			try {
+				const serviceType = config.serviceType as "RADARR" | "SONARR";
+
+				// Get latest naming data from cache (stored as array, take first item)
+				const cachedArray = await cacheManager.get<TrashNamingData[]>(
+					serviceType,
+					TRASH_CONFIG_TYPES.NAMING_PRESETS,
+				);
+				const cached = cachedArray?.[0] ?? null;
+				if (!cached) {
+					this.logger.warn(
+						`Naming cache empty for ${serviceType} — skipping sync for instance ${config.instance.label}`,
+					);
+					continue;
+				}
+
+				// Parse stored presets
+				let selectedPresets: NamingSelectedPresets;
+				try {
+					selectedPresets = JSON.parse(config.selectedPresets) as NamingSelectedPresets;
+				} catch {
+					result.errors.push(`Corrupt naming config presets for instance ${config.instance.label}`);
+					continue;
+				}
+
+				// Compute current hash from resolved payload
+				const payload = resolvePayload(cached, selectedPresets);
+				const currentHash = computeNamingHash(payload);
+
+				if (currentHash === config.lastDeployedHash) {
+					continue; // No changes
+				}
+
+				if (config.syncStrategy === "notify") {
+					result.updatesPending++;
+					continue;
+				}
+
+				// Auto-sync: apply naming presets to instance
+				if (!config.instance.enabled) {
+					this.logger.debug(`Skipping naming sync for disabled instance ${config.instance.label}`);
+					continue;
+				}
+
+				// Both Radarr and Sonarr use the same naming config endpoint
+				const apiPath = "/api/v3/config/naming";
+
+				// Get current config first (need to preserve id and other fields)
+				const currentResponse = await this.arrClientFactory.rawRequest(config.instance, apiPath, {
+					method: "GET",
+				});
+				if (!currentResponse.ok) {
+					throw new Error(`Failed to get current naming config: ${currentResponse.status}`);
+				}
+				const currentConfig = (await currentResponse.json()) as Record<string, unknown>;
+
+				// Merge payload onto current config
+				const mergedConfig = { ...currentConfig, ...payload };
+
+				const applyResponse = await this.arrClientFactory.rawRequest(config.instance, apiPath, {
+					method: "PUT",
+					body: mergedConfig,
+				});
+
+				if (!applyResponse.ok) {
+					throw new Error(
+						`Failed to apply naming config: ${applyResponse.status} ${applyResponse.statusText}`,
+					);
+				}
+
+				// Update the config with new hash
+				await this.prisma.namingConfig.update({
+					where: { id: config.id },
+					data: {
+						lastDeployedHash: currentHash,
+						lastDeployedAt: new Date(),
+					},
+				});
+
+				result.autoSynced++;
+				this.logger.info(`Auto-synced naming config for ${config.instance.label}`);
+			} catch (error) {
+				result.errors.push(
+					`Naming sync failed for instance ${config.instance?.label ?? config.instanceId}: ${getErrorMessage(error)}`,
+				);
+				this.logger.error(
+					{
+						err: error instanceof Error ? error : new Error(String(error)),
+						instanceId: config.instanceId,
+					},
+					`Naming sync failed for instance ${config.instanceId}`,
 				);
 			}
 		}
@@ -573,9 +841,9 @@ export class UpdateScheduler {
 						changeLog = Array.isArray(parsed) ? parsed : [];
 					} catch (parseError) {
 						this.logger.warn(
-							`Failed to parse changeLog for template ${template.templateId}: ${
-								getErrorMessage(parseError)
-							}. Raw value: ${String(existingTemplate.changeLog).slice(0, 100)}`,
+							`Failed to parse changeLog for template ${template.templateId}: ${getErrorMessage(
+								parseError,
+							)}. Raw value: ${String(existingTemplate.changeLog).slice(0, 100)}`,
 						);
 					}
 				}
@@ -619,7 +887,10 @@ export class UpdateScheduler {
 				}
 			} catch (error) {
 				this.logger.error(
-					{ err: error instanceof Error ? error : new Error(String(error)), templateId: template.templateId },
+					{
+						err: error instanceof Error ? error : new Error(String(error)),
+						templateId: template.templateId,
+					},
 					`Failed to create notification for template ${template.templateId}`,
 				);
 			}
@@ -702,6 +973,19 @@ export function createUpdateScheduler(
 	prisma: PrismaClient,
 	logger: Logger,
 	arrClientFactory?: ArrClientFactory,
+	options?: {
+		repoConfigResolver?: RepoConfigResolver;
+		deploymentExecutor?: import("./deployment-executor.js").DeploymentExecutorService;
+		notifyFn?: (payload: import("../notifications/types.js").NotificationPayload) => Promise<void>;
+	},
 ): UpdateScheduler {
-	return new UpdateScheduler(config, templateUpdater, versionTracker, prisma, logger, arrClientFactory);
+	return new UpdateScheduler(
+		config,
+		templateUpdater,
+		versionTracker,
+		prisma,
+		logger,
+		arrClientFactory,
+		options,
+	);
 }

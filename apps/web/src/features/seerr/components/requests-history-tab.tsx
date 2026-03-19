@@ -1,15 +1,15 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect, useRef } from "react";
-import { AlertCircle, ClipboardList, Trash2, Loader2 } from "lucide-react";
-import { toast } from "sonner";
 import { SEERR_REQUEST_STATUS, type SeerrRequest } from "@arr/shared";
+import { AlertCircle, ClipboardList, Loader2, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { FilterSelect, PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
 import { Button } from "../../../components/ui";
 import {
-	useSeerrRequests,
 	useDeleteSeerrRequest,
 	useRetrySeerrRequest,
+	useSeerrRequests,
 	useSeerrUsers,
 } from "../../../hooks/api/useSeerr";
 import { RequestCard } from "./request-card";
@@ -249,9 +249,7 @@ export const RequestsHistoryTab = ({ instanceId, onSelectRequest }: RequestsHist
 								disabled={isFetching}
 								className="gap-2 border-border/50 bg-card/50 text-xs"
 							>
-								{isFetching ? (
-									<Loader2 className="h-3 w-3 animate-spin" />
-								) : null}
+								{isFetching ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
 								Load More ({totalResults - allRequests.length} remaining)
 							</Button>
 						</div>

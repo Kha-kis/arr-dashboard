@@ -64,7 +64,10 @@ export const QualityBreakdown = ({ breakdown }: QualityBreakdownProps) => {
 								aria-labelledby={labelId}
 								className="h-2 overflow-hidden rounded-full bg-muted"
 							>
-								<div className="h-full" style={{ width: `${percentage}%`, backgroundColor: themeGradient.fromMedium }} />
+								<div
+									className="h-full"
+									style={{ width: `${percentage}%`, backgroundColor: themeGradient.fromMedium }}
+								/>
 							</div>
 						</div>
 						<div className="w-16 text-right text-xs text-muted-foreground">

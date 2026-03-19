@@ -10,7 +10,10 @@ import { requireSeerrClient } from "../../lib/seerr/seerr-client.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 const instanceIdParams = z.object({ instanceId: z.string().min(1) });
-const userIdParams = z.object({ instanceId: z.string().min(1), seerrUserId: z.coerce.number().int().positive() });
+const userIdParams = z.object({
+	instanceId: z.string().min(1),
+	seerrUserId: z.coerce.number().int().positive(),
+});
 
 const listUsersQuery = z.object({
 	take: z.coerce.number().int().min(1).max(100).default(20),

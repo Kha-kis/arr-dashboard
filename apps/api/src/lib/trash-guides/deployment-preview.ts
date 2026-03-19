@@ -5,21 +5,21 @@
  * actual Custom Formats in Radarr/Sonarr instance, detecting conflicts.
  */
 
-import type { PrismaClient } from "../../lib/prisma.js";
 import type {
-	DeploymentPreview,
-	CustomFormatDeploymentItem,
 	CustomFormatConflict,
-	DeploymentAction,
-	UnmatchedCustomFormat,
+	CustomFormatDeploymentItem,
 	CustomFormatSpecification,
+	DeploymentAction,
+	DeploymentPreview,
 	TemplateCustomFormat,
+	UnmatchedCustomFormat,
 } from "@arr/shared";
-import type { SonarrClient, RadarrClient } from "arr-sdk";
-import type { ArrClientFactory } from "../arr/client-factory.js";
-import type { FastifyBaseLogger } from "fastify";
+import type { RadarrClient, SonarrClient } from "arr-sdk";
 import { dequal as deepEqual } from "dequal";
-import { TemplateNotFoundError, InstanceNotFoundError, AppValidationError } from "../errors.js";
+import type { FastifyBaseLogger } from "fastify";
+import type { PrismaClient } from "../../lib/prisma.js";
+import type { ArrClientFactory } from "../arr/client-factory.js";
+import { AppValidationError, InstanceNotFoundError, TemplateNotFoundError } from "../errors.js";
 
 // SDK type aliases
 type SdkCustomFormat = Awaited<ReturnType<SonarrClient["customFormat"]["getAll"]>>[number];
@@ -299,7 +299,10 @@ export class DeploymentPreviewService {
 		try {
 			templateConfig = JSON.parse(template.configData) as ParsedTemplateConfig;
 		} catch (parseError) {
-			this.log.error({ err: parseError, templateId: template.id }, "Template has corrupted configData");
+			this.log.error(
+				{ err: parseError, templateId: template.id },
+				"Template has corrupted configData",
+			);
 			throw new AppValidationError("Template has corrupted configuration data");
 		}
 		const scoreSet = templateConfig.qualityProfile?.trash_score_set;
@@ -322,7 +325,10 @@ export class DeploymentPreviewService {
 				? (JSON.parse(template.instanceOverrides) as InstanceOverridesMap)
 				: {};
 		} catch (parseError) {
-			this.log.warn({ err: parseError, templateId: template.id }, "Failed to parse instanceOverrides");
+			this.log.warn(
+				{ err: parseError, templateId: template.id },
+				"Failed to parse instanceOverrides",
+			);
 		}
 		const overridesForInstance = instanceOverrides[instanceId] || {};
 		const scoreOverridesMap = overridesForInstance.cfScoreOverrides || {};
@@ -618,14 +624,14 @@ export class DeploymentPreviewService {
 				if (Array.isArray(spec.fields)) {
 					const trashIdField = spec.fields.find((f) => f.name === "trash_id");
 					if (trashIdField) {
-						return String(trashIdField.value);
+						return String(trashIdField.value).toLowerCase();
 					}
 				} else if (typeof spec.fields === "object") {
 					// Check common field patterns for trash_id
 					const fields = spec.fields as Record<string, unknown>;
 					const trashIdValue = fields.trash_id || fields.trashId;
 					if (typeof trashIdValue === "string" && trashIdValue.length > 0) {
-						return trashIdValue;
+						return trashIdValue.toLowerCase();
 					}
 				}
 			}
@@ -636,7 +642,7 @@ export class DeploymentPreviewService {
 		if (cf.name) {
 			const trashIdMatch = cf.name.match(/\[([a-f0-9-]{36})\]$/i);
 			if (trashIdMatch?.[1]) {
-				return trashIdMatch[1];
+				return trashIdMatch[1].toLowerCase();
 			}
 		}
 

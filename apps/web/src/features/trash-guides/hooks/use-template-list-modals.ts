@@ -1,5 +1,5 @@
-import { useReducer } from "react";
 import type { TrashTemplate } from "@arr/shared";
+import { useReducer } from "react";
 
 // ── State shape (matches the original useState types exactly) ──
 

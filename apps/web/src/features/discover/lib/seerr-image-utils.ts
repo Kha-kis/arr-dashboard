@@ -1,8 +1,8 @@
 import {
-	SEERR_MEDIA_STATUS,
 	SEERR_ANIME_KEYWORD_ID,
-	TMDB_ANIMATION_GENRE_ID,
+	SEERR_MEDIA_STATUS,
 	type SeerrMediaStatus,
+	TMDB_ANIMATION_GENRE_ID,
 } from "@arr/shared";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
@@ -84,8 +84,7 @@ export function isLikelyAnime(item: {
 }): boolean {
 	if (item.mediaType === "movie") return false;
 	return (
-		item.originalLanguage === "ja" &&
-		(item.genreIds?.includes(TMDB_ANIMATION_GENRE_ID) ?? false)
+		item.originalLanguage === "ja" && (item.genreIds?.includes(TMDB_ANIMATION_GENRE_ID) ?? false)
 	);
 }
 
@@ -100,9 +99,10 @@ export function getDisplayTitle(item: {
 }
 
 /** Get the release year from a date string */
-export function getReleaseYear(
-	item: { releaseDate?: string; firstAirDate?: string },
-): number | null {
+export function getReleaseYear(item: {
+	releaseDate?: string;
+	firstAirDate?: string;
+}): number | null {
 	const date = item.releaseDate || item.firstAirDate;
 	if (!date) return null;
 	const year = new Date(date).getFullYear();

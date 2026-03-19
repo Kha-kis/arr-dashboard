@@ -1,26 +1,26 @@
 ﻿"use client";
 
-import { useQuery } from "@tanstack/react-query";
 import type {
-	MultiInstanceQueueResponse,
-	MultiInstanceHistoryResponse,
-	MultiInstanceCalendarResponse,
 	DashboardStatisticsResponse,
+	MultiInstanceCalendarResponse,
+	MultiInstanceHistoryResponse,
+	MultiInstanceQueueResponse,
 } from "@arr/shared";
+import { useQuery } from "@tanstack/react-query";
 import {
-	fetchMultiInstanceQueue,
-	fetchMultiInstanceHistory,
-	fetchMultiInstanceCalendar,
 	fetchDashboardStatistics,
+	fetchMultiInstanceCalendar,
+	fetchMultiInstanceHistory,
+	fetchMultiInstanceQueue,
 } from "../../lib/api-client/dashboard";
 
 export const useMultiInstanceQueueQuery = () =>
 	useQuery<MultiInstanceQueueResponse>({
 		queryKey: ["dashboard", "queue"],
 		queryFn: fetchMultiInstanceQueue,
-		staleTime: 10 * 1000,
+		staleTime: 25_000,
 		gcTime: 60 * 1000, // 1 minute - short gcTime for frequently polled data
-		refetchInterval: 10 * 1000,
+		refetchInterval: 30_000,
 	});
 
 export const useMultiInstanceHistoryQuery = (params?: {

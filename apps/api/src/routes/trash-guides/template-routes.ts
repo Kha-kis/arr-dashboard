@@ -186,6 +186,23 @@ const templateConfigSchema = z.object({
 	qualityProfile: qualityProfileSchema.optional(),
 	qualitySize: z.array(trashQualitySizeSchema).optional(),
 	naming: z.array(trashNamingSchemeSchema).optional(),
+	namingSelection: z
+		.discriminatedUnion("serviceType", [
+			z.object({
+				serviceType: z.literal("RADARR"),
+				filePreset: z.string().nullable().default(null),
+				folderPreset: z.string().nullable().default(null),
+			}),
+			z.object({
+				serviceType: z.literal("SONARR"),
+				standardEpisodePreset: z.string().nullable().default(null),
+				dailyEpisodePreset: z.string().nullable().default(null),
+				animeEpisodePreset: z.string().nullable().default(null),
+				seriesFolderPreset: z.string().nullable().default(null),
+				seasonFolderPreset: z.string().nullable().default(null),
+			}),
+		])
+		.optional(),
 	completeQualityProfile: completeQualityProfileSchema.optional(),
 	syncSettings: templateSyncSettingsSchema.optional(),
 	customQualityConfig: customQualityConfigSchema.optional(),

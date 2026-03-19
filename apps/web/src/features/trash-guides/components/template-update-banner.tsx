@@ -1,10 +1,18 @@
 "use client";
 
+import {
+	AlertCircle,
+	CheckCircle2,
+	ChevronDown,
+	ChevronUp,
+	Clock,
+	History,
+	RefreshCw,
+} from "lucide-react";
 import { useState } from "react";
-import { RefreshCw, Clock, AlertCircle, CheckCircle2, ChevronDown, ChevronUp, History } from "lucide-react";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { TemplateUpdateInfo } from "../../../lib/api-client/trash-guides";
 import { cn } from "../../../lib/utils";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { TemplateDiffModal } from "./template-diff-modal";
 
 interface TemplateUpdateBannerProps {
@@ -25,10 +33,7 @@ function formatRelativeTime(timestamp: string | undefined): string {
 	return `${diffDays}d ago`;
 }
 
-export function TemplateUpdateBanner({
-	update,
-	onSyncSuccess,
-}: TemplateUpdateBannerProps) {
+export function TemplateUpdateBanner({ update, onSyncSuccess }: TemplateUpdateBannerProps) {
 	const { gradient: themeGradient } = useThemeGradient();
 	const [showDetails, setShowDetails] = useState(false);
 	const [showDiffModal, setShowDiffModal] = useState(false);
@@ -41,8 +46,12 @@ export function TemplateUpdateBanner({
 		: { borderColor: themeGradient.fromMuted, backgroundColor: themeGradient.fromLight };
 
 	const bannerClasses = isSynced ? "border-green-500/30 bg-green-500/10" : "";
-	const iconStyle: React.CSSProperties | undefined = isSynced ? undefined : { color: themeGradient.from };
-	const buttonStyle: React.CSSProperties | undefined = isSynced ? undefined : { backgroundColor: themeGradient.from };
+	const iconStyle: React.CSSProperties | undefined = isSynced
+		? undefined
+		: { color: themeGradient.from };
+	const buttonStyle: React.CSSProperties | undefined = isSynced
+		? undefined
+		: { backgroundColor: themeGradient.from };
 	const buttonClasses = isSynced ? "bg-green-600 hover:bg-green-700" : "hover:opacity-90";
 
 	return (
@@ -109,7 +118,7 @@ export function TemplateUpdateBanner({
 					onClick={() => setShowDiffModal(true)}
 					className={cn(
 						"px-4 py-1.5 text-xs font-medium text-primary-fg rounded transition-colors",
-						buttonClasses
+						buttonClasses,
 					)}
 					style={buttonStyle}
 				>
@@ -120,10 +129,7 @@ export function TemplateUpdateBanner({
 			{/* Expandable details */}
 			{showDetails && (
 				<div
-					className={cn(
-						"mt-3 pt-3 border-t",
-						isSynced && "border-green-500/20"
-					)}
+					className={cn("mt-3 pt-3 border-t", isSynced && "border-green-500/20")}
 					style={!isSynced ? { borderColor: themeGradient.fromMuted } : undefined}
 				>
 					<div className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-muted-foreground">

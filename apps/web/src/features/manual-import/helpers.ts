@@ -1,9 +1,9 @@
 import type {
 	ManualImportCandidateUnion,
-	ManualImportSonarrCandidate,
-	ManualImportRadarrCandidate,
 	ManualImportLidarrCandidate,
+	ManualImportRadarrCandidate,
 	ManualImportReadarrCandidate,
+	ManualImportSonarrCandidate,
 } from "./types";
 
 export const isSonarrCandidate = (

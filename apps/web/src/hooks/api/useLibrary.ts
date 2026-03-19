@@ -1,6 +1,5 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
 	LibraryAlbumMonitorRequest,
 	LibraryAlbumSearchRequest,
@@ -14,24 +13,29 @@ import type {
 	LibraryEpisodeSearchRequest,
 	LibraryEpisodesResponse,
 	LibraryMovieFileResponse,
-	LibraryToggleMonitorRequest,
-	LibrarySeasonSearchRequest,
 	LibraryMovieSearchRequest,
+	LibrarySeasonSearchRequest,
 	LibrarySeriesSearchRequest,
+	LibraryToggleMonitorRequest,
 	LibraryTracksResponse,
 	PaginatedLibraryResponse,
 } from "@arr/shared";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+	type FetchAlbumsParams,
+	type FetchBooksParams,
+	type FetchTracksParams,
 	fetchAlbums,
 	fetchBooks,
 	fetchEpisodes,
 	fetchLibrary,
-	fetchMovieFile,
 	fetchLibrarySyncStatus,
+	fetchMovieFile,
 	fetchTracks,
-	triggerLibrarySync,
-	updateLibrarySyncSettings,
+	type LibraryQueryParams,
+	type LibrarySyncSettings,
+	type LibrarySyncStatusResponse,
 	searchLibraryAlbum,
 	searchLibraryArtist,
 	searchLibraryAuthor,
@@ -44,12 +48,8 @@ import {
 	toggleBookMonitoring,
 	toggleEpisodeMonitoring,
 	toggleLibraryMonitoring,
-	type FetchAlbumsParams,
-	type FetchBooksParams,
-	type FetchTracksParams,
-	type LibraryQueryParams,
-	type LibrarySyncStatusResponse,
-	type LibrarySyncSettings,
+	triggerLibrarySync,
+	updateLibrarySyncSettings,
 } from "../../lib/api-client/library";
 import { QUEUE_QUERY_KEY } from "../../lib/query-keys";
 
@@ -105,11 +105,7 @@ export const useLibrarySyncStatus = (options: { enabled?: boolean } = {}) =>
 
 export const useTriggerLibrarySyncMutation = () => {
 	const queryClient = useQueryClient();
-	return useMutation<
-		{ success: boolean; message: string; instanceId: string },
-		unknown,
-		string
-	>({
+	return useMutation<{ success: boolean; message: string; instanceId: string }, unknown, string>({
 		mutationFn: triggerLibrarySync,
 		onSuccess: () => {
 			void queryClient.invalidateQueries({ queryKey: ["library", "sync", "status"] });

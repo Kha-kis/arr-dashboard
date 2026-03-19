@@ -9,32 +9,25 @@
 
 "use client";
 
+import { ChevronLeft, ChevronRight, Info, Settings } from "lucide-react";
 import {
 	Alert,
 	AlertDescription,
 	Card,
+	CardContent,
+	CardDescription,
 	CardHeader,
 	CardTitle,
-	CardDescription,
-	CardContent,
 } from "../../../../components/ui";
-import {
-	ChevronLeft,
-	ChevronRight,
-	Info,
-	Settings,
-} from "lucide-react";
-import { SanitizedHtml } from "../sanitized-html";
 import { useThemeGradient } from "../../../../hooks/useThemeGradient";
 import { ConditionEditor } from "../condition-editor";
+import { SanitizedHtml } from "../sanitized-html";
 import type { CFSelectionState, ConditionEditorTarget } from "./cf-configuration-types";
 
 interface CFConfigurationEditProps {
 	qualityProfile: { name: string };
 	selections: Record<string, CFSelectionState>;
-	onSelectionsChange: React.Dispatch<
-		React.SetStateAction<Record<string, CFSelectionState>>
-	>;
+	onSelectionsChange: React.Dispatch<React.SetStateAction<Record<string, CFSelectionState>>>;
 	selectedCount: number;
 	mandatoryCFs: any[];
 	cfGroups: any[];
@@ -84,9 +77,7 @@ const EditCFCard = ({
 				/>
 				<div className="flex-1">
 					<div className="flex items-center gap-2 mb-2">
-						<span className="font-medium text-foreground">
-							{cf.displayName || cf.name}
-						</span>
+						<span className="font-medium text-foreground">{cf.displayName || cf.name}</span>
 						{isRequired && (
 							<span
 								className="inline-flex items-center gap-1 rounded bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-300"
@@ -115,13 +106,9 @@ const EditCFCard = ({
 
 					<div className="space-y-2">
 						<div className="flex items-center gap-2 text-xs text-muted-foreground">
-							<span>
-								Current: {scoreOverride ?? resolvedDefaultScore}
-							</span>
+							<span>Current: {scoreOverride ?? resolvedDefaultScore}</span>
 							{cf.originalConfig?.trash_scores && (
-								<span>
-									• TRaSH Default: {resolvedDefaultScore}
-								</span>
+								<span>• TRaSH Default: {resolvedDefaultScore}</span>
 							)}
 						</div>
 
@@ -135,9 +122,7 @@ const EditCFCard = ({
 								<Settings className="h-3 w-3" />
 								Advanced
 							</button>
-							<label className="text-sm text-muted-foreground">
-								Override Score:
-							</label>
+							<label className="text-sm text-muted-foreground">Override Score:</label>
 							<input
 								type="number"
 								value={scoreOverride ?? ""}
@@ -185,31 +170,22 @@ export const CFConfigurationEdit = ({
 
 	// Separate profile CFs from additional CFs
 	const profileCFIds = new Set(mandatoryCFs.map((cf: any) => cf.trash_id));
-	const profileCFs = mandatoryCFs.filter(
-		(cf: any) => selections[cf.trash_id]?.selected,
-	);
+	const profileCFs = mandatoryCFs.filter((cf: any) => selections[cf.trash_id]?.selected);
 
 	const additionalCFs = Object.entries(selections)
-		.filter(
-			([trashId, sel]) => sel?.selected && !profileCFIds.has(trashId),
-		)
+		.filter(([trashId, sel]) => sel?.selected && !profileCFIds.has(trashId))
 		.map(([trashId]) => {
 			for (const group of cfGroups) {
 				const foundCF = group.custom_formats?.find(
-					(c: any) =>
-						(typeof c === "string" ? c : c.trash_id) === trashId,
+					(c: any) => (typeof c === "string" ? c : c.trash_id) === trashId,
 				);
 				if (foundCF) {
-					return typeof foundCF === "string"
-						? { trash_id: foundCF, name: foundCF }
-						: foundCF;
+					return typeof foundCF === "string" ? { trash_id: foundCF, name: foundCF } : foundCF;
 				}
 			}
 
 			if (availableFormats) {
-				const foundInAvailable = availableFormats.find(
-					(cf: any) => cf.trash_id === trashId,
-				);
+				const foundInAvailable = availableFormats.find((cf: any) => cf.trash_id === trashId);
 				if (foundInAvailable) {
 					const resolvedScore = resolveScore(foundInAvailable);
 					return {
@@ -234,9 +210,8 @@ export const CFConfigurationEdit = ({
 				<CardHeader>
 					<CardTitle>Edit Template Configuration</CardTitle>
 					<CardDescription>
-						Modify custom formats from the quality profile or add
-						additional formats. {selectedCount} custom formats
-						selected.
+						Modify custom formats from the quality profile or add additional formats.{" "}
+						{selectedCount} custom formats selected.
 					</CardDescription>
 				</CardHeader>
 			</Card>
@@ -244,17 +219,12 @@ export const CFConfigurationEdit = ({
 			{/* Quality Profile CFs */}
 			<div className="space-y-3">
 				<div className="flex items-center justify-between">
-					<h3 className="text-lg font-medium text-foreground">
-						Quality Profile Custom Formats
-					</h3>
-					<span className="text-sm text-muted-foreground">
-						{profileCFs.length} formats
-					</span>
+					<h3 className="text-lg font-medium text-foreground">Quality Profile Custom Formats</h3>
+					<span className="text-sm text-muted-foreground">{profileCFs.length} formats</span>
 				</div>
 				<p className="text-sm text-muted-foreground">
-					These custom formats come from the TRaSH Guides quality
-					profile &quot;{qualityProfile.name}&quot;. You can adjust
-					scores or disable them.
+					These custom formats come from the TRaSH Guides quality profile &quot;
+					{qualityProfile.name}&quot;. You can adjust scores or disable them.
 				</p>
 
 				{profileCFs.length > 0 ? (
@@ -267,15 +237,8 @@ export const CFConfigurationEdit = ({
 								selection={selections[cf.trash_id]}
 								themeGradient={themeGradient}
 								resolveScore={resolveScore}
-								onToggle={() =>
-									onToggleCF(
-										cf.trash_id,
-										cf.required === true,
-									)
-								}
-								onUpdateScore={(score) =>
-									onUpdateScore(cf.trash_id, score)
-								}
+								onToggle={() => onToggleCF(cf.trash_id, cf.required === true)}
+								onUpdateScore={(score) => onUpdateScore(cf.trash_id, score)}
 								onOpenConditionEditor={() =>
 									onConditionEditorOpen({
 										trashId: cf.trash_id,
@@ -289,9 +252,8 @@ export const CFConfigurationEdit = ({
 					<Alert>
 						<Info className="h-4 w-4" />
 						<AlertDescription>
-							All quality profile formats have been removed. Click
-							&quot;Add More Formats&quot; to browse available
-							formats.
+							All quality profile formats have been removed. Click &quot;Add More Formats&quot; to
+							browse available formats.
 						</AlertDescription>
 					</Alert>
 				)}
@@ -301,16 +263,11 @@ export const CFConfigurationEdit = ({
 			{additionalCFs.length > 0 && (
 				<div className="space-y-3">
 					<div className="flex items-center justify-between">
-						<h3 className="text-lg font-medium text-foreground">
-							Additional Custom Formats
-						</h3>
-						<span className="text-sm text-muted-foreground">
-							{additionalCFs.length} formats
-						</span>
+						<h3 className="text-lg font-medium text-foreground">Additional Custom Formats</h3>
+						<span className="text-sm text-muted-foreground">{additionalCFs.length} formats</span>
 					</div>
 					<p className="text-sm text-muted-foreground">
-						These custom formats were added beyond the quality
-						profile&apos;s defaults.
+						These custom formats were added beyond the quality profile&apos;s defaults.
 					</p>
 
 					<div className="space-y-2">
@@ -322,15 +279,8 @@ export const CFConfigurationEdit = ({
 								selection={selections[cf.trash_id]}
 								themeGradient={themeGradient}
 								resolveScore={resolveScore}
-								onToggle={() =>
-									onToggleCF(
-										cf.trash_id,
-										cf.required === true,
-									)
-								}
-								onUpdateScore={(score) =>
-									onUpdateScore(cf.trash_id, score)
-								}
+								onToggle={() => onToggleCF(cf.trash_id, cf.required === true)}
+								onUpdateScore={(score) => onUpdateScore(cf.trash_id, score)}
 								onOpenConditionEditor={() =>
 									onConditionEditorOpen({
 										trashId: cf.trash_id,
@@ -351,8 +301,7 @@ export const CFConfigurationEdit = ({
 							<span className="flex flex-col sm:inline-flex sm:items-center sm:gap-2">
 								<span>Browse Custom Formats</span>
 								<span className="text-sm font-normal text-muted-foreground">
-									(Add additional custom formats to your
-									template)
+									(Add additional custom formats to your template)
 								</span>
 							</span>
 						</h3>
@@ -369,83 +318,49 @@ export const CFConfigurationEdit = ({
 						}}
 					>
 						<CardHeader>
-							<CardTitle className="text-base">
-								Available Custom Formats
-							</CardTitle>
+							<CardTitle className="text-base">Available Custom Formats</CardTitle>
 							<CardDescription>
-								Select additional custom formats to add to your
-								template. Formats already in your template are
-								hidden.
+								Select additional custom formats to add to your template. Formats already in your
+								template are hidden.
 							</CardDescription>
 						</CardHeader>
 						<CardContent>
 							<div className="space-y-2">
 								{availableFormats
 									.filter((cf: any) => {
-										const isInTemplate =
-											mandatoryCFs?.some(
-												(mandatoryCF: any) =>
-													mandatoryCF.trash_id ===
-													cf.trash_id,
-											);
+										const isInTemplate = mandatoryCFs?.some(
+											(mandatoryCF: any) => mandatoryCF.trash_id === cf.trash_id,
+										);
 										if (isInTemplate) return false;
 
-										const isSelected =
-											selections[cf.trash_id]
-												?.selected ?? false;
+										const isSelected = selections[cf.trash_id]?.selected ?? false;
 										if (isSelected) return false;
 										if (searchQuery) {
-											const search =
-												searchQuery.toLowerCase();
+											const search = searchQuery.toLowerCase();
 											return (
-												cf.name
-													?.toLowerCase()
-													.includes(search) ||
-												cf.displayName
-													?.toLowerCase()
-													.includes(search) ||
-												cf.description
-													?.toLowerCase()
-													.includes(search)
+												cf.name?.toLowerCase().includes(search) ||
+												cf.displayName?.toLowerCase().includes(search) ||
+												cf.description?.toLowerCase().includes(search)
 											);
 										}
 										return true;
 									})
 									.map((cf: any) => {
-										const isSelected =
-											selections[cf.trash_id]
-												?.selected ?? false;
-										const scoreOverride =
-											selections[cf.trash_id]
-												?.scoreOverride;
-										const displayScore = resolveScore(
-											cf,
-											cf.score,
-										);
-										const isRequired =
-											cf.required === true;
+										const isSelected = selections[cf.trash_id]?.selected ?? false;
+										const scoreOverride = selections[cf.trash_id]?.scoreOverride;
+										const displayScore = resolveScore(cf, cf.score);
+										const isRequired = cf.required === true;
 										return (
 											<div
 												key={cf.trash_id}
 												className="rounded-lg p-4 border border-border/50 bg-card transition-all hover:border-primary/50 hover:bg-muted hover:shadow-md cursor-pointer"
 												role="button"
 												tabIndex={0}
-												onClick={() =>
-													onToggleCF(
-														cf.trash_id,
-														isRequired,
-													)
-												}
+												onClick={() => onToggleCF(cf.trash_id, isRequired)}
 												onKeyDown={(e) => {
-													if (
-														e.key === "Enter" ||
-														e.key === " "
-													) {
+													if (e.key === "Enter" || e.key === " ") {
 														e.preventDefault();
-														onToggleCF(
-															cf.trash_id,
-															isRequired,
-														);
+														onToggleCF(cf.trash_id, isRequired);
 													}
 												}}
 												aria-pressed={isSelected}
@@ -455,39 +370,23 @@ export const CFConfigurationEdit = ({
 													<input
 														type="checkbox"
 														checked={isSelected}
-														onChange={() =>
-															onToggleCF(
-																cf.trash_id,
-																isRequired,
-															)
-														}
+														onChange={() => onToggleCF(cf.trash_id, isRequired)}
 														className="mt-1 h-4 w-4 rounded border-border bg-muted text-primary focus:ring-primary focus:ring-offset-0 cursor-pointer"
-														onClick={(e) =>
-															e.stopPropagation()
-														}
+														onClick={(e) => e.stopPropagation()}
 													/>
 													<div className="flex-1">
 														<div className="flex items-center gap-2 mb-2">
 															<span className="font-medium text-foreground">
-																{cf.displayName ||
-																	cf.name}
+																{cf.displayName || cf.name}
 															</span>
 														</div>
 														{cf.description && (
-															<details
-																className="mb-2 group"
-																onClick={(e) =>
-																	e.stopPropagation()
-																}
-															>
+															<details className="mb-2 group" onClick={(e) => e.stopPropagation()}>
 																<summary className="cursor-pointer text-xs text-primary hover:text-primary/80 transition flex items-center gap-1">
 																	<span className="group-open:rotate-90 transition-transform">
 																		▶
 																	</span>
-																	<span>
-																		What is
-																		this?
-																	</span>
+																	<span>What is this?</span>
 																</summary>
 																<SanitizedHtml
 																	html={cf.description}
@@ -498,49 +397,23 @@ export const CFConfigurationEdit = ({
 														{isSelected && (
 															<div className="flex items-center gap-2">
 																<label className="text-xs text-muted-foreground">
-																	Score
-																	(Default:{" "}
-																	{displayScore}
+																	Score (Default: {displayScore}
 																	):
 																</label>
 																<input
 																	type="number"
-																	value={
-																		scoreOverride ??
-																		""
-																	}
-																	onChange={(
-																		e,
-																	) =>
-																		onUpdateScore(
-																			cf.trash_id,
-																			e
-																				.target
-																				.value,
-																		)
-																	}
-																	placeholder={String(
-																		displayScore,
-																	)}
+																	value={scoreOverride ?? ""}
+																	onChange={(e) => onUpdateScore(cf.trash_id, e.target.value)}
+																	placeholder={String(displayScore)}
 																	className="w-24 rounded border border-border bg-muted px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-primary"
-																	onClick={(
-																		e,
-																	) =>
-																		e.stopPropagation()
-																	}
+																	onClick={(e) => e.stopPropagation()}
 																/>
-																{scoreOverride !==
-																	undefined && (
+																{scoreOverride !== undefined && (
 																	<button
 																		type="button"
-																		onClick={(
-																			e,
-																		) => {
+																		onClick={(e) => {
 																			e.stopPropagation();
-																			onUpdateScore(
-																				cf.trash_id,
-																				"",
-																			);
+																			onUpdateScore(cf.trash_id, "");
 																		}}
 																		className="text-xs text-primary hover:text-primary/80 transition"
 																		title="Reset to default"
@@ -588,23 +461,15 @@ export const CFConfigurationEdit = ({
 			{/* Condition Editor Modal */}
 			{conditionEditorFormat &&
 				(() => {
-					const selection =
-						selections[conditionEditorFormat.trashId];
+					const selection = selections[conditionEditorFormat.trashId];
 
 					const format = conditionEditorFormat.format;
-					const specs =
-						format.originalConfig?.specifications ||
-						format.specifications ||
-						[];
+					const specs = format.originalConfig?.specifications || format.specifications || [];
 
-					const specificationsWithEnabled = specs.map(
-						(spec: any) => ({
-							...spec,
-							enabled:
-								selection?.conditionsEnabled?.[spec.name] !==
-								false,
-						}),
-					);
+					const specificationsWithEnabled = specs.map((spec: any) => ({
+						...spec,
+						enabled: selection?.conditionsEnabled?.[spec.name] !== false,
+					}));
 
 					return (
 						<div
@@ -620,12 +485,7 @@ export const CFConfigurationEdit = ({
 									className="absolute top-4 right-4 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground z-10"
 									aria-label="Close"
 								>
-									<svg
-										className="h-5 w-5"
-										fill="none"
-										stroke="currentColor"
-										viewBox="0 0 24 24"
-									>
+									<svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path
 											strokeLinecap="round"
 											strokeLinejoin="round"
@@ -636,39 +496,27 @@ export const CFConfigurationEdit = ({
 								</button>
 
 								<ConditionEditor
-									customFormatId={
-										conditionEditorFormat.trashId
-									}
+									customFormatId={conditionEditorFormat.trashId}
 									customFormatName={
-										conditionEditorFormat.format
-											.displayName ||
-										conditionEditorFormat.format
-											.name
+										conditionEditorFormat.format.displayName || conditionEditorFormat.format.name
 									}
 									specifications={specificationsWithEnabled}
 									onChange={(updatedSpecs: any) => {
-										const conditionsEnabled: Record<
-											string,
-											boolean
-										> = {};
+										const conditionsEnabled: Record<string, boolean> = {};
 										for (const spec of updatedSpecs) {
-											conditionsEnabled[spec.name] =
-												spec.enabled !== false;
+											conditionsEnabled[spec.name] = spec.enabled !== false;
 										}
 										onSelectionsChange((prev) => {
-											const current = prev[
-												conditionEditorFormat.trashId
-											] || {
+											const current = prev[conditionEditorFormat.trashId] || {
 												selected: true,
 												conditionsEnabled: {},
 											};
 											return {
 												...prev,
-												[conditionEditorFormat.trashId]:
-													{
-														...current,
-														conditionsEnabled,
-													},
+												[conditionEditorFormat.trashId]: {
+													...current,
+													conditionsEnabled,
+												},
 											};
 										});
 									}}

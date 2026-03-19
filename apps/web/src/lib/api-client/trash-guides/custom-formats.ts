@@ -162,20 +162,24 @@ export interface DeployUserCFsRequest {
  * Fetch all available custom formats from TRaSH Guides cache
  */
 export async function fetchCustomFormatsList(
-	serviceType?: "RADARR" | "SONARR"
+	serviceType?: "RADARR" | "SONARR",
 ): Promise<CustomFormatsListResponse> {
 	const params = serviceType ? `?serviceType=${serviceType}` : "";
-	return await apiRequest<CustomFormatsListResponse>(`/api/trash-guides/cache/custom-formats/list${params}`);
+	return await apiRequest<CustomFormatsListResponse>(
+		`/api/trash-guides/cache/custom-formats/list${params}`,
+	);
 }
 
 /**
  * Fetch all CF descriptions from TRaSH Guides cache
  */
 export async function fetchCFDescriptionsList(
-	serviceType?: "RADARR" | "SONARR"
+	serviceType?: "RADARR" | "SONARR",
 ): Promise<CFDescriptionsListResponse> {
 	const params = serviceType ? `?serviceType=${serviceType}` : "";
-	return await apiRequest<CFDescriptionsListResponse>(`/api/trash-guides/cache/cf-descriptions/list${params}`);
+	return await apiRequest<CFDescriptionsListResponse>(
+		`/api/trash-guides/cache/cf-descriptions/list${params}`,
+	);
 }
 
 /**
@@ -183,7 +187,9 @@ export async function fetchCFDescriptionsList(
  * These are MkDocs snippets referenced by CF descriptions using --8<-- syntax.
  */
 export async function fetchCFIncludesList(): Promise<CFInclude[]> {
-	const response = await apiRequest<CFIncludesListResponse>(`/api/trash-guides/cache/cf-includes/list`);
+	const response = await apiRequest<CFIncludesListResponse>(
+		`/api/trash-guides/cache/cf-includes/list`,
+	);
 	return response.data || [];
 }
 
@@ -191,7 +197,7 @@ export async function fetchCFIncludesList(): Promise<CFInclude[]> {
  * Deploy a single custom format to an instance
  */
 export async function deployCustomFormat(
-	request: DeployCustomFormatRequest
+	request: DeployCustomFormatRequest,
 ): Promise<DeployCustomFormatResponse> {
 	return await apiRequest<DeployCustomFormatResponse>("/api/trash-guides/custom-formats/deploy", {
 		method: "POST",
@@ -203,29 +209,34 @@ export async function deployCustomFormat(
  * Deploy multiple custom formats to an instance
  */
 export async function deployMultipleCustomFormats(
-	request: DeployMultipleCustomFormatsRequest
+	request: DeployMultipleCustomFormatsRequest,
 ): Promise<DeployMultipleCustomFormatsResponse> {
-	return await apiRequest<DeployMultipleCustomFormatsResponse>("/api/trash-guides/custom-formats/deploy-multiple", {
-		method: "POST",
-		json: request,
-	});
+	return await apiRequest<DeployMultipleCustomFormatsResponse>(
+		"/api/trash-guides/custom-formats/deploy-multiple",
+		{
+			method: "POST",
+			json: request,
+		},
+	);
 }
 
 /**
  * Fetch user custom formats
  */
 export async function fetchUserCustomFormats(
-	serviceType?: "RADARR" | "SONARR"
+	serviceType?: "RADARR" | "SONARR",
 ): Promise<UserCustomFormatsResponse> {
 	const params = serviceType ? `?serviceType=${serviceType}` : "";
-	return await apiRequest<UserCustomFormatsResponse>(`/api/trash-guides/user-custom-formats${params}`);
+	return await apiRequest<UserCustomFormatsResponse>(
+		`/api/trash-guides/user-custom-formats${params}`,
+	);
 }
 
 /**
  * Create a user custom format
  */
 export async function createUserCustomFormat(
-	request: CreateUserCFRequest
+	request: CreateUserCFRequest,
 ): Promise<{ success: boolean; customFormat: UserCustomFormat }> {
 	return await apiRequest("/api/trash-guides/user-custom-formats", {
 		method: "POST",
@@ -238,7 +249,7 @@ export async function createUserCustomFormat(
  */
 export async function updateUserCustomFormat(
 	id: string,
-	request: Partial<CreateUserCFRequest>
+	request: Partial<CreateUserCFRequest>,
 ): Promise<{ success: boolean; customFormat: UserCustomFormat }> {
 	return await apiRequest(`/api/trash-guides/user-custom-formats/${id}`, {
 		method: "PUT",
@@ -250,7 +261,7 @@ export async function updateUserCustomFormat(
  * Delete a user custom format
  */
 export async function deleteUserCustomFormat(
-	id: string
+	id: string,
 ): Promise<{ success: boolean; message: string }> {
 	return await apiRequest(`/api/trash-guides/user-custom-formats/${id}`, {
 		method: "DELETE",
@@ -261,7 +272,7 @@ export async function deleteUserCustomFormat(
  * Import user custom formats from JSON
  */
 export async function importUserCFsFromJson(
-	request: ImportUserCFFromJsonRequest
+	request: ImportUserCFFromJsonRequest,
 ): Promise<UserCFImportResponse> {
 	return await apiRequest("/api/trash-guides/user-custom-formats/import-json", {
 		method: "POST",
@@ -273,7 +284,7 @@ export async function importUserCFsFromJson(
  * Import user custom formats from a connected instance
  */
 export async function importUserCFsFromInstance(
-	request: ImportUserCFFromInstanceRequest
+	request: ImportUserCFFromInstanceRequest,
 ): Promise<UserCFImportResponse> {
 	return await apiRequest("/api/trash-guides/user-custom-formats/import-from-instance", {
 		method: "POST",
@@ -285,7 +296,7 @@ export async function importUserCFsFromInstance(
  * Deploy user custom formats to an instance
  */
 export async function deployUserCustomFormats(
-	request: DeployUserCFsRequest
+	request: DeployUserCFsRequest,
 ): Promise<DeployMultipleCustomFormatsResponse> {
 	return await apiRequest("/api/trash-guides/user-custom-formats/deploy", {
 		method: "POST",

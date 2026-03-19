@@ -81,6 +81,14 @@ export const buildLibraryExternalLink = (
 };
 
 /**
+ * Build a Plex deep link URL for opening an item in the Plex web app.
+ * Requires the server's machineId and the item's ratingKey from Plex cache.
+ */
+export const buildPlexUrl = (machineId: string, ratingKey: string): string => {
+	return `https://app.plex.tv/desktop/#!/server/${machineId}/details?key=${encodeURIComponent(`/library/metadata/${ratingKey}`)}`;
+};
+
+/**
  * Group library items by type (movies vs series)
  */
 export const groupItemsByType = (items: LibraryItem[]) => ({

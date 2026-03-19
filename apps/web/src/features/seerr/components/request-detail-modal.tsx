@@ -1,45 +1,39 @@
 "use client";
 
-import {
-	X,
-	Star,
-	Clock,
-	Calendar,
-	Film,
-	Tv,
-	Loader2,
-	Layers,
-	User,
-	Check,
-	RotateCcw,
-	Trash2,
-} from "lucide-react";
 import type { SeerrRequest, SeerrSeason } from "@arr/shared";
-import { SEERR_REQUEST_STATUS, SEERR_MEDIA_STATUS } from "@arr/shared";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { useFocusTrap } from "../../../hooks/useFocusTrap";
-import { RATING_COLOR } from "../../../lib/theme-gradients";
-import { StatusBadge, GradientButton } from "../../../components/layout";
+import { SEERR_MEDIA_STATUS, SEERR_REQUEST_STATUS } from "@arr/shared";
+import {
+	Calendar,
+	Check,
+	Clock,
+	Film,
+	Layers,
+	Loader2,
+	RotateCcw,
+	Star,
+	Trash2,
+	Tv,
+	User,
+	X,
+} from "lucide-react";
+import { GradientButton, StatusBadge } from "../../../components/layout";
 import { Button } from "../../../components/ui";
-import {
-	useSeerrMovieDetails,
-	useSeerrTvDetails,
-} from "../../../hooks/api/useSeerr";
-import {
-	getSeerrImageUrl,
-	isAnimeFromKeywords,
-} from "../../discover/lib/seerr-image-utils";
+import { useSeerrMovieDetails, useSeerrTvDetails } from "../../../hooks/api/useSeerr";
+import { useFocusTrap } from "../../../hooks/useFocusTrap";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { RATING_COLOR } from "../../../lib/theme-gradients";
 import {
 	CastSection,
-	TrailerButton,
 	ExternalLinksSection,
+	TrailerButton,
 } from "../../discover/components/media-detail-sections";
+import { getSeerrImageUrl, isAnimeFromKeywords } from "../../discover/lib/seerr-image-utils";
 import {
-	getRequestStatusLabel,
-	getRequestStatusVariant,
+	formatRelativeTime,
 	getMediaStatusLabel,
 	getMediaStatusVariant,
-	formatRelativeTime,
+	getRequestStatusLabel,
+	getRequestStatusVariant,
 } from "../lib/seerr-utils";
 
 // ============================================================================
@@ -116,7 +110,7 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 		? isMovie
 			? (details as NonNullable<typeof movieQuery.data>).title
 			: (details as NonNullable<typeof tvQuery.data>).name
-		: request.media.title ?? `${isMovie ? "Movie" : "Series"} #${tmdbId}`;
+		: (request.media.title ?? `${isMovie ? "Movie" : "Series"} #${tmdbId}`);
 
 	const releaseDate = isMovie
 		? (details as NonNullable<typeof movieQuery.data>)?.releaseDate
@@ -133,9 +127,7 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 			).voteAverage
 		: undefined;
 
-	const runtime = isMovie
-		? (details as NonNullable<typeof movieQuery.data>)?.runtime
-		: undefined;
+	const runtime = isMovie ? (details as NonNullable<typeof movieQuery.data>)?.runtime : undefined;
 	const numberOfSeasons = !isMovie
 		? (details as NonNullable<typeof tvQuery.data>)?.numberOfSeasons
 		: undefined;
@@ -200,11 +192,7 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 				<div className="relative h-[250px] sm:h-[300px] overflow-hidden">
 					{backdropUrl ? (
 						/* eslint-disable-next-line @next/next/no-img-element */
-						<img
-							src={backdropUrl}
-							alt={title}
-							className="h-full w-full object-cover"
-						/>
+						<img src={backdropUrl} alt={title} className="h-full w-full object-cover" />
 					) : (
 						<div
 							className="h-full w-full"
@@ -311,7 +299,9 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 									) : (
 										<User className="h-3.5 w-3.5" />
 									)}
-									<span className="font-medium text-foreground/80">{request.requestedBy.displayName}</span>
+									<span className="font-medium text-foreground/80">
+										{request.requestedBy.displayName}
+									</span>
 								</span>
 								<span>{formatRelativeTime(request.createdAt)}</span>
 								{request.modifiedBy && (
@@ -333,11 +323,7 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 					{(isPending || isFailed || onDelete) && (
 						<div className="flex items-center gap-3">
 							{isPending && onApprove && (
-								<GradientButton
-									size="sm"
-									icon={Check}
-									onClick={() => onApprove(request.id)}
-								>
+								<GradientButton size="sm" icon={Check} onClick={() => onApprove(request.id)}>
 									Approve
 								</GradientButton>
 							)}
@@ -394,10 +380,7 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 					{/* Loading state for details */}
 					{isDetailsLoading && (
 						<div className="flex items-center justify-center py-8">
-							<Loader2
-								className="h-6 w-6 animate-spin"
-								style={{ color: themeGradient.from }}
-							/>
+							<Loader2 className="h-6 w-6 animate-spin" style={{ color: themeGradient.from }} />
 						</div>
 					)}
 
@@ -407,9 +390,7 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 							<h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
 								Overview
 							</h3>
-							<p className="text-sm text-foreground/80 leading-relaxed">
-								{details.overview}
-							</p>
+							<p className="text-sm text-foreground/80 leading-relaxed">{details.overview}</p>
 						</div>
 					)}
 
@@ -422,7 +403,10 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 							<div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
 								{detailSeasons.map((season) => {
 									const isRequested = requestedSeasonNums.has(season.seasonNumber);
-									const requestSeason = getRequestSeasonStatus(request.seasons, season.seasonNumber);
+									const requestSeason = getRequestSeasonStatus(
+										request.seasons,
+										season.seasonNumber,
+									);
 
 									return (
 										<div
@@ -480,4 +464,3 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 		</div>
 	);
 };
-

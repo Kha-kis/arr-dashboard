@@ -3,17 +3,17 @@
  */
 
 import {
-	type SeerrRequestStatus,
-	type SeerrMediaStatus,
-	type SeerrIssueType,
-	type SeerrIssueStatus,
-	SEERR_REQUEST_STATUS,
-	SEERR_REQUEST_STATUS_LABEL,
-	SEERR_MEDIA_STATUS,
-	SEERR_MEDIA_STATUS_LABEL,
-	SEERR_ISSUE_TYPE_LABEL,
 	SEERR_ISSUE_STATUS,
 	SEERR_ISSUE_STATUS_LABEL,
+	SEERR_ISSUE_TYPE_LABEL,
+	SEERR_MEDIA_STATUS,
+	SEERR_MEDIA_STATUS_LABEL,
+	SEERR_REQUEST_STATUS,
+	SEERR_REQUEST_STATUS_LABEL,
+	type SeerrIssueStatus,
+	type SeerrIssueType,
+	type SeerrMediaStatus,
+	type SeerrRequestStatus,
 } from "@arr/shared";
 
 // ============================================================================
@@ -110,4 +110,20 @@ export function formatRelativeTime(dateStr: string): string {
 export function getPosterUrl(posterPath?: string | null): string | null {
 	if (!posterPath) return null;
 	return `https://image.tmdb.org/t/p/w185${posterPath}`;
+}
+
+// ============================================================================
+// Error helpers
+// ============================================================================
+
+/** Check if an error is a Seerr circuit breaker open error (HTTP 503) */
+export function isSeerrCircuitBreakerError(error: unknown): boolean {
+	if (!error || typeof error !== "object") return false;
+	if ("status" in error && (error as { status?: number }).status === 503) return true;
+	// Fallback: check message for non-ApiError shapes
+	const msg =
+		"message" in error && typeof (error as { message?: string }).message === "string"
+			? (error as { message: string }).message
+			: "";
+	return msg.toLowerCase().includes("circuit breaker open");
 }

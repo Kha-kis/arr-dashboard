@@ -41,7 +41,9 @@ export const backupApi = {
 	/**
 	 * Restore from a backup stored on filesystem
 	 */
-	async restoreBackupFromFile(request: RestoreBackupFromFileRequest): Promise<RestoreBackupResponse> {
+	async restoreBackupFromFile(
+		request: RestoreBackupFromFileRequest,
+	): Promise<RestoreBackupResponse> {
 		return apiRequest<RestoreBackupResponse>("/api/backup/restore-from-file", {
 			json: request,
 		});
@@ -102,7 +104,7 @@ export const backupApi = {
 					// Convert to base64 using chunked approach to avoid call stack overflow
 					// Process in 8KB chunks to safely handle large files
 					const CHUNK_SIZE = 8192;
-					let binaryString = '';
+					let binaryString = "";
 
 					for (let i = 0; i < uint8Array.length; i += CHUNK_SIZE) {
 						const chunk = uint8Array.subarray(i, Math.min(i + CHUNK_SIZE, uint8Array.length));
@@ -147,7 +149,9 @@ export const backupApi = {
 	/**
 	 * Set or update the backup password
 	 */
-	async setPassword(request: SetBackupPasswordRequest): Promise<{ success: boolean; message: string }> {
+	async setPassword(
+		request: SetBackupPasswordRequest,
+	): Promise<{ success: boolean; message: string }> {
 		return apiRequest<{ success: boolean; message: string }>("/api/backup/password", {
 			method: "PUT",
 			json: request,

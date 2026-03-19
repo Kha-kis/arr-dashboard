@@ -9,10 +9,7 @@ import { toBoolean, toNumber, toStringValue } from "./type-converters.js";
  * @param albumId - The album ID this track belongs to
  * @returns A normalized library track
  */
-export const normalizeTrack = (
-	raw: Record<string, unknown>,
-	albumId: number,
-): LibraryTrack => {
+export const normalizeTrack = (raw: Record<string, unknown>, albumId: number): LibraryTrack => {
 	const trackFile = raw?.trackFile as Record<string, unknown> | undefined;
 	const mediaInfo = trackFile?.mediaInfo as Record<string, unknown> | undefined;
 	const quality = trackFile?.quality as Record<string, unknown> | undefined;

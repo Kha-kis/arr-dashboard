@@ -129,7 +129,7 @@ async function analyzeStatusMessages() {
 		}
 
 		const safeKeywords = ["waiting for import", "import pending", "manual import"];
-		const hasSafe = safeKeywords.some(k => allText.join(" ").toLowerCase().includes(k));
+		const hasSafe = safeKeywords.some((k) => allText.join(" ").toLowerCase().includes(k));
 
 		if (hasSafe) {
 			console.log(`   Title: ${item.title}`);
@@ -154,7 +154,9 @@ async function analyzeStatusMessages() {
 		"unknown movie",
 	];
 
-	console.log("\nCurrent safe patterns only match: 'waiting for import', 'import pending', 'manual import'");
+	console.log(
+		"\nCurrent safe patterns only match: 'waiting for import', 'import pending', 'manual import'",
+	);
 	console.log("\nMost pending/blocked items don't have these patterns in their status.");
 	console.log("This is expected - 'safe only' mode is conservative by design.\n");
 	console.log("Options:");
@@ -163,4 +165,7 @@ async function analyzeStatusMessages() {
 	console.log("  3. Add more patterns to the safe list if we identify reliable ones\n");
 }
 
-analyzeStatusMessages().catch(console.error);
+// Only execute when run directly (not when imported)
+if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, "/"))) {
+	analyzeStatusMessages().catch(console.error);
+}

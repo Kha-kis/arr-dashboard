@@ -1,43 +1,44 @@
 "use client";
 
-import { useDeferredValue, useMemo, useState } from "react";
 import type { ServiceInstanceSummary } from "@arr/shared";
-import { useMultiInstanceHistoryQuery } from "../../../hooks/api/useDashboard";
-import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
-import { Button } from "../../../components/ui/button";
-import { Input } from "../../../components/ui/input";
-import { Alert, AlertDescription, Pagination } from "../../../components/ui";
 import {
-	PremiumPageHeader,
-	StatCard,
-	PremiumSkeleton,
-	FilterSelect,
-	ServiceBadge,
-} from "../../../components/layout";
-import { HistoryTable } from "./history-table";
-import { HistoryTimeline } from "./history-timeline";
-import { SERVICE_FILTERS } from "../lib/history-utils";
-import { useHistoryState } from "../hooks/use-history-state";
-import { useHistoryData } from "../hooks/use-history-data";
-import type { TimeRangePreset } from "../lib/date-utils";
-import { groupByDay } from "../lib/date-utils";
-import {
-	History,
-	RefreshCw,
-	Filter,
-	RotateCcw,
-	LayoutList,
-	Table2,
-	ArrowDownToLine,
-	Package,
 	AlertTriangle,
+	ArrowDownToLine,
 	ChevronDown,
 	ChevronUp,
+	Filter,
+	History,
+	LayoutList,
+	Package,
+	RefreshCw,
+	RotateCcw,
+	Table2,
 	X,
 } from "lucide-react";
-import { SERVICE_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useDeferredValue, useMemo, useState } from "react";
+import {
+	FilterSelect,
+	PremiumPageHeader,
+	PremiumSkeleton,
+	ServiceBadge,
+	StatCard,
+} from "../../../components/layout";
+import { ToggleSwitch } from "../../../components/layout/config-primitives";
+import { Alert, AlertDescription, Pagination } from "../../../components/ui";
+import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
+import { useMultiInstanceHistoryQuery } from "../../../hooks/api/useDashboard";
+import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
+import { useHistoryData } from "../hooks/use-history-data";
+import { useHistoryState } from "../hooks/use-history-state";
+import type { TimeRangePreset } from "../lib/date-utils";
+import { groupByDay } from "../lib/date-utils";
+import { SERVICE_FILTERS } from "../lib/history-utils";
+import { HistoryTable } from "./history-table";
+import { HistoryTimeline } from "./history-timeline";
 
 const TIME_RANGE_PRESETS: Array<{ value: TimeRangePreset; label: string }> = [
 	{ value: "24h", label: "24h" },
@@ -137,7 +138,11 @@ export const HistoryClient = () => {
 			const dateMs = item.date ? new Date(item.date).getTime() : 0;
 			if (dateMs < cutoff) continue;
 			const eventType = (item.eventType ?? item.status ?? "").toLowerCase();
-			if (eventType.includes("fail") || eventType.includes("error") || eventType.includes("reject")) {
+			if (
+				eventType.includes("fail") ||
+				eventType.includes("error") ||
+				eventType.includes("reject")
+			) {
 				const title = item.title ?? item.sourceTitle ?? "Unknown";
 				if (!titles.includes(title)) {
 					titles.push(title);
@@ -168,7 +173,11 @@ export const HistoryClient = () => {
 			<div className="space-y-8 animate-in fade-in duration-500">
 				<div className="space-y-4">
 					<PremiumSkeleton variant="line" className="h-8 w-48" />
-					<PremiumSkeleton variant="line" className="h-10 w-64" style={{ animationDelay: "50ms" }} />
+					<PremiumSkeleton
+						variant="line"
+						className="h-10 w-64"
+						style={{ animationDelay: "50ms" }}
+					/>
 				</div>
 				<div className="grid gap-4 md:grid-cols-3">
 					{[0, 1, 2].map((i) => (
@@ -176,9 +185,21 @@ export const HistoryClient = () => {
 							key={i}
 							className="relative overflow-hidden rounded-2xl border border-border/30 bg-card/30 p-6"
 						>
-							<PremiumSkeleton variant="card" className="h-12 w-12 rounded-xl mb-4" style={{ animationDelay: `${(i + 2) * 50}ms` }} />
-							<PremiumSkeleton variant="line" className="h-8 w-16 mb-2" style={{ animationDelay: `${(i + 3) * 50}ms` }} />
-							<PremiumSkeleton variant="line" className="h-4 w-24" style={{ animationDelay: `${(i + 4) * 50}ms` }} />
+							<PremiumSkeleton
+								variant="card"
+								className="h-12 w-12 rounded-xl mb-4"
+								style={{ animationDelay: `${(i + 2) * 50}ms` }}
+							/>
+							<PremiumSkeleton
+								variant="line"
+								className="h-8 w-16 mb-2"
+								style={{ animationDelay: `${(i + 3) * 50}ms` }}
+							/>
+							<PremiumSkeleton
+								variant="line"
+								className="h-4 w-24"
+								style={{ animationDelay: `${(i + 4) * 50}ms` }}
+							/>
 						</div>
 					))}
 				</div>
@@ -196,9 +217,7 @@ export const HistoryClient = () => {
 				gradientTitle
 				description="Review recent activity from all configured instances."
 				highlightStat={
-					allItems.length > 0
-						? { value: allItems.length, label: "events tracked" }
-						: undefined
+					allItems.length > 0 ? { value: allItems.length, label: "events tracked" } : undefined
 				}
 				actions={
 					<div className="flex items-center gap-2">
@@ -211,12 +230,16 @@ export const HistoryClient = () => {
 									"flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-all",
 									viewMode === "timeline"
 										? "text-foreground"
-										: "text-muted-foreground hover:text-foreground"
+										: "text-muted-foreground hover:text-foreground",
 								)}
-								style={viewMode === "timeline" ? {
-									backgroundColor: themeGradient.fromLight,
-									color: themeGradient.from,
-								} : undefined}
+								style={
+									viewMode === "timeline"
+										? {
+												backgroundColor: themeGradient.fromLight,
+												color: themeGradient.from,
+											}
+										: undefined
+								}
 							>
 								<LayoutList className="h-3.5 w-3.5" />
 								Timeline
@@ -228,12 +251,16 @@ export const HistoryClient = () => {
 									"flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-all border-l border-border/50",
 									viewMode === "table"
 										? "text-foreground"
-										: "text-muted-foreground hover:text-foreground"
+										: "text-muted-foreground hover:text-foreground",
 								)}
-								style={viewMode === "table" ? {
-									backgroundColor: themeGradient.fromLight,
-									color: themeGradient.from,
-								} : undefined}
+								style={
+									viewMode === "table"
+										? {
+												backgroundColor: themeGradient.fromLight,
+												color: themeGradient.from,
+											}
+										: undefined
+								}
 							>
 								<Table2 className="h-3.5 w-3.5" />
 								Table
@@ -244,13 +271,13 @@ export const HistoryClient = () => {
 							onClick={() => void handleRefresh()}
 							className={cn(
 								"relative overflow-hidden transition-all duration-300",
-								isRefreshing && "pointer-events-none"
+								isRefreshing && "pointer-events-none",
 							)}
 						>
 							<RefreshCw
 								className={cn(
 									"h-4 w-4 mr-2 transition-transform duration-500",
-									isRefreshing && "animate-spin"
+									isRefreshing && "animate-spin",
 								)}
 							/>
 							Refresh
@@ -286,14 +313,18 @@ export const HistoryClient = () => {
 								"rounded-full px-4 py-1.5 text-xs font-medium transition-all duration-200 border",
 								isActive
 									? "border-transparent shadow-sm"
-									: "border-border/50 bg-card/30 text-muted-foreground hover:text-foreground hover:border-border/80"
+									: "border-border/50 bg-card/30 text-muted-foreground hover:text-foreground hover:border-border/80",
 							)}
-							style={isActive ? {
-								backgroundColor: themeGradient.fromLight,
-								color: themeGradient.from,
-								borderColor: themeGradient.fromMuted,
-								boxShadow: `0 0 12px ${themeGradient.glow}`,
-							} : undefined}
+							style={
+								isActive
+									? {
+											backgroundColor: themeGradient.fromLight,
+											color: themeGradient.from,
+											borderColor: themeGradient.fromMuted,
+											boxShadow: `0 0 12px ${themeGradient.glow}`,
+										}
+									: undefined
+							}
 						>
 							{preset.label}
 						</button>
@@ -331,11 +362,15 @@ export const HistoryClient = () => {
 						label="Failures"
 						description="Last 24 hours"
 						icon={AlertTriangle}
-						gradient={activitySummary.failures > 0 ? {
-							from: SEMANTIC_COLORS.error.text,
-							to: SEMANTIC_COLORS.error.text,
-							glow: `${SEMANTIC_COLORS.error.text}40`,
-						} : undefined}
+						gradient={
+							activitySummary.failures > 0
+								? {
+										from: SEMANTIC_COLORS.error.text,
+										to: SEMANTIC_COLORS.error.text,
+										glow: `${SEMANTIC_COLORS.error.text}40`,
+									}
+								: undefined
+						}
 						animationDelay={300}
 					/>
 				</div>
@@ -372,19 +407,20 @@ export const HistoryClient = () => {
 										"flex items-center gap-2 rounded-lg border px-3 py-2 transition-all duration-200 cursor-pointer",
 										isActive
 											? "ring-1 shadow-sm"
-											: "border-border/50 bg-card/30 hover:border-border/80"
+											: "border-border/50 bg-card/30 hover:border-border/80",
 									)}
-									style={isActive ? {
-										borderColor: gradient.from,
-										backgroundColor: `${gradient.from}15`,
-										boxShadow: `0 0 8px ${gradient.glow}`,
-									} : undefined}
+									style={
+										isActive
+											? {
+													borderColor: gradient.from,
+													backgroundColor: `${gradient.from}15`,
+													boxShadow: `0 0 8px ${gradient.glow}`,
+												}
+											: undefined
+									}
 								>
 									<ServiceBadge service={service} />
-									<span
-										className="text-sm font-semibold"
-										style={{ color: gradient.from }}
-									>
+									<span className="text-sm font-semibold" style={{ color: gradient.from }}>
 										{count}
 									</span>
 								</button>
@@ -396,183 +432,211 @@ export const HistoryClient = () => {
 
 			{/* Filters Card (Collapsible) */}
 			<div
-				className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500"
-				style={{ animationDelay: "400ms", animationFillMode: "backwards" }}
+				className="relative rounded-xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500"
+				style={{
+					border: `1px solid ${themeGradient.from}10`,
+					animationDelay: "400ms",
+					animationFillMode: "backwards",
+				}}
 			>
-				{/* Clickable Header */}
-				<button
-					type="button"
-					onClick={() => setFiltersOpen(!filtersOpen)}
-					className="flex items-center gap-3 w-full px-5 py-3 text-left hover:bg-muted/10 transition-colors"
-				>
-					<Filter className="h-4 w-4 text-muted-foreground" />
-					<span className="text-sm font-medium text-foreground">Filters</span>
-					{filtersActive && !filtersOpen && (
+				<div
+					className="absolute inset-0 pointer-events-none"
+					style={{
+						background: `linear-gradient(135deg, ${themeGradient.from}04, transparent 60%)`,
+					}}
+				/>
+				<div
+					className="absolute left-0 top-0 bottom-0 w-[3px]"
+					style={{
+						background: `linear-gradient(180deg, ${themeGradient.from}, ${themeGradient.fromLight})`,
+					}}
+				/>
+				<div className="relative">
+					{/* Clickable Header */}
+					<button
+						type="button"
+						onClick={() => setFiltersOpen(!filtersOpen)}
+						className="flex items-center gap-3 w-full px-5 py-3 text-left hover:bg-muted/10 transition-colors"
+					>
 						<span
-							className="text-xs font-medium rounded-full px-2 py-0.5"
-							style={{
-								backgroundColor: themeGradient.fromLight,
-								color: themeGradient.from,
-							}}
+							className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
+							style={{ backgroundColor: `${themeGradient.from}12`, color: themeGradient.from }}
 						>
-							Active
+							<Filter className="h-2.5 w-2.5" />
+							Filters
 						</span>
+						{filtersActive && !filtersOpen && (
+							<span
+								className="text-xs font-medium rounded-full px-2 py-0.5"
+								style={{
+									backgroundColor: themeGradient.fromLight,
+									color: themeGradient.from,
+								}}
+							>
+								Active
+							</span>
+						)}
+						<div className="ml-auto">
+							{filtersOpen ? (
+								<ChevronUp className="h-4 w-4 text-muted-foreground" />
+							) : (
+								<ChevronDown className="h-4 w-4 text-muted-foreground" />
+							)}
+						</div>
+					</button>
+
+					{/* Active Filter Chips (shown when collapsed) */}
+					{!filtersOpen && filtersActive && (
+						<div className="flex flex-wrap gap-2 px-5 pb-3 animate-in fade-in duration-200">
+							{deferredSearchTerm && (
+								<ActiveFilterChip
+									label={`Search: "${deferredSearchTerm}"`}
+									onRemove={() => actions.setSearchTerm("")}
+									gradient={themeGradient}
+								/>
+							)}
+							{serviceFilter !== "all" && (
+								<ActiveFilterChip
+									label={`Service: ${serviceFilter}`}
+									onRemove={() => actions.setServiceFilter("all")}
+									gradient={themeGradient}
+								/>
+							)}
+							{instanceFilter !== "all" && (
+								<ActiveFilterChip
+									label={`Instance: ${instanceOptions.find((o) => o.value === instanceFilter)?.label ?? instanceFilter}`}
+									onRemove={() => actions.setInstanceFilter("all")}
+									gradient={themeGradient}
+								/>
+							)}
+							{statusFilter !== "all" && (
+								<ActiveFilterChip
+									label={`Status: ${statusFilter}`}
+									onRemove={() => actions.setStatusFilter("all")}
+									gradient={themeGradient}
+								/>
+							)}
+						</div>
 					)}
-					<div className="ml-auto">
-						{filtersOpen ? (
-							<ChevronUp className="h-4 w-4 text-muted-foreground" />
-						) : (
-							<ChevronDown className="h-4 w-4 text-muted-foreground" />
-						)}
-					</div>
-				</button>
 
-				{/* Active Filter Chips (shown when collapsed) */}
-				{!filtersOpen && filtersActive && (
-					<div className="flex flex-wrap gap-2 px-5 pb-3 animate-in fade-in duration-200">
-						{deferredSearchTerm && (
-							<ActiveFilterChip
-								label={`Search: "${deferredSearchTerm}"`}
-								onRemove={() => actions.setSearchTerm("")}
-								gradient={themeGradient}
-							/>
-						)}
-						{serviceFilter !== "all" && (
-							<ActiveFilterChip
-								label={`Service: ${serviceFilter}`}
-								onRemove={() => actions.setServiceFilter("all")}
-								gradient={themeGradient}
-							/>
-						)}
-						{instanceFilter !== "all" && (
-							<ActiveFilterChip
-								label={`Instance: ${instanceOptions.find(o => o.value === instanceFilter)?.label ?? instanceFilter}`}
-								onRemove={() => actions.setInstanceFilter("all")}
-								gradient={themeGradient}
-							/>
-						)}
-						{statusFilter !== "all" && (
-							<ActiveFilterChip
-								label={`Status: ${statusFilter}`}
-								onRemove={() => actions.setStatusFilter("all")}
-								gradient={themeGradient}
-							/>
-						)}
-					</div>
-				)}
-
-				{/* Expanded Filter Controls */}
-				{filtersOpen && (
-					<div className="px-5 pb-5 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
-						<div className="flex flex-wrap items-end gap-4">
-							<div className="flex min-w-[140px] flex-col gap-1.5">
-								<label className="text-xs font-medium text-muted-foreground uppercase tracking-wide" htmlFor="history-start-date">
-									From Date
-								</label>
-								<Input
-									id="history-start-date"
-									type="date"
-									value={startDate ? startDate.slice(0, 10) : ""}
-									onChange={(event) => {
-										actions.setStartDate(event.target.value);
-										actions.setPage(1);
-									}}
-									className="bg-background/50 border-border/50 focus:border-primary"
+					{/* Expanded Filter Controls */}
+					{filtersOpen && (
+						<div className="px-5 pb-5 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+							<div className="flex flex-wrap items-end gap-4">
+								<div className="flex min-w-[140px] flex-col gap-1.5">
+									<label
+										className="text-xs font-medium text-muted-foreground uppercase tracking-wide"
+										htmlFor="history-start-date"
+									>
+										From Date
+									</label>
+									<Input
+										id="history-start-date"
+										type="date"
+										value={startDate ? startDate.slice(0, 10) : ""}
+										onChange={(event) => {
+											actions.setStartDate(event.target.value);
+											actions.setPage(1);
+										}}
+										className="bg-background/50 border-border/50 focus:border-primary"
+									/>
+								</div>
+								<div className="flex min-w-[140px] flex-col gap-1.5">
+									<label
+										className="text-xs font-medium text-muted-foreground uppercase tracking-wide"
+										htmlFor="history-end-date"
+									>
+										To Date
+									</label>
+									<Input
+										id="history-end-date"
+										type="date"
+										value={endDate}
+										onChange={(event) => {
+											actions.setEndDate(event.target.value);
+											actions.setPage(1);
+										}}
+										className="bg-background/50 border-border/50 focus:border-primary"
+									/>
+								</div>
+								<div className="flex min-w-[200px] flex-1 flex-col gap-1.5">
+									<label
+										className="text-xs font-medium text-muted-foreground uppercase tracking-wide"
+										htmlFor="history-search"
+									>
+										Search
+									</label>
+									<Input
+										id="history-search"
+										value={searchTerm}
+										onChange={(event) => actions.setSearchTerm(event.target.value)}
+										placeholder="Search title, client, or indexer"
+										className="bg-background/50 border-border/50 focus:border-primary"
+									/>
+								</div>
+								<FilterSelect
+									value={serviceFilter}
+									onChange={(value) =>
+										actions.setServiceFilter(value as (typeof SERVICE_FILTERS)[number]["value"])
+									}
+									options={SERVICE_FILTERS}
+									label="Service"
+									className="min-w-[140px]"
+								/>
+								<FilterSelect
+									value={instanceFilter}
+									onChange={(value) => actions.setInstanceFilter(value)}
+									options={[{ value: "all", label: "All instances" }, ...instanceOptions]}
+									label="Instance"
+									className="min-w-[180px]"
+								/>
+								<FilterSelect
+									value={statusFilter}
+									onChange={(value) => actions.setStatusFilter(value)}
+									options={[{ value: "all", label: "All statuses" }, ...statusOptions]}
+									label="Status"
+									className="min-w-[160px]"
 								/>
 							</div>
-							<div className="flex min-w-[140px] flex-col gap-1.5">
-								<label className="text-xs font-medium text-muted-foreground uppercase tracking-wide" htmlFor="history-end-date">
-									To Date
-								</label>
-								<Input
-									id="history-end-date"
-									type="date"
-									value={endDate}
-									onChange={(event) => {
-										actions.setEndDate(event.target.value);
-										actions.setPage(1);
-									}}
-									className="bg-background/50 border-border/50 focus:border-primary"
-								/>
-							</div>
-							<div className="flex min-w-[200px] flex-1 flex-col gap-1.5">
-								<label className="text-xs font-medium text-muted-foreground uppercase tracking-wide" htmlFor="history-search">
-									Search
-								</label>
-								<Input
-									id="history-search"
-									value={searchTerm}
-									onChange={(event) => actions.setSearchTerm(event.target.value)}
-									placeholder="Search title, client, or indexer"
-									className="bg-background/50 border-border/50 focus:border-primary"
-								/>
-							</div>
-							<FilterSelect
-								value={serviceFilter}
-								onChange={(value) =>
-									actions.setServiceFilter(
-										value as (typeof SERVICE_FILTERS)[number]["value"],
-									)
-								}
-								options={SERVICE_FILTERS}
-								label="Service"
-								className="min-w-[140px]"
-							/>
-							<FilterSelect
-								value={instanceFilter}
-								onChange={(value) => actions.setInstanceFilter(value)}
-								options={[{ value: "all", label: "All instances" }, ...instanceOptions]}
-								label="Instance"
-								className="min-w-[180px]"
-							/>
-							<FilterSelect
-								value={statusFilter}
-								onChange={(value) => actions.setStatusFilter(value)}
-								options={[{ value: "all", label: "All statuses" }, ...statusOptions]}
-								label="Status"
-								className="min-w-[160px]"
-							/>
-						</div>
-						<div className="flex items-center gap-4 pt-1">
-							<label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
-								<input
-									type="checkbox"
-									checked={groupByDownload}
-									onChange={(e) => {
-										actions.setGroupByDownload(e.target.checked);
-										actions.setPage(1);
-									}}
-									className="rounded border-border/50 bg-background/50 text-primary focus:ring-primary/20"
-								/>
-								Group by download
-							</label>
-							<label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
-								<input
-									type="checkbox"
-									checked={hideProwlarrRss}
-									onChange={(e) => {
-										actions.setHideProwlarrRss(e.target.checked);
-										actions.setPage(1);
-									}}
-									className="rounded border-border/50 bg-background/50 text-primary focus:ring-primary/20"
-								/>
-								Hide RSS events
-							</label>
-							<div className="ml-auto">
-								<Button
-									variant="ghost"
-									size="sm"
-									onClick={handleResetFilters}
-									disabled={!filtersActive}
-									className="gap-2"
-								>
-									<RotateCcw className="h-4 w-4" />
-									Reset
-								</Button>
+							<div className="flex items-center gap-5 pt-1">
+								<div className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
+									<ToggleSwitch
+										checked={groupByDownload}
+										onChange={(v) => {
+											actions.setGroupByDownload(v);
+											actions.setPage(1);
+										}}
+										label="Group by download"
+									/>
+									Group by download
+								</div>
+								<div className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
+									<ToggleSwitch
+										checked={hideProwlarrRss}
+										onChange={(v) => {
+											actions.setHideProwlarrRss(v);
+											actions.setPage(1);
+										}}
+										label="Hide RSS events"
+									/>
+									Hide RSS events
+								</div>
+								<div className="ml-auto">
+									<Button
+										variant="ghost"
+										size="sm"
+										onClick={handleResetFilters}
+										disabled={!filtersActive}
+										className="gap-2"
+									>
+										<RotateCcw className="h-4 w-4" />
+										Reset
+									</Button>
+								</div>
 							</div>
 						</div>
-					</div>
-				)}
+					)}
+				</div>
 			</div>
 
 			{/* Status Summary Pills */}
@@ -584,13 +648,14 @@ export const HistoryClient = () => {
 					{statusSummary.map(([label, count], index) => (
 						<div
 							key={`${index}-${label}`}
-							className="flex items-center gap-2 rounded-full border border-border/50 bg-card/30 backdrop-blur-xs px-4 py-2 text-sm"
+							className="flex items-center gap-2 rounded-full px-4 py-2 text-sm"
+							style={{
+								backgroundColor: `${themeGradient.from}08`,
+								border: `1px solid ${themeGradient.from}12`,
+							}}
 						>
 							<span className="text-muted-foreground">{label}</span>
-							<span
-								className="font-semibold"
-								style={{ color: themeGradient.from }}
-							>
+							<span className="font-semibold" style={{ color: themeGradient.from }}>
 								{count}
 							</span>
 						</div>
@@ -636,11 +701,9 @@ export const HistoryClient = () => {
 						style={{ color: SEMANTIC_COLORS.error.text }}
 					/>
 					<div className="flex-1 min-w-0 space-y-1">
-						<p
-							className="text-sm font-medium"
-							style={{ color: SEMANTIC_COLORS.error.text }}
-						>
-							{activitySummary.failures} failure{activitySummary.failures !== 1 ? "s" : ""} in the last 24 hours
+						<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
+							{activitySummary.failures} failure{activitySummary.failures !== 1 ? "s" : ""} in the
+							last 24 hours
 						</p>
 						{recentFailureTitles.length > 0 && (
 							<p className="text-xs text-muted-foreground truncate">

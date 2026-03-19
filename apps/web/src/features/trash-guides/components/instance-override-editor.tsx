@@ -1,31 +1,25 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import {
-	LegacyDialog,
-	LegacyDialogHeader,
-	LegacyDialogTitle,
-	LegacyDialogDescription,
-	LegacyDialogContent,
-	LegacyDialogFooter,
-} from "../../../components/ui";
-import { Button } from "../../../components/ui";
+import { AlertCircle, RotateCcw, Save, Settings, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { PremiumSkeleton } from "../../../components/layout/premium-components";
 import {
-	AlertCircle,
-	Settings,
-	RotateCcw,
-	Save,
-	Trash2,
-} from "lucide-react";
+	Button,
+	LegacyDialog,
+	LegacyDialogContent,
+	LegacyDialogDescription,
+	LegacyDialogFooter,
+	LegacyDialogHeader,
+	LegacyDialogTitle,
+} from "../../../components/ui";
 import {
+	useDeleteInstanceOverrides,
 	useInstanceOverrides,
 	useUpdateInstanceOverrides,
-	useDeleteInstanceOverrides,
 } from "../../../hooks/api/useInstanceOverrides";
-import { cn } from "../../../lib/utils";
-import { toast } from "sonner";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { cn } from "../../../lib/utils";
 
 interface CustomFormatOverrideRow {
 	trashId: string;
@@ -123,11 +117,7 @@ export const InstanceOverrideEditor = ({
 		}
 
 		setEditedOverrides((prev) =>
-			prev.map((row) =>
-				row.trashId === trashId
-					? { ...row, overrideScore: numValue }
-					: row,
-			),
+			prev.map((row) => (row.trashId === trashId ? { ...row, overrideScore: numValue } : row)),
 		);
 		pendingEditsRef.current = true;
 		setHasChanges(true);
@@ -135,9 +125,7 @@ export const InstanceOverrideEditor = ({
 
 	const handleEnabledChange = (trashId: string, enabled: boolean) => {
 		setEditedOverrides((prev) =>
-			prev.map((row) =>
-				row.trashId === trashId ? { ...row, enabled } : row,
-			),
+			prev.map((row) => (row.trashId === trashId ? { ...row, enabled } : row)),
 		);
 		pendingEditsRef.current = true;
 		setHasChanges(true);
@@ -146,9 +134,7 @@ export const InstanceOverrideEditor = ({
 	const handleResetToBase = (trashId: string) => {
 		setEditedOverrides((prev) =>
 			prev.map((row) =>
-				row.trashId === trashId
-					? { ...row, overrideScore: undefined, enabled: true }
-					: row,
+				row.trashId === trashId ? { ...row, overrideScore: undefined, enabled: true } : row,
 			),
 		);
 		pendingEditsRef.current = true;
@@ -254,7 +240,11 @@ export const InstanceOverrideEditor = ({
 				{isLoading && (
 					<div className="space-y-4">
 						<PremiumSkeleton variant="card" className="h-12 w-full" />
-						<PremiumSkeleton variant="card" className="h-64 w-full" style={{ animationDelay: "50ms" }} />
+						<PremiumSkeleton
+							variant="card"
+							className="h-64 w-full"
+							style={{ animationDelay: "50ms" }}
+						/>
 					</div>
 				)}
 
@@ -311,7 +301,9 @@ export const InstanceOverrideEditor = ({
 											<th className="text-left p-3 font-medium text-foreground">Enabled</th>
 											<th className="text-left p-3 font-medium text-foreground">Custom Format</th>
 											<th className="text-center p-3 font-medium text-foreground">Default Score</th>
-											<th className="text-center p-3 font-medium text-foreground">Override Score</th>
+											<th className="text-center p-3 font-medium text-foreground">
+												Override Score
+											</th>
 											<th className="text-center p-3 font-medium text-foreground">Actions</th>
 										</tr>
 									</thead>
@@ -321,30 +313,31 @@ export const InstanceOverrideEditor = ({
 											return (
 												<tr
 													key={row.trashId}
-													className={cn(
-														"transition",
-														hasOverride && "bg-primary/5",
-													)}
+													className={cn("transition", hasOverride && "bg-primary/5")}
 												>
-												<td className="p-3">
-													<input
-														type="checkbox"
-														checked={row.enabled}
-														onChange={(e) => handleEnabledChange(row.trashId, e.target.checked)}
-														aria-label={`Enable ${row.name || row.trashId}`}
-														className="w-4 h-4 rounded border-border"
-													/>
-												</td>
 													<td className="p-3">
-														<span className={cn(
-															"text-sm",
-															!row.enabled && "text-muted-foreground line-through",
-														)}>
+														<input
+															type="checkbox"
+															checked={row.enabled}
+															onChange={(e) => handleEnabledChange(row.trashId, e.target.checked)}
+															aria-label={`Enable ${row.name || row.trashId}`}
+															className="w-4 h-4 rounded border-border"
+														/>
+													</td>
+													<td className="p-3">
+														<span
+															className={cn(
+																"text-sm",
+																!row.enabled && "text-muted-foreground line-through",
+															)}
+														>
 															{row.name}
 														</span>
 													</td>
 													<td className="p-3 text-center">
-														<span className="text-sm text-muted-foreground">{row.defaultScore}</span>
+														<span className="text-sm text-muted-foreground">
+															{row.defaultScore}
+														</span>
 													</td>
 													<td className="p-3">
 														<input

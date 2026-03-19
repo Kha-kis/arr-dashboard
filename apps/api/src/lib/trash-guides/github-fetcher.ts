@@ -11,15 +11,52 @@ import type {
 	TrashConfigType,
 	TrashCustomFormat,
 	TrashCustomFormatGroup,
+	TrashNamingData,
 	TrashNamingScheme,
 	TrashQualityProfile,
+	TrashQualityProfileGroup,
 	TrashQualitySize,
 	TrashRepoConfig,
 } from "@arr/shared";
 import { DEFAULT_TRASH_REPO } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
 import DOMPurify from "isomorphic-dompurify";
+import { z } from "zod";
 import { marked } from "marked";
+import { parseUpstreamOrThrow, UpstreamValidationError } from "../validation/parse-upstream.js";
+import {
+	radarrNamingSchema,
+	sonarrNamingSchema,
+	trashCustomFormatGroupSchema,
+	trashCustomFormatSchema,
+	trashNamingSchemeSchema,
+	trashQualityProfileGroupSchema,
+	trashQualityProfileSchema,
+	trashQualitySizeSchema,
+	recordValidationStats,
+	validateAndCollect,
+} from "./github-schemas.js";
+
+// ============================================================================
+// GitHub API Schemas
+// ============================================================================
+
+/** Schema for GitHub Contents API directory listing entries */
+export const githubDirectoryEntrySchema = z.looseObject({
+	name: z.string(),
+	type: z.string(),
+	download_url: z.string().nullable().optional(),
+});
+
+/** Schema for GitHub repo info (used by custom-repo validation) */
+export const githubRepoInfoSchema = z.looseObject({
+	default_branch: z.string().optional(),
+});
+
+/** Schema for GitHub API error bodies */
+export const githubErrorBodySchema = z.looseObject({
+	message: z.string().optional(),
+});
 
 // ============================================================================
 // Logger Interface
@@ -35,10 +72,14 @@ interface Logger {
 	debug?: (msg: string | object, ...args: unknown[]) => void;
 }
 
-/** No-op logger for when logging is disabled */
-const noopLogger: Logger = {
-	warn: () => {},
-	error: () => {},
+/**
+ * Fallback logger using console — ensures validation warnings and fetch
+ * errors are always visible, even if callers forget to pass app.log.
+ */
+const fallbackLogger: Logger = {
+	warn: (msg: string | object, ...args: unknown[]) => console.warn("[TrashFetcher]", msg, ...args),
+	error: (msg: string | object, ...args: unknown[]) =>
+		console.error("[TrashFetcher]", msg, ...args),
 	debug: () => {},
 };
 
@@ -203,11 +244,12 @@ interface FetchOptions {
 	repoConfig?: TrashRepoConfig;
 }
 
-interface TrashMetadata {
-	version?: string;
-	lastUpdated?: string;
-	[key: string]: unknown;
-}
+/** Schema for TRaSH Guides metadata file */
+export const trashMetadataSchema = z.looseObject({
+	version: z.string().optional(),
+	lastUpdated: z.string().optional(),
+});
+type TrashMetadata = z.infer<typeof trashMetadataSchema>;
 
 // ============================================================================
 // Helper Functions
@@ -273,7 +315,7 @@ async function fetchWithTimeout(
 async function fetchWithRetry(
 	url: string,
 	options: FetchOptions = {},
-	log: Logger = noopLogger,
+	log: Logger = fallbackLogger,
 ): Promise<Response> {
 	const {
 		timeout = FETCH_TIMEOUT_MS,
@@ -328,7 +370,7 @@ async function fetchWithRetry(
 				const retryAfter = response.headers.get("Retry-After");
 				const waitTime = retryAfter
 					? Number.parseInt(retryAfter, 10) * 1000
-					: Math.min(retryDelay * Math.pow(2, attempt - 1) + Math.random() * 1000, 60000);
+					: Math.min(retryDelay * 2 ** (attempt - 1) + Math.random() * 1000, 60000);
 				const rateLimitRemaining = response.headers.get("X-RateLimit-Remaining");
 				const rateLimitReset = response.headers.get("X-RateLimit-Reset");
 
@@ -418,14 +460,10 @@ function mergeByTrashId<T>(official: T[], custom: T[]): T[] {
 
 	// Tag shallow copies with source repo for provenance tracking (avoids mutating inputs)
 	const taggedBase = base.map((item) =>
-		item && typeof item === "object"
-			? ({ ...item, _repoSource: "official" as const } as T)
-			: item,
+		item && typeof item === "object" ? ({ ...item, _repoSource: "official" as const } as T) : item,
 	);
 	const taggedCustom = custom.map((item) =>
-		item && typeof item === "object"
-			? ({ ...item, _repoSource: "custom" as const } as T)
-			: item,
+		item && typeof item === "object" ? ({ ...item, _repoSource: "custom" as const } as T) : item,
 	);
 
 	return [...taggedBase, ...taggedCustom];
@@ -450,7 +488,7 @@ export class TrashGitHubFetcher {
 	constructor(options: FetchOptions = {}) {
 		this.fetchOptions = options;
 		// Use provided logger or no-op logger (silent by default)
-		this.log = (options.logger as Logger) ?? noopLogger;
+		this.log = (options.logger as Logger) ?? fallbackLogger;
 
 		// Build URLs from repo config (custom fork or official)
 		this.repoConfig = options.repoConfig ?? DEFAULT_TRASH_REPO;
@@ -479,6 +517,10 @@ export class TrashGitHubFetcher {
 				return `${this.baseUrl}/${service}/naming`;
 			case "QUALITY_PROFILES":
 				return `${this.baseUrl}/${service}/quality-profiles`;
+			case "QUALITY_PROFILE_GROUPS":
+				return `${this.baseUrl}/${service}/quality-profile-groups/groups.json`;
+			case "NAMING_PRESETS":
+				return `${this.baseUrl}/${service}/naming`;
 			default:
 				throw new Error(`Unknown config type: ${configType}`);
 		}
@@ -494,7 +536,11 @@ export class TrashGitHubFetcher {
 			throw new Error(`Failed to fetch metadata: ${response.statusText}`);
 		}
 
-		return (await response.json()) as TrashMetadata;
+		const raw = await response.json();
+		return parseUpstreamOrThrow(raw, trashMetadataSchema, {
+			integration: "trash-guides",
+			category: "metadata",
+		});
 	}
 
 	/**
@@ -519,16 +565,16 @@ export class TrashGitHubFetcher {
 				const response = await fetchWithRetry(url, this.fetchOptions, this.log);
 
 				if (response.ok) {
-					const data = (await response.json()) as TrashCustomFormat | TrashCustomFormat[];
-					// Handle both single format and array of formats
-					if (Array.isArray(data)) {
-						formats.push(...data);
-					} else {
-						formats.push(data);
-					}
+					const rawData: unknown = await response.json();
+					const result = validateAndCollect(rawData, trashCustomFormatSchema, file, this.log, {
+						integration: "trash-guides",
+						category: "customFormats",
+					});
+					formats.push(...result.items);
+					recordValidationStats("customFormats", result.stats);
 				}
 			} catch (error) {
-				this.log.warn(`Failed to fetch ${file}:`, error);
+				this.log.warn({ err: error, file }, "Failed to fetch config file");
 				// Continue with other files
 			}
 		}
@@ -553,15 +599,16 @@ export class TrashGitHubFetcher {
 				const response = await fetchWithRetry(url, this.fetchOptions, this.log);
 
 				if (response.ok) {
-					const data = (await response.json()) as TrashCustomFormatGroup | TrashCustomFormatGroup[];
-					if (Array.isArray(data)) {
-						groups.push(...data);
-					} else {
-						groups.push(data);
-					}
+					const rawData: unknown = await response.json();
+					const result = validateAndCollect(rawData, trashCustomFormatGroupSchema, file, this.log, {
+						integration: "trash-guides",
+						category: "customFormatGroups",
+					});
+					groups.push(...result.items);
+					recordValidationStats("customFormatGroups", result.stats);
 				}
 			} catch (error) {
-				this.log.warn(`Failed to fetch ${file}:`, error);
+				this.log.warn({ err: error, file }, "Failed to fetch config file");
 			}
 		}
 
@@ -583,15 +630,16 @@ export class TrashGitHubFetcher {
 				const response = await fetchWithRetry(url, this.fetchOptions, this.log);
 
 				if (response.ok) {
-					const data = (await response.json()) as TrashQualitySize | TrashQualitySize[];
-					if (Array.isArray(data)) {
-						settings.push(...data);
-					} else {
-						settings.push(data);
-					}
+					const rawData: unknown = await response.json();
+					const result = validateAndCollect(rawData, trashQualitySizeSchema, file, this.log, {
+						integration: "trash-guides",
+						category: "qualitySize",
+					});
+					settings.push(...result.items);
+					recordValidationStats("qualitySize", result.stats);
 				}
 			} catch (error) {
-				this.log.warn(`Failed to fetch ${file}:`, error);
+				this.log.warn({ err: error, file }, "Failed to fetch config file");
 			}
 		}
 
@@ -613,15 +661,16 @@ export class TrashGitHubFetcher {
 				const response = await fetchWithRetry(url, this.fetchOptions, this.log);
 
 				if (response.ok) {
-					const data = (await response.json()) as TrashNamingScheme | TrashNamingScheme[];
-					if (Array.isArray(data)) {
-						schemes.push(...data);
-					} else {
-						schemes.push(data);
-					}
+					const rawData: unknown = await response.json();
+					const result = validateAndCollect(rawData, trashNamingSchemeSchema, file, this.log, {
+						integration: "trash-guides",
+						category: "namingSchemes",
+					});
+					schemes.push(...result.items);
+					recordValidationStats("namingSchemes", result.stats);
 				}
 			} catch (error) {
-				this.log.warn(`Failed to fetch ${file}:`, error);
+				this.log.warn({ err: error, file }, "Failed to fetch config file");
 			}
 		}
 
@@ -643,20 +692,87 @@ export class TrashGitHubFetcher {
 				const response = await fetchWithRetry(url, this.fetchOptions, this.log);
 
 				if (response.ok) {
-					const data = (await response.json()) as TrashQualityProfile | TrashQualityProfile[];
-					// Handle both single profile and array of profiles
-					if (Array.isArray(data)) {
-						profiles.push(...data);
-					} else {
-						profiles.push(data);
-					}
+					const rawData: unknown = await response.json();
+					const result = validateAndCollect(rawData, trashQualityProfileSchema, file, this.log, {
+						integration: "trash-guides",
+						category: "qualityProfiles",
+					});
+					profiles.push(...result.items);
+					recordValidationStats("qualityProfiles", result.stats);
 				}
 			} catch (error) {
-				this.log.warn(`Failed to fetch ${file}:`, error);
+				this.log.warn({ err: error, file }, "Failed to fetch config file");
 			}
 		}
 
 		return profiles;
+	}
+
+	/**
+	 * Fetch Quality Profile Groups for a service.
+	 * Groups are stored in a single file (groups.json), not discovered via directory listing.
+	 */
+	async fetchQualityProfileGroups(
+		serviceType: "RADARR" | "SONARR",
+	): Promise<TrashQualityProfileGroup[]> {
+		const url = this.buildGitHubUrl(serviceType, "QUALITY_PROFILE_GROUPS");
+		try {
+			const response = await fetchWithRetry(url, this.fetchOptions, this.log);
+			if (!response.ok) {
+				this.log.warn(`Failed to fetch quality profile groups: ${response.status}`);
+				return [];
+			}
+			const rawData: unknown = await response.json();
+			return validateAndCollect(rawData, trashQualityProfileGroupSchema, "groups.json", this.log, {
+				integration: "trash-guides",
+				category: "qualityProfileGroups",
+			}).items;
+		} catch (error) {
+			this.log.error("Error fetching quality profile groups:", error);
+			return [];
+		}
+	}
+
+	/**
+	 * Fetch Naming data for a service using service-specific schemas (Feature 2).
+	 * Returns validated naming data objects (one per JSON file in the naming directory).
+	 */
+	async fetchNamingData(serviceType: "RADARR" | "SONARR"): Promise<TrashNamingData[]> {
+		const baseUrl = this.buildGitHubUrl(serviceType, "NAMING");
+
+		const results: TrashNamingData[] = [];
+		const knownFiles = await this.discoverConfigFiles(baseUrl);
+
+		for (const file of knownFiles) {
+			try {
+				const url = `${baseUrl}/${file}`;
+				const response = await fetchWithRetry(url, this.fetchOptions, this.log);
+
+				if (response.ok) {
+					const rawData: unknown = await response.json();
+					// Branch by service type — each schema's .transform() injects the _service discriminant
+					if (serviceType === "RADARR") {
+						results.push(
+							...validateAndCollect(rawData, radarrNamingSchema, file, this.log, {
+								integration: "trash-guides",
+								category: "namingPresets",
+							}).items,
+						);
+					} else {
+						results.push(
+							...validateAndCollect(rawData, sonarrNamingSchema, file, this.log, {
+								integration: "trash-guides",
+								category: "namingPresets",
+							}).items,
+						);
+					}
+				}
+			} catch (error) {
+				this.log.warn({ err: error, file }, "Failed to fetch naming file");
+			}
+		}
+
+		return results;
 	}
 
 	/**
@@ -726,10 +842,11 @@ export class TrashGitHubFetcher {
 				return [];
 			}
 
-			const files = (await response.json()) as Array<{
-				name: string;
-				type: string;
-			}>;
+			const files = parseUpstreamOrThrow(
+				await response.json(),
+				z.array(githubDirectoryEntrySchema),
+				{ integration: "trash-guides", category: "directory-listing" },
+			);
 
 			// Filter for .md files only
 			const mdFiles = files
@@ -755,7 +872,14 @@ export class TrashGitHubFetcher {
 
 			return descriptions;
 		} catch (error) {
-			this.log.error("Failed to fetch CF descriptions:", error);
+			if (error instanceof UpstreamValidationError) {
+				this.log.warn(
+					{ integration: error.integration, issues: error.issues },
+					"GitHub directory listing schema drift",
+				);
+			} else {
+				this.log.error("Failed to fetch CF descriptions:", error);
+			}
 			return [];
 		}
 	}
@@ -792,10 +916,11 @@ export class TrashGitHubFetcher {
 				return [];
 			}
 
-			const files = (await response.json()) as Array<{
-				name: string;
-				type: string;
-			}>;
+			const files = parseUpstreamOrThrow(
+				await response.json(),
+				z.array(githubDirectoryEntrySchema),
+				{ integration: "trash-guides", category: "directory-listing" },
+			);
 
 			// Filter for .md files that match known include patterns
 			const includeFiles = files
@@ -851,7 +976,14 @@ export class TrashGitHubFetcher {
 			this.log.debug?.(`Fetched ${includes.length} CF include files`);
 			return includes;
 		} catch (error) {
-			this.log.error("Failed to fetch CF includes:", error);
+			if (error instanceof UpstreamValidationError) {
+				this.log.warn(
+					{ integration: error.integration, issues: error.issues },
+					"GitHub directory listing schema drift",
+				);
+			} else {
+				this.log.error("Failed to fetch CF includes:", error);
+			}
 			return [];
 		}
 	}
@@ -901,6 +1033,10 @@ export class TrashGitHubFetcher {
 				return this.fetchAllCFDescriptions();
 			case "CF_INCLUDES":
 				return this.fetchCFIncludes();
+			case "QUALITY_PROFILE_GROUPS":
+				return this.fetchQualityProfileGroups(serviceType);
+			case "NAMING_PRESETS":
+				return this.fetchNamingData(serviceType);
 			default:
 				throw new Error(`Unsupported config type: ${configType}`);
 		}
@@ -930,11 +1066,11 @@ export class TrashGitHubFetcher {
 				return [];
 			}
 
-			const files = (await response.json()) as Array<{
-				name: string;
-				type: string;
-				download_url: string | null;
-			}>;
+			const files = parseUpstreamOrThrow(
+				await response.json(),
+				z.array(githubDirectoryEntrySchema),
+				{ integration: "trash-guides", category: "directory-listing" },
+			);
 
 			// Filter for .json files only
 			const jsonFiles = files
@@ -947,7 +1083,14 @@ export class TrashGitHubFetcher {
 
 			return jsonFiles;
 		} catch (error) {
-			this.log.error(`Failed to discover config files at ${baseUrl}:`, error);
+			if (error instanceof UpstreamValidationError) {
+				this.log.warn(
+					{ integration: error.integration, issues: error.issues },
+					"GitHub directory listing schema drift",
+				);
+			} else {
+				this.log.error(`Failed to discover config files at ${baseUrl}:`, error);
+			}
 			return [];
 		}
 	}

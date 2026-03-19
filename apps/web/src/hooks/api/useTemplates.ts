@@ -1,22 +1,22 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { CreateTemplateRequest, UpdateTemplateRequest } from "@arr/shared";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-	fetchTemplates,
-	fetchTemplate,
 	createTemplate,
-	updateTemplate,
 	deleteTemplate,
 	duplicateTemplate,
-	importTemplate,
+	type EnhancedImportTemplatePayload,
 	exportTemplate,
+	fetchTemplate,
 	fetchTemplateStats,
+	fetchTemplates,
+	importEnhancedTemplate,
+	importTemplate,
 	type TemplateListResponse,
 	type TemplateResponse,
 	type TemplateStatsResponse,
-	importEnhancedTemplate,
-	type EnhancedImportTemplatePayload,
+	updateTemplate,
 } from "../../lib/api-client/trash-guides";
 
 // ============================================================================
@@ -104,7 +104,9 @@ export const useUpdateTemplate = () => {
 			updateTemplate(templateId, payload),
 		onSuccess: (_, variables) => {
 			void queryClient.invalidateQueries({ queryKey: TEMPLATES_QUERY_KEY });
-			void queryClient.invalidateQueries({ queryKey: ["trash-guides", "template", variables.templateId] });
+			void queryClient.invalidateQueries({
+				queryKey: ["trash-guides", "template", variables.templateId],
+			});
 		},
 	});
 };

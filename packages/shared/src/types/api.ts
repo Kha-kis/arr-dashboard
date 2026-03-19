@@ -1,56 +1,56 @@
 import type { ArrServiceType } from "./arr";
 
 export interface ServiceTagResponse {
-  id: string;
-  name: string;
+	id: string;
+	name: string;
 }
 
 export interface ServiceInstanceSummary {
-  id: string;
-  service: ArrServiceType;
-  label: string;
-  baseUrl: string;
-  externalUrl: string | null;
-  enabled: boolean;
-  isDefault: boolean;
-  hasApiKey: boolean;
-  storageGroupId: string | null;
-  createdAt: string;
-  updatedAt: string;
-  tags: ServiceTagResponse[];
+	id: string;
+	service: ArrServiceType;
+	label: string;
+	baseUrl: string;
+	externalUrl: string | null;
+	enabled: boolean;
+	isDefault: boolean;
+	hasApiKey: boolean;
+	storageGroupId: string | null;
+	createdAt: string;
+	updatedAt: string;
+	tags: ServiceTagResponse[];
 }
 
 export interface ServicesResponse {
-  services: ServiceInstanceSummary[];
+	services: ServiceInstanceSummary[];
 }
 
 export interface ServiceResponse {
-  service: ServiceInstanceSummary;
+	service: ServiceInstanceSummary;
 }
 
 export interface TagsResponse {
-  tags: ServiceTagResponse[];
+	tags: ServiceTagResponse[];
 }
 
 export interface CreateTagResponse {
-  tag: ServiceTagResponse;
+	tag: ServiceTagResponse;
 }
 
 export interface CurrentUser {
-  id: string;
-  username: string;
-  mustChangePassword: boolean;
-  createdAt: string;
-  hasTmdbApiKey?: boolean;
-  hasPassword?: boolean;
+	id: string;
+	username: string;
+	mustChangePassword: boolean;
+	createdAt: string;
+	hasTmdbApiKey?: boolean;
+	hasPassword?: boolean;
 }
 
 export interface CurrentUserResponse {
-  user: CurrentUser;
+	user: CurrentUser;
 }
 
 export interface ErrorResponse {
-  error: string;
-  details?: unknown;
+	error: string;
+	details?: unknown;
 }
 export type ApiErrorPayload = unknown;

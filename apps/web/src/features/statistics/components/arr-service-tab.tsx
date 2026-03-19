@@ -1,13 +1,13 @@
 "use client";
 
 import type { LucideIcon } from "lucide-react";
-import { Activity, BarChart3, CheckCircle2, AlertTriangle, TrendingUp } from "lucide-react";
+import { Activity, AlertTriangle, BarChart3, CheckCircle2, TrendingUp } from "lucide-react";
 import { PremiumCard, StatCard } from "../../../components/layout";
 import { QualityBreakdown } from "../../../components/presentational/quality-breakdown";
-import { formatBytes, formatPercent, formatRuntime } from "../lib/formatters";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import type { ServiceGradient } from "../../../lib/theme-gradients";
-import { useIncognitoMode, getLinuxInstanceName } from "../../../lib/incognito";
 import type { useStatisticsData } from "../hooks/useStatisticsData";
+import { formatBytes, formatPercent, formatRuntime } from "../lib/formatters";
 
 const integer = new Intl.NumberFormat();
 
@@ -40,9 +40,16 @@ export type ArrServiceType = "sonarr" | "radarr" | "lidarr" | "readarr";
 // biome-ignore lint/suspicious/noExplicitAny: Strategy pattern requires type erasure at the component boundary
 interface ServiceVariant<TTotals = any, TRow = any> {
 	/** Primary stat grid: 4 cards across the top */
-	primaryStats: (totals: TTotals) => Array<{ value: string | number; label: string; icon: LucideIcon; animationDelay: number }>;
+	primaryStats: (
+		totals: TTotals,
+	) => Array<{ value: string | number; label: string; icon: LucideIcon; animationDelay: number }>;
 	/** Secondary stat grid: 4 cards in the second row */
-	secondaryStats: (totals: TTotals) => Array<{ value: string | number; label: string; description?: string; animationDelay: number }>;
+	secondaryStats: (totals: TTotals) => Array<{
+		value: string | number;
+		label: string;
+		description?: string;
+		animationDelay: number;
+	}>;
 	/** Table column headers */
 	columns: string[];
 	/** Table row cells (must match columns order) */
@@ -63,10 +70,25 @@ const SONARR_VARIANT: ServiceVariant<SonarrTotals, SonarrRow> = {
 		{ value: t.endedSeries, label: "Ended", icon: CheckCircle2, animationDelay: 350 },
 	],
 	secondaryStats: (t) => [
-		{ value: t.downloadedEpisodes, label: "Downloaded", description: "Episodes", animationDelay: 400 },
+		{
+			value: t.downloadedEpisodes,
+			label: "Downloaded",
+			description: "Episodes",
+			animationDelay: 400,
+		},
 		{ value: t.missingEpisodes, label: "Missing", description: "Episodes", animationDelay: 450 },
-		{ value: formatPercent(t.downloadPercent), label: "Complete", description: "Download progress", animationDelay: 500 },
-		{ value: t.cutoffUnmetCount, label: "Cutoff Unmet", description: "Eligible for upgrade", animationDelay: 550 },
+		{
+			value: formatPercent(t.downloadPercent),
+			label: "Complete",
+			description: "Download progress",
+			animationDelay: 500,
+		},
+		{
+			value: t.cutoffUnmetCount,
+			label: "Cutoff Unmet",
+			description: "Eligible for upgrade",
+			animationDelay: 550,
+		},
 	],
 	columns: ["Instance", "Series", "Monitored", "Downloaded", "Missing", "Progress"],
 	rowCells: (r) => [r.totalSeries, r.monitoredSeries, r.downloadedEpisodes, r.missingEpisodes],
@@ -83,10 +105,30 @@ const RADARR_VARIANT: ServiceVariant<RadarrTotals, RadarrRow> = {
 		{ value: t.missingMovies, label: "Missing", icon: AlertTriangle, animationDelay: 350 },
 	],
 	secondaryStats: (t) => [
-		{ value: formatPercent(t.downloadPercent), label: "Complete", description: "Download progress", animationDelay: 400 },
-		{ value: t.cutoffUnmetCount, label: "Cutoff Unmet", description: "Eligible for upgrade", animationDelay: 450 },
-		{ value: formatBytes(t.averageMovieSize), label: "Avg Size", description: "Per movie", animationDelay: 500 },
-		{ value: formatRuntime(t.totalRuntime), label: "Runtime", description: "Total duration", animationDelay: 550 },
+		{
+			value: formatPercent(t.downloadPercent),
+			label: "Complete",
+			description: "Download progress",
+			animationDelay: 400,
+		},
+		{
+			value: t.cutoffUnmetCount,
+			label: "Cutoff Unmet",
+			description: "Eligible for upgrade",
+			animationDelay: 450,
+		},
+		{
+			value: formatBytes(t.averageMovieSize),
+			label: "Avg Size",
+			description: "Per movie",
+			animationDelay: 500,
+		},
+		{
+			value: formatRuntime(t.totalRuntime),
+			label: "Runtime",
+			description: "Total duration",
+			animationDelay: 550,
+		},
 	],
 	columns: ["Instance", "Movies", "Monitored", "Downloaded", "Missing", "Progress"],
 	rowCells: (r) => [r.totalMovies, r.monitoredMovies, r.downloadedMovies, r.missingMovies],
@@ -105,8 +147,18 @@ const LIDARR_VARIANT: ServiceVariant<LidarrTotals, LidarrRow> = {
 	secondaryStats: (t) => [
 		{ value: t.downloadedTracks, label: "Downloaded", description: "Tracks", animationDelay: 400 },
 		{ value: t.missingTracks, label: "Missing", description: "Tracks", animationDelay: 450 },
-		{ value: formatPercent(t.downloadPercent), label: "Complete", description: "Download progress", animationDelay: 500 },
-		{ value: t.cutoffUnmetCount ?? 0, label: "Cutoff Unmet", description: "Eligible for upgrade", animationDelay: 550 },
+		{
+			value: formatPercent(t.downloadPercent),
+			label: "Complete",
+			description: "Download progress",
+			animationDelay: 500,
+		},
+		{
+			value: t.cutoffUnmetCount ?? 0,
+			label: "Cutoff Unmet",
+			description: "Eligible for upgrade",
+			animationDelay: 550,
+		},
 	],
 	columns: ["Instance", "Artists", "Albums", "Downloaded", "Missing", "Progress"],
 	rowCells: (r) => [r.totalArtists, r.totalAlbums, r.downloadedTracks, r.missingTracks],
@@ -125,8 +177,18 @@ const READARR_VARIANT: ServiceVariant<ReadarrTotals, ReadarrRow> = {
 	secondaryStats: (t) => [
 		{ value: t.downloadedBooks, label: "Downloaded", description: "Books", animationDelay: 400 },
 		{ value: t.missingBooks, label: "Missing", description: "Books", animationDelay: 450 },
-		{ value: formatPercent(t.downloadPercent), label: "Complete", description: "Download progress", animationDelay: 500 },
-		{ value: t.cutoffUnmetCount ?? 0, label: "Cutoff Unmet", description: "Eligible for upgrade", animationDelay: 550 },
+		{
+			value: formatPercent(t.downloadPercent),
+			label: "Complete",
+			description: "Download progress",
+			animationDelay: 500,
+		},
+		{
+			value: t.cutoffUnmetCount ?? 0,
+			label: "Cutoff Unmet",
+			description: "Eligible for upgrade",
+			animationDelay: 550,
+		},
 	],
 	columns: ["Instance", "Authors", "Books", "Downloaded", "Missing", "Progress"],
 	rowCells: (r) => [r.totalAuthors, r.totalBooks, r.downloadedBooks, r.missingBooks],

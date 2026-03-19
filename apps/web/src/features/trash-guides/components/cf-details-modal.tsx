@@ -1,10 +1,13 @@
 "use client";
 
 import { Palette, X } from "lucide-react";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import type {
+	CFDescriptionsListResponse,
+	CustomFormat,
+} from "../../../lib/api-client/trash-guides";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { SanitizedHtml } from "./sanitized-html";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import type { CustomFormat, CFDescriptionsListResponse } from "../../../lib/api-client/trash-guides";
 
 const SERVICE_COLORS = {
 	RADARR: SERVICE_GRADIENTS.radarr,
@@ -33,17 +36,16 @@ interface CFDetailsModalProps {
 	onClose: () => void;
 }
 
-const CFDetailsModal = ({
-	format,
-	cfDescriptions,
-	onClose,
-}: CFDetailsModalProps) => {
+const CFDetailsModal = ({ format, cfDescriptions, onClose }: CFDetailsModalProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 
 	const service = format.service.toLowerCase() as "radarr" | "sonarr";
 	const descriptions = cfDescriptions?.[service] || [];
-	const slug = format.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-	const description = descriptions.find(d => d.cfName === slug);
+	const slug = format.name
+		.toLowerCase()
+		.replace(/\s+/g, "-")
+		.replace(/[^a-z0-9-]/g, "");
+	const description = descriptions.find((d) => d.cfName === slug);
 
 	return (
 		<div
@@ -76,7 +78,9 @@ const CFDetailsModal = ({
 							<Palette className="h-5 w-5" style={{ color: SERVICE_COLORS[format.service].from }} />
 						</div>
 						<div>
-							<h3 id="cf-details-title" className="text-lg font-bold text-foreground">{format.name}</h3>
+							<h3 id="cf-details-title" className="text-lg font-bold text-foreground">
+								{format.name}
+							</h3>
 							<LocalServiceBadge service={format.service} />
 						</div>
 					</div>
@@ -174,7 +178,7 @@ const CFDetailsModal = ({
 													<div key={key} className="text-xs flex items-start gap-2">
 														<span className="text-muted-foreground shrink-0">{key}:</span>
 														<span className="font-mono text-foreground/80 break-all">
-															{typeof value === 'object' ? JSON.stringify(value) : String(value)}
+															{typeof value === "object" ? JSON.stringify(value) : String(value)}
 														</span>
 													</div>
 												))}

@@ -6,19 +6,19 @@
  */
 
 import type {
-	TrashCacheStatus,
-	TrashCacheEntry,
+	ConflictResolution,
+	ConflictType,
+	CustomFormatConflict,
+	CustomFormatDeploymentItem,
 	CustomQualityConfig,
-	TrashConfigType,
+	DeploymentAction,
+	DeploymentPreview,
 	GitHubRateLimitResponse,
 	SyncMetricsSnapshot,
-	DeploymentPreview,
-	CustomFormatDeploymentItem,
-	CustomFormatConflict,
-	DeploymentAction,
-	ConflictType,
-	ConflictResolution,
 	TemplateImportOptions,
+	TrashCacheEntry,
+	TrashCacheStatus,
+	TrashConfigType,
 	TrashTemplate,
 } from "@arr/shared";
 
@@ -62,6 +62,7 @@ export type QualityProfileSummary = {
 	language?: string;
 	customFormatCount: number;
 	qualityCount: number;
+	groupName?: string;
 };
 
 export type QualityProfilesResponse = {

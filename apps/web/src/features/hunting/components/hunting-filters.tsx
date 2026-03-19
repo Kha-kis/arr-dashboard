@@ -1,12 +1,12 @@
 "use client";
 
+import { Check, ChevronDown, ChevronUp, Filter, X } from "lucide-react";
 import { useState } from "react";
-import { ChevronDown, ChevronUp, Filter, X, Check } from "lucide-react";
-import { Button, Input, Switch, Badge } from "../../../components/ui";
 import { PremiumSkeleton } from "../../../components/layout";
-import { useFilterOptions } from "../hooks/useFilterOptions";
-import type { HuntConfigWithInstance, HuntConfigUpdate } from "../lib/hunting-types";
+import { Badge, Button, Input, Switch } from "../../../components/ui";
 import { cn } from "../../../lib/utils";
+import { useFilterOptions } from "../hooks/useFilterOptions";
+import type { HuntConfigUpdate, HuntConfigWithInstance } from "../lib/hunting-types";
 
 interface HuntingFiltersProps {
 	config: HuntConfigWithInstance;
@@ -33,8 +33,12 @@ export const HuntingFilters = ({ config, formState, onChange }: HuntingFiltersPr
 	const monitoredOnly = formState.monitoredOnly ?? config.monitoredOnly ?? true;
 	const includeTags = parseJson<number>(formState.includeTags ?? config.includeTags);
 	const excludeTags = parseJson<number>(formState.excludeTags ?? config.excludeTags);
-	const includeQualityProfiles = parseJson<number>(formState.includeQualityProfiles ?? config.includeQualityProfiles);
-	const excludeQualityProfiles = parseJson<number>(formState.excludeQualityProfiles ?? config.excludeQualityProfiles);
+	const includeQualityProfiles = parseJson<number>(
+		formState.includeQualityProfiles ?? config.includeQualityProfiles,
+	);
+	const excludeQualityProfiles = parseJson<number>(
+		formState.excludeQualityProfiles ?? config.excludeQualityProfiles,
+	);
 	const includeStatuses = parseJson<string>(formState.includeStatuses ?? config.includeStatuses);
 	const yearMin = formState.yearMin ?? config.yearMin;
 	const yearMax = formState.yearMax ?? config.yearMax;
@@ -59,10 +63,10 @@ export const HuntingFilters = ({ config, formState, onChange }: HuntingFiltersPr
 	const toggleArrayItem = <T extends number | string>(
 		field: keyof HuntConfigUpdate,
 		currentValues: T[],
-		item: T
+		item: T,
 	) => {
 		const newValues = currentValues.includes(item)
-			? currentValues.filter(v => v !== item)
+			? currentValues.filter((v) => v !== item)
 			: [...currentValues, item];
 		updateJsonField(field, newValues as (number | string)[]);
 	};
@@ -78,7 +82,9 @@ export const HuntingFilters = ({ config, formState, onChange }: HuntingFiltersPr
 					<Filter className="h-4 w-4 text-muted-foreground" />
 					<span className="font-medium text-foreground">Filters</span>
 					{hasActiveFilters && (
-						<Badge variant="info" size="sm">Active</Badge>
+						<Badge variant="info" size="sm">
+							Active
+						</Badge>
 					)}
 				</div>
 				{expanded ? (
@@ -92,9 +98,17 @@ export const HuntingFilters = ({ config, formState, onChange }: HuntingFiltersPr
 				<div className="mt-4 space-y-6">
 					{isLoading ? (
 						<div className="space-y-4">
-							<PremiumSkeleton variant="line" className="h-8 w-full" style={{ animationDelay: "0ms" }} />
+							<PremiumSkeleton
+								variant="line"
+								className="h-8 w-full"
+								style={{ animationDelay: "0ms" }}
+							/>
 							<PremiumSkeleton variant="card" className="h-20" style={{ animationDelay: "50ms" }} />
-							<PremiumSkeleton variant="card" className="h-20" style={{ animationDelay: "100ms" }} />
+							<PremiumSkeleton
+								variant="card"
+								className="h-20"
+								style={{ animationDelay: "100ms" }}
+							/>
 						</div>
 					) : (
 						<>
@@ -121,7 +135,9 @@ export const HuntingFilters = ({ config, formState, onChange }: HuntingFiltersPr
 										</Button>
 									</div>
 									<p className="text-xs text-muted-foreground">
-										{filterLogic === "AND" ? "All conditions must match" : "Any condition can match"}
+										{filterLogic === "AND"
+											? "All conditions must match"
+											: "Any condition can match"}
 									</p>
 								</div>
 								<div className="space-y-2">
@@ -131,13 +147,9 @@ export const HuntingFilters = ({ config, formState, onChange }: HuntingFiltersPr
 											checked={monitoredOnly}
 											onCheckedChange={(checked) => onChange({ monitoredOnly: checked })}
 										/>
-										<span className="text-sm text-foreground">
-											{monitoredOnly ? "Yes" : "No"}
-										</span>
+										<span className="text-sm text-foreground">{monitoredOnly ? "Yes" : "No"}</span>
 									</div>
-									<p className="text-xs text-muted-foreground">
-										Only hunt monitored content
-									</p>
+									<p className="text-xs text-muted-foreground">Only hunt monitored content</p>
 								</div>
 							</div>
 
@@ -162,7 +174,10 @@ export const HuntingFilters = ({ config, formState, onChange }: HuntingFiltersPr
 													onClick={() => {
 														// Remove from exclude if adding to include
 														if (excludeTags.includes(tag.id)) {
-															updateJsonField("excludeTags", excludeTags.filter(id => id !== tag.id));
+															updateJsonField(
+																"excludeTags",
+																excludeTags.filter((id) => id !== tag.id),
+															);
 														}
 														toggleArrayItem("includeTags", includeTags, tag.id);
 													}}
@@ -186,7 +201,10 @@ export const HuntingFilters = ({ config, formState, onChange }: HuntingFiltersPr
 													onClick={() => {
 														// Remove from include if adding to exclude
 														if (includeTags.includes(tag.id)) {
-															updateJsonField("includeTags", includeTags.filter(id => id !== tag.id));
+															updateJsonField(
+																"includeTags",
+																includeTags.filter((id) => id !== tag.id),
+															);
 														}
 														toggleArrayItem("excludeTags", excludeTags, tag.id);
 													}}
@@ -218,9 +236,16 @@ export const HuntingFilters = ({ config, formState, onChange }: HuntingFiltersPr
 													excluded={excludeQualityProfiles.includes(qp.id)}
 													onClick={() => {
 														if (excludeQualityProfiles.includes(qp.id)) {
-															updateJsonField("excludeQualityProfiles", excludeQualityProfiles.filter(id => id !== qp.id));
+															updateJsonField(
+																"excludeQualityProfiles",
+																excludeQualityProfiles.filter((id) => id !== qp.id),
+															);
 														}
-														toggleArrayItem("includeQualityProfiles", includeQualityProfiles, qp.id);
+														toggleArrayItem(
+															"includeQualityProfiles",
+															includeQualityProfiles,
+															qp.id,
+														);
 													}}
 													variant="include"
 												/>
@@ -241,9 +266,16 @@ export const HuntingFilters = ({ config, formState, onChange }: HuntingFiltersPr
 													excluded={includeQualityProfiles.includes(qp.id)}
 													onClick={() => {
 														if (includeQualityProfiles.includes(qp.id)) {
-															updateJsonField("includeQualityProfiles", includeQualityProfiles.filter(id => id !== qp.id));
+															updateJsonField(
+																"includeQualityProfiles",
+																includeQualityProfiles.filter((id) => id !== qp.id),
+															);
 														}
-														toggleArrayItem("excludeQualityProfiles", excludeQualityProfiles, qp.id);
+														toggleArrayItem(
+															"excludeQualityProfiles",
+															excludeQualityProfiles,
+															qp.id,
+														);
 													}}
 													variant="exclude"
 												/>
@@ -263,7 +295,9 @@ export const HuntingFilters = ({ config, formState, onChange }: HuntingFiltersPr
 												key={status.value}
 												label={status.label}
 												selected={includeStatuses.includes(status.value)}
-												onClick={() => toggleArrayItem("includeStatuses", includeStatuses, status.value)}
+												onClick={() =>
+													toggleArrayItem("includeStatuses", includeStatuses, status.value)
+												}
 												variant="include"
 											/>
 										))}
@@ -286,9 +320,11 @@ export const HuntingFilters = ({ config, formState, onChange }: HuntingFiltersPr
 											min={1900}
 											max={2100}
 											value={yearMin ?? ""}
-											onChange={(e) => onChange({
-												yearMin: e.target.value ? Number.parseInt(e.target.value) : null
-											})}
+											onChange={(e) =>
+												onChange({
+													yearMin: e.target.value ? Number.parseInt(e.target.value) : null,
+												})
+											}
 										/>
 									</div>
 									<div className="space-y-1">
@@ -299,9 +335,11 @@ export const HuntingFilters = ({ config, formState, onChange }: HuntingFiltersPr
 											min={1900}
 											max={2100}
 											value={yearMax ?? ""}
-											onChange={(e) => onChange({
-												yearMax: e.target.value ? Number.parseInt(e.target.value) : null
-											})}
+											onChange={(e) =>
+												onChange({
+													yearMax: e.target.value ? Number.parseInt(e.target.value) : null,
+												})
+											}
 										/>
 									</div>
 								</div>
@@ -317,9 +355,11 @@ export const HuntingFilters = ({ config, formState, onChange }: HuntingFiltersPr
 										min={0}
 										max={365}
 										value={ageThresholdDays ?? ""}
-										onChange={(e) => onChange({
-											ageThresholdDays: e.target.value ? Number.parseInt(e.target.value) : null
-										})}
+										onChange={(e) =>
+											onChange({
+												ageThresholdDays: e.target.value ? Number.parseInt(e.target.value) : null,
+											})
+										}
 										className="w-32"
 									/>
 									<span className="text-sm text-muted-foreground">days old</span>
@@ -382,14 +422,14 @@ const TagButton = ({ label, selected, excluded, onClick, variant }: TagButtonPro
 				"px-2.5 py-1 text-xs rounded-full border transition-all",
 				"flex items-center gap-1",
 				isDisabled && "opacity-40 cursor-not-allowed",
-				!selected && !isDisabled && "border-border bg-card text-muted-foreground hover:border-muted-foreground",
+				!selected &&
+					!isDisabled &&
+					"border-border bg-card text-muted-foreground hover:border-muted-foreground",
 				selected && variant === "include" && "border-green-500 bg-green-500/10 text-green-500",
 				selected && variant === "exclude" && "border-red-500 bg-red-500/10 text-red-500",
 			)}
 		>
-			{selected && (
-				<Check className="h-3 w-3" />
-			)}
+			{selected && <Check className="h-3 w-3" />}
 			{label}
 		</button>
 	);

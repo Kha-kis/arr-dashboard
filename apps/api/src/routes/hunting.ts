@@ -1,20 +1,21 @@
+import { LIBRARY_SERVICES_UPPER } from "@arr/shared";
+import { LidarrClient, RadarrClient, ReadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
-import { SonarrClient, RadarrClient, LidarrClient, ReadarrClient } from "arr-sdk";
 import { toServiceLabel } from "../lib/arr/client-helpers.js";
 import { requireInstance } from "../lib/arr/instance-helpers.js";
-import { getHuntingScheduler } from "../lib/hunting/scheduler.js";
 import {
-	MIN_MISSING_INTERVAL_MINS,
-	MIN_UPGRADE_INTERVAL_MINS,
-	MAX_INTERVAL_MINS,
-	MIN_BATCH_SIZE,
 	MAX_BATCH_SIZE,
-	MIN_HOURLY_API_CAP,
 	MAX_HOURLY_API_CAP,
+	MAX_INTERVAL_MINS,
 	MAX_QUEUE_THRESHOLD,
 	MAX_RESEARCH_AFTER_DAYS,
+	MIN_BATCH_SIZE,
+	MIN_HOURLY_API_CAP,
+	MIN_MISSING_INTERVAL_MINS,
+	MIN_UPGRADE_INTERVAL_MINS,
 } from "../lib/hunting/constants.js";
+import { getHuntingScheduler } from "../lib/hunting/scheduler.js";
 import { cleanupOldSearchHistory } from "../lib/hunting/search-history.js";
 import { safeJsonParse } from "../lib/utils/json.js";
 import { parsePaginationQuery } from "../lib/utils/pagination.js";
@@ -55,6 +56,8 @@ const huntConfigUpdateSchema = z.object({
 	ageThresholdDays: z.number().int().min(0).max(365).nullable().optional(),
 	// Season pack preference (Sonarr only)
 	preferSeasonPacks: z.boolean().optional(),
+	// Re-search all monitored items (not just cutoff list)
+	upgradeSearchAll: z.boolean().optional(),
 	// Re-search settings (0 = never re-search already searched items)
 	researchAfterDays: z.number().int().min(0).max(MAX_RESEARCH_AFTER_DAYS).optional(),
 });
@@ -82,7 +85,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const instances = await app.prisma.serviceInstance.findMany({
 			where: {
 				userId,
-				service: { in: ["SONARR", "RADARR", "LIDARR", "READARR"] },
+				service: { in: [...LIBRARY_SERVICES_UPPER] },
 			},
 			include: {
 				huntConfig: true,
@@ -151,7 +154,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const instances = await app.prisma.serviceInstance.findMany({
 			where: {
 				userId,
-				service: { in: ["SONARR", "RADARR", "LIDARR", "READARR"] },
+				service: { in: [...LIBRARY_SERVICES_UPPER] },
 			},
 			include: {
 				huntConfig: true,
@@ -350,9 +353,9 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 		const huntType = body.type === "upgrade" ? "upgrade" : "missing";
 
-		// Queue hunt job with cooldown check
+		// Trigger hunt with cooldown check
 		const scheduler = getHuntingScheduler();
-		const result = scheduler.queueManualHunt(instanceId, huntType);
+		const result = scheduler.triggerManualHunt(instanceId, huntType);
 
 		if (!result.queued) {
 			// Return 429 Too Many Requests with cooldown message
@@ -377,7 +380,10 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const service = instance.service.toLowerCase();
 
 		const client = app.arrClientFactory.create(instance) as
-			SonarrClient | RadarrClient | LidarrClient | ReadarrClient;
+			| SonarrClient
+			| RadarrClient
+			| LidarrClient
+			| ReadarrClient;
 
 		// Validate client type matches service
 		if (service === "sonarr" && !(client instanceof SonarrClient)) {

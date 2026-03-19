@@ -10,9 +10,9 @@
 import { Bug, ChevronDown, ChevronUp } from "lucide-react";
 import { useState } from "react";
 import { MAX_RETRY_ATTEMPTS } from "../../../hooks/api/useSync";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import type { ValidationResult } from "../../../lib/api-client/trash-guides";
-import type { ValidationTiming, RetryProgress } from "../lib/sync-validation-utils";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import type { RetryProgress, ValidationTiming } from "../lib/sync-validation-utils";
 
 interface SyncDebugPanelProps {
 	templateId: string;
@@ -52,11 +52,7 @@ export const SyncDebugPanel = ({
 					<Bug className="h-4 w-4" />
 					Debug Panel (Development Only)
 				</span>
-				{showDebugPanel ? (
-					<ChevronUp className="h-4 w-4" />
-				) : (
-					<ChevronDown className="h-4 w-4" />
-				)}
+				{showDebugPanel ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
 			</button>
 			{showDebugPanel && (
 				<div className="border-t border-purple-500/20 p-3">
@@ -75,7 +71,9 @@ export const SyncDebugPanel = ({
 						</div>
 						<div className="grid grid-cols-2 gap-2">
 							<span className="text-purple-400">Manual Retry Count:</span>
-							<span className="text-purple-200">{retryCount} / {maxManualRetries}</span>
+							<span className="text-purple-200">
+								{retryCount} / {maxManualRetries}
+							</span>
 						</div>
 						<div className="grid grid-cols-2 gap-2">
 							<span className="text-purple-400">Auto Retry Max:</span>

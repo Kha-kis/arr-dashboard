@@ -2,11 +2,11 @@ import type { Metadata } from "next";
 import { DM_Sans } from "next/font/google";
 import localFont from "next/font/local";
 import "./globals.css";
-import { RootProviders } from "../src/providers/root-providers";
-import { LayoutWrapper } from "../src/components/layout/layout-wrapper";
 import { AuthGate } from "../src/components/auth/auth-gate";
+import { LayoutWrapper } from "../src/components/layout/layout-wrapper";
 import { Toaster } from "../src/components/ui";
 import { COLOR_THEMES } from "../src/lib/theme-constants";
+import { RootProviders } from "../src/providers/root-providers";
 
 /**
  * Premium Typography System
@@ -45,6 +45,12 @@ const dmSans = DM_Sans({
 export const metadata: Metadata = {
 	title: "Arr Control Center",
 	description: "Centralized management dashboard for Sonarr, Radarr, and Prowlarr",
+	manifest: "/manifest.json",
+	appleWebApp: {
+		capable: true,
+		statusBarStyle: "black-translucent",
+		title: "Arr CC",
+	},
 	icons: {
 		icon: [
 			{ url: "/icon.svg", type: "image/svg+xml" },
@@ -60,7 +66,12 @@ interface RootLayoutProps {
 
 const RootLayout = ({ children }: RootLayoutProps) => {
 	return (
-		<html lang="en" suppressHydrationWarning className={`${satoshi.variable} ${dmSans.variable}`} data-scroll-behavior="smooth">
+		<html
+			lang="en"
+			suppressHydrationWarning
+			className={`${satoshi.variable} ${dmSans.variable}`}
+			data-scroll-behavior="smooth"
+		>
 			<head>
 				{/*
 				  Color Theme Initialization Script (Inline)

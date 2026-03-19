@@ -164,9 +164,7 @@ export async function getSyncHistory(
 	instanceId: string,
 	params?: { limit?: number; offset?: number },
 ): Promise<SyncHistoryResponse> {
-	const queryParams = params
-		? `?limit=${params.limit || 20}&offset=${params.offset || 0}`
-		: "";
+	const queryParams = params ? `?limit=${params.limit || 20}&offset=${params.offset || 0}` : "";
 	return await apiRequest<SyncHistoryResponse>(
 		`/api/trash-guides/sync/history/${instanceId}${queryParams}`,
 	);

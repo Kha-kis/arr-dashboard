@@ -1,0 +1,177 @@
+# Docker Compose for E2E integration testing with real *arr services.
+# Provides Sonarr, Radarr, Lidarr, Readarr, and Prowlarr instances alongside
+# arr-dashboard so Playwright can test against live data flowing through real APIs.
+#
+# Usage:
+#   docker compose up -d --build          # Start all services
+#   bash bootstrap-services.sh            # Extract API keys, write .env.services
+#   docker compose down -v --remove-orphans  # Teardown
+
+services:
+  # ── Core *arr services ──────────────────────────────────────────────
+
+  sonarr:
+    image: linuxserver/sonarr:latest
+    container_name: e2e-sonarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    volumes:
+      - sonarr-config:/config
+    ports:
+      - "8989:8989"
+    networks:
+      - e2e-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8989/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+  radarr:
+    image: linuxserver/radarr:latest
+    container_name: e2e-radarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    volumes:
+      - radarr-config:/config
+    ports:
+      - "7878:7878"
+    networks:
+      - e2e-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:7878/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+  lidarr:
+    image: linuxserver/lidarr:latest
+    container_name: e2e-lidarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    volumes:
+      - lidarr-config:/config
+    ports:
+      - "8686:8686"
+    networks:
+      - e2e-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8686/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+  readarr:
+    # Pinned: linuxserver/readarr:develop dropped amd64 manifests after 0.4.10
+    image: lscr.io/linuxserver/readarr:0.4.10-develop
+    container_name: e2e-readarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    volumes:
+      - readarr-config:/config
+    ports:
+      - "8787:8787"
+    networks:
+      - e2e-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8787/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+  prowlarr:
+    image: linuxserver/prowlarr:latest
+    container_name: e2e-prowlarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    volumes:
+      - prowlarr-config:/config
+    ports:
+      - "9696:9696"
+    networks:
+      - e2e-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9696/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+  # ── Webhook receiver for notification testing ──────────────────────
+  # Accepts any HTTP request and returns 200 — used to verify webhook delivery
+
+  webhook-receiver:
+    image: traefik/whoami:latest
+    container_name: e2e-webhook-receiver
+    ports:
+      - "9999:80"
+    networks:
+      - e2e-net
+
+  # ── arr-dashboard (built from local source) ─────────────────────────
+
+  arr-dashboard:
+    build:
+      context: ../../
+      dockerfile: Dockerfile
+      args:
+        VERSION: e2e-test
+        COMMIT_SHA: local
+    container_name: e2e-arr-dashboard
+    ports:
+      - "3000:3000"
+      - "3001:3001"
+    volumes:
+      - dashboard-config:/config
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - PORT=3000
+      - API_PORT=3001
+      - DATABASE_URL=file:/config/prod.db
+      - API_RATE_LIMIT_MAX=10000
+    networks:
+      - e2e-net
+    depends_on:
+      sonarr:
+        condition: service_healthy
+      radarr:
+        condition: service_healthy
+      lidarr:
+        condition: service_healthy
+      readarr:
+        condition: service_healthy
+      prowlarr:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+volumes:
+  sonarr-config:
+  radarr-config:
+  lidarr-config:
+  readarr-config:
+  prowlarr-config:
+  dashboard-config:
+
+networks:
+  e2e-net:
+    driver: bridge

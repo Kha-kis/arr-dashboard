@@ -1,9 +1,9 @@
 "use client";
 
 import { AlertTriangle, CheckCircle2, Info } from "lucide-react";
-import { cn } from "../../../lib/utils";
-import { getInfoColor } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getInfoColor } from "../../../lib/theme-gradients";
+import { cn } from "../../../lib/utils";
 
 export type MessageTone = "info" | "warning" | "error";
 
@@ -36,7 +36,7 @@ export const QueueIssueBadge = ({ summary, size = "md" }: QueueIssueBadgeProps) 
 					"inline-flex items-center gap-1.5 rounded-full font-medium transition-all duration-300",
 					"bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
 					padding,
-					textSize
+					textSize,
 				)}
 			>
 				<CheckCircle2 className={iconSize} />
@@ -59,7 +59,7 @@ export const QueueIssueBadge = ({ summary, size = "md" }: QueueIssueBadgeProps) 
 				className={cn(
 					"inline-flex items-center gap-1.5 rounded-full font-medium border transition-all duration-300",
 					padding,
-					textSize
+					textSize,
 				)}
 				style={{
 					backgroundColor: themeInfo.bg,
@@ -91,7 +91,7 @@ export const QueueIssueBadge = ({ summary, size = "md" }: QueueIssueBadgeProps) 
 				"inline-flex items-center gap-1.5 rounded-full font-medium border transition-all duration-300",
 				style.classes,
 				padding,
-				textSize
+				textSize,
 			)}
 		>
 			<AlertTriangle className={iconSize} />

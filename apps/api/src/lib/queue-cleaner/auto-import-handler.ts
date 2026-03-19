@@ -5,20 +5,17 @@
  * import_pending/import_blocked queue items before removal.
  */
 
+import type { AutoImportResult } from "@arr/shared";
 import type { FastifyInstance } from "fastify";
-import type { QueueCleanerConfig, QueueCleanerStrike, ServiceInstance } from "../prisma.js";
-import { loggers } from "../logger.js";
-import {
-	AUTO_IMPORT_SAFE_KEYWORDS,
-	AUTO_IMPORT_NEVER_KEYWORDS,
-} from "./constants.js";
 import {
 	autoImportByDownloadIdWithSdk,
 	ManualImportError,
 } from "../../routes/manual-import-utils.js";
-import type { AutoImportResult } from "@arr/shared";
 import type { QueueCapableClient } from "../arr/client-factory.js";
-import { parseJsonArray, isString } from "../utils/json.js";
+import { loggers } from "../logger.js";
+import type { QueueCleanerConfig, QueueCleanerStrike, ServiceInstance } from "../prisma.js";
+import { isString, parseJsonArray } from "../utils/json.js";
+import { AUTO_IMPORT_NEVER_KEYWORDS, AUTO_IMPORT_SAFE_KEYWORDS } from "./constants.js";
 import { matchesKeywords } from "./queue-item-utils.js";
 
 const log = loggers.queueCleaner;
@@ -63,7 +60,13 @@ export function evaluateAutoImportEligibility(
 		return { eligible: false, reason: `Cannot auto-import: ${neverMatch}` };
 	}
 
-	const customNeverPatterns = parseJsonArray(config.autoImportNeverPatterns, isString, "autoImportNeverPatterns", log, { configId: config.id });
+	const customNeverPatterns = parseJsonArray(
+		config.autoImportNeverPatterns,
+		isString,
+		"autoImportNeverPatterns",
+		log,
+		{ configId: config.id },
+	);
 	if (customNeverPatterns.length > 0) {
 		const customNeverMatch = matchesKeywords(statusTexts, customNeverPatterns);
 		if (customNeverMatch) {
@@ -76,7 +79,13 @@ export function evaluateAutoImportEligibility(
 
 		let customMatch: string | null = null;
 		if (!safeMatch) {
-			const customPatterns = parseJsonArray(config.autoImportCustomPatterns, isString, "autoImportCustomPatterns", log, { configId: config.id });
+			const customPatterns = parseJsonArray(
+				config.autoImportCustomPatterns,
+				isString,
+				"autoImportCustomPatterns",
+				log,
+				{ configId: config.id },
+			);
 			if (customPatterns.length > 0) {
 				customMatch = matchesKeywords(statusTexts, customPatterns);
 			}
@@ -107,12 +116,16 @@ export async function attemptAutoImport(
 ): Promise<AutoImportResult> {
 	const serviceLower = instance.service.toLowerCase();
 	const validServices = ["sonarr", "radarr", "lidarr", "readarr"] as const;
-	if (!validServices.includes(serviceLower as typeof validServices[number])) {
+	if (!validServices.includes(serviceLower as (typeof validServices)[number])) {
 		log.warn(
 			{ instanceId: instance.id, service: instance.service },
 			"Auto-import not supported for this service type",
 		);
-		return { attempted: false, success: false, skippedReason: `Unsupported service: ${instance.service}` };
+		return {
+			attempted: false,
+			success: false,
+			skippedReason: `Unsupported service: ${instance.service}`,
+		};
 	}
 	const service = serviceLower as "sonarr" | "radarr" | "lidarr" | "readarr";
 
@@ -121,10 +134,7 @@ export async function attemptAutoImport(
 	try {
 		await autoImportByDownloadIdWithSdk(client, service, downloadId);
 
-		log.info(
-			{ instanceId: instance.id, downloadId, itemTitle },
-			"Auto-import succeeded",
-		);
+		log.info({ instanceId: instance.id, downloadId, itemTitle }, "Auto-import succeeded");
 		return { attempted: true, success: true };
 	} catch (error) {
 		const errorMsg =
@@ -134,10 +144,7 @@ export async function attemptAutoImport(
 					? error.message
 					: "Unknown error";
 
-		log.warn(
-			{ instanceId: instance.id, downloadId, itemTitle, err: error },
-			"Auto-import failed",
-		);
+		log.warn({ instanceId: instance.id, downloadId, itemTitle, err: error }, "Auto-import failed");
 		return { attempted: true, success: false, error: errorMsg };
 	}
 }

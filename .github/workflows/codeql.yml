@@ -41,6 +41,7 @@ jobs:
           languages: javascript-typescript
           # Use extended query suite for more thorough analysis
           queries: security-extended
+          config-file: .github/codeql/codeql-config.yml
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v4

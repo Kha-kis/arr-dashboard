@@ -1,19 +1,22 @@
 "use client";
 
-import React, { Suspense, useCallback, useEffect, useState } from "react";
 import type { LibraryItem } from "@arr/shared";
+import { useSearchParams } from "next/navigation";
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "../../../components/ui";
 import { useLibraryMonitorMutation } from "../../../hooks/api/useLibrary";
+import { usePlexIdentity, useSeriesProgress, useWatchEnrichment } from "../../../hooks/api/usePlex";
 import { useLibraryEnrichment } from "../../../hooks/api/useSeerr";
+import { fetchLibraryItemByTmdbId } from "../../../lib/api-client/library";
 import { useSeerrInstances } from "../../seerr/hooks/use-seerr-instances";
-import { useLibraryFilters, useLibraryData, useLibraryActions } from "../hooks";
-import { LibraryHeader } from "./library-header";
-import { LibraryContent } from "./library-content";
-import { LibraryCard } from "./library-card";
-import { ItemDetailsModal } from "./item-details-modal";
+import { useLibraryActions, useLibraryData, useLibraryFilters } from "../hooks";
+import { buildLibraryExternalLink, buildPlexUrl } from "../lib/library-utils";
 import { AlbumBreakdownModal } from "./album-breakdown-modal";
 import { BookBreakdownModal } from "./book-breakdown-modal";
-import { buildLibraryExternalLink } from "../lib/library-utils";
+import { ItemDetailsModal } from "./item-details-modal";
+import { LibraryCard } from "./library-card";
+import { LibraryContent } from "./library-content";
+import { LibraryHeader } from "./library-header";
 
 const EnrichedDetailModal = React.lazy(() =>
 	import("./enriched-detail-modal").then((m) => ({ default: m.EnrichedDetailModal })),
@@ -37,6 +40,23 @@ export const LibraryClient: React.FC = () => {
 	const [albumDetail, setAlbumDetail] = useState<LibraryItem | null>(null);
 	const [bookDetail, setBookDetail] = useState<LibraryItem | null>(null);
 
+	// Deep link: auto-open detail modal when ?tmdbId= is in the URL
+	const searchParams = useSearchParams();
+	const deepLinkTmdbId = searchParams.get("tmdbId");
+	const deepLinkHandled = useRef<string | null>(null);
+
+	useEffect(() => {
+		if (!deepLinkTmdbId || deepLinkHandled.current === deepLinkTmdbId) return;
+		deepLinkHandled.current = deepLinkTmdbId;
+
+		const tmdbId = Number(deepLinkTmdbId);
+		if (!Number.isFinite(tmdbId) || tmdbId <= 0) return;
+
+		fetchLibraryItemByTmdbId(tmdbId).then((item) => {
+			if (item) setItemDetail(item);
+		});
+	}, [deepLinkTmdbId]);
+
 	// Seerr integration — detect if any Seerr instance is configured
 	const { defaultInstance: seerrInstance } = useSeerrInstances();
 	const seerrInstanceId = seerrInstance?.id ?? null;
@@ -59,6 +79,33 @@ export const LibraryClient: React.FC = () => {
 	// Seerr enrichment — fetch TMDB ratings + issue counts for current page items
 	const enrichmentQuery = useLibraryEnrichment(seerrInstanceId, data.items);
 	const enrichmentMap = enrichmentQuery.data?.items ?? null;
+
+	// Plex watch enrichment — fetch watch counts, on-deck status, last watched
+	const watchEnrichmentQuery = useWatchEnrichment(data.items);
+	const watchEnrichmentMap = watchEnrichmentQuery.data?.items ?? null;
+
+	// Plex identity — needed to build "Watch in Plex" deep links
+	const plexIdentityQuery = usePlexIdentity();
+	const plexMachineIdMap = useMemo(() => {
+		const map = new Map<string, string>();
+		if (plexIdentityQuery.data?.servers) {
+			for (const server of plexIdentityQuery.data.servers) {
+				map.set(server.instanceId, server.machineId);
+			}
+		}
+		return map;
+	}, [plexIdentityQuery.data]);
+
+	// Plex series progress — fetch watched/total episode counts for series items
+	const seriesTmdbIds = useMemo(
+		() =>
+			data.items
+				.filter((item) => item.type === "series" && item.remoteIds?.tmdbId)
+				.map((item) => item.remoteIds!.tmdbId!),
+		[data.items],
+	);
+	const seriesProgressQuery = useSeriesProgress(seriesTmdbIds);
+	const seriesProgressMap = seriesProgressQuery.data?.progress ?? null;
 
 	// Notify user if Seerr enrichment fails (one-time per error transition)
 	useEffect(() => {
@@ -140,14 +187,28 @@ export const LibraryClient: React.FC = () => {
 	const handleCloseBookDetail = useCallback(() => setBookDetail(null), []);
 
 	// Item monitoring handler (memoized)
-	const handleToggleMonitor = useCallback((item: LibraryItem) => {
-		monitorMutation.mutate({
-			instanceId: item.instanceId,
-			service: item.service,
-			itemId: item.id,
-			monitored: !(item.monitored ?? false),
-		});
-	}, [monitorMutation]);
+	const handleToggleMonitor = useCallback(
+		(item: LibraryItem) => {
+			monitorMutation.mutate({
+				instanceId: item.instanceId,
+				service: item.service,
+				itemId: item.id,
+				monitored: !(item.monitored ?? false),
+			});
+		},
+		[monitorMutation],
+	);
+
+	// Compute Plex URL for the detail modal item
+	const modalPlexUrl = useMemo(() => {
+		if (!itemDetail || !watchEnrichmentMap || !itemDetail.remoteIds?.tmdbId) return undefined;
+		const key = `${itemDetail.type === "movie" ? "movie" : "series"}:${itemDetail.remoteIds.tmdbId}`;
+		const wd = watchEnrichmentMap[key];
+		if (!wd?.ratingKey || !wd.instanceId) return undefined;
+		const machineId = plexMachineIdMap.get(wd.instanceId);
+		if (!machineId) return undefined;
+		return buildPlexUrl(machineId, wd.ratingKey);
+	}, [itemDetail, watchEnrichmentMap, plexMachineIdMap]);
 
 	return (
 		<>
@@ -204,11 +265,16 @@ export const LibraryClient: React.FC = () => {
 					LibraryCard={LibraryCard}
 					isSyncing={data.isSyncing}
 					enrichmentMap={enrichmentMap}
+					watchEnrichmentMap={watchEnrichmentMap}
+					seriesProgressMap={seriesProgressMap}
+					plexMachineIdMap={plexMachineIdMap}
 				/>
 			</div>
 
-			{itemDetail && (
-				seerrInstanceId && (itemDetail.service === "sonarr" || itemDetail.service === "radarr") && itemDetail.remoteIds?.tmdbId ? (
+			{itemDetail &&
+				(seerrInstanceId &&
+				(itemDetail.service === "sonarr" || itemDetail.service === "radarr") &&
+				itemDetail.remoteIds?.tmdbId ? (
 					<Suspense>
 						<EnrichedDetailModal
 							item={itemDetail}
@@ -223,15 +289,31 @@ export const LibraryClient: React.FC = () => {
 							pendingSeasonAction={actions.pendingSeasonAction}
 							enrichedPosterPath={
 								enrichmentMap && itemDetail.remoteIds?.tmdbId
-									? enrichmentMap[`${itemDetail.type === "movie" ? "movie" : "tv"}:${itemDetail.remoteIds.tmdbId}`]?.posterPath
+									? enrichmentMap[
+											`${itemDetail.type === "movie" ? "movie" : "tv"}:${itemDetail.remoteIds.tmdbId}`
+										]?.posterPath
 									: undefined
 							}
+							plexData={
+								watchEnrichmentMap && itemDetail.remoteIds?.tmdbId
+									? watchEnrichmentMap[
+											`${itemDetail.type === "movie" ? "movie" : "series"}:${itemDetail.remoteIds.tmdbId}`
+										]
+									: undefined
+							}
+							userRating={
+								watchEnrichmentMap && itemDetail.remoteIds?.tmdbId
+									? watchEnrichmentMap[
+											`${itemDetail.type === "movie" ? "movie" : "series"}:${itemDetail.remoteIds.tmdbId}`
+										]?.userRating
+									: undefined
+							}
+							plexUrl={modalPlexUrl}
 						/>
 					</Suspense>
 				) : (
 					<ItemDetailsModal item={itemDetail} onClose={handleCloseItemDetail} />
-				)
-			)}
+				))}
 
 			{albumDetail && (
 				<AlbumBreakdownModal

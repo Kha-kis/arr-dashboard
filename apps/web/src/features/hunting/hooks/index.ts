@@ -1,4 +1,4 @@
-export { useHuntingStatus } from "./useHuntingStatus";
+export { useHuntingConfigs, useToggleScheduler, useUpdateHuntConfig } from "./useHuntingConfig";
 export { useHuntingLogs } from "./useHuntingLogs";
-export { useHuntingConfigs, useUpdateHuntConfig, useToggleScheduler } from "./useHuntingConfig";
+export { useHuntingStatus } from "./useHuntingStatus";
 export { useManualHunt } from "./useManualHunt";

@@ -1,4 +1,4 @@
-import type { ServiceTagResponse, TagsResponse, CreateTagResponse } from "@arr/shared";
+import type { CreateTagResponse, ServiceTagResponse, TagsResponse } from "@arr/shared";
 import { apiRequest, UnauthorizedError } from "./base";
 
 export async function fetchTags(): Promise<ServiceTagResponse[]> {

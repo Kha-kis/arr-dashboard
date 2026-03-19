@@ -8,25 +8,25 @@
  * - Key generation and grouping
  */
 
-import { describe, it, expect } from "vitest";
 import type { QueueItem } from "@arr/shared";
+import { describe, expect, it } from "vitest";
 import {
-	buildKey,
-	getGroupKey,
-	deriveTitle,
-	sumNumbers,
-	resolveMessageTone,
-	looksLikeReleaseName,
-	collectStatusLines,
-	summarizeLines,
-	summarizeIssueCounts,
-	computeProgressValue,
-	formatSizeGB,
 	analyzeQueueItem,
+	buildKey,
+	collectStatusLines,
+	computeProgressValue,
+	deriveTitle,
 	filterProblematicItems,
-	getProblematicCounts,
+	formatSizeGB,
+	getGroupKey,
 	getProblematicCount,
+	getProblematicCounts,
 	ISSUE_TYPE_LABELS,
+	looksLikeReleaseName,
+	resolveMessageTone,
+	summarizeIssueCounts,
+	summarizeLines,
+	sumNumbers,
 } from "./queue-utils";
 
 // Helper to create minimal QueueItem for testing
@@ -247,7 +247,11 @@ describe("collectStatusLines", () => {
 		});
 		const lines = collectStatusLines(item);
 		expect(lines).toHaveLength(3);
-		expect(lines.map((l) => l.text)).toEqual(["Import Problem", "No files found", "Unable to match"]);
+		expect(lines.map((l) => l.text)).toEqual([
+			"Import Problem",
+			"No files found",
+			"Unable to match",
+		]);
 	});
 
 	it("should collect error messages", () => {

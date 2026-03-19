@@ -56,10 +56,10 @@ export const PageLayout = ({
 	return (
 		<main
 			className={cn(
-				"mx-auto flex flex-col px-6 py-16",
+				"mx-auto flex flex-col px-3 py-8 sm:px-4 sm:py-12 md:px-6 md:py-16",
 				MAX_WIDTH_CLASSES[maxWidth],
 				GAP_CLASSES[gap],
-				className
+				className,
 			)}
 		>
 			{children}

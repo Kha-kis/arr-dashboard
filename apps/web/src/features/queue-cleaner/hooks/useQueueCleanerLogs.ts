@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../../../lib/api-client/base";
+import { LOGS_ACTIVE_REFRESH_INTERVAL, LOGS_REFRESH_INTERVAL } from "../lib/constants";
 import type { QueueCleanerLog } from "../lib/queue-cleaner-types";
-import { LOGS_REFRESH_INTERVAL, LOGS_ACTIVE_REFRESH_INTERVAL } from "../lib/constants";
 
 interface UseLogsParams {
 	status?: string;
@@ -24,9 +24,7 @@ async function fetchLogs(params: UseLogsParams): Promise<LogsResponse> {
 	if (params.pageSize) searchParams.set("pageSize", params.pageSize.toString());
 
 	const queryString = searchParams.toString();
-	return apiRequest<LogsResponse>(
-		`/api/queue-cleaner/logs${queryString ? `?${queryString}` : ""}`,
-	);
+	return apiRequest<LogsResponse>(`/api/queue-cleaner/logs${queryString ? `?${queryString}` : ""}`);
 }
 
 /** Hook return type for useQueueCleanerLogs */
@@ -49,9 +47,7 @@ export function useQueueCleanerLogs(params: UseLogsParams = {}): UseQueueCleaner
 	const query = useQuery({
 		queryKey: ["queue-cleaner", "logs", queryParams],
 		queryFn: () => fetchLogs(queryParams),
-		refetchInterval: hasRunningCleans
-			? LOGS_ACTIVE_REFRESH_INTERVAL
-			: LOGS_REFRESH_INTERVAL,
+		refetchInterval: hasRunningCleans ? LOGS_ACTIVE_REFRESH_INTERVAL : LOGS_REFRESH_INTERVAL,
 	});
 
 	const logs = query.data?.logs ?? [];

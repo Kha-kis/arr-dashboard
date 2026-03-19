@@ -1,23 +1,23 @@
 "use client";
 
-import { useState } from "react";
-import { useFocusTrap } from "../../../hooks/useFocusTrap";
 import type { LibraryItem } from "@arr/shared";
 import {
+	AlertTriangle,
+	CheckCircle2,
 	ChevronDown,
 	ChevronRight,
+	Layers,
 	Loader2,
 	Search,
 	Tv,
-	Layers,
 	X,
-	AlertTriangle,
-	CheckCircle2,
 } from "lucide-react";
+import { useState } from "react";
 import { Button } from "../../../components/ui";
-import { SeasonEpisodeList } from "./season-episode-list";
-import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { useFocusTrap } from "../../../hooks/useFocusTrap";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { SeasonEpisodeList } from "./season-episode-list";
 
 /**
  * Props for the SeasonBreakdownModal component
@@ -114,9 +114,16 @@ export const SeasonBreakdownModal = ({
 		0,
 	);
 
-	const totalEpisodes = item.seasons.reduce((total, season) => total + (season.episodeCount ?? 0), 0);
-	const downloadedEpisodes = item.seasons.reduce((total, season) => total + (season.episodeFileCount ?? 0), 0);
-	const overallProgress = totalEpisodes > 0 ? Math.round((downloadedEpisodes / totalEpisodes) * 100) : 0;
+	const totalEpisodes = item.seasons.reduce(
+		(total, season) => total + (season.episodeCount ?? 0),
+		0,
+	);
+	const downloadedEpisodes = item.seasons.reduce(
+		(total, season) => total + (season.episodeFileCount ?? 0),
+		0,
+	);
+	const overallProgress =
+		totalEpisodes > 0 ? Math.round((downloadedEpisodes / totalEpisodes) * 100) : 0;
 
 	return (
 		<div
@@ -166,7 +173,9 @@ export const SeasonBreakdownModal = ({
 							<Tv className="h-6 w-6" style={{ color: SONARR_COLOR }} />
 						</div>
 						<div className="flex-1 min-w-0">
-							<h2 id="season-breakdown-title" className="text-xl font-bold text-foreground">{item.title}</h2>
+							<h2 id="season-breakdown-title" className="text-xl font-bold text-foreground">
+								{item.title}
+							</h2>
 							<div className="flex flex-wrap items-center gap-3 mt-1 text-sm text-muted-foreground">
 								<span>{item.instanceName}</span>
 								<span>•</span>
@@ -258,10 +267,7 @@ export const SeasonBreakdownModal = ({
 												}}
 											>
 												{isExpanded ? (
-													<ChevronDown
-														className="h-4 w-4"
-														style={{ color: themeGradient.from }}
-													/>
+													<ChevronDown className="h-4 w-4" style={{ color: themeGradient.from }} />
 												) : (
 													<ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
 												)}
@@ -279,7 +285,9 @@ export const SeasonBreakdownModal = ({
 												{downloaded}/{total || "?"} episodes
 											</SeasonBadge>
 											{missing > 0 && <SeasonBadge tone="error">{missing} missing</SeasonBadge>}
-											{season.monitored === false && <SeasonBadge tone="muted">Unmonitored</SeasonBadge>}
+											{season.monitored === false && (
+												<SeasonBadge tone="muted">Unmonitored</SeasonBadge>
+											)}
 										</div>
 
 										<div className="flex flex-wrap items-center gap-2">

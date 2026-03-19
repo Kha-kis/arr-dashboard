@@ -1,30 +1,37 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { SEERR_ISSUE_STATUS, type SeerrIssueType } from "@arr/shared";
+import {
+	AlertCircle,
+	AlertTriangle,
+	CheckCircle,
+	Loader2,
+	MessageSquare,
+	Send,
+} from "lucide-react";
 import Image from "next/image";
-import { AlertCircle, AlertTriangle, CheckCircle, MessageSquare, Loader2, Send } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
 	FilterSelect,
-	GlassmorphicCard,
-	StatusBadge,
 	PremiumEmptyState,
 	PremiumSkeleton,
+	StatusBadge,
 } from "../../../components/layout";
 import { Button } from "../../../components/ui";
 import {
+	useAddSeerrIssueComment,
 	useSeerrIssues,
 	useUpdateSeerrIssueStatus,
-	useAddSeerrIssueComment,
 } from "../../../hooks/api/useSeerr";
+import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import {
-	getIssueTypeLabel,
+	formatRelativeTime,
 	getIssueStatusLabel,
 	getIssueStatusVariant,
-	formatRelativeTime,
+	getIssueTypeLabel,
 	getPosterUrl,
 } from "../lib/seerr-utils";
-import { SEERR_ISSUE_STATUS, type SeerrIssueType } from "@arr/shared";
 
 type IssueFilter = "all" | "open" | "resolved";
 type IssueSort = "added" | "modified";
@@ -49,6 +56,15 @@ const TYPE_FILTER_OPTIONS: { value: IssueTypeFilter; label: string }[] = [
 	{ value: "4", label: "Other" },
 ];
 
+const SEERR_GRADIENT = SERVICE_GRADIENTS.seerr;
+
+function getIssueAccentColor(status: number): { from: string; to: string } {
+	if (status === SEERR_ISSUE_STATUS.OPEN) {
+		return { from: SEMANTIC_COLORS.warning.from, to: SEMANTIC_COLORS.warning.to };
+	}
+	return { from: SEMANTIC_COLORS.success.from, to: SEMANTIC_COLORS.success.to };
+}
+
 function formatProblemLocation(problemSeason: number, problemEpisode: number): string | null {
 	if (problemSeason === 0 && problemEpisode === 0) return null;
 	if (problemEpisode === 0) return `S${String(problemSeason).padStart(2, "0")}`;
@@ -65,7 +81,12 @@ export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 	const [sort, setSort] = useState<IssueSort>("added");
 	const [typeFilter, setTypeFilter] = useState<IssueTypeFilter>("all");
 	const [take, setTake] = useState(PAGE_SIZE);
-	const { data, isLoading, isFetching, isError } = useSeerrIssues({ instanceId, filter, sort, take });
+	const { data, isLoading, isFetching, isError } = useSeerrIssues({
+		instanceId,
+		filter,
+		sort,
+		take,
+	});
 
 	// Reset pagination when filters change
 	const prevRef = useRef({ filter, sort, typeFilter });
@@ -166,146 +187,207 @@ export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 				<div className="space-y-3">
 					{issues.map((issue, index) => {
 						const posterUrl = getPosterUrl(issue.media.posterPath);
-						const problemLocation = formatProblemLocation(issue.problemSeason, issue.problemEpisode);
+						const problemLocation = formatProblemLocation(
+							issue.problemSeason,
+							issue.problemEpisode,
+						);
+						const accent = getIssueAccentColor(issue.status);
 
 						return (
 							<div
 								key={issue.id}
-								className="animate-in fade-in slide-in-from-bottom-2 duration-300"
-								style={{ animationDelay: `${index * 30}ms`, animationFillMode: "backwards" }}
+								className="group relative rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-[1px] hover:shadow-lg hover:shadow-black/10 animate-in fade-in slide-in-from-bottom-1 duration-300"
+								style={{
+									border: `1px solid ${accent.from}10`,
+									animationDelay: `${index * 50}ms`,
+									animationFillMode: "backwards",
+								}}
 							>
-								<GlassmorphicCard padding="md">
-									<div className="flex items-start gap-4">
-										{/* Poster */}
-										<div className="flex h-14 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted/30">
-											{posterUrl ? (
-												<Image
-													src={posterUrl}
-													alt={issue.media.title ?? "Media"}
-													width={40}
-													height={56}
-													className="h-full w-full object-cover"
-												/>
-											) : (
-												<AlertTriangle className="h-4 w-4 text-muted-foreground" />
-											)}
-										</div>
+								{/* Background gradient */}
+								<div
+									className="absolute inset-0 pointer-events-none"
+									style={{
+										background: `linear-gradient(135deg, ${accent.from}05, transparent 60%)`,
+									}}
+								/>
 
-										{/* Content */}
-										<div className="min-w-0 flex-1">
-											<div className="flex items-center gap-2 flex-wrap">
-												<h3 className="truncate text-sm font-semibold text-foreground">
-													{issue.media.title ?? `Issue #${issue.id}`}
-												</h3>
-												<StatusBadge status={getIssueStatusVariant(issue.status)}>
-													{getIssueStatusLabel(issue.status)}
-												</StatusBadge>
-											</div>
-											<div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-												<span>{getIssueTypeLabel(issue.issueType)}</span>
-												{problemLocation && (
-													<span className="rounded-md bg-muted/30 px-1.5 py-0.5 text-[10px] font-medium text-foreground">
-														{problemLocation}
-													</span>
-												)}
-												<span>by {issue.createdBy.displayName}</span>
-												<span>{formatRelativeTime(issue.createdAt)}</span>
-												{issue.comments.length > 0 && (
-													<span className="flex items-center gap-1">
-														<MessageSquare className="h-3 w-3" />
-														{issue.comments.length}
-													</span>
-												)}
-											</div>
+								{/* Hover glow */}
+								<div
+									className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+									style={{
+										background: `radial-gradient(ellipse at top left, ${accent.from}06, transparent 50%)`,
+									}}
+								/>
 
-											{/* Existing comments */}
-											{issue.comments.length > 0 && (
-												<div className="mt-2 space-y-1.5 border-l-2 border-border/30 pl-3">
-													{issue.comments.map((comment) => (
-														<div key={comment.id} className="text-xs">
-															<span className="font-medium text-foreground">
-																{comment.user.displayName}
-															</span>
-															<span className="ml-1.5 text-muted-foreground">
-																{formatRelativeTime(comment.createdAt)}
-															</span>
-															<p className="mt-0.5 text-muted-foreground">{comment.message}</p>
-														</div>
-													))}
-												</div>
-											)}
+								{/* Accent bar */}
+								<div
+									className="absolute left-0 top-0 bottom-0 w-[3px]"
+									style={{
+										background: `linear-gradient(180deg, ${accent.from}, ${accent.to}70)`,
+									}}
+								/>
 
-											{/* Comment input for open issues */}
-											{issue.status === SEERR_ISSUE_STATUS.OPEN && (
-												<div className="mt-2 flex items-center gap-2">
-													<input
-														type="text"
-														placeholder="Add a comment..."
-														value={commentInput[issue.id] ?? ""}
-														onChange={(e) =>
-															setCommentInput((prev) => ({ ...prev, [issue.id]: e.target.value }))
-														}
-														className="h-7 flex-1 rounded-md border border-border/50 bg-card/30 px-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-hidden"
-														onKeyDown={(e) => {
-															if (e.key === "Enter") handleSubmitComment(issue.id);
-														}}
-													/>
-													<button
-														type="button"
-														onClick={() => handleSubmitComment(issue.id)}
-														disabled={!commentInput[issue.id]?.trim() || addCommentMutation.isPending}
-														className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/50 bg-card/30 text-muted-foreground transition-colors hover:bg-card/60 hover:text-foreground disabled:opacity-40 disabled:pointer-events-none"
-														title="Send comment"
-													>
-														<Send className="h-3 w-3" />
-													</button>
-												</div>
-											)}
-										</div>
-
-										{/* Resolve/reopen button */}
-										<div className="shrink-0">
-											{issue.status === SEERR_ISSUE_STATUS.OPEN ? (
-												<Button
-													variant="secondary"
-													size="sm"
-													disabled={updateStatusMutation.isPending}
-													onClick={() =>
-														updateStatusMutation.mutate(
-															{ instanceId, issueId: issue.id, status: "resolved" },
-															{
-																onSuccess: () => toast.success("Issue resolved"),
-																onError: () => toast.error("Failed to resolve issue"),
-															},
-														)
-													}
-													className="gap-1.5 border-border/50 bg-card/50 text-xs"
-												>
-													<CheckCircle className="h-3 w-3" />
-													Resolve
-												</Button>
-											) : (
-												<Button
-													variant="secondary"
-													size="sm"
-													disabled={updateStatusMutation.isPending}
-													onClick={() =>
-														updateStatusMutation.mutate(
-															{ instanceId, issueId: issue.id, status: "open" },
-															{
-																onSuccess: () => toast.success("Issue reopened"),
-																onError: () => toast.error("Failed to reopen issue"),
-															},
-														)
-													}
-													className="gap-1.5 border-border/50 bg-card/50 text-xs"
-												>
-													Reopen
-												</Button>
-											)}
-										</div>
+								<div className="relative flex items-start gap-4 py-3.5 pl-5 pr-4">
+									{/* Poster */}
+									<div
+										className="flex h-14 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md ring-1 ring-white/[0.06]"
+										style={{
+											boxShadow: posterUrl
+												? `0 2px 8px ${SEERR_GRADIENT.from}10, 0 4px 12px rgba(0,0,0,0.2)`
+												: undefined,
+											backgroundColor: posterUrl ? undefined : "rgba(255,255,255,0.04)",
+										}}
+									>
+										{posterUrl ? (
+											<Image
+												src={posterUrl}
+												alt={issue.media.title ?? "Media"}
+												width={40}
+												height={56}
+												className="h-full w-full object-cover"
+											/>
+										) : (
+											<AlertTriangle className="h-4 w-4 text-muted-foreground/40" />
+										)}
 									</div>
-								</GlassmorphicCard>
+
+									{/* Content */}
+									<div className="min-w-0 flex-1">
+										{/* Top row: type pill + metadata */}
+										<div className="flex items-center gap-2 mb-1">
+											<span
+												className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider shrink-0"
+												style={{
+													backgroundColor: `${SEERR_GRADIENT.from}12`,
+													color: SEERR_GRADIENT.from,
+												}}
+											>
+												{getIssueTypeLabel(issue.issueType)}
+											</span>
+											{problemLocation && (
+												<span
+													className="rounded-md px-1.5 py-0.5 text-[10px] font-mono font-bold"
+													style={{
+														backgroundColor: `${SEERR_GRADIENT.from}12`,
+														color: SEERR_GRADIENT.from,
+													}}
+												>
+													{problemLocation}
+												</span>
+											)}
+											<span className="text-[11px] text-muted-foreground/40">
+												by {issue.createdBy.displayName}
+											</span>
+											<span className="text-[11px] text-muted-foreground/40">
+												{formatRelativeTime(issue.createdAt)}
+											</span>
+											{issue.comments.length > 0 && (
+												<span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/40">
+													<MessageSquare className="h-3 w-3" />
+													{issue.comments.length}
+												</span>
+											)}
+										</div>
+
+										{/* Title + status */}
+										<div className="flex items-center gap-2 flex-wrap">
+											<h3 className="truncate text-[14px] font-semibold text-foreground leading-snug">
+												{issue.media.title ?? `Issue #${issue.id}`}
+											</h3>
+											<StatusBadge status={getIssueStatusVariant(issue.status)}>
+												{getIssueStatusLabel(issue.status)}
+											</StatusBadge>
+										</div>
+
+										{/* Existing comments */}
+										{issue.comments.length > 0 && (
+											<div className="mt-2 space-y-1.5 border-l-2 border-border/20 pl-3">
+												{issue.comments.map((comment) => (
+													<div key={comment.id} className="text-xs">
+														<span className="font-medium text-foreground">
+															{comment.user.displayName}
+														</span>
+														<span className="ml-1.5 text-muted-foreground/40">
+															{formatRelativeTime(comment.createdAt)}
+														</span>
+														<p className="mt-0.5 text-muted-foreground/50">{comment.message}</p>
+													</div>
+												))}
+											</div>
+										)}
+
+										{/* Comment input for open issues */}
+										{issue.status === SEERR_ISSUE_STATUS.OPEN && (
+											<div className="mt-2 flex items-center gap-2">
+												<input
+													type="text"
+													placeholder="Add a comment..."
+													value={commentInput[issue.id] ?? ""}
+													onChange={(e) =>
+														setCommentInput((prev) => ({ ...prev, [issue.id]: e.target.value }))
+													}
+													className="h-7 flex-1 rounded-md border border-border/30 bg-white/[0.03] px-2 text-xs text-foreground placeholder:text-muted-foreground/30 focus:outline-hidden focus:border-border/50"
+													onKeyDown={(e) => {
+														if (e.key === "Enter") handleSubmitComment(issue.id);
+													}}
+												/>
+												<button
+													type="button"
+													onClick={() => handleSubmitComment(issue.id)}
+													disabled={
+														!commentInput[issue.id]?.trim() || addCommentMutation.isPending
+													}
+													className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/30 bg-white/[0.03] text-muted-foreground/40 transition-colors hover:bg-white/[0.06] hover:text-foreground disabled:opacity-40 disabled:pointer-events-none"
+													title="Send comment"
+												>
+													<Send className="h-3 w-3" />
+												</button>
+											</div>
+										)}
+									</div>
+
+									{/* Resolve/reopen button — hover reveal */}
+									<div className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+										{issue.status === SEERR_ISSUE_STATUS.OPEN ? (
+											<Button
+												variant="secondary"
+												size="sm"
+												disabled={updateStatusMutation.isPending}
+												onClick={() =>
+													updateStatusMutation.mutate(
+														{ instanceId, issueId: issue.id, status: "resolved" },
+														{
+															onSuccess: () => toast.success("Issue resolved"),
+															onError: () => toast.error("Failed to resolve issue"),
+														},
+													)
+												}
+												className="gap-1.5 border-border/50 bg-card/50 text-xs"
+											>
+												<CheckCircle className="h-3 w-3" />
+												Resolve
+											</Button>
+										) : (
+											<Button
+												variant="secondary"
+												size="sm"
+												disabled={updateStatusMutation.isPending}
+												onClick={() =>
+													updateStatusMutation.mutate(
+														{ instanceId, issueId: issue.id, status: "open" },
+														{
+															onSuccess: () => toast.success("Issue reopened"),
+															onError: () => toast.error("Failed to reopen issue"),
+														},
+													)
+												}
+												className="gap-1.5 border-border/50 bg-card/50 text-xs"
+											>
+												Reopen
+											</Button>
+										)}
+									</div>
+								</div>
 							</div>
 						);
 					})}

@@ -8,8 +8,8 @@
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import {
-	type TrashBackupCleanupService,
 	createTrashBackupCleanupService,
+	type TrashBackupCleanupService,
 } from "../lib/trash-guides/trash-backup-cleanup.js";
 
 declare module "fastify" {

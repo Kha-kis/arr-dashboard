@@ -1,12 +1,12 @@
 "use client";
 
+import { Loader2, Zap } from "lucide-react";
 import { useState } from "react";
-import { Zap, Loader2 } from "lucide-react";
-import { apiRequest } from "../../../lib/api-client/base";
+import { Alert, AlertDescription } from "../../../components/ui";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
-import { Alert, AlertDescription } from "../../../components/ui";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { apiRequest } from "../../../lib/api-client/base";
 
 export const OIDCSetup = () => {
 	const { gradient: themeGradient } = useThemeGradient();
@@ -129,7 +129,9 @@ export const OIDCSetup = () => {
 				</p>
 			</div>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-muted-foreground font-medium">Scopes (comma-separated)</label>
+				<label className="text-xs uppercase text-muted-foreground font-medium">
+					Scopes (comma-separated)
+				</label>
 				<Input
 					value={formState.scopes}
 					onChange={(e) => setFormState({ ...formState, scopes: e.target.value })}

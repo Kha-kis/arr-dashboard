@@ -1,32 +1,31 @@
 "use client";
 
-import { useState } from "react";
 import {
-	Trash2,
-	Play,
-	Eye,
 	CheckCircle2,
+	Eye,
 	Loader2,
-	Zap,
+	Play,
 	ShieldAlert,
 	SkipForward,
 	Sparkles,
+	Trash2,
+	Zap,
 } from "lucide-react";
-import { Button, toast } from "../../../components/ui";
+import { useState } from "react";
 import {
-	StatCard,
 	PremiumEmptyState,
 	PremiumSection,
 	ServiceBadge,
+	StatCard,
 	StatusBadge,
-	GlassmorphicCard,
 } from "../../../components/layout";
-import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import type { QueueCleanerStatus, InstanceCleanerStatus } from "../lib/queue-cleaner-types";
-import { useManualClean } from "../hooks/useManualClean";
-import { useEnhancedPreview } from "../hooks/useDryRun";
-import { EnhancedDryRunPreview } from "./dry-run-preview";
+import { Button, toast } from "../../../components/ui";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useEnhancedPreview } from "../hooks/useDryRun";
+import { useManualClean } from "../hooks/useManualClean";
+import type { InstanceCleanerStatus, QueueCleanerStatus } from "../lib/queue-cleaner-types";
+import { EnhancedDryRunPreview } from "./dry-run-preview";
 
 interface OverviewProps {
 	status: QueueCleanerStatus | null;
@@ -34,7 +33,6 @@ interface OverviewProps {
 }
 
 export const QueueCleanerOverview = ({ status, onRefresh }: OverviewProps) => {
-
 	if (!status || status.instances.length === 0) {
 		return (
 			<PremiumEmptyState
@@ -112,21 +110,11 @@ interface InstanceStatusCardProps {
 	animationDelay: number;
 }
 
-const InstanceStatusCard = ({
-	instance,
-	onRefresh,
-	animationDelay,
-}: InstanceStatusCardProps) => {
+const InstanceStatusCard = ({ instance, onRefresh, animationDelay }: InstanceStatusCardProps) => {
 	const serviceGradient = getServiceGradient(instance.service);
 	const { triggerClean, isTriggering, isCooldownError } = useManualClean();
-	const {
-		runPreview,
-		runClean,
-		previewResult,
-		isLoadingPreview,
-		isRunningClean,
-		resetPreview,
-	} = useEnhancedPreview();
+	const { runPreview, runClean, previewResult, isLoadingPreview, isRunningClean, resetPreview } =
+		useEnhancedPreview();
 	const [showPreview, setShowPreview] = useState(false);
 
 	const handleManualClean = async () => {
@@ -158,124 +146,158 @@ const InstanceStatusCard = ({
 	};
 
 	const lastRunDate = instance.lastRunAt ? new Date(instance.lastRunAt) : null;
-	const lastRunAgo = lastRunDate
-		? getTimeAgo(lastRunDate)
-		: "Never";
+	const lastRunAgo = lastRunDate ? getTimeAgo(lastRunDate) : "Never";
+
+	const accent = instance.enabled
+		? { from: serviceGradient.from, to: serviceGradient.to }
+		: { from: "#6b7280", to: "#9ca3af" };
 
 	return (
 		<>
 			<div
-				className="animate-in fade-in slide-in-from-bottom-2 duration-300"
-				style={{ animationDelay: `${animationDelay}ms`, animationFillMode: "backwards" }}
+				className="group relative rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-[1px] hover:shadow-lg hover:shadow-black/10 animate-in fade-in slide-in-from-bottom-1 duration-300"
+				style={{
+					border: `1px solid ${accent.from}10`,
+					animationDelay: `${animationDelay}ms`,
+					animationFillMode: "backwards",
+				}}
 			>
-				<GlassmorphicCard>
-					{/* Service accent line */}
-					<div
-						className="absolute top-0 left-0 right-0 h-0.5 rounded-t-xl"
-						style={{
-							background: `linear-gradient(90deg, ${serviceGradient.from}, ${serviceGradient.to})`,
-						}}
-					/>
+				{/* Background gradient */}
+				<div
+					className="absolute inset-0 pointer-events-none"
+					style={{
+						background: `linear-gradient(135deg, ${accent.from}04, transparent 60%)`,
+					}}
+				/>
 
-					<div className="p-5">
-						{/* Header */}
-						<div className="flex items-start justify-between mb-4">
-							<div className="flex items-center gap-3">
-								<div
-									className="flex h-9 w-9 items-center justify-center rounded-lg"
-									style={{
-										background: `linear-gradient(135deg, ${serviceGradient.from}20, ${serviceGradient.to}10)`,
-										border: `1px solid ${serviceGradient.from}30`,
-									}}
-								>
-									<Sparkles
-										className="h-4 w-4"
-										style={{ color: serviceGradient.from }}
-									/>
-								</div>
-								<div>
-									<h4 className="font-medium text-foreground">
+				{/* Hover glow */}
+				<div
+					className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+					style={{
+						background: `radial-gradient(ellipse at top left, ${accent.from}06, transparent 50%)`,
+					}}
+				/>
+
+				{/* Service accent bar */}
+				<div
+					className="absolute left-0 top-0 bottom-0 w-[3px]"
+					style={{
+						background: `linear-gradient(180deg, ${accent.from}, ${accent.to}70)`,
+					}}
+				/>
+
+				<div className="relative p-5">
+					{/* Header */}
+					<div className="flex items-start justify-between mb-4">
+						<div className="flex items-center gap-2">
+							<span
+								className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider shrink-0"
+								style={{
+									backgroundColor: `${serviceGradient.from}12`,
+									color: serviceGradient.from,
+								}}
+							>
+								<Sparkles className="h-2.5 w-2.5" />
+								Cleaner
+							</span>
+							<div>
+								<div className="flex items-center gap-2">
+									<h4 className="font-semibold text-[14px] text-foreground leading-snug">
 										{instance.instanceName}
 									</h4>
-									<div className="flex items-center gap-2 mt-0.5">
-										<ServiceBadge service={instance.service} />
-										{instance.dryRunMode && instance.hasConfig && (
-											<span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-400 border border-amber-500/20">
-												<ShieldAlert className="h-3 w-3" />
-												Dry Run
-											</span>
-										)}
-									</div>
-								</div>
-							</div>
-							<StatusBadge status={instance.enabled ? "success" : "info"}>
-								{instance.enabled ? "Active" : "Inactive"}
-							</StatusBadge>
-						</div>
-
-						{/* Stats row */}
-						<div className="grid grid-cols-3 gap-3 mb-4">
-							<div className="rounded-lg bg-card/50 p-2.5 text-center">
-								<div className="text-xs text-muted-foreground">Cleaned</div>
-								<div className="text-lg font-semibold text-foreground">
-									{instance.cleanedToday}
-								</div>
-							</div>
-							<div className="rounded-lg bg-card/50 p-2.5 text-center">
-								<div className="text-xs text-muted-foreground">Skipped</div>
-								<div className="text-lg font-semibold text-foreground">
-									{instance.skippedToday}
-								</div>
-							</div>
-							<div className="rounded-lg bg-card/50 p-2.5 text-center">
-								<div className="text-xs text-muted-foreground">Last Run</div>
-								<div className="text-xs font-medium text-foreground mt-1">
-									{lastRunAgo}
+									<ServiceBadge service={instance.service} />
+									{instance.dryRunMode && instance.hasConfig && (
+										<span className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-400 border border-amber-500/15">
+											<ShieldAlert className="h-2.5 w-2.5" />
+											Dry Run
+										</span>
+									)}
 								</div>
 							</div>
 						</div>
-
-						{/* Actions */}
-						{instance.hasConfig && (
-							<div className="flex gap-2">
-								<Button
-									variant="secondary"
-									size="sm"
-									className="flex-1 gap-1.5 text-xs"
-									onClick={() => void handleManualClean()}
-									disabled={isTriggering || !instance.enabled}
-								>
-									{isTriggering ? (
-										<Loader2 className="h-3 w-3 animate-spin" />
-									) : (
-										<Play className="h-3 w-3" />
-									)}
-									Run Now
-								</Button>
-								<Button
-									variant="secondary"
-									size="sm"
-									className="flex-1 gap-1.5 text-xs"
-									onClick={() => void handlePreview()}
-									disabled={isLoadingPreview}
-								>
-									{isLoadingPreview ? (
-										<Loader2 className="h-3 w-3 animate-spin" />
-									) : (
-										<Eye className="h-3 w-3" />
-									)}
-									Preview
-								</Button>
-							</div>
-						)}
-
-						{!instance.hasConfig && (
-							<p className="text-xs text-muted-foreground text-center py-2">
-								Configure in the Configuration tab to get started
-							</p>
-						)}
+						<StatusBadge status={instance.enabled ? "success" : "info"}>
+							{instance.enabled ? "Active" : "Inactive"}
+						</StatusBadge>
 					</div>
-				</GlassmorphicCard>
+
+					{/* Stats row */}
+					<div className="grid grid-cols-3 gap-3 mb-4">
+						<div
+							className="rounded-lg p-2.5 text-center"
+							style={{
+								backgroundColor: `${serviceGradient.from}06`,
+								border: `1px solid ${serviceGradient.from}10`,
+							}}
+						>
+							<div className="text-[10px] text-muted-foreground/50">Cleaned</div>
+							<div className="text-lg font-semibold text-foreground">
+								{instance.cleanedToday}
+							</div>
+						</div>
+						<div
+							className="rounded-lg p-2.5 text-center"
+							style={{
+								backgroundColor: `${serviceGradient.from}06`,
+								border: `1px solid ${serviceGradient.from}10`,
+							}}
+						>
+							<div className="text-[10px] text-muted-foreground/50">Skipped</div>
+							<div className="text-lg font-semibold text-foreground">
+								{instance.skippedToday}
+							</div>
+						</div>
+						<div
+							className="rounded-lg p-2.5 text-center"
+							style={{
+								backgroundColor: `${serviceGradient.from}06`,
+								border: `1px solid ${serviceGradient.from}10`,
+							}}
+						>
+							<div className="text-[10px] text-muted-foreground/50">Last Run</div>
+							<div className="text-xs font-medium text-foreground mt-1">{lastRunAgo}</div>
+						</div>
+					</div>
+
+					{/* Actions */}
+					{instance.hasConfig && (
+						<div className="flex gap-2">
+							<Button
+								variant="secondary"
+								size="sm"
+								className="flex-1 gap-1.5 text-xs border-border/50 bg-card/50"
+								onClick={() => void handleManualClean()}
+								disabled={isTriggering || !instance.enabled}
+							>
+								{isTriggering ? (
+									<Loader2 className="h-3 w-3 animate-spin" />
+								) : (
+									<Play className="h-3 w-3" />
+								)}
+								Run Now
+							</Button>
+							<Button
+								variant="secondary"
+								size="sm"
+								className="flex-1 gap-1.5 text-xs border-border/50 bg-card/50"
+								onClick={() => void handlePreview()}
+								disabled={isLoadingPreview}
+							>
+								{isLoadingPreview ? (
+									<Loader2 className="h-3 w-3 animate-spin" />
+								) : (
+									<Eye className="h-3 w-3" />
+								)}
+								Preview
+							</Button>
+						</div>
+					)}
+
+					{!instance.hasConfig && (
+						<p className="text-[11px] text-muted-foreground/40 text-center py-2">
+							Configure in the Configuration tab to get started
+						</p>
+					)}
+				</div>
 			</div>
 
 			{/* Enhanced Preview Modal */}

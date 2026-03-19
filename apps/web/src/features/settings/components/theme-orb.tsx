@@ -51,7 +51,7 @@ export const ThemeOrbButton = ({
 			className={cn(
 				"group relative flex flex-col items-center gap-3 rounded-xl p-4 transition-all duration-300",
 				"hover:bg-muted/30",
-				isSelected && "bg-muted/50"
+				isSelected && "bg-muted/50",
 			)}
 			style={animationDelay ? { animationDelay } : undefined}
 		>
@@ -61,7 +61,7 @@ export const ThemeOrbButton = ({
 				<div
 					className={cn(
 						`absolute ${glowInset} rounded-full ${glowBlur} transition-all duration-500`,
-						isSelected ? selectedGlowOpacity : `opacity-0 ${hoverGlowOpacity}`
+						isSelected ? selectedGlowOpacity : `opacity-0 ${hoverGlowOpacity}`,
 					)}
 					style={{ backgroundColor: gradient.glow }}
 				/>
@@ -73,7 +73,7 @@ export const ThemeOrbButton = ({
 						"ring-2 ring-offset-2 ring-offset-background",
 						isSelected
 							? "ring-foreground/20 scale-110"
-							: "ring-transparent group-hover:ring-border group-hover:scale-105"
+							: "ring-transparent group-hover:ring-border group-hover:scale-105",
 					)}
 					style={{
 						background: `linear-gradient(135deg, ${gradient.from}, ${gradient.to})`,
@@ -107,8 +107,12 @@ export const ThemeOrbButton = ({
 							className={cn(
 								"absolute -inset-1 rounded-full animate-ping",
 								isSelected
-									? isIntense ? "opacity-30" : "opacity-20"
-									: isIntense ? "opacity-15" : "opacity-10"
+									? isIntense
+										? "opacity-30"
+										: "opacity-20"
+									: isIntense
+										? "opacity-15"
+										: "opacity-10",
 							)}
 							style={{
 								backgroundColor: gradient.from,
@@ -119,7 +123,7 @@ export const ThemeOrbButton = ({
 							<div
 								className={cn(
 									"absolute -inset-2 rounded-full animate-ping",
-									isSelected ? "opacity-20" : "opacity-10"
+									isSelected ? "opacity-20" : "opacity-10",
 								)}
 								style={{
 									backgroundColor: gradient.to,
@@ -136,7 +140,7 @@ export const ThemeOrbButton = ({
 			<span
 				className={cn(
 					"text-xs font-medium transition-colors duration-300",
-					isSelected ? "text-foreground" : "text-muted-foreground group-hover:text-foreground"
+					isSelected ? "text-foreground" : "text-muted-foreground group-hover:text-foreground",
 				)}
 			>
 				{label}

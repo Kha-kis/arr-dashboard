@@ -1,6 +1,6 @@
 "use client";
 
-import { Tag, X, Loader2 } from "lucide-react";
+import { Loader2, Tag, X } from "lucide-react";
 import { Button } from "../../../components/ui/button";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
@@ -39,7 +39,7 @@ export const TagListItem = ({
 
 	return (
 		<li
-			className="group flex items-center justify-between rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs px-4 py-3 transition-all duration-300 hover:border-border/80 animate-in fade-in slide-in-from-bottom-2"
+			className="group flex items-center justify-between rounded-xl border border-border/30 bg-muted/10 px-4 py-3 transition-all duration-300 hover:border-border/80 animate-in fade-in slide-in-from-bottom-2"
 			style={{
 				animationDelay: `${animationDelay}ms`,
 				animationFillMode: "backwards",

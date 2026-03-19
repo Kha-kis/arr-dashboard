@@ -1,21 +1,21 @@
 "use client";
 
-import { useState, useEffect, useId } from "react";
-import { Settings, Loader2, Film, Tv } from "lucide-react";
+import type { SeerrQuota, SeerrUser } from "@arr/shared";
+import { Film, Loader2, Settings, Tv } from "lucide-react";
+import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
-import type { SeerrUser, SeerrQuota } from "@arr/shared";
+import { GradientButton, PremiumProgress } from "../../../components/layout/premium-components";
 import {
+	Input,
 	LegacyDialog,
+	LegacyDialogClose,
+	LegacyDialogContent,
+	LegacyDialogDescription,
+	LegacyDialogFooter,
 	LegacyDialogHeader,
 	LegacyDialogTitle,
-	LegacyDialogDescription,
-	LegacyDialogContent,
-	LegacyDialogFooter,
-	LegacyDialogClose,
-	Input,
 } from "../../../components/ui";
 import { SimpleFormField } from "../../../components/ui/simple-form-field";
-import { GradientButton, PremiumProgress } from "../../../components/layout/premium-components";
 import { useSeerrUserQuota, useUpdateSeerrUser } from "../../../hooks/api/useSeerr";
 
 interface UserSettingsDialogProps {

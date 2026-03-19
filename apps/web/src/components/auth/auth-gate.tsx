@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect } from "react";
 import { useCurrentUser, useSetupRequired } from "../../hooks/api/useAuth";
 
 const PUBLIC_ROUTES = new Set(["/login", "/setup"]);
@@ -20,7 +20,11 @@ export const AuthGate = ({ children }: AuthGateProps) => {
 
 	// Only fetch user if setup is complete AND not on a public route
 	const shouldFetchUser = setupRequired?.required === false && !isSetupRoute && !isPublicRoute;
-	const { data: user, isLoading: userLoading, isFetching: userFetching } = useCurrentUser(shouldFetchUser);
+	const {
+		data: user,
+		isLoading: userLoading,
+		isFetching: userFetching,
+	} = useCurrentUser(shouldFetchUser);
 
 	// Handle auth redirects (but NOT setup redirects - home page handles that)
 	useEffect(() => {
@@ -41,7 +45,16 @@ export const AuthGate = ({ children }: AuthGateProps) => {
 		}
 
 		// Redirect logged-in users away from login (handled above by isPublicRoute check)
-	}, [setupRequired, shouldFetchUser, userLoading, userFetching, user, pathname, isPublicRoute, router]);
+	}, [
+		setupRequired,
+		shouldFetchUser,
+		userLoading,
+		userFetching,
+		user,
+		pathname,
+		isPublicRoute,
+		router,
+	]);
 
 	// Always render children immediately to avoid hydration issues
 	return <>{children}</>;

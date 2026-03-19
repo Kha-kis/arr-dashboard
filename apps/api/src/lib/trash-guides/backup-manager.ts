@@ -194,7 +194,10 @@ export class BackupManager {
 					configCount: data.customFormats.length,
 				});
 			} catch (error) {
-				log.error({ err: error, backupId: backup.id, instanceId: backup.instanceId }, "Failed to parse backup data");
+				log.error(
+					{ err: error, backupId: backup.id, instanceId: backup.instanceId },
+					"Failed to parse backup data",
+				);
 				// Skip corrupted backups instead of crashing
 			}
 			return result;

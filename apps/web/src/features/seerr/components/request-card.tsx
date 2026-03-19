@@ -1,19 +1,24 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { SeerrMediaStatus, SeerrRequest, SeerrSeason } from "@arr/shared";
+import { SEERR_MEDIA_STATUS, SEERR_REQUEST_STATUS } from "@arr/shared";
+import { Calendar, Film, Tv, User } from "lucide-react";
 import Image from "next/image";
-import type { SeerrRequest, SeerrSeason, SeerrMediaStatus } from "@arr/shared";
-import { SEERR_REQUEST_STATUS, SEERR_MEDIA_STATUS } from "@arr/shared";
-import { Film, Tv, User } from "lucide-react";
-import { GlassmorphicCard, StatusBadge } from "../../../components/layout";
+import type { ReactNode } from "react";
+import { StatusBadge } from "../../../components/layout";
+import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import {
-	getRequestStatusLabel,
-	getRequestStatusVariant,
+	formatRelativeTime,
 	getMediaStatusLabel,
 	getMediaStatusVariant,
-	formatRelativeTime,
 	getPosterUrl,
+	getRequestStatusLabel,
+	getRequestStatusVariant,
 } from "../lib/seerr-utils";
+
+// ============================================================================
+// Types
+// ============================================================================
 
 interface RequestCardProps {
 	request: SeerrRequest;
@@ -21,6 +26,31 @@ interface RequestCardProps {
 	index?: number;
 	onClick?: () => void;
 }
+
+// ============================================================================
+// Status-to-color mapping
+// ============================================================================
+
+const SEERR_GRADIENT = SERVICE_GRADIENTS.seerr;
+
+function getStatusAccentColor(status: number): { from: string; to: string; glow: string } {
+	switch (status) {
+		case SEERR_REQUEST_STATUS.PENDING:
+			return { from: SEMANTIC_COLORS.warning.from, to: SEMANTIC_COLORS.warning.to, glow: SEMANTIC_COLORS.warning.glow };
+		case SEERR_REQUEST_STATUS.APPROVED:
+		case SEERR_REQUEST_STATUS.COMPLETED:
+			return { from: SEMANTIC_COLORS.success.from, to: SEMANTIC_COLORS.success.to, glow: SEMANTIC_COLORS.success.glow };
+		case SEERR_REQUEST_STATUS.DECLINED:
+		case SEERR_REQUEST_STATUS.FAILED:
+			return { from: SEMANTIC_COLORS.error.from, to: SEMANTIC_COLORS.error.to, glow: SEMANTIC_COLORS.error.glow };
+		default:
+			return { from: SEERR_GRADIENT.from, to: SEERR_GRADIENT.to, glow: SEERR_GRADIENT.glow };
+	}
+}
+
+// ============================================================================
+// Season helpers
+// ============================================================================
 
 function getSeasonStatusColor(status: SeerrMediaStatus): string {
 	switch (status) {
@@ -36,6 +66,16 @@ function getSeasonStatusColor(status: SeerrMediaStatus): string {
 			return "bg-muted-foreground/40";
 	}
 }
+
+const SEERR_MEDIA_STATUS_LABEL_MAP: Record<number, string> = {
+	1: "Unavailable",
+	2: "Pending",
+	3: "Processing",
+	4: "Partially Available",
+	5: "Available",
+	6: "Blocklisted",
+	7: "Deleted",
+};
 
 function formatSeasons(seasons?: SeerrSeason[]): ReactNode | null {
 	if (!seasons || seasons.length === 0) return null;
@@ -54,29 +94,39 @@ function formatSeasons(seasons?: SeerrSeason[]): ReactNode | null {
 			</span>
 		);
 	}
-	const availableCount = seasons.filter(
-		(s) => s.status === SEERR_MEDIA_STATUS.AVAILABLE,
-	).length;
+	const availableCount = seasons.filter((s) => s.status === SEERR_MEDIA_STATUS.AVAILABLE).length;
 	if (availableCount > 0 && availableCount < seasons.length) {
 		return `${seasons.length} seasons (${availableCount} available)`;
 	}
 	return `${seasons.length} seasons`;
 }
 
-const SEERR_MEDIA_STATUS_LABEL_MAP: Record<number, string> = {
-	1: "Unavailable",
-	2: "Pending",
-	3: "Processing",
-	4: "Partially Available",
-	5: "Available",
-	6: "Blocklisted",
-	7: "Deleted",
-};
+// ============================================================================
+// Metadata chip
+// ============================================================================
+
+const MetaChip = ({
+	icon: Icon,
+	children,
+}: {
+	icon?: React.ComponentType<{ className?: string }>;
+	children: React.ReactNode;
+}) => (
+	<span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/50">
+		{Icon && <Icon className="h-3 w-3 shrink-0" />}
+		{children}
+	</span>
+);
+
+// ============================================================================
+// Component
+// ============================================================================
 
 export const RequestCard = ({ request, actions, index = 0, onClick }: RequestCardProps) => {
 	const posterUrl = getPosterUrl(request.media.posterPath);
 	const TypeIcon = request.type === "movie" ? Film : Tv;
 	const seasonInfo = request.type === "tv" ? formatSeasons(request.seasons) : null;
+	const statusAccent = getStatusAccentColor(request.status);
 	const showMediaStatus =
 		request.status === SEERR_REQUEST_STATUS.APPROVED ||
 		request.status === SEERR_REQUEST_STATUS.COMPLETED ||
@@ -84,17 +134,63 @@ export const RequestCard = ({ request, actions, index = 0, onClick }: RequestCar
 
 	return (
 		<div
-			className={`animate-in fade-in slide-in-from-bottom-2 duration-300${onClick ? " cursor-pointer" : ""}`}
-			style={{ animationDelay: `${index * 30}ms`, animationFillMode: "backwards" }}
+			className={`group relative rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-[1px] hover:shadow-lg hover:shadow-black/10 animate-in fade-in slide-in-from-bottom-1 duration-300${onClick ? " cursor-pointer" : ""}`}
+			style={{
+				border: `1px solid ${statusAccent.from}10`,
+				animationDelay: `${index * 50}ms`,
+				animationFillMode: "backwards",
+			}}
 			onClick={onClick}
-			onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } } : undefined}
+			onKeyDown={
+				onClick
+					? (e) => {
+							if (e.key === "Enter" || e.key === " ") {
+								e.preventDefault();
+								onClick();
+							}
+						}
+					: undefined
+			}
 			role={onClick ? "button" : undefined}
 			tabIndex={onClick ? 0 : undefined}
 		>
-			<GlassmorphicCard padding="none">
-				<div className="flex items-center gap-4 p-4">
+			{/* Status-tinted background with diagonal gradient */}
+			<div
+				className="absolute inset-0 pointer-events-none"
+				style={{
+					background: `linear-gradient(135deg, ${statusAccent.from}06, transparent 60%)`,
+				}}
+			/>
+
+			{/* Hover glow effect */}
+			<div
+				className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+				style={{
+					background: `radial-gradient(ellipse at top left, ${statusAccent.from}08, transparent 50%)`,
+				}}
+			/>
+
+			<div className="relative flex">
+				{/* Status accent bar */}
+				<div
+					className="absolute left-0 top-0 bottom-0 w-[3px]"
+					style={{
+						background: `linear-gradient(180deg, ${statusAccent.from}, ${statusAccent.to}70)`,
+					}}
+				/>
+
+				{/* Content area */}
+				<div className="flex-1 min-w-0 flex items-start gap-4 py-3.5 pl-5 pr-4">
 					{/* Poster thumbnail */}
-					<div className="flex h-16 w-11 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted/30">
+					<div
+						className="shrink-0 w-[44px] h-[64px] rounded-md overflow-hidden ring-1 ring-white/[0.06] flex items-center justify-center"
+						style={{
+							boxShadow: posterUrl
+								? `0 2px 8px ${SEERR_GRADIENT.from}10, 0 4px 12px rgba(0,0,0,0.2)`
+								: undefined,
+							backgroundColor: posterUrl ? undefined : "rgba(255,255,255,0.04)",
+						}}
+					>
 						{posterUrl ? (
 							<Image
 								src={posterUrl}
@@ -104,16 +200,47 @@ export const RequestCard = ({ request, actions, index = 0, onClick }: RequestCar
 								className="h-full w-full object-cover"
 							/>
 						) : (
-							<TypeIcon className="h-5 w-5 text-muted-foreground" />
+							<TypeIcon className="h-5 w-5 text-muted-foreground/40" />
 						)}
 					</div>
 
 					{/* Title + metadata */}
 					<div className="min-w-0 flex-1">
-						<div className="flex items-center gap-2 flex-wrap">
-							<h3 className="truncate text-sm font-semibold text-foreground">
-								{request.media.title ?? `${request.type === "movie" ? "Movie" : "Series"} #${request.media.tmdbId}`}
-							</h3>
+						{/* Top row: type pill + requester */}
+						<div className="flex items-center gap-2 mb-1.5">
+							{/* Type pill with seerr brand color */}
+							<span
+								className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider shrink-0"
+								style={{
+									backgroundColor: `${SEERR_GRADIENT.from}12`,
+									color: SEERR_GRADIENT.from,
+									boxShadow: `0 0 10px ${SEERR_GRADIENT.from}08`,
+								}}
+							>
+								<TypeIcon className="h-2.5 w-2.5" />
+								{request.type === "movie" ? "Movie" : "TV"}
+								{request.is4k && " · 4K"}
+							</span>
+
+							{/* Requester */}
+							<MetaChip icon={User}>{request.requestedBy.displayName}</MetaChip>
+
+							{/* Separator dot */}
+							<span
+								className="h-[3px] w-[3px] rounded-full shrink-0"
+								style={{ backgroundColor: `${statusAccent.from}30` }}
+							/>
+
+							{/* Time */}
+							<MetaChip icon={Calendar}>{formatRelativeTime(request.createdAt)}</MetaChip>
+						</div>
+
+						{/* Title row */}
+						<h3 className="text-[14px] font-semibold text-foreground leading-snug flex items-center gap-2 flex-wrap">
+							<span className="truncate">
+								{request.media.title ??
+									`${request.type === "movie" ? "Movie" : "Series"} #${request.media.tmdbId}`}
+							</span>
 							<StatusBadge status={getRequestStatusVariant(request.status)}>
 								{getRequestStatusLabel(request.status)}
 							</StatusBadge>
@@ -122,21 +249,22 @@ export const RequestCard = ({ request, actions, index = 0, onClick }: RequestCar
 									{getMediaStatusLabel(request.media.status)}
 								</StatusBadge>
 							)}
-						</div>
-						<div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-							<span className="flex items-center gap-1">
-								<TypeIcon className="h-3 w-3" />
-								{request.type === "movie" ? "Movie" : "TV"}
-								{request.is4k && " (4K)"}
-							</span>
-							{seasonInfo && <span className="flex items-center">{seasonInfo}</span>}
-							<span className="flex items-center gap-1">
-								<User className="h-3 w-3" />
-								{request.requestedBy.displayName}
-							</span>
-							<span>{formatRelativeTime(request.createdAt)}</span>
+						</h3>
+
+						{/* Metadata row */}
+						<div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
+							{seasonInfo && (
+								<span className="inline-flex items-center text-[11px] text-muted-foreground/50">
+									{seasonInfo}
+								</span>
+							)}
+							{request.media.overview && (
+								<p className="w-full mt-1 text-[11.5px] leading-relaxed text-muted-foreground/40 line-clamp-1">
+									{request.media.overview}
+								</p>
+							)}
 							{request.modifiedBy && (
-								<span className="text-muted-foreground/70">
+								<span className="text-[11px] text-muted-foreground/35">
 									{request.status === SEERR_REQUEST_STATUS.APPROVED ||
 									request.status === SEERR_REQUEST_STATUS.COMPLETED
 										? "Approved"
@@ -150,9 +278,17 @@ export const RequestCard = ({ request, actions, index = 0, onClick }: RequestCar
 					</div>
 
 					{/* Action buttons */}
-					{actions && <div className="flex shrink-0 items-center gap-2" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>{actions}</div>}
+					{actions && (
+						<div
+							className="flex shrink-0 items-center gap-2 pt-1"
+							onClick={(e) => e.stopPropagation()}
+							onKeyDown={(e) => e.stopPropagation()}
+						>
+							{actions}
+						</div>
+					)}
 				</div>
-			</GlassmorphicCard>
+			</div>
 		</div>
 	);
 };

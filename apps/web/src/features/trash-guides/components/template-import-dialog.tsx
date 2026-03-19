@@ -10,13 +10,13 @@
  * - Animated entrance effects
  */
 
-import { useState, useEffect, useRef } from "react";
+import { AlertCircle, FileJson, Info, Loader2, Upload, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Button, Input } from "../../../components/ui";
 import { useImportTemplate } from "../../../hooks/api/useTemplates";
-import { Input, Button } from "../../../components/ui";
-import { Upload, X, FileJson, AlertCircle, Info, Loader2 } from "lucide-react";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 interface TemplateImportDialogProps {
 	open: boolean;
@@ -65,7 +65,7 @@ export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProp
 		const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB in bytes
 		if (file.size > MAX_FILE_SIZE) {
 			setParseError(
-				`File is too large (${(file.size / (1024 * 1024)).toFixed(1)}MB). Maximum allowed size is 10MB.`
+				`File is too large (${(file.size / (1024 * 1024)).toFixed(1)}MB). Maximum allowed size is 10MB.`,
 			);
 			// Reset the input to allow re-selecting
 			event.target.value = "";
@@ -126,8 +126,8 @@ export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProp
 	if (!open) return null;
 
 	const hasError = importMutation.isError || parseError;
-	const errorMessage = parseError ||
-		(getErrorMessage(importMutation.error, "Failed to import template"));
+	const errorMessage =
+		parseError || getErrorMessage(importMutation.error, "Failed to import template");
 	const canImport = jsonData.trim() && !importMutation.isPending;
 
 	return (
@@ -200,7 +200,8 @@ export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProp
 					>
 						<Info className="h-4 w-4 mt-0.5 shrink-0" style={{ color: themeGradient.from }} />
 						<p className="text-sm text-muted-foreground">
-							Import a template from a JSON file exported from TRaSH Guides or another arr-dashboard instance.
+							Import a template from a JSON file exported from TRaSH Guides or another arr-dashboard
+							instance.
 						</p>
 					</div>
 

@@ -9,10 +9,10 @@
 
 import type { TrashTemplate } from "@arr/shared";
 import { Copy, Download, Edit, Rocket, Trash2 } from "lucide-react";
-import { SEMANTIC_COLORS, getServiceGradient } from "../../../lib/theme-gradients";
+import type { TemplateUpdateInfo } from "../../../lib/api-client/trash-guides";
+import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { TemplateStats } from "./template-stats";
 import { TemplateUpdateBanner } from "./template-update-banner";
-import type { TemplateUpdateInfo } from "../../../lib/api-client/trash-guides";
 
 interface TemplateCardContentProps {
 	template: TrashTemplate;

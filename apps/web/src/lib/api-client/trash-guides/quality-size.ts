@@ -95,25 +95,19 @@ export async function getQualitySizePreview(
 	instanceId: string,
 	presetTrashId: string,
 ): Promise<QualitySizePreviewResponse> {
-	return apiRequest<QualitySizePreviewResponse>(
-		"/api/trash-guides/quality-size/preview",
-		{
-			method: "POST",
-			json: { instanceId, presetTrashId },
-		},
-	);
+	return apiRequest<QualitySizePreviewResponse>("/api/trash-guides/quality-size/preview", {
+		method: "POST",
+		json: { instanceId, presetTrashId },
+	});
 }
 
 export async function applyQualitySize(
 	payload: ApplyQualitySizePayload,
 ): Promise<ApplyQualitySizeResponse> {
-	return apiRequest<ApplyQualitySizeResponse>(
-		"/api/trash-guides/quality-size/apply",
-		{
-			method: "POST",
-			json: payload,
-		},
-	);
+	return apiRequest<ApplyQualitySizeResponse>("/api/trash-guides/quality-size/apply", {
+		method: "POST",
+		json: payload,
+	});
 }
 
 export async function fetchQualitySizeMapping(
@@ -127,11 +121,8 @@ export async function fetchQualitySizeMapping(
 export async function updateQualitySizeSyncStrategy(
 	payload: UpdateSyncStrategyPayload,
 ): Promise<UpdateSyncStrategyResponse> {
-	return apiRequest<UpdateSyncStrategyResponse>(
-		"/api/trash-guides/quality-size/sync-strategy",
-		{
-			method: "PATCH",
-			json: payload,
-		},
-	);
+	return apiRequest<UpdateSyncStrategyResponse>("/api/trash-guides/quality-size/sync-strategy", {
+		method: "PATCH",
+		json: payload,
+	});
 }

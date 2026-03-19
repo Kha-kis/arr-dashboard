@@ -5,11 +5,11 @@
  */
 
 export {
+	removeCachedItem,
+	type SyncExecutorDeps,
+	type SyncResult,
 	syncInstance,
 	syncSingleItem,
-	removeCachedItem,
-	type SyncResult,
-	type SyncExecutorDeps,
 } from "./sync-executor.js";
 
 export { getLibrarySyncScheduler } from "./sync-scheduler.js";

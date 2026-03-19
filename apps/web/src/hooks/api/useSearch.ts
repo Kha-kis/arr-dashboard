@@ -1,20 +1,21 @@
 ﻿"use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
 	MultiInstanceSearchResponse,
 	ProwlarrIndexerDetails,
+	ProwlarrIndexerHealth,
 	SearchGrabRequest,
 	SearchIndexersResponse,
 	SearchIndexerTestRequest,
 	SearchIndexerTestResponse,
 	SearchRequest,
 } from "@arr/shared";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-	fetchSearchIndexers,
 	fetchSearchIndexerDetails,
-	performManualSearch,
+	fetchSearchIndexers,
 	grabManualSearchResult,
+	performManualSearch,
 	testSearchIndexer,
 	updateSearchIndexer,
 } from "../../lib/api-client/search";
@@ -52,10 +53,11 @@ export const useIndexerDetailsQuery = (
 	instanceId: string | null,
 	indexerId: number | null,
 	enabled = false,
+	health?: ProwlarrIndexerHealth,
 ) =>
 	useQuery<ProwlarrIndexerDetails>({
 		queryKey: ["search", "indexers", "details", instanceId, indexerId],
-		queryFn: () => fetchSearchIndexerDetails(instanceId!, indexerId!),
+		queryFn: () => fetchSearchIndexerDetails(instanceId!, indexerId!, health),
 		enabled: Boolean(enabled && instanceId && indexerId !== null),
 		staleTime: 60 * 1000,
 	});

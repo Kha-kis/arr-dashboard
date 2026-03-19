@@ -6,8 +6,8 @@
  * When no custom repo is configured, falls back to the official TRaSH-Guides/Guides repository.
  */
 
-import { DEFAULT_TRASH_REPO } from "@arr/shared";
 import type { TrashRepoConfig } from "@arr/shared";
+import { DEFAULT_TRASH_REPO } from "@arr/shared";
 import type { PrismaClient } from "../../lib/prisma.js";
 
 /**
@@ -16,7 +16,10 @@ import type { PrismaClient } from "../../lib/prisma.js";
  *
  * @returns TrashRepoConfig - custom repo if configured, otherwise official default
  */
-export async function getRepoConfig(prisma: PrismaClient, userId: string): Promise<TrashRepoConfig> {
+export async function getRepoConfig(
+	prisma: PrismaClient,
+	userId: string,
+): Promise<TrashRepoConfig> {
 	const settings = await prisma.trashSettings.findUnique({
 		where: { userId },
 		select: {

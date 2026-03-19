@@ -1,16 +1,17 @@
-import { historyItemSchema } from "@arr/shared";
-import type { HistoryItem } from "@arr/shared";
+import { ARR_SERVICES_UPPER, type HistoryItem, historyItemSchema } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import {
 	executeOnInstances,
-	isSonarrClient,
-	isRadarrClient,
-	isProwlarrClient,
 	isLidarrClient,
+	isProwlarrClient,
+	isRadarrClient,
 	isReadarrClient,
+	isSonarrClient,
 } from "../../lib/arr/client-helpers.js";
-import { normalizeHistoryItem, type HistoryService } from "../../lib/dashboard/history-utils.js";
+import { type HistoryService, normalizeHistoryItem } from "../../lib/dashboard/history-utils.js";
+import { validateRequest } from "../../lib/utils/validate.js";
+import { validateAndCollect } from "../../lib/validation/validate-batch.js";
 
 /**
  * Query schema for history endpoint.
@@ -31,12 +32,12 @@ export const historyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Fetches download history from all enabled Sonarr, Radarr, Prowlarr, Lidarr, and Readarr instances
 	 */
 	app.get("/dashboard/history", async (request, reply) => {
-		const { startDate, endDate } = historyQuerySchema.parse(request.query ?? {});
+		const { startDate, endDate } = validateRequest(historyQuerySchema, request.query ?? {});
 
 		const response = await executeOnInstances(
 			app,
 			request.currentUser!.id,
-			{ serviceTypes: ["SONARR", "RADARR", "PROWLARR", "LIDARR", "READARR"] },
+			{ serviceTypes: [...ARR_SERVICES_UPPER] },
 			async (client, instance) => {
 				const service = instance.service.toLowerCase() as HistoryService;
 				const recordLimit = 2500;
@@ -100,15 +101,19 @@ export const historyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					totalRecords = result.totalRecords ?? rawRecords.length;
 				}
 
-				// Normalize and enrich items
-				const items = rawRecords.map((raw) => {
-					const normalized = normalizeHistoryItem(raw, service);
-					return historyItemSchema.parse({
-						...normalized,
-						instanceId: instance.id,
-						instanceName: instance.label,
-					});
-				});
+				// Normalize and enrich items, then validate in tolerant mode
+				const normalized = rawRecords.map((raw) => ({
+					...normalizeHistoryItem(raw, service),
+					instanceId: instance.id,
+					instanceName: instance.label,
+				}));
+				const { items } = validateAndCollect(
+					normalized,
+					historyItemSchema,
+					`dashboard/history/${service}`,
+					request.log,
+					{ integration: "dashboard", category: "history", mode: "tolerant" },
+				);
 
 				return {
 					items,

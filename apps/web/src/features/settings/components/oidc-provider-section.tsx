@@ -1,33 +1,38 @@
 "use client";
 
-import { useState } from "react";
 import type { UpdateOIDCProvider } from "@arr/shared";
 import {
-	ShieldCheck,
+	AlertCircle,
+	Check,
+	Globe,
+	Key,
+	Link,
+	Loader2,
+	Pencil,
 	Plus,
 	Settings,
-	Link,
-	Key,
-	Globe,
-	Pencil,
+	ShieldCheck,
 	Trash2,
-	Check,
 	X,
-	Loader2,
-	AlertCircle,
 } from "lucide-react";
+import { useState } from "react";
+import {
+	PremiumEmptyState,
+	PremiumSection,
+	PremiumSkeleton,
+} from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
-import { PremiumSection, GlassmorphicCard, PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import {
-	useOIDCProvider,
 	useCreateOIDCProvider,
-	useUpdateOIDCProvider,
 	useDeleteOIDCProvider,
+	useOIDCProvider,
+	useUpdateOIDCProvider,
 } from "../../../hooks/api/useOIDCProviders";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { ToggleSwitch } from "../../../components/layout/config-primitives";
 
 /**
  * Premium OIDC Provider Section
@@ -212,7 +217,7 @@ export const OIDCProviderSection = () => {
 
 				{/* No Provider - Show Create Form or Empty State */}
 				{!provider && (
-					<GlassmorphicCard padding="lg">
+					<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
 						{showCreateForm ? (
 							<div className="space-y-6">
 								<div className="flex items-center gap-3">
@@ -244,7 +249,9 @@ export const OIDCProviderSection = () => {
 											placeholder="e.g., Authentik SSO"
 											className="bg-card/30 border-border/50"
 										/>
-										<p className="text-xs text-muted-foreground">Friendly name shown on login page</p>
+										<p className="text-xs text-muted-foreground">
+											Friendly name shown on login page
+										</p>
 									</div>
 
 									<div className="space-y-2 sm:col-span-2">
@@ -257,7 +264,9 @@ export const OIDCProviderSection = () => {
 											placeholder="https://auth.example.com"
 											className="bg-card/30 border-border/50"
 										/>
-										<p className="text-xs text-muted-foreground">Your OIDC provider&apos;s base URL</p>
+										<p className="text-xs text-muted-foreground">
+											Your OIDC provider&apos;s base URL
+										</p>
 									</div>
 
 									<div className="space-y-2">
@@ -315,16 +324,12 @@ export const OIDCProviderSection = () => {
 									</div>
 
 									<div className="sm:col-span-2">
-										<label className="flex items-center gap-2 cursor-pointer">
-											<input
-												type="checkbox"
-												checked={formData.enabled}
-												onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
-												className="h-4 w-4 rounded border-border bg-card/30"
-											/>
-											<span className="text-sm text-foreground">Enable provider</span>
-										</label>
-									</div>
+									<ToggleSwitch
+										label="Enable provider"
+										checked={formData.enabled}
+										onChange={(v) => setFormData({ ...formData, enabled: v })}
+									/>
+								</div>
 								</div>
 
 								<div className="flex gap-3">
@@ -349,10 +354,7 @@ export const OIDCProviderSection = () => {
 											</>
 										)}
 									</Button>
-									<Button
-										variant="outline"
-										onClick={() => setShowCreateForm(false)}
-									>
+									<Button variant="outline" onClick={() => setShowCreateForm(false)}>
 										Cancel
 									</Button>
 								</div>
@@ -377,12 +379,12 @@ export const OIDCProviderSection = () => {
 								}
 							/>
 						)}
-					</GlassmorphicCard>
+					</div>
 				)}
 
 				{/* Provider Exists - Show Details or Edit Form */}
 				{provider && (
-					<GlassmorphicCard padding="lg">
+					<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
 						{isEditing ? (
 							<div className="space-y-6">
 								<div className="flex items-center gap-3">
@@ -472,16 +474,12 @@ export const OIDCProviderSection = () => {
 									</div>
 
 									<div className="sm:col-span-2">
-										<label className="flex items-center gap-2 cursor-pointer">
-											<input
-												type="checkbox"
-												checked={editData.enabled}
-												onChange={(e) => setEditData({ ...editData, enabled: e.target.checked })}
-												className="h-4 w-4 rounded border-border bg-card/30"
-											/>
-											<span className="text-sm text-foreground">Enable provider</span>
-										</label>
-									</div>
+									<ToggleSwitch
+										label="Enable provider"
+										checked={editData.enabled}
+										onChange={(v) => setEditData({ ...editData, enabled: v })}
+									/>
+								</div>
 								</div>
 
 								<div className="flex gap-3">
@@ -506,10 +504,7 @@ export const OIDCProviderSection = () => {
 											</>
 										)}
 									</Button>
-									<Button
-										variant="outline"
-										onClick={() => setIsEditing(false)}
-									>
+									<Button variant="outline" onClick={() => setIsEditing(false)}>
 										Cancel
 									</Button>
 								</div>
@@ -529,7 +524,11 @@ export const OIDCProviderSection = () => {
 										>
 											<ShieldCheck
 												className="h-5 w-5"
-												style={{ color: provider.enabled ? SEMANTIC_COLORS.success.from : SEMANTIC_COLORS.error.from }}
+												style={{
+													color: provider.enabled
+														? SEMANTIC_COLORS.success.from
+														: SEMANTIC_COLORS.error.from,
+												}}
 											/>
 										</div>
 										<div>
@@ -612,7 +611,7 @@ export const OIDCProviderSection = () => {
 								</div>
 							</div>
 						)}
-					</GlassmorphicCard>
+					</div>
 				)}
 			</div>
 		</PremiumSection>

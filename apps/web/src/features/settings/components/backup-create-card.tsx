@@ -1,13 +1,13 @@
 "use client";
 
+import { CheckCircle2, Download, Loader2 } from "lucide-react";
 import { useState } from "react";
-import { Download, CheckCircle2, Loader2 } from "lucide-react";
+
 import { Button, toast } from "../../../components/ui";
-import { GlassmorphicCard } from "../../../components/layout";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useCreateBackup } from "../../../hooks/api/useBackup";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 export const BackupCreateCard = () => {
 	const { gradient: themeGradient } = useThemeGradient();
@@ -28,7 +28,7 @@ export const BackupCreateCard = () => {
 	};
 
 	return (
-		<GlassmorphicCard padding="lg">
+		<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
 			<div className="space-y-4">
 				<div className="flex items-center gap-2">
 					<div
@@ -81,6 +81,6 @@ export const BackupCreateCard = () => {
 					</div>
 				)}
 			</div>
-		</GlassmorphicCard>
+		</div>
 	);
 };

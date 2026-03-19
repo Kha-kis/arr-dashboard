@@ -7,7 +7,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
+	createSyncProgressStream,
+	executeSync,
+	getSyncDetail,
+	getSyncHistory,
+	getSyncProgress,
 	type RollbackResult,
+	rollbackSync,
 	type SyncDetail,
 	type SyncExecuteRequest,
 	type SyncHistoryResponse,
@@ -15,12 +21,6 @@ import {
 	type SyncResult,
 	type SyncValidationRequest,
 	type ValidationResult,
-	createSyncProgressStream,
-	executeSync,
-	getSyncDetail,
-	getSyncHistory,
-	getSyncProgress,
-	rollbackSync,
 	validateSync,
 } from "../../lib/api-client/trash-guides";
 
@@ -118,7 +118,7 @@ async function withRetry<T>(
 			}
 
 			// Calculate delay with exponential backoff
-			const delayMs = options.baseDelayMs * Math.pow(2, attempt - 1);
+			const delayMs = options.baseDelayMs * 2 ** (attempt - 1);
 
 			// Notify about retry progress
 			options.onProgress?.(attempt, options.maxAttempts, delayMs);

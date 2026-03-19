@@ -1,37 +1,42 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import {
-	LegacyDialog,
-	LegacyDialogHeader,
-	LegacyDialogTitle,
-	LegacyDialogDescription,
-	LegacyDialogContent,
-	LegacyDialogFooter,
-} from "../../../components/ui";
-import { Button, NativeSelect, SelectOption } from "../../../components/ui";
-import { PremiumSkeleton } from "../../../components/layout/premium-components";
 import {
 	AlertCircle,
-	Plus,
-	Edit,
 	AlertTriangle,
-	CheckCircle2,
-	Server,
-	Package,
-	Settings,
-	RefreshCw,
 	Bell,
-	Hand,
+	CheckCircle2,
 	ChevronDown,
 	ChevronUp,
+	Edit,
+	Hand,
+	Package,
+	Plus,
+	RefreshCw,
+	Server,
+	Settings,
 } from "lucide-react";
-import { useDeploymentPreview, useExecuteDeployment } from "../../../hooks/api/useDeploymentPreview";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useEffect, useRef, useState } from "react";
+import { PremiumSkeleton } from "../../../components/layout/premium-components";
+import {
+	Button,
+	LegacyDialog,
+	LegacyDialogContent,
+	LegacyDialogDescription,
+	LegacyDialogFooter,
+	LegacyDialogHeader,
+	LegacyDialogTitle,
+	NativeSelect,
+	SelectOption,
+} from "../../../components/ui";
+import {
+	useDeploymentPreview,
+	useExecuteDeployment,
+} from "../../../hooks/api/useDeploymentPreview";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import type { DeploymentAction, ConflictResolution } from "../../../lib/api-client/trash-guides";
-import { InstanceOverrideEditor } from "./instance-override-editor";
+import type { ConflictResolution, DeploymentAction } from "../../../lib/api-client/trash-guides";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { InstanceOverrideEditor } from "./instance-override-editor";
 
 interface DeploymentPreviewModalProps {
 	open: boolean;
@@ -54,13 +59,13 @@ export const DeploymentPreviewModal = ({
 }: DeploymentPreviewModalProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const { data, isLoading, error } = useDeploymentPreview(templateId, instanceId);
-	const [expandedConflicts, setExpandedConflicts] = useState<Set<string>>(
-		new Set(),
-	);
+	const [expandedConflicts, setExpandedConflicts] = useState<Set<string>>(new Set());
 	const [showOverrideEditor, setShowOverrideEditor] = useState(false);
 	const [syncStrategy, setSyncStrategy] = useState<"auto" | "manual" | "notify">("notify");
 	// Track user's conflict resolution choices: trashId -> resolution
-	const [conflictResolutions, setConflictResolutions] = useState<Record<string, ConflictResolution>>({});
+	const [conflictResolutions, setConflictResolutions] = useState<
+		Record<string, ConflictResolution>
+	>({});
 	// Track if conflict resolutions have been initialized to prevent overwriting user selections
 	const initializedRef = useRef(false);
 
@@ -194,7 +199,8 @@ export const DeploymentPreviewModal = ({
 				templateId,
 				instanceId,
 				syncStrategy,
-				conflictResolutions: Object.keys(conflictResolutions).length > 0 ? conflictResolutions : undefined,
+				conflictResolutions:
+					Object.keys(conflictResolutions).length > 0 ? conflictResolutions : undefined,
 			},
 			{
 				onSuccess: (response) => {
@@ -211,7 +217,8 @@ export const DeploymentPreviewModal = ({
 	const deploymentError = deploymentMutation.isError
 		? getErrorMessage(deploymentMutation.error, "Failed to execute deployment")
 		: deploymentMutation.data && !deploymentMutation.data.success
-			? Array.isArray(deploymentMutation.data.result?.errors) && deploymentMutation.data.result.errors.length > 0
+			? Array.isArray(deploymentMutation.data.result?.errors) &&
+				deploymentMutation.data.result.errors.length > 0
 				? deploymentMutation.data.result.errors.join(", ")
 				: "Deployment failed"
 			: null;
@@ -234,7 +241,11 @@ export const DeploymentPreviewModal = ({
 				{isLoading && (
 					<div className="space-y-4">
 						<PremiumSkeleton variant="card" className="h-24 w-full" />
-						<PremiumSkeleton variant="card" className="h-48 w-full" style={{ animationDelay: "50ms" }} />
+						<PremiumSkeleton
+							variant="card"
+							className="h-48 w-full"
+							style={{ animationDelay: "50ms" }}
+						/>
 					</div>
 				)}
 
@@ -270,21 +281,25 @@ export const DeploymentPreviewModal = ({
 							<div className="flex items-center gap-3 mb-3">
 								<Server className="h-5 w-5 text-muted-foreground" />
 								<div className="flex-1">
-									<h3 className="text-sm font-medium text-foreground">
-										Target Instance
-									</h3>
+									<h3 className="text-sm font-medium text-foreground">Target Instance</h3>
 									<p className="text-xs text-muted-foreground">
 										{data.data.instanceLabel} ({data.data.instanceServiceType})
 									</p>
 								</div>
 								<div className="flex items-center gap-2">
 									{data.data.instanceReachable ? (
-										<div className="flex items-center gap-2" style={{ color: SEMANTIC_COLORS.success.from }}>
+										<div
+											className="flex items-center gap-2"
+											style={{ color: SEMANTIC_COLORS.success.from }}
+										>
 											<CheckCircle2 className="h-4 w-4" />
 											<span className="text-xs font-medium">Connected</span>
 										</div>
 									) : (
-										<div className="flex items-center gap-2" style={{ color: SEMANTIC_COLORS.error.from }}>
+										<div
+											className="flex items-center gap-2"
+											style={{ color: SEMANTIC_COLORS.error.from }}
+										>
 											<AlertCircle className="h-4 w-4" />
 											<span className="text-xs font-medium">Unreachable</span>
 										</div>
@@ -311,9 +326,7 @@ export const DeploymentPreviewModal = ({
 
 						{/* Sync Strategy Selector */}
 						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">
-							<h3 className="text-sm font-medium text-foreground mb-3">
-								Update Behavior
-							</h3>
+							<h3 className="text-sm font-medium text-foreground mb-3">Update Behavior</h3>
 							<p className="text-xs text-muted-foreground mb-3">
 								Choose how this instance should handle future template updates
 							</p>
@@ -322,39 +335,49 @@ export const DeploymentPreviewModal = ({
 									type="button"
 									onClick={() => setSyncStrategy("auto")}
 									className="flex items-center gap-3 rounded-xl border p-3 text-left transition"
-									style={syncStrategy === "auto" ? {
-										borderColor: SEMANTIC_COLORS.success.border,
-										backgroundColor: SEMANTIC_COLORS.success.bg,
-									} : {
-										borderColor: "hsl(var(--border) / 0.5)",
-									}}
+									style={
+										syncStrategy === "auto"
+											? {
+													borderColor: SEMANTIC_COLORS.success.border,
+													backgroundColor: SEMANTIC_COLORS.success.bg,
+												}
+											: {
+													borderColor: "hsl(var(--border) / 0.5)",
+												}
+									}
 								>
 									<RefreshCw
 										className="h-5 w-5 shrink-0"
-										style={{ color: syncStrategy === "auto" ? SEMANTIC_COLORS.success.from : undefined }}
+										style={{
+											color: syncStrategy === "auto" ? SEMANTIC_COLORS.success.from : undefined,
+										}}
 									/>
 									<div>
 										<p
 											className="text-sm font-medium"
-											style={{ color: syncStrategy === "auto" ? SEMANTIC_COLORS.success.text : undefined }}
+											style={{
+												color: syncStrategy === "auto" ? SEMANTIC_COLORS.success.text : undefined,
+											}}
 										>
 											Auto-sync
 										</p>
-										<p className="text-xs text-muted-foreground">
-											Automatically apply updates
-										</p>
+										<p className="text-xs text-muted-foreground">Automatically apply updates</p>
 									</div>
 								</button>
 								<button
 									type="button"
 									onClick={() => setSyncStrategy("notify")}
 									className="flex items-center gap-3 rounded-xl border p-3 text-left transition"
-									style={syncStrategy === "notify" ? {
-										borderColor: themeGradient.from,
-										backgroundColor: themeGradient.fromLight,
-									} : {
-										borderColor: "hsl(var(--border) / 0.5)",
-									}}
+									style={
+										syncStrategy === "notify"
+											? {
+													borderColor: themeGradient.from,
+													backgroundColor: themeGradient.fromLight,
+												}
+											: {
+													borderColor: "hsl(var(--border) / 0.5)",
+												}
+									}
 								>
 									<Bell
 										className="h-5 w-5 shrink-0"
@@ -367,36 +390,40 @@ export const DeploymentPreviewModal = ({
 										>
 											Notify
 										</p>
-										<p className="text-xs text-muted-foreground">
-											Alert me before syncing
-										</p>
+										<p className="text-xs text-muted-foreground">Alert me before syncing</p>
 									</div>
 								</button>
 								<button
 									type="button"
 									onClick={() => setSyncStrategy("manual")}
 									className="flex items-center gap-3 rounded-xl border p-3 text-left transition"
-									style={syncStrategy === "manual" ? {
-										borderColor: SEMANTIC_COLORS.warning.border,
-										backgroundColor: SEMANTIC_COLORS.warning.bg,
-									} : {
-										borderColor: "hsl(var(--border) / 0.5)",
-									}}
+									style={
+										syncStrategy === "manual"
+											? {
+													borderColor: SEMANTIC_COLORS.warning.border,
+													backgroundColor: SEMANTIC_COLORS.warning.bg,
+												}
+											: {
+													borderColor: "hsl(var(--border) / 0.5)",
+												}
+									}
 								>
 									<Hand
 										className="h-5 w-5 shrink-0"
-										style={{ color: syncStrategy === "manual" ? SEMANTIC_COLORS.warning.from : undefined }}
+										style={{
+											color: syncStrategy === "manual" ? SEMANTIC_COLORS.warning.from : undefined,
+										}}
 									/>
 									<div>
 										<p
 											className="text-sm font-medium"
-											style={{ color: syncStrategy === "manual" ? SEMANTIC_COLORS.warning.text : undefined }}
+											style={{
+												color: syncStrategy === "manual" ? SEMANTIC_COLORS.warning.text : undefined,
+											}}
 										>
 											Manual
 										</p>
-										<p className="text-xs text-muted-foreground">
-											Only sync when I choose
-										</p>
+										<p className="text-xs text-muted-foreground">Only sync when I choose</p>
 									</div>
 								</button>
 							</div>
@@ -418,7 +445,11 @@ export const DeploymentPreviewModal = ({
 									/>
 									<div className="space-y-2">
 										{data.data.warnings.map((warning, idx) => (
-											<p key={idx} className="text-sm" style={{ color: SEMANTIC_COLORS.warning.text }}>
+											<p
+												key={idx}
+												className="text-sm"
+												style={{ color: SEMANTIC_COLORS.warning.text }}
+											>
 												{warning}
 											</p>
 										))}
@@ -429,9 +460,7 @@ export const DeploymentPreviewModal = ({
 
 						{/* Summary Statistics */}
 						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">
-							<h3 className="text-sm font-medium text-foreground mb-3">
-								Deployment Summary
-							</h3>
+							<h3 className="text-sm font-medium text-foreground mb-3">Deployment Summary</h3>
 							<div className="grid grid-cols-2 md:grid-cols-5 gap-4">
 								<div className="space-y-1">
 									<p className="text-xs text-muted-foreground">Total Items</p>
@@ -443,7 +472,10 @@ export const DeploymentPreviewModal = ({
 									<p className="text-xs" style={{ color: SEMANTIC_COLORS.success.text }}>
 										New
 									</p>
-									<p className="text-2xl font-semibold" style={{ color: SEMANTIC_COLORS.success.from }}>
+									<p
+										className="text-2xl font-semibold"
+										style={{ color: SEMANTIC_COLORS.success.from }}
+									>
 										{data.data.summary.newCustomFormats}
 									</p>
 								</div>
@@ -459,7 +491,10 @@ export const DeploymentPreviewModal = ({
 									<p className="text-xs" style={{ color: SEMANTIC_COLORS.warning.text }}>
 										Conflicts
 									</p>
-									<p className="text-2xl font-semibold" style={{ color: SEMANTIC_COLORS.warning.from }}>
+									<p
+										className="text-2xl font-semibold"
+										style={{ color: SEMANTIC_COLORS.warning.from }}
+									>
 										{data.data.summary.totalConflicts}
 									</p>
 								</div>
@@ -467,7 +502,10 @@ export const DeploymentPreviewModal = ({
 									<p className="text-xs" style={{ color: SEMANTIC_COLORS.info.text }}>
 										Unmatched
 									</p>
-									<p className="text-2xl font-semibold" style={{ color: SEMANTIC_COLORS.info.from }}>
+									<p
+										className="text-2xl font-semibold"
+										style={{ color: SEMANTIC_COLORS.info.from }}
+									>
 										{data.data.summary.unmatchedCustomFormats ?? 0}
 									</p>
 								</div>
@@ -476,11 +514,13 @@ export const DeploymentPreviewModal = ({
 							{data.data.requiresConflictResolution && (
 								<div className="mt-3 pt-3 border-t border-border/50">
 									<div className="flex items-center gap-2 text-sm">
-										<AlertCircle className="h-4 w-4" style={{ color: SEMANTIC_COLORS.warning.from }} />
+										<AlertCircle
+											className="h-4 w-4"
+											style={{ color: SEMANTIC_COLORS.warning.from }}
+										/>
 										<span className="text-muted-foreground">
 											{data.data.summary.unresolvedConflicts} unresolved conflict
-											{data.data.summary.unresolvedConflicts !== 1 ? "s" : ""}{" "}
-											require attention
+											{data.data.summary.unresolvedConflicts !== 1 ? "s" : ""} require attention
 										</span>
 									</div>
 								</div>
@@ -505,9 +545,7 @@ export const DeploymentPreviewModal = ({
 													{getActionIcon(item.action)}
 													<div className="flex-1 min-w-0">
 														<div className="flex items-center gap-2">
-															<p className="text-sm font-medium truncate">
-																{item.name}
-															</p>
+															<p className="text-sm font-medium truncate">{item.name}</p>
 															<span className="px-2 py-0.5 rounded-full text-xs font-medium bg-current/10">
 																{getActionLabel(item.action)}
 															</span>
@@ -540,13 +578,15 @@ export const DeploymentPreviewModal = ({
 														</Button>
 														{/* Conflict resolution selector */}
 														<div className="flex items-center gap-2 shrink-0">
-															<span className="text-xs text-muted-foreground whitespace-nowrap">Action:</span>
+															<span className="text-xs text-muted-foreground whitespace-nowrap">
+																Action:
+															</span>
 															<NativeSelect
 																value={conflictResolutions[item.trashId] || "use_template"}
 																onChange={(e) => {
-																	setConflictResolutions(prev => ({
+																	setConflictResolutions((prev) => ({
 																		...prev,
-																		[item.trashId]: e.target.value as ConflictResolution
+																		[item.trashId]: e.target.value as ConflictResolution,
 																	}));
 																}}
 																className="w-[200px] text-sm px-3 py-2"
@@ -571,9 +611,14 @@ export const DeploymentPreviewModal = ({
 																				border: `1px solid ${SEMANTIC_COLORS.success.border}`,
 																			}}
 																		>
-																			<p className="font-semibold mb-1.5" style={{ color: SEMANTIC_COLORS.success.from }}>Template:</p>
+																			<p
+																				className="font-semibold mb-1.5"
+																				style={{ color: SEMANTIC_COLORS.success.from }}
+																			>
+																				Template:
+																			</p>
 																			<pre className="overflow-auto max-h-48 whitespace-pre-wrap wrap-break-word text-muted-foreground font-mono text-[10px]">
-																				{typeof conflict.templateValue === 'object'
+																				{typeof conflict.templateValue === "object"
 																					? JSON.stringify(conflict.templateValue, null, 2)
 																					: String(conflict.templateValue)}
 																			</pre>
@@ -585,9 +630,14 @@ export const DeploymentPreviewModal = ({
 																				border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
 																			}}
 																		>
-																			<p className="font-semibold mb-1.5" style={{ color: SEMANTIC_COLORS.warning.from }}>Instance:</p>
+																			<p
+																				className="font-semibold mb-1.5"
+																				style={{ color: SEMANTIC_COLORS.warning.from }}
+																			>
+																				Instance:
+																			</p>
 																			<pre className="overflow-auto max-h-48 whitespace-pre-wrap wrap-break-word text-muted-foreground font-mono text-[10px]">
-																				{typeof conflict.instanceValue === 'object'
+																				{typeof conflict.instanceValue === "object"
 																					? JSON.stringify(conflict.instanceValue, null, 2)
 																					: String(conflict.instanceValue)}
 																			</pre>
@@ -627,7 +677,10 @@ export const DeploymentPreviewModal = ({
 													style={{ color: SEMANTIC_COLORS.info.from }}
 												/>
 												<div className="flex-1 min-w-0">
-													<p className="text-sm font-medium truncate" style={{ color: SEMANTIC_COLORS.info.text }}>
+													<p
+														className="text-sm font-medium truncate"
+														style={{ color: SEMANTIC_COLORS.info.text }}
+													>
 														{item.name}
 													</p>
 													<p className="text-xs mt-1" style={{ color: SEMANTIC_COLORS.info.from }}>
@@ -644,10 +697,11 @@ export const DeploymentPreviewModal = ({
 						{/* No Changes Message */}
 						{data.data.summary.totalItems === 0 && (
 							<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-8 text-center">
-								<CheckCircle2 className="h-12 w-12 mx-auto mb-3" style={{ color: SEMANTIC_COLORS.success.from }} />
-								<p className="text-sm font-medium text-foreground">
-									Instance is up to date
-								</p>
+								<CheckCircle2
+									className="h-12 w-12 mx-auto mb-3"
+									style={{ color: SEMANTIC_COLORS.success.from }}
+								/>
+								<p className="text-sm font-medium text-foreground">Instance is up to date</p>
 								<p className="text-xs text-muted-foreground mt-1">
 									No changes needed for this deployment
 								</p>
@@ -666,14 +720,22 @@ export const DeploymentPreviewModal = ({
 							border: `1px solid ${SEMANTIC_COLORS.error.border}`,
 						}}
 					>
-						<AlertCircle className="h-5 w-5 mt-0.5 shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
+						<AlertCircle
+							className="h-5 w-5 mt-0.5 shrink-0"
+							style={{ color: SEMANTIC_COLORS.error.from }}
+						/>
 						<div>
 							<p className="text-sm font-medium text-foreground">Deployment Failed</p>
 							<p className="text-sm text-muted-foreground mt-1">{deploymentError}</p>
 						</div>
 					</div>
 				)}
-				<Button variant="ghost" onClick={onClose} disabled={deploymentMutation.isPending} className="rounded-xl">
+				<Button
+					variant="ghost"
+					onClick={onClose}
+					disabled={deploymentMutation.isPending}
+					className="rounded-xl"
+				>
 					Cancel
 				</Button>
 				<Button

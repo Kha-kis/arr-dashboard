@@ -1,28 +1,27 @@
 "use client";
 
 import {
-	BarChart3,
-	Trash2,
-	CheckCircle2,
-	AlertTriangle,
-	Clock,
-	TrendingUp,
 	Activity,
+	AlertTriangle,
+	BarChart3,
+	CheckCircle2,
+	Clock,
 	Sparkles,
+	Trash2,
+	TrendingUp,
 } from "lucide-react";
 import {
-	StatCard,
-	PremiumSection,
 	PremiumEmptyState,
-	GlassmorphicCard,
+	PremiumSection,
 	ServiceBadge,
+	StatCard,
 } from "../../../components/layout";
 import { PremiumSkeleton } from "../../../components/layout/premium-components";
-import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useQueueCleanerStatistics } from "../hooks/useQueueCleanerStatistics";
-import type { PeriodStats, InstanceBreakdown, RecentActivity } from "../lib/queue-cleaner-types";
-import { RULE_LABELS, RULE_COLORS, DEFAULT_RULE_COLOR } from "../lib/constants";
+import { DEFAULT_RULE_COLOR, RULE_COLORS, RULE_LABELS } from "../lib/constants";
+import type { InstanceBreakdown, PeriodStats, RecentActivity } from "../lib/queue-cleaner-types";
 
 export const QueueCleanerStatistics = () => {
 	const { statistics, isLoading, error } = useQueueCleanerStatistics();
@@ -33,13 +32,22 @@ export const QueueCleanerStatistics = () => {
 			<div className="space-y-8">
 				<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
 					{[0, 1, 2, 3].map((i) => (
-						<div
-							key={i}
-							className="rounded-2xl border border-border/30 bg-card/30 p-6"
-						>
-							<PremiumSkeleton variant="circle" className="h-12 w-12 rounded-xl mb-4" style={{ animationDelay: `${i * 50}ms` }} />
-							<PremiumSkeleton variant="line" className="h-8 w-16 mb-2" style={{ animationDelay: `${i * 50 + 25}ms` }} />
-							<PremiumSkeleton variant="line" className="h-4 w-24" style={{ animationDelay: `${i * 50 + 50}ms` }} />
+						<div key={i} className="rounded-2xl border border-border/30 bg-card/30 p-6">
+							<PremiumSkeleton
+								variant="circle"
+								className="h-12 w-12 rounded-xl mb-4"
+								style={{ animationDelay: `${i * 50}ms` }}
+							/>
+							<PremiumSkeleton
+								variant="line"
+								className="h-8 w-16 mb-2"
+								style={{ animationDelay: `${i * 50 + 25}ms` }}
+							/>
+							<PremiumSkeleton
+								variant="line"
+								className="h-4 w-24"
+								style={{ animationDelay: `${i * 50 + 50}ms` }}
+							/>
 						</div>
 					))}
 				</div>
@@ -78,10 +86,11 @@ export const QueueCleanerStatistics = () => {
 						borderColor: "rgba(245, 158, 11, 0.3)",
 					}}
 				>
-					<AlertTriangle className="h-4 w-4 flex-shrink-0" style={{ color: SEMANTIC_COLORS.warning.from }} />
-					<p className="text-sm text-amber-200">
-						{statistics.dataQuality.warning}
-					</p>
+					<AlertTriangle
+						className="h-4 w-4 flex-shrink-0"
+						style={{ color: SEMANTIC_COLORS.warning.from }}
+					/>
+					<p className="text-sm text-amber-200">{statistics.dataQuality.warning}</p>
 				</div>
 			)}
 
@@ -178,11 +187,7 @@ function formatDuration(ms: number): string {
 }
 
 // Rule Breakdown Chart Component
-const RuleBreakdownChart = ({
-	ruleBreakdown,
-}: {
-	ruleBreakdown: Record<string, number>;
-}) => {
+const RuleBreakdownChart = ({ ruleBreakdown }: { ruleBreakdown: Record<string, number> }) => {
 	const entries = Object.entries(ruleBreakdown).sort((a, b) => b[1] - a[1]);
 	const total = entries.reduce((sum, [, count]) => sum + count, 0);
 
@@ -258,9 +263,7 @@ const DailyTrendChart = ({
 						style={{ animationDelay: `${index * 50}ms`, animationFillMode: "backwards" }}
 					>
 						<div className="w-full flex flex-col items-center justify-end flex-1">
-							<div className="text-xs text-muted-foreground mb-1">
-								{day.itemsCleaned}
-							</div>
+							<div className="text-xs text-muted-foreground mb-1">{day.itemsCleaned}</div>
 							<div
 								className="w-full rounded-t-sm transition-all duration-500"
 								style={{
@@ -283,11 +286,7 @@ const DailyTrendChart = ({
 };
 
 // Instance Breakdown List
-const InstanceBreakdownList = ({
-	instances,
-}: {
-	instances: InstanceBreakdown[];
-}) => {
+const InstanceBreakdownList = ({ instances }: { instances: InstanceBreakdown[] }) => {
 	if (instances.length === 0) {
 		return (
 			<div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
@@ -301,43 +300,58 @@ const InstanceBreakdownList = ({
 			{instances.map((instance, index) => {
 				const gradient = getServiceGradient(instance.service);
 				return (
-					<GlassmorphicCard
+					<div
 						key={instance.instanceId}
-						padding="sm"
-						className="animate-in fade-in slide-in-from-bottom-2 duration-300"
-						style={{ animationDelay: `${index * 30}ms`, animationFillMode: "backwards" }}
+						className="group relative rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-[1px] hover:shadow-lg hover:shadow-black/10 animate-in fade-in slide-in-from-bottom-1 duration-300"
+						style={{
+							border: `1px solid ${gradient.from}10`,
+							animationDelay: `${index * 30}ms`,
+							animationFillMode: "backwards",
+						}}
 					>
-						<div className="flex items-center justify-between">
-							<div className="flex items-center gap-3">
-								<div
-									className="flex h-8 w-8 items-center justify-center rounded-lg"
+						<div
+							className="absolute inset-0 pointer-events-none"
+							style={{
+								background: `linear-gradient(135deg, ${gradient.from}04, transparent 60%)`,
+							}}
+						/>
+						<div
+							className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+							style={{
+								background: `radial-gradient(ellipse at top left, ${gradient.from}06, transparent 50%)`,
+							}}
+						/>
+						<div
+							className="absolute left-0 top-0 bottom-0 w-[3px]"
+							style={{
+								background: `linear-gradient(180deg, ${gradient.from}, ${gradient.to}70)`,
+							}}
+						/>
+						<div className="relative flex items-center justify-between py-3 pl-5 pr-4">
+							<div className="flex items-center gap-2">
+								<span
+									className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider shrink-0"
 									style={{
-										background: `linear-gradient(135deg, ${gradient.from}20, ${gradient.to}10)`,
-										border: `1px solid ${gradient.from}30`,
+										backgroundColor: `${gradient.from}12`,
+										color: gradient.from,
 									}}
 								>
-									<Sparkles className="h-4 w-4" style={{ color: gradient.from }} />
-								</div>
-								<div>
-									<div className="flex items-center gap-2">
-										<span className="text-sm font-medium text-foreground">
-											{instance.instanceName}
-										</span>
-										<ServiceBadge service={instance.service} />
-									</div>
-									<div className="text-xs text-muted-foreground">
-										{instance.totalRuns} runs
-									</div>
-								</div>
+									<Sparkles className="h-2.5 w-2.5" />
+									{instance.totalRuns} runs
+								</span>
+								<span className="text-[14px] font-semibold text-foreground leading-snug">
+									{instance.instanceName}
+								</span>
+								<ServiceBadge service={instance.service} />
 							</div>
 							<div className="text-right">
 								<div className="text-lg font-semibold text-foreground">
 									{instance.itemsCleaned}
 								</div>
-								<div className="text-xs text-muted-foreground">items cleaned</div>
+								<div className="text-[10px] text-muted-foreground/40">items cleaned</div>
 							</div>
 						</div>
-					</GlassmorphicCard>
+					</div>
 				);
 			})}
 		</div>
@@ -345,11 +359,7 @@ const InstanceBreakdownList = ({
 };
 
 // Recent Activity List
-const RecentActivityList = ({
-	activities,
-}: {
-	activities: RecentActivity[];
-}) => {
+const RecentActivityList = ({ activities }: { activities: RecentActivity[] }) => {
 	if (activities.length === 0) {
 		return (
 			<div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
@@ -368,57 +378,68 @@ const RecentActivityList = ({
 						? SEMANTIC_COLORS.success
 						: activity.status === "error"
 							? SEMANTIC_COLORS.error
-							: { bg: "rgba(148, 163, 184, 0.1)", text: "#94a3b8", border: "rgba(148, 163, 184, 0.2)" };
+							: {
+									bg: "rgba(148, 163, 184, 0.1)",
+									text: "#94a3b8",
+									border: "rgba(148, 163, 184, 0.2)",
+								};
 
 				return (
 					<div
 						key={activity.id}
-						className="flex items-center justify-between rounded-lg border border-border/30 bg-card/30 p-3 animate-in fade-in slide-in-from-bottom-2 duration-300"
-						style={{ animationDelay: `${index * 30}ms`, animationFillMode: "backwards" }}
+						className="group relative rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-[1px] hover:shadow-lg hover:shadow-black/10 animate-in fade-in slide-in-from-bottom-1 duration-300"
+						style={{
+							border: `1px solid ${gradient.from}10`,
+							animationDelay: `${index * 30}ms`,
+							animationFillMode: "backwards",
+						}}
 					>
-						<div className="flex items-center gap-3">
-							<div
-								className="flex h-7 w-7 items-center justify-center rounded-md"
-								style={{
-									background: `linear-gradient(135deg, ${gradient.from}20, ${gradient.to}10)`,
-									border: `1px solid ${gradient.from}30`,
-								}}
-							>
-								<Sparkles className="h-3.5 w-3.5" style={{ color: gradient.from }} />
-							</div>
-							<div>
-								<div className="text-sm font-medium text-foreground">
+						<div
+							className="absolute inset-0 pointer-events-none"
+							style={{
+								background: `linear-gradient(135deg, ${gradient.from}04, transparent 60%)`,
+							}}
+						/>
+						<div
+							className="absolute left-0 top-0 bottom-0 w-[3px]"
+							style={{
+								background: `linear-gradient(180deg, ${gradient.from}, ${gradient.to}70)`,
+							}}
+						/>
+						<div className="relative flex items-center justify-between py-3 pl-5 pr-4">
+							<div className="flex items-center gap-2">
+								<span className="text-[14px] font-semibold text-foreground leading-snug">
 									{activity.instanceName}
-								</div>
-								<div className="text-xs text-muted-foreground">
+								</span>
+								<span className="text-[11px] text-muted-foreground/40">
 									{date.toLocaleString(undefined, {
 										month: "short",
 										day: "numeric",
 										hour: "2-digit",
 										minute: "2-digit",
 									})}
-								</div>
+								</span>
 							</div>
-						</div>
-						<div className="flex items-center gap-3">
-							<div className="text-right">
-								<div className="text-sm font-medium text-foreground">
-									{activity.itemsCleaned} cleaned
+							<div className="flex items-center gap-3">
+								<div className="text-right">
+									<span className="text-sm font-medium text-foreground">
+										{activity.itemsCleaned} cleaned
+									</span>
+									{activity.isDryRun && (
+										<span className="ml-2 text-[10px] text-amber-400">Dry Run</span>
+									)}
 								</div>
-								{activity.isDryRun && (
-									<span className="text-[10px] text-amber-400">Dry Run</span>
-								)}
+								<span
+									className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold capitalize"
+									style={{
+										backgroundColor: statusColor.bg,
+										color: statusColor.text,
+										border: `1px solid ${statusColor.border}`,
+									}}
+								>
+									{activity.status}
+								</span>
 							</div>
-							<span
-								className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium capitalize"
-								style={{
-									backgroundColor: statusColor.bg,
-									color: statusColor.text,
-									border: `1px solid ${statusColor.border}`,
-								}}
-							>
-								{activity.status}
-							</span>
 						</div>
 					</div>
 				);

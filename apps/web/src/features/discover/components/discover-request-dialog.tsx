@@ -1,29 +1,29 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import type { SeerrDiscoverResult, SeerrSeasonSummary } from "@arr/shared";
 import {
-	X,
-	Send,
 	Check,
 	CheckCheck,
-	Loader2,
-	Monitor,
-	Layers,
-	Server,
 	ChevronDown,
 	FolderOpen,
+	Layers,
+	Loader2,
+	Monitor,
+	Send,
+	Server,
 	Sliders,
+	X,
 } from "lucide-react";
-import type { SeerrDiscoverResult, SeerrSeasonSummary } from "@arr/shared";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { useFocusTrap } from "../../../hooks/useFocusTrap";
+import { useCallback, useMemo, useState } from "react";
+import { toast } from "sonner";
 import {
 	useCreateSeerrRequest,
 	useSeerrRequestOptions,
 	useSeerrTvDetails,
 } from "../../../hooks/api/useSeerr";
+import { useFocusTrap } from "../../../hooks/useFocusTrap";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getDisplayTitle } from "../lib/seerr-image-utils";
-import { toast } from "sonner";
 
 // Sentinel value for "use Seerr's default" in dropdowns
 const USE_DEFAULT = "__default__";
@@ -57,10 +57,7 @@ export const DiscoverRequestDialog: React.FC<DiscoverRequestDialogProps> = ({
 	// For TV, fetch details to get season list
 	const tvQuery = useSeerrTvDetails(instanceId, !isMovie ? item.id : 0);
 	const seasons = useMemo(
-		() =>
-			!isMovie
-				? (tvQuery.data?.seasons ?? []).filter((s) => s.seasonNumber > 0)
-				: [],
+		() => (!isMovie ? (tvQuery.data?.seasons ?? []).filter((s) => s.seasonNumber > 0) : []),
 		[isMovie, tvQuery.data?.seasons],
 	);
 
@@ -166,7 +163,10 @@ export const DiscoverRequestDialog: React.FC<DiscoverRequestDialogProps> = ({
 				{/* Header */}
 				<div className="flex items-center justify-between p-5 border-b border-border/30">
 					<div className="space-y-1 min-w-0">
-						<h3 id="request-dialog-title" className="text-lg font-semibold text-foreground truncate">
+						<h3
+							id="request-dialog-title"
+							className="text-lg font-semibold text-foreground truncate"
+						>
 							Request {isMovie ? "Movie" : "TV Show"}
 						</h3>
 						<p className="text-sm text-muted-foreground truncate">{title}</p>
@@ -213,10 +213,7 @@ export const DiscoverRequestDialog: React.FC<DiscoverRequestDialogProps> = ({
 
 							{tvQuery.isLoading ? (
 								<div className="flex items-center justify-center py-6">
-									<Loader2
-										className="h-5 w-5 animate-spin"
-										style={{ color: themeGradient.from }}
-									/>
+									<Loader2 className="h-5 w-5 animate-spin" style={{ color: themeGradient.from }} />
 								</div>
 							) : (
 								<div className="space-y-1.5 max-h-[240px] overflow-y-auto pr-1 scrollbar-none">
@@ -298,9 +295,7 @@ export const DiscoverRequestDialog: React.FC<DiscoverRequestDialogProps> = ({
 										icon={FolderOpen}
 										label="Root Folder"
 										value={selectedRootFolder ?? USE_DEFAULT}
-										onChange={(v) =>
-											setSelectedRootFolder(v === USE_DEFAULT ? undefined : v)
-										}
+										onChange={(v) => setSelectedRootFolder(v === USE_DEFAULT ? undefined : v)}
 										options={[
 											{ value: USE_DEFAULT, label: "Default" },
 											...activeServer.rootFolders.map((f) => ({
@@ -360,7 +355,13 @@ interface ToggleRowProps {
 	themeFrom: string;
 }
 
-const ToggleRow: React.FC<ToggleRowProps> = ({ icon: Icon, label, checked, onChange, themeFrom }) => (
+const ToggleRow: React.FC<ToggleRowProps> = ({
+	icon: Icon,
+	label,
+	checked,
+	onChange,
+	themeFrom,
+}) => (
 	<label className="flex items-center justify-between rounded-xl border border-border/50 bg-card/40 px-4 py-3 cursor-pointer transition-colors hover:bg-card/60">
 		<div className="flex items-center gap-2">
 			<Icon className="h-4 w-4 text-muted-foreground" />

@@ -1,8 +1,8 @@
-import { arrServiceTypeSchema } from "@arr/shared";
-import type { ServiceType } from "../lib/prisma.js";
+import { ALL_SERVICES, arrServiceTypeSchema } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { requireInstance } from "../lib/arr/instance-helpers.js";
+import type { ServiceType } from "../lib/prisma.js";
 import { testServiceConnection } from "../lib/services/connection-tester.js";
 import { formatServiceInstance } from "../lib/services/service-formatter.js";
 import { updateInstanceTags, upsertTags } from "../lib/services/tag-manager.js";
@@ -58,7 +58,10 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.post("/services", async (request, reply) => {
-		const { apiKey, service, tags, isDefault, ...rest } = validateRequest(servicePayloadSchema, request.body);
+		const { apiKey, service, tags, isDefault, ...rest } = validateRequest(
+			servicePayloadSchema,
+			request.body,
+		);
 
 		const encrypted = app.encryptor.encrypt(apiKey);
 
@@ -66,7 +69,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 		if (isDefault) {
 			await app.prisma.serviceInstance.updateMany({
-				where: { service: serviceEnum },
+				where: { service: serviceEnum, userId: request.currentUser!.id },
 				data: { isDefault: false },
 			});
 		}
@@ -114,17 +117,14 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 				payload.service ?? existing.service.toLowerCase()
 			).toUpperCase() as ServiceType;
 			await app.prisma.serviceInstance.updateMany({
-				where: { service: targetService, NOT: { id } },
+				where: { service: targetService, userId, NOT: { id } },
 				data: { isDefault: false },
 			});
 		}
 
-		const _updated = await app.prisma.serviceInstance.update({
-			where: { id },
+		await app.prisma.serviceInstance.updateMany({
+			where: { id, userId },
 			data: updateData,
-			include: {
-				tags: { include: { tag: true } },
-			},
 		});
 
 		if (payload.tags) {
@@ -144,7 +144,10 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(404).send({ error: "Service instance not found" });
 		}
 
-		request.log.info({ service: fresh.service, label: fresh.label, instanceId: id }, "Service instance updated");
+		request.log.info(
+			{ service: fresh.service, label: fresh.label, instanceId: id },
+			"Service instance updated",
+		);
 
 		return reply.send({
 			service: formatServiceInstance(fresh),
@@ -181,8 +184,19 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 		return reply.status(201).send({ tag });
 	});
 
-	app.delete("/tags/:id", async (_request, reply) => {
-		const { id } = (_request as { params: { id: string } }).params;
+	app.delete("/tags/:id", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const { id } = (request as { params: { id: string } }).params;
+
+		// Only delete tags that are associated with the current user's instances
+		// (ServiceTag is shared, so verify at least one of the user's instances uses it)
+		const userTag = await app.prisma.serviceInstanceTag.findFirst({
+			where: { tagId: id, instance: { userId } },
+		});
+
+		if (!userTag) {
+			return reply.status(404).send({ error: "Tag not found" });
+		}
 
 		await app.prisma.serviceTag.delete({
 			where: { id },
@@ -208,16 +222,46 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			});
 		}
 
-		if (!["sonarr", "radarr", "prowlarr", "lidarr", "readarr", "seerr"].includes(service)) {
+		// Validate URL scheme to prevent SSRF with non-HTTP schemes
+		try {
+			const parsed = new URL(baseUrl);
+			if (!["http:", "https:"].includes(parsed.protocol)) {
+				return reply.status(400).send({
+					error: "Invalid URL scheme",
+					details: "Base URL must use http:// or https://",
+				});
+			}
+		} catch {
+			return reply.status(400).send({
+				error: "Invalid URL",
+				details: "Base URL must be a valid URL",
+			});
+		}
+
+		if (!(ALL_SERVICES as readonly string[]).includes(service)) {
 			return reply.status(400).send({
 				error: "Invalid service type",
-				details: "Service must be sonarr, radarr, prowlarr, lidarr, readarr, or seerr",
+				details: `Service must be one of: ${ALL_SERVICES.join(", ")}`,
 			});
 		}
 
 		const result = await testServiceConnection(baseUrl, apiKey, service);
 		if (!result.success) {
 			request.log.warn({ service, baseUrl }, "Connection test failed");
+
+			app.notificationService
+				?.notify({
+					eventType: "SERVICE_CONNECTION_FAILED",
+					title: `Connection test failed for ${service}`,
+					body: result.error ?? `Failed to connect to ${service} at ${baseUrl}`,
+					metadata: {
+						service,
+						baseUrl,
+					},
+				})
+				.catch((err) => {
+					request.log.warn({ err }, "Service connection failed notification dispatch failed");
+				});
 		}
 		return reply.status(200).send(result);
 	});

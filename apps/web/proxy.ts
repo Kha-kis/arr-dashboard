@@ -1,14 +1,8 @@
-import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 
 const SESSION_COOKIE_NAME = process.env.NEXT_PUBLIC_SESSION_COOKIE_NAME ?? "arr_session";
-const PUBLIC_PATHS = new Set([
-	"/login",
-	"/setup",
-	"/favicon.ico",
-	"/robots.txt",
-	"/sitemap.xml",
-]);
+const PUBLIC_PATHS = new Set(["/login", "/setup", "/favicon.ico", "/robots.txt", "/sitemap.xml"]);
 const PUBLIC_FILE = /\.(.*)$/;
 
 const isPublicPath = (pathname: string) => {

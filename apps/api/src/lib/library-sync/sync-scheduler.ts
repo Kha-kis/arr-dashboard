@@ -5,6 +5,7 @@
  * with ARR instances.
  */
 
+import { LIBRARY_SERVICES_UPPER } from "@arr/shared";
 import type { FastifyInstance } from "fastify";
 import { createLogger } from "../logger.js";
 import { type SyncResult, syncInstance } from "./sync-executor.js";
@@ -121,7 +122,7 @@ class LibrarySyncScheduler {
 		}
 
 		// Skip if not a library service (only Prowlarr has no library)
-		if (!["SONARR", "RADARR", "LIDARR", "READARR"].includes(instance.service)) {
+		if (!(LIBRARY_SERVICES_UPPER as readonly string[]).includes(instance.service)) {
 			log.debug({ instanceId, service: instance.service }, "Skipping non-library instance");
 			return null;
 		}
@@ -155,7 +156,7 @@ class LibrarySyncScheduler {
 			const instances = await this.app.prisma.serviceInstance.findMany({
 				where: {
 					enabled: true,
-					service: { in: ["SONARR", "RADARR", "LIDARR", "READARR"] },
+					service: { in: [...LIBRARY_SERVICES_UPPER] },
 				},
 				include: {
 					librarySyncStatus: true,
@@ -252,6 +253,32 @@ class LibrarySyncScheduler {
 				{ instanceId: instance.id, instanceLabel: instance.label, success: result.success },
 				"Library sync completed",
 			);
+
+			// Notify about newly downloaded content (hasFile: false → true transitions)
+			if (result.success && result.newDownloads.length > 0) {
+				const titles = result.newDownloads.slice(0, 5).map((d) => d.title);
+				const remaining = result.newDownloads.length - titles.length;
+
+				this.app.notificationService
+					?.notify({
+						eventType: "LIBRARY_NEW_CONTENT",
+						title: `${result.newDownloads.length} new download(s) on ${instance.label}`,
+						body: remaining > 0 ? `${titles.join(", ")} and ${remaining} more` : titles.join(", "),
+						url: "/library",
+						metadata: {
+							instance: instance.label,
+							service: instance.service,
+							itemCount: result.newDownloads.length,
+							items: titles,
+						},
+					})
+					.catch((err) => {
+						log.warn(
+							{ err, instanceLabel: instance.label },
+							"New content notification dispatch failed",
+						);
+					});
+			}
 
 			return result;
 		} finally {

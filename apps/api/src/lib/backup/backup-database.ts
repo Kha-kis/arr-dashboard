@@ -228,11 +228,7 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 		// --- Service instances & tags ---
 
 		if (data.serviceInstances.length > 0) {
-			validateRecords(data.serviceInstances, "serviceInstance", [
-				"id",
-				"service",
-				"baseUrl",
-			]);
+			validateRecords(data.serviceInstances, "serviceInstance", ["id", "service", "baseUrl"]);
 			await tx.serviceInstance.createMany({
 				data: data.serviceInstances as Prisma.ServiceInstanceCreateManyInput[],
 			});
@@ -246,10 +242,7 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 		}
 
 		if (data.serviceInstanceTags.length > 0) {
-			validateRecords(data.serviceInstanceTags, "serviceInstanceTag", [
-				"instanceId",
-				"tagId",
-			]);
+			validateRecords(data.serviceInstanceTags, "serviceInstanceTag", ["instanceId", "tagId"]);
 			await tx.serviceInstanceTag.createMany({
 				data: data.serviceInstanceTags as Prisma.ServiceInstanceTagCreateManyInput[],
 			});
@@ -307,11 +300,10 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 		}
 
 		if (data.instanceQualityProfileOverrides && data.instanceQualityProfileOverrides.length > 0) {
-			validateRecords(
-				data.instanceQualityProfileOverrides,
-				"instanceQualityProfileOverride",
-				["id", "instanceId"],
-			);
+			validateRecords(data.instanceQualityProfileOverrides, "instanceQualityProfileOverride", [
+				"id",
+				"instanceId",
+			]);
 			await tx.instanceQualityProfileOverride.createMany({
 				data: data.instanceQualityProfileOverrides as Prisma.InstanceQualityProfileOverrideCreateManyInput[],
 			});
@@ -342,11 +334,7 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 		// --- TRaSH Guides history/audit ---
 
 		if (data.trashSyncHistory && data.trashSyncHistory.length > 0) {
-			validateRecords(data.trashSyncHistory, "trashSyncHistory", [
-				"id",
-				"instanceId",
-				"userId",
-			]);
+			validateRecords(data.trashSyncHistory, "trashSyncHistory", ["id", "instanceId", "userId"]);
 			await tx.trashSyncHistory.createMany({
 				data: data.trashSyncHistory as Prisma.TrashSyncHistoryCreateManyInput[],
 			});

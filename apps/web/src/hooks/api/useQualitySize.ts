@@ -1,18 +1,18 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
+	type ApplyQualitySizePayload,
+	type ApplyQualitySizeResponse,
+	applyQualitySize,
+	fetchQualitySizeMapping,
 	fetchQualitySizePresets,
 	getQualitySizePreview,
-	fetchQualitySizeMapping,
-	applyQualitySize,
-	updateQualitySizeSyncStrategy,
+	type QualitySizeMappingResponse,
 	type QualitySizePresetsResponse,
 	type QualitySizePreviewResponse,
-	type QualitySizeMappingResponse,
-	type ApplyQualitySizeResponse,
-	type ApplyQualitySizePayload,
+	updateQualitySizeSyncStrategy,
 } from "../../lib/api-client/trash-guides";
 
 /**
@@ -42,10 +42,7 @@ export function useQualitySizeMapping(instanceId: string | null) {
 /**
  * Preview the diff between a TRaSH preset and instance quality definitions.
  */
-export function useQualitySizePreview(
-	instanceId: string | null,
-	presetTrashId: string | null,
-) {
+export function useQualitySizePreview(instanceId: string | null, presetTrashId: string | null) {
 	return useQuery<QualitySizePreviewResponse>({
 		queryKey: ["trash-guides", "quality-size", "preview", instanceId, presetTrashId],
 		queryFn: () => getQualitySizePreview(instanceId!, presetTrashId!),

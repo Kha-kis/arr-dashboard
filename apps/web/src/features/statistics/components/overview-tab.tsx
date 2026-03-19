@@ -1,28 +1,33 @@
 "use client";
 
-import type { HealthIssue, CombinedDiskStats } from "@arr/shared";
-import { PremiumCard, StatCard } from "../../../components/layout";
+import type { CombinedDiskStats, HealthIssue } from "@arr/shared";
 import {
-	useIncognitoMode,
-	getLinuxInstanceName,
-	anonymizeHealthMessage,
-	getLinuxUrl,
-} from "../../../lib/incognito";
-import { getServiceGradient, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
-import { formatBytes, formatPercent } from "../lib/formatters";
-import { ServiceQuickCard } from "./service-quick-card";
-import {
+	Activity,
 	AlertTriangle,
+	BookOpen,
 	CheckCircle2,
-	HardDrive,
+	ChevronDown,
+	ChevronUp,
 	ExternalLink,
-	Tv,
 	Film,
 	Globe,
+	HardDrive,
 	Music,
-	BookOpen,
+	Tv,
 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { StatCard } from "../../../components/layout";
+import {
+	anonymizeHealthMessage,
+	getLinuxInstanceName,
+	getLinuxUrl,
+	useIncognitoMode,
+} from "../../../lib/incognito";
+import { getServiceGradient, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { useTautulliPlaysByDate, useTautulliStats } from "../../../hooks/api/useTautulli";
 import type { useStatisticsData } from "../hooks/useStatisticsData";
+import { formatBytes, formatPercent } from "../lib/formatters";
+import { ServiceQuickCard } from "./service-quick-card";
 import type { StatisticsTab } from "./statistics-tabs";
 
 type StatisticsData = ReturnType<typeof useStatisticsData>;
@@ -40,7 +45,20 @@ interface OverviewTabProps {
 	lidarrTotals: StatisticsData["lidarrTotals"];
 	readarrTotals: StatisticsData["readarrTotals"];
 	prowlarrTotals: StatisticsData["prowlarrTotals"];
+	hasTautulli: boolean;
 	onSwitchTab: (tab: StatisticsTab) => void;
+}
+
+function formatDuration(seconds: number): string {
+	if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+	const hours = Math.floor(seconds / 3600);
+	const mins = Math.round((seconds % 3600) / 60);
+	if (hours >= 24) {
+		const days = Math.floor(hours / 24);
+		const remH = hours % 24;
+		return remH > 0 ? `${days}d ${remH}h` : `${days}d`;
+	}
+	return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
 }
 
 export const OverviewTab = ({
@@ -56,91 +74,148 @@ export const OverviewTab = ({
 	lidarrTotals,
 	readarrTotals,
 	prowlarrTotals,
+	hasTautulli,
 	onSwitchTab,
 }: OverviewTabProps) => {
 	const [incognitoMode] = useIncognitoMode();
+	const [healthExpanded, setHealthExpanded] = useState(false);
+
+	// Fetch Plex summary data when Tautulli is available
+	const { data: tautulliStats } = useTautulliStats(30, hasTautulli);
+	const { data: tautulliPlays } = useTautulliPlaysByDate(30, hasTautulli);
+
+	const plexSummary = useMemo(() => {
+		if (!tautulliStats?.userStats && !tautulliPlays?.series) return null;
+		// Total plays from plays-by-date (matches Plex tab calculation)
+		const totalPlays = tautulliPlays?.series
+			? tautulliPlays.series.reduce(
+					(acc: number, s: { data: number[] }) =>
+						acc + s.data.reduce((a: number, b: number) => a + b, 0),
+					0,
+				)
+			: 0;
+		const totalDuration = tautulliStats?.userStats
+			? tautulliStats.userStats.reduce(
+					(acc: number, u: { totalDuration: number }) => acc + u.totalDuration,
+					0,
+				)
+			: 0;
+		return {
+			activeUsers: tautulliStats?.userStats?.length ?? 0,
+			totalPlays,
+			totalDuration,
+		};
+	}, [tautulliStats, tautulliPlays]);
 
 	return (
 		<div className="flex flex-col gap-8">
-			{/* Health Status */}
+			{/* Health Status — compact collapsible banner */}
 			{allHealthIssues.length > 0 ? (
-				<PremiumCard
-					title={`${allHealthIssues.length} Health ${allHealthIssues.length === 1 ? "Issue" : "Issues"} Detected`}
-					description="Review and resolve issues across your instances"
-					icon={AlertTriangle}
-					gradientIcon
-					animationDelay={200}
+				<div
+					className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.04] overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500"
+					style={{ animationDelay: "200ms", animationFillMode: "backwards" }}
 				>
-					<div className="space-y-4">
-						{allHealthIssues.map((issue) => (
-							<div
-								key={`${issue.service}-${issue.instanceId}-${issue.type}-${issue.message}`}
-								className="flex flex-col gap-3 p-4 rounded-xl bg-background/50 border border-border/50"
-							>
-								<div className="flex items-start justify-between gap-4">
-									<div className="flex items-center gap-3">
-										{(() => {
-											const serviceGradient = getServiceGradient(issue.service);
-											return (
-												<span
-													className="px-2 py-1 rounded-lg text-xs font-medium uppercase"
-													style={{
-														background: `linear-gradient(135deg, ${serviceGradient.from}20, ${serviceGradient.to}20)`,
-														color: serviceGradient.from,
-													}}
-												>
-													{issue.service}
-												</span>
-											);
-										})()}
-										<span className="text-sm text-muted-foreground">
-											{incognitoMode ? getLinuxInstanceName(issue.instanceName) : issue.instanceName}
-										</span>
+					<button
+						type="button"
+						onClick={() => setHealthExpanded(!healthExpanded)}
+						className="w-full flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-amber-500/[0.03]"
+					>
+						<div
+							className="flex h-8 w-8 items-center justify-center rounded-lg shrink-0"
+							style={{
+								background: "linear-gradient(135deg, #f59e0b20, #d9770620)",
+							}}
+						>
+							<AlertTriangle className="h-4 w-4 text-amber-500" />
+						</div>
+						<div className="flex-1 text-left min-w-0">
+							<span className="text-sm font-semibold text-amber-400">
+								{allHealthIssues.length} Health {allHealthIssues.length === 1 ? "Issue" : "Issues"}
+							</span>
+							<span className="text-xs text-muted-foreground/50 ml-2">
+								across your instances
+							</span>
+						</div>
+						{healthExpanded ? (
+							<ChevronUp className="h-4 w-4 text-muted-foreground/50 shrink-0" />
+						) : (
+							<ChevronDown className="h-4 w-4 text-muted-foreground/50 shrink-0" />
+						)}
+					</button>
+
+					{healthExpanded && (
+						<div className="px-5 pb-4 space-y-3 border-t border-amber-500/10 pt-3 animate-in fade-in slide-in-from-top-1 duration-200">
+							{allHealthIssues.map((issue) => (
+								<div
+									key={`${issue.service}-${issue.instanceId}-${issue.type}-${issue.message}`}
+									className="flex flex-col gap-2 p-3.5 rounded-xl bg-background/50 border border-border/50"
+								>
+									<div className="flex items-start justify-between gap-4">
+										<div className="flex items-center gap-3">
+											{(() => {
+												const serviceGradient = getServiceGradient(issue.service);
+												return (
+													<span
+														className="px-2 py-1 rounded-lg text-xs font-medium uppercase"
+														style={{
+															background: `linear-gradient(135deg, ${serviceGradient.from}20, ${serviceGradient.to}20)`,
+															color: serviceGradient.from,
+														}}
+													>
+														{issue.service}
+													</span>
+												);
+											})()}
+											<span className="text-sm text-muted-foreground">
+												{incognitoMode
+													? getLinuxInstanceName(issue.instanceName)
+													: issue.instanceName}
+											</span>
+										</div>
+										<a
+											href={`${incognitoMode ? getLinuxUrl(issue.instanceBaseUrl) : issue.instanceBaseUrl}/system/status`}
+											target="_blank"
+											rel="noopener noreferrer"
+											className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border/50 bg-background/50 hover:bg-background transition-colors shrink-0"
+										>
+											View
+											<ExternalLink className="h-3 w-3" />
+										</a>
 									</div>
-									<a
-										href={`${incognitoMode ? getLinuxUrl(issue.instanceBaseUrl) : issue.instanceBaseUrl}/system/status`}
-										target="_blank"
-										rel="noopener noreferrer"
-										className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border/50 bg-background/50 hover:bg-background transition-colors"
-									>
-										View
-										<ExternalLink className="h-3 w-3" />
-									</a>
+									<p className="text-sm">
+										{incognitoMode ? anonymizeHealthMessage(issue.message) : issue.message}
+									</p>
+									{issue.source && (
+										<p className="text-xs text-muted-foreground">Source: {issue.source}</p>
+									)}
 								</div>
-								<p className="text-sm">
-									{incognitoMode ? anonymizeHealthMessage(issue.message) : issue.message}
-								</p>
-								{issue.source && (
-									<p className="text-xs text-muted-foreground">Source: {issue.source}</p>
-								)}
-							</div>
-						))}
-					</div>
-				</PremiumCard>
+							))}
+						</div>
+					)}
+				</div>
 			) : (
 				<div
-					className="flex items-center gap-4 p-6 rounded-2xl border border-border/50 bg-emerald-500/10 backdrop-blur-xs animate-in fade-in slide-in-from-bottom-4 duration-500"
+					className="flex items-center gap-4 p-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] animate-in fade-in slide-in-from-bottom-4 duration-500"
 					style={{ animationDelay: "200ms", animationFillMode: "backwards" }}
 				>
 					<div
-						className="flex h-12 w-12 items-center justify-center rounded-xl"
+						className="flex h-8 w-8 items-center justify-center rounded-lg shrink-0"
 						style={{
-							background: "linear-gradient(135deg, #10b981, #059669)",
-							boxShadow: "0 8px 24px -8px rgba(16, 185, 129, 0.5)",
+							background: "linear-gradient(135deg, #10b98120, #05966920)",
 						}}
 					>
-						<CheckCircle2 className="h-6 w-6 text-white" />
+						<CheckCircle2 className="h-4 w-4 text-emerald-400" />
 					</div>
 					<div>
-						<h3 className="text-lg font-semibold text-emerald-400">All Systems Healthy</h3>
-						<p className="text-sm text-muted-foreground">
-							No health issues detected across all configured instances
-						</p>
+						<span className="text-sm font-semibold text-emerald-400">All Systems Healthy</span>
+						<span className="text-xs text-muted-foreground/50 ml-2">
+							No issues detected across all instances
+						</span>
 					</div>
 				</div>
 			)}
 
-			{/* Summary Stats Grid */}
+			{/* Storage + Instance Summary — compact row */}
 			<div
 				className="grid gap-4 md:grid-cols-3 lg:grid-cols-6 animate-in fade-in slide-in-from-bottom-4 duration-500"
 				style={{ animationDelay: "300ms", animationFillMode: "backwards" }}
@@ -201,7 +276,7 @@ export const OverviewTab = ({
 
 			{/* Service Quick Stats */}
 			<div
-				className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 animate-in fade-in slide-in-from-bottom-4 duration-500"
+				className={`grid gap-6 md:grid-cols-2 lg:grid-cols-3 ${hasTautulli ? "xl:grid-cols-3" : "xl:grid-cols-5"} animate-in fade-in slide-in-from-bottom-4 duration-500`}
 				style={{ animationDelay: "400ms", animationFillMode: "backwards" }}
 			>
 				<ServiceQuickCard
@@ -211,7 +286,11 @@ export const OverviewTab = ({
 					onViewDetails={() => onSwitchTab("sonarr")}
 					stats={[
 						{ label: "Series", value: sonarrTotals.totalSeries },
-						{ label: "Downloaded", value: formatPercent(sonarrTotals.downloadPercent), highlight: true },
+						{
+							label: "Downloaded",
+							value: formatPercent(sonarrTotals.downloadPercent),
+							highlight: true,
+						},
 						{ label: "Missing", value: sonarrTotals.missingEpisodes },
 						{ label: "Disk Usage", value: formatPercent(sonarrTotals.diskPercent) },
 					]}
@@ -223,7 +302,11 @@ export const OverviewTab = ({
 					onViewDetails={() => onSwitchTab("radarr")}
 					stats={[
 						{ label: "Movies", value: radarrTotals.totalMovies },
-						{ label: "Downloaded", value: formatPercent(radarrTotals.downloadPercent), highlight: true },
+						{
+							label: "Downloaded",
+							value: formatPercent(radarrTotals.downloadPercent),
+							highlight: true,
+						},
 						{ label: "Missing", value: radarrTotals.missingMovies },
 						{ label: "Disk Usage", value: formatPercent(radarrTotals.diskPercent) },
 					]}
@@ -235,7 +318,11 @@ export const OverviewTab = ({
 					onViewDetails={() => onSwitchTab("lidarr")}
 					stats={[
 						{ label: "Artists", value: lidarrTotals.totalArtists },
-						{ label: "Downloaded", value: formatPercent(lidarrTotals.downloadPercent), highlight: true },
+						{
+							label: "Downloaded",
+							value: formatPercent(lidarrTotals.downloadPercent),
+							highlight: true,
+						},
 						{ label: "Missing", value: lidarrTotals.missingTracks },
 						{ label: "Disk Usage", value: formatPercent(lidarrTotals.diskPercent) },
 					]}
@@ -247,7 +334,11 @@ export const OverviewTab = ({
 					onViewDetails={() => onSwitchTab("readarr")}
 					stats={[
 						{ label: "Authors", value: readarrTotals.totalAuthors },
-						{ label: "Downloaded", value: formatPercent(readarrTotals.downloadPercent), highlight: true },
+						{
+							label: "Downloaded",
+							value: formatPercent(readarrTotals.downloadPercent),
+							highlight: true,
+						},
 						{ label: "Missing", value: readarrTotals.missingBooks },
 						{ label: "Disk Usage", value: formatPercent(readarrTotals.diskPercent) },
 					]}
@@ -264,6 +355,27 @@ export const OverviewTab = ({
 						{ label: "Grab Rate", value: formatPercent(prowlarrTotals.grabRate) },
 					]}
 				/>
+				{hasTautulli && (
+					<ServiceQuickCard
+						name="Plex"
+						icon={Activity}
+						gradient={SERVICE_GRADIENTS.plex}
+						onViewDetails={() => onSwitchTab("plex")}
+						stats={[
+							{ label: "Total Plays", value: plexSummary?.totalPlays ?? "—" },
+							{
+								label: "Active Users",
+								value: plexSummary?.activeUsers ?? "—",
+								highlight: true,
+							},
+							{
+								label: "Watch Time",
+								value: plexSummary ? formatDuration(plexSummary.totalDuration) : "—",
+							},
+							{ label: "Period", value: "30 days" },
+						]}
+					/>
+				)}
 			</div>
 		</div>
 	);

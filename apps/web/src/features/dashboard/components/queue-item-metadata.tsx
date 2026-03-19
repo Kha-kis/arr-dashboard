@@ -5,15 +5,15 @@
  */
 
 import type { QueueItem } from "@arr/shared";
-import { ExternalLink, Tv, Film, HardDrive, Globe, Database, Music, BookOpen } from "lucide-react";
-import { formatSizeGB } from "../lib/queue-utils";
+import { BookOpen, Database, ExternalLink, Film, Globe, HardDrive, Music, Tv } from "lucide-react";
 import {
-	useIncognitoMode,
-	getLinuxInstanceName,
 	getLinuxDownloadClient,
 	getLinuxIndexer,
+	getLinuxInstanceName,
+	useIncognitoMode,
 } from "../../../lib/incognito";
 import { cn } from "../../../lib/utils";
+import { formatSizeGB } from "../lib/queue-utils";
 
 interface QueueItemMetadataProps {
 	item: QueueItem;
@@ -78,7 +78,7 @@ export const QueueItemMetadata = ({
 					"inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-medium border capitalize transition-all duration-300",
 					serviceStyle?.bg ?? "bg-muted/20",
 					serviceStyle?.border ?? "border-border/50",
-					serviceStyle?.text ?? "text-muted-foreground"
+					serviceStyle?.text ?? "text-muted-foreground",
 				)}
 			>
 				<ServiceIcon className="h-3 w-3" />
@@ -86,8 +86,8 @@ export const QueueItemMetadata = ({
 			</span>
 
 			{/* Instance name with external link */}
-			{item.instanceName && (
-				instanceUrl ? (
+			{item.instanceName &&
+				(instanceUrl ? (
 					<a
 						href={`${instanceUrl}/activity/queue`}
 						target="_blank"
@@ -95,7 +95,7 @@ export const QueueItemMetadata = ({
 						className={cn(
 							"group inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-medium transition-all duration-300",
 							"bg-muted/20 border border-border/30 text-muted-foreground",
-							"hover:bg-primary/10 hover:border-primary/30 hover:text-primary"
+							"hover:bg-primary/10 hover:border-primary/30 hover:text-primary",
 						)}
 						title={`Open ${item.instanceName} queue`}
 					>
@@ -108,16 +108,13 @@ export const QueueItemMetadata = ({
 						<Database className="h-3 w-3" />
 						{displayName}
 					</span>
-				)
-			)}
+				))}
 
 			{/* Download client */}
 			{item.downloadClient && (
 				<span className="inline-flex items-center gap-1.5 text-muted-foreground">
 					<HardDrive className="h-3 w-3" />
-					{incognitoMode
-						? getLinuxDownloadClient(item.downloadClient)
-						: item.downloadClient}
+					{incognitoMode ? getLinuxDownloadClient(item.downloadClient) : item.downloadClient}
 				</span>
 			)}
 
@@ -130,11 +127,7 @@ export const QueueItemMetadata = ({
 			)}
 
 			{/* Size */}
-			{sizeText && (
-				<span className="text-muted-foreground font-mono">
-					{sizeText}
-				</span>
-			)}
+			{sizeText && <span className="text-muted-foreground font-mono">{sizeText}</span>}
 
 			{/* Group count */}
 			{showGroupCount && groupCount && (

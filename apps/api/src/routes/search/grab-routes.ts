@@ -1,7 +1,8 @@
-import type { FastifyPluginCallback } from "fastify";
 import { searchGrabRequestSchema } from "@arr/shared";
+import type { FastifyPluginCallback } from "fastify";
 import { getClientForInstance, isProwlarrClient } from "../../lib/arr/client-helpers.js";
 import { grabProwlarrReleaseWithSdk } from "../../lib/search/prowlarr-api.js";
+import { validateRequest } from "../../lib/utils/validate.js";
 
 /**
  * Registers grab/download routes for Prowlarr.
@@ -15,7 +16,7 @@ export const registerGrabRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Grabs a search result and sends it to the configured download client in Prowlarr.
 	 */
 	app.post("/search/grab", async (request, reply) => {
-		const payload = searchGrabRequestSchema.parse(request.body ?? {});
+		const payload = validateRequest(searchGrabRequestSchema, request.body ?? {});
 
 		const clientResult = await getClientForInstance(app, request, payload.instanceId);
 		if (!clientResult.success) {

@@ -10,14 +10,14 @@
  * - Animated entrance effects
  */
 
-import { useState, useEffect } from "react";
-import { Button } from "../../../components/ui/button";
-import { AlertTriangle, ArrowUpCircle, X, Loader2, Layers } from "lucide-react";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { AlertTriangle, ArrowUpCircle, Layers, Loader2, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Button } from "../../../components/ui/button";
 import { usePromoteOverride } from "../../../hooks/api/useQualityProfileOverrides";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 interface PromoteOverrideDialogProps {
 	open: boolean;
@@ -167,7 +167,8 @@ export function PromoteOverrideDialog({
 						<div className="text-sm" style={{ color: SEMANTIC_COLORS.warning.text }}>
 							<p className="font-medium mb-1">This will affect all instances</p>
 							<p className="opacity-90">
-								All instances using template &quot;{templateName}&quot; will receive this score on their next sync.
+								All instances using template &quot;{templateName}&quot; will receive this score on
+								their next sync.
 							</p>
 						</div>
 					</div>
@@ -183,10 +184,7 @@ export function PromoteOverrideDialog({
 							<div className="font-medium text-foreground">{customFormatName}</div>
 
 							<div className="text-muted-foreground">Current Score:</div>
-							<div
-								className="font-mono font-bold"
-								style={{ color: themeGradient.from }}
-							>
+							<div className="font-mono font-bold" style={{ color: themeGradient.from }}>
 								{currentScore}
 							</div>
 
@@ -220,7 +218,9 @@ export function PromoteOverrideDialog({
 							</li>
 							<li className="flex items-start gap-2">
 								<span style={{ color: themeGradient.from }}>•</span>
-								<span>All instances using this template will get this score on next deployment/sync</span>
+								<span>
+									All instances using this template will get this score on next deployment/sync
+								</span>
 							</li>
 						</ul>
 					</div>

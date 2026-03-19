@@ -4,8 +4,8 @@
  * API endpoints for retrieving deployment history.
  */
 
+import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyPluginAsync } from "fastify";
-import type { SonarrClient, RadarrClient } from "arr-sdk";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 

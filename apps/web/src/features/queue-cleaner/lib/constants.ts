@@ -9,71 +9,71 @@
 export {
 	// Types
 	type CleanerRule,
-	type PreviewStatusRule,
-	type PreviewRule,
-	type ImportBlockCleanupLevel,
-	type ImportBlockPatternMode,
-	type WhitelistType,
-	type WhitelistPattern,
 	// Schemas (for validation if needed)
 	cleanerRuleSchema,
-	previewStatusRuleSchema,
-	previewRuleSchema,
-	importBlockCleanupLevelSchema,
-	importBlockPatternModeSchema,
-	whitelistTypeSchema,
-	whitelistPatternSchema,
-	// Constants - Intervals
-	MIN_INTERVAL_MINS,
-	MAX_INTERVAL_MINS,
-	DEFAULT_INTERVAL_MINS,
-	// Constants - Stalled
-	MIN_STALLED_THRESHOLD_MINS,
-	MAX_STALLED_THRESHOLD_MINS,
-	DEFAULT_STALLED_THRESHOLD_MINS,
-	// Constants - Slow
-	MIN_SLOW_SPEED_THRESHOLD,
-	MAX_SLOW_SPEED_THRESHOLD,
-	DEFAULT_SLOW_SPEED_THRESHOLD,
-	MIN_SLOW_GRACE_PERIOD_MINS,
-	MAX_SLOW_GRACE_PERIOD_MINS,
-	DEFAULT_SLOW_GRACE_PERIOD_MINS,
-	// Constants - Safety
-	MIN_MAX_REMOVALS,
-	MAX_MAX_REMOVALS,
-	DEFAULT_MAX_REMOVALS,
-	MIN_QUEUE_AGE_MINS,
-	MAX_QUEUE_AGE_MINS,
-	DEFAULT_QUEUE_AGE_MINS,
-	// Constants - Strikes
-	MIN_MAX_STRIKES,
-	MAX_MAX_STRIKES,
-	DEFAULT_MAX_STRIKES,
-	MIN_STRIKE_DECAY_HOURS,
-	MAX_STRIKE_DECAY_HOURS,
-	DEFAULT_STRIKE_DECAY_HOURS,
-	// Constants - Seeding
-	MIN_SEEDING_TIMEOUT_HOURS,
-	MAX_SEEDING_TIMEOUT_HOURS,
-	DEFAULT_SEEDING_TIMEOUT_HOURS,
-	// Constants - Estimated
-	MIN_ESTIMATED_MULTIPLIER,
-	MAX_ESTIMATED_MULTIPLIER,
-	DEFAULT_ESTIMATED_MULTIPLIER,
-	// Constants - Import Pending
-	MIN_IMPORT_PENDING_MINS,
-	MAX_IMPORT_PENDING_MINS,
-	DEFAULT_IMPORT_PENDING_MINS,
-	// Constants - Auto-Import
-	MIN_AUTO_IMPORT_ATTEMPTS,
-	MAX_AUTO_IMPORT_ATTEMPTS,
 	DEFAULT_AUTO_IMPORT_ATTEMPTS,
-	MIN_AUTO_IMPORT_COOLDOWN_MINS,
-	MAX_AUTO_IMPORT_COOLDOWN_MINS,
 	DEFAULT_AUTO_IMPORT_COOLDOWN_MINS,
+	DEFAULT_ESTIMATED_MULTIPLIER,
 	// Constants - Defaults
 	DEFAULT_IMPORT_BLOCK_CLEANUP_LEVEL,
 	DEFAULT_IMPORT_BLOCK_PATTERN_MODE,
+	DEFAULT_IMPORT_PENDING_MINS,
+	DEFAULT_INTERVAL_MINS,
+	DEFAULT_MAX_REMOVALS,
+	DEFAULT_MAX_STRIKES,
+	DEFAULT_QUEUE_AGE_MINS,
+	DEFAULT_SEEDING_TIMEOUT_HOURS,
+	DEFAULT_SLOW_GRACE_PERIOD_MINS,
+	DEFAULT_SLOW_SPEED_THRESHOLD,
+	DEFAULT_STALLED_THRESHOLD_MINS,
+	DEFAULT_STRIKE_DECAY_HOURS,
+	type ImportBlockCleanupLevel,
+	type ImportBlockPatternMode,
+	importBlockCleanupLevelSchema,
+	importBlockPatternModeSchema,
+	MAX_AUTO_IMPORT_ATTEMPTS,
+	MAX_AUTO_IMPORT_COOLDOWN_MINS,
+	MAX_ESTIMATED_MULTIPLIER,
+	MAX_IMPORT_PENDING_MINS,
+	MAX_INTERVAL_MINS,
+	MAX_MAX_REMOVALS,
+	MAX_MAX_STRIKES,
+	MAX_QUEUE_AGE_MINS,
+	MAX_SEEDING_TIMEOUT_HOURS,
+	MAX_SLOW_GRACE_PERIOD_MINS,
+	MAX_SLOW_SPEED_THRESHOLD,
+	MAX_STALLED_THRESHOLD_MINS,
+	MAX_STRIKE_DECAY_HOURS,
+	// Constants - Auto-Import
+	MIN_AUTO_IMPORT_ATTEMPTS,
+	MIN_AUTO_IMPORT_COOLDOWN_MINS,
+	// Constants - Estimated
+	MIN_ESTIMATED_MULTIPLIER,
+	// Constants - Import Pending
+	MIN_IMPORT_PENDING_MINS,
+	// Constants - Intervals
+	MIN_INTERVAL_MINS,
+	// Constants - Safety
+	MIN_MAX_REMOVALS,
+	// Constants - Strikes
+	MIN_MAX_STRIKES,
+	MIN_QUEUE_AGE_MINS,
+	// Constants - Seeding
+	MIN_SEEDING_TIMEOUT_HOURS,
+	MIN_SLOW_GRACE_PERIOD_MINS,
+	// Constants - Slow
+	MIN_SLOW_SPEED_THRESHOLD,
+	// Constants - Stalled
+	MIN_STALLED_THRESHOLD_MINS,
+	MIN_STRIKE_DECAY_HOURS,
+	type PreviewRule,
+	type PreviewStatusRule,
+	previewRuleSchema,
+	previewStatusRuleSchema,
+	type WhitelistPattern,
+	type WhitelistType,
+	whitelistPatternSchema,
+	whitelistTypeSchema,
 } from "@arr/shared";
 
 // ============================================================================
@@ -167,13 +167,33 @@ export const RULE_COLORS: Record<string, RuleColorStyle> = {
 	stalled: { bg: "rgba(245, 158, 11, 0.1)", text: "#f59e0b", border: "rgba(245, 158, 11, 0.2)" },
 	failed: { bg: "rgba(239, 68, 68, 0.1)", text: "#ef4444", border: "rgba(239, 68, 68, 0.2)" },
 	slow: { bg: "rgba(99, 102, 241, 0.1)", text: "#6366f1", border: "rgba(99, 102, 241, 0.2)" },
-	error_pattern: { bg: "rgba(168, 85, 247, 0.1)", text: "#a855f7", border: "rgba(168, 85, 247, 0.2)" },
-	seeding_timeout: { bg: "rgba(6, 182, 212, 0.1)", text: "#06b6d4", border: "rgba(6, 182, 212, 0.2)" },
-	import_pending: { bg: "rgba(251, 146, 60, 0.1)", text: "#fb923c", border: "rgba(251, 146, 60, 0.2)" },
-	import_blocked: { bg: "rgba(244, 63, 94, 0.1)", text: "#f43f5e", border: "rgba(244, 63, 94, 0.2)" },
+	error_pattern: {
+		bg: "rgba(168, 85, 247, 0.1)",
+		text: "#a855f7",
+		border: "rgba(168, 85, 247, 0.2)",
+	},
+	seeding_timeout: {
+		bg: "rgba(6, 182, 212, 0.1)",
+		text: "#06b6d4",
+		border: "rgba(6, 182, 212, 0.2)",
+	},
+	import_pending: {
+		bg: "rgba(251, 146, 60, 0.1)",
+		text: "#fb923c",
+		border: "rgba(251, 146, 60, 0.2)",
+	},
+	import_blocked: {
+		bg: "rgba(244, 63, 94, 0.1)",
+		text: "#f43f5e",
+		border: "rgba(244, 63, 94, 0.2)",
+	},
 	whitelisted: { bg: "rgba(34, 197, 94, 0.1)", text: "#22c55e", border: "rgba(34, 197, 94, 0.2)" },
 	healthy: { bg: "rgba(34, 197, 94, 0.1)", text: "#22c55e", border: "rgba(34, 197, 94, 0.2)" },
-	too_young: { bg: "rgba(148, 163, 184, 0.1)", text: "#94a3b8", border: "rgba(148, 163, 184, 0.2)" },
+	too_young: {
+		bg: "rgba(148, 163, 184, 0.1)",
+		text: "#94a3b8",
+		border: "rgba(148, 163, 184, 0.2)",
+	},
 };
 
 /** Human-readable labels for rule types */

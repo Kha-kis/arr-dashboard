@@ -1,3 +1,4 @@
+import { LIBRARY_SERVICES_UPPER } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { toServiceLabel } from "../lib/arr/client-helpers.js";
@@ -252,6 +253,16 @@ const configUpdateSchema = z.object({
 	// Instead of deleting, move torrent to a different category in the client
 	// The actual category name is configured in Sonarr/Radarr's download client settings
 	changeCategoryEnabled: z.boolean().optional(),
+
+	// Tag pre-filter
+	tagFilterEnabled: z.boolean().optional(),
+	includeTags: z.string().nullable().optional(), // JSON array of tag IDs
+	excludeTags: z.string().nullable().optional(),
+
+	// Quality profile pre-filter
+	profileFilterEnabled: z.boolean().optional(),
+	includeProfiles: z.string().nullable().optional(), // JSON array of profile IDs
+	excludeProfiles: z.string().nullable().optional(),
 });
 
 const configCreateSchema = z.object({
@@ -279,7 +290,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const instances = await app.prisma.serviceInstance.findMany({
 			where: {
 				userId,
-				service: { in: ["SONARR", "RADARR", "LIDARR", "READARR"] },
+				service: { in: [...LIBRARY_SERVICES_UPPER] },
 			},
 			include: {
 				queueCleanerConfig: true,
@@ -342,7 +353,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const instances = await app.prisma.serviceInstance.findMany({
 			where: {
 				userId,
-				service: { in: ["SONARR", "RADARR", "LIDARR", "READARR"] },
+				service: { in: [...LIBRARY_SERVICES_UPPER] },
 			},
 			include: {
 				queueCleanerConfig: true,
@@ -702,10 +713,12 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 		async (request, reply) => {
 			const userId = request.currentUser!.id;
 
-			// Get all logs for user instances
+			// Get logs for user instances (bounded to last 90 days for performance)
+			const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
 			const allLogs = await app.prisma.queueCleanerLog.findMany({
 				where: {
 					instance: { userId },
+					startedAt: { gte: ninetyDaysAgo },
 				},
 				include: { instance: true },
 				orderBy: { startedAt: "desc" },
@@ -715,7 +728,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 			const instances = await app.prisma.serviceInstance.findMany({
 				where: {
 					userId,
-					service: { in: ["SONARR", "RADARR", "LIDARR", "READARR"] },
+					service: { in: [...LIBRARY_SERVICES_UPPER] },
 				},
 				include: { queueCleanerConfig: true },
 			});

@@ -1,4 +1,4 @@
-import type { ZodSchema, ZodError, z } from "zod";
+import type { ZodError, ZodSchema, z } from "zod";
 
 /**
  * Thrown when Zod validation fails. Caught by the centralized error handler

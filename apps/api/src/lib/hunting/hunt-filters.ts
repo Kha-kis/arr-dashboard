@@ -7,8 +7,8 @@
  * AND/OR filter logic, and include/exclude for tags and quality profiles.
  */
 
-import type { HuntConfig } from "../prisma.js";
 import type { FastifyBaseLogger } from "fastify";
+import type { HuntConfig } from "../prisma.js";
 
 /**
  * Logger type for hunt functions.

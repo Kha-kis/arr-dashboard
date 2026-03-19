@@ -336,7 +336,11 @@ export const detectLifecycleStages = (items: HistoryItem[]): LifecycleStage[] =>
 			stage = { stage: "grabbed", label: "Grabbed", color: "info" };
 		} else if (eventType.includes("import") || eventType.includes("download")) {
 			stage = { stage: "imported", label: "Imported", color: "success" };
-		} else if (eventType.includes("fail") || eventType.includes("error") || eventType.includes("reject")) {
+		} else if (
+			eventType.includes("fail") ||
+			eventType.includes("error") ||
+			eventType.includes("reject")
+		) {
 			stage = { stage: "failed", label: "Failed", color: "error" };
 		} else if (eventType.includes("delete") || eventType.includes("removed")) {
 			stage = { stage: "deleted", label: "Deleted", color: "warning" };
@@ -417,7 +421,9 @@ export const getDisplayTitle = (item: HistoryItem): string => {
 /**
  * Maps event type to StatusBadge variant
  */
-export const getEventTypeStatusBadge = (eventType: string): "success" | "warning" | "error" | "info" | "default" => {
+export const getEventTypeStatusBadge = (
+	eventType: string,
+): "success" | "warning" | "error" | "info" | "default" => {
 	const normalized = eventType.toLowerCase();
 	if (normalized.includes("download") || normalized.includes("import")) {
 		return "success";
@@ -429,10 +435,7 @@ export const getEventTypeStatusBadge = (eventType: string): "success" | "warning
 	) {
 		return "error";
 	}
-	if (
-		normalized.includes("delete") ||
-		normalized.includes("removed")
-	) {
+	if (normalized.includes("delete") || normalized.includes("removed")) {
 		return "error";
 	}
 	if (
@@ -465,11 +468,7 @@ export const getSourceClient = (item: HistoryItem): string => {
 
 	let result = "";
 
-	if (
-		eventType.includes("grab") ||
-		eventType.includes("query") ||
-		eventType.includes("rss")
-	) {
+	if (eventType.includes("grab") || eventType.includes("query") || eventType.includes("rss")) {
 		result = isProwlarr
 			? prowlarrData?.indexer || prowlarrData?.indexerName || item.indexer || ""
 			: item.indexer || "";
@@ -491,11 +490,7 @@ export const getSourceClient = (item: HistoryItem): string => {
  */
 export const getSourceClientKind = (item: HistoryItem): "indexer" | "client" | "other" => {
 	const eventType = (item.eventType ?? item.status ?? "").toLowerCase();
-	if (
-		eventType.includes("grab") ||
-		eventType.includes("query") ||
-		eventType.includes("rss")
-	) {
+	if (eventType.includes("grab") || eventType.includes("query") || eventType.includes("rss")) {
 		return "indexer";
 	}
 	if (eventType.includes("download") || eventType.includes("import")) {
@@ -528,7 +523,11 @@ export const createActivitySummary = (items: HistoryItem[]): ActivitySummary => 
 			summary.grabs += 1;
 		} else if (eventType.includes("import") || eventType.includes("download")) {
 			summary.imports += 1;
-		} else if (eventType.includes("fail") || eventType.includes("error") || eventType.includes("reject")) {
+		} else if (
+			eventType.includes("fail") ||
+			eventType.includes("error") ||
+			eventType.includes("reject")
+		) {
 			summary.failures += 1;
 		}
 	}

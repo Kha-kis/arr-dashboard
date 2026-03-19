@@ -20,7 +20,9 @@ const backupSchedulerPlugin = fastifyPlugin(
 			const secretsPath = resolveSecretsPath(databaseUrl);
 
 			// Create and register backup scheduler (Prisma and config are guaranteed to be ready)
-			const scheduler = new BackupScheduler(app.prisma, app.log, secretsPath);
+			const scheduler = new BackupScheduler(app.prisma, app.log, secretsPath, (payload) =>
+				app.notificationService.notify(payload),
+			);
 			app.decorate("backupScheduler", scheduler);
 
 			// Start scheduler

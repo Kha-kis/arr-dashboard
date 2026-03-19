@@ -1,18 +1,18 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import type { CustomQualityConfig, NamingSelectedPresets, TrashTemplate } from "@arr/shared";
+import { X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "../../../components/ui";
-import { X } from "lucide-react";
 import type { QualityProfileSummary } from "../../../lib/api-client/trash-guides";
-import type { TrashTemplate, CustomQualityConfig } from "@arr/shared";
-import { QualityProfileSelection } from "./wizard-steps/quality-profile-selection";
-import { QualityConfiguration } from "./wizard-steps/quality-configuration";
-import { CFConfiguration } from "./wizard-steps/cf-configuration";
-import { CFResolution, type ResolvedCF } from "./wizard-steps/cf-resolution";
-import { TemplateCreation } from "./wizard-steps/template-creation";
 import { htmlToPlainText } from "../lib/description-utils";
 import { getEffectiveQualityConfig } from "../lib/quality-config-utils";
+import { CFConfiguration } from "./wizard-steps/cf-configuration";
+import { CFResolution, type ResolvedCF } from "./wizard-steps/cf-resolution";
+import { QualityConfiguration } from "./wizard-steps/quality-configuration";
+import { QualityProfileSelection } from "./wizard-steps/quality-profile-selection";
+import { TemplateCreation } from "./wizard-steps/template-creation";
 
 /**
  * Check if a trashId indicates a cloned profile from an instance
@@ -38,7 +38,7 @@ function parseClonedProfileId(trashId: string): { instanceId: string; profileId:
 
 	// Split by "-"
 	const parts = withoutPrefix.split("-");
-	
+
 	// Need at least: instanceId (1+ parts) + profileId (1 part) + uuid (2 or 5 parts) = 4 or 7 parts minimum
 	if (parts.length < 4) return null;
 
@@ -48,7 +48,7 @@ function parseClonedProfileId(trashId: string): { instanceId: string; profileId:
 	const uuidCandidate5 = uuidParts5.join("-");
 	// UUID regex: 8-4-4-4-12 hex digits
 	const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-	
+
 	let profileIdIndex: number;
 
 	if (uuidRegex.test(uuidCandidate5) && parts.length >= 7) {
@@ -58,12 +58,17 @@ function parseClonedProfileId(trashId: string): { instanceId: string; profileId:
 		// Try fallback 2-part format (timestamp-random)
 		const uuidParts2 = parts.slice(-2);
 		if (parts.length < 4) return null; // Need at least instanceId + profileId + 2-part ID
-		
+
 		// Check if first part is numeric (timestamp) and second is alphanumeric
 		const timestampPart = uuidParts2[0];
 		const randomPart = uuidParts2[1];
-		
-		if (timestampPart && randomPart && /^\d+$/.test(timestampPart) && /^[a-z0-9]+$/i.test(randomPart)) {
+
+		if (
+			timestampPart &&
+			randomPart &&
+			/^\d+$/.test(timestampPart) &&
+			/^[a-z0-9]+$/i.test(randomPart)
+		) {
 			// Fallback 2-part format detected
 			profileIdIndex = parts.length - 3; // profileId is third-to-last before 2-part ID
 		} else {
@@ -101,18 +106,21 @@ type WizardStep = "profile" | "quality" | "customize" | "cf-resolution" | "summa
  * In edit mode, we don't have the original TRaSH profile trashId since templates
  * don't persist that information. The trashId is only needed for new imports.
  */
-type WizardSelectedProfile = Omit<QualityProfileSummary, 'trashId'> & {
+type WizardSelectedProfile = Omit<QualityProfileSummary, "trashId"> & {
 	trashId?: string;
 };
 
 interface WizardState {
 	currentStep: WizardStep;
 	selectedProfile: WizardSelectedProfile | null;
-	customFormatSelections: Record<string, {
-		selected: boolean;
-		scoreOverride?: number;
-		conditionsEnabled: Record<string, boolean>;
-	}>;
+	customFormatSelections: Record<
+		string,
+		{
+			selected: boolean;
+			scoreOverride?: number;
+			conditionsEnabled: Record<string, boolean>;
+		}
+	>;
 	templateName: string;
 	templateDescription: string;
 	templateId?: string; // For editing existing templates
@@ -120,14 +128,25 @@ interface WizardState {
 	cfResolutions?: ResolvedCF[];
 	/** Custom quality configuration for power users */
 	customQualityConfig?: CustomQualityConfig;
+	/** Optional naming presets to deploy with this template */
+	namingSelection?: NamingSelectedPresets;
 }
 
 // Standard step order for TRaSH Guides profiles: quality config before CF config
 const STANDARD_STEP_ORDER: WizardStep[] = ["profile", "quality", "customize", "summary"];
 // Step order for cloned profiles: resolution BEFORE quality and configuration
-const CLONED_STEP_ORDER: WizardStep[] = ["profile", "cf-resolution", "quality", "customize", "summary"];
+const CLONED_STEP_ORDER: WizardStep[] = [
+	"profile",
+	"cf-resolution",
+	"quality",
+	"customize",
+	"summary",
+];
 
-const getStepTitles = (isEditMode: boolean, _isClonedProfile: boolean): Record<WizardStep, string> => ({
+const getStepTitles = (
+	isEditMode: boolean,
+	_isClonedProfile: boolean,
+): Record<WizardStep, string> => ({
 	profile: "Select Quality Profile",
 	quality: "Configure Qualities",
 	customize: isEditMode ? "Edit Custom Formats" : "Configure Custom Formats",
@@ -135,7 +154,10 @@ const getStepTitles = (isEditMode: boolean, _isClonedProfile: boolean): Record<W
 	summary: isEditMode ? "Review & Update" : "Review & Create",
 });
 
-const getStepDescriptions = (isEditMode: boolean, isClonedProfile: boolean): Record<WizardStep, string> => ({
+const getStepDescriptions = (
+	isEditMode: boolean,
+	isClonedProfile: boolean,
+): Record<WizardStep, string> => ({
 	profile: "Select a TRaSH Guides quality profile to import",
 	quality: "Configure quality priorities, groupings, and cutoff settings",
 	customize: isEditMode
@@ -144,7 +166,9 @@ const getStepDescriptions = (isEditMode: boolean, isClonedProfile: boolean): Rec
 			? "Review matched CFs and adjust scores before deployment"
 			: "Select CF groups and individual formats, adjust scores",
 	"cf-resolution": "Match your instance's Custom Formats to TRaSH Guides equivalents",
-	summary: isEditMode ? "Review your changes and update template" : "Review your selections and create template",
+	summary: isEditMode
+		? "Review your changes and update template"
+		: "Review your selections and create template",
 });
 
 export const QualityProfileWizard = ({
@@ -173,21 +197,22 @@ export const QualityProfileWizard = ({
 	// Determine if current profile is cloned
 	const isClonedProfileSelected = useMemo(
 		() => isClonedProfile(wizardState.selectedProfile?.trashId),
-		[wizardState.selectedProfile?.trashId]
+		[wizardState.selectedProfile?.trashId],
 	);
 
 	// Get parsed cloned profile info if applicable
 	const clonedProfileInfo = useMemo(
-		() => wizardState.selectedProfile?.trashId
-			? parseClonedProfileId(wizardState.selectedProfile.trashId)
-			: null,
-		[wizardState.selectedProfile?.trashId]
+		() =>
+			wizardState.selectedProfile?.trashId
+				? parseClonedProfileId(wizardState.selectedProfile.trashId)
+				: null,
+		[wizardState.selectedProfile?.trashId],
 	);
 
 	// Dynamic step order based on profile type
 	const stepOrder = useMemo(
-		() => isClonedProfileSelected ? CLONED_STEP_ORDER : STANDARD_STEP_ORDER,
-		[isClonedProfileSelected]
+		() => (isClonedProfileSelected ? CLONED_STEP_ORDER : STANDARD_STEP_ORDER),
+		[isClonedProfileSelected],
 	);
 
 	const currentStepIndex = stepOrder.indexOf(wizardState.currentStep);
@@ -197,11 +222,14 @@ export const QualityProfileWizard = ({
 	useEffect(() => {
 		if (editingTemplate && open) {
 			// Convert template's config data into wizard format
-			const selections: Record<string, {
-				selected: boolean;
-				scoreOverride?: number;
-				conditionsEnabled: Record<string, boolean>;
-			}> = {};
+			const selections: Record<
+				string,
+				{
+					selected: boolean;
+					scoreOverride?: number;
+					conditionsEnabled: Record<string, boolean>;
+				}
+			> = {};
 
 			// Map customFormats from template to wizard selections
 			editingTemplate.config.customFormats.forEach((cf) => {
@@ -253,7 +281,7 @@ export const QualityProfileWizard = ({
 	const handleProfileSelected = (profile: QualityProfileSummary) => {
 		// For cloned profiles, go to cf-resolution first; for TRaSH profiles, go to quality config
 		const nextStep: WizardStep = isClonedProfile(profile.trashId) ? "cf-resolution" : "quality";
-		setWizardState(prev => ({
+		setWizardState((prev) => ({
 			...prev,
 			currentStep: nextStep,
 			selectedProfile: profile,
@@ -267,7 +295,7 @@ export const QualityProfileWizard = ({
 
 	const handleQualityConfigComplete = (qualityConfig: CustomQualityConfig) => {
 		// After quality configuration, go to CF customization
-		setWizardState(prev => ({
+		setWizardState((prev) => ({
 			...prev,
 			currentStep: "customize",
 			customQualityConfig: qualityConfig,
@@ -275,14 +303,17 @@ export const QualityProfileWizard = ({
 	};
 
 	const handleCustomizationComplete = (
-		selections: Record<string, {
-			selected: boolean;
-			scoreOverride?: number;
-			conditionsEnabled: Record<string, boolean>;
-		}>
+		selections: Record<
+			string,
+			{
+				selected: boolean;
+				scoreOverride?: number;
+				conditionsEnabled: Record<string, boolean>;
+			}
+		>,
 	) => {
 		// Go to summary - template naming happens in the Review step
-		setWizardState(prev => ({
+		setWizardState((prev) => ({
 			...prev,
 			currentStep: "summary",
 			customFormatSelections: selections,
@@ -291,7 +322,7 @@ export const QualityProfileWizard = ({
 
 	const handleCFResolutionComplete = (resolutions: ResolvedCF[]) => {
 		// After CF resolution, go to quality step
-		setWizardState(prev => ({
+		setWizardState((prev) => ({
 			...prev,
 			currentStep: "quality",
 			cfResolutions: resolutions,
@@ -317,7 +348,7 @@ export const QualityProfileWizard = ({
 		if (currentIndex > 0) {
 			const previousStep = stepOrder[currentIndex - 1];
 			if (previousStep) {
-				setWizardState(prev => ({
+				setWizardState((prev) => ({
 					...prev,
 					currentStep: previousStep,
 				}));
@@ -326,7 +357,7 @@ export const QualityProfileWizard = ({
 	};
 
 	const handleEditStep = (step: WizardStep) => {
-		setWizardState(prev => ({
+		setWizardState((prev) => ({
 			...prev,
 			currentStep: step,
 		}));
@@ -376,15 +407,14 @@ export const QualityProfileWizard = ({
 									{getStepTitles(isEditMode, isClonedProfileSelected)[wizardState.currentStep]}
 								</h2>
 								<p className="mt-1 text-sm text-muted-foreground">
-									{getStepDescriptions(isEditMode, isClonedProfileSelected)[wizardState.currentStep]}
+									{
+										getStepDescriptions(isEditMode, isClonedProfileSelected)[
+											wizardState.currentStep
+										]
+									}
 								</p>
 							</div>
-							<Button
-								variant="ghost"
-								size="sm"
-								onClick={handleClose}
-								aria-label="Close wizard"
-							>
+							<Button variant="ghost" size="sm" onClick={handleClose} aria-label="Close wizard">
 								<X className="h-5 w-5" />
 							</Button>
 						</div>
@@ -396,9 +426,7 @@ export const QualityProfileWizard = ({
 								const isCompleted = index < currentStepIndex;
 								const isAccessible = index <= currentStepIndex;
 								// In edit mode, allow navigating to any step except profile (step 0)
-								const canNavigate = isEditMode
-									? index > 0 && !isActive
-									: isCompleted && !isActive;
+								const canNavigate = isEditMode ? index > 0 && !isActive : isCompleted && !isActive;
 
 								return (
 									<div key={step} className="flex items-center flex-1">
@@ -448,10 +476,7 @@ export const QualityProfileWizard = ({
 				{/* Content */}
 				<div className="overflow-y-auto p-6" style={{ maxHeight: "calc(90vh - 180px)" }}>
 					{wizardState.currentStep === "profile" && !isEditMode && (
-						<QualityProfileSelection
-							serviceType={serviceType}
-							onSelect={handleProfileSelected}
-						/>
+						<QualityProfileSelection serviceType={serviceType} onSelect={handleProfileSelected} />
 					)}
 
 					{wizardState.currentStep === "quality" && wizardState.selectedProfile && (
@@ -478,17 +503,19 @@ export const QualityProfileWizard = ({
 						/>
 					)}
 
-					{wizardState.currentStep === "cf-resolution" && wizardState.selectedProfile && clonedProfileInfo && (
-						<CFResolution
-							serviceType={serviceType}
-							instanceId={clonedProfileInfo.instanceId}
-							profileId={clonedProfileInfo.profileId}
-							profileName={wizardState.selectedProfile.name}
-							onComplete={handleCFResolutionComplete}
-							onBack={handleBack}
-							initialResolutions={wizardState.cfResolutions}
-						/>
-					)}
+					{wizardState.currentStep === "cf-resolution" &&
+						wizardState.selectedProfile &&
+						clonedProfileInfo && (
+							<CFResolution
+								serviceType={serviceType}
+								instanceId={clonedProfileInfo.instanceId}
+								profileId={clonedProfileInfo.profileId}
+								profileName={wizardState.selectedProfile.name}
+								onComplete={handleCFResolutionComplete}
+								onBack={handleBack}
+								initialResolutions={wizardState.cfResolutions}
+							/>
+						)}
 
 					{wizardState.currentStep === "summary" && wizardState.selectedProfile && (
 						<TemplateCreation
@@ -499,6 +526,7 @@ export const QualityProfileWizard = ({
 								templateName: wizardState.templateName,
 								templateDescription: wizardState.templateDescription,
 								customQualityConfig: wizardState.customQualityConfig,
+								namingSelection: wizardState.namingSelection,
 							}}
 							templateId={wizardState.templateId} // Pass template ID for update
 							isEditMode={isEditMode}
@@ -511,6 +539,6 @@ export const QualityProfileWizard = ({
 				</div>
 			</div>
 		</div>,
-		document.body
+		document.body,
 	);
 };

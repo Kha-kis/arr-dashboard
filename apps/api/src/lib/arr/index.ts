@@ -17,53 +17,48 @@
  * ```
  */
 
+// Re-export SDK client types for convenience
+export { ProwlarrClient, RadarrClient, SonarrClient } from "arr-sdk";
 // Factory and core types
-export {
-	ArrClientFactory,
-	type ArrClient,
-	type ClientForService,
-	type ClientFactoryOptions,
-	type ClientInstanceData,
-} from "./client-factory.js";
-
 // Error types and utilities
 export {
+	type ArrClient,
+	ArrClientFactory,
 	ArrError,
-	NotFoundError,
-	UnauthorizedError,
-	ValidationError,
-	TimeoutError,
-	NetworkError,
-	isArrError,
-	isNotFoundError,
-	isUnauthorizedError,
-	isValidationError,
-	isTimeoutError,
-	isNetworkError,
 	arrErrorToHttpStatus,
 	arrErrorToResponse,
+	type ClientFactoryOptions,
+	type ClientForService,
+	type ClientInstanceData,
+	isArrError,
+	isNetworkError,
+	isNotFoundError,
+	isTimeoutError,
+	isUnauthorizedError,
+	isValidationError,
+	NetworkError,
+	NotFoundError,
+	TimeoutError,
+	UnauthorizedError,
+	ValidationError,
 } from "./client-factory.js";
-
 // Helper utilities
 export {
-	toServiceLabel,
 	executeOnInstances,
-	executeOnSonarrInstances,
-	executeOnRadarrInstances,
 	executeOnProwlarrInstances,
+	executeOnRadarrInstances,
+	executeOnSonarrInstances,
 	getClientForInstance,
-	getSonarrClientForInstance,
-	getRadarrClientForInstance,
 	getProwlarrClientForInstance,
-	isSonarrClient,
-	isRadarrClient,
-	isProwlarrClient,
-	type InstanceResult,
+	getRadarrClientForInstance,
+	getSonarrClientForInstance,
 	type InstanceError,
 	type InstanceOperationResult,
-	type MultiInstanceResponse,
+	type InstanceResult,
+	isProwlarrClient,
+	isRadarrClient,
+	isSonarrClient,
 	type MultiInstanceOptions,
+	type MultiInstanceResponse,
+	toServiceLabel,
 } from "./client-helpers.js";
-
-// Re-export SDK client types for convenience
-export { SonarrClient, RadarrClient, ProwlarrClient } from "arr-sdk";

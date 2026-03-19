@@ -33,52 +33,52 @@ export const ServiceInstancesTable = ({ instances, incognitoMode }: ServiceInsta
 						// Use externalUrl for browser navigation if available, otherwise fall back to baseUrl
 						const linkUrl = instance.externalUrl || instance.baseUrl;
 						return (
-						<tr key={instance.id}>
-							<td className="px-4 py-3 font-medium text-foreground">
-								<a
-									href={linkUrl}
-									target="_blank"
-									rel="noopener noreferrer"
-									className="inline-flex items-center gap-1.5 text-foreground hover:text-sky-400 transition-colors"
-									title={`Open ${instance.label} in new tab`}
-								>
-									{instance.label}
-									<ExternalLink className="h-3 w-3 opacity-50" />
-								</a>
-							</td>
-							<td className="px-4 py-3 capitalize">{instance.service}</td>
-							<td className="px-4 py-3 text-muted-foreground">
-								{incognitoMode ? getLinuxUrl(linkUrl) : linkUrl}
-							</td>
-							<td className="px-4 py-3">
-								{instance.tags.length === 0 ? (
-									<span className="text-muted-foreground/60">-</span>
-								) : (
-									<div className="flex flex-wrap gap-2">
-										{instance.tags.map((tag) => (
-											<span
-												key={tag.id}
-												className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-foreground"
-											>
-												{tag.name}
-											</span>
-										))}
-									</div>
-								)}
-							</td>
-							<td className="px-4 py-3 text-center">
-								<span
-									className={`inline-flex items-center justify-center rounded-full px-3 py-1 text-xs font-semibold ${
-										instance.enabled
-											? "bg-emerald-500/20 text-emerald-200"
-											: "bg-muted text-muted-foreground"
-									}`}
-								>
-									{instance.enabled ? "Enabled" : "Disabled"}
-								</span>
-							</td>
-						</tr>
-					);
+							<tr key={instance.id}>
+								<td className="px-4 py-3 font-medium text-foreground">
+									<a
+										href={linkUrl}
+										target="_blank"
+										rel="noopener noreferrer"
+										className="inline-flex items-center gap-1.5 text-foreground hover:text-sky-400 transition-colors"
+										title={`Open ${instance.label} in new tab`}
+									>
+										{instance.label}
+										<ExternalLink className="h-3 w-3 opacity-50" />
+									</a>
+								</td>
+								<td className="px-4 py-3 capitalize">{instance.service}</td>
+								<td className="px-4 py-3 text-muted-foreground">
+									{incognitoMode ? getLinuxUrl(linkUrl) : linkUrl}
+								</td>
+								<td className="px-4 py-3">
+									{instance.tags.length === 0 ? (
+										<span className="text-muted-foreground/60">-</span>
+									) : (
+										<div className="flex flex-wrap gap-2">
+											{instance.tags.map((tag) => (
+												<span
+													key={tag.id}
+													className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-foreground"
+												>
+													{tag.name}
+												</span>
+											))}
+										</div>
+									)}
+								</td>
+								<td className="px-4 py-3 text-center">
+									<span
+										className={`inline-flex items-center justify-center rounded-full px-3 py-1 text-xs font-semibold ${
+											instance.enabled
+												? "bg-emerald-500/20 text-emerald-200"
+												: "bg-muted text-muted-foreground"
+										}`}
+									>
+										{instance.enabled ? "Enabled" : "Disabled"}
+									</span>
+								</td>
+							</tr>
+						);
 					})}
 				</tbody>
 			</table>

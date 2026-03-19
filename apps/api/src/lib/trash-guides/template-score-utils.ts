@@ -111,7 +111,11 @@ export function calculateScoreAndSource(
 		return { score: templateCF.scoreOverride, scoreSource: "template override" };
 	}
 
-	if (scoreSet != null && scoreSet !== "" && templateCF.originalConfig?.trash_scores?.[scoreSet] !== undefined) {
+	if (
+		scoreSet != null &&
+		scoreSet !== "" &&
+		templateCF.originalConfig?.trash_scores?.[scoreSet] !== undefined
+	) {
 		const score = templateCF.originalConfig.trash_scores[scoreSet];
 		if (typeof score === "number" && Number.isFinite(score)) {
 			return { score, scoreSource: `TRaSH score set (${scoreSet})` };

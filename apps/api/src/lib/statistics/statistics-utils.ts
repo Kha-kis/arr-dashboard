@@ -129,28 +129,19 @@ export const toNumber = (value: unknown): number | undefined => {
 // ============================================================================
 
 /**
- * Safely makes a request and parses JSON, returning undefined on error
+ * Safely execute an SDK call and return undefined on error.
+ * Logs failures so silent data gaps on the statistics page are diagnosable.
  */
-export const safeRequestJson = async <T>(
-	fetcher: (path: string, init?: RequestInit) => Promise<Response>,
-	path: string,
-	init?: RequestInit,
+export const safeRequest = async <T>(
+	operation: () => Promise<T>,
+	context?: string,
 ): Promise<T | undefined> => {
 	try {
-		const response = await fetcher(path, init);
-		return (await response.json()) as T;
-	} catch {
-		return undefined;
-	}
-};
-
-/**
- * Safely execute an SDK call and return undefined on error
- */
-export const safeRequest = async <T>(operation: () => Promise<T>): Promise<T | undefined> => {
-	try {
 		return await operation();
-	} catch {
+	} catch (err) {
+		if (context) {
+			console.warn('[statistics] %s failed:', context, err instanceof Error ? err.message : err);
+		}
 		return undefined;
 	}
 };
@@ -234,8 +225,8 @@ export const checkRecentlyAdded = (
 export const calculateDiskTotals = <T extends DiskSpaceEntry>(diskspace: T[]): DiskTotals => {
 	const totals = diskspace.reduce(
 		(acc, entry) => {
-			acc.total += (entry?.totalSpace ?? 0);
-			acc.free += (entry?.freeSpace ?? 0);
+			acc.total += entry?.totalSpace ?? 0;
+			acc.free += entry?.freeSpace ?? 0;
 			return acc;
 		},
 		{ total: 0, free: 0 },
