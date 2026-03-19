@@ -67,7 +67,7 @@ interface MiniStatCardProps {
 }
 
 export const MiniStatCard = ({ icon: Icon, label, value, color }: MiniStatCardProps) => (
-	<div className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-xs p-4">
+	<div className="rounded-xl border border-border/30 bg-card/30 p-4">
 		<div className="flex items-center gap-2 mb-2">
 			<div
 				className="h-8 w-8 rounded-lg flex items-center justify-center"

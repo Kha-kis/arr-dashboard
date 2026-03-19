@@ -14,7 +14,7 @@ import {
 	Trash2,
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { GlassmorphicCard, ServiceBadge } from "../../../components/layout/premium-components";
+import { ServiceBadge } from "../../../components/layout/premium-components";
 import {
 	useApplyNaming,
 	useDeleteNamingConfig,
@@ -26,6 +26,7 @@ import {
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { ToggleRow } from "../../../components/layout/config-primitives";
 import { SyncStrategyControl } from "./sync-strategy-control";
 
 const NamingHistoryTable = lazy(() =>
@@ -185,7 +186,7 @@ function PreviewTable({
 	themeGradient: ReturnType<typeof useThemeGradient>["gradient"];
 }) {
 	return (
-		<GlassmorphicCard padding="none">
+		<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10">
 			<div className="overflow-x-auto">
 				<table className="w-full text-sm">
 					<thead>
@@ -245,7 +246,7 @@ function PreviewTable({
 					</tbody>
 				</table>
 			</div>
-		</GlassmorphicCard>
+		</div>
 	);
 }
 
@@ -502,11 +503,11 @@ export function NamingManager() {
 						Loading instances...
 					</div>
 				) : arrInstances.length === 0 ? (
-					<GlassmorphicCard padding="md">
+					<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
 						<p className="text-sm text-muted-foreground">
 							No Radarr or Sonarr instances configured. Add an instance in Settings first.
 						</p>
-					</GlassmorphicCard>
+					</div>
 				) : (
 					<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 						{arrInstances.map((instance, index) => {
@@ -577,7 +578,7 @@ export function NamingManager() {
 									Loading presets...
 								</div>
 							) : (
-								<GlassmorphicCard padding="md">
+								<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
 									<div className="space-y-5">
 										{categories.map((cat) => (
 											<PresetSelector
@@ -591,7 +592,7 @@ export function NamingManager() {
 											/>
 										))}
 									</div>
-								</GlassmorphicCard>
+								</div>
 							)}
 
 							{/* Preview Button */}
@@ -668,33 +669,25 @@ export function NamingManager() {
 							</div>
 
 							{/* Rename Toggle */}
-							<GlassmorphicCard padding="sm">
-								<label className="flex items-center gap-3 cursor-pointer">
-									<input
-										type="checkbox"
-										checked={
-											enableRename ??
-											previewMutation.data.preview.comparisons.some((c) =>
-												c.arrApiField === "renameMovies" || c.arrApiField === "renameEpisodes"
-													? c.currentValue === "true"
-													: false,
-											)
-										}
-										onChange={(e) => setEnableRename(e.target.checked)}
-										className="h-4 w-4 rounded border-border/50 accent-current"
-										style={{ accentColor: themeGradient.from }}
-										disabled={applyMutation.isPending}
-									/>
-									<div>
-										<span className="text-sm font-medium">Enable file renaming</span>
-										<p className="text-xs text-muted-foreground">
-											{serviceType === "RADARR"
-												? "Sets renameMovies — allows Radarr to rename movie files"
-												: "Sets renameEpisodes — allows Sonarr to rename episode files"}
-										</p>
-									</div>
-								</label>
-							</GlassmorphicCard>
+							<div className="rounded-xl border border-border/30 bg-muted/10 p-3">
+								<ToggleRow
+									label="Enable file renaming"
+									description={
+										serviceType === "RADARR"
+											? "Sets renameMovies — allows Radarr to rename movie files"
+											: "Sets renameEpisodes — allows Sonarr to rename episode files"
+									}
+									checked={
+										enableRename ??
+										previewMutation.data.preview.comparisons.some((c) =>
+											c.arrApiField === "renameMovies" || c.arrApiField === "renameEpisodes"
+												? c.currentValue === "true"
+												: false,
+										)
+									}
+									onChange={(v) => setEnableRename(v)}
+								/>
+							</div>
 
 							<PreviewTable
 								comparisons={previewMutation.data.preview.comparisons}
@@ -805,7 +798,7 @@ export function NamingManager() {
 						<NamingHistoryTable instanceId={selectedInstanceId} />
 					</Suspense>
 				) : (
-					<div className="rounded-2xl border border-dashed border-border/50 bg-card/20 backdrop-blur-xs p-12 text-center">
+					<div className="rounded-2xl border border-dashed border-border/30 bg-muted/10 p-12 text-center">
 						<History className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
 						<p className="text-lg font-medium text-foreground mb-2">Select an instance</p>
 						<p className="text-sm text-muted-foreground">

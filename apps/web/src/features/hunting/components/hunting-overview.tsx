@@ -51,8 +51,6 @@ interface HuntingOverviewProps {
  * - Theme-aware progress bars for API usage
  */
 export const HuntingOverview = ({ status, onRefresh }: HuntingOverviewProps) => {
-	const { gradient: _themeGradient } = useThemeGradient();
-
 	if (!status || status.instances.length === 0) {
 		return (
 			<PremiumEmptyState
@@ -227,8 +225,6 @@ const InstanceStatusCard = ({
 	onRefresh,
 	animationDelay = 0,
 }: InstanceStatusCardProps) => {
-	const { gradient: _themeGradient } = useThemeGradient();
-
 	const isActive = instance.huntMissingEnabled || instance.huntUpgradesEnabled;
 	const { triggerHunt, isTriggering, isCooldownError } = useManualHunt();
 	const [triggeringType, setTriggeringType] = useState<"missing" | "upgrade" | null>(null);

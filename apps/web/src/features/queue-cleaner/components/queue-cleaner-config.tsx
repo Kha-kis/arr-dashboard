@@ -15,7 +15,6 @@ import {
 	ShieldAlert,
 	ShieldCheck,
 	Snail,
-	Sparkles,
 	Target,
 	Timer,
 	Trash2,
@@ -24,7 +23,6 @@ import {
 } from "lucide-react";
 import { useCallback, useState } from "react";
 import {
-	GlassmorphicCard,
 	PremiumEmptyState,
 	PremiumSection,
 	ServiceBadge,
@@ -109,8 +107,25 @@ export const QueueCleanerConfig = () => {
 	return (
 		<div className="flex flex-col gap-6">
 			{/* Scheduler toggle */}
-			<GlassmorphicCard>
-				<div className="p-5 flex items-center justify-between">
+			<div
+				className="group relative rounded-xl overflow-hidden transition-all duration-200"
+				style={{
+					border: `1px solid ${themeGradient.from}10`,
+				}}
+			>
+				<div
+					className="absolute inset-0 pointer-events-none"
+					style={{
+						background: `linear-gradient(135deg, ${themeGradient.from}04, transparent 60%)`,
+					}}
+				/>
+				<div
+					className="absolute left-0 top-0 bottom-0 w-[3px]"
+					style={{
+						background: `linear-gradient(180deg, ${themeGradient.from}, ${themeGradient.to}70)`,
+					}}
+				/>
+				<div className="relative p-5 flex items-center justify-between">
 					<div className="flex items-center gap-3">
 						<div
 							className="flex h-9 w-9 items-center justify-center rounded-lg"
@@ -143,7 +158,7 @@ export const QueueCleanerConfig = () => {
 						Toggle
 					</Button>
 				</div>
-			</GlassmorphicCard>
+			</div>
 
 			{/* Add config for unconfigured instances */}
 			{unconfiguredInstances.length > 0 && (
@@ -213,41 +228,70 @@ const UnconfiguredInstanceCard = ({
 	const serviceGradient = getServiceGradient(instance.service);
 
 	return (
-		<GlassmorphicCard>
-			<div className="p-4 flex items-center justify-between">
-				<div className="flex items-center gap-3">
-					<div
-						className="flex h-8 w-8 items-center justify-center rounded-lg"
+		<div
+			className="group relative rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-[1px] hover:shadow-lg hover:shadow-black/10 animate-in fade-in slide-in-from-bottom-1 duration-300"
+			style={{
+				border: `1px solid ${serviceGradient.from}10`,
+			}}
+		>
+			<div
+				className="absolute inset-0 pointer-events-none"
+				style={{
+					background: `linear-gradient(135deg, ${serviceGradient.from}04, transparent 60%)`,
+				}}
+			/>
+			<div
+				className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+				style={{
+					background: `radial-gradient(ellipse at top left, ${serviceGradient.from}06, transparent 50%)`,
+				}}
+			/>
+			<div
+				className="absolute left-0 top-0 bottom-0 w-[3px]"
+				style={{
+					background: `linear-gradient(180deg, ${serviceGradient.from}60, ${serviceGradient.to}30)`,
+				}}
+			/>
+			<div className="relative flex items-center justify-between py-3.5 pl-5 pr-4">
+				<div className="flex items-center gap-2">
+					<span
+						className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider shrink-0"
 						style={{
-							background: `linear-gradient(135deg, ${serviceGradient.from}20, ${serviceGradient.to}10)`,
-							border: `1px solid ${serviceGradient.from}30`,
+							backgroundColor: `${serviceGradient.from}12`,
+							color: serviceGradient.from,
 						}}
 					>
-						<Sparkles className="h-4 w-4" style={{ color: serviceGradient.from }} />
-					</div>
+						<Plus className="h-2.5 w-2.5" />
+						New
+					</span>
 					<div>
-						<span className="text-sm font-medium text-foreground">{instance.label}</span>
-						<div className="mt-0.5">
+						<div className="flex items-center gap-2">
+							<span className="text-[14px] font-semibold text-foreground">
+								{instance.label}
+							</span>
 							<ServiceBadge service={instance.service} />
 						</div>
+						<p className="text-[11px] text-muted-foreground/40 mt-0.5">
+							Click to enable queue cleaning
+						</p>
 					</div>
 				</div>
 				<Button
 					variant="secondary"
 					size="sm"
-					className="gap-1.5"
+					className="gap-1.5 border-border/50 bg-card/50 text-xs opacity-0 group-hover:opacity-100 transition-opacity duration-200"
 					onClick={onAdd}
 					disabled={isCreating}
 				>
 					{isCreating ? (
-						<Loader2 className="h-3.5 w-3.5 animate-spin" />
+						<Loader2 className="h-3 w-3 animate-spin" />
 					) : (
-						<Plus className="h-3.5 w-3.5" />
+						<Plus className="h-3 w-3" />
 					)}
 					Configure
 				</Button>
 			</div>
-		</GlassmorphicCard>
+		</div>
 	);
 };
 
@@ -354,34 +398,50 @@ const InstanceConfigCard = ({
 
 	return (
 		<div
-			className="animate-in fade-in slide-in-from-bottom-2 duration-300"
-			style={{ animationDelay: `${animationDelay}ms`, animationFillMode: "backwards" }}
+			className="group/config relative rounded-xl overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300"
+			style={{
+				animationDelay: `${animationDelay}ms`,
+				animationFillMode: "backwards",
+				border: `1px solid ${serviceGradient.from}10`,
+			}}
 		>
-			<GlassmorphicCard>
-				{/* Accent line */}
-				<div
-					className="absolute top-0 left-0 right-0 h-0.5 rounded-t-xl"
-					style={{
-						background: `linear-gradient(90deg, ${serviceGradient.from}, ${serviceGradient.to})`,
-					}}
-				/>
+			{/* Background gradient */}
+			<div
+				className="absolute inset-0 pointer-events-none"
+				style={{
+					background: `linear-gradient(135deg, ${serviceGradient.from}03, transparent 60%)`,
+				}}
+			/>
 
-				<div className="p-5 space-y-6">
+			{/* Service accent bar */}
+			<div
+				className="absolute left-0 top-0 bottom-0 w-[3px]"
+				style={{
+					background: `linear-gradient(180deg, ${serviceGradient.from}, ${serviceGradient.to}70)`,
+				}}
+			/>
+
+				<div className="relative p-5 space-y-6">
 					{/* Header */}
 					<div className="flex items-start justify-between">
-						<div className="flex items-center gap-3">
-							<div
-								className="flex h-9 w-9 items-center justify-center rounded-lg"
+						<div className="flex items-center gap-2">
+							<span
+								className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider shrink-0"
 								style={{
-									background: `linear-gradient(135deg, ${serviceGradient.from}20, ${serviceGradient.to}10)`,
-									border: `1px solid ${serviceGradient.from}30`,
+									backgroundColor: `${serviceGradient.from}12`,
+									color: serviceGradient.from,
 								}}
 							>
-								<Sparkles className="h-4 w-4" style={{ color: serviceGradient.from }} />
-							</div>
+								<Settings className="h-2.5 w-2.5" />
+								Config
+							</span>
 							<div>
-								<h4 className="font-medium text-foreground">{config.instanceName}</h4>
-								<ServiceBadge service={config.service} />
+								<div className="flex items-center gap-2">
+									<h4 className="font-semibold text-[14px] text-foreground leading-snug">
+										{config.instanceName}
+									</h4>
+									<ServiceBadge service={config.service} />
+								</div>
 							</div>
 						</div>
 						<ToggleSwitch
@@ -393,7 +453,7 @@ const InstanceConfigCard = ({
 
 					{/* Dry Run Mode — prominently displayed */}
 					<div
-						className="flex items-center justify-between rounded-lg p-3"
+						className="flex items-center justify-between rounded-xl p-3.5 transition-colors duration-200"
 						style={{
 							backgroundColor: formData.dryRunMode
 								? SEMANTIC_COLORS.warning.bg
@@ -401,20 +461,30 @@ const InstanceConfigCard = ({
 							border: `1px solid ${formData.dryRunMode ? SEMANTIC_COLORS.warning.border : SEMANTIC_COLORS.error.border}`,
 						}}
 					>
-						<div className="flex items-center gap-2">
-							<ShieldAlert
-								className="h-4 w-4"
+						<div className="flex items-center gap-3">
+							<div
+								className="flex h-8 w-8 items-center justify-center rounded-lg shrink-0"
 								style={{
-									color: formData.dryRunMode
-										? SEMANTIC_COLORS.warning.text
-										: SEMANTIC_COLORS.error.text,
+									backgroundColor: formData.dryRunMode
+										? "rgba(245, 158, 11, 0.15)"
+										: "rgba(239, 68, 68, 0.15)",
+									border: `1px solid ${formData.dryRunMode ? "rgba(245, 158, 11, 0.2)" : "rgba(239, 68, 68, 0.2)"}`,
 								}}
-							/>
+							>
+								<ShieldAlert
+									className="h-4 w-4"
+									style={{
+										color: formData.dryRunMode
+											? SEMANTIC_COLORS.warning.text
+											: SEMANTIC_COLORS.error.text,
+									}}
+								/>
+							</div>
 							<div>
 								<span className="text-sm font-medium text-foreground">
-									{formData.dryRunMode ? "Dry Run Mode (Safe)" : "Live Mode (Removing!)"}
+									{formData.dryRunMode ? "Dry Run Mode" : "Live Mode"}
 								</span>
-								<p className="text-xs text-muted-foreground">
+								<p className="text-[11px] text-muted-foreground/60">
 									{formData.dryRunMode
 										? "Preview what would be removed without actually removing"
 										: "Items matching rules will be removed from the queue"}
@@ -522,7 +592,7 @@ const InstanceConfigCard = ({
 							max={MAX_STRIKE_DECAY_HOURS}
 							suffix="hours"
 						/>
-						<div className="text-xs text-muted-foreground p-2 rounded-md bg-card/30 border border-border/30">
+						<div className="text-[11px] text-muted-foreground/70 p-2.5 rounded-lg bg-card/20 border border-border/15">
 							Items receive strikes instead of immediate removal. After reaching max strikes, they
 							are removed. Strikes decay after the specified period of no new issues.
 						</div>
@@ -625,7 +695,7 @@ const InstanceConfigCard = ({
 							max={MAX_SEEDING_TIMEOUT_HOURS}
 							suffix="hours"
 						/>
-						<div className="text-xs text-muted-foreground p-2 rounded-md bg-card/30 border border-border/30">
+						<div className="text-[11px] text-muted-foreground/70 p-2.5 rounded-lg bg-card/20 border border-border/15">
 							Completed downloads that have been seeding longer than the timeout will be removed.
 							Useful for cleaning up finished torrents.
 						</div>
@@ -648,7 +718,7 @@ const InstanceConfigCard = ({
 							max={MAX_ESTIMATED_MULTIPLIER}
 							suffix="x"
 						/>
-						<div className="text-xs text-muted-foreground p-2 rounded-md bg-card/30 border border-border/30">
+						<div className="text-[11px] text-muted-foreground/70 p-2.5 rounded-lg bg-card/20 border border-border/15">
 							Uses the ETA from your download client. If a download was estimated to complete in 1
 							hour but is still downloading after 2 hours (2x multiplier), it will be flagged as
 							stalled.
@@ -754,27 +824,36 @@ const InstanceConfigCard = ({
 									<option value="moderate">Moderate - Include items needing manual action</option>
 									<option value="aggressive">Aggressive - Clean anything stuck</option>
 								</select>
-								<details className="text-xs text-muted-foreground">
-									<summary className="cursor-pointer hover:text-foreground transition-colors py-1">
-										What does each level clean? (click to expand)
+								<details className="text-xs text-muted-foreground group/details">
+									<summary className="cursor-pointer hover:text-foreground transition-colors py-1.5 flex items-center gap-1.5">
+										<Settings className="h-3 w-3" />
+										What does each level clean?
 									</summary>
-									<div className="mt-2 p-2.5 rounded-md bg-card/30 border border-border/30 space-y-1.5">
-										<p>
-											<span className="inline-block w-20 font-medium text-emerald-400">Safe:</span>
-											Duplicates, already exists, quality rejected, sample files, no video files
-										</p>
-										<p>
-											<span className="inline-block w-20 font-medium text-amber-400">
-												Moderate:
+									<div className="mt-2 p-3 rounded-lg bg-card/20 border border-border/20 space-y-2">
+										<div className="flex items-start gap-2">
+											<span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/15 shrink-0 mt-0.5">
+												Safe
 											</span>
-											+ manual import required, missing expected files
-										</p>
-										<p>
-											<span className="inline-block w-20 font-medium text-red-400">
-												Aggressive:
+											<span className="text-[11px]">
+												Duplicates, already exists, quality rejected, sample files, no video files
 											</span>
-											+ password protected, unpack/RAR issues
-										</p>
+										</div>
+										<div className="flex items-start gap-2">
+											<span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/15 shrink-0 mt-0.5">
+												Moderate
+											</span>
+											<span className="text-[11px]">
+												+ manual import required, missing expected files
+											</span>
+										</div>
+										<div className="flex items-start gap-2">
+											<span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-500/10 text-red-400 border border-red-500/15 shrink-0 mt-0.5">
+												Aggressive
+											</span>
+											<span className="text-[11px]">
+												+ password protected, unpack/RAR issues
+											</span>
+										</div>
 									</div>
 								</details>
 							</div>
@@ -874,10 +953,21 @@ const InstanceConfigCard = ({
 					</RuleSection>
 
 					{/* Removal Options */}
-					<div className="space-y-3 pt-2 border-t border-border/30">
-						<h5 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-							Removal Options
-						</h5>
+					<div className="space-y-3 pt-4 border-t border-border/20">
+						<div className="flex items-center gap-2">
+							<div
+								className="flex h-6 w-6 items-center justify-center rounded-md"
+								style={{
+									backgroundColor: `${serviceGradient.from}10`,
+									border: `1px solid ${serviceGradient.from}15`,
+								}}
+							>
+								<Trash2 className="h-3 w-3" style={{ color: serviceGradient.from }} />
+							</div>
+							<h5 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+								Removal Options
+							</h5>
+						</div>
 						<ToggleRow
 							label="Remove from download client"
 							description="Also remove the download from qBittorrent/SABnzbd etc."
@@ -909,10 +999,21 @@ const InstanceConfigCard = ({
 					</div>
 
 					{/* Safety Settings */}
-					<div className="space-y-3 pt-2 border-t border-border/30">
-						<h5 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-							Safety Limits
-						</h5>
+					<div className="space-y-3 pt-4 border-t border-border/20">
+						<div className="flex items-center gap-2">
+							<div
+								className="flex h-6 w-6 items-center justify-center rounded-md"
+								style={{
+									backgroundColor: `${serviceGradient.from}10`,
+									border: `1px solid ${serviceGradient.from}15`,
+								}}
+							>
+								<ShieldCheck className="h-3 w-3" style={{ color: serviceGradient.from }} />
+							</div>
+							<h5 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+								Safety Limits
+							</h5>
+						</div>
 						<ConfigInput
 							label="Max Removals Per Run"
 							description="Cap the number of items removed in a single run"
@@ -934,7 +1035,7 @@ const InstanceConfigCard = ({
 					</div>
 
 					{/* Save/Reset/Delete buttons */}
-					<div className="flex justify-between gap-2 pt-2 border-t border-border/30">
+					<div className="flex justify-between gap-2 pt-4 border-t border-border/20">
 						<Button
 							variant="secondary"
 							size="sm"
@@ -986,7 +1087,6 @@ const InstanceConfigCard = ({
 						</div>
 					</div>
 				</div>
-			</GlassmorphicCard>
-		</div>
+			</div>
 	);
 };

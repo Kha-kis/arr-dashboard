@@ -51,14 +51,31 @@ const CacheStatusCard = ({
 }) => {
 	const { gradient: themeGradient } = useThemeGradient();
 
+	const cardColor = isStale ? SEMANTIC_COLORS.warning.from : themeGradient.from;
+
 	return (
 		<article
-			className="group rounded-2xl border p-5 transition-all duration-300 hover:shadow-lg hover:shadow-black/5"
+			className="group relative rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-[1px] hover:shadow-lg hover:shadow-black/10"
 			style={{
-				backgroundColor: isStale ? SEMANTIC_COLORS.warning.bg : "rgba(var(--card), 0.3)",
-				borderColor: isStale ? SEMANTIC_COLORS.warning.border : "rgba(var(--border), 0.5)",
+				border: `1px solid ${cardColor}${isStale ? "20" : "10"}`,
 			}}
 		>
+			<div
+				className="absolute inset-0 pointer-events-none"
+				style={{ background: `linear-gradient(135deg, ${cardColor}04, transparent 60%)` }}
+			/>
+			<div
+				className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+				style={{ background: `radial-gradient(ellipse at top left, ${cardColor}06, transparent 50%)` }}
+			/>
+			<div
+				className="absolute left-0 top-0 bottom-0 w-[3px]"
+				style={{ background: isStale
+					? `linear-gradient(180deg, ${SEMANTIC_COLORS.warning.from}, ${SEMANTIC_COLORS.warning.from}70)`
+					: `linear-gradient(180deg, ${themeGradient.from}, ${themeGradient.fromLight})`
+				}}
+			/>
+			<div className="relative p-5">
 			<div className="flex items-start justify-between mb-4">
 				<div className="flex items-center gap-3">
 					<div
@@ -117,6 +134,7 @@ const CacheStatusCard = ({
 						<span className="text-foreground">{new Date(lastFetched).toLocaleString()}</span>
 					</span>
 				</div>
+			</div>
 			</div>
 		</article>
 	);

@@ -3,7 +3,6 @@
 import { ChevronLeft, ChevronRight, Film, PlayCircle, Tv } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { GlassmorphicCard } from "../../../components/layout";
 import { useOnDeck } from "../../../hooks/api/usePlex";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 
@@ -58,7 +57,7 @@ export const OnDeckWidget = ({ enabled, animationDelay = 0 }: OnDeckWidgetProps)
 			className="animate-in fade-in slide-in-from-bottom-4 duration-500"
 			style={{ animationDelay: `${animationDelay}ms`, animationFillMode: "backwards" }}
 		>
-			<GlassmorphicCard padding="none">
+			<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10">
 				<div
 					className="h-0.5 w-full rounded-t-xl"
 					style={{
@@ -177,7 +176,7 @@ export const OnDeckWidget = ({ enabled, animationDelay = 0 }: OnDeckWidgetProps)
 						</button>
 					)}
 				</div>
-			</GlassmorphicCard>
+			</div>
 		</div>
 	);
 };

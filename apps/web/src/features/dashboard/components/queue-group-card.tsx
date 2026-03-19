@@ -94,7 +94,7 @@ export const QueueGroupCard = ({
 	return (
 		<div
 			className={cn(
-				"group relative overflow-hidden rounded-xl border border-border/40 bg-card/50 backdrop-blur-xs transition-all duration-300",
+				"group relative overflow-hidden rounded-xl border border-border/40 bg-card/50 transition-all duration-300",
 				"hover:border-primary/30",
 				expanded && "shadow-xl",
 			)}

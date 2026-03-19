@@ -95,7 +95,7 @@ export function NamingHistoryTable({ instanceId }: NamingHistoryTableProps) {
 	// ── Loading ──────────────────────────────────────────────────────────
 	if (isLoading) {
 		return (
-			<div className="flex items-center justify-center p-12 rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs">
+			<div className="flex items-center justify-center p-12 rounded-2xl border border-border/30 bg-muted/10">
 				<div
 					className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
 					style={{ borderColor: `${themeGradient.from}40`, borderTopColor: "transparent" }}
@@ -129,7 +129,7 @@ export function NamingHistoryTable({ instanceId }: NamingHistoryTableProps) {
 	// ── Empty ────────────────────────────────────────────────────────────
 	if (history.length === 0) {
 		return (
-			<div className="rounded-2xl border border-dashed border-border/50 bg-card/20 backdrop-blur-xs p-12 text-center">
+			<div className="rounded-2xl border border-dashed border-border/30 bg-muted/10 p-12 text-center">
 				<History className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
 				<p className="text-lg font-medium text-foreground mb-2">No deployment history</p>
 				<p className="text-sm text-muted-foreground">Deploy naming presets to see history here</p>
@@ -140,7 +140,7 @@ export function NamingHistoryTable({ instanceId }: NamingHistoryTableProps) {
 	// ── Table ────────────────────────────────────────────────────────────
 	return (
 		<div className="space-y-4 animate-in fade-in duration-300">
-			<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs overflow-hidden">
+			<div className="rounded-2xl border border-border/30 bg-muted/10 overflow-hidden">
 				<table className="w-full">
 					<thead>
 						<tr className="border-b border-border/50">

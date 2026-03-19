@@ -4,7 +4,6 @@ import type { BackupFileInfo } from "@arr/shared";
 import { AlertCircle, Archive, Download, FileText, Loader2, Trash2, Upload } from "lucide-react";
 import { useState } from "react";
 import {
-	GlassmorphicCard,
 	PremiumEmptyState,
 	PremiumSection,
 	PremiumTable,
@@ -230,7 +229,7 @@ export const BackupListSection = ({ onRestoreComplete }: BackupListSectionProps)
 					aria-modal="true"
 					aria-labelledby="restore-backup-title"
 				>
-					<GlassmorphicCard padding="lg" className="w-full max-w-md m-4">
+					<div className="rounded-xl border border-border/30 bg-muted/10 p-6 w-full max-w-md m-4">
 						<div className="space-y-4">
 							<h3 id="restore-backup-title" className="text-lg font-semibold text-foreground">
 								Restore Backup
@@ -287,7 +286,7 @@ export const BackupListSection = ({ onRestoreComplete }: BackupListSectionProps)
 								</Button>
 							</div>
 						</div>
-					</GlassmorphicCard>
+					</div>
 				</div>
 			)}
 		</>

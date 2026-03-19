@@ -39,7 +39,7 @@ export const WatchHistoryWidget = ({ days, enabled }: WatchHistoryWidgetProps) =
 
 	if (isLoading) {
 		return (
-			<div className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-xs p-6">
+			<div className="rounded-xl border border-border/30 bg-card/30 p-6">
 				<PremiumSkeleton variant="line" className="h-5 w-40 mb-4" />
 				<div className="space-y-3">
 					{[0, 1, 2].map((i) => (
@@ -80,7 +80,7 @@ export const WatchHistoryWidget = ({ days, enabled }: WatchHistoryWidgetProps) =
 	const visibleEvents = expanded ? data.events : data.events.slice(0, INITIAL_VISIBLE);
 
 	return (
-		<div className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-xs p-6 space-y-4">
+		<div className="rounded-xl border border-border/30 bg-card/30 p-6 space-y-4">
 			<div className="flex items-center justify-between">
 				<h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
 					<Clock className="h-4 w-4" style={{ color: gradient.from }} />

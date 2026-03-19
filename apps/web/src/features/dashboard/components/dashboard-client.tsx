@@ -133,7 +133,7 @@ const ServiceStatCard = ({
 			onClick={onClick}
 			disabled={!onClick}
 			className={cn(
-				"group relative overflow-hidden rounded-2xl border border-border/50 bg-card/50 backdrop-blur-xs p-6 text-left transition-colors duration-300",
+				"group relative overflow-hidden rounded-2xl border border-border/50 bg-card/50 p-6 text-left transition-colors duration-300",
 				onClick && "cursor-pointer hover:border-border",
 				!onClick && "cursor-default",
 			)}
@@ -730,7 +730,7 @@ export const DashboardClient = () => {
 							className="animate-in fade-in slide-in-from-bottom-4 duration-500"
 							style={{ animationDelay: "550ms", animationFillMode: "backwards" }}
 						>
-							<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs overflow-hidden">
+							<div className="rounded-2xl border border-border/30 bg-muted/10 overflow-hidden">
 								<button
 									type="button"
 									onClick={() => setInstancesExpanded((v) => !v)}
@@ -833,7 +833,7 @@ export const DashboardClient = () => {
 				{/* Queue Tab */}
 				{activeTab === "queue" && (
 					<div className="animate-in fade-in duration-300">
-						<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs overflow-hidden">
+						<div className="rounded-2xl border border-border/30 bg-muted/10 overflow-hidden">
 							<div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-border/50">
 								<div className="flex items-center gap-3">
 									<div

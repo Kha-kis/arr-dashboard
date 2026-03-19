@@ -84,7 +84,7 @@ const PremiumSelect = ({
 				<SelectPrimitive.Trigger
 					className={cn(
 						"relative flex h-11 w-full min-w-[150px] items-center justify-between gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all duration-300",
-						"bg-card/60 backdrop-blur-xs text-foreground",
+						"bg-card/60 text-foreground",
 						"focus:outline-hidden focus:ring-2 focus:ring-offset-0 focus:ring-offset-transparent",
 						"data-placeholder:text-muted-foreground",
 						"disabled:cursor-not-allowed disabled:opacity-50",
@@ -305,7 +305,7 @@ export const QueueFilters = ({
 		<div className="space-y-3">
 			{/* Main filter bar */}
 			<div
-				className="relative overflow-hidden rounded-2xl border border-border/40 bg-card/50 backdrop-blur-xs transition-all duration-300"
+				className="relative overflow-hidden rounded-2xl border border-border/40 bg-card/50 transition-all duration-300"
 				style={{
 					boxShadow: filtersActive ? `0 4px 20px -4px ${themeGradient.glow}` : undefined,
 				}}

@@ -14,7 +14,7 @@ import {
 	Tv,
 } from "lucide-react";
 import { useState } from "react";
-import { FilterSelect, GlassmorphicCard } from "../../../components/layout";
+import { FilterSelect } from "../../../components/layout";
 import { Button, Input } from "../../../components/ui";
 import { usePlexAccounts, usePlexScanMutation, usePlexSections } from "../../../hooks/api/usePlex";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
@@ -252,7 +252,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 
 						{/* Sync Status Indicator */}
 						{syncStatus && (
-							<div className="flex items-center gap-2 rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs px-4 py-2 text-sm">
+							<div className="flex items-center gap-2 rounded-xl border border-border/30 bg-muted/10 px-4 py-2 text-sm">
 								{isSyncing ? (
 									<>
 										<RefreshCw
@@ -284,7 +284,10 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 			</div>
 
 			{/* Filters Card */}
-			<GlassmorphicCard padding="none" animationDelay={100} className="overflow-hidden">
+			<div
+				className="overflow-hidden rounded-xl border border-border/30 bg-muted/10 animate-in fade-in slide-in-from-bottom-4 duration-500"
+				style={{ animationDelay: "100ms", animationFillMode: "backwards" }}
+			>
 				{/* Header */}
 				<div className="flex items-center gap-3 px-6 py-4 border-b border-border/50">
 					<div
@@ -440,7 +443,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 						</div>
 					</div>
 				</div>
-			</GlassmorphicCard>
+			</div>
 		</header>
 	);
 };

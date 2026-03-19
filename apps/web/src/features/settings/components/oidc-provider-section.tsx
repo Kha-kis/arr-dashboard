@@ -17,7 +17,6 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import {
-	GlassmorphicCard,
 	PremiumEmptyState,
 	PremiumSection,
 	PremiumSkeleton,
@@ -33,6 +32,7 @@ import {
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { ToggleSwitch } from "../../../components/layout/config-primitives";
 
 /**
  * Premium OIDC Provider Section
@@ -217,7 +217,7 @@ export const OIDCProviderSection = () => {
 
 				{/* No Provider - Show Create Form or Empty State */}
 				{!provider && (
-					<GlassmorphicCard padding="lg">
+					<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
 						{showCreateForm ? (
 							<div className="space-y-6">
 								<div className="flex items-center gap-3">
@@ -324,16 +324,12 @@ export const OIDCProviderSection = () => {
 									</div>
 
 									<div className="sm:col-span-2">
-										<label className="flex items-center gap-2 cursor-pointer">
-											<input
-												type="checkbox"
-												checked={formData.enabled}
-												onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
-												className="h-4 w-4 rounded border-border bg-card/30"
-											/>
-											<span className="text-sm text-foreground">Enable provider</span>
-										</label>
-									</div>
+									<ToggleSwitch
+										label="Enable provider"
+										checked={formData.enabled}
+										onChange={(v) => setFormData({ ...formData, enabled: v })}
+									/>
+								</div>
 								</div>
 
 								<div className="flex gap-3">
@@ -383,12 +379,12 @@ export const OIDCProviderSection = () => {
 								}
 							/>
 						)}
-					</GlassmorphicCard>
+					</div>
 				)}
 
 				{/* Provider Exists - Show Details or Edit Form */}
 				{provider && (
-					<GlassmorphicCard padding="lg">
+					<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
 						{isEditing ? (
 							<div className="space-y-6">
 								<div className="flex items-center gap-3">
@@ -478,16 +474,12 @@ export const OIDCProviderSection = () => {
 									</div>
 
 									<div className="sm:col-span-2">
-										<label className="flex items-center gap-2 cursor-pointer">
-											<input
-												type="checkbox"
-												checked={editData.enabled}
-												onChange={(e) => setEditData({ ...editData, enabled: e.target.checked })}
-												className="h-4 w-4 rounded border-border bg-card/30"
-											/>
-											<span className="text-sm text-foreground">Enable provider</span>
-										</label>
-									</div>
+									<ToggleSwitch
+										label="Enable provider"
+										checked={editData.enabled}
+										onChange={(v) => setEditData({ ...editData, enabled: v })}
+									/>
+								</div>
 								</div>
 
 								<div className="flex gap-3">
@@ -619,7 +611,7 @@ export const OIDCProviderSection = () => {
 								</div>
 							</div>
 						)}
-					</GlassmorphicCard>
+					</div>
 				)}
 			</div>
 		</PremiumSection>

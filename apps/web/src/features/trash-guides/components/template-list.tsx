@@ -306,7 +306,7 @@ export const TemplateList = ({
 			</div>
 
 			{/* Search and Sort Controls */}
-			<div className="flex flex-col gap-4 rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-4 sm:flex-row sm:items-center sm:justify-between">
+			<div className="flex flex-col gap-4 rounded-2xl border border-border/30 bg-muted/10 p-4 sm:flex-row sm:items-center sm:justify-between">
 				{/* Search Input */}
 				<div className="flex-1 max-w-md">
 					<div className="relative">
@@ -379,7 +379,7 @@ export const TemplateList = ({
 						{templates.map((template, index) => (
 							<article
 								key={template.id}
-								className="group relative flex flex-col overflow-hidden rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6 transition-all duration-300 hover:border-border hover:bg-card/50 hover:shadow-lg animate-in fade-in slide-in-from-bottom-2"
+								className="group relative flex flex-col overflow-hidden rounded-2xl border border-border/30 bg-muted/10 p-6 transition-all duration-300 hover:border-border hover:bg-card/50 hover:shadow-lg animate-in fade-in slide-in-from-bottom-2"
 								style={{
 									animationDelay: `${index * 50}ms`,
 									animationFillMode: "backwards",

@@ -170,7 +170,7 @@ export const IndexerStatsGrid = ({ stats }: { stats: IndexerStats }) => {
 	const hasHealthData = stats.healthy > 0 || stats.degraded > 0 || stats.failing > 0;
 
 	return (
-		<div className="rounded-xl border border-border/40 bg-card/20 backdrop-blur-xs overflow-hidden animate-in fade-in duration-300">
+		<div className="rounded-xl border border-border/30 bg-muted/10 overflow-hidden animate-in fade-in duration-300">
 			<div className="flex items-center overflow-x-auto scrollbar-none">
 				{/* Primary stats */}
 				<StatPill icon={Globe} label="Total" value={stats.total} />

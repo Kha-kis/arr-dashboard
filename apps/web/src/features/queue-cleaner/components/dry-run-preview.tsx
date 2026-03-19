@@ -18,7 +18,7 @@ import {
 	X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { GlassmorphicCard, ServiceBadge } from "../../../components/layout";
+import { ServiceBadge } from "../../../components/layout";
 import { Button, toast } from "../../../components/ui";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
@@ -500,7 +500,7 @@ const PreviewItemRow = ({
 	const actionColor = ACTION_COLORS[item.action] ?? DEFAULT_RULE_COLOR;
 
 	return (
-		<GlassmorphicCard padding="none">
+		<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10">
 			<button type="button" className="w-full p-3 text-left" onClick={onToggle}>
 				<div className="flex items-start gap-2">
 					{isExpanded ? (
@@ -564,7 +564,7 @@ const PreviewItemRow = ({
 					</div>
 				</div>
 			)}
-		</GlassmorphicCard>
+		</div>
 	);
 };
 
@@ -598,7 +598,7 @@ const GroupedItemRow = ({
 	const commonPrefix = findCommonPrefix(titles);
 
 	return (
-		<GlassmorphicCard padding="none">
+		<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10">
 			<button type="button" className="w-full p-3 text-left" onClick={onToggleGroup}>
 				<div className="flex items-start gap-2">
 					{isExpanded ? (
@@ -666,7 +666,7 @@ const GroupedItemRow = ({
 					</div>
 				</div>
 			)}
-		</GlassmorphicCard>
+		</div>
 	);
 };
 

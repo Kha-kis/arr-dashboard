@@ -2,7 +2,7 @@
 
 import { Bell, BellOff, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { GlassmorphicCard, StatusBadge } from "@/components/layout/premium-components";
+import { StatusBadge } from "@/components/layout/premium-components";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 import { notificationsApi } from "../../../lib/api-client/notifications";
 
@@ -113,7 +113,7 @@ export function BrowserPushCard() {
 	if (state === "unsupported") return null;
 
 	return (
-		<GlassmorphicCard padding="md">
+		<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
 			<div className="flex items-center gap-4">
 				<div
 					className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
@@ -176,6 +176,6 @@ export function BrowserPushCard() {
 					) : null}
 				</div>
 			</div>
-		</GlassmorphicCard>
+		</div>
 	);
 }

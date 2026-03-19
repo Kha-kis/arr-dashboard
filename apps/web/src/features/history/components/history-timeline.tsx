@@ -158,15 +158,26 @@ const HistoryTimelineCard = ({
 
 	return (
 		<div
-			className="group relative rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs overflow-hidden transition-all duration-200 hover:border-border/80 hover:bg-card/40 animate-in fade-in slide-in-from-bottom-2 duration-300"
+			className="group relative rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-[1px] hover:shadow-lg hover:shadow-black/10 animate-in fade-in slide-in-from-bottom-2 duration-300"
 			style={{
-				borderLeftWidth: "3px",
-				borderLeftColor: serviceGradient.from,
+				border: `1px solid ${serviceGradient.from}10`,
 				animationDelay: `${Math.min(animationIndex * 30, 300)}ms`,
 				animationFillMode: "backwards",
 			}}
 		>
-			<div className="p-4 space-y-2">
+			<div
+				className="absolute inset-0 pointer-events-none"
+				style={{ background: `linear-gradient(135deg, ${serviceGradient.from}04, transparent 60%)` }}
+			/>
+			<div
+				className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+				style={{ background: `radial-gradient(ellipse at top left, ${serviceGradient.from}06, transparent 50%)` }}
+			/>
+			<div
+				className="absolute left-0 top-0 bottom-0 w-[3px]"
+				style={{ background: `linear-gradient(180deg, ${serviceGradient.from}, ${serviceGradient.to}70)` }}
+			/>
+			<div className="relative p-4 space-y-2">
 				{/* Header: Title + Relative Time */}
 				<div className="flex items-start justify-between gap-3">
 					<div className="flex-1 min-w-0">

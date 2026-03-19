@@ -51,7 +51,7 @@ export const EmptyIndexersCard = () => {
 	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
-		<div className="relative rounded-2xl border border-dashed border-border/50 bg-card/20 backdrop-blur-xs p-12 text-center animate-in fade-in slide-in-from-bottom-4 duration-500 overflow-hidden">
+		<div className="relative rounded-2xl border border-dashed border-border/30 bg-muted/10 p-12 text-center animate-in fade-in slide-in-from-bottom-4 duration-500 overflow-hidden">
 			{/* Background orbs */}
 			<FloatingOrb color={PROWLARR_COLOR} size={120} top="-20px" left="10%" delay="0s" />
 			<FloatingOrb color={themeGradient.from} size={80} top="60%" left="75%" delay="1.5s" />

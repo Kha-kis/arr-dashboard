@@ -3,6 +3,7 @@
 import { Loader2, Save, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
+import { INPUT_BASE_CLASSES, getInputStyles } from "@/lib/theme-input-styles";
 // GradientButton doesn't accept type="submit", so we use a styled native button
 import type { NotificationChannelType } from "@arr/shared";
 import {
@@ -11,6 +12,7 @@ import {
 	useUpdateChannel,
 } from "../../../hooks/api/useNotifications";
 import { notificationsApi } from "../../../lib/api-client/notifications";
+import { ToggleSwitch } from "../../../components/layout/config-primitives";
 
 interface ChannelFormProps {
 	channelId: string | null;
@@ -98,8 +100,9 @@ export function ChannelForm({ channelId, onSave, onCancel }: ChannelFormProps) {
 						onChange={(e) => setName(e.target.value)}
 						placeholder="My Discord"
 						required
-						className="w-full rounded-md border border-border/50 bg-background/50 px-3 py-2 text-sm focus:outline-none focus:ring-2"
-						style={{ focusRingColor: gradient.from } as React.CSSProperties}
+						className={INPUT_BASE_CLASSES.input}
+						onFocus={(e) => getInputStyles(gradient).applyFocus(e.currentTarget)}
+						onBlur={(e) => getInputStyles(gradient).removeFocus(e.currentTarget)}
 					/>
 				</label>
 
@@ -112,7 +115,7 @@ export function ChannelForm({ channelId, onSave, onCancel }: ChannelFormProps) {
 								setType(e.target.value as NotificationChannelType);
 								setConfig({});
 							}}
-							className="w-full rounded-md border border-border/50 bg-background/50 px-3 py-2 text-sm"
+							className={INPUT_BASE_CLASSES.select}
 						>
 							{channelTypes.map((t) => (
 								<option key={t.type} value={t.type}>
@@ -129,14 +132,13 @@ export function ChannelForm({ channelId, onSave, onCancel }: ChannelFormProps) {
 				<div className="grid gap-4 sm:grid-cols-2">
 					{typeFields.map((field) =>
 						field.type === "boolean" ? (
-							<label key={field.key} className="flex items-center gap-2 text-sm">
-								<input
-									type="checkbox"
+							<div key={field.key}>
+								<ToggleSwitch
+									label={field.label}
 									checked={!!config[field.key]}
-									onChange={(e) => setConfig({ ...config, [field.key]: e.target.checked })}
+									onChange={(v) => setConfig({ ...config, [field.key]: v })}
 								/>
-								{field.label}
-							</label>
+							</div>
 						) : (
 							<label key={field.key} className="block">
 								<span className="text-caption text-muted-foreground mb-1 block">{field.label}</span>
@@ -151,7 +153,7 @@ export function ChannelForm({ channelId, onSave, onCancel }: ChannelFormProps) {
 												field.type === "number" ? Number(e.target.value) : e.target.value,
 										})
 									}
-									className="w-full rounded-md border border-border/50 bg-background/50 px-3 py-2 text-sm focus:outline-none"
+									className={INPUT_BASE_CLASSES.input}
 								/>
 							</label>
 						),
@@ -160,10 +162,11 @@ export function ChannelForm({ channelId, onSave, onCancel }: ChannelFormProps) {
 			)}
 
 			<div className="flex items-center justify-between pt-2">
-				<label className="flex items-center gap-2 text-sm">
-					<input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-					Enabled
-				</label>
+				<ToggleSwitch
+					label="Enabled"
+					checked={enabled}
+					onChange={(v) => setEnabled(v)}
+				/>
 
 				<button
 					type="submit"

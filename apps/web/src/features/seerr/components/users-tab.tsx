@@ -6,13 +6,13 @@ import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
 	FilterSelect,
-	GlassmorphicCard,
 	PremiumEmptyState,
 	PremiumProgress,
 	PremiumSkeleton,
 } from "../../../components/layout";
 import { Button } from "../../../components/ui";
 import { useSeerrUserQuota, useSeerrUsers } from "../../../hooks/api/useSeerr";
+import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { UserSettingsDialog } from "./user-settings-dialog";
 
 type UserSort = "displayname" | "created" | "updated" | "requests";
@@ -24,17 +24,16 @@ const SORT_OPTIONS: { value: UserSort; label: string }[] = [
 	{ value: "requests", label: "Most Requests" },
 ];
 
-function getUserTypeBadge(userType: number): { label: string; className: string } | null {
+const SEERR_GRADIENT = SERVICE_GRADIENTS.seerr;
+
+function getUserTypeBadge(userType: number): { label: string; color: string } | null {
 	switch (userType) {
 		case 1:
-			return { label: "Local", className: "bg-sky-500/10 text-sky-400 border-sky-500/20" };
+			return { label: "Local", color: "#38bdf8" }; // sky-400
 		case 2:
-			return { label: "Plex", className: "bg-amber-500/10 text-amber-400 border-amber-500/20" };
+			return { label: "Plex", color: "#e5a00d" }; // plex gold
 		case 3:
-			return {
-				label: "Jellyfin",
-				className: "bg-purple-500/10 text-purple-400 border-purple-500/20",
-			};
+			return { label: "Jellyfin", color: "#a78bfa" }; // violet-400
 		default:
 			return null;
 	}
@@ -113,65 +112,102 @@ export const UsersTab = ({ instanceId }: UsersTabProps) => {
 				return (
 					<div
 						key={user.id}
-						className="animate-in fade-in slide-in-from-bottom-2 duration-300"
-						style={{ animationDelay: `${index * 30}ms`, animationFillMode: "backwards" }}
+						className="group relative rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-[1px] hover:shadow-lg hover:shadow-black/10 animate-in fade-in slide-in-from-bottom-1 duration-300"
+						style={{
+							border: `1px solid ${SEERR_GRADIENT.from}10`,
+							animationDelay: `${index * 50}ms`,
+							animationFillMode: "backwards",
+						}}
 					>
-						<GlassmorphicCard padding="md">
-							<div className="flex items-center gap-4">
-								{/* Avatar */}
-								<div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted/30">
-									{user.avatar ? (
-										<Image
-											src={user.avatar}
-											alt={user.displayName}
-											width={40}
-											height={40}
-											className="h-full w-full object-cover"
-											unoptimized
-										/>
-									) : (
-										<Users className="h-4 w-4 text-muted-foreground" />
+						{/* Background gradient */}
+						<div
+							className="absolute inset-0 pointer-events-none"
+							style={{
+								background: `linear-gradient(135deg, ${SEERR_GRADIENT.from}04, transparent 60%)`,
+							}}
+						/>
+
+						{/* Hover glow */}
+						<div
+							className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+							style={{
+								background: `radial-gradient(ellipse at top left, ${SEERR_GRADIENT.from}06, transparent 50%)`,
+							}}
+						/>
+
+						{/* Accent bar */}
+						<div
+							className="absolute left-0 top-0 bottom-0 w-[3px]"
+							style={{
+								background: `linear-gradient(180deg, ${SEERR_GRADIENT.from}, ${SEERR_GRADIENT.to}70)`,
+							}}
+						/>
+
+						<div className="relative flex items-center gap-4 py-3.5 pl-5 pr-4">
+							{/* Avatar */}
+							<div
+								className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full ring-1 ring-white/[0.06]"
+								style={{
+									boxShadow: `0 2px 8px ${SEERR_GRADIENT.from}10`,
+									backgroundColor: user.avatar ? undefined : "rgba(255,255,255,0.04)",
+								}}
+							>
+								{user.avatar ? (
+									<Image
+										src={user.avatar}
+										alt={user.displayName}
+										width={40}
+										height={40}
+										className="h-full w-full object-cover"
+										unoptimized
+									/>
+								) : (
+									<Users className="h-4 w-4 text-muted-foreground/40" />
+								)}
+							</div>
+
+							{/* User info */}
+							<div className="min-w-0 flex-1">
+								<div className="flex items-center gap-2">
+									<h3 className="truncate text-sm font-semibold text-foreground">
+										{user.displayName}
+									</h3>
+									{typeBadge && (
+										<span
+											className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider shrink-0"
+											style={{
+												backgroundColor: `${typeBadge.color}12`,
+												color: typeBadge.color,
+												border: `1px solid ${typeBadge.color}18`,
+											}}
+										>
+											{typeBadge.label}
+										</span>
+									)}
+									{user.email && (
+										<span className="hidden sm:inline truncate text-[11px] text-muted-foreground/40">
+											{user.email}
+										</span>
 									)}
 								</div>
-
-								{/* User info */}
-								<div className="min-w-0 flex-1">
-									<div className="flex items-center gap-2">
-										<h3 className="truncate text-sm font-semibold text-foreground">
-											{user.displayName}
-										</h3>
-										{typeBadge && (
-											<span
-												className={`rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${typeBadge.className}`}
-											>
-												{typeBadge.label}
-											</span>
-										)}
-										{user.email && (
-											<span className="hidden sm:inline truncate text-xs text-muted-foreground">
-												{user.email}
-											</span>
-										)}
-									</div>
-									<p className="mt-0.5 text-xs text-muted-foreground">
-										{user.requestCount} request{user.requestCount !== 1 ? "s" : ""}
-									</p>
-								</div>
-
-								{/* Quota bars */}
-								<UserQuotaBars instanceId={instanceId} userId={user.id} />
-
-								{/* Manage button */}
-								<button
-									type="button"
-									onClick={() => setManagingUser(user)}
-									className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground"
-									title="Manage user quotas"
-								>
-									<Settings className="h-4 w-4" />
-								</button>
+								<p className="mt-0.5 text-[11px] text-muted-foreground/50">
+									{user.requestCount} request{user.requestCount !== 1 ? "s" : ""}
+								</p>
 							</div>
-						</GlassmorphicCard>
+
+							{/* Quota bars */}
+							<UserQuotaBars instanceId={instanceId} userId={user.id} />
+
+							{/* Manage button */}
+							<button
+								type="button"
+								onClick={() => setManagingUser(user)}
+								className="shrink-0 rounded-lg p-1.5 text-muted-foreground/40 transition-all hover:bg-white/[0.06] hover:text-foreground opacity-0 group-hover:opacity-100"
+								title="Manage user quotas"
+							>
+								<Settings className="h-4 w-4" />
+							</button>
+						</div>
 					</div>
 				);
 			})}

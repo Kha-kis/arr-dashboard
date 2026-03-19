@@ -334,7 +334,7 @@ export const PlexTab = () => {
 						return (
 							<div
 								key={series.name}
-								className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-xs p-4"
+								className="rounded-xl border border-border/30 bg-card/30 p-4"
 							>
 								<div className="flex items-center justify-between mb-3">
 									<h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
@@ -365,7 +365,7 @@ export const PlexTab = () => {
 			) : (
 				/* Single combined sparkline fallback */
 				combinedDailyPlays.length > 1 && (
-					<div className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-xs p-6">
+					<div className="rounded-xl border border-border/30 bg-card/30 p-6">
 						<h3 className="text-sm font-medium text-muted-foreground mb-4">
 							Plays Over Time ({timeRange} days)
 						</h3>
@@ -390,7 +390,7 @@ export const PlexTab = () => {
 
 			{/* Top Users */}
 			{topUsers.length > 0 && (
-				<div className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-xs p-6">
+				<div className="rounded-xl border border-border/30 bg-card/30 p-6">
 					<h3 className="text-sm font-medium text-muted-foreground mb-4 flex items-center gap-2">
 						<Users className="h-4 w-4" />
 						Top Users
@@ -407,7 +407,7 @@ export const PlexTab = () => {
 						return (
 							<div
 								key={section.statId}
-								className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-xs p-6"
+								className="rounded-xl border border-border/30 bg-card/30 p-6"
 							>
 								<h3 className="text-sm font-medium text-muted-foreground mb-4 flex items-center gap-2">
 									<Icon className="h-4 w-4" style={{ color: section.color }} />

@@ -2,7 +2,7 @@
 
 import { CheckCircle2, Download, Loader2 } from "lucide-react";
 import { useState } from "react";
-import { GlassmorphicCard } from "../../../components/layout";
+
 import { Button, toast } from "../../../components/ui";
 import { useCreateBackup } from "../../../hooks/api/useBackup";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
@@ -28,7 +28,7 @@ export const BackupCreateCard = () => {
 	};
 
 	return (
-		<GlassmorphicCard padding="lg">
+		<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
 			<div className="space-y-4">
 				<div className="flex items-center gap-2">
 					<div
@@ -81,6 +81,6 @@ export const BackupCreateCard = () => {
 					</div>
 				)}
 			</div>
-		</GlassmorphicCard>
+		</div>
 	);
 };

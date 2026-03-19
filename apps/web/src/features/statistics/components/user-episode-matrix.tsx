@@ -63,7 +63,7 @@ export const UserEpisodeMatrix = ({ tmdbIds, enabled }: UserEpisodeMatrixProps) 
 
 	if (isLoading) {
 		return (
-			<div className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-xs p-6">
+			<div className="rounded-xl border border-border/30 bg-card/30 p-6">
 				<PremiumSkeleton variant="line" className="h-5 w-40 mb-4" />
 				<PremiumSkeleton variant="line" className="h-[80px] w-full" />
 			</div>
@@ -85,7 +85,7 @@ export const UserEpisodeMatrix = ({ tmdbIds, enabled }: UserEpisodeMatrixProps) 
 	}
 
 	return (
-		<div className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-xs p-6 space-y-4">
+		<div className="rounded-xl border border-border/30 bg-card/30 p-6 space-y-4">
 			<h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
 				<Grid3X3 className="h-4 w-4" style={{ color: gradient.from }} />
 				Episode Completion by User

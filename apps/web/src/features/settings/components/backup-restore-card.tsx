@@ -2,7 +2,7 @@
 
 import { Loader2, Upload } from "lucide-react";
 import { useState } from "react";
-import { GlassmorphicCard } from "../../../components/layout";
+
 import { Button, Input, toast } from "../../../components/ui";
 import { useReadBackupFile, useRestoreBackup } from "../../../hooks/api/useBackup";
 import { getErrorMessage } from "../../../lib/error-utils";
@@ -47,7 +47,7 @@ export const BackupRestoreCard = ({ onRestoreComplete }: BackupRestoreCardProps)
 	};
 
 	return (
-		<GlassmorphicCard padding="lg">
+		<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
 			<div className="space-y-4">
 				<div className="flex items-center gap-2">
 					<div
@@ -134,6 +134,6 @@ export const BackupRestoreCard = ({ onRestoreComplete }: BackupRestoreCardProps)
 					</form>
 				)}
 			</div>
-		</GlassmorphicCard>
+		</div>
 	);
 };

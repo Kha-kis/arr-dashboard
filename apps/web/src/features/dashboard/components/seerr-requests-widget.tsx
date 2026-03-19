@@ -2,7 +2,6 @@
 
 import { Check, CheckCircle, ChevronRight, Clock, Film, Inbox, Loader2, Tv, X } from "lucide-react";
 import Link from "next/link";
-import { GlassmorphicCard } from "../../../components/layout";
 import { useSeerrRequestCount } from "../../../hooks/api/useSeerr";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 
@@ -28,7 +27,7 @@ export const SeerrRequestsWidget = ({
 				style={{ animationDelay: `${animationDelay}ms`, animationFillMode: "backwards" }}
 			>
 				<Link href="/requests" className="block">
-					<GlassmorphicCard padding="none" className="group transition-all hover:border-border/80">
+					<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10 group transition-all hover:border-border/80">
 						<div
 							className="h-0.5 w-full rounded-t-xl"
 							style={{
@@ -50,7 +49,7 @@ export const SeerrRequestsWidget = ({
 								<p className="text-xs text-muted-foreground">Could not load request counts</p>
 							</div>
 						</div>
-					</GlassmorphicCard>
+					</div>
 				</Link>
 			</div>
 		);
@@ -80,7 +79,7 @@ export const SeerrRequestsWidget = ({
 			style={{ animationDelay: `${animationDelay}ms`, animationFillMode: "backwards" }}
 		>
 			<Link href="/requests" className="block">
-				<GlassmorphicCard padding="none" className="group transition-all hover:border-border/80">
+				<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10 group transition-all hover:border-border/80">
 					{/* Accent line */}
 					<div
 						className="h-0.5 w-full rounded-t-xl"
@@ -136,7 +135,7 @@ export const SeerrRequestsWidget = ({
 							))}
 						</div>
 					</div>
-				</GlassmorphicCard>
+				</div>
 			</Link>
 		</div>
 	);

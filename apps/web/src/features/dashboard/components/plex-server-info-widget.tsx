@@ -1,7 +1,6 @@
 "use client";
 
 import { HardDrive, Server } from "lucide-react";
-import { GlassmorphicCard } from "../../../components/layout";
 import { usePlexIdentity } from "../../../hooks/api/usePlex";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 
@@ -43,7 +42,7 @@ export const PlexServerInfoWidget = ({
 				className="animate-in fade-in slide-in-from-bottom-4 duration-500"
 				style={{ animationDelay: `${animationDelay}ms`, animationFillMode: "backwards" }}
 			>
-				<GlassmorphicCard padding="none">
+				<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10">
 					<div
 						className="h-0.5 w-full rounded-t-xl"
 						style={{
@@ -76,7 +75,7 @@ export const PlexServerInfoWidget = ({
 							</div>
 						</div>
 					</div>
-				</GlassmorphicCard>
+				</div>
 			</div>
 		);
 	}
@@ -87,7 +86,7 @@ export const PlexServerInfoWidget = ({
 			className="animate-in fade-in slide-in-from-bottom-4 duration-500"
 			style={{ animationDelay: `${animationDelay}ms`, animationFillMode: "backwards" }}
 		>
-			<GlassmorphicCard padding="none">
+			<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10">
 				<div
 					className="h-0.5 w-full rounded-t-xl"
 					style={{
@@ -142,7 +141,7 @@ export const PlexServerInfoWidget = ({
 						);
 					})}
 				</div>
-			</GlassmorphicCard>
+			</div>
 		</div>
 	);
 };

@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertCircle, Calendar, Check, ExternalLink, Key, Loader2, User } from "lucide-react";
-import { GlassmorphicCard, PremiumSection } from "../../../components/layout";
+import { PremiumSection } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
@@ -210,7 +210,7 @@ export const AccountTab = ({
 			</PremiumSection>
 
 			{/* Account details sidebar */}
-			<GlassmorphicCard padding="lg">
+			<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
 				<div className="space-y-4">
 					<div className="flex items-center gap-2">
 						<div
@@ -272,7 +272,7 @@ export const AccountTab = ({
 						</div>
 					</div>
 				</div>
-			</GlassmorphicCard>
+			</div>
 		</div>
 	);
 };

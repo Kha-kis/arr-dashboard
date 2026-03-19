@@ -49,7 +49,7 @@ export const IndexerInstanceCard = ({
 	const [incognitoMode] = useIncognitoMode();
 
 	return (
-		<article className="rounded-xl border border-border/30 bg-card/15 backdrop-blur-xs overflow-hidden">
+		<article className="rounded-xl border border-border/30 bg-card/15 overflow-hidden">
 			{/* Slim header */}
 			<header className="flex items-center justify-between px-4 py-3 border-b border-border/20">
 				<div className="flex items-center gap-3">

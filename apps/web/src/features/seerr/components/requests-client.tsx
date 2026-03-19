@@ -131,7 +131,7 @@ export const RequestsClient = () => {
 				actions={
 					<div className="flex items-center gap-3">
 						{seerrStatus && (
-							<div className="hidden sm:flex items-center gap-2 rounded-lg border border-border/50 bg-card/30 px-3 py-1.5 text-xs text-muted-foreground">
+							<div className="hidden sm:flex items-center gap-2 rounded-lg border border-border/30 bg-muted/10 px-3 py-1.5 text-xs text-muted-foreground">
 								<span>v{seerrStatus.version}</span>
 								{seerrStatus.updateAvailable && (
 									<span className="rounded-md bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-400">

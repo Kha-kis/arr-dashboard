@@ -2,7 +2,6 @@
 
 import { BarChart3, Loader2 } from "lucide-react";
 import { useState } from "react";
-import { GlassmorphicCard } from "@/components/layout/premium-components";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 import { useNotificationStatistics } from "../../../hooks/api/useNotifications";
 
@@ -54,11 +53,11 @@ export function NotificationStatistics() {
 
 	if (!stats) {
 		return (
-			<GlassmorphicCard padding="lg">
+			<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
 				<p className="text-center text-muted-foreground py-8">
 					No statistics available yet. Statistics appear after notifications are sent.
 				</p>
-			</GlassmorphicCard>
+			</div>
 		);
 	}
 
@@ -108,7 +107,7 @@ export function NotificationStatistics() {
 
 			{/* Daily trend */}
 			{dailyTrend.length > 0 && (
-				<GlassmorphicCard padding="md">
+				<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
 					<div className="flex items-center gap-2 mb-4">
 						<BarChart3 className="h-4 w-4" style={{ color: gradient.from }} />
 						<h3 className="font-semibold text-sm">Daily Trend</h3>
@@ -166,12 +165,12 @@ export function NotificationStatistics() {
 							);
 						})}
 					</div>
-				</GlassmorphicCard>
+				</div>
 			)}
 
 			{/* Per-channel health */}
 			{perChannel.length > 0 && (
-				<GlassmorphicCard padding="md">
+				<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
 					<h3 className="font-semibold text-sm mb-4">Channel Health</h3>
 					<div className="space-y-3">
 						{perChannel.map((ch) => {
@@ -204,12 +203,12 @@ export function NotificationStatistics() {
 							);
 						})}
 					</div>
-				</GlassmorphicCard>
+				</div>
 			)}
 
 			{/* Per-event breakdown table */}
 			{perEventType.length > 0 && (
-				<GlassmorphicCard padding="none">
+				<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10">
 					<div className="px-4 py-3 border-b border-border/30">
 						<h3 className="font-semibold text-sm">Event Breakdown</h3>
 					</div>
@@ -259,7 +258,7 @@ export function NotificationStatistics() {
 							</tbody>
 						</table>
 					</div>
-				</GlassmorphicCard>
+				</div>
 			)}
 		</div>
 	);
@@ -275,9 +274,9 @@ function SummaryCard({
 	color: string;
 }) {
 	return (
-		<GlassmorphicCard padding="md">
+		<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
 			<p className="text-xs text-muted-foreground mb-1">{label}</p>
 			<p className={`text-2xl font-bold ${color}`}>{value}</p>
-		</GlassmorphicCard>
+		</div>
 	);
 }

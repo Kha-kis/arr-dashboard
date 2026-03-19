@@ -2,7 +2,7 @@
 
 import { ChevronLeft, ChevronRight, Loader2, X } from "lucide-react";
 import { useState } from "react";
-import { GlassmorphicCard, StatusBadge } from "@/components/layout/premium-components";
+import { StatusBadge } from "@/components/layout/premium-components";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 import { useNotificationLogs } from "../../../hooks/api/useNotifications";
 
@@ -128,16 +128,16 @@ export function NotificationLogTable() {
 					<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
 				</div>
 			) : !data || data.logs.length === 0 ? (
-				<GlassmorphicCard padding="lg">
+				<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
 					<p className="text-center text-muted-foreground py-8">
 						{hasFilters
 							? "No logs match the current filters."
 							: "No notification logs yet. Logs appear after notifications are sent."}
 					</p>
-				</GlassmorphicCard>
+				</div>
 			) : (
 				<>
-					<GlassmorphicCard padding="none">
+					<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10">
 						<div className="overflow-x-auto">
 							<table className="w-full text-sm">
 								<thead>
@@ -192,7 +192,7 @@ export function NotificationLogTable() {
 								</tbody>
 							</table>
 						</div>
-					</GlassmorphicCard>
+					</div>
 
 					{/* Pagination */}
 					{data.total > data.limit && (

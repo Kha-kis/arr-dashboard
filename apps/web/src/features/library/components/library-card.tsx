@@ -22,7 +22,7 @@ import {
 	Tv,
 } from "lucide-react";
 import { memo } from "react";
-import { GlassmorphicCard, ServiceBadge, StatusBadge } from "../../../components/layout";
+import { ServiceBadge, StatusBadge } from "../../../components/layout";
 import { Button } from "../../../components/ui";
 import {
 	getLinuxInstanceName,
@@ -412,7 +412,7 @@ export const LibraryCard = memo(function LibraryCard({
 	}
 
 	return (
-		<GlassmorphicCard padding="md" className="flex flex-col gap-3">
+		<div className="rounded-xl border border-border/30 bg-muted/10 p-4 flex flex-col gap-3">
 			<div className="flex gap-3">
 				<button
 					type="button"
@@ -765,6 +765,6 @@ export const LibraryCard = memo(function LibraryCard({
 					</div>
 				)}
 			</div>
-		</GlassmorphicCard>
+		</div>
 	);
 });

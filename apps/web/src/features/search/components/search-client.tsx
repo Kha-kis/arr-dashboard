@@ -168,7 +168,7 @@ export const SearchClient = () => {
 
 			{noIndexers ? (
 				<div
-					className="rounded-2xl border-2 border-dashed border-border/50 bg-card/20 p-8 text-center animate-in fade-in slide-in-from-bottom-4 duration-500"
+					className="rounded-2xl border-2 border-dashed border-border/30 bg-muted/10 p-8 text-center animate-in fade-in slide-in-from-bottom-4 duration-500"
 					style={{ animationDelay: "100ms", animationFillMode: "backwards" }}
 				>
 					<div

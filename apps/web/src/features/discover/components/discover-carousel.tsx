@@ -157,7 +157,7 @@ export const DiscoverCarousel: React.FC<DiscoverCarouselProps> = ({
 				style={{ animationDelay: `${animationDelay}ms`, animationFillMode: "backwards" }}
 			>
 				<SectionHeader />
-				<div className="flex items-center gap-3 rounded-xl border border-border/50 bg-card/30 px-4 py-6 text-sm text-muted-foreground">
+				<div className="flex items-center gap-3 rounded-xl border border-border/30 bg-muted/10 px-4 py-6 text-sm text-muted-foreground">
 					<AlertCircle className="h-4 w-4 shrink-0" />
 					<span>Failed to load {title.toLowerCase()}</span>
 				</div>

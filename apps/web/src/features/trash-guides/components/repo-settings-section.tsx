@@ -196,7 +196,7 @@ export const RepoSettingsSection = () => {
 	return (
 		<div className="space-y-6 animate-in fade-in duration-300">
 			{/* Current Repository Display */}
-			<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6">
+			<div className="rounded-2xl border border-border/30 bg-muted/10 p-6">
 				<div className="flex items-start gap-4">
 					<div
 						className="flex h-12 w-12 items-center justify-center rounded-xl shrink-0"
@@ -322,7 +322,7 @@ export const RepoSettingsSection = () => {
 
 			{/* Override Report — only visible in supplementary mode */}
 			{isCustom && settingsData?.settings?.customRepoMode === "supplementary" && (
-				<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6 animate-in fade-in duration-300">
+				<div className="rounded-2xl border border-border/30 bg-muted/10 p-6 animate-in fade-in duration-300">
 					<div className="flex items-start justify-between gap-4">
 						<div>
 							<h4 className="text-base font-semibold text-foreground flex items-center gap-2">
@@ -425,7 +425,7 @@ export const RepoSettingsSection = () => {
 								return (
 									<div
 										key={configType}
-										className="rounded-lg border border-border/40 bg-card/20 p-3"
+										className="rounded-lg border border-border/30 bg-muted/10 p-3"
 									>
 										<div className="flex items-center justify-between">
 											<span className="text-sm font-medium text-foreground">{label}</span>
@@ -506,7 +506,7 @@ export const RepoSettingsSection = () => {
 			)}
 
 			{/* Configure Custom Repository Form */}
-			<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6">
+			<div className="rounded-2xl border border-border/30 bg-muted/10 p-6">
 				<h4 className="text-base font-semibold text-foreground mb-1">
 					Configure Custom Repository
 				</h4>
@@ -801,7 +801,7 @@ export const RepoSettingsSection = () => {
 
 			{/* Reset to Official */}
 			{isCustom && (
-				<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6 animate-in fade-in duration-300">
+				<div className="rounded-2xl border border-border/30 bg-muted/10 p-6 animate-in fade-in duration-300">
 					<div className="flex items-start justify-between gap-4">
 						<div>
 							<h4 className="text-base font-semibold text-foreground">

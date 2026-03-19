@@ -12,7 +12,7 @@ import {
 	Server,
 } from "lucide-react";
 import { useState } from "react";
-import { GlassmorphicCard, ServiceBadge } from "../../../components/layout/premium-components";
+import { ServiceBadge } from "../../../components/layout/premium-components";
 import {
 	useApplyQualitySize,
 	useQualitySizeMapping,
@@ -177,11 +177,11 @@ export function QualitySizeManager() {
 						Loading instances...
 					</div>
 				) : arrInstances.length === 0 ? (
-					<GlassmorphicCard padding="md">
+					<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
 						<p className="text-sm text-muted-foreground">
 							No Radarr or Sonarr instances configured. Add an instance in Settings first.
 						</p>
-					</GlassmorphicCard>
+					</div>
 				) : (
 					<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 						{arrInstances.map((instance, index) => {
@@ -241,11 +241,11 @@ export function QualitySizeManager() {
 							Loading presets...
 						</div>
 					) : !presetsData?.presets?.length ? (
-						<GlassmorphicCard padding="md">
+						<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
 							<p className="text-sm text-muted-foreground">
 								No quality size presets found for {serviceType}. Try refreshing the cache.
 							</p>
-						</GlassmorphicCard>
+						</div>
 					) : (
 						<div className="flex flex-wrap gap-3">
 							{presetsData.presets.map((preset) => {
@@ -332,7 +332,7 @@ export function QualitySizeManager() {
 			{/* Phase 3a: Default reset confirmation */}
 			{selectedPresetId === DEFAULT_PRESET_ID && (
 				<div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-					<GlassmorphicCard padding="md">
+					<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
 						<div className="flex items-start gap-3">
 							<RotateCcw className="h-5 w-5 shrink-0 text-muted-foreground mt-0.5" />
 							<div>
@@ -346,7 +346,7 @@ export function QualitySizeManager() {
 								</p>
 							</div>
 						</div>
-					</GlassmorphicCard>
+					</div>
 					<button
 						type="button"
 						onClick={handleApply}
@@ -415,7 +415,7 @@ export function QualitySizeManager() {
 							Comparing quality definitions...
 						</div>
 					) : previewData?.comparisons ? (
-						<GlassmorphicCard padding="none">
+						<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10">
 							<div className="overflow-x-auto">
 								<table className="w-full text-sm">
 									<thead>
@@ -515,7 +515,7 @@ export function QualitySizeManager() {
 									</tbody>
 								</table>
 							</div>
-						</GlassmorphicCard>
+						</div>
 					) : null}
 
 					{/* Apply Button */}

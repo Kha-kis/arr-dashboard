@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { GlassmorphicCard, PremiumSection } from "../../../components/layout";
+import { PremiumSection } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import { apiRequest } from "../../../lib/api-client/base";
 import { getErrorMessage } from "../../../lib/error-utils";
@@ -107,7 +107,7 @@ function SystemInfoCard({
 }) {
 	return (
 		<div
-			className="flex items-start gap-3 p-4 rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs transition-all duration-300 hover:border-border/80 animate-in fade-in slide-in-from-bottom-2"
+			className="flex items-start gap-3 p-4 rounded-xl border border-border/30 bg-muted/10 transition-all duration-300 hover:border-border/80 animate-in fade-in slide-in-from-bottom-2"
 			style={{
 				animationDelay: `${animationDelay}ms`,
 				animationFillMode: "backwards",
@@ -320,7 +320,7 @@ export function ValidationHealthSection({
 					</p>
 				)}
 				{integrationNames.length > 0 && (
-					<GlassmorphicCard padding="none">
+					<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10">
 						<div className="overflow-x-auto">
 							<table className="w-full text-sm">
 								<thead>
@@ -490,7 +490,7 @@ export function ValidationHealthSection({
 								</tbody>
 							</table>
 						</div>
-					</GlassmorphicCard>
+					</div>
 				)}
 
 				{/* Schema Drift Section */}
@@ -520,7 +520,7 @@ function SchemaDriftSection({
 	if (integrationNames.length === 0) return null;
 
 	return (
-		<GlassmorphicCard padding="none">
+		<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10">
 			<button
 				type="button"
 				onClick={() => setIsOpen(!isOpen)}
@@ -641,7 +641,7 @@ function SchemaDriftSection({
 					)}
 				</div>
 			)}
-		</GlassmorphicCard>
+		</div>
 	);
 }
 
@@ -694,7 +694,7 @@ function QuarantineSection() {
 	};
 
 	return (
-		<GlassmorphicCard padding="none">
+		<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10">
 			<button
 				type="button"
 				onClick={() => setIsOpen(!isOpen)}
@@ -860,6 +860,6 @@ function QuarantineSection() {
 					)}
 				</div>
 			)}
-		</GlassmorphicCard>
+		</div>
 	);
 }
