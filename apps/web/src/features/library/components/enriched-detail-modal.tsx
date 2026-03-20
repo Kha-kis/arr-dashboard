@@ -143,11 +143,12 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 	const serviceColor = SERVICE_COLORS[item.service];
 
 	// Title and overview — prefer Seerr TMDB data, fall back to ARR
-	const title = details
+	const rawTitle = details
 		? isMovie
 			? (details as NonNullable<typeof movieQuery.data>).title
 			: (details as NonNullable<typeof tvQuery.data>).name
 		: item.title;
+	const title = incognitoMode ? getLinuxIsoName(rawTitle) : rawTitle;
 	const overview = details?.overview ?? item.overview;
 
 	// Backdrop
@@ -342,13 +343,13 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 				</button>
 
 				{/* Hero backdrop */}
-				<BackdropHero backdropPath={backdropPath} title={title} />
+				{!incognitoMode && <BackdropHero backdropPath={backdropPath} title={title} />}
 
 				{/* Content */}
 				<div className="relative -mt-24 px-6 pb-6 space-y-6">
 					{/* Header: poster + info */}
 					<div className="flex gap-5">
-						{hasPoster && (
+						{!incognitoMode && hasPoster && (
 							<div className="shrink-0 w-[120px] rounded-xl overflow-hidden border border-border/50 shadow-xl hidden sm:block">
 								<PosterImage
 									tmdbPosterPath={tmdbPosterPath}
@@ -480,7 +481,7 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 					)}
 
 					{/* Overview */}
-					{overview && (
+					{!incognitoMode && overview && (
 						<div className="space-y-2">
 							<h3 className="text-xs uppercase tracking-wider font-medium text-muted-foreground">
 								Overview

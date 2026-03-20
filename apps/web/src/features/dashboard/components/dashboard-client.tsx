@@ -37,7 +37,7 @@ import { useDashboardStatisticsQuery } from "../../../hooks/api/useDashboard";
 import { useNowPlaying } from "../../../hooks/api/usePlex";
 import { useTautulliActivity } from "../../../hooks/api/useTautulli";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { useIncognitoMode } from "../../../lib/incognito";
+import { anonymizeHealthMessage, getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
 const ManualImportModal = lazy(() => import("../../manual-import/components/manual-import-modal"));
@@ -516,7 +516,7 @@ export const DashboardClient = () => {
 									backgroundClip: "text",
 								}}
 							>
-								Hi, {currentUser.username}
+								Hi, {incognitoMode ? getLinuxUsername(currentUser.username) : currentUser.username}
 							</span>
 						</h1>
 						<p className="text-muted-foreground max-w-xl">
@@ -676,7 +676,7 @@ export const DashboardClient = () => {
 											description={description}
 											subtitle={subtitle}
 											warningLine={warningLine}
-											healthWarning={healthWarning}
+											healthWarning={healthWarning ? (incognitoMode ? anonymizeHealthMessage(healthWarning) : healthWarning) : undefined}
 											detail={instanceNote}
 											onClick={cardOnClick}
 											animationDelay={100 + index * 50}

@@ -12,6 +12,7 @@ import {
 	useSeerrRequests,
 	useSeerrUsers,
 } from "../../../hooks/api/useSeerr";
+import { getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 import { RequestCard } from "./request-card";
 
 type RequestFilter =
@@ -51,6 +52,7 @@ interface RequestsHistoryTabProps {
 }
 
 export const RequestsHistoryTab = ({ instanceId, onSelectRequest }: RequestsHistoryTabProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	const [statusFilter, setStatusFilter] = useState<RequestFilter>("all");
 	const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
 	const [userFilter, setUserFilter] = useState<string>("all");
@@ -94,11 +96,11 @@ export const RequestsHistoryTab = ({ instanceId, onSelectRequest }: RequestsHist
 		for (const user of usersData.results) {
 			base.push({
 				value: String(user.id),
-				label: user.displayName || user.email || `User #${user.id}`,
+				label: incognitoMode ? getLinuxUsername(user.displayName || user.email || `User #${user.id}`) : (user.displayName || user.email || `User #${user.id}`),
 			});
 		}
 		return base;
-	}, [usersData]);
+	}, [usersData, incognitoMode]);
 
 	// Client-side type filter (Overseerr API doesn't support type filtering)
 	const allRequests = data?.results ?? [];

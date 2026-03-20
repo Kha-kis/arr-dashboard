@@ -6,6 +6,7 @@ import { useDeviceAnalytics } from "../../../hooks/api/usePlex";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
 import { Smartphone } from "lucide-react";
+import { useIncognitoMode, getLinuxDevice } from "../../../lib/incognito";
 
 // ============================================================================
 // Donut Chart (consistent with codec-chart)
@@ -83,6 +84,7 @@ interface DeviceChartProps {
 
 export const DeviceChart = ({ days, enabled }: DeviceChartProps) => {
 	const { gradient } = useThemeGradient();
+	const [incognitoMode] = useIncognitoMode();
 	const { data, isLoading, isError } = useDeviceAnalytics(days, enabled);
 
 	const platformSegments = useMemo((): DonutSegment[] => {
@@ -90,11 +92,11 @@ export const DeviceChart = ({ days, enabled }: DeviceChartProps) => {
 		return data.platforms
 			.slice(0, 6)
 			.map((p: { platform: string; sessions: number }, i: number) => ({
-				label: p.platform,
+				label: incognitoMode ? "Linux" : p.platform,
 				value: p.sessions,
 				color: DONUT_COLORS[i % DONUT_COLORS.length]!,
 			}));
-	}, [data]);
+	}, [data, incognitoMode]);
 
 	if (isLoading) {
 		return (
@@ -168,9 +170,9 @@ export const DeviceChart = ({ days, enabled }: DeviceChartProps) => {
 								>
 									<span
 										className="w-24 truncate text-muted-foreground text-right"
-										title={player.player}
+										title={incognitoMode ? getLinuxDevice(player.player) : player.player}
 									>
-										{player.player}
+										{incognitoMode ? getLinuxDevice(player.player) : player.player}
 									</span>
 									<div className="flex-1 h-4 rounded-full bg-muted/30 overflow-hidden">
 										<div

@@ -115,6 +115,83 @@ export function getLinuxUrl(_url: string): string {
 	return "http://localhost";
 }
 
+// Generic username based on hash
+const LINUX_USERNAMES = [
+	"tux",
+	"penguin",
+	"root",
+	"admin",
+	"sysadmin",
+	"devops",
+	"operator",
+	"maintainer",
+];
+
+export function getLinuxUsername(value: string): string {
+	if (!value) return LINUX_USERNAMES[0]!;
+	let hashSum = 0;
+	for (let i = 0; i < value.length; i++) {
+		hashSum += value.charCodeAt(i);
+	}
+	return LINUX_USERNAMES[hashSum % LINUX_USERNAMES.length]!;
+}
+
+// Generic device/player name
+const LINUX_DEVICES = [
+	"ThinkPad X1",
+	"Raspberry Pi",
+	"Dell Server",
+	"NUC Gateway",
+	"Workstation",
+	"Home Terminal",
+];
+
+export function getLinuxDevice(value: string): string {
+	if (!value) return LINUX_DEVICES[0]!;
+	let hashSum = 0;
+	for (let i = 0; i < value.length; i++) {
+		hashSum += value.charCodeAt(i);
+	}
+	return LINUX_DEVICES[hashSum % LINUX_DEVICES.length]!;
+}
+
+// Generic Plex library section names
+const LINUX_SECTIONS = [
+	"Distributions",
+	"Server ISOs",
+	"Desktop ISOs",
+	"Live Images",
+	"ARM Builds",
+	"Source Archives",
+];
+
+export function getLinuxSectionName(value: string): string {
+	if (!value) return LINUX_SECTIONS[0]!;
+	let hashSum = 0;
+	for (let i = 0; i < value.length; i++) {
+		hashSum += value.charCodeAt(i);
+	}
+	return LINUX_SECTIONS[hashSum % LINUX_SECTIONS.length]!;
+}
+
+// Generic server friendly name
+export function getLinuxServerName(value: string): string {
+	if (!value) return "linux-server";
+	let hashSum = 0;
+	for (let i = 0; i < value.length; i++) {
+		hashSum += value.charCodeAt(i);
+	}
+	const names = ["linux-server", "media-server", "home-server", "nas-server", "plex-host"];
+	return names[hashSum % names.length]!;
+}
+
+// Anonymize email addresses
+export function getLinuxEmail(email: string): string {
+	if (!email) return "user@linux.local";
+	const username = getLinuxUsername(email);
+	return `${username}@linux.local`;
+}
+
 // Anonymize health messages by replacing indexer names and show/movie names
 export function anonymizeHealthMessage(message: string): string {
 	// Replace patterns like "IndexerName (Prowlarr), OtherIndexer (Prowlarr)" with "LinuxTracker, LinuxTracker"
@@ -142,6 +219,13 @@ export function anonymizeHealthMessage(message: string): string {
 			const isoName = getLinuxIsoName(name.trim());
 			return `${isoName} (${idType} [redacted])`;
 		},
+	);
+
+	// Replace download client names in health messages
+	// Pattern: "Download client ClientName is set to..." or "Download client ClientName places..."
+	anonymized = anonymized.replace(
+		/Download client\s+(\S+)/gi,
+		"Download client Transmission",
 	);
 
 	// Replace any remaining quoted names with generic alternatives
@@ -207,6 +291,27 @@ export function anonymizeStatusMessage(message: string): string {
 		/(for|from|in|of)\s+['"]?[A-Z][A-Za-z0-9\s.'\-:]+['"]?\s*(S\d|Season|\()/gi,
 		(_, prefix) => `${prefix} linux-distribution (`,
 	);
+
+	// Lidarr: "Couldn't find similar album for [/path/to/Artist - Album (Year) [FLAC]]"
+	// Handle nested brackets by matching [/path...] including any nested [...] groups
+	anonymized = anonymized.replace(
+		/\[\/(?:[^\[\]]|\[[^\]]*\])*\](?:\])?/g,
+		`[${LINUX_SAVE_PATHS[0]}/linux-distribution-v1.0-x86_64]`,
+	);
+
+	// Lidarr: Music release names "Artist - Album (Year) {Catalog} [FLAC-CD]"
+	// Requires a music-release marker: (YYYY) suffix or [FLAC/MP3/etc] bracket
+	anonymized = anonymized.replace(
+		/[A-Za-z0-9\s.,'&!?]+\s+-\s+[A-Za-z0-9\s.,'&!?]+(?:\s*\(\d{4}\))[^"\n]*/g,
+		"linux-distribution-v1.0-x86_64",
+	);
+	anonymized = anonymized.replace(
+		/[A-Za-z0-9\s.,'&!?]+\s+-\s+[A-Za-z0-9\s.,'&!?]+\s*\[(?:FLAC|MP3|AAC|ALAC|OGG|WAV|WEB)[^\]]*\][^"\n]*/gi,
+		"linux-distribution-v1.0-x86_64",
+	);
+
+	// Replace any remaining quoted strings with generic name
+	anonymized = anonymized.replace(/"([^"]+)"/g, '"linux-distribution-v1.0-x86_64"');
 
 	// Keep generic messages as-is
 	// "Episode has a TBA title and recently aired" - this is generic enough

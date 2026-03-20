@@ -496,6 +496,8 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			sourceProfileName,
 			sourceInstanceLabel,
 			profileConfig,
+			matchedTrashProfileId,
+			matchedScoreSet,
 		} = request.body as {
 			serviceType: "RADARR" | "SONARR";
 			trashId: string;
@@ -521,7 +523,21 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				items?: unknown[];
 				language?: unknown;
 			};
+			/** TRaSH profile ID if the cloned profile was matched to a TRaSH Guides profile */
+			matchedTrashProfileId?: string;
+			/** Score set from the matched TRaSH profile */
+			matchedScoreSet?: string;
 		};
+
+		// Sanitize optional TRaSH match fields (type-safe since body uses `as` assertion)
+		const safeMatchedTrashProfileId =
+			typeof matchedTrashProfileId === "string" && matchedTrashProfileId.length <= 100
+				? matchedTrashProfileId
+				: undefined;
+		const safeMatchedScoreSet =
+			typeof matchedScoreSet === "string" && matchedScoreSet.length <= 100
+				? matchedScoreSet
+				: undefined;
 
 		if (!serviceType || !templateName || !sourceInstanceId || !sourceProfileId) {
 			return reply.status(400).send({
@@ -606,7 +622,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const qualityProfileMetadata = {
 			language: completeQualityProfile.language?.name,
 			cutoff: completeQualityProfile.cutoffQuality?.name,
-			trash_score_set: undefined,
+			trash_score_set: safeMatchedScoreSet,
 		};
 
 		// Build the template config
@@ -627,7 +643,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				templateDescription || `Cloned from ${sourceInstanceLabel}: ${sourceProfileName}`,
 			serviceType,
 			config: templateConfig,
-			sourceQualityProfileTrashId: trashId,
+			sourceQualityProfileTrashId: safeMatchedTrashProfileId || trashId,
 			sourceQualityProfileName: sourceProfileName,
 			trashGuidesCommitHash: currentCommitHash || undefined,
 		});

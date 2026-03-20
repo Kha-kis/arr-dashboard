@@ -25,6 +25,7 @@ import {
 	StatusBadge,
 } from "../../../components/layout";
 import { Pagination } from "../../../components/ui";
+import { getLinuxIndexer, getLinuxInstanceName, getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useHuntingLogs } from "../hooks/useHuntingLogs";
 import type { HuntLog } from "../lib/hunting-types";
@@ -39,6 +40,7 @@ import type { HuntLog } from "../lib/hunting-types";
  * - Theme-aware status badges
  */
 export const HuntingActivity = () => {
+	const [incognitoMode] = useIncognitoMode();
 	const [typeFilter, setTypeFilter] = useState<string>("all");
 	const [statusFilter, setStatusFilter] = useState<string>("all");
 	const [page, setPage] = useState(1);
@@ -189,6 +191,7 @@ interface ActivityLogEntryProps {
 }
 
 const ActivityLogEntry = ({ log, animationDelay = 0 }: ActivityLogEntryProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	const [expanded, setExpanded] = useState(false);
 
 	const Icon = log.huntType === "missing" ? Search : ArrowUpCircle;
@@ -266,7 +269,7 @@ const ActivityLogEntry = ({ log, animationDelay = 0 }: ActivityLogEntryProps) =>
 					<div className="text-left min-w-0">
 						<div className="flex items-center gap-2 flex-wrap">
 							<span className="font-semibold text-[14px] text-foreground leading-snug">
-								{log.instanceName}
+								{incognitoMode ? getLinuxInstanceName(log.instanceName) : log.instanceName}
 							</span>
 							<ServiceBadge service={log.service} />
 							<StatusBadge status={statusInfo.status} icon={StatusIcon}>
@@ -367,12 +370,12 @@ const ActivityLogEntry = ({ log, animationDelay = 0 }: ActivityLogEntryProps) =>
 											border: `1px solid ${SEMANTIC_COLORS.success.border}`,
 										}}
 									>
-										<span className="font-medium text-foreground flex-1">{item.title}</span>
+										<span className="font-medium text-foreground flex-1">{incognitoMode ? getLinuxIsoName(item.title) : item.title}</span>
 										{item.quality && (
 											<StatusBadge status="success">{item.quality}</StatusBadge>
 										)}
 										{item.indexer && (
-											<span className="text-muted-foreground">{item.indexer}</span>
+											<span className="text-muted-foreground">{incognitoMode ? getLinuxIndexer(item.indexer) : item.indexer}</span>
 										)}
 										{item.size && (
 											<span className="text-muted-foreground flex items-center gap-1">

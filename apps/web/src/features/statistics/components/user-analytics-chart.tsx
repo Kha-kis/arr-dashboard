@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useUserAnalytics } from "../../../hooks/api/usePlex";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { useIncognitoMode, getLinuxUsername } from "../../../lib/incognito";
 import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
 import { Clock, Users } from "lucide-react";
 
@@ -68,10 +69,12 @@ const UserDailySparkline = ({
 	dailyBreakdown,
 	topUsers,
 	colors,
+	incognitoMode,
 }: {
 	dailyBreakdown: Array<{ date: string; userSessions: Record<string, number> }>;
 	topUsers: string[];
 	colors: string[];
+	incognitoMode: boolean;
 }) => {
 	if (dailyBreakdown.length < 2 || topUsers.length === 0) return null;
 
@@ -132,7 +135,7 @@ const UserDailySparkline = ({
 							className="h-2 w-2 rounded-full"
 							style={{ backgroundColor: colors[i % colors.length] }}
 						/>
-						{user}
+						{incognitoMode ? getLinuxUsername(user) : user}
 					</div>
 				))}
 			</div>
@@ -163,6 +166,7 @@ interface UserAnalyticsChartProps {
 
 export const UserAnalyticsChart = ({ days, enabled }: UserAnalyticsChartProps) => {
 	const { gradient } = useThemeGradient();
+	const [incognitoMode] = useIncognitoMode();
 	const { data, isLoading, isError } = useUserAnalytics(days, enabled);
 
 	const userColors = useMemo(
@@ -180,12 +184,12 @@ export const UserAnalyticsChart = ({ days, enabled }: UserAnalyticsChartProps) =
 		if (!data?.users) return [];
 		return data.users.map(
 			(u: { username: string; totalSessions: number; estimatedWatchTimeMinutes: number }) => ({
-				label: u.username,
+				label: incognitoMode ? getLinuxUsername(u.username) : u.username,
 				value: u.totalSessions,
 				secondaryLabel: formatWatchTime(u.estimatedWatchTimeMinutes),
 			}),
 		);
-	}, [data]);
+	}, [data, incognitoMode]);
 
 	const topUsers = useMemo(
 		() => data?.users.slice(0, 5).map((u: { username: string }) => u.username) ?? [],
@@ -256,6 +260,7 @@ export const UserAnalyticsChart = ({ days, enabled }: UserAnalyticsChartProps) =
 					dailyBreakdown={data.dailyBreakdown}
 					topUsers={topUsers}
 					colors={userColors}
+					incognitoMode={incognitoMode}
 				/>
 			)}
 		</div>

@@ -18,6 +18,7 @@ import { PremiumSkeleton } from "../../../components/layout";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useTautulliPlaysByDate, useTautulliStats } from "../../../hooks/api/useTautulli";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { useIncognitoMode, getLinuxUsername, getLinuxIsoName, getLinuxSectionName, getLinuxDevice } from "../../../lib/incognito";
 import { Sparkline, MiniStatCard } from "./chart-primitives";
 import { TranscodeChart } from "./transcode-chart";
 import { BandwidthChart } from "./bandwidth-chart";
@@ -112,6 +113,7 @@ const TIME_RANGES = [7, 14, 30] as const;
 export const PlexTab = () => {
 	const [timeRange, setTimeRange] = useState<number>(30);
 	const { gradient } = useThemeGradient();
+	const [incognitoMode] = useIncognitoMode();
 
 	const statsQuery = useTautulliStats(timeRange);
 	const playsQuery = useTautulliPlaysByDate(timeRange);
@@ -173,11 +175,11 @@ export const PlexTab = () => {
 		return [...stats.userStats]
 			.sort((a: { totalPlays: number }, b: { totalPlays: number }) => b.totalPlays - a.totalPlays)
 			.map((u: { friendlyName: string; totalPlays: number; totalDuration: number }) => ({
-				label: u.friendlyName,
+				label: incognitoMode ? getLinuxUsername(u.friendlyName) : u.friendlyName,
 				value: u.totalPlays,
 				secondaryLabel: formatDuration(u.totalDuration),
 			}));
-	}, [stats]);
+	}, [stats, incognitoMode]);
 
 	// Categorize home stats by statId prefix into meaningful groups
 	// Tautulli returns stat_ids like: top_movies, popular_movies, top_tv, popular_tv,
@@ -217,14 +219,23 @@ export const PlexTab = () => {
 					title: s.statTitle, // Use the human-readable title from Tautulli API
 					icon: style.icon,
 					color: style.color,
-					items: s.rows.map((r: TautulliHomeStatRow) => ({
-						label: isPlatform ? r.platform || r.title : r.title,
+					items: s.rows.map((r: TautulliHomeStatRow) => {
+						const isUser = s.statId.includes("user");
+						const rawLabel = isPlatform ? (r.platform || r.title) : r.title;
+						const anonLabel = isPlatform
+							? getLinuxDevice(rawLabel)
+							: isUser
+								? getLinuxUsername(rawLabel)
+								: getLinuxIsoName(rawLabel);
+						return {
+						label: incognitoMode ? anonLabel : rawLabel,
 						value: r.totalPlays,
 						secondaryLabel: r.totalDuration > 0 ? formatDuration(r.totalDuration) : undefined,
-					})),
+						};
+					}),
 				};
 			});
-	}, [stats]);
+	}, [stats, incognitoMode]);
 
 	const isLoading = statsQuery.isLoading || playsQuery.isLoading;
 	const isError = statsQuery.isError && playsQuery.isError;
@@ -411,7 +422,7 @@ export const PlexTab = () => {
 							>
 								<h3 className="text-sm font-medium text-muted-foreground mb-4 flex items-center gap-2">
 									<Icon className="h-4 w-4" style={{ color: section.color }} />
-									{section.title}
+									{incognitoMode ? getLinuxSectionName(section.title) : section.title}
 								</h3>
 								<BarChart items={section.items} color={section.color} />
 							</div>

@@ -21,6 +21,7 @@ import { Button } from "../../../components/ui";
 import { useSeerrMovieDetails, useSeerrTvDetails } from "../../../hooks/api/useSeerr";
 import { useFocusTrap } from "../../../hooks/useFocusTrap";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getLinuxIsoName, getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 import { RATING_COLOR } from "../../../lib/theme-gradients";
 import {
 	CastSection,
@@ -93,6 +94,7 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 	onRetry,
 	onDelete,
 }) => {
+	const [incognitoMode] = useIncognitoMode();
 	const { gradient: themeGradient } = useThemeGradient();
 	const focusTrapRef = useFocusTrap<HTMLDivElement>(true, onClose);
 	const isMovie = request.type === "movie";
@@ -106,19 +108,20 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 	const isDetailsLoading = isMovie ? movieQuery.isLoading : tvQuery.isLoading;
 
 	// Derived display values
-	const title = details
+	const rawTitle = details
 		? isMovie
 			? (details as NonNullable<typeof movieQuery.data>).title
 			: (details as NonNullable<typeof tvQuery.data>).name
 		: (request.media.title ?? `${isMovie ? "Movie" : "Series"} #${tmdbId}`);
+	const title = incognitoMode ? getLinuxIsoName(rawTitle) : rawTitle;
 
 	const releaseDate = isMovie
 		? (details as NonNullable<typeof movieQuery.data>)?.releaseDate
 		: (details as NonNullable<typeof tvQuery.data>)?.firstAirDate;
 	const year = releaseDate ? new Date(releaseDate).getFullYear() : null;
 
-	const backdropUrl = getSeerrImageUrl(details?.backdropPath, "w1280");
-	const posterUrl = getSeerrImageUrl(details?.posterPath ?? request.media.posterPath, "w342");
+	const backdropUrl = incognitoMode ? null : getSeerrImageUrl(details?.backdropPath, "w1280");
+	const posterUrl = incognitoMode ? null : getSeerrImageUrl(details?.posterPath ?? request.media.posterPath, "w342");
 
 	const voteAverage = details
 		? (isMovie
@@ -289,7 +292,7 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 							{/* Requester info */}
 							<div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
 								<span className="flex items-center gap-1.5">
-									{request.requestedBy.avatar ? (
+									{request.requestedBy.avatar && !incognitoMode ? (
 										/* eslint-disable-next-line @next/next/no-img-element */
 										<img
 											src={request.requestedBy.avatar}
@@ -300,7 +303,7 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 										<User className="h-3.5 w-3.5" />
 									)}
 									<span className="font-medium text-foreground/80">
-										{request.requestedBy.displayName}
+										{incognitoMode ? getLinuxUsername(request.requestedBy.displayName) : request.requestedBy.displayName}
 									</span>
 								</span>
 								<span>{formatRelativeTime(request.createdAt)}</span>
@@ -312,7 +315,7 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 											: request.status === SEERR_REQUEST_STATUS.DECLINED
 												? "Declined"
 												: "Modified"}{" "}
-										by {request.modifiedBy.displayName}
+										by {incognitoMode ? getLinuxUsername(request.modifiedBy.displayName) : request.modifiedBy.displayName}
 									</span>
 								)}
 							</div>
@@ -385,7 +388,7 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 					)}
 
 					{/* Overview */}
-					{details?.overview && (
+					{!incognitoMode && details?.overview && (
 						<div className="space-y-2">
 							<h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
 								Overview

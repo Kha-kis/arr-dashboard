@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRecentlyAdded } from "../../../hooks/api/usePlex";
+import { getLinuxIsoName, getLinuxSectionName, useIncognitoMode } from "../../../lib/incognito";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 
 const plexGradient = SERVICE_GRADIENTS.plex;
@@ -30,6 +31,7 @@ interface RecentlyAddedWidgetProps {
 }
 
 export const RecentlyAddedWidget = ({ enabled, animationDelay = 0 }: RecentlyAddedWidgetProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	const { data, isLoading, isError } = useRecentlyAdded(20, enabled);
 	const [failedThumbs, setFailedThumbs] = useState<Set<string>>(new Set());
 	const scrollRef = useRef<HTMLDivElement>(null);
@@ -107,6 +109,8 @@ export const RecentlyAddedWidget = ({ enabled, animationDelay = 0 }: RecentlyAdd
 								const thumbKey = `${item.instanceId}-${item.tmdbId}`;
 								const hasThumb = item.thumb && !failedThumbs.has(thumbKey);
 								const libraryHref = item.tmdbId ? `/library?tmdbId=${item.tmdbId}` : "/library";
+								const displayTitle = incognitoMode ? getLinuxIsoName(item.title) : item.title;
+								const displaySection = incognitoMode && item.sectionTitle ? getLinuxSectionName(item.sectionTitle) : item.sectionTitle;
 
 								return (
 									<Link
@@ -125,10 +129,10 @@ export const RecentlyAddedWidget = ({ enabled, animationDelay = 0 }: RecentlyAdd
 												boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
 											}}
 										>
-											{hasThumb ? (
+											{hasThumb && !incognitoMode ? (
 												<Image
 													src={getPlexThumbUrl(item.instanceId, item.thumb!)}
-													alt={item.title}
+													alt={displayTitle}
 													width={140}
 													height={210}
 													className="absolute inset-0 w-full h-full object-cover"
@@ -144,12 +148,12 @@ export const RecentlyAddedWidget = ({ enabled, animationDelay = 0 }: RecentlyAdd
 										</div>
 										<p
 											className="text-sm font-medium text-foreground line-clamp-2 leading-snug mb-0.5"
-											title={item.title}
+											title={displayTitle}
 										>
-											{item.title}
+											{displayTitle}
 										</p>
 										<span className="text-xs text-muted-foreground truncate block">
-											{item.sectionTitle}
+											{displaySection}
 										</span>
 									</Link>
 								);

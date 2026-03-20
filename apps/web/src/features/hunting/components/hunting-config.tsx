@@ -38,6 +38,7 @@ import {
 } from "../../../components/ui/dialog";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import {
 	useClearSearchHistory,
@@ -72,6 +73,7 @@ import { HuntingFilters } from "./hunting-filters";
  * - Filter controls
  */
 export const HuntingConfig = () => {
+	const [incognitoMode] = useIncognitoMode();
 	const { gradient: themeGradient } = useThemeGradient();
 
 	const { configs, instances, isLoading, error, refetch } = useHuntingConfigs();
@@ -271,6 +273,7 @@ interface InstanceConfigCardProps {
 }
 
 const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceConfigCardProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	const { gradient: themeGradient } = useThemeGradient();
 
 	// Confirmation dialog state
@@ -377,7 +380,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 
 	return (
 		<PremiumCard
-			title={config.instanceName}
+			title={incognitoMode ? getLinuxInstanceName(config.instanceName) : config.instanceName}
 			description="Configure hunting settings for this instance"
 			animationDelay={animationDelay}
 			showHeader={false}
@@ -396,7 +399,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 					</div>
 					<div>
 						<div className="flex items-center gap-2">
-							<h3 className="font-semibold">{config.instanceName}</h3>
+							<h3 className="font-semibold">{incognitoMode ? getLinuxInstanceName(config.instanceName) : config.instanceName}</h3>
 							<ServiceBadge service={config.service} />
 						</div>
 						<p className="text-sm text-muted-foreground">
@@ -623,7 +626,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 								</DialogTitle>
 								<DialogDescription>
 									Are you sure you want to clear the search history for{" "}
-									<span className="font-medium text-foreground">{config.instanceName}</span>?
+									<span className="font-medium text-foreground">{incognitoMode ? getLinuxInstanceName(config.instanceName) : config.instanceName}</span>?
 								</DialogDescription>
 							</DialogHeader>
 							<div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-sm text-muted-foreground">
@@ -692,6 +695,7 @@ const UnconfiguredInstanceCard = ({
 	onConfigure,
 	animationDelay = 0,
 }: UnconfiguredInstanceCardProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	const { createConfig, isCreating } = useUpdateHuntConfig();
 	const serviceGradient = getServiceGradient(service);
 
@@ -752,7 +756,7 @@ const UnconfiguredInstanceCard = ({
 					</span>
 					<div>
 						<div className="flex items-center gap-2">
-							<span className="font-semibold text-[14px] text-foreground">{instanceName}</span>
+							<span className="font-semibold text-[14px] text-foreground">{incognitoMode ? getLinuxInstanceName(instanceName) : instanceName}</span>
 							<ServiceBadge service={service} />
 						</div>
 						<p className="text-[11px] text-muted-foreground/40 mt-0.5">

@@ -6,6 +6,7 @@ import { useQualityScore } from "../../../hooks/api/usePlex";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
 import { Gauge } from "lucide-react";
+import { useIncognitoMode, getLinuxUsername } from "../../../lib/incognito";
 
 // ============================================================================
 // Circular Gauge (0-100)
@@ -131,6 +132,7 @@ interface QualityScoreChartProps {
 
 export const QualityScoreChart = ({ days, enabled }: QualityScoreChartProps) => {
 	const { gradient } = useThemeGradient();
+	const [incognitoMode] = useIncognitoMode();
 	const { data, isLoading, isError } = useQualityScore(days, enabled);
 
 	const scoreColor = useMemo(() => {
@@ -233,9 +235,9 @@ export const QualityScoreChart = ({ days, enabled }: QualityScoreChartProps) => 
 										className="h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
 										style={{ backgroundColor: `${gradient.from}20`, color: gradient.from }}
 									>
-										{user.username.charAt(0).toUpperCase()}
+										{(incognitoMode ? getLinuxUsername(user.username) : user.username).charAt(0).toUpperCase()}
 									</div>
-									<span className="w-20 truncate text-muted-foreground">{user.username}</span>
+									<span className="w-20 truncate text-muted-foreground">{incognitoMode ? getLinuxUsername(user.username) : user.username}</span>
 									<div className="flex-1 h-3 rounded-full bg-muted/30 overflow-hidden">
 										<div
 											className="h-full rounded-full transition-all duration-500"

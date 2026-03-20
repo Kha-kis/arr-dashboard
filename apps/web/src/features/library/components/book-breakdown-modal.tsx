@@ -17,6 +17,7 @@ import { Button } from "../../../components/ui";
 import { useBooksQuery } from "../../../hooks/api/useLibrary";
 import { useFocusTrap } from "../../../hooks/useFocusTrap";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { formatBytes } from "../lib/library-utils";
 
@@ -88,6 +89,7 @@ export const BookBreakdownModal = ({
 	pendingActionKey,
 }: BookBreakdownModalProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
+	const [incognitoMode] = useIncognitoMode();
 	const [expandedBooks, setExpandedBooks] = useState<Set<number>>(new Set());
 	const focusTrapRef = useFocusTrap<HTMLDivElement>(true, onClose);
 
@@ -174,7 +176,7 @@ export const BookBreakdownModal = ({
 								{item.title}
 							</h2>
 							<div className="flex flex-wrap items-center gap-3 mt-1 text-sm text-muted-foreground">
-								<span>{item.instanceName}</span>
+								<span>{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}</span>
 								<span>•</span>
 								<span className="flex items-center gap-1">
 									<BookOpen className="h-3.5 w-3.5" />

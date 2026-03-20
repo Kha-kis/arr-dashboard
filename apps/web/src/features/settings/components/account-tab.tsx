@@ -5,6 +5,7 @@ import { PremiumSection } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 /**
@@ -56,6 +57,7 @@ export const AccountTab = ({
 	isUpdating,
 	updateResult,
 }: AccountTabProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
@@ -80,14 +82,14 @@ export const AccountTab = ({
 									username: event.target.value,
 								}))
 							}
-							placeholder={currentUser?.username ?? ""}
+							placeholder={incognitoMode ? getLinuxUsername(currentUser?.username ?? "") : (currentUser?.username ?? "")}
 							className="bg-card/30 border-border/50 focus:border-primary"
 							style={{
 								["--tw-ring-color" as string]: themeGradient.from,
 							}}
 						/>
 						<p className="text-xs text-muted-foreground">
-							Current: <span className="text-foreground">{currentUser?.username}</span>
+							Current: <span className="text-foreground">{incognitoMode ? getLinuxUsername(currentUser?.username ?? "") : currentUser?.username}</span>
 						</p>
 					</div>
 

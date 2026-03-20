@@ -160,6 +160,10 @@ export type CreateClonedTemplatePayload = {
 		language?: unknown;
 	};
 	customQualityConfig?: CustomQualityConfig;
+	/** TRaSH profile ID if the cloned profile was matched to a TRaSH Guides profile */
+	matchedTrashProfileId?: string;
+	/** Score set from the matched TRaSH profile (e.g., "default", "sqp-1") */
+	matchedScoreSet?: string;
 };
 
 // ============================================================================
