@@ -185,6 +185,10 @@ export const QualityProfileWizard = ({
 		templateDescription: "",
 		cfResolutions: undefined,
 	});
+	const [matchedTrashProfile, setMatchedTrashProfile] = useState<{
+		trashId: string;
+		scoreSet: string;
+	} | null>(null);
 	const [mounted, setMounted] = useState(false);
 
 	// Ensure we're mounted before using portal (SSR safety)
@@ -281,6 +285,7 @@ export const QualityProfileWizard = ({
 	const handleProfileSelected = (profile: QualityProfileSummary) => {
 		// For cloned profiles, go to cf-resolution first; for TRaSH profiles, go to quality config
 		const nextStep: WizardStep = isClonedProfile(profile.trashId) ? "cf-resolution" : "quality";
+		setMatchedTrashProfile(null);
 		setWizardState((prev) => ({
 			...prev,
 			currentStep: nextStep,
@@ -331,6 +336,7 @@ export const QualityProfileWizard = ({
 
 	const handleComplete = () => {
 		// Reset wizard state
+		setMatchedTrashProfile(null);
 		setWizardState({
 			currentStep: "profile",
 			selectedProfile: null,
@@ -365,6 +371,7 @@ export const QualityProfileWizard = ({
 
 	const handleClose = () => {
 		// Reset on close
+		setMatchedTrashProfile(null);
 		setWizardState({
 			currentStep: "profile",
 			selectedProfile: null,
@@ -514,6 +521,7 @@ export const QualityProfileWizard = ({
 								onComplete={handleCFResolutionComplete}
 								onBack={handleBack}
 								initialResolutions={wizardState.cfResolutions}
+								onTrashProfileMatch={setMatchedTrashProfile}
 							/>
 						)}
 
@@ -531,6 +539,7 @@ export const QualityProfileWizard = ({
 							templateId={wizardState.templateId} // Pass template ID for update
 							isEditMode={isEditMode}
 							editingTemplate={editingTemplate} // Pass template for CF group info in edit mode
+							matchedTrashProfile={matchedTrashProfile}
 							onComplete={handleComplete}
 							onBack={handleBack}
 							onEditStep={handleEditStep}

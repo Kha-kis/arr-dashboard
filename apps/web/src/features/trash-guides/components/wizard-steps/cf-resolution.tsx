@@ -57,6 +57,8 @@ interface CFResolutionProps {
 	onBack: () => void;
 	/** Pre-existing resolutions (for editing/returning to this step) */
 	initialResolutions?: ResolvedCF[];
+	/** Callback to propagate matched TRaSH profile data to the wizard */
+	onTrashProfileMatch?: (match: { trashId: string; scoreSet: string } | null) => void;
 }
 
 type FilterMode = "all" | "matched" | "unmatched";
@@ -120,6 +122,7 @@ export const CFResolution = ({
 	onComplete,
 	onBack,
 	initialResolutions,
+	onTrashProfileMatch,
 }: CFResolutionProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const [searchQuery, setSearchQuery] = useState("");
@@ -160,6 +163,19 @@ export const CFResolution = ({
 		}
 		return new Set(profileMatchData.recommendations.recommendedTrashIds);
 	}, [profileMatchData]);
+
+	// Propagate matched TRaSH profile data to parent wizard for template creation
+	useEffect(() => {
+		if (!onTrashProfileMatch) return;
+		if (profileMatchData?.matched && profileMatchData.matchedProfile) {
+			onTrashProfileMatch({
+				trashId: profileMatchData.matchedProfile.trash_id,
+				scoreSet: profileMatchData.matchedProfile.scoreSet || "",
+			});
+		} else if (profileMatchData && !profileMatchData.matched) {
+			onTrashProfileMatch(null);
+		}
+	}, [profileMatchData, onTrashProfileMatch]);
 
 	// Determine if a CF should be excluded (combines score logic and recommendation logic)
 	const shouldBeExcluded = useCallback(

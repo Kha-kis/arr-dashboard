@@ -132,6 +132,8 @@ interface TemplateCreationProps {
 	templateId?: string; // For editing existing templates
 	isEditMode?: boolean;
 	editingTemplate?: TrashTemplate; // Original template data for CF group info in edit mode
+	/** Matched TRaSH profile data from CF resolution step (cloned profiles only) */
+	matchedTrashProfile?: { trashId: string; scoreSet: string } | null;
 	onComplete: () => void;
 	onBack: () => void;
 	onEditStep?: (step: "profile" | "quality" | "customize") => void; // Quick edit navigation
@@ -143,6 +145,7 @@ export const TemplateCreation = ({
 	templateId,
 	isEditMode = false,
 	editingTemplate,
+	matchedTrashProfile,
 	onComplete,
 	onBack,
 	onEditStep,
@@ -298,6 +301,8 @@ export const TemplateCreation = ({
 						language: profileData?.language,
 					},
 					customQualityConfig: wizardState.customQualityConfig,
+					matchedTrashProfileId: matchedTrashProfile?.trashId,
+					matchedScoreSet: matchedTrashProfile?.scoreSet,
 				});
 			} else {
 				// Create new template from TRaSH Guides (trashId required)
