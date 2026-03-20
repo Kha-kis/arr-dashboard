@@ -18,6 +18,7 @@ import {
 	ServiceBadge,
 	StatusBadge,
 } from "../../../components/layout";
+import { getLinuxInstanceName, getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useQueueCleanerLogs } from "../hooks/useQueueCleanerLogs";
 import type { CleanerResultItem, QueueCleanerLog } from "../lib/queue-cleaner-types";
@@ -120,6 +121,7 @@ interface LogEntryRowProps {
 }
 
 const LogEntryRow = ({ log, isExpanded, onToggle, animationDelay }: LogEntryRowProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	const serviceGradient = getServiceGradient(log.service);
 	const hasDetails =
 		(log.cleanedItems && log.cleanedItems.length > 0) ||
@@ -201,7 +203,7 @@ const LogEntryRow = ({ log, isExpanded, onToggle, animationDelay }: LogEntryRowP
 							Clean
 						</span>
 						<span className="text-[14px] font-semibold text-foreground truncate leading-snug">
-							{log.instanceName}
+							{incognitoMode ? getLinuxInstanceName(log.instanceName) : log.instanceName}
 						</span>
 						<ServiceBadge service={log.service} />
 						{log.isDryRun && (
@@ -281,7 +283,7 @@ const LogEntryRow = ({ log, isExpanded, onToggle, animationDelay }: LogEntryRowP
 											}}
 										>
 											<span className="text-xs text-foreground truncate flex-1">
-												{item.title}
+												{incognitoMode ? getLinuxIsoName(item.title) : item.title}
 											</span>
 											<span className="text-[10px] text-muted-foreground ml-2 shrink-0">
 												{item.reason}
@@ -313,7 +315,7 @@ const LogEntryRow = ({ log, isExpanded, onToggle, animationDelay }: LogEntryRowP
 											}}
 										>
 											<span className="text-xs text-foreground truncate flex-1">
-												{item.title}
+												{incognitoMode ? getLinuxIsoName(item.title) : item.title}
 											</span>
 											<div className="flex items-center gap-2 ml-2 shrink-0">
 												{item.strikeCount !== undefined &&
@@ -353,7 +355,7 @@ const LogEntryRow = ({ log, isExpanded, onToggle, animationDelay }: LogEntryRowP
 											}}
 										>
 											<span className="text-xs text-foreground truncate flex-1">
-												{item.title}
+												{incognitoMode ? getLinuxIsoName(item.title) : item.title}
 											</span>
 											<span className="text-[10px] text-muted-foreground ml-2 shrink-0">
 												{item.reason}

@@ -4,7 +4,7 @@ import { Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCurrentUser, useLogoutMutation } from "../../hooks/api/useAuth";
-import { useIncognitoMode } from "../../lib/incognito";
+import { getLinuxUsername, useIncognitoMode } from "../../lib/incognito";
 import { Button } from "../ui/button";
 
 export const TopBar = () => {
@@ -58,11 +58,11 @@ export const TopBar = () => {
 
 							<div className="relative h-9 w-9 rounded-full bg-linear-to-br from-primary to-accent text-white flex items-center justify-center shadow-md ring-1 ring-white/10">
 								<span className="text-sm font-semibold">
-									{user.username[0]?.toUpperCase() ?? "U"}
+									{(incognitoMode ? getLinuxUsername(user.username) : user.username)[0]?.toUpperCase() ?? "U"}
 								</span>
 							</div>
 							<div className="text-right relative">
-								<p className="text-sm font-medium text-foreground">{user.username}</p>
+								<p className="text-sm font-medium text-foreground">{incognitoMode ? getLinuxUsername(user.username) : user.username}</p>
 							</div>
 						</div>
 						<Button

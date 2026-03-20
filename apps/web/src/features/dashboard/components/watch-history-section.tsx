@@ -6,6 +6,7 @@ import { useState } from "react";
 import { PremiumSkeleton } from "../../../components/layout";
 import { Button } from "../../../components/ui";
 import { useWatchHistory } from "../../../hooks/api/useTautulli";
+import { getLinuxIsoName, getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 
 // ============================================================================
@@ -37,10 +38,12 @@ const plexGradient = SERVICE_GRADIENTS.plex;
 // ============================================================================
 
 const HistoryRow = ({ item, index }: { item: TautulliWatchHistoryItem; index: number }) => {
+	const [incognitoMode] = useIncognitoMode();
 	const Icon = MEDIA_ICONS[item.mediaType] ?? Film;
-	const displayTitle = item.grandparentTitle
+	const rawTitle = item.grandparentTitle
 		? `${item.grandparentTitle} — ${item.title}`
 		: item.title;
+	const displayTitle = incognitoMode ? getLinuxIsoName(rawTitle) : rawTitle;
 
 	return (
 		<div
@@ -65,11 +68,11 @@ const HistoryRow = ({ item, index }: { item: TautulliWatchHistoryItem; index: nu
 			<div className="flex-1 min-w-0">
 				<p className="text-sm font-medium text-foreground truncate">{displayTitle}</p>
 				<div className="flex items-center gap-2 text-xs text-muted-foreground">
-					<span>{item.user}</span>
+					<span>{incognitoMode ? getLinuxUsername(item.user) : item.user}</span>
 					{item.platform && (
 						<>
 							<span className="text-muted-foreground/30">·</span>
-							<span>{item.platform}</span>
+							<span>{incognitoMode ? "Linux" : item.platform}</span>
 						</>
 					)}
 				</div>

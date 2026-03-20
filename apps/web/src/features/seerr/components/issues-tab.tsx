@@ -24,6 +24,7 @@ import {
 	useSeerrIssues,
 	useUpdateSeerrIssueStatus,
 } from "../../../hooks/api/useSeerr";
+import { getLinuxIsoName, getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import {
 	formatRelativeTime,
@@ -76,6 +77,7 @@ interface IssuesTabProps {
 }
 
 export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	const PAGE_SIZE = 50;
 	const [filter, setFilter] = useState<IssueFilter>("open");
 	const [sort, setSort] = useState<IssueSort>("added");
@@ -238,7 +240,7 @@ export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 											backgroundColor: posterUrl ? undefined : "rgba(255,255,255,0.04)",
 										}}
 									>
-										{posterUrl ? (
+										{posterUrl && !incognitoMode ? (
 											<Image
 												src={posterUrl}
 												alt={issue.media.title ?? "Media"}
@@ -276,7 +278,7 @@ export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 												</span>
 											)}
 											<span className="text-[11px] text-muted-foreground/40">
-												by {issue.createdBy.displayName}
+												by {incognitoMode ? getLinuxUsername(issue.createdBy.displayName) : issue.createdBy.displayName}
 											</span>
 											<span className="text-[11px] text-muted-foreground/40">
 												{formatRelativeTime(issue.createdAt)}
@@ -292,7 +294,7 @@ export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 										{/* Title + status */}
 										<div className="flex items-center gap-2 flex-wrap">
 											<h3 className="truncate text-[14px] font-semibold text-foreground leading-snug">
-												{issue.media.title ?? `Issue #${issue.id}`}
+												{incognitoMode ? getLinuxIsoName(issue.media.title ?? `Issue #${issue.id}`) : (issue.media.title ?? `Issue #${issue.id}`)}
 											</h3>
 											<StatusBadge status={getIssueStatusVariant(issue.status)}>
 												{getIssueStatusLabel(issue.status)}
@@ -305,7 +307,7 @@ export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 												{issue.comments.map((comment) => (
 													<div key={comment.id} className="text-xs">
 														<span className="font-medium text-foreground">
-															{comment.user.displayName}
+															{incognitoMode ? getLinuxUsername(comment.user.displayName) : comment.user.displayName}
 														</span>
 														<span className="ml-1.5 text-muted-foreground/40">
 															{formatRelativeTime(comment.createdAt)}

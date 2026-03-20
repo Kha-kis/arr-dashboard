@@ -5,6 +5,7 @@ import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useWatchHistory } from "../../../hooks/api/usePlex";
 import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
 import { ChevronDown, ChevronUp, Clock, MonitorPlay } from "lucide-react";
+import { useIncognitoMode, getLinuxUsername, getLinuxIsoName } from "../../../lib/incognito";
 
 // ============================================================================
 // Time Formatting
@@ -34,6 +35,7 @@ interface WatchHistoryWidgetProps {
 
 export const WatchHistoryWidget = ({ days, enabled }: WatchHistoryWidgetProps) => {
 	const { gradient } = useThemeGradient();
+	const [incognitoMode] = useIncognitoMode();
 	const { data, isLoading, isError } = useWatchHistory(days, 20, enabled);
 	const [expanded, setExpanded] = useState(false);
 
@@ -115,18 +117,18 @@ export const WatchHistoryWidget = ({ days, enabled }: WatchHistoryWidgetProps) =
 								className="h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
 								style={{ backgroundColor: `${gradient.from}20`, color: gradient.from }}
 							>
-								{event.user.charAt(0).toUpperCase()}
+								{(incognitoMode ? getLinuxUsername(event.user) : event.user).charAt(0).toUpperCase()}
 							</div>
 
 							{/* Content */}
 							<div className="flex-1 min-w-0">
-								<p className="text-sm font-medium truncate">{event.title}</p>
+								<p className="text-sm font-medium truncate">{incognitoMode ? getLinuxIsoName(event.title) : event.title}</p>
 								<p className="text-[10px] text-muted-foreground flex items-center gap-2">
-									<span>{event.user}</span>
+									<span>{incognitoMode ? getLinuxUsername(event.user) : event.user}</span>
 									{event.platform && (
 										<>
 											<span className="text-border">·</span>
-											<span>{event.platform}</span>
+											<span>{incognitoMode ? "Linux" : event.platform}</span>
 										</>
 									)}
 									{event.videoDecision && (

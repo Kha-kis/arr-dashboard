@@ -2,6 +2,7 @@
 
 import { HardDrive, Server } from "lucide-react";
 import { usePlexIdentity } from "../../../hooks/api/usePlex";
+import { getLinuxServerName, useIncognitoMode } from "../../../lib/incognito";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 
 const plexGradient = SERVICE_GRADIENTS.plex;
@@ -32,6 +33,7 @@ export const PlexServerInfoWidget = ({
 	animationDelay = 0,
 	variant = "compact",
 }: PlexServerInfoWidgetProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	const { data, isLoading, isError } = usePlexIdentity(enabled);
 
 	if (!enabled || isLoading || isError || !data?.servers?.length) return null;
@@ -66,7 +68,7 @@ export const PlexServerInfoWidget = ({
 									const ver = parsePlexVersion(server.version);
 									return (
 										<p key={server.instanceId} className="text-xs text-muted-foreground">
-											{server.friendlyName || server.instanceName}
+											{incognitoMode ? getLinuxServerName(server.friendlyName || server.instanceName) : (server.friendlyName || server.instanceName)}
 											{" · "}v{ver.display}
 											{server.platform && ` · ${server.platform}`}
 										</p>
@@ -126,7 +128,7 @@ export const PlexServerInfoWidget = ({
 								<HardDrive className="h-5 w-5 text-muted-foreground" />
 								<div className="flex-1 min-w-0">
 									<p className="text-sm font-medium text-foreground truncate">
-										{server.friendlyName || server.instanceName}
+										{incognitoMode ? getLinuxServerName(server.friendlyName || server.instanceName) : (server.friendlyName || server.instanceName)}
 									</p>
 									<p className="text-xs text-muted-foreground">
 										v{ver.display}
@@ -135,7 +137,7 @@ export const PlexServerInfoWidget = ({
 									</p>
 								</div>
 								<span className="text-xs text-muted-foreground font-mono">
-									{server.machineId.slice(0, 8)}
+									{incognitoMode ? "••••••••" : server.machineId.slice(0, 8)}
 								</span>
 							</div>
 						);

@@ -53,6 +53,7 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
+import { getLinuxIsoName, useIncognitoMode } from "@/lib/incognito";
 import { INPUT_BASE_CLASSES } from "@/lib/theme-input-styles";
 import {
 	useApproveCleanupItem,
@@ -223,6 +224,7 @@ function ConfigTab({
 	executeError?: Error | null;
 	onExplain: (target: ExplainTarget) => void;
 }) {
+	const [incognitoMode] = useIncognitoMode();
 	const createRule = useCreateCleanupRule();
 	const updateRule = useUpdateCleanupRule();
 	const deleteRule = useDeleteCleanupRule();
@@ -529,7 +531,7 @@ function ConfigTab({
 										key={`${item.title}-${i}`}
 										className="flex items-center justify-between rounded-md bg-card/20 px-3 py-2 text-sm"
 									>
-										<span className="truncate">{item.title}</span>
+										<span className="truncate">{incognitoMode ? getLinuxIsoName(item.title) : item.title}</span>
 										<div className="flex items-center gap-2 shrink-0 ml-3">
 											<button
 												type="button"
@@ -731,6 +733,7 @@ function ConfigTab({
 // ============================================================================
 
 function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => void }) {
+	const [incognitoMode] = useIncognitoMode();
 	const { gradient } = useThemeGradient();
 	const [page, setPage] = useState(1);
 	const [statusFilter, setStatusFilter] = useState("pending");
@@ -923,7 +926,7 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 											) : (
 												<Film className="h-3.5 w-3.5 text-orange-400 shrink-0" aria-label="Movie" />
 											)}
-											<span className="font-medium truncate">{item.title}</span>
+											<span className="font-medium truncate">{incognitoMode ? getLinuxIsoName(item.title) : item.title}</span>
 											{item.year && (
 												<span className="text-xs text-muted-foreground">({item.year})</span>
 											)}
@@ -1028,6 +1031,7 @@ interface LogDetail {
 }
 
 function LogsTab() {
+	const [incognitoMode] = useIncognitoMode();
 	const [page, setPage] = useState(1);
 	const [logStatusFilter, setLogStatusFilter] = useState<string | undefined>(undefined);
 	const [sinceFilter, setSinceFilter] = useState("");
@@ -1215,7 +1219,7 @@ function LogsTab() {
 																{details.map((d, i) => (
 																	<div key={i} className="flex items-center gap-2 text-xs">
 																		<span className="text-foreground font-medium truncate max-w-[200px]">
-																			{d.title}
+																			{incognitoMode ? getLinuxIsoName(d.title) : d.title}
 																		</span>
 																		<span className="text-muted-foreground">—</span>
 																		<span className="text-muted-foreground">{d.rule}</span>
@@ -1567,6 +1571,7 @@ function ExplainDialog({
 	isPending: boolean;
 	onClose: () => void;
 }) {
+	const [incognitoMode] = useIncognitoMode();
 	return (
 		<Dialog
 			open={target !== null}
@@ -1576,7 +1581,7 @@ function ExplainDialog({
 		>
 			<DialogContent className="max-w-lg">
 				<DialogHeader>
-					<DialogTitle>Rule Evaluation — {target?.title}</DialogTitle>
+					<DialogTitle>Rule Evaluation — {target?.title ? (incognitoMode ? getLinuxIsoName(target.title) : target.title) : ""}</DialogTitle>
 					<DialogDescription>How each cleanup rule evaluated this item.</DialogDescription>
 				</DialogHeader>
 

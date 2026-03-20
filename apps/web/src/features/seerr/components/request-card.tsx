@@ -6,6 +6,7 @@ import { Calendar, Film, Tv, User } from "lucide-react";
 import Image from "next/image";
 import type { ReactNode } from "react";
 import { StatusBadge } from "../../../components/layout";
+import { getLinuxIsoName, getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import {
 	formatRelativeTime,
@@ -123,6 +124,7 @@ const MetaChip = ({
 // ============================================================================
 
 export const RequestCard = ({ request, actions, index = 0, onClick }: RequestCardProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	const posterUrl = getPosterUrl(request.media.posterPath);
 	const TypeIcon = request.type === "movie" ? Film : Tv;
 	const seasonInfo = request.type === "tv" ? formatSeasons(request.seasons) : null;
@@ -191,7 +193,7 @@ export const RequestCard = ({ request, actions, index = 0, onClick }: RequestCar
 							backgroundColor: posterUrl ? undefined : "rgba(255,255,255,0.04)",
 						}}
 					>
-						{posterUrl ? (
+						{posterUrl && !incognitoMode ? (
 							<Image
 								src={posterUrl}
 								alt={request.media.title ?? "Media"}
@@ -223,7 +225,7 @@ export const RequestCard = ({ request, actions, index = 0, onClick }: RequestCar
 							</span>
 
 							{/* Requester */}
-							<MetaChip icon={User}>{request.requestedBy.displayName}</MetaChip>
+							<MetaChip icon={User}>{incognitoMode ? getLinuxUsername(request.requestedBy.displayName) : request.requestedBy.displayName}</MetaChip>
 
 							{/* Separator dot */}
 							<span
@@ -238,8 +240,10 @@ export const RequestCard = ({ request, actions, index = 0, onClick }: RequestCar
 						{/* Title row */}
 						<h3 className="text-[14px] font-semibold text-foreground leading-snug flex items-center gap-2 flex-wrap">
 							<span className="truncate">
-								{request.media.title ??
-									`${request.type === "movie" ? "Movie" : "Series"} #${request.media.tmdbId}`}
+								{incognitoMode
+									? getLinuxIsoName(request.media.title ?? String(request.media.tmdbId))
+									: (request.media.title ??
+										`${request.type === "movie" ? "Movie" : "Series"} #${request.media.tmdbId}`)}
 							</span>
 							<StatusBadge status={getRequestStatusVariant(request.status)}>
 								{getRequestStatusLabel(request.status)}
@@ -258,7 +262,7 @@ export const RequestCard = ({ request, actions, index = 0, onClick }: RequestCar
 									{seasonInfo}
 								</span>
 							)}
-							{request.media.overview && (
+							{request.media.overview && !incognitoMode && (
 								<p className="w-full mt-1 text-[11.5px] leading-relaxed text-muted-foreground/40 line-clamp-1">
 									{request.media.overview}
 								</p>
@@ -271,7 +275,7 @@ export const RequestCard = ({ request, actions, index = 0, onClick }: RequestCar
 										: request.status === SEERR_REQUEST_STATUS.DECLINED
 											? "Declined"
 											: "Modified"}{" "}
-									by {request.modifiedBy.displayName}
+									by {incognitoMode ? getLinuxUsername(request.modifiedBy.displayName) : request.modifiedBy.displayName}
 								</span>
 							)}
 						</div>

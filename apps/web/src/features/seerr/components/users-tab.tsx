@@ -12,6 +12,7 @@ import {
 } from "../../../components/layout";
 import { Button } from "../../../components/ui";
 import { useSeerrUserQuota, useSeerrUsers } from "../../../hooks/api/useSeerr";
+import { getLinuxEmail, getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { UserSettingsDialog } from "./user-settings-dialog";
 
@@ -46,6 +47,7 @@ interface UsersTabProps {
 const PAGE_SIZE = 50;
 
 export const UsersTab = ({ instanceId }: UsersTabProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	const [sort, setSort] = useState<UserSort>("displayname");
 	const [take, setTake] = useState(PAGE_SIZE);
 	const { data, isLoading, isFetching, isError } = useSeerrUsers({ instanceId, take, sort });
@@ -152,7 +154,7 @@ export const UsersTab = ({ instanceId }: UsersTabProps) => {
 									backgroundColor: user.avatar ? undefined : "rgba(255,255,255,0.04)",
 								}}
 							>
-								{user.avatar ? (
+								{user.avatar && !incognitoMode ? (
 									<Image
 										src={user.avatar}
 										alt={user.displayName}
@@ -170,7 +172,7 @@ export const UsersTab = ({ instanceId }: UsersTabProps) => {
 							<div className="min-w-0 flex-1">
 								<div className="flex items-center gap-2">
 									<h3 className="truncate text-sm font-semibold text-foreground">
-										{user.displayName}
+										{incognitoMode ? getLinuxUsername(user.displayName) : user.displayName}
 									</h3>
 									{typeBadge && (
 										<span
@@ -186,7 +188,7 @@ export const UsersTab = ({ instanceId }: UsersTabProps) => {
 									)}
 									{user.email && (
 										<span className="hidden sm:inline truncate text-[11px] text-muted-foreground/40">
-											{user.email}
+											{incognitoMode ? getLinuxEmail(user.email) : user.email}
 										</span>
 									)}
 								</div>

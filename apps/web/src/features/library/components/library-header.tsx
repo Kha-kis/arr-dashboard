@@ -18,6 +18,7 @@ import { FilterSelect } from "../../../components/layout";
 import { Button, Input } from "../../../components/ui";
 import { usePlexAccounts, usePlexScanMutation, usePlexSections } from "../../../hooks/api/usePlex";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getLinuxInstanceName, getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
 import type { SyncStatus } from "../hooks/use-library-data";
@@ -160,6 +161,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 	onWatchedByFilterChange,
 	hasPlexInstances = false,
 }) => {
+	const [incognitoMode] = useIncognitoMode();
 	const { gradient: themeGradient } = useThemeGradient();
 	const plexSectionsQuery = usePlexSections();
 	const plexScanMutation = usePlexScanMutation();
@@ -365,7 +367,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 									.filter((option) => serviceFilter === "all" || option.service === serviceFilter)
 									.map((option) => ({
 										value: option.id,
-										label: option.label,
+										label: incognitoMode ? getLinuxInstanceName(option.label) : option.label,
 									})),
 							]}
 							className="min-w-[160px]"
@@ -407,7 +409,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 									{ value: "all", label: "All users" },
 									...plexUsers.map((user) => ({
 										value: user,
-										label: user,
+										label: incognitoMode ? getLinuxUsername(user) : user,
 									})),
 								]}
 								className="min-w-[140px]"

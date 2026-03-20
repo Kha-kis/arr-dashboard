@@ -16,6 +16,7 @@ import {
 import { useMovieFileQuery } from "../../../hooks/api/useLibrary";
 import { useFocusTrap } from "../../../hooks/useFocusTrap";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getLinuxInstanceName, getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
 import { ExternalLinksSection } from "../../discover/components/media-detail-sections";
 import { formatBytes, formatRuntime, SERVICE_COLORS } from "../lib/library-utils";
 import { PosterImage } from "./poster-image";
@@ -59,6 +60,7 @@ const MetadataItem = ({
  * - External link buttons
  */
 export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	const { gradient: themeGradient } = useThemeGradient();
 	const focusTrapRef = useFocusTrap<HTMLDivElement>(true, onClose);
 
@@ -97,7 +99,7 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 		icon?: React.ComponentType<{ className?: string }>;
 	}> = [];
 	if (!isMovie) {
-		seriesMetadata.push({ label: "Instance", value: item.instanceName });
+		seriesMetadata.push({ label: "Instance", value: incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName });
 		seriesMetadata.push({ label: "Service", value: serviceLabel });
 		if (resolvedQualityProfileName) {
 			seriesMetadata.push({ label: "Quality profile", value: resolvedQualityProfileName });
@@ -169,7 +171,7 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 					}}
 				>
 					<div className="flex gap-5">
-						{item.poster && (
+						{!incognitoMode && item.poster && (
 							<div className="h-48 w-32 overflow-hidden rounded-xl border border-border/50 shadow-lg shrink-0">
 								<PosterImage arrPosterUrl={item.poster} size="w342" alt={item.title} />
 							</div>
@@ -198,7 +200,7 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 							</div>
 
 							<h2 id="item-details-title" className="text-2xl font-bold text-foreground mb-1">
-								{item.title}
+								{incognitoMode ? getLinuxIsoName(item.title) : item.title}
 							</h2>
 
 							<div className="flex items-center gap-3 text-sm text-muted-foreground">
@@ -208,7 +210,7 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 										{item.year}
 									</span>
 								)}
-								<span>{item.instanceName}</span>
+								<span>{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}</span>
 							</div>
 						</div>
 					</div>
@@ -217,7 +219,7 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 				{/* Content */}
 				<div className="p-6 space-y-6">
 					{/* Overview */}
-					{item.overview && (
+					{!incognitoMode && item.overview && (
 						<div>
 							<h3 className="text-xs uppercase tracking-wider font-medium text-muted-foreground mb-2">
 								Overview
@@ -294,7 +296,7 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 								<div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 text-sm">
 									<div>
 										<p className="text-xs text-muted-foreground">Instance</p>
-										<p className="font-medium text-foreground">{item.instanceName}</p>
+										<p className="font-medium text-foreground">{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}</p>
 									</div>
 									{resolvedQualityProfileName && (
 										<div>

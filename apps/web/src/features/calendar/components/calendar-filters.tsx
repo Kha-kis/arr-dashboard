@@ -2,6 +2,7 @@
 
 import { Eye, EyeOff, RotateCcw, Search, X } from "lucide-react";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { getServiceGradient } from "../../../lib/theme-gradients";
 import type { ServiceFilterValue } from "../hooks/use-calendar-state";
 
@@ -38,6 +39,7 @@ export const CalendarFilters = ({
 	onIncludeUnmonitoredChange,
 	onResetFilters,
 }: CalendarFiltersProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	const { gradient: themeGradient } = useThemeGradient();
 
 	const isFilterActive =
@@ -105,7 +107,7 @@ export const CalendarFilters = ({
 					<option value="all">All instances</option>
 					{instanceOptions.map((opt) => (
 						<option key={opt.value} value={opt.value}>
-							{opt.label}
+							{incognitoMode ? getLinuxInstanceName(opt.label) : opt.label}
 						</option>
 					))}
 				</select>

@@ -30,6 +30,7 @@ import {
 import { Button, toast } from "../../../components/ui";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import {
 	useQueueCleanerConfigs,
@@ -225,6 +226,7 @@ const UnconfiguredInstanceCard = ({
 	onAdd: () => void;
 	isCreating: boolean;
 }) => {
+	const [incognitoMode] = useIncognitoMode();
 	const serviceGradient = getServiceGradient(instance.service);
 
 	return (
@@ -267,7 +269,7 @@ const UnconfiguredInstanceCard = ({
 					<div>
 						<div className="flex items-center gap-2">
 							<span className="text-[14px] font-semibold text-foreground">
-								{instance.label}
+								{incognitoMode ? getLinuxInstanceName(instance.label) : instance.label}
 							</span>
 							<ServiceBadge service={instance.service} />
 						</div>
@@ -348,6 +350,7 @@ const InstanceConfigCard = ({
 	config: QueueCleanerConfigWithInstance;
 	animationDelay: number;
 }) => {
+	const [incognitoMode] = useIncognitoMode();
 	const { gradient: themeGradient } = useThemeGradient();
 	const serviceGradient = getServiceGradient(config.service);
 	const { updateConfig, deleteConfig, isUpdating, isDeleting } = useUpdateQueueCleanerConfig();
@@ -370,7 +373,7 @@ const InstanceConfigCard = ({
 		try {
 			await updateConfig(config.instanceId, formData);
 			setIsDirty(false);
-			toast.success(`Config updated for ${config.instanceName}`);
+			toast.success(`Config updated for ${incognitoMode ? getLinuxInstanceName(config.instanceName) : config.instanceName}`);
 		} catch (error) {
 			toast.error(getErrorMessage(error, "Failed to update config"));
 		}
@@ -388,7 +391,7 @@ const InstanceConfigCard = ({
 		}
 		try {
 			await deleteConfig(config.instanceId);
-			toast.success(`Config deleted for ${config.instanceName}`);
+			toast.success(`Config deleted for ${incognitoMode ? getLinuxInstanceName(config.instanceName) : config.instanceName}`);
 		} catch (error) {
 			toast.error(getErrorMessage(error, "Failed to delete config"));
 		} finally {
@@ -438,7 +441,7 @@ const InstanceConfigCard = ({
 							<div>
 								<div className="flex items-center gap-2">
 									<h4 className="font-semibold text-[14px] text-foreground leading-snug">
-										{config.instanceName}
+										{incognitoMode ? getLinuxInstanceName(config.instanceName) : config.instanceName}
 									</h4>
 									<ServiceBadge service={config.service} />
 								</div>
