@@ -233,7 +233,7 @@ export function PatternTester({ pattern, negate = false, onClose }: PatternTeste
 								);
 							} catch (error) {
 								// Show error indicator for lines that failed regex execution
-								console.error(`Regex execution error for line "${line}":`, error);
+								console.error("Regex execution error for line:", line, error);
 								return (
 									<div
 										key={index}
