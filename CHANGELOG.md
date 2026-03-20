@@ -5,6 +5,38 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.1] - 2026-03-20
+
+Security patches, comprehensive incognito mode coverage, and TRaSH Guides cloning improvements.
+
+### Security
+
+- **Dependency overrides** - Updated `hono` to 4.12.8 (CVE-2026-29045, CVE-2026-29085, CVE-2026-29086, GHSA-v8w9), `@hono/node-server` to 1.19.11 (CVE-2026-29087), and `flatted` to 3.4.2 (prototype pollution)
+- **Input sanitization** - Added type and length validation for TRaSH profile match fields in clone template API
+- **Semgrep fix** - Resolved unsafe format string finding in pattern tester
+
+### Fixed
+
+#### Incognito Mode (Hide Sensitive Data)
+- **Complete coverage across all features** - Extended incognito mode to 40+ components across every page, tab, modal, filter dropdown, chart, and toast message in the application
+- **Dashboard** - Now hides media titles, usernames, server names, device names, and platform info in Plex widgets (Now Playing, Continue Watching, Recently Added, Watch History, Server Info), health messages (download client names), and username greeting
+- **Library** - Hides titles, overviews, poster images, instance names, file paths, and Plex usernames in library cards, detail modals, and filter dropdowns
+- **Calendar** - Anonymizes event titles, instance names, and overviews in calendar cards and filter dropdowns
+- **Statistics** - Hides Plex usernames, media titles, device/player names, and platform names across all charts (user analytics, watch history, device chart, quality scores)
+- **Requests (Seerr)** - Anonymizes media titles, user display names, email addresses, avatar images, and overviews across all tabs (requests, users, issues, history, settings dialog)
+- **Hunting** - Hides instance names, grabbed item titles, and indexer names in config cards and activity logs
+- **Queue Cleaner** - Anonymizes instance names and item titles in config, overview, activity logs, and toast messages
+- **Library Cleanup** - Hides media titles in approval queue, log details, and rule evaluation dialog
+- **Notifications** - Anonymizes channel names and event titles in notification logs
+- **Settings** - Hides instance labels, service URLs, and username on Account tab
+- **Topbar** - Anonymizes username display and avatar initial
+- **Queue messages** - Added Lidarr music release anonymization patterns for artist/album names, file paths with nested brackets, and download client names in health messages
+- New utility functions: `getLinuxUsername`, `getLinuxDevice`, `getLinuxSectionName`, `getLinuxServerName`, `getLinuxEmail`
+
+#### TRaSH Guides
+- **Cloned template quality display** - Templates created via "Clone from Instance" now properly show quality configuration in the editor instead of "No Quality Configuration" empty state
+- **TRaSH profile linking** - Cloned templates are now linked to their matching TRaSH Guides profile (e.g., SQP-2) for ongoing score updates. User score overrides are preserved via the existing `scoreOverride` system
+
 ## [2.9.0] - 2026-03-19
 
 v2.9 is the largest feature release since 2.0 — adding media server awareness, a notification system, library lifecycle management, and TRaSH naming scheme deployment.
@@ -22,7 +54,7 @@ v2.9 is the largest feature release since 2.0 — adding media server awareness,
 - **Watch Statistics** - Historical watch data aggregation surfaced in the Statistics and Library pages
 - **Session Merging** - Intelligently merges Plex and Tautulli session data for the richest possible Now Playing view
 
-#### Seerr / Jellyseerr Integration
+#### Seerr Integration
 - **Request Management** - View, approve, and decline media requests from Seerr directly within the dashboard
 - **User Management** - Browse Seerr users with request counts and permissions
 - **Issue Tracking** - View and manage reported issues from Seerr
