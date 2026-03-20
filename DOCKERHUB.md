@@ -1,8 +1,8 @@
 # Arr Dashboard
 
-> **Version 2.8.5** - Bug fixes for queue cleaner, statistics, dropdowns, logging, and Docker PostgreSQL
+> **Version 2.9.1** — Security patches, comprehensive incognito mode, TRaSH Guides cloning improvements
 
-A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances. Consolidate your media automation management into a single, secure, and powerful interface.
+A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, **Lidarr**, **Readarr**, **Plex**, **Tautulli**, and **Seerr** instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
 ## Quick Start
 
@@ -36,16 +36,20 @@ services:
 
 ## Features
 
-- **Unified Dashboard** - View queue, calendar, and history across all Sonarr/Radarr instances
-- **Global Search** - Search for content across all your indexers simultaneously
-- **Library Management** - Manage your movies and TV shows in one place
-- **TMDB Integration** - Discover trending, popular, and upcoming content
-- **TRaSH Guides Integration** - Apply quality profiles and custom formats with auto-sync
-- **Automated Hunting** - Auto-search for missing content and quality upgrades
-- **Multi-Auth Support** - Password, OIDC (Authelia/Authentik), or Passkeys (WebAuthn)
-- **Encrypted Storage** - All API keys encrypted at rest (AES-256-GCM)
-- **Incognito Mode** - Hide sensitive media titles for screenshots/demos
-- **Backup & Restore** - Encrypted backups for easy migration
+- **Unified Dashboard** — Queue, calendar, history, and statistics across all Sonarr, Radarr, Prowlarr, Lidarr, and Readarr instances
+- **Plex & Tautulli Integration** — Now playing, watch history, on deck, recently added, and detailed analytics with user/device/codec charts
+- **Seerr** — Manage media requests, users, issues, and notification agents
+- **Global Search** — Search for content across all indexers via Prowlarr
+- **TMDB Discovery** — Trending, popular, and upcoming content with one-click add
+- **TRaSH Guides** — Quality profiles, custom formats, naming schemes with auto-sync and profile cloning
+- **Notification System** — Discord, Telegram, Email, Pushover, Gotify, Ntfy, Pushbullet, Browser Push
+- **Library Cleanup** — Rule-based cleanup with 20+ condition types, approval queue, and audit logging
+- **Automated Hunting** — Auto-search for missing content and quality upgrades with per-instance config
+- **Queue Cleaner** — Automated queue management with strike system and dry-run mode
+- **Multi-Auth** — Password, OIDC (Authelia/Authentik), or Passkeys (WebAuthn)
+- **Encrypted Storage** — All API keys encrypted at rest (AES-256-GCM)
+- **Incognito Mode** — Hide all sensitive data across the entire UI for safe screenshotting
+- **Backup & Restore** — Automated encrypted backups with configurable retention
 
 ## Environment Variables
 
@@ -63,8 +67,11 @@ services:
 |----------|---------|-------------|
 | `SESSION_TTL_HOURS` | `24` | Session expiration time in hours |
 | `SESSION_COOKIE_NAME` | `arr_session` | Name of the session cookie |
+| `PASSWORD_POLICY` | `strict` | `strict` or `relaxed` (8+ chars, passphrase-friendly) |
 | `API_RATE_LIMIT_MAX` | `200` | Max requests per minute |
 | `BACKUP_PASSWORD` | Auto-generated | Password for encrypted backups |
+| `LOG_LEVEL` | `info` | Logging level (`debug`, `info`, `warn`, `error`) |
+| `GITHUB_TOKEN` | - | Optional GitHub token for TRaSH Guides (higher rate limits) |
 
 ### WebAuthn/Passkeys (Optional)
 
@@ -74,48 +81,35 @@ services:
 | `WEBAUTHN_RP_ID` | `localhost` | Your domain (no protocol) |
 | `WEBAUTHN_ORIGIN` | `http://localhost:3000` | Full URL with protocol |
 
-> **Note:** Set `PUID` and `PGID` to match the owner of your config directory. Run `id -u` and `id -g` on your host to find your user/group IDs. This follows the [LinuxServer.io](https://docs.linuxserver.io/general/understanding-puid-and-pgid) convention.
+> **Note:** Set `PUID` and `PGID` to match the owner of your config directory. Run `id -u` and `id -g` on your host to find your user/group IDs.
 
 ## Version Tags
 
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.9.1` | Security patches, complete incognito mode, TRaSH cloning improvements |
+| `2.9.0` | Plex/Tautulli/Seerr integration, notifications, library cleanup, naming deployment |
 | `2.8.5` | Bug fixes: queue cleaner, statistics, dropdowns, logging, Docker PostgreSQL |
-| `2.8.4` | Harden quality definition reset with multi-strategy fallback |
-| `2.8.3` | TRaSH Guides PR #2590 compatibility (include semantics + quality ordering) |
-| `2.8.2` | Hotfix for Docker startup crash in v2.8.1 |
-| `2.8.1` | Security hardening, quality size presets & deep refactoring |
 | `2.8.0` | Full Lidarr & Readarr support + Queue Cleaner auto-import |
-| `2.7.4` | Configurable password policy for passphrase support |
-| `2.7.3` | Queue Cleaner, Prefer Season Packs & improved error handling |
-| `2.7.2` | Custom upstream repos, user custom formats & bug fixes |
-| `2.7.1` | TRaSH template persistence fix + Next.js security patch |
 | `2.7.0` | Major stack upgrade (Node 22, Next.js 16, Prisma 7, Tailwind 4) |
-| `2.6.7` | Bug fixes for Unraid, OIDC, hunting + sync metrics telemetry |
-| `2.6.6` | Sync strategy-specific score handling for TRaSH Guides |
-| `2.6.5` | Fix permission errors on Unraid/PostgreSQL, System Information display |
-| `2.6.4` | Hotfix for upgrade crash loop affecting v2.6.3 |
-| `2.6.3` | Backup encryption, TRaSH standalone CF deployment, security & performance improvements |
-| `2.6.x` | PostgreSQL support, automated hunting, improved error handling |
 | `2.5.0` | **Breaking:** Volume path changed to `/config` (LinuxServer.io convention) |
-| `2.4.x` | TRaSH Guides integration, PUID/PGID support (uses `/app/data`) |
 
-> ⚠️ **Upgrading from 2.4.x?** The volume mount path changed from `/app/data` to `/config`. See [migration instructions](https://github.com/Kha-kis/arr-dashboard/blob/main/RELEASE_NOTES.md).
+> **Upgrading from 2.4.x?** The volume mount path changed from `/app/data` to `/config`. See [migration instructions](https://github.com/Kha-kis/arr-dashboard/blob/main/RELEASE_NOTES.md).
 
 ## First Time Setup
 
 1. Open `http://your-server-ip:3000`
 2. Create your admin account on first run
 3. Add your Sonarr/Radarr/Prowlarr instances in Settings
-4. (Optional) Add TMDB API key for Discover page
+4. Optionally connect Plex, Tautulli, and Seerr
 5. Start managing your media!
 
 ## Volumes
 
 | Path | Description |
 |------|-------------|
-| `/config` | Database and secrets storage (required) |
+| `/config` | Database, secrets, and backups (required) |
 
 ## Ports
 
@@ -140,17 +134,14 @@ docker run -d \
 ## Troubleshooting
 
 ```bash
-# Check container logs
 docker logs arr-dashboard
-
-# Restart container
 docker restart arr-dashboard
 ```
 
 ## Links
 
 - **GitHub**: https://github.com/Kha-kis/arr-dashboard
-- **Documentation**: https://github.com/Kha-kis/arr-dashboard#readme
+- **Documentation**: https://github.com/Kha-kis/arr-dashboard/wiki
 - **Issues**: https://github.com/Kha-kis/arr-dashboard/issues
 
 ## Support

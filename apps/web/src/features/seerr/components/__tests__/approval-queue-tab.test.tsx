@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -130,7 +131,9 @@ function createWrapper() {
 		defaultOptions: { queries: { retry: false } },
 	});
 	return ({ children }: { children: ReactNode }) => (
-		<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+		<QueryClientProvider client={queryClient}>
+			<IncognitoProvider>{children}</IncognitoProvider>
+		</QueryClientProvider>
 	);
 }
 
