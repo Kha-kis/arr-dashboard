@@ -16,6 +16,13 @@ import {
 } from "lucide-react";
 import { useNowPlaying } from "../../../hooks/api/usePlex";
 import { useTautulliActivity } from "../../../hooks/api/useTautulli";
+import {
+	getLinuxDevice,
+	getLinuxIsoName,
+	getLinuxInstanceName,
+	getLinuxUsername,
+	useIncognitoMode,
+} from "../../../lib/incognito";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 
 // ============================================================================
@@ -309,13 +316,25 @@ export const NowPlayingWidget = ({
 	animationDelay = 0,
 	variant = "compact",
 }: NowPlayingWidgetProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	const plexQuery = useNowPlaying(hasPlexInstances);
 	const tautulliQuery = useTautulliActivity(hasTautulliInstances);
 
 	const plexSessions = plexQuery.data?.sessions ?? [];
 	const tautulliSessions = tautulliQuery.data?.sessions ?? [];
 
-	const sessions = mergeSessions(plexSessions, tautulliSessions);
+	const rawSessions = mergeSessions(plexSessions, tautulliSessions);
+	const sessions = incognitoMode
+		? rawSessions.map((s) => ({
+				...s,
+				title: getLinuxIsoName(s.title),
+				subtitle: s.subtitle ? getLinuxIsoName(s.subtitle) : undefined,
+				user: getLinuxUsername(s.user),
+				player: getLinuxDevice(s.player),
+				platform: "Linux",
+				instanceName: getLinuxInstanceName(s.instanceName),
+			}))
+		: rawSessions;
 	const totalBandwidth =
 		(tautulliQuery.data?.totalBandwidth ?? 0) || (plexQuery.data?.totalBandwidth ?? 0);
 	const lanBandwidth = tautulliQuery.data?.lanBandwidth ?? 0;

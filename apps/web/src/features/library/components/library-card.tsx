@@ -12,6 +12,7 @@ import {
 	Clock,
 	Eye,
 	ExternalLink,
+	Film,
 	Info,
 	ListTree,
 	Loader2,
@@ -274,7 +275,7 @@ export const LibraryCard = memo(function LibraryCard({
 	}
 
 	const metadata: Array<{ label: string; value: React.ReactNode }> = [
-		{ label: "Instance", value: item.instanceName },
+		{ label: "Instance", value: incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName },
 	];
 
 	if (item.qualityProfileName) {
@@ -419,13 +420,19 @@ export const LibraryCard = memo(function LibraryCard({
 					className="h-36 w-24 overflow-hidden rounded-lg border border-border bg-muted shadow-md shrink-0 transition-transform hover:scale-105 cursor-pointer"
 					onClick={() => onExpandDetails?.(item)}
 				>
-					<PosterImage
-						tmdbPosterPath={posterPath}
-						arrPosterUrl={item.poster}
-						size="w185"
-						alt={item.title}
-						placeholder={item.type === "movie" ? "Poster" : "Artwork"}
-					/>
+					{incognitoMode ? (
+						<div className="h-full w-full flex items-center justify-center text-muted-foreground">
+							<Film className="h-8 w-8" />
+						</div>
+					) : (
+						<PosterImage
+							tmdbPosterPath={posterPath}
+							arrPosterUrl={item.poster}
+							size="w185"
+							alt={item.title}
+							placeholder={item.type === "movie" ? "Poster" : "Artwork"}
+						/>
+					)}
 				</button>
 
 				<div className="flex-1 min-w-0 space-y-2">
@@ -438,7 +445,7 @@ export const LibraryCard = memo(function LibraryCard({
 								tabIndex={0}
 								onKeyDown={(e) => e.key === "Enter" && onExpandDetails?.(item)}
 							>
-								{item.title}
+								{incognitoMode ? getLinuxIsoName(item.title) : item.title}
 							</h3>
 							{item.year && item.type === "movie" ? (
 								<span className="text-xs text-muted-foreground">{item.year}</span>
@@ -501,7 +508,7 @@ export const LibraryCard = memo(function LibraryCard({
 										color: SEMANTIC_COLORS.info.text,
 									}}
 									title={
-										watchedByUsers?.length ? `Watched by: ${watchedByUsers.join(", ")}` : undefined
+										!incognitoMode && watchedByUsers?.length ? `Watched by: ${watchedByUsers.join(", ")}` : undefined
 									}
 								>
 									<Eye className="h-3 w-3" />
@@ -537,7 +544,7 @@ export const LibraryCard = memo(function LibraryCard({
 						</div>
 					</div>
 
-					{item.overview ? (
+					{!incognitoMode && item.overview ? (
 						<div className="group relative">
 							<p className="text-xs leading-relaxed text-muted-foreground line-clamp-2">
 								{item.overview}

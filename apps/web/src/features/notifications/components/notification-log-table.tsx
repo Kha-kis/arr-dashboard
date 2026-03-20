@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Loader2, X } from "lucide-react";
 import { useState } from "react";
 import { StatusBadge } from "@/components/layout/premium-components";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
+import { getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
 import { useNotificationLogs } from "../../../hooks/api/useNotifications";
 
 const STATUS_OPTIONS = [
@@ -47,6 +48,7 @@ interface Filters {
 
 export function NotificationLogTable() {
 	const { gradient } = useThemeGradient();
+	const [incognitoMode] = useIncognitoMode();
 	const [page, setPage] = useState(1);
 	const [filters, setFilters] = useState<Filters>({ status: "", eventType: "" });
 
@@ -159,7 +161,7 @@ export function NotificationLogTable() {
 											<td className="px-4 py-2.5 text-xs text-muted-foreground font-mono">
 												{log.eventType}
 											</td>
-											<td className="px-4 py-2.5 truncate max-w-[200px]">{log.title}</td>
+											<td className="px-4 py-2.5 truncate max-w-[200px]">{incognitoMode ? getLinuxIsoName(log.title) : log.title}</td>
 											<td className="px-4 py-2.5 text-xs text-muted-foreground">
 												{log.channelType}
 											</td>

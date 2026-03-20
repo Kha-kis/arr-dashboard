@@ -17,6 +17,7 @@ import {
 } from "../../../components/ui";
 import { SimpleFormField } from "../../../components/ui/simple-form-field";
 import { useSeerrUserQuota, useUpdateSeerrUser } from "../../../hooks/api/useSeerr";
+import { getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 
 interface UserSettingsDialogProps {
 	user: SeerrUser | null;
@@ -54,6 +55,7 @@ export const UserSettingsDialog = ({
 		tvQuotaLimit: null,
 		tvQuotaDays: null,
 	});
+	const [incognitoMode] = useIncognitoMode();
 	const updateMutation = useUpdateSeerrUser();
 	const { data: quota } = useSeerrUserQuota(instanceId, user?.id ?? 0);
 
@@ -78,10 +80,10 @@ export const UserSettingsDialog = ({
 			{ instanceId, seerrUserId: user.id, data: draft },
 			{
 				onSuccess: () => {
-					toast.success(`Updated quota settings for ${user.displayName}`);
+					toast.success(`Updated quota settings for ${incognitoMode ? getLinuxUsername(user.displayName) : user.displayName}`);
 					onOpenChange(false);
 				},
-				onError: () => toast.error(`Failed to update quota for ${user.displayName}`),
+				onError: () => toast.error(`Failed to update quota for ${incognitoMode ? getLinuxUsername(user.displayName) : user.displayName}`),
 			},
 		);
 	};
@@ -93,7 +95,7 @@ export const UserSettingsDialog = ({
 				<LegacyDialogTitle>
 					<div className="flex items-center gap-2">
 						<Settings className="h-5 w-5" />
-						{user.displayName}
+						{incognitoMode ? getLinuxUsername(user.displayName) : user.displayName}
 					</div>
 				</LegacyDialogTitle>
 				<LegacyDialogDescription>

@@ -21,6 +21,7 @@ import {
 } from "../../../components/layout";
 import { Button, toast } from "../../../components/ui";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useEnhancedPreview } from "../hooks/useDryRun";
 import { useManualClean } from "../hooks/useManualClean";
@@ -112,6 +113,7 @@ interface InstanceStatusCardProps {
 
 const InstanceStatusCard = ({ instance, onRefresh, animationDelay }: InstanceStatusCardProps) => {
 	const serviceGradient = getServiceGradient(instance.service);
+	const [incognitoMode] = useIncognitoMode();
 	const { triggerClean, isTriggering, isCooldownError } = useManualClean();
 	const { runPreview, runClean, previewResult, isLoadingPreview, isRunningClean, resetPreview } =
 		useEnhancedPreview();
@@ -203,7 +205,7 @@ const InstanceStatusCard = ({ instance, onRefresh, animationDelay }: InstanceSta
 							<div>
 								<div className="flex items-center gap-2">
 									<h4 className="font-semibold text-[14px] text-foreground leading-snug">
-										{instance.instanceName}
+										{incognitoMode ? getLinuxInstanceName(instance.instanceName) : instance.instanceName}
 									</h4>
 									<ServiceBadge service={instance.service} />
 									{instance.dryRunMode && instance.hasConfig && (

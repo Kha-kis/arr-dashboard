@@ -12,6 +12,7 @@ import {
 	HardDrive,
 	Tv,
 } from "lucide-react";
+import { getLinuxIsoName, getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { BRAND_COLORS, SERVICE_GRADIENTS, getServiceGradient } from "../../../lib/theme-gradients";
 import type { DeduplicatedCalendarItem } from "../hooks/use-calendar-data";
 import {
@@ -108,10 +109,12 @@ export const CalendarEventCard = ({
 	plexUrlMap,
 	index = 0,
 }: CalendarEventCardProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	const instance = serviceMap.get(event.instanceId);
 	const externalLink = buildExternalLink(event, instance);
 	const details = extractEventDetails(event);
-	const title = formatEventTitle(event);
+	const rawTitle = formatEventTitle(event);
+	const title = incognitoMode ? getLinuxIsoName(rawTitle) : rawTitle;
 	const serviceGradient = getServiceGradient(event.service);
 	const serviceLabel = SERVICE_LABELS[event.service] ?? event.service;
 	const TypeIcon = TYPE_ICONS[event.type] ?? Film;
@@ -130,11 +133,15 @@ export const CalendarEventCard = ({
 			: undefined;
 
 	const hasMultipleInstances = event.allInstances.length > 1;
-	const instancesDisplay = hasMultipleInstances
-		? event.allInstances.map((inst) => inst.instanceName).join(", ")
-		: event.instanceName;
+	const instancesDisplay = incognitoMode
+		? (hasMultipleInstances
+			? event.allInstances.map((inst) => getLinuxInstanceName(inst.instanceName)).join(", ")
+			: getLinuxInstanceName(event.instanceName))
+		: (hasMultipleInstances
+			? event.allInstances.map((inst) => inst.instanceName).join(", ")
+			: event.instanceName);
 
-	const hasPoster = !!event.posterUrl;
+	const hasPoster = !incognitoMode && !!event.posterUrl;
 
 	return (
 		<div
@@ -274,7 +281,7 @@ export const CalendarEventCard = ({
 							</h3>
 
 							{/* Overview */}
-							{event.overview && (
+							{event.overview && !incognitoMode && (
 								<p className="mt-1.5 text-[11.5px] leading-relaxed text-muted-foreground/45 line-clamp-2">
 									{event.overview}
 								</p>

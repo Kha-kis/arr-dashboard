@@ -15,7 +15,7 @@ import {
 import { ServiceBadge, StatusBadge } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { getLinuxUrl, useIncognitoMode } from "../../../lib/incognito";
+import { getLinuxInstanceName, getLinuxUrl, useIncognitoMode } from "../../../lib/incognito";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
 
@@ -114,7 +114,7 @@ export const ServiceInstanceCard = ({
 					<div className="min-w-0 flex-1 space-y-2">
 						<div className="flex flex-wrap items-center gap-2">
 							<ServiceBadge service={instance.service} />
-							<h3 className="text-base font-semibold text-foreground">{instance.label}</h3>
+							<h3 className="text-base font-semibold text-foreground">{incognitoMode ? getLinuxInstanceName(instance.label) : instance.label}</h3>
 							{instance.isDefault && (
 								<div
 									className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"

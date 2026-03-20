@@ -3,6 +3,7 @@
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { useThemeGradient } from "../../hooks/useThemeGradient";
+import { getLinuxInstanceName, useIncognitoMode } from "../../lib/incognito";
 import { getServiceGradient } from "../../lib/theme-gradients";
 import { cn } from "../../lib/utils";
 import { ServiceBadge } from "./premium-data-display";
@@ -197,6 +198,7 @@ export const InstanceCard = ({
 	className,
 	animationDelay = 0,
 }: InstanceCardProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	const gradient = getServiceGradient(service);
 
 	return (
@@ -231,7 +233,7 @@ export const InstanceCard = ({
 				<div className="flex items-start justify-between mb-3">
 					<div>
 						<div className="flex items-center gap-2 mb-1">
-							<h3 className="font-semibold text-foreground">{instanceName}</h3>
+							<h3 className="font-semibold text-foreground">{incognitoMode ? getLinuxInstanceName(instanceName) : instanceName}</h3>
 							<ServiceBadge service={service} />
 						</div>
 						{status}

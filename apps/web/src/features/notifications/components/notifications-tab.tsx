@@ -21,6 +21,7 @@ import {
 	StatusBadge,
 } from "@/components/layout/premium-components";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import {
 	useChannelTypes,
 	useDeleteChannel,
@@ -233,6 +234,7 @@ function ChannelRow({
 	isTesting: boolean;
 	testResult?: { success: boolean; error?: string };
 }) {
+	const [incognitoMode] = useIncognitoMode();
 	const [confirmingDelete, setConfirmingDelete] = useState(false);
 
 	useEffect(() => {
@@ -274,7 +276,7 @@ function ChannelRow({
 
 				<div className="min-w-0 flex-1">
 					<div className="flex items-center gap-2">
-						<span className="font-medium truncate">{channel.name}</span>
+						<span className="font-medium truncate">{incognitoMode ? getLinuxInstanceName(channel.name) : channel.name}</span>
 						<StatusBadge status={channel.enabled ? "success" : "warning"}>
 							{channel.enabled ? "Active" : "Disabled"}
 						</StatusBadge>
