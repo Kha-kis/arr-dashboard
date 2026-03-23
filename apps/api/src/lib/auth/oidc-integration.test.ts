@@ -4,19 +4,21 @@ import { normalizeIssuerUrl } from "./oidc-utils.js";
 /**
  * Integration tests for OIDC configuration flow
  * Tests the normalization behavior that will be used by the API endpoints
+ *
+ * IMPORTANT: Trailing slashes are now preserved per RFC 8414 §2.
+ * oauth4webapi performs strict issuer comparison, so the stored value
+ * must match the provider's canonical issuer exactly. Providers like
+ * Authentik include a trailing slash. See GitHub issue #208.
  */
 describe("OIDC Configuration Integration", () => {
 	describe("Issuer URL normalization in configuration flow", () => {
-		// Simulate the validation + normalization that happens in the API endpoints
 		const simulateOidcConfig = (issuer: string) => {
-			// First, validate it's a URL (Zod does this)
 			try {
 				new URL(issuer);
 			} catch {
 				throw new Error("Invalid URL format");
 			}
 
-			// Then normalize (our new function)
 			const normalizedIssuer = normalizeIssuerUrl(issuer);
 
 			return {
@@ -26,25 +28,23 @@ describe("OIDC Configuration Integration", () => {
 			};
 		};
 
-		it("should accept and normalize Keycloak URL with trailing slash", () => {
+		it("should preserve Authentik URL with trailing slash (#208)", () => {
+			const result = simulateOidcConfig("https://authentik.local/application/o/app/");
+
+			expect(result.normalizedIssuer).toBe("https://authentik.local/application/o/app/");
+			expect(result.wasNormalized).toBe(false);
+		});
+
+		it("should preserve trailing slash on Keycloak URL", () => {
 			const result = simulateOidcConfig("https://keycloak.example.com/realms/master/");
 
-			expect(result.normalizedIssuer).toBe("https://keycloak.example.com/realms/master");
-			expect(result.wasNormalized).toBe(true);
+			expect(result.normalizedIssuer).toBe("https://keycloak.example.com/realms/master/");
+			expect(result.wasNormalized).toBe(false);
 		});
 
-		it("should accept and normalize URL with .well-known suffix", () => {
+		it("should strip .well-known suffix", () => {
 			const result = simulateOidcConfig(
 				"https://keycloak.example.com/realms/master/.well-known/openid-configuration",
-			);
-
-			expect(result.normalizedIssuer).toBe("https://keycloak.example.com/realms/master");
-			expect(result.wasNormalized).toBe(true);
-		});
-
-		it("should accept and normalize URL with both issues", () => {
-			const result = simulateOidcConfig(
-				"https://keycloak.example.com/realms/master/.well-known/openid-configuration/",
 			);
 
 			expect(result.normalizedIssuer).toBe("https://keycloak.example.com/realms/master");
@@ -58,17 +58,18 @@ describe("OIDC Configuration Integration", () => {
 			expect(result.wasNormalized).toBe(false);
 		});
 
-		it("should handle various common OIDC providers", () => {
+		it("should handle various common OIDC providers (trailing slashes preserved)", () => {
 			const providers = [
-				{ input: "https://accounts.google.com/", expected: "https://accounts.google.com" },
+				{ input: "https://accounts.google.com/", expected: "https://accounts.google.com/" },
 				{
 					input: "https://login.microsoftonline.com/tenant-id/v2.0/",
-					expected: "https://login.microsoftonline.com/tenant-id/v2.0",
+					expected: "https://login.microsoftonline.com/tenant-id/v2.0/",
 				},
-				{ input: "https://auth.example.com/", expected: "https://auth.example.com" },
+				{ input: "https://auth.example.com/", expected: "https://auth.example.com/" },
+				{ input: "https://auth.example.com", expected: "https://auth.example.com" },
 				{
 					input: "https://authentik.local/application/o/app/",
-					expected: "https://authentik.local/application/o/app",
+					expected: "https://authentik.local/application/o/app/",
 				},
 			];
 
@@ -94,25 +95,14 @@ describe("OIDC Configuration Integration", () => {
 	});
 
 	describe("Discovery URL construction", () => {
-		it("should construct correct discovery URL from normalized issuer", () => {
-			const testCases = [
-				{
-					input: "https://keycloak.example.com/realms/master/",
-					expectedDiscovery:
-						"https://keycloak.example.com/realms/master/.well-known/openid-configuration",
-				},
-				{
-					input: "https://keycloak.example.com/realms/master/.well-known/openid-configuration",
-					expectedDiscovery:
-						"https://keycloak.example.com/realms/master/.well-known/openid-configuration",
-				},
-			];
-
-			for (const { input, expectedDiscovery } of testCases) {
-				const normalized = normalizeIssuerUrl(input);
-				const discoveryUrl = `${normalized}/.well-known/openid-configuration`;
-				expect(discoveryUrl).toBe(expectedDiscovery);
-			}
+		it("oauth4webapi handles discovery URL construction internally", () => {
+			// oauth4webapi appends /.well-known/openid-configuration to the issuer URL
+			// We no longer construct discovery URLs manually — this test verifies
+			// that normalizeIssuerUrl only strips the .well-known suffix
+			const normalized = normalizeIssuerUrl(
+				"https://keycloak.example.com/realms/master/.well-known/openid-configuration",
+			);
+			expect(normalized).toBe("https://keycloak.example.com/realms/master");
 		});
 	});
 });

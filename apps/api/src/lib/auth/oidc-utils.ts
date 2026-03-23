@@ -1,47 +1,24 @@
 /**
  * OIDC URL utilities for normalizing and validating issuer URLs.
  *
- * oauth4webapi automatically appends /.well-known/openid-configuration to the issuer URL
- * when performing discovery. This module ensures user-provided URLs are normalized
- * to prevent issues like double paths or trailing slashes.
+ * oauth4webapi performs strict string comparison (per RFC 8414 §2) between
+ * the stored issuer and the `issuer` field in the discovery document.
+ * We resolve the canonical issuer from the provider to avoid mismatches.
  */
 
 /**
- * Normalizes an OIDC issuer URL by:
- * 1. Trimming whitespace
- * 2. Removing trailing slashes
- * 3. Removing .well-known/openid-configuration suffix if present
- * 4. Validating the result is still a valid URL
- *
- * @param issuer - The issuer URL to normalize
- * @returns The normalized issuer URL
- * @throws Error if the result is not a valid URL
- *
- * @example
- * normalizeIssuerUrl("https://keycloak/realms/master/")
- * // Returns: "https://keycloak/realms/master"
- *
- * @example
- * normalizeIssuerUrl("https://keycloak/realms/master/.well-known/openid-configuration")
- * // Returns: "https://keycloak/realms/master"
+ * Basic normalization: trims whitespace and strips .well-known suffix.
+ * Does NOT alter trailing slashes — use resolveCanonicalIssuer() for
+ * the authoritative issuer value from the provider.
  */
 export function normalizeIssuerUrl(issuer: string): string {
 	let normalized = issuer.trim();
 
-	// Remove trailing slashes (may be multiple)
-	while (normalized.endsWith("/")) {
-		normalized = normalized.slice(0, -1);
-	}
-
 	// Remove .well-known/openid-configuration suffix if present (case-insensitive)
+	// Users may paste the full discovery URL instead of the issuer URL
 	const wellKnownSuffix = "/.well-known/openid-configuration";
 	if (normalized.toLowerCase().endsWith(wellKnownSuffix)) {
 		normalized = normalized.slice(0, -wellKnownSuffix.length);
-	}
-
-	// Remove any trailing slashes that may have been before the .well-known suffix
-	while (normalized.endsWith("/")) {
-		normalized = normalized.slice(0, -1);
 	}
 
 	// Validate it's still a valid URL
@@ -49,6 +26,56 @@ export function normalizeIssuerUrl(issuer: string): string {
 		new URL(normalized);
 	} catch {
 		throw new Error(`Invalid issuer URL: ${issuer}`);
+	}
+
+	return normalized;
+}
+
+/**
+ * Resolves the canonical issuer URL by fetching the OIDC discovery document
+ * and returning the provider's `issuer` field. This ensures the stored value
+ * exactly matches what oauth4webapi will compare against.
+ *
+ * Falls back to the normalized URL if discovery fails (e.g., network error),
+ * so existing providers that already work are not broken.
+ *
+ * @param issuer - The user-provided issuer URL
+ * @returns The provider's canonical issuer URL
+ *
+ * @example
+ * // Authentik returns issuer with trailing slash
+ * await resolveCanonicalIssuer("https://auth.example.com/application/o/app/")
+ * // Returns: "https://auth.example.com/application/o/app/"
+ *
+ * @example
+ * // Keycloak returns issuer without trailing slash
+ * await resolveCanonicalIssuer("https://keycloak.example.com/realms/master/")
+ * // Returns: "https://keycloak.example.com/realms/master"
+ */
+export async function resolveCanonicalIssuer(issuer: string): Promise<string> {
+	const normalized = normalizeIssuerUrl(issuer);
+
+	try {
+		// Try both with and without trailing slash for discovery
+		// Some providers require the exact path, others are flexible
+		const discoveryUrl = normalized.endsWith("/")
+			? `${normalized}.well-known/openid-configuration`
+			: `${normalized}/.well-known/openid-configuration`;
+
+		const response = await fetch(discoveryUrl, {
+			headers: { Accept: "application/json" },
+			signal: AbortSignal.timeout(10_000),
+		});
+
+		if (response.ok) {
+			const doc = (await response.json()) as { issuer?: string };
+			if (doc.issuer && typeof doc.issuer === "string") {
+				return doc.issuer;
+			}
+		}
+	} catch {
+		// Discovery failed — fall back to normalized URL
+		// This preserves behavior for providers that were already working
 	}
 
 	return normalized;

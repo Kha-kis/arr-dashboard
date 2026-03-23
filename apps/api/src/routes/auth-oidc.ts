@@ -4,7 +4,7 @@ import * as oauth from "oauth4webapi";
 import { z } from "zod";
 import { warmConnectionsForUser } from "../lib/arr/connection-warmer.js";
 import { OIDCProvider } from "../lib/auth/oidc-provider.js";
-import { normalizeIssuerUrl } from "../lib/auth/oidc-utils.js";
+import { resolveCanonicalIssuer } from "../lib/auth/oidc-utils.js";
 import { getSessionMetadata } from "../lib/auth/session-metadata.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { validateRequest } from "../lib/utils/validate.js";
@@ -81,14 +81,15 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			const { displayName, clientId, clientSecret, scopes } = parsed;
 
-			// Normalize issuer URL to prevent discovery failures
+			// Resolve canonical issuer URL from the provider's discovery document
+			// This ensures the stored value matches what oauth4webapi compares against (RFC 8414 §2)
 			let normalizedIssuer: string;
 			try {
-				normalizedIssuer = normalizeIssuerUrl(parsed.issuer);
+				normalizedIssuer = await resolveCanonicalIssuer(parsed.issuer);
 				if (normalizedIssuer !== parsed.issuer) {
 					request.log.info(
-						{ original: parsed.issuer, normalized: normalizedIssuer },
-						"Normalized OIDC issuer URL",
+						{ original: parsed.issuer, resolved: normalizedIssuer },
+						"Resolved canonical OIDC issuer URL from discovery document",
 					);
 				}
 			} catch (error) {

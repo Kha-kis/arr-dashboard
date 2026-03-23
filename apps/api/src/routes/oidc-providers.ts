@@ -7,7 +7,7 @@ import {
 	updateOidcProviderSchema,
 } from "@arr/shared";
 import type { FastifyInstance } from "fastify";
-import { normalizeIssuerUrl } from "../lib/auth/oidc-utils.js";
+import { resolveCanonicalIssuer } from "../lib/auth/oidc-utils.js";
 import { hashPassword } from "../lib/auth/password.js";
 import type { Prisma, OIDCProvider as PrismaOIDCProvider } from "../lib/prisma.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
@@ -64,11 +64,11 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 			// Normalize issuer URL to prevent discovery failures
 			let normalizedIssuer: string;
 			try {
-				normalizedIssuer = normalizeIssuerUrl(data.issuer);
+				normalizedIssuer = await resolveCanonicalIssuer(data.issuer);
 				if (normalizedIssuer !== data.issuer) {
 					request.log.info(
 						{ original: data.issuer, normalized: normalizedIssuer },
-						"Normalized OIDC issuer URL",
+						"Resolved canonical OIDC issuer URL from discovery document",
 					);
 				}
 			} catch (error) {
@@ -138,11 +138,11 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 			let normalizedIssuer: string | undefined;
 			if (data.issuer) {
 				try {
-					normalizedIssuer = normalizeIssuerUrl(data.issuer);
+					normalizedIssuer = await resolveCanonicalIssuer(data.issuer);
 					if (normalizedIssuer !== data.issuer) {
 						request.log.info(
 							{ original: data.issuer, normalized: normalizedIssuer },
-							"Normalized OIDC issuer URL",
+							"Resolved canonical OIDC issuer URL from discovery document",
 						);
 					}
 				} catch (error) {

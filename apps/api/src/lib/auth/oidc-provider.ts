@@ -160,23 +160,50 @@ export class OIDCProvider {
 			return this.authServer;
 		}
 
-		const issuerUrl = new URL(this.config.issuer);
+		let issuerUrl = new URL(this.config.issuer);
 
 		try {
 			// Allow HTTP for local/development environments (localhost, 127.0.0.1, private IPs)
 			// In production with public domains, HTTPS is still enforced by oauth4webapi
-			const discoveryResponse = await oauth.discoveryRequest(issuerUrl, {
-				algorithm: "oidc",
+			const insecureOpts = {
+				algorithm: "oidc" as const,
 				[oauth.allowInsecureRequests]: this.shouldAllowInsecureRequests(),
-			});
+			};
 
-			const authServer = await oauth.processDiscoveryResponse(issuerUrl, discoveryResponse);
+			let discoveryResponse = await oauth.discoveryRequest(issuerUrl, insecureOpts);
 
-			this.authServer = authServer;
-			return authServer;
+			try {
+				const authServer = await oauth.processDiscoveryResponse(issuerUrl, discoveryResponse);
+				this.authServer = authServer;
+				return authServer;
+			} catch (processError) {
+				const processMsg = getErrorMessage(processError);
+
+				// Self-healing: if issuer mismatch, the stored value may have been normalized
+				// differently from the provider's canonical issuer (e.g., trailing slash).
+				// Fetch the discovery doc, extract the canonical issuer, and retry.
+				if (processMsg.includes("OAUTH_JSON_ATTRIBUTE_COMPARISON_FAILED")) {
+					try {
+						const res = await discoveryResponse.clone().json() as { issuer?: string };
+						if (res.issuer && res.issuer !== this.config.issuer) {
+							issuerUrl = new URL(res.issuer);
+							discoveryResponse = await oauth.discoveryRequest(issuerUrl, insecureOpts);
+							const authServer = await oauth.processDiscoveryResponse(
+								issuerUrl,
+								discoveryResponse,
+							);
+							this.authServer = authServer;
+							return authServer;
+						}
+					} catch {
+						// Retry failed — fall through to the original error
+					}
+				}
+
+				throw processError;
+			}
 		} catch (error) {
 			const errMsg = getErrorMessage(error);
-			const discoveryUrl = `${this.config.issuer}/.well-known/openid-configuration`;
 
 			// Provide helpful error messages for common issues
 			if (
@@ -184,7 +211,7 @@ export class OIDCProvider {
 				errMsg.includes("OAUTH_RESPONSE_IS_NOT_CONFORM")
 			) {
 				throw new Error(
-					`OIDC discovery failed for "${this.config.issuer}". The discovery endpoint (${discoveryUrl}) returned an invalid response. Please verify: (1) The issuer URL is correct (should NOT include trailing slash or .well-known/openid-configuration), (2) The OIDC provider is accessible from this server, (3) The provider supports OpenID Connect discovery. Original error: ${errMsg}`,
+					`OIDC discovery failed for "${this.config.issuer}". Please verify: (1) The issuer URL is correct, (2) The OIDC provider is accessible from this server, (3) The provider supports OpenID Connect discovery. Original error: ${errMsg}`,
 				);
 			}
 
