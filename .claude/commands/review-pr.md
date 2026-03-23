@@ -6,8 +6,8 @@ Review pull request $ARGUMENTS
 
 Review for:
 - **Correctness**: Does the code do what the PR claims?
-- **Security**: Any auth bypasses, missing ownership checks, unvalidated input?
-- **Consistency**: Does it follow CLAUDE.md conventions (query keys, polling constants, incognito mode, etc.)?
+- **Security**: Any auth bypasses, missing ownership checks, unvalidated input? For deep security review, use `/security-pass` on the affected files.
+- **Consistency**: Does it follow CLAUDE.md conventions (query keys, polling constants, incognito mode, server state in hooks, etc.)?
 - **Tests**: Are new behaviors tested? Are existing tests updated?
 - **Edge cases**: Timezone issues, null handling, empty arrays, concurrent access?
 
