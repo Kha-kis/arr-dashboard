@@ -112,7 +112,7 @@ packages/shared/src/types/ # Shared Zod schemas + TypeScript types
 
 ## Key Frontend Patterns
 
-**Data fetching**: API client module -> `useQuery`/`useMutation` hook -> component. All API requests use `credentials: "include"`.
+**Data fetching**: API client module -> `useQuery`/`useMutation` hook -> component. All API requests use `credentials: "include"`. Server state must live in shared domain hooks (`hooks/api/`), never inline in components. Components should only render and handle user interaction — keep data transformation and business logic in hooks or utilities.
 
 **Middleware** (`apps/web/middleware.ts`): Only does route protection (session validation via `/auth/me`), NOT API proxying. API proxying is handled by Next.js rewrites in `next.config.mjs`.
 

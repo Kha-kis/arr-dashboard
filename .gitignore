@@ -50,9 +50,10 @@ apps/api/dev.db
 # Development tool artifacts
 .auditor_venv/
 .pf/
-# Claude Code — ignore config, keep commands (workflow templates for contributors)
+# Claude Code — ignore config, keep commands and skills
 .claude/*
 !.claude/commands/
+!.claude/skills/
 .serena/
 .leann/
 claudedocs/
