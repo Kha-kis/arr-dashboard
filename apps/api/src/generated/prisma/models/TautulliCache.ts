@@ -1248,6 +1248,11 @@ export type TautulliCacheFindManyArgs<ExtArgs extends runtime.Types.Extensions.I
    * Skip the first `n` TautulliCaches.
    */
   skip?: number
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+   * 
+   * Filter by unique combinations of TautulliCaches.
+   */
   distinct?: Prisma.TautulliCacheScalarFieldEnum | Prisma.TautulliCacheScalarFieldEnum[]
 }
 

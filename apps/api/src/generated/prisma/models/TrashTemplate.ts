@@ -2095,6 +2095,11 @@ export type TrashTemplateFindManyArgs<ExtArgs extends runtime.Types.Extensions.I
    * Skip the first `n` TrashTemplates.
    */
   skip?: number
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+   * 
+   * Filter by unique combinations of TrashTemplates.
+   */
   distinct?: Prisma.TrashTemplateScalarFieldEnum | Prisma.TrashTemplateScalarFieldEnum[]
 }
 

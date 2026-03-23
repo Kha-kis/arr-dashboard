@@ -51,7 +51,7 @@ export const prismaPlugin = fp(
 				);
 			}
 			pgPool = new pg.default.Pool({ connectionString: databaseUrl });
-			adapter = new PrismaPg(pgPool);
+			adapter = new PrismaPg(pgPool as any);
 		} else {
 			const { PrismaBetterSqlite3 } = await import("@prisma/adapter-better-sqlite3");
 			const dbPath = parseSqliteUrl(databaseUrl);

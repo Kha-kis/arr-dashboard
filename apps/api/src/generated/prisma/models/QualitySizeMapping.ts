@@ -1446,6 +1446,11 @@ export type QualitySizeMappingFindManyArgs<ExtArgs extends runtime.Types.Extensi
    * Skip the first `n` QualitySizeMappings.
    */
   skip?: number
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+   * 
+   * Filter by unique combinations of QualitySizeMappings.
+   */
   distinct?: Prisma.QualitySizeMappingScalarFieldEnum | Prisma.QualitySizeMappingScalarFieldEnum[]
 }
 
