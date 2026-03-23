@@ -146,7 +146,7 @@ export const AlbumBreakdownModal = ({
 
 	// Compute overall stats from fetched albums
 	const totalTracks = albums.reduce(
-		(sum, a) => sum + (a.statistics?.totalTrackCount ?? a.statistics?.trackCount ?? 0),
+		(sum, a) => sum + (a.statistics?.trackCount ?? a.statistics?.totalTrackCount ?? 0),
 		0,
 	);
 	const downloadedTracks = albums.reduce((sum, a) => sum + (a.statistics?.trackFileCount ?? 0), 0);
@@ -340,7 +340,7 @@ const AlbumRow = ({
 	pendingActionKey,
 	themeGradient,
 }: AlbumRowProps) => {
-	const trackTotal = album.statistics?.totalTrackCount ?? album.statistics?.trackCount ?? 0;
+	const trackTotal = album.statistics?.trackCount ?? album.statistics?.totalTrackCount ?? 0;
 	const trackDownloaded = album.statistics?.trackFileCount ?? 0;
 	const trackMissing = album.monitored !== false ? Math.max(trackTotal - trackDownloaded, 0) : 0;
 	const percentComplete =
