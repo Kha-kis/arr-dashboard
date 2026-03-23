@@ -10,9 +10,11 @@
 import { describe, it, expect, vi } from "vitest";
 import {
 	fetchSonarrStatisticsWithSdk,
+	fetchLidarrStatisticsWithSdk,
 	aggregateSonarrStatistics,
 } from "../dashboard-statistics.js";
 import type { SonarrClient } from "arr-sdk/sonarr";
+import type { LidarrClient } from "arr-sdk/lidarr";
 
 // ---------------------------------------------------------------------------
 // Helpers – build mock SonarrClient
@@ -392,5 +394,142 @@ describe("aggregateSonarrStatistics", () => {
 	it("returns undefined for empty instances array", () => {
 		const result = aggregateSonarrStatistics([]);
 		expect(result).toBeUndefined();
+	});
+});
+
+// ===========================================================================
+// Lidarr Statistics — Monitored track count (#209)
+// ===========================================================================
+
+interface MockArtistEntry {
+	id: number;
+	artistName: string;
+	monitored: boolean;
+	status: "continuing" | "ended";
+	added: string;
+	tags: number[];
+	qualityProfileId: number;
+	statistics: {
+		albumCount: number;
+		totalTrackCount: number;
+		trackCount: number; // monitored album tracks only
+		trackFileCount: number;
+		sizeOnDisk: number;
+	};
+}
+
+function createMockLidarrClient(
+	artistList: MockArtistEntry[],
+): LidarrClient {
+	return {
+		artist: { getAll: vi.fn().mockResolvedValue(artistList) },
+		diskSpace: { get: vi.fn().mockResolvedValue([{ freeSpace: 500_000_000_000, totalSpace: 1_000_000_000_000 }]) },
+		health: { get: vi.fn().mockResolvedValue([]) },
+		wanted: { getCutoffUnmet: vi.fn().mockResolvedValue({ totalRecords: 0 }) },
+		qualityProfile: { getAll: vi.fn().mockResolvedValue([{ id: 1, name: "Lossless" }]) },
+		tag: { getAll: vi.fn().mockResolvedValue([]) },
+	} as unknown as LidarrClient;
+}
+
+function makeArtist(overrides: Partial<MockArtistEntry> & { id: number }): MockArtistEntry {
+	return {
+		artistName: `Artist ${overrides.id}`,
+		monitored: true,
+		status: "continuing",
+		added: "2025-01-01T00:00:00Z",
+		tags: [],
+		qualityProfileId: 1,
+		statistics: {
+			albumCount: 5,
+			totalTrackCount: 100,
+			trackCount: 60, // Only 60 of 100 tracks are from monitored albums
+			trackFileCount: 50,
+			sizeOnDisk: 50_000_000_000,
+		},
+		...overrides,
+	};
+}
+
+const LIDARR_INSTANCE = { id: "lidarr-1", name: "Test Lidarr", url: "http://localhost:8686" };
+
+describe("fetchLidarrStatisticsWithSdk", () => {
+	it("uses trackCount (monitored albums) not totalTrackCount for missing calculation (#209)", async () => {
+		// Artist with 100 total tracks but only 60 from monitored albums, 50 downloaded
+		// Old bug: missing = 100 - 50 = 50 (WRONG — counts unmonitored album tracks)
+		// Fix: missing = 60 - 50 = 10 (CORRECT — only monitored album tracks)
+		const artists = [
+			makeArtist({
+				id: 1,
+				statistics: {
+					albumCount: 10,
+					totalTrackCount: 100,
+					trackCount: 60,
+					trackFileCount: 50,
+					sizeOnDisk: 50_000_000_000,
+				},
+			}),
+		];
+
+		const client = createMockLidarrClient(artists);
+		const result = await fetchLidarrStatisticsWithSdk(
+			client,
+			LIDARR_INSTANCE.id,
+			LIDARR_INSTANCE.name,
+			LIDARR_INSTANCE.url,
+		);
+
+		expect(result.missingTracks).toBe(10);
+		expect(result.totalTracks).toBe(60); // Uses monitored trackCount
+		expect(result.downloadedTracks).toBe(50);
+	});
+
+	it("excludes unmonitored artists entirely from missing count", async () => {
+		const artists = [
+			makeArtist({ id: 1, monitored: true, statistics: { albumCount: 5, totalTrackCount: 50, trackCount: 40, trackFileCount: 35, sizeOnDisk: 35_000_000_000 } }),
+			makeArtist({ id: 2, monitored: false, statistics: { albumCount: 20, totalTrackCount: 500, trackCount: 400, trackFileCount: 0, sizeOnDisk: 0 } }),
+		];
+
+		const client = createMockLidarrClient(artists);
+		const result = await fetchLidarrStatisticsWithSdk(
+			client,
+			LIDARR_INSTANCE.id,
+			LIDARR_INSTANCE.name,
+			LIDARR_INSTANCE.url,
+		);
+
+		// Only artist 1 counts: 40 monitored tracks - 35 downloaded = 5 missing
+		expect(result.missingTracks).toBe(5);
+		expect(result.totalTracks).toBe(40);
+		expect(result.downloadedTracks).toBe(35);
+		// But total artists still counts both
+		expect(result.totalArtists).toBe(2);
+		expect(result.monitoredArtists).toBe(1);
+	});
+
+	it("falls back to totalTrackCount when trackCount is missing", async () => {
+		const artists = [
+			makeArtist({
+				id: 1,
+				statistics: {
+					albumCount: 5,
+					totalTrackCount: 80,
+					trackCount: undefined as unknown as number,
+					trackFileCount: 70,
+					sizeOnDisk: 70_000_000_000,
+				},
+			}),
+		];
+
+		const client = createMockLidarrClient(artists);
+		const result = await fetchLidarrStatisticsWithSdk(
+			client,
+			LIDARR_INSTANCE.id,
+			LIDARR_INSTANCE.name,
+			LIDARR_INSTANCE.url,
+		);
+
+		// Falls back to totalTrackCount when trackCount unavailable
+		expect(result.missingTracks).toBe(10);
+		expect(result.totalTracks).toBe(80);
 	});
 });

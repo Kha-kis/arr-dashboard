@@ -513,18 +513,20 @@ export const fetchLidarrStatisticsWithSdk = async (
 
 		const stats = artist.statistics;
 		const albumCount = stats?.albumCount ?? 0;
-		const trackCount = stats?.totalTrackCount ?? 0;
+		// trackCount = monitored album tracks only (excludes unmonitored albums)
+		// totalTrackCount = ALL tracks including unmonitored albums
+		const monitoredTrackCount = stats?.trackCount ?? stats?.totalTrackCount ?? 0;
 		const trackFileCount = stats?.trackFileCount ?? 0;
 		const sizeOnDisk = stats?.sizeOnDisk ?? 0;
 
 		totalAlbums += albumCount;
 		totalFileSize += sizeOnDisk;
 
-		// Only count tracks from monitored artists for missing/downloaded stats
+		// Only count tracks from monitored artists, using monitored album track count
 		if (artist.monitored !== false) {
-			totalTracks += trackCount;
+			totalTracks += monitoredTrackCount;
 			downloadedTracks += trackFileCount;
-			missingTracks += Math.max(0, trackCount - trackFileCount);
+			missingTracks += Math.max(0, monitoredTrackCount - trackFileCount);
 		}
 
 		if (trackFileCount > 0) {

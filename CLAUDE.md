@@ -63,6 +63,11 @@ packages/shared/src/types/ # Shared Zod schemas + TypeScript types
 - **Premium Components**: Check `premium-components.tsx` before creating custom UI (has GlassmorphicCard, ServiceBadge, StatusBadge, PremiumTabs, PremiumTable, GradientButton, etc.)
 - **Error messages**: Use `getErrorMessage()` from `lib/utils/error-message.ts` instead of `error instanceof Error ? error.message : ...`
 - **Logging**: Use `request.log` or `app.log` (pino), never `console.log` in production code
+- **Query keys**: All React Query keys must be defined in `lib/query-keys.ts`. Never use inline string arrays. Import from the centralized file.
+- **Polling**: Use named constants from `lib/polling-intervals.ts` (POLLING_REALTIME, POLLING_ACTIVE, POLLING_STANDARD, POLLING_STATS, POLLING_BACKGROUND, POLLING_FAST). Never hardcode interval numbers.
+- **Refresh pattern**: Use `useRefreshState()` hook from `hooks/useRefreshState.ts` for "refresh with animation" buttons. Never manually manage isRefreshing + setTimeout.
+- **No broad refactors**: Do not refactor code unrelated to the current task. Do not "clean up" files you're passing through. Only change what's directly required.
+- **Impact summaries**: When completing a task, summarize: what changed, why, files affected, risks, and validation performed.
 
 ## Adding Features
 
@@ -107,7 +112,7 @@ packages/shared/src/types/ # Shared Zod schemas + TypeScript types
 
 ## Key Frontend Patterns
 
-**Data fetching**: API client module -> `useQuery`/`useMutation` hook -> component. All API requests use `credentials: "include"`.
+**Data fetching**: API client module -> `useQuery`/`useMutation` hook -> component. All API requests use `credentials: "include"`. Server state must live in shared domain hooks (`hooks/api/`), never inline in components. Components should only render and handle user interaction — keep data transformation and business logic in hooks or utilities.
 
 **Middleware** (`apps/web/middleware.ts`): Only does route protection (session validation via `/auth/me`), NOT API proxying. API proxying is handled by Next.js rewrites in `next.config.mjs`.
 
@@ -146,6 +151,16 @@ pnpm --filter @arr/api exec tsc --noEmit         # Type check backend
 - **Backup service**: Decomposed into `backup-crypto.ts`, `backup-validation.ts`, `backup-file-utils.ts`, `backup-database.ts`
 - **Queue Cleaner**: Has its own `QueueCleanerConfig` model for per-instance auto-cleanup settings
 
+## Release Checklist
+
+When preparing a release, update ALL of these before tagging:
+1. `package.json` — version field
+2. `CHANGELOG.md` — new version section
+3. `README.md` — version tagline at top + version tags table
+4. `DOCKERHUB.md` — version tagline at top + version tags table
+5. `CLAUDE.md` — version at bottom
+6. **Wiki** — update version in `Home.md` and `Troubleshooting.md` (`/tmp/arr-wiki` or clone from `arr-dashboard.wiki.git`)
+
 ## Detailed Reference (not loaded by default)
 
 For deep dives, see these files (create as needed):
@@ -155,4 +170,4 @@ For deep dives, see these files (create as needed):
 
 ---
 
-**Version:** 2.9.2 | **Node:** 22+ | **pnpm:** 10+
+**Version:** 2.9.3 | **Node:** 22+ | **pnpm:** 10+

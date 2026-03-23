@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.9.1** — Security patches, comprehensive incognito mode, TRaSH Guides cloning improvements
+> **Version 2.9.3** — Lidarr stats fix, Claude Code tooling, GitHub templates
 
 A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, **Lidarr**, **Readarr**, **Plex**, **Tautulli**, and **Seerr** instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -201,6 +201,8 @@ docker-compose up -d
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.9.3` | Lidarr stats fix (#209 follow-up), Claude Code tooling, GitHub templates |
+| `2.9.2` | Bug fixes (#207 #208 #209), architecture improvements, 28 dependency updates |
 | `2.9.1` | Security patches, complete incognito mode, TRaSH cloning improvements |
 | `2.9.0` | Plex/Tautulli/Seerr integration, notifications, library cleanup, naming deployment |
 | `2.8.5` | Bug fixes: queue cleaner, statistics, dropdowns, logging, Docker PostgreSQL |
