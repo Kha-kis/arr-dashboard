@@ -5,6 +5,19 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.3] - 2026-03-23
+
+### Fixed
+
+- **Lidarr unmonitored album tracks still counted as missing (#209)** — v2.9.2 filtered by artist-level monitoring but used `totalTrackCount` (all albums) instead of `trackCount` (monitored albums only). Fixed in dashboard statistics, artist normalizer, library card, and album breakdown modal
+
+### Added
+
+- **GitHub issue templates** — Structured bug report and feature request forms with version, deployment method, connected services, and logs fields
+- **GitHub PR template** — Checklist covering validation, query keys, polling constants, incognito mode, and ownership checks
+- **Claude Code commands** — 9 slash commands for development workflows (fix-issue, release-prep, validate, review-pr, feature-audit, security-pass, stabilize-branch, release-patch, prepare-changelog)
+- **Claude Code skills** — 5 domain-specific reasoning skills (frontend architecture, release engineering, integration auditing, auth review, regression hunting)
+
 ## [2.9.2] - 2026-03-23
 
 Bug fixes, dependency updates, OIDC compatibility, and frontend architecture improvements.

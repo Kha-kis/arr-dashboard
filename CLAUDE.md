@@ -169,4 +169,4 @@ For deep dives, see these files (create as needed):
 
 ---
 
-**Version:** 2.9.2 | **Node:** 22+ | **pnpm:** 10+
+**Version:** 2.9.3 | **Node:** 22+ | **pnpm:** 10+
