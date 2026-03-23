@@ -18,6 +18,7 @@ import { PremiumSection } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import { apiRequest } from "../../../lib/api-client/base";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { POLLING_STANDARD } from "../../../lib/polling-intervals";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 // ============================================================================
@@ -658,7 +659,7 @@ function QuarantineSection() {
 	const { data: quarantine } = useQuery<QuarantineResponse>({
 		queryKey: ["validation-quarantine"],
 		queryFn: () => apiRequest<QuarantineResponse>("/api/system/validation-quarantine"),
-		refetchInterval: 60_000,
+		refetchInterval: POLLING_STANDARD,
 	});
 
 	const clearMutation = useMutation({

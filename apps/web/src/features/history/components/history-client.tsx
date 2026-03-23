@@ -29,6 +29,7 @@ import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { useMultiInstanceHistoryQuery } from "../../../hooks/api/useDashboard";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
+import { useRefreshState } from "../../../hooks/useRefreshState";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
@@ -48,7 +49,6 @@ const TIME_RANGE_PRESETS: Array<{ value: TimeRangePreset; label: string }> = [
 ];
 
 export const HistoryClient = () => {
-	const [isRefreshing, setIsRefreshing] = useState(false);
 	const [showServiceBreakdown, setShowServiceBreakdown] = useState(false);
 	const [filtersOpen, setFiltersOpen] = useState(false);
 	const [dismissedFailureAlert, setDismissedFailureAlert] = useState(false);
@@ -74,6 +74,7 @@ export const HistoryClient = () => {
 		startDate: startDate || undefined,
 		endDate: endDate || undefined,
 	});
+	const [isRefreshing, handleRefresh] = useRefreshState(refetch);
 
 	const { data: services } = useServicesQuery();
 
@@ -159,12 +160,6 @@ export const HistoryClient = () => {
 		actions.setStatusFilter("all");
 		actions.setTimeRangePreset("7d");
 		actions.setHideProwlarrRss(true);
-	};
-
-	const handleRefresh = async () => {
-		setIsRefreshing(true);
-		await refetch();
-		setTimeout(() => setIsRefreshing(false), 500);
 	};
 
 	// Loading skeleton

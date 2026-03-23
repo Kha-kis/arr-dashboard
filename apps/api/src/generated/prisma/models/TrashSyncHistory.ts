@@ -2040,6 +2040,11 @@ export type TrashSyncHistoryFindManyArgs<ExtArgs extends runtime.Types.Extension
    * Skip the first `n` TrashSyncHistories.
    */
   skip?: number
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+   * 
+   * Filter by unique combinations of TrashSyncHistories.
+   */
   distinct?: Prisma.TrashSyncHistoryScalarFieldEnum | Prisma.TrashSyncHistoryScalarFieldEnum[]
 }
 

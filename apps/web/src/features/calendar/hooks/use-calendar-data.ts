@@ -190,8 +190,10 @@ export const useCalendarData = (
 	const eventsByDate = useMemo(() => {
 		const map = new Map<string, DeduplicatedCalendarItem[]>();
 		for (const item of filteredEvents) {
-			// Use releaseDate for albums, otherwise airDateUtc/airDate
-			const iso = item.releaseDate ?? item.airDateUtc ?? item.airDate;
+			// Prefer local date (airDate/releaseDate) over UTC for bucketing into grid cells.
+			// airDateUtc can shift events to the next day for users in negative UTC offsets
+			// (e.g., a Sunday 8pm ET show has airDateUtc on Monday UTC). See issue #207.
+			const iso = item.airDate ?? item.releaseDate ?? item.airDateUtc;
 			if (!iso) {
 				continue;
 			}
@@ -204,11 +206,12 @@ export const useCalendarData = (
 				map.set(dateKey, [item]);
 			}
 		}
-		// Sort events within each date
+		// Sort events within each date by most precise time available
+		// (airDateUtc has time precision; airDate is just YYYY-MM-DD)
 		for (const value of map.values()) {
 			value.sort((a, b) => {
-				const timeA = new Date(a.releaseDate ?? a.airDateUtc ?? a.airDate ?? 0).getTime();
-				const timeB = new Date(b.releaseDate ?? b.airDateUtc ?? b.airDate ?? 0).getTime();
+				const timeA = new Date(a.airDateUtc ?? a.releaseDate ?? a.airDate ?? 0).getTime();
+				const timeB = new Date(b.airDateUtc ?? b.releaseDate ?? b.airDate ?? 0).getTime();
 				if (timeA !== timeB) {
 					return timeA - timeB;
 				}

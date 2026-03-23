@@ -1485,6 +1485,11 @@ export type NamingConfigFindManyArgs<ExtArgs extends runtime.Types.Extensions.In
    * Skip the first `n` NamingConfigs.
    */
   skip?: number
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+   * 
+   * Filter by unique combinations of NamingConfigs.
+   */
   distinct?: Prisma.NamingConfigScalarFieldEnum | Prisma.NamingConfigScalarFieldEnum[]
 }
 

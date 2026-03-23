@@ -1454,6 +1454,11 @@ export type TemplateQualityProfileMappingFindManyArgs<ExtArgs extends runtime.Ty
    * Skip the first `n` TemplateQualityProfileMappings.
    */
   skip?: number
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+   * 
+   * Filter by unique combinations of TemplateQualityProfileMappings.
+   */
   distinct?: Prisma.TemplateQualityProfileMappingScalarFieldEnum | Prisma.TemplateQualityProfileMappingScalarFieldEnum[]
 }
 

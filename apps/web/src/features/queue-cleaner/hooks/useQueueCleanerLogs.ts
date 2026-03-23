@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../../../lib/api-client/base";
+import { queueCleanerKeys } from "../../../lib/query-keys";
 import { LOGS_ACTIVE_REFRESH_INTERVAL, LOGS_REFRESH_INTERVAL } from "../lib/constants";
 import type { QueueCleanerLog } from "../lib/queue-cleaner-types";
 
@@ -45,7 +46,7 @@ export function useQueueCleanerLogs(params: UseLogsParams = {}): UseQueueCleaner
 	const { hasRunningCleans, ...queryParams } = params;
 
 	const query = useQuery({
-		queryKey: ["queue-cleaner", "logs", queryParams],
+		queryKey: queueCleanerKeys.logs(queryParams as Record<string, unknown>),
 		queryFn: () => fetchLogs(queryParams),
 		refetchInterval: hasRunningCleans ? LOGS_ACTIVE_REFRESH_INTERVAL : LOGS_REFRESH_INTERVAL,
 	});

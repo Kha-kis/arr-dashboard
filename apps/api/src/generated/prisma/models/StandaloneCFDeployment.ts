@@ -1232,6 +1232,11 @@ export type StandaloneCFDeploymentFindManyArgs<ExtArgs extends runtime.Types.Ext
    * Skip the first `n` StandaloneCFDeployments.
    */
   skip?: number
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+   * 
+   * Filter by unique combinations of StandaloneCFDeployments.
+   */
   distinct?: Prisma.StandaloneCFDeploymentScalarFieldEnum | Prisma.StandaloneCFDeploymentScalarFieldEnum[]
 }
 

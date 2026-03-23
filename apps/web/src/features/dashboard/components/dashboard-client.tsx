@@ -36,6 +36,7 @@ import {
 import { useDashboardStatisticsQuery } from "../../../hooks/api/useDashboard";
 import { useNowPlaying } from "../../../hooks/api/usePlex";
 import { useTautulliActivity } from "../../../hooks/api/useTautulli";
+import { useRefreshState } from "../../../hooks/useRefreshState";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { anonymizeHealthMessage, getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
@@ -318,7 +319,6 @@ const DashboardSkeleton = () => (
 export const DashboardClient = () => {
 	const [incognitoMode] = useIncognitoMode();
 	const [activeTab, setActiveTab] = useState<DashboardTab>("overview");
-	const [isRefreshing, setIsRefreshing] = useState(false);
 	const [instancesExpanded, setInstancesExpanded] = useState(false);
 	const router = useRouter();
 
@@ -462,11 +462,11 @@ export const DashboardClient = () => {
 	);
 
 	// Refresh handler with animation
-	const handleRefresh = async () => {
-		setIsRefreshing(true);
-		await Promise.all([servicesRefetch(), queueRefetch()]);
-		setTimeout(() => setIsRefreshing(false), 500);
-	};
+	const refetchAll = useCallback(
+		() => Promise.all([servicesRefetch(), queueRefetch()]),
+		[servicesRefetch, queueRefetch],
+	);
+	const [isRefreshing, handleRefresh] = useRefreshState(refetchAll);
 
 	if (isLoading) {
 		return <DashboardSkeleton />;

@@ -1305,6 +1305,11 @@ export type WebAuthnCredentialFindManyArgs<ExtArgs extends runtime.Types.Extensi
    * Skip the first `n` WebAuthnCredentials.
    */
   skip?: number
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+   * 
+   * Filter by unique combinations of WebAuthnCredentials.
+   */
   distinct?: Prisma.WebAuthnCredentialScalarFieldEnum | Prisma.WebAuthnCredentialScalarFieldEnum[]
 }
 

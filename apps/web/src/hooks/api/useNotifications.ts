@@ -7,21 +7,7 @@ import {
 	type SubscriptionUpdateEntry,
 	type UpdateChannelRequest,
 } from "../../lib/api-client/notifications";
-
-// ============================================================================
-// Query Keys
-// ============================================================================
-
-const KEYS = {
-	channels: ["notification-channels"] as const,
-	channelTypes: ["notification-channel-types"] as const,
-	subscriptions: ["notification-subscriptions"] as const,
-	logs: (page: number, filters?: Record<string, string>) =>
-		["notification-logs", page, filters] as const,
-	rules: ["notification-rules"] as const,
-	statistics: (days: number) => ["notification-statistics", days] as const,
-	aggregation: ["notification-aggregation"] as const,
-};
+import { notificationKeys } from "../../lib/query-keys";
 
 // ============================================================================
 // Queries
@@ -29,7 +15,7 @@ const KEYS = {
 
 export function useNotificationChannels() {
 	return useQuery({
-		queryKey: KEYS.channels,
+		queryKey: notificationKeys.channels,
 		queryFn: () => notificationsApi.listChannels(),
 		staleTime: 30_000,
 	});
@@ -37,7 +23,7 @@ export function useNotificationChannels() {
 
 export function useChannelTypes(): ReturnType<typeof useQuery<ChannelTypeInfo[]>> {
 	return useQuery({
-		queryKey: KEYS.channelTypes,
+		queryKey: notificationKeys.channelTypes,
 		queryFn: () => notificationsApi.getChannelTypes(),
 		staleTime: 5 * 60 * 1000,
 	});
@@ -45,7 +31,7 @@ export function useChannelTypes(): ReturnType<typeof useQuery<ChannelTypeInfo[]>
 
 export function useNotificationSubscriptions() {
 	return useQuery({
-		queryKey: KEYS.subscriptions,
+		queryKey: notificationKeys.subscriptions,
 		queryFn: () => notificationsApi.getSubscriptions(),
 		staleTime: 60_000,
 	});
@@ -57,14 +43,14 @@ export function useNotificationLogs(
 	filters?: { status?: string; eventType?: string; since?: string; until?: string },
 ) {
 	return useQuery({
-		queryKey: KEYS.logs(page, filters as Record<string, string> | undefined),
+		queryKey: notificationKeys.logs(page, filters as Record<string, string> | undefined),
 		queryFn: () => notificationsApi.getLogs(page, limit, filters),
 	});
 }
 
 export function useNotificationRules() {
 	return useQuery({
-		queryKey: KEYS.rules,
+		queryKey: notificationKeys.rules,
 		queryFn: () => notificationsApi.listRules(),
 		staleTime: 30_000,
 	});
@@ -72,7 +58,7 @@ export function useNotificationRules() {
 
 export function useNotificationStatistics(days = 30) {
 	return useQuery({
-		queryKey: KEYS.statistics(days),
+		queryKey: notificationKeys.statistics(days),
 		queryFn: () => notificationsApi.getStatistics(days),
 		staleTime: 60_000,
 	});
@@ -80,7 +66,7 @@ export function useNotificationStatistics(days = 30) {
 
 export function useAggregationConfigs() {
 	return useQuery({
-		queryKey: KEYS.aggregation,
+		queryKey: notificationKeys.aggregation,
 		queryFn: () => notificationsApi.getAggregationConfigs(),
 		staleTime: 60_000,
 	});
@@ -95,7 +81,7 @@ export function useCreateChannel() {
 	return useMutation({
 		mutationFn: (data: CreateChannelRequest) => notificationsApi.createChannel(data),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: KEYS.channels });
+			queryClient.invalidateQueries({ queryKey: notificationKeys.channels });
 		},
 	});
 }
@@ -106,7 +92,7 @@ export function useUpdateChannel() {
 		mutationFn: ({ id, data }: { id: string; data: UpdateChannelRequest }) =>
 			notificationsApi.updateChannel(id, data),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: KEYS.channels });
+			queryClient.invalidateQueries({ queryKey: notificationKeys.channels });
 		},
 	});
 }
@@ -116,7 +102,7 @@ export function useDeleteChannel() {
 	return useMutation({
 		mutationFn: (id: string) => notificationsApi.deleteChannel(id),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: KEYS.channels });
+			queryClient.invalidateQueries({ queryKey: notificationKeys.channels });
 		},
 	});
 }
@@ -126,7 +112,7 @@ export function useTestChannel() {
 	return useMutation({
 		mutationFn: (id: string) => notificationsApi.testChannel(id),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: KEYS.channels });
+			queryClient.invalidateQueries({ queryKey: notificationKeys.channels });
 		},
 	});
 }
@@ -137,7 +123,7 @@ export function useUpdateSubscriptions() {
 		mutationFn: (entries: SubscriptionUpdateEntry[]) =>
 			notificationsApi.updateSubscriptions(entries),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: KEYS.subscriptions });
+			queryClient.invalidateQueries({ queryKey: notificationKeys.subscriptions });
 		},
 	});
 }
@@ -147,7 +133,7 @@ export function useCreateRule() {
 	return useMutation({
 		mutationFn: (data: CreateNotificationRule) => notificationsApi.createRule(data),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: KEYS.rules });
+			queryClient.invalidateQueries({ queryKey: notificationKeys.rules });
 		},
 	});
 }
@@ -158,7 +144,7 @@ export function useUpdateRule() {
 		mutationFn: ({ id, data }: { id: string; data: UpdateNotificationRule }) =>
 			notificationsApi.updateRule(id, data),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: KEYS.rules });
+			queryClient.invalidateQueries({ queryKey: notificationKeys.rules });
 		},
 	});
 }
@@ -168,7 +154,7 @@ export function useDeleteRule() {
 	return useMutation({
 		mutationFn: (id: string) => notificationsApi.deleteRule(id),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: KEYS.rules });
+			queryClient.invalidateQueries({ queryKey: notificationKeys.rules });
 		},
 	});
 }
@@ -185,7 +171,7 @@ export function useUpdateAggregationConfigs() {
 			}>,
 		) => notificationsApi.updateAggregationConfigs(configs),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: KEYS.aggregation });
+			queryClient.invalidateQueries({ queryKey: notificationKeys.aggregation });
 		},
 	});
 }

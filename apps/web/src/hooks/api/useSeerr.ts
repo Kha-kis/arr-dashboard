@@ -25,7 +25,8 @@ import type {
 	SeerrUser,
 } from "@arr/shared";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { POLLING_ACTIVE, POLLING_BACKGROUND, POLLING_STANDARD } from "../../lib/polling-intervals";
+import { useEnrichableItems } from "../useEnrichableItems";
 import {
 	addSeerrIssueComment,
 	approveSeerrRequest,
@@ -69,53 +70,7 @@ import {
 	updateSeerrNotification,
 	updateSeerrUser,
 } from "../../lib/api-client/seerr";
-
-// ============================================================================
-// Query Keys
-// ============================================================================
-
-const seerrKeys = {
-	all: ["seerr"] as const,
-	requests: (instanceId: string, params?: Omit<FetchSeerrRequestsParams, "instanceId">) =>
-		["seerr", "requests", instanceId, params] as const,
-	request: (instanceId: string, requestId: number) =>
-		["seerr", "request", instanceId, requestId] as const,
-	requestCount: (instanceId: string) => ["seerr", "request-count", instanceId] as const,
-	users: (instanceId: string, params?: Omit<FetchSeerrUsersParams, "instanceId">) =>
-		["seerr", "users", instanceId, params] as const,
-	userQuota: (instanceId: string, userId: number) =>
-		["seerr", "user-quota", instanceId, userId] as const,
-	issues: (instanceId: string, params?: Omit<FetchSeerrIssuesParams, "instanceId">) =>
-		["seerr", "issues", instanceId, params] as const,
-	notifications: (instanceId: string) => ["seerr", "notifications", instanceId] as const,
-	status: (instanceId: string) => ["seerr", "status", instanceId] as const,
-	health: (instanceId: string) => ["seerr", "health", instanceId] as const,
-	audit: (instanceId: string) => ["seerr", "audit", instanceId] as const,
-	// Discover
-	libraryEnrichment: (instanceId: string, tmdbIdKey: string) =>
-		["seerr", "library-enrichment", instanceId, tmdbIdKey] as const,
-	discover: {
-		all: ["seerr", "discover"] as const,
-		movies: (instanceId: string) => ["seerr", "discover", "movies", instanceId] as const,
-		tv: (instanceId: string) => ["seerr", "discover", "tv", instanceId] as const,
-		trending: (instanceId: string) => ["seerr", "discover", "trending", instanceId] as const,
-		moviesUpcoming: (instanceId: string) =>
-			["seerr", "discover", "movies-upcoming", instanceId] as const,
-		tvUpcoming: (instanceId: string) => ["seerr", "discover", "tv-upcoming", instanceId] as const,
-		search: (instanceId: string, query: string) =>
-			["seerr", "discover", "search", instanceId, query] as const,
-		movieDetails: (instanceId: string, tmdbId: number) =>
-			["seerr", "discover", "movie", instanceId, tmdbId] as const,
-		tvDetails: (instanceId: string, tmdbId: number) =>
-			["seerr", "discover", "tv-details", instanceId, tmdbId] as const,
-		genres: (instanceId: string, mediaType: "movie" | "tv") =>
-			["seerr", "discover", "genres", instanceId, mediaType] as const,
-		requestOptions: (instanceId: string, mediaType: "movie" | "tv") =>
-			["seerr", "discover", "request-options", instanceId, mediaType] as const,
-		byGenre: (instanceId: string, mediaType: "movie" | "tv", genreId: number) =>
-			["seerr", "discover", "genre", instanceId, mediaType, genreId] as const,
-	},
-};
+import { seerrKeys } from "../../lib/query-keys";
 
 // ============================================================================
 // Request Hooks
@@ -125,7 +80,7 @@ export const useSeerrRequests = (params: FetchSeerrRequestsParams) =>
 	useQuery<SeerrPageResult<SeerrRequest>>({
 		queryKey: seerrKeys.requests(params.instanceId, params),
 		queryFn: () => fetchSeerrRequests(params),
-		refetchInterval: 30_000,
+		refetchInterval: POLLING_ACTIVE,
 		enabled: !!params.instanceId,
 	});
 
@@ -141,7 +96,7 @@ export const useSeerrRequestCount = (instanceId: string) =>
 	useQuery<SeerrRequestCount>({
 		queryKey: seerrKeys.requestCount(instanceId),
 		queryFn: () => fetchSeerrRequestCount(instanceId),
-		refetchInterval: 30_000,
+		refetchInterval: POLLING_ACTIVE,
 		enabled: !!instanceId,
 	});
 
@@ -213,7 +168,7 @@ export const useSeerrUsers = (params: FetchSeerrUsersParams) =>
 	useQuery<SeerrPageResult<SeerrUser>>({
 		queryKey: seerrKeys.users(params.instanceId, params),
 		queryFn: () => fetchSeerrUsers(params),
-		refetchInterval: 60_000,
+		refetchInterval: POLLING_STANDARD,
 		enabled: !!params.instanceId,
 	});
 
@@ -221,7 +176,7 @@ export const useSeerrUserQuota = (instanceId: string, userId: number) =>
 	useQuery<SeerrQuota>({
 		queryKey: seerrKeys.userQuota(instanceId, userId),
 		queryFn: () => fetchSeerrUserQuota(instanceId, userId),
-		refetchInterval: 60_000,
+		refetchInterval: POLLING_STANDARD,
 		enabled: !!instanceId && !!userId,
 	});
 
@@ -249,7 +204,7 @@ export const useSeerrIssues = (params: FetchSeerrIssuesParams) =>
 	useQuery<SeerrPageResult<SeerrIssue>>({
 		queryKey: seerrKeys.issues(params.instanceId, params),
 		queryFn: () => fetchSeerrIssues(params),
-		refetchInterval: 60_000,
+		refetchInterval: POLLING_STANDARD,
 		enabled: !!params.instanceId,
 	});
 
@@ -291,7 +246,7 @@ export const useSeerrNotifications = (instanceId: string) =>
 	useQuery<{ agents: SeerrNotificationAgent[] }>({
 		queryKey: seerrKeys.notifications(instanceId),
 		queryFn: () => fetchSeerrNotifications(instanceId),
-		refetchInterval: 5 * 60_000,
+		refetchInterval: POLLING_BACKGROUND,
 		enabled: !!instanceId,
 	});
 
@@ -323,7 +278,7 @@ export const useSeerrStatus = (instanceId: string) =>
 	useQuery<SeerrStatus>({
 		queryKey: seerrKeys.status(instanceId),
 		queryFn: () => fetchSeerrStatus(instanceId),
-		refetchInterval: 5 * 60_000,
+		refetchInterval: POLLING_BACKGROUND,
 		enabled: !!instanceId,
 	});
 
@@ -335,7 +290,7 @@ export const useSeerrHealth = (instanceId: string) =>
 	useQuery<SeerrHealthResponse>({
 		queryKey: seerrKeys.health(instanceId),
 		queryFn: () => fetchSeerrHealth(instanceId),
-		refetchInterval: 5 * 60_000,
+		refetchInterval: POLLING_BACKGROUND,
 		enabled: !!instanceId,
 		throwOnError: false,
 	});
@@ -360,7 +315,7 @@ export const useSeerrAuditLog = (instanceId: string) =>
 	useQuery<SeerrAuditLogEntry[]>({
 		queryKey: seerrKeys.audit(instanceId),
 		queryFn: () => fetchSeerrAuditLog(instanceId),
-		refetchInterval: 30_000,
+		refetchInterval: POLLING_ACTIVE,
 		enabled: !!instanceId,
 	});
 
@@ -512,29 +467,13 @@ export const useLibraryEnrichment = (
 	seerrInstanceId: string | null | undefined,
 	items: LibraryItem[],
 ) => {
-	// Extract enrichable items (movie/series with tmdbId)
-	const enrichable = useMemo(() => {
-		if (!seerrInstanceId || items.length === 0) return { tmdbIds: [], types: [], key: "" };
-
-		const tmdbIds: number[] = [];
-		const types: ("movie" | "tv")[] = [];
-
-		for (const item of items) {
-			if ((item.service === "sonarr" || item.service === "radarr") && item.remoteIds?.tmdbId) {
-				tmdbIds.push(item.remoteIds.tmdbId);
-				types.push(item.type === "movie" ? "movie" : "tv");
-			}
-		}
-
-		// Stable key for query deduplication — includes types so movie/tv with same ID don't collide
-		const key = tmdbIds.map((id, i) => `${types[i]}:${id}`).join(",");
-		return { tmdbIds, types, key };
-	}, [seerrInstanceId, items]);
+	// Seerr API expects "tv" for series
+	const enrichable = useEnrichableItems(items, { movie: "movie", series: "tv" });
 
 	return useQuery<LibraryEnrichmentResponse>({
 		queryKey: seerrKeys.libraryEnrichment(seerrInstanceId ?? "", enrichable.key),
 		queryFn: () => fetchLibraryEnrichment(seerrInstanceId!, enrichable.tmdbIds, enrichable.types),
 		staleTime: 5 * 60_000,
-		enabled: !!seerrInstanceId && enrichable.tmdbIds.length > 0,
+		enabled: !!seerrInstanceId && enrichable.hasItems,
 	});
 };

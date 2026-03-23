@@ -1241,6 +1241,11 @@ export type CacheRefreshStatusFindManyArgs<ExtArgs extends runtime.Types.Extensi
    * Skip the first `n` CacheRefreshStatuses.
    */
   skip?: number
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+   * 
+   * Filter by unique combinations of CacheRefreshStatuses.
+   */
   distinct?: Prisma.CacheRefreshStatusScalarFieldEnum | Prisma.CacheRefreshStatusScalarFieldEnum[]
 }
 

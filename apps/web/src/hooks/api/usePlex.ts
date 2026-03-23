@@ -31,6 +31,8 @@ import type {
 } from "@arr/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
+import { POLLING_REALTIME } from "../../lib/polling-intervals";
+import { useEnrichableItems } from "../useEnrichableItems";
 import {
 	fetchBandwidthAnalytics,
 	fetchBandwidthForecast,
@@ -58,36 +60,7 @@ import {
 	triggerPlexScan,
 	updatePlexTag,
 } from "../../lib/api-client/plex";
-
-// ============================================================================
-// Query Keys
-// ============================================================================
-
-export const plexKeys = {
-	all: ["plex"] as const,
-	watchEnrichment: (key: string) => ["plex", "watch-enrichment", key] as const,
-	sections: () => ["plex", "sections"] as const,
-	nowPlaying: () => ["plex", "now-playing"] as const,
-	episodes: (instanceId: string, showTmdbId: number) =>
-		["plex", "episodes", instanceId, showTmdbId] as const,
-	tags: (instanceId: string) => ["plex", "tags", instanceId] as const,
-	recentlyAdded: (limit: number) => ["plex", "recently-added", limit] as const,
-	identity: () => ["plex", "identity"] as const,
-	onDeck: () => ["plex", "on-deck"] as const,
-	accounts: () => ["plex", "accounts"] as const,
-	cacheHealth: () => ["plex", "cache-health"] as const,
-	seriesProgress: (key: string) => ["plex", "series-progress", key] as const,
-	transcodeAnalytics: (days: number) => ["plex", "transcode-analytics", days] as const,
-	bandwidthAnalytics: (days: number) => ["plex", "bandwidth-analytics", days] as const,
-	userAnalytics: (days: number) => ["plex", "user-analytics", days] as const,
-	watchHistory: (days: number, limit: number) => ["plex", "watch-history", days, limit] as const,
-	codecAnalytics: (days: number) => ["plex", "codec-analytics", days] as const,
-	deviceAnalytics: (days: number) => ["plex", "device-analytics", days] as const,
-	collectionStats: () => ["plex", "collection-stats"] as const,
-	userEpisodeCompletion: (key: string) => ["plex", "user-episode-completion", key] as const,
-	qualityScore: (days: number) => ["plex", "quality-score", days] as const,
-	bandwidthForecast: (days: number) => ["plex", "bandwidth-forecast", days] as const,
-};
+import { plexKeys } from "../../lib/query-keys";
 
 // ============================================================================
 // Watch Enrichment (F1)
@@ -98,26 +71,14 @@ export const plexKeys = {
  * Follows the same pattern as useLibraryEnrichment in useSeerr.ts.
  */
 export const useWatchEnrichment = (items: LibraryItem[]) => {
-	const enrichable = useMemo(() => {
-		if (items.length === 0) return { tmdbIds: [], types: [], key: "" };
-
-		const tmdbIds: number[] = [];
-		const types: string[] = [];
-		for (const item of items) {
-			if ((item.service === "sonarr" || item.service === "radarr") && item.remoteIds?.tmdbId) {
-				tmdbIds.push(item.remoteIds.tmdbId);
-				types.push(item.type === "movie" ? "movie" : "series");
-			}
-		}
-		const key = tmdbIds.map((id, i) => `${types[i]}:${id}`).join(",");
-		return { tmdbIds, types, key };
-	}, [items]);
+	// Plex API expects "series" for series
+	const enrichable = useEnrichableItems(items, { movie: "movie", series: "series" });
 
 	return useQuery<WatchEnrichmentResponse>({
 		queryKey: plexKeys.watchEnrichment(enrichable.key),
 		queryFn: () => fetchWatchEnrichment(enrichable.tmdbIds, enrichable.types),
 		staleTime: 5 * 60_000,
-		enabled: enrichable.tmdbIds.length > 0,
+		enabled: enrichable.hasItems,
 	});
 };
 
@@ -147,7 +108,7 @@ export const usePlexScanMutation = () => {
 // Now Playing (F4)
 // ============================================================================
 
-export const useNowPlaying = (enabled = true, refetchInterval = 15_000) => {
+export const useNowPlaying = (enabled = true, refetchInterval = POLLING_REALTIME) => {
 	return useQuery<PlexNowPlayingResponse>({
 		queryKey: plexKeys.nowPlaying(),
 		queryFn: fetchNowPlaying,

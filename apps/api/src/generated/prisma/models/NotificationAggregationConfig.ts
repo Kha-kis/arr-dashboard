@@ -1212,6 +1212,11 @@ export type NotificationAggregationConfigFindManyArgs<ExtArgs extends runtime.Ty
    * Skip the first `n` NotificationAggregationConfigs.
    */
   skip?: number
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+   * 
+   * Filter by unique combinations of NotificationAggregationConfigs.
+   */
   distinct?: Prisma.NotificationAggregationConfigScalarFieldEnum | Prisma.NotificationAggregationConfigScalarFieldEnum[]
 }
 

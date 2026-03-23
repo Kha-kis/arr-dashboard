@@ -1621,6 +1621,11 @@ export type LibraryCleanupLogFindManyArgs<ExtArgs extends runtime.Types.Extensio
    * Skip the first `n` LibraryCleanupLogs.
    */
   skip?: number
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+   * 
+   * Filter by unique combinations of LibraryCleanupLogs.
+   */
   distinct?: Prisma.LibraryCleanupLogScalarFieldEnum | Prisma.LibraryCleanupLogScalarFieldEnum[]
 }
 

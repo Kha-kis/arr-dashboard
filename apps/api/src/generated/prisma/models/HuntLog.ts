@@ -1422,6 +1422,11 @@ export type HuntLogFindManyArgs<ExtArgs extends runtime.Types.Extensions.Interna
    * Skip the first `n` HuntLogs.
    */
   skip?: number
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+   * 
+   * Filter by unique combinations of HuntLogs.
+   */
   distinct?: Prisma.HuntLogScalarFieldEnum | Prisma.HuntLogScalarFieldEnum[]
 }
 

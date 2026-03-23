@@ -1423,6 +1423,11 @@ export type UserCustomFormatFindManyArgs<ExtArgs extends runtime.Types.Extension
    * Skip the first `n` UserCustomFormats.
    */
   skip?: number
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+   * 
+   * Filter by unique combinations of UserCustomFormats.
+   */
   distinct?: Prisma.UserCustomFormatScalarFieldEnum | Prisma.UserCustomFormatScalarFieldEnum[]
 }
 

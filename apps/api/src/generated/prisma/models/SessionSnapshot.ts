@@ -1411,6 +1411,11 @@ export type SessionSnapshotFindManyArgs<ExtArgs extends runtime.Types.Extensions
    * Skip the first `n` SessionSnapshots.
    */
   skip?: number
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+   * 
+   * Filter by unique combinations of SessionSnapshots.
+   */
   distinct?: Prisma.SessionSnapshotScalarFieldEnum | Prisma.SessionSnapshotScalarFieldEnum[]
 }
 

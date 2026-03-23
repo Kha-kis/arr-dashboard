@@ -29,6 +29,7 @@ import { Switch } from "../../../components/ui/switch";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { apiRequest } from "../../../lib/api-client/base";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { POLLING_STANDARD } from "../../../lib/polling-intervals";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
 import {
@@ -225,7 +226,7 @@ export function SystemTab() {
 	const { data: systemInfo } = useQuery({
 		queryKey: ["system-info"],
 		queryFn: getSystemInfo,
-		refetchInterval: 60000,
+		refetchInterval: POLLING_STANDARD,
 	});
 
 	const {
@@ -240,7 +241,7 @@ export function SystemTab() {
 	const { data: validationHealth } = useQuery({
 		queryKey: ["validation-health"],
 		queryFn: getValidationHealth,
-		refetchInterval: 60000,
+		refetchInterval: POLLING_STANDARD,
 	});
 
 	const resetHealthMutation = useMutation({

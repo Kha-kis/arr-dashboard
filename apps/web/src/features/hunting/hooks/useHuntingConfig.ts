@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "../../../lib/api-client/base";
+import { huntingKeys } from "../../../lib/query-keys";
 import type {
 	HuntConfigUpdate,
 	HuntConfigWithInstance,
@@ -73,7 +74,7 @@ async function toggleScheduler(): Promise<{ running: boolean }> {
  */
 export function useHuntingConfigs() {
 	const query = useQuery({
-		queryKey: ["hunting", "configs"],
+		queryKey: huntingKeys.configs,
 		queryFn: fetchHuntingConfigs,
 	});
 
@@ -103,14 +104,14 @@ export function useUpdateHuntConfig() {
 		mutationFn: ({ instanceId, data }: { instanceId: string; data: HuntConfigUpdate }) =>
 			updateHuntConfig(instanceId, data),
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["hunting"] });
+			void queryClient.invalidateQueries({ queryKey: huntingKeys.all });
 		},
 	});
 
 	const createMutation = useMutation({
 		mutationFn: (instanceId: string) => createHuntConfig(instanceId),
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["hunting"] });
+			void queryClient.invalidateQueries({ queryKey: huntingKeys.all });
 		},
 	});
 
@@ -138,7 +139,7 @@ export function useToggleScheduler() {
 	const mutation = useMutation({
 		mutationFn: toggleScheduler,
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["hunting"] });
+			void queryClient.invalidateQueries({ queryKey: huntingKeys.all });
 		},
 	});
 
@@ -189,7 +190,7 @@ export function useClearSearchHistory() {
 			huntType?: "missing" | "upgrade";
 		}) => clearSearchHistory(instanceId, huntType),
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["hunting"] });
+			void queryClient.invalidateQueries({ queryKey: huntingKeys.all });
 		},
 	});
 

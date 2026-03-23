@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { usePlexIdentity, plexKeys } from "../../../hooks/api/usePlex";
+import { usePlexIdentity } from "../../../hooks/api/usePlex";
+import { plexKeys } from "../../../lib/query-keys";
 import { fetchWatchEnrichment } from "../../../lib/api-client/plex";
 import { buildPlexUrl } from "../../library/lib/library-utils";
 import type { DeduplicatedCalendarItem } from "./use-calendar-data";

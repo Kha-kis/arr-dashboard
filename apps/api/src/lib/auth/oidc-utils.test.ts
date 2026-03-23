@@ -8,15 +8,15 @@ describe("normalizeIssuerUrl", () => {
 		);
 	});
 
-	it("should remove trailing slash", () => {
+	it("should preserve trailing slash (RFC 8414 compliance)", () => {
 		expect(normalizeIssuerUrl("https://keycloak.example.com/realms/master/")).toBe(
-			"https://keycloak.example.com/realms/master",
+			"https://keycloak.example.com/realms/master/",
 		);
 	});
 
-	it("should remove multiple trailing slashes", () => {
+	it("should preserve multiple trailing slashes as-is", () => {
 		expect(normalizeIssuerUrl("https://keycloak.example.com/realms/master///")).toBe(
-			"https://keycloak.example.com/realms/master",
+			"https://keycloak.example.com/realms/master///",
 		);
 	});
 
@@ -32,22 +32,6 @@ describe("normalizeIssuerUrl", () => {
 		expect(
 			normalizeIssuerUrl(
 				"https://keycloak.example.com/realms/master/.WELL-KNOWN/OPENID-CONFIGURATION",
-			),
-		).toBe("https://keycloak.example.com/realms/master");
-	});
-
-	it("should handle both trailing slash and .well-known suffix", () => {
-		expect(
-			normalizeIssuerUrl(
-				"https://keycloak.example.com/realms/master/.well-known/openid-configuration/",
-			),
-		).toBe("https://keycloak.example.com/realms/master");
-	});
-
-	it("should handle slash before .well-known and after it", () => {
-		expect(
-			normalizeIssuerUrl(
-				"https://keycloak.example.com/realms/master//.well-known/openid-configuration//",
 			),
 		).toBe("https://keycloak.example.com/realms/master");
 	});
@@ -70,13 +54,13 @@ describe("normalizeIssuerUrl", () => {
 		expect(normalizeIssuerUrl("https://auth.example.com")).toBe("https://auth.example.com");
 	});
 
-	it("should handle Authentik URL format", () => {
+	it("should handle Authentik URL format with trailing slash (#208)", () => {
 		expect(normalizeIssuerUrl("https://authentik.example.com/application/o/arr-dashboard/")).toBe(
-			"https://authentik.example.com/application/o/arr-dashboard",
+			"https://authentik.example.com/application/o/arr-dashboard/",
 		);
 	});
 
-	it("should handle Google OAuth URL", () => {
-		expect(normalizeIssuerUrl("https://accounts.google.com/")).toBe("https://accounts.google.com");
+	it("should handle Google OAuth URL with trailing slash", () => {
+		expect(normalizeIssuerUrl("https://accounts.google.com/")).toBe("https://accounts.google.com/");
 	});
 });

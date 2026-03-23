@@ -1289,6 +1289,11 @@ export type InstanceQualityProfileOverrideFindManyArgs<ExtArgs extends runtime.T
    * Skip the first `n` InstanceQualityProfileOverrides.
    */
   skip?: number
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+   * 
+   * Filter by unique combinations of InstanceQualityProfileOverrides.
+   */
   distinct?: Prisma.InstanceQualityProfileOverrideScalarFieldEnum | Prisma.InstanceQualityProfileOverrideScalarFieldEnum[]
 }
 

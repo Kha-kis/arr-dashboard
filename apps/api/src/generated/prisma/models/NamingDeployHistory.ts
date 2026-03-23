@@ -1659,6 +1659,11 @@ export type NamingDeployHistoryFindManyArgs<ExtArgs extends runtime.Types.Extens
    * Skip the first `n` NamingDeployHistories.
    */
   skip?: number
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+   * 
+   * Filter by unique combinations of NamingDeployHistories.
+   */
   distinct?: Prisma.NamingDeployHistoryScalarFieldEnum | Prisma.NamingDeployHistoryScalarFieldEnum[]
 }
 

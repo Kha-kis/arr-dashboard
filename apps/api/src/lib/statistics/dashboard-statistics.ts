@@ -224,7 +224,7 @@ export const fetchSonarrStatisticsWithSdk = async (
 		const episodesWithFile = stats?.episodeFileCount ?? 0;
 		const sizeOnDisk = stats?.sizeOnDisk ?? 0;
 
-		totalEpisodes += episodesTotal;
+		totalEpisodes += monitoredEpisodes;
 		episodeFileCount += episodesWithFile;
 		downloadedEpisodes += episodesWithFile;
 		missingEpisodes += Math.max(0, monitoredEpisodes - episodesWithFile);
@@ -518,10 +518,14 @@ export const fetchLidarrStatisticsWithSdk = async (
 		const sizeOnDisk = stats?.sizeOnDisk ?? 0;
 
 		totalAlbums += albumCount;
-		totalTracks += trackCount;
-		downloadedTracks += trackFileCount;
-		missingTracks += Math.max(0, trackCount - trackFileCount);
 		totalFileSize += sizeOnDisk;
+
+		// Only count tracks from monitored artists for missing/downloaded stats
+		if (artist.monitored !== false) {
+			totalTracks += trackCount;
+			downloadedTracks += trackFileCount;
+			missingTracks += Math.max(0, trackCount - trackFileCount);
+		}
 
 		if (trackFileCount > 0) {
 			updateQualityBreakdown(

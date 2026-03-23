@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { PremiumSkeleton } from "../../../components/layout";
 import { Alert, AlertDescription } from "../../../components/ui";
 import { Button } from "../../../components/ui/button";
+import { useRefreshState } from "../../../hooks/useRefreshState";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
@@ -18,7 +19,6 @@ import type { StatisticsTab } from "./statistics-tabs";
 
 export const StatisticsClient = () => {
 	const [activeTab, setActiveTab] = useState<StatisticsTab>("overview");
-	const [isRefreshing, setIsRefreshing] = useState(false);
 	const { gradient: themeGradient } = useThemeGradient();
 
 	// Detect Tautulli instances for Plex/Tautulli stats tab
@@ -46,12 +46,7 @@ export const StatisticsClient = () => {
 		combinedDisk,
 		allHealthIssues,
 	} = useStatisticsData();
-
-	const handleRefresh = async () => {
-		setIsRefreshing(true);
-		await refetch();
-		setTimeout(() => setIsRefreshing(false), 500);
-	};
+	const [isRefreshing, handleRefresh] = useRefreshState(refetch);
 
 	const tabs: Array<{
 		id: StatisticsTab;

@@ -1416,6 +1416,11 @@ export type TrashSettingsFindManyArgs<ExtArgs extends runtime.Types.Extensions.I
    * Skip the first `n` TrashSettings.
    */
   skip?: number
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+   * 
+   * Filter by unique combinations of TrashSettings.
+   */
   distinct?: Prisma.TrashSettingsScalarFieldEnum | Prisma.TrashSettingsScalarFieldEnum[]
 }
 

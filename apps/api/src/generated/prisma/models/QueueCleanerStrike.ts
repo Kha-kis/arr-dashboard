@@ -1457,6 +1457,11 @@ export type QueueCleanerStrikeFindManyArgs<ExtArgs extends runtime.Types.Extensi
    * Skip the first `n` QueueCleanerStrikes.
    */
   skip?: number
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+   * 
+   * Filter by unique combinations of QueueCleanerStrikes.
+   */
   distinct?: Prisma.QueueCleanerStrikeScalarFieldEnum | Prisma.QueueCleanerStrikeScalarFieldEnum[]
 }
 

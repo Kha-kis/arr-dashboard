@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "../../../lib/api-client/base";
+import { queueCleanerKeys } from "../../../lib/query-keys";
 import type { CleanerResult, EnhancedPreviewResult } from "../lib/queue-cleaner-types";
 
 async function runDryRun(instanceId: string): Promise<CleanerResult> {
@@ -29,7 +30,7 @@ export function useDryRun() {
 	const mutation = useMutation({
 		mutationFn: (instanceId: string) => runDryRun(instanceId),
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["queue-cleaner"] });
+			void queryClient.invalidateQueries({ queryKey: queueCleanerKeys.all });
 		},
 	});
 
@@ -52,7 +53,7 @@ export function useEnhancedPreview() {
 	const cleanMutation = useMutation({
 		mutationFn: (instanceId: string) => triggerClean(instanceId),
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["queue-cleaner"] });
+			void queryClient.invalidateQueries({ queryKey: queueCleanerKeys.all });
 		},
 	});
 

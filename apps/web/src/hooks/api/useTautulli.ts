@@ -17,24 +17,14 @@ import {
 	fetchTautulliStats,
 	fetchWatchHistory,
 } from "../../lib/api-client/tautulli";
-
-// ============================================================================
-// Query Keys
-// ============================================================================
-
-export const tautulliKeys = {
-	all: ["tautulli"] as const,
-	activity: () => ["tautulli", "activity"] as const,
-	stats: (timeRange: number) => ["tautulli", "stats", timeRange] as const,
-	playsByDate: (timeRange: number) => ["tautulli", "plays-by-date", timeRange] as const,
-	history: (length: number, start: number) => ["tautulli", "history", length, start] as const,
-};
+import { tautulliKeys } from "../../lib/query-keys";
+import { POLLING_REALTIME } from "../../lib/polling-intervals";
 
 // ============================================================================
 // Activity (F5)
 // ============================================================================
 
-export const useTautulliActivity = (enabled = true, refetchInterval = 15_000) => {
+export const useTautulliActivity = (enabled = true, refetchInterval = POLLING_REALTIME) => {
 	return useQuery<TautulliActivityResponse>({
 		queryKey: tautulliKeys.activity(),
 		queryFn: fetchTautulliActivity,

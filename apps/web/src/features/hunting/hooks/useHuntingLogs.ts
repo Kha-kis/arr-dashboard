@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../../../lib/api-client/base";
+import { huntingKeys } from "../../../lib/query-keys";
+import { POLLING_FAST, POLLING_STANDARD } from "../../../lib/polling-intervals";
 import type { HuntLog } from "../lib/hunting-types";
 
 interface UseHuntingLogsParams {
@@ -53,10 +55,10 @@ export function useHuntingLogs(params: UseHuntingLogsParams = {}) {
 	const { hasRunningHunts, ...queryParams } = params;
 
 	const query = useQuery({
-		queryKey: ["hunting", "logs", queryParams],
+		queryKey: huntingKeys.logs(queryParams as Record<string, unknown>),
 		queryFn: () => fetchHuntingLogs(queryParams),
 		// Poll faster when hunts are running to show progress updates
-		refetchInterval: hasRunningHunts ? 5000 : 60000,
+		refetchInterval: hasRunningHunts ? POLLING_FAST : POLLING_STANDARD,
 	});
 
 	// Check if any logs are currently running

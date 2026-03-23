@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../../../lib/api-client/base";
+import { queueCleanerKeys } from "../../../lib/query-keys";
 import { STATUS_REFRESH_INTERVAL } from "../lib/constants";
 import type { QueueCleanerStatus } from "../lib/queue-cleaner-types";
 
@@ -20,7 +21,7 @@ interface UseQueueCleanerStatusResult {
  */
 export function useQueueCleanerStatus(): UseQueueCleanerStatusResult {
 	const query = useQuery({
-		queryKey: ["queue-cleaner", "status"],
+		queryKey: queueCleanerKeys.status,
 		queryFn: fetchStatus,
 		refetchInterval: STATUS_REFRESH_INTERVAL,
 	});

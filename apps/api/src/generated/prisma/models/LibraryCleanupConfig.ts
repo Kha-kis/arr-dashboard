@@ -1762,6 +1762,11 @@ export type LibraryCleanupConfigFindManyArgs<ExtArgs extends runtime.Types.Exten
    * Skip the first `n` LibraryCleanupConfigs.
    */
   skip?: number
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+   * 
+   * Filter by unique combinations of LibraryCleanupConfigs.
+   */
   distinct?: Prisma.LibraryCleanupConfigScalarFieldEnum | Prisma.LibraryCleanupConfigScalarFieldEnum[]
 }
 

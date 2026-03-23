@@ -51,6 +51,7 @@ import {
 	triggerLibrarySync,
 	updateLibrarySyncSettings,
 } from "../../lib/api-client/library";
+import { POLLING_BACKGROUND, POLLING_STANDARD } from "../../lib/polling-intervals";
 import { QUEUE_QUERY_KEY } from "../../lib/query-keys";
 
 // ============================================================================
@@ -70,7 +71,7 @@ export const useLibraryQuery = (options: UseLibraryQueryOptions = {}) => {
 		enabled: enabled ?? true,
 		staleTime: 60 * 1000,
 		gcTime: 3 * 60 * 1000, // 3 minutes - cleanup old filter/page combinations
-		refetchInterval: 5 * 60 * 1000,
+		refetchInterval: POLLING_BACKGROUND,
 	});
 };
 
@@ -86,7 +87,7 @@ export const useLibraryForFiltering = (options: { enabled?: boolean } = {}) => {
 		enabled: options.enabled ?? true,
 		staleTime: 2 * 60 * 1000, // 2 minutes - slightly longer since it's expensive
 		gcTime: 3 * 60 * 1000, // 3 minutes - cleanup when leaving discover page
-		refetchInterval: 5 * 60 * 1000,
+		refetchInterval: POLLING_BACKGROUND,
 	});
 };
 
@@ -100,7 +101,7 @@ export const useLibrarySyncStatus = (options: { enabled?: boolean } = {}) =>
 		queryFn: fetchLibrarySyncStatus,
 		enabled: options.enabled ?? true,
 		staleTime: 30 * 1000,
-		refetchInterval: 60 * 1000,
+		refetchInterval: POLLING_STANDARD,
 	});
 
 export const useTriggerLibrarySyncMutation = () => {
