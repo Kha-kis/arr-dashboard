@@ -52,7 +52,13 @@ export function normalizeIssuerUrl(issuer: string): string {
  * await resolveCanonicalIssuer("https://keycloak.example.com/realms/master/")
  * // Returns: "https://keycloak.example.com/realms/master"
  */
-export async function resolveCanonicalIssuer(issuer: string): Promise<string> {
+export interface ResolveIssuerResult {
+	issuer: string;
+	source: "discovery" | "fallback";
+	warning?: string;
+}
+
+export async function resolveCanonicalIssuer(issuer: string): Promise<ResolveIssuerResult> {
 	const normalized = normalizeIssuerUrl(issuer);
 
 	try {
@@ -81,13 +87,26 @@ export async function resolveCanonicalIssuer(issuer: string): Promise<string> {
 		if (response.ok) {
 			const doc = (await response.json()) as { issuer?: string };
 			if (doc.issuer && typeof doc.issuer === "string") {
-				return doc.issuer;
+				return { issuer: doc.issuer, source: "discovery" };
 			}
+			return {
+				issuer: normalized,
+				source: "fallback",
+				warning: "Discovery document returned valid JSON but no issuer field",
+			};
 		}
-	} catch {
-		// Discovery failed — fall back to normalized URL
-		// This preserves behavior for providers that were already working
-	}
 
-	return normalized;
+		return {
+			issuer: normalized,
+			source: "fallback",
+			warning: `Discovery endpoint returned HTTP ${response.status}. The issuer URL may be incorrect.`,
+		};
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		return {
+			issuer: normalized,
+			source: "fallback",
+			warning: `Discovery fetch failed: ${message}. Using normalized URL as-is.`,
+		};
+	}
 }

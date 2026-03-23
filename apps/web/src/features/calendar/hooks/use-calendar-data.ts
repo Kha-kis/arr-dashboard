@@ -206,11 +206,12 @@ export const useCalendarData = (
 				map.set(dateKey, [item]);
 			}
 		}
-		// Sort events within each date
+		// Sort events within each date by most precise time available
+		// (airDateUtc has time precision; airDate is just YYYY-MM-DD)
 		for (const value of map.values()) {
 			value.sort((a, b) => {
-				const timeA = new Date(a.releaseDate ?? a.airDateUtc ?? a.airDate ?? 0).getTime();
-				const timeB = new Date(b.releaseDate ?? b.airDateUtc ?? b.airDate ?? 0).getTime();
+				const timeA = new Date(a.airDateUtc ?? a.releaseDate ?? a.airDate ?? 0).getTime();
+				const timeB = new Date(b.airDateUtc ?? b.releaseDate ?? b.airDate ?? 0).getTime();
 				if (timeA !== timeB) {
 					return timeA - timeB;
 				}

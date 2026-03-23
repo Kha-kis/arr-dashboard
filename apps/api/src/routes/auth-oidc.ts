@@ -85,11 +85,18 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			// This ensures the stored value matches what oauth4webapi compares against (RFC 8414 §2)
 			let normalizedIssuer: string;
 			try {
-				normalizedIssuer = await resolveCanonicalIssuer(parsed.issuer);
-				if (normalizedIssuer !== parsed.issuer) {
+				const result = await resolveCanonicalIssuer(parsed.issuer);
+				normalizedIssuer = result.issuer;
+				if (result.source === "discovery" && normalizedIssuer !== parsed.issuer) {
 					request.log.info(
 						{ original: parsed.issuer, resolved: normalizedIssuer },
 						"Resolved canonical OIDC issuer URL from discovery document",
+					);
+				}
+				if (result.warning) {
+					request.log.warn(
+						{ original: parsed.issuer, resolved: normalizedIssuer, warning: result.warning },
+						"OIDC discovery warning — using fallback issuer URL",
 					);
 				}
 			} catch (error) {

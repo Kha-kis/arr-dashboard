@@ -61,14 +61,21 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 		async (request, reply) => {
 			const data = validateRequest(createOidcProviderSchema, request.body);
 
-			// Normalize issuer URL to prevent discovery failures
+			// Resolve canonical issuer URL from the provider's discovery document
 			let normalizedIssuer: string;
 			try {
-				normalizedIssuer = await resolveCanonicalIssuer(data.issuer);
-				if (normalizedIssuer !== data.issuer) {
+				const result = await resolveCanonicalIssuer(data.issuer);
+				normalizedIssuer = result.issuer;
+				if (result.source === "discovery" && normalizedIssuer !== data.issuer) {
 					request.log.info(
 						{ original: data.issuer, resolved: normalizedIssuer },
 						"Resolved canonical OIDC issuer URL from discovery document",
+					);
+				}
+				if (result.warning) {
+					request.log.warn(
+						{ original: data.issuer, resolved: normalizedIssuer, warning: result.warning },
+						"OIDC discovery warning — using fallback issuer URL",
 					);
 				}
 			} catch (error) {
@@ -134,15 +141,22 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 		async (request, reply) => {
 			const data = validateRequest(updateOidcProviderSchema, request.body);
 
-			// Normalize issuer URL if provided
+			// Resolve canonical issuer URL if provided
 			let normalizedIssuer: string | undefined;
 			if (data.issuer) {
 				try {
-					normalizedIssuer = await resolveCanonicalIssuer(data.issuer);
-					if (normalizedIssuer !== data.issuer) {
+					const result = await resolveCanonicalIssuer(data.issuer);
+					normalizedIssuer = result.issuer;
+					if (result.source === "discovery" && normalizedIssuer !== data.issuer) {
 						request.log.info(
 							{ original: data.issuer, resolved: normalizedIssuer },
 							"Resolved canonical OIDC issuer URL from discovery document",
+						);
+					}
+					if (result.warning) {
+						request.log.warn(
+							{ original: data.issuer, resolved: normalizedIssuer, warning: result.warning },
+							"OIDC discovery warning — using fallback issuer URL",
 						);
 					}
 				} catch (error) {
