@@ -1,6 +1,6 @@
 {
   "name": "arr-dashboard-platform",
-  "version": "2.9.1",
+  "version": "2.9.2",
   "private": true,
   "packageManager": "pnpm@10.28.1",
   "scripts": {
@@ -26,7 +26,8 @@
       "ajv@<6.14.0": "6.14.0",
       "rollup@>=4.0.0 <4.59.0": "4.59.0",
       "undici@>=7.0.0 <7.24.0": "7.24.0",
-      "flatted@<3.4.2": "3.4.2"
+      "flatted@<3.4.2": "3.4.2",
+      "effect@<3.20.0": "3.20.0"
     }
   },
   "devDependencies": {
