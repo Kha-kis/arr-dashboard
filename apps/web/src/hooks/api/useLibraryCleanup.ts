@@ -10,21 +10,8 @@ import {
 	type ExecuteResult,
 	libraryCleanupApi,
 } from "../../lib/api-client/library-cleanup";
-
-// ============================================================================
-// Query Keys
-// ============================================================================
-
-const KEYS = {
-	fieldOptions: ["library-cleanup-field-options"] as const,
-	config: ["library-cleanup-config"] as const,
-	status: ["library-cleanup-status"] as const,
-	statistics: (days: number) => ["library-cleanup-statistics", days] as const,
-	approvalQueue: (page: number, status?: string) =>
-		["library-cleanup-approvals", page, status] as const,
-	logs: (page: number, filters?: Record<string, string>) =>
-		["library-cleanup-logs", page, filters] as const,
-};
+import { libraryCleanupKeys } from "../../lib/query-keys";
+import { POLLING_STANDARD } from "../../lib/polling-intervals";
 
 // ============================================================================
 // Queries
@@ -32,7 +19,7 @@ const KEYS = {
 
 export function useCleanupFieldOptions() {
 	return useQuery({
-		queryKey: KEYS.fieldOptions,
+		queryKey: libraryCleanupKeys.fieldOptions,
 		queryFn: () => libraryCleanupApi.getFieldOptions(),
 		staleTime: 5 * 60 * 1000, // 5 min — field options change infrequently
 	});
@@ -40,22 +27,22 @@ export function useCleanupFieldOptions() {
 
 export function useCleanupConfig() {
 	return useQuery({
-		queryKey: KEYS.config,
+		queryKey: libraryCleanupKeys.config,
 		queryFn: () => libraryCleanupApi.getConfig(),
 	});
 }
 
 export function useCleanupStatus() {
 	return useQuery({
-		queryKey: KEYS.status,
+		queryKey: libraryCleanupKeys.status,
 		queryFn: () => libraryCleanupApi.getStatus(),
-		refetchInterval: 60 * 1000, // 1 minute
+		refetchInterval: POLLING_STANDARD,
 	});
 }
 
 export function useCleanupStatistics(days = 30) {
 	return useQuery({
-		queryKey: KEYS.statistics(days),
+		queryKey: libraryCleanupKeys.statistics(days),
 		queryFn: () => libraryCleanupApi.getStatistics(days),
 		staleTime: 5 * 60 * 1000, // 5 min — stats don't change rapidly
 	});
@@ -63,7 +50,7 @@ export function useCleanupStatistics(days = 30) {
 
 export function useCleanupApprovalQueue(page = 1, pageSize = 20, statusFilter = "pending") {
 	return useQuery({
-		queryKey: KEYS.approvalQueue(page, statusFilter),
+		queryKey: libraryCleanupKeys.approvalQueue(page, statusFilter),
 		queryFn: () => libraryCleanupApi.getApprovalQueue(page, pageSize, statusFilter),
 	});
 }
@@ -74,7 +61,7 @@ export function useCleanupLogs(
 	filters?: { status?: string; since?: string; until?: string },
 ) {
 	return useQuery({
-		queryKey: KEYS.logs(page, filters as Record<string, string> | undefined),
+		queryKey: libraryCleanupKeys.logs(page, filters as Record<string, string> | undefined),
 		queryFn: () => libraryCleanupApi.getLogs(page, pageSize, filters),
 	});
 }
@@ -100,8 +87,8 @@ export function useUpdateCleanupConfig() {
 	return useMutation({
 		mutationFn: (data: UpdateCleanupConfig) => libraryCleanupApi.updateConfig(data),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: KEYS.config });
-			queryClient.invalidateQueries({ queryKey: KEYS.status });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.config });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.status });
 		},
 	});
 }
@@ -111,7 +98,7 @@ export function useCreateCleanupRule() {
 	return useMutation({
 		mutationFn: (data: CreateCleanupRule) => libraryCleanupApi.createRule(data),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: KEYS.config });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.config });
 		},
 	});
 }
@@ -122,7 +109,7 @@ export function useUpdateCleanupRule() {
 		mutationFn: ({ id, data }: { id: string; data: UpdateCleanupRule }) =>
 			libraryCleanupApi.updateRule(id, data),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: KEYS.config });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.config });
 		},
 	});
 }
@@ -132,7 +119,7 @@ export function useDeleteCleanupRule() {
 	return useMutation({
 		mutationFn: (id: string) => libraryCleanupApi.deleteRule(id),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: KEYS.config });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.config });
 		},
 	});
 }
@@ -142,7 +129,7 @@ export function useReorderCleanupRules() {
 	return useMutation({
 		mutationFn: (ruleIds: string[]) => libraryCleanupApi.reorderRules(ruleIds),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: KEYS.config });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.config });
 		},
 	});
 }
@@ -158,8 +145,8 @@ export function useCleanupExecute() {
 	return useMutation({
 		mutationFn: (): Promise<ExecuteResult> => libraryCleanupApi.execute(),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: KEYS.config });
-			queryClient.invalidateQueries({ queryKey: KEYS.status });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.config });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.status });
 			queryClient.invalidateQueries({ queryKey: ["library-cleanup-logs"] });
 			queryClient.invalidateQueries({ queryKey: ["library-cleanup-approvals"] });
 			queryClient.invalidateQueries({ queryKey: ["library-cleanup-statistics"] });

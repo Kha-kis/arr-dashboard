@@ -1261,6 +1261,11 @@ export type SeerrActionLogFindManyArgs<ExtArgs extends runtime.Types.Extensions.
    * Skip the first `n` SeerrActionLogs.
    */
   skip?: number
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+   * 
+   * Filter by unique combinations of SeerrActionLogs.
+   */
   distinct?: Prisma.SeerrActionLogScalarFieldEnum | Prisma.SeerrActionLogScalarFieldEnum[]
 }
 

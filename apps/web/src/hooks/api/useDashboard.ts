@@ -13,6 +13,7 @@ import {
 	fetchMultiInstanceHistory,
 	fetchMultiInstanceQueue,
 } from "../../lib/api-client/dashboard";
+import { POLLING_ACTIVE, POLLING_STANDARD, POLLING_STATS } from "../../lib/polling-intervals";
 
 export const useMultiInstanceQueueQuery = () =>
 	useQuery<MultiInstanceQueueResponse>({
@@ -20,7 +21,7 @@ export const useMultiInstanceQueueQuery = () =>
 		queryFn: fetchMultiInstanceQueue,
 		staleTime: 25_000,
 		gcTime: 60 * 1000, // 1 minute - short gcTime for frequently polled data
-		refetchInterval: 30_000,
+		refetchInterval: POLLING_ACTIVE,
 	});
 
 export const useMultiInstanceHistoryQuery = (params?: {
@@ -34,7 +35,7 @@ export const useMultiInstanceHistoryQuery = (params?: {
 		queryFn: () => fetchMultiInstanceHistory(params),
 		staleTime: 60 * 1000,
 		gcTime: 2 * 60 * 1000, // 2 minutes - cleanup old param combinations
-		refetchInterval: 60 * 1000,
+		refetchInterval: POLLING_STANDARD,
 	});
 
 export const useMultiInstanceCalendarQuery = (params: {
@@ -47,7 +48,7 @@ export const useMultiInstanceCalendarQuery = (params: {
 		queryFn: () => fetchMultiInstanceCalendar(params),
 		staleTime: 60 * 1000,
 		gcTime: 2 * 60 * 1000, // 2 minutes - cleanup old date ranges
-		refetchInterval: 60 * 1000,
+		refetchInterval: POLLING_STANDARD,
 	});
 
 export const useDashboardStatisticsQuery = () =>
@@ -56,5 +57,5 @@ export const useDashboardStatisticsQuery = () =>
 		queryFn: fetchDashboardStatistics,
 		staleTime: 60 * 1000,
 		gcTime: 2 * 60 * 1000, // 2 minutes
-		refetchInterval: 120 * 1000,
+		refetchInterval: POLLING_STATS,
 	});

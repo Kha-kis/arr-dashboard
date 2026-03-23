@@ -21,6 +21,7 @@ import {
 	fetchSyncMetrics,
 	refreshCache,
 } from "../../lib/api-client/trash-guides";
+import { POLLING_STANDARD } from "../../lib/polling-intervals";
 
 /**
  * Hook to fetch TRaSH Guides cache status
@@ -99,7 +100,7 @@ export const useGitHubRateLimit = (options?: { enabled?: boolean }) =>
 		queryKey: ["github-rate-limit"],
 		queryFn: fetchGitHubRateLimit,
 		staleTime: 30 * 1000, // 30 seconds - rate limits change frequently
-		refetchInterval: 60 * 1000, // Refetch every minute when visible
+		refetchInterval: POLLING_STANDARD,
 		enabled: options?.enabled ?? true,
 	});
 
@@ -112,7 +113,7 @@ export const useSyncMetrics = (options?: { enabled?: boolean }) =>
 		queryKey: ["sync-metrics"],
 		queryFn: fetchSyncMetrics,
 		staleTime: 30 * 1000, // 30 seconds
-		refetchInterval: 60 * 1000, // Refetch every minute when visible
+		refetchInterval: POLLING_STANDARD,
 		enabled: options?.enabled ?? true,
 	});
 

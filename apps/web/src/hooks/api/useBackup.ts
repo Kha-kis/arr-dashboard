@@ -7,6 +7,7 @@ import type {
 } from "@arr/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { backupApi } from "../../lib/api-client/backup";
+import { backupKeys } from "../../lib/query-keys";
 
 /**
  * Retrieve the list of backups stored on the filesystem.
@@ -15,7 +16,7 @@ import { backupApi } from "../../lib/api-client/backup";
  */
 export function useBackups() {
 	return useQuery({
-		queryKey: ["backups"],
+		queryKey: backupKeys.all,
 		queryFn: () => backupApi.listBackups(),
 	});
 }
@@ -95,7 +96,7 @@ export function useDeleteBackup() {
  */
 export function useBackupSettings() {
 	return useQuery({
-		queryKey: ["backup-settings"],
+		queryKey: backupKeys.settings,
 		queryFn: () => backupApi.getSettings(),
 	});
 }
@@ -154,7 +155,7 @@ export function useDownloadBackup() {
  */
 export function useBackupPasswordStatus() {
 	return useQuery({
-		queryKey: ["backup-password-status"],
+		queryKey: backupKeys.passwordStatus,
 		queryFn: () => backupApi.getPasswordStatus(),
 	});
 }

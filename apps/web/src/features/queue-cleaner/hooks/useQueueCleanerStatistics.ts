@@ -1,8 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../../../lib/api-client/base";
+import { queueCleanerKeys } from "../../../lib/query-keys";
 import type { QueueCleanerStatistics } from "../lib/queue-cleaner-types";
+import { POLLING_STANDARD } from "../../../lib/polling-intervals";
 
-const STATISTICS_REFRESH_INTERVAL = 60000; // 1 minute
+const STATISTICS_REFRESH_INTERVAL = POLLING_STANDARD;
 
 async function fetchStatistics(): Promise<QueueCleanerStatistics> {
 	return apiRequest<QueueCleanerStatistics>("/api/queue-cleaner/statistics");
@@ -22,7 +24,7 @@ interface UseQueueCleanerStatisticsResult {
  */
 export function useQueueCleanerStatistics(): UseQueueCleanerStatisticsResult {
 	const query = useQuery({
-		queryKey: ["queue-cleaner", "statistics"],
+		queryKey: queueCleanerKeys.statistics,
 		queryFn: fetchStatistics,
 		refetchInterval: STATISTICS_REFRESH_INTERVAL,
 	});

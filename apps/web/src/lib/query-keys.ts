@@ -226,19 +226,163 @@ export const searchKeys = {
 };
 
 /* -------------------------------------------------------------------------- */
+/*  Notifications                                                              */
+/* -------------------------------------------------------------------------- */
+
+export const notificationKeys = {
+	all: ["notifications"] as const,
+	channels: ["notification-channels"] as const,
+	channelTypes: ["notification-channel-types"] as const,
+	subscriptions: ["notification-subscriptions"] as const,
+	logs: (page: number, filters?: Record<string, string>) =>
+		["notification-logs", page, filters] as const,
+	rules: ["notification-rules"] as const,
+	statistics: (days: number) => ["notification-statistics", days] as const,
+	aggregation: ["notification-aggregation"] as const,
+};
+
+/* -------------------------------------------------------------------------- */
+/*  Plex                                                                       */
+/* -------------------------------------------------------------------------- */
+
+export const plexKeys = {
+	all: ["plex"] as const,
+	watchEnrichment: (key: string) => ["plex", "watch-enrichment", key] as const,
+	sections: () => ["plex", "sections"] as const,
+	nowPlaying: () => ["plex", "now-playing"] as const,
+	episodes: (instanceId: string, showTmdbId: number) =>
+		["plex", "episodes", instanceId, showTmdbId] as const,
+	tags: (instanceId: string) => ["plex", "tags", instanceId] as const,
+	recentlyAdded: (limit: number) => ["plex", "recently-added", limit] as const,
+	identity: () => ["plex", "identity"] as const,
+	onDeck: () => ["plex", "on-deck"] as const,
+	accounts: () => ["plex", "accounts"] as const,
+	cacheHealth: () => ["plex", "cache-health"] as const,
+	seriesProgress: (key: string) => ["plex", "series-progress", key] as const,
+	transcodeAnalytics: (days: number) => ["plex", "transcode-analytics", days] as const,
+	bandwidthAnalytics: (days: number) => ["plex", "bandwidth-analytics", days] as const,
+	userAnalytics: (days: number) => ["plex", "user-analytics", days] as const,
+	watchHistory: (days: number, limit: number) => ["plex", "watch-history", days, limit] as const,
+	codecAnalytics: (days: number) => ["plex", "codec-analytics", days] as const,
+	deviceAnalytics: (days: number) => ["plex", "device-analytics", days] as const,
+	collectionStats: () => ["plex", "collection-stats"] as const,
+	userEpisodeCompletion: (key: string) => ["plex", "user-episode-completion", key] as const,
+	qualityScore: (days: number) => ["plex", "quality-score", days] as const,
+	bandwidthForecast: (days: number) => ["plex", "bandwidth-forecast", days] as const,
+};
+
+/* -------------------------------------------------------------------------- */
+/*  Tautulli                                                                   */
+/* -------------------------------------------------------------------------- */
+
+export const tautulliKeys = {
+	all: ["tautulli"] as const,
+	activity: () => ["tautulli", "activity"] as const,
+	stats: (timeRange: number) => ["tautulli", "stats", timeRange] as const,
+	playsByDate: (timeRange: number) => ["tautulli", "plays-by-date", timeRange] as const,
+	history: (length: number, start: number) => ["tautulli", "history", length, start] as const,
+};
+
+/* -------------------------------------------------------------------------- */
+/*  Seerr                                                                      */
+/* -------------------------------------------------------------------------- */
+
+export const seerrKeys = {
+	all: ["seerr"] as const,
+	requests: (instanceId: string, params?: object) =>
+		["seerr", "requests", instanceId, params] as const,
+	request: (instanceId: string, requestId: number) =>
+		["seerr", "request", instanceId, requestId] as const,
+	requestCount: (instanceId: string) => ["seerr", "request-count", instanceId] as const,
+	users: (instanceId: string, params?: object) =>
+		["seerr", "users", instanceId, params] as const,
+	userQuota: (instanceId: string, userId: number) =>
+		["seerr", "user-quota", instanceId, userId] as const,
+	issues: (instanceId: string, params?: object) =>
+		["seerr", "issues", instanceId, params] as const,
+	notifications: (instanceId: string) => ["seerr", "notifications", instanceId] as const,
+	status: (instanceId: string) => ["seerr", "status", instanceId] as const,
+	health: (instanceId: string) => ["seerr", "health", instanceId] as const,
+	audit: (instanceId: string) => ["seerr", "audit", instanceId] as const,
+	libraryEnrichment: (instanceId: string, tmdbIdKey: string) =>
+		["seerr", "library-enrichment", instanceId, tmdbIdKey] as const,
+	discover: {
+		all: ["seerr", "discover"] as const,
+		movies: (instanceId: string) => ["seerr", "discover", "movies", instanceId] as const,
+		tv: (instanceId: string) => ["seerr", "discover", "tv", instanceId] as const,
+		trending: (instanceId: string) => ["seerr", "discover", "trending", instanceId] as const,
+		moviesUpcoming: (instanceId: string) =>
+			["seerr", "discover", "movies-upcoming", instanceId] as const,
+		tvUpcoming: (instanceId: string) => ["seerr", "discover", "tv-upcoming", instanceId] as const,
+		search: (instanceId: string, query: string) =>
+			["seerr", "discover", "search", instanceId, query] as const,
+		movieDetails: (instanceId: string, tmdbId: number) =>
+			["seerr", "discover", "movie", instanceId, tmdbId] as const,
+		tvDetails: (instanceId: string, tmdbId: number) =>
+			["seerr", "discover", "tv-details", instanceId, tmdbId] as const,
+		genres: (instanceId: string, mediaType: "movie" | "tv") =>
+			["seerr", "discover", "genres", instanceId, mediaType] as const,
+		requestOptions: (instanceId: string, mediaType: "movie" | "tv") =>
+			["seerr", "discover", "request-options", instanceId, mediaType] as const,
+		byGenre: (instanceId: string, mediaType: "movie" | "tv", genreId: number) =>
+			["seerr", "discover", "genre", instanceId, mediaType, genreId] as const,
+	},
+};
+
+/* -------------------------------------------------------------------------- */
+/*  Hunting                                                                    */
+/* -------------------------------------------------------------------------- */
+
+export const huntingKeys = {
+	all: ["hunting"] as const,
+	status: ["hunting", "status"] as const,
+	configs: ["hunting", "configs"] as const,
+	logs: (params?: Record<string, unknown>) => ["hunting", "logs", params] as const,
+};
+
+/* -------------------------------------------------------------------------- */
+/*  Queue Cleaner                                                              */
+/* -------------------------------------------------------------------------- */
+
+export const queueCleanerKeys = {
+	all: ["queue-cleaner"] as const,
+	status: ["queue-cleaner", "status"] as const,
+	configs: ["queue-cleaner", "configs"] as const,
+	logs: (params?: Record<string, unknown>) => ["queue-cleaner", "logs", params] as const,
+	statistics: ["queue-cleaner", "statistics"] as const,
+};
+
+/* -------------------------------------------------------------------------- */
+/*  Library Cleanup                                                            */
+/* -------------------------------------------------------------------------- */
+
+export const libraryCleanupKeys = {
+	all: ["library-cleanup"] as const,
+	fieldOptions: ["library-cleanup-field-options"] as const,
+	config: ["library-cleanup-config"] as const,
+	status: ["library-cleanup-status"] as const,
+	statistics: (days: number) => ["library-cleanup-statistics", days] as const,
+	approvalQueue: (page: number, status?: string) =>
+		["library-cleanup-approvals", page, status] as const,
+	logs: (page: number, filters?: Record<string, string>) =>
+		["library-cleanup-logs", page, filters] as const,
+};
+
+/* -------------------------------------------------------------------------- */
+/*  Validation                                                                 */
+/* -------------------------------------------------------------------------- */
+
+export const validationKeys = {
+	health: ["validation-health"] as const,
+	quarantine: ["validation-quarantine"] as const,
+};
+
+/* -------------------------------------------------------------------------- */
 /*  Feature Singletons                                                         */
 /* -------------------------------------------------------------------------- */
 
 export const oidcKeys = {
 	provider: ["oidc-provider"] as const,
-};
-
-export const queueCleanerKeys = {
-	all: ["queue-cleaner"] as const,
-};
-
-export const huntingKeys = {
-	all: ["hunting"] as const,
 };
 
 export const backupKeys = {

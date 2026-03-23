@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../../../lib/api-client/base";
+import { huntingKeys } from "../../../lib/query-keys";
+import { POLLING_ACTIVE } from "../../../lib/polling-intervals";
 import type { HuntingStatus } from "../lib/hunting-types";
 
 /**
@@ -22,9 +24,9 @@ async function fetchHuntingStatus(): Promise<HuntingStatus> {
  */
 export function useHuntingStatus() {
 	const query = useQuery({
-		queryKey: ["hunting", "status"],
+		queryKey: huntingKeys.status,
 		queryFn: fetchHuntingStatus,
-		refetchInterval: 30000, // Refresh every 30 seconds
+		refetchInterval: POLLING_ACTIVE,
 	});
 
 	return {

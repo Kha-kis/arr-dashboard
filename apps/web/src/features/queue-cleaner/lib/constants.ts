@@ -5,6 +5,8 @@
  * frontend-specific constants for UI configuration.
  */
 
+import { POLLING_ACTIVE, POLLING_FAST, POLLING_STANDARD } from "../../../lib/polling-intervals";
+
 // Re-export all shared constants and types
 export {
 	// Types
@@ -211,12 +213,14 @@ export const RULE_LABELS: Record<string, string> = {
 };
 
 // === REFRESH INTERVALS ===
+// Re-exported from centralized polling constants for backward compatibility.
+// See apps/web/src/lib/polling-intervals.ts for the canonical definitions.
 
 /** Status refresh interval (30 seconds) */
-export const STATUS_REFRESH_INTERVAL = 30000;
+export const STATUS_REFRESH_INTERVAL = POLLING_ACTIVE;
 
 /** Logs refresh interval (60 seconds) */
-export const LOGS_REFRESH_INTERVAL = 60000;
+export const LOGS_REFRESH_INTERVAL = POLLING_STANDARD;
 
 /** Logs refresh interval when runs are active (5 seconds) */
-export const LOGS_ACTIVE_REFRESH_INTERVAL = 5000;
+export const LOGS_ACTIVE_REFRESH_INTERVAL = POLLING_FAST;

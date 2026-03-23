@@ -2320,6 +2320,11 @@ export type TemplateDeploymentHistoryFindManyArgs<ExtArgs extends runtime.Types.
    * Skip the first `n` TemplateDeploymentHistories.
    */
   skip?: number
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+   * 
+   * Filter by unique combinations of TemplateDeploymentHistories.
+   */
   distinct?: Prisma.TemplateDeploymentHistoryScalarFieldEnum | Prisma.TemplateDeploymentHistoryScalarFieldEnum[]
 }
 

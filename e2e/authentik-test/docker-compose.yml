@@ -1,0 +1,90 @@
+# Docker Compose for Authentik OIDC integration testing
+# Validates fix for GitHub Issue #208: OIDC issuer URL trailing slash normalization
+#
+# Usage:
+#   docker compose up -d
+#   # Wait for health checks, then run: npx playwright test authentik-oidc.spec.ts
+
+services:
+  postgresql:
+    image: postgres:16-alpine
+    container_name: authentik-test-db
+    environment:
+      POSTGRES_DB: authentik
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: testing-only-not-production
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authentik"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - authentik-net
+    tmpfs:
+      - /var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: authentik-test-redis
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - authentik-net
+
+  authentik-server:
+    image: ghcr.io/goauthentik/server:latest
+    container_name: authentik-test-server
+    command: server
+    environment:
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: testing-only-not-production
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_SECRET_KEY: e2e-test-secret-key-not-for-production-use
+      # Bootstrap admin account — no manual setup needed
+      AUTHENTIK_BOOTSTRAP_PASSWORD: TestPassword123!
+      AUTHENTIK_BOOTSTRAP_TOKEN: e2e-test-api-token
+      AUTHENTIK_BOOTSTRAP_EMAIL: admin@test.local
+    ports:
+      - "9000:9000"
+      - "9443:9443"
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000/-/health/ready/"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    networks:
+      - authentik-net
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:latest
+    container_name: authentik-test-worker
+    command: worker
+    environment:
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: testing-only-not-production
+      AUTHENTIK_REDIS__HOST: redis
+      AUTHENTIK_SECRET_KEY: e2e-test-secret-key-not-for-production-use
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - authentik-net
+
+networks:
+  authentik-net:
+    driver: bridge

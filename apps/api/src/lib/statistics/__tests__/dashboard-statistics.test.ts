@@ -127,7 +127,7 @@ describe("fetchSonarrStatisticsWithSdk", () => {
 		);
 
 		expect(result.missingEpisodes).toBe(10);
-		expect(result.totalEpisodes).toBe(200);
+		expect(result.totalEpisodes).toBe(50); // Uses monitored episodeCount for consistent % calculation
 		expect(result.downloadedEpisodes).toBe(40);
 	});
 
@@ -169,7 +169,7 @@ describe("fetchSonarrStatisticsWithSdk", () => {
 		// Old buggy calculation: (5000 - 20) + (4000 - 10) = 8970 (matches the ~9k report!)
 		// Correct calculation: (30 - 20) + (50 - 10) = 50
 		expect(result.missingEpisodes).toBe(50);
-		expect(result.totalEpisodes).toBe(9000);
+		expect(result.totalEpisodes).toBe(80); // 30 + 50 monitored episodes
 	});
 
 	it("excludes future unaired episodes from missing count", async () => {
@@ -222,7 +222,7 @@ describe("fetchSonarrStatisticsWithSdk", () => {
 		);
 
 		expect(result.missingEpisodes).toBe(5);
-		expect(result.totalEpisodes).toBe(150);
+		expect(result.totalEpisodes).toBe(120); // Uses monitored episodeCount, excludes specials
 	});
 
 	it("falls back to totalEpisodeCount when episodeCount is missing", async () => {
@@ -317,7 +317,7 @@ describe("fetchSonarrStatisticsWithSdk", () => {
 
 		// Missing: (100-95) + (200-180) + (50-50) = 5 + 20 + 0 = 25
 		expect(result.missingEpisodes).toBe(25);
-		expect(result.totalEpisodes).toBe(850);
+		expect(result.totalEpisodes).toBe(350); // 100 + 200 + 50 monitored episodes
 		expect(result.downloadedEpisodes).toBe(325);
 	});
 });

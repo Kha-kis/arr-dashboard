@@ -1646,6 +1646,11 @@ export type LibraryCleanupApprovalFindManyArgs<ExtArgs extends runtime.Types.Ext
    * Skip the first `n` LibraryCleanupApprovals.
    */
   skip?: number
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+   * 
+   * Filter by unique combinations of LibraryCleanupApprovals.
+   */
   distinct?: Prisma.LibraryCleanupApprovalScalarFieldEnum | Prisma.LibraryCleanupApprovalScalarFieldEnum[]
 }
 

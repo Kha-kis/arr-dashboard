@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ApiError, apiRequest } from "../../../lib/api-client/base";
+import { queueCleanerKeys } from "../../../lib/query-keys";
 
 interface TriggerCleanResponse {
 	message: string;
@@ -18,7 +19,7 @@ export function useManualClean() {
 	const mutation = useMutation({
 		mutationFn: (instanceId: string) => triggerClean(instanceId),
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["queue-cleaner"] });
+			void queryClient.invalidateQueries({ queryKey: queueCleanerKeys.all });
 		},
 	});
 

@@ -7,7 +7,7 @@ import {
 	updateOidcProviderSchema,
 } from "@arr/shared";
 import type { FastifyInstance } from "fastify";
-import { normalizeIssuerUrl } from "../lib/auth/oidc-utils.js";
+import { resolveCanonicalIssuer } from "../lib/auth/oidc-utils.js";
 import { hashPassword } from "../lib/auth/password.js";
 import type { Prisma, OIDCProvider as PrismaOIDCProvider } from "../lib/prisma.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
@@ -61,14 +61,21 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 		async (request, reply) => {
 			const data = validateRequest(createOidcProviderSchema, request.body);
 
-			// Normalize issuer URL to prevent discovery failures
+			// Resolve canonical issuer URL from the provider's discovery document
 			let normalizedIssuer: string;
 			try {
-				normalizedIssuer = normalizeIssuerUrl(data.issuer);
-				if (normalizedIssuer !== data.issuer) {
+				const result = await resolveCanonicalIssuer(data.issuer);
+				normalizedIssuer = result.issuer;
+				if (result.source === "discovery" && normalizedIssuer !== data.issuer) {
 					request.log.info(
-						{ original: data.issuer, normalized: normalizedIssuer },
-						"Normalized OIDC issuer URL",
+						{ original: data.issuer, resolved: normalizedIssuer },
+						"Resolved canonical OIDC issuer URL from discovery document",
+					);
+				}
+				if (result.warning) {
+					request.log.warn(
+						{ original: data.issuer, resolved: normalizedIssuer, warning: result.warning },
+						"OIDC discovery warning — using fallback issuer URL",
 					);
 				}
 			} catch (error) {
@@ -134,15 +141,22 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 		async (request, reply) => {
 			const data = validateRequest(updateOidcProviderSchema, request.body);
 
-			// Normalize issuer URL if provided
+			// Resolve canonical issuer URL if provided
 			let normalizedIssuer: string | undefined;
 			if (data.issuer) {
 				try {
-					normalizedIssuer = normalizeIssuerUrl(data.issuer);
-					if (normalizedIssuer !== data.issuer) {
+					const result = await resolveCanonicalIssuer(data.issuer);
+					normalizedIssuer = result.issuer;
+					if (result.source === "discovery" && normalizedIssuer !== data.issuer) {
 						request.log.info(
-							{ original: data.issuer, normalized: normalizedIssuer },
-							"Normalized OIDC issuer URL",
+							{ original: data.issuer, resolved: normalizedIssuer },
+							"Resolved canonical OIDC issuer URL from discovery document",
+						);
+					}
+					if (result.warning) {
+						request.log.warn(
+							{ original: data.issuer, resolved: normalizedIssuer, warning: result.warning },
+							"OIDC discovery warning — using fallback issuer URL",
 						);
 					}
 				} catch (error) {

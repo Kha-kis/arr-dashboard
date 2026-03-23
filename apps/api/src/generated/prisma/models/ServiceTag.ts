@@ -1056,6 +1056,11 @@ export type ServiceTagFindManyArgs<ExtArgs extends runtime.Types.Extensions.Inte
    * Skip the first `n` ServiceTags.
    */
   skip?: number
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+   * 
+   * Filter by unique combinations of ServiceTags.
+   */
   distinct?: Prisma.ServiceTagScalarFieldEnum | Prisma.ServiceTagScalarFieldEnum[]
 }
 
