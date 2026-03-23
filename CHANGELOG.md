@@ -5,6 +5,44 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.2] - 2026-03-23
+
+Bug fixes, dependency updates, OIDC compatibility, and frontend architecture improvements.
+
+### Fixed
+
+- **Calendar Sunday events (#207)** — Events were bucketed by UTC date (`airDateUtc`) instead of local air date (`airDate`), causing shows airing Sunday evening in negative UTC timezones to appear on Monday. Now uses the local air date for grid bucketing and UTC for intra-day sort ordering
+- **Sonarr/Lidarr statistics (#209)** — Dashboard and statistics showed inflated missing counts and inconsistent downloaded percentages. Sonarr now uses monitored episode count (not total) as the denominator. Lidarr now only counts tracks from monitored artists
+- **OIDC Authentik compatibility (#208)** — Authentik includes a trailing slash in its canonical issuer URL, causing `oauth4webapi` strict comparison to fail. New `resolveCanonicalIssuer()` fetches the provider's discovery document to store the exact canonical issuer. Self-healing retry in login flow auto-corrects existing stored issuers without database migration
+
+### Changed
+
+#### Architecture — Frontend Query Infrastructure
+- **Centralized query keys** — Consolidated all React Query keys into `query-keys.ts`. Migrated 15 hook files from local KEYS objects and inline string arrays to centralized key factories. Eliminates key drift and enables consistent cache invalidation
+- **Polling standardization** — Migrated 28 inline `refetchInterval` values to 6 named constants (`POLLING_REALTIME` 15s through `POLLING_BACKGROUND` 5min). All polling intervals are now auditable from a single file
+- **`useRefreshState` hook** — Extracted the 6-copy "isRefreshing + setTimeout" pattern into a shared hook with proper timeout cleanup on unmount, fixing a potential memory leak in 5 of 6 original implementations
+- **`useEnrichableItems` hook** — Extracted duplicated library item enrichment logic from Seerr and Plex hooks. Fixes a hidden type mapping inconsistency where Seerr used `"tv"` and Plex used `"series"` for the same concept — both now declare their mapping explicitly
+
+#### Documentation
+- **CLAUDE.md rewrite** — Reduced from 1,177 to 158 lines (87% smaller). Extracted detailed reference sections to `docs/THEMING.md`, `docs/AUTH.md`, `docs/API-ROUTES.md`
+
+### Dependencies
+
+- Prisma 7.4.2 → 7.5.0
+- Next.js 16.1.7 → 16.2.1
+- TanStack Query 5.90.21 → 5.95.0
+- Tailwind CSS 4.2.1 → 4.2.2
+- Biome 2.4.6 → 2.4.8
+- Vitest 4.0.18 → 4.1.0
+- better-sqlite3 12.6.2 → 12.8.0
+- pnpm/action-setup v4 → v5
+- 24 production + 4 dev dependency updates total
+- `effect` override to 3.20.0 (Dependabot alert #32)
+
+### Added
+
+- **Authentik OIDC test infrastructure** — Docker Compose setup with PostgreSQL, Redis, and Authentik for end-to-end OIDC flow testing. Validates trailing-slash issuer handling against a real Authentik instance
+
 ## [2.9.1] - 2026-03-20
 
 Security patches, comprehensive incognito mode coverage, and TRaSH Guides cloning improvements.
