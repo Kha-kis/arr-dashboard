@@ -1,0 +1,46 @@
+name: Feature Request
+description: Suggest a new feature or improvement
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or Use Case
+      description: "What problem does this solve? What's the use case?"
+      placeholder: "I want to be able to..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: "How should this work? What should the user experience be?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: "Any other approaches you've thought about?"
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Feature Area
+      options:
+        - Dashboard
+        - Library
+        - Calendar
+        - Search / Indexers
+        - Statistics
+        - Requests (Seerr)
+        - Hunting
+        - Queue Cleaner
+        - Library Cleanup
+        - TRaSH Guides
+        - Notifications
+        - Settings
+        - Authentication
+        - Other

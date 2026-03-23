@@ -318,14 +318,14 @@ export const LibraryCard = memo(function LibraryCard({
 	} else if (item.type === "artist") {
 		const albumCount = item.statistics?.albumCount ?? 0;
 		const trackFileCount = item.statistics?.trackFileCount ?? 0;
-		const totalTrackCount = item.statistics?.totalTrackCount ?? 0;
+		const monitoredTrackCount = item.statistics?.trackCount ?? item.statistics?.totalTrackCount ?? 0;
 		if (albumCount > 0) {
 			metadata.push({ label: "Albums", value: albumCount });
 		}
-		if (totalTrackCount > 0) {
+		if (monitoredTrackCount > 0) {
 			metadata.push({
 				label: "Tracks",
-				value: `${trackFileCount}/${totalTrackCount}`,
+				value: `${trackFileCount}/${monitoredTrackCount}`,
 			});
 		}
 		if (sizeLabel) {

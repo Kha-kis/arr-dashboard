@@ -199,7 +199,8 @@ export class OIDCProvider {
 						// Retry failed — fall through to the original error
 						// Log for debugging but don't mask the original error
 						console.warn(
-							`[OIDC] Self-healing retry failed for "${this.config.issuer}":`,
+							"[OIDC] Self-healing retry failed for issuer:",
+							this.config.issuer,
 							retryError instanceof Error ? retryError.message : retryError,
 						);
 					}

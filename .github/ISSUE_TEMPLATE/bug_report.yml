@@ -1,0 +1,75 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please fill in what you can — more detail helps us fix it faster.
+
+  - type: input
+    id: version
+    attributes:
+      label: Arr Dashboard Version
+      description: "Check Settings → System or the Docker image tag"
+      placeholder: "e.g., 2.9.2"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment Method
+      options:
+        - Docker (docker run / docker compose)
+        - Unraid
+        - Synology/QNAP
+        - Manual (Node.js)
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: database
+    attributes:
+      label: Database
+      options:
+        - SQLite (default)
+        - PostgreSQL
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: "Clear description of the bug"
+      placeholder: "When I do X, I expect Y but instead Z happens"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: "How can we reproduce this?"
+      placeholder: |
+        1. Go to '...'
+        2. Click on '...'
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: services
+    attributes:
+      label: Connected Services
+      description: "Which services are relevant to this bug?"
+      placeholder: "e.g., Sonarr 4.0.17, Radarr 5.x, Lidarr 3.x, Plex, Tautulli, Seerr"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs
+      description: "Container logs, browser console, or API errors"
+      render: shell
