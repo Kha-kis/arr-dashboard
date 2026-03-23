@@ -69,53 +69,7 @@ import {
 	updateSeerrNotification,
 	updateSeerrUser,
 } from "../../lib/api-client/seerr";
-
-// ============================================================================
-// Query Keys
-// ============================================================================
-
-const seerrKeys = {
-	all: ["seerr"] as const,
-	requests: (instanceId: string, params?: Omit<FetchSeerrRequestsParams, "instanceId">) =>
-		["seerr", "requests", instanceId, params] as const,
-	request: (instanceId: string, requestId: number) =>
-		["seerr", "request", instanceId, requestId] as const,
-	requestCount: (instanceId: string) => ["seerr", "request-count", instanceId] as const,
-	users: (instanceId: string, params?: Omit<FetchSeerrUsersParams, "instanceId">) =>
-		["seerr", "users", instanceId, params] as const,
-	userQuota: (instanceId: string, userId: number) =>
-		["seerr", "user-quota", instanceId, userId] as const,
-	issues: (instanceId: string, params?: Omit<FetchSeerrIssuesParams, "instanceId">) =>
-		["seerr", "issues", instanceId, params] as const,
-	notifications: (instanceId: string) => ["seerr", "notifications", instanceId] as const,
-	status: (instanceId: string) => ["seerr", "status", instanceId] as const,
-	health: (instanceId: string) => ["seerr", "health", instanceId] as const,
-	audit: (instanceId: string) => ["seerr", "audit", instanceId] as const,
-	// Discover
-	libraryEnrichment: (instanceId: string, tmdbIdKey: string) =>
-		["seerr", "library-enrichment", instanceId, tmdbIdKey] as const,
-	discover: {
-		all: ["seerr", "discover"] as const,
-		movies: (instanceId: string) => ["seerr", "discover", "movies", instanceId] as const,
-		tv: (instanceId: string) => ["seerr", "discover", "tv", instanceId] as const,
-		trending: (instanceId: string) => ["seerr", "discover", "trending", instanceId] as const,
-		moviesUpcoming: (instanceId: string) =>
-			["seerr", "discover", "movies-upcoming", instanceId] as const,
-		tvUpcoming: (instanceId: string) => ["seerr", "discover", "tv-upcoming", instanceId] as const,
-		search: (instanceId: string, query: string) =>
-			["seerr", "discover", "search", instanceId, query] as const,
-		movieDetails: (instanceId: string, tmdbId: number) =>
-			["seerr", "discover", "movie", instanceId, tmdbId] as const,
-		tvDetails: (instanceId: string, tmdbId: number) =>
-			["seerr", "discover", "tv-details", instanceId, tmdbId] as const,
-		genres: (instanceId: string, mediaType: "movie" | "tv") =>
-			["seerr", "discover", "genres", instanceId, mediaType] as const,
-		requestOptions: (instanceId: string, mediaType: "movie" | "tv") =>
-			["seerr", "discover", "request-options", instanceId, mediaType] as const,
-		byGenre: (instanceId: string, mediaType: "movie" | "tv", genreId: number) =>
-			["seerr", "discover", "genre", instanceId, mediaType, genreId] as const,
-	},
-};
+import { seerrKeys } from "../../lib/query-keys";
 
 // ============================================================================
 // Request Hooks

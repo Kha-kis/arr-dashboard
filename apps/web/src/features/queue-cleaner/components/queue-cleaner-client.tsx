@@ -2,14 +2,16 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { Activity, BarChart3, RefreshCw, Settings, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { queueCleanerKeys } from "../../../lib/query-keys";
+import { useCallback, useState } from "react";
+import { useRefreshState } from "../../../hooks/useRefreshState";
 import {
 	PremiumPageHeader,
 	PremiumPageLoading,
 	type PremiumTab,
 	PremiumTabs,
 } from "../../../components/layout";
-import { Alert, AlertDescription, Button, toast } from "../../../components/ui";
+import { Alert, AlertDescription, Button } from "../../../components/ui";
 import { useQueueCleanerStatus } from "../hooks/useQueueCleanerStatus";
 import { QueueCleanerActivity } from "./queue-cleaner-activity";
 import { QueueCleanerConfig } from "./queue-cleaner-config";
@@ -22,27 +24,12 @@ export const QueueCleanerClient = () => {
 	const [activeTab, setActiveTab] = useState<CleanerTab>("overview");
 	const { status, isLoading, error } = useQueueCleanerStatus();
 	const queryClient = useQueryClient();
-	const [isRefreshing, setIsRefreshing] = useState(false);
-	const refreshTimeout = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-	useEffect(() => {
-		return () => clearTimeout(refreshTimeout.current);
-	}, []);
-
-	const handleRefresh = useCallback(() => {
-		if (isRefreshing) return;
-		setIsRefreshing(true);
-		clearTimeout(refreshTimeout.current);
-
-		void queryClient
-			.invalidateQueries({ queryKey: ["queue-cleaner"] })
-			.catch(() => {
-				toast.error("Failed to refresh queue cleaner data");
-			})
-			.finally(() => {
-				refreshTimeout.current = setTimeout(() => setIsRefreshing(false), 600);
-			});
-	}, [queryClient, isRefreshing]);
+	const refetchCleaner = useCallback(
+		() => queryClient.invalidateQueries({ queryKey: queueCleanerKeys.all }),
+		[queryClient],
+	);
+	const [isRefreshing, handleRefresh] = useRefreshState(refetchCleaner);
 
 	const tabs: PremiumTab[] = [
 		{

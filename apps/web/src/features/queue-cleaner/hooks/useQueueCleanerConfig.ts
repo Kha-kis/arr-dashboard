@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "../../../lib/api-client/base";
+import { queueCleanerKeys } from "../../../lib/query-keys";
 import type {
 	InstanceSummary,
 	QueueCleanerConfigUpdate,
@@ -40,7 +41,7 @@ async function deleteConfig(instanceId: string): Promise<void> {
 
 export function useQueueCleanerConfigs() {
 	const query = useQuery({
-		queryKey: ["queue-cleaner", "configs"],
+		queryKey: queueCleanerKeys.configs,
 		queryFn: fetchConfigs,
 	});
 
@@ -60,21 +61,21 @@ export function useUpdateQueueCleanerConfig() {
 		mutationFn: ({ instanceId, data }: { instanceId: string; data: QueueCleanerConfigUpdate }) =>
 			updateConfig(instanceId, data),
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["queue-cleaner"] });
+			void queryClient.invalidateQueries({ queryKey: queueCleanerKeys.all });
 		},
 	});
 
 	const createMutation = useMutation({
 		mutationFn: (instanceId: string) => createConfig(instanceId),
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["queue-cleaner"] });
+			void queryClient.invalidateQueries({ queryKey: queueCleanerKeys.all });
 		},
 	});
 
 	const deleteMutation = useMutation({
 		mutationFn: (instanceId: string) => deleteConfig(instanceId),
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["queue-cleaner"] });
+			void queryClient.invalidateQueries({ queryKey: queueCleanerKeys.all });
 		},
 	});
 
@@ -99,7 +100,7 @@ export function useToggleCleanerScheduler() {
 				method: "POST",
 			}),
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["queue-cleaner"] });
+			void queryClient.invalidateQueries({ queryKey: queueCleanerKeys.all });
 		},
 	});
 

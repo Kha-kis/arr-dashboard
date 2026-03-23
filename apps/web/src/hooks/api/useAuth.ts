@@ -15,6 +15,7 @@ import {
 	type SetupRequiredResponse,
 	updateAccount,
 } from "../../lib/api-client/auth";
+import { authKeys } from "../../lib/query-keys";
 
 // Login
 interface LoginPayload {
@@ -31,7 +32,7 @@ export const useLoginMutation = () => {
 		onSuccess: (user) => {
 			// Immediately set the user data in cache instead of invalidating
 			// This prevents race conditions on redirect
-			queryClient.setQueryData(["current-user"], user);
+			queryClient.setQueryData(authKeys.currentUser, user);
 		},
 	});
 };
@@ -44,7 +45,7 @@ export const useLogoutMutation = () => {
 		mutationFn: logout,
 		onSuccess: () => {
 			// Immediately clear user data from cache
-			queryClient.setQueryData(["current-user"], null);
+			queryClient.setQueryData(authKeys.currentUser, null);
 		},
 	});
 };
@@ -56,7 +57,7 @@ export const useCurrentUser = (
 	const queryClient = useQueryClient();
 
 	const query = useQuery<CurrentUser | null>({
-		queryKey: ["current-user"],
+		queryKey: authKeys.currentUser,
 		queryFn: fetchCurrentUser,
 		staleTime: 5 * 60 * 1000,
 		retry: false,
@@ -74,7 +75,7 @@ export const useCurrentUser = (
 			"status" in query.error &&
 			query.error.status === 401
 		) {
-			queryClient.setQueryData(["current-user"], null);
+			queryClient.setQueryData(authKeys.currentUser, null);
 		}
 	}, [query.error, queryClient]);
 
@@ -99,7 +100,7 @@ export const useUpdateAccountMutation = () => {
 		mutationFn: updateAccount,
 		onSuccess: () => {
 			// Invalidate to refetch with updated hasPassword and hasTmdbApiKey fields
-			queryClient.invalidateQueries({ queryKey: ["current-user"] });
+			queryClient.invalidateQueries({ queryKey: authKeys.currentUser });
 		},
 	});
 };
@@ -121,7 +122,7 @@ export const useRemovePasswordMutation = () => {
 		mutationFn: removePassword,
 		onSuccess: () => {
 			// Invalidate current user to refetch and show updated state
-			queryClient.invalidateQueries({ queryKey: ["current-user"] });
+			queryClient.invalidateQueries({ queryKey: authKeys.currentUser });
 		},
 	});
 };
@@ -129,7 +130,7 @@ export const useRemovePasswordMutation = () => {
 // Setup Required (also returns password policy for frontend validation)
 export const useSetupRequired = () =>
 	useQuery<SetupRequiredResponse>({
-		queryKey: ["setup-required"],
+		queryKey: authKeys.setupRequired,
 		queryFn: checkSetupRequired,
 		staleTime: 5 * 60 * 1000,
 		retry: 1,
@@ -141,7 +142,7 @@ export const useSetupRequired = () =>
 // Passkey Credentials
 export const usePasskeyCredentials = () =>
 	useQuery<PasskeyCredential[]>({
-		queryKey: ["passkey-credentials"],
+		queryKey: authKeys.passkeyCredentials,
 		queryFn: getPasskeyCredentials,
 		staleTime: 5 * 60 * 1000, // 5 minutes
 	});

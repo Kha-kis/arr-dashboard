@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, Dot, RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { useRefreshState } from "../../../hooks/useRefreshState";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { formatMonthLabel } from "../lib/calendar-formatters";
 
@@ -23,13 +23,7 @@ export const CalendarHeader = ({
 	onRefresh,
 }: CalendarHeaderProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
-	const [isRefreshing, setIsRefreshing] = useState(false);
-
-	const handleRefresh = () => {
-		setIsRefreshing(true);
-		onRefresh();
-		setTimeout(() => setIsRefreshing(false), 500);
-	};
+	const [isRefreshing, handleRefresh] = useRefreshState(onRefresh);
 
 	const label = formatMonthLabel(monthStart);
 

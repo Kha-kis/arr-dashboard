@@ -58,36 +58,7 @@ import {
 	triggerPlexScan,
 	updatePlexTag,
 } from "../../lib/api-client/plex";
-
-// ============================================================================
-// Query Keys
-// ============================================================================
-
-export const plexKeys = {
-	all: ["plex"] as const,
-	watchEnrichment: (key: string) => ["plex", "watch-enrichment", key] as const,
-	sections: () => ["plex", "sections"] as const,
-	nowPlaying: () => ["plex", "now-playing"] as const,
-	episodes: (instanceId: string, showTmdbId: number) =>
-		["plex", "episodes", instanceId, showTmdbId] as const,
-	tags: (instanceId: string) => ["plex", "tags", instanceId] as const,
-	recentlyAdded: (limit: number) => ["plex", "recently-added", limit] as const,
-	identity: () => ["plex", "identity"] as const,
-	onDeck: () => ["plex", "on-deck"] as const,
-	accounts: () => ["plex", "accounts"] as const,
-	cacheHealth: () => ["plex", "cache-health"] as const,
-	seriesProgress: (key: string) => ["plex", "series-progress", key] as const,
-	transcodeAnalytics: (days: number) => ["plex", "transcode-analytics", days] as const,
-	bandwidthAnalytics: (days: number) => ["plex", "bandwidth-analytics", days] as const,
-	userAnalytics: (days: number) => ["plex", "user-analytics", days] as const,
-	watchHistory: (days: number, limit: number) => ["plex", "watch-history", days, limit] as const,
-	codecAnalytics: (days: number) => ["plex", "codec-analytics", days] as const,
-	deviceAnalytics: (days: number) => ["plex", "device-analytics", days] as const,
-	collectionStats: () => ["plex", "collection-stats"] as const,
-	userEpisodeCompletion: (key: string) => ["plex", "user-episode-completion", key] as const,
-	qualityScore: (days: number) => ["plex", "quality-score", days] as const,
-	bandwidthForecast: (days: number) => ["plex", "bandwidth-forecast", days] as const,
-};
+import { plexKeys } from "../../lib/query-keys";
 
 // ============================================================================
 // Watch Enrichment (F1)

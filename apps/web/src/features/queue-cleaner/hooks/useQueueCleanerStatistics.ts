@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../../../lib/api-client/base";
+import { queueCleanerKeys } from "../../../lib/query-keys";
 import type { QueueCleanerStatistics } from "../lib/queue-cleaner-types";
 
 const STATISTICS_REFRESH_INTERVAL = 60000; // 1 minute
@@ -22,7 +23,7 @@ interface UseQueueCleanerStatisticsResult {
  */
 export function useQueueCleanerStatistics(): UseQueueCleanerStatisticsResult {
 	const query = useQuery({
-		queryKey: ["queue-cleaner", "statistics"],
+		queryKey: queueCleanerKeys.statistics,
 		queryFn: fetchStatistics,
 		refetchInterval: STATISTICS_REFRESH_INTERVAL,
 	});
