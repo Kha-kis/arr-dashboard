@@ -146,6 +146,15 @@ pnpm --filter @arr/api exec tsc --noEmit         # Type check backend
 - **Backup service**: Decomposed into `backup-crypto.ts`, `backup-validation.ts`, `backup-file-utils.ts`, `backup-database.ts`
 - **Queue Cleaner**: Has its own `QueueCleanerConfig` model for per-instance auto-cleanup settings
 
+## Release Checklist
+
+When preparing a release, update ALL of these before tagging:
+1. `package.json` — version field
+2. `CHANGELOG.md` — new version section
+3. `README.md` — version tagline at top + version tags table
+4. `DOCKERHUB.md` — version tagline at top + version tags table
+5. `CLAUDE.md` — version at bottom
+
 ## Detailed Reference (not loaded by default)
 
 For deep dives, see these files (create as needed):
