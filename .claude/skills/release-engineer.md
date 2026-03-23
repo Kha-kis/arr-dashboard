@@ -16,6 +16,7 @@ These files must ALL be updated together on every release. Missing any one cause
 3. `README.md` — version tagline (line 3) + version tags table (~line 203)
 4. `DOCKERHUB.md` — version tagline (line 3) + version tags table (~line 90)
 5. `CLAUDE.md` — version footer (last line)
+6. **Wiki** — version in `Home.md` and `Troubleshooting.md` (separate git repo: `arr-dashboard.wiki.git`)
 
 ## Changelog Style
 

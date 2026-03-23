@@ -159,6 +159,7 @@ When preparing a release, update ALL of these before tagging:
 3. `README.md` — version tagline at top + version tags table
 4. `DOCKERHUB.md` — version tagline at top + version tags table
 5. `CLAUDE.md` — version at bottom
+6. **Wiki** — update version in `Home.md` and `Troubleshooting.md` (`/tmp/arr-wiki` or clone from `arr-dashboard.wiki.git`)
 
 ## Detailed Reference (not loaded by default)
 

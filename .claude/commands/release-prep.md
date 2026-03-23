@@ -9,6 +9,7 @@ Follow the release checklist exactly:
 3. **README**: Update version tagline at top + add entry to version tags table
 4. **DOCKERHUB**: Update version tagline at top + add entry to version tags table
 5. **CLAUDE.md**: Update version at bottom
+6. **Wiki**: Update version in `Home.md` and `Troubleshooting.md` (clone from `arr-dashboard.wiki.git` if not at `/tmp/arr-wiki`)
 
 Then validate (or run `/validate`):
 - `pnpm --filter @arr/web exec tsc --noEmit`
