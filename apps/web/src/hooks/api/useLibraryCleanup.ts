@@ -11,6 +11,7 @@ import {
 	libraryCleanupApi,
 } from "../../lib/api-client/library-cleanup";
 import { libraryCleanupKeys } from "../../lib/query-keys";
+import { POLLING_STANDARD } from "../../lib/polling-intervals";
 
 // ============================================================================
 // Queries
@@ -35,7 +36,7 @@ export function useCleanupStatus() {
 	return useQuery({
 		queryKey: libraryCleanupKeys.status,
 		queryFn: () => libraryCleanupApi.getStatus(),
-		refetchInterval: 60 * 1000, // 1 minute
+		refetchInterval: POLLING_STANDARD,
 	});
 }
 

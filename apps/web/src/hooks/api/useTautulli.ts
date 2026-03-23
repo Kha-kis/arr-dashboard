@@ -18,12 +18,13 @@ import {
 	fetchWatchHistory,
 } from "../../lib/api-client/tautulli";
 import { tautulliKeys } from "../../lib/query-keys";
+import { POLLING_REALTIME } from "../../lib/polling-intervals";
 
 // ============================================================================
 // Activity (F5)
 // ============================================================================
 
-export const useTautulliActivity = (enabled = true, refetchInterval = 15_000) => {
+export const useTautulliActivity = (enabled = true, refetchInterval = POLLING_REALTIME) => {
 	return useQuery<TautulliActivityResponse>({
 		queryKey: tautulliKeys.activity(),
 		queryFn: fetchTautulliActivity,

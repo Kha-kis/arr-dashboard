@@ -31,6 +31,8 @@ import type {
 } from "@arr/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
+import { POLLING_REALTIME } from "../../lib/polling-intervals";
+import { useEnrichableItems } from "../useEnrichableItems";
 import {
 	fetchBandwidthAnalytics,
 	fetchBandwidthForecast,
@@ -69,26 +71,14 @@ import { plexKeys } from "../../lib/query-keys";
  * Follows the same pattern as useLibraryEnrichment in useSeerr.ts.
  */
 export const useWatchEnrichment = (items: LibraryItem[]) => {
-	const enrichable = useMemo(() => {
-		if (items.length === 0) return { tmdbIds: [], types: [], key: "" };
-
-		const tmdbIds: number[] = [];
-		const types: string[] = [];
-		for (const item of items) {
-			if ((item.service === "sonarr" || item.service === "radarr") && item.remoteIds?.tmdbId) {
-				tmdbIds.push(item.remoteIds.tmdbId);
-				types.push(item.type === "movie" ? "movie" : "series");
-			}
-		}
-		const key = tmdbIds.map((id, i) => `${types[i]}:${id}`).join(",");
-		return { tmdbIds, types, key };
-	}, [items]);
+	// Plex API expects "series" for series
+	const enrichable = useEnrichableItems(items, { movie: "movie", series: "series" });
 
 	return useQuery<WatchEnrichmentResponse>({
 		queryKey: plexKeys.watchEnrichment(enrichable.key),
 		queryFn: () => fetchWatchEnrichment(enrichable.tmdbIds, enrichable.types),
 		staleTime: 5 * 60_000,
-		enabled: enrichable.tmdbIds.length > 0,
+		enabled: enrichable.hasItems,
 	});
 };
 
@@ -118,7 +108,7 @@ export const usePlexScanMutation = () => {
 // Now Playing (F4)
 // ============================================================================
 
-export const useNowPlaying = (enabled = true, refetchInterval = 15_000) => {
+export const useNowPlaying = (enabled = true, refetchInterval = POLLING_REALTIME) => {
 	return useQuery<PlexNowPlayingResponse>({
 		queryKey: plexKeys.nowPlaying(),
 		queryFn: fetchNowPlaying,

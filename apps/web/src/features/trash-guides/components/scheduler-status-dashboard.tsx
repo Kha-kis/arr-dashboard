@@ -18,6 +18,7 @@ import {
 import { useSchedulerStatus, useTriggerUpdateCheck } from "../../../hooks/api/useTemplateUpdates";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { POLLING_STANDARD } from "../../../lib/polling-intervals";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 /**
@@ -90,7 +91,7 @@ const StatCard = ({
 export const SchedulerStatusDashboard = () => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const { data, isLoading, error } = useSchedulerStatus({
-		refetchInterval: 60000, // Refresh every minute
+		refetchInterval: POLLING_STANDARD,
 	});
 	const triggerCheck = useTriggerUpdateCheck();
 
