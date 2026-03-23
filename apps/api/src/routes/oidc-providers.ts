@@ -67,7 +67,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 				normalizedIssuer = await resolveCanonicalIssuer(data.issuer);
 				if (normalizedIssuer !== data.issuer) {
 					request.log.info(
-						{ original: data.issuer, normalized: normalizedIssuer },
+						{ original: data.issuer, resolved: normalizedIssuer },
 						"Resolved canonical OIDC issuer URL from discovery document",
 					);
 				}
@@ -141,7 +141,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 					normalizedIssuer = await resolveCanonicalIssuer(data.issuer);
 					if (normalizedIssuer !== data.issuer) {
 						request.log.info(
-							{ original: data.issuer, normalized: normalizedIssuer },
+							{ original: data.issuer, resolved: normalizedIssuer },
 							"Resolved canonical OIDC issuer URL from discovery document",
 						);
 					}

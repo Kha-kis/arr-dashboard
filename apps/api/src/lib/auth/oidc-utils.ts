@@ -56,16 +56,27 @@ export async function resolveCanonicalIssuer(issuer: string): Promise<string> {
 	const normalized = normalizeIssuerUrl(issuer);
 
 	try {
-		// Try both with and without trailing slash for discovery
-		// Some providers require the exact path, others are flexible
-		const discoveryUrl = normalized.endsWith("/")
+		// Try discovery with the URL as-is first, then with opposite trailing slash
+		const primaryUrl = normalized.endsWith("/")
 			? `${normalized}.well-known/openid-configuration`
 			: `${normalized}/.well-known/openid-configuration`;
 
-		const response = await fetch(discoveryUrl, {
+		const fetchOpts = {
 			headers: { Accept: "application/json" },
 			signal: AbortSignal.timeout(10_000),
-		});
+		};
+
+		let response = await fetch(primaryUrl, fetchOpts);
+
+		// If first attempt fails, try opposite trailing slash variant
+		if (!response.ok) {
+			const alt = normalized.endsWith("/")
+				? `${normalized.slice(0, -1)}/.well-known/openid-configuration`
+				: `${normalized}/.well-known/openid-configuration`;
+			if (alt !== primaryUrl) {
+				response = await fetch(alt, fetchOpts);
+			}
+		}
 
 		if (response.ok) {
 			const doc = (await response.json()) as { issuer?: string };
