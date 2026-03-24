@@ -5,6 +5,12 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.1] - 2026-03-24
+
+### Fixed
+
+- **Quality filter not applied** — The library "Quality" dropdown (Cutoff unmet / Cutoff met) was not filtering results because the `cutoffUnmet` parameter was missing from the API client's URL serialization. The filter UI, backend validation, and database query all worked correctly — only the HTTP request was missing the parameter
+
 ## [2.10.0] - 2026-03-24
 
 Cross-service Library Intelligence, TRaSH scheduled sync, quality upgrade visibility, and foundational reliability improvements.
