@@ -12,6 +12,7 @@ import { useLibraryQuery, useLibrarySyncStatus } from "../../../hooks/api/useLib
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import type {
 	FileFilterValue,
+	QualityFilterValue,
 	SortByValue,
 	SortOrderValue,
 	StatusFilterValue,
@@ -36,6 +37,7 @@ export interface LibraryDataParams {
 	// Status and file filters
 	statusFilter: StatusFilterValue;
 	fileFilter: FileFilterValue;
+	qualityFilter: QualityFilterValue;
 	// Sorting
 	sortBy: SortByValue;
 	sortOrder: SortOrderValue;
@@ -106,6 +108,7 @@ export function useLibraryData(params: LibraryDataParams): LibraryData {
 		searchTerm,
 		statusFilter,
 		fileFilter,
+		qualityFilter,
 		sortBy,
 		sortOrder,
 		page,
@@ -116,6 +119,8 @@ export function useLibraryData(params: LibraryDataParams): LibraryData {
 	const monitoredFilter =
 		statusFilter === "all" ? "all" : statusFilter === "monitored" ? "true" : "false";
 	const hasFileFilter = fileFilter === "all" ? "all" : fileFilter === "has-file" ? "true" : "false";
+	const cutoffUnmetFilter =
+		qualityFilter === "all" ? "all" : qualityFilter === "cutoff-unmet" ? "true" : "false";
 
 	// Fetch library data with server-side pagination
 	const libraryQuery = useLibraryQuery({
@@ -128,6 +133,7 @@ export function useLibraryData(params: LibraryDataParams): LibraryData {
 		search: searchTerm.trim() || undefined,
 		monitored: monitoredFilter,
 		hasFile: hasFileFilter,
+		cutoffUnmet: cutoffUnmetFilter,
 		// Sorting
 		sortBy,
 		sortOrder,

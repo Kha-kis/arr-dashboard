@@ -17,6 +17,7 @@ import { ItemDetailsModal } from "./item-details-modal";
 import { LibraryCard } from "./library-card";
 import { LibraryContent } from "./library-content";
 import { LibraryHeader } from "./library-header";
+import { LibraryInsightsSection } from "./library-insights-section";
 
 const EnrichedDetailModal = React.lazy(() =>
 	import("./enriched-detail-modal").then((m) => ({ default: m.EnrichedDetailModal })),
@@ -69,6 +70,7 @@ export const LibraryClient: React.FC = () => {
 		searchTerm: filters.searchTerm,
 		statusFilter: filters.statusFilter,
 		fileFilter: filters.fileFilter,
+		qualityFilter: filters.qualityFilter,
 		sortBy: filters.sortBy,
 		sortOrder: filters.sortOrder,
 		page: filters.page,
@@ -221,6 +223,8 @@ export const LibraryClient: React.FC = () => {
 				onStatusFilterChange={filters.setStatusFilter}
 				fileFilter={filters.fileFilter}
 				onFileFilterChange={filters.setFileFilter}
+				qualityFilter={filters.qualityFilter}
+				onQualityFilterChange={filters.setQualityFilter}
 				searchTerm={filters.searchTerm}
 				onSearchTermChange={filters.setSearchTerm}
 				sortBy={filters.sortBy}
@@ -231,6 +235,8 @@ export const LibraryClient: React.FC = () => {
 				syncStatus={data.syncStatus}
 				isSyncing={data.isSyncing}
 			/>
+
+			<LibraryInsightsSection />
 
 			<div
 				className="animate-in fade-in slide-in-from-bottom-4 duration-500"

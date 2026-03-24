@@ -21,6 +21,7 @@ export const libraryQuerySchema = z.object({
 	// Filters
 	monitored: z.enum(["true", "false", "all"]).default("all"),
 	hasFile: z.enum(["true", "false", "all"]).default("all"),
+	cutoffUnmet: z.enum(["true", "false", "all"]).default("all"),
 	status: z.string().optional(),
 	qualityProfileId: z.coerce.number().int().optional(),
 	yearMin: z.coerce.number().int().optional(),

@@ -4474,6 +4474,7 @@ export const LibraryCacheScalarFieldEnum = {
   qualityProfileId: 'qualityProfileId',
   qualityProfileName: 'qualityProfileName',
   sizeOnDisk: 'sizeOnDisk',
+  cutoffUnmet: 'cutoffUnmet',
   data: 'data',
   arrAddedAt: 'arrAddedAt',
   arrUpdatedAt: 'arrUpdatedAt',

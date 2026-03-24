@@ -79,6 +79,7 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 					instanceId: parsed.instanceId,
 					monitored: parsed.monitored,
 					hasFile: parsed.hasFile,
+					cutoffUnmet: parsed.cutoffUnmet,
 					status: parsed.status,
 					qualityProfileId: parsed.qualityProfileId,
 					yearMin: parsed.yearMin,
@@ -119,6 +120,7 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 					instanceId: parsed.instanceId,
 					monitored: parsed.monitored,
 					hasFile: parsed.hasFile,
+					cutoffUnmet: parsed.cutoffUnmet,
 					status: parsed.status,
 					qualityProfileId: parsed.qualityProfileId,
 					yearMin: parsed.yearMin,
@@ -182,6 +184,11 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 			where.hasFile = parsed.hasFile === "true";
 		}
 
+		// Cutoff unmet filter
+		if (parsed.cutoffUnmet !== "all") {
+			where.cutoffUnmet = parsed.cutoffUnmet === "true";
+		}
+
 		// Status filter
 		if (parsed.status) {
 			where.status = parsed.status;
@@ -241,10 +248,12 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 					}),
 		});
 
-		// Parse JSON data back to LibraryItem
+		// Parse JSON data back to LibraryItem, injecting cache-only fields
 		const items: LibraryItem[] = cachedItems.map((item) => {
 			try {
-				return JSON.parse(item.data) as LibraryItem;
+				const parsed = JSON.parse(item.data) as LibraryItem;
+				parsed.cutoffUnmet = item.cutoffUnmet;
+				return parsed;
 			} catch (parseError) {
 				// Log parsing failure for debugging
 				request.log.warn(
