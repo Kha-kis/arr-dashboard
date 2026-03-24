@@ -426,6 +426,14 @@ export const systemKeys = {
 };
 
 /* -------------------------------------------------------------------------- */
+/*  Pulse                                                                      */
+/* -------------------------------------------------------------------------- */
+
+export const pulseKeys = {
+	all: ["pulse"] as const,
+};
+
+/* -------------------------------------------------------------------------- */
 /*  Backward-compatible constants                                              */
 /*  These match the old per-file `const X_QUERY_KEY` pattern.                  */
 /*  Prefer the namespaced versions above for new code.                         */

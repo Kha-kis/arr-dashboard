@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.10.1** — Library Intelligence, TRaSH scheduled sync, quality upgrade visibility, Lidarr/Readarr grab detection
+> **Version 2.11.0** — System Pulse, Library Intelligence, TRaSH scheduled sync, quality upgrade visibility
 
 A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, **Lidarr**, **Readarr**, **Plex**, **Tautulli**, and **Seerr** instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -88,6 +88,7 @@ services:
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.11.0` | System Pulse — unified health attention feed across all services |
 | `2.10.1` | Quality filter fix |
 | `2.10.0` | Library Intelligence, TRaSH scheduled sync, quality upgrades, grab detection |
 | `2.9.3` | Lidarr stats fix (#209 follow-up), Claude Code tooling, GitHub templates |

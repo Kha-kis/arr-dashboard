@@ -15,4 +15,5 @@ export * from "./seerr";
 export * from "./plex";
 export * from "./tautulli";
 export * from "./template-sharing";
+export * from "./pulse";
 export * from "./trash-guides";

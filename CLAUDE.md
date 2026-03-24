@@ -15,7 +15,7 @@ These cause bugs if ignored:
 3. **Encryption**: All API keys must be encrypted with `app.encryptor.encrypt()` before storage. Store both `value` and `iv`.
 4. **Auth Check**: Protected routes use preHandler hook checking `request.currentUser?.id`. Every route plugin must add this hook.
 5. **Validation**: Use `validateRequest()` from `lib/utils/validate.ts` for request body parsing. Never use `request.body as Type`.
-6. **Incognito Mode**: Any component displaying sensitive data (titles, usernames, URLs, instance names) must use `useIncognitoMode()` hook from `contexts/IncognitoContext.tsx` and anonymize with functions from `lib/incognito.ts`. Tests rendering such components need `<IncognitoProvider>` wrapper.
+6. **Incognito Mode**: Any component displaying sensitive data (titles, usernames, URLs, instance names) must use `useIncognitoMode()` hook from `contexts/IncognitoContext.tsx` and anonymize with functions from `lib/incognito.ts`. This includes API response text that embeds instance names (e.g., Pulse titles like `"Label: message"` — split and anonymize both parts). Tests rendering such components need `<IncognitoProvider>` wrapper.
 7. **Query Invalidation**: Always invalidate relevant React Query keys after mutations.
 8. **Session Invalidation**: After credential changes (password, passkey deletion), call `invalidateAllUserSessions(userId, exceptToken)`.
 
@@ -87,6 +87,16 @@ packages/shared/src/types/ # Shared Zod schemas + TypeScript types
 1. Edit `apps/api/prisma/schema.prisma`
 2. Run `pnpm --filter @arr/api run db:push` (syncs schema + regenerates client)
 3. No migrations — uses `db push` for multi-provider support (SQLite/PostgreSQL)
+
+## Trust & UX Correctness
+
+When adding features that surface data to users (pages, panels, signals, notifications), verify:
+
+1. **Service-availability gating**: If a signal depends on optional services (Plex, Seerr, Tautulli), guard it — don't show misleading items when the service isn't configured
+2. **Signal accuracy**: Every user-facing count or status must be precise, not a proxy. If you can't compute the exact value cheaply, don't show it — overclaiming erodes trust
+3. **Duplicate surface check**: Before adding a signal, check where the same data already appears. Justify the overlap (cross-system synthesis is good, pure duplication is not)
+4. **Action link verification**: Every action link must point to an existing page that shows the relevant data with any required query params
+5. **Run `/trust-check`** on new user-facing features before marking them ready for review
 
 ## Database
 
@@ -170,4 +180,4 @@ For deep dives, see these files (create as needed):
 
 ---
 
-**Version:** 2.10.1 | **Node:** 22+ | **pnpm:** 10+
+**Version:** 2.11.0 | **Node:** 22+ | **pnpm:** 10+

@@ -5,6 +5,24 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.11.0] - 2026-03-24
+
+System Pulse — a unified attention feed that synthesizes health signals from every connected service into a single prioritized page.
+
+### Added
+
+#### System Pulse — Unified Health Attention Feed
+- **Pulse page** — New `/pulse` page as the first item in sidebar navigation. Aggregates health signals from all connected services into a prioritized feed grouped by severity (critical, warning, info). Severity sections are collapsible with item counts. Empty state shows "All clear" when no issues detected
+- **ARR health monitoring** — Surfaces health issues and warnings reported by Sonarr, Radarr, Prowlarr, Lidarr, and Readarr instances. ARR errors map to critical severity, warnings to warning severity
+- **Disk space alerts** — Warns when any ARR instance's storage exceeds 80% (warning) or 90% (critical). Deduplicates shared storage groups to avoid double-counting
+- **Instance unreachable detection** — Detects when ARR instances fail to respond to health checks and surfaces them as critical signals. Also catches client creation failures (e.g., bad API key)
+- **Seerr circuit breaker visibility** — Surfaces Seerr outages (circuit breaker OPEN → critical) and recovery state (HALF_OPEN → warning) on the Pulse page
+- **Cache staleness tracking** — Warns when Plex or Tautulli cache data hasn't refreshed in 12+ hours or when the last refresh resulted in an error
+- **Validation health signals** — Surfaces integration validation failures (TRaSH, Seerr, Plex, Tautulli) from the validation health registry. Failing integrations are critical, degraded are warning
+- **Quality cutoff signal** — Shows an info-level count of library items below their quality profile cutoff, with a direct link to the filtered library view
+- **Operation failure alerts** — Surfaces hunt failures, queue cleaner errors, and TRaSH sync failures from the last 24 hours. Capped at 5 items per category to avoid noise
+- **Server-side caching** — Pulse response is cached per-user for 60 seconds to avoid excessive ARR API calls on page refresh. Frontend polls every 120 seconds (POLLING_STATS interval)
+
 ## [2.10.1] - 2026-03-24
 
 ### Fixed
