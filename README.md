@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.10.0** — Library Intelligence, TRaSH scheduled sync, quality upgrade visibility, Lidarr/Readarr grab detection
+> **Version 2.10.1** — Library Intelligence, TRaSH scheduled sync, quality upgrade visibility, Lidarr/Readarr grab detection
 
 A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, **Lidarr**, **Readarr**, **Plex**, **Tautulli**, and **Seerr** instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -201,6 +201,7 @@ docker-compose up -d
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.10.1` | Quality filter fix |
 | `2.10.0` | Library Intelligence, TRaSH scheduled sync, quality upgrades, grab detection |
 | `2.9.3` | Lidarr stats fix (#209 follow-up), Claude Code tooling, GitHub templates |
 | `2.9.2` | Bug fixes (#207 #208 #209), architecture improvements, 28 dependency updates |
