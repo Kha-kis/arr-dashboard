@@ -205,22 +205,14 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.post("/services/test-connection", async (request, reply) => {
-		const payload = request.body as {
-			baseUrl?: unknown;
-			apiKey?: unknown;
-			service?: unknown;
-		};
-		const baseUrl = typeof payload?.baseUrl === "string" ? payload.baseUrl : undefined;
-		const apiKey = typeof payload?.apiKey === "string" ? payload.apiKey : undefined;
-		const service =
-			typeof payload?.service === "string" ? payload.service.toLowerCase() : undefined;
-
-		if (!baseUrl || !apiKey || !service) {
-			return reply.status(400).send({
-				error: "Missing required fields",
-				details: "baseUrl, apiKey, and service are required",
-			});
-		}
+		const { baseUrl, apiKey, service } = validateRequest(
+			z.object({
+				baseUrl: z.string().min(1),
+				apiKey: z.string().min(1),
+				service: z.string().min(1).transform((s) => s.toLowerCase()),
+			}),
+			request.body,
+		);
 
 		// Validate URL scheme to prevent SSRF with non-HTTP schemes
 		try {

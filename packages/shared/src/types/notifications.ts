@@ -105,6 +105,9 @@ export const notificationEventTypeSchema = z.enum([
 	"SYSTEM_STARTUP",
 	"SYSTEM_ERROR",
 	"VALIDATION_HEALTH_DEGRADED",
+	// Library Insights
+	"LIBRARY_INSIGHT_REQUESTED_UNWATCHED",
+	"LIBRARY_INSIGHT_WATCHED_MONITORED",
 ]);
 
 export type NotificationEventType = z.infer<typeof notificationEventTypeSchema>;

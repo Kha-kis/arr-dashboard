@@ -49,7 +49,10 @@ export interface SyncExecutorDeps {
 /**
  * Extracts indexed fields from a LibraryItem for database storage
  */
-function extractCacheFields(item: LibraryItem): {
+function extractCacheFields(
+	item: LibraryItem,
+	cutoffUnmetIds?: Set<number>,
+): {
 	title: string;
 	titleSlug: string | null;
 	sortTitle: string | null;
@@ -60,9 +63,11 @@ function extractCacheFields(item: LibraryItem): {
 	qualityProfileId: number | null;
 	qualityProfileName: string | null;
 	sizeOnDisk: bigint;
+	cutoffUnmet: boolean;
 	arrAddedAt: Date | null;
 	arrUpdatedAt: Date | null;
 } {
+	const arrItemId = typeof item.id === "string" ? Number.parseInt(item.id, 10) : item.id;
 	return {
 		title: item.title,
 		titleSlug: item.titleSlug ?? null,
@@ -74,6 +79,7 @@ function extractCacheFields(item: LibraryItem): {
 		qualityProfileId: item.qualityProfileId ?? null,
 		qualityProfileName: item.qualityProfileName ?? null,
 		sizeOnDisk: BigInt(item.sizeOnDisk ?? 0),
+		cutoffUnmet: cutoffUnmetIds?.has(arrItemId) ?? false,
 		arrAddedAt: item.added ? new Date(item.added) : null,
 		arrUpdatedAt: item.updated ? new Date(item.updated) : null,
 	};
@@ -163,6 +169,40 @@ export async function syncInstance(
 			buildLibraryItem(instance, service, raw as Record<string, unknown>),
 		);
 
+		// Fetch cutoff-unmet item IDs for Sonarr/Radarr (quality upgrade candidates)
+		const cutoffUnmetIds = new Set<number>();
+		if (client instanceof SonarrClient || client instanceof RadarrClient) {
+			try {
+				let cutoffPage = 1;
+				const cutoffPageSize = 1000;
+				let hasMore = true;
+				while (hasMore) {
+					const cutoffResult = await client.wanted.cutoff({
+						page: cutoffPage,
+						pageSize: cutoffPageSize,
+					});
+					const records = cutoffResult.records ?? [];
+					for (const record of records) {
+						const recordAny = record as Record<string, unknown>;
+						// Sonarr cutoff returns episodes with seriesId; Radarr returns movies with id
+						const itemId = (recordAny.seriesId ?? recordAny.id) as number | undefined;
+						if (itemId) cutoffUnmetIds.add(itemId);
+					}
+					hasMore = records.length === cutoffPageSize;
+					cutoffPage++;
+				}
+				log.debug(
+					{ instanceId: instance.id, cutoffUnmetCount: cutoffUnmetIds.size },
+					"Fetched cutoff-unmet item IDs",
+				);
+			} catch (error) {
+				log.warn(
+					{ err: error, instanceId: instance.id },
+					"Failed to fetch cutoff-unmet data — cutoffUnmet will default to false",
+				);
+			}
+		}
+
 		// Get existing cached items for this instance (include hasFile for download detection)
 		const existingItems = await prisma.libraryCache.findMany({
 			where: { instanceId: instance.id },
@@ -192,7 +232,7 @@ export async function syncInstance(
 					seenKeys.add(key);
 
 					const existing = existingMap.get(key);
-					const fields = extractCacheFields(item);
+					const fields = extractCacheFields(item, cutoffUnmetIds);
 
 					if (existing) {
 						// Update existing item

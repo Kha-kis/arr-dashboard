@@ -37,6 +37,7 @@ const passkeyRegisterVerifySchema = z.object({
 
 const passkeyLoginVerifySchema = z.object({
 	response: z.any(), // AuthenticationResponseJSON
+	sessionId: z.string().min(1, "Session ID required"),
 });
 
 const passkeyDeleteSchema = z.object({
@@ -198,18 +199,13 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		async (request, reply) => {
 			const parsed = validateRequest(passkeyLoginVerifySchema, request.body);
 
-			const sessionId = (request.body as { sessionId?: string }).sessionId;
-			if (!sessionId) {
-				return reply.status(400).send({ error: "Session ID required" });
-			}
-
-			const storedChallenge = challengeStore.get(sessionId);
+			const storedChallenge = challengeStore.get(parsed.sessionId);
 			if (!storedChallenge) {
 				return reply.status(400).send({ error: "Challenge not found or expired" });
 			}
 
 			// Remove challenge to prevent replay
-			challengeStore.delete(sessionId);
+			challengeStore.delete(parsed.sessionId);
 
 			try {
 				const response = parsed.response as AuthenticationResponseJSON;

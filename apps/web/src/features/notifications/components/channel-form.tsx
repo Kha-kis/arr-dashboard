@@ -1,7 +1,8 @@
 "use client";
 
-import { Loader2, Save, X } from "lucide-react";
+import { AlertTriangle, Loader2, Save, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 import { INPUT_BASE_CLASSES, getInputStyles } from "@/lib/theme-input-styles";
 // GradientButton doesn't accept type="submit", so we use a styled native button
@@ -12,6 +13,7 @@ import {
 	useUpdateChannel,
 } from "../../../hooks/api/useNotifications";
 import { notificationsApi } from "../../../lib/api-client/notifications";
+import { getErrorMessage } from "../../../lib/error-utils";
 import { ToggleSwitch } from "../../../components/layout/config-primitives";
 
 interface ChannelFormProps {
@@ -31,12 +33,14 @@ export function ChannelForm({ channelId, onSave, onCancel }: ChannelFormProps) {
 	const [enabled, setEnabled] = useState(true);
 	const [config, setConfig] = useState<Record<string, unknown>>({});
 	const [loading, setLoading] = useState(false);
+	const [loadError, setLoadError] = useState<string | null>(null);
 
 	const isEdit = channelId !== null;
 
 	useEffect(() => {
 		if (channelId) {
 			setLoading(true);
+			setLoadError(null);
 			notificationsApi
 				.getChannelConfig(channelId)
 				.then((ch) => {
@@ -44,6 +48,9 @@ export function ChannelForm({ channelId, onSave, onCancel }: ChannelFormProps) {
 					setType(ch.type);
 					setEnabled(ch.enabled);
 					setConfig(ch.config);
+				})
+				.catch((err) => {
+					setLoadError(getErrorMessage(err, "Failed to load channel configuration"));
 				})
 				.finally(() => setLoading(false));
 		}
@@ -63,8 +70,8 @@ export function ChannelForm({ channelId, onSave, onCancel }: ChannelFormProps) {
 				await createChannel.mutateAsync({ name, type, enabled, config });
 			}
 			onSave();
-		} catch {
-			// Error handled by mutation
+		} catch (error) {
+			toast.error(getErrorMessage(error, "Failed to save channel"));
 		}
 	};
 
@@ -72,6 +79,22 @@ export function ChannelForm({ channelId, onSave, onCancel }: ChannelFormProps) {
 		return (
 			<div className="flex items-center justify-center py-8">
 				<Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+			</div>
+		);
+	}
+
+	if (loadError) {
+		return (
+			<div className="flex flex-col items-center gap-3 py-8 text-muted-foreground">
+				<AlertTriangle className="h-6 w-6" />
+				<p className="text-sm">{loadError}</p>
+				<button
+					type="button"
+					onClick={onCancel}
+					className="text-sm underline hover:text-foreground"
+				>
+					Go back
+				</button>
 			</div>
 		);
 	}

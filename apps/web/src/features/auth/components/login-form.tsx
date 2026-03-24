@@ -19,6 +19,7 @@ import { Input } from "../../../components/ui/input";
 import { PasswordInput } from "../../../components/ui/password-input";
 import { useLoginMutation, useSetupRequired } from "../../../hooks/api/useAuth";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { authKeys } from "../../../lib/query-keys";
 import {
 	getOIDCProvider,
 	getPasskeyLoginOptions,
@@ -150,7 +151,7 @@ export const LoginForm = () => {
 			await verifyPasskeyLogin(authResponse, sessionId);
 
 			// Invalidate queries to update authentication state
-			await queryClient.invalidateQueries({ queryKey: ["user"] });
+			await queryClient.invalidateQueries({ queryKey: authKeys.currentUser });
 
 			// Use full page navigation to ensure cookie is sent
 			window.location.href = redirectTarget;

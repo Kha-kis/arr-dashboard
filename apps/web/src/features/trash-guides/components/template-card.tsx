@@ -1,6 +1,7 @@
 "use client";
 
 import type { NamingSelectedPresets, TrashTemplate } from "@arr/shared";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import {
 	AlertCircle,
 	Bell,
@@ -101,6 +102,7 @@ export const TemplateCard = ({
 	onViewHistory,
 }: TemplateCardProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
+	const [incognitoMode] = useIncognitoMode();
 	const [expanded, setExpanded] = useState(false);
 	const [updatingStrategyInstanceId, setUpdatingStrategyInstanceId] = useState<string | null>(null);
 
@@ -215,6 +217,28 @@ export const TemplateCard = ({
 					)}
 				</div>
 
+				{/* Sync metadata — staleness + modification status */}
+				<div className="flex items-center gap-3 text-xs text-muted-foreground/60 mb-3">
+					{template.lastSyncedAt && (
+						<span className="flex items-center gap-1">
+							<RefreshCw className="h-3 w-3" />
+							Synced {new Date(template.lastSyncedAt).toLocaleDateString()}
+						</span>
+					)}
+					{!template.lastSyncedAt && (
+						<span className="flex items-center gap-1">
+							<RefreshCw className="h-3 w-3" />
+							Never synced
+						</span>
+					)}
+					{template.hasUserModifications && (
+						<span className="flex items-center gap-1 text-amber-400/70">
+							<Edit className="h-3 w-3" />
+							Modified
+						</span>
+					)}
+				</div>
+
 				{/* Status Badges - Only shown when relevant */}
 				{hasUpdate && onViewUpdate && (
 					<button
@@ -285,7 +309,7 @@ export const TemplateCard = ({
 											<div className="min-w-0">
 												<div className="flex items-center gap-2">
 													<span className="text-sm font-medium text-foreground truncate">
-														{instance.instanceName}
+														{incognitoMode ? getLinuxInstanceName(instance.instanceName) : instance.instanceName}
 													</span>
 													<Badge
 														variant={strategyInfo.variant}

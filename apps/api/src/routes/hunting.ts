@@ -194,7 +194,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const { instanceId } = validateRequest(huntConfigCreateSchema, request.body);
 		const userId = request.currentUser!.id;
 
-		const instance = await requireInstance(app, userId, instanceId);
+		await requireInstance(app, userId, instanceId);
 
 		// Check if config already exists
 		const existing = await app.prisma.huntConfig.findUnique({
@@ -342,7 +342,6 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 	// Manual hunt trigger (with cooldown enforcement)
 	app.post("/hunting/trigger/:instanceId", async (request, reply) => {
 		const { instanceId } = request.params as { instanceId: string };
-		const body = request.body as { type?: string };
 		const userId = request.currentUser!.id;
 
 		const instance = await requireInstance(app, userId, instanceId, { huntConfig: true });
@@ -351,6 +350,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(404).send({ error: "Hunt config not found for this instance" });
 		}
 
+		const body = (request.body || {}) as Record<string, unknown>;
 		const huntType = body.type === "upgrade" ? "upgrade" : "missing";
 
 		// Trigger hunt with cooldown check

@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../../../lib/api-client/base";
+import { huntingKeys } from "../../../lib/query-keys";
 import type { FilterOptions } from "../lib/hunting-types";
 
 /**
@@ -20,7 +21,7 @@ async function fetchFilterOptions(instanceId: string): Promise<FilterOptions> {
  */
 export function useFilterOptions(instanceId: string) {
 	const query = useQuery({
-		queryKey: ["hunting", "filter-options", instanceId],
+		queryKey: huntingKeys.filterOptions(instanceId),
 		queryFn: () => fetchFilterOptions(instanceId),
 		staleTime: 5 * 60 * 1000, // 5 minutes - filter options don't change often
 		enabled: !!instanceId,

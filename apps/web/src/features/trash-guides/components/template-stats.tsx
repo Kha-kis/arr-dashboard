@@ -6,6 +6,7 @@ import {
 	Calendar,
 	ChevronDown,
 	ChevronUp,
+	Clock,
 	Hand,
 	History,
 	Layers,
@@ -30,8 +31,20 @@ const InstanceQualityOverrideModal = lazy(() =>
 		default: m.InstanceQualityOverrideModal,
 	})),
 );
+const TemplateScheduleModal = lazy(() =>
+	import("./template-schedule-modal").then((m) => ({
+		default: m.TemplateScheduleModal,
+	})),
+);
 
 import { toast } from "sonner";
+import {
+	useCreateSyncSchedule,
+	useDeleteSyncSchedule,
+	useSyncScheduleByLink,
+	useUpdateSyncSchedule,
+} from "../../../hooks/api/useSyncSchedules";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import {
 	Badge,
 	Button,
@@ -89,6 +102,7 @@ export const TemplateStats = ({
 	onUnlinkInstance,
 }: TemplateStatsProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
+	const [incognitoMode] = useIncognitoMode();
 	const [expanded, setExpanded] = useState(false);
 	const [showBulkDeployment, setShowBulkDeployment] = useState(false);
 	const [showHistory, setShowHistory] = useState(false);
@@ -100,10 +114,21 @@ export const TemplateStats = ({
 		instanceId: string;
 		instanceName: string;
 	} | null>(null);
+	const [scheduleModal, setScheduleModal] = useState<{
+		instanceId: string;
+		instanceName: string;
+	} | null>(null);
 	const [updatingStrategyInstanceId, setUpdatingStrategyInstanceId] = useState<string | null>(null);
 
 	const updateSyncStrategyMutation = useUpdateSyncStrategy();
 	const bulkUpdateSyncStrategyMutation = useBulkUpdateSyncStrategy();
+	const createScheduleMutation = useCreateSyncSchedule();
+	const updateScheduleMutation = useUpdateSyncSchedule();
+	const _deleteScheduleMutation = useDeleteSyncSchedule();
+	const { data: scheduleData } = useSyncScheduleByLink(
+		scheduleModal?.instanceId ? templateId : null,
+		scheduleModal?.instanceId ?? null,
+	);
 
 	const handleBulkSyncStrategyChange = (newStrategy: "auto" | "manual" | "notify") => {
 		const strategyLabel = getSyncStrategyInfo(newStrategy).label;
@@ -313,7 +338,7 @@ export const TemplateStats = ({
 											{/* Top: Instance name + strategy badge */}
 											<div className="flex items-center justify-center gap-2">
 												<span className="text-sm font-medium text-foreground">
-													{instance.instanceName}
+													{incognitoMode ? getLinuxInstanceName(instance.instanceName) : instance.instanceName}
 												</span>
 												<Badge
 													variant={strategyInfo.variant}
@@ -396,6 +421,20 @@ export const TemplateStats = ({
 														<StrategyIcon className="h-3.5 w-3.5 text-muted-foreground/50" />
 													</div>
 												)}
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														setScheduleModal({
+															instanceId: instance.instanceId,
+															instanceName: instance.instanceName,
+														});
+													}}
+													className="flex items-center justify-center rounded border border-border bg-card p-1.5 text-muted-foreground transition hover:bg-card/80"
+													title="Configure sync schedule"
+												>
+													<Clock className="h-3.5 w-3.5" />
+												</button>
 												<button
 													type="button"
 													onClick={(e) => {
@@ -586,6 +625,52 @@ export const TemplateStats = ({
 						onSaved={() => {
 							// Optionally refresh data
 						}}
+					/>
+				</Suspense>
+			)}
+
+			{/* Sync Schedule Modal (lazy-loaded) */}
+			{scheduleModal && (
+				<Suspense>
+					<TemplateScheduleModal
+						open={!!scheduleModal}
+						onClose={() => setScheduleModal(null)}
+						templateName={templateName}
+						instanceName={scheduleModal.instanceName}
+						existingSchedule={
+							scheduleData?.data
+								? {
+										id: scheduleData.data.id,
+										frequency: scheduleData.data.frequency as "DAILY" | "WEEKLY" | "MONTHLY",
+										enabled: scheduleData.data.enabled,
+										autoApply: scheduleData.data.autoApply,
+										notifyUser: scheduleData.data.notifyUser,
+										lastRunAt: scheduleData.data.lastRunAt,
+										nextRunAt: scheduleData.data.nextRunAt,
+									}
+								: undefined
+						}
+						onSave={async (data) => {
+							if (scheduleData?.data) {
+								await updateScheduleMutation.mutateAsync({
+									id: scheduleData.data.id,
+									payload: data,
+								});
+							} else {
+								await createScheduleMutation.mutateAsync({
+									templateId,
+									instanceId: scheduleModal.instanceId,
+									...data,
+								});
+							}
+						}}
+						onDelete={
+							scheduleData?.data
+								? async () => {
+										await _deleteScheduleMutation.mutateAsync(scheduleData.data!.id);
+									}
+								: undefined
+						}
 					/>
 				</Suspense>
 			)}

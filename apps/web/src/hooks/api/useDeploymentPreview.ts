@@ -19,7 +19,7 @@ import {
 	unlinkTemplateFromInstance,
 	updateSyncStrategy,
 } from "../../lib/api-client/trash-guides";
-import { TEMPLATES_QUERY_KEY } from "./useTemplates";
+import { TEMPLATES_QUERY_KEY, deploymentHistoryKeys, trashGuidesKeys } from "../../lib/query-keys";
 
 export type InstancePreviewResult = {
 	instanceId: string;
@@ -34,7 +34,7 @@ export type InstancePreviewResult = {
  */
 export function useDeploymentPreview(templateId: string | null, instanceId: string | null) {
 	return useQuery<DeploymentPreviewResponse>({
-		queryKey: ["trash-guides", "deployment", "preview", templateId, instanceId],
+		queryKey: trashGuidesKeys.deployment.preview(templateId!, instanceId!),
 		queryFn: () => getDeploymentPreview(templateId!, instanceId!),
 		enabled: !!templateId && !!instanceId,
 		staleTime: 2 * 60 * 1000, // 2 minutes
@@ -53,16 +53,16 @@ export function useExecuteDeployment() {
 		onSuccess: () => {
 			// Invalidate relevant queries
 			queryClient.invalidateQueries({
-				queryKey: ["trash-guides", "deployment"],
+				queryKey: trashGuidesKeys.deployment.all,
 			});
 			queryClient.invalidateQueries({
-				queryKey: ["deployment-history"],
+				queryKey: deploymentHistoryKeys.all,
 			});
 			queryClient.invalidateQueries({
 				queryKey: TEMPLATES_QUERY_KEY,
 			});
 			queryClient.invalidateQueries({
-				queryKey: ["template-stats"],
+				queryKey: ["template-stats"] as const,
 			});
 		},
 	});
@@ -79,16 +79,16 @@ export function useExecuteBulkDeployment() {
 		onSuccess: () => {
 			// Invalidate relevant queries
 			queryClient.invalidateQueries({
-				queryKey: ["trash-guides", "deployment"],
+				queryKey: trashGuidesKeys.deployment.all,
 			});
 			queryClient.invalidateQueries({
-				queryKey: ["deployment-history"],
+				queryKey: deploymentHistoryKeys.all,
 			});
 			queryClient.invalidateQueries({
 				queryKey: TEMPLATES_QUERY_KEY,
 			});
 			queryClient.invalidateQueries({
-				queryKey: ["template-stats"],
+				queryKey: ["template-stats"] as const,
 			});
 		},
 	});
@@ -109,7 +109,7 @@ export function useBulkDeploymentPreviews(
 } {
 	const queries = useQueries({
 		queries: instanceIds.map((instanceId) => ({
-			queryKey: ["trash-guides", "deployment", "preview", templateId, instanceId],
+			queryKey: trashGuidesKeys.deployment.preview(templateId!, instanceId!),
 			queryFn: () => getDeploymentPreview(templateId!, instanceId),
 			enabled: !!templateId && instanceIds.length > 0,
 			staleTime: 2 * 60 * 1000, // 2 minutes
@@ -143,11 +143,11 @@ export function useUpdateSyncStrategy() {
 		onSuccess: (_data, variables) => {
 			// Invalidate template stats for the specific template
 			queryClient.invalidateQueries({
-				queryKey: ["template-stats", variables.templateId],
+				queryKey: trashGuidesKeys.templates.stats(variables.templateId),
 			});
 			// Also invalidate deployment queries
 			queryClient.invalidateQueries({
-				queryKey: ["trash-guides", "deployment"],
+				queryKey: trashGuidesKeys.deployment.all,
 			});
 		},
 		onError: (error) => {
@@ -170,11 +170,11 @@ export function useBulkUpdateSyncStrategy() {
 		onSuccess: (_data, variables) => {
 			// Invalidate template stats for the specific template
 			queryClient.invalidateQueries({
-				queryKey: ["template-stats", variables.templateId],
+				queryKey: trashGuidesKeys.templates.stats(variables.templateId),
 			});
 			// Also invalidate deployment queries
 			queryClient.invalidateQueries({
-				queryKey: ["trash-guides", "deployment"],
+				queryKey: trashGuidesKeys.deployment.all,
 			});
 		},
 		onError: (error) => {
@@ -206,11 +206,11 @@ export function useUnlinkTemplateFromInstance() {
 			});
 			// Invalidate template stats for the specific template
 			queryClient.invalidateQueries({
-				queryKey: ["template-stats", data.data.templateId],
+				queryKey: trashGuidesKeys.templates.stats(data.data.templateId),
 			});
 			// Invalidate deployment queries
 			queryClient.invalidateQueries({
-				queryKey: ["trash-guides", "deployment"],
+				queryKey: trashGuidesKeys.deployment.all,
 			});
 		},
 		onError: (error) => {
