@@ -15,6 +15,7 @@ import { namingRoutes } from "./naming-routes.js";
 import profileCloneRoutes from "./profile-clone-routes.js";
 import { registerQualityProfileRoutes } from "./quality-profile-routes.js";
 import { qualitySizeRoutes } from "./quality-size-routes.js";
+import { registerScheduleRoutes } from "./schedule-routes.js";
 import { registerSettingsRoutes } from "./settings-routes.js";
 import { registerSyncRoutes } from "./sync-routes.js";
 import { registerTemplateRoutes } from "./template-routes.js";
@@ -64,6 +65,9 @@ export async function registerTrashGuidesRoutes(app: FastifyInstance, _opts: Fas
 
 	// Register naming routes under /naming
 	app.register(namingRoutes, { prefix: "/naming" });
+
+	// Register schedule routes under /schedules
+	app.register(registerScheduleRoutes, { prefix: "/schedules" });
 
 	// Register settings routes under /settings
 	app.register(registerSettingsRoutes, { prefix: "/settings" });
