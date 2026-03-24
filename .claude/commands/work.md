@@ -37,7 +37,8 @@ State your classification and reasoning in one line, then proceed.
 1. Run `/review-pr {pr_number}`
 2. If the PR touches auth, encryption, or routes: run `/security-pass` on affected files
 3. If the PR is large (>10 files changed): run `/feature-audit` on the primary module
-4. Run `/validate` if CI status is not all green
+4. If the PR adds new pages, API routes, or feature panels: run `/trust-check` on affected files
+5. Run `/validate` if CI status is not all green
 
 ### Feature workflow
 1. Run `/feature-audit {target}` — get the action plan first
@@ -45,6 +46,7 @@ State your classification and reasoning in one line, then proceed.
 3. Ask: "Which item should I implement?" (unless the task already specifies)
 4. Implement the chosen item
 5. Run `/validate`
+6. **Trust gate**: Check if changed files include new pages (`app/*/page.tsx`), new API routes (`routes/*.ts`), new feature panels (`features/*/components/*`), or notification event types. If yes, run `/trust-check` on the affected files before declaring the work done.
 
 ### Release workflow
 1. Run `/release-patch` — assess readiness

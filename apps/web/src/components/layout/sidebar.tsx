@@ -2,6 +2,7 @@
 
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import {
+	Activity,
 	BarChart3,
 	Calendar,
 	ChevronRight,
@@ -29,6 +30,7 @@ import { useColorTheme } from "../../providers/color-theme-provider";
 import { springs } from "../motion";
 
 const NAV_ITEMS = [
+	{ href: "/pulse", label: "Pulse", icon: Activity },
 	{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
 	{ href: "/discover", label: "Discover", icon: Compass },
 	{ href: "/library", label: "Library", icon: Library },
