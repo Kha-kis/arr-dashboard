@@ -103,7 +103,7 @@ export function WatchedMonitoredPanel({
 			{expanded && (
 				<div className="border-t border-border/20 px-4 py-3 space-y-2">
 					<p className="text-xs text-muted-foreground mb-3">
-						Items with Plex plays that are still monitored. Consider unmonitoring to reduce indexer searches. Sorted by watch count.
+						Movies and ended series with Plex plays that are still monitored. Continuing series are excluded. Sorted by watch count.
 					</p>
 					{items.map((item) => (
 						<WatchedRow

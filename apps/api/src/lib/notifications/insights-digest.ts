@@ -276,7 +276,7 @@ export class InsightsDigestScheduler {
 				monitored: true,
 				hasFile: true,
 			},
-			select: { data: true, itemType: true, title: true },
+			select: { data: true, itemType: true, title: true, status: true },
 			take: 500,
 		});
 
@@ -289,6 +289,9 @@ export class InsightsDigestScheduler {
 			const remoteIds = parsed.remoteIds as Record<string, unknown> | undefined;
 			const tmdbId = remoteIds?.tmdbId;
 			if (!tmdbId) continue;
+
+			// Skip continuing/upcoming series — they should stay monitored for new episodes
+			if (item.itemType === "series" && item.status && item.status !== "ended") continue;
 
 			// PlexCache stores "movie" | "series"
 			const mediaType = item.itemType === "movie" ? "movie" : "series";

@@ -265,6 +265,9 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 			// Only include items that have actually been watched
 			if (!plexInfo || plexInfo.watchCount === 0) continue;
 
+			// Skip continuing/upcoming series — they should stay monitored for new episodes
+			if (item.itemType === "series" && item.status && item.status !== "ended") continue;
+
 			const inst = instanceMap.get(item.instanceId);
 
 			results.push({
