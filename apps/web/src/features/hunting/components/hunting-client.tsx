@@ -103,7 +103,7 @@ export const HuntingClient = () => {
 				className="animate-in fade-in slide-in-from-bottom-4 duration-500"
 				style={{ animationDelay: "200ms", animationFillMode: "backwards" }}
 			>
-				{activeTab === "overview" && <HuntingOverview status={status} onRefresh={refetch} />}
+				{activeTab === "overview" && <HuntingOverview status={status} onRefresh={refetch} onConfigure={() => setActiveTab("config")} />}
 				{activeTab === "activity" && <HuntingActivity />}
 				{activeTab === "config" && <HuntingConfig />}
 			</div>

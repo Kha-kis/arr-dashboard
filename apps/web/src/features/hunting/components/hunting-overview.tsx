@@ -40,6 +40,7 @@ import { getErrorMessage } from "../../../lib/error-utils";
 interface HuntingOverviewProps {
 	status: HuntingStatus | null;
 	onRefresh: () => void;
+	onConfigure?: () => void;
 }
 
 /**
@@ -50,13 +51,20 @@ interface HuntingOverviewProps {
  * - Glassmorphic instance cards with service accent
  * - Theme-aware progress bars for API usage
  */
-export const HuntingOverview = ({ status, onRefresh }: HuntingOverviewProps) => {
+export const HuntingOverview = ({ status, onRefresh, onConfigure }: HuntingOverviewProps) => {
 	if (!status || status.instances.length === 0) {
 		return (
 			<PremiumEmptyState
 				icon={Search}
 				title="No instances configured for hunting"
-				description="Configure hunting for your Sonarr, Radarr, Lidarr, and Readarr instances in the Configuration tab."
+				description="Configure hunting for your Sonarr, Radarr, Lidarr, and Readarr instances to start finding missing and upgrade content."
+				action={
+					onConfigure ? (
+						<Button variant="secondary" className="gap-2 border-border/50 bg-card/50" onClick={onConfigure}>
+							Go to Configuration
+						</Button>
+					) : undefined
+				}
 			/>
 		);
 	}

@@ -2,7 +2,7 @@
 
 import type { SeerrRequest } from "@arr/shared";
 import { AlertCircle, Check, Loader2, Trash2, X } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
 	FilterSelect,
@@ -100,6 +100,26 @@ export const ApprovalQueueTab = ({ instanceId, onSelectRequest }: ApprovalQueueT
 			);
 		},
 		[instanceId, selectedIds, bulkMutation],
+	);
+
+	const [confirmBulkAction, setConfirmBulkAction] = useState<"decline" | "delete" | null>(null);
+
+	useEffect(() => {
+		if (!confirmBulkAction) return;
+		const timer = setTimeout(() => setConfirmBulkAction(null), 3000);
+		return () => clearTimeout(timer);
+	}, [confirmBulkAction]);
+
+	const handleBulkDestructive = useCallback(
+		(action: "decline" | "delete") => {
+			if (confirmBulkAction === action) {
+				handleBulkAction(action);
+				setConfirmBulkAction(null);
+			} else {
+				setConfirmBulkAction(action);
+			}
+		},
+		[confirmBulkAction, handleBulkAction],
 	);
 
 	if (isLoading) {
@@ -317,21 +337,33 @@ export const ApprovalQueueTab = ({ instanceId, onSelectRequest }: ApprovalQueueT
 							variant="secondary"
 							size="sm"
 							disabled={bulkMutation.isPending}
-							onClick={() => handleBulkAction("decline")}
-							className="gap-1.5 border-border/50 bg-card/50"
+							onClick={() => handleBulkDestructive("decline")}
+							className={`gap-1.5 border-border/50 bg-card/50 ${confirmBulkAction === "decline" ? "text-red-400 border-red-400/50" : ""}`}
 						>
-							<X className="h-3.5 w-3.5" />
-							Decline All
+							{confirmBulkAction === "decline" ? (
+								<span className="text-xs font-medium">Confirm decline {selectedIds.size}?</span>
+							) : (
+								<>
+									<X className="h-3.5 w-3.5" />
+									Decline All
+								</>
+							)}
 						</Button>
 						<Button
 							variant="secondary"
 							size="sm"
 							disabled={bulkMutation.isPending}
-							onClick={() => handleBulkAction("delete")}
-							className="gap-1.5 border-border/50 bg-card/50 text-red-400 hover:text-red-300"
+							onClick={() => handleBulkDestructive("delete")}
+							className={`gap-1.5 border-border/50 bg-card/50 ${confirmBulkAction === "delete" ? "text-red-400 border-red-400/50" : "text-red-400 hover:text-red-300"}`}
 						>
-							<Trash2 className="h-3 w-3" />
-							Delete All
+							{confirmBulkAction === "delete" ? (
+								<span className="text-xs font-medium">Confirm delete {selectedIds.size}?</span>
+							) : (
+								<>
+									<Trash2 className="h-3 w-3" />
+									Delete All
+								</>
+							)}
 						</Button>
 					</div>
 				</div>

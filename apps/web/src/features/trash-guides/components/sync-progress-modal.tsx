@@ -6,6 +6,7 @@ import { Button } from "../../../components/ui";
 import { useSyncProgress } from "../../../hooks/api/useSync";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { SyncProgressStatus } from "../../../lib/api-client/trash-guides";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 const FOCUSABLE_SELECTOR =
@@ -58,6 +59,8 @@ export const SyncProgressModal = ({
 	onClose,
 }: SyncProgressModalProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
+	const [incognitoMode] = useIncognitoMode();
+	const displayInstanceName = incognitoMode ? getLinuxInstanceName(instanceName) : instanceName;
 	const { progress, error, isLoading, isPolling } = useSyncProgress(syncId);
 
 	// Track whether completion callback has been scheduled to prevent duplicate calls
@@ -212,7 +215,7 @@ export const SyncProgressModal = ({
 								</h2>
 								<p id="sync-progress-description" className="mt-1 text-sm text-muted-foreground">
 									Template: <span className="font-medium text-foreground">{templateName}</span> →
-									Instance: <span className="font-medium text-foreground">{instanceName}</span>
+									Instance: <span className="font-medium text-foreground">{displayInstanceName}</span>
 								</p>
 							</div>
 						</div>
@@ -472,7 +475,7 @@ export const SyncProgressModal = ({
 												className="mt-0.5 text-sm opacity-80"
 												style={{ color: SEMANTIC_COLORS.success.text }}
 											>
-												All configurations have been applied to {instanceName}
+												All configurations have been applied to {displayInstanceName}
 											</p>
 										</div>
 									</div>
