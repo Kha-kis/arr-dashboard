@@ -37,7 +37,7 @@ export function useCreateBackup() {
 		},
 		onSuccess: () => {
 			// Invalidate backups list to refetch
-			queryClient.invalidateQueries({ queryKey: ["backups"] });
+			queryClient.invalidateQueries({ queryKey: backupKeys.all });
 		},
 	});
 }
@@ -84,7 +84,7 @@ export function useDeleteBackup() {
 		},
 		onSuccess: () => {
 			// Invalidate backups list to refetch
-			queryClient.invalidateQueries({ queryKey: ["backups"] });
+			queryClient.invalidateQueries({ queryKey: backupKeys.all });
 		},
 	});
 }
@@ -115,7 +115,7 @@ export function useUpdateBackupSettings() {
 		},
 		onSuccess: () => {
 			// Invalidate settings to refetch
-			queryClient.invalidateQueries({ queryKey: ["backup-settings"] });
+			queryClient.invalidateQueries({ queryKey: backupKeys.settings });
 		},
 	});
 }
@@ -174,7 +174,7 @@ export function useSetBackupPassword() {
 			return backupApi.setPassword(request);
 		},
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["backup-password-status"] });
+			queryClient.invalidateQueries({ queryKey: backupKeys.passwordStatus });
 		},
 	});
 }
@@ -193,7 +193,7 @@ export function useRemoveBackupPassword() {
 			return backupApi.removePassword();
 		},
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["backup-password-status"] });
+			queryClient.invalidateQueries({ queryKey: backupKeys.passwordStatus });
 		},
 	});
 }

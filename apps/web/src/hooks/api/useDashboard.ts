@@ -14,10 +14,11 @@ import {
 	fetchMultiInstanceQueue,
 } from "../../lib/api-client/dashboard";
 import { POLLING_ACTIVE, POLLING_STANDARD, POLLING_STATS } from "../../lib/polling-intervals";
+import { dashboardKeys } from "../../lib/query-keys";
 
 export const useMultiInstanceQueueQuery = () =>
 	useQuery<MultiInstanceQueueResponse>({
-		queryKey: ["dashboard", "queue"],
+		queryKey: dashboardKeys.queue,
 		queryFn: fetchMultiInstanceQueue,
 		staleTime: 25_000,
 		gcTime: 60 * 1000, // 1 minute - short gcTime for frequently polled data
@@ -31,7 +32,7 @@ export const useMultiInstanceHistoryQuery = (params?: {
 	pageSize?: number;
 }) =>
 	useQuery<MultiInstanceHistoryResponse>({
-		queryKey: ["dashboard", "history", params],
+		queryKey: dashboardKeys.history(params ?? {}),
 		queryFn: () => fetchMultiInstanceHistory(params),
 		staleTime: 60 * 1000,
 		gcTime: 2 * 60 * 1000, // 2 minutes - cleanup old param combinations
@@ -44,7 +45,7 @@ export const useMultiInstanceCalendarQuery = (params: {
 	unmonitored?: boolean;
 }) =>
 	useQuery<MultiInstanceCalendarResponse>({
-		queryKey: ["dashboard", "calendar", params],
+		queryKey: dashboardKeys.calendar(params),
 		queryFn: () => fetchMultiInstanceCalendar(params),
 		staleTime: 60 * 1000,
 		gcTime: 2 * 60 * 1000, // 2 minutes - cleanup old date ranges
@@ -53,7 +54,7 @@ export const useMultiInstanceCalendarQuery = (params: {
 
 export const useDashboardStatisticsQuery = () =>
 	useQuery<DashboardStatisticsResponse>({
-		queryKey: ["dashboard", "statistics"],
+		queryKey: dashboardKeys.statistics,
 		queryFn: fetchDashboardStatistics,
 		staleTime: 60 * 1000,
 		gcTime: 2 * 60 * 1000, // 2 minutes

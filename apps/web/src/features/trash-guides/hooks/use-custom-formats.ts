@@ -4,6 +4,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { customFormatKeys, trashCacheKeys } from "../../../lib/query-keys";
 import {
 	type CreateUserCFRequest,
 	createUserCustomFormat,
@@ -30,7 +31,7 @@ import {
  */
 export function useCustomFormats(serviceType?: "RADARR" | "SONARR") {
 	return useQuery({
-		queryKey: ["custom-formats", "list", serviceType],
+		queryKey: customFormatKeys.list(serviceType),
 		queryFn: () => fetchCustomFormatsList(serviceType),
 		staleTime: 5 * 60 * 1000, // 5 minutes
 	});
@@ -46,7 +47,7 @@ export function useDeployCustomFormat() {
 		mutationFn: (request: DeployCustomFormatRequest) => deployCustomFormat(request),
 		onSuccess: () => {
 			// Invalidate related queries
-			queryClient.invalidateQueries({ queryKey: ["custom-formats"] });
+			queryClient.invalidateQueries({ queryKey: customFormatKeys.all });
 		},
 	});
 }
@@ -56,7 +57,7 @@ export function useDeployCustomFormat() {
  */
 export function useCFDescriptions(serviceType?: "RADARR" | "SONARR") {
 	return useQuery({
-		queryKey: ["cf-descriptions", "list", serviceType],
+		queryKey: customFormatKeys.descriptions(serviceType),
 		queryFn: () => fetchCFDescriptionsList(serviceType),
 		staleTime: 60 * 60 * 1000, // 1 hour - descriptions change less frequently
 	});
@@ -68,7 +69,7 @@ export function useCFDescriptions(serviceType?: "RADARR" | "SONARR") {
  */
 export function useCFIncludes() {
 	return useQuery({
-		queryKey: ["cf-includes", "list"],
+		queryKey: trashCacheKeys.cfIncludesList,
 		queryFn: () => fetchCFIncludesList(),
 		staleTime: 60 * 60 * 1000, // 1 hour - includes change less frequently
 	});
@@ -85,7 +86,7 @@ export function useDeployMultipleCustomFormats() {
 			deployMultipleCustomFormats(request),
 		onSuccess: () => {
 			// Invalidate related queries
-			queryClient.invalidateQueries({ queryKey: ["custom-formats"] });
+			queryClient.invalidateQueries({ queryKey: customFormatKeys.all });
 		},
 	});
 }
@@ -99,7 +100,7 @@ export function useDeployMultipleCustomFormats() {
  */
 export function useUserCustomFormats(serviceType?: "RADARR" | "SONARR") {
 	return useQuery({
-		queryKey: ["user-custom-formats", serviceType],
+		queryKey: customFormatKeys.userByService(serviceType),
 		queryFn: () => fetchUserCustomFormats(serviceType),
 		staleTime: 60 * 1000, // 1 minute
 	});
@@ -114,7 +115,7 @@ export function useCreateUserCustomFormat() {
 	return useMutation({
 		mutationFn: (request: CreateUserCFRequest) => createUserCustomFormat(request),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["user-custom-formats"] });
+			queryClient.invalidateQueries({ queryKey: customFormatKeys.user });
 		},
 	});
 }
@@ -129,7 +130,7 @@ export function useUpdateUserCustomFormat() {
 		mutationFn: ({ id, ...request }: { id: string } & Partial<CreateUserCFRequest>) =>
 			updateUserCustomFormat(id, request),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["user-custom-formats"] });
+			queryClient.invalidateQueries({ queryKey: customFormatKeys.user });
 		},
 	});
 }
@@ -143,7 +144,7 @@ export function useDeleteUserCustomFormat() {
 	return useMutation({
 		mutationFn: (id: string) => deleteUserCustomFormat(id),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["user-custom-formats"] });
+			queryClient.invalidateQueries({ queryKey: customFormatKeys.user });
 		},
 	});
 }
@@ -157,7 +158,7 @@ export function useImportUserCFFromJson() {
 	return useMutation({
 		mutationFn: (request: ImportUserCFFromJsonRequest) => importUserCFsFromJson(request),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["user-custom-formats"] });
+			queryClient.invalidateQueries({ queryKey: customFormatKeys.user });
 		},
 	});
 }
@@ -171,7 +172,7 @@ export function useImportUserCFFromInstance() {
 	return useMutation({
 		mutationFn: (request: ImportUserCFFromInstanceRequest) => importUserCFsFromInstance(request),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["user-custom-formats"] });
+			queryClient.invalidateQueries({ queryKey: customFormatKeys.user });
 		},
 	});
 }
@@ -185,8 +186,8 @@ export function useDeployUserCustomFormats() {
 	return useMutation({
 		mutationFn: (request: DeployUserCFsRequest) => deployUserCustomFormats(request),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["user-custom-formats"] });
-			queryClient.invalidateQueries({ queryKey: ["custom-formats"] });
+			queryClient.invalidateQueries({ queryKey: customFormatKeys.user });
+			queryClient.invalidateQueries({ queryKey: customFormatKeys.all });
 		},
 	});
 }

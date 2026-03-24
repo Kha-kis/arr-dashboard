@@ -82,7 +82,7 @@ export const trashGuidesKeys = {
 		attention: ["trash-guides", "updates", "attention"] as const,
 		latestVersion: ["trash-guides", "updates", "version", "latest"] as const,
 		scheduler: ["trash-guides", "updates", "scheduler", "status"] as const,
-		diff: (templateId: string, targetCommit: string) =>
+		diff: (templateId: string, targetCommit?: string) =>
 			["trash-guides", "updates", "diff", templateId, targetCommit] as const,
 	},
 
@@ -97,8 +97,27 @@ export const trashGuidesKeys = {
 			["trash-guides", "deployment", "preview", templateId, instanceId] as const,
 	},
 
+	// Schedules
+	schedules: {
+		all: ["trash-guides", "schedules"] as const,
+		byLink: (templateId: string, instanceId: string) =>
+			["trash-guides", "schedules", "by-link", templateId, instanceId] as const,
+	},
+
 	// Settings
 	settings: ["trash-settings"] as const,
+
+	// Supplementary report
+	supplementaryReport: (serviceType: string) => ["supplementary-report", serviceType] as const,
+
+	// Quality Size
+	qualitySize: {
+		all: ["trash-guides", "quality-size"] as const,
+		presets: (serviceType: string) => ["trash-guides", "quality-size", "presets", serviceType] as const,
+		mapping: (instanceId: string) => ["trash-guides", "quality-size", "mapping", instanceId] as const,
+		preview: (instanceId: string, presetTrashId: string) =>
+			["trash-guides", "quality-size", "preview", instanceId, presetTrashId] as const,
+	},
 };
 
 /* -------------------------------------------------------------------------- */
@@ -110,7 +129,7 @@ export const qualityProfileKeys = {
 	list: (serviceType: string) => ["quality-profiles", serviceType] as const,
 	details: (serviceType: string, trashId: string) =>
 		["quality-profile-details", serviceType, trashId] as const,
-	overrides: (instanceId: string, qualityProfileId: string) =>
+	overrides: (instanceId: string, qualityProfileId: number) =>
 		["quality-profile-overrides", instanceId, qualityProfileId] as const,
 	cfValidation: (instanceId: string, profileId: string, serviceType: string) =>
 		["cf-validation", instanceId, profileId, serviceType] as const,
@@ -126,11 +145,15 @@ export const qualityProfileKeys = {
 /* -------------------------------------------------------------------------- */
 
 export const trashCacheKeys = {
+	allStatus: ["trash-cache-status"] as const,
 	status: (serviceType?: string) => ["trash-cache-status", serviceType] as const,
+	allEntries: ["trash-cache-entries"] as const,
 	entries: (serviceType: string) => ["trash-cache-entries", serviceType] as const,
 	cfIncludes: ["cf-includes"] as const,
+	cfIncludesList: ["cf-includes", "list"] as const,
 	gitHubRateLimit: ["github-rate-limit"] as const,
 	syncMetrics: ["sync-metrics"] as const,
+	cacheHealth: ["cache-health"] as const,
 };
 
 /* -------------------------------------------------------------------------- */
@@ -165,7 +188,10 @@ export const deploymentHistoryKeys = {
 
 export const customFormatKeys = {
 	all: ["custom-formats"] as const,
+	list: (serviceType?: string) => ["custom-formats", "list", serviceType] as const,
+	descriptions: (serviceType?: string) => ["cf-descriptions", "list", serviceType] as const,
 	user: ["user-custom-formats"] as const,
+	userByService: (serviceType?: string) => ["user-custom-formats", serviceType] as const,
 };
 
 /* -------------------------------------------------------------------------- */
@@ -173,6 +199,7 @@ export const customFormatKeys = {
 /* -------------------------------------------------------------------------- */
 
 export const bulkScoreKeys = {
+	all: ["bulk-scores"] as const,
 	list: (filters: Record<string, unknown>) => ["bulk-scores", filters] as const,
 };
 
@@ -338,6 +365,7 @@ export const huntingKeys = {
 	status: ["hunting", "status"] as const,
 	configs: ["hunting", "configs"] as const,
 	logs: (params?: Record<string, unknown>) => ["hunting", "logs", params] as const,
+	filterOptions: (instanceId: string) => ["hunting", "filter-options", instanceId] as const,
 };
 
 /* -------------------------------------------------------------------------- */
@@ -393,6 +421,8 @@ export const backupKeys = {
 
 export const systemKeys = {
 	settings: ["system-settings"] as const,
+	info: ["system-info"] as const,
+	logs: ["system-logs"] as const,
 };
 
 /* -------------------------------------------------------------------------- */

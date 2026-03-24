@@ -14,13 +14,14 @@ import {
 	type QualitySizePreviewResponse,
 	updateQualitySizeSyncStrategy,
 } from "../../lib/api-client/trash-guides";
+import { trashGuidesKeys } from "../../lib/query-keys";
 
 /**
  * Fetch available quality size presets for a service type.
  */
 export function useQualitySizePresets(serviceType: "RADARR" | "SONARR" | null) {
 	return useQuery<QualitySizePresetsResponse>({
-		queryKey: ["trash-guides", "quality-size", "presets", serviceType],
+		queryKey: trashGuidesKeys.qualitySize.presets(serviceType!),
 		queryFn: () => fetchQualitySizePresets(serviceType!),
 		enabled: !!serviceType,
 		staleTime: 5 * 60 * 1000,
@@ -33,7 +34,7 @@ export function useQualitySizePresets(serviceType: "RADARR" | "SONARR" | null) {
  */
 export function useQualitySizeMapping(instanceId: string | null) {
 	return useQuery<QualitySizeMappingResponse>({
-		queryKey: ["trash-guides", "quality-size", "mapping", instanceId],
+		queryKey: trashGuidesKeys.qualitySize.mapping(instanceId!),
 		queryFn: () => fetchQualitySizeMapping(instanceId!),
 		enabled: !!instanceId,
 	});
@@ -44,7 +45,7 @@ export function useQualitySizeMapping(instanceId: string | null) {
  */
 export function useQualitySizePreview(instanceId: string | null, presetTrashId: string | null) {
 	return useQuery<QualitySizePreviewResponse>({
-		queryKey: ["trash-guides", "quality-size", "preview", instanceId, presetTrashId],
+		queryKey: trashGuidesKeys.qualitySize.preview(instanceId!, presetTrashId!),
 		queryFn: () => getQualitySizePreview(instanceId!, presetTrashId!),
 		enabled: !!instanceId && !!presetTrashId,
 		retry: false,
@@ -66,7 +67,7 @@ export function useApplyQualitySize() {
 				toast.success(data.message);
 			}
 			void queryClient.refetchQueries({
-				queryKey: ["trash-guides", "quality-size"],
+				queryKey: trashGuidesKeys.qualitySize.all,
 			});
 		},
 		onError: (error) => {
@@ -86,7 +87,7 @@ export function useUpdateQualitySizeSyncStrategy() {
 		onSuccess: (data) => {
 			toast.success(`Sync strategy updated to "${data.syncStrategy}"`);
 			queryClient.invalidateQueries({
-				queryKey: ["trash-guides", "quality-size"],
+				queryKey: trashGuidesKeys.qualitySize.all,
 			});
 		},
 		onError: (error: Error) => {
