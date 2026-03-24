@@ -1,6 +1,5 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	AlertTriangle,
 	ChevronDown,
@@ -26,99 +25,20 @@ import { PremiumSection, PremiumSkeleton } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Switch } from "../../../components/ui/switch";
+import {
+	useLogFiles,
+	useResetValidationHealth,
+	useRestartSystem,
+	useSystemInfo,
+	useSystemSettings,
+	useUpdateSystemSettings,
+	useValidationHealth,
+} from "../../../hooks/api/useSystem";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { apiRequest } from "../../../lib/api-client/base";
-import { getErrorMessage } from "../../../lib/error-utils";
-import { POLLING_STANDARD } from "../../../lib/polling-intervals";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
-import {
-	type ValidationHealthResponse,
-	ValidationHealthSection,
-} from "./validation-health-section";
+import { ValidationHealthSection } from "./validation-health-section";
 
-interface SystemSettings {
-	apiPort: number;
-	webPort: number;
-	listenAddress: string;
-	appName: string;
-	externalUrl: string | null;
-	trustProxy: boolean;
-	secureCookies: boolean | null;
-	effectiveApiPort: number;
-	effectiveWebPort: number;
-	effectiveListenAddress: string;
-	effectiveTrustProxy: boolean;
-	effectiveSecureCookies: boolean;
-	requiresRestart: boolean;
-	updatedAt: string;
-}
-
-interface SystemSettingsResponse {
-	success: boolean;
-	data: SystemSettings;
-	message?: string;
-}
-
-interface SystemInfo {
-	version: string;
-	database: {
-		type: string;
-		host: string | null;
-	};
-	runtime: {
-		nodeVersion: string;
-		platform: string;
-		uptime: number;
-	};
-	logging?: {
-		level: string;
-		logFileEnabled: boolean;
-		maxFileSize: string;
-		maxFiles: number;
-	};
-}
-
-interface SystemInfoResponse {
-	success: boolean;
-	data: SystemInfo;
-}
-
-interface LogFile {
-	name: string;
-	size: number;
-	modified: string;
-}
-
-interface LogFilesResponse {
-	success: boolean;
-	data: {
-		directory: string;
-		files: LogFile[];
-	};
-}
-
-async function getSystemSettings(): Promise<SystemSettingsResponse> {
-	return apiRequest<SystemSettingsResponse>("/api/system/settings");
-}
-
-async function getSystemInfo(): Promise<SystemInfoResponse> {
-	return apiRequest<SystemInfoResponse>("/api/system/info");
-}
-
-async function getLogFiles(): Promise<LogFilesResponse> {
-	return apiRequest<LogFilesResponse>("/api/system/logs");
-}
-
-async function getValidationHealth(): Promise<ValidationHealthResponse> {
-	return apiRequest<ValidationHealthResponse>("/api/system/validation-health");
-}
-
-async function resetValidationHealth(): Promise<ValidationHealthResponse> {
-	return apiRequest<ValidationHealthResponse>("/api/system/validation-health", {
-		method: "DELETE",
-	});
-}
 function formatUptime(seconds: number): string {
 	const days = Math.floor(seconds / 86400);
 	const hours = Math.floor((seconds % 86400) / 3600);
@@ -139,26 +59,6 @@ function formatFileSize(bytes: number): string {
 	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-async function updateSystemSettings(data: {
-	apiPort?: number;
-	webPort?: number;
-	listenAddress?: string;
-	appName?: string;
-	externalUrl?: string | null;
-	trustProxy?: boolean;
-	secureCookies?: boolean | null;
-}): Promise<SystemSettingsResponse> {
-	return apiRequest<SystemSettingsResponse>("/api/system/settings", {
-		method: "PUT",
-		json: data,
-	});
-}
-
-async function restartSystem(): Promise<{ success: boolean; message: string }> {
-	return apiRequest<{ success: boolean; message: string }>("/api/system/restart", {
-		method: "POST",
-	});
-}
 
 /**
  * Premium System Info Card
@@ -208,7 +108,6 @@ function SystemInfoCard({ icon, label, value, subtitle, animationDelay = 0 }: Sy
  */
 export function SystemTab() {
 	const { gradient: themeGradient } = useThemeGradient();
-	const queryClient = useQueryClient();
 	const [apiPort, setApiPort] = useState(3001);
 	const [webPort, setWebPort] = useState(3000);
 	const [listenAddress, setListenAddress] = useState("0.0.0.0");
@@ -218,64 +117,13 @@ export function SystemTab() {
 	const [hasChanges, setHasChanges] = useState(false);
 	const [isDockerInfoOpen, setIsDockerInfoOpen] = useState(false);
 
-	const { data: settings, isLoading } = useQuery({
-		queryKey: ["system-settings"],
-		queryFn: getSystemSettings,
-	});
-
-	const { data: systemInfo } = useQuery({
-		queryKey: ["system-info"],
-		queryFn: getSystemInfo,
-		refetchInterval: POLLING_STANDARD,
-	});
-
-	const {
-		data: logFiles,
-		refetch: refetchLogs,
-		isError: logFilesError,
-	} = useQuery({
-		queryKey: ["system-logs"],
-		queryFn: getLogFiles,
-	});
-
-	const { data: validationHealth } = useQuery({
-		queryKey: ["validation-health"],
-		queryFn: getValidationHealth,
-		refetchInterval: POLLING_STANDARD,
-	});
-
-	const resetHealthMutation = useMutation({
-		mutationFn: resetValidationHealth,
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["validation-health"] });
-			toast.success("Validation health stats reset");
-		},
-		onError: (error) => {
-			toast.error(getErrorMessage(error, "Failed to reset validation health"));
-		},
-	});
-
-	const updateMutation = useMutation({
-		mutationFn: updateSystemSettings,
-		onSuccess: (response) => {
-			queryClient.invalidateQueries({ queryKey: ["system-settings"] });
-			toast.success(response.message || "Settings saved");
-			setHasChanges(false);
-		},
-		onError: (error) => {
-			toast.error(getErrorMessage(error, "Failed to save settings"));
-		},
-	});
-
-	const restartMutation = useMutation({
-		mutationFn: restartSystem,
-		onSuccess: (response) => {
-			toast.success(response.message || "Restart initiated");
-		},
-		onError: (error) => {
-			toast.error(getErrorMessage(error, "Failed to restart"));
-		},
-	});
+	const { data: settings, isLoading } = useSystemSettings();
+	const { data: systemInfo } = useSystemInfo();
+	const { data: logFiles, refetch: refetchLogs, isError: logFilesError } = useLogFiles();
+	const { data: validationHealth } = useValidationHealth();
+	const resetHealthMutation = useResetValidationHealth();
+	const updateMutation = useUpdateSystemSettings();
+	const restartMutation = useRestartSystem();
 
 	useEffect(() => {
 		if (settings?.data) {
@@ -365,14 +213,17 @@ export function SystemTab() {
 			}
 		}
 		// Send null for empty string to clear the value
-		updateMutation.mutate({
-			apiPort,
-			webPort,
-			listenAddress,
-			externalUrl: externalUrl || null,
-			trustProxy,
-			secureCookies,
-		});
+		updateMutation.mutate(
+			{
+				apiPort,
+				webPort,
+				listenAddress,
+				externalUrl: externalUrl || null,
+				trustProxy,
+				secureCookies,
+			},
+			{ onSuccess: () => setHasChanges(false) },
+		);
 	};
 
 	const handleRestart = () => {
