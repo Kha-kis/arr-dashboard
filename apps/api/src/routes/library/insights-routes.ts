@@ -13,7 +13,6 @@
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { SeerrClient } from "../../lib/seerr/seerr-client.js";
-import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { safeJsonParse } from "../../lib/utils/json.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
@@ -342,7 +341,7 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 		}
 
 		// Fetch Seerr requests — build map of tmdbId → request info
-		let seerrRequests: Array<{
+		const seerrRequests: Array<{
 			tmdbId: number;
 			type: "movie" | "tv";
 			requestedBy: string;

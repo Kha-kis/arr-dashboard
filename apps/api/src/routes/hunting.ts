@@ -194,7 +194,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const { instanceId } = validateRequest(huntConfigCreateSchema, request.body);
 		const userId = request.currentUser!.id;
 
-		const instance = await requireInstance(app, userId, instanceId);
+		await requireInstance(app, userId, instanceId);
 
 		// Check if config already exists
 		const existing = await app.prisma.huntConfig.findUnique({

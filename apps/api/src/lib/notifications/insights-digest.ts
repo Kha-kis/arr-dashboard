@@ -158,7 +158,7 @@ export class InsightsDigestScheduler {
 		}
 
 		// Fetch available Seerr requests
-		let seerrRequests: Array<{
+		const seerrRequests: Array<{
 			tmdbId: number;
 			type: "movie" | "tv";
 			requestedBy: string;
