@@ -15,14 +15,14 @@ import {
 	triggerUpdateCheck,
 	type UpdateCheckResponse,
 } from "../../lib/api-client/trash-guides";
-import { TEMPLATES_QUERY_KEY } from "./useTemplates";
+import { TEMPLATES_QUERY_KEY, trashGuidesKeys } from "../../lib/query-keys";
 
 /**
  * Hook to check for available template updates
  */
 export function useTemplateUpdates(options?: { refetchInterval?: number }) {
 	return useQuery<UpdateCheckResponse>({
-		queryKey: ["trash-guides", "updates"],
+		queryKey: trashGuidesKeys.updates.all,
 		queryFn: checkForUpdates,
 		refetchInterval: options?.refetchInterval,
 		staleTime: 5 * 60 * 1000, // 5 minutes
@@ -34,7 +34,7 @@ export function useTemplateUpdates(options?: { refetchInterval?: number }) {
  */
 export function useTemplatesNeedingAttention() {
 	return useQuery<AttentionResponse>({
-		queryKey: ["trash-guides", "updates", "attention"],
+		queryKey: trashGuidesKeys.updates.attention,
 		queryFn: getTemplatesNeedingAttention,
 		staleTime: 5 * 60 * 1000, // 5 minutes
 	});
@@ -45,7 +45,7 @@ export function useTemplatesNeedingAttention() {
  */
 export function useLatestVersion() {
 	return useQuery<LatestVersionResponse>({
-		queryKey: ["trash-guides", "updates", "version", "latest"],
+		queryKey: trashGuidesKeys.updates.latestVersion,
 		queryFn: getLatestVersion,
 		staleTime: 15 * 60 * 1000, // 15 minutes
 	});
@@ -56,7 +56,7 @@ export function useLatestVersion() {
  */
 export function useSchedulerStatus(options?: { refetchInterval?: number }) {
 	return useQuery<SchedulerStatusResponse>({
-		queryKey: ["trash-guides", "updates", "scheduler", "status"],
+		queryKey: trashGuidesKeys.updates.scheduler,
 		queryFn: getSchedulerStatus,
 		refetchInterval: options?.refetchInterval,
 		staleTime: 60 * 1000, // 1 minute
@@ -74,9 +74,9 @@ export function useSyncTemplate() {
 			syncTemplate(templateId, payload),
 		onSuccess: () => {
 			// Invalidate relevant queries
-			queryClient.invalidateQueries({ queryKey: ["trash-guides", "updates"] });
+			queryClient.invalidateQueries({ queryKey: trashGuidesKeys.updates.all });
 			queryClient.invalidateQueries({
-				queryKey: ["trash-guides", "updates", "attention"],
+				queryKey: trashGuidesKeys.updates.attention,
 			});
 			queryClient.invalidateQueries({ queryKey: TEMPLATES_QUERY_KEY });
 		},
@@ -93,9 +93,9 @@ export function useProcessAutoUpdates() {
 		mutationFn: processAutoUpdates,
 		onSuccess: () => {
 			// Invalidate relevant queries
-			queryClient.invalidateQueries({ queryKey: ["trash-guides", "updates"] });
+			queryClient.invalidateQueries({ queryKey: trashGuidesKeys.updates.all });
 			queryClient.invalidateQueries({
-				queryKey: ["trash-guides", "updates", "attention"],
+				queryKey: trashGuidesKeys.updates.attention,
 			});
 			queryClient.invalidateQueries({ queryKey: TEMPLATES_QUERY_KEY });
 		},
@@ -117,13 +117,13 @@ export function useTriggerUpdateCheck() {
 			// The backend waits for the update check to complete before responding,
 			// so we can immediately invalidate queries without a timeout
 			queryClient.invalidateQueries({
-				queryKey: ["trash-guides", "updates"],
+				queryKey: trashGuidesKeys.updates.all,
 			});
 			queryClient.invalidateQueries({
-				queryKey: ["trash-guides", "updates", "attention"],
+				queryKey: trashGuidesKeys.updates.attention,
 			});
 			queryClient.invalidateQueries({
-				queryKey: ["trash-guides", "updates", "scheduler", "status"],
+				queryKey: trashGuidesKeys.updates.scheduler,
 			});
 		},
 	});
@@ -134,7 +134,7 @@ export function useTriggerUpdateCheck() {
  */
 export function useTemplateDiff(templateId: string | null, targetCommit?: string) {
 	return useQuery<TemplateDiffResponse>({
-		queryKey: ["trash-guides", "updates", "diff", templateId, targetCommit],
+		queryKey: trashGuidesKeys.updates.diff(templateId!, targetCommit),
 		queryFn: () => getTemplateDiff(templateId!, targetCommit),
 		enabled: !!templateId,
 		staleTime: 2 * 60 * 1000, // 2 minutes

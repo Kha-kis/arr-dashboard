@@ -13,6 +13,7 @@ import {
 	Trash2,
 	Zap,
 } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -254,7 +255,14 @@ export const HuntingConfig = () => {
 				<PremiumEmptyState
 					icon={Settings}
 					title="No instances available"
-					description="Add Sonarr, Radarr, Lidarr, or Readarr instances in Settings first."
+					description="Add Sonarr, Radarr, Lidarr, or Readarr instances in Settings to configure hunting."
+					action={
+						<Link href="/settings">
+							<Button variant="secondary" className="gap-2 border-border/50 bg-card/50">
+								Go to Settings
+							</Button>
+						</Link>
+					}
 				/>
 			)}
 		</div>

@@ -1,5 +1,6 @@
 import type { ServiceInstanceSummary } from "@arr/shared";
 import { useState } from "react";
+import { toast } from "sonner";
 import {
 	useCreateServiceMutation,
 	useDeleteServiceMutation,
@@ -71,21 +72,25 @@ export const useServicesManagement = () => {
 			return;
 		}
 
-		if (selectedServiceForEdit) {
-			const updatePayload: UpdateServicePayload = { ...basePayload };
-			if (!basePayload.apiKey) {
-				updatePayload.apiKey = undefined;
+		try {
+			if (selectedServiceForEdit) {
+				const updatePayload: UpdateServicePayload = { ...basePayload };
+				if (!basePayload.apiKey) {
+					updatePayload.apiKey = undefined;
+				}
+
+				await updateServiceMutation.mutateAsync({
+					id: selectedServiceForEdit.id,
+					payload: updatePayload,
+				});
+			} else {
+				await createServiceMutation.mutateAsync(basePayload);
 			}
 
-			await updateServiceMutation.mutateAsync({
-				id: selectedServiceForEdit.id,
-				payload: updatePayload,
-			});
-		} else {
-			await createServiceMutation.mutateAsync(basePayload);
+			resetForm(basePayload.service);
+		} catch (error) {
+			toast.error(getErrorMessage(error, "Failed to save service"));
 		}
-
-		resetForm(basePayload.service);
 	};
 
 	const handleDeleteService = async (
@@ -93,29 +98,41 @@ export const useServicesManagement = () => {
 		selectedServiceForEdit: ServiceInstanceSummary | null,
 		resetForm: (service: ServiceFormState["service"]) => void,
 	) => {
-		await deleteServiceMutation.mutateAsync(instance.id);
-		if (selectedServiceForEdit?.id === instance.id) {
-			resetForm(instance.service);
+		try {
+			await deleteServiceMutation.mutateAsync(instance.id);
+			if (selectedServiceForEdit?.id === instance.id) {
+				resetForm(instance.service);
+			}
+		} catch (error) {
+			toast.error(getErrorMessage(error, "Failed to delete service"));
 		}
 	};
 
 	const toggleDefault = async (instance: ServiceInstanceSummary) => {
-		await updateServiceMutation.mutateAsync({
-			id: instance.id,
-			payload: {
-				service: instance.service,
-				isDefault: !instance.isDefault,
-			},
-		});
+		try {
+			await updateServiceMutation.mutateAsync({
+				id: instance.id,
+				payload: {
+					service: instance.service,
+					isDefault: !instance.isDefault,
+				},
+			});
+		} catch (error) {
+			toast.error(getErrorMessage(error, "Failed to update default status"));
+		}
 	};
 
 	const toggleEnabled = async (instance: ServiceInstanceSummary) => {
-		await updateServiceMutation.mutateAsync({
-			id: instance.id,
-			payload: {
-				enabled: !instance.enabled,
-			},
-		});
+		try {
+			await updateServiceMutation.mutateAsync({
+				id: instance.id,
+				payload: {
+					enabled: !instance.enabled,
+				},
+			});
+		} catch (error) {
+			toast.error(getErrorMessage(error, "Failed to toggle service"));
+		}
 	};
 
 	const handleTestConnection = async (instance: ServiceInstanceSummary) => {

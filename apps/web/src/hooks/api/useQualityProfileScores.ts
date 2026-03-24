@@ -5,6 +5,7 @@ import {
 	type UpdateProfileScoresResponse,
 	updateQualityProfileScores,
 } from "../../lib/api-client/trash-guides";
+import { bulkScoreKeys, qualityProfileKeys } from "../../lib/query-keys";
 
 /**
  * Entry for bulk score update operations
@@ -55,10 +56,10 @@ export function useUpdateProfileScores() {
 		onSuccess: (_, variables) => {
 			// Invalidate related queries
 			queryClient.invalidateQueries({
-				queryKey: ["bulk-scores"],
+				queryKey: bulkScoreKeys.all,
 			});
 			queryClient.invalidateQueries({
-				queryKey: ["quality-profile-overrides", variables.instanceId, variables.qualityProfileId],
+				queryKey: qualityProfileKeys.overrides(variables.instanceId, variables.qualityProfileId),
 			});
 		},
 	});
@@ -164,18 +165,17 @@ export function useBulkUpdateScores() {
 
 			// Invalidate cache keys for all successfully updated profiles
 			queryClient.invalidateQueries({
-				queryKey: ["bulk-scores"],
+				queryKey: bulkScoreKeys.all,
 			});
 
 			// Invalidate individual quality profile override queries
 			for (const profileResult of result.results) {
 				if (profileResult.success) {
 					queryClient.invalidateQueries({
-						queryKey: [
-							"quality-profile-overrides",
+						queryKey: qualityProfileKeys.overrides(
 							profileResult.instanceId,
 							profileResult.profileId,
-						],
+						),
 					});
 				}
 			}

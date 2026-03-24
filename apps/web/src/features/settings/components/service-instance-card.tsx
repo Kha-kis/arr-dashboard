@@ -12,6 +12,7 @@ import {
 	Trash2,
 	Zap,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { ServiceBadge, StatusBadge } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
@@ -72,6 +73,23 @@ export const ServiceInstanceCard = ({
 }: ServiceInstanceCardProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const [incognitoMode] = useIncognitoMode();
+	const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+	useEffect(() => {
+		if (!confirmingDelete) return;
+		const timer = setTimeout(() => setConfirmingDelete(false), 3000);
+		return () => clearTimeout(timer);
+	}, [confirmingDelete]);
+
+	const handleDelete = () => {
+		if (confirmingDelete) {
+			onDelete(instance);
+			setConfirmingDelete(false);
+		} else {
+			setConfirmingDelete(true);
+		}
+	};
+
 	// Use externalUrl for browser navigation if available, otherwise fall back to baseUrl
 	const linkUrl = instance.externalUrl || instance.baseUrl;
 	const displayUrl = incognitoMode ? getLinuxUrl(linkUrl) : linkUrl;
@@ -210,16 +228,23 @@ export const ServiceInstanceCard = ({
 							<span className="hidden sm:inline">{instance.enabled ? "Disable" : "Enable"}</span>
 						</Button>
 
-						{/* Delete button */}
+						{/* Delete button — two-step confirm */}
 						<Button
 							variant="danger"
 							size="sm"
-							onClick={() => onDelete(instance)}
+							onClick={handleDelete}
 							disabled={mutationPending}
 							className="gap-1.5"
+							title={confirmingDelete ? "Click again to confirm deletion" : "Delete service"}
 						>
-							<Trash2 className="h-3.5 w-3.5" />
-							<span className="hidden sm:inline">Delete</span>
+							{confirmingDelete ? (
+								<span className="text-xs font-medium">Confirm?</span>
+							) : (
+								<>
+									<Trash2 className="h-3.5 w-3.5" />
+									<span className="hidden sm:inline">Delete</span>
+								</>
+							)}
 						</Button>
 					</div>
 				</div>

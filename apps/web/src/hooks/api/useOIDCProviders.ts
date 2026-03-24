@@ -6,6 +6,7 @@ import {
 	getOIDCProvider,
 	updateOIDCProvider,
 } from "../../lib/api-client/oidc-providers";
+import { oidcKeys } from "../../lib/query-keys";
 
 /**
  * Fetch the configured OIDC provider (admin only)
@@ -14,7 +15,7 @@ import {
  */
 export function useOIDCProvider() {
 	return useQuery({
-		queryKey: ["oidc-provider"],
+		queryKey: oidcKeys.provider,
 		queryFn: getOIDCProvider, // Returns { provider: OIDCProvider | null }
 	});
 }
@@ -36,7 +37,7 @@ export function useCreateOIDCProvider() {
 		mutationFn: (data: CreateOIDCProvider) => createOIDCProvider(data),
 		onSuccess: () => {
 			// Invalidate provider query to refetch
-			queryClient.invalidateQueries({ queryKey: ["oidc-provider"] });
+			queryClient.invalidateQueries({ queryKey: oidcKeys.provider });
 		},
 	});
 }
@@ -51,7 +52,7 @@ export function useUpdateOIDCProvider() {
 		mutationFn: (data: UpdateOIDCProvider) => updateOIDCProvider(data),
 		onSuccess: () => {
 			// Invalidate provider query to refetch
-			queryClient.invalidateQueries({ queryKey: ["oidc-provider"] });
+			queryClient.invalidateQueries({ queryKey: oidcKeys.provider });
 		},
 	});
 }
@@ -66,7 +67,7 @@ export function useDeleteOIDCProvider() {
 		mutationFn: () => deleteOIDCProvider(),
 		onSuccess: () => {
 			// Invalidate provider query to refetch
-			queryClient.invalidateQueries({ queryKey: ["oidc-provider"] });
+			queryClient.invalidateQueries({ queryKey: oidcKeys.provider });
 		},
 	});
 }

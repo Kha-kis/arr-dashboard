@@ -1,6 +1,5 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	Activity,
 	CheckCircle,
@@ -13,81 +12,16 @@ import {
 	XCircle,
 } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
 import { PremiumSection } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
-import { apiRequest } from "../../../lib/api-client/base";
-import { getErrorMessage } from "../../../lib/error-utils";
-import { POLLING_STANDARD } from "../../../lib/polling-intervals";
+import { useClearQuarantine, useValidationQuarantine } from "../../../hooks/api/useSystem";
+import type {
+	CategoryFingerprint,
+	HealthState,
+	QuarantinedItem,
+	ValidationHealthResponse,
+} from "../../../lib/api-client/system";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-
-// ============================================================================
-// Types
-// ============================================================================
-
-interface ValidationStats {
-	total: number;
-	validated: number;
-	rejected: number;
-}
-
-type HealthState = "healthy" | "degraded" | "failing";
-
-interface IntegrationHealth {
-	lastRefreshAt: string | null;
-	lastSuccessAt: string | null;
-	lastFailureAt: string | null;
-	consecutiveFailures: number;
-	state: HealthState;
-	categories: Record<string, ValidationStats>;
-	totals: ValidationStats;
-}
-
-interface SchemaFingerprint {
-	fields: string[];
-	recordedAt: string;
-	sampleCount: number;
-}
-
-interface DriftReport {
-	newFields: string[];
-	missingFields: string[];
-	hasDrift: boolean;
-}
-
-interface CategoryFingerprint {
-	baseline: SchemaFingerprint;
-	latest: SchemaFingerprint;
-	drift: DriftReport;
-	fieldMissCounts: Record<string, number>;
-}
-
-interface QuarantinedItem {
-	raw: unknown;
-	errors: string[];
-	integration: string;
-	category: string;
-	timestamp: string;
-}
-
-interface QuarantineResponse {
-	success: boolean;
-	data: {
-		items: Record<string, QuarantinedItem[]>;
-		totalCount: number;
-	};
-}
-
-export interface ValidationHealthResponse {
-	success: boolean;
-	data: {
-		integrations: Record<string, IntegrationHealth>;
-		overallTotals: ValidationStats;
-		validationModes: Record<string, string>;
-		resetAt: string | null;
-		fingerprints: Record<string, Record<string, CategoryFingerprint>>;
-	};
-}
 
 // ============================================================================
 // Helper Components
@@ -651,27 +585,12 @@ function SchemaDriftSection({
 // ============================================================================
 
 function QuarantineSection() {
-	const queryClient = useQueryClient();
 	const [isOpen, setIsOpen] = useState(false);
 	const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 	const [filterIntegration, setFilterIntegration] = useState<string>("all");
 
-	const { data: quarantine } = useQuery<QuarantineResponse>({
-		queryKey: ["validation-quarantine"],
-		queryFn: () => apiRequest<QuarantineResponse>("/api/system/validation-quarantine"),
-		refetchInterval: POLLING_STANDARD,
-	});
-
-	const clearMutation = useMutation({
-		mutationFn: () => apiRequest("/api/system/validation-quarantine", { method: "DELETE" }),
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["validation-quarantine"] });
-			toast.success("Quarantine cleared");
-		},
-		onError: (err) => {
-			toast.error(`Failed to clear quarantine: ${getErrorMessage(err)}`);
-		},
-	});
+	const { data: quarantine } = useValidationQuarantine();
+	const clearMutation = useClearQuarantine();
 
 	const totalCount = quarantine?.data?.totalCount ?? 0;
 	const itemsByIntegration = quarantine?.data?.items ?? {};

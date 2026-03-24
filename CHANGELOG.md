@@ -5,6 +5,53 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.0] - 2026-03-24
+
+Cross-service Library Intelligence, TRaSH scheduled sync, quality upgrade visibility, and foundational reliability improvements.
+
+### Added
+
+#### Library Intelligence — Cross-Service Insights
+- **Library Insights section** — New advisory panel on the Library page that surfaces actionable signals by correlating data across Sonarr/Radarr, Plex, and Seerr. Three signals: unwatched disk waste (large files with zero Plex plays), watched items still monitored (wasting indexer searches), and Seerr-requested content never watched
+- **Insight quick actions** — Inline "Unmonitor" button on watched-monitored and disk-waste items. Per-item "Dismiss" to hide items from the panel (persisted in localStorage)
+- **Priority summary** — Section header shows total count with breakdown by category and a contextual priority cue ("Start with requested items — someone is waiting")
+- **Insight notifications** — Two new event types: `LIBRARY_INSIGHT_REQUESTED_UNWATCHED` and `LIBRARY_INSIGHT_WATCHED_MONITORED`. Scheduler runs every 6 hours with 24-hour cooldown. Notifications deep-link to the relevant panel via `?insight=` query param
+
+#### TRaSH Scheduled Sync
+- **Sync scheduler** — Background scheduler executes template syncs based on `TrashSyncSchedule` rows. Checks every 60 seconds for due schedules, validates before executing, advances `nextRunAt` even on failure to prevent retry storms
+- **Schedule management API** — CRUD endpoints at `/api/trash-guides/schedules` with ownership enforcement and duplicate prevention
+- **Schedule modal** — Per-instance schedule creation/editing via the existing `TemplateScheduleModal` (previously built but unconnected). Shows last run time, next run time, and includes a two-step "Remove Schedule" button
+
+#### Quality Upgrade Intelligence
+- **Cutoff-unmet tracking** — New `cutoffUnmet` column on `LibraryCache`, populated during library sync from Sonarr/Radarr `/wanted/cutoff` endpoint. Lidarr/Readarr gracefully skipped
+- **Quality filter** — New "Quality" dropdown in the library header with options: All quality, Cutoff unmet, Cutoff met
+- **Cutoff badge + upgrade button** — Amber "Cutoff Unmet" badge on library cards with an inline "Upgrade" search button that triggers the existing Sonarr/Radarr search command
+
+#### Hunting
+- **Lidarr grab detection** — Accurate `itemsGrabbed` counts for Lidarr hunts using album-based history comparison. Previously hardcoded to 0
+- **Readarr grab detection** — Same for Readarr using book-based history comparison. Both services fall back to queue-based detection on history API failure
+
+#### Other
+- **Template staleness display** — Template cards now show "Synced [date]" and amber "Modified" badge for templates with local changes
+- **System hooks** — Extracted 7 inline queries and 3 mutations from `system-tab.tsx` and `validation-health-section.tsx` into shared `useSystem` hooks and `system` API client module
+- **Master workflow command** — `.claude/commands/work.md` dispatches to existing commands based on task context
+
+### Fixed
+
+- **Passkey login cache invalidation** — Post-passkey login now correctly invalidates `["current-user"]` instead of `["user"]`, fixing stale auth state after WebAuthn authentication
+- **Silent mutation failures in Settings** — Service create/update/delete/toggle, notification rule save/delete/toggle, subscription grid save, and channel config load now show clear error toasts on failure instead of silent no-ops
+- **Notification fetch error masquerading as empty state** — Rules tab and subscription grid now show a proper error state with retry guidance instead of misleading "no rules configured" when the API call fails
+- **Channel config load error swallowed** — Editing a notification channel that fails to load its config now shows an error message with "Go back" link instead of rendering an empty new-channel form
+- **Service delete without confirmation** — Service instance delete, tag delete, and Seerr bulk decline/delete now require two-step inline confirmation (click → "Confirm?" → click within 3 seconds)
+- **Dead-end empty states** — Dashboard "no instances" text, hunting overview "go to Configuration tab" text, hunting config "add in Settings" text, and sync history "No Instance Selected" page now have actionable links to the correct destination
+- **Incognito mode gaps** — 6 TRaSH-guides components (template-card, template-stats, sync-validation-modal, sync-progress-modal, template-schedule-modal, template-list) now mask instance names when incognito mode is active
+
+### Changed
+
+- **Query key centralization** — Replaced ~40 inline query key string arrays across 15 hook files with centralized imports from `query-keys.ts`. Added 12 new key definitions. Fixed `qualityProfileKeys.overrides` parameter type (`string` → `number`). Fixed 3 files importing `TEMPLATES_QUERY_KEY` from wrong source
+- **Request validation hardening** — 15+ API route handlers now use `validateRequest()` with Zod schemas: template-sharing (4 handlers), profile-clone (6 handlers), bulk-score export, user-CF deploy, hunting trigger, passkey login verify (added `sessionId` to schema), and service test-connection
+- **Notification event types** — Added "Library Insights" group to the notification subscription grid with two new event types
+
 ## [2.9.3] - 2026-03-23
 
 ### Fixed

@@ -1,7 +1,14 @@
 /** @type {import('next').NextConfig} */
 
+// Allow HMR from non-localhost origins in development (e.g., WSL2 IP)
+// Set DEV_ALLOWED_ORIGINS in .env.local: DEV_ALLOWED_ORIGINS=172.x.x.x
+const allowedOrigins = process.env.DEV_ALLOWED_ORIGINS
+	? process.env.DEV_ALLOWED_ORIGINS.split(",").map((s) => s.trim())
+	: [];
+
 const nextConfig = {
 	output: "standalone",
+	...(allowedOrigins.length > 0 && { allowedDevOrigins: allowedOrigins }),
 	// Empty turbopack config to silence Next.js 16 warning when using --webpack for builds
 	turbopack: {},
 	poweredByHeader: false,

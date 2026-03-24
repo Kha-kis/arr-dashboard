@@ -9,6 +9,7 @@ import {
 	Clock,
 	XCircle,
 } from "lucide-react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Badge, Button } from "../../../../components/ui";
@@ -73,8 +74,14 @@ export default function SyncHistoryPage() {
 					<AlertCircle className="mx-auto h-12 w-12 text-yellow-400" />
 					<h2 className="mt-4 text-xl font-semibold text-foreground">No Instance Selected</h2>
 					<p className="mt-2 text-muted-foreground">
-						Please select an instance to view sync history
+						Select an instance from the TRaSH Guides page to view sync history.
 					</p>
+					<Link
+						href="/trash-guides"
+						className="mt-4 inline-block rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition hover:bg-card/80"
+					>
+						Back to TRaSH Guides
+					</Link>
 				</div>
 			</div>
 		);

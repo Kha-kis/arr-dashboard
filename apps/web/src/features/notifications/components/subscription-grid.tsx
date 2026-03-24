@@ -1,7 +1,8 @@
 "use client";
 
-import { ChevronDown, ChevronRight, Loader2, Save } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, Loader2, Save } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import type { NotificationEventType } from "@arr/shared";
 import { GradientButton } from "@/components/layout/premium-components";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
@@ -13,6 +14,7 @@ import type {
 	SubscriptionGridResponse,
 	SubscriptionUpdateEntry,
 } from "../../../lib/api-client/notifications";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 /** Local map: eventType → channelId[] (convenient for checkbox toggling) */
 type SubsMap = Record<string, string[]>;
@@ -42,6 +44,8 @@ const EVENT_LABELS: Record<string, string> = {
 	PLEX_NEW_DEVICE: "New Device",
 	SYSTEM_STARTUP: "Startup",
 	SYSTEM_ERROR: "System Error",
+	LIBRARY_INSIGHT_REQUESTED_UNWATCHED: "Requested Unwatched",
+	LIBRARY_INSIGHT_WATCHED_MONITORED: "Watched Monitored",
 };
 
 const EVENT_GROUPS: Array<{ label: string; events: NotificationEventType[] }> = [
@@ -86,6 +90,10 @@ const EVENT_GROUPS: Array<{ label: string; events: NotificationEventType[] }> = 
 		label: "System",
 		events: ["SYSTEM_STARTUP", "SYSTEM_ERROR"],
 	},
+	{
+		label: "Library Insights",
+		events: ["LIBRARY_INSIGHT_REQUESTED_UNWATCHED", "LIBRARY_INSIGHT_WATCHED_MONITORED"],
+	},
 ];
 
 /** Derive local map from the backend normalized response */
@@ -128,7 +136,7 @@ function buildUpdateEntries(
 
 export function SubscriptionGrid() {
 	const { gradient } = useThemeGradient();
-	const { data: serverData, isLoading } = useNotificationSubscriptions();
+	const { data: serverData, isLoading, isError } = useNotificationSubscriptions();
 	const updateSubs = useUpdateSubscriptions();
 
 	const [localSubs, setLocalSubs] = useState<SubsMap>({});
@@ -175,6 +183,7 @@ export function SubscriptionGrid() {
 		}
 		updateSubs.mutate(entries, {
 			onSuccess: () => setHasChanges(false),
+			onError: (err) => toast.error(getErrorMessage(err, "Failed to save subscriptions")),
 		});
 	};
 
@@ -186,6 +195,15 @@ export function SubscriptionGrid() {
 		return (
 			<div className="flex items-center justify-center py-12">
 				<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+			</div>
+		);
+	}
+
+	if (isError) {
+		return (
+			<div className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
+				<AlertTriangle className="h-6 w-6" />
+				<p className="text-sm">Failed to load subscriptions. Please try refreshing the page.</p>
 			</div>
 		);
 	}

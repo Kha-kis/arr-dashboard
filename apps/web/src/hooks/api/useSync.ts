@@ -23,6 +23,7 @@ import {
 	type ValidationResult,
 	validateSync,
 } from "../../lib/api-client/trash-guides";
+import { syncKeys, trashGuidesKeys } from "../../lib/query-keys";
 
 // ============================================================================
 // Validation Hook
@@ -232,12 +233,12 @@ export function useExecuteSync() {
 		onSuccess: (data, variables) => {
 			// Invalidate sync history for the instance
 			queryClient.invalidateQueries({
-				queryKey: ["sync-history", variables.instanceId],
+				queryKey: syncKeys.history(variables.instanceId),
 			});
 
 			// Invalidate template stats
 			queryClient.invalidateQueries({
-				queryKey: ["template-stats", variables.templateId],
+				queryKey: trashGuidesKeys.templates.stats(variables.templateId),
 			});
 		},
 	});
@@ -285,7 +286,7 @@ export function useSyncProgress(syncId: string | null, enabled = true) {
 
 	// Polling fallback
 	const pollingQuery = useQuery({
-		queryKey: ["sync-progress", syncId],
+		queryKey: syncKeys.progress(syncId!),
 		queryFn: () => getSyncProgress(syncId!),
 		enabled: enabled && usePolling && !!syncId,
 		refetchInterval: (query) => {
@@ -320,7 +321,7 @@ export function useSyncProgress(syncId: string | null, enabled = true) {
 
 export function useSyncHistory(instanceId: string, params?: { limit?: number; offset?: number }) {
 	return useQuery<SyncHistoryResponse, Error>({
-		queryKey: ["sync-history", instanceId, params],
+		queryKey: syncKeys.history(instanceId, params),
 		queryFn: () => getSyncHistory(instanceId, params),
 		enabled: !!instanceId,
 	});
@@ -332,7 +333,7 @@ export function useSyncHistory(instanceId: string, params?: { limit?: number; of
 
 export function useSyncDetail(syncId: string | null) {
 	return useQuery<SyncDetail, Error>({
-		queryKey: ["sync-detail", syncId],
+		queryKey: syncKeys.detail(syncId!),
 		queryFn: () => getSyncDetail(syncId!),
 		enabled: !!syncId,
 	});
@@ -357,13 +358,13 @@ export function useRollbackSync() {
 		onSuccess: (data, variables) => {
 			// Invalidate sync detail
 			queryClient.invalidateQueries({
-				queryKey: ["sync-detail", variables.syncId],
+				queryKey: syncKeys.detail(variables.syncId),
 			});
 
 			// Invalidate sync history - targeted if instanceId provided
 			if (variables.instanceId) {
 				queryClient.invalidateQueries({
-					queryKey: ["sync-history", variables.instanceId],
+					queryKey: syncKeys.history(variables.instanceId),
 				});
 			} else {
 				// Global invalidation when instanceId not available

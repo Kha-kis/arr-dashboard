@@ -56,6 +56,7 @@ export type LibraryCacheMinAggregateOutputType = {
   qualityProfileId: number | null
   qualityProfileName: string | null
   sizeOnDisk: bigint | null
+  cutoffUnmet: boolean | null
   data: string | null
   arrAddedAt: Date | null
   arrUpdatedAt: Date | null
@@ -78,6 +79,7 @@ export type LibraryCacheMaxAggregateOutputType = {
   qualityProfileId: number | null
   qualityProfileName: string | null
   sizeOnDisk: bigint | null
+  cutoffUnmet: boolean | null
   data: string | null
   arrAddedAt: Date | null
   arrUpdatedAt: Date | null
@@ -100,6 +102,7 @@ export type LibraryCacheCountAggregateOutputType = {
   qualityProfileId: number
   qualityProfileName: number
   sizeOnDisk: number
+  cutoffUnmet: number
   data: number
   arrAddedAt: number
   arrUpdatedAt: number
@@ -138,6 +141,7 @@ export type LibraryCacheMinAggregateInputType = {
   qualityProfileId?: true
   qualityProfileName?: true
   sizeOnDisk?: true
+  cutoffUnmet?: true
   data?: true
   arrAddedAt?: true
   arrUpdatedAt?: true
@@ -160,6 +164,7 @@ export type LibraryCacheMaxAggregateInputType = {
   qualityProfileId?: true
   qualityProfileName?: true
   sizeOnDisk?: true
+  cutoffUnmet?: true
   data?: true
   arrAddedAt?: true
   arrUpdatedAt?: true
@@ -182,6 +187,7 @@ export type LibraryCacheCountAggregateInputType = {
   qualityProfileId?: true
   qualityProfileName?: true
   sizeOnDisk?: true
+  cutoffUnmet?: true
   data?: true
   arrAddedAt?: true
   arrUpdatedAt?: true
@@ -291,6 +297,7 @@ export type LibraryCacheGroupByOutputType = {
   qualityProfileId: number | null
   qualityProfileName: string | null
   sizeOnDisk: bigint
+  cutoffUnmet: boolean
   data: string
   arrAddedAt: Date | null
   arrUpdatedAt: Date | null
@@ -336,6 +343,7 @@ export type LibraryCacheWhereInput = {
   qualityProfileId?: Prisma.IntNullableFilter<"LibraryCache"> | number | null
   qualityProfileName?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
   sizeOnDisk?: Prisma.BigIntFilter<"LibraryCache"> | bigint | number
+  cutoffUnmet?: Prisma.BoolFilter<"LibraryCache"> | boolean
   data?: Prisma.StringFilter<"LibraryCache"> | string
   arrAddedAt?: Prisma.DateTimeNullableFilter<"LibraryCache"> | Date | string | null
   arrUpdatedAt?: Prisma.DateTimeNullableFilter<"LibraryCache"> | Date | string | null
@@ -359,6 +367,7 @@ export type LibraryCacheOrderByWithRelationInput = {
   qualityProfileId?: Prisma.SortOrderInput | Prisma.SortOrder
   qualityProfileName?: Prisma.SortOrderInput | Prisma.SortOrder
   sizeOnDisk?: Prisma.SortOrder
+  cutoffUnmet?: Prisma.SortOrder
   data?: Prisma.SortOrder
   arrAddedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   arrUpdatedAt?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -386,6 +395,7 @@ export type LibraryCacheWhereUniqueInput = Prisma.AtLeast<{
   qualityProfileId?: Prisma.IntNullableFilter<"LibraryCache"> | number | null
   qualityProfileName?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
   sizeOnDisk?: Prisma.BigIntFilter<"LibraryCache"> | bigint | number
+  cutoffUnmet?: Prisma.BoolFilter<"LibraryCache"> | boolean
   data?: Prisma.StringFilter<"LibraryCache"> | string
   arrAddedAt?: Prisma.DateTimeNullableFilter<"LibraryCache"> | Date | string | null
   arrUpdatedAt?: Prisma.DateTimeNullableFilter<"LibraryCache"> | Date | string | null
@@ -409,6 +419,7 @@ export type LibraryCacheOrderByWithAggregationInput = {
   qualityProfileId?: Prisma.SortOrderInput | Prisma.SortOrder
   qualityProfileName?: Prisma.SortOrderInput | Prisma.SortOrder
   sizeOnDisk?: Prisma.SortOrder
+  cutoffUnmet?: Prisma.SortOrder
   data?: Prisma.SortOrder
   arrAddedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   arrUpdatedAt?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -439,6 +450,7 @@ export type LibraryCacheScalarWhereWithAggregatesInput = {
   qualityProfileId?: Prisma.IntNullableWithAggregatesFilter<"LibraryCache"> | number | null
   qualityProfileName?: Prisma.StringNullableWithAggregatesFilter<"LibraryCache"> | string | null
   sizeOnDisk?: Prisma.BigIntWithAggregatesFilter<"LibraryCache"> | bigint | number
+  cutoffUnmet?: Prisma.BoolWithAggregatesFilter<"LibraryCache"> | boolean
   data?: Prisma.StringWithAggregatesFilter<"LibraryCache"> | string
   arrAddedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"LibraryCache"> | Date | string | null
   arrUpdatedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"LibraryCache"> | Date | string | null
@@ -460,6 +472,7 @@ export type LibraryCacheCreateInput = {
   qualityProfileId?: number | null
   qualityProfileName?: string | null
   sizeOnDisk?: bigint | number
+  cutoffUnmet?: boolean
   data: string
   arrAddedAt?: Date | string | null
   arrUpdatedAt?: Date | string | null
@@ -483,6 +496,7 @@ export type LibraryCacheUncheckedCreateInput = {
   qualityProfileId?: number | null
   qualityProfileName?: string | null
   sizeOnDisk?: bigint | number
+  cutoffUnmet?: boolean
   data: string
   arrAddedAt?: Date | string | null
   arrUpdatedAt?: Date | string | null
@@ -504,6 +518,7 @@ export type LibraryCacheUpdateInput = {
   qualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   qualityProfileName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  cutoffUnmet?: Prisma.BoolFieldUpdateOperationsInput | boolean
   data?: Prisma.StringFieldUpdateOperationsInput | string
   arrAddedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   arrUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -527,6 +542,7 @@ export type LibraryCacheUncheckedUpdateInput = {
   qualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   qualityProfileName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  cutoffUnmet?: Prisma.BoolFieldUpdateOperationsInput | boolean
   data?: Prisma.StringFieldUpdateOperationsInput | string
   arrAddedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   arrUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -549,6 +565,7 @@ export type LibraryCacheCreateManyInput = {
   qualityProfileId?: number | null
   qualityProfileName?: string | null
   sizeOnDisk?: bigint | number
+  cutoffUnmet?: boolean
   data: string
   arrAddedAt?: Date | string | null
   arrUpdatedAt?: Date | string | null
@@ -570,6 +587,7 @@ export type LibraryCacheUpdateManyMutationInput = {
   qualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   qualityProfileName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  cutoffUnmet?: Prisma.BoolFieldUpdateOperationsInput | boolean
   data?: Prisma.StringFieldUpdateOperationsInput | string
   arrAddedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   arrUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -592,6 +610,7 @@ export type LibraryCacheUncheckedUpdateManyInput = {
   qualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   qualityProfileName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  cutoffUnmet?: Prisma.BoolFieldUpdateOperationsInput | boolean
   data?: Prisma.StringFieldUpdateOperationsInput | string
   arrAddedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   arrUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -630,6 +649,7 @@ export type LibraryCacheCountOrderByAggregateInput = {
   qualityProfileId?: Prisma.SortOrder
   qualityProfileName?: Prisma.SortOrder
   sizeOnDisk?: Prisma.SortOrder
+  cutoffUnmet?: Prisma.SortOrder
   data?: Prisma.SortOrder
   arrAddedAt?: Prisma.SortOrder
   arrUpdatedAt?: Prisma.SortOrder
@@ -659,6 +679,7 @@ export type LibraryCacheMaxOrderByAggregateInput = {
   qualityProfileId?: Prisma.SortOrder
   qualityProfileName?: Prisma.SortOrder
   sizeOnDisk?: Prisma.SortOrder
+  cutoffUnmet?: Prisma.SortOrder
   data?: Prisma.SortOrder
   arrAddedAt?: Prisma.SortOrder
   arrUpdatedAt?: Prisma.SortOrder
@@ -681,6 +702,7 @@ export type LibraryCacheMinOrderByAggregateInput = {
   qualityProfileId?: Prisma.SortOrder
   qualityProfileName?: Prisma.SortOrder
   sizeOnDisk?: Prisma.SortOrder
+  cutoffUnmet?: Prisma.SortOrder
   data?: Prisma.SortOrder
   arrAddedAt?: Prisma.SortOrder
   arrUpdatedAt?: Prisma.SortOrder
@@ -763,6 +785,7 @@ export type LibraryCacheCreateWithoutInstanceInput = {
   qualityProfileId?: number | null
   qualityProfileName?: string | null
   sizeOnDisk?: bigint | number
+  cutoffUnmet?: boolean
   data: string
   arrAddedAt?: Date | string | null
   arrUpdatedAt?: Date | string | null
@@ -784,6 +807,7 @@ export type LibraryCacheUncheckedCreateWithoutInstanceInput = {
   qualityProfileId?: number | null
   qualityProfileName?: string | null
   sizeOnDisk?: bigint | number
+  cutoffUnmet?: boolean
   data: string
   arrAddedAt?: Date | string | null
   arrUpdatedAt?: Date | string | null
@@ -834,6 +858,7 @@ export type LibraryCacheScalarWhereInput = {
   qualityProfileId?: Prisma.IntNullableFilter<"LibraryCache"> | number | null
   qualityProfileName?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
   sizeOnDisk?: Prisma.BigIntFilter<"LibraryCache"> | bigint | number
+  cutoffUnmet?: Prisma.BoolFilter<"LibraryCache"> | boolean
   data?: Prisma.StringFilter<"LibraryCache"> | string
   arrAddedAt?: Prisma.DateTimeNullableFilter<"LibraryCache"> | Date | string | null
   arrUpdatedAt?: Prisma.DateTimeNullableFilter<"LibraryCache"> | Date | string | null
@@ -855,6 +880,7 @@ export type LibraryCacheCreateManyInstanceInput = {
   qualityProfileId?: number | null
   qualityProfileName?: string | null
   sizeOnDisk?: bigint | number
+  cutoffUnmet?: boolean
   data: string
   arrAddedAt?: Date | string | null
   arrUpdatedAt?: Date | string | null
@@ -876,6 +902,7 @@ export type LibraryCacheUpdateWithoutInstanceInput = {
   qualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   qualityProfileName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  cutoffUnmet?: Prisma.BoolFieldUpdateOperationsInput | boolean
   data?: Prisma.StringFieldUpdateOperationsInput | string
   arrAddedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   arrUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -897,6 +924,7 @@ export type LibraryCacheUncheckedUpdateWithoutInstanceInput = {
   qualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   qualityProfileName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  cutoffUnmet?: Prisma.BoolFieldUpdateOperationsInput | boolean
   data?: Prisma.StringFieldUpdateOperationsInput | string
   arrAddedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   arrUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -918,6 +946,7 @@ export type LibraryCacheUncheckedUpdateManyWithoutInstanceInput = {
   qualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   qualityProfileName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  cutoffUnmet?: Prisma.BoolFieldUpdateOperationsInput | boolean
   data?: Prisma.StringFieldUpdateOperationsInput | string
   arrAddedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   arrUpdatedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -942,6 +971,7 @@ export type LibraryCacheSelect<ExtArgs extends runtime.Types.Extensions.Internal
   qualityProfileId?: boolean
   qualityProfileName?: boolean
   sizeOnDisk?: boolean
+  cutoffUnmet?: boolean
   data?: boolean
   arrAddedAt?: boolean
   arrUpdatedAt?: boolean
@@ -965,6 +995,7 @@ export type LibraryCacheSelectCreateManyAndReturn<ExtArgs extends runtime.Types.
   qualityProfileId?: boolean
   qualityProfileName?: boolean
   sizeOnDisk?: boolean
+  cutoffUnmet?: boolean
   data?: boolean
   arrAddedAt?: boolean
   arrUpdatedAt?: boolean
@@ -988,6 +1019,7 @@ export type LibraryCacheSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.
   qualityProfileId?: boolean
   qualityProfileName?: boolean
   sizeOnDisk?: boolean
+  cutoffUnmet?: boolean
   data?: boolean
   arrAddedAt?: boolean
   arrUpdatedAt?: boolean
@@ -1011,6 +1043,7 @@ export type LibraryCacheSelectScalar = {
   qualityProfileId?: boolean
   qualityProfileName?: boolean
   sizeOnDisk?: boolean
+  cutoffUnmet?: boolean
   data?: boolean
   arrAddedAt?: boolean
   arrUpdatedAt?: boolean
@@ -1018,7 +1051,7 @@ export type LibraryCacheSelectScalar = {
   updatedAt?: boolean
 }
 
-export type LibraryCacheOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "arrItemId" | "itemType" | "title" | "titleSlug" | "sortTitle" | "year" | "monitored" | "hasFile" | "status" | "qualityProfileId" | "qualityProfileName" | "sizeOnDisk" | "data" | "arrAddedAt" | "arrUpdatedAt" | "cachedAt" | "updatedAt", ExtArgs["result"]["libraryCache"]>
+export type LibraryCacheOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "arrItemId" | "itemType" | "title" | "titleSlug" | "sortTitle" | "year" | "monitored" | "hasFile" | "status" | "qualityProfileId" | "qualityProfileName" | "sizeOnDisk" | "cutoffUnmet" | "data" | "arrAddedAt" | "arrUpdatedAt" | "cachedAt" | "updatedAt", ExtArgs["result"]["libraryCache"]>
 export type LibraryCacheInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }
@@ -1049,6 +1082,7 @@ export type $LibraryCachePayload<ExtArgs extends runtime.Types.Extensions.Intern
     qualityProfileId: number | null
     qualityProfileName: string | null
     sizeOnDisk: bigint
+    cutoffUnmet: boolean
     data: string
     arrAddedAt: Date | null
     arrUpdatedAt: Date | null
@@ -1492,6 +1526,7 @@ export interface LibraryCacheFieldRefs {
   readonly qualityProfileId: Prisma.FieldRef<"LibraryCache", 'Int'>
   readonly qualityProfileName: Prisma.FieldRef<"LibraryCache", 'String'>
   readonly sizeOnDisk: Prisma.FieldRef<"LibraryCache", 'BigInt'>
+  readonly cutoffUnmet: Prisma.FieldRef<"LibraryCache", 'Boolean'>
   readonly data: Prisma.FieldRef<"LibraryCache", 'String'>
   readonly arrAddedAt: Prisma.FieldRef<"LibraryCache", 'DateTime'>
   readonly arrUpdatedAt: Prisma.FieldRef<"LibraryCache", 'DateTime'>

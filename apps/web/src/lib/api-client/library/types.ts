@@ -10,6 +10,7 @@ export interface LibraryQueryParams {
 	search?: string;
 	monitored?: "true" | "false" | "all";
 	hasFile?: "true" | "false" | "all";
+	cutoffUnmet?: "true" | "false" | "all";
 	status?: string;
 	qualityProfileId?: number;
 	yearMin?: number;

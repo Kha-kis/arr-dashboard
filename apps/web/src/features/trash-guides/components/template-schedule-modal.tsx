@@ -1,10 +1,22 @@
 "use client";
 
-import { AlertCircle, Bell, Calendar, Check, Clock, Loader2, Power, X, Zap } from "lucide-react";
+import {
+	AlertCircle,
+	Bell,
+	Calendar,
+	Check,
+	Clock,
+	Loader2,
+	Power,
+	Trash2,
+	X,
+	Zap,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 interface TemplateScheduleModalProps {
@@ -18,6 +30,8 @@ interface TemplateScheduleModalProps {
 		enabled: boolean;
 		autoApply: boolean;
 		notifyUser: boolean;
+		lastRunAt?: string | null;
+		nextRunAt?: string | null;
 	} | null;
 	onSave: (schedule: {
 		frequency: "DAILY" | "WEEKLY" | "MONTHLY";
@@ -25,6 +39,7 @@ interface TemplateScheduleModalProps {
 		autoApply: boolean;
 		notifyUser: boolean;
 	}) => Promise<void>;
+	onDelete?: () => Promise<void>;
 }
 
 const frequencyOptions = [
@@ -49,7 +64,10 @@ export const TemplateScheduleModal = ({
 	instanceName,
 	existingSchedule,
 	onSave,
+	onDelete,
 }: TemplateScheduleModalProps) => {
+	const [incognitoMode] = useIncognitoMode();
+	const displayInstanceName = incognitoMode ? getLinuxInstanceName(instanceName) : instanceName;
 	const [frequency, setFrequency] = useState<"DAILY" | "WEEKLY" | "MONTHLY">(
 		existingSchedule?.frequency || "WEEKLY",
 	);
@@ -57,6 +75,8 @@ export const TemplateScheduleModal = ({
 	const [autoApply, setAutoApply] = useState(existingSchedule?.autoApply ?? false);
 	const [notifyUser, setNotifyUser] = useState(existingSchedule?.notifyUser ?? true);
 	const [isSaving, setIsSaving] = useState(false);
+	const [isDeleting, setIsDeleting] = useState(false);
+	const [confirmingDelete, setConfirmingDelete] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
 	const { gradient: themeGradient } = useThemeGradient();
@@ -125,6 +145,31 @@ export const TemplateScheduleModal = ({
 			document.removeEventListener("keydown", handleKeyDown);
 		};
 	}, [open, onClose]);
+
+	// Auto-reset delete confirmation
+	useEffect(() => {
+		if (!confirmingDelete) return;
+		const timer = setTimeout(() => setConfirmingDelete(false), 3000);
+		return () => clearTimeout(timer);
+	}, [confirmingDelete]);
+
+	const handleDelete = async () => {
+		if (!confirmingDelete) {
+			setConfirmingDelete(true);
+			return;
+		}
+		setIsDeleting(true);
+		setError(null);
+		try {
+			await onDelete?.();
+			onClose();
+		} catch (err) {
+			setError(getErrorMessage(err, "Failed to remove schedule."));
+		} finally {
+			setIsDeleting(false);
+			setConfirmingDelete(false);
+		}
+	};
 
 	const handleSave = async () => {
 		setIsSaving(true);
@@ -210,7 +255,7 @@ export const TemplateScheduleModal = ({
 								{existingSchedule ? "Edit Sync Schedule" : "Create Sync Schedule"}
 							</h2>
 							<p className="text-sm text-muted-foreground">
-								Automatically sync &quot;{templateName}&quot; to {instanceName}
+								Automatically sync &quot;{templateName}&quot; to {displayInstanceName}
 							</p>
 						</div>
 					</div>
@@ -218,6 +263,24 @@ export const TemplateScheduleModal = ({
 
 				{/* Content */}
 				<div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
+					{/* Schedule Status — shown when editing an existing schedule */}
+					{existingSchedule && (existingSchedule.nextRunAt || existingSchedule.lastRunAt) && (
+						<div className="flex items-center gap-4 rounded-xl border border-border/30 bg-muted/10 px-4 py-3 text-xs text-muted-foreground">
+							{existingSchedule.lastRunAt && (
+								<span className="flex items-center gap-1.5">
+									<Check className="h-3 w-3" style={{ color: SEMANTIC_COLORS.success.from }} />
+									Last run: {new Date(existingSchedule.lastRunAt).toLocaleString()}
+								</span>
+							)}
+							{existingSchedule.nextRunAt && existingSchedule.enabled !== false && (
+								<span className="flex items-center gap-1.5">
+									<Clock className="h-3 w-3" style={{ color: themeGradient.from }} />
+									Next run: {new Date(existingSchedule.nextRunAt).toLocaleString()}
+								</span>
+							)}
+						</div>
+					)}
+
 					{/* Error Alert */}
 					{error && (
 						<div
@@ -354,7 +417,7 @@ export const TemplateScheduleModal = ({
 								<div>
 									<span className="text-sm font-medium text-foreground">Auto-Apply Changes</span>
 									<p className="text-xs text-muted-foreground mt-0.5">
-										Automatically deploy changes to {instanceName} without manual approval
+										Automatically deploy changes to {displayInstanceName} without manual approval
 									</p>
 								</div>
 							</div>
@@ -465,7 +528,33 @@ export const TemplateScheduleModal = ({
 				</div>
 
 				{/* Footer */}
-				<div className="flex justify-end gap-3 border-t border-border/30 p-6">
+				<div className="flex justify-between border-t border-border/30 p-6">
+					{/* Delete button — only shown when editing */}
+					<div>
+						{existingSchedule && onDelete && (
+							<Button
+								variant="danger"
+								onClick={handleDelete}
+								disabled={isSaving || isDeleting}
+								className="gap-2 rounded-xl"
+							>
+								{isDeleting ? (
+									<>
+										<Loader2 className="h-4 w-4 animate-spin" />
+										Removing...
+									</>
+								) : confirmingDelete ? (
+									<span className="text-xs font-medium">Confirm remove?</span>
+								) : (
+									<>
+										<Trash2 className="h-4 w-4" />
+										Remove Schedule
+									</>
+								)}
+							</Button>
+						)}
+					</div>
+					<div className="flex gap-3">
 					<Button variant="outline" onClick={onClose} className="rounded-xl">
 						Cancel
 					</Button>
@@ -490,6 +579,7 @@ export const TemplateScheduleModal = ({
 							</>
 						)}
 					</Button>
+					</div>
 				</div>
 			</div>
 		</div>

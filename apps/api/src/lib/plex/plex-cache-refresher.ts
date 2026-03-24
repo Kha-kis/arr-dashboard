@@ -290,7 +290,7 @@ export async function refreshPlexCache(
 					upsertedIds.push(row.id);
 					upserted++;
 				}
-			} catch (error) {
+			} catch (_error) {
 				// If a batch fails, fall back to individual upserts for that chunk
 				for (const agg of chunk) {
 					try {

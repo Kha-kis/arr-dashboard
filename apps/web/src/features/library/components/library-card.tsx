@@ -9,6 +9,7 @@
 import type { LibraryItem } from "@arr/shared";
 import {
 	AlertTriangle,
+	ArrowUpCircle,
 	Clock,
 	Eye,
 	ExternalLink,
@@ -459,6 +460,59 @@ export const LibraryCard = memo(function LibraryCard({
 							<StatusBadge status={monitoredStatus}>
 								{monitored ? "Monitored" : "Unmonitored"}
 							</StatusBadge>
+							{item.cutoffUnmet && (
+								<>
+									<StatusBadge status="warning">Cutoff Unmet</StatusBadge>
+									{item.service === "radarr" && onSearchMovie && (
+										<button
+											type="button"
+											onClick={(e) => {
+												e.stopPropagation();
+												onSearchMovie(item);
+											}}
+											disabled={movieSearchPending}
+											className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold transition-colors"
+											style={{
+												backgroundColor: SEMANTIC_COLORS.warning.bg,
+												border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
+												color: SEMANTIC_COLORS.warning.text,
+											}}
+											title="Search for a higher quality version"
+										>
+											{movieSearchPending ? (
+												<Loader2 className="h-3 w-3 animate-spin" />
+											) : (
+												<ArrowUpCircle className="h-3 w-3" />
+											)}
+											Upgrade
+										</button>
+									)}
+									{item.service === "sonarr" && onSearchSeries && (
+										<button
+											type="button"
+											onClick={(e) => {
+												e.stopPropagation();
+												onSearchSeries(item);
+											}}
+											disabled={seriesSearchPending}
+											className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold transition-colors"
+											style={{
+												backgroundColor: SEMANTIC_COLORS.warning.bg,
+												border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
+												color: SEMANTIC_COLORS.warning.text,
+											}}
+											title="Search for higher quality episodes"
+										>
+											{seriesSearchPending ? (
+												<Loader2 className="h-3 w-3 animate-spin" />
+											) : (
+												<ArrowUpCircle className="h-3 w-3" />
+											)}
+											Upgrade
+										</button>
+									)}
+								</>
+							)}
 							{typeof tmdbRating === "number" && tmdbRating > 0 && (
 								<span
 									className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold"

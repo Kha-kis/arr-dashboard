@@ -1,6 +1,7 @@
 "use client";
 
 import { Loader2, Tag, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Button } from "../../../components/ui/button";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
@@ -36,6 +37,22 @@ export const TagListItem = ({
 	animationDelay = 0,
 }: TagListItemProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
+	const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+	useEffect(() => {
+		if (!confirmingDelete) return;
+		const timer = setTimeout(() => setConfirmingDelete(false), 3000);
+		return () => clearTimeout(timer);
+	}, [confirmingDelete]);
+
+	const handleRemove = () => {
+		if (confirmingDelete) {
+			onRemove(id);
+			setConfirmingDelete(false);
+		} else {
+			setConfirmingDelete(true);
+		}
+	};
 
 	return (
 		<li
@@ -60,17 +77,23 @@ export const TagListItem = ({
 			<Button
 				variant="ghost"
 				size="sm"
-				onClick={() => onRemove(id)}
+				onClick={handleRemove}
 				disabled={isPending}
-				aria-label={`Remove ${name}`}
-				className="gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+				aria-label={confirmingDelete ? `Confirm remove ${name}` : `Remove ${name}`}
+				className={`gap-1.5 transition-opacity ${
+					confirmingDelete
+						? "opacity-100 text-red-400"
+						: "opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive"
+				}`}
 			>
 				{isPending ? (
 					<Loader2 className="h-3.5 w-3.5 animate-spin" />
+				) : confirmingDelete ? (
+					<span className="text-xs font-medium">Confirm?</span>
 				) : (
 					<X className="h-3.5 w-3.5" />
 				)}
-				<span className="hidden sm:inline">Remove</span>
+				{!confirmingDelete && <span className="hidden sm:inline">Remove</span>}
 			</Button>
 		</li>
 	);

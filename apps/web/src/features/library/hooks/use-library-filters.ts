@@ -21,6 +21,12 @@ export const FILE_FILTERS = [
 	{ value: "missing", label: "Missing file" },
 ] as const;
 
+export const QUALITY_FILTERS = [
+	{ value: "all", label: "All quality" },
+	{ value: "cutoff-unmet", label: "Cutoff unmet" },
+	{ value: "cutoff-met", label: "Cutoff met" },
+] as const;
+
 /**
  * Sort options for library items
  */
@@ -33,6 +39,7 @@ export const SORT_OPTIONS = [
 
 export type StatusFilterValue = (typeof STATUS_FILTERS)[number]["value"];
 export type FileFilterValue = (typeof FILE_FILTERS)[number]["value"];
+export type QualityFilterValue = (typeof QUALITY_FILTERS)[number]["value"];
 export type SortByValue = (typeof SORT_OPTIONS)[number]["value"];
 export type SortOrderValue = "asc" | "desc";
 
@@ -52,6 +59,8 @@ export interface LibraryFilters {
 	setStatusFilter: (value: StatusFilterValue) => void;
 	fileFilter: FileFilterValue;
 	setFileFilter: (value: FileFilterValue) => void;
+	qualityFilter: QualityFilterValue;
+	setQualityFilter: (value: QualityFilterValue) => void;
 
 	// Sorting
 	sortBy: SortByValue;
@@ -92,6 +101,7 @@ export function useLibraryFilters(): LibraryFilters {
 	const [searchTerm, setSearchTermState] = useState("");
 	const [statusFilter, setStatusFilterState] = useState<StatusFilterValue>("all");
 	const [fileFilter, setFileFilterState] = useState<FileFilterValue>("all");
+	const [qualityFilter, setQualityFilterState] = useState<QualityFilterValue>("all");
 	const [sortBy, setSortByState] = useState<SortByValue>("sortTitle");
 	const [sortOrder, setSortOrderState] = useState<SortOrderValue>("asc");
 	const [page, setPage] = useState(1);
@@ -123,6 +133,11 @@ export function useLibraryFilters(): LibraryFilters {
 		setPage(1);
 	}, []);
 
+	const setQualityFilter = useCallback((value: QualityFilterValue) => {
+		setQualityFilterState(value);
+		setPage(1);
+	}, []);
+
 	const setSortBy = useCallback((value: SortByValue) => {
 		setSortByState(value);
 		setPage(1);
@@ -144,6 +159,7 @@ export function useLibraryFilters(): LibraryFilters {
 		setSearchTermState("");
 		setStatusFilterState("all");
 		setFileFilterState("all");
+		setQualityFilterState("all");
 		setSortByState("sortTitle");
 		setSortOrderState("asc");
 		setPage(1);
@@ -165,6 +181,8 @@ export function useLibraryFilters(): LibraryFilters {
 		setStatusFilter,
 		fileFilter,
 		setFileFilter,
+		qualityFilter,
+		setQualityFilter,
 		sortBy,
 		setSortBy,
 		sortOrder,

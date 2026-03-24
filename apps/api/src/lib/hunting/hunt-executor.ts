@@ -18,7 +18,12 @@ import type { QueueCapableClient } from "../arr/client-factory.js";
 import { delay } from "../utils/delay.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { SEARCH_DELAY_MS, SEASON_SEARCH_THRESHOLD } from "./constants.js";
-import { detectGrabbedItemsFromHistoryWithSdk, type GrabbedItem } from "./grab-detector.js";
+import {
+	detectGrabbedItemsFromHistoryWithSdk,
+	detectLidarrGrabbedItems,
+	detectReadarrGrabbedItems,
+	type GrabbedItem,
+} from "./grab-detector.js";
 import {
 	type HuntLogger,
 	type HuntService,
@@ -993,6 +998,8 @@ async function executeLidarrHuntWithSdk(
 			return `${artistName} - ${album.title}`;
 		});
 
+		const searchStartTime = new Date();
+		const searchedAlbumIds: number[] = [];
 		let searchErrors = 0;
 		for (let i = 0; i < albumsToSearch.length; i++) {
 			const album = albumsToSearch[i];
@@ -1008,6 +1015,7 @@ async function executeLidarrHuntWithSdk(
 					name: "AlbumSearch",
 					albumIds: [album.id],
 				});
+				searchedAlbumIds.push(album.id);
 			} catch (error) {
 				searchErrors++;
 				logger.error({ err: error, title: album.title }, "Failed to execute album search");
@@ -1029,15 +1037,25 @@ async function executeLidarrHuntWithSdk(
 			}),
 		);
 
+		const grabResult = await detectLidarrGrabbedItems(
+			client,
+			searchStartTime,
+			searchedAlbumIds,
+			counter,
+			logger,
+		);
+
+		const grabSummary = grabResult.items.length > 0 ? ` - ${grabResult.items.length} grabbed` : "";
 		const errorSummary = searchErrors > 0 ? ` (${searchErrors} search errors)` : "";
 
 		return {
 			itemsSearched: albumsToSearch.length - searchErrors,
-			itemsGrabbed: 0, // Grab detection not implemented for Lidarr yet
+			itemsGrabbed: grabResult.items.length,
 			searchedItems: searchedItemNames,
-			grabbedItems: [],
-			message: `Triggered search for ${albumsToSearch.length} albums${errorSummary}`,
+			grabbedItems: grabResult.items,
+			message: `Triggered search for ${albumsToSearch.length} albums${grabSummary}${errorSummary}`,
 			status: searchErrors > 0 ? "partial" : "completed",
+			...(grabResult.failed && { grabDetectionFailed: true }),
 		};
 	} catch (error) {
 		const message = getErrorMessage(error, "Unknown error");
@@ -1216,6 +1234,8 @@ async function executeReadarrHuntWithSdk(
 			return `${authorName} - ${book.title}`;
 		});
 
+		const searchStartTime = new Date();
+		const searchedBookIds: number[] = [];
 		let searchErrors = 0;
 		for (let i = 0; i < booksToSearch.length; i++) {
 			const book = booksToSearch[i];
@@ -1231,6 +1251,7 @@ async function executeReadarrHuntWithSdk(
 					name: "BookSearch",
 					bookIds: [book.id],
 				});
+				searchedBookIds.push(book.id);
 			} catch (error) {
 				searchErrors++;
 				logger.error({ err: error, title: book.title }, "Failed to execute book search");
@@ -1252,15 +1273,25 @@ async function executeReadarrHuntWithSdk(
 			}),
 		);
 
+		const grabResult = await detectReadarrGrabbedItems(
+			client,
+			searchStartTime,
+			searchedBookIds,
+			counter,
+			logger,
+		);
+
+		const grabSummary = grabResult.items.length > 0 ? ` - ${grabResult.items.length} grabbed` : "";
 		const errorSummary = searchErrors > 0 ? ` (${searchErrors} search errors)` : "";
 
 		return {
 			itemsSearched: booksToSearch.length - searchErrors,
-			itemsGrabbed: 0, // Grab detection not implemented for Readarr yet
+			itemsGrabbed: grabResult.items.length,
 			searchedItems: searchedItemNames,
-			grabbedItems: [],
-			message: `Triggered search for ${booksToSearch.length} books${errorSummary}`,
+			grabbedItems: grabResult.items,
+			message: `Triggered search for ${booksToSearch.length} books${grabSummary}${errorSummary}`,
 			status: searchErrors > 0 ? "partial" : "completed",
+			...(grabResult.failed && { grabDetectionFailed: true }),
 		};
 	} catch (error) {
 		const message = getErrorMessage(error, "Unknown error");

@@ -4,10 +4,50 @@
  * Enhanced template export/import with validation and metadata
  */
 
-import type { TemplateExportOptions, TemplateImportOptions } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
+import { z } from "zod";
 import { createEnhancedTemplateService } from "../../lib/trash-guides/enhanced-template-service.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
+import { validateRequest } from "../../lib/utils/validate.js";
+
+// ============================================================================
+// Validation Schemas
+// ============================================================================
+
+const templateExportBodySchema = z.object({
+	templateId: z.string().min(1),
+	options: z
+		.object({
+			includeQualitySettings: z.boolean().optional(),
+			includeCustomConditions: z.boolean().optional(),
+			includeMetadata: z.boolean().optional(),
+			author: z.string().optional(),
+			tags: z.array(z.string()).optional(),
+			category: z.enum(["anime", "movies", "tv", "remux", "web", "general"]).optional(),
+			notes: z.string().optional(),
+		})
+		.optional(),
+});
+
+const templateJsonBodySchema = z.object({
+	jsonData: z.string().min(1, "JSON data is required"),
+});
+
+const templateImportBodySchema = z.object({
+	jsonData: z.string().min(1, "JSON data is required"),
+	options: z
+		.object({
+			onNameConflict: z.enum(["rename", "replace", "cancel"]).optional(),
+			onCustomFormatConflict: z.enum(["merge", "replace", "skip"]).optional(),
+			onQualityProfileConflict: z.enum(["merge", "replace", "skip"]).optional(),
+			includeQualitySettings: z.boolean().optional(),
+			includeCustomConditions: z.boolean().optional(),
+			includeMetadata: z.boolean().optional(),
+			strictValidation: z.boolean().optional(),
+			allowPartialImport: z.boolean().optional(),
+		})
+		.optional(),
+});
 
 // ============================================================================
 // Routes
@@ -20,10 +60,7 @@ const templateSharingRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 */
 	app.post("/export", async (request, reply) => {
 		const userId = request.currentUser!.id; // preHandler guarantees auth
-		const { templateId, options } = request.body as {
-			templateId: string;
-			options?: TemplateExportOptions;
-		};
+		const { templateId, options } = validateRequest(templateExportBodySchema, request.body);
 
 		const service = createEnhancedTemplateService(app.prisma);
 		const jsonData = await service.exportTemplateEnhanced(templateId, userId, options || {});
@@ -57,7 +94,7 @@ const templateSharingRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 */
 	app.post("/validate", async (request, reply) => {
 		const userId = request.currentUser!.id; // preHandler guarantees auth
-		const { jsonData } = request.body as { jsonData: string };
+		const { jsonData } = validateRequest(templateJsonBodySchema, request.body);
 
 		const service = createEnhancedTemplateService(app.prisma);
 		const result = await service.validateTemplateImport(userId, jsonData);
@@ -74,10 +111,7 @@ const templateSharingRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 */
 	app.post("/import", async (request, reply) => {
 		const userId = request.currentUser!.id; // preHandler guarantees auth
-		const { jsonData, options } = request.body as {
-			jsonData: string;
-			options?: TemplateImportOptions;
-		};
+		const { jsonData, options } = validateRequest(templateImportBodySchema, request.body);
 
 		const service = createEnhancedTemplateService(app.prisma);
 		const result = await service.importTemplateEnhanced(userId, jsonData, options || {});
@@ -105,7 +139,7 @@ const templateSharingRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 */
 	app.post("/preview", async (request, reply) => {
 		const userId = request.currentUser!.id; // preHandler guarantees auth
-		const { jsonData } = request.body as { jsonData: string };
+		const { jsonData } = validateRequest(templateJsonBodySchema, request.body);
 
 		// Parse JSON data
 		let data: unknown;

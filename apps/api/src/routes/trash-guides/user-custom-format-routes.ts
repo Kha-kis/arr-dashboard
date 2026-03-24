@@ -16,6 +16,12 @@ import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
+import { z } from "zod";
+
+const deployUserCFsSchema = z.object({
+	userCFIds: z.array(z.string()).min(1, "At least one user CF ID is required"),
+	instanceId: z.string().min(1, "Instance ID is required"),
+});
 
 // ============================================================================
 // Helper Functions
@@ -376,21 +382,9 @@ export async function registerUserCustomFormatRoutes(
 	 * POST /user-custom-formats/deploy
 	 * Deploy user custom formats to an instance
 	 */
-	app.post<{
-		Body: {
-			userCFIds: string[];
-			instanceId: string;
-		};
-	}>("/deploy", async (request, reply) => {
+	app.post("/deploy", async (request, reply) => {
 		const userId = request.currentUser!.id;
-		const { userCFIds, instanceId } = request.body as { userCFIds: string[]; instanceId: string };
-
-		if (!userCFIds?.length || !instanceId) {
-			return reply.status(400).send({
-				error: "VALIDATION_ERROR",
-				message: "userCFIds and instanceId are required",
-			});
-		}
+		const { userCFIds, instanceId } = validateRequest(deployUserCFsSchema, request.body);
 
 		const instance = await requireInstance(app, userId, instanceId);
 

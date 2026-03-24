@@ -767,7 +767,7 @@ export const DashboardClient = () => {
 														? `${enabledServices.length} active service${enabledServices.length !== 1 ? "s" : ""}`
 														: services.length > 0
 															? `${services.length} instance${services.length !== 1 ? "s" : ""} disabled`
-															: "Add your first instance to get started"}
+															: "No instances configured"}
 												</p>
 											)}
 										</div>
@@ -811,8 +811,14 @@ export const DashboardClient = () => {
 														<>
 															<h3 className="text-lg font-medium mb-1">No instances configured</h3>
 															<p className="text-sm text-muted-foreground max-w-sm mx-auto">
-																Add a Sonarr, Radarr, Lidarr, Readarr, or Prowlarr instance from the
-																Settings page to begin monitoring.
+																Add a Sonarr, Radarr, Lidarr, Readarr, or Prowlarr instance from{" "}
+																<Link
+																	href="/settings"
+																	className="underline hover:text-foreground transition-colors"
+																>
+																	Settings
+																</Link>{" "}
+																to begin monitoring.
 															</p>
 														</>
 													)}

@@ -22,7 +22,7 @@ import { getLinuxInstanceName, getLinuxUsername, useIncognitoMode } from "../../
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
 import type { SyncStatus } from "../hooks/use-library-data";
-import type { SortByValue, SortOrderValue } from "../hooks/use-library-filters";
+import type { QualityFilterValue, SortByValue, SortOrderValue } from "../hooks/use-library-filters";
 
 /**
  * Service filter options for the library
@@ -58,6 +58,12 @@ const FILE_FILTERS = [
 	{ value: "missing", label: "Missing file" },
 ] as const;
 
+const QUALITY_FILTERS = [
+	{ value: "all", label: "All quality" },
+	{ value: "cutoff-unmet", label: "Cutoff unmet" },
+	{ value: "cutoff-met", label: "Cutoff met" },
+] as const;
+
 /**
  * Sort options for the library
  */
@@ -88,6 +94,10 @@ interface LibraryHeaderProps {
 	fileFilter: (typeof FILE_FILTERS)[number]["value"];
 	/** Handler for file filter changes */
 	onFileFilterChange: (value: (typeof FILE_FILTERS)[number]["value"]) => void;
+	/** Currently selected quality filter */
+	qualityFilter: QualityFilterValue;
+	/** Handler for quality filter changes */
+	onQualityFilterChange: (value: QualityFilterValue) => void;
 	/** Current search term */
 	searchTerm: string;
 	/** Handler for search term changes */
@@ -148,6 +158,8 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 	onStatusFilterChange,
 	fileFilter,
 	onFileFilterChange,
+	qualityFilter,
+	onQualityFilterChange,
 	searchTerm,
 	onSearchTermChange,
 	sortBy,
@@ -397,6 +409,19 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 								label: option.label,
 							}))}
 							className="min-w-[130px]"
+						/>
+
+						<FilterSelect
+							label="Quality"
+							value={qualityFilter}
+							onChange={(value) =>
+								onQualityFilterChange(value as QualityFilterValue)
+							}
+							options={QUALITY_FILTERS.map((option) => ({
+								value: option.value,
+								label: option.label,
+							}))}
+							className="min-w-[140px]"
 						/>
 
 						{/* Watched By filter (Plex) */}

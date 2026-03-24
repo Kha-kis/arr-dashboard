@@ -10,13 +10,14 @@ import {
 	type UndeployResponse,
 	undeployDeployment,
 } from "../../lib/api-client/trash-guides";
+import { deploymentHistoryKeys } from "../../lib/query-keys";
 
 /**
  * Hook to fetch all deployment history (global view)
  */
 export function useAllDeploymentHistory(options?: { limit?: number; offset?: number }) {
 	return useQuery<DeploymentHistoryResponse, Error>({
-		queryKey: ["deployment-history", "all", options],
+		queryKey: deploymentHistoryKeys.allHistory(options),
 		queryFn: () => getAllDeploymentHistory(options),
 	});
 }
@@ -29,7 +30,7 @@ export function useTemplateDeploymentHistory(
 	options?: { limit?: number; offset?: number },
 ) {
 	return useQuery<DeploymentHistoryResponse, Error>({
-		queryKey: ["deployment-history", "template", templateId, options],
+		queryKey: deploymentHistoryKeys.template(templateId!, options),
 		queryFn: () => {
 			if (!templateId) throw new Error("Template ID is required");
 			return getTemplateDeploymentHistory(templateId, options);
@@ -46,7 +47,7 @@ export function useInstanceDeploymentHistory(
 	options?: { limit?: number; offset?: number },
 ) {
 	return useQuery<DeploymentHistoryResponse, Error>({
-		queryKey: ["deployment-history", "instance", instanceId, options],
+		queryKey: deploymentHistoryKeys.instance(instanceId!, options),
 		queryFn: () => {
 			if (!instanceId) throw new Error("Instance ID is required");
 			return getInstanceDeploymentHistory(instanceId, options);
@@ -60,7 +61,7 @@ export function useInstanceDeploymentHistory(
  */
 export function useDeploymentHistoryDetail(historyId: string | null) {
 	return useQuery<DeploymentHistoryDetailResponse, Error>({
-		queryKey: ["deployment-history", "detail", historyId],
+		queryKey: deploymentHistoryKeys.detail(historyId!),
 		queryFn: () => {
 			if (!historyId) throw new Error("History ID is required");
 			return getDeploymentHistoryDetail(historyId);
@@ -80,12 +81,12 @@ export function useUndeployDeployment() {
 		onSuccess: (data, historyId) => {
 			// Invalidate deployment history queries to refetch updated data
 			queryClient.invalidateQueries({
-				queryKey: ["deployment-history"],
+				queryKey: deploymentHistoryKeys.all,
 			});
 
 			// Invalidate the specific history detail
 			queryClient.invalidateQueries({
-				queryKey: ["deployment-history", "detail", historyId],
+				queryKey: deploymentHistoryKeys.detail(historyId!),
 			});
 		},
 	});
@@ -102,7 +103,7 @@ export function useDeleteDeploymentHistory() {
 		onSuccess: () => {
 			// Invalidate all deployment history queries to refetch updated data
 			queryClient.invalidateQueries({
-				queryKey: ["deployment-history"],
+				queryKey: deploymentHistoryKeys.all,
 			});
 		},
 	});
@@ -120,14 +121,12 @@ export function useDeploymentHistory(
 	instanceId?: string,
 	options?: { limit?: number; offset?: number },
 ) {
-	// Determine which query to use based on provided IDs
-	const queryType = templateId ? "template" : instanceId ? "instance" : "all";
-	const queryId = templateId || instanceId;
-
-	// Build queryKey conditionally - omit queryId when undefined to match useAllDeploymentHistory
-	const queryKey = queryId
-		? ["deployment-history", queryType, queryId, options]
-		: ["deployment-history", queryType, options];
+	// Build queryKey using centralized key factories
+	const queryKey = templateId
+		? deploymentHistoryKeys.template(templateId, options)
+		: instanceId
+			? deploymentHistoryKeys.instance(instanceId, options)
+			: deploymentHistoryKeys.allHistory(options);
 
 	return useQuery<DeploymentHistoryResponse, Error>({
 		queryKey,

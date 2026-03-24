@@ -22,13 +22,14 @@ import {
 	refreshCache,
 } from "../../lib/api-client/trash-guides";
 import { POLLING_STANDARD } from "../../lib/polling-intervals";
+import { trashCacheKeys } from "../../lib/query-keys";
 
 /**
  * Hook to fetch TRaSH Guides cache status
  */
 export const useTrashCacheStatus = (serviceType?: "RADARR" | "SONARR") =>
 	useQuery<TrashCacheStatusResponse>({
-		queryKey: ["trash-cache-status", serviceType],
+		queryKey: trashCacheKeys.status(serviceType),
 		queryFn: () => fetchCacheStatus(serviceType),
 		staleTime: 5 * 60 * 1000, // 5 minutes
 		refetchOnMount: true,
@@ -39,7 +40,7 @@ export const useTrashCacheStatus = (serviceType?: "RADARR" | "SONARR") =>
  */
 export const useTrashCacheEntries = (serviceType: "RADARR" | "SONARR") =>
 	useQuery<TrashCacheEntry[]>({
-		queryKey: ["trash-cache-entries", serviceType],
+		queryKey: trashCacheKeys.entries(serviceType),
 		queryFn: () => fetchCacheEntries(serviceType),
 		staleTime: 5 * 60 * 1000, // 5 minutes
 	});
@@ -54,8 +55,8 @@ export const useRefreshTrashCache = () => {
 		mutationFn: (payload: RefreshCachePayload) => refreshCache(payload),
 		onSuccess: (_data, variables) => {
 			// Invalidate cache status and entries queries to refetch fresh data
-			void queryClient.invalidateQueries({ queryKey: ["trash-cache-status"] });
-			void queryClient.invalidateQueries({ queryKey: ["trash-cache-entries"] });
+			void queryClient.invalidateQueries({ queryKey: trashCacheKeys.allStatus });
+			void queryClient.invalidateQueries({ queryKey: trashCacheKeys.allEntries });
 			// Also invalidate trash-guides related queries for the specific service type
 			void queryClient.invalidateQueries({
 				queryKey: ["trash-guides", variables.serviceType],
@@ -83,10 +84,10 @@ export const useDeleteTrashCacheEntry = () => {
 			deleteCacheEntry(serviceType, configType),
 		onSuccess: () => {
 			// Invalidate cache status and entries queries to refetch fresh data
-			void queryClient.invalidateQueries({ queryKey: ["trash-cache-status"] });
-			void queryClient.invalidateQueries({ queryKey: ["trash-cache-entries"] });
+			void queryClient.invalidateQueries({ queryKey: trashCacheKeys.allStatus });
+			void queryClient.invalidateQueries({ queryKey: trashCacheKeys.allEntries });
 			// Invalidate CF includes list since it may have been deleted
-			void queryClient.invalidateQueries({ queryKey: ["cf-includes"] });
+			void queryClient.invalidateQueries({ queryKey: trashCacheKeys.cfIncludes });
 		},
 	});
 };
@@ -97,7 +98,7 @@ export const useDeleteTrashCacheEntry = () => {
  */
 export const useGitHubRateLimit = (options?: { enabled?: boolean }) =>
 	useQuery<GitHubRateLimitResponse>({
-		queryKey: ["github-rate-limit"],
+		queryKey: trashCacheKeys.gitHubRateLimit,
 		queryFn: fetchGitHubRateLimit,
 		staleTime: 30 * 1000, // 30 seconds - rate limits change frequently
 		refetchInterval: POLLING_STANDARD,
@@ -110,7 +111,7 @@ export const useGitHubRateLimit = (options?: { enabled?: boolean }) =>
  */
 export const useSyncMetrics = (options?: { enabled?: boolean }) =>
 	useQuery<SyncMetricsSnapshot>({
-		queryKey: ["sync-metrics"],
+		queryKey: trashCacheKeys.syncMetrics,
 		queryFn: fetchSyncMetrics,
 		staleTime: 30 * 1000, // 30 seconds
 		refetchInterval: POLLING_STANDARD,
@@ -123,7 +124,7 @@ export const useSyncMetrics = (options?: { enabled?: boolean }) =>
  */
 export const useCacheHealth = (options?: { enabled?: boolean }) =>
 	useQuery<CacheValidationHealth>({
-		queryKey: ["cache-health"],
+		queryKey: trashCacheKeys.cacheHealth,
 		queryFn: fetchCacheHealth,
 		staleTime: 5 * 60 * 1000, // 5 minutes — only changes on cache refresh
 		enabled: options?.enabled ?? true,

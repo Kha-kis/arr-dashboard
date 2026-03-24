@@ -27,6 +27,76 @@ import {
 import type { TrashCFWithScores } from "../../lib/trash-guides/template-score-utils.js";
 import { createTemplateService } from "../../lib/trash-guides/template-service.js";
 import { findCutoffQualityName } from "../../lib/utils/quality-utils.js";
+import { validateRequest } from "../../lib/utils/validate.js";
+
+// ============================================================================
+// Validation Schemas
+// ============================================================================
+
+import { z } from "zod";
+
+const profileImportSchema = z.object({
+	instanceId: z.string().min(1),
+	profileId: z.number().int(),
+});
+
+const profilePreviewSchema = z.object({
+	instanceId: z.string().min(1),
+	profile: z.object({}).passthrough(),
+	customFormats: z.array(
+		z.object({
+			trash_id: z.string(),
+			score: z.number(),
+		}),
+	),
+});
+
+const profileDeploySchema = profilePreviewSchema.extend({
+	profileName: z.string().min(1),
+	existingProfileId: z.number().int().optional(),
+});
+
+const serviceTypeEnum = z.enum(["RADARR", "SONARR"]);
+
+const validateCfsSchema = z.object({
+	instanceId: z.string().min(1),
+	profileId: z.number().int(),
+	serviceType: serviceTypeEnum,
+});
+
+const matchProfileSchema = z.object({
+	profileName: z.string().min(1),
+	serviceType: serviceTypeEnum,
+});
+
+const createTemplateSchema = z.object({
+	serviceType: serviceTypeEnum,
+	trashId: z.string().min(1),
+	templateName: z.string().min(1),
+	templateDescription: z.string().optional(),
+	customFormatSelections: z.record(
+		z.string(),
+		z.object({
+			selected: z.boolean(),
+			scoreOverride: z.number().optional(),
+			conditionsEnabled: z.record(z.string(), z.boolean()),
+		}),
+	),
+	sourceInstanceId: z.string().min(1),
+	sourceProfileId: z.number().int(),
+	sourceProfileName: z.string(),
+	sourceInstanceLabel: z.string(),
+	profileConfig: z.object({
+		upgradeAllowed: z.boolean(),
+		cutoff: z.number(),
+		minFormatScore: z.number(),
+		cutoffFormatScore: z.number().optional(),
+		items: z.array(z.unknown()).optional(),
+		language: z.unknown().optional(),
+	}),
+	matchedTrashProfileId: z.string().optional(),
+	matchedScoreSet: z.string().optional(),
+});
 
 // ============================================================================
 // Routes
@@ -39,10 +109,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 */
 	app.post("/import", async (request, reply) => {
 		const userId = request.currentUser!.id; // preHandler guarantees auth
-		const { instanceId, profileId } = request.body as {
-			instanceId: string;
-			profileId: number;
-		};
+		const { instanceId, profileId } = validateRequest(profileImportSchema, request.body);
 
 		const profileCloner = createProfileCloner(app.prisma, app.arrClientFactory);
 		const result = await profileCloner.importQualityProfile({
@@ -72,18 +139,14 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 */
 	app.post("/preview", async (request, reply) => {
 		const userId = request.currentUser!.id; // preHandler guarantees auth
-		const { instanceId, profile, customFormats } = request.body as {
-			instanceId: string;
-			profile: CompleteQualityProfile;
-			customFormats: Array<{ trash_id: string; score: number }>;
-		};
+		const validated = validateRequest(profilePreviewSchema, request.body);
 
 		const profileCloner = createProfileCloner(app.prisma, app.arrClientFactory);
 		const result = await profileCloner.previewProfileDeployment(
-			instanceId,
+			validated.instanceId,
 			userId,
-			profile,
-			customFormats,
+			validated.profile as unknown as CompleteQualityProfile,
+			validated.customFormats,
 		);
 
 		if (!result.success) {
@@ -105,23 +168,17 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 */
 	app.post("/deploy", async (request, reply) => {
 		const userId = request.currentUser!.id; // preHandler guarantees auth
-		const { instanceId, profile, customFormats, profileName, existingProfileId } = request.body as {
-			instanceId: string;
-			profile: CompleteQualityProfile;
-			customFormats: Array<{ trash_id: string; score: number }>;
-			profileName: string;
-			existingProfileId?: number;
-		};
+		const validated = validateRequest(profileDeploySchema, request.body);
 
 		const profileCloner = createProfileCloner(app.prisma, app.arrClientFactory);
 		const result = await profileCloner.deployCompleteProfile(
-			instanceId,
+			validated.instanceId,
 			userId,
-			profile,
-			customFormats,
+			validated.profile as unknown as CompleteQualityProfile,
+			validated.customFormats,
 			{
-				profileName,
-				existingProfileId,
+				profileName: validated.profileName,
+				existingProfileId: validated.existingProfileId,
 			},
 		);
 
@@ -277,18 +334,10 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Used when cloning a profile to identify which CFs match TRaSH Guides
 	 */
 	app.post("/validate-cfs", async (request, reply) => {
-		const { instanceId, profileId, serviceType } = request.body as {
-			instanceId: string;
-			profileId: number;
-			serviceType: "RADARR" | "SONARR";
-		};
-
-		if (!instanceId || profileId === undefined || !serviceType) {
-			return reply.status(400).send({
-				success: false,
-				error: "Missing required fields: instanceId, profileId, serviceType",
-			});
-		}
+		const { instanceId, profileId, serviceType } = validateRequest(
+			validateCfsSchema,
+			request.body,
+		);
 
 		const instance = await requireInstance(app, request.currentUser!.id, instanceId);
 
@@ -399,17 +448,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * This helps users identify which CFs are expected to be in a profile based on TRaSH Guides
 	 */
 	app.post("/match-profile", async (request, reply) => {
-		const { profileName, serviceType } = request.body as {
-			profileName: string;
-			serviceType: "RADARR" | "SONARR";
-		};
-
-		if (!profileName || !serviceType) {
-			return reply.status(400).send({
-				success: false,
-				error: "Missing required fields: profileName, serviceType",
-			});
-		}
+		const { profileName, serviceType } = validateRequest(matchProfileSchema, request.body);
 
 		const cacheManager = createCacheManager(app.prisma);
 
@@ -498,36 +537,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			profileConfig,
 			matchedTrashProfileId,
 			matchedScoreSet,
-		} = request.body as {
-			serviceType: "RADARR" | "SONARR";
-			trashId: string;
-			templateName: string;
-			templateDescription?: string;
-			customFormatSelections: Record<
-				string,
-				{
-					selected: boolean;
-					scoreOverride?: number;
-					conditionsEnabled: Record<string, boolean>;
-				}
-			>;
-			sourceInstanceId: string;
-			sourceProfileId: number;
-			sourceProfileName: string;
-			sourceInstanceLabel: string;
-			profileConfig: {
-				upgradeAllowed: boolean;
-				cutoff: number;
-				minFormatScore: number;
-				cutoffFormatScore?: number;
-				items?: unknown[];
-				language?: unknown;
-			};
-			/** TRaSH profile ID if the cloned profile was matched to a TRaSH Guides profile */
-			matchedTrashProfileId?: string;
-			/** Score set from the matched TRaSH profile */
-			matchedScoreSet?: string;
-		};
+		} = validateRequest(createTemplateSchema, request.body);
 
 		// Sanitize optional TRaSH match fields (type-safe since body uses `as` assertion)
 		const safeMatchedTrashProfileId =

@@ -26,6 +26,7 @@ import {
 } from "../../../hooks/api/useTemplates";
 import { useTemplateUpdates } from "../../../hooks/api/useTemplateUpdates";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useTemplateListModals } from "../hooks/use-template-list-modals";
 import { TemplateCardContent } from "./template-card-content";
@@ -83,6 +84,7 @@ export const TemplateList = ({
 	onBrowseQualityProfiles,
 }: TemplateListProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
+	const [incognitoMode] = useIncognitoMode();
 
 	// Search, filter, and sort state
 	const [searchInput, setSearchInput] = useState("");
@@ -667,7 +669,7 @@ export const TemplateList = ({
 							</h3>
 							<p className="text-sm text-muted-foreground">
 								Are you sure you want to unlink template &quot;{modals.unlinkConfirm.templateName}
-								&quot; from instance &quot;{modals.unlinkConfirm.instanceName}&quot;?
+								&quot; from instance &quot;{incognitoMode ? getLinuxInstanceName(modals.unlinkConfirm.instanceName) : modals.unlinkConfirm.instanceName}&quot;?
 							</p>
 							<p className="text-xs text-muted-foreground">
 								This will remove the deployment mapping. Custom Formats already on the instance will

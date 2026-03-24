@@ -18,6 +18,7 @@ import {
 	testCustomRepo,
 	updateTrashSettings,
 } from "../../lib/api-client/trash-guides";
+import { trashCacheKeys, trashGuidesKeys } from "../../lib/query-keys";
 
 /**
  * Schedule delayed cache query invalidations to pick up background population.
@@ -35,8 +36,8 @@ function scheduleCacheRefresh(queryClient: QueryClient): void {
 	for (const delay of CACHE_REFRESH_DELAYS_MS) {
 		pendingTimers.push(
 			setTimeout(() => {
-				void queryClient.invalidateQueries({ queryKey: ["trash-cache-status"] });
-				void queryClient.invalidateQueries({ queryKey: ["trash-cache-entries"] });
+				void queryClient.invalidateQueries({ queryKey: trashCacheKeys.allStatus });
+				void queryClient.invalidateQueries({ queryKey: trashCacheKeys.allEntries });
 			}, delay),
 		);
 	}
@@ -47,7 +48,7 @@ function scheduleCacheRefresh(queryClient: QueryClient): void {
  */
 export function useTrashSettings() {
 	return useQuery<TrashSettingsResponse>({
-		queryKey: ["trash-settings"],
+		queryKey: trashGuidesKeys.settings,
 		queryFn: fetchTrashSettings,
 		staleTime: 5 * 60 * 1000, // 5 minutes
 	});
@@ -63,10 +64,10 @@ export function useUpdateTrashSettings() {
 	return useMutation<UpdateTrashSettingsResponse, Error, UpdateTrashSettingsPayload>({
 		mutationFn: updateTrashSettings,
 		onSuccess: (data) => {
-			void queryClient.invalidateQueries({ queryKey: ["trash-settings"] });
+			void queryClient.invalidateQueries({ queryKey: trashGuidesKeys.settings });
 			if (data.cacheCleared) {
-				void queryClient.invalidateQueries({ queryKey: ["trash-cache-status"] });
-				void queryClient.invalidateQueries({ queryKey: ["trash-cache-entries"] });
+				void queryClient.invalidateQueries({ queryKey: trashCacheKeys.allStatus });
+				void queryClient.invalidateQueries({ queryKey: trashCacheKeys.allEntries });
 				scheduleCacheRefresh(queryClient);
 			}
 		},
@@ -93,9 +94,9 @@ export function useResetToOfficialRepo() {
 	return useMutation<ResetRepoResponse, Error, void>({
 		mutationFn: resetToOfficialRepo,
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["trash-settings"] });
-			void queryClient.invalidateQueries({ queryKey: ["trash-cache-status"] });
-			void queryClient.invalidateQueries({ queryKey: ["trash-cache-entries"] });
+			void queryClient.invalidateQueries({ queryKey: trashGuidesKeys.settings });
+			void queryClient.invalidateQueries({ queryKey: trashCacheKeys.allStatus });
+			void queryClient.invalidateQueries({ queryKey: trashCacheKeys.allEntries });
 			scheduleCacheRefresh(queryClient);
 		},
 	});
@@ -107,7 +108,7 @@ export function useResetToOfficialRepo() {
  */
 export function useSupplementaryReport(serviceType: "RADARR" | "SONARR", enabled: boolean) {
 	return useQuery<SupplementaryReportResponse>({
-		queryKey: ["supplementary-report", serviceType],
+		queryKey: trashGuidesKeys.supplementaryReport(serviceType),
 		queryFn: () => fetchSupplementaryReport(serviceType),
 		enabled,
 		staleTime: 10 * 60 * 1000, // 10 minutes — GitHub data changes infrequently

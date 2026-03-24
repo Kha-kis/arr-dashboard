@@ -9,7 +9,12 @@ import {
 	type PromoteOverridePayload,
 	promoteOverrideToTemplate,
 } from "../../lib/api-client/trash-guides";
-import { TEMPLATES_QUERY_KEY } from "./useTemplates";
+import {
+	TEMPLATES_QUERY_KEY,
+	bulkScoreKeys,
+	qualityProfileKeys,
+	trashGuidesKeys,
+} from "../../lib/query-keys";
 
 /**
  * Hook to fetch quality profile score overrides for an instance
@@ -19,7 +24,7 @@ export function useQualityProfileOverrides(
 	qualityProfileId: number | null,
 ) {
 	return useQuery<GetOverridesResponse>({
-		queryKey: ["quality-profile-overrides", instanceId, qualityProfileId],
+		queryKey: qualityProfileKeys.overrides(instanceId!, qualityProfileId!),
 		queryFn: () => getQualityProfileOverrides(instanceId!, qualityProfileId!),
 		enabled: !!instanceId && !!qualityProfileId,
 		staleTime: 30 * 1000, // 30 seconds (refresh frequently to show latest changes)
@@ -45,7 +50,7 @@ export function usePromoteOverride() {
 		onSuccess: (_, variables) => {
 			// Invalidate override queries for this profile
 			queryClient.invalidateQueries({
-				queryKey: ["quality-profile-overrides", variables.instanceId, variables.qualityProfileId],
+				queryKey: qualityProfileKeys.overrides(variables.instanceId, variables.qualityProfileId),
 			});
 			// Invalidate templates query (template was updated)
 			queryClient.invalidateQueries({
@@ -53,7 +58,7 @@ export function usePromoteOverride() {
 			});
 			// Invalidate specific template
 			queryClient.invalidateQueries({
-				queryKey: ["trash-guides", "template", variables.payload.templateId],
+				queryKey: trashGuidesKeys.templates.detail(variables.payload.templateId),
 			});
 		},
 	});
@@ -78,11 +83,11 @@ export function useDeleteOverride() {
 		onSuccess: (data, variables) => {
 			// Invalidate override queries for this profile
 			queryClient.invalidateQueries({
-				queryKey: ["quality-profile-overrides", variables.instanceId, variables.qualityProfileId],
+				queryKey: qualityProfileKeys.overrides(variables.instanceId, variables.qualityProfileId),
 			});
 			// Invalidate bulk-scores query used by bulk score manager
 			queryClient.invalidateQueries({
-				queryKey: ["bulk-scores"],
+				queryKey: bulkScoreKeys.all,
 			});
 			// Show success toast if message is provided
 			if (data.message) {
@@ -117,11 +122,11 @@ export function useBulkDeleteOverrides() {
 		onSuccess: (data, variables) => {
 			// Invalidate override queries for this profile
 			queryClient.invalidateQueries({
-				queryKey: ["quality-profile-overrides", variables.instanceId, variables.qualityProfileId],
+				queryKey: qualityProfileKeys.overrides(variables.instanceId, variables.qualityProfileId),
 			});
 			// Invalidate bulk-scores query used by bulk score manager
 			queryClient.invalidateQueries({
-				queryKey: ["bulk-scores"],
+				queryKey: bulkScoreKeys.all,
 			});
 			// Show success toast if message is provided
 			if (data.message) {

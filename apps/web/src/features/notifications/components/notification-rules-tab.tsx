@@ -1,7 +1,8 @@
 "use client";
 
-import { ChevronDown, ChevronUp, Loader2, Minus, Plus, Shield, Trash2 } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronUp, Loader2, Minus, Plus, Shield, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import type { RuleCondition } from "@arr/shared";
 import {
 	GradientButton,
@@ -17,6 +18,7 @@ import {
 	useUpdateRule,
 } from "../../../hooks/api/useNotifications";
 import type { NotificationRuleResponse } from "../../../lib/api-client/notifications";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 const ACTION_LABELS: Record<string, string> = {
 	suppress: "Suppress",
@@ -69,7 +71,7 @@ function conditionsFromRule(rule: NotificationRuleResponse): RuleCondition[] {
 
 export function NotificationRulesTab() {
 	const { gradient } = useThemeGradient();
-	const { data: rules = [], isLoading } = useNotificationRules();
+	const { data: rules = [], isLoading, isError } = useNotificationRules();
 	const { data: channels = [] } = useNotificationChannels();
 	const createRule = useCreateRule();
 	const updateRule = useUpdateRule();
@@ -118,10 +120,11 @@ export function NotificationRulesTab() {
 		if (payload.conditions.length === 0) return;
 		if (!payload.name) return;
 
+		const errorHandler = { onError: (err: Error) => toast.error(getErrorMessage(err, "Failed to save rule")) };
 		if (editingRule) {
-			updateRule.mutate({ id: editingRule.id, data: payload }, { onSuccess: cancelForm });
+			updateRule.mutate({ id: editingRule.id, data: payload }, { onSuccess: cancelForm, ...errorHandler });
 		} else {
-			createRule.mutate(payload, { onSuccess: cancelForm });
+			createRule.mutate(payload, { onSuccess: cancelForm, ...errorHandler });
 		}
 	};
 
@@ -157,7 +160,9 @@ export function NotificationRulesTab() {
 
 	const handleDelete = (id: string) => {
 		if (confirmDeleteId === id) {
-			deleteRule.mutate(id);
+			deleteRule.mutate(id, {
+				onError: (err) => toast.error(getErrorMessage(err, "Failed to delete rule")),
+			});
 			setConfirmDeleteId(null);
 		} else {
 			setConfirmDeleteId(id);
@@ -166,7 +171,10 @@ export function NotificationRulesTab() {
 	};
 
 	const toggleEnabled = (rule: NotificationRuleResponse) => {
-		updateRule.mutate({ id: rule.id, data: { enabled: !rule.enabled } });
+		updateRule.mutate(
+			{ id: rule.id, data: { enabled: !rule.enabled } },
+			{ onError: (err) => toast.error(getErrorMessage(err, "Failed to update rule")) },
+		);
 	};
 
 	const isSaving = createRule.isPending || updateRule.isPending;
@@ -177,6 +185,15 @@ export function NotificationRulesTab() {
 		return (
 			<div className="flex items-center justify-center py-12">
 				<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+			</div>
+		);
+	}
+
+	if (isError) {
+		return (
+			<div className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
+				<AlertTriangle className="h-6 w-6" />
+				<p className="text-sm">Failed to load notification rules. Please try refreshing the page.</p>
 			</div>
 		);
 	}

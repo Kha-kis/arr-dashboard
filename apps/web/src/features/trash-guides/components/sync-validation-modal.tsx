@@ -13,6 +13,7 @@
  */
 
 import { Info, Loader2, RefreshCw, X } from "lucide-react";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui";
 import { useValidateSync } from "../../../hooks/api/useSync";
@@ -66,6 +67,8 @@ export const SyncValidationModal = ({
 	onSwitchToManualSync,
 }: SyncValidationModalProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
+	const [incognitoMode] = useIncognitoMode();
+	const displayInstanceName = incognitoMode ? getLinuxInstanceName(instanceName) : instanceName;
 	const [resolutions, setResolutions] = useState<Record<string, "REPLACE" | "SKIP">>({});
 	const [validation, setValidation] = useState<ValidationResult | null>(null);
 	const [retryCount, setRetryCount] = useState(0);
@@ -347,7 +350,7 @@ export const SyncValidationModal = ({
 							</h2>
 							<p className="mt-1 text-sm text-muted-foreground">
 								Template: <span className="font-medium text-foreground">{templateName}</span> →
-								Instance: <span className="font-medium text-foreground">{instanceName}</span>
+								Instance: <span className="font-medium text-foreground">{displayInstanceName}</span>
 							</p>
 						</div>
 					</div>
