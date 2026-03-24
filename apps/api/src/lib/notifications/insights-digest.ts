@@ -112,7 +112,7 @@ export class InsightsDigestScheduler {
 		this.notifyFn!({
 			eventType: "LIBRARY_INSIGHT_WATCHED_MONITORED",
 			title: `${items.length} watched item${items.length !== 1 ? "s" : ""} still monitored`,
-			body: `These items have been watched but are still monitored, using indexer searches for upgrades:\n${itemList}${moreText}`,
+			body: `These items have been watched but are still being monitored for new downloads:\n${itemList}${moreText}`,
 			url: "/library?insight=watched-monitored",
 			metadata: { count: items.length, signal: "watched_monitored" },
 		}).catch((err) => {

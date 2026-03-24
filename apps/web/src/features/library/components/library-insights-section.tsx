@@ -81,7 +81,7 @@ export function LibraryInsightsSection() {
 				)}
 			</div>
 			{priorityCue && (
-				<p className="text-xs text-muted-foreground/50 -mt-1 ml-6 italic">{priorityCue}</p>
+				<p className="text-xs text-muted-foreground/70 -mt-1 ml-6 italic">{priorityCue}</p>
 			)}
 
 			{/* Panels — ordered by priority: requests > monitoring > storage */}

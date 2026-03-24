@@ -102,7 +102,7 @@ export function DiskWastePanel({
 					</div>
 					<div>
 						<span className="text-sm font-medium text-foreground">
-							Top {items.length} unwatched item{items.length !== 1 ? "s" : ""} using{" "}
+							{items.length} unwatched item{items.length !== 1 ? "s" : ""} using{" "}
 							{formatSize(totalWasted)}
 						</span>
 						{!hasPlexData && (
