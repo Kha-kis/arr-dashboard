@@ -25,7 +25,12 @@ Assess the current branch for merge/release readiness.
    - Are there TODO comments introduced in this branch?
    - Are there uncommitted changes that should be staged?
 
-6. **Recommendation**:
+6. **Trust check** (if applicable):
+   - Check if changed files include new pages (`app/*/page.tsx`), new API routes, or new feature panels
+   - If yes: run `/trust-check` on the affected files (privacy, ownership, signal accuracy, service gating, action links, overlap)
+   - If no: skip — not needed for bug fixes, dependency updates, or refactors
+
+7. **Recommendation**:
    - Safe to merge? Yes/No with reasoning
    - If no: list specific blockers
    - If yes: recommended merge strategy (squash vs merge) and any post-merge actions needed
