@@ -47,6 +47,7 @@ import { registerServiceRoutes } from "./routes/services.js";
 import { registerSystemRoutes } from "./routes/system.js";
 import { registerTrashGuidesRoutes } from "./routes/trash-guides/index.js";
 import { registerPlexRoutes } from "./routes/plex/index.js";
+import { registerPulseRoutes } from "./routes/pulse.js";
 import { registerTautulliRoutes } from "./routes/tautulli/index.js";
 import { logger } from "./lib/logger.js";
 
@@ -251,6 +252,7 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 		api.register(registerNotificationRoutes, { prefix: "/api/notifications" });
 		api.register(registerLibraryCleanupRoutes, { prefix: "/api" });
 		api.register(registerPlexRoutes, { prefix: "/api/plex" });
+		api.register(registerPulseRoutes, { prefix: "/api" });
 		api.register(registerTautulliRoutes, { prefix: "/api/tautulli" });
 	});
 
