@@ -321,6 +321,8 @@ interface CleanupRuleDialogProps {
 	onOpenChange: (open: boolean) => void;
 	/** When set, dialog is in edit mode pre-populated with this rule */
 	editRule?: CleanupRuleResponse | null;
+	/** When set, dialog is in create mode pre-populated from a template */
+	templateData?: CreateCleanupRule | null;
 	onSave: (data: CreateCleanupRule) => void;
 	isSaving: boolean;
 }
@@ -333,6 +335,7 @@ export function CleanupRuleDialog({
 	open,
 	onOpenChange,
 	editRule,
+	templateData,
 	onSave,
 	isSaving,
 }: CleanupRuleDialogProps) {
@@ -766,8 +769,27 @@ export function CleanupRuleDialog({
 			setSelectedPlexLibraries([]);
 			setExcludeTags([]);
 			setExcludeTitles("");
+
+			// Overlay template data on top of defaults (create mode only)
+			if (templateData) {
+				setName(templateData.name);
+				setAction((templateData.action as "delete" | "unmonitor" | "delete_files") ?? "delete");
+				setRetentionMode(templateData.retentionMode ?? false);
+				if (templateData.operator && templateData.conditions) {
+					setIsComposite(true);
+					setCompositeOperator(templateData.operator as "AND" | "OR");
+					setRuleType("composite");
+					setConditions(
+						templateData.conditions.map((c, i) => ({
+							id: `tpl-${i}`,
+							ruleType: c.ruleType,
+							params: c.parameters ?? {},
+						})),
+					);
+				}
+			}
 		}
-	}, [open, editRule]);
+	}, [open, editRule, templateData]);
 
 	// ── Build parameters ────────────────────────────────────────────
 	const buildParams = useCallback((): Record<string, unknown> => {
@@ -962,6 +984,25 @@ export function CleanupRuleDialog({
 			setCompositeError("Composite rules must have at least one condition");
 			return;
 		}
+		// Validate composite conditions have required fields filled in
+		if (isComposite) {
+			for (const cond of conditions) {
+				const p = cond.params;
+				if (
+					(cond.ruleType === "seerr_requested_by" ||
+						cond.ruleType === "plex_watched_by" ||
+						cond.ruleType === "tautulli_watched_by" ||
+						cond.ruleType === "seerr_modified_by") &&
+					Array.isArray(p.userNames) &&
+					p.userNames.length === 0
+				) {
+					setCompositeError(
+						"Each condition that targets users must have at least one username selected.",
+					);
+					return;
+				}
+			}
+		}
 		setCompositeError(null);
 		const base = {
 			name,
@@ -1020,6 +1061,12 @@ export function CleanupRuleDialog({
 							: "Configure when items should be flagged for cleanup."}
 					</DialogDescription>
 				</DialogHeader>
+
+				{!isEdit && templateData && (
+					<div className="rounded-lg border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-xs text-blue-400">
+						Template applied. Fill in the usernames in each condition below, then save.
+					</div>
+				)}
 
 				<form
 					onSubmit={handleSubmit}
