@@ -29,6 +29,11 @@ const bulkScoreUpdateSchema = z.object({
 	resetToDefault: z.boolean().optional(),
 });
 
+const bulkScoreExportRequestSchema = z.object({
+	templateIds: z.array(z.string()).min(1, "At least one template ID is required"),
+	serviceType: z.enum(["RADARR", "SONARR"]).optional(),
+});
+
 const bulkScoreExportSchema = z.object({
 	version: z.string(),
 	exportedAt: z.string(),
@@ -167,10 +172,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 */
 	app.post("/export", async (request, reply) => {
 		const userId = request.currentUser!.id; // preHandler guarantees authentication
-		const { templateIds, serviceType } = request.body as {
-			templateIds: string[];
-			serviceType?: "RADARR" | "SONARR";
-		};
+		const { templateIds, serviceType } = validateRequest(bulkScoreExportRequestSchema, request.body);
 
 		const bulkScoreManager = createBulkScoreManager(app.prisma, app.arrClientFactory);
 		const exportData = await bulkScoreManager.exportScores(userId, templateIds, serviceType);
