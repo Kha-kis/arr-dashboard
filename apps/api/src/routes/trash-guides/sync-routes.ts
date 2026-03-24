@@ -286,7 +286,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 
 		// Verify instance exists and is owned by the current user.
 		// Including userId in the where clause ensures non-owned instances return null,
-		const instance = await requireInstance(app, userId, instanceId);
+		await requireInstance(app, userId, instanceId);
 
 		// Get sync history for this user and instance
 		const [syncs, total] = await Promise.all([
