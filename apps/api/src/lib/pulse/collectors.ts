@@ -463,6 +463,84 @@ const collectTrashSyncFailures: Collector = async (app, userId) => {
 };
 
 // ============================================================================
+// 9. Cleanup Opportunities
+// ============================================================================
+
+const collectCleanupOpportunities: Collector = async (app, userId, _log) => {
+	const config = await app.prisma.libraryCleanupConfig.findFirst({
+		where: { userId },
+		select: {
+			enabled: true,
+			rules: { where: { enabled: true }, select: { id: true } },
+			logs: {
+				where: { status: "completed" },
+				orderBy: { startedAt: "desc" },
+				take: 1,
+				select: { itemsFlagged: true, itemsEvaluated: true, startedAt: true },
+			},
+		},
+	});
+
+	if (!config) return [];
+
+	const items: PulseItem[] = [];
+	const ruleCount = config.rules.length;
+	const lastLog = config.logs[0];
+
+	// Cleanup disabled but rules exist
+	if (!config.enabled && ruleCount > 0) {
+		items.push({
+			id: "cleanup-disabled",
+			severity: "info",
+			category: "quality",
+			title: "Library cleanup is paused",
+			detail: `${ruleCount} rule${ruleCount === 1 ? "" : "s"} configured but cleanup is disabled`,
+			actionUrl: "/cleanup",
+			actionLabel: "Review cleanup",
+			source: "cleanup",
+			timestamp: now(),
+		});
+	}
+
+	// Last run flagged items
+	if (lastLog && lastLog.itemsFlagged > 0) {
+		items.push({
+			id: "cleanup-items-flagged",
+			severity: "info",
+			category: "quality",
+			title: `${lastLog.itemsFlagged} item${lastLog.itemsFlagged === 1 ? "" : "s"} match cleanup rules`,
+			detail: `Found in last run (${lastLog.itemsEvaluated} evaluated)`,
+			actionUrl: "/cleanup",
+			actionLabel: "Review in cleanup",
+			source: "cleanup",
+			timestamp: lastLog.startedAt.toISOString(),
+		});
+	}
+
+	// No rules configured but has a meaningful library
+	if (ruleCount === 0) {
+		const libraryCount = await app.prisma.libraryCache.count({
+			where: { instance: { userId } },
+		});
+		if (libraryCount > 50) {
+			items.push({
+				id: "cleanup-no-rules",
+				severity: "info",
+				category: "quality",
+				title: "No cleanup rules configured",
+				detail: `${libraryCount} items in library — templates available to get started`,
+				actionUrl: "/cleanup",
+				actionLabel: "Set up cleanup",
+				source: "cleanup",
+				timestamp: now(),
+			});
+		}
+	}
+
+	return items;
+};
+
+// ============================================================================
 // Byte formatting utility
 // ============================================================================
 
@@ -487,4 +565,5 @@ export const pulseCollectors: Collector[] = [
 	collectHuntFailures,
 	collectQueueCleanerFailures,
 	collectTrashSyncFailures,
+	collectCleanupOpportunities,
 ];
