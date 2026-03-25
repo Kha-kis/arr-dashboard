@@ -62,6 +62,7 @@ import {
 	useCleanupConfig,
 	useCleanupExecute,
 	useCleanupExplain,
+	useCleanupFieldOptions,
 	useCleanupLogs,
 	useCleanupPreview,
 	useCleanupStatistics,
@@ -73,8 +74,10 @@ import {
 	useUpdateCleanupConfig,
 	useUpdateCleanupRule,
 } from "../../../hooks/api/useLibraryCleanup";
+import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { CleanupHealthBanner } from "./cleanup-health-banner";
 import { CleanupRuleDialog } from "./cleanup-rule-dialog";
+import { CleanupRuleTemplates } from "./cleanup-rule-templates";
 
 type Tab = "config" | "approvals" | "logs" | "statistics";
 
@@ -229,9 +232,16 @@ function ConfigTab({
 	const updateRule = useUpdateCleanupRule();
 	const deleteRule = useDeleteCleanupRule();
 	const reorderRules = useReorderCleanupRules();
+	const { data: fieldOptions } = useCleanupFieldOptions();
+	const { data: allServices } = useServicesQuery();
+	const hasSeerr = useMemo(
+		() => (allServices ?? []).some((s) => s.service === "seerr"),
+		[allServices],
+	);
 
 	const [dialogOpen, setDialogOpen] = useState(false);
 	const [editingRule, setEditingRule] = useState<CleanupRuleResponse | null>(null);
+	const [templateData, setTemplateData] = useState<CreateCleanupRule | null>(null);
 	const [confirmRunOpen, setConfirmRunOpen] = useState(false);
 	const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
@@ -259,11 +269,19 @@ function ConfigTab({
 
 	const handleCreate = () => {
 		setEditingRule(null);
+		setTemplateData(null);
+		setDialogOpen(true);
+	};
+
+	const handleSelectTemplate = (rule: CreateCleanupRule) => {
+		setEditingRule(null);
+		setTemplateData(rule);
 		setDialogOpen(true);
 	};
 
 	const handleEdit = (rule: CleanupRuleResponse) => {
 		setEditingRule(rule);
+		setTemplateData(null);
 		setDialogOpen(true);
 	};
 
@@ -580,6 +598,14 @@ function ConfigTab({
 				</div>
 			)}
 
+			{/* Rule Templates */}
+			<CleanupRuleTemplates
+				hasPlex={fieldOptions?.hasPlex ?? false}
+				hasSeerr={hasSeerr}
+				hasTautulli={fieldOptions?.hasTautulli ?? false}
+				onSelectTemplate={handleSelectTemplate}
+			/>
+
 			{/* Rules */}
 			<div
 				className="relative rounded-xl overflow-hidden"
@@ -721,6 +747,7 @@ function ConfigTab({
 				open={dialogOpen}
 				onOpenChange={setDialogOpen}
 				editRule={editingRule}
+				templateData={templateData}
 				onSave={handleSave}
 				isSaving={createRule.isPending || updateRule.isPending}
 			/>

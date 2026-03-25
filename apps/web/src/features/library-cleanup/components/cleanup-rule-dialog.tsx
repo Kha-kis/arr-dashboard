@@ -215,6 +215,17 @@ const RULE_TYPES: Array<{ value: CleanupRuleType; label: string; desc: string }>
 		label: "Recently Active",
 		desc: "Protect items with recent activity (best used as retention rule)",
 	},
+	// Phase 4: Requester-aware cross-service
+	{
+		value: "seerr_requester_watched",
+		label: "Requester Watched",
+		desc: "Matches when the Seerr requester has watched the item in Plex",
+	},
+	{
+		value: "seerr_requester_not_watched",
+		label: "Requester Not Watched",
+		desc: "Matches when the Seerr requester has not watched the item in Plex",
+	},
 ];
 
 const RULE_CATEGORIES: Array<{
@@ -222,7 +233,7 @@ const RULE_CATEGORIES: Array<{
 	label: string;
 	icon: LucideIcon;
 	types: CleanupRuleType[];
-	requires?: "plex" | "tautulli";
+	requires?: "plex" | "tautulli" | "plex+seerr";
 }> = [
 	{
 		id: "content",
@@ -308,6 +319,13 @@ const RULE_CATEGORIES: Array<{
 		types: ["plex_episode_completion", "user_retention", "staleness_score", "recently_active"],
 		requires: "plex" as const,
 	},
+	{
+		id: "cross-service",
+		label: "Cross-Service",
+		icon: Target,
+		types: ["seerr_requester_watched", "seerr_requester_not_watched"],
+		requires: "plex+seerr" as const,
+	},
 ];
 
 const RULE_TYPE_MAP = new Map(RULE_TYPES.map((t) => [t.value, t]));
@@ -321,6 +339,8 @@ interface CleanupRuleDialogProps {
 	onOpenChange: (open: boolean) => void;
 	/** When set, dialog is in edit mode pre-populated with this rule */
 	editRule?: CleanupRuleResponse | null;
+	/** When set, dialog is in create mode pre-populated from a template */
+	templateData?: CreateCleanupRule | null;
 	onSave: (data: CreateCleanupRule) => void;
 	isSaving: boolean;
 }
@@ -333,6 +353,7 @@ export function CleanupRuleDialog({
 	open,
 	onOpenChange,
 	editRule,
+	templateData,
 	onSave,
 	isSaving,
 }: CleanupRuleDialogProps) {
@@ -342,6 +363,10 @@ export function CleanupRuleDialog({
 	const { data: allServices } = useServicesQuery();
 	const arrInstances = useMemo(
 		() => (allServices ?? []).filter((s) => s.service === "sonarr" || s.service === "radarr"),
+		[allServices],
+	);
+	const hasSeerr = useMemo(
+		() => (allServices ?? []).some((s) => s.service === "seerr"),
 		[allServices],
 	);
 
@@ -766,8 +791,49 @@ export function CleanupRuleDialog({
 			setSelectedPlexLibraries([]);
 			setExcludeTags([]);
 			setExcludeTitles("");
+
+			// Overlay template data on top of defaults (create mode only)
+			if (templateData) {
+				setName(templateData.name);
+				setAction((templateData.action as "delete" | "unmonitor" | "delete_files") ?? "delete");
+				setRetentionMode(templateData.retentionMode ?? false);
+				if (templateData.serviceFilter) {
+					setServiceFilter(templateData.serviceFilter);
+				}
+				if (templateData.operator && templateData.conditions) {
+					// Composite template
+					setIsComposite(true);
+					setCompositeOperator(templateData.operator as "AND" | "OR");
+					setRuleType("composite");
+					setConditions(
+						templateData.conditions.map((c, i) => ({
+							id: `tpl-${i}`,
+							ruleType: c.ruleType,
+							params: c.parameters ?? {},
+						})),
+					);
+				} else if (templateData.ruleType && templateData.ruleType !== "composite") {
+					// Single-rule template
+					setRuleType(templateData.ruleType);
+					const activeCat = RULE_CATEGORIES.find((c) =>
+						c.types.includes(templateData.ruleType),
+					);
+					if (activeCat) {
+						setExpandedCategories(new Set([activeCat.id]));
+					}
+					const p = templateData.parameters ?? {};
+					switch (templateData.ruleType) {
+						case "staleness_score":
+						case "plex_episode_completion":
+						case "user_retention":
+						case "recently_active":
+							setBehaviorParams(p);
+							break;
+					}
+				}
+			}
 		}
-	}, [open, editRule]);
+	}, [open, editRule, templateData]);
 
 	// ── Build parameters ────────────────────────────────────────────
 	const buildParams = useCallback((): Record<string, unknown> => {
@@ -962,6 +1028,25 @@ export function CleanupRuleDialog({
 			setCompositeError("Composite rules must have at least one condition");
 			return;
 		}
+		// Validate composite conditions have required fields filled in
+		if (isComposite) {
+			for (const cond of conditions) {
+				const p = cond.params;
+				if (
+					(cond.ruleType === "seerr_requested_by" ||
+						cond.ruleType === "plex_watched_by" ||
+						cond.ruleType === "tautulli_watched_by" ||
+						cond.ruleType === "seerr_modified_by") &&
+					Array.isArray(p.userNames) &&
+					p.userNames.length === 0
+				) {
+					setCompositeError(
+						"Each condition that targets users must have at least one username selected.",
+					);
+					return;
+				}
+			}
+		}
 		setCompositeError(null);
 		const base = {
 			name,
@@ -1020,6 +1105,16 @@ export function CleanupRuleDialog({
 							: "Configure when items should be flagged for cleanup."}
 					</DialogDescription>
 				</DialogHeader>
+
+				{!isEdit && templateData && (
+					<div className="rounded-lg border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-xs text-blue-400">
+						{templateData.conditions?.some((c) =>
+							"userNames" in (c.parameters ?? {}),
+						)
+							? "Template applied. Fill in the usernames in each condition below, then save."
+							: "Template applied. Review the settings below and save when ready."}
+					</div>
+				)}
 
 				<form
 					onSubmit={handleSubmit}
@@ -1297,6 +1392,8 @@ export function CleanupRuleDialog({
 									{RULE_CATEGORIES.filter((cat) => {
 										if (cat.requires === "plex" && !fieldOptions?.hasPlex) return false;
 										if (cat.requires === "tautulli" && !fieldOptions?.hasTautulli) return false;
+										if (cat.requires === "plex+seerr" && (!fieldOptions?.hasPlex || !hasSeerr))
+											return false;
 										return true;
 									}).map((cat) => {
 										const CatIcon = cat.icon;

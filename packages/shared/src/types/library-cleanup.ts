@@ -60,6 +60,9 @@ export const cleanupRuleTypeSchema = z.enum([
 	"staleness_score",
 	// Phase 3: Advanced automation
 	"recently_active",
+	// Phase 4: Requester-aware cross-service rules
+	"seerr_requester_watched",
+	"seerr_requester_not_watched",
 ]);
 
 export type CleanupRuleType = z.infer<typeof cleanupRuleTypeSchema>;
@@ -340,6 +343,12 @@ export const recentlyActiveParamsSchema = z.object({
 	requireActivity: z.boolean().default(true),
 });
 
+// ── Phase 4: Requester-Aware Cross-Service Rule Parameter Schemas ────
+
+// No user-configurable parameters — matching is automatic via display name comparison
+export const seerrRequesterWatchedParamsSchema = z.object({});
+export const seerrRequesterNotWatchedParamsSchema = z.object({});
+
 // ── Type Exports ─────────────────────────────────────────────────────
 
 export type AgeRuleParams = z.infer<typeof ageRuleParamsSchema>;
@@ -386,6 +395,8 @@ export type PlexEpisodeCompletionParams = z.infer<typeof plexEpisodeCompletionPa
 export type UserRetentionParams = z.infer<typeof userRetentionParamsSchema>;
 export type StalenessScoreParams = z.infer<typeof stalenessScoreParamsSchema>;
 export type RecentlyActiveParams = z.infer<typeof recentlyActiveParamsSchema>;
+export type SeerrRequesterWatchedParams = z.infer<typeof seerrRequesterWatchedParamsSchema>;
+export type SeerrRequesterNotWatchedParams = z.infer<typeof seerrRequesterNotWatchedParamsSchema>;
 
 // ============================================================================
 // Configuration Types
@@ -724,6 +735,8 @@ export const ruleParamSchemaMap: Record<string, z.ZodType> = {
 	user_retention: userRetentionParamsSchema,
 	staleness_score: stalenessScoreParamsSchema,
 	recently_active: recentlyActiveParamsSchema,
+	seerr_requester_watched: seerrRequesterWatchedParamsSchema,
+	seerr_requester_not_watched: seerrRequesterNotWatchedParamsSchema,
 };
 
 /**
@@ -756,4 +769,6 @@ export const ruleDataSourceMap: Record<string, DataSourceDependency> = {
 	user_retention: null, // Dynamic: depends on params.source (plex, tautulli, or either)
 	staleness_score: "plex", // Uses multiple sources; plex is the primary
 	recently_active: "plex", // Checks Plex on-deck/watch status
+	seerr_requester_watched: "seerr", // Also needs plex — both prefetch lists include these types
+	seerr_requester_not_watched: "seerr", // Also needs plex — both prefetch lists include these types
 };

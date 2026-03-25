@@ -747,6 +747,74 @@ function evaluateSeerrRequestCount(
 }
 
 // ============================================================================
+// Requester-Aware Cross-Service Evaluators
+// ============================================================================
+
+/**
+ * Seerr Requester Watched: flag items where ANY Seerr requester has also watched
+ * the item in Plex. Returns on the first matching requester (case-insensitive
+ * display name comparison). Returns null when Seerr or Plex data is unavailable.
+ */
+function evaluateSeerrRequesterWatched(
+	item: CacheItemForEval,
+	seerrMap: SeerrRequestMap | undefined,
+	plexMap: PlexWatchMap | undefined,
+	plexLibraryFilter?: string[] | null,
+): string | null {
+	const requests = lookupSeerrRequests(item, seerrMap);
+	if (!requests || requests.length === 0) return null;
+
+	const watch = lookupPlexWatch(item, plexMap, plexLibraryFilter);
+	if (!watch) return null;
+
+	const watchedBy = watch.watchedByUsers.map((u) => u.toLowerCase());
+	if (watchedBy.length === 0) return null;
+
+	for (const req of requests) {
+		const requester = req.requestedBy.toLowerCase();
+		if (watchedBy.includes(requester)) {
+			return `Requested by "${req.requestedBy}" and watched by same user in Plex`;
+		}
+	}
+
+	return null;
+}
+
+/**
+ * Seerr Requester Not Watched: flag items where NO Seerr requester has watched
+ * the item in Plex. If multiple requesters exist, only matches when none of
+ * them appear in the Plex watchedByUsers list (case-insensitive).
+ */
+function evaluateSeerrRequesterNotWatched(
+	item: CacheItemForEval,
+	seerrMap: SeerrRequestMap | undefined,
+	plexMap: PlexWatchMap | undefined,
+	plexLibraryFilter?: string[] | null,
+): string | null {
+	const requests = lookupSeerrRequests(item, seerrMap);
+	if (!requests || requests.length === 0) return null;
+
+	// Require Plex data — without it we can't distinguish "not watched" from "unknown"
+	const watch = lookupPlexWatch(item, plexMap, plexLibraryFilter);
+	if (!watch) return null;
+
+	const watchedBy = watch.watchedByUsers.map((u) => u.toLowerCase());
+
+	// Check if ANY requester has watched — if so, don't flag
+	const unwatchedRequesters: string[] = [];
+	for (const req of requests) {
+		const requester = req.requestedBy.toLowerCase();
+		if (watchedBy.includes(requester)) {
+			return null; // At least one requester watched — not a "not watched" item
+		}
+		unwatchedRequesters.push(req.requestedBy);
+	}
+
+	// No requester has watched this item
+	return `Requested by ${unwatchedRequesters.map((n) => `"${n}"`).join(", ")} but not watched by any requester in Plex`;
+}
+
+// ============================================================================
 // Tautulli Rule Evaluators
 // ============================================================================
 
@@ -1846,6 +1914,22 @@ export function evaluateSingleCondition(
 			return evaluateStalenessScore(item, params as StalenessScoreParams, ctx);
 		case "recently_active":
 			return evaluateRecentlyActive(item, params as RecentlyActiveParams, ctx);
+
+		// ── Phase 4: Requester-aware cross-service rules ─────────────
+		case "seerr_requester_watched":
+			return evaluateSeerrRequesterWatched(
+				item,
+				ctx.seerrMap,
+				ctx.plexMap,
+				plexLibFilter,
+			);
+		case "seerr_requester_not_watched":
+			return evaluateSeerrRequesterNotWatched(
+				item,
+				ctx.seerrMap,
+				ctx.plexMap,
+				plexLibFilter,
+			);
 
 		default:
 			return null;
