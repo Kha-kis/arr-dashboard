@@ -328,6 +328,7 @@ describe("CleanupRuleDialog", () => {
 					priority: 0,
 					parameters: { operator: "older_than", days: 90 },
 					action: "delete",
+					retentionMode: false,
 				} as CreateCleanupRule,
 			});
 			const nameInput = screen.getByPlaceholderText("e.g., Old low-rated movies");
@@ -343,6 +344,7 @@ describe("CleanupRuleDialog", () => {
 					priority: 0,
 					parameters: {},
 					action: "unmonitor",
+					retentionMode: false,
 				} as CreateCleanupRule,
 			});
 			expect(
@@ -359,6 +361,7 @@ describe("CleanupRuleDialog", () => {
 					priority: 0,
 					parameters: {},
 					action: "delete",
+					retentionMode: false,
 					operator: "AND",
 					conditions: [
 						{
@@ -382,6 +385,7 @@ describe("CleanupRuleDialog", () => {
 					priority: 0,
 					parameters: {},
 					action: "delete",
+					retentionMode: false,
 				} as CreateCleanupRule,
 			});
 			expect(screen.getByText("New Cleanup Rule")).toBeInTheDocument();
@@ -396,6 +400,7 @@ describe("CleanupRuleDialog", () => {
 					priority: 0,
 					parameters: {},
 					action: "delete",
+					retentionMode: false,
 					operator: "OR",
 					conditions: [
 						{ ruleType: "age", parameters: { operator: "older_than", days: 90 } },
