@@ -219,12 +219,12 @@ const RULE_TYPES: Array<{ value: CleanupRuleType; label: string; desc: string }>
 	{
 		value: "seerr_requester_watched",
 		label: "Requester Watched",
-		desc: "Flag items where the Seerr requester has watched them in Plex",
+		desc: "Matches when the Seerr requester has watched the item in Plex",
 	},
 	{
 		value: "seerr_requester_not_watched",
 		label: "Requester Not Watched",
-		desc: "Flag items where the Seerr requester has not watched them in Plex",
+		desc: "Matches when the Seerr requester has not watched the item in Plex",
 	},
 ];
 

@@ -34,7 +34,7 @@ export const RULE_TEMPLATES: RuleTemplate[] = [
 		id: "requested-and-watched",
 		name: "Requested & Watched",
 		description:
-			"Automatically flag items where the Seerr requester has watched them in Plex — no username setup needed.",
+			"Matches when the Seerr requester also appears in Plex watch data for the item. No username setup needed.",
 		icon: Combine,
 		category: "cross-service",
 		requiredServices: ["plex", "seerr"],
@@ -52,7 +52,7 @@ export const RULE_TEMPLATES: RuleTemplate[] = [
 		id: "requested-not-watched",
 		name: "Requested but Not Watched",
 		description:
-			"Automatically flag items where the Seerr requester has not watched them in Plex — find forgotten requests.",
+			"Matches when the Seerr requester has not watched the item in Plex. Only evaluated when Plex watch data exists.",
 		icon: EyeOff,
 		category: "cross-service",
 		requiredServices: ["plex", "seerr"],
