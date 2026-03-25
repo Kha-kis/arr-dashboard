@@ -34,28 +34,17 @@ export const RULE_TEMPLATES: RuleTemplate[] = [
 		id: "requested-and-watched",
 		name: "Requested & Watched",
 		description:
-			"Flag items that a user both requested in Seerr and has already watched in Plex — safe candidates for cleanup.",
+			"Automatically flag items where the Seerr requester has watched them in Plex — no username setup needed.",
 		icon: Combine,
 		category: "cross-service",
 		requiredServices: ["plex", "seerr"],
 		buildRule: () => ({
-			name: "Requested & Watched by Same User",
+			name: "Requested & Watched by Requester",
 			enabled: true,
 			priority: 0,
-			ruleType: "composite" as const,
+			ruleType: "seerr_requester_watched" as const,
 			parameters: {},
 			action: "unmonitor" as const,
-			operator: "AND" as const,
-			conditions: [
-				{
-					ruleType: "seerr_requested_by",
-					parameters: { userNames: [] },
-				},
-				{
-					ruleType: "plex_watched_by",
-					parameters: { operator: "includes_any", userNames: [] },
-				},
-			] satisfies Condition[],
 			retentionMode: false,
 		}),
 	},
@@ -63,28 +52,17 @@ export const RULE_TEMPLATES: RuleTemplate[] = [
 		id: "requested-not-watched",
 		name: "Requested but Not Watched",
 		description:
-			"Flag items that a user requested in Seerr but has never watched in Plex — identify forgotten requests.",
+			"Automatically flag items where the Seerr requester has not watched them in Plex — find forgotten requests.",
 		icon: EyeOff,
 		category: "cross-service",
 		requiredServices: ["plex", "seerr"],
 		buildRule: () => ({
-			name: "Requested but Not Watched",
+			name: "Requested but Not Watched by Requester",
 			enabled: true,
 			priority: 0,
-			ruleType: "composite" as const,
+			ruleType: "seerr_requester_not_watched" as const,
 			parameters: {},
 			action: "unmonitor" as const,
-			operator: "AND" as const,
-			conditions: [
-				{
-					ruleType: "seerr_requested_by",
-					parameters: { userNames: [] },
-				},
-				{
-					ruleType: "plex_watched_by",
-					parameters: { operator: "excludes_all", userNames: [] },
-				},
-			] satisfies Condition[],
 			retentionMode: false,
 		}),
 	},

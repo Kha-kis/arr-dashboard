@@ -747,6 +747,67 @@ function evaluateSeerrRequestCount(
 }
 
 // ============================================================================
+// Requester-Aware Cross-Service Evaluators
+// ============================================================================
+
+/**
+ * Seerr Requester Watched: flag items where the Seerr requester has watched
+ * the item in Plex. Matches automatically by comparing requester display name
+ * with Plex watchedByUsers (case-insensitive).
+ */
+function evaluateSeerrRequesterWatched(
+	item: CacheItemForEval,
+	seerrMap: SeerrRequestMap | undefined,
+	plexMap: PlexWatchMap | undefined,
+	plexLibraryFilter?: string[] | null,
+): string | null {
+	const requests = lookupSeerrRequests(item, seerrMap);
+	if (!requests || requests.length === 0) return null;
+
+	const watch = lookupPlexWatch(item, plexMap, plexLibraryFilter);
+	if (!watch) return null;
+
+	const watchedBy = watch.watchedByUsers.map((u) => u.toLowerCase());
+	if (watchedBy.length === 0) return null;
+
+	for (const req of requests) {
+		const requester = req.requestedBy.toLowerCase();
+		if (watchedBy.includes(requester)) {
+			return `Requested by "${req.requestedBy}" and watched by same user in Plex`;
+		}
+	}
+
+	return null;
+}
+
+/**
+ * Seerr Requester Not Watched: flag items where the Seerr requester has NOT
+ * watched the item in Plex. Matches automatically by comparing requester
+ * display name with Plex watchedByUsers (case-insensitive).
+ */
+function evaluateSeerrRequesterNotWatched(
+	item: CacheItemForEval,
+	seerrMap: SeerrRequestMap | undefined,
+	plexMap: PlexWatchMap | undefined,
+	plexLibraryFilter?: string[] | null,
+): string | null {
+	const requests = lookupSeerrRequests(item, seerrMap);
+	if (!requests || requests.length === 0) return null;
+
+	const watch = lookupPlexWatch(item, plexMap, plexLibraryFilter);
+	const watchedBy = watch ? watch.watchedByUsers.map((u) => u.toLowerCase()) : [];
+
+	for (const req of requests) {
+		const requester = req.requestedBy.toLowerCase();
+		if (!watchedBy.includes(requester)) {
+			return `Requested by "${req.requestedBy}" but not watched by requester in Plex`;
+		}
+	}
+
+	return null;
+}
+
+// ============================================================================
 // Tautulli Rule Evaluators
 // ============================================================================
 
@@ -1846,6 +1907,22 @@ export function evaluateSingleCondition(
 			return evaluateStalenessScore(item, params as StalenessScoreParams, ctx);
 		case "recently_active":
 			return evaluateRecentlyActive(item, params as RecentlyActiveParams, ctx);
+
+		// ── Phase 4: Requester-aware cross-service rules ─────────────
+		case "seerr_requester_watched":
+			return evaluateSeerrRequesterWatched(
+				item,
+				ctx.seerrMap,
+				ctx.plexMap,
+				plexLibFilter,
+			);
+		case "seerr_requester_not_watched":
+			return evaluateSeerrRequesterNotWatched(
+				item,
+				ctx.seerrMap,
+				ctx.plexMap,
+				plexLibFilter,
+			);
 
 		default:
 			return null;

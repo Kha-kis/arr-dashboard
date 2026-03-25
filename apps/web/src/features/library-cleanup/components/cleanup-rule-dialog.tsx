@@ -215,6 +215,17 @@ const RULE_TYPES: Array<{ value: CleanupRuleType; label: string; desc: string }>
 		label: "Recently Active",
 		desc: "Protect items with recent activity (best used as retention rule)",
 	},
+	// Phase 4: Requester-aware cross-service
+	{
+		value: "seerr_requester_watched",
+		label: "Requester Watched",
+		desc: "Flag items where the Seerr requester has watched them in Plex",
+	},
+	{
+		value: "seerr_requester_not_watched",
+		label: "Requester Not Watched",
+		desc: "Flag items where the Seerr requester has not watched them in Plex",
+	},
 ];
 
 const RULE_CATEGORIES: Array<{
@@ -307,6 +318,12 @@ const RULE_CATEGORIES: Array<{
 		icon: Brain,
 		types: ["plex_episode_completion", "user_retention", "staleness_score", "recently_active"],
 		requires: "plex" as const,
+	},
+	{
+		id: "cross-service",
+		label: "Cross-Service",
+		icon: Target,
+		types: ["seerr_requester_watched", "seerr_requester_not_watched"],
 	},
 ];
 
@@ -793,6 +810,12 @@ export function CleanupRuleDialog({
 				} else if (templateData.ruleType && templateData.ruleType !== "composite") {
 					// Single-rule template
 					setRuleType(templateData.ruleType);
+					const activeCat = RULE_CATEGORIES.find((c) =>
+						c.types.includes(templateData.ruleType),
+					);
+					if (activeCat) {
+						setExpandedCategories(new Set([activeCat.id]));
+					}
 					const p = templateData.parameters ?? {};
 					switch (templateData.ruleType) {
 						case "staleness_score":

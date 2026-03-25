@@ -754,6 +754,8 @@ async function evaluateAllItems(
 		"seerr_modified_by",
 		"seerr_is_requested",
 		"seerr_request_count",
+		"seerr_requester_watched",
+		"seerr_requester_not_watched",
 	];
 	const hasSeerrRules = SEERR_RULE_TYPES.some((t) => activeTypes.has(t));
 	const seerrResult = hasSeerrRules ? await prefetchSeerrRequests(deps, config.userId) : undefined;
@@ -786,6 +788,8 @@ async function evaluateAllItems(
 		"user_retention",
 		"staleness_score",
 		"recently_active",
+		"seerr_requester_watched",
+		"seerr_requester_not_watched",
 	];
 	const hasPlexRules = PLEX_RULE_TYPES.some((t) => activeTypes.has(t));
 	const plexResult = hasPlexRules ? await prefetchPlexData(deps, config.userId) : undefined;
@@ -1286,6 +1290,8 @@ export async function buildEvalContext(
 		"seerr_modified_by",
 		"seerr_is_requested",
 		"seerr_request_count",
+		"seerr_requester_watched",
+		"seerr_requester_not_watched",
 	];
 	const TAUTULLI_RULE_TYPES = [
 		"tautulli_last_watched",
@@ -1306,6 +1312,8 @@ export async function buildEvalContext(
 		"user_retention",
 		"staleness_score",
 		"recently_active",
+		"seerr_requester_watched",
+		"seerr_requester_not_watched",
 	];
 
 	const [seerrMap, tautulliMap, plexMap, plexEpisodeMap] = await Promise.all([

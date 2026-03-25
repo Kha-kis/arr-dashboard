@@ -109,6 +109,9 @@ export function getDefaultConditionParams(ruleType: CleanupRuleType): Record<str
 			return { operator: "greater_than", threshold: 70 };
 		case "recently_active":
 			return { protectionDays: 30, requireActivity: true };
+		case "seerr_requester_watched":
+		case "seerr_requester_not_watched":
+			return {};
 		default:
 			return {};
 	}
@@ -1455,6 +1458,22 @@ export function ConditionParamsFields({
 						rule will be shielded from cleanup.
 					</p>
 				</div>
+			);
+
+		case "seerr_requester_watched":
+			return (
+				<p className="text-xs text-muted-foreground">
+					Automatically matches items where the Seerr requester has watched them in Plex.
+					No configuration needed — compares Seerr display names with Plex usernames.
+				</p>
+			);
+
+		case "seerr_requester_not_watched":
+			return (
+				<p className="text-xs text-muted-foreground">
+					Automatically matches items where the Seerr requester has not watched them in Plex.
+					No configuration needed — compares Seerr display names with Plex usernames.
+				</p>
 			);
 
 		case "composite":
