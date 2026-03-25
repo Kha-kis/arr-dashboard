@@ -11,13 +11,19 @@ Inspect the task description, current branch, and git state to determine the wor
 | Signal | Workflow |
 |--------|----------|
 | `#NNN` or mentions a GitHub issue | **issue** |
-| `PR`, `pull request`, or `#NNN` with PR context | **pr** |
+| `review PR`, `check PR`, or `#NNN` with incoming review context | **pr-review** |
+| `prepare PR`, `create PR`, `open PR`, `write PR`, `update PR`, `refresh PR`, `package for PR`, `ready for PR` | **pr-prep** |
 | References a feature, module, or file path to improve | **feature** |
 | `release`, `patch`, `ship`, version number like `2.x.x` | **release** |
 | Branch has unreleased commits + task is about readiness | **stabilize** |
 | None of the above | **ambiguous** — infer from git context below |
 
-For ambiguous tasks, check:
+**Implicit readiness signals** — if the task contains phrases like `is this ready`, `can we ship this`, `should we open a PR`, `is this good to merge`, or `what's left before PR`:
+- Do NOT auto-route. These are ambiguous between stabilize and pr-prep.
+- Instead ask: "This looks like PR preparation — do you want me to run `/pr-prep`? Or would you prefer `/stabilize-branch` to check for blockers first?"
+- Route based on the user's answer.
+
+For other ambiguous tasks, check:
 - `git log --oneline origin/main..HEAD` — if there are unreleased commits, lean toward **stabilize**
 - `git branch --show-current` — if branch name contains `fix/`, `feat/`, `release/`, use that hint
 - `gh issue list --assignee @me --state open --limit 3` — if the task loosely matches an open issue, treat as **issue**
@@ -33,12 +39,16 @@ State your classification and reasoning in one line, then proceed.
 2. Run `/validate`
 3. If on a feature branch with multiple commits, run `/stabilize-branch`
 
-### PR workflow
+### PR review workflow (incoming — reviewing a PR)
 1. Run `/review-pr {pr_number}`
 2. If the PR touches auth, encryption, or routes: run `/security-pass` on affected files
 3. If the PR is large (>10 files changed): run `/feature-audit` on the primary module
 4. If the PR adds new pages, API routes, or feature panels: run `/trust-check` on affected files
 5. Run `/validate` if CI status is not all green
+
+### PR prep workflow (outgoing — packaging your work for review)
+1. Run `/pr-prep`
+2. Follow the command's output — it handles drafting, readiness checks, and create/update
 
 ### Feature workflow
 1. Run `/feature-audit {target}` — get the action plan first

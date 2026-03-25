@@ -47,6 +47,7 @@ const createRequestBody = z.object({
 	rootFolder: z.string().optional(),
 	languageProfileId: z.number().int().positive().optional(),
 	tags: z.array(z.number().int()).optional(),
+	userId: z.number().int().positive().optional(),
 });
 
 export async function registerDiscoverRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {

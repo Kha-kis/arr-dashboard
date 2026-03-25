@@ -12,6 +12,8 @@ import {
 	Send,
 	Server,
 	Sliders,
+	Tag,
+	User,
 	X,
 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
@@ -20,9 +22,12 @@ import {
 	useCreateSeerrRequest,
 	useSeerrRequestOptions,
 	useSeerrTvDetails,
+	useSeerrUsers,
 } from "../../../hooks/api/useSeerr";
 import { useFocusTrap } from "../../../hooks/useFocusTrap";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getErrorMessage } from "../../../lib/error-utils";
+import { getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 import { getDisplayTitle } from "../lib/seerr-image-utils";
 
 // Sentinel value for "use Seerr's default" in dropdowns
@@ -40,6 +45,7 @@ export const DiscoverRequestDialog: React.FC<DiscoverRequestDialogProps> = ({
 	onClose,
 }) => {
 	const { gradient: themeGradient } = useThemeGradient();
+	const [incognitoMode] = useIncognitoMode();
 	const focusTrapRef = useFocusTrap<HTMLDivElement>(true, onClose);
 	const createRequest = useCreateSeerrRequest();
 	const isMovie = item.mediaType === "movie";
@@ -61,12 +67,18 @@ export const DiscoverRequestDialog: React.FC<DiscoverRequestDialogProps> = ({
 		[isMovie, tvQuery.data?.seasons],
 	);
 
+	// Fetch Seerr users for "Request As" selector
+	const usersQuery = useSeerrUsers({ instanceId, take: 50, sort: "displayname" });
+	const seerrUsers = useMemo(() => usersQuery.data?.results ?? [], [usersQuery.data?.results]);
+
 	// State
 	const [is4k, setIs4k] = useState(false);
 	const [selectedSeasons, setSelectedSeasons] = useState<Set<number>>(new Set());
 	const [selectedServerId, setSelectedServerId] = useState<number | undefined>(undefined);
 	const [selectedProfileId, setSelectedProfileId] = useState<number | undefined>(undefined);
 	const [selectedRootFolder, setSelectedRootFolder] = useState<string | undefined>(undefined);
+	const [selectedUserId, setSelectedUserId] = useState<number | undefined>(undefined);
+	const [selectedTags, setSelectedTags] = useState<Set<number>>(new Set());
 
 	// Active servers based on 4K toggle
 	const activeServers = is4k ? fourKServers : regularServers;
@@ -114,12 +126,14 @@ export const DiscoverRequestDialog: React.FC<DiscoverRequestDialogProps> = ({
 					...(selectedServerId ? { serverId: selectedServerId } : {}),
 					...(selectedProfileId ? { profileId: selectedProfileId } : {}),
 					...(selectedRootFolder ? { rootFolder: selectedRootFolder } : {}),
+					...(selectedUserId ? { userId: selectedUserId } : {}),
+					...(selectedTags.size > 0 ? { tags: Array.from(selectedTags) } : {}),
 				},
 			});
 			toast.success(`${title} has been requested successfully.`);
 			onClose();
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Failed to submit request");
+			toast.error(getErrorMessage(err, "Failed to submit request"));
 		}
 	}, [
 		createRequest,
@@ -133,6 +147,8 @@ export const DiscoverRequestDialog: React.FC<DiscoverRequestDialogProps> = ({
 		selectedServerId,
 		selectedProfileId,
 		selectedRootFolder,
+		selectedUserId,
+		selectedTags,
 		title,
 		onClose,
 	]);
@@ -143,6 +159,7 @@ export const DiscoverRequestDialog: React.FC<DiscoverRequestDialogProps> = ({
 		setSelectedServerId(undefined);
 		setSelectedProfileId(undefined);
 		setSelectedRootFolder(undefined);
+		setSelectedTags(new Set());
 	}, []);
 
 	return (
@@ -242,6 +259,33 @@ export const DiscoverRequestDialog: React.FC<DiscoverRequestDialogProps> = ({
 						/>
 					)}
 
+					{/* Request As user selector */}
+					{seerrUsers.length > 0 && (
+						<div className="space-y-1">
+							<SelectField
+								icon={User}
+								label="Request As"
+								value={selectedUserId?.toString() ?? USE_DEFAULT}
+								onChange={(v) =>
+									setSelectedUserId(v === USE_DEFAULT ? undefined : Number(v))
+								}
+								options={[
+									{ value: USE_DEFAULT, label: "Default request user" },
+									...seerrUsers.map((u) => ({
+										value: u.id.toString(),
+										label: incognitoMode
+											? getLinuxUsername(u.displayName)
+											: u.displayName,
+									})),
+								]}
+								themeFrom={themeGradient.from}
+							/>
+							<p className="text-[11px] text-muted-foreground/70 px-0.5">
+								Overrides who this request is attributed to in Seerr
+							</p>
+						</div>
+					)}
+
 					{/* Server / Quality / Root Folder options */}
 					{optionsQuery.isLoading ? (
 						<div className="flex items-center justify-center py-4">
@@ -260,6 +304,7 @@ export const DiscoverRequestDialog: React.FC<DiscoverRequestDialogProps> = ({
 											setSelectedServerId(Number(v));
 											setSelectedProfileId(undefined);
 											setSelectedRootFolder(undefined);
+											setSelectedTags(new Set());
 										}}
 										options={activeServers.map((s) => ({
 											value: s.server.id.toString(),
@@ -305,6 +350,54 @@ export const DiscoverRequestDialog: React.FC<DiscoverRequestDialogProps> = ({
 										]}
 										themeFrom={themeGradient.from}
 									/>
+								)}
+
+								{/* Tags */}
+								{activeServer.tags.length > 0 && (
+									<div className="space-y-1.5">
+										<label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+											<Tag className="h-3.5 w-3.5" />
+											Tags
+										</label>
+										<div className="flex flex-wrap gap-1.5">
+											{activeServer.tags.map((tag) => {
+												const isSelected = selectedTags.has(tag.id);
+												return (
+													<button
+														key={tag.id}
+														type="button"
+														onClick={() =>
+															setSelectedTags((prev) => {
+																const next = new Set(prev);
+																if (next.has(tag.id)) {
+																	next.delete(tag.id);
+																} else {
+																	next.add(tag.id);
+																}
+																return next;
+															})
+														}
+														className="rounded-md border px-2.5 py-1 text-xs font-medium transition-all duration-150"
+														style={{
+															borderColor: isSelected
+																? `${themeGradient.from}60`
+																: "var(--border)",
+															backgroundColor: isSelected
+																? `${themeGradient.from}12`
+																: "transparent",
+															color: isSelected
+																? themeGradient.from
+																: "var(--muted-foreground)",
+														}}
+													>
+														{incognitoMode
+															? getLinuxUsername(tag.label)
+															: tag.label}
+													</button>
+												);
+											})}
+										</div>
+									</div>
 								)}
 							</div>
 						)
