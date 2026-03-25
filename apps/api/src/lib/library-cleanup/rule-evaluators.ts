@@ -794,8 +794,11 @@ function evaluateSeerrRequesterNotWatched(
 	const requests = lookupSeerrRequests(item, seerrMap);
 	if (!requests || requests.length === 0) return null;
 
+	// Require Plex data — without it we can't distinguish "not watched" from "unknown"
 	const watch = lookupPlexWatch(item, plexMap, plexLibraryFilter);
-	const watchedBy = watch ? watch.watchedByUsers.map((u) => u.toLowerCase()) : [];
+	if (!watch) return null;
+
+	const watchedBy = watch.watchedByUsers.map((u) => u.toLowerCase());
 
 	for (const req of requests) {
 		const requester = req.requestedBy.toLowerCase();
