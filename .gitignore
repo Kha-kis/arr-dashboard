@@ -98,7 +98,9 @@ lerna-debug.log*
 /.playwright/
 /.playwright-auth/
 /.playwright-mcp/
-/.playwright-cli/
+**/.playwright-cli/
+auth-state.json
+**/auth-state.json
 
 # Sensitive data - must never be committed
 secrets.json
@@ -118,3 +120,12 @@ memory/
 
 # Debug screenshots (Playwright MCP)
 /album-modal*.png
+
+# Release screenshots and capture tooling
+screenshots-*/
+/*-page.png
+/*-check.png
+/*-notifications.png
+/*-redesigned.png
+/*-users.png
+scripts/capture-release-screenshots.ts

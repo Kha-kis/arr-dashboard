@@ -392,6 +392,7 @@ export interface SeerrCreateRequestPayload {
 	rootFolder?: string;
 	languageProfileId?: number;
 	tags?: number[];
+	userId?: number;
 }
 
 /** Response from POST /api/v1/request */
