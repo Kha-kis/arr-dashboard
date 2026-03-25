@@ -233,7 +233,7 @@ const RULE_CATEGORIES: Array<{
 	label: string;
 	icon: LucideIcon;
 	types: CleanupRuleType[];
-	requires?: "plex" | "tautulli";
+	requires?: "plex" | "tautulli" | "plex+seerr";
 }> = [
 	{
 		id: "content",
@@ -324,6 +324,7 @@ const RULE_CATEGORIES: Array<{
 		label: "Cross-Service",
 		icon: Target,
 		types: ["seerr_requester_watched", "seerr_requester_not_watched"],
+		requires: "plex+seerr" as const,
 	},
 ];
 
@@ -362,6 +363,10 @@ export function CleanupRuleDialog({
 	const { data: allServices } = useServicesQuery();
 	const arrInstances = useMemo(
 		() => (allServices ?? []).filter((s) => s.service === "sonarr" || s.service === "radarr"),
+		[allServices],
+	);
+	const hasSeerr = useMemo(
+		() => (allServices ?? []).some((s) => s.service === "seerr"),
 		[allServices],
 	);
 
@@ -1387,6 +1392,8 @@ export function CleanupRuleDialog({
 									{RULE_CATEGORIES.filter((cat) => {
 										if (cat.requires === "plex" && !fieldOptions?.hasPlex) return false;
 										if (cat.requires === "tautulli" && !fieldOptions?.hasTautulli) return false;
+										if (cat.requires === "plex+seerr" && (!fieldOptions?.hasPlex || !hasSeerr))
+											return false;
 										return true;
 									}).map((cat) => {
 										const CatIcon = cat.icon;

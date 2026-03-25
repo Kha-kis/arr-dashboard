@@ -751,9 +751,9 @@ function evaluateSeerrRequestCount(
 // ============================================================================
 
 /**
- * Seerr Requester Watched: flag items where the Seerr requester has watched
- * the item in Plex. Matches automatically by comparing requester display name
- * with Plex watchedByUsers (case-insensitive).
+ * Seerr Requester Watched: flag items where ANY Seerr requester has also watched
+ * the item in Plex. Returns on the first matching requester (case-insensitive
+ * display name comparison). Returns null when Seerr or Plex data is unavailable.
  */
 function evaluateSeerrRequesterWatched(
 	item: CacheItemForEval,
@@ -781,9 +781,9 @@ function evaluateSeerrRequesterWatched(
 }
 
 /**
- * Seerr Requester Not Watched: flag items where the Seerr requester has NOT
- * watched the item in Plex. Matches automatically by comparing requester
- * display name with Plex watchedByUsers (case-insensitive).
+ * Seerr Requester Not Watched: flag items where NO Seerr requester has watched
+ * the item in Plex. If multiple requesters exist, only matches when none of
+ * them appear in the Plex watchedByUsers list (case-insensitive).
  */
 function evaluateSeerrRequesterNotWatched(
 	item: CacheItemForEval,
@@ -800,14 +800,18 @@ function evaluateSeerrRequesterNotWatched(
 
 	const watchedBy = watch.watchedByUsers.map((u) => u.toLowerCase());
 
+	// Check if ANY requester has watched — if so, don't flag
+	const unwatchedRequesters: string[] = [];
 	for (const req of requests) {
 		const requester = req.requestedBy.toLowerCase();
-		if (!watchedBy.includes(requester)) {
-			return `Requested by "${req.requestedBy}" but not watched by requester in Plex`;
+		if (watchedBy.includes(requester)) {
+			return null; // At least one requester watched — not a "not watched" item
 		}
+		unwatchedRequesters.push(req.requestedBy);
 	}
 
-	return null;
+	// No requester has watched this item
+	return `Requested by ${unwatchedRequesters.map((n) => `"${n}"`).join(", ")} but not watched by any requester in Plex`;
 }
 
 // ============================================================================

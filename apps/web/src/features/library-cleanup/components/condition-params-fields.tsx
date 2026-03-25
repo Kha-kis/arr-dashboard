@@ -1464,15 +1464,16 @@ export function ConditionParamsFields({
 			return (
 				<p className="text-xs text-muted-foreground">
 					Matches when the Seerr requester also appears in Plex watch data for the item.
-					No configuration needed — works automatically across all users.
+					No configuration needed — automatically matches requester names against Plex watch data.
+					Skipped when no Plex watch data is available.
 				</p>
 			);
 
 		case "seerr_requester_not_watched":
 			return (
 				<p className="text-xs text-muted-foreground">
-					Matches when the Seerr requester has not watched the item in Plex.
-					Only evaluated when Plex watch data exists — skipped for items not yet in Plex.
+					Matches when no Seerr requester has watched the item in Plex.
+					No configuration needed — skipped when no Plex watch data is available for the item.
 				</p>
 			);
 

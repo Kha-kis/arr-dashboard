@@ -466,7 +466,7 @@ const collectTrashSyncFailures: Collector = async (app, userId) => {
 // 9. Cleanup Opportunities
 // ============================================================================
 
-const collectCleanupOpportunities: Collector = async (app, userId) => {
+const collectCleanupOpportunities: Collector = async (app, userId, _log) => {
 	const config = await app.prisma.libraryCleanupConfig.findFirst({
 		where: { userId },
 		select: {

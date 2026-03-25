@@ -345,6 +345,7 @@ export const recentlyActiveParamsSchema = z.object({
 
 // ── Phase 4: Requester-Aware Cross-Service Rule Parameter Schemas ────
 
+// No user-configurable parameters — matching is automatic via display name comparison
 export const seerrRequesterWatchedParamsSchema = z.object({});
 export const seerrRequesterNotWatchedParamsSchema = z.object({});
 
@@ -768,6 +769,6 @@ export const ruleDataSourceMap: Record<string, DataSourceDependency> = {
 	user_retention: null, // Dynamic: depends on params.source (plex, tautulli, or either)
 	staleness_score: "plex", // Uses multiple sources; plex is the primary
 	recently_active: "plex", // Checks Plex on-deck/watch status
-	seerr_requester_watched: null, // Dual dependency: seerr + plex (prefetch handled explicitly)
-	seerr_requester_not_watched: null, // Dual dependency: seerr + plex (prefetch handled explicitly)
+	seerr_requester_watched: "seerr", // Also needs plex — both prefetch lists include these types
+	seerr_requester_not_watched: "seerr", // Also needs plex — both prefetch lists include these types
 };
