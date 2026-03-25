@@ -37,13 +37,16 @@ export function setupAuthInjection(
  * Returns an inject helper bound to the given app that sends the auth header.
  */
 export function createInjectAuthenticated(app: FastifyInstance) {
-	return (method: string, url: string, options: { body?: unknown } = {}) => {
-		return app.inject({
-			method: method as any,
+	return async (method: string, url: string, options: { body?: unknown } = {}) => {
+		const injectOpts: Record<string, unknown> = {
+			method,
 			url,
 			headers: { [AUTH_HEADER]: "1" },
-			...(options.body !== undefined ? { payload: options.body } : {}),
-		});
+		};
+		if (options.body !== undefined) {
+			injectOpts.payload = options.body;
+		}
+		return app.inject(injectOpts as any);
 	};
 }
 
