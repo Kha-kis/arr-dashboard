@@ -775,7 +775,11 @@ export function CleanupRuleDialog({
 				setName(templateData.name);
 				setAction((templateData.action as "delete" | "unmonitor" | "delete_files") ?? "delete");
 				setRetentionMode(templateData.retentionMode ?? false);
+				if (templateData.serviceFilter) {
+					setServiceFilter(templateData.serviceFilter);
+				}
 				if (templateData.operator && templateData.conditions) {
+					// Composite template
 					setIsComposite(true);
 					setCompositeOperator(templateData.operator as "AND" | "OR");
 					setRuleType("composite");
@@ -786,6 +790,18 @@ export function CleanupRuleDialog({
 							params: c.parameters ?? {},
 						})),
 					);
+				} else if (templateData.ruleType && templateData.ruleType !== "composite") {
+					// Single-rule template
+					setRuleType(templateData.ruleType);
+					const p = templateData.parameters ?? {};
+					switch (templateData.ruleType) {
+						case "staleness_score":
+						case "plex_episode_completion":
+						case "user_retention":
+						case "recently_active":
+							setBehaviorParams(p);
+							break;
+					}
 				}
 			}
 		}
@@ -1064,7 +1080,11 @@ export function CleanupRuleDialog({
 
 				{!isEdit && templateData && (
 					<div className="rounded-lg border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-xs text-blue-400">
-						Template applied. Fill in the usernames in each condition below, then save.
+						{templateData.conditions?.some((c) =>
+							"userNames" in (c.parameters ?? {}),
+						)
+							? "Template applied. Fill in the usernames in each condition below, then save."
+							: "Template applied. Review the settings below and save when ready."}
 					</div>
 				)}
 
