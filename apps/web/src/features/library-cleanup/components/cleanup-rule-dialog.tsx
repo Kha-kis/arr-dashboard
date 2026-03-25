@@ -22,7 +22,7 @@ import {
 	Tv,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
 	Dialog,
 	DialogContent,
@@ -38,6 +38,11 @@ import { getServiceGradient } from "@/lib/theme-gradients";
 import { getInputStyles } from "@/lib/theme-input-styles";
 import { ConditionParamsFields, getDefaultConditionParams } from "./condition-params-fields";
 import { MultiSelectField } from "./multi-select-field";
+import {
+	buildParams as buildParamsPure,
+	splitCsv,
+	type BuildParamsState,
+} from "../lib/rule-dialog-logic";
 
 // ============================================================================
 // Constants
@@ -835,121 +840,11 @@ export function CleanupRuleDialog({
 		}
 	}, [open, editRule, templateData]);
 
-	// ── Build parameters ────────────────────────────────────────────
-	const buildParams = useCallback((): Record<string, unknown> => {
-		switch (ruleType) {
-			case "age":
-				return { field: "arrAddedAt", operator: ageOp, days };
-			case "size":
-				return { operator: sizeOp, sizeGb };
-			case "rating":
-				return scoreOp === "unrated"
-					? { source: "tmdb", operator: "unrated" }
-					: { source: "tmdb", operator: scoreOp, score };
-			case "status":
-				return { statuses: splitCsv(statuses) };
-			case "unmonitored":
-			case "no_file":
-				return {};
-			case "genre":
-				return { operator: genreOp, genres: splitCsv(genres) };
-			case "year_range": {
-				if (yearOp === "between") return { operator: yearOp, yearFrom, yearTo };
-				return { operator: yearOp, year };
-			}
-			case "quality_profile":
-				return { profileNames: splitCsv(profileNames) };
-			case "language":
-				return { operator: langOp, languages: splitCsv(languages) };
-			case "seerr_requested_by":
-				return { userNames: splitCsv(seerrUserNames) };
-			case "seerr_request_age":
-				return { operator: seerrReqAgeOp, days: seerrReqAgeDays };
-			case "seerr_request_status":
-				return { statuses: splitCsv(seerrReqStatuses) };
-			// File metadata rules — use arrays directly
-			case "video_codec":
-				return { operator: videoCodecOp, codecs: selectedVideoCodecs };
-			case "audio_codec":
-				return { operator: audioCodecOp, codecs: selectedAudioCodecs };
-			case "resolution":
-				return { operator: resolutionOp, resolutions: selectedResolutions };
-			case "hdr_type":
-				return hdrOp === "none"
-					? { operator: "none" }
-					: { operator: hdrOp, types: selectedHdrTypes };
-			case "custom_format_score":
-				return { operator: cfScoreOp, score: cfScore };
-			case "runtime":
-				return { operator: runtimeOp, minutes: runtimeMinutes };
-			case "release_group":
-				return { operator: releaseGroupOp, groups: selectedReleaseGroups };
-			// Enhanced Seerr rules
-			case "seerr_is_4k":
-				return { is4k: seerrIs4k };
-			case "seerr_request_modified_age":
-				return { operator: seerrModifiedAgeOp, days: seerrModifiedAgeDays };
-			case "seerr_modified_by":
-				return { userNames: splitCsv(seerrModifiedByUsers) };
-			// Tautulli rules
-			case "tautulli_last_watched":
-				return tautulliLastWatchedOp === "never"
-					? { operator: "never" }
-					: { operator: tautulliLastWatchedOp, days: tautulliLastWatchedDays };
-			case "tautulli_watch_count":
-				return { operator: tautulliWatchCountOp, count: tautulliWatchCount };
-			case "tautulli_watched_by":
-				return { operator: tautulliWatchedByOp, userNames: selectedTautulliUsers };
-			// Plex rules
-			case "plex_last_watched":
-				return plexLastWatchedOp === "never"
-					? { operator: "never" }
-					: { operator: plexLastWatchedOp, days: plexLastWatchedDays };
-			case "plex_watch_count":
-				return { operator: plexWatchCountOp, count: plexWatchCountVal };
-			case "plex_on_deck":
-				return { isDeck: plexOnDeckVal };
-			case "plex_user_rating":
-				return plexUserRatingOp === "unrated"
-					? { operator: "unrated" }
-					: { operator: plexUserRatingOp, rating: plexUserRatingVal };
-			case "plex_watched_by":
-				return { operator: plexWatchedByOp, userNames: selectedPlexUsers };
-			// Phase C rules
-			case "imdb_rating":
-				return imdbRatingOp === "unrated"
-					? { operator: "unrated" }
-					: { operator: imdbRatingOp, score: imdbRatingScore };
-			case "file_path":
-				return { operator: filePathOp, pattern: filePathPattern, field: filePathField };
-			case "seerr_is_requested":
-				return { isRequested: seerrIsRequested };
-			case "seerr_request_count":
-				return { operator: seerrRequestCountOp, count: seerrRequestCountVal };
-			case "audio_channels":
-				return { operator: audioChannelsOp, channels: audioChannelsVal };
-			case "tag_match":
-				return { operator: tagMatchOp, tagIds: selectedTagIds };
-			// Phase D rules
-			case "plex_collection":
-				return { operator: plexCollectionOp, collections: selectedPlexCollections };
-			case "plex_label":
-				return { operator: plexLabelOp, labels: selectedPlexLabels };
-			case "plex_added_at":
-				return { operator: plexAddedAtOp, days: plexAddedAtDays };
-			// Phase 2/3: Behavior analysis (delegate to behaviorParams)
-			case "plex_episode_completion":
-			case "user_retention":
-			case "staleness_score":
-			case "recently_active":
-				return behaviorParams;
-			default:
-				return {};
-		}
-	}, [
+	// ── Build parameters (delegates to extracted pure function) ─────
+	const buildParamsState: BuildParamsState = {
 		ruleType,
-		days,
 		ageOp,
+		days,
 		sizeOp,
 		sizeGb,
 		scoreOp,
@@ -969,8 +864,8 @@ export function CleanupRuleDialog({
 		seerrReqAgeDays,
 		seerrReqStatuses,
 		videoCodecOp,
-		audioCodecOp,
 		selectedVideoCodecs,
+		audioCodecOp,
 		selectedAudioCodecs,
 		resolutionOp,
 		selectedResolutions,
@@ -1020,7 +915,8 @@ export function CleanupRuleDialog({
 		plexAddedAtOp,
 		plexAddedAtDays,
 		behaviorParams,
-	]);
+	};
+	const buildParams = () => buildParamsPure(buildParamsState);
 
 	const handleSubmit = (e: React.FormEvent) => {
 		e.preventDefault();
@@ -3330,13 +3226,3 @@ function ExcludeTagsPicker({
 	);
 }
 
-// ============================================================================
-// Helpers
-// ============================================================================
-
-function splitCsv(value: string): string[] {
-	return value
-		.split(",")
-		.map((s) => s.trim())
-		.filter(Boolean);
-}
