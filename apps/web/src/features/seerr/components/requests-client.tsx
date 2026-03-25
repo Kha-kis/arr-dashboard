@@ -11,7 +11,8 @@ import {
 	Users,
 	WifiOff,
 } from "lucide-react";
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
 	PremiumEmptyState,
@@ -54,6 +55,23 @@ export const RequestsClient = () => {
 	const [activeTab, setActiveTab] = useState<RequestsTab>("approval");
 	const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
 	const [selectedRequest, setSelectedRequest] = useState<SeerrRequest | null>(null);
+
+	// Deep-link: ?user=<id> pre-selects requester filter on "All Requests" tab
+	const searchParams = useSearchParams();
+	const deepLinkUserId = searchParams.get("user");
+	const [initialUserFilter, setInitialUserFilter] = useState<string | undefined>(undefined);
+
+	useEffect(() => {
+		if (deepLinkUserId) {
+			const parsed = Number(deepLinkUserId);
+			if (Number.isInteger(parsed) && parsed > 0) {
+				setInitialUserFilter(deepLinkUserId);
+				setActiveTab("all");
+			}
+		} else {
+			setInitialUserFilter(undefined);
+		}
+	}, [deepLinkUserId]);
 
 	// Resolve current instance
 	const currentInstanceId = selectedInstanceId ?? defaultInstance?.id ?? "";
@@ -221,6 +239,7 @@ export const RequestsClient = () => {
 							<RequestsHistoryTab
 								instanceId={currentInstanceId}
 								onSelectRequest={setSelectedRequest}
+								initialUserFilter={initialUserFilter}
 							/>
 						)}
 						{activeTab === "users" && <UsersTab instanceId={currentInstanceId} />}

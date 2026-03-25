@@ -36,6 +36,8 @@ import {
 	getRequestStatusLabel,
 	getRequestStatusVariant,
 } from "../lib/seerr-utils";
+import { RequesterProfilePopover } from "./requester-profile-popover";
+import { RequestStatusTimeline } from "./request-status-timeline";
 
 // ============================================================================
 // Types
@@ -291,21 +293,31 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 
 							{/* Requester info */}
 							<div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-								<span className="flex items-center gap-1.5">
-									{request.requestedBy.avatar && !incognitoMode ? (
-										/* eslint-disable-next-line @next/next/no-img-element */
-										<img
-											src={request.requestedBy.avatar}
-											alt={request.requestedBy.displayName}
-											className="h-5 w-5 rounded-full"
-										/>
-									) : (
-										<User className="h-3.5 w-3.5" />
-									)}
-									<span className="font-medium text-foreground/80">
-										{incognitoMode ? getLinuxUsername(request.requestedBy.displayName) : request.requestedBy.displayName}
-									</span>
-								</span>
+								<RequesterProfilePopover
+									seerrUser={request.requestedBy}
+									displayName={incognitoMode ? getLinuxUsername(request.requestedBy.displayName) : request.requestedBy.displayName}
+									instanceId={instanceId}
+									isIncognito={incognitoMode}
+								>
+									<button
+										type="button"
+										className="flex items-center gap-1.5 hover:text-foreground transition-colors"
+									>
+										{request.requestedBy.avatar && !incognitoMode ? (
+											/* eslint-disable-next-line @next/next/no-img-element */
+											<img
+												src={request.requestedBy.avatar}
+												alt={request.requestedBy.displayName}
+												className="h-5 w-5 rounded-full"
+											/>
+										) : (
+											<User className="h-3.5 w-3.5" />
+										)}
+										<span className="font-medium text-foreground/80">
+											{incognitoMode ? getLinuxUsername(request.requestedBy.displayName) : request.requestedBy.displayName}
+										</span>
+									</button>
+								</RequesterProfilePopover>
 								<span>{formatRelativeTime(request.createdAt)}</span>
 								{request.modifiedBy && (
 									<span className="text-muted-foreground/70">
@@ -320,6 +332,21 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 								)}
 							</div>
 						</div>
+					</div>
+
+					{/* Request lifecycle timeline */}
+					<div className="rounded-xl border border-border/30 bg-card/20 p-4">
+						<RequestStatusTimeline
+							request={request}
+							variant="expanded"
+							modifierName={
+								request.modifiedBy
+									? incognitoMode
+										? getLinuxUsername(request.modifiedBy.displayName)
+										: request.modifiedBy.displayName
+									: undefined
+							}
+						/>
 					</div>
 
 					{/* Action buttons */}
