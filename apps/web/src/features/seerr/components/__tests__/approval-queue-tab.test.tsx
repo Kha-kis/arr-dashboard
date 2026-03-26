@@ -20,6 +20,7 @@ vi.mock("../../../../hooks/api/useSeerr", () => ({
 	useDeclineSeerrRequest: () => mockUseDeclineSeerrRequest(),
 	useDeleteSeerrRequest: () => mockUseDeleteSeerrRequest(),
 	useBulkSeerrRequestAction: () => mockUseBulkSeerrRequestAction(),
+	useSeerrUserQuota: () => ({ data: undefined, isLoading: false, isError: false }),
 }));
 
 vi.mock("../../../../hooks/useThemeGradient", () => ({
