@@ -25,6 +25,7 @@ export const ROUTES = {
 	history: "/history",
 	statistics: "/statistics",
 	hunting: "/hunting",
+	requests: "/requests",
 	settings: "/settings",
 	trashGuides: "/trash-guides",
 } as const;
