@@ -191,6 +191,7 @@ export const ApprovalQueueTab = ({ instanceId, onSelectRequest }: ApprovalQueueT
 					<div className="flex-1 min-w-0">
 						<RequestCard
 							request={request}
+							instanceId={instanceId}
 							index={index}
 							onClick={() => onSelectRequest?.(request)}
 							actions={

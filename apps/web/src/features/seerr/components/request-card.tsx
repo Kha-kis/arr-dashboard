@@ -16,6 +16,8 @@ import {
 	getRequestStatusLabel,
 	getRequestStatusVariant,
 } from "../lib/seerr-utils";
+import { RequesterProfilePopover } from "./requester-profile-popover";
+import { RequestStatusTimeline } from "./request-status-timeline";
 
 // ============================================================================
 // Types
@@ -23,6 +25,8 @@ import {
 
 interface RequestCardProps {
 	request: SeerrRequest;
+	/** Seerr instance ID — enables requester profile popover when provided */
+	instanceId?: string;
 	actions?: ReactNode;
 	index?: number;
 	onClick?: () => void;
@@ -123,7 +127,7 @@ const MetaChip = ({
 // Component
 // ============================================================================
 
-export const RequestCard = ({ request, actions, index = 0, onClick }: RequestCardProps) => {
+export const RequestCard = ({ request, instanceId, actions, index = 0, onClick }: RequestCardProps) => {
 	const [incognitoMode] = useIncognitoMode();
 	const posterUrl = getPosterUrl(request.media.posterPath);
 	const TypeIcon = request.type === "movie" ? Film : Tv;
@@ -225,7 +229,25 @@ export const RequestCard = ({ request, actions, index = 0, onClick }: RequestCar
 							</span>
 
 							{/* Requester */}
-							<MetaChip icon={User}>{incognitoMode ? getLinuxUsername(request.requestedBy.displayName) : request.requestedBy.displayName}</MetaChip>
+							{instanceId ? (
+								<RequesterProfilePopover
+									seerrUser={request.requestedBy}
+									displayName={incognitoMode ? getLinuxUsername(request.requestedBy.displayName) : request.requestedBy.displayName}
+									instanceId={instanceId}
+									isIncognito={incognitoMode}
+								>
+									<button
+										type="button"
+										className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+										onClick={(e) => e.stopPropagation()}
+									>
+										<User className="h-3 w-3 shrink-0" />
+										{incognitoMode ? getLinuxUsername(request.requestedBy.displayName) : request.requestedBy.displayName}
+									</button>
+								</RequesterProfilePopover>
+							) : (
+								<MetaChip icon={User}>{incognitoMode ? getLinuxUsername(request.requestedBy.displayName) : request.requestedBy.displayName}</MetaChip>
+							)}
 
 							{/* Separator dot */}
 							<span
@@ -262,21 +284,21 @@ export const RequestCard = ({ request, actions, index = 0, onClick }: RequestCar
 									{seasonInfo}
 								</span>
 							)}
+							<RequestStatusTimeline
+								request={request}
+								variant="compact"
+								modifierName={
+									request.modifiedBy
+										? incognitoMode
+											? getLinuxUsername(request.modifiedBy.displayName)
+											: request.modifiedBy.displayName
+										: undefined
+								}
+							/>
 							{request.media.overview && !incognitoMode && (
 								<p className="w-full mt-1 text-[11.5px] leading-relaxed text-muted-foreground/40 line-clamp-1">
 									{request.media.overview}
 								</p>
-							)}
-							{request.modifiedBy && (
-								<span className="text-[11px] text-muted-foreground/35">
-									{request.status === SEERR_REQUEST_STATUS.APPROVED ||
-									request.status === SEERR_REQUEST_STATUS.COMPLETED
-										? "Approved"
-										: request.status === SEERR_REQUEST_STATUS.DECLINED
-											? "Declined"
-											: "Modified"}{" "}
-									by {incognitoMode ? getLinuxUsername(request.modifiedBy.displayName) : request.modifiedBy.displayName}
-								</span>
 							)}
 						</div>
 					</div>

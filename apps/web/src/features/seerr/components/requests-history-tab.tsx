@@ -49,13 +49,15 @@ const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
 interface RequestsHistoryTabProps {
 	instanceId: string;
 	onSelectRequest?: (request: SeerrRequest) => void;
+	/** Pre-set requester filter from deep-link (?user=<id>) */
+	initialUserFilter?: string;
 }
 
-export const RequestsHistoryTab = ({ instanceId, onSelectRequest }: RequestsHistoryTabProps) => {
+export const RequestsHistoryTab = ({ instanceId, onSelectRequest, initialUserFilter }: RequestsHistoryTabProps) => {
 	const [incognitoMode] = useIncognitoMode();
 	const [statusFilter, setStatusFilter] = useState<RequestFilter>("all");
 	const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
-	const [userFilter, setUserFilter] = useState<string>("all");
+	const [userFilter, setUserFilter] = useState<string>(initialUserFilter ?? "all");
 	const [sort, setSort] = useState<RequestSort>("added");
 	const PAGE_SIZE = 50;
 	const [take, setTake] = useState(PAGE_SIZE);
@@ -69,6 +71,11 @@ export const RequestsHistoryTab = ({ instanceId, onSelectRequest }: RequestsHist
 		requestedBy,
 	});
 	const { data: usersData } = useSeerrUsers({ instanceId, take: 50, sort: "displayname" });
+
+	// Sync user filter when deep-link changes
+	useEffect(() => {
+		setUserFilter(initialUserFilter ?? "all");
+	}, [initialUserFilter]);
 
 	// Reset pagination when filters change
 	const prevFilterRef = useRef({ statusFilter, userFilter, sort });
@@ -175,6 +182,7 @@ export const RequestsHistoryTab = ({ instanceId, onSelectRequest }: RequestsHist
 						<RequestCard
 							key={request.id}
 							request={request}
+							instanceId={instanceId}
 							index={index}
 							onClick={() => onSelectRequest?.(request)}
 							actions={
