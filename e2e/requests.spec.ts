@@ -42,17 +42,33 @@ async function hasSeerrInstance(page: import("@playwright/test").Page): Promise<
  * Waits for request cards to appear, or returns false if none load.
  */
 async function waitForRequestCards(page: import("@playwright/test").Page): Promise<boolean> {
-	// Request cards contain requester names and status badges
-	const cards = page.locator("[role='button']").filter({ hasText: /movie|tv/i });
-	return cards.first().isVisible({ timeout: TIMEOUTS.apiResponse }).catch(() => false);
+	// Request cards have role="button" and contain a Movie/TV type badge
+	const card = page.locator("[role='button']").filter({ hasText: /movie|tv/i }).first();
+	try {
+		await card.waitFor({ state: "visible", timeout: TIMEOUTS.apiResponse });
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 /**
  * Checks whether the approval queue has pending request cards with Preview buttons.
  */
 async function waitForPendingRequestsWithPreview(page: import("@playwright/test").Page): Promise<boolean> {
-	const previewBtn = page.getByRole("button", { name: /preview request/i }).first();
-	return previewBtn.isVisible({ timeout: TIMEOUTS.apiResponse }).catch(() => false);
+	// Target the actual <button> element with aria-label, not the card wrapper (div[role=button])
+	const previewBtn = page.locator("button[aria-label='Preview request']").first();
+	try {
+		await previewBtn.waitFor({ state: "visible", timeout: TIMEOUTS.apiResponse });
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/** Returns locator for actual Preview <button> elements (not card wrappers) */
+function getPreviewButtons(page: import("@playwright/test").Page) {
+	return page.locator("button[aria-label='Preview request'], button[aria-label='Close preview']");
 }
 
 // ============================================================================
@@ -332,19 +348,15 @@ test.describe("Requests - Filter Controls", () => {
 // ============================================================================
 
 test.describe("Requests - Inline Preview", () => {
-	test.beforeEach(async ({ page }) => {
-		await page.goto(ROUTES.requests);
-		await waitForLoadingComplete(page);
-	});
-
 	test("should toggle inline preview when clicking Preview button", async ({ page }) => {
+		await page.goto(ROUTES.requests);
 		const hasSeerr = await hasSeerrInstance(page);
 		test.skip(!hasSeerr, "No Seerr instance configured");
 
 		const hasPreview = await waitForPendingRequestsWithPreview(page);
 		test.skip(!hasPreview, "No pending requests with Preview button");
 
-		const previewBtn = page.getByRole("button", { name: /preview request/i }).first();
+		const previewBtn = page.locator("button[aria-label='Preview request']").first();
 
 		// Click Preview — panel should expand
 		await previewBtn.click();
@@ -355,14 +367,15 @@ test.describe("Requests - Inline Preview", () => {
 		await expect(panel.getByText("Requested")).toBeVisible();
 
 		// Button should now show "Close preview" label
-		await expect(page.getByRole("button", { name: /close preview/i }).first()).toBeVisible();
+		await expect(page.locator("button[aria-label='Close preview']").first()).toBeVisible();
 
 		// Click again to close
-		await page.getByRole("button", { name: /close preview/i }).first().click();
+		await page.locator("button[aria-label='Close preview']").first().click();
 		await expect(panel).toBeHidden();
 	});
 
 	test("should show overview and seasons in preview for TV requests", async ({ page }) => {
+		await page.goto(ROUTES.requests);
 		const hasSeerr = await hasSeerrInstance(page);
 		test.skip(!hasSeerr, "No Seerr instance configured");
 
@@ -370,7 +383,7 @@ test.describe("Requests - Inline Preview", () => {
 		test.skip(!hasPreview, "No pending requests with Preview button");
 
 		// Open first preview
-		await page.getByRole("button", { name: /preview request/i }).first().click();
+		await page.locator("button[aria-label='Preview request']").first().click();
 		const panel = page.locator("[id^='preview-']").first();
 		await expect(panel).toBeVisible({ timeout: TIMEOUTS.short });
 
@@ -385,33 +398,38 @@ test.describe("Requests - Inline Preview", () => {
 	});
 
 	test("should close previous preview when opening another", async ({ page }) => {
+		await page.goto(ROUTES.requests);
 		const hasSeerr = await hasSeerrInstance(page);
 		test.skip(!hasSeerr, "No Seerr instance configured");
 
 		const hasPreview = await waitForPendingRequestsWithPreview(page);
 		test.skip(!hasPreview, "No pending requests with Preview button");
 
-		const previewButtons = page.getByRole("button", { name: /preview request/i });
+		const previewButtons = page.locator("button[aria-label='Preview request']");
 		const buttonCount = await previewButtons.count();
 		test.skip(buttonCount < 2, "Need at least 2 pending requests");
 
 		// Open first preview
-		await previewButtons.nth(0).click();
+		await previewButtons.first().click();
 		const panels = page.locator("[id^='preview-']");
 		await expect(panels.first()).toBeVisible({ timeout: TIMEOUTS.short });
 
-		// Open second preview — first should close
-		await previewButtons.nth(1).click();
-		const visiblePanels = await panels.count();
+		// After clicking, the first button label changed to "Close preview"
+		// so re-query for remaining "Preview request" buttons and click the next one
+		await page.locator("button[aria-label='Preview request']").first().click();
+		await page.waitForTimeout(300);
+
 		// Only one panel should be visible at a time
 		let visCount = 0;
-		for (let i = 0; i < visiblePanels; i++) {
-			if (await panels.nth(i).isVisible()) visCount++;
+		const allPanels = page.locator("[id^='preview-']");
+		for (let i = 0; i < await allPanels.count(); i++) {
+			if (await allPanels.nth(i).isVisible()) visCount++;
 		}
 		expect(visCount).toBe(1);
 	});
 
 	test("should open detail modal via Full Details button in preview", async ({ page }) => {
+		await page.goto(ROUTES.requests);
 		const hasSeerr = await hasSeerrInstance(page);
 		test.skip(!hasSeerr, "No Seerr instance configured");
 
@@ -419,7 +437,7 @@ test.describe("Requests - Inline Preview", () => {
 		test.skip(!hasPreview, "No pending requests with Preview button");
 
 		// Open preview
-		await page.getByRole("button", { name: /preview request/i }).first().click();
+		await page.locator("button[aria-label='Preview request']").first().click();
 		const panel = page.locator("[id^='preview-']").first();
 		await expect(panel).toBeVisible({ timeout: TIMEOUTS.short });
 
@@ -435,13 +453,14 @@ test.describe("Requests - Inline Preview", () => {
 	});
 
 	test("should support keyboard navigation for preview", async ({ page }) => {
+		await page.goto(ROUTES.requests);
 		const hasSeerr = await hasSeerrInstance(page);
 		test.skip(!hasSeerr, "No Seerr instance configured");
 
 		const hasPreview = await waitForPendingRequestsWithPreview(page);
 		test.skip(!hasPreview, "No pending requests with Preview button");
 
-		const previewBtn = page.getByRole("button", { name: /preview request/i }).first();
+		const previewBtn = page.locator("button[aria-label='Preview request']").first();
 
 		// Focus and activate with Enter
 		await previewBtn.focus();
@@ -536,15 +555,23 @@ test.describe("Requests - Accessibility", () => {
 		const hasPreview = await waitForPendingRequestsWithPreview(page);
 		test.skip(!hasPreview, "No pending requests with Preview button");
 
-		const previewBtn = page.getByRole("button", { name: /preview request/i }).first();
+		const previewBtn = page.locator("button[aria-label='Preview request']").first();
 
 		// Before expanding: aria-expanded should be false
 		await expect(previewBtn).toHaveAttribute("aria-expanded", "false");
 
 		// After expanding: aria-expanded should be true, aria-controls should reference panel
+		// Use the panel appearance as the ground truth (more reliable than checking attribute
+		// immediately after click, as React state updates are async)
 		await previewBtn.click();
-		await expect(previewBtn).toHaveAttribute("aria-expanded", "true");
-		const controlsId = await previewBtn.getAttribute("aria-controls");
+		const panel = page.locator("[id^='preview-']").first();
+		await expect(panel).toBeVisible({ timeout: TIMEOUTS.short });
+
+		// Now verify the button reflects expanded state
+		await expect(page.locator("button[aria-label='Close preview']").first()).toBeVisible();
+		const closeBtn = page.locator("button[aria-label='Close preview']").first();
+		await expect(closeBtn).toHaveAttribute("aria-expanded", "true");
+		const controlsId = await closeBtn.getAttribute("aria-controls");
 		expect(controlsId).toMatch(/^preview-\d+$/);
 
 		// The referenced panel should exist and be visible
@@ -560,7 +587,7 @@ test.describe("Requests - Accessibility", () => {
 		test.skip(!hasPreview, "No pending requests with Preview button");
 
 		// Open preview
-		await page.getByRole("button", { name: /preview request/i }).first().click();
+		await page.locator("button[aria-label='Preview request']").first().click();
 		const panel = page.locator("[id^='preview-']").first();
 		await expect(panel).toBeVisible({ timeout: TIMEOUTS.short });
 
