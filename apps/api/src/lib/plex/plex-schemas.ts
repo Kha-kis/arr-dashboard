@@ -103,11 +103,14 @@ export const plexOnDeckResponseSchema = z.looseObject({
 
 /** /status/sessions endpoint
  *
- * Plex returns sessionKey/ratingKey as numbers in some server versions and
- * strings in others (JSON encoding inconsistency). Use z.coerce.string() to
- * handle both. Player fields are optional with defaults because some clients
- * (PlexAmp, web player) don't report all device metadata. Session.id is also
- * coerced since it can appear as a numeric ID.
+ * Plex JSON responses vary in field types across server versions — the XML
+ * and JSON outputs have documented inconsistencies (see Plex forum thread
+ * "Inconsistencies between the XML and JSON outputs of status/sessions").
+ * Use z.coerce.string() / z.coerce.number() for defensive parsing of fields
+ * that may arrive as either type. Player fields are optional with defaults
+ * because some clients (PlexAmp, web player) don't report all device metadata.
+ * Note: official API docs type User.id as string, but this codebase consumes
+ * it as number (PlexSessionItem.user.id) — coerce handles both safely.
  */
 export const plexSessionsResponseSchema = z.looseObject({
 	MediaContainer: z.looseObject({
