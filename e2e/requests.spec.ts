@@ -261,11 +261,9 @@ test.describe("Requests - Requester Profile Popover", () => {
 
 test.describe("Requests - Deep Linking", () => {
 	test("should switch to All Requests tab when ?user= param is present", async ({ page }) => {
-		const hasSeerr = await hasSeerrInstance(page);
-
 		// Navigate with a user filter param
 		await page.goto(`${ROUTES.requests}?user=1`);
-		await waitForLoadingComplete(page);
+		const hasSeerr = await hasSeerrInstance(page);
 
 		if (hasSeerr) {
 			// Should automatically switch to "All Requests" tab
@@ -277,12 +275,10 @@ test.describe("Requests - Deep Linking", () => {
 	});
 
 	test("should reset filter when navigating to /requests without param", async ({ page }) => {
-		const hasSeerr = await hasSeerrInstance(page);
-		test.skip(!hasSeerr, "No Seerr instance configured");
-
 		// First navigate with user filter
 		await page.goto(`${ROUTES.requests}?user=1`);
-		await waitForLoadingComplete(page);
+		const hasSeerr = await hasSeerrInstance(page);
+		test.skip(!hasSeerr, "No Seerr instance configured");
 
 		// Then navigate without it
 		await page.goto(ROUTES.requests);
