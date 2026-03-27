@@ -101,24 +101,31 @@ export const plexOnDeckResponseSchema = z.looseObject({
 	}),
 });
 
-/** /status/sessions endpoint */
+/** /status/sessions endpoint
+ *
+ * Plex returns sessionKey/ratingKey as numbers in some server versions and
+ * strings in others (JSON encoding inconsistency). Use z.coerce.string() to
+ * handle both. Player fields are optional with defaults because some clients
+ * (PlexAmp, web player) don't report all device metadata. Session.id is also
+ * coerced since it can appear as a numeric ID.
+ */
 export const plexSessionsResponseSchema = z.looseObject({
 	MediaContainer: z.looseObject({
 		size: z.number().optional(),
 		Metadata: z
 			.array(
 				z.looseObject({
-					sessionKey: z.string(),
-					ratingKey: z.string(),
+					sessionKey: z.coerce.string(),
+					ratingKey: z.coerce.string(),
 					title: z.string().optional().default(""),
 					grandparentTitle: z.string().optional(),
-					type: z.string(),
+					type: z.string().optional().default("unknown"),
 					viewOffset: z.number().optional(),
 					duration: z.number().optional(),
 					thumb: z.string().optional(),
 					User: z
 						.looseObject({
-							id: z.number(),
+							id: z.coerce.number(),
 							title: z.string().optional().default(""),
 							thumb: z.string().optional(),
 						})
@@ -126,14 +133,14 @@ export const plexSessionsResponseSchema = z.looseObject({
 					Player: z
 						.looseObject({
 							title: z.string().optional().default(""),
-							platform: z.string(),
-							product: z.string(),
-							state: z.string(),
+							platform: z.string().optional().default("unknown"),
+							product: z.string().optional().default("unknown"),
+							state: z.string().optional().default("unknown"),
 						})
 						.optional(),
 					Session: z
 						.looseObject({
-							id: z.string(),
+							id: z.coerce.string(),
 							bandwidth: z.number().optional(),
 						})
 						.optional(),
