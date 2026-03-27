@@ -227,14 +227,16 @@ describe("RequestStatusTimeline — compact", () => {
 		expect(labels).toEqual(["Requested", "Approved", "Processing", "Available"]);
 	});
 
-	it("has aria-label on compact stage wrappers for screen readers", () => {
+	it("has role='img' with synthesized aria-label on compact timeline wrapper", () => {
 		const request = makeRequest({ status: 1 });
 		const { container } = render(
 			<RequestStatusTimeline request={request} variant="compact" />,
 		);
-		const labeledElements = container.querySelectorAll("[aria-label]");
-		expect(labeledElements.length).toBeGreaterThanOrEqual(4);
-		expect(labeledElements[0]?.getAttribute("aria-label")).toBe("Requested");
+		const wrapper = container.querySelector('[role="img"]');
+		expect(wrapper).toBeTruthy();
+		expect(wrapper?.getAttribute("aria-label")).toBe(
+			"Status: Requested → Pending (active) → Processing → Available",
+		);
 	});
 
 	it("includes actor attribution in title for declined stage", () => {

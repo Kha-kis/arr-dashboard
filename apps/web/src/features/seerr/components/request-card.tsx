@@ -91,6 +91,8 @@ function formatSeasons(seasons?: SeerrSeason[]): ReactNode | null {
 					<span key={s.seasonNumber} className="flex items-center gap-0.5">
 						<span
 							className={`inline-block h-1.5 w-1.5 rounded-full ${getSeasonStatusColor(s.status)}`}
+							role="img"
+							aria-label={`S${s.seasonNumber}: ${SEERR_MEDIA_STATUS_LABEL_MAP[s.status] ?? "Unknown"}`}
 							title={`S${s.seasonNumber}: ${SEERR_MEDIA_STATUS_LABEL_MAP[s.status] ?? "Unknown"}`}
 						/>
 						S{s.seasonNumber}

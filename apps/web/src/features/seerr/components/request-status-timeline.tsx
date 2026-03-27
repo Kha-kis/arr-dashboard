@@ -215,23 +215,32 @@ function StageIcon({ status, size }: { status: StageStatus; size: number }) {
 // ============================================================================
 
 function CompactTimeline({ stages }: { stages: TimelineStage[] }) {
+	const summary = stages
+		.map((s) => {
+			const suffix = s.status === "active" ? " (active)" : s.status === "failed" ? " (failed)" : "";
+			return s.label + suffix;
+		})
+		.join(" → ");
+
 	return (
-		<div className="flex items-center gap-0.5">
+		<div
+			className="flex items-center gap-0.5"
+			role="img"
+			aria-label={`Status: ${summary}`}
+		>
 			{stages.map((stage, i) => {
 				const color = STAGE_COLORS[stage.status];
 				const isLast = i === stages.length - 1;
 				return (
-					<div key={stage.label} className="flex items-center gap-0.5">
+					<div key={stage.label} className="flex items-center gap-0.5" aria-hidden="true">
 						<span
 							className="flex items-center gap-0.5"
 							title={stage.label + (stage.actor ? ` by ${stage.actor}` : "")}
-							aria-label={stage.label + (stage.actor ? ` by ${stage.actor}` : "")}
 						>
 							<StageIcon status={stage.status} size={10} />
 							<span
 								className="text-[9px] font-medium leading-none hidden sm:inline"
 								style={{ color: color.text }}
-								aria-hidden="true"
 							>
 								{stage.label}
 							</span>

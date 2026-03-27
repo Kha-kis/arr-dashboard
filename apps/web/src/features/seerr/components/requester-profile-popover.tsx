@@ -63,7 +63,14 @@ function QuotaBar({
 					{used}/{limit}
 				</span>
 			</div>
-			<div className="h-1.5 w-full rounded-full bg-muted/30 overflow-hidden">
+			<div
+				role="progressbar"
+				aria-label={label}
+				aria-valuenow={used}
+				aria-valuemin={0}
+				aria-valuemax={limit > 0 ? limit : undefined}
+				className="h-1.5 w-full rounded-full bg-muted/30 overflow-hidden"
+			>
 				<div
 					className="h-full rounded-full transition-all duration-300"
 					style={{ width: `${pct}%`, backgroundColor: barColor }}
@@ -130,8 +137,8 @@ export const RequesterProfilePopover = ({
 				{/* Quota section */}
 				<div className="p-3 space-y-2.5">
 					{quotaLoading && (
-						<div className="flex items-center justify-center py-1">
-							<Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+						<div role="status" aria-label="Loading quota" className="flex items-center justify-center py-1">
+							<Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" aria-hidden="true" />
 						</div>
 					)}
 					{quotaError && (
