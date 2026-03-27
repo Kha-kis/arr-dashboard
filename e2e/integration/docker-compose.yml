@@ -1,10 +1,16 @@
 # Docker Compose for E2E integration testing with real *arr services.
-# Provides Sonarr, Radarr, Lidarr, Readarr, and Prowlarr instances alongside
-# arr-dashboard so Playwright can test against live data flowing through real APIs.
+# Provides Sonarr, Radarr, Lidarr, Readarr, Prowlarr, Jellyfin, and Seerr
+# instances alongside arr-dashboard so Playwright can test against live data
+# flowing through real APIs.
+#
+# Jellyfin is included solely as an auth bridge for Seerr — Seerr requires a
+# media server to create its first admin user. There is no API-only path.
 #
 # Usage:
 #   docker compose up -d --build          # Start all services
-#   bash bootstrap-services.sh            # Extract API keys, write .env.services
+#   npx playwright test jellyfin-setup \  # Complete Jellyfin wizard via UI
+#     --config=e2e/integration/playwright.integration.config.ts
+#   bash bootstrap-services.sh            # Extract API keys, bootstrap Seerr
 #   docker compose down -v --remove-orphans  # Teardown
 
 services:
@@ -111,8 +117,55 @@ services:
       retries: 30
       start_period: 15s
 
+  # ── Jellyfin + Seerr ───────────────────────────────────────────────
+  # Jellyfin exists only as an auth bridge — Seerr requires a media server
+  # to create its first admin user (no local-only admin creation path).
+  # The Jellyfin setup wizard is completed via Playwright before bootstrap.
+
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: e2e-jellyfin
+    volumes:
+      - jellyfin-config:/config
+      - jellyfin-cache:/cache
+    ports:
+      - "8096:8096"
+    networks:
+      - e2e-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8096/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+  seerr:
+    image: ghcr.io/seerr-team/seerr:latest
+    container_name: e2e-seerr
+    environment:
+      - TZ=Etc/UTC
+      - API_KEY=e2e-seerr-test-api-key-0123456789ab
+    volumes:
+      - seerr-config:/app/config
+    ports:
+      - "5055:5055"
+    networks:
+      - e2e-net
+    depends_on:
+      jellyfin:
+        condition: service_healthy
+      sonarr:
+        condition: service_healthy
+      radarr:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5055/api/v1/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
   # ── Webhook receiver for notification testing ──────────────────────
-  # Accepts any HTTP request and returns 200 — used to verify webhook delivery
 
   webhook-receiver:
     image: traefik/whoami:latest
@@ -133,8 +186,8 @@ services:
         COMMIT_SHA: local
     container_name: e2e-arr-dashboard
     ports:
-      - "3000:3000"
-      - "3001:3001"
+      - "${DASHBOARD_PORT:-3000}:3000"
+      - "${DASHBOARD_API_PORT:-3001}:3001"
     volumes:
       - dashboard-config:/config
     environment:
@@ -170,6 +223,9 @@ volumes:
   lidarr-config:
   readarr-config:
   prowlarr-config:
+  jellyfin-config:
+  jellyfin-cache:
+  seerr-config:
   dashboard-config:
 
 networks:
