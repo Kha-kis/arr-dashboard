@@ -53,6 +53,12 @@ const SERVICES = [
 		baseUrl: process.env.PROWLARR_URL || "http://prowlarr:9696",
 		apiKey: process.env.PROWLARR_API_KEY || "",
 	},
+	{
+		label: "E2E Seerr",
+		service: "seerr",
+		baseUrl: process.env.SEERR_URL || "http://seerr:5055",
+		apiKey: process.env.SEERR_API_KEY || "",
+	},
 ] as const;
 
 setup("register user and add services", async ({ page }) => {
