@@ -332,6 +332,64 @@ describe("Upstream fixture regression tests", () => {
 			}
 		});
 
+		it("accepts sessions with numeric sessionKey/ratingKey (Plex version variance)", () => {
+			const numericKeysResponse = {
+				MediaContainer: {
+					size: 1,
+					Metadata: [
+						{
+							sessionKey: 42,
+							ratingKey: 789,
+							title: "Movie Title",
+							type: "movie",
+							Session: { id: 101 },
+							User: { id: "1", title: "user" },
+						},
+					],
+				},
+			};
+			const result = parseUpstream(numericKeysResponse, plexSessionsResponseSchema, {
+				integration: "plex",
+				category: "/status/sessions",
+			});
+			expect(result.success).toBe(true);
+			if (result.success) {
+				const session = result.data.MediaContainer.Metadata![0]!;
+				expect(session.sessionKey).toBe("42");
+				expect(session.ratingKey).toBe("789");
+				expect(session.Session?.id).toBe("101");
+				expect(session.User?.id).toBe(1);
+			}
+		});
+
+		it("accepts sessions with missing Player fields (minimal client metadata)", () => {
+			const minimalPlayerResponse = {
+				MediaContainer: {
+					size: 1,
+					Metadata: [
+						{
+							sessionKey: "1",
+							ratingKey: "100",
+							title: "Song",
+							Player: { title: "PlexAmp" },
+						},
+					],
+				},
+			};
+			const result = parseUpstream(minimalPlayerResponse, plexSessionsResponseSchema, {
+				integration: "plex",
+				category: "/status/sessions",
+			});
+			expect(result.success).toBe(true);
+			if (result.success) {
+				const session = result.data.MediaContainer.Metadata![0]!;
+				expect(session.Player?.platform).toBe("unknown");
+				expect(session.Player?.product).toBe("unknown");
+				expect(session.Player?.state).toBe("unknown");
+				expect(session.type).toBe("unknown");
+			}
+		});
+
 		it("accepts real history response", () => {
 			const result = parseUpstream(PLEX_HISTORY_RESPONSE, plexHistoryResponseSchema, {
 				integration: "plex",

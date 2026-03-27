@@ -101,24 +101,34 @@ export const plexOnDeckResponseSchema = z.looseObject({
 	}),
 });
 
-/** /status/sessions endpoint */
+/** /status/sessions endpoint
+ *
+ * Plex JSON responses vary in field types across server versions — the XML
+ * and JSON outputs have documented inconsistencies (see Plex forum thread
+ * "Inconsistencies between the XML and JSON outputs of status/sessions").
+ * Use z.coerce.string() / z.coerce.number() for defensive parsing of fields
+ * that may arrive as either type. Player fields are optional with defaults
+ * because some clients (PlexAmp, web player) don't report all device metadata.
+ * Note: official API docs type User.id as string, but this codebase consumes
+ * it as number (PlexSessionItem.user.id) — coerce handles both safely.
+ */
 export const plexSessionsResponseSchema = z.looseObject({
 	MediaContainer: z.looseObject({
 		size: z.number().optional(),
 		Metadata: z
 			.array(
 				z.looseObject({
-					sessionKey: z.string(),
-					ratingKey: z.string(),
+					sessionKey: z.coerce.string(),
+					ratingKey: z.coerce.string(),
 					title: z.string().optional().default(""),
 					grandparentTitle: z.string().optional(),
-					type: z.string(),
+					type: z.string().optional().default("unknown"),
 					viewOffset: z.number().optional(),
 					duration: z.number().optional(),
 					thumb: z.string().optional(),
 					User: z
 						.looseObject({
-							id: z.number(),
+							id: z.coerce.number(),
 							title: z.string().optional().default(""),
 							thumb: z.string().optional(),
 						})
@@ -126,14 +136,14 @@ export const plexSessionsResponseSchema = z.looseObject({
 					Player: z
 						.looseObject({
 							title: z.string().optional().default(""),
-							platform: z.string(),
-							product: z.string(),
-							state: z.string(),
+							platform: z.string().optional().default("unknown"),
+							product: z.string().optional().default("unknown"),
+							state: z.string().optional().default("unknown"),
 						})
 						.optional(),
 					Session: z
 						.looseObject({
-							id: z.string(),
+							id: z.coerce.string(),
 							bandwidth: z.number().optional(),
 						})
 						.optional(),
