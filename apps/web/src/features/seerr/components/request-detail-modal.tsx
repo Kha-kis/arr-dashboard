@@ -301,6 +301,7 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 								>
 									<button
 										type="button"
+										aria-label={`View profile for ${incognitoMode ? getLinuxUsername(request.requestedBy.displayName) : request.requestedBy.displayName}`}
 										className="flex items-center gap-1.5 hover:text-foreground transition-colors"
 									>
 										{request.requestedBy.avatar && !incognitoMode ? (
@@ -311,7 +312,7 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 												className="h-5 w-5 rounded-full"
 											/>
 										) : (
-											<User className="h-3.5 w-3.5" />
+											<User className="h-3.5 w-3.5" aria-hidden="true" />
 										)}
 										<span className="font-medium text-foreground/80">
 											{incognitoMode ? getLinuxUsername(request.requestedBy.displayName) : request.requestedBy.displayName}

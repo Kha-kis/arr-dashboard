@@ -146,7 +146,7 @@ export const StatusBadge = ({ status, children, icon: Icon, className }: StatusB
 				border: `1px solid ${colors.border}`,
 			}}
 		>
-			{Icon && <Icon className="h-3 w-3" />}
+			{Icon && <Icon className="h-3 w-3" aria-hidden="true" />}
 			{children}
 		</span>
 	);

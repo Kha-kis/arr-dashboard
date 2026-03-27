@@ -169,6 +169,7 @@ export const RequestsClient = () => {
 						)}
 						<Button
 							variant="secondary"
+							aria-label="Clear server-side cache"
 							onClick={() => {
 								clearCacheMutation.mutate(
 									{ instanceId: currentInstanceId },

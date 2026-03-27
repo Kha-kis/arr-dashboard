@@ -169,7 +169,7 @@ export const RequesterProfilePopover = ({
 						className="flex items-center justify-center gap-1.5 w-full rounded-lg border border-border/30 bg-muted/10 px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted/20 hover:text-foreground transition-colors"
 						onClick={() => setIsOpen(false)}
 					>
-						<ExternalLink className="h-3 w-3" />
+						<ExternalLink className="h-3 w-3" aria-hidden="true" />
 						View all requests
 					</Link>
 				</div>

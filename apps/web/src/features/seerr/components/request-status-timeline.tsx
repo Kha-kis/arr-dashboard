@@ -189,24 +189,24 @@ function StageIcon({ status, size }: { status: StageStatus; size: number }) {
 	const iconSize = size - 2;
 
 	if (status === "completed") {
-		return <Check className="shrink-0" style={{ color: color.dot, width: iconSize, height: iconSize }} />;
+		return <Check className="shrink-0" aria-hidden="true" style={{ color: color.dot, width: iconSize, height: iconSize }} />;
 	}
 	if (status === "failed") {
-		return <X className="shrink-0" style={{ color: color.dot, width: iconSize, height: iconSize }} />;
+		return <X className="shrink-0" aria-hidden="true" style={{ color: color.dot, width: iconSize, height: iconSize }} />;
 	}
 	if (status === "active") {
 		return (
 			<span className="relative shrink-0 flex items-center justify-center" style={{ width: size, height: size }}>
 				<span
-					className="absolute inset-0 rounded-full animate-ping"
+					className="absolute inset-0 rounded-full motion-safe:animate-ping"
 					style={{ backgroundColor: color.dot, opacity: 0.3 }}
 				/>
-				<Circle className="fill-current" style={{ color: color.dot, width: iconSize, height: iconSize }} />
+				<Circle className="fill-current" aria-hidden="true" style={{ color: color.dot, width: iconSize, height: iconSize }} />
 			</span>
 		);
 	}
 	return (
-		<Circle className="shrink-0" style={{ color: color.dot, width: iconSize - 2, height: iconSize - 2 }} />
+		<Circle className="shrink-0" aria-hidden="true" style={{ color: color.dot, width: iconSize - 2, height: iconSize - 2 }} />
 	);
 }
 

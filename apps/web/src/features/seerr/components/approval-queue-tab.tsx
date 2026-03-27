@@ -171,6 +171,7 @@ export const ApprovalQueueTab = ({ instanceId, onSelectRequest }: ApprovalQueueT
 					</p>
 				</div>
 				<FilterSelect
+					label="Sort"
 					value={sort}
 					onChange={(v) => setSort(v as RequestSort)}
 					options={SORT_OPTIONS}
@@ -184,6 +185,7 @@ export const ApprovalQueueTab = ({ instanceId, onSelectRequest }: ApprovalQueueT
 							type="checkbox"
 							checked={selectedIds.has(request.id)}
 							onChange={() => toggleSelect(request.id)}
+							aria-label={`Select request for ${request.media.title ?? `item #${request.id}`}`}
 							className="h-4 w-4 rounded border-border/50"
 							style={{ accentColor: themeGradient.from }}
 						/>
