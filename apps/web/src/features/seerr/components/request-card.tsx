@@ -91,6 +91,8 @@ function formatSeasons(seasons?: SeerrSeason[]): ReactNode | null {
 					<span key={s.seasonNumber} className="flex items-center gap-0.5">
 						<span
 							className={`inline-block h-1.5 w-1.5 rounded-full ${getSeasonStatusColor(s.status)}`}
+							role="img"
+							aria-label={`S${s.seasonNumber}: ${SEERR_MEDIA_STATUS_LABEL_MAP[s.status] ?? "Unknown"}`}
 							title={`S${s.seasonNumber}: ${SEERR_MEDIA_STATUS_LABEL_MAP[s.status] ?? "Unknown"}`}
 						/>
 						S{s.seasonNumber}
@@ -118,7 +120,7 @@ const MetaChip = ({
 	children: React.ReactNode;
 }) => (
 	<span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/50">
-		{Icon && <Icon className="h-3 w-3 shrink-0" />}
+		{Icon && <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />}
 		{children}
 	</span>
 );
@@ -238,10 +240,12 @@ export const RequestCard = ({ request, instanceId, actions, index = 0, onClick }
 								>
 									<button
 										type="button"
+										aria-label={`View profile for ${incognitoMode ? getLinuxUsername(request.requestedBy.displayName) : request.requestedBy.displayName}`}
 										className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
 										onClick={(e) => e.stopPropagation()}
+										onKeyDown={(e) => e.stopPropagation()}
 									>
-										<User className="h-3 w-3 shrink-0" />
+										<User className="h-3 w-3 shrink-0" aria-hidden="true" />
 										{incognitoMode ? getLinuxUsername(request.requestedBy.displayName) : request.requestedBy.displayName}
 									</button>
 								</RequesterProfilePopover>

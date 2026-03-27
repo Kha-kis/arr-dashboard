@@ -1,7 +1,7 @@
 "use client";
 
 import type { SeerrRequest, SeerrSeason } from "@arr/shared";
-import { SEERR_MEDIA_STATUS, SEERR_REQUEST_STATUS } from "@arr/shared";
+import { SEERR_MEDIA_STATUS, SEERR_MEDIA_STATUS_LABEL, SEERR_REQUEST_STATUS } from "@arr/shared";
 import {
 	Calendar,
 	Check,
@@ -170,9 +170,6 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 		<div
 			className="fixed inset-0 z-modal-backdrop flex items-center justify-center p-4 animate-in fade-in duration-200"
 			onClick={onClose}
-			role="dialog"
-			aria-modal="true"
-			aria-labelledby="request-detail-title"
 		>
 			{/* Backdrop overlay */}
 			<div className="absolute inset-0 bg-black/70 backdrop-blur-xs" />
@@ -180,6 +177,11 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 			{/* Modal */}
 			<div
 				ref={focusTrapRef}
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="request-detail-title"
+				aria-describedby="request-detail-desc"
+				tabIndex={-1}
 				className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl border border-border/50 bg-card/95 backdrop-blur-xl shadow-2xl animate-in zoom-in-95 slide-in-from-bottom-4 duration-300 scrollbar-none"
 				onClick={(e) => e.stopPropagation()}
 			>
@@ -270,7 +272,7 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 							</div>
 
 							{/* Request info row */}
-							<div className="flex flex-wrap items-center gap-2">
+							<div id="request-detail-desc" className="flex flex-wrap items-center gap-2">
 								<StatusBadge status={getRequestStatusVariant(request.status)}>
 									{getRequestStatusLabel(request.status)}
 								</StatusBadge>
@@ -301,6 +303,7 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 								>
 									<button
 										type="button"
+										aria-label={`View profile for ${incognitoMode ? getLinuxUsername(request.requestedBy.displayName) : request.requestedBy.displayName}`}
 										className="flex items-center gap-1.5 hover:text-foreground transition-colors"
 									>
 										{request.requestedBy.avatar && !incognitoMode ? (
@@ -311,7 +314,7 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 												className="h-5 w-5 rounded-full"
 											/>
 										) : (
-											<User className="h-3.5 w-3.5" />
+											<User className="h-3.5 w-3.5" aria-hidden="true" />
 										)}
 										<span className="font-medium text-foreground/80">
 											{incognitoMode ? getLinuxUsername(request.requestedBy.displayName) : request.requestedBy.displayName}
@@ -409,8 +412,8 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 
 					{/* Loading state for details */}
 					{isDetailsLoading && (
-						<div className="flex items-center justify-center py-8">
-							<Loader2 className="h-6 w-6 animate-spin" style={{ color: themeGradient.from }} />
+						<div role="status" aria-label="Loading media details" className="flex items-center justify-center py-8">
+							<Loader2 className="h-6 w-6 animate-spin" aria-hidden="true" style={{ color: themeGradient.from }} />
 						</div>
 					)}
 
@@ -451,7 +454,9 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 												{isRequested && requestSeason && (
 													<span
 														className={`inline-block h-2 w-2 shrink-0 rounded-full ${getSeasonStatusColor(requestSeason.status)}`}
-														title={`Season ${season.seasonNumber} request status`}
+														role="img"
+														aria-label={SEERR_MEDIA_STATUS_LABEL[requestSeason.status as keyof typeof SEERR_MEDIA_STATUS_LABEL] ?? "Unknown"}
+														title={`Season ${season.seasonNumber}: ${SEERR_MEDIA_STATUS_LABEL[requestSeason.status as keyof typeof SEERR_MEDIA_STATUS_LABEL] ?? "Unknown"}`}
 													/>
 												)}
 												<Layers className="h-4 w-4 shrink-0 text-muted-foreground" />

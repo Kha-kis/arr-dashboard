@@ -1,7 +1,8 @@
 "use client";
 
-import type { SeerrRequest } from "@arr/shared";
-import { AlertCircle, Check, Loader2, Trash2, X } from "lucide-react";
+import type { SeerrMediaStatus, SeerrRequest, SeerrSeason } from "@arr/shared";
+import { SEERR_MEDIA_STATUS, SEERR_MEDIA_STATUS_LABEL } from "@arr/shared";
+import { AlertCircle, Check, Eye, EyeOff, ExternalLink, Loader2, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -19,7 +20,9 @@ import {
 	useSeerrRequests,
 } from "../../../hooks/api/useSeerr";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 import { RequestCard } from "./request-card";
+import { RequestStatusTimeline } from "./request-status-timeline";
 
 type RequestSort = "added" | "modified";
 
@@ -37,9 +40,11 @@ const PAGE_SIZE = 50;
 
 export const ApprovalQueueTab = ({ instanceId, onSelectRequest }: ApprovalQueueTabProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
+	const [incognitoMode] = useIncognitoMode();
 	const [sort, setSort] = useState<RequestSort>("added");
 	const [take, setTake] = useState(PAGE_SIZE);
 	const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+	const [previewId, setPreviewId] = useState<number | null>(null);
 	const { data, isLoading, isFetching, isError } = useSeerrRequests({
 		instanceId,
 		filter: "pending",
@@ -122,6 +127,10 @@ export const ApprovalQueueTab = ({ instanceId, onSelectRequest }: ApprovalQueueT
 		[confirmBulkAction, handleBulkAction],
 	);
 
+	const togglePreview = useCallback((id: number) => {
+		setPreviewId((prev) => (prev === id ? null : id));
+	}, []);
+
 	if (isLoading) {
 		return (
 			<div className="space-y-3">
@@ -171,134 +180,160 @@ export const ApprovalQueueTab = ({ instanceId, onSelectRequest }: ApprovalQueueT
 					</p>
 				</div>
 				<FilterSelect
+					label="Sort"
 					value={sort}
 					onChange={(v) => setSort(v as RequestSort)}
 					options={SORT_OPTIONS}
 					className="min-w-[120px]"
 				/>
 			</div>
-			{requests.map((request, index) => (
-				<div key={request.id} className="flex items-start gap-3">
-					<label className="flex items-center pt-4 cursor-pointer shrink-0">
-						<input
-							type="checkbox"
-							checked={selectedIds.has(request.id)}
-							onChange={() => toggleSelect(request.id)}
-							className="h-4 w-4 rounded border-border/50"
-							style={{ accentColor: themeGradient.from }}
-						/>
-					</label>
-					<div className="flex-1 min-w-0">
-						<RequestCard
-							request={request}
-							instanceId={instanceId}
-							index={index}
-							onClick={() => onSelectRequest?.(request)}
-							actions={
-								<>
-									<GradientButton
-										size="sm"
-										icon={Check}
-										disabled={approveMutation.isPending}
-										onClick={() =>
-											approveMutation.mutate(
-												{ instanceId, requestId: request.id },
-												{
-													onSuccess: () => toast.success("Request approved"),
-													onError: () => toast.error("Failed to approve request"),
-												},
-											)
-										}
-									>
-										Approve
-									</GradientButton>
-									{confirmingDeclineId === request.id ? (
-										<>
+			{requests.map((request, index) => {
+				const isPreviewing = previewId === request.id;
+				return (
+					<div key={request.id} className="flex items-start gap-3">
+						<label className="flex items-center pt-4 cursor-pointer shrink-0">
+							<input
+								type="checkbox"
+								checked={selectedIds.has(request.id)}
+								onChange={() => toggleSelect(request.id)}
+								aria-label={`Select request for ${request.media.title ?? `item #${request.id}`}`}
+								className="h-4 w-4 rounded border-border/50"
+								style={{ accentColor: themeGradient.from }}
+							/>
+						</label>
+						<div className="flex-1 min-w-0">
+							<RequestCard
+								request={request}
+								instanceId={instanceId}
+								index={index}
+								onClick={() => onSelectRequest?.(request)}
+								actions={
+									<>
+										<Button
+											variant="secondary"
+											size="sm"
+											onClick={() => togglePreview(request.id)}
+											aria-label={isPreviewing ? "Close preview" : "Preview request"}
+											aria-expanded={isPreviewing}
+											aria-controls={isPreviewing ? `preview-${request.id}` : undefined}
+											className="gap-1.5 border-border/50 bg-card/50 text-xs"
+										>
+											{isPreviewing ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+											<span className="hidden sm:inline">Preview</span>
+										</Button>
+										<GradientButton
+											size="sm"
+											icon={Check}
+											disabled={approveMutation.isPending}
+											onClick={() =>
+												approveMutation.mutate(
+													{ instanceId, requestId: request.id },
+													{
+														onSuccess: () => toast.success("Request approved"),
+														onError: () => toast.error("Failed to approve request"),
+													},
+												)
+											}
+										>
+											Approve
+										</GradientButton>
+										{confirmingDeclineId === request.id ? (
+											<>
+												<Button
+													variant="destructive"
+													size="sm"
+													disabled={declineMutation.isPending}
+													onClick={() => {
+														declineMutation.mutate(
+															{ instanceId, requestId: request.id },
+															{
+																onSuccess: () => toast.success("Request declined"),
+																onError: () => toast.error("Failed to decline request"),
+															},
+														);
+														setConfirmingDeclineId(null);
+													}}
+													className="gap-1.5 text-xs"
+												>
+													Confirm
+												</Button>
+												<Button
+													variant="secondary"
+													size="sm"
+													onClick={() => setConfirmingDeclineId(null)}
+													className="gap-1.5 border-border/50 bg-card/50 text-xs"
+												>
+													Cancel
+												</Button>
+											</>
+										) : (
 											<Button
-												variant="destructive"
+												variant="secondary"
 												size="sm"
 												disabled={declineMutation.isPending}
-												onClick={() => {
-													declineMutation.mutate(
-														{ instanceId, requestId: request.id },
-														{
-															onSuccess: () => toast.success("Request declined"),
-															onError: () => toast.error("Failed to decline request"),
-														},
-													);
-													setConfirmingDeclineId(null);
-												}}
-												className="gap-1.5 text-xs"
+												onClick={() => setConfirmingDeclineId(request.id)}
+												className="gap-1.5 border-border/50 bg-card/50"
 											>
-												Confirm
+												<X className="h-3.5 w-3.5" />
+												Decline
 											</Button>
+										)}
+										{confirmingDeleteId === request.id ? (
+											<>
+												<Button
+													variant="destructive"
+													size="sm"
+													disabled={deleteMutation.isPending}
+													onClick={() => {
+														deleteMutation.mutate(
+															{ instanceId, requestId: request.id },
+															{
+																onSuccess: () => toast.success("Request deleted"),
+																onError: () => toast.error("Failed to delete request"),
+															},
+														);
+														setConfirmingDeleteId(null);
+													}}
+													className="gap-1.5 text-xs"
+												>
+													Confirm
+												</Button>
+												<Button
+													variant="secondary"
+													size="sm"
+													onClick={() => setConfirmingDeleteId(null)}
+													className="gap-1.5 border-border/50 bg-card/50 text-xs"
+												>
+													Cancel
+												</Button>
+											</>
+										) : (
 											<Button
 												variant="secondary"
-												size="sm"
-												onClick={() => setConfirmingDeclineId(null)}
-												className="gap-1.5 border-border/50 bg-card/50 text-xs"
-											>
-												Cancel
-											</Button>
-										</>
-									) : (
-										<Button
-											variant="secondary"
-											size="sm"
-											disabled={declineMutation.isPending}
-											onClick={() => setConfirmingDeclineId(request.id)}
-											className="gap-1.5 border-border/50 bg-card/50"
-										>
-											<X className="h-3.5 w-3.5" />
-											Decline
-										</Button>
-									)}
-									{confirmingDeleteId === request.id ? (
-										<>
-											<Button
-												variant="destructive"
 												size="sm"
 												disabled={deleteMutation.isPending}
-												onClick={() => {
-													deleteMutation.mutate(
-														{ instanceId, requestId: request.id },
-														{
-															onSuccess: () => toast.success("Request deleted"),
-															onError: () => toast.error("Failed to delete request"),
-														},
-													);
-													setConfirmingDeleteId(null);
-												}}
-												className="gap-1.5 text-xs"
+												onClick={() => setConfirmingDeleteId(request.id)}
+												className="gap-1.5 border-border/50 bg-card/50"
 											>
-												Confirm
+												<Trash2 className="h-3 w-3" />
 											</Button>
-											<Button
-												variant="secondary"
-												size="sm"
-												onClick={() => setConfirmingDeleteId(null)}
-												className="gap-1.5 border-border/50 bg-card/50 text-xs"
-											>
-												Cancel
-											</Button>
-										</>
-									) : (
-										<Button
-											variant="secondary"
-											size="sm"
-											disabled={deleteMutation.isPending}
-											onClick={() => setConfirmingDeleteId(request.id)}
-											className="gap-1.5 border-border/50 bg-card/50"
-										>
-											<Trash2 className="h-3 w-3" />
-										</Button>
-									)}
-								</>
-							}
-						/>
+										)}
+									</>
+								}
+							/>
+
+							{/* Inline preview panel */}
+							{isPreviewing && (
+								<InlinePreviewPanel
+									request={request}
+									incognitoMode={incognitoMode}
+									onOpenDetails={() => onSelectRequest?.(request)}
+								/>
+							)}
+						</div>
 					</div>
-				</div>
-			))}
+				);
+			})}
 
 			{hasMore && (
 				<div className="flex justify-center pt-2">
@@ -372,3 +407,115 @@ export const ApprovalQueueTab = ({ instanceId, onSelectRequest }: ApprovalQueueT
 		</div>
 	);
 };
+
+// ============================================================================
+// Inline Preview Panel
+// ============================================================================
+
+function getSeasonStatusColor(status: SeerrMediaStatus): string {
+	switch (status) {
+		case SEERR_MEDIA_STATUS.AVAILABLE:
+			return "bg-emerald-400";
+		case SEERR_MEDIA_STATUS.PARTIALLY_AVAILABLE:
+			return "bg-sky-400";
+		case SEERR_MEDIA_STATUS.PROCESSING:
+			return "bg-amber-400";
+		case SEERR_MEDIA_STATUS.PENDING:
+			return "bg-amber-400/60";
+		default:
+			return "bg-muted-foreground/40";
+	}
+}
+
+function SeasonDetail({ seasons }: { seasons: SeerrSeason[] }) {
+	return (
+		<div className="space-y-1.5">
+			<h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+				Seasons
+			</h4>
+			<div className="flex flex-wrap gap-1.5">
+				{seasons.map((s) => {
+					const statusLabel =
+						SEERR_MEDIA_STATUS_LABEL[s.status as keyof typeof SEERR_MEDIA_STATUS_LABEL] ??
+						"Unknown";
+					return (
+						<span
+							key={s.seasonNumber}
+							className="inline-flex items-center gap-1.5 rounded-md border border-border/40 bg-card/40 px-2 py-1 text-[11px] text-muted-foreground"
+						>
+							<span
+								className={`inline-block h-2 w-2 shrink-0 rounded-full ${getSeasonStatusColor(s.status)}`}
+								role="img"
+								aria-label={`Season ${s.seasonNumber}: ${statusLabel}`}
+								title={`S${s.seasonNumber}: ${statusLabel}`}
+							/>
+							S{s.seasonNumber}
+							<span className="text-muted-foreground/50">{statusLabel}</span>
+						</span>
+					);
+				})}
+			</div>
+		</div>
+	);
+}
+
+interface InlinePreviewPanelProps {
+	request: SeerrRequest;
+	incognitoMode: boolean;
+	onOpenDetails?: () => void;
+}
+
+function InlinePreviewPanel({ request, incognitoMode, onOpenDetails }: InlinePreviewPanelProps) {
+	const hasOverview = !incognitoMode && !!request.media.overview;
+	const hasSeasons = request.type === "tv" && !!request.seasons && request.seasons.length > 0;
+
+	return (
+		<div
+			id={`preview-${request.id}`}
+			className="mt-1 rounded-xl border border-border/30 bg-card/20 backdrop-blur-xs p-4 space-y-4 animate-in fade-in slide-in-from-top-1 duration-200"
+		>
+			{/* Expanded timeline */}
+			<RequestStatusTimeline
+				request={request}
+				variant="expanded"
+				modifierName={
+					request.modifiedBy
+						? incognitoMode
+							? getLinuxUsername(request.modifiedBy.displayName)
+							: request.modifiedBy.displayName
+						: undefined
+				}
+			/>
+
+			{/* Overview */}
+			{hasOverview && (
+				<div className="space-y-1.5">
+					<h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+						Overview
+					</h4>
+					<p className="text-[12px] leading-relaxed text-foreground/70 line-clamp-3">
+						{request.media.overview}
+					</p>
+				</div>
+			)}
+
+			{/* Season detail (TV only) */}
+			{hasSeasons && <SeasonDetail seasons={request.seasons!} />}
+
+			{/* Details button — opens full modal */}
+			{onOpenDetails && (
+				<div className="flex items-center pt-1">
+					<Button
+						variant="secondary"
+						size="sm"
+						onClick={onOpenDetails}
+						className="gap-1.5 border-border/50 bg-card/50 text-xs"
+					>
+						<ExternalLink className="h-3 w-3" />
+						Full Details
+					</Button>
+				</div>
+			)}
+		</div>
+	);
+}

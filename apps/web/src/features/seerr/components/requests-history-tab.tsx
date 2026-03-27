@@ -144,24 +144,28 @@ export const RequestsHistoryTab = ({ instanceId, onSelectRequest, initialUserFil
 				</p>
 				<div className="flex flex-wrap items-center gap-2">
 					<FilterSelect
+						label="Sort"
 						value={sort}
 						onChange={(v) => setSort(v as RequestSort)}
 						options={SORT_OPTIONS}
 						className="min-w-[120px]"
 					/>
 					<FilterSelect
+						label="Type"
 						value={typeFilter}
 						onChange={(v) => setTypeFilter(v as TypeFilter)}
 						options={TYPE_OPTIONS}
 						className="min-w-[120px]"
 					/>
 					<FilterSelect
+						label="Status"
 						value={statusFilter}
 						onChange={(v) => setStatusFilter(v as RequestFilter)}
 						options={STATUS_OPTIONS}
 						className="min-w-[140px]"
 					/>
 					<FilterSelect
+						label="Requester"
 						value={userFilter}
 						onChange={setUserFilter}
 						options={userOptions}
@@ -241,9 +245,10 @@ export const RequestsHistoryTab = ({ instanceId, onSelectRequest, initialUserFil
 											size="sm"
 											disabled={deleteMutation.isPending}
 											onClick={() => setConfirmingDeleteId(request.id)}
+											aria-label="Delete request"
 											className="gap-1.5 border-border/50 bg-card/50 text-xs"
 										>
-											<Trash2 className="h-3 w-3" />
+											<Trash2 className="h-3 w-3" aria-hidden="true" />
 										</Button>
 									)}
 								</>

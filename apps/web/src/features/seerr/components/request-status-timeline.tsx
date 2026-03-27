@@ -148,13 +148,18 @@ function deriveStages(request: SeerrRequest, modifierName?: string): TimelineSta
 
 	// Stage 3: Processing
 	const isProcessing = media.status === SEERR_MEDIA_STATUS.PROCESSING;
+	const isMediaPending = media.status === SEERR_MEDIA_STATUS.PENDING;
 	const isAvailable =
 		media.status === SEERR_MEDIA_STATUS.AVAILABLE ||
 		media.status === SEERR_MEDIA_STATUS.PARTIALLY_AVAILABLE;
 
-	if (isAvailable) {
+	// When request is COMPLETED, trust the request status over an ambiguous
+	// media state — don't show "upcoming" stages that contradict completion
+	const isRequestCompleted = status === SEERR_REQUEST_STATUS.COMPLETED;
+
+	if (isAvailable || isRequestCompleted) {
 		stages.push({ label: "Processing", status: "completed" });
-	} else if (isProcessing) {
+	} else if (isProcessing || isMediaPending) {
 		stages.push({ label: "Processing", status: "active" });
 	} else {
 		stages.push({ label: "Processing", status: "upcoming" });
@@ -166,6 +171,8 @@ function deriveStages(request: SeerrRequest, modifierName?: string): TimelineSta
 			label: media.status === SEERR_MEDIA_STATUS.PARTIALLY_AVAILABLE ? "Partial" : "Available",
 			status: "completed",
 		});
+	} else if (isRequestCompleted) {
+		stages.push({ label: "Available", status: "completed" });
 	} else {
 		stages.push({ label: "Available", status: "upcoming" });
 	}
@@ -182,24 +189,24 @@ function StageIcon({ status, size }: { status: StageStatus; size: number }) {
 	const iconSize = size - 2;
 
 	if (status === "completed") {
-		return <Check className="shrink-0" style={{ color: color.dot, width: iconSize, height: iconSize }} />;
+		return <Check className="shrink-0" aria-hidden="true" style={{ color: color.dot, width: iconSize, height: iconSize }} />;
 	}
 	if (status === "failed") {
-		return <X className="shrink-0" style={{ color: color.dot, width: iconSize, height: iconSize }} />;
+		return <X className="shrink-0" aria-hidden="true" style={{ color: color.dot, width: iconSize, height: iconSize }} />;
 	}
 	if (status === "active") {
 		return (
 			<span className="relative shrink-0 flex items-center justify-center" style={{ width: size, height: size }}>
 				<span
-					className="absolute inset-0 rounded-full animate-ping"
+					className="absolute inset-0 rounded-full motion-safe:animate-ping"
 					style={{ backgroundColor: color.dot, opacity: 0.3 }}
 				/>
-				<Circle className="fill-current" style={{ color: color.dot, width: iconSize, height: iconSize }} />
+				<Circle className="fill-current" aria-hidden="true" style={{ color: color.dot, width: iconSize, height: iconSize }} />
 			</span>
 		);
 	}
 	return (
-		<Circle className="shrink-0" style={{ color: color.dot, width: iconSize - 2, height: iconSize - 2 }} />
+		<Circle className="shrink-0" aria-hidden="true" style={{ color: color.dot, width: iconSize - 2, height: iconSize - 2 }} />
 	);
 }
 
@@ -208,13 +215,24 @@ function StageIcon({ status, size }: { status: StageStatus; size: number }) {
 // ============================================================================
 
 function CompactTimeline({ stages }: { stages: TimelineStage[] }) {
+	const summary = stages
+		.map((s) => {
+			const suffix = s.status === "active" ? " (active)" : s.status === "failed" ? " (failed)" : "";
+			return s.label + suffix;
+		})
+		.join(" → ");
+
 	return (
-		<div className="flex items-center gap-0.5">
+		<div
+			className="flex items-center gap-0.5"
+			role="img"
+			aria-label={`Status: ${summary}`}
+		>
 			{stages.map((stage, i) => {
 				const color = STAGE_COLORS[stage.status];
 				const isLast = i === stages.length - 1;
 				return (
-					<div key={stage.label} className="flex items-center gap-0.5">
+					<div key={stage.label} className="flex items-center gap-0.5" aria-hidden="true">
 						<span
 							className="flex items-center gap-0.5"
 							title={stage.label + (stage.actor ? ` by ${stage.actor}` : "")}
