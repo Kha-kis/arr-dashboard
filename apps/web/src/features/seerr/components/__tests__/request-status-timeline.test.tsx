@@ -203,6 +203,40 @@ describe("RequestStatusTimeline — compact", () => {
 		expect(labels).toEqual(["Requested", "Approved", "Processing", "Deleted"]);
 	});
 
+	it("shows completed stages for COMPLETED request with UNKNOWN media", () => {
+		const request = makeRequest({
+			status: 5,
+			media: { id: 1, tmdbId: 123, status: 1, createdAt: "2024-06-01", updatedAt: "2024-06-01" },
+		});
+		const { container } = render(
+			<RequestStatusTimeline request={request} variant="compact" />,
+		);
+		const labels = getStageLabels(container);
+		expect(labels).toEqual(["Requested", "Approved", "Processing", "Available"]);
+	});
+
+	it("shows Processing as active when media is PENDING (queued)", () => {
+		const request = makeRequest({
+			status: 2,
+			media: { id: 1, tmdbId: 123, status: 2, createdAt: "2024-06-01", updatedAt: "2024-06-01" },
+		});
+		const { container } = render(
+			<RequestStatusTimeline request={request} variant="compact" />,
+		);
+		const labels = getStageLabels(container);
+		expect(labels).toEqual(["Requested", "Approved", "Processing", "Available"]);
+	});
+
+	it("has aria-label on compact stage wrappers for screen readers", () => {
+		const request = makeRequest({ status: 1 });
+		const { container } = render(
+			<RequestStatusTimeline request={request} variant="compact" />,
+		);
+		const labeledElements = container.querySelectorAll("[aria-label]");
+		expect(labeledElements.length).toBeGreaterThanOrEqual(4);
+		expect(labeledElements[0]?.getAttribute("aria-label")).toBe("Requested");
+	});
+
 	it("includes actor attribution in title for declined stage", () => {
 		const request = makeRequest({
 			status: 3,

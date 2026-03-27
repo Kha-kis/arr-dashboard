@@ -148,13 +148,18 @@ function deriveStages(request: SeerrRequest, modifierName?: string): TimelineSta
 
 	// Stage 3: Processing
 	const isProcessing = media.status === SEERR_MEDIA_STATUS.PROCESSING;
+	const isMediaPending = media.status === SEERR_MEDIA_STATUS.PENDING;
 	const isAvailable =
 		media.status === SEERR_MEDIA_STATUS.AVAILABLE ||
 		media.status === SEERR_MEDIA_STATUS.PARTIALLY_AVAILABLE;
 
-	if (isAvailable) {
+	// When request is COMPLETED, trust the request status over an ambiguous
+	// media state — don't show "upcoming" stages that contradict completion
+	const isRequestCompleted = status === SEERR_REQUEST_STATUS.COMPLETED;
+
+	if (isAvailable || isRequestCompleted) {
 		stages.push({ label: "Processing", status: "completed" });
-	} else if (isProcessing) {
+	} else if (isProcessing || isMediaPending) {
 		stages.push({ label: "Processing", status: "active" });
 	} else {
 		stages.push({ label: "Processing", status: "upcoming" });
@@ -166,6 +171,8 @@ function deriveStages(request: SeerrRequest, modifierName?: string): TimelineSta
 			label: media.status === SEERR_MEDIA_STATUS.PARTIALLY_AVAILABLE ? "Partial" : "Available",
 			status: "completed",
 		});
+	} else if (isRequestCompleted) {
+		stages.push({ label: "Available", status: "completed" });
 	} else {
 		stages.push({ label: "Available", status: "upcoming" });
 	}
@@ -218,11 +225,13 @@ function CompactTimeline({ stages }: { stages: TimelineStage[] }) {
 						<span
 							className="flex items-center gap-0.5"
 							title={stage.label + (stage.actor ? ` by ${stage.actor}` : "")}
+							aria-label={stage.label + (stage.actor ? ` by ${stage.actor}` : "")}
 						>
 							<StageIcon status={stage.status} size={10} />
 							<span
 								className="text-[9px] font-medium leading-none hidden sm:inline"
 								style={{ color: color.text }}
+								aria-hidden="true"
 							>
 								{stage.label}
 							</span>
