@@ -203,6 +203,42 @@ describe("RequestStatusTimeline — compact", () => {
 		expect(labels).toEqual(["Requested", "Approved", "Processing", "Deleted"]);
 	});
 
+	it("shows completed stages for COMPLETED request with UNKNOWN media", () => {
+		const request = makeRequest({
+			status: 5,
+			media: { id: 1, tmdbId: 123, status: 1, createdAt: "2024-06-01", updatedAt: "2024-06-01" },
+		});
+		const { container } = render(
+			<RequestStatusTimeline request={request} variant="compact" />,
+		);
+		const labels = getStageLabels(container);
+		expect(labels).toEqual(["Requested", "Approved", "Processing", "Available"]);
+	});
+
+	it("shows Processing as active when media is PENDING (queued)", () => {
+		const request = makeRequest({
+			status: 2,
+			media: { id: 1, tmdbId: 123, status: 2, createdAt: "2024-06-01", updatedAt: "2024-06-01" },
+		});
+		const { container } = render(
+			<RequestStatusTimeline request={request} variant="compact" />,
+		);
+		const labels = getStageLabels(container);
+		expect(labels).toEqual(["Requested", "Approved", "Processing", "Available"]);
+	});
+
+	it("has role='img' with synthesized aria-label on compact timeline wrapper", () => {
+		const request = makeRequest({ status: 1 });
+		const { container } = render(
+			<RequestStatusTimeline request={request} variant="compact" />,
+		);
+		const wrapper = container.querySelector('[role="img"]');
+		expect(wrapper).toBeTruthy();
+		expect(wrapper?.getAttribute("aria-label")).toBe(
+			"Status: Requested → Pending (active) → Processing → Available",
+		);
+	});
+
 	it("includes actor attribution in title for declined stage", () => {
 		const request = makeRequest({
 			status: 3,

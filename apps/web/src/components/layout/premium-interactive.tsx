@@ -63,7 +63,7 @@ export const PremiumTabs = ({ tabs, activeTab, onTabChange, className }: Premium
 						)}
 
 						{/* Icon */}
-						{Icon && <Icon className={cn("h-4 w-4 relative z-10", !isActive && "opacity-70")} />}
+						{Icon && <Icon className={cn("h-4 w-4 relative z-10", !isActive && "opacity-70")} aria-hidden="true" />}
 
 						{/* Label */}
 						<span className="relative z-10">{tab.label}</span>
@@ -110,6 +110,7 @@ export const FilterSelect = ({ value, onChange, options, label, className }: Fil
 			<select
 				value={value}
 				onChange={(e) => onChange(e.target.value)}
+				aria-label={label}
 				className="rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm
 					focus:outline-hidden focus:border-primary focus:ring-1 focus:ring-primary/20
 					[&>option]:bg-background [&>option]:text-foreground"
@@ -177,7 +178,7 @@ export const GradientButton = ({
 					boxShadow: `0 4px 14px -4px ${themeGradient.glow}`,
 				}}
 			>
-				{Icon && <Icon className={iconSizes} />}
+				{Icon && <Icon className={iconSizes} aria-hidden="true" />}
 				{children}
 			</button>
 		);
@@ -199,7 +200,7 @@ export const GradientButton = ({
 					className,
 				)}
 			>
-				{Icon && <Icon className={iconSizes} />}
+				{Icon && <Icon className={iconSizes} aria-hidden="true" />}
 				{children}
 			</button>
 		);
@@ -220,7 +221,7 @@ export const GradientButton = ({
 				className,
 			)}
 		>
-			{Icon && <Icon className={iconSizes} />}
+			{Icon && <Icon className={iconSizes} aria-hidden="true" />}
 			{children}
 		</button>
 	);
