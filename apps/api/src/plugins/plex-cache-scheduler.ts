@@ -12,7 +12,7 @@ import { createPlexClient } from "../lib/plex/plex-client.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
-const STARTUP_DELAY_MS = 30_000; // 30 seconds
+const STARTUP_DELAY_MS = 30_000; // 30 seconds — staggers with tautulli (2min), episode (5min), snapshot (60s)
 
 const plexCacheSchedulerPlugin = fastifyPlugin(
 	async (app: FastifyInstance) => {

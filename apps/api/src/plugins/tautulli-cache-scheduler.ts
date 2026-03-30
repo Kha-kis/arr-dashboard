@@ -16,7 +16,7 @@ import { createTautulliClient } from "../lib/tautulli/tautulli-client.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
-const STARTUP_DELAY_MS = 30_000; // 30 seconds
+const STARTUP_DELAY_MS = 2 * 60_000; // 2 minutes — staggered after plex-cache (30s) to reduce peak memory
 
 const tautulliCacheSchedulerPlugin = fastifyPlugin(
 	async (app: FastifyInstance) => {
@@ -153,7 +153,7 @@ const tautulliCacheSchedulerPlugin = fastifyPlugin(
 		}
 
 		app.addHook("onReady", async () => {
-			app.log.info("Tautulli cache scheduler initialized (6h interval, 30s startup delay)");
+			app.log.info("Tautulli cache scheduler initialized (6h interval, 2min startup delay)");
 
 			// Initial refresh after startup delay
 			timeoutHandle = setTimeout(() => {
