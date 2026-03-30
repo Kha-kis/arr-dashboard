@@ -18,7 +18,7 @@ import {
 	fetchWatchHistory,
 } from "../../lib/api-client/tautulli";
 import { tautulliKeys } from "../../lib/query-keys";
-import { POLLING_REALTIME } from "../../lib/polling-intervals";
+import { POLLING_BACKGROUND, POLLING_REALTIME, POLLING_STANDARD } from "../../lib/polling-intervals";
 
 // ============================================================================
 // Activity (F5)
@@ -41,7 +41,7 @@ export const useTautulliStats = (timeRange = 30, enabled = true) => {
 	return useQuery<TautulliStatsResponse>({
 		queryKey: tautulliKeys.stats(timeRange),
 		queryFn: () => fetchTautulliStats(timeRange),
-		staleTime: 5 * 60_000,
+		staleTime: POLLING_BACKGROUND,
 		enabled,
 	});
 };
@@ -50,7 +50,7 @@ export const useTautulliPlaysByDate = (timeRange = 30, enabled = true) => {
 	return useQuery<TautulliPlaysByDateResponse>({
 		queryKey: tautulliKeys.playsByDate(timeRange),
 		queryFn: () => fetchTautulliPlaysByDate(timeRange),
-		staleTime: 5 * 60_000,
+		staleTime: POLLING_BACKGROUND,
 		enabled,
 	});
 };
@@ -63,7 +63,7 @@ export const useWatchHistory = (length = 25, start = 0, enabled = true) => {
 	return useQuery<TautulliWatchHistoryResponse>({
 		queryKey: tautulliKeys.history(length, start),
 		queryFn: () => fetchWatchHistory(length, start),
-		staleTime: 60_000,
+		staleTime: POLLING_STANDARD,
 		enabled,
 	});
 };

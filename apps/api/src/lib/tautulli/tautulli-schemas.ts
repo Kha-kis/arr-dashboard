@@ -101,8 +101,8 @@ export const tautulliHomeStatSchema = z.looseObject({
 		z.looseObject({
 			title: z.string(),
 			friendly_name: z.string().optional(),
-			total_plays: z.number(),
-			total_duration: z.number(),
+			total_plays: z.number().optional().default(0),
+			total_duration: z.number().optional().default(0),
 			platform: z.string().optional(),
 			thumb: z.string().optional(),
 		}),
