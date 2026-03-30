@@ -134,7 +134,8 @@ ENV DATABASE_URL="file:/config/prod.db" \
     PUID=911 \
     PGID=911 \
     # Node.js memory optimization for containers (can be overridden)
-    NODE_OPTIONS="--max-old-space-size=512 --dns-result-order=ipv4first"
+    # 768MB accommodates users with many service instances (3+ Plex/Tautulli)
+    NODE_OPTIONS="--max-old-space-size=768 --dns-result-order=ipv4first"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD wget -q --spider http://127.0.0.1:${PORT:-3000}/health || exit 1
