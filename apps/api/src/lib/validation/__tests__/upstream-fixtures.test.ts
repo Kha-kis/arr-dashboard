@@ -25,6 +25,7 @@ import {
 	tautulliInfoSchema,
 	tautulliHistoryDataSchema,
 	tautulliActivityDataSchema,
+	tautulliHomeStatSchema,
 } from "../../tautulli/tautulli-schemas.js";
 
 // ============================================================================
@@ -283,6 +284,40 @@ const TAUTULLI_ACTIVITY_DATA = {
 	stream_count_transcode: 0,
 };
 
+const TAUTULLI_HOME_STATS_FULL = [
+	{
+		stat_id: "top_movies",
+		stat_title: "Most Watched Movies",
+		rows: [
+			{
+				title: "Dune: Part Two",
+				friendly_name: "admin",
+				total_plays: 5,
+				total_duration: 36000,
+				thumb: "/library/metadata/100/thumb/123",
+				// Extra fields
+				users_watched: 3,
+				rating_key: "100",
+			},
+		],
+	},
+];
+
+const TAUTULLI_HOME_STATS_MISSING_DURATION = [
+	{
+		stat_id: "top_platforms",
+		stat_title: "Top Platforms",
+		rows: [
+			{
+				title: "Chrome",
+				platform: "Chrome",
+				// total_plays and total_duration intentionally omitted —
+				// some Tautulli stat types don't include these fields
+			},
+		],
+	},
+];
+
 // ============================================================================
 // Tests
 // ============================================================================
@@ -492,6 +527,32 @@ describe("Upstream fixture regression tests", () => {
 			if (result.success) {
 				expect(result.data.sessions).toHaveLength(1);
 				expect(result.data.sessions[0]!.title).toBe("Dune");
+			}
+		});
+
+		it("accepts get_home_stats with all fields present", () => {
+			const result = parseUpstream(TAUTULLI_HOME_STATS_FULL, z.array(tautulliHomeStatSchema), {
+				integration: "tautulli",
+				category: "get_home_stats",
+			});
+			expect(result.success).toBe(true);
+			if (result.success) {
+				expect(result.data[0]!.rows[0]!.total_plays).toBe(5);
+				expect(result.data[0]!.rows[0]!.total_duration).toBe(36000);
+			}
+		});
+
+		it("accepts get_home_stats rows missing total_plays/total_duration (defaults to 0)", () => {
+			const result = parseUpstream(TAUTULLI_HOME_STATS_MISSING_DURATION, z.array(tautulliHomeStatSchema), {
+				integration: "tautulli",
+				category: "get_home_stats",
+			});
+			expect(result.success).toBe(true);
+			if (result.success) {
+				const row = result.data[0]!.rows[0]!;
+				expect(row.total_plays).toBe(0);
+				expect(row.total_duration).toBe(0);
+				expect(row.platform).toBe("Chrome");
 			}
 		});
 
