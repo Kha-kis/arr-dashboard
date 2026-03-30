@@ -22,6 +22,7 @@ import {
 import { Button, toast } from "../../../components/ui";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
+import { POST_CLEAN_REFRESH_DELAY_MS } from "../lib/constants";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useEnhancedPreview } from "../hooks/useDryRun";
 import { useManualClean } from "../hooks/useManualClean";
@@ -123,7 +124,7 @@ const InstanceStatusCard = ({ instance, onRefresh, animationDelay }: InstanceSta
 		try {
 			const result = await triggerClean(instance.instanceId);
 			toast.success(result.message);
-			setTimeout(() => void onRefresh(), 2000);
+			setTimeout(() => void onRefresh(), POST_CLEAN_REFRESH_DELAY_MS);
 		} catch (error) {
 			if (isCooldownError(error)) {
 				toast.warning((error as Error).message);
@@ -144,7 +145,7 @@ const InstanceStatusCard = ({ instance, onRefresh, animationDelay }: InstanceSta
 
 	const handleRunClean = async () => {
 		await runClean(instance.instanceId);
-		setTimeout(() => void onRefresh(), 2000);
+		setTimeout(() => void onRefresh(), POST_CLEAN_REFRESH_DELAY_MS);
 	};
 
 	const lastRunDate = instance.lastRunAt ? new Date(instance.lastRunAt) : null;

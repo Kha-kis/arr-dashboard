@@ -25,13 +25,8 @@ async function triggerClean(instanceId: string): Promise<{ triggered: boolean; m
 }
 
 export function useDryRun() {
-	const queryClient = useQueryClient();
-
 	const mutation = useMutation({
 		mutationFn: (instanceId: string) => runDryRun(instanceId),
-		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: queueCleanerKeys.all });
-		},
 	});
 
 	return {
