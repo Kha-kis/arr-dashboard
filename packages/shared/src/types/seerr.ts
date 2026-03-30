@@ -139,6 +139,24 @@ export interface SeerrRequestCount {
 	available: number;
 }
 
+// ============================================================================
+// Attention (Needs-Attention Dashboard Signal)
+// ============================================================================
+
+export type SeerrAttentionReason = "failed" | "stuck";
+
+export interface SeerrAttentionItem {
+	request: SeerrRequest;
+	reason: SeerrAttentionReason;
+	/** Milliseconds since the request's updatedAt timestamp */
+	ageMs: number;
+}
+
+export interface SeerrAttentionResponse {
+	items: SeerrAttentionItem[];
+	total: number;
+}
+
 export interface SeerrUser {
 	id: number;
 	email?: string;

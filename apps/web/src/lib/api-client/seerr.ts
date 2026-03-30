@@ -6,6 +6,7 @@
 
 import type {
 	LibraryEnrichmentResponse,
+	SeerrAttentionResponse,
 	SeerrCreateRequestPayload,
 	SeerrCreateRequestResponse,
 	SeerrDiscoverResponse,
@@ -47,6 +48,10 @@ export async function fetchSeerrRequests(
 
 export async function fetchSeerrRequestCount(instanceId: string): Promise<SeerrRequestCount> {
 	return apiRequest(`/api/seerr/requests/${instanceId}/count`);
+}
+
+export async function fetchSeerrAttention(instanceId: string): Promise<SeerrAttentionResponse> {
+	return apiRequest(`/api/seerr/requests/${instanceId}/attention`);
 }
 
 export async function fetchSeerrRequest(
