@@ -212,6 +212,11 @@ export const RULE_LABELS: Record<string, string> = {
 	too_young: "Too New",
 };
 
+// === TIMING CONSTANTS ===
+
+/** Delay before refreshing status after triggering a manual clean (ms) */
+export const POST_CLEAN_REFRESH_DELAY_MS = 2000;
+
 // === REFRESH INTERVALS ===
 // Re-exported from centralized polling constants for backward compatibility.
 // See apps/web/src/lib/polling-intervals.ts for the canonical definitions.
