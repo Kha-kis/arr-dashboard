@@ -33,8 +33,8 @@
 		"@radix-ui/react-tabs": "^1.1.13",
 		"@radix-ui/react-tooltip": "^1.2.8",
 		"@simplewebauthn/browser": "^13.3.0",
-		"@tanstack/react-query": "^5.95.1",
-		"@tanstack/react-query-devtools": "^5.95.1",
+		"@tanstack/react-query": "^5.95.2",
+		"@tanstack/react-query-devtools": "^5.95.2",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
 		"cmdk": "^1.1.1",
@@ -63,8 +63,8 @@
 		"@types/node": "^25.5.0",
 		"@types/react": "^19.2.14",
 		"@types/react-dom": "^19.2.3",
-		"@typescript-eslint/eslint-plugin": "^8.57.1",
-		"@typescript-eslint/parser": "^8.57.1",
+		"@typescript-eslint/eslint-plugin": "^8.57.2",
+		"@typescript-eslint/parser": "^8.57.2",
 		"@vitejs/plugin-react": "^5.2.0",
 		"eslint": "^9.39.4",
 		"eslint-config-next": "^16.2.1",
@@ -75,6 +75,6 @@
 		"postcss": "^8.5.8",
 		"tailwindcss": "^4.2.2",
 		"typescript": "^5.9.3",
-		"vitest": "^4.1.0"
+		"vitest": "^4.1.2"
 	}
 }
