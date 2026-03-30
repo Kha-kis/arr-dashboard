@@ -5,6 +5,7 @@
  * Tautulli uses `?apikey=KEY&cmd=COMMAND` instead of X-Api-Key headers.
  */
 
+import type { TautulliHistoryItem, TautulliInfo, TautulliLibrary } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
 import { z } from "zod";
 import type { ClientInstanceData } from "../arr/client-factory.js";
@@ -32,29 +33,6 @@ export interface TautulliResponse<T> {
 		message: string | null;
 		data: T;
 	};
-}
-
-export interface TautulliInfo {
-	tautulli_version: string;
-}
-
-export interface TautulliLibrary {
-	section_id: string;
-	section_name: string;
-	section_type: string; // "movie" | "show" | "artist"
-	count: string;
-}
-
-export interface TautulliHistoryItem {
-	rating_key: string;
-	parent_rating_key: string;
-	grandparent_rating_key: string;
-	title: string;
-	grandparent_title: string;
-	media_type: string; // "movie" | "episode"
-	user: string;
-	date: number; // Unix timestamp
-	play_count?: number;
 }
 
 export interface TautulliHistoryData {
