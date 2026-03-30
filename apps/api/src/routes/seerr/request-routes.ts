@@ -80,7 +80,7 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 			}
 		}
 
-		// Processing requests are only "stuck" if approved + processing media + older than threshold
+		// Processing requests are only "stuck" if approved + still processing + older than threshold
 		if (processingResult.status === "fulfilled") {
 			for (const req of processingResult.value.results) {
 				if (

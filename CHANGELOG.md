@@ -25,6 +25,8 @@ Seerr Requests Experience, API stability improvements, and full security sweep.
 - **API heap out-of-memory crash** — Four cache schedulers (Plex, Tautulli, episode, session-snapshot) all fired within 30 seconds of startup. With many service instances, overlapping memory peaks exceeded the 512MB heap limit. Staggered startup delays (30s/2min/5min), paginated session snapshot platform cache, released Plex refresher intermediates earlier, and bumped default heap to 768MB (#239, #242)
 - **Plex session schema** — Relaxed schema validation to tolerate type variance across Plex server versions (#228)
 - **Pino logging conflict** — Removed shell stdout redirect that conflicted with Pino's worker-thread transport, causing empty log files (#238)
+- **Seerr widget hydration error** — Fixed nested `<a>` tags in the dashboard Seerr widget that caused React hydration mismatches
+- **Seerr "View" link destination** — Stuck attention items now link to the "All Requests" tab instead of the pending approval tab where they wouldn't appear. Added `?tab=` deep-link support to the requests page
 - **Tautulli/Plex validation** — Improved statistics code quality and data validation (#233, #241)
 
 ### Changed
