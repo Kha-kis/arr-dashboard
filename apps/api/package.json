@@ -25,9 +25,9 @@
 		"@fastify/helmet": "^13.0.2",
 		"@fastify/rate-limit": "^10.3.0",
 		"@fastify/websocket": "^11.2.0",
-		"@prisma/adapter-better-sqlite3": "^7.5.0",
-		"@prisma/adapter-pg": "^7.5.0",
-		"@prisma/client": "^7.5.0",
+		"@prisma/adapter-better-sqlite3": "^7.6.0",
+		"@prisma/adapter-pg": "^7.6.0",
+		"@prisma/client": "^7.6.0",
 		"@simplewebauthn/server": "^13.3.0",
 		"arctic": "^3.7.0",
 		"argon2": "^0.44.0",
@@ -37,14 +37,14 @@
 		"dotenv": "^17.3.1",
 		"fastify": "^5.8.4",
 		"fastify-plugin": "^5.1.0",
-		"isomorphic-dompurify": "^3.6.0",
+		"isomorphic-dompurify": "^3.7.1",
 		"marked": "^17.0.5",
-		"nodemailer": "^8.0.3",
+		"nodemailer": "^8.0.4",
 		"oauth4webapi": "^3.8.5",
 		"pg": "^8.20.0",
 		"pino": "^10.3.1",
 		"pino-roll": "^4.0.0",
-		"prisma": "^7.5.0",
+		"prisma": "^7.6.0",
 		"tmdb-ts": "^2.3.0",
 		"web-push": "^3.6.7",
 		"zod": "^4.3.6"
@@ -58,6 +58,6 @@
 		"tsup": "^8.5.1",
 		"tsx": "^4.21.0",
 		"typescript": "^5.9.3",
-		"vitest": "^4.1.0"
+		"vitest": "^4.1.2"
 	}
 }
