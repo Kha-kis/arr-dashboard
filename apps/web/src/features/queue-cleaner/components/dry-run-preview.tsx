@@ -21,6 +21,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ServiceBadge } from "../../../components/layout";
 import { Button, toast } from "../../../components/ui";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getLinuxInstanceName, getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { DEFAULT_RULE_COLOR, RULE_COLORS, RULE_LABELS } from "../lib/constants";
 import type { EnhancedPreviewItem, EnhancedPreviewResult } from "../lib/queue-cleaner-types";
@@ -121,6 +122,7 @@ export const EnhancedDryRunPreview = ({
 	isRunningClean,
 }: EnhancedDryRunPreviewProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
+	const [incognitoMode] = useIncognitoMode();
 	const serviceGradient = getServiceGradient(result.instanceService);
 	const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set());
 
@@ -201,7 +203,7 @@ export const EnhancedDryRunPreview = ({
 						</div>
 						<div>
 							<div className="flex items-center gap-2">
-								<h3 className="font-semibold text-foreground">{result.instanceLabel}</h3>
+								<h3 className="font-semibold text-foreground">{incognitoMode ? getLinuxInstanceName(result.instanceLabel) : result.instanceLabel}</h3>
 								<ServiceBadge service={result.instanceService} />
 								{result.instanceReachable ? (
 									<span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2 py-0.5 text-[10px] font-medium text-green-500">
@@ -342,6 +344,7 @@ export const EnhancedDryRunPreview = ({
 							color={SEMANTIC_COLORS.error.text}
 							expandedItems={expandedItems}
 							onToggle={toggleExpand}
+							incognitoMode={incognitoMode}
 						/>
 					)}
 
@@ -353,6 +356,7 @@ export const EnhancedDryRunPreview = ({
 							color="#f59e0b"
 							expandedItems={expandedItems}
 							onToggle={toggleExpand}
+							incognitoMode={incognitoMode}
 						/>
 					)}
 
@@ -365,6 +369,7 @@ export const EnhancedDryRunPreview = ({
 							expandedItems={expandedItems}
 							onToggle={toggleExpand}
 							defaultCollapsed
+							incognitoMode={incognitoMode}
 						/>
 					)}
 
@@ -378,6 +383,7 @@ export const EnhancedDryRunPreview = ({
 							onToggle={toggleExpand}
 							defaultCollapsed
 							maxVisible={10}
+							incognitoMode={incognitoMode}
 						/>
 					)}
 
@@ -491,10 +497,12 @@ const PreviewItemRow = ({
 	item,
 	isExpanded,
 	onToggle,
+	incognitoMode,
 }: {
 	item: EnhancedPreviewItem;
 	isExpanded: boolean;
 	onToggle: () => void;
+	incognitoMode: boolean;
 }) => {
 	const ruleColor = RULE_COLORS[item.rule] ?? DEFAULT_RULE_COLOR;
 	const actionColor = ACTION_COLORS[item.action] ?? DEFAULT_RULE_COLOR;
@@ -510,7 +518,7 @@ const PreviewItemRow = ({
 					)}
 					<div className="flex-1 min-w-0">
 						<div className="flex items-center gap-2 mb-1">
-							<p className="text-sm font-medium text-foreground truncate">{item.title}</p>
+							<p className="text-sm font-medium text-foreground truncate">{incognitoMode ? getLinuxIsoName(item.title) : item.title}</p>
 							<span
 								className="inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[9px] font-medium"
 								style={{
@@ -577,12 +585,14 @@ const GroupedItemRow = ({
 	onToggleGroup,
 	expandedItems,
 	onToggleItem,
+	incognitoMode,
 }: {
 	group: ItemGroup;
 	isExpanded: boolean;
 	onToggleGroup: () => void;
 	expandedItems: Set<number>;
 	onToggleItem: (id: number) => void;
+	incognitoMode: boolean;
 }) => {
 	const actionColor = ACTION_COLORS[group.worstAction] ?? DEFAULT_RULE_COLOR;
 	const ruleColor = RULE_COLORS[group.dominantRule] ?? DEFAULT_RULE_COLOR;
@@ -610,7 +620,7 @@ const GroupedItemRow = ({
 						<div className="flex items-center gap-2 mb-1">
 							<Package className="h-4 w-4 text-muted-foreground shrink-0" />
 							<p className="text-sm font-medium text-foreground truncate">
-								{commonPrefix || "Download Pack"}
+								{incognitoMode ? getLinuxIsoName(commonPrefix || "Download Pack") : (commonPrefix || "Download Pack")}
 							</p>
 							<span
 								className="inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[9px] font-medium"
@@ -661,6 +671,7 @@ const GroupedItemRow = ({
 								item={item}
 								isExpanded={expandedItems.has(item.id)}
 								onToggle={() => onToggleItem(item.id)}
+								incognitoMode={incognitoMode}
 							/>
 						))}
 					</div>
@@ -679,6 +690,7 @@ const ItemSection = ({
 	onToggle,
 	defaultCollapsed = false,
 	maxVisible = 100,
+	incognitoMode,
 }: {
 	title: string;
 	icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
@@ -688,6 +700,7 @@ const ItemSection = ({
 	onToggle: (id: number) => void;
 	defaultCollapsed?: boolean;
 	maxVisible?: number;
+	incognitoMode: boolean;
 }) => {
 	const [collapsed, setCollapsed] = useState(defaultCollapsed);
 	const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -738,6 +751,7 @@ const ItemSection = ({
 									onToggleGroup={() => toggleGroup(itemOrGroup.downloadId)}
 									expandedItems={expandedItems}
 									onToggleItem={onToggle}
+									incognitoMode={incognitoMode}
 								/>
 							);
 						}
@@ -747,6 +761,7 @@ const ItemSection = ({
 								item={itemOrGroup}
 								isExpanded={expandedItems.has(itemOrGroup.id)}
 								onToggle={() => onToggle(itemOrGroup.id)}
+								incognitoMode={incognitoMode}
 							/>
 						);
 					})}
