@@ -56,12 +56,16 @@ export const RequestsClient = () => {
 	const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
 	const [selectedRequest, setSelectedRequest] = useState<SeerrRequest | null>(null);
 
-	// Deep-link: ?user=<id> pre-selects requester filter on "All Requests" tab
+	// Deep-link: ?tab=<id> pre-selects a tab, ?user=<id> pre-selects requester filter on "All Requests" tab
 	const searchParams = useSearchParams();
+	const deepLinkTab = searchParams.get("tab") as RequestsTab | null;
 	const deepLinkUserId = searchParams.get("user");
 	const [initialUserFilter, setInitialUserFilter] = useState<string | undefined>(undefined);
 
 	useEffect(() => {
+		if (deepLinkTab && ["approval", "all", "users", "issues", "notifications", "history"].includes(deepLinkTab)) {
+			setActiveTab(deepLinkTab);
+		}
 		if (deepLinkUserId) {
 			const parsed = Number(deepLinkUserId);
 			if (Number.isInteger(parsed) && parsed > 0) {
@@ -71,7 +75,7 @@ export const RequestsClient = () => {
 		} else {
 			setInitialUserFilter(undefined);
 		}
-	}, [deepLinkUserId]);
+	}, [deepLinkTab, deepLinkUserId]);
 
 	// Resolve current instance
 	const currentInstanceId = selectedInstanceId ?? defaultInstance?.id ?? "";
