@@ -54,6 +54,13 @@ apps/api/dev.db
 .claude/*
 !.claude/commands/
 !.claude/skills/
+# Ignore fetched skill symlinks (point into .agents/), keep owned .md files
+.claude/skills/next-best-practices
+.claude/skills/shadcn
+.claude/skills/web-design-guidelines
+# Fetched skill content (like node_modules for Claude skills)
+.agents/
+skills-lock.json
 .serena/
 .leann/
 claudedocs/
