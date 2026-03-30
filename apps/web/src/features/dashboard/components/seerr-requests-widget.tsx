@@ -1,9 +1,31 @@
 "use client";
 
-import { Check, CheckCircle, ChevronRight, Clock, Film, Inbox, Loader2, Tv, X } from "lucide-react";
+import type { SeerrRequest } from "@arr/shared";
+import {
+	Check,
+	CheckCircle,
+	ChevronRight,
+	Clock,
+	Film,
+	Inbox,
+	Loader2,
+	Tv,
+	User,
+	X,
+} from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
-import { useSeerrRequestCount } from "../../../hooks/api/useSeerr";
+import { useCallback, useState } from "react";
+import { toast } from "sonner";
+import {
+	useApproveSeerrRequest,
+	useSeerrRequestCount,
+	useSeerrRequests,
+} from "../../../hooks/api/useSeerr";
+import { getLinuxIsoName, getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { RequestStatusTimeline } from "../../seerr/components/request-status-timeline";
+import { formatRelativeTime, getPosterUrl } from "../../seerr/lib/seerr-utils";
 
 interface SeerrRequestsWidgetProps {
 	instanceId: string;
@@ -17,6 +39,13 @@ export const SeerrRequestsWidget = ({
 	animationDelay = 0,
 }: SeerrRequestsWidgetProps) => {
 	const { data: counts, isError } = useSeerrRequestCount(instanceId);
+	const { data: pendingData } = useSeerrRequests({
+		instanceId,
+		filter: "pending",
+		take: 1,
+		sort: "added",
+	});
+	const pendingRequest = pendingData?.results?.[0];
 
 	if (!counts && !isError) return null;
 
@@ -110,6 +139,15 @@ export const SeerrRequestsWidget = ({
 							<ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
 						</div>
 
+						{/* Pending request quick-approve */}
+						{pendingRequest && counts.pending > 0 && (
+							<PendingRequestCard
+								request={pendingRequest}
+								instanceId={instanceId}
+								pendingCount={counts.pending}
+							/>
+						)}
+
 						{/* Status stats row */}
 						<div className="mt-3 flex items-center gap-4">
 							{statusStats.map((stat) => (
@@ -140,3 +178,130 @@ export const SeerrRequestsWidget = ({
 		</div>
 	);
 };
+
+// ============================================================================
+// Pending Request Card (inline in widget)
+// ============================================================================
+
+function PendingRequestCard({
+	request,
+	instanceId,
+	pendingCount,
+}: {
+	request: SeerrRequest;
+	instanceId: string;
+	pendingCount: number;
+}) {
+	const [incognitoMode] = useIncognitoMode();
+	const approveMutation = useApproveSeerrRequest();
+	const [isApproving, setIsApproving] = useState(false);
+
+	const posterUrl = getPosterUrl(request.media.posterPath);
+	const title = incognitoMode
+		? getLinuxIsoName(request.media.title ?? String(request.media.tmdbId))
+		: (request.media.title ?? `Request #${request.id}`);
+	const requester = incognitoMode
+		? getLinuxUsername(request.requestedBy?.displayName ?? "Unknown")
+		: (request.requestedBy?.displayName ?? "Unknown");
+
+	const handleApprove = useCallback(
+		(e: React.MouseEvent) => {
+			e.preventDefault();
+			e.stopPropagation();
+			setIsApproving(true);
+			approveMutation.mutate(
+				{ instanceId, requestId: request.id },
+				{
+					onSuccess: () => {
+						toast.success("Request approved");
+						setIsApproving(false);
+					},
+					onError: () => {
+						toast.error("Failed to approve request");
+						setIsApproving(false);
+					},
+				},
+			);
+		},
+		[approveMutation, instanceId, request.id],
+	);
+
+	return (
+		<div className="mt-3 rounded-lg border border-border/20 bg-card/20 p-3">
+			<div className="flex items-start gap-3">
+				{/* Poster */}
+				<div
+					className="shrink-0 w-[36px] h-[52px] rounded overflow-hidden ring-1 ring-white/[0.06] flex items-center justify-center"
+					style={{
+						backgroundColor: posterUrl ? undefined : "rgba(255,255,255,0.04)",
+					}}
+				>
+					{posterUrl && !incognitoMode ? (
+						<Image
+							src={posterUrl}
+							alt=""
+							width={36}
+							height={52}
+							className="object-cover w-full h-full"
+							unoptimized
+						/>
+					) : (
+						<Film className="h-4 w-4 text-muted-foreground/40" />
+					)}
+				</div>
+
+				{/* Info */}
+				<div className="flex-1 min-w-0">
+					<div className="flex items-center gap-1.5">
+						<span className="text-xs font-medium text-foreground truncate">{title}</span>
+						<span
+							className="shrink-0 rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider"
+							style={{
+								background: `${seerrGradient.from}15`,
+								color: seerrGradient.from,
+							}}
+						>
+							{request.type === "movie" ? "Movie" : "TV"}
+						</span>
+					</div>
+
+					<div className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+						<User className="h-2.5 w-2.5" />
+						<span className="truncate">{requester}</span>
+						<span className="mx-0.5">·</span>
+						<span>{formatRelativeTime(request.createdAt)}</span>
+					</div>
+
+					{/* Compact timeline */}
+					<div className="mt-1.5">
+						<RequestStatusTimeline request={request} variant="compact" />
+					</div>
+				</div>
+
+				{/* Approve button */}
+				<button
+					type="button"
+					onClick={handleApprove}
+					disabled={isApproving}
+					aria-label={`Approve request for ${title}`}
+					className="shrink-0 flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-white transition-colors disabled:opacity-50"
+					style={{
+						background: `linear-gradient(135deg, ${seerrGradient.from}, ${seerrGradient.to})`,
+					}}
+				>
+					{isApproving ? (
+						<Loader2 className="h-3 w-3 animate-spin" />
+					) : (
+						<Check className="h-3 w-3" />
+					)}
+					<span className="hidden sm:inline">Approve</span>
+				</button>
+			</div>
+
+			{/* "View all N pending" link */}
+			{pendingCount > 1 && (
+				<p className="mt-2 text-[10px] text-muted-foreground">+{pendingCount - 1} more pending</p>
+			)}
+		</div>
+	);
+}
