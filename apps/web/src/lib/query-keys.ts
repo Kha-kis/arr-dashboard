@@ -321,6 +321,7 @@ export const seerrKeys = {
 	request: (instanceId: string, requestId: number) =>
 		["seerr", "request", instanceId, requestId] as const,
 	requestCount: (instanceId: string) => ["seerr", "request-count", instanceId] as const,
+	attention: (instanceId: string) => ["seerr", "attention", instanceId] as const,
 	users: (instanceId: string, params?: object) =>
 		["seerr", "users", instanceId, params] as const,
 	userQuota: (instanceId: string, userId: number) =>
