@@ -56,12 +56,7 @@ export async function registerHistoryRoutes(app: FastifyInstance, _opts: Fastify
 					grandparentTitle: raw.grandparent_title || undefined,
 					mediaType: mediaType as "movie" | "episode" | "track",
 					watchedAt: new Date(raw.date * 1000).toISOString(),
-					duration: 0,
-					watchedDuration: 0,
 					user: raw.user,
-					platform: "",
-					player: "",
-					completionPercent: 0,
 					ratingKey: raw.rating_key,
 				});
 			}

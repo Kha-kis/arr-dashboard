@@ -122,12 +122,12 @@ export interface TautulliWatchHistoryItem {
 	year?: number;
 	mediaType: "movie" | "episode" | "track";
 	watchedAt: string; // ISO date
-	duration: number; // seconds
-	watchedDuration: number; // seconds
+	duration?: number; // seconds — not available from Tautulli get_history
+	watchedDuration?: number; // seconds — not available from Tautulli get_history
 	user: string;
-	platform: string;
-	player: string;
-	completionPercent: number;
+	platform?: string; // not available from Tautulli get_history
+	player?: string; // not available from Tautulli get_history
+	completionPercent?: number; // not available from Tautulli get_history
 	ratingKey: string;
 }
 

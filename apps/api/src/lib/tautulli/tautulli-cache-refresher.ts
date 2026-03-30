@@ -16,7 +16,8 @@ import type { FastifyBaseLogger } from "fastify";
 import { getErrorMessage } from "../utils/error-message.js";
 import type { PrismaClient } from "../prisma.js";
 import { delay } from "../utils/delay.js";
-import type { TautulliClient, TautulliHistoryItem } from "./tautulli-client.js";
+import type { TautulliHistoryItem } from "@arr/shared";
+import type { TautulliClient } from "./tautulli-client.js";
 
 // Maximum pages of history to fetch per library (50 items per page)
 const MAX_HISTORY_PAGES = 20;

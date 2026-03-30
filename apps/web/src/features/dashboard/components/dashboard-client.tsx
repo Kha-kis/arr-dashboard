@@ -39,6 +39,7 @@ import { useTautulliActivity } from "../../../hooks/api/useTautulli";
 import { useRefreshState } from "../../../hooks/useRefreshState";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { anonymizeHealthMessage, getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
+import { POLLING_REALTIME, POLLING_STANDARD } from "../../../lib/polling-intervals";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
 const ManualImportModal = lazy(() => import("../../manual-import/components/manual-import-modal"));
@@ -373,8 +374,8 @@ export const DashboardClient = () => {
 
 	// Session count for Activity tab badge
 	const isMediaTab = activeTab === "overview" || activeTab === "activity";
-	const plexNowPlaying = useNowPlaying(hasPlexInstances, isMediaTab ? 15_000 : 60_000);
-	const tautulliActivity = useTautulliActivity(hasTautulliInstances, isMediaTab ? 15_000 : 60_000);
+	const plexNowPlaying = useNowPlaying(hasPlexInstances, isMediaTab ? POLLING_REALTIME : POLLING_STANDARD);
+	const tautulliActivity = useTautulliActivity(hasTautulliInstances, isMediaTab ? POLLING_REALTIME : POLLING_STANDARD);
 	const sessionCount = useMemo(() => {
 		if (!hasMediaServer) return undefined;
 		const plexCount = plexNowPlaying.data?.sessions?.length ?? 0;
