@@ -6,6 +6,7 @@
  * threshold is reached.
  */
 
+import { loggers } from "../logger.js";
 import type { NotificationPayload } from "./types.js";
 
 export interface AggregationConfig {
@@ -77,7 +78,7 @@ export class AggregationBuffer {
 
 		const digest = this.buildDigest(bucket.items, key);
 		this.flushCallback(digest).catch((err) => {
-			console.warn("[aggregation] Flush failed — batched notifications may be lost:", err instanceof Error ? err.message : err);
+			loggers.notifications.warn({ err }, "Aggregation flush failed — batched notifications may be lost");
 		});
 	}
 

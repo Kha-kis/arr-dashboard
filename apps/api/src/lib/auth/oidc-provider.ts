@@ -1,4 +1,5 @@
 import * as oauth from "oauth4webapi";
+import { loggers } from "../logger.js";
 import { getErrorMessage } from "../utils/error-message.js";
 
 export interface OIDCProviderConfig {
@@ -198,10 +199,9 @@ export class OIDCProvider {
 					} catch (retryError) {
 						// Retry failed — fall through to the original error
 						// Log for debugging but don't mask the original error
-						console.warn(
-							"[OIDC] Self-healing retry failed for issuer:",
-							this.config.issuer,
-							retryError instanceof Error ? retryError.message : retryError,
+						loggers.auth.warn(
+							{ err: retryError, issuer: this.config.issuer },
+							"OIDC self-healing retry failed",
 						);
 					}
 				}

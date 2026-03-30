@@ -5,6 +5,8 @@
  * These functions extract common patterns from service-specific fetch/aggregate functions.
  */
 
+import { loggers } from "../logger.js";
+
 // ============================================================================
 // Type Definitions
 // ============================================================================
@@ -140,7 +142,7 @@ export const safeRequest = async <T>(
 		return await operation();
 	} catch (err) {
 		if (context) {
-			console.warn('[statistics] %s failed:', context, err instanceof Error ? err.message : err);
+			loggers.statistics.warn({ err, context }, "Statistics request failed");
 		}
 		return undefined;
 	}
