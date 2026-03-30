@@ -1,6 +1,6 @@
 {
   "name": "arr-dashboard-platform",
-  "version": "2.11.0",
+  "version": "2.12.0",
   "private": true,
   "packageManager": "pnpm@10.28.1",
   "scripts": {
