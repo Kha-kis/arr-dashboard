@@ -1,14 +1,17 @@
 "use client";
 
-import type { SeerrRequest } from "@arr/shared";
+import type { SeerrAttentionItem, SeerrRequest } from "@arr/shared";
 import {
+	AlertTriangle,
 	Check,
 	CheckCircle,
 	ChevronRight,
 	Clock,
+	ExternalLink,
 	Film,
 	Inbox,
 	Loader2,
+	RefreshCw,
 	Tv,
 	User,
 	X,
@@ -19,13 +22,15 @@ import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import {
 	useApproveSeerrRequest,
+	useRetrySeerrRequest,
+	useSeerrAttention,
 	useSeerrRequestCount,
 	useSeerrRequests,
 } from "../../../hooks/api/useSeerr";
 import { getLinuxIsoName, getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { RequestStatusTimeline } from "../../seerr/components/request-status-timeline";
-import { formatRelativeTime, getPosterUrl } from "../../seerr/lib/seerr-utils";
+import { formatDuration, formatRelativeTime, getPosterUrl } from "../../seerr/lib/seerr-utils";
 
 interface SeerrRequestsWidgetProps {
 	instanceId: string;
@@ -45,7 +50,10 @@ export const SeerrRequestsWidget = ({
 		take: 1,
 		sort: "added",
 	});
+	const { data: attentionData } = useSeerrAttention(instanceId);
 	const pendingRequest = pendingData?.results?.[0];
+	const attentionItems = attentionData?.items ?? [];
+	const attentionTotal = attentionData?.total ?? 0;
 
 	if (!counts && !isError) return null;
 
@@ -86,7 +94,7 @@ export const SeerrRequestsWidget = ({
 
 	const statusStats = [
 		{ icon: Clock, label: "Pending", value: counts.pending, color: SEMANTIC_COLORS.warning.text },
-		{ icon: Loader2, label: "Processing", value: counts.processing, color: "#facc15" },
+		{ icon: Loader2, label: "Processing", value: counts.processing, color: SEMANTIC_COLORS.warning.text },
 		{ icon: Check, label: "Approved", value: counts.approved, color: SEMANTIC_COLORS.success.text },
 		{ icon: X, label: "Declined", value: counts.declined, color: SEMANTIC_COLORS.error.text },
 	];
@@ -148,6 +156,15 @@ export const SeerrRequestsWidget = ({
 							/>
 						)}
 
+						{/* Needs attention section */}
+						{attentionItems.length > 0 && (
+							<NeedsAttentionSection
+								items={attentionItems}
+								total={attentionTotal}
+								instanceId={instanceId}
+							/>
+						)}
+
 						{/* Status stats row */}
 						<div className="mt-3 flex items-center gap-4">
 							{statusStats.map((stat) => (
@@ -178,6 +195,131 @@ export const SeerrRequestsWidget = ({
 		</div>
 	);
 };
+
+// ============================================================================
+// Needs Attention Section
+// ============================================================================
+
+function NeedsAttentionSection({
+	items,
+	total,
+	instanceId,
+}: {
+	items: SeerrAttentionItem[];
+	total: number;
+	instanceId: string;
+}) {
+	const displayCount = total > items.length ? `${items.length}+` : String(items.length);
+
+	return (
+		<div className="mt-3 rounded-lg border border-border/20 bg-card/20 p-3">
+			<div className="flex items-center gap-1.5 mb-2">
+				<AlertTriangle className="h-3 w-3" style={{ color: SEMANTIC_COLORS.warning.text }} />
+				<span className="text-[11px] font-semibold text-foreground">
+					Needs Attention ({displayCount})
+				</span>
+			</div>
+			<div className="space-y-1.5">
+				{items.map((item) => (
+					<AttentionItemRow key={item.request.id} item={item} instanceId={instanceId} />
+				))}
+			</div>
+		</div>
+	);
+}
+
+function AttentionItemRow({
+	item,
+	instanceId,
+}: {
+	item: SeerrAttentionItem;
+	instanceId: string;
+}) {
+	const [incognitoMode] = useIncognitoMode();
+	const retryMutation = useRetrySeerrRequest();
+	const [isRetrying, setIsRetrying] = useState(false);
+
+	const title = incognitoMode
+		? getLinuxIsoName(item.request.media.title ?? String(item.request.media.tmdbId))
+		: (item.request.media.title ?? `Request #${item.request.id}`);
+
+	const handleRetry = useCallback(
+		(e: React.MouseEvent) => {
+			e.preventDefault();
+			e.stopPropagation();
+			setIsRetrying(true);
+			retryMutation.mutate(
+				{ instanceId, requestId: item.request.id },
+				{
+					onSuccess: () => {
+						toast.success("Request retried");
+						setIsRetrying(false);
+					},
+					onError: () => {
+						toast.error("Failed to retry request");
+						setIsRetrying(false);
+					},
+				},
+			);
+		},
+		[retryMutation, instanceId, item.request.id],
+	);
+
+	const handleViewClick = useCallback((e: React.MouseEvent) => {
+		e.stopPropagation();
+	}, []);
+
+	const isFailed = item.reason === "failed";
+
+	return (
+		<div className="flex items-center gap-2 rounded-md bg-card/30 px-2 py-1.5">
+			{/* Reason badge */}
+			<span
+				className="shrink-0 rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider"
+				style={{
+					background: isFailed
+						? `${SEMANTIC_COLORS.error.text}15`
+						: `${SEMANTIC_COLORS.warning.text}15`,
+					color: isFailed ? SEMANTIC_COLORS.error.text : SEMANTIC_COLORS.warning.text,
+				}}
+			>
+				{isFailed ? "Failed" : `Stuck ${formatDuration(item.ageMs)}`}
+			</span>
+
+			{/* Title */}
+			<span className="flex-1 min-w-0 text-[11px] text-foreground truncate">{title}</span>
+
+			{/* Action */}
+			{isFailed ? (
+				<button
+					type="button"
+					onClick={handleRetry}
+					disabled={isRetrying}
+					aria-label={`Retry request for ${title}`}
+					className="shrink-0 flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors hover:bg-muted/50 disabled:opacity-50"
+					style={{ color: SEMANTIC_COLORS.warning.text }}
+				>
+					{isRetrying ? (
+						<Loader2 className="h-2.5 w-2.5 animate-spin" />
+					) : (
+						<RefreshCw className="h-2.5 w-2.5" />
+					)}
+					<span>Retry</span>
+				</button>
+			) : (
+				<Link
+					href="/requests"
+					onClick={handleViewClick}
+					className="shrink-0 flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+					aria-label={`View stuck request for ${title}`}
+				>
+					<ExternalLink className="h-2.5 w-2.5" />
+					<span>View</span>
+				</Link>
+			)}
+		</div>
+	);
+}
 
 // ============================================================================
 // Pending Request Card (inline in widget)

@@ -107,6 +107,13 @@ export function formatRelativeTime(dateStr: string): string {
 	return date.toLocaleDateString();
 }
 
+export function formatDuration(ms: number): string {
+	const hours = Math.floor(ms / (1000 * 60 * 60));
+	if (hours < 24) return `${hours}h`;
+	const days = Math.floor(hours / 24);
+	return `${days}d`;
+}
+
 export function getPosterUrl(posterPath?: string | null): string | null {
 	if (!posterPath) return null;
 	return `https://image.tmdb.org/t/p/w185${posterPath}`;
