@@ -5,6 +5,43 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.12.0] - 2026-03-30
+
+Seerr Requests Experience, API stability improvements, and full security sweep.
+
+### Added
+
+#### Seerr Requests Experience
+- **Request lifecycle visibility** — Timeline view showing the full journey of each request from creation through approval to availability. Requester popover with user details. Deep-linking to individual requests via query params (#225)
+- **Requests UX improvements** — Lifecycle visibility, accessibility enhancements, and queue preview for the Seerr requests page (#229)
+- **Dashboard Seerr widget upgrade** — Inline pending request display with one-click approve directly from the dashboard (#236)
+- **"Needs Attention" signal** — Seerr dashboard widget now highlights items that need manual action (#237)
+
+#### Library Cleanup
+- **Cross-service cleanup rule templates** — Pre-built templates for common cleanup scenarios across Sonarr, Radarr, Plex, and Tautulli (#221)
+- **Requester evaluators** — Cleanup rules can now evaluate Seerr requester data. New Discover request options for rule authoring (#223)
+
+### Fixed
+- **API heap out-of-memory crash** — Four cache schedulers (Plex, Tautulli, episode, session-snapshot) all fired within 30 seconds of startup. With many service instances, overlapping memory peaks exceeded the 512MB heap limit. Staggered startup delays (30s/2min/5min), paginated session snapshot platform cache, released Plex refresher intermediates earlier, and bumped default heap to 768MB (#239, #242)
+- **Plex session schema** — Relaxed schema validation to tolerate type variance across Plex server versions (#228)
+- **Pino logging conflict** — Removed shell stdout redirect that conflicted with Pino's worker-thread transport, causing empty log files (#238)
+- **Tautulli/Plex validation** — Improved statistics code quality and data validation (#233, #241)
+
+### Changed
+- **Logging** — Routed all remaining `console.warn`/`console.error` calls through Pino structured logger (#240)
+- **CI** — Fixed Docker Hub login for Dependabot PRs — login step now skips when secrets are unavailable (#246)
+
+### Security
+- **nodemailer** 8.0.3 → 8.0.4 — SMTP command injection fix
+- **picomatch** 4.0.3 → 4.0.4, 2.3.1 → 2.3.2 — ReDoS and method injection fixes
+- **brace-expansion** 5.0.4 → 5.0.5, 1.1.12 → 1.1.13 — memory exhaustion fix
+- **yaml** 2.8.2 → 2.8.3 — stack overflow via nested collections fix
+- **prisma** 7.5.0 → 7.6.0, **@tanstack/react-query** 5.95.1 → 5.95.2, **turbo** 2.8.20 → 2.9.1, **@biomejs/biome** 2.4.8 → 2.4.10, **vitest** 4.1.0 → 4.1.2
+
+### Tests
+- First-wave test coverage for library cleanup, auth, services, and notifications (#224)
+- Seerr-backed integration tests for the requests experience (#231)
+
 ## [2.11.0] - 2026-03-24
 
 System Pulse — a unified attention feed that synthesizes health signals from every connected service into a single prioritized page.
