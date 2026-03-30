@@ -49,18 +49,22 @@ try {
 const logFilePath = join(LOG_DIR, "arr-dashboard.log");
 
 /**
- * Build dual-output transport: stdout + rotating log file.
- * Falls back to stdout-only if the log directory is not writable.
+ * Build the log destination.
+ *
+ * stdout is written synchronously via pino.destination(1) (main thread) so that
+ * output is always visible in `docker logs` — even when the process is backgrounded
+ * by the Docker entrypoint script. A pino.transport() worker thread's fd 1 can
+ * become detached from the container's stdout pipe in that scenario.
+ *
+ * File logging (pino-roll) runs in a worker thread via pino.transport() for
+ * non-blocking I/O. Both streams are combined via pino.multistream().
  */
-function buildTransport() {
-	const targets: pino.TransportTargetOptions[] = [
-		// stdout — always present (for docker logs / terminal)
-		{ target: "pino/file", options: { destination: 1 } },
-	];
+function buildDestination() {
+	const stdout = pino.destination({ dest: 1, sync: false });
+	const streams: pino.StreamEntry[] = [{ stream: stdout }];
 
-	// Only add file transport if the directory exists
 	if (existsSync(LOG_DIR)) {
-		targets.push({
+		const fileTransport = pino.transport({
 			target: "pino-roll",
 			options: {
 				file: logFilePath,
@@ -69,9 +73,10 @@ function buildTransport() {
 				mkdir: true,
 			},
 		});
+		streams.push({ stream: fileTransport });
 	}
 
-	return pino.transport({ targets });
+	return pino.multistream(streams);
 }
 
 /**
@@ -101,7 +106,7 @@ const REDACT_PATHS = [
 ];
 
 /**
- * Create the base logger with dual transport (stdout + rotating file)
+ * Create the base logger with stdout (main thread) + rotating file (worker thread)
  */
 export const logger = pino(
 	{
@@ -115,7 +120,7 @@ export const logger = pino(
 			censor: "[Redacted]",
 		},
 	},
-	buildTransport(),
+	buildDestination(),
 );
 
 /**

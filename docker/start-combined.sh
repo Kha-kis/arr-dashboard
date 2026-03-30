@@ -255,7 +255,11 @@ echo "  - Web Port: $PORT"
 echo ""
 echo "Starting API server on $HOST:$API_PORT..."
 cd /app/api
-su-exec abc sh -c "API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node dist/index.js" > /config/logs/api.log 2>&1 &
+# Let stdout/stderr flow directly to the container — Pino handles file logging
+# via its pino-roll transport (writes to /config/logs/arr-dashboard.log).
+# Previous approach redirected stdout to api.log, which conflicted with Pino's
+# worker-thread transport and caused both log files to remain empty.
+su-exec abc sh -c "API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node dist/index.js" &
 API_PID=$!
 echo "API started with PID $API_PID"
 
@@ -264,9 +268,6 @@ sleep 3
 if ! kill -0 "$API_PID" 2>/dev/null; then
     echo ""
     echo "ERROR: API process (PID $API_PID) died during startup!" >&2
-    echo "=== API startup output ===" >&2
-    cat /config/logs/api.log >&2 2>/dev/null || echo "(empty)"
-    echo "=== End API output ===" >&2
 
     # Temporarily disable set -e so wait's non-zero exit doesn't kill the script
     set +e
@@ -284,9 +285,6 @@ if ! kill -0 "$API_PID" 2>/dev/null; then
     echo "=== Foreground API exit code: $RERUN_EXIT ===" >&2
     exit 1
 fi
-
-# Tail the API log to container stdout so docker logs captures it
-tail -f /config/logs/api.log &
 
 # ============================================
 # Start Web server (as abc user)
