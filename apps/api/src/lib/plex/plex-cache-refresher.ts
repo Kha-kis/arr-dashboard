@@ -140,7 +140,9 @@ export async function refreshPlexCache(
 		}
 
 		// 4. Get history and aggregate (per-section: key includes sectionId)
-		const history = await client.getHistory({ maxResults: 5000 });
+		let history: Awaited<ReturnType<typeof client.getHistory>> | undefined =
+			await client.getHistory({ maxResults: 5000 });
+		const historyCount = history.length;
 		const aggregations = new Map<string, ItemAggregation>();
 
 		for (const entry of history) {
@@ -184,6 +186,9 @@ export async function refreshPlexCache(
 				});
 			}
 		}
+
+		// Release history array — only historyCount is needed from here (#239)
+		history = undefined;
 
 		// Ensure all library items are in aggregations (even if unwatched)
 		for (const [_ratingKey, itemData] of ratingKeyMap) {
@@ -232,10 +237,16 @@ export async function refreshPlexCache(
 			log.warn({ err }, "Failed to fetch Plex on-deck items");
 		}
 
+		// Release ratingKeyMap — all data now lives in aggregations (#239)
+		const libraryItemCount = ratingKeyMap.size;
+		ratingKeyMap.clear();
+
 		// 6. Upsert into PlexCache in batches (reduces 2000 transactions to ~20)
 		const BATCH_SIZE = 100;
 		const upsertedIds: string[] = [];
 		const aggregationsArray = [...aggregations.values()];
+		// Release Map hash table — aggregationsArray now owns all references (#239)
+		aggregations.clear();
 
 		for (let i = 0; i < aggregationsArray.length; i += BATCH_SIZE) {
 			const chunk = aggregationsArray.slice(i, i + BATCH_SIZE);
@@ -345,9 +356,9 @@ export async function refreshPlexCache(
 			if (evicted.count > 0) {
 				log.info({ instanceId, evicted: evicted.count }, "Plex cache: evicted stale rows");
 			}
-		} else if (aggregations.size > 0) {
+		} else if (aggregationsArray.length > 0) {
 			log.warn(
-				{ instanceId, aggregationSize: aggregations.size, errors },
+				{ instanceId, aggregationSize: aggregationsArray.length, errors },
 				"Plex cache: skipping eviction — all upserts failed, stale rows may accumulate",
 			);
 		}
@@ -355,9 +366,9 @@ export async function refreshPlexCache(
 		log.info(
 			{
 				instanceId,
-				totalLibraryItems: ratingKeyMap.size,
-				totalHistory: history.length,
-				uniqueItems: aggregations.size,
+				totalLibraryItems: libraryItemCount,
+				totalHistory: historyCount,
+				uniqueItems: aggregationsArray.length,
 				upserted,
 				errors,
 			},

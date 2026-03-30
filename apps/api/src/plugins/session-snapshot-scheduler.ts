@@ -183,28 +183,47 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 						const platformCutoff = new Date(
 							Date.now() - NEW_DEVICE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
 						);
-						const recentSnapshots = await app.prisma.sessionSnapshot.findMany({
-							where: { capturedAt: { gte: platformCutoff } },
-							select: { sessionsJson: true },
-							orderBy: { capturedAt: "desc" },
-							take: 10000,
-						});
 
+						// Paginate through snapshots in batches to avoid loading
+						// thousands of JSON strings into memory at once (#239)
+						const PLATFORM_BATCH_SIZE = 500;
 						const platforms = new Set<string>();
 						let platformParseFailures = 0;
-						for (const snap of recentSnapshots) {
-							try {
-								const sessions: Array<{ platform?: string }> = JSON.parse(snap.sessionsJson);
-								for (const s of sessions) {
-									if (s.platform) platforms.add(s.platform);
+						let cursor: string | undefined;
+						let batchCount = 0;
+
+						for (;;) {
+							const batch = await app.prisma.sessionSnapshot.findMany({
+								where: { capturedAt: { gte: platformCutoff } },
+								select: { id: true, sessionsJson: true },
+								orderBy: { id: "asc" },
+								take: PLATFORM_BATCH_SIZE,
+								...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+							});
+
+							if (batch.length === 0) break;
+
+							for (const snap of batch) {
+								try {
+									const sessions: Array<{ platform?: string }> = JSON.parse(snap.sessionsJson);
+									for (const s of sessions) {
+										if (s.platform) platforms.add(s.platform);
+									}
+								} catch {
+									platformParseFailures++;
 								}
-							} catch {
-								platformParseFailures++;
 							}
+
+							cursor = batch[batch.length - 1]!.id;
+							batchCount++;
+
+							// Safety cap: stop after 20 batches (10K records) to match prior behavior
+							if (batchCount >= 20) break;
 						}
+
 						if (platformParseFailures > 0) {
 							app.log.warn(
-								{ parseFailures: platformParseFailures, totalSnapshots: recentSnapshots.length },
+								{ parseFailures: platformParseFailures },
 								"Failed to parse sessionsJson during platform cache rebuild — possible data corruption",
 							);
 						}
