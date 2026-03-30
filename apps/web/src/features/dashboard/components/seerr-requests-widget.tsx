@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -43,6 +44,7 @@ export const SeerrRequestsWidget = ({
 	instanceId,
 	animationDelay = 0,
 }: SeerrRequestsWidgetProps) => {
+	const router = useRouter();
 	const { data: counts, isError } = useSeerrRequestCount(instanceId);
 	const { data: pendingData } = useSeerrRequests({
 		instanceId,
@@ -115,7 +117,14 @@ export const SeerrRequestsWidget = ({
 			className="animate-in fade-in slide-in-from-bottom-4 duration-500"
 			style={{ animationDelay: `${animationDelay}ms`, animationFillMode: "backwards" }}
 		>
-			<Link href="/requests" className="block">
+			{/* Use div instead of Link to avoid nested <a> tags from inner Links/buttons */}
+			<div
+				role="link"
+				tabIndex={0}
+				className="block cursor-pointer"
+				onClick={() => router.push("/requests")}
+				onKeyDown={(e) => { if (e.key === "Enter") router.push("/requests"); }}
+			>
 				<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10 group transition-all hover:border-border/80">
 					{/* Accent line */}
 					<div
@@ -191,7 +200,7 @@ export const SeerrRequestsWidget = ({
 						</div>
 					</div>
 				</div>
-			</Link>
+			</div>
 		</div>
 	);
 };
@@ -308,7 +317,7 @@ function AttentionItemRow({
 				</button>
 			) : (
 				<Link
-					href="/requests"
+					href="/requests?tab=all"
 					onClick={handleViewClick}
 					className="shrink-0 flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
 					aria-label={`View stuck request for ${title}`}
