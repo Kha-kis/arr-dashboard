@@ -136,6 +136,11 @@ export const loggers = {
 	deployment: logger.child({ module: "deployment" }),
 	scheduler: logger.child({ module: "scheduler" }),
 	queueCleaner: logger.child({ module: "queue-cleaner" }),
+	seerr: logger.child({ module: "seerr" }),
+	notifications: logger.child({ module: "notifications" }),
+	librarySync: logger.child({ module: "library-sync" }),
+	libraryCleanup: logger.child({ module: "library-cleanup" }),
+	statistics: logger.child({ module: "statistics" }),
 };
 
 /**

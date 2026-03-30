@@ -24,6 +24,7 @@ import DOMPurify from "isomorphic-dompurify";
 import { z } from "zod";
 import { marked } from "marked";
 import { parseUpstreamOrThrow, UpstreamValidationError } from "../validation/parse-upstream.js";
+import { loggers } from "../logger.js";
 import {
 	radarrNamingSchema,
 	sonarrNamingSchema,
@@ -73,15 +74,10 @@ interface Logger {
 }
 
 /**
- * Fallback logger using console — ensures validation warnings and fetch
+ * Fallback logger using Pino — ensures validation warnings and fetch
  * errors are always visible, even if callers forget to pass app.log.
  */
-const fallbackLogger: Logger = {
-	warn: (msg: string | object, ...args: unknown[]) => console.warn("[TrashFetcher]", msg, ...args),
-	error: (msg: string | object, ...args: unknown[]) =>
-		console.error("[TrashFetcher]", msg, ...args),
-	debug: () => {},
-};
+const fallbackLogger: Logger = loggers.trashGuides;
 
 // ============================================================================
 // HTML Sanitization Configuration
