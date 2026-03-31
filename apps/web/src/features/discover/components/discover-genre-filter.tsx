@@ -84,8 +84,9 @@ export const DiscoverGenreFilter: React.FC<DiscoverGenreFilterProps> = ({
 			{/* Genre pills */}
 			<div
 				ref={scrollRef}
-				className="flex items-center gap-2 overflow-x-auto scrollbar-none px-1"
+				className="flex items-center gap-2 overflow-x-auto px-1 pb-3"
 				style={{
+					scrollbarWidth: "thin",
 					maskImage: "linear-gradient(to right, transparent, black 2%, black 98%, transparent)",
 					WebkitMaskImage:
 						"linear-gradient(to right, transparent, black 2%, black 98%, transparent)",
