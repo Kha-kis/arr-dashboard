@@ -242,7 +242,7 @@ export function EnhancedTemplateImportModal({
 								</span>
 							</div>
 							<ul className="space-y-1.5 text-xs" style={{ color: SEMANTIC_COLORS.error.text }}>
-								{validation.errors.map((error: any, i: number) => (
+								{validation.errors.map((error, i) => (
 									<li key={i} className="flex items-start gap-2">
 										<span style={{ color: SEMANTIC_COLORS.error.from }}>•</span>
 										<span>
@@ -276,7 +276,7 @@ export function EnhancedTemplateImportModal({
 								</span>
 							</div>
 							<ul className="space-y-1.5 text-xs" style={{ color: SEMANTIC_COLORS.warning.text }}>
-								{validation.warnings.map((warning: any, i: number) => (
+								{validation.warnings.map((warning, i) => (
 									<li key={i} className="flex items-start gap-2">
 										<span style={{ color: SEMANTIC_COLORS.warning.from }}>•</span>
 										<span>
@@ -297,7 +297,7 @@ export function EnhancedTemplateImportModal({
 								<span className="font-medium text-sm text-foreground">Conflicts Detected</span>
 							</div>
 
-							{validation.conflicts.map((conflict: any, i: number) => (
+							{validation.conflicts.map((conflict, i) => (
 								<div key={i} className="space-y-3">
 									<p className="text-sm text-muted-foreground">{conflict.message}</p>
 
@@ -351,7 +351,7 @@ export function EnhancedTemplateImportModal({
 								</span>
 							</div>
 							<ul className="space-y-1 text-xs" style={{ color: SEMANTIC_COLORS.error.text }}>
-								{compatibility.issues.map((issue: any, i: number) => (
+								{compatibility.issues.map((issue, i) => (
 									<li key={i} className="flex items-start gap-2">
 										<span style={{ color: SEMANTIC_COLORS.error.from }}>•</span>
 										<span>{issue.message}</span>

@@ -1,5 +1,17 @@
 import type { CurrentUser, CurrentUserResponse } from "@arr/shared";
 import { ApiError, apiRequest, NetworkError, UnauthorizedError } from "../base";
+
+/**
+ * WebAuthn types for passkey operations.
+ *
+ * We use the types from @simplewebauthn/browser's internal types module.
+ * The server returns JSON-serialized WebAuthn options that the browser
+ * passes directly to startRegistration/startAuthentication.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- WebAuthn JSON options are opaque pass-through between server and @simplewebauthn/browser
+type WebAuthnOptions = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- WebAuthn credential JSON is opaque pass-through from @simplewebauthn/browser to server
+type WebAuthnCredentialJSON = any;
 import type {
 	OIDCLoginResponse,
 	OIDCProviderResponse,
@@ -125,7 +137,7 @@ export async function getPasskeyCredentials(): Promise<PasskeyCredential[]> {
 	return data.credentials;
 }
 
-export async function getPasskeyRegistrationOptions(friendlyName?: string): Promise<any> {
+export async function getPasskeyRegistrationOptions(friendlyName?: string): Promise<WebAuthnOptions> {
 	return apiRequest("/auth/passkey/register/options", {
 		method: "POST",
 		json: { friendlyName },
@@ -133,7 +145,7 @@ export async function getPasskeyRegistrationOptions(friendlyName?: string): Prom
 }
 
 export async function verifyPasskeyRegistration(
-	response: any,
+	response: WebAuthnCredentialJSON,
 	friendlyName?: string,
 ): Promise<void> {
 	await apiRequest("/auth/passkey/register/verify", {
@@ -142,13 +154,13 @@ export async function verifyPasskeyRegistration(
 	});
 }
 
-export async function getPasskeyLoginOptions(): Promise<{ options: any; sessionId: string }> {
+export async function getPasskeyLoginOptions(): Promise<{ options: WebAuthnOptions; sessionId: string }> {
 	return apiRequest("/auth/passkey/login/options", {
 		method: "POST",
 	});
 }
 
-export async function verifyPasskeyLogin(response: any, sessionId: string): Promise<CurrentUser> {
+export async function verifyPasskeyLogin(response: WebAuthnCredentialJSON, sessionId: string): Promise<CurrentUser> {
 	const data = await apiRequest<CurrentUserResponse>("/auth/passkey/login/verify", {
 		method: "POST",
 		json: { response, sessionId },

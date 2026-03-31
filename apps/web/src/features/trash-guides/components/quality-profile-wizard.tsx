@@ -1,6 +1,7 @@
 "use client";
 
 import type { CustomQualityConfig, NamingSelectedPresets, TrashTemplate } from "@arr/shared";
+import type { WizardEditingTemplate } from "../types/wizard-types";
 import { X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
@@ -505,7 +506,7 @@ export const QualityProfileWizard = ({
 							onNext={handleCustomizationComplete}
 							onBack={isEditMode ? undefined : handleBack} // Disable back in edit mode
 							isEditMode={isEditMode} // Pass edit mode flag
-							editingTemplate={editingTemplate} // Pass template data for edit mode
+							editingTemplate={editingTemplate as unknown as WizardEditingTemplate} // Pass template data for edit mode
 							cfResolutions={wizardState.cfResolutions} // Pass CF resolutions from previous step
 						/>
 					)}

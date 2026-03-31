@@ -99,9 +99,9 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 			payload &&
 			typeof payload === "object" &&
 			"message" in payload &&
-			typeof (payload as any).message === "string"
+			typeof (payload as Record<string, unknown>).message === "string"
 		) {
-			return (payload as any).message as string;
+			return (payload as Record<string, unknown>).message as string;
 		}
 
 		if (typeof payload === "string" && payload.trim().length > 0) {

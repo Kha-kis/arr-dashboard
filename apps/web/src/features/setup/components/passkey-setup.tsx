@@ -10,6 +10,7 @@ import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { apiRequest } from "../../../lib/api-client/base";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 interface RegisterResponse {
 	user: CurrentUser;
@@ -78,7 +79,7 @@ export const PasskeySetup = () => {
 			userCreated = true;
 
 			// Step 2: Get passkey registration options
-			const options = await apiRequest<any>("/auth/passkey/register/options", {
+			const options = await apiRequest<Parameters<typeof startRegistration>[0]>("/auth/passkey/register/options", {
 				method: "POST",
 				json: {
 					friendlyName: formState.passkeyName.trim() || `${formState.username}'s passkey`,
@@ -99,7 +100,7 @@ export const PasskeySetup = () => {
 
 			// Registration successful, redirect to dashboard
 			router.push("/dashboard");
-		} catch (err: any) {
+		} catch (err: unknown) {
 			// If user was created but passkey registration failed, delete the incomplete account
 			if (userCreated) {
 				try {
@@ -119,7 +120,7 @@ export const PasskeySetup = () => {
 					);
 				}
 			} else {
-				setError(err.message ?? "Failed to create admin account with passkey");
+				setError(getErrorMessage(err, "Failed to create admin account with passkey"));
 			}
 			setIsSubmitting(false);
 		}

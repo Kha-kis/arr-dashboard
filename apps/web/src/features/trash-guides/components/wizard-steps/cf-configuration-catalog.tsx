@@ -10,10 +10,14 @@ import {
 import type { ThemeGradient } from "../../../../lib/theme-gradients";
 import { SanitizedHtml } from "../sanitized-html";
 import type { CFSelectionState } from "./cf-configuration-types";
+import type {
+	WizardCFConfigurationResult,
+	ResolveScoreFn,
+} from "../../types/wizard-types";
 
 interface CatalogSectionProps {
 	/** The full CF configuration data from the hook */
-	data: any;
+	data: WizardCFConfigurationResult;
 	/** Current user selections */
 	selections: Record<string, CFSelectionState>;
 	/** Toggle a CF on/off */
@@ -21,7 +25,7 @@ interface CatalogSectionProps {
 	/** Update selection (for score overrides) */
 	onUpdateSelection: (trashId: string, update: Partial<CFSelectionState>) => void;
 	/** Resolve the score for a CF using the profile's score set */
-	resolveScore: (cf: any, fallback?: number) => number;
+	resolveScore: ResolveScoreFn;
 }
 
 // ---------- Additional Custom Formats ----------
@@ -36,10 +40,10 @@ export const AdditionalCFSection = ({
 	resolveScore,
 }: AdditionalCFSectionProps) => {
 	// Get all selected CFs that are NOT in mandatory or CF groups
-	const mandatoryCFIds = new Set(data.mandatoryCFs?.map((cf: any) => cf.trash_id) || []);
+	const mandatoryCFIds = new Set(data.mandatoryCFs?.map((cf) => cf.trash_id) || []);
 	const cfGroupCFIds = new Set<string>();
-	data.cfGroups?.forEach((group: any) => {
-		group.custom_formats?.forEach((cf: any) => {
+	data.cfGroups?.forEach((group) => {
+		group.custom_formats?.forEach((cf) => {
 			const cfTrashId = typeof cf === "string" ? cf : cf.trash_id;
 			cfGroupCFIds.add(cfTrashId);
 		});
@@ -51,10 +55,10 @@ export const AdditionalCFSection = ({
 				sel?.selected && !mandatoryCFIds.has(trashId) && !cfGroupCFIds.has(trashId),
 		)
 		.map(([trashId]) => {
-			const cf = data.availableFormats?.find((f: any) => f.trash_id === trashId);
+			const cf = data.availableFormats?.find((f) => f.trash_id === trashId);
 			return cf ? { ...cf, trash_id: trashId } : null;
 		})
-		.filter(Boolean);
+		.filter((cf): cf is NonNullable<typeof cf> => cf != null);
 
 	if (additionalCFs.length === 0) return null;
 
@@ -86,7 +90,7 @@ export const AdditionalCFSection = ({
 				</CardHeader>
 				<CardContent>
 					<div className="space-y-2">
-						{additionalCFs.map((cf: any) => {
+						{additionalCFs.map((cf) => {
 							const isSelected = selections[cf.trash_id]?.selected ?? false;
 							const scoreOverride = selections[cf.trash_id]?.scoreOverride;
 							const displayScore = resolveScore(cf, cf.score);
@@ -185,17 +189,17 @@ export const BrowseCFCatalog = ({
 }: BrowseCFCatalogProps) => {
 	if (!data.availableFormats || data.availableFormats.length === 0) return null;
 
-	const filterCF = (cf: any) => {
+	const filterCF = (cf: { trash_id: string; name?: string; displayName?: string; description?: string }) => {
 		// Hide formats already in template (mandatory or in groups)
 		const isInMandatory = data.mandatoryCFs?.some(
-			(mandatoryCF: any) => mandatoryCF.trash_id === cf.trash_id,
+			(mandatoryCF) => mandatoryCF.trash_id === cf.trash_id,
 		);
 		if (isInMandatory) return false;
 
 		// Hide formats in CF groups
-		const isInGroups = data.cfGroups?.some((group: any) =>
+		const isInGroups = data.cfGroups?.some((group) =>
 			group.custom_formats?.some(
-				(groupCF: any) =>
+				(groupCF) =>
 					(typeof groupCF === "string" ? groupCF : groupCF.trash_id) === cf.trash_id,
 			),
 		);
@@ -268,7 +272,7 @@ export const BrowseCFCatalog = ({
 				</CardHeader>
 				<CardContent>
 					<div className="space-y-2 max-h-96 overflow-y-auto">
-						{data.availableFormats.filter(filterCF).map((cf: any) => {
+						{data.availableFormats.filter(filterCF).map((cf) => {
 							const isSelected = selections[cf.trash_id]?.selected ?? false;
 							const scoreOverride = selections[cf.trash_id]?.scoreOverride;
 							const displayScore = resolveScore(cf, cf.score);

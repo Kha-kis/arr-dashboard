@@ -18,7 +18,7 @@ export interface CustomFormat {
 		implementation: string;
 		negate: boolean;
 		required: boolean;
-		fields: Record<string, any>;
+		fields: Record<string, unknown>;
 	}>;
 }
 
@@ -69,7 +69,7 @@ export interface UserCustomFormat {
 		implementation: string;
 		negate: boolean;
 		required: boolean;
-		fields: Record<string, any>;
+		fields: Record<string, unknown>;
 	}>;
 	defaultScore: number;
 	sourceInstanceId: string | null;
@@ -101,7 +101,7 @@ export interface CreateUserCFRequest {
 		implementation: string;
 		negate?: boolean;
 		required?: boolean;
-		fields?: Record<string, any>;
+		fields?: Record<string, unknown>;
 	}>;
 	defaultScore?: number;
 }
@@ -116,7 +116,7 @@ export interface ImportUserCFFromJsonRequest {
 			implementation: string;
 			negate?: boolean;
 			required?: boolean;
-			fields?: Record<string, any> | Array<{ name: string; value: any }>;
+			fields?: Record<string, unknown> | Array<{ name: string; value: unknown }>;
 		}>;
 	}>;
 	defaultScore?: number;

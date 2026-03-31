@@ -11,6 +11,7 @@ import { PasswordInput } from "../../../components/ui/password-input";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { PasswordPolicy } from "../../../lib/api-client/auth";
 import { apiRequest } from "../../../lib/api-client/base";
+import { getErrorMessage } from "../../../lib/error-utils";
 import { validatePassword } from "../../settings/lib/settings-utils";
 
 interface RegisterResponse {
@@ -67,8 +68,8 @@ export const PasswordSetup = ({ passwordPolicy = "strict" }: PasswordSetupProps)
 
 			// Registration successful, redirect to dashboard
 			router.push("/dashboard");
-		} catch (err: any) {
-			setError(err.message ?? "Failed to create admin account");
+		} catch (err: unknown) {
+			setError(getErrorMessage(err, "Failed to create admin account"));
 			setIsSubmitting(false);
 		}
 	};

@@ -21,6 +21,22 @@ import {
 	useImportUserCFFromJson,
 } from "../hooks/use-custom-formats";
 import { SpecificationBuilder, type SpecificationData } from "./specification-builder";
+import type { ImportUserCFFromJsonRequest } from "../../../lib/api-client/trash-guides";
+
+/** Shape of a parsed CF from JSON import */
+interface ParsedCF {
+	name: string;
+	includeCustomFormatWhenRenaming?: boolean;
+	specifications?: unknown[];
+	[key: string]: unknown;
+}
+
+/** Response from instance CFs endpoint */
+interface InstanceCFsResponse {
+	success: boolean;
+	error?: string;
+	data?: Array<{ id: number; name?: string }>;
+}
 
 interface UserCFImportDialogProps {
 	open: boolean;
@@ -255,14 +271,17 @@ function JsonImportTab({
 			const cfs = Array.isArray(parsed) ? parsed : [parsed];
 
 			// Validate basic structure
-			const valid = cfs.filter((cf: any) => cf.name && typeof cf.name === "string");
+			const valid = cfs.filter(
+				(cf: Record<string, unknown>): cf is ParsedCF =>
+					typeof cf.name === "string" && cf.name.length > 0,
+			);
 
 			if (valid.length === 0) {
 				setParseError("No valid custom formats found. Each must have at least a 'name' field.");
 				return;
 			}
 
-			setPreview(valid.map((cf: any) => ({ name: cf.name })));
+			setPreview(valid.map((cf) => ({ name: cf.name })));
 		} catch {
 			setParseError("Invalid JSON. Please check the format and try again.");
 		}
@@ -272,16 +291,16 @@ function JsonImportTab({
 		if (!jsonInput.trim()) return;
 
 		try {
-			const parsed = JSON.parse(jsonInput.trim());
-			const cfs = Array.isArray(parsed) ? parsed : [parsed];
+			const parsed = JSON.parse(jsonInput.trim()) as ParsedCF | ParsedCF[];
+			const cfs: ParsedCF[] = Array.isArray(parsed) ? parsed : [parsed];
 
 			importMutation.mutate(
 				{
 					serviceType,
-					customFormats: cfs.map((cf: any) => ({
+					customFormats: cfs.map((cf) => ({
 						name: cf.name,
 						includeCustomFormatWhenRenaming: cf.includeCustomFormatWhenRenaming,
-						specifications: cf.specifications,
+						specifications: cf.specifications as ImportUserCFFromJsonRequest["customFormats"][number]["specifications"],
 					})),
 					defaultScore,
 				},
@@ -451,7 +470,7 @@ function InstanceImportTab({
 	// Filter to only Radarr and Sonarr instances
 	// Note: service values are lowercase in frontend (API's formatServiceInstance lowercases them)
 	const arrInstances = (services || []).filter(
-		(s: any) => s.service === "radarr" || s.service === "sonarr",
+		(s) => s.service === "radarr" || s.service === "sonarr",
 	);
 
 	const loadInstanceCFs = async () => {
@@ -462,10 +481,10 @@ function InstanceImportTab({
 
 		try {
 			// Use the instance's custom format endpoint
-			const instance = arrInstances.find((s: any) => s.id === selectedInstanceId);
+			const instance = arrInstances.find((s) => s.id === selectedInstanceId);
 			if (!instance) throw new Error("Instance not found");
 
-			const response = await apiRequest<any>(
+			const response = await apiRequest<InstanceCFsResponse>(
 				`/api/trash-guides/user-custom-formats/instance-cfs/${selectedInstanceId}`,
 			);
 
@@ -474,7 +493,7 @@ function InstanceImportTab({
 			}
 
 			setInstanceCFs(
-				(response.data as any[]).map((cf: any) => ({
+				response.data.map((cf) => ({
 					id: cf.id,
 					name: cf.name || `CF-${cf.id}`,
 					checked: false,
@@ -529,7 +548,7 @@ function InstanceImportTab({
 						className="flex-1 rounded-lg border border-border/50 bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-hidden focus:ring-2 focus:ring-primary/20"
 					>
 						<option value="">Choose an instance...</option>
-						{arrInstances.map((instance: any) => (
+						{arrInstances.map((instance) => (
 							<option key={instance.id} value={instance.id}>
 								{instance.label} ({instance.service})
 							</option>

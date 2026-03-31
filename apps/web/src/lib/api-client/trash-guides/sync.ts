@@ -107,8 +107,8 @@ export interface SyncDetail {
 	configsApplied: number;
 	configsFailed: number;
 	configsSkipped: number;
-	appliedConfigs: any[] | null;
-	failedConfigs: any[] | null;
+	appliedConfigs: Array<{ name: string }> | null;
+	failedConfigs: Array<{ name: string; error?: string }> | null;
 	errorLog: string | null;
 	backupId: string | null;
 }

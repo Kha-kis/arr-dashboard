@@ -642,8 +642,8 @@ export const CustomFormatsBrowser = () => {
 										>
 											<option value="">Deploy to...</option>
 											{(instances || [])
-												.filter((inst: any) => inst.service !== "PROWLARR")
-												.map((inst: any) => (
+												.filter((inst) => inst.service !== "prowlarr")
+												.map((inst) => (
 													<option key={inst.id} value={inst.id}>
 														{inst.label} ({inst.service})
 													</option>

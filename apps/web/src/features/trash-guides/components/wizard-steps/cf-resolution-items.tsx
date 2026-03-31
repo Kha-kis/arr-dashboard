@@ -29,6 +29,18 @@ import { useThemeGradient } from "../../../../hooks/useThemeGradient";
 import type { CFMatchResult, MatchConfidence } from "../../../../lib/api-client/trash-guides";
 import type { CFResolutionDecision } from "./cf-configuration-types";
 
+/** Extended instance CF with optional specifications (present at runtime from API) */
+type InstanceCFWithSpecs = CFMatchResult["instanceCF"] & {
+	specifications?: unknown[];
+	includeCustomFormatWhenRenaming?: boolean;
+};
+
+/** Extended trash CF with optional specifications and scores (present at runtime) */
+type TrashCFWithSpecs = NonNullable<CFMatchResult["trashCF"]> & {
+	specifications?: unknown[];
+	trash_scores?: Record<string, number>;
+};
+
 function getConfidenceBadge(confidence: MatchConfidence) {
 	switch (confidence) {
 		case "exact":
@@ -215,8 +227,8 @@ export const CFResolutionItem = ({
 			: null;
 
 	// Check if we have spec data to compare
-	const instanceSpecs = (result.instanceCF as any).specifications || [];
-	const trashSpecs = (result.trashCF as any)?.specifications || [];
+	const instanceSpecs = (result.instanceCF as InstanceCFWithSpecs).specifications || [];
+	const trashSpecs = (result.trashCF as TrashCFWithSpecs | null)?.specifications || [];
 	const hasSpecsDiff =
 		result.matchDetails.specsDiffer && result.matchDetails.specsDiffer.length > 0;
 	const hasComparableData = hasMatch && (instanceSpecs.length > 0 || trashSpecs.length > 0);
@@ -414,8 +426,8 @@ export const CFResolutionItem = ({
 			{isExpanded && hasComparableData && (
 				<div className="border-t border-border p-3 bg-black/20">
 					<CFComparisonView
-						instanceCF={result.instanceCF as any}
-						trashCF={result.trashCF as any}
+						instanceCF={result.instanceCF as InstanceCFWithSpecs}
+						trashCF={result.trashCF as TrashCFWithSpecs | null}
 						matchDetails={result.matchDetails}
 						recommendedScore={result.recommendedScore}
 						scoreSet={result.scoreSet}
@@ -452,8 +464,8 @@ export const ExcludedCFItem = ({
 	const BadgeIcon = badge.icon;
 
 	// Check if we have spec data to compare
-	const instanceSpecs = (result.instanceCF as any).specifications || [];
-	const trashSpecs = (result.trashCF as any)?.specifications || [];
+	const instanceSpecs = (result.instanceCF as InstanceCFWithSpecs).specifications || [];
+	const trashSpecs = (result.trashCF as TrashCFWithSpecs | null)?.specifications || [];
 	const hasSpecsDiff =
 		result.matchDetails.specsDiffer && result.matchDetails.specsDiffer.length > 0;
 	const hasComparableData = instanceSpecs.length > 0 || trashSpecs.length > 0;
@@ -594,8 +606,8 @@ export const ExcludedCFItem = ({
 			{isExpanded && hasComparableData && (
 				<div className="border-t border-border p-3 bg-black/20">
 					<CFComparisonView
-						instanceCF={result.instanceCF as any}
-						trashCF={result.trashCF as any}
+						instanceCF={result.instanceCF as InstanceCFWithSpecs}
+						trashCF={result.trashCF as TrashCFWithSpecs | null}
 						matchDetails={result.matchDetails}
 						recommendedScore={result.recommendedScore}
 						scoreSet={result.scoreSet}
