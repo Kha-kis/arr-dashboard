@@ -11,7 +11,8 @@
 
 import type { PulseItem } from "@arr/shared";
 import { ARR_SERVICES_UPPER } from "@arr/shared";
-import { ProwlarrClient, SonarrClient } from "arr-sdk";
+import { ProwlarrClient } from "arr-sdk";
+import type { SonarrClient } from "arr-sdk";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import {
 	calculateDiskTotals,

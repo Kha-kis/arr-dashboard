@@ -1,5 +1,5 @@
 {
-	"$schema": "https://biomejs.dev/schemas/2.3.11/schema.json",
+	"$schema": "https://biomejs.dev/schemas/2.4.10/schema.json",
 	"formatter": {
 		"enabled": true,
 		"lineWidth": 100
@@ -13,7 +13,8 @@
 				"noUselessElse": "warn"
 			},
 			"suspicious": {
-				"noExplicitAny": "warn"
+				"noExplicitAny": "warn",
+				"noConsole": "warn"
 			},
 			"correctness": {
 				"noUnusedVariables": "warn",
@@ -21,15 +22,35 @@
 			}
 		}
 	},
+	"overrides": [
+		{
+			"includes": [
+				"apps/api/src/index.ts",
+				"apps/api/src/launcher.ts",
+				"apps/api/src/lib/queue-cleaner/test-*.ts",
+				"apps/api/src/lib/queue-cleaner/analyze-*.ts"
+			],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noConsole": "off"
+					}
+				}
+			}
+		},
+		{
+			"includes": ["**/__tests__/**", "**/*.test.ts", "**/*.test.tsx"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noExplicitAny": "off"
+					}
+				}
+			}
+		}
+	],
 	"assist": { "actions": { "source": { "organizeImports": "on" } } },
 	"files": {
-		"includes": [
-			"**",
-			"!**/legacy/**",
-			"!**/node_modules/**",
-			"!**/dist/**",
-			"!**/__tests__/**",
-			"!**/generated/**"
-		]
+		"includes": ["**", "!**/node_modules/**", "!**/dist/**", "!**/generated/**"]
 	}
 }

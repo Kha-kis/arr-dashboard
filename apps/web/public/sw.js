@@ -1,5 +1,3 @@
-/* eslint-disable no-restricted-globals */
-
 /**
  * Service worker for browser push notifications.
  *

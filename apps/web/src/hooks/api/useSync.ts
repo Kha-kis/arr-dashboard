@@ -208,6 +208,7 @@ export function useValidateSync(options?: UseValidateSyncOptions) {
 				);
 				console.warn("[useValidateSync] Full validation response:", data);
 			} else if (process.env.NODE_ENV === "development") {
+				// eslint-disable-next-line no-console -- dev-only debug logging
 				console.log("[useValidateSync] Validation completed:", logContext);
 			}
 			options?.onSuccess?.(data);

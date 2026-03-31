@@ -44,7 +44,7 @@ vi.mock("sonner", () => ({
 vi.mock("next/image", () => ({
 	default: (props: Record<string, unknown>) => {
 		// next/image passes non-standard props; just render essential ones
-		const { src, alt, fill, priority, ...rest } = props;
+		const { src, alt, fill: _fill, priority: _priority, ...rest } = props;
 		return <img src={src as string} alt={alt as string} {...rest} />;
 	},
 }));

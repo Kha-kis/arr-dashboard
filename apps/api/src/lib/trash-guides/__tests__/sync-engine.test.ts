@@ -5,7 +5,7 @@
  * are properly configured before sync operations.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { PrismaClient } from "../../../lib/prisma.js";
 import type { ArrClientFactory } from "../../arr/client-factory.js";
 import { SyncEngine, type SyncOptions } from "../sync-engine.js";

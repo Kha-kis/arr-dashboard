@@ -120,8 +120,8 @@ export class ProfileCloner {
 			}
 
 			// Transform to CompleteQualityProfile format
-			// Cast to any for property access since Sonarr/Radarr have slightly different schemas
-			const profileDataAny = profileData as any;
+			// Sonarr-specific fields (language, languages) exist on Sonarr profiles but not Radarr
+			const profileRecord = profileData as Record<string, unknown>;
 			const completeProfile: CompleteQualityProfile = {
 				sourceInstanceId: instanceId,
 				sourceInstanceLabel: clientResult.instanceLabel,
@@ -133,15 +133,15 @@ export class ProfileCloner {
 				cutoff: profileData.cutoff ?? 0,
 				cutoffQuality,
 
-				items: (profileData.items || []) as any[],
+				items: (profileData.items || []) as CompleteQualityProfile["items"],
 
 				minFormatScore: profileData.minFormatScore ?? 0,
 				cutoffFormatScore: profileData.cutoffFormatScore ?? 0,
 				minUpgradeFormatScore: profileData.minUpgradeFormatScore,
 
-				// Sonarr has language/languages, Radarr doesn't - access via any
-				language: profileDataAny.language,
-				languages: profileDataAny.languages,
+				// Sonarr has language/languages, Radarr doesn't — access via Record
+				language: profileRecord.language as CompleteQualityProfile["language"],
+				languages: profileRecord.languages as CompleteQualityProfile["languages"],
 			};
 
 			return {
@@ -218,15 +218,20 @@ export class ProfileCloner {
 			};
 
 			// Create or update profile
-			// Use any for return type since Sonarr/Radarr have different quality profile schemas
-			let deployedProfile: { id?: number };
+			// SonarrClient | RadarrClient union creates impossible intersection for QualityProfile create/update
+			// biome-ignore lint/suspicious/noExplicitAny: SDK type union incompatibility at QualitySource enum level
+			let deployedProfile: any;
 			if (options.existingProfileId) {
-				deployedProfile = (await client.qualityProfile.update(options.existingProfileId, {
-					id: options.existingProfileId,
-					...profilePayload,
-				} as any)) as any;
+				// biome-ignore lint/suspicious/noExplicitAny: SDK type union incompatibility
+				const updatePayload: any = { id: options.existingProfileId, ...profilePayload };
+				deployedProfile = await client.qualityProfile.update(
+					options.existingProfileId,
+					updatePayload,
+				);
 			} else {
-				deployedProfile = (await client.qualityProfile.create(profilePayload as any)) as any;
+				// biome-ignore lint/suspicious/noExplicitAny: SDK type union incompatibility
+				const createPayload: any = profilePayload;
+				deployedProfile = await client.qualityProfile.create(createPayload);
 			}
 
 			return {

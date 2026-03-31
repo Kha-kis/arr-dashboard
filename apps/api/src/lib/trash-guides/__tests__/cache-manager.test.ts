@@ -5,10 +5,9 @@
  * These tests require database access and are skipped unless TEST_DB=true.
  */
 
-import type { TrashConfigType } from "@arr/shared";
 import type { PrismaClient } from "../../../lib/prisma.js";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { TrashCacheManager } from "../cache-manager.js";
 
 // Check if we should run integration tests (requires writable test database)

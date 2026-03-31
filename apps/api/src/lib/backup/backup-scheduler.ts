@@ -80,7 +80,7 @@ export class BackupScheduler {
 			});
 
 			// No settings or disabled
-			if (!settings || !settings.enabled || settings.intervalType === "DISABLED") {
+			if (!settings?.enabled || settings.intervalType === "DISABLED") {
 				return;
 			}
 

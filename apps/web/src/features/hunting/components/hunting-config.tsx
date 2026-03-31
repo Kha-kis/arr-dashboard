@@ -74,7 +74,6 @@ import { HuntingFilters } from "./hunting-filters";
  * - Filter controls
  */
 export const HuntingConfig = () => {
-	const [incognitoMode] = useIncognitoMode();
 	const { gradient: themeGradient } = useThemeGradient();
 
 	const { configs, instances, isLoading, error, refetch } = useHuntingConfigs();

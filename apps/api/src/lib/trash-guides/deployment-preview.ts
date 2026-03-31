@@ -280,7 +280,7 @@ export class DeploymentPreviewService {
 		let instanceReachable = false;
 		let instanceVersion: string | undefined;
 		let instanceCustomFormats: SdkCustomFormat[] = [];
-		// Use any[] for quality profiles due to Sonarr/Radarr union type differences
+		// biome-ignore lint/suspicious/noExplicitAny: SonarrClient | RadarrClient getAll() returns incompatible QualitySource union
 		let instanceQualityProfiles: any[] = [];
 
 		try {

@@ -5,7 +5,7 @@
  * rate limit parsing, truncation, and error handling.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { telegramSender } from "../telegram-sender.js";
 import type { NotificationPayload } from "../../types.js";
 

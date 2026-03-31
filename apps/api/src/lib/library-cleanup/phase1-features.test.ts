@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 import type { CacheItemForEval, EvalContext, PlexWatchInfo, SeerrRequestInfo } from "./types.js";
 import { evaluateItemAgainstRules, explainItemAgainstRules } from "./rule-evaluators.js";
 import { ruleParamSchemaMap } from "@arr/shared";
+import type { LibraryCleanupRule } from "../prisma.js";
 
 // ---------------------------------------------------------------------------
 // Type stub — same shape as Prisma's LibraryCleanupRule
@@ -172,7 +173,7 @@ describe("retention rules", () => {
 	});
 
 	it("retention rule match protects item from cleanup rules", () => {
-		const rules = [retentionRule, cleanupRule] as any[];
+		const rules = [retentionRule, cleanupRule] as LibraryCleanupRule[];
 		// Item has 5 plex watches → retention matches → returns null (protected)
 		const result = evaluateItemAgainstRules(makeCacheItem(), rules, "RADARR", ctx);
 		expect(result).toBeNull();
@@ -183,7 +184,7 @@ describe("retention rules", () => {
 		const rules = [
 			makeRule({ ...cleanupRule, priority: 1 }),
 			makeRule({ ...retentionRule, priority: 2 }),
-		] as any[];
+		] as LibraryCleanupRule[];
 		const result = evaluateItemAgainstRules(makeCacheItem(), rules, "RADARR", ctx);
 		expect(result).toBeNull(); // Still protected
 	});
@@ -195,7 +196,7 @@ describe("retention rules", () => {
 			id: "retention-strict",
 			parameters: JSON.stringify({ operator: "greater_than", count: 10 }),
 		});
-		const rules = [strictRetention, cleanupRule] as any[];
+		const rules = [strictRetention, cleanupRule] as LibraryCleanupRule[];
 		const result = evaluateItemAgainstRules(makeCacheItem(), rules, "RADARR", ctx);
 		expect(result).not.toBeNull();
 		expect(result!.ruleId).toBe("cleanup-1");
@@ -218,7 +219,7 @@ describe("retention rules", () => {
 			ruleType: "rating",
 			parameters: JSON.stringify({ operator: "greater_than", score: 5 }),
 		});
-		const rules = [ret1, ret2, cleanupRule] as any[];
+		const rules = [ret1, ret2, cleanupRule] as LibraryCleanupRule[];
 		const result = evaluateItemAgainstRules(makeCacheItem(), rules, "RADARR", ctx);
 		expect(result).toBeNull(); // ret-2 matches → protected
 	});
@@ -228,7 +229,7 @@ describe("retention rules", () => {
 			...retentionRule,
 			enabled: false,
 		});
-		const rules = [disabledRet, cleanupRule] as any[];
+		const rules = [disabledRet, cleanupRule] as LibraryCleanupRule[];
 		const result = evaluateItemAgainstRules(makeCacheItem(), rules, "RADARR", ctx);
 		// Disabled retention won't protect, cleanup matches
 		expect(result).not.toBeNull();
@@ -252,7 +253,7 @@ describe("prefetch failure handling", () => {
 		const failedSources = new Set<"seerr" | "tautulli" | "plex" | null>(["plex"]);
 		const result = evaluateItemAgainstRules(
 			makeCacheItem(),
-			[plexRule] as any[],
+			[plexRule] as LibraryCleanupRule[],
 			"RADARR",
 			ctx,
 			failedSources,
@@ -269,7 +270,7 @@ describe("prefetch failure handling", () => {
 		const failedSources = new Set<"seerr" | "tautulli" | "plex" | null>(["plex"]);
 		const result = evaluateItemAgainstRules(
 			makeCacheItem(),
-			[ageRule] as any[],
+			[ageRule] as LibraryCleanupRule[],
 			"RADARR",
 			ctx,
 			failedSources,
@@ -291,7 +292,7 @@ describe("prefetch failure handling", () => {
 		const failedSources = new Set<"seerr" | "tautulli" | "plex" | null>(["plex"]);
 		const result = evaluateItemAgainstRules(
 			makeCacheItem(),
-			[compositeRule] as any[],
+			[compositeRule] as LibraryCleanupRule[],
 			"RADARR",
 			ctx,
 			failedSources,
@@ -315,7 +316,7 @@ describe("prefetch failure handling", () => {
 		const failedSources = new Set<"seerr" | "tautulli" | "plex" | null>(["seerr"]);
 		const result = evaluateItemAgainstRules(
 			makeCacheItem(), // 90 days old, rating 7.5 < 8
-			[compositeRule] as any[],
+			[compositeRule] as LibraryCleanupRule[],
 			"RADARR",
 			ctx,
 			failedSources,
@@ -341,7 +342,7 @@ describe("prefetch failure handling", () => {
 		const failedSources = new Set<"seerr" | "tautulli" | "plex" | null>(["plex"]);
 		const result = evaluateItemAgainstRules(
 			makeCacheItem(),
-			[retRule, cleanupRule] as any[],
+			[retRule, cleanupRule] as LibraryCleanupRule[],
 			"RADARR",
 			ctx,
 			failedSources,
@@ -361,7 +362,7 @@ describe("prefetch failure handling", () => {
 		// should match (watch is null → "never" matches)
 		const result = evaluateItemAgainstRules(
 			makeCacheItem(),
-			[plexRule] as any[],
+			[plexRule] as LibraryCleanupRule[],
 			"RADARR",
 			ctx,
 			undefined,
@@ -404,7 +405,7 @@ describe("explainItemAgainstRules", () => {
 				ruleType: "age",
 				parameters: JSON.stringify({ operator: "newer_than", days: 7 }),
 			}),
-		] as any[];
+		] as LibraryCleanupRule[];
 
 		const results = explainItemAgainstRules(makeCacheItem(), rules, "RADARR", ctx);
 		expect(results).toHaveLength(2);
@@ -417,7 +418,7 @@ describe("explainItemAgainstRules", () => {
 	});
 
 	it("reports disabled rules with filteredBy=disabled", () => {
-		const rules = [makeRule({ id: "r-disabled", name: "Disabled Rule", enabled: false })] as any[];
+		const rules = [makeRule({ id: "r-disabled", name: "Disabled Rule", enabled: false })] as LibraryCleanupRule[];
 		const results = explainItemAgainstRules(makeCacheItem(), rules, "RADARR", ctx);
 		expect(results[0]!.filteredBy).toBe("disabled");
 		expect(results[0]!.matched).toBe(false);
@@ -430,7 +431,7 @@ describe("explainItemAgainstRules", () => {
 				name: "Sonarr only",
 				serviceFilter: JSON.stringify(["SONARR"]),
 			}),
-		] as any[];
+		] as LibraryCleanupRule[];
 		const results = explainItemAgainstRules(makeCacheItem(), rules, "RADARR", ctx);
 		expect(results[0]!.filteredBy).toBe("service_filter");
 	});
@@ -443,7 +444,7 @@ describe("explainItemAgainstRules", () => {
 				name: "Exclude tag",
 				excludeTags: JSON.stringify([1]),
 			}),
-		] as any[];
+		] as LibraryCleanupRule[];
 		const results = explainItemAgainstRules(makeCacheItem(), rules, "RADARR", ctx);
 		expect(results[0]!.filteredBy).toBe("tag_exclusion");
 	});
@@ -457,7 +458,7 @@ describe("explainItemAgainstRules", () => {
 				ruleType: "plex_watch_count",
 				parameters: JSON.stringify({ operator: "greater_than", count: 0 }),
 			}),
-		] as any[];
+		] as LibraryCleanupRule[];
 		const results = explainItemAgainstRules(makeCacheItem(), rules, "RADARR", ctx);
 		expect(results[0]!.retentionMode).toBe(true);
 		expect(results[0]!.matched).toBe(true); // item has 5 plex watches
@@ -622,7 +623,7 @@ describe("retention + prefetch failure interaction", () => {
 
 		const result = evaluateItemAgainstRules(
 			makeCacheItem(),
-			[retRule, cleanRule] as any[],
+			[retRule, cleanRule] as LibraryCleanupRule[],
 			"RADARR",
 			ctx,
 			failedSources,
@@ -651,7 +652,7 @@ describe("retention + prefetch failure interaction", () => {
 
 		const result = evaluateItemAgainstRules(
 			makeCacheItem(), // rating 7.5 > 5
-			[retRule, cleanRule] as any[],
+			[retRule, cleanRule] as LibraryCleanupRule[],
 			"RADARR",
 			ctx,
 			failedSources,
