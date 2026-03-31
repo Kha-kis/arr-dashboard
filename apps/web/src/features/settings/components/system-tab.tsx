@@ -22,6 +22,7 @@ import {
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { PremiumSection, PremiumSkeleton } from "../../../components/layout";
+import { useIncognitoMode } from "../../../lib/incognito";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Switch } from "../../../components/ui/switch";
@@ -108,6 +109,7 @@ function SystemInfoCard({ icon, label, value, subtitle, animationDelay = 0 }: Sy
  */
 export function SystemTab() {
 	const { gradient: themeGradient } = useThemeGradient();
+	const [incognitoMode] = useIncognitoMode();
 	const [apiPort, setApiPort] = useState(3001);
 	const [webPort, setWebPort] = useState(3000);
 	const [listenAddress, setListenAddress] = useState("0.0.0.0");
@@ -294,7 +296,7 @@ export function SystemTab() {
 							}
 							label="Database"
 							value={systemInfo.data.database.type}
-							subtitle={systemInfo.data.database.host || undefined}
+							subtitle={incognitoMode ? "••••••••" : (systemInfo.data.database.host || undefined)}
 							animationDelay={50}
 						/>
 
@@ -468,7 +470,7 @@ export function SystemTab() {
 													}}
 												>
 													<td className="px-4 py-2.5">
-														<span className="font-mono text-xs text-foreground">{file.name}</span>
+														<span className="font-mono text-xs text-foreground">{incognitoMode ? "arr-dashboard.log" : file.name}</span>
 													</td>
 													<td className="px-4 py-2.5 text-muted-foreground text-xs">
 														{formatFileSize(file.size)}
@@ -745,7 +747,7 @@ ports:
 							<Info className="h-3 w-3" />
 							Running on:{" "}
 							<code className="px-1.5 py-0.5 bg-card/50 rounded font-mono text-foreground">
-								{settings?.data?.effectiveListenAddress}
+								{incognitoMode ? "••••••••" : settings?.data?.effectiveListenAddress}
 							</code>
 						</p>
 					</div>

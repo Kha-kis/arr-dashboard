@@ -7,6 +7,7 @@ import { useCallback } from "react";
 import { useSeerrMovieDetails, useSeerrTvDetails } from "../../../hooks/api/useSeerr";
 import { useFocusTrap } from "../../../hooks/useFocusTrap";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
 import { RATING_COLOR } from "../../../lib/theme-gradients";
 import {
 	getDisplayTitle,
@@ -35,6 +36,7 @@ export const DiscoverDetailModal: React.FC<DiscoverDetailModalProps> = ({
 	onSelectItem,
 }) => {
 	const { gradient: themeGradient } = useThemeGradient();
+	const [incognitoMode] = useIncognitoMode();
 	const focusTrapRef = useFocusTrap<HTMLDivElement>(true, onClose);
 	const isMovie = item.mediaType === "movie";
 
@@ -44,11 +46,12 @@ export const DiscoverDetailModal: React.FC<DiscoverDetailModalProps> = ({
 	const details = isMovie ? movieQuery.data : tvQuery.data;
 	const isDetailsLoading = isMovie ? movieQuery.isLoading : tvQuery.isLoading;
 
-	const title = details
+	const rawTitle = details
 		? isMovie
 			? (details as NonNullable<typeof movieQuery.data>).title
 			: (details as NonNullable<typeof tvQuery.data>).name
 		: getDisplayTitle(item);
+	const title = incognitoMode ? getLinuxIsoName(rawTitle ?? "") : rawTitle;
 	const year = getReleaseYear(
 		isMovie
 			? {
@@ -60,8 +63,8 @@ export const DiscoverDetailModal: React.FC<DiscoverDetailModalProps> = ({
 						(details as NonNullable<typeof tvQuery.data>)?.firstAirDate ?? item.firstAirDate,
 				},
 	);
-	const backdropUrl = getSeerrImageUrl(details?.backdropPath ?? item.backdropPath, "w1280");
-	const posterUrl = getSeerrImageUrl(details?.posterPath ?? item.posterPath, "w342");
+	const backdropUrl = incognitoMode ? null : getSeerrImageUrl(details?.backdropPath ?? item.backdropPath, "w1280");
+	const posterUrl = incognitoMode ? null : getSeerrImageUrl(details?.posterPath ?? item.posterPath, "w342");
 
 	const mediaStatus = details?.mediaInfo?.status ?? item.mediaInfo?.status;
 	const statusInfo = getMediaStatusInfo(mediaStatus);
@@ -275,7 +278,7 @@ export const DiscoverDetailModal: React.FC<DiscoverDetailModalProps> = ({
 					)}
 
 					{/* Overview */}
-					{details?.overview && (
+					{details?.overview && !incognitoMode && (
 						<div className="space-y-2">
 							<h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
 								Overview
