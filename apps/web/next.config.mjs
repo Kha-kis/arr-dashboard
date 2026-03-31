@@ -35,6 +35,19 @@ const nextConfig = {
 		];
 	},
 	async headers() {
+		const isDev = process.env.NODE_ENV !== "production";
+
+		// In development, allow direct API connections for HMR/WebSocket
+		// In production, API is proxied through Next.js rewrites — only 'self' needed
+		const connectSrc = isDev
+			? "connect-src 'self' http://localhost:3001 ws://localhost:3001 wss://localhost:3001 http://127.0.0.1:3001 ws://127.0.0.1:3001"
+			: "connect-src 'self'";
+
+		// unsafe-eval is needed for HMR in development but not in production
+		const scriptSrc = isDev
+			? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+			: "script-src 'self' 'unsafe-inline'";
+
 		return [
 			{
 				source: "/:path*",
@@ -43,12 +56,11 @@ const nextConfig = {
 						key: "Content-Security-Policy",
 						value: [
 							"default-src 'self'",
-							"script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+							scriptSrc,
 							"style-src 'self' 'unsafe-inline'",
 							"img-src 'self' data: https:",
 							"font-src 'self' data:",
-							// Allow WebSocket and HTTP connections to API in development
-							"connect-src 'self' http://localhost:3001 ws://localhost:3001 wss://localhost:3001 http://127.0.0.1:3001 ws://127.0.0.1:3001",
+							connectSrc,
 							"frame-ancestors 'none'",
 						].join("; "),
 					},

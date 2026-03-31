@@ -30,13 +30,23 @@ const passkeyRegisterOptionsSchema = z.object({
 	friendlyName: z.string().max(50).optional(),
 });
 
+// WebAuthn response schemas — validate structure before passing to @simplewebauthn/server
+const webAuthnResponseBaseSchema = z.object({
+	id: z.string().min(1),
+	rawId: z.string().min(1),
+	type: z.literal("public-key"),
+	response: z.record(z.string(), z.unknown()),
+	clientExtensionResults: z.record(z.string(), z.unknown()).optional(),
+	authenticatorAttachment: z.string().optional(),
+});
+
 const passkeyRegisterVerifySchema = z.object({
-	response: z.any(), // RegistrationResponseJSON
+	response: webAuthnResponseBaseSchema,
 	friendlyName: z.string().max(50).optional(),
 });
 
 const passkeyLoginVerifySchema = z.object({
-	response: z.any(), // AuthenticationResponseJSON
+	response: webAuthnResponseBaseSchema,
 	sessionId: z.string().min(1, "Session ID required"),
 });
 
@@ -133,7 +143,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			challengeStore.delete(request.currentUser.id);
 
 			try {
-				const response = parsed.response as RegistrationResponseJSON;
+				const response = parsed.response as unknown as RegistrationResponseJSON;
 				await passkeyService.verifyRegistration(
 					request.currentUser.id,
 					response,
@@ -208,7 +218,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			challengeStore.delete(parsed.sessionId);
 
 			try {
-				const response = parsed.response as AuthenticationResponseJSON;
+				const response = parsed.response as unknown as AuthenticationResponseJSON;
 				const verification = await passkeyService.verifyAuthentication(
 					response,
 					storedChallenge.challenge,
