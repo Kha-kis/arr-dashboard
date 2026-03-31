@@ -80,12 +80,12 @@ jobs:
         run: pnpm run test
 
   # End-to-End Tests with Playwright (sharded for parallelism)
-  # 3 shards for better load balancing across 13 spec files
+  # Uses production builds for faster, more realistic testing
   e2e:
     name: E2E Tests (${{ matrix.shardIndex }}/${{ matrix.shardTotal }})
     runs-on: ubuntu-latest
     needs: [lint-and-test]
-    timeout-minutes: 15
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -119,8 +119,8 @@ jobs:
       - name: Generate Prisma Client
         run: cd apps/api && pnpm exec prisma generate
 
-      - name: Build shared package
-        run: pnpm --filter @arr/shared run build
+      - name: Build all packages (production)
+        run: pnpm run build
 
       - name: Cache Playwright Browsers
         uses: actions/cache@v5
@@ -144,26 +144,32 @@ jobs:
 
       - name: Run E2E tests
         run: |
-          # Start API server in background (disable rate limiting for E2E tests)
-          (cd apps/api && DATABASE_URL=file:./test.db API_RATE_LIMIT_MAX=10000 LOG_LEVEL=warn pnpm run dev) &
+          # Start API production server in background
+          (cd apps/api && DATABASE_URL=file:./test.db API_RATE_LIMIT_MAX=10000 LOG_LEVEL=warn node dist/index.js) &
           API_PID=$!
 
-          # Start Web server in background
-          (cd apps/web && pnpm run dev) &
+          # Start Web production server in background
+          (cd apps/web && pnpm exec next start -p 3000) &
           WEB_PID=$!
 
-          # Wait for servers with faster polling
+          # Wait for servers (production builds start much faster than dev)
           echo "Waiting for servers to start..."
-          for i in {1..40}; do
+          for i in {1..30}; do
             API_OK=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/health 2>/dev/null || echo "000")
             WEB_OK=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 2>/dev/null || echo "000")
             if [ "$API_OK" = "200" ] && [ "$WEB_OK" != "000" ]; then
-              echo "Both servers ready! (API: $API_OK, Web: $WEB_OK)"
+              echo "Both servers ready! (API: $API_OK, Web: $WEB_OK) in ${i}s"
               break
             fi
-            [ $((i % 5)) -eq 0 ] && echo "Waiting... ($i/40) API=$API_OK WEB=$WEB_OK"
+            [ $((i % 5)) -eq 0 ] && echo "Waiting... ($i/30) API=$API_OK WEB=$WEB_OK"
             sleep 1
           done
+
+          if [ "$API_OK" != "200" ] || [ "$WEB_OK" = "000" ]; then
+            echo "::error::Servers failed to start within 30s (API=$API_OK Web=$WEB_OK)"
+            kill $API_PID $WEB_PID 2>/dev/null || true
+            exit 1
+          fi
 
           # Run the E2E tests (sharded)
           pnpm exec playwright test --project=chromium --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
@@ -173,7 +179,7 @@ jobs:
           kill $API_PID $WEB_PID 2>/dev/null || true
           exit $EXIT_CODE
         env:
-          NODE_ENV: test
+          NODE_ENV: production
           CI: true
 
       - name: Upload Playwright Report
