@@ -223,7 +223,7 @@ describe("POST /auth/passkey/login/verify", () => {
 			method: "POST",
 			url: "/auth/passkey/login/verify",
 			payload: {
-				response: { id: "cred-1", rawId: "cred-1", type: "public-key" },
+				response: { id: "cred-1", rawId: "cred-1", type: "public-key", response: { clientDataJSON: "test", authenticatorData: "test", signature: "test" } },
 				sessionId,
 			},
 		});
@@ -247,7 +247,7 @@ describe("POST /auth/passkey/login/verify", () => {
 			method: "POST",
 			url: "/auth/passkey/login/verify",
 			payload: {
-				response: { id: "cred-1", rawId: "cred-1", type: "public-key" },
+				response: { id: "cred-1", rawId: "cred-1", type: "public-key", response: { clientDataJSON: "test", authenticatorData: "test", signature: "test" } },
 				sessionId: "nonexistent-session-id",
 			},
 		});
@@ -274,7 +274,7 @@ describe("POST /auth/passkey/login/verify", () => {
 			method: "POST",
 			url: "/auth/passkey/login/verify",
 			payload: {
-				response: { id: "cred-1", rawId: "cred-1", type: "public-key" },
+				response: { id: "cred-1", rawId: "cred-1", type: "public-key", response: { clientDataJSON: "test", authenticatorData: "test", signature: "test" } },
 				sessionId,
 			},
 		});
