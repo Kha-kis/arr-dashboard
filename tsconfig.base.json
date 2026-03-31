@@ -14,13 +14,12 @@
     "noImplicitOverride": true,
     "noUncheckedIndexedAccess": true,
     "allowSyntheticDefaultImports": true,
-    "baseUrl": ".",
     "paths": {
-      "@arr/shared": ["packages/shared/src/index.ts"],
-      "@arr/shared/*": ["packages/shared/src/*"],
-      "@arr/api/*": ["apps/api/src/*"],
-      "@arr/web/*": ["apps/web/src/*"],
-      "@arr/types": ["packages/shared/src/types/index.ts"]
+      "@arr/shared": ["./packages/shared/src/index.ts"],
+      "@arr/shared/*": ["./packages/shared/src/*"],
+      "@arr/api/*": ["./apps/api/src/*"],
+      "@arr/web/*": ["./apps/web/src/*"],
+      "@arr/types": ["./packages/shared/src/types/index.ts"]
     }
   }
 }
