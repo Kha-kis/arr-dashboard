@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.12.0** — Seerr Requests Experience, API stability, security sweep
+> **Version 2.13.0** — Codebase hardening, TypeScript 6, security audit, CI optimization
 
 A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, **Lidarr**, **Readarr**, **Plex**, **Tautulli**, and **Seerr** instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -88,6 +88,7 @@ services:
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.13.0` | Codebase hardening, TypeScript 6, security audit, CI optimization |
 | `2.12.0` | Seerr Requests Experience, API stability, security sweep |
 | `2.11.0` | System Pulse — unified health attention feed across all services |
 | `2.10.1` | Quality filter fix |

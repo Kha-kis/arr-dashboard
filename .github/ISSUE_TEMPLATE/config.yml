@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Wiki & Documentation
+    url: https://github.com/Kha-kis/arr-dashboard/wiki
+    about: Check the wiki for setup guides, troubleshooting, and feature documentation
+  - name: Security Vulnerability
+    url: https://github.com/Kha-kis/arr-dashboard/security/advisories/new
+    about: Report security vulnerabilities privately (do NOT open a public issue)

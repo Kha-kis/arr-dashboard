@@ -4,13 +4,13 @@
 
 ## Overview
 
-Three mutually-exclusive authentication methods during setup:
+Three authentication methods (configured during setup):
 
-| Method | Requires | Disabled When |
-|--------|----------|---------------|
-| **Password** | Username + password | OIDC enabled |
-| **OIDC** | External provider | - |
-| **Passkeys** | Password as prerequisite | OIDC enabled |
+| Method | Requires | Notes |
+|--------|----------|-------|
+| **Password** | Username + password | Can be removed if OIDC is configured |
+| **OIDC** | External provider (Keycloak, Authentik, etc.) | Can coexist with password |
+| **Passkeys** | Password as prerequisite | WebAuthn/FIDO2 hardware keys |
 
 **Key Files:**
 - `apps/api/src/routes/auth.ts` - Password auth
@@ -34,10 +34,12 @@ Three mutually-exclusive authentication methods during setup:
 {
   httpOnly: true,
   sameSite: 'lax',      // CSRF protection
-  secure: false,         // Allow HTTP for local networks
+  secure: auto,          // Auto-detected: true when TRUST_PROXY=true, false for direct access
   maxAge: rememberMe ? 30 days : SESSION_TTL_HOURS
 }
 ```
+
+The `secure` flag is auto-detected: `COOKIE_SECURE=true` forces HTTPS-only, `COOKIE_SECURE=false` forces HTTP, and when unset it follows `TRUST_PROXY` (proxy implies HTTPS termination).
 
 **Session Operations** (`apps/api/src/lib/auth/session.ts`):
 ```typescript
@@ -64,7 +66,7 @@ await app.sessionService.invalidateAllUserSessions(userId, exceptToken?);
 
 **Validation** (`packages/shared/src/types/password.ts`):
 ```typescript
-export const passwordSchema = z.string()
+export const passwordSchemaStrict = z.string()
   .min(8).max(128)
   .regex(/[a-z]/, "lowercase required")
   .regex(/[A-Z]/, "uppercase required")
