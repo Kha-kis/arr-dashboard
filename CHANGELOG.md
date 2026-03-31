@@ -27,6 +27,13 @@ Codebase hardening release — lint infrastructure overhaul, frontend type safet
 - **E2E production builds** — Switched from dev mode to production builds for E2E tests. Eliminates timeout flake: slowest shard 15m19s → 4m35s (-70%), wall clock 15m19s → 6m25s (-58%) (#257)
 - **Knip dead code check** — Added to CI pipeline for automated dead code detection (#252)
 
+#### Repository Structure
+- **Screenshots reorganized** — 16 screenshot PNGs moved from root to `docs/screenshots/`, README references updated
+- **Stale files removed** — Deleted completed review docs, one-time migration scripts, Unraid template (now on addon store), tracked test artifacts
+- **Documentation updated** — Rewrote `docker/README.md` with complete env vars table, corrected `docs/AUTH.md` (cookie secure, password schema, auth methods), added missing routes to `docs/API-ROUTES.md`, fixed stale references in `CLAUDE.md`
+- **GitHub best practices** — Added `SECURITY.md` (vulnerability reporting), `CONTRIBUTING.md`, `.gitattributes` (line ending normalization, lockfile diff suppression), `.editorconfig`, issue template config with wiki/security links
+- **Gitignore cleanup** — Removed duplicates, added missing patterns, organized by category
+
 ### Fixed
 - **Discover genre scrollbar** — Scrollbar no longer overlaps genre pill content on the `/discover` page (#254)
 - **Queue cleaner incognito** — Added missing incognito mode to queue cleaner statistics and preview displays (#250)
