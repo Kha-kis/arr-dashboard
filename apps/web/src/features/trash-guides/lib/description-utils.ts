@@ -2,8 +2,6 @@
  * Utilities for cleaning and parsing TRaSH Guides descriptions
  */
 
-import type { CFInclude } from "../../../lib/api-client/trash-guides";
-
 /** Iteratively remove HTML comments until none remain (prevents partial match remnants) */
 function stripHtmlComments(text: string): string {
 	const pattern = /<!--.*?-->/gs;
@@ -13,49 +11,6 @@ function stripHtmlComments(text: string): string {
 		pattern.lastIndex = 0;
 	}
 	return result;
-}
-
-/**
- * Map of include path to content for quick lookup
- */
-export type IncludesMap = Map<string, string>;
-
-/**
- * Convert an array of CFInclude objects to a Map for efficient lookup.
- * The map is keyed by the include path (e.g., "includes/cf-descriptions/apply-10000.md")
- */
-export function buildIncludesMap(includes: CFInclude[]): IncludesMap {
-	const map = new Map<string, string>();
-	for (const include of includes) {
-		map.set(include.path, include.content);
-	}
-	return map;
-}
-
-/**
- * Resolve MkDocs include directives in markdown text.
- * Replaces --8<-- "path/to/file.md" with the actual content from the includes map.
- *
- * @param markdown - Raw markdown text that may contain include directives
- * @param includesMap - Map of include paths to their content
- * @returns Markdown with includes resolved (replaced with content)
- */
-export function resolveIncludes(markdown: string, includesMap: IncludesMap): string {
-	if (!includesMap || includesMap.size === 0) {
-		// No includes available, just strip the directives
-		return markdown.replace(/--8<--\s*"[^"]+"/g, "");
-	}
-
-	// Replace inline includes: --8<-- "path/to/file.md"
-	let resolved = markdown.replace(/--8<--\s*"([^"]+)"/g, (_match, path) => {
-		const content = includesMap.get(path);
-		return content || "";
-	});
-
-	// Remove any remaining block includes that weren't matched
-	resolved = resolved.replace(/--8<--.*?--8<--/gs, "");
-
-	return resolved;
 }
 
 /**
@@ -137,125 +92,6 @@ export function cleanDescription(rawMarkdown: string, titleToRemove?: string): s
 	}
 
 	return cleaned;
-}
-
-/**
- * Convert markdown description to formatted HTML for detailed display
- *
- * Unlike cleanDescription which produces compact plain text,
- * this preserves structure (paragraphs, lists) for modal/detail views.
- *
- * @param rawMarkdown - The raw markdown description from TRaSH Guides
- * @param titleToRemove - Optional title text to remove from the start
- * @returns HTML string with preserved formatting
- */
-export function markdownToFormattedHtml(rawMarkdown: string, titleToRemove?: string): string {
-	let text = stripHtmlComments(rawMarkdown)
-		// Comments and metadata
-		.replace(/\{:.*?\}/g, "")
-
-		// Fenced code blocks → styled code blocks
-		.replace(/```(\w*)\n?([\s\S]*?)```/g, "<pre><code>$2</code></pre>")
-		.replace(/~~~(\w*)\n?([\s\S]*?)~~~/g, "<pre><code>$2</code></pre>")
-
-		// Headers → bold text with line break
-		.replace(/^#{1,6}\s+(.+)$/gm, "<strong>$1</strong><br>")
-
-		// Blockquotes
-		.replace(/^>\s*(.+)$/gm, "<blockquote>$1</blockquote>")
-
-		// Horizontal rules
-		.replace(/^[-*_]{3,}$/gm, "<hr>")
-
-		// Images and links
-		.replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
-		.replace(
-			/\[([^\]]+)\]\(<([^>]+)>\)\{[^}]*\}/g,
-			'<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
-		)
-		.replace(
-			/\[([^\]]+)\]\(([^)]+)\)/g,
-			'<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
-		)
-
-		// Text formatting
-		.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-		.replace(/__(.+?)__/g, "<strong>$1</strong>")
-		.replace(/~~(.+?)~~/g, "<del>$1</del>")
-		.replace(/\*([^*\n]+)\*/g, "<em>$1</em>")
-		.replace(/\b_([^_\n]+)_\b/g, "<em>$1</em>")
-		.replace(/`([^`]+)`/g, "<code>$1</code>")
-
-		// Escape sequences
-		.replace(/\\_/g, "_")
-		.replace(/\\\*/g, "*")
-		.replace(/\\`/g, "`")
-		.replace(/=>/g, "→");
-
-	// Remove title if provided
-	if (titleToRemove) {
-		// nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
-		const titlePattern = new RegExp(
-			`^\\s*${escapeRegExp(titleToRemove)}\\s*(\\([^)]{1,50}\\))?\\s*`,
-			"i",
-		);
-		text = text.replace(titlePattern, "");
-	}
-
-	// Process lists - convert consecutive list items into proper lists
-	text = text
-		// Unordered lists
-		.replace(/(?:^[-*+]\s+.+$\n?)+/gm, (match) => {
-			const items = match
-				.trim()
-				.split("\n")
-				.map((line) => line.replace(/^[-*+]\s+/, "").trim())
-				.filter(Boolean)
-				.map((item) => `<li>${item}</li>`)
-				.join("");
-			return `<ul>${items}</ul>`;
-		})
-		// Ordered lists
-		.replace(/(?:^\d+\.\s+.+$\n?)+/gm, (match) => {
-			const items = match
-				.trim()
-				.split("\n")
-				.map((line) => line.replace(/^\d+\.\s+/, "").trim())
-				.filter(Boolean)
-				.map((item) => `<li>${item}</li>`)
-				.join("");
-			return `<ol>${items}</ol>`;
-		});
-
-	// Convert paragraphs (double newlines)
-	text = text
-		.split(/\n{2,}/)
-		.map((para) => para.trim())
-		.filter(Boolean)
-		.map((para) => {
-			// Don't wrap block elements in <p>
-			if (
-				para.startsWith("<ul>") ||
-				para.startsWith("<ol>") ||
-				para.startsWith("<pre>") ||
-				para.startsWith("<blockquote>") ||
-				para.startsWith("<hr")
-			) {
-				return para;
-			}
-			// Convert single newlines to <br> within paragraphs
-			return `<p>${para.replace(/\n/g, "<br>")}</p>`;
-		})
-		.join("");
-
-	return text.trim();
-}
-
-/**
- * Escape special regex characters in a string
- */
-function escapeRegExp(string: string): string {
-	return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**

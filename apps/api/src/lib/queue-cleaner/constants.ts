@@ -195,13 +195,6 @@ export const IMPORT_BLOCKED_TECHNICAL_KEYWORDS = [
 	"password protected",
 ] as const;
 
-/** Combined list for backward compatibility */
-export const IMPORT_BLOCKED_KEYWORDS = [
-	...IMPORT_BLOCKED_SAFE_KEYWORDS,
-	...IMPORT_BLOCKED_REVIEW_KEYWORDS,
-	...IMPORT_BLOCKED_TECHNICAL_KEYWORDS,
-] as const;
-
 /** Keywords indicating import is pending but may resolve itself - SKIP these */
 export const IMPORT_PENDING_RECOVERABLE_KEYWORDS = [
 	"extracting",
@@ -213,9 +206,6 @@ export const IMPORT_PENDING_RECOVERABLE_KEYWORDS = [
 	"scanning",
 ] as const;
 
-/** Supported whitelist pattern types */
-export const WHITELIST_TYPES = ["tracker", "tag", "category", "title"] as const;
-
 // ============================================================================
 // Auto-Import Constants (Backend-Only)
 // ============================================================================
@@ -226,17 +216,11 @@ export const MIN_AUTO_IMPORT_ATTEMPTS = 1;
 /** Maximum number of auto-import attempts before giving up */
 export const MAX_AUTO_IMPORT_ATTEMPTS = 5;
 
-/** Default number of auto-import attempts */
-export const DEFAULT_AUTO_IMPORT_ATTEMPTS = 2;
-
 /** Minimum cooldown between auto-import attempts on same item (minutes) */
 export const MIN_AUTO_IMPORT_COOLDOWN_MINS = 5;
 
 /** Maximum cooldown between auto-import attempts on same item (minutes) */
 export const MAX_AUTO_IMPORT_COOLDOWN_MINS = 240;
-
-/** Default cooldown between auto-import attempts (minutes) */
-export const DEFAULT_AUTO_IMPORT_COOLDOWN_MINS = 30;
 
 /**
  * Status patterns that are SAFE for auto-import.

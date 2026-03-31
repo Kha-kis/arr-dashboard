@@ -13,14 +13,6 @@ export type CalendarService = "sonarr" | "radarr" | "lidarr" | "readarr";
 type UnknownRecord = Record<string, any>;
 
 /**
- * Returns the API path for calendar endpoints
- * Note: Sonarr/Radarr use v3, Lidarr/Readarr use v1
- */
-export const calendarApiPath = (service: CalendarService) => {
-	return ["lidarr", "readarr"].includes(service) ? "/api/v1/calendar" : "/api/v3/calendar";
-};
-
-/**
  * Formats a date to YYYY-MM-DD format
  */
 export const formatDateOnly = (date: Date): string =>

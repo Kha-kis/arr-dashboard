@@ -6,7 +6,6 @@
 
 import type { FastifyBaseLogger } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
-import type { NotificationPayload } from "../notifications/types.js";
 import type { LibraryItemType, PrismaClient } from "../prisma.js";
 
 // ============================================================================
@@ -202,10 +201,3 @@ export interface CleanupRunResult {
 	warnings?: string[];
 }
 
-// ============================================================================
-// Scheduler
-// ============================================================================
-
-export interface CleanupSchedulerOptions {
-	notifyFn?: (payload: NotificationPayload) => Promise<void>;
-}

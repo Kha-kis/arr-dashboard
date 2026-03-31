@@ -73,6 +73,9 @@ jobs:
       - name: Run type checking
         run: pnpm run typecheck
 
+      - name: Check for dead code (Knip)
+        run: pnpm exec knip --no-exit-code
+
       - name: Run tests
         run: pnpm run test
 

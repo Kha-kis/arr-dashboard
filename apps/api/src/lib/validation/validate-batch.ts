@@ -10,16 +10,10 @@
 
 import type { z } from "zod";
 import { type DriftReport, schemaFingerprints } from "./schema-fingerprint.js";
+import type { Logger } from "./types.js";
 import { validationQuarantine } from "./validation-quarantine.js";
 
-// ============================================================================
-// Types
-// ============================================================================
-
-export interface Logger {
-	warn: (msg: string | object, ...args: unknown[]) => void;
-	error: (msg: string | object, ...args: unknown[]) => void;
-}
+export type { Logger };
 
 /** Validation stats returned alongside validated items */
 export interface ValidationStats {

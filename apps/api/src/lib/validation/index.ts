@@ -86,4 +86,3 @@ export const KNOWN_INTEGRATIONS = [
 	"queue-cleaner",
 ] as const;
 
-export type KnownIntegration = (typeof KNOWN_INTEGRATIONS)[number];

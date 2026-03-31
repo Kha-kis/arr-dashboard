@@ -33,15 +33,6 @@ export type ActionCounts = {
 };
 
 /**
- * CSS classes for message tones
- */
-export const messageToneClasses: Record<MessageTone, string> = {
-	info: "border-white/20 bg-white/5 text-white/80",
-	warning: "border-amber-500/40 bg-amber-500/10 text-amber-50",
-	error: "border-red-500/40 bg-red-500/10 text-red-100",
-};
-
-/**
  * Builds unique key for a queue item
  */
 export const buildKey = (item: QueueItem): string =>

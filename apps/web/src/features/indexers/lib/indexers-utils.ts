@@ -6,14 +6,6 @@ import type { ProwlarrIndexer, ProwlarrIndexerField } from "@arr/shared";
 export const numberFormatter = new Intl.NumberFormat();
 
 /**
- * Percentage formatter with one decimal place
- */
-export const percentFormatter = new Intl.NumberFormat(undefined, {
-	style: "percent",
-	maximumFractionDigits: 1,
-});
-
-/**
  * Statistics computed from indexer data
  */
 export interface IndexerStats {
@@ -170,19 +162,6 @@ export const formatFieldValue = (_name: string, value: unknown): string => {
 	}
 
 	return String(value);
-};
-
-/**
- * Formats a success rate as a percentage
- * @param value - Success rate (0-1 or 0-100)
- * @returns Formatted percentage string
- */
-export const formatSuccessRate = (value?: number): string => {
-	if (typeof value !== "number") {
-		return "–";
-	}
-	const normalized = value > 1 ? value / 100 : value;
-	return percentFormatter.format(Math.max(0, Math.min(1, normalized)));
 };
 
 /**

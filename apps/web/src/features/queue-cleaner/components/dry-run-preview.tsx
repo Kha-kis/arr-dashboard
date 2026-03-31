@@ -776,5 +776,3 @@ const ItemSection = ({
 	);
 };
 
-// Legacy export for backward compatibility
-export { EnhancedDryRunPreview as DryRunPreview };

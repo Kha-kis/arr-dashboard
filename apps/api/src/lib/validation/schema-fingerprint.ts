@@ -17,7 +17,7 @@
  * validation run after restart re-establishes them.
  */
 
-import type { Logger } from "./validate-batch.js";
+import type { Logger } from "./types.js";
 
 // ============================================================================
 // Constants

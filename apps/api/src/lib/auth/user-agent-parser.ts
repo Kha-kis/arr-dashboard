@@ -152,16 +152,3 @@ function detectDevice(ua: string): "desktop" | "mobile" | "tablet" | "unknown" {
 	return "unknown";
 }
 
-/**
- * Get a human-friendly summary of the user agent
- * Format: "Browser on OS" or "Browser on OS (Device)"
- */
-export function getUserAgentSummary(userAgent: string | undefined | null): string {
-	const parsed = parseUserAgent(userAgent);
-
-	if (parsed.browser === "Unknown" && parsed.os === "Unknown") {
-		return "Unknown device";
-	}
-
-	return `${parsed.browser} on ${parsed.os}`;
-}

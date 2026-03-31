@@ -222,18 +222,6 @@ export interface InstanceSummary {
 // Frontend-Specific Types: Strike Tracking
 // ============================================================================
 
-export interface QueueCleanerStrike {
-	id: string;
-	instanceId: string;
-	downloadId: string; // String for consistency with database schema
-	downloadTitle: string;
-	strikeCount: number;
-	lastRule: string;
-	lastReason: string;
-	firstStrikeAt: string;
-	lastStrikeAt: string;
-}
-
 // ============================================================================
 // Frontend-Specific Types: Statistics
 // ============================================================================
