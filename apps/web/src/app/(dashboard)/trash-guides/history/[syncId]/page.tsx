@@ -283,7 +283,7 @@ export default function SyncDetailPage() {
 				<div className="rounded-xl border border-border bg-card p-6">
 					<h2 className="mb-4 text-lg font-semibold text-foreground">Applied Configurations</h2>
 					<div className="space-y-2">
-						{sync.appliedConfigs.map((config: any, index: number) => (
+						{sync.appliedConfigs.map((config, index) => (
 							<div
 								key={index}
 								className="flex items-center justify-between rounded-lg border border-border bg-card p-3"
@@ -301,7 +301,7 @@ export default function SyncDetailPage() {
 				<div className="rounded-xl border border-red-500/20 bg-red-500/10 p-6">
 					<h2 className="mb-4 text-lg font-semibold text-red-200">Failed Configurations</h2>
 					<div className="space-y-2">
-						{sync.failedConfigs.map((config: any, index: number) => (
+						{sync.failedConfigs.map((config, index) => (
 							<div
 								key={index}
 								className="flex items-start justify-between rounded-lg border border-red-500/20 bg-red-500/10 p-3"

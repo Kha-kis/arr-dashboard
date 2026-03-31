@@ -7,6 +7,7 @@ import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { apiRequest } from "../../../lib/api-client/base";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 export const OIDCSetup = () => {
 	const { gradient: themeGradient } = useThemeGradient();
@@ -59,8 +60,8 @@ export const OIDCSetup = () => {
 
 			// Redirect to OIDC provider
 			window.location.href = response.authorizationUrl;
-		} catch (err: any) {
-			setError(err.message ?? "Failed to configure OIDC provider");
+		} catch (err: unknown) {
+			setError(getErrorMessage(err, "Failed to configure OIDC provider"));
 			setIsSubmitting(false);
 		}
 	};

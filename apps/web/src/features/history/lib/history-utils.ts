@@ -123,7 +123,9 @@ export const groupHistoryItems = (
 		if (item.service === "sonarr" || item.service === "radarr") {
 			const downloadId = item.downloadId?.trim();
 			const date = item.date ? new Date(item.date) : new Date();
-			const quality = (item.quality as any)?.quality?.name ?? "unknown";
+			const qualityRecord = item.quality && typeof item.quality === "object" ? item.quality as Record<string, unknown> : null;
+			const qualityInner = qualityRecord?.quality && typeof qualityRecord.quality === "object" ? qualityRecord.quality as Record<string, unknown> : null;
+			const quality = typeof qualityInner?.name === "string" ? qualityInner.name : "unknown";
 			let groupKey = "";
 
 			// Check if downloadId looks valid (not just a number which is likely an event ID)
@@ -367,18 +369,18 @@ export { formatBytes } from "../../../lib/format-utils";
 export const getDisplayTitle = (item: HistoryItem): string => {
 	// For Prowlarr, try to extract meaningful info from data field
 	if (item.service === "prowlarr") {
-		const data = item.data as any;
+		const data = item.data && typeof item.data === "object" ? item.data as Record<string, unknown> : null;
 		const eventType = (item.eventType ?? "").toLowerCase();
 
 		// For release grabbed events, prioritize release title
 		if (eventType.includes("grab") || eventType.includes("release")) {
-			const release = data?.releaseTitle || data?.title || item.title || item.sourceTitle;
+			const release = (typeof data?.releaseTitle === "string" && data.releaseTitle) || (typeof data?.title === "string" && data.title) || item.title || item.sourceTitle;
 			if (release && release !== "Untitled" && release) return release;
 		}
 
 		// For query/RSS events, show the search term or category
 		if (eventType.includes("query") || eventType.includes("rss")) {
-			const query = data?.query || data?.searchTerm || data?.term;
+			const query = (typeof data?.query === "string" && data.query) || (typeof data?.searchTerm === "string" && data.searchTerm) || (typeof data?.term === "string" && data.term);
 			if (query) return `Search: "${query}"`;
 
 			// For RSS with no query, show categories or "RSS Feed Sync"
@@ -391,10 +393,10 @@ export const getDisplayTitle = (item: HistoryItem): string => {
 		}
 
 		// Fallback: try release title, then query
-		const release = data?.releaseTitle || data?.title;
+		const release = (typeof data?.releaseTitle === "string" && data.releaseTitle) || (typeof data?.title === "string" && data.title);
 		if (release && release !== "Untitled" && release) return release;
 
-		const query = data?.query || data?.searchTerm;
+		const query = (typeof data?.query === "string" && data.query) || (typeof data?.searchTerm === "string" && data.searchTerm);
 		if (query) return `Search: "${query}"`;
 
 		// If we still have nothing useful, show the event type context
@@ -402,7 +404,7 @@ export const getDisplayTitle = (item: HistoryItem): string => {
 		if (eventType.includes("query")) return "Indexer Query";
 
 		// Last resort: show application
-		const app = data?.application || data?.source;
+		const app = (typeof data?.application === "string" && data.application) || (typeof data?.source === "string" && data.source);
 		if (app) return `${eventType} - ${app}`;
 	}
 
@@ -464,13 +466,13 @@ export const getEventTypeStatusBadge = (
 export const getSourceClient = (item: HistoryItem): string => {
 	const eventType = (item.eventType ?? item.status ?? "").toLowerCase();
 	const isProwlarr = item.service === "prowlarr";
-	const prowlarrData = isProwlarr ? (item.data as any) : null;
+	const prowlarrData = isProwlarr && item.data && typeof item.data === "object" ? item.data as Record<string, unknown> : null;
 
 	let result = "";
 
 	if (eventType.includes("grab") || eventType.includes("query") || eventType.includes("rss")) {
 		result = isProwlarr
-			? prowlarrData?.indexer || prowlarrData?.indexerName || item.indexer || ""
+			? (typeof prowlarrData?.indexer === "string" && prowlarrData.indexer) || (typeof prowlarrData?.indexerName === "string" && prowlarrData.indexerName) || item.indexer || ""
 			: item.indexer || "";
 	} else if (eventType.includes("download") || eventType.includes("import")) {
 		result = item.downloadClient || "";
