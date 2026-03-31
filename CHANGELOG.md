@@ -27,7 +27,16 @@ Codebase hardening release — lint infrastructure overhaul, frontend type safet
 - **E2E production builds** — Switched from dev mode to production builds for E2E tests. Eliminates timeout flake: slowest shard 15m19s → 4m35s (-70%), wall clock 15m19s → 6m25s (-58%) (#257)
 - **Knip dead code check** — Added to CI pipeline for automated dead code detection (#252)
 
+#### Repository Structure
+- **Screenshots reorganized** — Moved 16 PNGs from root to `docs/screenshots/`, refreshed with incognito mode enabled (#258, #262)
+- **Stale files removed** — Deleted completed review docs, one-time migration scripts, Unraid template (now on addon store) (#258)
+- **Documentation updated** — Rewrote `docker/README.md` with complete env vars table, corrected `docs/AUTH.md`, added missing routes to `docs/API-ROUTES.md` (#258)
+- **GitHub best practices** — Added `SECURITY.md`, `CONTRIBUTING.md`, `.gitattributes`, `.editorconfig`, issue template config (#258)
+
 ### Fixed
+- **Discover incognito mode** — Poster images, titles, and overview text now properly anonymized when incognito mode is enabled (#260)
+- **Calendar incognito mode** — Grid event chips now show anonymized titles; network/studio name hidden from detail card (#262)
+- **System settings incognito** — Database host, listen address, and log file names now masked in incognito mode (#260)
 - **Discover genre scrollbar** — Scrollbar no longer overlaps genre pill content on the `/discover` page (#254)
 - **Queue cleaner incognito** — Added missing incognito mode to queue cleaner statistics and preview displays (#250)
 
