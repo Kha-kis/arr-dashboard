@@ -40,7 +40,6 @@ import type { HuntLog } from "../lib/hunting-types";
  * - Theme-aware status badges
  */
 export const HuntingActivity = () => {
-	const [incognitoMode] = useIncognitoMode();
 	const [typeFilter, setTypeFilter] = useState<string>("all");
 	const [statusFilter, setStatusFilter] = useState<string>("all");
 	const [page, setPage] = useState(1);

@@ -9,7 +9,7 @@ import globals from "globals";
 /** @type {import('eslint').Linter.Config[]} */
 const eslintConfig = [
 	{
-		ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "coverage/**", "next-env.d.ts"],
+		ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "coverage/**", "next-env.d.ts", "server.js"],
 	},
 	{
 		files: ["**/*.{js,jsx,ts,tsx}"],
@@ -54,8 +54,11 @@ const eslintConfig = [
 			"react-hooks/rules-of-hooks": "error",
 			"react-hooks/exhaustive-deps": "warn",
 
-			// TypeScript rules (relaxed for now)
-			"@typescript-eslint/no-explicit-any": "off",
+			// TypeScript rules
+			"@typescript-eslint/no-explicit-any": "warn",
+
+			// Console usage — use structured error handling, not console.log
+			"no-console": ["warn", { allow: ["warn", "error"] }],
 
 			// Unused imports - auto-fixable
 			"unused-imports/no-unused-imports": "warn",

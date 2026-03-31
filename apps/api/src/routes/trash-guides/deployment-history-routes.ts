@@ -475,7 +475,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			}
 
 			const currentCF = currentCFMap.get(cfName);
-			if (!currentCF || !currentCF.id) {
+			if (!currentCF?.id) {
 				notFound.push(cfName);
 				continue;
 			}

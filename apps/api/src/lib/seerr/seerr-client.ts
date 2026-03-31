@@ -301,7 +301,7 @@ export class SeerrClient {
 			const extraHeaders: Record<string, string> = {};
 			if (isMutating && this.csrfData) {
 				extraHeaders["x-xsrf-token"] = this.csrfData.xsrfToken;
-				extraHeaders["Cookie"] = this.csrfData.cookies;
+				extraHeaders.Cookie = this.csrfData.cookies;
 			}
 
 			let response: Response;

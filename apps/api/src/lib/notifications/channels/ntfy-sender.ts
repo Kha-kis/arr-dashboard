@@ -87,7 +87,7 @@ export const ntfySender: ChannelSender = {
 
 	async test(config: Record<string, unknown>): Promise<void> {
 		const result = await ntfySender.send(config, {
-			eventType: "SYSTEM_STARTUP" as any,
+			eventType: "SYSTEM_STARTUP",
 			title: "Test Notification",
 			body: "This is a test notification from Arr Dashboard.",
 		});
