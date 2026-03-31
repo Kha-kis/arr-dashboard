@@ -19,6 +19,7 @@ interface OIDCStateData {
 }
 
 const oidcStateStore = new Map<string, OIDCStateData>();
+const OIDC_STATE_MAX_ENTRIES = 1000;
 
 // Clean up expired states every 5 minutes
 setInterval(
@@ -32,6 +33,13 @@ setInterval(
 	},
 	5 * 60 * 1000,
 );
+
+/** Sanitize OIDC error strings — truncate and strip non-printable characters */
+function sanitizeOIDCError(value: unknown, maxLength = 200): string {
+	if (typeof value !== "string") return "Unknown error";
+	// biome-ignore lint/suspicious/noControlCharactersInRegex: intentionally stripping control chars for sanitization
+	return value.replace(/[\x00-\x1f\x7f]/g, "").slice(0, maxLength);
+}
 
 const oidcCallbackSchema = z.object({
 	code: z.string(),
@@ -226,6 +234,12 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			const codeVerifier = oauth.generateRandomCodeVerifier();
 			const codeChallenge = await oauth.calculatePKCECodeChallenge(codeVerifier);
 
+			// Evict oldest entry if map exceeds cap (defense against state exhaustion)
+			if (oidcStateStore.size >= OIDC_STATE_MAX_ENTRIES) {
+				const oldestKey = oidcStateStore.keys().next().value;
+				if (oldestKey) oidcStateStore.delete(oldestKey);
+			}
+
 			// Store state with 15 minute expiration
 			oidcStateStore.set(state, {
 				nonce,
@@ -270,14 +284,15 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		// Check if OIDC provider returned an error
 		if (queryParams.error) {
-			const errorDescription = queryParams.error_description || "Unknown error";
+			const sanitizedError = sanitizeOIDCError(queryParams.error);
+			const sanitizedDescription = sanitizeOIDCError(queryParams.error_description);
 			request.log.error(
-				{ error: queryParams.error, description: errorDescription },
+				{ error: sanitizedError, description: sanitizedDescription },
 				"OIDC provider returned error",
 			);
 			return reply.status(400).send({
-				error: `Authentication failed: ${queryParams.error}`,
-				details: errorDescription,
+				error: `Authentication failed: ${sanitizedError}`,
+				details: sanitizedDescription,
 			});
 		}
 

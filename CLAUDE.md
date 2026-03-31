@@ -124,7 +124,7 @@ When adding features that surface data to users (pages, panels, signals, notific
 
 **Data fetching**: API client module -> `useQuery`/`useMutation` hook -> component. All API requests use `credentials: "include"`. Server state must live in shared domain hooks (`hooks/api/`), never inline in components. Components should only render and handle user interaction — keep data transformation and business logic in hooks or utilities.
 
-**Middleware** (`apps/web/middleware.ts`): Only does route protection (session validation via `/auth/me`), NOT API proxying. API proxying is handled by Next.js rewrites in `next.config.mjs`.
+**Route protection**: No Next.js middleware is used. Auth gating relies on API calls returning 401 for unauthenticated requests — the frontend redirects to `/login` on auth failure. API proxying is handled by Next.js rewrites in `next.config.mjs`.
 
 **Lazy modals**: Use `React.lazy` + `Suspense` for modals behind `{stateVar && <Modal />}`. Named exports need adapter: `lazy(() => import("./file").then(m => ({ default: m.NamedExport })))`.
 
