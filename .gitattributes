@@ -1,0 +1,22 @@
+# Normalize line endings
+* text=auto
+
+# Lock files — suppress diffs, mark as generated
+pnpm-lock.yaml -diff linguist-generated
+*.lock linguist-generated
+
+# Prisma schema — better syntax highlighting on GitHub
+*.prisma linguist-language=GraphQL
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+
+# Shell scripts — always LF
+*.sh text eol=lf
+docker/start-combined.sh text eol=lf

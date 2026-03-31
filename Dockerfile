@@ -1,5 +1,5 @@
 # Combined Dockerfile for Arr Dashboard (API + Web)
-# Optimized for single-container deployment (Unraid, etc.)
+# Single-container deployment — API and Web run together
 # syntax=docker/dockerfile:1
 
 # ===== BUILD BASE =====
@@ -75,7 +75,7 @@ ARG BUILD_DATE=unknown
 
 # OCI Image Labels (including build-time metadata)
 LABEL org.opencontainers.image.title="Arr Dashboard" \
-      org.opencontainers.image.description="Unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances" \
+      org.opencontainers.image.description="Unified dashboard for managing Sonarr, Radarr, Prowlarr, Lidarr, Readarr, Plex, Tautulli, and Seerr" \
       org.opencontainers.image.source="https://github.com/Kha-kis/arr-dashboard" \
       org.opencontainers.image.url="https://github.com/Kha-kis/arr-dashboard" \
       org.opencontainers.image.documentation="https://github.com/Kha-kis/arr-dashboard#readme" \

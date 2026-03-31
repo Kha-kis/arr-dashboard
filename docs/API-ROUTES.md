@@ -82,18 +82,20 @@ All routes in `apps/api/src/routes/`. Protected routes use preHandler authentica
 
 | Prefix | Purpose |
 |--------|---------|
-| `/api/search` | Prowlarr indexer search |
-| `/api/discover` | TMDB discovery |
-| `/api/hunting` | Auto-search configuration |
-| `/api/backup` | Backup management |
-| `/api/system` | System settings and info |
-| `/api/oidc-providers` | OIDC admin config |
-| `/api/library-cleanup` | Cleanup rules, approvals, execution |
-| `/api/notifications` | Channels, subscriptions, delivery |
-| `/api/plex` | Now playing, on-deck, watch history, analytics |
-| `/api/tautulli` | Activity, watch history enrichment |
-| `/api/seerr` | Jellyseerr/Overseerr request management |
-| `/api/validation` | Runtime validation health and drift |
+| `/api/search` | Prowlarr indexer search + grab |
+| `/api/discover` | TMDB/Seerr discovery |
+| `/api/hunting` | Auto-search configuration and execution |
+| `/api/queue-cleaner` | Queue cleanup rules, strikes, dry-run preview |
+| `/api/library-cleanup` | Library cleanup rules, approvals, execution |
+| `/api/manual-import` | Manual import candidates and submission |
+| `/api/backup` | Backup create, download, restore, scheduled backups |
+| `/api/system` | System settings, info, restart |
+| `/api/pulse` | System Pulse health signals and attention items |
+| `/api/notifications` | Channels, subscriptions, rules, delivery, aggregation |
+| `/api/oidc-providers` | OIDC provider admin configuration |
+| `/api/plex` | Now playing, on-deck, watch history, collections, analytics (bandwidth, codec, device, transcode, user), forecasts, episode completion, quality scores |
+| `/api/tautulli` | Activity, watch history enrichment, statistics |
+| `/api/seerr` | Request management, discovery, library enrichment, issues, notifications, user info |
 
 ## System Routes (`/api/system`)
 

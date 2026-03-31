@@ -53,7 +53,7 @@ packages/shared/src/types/ # Shared Zod schemas + TypeScript types
 
 ## Code Style & Conventions
 
-- **Formatter**: Biome (NOT ESLint/Prettier). Run `pnpm run lint` / `pnpm run format`
+- **Linting**: Biome for API + shared packages, ESLint for web (React-specific rules). Biome for formatting across all packages. Run `pnpm run lint` / `pnpm run format`
 - **TypeScript**: Strict mode, `noUncheckedIndexedAccess: true`
 - **Imports**: Feature modules use relative imports. Base UI components use `@/` alias
 - **Components**: Default to Server Components; add `"use client"` when using hooks/interactivity
@@ -153,7 +153,7 @@ pnpm --filter @arr/api exec tsc --noEmit         # Type check backend
 
 ## Patterns & Gotchas
 
-- **API Proxy**: Frontend uses `/api/*` paths. The middleware does NOT proxy — it only protects routes
+- **API Proxy**: Frontend uses `/api/*` paths via Next.js rewrites in `next.config.mjs`. No middleware exists — auth gating relies on API 401 responses
 - **Server Components**: Default in Next.js App Router. Add `"use client"` when needed
 - **Docker vs Dev**: Different env vars and paths (`/config/` vs `./`)
 - **Secrets auto-generated**: `ENCRYPTION_KEY` and `SESSION_COOKIE_SECRET` are auto-generated to `secrets.json` if not provided
@@ -180,4 +180,4 @@ For deep dives, see these files (create as needed):
 
 ---
 
-**Version:** 2.12.0 | **Node:** 22+ | **pnpm:** 10+
+**Version:** 2.13.0 | **Node:** 22+ | **pnpm:** 10+

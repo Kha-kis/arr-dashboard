@@ -5,6 +5,39 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.13.0] - 2026-03-31
+
+Codebase hardening release — lint infrastructure overhaul, frontend type safety, security audit, dependency modernization, and CI optimization. No new features; focused on reliability, maintainability, and developer experience.
+
+### Changed
+
+#### Codebase Quality
+- **Biome config audit** — Updated schema to v2.4.10, added `noConsole` rule, removed stale exclusions. Test files now linted (77 previously invisible). Production code: 76 → 0 Biome warnings (#251)
+- **Frontend type safety** — Fixed 140 → 5 `no-explicit-any` ESLint warnings across 24 files. New wizard type system (`WizardCustomFormat`, `WizardCFGroup`, etc.) properly types TRaSH Guides data flowing through the quality profile wizard (#253)
+- **Dead code removal** — Removed 21 unused files (~3,300 lines), 6 unused dependencies, 5 empty barrel files, ~60 unused exports. Added Knip to CI for regression prevention (#251, #252)
+- **Circular dependencies** — Fixed all 4 real circular dependency cycles (1 API, 3 web) by extracting shared types (#252)
+
+#### Dependencies
+- **TypeScript** 5.9.3 → 6.0.2 — Last JS-based compiler before Go rewrite. Migrated tsconfig: removed deprecated `baseUrl`, converted to relative paths (#256)
+- **ESLint** 9.39.4 → 10.1.0 — Modern engine with JSX scope analysis (#256)
+- **lucide-react** 0.577.0 → 1.7.0 — `aria-hidden` default on icons for better accessibility (#256)
+- **jsdom** 27.4.0 → 29.0.1 — Spec-compliant CSSOM for more accurate test environment (#256)
+
+#### CI/CD
+- **E2E production builds** — Switched from dev mode to production builds for E2E tests. Eliminates timeout flake: slowest shard 15m19s → 4m35s (-70%), wall clock 15m19s → 6m25s (-58%) (#257)
+- **Knip dead code check** — Added to CI pipeline for automated dead code detection (#252)
+
+### Fixed
+- **Discover genre scrollbar** — Scrollbar no longer overlaps genre pill content on the `/discover` page (#254)
+- **Queue cleaner incognito** — Added missing incognito mode to queue cleaner statistics and preview displays (#250)
+
+### Security
+- **Passkey validation** — Replaced `z.any()` with proper WebAuthn Zod schema for passkey registration/login. Malformed payloads now rejected at the validation gate before reaching `@simplewebauthn/server` (#255)
+- **OIDC error sanitization** — Reflected `error`/`error_description` from identity providers now truncated and stripped of control characters (#255)
+- **OIDC state exhaustion** — In-memory state map capped at 1,000 entries with oldest-entry eviction (#255)
+- **CSP hardening** — `connect-src` now dynamic (localhost in dev, `'self'` in production). Removed `unsafe-eval` from production `script-src` (#255)
+- **ESLint `no-console`** — Added to web package with `allow: ["warn", "error"]` to catch stray debug logging (#251)
+
 ## [2.12.0] - 2026-03-30
 
 Seerr Requests Experience, API stability improvements, and full security sweep.

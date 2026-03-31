@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.12.0** — Seerr Requests Experience, API stability, security sweep
+> **Version 2.13.0** — Codebase hardening, TypeScript 6, security audit, CI optimization
 
 A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, **Lidarr**, **Readarr**, **Plex**, **Tautulli**, and **Seerr** instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -15,49 +15,49 @@ A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, 
 <summary>Click to expand screenshots</summary>
 
 ### Dashboard
-![Dashboard](screenshot-dashboard.png)
+![Dashboard](docs/screenshots/screenshot-dashboard.png)
 
 ### Library
-![Library](screenshot-library.png)
+![Library](docs/screenshots/screenshot-library.png)
 
 ### Calendar
-![Calendar](screenshot-calendar.png)
+![Calendar](docs/screenshots/screenshot-calendar.png)
 
 ### Discover
-![Discover](screenshot-discover.png)
+![Discover](docs/screenshots/screenshot-discover.png)
 
 ### Search
-![Search](screenshot-search.png)
+![Search](docs/screenshots/screenshot-search.png)
 
 ### Indexers
-![Indexers](screenshot-indexers.png)
+![Indexers](docs/screenshots/screenshot-indexers.png)
 
 ### History
-![History](screenshot-history.png)
+![History](docs/screenshots/screenshot-history.png)
 
 ### Statistics
-![Statistics](screenshot-statistics.png)
+![Statistics](docs/screenshots/screenshot-statistics.png)
 
 ### Requests
-![Requests](screenshot-requests-all.png)
+![Requests](docs/screenshots/screenshot-requests-all.png)
 
 ### Hunting
-![Hunting](screenshot-hunting.png)
+![Hunting](docs/screenshots/screenshot-hunting.png)
 
 ### Queue Cleaner
-![Queue Cleaner](screenshot-queue-cleaner.png)
+![Queue Cleaner](docs/screenshots/screenshot-queue-cleaner.png)
 
 ### Library Cleanup
-![Library Cleanup](screenshot-library-cleanup.png)
+![Library Cleanup](docs/screenshots/screenshot-library-cleanup.png)
 
 ### TRaSH Guides
-![TRaSH Guides](screenshot-trash-guides.png)
+![TRaSH Guides](docs/screenshots/screenshot-trash-guides.png)
 
 ### Plex Statistics
-![Plex Statistics](screenshot-statistics-plex.png)
+![Plex Statistics](docs/screenshots/screenshot-statistics-plex.png)
 
 ### Settings
-![Settings](screenshot-settings.png)
+![Settings](docs/screenshots/screenshot-settings.png)
 
 </details>
 
@@ -201,6 +201,7 @@ docker-compose up -d
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.13.0` | Codebase hardening, TypeScript 6, security audit, CI optimization |
 | `2.12.0` | Seerr Requests Experience, API stability, security sweep |
 | `2.11.0` | System Pulse — unified health attention feed across all services |
 | `2.10.1` | Quality filter fix |
