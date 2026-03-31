@@ -1,0 +1,14 @@
+{
+	"$schema": "https://unpkg.com/knip@6/schema.json",
+	"ignore": [
+		"scripts/**",
+		"docker/**",
+		"e2e/**",
+		"**/generated/**",
+		"**/test-*.ts",
+		"**/analyze-*.ts"
+	],
+	"ignoreDependencies": ["pino-roll"],
+	"exclude": ["unlisted", "binaries", "duplicates", "unresolved"],
+	"ignoreExportsUsedInFile": true
+}

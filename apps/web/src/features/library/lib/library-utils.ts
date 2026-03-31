@@ -88,10 +88,3 @@ export const buildPlexUrl = (machineId: string, ratingKey: string): string => {
 	return `https://app.plex.tv/desktop/#!/server/${machineId}/details?key=${encodeURIComponent(`/library/metadata/${ratingKey}`)}`;
 };
 
-/**
- * Group library items by type (movies vs series)
- */
-export const groupItemsByType = (items: LibraryItem[]) => ({
-	movies: items.filter((item) => item.type === "movie"),
-	series: items.filter((item) => item.type === "series"),
-});

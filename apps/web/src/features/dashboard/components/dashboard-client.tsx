@@ -57,8 +57,7 @@ import { RecentlyAddedWidget } from "./recently-added-widget";
 import { SeerrRequestsWidget } from "./seerr-requests-widget";
 import { WatchHistorySection } from "./watch-history-section";
 
-/** Map of instanceId to baseUrl for linking to instances */
-export type InstanceUrlMap = Map<string, string>;
+import type { InstanceUrlMap } from "../types";
 
 /**
  * Service-specific config combining imported gradients with icons

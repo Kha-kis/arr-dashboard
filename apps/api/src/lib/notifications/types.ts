@@ -1,4 +1,4 @@
-import type { NotificationChannelType, NotificationEventType } from "@arr/shared";
+import type { NotificationEventType } from "@arr/shared";
 
 /**
  * Payload sent to channel senders for delivery.
@@ -33,15 +33,6 @@ export interface ChannelSender {
 	send(config: Record<string, unknown>, payload: NotificationPayload): Promise<SendResult>;
 	/** Test connectivity/authentication for this channel */
 	test(config: Record<string, unknown>): Promise<void>;
-}
-
-/**
- * Decrypted channel config as stored in the database.
- */
-export interface DecryptedChannelConfig {
-	channelId: string;
-	channelType: NotificationChannelType;
-	config: Record<string, unknown>;
 }
 
 /**

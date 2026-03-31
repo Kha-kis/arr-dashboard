@@ -39,11 +39,6 @@ export type DeploymentPreviewResponse = {
 	data: DeploymentPreview;
 };
 
-export type DeploymentPreviewRequest = {
-	templateId: string;
-	instanceId: string;
-};
-
 // ============================================================================
 // Instance Override Types
 // ============================================================================
@@ -51,12 +46,6 @@ export type DeploymentPreviewRequest = {
 export type InstanceOverrides = {
 	scoreOverrides?: Record<string, number>;
 	cfOverrides?: Record<string, { enabled: boolean }>;
-};
-
-export type InstanceOverridesResponse = {
-	templateId: string;
-	instanceId: string;
-	overrides: InstanceOverrides;
 };
 
 export type UpdateInstanceOverridesPayload = {

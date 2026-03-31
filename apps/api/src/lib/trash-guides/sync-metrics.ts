@@ -259,11 +259,3 @@ export function getSyncMetrics(): SyncMetricsService {
 	return metricsInstance;
 }
 
-/**
- * Reset the metrics service (primarily for testing).
- */
-export function resetSyncMetrics(): void {
-	if (metricsInstance) {
-		metricsInstance.reset();
-	}
-}

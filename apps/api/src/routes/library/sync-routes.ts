@@ -158,4 +158,3 @@ export const registerSyncRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	done();
 };
 
-export default registerSyncRoutes;

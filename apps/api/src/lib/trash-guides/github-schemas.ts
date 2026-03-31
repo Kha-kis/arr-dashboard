@@ -171,8 +171,6 @@ export const arrNamingConfigSchema = z.looseObject({
 	seasonFolderFormat: z.string().optional(),
 });
 
-export type ArrNamingConfig = z.infer<typeof arrNamingConfigSchema>;
-
 // ============================================================================
 // Quality Profile Schema (quality-profiles/*.json)
 // ============================================================================

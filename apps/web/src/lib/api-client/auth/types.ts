@@ -1,4 +1,4 @@
-import type { CurrentUser, PasswordPolicy, OIDCProvider as SharedOIDCProvider } from "@arr/shared";
+import type { CurrentUser, PasswordPolicy } from "@arr/shared";
 
 // Re-export shared types for convenience
 export type { PasswordPolicy, CurrentUser };
@@ -30,8 +30,6 @@ export interface RemovePasswordResponse {
 }
 
 // ==================== OIDC Authentication ====================
-
-export type OIDCProvider = SharedOIDCProvider;
 
 export interface OIDCProviderResponse {
 	provider: { displayName: string; enabled: boolean } | null;

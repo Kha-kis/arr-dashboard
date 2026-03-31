@@ -25,12 +25,6 @@ export type ManualImportSelection = {
 	rejected?: boolean;
 };
 
-export type ManualImportState = {
-	selections: ManualImportSelection[];
-	rejectedFiles: string[];
-	lastError?: string;
-};
-
 export type ManualImportResult = {
 	status: "success";
 	imported: number;
@@ -45,12 +39,6 @@ export type ManualImportModalProps = {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	onCompleted?: (result: ManualImportResult) => void;
-};
-
-export type ManualImportCandidateRow = {
-	candidate: ManualImportCandidateUnion;
-	rejected: boolean;
-	rejectionReason?: string;
 };
 
 export type {

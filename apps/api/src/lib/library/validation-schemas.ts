@@ -32,4 +32,3 @@ export const libraryQuerySchema = z.object({
 	sortOrder: z.enum(["asc", "desc"]).default("asc"),
 });
 
-export type LibraryQuery = z.infer<typeof libraryQuerySchema>;

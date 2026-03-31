@@ -20,10 +20,6 @@ export async function getOIDCProvider(): Promise<OIDCProviderResponse> {
 	});
 }
 
-/**
- * @deprecated Use getOIDCProvider instead - renamed to reflect single-provider semantics
- */
-export const getOIDCProviders = getOIDCProvider;
 
 /**
  * Create a new OIDC provider (admin only)

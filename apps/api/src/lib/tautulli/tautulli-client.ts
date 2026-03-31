@@ -27,14 +27,6 @@ import {
 // Response Types
 // ============================================================================
 
-export interface TautulliResponse<T> {
-	response: {
-		result: "success" | "error";
-		message: string | null;
-		data: T;
-	};
-}
-
 export interface TautulliHistoryData {
 	data: TautulliHistoryItem[];
 	recordsFiltered: number;

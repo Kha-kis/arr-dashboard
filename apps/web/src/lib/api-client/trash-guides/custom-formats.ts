@@ -40,33 +40,12 @@ export interface CFDescriptionsListResponse {
 	sonarr?: CFDescription[];
 }
 
-export interface CFInclude {
-	path: string;
-	content: string;
-	fetchedAt: string;
-}
-
-export interface CFIncludesListResponse {
-	data: CFInclude[];
-}
-
-export interface DeployCustomFormatRequest {
-	trashId: string;
-	instanceId: string;
-	serviceType: "RADARR" | "SONARR";
-}
-
 export interface DeployMultipleCustomFormatsRequest {
 	trashIds: string[];
 	instanceId: string;
 	serviceType: "RADARR" | "SONARR";
 }
 
-export interface DeployCustomFormatResponse {
-	success: boolean;
-	action: "created" | "updated";
-	customFormat: any;
-}
 
 export interface DeployMultipleCustomFormatsResponse {
 	success: boolean;
@@ -183,29 +162,6 @@ export async function fetchCFDescriptionsList(
 }
 
 /**
- * Fetch all CF include files from TRaSH Guides cache.
- * These are MkDocs snippets referenced by CF descriptions using --8<-- syntax.
- */
-export async function fetchCFIncludesList(): Promise<CFInclude[]> {
-	const response = await apiRequest<CFIncludesListResponse>(
-		`/api/trash-guides/cache/cf-includes/list`,
-	);
-	return response.data || [];
-}
-
-/**
- * Deploy a single custom format to an instance
- */
-export async function deployCustomFormat(
-	request: DeployCustomFormatRequest,
-): Promise<DeployCustomFormatResponse> {
-	return await apiRequest<DeployCustomFormatResponse>("/api/trash-guides/custom-formats/deploy", {
-		method: "POST",
-		json: request,
-	});
-}
-
-/**
  * Deploy multiple custom formats to an instance
  */
 export async function deployMultipleCustomFormats(
@@ -244,18 +200,6 @@ export async function createUserCustomFormat(
 	});
 }
 
-/**
- * Update a user custom format
- */
-export async function updateUserCustomFormat(
-	id: string,
-	request: Partial<CreateUserCFRequest>,
-): Promise<{ success: boolean; customFormat: UserCustomFormat }> {
-	return await apiRequest(`/api/trash-guides/user-custom-formats/${id}`, {
-		method: "PUT",
-		json: request,
-	});
-}
 
 /**
  * Delete a user custom format

@@ -64,10 +64,6 @@ export const MIN_HOURLY_API_CAP = 10;
  */
 export const MAX_HOURLY_API_CAP = 500;
 
-/**
- * Default hourly API cap for new configs
- */
-export const DEFAULT_HOURLY_API_CAP = 100;
 
 /**
  * Delay between individual search commands within a hunt (30 seconds)
@@ -83,32 +79,9 @@ export const SEARCH_DELAY_MS = 30_000;
  */
 export const MAX_QUEUE_THRESHOLD = 100;
 
-/**
- * Default queue threshold for new configs
- */
-export const DEFAULT_QUEUE_THRESHOLD = 25;
 
 // === DEFAULT INTERVALS ===
 
-/**
- * Default interval for missing hunts (60 minutes / 1 hour)
- */
-export const DEFAULT_MISSING_INTERVAL_MINS = 60;
-
-/**
- * Default interval for upgrade hunts (120 minutes / 2 hours)
- */
-export const DEFAULT_UPGRADE_INTERVAL_MINS = 120;
-
-/**
- * Default batch size for missing hunts
- */
-export const DEFAULT_MISSING_BATCH_SIZE = 5;
-
-/**
- * Default batch size for upgrade hunts
- */
-export const DEFAULT_UPGRADE_BATCH_SIZE = 3;
 
 // === SONARR SEARCH OPTIMIZATION ===
 
@@ -121,17 +94,6 @@ export const SEASON_SEARCH_THRESHOLD = 3;
 
 // === SEARCH HISTORY / RE-SEARCH SETTINGS ===
 
-/**
- * Default number of days before an item can be re-searched.
- * This prevents repeatedly searching for content that may not be available.
- */
-export const DEFAULT_RESEARCH_AFTER_DAYS = 7;
-
-/**
- * Minimum re-search interval (1 day)
- * Setting this too low defeats the purpose of tracking.
- */
-export const MIN_RESEARCH_AFTER_DAYS = 1;
 
 /**
  * Maximum re-search interval (90 days)
@@ -167,10 +129,3 @@ export const GRAB_CHECK_DELAY_MS = 10_000;
  */
 export const MAX_HUNT_DURATION_MS = 10 * 60 * 1000;
 
-/**
- * Interval for updating hunt progress in the database during execution.
- * This allows monitoring long-running hunts and detecting stuck ones.
- *
- * Default: 30 seconds
- */
-export const HUNT_PROGRESS_UPDATE_INTERVAL_MS = 30_000;

@@ -27,26 +27,9 @@ import {
 	ProfileMatchBanner,
 	ResolutionStatistics,
 } from "./cf-resolution-panels";
+import type { CFResolutionDecision, ResolvedCF } from "./cf-configuration-types";
 
-/**
- * User's decision for a matched CF
- */
-export type CFResolutionDecision = "use_trash" | "keep_instance";
-
-/**
- * Resolved CF data to be passed forward
- */
-export interface ResolvedCF {
-	instanceCFId: number;
-	instanceCFName: string;
-	decision: CFResolutionDecision;
-	/** If decision is use_trash, this contains the TRaSH CF trash_id */
-	trashId?: string;
-	/** Recommended score from TRaSH if applicable */
-	recommendedScore?: number;
-	/** Original instance score */
-	instanceScore?: number;
-}
+export type { CFResolutionDecision, ResolvedCF };
 
 interface CFResolutionProps {
 	serviceType: "RADARR" | "SONARR";

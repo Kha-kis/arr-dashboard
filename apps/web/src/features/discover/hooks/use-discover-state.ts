@@ -6,14 +6,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 export type DiscoverMediaType = "movie" | "tv";
 export type SearchSortOption = "popularity" | "rating" | "release_date";
 
-export interface DiscoverState {
-	mediaType: DiscoverMediaType;
-	searchInput: string;
-	debouncedQuery: string;
-	selectedItem: SeerrDiscoverResult | null;
-	requestItem: SeerrDiscoverResult | null;
-}
-
 export function useDiscoverState() {
 	const [mediaType, setMediaType] = useState<DiscoverMediaType>("movie");
 	const [searchInput, setSearchInput] = useState("");

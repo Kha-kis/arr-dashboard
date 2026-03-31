@@ -12,7 +12,7 @@ import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
 import { cn } from "../../../lib/utils";
 import { buildKey, collectStatusLines } from "../lib/queue-utils";
-import type { InstanceUrlMap } from "./dashboard-client";
+import type { InstanceUrlMap } from "../types";
 import type { QueueAction } from "./queue-action-buttons";
 import { QueueActionButtons } from "./queue-action-buttons";
 import type { IssueSummary } from "./queue-issue-badge";

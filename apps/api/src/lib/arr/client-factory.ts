@@ -33,11 +33,6 @@ export { ArrError, NotFoundError, UnauthorizedError, ValidationError, TimeoutErr
 // ============================================================================
 
 /**
- * Service types that have ARR SDK clients (excludes Seerr)
- */
-export type ArrServiceType = Exclude<ServiceType, "SEERR" | "TAUTULLI" | "PLEX">;
-
-/**
  * Union type of all ARR SDK clients
  */
 export type ArrClient = SonarrClient | RadarrClient | ProwlarrClient | LidarrClient | ReadarrClient;
@@ -324,34 +319,6 @@ export function isArrError(error: unknown): error is ArrError {
  */
 export function isNotFoundError(error: unknown): error is NotFoundError {
 	return error instanceof NotFoundError;
-}
-
-/**
- * Type guard for unauthorized errors (401)
- */
-export function isUnauthorizedError(error: unknown): error is UnauthorizedError {
-	return error instanceof UnauthorizedError;
-}
-
-/**
- * Type guard for validation errors (400)
- */
-export function isValidationError(error: unknown): error is ValidationError {
-	return error instanceof ValidationError;
-}
-
-/**
- * Type guard for timeout errors
- */
-export function isTimeoutError(error: unknown): error is TimeoutError {
-	return error instanceof TimeoutError;
-}
-
-/**
- * Type guard for network errors
- */
-export function isNetworkError(error: unknown): error is NetworkError {
-	return error instanceof NetworkError;
 }
 
 /**

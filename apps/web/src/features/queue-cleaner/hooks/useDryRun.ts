@@ -1,13 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "../../../lib/api-client/base";
 import { queueCleanerKeys } from "../../../lib/query-keys";
-import type { CleanerResult, EnhancedPreviewResult } from "../lib/queue-cleaner-types";
-
-async function runDryRun(instanceId: string): Promise<CleanerResult> {
-	return apiRequest<CleanerResult>(`/api/queue-cleaner/dry-run/${instanceId}`, {
-		method: "POST",
-	});
-}
+import type { EnhancedPreviewResult } from "../lib/queue-cleaner-types";
 
 async function runEnhancedPreview(instanceId: string): Promise<EnhancedPreviewResult> {
 	return apiRequest<EnhancedPreviewResult>(`/api/queue-cleaner/preview/${instanceId}`, {
@@ -22,20 +16,6 @@ async function triggerClean(instanceId: string): Promise<{ triggered: boolean; m
 			method: "POST",
 		},
 	);
-}
-
-export function useDryRun() {
-	const mutation = useMutation({
-		mutationFn: (instanceId: string) => runDryRun(instanceId),
-	});
-
-	return {
-		runDryRun: (instanceId: string) => mutation.mutateAsync(instanceId),
-		result: mutation.data ?? null,
-		isRunning: mutation.isPending,
-		error: mutation.error,
-		reset: mutation.reset,
-	};
 }
 
 export function useEnhancedPreview() {

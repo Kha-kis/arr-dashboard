@@ -104,12 +104,6 @@ export function getLinuxInstanceName(value: string): string {
 	return "Instance";
 }
 
-// Blur IP addresses
-export function getLinuxIpAddress(ip: string): string {
-	if (ip === "127.0.0.1" || ip === "localhost" || ip === "::1") return ip;
-	return "192.168.1.100";
-}
-
 // Generic API URL
 export function getLinuxUrl(_url: string): string {
 	return "http://localhost";

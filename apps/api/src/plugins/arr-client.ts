@@ -20,4 +20,3 @@ export const arrClientPlugin = fp(
 	},
 );
 
-export default arrClientPlugin;

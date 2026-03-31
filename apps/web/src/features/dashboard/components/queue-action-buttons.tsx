@@ -228,4 +228,4 @@ export const QueueActionButtons = ({
 	);
 };
 
-export { RemoveActionMenu, REMOVE_OPTIONS as REMOVE_ACTION_OPTIONS };
+export { RemoveActionMenu };

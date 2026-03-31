@@ -169,7 +169,6 @@ export type {
 	// History types
 	DeploymentHistoryEntry,
 	DeploymentHistoryResponse,
-	DeploymentPreviewRequest,
 	// Preview types
 	DeploymentPreviewResponse,
 	// Execution types
@@ -184,7 +183,6 @@ export type {
 	GetInstanceOverridesResponse,
 	// Override types
 	InstanceOverrides,
-	InstanceOverridesResponse,
 	TemplateInstanceOverride,
 	UndeployResponse,
 	// Unlink types
@@ -228,13 +226,9 @@ export {
 export type {
 	CFDescription,
 	CFDescriptionsListResponse,
-	CFInclude,
-	CFIncludesListResponse,
 	CreateUserCFRequest,
 	CustomFormat,
 	CustomFormatsListResponse,
-	DeployCustomFormatRequest,
-	DeployCustomFormatResponse,
 	DeployMultipleCustomFormatsRequest,
 	DeployMultipleCustomFormatsResponse,
 	DeployUserCFsRequest,
@@ -247,16 +241,13 @@ export type {
 export {
 	createUserCustomFormat,
 	deleteUserCustomFormat,
-	deployCustomFormat,
 	deployMultipleCustomFormats,
 	deployUserCustomFormats,
 	fetchCFDescriptionsList,
-	fetchCFIncludesList,
 	fetchCustomFormatsList,
 	fetchUserCustomFormats,
 	importUserCFsFromInstance,
 	importUserCFsFromJson,
-	updateUserCustomFormat,
 } from "./custom-formats";
 
 // ============================================================================

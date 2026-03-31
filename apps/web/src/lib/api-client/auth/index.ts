@@ -18,7 +18,6 @@ export type {
 	CurrentUser,
 	DeviceType,
 	OIDCLoginResponse,
-	OIDCProvider,
 	OIDCProviderResponse,
 	PasskeyCredential,
 	PasskeyCredentialsResponse,
