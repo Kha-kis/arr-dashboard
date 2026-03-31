@@ -81,11 +81,13 @@ const getQualityLabel = (quality: SearchResult["quality"]): string | null => {
 	if (!quality || typeof quality !== "object") {
 		return null;
 	}
-	const maybeNested = (quality as any).quality;
+	const record = quality as Record<string, unknown>;
+	const maybeNested = record.quality;
 	if (maybeNested && typeof maybeNested === "object") {
-		const name = typeof maybeNested.name === "string" ? maybeNested.name : undefined;
+		const nested = maybeNested as Record<string, unknown>;
+		const name = typeof nested.name === "string" ? nested.name : undefined;
 		const resolution =
-			typeof maybeNested.resolution === "number" ? maybeNested.resolution : undefined;
+			typeof nested.resolution === "number" ? nested.resolution : undefined;
 		if (name || resolution) {
 			if (name && resolution && !name.includes(`${resolution}p`)) {
 				return `${name} ${resolution}p`;
@@ -96,7 +98,7 @@ const getQualityLabel = (quality: SearchResult["quality"]): string | null => {
 			return `${resolution}p`;
 		}
 	}
-	const name = (quality as any).name;
+	const name = record.name;
 	return typeof name === "string" ? name : null;
 };
 

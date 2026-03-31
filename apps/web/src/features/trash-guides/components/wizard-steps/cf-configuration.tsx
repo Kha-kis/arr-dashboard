@@ -36,19 +36,11 @@ import { CFConfigurationCloned } from "./cf-configuration-cloned";
 import { CFConfigurationEdit } from "./cf-configuration-edit";
 import type { CFSelectionState, ConditionEditorTarget } from "./cf-configuration-types";
 import type { ResolvedCF } from "./cf-resolution";
+import type {
+	WizardEditingTemplate,
+	ResolveScoreFn,
+} from "../../types/wizard-types";
 
-interface CustomFormatItem {
-	displayName?: string;
-	name: string;
-	description?: string;
-	trash_id?: string;
-	[key: string]: unknown;
-}
-
-interface CFGroup {
-	customFormats: CustomFormatItem[];
-	[key: string]: unknown;
-}
 
 /**
  * Wizard-specific profile type that allows undefined trashId for edit mode.
@@ -65,7 +57,7 @@ interface CFConfigurationProps {
 	onNext: (selections: Record<string, CFSelectionState>) => void;
 	onBack?: () => void; // Optional - undefined means hide back button
 	isEditMode?: boolean; // Edit mode flag to skip API call
-	editingTemplate?: any; // Template being edited (contains all CF data)
+	editingTemplate?: WizardEditingTemplate; // Template being edited (contains all CF data)
 	cfResolutions?: ResolvedCF[]; // CF resolutions from cf-resolution step (for cloned profiles)
 }
 
@@ -110,7 +102,7 @@ export const CFConfiguration = ({
 			return;
 		}
 
-		const newSelections: Record<string, any> = {};
+		const newSelections: Record<string, CFSelectionState> = {};
 
 		for (const resolution of cfResolutions) {
 			// Use trashId if linked to TRaSH, otherwise use instance CF name as key
@@ -141,7 +133,7 @@ export const CFConfiguration = ({
 
 		const cfGroups = data.cfGroups || [];
 		const mandatoryCFs = data.mandatoryCFs || [];
-		const newSelections: Record<string, any> = {};
+		const newSelections: Record<string, CFSelectionState> = {};
 
 		// Add mandatory CFs (always selected)
 		for (const cf of mandatoryCFs) {
@@ -210,7 +202,7 @@ export const CFConfiguration = ({
 		}));
 	};
 
-	const selectAllInGroup = (groupCFs: any[]) => {
+	const selectAllInGroup = (groupCFs: Array<{ trash_id: string; required?: boolean }>) => {
 		setSelections((prev) => {
 			const updated = { ...prev };
 			for (const cf of groupCFs) {
@@ -227,7 +219,7 @@ export const CFConfiguration = ({
 		});
 	};
 
-	const deselectAllInGroup = (groupCFs: any[]) => {
+	const deselectAllInGroup = (groupCFs: Array<{ trash_id: string; required?: boolean }>) => {
 		setSelections((prev) => {
 			const updated = { ...prev };
 			for (const cf of groupCFs) {
@@ -414,24 +406,36 @@ export const CFConfiguration = ({
 
 	// Helper to resolve score from trash_scores using profile's score set
 	// Priority: trash_scores[scoreSet] → trash_scores.default → fallback → 0
-	const resolveScore = (cf: any, fallback?: number): number => {
-		const trashScores = cf.originalConfig?.trash_scores ?? cf.trash_scores;
+	const resolveScore: ResolveScoreFn = (cf, fallback?) => {
+		const cfRecord = cf as Record<string, unknown>;
+		const originalConfig = cfRecord.originalConfig as Record<string, unknown> | undefined;
+		const trashScores = (originalConfig?.trash_scores ?? cfRecord.trash_scores) as Record<string, number> | undefined;
 		return trashScores?.[scoreSet] ?? trashScores?.default ?? fallback ?? 0;
 	};
 
-	const groupedCFs = cfGroups.map((group: any) => {
+	const groupedCFs = cfGroups.map((group) => {
 		const cfs = Array.isArray(group.custom_formats) ? group.custom_formats : [];
 		return {
 			...group,
-			customFormats: cfs.map((cf: any) => ({
-				trash_id: cf.trash_id,
-				name: cf.name,
-				displayName: cf.displayName || cf.name,
-				description: cf.description,
-				score: resolveScore(cf, cf.score),
-				isRequired: cf.required === true,
-				source: cf.source,
-			})),
+			customFormats: cfs
+				.filter((cf): cf is Exclude<typeof cf, string> => typeof cf !== "string")
+				.map((cf) => {
+					const cfRecord = cf as Record<string, unknown>;
+					return {
+						trash_id: cf.trash_id,
+						name: cf.name,
+						displayName: cf.name,
+						description: undefined as string | undefined,
+						score: resolveScore(cfRecord, 0),
+						isRequired: cf.required === true,
+						required: cf.required,
+						default: cf.default,
+						defaultChecked: cf.defaultChecked,
+						source: undefined as string | undefined,
+						includeCustomFormatWhenRenaming: cfRecord.includeCustomFormatWhenRenaming as boolean | undefined,
+						specifications: cfRecord.specifications as unknown[] | undefined,
+					};
+				}),
 		};
 	});
 
@@ -439,21 +443,21 @@ export const CFConfiguration = ({
 	const searchLower = searchQuery.toLowerCase().trim();
 	const filteredGroupedCFs = searchLower
 		? groupedCFs
-				.map((group: CFGroup) => ({
+				.map((group) => ({
 					...group,
 					customFormats: group.customFormats.filter(
-						(cf: CustomFormatItem) =>
+						(cf) =>
 							(cf.displayName?.toLowerCase().includes(searchLower) ?? false) ||
 							cf.name.toLowerCase().includes(searchLower) ||
 							(cf.description?.toLowerCase().includes(searchLower) ?? false),
 					),
 				}))
-				.filter((group: CFGroup) => group.customFormats.length > 0)
+				.filter((group) => group.customFormats.length > 0)
 		: groupedCFs;
 
 	const filteredMandatoryCFs = searchLower
 		? mandatoryCFs.filter(
-				(cf: CustomFormatItem) =>
+				(cf) =>
 					(cf.displayName?.toLowerCase().includes(searchLower) ?? false) ||
 					cf.name.toLowerCase().includes(searchLower) ||
 					cf.description?.toLowerCase().includes(searchLower),
@@ -529,7 +533,7 @@ export const CFConfiguration = ({
 							Found{" "}
 							{filteredMandatoryCFs.length +
 								filteredGroupedCFs.reduce(
-									(acc: number, g: CFGroup) => acc + g.customFormats.length,
+									(acc, g) => acc + g.customFormats.length,
 									0,
 								)}{" "}
 							custom formats matching &quot;{searchQuery}&quot;
@@ -594,7 +598,7 @@ export const CFConfiguration = ({
 					</CardHeader>
 					<CardContent>
 						<div className="space-y-2">
-							{filteredMandatoryCFs.map((cf: any) => {
+							{filteredMandatoryCFs.map((cf) => {
 								const isSelected = selections[cf.trash_id]?.selected ?? true;
 								const scoreOverride = selections[cf.trash_id]?.scoreOverride;
 								const displayScore = resolveScore(cf, cf.defaultScore ?? cf.score);
@@ -714,10 +718,10 @@ export const CFConfiguration = ({
 						</span>
 					</div>
 
-					{filteredGroupedCFs.map((group: any) => {
+					{filteredGroupedCFs.map((group) => {
 						const groupCFs = group.customFormats || [];
 						const selectedInGroup = groupCFs.filter(
-							(cf: any) => selections[cf.trash_id]?.selected,
+							(cf) => selections[cf.trash_id]?.selected,
 						).length;
 						const isGroupDefault =
 							group.default === true || group.default === "true" || group.defaultEnabled === true;
@@ -833,7 +837,7 @@ export const CFConfiguration = ({
 
 								<CardContent>
 									<div className="space-y-2">
-										{groupCFs.map((cf: any) => {
+										{groupCFs.map((cf) => {
 											const isSelected = selections[cf.trash_id]?.selected ?? false;
 											const scoreOverride = selections[cf.trash_id]?.scoreOverride;
 											const isCFRequired = cf.required === true;
@@ -963,16 +967,16 @@ export const CFConfiguration = ({
 			)}
 
 			{/* Additional Custom Formats - Selected from Browse */}
-			<AdditionalCFSection
+			{data && <AdditionalCFSection
 				data={data}
 				selections={selections}
 				onToggleCF={(trashId) => toggleCF(trashId)}
 				onUpdateSelection={updateSelection}
 				resolveScore={resolveScore}
-			/>
+			/>}
 
 			{/* Browse All Custom Formats */}
-			<BrowseCFCatalog
+			{data && <BrowseCFCatalog
 				data={data}
 				selections={selections}
 				onToggleCF={(trashId) => toggleCF(trashId)}
@@ -981,7 +985,7 @@ export const CFConfiguration = ({
 				searchQuery={searchQuery}
 				isClonedProfile={isClonedProfile}
 				themeGradient={themeGradient}
-			/>
+			/>}
 
 			{/* Navigation */}
 			<div

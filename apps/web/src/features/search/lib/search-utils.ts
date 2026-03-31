@@ -233,7 +233,7 @@ const isStackTrace = (text: string): boolean => {
 export const deriveGrabErrorMessage = (error: unknown): string => {
 	// Check if it's an ApiError with payload
 	if (error && typeof error === "object" && "payload" in error) {
-		const payload = (error as any).payload;
+		const payload = (error as Record<string, unknown>).payload;
 
 		if (payload && typeof payload === "object") {
 			const record = payload as Record<string, unknown>;
@@ -269,9 +269,10 @@ export const deriveGrabErrorMessage = (error: unknown): string => {
 			return friendly ?? payload.trim();
 		}
 
-		if ("message" in error && typeof (error as any).message === "string") {
-			const friendly = interpretGrabError((error as any).message);
-			return friendly ?? (error as any).message;
+		if ("message" in error && typeof (error as Record<string, unknown>).message === "string") {
+			const msg = (error as Record<string, unknown>).message as string;
+			const friendly = interpretGrabError(msg);
+			return friendly ?? msg;
 		}
 	}
 

@@ -137,16 +137,19 @@ export function useBulkUpdateScores() {
 					.map((r) => r.error?.message || "Unknown error")
 					.join(", ");
 
-				const error = new Error(
-					`Failed to update ${failureCount} quality profile(s): ${errorMessages}`,
+				const error = Object.assign(
+					new Error(
+						`Failed to update ${failureCount} quality profile(s): ${errorMessages}`,
+					),
+					{
+						results: {
+							totalProfiles: entries.length,
+							successCount,
+							failureCount,
+							results,
+						},
+					},
 				);
-				// Attach results to the error for access in onError
-				(error as any).results = {
-					totalProfiles: entries.length,
-					successCount,
-					failureCount,
-					results,
-				};
 				throw error;
 			}
 

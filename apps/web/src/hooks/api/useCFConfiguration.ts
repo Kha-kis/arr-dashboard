@@ -1,6 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../../lib/api-client/base";
 import type { QualityProfileSummary } from "../../lib/api-client/trash-guides";
+import type {
+	WizardAvailableFormat,
+	WizardCFConfigurationResult,
+	WizardCFGroup,
+	WizardCustomFormat,
+	WizardQualityItem,
+} from "../../features/trash-guides/types/wizard-types";
 
 /**
  * Wizard-specific profile type that allows undefined trashId for edit mode.
@@ -14,7 +21,7 @@ interface UseCFConfigurationOptions {
 	serviceType: "RADARR" | "SONARR";
 	qualityProfile: WizardSelectedProfile;
 	isEditMode?: boolean;
-	editingTemplate?: any;
+	editingTemplate?: { id: string; config: Record<string, unknown>; [key: string]: unknown };
 }
 
 /**
@@ -216,11 +223,11 @@ async function fetchCFDescriptionMap(serviceType: string): Promise<{
 	const bySlug = new Map<string, DescEntry>();
 	const byDisplayName = new Map<string, DescEntry>();
 	try {
-		const res = await apiRequest<any>(
+		const res = await apiRequest<Record<string, Array<{ cfName: string; description: string; displayName?: string }>>>(
 			`/api/trash-guides/cache/cf-descriptions/list?serviceType=${serviceType}`,
 		);
 		const serviceKey = serviceType.toLowerCase();
-		const descriptions: any[] = res?.[serviceKey] || [];
+		const descriptions = res?.[serviceKey] || [];
 		for (const desc of descriptions) {
 			if (desc.cfName && desc.description) {
 				const entry: DescEntry = {
@@ -256,10 +263,10 @@ function cfNameToSlug(name: string): string {
  * Mirrors the 4-strategy approach from custom-formats-browser.tsx.
  */
 function enrichWithDescription(
-	cf: any,
+	cf: { name?: string; originalConfig?: Record<string, unknown>; trash_description?: string; description?: string; displayName?: string },
 	descMaps: { bySlug: Map<string, DescEntry>; byDisplayName: Map<string, DescEntry> },
 ): { description: string; displayName: string } {
-	const name = cf.name || cf.originalConfig?.name || "";
+	const name = cf.name || (cf.originalConfig?.name as string) || "";
 	const slug = cfNameToSlug(name);
 	const nameLower = name.toLowerCase();
 
@@ -293,30 +300,35 @@ function enrichWithDescription(
 	};
 }
 
-async function fetchEditModeData(serviceType: string, editingTemplate: any) {
-	const templateCFs = editingTemplate.config.customFormats || [];
-	const templateCFGroups = editingTemplate.config.customFormatGroups || [];
+async function fetchEditModeData(
+	serviceType: string,
+	editingTemplate: { config: Record<string, unknown>; [key: string]: unknown },
+): Promise<WizardCFConfigurationResult> {
+	const config = editingTemplate.config;
+	const templateCFs = (config.customFormats as Array<Record<string, unknown>>) || [];
+	const templateCFGroups = (config.customFormatGroups as Array<Record<string, unknown>>) || [];
 
 	// Fetch description map for enrichment
 	const descMap = await fetchCFDescriptionMap(serviceType);
 
 	// Extract custom formats from template's originalConfig
-	const mandatoryCFs = templateCFs.map((cf: any) => {
-		const trashScores = cf.originalConfig?.trash_scores || {};
+	const mandatoryCFs: WizardCustomFormat[] = templateCFs.map((cf) => {
+		const oc = (cf.originalConfig as Record<string, unknown>) || {};
+		const trashScores = (oc.trash_scores as Record<string, number>) || {};
 		const defaultScore = trashScores.default || 0;
-		const cfName = cf.originalConfig?.name || cf.name;
-		const enriched = enrichWithDescription({ name: cfName, ...cf }, descMap);
+		const cfName = (oc.name as string) || (cf.name as string) || "";
+		const enriched = enrichWithDescription({ name: cfName }, descMap);
 
 		return {
-			trash_id: cf.trashId,
+			trash_id: (cf.trashId as string) || "",
 			name: cfName,
 			displayName: enriched.displayName,
 			description: enriched.description,
 			defaultScore,
-			scoreOverride: cf.scoreOverride,
+			scoreOverride: cf.scoreOverride as number | undefined,
 			source: "template" as const,
 			locked: false,
-			originalConfig: cf.originalConfig,
+			originalConfig: cf.originalConfig as Record<string, unknown>,
 		};
 	});
 
@@ -324,14 +336,17 @@ async function fetchEditModeData(serviceType: string, editingTemplate: any) {
 	const availableFormats = await fetchAvailableFormats(serviceType, descMap);
 
 	// Map CF Groups
-	const cfGroups = templateCFGroups.map((cfGroup: any) => ({
-		trash_id: cfGroup.trashId,
-		name: cfGroup.originalConfig?.name || cfGroup.name,
-		trash_description: cfGroup.originalConfig?.trash_description || "",
-		custom_formats: cfGroup.originalConfig?.custom_formats || [],
-		default: cfGroup.originalConfig?.default,
-		quality_profiles: cfGroup.originalConfig?.quality_profiles,
-	}));
+	const cfGroups: WizardCFGroup[] = templateCFGroups.map((cfGroup) => {
+		const oc = (cfGroup.originalConfig as Record<string, unknown>) || {};
+		return {
+			trash_id: (cfGroup.trashId as string) || "",
+			name: (oc.name as string) || (cfGroup.name as string) || "",
+			trash_description: (oc.trash_description as string) || "",
+			custom_formats: (oc.custom_formats as WizardCFGroup["custom_formats"]) || [],
+			default: oc.default as string | boolean | undefined,
+			quality_profiles: oc.quality_profiles as WizardCFGroup["quality_profiles"],
+		};
+	});
 
 	// In edit mode, provide default quality items from service type
 	// This allows users to configure qualities even if the template was created
@@ -363,10 +378,39 @@ async function fetchClonedProfileData(trashId: string) {
 
 	const { instanceId, profileId } = parsedId;
 
+	// Instance CF shape from the profile clone endpoint
+	interface InstanceCF {
+		trash_id: string;
+		name: string;
+		score?: number;
+		specifications?: unknown[];
+		includeCustomFormatWhenRenaming?: boolean;
+	}
+
+	interface InstanceProfile {
+		name: string;
+		upgradeAllowed?: boolean;
+		cutoff?: number;
+		minFormatScore?: number;
+		items?: Array<{
+			name?: string;
+			allowed?: boolean;
+			quality?: { name?: string; source?: string; resolution?: number };
+			items?: Array<string | { name?: string; quality?: { name?: string } }>;
+		}>;
+	}
+
 	// Fetch profile details from the source instance
-	const response = await apiRequest<any>(
-		`/api/trash-guides/profile-clone/profile-details/${instanceId}/${profileId}`,
-	);
+	const response = await apiRequest<{
+		success: boolean;
+		error?: string;
+		data?: {
+			profile: InstanceProfile;
+			customFormats: InstanceCF[];
+			allCustomFormats: InstanceCF[];
+			serviceType?: string;
+		};
+	}>(`/api/trash-guides/profile-clone/profile-details/${instanceId}/${profileId}`);
 
 	if (!response.success || !response.data) {
 		throw new Error(response.error || "Failed to fetch profile details from instance");
@@ -380,7 +424,7 @@ async function fetchClonedProfileData(trashId: string) {
 	const descMap = await fetchCFDescriptionMap(instanceServiceType);
 
 	// Convert instance CFs to the format expected by the wizard
-	const mandatoryCFs = customFormats.map((cf: any) => {
+	const mandatoryCFs: WizardCustomFormat[] = customFormats.map((cf) => {
 		const enriched = enrichWithDescription(cf, descMap);
 		return {
 			trash_id: cf.trash_id,
@@ -388,10 +432,10 @@ async function fetchClonedProfileData(trashId: string) {
 			displayName: enriched.displayName,
 			description: enriched.description,
 			score: cf.score,
-			defaultScore: cf.score,
+			defaultScore: cf.score ?? 0,
 			source: "instance" as const,
 			locked: false,
-			specifications: cf.specifications,
+			specifications: cf.specifications as WizardCustomFormat["specifications"],
 			originalConfig: {
 				name: cf.name,
 				specifications: cf.specifications,
@@ -401,14 +445,14 @@ async function fetchClonedProfileData(trashId: string) {
 	});
 
 	// All instance CFs as available formats
-	const availableFormats = allCustomFormats.map((cf: any) => {
+	const availableFormats: WizardAvailableFormat[] = allCustomFormats.map((cf) => {
 		const enriched = enrichWithDescription(cf, descMap);
 		return {
 			trash_id: cf.trash_id,
 			name: cf.name,
 			displayName: enriched.displayName,
 			description: enriched.description,
-			score: 0, // Instance CFs don't have TRaSH scores by default
+			score: 0,
 			originalConfig: {
 				name: cf.name,
 				specifications: cf.specifications,
@@ -418,14 +462,13 @@ async function fetchClonedProfileData(trashId: string) {
 	});
 
 	// Extract quality items from cloned profile
-	const qualityItems =
-		profile.items?.map((item: any) => ({
-			name: item.name || item.quality?.name,
+	const qualityItems: WizardQualityItem[] =
+		profile.items?.map((item) => ({
+			name: item.name || item.quality?.name || "",
 			allowed: item.allowed ?? true,
 			source: item.quality?.source,
 			resolution: item.quality?.resolution,
-			// Group items contain nested quality names
-			items: item.items?.map((q: any) => (typeof q === "string" ? q : q.name || q.quality?.name)),
+			items: item.items?.map((q) => (typeof q === "string" ? q : q.name || q.quality?.name || "")),
 		})) || [];
 
 	return {
@@ -448,25 +491,29 @@ async function fetchClonedProfileData(trashId: string) {
 	};
 }
 
-async function fetchNormalModeData(serviceType: string, trashId: string) {
-	const profileData = await apiRequest<any>(
+async function fetchNormalModeData(serviceType: string, trashId: string): Promise<WizardCFConfigurationResult> {
+	const profileData = await apiRequest<Record<string, unknown>>(
 		`/api/trash-guides/quality-profiles/${serviceType}/${trashId}`,
 	);
 
 	// Check for error response (quality profile route returns { statusCode, error, message } on error)
 	if (profileData.statusCode || profileData.error) {
 		throw new Error(
-			profileData.message || profileData.error || "Failed to fetch quality profile details",
+			((profileData.message || profileData.error) as string) || "Failed to fetch quality profile details",
 		);
 	}
 
 	const availableFormats = await fetchAvailableFormats(serviceType);
 
 	// Extract quality items from profile for QualityGroupEditor
-	const qualityItems = extractQualityItems(profileData.profile);
+	const qualityItems = extractQualityItems(
+		(profileData.profile as Record<string, unknown>) || {},
+	);
 
+	// The quality profile endpoint returns cfGroups, mandatoryCFs, stats, profile, etc.
+	// Spread them and add our computed fields
 	return {
-		...profileData,
+		...(profileData as WizardCFConfigurationResult),
 		availableFormats,
 		qualityItems,
 	};
@@ -476,34 +523,31 @@ async function fetchNormalModeData(serviceType: string, trashId: string) {
  * Extract quality items from TRaSH profile for QualityGroupEditor
  * TRaSH profiles have items array with quality definitions
  */
-function extractQualityItems(profile: any): Array<{
-	name: string;
-	allowed: boolean;
-	source?: string;
-	resolution?: number;
-	items?: string[];
-}> {
-	if (!profile?.items || !Array.isArray(profile.items)) {
+function extractQualityItems(profile: Record<string, unknown>): WizardQualityItem[] {
+	const items = profile?.items;
+	if (!items || !Array.isArray(items)) {
 		return [];
 	}
 
-	return profile.items.map((item: any) => ({
-		name: item.name,
-		allowed: item.allowed ?? true,
-		source: item.quality?.source,
-		resolution: item.quality?.resolution,
-		// If this is a group, it has nested items
-		items: item.items,
-	}));
+	return items.map((item: Record<string, unknown>) => {
+		const quality = item.quality as Record<string, unknown> | undefined;
+		return {
+			name: (item.name as string) || "",
+			allowed: (item.allowed as boolean) ?? true,
+			source: quality?.source as string | undefined,
+			resolution: quality?.resolution as number | undefined,
+			items: item.items as string[] | undefined,
+		};
+	});
 }
 
 async function fetchAvailableFormats(
 	serviceType: string,
 	existingDescMap?: { bySlug: Map<string, DescEntry>; byDisplayName: Map<string, DescEntry> },
 ) {
-	const customFormatsRes = await apiRequest<any>(
-		`/api/trash-guides/cache/entries?serviceType=${serviceType}&configType=CUSTOM_FORMATS`,
-	);
+	const customFormatsRes = await apiRequest<
+		Array<{ data?: Array<Record<string, unknown>> }> | { data?: Array<Record<string, unknown>> }
+	>(`/api/trash-guides/cache/entries?serviceType=${serviceType}&configType=CUSTOM_FORMATS`);
 
 	const customFormatsCacheEntry = Array.isArray(customFormatsRes)
 		? customFormatsRes[0]
@@ -517,11 +561,14 @@ async function fetchAvailableFormats(
 	// Note: We include originalConfig which contains trash_scores.
 	// The component resolves the actual score using the profile's scoreSet.
 	// No need to pre-compute 'score' here since it would only use default.
-	const trashFormats = allCustomFormats.map((cf: any) => {
-		const enriched = enrichWithDescription(cf, descMap);
+	const trashFormats: WizardAvailableFormat[] = allCustomFormats.map((cf) => {
+		const enriched = enrichWithDescription(
+			{ name: cf.name as string, trash_description: cf.trash_description as string },
+			descMap,
+		);
 		return {
-			trash_id: cf.trash_id,
-			name: cf.name,
+			trash_id: (cf.trash_id as string) || "",
+			name: (cf.name as string) || "",
 			displayName: enriched.displayName,
 			description: enriched.description,
 			originalConfig: cf,
@@ -530,12 +577,19 @@ async function fetchAvailableFormats(
 
 	// Also fetch user custom formats and merge them in
 	try {
-		const userCFsRes = await apiRequest<any>(
-			`/api/trash-guides/user-custom-formats?serviceType=${serviceType}`,
-		);
+		const userCFsRes = await apiRequest<{
+			customFormats?: Array<{
+				id: string;
+				name: string;
+				description?: string;
+				defaultScore?: number;
+				specifications?: unknown[];
+				includeCustomFormatWhenRenaming?: boolean;
+			}>;
+		}>(`/api/trash-guides/user-custom-formats?serviceType=${serviceType}`);
 		const userCFs = userCFsRes?.customFormats || [];
 
-		const userFormats = userCFs.map((cf: any) => ({
+		const userFormats: WizardAvailableFormat[] = userCFs.map((cf) => ({
 			trash_id: `user-${cf.id}`,
 			name: cf.name,
 			displayName: cf.name,

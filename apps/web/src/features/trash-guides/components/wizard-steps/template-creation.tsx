@@ -25,6 +25,48 @@ import {
 import { useThemeGradient } from "../../../../hooks/useThemeGradient";
 import { apiRequest } from "../../../../lib/api-client/base";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
+import type { WizardCFGroup } from "../../types/wizard-types";
+
+/** Response from profile details endpoints */
+interface ProfileDetailsResponse {
+	success?: boolean;
+	error?: string;
+	data?: {
+		profile?: {
+			upgradeAllowed?: boolean;
+			cutoff?: number;
+			minFormatScore?: number;
+			cutoffFormatScore?: number;
+			items?: unknown[];
+			language?: string;
+		};
+	};
+	profile?: {
+		upgradeAllowed?: boolean;
+		cutoff?: number;
+		minFormatScore?: number;
+		cutoffFormatScore?: number;
+		items?: unknown[];
+		language?: string;
+	};
+	cfGroups?: WizardCFGroup[];
+	mandatoryCFs?: Array<{ trash_id: string; [key: string]: unknown }>;
+	[key: string]: unknown;
+}
+
+/** Response shape for cache entries */
+interface CacheEntry {
+	configType: string;
+	data?: unknown[];
+	[key: string]: unknown;
+}
+
+/** Response shape for source profile data */
+interface SourceProfileResponse {
+	mandatoryCFs?: Array<{ trash_id: string; [key: string]: unknown }>;
+	cfGroups?: WizardCFGroup[];
+	[key: string]: unknown;
+}
 
 /**
  * Check if a trashId indicates a cloned profile from an instance
@@ -175,12 +217,12 @@ export const TemplateCreation = ({
 		queryFn: async () => {
 			if (isCloned && clonedProfileInfo) {
 				// Fetch from cloned profile endpoint
-				return await apiRequest<any>(
+				return await apiRequest<ProfileDetailsResponse>(
 					`/api/trash-guides/profile-clone/profile-details/${clonedProfileInfo.instanceId}/${clonedProfileInfo.profileId}`,
 				);
 			}
 			// Fetch from TRaSH Guides cache
-			return await apiRequest<any>(
+			return await apiRequest<ProfileDetailsResponse>(
 				`/api/trash-guides/quality-profiles/${serviceType}/${wizardState.selectedProfile.trashId}`,
 			);
 		},
@@ -194,11 +236,11 @@ export const TemplateCreation = ({
 		queryKey: ["cf-groups-cache", serviceType],
 		queryFn: async () => {
 			// API returns array directly, not wrapped in { entries: [...] }
-			const entries = await apiRequest<any[]>(
+			const entries = await apiRequest<CacheEntry[]>(
 				`/api/trash-guides/cache/entries?serviceType=${serviceType}`,
 			);
-			const cfGroupsEntry = entries?.find((e: any) => e.configType === "CF_GROUPS");
-			return cfGroupsEntry?.data || [];
+			const cfGroupsEntry = entries?.find((e) => e.configType === "CF_GROUPS");
+			return (cfGroupsEntry?.data as WizardCFGroup[] | undefined) || [];
 		},
 		// Fetch in edit mode to help categorize CFs
 		enabled: isEditMode,
@@ -211,7 +253,7 @@ export const TemplateCreation = ({
 	const { data: sourceProfileData } = useQuery({
 		queryKey: ["source-profile-data", serviceType, sourceProfileTrashId],
 		queryFn: async () => {
-			return await apiRequest<any>(
+			return await apiRequest<SourceProfileResponse>(
 				`/api/trash-guides/quality-profiles/${serviceType}/${sourceProfileTrashId}`,
 			);
 		},
@@ -236,25 +278,25 @@ export const TemplateCreation = ({
 
 		// Find all groups that contain at least one selected CF
 		// In edit mode, prefer cfGroupsCache from TRaSH cache for comprehensive group coverage
-		const cfGroupsForSubmit = isEditMode
+		const cfGroupsForSubmit: WizardCFGroup[] = isEditMode
 			? cfGroupsCache ||
 				editingTemplate?.config.customFormatGroups.map((g) => ({
 					trash_id: g.trashId,
-					name: g.name,
-					custom_formats: g.originalConfig?.custom_formats || [],
+					name: g.name || "",
+					custom_formats: (g.originalConfig?.custom_formats as WizardCFGroup["custom_formats"]) || [],
 				})) ||
 				[]
 			: data?.cfGroups || [];
 
 		const relevantGroupIds = cfGroupsForSubmit
-			.filter((group: any) => {
+			.filter((group) => {
 				const groupCFs = Array.isArray(group.custom_formats) ? group.custom_formats : [];
-				return groupCFs.some((cf: any) => {
+				return groupCFs.some((cf) => {
 					const cfTrashId = typeof cf === "string" ? cf : cf.trash_id;
 					return selectedCFTrashIds.has(cfTrashId);
 				});
 			})
-			.map((group: any) => group.trash_id);
+			.map((group) => group.trash_id);
 
 		try {
 			if (isEditMode && templateId) {
@@ -348,12 +390,12 @@ export const TemplateCreation = ({
 	// Build list of selected CF Groups for display (groups with at least one selected CF)
 	// In edit mode, prefer cfGroupsCache from TRaSH cache, fallback to template's stored groups
 	// This ensures proper categorization even for templates with incomplete group data
-	const cfGroups = isEditMode
+	const cfGroups: WizardCFGroup[] = isEditMode
 		? cfGroupsCache ||
 			editingTemplate?.config.customFormatGroups.map((g) => ({
 				trash_id: g.trashId,
-				name: g.name,
-				custom_formats: g.originalConfig?.custom_formats || [],
+				name: g.name || "",
+				custom_formats: (g.originalConfig?.custom_formats as WizardCFGroup["custom_formats"]) || [],
 			})) ||
 			[]
 		: data?.cfGroups || [];
@@ -364,9 +406,9 @@ export const TemplateCreation = ({
 			.map(([trashId]) => trashId),
 	);
 
-	const selectedCFGroups = cfGroups.filter((group: any) => {
+	const selectedCFGroups = cfGroups.filter((group) => {
 		const groupCFs = Array.isArray(group.custom_formats) ? group.custom_formats : [];
-		return groupCFs.some((cf: any) => {
+		return groupCFs.some((cf) => {
 			const cfTrashId = typeof cf === "string" ? cf : cf.trash_id;
 			return selectedCFTrashIds.has(cfTrashId);
 		});
@@ -382,16 +424,16 @@ export const TemplateCreation = ({
 	const mandatoryCFs = isEditMode
 		? sourceProfileData?.mandatoryCFs || []
 		: data?.mandatoryCFs || [];
-	const mandatoryCFIds = new Set(mandatoryCFs.map((cf: any) => cf.trash_id));
+	const mandatoryCFIds = new Set(mandatoryCFs.map((cf) => cf.trash_id));
 
 	// CFs from groups that have at least one selected CF
 	// (this replaces the previous step 2 group selection - now inferred from CF selections)
-	const groupsWithSelectedCFs = new Set(selectedCFGroups.map((g: any) => g.trash_id));
+	const groupsWithSelectedCFs = new Set(selectedCFGroups.map((g) => g.trash_id));
 	const cfsFromSelectedGroups = cfGroups
-		.filter((group: any) => groupsWithSelectedCFs.has(group.trash_id))
-		.flatMap((group: any) => {
+		.filter((group) => groupsWithSelectedCFs.has(group.trash_id))
+		.flatMap((group) => {
 			const groupCFs = Array.isArray(group.custom_formats) ? group.custom_formats : [];
-			return groupCFs.map((cf: any) => (typeof cf === "string" ? cf : cf.trash_id));
+			return groupCFs.map((cf) => (typeof cf === "string" ? cf : cf.trash_id));
 		});
 	const cfsFromSelectedGroupsSet = new Set(cfsFromSelectedGroups);
 
@@ -582,7 +624,7 @@ export const TemplateCreation = ({
 								)}
 							</div>
 							<div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
-								{selectedCFGroups.map((group: any) => (
+								{selectedCFGroups.map((group) => (
 									<div
 										key={group.trash_id}
 										className="text-sm text-foreground/70 flex items-start gap-2"

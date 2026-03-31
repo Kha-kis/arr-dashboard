@@ -19,6 +19,36 @@ import {
 } from "../../../../components/ui";
 import { apiRequest } from "../../../../lib/api-client/base";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
+
+interface QualityProfileItem {
+	name?: string;
+	allowed?: boolean;
+	quality?: { name?: string; source?: string; resolution?: number };
+	items?: Array<string | { name?: string; quality?: { name?: string } }>;
+}
+
+/** Response from cloned profile details endpoint */
+interface ClonedProfileDetailsResponse {
+	success: boolean;
+	error?: string;
+	data?: {
+		profile: {
+			cutoff?: number;
+			items?: QualityProfileItem[];
+		};
+	};
+}
+
+/** Response from TRaSH quality profile endpoint */
+interface TrashProfileResponse {
+	statusCode?: number;
+	error?: string;
+	message?: string;
+	profile?: {
+		cutoff?: string | number;
+		items?: QualityProfileItem[];
+	};
+}
 import { getErrorMessage } from "../../../../lib/error-utils";
 import { QualityGroupEditor } from "../quality-group-editor";
 
@@ -99,7 +129,7 @@ function parseClonedProfileId(trashId: string): { instanceId: string; profileId:
 /**
  * Extract quality items from TRaSH profile
  */
-function extractQualityItems(profile: any): Array<{
+function extractQualityItems(profile: { items?: QualityProfileItem[] }): Array<{
 	name: string;
 	allowed: boolean;
 	source?: string;
@@ -110,12 +140,12 @@ function extractQualityItems(profile: any): Array<{
 		return [];
 	}
 
-	return profile.items.map((item: any) => ({
-		name: item.name,
+	return profile.items.map((item) => ({
+		name: item.name || "",
 		allowed: item.allowed ?? true,
 		source: item.quality?.source,
 		resolution: item.quality?.resolution,
-		items: item.items,
+		items: item.items as string[] | undefined,
 	}));
 }
 
@@ -143,7 +173,7 @@ export const QualityConfiguration = ({
 		queryFn: async () => {
 			if (isCloned && clonedInfo) {
 				// Fetch from cloned profile
-				const response = await apiRequest<any>(
+				const response = await apiRequest<ClonedProfileDetailsResponse>(
 					`/api/trash-guides/profile-clone/profile-details/${clonedInfo.instanceId}/${clonedInfo.profileId}`,
 				);
 				if (!response.success || !response.data) {
@@ -152,13 +182,13 @@ export const QualityConfiguration = ({
 				const { profile } = response.data;
 				return {
 					qualityItems:
-						profile.items?.map((item: any) => ({
-							name: item.name || item.quality?.name,
+						profile.items?.map((item) => ({
+							name: item.name || item.quality?.name || "",
 							allowed: item.allowed ?? true,
 							source: item.quality?.source,
 							resolution: item.quality?.resolution,
-							items: item.items?.map((q: any) =>
-								typeof q === "string" ? q : q.name || q.quality?.name,
+							items: item.items?.map((q) =>
+								typeof q === "string" ? q : q.name || q.quality?.name || "",
 							),
 						})) || [],
 					profile: {
@@ -168,14 +198,14 @@ export const QualityConfiguration = ({
 			}
 			if (qualityProfile.trashId) {
 				// Fetch from TRaSH profile
-				const profileData = await apiRequest<any>(
+				const profileData = await apiRequest<TrashProfileResponse>(
 					`/api/trash-guides/quality-profiles/${serviceType}/${qualityProfile.trashId}`,
 				);
 				if (profileData.statusCode || profileData.error) {
 					throw new Error(profileData.message || "Failed to fetch quality profile");
 				}
 				return {
-					qualityItems: extractQualityItems(profileData.profile),
+					qualityItems: extractQualityItems(profileData.profile || {}),
 					profile: profileData.profile,
 				};
 			}
@@ -195,7 +225,7 @@ export const QualityConfiguration = ({
 		}
 
 		// Convert qualityItems to CustomQualityConfig format
-		const items = data.qualityItems.map((item: any, index: number) => {
+		const items = data.qualityItems.map((item: { name: string; allowed?: boolean; items?: string[] }, index: number) => {
 			const id = `q-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`;
 
 			// Check if this is a quality group (has nested items)
