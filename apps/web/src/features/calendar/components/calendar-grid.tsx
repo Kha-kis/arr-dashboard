@@ -2,6 +2,7 @@
 
 import { BookOpen, Disc3, Film, Tv } from "lucide-react";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
 import { cn } from "../../../lib/utils";
 import { getServiceGradient } from "../../../lib/theme-gradients";
 import type { DeduplicatedCalendarItem } from "../hooks/use-calendar-data";
@@ -90,9 +91,10 @@ const ServiceBar = ({ colors }: { colors: string[] }) => (
  * Shows service-colored icon and title in a tinted pill.
  */
 const EventChip = ({ event }: { event: DeduplicatedCalendarItem }) => {
+	const [incognitoMode] = useIncognitoMode();
 	const serviceGrad = getServiceGradient(event.service);
 	const ChipIcon = CHIP_ICONS[event.type];
-	const title =
+	const rawTitle =
 		event.type === "episode"
 			? (event.seriesTitle ?? event.title)
 			: event.type === "movie"
@@ -102,6 +104,7 @@ const EventChip = ({ event }: { event: DeduplicatedCalendarItem }) => {
 					: event.type === "book"
 						? (event.authorName ?? event.title)
 						: event.title;
+	const title = incognitoMode ? getLinuxIsoName(rawTitle ?? "") : rawTitle;
 
 	return (
 		<div

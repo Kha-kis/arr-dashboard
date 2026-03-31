@@ -294,7 +294,7 @@ export const CalendarEventCard = ({
 						{details.runtime && (
 							<MetaChip icon={Clock}>{details.runtime} min</MetaChip>
 						)}
-						{details.network && <MetaChip>{details.network}</MetaChip>}
+						{details.network && !incognitoMode && <MetaChip>{details.network}</MetaChip>}
 						{details.status && <MetaChip>{details.status}</MetaChip>}
 						{details.monitoring !== undefined && (
 							<MetaChip
