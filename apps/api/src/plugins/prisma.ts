@@ -80,4 +80,3 @@ export const prismaPlugin = fp(
 	},
 );
 
-export type PrismaPlugin = ReturnType<typeof prismaPlugin>;

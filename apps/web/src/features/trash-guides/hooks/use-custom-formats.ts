@@ -4,26 +4,22 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { customFormatKeys, trashCacheKeys } from "../../../lib/query-keys";
+import { customFormatKeys } from "../../../lib/query-keys";
 import {
 	type CreateUserCFRequest,
 	createUserCustomFormat,
-	type DeployCustomFormatRequest,
 	type DeployMultipleCustomFormatsRequest,
 	type DeployUserCFsRequest,
 	deleteUserCustomFormat,
-	deployCustomFormat,
 	deployMultipleCustomFormats,
 	deployUserCustomFormats,
 	fetchCFDescriptionsList,
-	fetchCFIncludesList,
 	fetchCustomFormatsList,
 	fetchUserCustomFormats,
 	type ImportUserCFFromInstanceRequest,
 	type ImportUserCFFromJsonRequest,
 	importUserCFsFromInstance,
 	importUserCFsFromJson,
-	updateUserCustomFormat,
 } from "../../../lib/api-client/trash-guides";
 
 /**
@@ -38,21 +34,6 @@ export function useCustomFormats(serviceType?: "RADARR" | "SONARR") {
 }
 
 /**
- * Hook to deploy a single custom format to an instance
- */
-export function useDeployCustomFormat() {
-	const queryClient = useQueryClient();
-
-	return useMutation({
-		mutationFn: (request: DeployCustomFormatRequest) => deployCustomFormat(request),
-		onSuccess: () => {
-			// Invalidate related queries
-			queryClient.invalidateQueries({ queryKey: customFormatKeys.all });
-		},
-	});
-}
-
-/**
  * Hook to fetch CF descriptions from TRaSH Guides
  */
 export function useCFDescriptions(serviceType?: "RADARR" | "SONARR") {
@@ -60,18 +41,6 @@ export function useCFDescriptions(serviceType?: "RADARR" | "SONARR") {
 		queryKey: customFormatKeys.descriptions(serviceType),
 		queryFn: () => fetchCFDescriptionsList(serviceType),
 		staleTime: 60 * 60 * 1000, // 1 hour - descriptions change less frequently
-	});
-}
-
-/**
- * Hook to fetch CF include files from TRaSH Guides.
- * These are MkDocs snippets referenced by CF descriptions using --8<-- syntax.
- */
-export function useCFIncludes() {
-	return useQuery({
-		queryKey: trashCacheKeys.cfIncludesList,
-		queryFn: () => fetchCFIncludesList(),
-		staleTime: 60 * 60 * 1000, // 1 hour - includes change less frequently
 	});
 }
 
@@ -114,21 +83,6 @@ export function useCreateUserCustomFormat() {
 
 	return useMutation({
 		mutationFn: (request: CreateUserCFRequest) => createUserCustomFormat(request),
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: customFormatKeys.user });
-		},
-	});
-}
-
-/**
- * Hook to update a user custom format
- */
-export function useUpdateUserCustomFormat() {
-	const queryClient = useQueryClient();
-
-	return useMutation({
-		mutationFn: ({ id, ...request }: { id: string } & Partial<CreateUserCFRequest>) =>
-			updateUserCustomFormat(id, request),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: customFormatKeys.user });
 		},

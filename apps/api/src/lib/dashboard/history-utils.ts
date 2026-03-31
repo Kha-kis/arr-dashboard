@@ -12,13 +12,6 @@ export type HistoryService = "sonarr" | "radarr" | "prowlarr" | "lidarr" | "read
 type UnknownRecord = Record<string, any>;
 
 /**
- * Returns the API path for history endpoints
- * Note: Prowlarr, Lidarr, and Readarr use v1 API; Sonarr/Radarr use v3
- */
-export const historyApiPath = (service: HistoryService) =>
-	["prowlarr", "lidarr", "readarr"].includes(service) ? "/api/v1/history" : "/api/v3/history";
-
-/**
  * Normalizes a raw history item from the ARR API into a consistent format
  * Supports Sonarr (episodes), Radarr (movies), Prowlarr (indexer), Lidarr (albums/tracks), and Readarr (books)
  */

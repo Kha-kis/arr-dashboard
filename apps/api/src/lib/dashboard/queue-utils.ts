@@ -13,14 +13,6 @@ export type QueueService = "sonarr" | "radarr" | "lidarr" | "readarr";
 type UnknownRecord = Record<string, any>;
 
 /**
- * Returns the API path for queue endpoints
- * Note: Sonarr/Radarr use v3, Lidarr/Readarr use v1
- */
-export const queueApiPath = (service: QueueService) => {
-	return ["lidarr", "readarr"].includes(service) ? "/api/v1/queue" : "/api/v3/queue";
-};
-
-/**
  * Keywords that indicate manual import is required
  */
 const manualImportKeywords = [
@@ -366,111 +358,6 @@ export type QueueSearchPayload = {
 	// Readarr
 	authorId?: number;
 	bookIds?: number[];
-};
-
-/**
- * Triggers a search command for the specified content using raw fetcher
- * Supports Sonarr, Radarr, Lidarr, and Readarr
- */
-export const triggerQueueSearch = async (
-	fetcher: (path: string, init?: RequestInit) => Promise<Response>,
-	service: QueueService,
-	payload?: QueueSearchPayload,
-) => {
-	if (!payload) {
-		return;
-	}
-
-	// Determine API version path based on service
-	const apiPath = ["lidarr", "readarr"].includes(service) ? "/api/v1/command" : "/api/v3/command";
-
-	if (service === "sonarr") {
-		const commandPayload: Record<string, unknown> = {};
-		if (Array.isArray(payload.episodeIds) && payload.episodeIds.length > 0) {
-			commandPayload.name = "EpisodeSearch";
-			commandPayload.episodeIds = Array.from(new Set(payload.episodeIds));
-		} else if (typeof payload.seriesId === "number") {
-			commandPayload.name = "SeriesSearch";
-			commandPayload.seriesId = payload.seriesId;
-		} else {
-			return;
-		}
-
-		const response = await fetcher(apiPath, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(commandPayload),
-		});
-		if (!response.ok) {
-			const message = await response.text().catch(() => response.statusText);
-			throw new Error(`Sonarr search command failed: ${message}`);
-		}
-		return;
-	}
-
-	if (service === "radarr") {
-		if (typeof payload.movieId !== "number") {
-			return;
-		}
-
-		const response = await fetcher(apiPath, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ name: "MoviesSearch", movieIds: [payload.movieId] }),
-		});
-		if (!response.ok) {
-			const message = await response.text().catch(() => response.statusText);
-			throw new Error(`Radarr search command failed: ${message}`);
-		}
-		return;
-	}
-
-	if (service === "lidarr") {
-		const commandPayload: Record<string, unknown> = {};
-		if (Array.isArray(payload.albumIds) && payload.albumIds.length > 0) {
-			commandPayload.name = "AlbumSearch";
-			commandPayload.albumIds = Array.from(new Set(payload.albumIds));
-		} else if (typeof payload.artistId === "number") {
-			commandPayload.name = "ArtistSearch";
-			commandPayload.artistId = payload.artistId;
-		} else {
-			return;
-		}
-
-		const response = await fetcher(apiPath, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(commandPayload),
-		});
-		if (!response.ok) {
-			const message = await response.text().catch(() => response.statusText);
-			throw new Error(`Lidarr search command failed: ${message}`);
-		}
-		return;
-	}
-
-	if (service === "readarr") {
-		const commandPayload: Record<string, unknown> = {};
-		if (Array.isArray(payload.bookIds) && payload.bookIds.length > 0) {
-			commandPayload.name = "BookSearch";
-			commandPayload.bookIds = Array.from(new Set(payload.bookIds));
-		} else if (typeof payload.authorId === "number") {
-			commandPayload.name = "AuthorSearch";
-			commandPayload.authorId = payload.authorId;
-		} else {
-			return;
-		}
-
-		const response = await fetcher(apiPath, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(commandPayload),
-		});
-		if (!response.ok) {
-			const message = await response.text().catch(() => response.statusText);
-			throw new Error(`Readarr search command failed: ${message}`);
-		}
-	}
 };
 
 /** Union type for all ARR clients that support queue operations */

@@ -27,7 +27,7 @@ import {
 import { useState } from "react";
 import { useThemeGradient } from "../../../../hooks/useThemeGradient";
 import type { CFMatchResult, MatchConfidence } from "../../../../lib/api-client/trash-guides";
-import type { CFResolutionDecision } from "./cf-resolution";
+import type { CFResolutionDecision } from "./cf-configuration-types";
 
 function getConfidenceBadge(confidence: MatchConfidence) {
 	switch (confidence) {

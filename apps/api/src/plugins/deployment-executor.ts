@@ -10,7 +10,7 @@
 import fp from "fastify-plugin";
 import { DeploymentExecutorService } from "../lib/trash-guides/deployment-executor.js";
 
-export const deploymentExecutorPlugin = fp(
+const deploymentExecutorPlugin = fp(
 	async (app) => {
 		const service = new DeploymentExecutorService(app.prisma, app.arrClientFactory);
 		app.decorate("deploymentExecutor", service);

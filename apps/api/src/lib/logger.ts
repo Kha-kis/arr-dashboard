@@ -150,4 +150,3 @@ export function createLogger(module: string) {
 	return logger.child({ module });
 }
 
-export default logger;

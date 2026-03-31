@@ -11,7 +11,7 @@ import {
 	useQueueExpansion,
 	useQueueSelection,
 } from "../hooks";
-import type { InstanceUrlMap } from "./dashboard-client";
+import type { InstanceUrlMap } from "../types";
 import type { QueueAction } from "./queue-action-buttons";
 import { QueueGroupCard } from "./queue-group-card";
 import { QueueItemCard } from "./queue-item-card";

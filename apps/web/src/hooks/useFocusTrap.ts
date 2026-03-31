@@ -110,4 +110,3 @@ export function useFocusTrap<T extends HTMLElement>(isActive: boolean, onEscape?
 	return containerRef;
 }
 
-export default useFocusTrap;
