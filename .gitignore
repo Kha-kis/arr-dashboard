@@ -1,27 +1,23 @@
 node_modules
 .pnpm-store
+
+# Environment files
 .env
 .env.local
 .env.test
 .env.*.local
-.env.development.local
-.env.test.local
-.env.production.local
+
+# Build output
 .next
 out
 build
 dist
 coverage
-logs
-.tmp
-.DS_Store
-*.log
 .turbo
 apps/**/.turbo
 apps/**/.next
 apps/**/node_modules
 packages/**/node_modules
-legacy/node_modules
 
 # Build caches
 *.tsbuildinfo
@@ -31,10 +27,13 @@ legacy/node_modules
 .parcel-cache
 .nyc_output
 
-# Next.js specific
+# Next.js
 .vercel
 .output
-storybook-static
+
+# Logs
+logs
+*.log
 
 # Test coverage
 *.lcov
@@ -45,62 +44,23 @@ coverage/
 *.db-journal
 data/
 data-dev/
-apps/api/dev.db
 
-# Development tool artifacts
-.auditor_venv/
-.pf/
-# Claude Code — ignore config, keep commands and skills
-.claude/*
-!.claude/commands/
-!.claude/skills/
-# Ignore fetched skill symlinks (point into .agents/), keep owned .md files
-.claude/skills/next-best-practices
-.claude/skills/shadcn
-.claude/skills/web-design-guidelines
-# Fetched skill content (like node_modules for Claude skills)
-.agents/
-skills-lock.json
-.serena/
-.leann/
-claudedocs/
+# Development config (local overrides)
+config/
+config-dev/
+config-test/
+test-config/
 
-# IDE and Editor files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# Sensitive data — must never be committed
+secrets.json
+apps/api/secrets.json
+apps/api/backups/
+backups/
 
-# OS specific
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-$RECYCLE.BIN/
-
-# Temporary files
-*.tmp
-nul
-*.pid
-*.seed
-
-# Package manager
-.yarn/
-.pnp.*
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-# Runtime
-*.pid
-*.seed
-*.pid.lock
-
-# Playwright
+# Playwright / E2E
 /test-results/
 /playwright-report/
+/playwright-report-integration/
 /blob-report/
 /.playwright/
 /.playwright-auth/
@@ -109,30 +69,53 @@ lerna-debug.log*
 auth-state.json
 **/auth-state.json
 
-# Sensitive data - must never be committed
-secrets.json
-apps/api/secrets.json
-apps/api/backups/
-backups/
+# Claude Code
+.claude/*
+!.claude/commands/
+!.claude/skills/
+# Ignore fetched skill symlinks, keep owned .md files
+.claude/skills/next-best-practices
+.claude/skills/shadcn
+.claude/skills/web-design-guidelines
+.agents/
+skills-lock.json
 
-# Testing artifacts
-playwright-report/
-test-results/
-.playwright-auth/
-.playwright-mcp/
-
-# AI/ML development tools
+# AI/ML development tool artifacts
+.auditor_venv/
+.pf/
+.serena/
 .leann/
+claudedocs/
 memory/
 
-# Debug screenshots (Playwright MCP)
-/album-modal*.png
+# IDE and Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Temporary files
+*.tmp
+nul
+*.pid
+*.seed
+*.pid.lock
+
+# Package manager
+.yarn/
+.pnp.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
 # Release screenshots and capture tooling
 screenshots-*/
-/*-page.png
-/*-check.png
-/*-notifications.png
-/*-redesigned.png
-/*-users.png
 scripts/capture-release-screenshots.ts

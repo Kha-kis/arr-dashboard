@@ -2,32 +2,24 @@
 
 This directory contains files for building and deploying Arr Dashboard as a single container.
 
-**Note:** The project uses a combined image approach - API and Web run together in one container for simplicity.
+## Container Architecture
 
-## Why Single Container?
+API and Web run together in one container for simple deployment:
+- **Simpler deployment** — One container to manage
+- **Easier networking** — No container linking needed
+- **Lower overhead** — Shared resources and dependencies
 
-- **Simpler deployment** - One container to manage
-- **Unraid compatible** - Works great with Community Applications
-- **Easier networking** - No container linking needed
-- **Lower overhead** - Shared resources and dependencies
+## Files
 
-## Building the Image
-
-From the repository root:
-
-```bash
-docker build -t arr-dashboard:latest .
-```
-
-Or use docker-compose:
-
-```bash
-docker-compose up -d --build
-```
+| File | Purpose |
+|------|---------|
+| `start-combined.sh` | Container entrypoint — PUID/PGID setup, database detection, Prisma provider switching, service startup |
+| `validate-runtime.sh` | CI validation script — checks all required files exist in the built image |
+| `read-base-path.cjs` | Reads system settings (ports, listen address) from database at startup |
 
 ## Running the Container
 
-### Using Docker Run
+### Docker Run
 
 ```bash
 docker run -d \
@@ -40,7 +32,7 @@ docker run -d \
   khak1s/arr-dashboard:latest
 ```
 
-### Using Docker Compose
+### Docker Compose
 
 ```bash
 docker-compose up -d
@@ -50,7 +42,7 @@ docker-compose up -d
 
 ### SQLite (Default)
 
-SQLite is the default database — no additional configuration needed. The database file is stored in the `/config` volume:
+No configuration needed. Database stored at `/config/prod.db`:
 
 ```bash
 docker run -d \
@@ -62,7 +54,7 @@ docker run -d \
 
 ### PostgreSQL
 
-To use PostgreSQL, set the `DATABASE_URL` environment variable to a PostgreSQL connection string. The application automatically detects the database type from the URL — no other configuration is needed:
+Set `DATABASE_URL` to a PostgreSQL connection string. The container automatically detects the provider and regenerates the Prisma client:
 
 ```bash
 docker run -d \
@@ -73,102 +65,89 @@ docker run -d \
   khak1s/arr-dashboard:latest
 ```
 
-Both `postgresql://` and `postgres://` URL schemes are supported. On first startup with a new PostgreSQL database, the schema is created automatically.
+Both `postgresql://` and `postgres://` URL schemes are supported.
 
 ## Environment Variables
 
-### Core Settings
+### Core
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PUID` | `911` | User ID for file permissions |
 | `PGID` | `911` | Group ID for file permissions |
-| `DATABASE_URL` | `file:/config/prod.db` | Database connection string (SQLite or PostgreSQL) |
-| `API_PORT` | `3001` | API server port (internal) |
+| `DATABASE_URL` | `file:/config/prod.db` | Database connection (SQLite path or PostgreSQL URL) |
 | `PORT` | `3000` | Web server port |
+| `API_PORT` | `3001` | API server port (internal) |
+| `HOST` | `0.0.0.0` | Listen address |
 
 ### Session & Security
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SESSION_TTL_HOURS` | `24` | Session expiration time in hours |
-| `SESSION_COOKIE_NAME` | `arr_session` | Name of the session cookie |
-| `API_RATE_LIMIT_MAX` | `200` | Max requests per minute |
-| `BACKUP_PASSWORD` | Auto-generated | Password for encrypted backups |
+| `SESSION_TTL_HOURS` | `24` | Session expiration (1-720 hours) |
+| `SESSION_COOKIE_NAME` | `arr_session` | Session cookie name |
+| `SESSION_COOKIE_SECRET` | Auto-generated | Cookie signing secret (saved to `/config/secrets.json`) |
+| `ENCRYPTION_KEY` | Auto-generated | AES-256-GCM key for API key encryption (saved to `/config/secrets.json`) |
+| `TRUST_PROXY` | `false` | Set `true` when behind a reverse proxy (enables X-Forwarded-* headers) |
+| `COOKIE_SECURE` | Auto-detected | Force secure cookies (`true`/`false`/`auto`). Auto detects HTTPS |
 
-### WebAuthn/Passkeys (Optional)
+### Rate Limiting
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `WEBAUTHN_RP_NAME` | `Arr Dashboard` | Display name shown to users |
-| `WEBAUTHN_RP_ID` | `localhost` | Your domain (no protocol) |
+| `API_RATE_LIMIT_MAX` | `200` | Max requests per minute |
+
+### WebAuthn / Passkeys
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WEBAUTHN_RP_NAME` | `Arr Dashboard` | Display name shown during passkey registration |
+| `WEBAUTHN_RP_ID` | `localhost` | Your domain (no protocol, e.g., `dashboard.example.com`) |
 | `WEBAUTHN_ORIGIN` | `http://localhost:3000` | Full URL with protocol |
 
-### Advanced
+### Logging
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LOG_LEVEL` | `info` | Logging level (debug, info, warn, error) |
-| `GITHUB_TOKEN` | - | Optional GitHub token for TRaSH Guides (higher rate limits) |
+| `LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+| `LOG_DIR` | `/config/logs` | Log file directory |
+| `LOG_MAX_SIZE` | `10m` | Max log file size before rotation |
+| `LOG_MAX_FILES` | `5` | Number of rotated log files to keep |
+
+### Optional
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GITHUB_TOKEN` | — | GitHub token for TRaSH Guides (higher rate limits) |
+| `APP_URL` | — | Public URL for OIDC callback (e.g., `https://dashboard.example.com`) |
 
 ## Ports
 
-- **3000** - Web UI (required)
-- **3001** - API (optional, only needed for direct API access)
+- **3000** — Web UI (required)
+- **3001** — API (internal, only expose for direct API access)
 
 ## Volumes
 
-- `/config` - Database and configuration files (LinuxServer.io convention)
+- `/config` — Database, secrets, logs, and backups
 
 ## Health Check
 
-The container includes a health check at `/health` that validates both the Next.js frontend and Fastify API are running. This endpoint is publicly accessible (no authentication required) and can be used with external monitoring tools like Uptime Kuma.
+Built-in health check at `/health` (unauthenticated):
 
-- **Docker HEALTHCHECK**: `http://localhost:3000/health` (built-in, runs every 30s)
-- **Uptime Kuma / external**: `http://<host>:3000/health`
+- **Docker HEALTHCHECK**: `http://localhost:3000/health` (runs every 30s)
+- **External monitoring**: `http://<host>:3000/health`
 
-## Process Management
+Returns: `{ "status": "ok", "version": "X.Y.Z", "commit": "..." }`
 
-The combined container uses a lightweight shell script to manage both processes:
-- **tini** - Proper signal handling and zombie reaping
-- **Background processes** - API and Web run as separate processes
-- **Graceful shutdown** - SIGTERM/SIGINT properly propagate to both services
+## Building
 
-## Troubleshooting
-
-### Check Logs
+From the repository root:
 
 ```bash
-docker logs arr-dashboard
+docker build -t arr-dashboard:latest .
 ```
 
-### Check Process Status
-
-```bash
-docker exec arr-dashboard ps aux
-```
-
-### Restart Container
-
-```bash
-docker restart arr-dashboard
-```
-
-### Access Shell
-
-```bash
-docker exec -it arr-dashboard sh
-```
-
-## Unraid Deployment
-
-Arr Dashboard is available in Unraid Community Applications. Search for "Arr Dashboard" in the Apps tab.
-
-For manual installation or detailed instructions, see [UNRAID_DEPLOYMENT.md](../UNRAID_DEPLOYMENT.md).
-
-## Building for Multiple Platforms
-
-To build for both amd64 and arm64:
+### Multi-Platform
 
 ```bash
 docker buildx build \
@@ -178,12 +157,15 @@ docker buildx build \
   .
 ```
 
-## Size Optimization
+## Troubleshooting
 
-The combined image is optimized for size:
-- Multi-stage build to exclude build dependencies
-- Alpine Linux base (small footprint)
-- Production-only dependencies in final stage
-- Shared dependencies between API and Web
+```bash
+# View logs
+docker logs arr-dashboard
 
-Expected image size: ~400-500MB
+# Access shell
+docker exec -it arr-dashboard sh
+
+# Check health
+curl http://localhost:3000/health
+```
