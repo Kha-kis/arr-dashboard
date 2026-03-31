@@ -7,7 +7,6 @@
  * Displays current tags as badges with add/remove capability.
  */
 
-import type { PlexTagUpdateRequest } from "@arr/shared";
 import { Plus, Tag, X } from "lucide-react";
 import { useCallback, useState } from "react";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";

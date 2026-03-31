@@ -859,7 +859,7 @@ function evaluateTautulliLastWatched(
 		return null;
 	}
 
-	if (!watch || !watch.lastWatchedAt) {
+	if (!watch?.lastWatchedAt) {
 		// Never watched — fall back to best available added date
 		if (params.operator === "older_than" && params.days) {
 			// Prefer Plex addedAt (when added to media server), then arrAddedAt (when grabbed by ARR)

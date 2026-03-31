@@ -4,7 +4,7 @@
  * Unit tests for executeOnInstances and related helper functions.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { ServiceInstance, ServiceType } from "../../../lib/prisma.js";
 import type { FastifyInstance } from "fastify";
 import {
@@ -13,7 +13,6 @@ import {
 	isSonarrClient,
 	isRadarrClient,
 	isProwlarrClient,
-	type MultiInstanceResponse,
 } from "../client-helpers.js";
 import type { FastifyRequest } from "fastify";
 import { SonarrClient, RadarrClient, ProwlarrClient } from "arr-sdk";
@@ -32,15 +31,9 @@ vi.mock("arr-sdk", () => {
 	}
 
 	return {
-		SonarrClient: class MockSonarrClient {
-			constructor() {}
-		},
-		RadarrClient: class MockRadarrClient {
-			constructor() {}
-		},
-		ProwlarrClient: class MockProwlarrClient {
-			constructor() {}
-		},
+		SonarrClient: class MockSonarrClient {},
+		RadarrClient: class MockRadarrClient {},
+		ProwlarrClient: class MockProwlarrClient {},
 		ArrError: MockArrError,
 	};
 });
@@ -222,7 +215,7 @@ describe("executeOnInstances - Error Handling", () => {
 			},
 			log: createMockLogger(),
 			arrClientFactory: {
-				create: vi.fn((instance: ServiceInstance) => {
+				create: vi.fn((_instance: ServiceInstance) => {
 					return new SonarrClient({ baseUrl: "http://test", apiKey: "key" });
 				}),
 			},

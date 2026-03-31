@@ -346,9 +346,8 @@ export class DeploymentExecutorService {
 				}
 
 				if (existingCF?.id) {
-					// biome-ignore lint/suspicious/noExplicitAny: Dynamic TRaSH spec format
 					const specifications = (templateCF.originalConfig?.specifications || []).map(
-						(spec: any) => ({
+						(spec) => ({
 							...spec,
 							fields: transformFieldsToArray(spec.fields),
 						}),
@@ -367,9 +366,8 @@ export class DeploymentExecutorService {
 					updated++;
 					details.updated.push(templateCF.name);
 				} else {
-					// biome-ignore lint/suspicious/noExplicitAny: Dynamic TRaSH spec format
 					const specifications = (templateCF.originalConfig?.specifications || []).map(
-						(spec: any) => ({
+						(spec) => ({
 							...spec,
 							fields: transformFieldsToArray(spec.fields),
 						}),

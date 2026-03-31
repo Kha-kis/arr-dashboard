@@ -557,7 +557,7 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			where: { id: request.currentUser.id },
 		});
 
-		if (!user || !user.hashedPassword) {
+		if (!user?.hashedPassword) {
 			return reply.status(400).send({ error: "User does not have a password set" });
 		}
 
@@ -585,7 +585,7 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			where: { id: 1 },
 		});
 
-		if (!oidcProvider || !oidcProvider.enabled) {
+		if (!oidcProvider?.enabled) {
 			return reply.status(400).send({
 				error:
 					"Cannot remove password. OIDC provider is disabled. Please enable OIDC or keep your password.",

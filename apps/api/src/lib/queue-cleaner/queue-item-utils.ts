@@ -144,7 +144,7 @@ export function checkWhitelist(
 	patterns: WhitelistPattern[],
 ): { matched: boolean; reason?: string } {
 	for (const pattern of patterns) {
-		if (!pattern.pattern || !pattern.pattern.trim()) continue;
+		if (!pattern.pattern?.trim()) continue;
 		const lowerPattern = pattern.pattern.toLowerCase().trim();
 
 		switch (pattern.type) {

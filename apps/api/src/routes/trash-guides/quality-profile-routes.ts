@@ -9,6 +9,7 @@ import {
 	isCFGroupApplicableToProfile,
 	type TemplateConfig,
 	type TrashCustomFormat,
+	type TrashCustomFormatGroup,
 	type TrashQualityProfile,
 	type TrashQualityProfileGroup,
 } from "@arr/shared";
@@ -272,24 +273,28 @@ export async function registerQualityProfileRoutes(
 		}
 
 		// Get CF Groups from cache
-		const cfGroups = (await cacheManager.get(serviceType as "RADARR" | "SONARR", "CF_GROUPS")) as
-			| any[]
-			| null;
+		const cfGroups = (await cacheManager.get(
+			serviceType as "RADARR" | "SONARR",
+			"CF_GROUPS",
+		)) as TrashCustomFormatGroup[] | null;
 
 		// Get Custom Formats from cache
 		const customFormats = (await cacheManager.get(
 			serviceType as "RADARR" | "SONARR",
 			"CUSTOM_FORMATS",
-		)) as any[] | null;
+		)) as TrashCustomFormat[] | null;
 
 		// Get CF Descriptions from cache
 		const cfDescriptions = (await cacheManager.get(
 			serviceType as "RADARR" | "SONARR",
 			"CF_DESCRIPTIONS",
-		)) as any[] | null;
+		)) as Array<{ cfName: string; description?: string; displayName?: string }> | null;
 
 		// Build description lookup by CF name (slug format)
-		const descriptionMap = new Map<string, any>();
+		const descriptionMap = new Map<
+			string,
+			{ cfName: string; description?: string; displayName?: string }
+		>();
 		if (cfDescriptions) {
 			for (const desc of cfDescriptions) {
 				descriptionMap.set(desc.cfName, desc);
@@ -467,7 +472,7 @@ export async function registerQualityProfileRoutes(
 		}
 
 		// Get Custom Formats referenced in the quality profile
-		const customFormats = (await cacheManager.get(serviceType, "CUSTOM_FORMATS")) as any[] | null;
+		const customFormats = (await cacheManager.get(serviceType, "CUSTOM_FORMATS")) as TrashCustomFormat[] | null;
 
 		if (!customFormats) {
 			return reply.status(400).send({
@@ -500,7 +505,7 @@ export async function registerQualityProfileRoutes(
 		};
 
 		// Get CF Groups for reference storage
-		const cfGroups = (await cacheManager.get(serviceType, "CF_GROUPS")) as any[] | null;
+		const cfGroups = (await cacheManager.get(serviceType, "CF_GROUPS")) as TrashCustomFormatGroup[] | null;
 
 		// Add selected CF Groups
 		if (cfGroups) {
@@ -612,7 +617,7 @@ export async function registerQualityProfileRoutes(
 		}
 
 		// Get Custom Formats from cache
-		const customFormats = (await cacheManager.get(serviceType, "CUSTOM_FORMATS")) as any[] | null;
+		const customFormats = (await cacheManager.get(serviceType, "CUSTOM_FORMATS")) as TrashCustomFormat[] | null;
 
 		if (!customFormats) {
 			return reply.status(400).send({
@@ -641,7 +646,7 @@ export async function registerQualityProfileRoutes(
 		};
 
 		// Get CF Groups for reference storage
-		const cfGroups = (await cacheManager.get(serviceType, "CF_GROUPS")) as any[] | null;
+		const cfGroups = (await cacheManager.get(serviceType, "CF_GROUPS")) as TrashCustomFormatGroup[] | null;
 
 		// Build lookup maps from existing template data for fallback
 		const existingGroupMap = new Map(

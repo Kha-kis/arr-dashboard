@@ -32,13 +32,19 @@ const deployUserCFsSchema = z.object({
  * Sonarr/Radarr APIs return fields as [{name, value}], but we store as {name: value}.
  */
 function normalizeFields(
-	fields: Record<string, unknown> | Array<{ name: string; value: unknown }> | null | undefined,
+	fields:
+		| Record<string, unknown>
+		| Array<{ name?: string | null; value?: unknown }>
+		| null
+		| undefined,
 ): Record<string, unknown> {
 	if (!fields) return {};
 	if (Array.isArray(fields)) {
 		const obj: Record<string, unknown> = {};
 		for (const field of fields) {
-			obj[field.name] = field.value;
+			if (field.name) {
+				obj[field.name] = field.value;
+			}
 		}
 		return obj;
 	}
@@ -263,7 +269,7 @@ export async function registerUserCustomFormatRoutes(
 					implementation: spec.implementation,
 					negate: spec.negate ?? false,
 					required: spec.required ?? false,
-					fields: normalizeFields(spec.fields as any),
+					fields: normalizeFields(spec.fields),
 				}));
 
 				await app.prisma.userCustomFormat.create({
@@ -342,7 +348,7 @@ export async function registerUserCustomFormatRoutes(
 				}
 
 				// Normalize specifications
-				const specs = ((cf as any).specifications || []).map((spec: any) => ({
+				const specs = (cf.specifications || []).map((spec) => ({
 					name: spec.name || "",
 					implementation: spec.implementation || "",
 					negate: spec.negate ?? false,
@@ -355,7 +361,7 @@ export async function registerUserCustomFormatRoutes(
 						userId,
 						name: cfName,
 						serviceType,
-						includeCustomFormatWhenRenaming: (cf as any).includeCustomFormatWhenRenaming ?? false,
+						includeCustomFormatWhenRenaming: cf.includeCustomFormatWhenRenaming ?? false,
 						specifications: JSON.stringify(specs),
 						defaultScore: defaultScore ?? 0,
 						sourceInstanceId: instanceId,
@@ -421,12 +427,14 @@ export async function registerUserCustomFormatRoutes(
 		// Loop-level error collection — KEEP
 		for (const userCF of userCFs) {
 			try {
-				const specs = JSON.parse(userCF.specifications);
+				const specs: Array<Record<string, unknown>> = JSON.parse(userCF.specifications);
 
 				// Transform fields from object to array format for the ARR API
-				const transformedSpecs = specs.map((spec: any) => ({
+				const transformedSpecs = specs.map((spec) => ({
 					...spec,
-					fields: Object.entries(spec.fields || {}).map(([name, value]) => ({ name, value })),
+					fields: Object.entries(
+						(spec.fields as Record<string, unknown>) || {},
+					).map(([name, value]) => ({ name, value })),
 				}));
 
 				const existing = existingByName.get(userCF.name);

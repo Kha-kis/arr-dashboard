@@ -51,7 +51,7 @@ export const prismaPlugin = fp(
 				);
 			}
 			pgPool = new pg.default.Pool({ connectionString: databaseUrl });
-			// @types/pg@8.20.0 Pool type is incompatible with @prisma/adapter-pg's bundled @types/pg@8.11.11
+			// biome-ignore lint/suspicious/noExplicitAny: @types/pg@8.20.0 Pool type incompatible with @prisma/adapter-pg's bundled @types/pg@8.11.11
 			adapter = new PrismaPg(pgPool as any);
 		} else {
 			const { PrismaBetterSqlite3 } = await import("@prisma/adapter-better-sqlite3");

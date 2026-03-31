@@ -109,7 +109,7 @@ describe("ntfySender", () => {
 		const call = mockFetch.mock.calls[0]!;
 		const headers: Record<string, string> = call[1].headers;
 
-		expect(headers["Authorization"]).toBe("Bearer tk_abc");
+		expect(headers.Authorization).toBe("Bearer tk_abc");
 	});
 
 	it("does not include Authorization when no token", async () => {
@@ -123,7 +123,7 @@ describe("ntfySender", () => {
 		const call = mockFetch.mock.calls[0]!;
 		const headers: Record<string, string> = call[1].headers;
 
-		expect(headers["Authorization"]).toBeUndefined();
+		expect(headers.Authorization).toBeUndefined();
 	});
 
 	it("includes X-Click header when payload has url", async () => {

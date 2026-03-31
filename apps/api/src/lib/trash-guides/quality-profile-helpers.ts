@@ -5,6 +5,7 @@
  * (schema-based, cloned, custom) and the quality profile sync logic.
  */
 
+import type { TrashCustomFormat } from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import { loggers } from "../logger.js";
 import { calculateScoreAndSource } from "./template-score-utils.js";
@@ -18,8 +19,7 @@ export interface TemplateCF {
 	trashId: string;
 	name: string;
 	scoreOverride: number;
-	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR custom format config
-	originalConfig: any;
+	originalConfig: TrashCustomFormat;
 }
 
 /**

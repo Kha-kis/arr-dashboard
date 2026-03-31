@@ -28,6 +28,7 @@ const log = loggers.trashGuides;
 // SDK type aliases
 type SdkCustomFormat = Awaited<ReturnType<SonarrClient["customFormat"]["getAll"]>>[number];
 
+
 // ============================================================================
 // Bulk Score Manager Class
 // ============================================================================
@@ -95,6 +96,7 @@ export class BulkScoreManager {
 
 			// Fetch quality profiles from this instance
 			// Use any[] due to Sonarr/Radarr type union - we only read data, not write
+			// biome-ignore lint/suspicious/noExplicitAny: SonarrClient | RadarrClient getAll() returns incompatible QualitySource union
 			let qualityProfiles: any[];
 			try {
 				qualityProfiles = await client.qualityProfile.getAll();
@@ -241,6 +243,7 @@ export class BulkScoreManager {
 
 			// Fetch quality profiles to get actual scores
 			// Use any[] due to Sonarr/Radarr type union - we only read data, not write
+			// biome-ignore lint/suspicious/noExplicitAny: SonarrClient | RadarrClient getAll() returns incompatible QualitySource union
 			let qualityProfiles: any[];
 			try {
 				qualityProfiles = await client.qualityProfile.getAll();

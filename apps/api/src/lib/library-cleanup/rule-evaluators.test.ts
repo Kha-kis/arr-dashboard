@@ -15,6 +15,7 @@ import {
 	evaluateSingleCondition,
 	extractRating,
 } from "./rule-evaluators.js";
+import type { LibraryCleanupRule } from "../prisma.js";
 
 // ---------------------------------------------------------------------------
 // Type stub for Prisma-generated LibraryCleanupRule (avoids prisma generate)
@@ -541,7 +542,7 @@ describe("composite rules", () => {
 			parameters: "{}",
 		});
 		// Cast to any to satisfy Prisma type — fields are structurally compatible
-		const result = evaluateRule(makeCacheItem(), rule as any, "RADARR", ctx);
+		const result = evaluateRule(makeCacheItem(), rule as LibraryCleanupRule, "RADARR", ctx);
 		expect(result).not.toBeNull();
 		expect(result!.reason).toContain(" AND ");
 		expect(result!.reason).toContain("days ago");
@@ -557,7 +558,7 @@ describe("composite rules", () => {
 			]),
 			parameters: "{}",
 		});
-		const result = evaluateRule(makeCacheItem(), rule as any, "RADARR", ctx);
+		const result = evaluateRule(makeCacheItem(), rule as LibraryCleanupRule, "RADARR", ctx);
 		expect(result).toBeNull();
 	});
 
@@ -570,7 +571,7 @@ describe("composite rules", () => {
 			]),
 			parameters: "{}",
 		});
-		const result = evaluateRule(makeCacheItem(), rule as any, "RADARR", ctx);
+		const result = evaluateRule(makeCacheItem(), rule as LibraryCleanupRule, "RADARR", ctx);
 		expect(result).not.toBeNull();
 		expect(result!.reason).toContain("days ago");
 	});
@@ -584,7 +585,7 @@ describe("composite rules", () => {
 			]),
 			parameters: "{}",
 		});
-		const result = evaluateRule(makeCacheItem(), rule as any, "RADARR", ctx);
+		const result = evaluateRule(makeCacheItem(), rule as LibraryCleanupRule, "RADARR", ctx);
 		expect(result).toBeNull();
 	});
 });
@@ -598,31 +599,31 @@ describe("evaluateRule filter chain", () => {
 
 	it("respects disabled rule", () => {
 		const rule = makeRule({ enabled: false });
-		const result = evaluateRule(makeCacheItem(), rule as any, "RADARR", ctx);
+		const result = evaluateRule(makeCacheItem(), rule as LibraryCleanupRule, "RADARR", ctx);
 		expect(result).toBeNull();
 	});
 
 	it("respects service filter", () => {
 		const rule = makeRule({ serviceFilter: JSON.stringify(["SONARR"]) });
-		const result = evaluateRule(makeCacheItem(), rule as any, "RADARR", ctx);
+		const result = evaluateRule(makeCacheItem(), rule as LibraryCleanupRule, "RADARR", ctx);
 		expect(result).toBeNull();
 	});
 
 	it("respects instance filter", () => {
 		const rule = makeRule({ instanceFilter: JSON.stringify(["other-instance"]) });
-		const result = evaluateRule(makeCacheItem(), rule as any, "RADARR", ctx);
+		const result = evaluateRule(makeCacheItem(), rule as LibraryCleanupRule, "RADARR", ctx);
 		expect(result).toBeNull();
 	});
 
 	it("respects tag exclusion", () => {
 		const rule = makeRule({ excludeTags: JSON.stringify([1]) }); // item has tag 1
-		const result = evaluateRule(makeCacheItem(), rule as any, "RADARR", ctx);
+		const result = evaluateRule(makeCacheItem(), rule as LibraryCleanupRule, "RADARR", ctx);
 		expect(result).toBeNull();
 	});
 
 	it("respects title exclusion regex", () => {
 		const rule = makeRule({ excludeTitles: JSON.stringify(["Test.*2020"]) });
-		const result = evaluateRule(makeCacheItem(), rule as any, "RADARR", ctx);
+		const result = evaluateRule(makeCacheItem(), rule as LibraryCleanupRule, "RADARR", ctx);
 		expect(result).toBeNull();
 	});
 
@@ -632,7 +633,7 @@ describe("evaluateRule filter chain", () => {
 			name: "Old Content",
 			action: "unmonitor",
 		});
-		const result = evaluateRule(makeCacheItem(), rule as any, "RADARR", ctx);
+		const result = evaluateRule(makeCacheItem(), rule as LibraryCleanupRule, "RADARR", ctx);
 		expect(result).toEqual({
 			ruleId: "rule-99",
 			ruleName: "Old Content",
@@ -750,14 +751,14 @@ describe("golden test — multi-rule priority evaluation", () => {
 	];
 
 	it("first matching rule wins (declined request takes priority)", () => {
-		const result = evaluateItemAgainstRules(declinedRequest, rules as any[], "RADARR", ctx);
+		const result = evaluateItemAgainstRules(declinedRequest, rules as LibraryCleanupRule[], "RADARR", ctx);
 		expect(result).not.toBeNull();
 		expect(result!.ruleId).toBe("r-declined");
 		expect(result!.action).toBe("delete");
 	});
 
 	it("composite AND rule matches old low-rated item", () => {
-		const result = evaluateItemAgainstRules(oldLowRated, rules as any[], "RADARR", ctx);
+		const result = evaluateItemAgainstRules(oldLowRated, rules as LibraryCleanupRule[], "RADARR", ctx);
 		// oldLowRated has no seerr request (tmdbId 12345 has declined request, but this item
 		// also has tmdbId 12345 in its data — it WILL match r-declined first)
 		expect(result).not.toBeNull();
@@ -772,7 +773,7 @@ describe("golden test — multi-rule priority evaluation", () => {
 		//   "never" with null watch → "Never watched (per Plex)"... wait
 		//   Actually: watch is null (not in plexMap), so returns null for "never"
 		//   because the function only returns match when watch exists but lastWatchedAt is null
-		const result = evaluateItemAgainstRules(recentHighRated, rules as any[], "RADARR", ctx);
+		const result = evaluateItemAgainstRules(recentHighRated, rules as LibraryCleanupRule[], "RADARR", ctx);
 		// plex_last_watched with "never": if watch is null (no plex entry), the function returns null
 		// (you need to be IN plex with null lastWatchedAt to match)
 		// But wait — looking at the code: `if (!watch || watch.lastWatchedAt === null)` — so null watch
@@ -786,7 +787,7 @@ describe("golden test — multi-rule priority evaluation", () => {
 		// protectedByGenre has rating 2.0, is old (90 days) — matches r-low-rating conditions
 		// BUT has excludeTitles pattern "Protected" which matches "Protected Film"
 		// So r-low-rating skips. Check if r-never-watched catches it.
-		const result = evaluateItemAgainstRules(protectedByGenre, rules as any[], "RADARR", ctx);
+		const result = evaluateItemAgainstRules(protectedByGenre, rules as LibraryCleanupRule[], "RADARR", ctx);
 		// protectedByGenre has tmdbId 12345 → seerr has declined request → r-declined matches
 		expect(result).not.toBeNull();
 		expect(result!.ruleId).toBe("r-declined");
@@ -804,7 +805,7 @@ describe("golden test — multi-rule priority evaluation", () => {
 			}),
 		});
 
-		const result = evaluateItemAgainstRules(noSeerrItem, rules as any[], "RADARR", ctx);
+		const result = evaluateItemAgainstRules(noSeerrItem, rules as LibraryCleanupRule[], "RADARR", ctx);
 		// r-declined: no seerr data → skip
 		// r-low-rating: rating 2.5 < 5 AND age ~90 days > 60 → MATCH
 		expect(result).not.toBeNull();

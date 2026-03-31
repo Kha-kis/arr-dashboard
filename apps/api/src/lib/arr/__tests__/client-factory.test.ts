@@ -103,7 +103,7 @@ const createMockEncryptor = () => ({
 		value: `encrypted-${value}`,
 		iv: "test-iv",
 	})),
-	decrypt: vi.fn(({ value }: { value: string; iv: string }) => `decrypted-api-key`),
+	decrypt: vi.fn((_: { value: string; iv: string }) => `decrypted-api-key`),
 	safeCompare: vi.fn((a: string, b: string) => a === b),
 }) as unknown as Encryptor;
 

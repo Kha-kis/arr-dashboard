@@ -166,7 +166,7 @@ export async function executeCleanupRun(
 		include: { rules: { orderBy: { priority: "asc" } } },
 	});
 
-	if (!config || !config.enabled || config.rules.length === 0) {
+	if (!config?.enabled || config.rules.length === 0) {
 		return {
 			isDryRun: config?.dryRunMode ?? true,
 			status: "completed",

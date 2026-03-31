@@ -34,7 +34,6 @@ function sourceStatusIcon(status: PrefetchSourceStatus) {
 export function CleanupHealthBanner({ status }: CleanupHealthBannerProps) {
 	const isError = status.lastResult === "error";
 	const isPartial = status.lastResult === "partial";
-	const isHealthy = status.lastResult === "completed";
 
 	if (!status.enabled && !status.lastResult) return null;
 

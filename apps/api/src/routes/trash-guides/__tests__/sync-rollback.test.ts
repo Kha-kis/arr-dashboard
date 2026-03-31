@@ -12,7 +12,7 @@
 
 import type { PrismaClient } from "../../../lib/prisma.js";
 import { createTestPrismaClient } from "../../../lib/__tests__/test-prisma.js";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 // Check if we should run integration tests (requires writable test database)
 const RUN_DB_TESTS = process.env.TEST_DB === "true";

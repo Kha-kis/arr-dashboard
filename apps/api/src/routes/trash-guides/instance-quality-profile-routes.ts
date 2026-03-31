@@ -133,12 +133,8 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 		}
 
 		// Update the quality profile
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Radarr/Sonarr have different quality source enums
-		const updatedProfile: any = {
-			...profile,
-			formatItems: updatedFormatItems,
-		};
-
+		// biome-ignore lint/suspicious/noExplicitAny: SonarrClient | RadarrClient union creates impossible intersection for QualityProfile.update() parameter
+		const updatedProfile: any = { ...profile, formatItems: updatedFormatItems };
 		await client.qualityProfile.update(profileIdNum, updatedProfile);
 
 		// Check if this quality profile is managed by a template
@@ -351,7 +347,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 		const template = templateMapping.template;
 
 		// Parse template config
-		let configData: Record<string, any>;
+		let configData: ParsedTemplateConfig;
 		try {
 			configData = JSON.parse(template.configData);
 		} catch (parseError) {
@@ -661,12 +657,8 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 			});
 
 			// Update the quality profile in Radarr/Sonarr
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Radarr/Sonarr have different quality source enums
-			const updatedProfile: any = {
-				...profile,
-				formatItems: updatedFormatItems,
-			};
-
+			// biome-ignore lint/suspicious/noExplicitAny: SonarrClient | RadarrClient union creates impossible intersection for QualityProfile.update() parameter
+			const updatedProfile: any = { ...profile, formatItems: updatedFormatItems };
 			await client.qualityProfile.update(profileIdNum, updatedProfile);
 
 			// Delete the override from database
@@ -756,7 +748,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 		}
 
 		// Parse template config
-		let templateConfigParsed: Record<string, any>;
+		let templateConfigParsed: ParsedTemplateConfig;
 		try {
 			templateConfigParsed = JSON.parse(templateMapping.template.configData);
 		} catch (parseError) {
@@ -817,7 +809,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 					templateConfigParsed.scoreSet !== "" &&
 					templateCf.originalConfig?.trash_scores?.[templateConfigParsed.scoreSet] !== undefined
 				) {
-					score = templateCf.originalConfig.trash_scores[templateConfigParsed.scoreSet];
+					score = templateCf.originalConfig.trash_scores[templateConfigParsed.scoreSet]!;
 				}
 				// Priority 3: TRaSH Guides default score
 				else if (templateCf.originalConfig?.trash_scores?.default !== undefined) {
@@ -847,12 +839,8 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 		});
 
 		// Update the quality profile in Radarr/Sonarr
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Radarr/Sonarr have different quality source enums
-		const updatedProfile: any = {
-			...profile,
-			formatItems: updatedFormatItems,
-		};
-
+		// biome-ignore lint/suspicious/noExplicitAny: SonarrClient | RadarrClient union creates impossible intersection for QualityProfile.update() parameter
+		const updatedProfile: any = { ...profile, formatItems: updatedFormatItems };
 		await client.qualityProfile.update(profileIdNum, updatedProfile);
 
 		// Delete all specified overrides from database
