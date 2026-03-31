@@ -4,6 +4,7 @@ import type { SeerrDiscoverResult } from "@arr/shared";
 import { Film, Star, Tv } from "lucide-react";
 import { useState } from "react";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
 import { RATING_COLOR } from "../../../lib/theme-gradients";
 import {
 	getDisplayTitle,
@@ -21,8 +22,9 @@ interface DiscoverPosterCardProps {
 
 export const DiscoverPosterCard: React.FC<DiscoverPosterCardProps> = ({ item, onClick, index }) => {
 	const { gradient: themeGradient } = useThemeGradient();
-	const posterUrl = getSeerrImageUrl(item.posterPath, "w300");
-	const title = getDisplayTitle(item);
+	const [incognitoMode] = useIncognitoMode();
+	const posterUrl = incognitoMode ? null : getSeerrImageUrl(item.posterPath, "w300");
+	const title = incognitoMode ? getLinuxIsoName(getDisplayTitle(item)) : getDisplayTitle(item);
 	const year = getReleaseYear(item);
 	const statusInfo = getMediaStatusInfo(item.mediaInfo?.status);
 	const anime = isLikelyAnime(item);
