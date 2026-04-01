@@ -13,9 +13,12 @@ import type {
 	CollectionStats,
 	DeviceAnalytics,
 	PlexAccountsResponse,
+	PlexDiscoverServersResponse,
 	PlexEpisodeStatusResponse,
 	PlexIdentityResponse,
 	PlexNowPlayingResponse,
+	PlexOAuthPinResponse,
+	PlexOAuthTokenResponse,
 	PlexOnDeckResponse,
 	PlexRecentlyAddedResponse,
 	PlexScanResponse,
@@ -261,4 +264,34 @@ export async function fetchQualityScore(days = 30): Promise<QualityScoreAnalytic
 /** Fetch bandwidth forecast with linear regression projections. */
 export async function fetchBandwidthForecast(days = 30): Promise<BandwidthForecast> {
 	return apiRequest(`/api/plex/analytics/forecast?days=${days}`);
+}
+
+// ============================================================================
+// OAuth Setup Assistance
+// ============================================================================
+
+/** Create a Plex OAuth PIN for the popup auth flow. */
+export async function createPlexPin(clientId: string): Promise<PlexOAuthPinResponse> {
+	return apiRequest("/api/plex/oauth/pin", { json: { clientId } });
+}
+
+/** Poll for Plex OAuth PIN approval. Returns null tokenRef until user approves. */
+export async function pollPlexPin(
+	pinId: number,
+	clientId: string,
+): Promise<PlexOAuthTokenResponse> {
+	return apiRequest(`/api/plex/oauth/pin/${pinId}?clientId=${encodeURIComponent(clientId)}`);
+}
+
+/** Discover Plex servers using a server-side token reference. */
+export async function discoverPlexServers(
+	tokenRef: string,
+	clientId: string,
+): Promise<PlexDiscoverServersResponse> {
+	return apiRequest("/api/plex/oauth/servers", { json: { tokenRef, clientId } });
+}
+
+/** Consume a stored Plex token (single-use) for service form pre-fill. */
+export async function retrievePlexToken(tokenRef: string): Promise<{ authToken: string }> {
+	return apiRequest("/api/plex/oauth/token", { json: { tokenRef } });
 }

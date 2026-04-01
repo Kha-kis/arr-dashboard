@@ -113,8 +113,10 @@ export const trashGuidesKeys = {
 	// Quality Size
 	qualitySize: {
 		all: ["trash-guides", "quality-size"] as const,
-		presets: (serviceType: string) => ["trash-guides", "quality-size", "presets", serviceType] as const,
-		mapping: (instanceId: string) => ["trash-guides", "quality-size", "mapping", instanceId] as const,
+		presets: (serviceType: string) =>
+			["trash-guides", "quality-size", "presets", serviceType] as const,
+		mapping: (instanceId: string) =>
+			["trash-guides", "quality-size", "mapping", instanceId] as const,
 		preview: (instanceId: string, presetTrashId: string) =>
 			["trash-guides", "quality-size", "preview", instanceId, presetTrashId] as const,
 	},
@@ -322,12 +324,10 @@ export const seerrKeys = {
 		["seerr", "request", instanceId, requestId] as const,
 	requestCount: (instanceId: string) => ["seerr", "request-count", instanceId] as const,
 	attention: (instanceId: string) => ["seerr", "attention", instanceId] as const,
-	users: (instanceId: string, params?: object) =>
-		["seerr", "users", instanceId, params] as const,
+	users: (instanceId: string, params?: object) => ["seerr", "users", instanceId, params] as const,
 	userQuota: (instanceId: string, userId: number) =>
 		["seerr", "user-quota", instanceId, userId] as const,
-	issues: (instanceId: string, params?: object) =>
-		["seerr", "issues", instanceId, params] as const,
+	issues: (instanceId: string, params?: object) => ["seerr", "issues", instanceId, params] as const,
 	notifications: (instanceId: string) => ["seerr", "notifications", instanceId] as const,
 	status: (instanceId: string) => ["seerr", "status", instanceId] as const,
 	health: (instanceId: string) => ["seerr", "health", instanceId] as const,

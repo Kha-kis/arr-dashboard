@@ -379,3 +379,35 @@ export interface BandwidthForecast {
 	peakHours: Array<{ hour: number; avgConcurrent: number; avgBandwidth: number }>;
 	trend: "increasing" | "stable" | "decreasing";
 }
+
+// ============================================================================
+// Plex OAuth Setup (PIN-based auth + server discovery)
+// ============================================================================
+
+export interface PlexOAuthPinResponse {
+	pinId: number;
+	pinCode: string;
+}
+
+export interface PlexOAuthTokenResponse {
+	tokenRef: string | null;
+}
+
+export interface PlexServerConnection {
+	uri: string;
+	local: boolean;
+	relay: boolean;
+	reachable: boolean;
+}
+
+export interface PlexDiscoveredServer {
+	name: string;
+	clientIdentifier: string;
+	platform?: string;
+	version?: string;
+	connections: PlexServerConnection[];
+}
+
+export interface PlexDiscoverServersResponse {
+	servers: PlexDiscoveredServer[];
+}
