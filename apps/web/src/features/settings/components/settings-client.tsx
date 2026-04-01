@@ -26,6 +26,7 @@ import { BackupTab } from "./backup-tab";
 import { OIDCProviderSection } from "./oidc-provider-section";
 import { PasskeySection } from "./passkey-section";
 import { PasswordSection } from "./password-section";
+import { GettingStartedBanner } from "./getting-started-banner";
 import { ServiceForm } from "./service-form";
 import { ServicesTab } from "./services-tab";
 import { SessionsSection } from "./sessions-section";
@@ -129,40 +130,42 @@ export const SettingsClient = () => {
 			>
 				{/* Services tab */}
 				{activeTab === "services" && (
-					<div
-						role="tabpanel"
-						id="settings-panel-services"
-						aria-labelledby="settings-tab-services"
-						className="grid gap-6 xl:grid-cols-[2fr_1fr]"
-					>
-						<ServicesTab
+					<div role="tabpanel" id="settings-panel-services" aria-labelledby="settings-tab-services">
+						<GettingStartedBanner
 							services={services}
-							isLoading={servicesLoading}
-							onTestConnection={servicesManagement.handleTestConnection}
-							onEdit={serviceFormState.handleEdit}
-							onToggleDefault={servicesManagement.toggleDefault}
-							onToggleEnabled={servicesManagement.toggleEnabled}
-							onDelete={handleDeleteService}
-							testingConnection={servicesManagement.testingConnection}
-							testResult={servicesManagement.testResult}
-							mutationPending={servicesManagement.updateServiceMutation.isPending}
+							onSelectService={(service) => serviceFormState.resetForm(service)}
 						/>
+						<div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
+							<ServicesTab
+								services={services}
+								isLoading={servicesLoading}
+								onTestConnection={servicesManagement.handleTestConnection}
+								onEdit={serviceFormState.handleEdit}
+								onToggleDefault={servicesManagement.toggleDefault}
+								onToggleEnabled={servicesManagement.toggleEnabled}
+								onDelete={handleDeleteService}
+								testingConnection={servicesManagement.testingConnection}
+								testResult={servicesManagement.testResult}
+								mutationPending={servicesManagement.updateServiceMutation.isPending}
+							/>
 
-						<ServiceForm
-							formState={serviceFormState.formState}
-							onFormStateChange={serviceFormState.setFormState}
-							onSubmit={handleServiceFormSubmit}
-							onCancel={() => serviceFormState.resetForm(serviceFormState.formState.service)}
-							onTestConnection={() =>
-								servicesManagement.handleTestFormConnection(serviceFormState.formState)
-							}
-							selectedService={serviceFormState.selectedServiceForEdit}
-							availableTags={availableTags}
-							isCreating={servicesManagement.createServiceMutation.isPending}
-							isUpdating={servicesManagement.updateServiceMutation.isPending}
-							isTesting={servicesManagement.testingFormConnection}
-							testResult={servicesManagement.formTestResult}
-						/>
+							<ServiceForm
+								formState={serviceFormState.formState}
+								onFormStateChange={serviceFormState.setFormState}
+								onSubmit={handleServiceFormSubmit}
+								onCancel={() => serviceFormState.resetForm(serviceFormState.formState.service)}
+								onTestConnection={() =>
+									servicesManagement.handleTestFormConnection(serviceFormState.formState)
+								}
+								selectedService={serviceFormState.selectedServiceForEdit}
+								services={services}
+								availableTags={availableTags}
+								isCreating={servicesManagement.createServiceMutation.isPending}
+								isUpdating={servicesManagement.updateServiceMutation.isPending}
+								isTesting={servicesManagement.testingFormConnection}
+								testResult={servicesManagement.formTestResult}
+							/>
+						</div>
 					</div>
 				)}
 
