@@ -18,6 +18,7 @@ import { cn } from "../../../lib/utils";
 import { SERVICE_TYPES } from "../lib/settings-constants";
 import type { ServiceFormState } from "../lib/settings-utils";
 import { getServicePlaceholders } from "../lib/settings-utils";
+import { PlexOAuthSection } from "./plex-oauth-section";
 
 /**
  * Props for the ServiceForm component
@@ -115,6 +116,20 @@ export const ServiceForm = ({
 							))}
 						</div>
 					</div>
+					{formState.service === "plex" && (
+						<PlexOAuthSection
+							mode={selectedService ? "edit" : "add"}
+							onServerSelected={(label, baseUrl, apiKey) =>
+								onFormStateChange((prev) => ({
+									...prev,
+									label,
+									baseUrl,
+									apiKey,
+								}))
+							}
+							onTestConnection={onTestConnection}
+						/>
+					)}
 					<SimpleFormField
 						label="Label"
 						htmlFor="service-label"
