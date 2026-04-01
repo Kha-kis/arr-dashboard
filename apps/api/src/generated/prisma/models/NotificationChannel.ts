@@ -214,7 +214,7 @@ export type NotificationChannelGroupByOutputType = {
   _max: NotificationChannelMaxAggregateOutputType | null
 }
 
-type GetNotificationChannelGroupByPayload<T extends NotificationChannelGroupByArgs> = Prisma.PrismaPromise<
+export type GetNotificationChannelGroupByPayload<T extends NotificationChannelGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<NotificationChannelGroupByOutputType, T['by']> &
       {

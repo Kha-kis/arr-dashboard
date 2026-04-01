@@ -252,7 +252,7 @@ export type QueueCleanerStrikeGroupByOutputType = {
   _max: QueueCleanerStrikeMaxAggregateOutputType | null
 }
 
-type GetQueueCleanerStrikeGroupByPayload<T extends QueueCleanerStrikeGroupByArgs> = Prisma.PrismaPromise<
+export type GetQueueCleanerStrikeGroupByPayload<T extends QueueCleanerStrikeGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<QueueCleanerStrikeGroupByOutputType, T['by']> &
       {

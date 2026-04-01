@@ -214,7 +214,7 @@ export type ServiceInstanceGroupByOutputType = {
   _max: ServiceInstanceMaxAggregateOutputType | null
 }
 
-type GetServiceInstanceGroupByPayload<T extends ServiceInstanceGroupByArgs> = Prisma.PrismaPromise<
+export type GetServiceInstanceGroupByPayload<T extends ServiceInstanceGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<ServiceInstanceGroupByOutputType, T['by']> &
       {

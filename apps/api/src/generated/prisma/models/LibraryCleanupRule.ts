@@ -283,7 +283,7 @@ export type LibraryCleanupRuleGroupByOutputType = {
   _max: LibraryCleanupRuleMaxAggregateOutputType | null
 }
 
-type GetLibraryCleanupRuleGroupByPayload<T extends LibraryCleanupRuleGroupByArgs> = Prisma.PrismaPromise<
+export type GetLibraryCleanupRuleGroupByPayload<T extends LibraryCleanupRuleGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<LibraryCleanupRuleGroupByOutputType, T['by']> &
       {

@@ -310,7 +310,7 @@ export type LibraryCacheGroupByOutputType = {
   _max: LibraryCacheMaxAggregateOutputType | null
 }
 
-type GetLibraryCacheGroupByPayload<T extends LibraryCacheGroupByArgs> = Prisma.PrismaPromise<
+export type GetLibraryCacheGroupByPayload<T extends LibraryCacheGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<LibraryCacheGroupByOutputType, T['by']> &
       {

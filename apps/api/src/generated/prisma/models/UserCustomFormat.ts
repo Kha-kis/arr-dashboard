@@ -245,7 +245,7 @@ export type UserCustomFormatGroupByOutputType = {
   _max: UserCustomFormatMaxAggregateOutputType | null
 }
 
-type GetUserCustomFormatGroupByPayload<T extends UserCustomFormatGroupByArgs> = Prisma.PrismaPromise<
+export type GetUserCustomFormatGroupByPayload<T extends UserCustomFormatGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<UserCustomFormatGroupByOutputType, T['by']> &
       {

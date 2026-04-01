@@ -486,6 +486,9 @@ export const registerNotificationRoutes: FastifyPluginCallback = (app, _opts, do
 				conditions: JSON.parse(r.conditions),
 				targetChannelIds: r.targetChannelIds ? JSON.parse(r.targetChannelIds) : null,
 				throttleMinutes: r.throttleMinutes,
+				quietHoursStart: r.quietHoursStart,
+				quietHoursEnd: r.quietHoursEnd,
+				quietHoursTimezone: r.quietHoursTimezone,
 				createdAt: r.createdAt.toISOString(),
 				updatedAt: r.updatedAt.toISOString(),
 			})),
@@ -497,6 +500,13 @@ export const registerNotificationRoutes: FastifyPluginCallback = (app, _opts, do
 		const userId = request.currentUser!.id;
 		const body = validateRequest(createNotificationRuleSchema, request.body);
 
+		// Quiet hours requires start and end times
+		if (body.action === "quiet_hours" && (!body.quietHoursStart || !body.quietHoursEnd)) {
+			return reply.status(400).send({
+				error: "Start and end times are required for quiet hours rules",
+			});
+		}
+
 		const rule = await app.prisma.notificationRule.create({
 			data: {
 				userId,
@@ -507,6 +517,9 @@ export const registerNotificationRoutes: FastifyPluginCallback = (app, _opts, do
 				conditions: JSON.stringify(body.conditions),
 				targetChannelIds: body.targetChannelIds ? JSON.stringify(body.targetChannelIds) : null,
 				throttleMinutes: body.throttleMinutes ?? null,
+				quietHoursStart: body.quietHoursStart ?? null,
+				quietHoursEnd: body.quietHoursEnd ?? null,
+				quietHoursTimezone: body.quietHoursTimezone ?? null,
 			},
 		});
 
@@ -519,6 +532,9 @@ export const registerNotificationRoutes: FastifyPluginCallback = (app, _opts, do
 			conditions: body.conditions,
 			targetChannelIds: body.targetChannelIds ?? null,
 			throttleMinutes: body.throttleMinutes ?? null,
+			quietHoursStart: rule.quietHoursStart,
+			quietHoursEnd: rule.quietHoursEnd,
+			quietHoursTimezone: rule.quietHoursTimezone,
 			createdAt: rule.createdAt.toISOString(),
 			updatedAt: rule.updatedAt.toISOString(),
 		});
@@ -546,6 +562,10 @@ export const registerNotificationRoutes: FastifyPluginCallback = (app, _opts, do
 		if (body.targetChannelIds !== undefined)
 			updateData.targetChannelIds = JSON.stringify(body.targetChannelIds);
 		if (body.throttleMinutes !== undefined) updateData.throttleMinutes = body.throttleMinutes;
+		if (body.quietHoursStart !== undefined) updateData.quietHoursStart = body.quietHoursStart;
+		if (body.quietHoursEnd !== undefined) updateData.quietHoursEnd = body.quietHoursEnd;
+		if (body.quietHoursTimezone !== undefined)
+			updateData.quietHoursTimezone = body.quietHoursTimezone;
 
 		const updated = await app.prisma.notificationRule.update({
 			where: { id },
@@ -561,6 +581,9 @@ export const registerNotificationRoutes: FastifyPluginCallback = (app, _opts, do
 			conditions: JSON.parse(updated.conditions),
 			targetChannelIds: updated.targetChannelIds ? JSON.parse(updated.targetChannelIds) : null,
 			throttleMinutes: updated.throttleMinutes,
+			quietHoursStart: updated.quietHoursStart,
+			quietHoursEnd: updated.quietHoursEnd,
+			quietHoursTimezone: updated.quietHoursTimezone,
 			createdAt: updated.createdAt.toISOString(),
 			updatedAt: updated.updatedAt.toISOString(),
 		});

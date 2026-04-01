@@ -258,7 +258,7 @@ export type SessionSnapshotGroupByOutputType = {
   _max: SessionSnapshotMaxAggregateOutputType | null
 }
 
-type GetSessionSnapshotGroupByPayload<T extends SessionSnapshotGroupByArgs> = Prisma.PrismaPromise<
+export type GetSessionSnapshotGroupByPayload<T extends SessionSnapshotGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<SessionSnapshotGroupByOutputType, T['by']> &
       {

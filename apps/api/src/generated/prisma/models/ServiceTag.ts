@@ -151,7 +151,7 @@ export type ServiceTagGroupByOutputType = {
   _max: ServiceTagMaxAggregateOutputType | null
 }
 
-type GetServiceTagGroupByPayload<T extends ServiceTagGroupByArgs> = Prisma.PrismaPromise<
+export type GetServiceTagGroupByPayload<T extends ServiceTagGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<ServiceTagGroupByOutputType, T['by']> &
       {

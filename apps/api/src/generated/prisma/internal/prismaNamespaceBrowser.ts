@@ -843,6 +843,9 @@ export const NotificationRuleScalarFieldEnum = {
   conditions: 'conditions',
   targetChannelIds: 'targetChannelIds',
   throttleMinutes: 'throttleMinutes',
+  quietHoursStart: 'quietHoursStart',
+  quietHoursEnd: 'quietHoursEnd',
+  quietHoursTimezone: 'quietHoursTimezone',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const

@@ -295,7 +295,7 @@ export type TrashSyncHistoryGroupByOutputType = {
   _max: TrashSyncHistoryMaxAggregateOutputType | null
 }
 
-type GetTrashSyncHistoryGroupByPayload<T extends TrashSyncHistoryGroupByArgs> = Prisma.PrismaPromise<
+export type GetTrashSyncHistoryGroupByPayload<T extends TrashSyncHistoryGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<TrashSyncHistoryGroupByOutputType, T['by']> &
       {

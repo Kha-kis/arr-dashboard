@@ -284,7 +284,7 @@ export type PlexCacheGroupByOutputType = {
   _max: PlexCacheMaxAggregateOutputType | null
 }
 
-type GetPlexCacheGroupByPayload<T extends PlexCacheGroupByArgs> = Prisma.PrismaPromise<
+export type GetPlexCacheGroupByPayload<T extends PlexCacheGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<PlexCacheGroupByOutputType, T['by']> &
       {

@@ -570,7 +570,7 @@ export type QueueCleanerConfigGroupByOutputType = {
   _max: QueueCleanerConfigMaxAggregateOutputType | null
 }
 
-type GetQueueCleanerConfigGroupByPayload<T extends QueueCleanerConfigGroupByArgs> = Prisma.PrismaPromise<
+export type GetQueueCleanerConfigGroupByPayload<T extends QueueCleanerConfigGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<QueueCleanerConfigGroupByOutputType, T['by']> &
       {

@@ -206,7 +206,7 @@ export type CacheRefreshStatusGroupByOutputType = {
   _max: CacheRefreshStatusMaxAggregateOutputType | null
 }
 
-type GetCacheRefreshStatusGroupByPayload<T extends CacheRefreshStatusGroupByArgs> = Prisma.PrismaPromise<
+export type GetCacheRefreshStatusGroupByPayload<T extends CacheRefreshStatusGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<CacheRefreshStatusGroupByOutputType, T['by']> &
       {

@@ -400,7 +400,7 @@ export type HuntConfigGroupByOutputType = {
   _max: HuntConfigMaxAggregateOutputType | null
 }
 
-type GetHuntConfigGroupByPayload<T extends HuntConfigGroupByArgs> = Prisma.PrismaPromise<
+export type GetHuntConfigGroupByPayload<T extends HuntConfigGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<HuntConfigGroupByOutputType, T['by']> &
       {

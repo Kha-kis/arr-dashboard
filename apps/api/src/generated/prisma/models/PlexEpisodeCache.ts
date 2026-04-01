@@ -235,7 +235,7 @@ export type PlexEpisodeCacheGroupByOutputType = {
   _max: PlexEpisodeCacheMaxAggregateOutputType | null
 }
 
-type GetPlexEpisodeCacheGroupByPayload<T extends PlexEpisodeCacheGroupByArgs> = Prisma.PrismaPromise<
+export type GetPlexEpisodeCacheGroupByPayload<T extends PlexEpisodeCacheGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<PlexEpisodeCacheGroupByOutputType, T['by']> &
       {

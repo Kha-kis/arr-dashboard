@@ -250,14 +250,19 @@ export const ruleConditionSchema = z.object({
 	value: z.union([z.string(), z.number(), z.array(z.string())]),
 });
 
+const timeFormatRegex = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+
 export const createNotificationRuleSchema = z.object({
 	name: z.string().min(1).max(100),
 	enabled: z.boolean().optional().default(true),
 	priority: z.number().int().min(0).max(1000).optional().default(0),
-	action: z.enum(["suppress", "throttle", "route"]),
+	action: z.enum(["suppress", "throttle", "route", "quiet_hours"]),
 	conditions: z.array(ruleConditionSchema).min(1),
 	targetChannelIds: z.array(z.string()).optional(),
 	throttleMinutes: z.number().int().min(1).max(1440).optional(),
+	quietHoursStart: z.string().regex(timeFormatRegex, "Must be HH:MM (00:00–23:59)").optional(),
+	quietHoursEnd: z.string().regex(timeFormatRegex, "Must be HH:MM (00:00–23:59)").optional(),
+	quietHoursTimezone: z.string().min(1).max(64).optional(),
 });
 
 export const updateNotificationRuleSchema = createNotificationRuleSchema.partial();
@@ -271,10 +276,13 @@ export interface NotificationRuleResponse {
 	name: string;
 	enabled: boolean;
 	priority: number;
-	action: "suppress" | "throttle" | "route";
+	action: "suppress" | "throttle" | "route" | "quiet_hours";
 	conditions: RuleCondition[];
 	targetChannelIds: string[] | null;
 	throttleMinutes: number | null;
+	quietHoursStart: string | null;
+	quietHoursEnd: string | null;
+	quietHoursTimezone: string | null;
 	createdAt: string;
 	updatedAt: string;
 }

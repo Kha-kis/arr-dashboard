@@ -106,6 +106,7 @@ const notificationServicePlugin = fastifyPlugin(
 				clearInterval(logRetentionInterval);
 				logRetentionInterval = null;
 			}
+			service.dispose();
 			aggregationBuffer.flushAll();
 			retryHandler.flush();
 			dedupGate.destroy();

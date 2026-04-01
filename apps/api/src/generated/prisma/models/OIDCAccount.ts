@@ -165,7 +165,7 @@ export type OIDCAccountGroupByOutputType = {
   _max: OIDCAccountMaxAggregateOutputType | null
 }
 
-type GetOIDCAccountGroupByPayload<T extends OIDCAccountGroupByArgs> = Prisma.PrismaPromise<
+export type GetOIDCAccountGroupByPayload<T extends OIDCAccountGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<OIDCAccountGroupByOutputType, T['by']> &
       {

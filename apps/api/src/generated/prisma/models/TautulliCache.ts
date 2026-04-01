@@ -210,7 +210,7 @@ export type TautulliCacheGroupByOutputType = {
   _max: TautulliCacheMaxAggregateOutputType | null
 }
 
-type GetTautulliCacheGroupByPayload<T extends TautulliCacheGroupByArgs> = Prisma.PrismaPromise<
+export type GetTautulliCacheGroupByPayload<T extends TautulliCacheGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<TautulliCacheGroupByOutputType, T['by']> &
       {

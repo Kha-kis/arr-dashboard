@@ -212,6 +212,9 @@ export async function qualitySizeRoutes(app: FastifyInstance, _opts: FastifyPlug
 			where: { instanceId },
 		});
 
+		// Compute current preset hash so frontend can detect if preset changed since last apply
+		const currentPresetHash = computeQualitiesHash(preset.qualities);
+
 		return reply.send({
 			success: true,
 			preset: { trashId: preset.trash_id, type: preset.type },
@@ -228,8 +231,10 @@ export async function qualitySizeRoutes(app: FastifyInstance, _opts: FastifyPlug
 						presetType: existingMapping.presetType,
 						syncStrategy: existingMapping.syncStrategy,
 						lastAppliedAt: existingMapping.lastAppliedAt.toISOString(),
+						appliedDataHash: existingMapping.appliedDataHash,
 					}
 				: null,
+			currentPresetHash,
 		});
 	});
 

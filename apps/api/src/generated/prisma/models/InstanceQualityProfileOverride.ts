@@ -221,7 +221,7 @@ export type InstanceQualityProfileOverrideGroupByOutputType = {
   _max: InstanceQualityProfileOverrideMaxAggregateOutputType | null
 }
 
-type GetInstanceQualityProfileOverrideGroupByPayload<T extends InstanceQualityProfileOverrideGroupByArgs> = Prisma.PrismaPromise<
+export type GetInstanceQualityProfileOverrideGroupByPayload<T extends InstanceQualityProfileOverrideGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<InstanceQualityProfileOverrideGroupByOutputType, T['by']> &
       {

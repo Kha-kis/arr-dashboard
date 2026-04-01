@@ -228,7 +228,7 @@ export type HuntSearchHistoryGroupByOutputType = {
   _max: HuntSearchHistoryMaxAggregateOutputType | null
 }
 
-type GetHuntSearchHistoryGroupByPayload<T extends HuntSearchHistoryGroupByArgs> = Prisma.PrismaPromise<
+export type GetHuntSearchHistoryGroupByPayload<T extends HuntSearchHistoryGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<HuntSearchHistoryGroupByOutputType, T['by']> &
       {

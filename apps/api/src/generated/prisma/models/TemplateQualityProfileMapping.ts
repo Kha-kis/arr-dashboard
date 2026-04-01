@@ -220,7 +220,7 @@ export type TemplateQualityProfileMappingGroupByOutputType = {
   _max: TemplateQualityProfileMappingMaxAggregateOutputType | null
 }
 
-type GetTemplateQualityProfileMappingGroupByPayload<T extends TemplateQualityProfileMappingGroupByArgs> = Prisma.PrismaPromise<
+export type GetTemplateQualityProfileMappingGroupByPayload<T extends TemplateQualityProfileMappingGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<TemplateQualityProfileMappingGroupByOutputType, T['by']> &
       {
