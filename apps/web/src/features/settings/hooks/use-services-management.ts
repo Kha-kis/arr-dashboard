@@ -32,6 +32,9 @@ export const useServicesManagement = () => {
 	const [formTestResult, setFormTestResult] = useState<{
 		success: boolean;
 		message: string;
+		version?: string;
+		error?: string;
+		details?: string;
 	} | null>(null);
 
 	const handleSubmit = async (
@@ -146,7 +149,7 @@ export const useServicesManagement = () => {
 				setTestResult({
 					id: instance.id,
 					success: true,
-					message: `${result.message} (v${result.version})`,
+					message: `${result.message} (v${result.version?.replace(/^v/i, "") ?? "unknown"})`,
 				});
 			} else {
 				setTestResult({
@@ -188,12 +191,15 @@ export const useServicesManagement = () => {
 			if (result.success) {
 				setFormTestResult({
 					success: true,
-					message: `${result.message} (v${result.version})`,
+					message: result.message ?? "Connection successful",
+					version: result.version,
 				});
 			} else {
 				setFormTestResult({
 					success: false,
-					message: `${result.error}: ${result.details}`,
+					message: result.error ?? "Connection failed",
+					error: result.error,
+					details: result.details,
 				});
 			}
 		} catch (error: unknown) {

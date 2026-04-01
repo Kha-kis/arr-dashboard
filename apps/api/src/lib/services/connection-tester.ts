@@ -314,11 +314,11 @@ async function testPlexConnection(baseUrl: string, token: string): Promise<Conne
 		};
 	}
 
-	const name = json.MediaContainer.friendlyName ?? "Plex";
+	const name = json.MediaContainer.friendlyName;
 	const version = json.MediaContainer.version ?? "unknown";
 	return {
 		success: true,
-		message: `Successfully connected to Plex: ${name}`,
+		message: name ? `Successfully connected to ${name}` : "Successfully connected to Plex",
 		version,
 	};
 }

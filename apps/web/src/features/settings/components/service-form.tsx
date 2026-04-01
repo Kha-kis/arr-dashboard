@@ -15,6 +15,7 @@ import {
 } from "../../../components/ui";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { cn } from "../../../lib/utils";
+import { getLinuxUrl, useIncognitoMode } from "../../../lib/incognito";
 import { SERVICE_TYPES } from "../lib/settings-constants";
 import type { ServiceFormState } from "../lib/settings-utils";
 import { getServicePlaceholders } from "../lib/settings-utils";
@@ -37,6 +38,8 @@ interface ServiceFormProps {
 	onTestConnection: () => void;
 	/** The service being edited (null if adding new) */
 	selectedService: ServiceInstanceSummary | null;
+	/** Existing configured services (for URL suggestions) */
+	services: ServiceInstanceSummary[];
 	/** Available tags for autocomplete */
 	availableTags: string[];
 	/** Whether creation is pending */
@@ -49,6 +52,9 @@ interface ServiceFormProps {
 	testResult?: {
 		success: boolean;
 		message: string;
+		version?: string;
+		error?: string;
+		details?: string;
 	} | null;
 }
 
@@ -62,6 +68,7 @@ export const ServiceForm = ({
 	onCancel,
 	onTestConnection,
 	selectedService,
+	services,
 	availableTags,
 	isCreating,
 	isUpdating,
@@ -175,6 +182,13 @@ export const ServiceForm = ({
 							data-form-type="other"
 						/>
 					</SimpleFormField>
+					{!selectedService && !formState.baseUrl && (
+						<UrlSuggestions
+							currentService={formState.service}
+							services={services}
+							onSelect={(url) => onFormStateChange((prev) => ({ ...prev, baseUrl: url }))}
+						/>
+					)}
 					{formState.service === "seerr" && (
 						<SeerrAutoSetupSection
 							seerrUrl={formState.baseUrl}
@@ -247,7 +261,21 @@ export const ServiceForm = ({
 						</Button>
 						{testResult && (
 							<Alert variant={testResult.success ? "success" : "danger"}>
-								<AlertDescription>{testResult.message}</AlertDescription>
+								<AlertDescription>
+									<div className="space-y-1">
+										<div className="flex items-center gap-2">
+											<span>{testResult.message}</span>
+											{testResult.version && (
+												<span className="rounded bg-background/50 px-1.5 py-0.5 text-[10px] font-medium">
+													v{testResult.version.replace(/^v/i, "")}
+												</span>
+											)}
+										</div>
+										{testResult.details && (
+											<p className="line-clamp-3 text-xs opacity-80">{testResult.details}</p>
+										)}
+									</div>
+								</AlertDescription>
 							</Alert>
 						)}
 					</div>
@@ -335,5 +363,77 @@ export const ServiceForm = ({
 				</form>
 			</CardContent>
 		</Card>
+	);
+};
+
+/** Default ports for companion services, keyed by service type */
+const COMPANION_PORTS: Record<string, number> = {
+	seerr: 5055,
+	tautulli: 8181,
+	sonarr: 8989,
+	radarr: 7878,
+	prowlarr: 9696,
+	lidarr: 8686,
+	readarr: 8787,
+};
+
+/**
+ * Suggests URLs for companion services based on existing configured service hosts.
+ * When a Plex server is configured at 192.168.0.185:32400, suggests Seerr at :5055, etc.
+ */
+const UrlSuggestions = ({
+	currentService,
+	services,
+	onSelect,
+}: {
+	currentService: string;
+	services: ServiceInstanceSummary[];
+	onSelect: (url: string) => void;
+}) => {
+	const [isIncognito] = useIncognitoMode();
+
+	// Extract unique hosts with their protocol from existing services
+	const knownHosts = new Map<string, string>();
+	for (const svc of services) {
+		try {
+			const parsed = new URL(svc.baseUrl);
+			if (!knownHosts.has(parsed.hostname)) {
+				knownHosts.set(parsed.hostname, parsed.protocol);
+			}
+		} catch {
+			// Malformed baseUrl in stored service — skip suggestion, not actionable here
+		}
+	}
+
+	if (knownHosts.size === 0) return null;
+
+	const defaultPort = COMPANION_PORTS[currentService];
+	if (!defaultPort) return null;
+
+	// Build suggestions: each known host + protocol + the current service's default port
+	const suggestions = Array.from(knownHosts).map(
+		([host, protocol]) => `${protocol}//${host}:${defaultPort}`,
+	);
+
+	// Filter out URLs that already match a configured service
+	const configuredUrls = new Set(services.map((s) => s.baseUrl.replace(/\/$/, "")));
+	const unique = suggestions.filter((url) => !configuredUrls.has(url));
+
+	if (unique.length === 0) return null;
+
+	return (
+		<div className="flex flex-wrap gap-1.5">
+			<span className="text-xs text-muted-foreground">Try:</span>
+			{unique.map((url) => (
+				<button
+					key={url}
+					type="button"
+					onClick={() => onSelect(url)}
+					className="rounded border border-border bg-card px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+				>
+					{isIncognito ? getLinuxUrl(url) : url}
+				</button>
+			))}
+		</div>
 	);
 };
