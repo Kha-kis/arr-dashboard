@@ -291,7 +291,7 @@ export async function discoverPlexServers(
 	return apiRequest("/api/plex/oauth/servers", { json: { tokenRef, clientId } });
 }
 
-/** Consume a stored Plex token (single-use) for service form pre-fill. */
+/** Retrieve a stored Plex token for service form pre-fill. */
 export async function retrievePlexToken(tokenRef: string): Promise<{ authToken: string }> {
 	return apiRequest("/api/plex/oauth/token", { json: { tokenRef } });
 }
