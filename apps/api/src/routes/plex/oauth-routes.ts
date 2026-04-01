@@ -15,57 +15,10 @@ import type {
 	PlexServerConnection,
 } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
-import { randomBytes } from "node:crypto";
 import { z } from "zod";
+import { peekToken, startCleanupInterval, storeToken } from "../../lib/plex/token-store.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
-
-// ============================================================================
-// Server-side token store — keeps Plex auth tokens off the browser
-// ============================================================================
-
-interface StoredToken {
-	authToken: string;
-	expiresAt: number;
-}
-
-const plexTokenStore = new Map<string, StoredToken>();
-const TOKEN_TTL_MS = 10 * 60 * 1000; // 10 minutes
-const TOKEN_MAX_ENTRIES = 100;
-
-/** Start the cleanup interval. Returns the timer ref for graceful shutdown. */
-function startCleanupInterval(): ReturnType<typeof setInterval> {
-	return setInterval(() => {
-		const now = Date.now();
-		for (const [ref, data] of plexTokenStore.entries()) {
-			if (data.expiresAt < now) {
-				plexTokenStore.delete(ref);
-			}
-		}
-	}, 5 * 60 * 1000);
-}
-
-/** Store a token server-side and return a short-lived reference. */
-function storeToken(authToken: string): string {
-	// Evict oldest if at capacity
-	if (plexTokenStore.size >= TOKEN_MAX_ENTRIES) {
-		const oldestKey = plexTokenStore.keys().next().value;
-		if (oldestKey) plexTokenStore.delete(oldestKey);
-	}
-	const ref = randomBytes(32).toString("hex");
-	plexTokenStore.set(ref, { authToken, expiresAt: Date.now() + TOKEN_TTL_MS });
-	return ref;
-}
-
-/** Retrieve a stored token without deleting it. Returns null if expired or missing. */
-function peekToken(ref: string): string | null {
-	const stored = plexTokenStore.get(ref);
-	if (!stored || stored.expiresAt < Date.now()) {
-		plexTokenStore.delete(ref);
-		return null;
-	}
-	return stored.authToken;
-}
 
 const PLEX_TV_BASE = "https://plex.tv";
 const PLEX_PRODUCT_NAME = "Arr Control Center";
@@ -263,7 +216,10 @@ export async function registerOAuthRoutes(app: FastifyInstance, _opts: FastifyPl
 		}
 		const parsed = plexTvPinCheckSchema.safeParse(raw);
 		if (!parsed.success) {
-			request.log.warn({ zodError: parsed.error.issues }, "plex.tv PIN poll response did not match expected schema");
+			request.log.warn(
+				{ zodError: parsed.error.issues },
+				"plex.tv PIN poll response did not match expected schema",
+			);
 			return reply.status(502).send(errorPayload("Unexpected response from plex.tv"));
 		}
 
