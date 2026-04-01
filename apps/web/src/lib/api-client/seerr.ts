@@ -10,6 +10,7 @@ import type {
 	SeerrCreateRequestPayload,
 	SeerrCreateRequestResponse,
 	SeerrDiscoverResponse,
+	SeerrFetchKeyResponse,
 	SeerrGenre,
 	SeerrIssue,
 	SeerrIssueComment,
@@ -357,6 +358,18 @@ export async function fetchLibraryEnrichment(
 // ============================================================================
 // Helpers
 // ============================================================================
+
+// ============================================================================
+// OAuth Auto-Setup
+// ============================================================================
+
+/** Fetch Seerr API key using a stored Plex token. */
+export async function fetchSeerrApiKey(
+	seerrUrl: string,
+	tokenRef: string,
+): Promise<SeerrFetchKeyResponse> {
+	return apiRequest("/api/seerr/oauth/fetch-key", { json: { seerrUrl, tokenRef } });
+}
 
 function buildQueryString(params: Record<string, unknown>): string {
 	const entries = Object.entries(params).filter(([, v]) => v !== undefined);

@@ -19,6 +19,7 @@ import { SERVICE_TYPES } from "../lib/settings-constants";
 import type { ServiceFormState } from "../lib/settings-utils";
 import { getServicePlaceholders } from "../lib/settings-utils";
 import { PlexOAuthSection } from "./plex-oauth-section";
+import { SeerrAutoSetupSection } from "./seerr-auto-setup-section";
 
 /**
  * Props for the ServiceForm component
@@ -174,6 +175,19 @@ export const ServiceForm = ({
 							data-form-type="other"
 						/>
 					</SimpleFormField>
+					{formState.service === "seerr" && (
+						<SeerrAutoSetupSection
+							seerrUrl={formState.baseUrl}
+							mode={selectedService ? "edit" : "add"}
+							onApiKeyFetched={(apiKey) =>
+								onFormStateChange((prev) => ({
+									...prev,
+									apiKey,
+								}))
+							}
+							onTestConnection={onTestConnection}
+						/>
+					)}
 					<SimpleFormField
 						label="External URL"
 						htmlFor="service-externalurl"

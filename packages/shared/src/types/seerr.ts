@@ -880,3 +880,12 @@ export interface LibraryEnrichmentResponse {
 	/** Number of media enrichment lookups that failed */
 	enrichmentFailures?: number;
 }
+
+// ============================================================================
+// Seerr OAuth Auto-Setup
+// ============================================================================
+
+export interface SeerrFetchKeyResponse {
+	apiKey: string;
+	version: string;
+}
