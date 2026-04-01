@@ -407,6 +407,24 @@ export function QualitySizeManager() {
 						)}
 					</div>
 
+					{previewData?.existingMapping?.appliedDataHash &&
+						previewData.currentPresetHash &&
+						previewData.existingMapping.presetTrashId === selectedPresetId &&
+						previewData.existingMapping.appliedDataHash !== previewData.currentPresetHash && (
+							<div
+								className="flex items-center gap-2 rounded-lg border px-4 py-3 text-sm"
+								style={{
+									borderColor: SEMANTIC_COLORS.warning.border,
+									backgroundColor: SEMANTIC_COLORS.warning.bg,
+									color: SEMANTIC_COLORS.warning.text,
+								}}
+							>
+								<AlertTriangle className="h-4 w-4 shrink-0" />
+								This preset has been updated since you last applied it. Review the changes below and
+								re-apply to update your instance.
+							</div>
+						)}
+
 					{previewError ? (
 						<ErrorBanner message={`Failed to load preview: ${previewError.message}`} />
 					) : previewLoading ? (

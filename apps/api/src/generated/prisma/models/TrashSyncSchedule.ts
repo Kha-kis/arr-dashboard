@@ -207,7 +207,7 @@ export type TrashSyncScheduleGroupByOutputType = {
   _max: TrashSyncScheduleMaxAggregateOutputType | null
 }
 
-type GetTrashSyncScheduleGroupByPayload<T extends TrashSyncScheduleGroupByArgs> = Prisma.PrismaPromise<
+export type GetTrashSyncScheduleGroupByPayload<T extends TrashSyncScheduleGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<TrashSyncScheduleGroupByOutputType, T['by']> &
       {

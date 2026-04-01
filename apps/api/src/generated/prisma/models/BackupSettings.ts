@@ -249,7 +249,7 @@ export type BackupSettingsGroupByOutputType = {
   _max: BackupSettingsMaxAggregateOutputType | null
 }
 
-type GetBackupSettingsGroupByPayload<T extends BackupSettingsGroupByArgs> = Prisma.PrismaPromise<
+export type GetBackupSettingsGroupByPayload<T extends BackupSettingsGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<BackupSettingsGroupByOutputType, T['by']> &
       {

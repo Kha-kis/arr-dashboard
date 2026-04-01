@@ -220,7 +220,7 @@ export type WebAuthnCredentialGroupByOutputType = {
   _max: WebAuthnCredentialMaxAggregateOutputType | null
 }
 
-type GetWebAuthnCredentialGroupByPayload<T extends WebAuthnCredentialGroupByArgs> = Prisma.PrismaPromise<
+export type GetWebAuthnCredentialGroupByPayload<T extends WebAuthnCredentialGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<WebAuthnCredentialGroupByOutputType, T['by']> &
       {

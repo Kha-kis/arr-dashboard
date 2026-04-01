@@ -263,7 +263,7 @@ export type TrashSettingsGroupByOutputType = {
   _max: TrashSettingsMaxAggregateOutputType | null
 }
 
-type GetTrashSettingsGroupByPayload<T extends TrashSettingsGroupByArgs> = Prisma.PrismaPromise<
+export type GetTrashSettingsGroupByPayload<T extends TrashSettingsGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<TrashSettingsGroupByOutputType, T['by']> &
       {

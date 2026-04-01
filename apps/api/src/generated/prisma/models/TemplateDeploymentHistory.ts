@@ -341,7 +341,7 @@ export type TemplateDeploymentHistoryGroupByOutputType = {
   _max: TemplateDeploymentHistoryMaxAggregateOutputType | null
 }
 
-type GetTemplateDeploymentHistoryGroupByPayload<T extends TemplateDeploymentHistoryGroupByArgs> = Prisma.PrismaPromise<
+export type GetTemplateDeploymentHistoryGroupByPayload<T extends TemplateDeploymentHistoryGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<TemplateDeploymentHistoryGroupByOutputType, T['by']> &
       {

@@ -1,13 +1,19 @@
 "use client";
 
-import { AlertTriangle, ChevronDown, ChevronUp, Loader2, Minus, Plus, Shield, Trash2 } from "lucide-react";
+import {
+	AlertTriangle,
+	ChevronDown,
+	ChevronUp,
+	Loader2,
+	Minus,
+	Plus,
+	Shield,
+	Trash2,
+} from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import type { RuleCondition } from "@arr/shared";
-import {
-	GradientButton,
-	StatusBadge,
-} from "@/components/layout/premium-components";
+import { GradientButton, StatusBadge } from "@/components/layout/premium-components";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 import { INPUT_BASE_CLASSES } from "@/lib/theme-input-styles";
 import {
@@ -24,12 +30,14 @@ const ACTION_LABELS: Record<string, string> = {
 	suppress: "Suppress",
 	throttle: "Throttle",
 	route: "Route to channels",
+	quiet_hours: "Quiet Hours",
 };
 
 const ACTION_DESCRIPTIONS: Record<string, string> = {
 	suppress: "Block matching notifications from being sent",
 	throttle: "Limit how often matching notifications fire",
 	route: "Send matching notifications to specific channels only",
+	quiet_hours: "Silence notifications during a scheduled time window",
 };
 
 const FIELD_OPTIONS = [
@@ -47,11 +55,14 @@ const OPERATOR_OPTIONS = [
 
 interface RuleFormData {
 	name: string;
-	action: "suppress" | "throttle" | "route";
+	action: "suppress" | "throttle" | "route" | "quiet_hours";
 	conditions: RuleCondition[];
 	priority: number;
 	throttleMinutes: number;
 	targetChannelIds: string[];
+	quietHoursStart: string;
+	quietHoursEnd: string;
+	quietHoursTimezone: string;
 }
 
 const EMPTY_CONDITION: RuleCondition = { field: "eventType", operator: "equals", value: "" };
@@ -63,6 +74,9 @@ const DEFAULT_FORM: RuleFormData = {
 	priority: 0,
 	throttleMinutes: 60,
 	targetChannelIds: [],
+	quietHoursStart: "22:00",
+	quietHoursEnd: "08:00",
+	quietHoursTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
 };
 
 function conditionsFromRule(rule: NotificationRuleResponse): RuleCondition[] {
@@ -97,6 +111,10 @@ export function NotificationRulesTab() {
 			priority: rule.priority,
 			throttleMinutes: rule.throttleMinutes ?? 60,
 			targetChannelIds: rule.targetChannelIds ?? [],
+			quietHoursStart: rule.quietHoursStart ?? "22:00",
+			quietHoursEnd: rule.quietHoursEnd ?? "08:00",
+			quietHoursTimezone:
+				rule.quietHoursTimezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
 		});
 		setShowForm(true);
 	};
@@ -115,14 +133,24 @@ export function NotificationRulesTab() {
 			enabled: true,
 			...(formData.action === "throttle" && { throttleMinutes: formData.throttleMinutes }),
 			...(formData.action === "route" && { targetChannelIds: formData.targetChannelIds }),
+			...(formData.action === "quiet_hours" && {
+				quietHoursStart: formData.quietHoursStart,
+				quietHoursEnd: formData.quietHoursEnd,
+				quietHoursTimezone: formData.quietHoursTimezone,
+			}),
 		};
 
 		if (payload.conditions.length === 0) return;
 		if (!payload.name) return;
 
-		const errorHandler = { onError: (err: Error) => toast.error(getErrorMessage(err, "Failed to save rule")) };
+		const errorHandler = {
+			onError: (err: Error) => toast.error(getErrorMessage(err, "Failed to save rule")),
+		};
 		if (editingRule) {
-			updateRule.mutate({ id: editingRule.id, data: payload }, { onSuccess: cancelForm, ...errorHandler });
+			updateRule.mutate(
+				{ id: editingRule.id, data: payload },
+				{ onSuccess: cancelForm, ...errorHandler },
+			);
 		} else {
 			createRule.mutate(payload, { onSuccess: cancelForm, ...errorHandler });
 		}
@@ -193,7 +221,9 @@ export function NotificationRulesTab() {
 		return (
 			<div className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
 				<AlertTriangle className="h-6 w-6" />
-				<p className="text-sm">Failed to load notification rules. Please try refreshing the page.</p>
+				<p className="text-sm">
+					Failed to load notification rules. Please try refreshing the page.
+				</p>
 			</div>
 		);
 	}
@@ -260,7 +290,7 @@ export function NotificationRulesTab() {
 								Action
 							</label>
 							<div className="flex flex-wrap gap-2">
-								{(["suppress", "throttle", "route"] as const).map((action) => (
+								{(["suppress", "throttle", "route", "quiet_hours"] as const).map((action) => (
 									<button
 										type="button"
 										key={action}
@@ -301,6 +331,56 @@ export function NotificationRulesTab() {
 									onFocus={(e) => (e.target.style.borderColor = gradient.from)}
 									onBlur={(e) => (e.target.style.borderColor = "")}
 								/>
+							</div>
+						)}
+
+						{/* Quiet hours sub-fields */}
+						{formData.action === "quiet_hours" && (
+							<div className="grid gap-3 sm:grid-cols-3">
+								<div>
+									<label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+										Start time
+									</label>
+									<input
+										type="time"
+										value={formData.quietHoursStart}
+										onChange={(e) =>
+											setFormData((p) => ({ ...p, quietHoursStart: e.target.value }))
+										}
+										className={inputClass}
+										onFocus={(e) => (e.target.style.borderColor = gradient.from)}
+										onBlur={(e) => (e.target.style.borderColor = "")}
+									/>
+								</div>
+								<div>
+									<label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+										End time
+									</label>
+									<input
+										type="time"
+										value={formData.quietHoursEnd}
+										onChange={(e) => setFormData((p) => ({ ...p, quietHoursEnd: e.target.value }))}
+										className={inputClass}
+										onFocus={(e) => (e.target.style.borderColor = gradient.from)}
+										onBlur={(e) => (e.target.style.borderColor = "")}
+									/>
+								</div>
+								<div>
+									<label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+										Timezone
+									</label>
+									<input
+										type="text"
+										value={formData.quietHoursTimezone}
+										onChange={(e) =>
+											setFormData((p) => ({ ...p, quietHoursTimezone: e.target.value }))
+										}
+										placeholder="America/New_York"
+										className={inputClass}
+										onFocus={(e) => (e.target.style.borderColor = gradient.from)}
+										onBlur={(e) => (e.target.style.borderColor = "")}
+									/>
+								</div>
 							</div>
 						)}
 
@@ -434,7 +514,7 @@ export function NotificationRulesTab() {
 						<Shield className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" />
 						<p className="text-muted-foreground">No notification rules configured yet.</p>
 						<p className="mt-1 text-sm text-muted-foreground/70">
-							Rules let you suppress, throttle, or route notifications.
+							Rules let you suppress, throttle, route, or schedule quiet hours for notifications.
 						</p>
 					</div>
 				</div>
@@ -478,6 +558,9 @@ export function NotificationRulesTab() {
 											: ""}
 										{rule.action === "route" && rule.targetChannelIds?.length
 											? ` · ${rule.targetChannelIds.length} channel${rule.targetChannelIds.length !== 1 ? "s" : ""}`
+											: ""}
+										{rule.action === "quiet_hours" && rule.quietHoursStart && rule.quietHoursEnd
+											? ` · ${rule.quietHoursStart}–${rule.quietHoursEnd} ${rule.quietHoursTimezone ?? "UTC"}`
 											: ""}
 									</p>
 								</div>

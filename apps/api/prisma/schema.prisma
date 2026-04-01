@@ -1176,10 +1176,13 @@ model NotificationRule {
   name             String
   enabled          Boolean  @default(true)
   priority         Int      @default(0)          // Lower = higher priority
-  action           String                        // "suppress" | "throttle" | "route"
+  action           String                        // "suppress" | "throttle" | "route" | "quiet_hours"
   conditions       String                        // JSON: Array<{field, operator, value}>
   targetChannelIds String?                       // JSON: string[] — for "route" action
   throttleMinutes  Int?                          // For "throttle" action
+  quietHoursStart  String?                       // "HH:MM" 24h format — for "quiet_hours" action
+  quietHoursEnd    String?                       // "HH:MM" 24h format — for "quiet_hours" action
+  quietHoursTimezone String?                     // IANA timezone (e.g., "America/New_York")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

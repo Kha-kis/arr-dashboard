@@ -295,7 +295,7 @@ export type LibraryCleanupApprovalGroupByOutputType = {
   _max: LibraryCleanupApprovalMaxAggregateOutputType | null
 }
 
-type GetLibraryCleanupApprovalGroupByPayload<T extends LibraryCleanupApprovalGroupByArgs> = Prisma.PrismaPromise<
+export type GetLibraryCleanupApprovalGroupByPayload<T extends LibraryCleanupApprovalGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<LibraryCleanupApprovalGroupByOutputType, T['by']> &
       {

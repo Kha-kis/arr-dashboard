@@ -37,11 +37,13 @@ export type QualitySizePreviewResponse = {
 		unmatched: number;
 		total: number;
 	};
+	currentPresetHash: string;
 	existingMapping: {
 		presetTrashId: string;
 		presetType: string;
 		syncStrategy: "auto" | "manual" | "notify";
 		lastAppliedAt: string;
+		appliedDataHash: string | null;
 	} | null;
 };
 

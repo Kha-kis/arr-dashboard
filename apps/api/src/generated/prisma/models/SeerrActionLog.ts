@@ -186,7 +186,7 @@ export type SeerrActionLogGroupByOutputType = {
   _max: SeerrActionLogMaxAggregateOutputType | null
 }
 
-type GetSeerrActionLogGroupByPayload<T extends SeerrActionLogGroupByArgs> = Prisma.PrismaPromise<
+export type GetSeerrActionLogGroupByPayload<T extends SeerrActionLogGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<SeerrActionLogGroupByOutputType, T['by']> &
       {
