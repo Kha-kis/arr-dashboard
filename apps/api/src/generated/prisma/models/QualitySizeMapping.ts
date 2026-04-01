@@ -200,7 +200,7 @@ export type QualitySizeMappingGroupByOutputType = {
   _max: QualitySizeMappingMaxAggregateOutputType | null
 }
 
-type GetQualitySizeMappingGroupByPayload<T extends QualitySizeMappingGroupByArgs> = Prisma.PrismaPromise<
+export type GetQualitySizeMappingGroupByPayload<T extends QualitySizeMappingGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<QualitySizeMappingGroupByOutputType, T['by']> &
       {

@@ -185,7 +185,7 @@ export type VapidKeysGroupByOutputType = {
   _max: VapidKeysMaxAggregateOutputType | null
 }
 
-type GetVapidKeysGroupByPayload<T extends VapidKeysGroupByArgs> = Prisma.PrismaPromise<
+export type GetVapidKeysGroupByPayload<T extends VapidKeysGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<VapidKeysGroupByOutputType, T['by']> &
       {

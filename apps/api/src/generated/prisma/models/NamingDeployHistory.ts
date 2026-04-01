@@ -259,7 +259,7 @@ export type NamingDeployHistoryGroupByOutputType = {
   _max: NamingDeployHistoryMaxAggregateOutputType | null
 }
 
-type GetNamingDeployHistoryGroupByPayload<T extends NamingDeployHistoryGroupByArgs> = Prisma.PrismaPromise<
+export type GetNamingDeployHistoryGroupByPayload<T extends NamingDeployHistoryGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<NamingDeployHistoryGroupByOutputType, T['by']> &
       {

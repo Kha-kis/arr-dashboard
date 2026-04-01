@@ -179,7 +179,7 @@ export type StandaloneCFDeploymentGroupByOutputType = {
   _max: StandaloneCFDeploymentMaxAggregateOutputType | null
 }
 
-type GetStandaloneCFDeploymentGroupByPayload<T extends StandaloneCFDeploymentGroupByArgs> = Prisma.PrismaPromise<
+export type GetStandaloneCFDeploymentGroupByPayload<T extends StandaloneCFDeploymentGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<StandaloneCFDeploymentGroupByOutputType, T['by']> &
       {

@@ -28,6 +28,9 @@ function makeRule(overrides?: Partial<NotificationRule>): NotificationRule {
 		conditions: [],
 		targetChannelIds: null,
 		throttleMinutes: null,
+		quietHoursStart: null,
+		quietHoursEnd: null,
+		quietHoursTimezone: null,
 		...overrides,
 	};
 }
@@ -63,10 +66,7 @@ describe("RuleEngine", () => {
 				conditions: [{ field: "title", operator: "contains", value: "found" }],
 			}),
 		];
-		const result = engine.evaluate(
-			makePayload({ title: "Hunt found 3 items" }),
-			rules,
-		);
+		const result = engine.evaluate(makePayload({ title: "Hunt found 3 items" }), rules);
 		expect(result).not.toBeNull();
 		expect(result!.ruleId).toBe("rule-1");
 	});
@@ -77,7 +77,10 @@ describe("RuleEngine", () => {
 				conditions: [{ field: "eventType", operator: "not_equals", value: "BACKUP_COMPLETED" }],
 			}),
 		];
-		const result = engine.evaluate(makePayload({ eventType: "HUNT_COMPLETED" as NotificationPayload["eventType"] }), rules);
+		const result = engine.evaluate(
+			makePayload({ eventType: "HUNT_COMPLETED" as NotificationPayload["eventType"] }),
+			rules,
+		);
 		expect(result).not.toBeNull();
 		expect(result!.ruleId).toBe("rule-1");
 	});
@@ -88,10 +91,7 @@ describe("RuleEngine", () => {
 				conditions: [{ field: "metadata.count", operator: "greater_than", value: 5 }],
 			}),
 		];
-		const result = engine.evaluate(
-			makePayload({ metadata: { count: 10 } }),
-			rules,
-		);
+		const result = engine.evaluate(makePayload({ metadata: { count: 10 } }), rules);
 		expect(result).not.toBeNull();
 		expect(result!.ruleId).toBe("rule-1");
 	});
@@ -211,10 +211,7 @@ describe("RuleEngine", () => {
 				conditions: [{ field: "metadata.count", operator: "greater_than", value: 5 }],
 			}),
 		];
-		const result = engine.evaluate(
-			makePayload({ metadata: undefined }),
-			rules,
-		);
+		const result = engine.evaluate(makePayload({ metadata: undefined }), rules);
 		// metadata.count resolves to undefined, condition returns false
 		expect(result).toBeNull();
 	});

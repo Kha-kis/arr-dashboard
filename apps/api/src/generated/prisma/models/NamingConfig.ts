@@ -207,7 +207,7 @@ export type NamingConfigGroupByOutputType = {
   _max: NamingConfigMaxAggregateOutputType | null
 }
 
-type GetNamingConfigGroupByPayload<T extends NamingConfigGroupByArgs> = Prisma.PrismaPromise<
+export type GetNamingConfigGroupByPayload<T extends NamingConfigGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<NamingConfigGroupByOutputType, T['by']> &
       {

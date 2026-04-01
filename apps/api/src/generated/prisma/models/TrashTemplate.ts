@@ -270,7 +270,7 @@ export type TrashTemplateGroupByOutputType = {
   _max: TrashTemplateMaxAggregateOutputType | null
 }
 
-type GetTrashTemplateGroupByPayload<T extends TrashTemplateGroupByArgs> = Prisma.PrismaPromise<
+export type GetTrashTemplateGroupByPayload<T extends TrashTemplateGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<TrashTemplateGroupByOutputType, T['by']> &
       {

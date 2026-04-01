@@ -46,6 +46,9 @@ export type NotificationRuleMinAggregateOutputType = {
   conditions: string | null
   targetChannelIds: string | null
   throttleMinutes: number | null
+  quietHoursStart: string | null
+  quietHoursEnd: string | null
+  quietHoursTimezone: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -60,6 +63,9 @@ export type NotificationRuleMaxAggregateOutputType = {
   conditions: string | null
   targetChannelIds: string | null
   throttleMinutes: number | null
+  quietHoursStart: string | null
+  quietHoursEnd: string | null
+  quietHoursTimezone: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -74,6 +80,9 @@ export type NotificationRuleCountAggregateOutputType = {
   conditions: number
   targetChannelIds: number
   throttleMinutes: number
+  quietHoursStart: number
+  quietHoursEnd: number
+  quietHoursTimezone: number
   createdAt: number
   updatedAt: number
   _all: number
@@ -100,6 +109,9 @@ export type NotificationRuleMinAggregateInputType = {
   conditions?: true
   targetChannelIds?: true
   throttleMinutes?: true
+  quietHoursStart?: true
+  quietHoursEnd?: true
+  quietHoursTimezone?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -114,6 +126,9 @@ export type NotificationRuleMaxAggregateInputType = {
   conditions?: true
   targetChannelIds?: true
   throttleMinutes?: true
+  quietHoursStart?: true
+  quietHoursEnd?: true
+  quietHoursTimezone?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -128,6 +143,9 @@ export type NotificationRuleCountAggregateInputType = {
   conditions?: true
   targetChannelIds?: true
   throttleMinutes?: true
+  quietHoursStart?: true
+  quietHoursEnd?: true
+  quietHoursTimezone?: true
   createdAt?: true
   updatedAt?: true
   _all?: true
@@ -229,6 +247,9 @@ export type NotificationRuleGroupByOutputType = {
   conditions: string
   targetChannelIds: string | null
   throttleMinutes: number | null
+  quietHoursStart: string | null
+  quietHoursEnd: string | null
+  quietHoursTimezone: string | null
   createdAt: Date
   updatedAt: Date
   _count: NotificationRuleCountAggregateOutputType | null
@@ -238,7 +259,7 @@ export type NotificationRuleGroupByOutputType = {
   _max: NotificationRuleMaxAggregateOutputType | null
 }
 
-type GetNotificationRuleGroupByPayload<T extends NotificationRuleGroupByArgs> = Prisma.PrismaPromise<
+export type GetNotificationRuleGroupByPayload<T extends NotificationRuleGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<NotificationRuleGroupByOutputType, T['by']> &
       {
@@ -266,6 +287,9 @@ export type NotificationRuleWhereInput = {
   conditions?: Prisma.StringFilter<"NotificationRule"> | string
   targetChannelIds?: Prisma.StringNullableFilter<"NotificationRule"> | string | null
   throttleMinutes?: Prisma.IntNullableFilter<"NotificationRule"> | number | null
+  quietHoursStart?: Prisma.StringNullableFilter<"NotificationRule"> | string | null
+  quietHoursEnd?: Prisma.StringNullableFilter<"NotificationRule"> | string | null
+  quietHoursTimezone?: Prisma.StringNullableFilter<"NotificationRule"> | string | null
   createdAt?: Prisma.DateTimeFilter<"NotificationRule"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"NotificationRule"> | Date | string
   user?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
@@ -281,6 +305,9 @@ export type NotificationRuleOrderByWithRelationInput = {
   conditions?: Prisma.SortOrder
   targetChannelIds?: Prisma.SortOrderInput | Prisma.SortOrder
   throttleMinutes?: Prisma.SortOrderInput | Prisma.SortOrder
+  quietHoursStart?: Prisma.SortOrderInput | Prisma.SortOrder
+  quietHoursEnd?: Prisma.SortOrderInput | Prisma.SortOrder
+  quietHoursTimezone?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   user?: Prisma.UserOrderByWithRelationInput
@@ -299,6 +326,9 @@ export type NotificationRuleWhereUniqueInput = Prisma.AtLeast<{
   conditions?: Prisma.StringFilter<"NotificationRule"> | string
   targetChannelIds?: Prisma.StringNullableFilter<"NotificationRule"> | string | null
   throttleMinutes?: Prisma.IntNullableFilter<"NotificationRule"> | number | null
+  quietHoursStart?: Prisma.StringNullableFilter<"NotificationRule"> | string | null
+  quietHoursEnd?: Prisma.StringNullableFilter<"NotificationRule"> | string | null
+  quietHoursTimezone?: Prisma.StringNullableFilter<"NotificationRule"> | string | null
   createdAt?: Prisma.DateTimeFilter<"NotificationRule"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"NotificationRule"> | Date | string
   user?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
@@ -314,6 +344,9 @@ export type NotificationRuleOrderByWithAggregationInput = {
   conditions?: Prisma.SortOrder
   targetChannelIds?: Prisma.SortOrderInput | Prisma.SortOrder
   throttleMinutes?: Prisma.SortOrderInput | Prisma.SortOrder
+  quietHoursStart?: Prisma.SortOrderInput | Prisma.SortOrder
+  quietHoursEnd?: Prisma.SortOrderInput | Prisma.SortOrder
+  quietHoursTimezone?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   _count?: Prisma.NotificationRuleCountOrderByAggregateInput
@@ -336,6 +369,9 @@ export type NotificationRuleScalarWhereWithAggregatesInput = {
   conditions?: Prisma.StringWithAggregatesFilter<"NotificationRule"> | string
   targetChannelIds?: Prisma.StringNullableWithAggregatesFilter<"NotificationRule"> | string | null
   throttleMinutes?: Prisma.IntNullableWithAggregatesFilter<"NotificationRule"> | number | null
+  quietHoursStart?: Prisma.StringNullableWithAggregatesFilter<"NotificationRule"> | string | null
+  quietHoursEnd?: Prisma.StringNullableWithAggregatesFilter<"NotificationRule"> | string | null
+  quietHoursTimezone?: Prisma.StringNullableWithAggregatesFilter<"NotificationRule"> | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"NotificationRule"> | Date | string
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"NotificationRule"> | Date | string
 }
@@ -349,6 +385,9 @@ export type NotificationRuleCreateInput = {
   conditions: string
   targetChannelIds?: string | null
   throttleMinutes?: number | null
+  quietHoursStart?: string | null
+  quietHoursEnd?: string | null
+  quietHoursTimezone?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   user: Prisma.UserCreateNestedOneWithoutNotificationRulesInput
@@ -364,6 +403,9 @@ export type NotificationRuleUncheckedCreateInput = {
   conditions: string
   targetChannelIds?: string | null
   throttleMinutes?: number | null
+  quietHoursStart?: string | null
+  quietHoursEnd?: string | null
+  quietHoursTimezone?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -377,6 +419,9 @@ export type NotificationRuleUpdateInput = {
   conditions?: Prisma.StringFieldUpdateOperationsInput | string
   targetChannelIds?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   throttleMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  quietHoursStart?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  quietHoursEnd?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  quietHoursTimezone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   user?: Prisma.UserUpdateOneRequiredWithoutNotificationRulesNestedInput
@@ -392,6 +437,9 @@ export type NotificationRuleUncheckedUpdateInput = {
   conditions?: Prisma.StringFieldUpdateOperationsInput | string
   targetChannelIds?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   throttleMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  quietHoursStart?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  quietHoursEnd?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  quietHoursTimezone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -406,6 +454,9 @@ export type NotificationRuleCreateManyInput = {
   conditions: string
   targetChannelIds?: string | null
   throttleMinutes?: number | null
+  quietHoursStart?: string | null
+  quietHoursEnd?: string | null
+  quietHoursTimezone?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -419,6 +470,9 @@ export type NotificationRuleUpdateManyMutationInput = {
   conditions?: Prisma.StringFieldUpdateOperationsInput | string
   targetChannelIds?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   throttleMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  quietHoursStart?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  quietHoursEnd?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  quietHoursTimezone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -433,6 +487,9 @@ export type NotificationRuleUncheckedUpdateManyInput = {
   conditions?: Prisma.StringFieldUpdateOperationsInput | string
   targetChannelIds?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   throttleMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  quietHoursStart?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  quietHoursEnd?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  quietHoursTimezone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -457,6 +514,9 @@ export type NotificationRuleCountOrderByAggregateInput = {
   conditions?: Prisma.SortOrder
   targetChannelIds?: Prisma.SortOrder
   throttleMinutes?: Prisma.SortOrder
+  quietHoursStart?: Prisma.SortOrder
+  quietHoursEnd?: Prisma.SortOrder
+  quietHoursTimezone?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -476,6 +536,9 @@ export type NotificationRuleMaxOrderByAggregateInput = {
   conditions?: Prisma.SortOrder
   targetChannelIds?: Prisma.SortOrder
   throttleMinutes?: Prisma.SortOrder
+  quietHoursStart?: Prisma.SortOrder
+  quietHoursEnd?: Prisma.SortOrder
+  quietHoursTimezone?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -490,6 +553,9 @@ export type NotificationRuleMinOrderByAggregateInput = {
   conditions?: Prisma.SortOrder
   targetChannelIds?: Prisma.SortOrder
   throttleMinutes?: Prisma.SortOrder
+  quietHoursStart?: Prisma.SortOrder
+  quietHoursEnd?: Prisma.SortOrder
+  quietHoursTimezone?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -550,6 +616,9 @@ export type NotificationRuleCreateWithoutUserInput = {
   conditions: string
   targetChannelIds?: string | null
   throttleMinutes?: number | null
+  quietHoursStart?: string | null
+  quietHoursEnd?: string | null
+  quietHoursTimezone?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -563,6 +632,9 @@ export type NotificationRuleUncheckedCreateWithoutUserInput = {
   conditions: string
   targetChannelIds?: string | null
   throttleMinutes?: number | null
+  quietHoursStart?: string | null
+  quietHoursEnd?: string | null
+  quietHoursTimezone?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -605,6 +677,9 @@ export type NotificationRuleScalarWhereInput = {
   conditions?: Prisma.StringFilter<"NotificationRule"> | string
   targetChannelIds?: Prisma.StringNullableFilter<"NotificationRule"> | string | null
   throttleMinutes?: Prisma.IntNullableFilter<"NotificationRule"> | number | null
+  quietHoursStart?: Prisma.StringNullableFilter<"NotificationRule"> | string | null
+  quietHoursEnd?: Prisma.StringNullableFilter<"NotificationRule"> | string | null
+  quietHoursTimezone?: Prisma.StringNullableFilter<"NotificationRule"> | string | null
   createdAt?: Prisma.DateTimeFilter<"NotificationRule"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"NotificationRule"> | Date | string
 }
@@ -618,6 +693,9 @@ export type NotificationRuleCreateManyUserInput = {
   conditions: string
   targetChannelIds?: string | null
   throttleMinutes?: number | null
+  quietHoursStart?: string | null
+  quietHoursEnd?: string | null
+  quietHoursTimezone?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -631,6 +709,9 @@ export type NotificationRuleUpdateWithoutUserInput = {
   conditions?: Prisma.StringFieldUpdateOperationsInput | string
   targetChannelIds?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   throttleMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  quietHoursStart?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  quietHoursEnd?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  quietHoursTimezone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -644,6 +725,9 @@ export type NotificationRuleUncheckedUpdateWithoutUserInput = {
   conditions?: Prisma.StringFieldUpdateOperationsInput | string
   targetChannelIds?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   throttleMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  quietHoursStart?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  quietHoursEnd?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  quietHoursTimezone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -657,6 +741,9 @@ export type NotificationRuleUncheckedUpdateManyWithoutUserInput = {
   conditions?: Prisma.StringFieldUpdateOperationsInput | string
   targetChannelIds?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   throttleMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  quietHoursStart?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  quietHoursEnd?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  quietHoursTimezone?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -673,6 +760,9 @@ export type NotificationRuleSelect<ExtArgs extends runtime.Types.Extensions.Inte
   conditions?: boolean
   targetChannelIds?: boolean
   throttleMinutes?: boolean
+  quietHoursStart?: boolean
+  quietHoursEnd?: boolean
+  quietHoursTimezone?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
@@ -688,6 +778,9 @@ export type NotificationRuleSelectCreateManyAndReturn<ExtArgs extends runtime.Ty
   conditions?: boolean
   targetChannelIds?: boolean
   throttleMinutes?: boolean
+  quietHoursStart?: boolean
+  quietHoursEnd?: boolean
+  quietHoursTimezone?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
@@ -703,6 +796,9 @@ export type NotificationRuleSelectUpdateManyAndReturn<ExtArgs extends runtime.Ty
   conditions?: boolean
   targetChannelIds?: boolean
   throttleMinutes?: boolean
+  quietHoursStart?: boolean
+  quietHoursEnd?: boolean
+  quietHoursTimezone?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
@@ -718,11 +814,14 @@ export type NotificationRuleSelectScalar = {
   conditions?: boolean
   targetChannelIds?: boolean
   throttleMinutes?: boolean
+  quietHoursStart?: boolean
+  quietHoursEnd?: boolean
+  quietHoursTimezone?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type NotificationRuleOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "name" | "enabled" | "priority" | "action" | "conditions" | "targetChannelIds" | "throttleMinutes" | "createdAt" | "updatedAt", ExtArgs["result"]["notificationRule"]>
+export type NotificationRuleOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "name" | "enabled" | "priority" | "action" | "conditions" | "targetChannelIds" | "throttleMinutes" | "quietHoursStart" | "quietHoursEnd" | "quietHoursTimezone" | "createdAt" | "updatedAt", ExtArgs["result"]["notificationRule"]>
 export type NotificationRuleInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
 }
@@ -748,6 +847,9 @@ export type $NotificationRulePayload<ExtArgs extends runtime.Types.Extensions.In
     conditions: string
     targetChannelIds: string | null
     throttleMinutes: number | null
+    quietHoursStart: string | null
+    quietHoursEnd: string | null
+    quietHoursTimezone: string | null
     createdAt: Date
     updatedAt: Date
   }, ExtArgs["result"]["notificationRule"]>
@@ -1183,6 +1285,9 @@ export interface NotificationRuleFieldRefs {
   readonly conditions: Prisma.FieldRef<"NotificationRule", 'String'>
   readonly targetChannelIds: Prisma.FieldRef<"NotificationRule", 'String'>
   readonly throttleMinutes: Prisma.FieldRef<"NotificationRule", 'Int'>
+  readonly quietHoursStart: Prisma.FieldRef<"NotificationRule", 'String'>
+  readonly quietHoursEnd: Prisma.FieldRef<"NotificationRule", 'String'>
+  readonly quietHoursTimezone: Prisma.FieldRef<"NotificationRule", 'String'>
   readonly createdAt: Prisma.FieldRef<"NotificationRule", 'DateTime'>
   readonly updatedAt: Prisma.FieldRef<"NotificationRule", 'DateTime'>
 }

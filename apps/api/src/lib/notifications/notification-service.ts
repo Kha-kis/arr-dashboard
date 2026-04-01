@@ -43,6 +43,9 @@ export class NotificationService {
 	private retryHandler: RetryHandler;
 	private ruleEngine: RuleEngine | null;
 	private aggregationBuffer: AggregationBuffer | null;
+	private deferredQueue: Array<{ payload: NotificationPayload; deliverAt: number }> = [];
+	private deferFlushTimer: ReturnType<typeof setInterval> | null = null;
+	private static readonly MAX_DEFERRED_QUEUE_SIZE = 200;
 
 	constructor(
 		prisma: PrismaClient,
@@ -62,13 +65,74 @@ export class NotificationService {
 		this.retryHandler = retryHandler;
 		this.ruleEngine = ruleEngine ?? null;
 		this.aggregationBuffer = aggregationBuffer ?? null;
+
+		// Check deferred notifications every minute
+		this.deferFlushTimer = setInterval(() => this.flushDeferredNotifications(), 60_000);
+	}
+
+	/** Clean up timers on shutdown */
+	dispose(): void {
+		if (this.deferFlushTimer) {
+			clearInterval(this.deferFlushTimer);
+			this.deferFlushTimer = null;
+		}
+	}
+
+	/** Queue a notification for delivery after quiet hours end. */
+	private deferNotification(payload: NotificationPayload, deferUntil: string, ruleId: string): void {
+		// Cap queue to prevent unbounded growth
+		if (this.deferredQueue.length >= NotificationService.MAX_DEFERRED_QUEUE_SIZE) {
+			this.logger.warn(
+				{ queueSize: this.deferredQueue.length },
+				"Deferred notification queue full — dropping oldest entry",
+			);
+			this.deferredQueue.shift();
+		}
+		const deliverAt = new Date(deferUntil).getTime();
+		this.deferredQueue.push({ payload, deliverAt });
+		this.logger.info(
+			{ eventType: payload.eventType, ruleId, deferUntil, queueSize: this.deferredQueue.length },
+			"Notification deferred until quiet hours end",
+		);
+	}
+
+	/** Deliver any deferred notifications whose delivery time has passed. */
+	private async flushDeferredNotifications(): Promise<void> {
+		if (this.deferredQueue.length === 0) return;
+
+		const now = Date.now();
+		const ready = this.deferredQueue.filter((item) => item.deliverAt <= now);
+		if (ready.length === 0) return;
+
+		// Remove ready items from queue
+		this.deferredQueue = this.deferredQueue.filter((item) => item.deliverAt > now);
+
+		this.logger.info(
+			{ count: ready.length, remaining: this.deferredQueue.length },
+			"Delivering deferred notifications after quiet hours",
+		);
+
+		// Deliver each deferred notification individually (skipRules prevents re-deferral).
+		// Individual delivery ensures each notification routes to the correct channels
+		// based on its own eventType subscriptions.
+		const deliveryOptions = { skipRules: true };
+		for (const item of ready) {
+			try {
+				await this.notify(item.payload, deliveryOptions);
+			} catch (err: unknown) {
+				this.logger.warn(
+					{ err, eventType: item.payload.eventType },
+					"Failed to deliver deferred notification",
+				);
+			}
+		}
 	}
 
 	/**
 	 * Send a notification to all channels subscribed to the given event type.
 	 * Failures on individual channels are logged but do not throw.
 	 */
-	async notify(payload: NotificationPayload): Promise<void> {
+	async notify(payload: NotificationPayload, options?: { skipRules?: boolean }): Promise<void> {
 		// Dedup: skip if an identical payload was dispatched within the TTL window
 		if (this.dedupGate.isDuplicate(payload)) {
 			this.logger.debug({ eventType: payload.eventType }, "Duplicate notification suppressed");
@@ -94,8 +158,9 @@ export class NotificationService {
 		}
 
 		// Rule engine: evaluate user-defined rules for suppression, throttling, routing
+		// Deferred notifications skip rules to prevent infinite re-deferral loops
 		const userId = enabledSubs[0]?.channel?.userId;
-		if (userId && this.ruleEngine) {
+		if (userId && this.ruleEngine && !options?.skipRules) {
 			const rules = await this.loadRules(userId);
 			const ruleResult = this.ruleEngine.evaluate(payload, rules);
 			if (ruleResult) {
@@ -104,6 +169,10 @@ export class NotificationService {
 						{ eventType: payload.eventType, ruleId: ruleResult.ruleId },
 						"Notification suppressed by rule",
 					);
+					return;
+				}
+				if (ruleResult.action === "defer" && ruleResult.deferUntil) {
+					this.deferNotification(payload, ruleResult.deferUntil, ruleResult.ruleId);
 					return;
 				}
 				if (ruleResult.action === "throttle" && ruleResult.throttleMinutes) {
@@ -353,10 +422,13 @@ export class NotificationService {
 					id: r.id,
 					enabled: r.enabled,
 					priority: r.priority,
-					action: r.action as "suppress" | "throttle" | "route",
+					action: r.action as "suppress" | "throttle" | "route" | "quiet_hours",
 					conditions: JSON.parse(r.conditions),
 					targetChannelIds: r.targetChannelIds ? JSON.parse(r.targetChannelIds) : null,
 					throttleMinutes: r.throttleMinutes,
+					quietHoursStart: r.quietHoursStart,
+					quietHoursEnd: r.quietHoursEnd,
+					quietHoursTimezone: r.quietHoursTimezone,
 				});
 			} catch (err) {
 				this.logger.error({ err, ruleId: r.id }, "Skipping notification rule with corrupted JSON");

@@ -238,7 +238,7 @@ export type LibraryCleanupConfigGroupByOutputType = {
   _max: LibraryCleanupConfigMaxAggregateOutputType | null
 }
 
-type GetLibraryCleanupConfigGroupByPayload<T extends LibraryCleanupConfigGroupByArgs> = Prisma.PrismaPromise<
+export type GetLibraryCleanupConfigGroupByPayload<T extends LibraryCleanupConfigGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<LibraryCleanupConfigGroupByOutputType, T['by']> &
       {

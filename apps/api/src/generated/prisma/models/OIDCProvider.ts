@@ -234,7 +234,7 @@ export type OIDCProviderGroupByOutputType = {
   _max: OIDCProviderMaxAggregateOutputType | null
 }
 
-type GetOIDCProviderGroupByPayload<T extends OIDCProviderGroupByArgs> = Prisma.PrismaPromise<
+export type GetOIDCProviderGroupByPayload<T extends OIDCProviderGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<OIDCProviderGroupByOutputType, T['by']> &
       {

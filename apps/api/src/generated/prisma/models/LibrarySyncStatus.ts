@@ -249,7 +249,7 @@ export type LibrarySyncStatusGroupByOutputType = {
   _max: LibrarySyncStatusMaxAggregateOutputType | null
 }
 
-type GetLibrarySyncStatusGroupByPayload<T extends LibrarySyncStatusGroupByArgs> = Prisma.PrismaPromise<
+export type GetLibrarySyncStatusGroupByPayload<T extends LibrarySyncStatusGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<LibrarySyncStatusGroupByOutputType, T['by']> &
       {
