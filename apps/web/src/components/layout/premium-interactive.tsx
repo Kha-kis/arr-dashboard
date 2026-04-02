@@ -32,7 +32,7 @@ export const PremiumTabs = ({ tabs, activeTab, onTabChange, className }: Premium
 	return (
 		<div
 			className={cn(
-				"inline-flex rounded-xl bg-card/30 backdrop-blur-xs border border-border/50 p-1.5",
+				"flex w-full overflow-x-auto rounded-xl bg-card/30 backdrop-blur-xs border border-border/50 p-1.5 scrollbar-none",
 				className,
 			)}
 		>
@@ -45,9 +45,10 @@ export const PremiumTabs = ({ tabs, activeTab, onTabChange, className }: Premium
 					<button
 						key={tab.id}
 						type="button"
+						aria-label={tab.label}
 						onClick={() => onTabChange(tab.id)}
 						className={cn(
-							"relative flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-all duration-300",
+							"relative flex shrink-0 items-center gap-1.5 px-2.5 py-2 text-xs font-medium rounded-lg transition-all duration-300 sm:gap-2 sm:px-4 sm:py-2.5 sm:text-sm",
 							isActive ? "text-white" : "text-muted-foreground hover:text-foreground",
 						)}
 					>
@@ -63,10 +64,15 @@ export const PremiumTabs = ({ tabs, activeTab, onTabChange, className }: Premium
 						)}
 
 						{/* Icon */}
-						{Icon && <Icon className={cn("h-4 w-4 relative z-10", !isActive && "opacity-70")} aria-hidden="true" />}
+						{Icon && (
+							<Icon
+								className={cn("h-4 w-4 relative z-10", !isActive && "opacity-70")}
+								aria-hidden="true"
+							/>
+						)}
 
-						{/* Label */}
-						<span className="relative z-10">{tab.label}</span>
+						{/* Label — hidden on mobile, shown on sm+ */}
+						<span className="relative z-10 hidden sm:inline">{tab.label}</span>
 
 						{/* Badge */}
 						{tab.badge !== undefined && (
