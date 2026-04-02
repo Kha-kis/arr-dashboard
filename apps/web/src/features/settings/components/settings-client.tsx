@@ -135,7 +135,7 @@ export const SettingsClient = () => {
 							services={services}
 							onSelectService={(service) => serviceFormState.resetForm(service)}
 						/>
-						<div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
+						<div className="grid gap-4 sm:gap-6 xl:grid-cols-[2fr_1fr]">
 							<ServicesTab
 								services={services}
 								isLoading={servicesLoading}

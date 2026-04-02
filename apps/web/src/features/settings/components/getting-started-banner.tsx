@@ -106,7 +106,7 @@ export const GettingStartedBanner = ({ services, onSelectService }: GettingStart
 				</div>
 			</div>
 
-			<div className="grid gap-2 sm:grid-cols-2">
+			<div className="grid gap-2 sm:gap-3 sm:grid-cols-2">
 				{stepsToShow.slice(0, 4).map((step) => {
 					const gradient = getServiceGradient(step.service);
 					return (
@@ -114,7 +114,7 @@ export const GettingStartedBanner = ({ services, onSelectService }: GettingStart
 							key={step.service}
 							type="button"
 							onClick={() => onSelectService(step.service)}
-							className="group flex items-center gap-3 rounded-lg border border-border/50 bg-card/30 px-3 py-2.5 text-left transition-all duration-200 hover:border-border hover:bg-card/60"
+							className="group flex min-h-[44px] items-center gap-2 rounded-lg border border-border/50 bg-card/30 px-3 py-2.5 text-left transition-all duration-200 hover:border-border hover:bg-card/60 sm:gap-3"
 						>
 							<div
 								className="flex h-6 w-6 shrink-0 items-center justify-center rounded"

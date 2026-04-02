@@ -42,7 +42,11 @@ function pickBestConnection(connections: PlexServerConnection[]): PlexServerConn
 	return connections[0];
 }
 
-export const PlexOAuthSection = ({ onServerSelected, onTestConnection, mode }: PlexOAuthSectionProps) => {
+export const PlexOAuthSection = ({
+	onServerSelected,
+	onTestConnection,
+	mode,
+}: PlexOAuthSectionProps) => {
 	const isEdit = mode === "edit";
 	const { status, servers, tokenRef, error, startOAuth, cancel } = usePlexOAuth();
 	const [isIncognito] = useIncognitoMode();
@@ -113,7 +117,7 @@ export const PlexOAuthSection = ({ onServerSelected, onTestConnection, mode }: P
 	if (status === "pending" || status === "polling" || status === "discovering") {
 		return (
 			<div className="space-y-3">
-				<div className="flex items-center justify-between rounded-lg border border-border/50 bg-card/30 px-4 py-3">
+				<div className="flex items-center justify-between gap-2 rounded-lg border border-border/50 bg-card/30 px-3 py-2.5 sm:px-4 sm:py-3">
 					<div className="flex items-center gap-2 text-sm text-muted-foreground">
 						<Loader2 className="h-4 w-4 animate-spin" style={{ color: PLEX_GRADIENT.from }} />
 						{status === "pending" && "Connecting to Plex..."}
@@ -193,7 +197,7 @@ export const PlexOAuthSection = ({ onServerSelected, onTestConnection, mode }: P
 												key={key}
 												type="button"
 												onClick={() => handleSelectConnection(server, conn)}
-												className="flex w-full items-center gap-2 rounded-md border px-3 py-1.5 text-left text-xs transition-all duration-200 hover:bg-accent/50"
+												className="flex w-full items-center gap-1.5 rounded-md border px-2 py-2 text-left text-[11px] transition-all duration-200 hover:bg-accent/50 sm:gap-2 sm:px-3 sm:py-1.5 sm:text-xs"
 												style={
 													isSelected
 														? {
@@ -245,7 +249,8 @@ export const PlexOAuthSection = ({ onServerSelected, onTestConnection, mode }: P
 				{selectedUnreachable && selectedKey && (
 					<Alert variant="danger">
 						<AlertDescription>
-							This connection was unreachable during discovery. You may need to adjust the Base URL below before saving. Use Test connection to verify.
+							This connection was unreachable during discovery. You may need to adjust the Base URL
+							below before saving. Use Test connection to verify.
 						</AlertDescription>
 					</Alert>
 				)}
