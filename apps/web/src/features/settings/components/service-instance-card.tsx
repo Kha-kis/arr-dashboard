@@ -132,7 +132,9 @@ export const ServiceInstanceCard = ({
 					<div className="min-w-0 flex-1 space-y-2">
 						<div className="flex flex-wrap items-center gap-2">
 							<ServiceBadge service={instance.service} />
-							<h3 className="text-base font-semibold text-foreground">{incognitoMode ? getLinuxInstanceName(instance.label) : instance.label}</h3>
+							<h3 className="text-base font-semibold text-foreground">
+								{incognitoMode ? getLinuxInstanceName(instance.label) : instance.label}
+							</h3>
 							{instance.isDefault && (
 								<div
 									className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
@@ -179,7 +181,7 @@ export const ServiceInstanceCard = ({
 					</div>
 
 					{/* Right: Action buttons */}
-					<div className="flex shrink-0 flex-wrap items-center gap-1.5">
+					<div className="flex shrink-0 flex-wrap items-center gap-1 sm:gap-1.5">
 						{/* Test button */}
 						<Button
 							variant="secondary"

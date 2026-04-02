@@ -89,10 +89,10 @@ export const ServiceForm = ({
 				</CardDescription>
 			</CardHeader>
 			<CardContent>
-				<form className="space-y-4" onSubmit={onSubmit} autoComplete="off">
+				<form className="space-y-3 sm:space-y-4" onSubmit={onSubmit} autoComplete="off">
 					<div className="space-y-2">
 						<label className="text-xs uppercase text-muted-foreground">Service</label>
-						<div className="flex gap-2">
+						<div className="grid grid-cols-4 gap-1.5 lg:grid-cols-8 sm:gap-2">
 							{SERVICE_TYPES.map((service) => (
 								<button
 									key={service}
@@ -105,7 +105,7 @@ export const ServiceForm = ({
 										}))
 									}
 									className={cn(
-										"flex-1 rounded-lg border px-3 py-2 text-sm capitalize transition-all duration-200",
+										"min-h-[40px] rounded-lg border px-2 py-2 text-xs capitalize transition-all duration-200 sm:px-3 sm:text-sm",
 										formState.service !== service &&
 											"border-border bg-card text-muted-foreground hover:text-foreground",
 									)}
