@@ -198,11 +198,47 @@ const RULE_TYPES: Array<{ value: CleanupRuleType; label: string; desc: string }>
 		label: "Plex: Added At",
 		desc: "Flag items by when added to Plex",
 	},
+	// Jellyfin integration rules
+	{
+		value: "jellyfin_last_watched",
+		label: "Jellyfin Last Watched",
+		desc: "Days since last watched on Jellyfin",
+	},
+	{
+		value: "jellyfin_watch_count",
+		label: "Jellyfin Watch Count",
+		desc: "Number of times played on Jellyfin",
+	},
+	{
+		value: "jellyfin_on_deck",
+		label: "Jellyfin Continue Watching",
+		desc: "Whether the item is on Jellyfin's Continue Watching",
+	},
+	{
+		value: "jellyfin_user_rating",
+		label: "Jellyfin User Rating",
+		desc: "User rating on Jellyfin (favorites = 10)",
+	},
+	{
+		value: "jellyfin_watched_by",
+		label: "Jellyfin Watched By",
+		desc: "Which Jellyfin users have watched an item",
+	},
+	{
+		value: "jellyfin_added_at",
+		label: "Jellyfin Added At",
+		desc: "When the item was added to Jellyfin",
+	},
 	// Behavior-aware rules (Phase 2)
 	{
 		value: "plex_episode_completion",
 		label: "Episode Completion",
 		desc: "Flag series by % of episodes watched in Plex",
+	},
+	{
+		value: "jellyfin_episode_completion",
+		label: "Jellyfin Episode Completion",
+		desc: "Watched percentage of episodes on Jellyfin",
 	},
 	{
 		value: "user_retention",
@@ -238,7 +274,7 @@ const RULE_CATEGORIES: Array<{
 	label: string;
 	icon: LucideIcon;
 	types: CleanupRuleType[];
-	requires?: "plex" | "tautulli" | "plex+seerr";
+	requires?: "plex" | "tautulli" | "plex+seerr" | "jellyfin";
 }> = [
 	{
 		id: "content",
@@ -316,6 +352,21 @@ const RULE_CATEGORIES: Array<{
 			"plex_added_at",
 		],
 		requires: "plex" as const,
+	},
+	{
+		id: "jellyfin",
+		label: "Jellyfin Integration",
+		icon: Tv,
+		types: [
+			"jellyfin_last_watched",
+			"jellyfin_watch_count",
+			"jellyfin_on_deck",
+			"jellyfin_user_rating",
+			"jellyfin_watched_by",
+			"jellyfin_added_at",
+			"jellyfin_episode_completion",
+		],
+		requires: "jellyfin" as const,
 	},
 	{
 		id: "behavior",
@@ -443,6 +494,19 @@ export function CleanupRuleDialog({
 	const [plexUserRatingVal, setPlexUserRatingVal] = useState(5);
 	const [plexWatchedByOp, setPlexWatchedByOp] = useState("includes_any");
 	const [selectedPlexUsers, setSelectedPlexUsers] = useState<string[]>([]);
+
+	// ── Jellyfin params ─────────────────────────────────────────────
+	const [jellyfinLastWatchedOp, setJellyfinLastWatchedOp] = useState("older_than");
+	const [jellyfinLastWatchedDays, setJellyfinLastWatchedDays] = useState(90);
+	const [jellyfinWatchCountOp, setJellyfinWatchCountOp] = useState("less_than");
+	const [jellyfinWatchCountVal, setJellyfinWatchCountVal] = useState(1);
+	const [jellyfinOnDeckVal, setJellyfinOnDeckVal] = useState(false);
+	const [jellyfinUserRatingOp, setJellyfinUserRatingOp] = useState("less_than");
+	const [jellyfinUserRatingVal, setJellyfinUserRatingVal] = useState(5);
+	const [jellyfinWatchedByOp, setJellyfinWatchedByOp] = useState("includes_any");
+	const [selectedJellyfinUsers, setSelectedJellyfinUsers] = useState<string[]>([]);
+	const [jellyfinAddedAtOp, setJellyfinAddedAtOp] = useState("older_than");
+	const [jellyfinAddedAtDays, setJellyfinAddedAtDays] = useState(90);
 
 	// ── Action (Phase A) ────────────────────────────────────────────
 	const [action, setAction] = useState<"delete" | "unmonitor" | "delete_files">("delete");
@@ -686,8 +750,33 @@ export function CleanupRuleDialog({
 					setPlexAddedAtOp((p.operator as string) ?? "older_than");
 					setPlexAddedAtDays((p.days as number) ?? 90);
 					break;
+				// Jellyfin rules
+				case "jellyfin_last_watched":
+					setJellyfinLastWatchedOp((p.operator as string) ?? "older_than");
+					setJellyfinLastWatchedDays((p.days as number) ?? 90);
+					break;
+				case "jellyfin_watch_count":
+					setJellyfinWatchCountOp((p.operator as string) ?? "less_than");
+					setJellyfinWatchCountVal((p.count as number) ?? 1);
+					break;
+				case "jellyfin_on_deck":
+					setJellyfinOnDeckVal((p.isDeck as boolean) ?? false);
+					break;
+				case "jellyfin_user_rating":
+					setJellyfinUserRatingOp((p.operator as string) ?? "less_than");
+					setJellyfinUserRatingVal((p.rating as number) ?? 5);
+					break;
+				case "jellyfin_watched_by":
+					setJellyfinWatchedByOp((p.operator as string) ?? "includes_any");
+					setSelectedJellyfinUsers(Array.isArray(p.userNames) ? (p.userNames as string[]) : []);
+					break;
+				case "jellyfin_added_at":
+					setJellyfinAddedAtOp((p.operator as string) ?? "older_than");
+					setJellyfinAddedAtDays((p.days as number) ?? 90);
+					break;
 				// Phase 2/3: Behavior analysis (delegate to behaviorParams)
 				case "plex_episode_completion":
+				case "jellyfin_episode_completion":
 				case "user_retention":
 				case "staleness_score":
 				case "recently_active":
@@ -763,6 +852,18 @@ export function CleanupRuleDialog({
 			setPlexUserRatingVal(5);
 			setPlexWatchedByOp("includes_any");
 			setSelectedPlexUsers([]);
+			// Jellyfin defaults
+			setJellyfinLastWatchedOp("older_than");
+			setJellyfinLastWatchedDays(90);
+			setJellyfinWatchCountOp("less_than");
+			setJellyfinWatchCountVal(1);
+			setJellyfinOnDeckVal(false);
+			setJellyfinUserRatingOp("less_than");
+			setJellyfinUserRatingVal(5);
+			setJellyfinWatchedByOp("includes_any");
+			setSelectedJellyfinUsers([]);
+			setJellyfinAddedAtOp("older_than");
+			setJellyfinAddedAtDays(90);
 			// Phase A/B
 			setAction("delete");
 			setRetentionMode(false);
@@ -830,6 +931,7 @@ export function CleanupRuleDialog({
 					switch (templateData.ruleType) {
 						case "staleness_score":
 						case "plex_episode_completion":
+						case "jellyfin_episode_completion":
 						case "user_retention":
 						case "recently_active":
 							setBehaviorParams(p);
@@ -914,6 +1016,17 @@ export function CleanupRuleDialog({
 		selectedPlexLabels,
 		plexAddedAtOp,
 		plexAddedAtDays,
+		jellyfinLastWatchedOp,
+		jellyfinLastWatchedDays,
+		jellyfinWatchCountOp,
+		jellyfinWatchCountVal,
+		jellyfinOnDeckVal,
+		jellyfinUserRatingOp,
+		jellyfinUserRatingVal,
+		jellyfinWatchedByOp,
+		selectedJellyfinUsers,
+		jellyfinAddedAtOp,
+		jellyfinAddedAtDays,
 		behaviorParams,
 	};
 	const buildParams = () => buildParamsPure(buildParamsState);
@@ -1288,6 +1401,7 @@ export function CleanupRuleDialog({
 									{RULE_CATEGORIES.filter((cat) => {
 										if (cat.requires === "plex" && !fieldOptions?.hasPlex) return false;
 										if (cat.requires === "tautulli" && !fieldOptions?.hasTautulli) return false;
+										if (cat.requires === "jellyfin" && !fieldOptions?.hasJellyfin) return false;
 										if (cat.requires === "plex+seerr" && (!fieldOptions?.hasPlex || !hasSeerr))
 											return false;
 										return true;
@@ -1517,6 +1631,28 @@ export function CleanupRuleDialog({
 								setPlexAddedAtOp={setPlexAddedAtOp}
 								plexAddedAtDays={plexAddedAtDays}
 								setPlexAddedAtDays={setPlexAddedAtDays}
+								jellyfinLastWatchedOp={jellyfinLastWatchedOp}
+								setJellyfinLastWatchedOp={setJellyfinLastWatchedOp}
+								jellyfinLastWatchedDays={jellyfinLastWatchedDays}
+								setJellyfinLastWatchedDays={setJellyfinLastWatchedDays}
+								jellyfinWatchCountOp={jellyfinWatchCountOp}
+								setJellyfinWatchCountOp={setJellyfinWatchCountOp}
+								jellyfinWatchCountVal={jellyfinWatchCountVal}
+								setJellyfinWatchCountVal={setJellyfinWatchCountVal}
+								jellyfinOnDeckVal={jellyfinOnDeckVal}
+								setJellyfinOnDeckVal={setJellyfinOnDeckVal}
+								jellyfinUserRatingOp={jellyfinUserRatingOp}
+								setJellyfinUserRatingOp={setJellyfinUserRatingOp}
+								jellyfinUserRatingVal={jellyfinUserRatingVal}
+								setJellyfinUserRatingVal={setJellyfinUserRatingVal}
+								jellyfinWatchedByOp={jellyfinWatchedByOp}
+								setJellyfinWatchedByOp={setJellyfinWatchedByOp}
+								selectedJellyfinUsers={selectedJellyfinUsers}
+								setSelectedJellyfinUsers={setSelectedJellyfinUsers}
+								jellyfinAddedAtOp={jellyfinAddedAtOp}
+								setJellyfinAddedAtOp={setJellyfinAddedAtOp}
+								jellyfinAddedAtDays={jellyfinAddedAtDays}
+								setJellyfinAddedAtDays={setJellyfinAddedAtDays}
 								behaviorParams={behaviorParams}
 								setBehaviorParams={setBehaviorParams}
 								fieldOptions={fieldOptions}
@@ -1858,6 +1994,29 @@ interface ParamsFieldsProps {
 	setPlexAddedAtOp: (v: string) => void;
 	plexAddedAtDays: number;
 	setPlexAddedAtDays: (v: number) => void;
+	// Jellyfin
+	jellyfinLastWatchedOp: string;
+	setJellyfinLastWatchedOp: (v: string) => void;
+	jellyfinLastWatchedDays: number;
+	setJellyfinLastWatchedDays: (v: number) => void;
+	jellyfinWatchCountOp: string;
+	setJellyfinWatchCountOp: (v: string) => void;
+	jellyfinWatchCountVal: number;
+	setJellyfinWatchCountVal: (v: number) => void;
+	jellyfinOnDeckVal: boolean;
+	setJellyfinOnDeckVal: (v: boolean) => void;
+	jellyfinUserRatingOp: string;
+	setJellyfinUserRatingOp: (v: string) => void;
+	jellyfinUserRatingVal: number;
+	setJellyfinUserRatingVal: (v: number) => void;
+	jellyfinWatchedByOp: string;
+	setJellyfinWatchedByOp: (v: string) => void;
+	selectedJellyfinUsers: string[];
+	setSelectedJellyfinUsers: (v: string[]) => void;
+	jellyfinAddedAtOp: string;
+	setJellyfinAddedAtOp: (v: string) => void;
+	jellyfinAddedAtDays: number;
+	setJellyfinAddedAtDays: (v: number) => void;
 	// Phase 2/3: Behavior analysis (delegate to ConditionParamsFields)
 	behaviorParams: Record<string, unknown>;
 	setBehaviorParams: (v: Record<string, unknown>) => void;
@@ -2013,6 +2172,28 @@ function ParamsFields(props: ParamsFieldsProps) {
 		setPlexAddedAtOp,
 		plexAddedAtDays,
 		setPlexAddedAtDays,
+		jellyfinLastWatchedOp,
+		setJellyfinLastWatchedOp,
+		jellyfinLastWatchedDays,
+		setJellyfinLastWatchedDays,
+		jellyfinWatchCountOp,
+		setJellyfinWatchCountOp,
+		jellyfinWatchCountVal,
+		setJellyfinWatchCountVal,
+		jellyfinOnDeckVal,
+		setJellyfinOnDeckVal,
+		jellyfinUserRatingOp,
+		setJellyfinUserRatingOp,
+		jellyfinUserRatingVal,
+		setJellyfinUserRatingVal,
+		jellyfinWatchedByOp,
+		setJellyfinWatchedByOp,
+		selectedJellyfinUsers,
+		setSelectedJellyfinUsers,
+		jellyfinAddedAtOp,
+		setJellyfinAddedAtOp,
+		jellyfinAddedAtDays,
+		setJellyfinAddedAtDays,
 		behaviorParams,
 		setBehaviorParams,
 		fieldOptions,
@@ -3028,8 +3209,183 @@ function ParamsFields(props: ParamsFieldsProps) {
 				</div>
 			);
 
+		// ── Jellyfin Rules ──────────────────────────────────────────────
+		case "jellyfin_last_watched":
+			return (
+				<div className="space-y-2">
+					<div className="flex gap-2">
+						<label className="block flex-1">
+							<span className={labelClass}>Operator</span>
+							<select
+								value={jellyfinLastWatchedOp}
+								onChange={(e) => setJellyfinLastWatchedOp(e.target.value)}
+								className={inputClass}
+							>
+								<option value="older_than">Last watched older than</option>
+								<option value="never">Never watched</option>
+							</select>
+						</label>
+						{jellyfinLastWatchedOp !== "never" && (
+							<label className="block w-24">
+								<span className={labelClass}>Days</span>
+								<input
+									type="number"
+									value={jellyfinLastWatchedDays}
+									onChange={(e) => setJellyfinLastWatchedDays(Number(e.target.value))}
+									min={1}
+									className={inputClass}
+								/>
+							</label>
+						)}
+					</div>
+					<p className="text-xs text-muted-foreground">
+						Requires a Jellyfin instance to be configured.
+					</p>
+				</div>
+			);
+		case "jellyfin_watch_count":
+			return (
+				<div className="space-y-2">
+					<div className="flex gap-2">
+						<label className="block flex-1">
+							<span className={labelClass}>Operator</span>
+							<select
+								value={jellyfinWatchCountOp}
+								onChange={(e) => setJellyfinWatchCountOp(e.target.value)}
+								className={inputClass}
+							>
+								<option value="less_than">Less than</option>
+								<option value="greater_than">Greater than</option>
+							</select>
+						</label>
+						<label className="block w-24">
+							<span className={labelClass}>Count</span>
+							<input
+								type="number"
+								value={jellyfinWatchCountVal}
+								onChange={(e) => setJellyfinWatchCountVal(Number(e.target.value))}
+								min={0}
+								className={inputClass}
+							/>
+						</label>
+					</div>
+					<p className="text-xs text-muted-foreground">
+						Flag items by total play count from Jellyfin.
+					</p>
+				</div>
+			);
+		case "jellyfin_on_deck":
+			return (
+				<div className="space-y-2">
+					<label className="flex items-center gap-2 text-sm">
+						<input
+							type="checkbox"
+							checked={jellyfinOnDeckVal}
+							onChange={(e) => setJellyfinOnDeckVal(e.target.checked)}
+						/>
+						Item is on Continue Watching
+					</label>
+					<p className="text-xs text-muted-foreground">
+						{jellyfinOnDeckVal
+							? "Matches items currently on Jellyfin's Continue Watching."
+							: "Matches items NOT on Jellyfin's Continue Watching."}
+					</p>
+				</div>
+			);
+		case "jellyfin_user_rating":
+			return (
+				<div className="space-y-2">
+					<div className="flex gap-2">
+						<label className="block flex-1">
+							<span className={labelClass}>Operator</span>
+							<select
+								value={jellyfinUserRatingOp}
+								onChange={(e) => setJellyfinUserRatingOp(e.target.value)}
+								className={inputClass}
+							>
+								<option value="less_than">Less than</option>
+								<option value="greater_than">Greater than</option>
+								<option value="unrated">Unrated</option>
+							</select>
+						</label>
+						{jellyfinUserRatingOp !== "unrated" && (
+							<label className="block w-24">
+								<span className={labelClass}>Rating</span>
+								<input
+									type="number"
+									value={jellyfinUserRatingVal}
+									onChange={(e) => setJellyfinUserRatingVal(Number(e.target.value))}
+									min={0}
+									max={10}
+									step={0.5}
+									className={inputClass}
+								/>
+							</label>
+						)}
+					</div>
+					<p className="text-xs text-muted-foreground">
+						Flag items by user rating in Jellyfin (0-10; favorites = 10).
+					</p>
+				</div>
+			);
+		case "jellyfin_watched_by":
+			return (
+				<div className="space-y-2">
+					<label className="block">
+						<span className={labelClass}>Operator</span>
+						<select
+							value={jellyfinWatchedByOp}
+							onChange={(e) => setJellyfinWatchedByOp(e.target.value)}
+							className={inputClass}
+						>
+							<option value="includes_any">Watched by any of</option>
+							<option value="excludes_all">Not watched by any of</option>
+						</select>
+					</label>
+					<MultiSelectField
+						label="Jellyfin Users"
+						options={fieldOptions?.jellyfinUsers ?? []}
+						selected={selectedJellyfinUsers}
+						onChange={setSelectedJellyfinUsers}
+						loading={fieldOptionsLoading}
+						inputClass={inputClass}
+						labelClass={labelClass}
+					/>
+					<p className="text-xs text-muted-foreground">
+						Flag items based on which Jellyfin users have watched them.
+					</p>
+				</div>
+			);
+		case "jellyfin_added_at":
+			return (
+				<div className="flex gap-2">
+					<label className="block flex-1">
+						<span className={labelClass}>Operator</span>
+						<select
+							value={jellyfinAddedAtOp}
+							onChange={(e) => setJellyfinAddedAtOp(e.target.value)}
+							className={inputClass}
+						>
+							<option value="older_than">Added more than</option>
+							<option value="newer_than">Added within last</option>
+						</select>
+					</label>
+					<label className="block w-24">
+						<span className={labelClass}>Days</span>
+						<input
+							type="number"
+							value={jellyfinAddedAtDays}
+							onChange={(e) => setJellyfinAddedAtDays(Number(e.target.value))}
+							min={1}
+							className={inputClass}
+						/>
+					</label>
+				</div>
+			);
+
 		// Phase 2/3: Behavior analysis — delegate to ConditionParamsFields
 		case "plex_episode_completion":
+		case "jellyfin_episode_completion":
 		case "user_retention":
 		case "staleness_score":
 		case "recently_active":

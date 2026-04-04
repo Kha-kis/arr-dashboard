@@ -79,6 +79,11 @@ export async function testServiceConnection(
 			return await testPlexConnection(normalizedBaseUrl, apiKey);
 		}
 
+		// Jellyfin uses Authorization: MediaBrowser header
+		if (service === "jellyfin") {
+			return await testJellyfinConnection(normalizedBaseUrl, apiKey);
+		}
+
 		// Seerr uses its own status endpoint; Prowlarr/Lidarr/Readarr use v1; Sonarr/Radarr use v3
 		const apiPath =
 			service === "seerr"
@@ -319,6 +324,94 @@ async function testPlexConnection(baseUrl: string, token: string): Promise<Conne
 	return {
 		success: true,
 		message: name ? `Successfully connected to ${name}` : "Successfully connected to Plex",
+		version,
+	};
+}
+
+/**
+ * Tests connection to a Jellyfin server using the public info endpoint + API key validation.
+ */
+async function testJellyfinConnection(
+	baseUrl: string,
+	apiKey: string,
+): Promise<ConnectionTestResult> {
+	// First test with public endpoint (no auth needed)
+	const publicUrl = `${baseUrl}/System/Info/Public`;
+
+	const response = await fetch(publicUrl, {
+		headers: { Accept: "application/json" },
+		signal: AbortSignal.timeout(5000),
+	});
+
+	const proxyDetected = detectAuthProxy(response, publicUrl);
+	if (proxyDetected) {
+		return {
+			success: false,
+			error: "Authentication proxy detected",
+			details: `${proxyDetected}\n\n${AUTH_PROXY_ADVICE}`,
+		};
+	}
+
+	if (!response.ok) {
+		return handleHttpError(response, baseUrl);
+	}
+
+	const contentType = response.headers.get("content-type");
+	if (!contentType?.includes("application/json")) {
+		return {
+			success: false,
+			error: "Invalid response format",
+			details:
+				"Received HTML instead of JSON. Check if the base URL is correct (e.g., http://localhost:8096). If behind an auth proxy, use the internal/LAN URL.",
+		};
+	}
+
+	const json = (await response.json()) as {
+		ServerName?: string;
+		Version?: string;
+		Id?: string;
+	};
+
+	if (!json.Id) {
+		return {
+			success: false,
+			error: "Invalid Jellyfin response",
+			details: "Response did not contain a server ID. Check the URL points to a Jellyfin server.",
+		};
+	}
+
+	// Validate the API key by calling an authenticated endpoint
+	const authUrl = `${baseUrl}/System/Info`;
+	try {
+		const authResponse = await fetch(authUrl, {
+			headers: {
+				Accept: "application/json",
+				Authorization: `MediaBrowser Token="${apiKey}"`,
+			},
+			signal: AbortSignal.timeout(5000),
+		});
+		if (authResponse.status === 401) {
+			return {
+				success: false,
+				error: "Authentication failed (401)",
+				details: "Invalid API key. Generate one in Jellyfin Dashboard > API Keys.",
+			};
+		}
+	} catch (authErr) {
+		return {
+			success: false,
+			error: "API key validation failed",
+			details:
+				"Jellyfin server was reached but the API key could not be verified. Check your key in Jellyfin Dashboard > API Keys.",
+			version: json.Version,
+		};
+	}
+
+	const name = json.ServerName ?? "Jellyfin";
+	const version = json.Version ?? "unknown";
+	return {
+		success: true,
+		message: `Successfully connected to ${name}`,
 		version,
 	};
 }

@@ -16,6 +16,7 @@ enum ServiceType {
   SEERR
   TAUTULLI
   PLEX
+  JELLYFIN
 }
 
 // Library item type enum - uses lowercase to match Zod schema in shared package
@@ -111,6 +112,8 @@ model ServiceInstance {
   plexCaches                  PlexCache[]
   plexEpisodeCaches           PlexEpisodeCache[]
   tautulliCaches              TautulliCache[]
+  jellyfinCaches              JellyfinCache[]
+  jellyfinEpisodeCaches       JellyfinEpisodeCache[]
   cacheRefreshStatuses        CacheRefreshStatus[]
   sessionSnapshots            SessionSnapshot[]
   namingConfig                NamingConfig?
@@ -1257,6 +1260,57 @@ model PlexEpisodeCache {
   @@unique([instanceId, showTmdbId, seasonNumber, episodeNumber])
   @@index([instanceId])
   @@map("plex_episode_cache")
+}
+
+// ============================================================================
+// Jellyfin Integration Models
+// Cache of Jellyfin library and watch data — mirrors PlexCache structure
+// ============================================================================
+
+/// Cached Jellyfin per-item library + watch data
+model JellyfinCache {
+  id            String    @id @default(cuid())
+  instanceId    String
+  tmdbId        Int
+  mediaType     String                         // "movie" | "series"
+  libraryId     String                         // Jellyfin library/view ID
+  libraryName   String
+  title         String    @default("")
+  jellyfinId    String?                        // Jellyfin item ID for API operations
+  lastWatchedAt DateTime?
+  watchCount    Int       @default(0)
+  watchedByUsers String                        // JSON array of usernames
+  onDeck        Boolean   @default(false)
+  userRating    Float?
+  collections   String                         // JSON array of collection names
+  addedAt       DateTime?
+  thumb         String?                        // Jellyfin image path
+
+  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, tmdbId, mediaType, libraryId])
+  @@index([instanceId])
+  @@map("jellyfin_cache")
+}
+
+/// Cached Jellyfin episode-level watch data
+model JellyfinEpisodeCache {
+  id              String    @id @default(cuid())
+  instanceId      String
+  showTmdbId      Int
+  seasonNumber    Int
+  episodeNumber   Int
+  jellyfinId      String                       // Jellyfin episode item ID
+  title           String
+  watched         Boolean
+  watchedByUsers  String                       // JSON array of usernames
+  lastWatchedAt   DateTime?
+
+  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, showTmdbId, seasonNumber, episodeNumber])
+  @@index([instanceId])
+  @@map("jellyfin_episode_cache")
 }
 
 // ============================================================================

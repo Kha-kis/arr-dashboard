@@ -285,6 +285,29 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			}
 		}
 
+		// Extract distinct Jellyfin users and libraries
+		const jellyfinUsers = new Set<string>();
+		const jellyfinLibraries = new Set<string>();
+		const jellyfinInstances = await app.prisma.serviceInstance.findMany({
+			where: { userId, service: "JELLYFIN" },
+			select: { id: true },
+		});
+		if (jellyfinInstances.length > 0) {
+			const jfRows = await app.prisma.jellyfinCache.findMany({
+				where: { instanceId: { in: jellyfinInstances.map((i) => i.id) } },
+				select: { watchedByUsers: true, libraryName: true },
+			});
+			for (const row of jfRows) {
+				if (row.libraryName) jellyfinLibraries.add(row.libraryName);
+				const users = safeJsonParse(row.watchedByUsers);
+				if (Array.isArray(users)) {
+					for (const u of users) {
+						if (typeof u === "string" && u) jellyfinUsers.add(u);
+					}
+				}
+			}
+		}
+
 		// Fetch ARR tags from all Sonarr/Radarr instances
 		const arrTags: Array<{ id: number; label: string }> = [];
 		const seenTagIds = new Set<number>();
@@ -320,9 +343,12 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			plexLibraries: sorted(plexLibraries),
 			plexCollections: sorted(plexCollections),
 			plexLabels: sorted(plexLabels),
+			jellyfinUsers: sorted(jellyfinUsers),
+			jellyfinLibraries: sorted(jellyfinLibraries),
 			arrTags,
 			hasPlex: plexInstances.length > 0,
 			hasTautulli: tautulliInstances.length > 0,
+			hasJellyfin: jellyfinInstances.length > 0,
 		};
 
 		// Store in cache

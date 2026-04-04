@@ -77,6 +77,11 @@ export const getServicePlaceholders = (service: ServiceType) => {
 				label: "Primary Plex",
 				baseUrl: "http://localhost:32400",
 			};
+		case "jellyfin":
+			return {
+				label: "Primary Jellyfin",
+				baseUrl: "http://localhost:8096",
+			};
 		default:
 			return {
 				label: "Primary Instance",

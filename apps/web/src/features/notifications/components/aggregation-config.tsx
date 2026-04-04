@@ -33,6 +33,9 @@ const EVENT_LABELS: Record<string, string> = {
 	PLEX_CONCURRENT_PEAK: "Plex: Concurrent Peak",
 	PLEX_TRANSCODE_HEAVY: "Plex: Heavy Transcoding",
 	PLEX_NEW_DEVICE: "Plex: New Device",
+	JELLYFIN_CONCURRENT_PEAK: "Jellyfin: Concurrent Peak",
+	JELLYFIN_TRANSCODE_HEAVY: "Jellyfin: Heavy Transcoding",
+	JELLYFIN_NEW_DEVICE: "Jellyfin: New Device",
 	SYSTEM_STARTUP: "System: Startup",
 	SYSTEM_ERROR: "System: Error",
 };
@@ -51,6 +54,9 @@ const AGGREGATABLE_EVENTS: NotificationEventType[] = [
 	"PLEX_CONCURRENT_PEAK",
 	"PLEX_TRANSCODE_HEAVY",
 	"PLEX_NEW_DEVICE",
+	"JELLYFIN_CONCURRENT_PEAK",
+	"JELLYFIN_TRANSCODE_HEAVY",
+	"JELLYFIN_NEW_DEVICE",
 ];
 
 interface LocalConfig {

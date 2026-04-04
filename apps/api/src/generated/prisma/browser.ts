@@ -229,6 +229,16 @@ export type PlexCache = Prisma.PlexCacheModel
  */
 export type PlexEpisodeCache = Prisma.PlexEpisodeCacheModel
 /**
+ * Model JellyfinCache
+ * Cached Jellyfin per-item library + watch data
+ */
+export type JellyfinCache = Prisma.JellyfinCacheModel
+/**
+ * Model JellyfinEpisodeCache
+ * Cached Jellyfin episode-level watch data
+ */
+export type JellyfinEpisodeCache = Prisma.JellyfinEpisodeCacheModel
+/**
  * Model TautulliCache
  * Cached Tautulli watch statistics per media item
  */

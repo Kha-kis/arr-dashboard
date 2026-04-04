@@ -426,6 +426,8 @@ export const ModelName = {
   NotificationAggregationConfig: 'NotificationAggregationConfig',
   PlexCache: 'PlexCache',
   PlexEpisodeCache: 'PlexEpisodeCache',
+  JellyfinCache: 'JellyfinCache',
+  JellyfinEpisodeCache: 'JellyfinEpisodeCache',
   TautulliCache: 'TautulliCache',
   CacheRefreshStatus: 'CacheRefreshStatus',
   SessionSnapshot: 'SessionSnapshot',
@@ -447,7 +449,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog"
+    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -3559,6 +3561,154 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    JellyfinCache: {
+      payload: Prisma.$JellyfinCachePayload<ExtArgs>
+      fields: Prisma.JellyfinCacheFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.JellyfinCacheFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinCachePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.JellyfinCacheFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinCachePayload>
+        }
+        findFirst: {
+          args: Prisma.JellyfinCacheFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinCachePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.JellyfinCacheFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinCachePayload>
+        }
+        findMany: {
+          args: Prisma.JellyfinCacheFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinCachePayload>[]
+        }
+        create: {
+          args: Prisma.JellyfinCacheCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinCachePayload>
+        }
+        createMany: {
+          args: Prisma.JellyfinCacheCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.JellyfinCacheCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinCachePayload>[]
+        }
+        delete: {
+          args: Prisma.JellyfinCacheDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinCachePayload>
+        }
+        update: {
+          args: Prisma.JellyfinCacheUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinCachePayload>
+        }
+        deleteMany: {
+          args: Prisma.JellyfinCacheDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.JellyfinCacheUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.JellyfinCacheUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinCachePayload>[]
+        }
+        upsert: {
+          args: Prisma.JellyfinCacheUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinCachePayload>
+        }
+        aggregate: {
+          args: Prisma.JellyfinCacheAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateJellyfinCache>
+        }
+        groupBy: {
+          args: Prisma.JellyfinCacheGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.JellyfinCacheGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.JellyfinCacheCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.JellyfinCacheCountAggregateOutputType> | number
+        }
+      }
+    }
+    JellyfinEpisodeCache: {
+      payload: Prisma.$JellyfinEpisodeCachePayload<ExtArgs>
+      fields: Prisma.JellyfinEpisodeCacheFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.JellyfinEpisodeCacheFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeCachePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.JellyfinEpisodeCacheFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeCachePayload>
+        }
+        findFirst: {
+          args: Prisma.JellyfinEpisodeCacheFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeCachePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.JellyfinEpisodeCacheFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeCachePayload>
+        }
+        findMany: {
+          args: Prisma.JellyfinEpisodeCacheFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeCachePayload>[]
+        }
+        create: {
+          args: Prisma.JellyfinEpisodeCacheCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeCachePayload>
+        }
+        createMany: {
+          args: Prisma.JellyfinEpisodeCacheCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.JellyfinEpisodeCacheCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeCachePayload>[]
+        }
+        delete: {
+          args: Prisma.JellyfinEpisodeCacheDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeCachePayload>
+        }
+        update: {
+          args: Prisma.JellyfinEpisodeCacheUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeCachePayload>
+        }
+        deleteMany: {
+          args: Prisma.JellyfinEpisodeCacheDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.JellyfinEpisodeCacheUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.JellyfinEpisodeCacheUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeCachePayload>[]
+        }
+        upsert: {
+          args: Prisma.JellyfinEpisodeCacheUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$JellyfinEpisodeCachePayload>
+        }
+        aggregate: {
+          args: Prisma.JellyfinEpisodeCacheAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateJellyfinEpisodeCache>
+        }
+        groupBy: {
+          args: Prisma.JellyfinEpisodeCacheGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.JellyfinEpisodeCacheGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.JellyfinEpisodeCacheCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.JellyfinEpisodeCacheCountAggregateOutputType> | number
+        }
+      }
+    }
     TautulliCache: {
       payload: Prisma.$TautulliCachePayload<ExtArgs>
       fields: Prisma.TautulliCacheFieldRefs
@@ -4829,6 +4979,44 @@ export const PlexEpisodeCacheScalarFieldEnum = {
 export type PlexEpisodeCacheScalarFieldEnum = (typeof PlexEpisodeCacheScalarFieldEnum)[keyof typeof PlexEpisodeCacheScalarFieldEnum]
 
 
+export const JellyfinCacheScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  tmdbId: 'tmdbId',
+  mediaType: 'mediaType',
+  libraryId: 'libraryId',
+  libraryName: 'libraryName',
+  title: 'title',
+  jellyfinId: 'jellyfinId',
+  lastWatchedAt: 'lastWatchedAt',
+  watchCount: 'watchCount',
+  watchedByUsers: 'watchedByUsers',
+  onDeck: 'onDeck',
+  userRating: 'userRating',
+  collections: 'collections',
+  addedAt: 'addedAt',
+  thumb: 'thumb'
+} as const
+
+export type JellyfinCacheScalarFieldEnum = (typeof JellyfinCacheScalarFieldEnum)[keyof typeof JellyfinCacheScalarFieldEnum]
+
+
+export const JellyfinEpisodeCacheScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  showTmdbId: 'showTmdbId',
+  seasonNumber: 'seasonNumber',
+  episodeNumber: 'episodeNumber',
+  jellyfinId: 'jellyfinId',
+  title: 'title',
+  watched: 'watched',
+  watchedByUsers: 'watchedByUsers',
+  lastWatchedAt: 'lastWatchedAt'
+} as const
+
+export type JellyfinEpisodeCacheScalarFieldEnum = (typeof JellyfinEpisodeCacheScalarFieldEnum)[keyof typeof JellyfinEpisodeCacheScalarFieldEnum]
+
+
 export const TautulliCacheScalarFieldEnum = {
   id: 'id',
   instanceId: 'instanceId',
@@ -5146,6 +5334,8 @@ export type GlobalOmitConfig = {
   notificationAggregationConfig?: Prisma.NotificationAggregationConfigOmit
   plexCache?: Prisma.PlexCacheOmit
   plexEpisodeCache?: Prisma.PlexEpisodeCacheOmit
+  jellyfinCache?: Prisma.JellyfinCacheOmit
+  jellyfinEpisodeCache?: Prisma.JellyfinEpisodeCacheOmit
   tautulliCache?: Prisma.TautulliCacheOmit
   cacheRefreshStatus?: Prisma.CacheRefreshStatusOmit
   sessionSnapshot?: Prisma.SessionSnapshotOmit

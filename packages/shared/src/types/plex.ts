@@ -204,7 +204,7 @@ export interface PlexAccountsResponse {
 export interface CacheHealthItem {
 	instanceId: string;
 	instanceName: string;
-	cacheType: "plex" | "tautulli" | "plex_episode";
+	cacheType: "plex" | "tautulli" | "plex_episode" | "jellyfin" | "jellyfin_episode";
 	lastRefreshedAt: string;
 	lastResult: "success" | "error";
 	lastErrorMessage: string | null;
