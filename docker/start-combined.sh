@@ -17,12 +17,13 @@ if [ "$(id -u)" -ne 0 ]; then
     ACTUAL_UID=$(id -u)
     ACTUAL_GID=$(id -g)
     # Warn if user explicitly set PUID/PGID that differ from actual UID/GID
-    if [ -n "$PUID" ] && [ "$PUID" != "$ACTUAL_UID" ]; then
+    # Skip warning when PUID/PGID match the Dockerfile defaults (911) — not user-set
+    if [ -n "$PUID" ] && [ "$PUID" != "$ACTUAL_UID" ] && [ "$PUID" != "911" ]; then
         echo ""
         echo "  WARNING: PUID=$PUID is ignored in rootless mode (running as UID $ACTUAL_UID)"
         echo "  Remove PUID/PGID env vars when using --user, or remove --user to use PUID/PGID"
     fi
-    if [ -n "$PGID" ] && [ "$PGID" != "$ACTUAL_GID" ]; then
+    if [ -n "$PGID" ] && [ "$PGID" != "$ACTUAL_GID" ] && [ "$PGID" != "911" ]; then
         echo "  WARNING: PGID=$PGID is ignored in rootless mode (running as GID $ACTUAL_GID)"
     fi
     PUID=$ACTUAL_UID
