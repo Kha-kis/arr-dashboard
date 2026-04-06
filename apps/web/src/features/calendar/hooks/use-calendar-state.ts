@@ -35,7 +35,7 @@ export interface CalendarState {
 	resetFilters: () => void;
 }
 
-export const useCalendarState = (): CalendarState => {
+export const useCalendarState = (weekStart: 0 | 1 = 0): CalendarState => {
 	const [currentMonth, setCurrentMonth] = useState(() => {
 		const now = new Date();
 		return createMonthDate(now.getUTCFullYear(), now.getUTCMonth());
@@ -54,7 +54,9 @@ export const useCalendarState = (): CalendarState => {
 		end.setUTCDate(0);
 
 		const calendarStartDate = new Date(start);
-		calendarStartDate.setUTCDate(calendarStartDate.getUTCDate() - calendarStartDate.getUTCDay());
+		const dayOfWeek = calendarStartDate.getUTCDay();
+		const offset = (dayOfWeek - weekStart + 7) % 7;
+		calendarStartDate.setUTCDate(calendarStartDate.getUTCDate() - offset);
 
 		// Always show 6 rows (42 days) so the grid height stays constant
 		const calendarEndDate = new Date(calendarStartDate);
@@ -66,7 +68,7 @@ export const useCalendarState = (): CalendarState => {
 			calendarStart: calendarStartDate,
 			calendarEnd: calendarEndDate,
 		};
-	}, [currentMonth]);
+	}, [currentMonth, weekStart]);
 
 	const daysInView = useMemo(() => {
 		const days: Date[] = [];

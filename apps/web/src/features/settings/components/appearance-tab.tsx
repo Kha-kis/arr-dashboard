@@ -1,8 +1,9 @@
 "use client";
 
-import { Crown, Lock, Monitor, Moon, Smartphone, Sparkles, Sun, Zap } from "lucide-react";
+import { Calendar, Crown, Lock, Monitor, Moon, Smartphone, Sparkles, Sun, Zap } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useRef, useState } from "react";
+import { type WeekStart, useFirstDayOfWeek } from "../../../hooks/useFirstDayOfWeek";
 import { useOLEDMode } from "../../../hooks/useOLEDMode";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { THEME_GRADIENT_VALUES } from "../../../lib/theme-gradients";
@@ -36,6 +37,7 @@ export function AppearanceTab() {
 	const { colorTheme, setColorTheme } = useColorTheme();
 	const { gradient: activeGradient } = useThemeGradient();
 	const { isOLED, toggleOLED } = useOLEDMode();
+	const { weekStart, setWeekStart } = useFirstDayOfWeek();
 	const [mounted, setMounted] = useState(false);
 	const [hoveredTheme, setHoveredTheme] = useState<ColorTheme | null>(null);
 	const [isTransitioning, setIsTransitioning] = useState(false);
@@ -263,6 +265,70 @@ export function AppearanceTab() {
 								</div>
 							</div>
 						)}
+
+						{/* Calendar — Week Start */}
+						<div
+							className="animate-in fade-in slide-in-from-bottom-4 duration-500"
+							style={{ animationDelay: "175ms" }}
+						>
+							<div className="rounded-2xl border border-border/50 bg-card/50 backdrop-blur-xs p-6">
+								<h3 className="text-sm font-medium text-foreground mb-4 flex items-center gap-2">
+									<span className="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
+									Calendar
+								</h3>
+
+								<div className="flex items-center justify-between">
+									<div className="flex items-center gap-3">
+										<div
+											className="flex h-10 w-10 items-center justify-center rounded-xl transition-all duration-300"
+											style={{
+												background: `${activeGradient.from}15`,
+											}}
+										>
+											<Calendar
+												className="h-5 w-5 transition-colors duration-300"
+												style={{ color: activeGradient.from }}
+											/>
+										</div>
+										<div>
+											<p className="text-sm font-medium text-foreground">Week Starts On</p>
+											<p className="text-xs text-muted-foreground">
+												Choose the first day of the week for the calendar
+											</p>
+										</div>
+									</div>
+
+									<div className="flex items-center gap-1 p-1 rounded-lg bg-muted/50">
+										{([
+											{ value: 0 as WeekStart, label: "Sun" },
+											{ value: 1 as WeekStart, label: "Mon" },
+										]).map(({ value, label }) => (
+											<button
+												key={value}
+												type="button"
+												onClick={() => setWeekStart(value)}
+												className={cn(
+													"relative px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-300",
+													weekStart === value
+														? "text-foreground"
+														: "text-muted-foreground hover:text-foreground",
+												)}
+											>
+												{weekStart === value && (
+													<span
+														className="absolute inset-0 rounded-md bg-background shadow-sm transition-all duration-300"
+														style={{
+															boxShadow: `0 2px 8px -2px ${activeGradient.glow}`,
+														}}
+													/>
+												)}
+												<span className="relative">{label}</span>
+											</button>
+										))}
+									</div>
+								</div>
+							</div>
+						</div>
 
 						{/* Standard Color Themes */}
 						<div
