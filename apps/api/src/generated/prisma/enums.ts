@@ -18,7 +18,8 @@ export const ServiceType = {
   SEERR: 'SEERR',
   TAUTULLI: 'TAUTULLI',
   PLEX: 'PLEX',
-  JELLYFIN: 'JELLYFIN'
+  JELLYFIN: 'JELLYFIN',
+  EMBY: 'EMBY'
 } as const
 
 export type ServiceType = (typeof ServiceType)[keyof typeof ServiceType]

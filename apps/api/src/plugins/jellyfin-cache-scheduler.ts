@@ -27,7 +27,7 @@ const jellyfinCacheSchedulerPlugin = fastifyPlugin(
 			isRunning = true;
 			try {
 				const instances = await app.prisma.serviceInstance.findMany({
-					where: { service: "JELLYFIN", enabled: true },
+					where: { service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
 				});
 
 				if (instances.length === 0) {

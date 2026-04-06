@@ -54,7 +54,7 @@ export const CacheHealthBanner = ({ enabled }: CacheHealthBannerProps) => {
 	// Collect affected instances by cache type for targeted refresh
 	const affected = [...staleItems, ...errorItems];
 	const plexInstanceIds = [...new Set(affected.filter((i) => i.cacheType === "plex" || i.cacheType === "plex_episode").map((i) => i.instanceId))];
-	const jellyfinInstanceIds = [...new Set(affected.filter((i) => i.cacheType === "jellyfin" || i.cacheType === "jellyfin_episode").map((i) => i.instanceId))];
+	const jellyfinInstanceIds = [...new Set(affected.filter((i) => i.cacheType === "jellyfin" || i.cacheType === "jellyfin_episode" || i.cacheType === "emby" || i.cacheType === "emby_episode").map((i) => i.instanceId))];
 	const hasRefreshable = plexInstanceIds.length > 0 || jellyfinInstanceIds.length > 0;
 
 	const handleRefresh = async () => {

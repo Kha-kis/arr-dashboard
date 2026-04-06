@@ -33,7 +33,7 @@ export async function registerEpisodeRoutes(app: FastifyInstance, _opts: Fastify
 
 		// Verify instance ownership
 		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { id: instanceId, userId, service: "JELLYFIN", enabled: true },
+			where: { id: instanceId, userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
 			select: { id: true },
 		});
 

@@ -39,7 +39,7 @@ export async function registerSeriesProgressRoutes(
 		}
 
 		const jellyfinInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "JELLYFIN", enabled: true },
+			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
 			select: { id: true },
 		});
 
