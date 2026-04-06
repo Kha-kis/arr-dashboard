@@ -14,6 +14,11 @@ echo "=========================================="
 
 if [ "$(id -u)" -ne 0 ]; then
     ROOTLESS=true
+    # Warn if user explicitly set PUID/PGID (they'll be ignored in rootless mode)
+    if [ -n "${PUID+x}" ] || [ -n "${PGID+x}" ]; then
+        echo ""
+        echo "  WARNING: PUID/PGID env vars are ignored in rootless mode (using actual UID/GID)"
+    fi
     PUID=$(id -u)
     PGID=$(id -g)
     echo ""
@@ -155,6 +160,10 @@ if [ "$CURRENT_PROVIDER" != "$DB_PROVIDER" ]; then
     # Use a more robust sed pattern that handles different formatting
     if ! sed -i '/datasource db/,/^}/ s/provider = "[^"]*"/provider = "'"$DB_PROVIDER"'"/' prisma/schema.prisma; then
         echo "ERROR: Failed to update schema.prisma provider" >&2
+        if [ "$ROOTLESS" = true ]; then
+            echo "  In rootless mode, schema files may not be writable." >&2
+            echo "  Either rebuild the image with DATABASE_URL set, or ensure /app/api is writable." >&2
+        fi
         exit 1
     fi
 
