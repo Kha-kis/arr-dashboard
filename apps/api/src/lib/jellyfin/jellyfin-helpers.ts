@@ -58,8 +58,8 @@ export async function requireJellyfinClient(
 		throw new InstanceNotFoundError(instanceId);
 	}
 
-	if (instance.service !== "JELLYFIN") {
-		throw new AppValidationError("Instance is not a Jellyfin service");
+	if (instance.service !== "JELLYFIN" && instance.service !== "EMBY") {
+		throw new AppValidationError("Instance is not a Jellyfin or Emby service");
 	}
 
 	const client = createJellyfinClient(app.encryptor, instance, app.log);
@@ -79,7 +79,7 @@ export async function executeOnJellyfinInstances<T>(
 	operation: (client: JellyfinClient, instance: ServiceInstance) => Promise<T>,
 ): Promise<JellyfinMultiInstanceResponse<T>> {
 	const instances = await app.prisma.serviceInstance.findMany({
-		where: { userId, service: "JELLYFIN", enabled: true },
+		where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
 		orderBy: { label: "asc" },
 	});
 

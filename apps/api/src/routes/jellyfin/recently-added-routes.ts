@@ -33,7 +33,7 @@ export async function registerRecentlyAddedRoutes(
 		const userId = request.currentUser!.id;
 
 		const jellyfinInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "JELLYFIN", enabled: true },
+			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
 			select: { id: true, label: true },
 		});
 

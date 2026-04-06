@@ -82,6 +82,11 @@ export const getServicePlaceholders = (service: ServiceType) => {
 				label: "Primary Jellyfin",
 				baseUrl: "http://localhost:8096",
 			};
+		case "emby":
+			return {
+				label: "Primary Emby",
+				baseUrl: "http://localhost:8096",
+			};
 		default:
 			return {
 				label: "Primary Instance",

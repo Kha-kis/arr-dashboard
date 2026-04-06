@@ -48,7 +48,7 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, _opts: Fasti
 		const userId = request.currentUser!.id;
 
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "JELLYFIN", enabled: true },
+			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
 			select: { id: true },
 		});
 
@@ -95,7 +95,7 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, _opts: Fasti
 		const userId = request.currentUser!.id;
 
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "JELLYFIN", enabled: true },
+			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
 			select: { id: true },
 		});
 
@@ -142,7 +142,7 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, _opts: Fasti
 		const userId = request.currentUser!.id;
 
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "JELLYFIN", enabled: true },
+			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
 			select: { id: true },
 		});
 
@@ -179,7 +179,7 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, _opts: Fasti
 		const userId = request.currentUser!.id;
 
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "JELLYFIN", enabled: true },
+			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
 			select: { id: true },
 		});
 
@@ -218,7 +218,7 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, _opts: Fasti
 		const userId = request.currentUser!.id;
 
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "JELLYFIN", enabled: true },
+			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
 			select: { id: true },
 		});
 
@@ -260,7 +260,7 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, _opts: Fasti
 		const userId = request.currentUser!.id;
 
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "JELLYFIN", enabled: true },
+			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
 			select: { id: true },
 		});
 
@@ -293,7 +293,7 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, _opts: Fasti
 		const userId = request.currentUser!.id;
 
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "JELLYFIN", enabled: true },
+			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
 			select: { id: true },
 		});
 
@@ -331,7 +331,7 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, _opts: Fasti
 		const userId = request.currentUser!.id;
 
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "JELLYFIN", enabled: true },
+			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
 			select: { id: true },
 		});
 
@@ -374,7 +374,7 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, _opts: Fasti
 		}
 
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "JELLYFIN", enabled: true },
+			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
 			select: { id: true },
 		});
 

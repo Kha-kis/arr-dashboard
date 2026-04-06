@@ -638,7 +638,7 @@ async function prefetchJellyfinData(
 	const { prisma, log } = deps;
 
 	const jellyfinInstances = await prisma.serviceInstance.findMany({
-		where: { userId, service: "JELLYFIN" },
+		where: { userId, service: { in: ["JELLYFIN", "EMBY"] } },
 		select: { id: true },
 	});
 
@@ -717,7 +717,7 @@ async function prefetchJellyfinEpisodeData(
 
 	try {
 		const instances = await prisma.serviceInstance.findMany({
-			where: { userId, service: "JELLYFIN" },
+			where: { userId, service: { in: ["JELLYFIN", "EMBY"] } },
 			select: { id: true },
 		});
 		const instanceIds = instances.map((i) => i.id);
