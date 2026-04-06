@@ -81,7 +81,11 @@ services:
 | `WEBAUTHN_RP_ID` | `localhost` | Your domain (no protocol) |
 | `WEBAUTHN_ORIGIN` | `http://localhost:3000` | Full URL with protocol |
 
-> **Note:** Set `PUID` and `PGID` to match the owner of your config directory. Run `id -u` and `id -g` on your host to find your user/group IDs. The container must start as root — do not use Docker's `--user` flag, as it bypasses the internal permission setup and privilege drop.
+> **Note:** Two modes are supported for running as a non-root user:
+>
+> **PUID/PGID (default):** Set these to match the owner of your config directory. The container starts as root, sets up permissions, then drops privileges. Follows the [LinuxServer.io convention](https://docs.linuxserver.io/general/understanding-puid-and-pgid).
+>
+> **Rootless (`--user`):** Run with `--user UID:GID` or `user: "UID:GID"` in Compose. No root required. Ensure `/config` is writable by the specified user.
 
 ## Version Tags
 
@@ -126,6 +130,7 @@ services:
 
 ## Security Hardening (Optional)
 
+Using PUID/PGID:
 ```bash
 docker run -d \
   --name arr-dashboard \
@@ -135,6 +140,16 @@ docker run -d \
   -v /path/to/config:/config \
   -e PUID=1000 \
   -e PGID=1000 \
+  khak1s/arr-dashboard:latest
+```
+
+Using rootless mode (no root required):
+```bash
+docker run -d \
+  --name arr-dashboard \
+  --user 1000:1000 \
+  -p 3000:3000 \
+  -v /path/to/config:/config \
   khak1s/arr-dashboard:latest
 ```
 
