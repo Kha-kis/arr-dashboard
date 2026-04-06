@@ -262,7 +262,7 @@ The `/config` volume contains critical data that must be preserved:
 | `LOG_LEVEL` | `info` | Logging level (`debug`, `info`, `warn`, `error`) |
 | `GITHUB_TOKEN` | - | Optional GitHub token for TRaSH Guides (higher rate limits) |
 
-> **Note:** Set `PUID` and `PGID` to match the owner of your config directory. Run `id -u` and `id -g` on your host to find your user/group IDs. This follows the [LinuxServer.io](https://docs.linuxserver.io/general/understanding-puid-and-pgid) convention.
+> **Note:** Set `PUID` and `PGID` to match the owner of your config directory. Run `id -u` and `id -g` on your host to find your user/group IDs. This follows the [LinuxServer.io](https://docs.linuxserver.io/general/understanding-puid-and-pgid) convention. The container must start as root — do not use Docker's `--user` flag, as it bypasses the internal permission setup and privilege drop.
 
 ## Platform Support
 
