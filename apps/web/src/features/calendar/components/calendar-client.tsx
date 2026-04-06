@@ -96,7 +96,7 @@ export const CalendarClient = () => {
 							))}
 						</div>
 						<div className="grid grid-cols-7 gap-px rounded-2xl overflow-hidden border border-border/10">
-							{Array.from({ length: 35 }).map((_, i) => (
+							{Array.from({ length: 42 }).map((_, i) => (
 								<PremiumSkeleton
 									key={i}
 									className="h-[115px] lg:h-[130px]"
