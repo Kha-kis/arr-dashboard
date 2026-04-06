@@ -34,6 +34,7 @@ import {
 	Typography,
 } from "../../../components/ui";
 import { useDashboardStatisticsQuery } from "../../../hooks/api/useDashboard";
+import { useJellyfinNowPlaying } from "../../../hooks/api/useJellyfin";
 import { useNowPlaying } from "../../../hooks/api/usePlex";
 import { useTautulliActivity } from "../../../hooks/api/useTautulli";
 import { useRefreshState } from "../../../hooks/useRefreshState";
@@ -360,7 +361,7 @@ export const DashboardClient = () => {
 		[services],
 	);
 
-	// Detect Plex/Tautulli instances for Now Playing widget
+	// Detect media server instances for Now Playing widget
 	const hasPlexInstances = useMemo(
 		() => services.some((s) => s.service.toLowerCase() === "plex" && s.enabled),
 		[services],
@@ -369,19 +370,25 @@ export const DashboardClient = () => {
 		() => services.some((s) => s.service.toLowerCase() === "tautulli" && s.enabled),
 		[services],
 	);
-	const hasMediaServer = hasPlexInstances || hasTautulliInstances;
+	const hasJellyfinInstances = useMemo(
+		() => services.some((s) => s.service.toLowerCase() === "jellyfin" && s.enabled),
+		[services],
+	);
+	const hasMediaServer = hasPlexInstances || hasTautulliInstances || hasJellyfinInstances;
 
 	// Session count for Activity tab badge
 	const isMediaTab = activeTab === "overview" || activeTab === "activity";
 	const plexNowPlaying = useNowPlaying(hasPlexInstances, isMediaTab ? POLLING_REALTIME : POLLING_STANDARD);
 	const tautulliActivity = useTautulliActivity(hasTautulliInstances, isMediaTab ? POLLING_REALTIME : POLLING_STANDARD);
+	const jellyfinNowPlaying = useJellyfinNowPlaying(hasJellyfinInstances, isMediaTab ? POLLING_REALTIME : POLLING_STANDARD);
 	const sessionCount = useMemo(() => {
 		if (!hasMediaServer) return undefined;
 		const plexCount = plexNowPlaying.data?.sessions?.length ?? 0;
 		const tautulliCount = tautulliActivity.data?.sessions?.length ?? 0;
-		// Use max (they overlap — Tautulli monitors same Plex)
-		return Math.max(plexCount, tautulliCount);
-	}, [hasMediaServer, plexNowPlaying.data, tautulliActivity.data]);
+		const jellyfinCount = jellyfinNowPlaying.data?.sessions?.length ?? 0;
+		// Use max for Plex/Tautulli (they overlap), then add Jellyfin (separate server)
+		return Math.max(plexCount, tautulliCount) + jellyfinCount;
+	}, [hasMediaServer, plexNowPlaying.data, tautulliActivity.data, jellyfinNowPlaying.data]);
 
 	// Build instanceId → baseUrl map
 	const instanceUrlMap = useMemo<InstanceUrlMap>(() => {
@@ -706,6 +713,7 @@ export const DashboardClient = () => {
 										<NowPlayingWidget
 											hasPlexInstances={hasPlexInstances}
 											hasTautulliInstances={hasTautulliInstances}
+											hasJellyfinInstances={hasJellyfinInstances}
 											animationDelay={450}
 											variant="compact"
 										/>
@@ -714,7 +722,8 @@ export const DashboardClient = () => {
 								{/* Right column */}
 								<div className="space-y-6">
 									<PlexServerInfoWidget
-										enabled={hasPlexInstances}
+										hasPlexInstances={hasPlexInstances}
+										hasJellyfinInstances={hasJellyfinInstances}
 										animationDelay={475}
 										variant="compact"
 									/>
@@ -723,8 +732,8 @@ export const DashboardClient = () => {
 						)}
 
 						{/* Full-width media carousels */}
-						<OnDeckWidget enabled={hasPlexInstances} animationDelay={500} />
-						<RecentlyAddedWidget enabled={hasPlexInstances} animationDelay={525} />
+						<OnDeckWidget hasPlexInstances={hasPlexInstances} hasJellyfinInstances={hasJellyfinInstances} animationDelay={500} />
+						<RecentlyAddedWidget hasPlexInstances={hasPlexInstances} hasJellyfinInstances={hasJellyfinInstances} animationDelay={525} />
 
 						{/* Configured Instances Section — collapsible */}
 						<div
@@ -959,9 +968,10 @@ export const DashboardClient = () => {
 						<NowPlayingWidget
 							hasPlexInstances={hasPlexInstances}
 							hasTautulliInstances={hasTautulliInstances}
+							hasJellyfinInstances={hasJellyfinInstances}
 							variant="full"
 						/>
-						<OnDeckWidget enabled={hasPlexInstances} animationDelay={100} />
+						<OnDeckWidget hasPlexInstances={hasPlexInstances} hasJellyfinInstances={hasJellyfinInstances} animationDelay={100} />
 						<WatchHistorySection enabled={hasTautulliInstances} />
 					</div>
 				)}

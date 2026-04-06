@@ -27,6 +27,7 @@ import type {
 	PlexSectionWatchInfo,
 	PlexEpisodeMap,
 	PlexWatchMap,
+	JellyfinWatchMap,
 	PrefetchResults,
 	SeerrRequestInfo,
 	SeerrRequestMap,
@@ -627,6 +628,165 @@ async function prefetchPlexData(
 }
 
 /**
+ * Prefetch Jellyfin watch data from JellyfinCache.
+ * Mirrors prefetchPlexData but simpler — no sections/labels.
+ */
+async function prefetchJellyfinData(
+	deps: CleanupExecutorDeps,
+	userId: string,
+): Promise<JellyfinWatchMap | undefined> {
+	const { prisma, log } = deps;
+
+	const jellyfinInstances = await prisma.serviceInstance.findMany({
+		where: { userId, service: "JELLYFIN" },
+		select: { id: true },
+	});
+
+	if (jellyfinInstances.length === 0) return undefined;
+
+	try {
+		const cacheRows = await prisma.jellyfinCache.findMany({
+			where: { instanceId: { in: jellyfinInstances.map((i) => i.id) } },
+		});
+
+		const map: JellyfinWatchMap = new Map();
+		for (const row of cacheRows) {
+			try {
+				const key = `${row.mediaType}:${row.tmdbId}`;
+				const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
+
+				const existing = map.get(key);
+				if (existing) {
+					if (
+						row.lastWatchedAt &&
+						(!existing.lastWatchedAt || row.lastWatchedAt > existing.lastWatchedAt)
+					) {
+						existing.lastWatchedAt = row.lastWatchedAt;
+					}
+					existing.watchCount += row.watchCount;
+					for (const user of watchedByUsers) {
+						if (!existing.watchedByUsers.includes(user)) {
+							existing.watchedByUsers.push(user);
+						}
+					}
+					existing.onDeck = existing.onDeck || row.onDeck;
+					if (row.userRating != null) {
+						existing.userRating =
+							existing.userRating != null
+								? Math.max(existing.userRating, row.userRating)
+								: row.userRating;
+					}
+					if (row.addedAt && (!existing.addedAt || row.addedAt < existing.addedAt)) {
+						existing.addedAt = row.addedAt;
+					}
+				} else {
+					map.set(key, {
+						lastWatchedAt: row.lastWatchedAt,
+						watchCount: row.watchCount,
+						watchedByUsers: [...watchedByUsers],
+						onDeck: row.onDeck,
+						userRating: row.userRating,
+						addedAt: row.addedAt,
+					});
+				}
+			} catch (rowErr) {
+				log.warn({ err: rowErr, tmdbId: row.tmdbId }, "Skipping Jellyfin cache row with bad data");
+			}
+		}
+
+		log.info({ totalEntries: map.size }, "Jellyfin watch data prefetch complete for cleanup");
+		return map;
+	} catch (error) {
+		log.warn(
+			{ err: error },
+			"Failed to prefetch Jellyfin data for cleanup — Jellyfin rules will be skipped",
+		);
+		return undefined;
+	}
+}
+
+/**
+ * Prefetch Jellyfin episode completion data.
+ * Mirrors Plex pattern using JellyfinEpisodeCache with GROUP BY.
+ */
+async function prefetchJellyfinEpisodeData(
+	deps: CleanupExecutorDeps,
+	userId: string,
+): Promise<PlexEpisodeMap | undefined> {
+	const { prisma, log } = deps;
+
+	try {
+		const instances = await prisma.serviceInstance.findMany({
+			where: { userId, service: "JELLYFIN" },
+			select: { id: true },
+		});
+		const instanceIds = instances.map((i) => i.id);
+		if (instanceIds.length === 0) return new Map();
+
+		const totalCounts = await prisma.jellyfinEpisodeCache.groupBy({
+			by: ["showTmdbId"],
+			where: { instanceId: { in: instanceIds } },
+			_count: { id: true },
+		});
+
+		const watchedCounts = await prisma.jellyfinEpisodeCache.groupBy({
+			by: ["showTmdbId"],
+			where: { instanceId: { in: instanceIds }, watched: true },
+			_count: { id: true },
+		});
+
+		const seasonTotals = await prisma.jellyfinEpisodeCache.groupBy({
+			by: ["showTmdbId", "seasonNumber"],
+			where: { instanceId: { in: instanceIds } },
+			_count: { id: true },
+		});
+
+		const seasonWatched = await prisma.jellyfinEpisodeCache.groupBy({
+			by: ["showTmdbId", "seasonNumber"],
+			where: { instanceId: { in: instanceIds }, watched: true },
+			_count: { id: true },
+		});
+
+		const seasonWatchedMap = new Map(
+			seasonWatched.map((g) => [`${g.showTmdbId}:${g.seasonNumber}`, g._count.id]),
+		);
+
+		const showSeasonsMap = new Map<number, Map<number, { total: number; watched: number }>>();
+		for (const g of seasonTotals) {
+			let seasons = showSeasonsMap.get(g.showTmdbId);
+			if (!seasons) {
+				seasons = new Map();
+				showSeasonsMap.set(g.showTmdbId, seasons);
+			}
+			seasons.set(g.seasonNumber, {
+				total: g._count.id,
+				watched: seasonWatchedMap.get(`${g.showTmdbId}:${g.seasonNumber}`) ?? 0,
+			});
+		}
+
+		const watchedMap = new Map(watchedCounts.map((g) => [g.showTmdbId, g._count.id]));
+		const map: PlexEpisodeMap = new Map();
+
+		for (const group of totalCounts) {
+			map.set(group.showTmdbId, {
+				total: group._count.id,
+				watched: watchedMap.get(group.showTmdbId) ?? 0,
+				seasons: showSeasonsMap.get(group.showTmdbId) ?? new Map(),
+			});
+		}
+
+		log.info({ totalShows: map.size }, "Jellyfin episode data prefetch complete for cleanup");
+		return map;
+	} catch (error) {
+		log.warn(
+			{ err: error },
+			"Failed to prefetch Jellyfin episode data for cleanup — episode completion rules will be skipped",
+		);
+		return undefined;
+	}
+}
+
+/**
  * Prefetch Plex episode completion data for series.
  * Uses SQL GROUP BY on PlexEpisodeCache to avoid loading all episodes into memory.
  * Returns a Map of showTmdbId → { total, watched }.
@@ -795,10 +955,30 @@ async function evaluateAllItems(
 	const plexResult = hasPlexRules ? await prefetchPlexData(deps, config.userId) : undefined;
 	const plexMap = hasPlexRules ? plexResult : undefined;
 
+	// Prefetch Jellyfin watch data if any Jellyfin rule types are active
+	const JELLYFIN_RULE_TYPES = [
+		"jellyfin_last_watched",
+		"jellyfin_watch_count",
+		"jellyfin_on_deck",
+		"jellyfin_user_rating",
+		"jellyfin_watched_by",
+		"jellyfin_added_at",
+	];
+	const hasJellyfinRules = JELLYFIN_RULE_TYPES.some((t) => activeTypes.has(t));
+	const jellyfinResult = hasJellyfinRules
+		? await prefetchJellyfinData(deps, config.userId)
+		: undefined;
+	const jellyfinMap = hasJellyfinRules ? jellyfinResult : undefined;
+
 	// Prefetch Plex episode data if episode completion rule is active
 	const hasEpisodeRules = activeTypes.has("plex_episode_completion");
 	const plexEpisodeMap = hasEpisodeRules
 		? await prefetchPlexEpisodeData(deps, config.userId)
+		: undefined;
+
+	const hasJellyfinEpisodeRules = activeTypes.has("jellyfin_episode_completion");
+	const jellyfinEpisodeMap = hasJellyfinEpisodeRules
+		? await prefetchJellyfinEpisodeData(deps, config.userId)
 		: undefined;
 
 	// Build prefetch health status
@@ -806,6 +986,7 @@ async function evaluateAllItems(
 		seerr: hasSeerrRules ? (seerrMap ? "ok" : "failed") : "skipped",
 		tautulli: hasTautulliRules ? (tautulliMap ? "ok" : "failed") : "skipped",
 		plex: hasPlexRules ? (plexMap ? "ok" : "failed") : "skipped",
+		jellyfin: hasJellyfinRules ? (jellyfinMap ? "ok" : "failed") : "skipped",
 	};
 
 	// Check for failed prefetches that have dependent rules — generate warnings
@@ -813,6 +994,7 @@ async function evaluateAllItems(
 	if (prefetchHealth.seerr === "failed") failedSources.add("seerr");
 	if (prefetchHealth.tautulli === "failed") failedSources.add("tautulli");
 	if (prefetchHealth.plex === "failed") failedSources.add("plex");
+	if (prefetchHealth.jellyfin === "failed") failedSources.add("jellyfin");
 
 	if (failedSources.size > 0) {
 		for (const source of failedSources) {
@@ -833,7 +1015,7 @@ async function evaluateAllItems(
 	}
 
 	// Build evaluation context
-	const ctx: EvalContext = { now, seerrMap, tautulliMap, plexMap, plexEpisodeMap };
+	const ctx: EvalContext = { now, seerrMap, tautulliMap, plexMap, plexEpisodeMap, jellyfinMap, jellyfinEpisodeMap };
 
 	const flagged: FlaggedItem[] = [];
 	let totalEvaluated = 0;

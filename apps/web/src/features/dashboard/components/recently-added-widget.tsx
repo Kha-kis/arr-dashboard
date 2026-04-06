@@ -3,12 +3,13 @@
 import { ChevronLeft, ChevronRight, Film, Plus, Tv } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useJellyfinRecentlyAdded } from "../../../hooks/api/useJellyfin";
 import { useRecentlyAdded } from "../../../hooks/api/usePlex";
 import { getLinuxIsoName, getLinuxSectionName, useIncognitoMode } from "../../../lib/incognito";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 
-const plexGradient = SERVICE_GRADIENTS.plex;
+const mediaGradient = SERVICE_GRADIENTS.plex;
 const MAX_DISPLAY = 12;
 
 function timeAgo(dateString: string): string {
@@ -25,14 +26,72 @@ function getPlexThumbUrl(instanceId: string, thumb: string): string {
 	return `/api/plex/thumb/${instanceId}?path=${encodeURIComponent(thumb)}`;
 }
 
+function getJellyfinThumbUrl(instanceId: string, jellyfinId: string): string {
+	return `/api/jellyfin/thumb/${instanceId}?itemId=${encodeURIComponent(jellyfinId)}`;
+}
+
+interface NormalizedRecentItem {
+	key: string;
+	tmdbId: number;
+	title: string;
+	mediaType: string;
+	sectionTitle: string;
+	addedAt: string | null;
+	instanceId: string;
+	thumbUrl: string | null;
+}
+
 interface RecentlyAddedWidgetProps {
-	enabled: boolean;
+	hasPlexInstances: boolean;
+	hasJellyfinInstances: boolean;
 	animationDelay?: number;
 }
 
-export const RecentlyAddedWidget = ({ enabled, animationDelay = 0 }: RecentlyAddedWidgetProps) => {
+export const RecentlyAddedWidget = ({ hasPlexInstances, hasJellyfinInstances, animationDelay = 0 }: RecentlyAddedWidgetProps) => {
+	const enabled = hasPlexInstances || hasJellyfinInstances;
 	const [incognitoMode] = useIncognitoMode();
-	const { data, isLoading, isError } = useRecentlyAdded(20, enabled);
+	const plexQuery = useRecentlyAdded(20, hasPlexInstances);
+	const jellyfinQuery = useJellyfinRecentlyAdded(20, hasJellyfinInstances);
+
+	const items = useMemo<NormalizedRecentItem[]>(() => {
+		const result: NormalizedRecentItem[] = [];
+		for (const item of plexQuery.data?.items ?? []) {
+			result.push({
+				key: `plex:${item.instanceId}:${item.tmdbId}:${item.mediaType}`,
+				tmdbId: item.tmdbId,
+				title: item.title,
+				mediaType: item.mediaType,
+				sectionTitle: item.sectionTitle,
+				addedAt: item.addedAt,
+				instanceId: item.instanceId,
+				thumbUrl: item.thumb ? getPlexThumbUrl(item.instanceId, item.thumb) : null,
+			});
+		}
+		for (const item of jellyfinQuery.data?.items ?? []) {
+			result.push({
+				key: `jellyfin:${item.instanceId}:${item.tmdbId}:${item.mediaType}`,
+				tmdbId: item.tmdbId,
+				title: item.title,
+				mediaType: item.mediaType,
+				sectionTitle: item.libraryName,
+				addedAt: item.addedAt,
+				instanceId: item.instanceId,
+				thumbUrl: item.jellyfinId ? getJellyfinThumbUrl(item.instanceId, item.jellyfinId) : null,
+			});
+		}
+		// Sort by addedAt descending (most recent first)
+		result.sort((a, b) => {
+			if (!a.addedAt) return 1;
+			if (!b.addedAt) return -1;
+			return new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime();
+		});
+		return result;
+	}, [plexQuery.data, jellyfinQuery.data]);
+
+	const isLoading = plexQuery.isLoading || jellyfinQuery.isLoading;
+	const enabledErrors = [hasPlexInstances && plexQuery.isError, hasJellyfinInstances && jellyfinQuery.isError].filter(Boolean).length;
+	const enabledCount = [hasPlexInstances, hasJellyfinInstances].filter(Boolean).length;
+	const isError = enabledCount > 0 && enabledErrors === enabledCount;
 	const [failedThumbs, setFailedThumbs] = useState<Set<string>>(new Set());
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -52,7 +111,7 @@ export const RecentlyAddedWidget = ({ enabled, animationDelay = 0 }: RecentlyAdd
 		const observer = new ResizeObserver(updateScrollState);
 		observer.observe(el);
 		return () => observer.disconnect();
-	}, [updateScrollState, data]);
+	}, [updateScrollState, items]);
 
 	const scrollBy = useCallback((direction: "left" | "right") => {
 		const el = scrollRef.current;
@@ -60,10 +119,10 @@ export const RecentlyAddedWidget = ({ enabled, animationDelay = 0 }: RecentlyAdd
 		el.scrollBy({ left: direction === "left" ? -300 : 300, behavior: "smooth" });
 	}, []);
 
-	if (!enabled || isLoading || isError || !data?.items?.length) return null;
+	if (!enabled || isLoading || isError || items.length === 0) return null;
 
-	const displayItems = data.items.slice(0, MAX_DISPLAY);
-	const remaining = data.items.length - MAX_DISPLAY;
+	const displayItems = items.slice(0, MAX_DISPLAY);
+	const remaining = items.length - MAX_DISPLAY;
 
 	return (
 		<div
@@ -74,22 +133,22 @@ export const RecentlyAddedWidget = ({ enabled, animationDelay = 0 }: RecentlyAdd
 				<div
 					className="h-0.5 w-full rounded-t-xl"
 					style={{
-						background: `linear-gradient(90deg, ${plexGradient.from}, ${plexGradient.to})`,
+						background: `linear-gradient(90deg, ${mediaGradient.from}, ${mediaGradient.to})`,
 					}}
 				/>
 				<div className="flex items-center gap-3 px-6 py-4 border-b border-border/50">
 					<div
 						className="flex h-8 w-8 items-center justify-center rounded-lg"
 						style={{
-							background: `linear-gradient(135deg, ${plexGradient.from}20, ${plexGradient.to}20)`,
-							border: `1px solid ${plexGradient.from}30`,
+							background: `linear-gradient(135deg, ${mediaGradient.from}20, ${mediaGradient.to}20)`,
+							border: `1px solid ${mediaGradient.from}30`,
 						}}
 					>
-						<Plus className="h-4 w-4" style={{ color: plexGradient.from }} />
+						<Plus className="h-4 w-4" style={{ color: mediaGradient.from }} />
 					</div>
 					<div>
 						<h3 className="text-sm font-semibold text-foreground">Recently Added</h3>
-						<p className="text-xs text-muted-foreground">Latest additions to your Plex library</p>
+						<p className="text-xs text-muted-foreground">Latest additions to your media library</p>
 					</div>
 				</div>
 
@@ -106,15 +165,15 @@ export const RecentlyAddedWidget = ({ enabled, animationDelay = 0 }: RecentlyAdd
 									item.mediaType === "movie"
 										? "linear-gradient(160deg, #92400e 0%, #f59e0b 100%)"
 										: "linear-gradient(160deg, #164e63 0%, #06b6d4 100%)";
-								const thumbKey = `${item.instanceId}-${item.tmdbId}`;
-								const hasThumb = item.thumb && !failedThumbs.has(thumbKey);
+								const thumbKey = item.key;
+								const hasThumb = item.thumbUrl && !failedThumbs.has(thumbKey);
 								const libraryHref = item.tmdbId ? `/library?tmdbId=${item.tmdbId}` : "/library";
 								const displayTitle = incognitoMode ? getLinuxIsoName(item.title) : item.title;
 								const displaySection = incognitoMode && item.sectionTitle ? getLinuxSectionName(item.sectionTitle) : item.sectionTitle;
 
 								return (
 									<Link
-										key={`${item.instanceId}-${item.tmdbId}-${item.mediaType}`}
+										key={item.key}
 										href={libraryHref}
 										className="flex-shrink-0 w-[140px] group animate-in fade-in slide-in-from-bottom-2 duration-300"
 										style={{
@@ -131,7 +190,7 @@ export const RecentlyAddedWidget = ({ enabled, animationDelay = 0 }: RecentlyAdd
 										>
 											{hasThumb && !incognitoMode ? (
 												<Image
-													src={getPlexThumbUrl(item.instanceId, item.thumb!)}
+													src={item.thumbUrl!}
 													alt={displayTitle}
 													width={140}
 													height={210}
@@ -142,9 +201,11 @@ export const RecentlyAddedWidget = ({ enabled, animationDelay = 0 }: RecentlyAdd
 											) : (
 												<MediaIcon className="absolute inset-0 m-auto h-10 w-10 text-white/30" />
 											)}
-											<div className="absolute top-2 right-2 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white/90 leading-tight">
-												{timeAgo(item.addedAt)}
-											</div>
+											{item.addedAt && (
+												<div className="absolute top-2 right-2 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white/90 leading-tight">
+													{timeAgo(item.addedAt)}
+												</div>
+											)}
 										</div>
 										<p
 											className="text-sm font-medium text-foreground line-clamp-2 leading-snug mb-0.5"

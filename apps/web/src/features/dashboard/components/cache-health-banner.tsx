@@ -1,8 +1,13 @@
 "use client";
 
 import { AlertTriangle, Loader2, RefreshCw, X } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Alert, AlertDescription } from "../../../components/ui";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
+import {
+	useJellyfinCacheHealth,
+	useJellyfinCacheRefreshMutation,
+} from "../../../hooks/api/useJellyfin";
 import { useCacheHealth, useCacheRefreshMutation } from "../../../hooks/api/usePlex";
 
 interface CacheHealthBannerProps {
@@ -10,43 +15,58 @@ interface CacheHealthBannerProps {
 }
 
 export const CacheHealthBanner = ({ enabled }: CacheHealthBannerProps) => {
-	const { data, isError } = useCacheHealth(enabled);
-	const refreshMutation = useCacheRefreshMutation();
+	const [incognitoMode] = useIncognitoMode();
+	const plexHealth = useCacheHealth(enabled);
+	const jellyfinHealth = useJellyfinCacheHealth(enabled);
+	const plexRefresh = useCacheRefreshMutation();
+	const jellyfinRefresh = useJellyfinCacheRefreshMutation();
 	const [isRefreshing, setIsRefreshing] = useState(false);
 	const [dismissed, setDismissed] = useState(false);
+	const [refreshError, setRefreshError] = useState(false);
 
-	if (dismissed || isError || !data?.items?.length) return null;
+	const allItems = useMemo(() => {
+		const plex = plexHealth.data?.items ?? [];
+		const jellyfin = jellyfinHealth.data?.items ?? [];
+		return [...plex, ...jellyfin];
+	}, [plexHealth.data, jellyfinHealth.data]);
 
-	const staleItems = data.items.filter((item) => item.isStale);
-	const errorItems = data.items.filter((item) => item.lastResult === "error" && !item.isStale);
+	const isError = plexHealth.isError && jellyfinHealth.isError;
+
+	if (dismissed || isError || allItems.length === 0) return null;
+
+	const staleItems = allItems.filter((item) => item.isStale);
+	const errorItems = allItems.filter((item) => item.lastResult === "error" && !item.isStale);
 
 	if (staleItems.length === 0 && errorItems.length === 0) return null;
 
+	const displayName = (name: string) => incognitoMode ? getLinuxInstanceName(name) : name;
+
 	const messages: string[] = [];
 	if (staleItems.length > 0) {
-		const names = staleItems.map((i) => `${i.instanceName} (${i.cacheType})`).join(", ");
+		const names = staleItems.map((i) => `${displayName(i.instanceName)} (${i.cacheType})`).join(", ");
 		messages.push(`Stale cache data: ${names}`);
 	}
 	if (errorItems.length > 0) {
-		const names = errorItems.map((i) => `${i.instanceName} (${i.cacheType})`).join(", ");
+		const names = errorItems.map((i) => `${displayName(i.instanceName)} (${i.cacheType})`).join(", ");
 		messages.push(`Cache refresh errors: ${names}`);
 	}
 
-	// Collect unique Plex instance IDs from affected items (only plex cache type is refreshable)
-	const refreshableInstanceIds = [
-		...new Set(
-			[...staleItems, ...errorItems]
-				.filter((item) => item.cacheType === "plex")
-				.map((item) => item.instanceId),
-		),
-	];
+	// Collect affected instances by cache type for targeted refresh
+	const affected = [...staleItems, ...errorItems];
+	const plexInstanceIds = [...new Set(affected.filter((i) => i.cacheType === "plex" || i.cacheType === "plex_episode").map((i) => i.instanceId))];
+	const jellyfinInstanceIds = [...new Set(affected.filter((i) => i.cacheType === "jellyfin" || i.cacheType === "jellyfin_episode").map((i) => i.instanceId))];
+	const hasRefreshable = plexInstanceIds.length > 0 || jellyfinInstanceIds.length > 0;
 
 	const handleRefresh = async () => {
 		setIsRefreshing(true);
+		setRefreshError(false);
 		try {
-			await Promise.allSettled(
-				refreshableInstanceIds.map((instanceId) => refreshMutation.mutateAsync({ instanceId })),
-			);
+			const results = await Promise.allSettled([
+				...plexInstanceIds.map((id) => plexRefresh.mutateAsync({ instanceId: id })),
+				...jellyfinInstanceIds.map((id) => jellyfinRefresh.mutateAsync({ instanceId: id })),
+			]);
+			const failures = results.filter((r) => r.status === "rejected");
+			if (failures.length > 0) setRefreshError(true);
 		} finally {
 			setIsRefreshing(false);
 		}
@@ -59,10 +79,12 @@ export const CacheHealthBanner = ({ enabled }: CacheHealthBannerProps) => {
 				<AlertDescription className="flex-1">
 					{messages.join(" — ")}
 					<span className="text-xs text-muted-foreground ml-2">
-						Data may be outdated. Caches refresh automatically every 6 hours.
+						{refreshError
+							? "Some cache refreshes failed. Please try again."
+							: "Data may be outdated. Caches refresh automatically every 6 hours."}
 					</span>
 				</AlertDescription>
-				{refreshableInstanceIds.length > 0 && (
+				{hasRefreshable && (
 					<button
 						type="button"
 						onClick={handleRefresh}
@@ -77,7 +99,7 @@ export const CacheHealthBanner = ({ enabled }: CacheHealthBannerProps) => {
 						)}
 					</button>
 				)}
-				{refreshableInstanceIds.length === 0 && (
+				{!hasRefreshable && (
 					<RefreshCw className="h-3.5 w-3.5 text-muted-foreground" />
 				)}
 				<button

@@ -41,6 +41,13 @@ export const cleanupRuleTypeSchema = z.enum([
 	"plex_on_deck",
 	"plex_user_rating",
 	"plex_watched_by",
+	// Jellyfin integration rules
+	"jellyfin_last_watched",
+	"jellyfin_watch_count",
+	"jellyfin_on_deck",
+	"jellyfin_user_rating",
+	"jellyfin_watched_by",
+	"jellyfin_added_at",
 	// Phase C: New rule types
 	"imdb_rating",
 	"file_path",
@@ -56,6 +63,7 @@ export const cleanupRuleTypeSchema = z.enum([
 	"composite",
 	// Phase 2: Behavior-aware rules
 	"plex_episode_completion",
+	"jellyfin_episode_completion",
 	"user_retention",
 	"staleness_score",
 	// Phase 3: Advanced automation
@@ -306,6 +314,15 @@ export const plexAddedAtParamsSchema = z.object({
 	days: z.number().int().min(1),
 });
 
+// ── Jellyfin Integration Rule Parameter Schemas ─────────────────────
+// Jellyfin params share the same shapes as Plex (same operator/value patterns)
+export const jellyfinLastWatchedParamsSchema = plexLastWatchedParamsSchema;
+export const jellyfinWatchCountParamsSchema = plexWatchCountParamsSchema;
+export const jellyfinOnDeckParamsSchema = plexOnDeckParamsSchema;
+export const jellyfinUserRatingParamsSchema = plexUserRatingParamsSchema;
+export const jellyfinWatchedByParamsSchema = plexWatchedByParamsSchema;
+export const jellyfinAddedAtParamsSchema = plexAddedAtParamsSchema;
+
 // ── Phase 2: Behavior-Aware Rule Parameter Schemas ───────────────────
 
 export const plexEpisodeCompletionParamsSchema = z.object({
@@ -313,6 +330,8 @@ export const plexEpisodeCompletionParamsSchema = z.object({
 	percentage: z.number().min(0).max(100),
 	minSeason: z.number().int().min(1).optional(),
 });
+
+export const jellyfinEpisodeCompletionParamsSchema = plexEpisodeCompletionParamsSchema;
 
 export const userRetentionParamsSchema = z.object({
 	operator: z.enum(["watched_by_none", "watched_by_all", "watched_by_count"]),
@@ -391,6 +410,13 @@ export type TagMatchRuleParams = z.infer<typeof tagMatchRuleParamsSchema>;
 export type PlexCollectionRuleParams = z.infer<typeof plexCollectionRuleParamsSchema>;
 export type PlexLabelRuleParams = z.infer<typeof plexLabelRuleParamsSchema>;
 export type PlexAddedAtParams = z.infer<typeof plexAddedAtParamsSchema>;
+export type JellyfinLastWatchedParams = z.infer<typeof jellyfinLastWatchedParamsSchema>;
+export type JellyfinWatchCountParams = z.infer<typeof jellyfinWatchCountParamsSchema>;
+export type JellyfinOnDeckParams = z.infer<typeof jellyfinOnDeckParamsSchema>;
+export type JellyfinUserRatingParams = z.infer<typeof jellyfinUserRatingParamsSchema>;
+export type JellyfinWatchedByParams = z.infer<typeof jellyfinWatchedByParamsSchema>;
+export type JellyfinAddedAtParams = z.infer<typeof jellyfinAddedAtParamsSchema>;
+export type JellyfinEpisodeCompletionParams = z.infer<typeof jellyfinEpisodeCompletionParamsSchema>;
 export type PlexEpisodeCompletionParams = z.infer<typeof plexEpisodeCompletionParamsSchema>;
 export type UserRetentionParams = z.infer<typeof userRetentionParamsSchema>;
 export type StalenessScoreParams = z.infer<typeof stalenessScoreParamsSchema>;
@@ -567,9 +593,12 @@ export interface CleanupFieldOptionsResponse {
 	plexLibraries: string[];
 	plexCollections: string[];
 	plexLabels: string[];
+	jellyfinUsers: string[];
+	jellyfinLibraries: string[];
 	arrTags: Array<{ id: number; label: string }>;
 	hasPlex: boolean;
 	hasTautulli: boolean;
+	hasJellyfin: boolean;
 }
 
 /** Preview result: items that would be flagged by current rules */
@@ -727,11 +756,18 @@ export const ruleParamSchemaMap: Record<string, z.ZodType> = {
 	plex_collection: plexCollectionRuleParamsSchema,
 	plex_label: plexLabelRuleParamsSchema,
 	plex_added_at: plexAddedAtParamsSchema,
+	jellyfin_last_watched: jellyfinLastWatchedParamsSchema,
+	jellyfin_watch_count: jellyfinWatchCountParamsSchema,
+	jellyfin_on_deck: jellyfinOnDeckParamsSchema,
+	jellyfin_user_rating: jellyfinUserRatingParamsSchema,
+	jellyfin_watched_by: jellyfinWatchedByParamsSchema,
+	jellyfin_added_at: jellyfinAddedAtParamsSchema,
 	imdb_rating: imdbRatingRuleParamsSchema,
 	file_path: filePathRuleParamsSchema,
 	audio_channels: audioChannelsRuleParamsSchema,
 	tag_match: tagMatchRuleParamsSchema,
 	plex_episode_completion: plexEpisodeCompletionParamsSchema,
+	jellyfin_episode_completion: jellyfinEpisodeCompletionParamsSchema,
 	user_retention: userRetentionParamsSchema,
 	staleness_score: stalenessScoreParamsSchema,
 	recently_active: recentlyActiveParamsSchema,
@@ -743,7 +779,7 @@ export const ruleParamSchemaMap: Record<string, z.ZodType> = {
  * Data source each rule type depends on.
  * Rules whose data source fails should be skipped to avoid false matches.
  */
-export type DataSourceDependency = "seerr" | "tautulli" | "plex" | null;
+export type DataSourceDependency = "seerr" | "tautulli" | "plex" | "jellyfin" | null;
 
 export const ruleDataSourceMap: Record<string, DataSourceDependency> = {
 	seerr_requested_by: "seerr",
@@ -765,6 +801,13 @@ export const ruleDataSourceMap: Record<string, DataSourceDependency> = {
 	plex_collection: "plex",
 	plex_label: "plex",
 	plex_added_at: "plex",
+	jellyfin_last_watched: "jellyfin",
+	jellyfin_watch_count: "jellyfin",
+	jellyfin_on_deck: "jellyfin",
+	jellyfin_user_rating: "jellyfin",
+	jellyfin_watched_by: "jellyfin",
+	jellyfin_added_at: "jellyfin",
+	jellyfin_episode_completion: "jellyfin",
 	plex_episode_completion: "plex",
 	user_retention: null, // Dynamic: depends on params.source (plex, tautulli, or either)
 	staleness_score: "plex", // Uses multiple sources; plex is the primary

@@ -126,6 +126,23 @@ export interface BuildParamsState {
 	// plex_added_at
 	plexAddedAtOp: string;
 	plexAddedAtDays: number;
+	// jellyfin_last_watched
+	jellyfinLastWatchedOp: string;
+	jellyfinLastWatchedDays: number;
+	// jellyfin_watch_count
+	jellyfinWatchCountOp: string;
+	jellyfinWatchCountVal: number;
+	// jellyfin_on_deck
+	jellyfinOnDeckVal: boolean;
+	// jellyfin_user_rating
+	jellyfinUserRatingOp: string;
+	jellyfinUserRatingVal: number;
+	// jellyfin_watched_by
+	jellyfinWatchedByOp: string;
+	selectedJellyfinUsers: string[];
+	// jellyfin_added_at
+	jellyfinAddedAtOp: string;
+	jellyfinAddedAtDays: number;
 	// behavior analysis (plex_episode_completion, user_retention, staleness_score, recently_active)
 	behaviorParams: Record<string, unknown>;
 }
@@ -234,7 +251,24 @@ export function buildParams(state: BuildParamsState): Record<string, unknown> {
 			return { operator: state.plexLabelOp, labels: state.selectedPlexLabels };
 		case "plex_added_at":
 			return { operator: state.plexAddedAtOp, days: state.plexAddedAtDays };
+		case "jellyfin_last_watched":
+			return state.jellyfinLastWatchedOp === "never"
+				? { operator: "never" }
+				: { operator: state.jellyfinLastWatchedOp, days: state.jellyfinLastWatchedDays };
+		case "jellyfin_watch_count":
+			return { operator: state.jellyfinWatchCountOp, count: state.jellyfinWatchCountVal };
+		case "jellyfin_on_deck":
+			return { isDeck: state.jellyfinOnDeckVal };
+		case "jellyfin_user_rating":
+			return state.jellyfinUserRatingOp === "unrated"
+				? { operator: "unrated" }
+				: { operator: state.jellyfinUserRatingOp, rating: state.jellyfinUserRatingVal };
+		case "jellyfin_watched_by":
+			return { operator: state.jellyfinWatchedByOp, userNames: state.selectedJellyfinUsers };
+		case "jellyfin_added_at":
+			return { operator: state.jellyfinAddedAtOp, days: state.jellyfinAddedAtDays };
 		case "plex_episode_completion":
+		case "jellyfin_episode_completion":
 		case "user_retention":
 		case "staleness_score":
 		case "recently_active":

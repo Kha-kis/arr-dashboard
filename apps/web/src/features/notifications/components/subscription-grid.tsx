@@ -42,6 +42,9 @@ const EVENT_LABELS: Record<string, string> = {
 	PLEX_CONCURRENT_PEAK: "Concurrent Peak",
 	PLEX_TRANSCODE_HEAVY: "Heavy Transcoding",
 	PLEX_NEW_DEVICE: "New Device",
+	JELLYFIN_CONCURRENT_PEAK: "Concurrent Peak",
+	JELLYFIN_TRANSCODE_HEAVY: "Heavy Transcoding",
+	JELLYFIN_NEW_DEVICE: "New Device",
 	SYSTEM_STARTUP: "Startup",
 	SYSTEM_ERROR: "System Error",
 	LIBRARY_INSIGHT_REQUESTED_UNWATCHED: "Requested Unwatched",
@@ -78,12 +81,15 @@ const EVENT_GROUPS: Array<{ label: string; events: NotificationEventType[] }> = 
 		events: ["SERVICE_CONNECTION_FAILED"],
 	},
 	{
-		label: "Cache & Plex",
+		label: "Cache & Media Servers",
 		events: [
 			"CACHE_REFRESH_STALE",
 			"PLEX_CONCURRENT_PEAK",
 			"PLEX_TRANSCODE_HEAVY",
 			"PLEX_NEW_DEVICE",
+			"JELLYFIN_CONCURRENT_PEAK",
+			"JELLYFIN_TRANSCODE_HEAVY",
+			"JELLYFIN_NEW_DEVICE",
 		],
 	},
 	{

@@ -93,6 +93,8 @@ export const ModelName = {
   NotificationAggregationConfig: 'NotificationAggregationConfig',
   PlexCache: 'PlexCache',
   PlexEpisodeCache: 'PlexEpisodeCache',
+  JellyfinCache: 'JellyfinCache',
+  JellyfinEpisodeCache: 'JellyfinEpisodeCache',
   TautulliCache: 'TautulliCache',
   CacheRefreshStatus: 'CacheRefreshStatus',
   SessionSnapshot: 'SessionSnapshot',
@@ -902,6 +904,44 @@ export const PlexEpisodeCacheScalarFieldEnum = {
 } as const
 
 export type PlexEpisodeCacheScalarFieldEnum = (typeof PlexEpisodeCacheScalarFieldEnum)[keyof typeof PlexEpisodeCacheScalarFieldEnum]
+
+
+export const JellyfinCacheScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  tmdbId: 'tmdbId',
+  mediaType: 'mediaType',
+  libraryId: 'libraryId',
+  libraryName: 'libraryName',
+  title: 'title',
+  jellyfinId: 'jellyfinId',
+  lastWatchedAt: 'lastWatchedAt',
+  watchCount: 'watchCount',
+  watchedByUsers: 'watchedByUsers',
+  onDeck: 'onDeck',
+  userRating: 'userRating',
+  collections: 'collections',
+  addedAt: 'addedAt',
+  thumb: 'thumb'
+} as const
+
+export type JellyfinCacheScalarFieldEnum = (typeof JellyfinCacheScalarFieldEnum)[keyof typeof JellyfinCacheScalarFieldEnum]
+
+
+export const JellyfinEpisodeCacheScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  showTmdbId: 'showTmdbId',
+  seasonNumber: 'seasonNumber',
+  episodeNumber: 'episodeNumber',
+  jellyfinId: 'jellyfinId',
+  title: 'title',
+  watched: 'watched',
+  watchedByUsers: 'watchedByUsers',
+  lastWatchedAt: 'lastWatchedAt'
+} as const
+
+export type JellyfinEpisodeCacheScalarFieldEnum = (typeof JellyfinEpisodeCacheScalarFieldEnum)[keyof typeof JellyfinEpisodeCacheScalarFieldEnum]
 
 
 export const TautulliCacheScalarFieldEnum = {

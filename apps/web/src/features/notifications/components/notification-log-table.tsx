@@ -37,6 +37,9 @@ const EVENT_TYPE_OPTIONS = [
 	{ value: "PLEX_CONCURRENT_PEAK", label: "Plex: Concurrent Peak" },
 	{ value: "PLEX_TRANSCODE_HEAVY", label: "Plex: Heavy Transcoding" },
 	{ value: "PLEX_NEW_DEVICE", label: "Plex: New Device" },
+	{ value: "JELLYFIN_CONCURRENT_PEAK", label: "Jellyfin: Concurrent Peak" },
+	{ value: "JELLYFIN_TRANSCODE_HEAVY", label: "Jellyfin: Heavy Transcoding" },
+	{ value: "JELLYFIN_NEW_DEVICE", label: "Jellyfin: New Device" },
 	{ value: "SYSTEM_STARTUP", label: "System: Startup" },
 	{ value: "SYSTEM_ERROR", label: "System: Error" },
 ];

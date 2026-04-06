@@ -332,7 +332,8 @@ export type ServiceType =
 	| "readarr"
 	| "seerr"
 	| "tautulli"
-	| "plex";
+	| "plex"
+	| "jellyfin";
 
 /**
  * Service-specific gradients for visual distinction
@@ -385,6 +386,11 @@ export const SERVICE_GRADIENTS: Record<ServiceType, ServiceGradient> = {
 		from: "#cc7b19", // burnt amber (distinct from Tautulli gold and Radarr orange)
 		to: "#e5a336", // warm amber
 		glow: "rgba(204, 123, 25, 0.35)",
+	},
+	jellyfin: {
+		from: "#00a4dc", // Jellyfin brand blue
+		to: "#6c47ff", // purple accent
+		glow: "rgba(0, 164, 220, 0.35)",
 	},
 };
 

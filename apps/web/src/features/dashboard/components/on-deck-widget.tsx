@@ -3,26 +3,77 @@
 import { ChevronLeft, ChevronRight, Film, PlayCircle, Tv } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useJellyfinOnDeck } from "../../../hooks/api/useJellyfin";
 import { useOnDeck } from "../../../hooks/api/usePlex";
 import { getLinuxIsoName, getLinuxSectionName, useIncognitoMode } from "../../../lib/incognito";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 
-const plexGradient = SERVICE_GRADIENTS.plex;
+const mediaGradient = SERVICE_GRADIENTS.plex;
 const MAX_DISPLAY = 10;
 
 function getPlexThumbUrl(instanceId: string, thumb: string): string {
 	return `/api/plex/thumb/${instanceId}?path=${encodeURIComponent(thumb)}`;
 }
 
+function getJellyfinThumbUrl(instanceId: string, jellyfinId: string): string {
+	return `/api/jellyfin/thumb/${instanceId}?itemId=${encodeURIComponent(jellyfinId)}`;
+}
+
+interface NormalizedOnDeckItem {
+	key: string;
+	tmdbId: number;
+	title: string;
+	mediaType: string;
+	sectionTitle: string;
+	instanceId: string;
+	thumbUrl: string | null;
+}
+
 interface OnDeckWidgetProps {
-	enabled: boolean;
+	hasPlexInstances: boolean;
+	hasJellyfinInstances: boolean;
 	animationDelay?: number;
 }
 
-export const OnDeckWidget = ({ enabled, animationDelay = 0 }: OnDeckWidgetProps) => {
+export const OnDeckWidget = ({ hasPlexInstances, hasJellyfinInstances, animationDelay = 0 }: OnDeckWidgetProps) => {
+	const enabled = hasPlexInstances || hasJellyfinInstances;
 	const [incognitoMode] = useIncognitoMode();
-	const { data, isLoading, isError } = useOnDeck(enabled);
+	const plexQuery = useOnDeck(hasPlexInstances);
+	const jellyfinQuery = useJellyfinOnDeck(hasJellyfinInstances);
+
+	const items = useMemo<NormalizedOnDeckItem[]>(() => {
+		const result: NormalizedOnDeckItem[] = [];
+		for (const item of plexQuery.data?.items ?? []) {
+			result.push({
+				key: `plex:${item.instanceId}:${item.tmdbId}:${item.mediaType}`,
+				tmdbId: item.tmdbId,
+				title: item.title,
+				mediaType: item.mediaType,
+				sectionTitle: item.sectionTitle,
+				instanceId: item.instanceId,
+				thumbUrl: item.thumb ? getPlexThumbUrl(item.instanceId, item.thumb) : null,
+			});
+		}
+		for (const item of jellyfinQuery.data?.items ?? []) {
+			result.push({
+				key: `jellyfin:${item.instanceId}:${item.tmdbId}:${item.mediaType}`,
+				tmdbId: item.tmdbId,
+				title: item.title,
+				mediaType: item.mediaType,
+				sectionTitle: item.libraryName,
+				instanceId: item.instanceId,
+				thumbUrl: item.jellyfinId ? getJellyfinThumbUrl(item.instanceId, item.jellyfinId) : null,
+			});
+		}
+		return result;
+	}, [plexQuery.data, jellyfinQuery.data]);
+
+	const isLoading = plexQuery.isLoading || jellyfinQuery.isLoading;
+	// Only error if all enabled sources failed
+	const enabledErrors = [hasPlexInstances && plexQuery.isError, hasJellyfinInstances && jellyfinQuery.isError].filter(Boolean).length;
+	const enabledCount = [hasPlexInstances, hasJellyfinInstances].filter(Boolean).length;
+	const isError = enabledCount > 0 && enabledErrors === enabledCount;
 	const [failedThumbs, setFailedThumbs] = useState<Set<string>>(new Set());
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -42,7 +93,7 @@ export const OnDeckWidget = ({ enabled, animationDelay = 0 }: OnDeckWidgetProps)
 		const observer = new ResizeObserver(updateScrollState);
 		observer.observe(el);
 		return () => observer.disconnect();
-	}, [updateScrollState, data]);
+	}, [updateScrollState, items]);
 
 	const scrollBy = useCallback((direction: "left" | "right") => {
 		const el = scrollRef.current;
@@ -50,10 +101,10 @@ export const OnDeckWidget = ({ enabled, animationDelay = 0 }: OnDeckWidgetProps)
 		el.scrollBy({ left: direction === "left" ? -300 : 300, behavior: "smooth" });
 	}, []);
 
-	if (!enabled || isLoading || isError || !data?.items?.length) return null;
+	if (!enabled || isLoading || isError || items.length === 0) return null;
 
-	const displayItems = data.items.slice(0, MAX_DISPLAY);
-	const remaining = data.items.length - MAX_DISPLAY;
+	const displayItems = items.slice(0, MAX_DISPLAY);
+	const remaining = items.length - MAX_DISPLAY;
 
 	return (
 		<div
@@ -64,23 +115,23 @@ export const OnDeckWidget = ({ enabled, animationDelay = 0 }: OnDeckWidgetProps)
 				<div
 					className="h-0.5 w-full rounded-t-xl"
 					style={{
-						background: `linear-gradient(90deg, ${plexGradient.from}, ${plexGradient.to})`,
+						background: `linear-gradient(90deg, ${mediaGradient.from}, ${mediaGradient.to})`,
 					}}
 				/>
 				<div className="flex items-center gap-3 px-6 py-4 border-b border-border/50">
 					<div
 						className="flex h-8 w-8 items-center justify-center rounded-lg"
 						style={{
-							background: `linear-gradient(135deg, ${plexGradient.from}20, ${plexGradient.to}20)`,
-							border: `1px solid ${plexGradient.from}30`,
+							background: `linear-gradient(135deg, ${mediaGradient.from}20, ${mediaGradient.to}20)`,
+							border: `1px solid ${mediaGradient.from}30`,
 						}}
 					>
-						<PlayCircle className="h-4 w-4" style={{ color: plexGradient.from }} />
+						<PlayCircle className="h-4 w-4" style={{ color: mediaGradient.from }} />
 					</div>
 					<div>
 						<h3 className="text-sm font-semibold text-foreground">Continue Watching</h3>
 						<p className="text-xs text-muted-foreground">
-							{data.items.length} item{data.items.length !== 1 ? "s" : ""} on deck
+							{items.length} item{items.length !== 1 ? "s" : ""} on deck
 						</p>
 					</div>
 				</div>
@@ -98,15 +149,15 @@ export const OnDeckWidget = ({ enabled, animationDelay = 0 }: OnDeckWidgetProps)
 									item.mediaType === "movie"
 										? "linear-gradient(160deg, #92400e 0%, #f59e0b 100%)"
 										: "linear-gradient(160deg, #164e63 0%, #06b6d4 100%)";
-								const thumbKey = `${item.instanceId}-${item.tmdbId}`;
-								const hasThumb = item.thumb && !failedThumbs.has(thumbKey);
+								const thumbKey = item.key;
+								const hasThumb = item.thumbUrl && !failedThumbs.has(thumbKey);
 								const libraryHref = item.tmdbId ? `/library?tmdbId=${item.tmdbId}` : "/library";
 								const displayTitle = incognitoMode ? getLinuxIsoName(item.title) : item.title;
 								const displaySection = incognitoMode && item.sectionTitle ? getLinuxSectionName(item.sectionTitle) : item.sectionTitle;
 
 								return (
 									<Link
-										key={`${item.instanceId}-${item.tmdbId}-${item.mediaType}`}
+										key={item.key}
 										href={libraryHref}
 										className="flex-shrink-0 w-[140px] group animate-in fade-in slide-in-from-bottom-2 duration-300"
 										style={{
@@ -123,7 +174,7 @@ export const OnDeckWidget = ({ enabled, animationDelay = 0 }: OnDeckWidgetProps)
 										>
 											{hasThumb && !incognitoMode ? (
 												<Image
-													src={getPlexThumbUrl(item.instanceId, item.thumb!)}
+													src={item.thumbUrl!}
 													alt={displayTitle}
 													width={140}
 													height={210}

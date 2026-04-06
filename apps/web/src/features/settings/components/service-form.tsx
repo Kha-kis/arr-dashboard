@@ -228,7 +228,13 @@ export const ServiceForm = ({
 						label="API Key"
 						htmlFor="service-apikey"
 						hint={
-							selectedService ? "Leave empty to keep current key" : "Found in Settings > General"
+							selectedService
+								? "Leave empty to keep current key"
+								: formState.service === "jellyfin"
+									? "Found in Jellyfin Dashboard > API Keys"
+									: formState.service === "tautulli"
+										? "Found in Settings > Web Interface"
+										: "Found in Settings > General"
 						}
 						required={!selectedService}
 					>
@@ -375,6 +381,7 @@ const COMPANION_PORTS: Record<string, number> = {
 	prowlarr: 9696,
 	lidarr: 8686,
 	readarr: 8787,
+	jellyfin: 8096,
 };
 
 /**
