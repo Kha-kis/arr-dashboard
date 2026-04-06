@@ -81,7 +81,7 @@ services:
 | `WEBAUTHN_RP_ID` | `localhost` | Your domain (no protocol) |
 | `WEBAUTHN_ORIGIN` | `http://localhost:3000` | Full URL with protocol |
 
-> **Note:** Set `PUID` and `PGID` to match the owner of your config directory. Run `id -u` and `id -g` on your host to find your user/group IDs.
+> **Note:** Set `PUID` and `PGID` to match the owner of your config directory. Run `id -u` and `id -g` on your host to find your user/group IDs. The container must start as root — do not use Docker's `--user` flag, as it bypasses the internal permission setup and privilege drop.
 
 ## Version Tags
 
