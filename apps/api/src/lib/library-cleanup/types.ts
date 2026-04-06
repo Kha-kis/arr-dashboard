@@ -109,6 +109,21 @@ export interface PlexWatchInfo {
  */
 export type PlexWatchMap = Map<string, PlexWatchInfo>;
 
+/** Jellyfin watch data for a single library item (aggregated across libraries) */
+export interface JellyfinWatchInfo {
+	lastWatchedAt: Date | null;
+	watchCount: number;
+	watchedByUsers: string[];
+	onDeck: boolean;
+	userRating: number | null;
+	addedAt: Date | null;
+}
+
+/**
+ * Jellyfin watch data lookup map: "movie:tmdbId" | "series:tmdbId" → JellyfinWatchInfo
+ */
+export type JellyfinWatchMap = Map<string, JellyfinWatchInfo>;
+
 /** Aggregated episode completion data for a show */
 export interface PlexEpisodeStats {
 	total: number;
@@ -132,6 +147,9 @@ export interface EvalContext {
 	tautulliMap?: TautulliWatchMap;
 	plexMap?: PlexWatchMap;
 	plexEpisodeMap?: PlexEpisodeMap;
+	jellyfinMap?: JellyfinWatchMap;
+	/** Reuses PlexEpisodeMap shape — same total/watched/seasons structure */
+	jellyfinEpisodeMap?: PlexEpisodeMap;
 }
 
 /** Tracks the outcome of each data source prefetch */
@@ -139,6 +157,7 @@ export interface PrefetchResults {
 	seerr: "ok" | "failed" | "skipped";
 	tautulli: "ok" | "failed" | "skipped";
 	plex: "ok" | "failed" | "skipped";
+	jellyfin: "ok" | "failed" | "skipped";
 }
 
 /** Action from a rule definition (what the rule intends to do) */

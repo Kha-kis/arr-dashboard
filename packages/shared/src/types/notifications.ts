@@ -101,6 +101,10 @@ export const notificationEventTypeSchema = z.enum([
 	"PLEX_CONCURRENT_PEAK",
 	"PLEX_TRANSCODE_HEAVY",
 	"PLEX_NEW_DEVICE",
+	// Jellyfin Analytics
+	"JELLYFIN_CONCURRENT_PEAK",
+	"JELLYFIN_TRANSCODE_HEAVY",
+	"JELLYFIN_NEW_DEVICE",
 	// System
 	"SYSTEM_STARTUP",
 	"SYSTEM_ERROR",

@@ -16,6 +16,7 @@
 
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
+import { createJellyfinClient } from "../lib/jellyfin/jellyfin-client.js";
 import type { TautulliSessionItem } from "../lib/tautulli/tautulli-client.js";
 import { createPlexClient } from "../lib/plex/plex-client.js";
 import { createTautulliClient } from "../lib/tautulli/tautulli-client.js";
@@ -323,6 +324,172 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 			}
 		}
 
+		/**
+		 * Check Jellyfin notification thresholds (mirrors Plex logic).
+		 */
+		async function checkJellyfinNotifications(
+			totalConcurrent: number,
+			totalTranscode: number,
+			totalSessions: number,
+			platforms: Set<string>,
+			knownPlatforms: Set<string>,
+		) {
+			if (!app.notificationService) return;
+
+			if (totalConcurrent >= CONCURRENT_PEAK_THRESHOLD) {
+				await app.notificationService
+					.notify({
+						eventType: "JELLYFIN_CONCURRENT_PEAK",
+						title: "High concurrent Jellyfin streams",
+						body: `${totalConcurrent} concurrent streams active (threshold: ${CONCURRENT_PEAK_THRESHOLD}).`,
+						url: "/statistics",
+					})
+					.catch((err) =>
+						app.log.warn({ err, eventType: "JELLYFIN_CONCURRENT_PEAK" }, "Non-fatal: notification delivery failed"),
+					);
+			}
+
+			if (totalSessions > 0 && totalTranscode / totalSessions > TRANSCODE_HEAVY_RATIO) {
+				const pct = Math.round((totalTranscode / totalSessions) * 100);
+				await app.notificationService
+					.notify({
+						eventType: "JELLYFIN_TRANSCODE_HEAVY",
+						title: "Heavy Jellyfin transcoding",
+						body: `${pct}% of active Jellyfin streams are transcoding (${totalTranscode}/${totalSessions}).`,
+						url: "/statistics",
+					})
+					.catch((err) =>
+						app.log.warn({ err, eventType: "JELLYFIN_TRANSCODE_HEAVY" }, "Non-fatal: notification delivery failed"),
+					);
+			}
+
+			for (const platform of platforms) {
+				if (!knownPlatforms.has(platform)) {
+					const safePlatform = platform.replace(/[<>&"']/g, "").slice(0, 50);
+					await app.notificationService
+						.notify({
+							eventType: "JELLYFIN_NEW_DEVICE",
+							title: "New Jellyfin device detected",
+							body: `A new client "${safePlatform}" was seen streaming on Jellyfin for the first time in ${NEW_DEVICE_LOOKBACK_DAYS} days.`,
+							url: "/statistics",
+						})
+						.catch((err) =>
+							app.log.warn({ err, eventType: "JELLYFIN_NEW_DEVICE" }, "Non-fatal: notification delivery failed"),
+						);
+				}
+			}
+		}
+
+		/**
+		 * Capture Jellyfin session snapshots into the shared SessionSnapshot table.
+		 * Jellyfin provides all codec/platform data natively (no Tautulli enrichment needed).
+		 */
+		async function captureJellyfinSnapshots() {
+			try {
+				const instances = await app.prisma.serviceInstance.findMany({
+					where: { service: "JELLYFIN", enabled: true },
+				});
+
+				if (instances.length === 0) return;
+
+				let tickTotalConcurrent = 0;
+				let tickTotalTranscode = 0;
+				let tickTotalSessions = 0;
+				const tickPlatforms = new Set<string>();
+
+				for (const instance of instances) {
+					try {
+						const client = createJellyfinClient(app.encryptor, instance, app.log);
+						const sessions = await client.getSessions();
+
+						if (sessions.length === 0) continue;
+
+						// Classify sessions
+						let totalBandwidth = 0;
+						let directPlayCount = 0;
+						let transcodeCount = 0;
+						let directStreamCount = 0;
+
+						const enrichedSessions = sessions.map((s) => {
+							const bw = s.transcodingInfo?.bitrate
+								? Math.round(s.transcodingInfo.bitrate / 1000)
+								: 0;
+							totalBandwidth += bw;
+
+							const method = s.playMethod?.toLowerCase() ?? "directplay";
+							if (method === "transcode") {
+								transcodeCount++;
+							} else if (method === "directstream") {
+								directStreamCount++;
+							} else {
+								directPlayCount++;
+							}
+
+							const platform = s.client ?? s.deviceName ?? null;
+							if (platform) tickPlatforms.add(platform);
+
+							return {
+								user: s.userName ?? "Unknown",
+								title: s.nowPlayingItem?.name ?? "Unknown",
+								videoDecision: s.transcodingInfo && !s.transcodingInfo.isVideoDirect ? "transcode" : s.playMethod ?? "direct play",
+								bandwidth: bw,
+								state: s.isPaused ? "paused" : "playing",
+								audioDecision: s.transcodingInfo && !s.transcodingInfo.isAudioDirect ? "transcode" : "direct",
+								videoCodec: s.transcodingInfo?.videoCodec ?? null,
+								audioCodec: s.transcodingInfo?.audioCodec ?? null,
+								videoResolution: s.transcodingInfo?.width && s.transcodingInfo?.height
+									? `${s.transcodingInfo.width}x${s.transcodingInfo.height}`
+									: null,
+								platform,
+								player: s.deviceName ?? null,
+							};
+						});
+
+						await app.prisma.sessionSnapshot.create({
+							data: {
+								instanceId: instance.id,
+								concurrentStreams: sessions.length,
+								totalBandwidth,
+								lanBandwidth: 0,
+								wanBandwidth: 0,
+								directPlayCount,
+								transcodeCount,
+								directStreamCount,
+								sessionsJson: JSON.stringify(enrichedSessions),
+							},
+						});
+
+						tickTotalConcurrent += sessions.length;
+						tickTotalTranscode += transcodeCount;
+						tickTotalSessions += sessions.length;
+					} catch (err) {
+						app.log.warn(
+							{ err, instanceId: instance.id, label: instance.label },
+							"Jellyfin session snapshot capture failed for instance",
+						);
+					}
+				}
+
+				// Fire Jellyfin notifications
+				if (tickTotalSessions > 0) {
+					checkJellyfinNotifications(
+						tickTotalConcurrent,
+						tickTotalTranscode,
+						tickTotalSessions,
+						tickPlatforms,
+						cachedKnownPlatforms ?? new Set(),
+					).catch((err) => app.log.warn({ err }, "Jellyfin session snapshot: notification check failed"));
+
+					// Merge current platforms into known cache
+					if (cachedKnownPlatforms) {
+						for (const p of tickPlatforms) cachedKnownPlatforms.add(p);
+					}
+				}
+			} catch (err) {
+				app.log.error({ err }, "Jellyfin session snapshot capture failed");
+			}
+		}
+
 		async function cleanupOldSnapshots() {
 			try {
 				const cutoff = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000);
@@ -344,10 +511,16 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 				captureSnapshots().catch((err) => {
 					app.log.error({ err }, "Failed during initial session snapshot capture");
 				});
+				captureJellyfinSnapshots().catch((err) => {
+					app.log.error({ err }, "Failed during initial Jellyfin session snapshot capture");
+				});
 
 				snapshotIntervalHandle = setInterval(() => {
 					captureSnapshots().catch((err) => {
 						app.log.error({ err }, "Failed during scheduled session snapshot capture");
+					});
+					captureJellyfinSnapshots().catch((err) => {
+						app.log.error({ err }, "Failed during scheduled Jellyfin session snapshot capture");
 					});
 				}, INTERVAL_MS);
 
