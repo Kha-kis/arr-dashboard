@@ -226,7 +226,7 @@ export const CalendarGrid = ({
 							type="button"
 							onClick={() => onSelectDate(date)}
 							className={cn(
-								"flex flex-col text-left transition-all duration-200 min-h-[115px] lg:min-h-[130px] relative group/cell",
+								"flex flex-col text-left transition-all duration-200 h-[115px] lg:h-[130px] relative group/cell",
 								inCurrentMonth
 									? isPast && !isTodayDate
 										? "bg-card/[0.06]"

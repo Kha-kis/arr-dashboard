@@ -56,8 +56,9 @@ export const useCalendarState = (): CalendarState => {
 		const calendarStartDate = new Date(start);
 		calendarStartDate.setUTCDate(calendarStartDate.getUTCDate() - calendarStartDate.getUTCDay());
 
-		const calendarEndDate = new Date(end);
-		calendarEndDate.setUTCDate(calendarEndDate.getUTCDate() + (6 - calendarEndDate.getUTCDay()));
+		// Always show 6 rows (42 days) so the grid height stays constant
+		const calendarEndDate = new Date(calendarStartDate);
+		calendarEndDate.setUTCDate(calendarEndDate.getUTCDate() + 41);
 
 		return {
 			monthStart: start,
