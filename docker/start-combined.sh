@@ -6,58 +6,110 @@ echo "Arr Dashboard - Combined Container"
 echo "=========================================="
 
 # ============================================
-# PUID/PGID handling (LinuxServer convention)
+# Rootless detection
 # ============================================
+# If the container is already running as a non-root user (e.g., --user 911:911),
+# skip all privilege management (groupmod, usermod, chown, su-exec).
+# This supports Kubernetes, Podman rootless, and security-hardened deployments.
 
-PUID=${PUID:-911}
-PGID=${PGID:-911}
+if [ "$(id -u)" -ne 0 ]; then
+    ROOTLESS=true
+    ACTUAL_UID=$(id -u)
+    ACTUAL_GID=$(id -g)
+    # Warn if user explicitly set PUID/PGID that differ from actual UID/GID
+    # Skip warning when PUID/PGID match the Dockerfile defaults (911) — not user-set
+    if [ -n "$PUID" ] && [ "$PUID" != "$ACTUAL_UID" ] && [ "$PUID" != "911" ]; then
+        echo ""
+        echo "  WARNING: PUID=$PUID is ignored in rootless mode (running as UID $ACTUAL_UID)"
+        echo "  Remove PUID/PGID env vars when using --user, or remove --user to use PUID/PGID"
+    fi
+    if [ -n "$PGID" ] && [ "$PGID" != "$ACTUAL_GID" ] && [ "$PGID" != "911" ]; then
+        echo "  WARNING: PGID=$PGID is ignored in rootless mode (running as GID $ACTUAL_GID)"
+    fi
+    PUID=$ACTUAL_UID
+    PGID=$ACTUAL_GID
+    echo ""
+    echo "Running in rootless mode (--user $PUID:$PGID)"
+    echo "  - Skipping PUID/PGID user management"
+    echo "  - Skipping ownership changes"
 
-echo ""
-echo "Setting up user/group..."
-echo "  - PUID: $PUID"
-echo "  - PGID: $PGID"
+    # Ensure config directory exists (may fail if parent isn't writable)
+    mkdir -p /config /config/logs 2>/dev/null || true
 
-# Modify abc group GID if different from default
-if [ "$(id -g abc)" != "$PGID" ]; then
-    groupmod -o -g "$PGID" abc
+    # Verify /config is writable — fail fast with actionable message
+    if [ ! -d /config ] || ! touch /config/.startup-check 2>/dev/null; then
+        echo "ERROR: /config is not writable by UID:$PUID GID:$PGID" >&2
+        echo "  In rootless mode, the config volume must be writable by the --user you specified." >&2
+        echo "  Example: chown $PUID:$PGID /path/to/config" >&2
+        exit 1
+    fi
+    rm -f /config/.startup-check
+else
+    ROOTLESS=false
+
+    # ============================================
+    # PUID/PGID handling (LinuxServer convention)
+    # ============================================
+
+    PUID=${PUID:-911}
+    PGID=${PGID:-911}
+
+    echo ""
+    echo "Setting up user/group..."
+    echo "  - PUID: $PUID"
+    echo "  - PGID: $PGID"
+
+    # Validate PUID/PGID are numeric (defense-in-depth)
+    case "$PUID" in
+    	''|*[!0-9]*) echo "Invalid PUID: $PUID (must be numeric)" >&2; exit 1 ;;
+    esac
+    case "$PGID" in
+    	''|*[!0-9]*) echo "Invalid PGID: $PGID (must be numeric)" >&2; exit 1 ;;
+    esac
+
+    # Modify abc group GID if different from default
+    if [ "$(id -g abc)" != "$PGID" ]; then
+        groupmod -o -g "$PGID" abc
+    fi
+
+    # Modify abc user UID if different from default
+    if [ "$(id -u abc)" != "$PUID" ]; then
+        usermod -o -u "$PUID" abc
+    fi
+
+    # ============================================
+    # Directory setup and permissions
+    # ============================================
+
+    echo ""
+    echo "Setting up directories and permissions..."
+
+    # Ensure config directory exists (LinuxServer convention)
+    mkdir -p /config
+    mkdir -p /config/logs
+
+    # Set ownership of writable directories using numeric IDs
+    # This ensures correct permissions even when mounting pre-existing directories
+    chown -R "${PUID}:${PGID}" /config
+
+    # NOTE: We intentionally do NOT chown /app/api recursively here.
+    # A recursive chown on /app/api (~40k+ files in node_modules) causes severe
+    # performance issues on Unraid's FUSE-based filesystem (shfs), creating
+    # startup hangs that can last several minutes or indefinitely.
+    # See: https://github.com/Kha-kis/arr-dashboard/issues/29
+    #
+    # Instead, we only set permissions on specific Prisma directories when
+    # a database provider switch actually requires client regeneration (below).
 fi
 
-# Modify abc user UID if different from default
-if [ "$(id -u abc)" != "$PUID" ]; then
-    usermod -o -u "$PUID" abc
-fi
-
-# ============================================
-# Directory setup and permissions
-# ============================================
-
-echo ""
-echo "Setting up directories and permissions..."
-
-# Ensure config directory exists (LinuxServer convention)
-mkdir -p /config
-mkdir -p /config/logs
-
-# Validate PUID/PGID are numeric (defense-in-depth)
-case "$PUID" in
-	''|*[!0-9]*) echo "Invalid PUID: $PUID (must be numeric)" >&2; exit 1 ;;
-esac
-case "$PGID" in
-	''|*[!0-9]*) echo "Invalid PGID: $PGID (must be numeric)" >&2; exit 1 ;;
-esac
-
-# Set ownership of writable directories using numeric IDs
-# This ensures correct permissions even when mounting pre-existing directories
-chown -R "${PUID}:${PGID}" /config
-
-# NOTE: We intentionally do NOT chown /app/api recursively here.
-# A recursive chown on /app/api (~40k+ files in node_modules) causes severe
-# performance issues on Unraid's FUSE-based filesystem (shfs), creating
-# startup hangs that can last several minutes or indefinitely.
-# See: https://github.com/Kha-kis/arr-dashboard/issues/29
-#
-# Instead, we only set permissions on specific Prisma directories when
-# a database provider switch actually requires client regeneration (below).
+# Helper: run a command as the target user (su-exec when root, direct when rootless)
+run_as_user() {
+    if [ "$ROOTLESS" = true ]; then
+        "$@"
+    else
+        su-exec abc "$@"
+    fi
+}
 
 # ============================================
 # Signal handling
@@ -123,6 +175,10 @@ if [ "$CURRENT_PROVIDER" != "$DB_PROVIDER" ]; then
     # Use a more robust sed pattern that handles different formatting
     if ! sed -i '/datasource db/,/^}/ s/provider = "[^"]*"/provider = "'"$DB_PROVIDER"'"/' prisma/schema.prisma; then
         echo "ERROR: Failed to update schema.prisma provider" >&2
+        if [ "$ROOTLESS" = true ]; then
+            echo "  In rootless mode, schema files may not be writable." >&2
+            echo "  Either rebuild the image with DATABASE_URL set, or ensure /app/api is writable." >&2
+        fi
         exit 1
     fi
 
@@ -141,20 +197,27 @@ if [ "$CURRENT_PROVIDER" != "$DB_PROVIDER" ]; then
     # Set permissions ONLY on the specific Prisma client directories that need to be writable
     # This is much faster than chown -R /app/api which causes Unraid startup hangs
     # See: https://github.com/Kha-kis/arr-dashboard/issues/29
-    echo "  - Setting permissions for Prisma client directories..."
-    for dir in /app/api/node_modules/.pnpm/@prisma+client@*/; do
-        [ -d "$dir" ] && chown -R "${PUID}:${PGID}" "$dir"
-    done
-    # Also handle the top-level @prisma directory symlinks
-    [ -d "/app/api/node_modules/@prisma" ] && chown -R "${PUID}:${PGID}" "/app/api/node_modules/@prisma"
-    # Ensure prisma directory is writable for any generated files
-    [ -d "/app/api/node_modules/.prisma" ] && chown -R "${PUID}:${PGID}" "/app/api/node_modules/.prisma"
-    # Ensure Prisma output directory is writable (Prisma 7 generates to src/generated/prisma/)
-    [ -d "/app/api/src/generated" ] && chown -R "${PUID}:${PGID}" "/app/api/src/generated"
+    # Skip in rootless mode — the user already owns these files or they were built with correct ownership
+    if [ "$ROOTLESS" = false ]; then
+        echo "  - Setting permissions for Prisma client directories..."
+        for dir in /app/api/node_modules/.pnpm/@prisma+client@*/; do
+            [ -d "$dir" ] && chown -R "${PUID}:${PGID}" "$dir"
+        done
+        # Also handle the top-level @prisma directory symlinks
+        [ -d "/app/api/node_modules/@prisma" ] && chown -R "${PUID}:${PGID}" "/app/api/node_modules/@prisma"
+        # Ensure prisma directory is writable for any generated files
+        [ -d "/app/api/node_modules/.prisma" ] && chown -R "${PUID}:${PGID}" "/app/api/node_modules/.prisma"
+        # Ensure Prisma output directory is writable (Prisma 7 generates to src/generated/prisma/)
+        [ -d "/app/api/src/generated" ] && chown -R "${PUID}:${PGID}" "/app/api/src/generated"
+    fi
 
-    if ! su-exec abc ./node_modules/.bin/prisma generate --schema prisma/schema.prisma; then
+    if ! run_as_user ./node_modules/.bin/prisma generate --schema prisma/schema.prisma; then
         echo "ERROR: Failed to regenerate Prisma client" >&2
-        echo "  Check that /app/api has correct permissions for PUID:$PUID PGID:$PGID" >&2
+        if [ "$ROOTLESS" = true ]; then
+            echo "  In rootless mode, ensure /app/api is writable by UID:$PUID" >&2
+        else
+            echo "  Check that /app/api has correct permissions for PUID:$PUID PGID:$PGID" >&2
+        fi
         exit 1
     fi
 
@@ -169,17 +232,27 @@ if [ "$CURRENT_PROVIDER" != "$DB_PROVIDER" ]; then
     # generates SQLite-dialect SQL, causing a silent crash with PostgreSQL.
     echo "  - Patching bundled Prisma config in dist/index.js..."
     if [ -f dist/index.js ]; then
-        sed -i 's/"activeProvider": "sqlite"/"activeProvider": "'"$DB_PROVIDER"'"/' dist/index.js
-        sed -i 's/provider = "sqlite"/provider = "'"$DB_PROVIDER"'"/' dist/index.js
-        sed -i 's/query_compiler_fast_bg\.sqlite\./query_compiler_fast_bg.'"$DB_PROVIDER"'./g' dist/index.js
+        if ! sed -i 's/"activeProvider": "sqlite"/"activeProvider": "'"$DB_PROVIDER"'"/' dist/index.js \
+           || ! sed -i 's/provider = "sqlite"/provider = "'"$DB_PROVIDER"'"/' dist/index.js \
+           || ! sed -i 's/query_compiler_fast_bg\.sqlite\./query_compiler_fast_bg.'"$DB_PROVIDER"'./g' dist/index.js; then
+            echo "ERROR: Failed to patch dist/index.js for $DB_PROVIDER" >&2
+            if [ "$ROOTLESS" = true ]; then
+                echo "  In rootless mode, ensure /app/api/dist is writable by UID:$PUID" >&2
+            fi
+            exit 1
+        fi
         echo "  - Bundle patched for $DB_PROVIDER"
 
-        # Verify the patch was applied correctly
+        # Verify the patch was actually applied (sed returns 0 even when matching nothing)
         echo "  - Verifying patch..."
         echo "    activeProvider: $(grep -o '"activeProvider": "[^"]*"' dist/index.js)"
         echo "    WASM paths: $(grep -c "query_compiler_fast_bg.$DB_PROVIDER." dist/index.js) references"
-        echo "    File size: $(wc -c < dist/index.js) bytes"
-        echo "    Permissions: $(ls -la dist/index.js)"
+
+        if grep -q '"activeProvider": "sqlite"' dist/index.js && [ "$DB_PROVIDER" = "postgresql" ]; then
+            echo "ERROR: dist/index.js still contains sqlite provider after patching" >&2
+            echo "  The bundle format may have changed — rebuild the image" >&2
+            exit 1
+        fi
     else
         echo "WARNING: dist/index.js not found, skipping bundle patch" >&2
     fi
@@ -199,8 +272,12 @@ echo "Synchronizing database schema..."
 # Prisma migrations are provider-specific SQL, but db push generates correct SQL for any provider
 # --accept-data-loss allows dropping unused columns during schema updates (e.g., removed urlBase)
 # Note: Prisma 7 removed --skip-generate flag (db push no longer regenerates by default)
-if ! su-exec abc ./node_modules/.bin/prisma db push --schema prisma/schema.prisma --accept-data-loss; then
+if ! run_as_user ./node_modules/.bin/prisma db push --schema prisma/schema.prisma --accept-data-loss; then
     echo "ERROR: Database schema synchronization failed" >&2
+    if [ "$ROOTLESS" = true ]; then
+        echo "  - In rootless mode, ensure the database file is readable/writable by UID:$PUID" >&2
+        echo "  - If switching from root to rootless, run: chown $PUID:$PGID /path/to/config/prod.db" >&2
+    fi
     echo "  - Ensure DATABASE_URL is correct and the database is accessible" >&2
     echo "  - For PostgreSQL: Check that the database exists and user has permissions" >&2
     echo "  - Current DATABASE_URL: ${DATABASE_URL%%@*}@[REDACTED]" >&2
@@ -216,7 +293,7 @@ echo ""
 echo "Loading system settings from database..."
 
 # Read settings as JSON from database (script is in api dir to access prisma client)
-DB_SETTINGS=$(su-exec abc node /app/api/read-base-path.cjs 2>/dev/null || echo '{"apiPort":null,"webPort":null,"listenAddress":null}')
+DB_SETTINGS=$(run_as_user node /app/api/read-base-path.cjs 2>/dev/null || echo '{"apiPort":null,"webPort":null,"listenAddress":null}')
 
 # Parse JSON values using node (since jq might not be available)
 DB_API_PORT=$(echo "$DB_SETTINGS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const v=JSON.parse(d).apiPort;console.log(v||'')})")
@@ -259,7 +336,7 @@ cd /app/api
 # via its pino-roll transport (writes to /config/logs/arr-dashboard.log).
 # Previous approach redirected stdout to api.log, which conflicted with Pino's
 # worker-thread transport and caused both log files to remain empty.
-su-exec abc sh -c "API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node dist/index.js" &
+run_as_user sh -c "API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node dist/index.js" &
 API_PID=$!
 echo "API started with PID $API_PID"
 
@@ -279,7 +356,7 @@ if ! kill -0 "$API_PID" 2>/dev/null; then
     # Re-run the API in the foreground with a timeout to capture the actual error
     echo "=== Re-running API in foreground (10s timeout) ===" >&2
     set +e
-    timeout 10 su-exec abc sh -c "API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node dist/index.js" 2>&1
+    timeout 10 run_as_user sh -c "API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node dist/index.js" 2>&1
     RERUN_EXIT=$?
     set -e
     echo "=== Foreground API exit code: $RERUN_EXIT ===" >&2
@@ -294,7 +371,7 @@ echo ""
 echo "Starting Web server on $HOST:$PORT..."
 cd /app/web
 # Use custom server wrapper for runtime API_HOST configuration
-su-exec abc sh -c "API_HOST=http://localhost:$API_PORT PORT=$PORT HOSTNAME=$HOST HOST=$HOST node server.js" &
+run_as_user sh -c "API_HOST=http://localhost:$API_PORT PORT=$PORT HOSTNAME=$HOST HOST=$HOST node server.js" &
 WEB_PID=$!
 echo "Web started with PID $WEB_PID"
 

@@ -262,7 +262,11 @@ The `/config` volume contains critical data that must be preserved:
 | `LOG_LEVEL` | `info` | Logging level (`debug`, `info`, `warn`, `error`) |
 | `GITHUB_TOKEN` | - | Optional GitHub token for TRaSH Guides (higher rate limits) |
 
-> **Note:** Set `PUID` and `PGID` to match the owner of your config directory. Run `id -u` and `id -g` on your host to find your user/group IDs. This follows the [LinuxServer.io](https://docs.linuxserver.io/general/understanding-puid-and-pgid) convention. The container must start as root — do not use Docker's `--user` flag, as it bypasses the internal permission setup and privilege drop.
+> **Note:** Two modes are supported for running as a non-root user:
+>
+> **PUID/PGID (default):** Set `PUID` and `PGID` to match the owner of your config directory. The container starts as root, sets up permissions, then drops privileges. This follows the [LinuxServer.io](https://docs.linuxserver.io/general/understanding-puid-and-pgid) convention.
+>
+> **Rootless (`--user`):** Run the container directly as a non-root user with `--user UID:GID` or `user: "UID:GID"` in Compose. No root required — ideal for Kubernetes and security-hardened deployments. Ensure `/config` is writable by the specified user. PUID/PGID env vars are ignored in this mode.
 
 ## Platform Support
 
@@ -360,6 +364,7 @@ pnpm run db:generate  # Regenerate Prisma client
 
 ### Docker Security Hardening (Optional)
 
+Using PUID/PGID (starts as root, drops privileges):
 ```bash
 docker run -d \
   --name arr-dashboard \
@@ -371,6 +376,17 @@ docker run -d \
   -e PGID=1000 \
   khak1s/arr-dashboard:latest
 ```
+
+Using rootless mode (no root required):
+```bash
+docker run -d \
+  --name arr-dashboard \
+  --user 1000:1000 \
+  -p 3000:3000 \
+  -v /path/to/config:/config \
+  khak1s/arr-dashboard:latest
+```
+> Ensure `/path/to/config` is owned by UID:GID `1000:1000` when using rootless mode.
 
 ### Reverse Proxy Example (nginx)
 
