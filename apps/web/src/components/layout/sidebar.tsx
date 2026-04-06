@@ -5,6 +5,7 @@ import {
 	Activity,
 	BarChart3,
 	Calendar,
+	ChevronDown,
 	ChevronRight,
 	Compass,
 	Eraser,
@@ -23,196 +24,364 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useThemeGradient } from "../../hooks/useThemeGradient";
 import { cn } from "../../lib/utils";
 import { useColorTheme } from "../../providers/color-theme-provider";
 import { springs } from "../motion";
 
-const NAV_ITEMS = [
-	{ href: "/pulse", label: "Pulse", icon: Activity },
-	{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-	{ href: "/discover", label: "Discover", icon: Compass },
-	{ href: "/library", label: "Library", icon: Library },
-	{ href: "/search", label: "Search", icon: Search },
-	{ href: "/indexers", label: "Indexers", icon: Globe },
-	{ href: "/calendar", label: "Calendar", icon: Calendar },
-	{ href: "/statistics", label: "Statistics", icon: BarChart3 },
-	{ href: "/requests", label: "Requests", icon: Inbox },
-	{ href: "/hunting", label: "Hunting", icon: Target },
-	{ href: "/queue-cleaner", label: "Queue Cleaner", icon: Trash2 },
-	{ href: "/library-cleanup", label: "Cleanup", icon: Eraser },
-	{ href: "/history", label: "History", icon: History },
-	{ href: "/trash-guides", label: "TRaSH Guides", icon: Sparkles },
-	{ href: "/settings", label: "Settings", icon: Settings },
+interface NavItem {
+	href: string;
+	label: string;
+	icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
+}
+
+interface NavGroup {
+	id: string;
+	label: string;
+	items: NavItem[];
+}
+
+const NAV_GROUPS: NavGroup[] = [
+	{
+		id: "overview",
+		label: "Overview",
+		items: [
+			{ href: "/pulse", label: "Pulse", icon: Activity },
+			{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+			{ href: "/calendar", label: "Calendar", icon: Calendar },
+			{ href: "/statistics", label: "Statistics", icon: BarChart3 },
+		],
+	},
+	{
+		id: "media",
+		label: "Media",
+		items: [
+			{ href: "/discover", label: "Discover", icon: Compass },
+			{ href: "/library", label: "Library", icon: Library },
+			{ href: "/search", label: "Search", icon: Search },
+			{ href: "/requests", label: "Requests", icon: Inbox },
+		],
+	},
+	{
+		id: "maintenance",
+		label: "Maintenance",
+		items: [
+			{ href: "/hunting", label: "Hunting", icon: Target },
+			{ href: "/queue-cleaner", label: "Queue Cleaner", icon: Trash2 },
+			{ href: "/library-cleanup", label: "Cleanup", icon: Eraser },
+			{ href: "/history", label: "History", icon: History },
+		],
+	},
+	{
+		id: "configuration",
+		label: "Configuration",
+		items: [
+			{ href: "/indexers", label: "Indexers", icon: Globe },
+			{ href: "/trash-guides", label: "TRaSH Guides", icon: Sparkles },
+			{ href: "/settings", label: "Settings", icon: Settings },
+		],
+	},
 ];
+
+const STORAGE_KEY = "sidebar-collapsed-groups";
+
+function loadCollapsedGroups(): Set<string> {
+	try {
+		const stored = localStorage.getItem(STORAGE_KEY);
+		if (stored) {
+			const parsed: unknown = JSON.parse(stored);
+			if (Array.isArray(parsed)) {
+				return new Set(parsed.filter((v): v is string => typeof v === "string"));
+			}
+		}
+	} catch {
+		// Ignore malformed localStorage
+	}
+	return new Set();
+}
+
+function saveCollapsedGroups(collapsed: Set<string>) {
+	try {
+		localStorage.setItem(STORAGE_KEY, JSON.stringify([...collapsed]));
+	} catch {
+		// Ignore storage errors
+	}
+}
+
+/** Find which group contains a given pathname */
+function findGroupForPath(pathname: string): string | undefined {
+	for (const group of NAV_GROUPS) {
+		if (group.items.some((item) => item.href === pathname)) {
+			return group.id;
+		}
+	}
+	return undefined;
+}
 
 interface NavContentProps {
 	useFlatStyling: boolean;
 	themeGradient: { from: string; to: string; glow: string };
 	pathname: string;
+	collapsedGroups: Set<string>;
+	onToggleGroup: (groupId: string) => void;
 	setMobileMenuOpen: (open: boolean) => void;
 }
 
-const NavContent = ({ useFlatStyling, themeGradient, pathname, setMobileMenuOpen }: NavContentProps) => (
-		<>
-			{/* Logo/Brand */}
-			<div className="mb-8 relative z-10">
-				<div className="flex items-center gap-3">
-					<div
+const NavContent = ({
+	useFlatStyling,
+	themeGradient,
+	pathname,
+	collapsedGroups,
+	onToggleGroup,
+	setMobileMenuOpen,
+}: NavContentProps) => (
+	<>
+		{/* Logo/Brand */}
+		<div className="mb-6 relative z-10">
+			<div className="flex items-center gap-3">
+				<div
+					className={cn(
+						"flex items-center justify-center",
+						useFlatStyling ? "h-5 w-5" : "h-10 w-10 rounded-xl",
+					)}
+					style={
+						useFlatStyling
+							? {
+									background: themeGradient.from,
+								}
+							: {
+									background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+									boxShadow: `0 8px 24px -8px ${themeGradient.glow}`,
+								}
+					}
+				>
+					<LayoutDashboard
+						className={useFlatStyling ? "h-4 w-4 text-white" : "h-5 w-5 text-white"}
+					/>
+				</div>
+				<div>
+					<h1
 						className={cn(
-							"flex items-center justify-center",
-							useFlatStyling ? "h-5 w-5" : "h-10 w-10 rounded-xl",
+							"font-bold tracking-tight",
+							useFlatStyling ? "text-sm text-foreground" : "text-lg",
 						)}
 						style={
 							useFlatStyling
-								? {
-										background: themeGradient.from,
-									}
+								? undefined
 								: {
 										background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
-										boxShadow: `0 8px 24px -8px ${themeGradient.glow}`,
+										WebkitBackgroundClip: "text",
+										WebkitTextFillColor: "transparent",
+										backgroundClip: "text",
 									}
 						}
 					>
-						<LayoutDashboard
-							className={useFlatStyling ? "h-4 w-4 text-white" : "h-5 w-5 text-white"}
-						/>
-					</div>
-					<div>
-						<h1
-							className={cn(
-								"font-bold tracking-tight",
-								useFlatStyling ? "text-sm text-foreground" : "text-lg",
-							)}
-							style={
-								useFlatStyling
-									? undefined
-									: {
-											background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
-											WebkitBackgroundClip: "text",
-											WebkitTextFillColor: "transparent",
-											backgroundClip: "text",
-										}
-							}
-						>
-							Arr Control
-						</h1>
-						<p className="text-[10px] uppercase tracking-widest text-muted-foreground">
-							Media Server
-						</p>
-					</div>
+						Arr Control
+					</h1>
+					<p className="text-[10px] uppercase tracking-widest text-muted-foreground">
+						Media Server
+					</p>
 				</div>
 			</div>
+		</div>
 
-			{/* Navigation */}
-			<LayoutGroup>
-				<nav className="flex flex-col gap-1.5 relative z-10">
-					{NAV_ITEMS.map((item) => {
-						const Icon = item.icon;
-						const isActive = pathname === item.href;
+		{/* Navigation */}
+		<LayoutGroup>
+			<nav
+				aria-label="Main navigation"
+				className="flex flex-col gap-3 relative z-10 overflow-y-auto flex-1 -mx-2 px-2"
+			>
+				{NAV_GROUPS.map((group) => {
+					const isCollapsed = collapsedGroups.has(group.id);
+					const hasActiveItem = group.items.some((item) => item.href === pathname);
 
-						return (
-							<Link
-								key={item.href}
-								href={item.href}
-								onClick={() => setMobileMenuOpen(false)}
-								aria-current={isActive ? "page" : undefined}
+					return (
+						<div key={group.id}>
+							{/* Group header */}
+							<button
+								type="button"
+								onClick={() => onToggleGroup(group.id)}
+								aria-expanded={!isCollapsed}
+								aria-controls={`nav-group-${group.id}`}
 								className={cn(
-									"group relative flex items-center gap-3 rounded-xl px-3 py-2.5 min-h-[44px] text-sm font-medium transition-colors duration-200",
-									isActive && !useFlatStyling && "text-white",
-									// *arr/qBittorrent themes: CSS handles styling via [aria-current="page"]
+									"flex w-full items-center gap-2 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-colors duration-200",
+									"text-muted-foreground/70 hover:text-muted-foreground",
 									useFlatStyling && "rounded-none",
-									!isActive && "text-muted-foreground hover:text-foreground",
 								)}
 							>
-								{/* Active background with gradient - uses layoutId for sliding animation */}
-								{/* Skip gradient for flat themes - CSS handles indicator */}
-								{isActive && !useFlatStyling && (
+								<motion.div animate={{ rotate: isCollapsed ? -90 : 0 }} transition={springs.quick}>
+									<ChevronDown className="h-3 w-3" />
+								</motion.div>
+								<span className="flex-1 text-left">{group.label}</span>
+								{/* Active dot indicator when group is collapsed */}
+								{isCollapsed && hasActiveItem && (
 									<motion.div
-										layoutId="sidebar-active-indicator"
-										className="absolute inset-0 rounded-xl"
+										initial={{ scale: 0 }}
+										animate={{ scale: 1 }}
+										className="h-1.5 w-1.5 rounded-full"
 										style={{
-											background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
-											boxShadow: `0 4px 16px -4px ${themeGradient.glow}`,
-										}}
-										transition={springs.snappy}
-									/>
-								)}
-
-								{/* Hover glow effect for inactive items - skip for flat themes */}
-								{!isActive && !useFlatStyling && (
-									<div
-										className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-										style={{
-											background: `linear-gradient(135deg, ${themeGradient.from}10, ${themeGradient.to}05)`,
+											background: useFlatStyling
+												? themeGradient.from
+												: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
 										}}
 									/>
 								)}
+							</button>
 
-								{/* Icon */}
-								<Icon
-									className={cn(
-										"relative z-10 h-4 w-4 transition-all duration-300",
-										isActive && "drop-shadow-xs",
-										!isActive && "group-hover:scale-110",
-									)}
-									style={!isActive ? { color: themeGradient.from } : undefined}
-								/>
-
-								{/* Label */}
-								<span className="relative z-10 flex-1">{item.label}</span>
-
-								{/* Active indicator arrow */}
-								{isActive && (
+							{/* Group items */}
+							<AnimatePresence initial={false}>
+								{!isCollapsed && (
 									<motion.div
-										initial={{ opacity: 0, x: -4 }}
-										animate={{ opacity: 1, x: 0 }}
-										transition={springs.quick}
+										id={`nav-group-${group.id}`}
+										role="region"
+										initial={{ height: 0, opacity: 0 }}
+										animate={{ height: "auto", opacity: 1 }}
+										exit={{ height: 0, opacity: 0 }}
+										transition={{ type: "tween", duration: 0.2, ease: "easeInOut" }}
+										className="overflow-hidden"
 									>
-										<ChevronRight className="relative z-10 h-4 w-4 text-white/70" />
+										<div className="flex flex-col gap-1 pt-1">
+											{group.items.map((item) => {
+												const Icon = item.icon;
+												const isActive = pathname === item.href;
+
+												return (
+													<Link
+														key={item.href}
+														href={item.href}
+														onClick={() => setMobileMenuOpen(false)}
+														aria-current={isActive ? "page" : undefined}
+														className={cn(
+															"group relative flex items-center gap-3 rounded-xl px-3 py-2 min-h-[40px] text-sm font-medium transition-colors duration-200",
+															isActive && !useFlatStyling && "text-white",
+															useFlatStyling && "rounded-none",
+															!isActive && "text-muted-foreground hover:text-foreground",
+														)}
+													>
+														{/* Active background with gradient */}
+														{isActive && !useFlatStyling && (
+															<motion.div
+																layoutId="sidebar-active-indicator"
+																className="absolute inset-0 rounded-xl"
+																style={{
+																	background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+																	boxShadow: `0 4px 16px -4px ${themeGradient.glow}`,
+																}}
+																transition={springs.snappy}
+															/>
+														)}
+
+														{/* Hover glow effect for inactive items */}
+														{!isActive && !useFlatStyling && (
+															<div
+																className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+																style={{
+																	background: `linear-gradient(135deg, ${themeGradient.from}10, ${themeGradient.to}05)`,
+																}}
+															/>
+														)}
+
+														{/* Icon */}
+														<Icon
+															className={cn(
+																"relative z-10 h-4 w-4 transition-all duration-300",
+																isActive && "drop-shadow-xs",
+																!isActive && "group-hover:scale-110",
+															)}
+															style={!isActive ? { color: themeGradient.from } : undefined}
+														/>
+
+														{/* Label */}
+														<span className="relative z-10 flex-1">{item.label}</span>
+
+														{/* Active indicator arrow */}
+														{isActive && (
+															<motion.div
+																initial={{ opacity: 0, x: -4 }}
+																animate={{ opacity: 1, x: 0 }}
+																transition={springs.quick}
+															>
+																<ChevronRight className="relative z-10 h-4 w-4 text-white/70" />
+															</motion.div>
+														)}
+
+														{/* Hover indicator for inactive */}
+														{!isActive && (
+															<ChevronRight
+																className={cn(
+																	"relative z-10 h-4 w-4 transition-all duration-300",
+																	"opacity-0 -translate-x-2 group-hover:opacity-50 group-hover:translate-x-0",
+																)}
+																style={{ color: themeGradient.from }}
+															/>
+														)}
+													</Link>
+												);
+											})}
+										</div>
 									</motion.div>
 								)}
+							</AnimatePresence>
+						</div>
+					);
+				})}
+			</nav>
+		</LayoutGroup>
 
-								{/* Hover indicator for inactive */}
-								{!isActive && (
-									<ChevronRight
-										className={cn(
-											"relative z-10 h-4 w-4 transition-all duration-300",
-											"opacity-0 -translate-x-2 group-hover:opacity-50 group-hover:translate-x-0",
-										)}
-										style={{ color: themeGradient.from }}
-									/>
-								)}
-							</Link>
-						);
-					})}
-				</nav>
-			</LayoutGroup>
-
-			{/* Bottom decorative element */}
-			<div className="mt-auto pt-6 relative z-10">
-				<div
-					className="h-0.5 rounded-full"
-					style={{
-						background: `linear-gradient(90deg, ${themeGradient.from}, transparent)`,
-						opacity: 0.3,
-					}}
-				/>
-			</div>
-		</>
+		{/* Bottom decorative element */}
+		<div className="mt-auto pt-4 relative z-10">
+			<div
+				className="h-0.5 rounded-full"
+				style={{
+					background: `linear-gradient(90deg, ${themeGradient.from}, transparent)`,
+					opacity: 0.3,
+				}}
+			/>
+		</div>
+	</>
 );
 
 export const Sidebar = () => {
 	const pathname = usePathname();
 	const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 	const [mounted, setMounted] = useState(false);
+	const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 	const { gradient: themeGradient } = useThemeGradient();
 	const { colorTheme } = useColorTheme();
 
-	// Handle hydration - only check theme after mount to avoid SSR mismatch
+	// Handle hydration + load persisted collapsed state
 	useEffect(() => {
 		setMounted(true);
+		setCollapsedGroups(loadCollapsedGroups());
+	}, []);
+
+	// Auto-expand the group containing the active route
+	const activeGroupId = useMemo(() => findGroupForPath(pathname), [pathname]);
+
+	useEffect(() => {
+		if (activeGroupId) {
+			setCollapsedGroups((prev) => {
+				if (!prev.has(activeGroupId)) return prev;
+				const next = new Set(prev);
+				next.delete(activeGroupId);
+				saveCollapsedGroups(next);
+				return next;
+			});
+		}
+	}, [activeGroupId]);
+
+	const handleToggleGroup = useCallback((groupId: string) => {
+		setCollapsedGroups((prev) => {
+			const next = new Set(prev);
+			if (next.has(groupId)) {
+				next.delete(groupId);
+			} else {
+				next.add(groupId);
+			}
+			saveCollapsedGroups(next);
+			return next;
+		});
 	}, []);
 
 	// *arr Suite and qBittorrent themes use flat styling, not gradients
@@ -307,7 +476,14 @@ export const Sidebar = () => {
 							}}
 						/>
 
-						<NavContent useFlatStyling={useFlatStyling} themeGradient={themeGradient} pathname={pathname} setMobileMenuOpen={setMobileMenuOpen} />
+						<NavContent
+							useFlatStyling={useFlatStyling}
+							themeGradient={themeGradient}
+							pathname={pathname}
+							collapsedGroups={collapsedGroups}
+							onToggleGroup={handleToggleGroup}
+							setMobileMenuOpen={setMobileMenuOpen}
+						/>
 					</motion.aside>
 				)}
 			</AnimatePresence>
@@ -315,7 +491,7 @@ export const Sidebar = () => {
 			{/* Desktop sidebar */}
 			<aside
 				data-sidebar
-				className="hidden w-64 shrink-0 flex-col border-r border-border/30 bg-background/50 backdrop-blur-xl p-6 lg:flex relative"
+				className="hidden w-64 shrink-0 flex-col border-r border-border/30 bg-background/50 backdrop-blur-xl p-6 lg:flex relative overflow-hidden"
 			>
 				{/* Decorative gradient orb */}
 				<div
@@ -326,7 +502,14 @@ export const Sidebar = () => {
 					}}
 				/>
 
-				<NavContent useFlatStyling={useFlatStyling} themeGradient={themeGradient} pathname={pathname} setMobileMenuOpen={setMobileMenuOpen} />
+				<NavContent
+					useFlatStyling={useFlatStyling}
+					themeGradient={themeGradient}
+					pathname={pathname}
+					collapsedGroups={collapsedGroups}
+					onToggleGroup={handleToggleGroup}
+					setMobileMenuOpen={setMobileMenuOpen}
+				/>
 			</aside>
 		</>
 	);
