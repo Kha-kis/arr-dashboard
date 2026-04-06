@@ -14,21 +14,35 @@ echo "=========================================="
 
 if [ "$(id -u)" -ne 0 ]; then
     ROOTLESS=true
-    # Warn if user explicitly set PUID/PGID (they'll be ignored in rootless mode)
-    if [ -n "${PUID+x}" ] || [ -n "${PGID+x}" ]; then
+    ACTUAL_UID=$(id -u)
+    ACTUAL_GID=$(id -g)
+    # Warn if user explicitly set PUID/PGID that differ from actual UID/GID
+    if [ -n "$PUID" ] && [ "$PUID" != "$ACTUAL_UID" ]; then
         echo ""
-        echo "  WARNING: PUID/PGID env vars are ignored in rootless mode (using actual UID/GID)"
+        echo "  WARNING: PUID=$PUID is ignored in rootless mode (running as UID $ACTUAL_UID)"
+        echo "  Remove PUID/PGID env vars when using --user, or remove --user to use PUID/PGID"
     fi
-    PUID=$(id -u)
-    PGID=$(id -g)
+    if [ -n "$PGID" ] && [ "$PGID" != "$ACTUAL_GID" ]; then
+        echo "  WARNING: PGID=$PGID is ignored in rootless mode (running as GID $ACTUAL_GID)"
+    fi
+    PUID=$ACTUAL_UID
+    PGID=$ACTUAL_GID
     echo ""
     echo "Running in rootless mode (--user $PUID:$PGID)"
     echo "  - Skipping PUID/PGID user management"
     echo "  - Skipping ownership changes"
-    echo "  - Ensure /config is writable by UID:$PUID GID:$PGID"
 
     # Ensure config directory exists (may fail if parent isn't writable)
     mkdir -p /config /config/logs 2>/dev/null || true
+
+    # Verify /config is writable — fail fast with actionable message
+    if [ ! -d /config ] || ! touch /config/.startup-check 2>/dev/null; then
+        echo "ERROR: /config is not writable by UID:$PUID GID:$PGID" >&2
+        echo "  In rootless mode, the config volume must be writable by the --user you specified." >&2
+        echo "  Example: chown $PUID:$PGID /path/to/config" >&2
+        exit 1
+    fi
+    rm -f /config/.startup-check
 else
     ROOTLESS=false
 
@@ -198,7 +212,11 @@ if [ "$CURRENT_PROVIDER" != "$DB_PROVIDER" ]; then
 
     if ! run_as_user ./node_modules/.bin/prisma generate --schema prisma/schema.prisma; then
         echo "ERROR: Failed to regenerate Prisma client" >&2
-        echo "  Check that /app/api has correct permissions for PUID:$PUID PGID:$PGID" >&2
+        if [ "$ROOTLESS" = true ]; then
+            echo "  In rootless mode, ensure /app/api is writable by UID:$PUID" >&2
+        else
+            echo "  Check that /app/api has correct permissions for PUID:$PUID PGID:$PGID" >&2
+        fi
         exit 1
     fi
 
@@ -213,17 +231,27 @@ if [ "$CURRENT_PROVIDER" != "$DB_PROVIDER" ]; then
     # generates SQLite-dialect SQL, causing a silent crash with PostgreSQL.
     echo "  - Patching bundled Prisma config in dist/index.js..."
     if [ -f dist/index.js ]; then
-        sed -i 's/"activeProvider": "sqlite"/"activeProvider": "'"$DB_PROVIDER"'"/' dist/index.js
-        sed -i 's/provider = "sqlite"/provider = "'"$DB_PROVIDER"'"/' dist/index.js
-        sed -i 's/query_compiler_fast_bg\.sqlite\./query_compiler_fast_bg.'"$DB_PROVIDER"'./g' dist/index.js
+        if ! sed -i 's/"activeProvider": "sqlite"/"activeProvider": "'"$DB_PROVIDER"'"/' dist/index.js \
+           || ! sed -i 's/provider = "sqlite"/provider = "'"$DB_PROVIDER"'"/' dist/index.js \
+           || ! sed -i 's/query_compiler_fast_bg\.sqlite\./query_compiler_fast_bg.'"$DB_PROVIDER"'./g' dist/index.js; then
+            echo "ERROR: Failed to patch dist/index.js for $DB_PROVIDER" >&2
+            if [ "$ROOTLESS" = true ]; then
+                echo "  In rootless mode, ensure /app/api/dist is writable by UID:$PUID" >&2
+            fi
+            exit 1
+        fi
         echo "  - Bundle patched for $DB_PROVIDER"
 
-        # Verify the patch was applied correctly
+        # Verify the patch was actually applied (sed returns 0 even when matching nothing)
         echo "  - Verifying patch..."
         echo "    activeProvider: $(grep -o '"activeProvider": "[^"]*"' dist/index.js)"
         echo "    WASM paths: $(grep -c "query_compiler_fast_bg.$DB_PROVIDER." dist/index.js) references"
-        echo "    File size: $(wc -c < dist/index.js) bytes"
-        echo "    Permissions: $(ls -la dist/index.js)"
+
+        if grep -q '"activeProvider": "sqlite"' dist/index.js && [ "$DB_PROVIDER" = "postgresql" ]; then
+            echo "ERROR: dist/index.js still contains sqlite provider after patching" >&2
+            echo "  The bundle format may have changed — rebuild the image" >&2
+            exit 1
+        fi
     else
         echo "WARNING: dist/index.js not found, skipping bundle patch" >&2
     fi
@@ -245,6 +273,10 @@ echo "Synchronizing database schema..."
 # Note: Prisma 7 removed --skip-generate flag (db push no longer regenerates by default)
 if ! run_as_user ./node_modules/.bin/prisma db push --schema prisma/schema.prisma --accept-data-loss; then
     echo "ERROR: Database schema synchronization failed" >&2
+    if [ "$ROOTLESS" = true ]; then
+        echo "  - In rootless mode, ensure the database file is readable/writable by UID:$PUID" >&2
+        echo "  - If switching from root to rootless, run: chown $PUID:$PGID /path/to/config/prod.db" >&2
+    fi
     echo "  - Ensure DATABASE_URL is correct and the database is accessible" >&2
     echo "  - For PostgreSQL: Check that the database exists and user has permissions" >&2
     echo "  - Current DATABASE_URL: ${DATABASE_URL%%@*}@[REDACTED]" >&2
