@@ -8,6 +8,7 @@ import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { safeOpenUrl } from "../../../lib/utils/url-validation";
 import { useCalendarData } from "../hooks/use-calendar-data";
 import { useCalendarPlexLinks } from "../hooks/use-calendar-plex-links";
+import { useFirstDayOfWeek } from "../../../hooks/useFirstDayOfWeek";
 import { useCalendarState } from "../hooks/use-calendar-state";
 import { formatDateOnly } from "../lib/calendar-formatters";
 import { CalendarEventList } from "./calendar-event-list";
@@ -16,7 +17,8 @@ import { CalendarGrid } from "./calendar-grid";
 import { CalendarHeader } from "./calendar-header";
 
 export const CalendarClient = () => {
-	const calendarState = useCalendarState();
+	const { weekStart } = useFirstDayOfWeek();
+	const calendarState = useCalendarState(weekStart);
 	const { calendarStart, calendarEnd, filters, monthStart, selectedDate, daysInView } =
 		calendarState;
 
@@ -185,6 +187,7 @@ export const CalendarClient = () => {
 						selectedDate={selectedDate}
 						onSelectDate={calendarState.setSelectedDate}
 						eventsByDate={eventsByDate}
+						weekStart={weekStart}
 					/>
 				</div>
 

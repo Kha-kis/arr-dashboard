@@ -14,6 +14,7 @@ interface CalendarGridProps {
 	readonly selectedDate: Date | null;
 	readonly onSelectDate: (date: Date) => void;
 	readonly eventsByDate: Map<string, DeduplicatedCalendarItem[]>;
+	readonly weekStart?: 0 | 1;
 	readonly className?: string;
 }
 
@@ -161,21 +162,30 @@ export const CalendarGrid = ({
 	selectedDate,
 	onSelectDate,
 	eventsByDate,
+	weekStart = 0,
 	className,
 }: CalendarGridProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const todayKey = formatDateOnly(new Date());
 
+	const rotatedLabels = [
+		...WEEKDAY_LABELS.slice(weekStart),
+		...WEEKDAY_LABELS.slice(0, weekStart),
+	];
+	// Weekend column indices after rotation
+	const satIndex = (6 - weekStart + 7) % 7;
+	const sunIndex = (0 - weekStart + 7) % 7;
+
 	return (
 		<div className="overflow-x-auto -mx-1 px-1">
 			{/* Weekday headers */}
 			<div className="grid grid-cols-7 gap-px min-w-[480px] mb-1.5">
-				{WEEKDAY_LABELS.map((day, i) => (
+				{rotatedLabels.map((day, i) => (
 					<div
 						key={day}
 						className={cn(
 							"py-2.5 text-center text-[10px] font-bold uppercase tracking-[0.15em]",
-							i === 0 || i === 6
+							i === satIndex || i === sunIndex
 								? "text-muted-foreground/20"
 								: "text-muted-foreground/40",
 						)}
