@@ -289,7 +289,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		const jellyfinUsers = new Set<string>();
 		const jellyfinLibraries = new Set<string>();
 		const jellyfinInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "JELLYFIN" },
+			where: { userId, service: { in: ["JELLYFIN", "EMBY"] } },
 			select: { id: true },
 		});
 		if (jellyfinInstances.length > 0) {

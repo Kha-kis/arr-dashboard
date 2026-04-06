@@ -371,7 +371,7 @@ export const DashboardClient = () => {
 		[services],
 	);
 	const hasJellyfinInstances = useMemo(
-		() => services.some((s) => s.service.toLowerCase() === "jellyfin" && s.enabled),
+		() => services.some((s) => (s.service.toLowerCase() === "jellyfin" || s.service.toLowerCase() === "emby") && s.enabled),
 		[services],
 	);
 	const hasMediaServer = hasPlexInstances || hasTautulliInstances || hasJellyfinInstances;

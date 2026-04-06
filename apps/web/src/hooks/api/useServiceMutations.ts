@@ -105,7 +105,8 @@ export const useTestConnectionBeforeAdd = () => {
 				| "seerr"
 				| "tautulli"
 				| "plex"
-				| "jellyfin";
+				| "jellyfin"
+				| "emby";
 		}
 	>({
 		mutationFn: ({ baseUrl, apiKey, service }) => testConnectionBeforeAdd(baseUrl, apiKey, service),

@@ -65,6 +65,12 @@ const SETUP_STEPS: SetupStep[] = [
 		hasHelper: false,
 	},
 	{
+		service: "emby",
+		label: "Emby",
+		description: "Media server — API key from Dashboard > API Keys",
+		hasHelper: false,
+	},
+	{
 		service: "prowlarr",
 		label: "Prowlarr",
 		description: "Indexer management — API key from Settings > General",

@@ -340,7 +340,7 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 				await app.notificationService
 					.notify({
 						eventType: "JELLYFIN_CONCURRENT_PEAK",
-						title: "High concurrent Jellyfin streams",
+						title: "High concurrent media server streams",
 						body: `${totalConcurrent} concurrent streams active (threshold: ${CONCURRENT_PEAK_THRESHOLD}).`,
 						url: "/statistics",
 					})
@@ -354,8 +354,8 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 				await app.notificationService
 					.notify({
 						eventType: "JELLYFIN_TRANSCODE_HEAVY",
-						title: "Heavy Jellyfin transcoding",
-						body: `${pct}% of active Jellyfin streams are transcoding (${totalTranscode}/${totalSessions}).`,
+						title: "Heavy media server transcoding",
+						body: `${pct}% of active streams are transcoding (${totalTranscode}/${totalSessions}).`,
 						url: "/statistics",
 					})
 					.catch((err) =>
@@ -369,8 +369,8 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 					await app.notificationService
 						.notify({
 							eventType: "JELLYFIN_NEW_DEVICE",
-							title: "New Jellyfin device detected",
-							body: `A new client "${safePlatform}" was seen streaming on Jellyfin for the first time in ${NEW_DEVICE_LOOKBACK_DAYS} days.`,
+							title: "New media server device detected",
+							body: `A new client "${safePlatform}" was seen streaming for the first time in ${NEW_DEVICE_LOOKBACK_DAYS} days.`,
 							url: "/statistics",
 						})
 						.catch((err) =>
@@ -387,7 +387,7 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 		async function captureJellyfinSnapshots() {
 			try {
 				const instances = await app.prisma.serviceInstance.findMany({
-					where: { service: "JELLYFIN", enabled: true },
+					where: { service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
 				});
 
 				if (instances.length === 0) return;

@@ -79,8 +79,8 @@ export async function testServiceConnection(
 			return await testPlexConnection(normalizedBaseUrl, apiKey);
 		}
 
-		// Jellyfin uses Authorization: MediaBrowser header
-		if (service === "jellyfin") {
+		// Jellyfin and Emby use the same MediaBrowser auth header and API
+		if (service === "jellyfin" || service === "emby") {
 			return await testJellyfinConnection(normalizedBaseUrl, apiKey);
 		}
 
