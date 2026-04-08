@@ -25,6 +25,7 @@ export const TRASH_CONFIG_TYPES = {
 	CF_INCLUDES: "CF_INCLUDES", // MkDocs include files shared across CF descriptions
 	QUALITY_PROFILE_GROUPS: "QUALITY_PROFILE_GROUPS",
 	NAMING_PRESETS: "NAMING_PRESETS",
+	CONFLICTS: "CONFLICTS",
 } as const;
 
 export type TrashConfigType = (typeof TRASH_CONFIG_TYPES)[keyof typeof TRASH_CONFIG_TYPES];
@@ -412,6 +413,26 @@ export interface TrashQualityProfileGroup {
 	profiles: Record<string, string>;
 }
 
+/**
+ * Member of a CF conflict group — a single custom format that is
+ * mutually exclusive with the other members in the same group.
+ */
+export interface TrashConflictGroupMember {
+	trashId: string;
+	name: string;
+	desc?: string;
+}
+
+/**
+ * A group of mutually exclusive custom formats.
+ * Selecting 2+ members from the same group is contradictory
+ * (e.g., "SDR" and "SDR (no WEBDL)").
+ * Sourced from upstream TRaSH Guides conflicts.json.
+ */
+export interface TrashConflictGroup {
+	members: TrashConflictGroupMember[];
+}
+
 // ============================================================================
 // Cache Types
 // ============================================================================
@@ -431,7 +452,8 @@ export interface TrashCacheEntry {
 		| TrashQualityProfile[]
 		| TrashCFDescription[]
 		| TrashQualityProfileGroup[]
-		| TrashNamingData[];
+		| TrashNamingData[]
+		| TrashConflictGroup[];
 	version: number;
 	fetchedAt: string;
 	lastCheckedAt: string;

@@ -8,6 +8,7 @@
 import type {
 	TrashCFDescription,
 	TrashCFInclude,
+	TrashConflictGroup,
 	TrashConfigType,
 	TrashCustomFormat,
 	TrashCustomFormatGroup,
@@ -35,6 +36,7 @@ import {
 	trashQualityProfileSchema,
 	trashQualitySizeSchema,
 	recordValidationStats,
+	trashConflictsFileSchema,
 	validateAndCollect,
 } from "./github-schemas.js";
 
@@ -515,6 +517,8 @@ export class TrashGitHubFetcher {
 				return `${this.baseUrl}/${service}/quality-profiles`;
 			case "QUALITY_PROFILE_GROUPS":
 				return `${this.baseUrl}/${service}/quality-profile-groups/groups.json`;
+			case "CONFLICTS":
+				return `${this.baseUrl}/${service}/conflicts.json`;
 			case "NAMING_PRESETS":
 				return `${this.baseUrl}/${service}/naming`;
 			default:
@@ -725,6 +729,37 @@ export class TrashGitHubFetcher {
 			}).items;
 		} catch (error) {
 			this.log.error("Error fetching quality profile groups:", error);
+			return [];
+		}
+	}
+
+	/**
+	 * Fetch CF Conflicts for a service.
+	 * Conflicts are stored in a single file (conflicts.json) that declares
+	 * mutually exclusive custom format groups sourced from upstream TRaSH Guides.
+	 */
+	async fetchConflicts(serviceType: "RADARR" | "SONARR"): Promise<TrashConflictGroup[]> {
+		const url = this.buildGitHubUrl(serviceType, "CONFLICTS");
+		try {
+			const response = await fetchWithRetry(url, this.fetchOptions, this.log);
+			if (!response.ok) {
+				this.log.warn(`Failed to fetch CF conflicts: ${response.status}`);
+				return [];
+			}
+			const rawData: unknown = await response.json();
+			const parsed = parseUpstreamOrThrow(rawData, trashConflictsFileSchema, {
+				integration: "trash-guides",
+				category: "conflicts",
+			});
+			recordValidationStats("conflicts", {
+				total: parsed.custom_formats.length,
+				validated: parsed.custom_formats.length,
+				rejected: 0,
+			});
+			return parsed.custom_formats;
+		} catch (error) {
+			if (error instanceof UpstreamValidationError) throw error;
+			this.log.error("Error fetching CF conflicts:", error);
 			return [];
 		}
 	}
@@ -1033,6 +1068,8 @@ export class TrashGitHubFetcher {
 				return this.fetchQualityProfileGroups(serviceType);
 			case "NAMING_PRESETS":
 				return this.fetchNamingData(serviceType);
+			case "CONFLICTS":
+				return this.fetchConflicts(serviceType);
 			default:
 				throw new Error(`Unsupported config type: ${configType}`);
 		}

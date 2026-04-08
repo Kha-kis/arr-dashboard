@@ -975,6 +975,7 @@ export class TemplateUpdater {
 			"NAMING",
 			"QUALITY_PROFILES",
 			"CF_DESCRIPTIONS",
+			"CONFLICTS",
 		];
 
 		let refreshed = 0;
