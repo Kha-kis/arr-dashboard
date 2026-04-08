@@ -42,6 +42,7 @@ const getCacheParamsSchema = z.object({
 		"CF_DESCRIPTIONS",
 		"CF_INCLUDES",
 		"QUALITY_PROFILE_GROUPS",
+		"CONFLICTS",
 	]),
 });
 
@@ -58,6 +59,7 @@ const refreshCacheBodySchema = z.object({
 			"CF_DESCRIPTIONS",
 			"CF_INCLUDES",
 			"QUALITY_PROFILE_GROUPS",
+			"CONFLICTS",
 		])
 		.optional(),
 	force: z.boolean().optional().default(false),

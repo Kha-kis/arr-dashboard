@@ -16,6 +16,7 @@ import {
 	TRASH_CONFIG_TYPES,
 	type CustomQualityConfig,
 	type NamingSelectedPresets,
+	type TrashConflictGroup,
 	type TrashNamingData,
 } from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
@@ -26,6 +27,7 @@ import { loggers } from "../logger.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { createCacheManager } from "./cache-manager.js";
 import { extractTrashId, transformFieldsToArray } from "./cf-field-utils.js";
+import { checkMutualExclusions } from "./conflict-checker.js";
 import {
 	finalizeDeploymentHistory,
 	finalizeDeploymentHistoryWithFailure,
@@ -1026,6 +1028,24 @@ export class DeploymentExecutorService {
 				warnings.push(
 					`${profileResult.orphanedCFs.length} Custom Format(s) removed from TRaSH Guides - scores set to 0: ${profileResult.orphanedCFs.join(", ")}`,
 				);
+			}
+
+			// Check for mutually exclusive CF selections using upstream conflict data
+			try {
+				const conflictCacheManager = createCacheManager(this.prisma);
+				const conflictGroups = await conflictCacheManager.get<TrashConflictGroup[]>(
+					instance.service.toUpperCase() as "RADARR" | "SONARR",
+					"CONFLICTS",
+				);
+				if (conflictGroups && conflictGroups.length > 0) {
+					const selectedIds = new Set(templateCFs.map((cf) => cf.trashId.toLowerCase()));
+					const exclusionWarnings = checkMutualExclusions(selectedIds, conflictGroups);
+					for (const w of exclusionWarnings) {
+						warnings.push(w.message);
+					}
+				}
+			} catch (conflictCheckError) {
+				log.debug({ err: conflictCheckError }, "CF conflict check skipped — data may not be cached");
 			}
 
 			cfResult.details.orphaned = profileResult.orphanedCFs;

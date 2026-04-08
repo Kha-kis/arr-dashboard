@@ -209,6 +209,42 @@ export const trashQualityProfileGroupSchema = z.looseObject({
 });
 
 // ============================================================================
+// CF Conflicts Schema (conflicts.json)
+// ============================================================================
+
+/**
+ * Each conflict group in the upstream JSON is an object keyed by 32-char hex
+ * trash_id, e.g. { "9c38ebb7...": { name: "SDR" }, "25c12f78...": { name: "SDR (no WEBDL)" } }.
+ *
+ * The .transform() normalizes into our TrashConflictGroup shape so consumers
+ * get a clean members[] array instead of dealing with Object.entries().
+ */
+const conflictGroupMemberSchema = z.looseObject({
+	name: z.string(),
+	desc: z.string().optional(),
+});
+
+const trashIdKeySchema = z.string().regex(/^[a-f0-9]{32}$/i, "Key must be a 32-char hex trash_id");
+
+export const trashConflictGroupSchema = z
+	.record(trashIdKeySchema, conflictGroupMemberSchema)
+	.refine((obj) => Object.keys(obj).length >= 2, {
+		message: "Conflict group must have at least 2 members",
+	})
+	.transform((obj) => ({
+		members: Object.entries(obj).map(([trashId, member]) => ({
+			trashId: trashId.toLowerCase(),
+			name: member.name,
+			desc: member.desc,
+		})),
+	}));
+
+/** Top-level wrapper for the upstream conflicts.json file */
+export const trashConflictsFileSchema = z.looseObject({
+	custom_formats: z.array(trashConflictGroupSchema),
+});
+
+// ============================================================================
 // Validation Stats Accumulator (delegates to IntegrationHealthRegistry)
 // ============================================================================
 
