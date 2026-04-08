@@ -12,6 +12,8 @@ import { validateRequest } from "../../lib/utils/validate.js";
 // Validation Schemas
 // ============================================================================
 
+const idParams = z.object({ id: z.string().min(1) });
+
 const createScheduleSchema = z.object({
 	templateId: z.string().min(1),
 	instanceId: z.string().min(1),
@@ -147,7 +149,7 @@ export async function registerScheduleRoutes(app: FastifyInstance, _opts: Fastif
 	 */
 	app.put("/:id", async (request, reply) => {
 		const userId = request.currentUser!.id;
-		const { id } = request.params as { id: string };
+		const { id } = validateRequest(idParams, request.params);
 		const body = validateRequest(updateScheduleSchema, request.body);
 
 		// Verify ownership
@@ -178,7 +180,7 @@ export async function registerScheduleRoutes(app: FastifyInstance, _opts: Fastif
 	 */
 	app.delete("/:id", async (request, reply) => {
 		const userId = request.currentUser!.id;
-		const { id } = request.params as { id: string };
+		const { id } = validateRequest(idParams, request.params);
 
 		// Verify ownership
 		const existing = await app.prisma.trashSyncSchedule.findFirst({

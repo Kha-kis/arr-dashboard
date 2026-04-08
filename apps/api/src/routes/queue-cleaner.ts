@@ -49,6 +49,8 @@ const READ_RATE_LIMIT = { max: 60, timeWindow: "1 minute" };
 // Write operations (config updates, clearing strikes) - moderate limit
 const WRITE_RATE_LIMIT = { max: 30, timeWindow: "1 minute" };
 
+const instanceIdParams = z.object({ instanceId: z.string().min(1) });
+
 // Pattern validation constants
 const MAX_PATTERN_JSON_LENGTH = 10000;
 const MAX_PATTERN_COUNT = 50;
@@ -420,7 +422,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	// Update config
 	app.patch("/queue-cleaner/configs/:instanceId", async (request, reply) => {
-		const { instanceId } = request.params as { instanceId: string };
+		const { instanceId } = validateRequest(instanceIdParams, request.params);
 		const data = validateRequest(configUpdateSchema, request.body);
 		const userId = request.currentUser!.id;
 
@@ -450,7 +452,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	// Delete config
 	app.delete("/queue-cleaner/configs/:instanceId", async (request, reply) => {
-		const { instanceId } = request.params as { instanceId: string };
+		const { instanceId } = validateRequest(instanceIdParams, request.params);
 		const userId = request.currentUser!.id;
 
 		const instance = await requireInstance(app, userId, instanceId, { queueCleanerConfig: true });
@@ -570,7 +572,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 		"/queue-cleaner/trigger/:instanceId",
 		{ config: { rateLimit: MANUAL_CLEAN_RATE_LIMIT } },
 		async (request, reply) => {
-			const { instanceId } = request.params as { instanceId: string };
+			const { instanceId } = validateRequest(instanceIdParams, request.params);
 			const userId = request.currentUser!.id;
 
 			const instance = await requireInstance(app, userId, instanceId, { queueCleanerConfig: true });
@@ -610,7 +612,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 		"/queue-cleaner/dry-run/:instanceId",
 		{ config: { rateLimit: PREVIEW_RATE_LIMIT } },
 		async (request, reply) => {
-			const { instanceId } = request.params as { instanceId: string };
+			const { instanceId } = validateRequest(instanceIdParams, request.params);
 			const userId = request.currentUser!.id;
 
 			const instance = await requireInstance(app, userId, instanceId, { queueCleanerConfig: true });
@@ -633,7 +635,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 		"/queue-cleaner/preview/:instanceId",
 		{ config: { rateLimit: PREVIEW_RATE_LIMIT } },
 		async (request, reply) => {
-			const { instanceId } = request.params as { instanceId: string };
+			const { instanceId } = validateRequest(instanceIdParams, request.params);
 			const userId = request.currentUser!.id;
 
 			const instance = await requireInstance(app, userId, instanceId, { queueCleanerConfig: true });
@@ -656,7 +658,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 		"/queue-cleaner/strikes/:instanceId",
 		{ config: { rateLimit: READ_RATE_LIMIT } },
 		async (request, reply) => {
-			const { instanceId } = request.params as { instanceId: string };
+			const { instanceId } = validateRequest(instanceIdParams, request.params);
 			const userId = request.currentUser!.id;
 
 			await requireInstance(app, userId, instanceId);
@@ -687,7 +689,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 		"/queue-cleaner/strikes/:instanceId",
 		{ config: { rateLimit: WRITE_RATE_LIMIT } },
 		async (request, reply) => {
-			const { instanceId } = request.params as { instanceId: string };
+			const { instanceId } = validateRequest(instanceIdParams, request.params);
 			const userId = request.currentUser!.id;
 
 			const instance = await requireInstance(app, userId, instanceId);

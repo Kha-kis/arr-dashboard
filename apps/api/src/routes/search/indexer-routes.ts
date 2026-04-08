@@ -20,8 +20,14 @@ import {
 	testProwlarrIndexerWithSdk,
 	updateProwlarrIndexerWithSdk,
 } from "../../lib/search/prowlarr-api.js";
+import { z } from "zod";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
+
+const instanceIndexerParams = z.object({
+	instanceId: z.string().min(1),
+	indexerId: z.coerce.number().int().positive(),
+});
 
 /**
  * Registers indexer-related routes for Prowlarr.
@@ -70,21 +76,7 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 	 * Retrieves detailed information about a specific indexer.
 	 */
 	app.get("/search/indexers/:instanceId/:indexerId", async (request, reply) => {
-		const params = request.params as { instanceId: string; indexerId: string };
-		const instanceId = params.instanceId;
-		const indexerId = Number(params.indexerId);
-
-		const fallback = buildIndexerDetailsFallback(
-			instanceId,
-			"",
-			undefined,
-			Number.isFinite(indexerId) ? indexerId : 0,
-		);
-
-		if (!Number.isFinite(indexerId)) {
-			reply.status(400);
-			return searchIndexerDetailsResponseSchema.parse({ indexer: fallback });
-		}
+		const { instanceId, indexerId } = validateRequest(instanceIndexerParams, request.params);
 
 		const clientResult = await getClientForInstance(app, request, instanceId);
 		if (!clientResult.success) {
@@ -142,19 +134,10 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 	 * Updates an indexer's configuration in Prowlarr.
 	 */
 	app.put("/search/indexers/:instanceId/:indexerId", async (request, reply) => {
-		const params = request.params as {
-			instanceId?: string;
-			indexerId?: string;
-		};
-		const paramInstanceId = params.instanceId ?? "";
-		const indexerIdValue = Number(params.indexerId);
-
-		if (!Number.isFinite(indexerIdValue)) {
-			reply.status(400);
-			return searchIndexerDetailsResponseSchema.parse({
-				indexer: buildIndexerDetailsFallback(paramInstanceId, "", undefined, 0),
-			});
-		}
+		const { instanceId: paramInstanceId, indexerId: indexerIdValue } = validateRequest(
+			instanceIndexerParams,
+			request.params,
+		);
 
 		const payload: SearchIndexerUpdateRequest = validateRequest(
 			searchIndexerUpdateRequestSchema,
