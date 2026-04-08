@@ -20,6 +20,7 @@ import {
 	paginatedLibraryResponseSchema,
 } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
+import { z } from "zod";
 import {
 	getClientForInstance,
 	isLidarrClient,
@@ -35,7 +36,7 @@ import { normalizeTrack } from "../../lib/library/track-normalizer.js";
 import { libraryQuerySchema } from "../../lib/library/validation-schemas.js";
 import { getLibrarySyncScheduler } from "../../lib/library-sync/index.js";
 import { validateRequest } from "../../lib/utils/validate.js";
-import type { Prisma, LibraryItemType as PrismaLibraryItemType } from "../../lib/prisma.js";
+import { Prisma, type LibraryItemType as PrismaLibraryItemType } from "../../lib/prisma.js";
 
 /**
  * Register data fetching routes for library
@@ -342,10 +343,10 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 	 * Used for deep linking from dashboard widgets.
 	 */
 	app.get("/library/by-tmdb/:tmdbId", async (request, reply) => {
-		const tmdbId = Number((request.params as { tmdbId: string }).tmdbId);
-		if (!Number.isFinite(tmdbId) || tmdbId <= 0) {
-			return reply.status(400).send({ error: "Invalid tmdbId" });
-		}
+		const { tmdbId } = validateRequest(
+			z.object({ tmdbId: z.coerce.number().int().positive() }),
+			request.params,
+		);
 
 		const userId = request.currentUser!.id;
 		const userInstances = await app.prisma.serviceInstance.findMany({
@@ -358,16 +359,13 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 		}
 
 		// Use json_extract for SQLite, JSON path for PostgreSQL
-		const placeholders = instanceIds.map(() => "?").join(", ");
 		const jsonExtract =
 			app.dbProvider === "postgresql"
-				? `CAST("data"::json->>'remoteIds'->>'tmdbId' AS INTEGER) = ?`
-				: `CAST(json_extract(data, '$.remoteIds.tmdbId') AS INTEGER) = ?`;
+				? Prisma.sql`CAST("data"::json->'remoteIds'->>'tmdbId' AS INTEGER) = ${tmdbId}`
+				: Prisma.sql`CAST(json_extract(data, '$.remoteIds.tmdbId') AS INTEGER) = ${tmdbId}`;
 
-		const rows = await app.prisma.$queryRawUnsafe<Array<{ data: string }>>(
-			`SELECT data FROM library_cache WHERE "instanceId" IN (${placeholders}) AND ${jsonExtract} LIMIT 1`,
-			...instanceIds,
-			tmdbId,
+		const rows = await app.prisma.$queryRaw<Array<{ data: string }>>(
+			Prisma.sql`SELECT data FROM library_cache WHERE "instanceId" IN (${Prisma.join(instanceIds)}) AND ${jsonExtract} LIMIT 1`,
 		);
 
 		if (!rows[0]) {

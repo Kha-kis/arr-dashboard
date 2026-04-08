@@ -12,6 +12,7 @@ import { validateRequest } from "../lib/utils/validate.js";
  * Format: Map<userId or sessionId, { challenge, expiresAt }>
  */
 const challengeStore = new Map<string, { challenge: string; expiresAt: number }>();
+const PASSKEY_CHALLENGE_MAX_ENTRIES = 1000;
 
 // Clean up expired challenges every 5 minutes
 setInterval(
@@ -109,6 +110,21 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				undefined, // email field removed from User model
 			);
 
+			// Evict oldest entry if map exceeds cap (defense against challenge exhaustion)
+			if (challengeStore.size >= PASSKEY_CHALLENGE_MAX_ENTRIES) {
+				const oldestKey = challengeStore.keys().next().value;
+				if (oldestKey) {
+					const evicted = challengeStore.get(oldestKey);
+					if (evicted && evicted.expiresAt > Date.now()) {
+						request.log.warn(
+							{ storeSize: challengeStore.size },
+							"Passkey challenge store full — evicted a non-expired challenge",
+						);
+					}
+					challengeStore.delete(oldestKey);
+				}
+			}
+
 			// Store challenge for verification
 			challengeStore.set(request.currentUser.id, {
 				challenge: options.challenge,
@@ -168,7 +184,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	app.post(
 		"/passkey/login/options",
 		{ config: { rateLimit: PASSKEY_LOGIN_RATE_LIMIT } },
-		async (_request, reply) => {
+		async (request, reply) => {
 			// Check if OIDC provider is enabled - if so, passkey login is disabled
 			const oidcProvider = await app.prisma.oIDCProvider.findFirst({
 				where: { enabled: true },
@@ -184,6 +200,21 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			// Generate temporary session ID for challenge storage
 			const tempSessionId = randomBytes(32).toString("base64url");
+
+			// Evict oldest entry if map exceeds cap (defense against challenge exhaustion)
+			if (challengeStore.size >= PASSKEY_CHALLENGE_MAX_ENTRIES) {
+				const oldestKey = challengeStore.keys().next().value;
+				if (oldestKey) {
+					const evicted = challengeStore.get(oldestKey);
+					if (evicted && evicted.expiresAt > Date.now()) {
+						request.log.warn(
+							{ storeSize: challengeStore.size },
+							"Passkey challenge store full — evicted a non-expired challenge",
+						);
+					}
+					challengeStore.delete(oldestKey);
+				}
+			}
 
 			// Store challenge for verification
 			challengeStore.set(tempSessionId, {

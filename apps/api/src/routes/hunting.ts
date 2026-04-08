@@ -21,6 +21,8 @@ import { safeJsonParse } from "../lib/utils/json.js";
 import { parsePaginationQuery } from "../lib/utils/pagination.js";
 import { validateRequest } from "../lib/utils/validate.js";
 
+const instanceIdParams = z.object({ instanceId: z.string().min(1) });
+
 const huntConfigUpdateSchema = z.object({
 	// Feature toggles
 	huntMissingEnabled: z.boolean().optional(),
@@ -224,7 +226,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	// Update hunt config
 	app.patch("/hunting/configs/:instanceId", async (request, reply) => {
-		const { instanceId } = request.params as { instanceId: string };
+		const { instanceId } = validateRequest(instanceIdParams, request.params);
 		const data = validateRequest(huntConfigUpdateSchema, request.body);
 		const userId = request.currentUser!.id;
 
@@ -341,7 +343,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	// Manual hunt trigger (with cooldown enforcement)
 	app.post("/hunting/trigger/:instanceId", async (request, reply) => {
-		const { instanceId } = request.params as { instanceId: string };
+		const { instanceId } = validateRequest(instanceIdParams, request.params);
 		const userId = request.currentUser!.id;
 
 		const instance = await requireInstance(app, userId, instanceId, { huntConfig: true });
@@ -373,7 +375,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	// Get filter options (tags, quality profiles) from an instance
 	app.get("/hunting/filter-options/:instanceId", async (request, reply) => {
-		const { instanceId } = request.params as { instanceId: string };
+		const { instanceId } = validateRequest(instanceIdParams, request.params);
 		const userId = request.currentUser!.id;
 
 		const instance = await requireInstance(app, userId, instanceId);
@@ -462,11 +464,9 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 	// ==================== SEARCH HISTORY MANAGEMENT ====================
 
 	// Get search history stats for an instance
-	app.get<{
-		Params: { instanceId: string };
-	}>("/hunting/history/:instanceId", async (request, reply) => {
+	app.get("/hunting/history/:instanceId", async (request, reply) => {
 		const userId = request.currentUser!.id;
-		const { instanceId } = request.params;
+		const { instanceId } = validateRequest(instanceIdParams, request.params);
 
 		const instance = await requireInstance(app, userId, instanceId, { huntConfig: true });
 
@@ -527,13 +527,10 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	// Clear search history for an instance
-	app.delete<{
-		Params: { instanceId: string };
-		Querystring: { huntType?: "missing" | "upgrade" };
-	}>("/hunting/history/:instanceId", async (request, reply) => {
+	app.delete("/hunting/history/:instanceId", async (request, reply) => {
 		const userId = request.currentUser!.id;
-		const { instanceId } = request.params;
-		const { huntType } = request.query;
+		const { instanceId } = validateRequest(instanceIdParams, request.params);
+		const { huntType } = (request.query ?? {}) as { huntType?: "missing" | "upgrade" };
 
 		const instance = await requireInstance(app, userId, instanceId, { huntConfig: true });
 
