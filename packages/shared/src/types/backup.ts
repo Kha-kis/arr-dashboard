@@ -66,13 +66,6 @@ export const listBackupsResponseSchema = z.object({
 
 export type ListBackupsResponse = z.infer<typeof listBackupsResponseSchema>;
 
-// Delete backup request
-export const deleteBackupRequestSchema = z.object({
-	id: z.string(),
-});
-
-export type DeleteBackupRequest = z.infer<typeof deleteBackupRequestSchema>;
-
 // Restore backup from filesystem request
 export const restoreBackupFromFileRequestSchema = z.object({
 	id: z.string(), // Backup ID to restore from filesystem

@@ -9,6 +9,8 @@ import { updateInstanceTags, upsertTags } from "../lib/services/tag-manager.js";
 import { buildUpdateData } from "../lib/services/update-builder.js";
 import { validateRequest } from "../lib/utils/validate.js";
 
+const idParams = z.object({ id: z.string().min(1) });
+
 const servicePayloadSchema = z.object({
 	label: z.string().min(1).max(120),
 	baseUrl: z.string().url(),
@@ -105,7 +107,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.put("/services/:id", async (request, reply) => {
-		const { id } = request.params as { id: string };
+		const { id } = validateRequest(idParams, request.params);
 		const payload = validateRequest(serviceUpdateSchema, request.body);
 		const userId = request.currentUser!.id;
 		const existing = await requireInstance(app, userId, id);
@@ -155,7 +157,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.delete("/services/:id", async (request, reply) => {
-		const { id } = request.params as { id: string };
+		const { id } = validateRequest(idParams, request.params);
 		const userId = request.currentUser!.id; // preHandler guarantees authentication
 
 		await requireInstance(app, userId, id);
@@ -186,7 +188,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	app.delete("/tags/:id", async (request, reply) => {
 		const userId = request.currentUser!.id;
-		const { id } = (request as { params: { id: string } }).params;
+		const { id } = validateRequest(idParams, request.params);
 
 		// Only delete tags that are associated with the current user's instances
 		// (ServiceTag is shared, so verify at least one of the user's instances uses it)
@@ -259,7 +261,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.post("/services/:id/test", async (request, reply) => {
-		const { id } = request.params as { id: string };
+		const { id } = validateRequest(idParams, request.params);
 		const userId = request.currentUser!.id; // preHandler guarantees authentication
 
 		const instance = await requireInstance(app, userId, id);

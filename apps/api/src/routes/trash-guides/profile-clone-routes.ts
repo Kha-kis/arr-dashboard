@@ -35,6 +35,12 @@ import { validateRequest } from "../../lib/utils/validate.js";
 
 import { z } from "zod";
 
+const instanceIdParams = z.object({ instanceId: z.string().min(1) });
+const instanceProfileParams = z.object({
+	instanceId: z.string().min(1),
+	profileId: z.coerce.number().int().positive(),
+});
+
 const profileImportSchema = z.object({
 	instanceId: z.string().min(1),
 	profileId: z.number().int(),
@@ -203,7 +209,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 */
 	app.get("/profiles/:instanceId", async (request, reply) => {
 		const userId = request.currentUser!.id; // preHandler guarantees auth
-		const { instanceId } = request.params as { instanceId: string };
+		const { instanceId } = validateRequest(instanceIdParams, request.params);
 
 		// Get instance - verify ownership by including userId in where clause.
 		const instance = await requireInstance(app, userId, instanceId);
@@ -249,10 +255,10 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Get detailed quality profile with custom formats from an instance
 	 */
 	app.get("/profile-details/:instanceId/:profileId", async (request, reply) => {
-		const { instanceId, profileId } = request.params as {
-			instanceId: string;
-			profileId: string;
-		};
+		const { instanceId, profileId } = validateRequest(
+			instanceProfileParams,
+			request.params,
+		);
 
 		const instance = await requireInstance(app, request.currentUser!.id, instanceId);
 
@@ -269,7 +275,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		// Fetch the quality profile and all custom formats in parallel
 		const [profile, allCustomFormats] = await Promise.all([
-			client.qualityProfile.getById(Number(profileId)),
+			client.qualityProfile.getById(profileId),
 			client.customFormat.getAll(),
 		]);
 

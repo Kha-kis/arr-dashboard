@@ -118,7 +118,16 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			// Use APP_URL (configured env var) as the trusted base URL.
 			// Only fall back to request headers when TRUST_PROXY is enabled (headers are validated by Fastify).
 			let redirectUri = parsed.redirectUri;
-			if (!redirectUri) {
+			if (redirectUri) {
+				// Validate redirect URI origin matches APP_URL to prevent open redirect
+				const redirectOrigin = new URL(redirectUri).origin;
+				const appOrigin = new URL(app.config.APP_URL).origin;
+				if (redirectOrigin !== appOrigin) {
+					return reply.status(400).send({
+						error: "Redirect URI must match the application URL origin",
+					});
+				}
+			} else {
 				redirectUri = `${app.config.APP_URL}/auth/oidc/callback`;
 				request.log.info({ redirectUri }, "Auto-generated redirect URI from APP_URL");
 			}

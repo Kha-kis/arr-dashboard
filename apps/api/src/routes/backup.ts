@@ -3,7 +3,6 @@ import {
 	type BackupFileInfo,
 	type BackupSettings,
 	createBackupRequestSchema,
-	deleteBackupRequestSchema,
 	type ListBackupsResponse,
 	type RestoreBackupResponse,
 	restoreBackupFromFileRequestSchema,
@@ -14,8 +13,11 @@ import type { FastifyPluginCallback } from "fastify";
 import { BackupService } from "../lib/backup/backup-service.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { resolveSecretsPath } from "../lib/utils/secrets-path.js";
+import { z } from "zod";
 import { validateRequest } from "../lib/utils/validate.js";
 import { getAppVersion } from "../lib/utils/version.js";
+
+const idParams = z.object({ id: z.string().min(1) });
 
 const BACKUP_RATE_LIMIT = { max: 3, timeWindow: "5 minutes" };
 const RESTORE_RATE_LIMIT = { max: 2, timeWindow: "5 minutes" };
@@ -221,10 +223,10 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Download a backup file by ID
 	 */
 	app.get("/:id/download", async (request, reply) => {
-		const params = request.params as { id: string };
+		const { id } = validateRequest(idParams, request.params);
 
 		const backupService = getBackupService();
-		const backup = await backupService.getBackupByIdInternal(params.id);
+		const backup = await backupService.getBackupByIdInternal(id);
 
 		if (!backup) {
 			return reply.status(404).send({ error: "Backup not found" });
@@ -235,7 +237,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		request.log.info(
 			{
-				backupId: params.id,
+				backupId: id,
 				filename: safeFilename,
 			},
 			"Backup downloaded",
@@ -254,8 +256,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Delete a backup by ID
 	 */
 	app.delete("/:id", { config: { rateLimit: DELETE_RATE_LIMIT } }, async (request, reply) => {
-		const params = request.params as { id: string };
-		const { id } = validateRequest(deleteBackupRequestSchema, { id: params.id });
+		const { id } = validateRequest(idParams, request.params);
 
 		try {
 			const backupService = getBackupService();
