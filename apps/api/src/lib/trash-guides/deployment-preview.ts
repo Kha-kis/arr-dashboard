@@ -11,6 +11,7 @@ import type {
 	CustomFormatSpecification,
 	DeploymentAction,
 	DeploymentPreview,
+	TrashConflictGroup,
 	TemplateCustomFormat,
 	UnmatchedCustomFormat,
 } from "@arr/shared";
@@ -20,6 +21,8 @@ import type { FastifyBaseLogger } from "fastify";
 import type { PrismaClient } from "../../lib/prisma.js";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import { AppValidationError, InstanceNotFoundError, TemplateNotFoundError } from "../errors.js";
+import { createCacheManager } from "./cache-manager.js";
+import { checkMutualExclusions } from "./conflict-checker.js";
 
 // SDK type aliases
 type SdkCustomFormat = Awaited<ReturnType<SonarrClient["customFormat"]["getAll"]>>[number];
@@ -579,6 +582,24 @@ export class DeploymentPreviewService {
 			warnings.push(
 				`${unmatchedCFs.length} Custom Format${unmatchedCFs.length === 1 ? "" : "s"} in the instance ${unmatchedCFs.length === 1 ? "is" : "are"} not part of this template. These will not be modified by this deployment.`,
 			);
+		}
+
+		// Check for mutually exclusive CF selections using upstream conflict data
+		try {
+			const cacheManager = createCacheManager(this.prisma);
+			const conflictGroups = await cacheManager.get<TrashConflictGroup[]>(
+				instance.service.toUpperCase() as "RADARR" | "SONARR",
+				"CONFLICTS",
+			);
+			if (conflictGroups && conflictGroups.length > 0) {
+				const selectedIds = new Set(templateCFs.map((cf) => cf.trashId.toLowerCase()));
+				const exclusionWarnings = checkMutualExclusions(selectedIds, conflictGroups);
+				for (const w of exclusionWarnings) {
+					warnings.push(w.message);
+				}
+			}
+		} catch {
+			this.log.warn("Failed to check CF mutual exclusions — conflict data may not be cached yet");
 		}
 
 		return {
