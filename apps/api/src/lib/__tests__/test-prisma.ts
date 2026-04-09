@@ -45,8 +45,7 @@ export async function createTestPgClient(connectionString: string): Promise<{
 	const pg = await import("pg");
 
 	const pool = new pg.default.Pool({ connectionString });
-	// biome-ignore lint/suspicious/noExplicitAny: @types/pg version mismatch with @prisma/adapter-pg
-	const adapter = new PrismaPg(pool as any);
+	const adapter = new PrismaPg(pool);
 	const prisma = new PrismaClient({ adapter });
 
 	return {
