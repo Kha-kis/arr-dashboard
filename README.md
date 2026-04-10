@@ -1,8 +1,8 @@
 # Arr Dashboard
 
-> **Version 2.13.0** — Codebase hardening, TypeScript 6, security audit, CI optimization
+> **Version 2.14.0** — Jellyfin & Emby integration, OAuth-assisted setup, notification quiet hours
 
-A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, **Lidarr**, **Readarr**, **Plex**, **Tautulli**, and **Seerr** instances. Consolidate your media automation management into a single, secure, and powerful interface.
+A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, **Lidarr**, **Readarr**, **Plex**, **Tautulli**, **Jellyfin**, **Emby**, and **Seerr** instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
 [![CI](https://github.com/Kha-kis/arr-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/Kha-kis/arr-dashboard/actions/workflows/ci.yml)
 [![Dev Build](https://github.com/Kha-kis/arr-dashboard/actions/workflows/docker-dev.yml/badge.svg)](https://github.com/Kha-kis/arr-dashboard/actions/workflows/docker-dev.yml)
@@ -77,6 +77,13 @@ A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, 
 - **Watch History** — Historical watch data enriched with Tautulli analytics
 - **Plex Statistics** — Dedicated stats tab with user analytics, device breakdown, codec distribution, bandwidth forecasting, quality scores, and daily activity charts
 - **Library Enrichment** — Watch status, play counts, and last-watched dates shown on library items
+- **Connect with Plex** — OAuth-assisted setup discovers your reachable Plex servers and auto-fills the URL and token
+
+### Jellyfin & Emby Integration
+- **Full Plex Parity** — Now playing, on-deck, recently added, watch history, library enrichment, and cleanup rules — at parity with the Plex integration
+- **Native Analytics** — User, device, transcode, codec, bandwidth, quality score, and episode completion analytics sourced directly from Jellyfin/Emby (no Tautulli-equivalent required)
+- **Unified Backend** — Emby is supported through a unified Jellyfin/Emby backend; both services work identically and can run side-by-side
+- **Watch-Aware Cleanup** — 7 library cleanup rule evaluators use Jellyfin/Emby watch data (last watched, watch count, on-deck, user rating, watched-by, added-at, episode completion)
 
 ### Seerr Integration
 - **Request Management** — View, approve, and decline media requests directly from the dashboard
@@ -192,15 +199,18 @@ docker-compose up -d
 | **Prowlarr** | Full | Indexer management, global search |
 | **Lidarr** | Full | Queue, calendar, library, history, statistics, hunting |
 | **Readarr** | Full | Queue, calendar, library, history, statistics, hunting |
-| **Plex** | Full | Now playing, on deck, recently added, watch history, library enrichment |
+| **Plex** | Full | Now playing, on deck, recently added, watch history, library enrichment, OAuth setup |
 | **Tautulli** | Full | Activity monitoring, watch statistics, bandwidth analytics |
-| **Seerr** | Full | Requests, users, issues, notification agents |
+| **Jellyfin** | Full | Now playing, on deck, recently added, watch history, native analytics, library cleanup |
+| **Emby** | Full | Shares Jellyfin backend — same capabilities, same setup flow |
+| **Seerr** | Full | Requests, users, issues, notification agents, optional Plex sign-in auto-setup |
 
 ## Version Tags
 
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.14.0` | Jellyfin & Emby integration, OAuth-assisted setup, notification quiet hours |
 | `2.13.0` | Codebase hardening, TypeScript 6, security audit, CI optimization |
 | `2.12.0` | Seerr Requests Experience, API stability, security sweep |
 | `2.11.0` | System Pulse — unified health attention feed across all services |

@@ -1,8 +1,8 @@
 # Arr Dashboard
 
-> **Version 2.13.0** — Codebase hardening, TypeScript 6, security audit, CI optimization
+> **Version 2.14.0** — Jellyfin & Emby integration, OAuth-assisted setup, notification quiet hours
 
-A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, **Lidarr**, **Readarr**, **Plex**, **Tautulli**, and **Seerr** instances. Consolidate your media automation management into a single, secure, and powerful interface.
+A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, **Lidarr**, **Readarr**, **Plex**, **Tautulli**, **Jellyfin**, **Emby**, and **Seerr** instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
 ## Quick Start
 
@@ -38,7 +38,8 @@ services:
 
 - **Unified Dashboard** — Queue, calendar, history, and statistics across all Sonarr, Radarr, Prowlarr, Lidarr, and Readarr instances
 - **Plex & Tautulli Integration** — Now playing, watch history, on deck, recently added, and detailed analytics with user/device/codec charts
-- **Seerr** — Manage media requests, users, issues, and notification agents
+- **Jellyfin & Emby Integration** — Full media server parity with Plex, sourced directly from native APIs (no Tautulli-equivalent required)
+- **Seerr** — Manage media requests, users, issues, and notification agents, with optional auto-setup via Plex sign-in
 - **Global Search** — Search for content across all indexers via Prowlarr
 - **TMDB Discovery** — Trending, popular, and upcoming content with one-click add
 - **TRaSH Guides** — Quality profiles, custom formats, naming schemes with auto-sync and profile cloning
@@ -92,6 +93,7 @@ services:
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.14.0` | Jellyfin & Emby integration, OAuth-assisted setup, notification quiet hours |
 | `2.13.0` | Codebase hardening, TypeScript 6, security audit, CI optimization |
 | `2.12.0` | Seerr Requests Experience, API stability, security sweep |
 | `2.11.0` | System Pulse — unified health attention feed across all services |
