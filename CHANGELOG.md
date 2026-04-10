@@ -5,6 +5,51 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.14.0] - 2026-04-09
+
+Media server expansion and setup experience overhaul — full Jellyfin and Emby support with Plex feature parity, OAuth-assisted setup for Plex and Seerr, notification quiet hours, TRaSH Custom Format conflict detection, and a host of UX refinements.
+
+### Added
+
+#### Media Server Expansion
+- **Jellyfin support** — Full media server integration with Plex feature parity: now playing, watch history, on-deck, recently added, user/device/codec/transcode/bandwidth analytics, quality score, bandwidth forecast, episode completion, and watch-aware library cleanup. No separate Tautulli-equivalent required — analytics are sourced directly from Jellyfin's API. 7 cleanup rule evaluators expose watch count, last watched, on-deck, user rating, watched-by, added-at, and episode completion (#274)
+- **Emby support** — Emby is supported through a unified Jellyfin/Emby backend (they descend from the same codebase). All Jellyfin capabilities work identically for Emby, and multi-instance aggregates combine data across Jellyfin and Emby instances (#277)
+
+#### OAuth-Assisted Setup
+- **Plex OAuth** — New **Connect with Plex** button in the service form triggers a plex.tv PIN flow that discovers your reachable Plex servers with per-connection reachability badges (Local/Remote/Relay, SSL indicator, Recommended label). The best reachable connection auto-fills the URL and token fields. Works in both add and edit modes; manual entry remains available as a fallback (#264)
+- **Seerr auto-setup via Plex sign-in** — New **Sign in to Seerr with Plex** button authenticates to your Seerr instance using your Plex token and auto-fetches the Seerr API key from the admin settings endpoint. Requires admin access on the Seerr instance and Plex login enabled; falls back to specific error messages if requirements aren't met (#265)
+
+#### Setup UX
+- **Getting Started banner** — When fewer than three services are configured, the Services page shows a guided banner listing recommended services (Plex, Sonarr, Radarr, Seerr, Tautulli, Jellyfin, Emby, Prowlarr) with descriptions and **Auto-setup** badges for services with OAuth helpers. Clicking a recommendation jumps straight into the add-instance form with the service type pre-selected (#266)
+- **URL suggestions** — After you add one service, the form offers companion-service URL suggestions derived from existing service hosts (e.g., if Plex is at `192.168.1.100:32400`, the form suggests `:5055` for Seerr, `:8181` for Tautulli, `:8989` for Sonarr, etc.). Incognito-aware — URLs are anonymized in incognito mode (#266)
+- **Connection test feedback** — Successful connection tests display the detected service version as a badge; failures show specific error messages with troubleshooting hints (authentication proxy detection, endpoint-not-found, invalid response format) (#266)
+
+#### TRaSH Guides
+- **Custom Format conflict detection** — Deployment previews now cross-reference selected custom formats against the upstream TRaSH `conflicts.json` registry and display advisory warnings when mutually exclusive CFs would be deployed together. Warnings are informational only — deployment is not blocked (#286)
+- **Quality size preset upstream update warnings** — Previewing a previously-applied quality size preset now compares a SHA-256 hash of the current upstream data against the hash recorded at your last apply. If they differ, a banner surfaces: "This preset has been updated since you last applied it" — letting you stay aligned with upstream changes without surprise (#267)
+
+#### Notifications
+- **Quiet hours** — New notification rule action type that defers non-critical notifications during a configurable time window (HH:MM, IANA timezone, overnight ranges supported). Critical events — `SYSTEM_ERROR`, `ACCOUNT_LOCKED`, `LOGIN_FAILED`, `SERVICE_CONNECTION_FAILED`, `BACKUP_FAILED` — always bypass the window. Deferred notifications are flushed in arrival order when the window ends. Fails closed on malformed config (#267)
+
+#### UI & UX
+- **Week Starts On setting** — Settings → Appearance now offers a Sunday/Monday toggle for the calendar grid's first column. Stored per-browser in local storage (#281)
+- **Collapsible sidebar groups** — Sidebar navigation is reorganized into four collapsible groups (Overview, Media, Maintenance, Configuration). Collapse state persists across sessions and the group containing the active page auto-expands on navigation. Accessible: `aria-expanded` headers, `aria-current="page"`, keyboard-navigable (#270, #283)
+
+### Fixed
+- **Rootless container startup** — The container now supports `--user UID:GID` / `user: "UID:GID"` in Compose for rootless deployments. Startup gracefully skips permission setup when the process cannot chown, dropping straight into application start (#282)
+- **Mobile responsive settings** — Settings page and service forms now lay out correctly on small screens; previously, the forms overflowed viewport width on mobile (#268)
+- **Calendar layout shift** — Navigating between months no longer causes content reflow/layout shift in the grid view (#279)
+
+### Changed
+- **PUID/PGID docs** — Updated PUID/PGID usage guidance to clarify when to use the default PUID/PGID convention vs the new rootless `--user` flag. Warns against combining `--user` with PUID/PGID, which produces conflicting instructions (#278)
+- **Production dependencies** — 10 dependency updates across the production-dependencies group (#275)
+- **Dev dependencies** — 2 dependency updates across the dev-dependencies group (#276)
+
+### Security
+- **Input validation hardening** — Tightened input validation at challenge store boundaries, hardened SQL construction paths, and addressed findings from a targeted auth audit (#285)
+- **defu & vite vulnerabilities** — Patched transitive vulnerabilities in `defu` and `vite` via `pnpm.overrides` (#284)
+- **hono, nodemailer, prisma bumps** — Patched 7 open Dependabot alerts by raising transitive floors (`hono` 4.12.11 → 4.12.12, `@hono/node-server` 1.19.11 → 1.19.13) and bumping direct deps (`nodemailer` 8.0.4 → 8.0.5, `prisma` / `@prisma/client` / adapters 7.6.0 → 7.7.0). `hono` is transitive via `@prisma/dev` dev tooling and not reachable in production (#288)
+
 ## [2.13.0] - 2026-03-31
 
 Codebase hardening release — lint infrastructure overhaul, frontend type safety, security audit, dependency modernization, and CI optimization. No new features; focused on reliability, maintainability, and developer experience.
