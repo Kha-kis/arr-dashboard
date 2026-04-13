@@ -88,3 +88,21 @@ export const buildPlexUrl = (machineId: string, ratingKey: string): string => {
 	return `https://app.plex.tv/desktop/#!/server/${machineId}/details?key=${encodeURIComponent(`/library/metadata/${ratingKey}`)}`;
 };
 
+/**
+ * Build a Jellyfin or Emby deep link URL for opening an item in the web UI.
+ * Jellyfin: {baseUrl}/web/#/details?id={jellyfinId}
+ * Emby:     {baseUrl}/web/index.html#!/item?id={jellyfinId}&serverId={serverId}
+ */
+export const buildJellyfinUrl = (
+	baseUrl: string,
+	jellyfinId: string,
+	service: "jellyfin" | "emby",
+	serverId?: string,
+): string => {
+	const base = normalizeBaseUrl(baseUrl);
+	if (service === "emby" && serverId) {
+		return `${base}/web/index.html#!/item?id=${encodeURIComponent(jellyfinId)}&serverId=${encodeURIComponent(serverId)}`;
+	}
+	return `${base}/web/#/details?id=${encodeURIComponent(jellyfinId)}`;
+};
+

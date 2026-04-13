@@ -102,8 +102,10 @@ interface LibraryCardProps {
 	plexUserRating?: number | null;
 	/** Plex watch progress for series (watched/total episodes) */
 	seriesProgress?: { watched: number; total: number; percent: number } | null;
-	/** Plex deep link URL for "Watch in Plex" */
+	/** Media server deep link URL */
 	plexUrl?: string | null;
+	/** Label for the media server link (e.g., "Plex", "Jellyfin", "Emby") */
+	mediaServerLabel?: string;
 }
 
 /**
@@ -153,6 +155,7 @@ export const LibraryCard = memo(function LibraryCard({
 	plexUserRating,
 	seriesProgress,
 	plexUrl,
+	mediaServerLabel,
 }: LibraryCardProps) {
 	const [incognitoMode] = useIncognitoMode();
 	const monitored = item.monitored ?? false;
@@ -372,7 +375,7 @@ export const LibraryCard = memo(function LibraryCard({
 	}
 	if (plexUrl) {
 		externalLinks.push({
-			label: "Plex",
+			label: mediaServerLabel ?? "Plex",
 			onClick: () => safeOpenUrl(plexUrl),
 		});
 	}
@@ -534,7 +537,7 @@ export const LibraryCard = memo(function LibraryCard({
 										border: "1px solid rgba(251, 191, 36, 0.3)",
 										color: RATING_COLOR,
 									}}
-									title="Your Plex Rating"
+									title="Your Rating"
 								>
 									<Star className="h-3 w-3 fill-current" />
 									{plexUserRating.toFixed(1)}

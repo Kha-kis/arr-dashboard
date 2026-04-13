@@ -5,12 +5,13 @@ import { useSearchParams } from "next/navigation";
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "../../../components/ui";
 import { useLibraryMonitorMutation } from "../../../hooks/api/useLibrary";
+import { useJellyfinIdentity, useJellyfinSeriesProgress, useJellyfinWatchEnrichment } from "../../../hooks/api/useJellyfin";
 import { usePlexIdentity, useSeriesProgress, useWatchEnrichment } from "../../../hooks/api/usePlex";
 import { useLibraryEnrichment } from "../../../hooks/api/useSeerr";
 import { fetchLibraryItemByTmdbId } from "../../../lib/api-client/library";
 import { useSeerrInstances } from "../../seerr/hooks/use-seerr-instances";
 import { useLibraryActions, useLibraryData, useLibraryFilters } from "../hooks";
-import { buildLibraryExternalLink, buildPlexUrl } from "../lib/library-utils";
+import { buildJellyfinUrl, buildLibraryExternalLink, buildPlexUrl } from "../lib/library-utils";
 import { AlbumBreakdownModal } from "./album-breakdown-modal";
 import { BookBreakdownModal } from "./book-breakdown-modal";
 import { ItemDetailsModal } from "./item-details-modal";
@@ -82,9 +83,16 @@ export const LibraryClient: React.FC = () => {
 	const enrichmentQuery = useLibraryEnrichment(seerrInstanceId, data.items);
 	const enrichmentMap = enrichmentQuery.data?.items ?? null;
 
-	// Plex watch enrichment — fetch watch counts, on-deck status, last watched
-	const watchEnrichmentQuery = useWatchEnrichment(data.items);
-	const watchEnrichmentMap = watchEnrichmentQuery.data?.items ?? null;
+	// Watch enrichment — fetch watch counts, on-deck status, last watched from Plex + Jellyfin/Emby
+	const plexWatchQuery = useWatchEnrichment(data.items);
+	const jellyfinWatchQuery = useJellyfinWatchEnrichment(data.items);
+	const watchEnrichmentMap = useMemo(() => {
+		const plexItems = plexWatchQuery.data?.items;
+		const jfItems = jellyfinWatchQuery.data?.items;
+		if (!plexItems && !jfItems) return null;
+		// Jellyfin first, Plex on top — Plex wins on conflicts (has ratingKey + labels)
+		return { ...jfItems, ...plexItems };
+	}, [plexWatchQuery.data, jellyfinWatchQuery.data]);
 
 	// Plex identity — needed to build "Watch in Plex" deep links
 	const plexIdentityQuery = usePlexIdentity();
@@ -98,7 +106,23 @@ export const LibraryClient: React.FC = () => {
 		return map;
 	}, [plexIdentityQuery.data]);
 
-	// Plex series progress — fetch watched/total episode counts for series items
+	// Jellyfin/Emby identity — needed to build "Watch in Jellyfin/Emby" deep links
+	const jellyfinIdentityQuery = useJellyfinIdentity();
+	const jellyfinServerMap = useMemo(() => {
+		const map = new Map<string, { baseUrl: string; service: "jellyfin" | "emby"; serverId: string }>();
+		if (jellyfinIdentityQuery.data) {
+			for (const server of jellyfinIdentityQuery.data) {
+				map.set(server.instanceId, {
+					baseUrl: server.baseUrl,
+					service: server.service,
+					serverId: server.serverId,
+				});
+			}
+		}
+		return map;
+	}, [jellyfinIdentityQuery.data]);
+
+	// Series progress — fetch watched/total episode counts from Plex + Jellyfin/Emby
 	const seriesTmdbIds = useMemo(
 		() =>
 			data.items
@@ -106,8 +130,14 @@ export const LibraryClient: React.FC = () => {
 				.map((item) => item.remoteIds!.tmdbId!),
 		[data.items],
 	);
-	const seriesProgressQuery = useSeriesProgress(seriesTmdbIds);
-	const seriesProgressMap = seriesProgressQuery.data?.progress ?? null;
+	const plexProgressQuery = useSeriesProgress(seriesTmdbIds);
+	const jellyfinProgressQuery = useJellyfinSeriesProgress(seriesTmdbIds);
+	const seriesProgressMap = useMemo(() => {
+		const plexProgress = plexProgressQuery.data?.progress;
+		const jfProgress = jellyfinProgressQuery.data?.progress;
+		if (!plexProgress && !jfProgress) return null;
+		return { ...jfProgress, ...plexProgress };
+	}, [plexProgressQuery.data, jellyfinProgressQuery.data]);
 
 	// Notify user if Seerr enrichment fails (one-time per error transition)
 	useEffect(() => {
@@ -201,16 +231,24 @@ export const LibraryClient: React.FC = () => {
 		[monitorMutation],
 	);
 
-	// Compute Plex URL for the detail modal item
-	const modalPlexUrl = useMemo(() => {
+	// Compute media server deep link URL for the detail modal item (Plex or Jellyfin/Emby)
+	const modalMediaServerUrl = useMemo(() => {
 		if (!itemDetail || !watchEnrichmentMap || !itemDetail.remoteIds?.tmdbId) return undefined;
 		const key = `${itemDetail.type === "movie" ? "movie" : "series"}:${itemDetail.remoteIds.tmdbId}`;
 		const wd = watchEnrichmentMap[key];
-		if (!wd?.ratingKey || !wd.instanceId) return undefined;
-		const machineId = plexMachineIdMap.get(wd.instanceId);
-		if (!machineId) return undefined;
-		return buildPlexUrl(machineId, wd.ratingKey);
-	}, [itemDetail, watchEnrichmentMap, plexMachineIdMap]);
+		if (!wd?.instanceId) return undefined;
+		// Try Plex first
+		if (wd.ratingKey) {
+			const machineId = plexMachineIdMap.get(wd.instanceId);
+			if (machineId) return buildPlexUrl(machineId, wd.ratingKey);
+		}
+		// Try Jellyfin/Emby
+		if (wd.jellyfinId) {
+			const jfServer = jellyfinServerMap.get(wd.instanceId);
+			if (jfServer) return buildJellyfinUrl(jfServer.baseUrl, wd.jellyfinId, jfServer.service, jfServer.serverId);
+		}
+		return undefined;
+	}, [itemDetail, watchEnrichmentMap, plexMachineIdMap, jellyfinServerMap]);
 
 	return (
 		<>
@@ -274,6 +312,7 @@ export const LibraryClient: React.FC = () => {
 					watchEnrichmentMap={watchEnrichmentMap}
 					seriesProgressMap={seriesProgressMap}
 					plexMachineIdMap={plexMachineIdMap}
+					jellyfinServerMap={jellyfinServerMap}
 				/>
 			</div>
 
@@ -314,7 +353,18 @@ export const LibraryClient: React.FC = () => {
 										]?.userRating
 									: undefined
 							}
-							plexUrl={modalPlexUrl}
+							plexUrl={modalMediaServerUrl}
+							mediaServerLabel={(() => {
+								if (!itemDetail?.remoteIds?.tmdbId || !watchEnrichmentMap) return undefined;
+								const key = `${itemDetail.type === "movie" ? "movie" : "series"}:${itemDetail.remoteIds.tmdbId}`;
+								const wd = watchEnrichmentMap[key];
+								if (!wd?.instanceId) return undefined;
+								if (jellyfinServerMap.has(wd.instanceId)) {
+									const jf = jellyfinServerMap.get(wd.instanceId)!;
+									return jf.service === "emby" ? "Emby" : "Jellyfin";
+								}
+								return "Plex";
+							})()}
 						/>
 					</Suspense>
 				) : (
