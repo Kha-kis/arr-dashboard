@@ -11,7 +11,7 @@
 
 import type { PulseItem } from "@arr/shared";
 import { ARR_SERVICES_UPPER } from "@arr/shared";
-import { ProwlarrClient } from "arr-sdk";
+import { LidarrClient, ProwlarrClient } from "arr-sdk";
 import type { SonarrClient } from "arr-sdk";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import {
@@ -71,16 +71,35 @@ const collectArrSignals: Collector = async (app, userId, log) => {
 				// Prowlarr has no disk space endpoint
 				const hasDiskSpace = !(client instanceof ProwlarrClient);
 
-				// All ARR clients expose .health.getAll() — use SonarrClient as
-				// the representative type (the return shape is identical across services)
+				// Lidarr uses .get() instead of .getAll() for health and diskSpace
+				// (older API convention); all other ARR services use .getAll()
+				const isLidarr = client instanceof LidarrClient;
 				const typedClient = client as SonarrClient;
+				const lidarrClient = client as LidarrClient;
 
-				const [rawHealth, rawDisk] = await Promise.all([
-					safeRequest(() => typedClient.health.getAll(), `${service} health`),
+				// Normalize health/diskSpace results to a shared shape; Lidarr returns
+				// .get() (string wikiUrl) while other services return .getAll() (object wikiUrl).
+				// processHealthIssues accepts both via its HealthEntry constraint.
+				type ArrHealth = Array<{
+					type?: string | null;
+					message?: string | null;
+					source?: string | null;
+					wikiUrl?: string | { toString(): string } | null;
+				}>;
+				type ArrDisk = Array<{ totalSpace?: number | null; freeSpace?: number | null }>;
+
+				const [rawHealthUntyped, rawDiskUntyped] = await Promise.all([
+					isLidarr
+						? safeRequest(() => lidarrClient.health.get(), `${service} health`)
+						: safeRequest(() => typedClient.health.getAll(), `${service} health`),
 					hasDiskSpace
-						? safeRequest(() => typedClient.diskSpace.getAll(), `${service} disk`)
-						: Promise.resolve([] as Awaited<ReturnType<SonarrClient["diskSpace"]["getAll"]>>),
+						? isLidarr
+							? safeRequest(() => lidarrClient.diskSpace.get(), `${service} disk`)
+							: safeRequest(() => typedClient.diskSpace.getAll(), `${service} disk`)
+						: Promise.resolve([] as ArrDisk),
 				]);
+				const rawHealth = rawHealthUntyped as ArrHealth | undefined;
+				const rawDisk = rawDiskUntyped as ArrDisk | undefined;
 
 				// If health call failed, the instance is likely unreachable
 				if (rawHealth === undefined) {
