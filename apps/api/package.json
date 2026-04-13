@@ -11,7 +11,7 @@
 		"lint": "biome lint src",
 		"format": "biome format src",
 		"typecheck": "tsc --noEmit",
-		"test": "vitest",
+		"test": "pnpm --filter @arr/shared build && vitest",
 		"db:generate": "prisma generate --schema prisma/schema.prisma",
 		"db:push": "prisma db push --schema prisma/schema.prisma",
 		"db:sync": "prisma db push --schema prisma/schema.prisma --skip-generate",
