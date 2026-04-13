@@ -390,11 +390,11 @@ export const DashboardClient = () => {
 		return Math.max(plexCount, tautulliCount) + jellyfinCount;
 	}, [hasMediaServer, plexNowPlaying.data, tautulliActivity.data, jellyfinNowPlaying.data]);
 
-	// Build instanceId → baseUrl map
+	// Build instanceId → externalUrl (or baseUrl fallback) map
 	const instanceUrlMap = useMemo<InstanceUrlMap>(() => {
 		const map = new Map<string, string>();
 		for (const service of services) {
-			map.set(service.id, service.baseUrl);
+			map.set(service.id, service.externalUrl ?? service.baseUrl);
 		}
 		return map;
 	}, [services]);
