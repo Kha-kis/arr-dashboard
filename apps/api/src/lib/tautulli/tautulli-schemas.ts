@@ -51,35 +51,40 @@ export const tautulliHistoryDataSchema = z.looseObject({
 
 /** get_activity — inner data */
 export const tautulliActivityDataSchema = z.looseObject({
-	sessions: z.array(
-		z.looseObject({
-			session_key: z.string(),
-			rating_key: z.coerce.string(),
-			title: z.string(),
-			grandparent_title: z.string().optional(),
-			media_type: z.string(),
-			user: z.string(),
-			friendly_name: z.string(),
-			player: z.string(),
-			platform: z.string(),
-			product: z.string(),
-			state: z.string(),
-			progress_percent: z.string(),
-			transcode_decision: z.string(),
-			stream_video_decision: z.string(),
-			stream_audio_decision: z.string(),
-			video_resolution: z.string(),
-			audio_codec: z.string(),
-			video_codec: z.string(),
-			bandwidth: z.string(),
-			location: z.string(),
-			thumb: z.string().optional(),
-		}),
+	// Tautulli omits sessions/bandwidth fields entirely when there are no active streams.
+	// Use z.preprocess to coerce undefined → safe defaults (matches v2.17+ idle behaviour).
+	sessions: z.preprocess(
+		(v) => v ?? [],
+		z.array(
+			z.looseObject({
+				session_key: z.string(),
+				rating_key: z.coerce.string(),
+				title: z.string(),
+				grandparent_title: z.string().optional(),
+				media_type: z.string(),
+				user: z.string(),
+				friendly_name: z.string(),
+				player: z.string(),
+				platform: z.string(),
+				product: z.string(),
+				state: z.string(),
+				progress_percent: z.string(),
+				transcode_decision: z.string(),
+				stream_video_decision: z.string(),
+				stream_audio_decision: z.string(),
+				video_resolution: z.string(),
+				audio_codec: z.string(),
+				video_codec: z.string(),
+				bandwidth: z.string(),
+				location: z.string(),
+				thumb: z.string().optional(),
+			}),
+		),
 	),
-	stream_count: z.string(),
-	total_bandwidth: z.number(),
-	lan_bandwidth: z.number(),
-	wan_bandwidth: z.number(),
+	stream_count: z.preprocess((v) => v ?? "0", z.string()),
+	total_bandwidth: z.preprocess((v) => v ?? 0, z.number()),
+	lan_bandwidth: z.preprocess((v) => v ?? 0, z.number()),
+	wan_bandwidth: z.preprocess((v) => v ?? 0, z.number()),
 });
 
 /** get_plays_by_date — inner data */
