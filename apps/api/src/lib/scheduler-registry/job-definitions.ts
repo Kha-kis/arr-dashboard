@@ -1,0 +1,157 @@
+/**
+ * Central catalog of background jobs the API process runs.
+ *
+ * Each entry below is the authoritative metadata for one scheduler. This file
+ * is the single source of truth for job ids — constants are exported so that
+ * scheduler plugins (and `registry.track()` call sites) reference the same
+ * string, eliminating the class of bugs where the registry and the telemetry
+ * surface drift apart.
+ *
+ * Concurrency notes belong in the `description` field and summarize the lock
+ * model the plugin enforces today. The registry itself only enforces `serial`;
+ * the other values are informational for operator UIs.
+ */
+
+import type { JobDefinition } from "./scheduler-registry.js";
+
+// Stable ids — reference these from plugins and tests instead of bare strings.
+export const JOB_ID = {
+	backup: "backup",
+	sessionCleanup: "session-cleanup",
+	sessionSnapshot: "session-snapshot",
+	librarySync: "library-sync",
+	hunting: "hunting",
+	queueCleaner: "queue-cleaner",
+	libraryCleanup: "library-cleanup",
+	insightsDigest: "insights-digest",
+	trashBackupCleanup: "trash-backup-cleanup",
+	trashUpdate: "trash-update",
+	trashSync: "trash-sync",
+	plexCache: "plex-cache",
+	plexEpisodeCache: "plex-episode-cache",
+	jellyfinCache: "jellyfin-cache",
+	jellyfinEpisodeCache: "jellyfin-episode-cache",
+	tautulliCache: "tautulli-cache",
+	seerrHealth: "seerr-health",
+} as const;
+
+export const KNOWN_JOBS: readonly JobDefinition[] = [
+	{
+		id: JOB_ID.backup,
+		label: "Backup scheduler",
+		description:
+			"Runs configured automatic backups (database + secrets). Ticks are serialized by BackupScheduler — a new tick cannot start while one is in flight.",
+		concurrency: "singleton",
+	},
+	{
+		id: JOB_ID.sessionCleanup,
+		label: "Session cleanup",
+		description:
+			"Deletes expired session rows every hour. Safe to run concurrently with request-time cleanup because SQL DELETE is idempotent.",
+		concurrency: "singleton",
+		intervalMs: 60 * 60 * 1000,
+	},
+	{
+		id: JOB_ID.sessionSnapshot,
+		label: "Session snapshot",
+		description:
+			"Captures Plex/Jellyfin stream telemetry every 5 minutes. Guarded by an in-plugin `isRunning` flag so ticks never overlap per-process.",
+		concurrency: "singleton",
+		intervalMs: 5 * 60 * 1000,
+	},
+	{
+		id: JOB_ID.librarySync,
+		label: "Library sync",
+		description:
+			"Syncs ARR library metadata on a per-instance cadence. Different ARR instances run independently; each instance is serial against itself.",
+		concurrency: "per-instance",
+	},
+	{
+		id: JOB_ID.hunting,
+		label: "Hunting scheduler",
+		description:
+			"Scans ARR instances for missing episodes/movies and optional upgrades. Per-instance scheduling with internal serialization to avoid hammering an ARR instance.",
+		concurrency: "per-instance",
+	},
+	{
+		id: JOB_ID.queueCleaner,
+		label: "Queue cleaner",
+		description:
+			"Applies configured queue cleanup rules (stalled, slow, rejected imports, …) per instance on a schedule. Per-instance serial.",
+		concurrency: "per-instance",
+	},
+	{
+		id: JOB_ID.libraryCleanup,
+		label: "Library cleanup",
+		description:
+			"Performs scheduled library hygiene (unmonitoring, deletions) per instance based on operator rules.",
+		concurrency: "per-instance",
+	},
+	{
+		id: JOB_ID.insightsDigest,
+		label: "Insights digest",
+		description:
+			"Aggregates dashboard insights and emits digest notifications on the configured cadence. Singleton.",
+		concurrency: "singleton",
+	},
+	{
+		id: JOB_ID.trashBackupCleanup,
+		label: "TRaSH backup cleanup",
+		description: "Prunes old TRaSH Guides ARR-config backups to keep the retention window tidy.",
+		concurrency: "singleton",
+	},
+	{
+		id: JOB_ID.trashUpdate,
+		label: "TRaSH Guides update",
+		description: "Refreshes the upstream TRaSH Guides data the app builds recommendations from.",
+		concurrency: "singleton",
+	},
+	{
+		id: JOB_ID.trashSync,
+		label: "TRaSH Guides sync",
+		description:
+			"Applies enabled TRaSH Guides templates to target ARR instances on the configured interval.",
+		concurrency: "per-instance",
+	},
+	{
+		id: JOB_ID.plexCache,
+		label: "Plex library cache",
+		description:
+			"Refreshes Plex library metadata cache per Plex instance. Per-instance serial with `CacheRefreshStatus` row as the durable witness.",
+		concurrency: "per-instance",
+	},
+	{
+		id: JOB_ID.plexEpisodeCache,
+		label: "Plex episode cache",
+		description: "Refreshes Plex episode metadata used by session views. Per-instance serial.",
+		concurrency: "per-instance",
+	},
+	{
+		id: JOB_ID.jellyfinCache,
+		label: "Jellyfin library cache",
+		description:
+			"Refreshes Jellyfin/Emby library metadata cache per instance. Per-instance serial.",
+		concurrency: "per-instance",
+	},
+	{
+		id: JOB_ID.jellyfinEpisodeCache,
+		label: "Jellyfin episode cache",
+		description:
+			"Refreshes Jellyfin/Emby episode metadata cache per instance. Per-instance serial.",
+		concurrency: "per-instance",
+	},
+	{
+		id: JOB_ID.tautulliCache,
+		label: "Tautulli cache",
+		description: "Refreshes Tautulli history + library caches per instance. Per-instance serial.",
+		concurrency: "per-instance",
+	},
+	{
+		id: JOB_ID.seerrHealth,
+		label: "Seerr health",
+		description:
+			"Pings configured Seerr (Jellyseerr/Overseerr) instances every 5 minutes. Guarded by an in-plugin `isRunning` flag.",
+		concurrency: "singleton",
+		intervalMs: 5 * 60 * 1000,
+	},
+] as const;

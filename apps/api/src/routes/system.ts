@@ -551,6 +551,25 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		});
 	});
 
+	/**
+	 * GET /system/jobs
+	 * Read-only runtime status of every registered background scheduler.
+	 *
+	 * Security: Requires authentication (single-admin architecture - all authenticated users are admins)
+	 * The endpoint never triggers job execution.
+	 */
+	app.get("/jobs", async (_request, reply) => {
+		const jobs = app.schedulerRegistry.list();
+		return reply.send({
+			success: true,
+			data: {
+				jobs,
+				count: jobs.length,
+				capturedAt: new Date().toISOString(),
+			},
+		});
+	});
+
 	done();
 };
 

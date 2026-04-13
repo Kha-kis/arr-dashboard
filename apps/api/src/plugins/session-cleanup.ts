@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
+import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 
 /**
  * Session cleanup interval in milliseconds
@@ -20,11 +21,16 @@ const sessionCleanupPlugin = fastifyPlugin(
 
 		const runCleanup = async () => {
 			try {
-				const deletedCount = await app.sessionService.cleanupExpiredSessions();
-				if (deletedCount > 0) {
-					app.log.info({ deletedCount }, "Cleaned up expired sessions");
-				}
+				// Route the tick through the scheduler registry so last run /
+				// duration / failure counts are visible via /api/system/jobs.
+				await app.schedulerRegistry.track(JOB_ID.sessionCleanup, async () => {
+					const deletedCount = await app.sessionService.cleanupExpiredSessions();
+					if (deletedCount > 0) {
+						app.log.info({ deletedCount }, "Cleaned up expired sessions");
+					}
+				});
 			} catch (error) {
+				// Registry already recorded the failure; preserve existing log behavior.
 				app.log.error({ err: error }, "Failed to clean up expired sessions");
 			}
 		};
@@ -49,7 +55,7 @@ const sessionCleanupPlugin = fastifyPlugin(
 	},
 	{
 		name: "session-cleanup",
-		dependencies: ["prisma", "security"],
+		dependencies: ["prisma", "security", "scheduler-registry"],
 	},
 );
 

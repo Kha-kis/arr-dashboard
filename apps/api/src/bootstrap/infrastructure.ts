@@ -5,6 +5,7 @@ import deploymentExecutorPlugin from "../plugins/deployment-executor.js";
 import lifecyclePlugin from "../plugins/lifecycle.js";
 import notificationServicePlugin from "../plugins/notification-service.js";
 import { prismaPlugin } from "../plugins/prisma.js";
+import schedulerRegistryPlugin from "../plugins/scheduler-registry.js";
 import { securityPlugin } from "../plugins/security.js";
 import seerrCachePlugin from "../plugins/seerr-cache.js";
 import seerrCircuitBreakerPlugin from "../plugins/seerr-circuit-breaker.js";
@@ -22,6 +23,7 @@ import seerrCircuitBreakerPlugin from "../plugins/seerr-circuit-breaker.js";
  *  - seerr cache       → shared response cache for Seerr requests
  *  - deploymentExecutor→ `app.deploymentExecutor`
  *  - notificationService → `app.notificationService`
+ *  - schedulerRegistry → `app.schedulerRegistry` (must precede scheduler plugins)
  *  - lifecycle         → graceful shutdown + health wiring
  */
 export function registerInfrastructure(app: FastifyInstance): void {
@@ -32,5 +34,6 @@ export function registerInfrastructure(app: FastifyInstance): void {
 	app.register(seerrCachePlugin);
 	app.register(deploymentExecutorPlugin);
 	app.register(notificationServicePlugin);
+	app.register(schedulerRegistryPlugin);
 	app.register(lifecyclePlugin);
 }
