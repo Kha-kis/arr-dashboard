@@ -90,6 +90,40 @@ If a change is just "added a feature in the obvious place," it does
 not need an ADR. ADRs are expensive to read; reserve them for the
 decisions whose absence would cost a future reader an hour.
 
+### Route Surface Governance
+
+Every top-level API route group has a **maturity tier** declared in
+[`apps/api/src/routes/route-manifest.ts`](apps/api/src/routes/route-manifest.ts).
+The tier tells you how careful to be when changing the route's
+contract. See
+[`docs/adr/0004-route-surface-governance.md`](docs/adr/0004-route-surface-governance.md)
+for the full definitions; the short version:
+
+| Tier | Change discipline |
+|---|---|
+| `stable` | Preserve request/response shape within a minor. CHANGELOG breaking changes. |
+| `operator` | Treat behavior changes as user-visible. Document in CHANGELOG. |
+| `internal` | Free to reshape — update the bundled frontend in the **same PR**. |
+| `experimental` | May move or be removed. Mark loudly in release notes. |
+
+When you add a new route group:
+
+1. Add an entry to `route-manifest.ts` (this is what registers the
+   route — the bootstrap files iterate the manifest).
+2. Add a row to the governance table in
+   [`docs/API-ROUTES.md`](docs/API-ROUTES.md).
+3. The contract test
+   (`apps/api/src/routes/__tests__/route-manifest.test.ts`) will fail if
+   either is forgotten.
+
+When you change an existing route, check its tier first:
+
+- `stable` / `operator` shape change → CHANGELOG entry required.
+- `internal` shape change → update the consuming frontend code in the
+  same PR, no CHANGELOG entry needed.
+- Promoting a route from `internal` to `stable` is a deliberate
+  decision; mention it in the PR description.
+
 ### Architecture-affecting examples
 
 - ✅ Adding a new auth method (Auth domain doc + ADR if it changes the
