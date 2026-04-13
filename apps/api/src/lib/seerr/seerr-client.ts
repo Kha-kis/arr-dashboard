@@ -123,7 +123,7 @@ const KNOWN_NOTIFICATION_AGENTS: readonly { id: KnownNotificationAgentId; name: 
 /** Schema for the raw notification agent response from Seerr's API (before id/name are injected) */
 const seerrNotificationAgentRawSchema = z.looseObject({
 	enabled: z.boolean(),
-	types: z.number(),
+	types: z.number().default(0),
 	options: z.record(z.string(), z.unknown()),
 });
 
