@@ -1,57 +1,16 @@
+import { randomBytes } from "node:crypto";
 import fastifyCors from "@fastify/cors";
 import fastifyHelmet from "@fastify/helmet";
 import fastifyRateLimit from "@fastify/rate-limit";
-import { randomBytes } from "node:crypto";
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
+import {
+	registerInfrastructure,
+	registerProtectedRoutes,
+	registerPublicRoutes,
+	registerSchedulers,
+} from "./bootstrap/index.js";
 import { type ApiEnv, envSchema } from "./config/env.js";
 import { arrErrorToHttpStatus, isArrError } from "./lib/arr/client-factory.js";
-import { arrClientPlugin } from "./plugins/arr-client.js";
-import backupSchedulerPlugin from "./plugins/backup-scheduler.js";
-import deploymentExecutorPlugin from "./plugins/deployment-executor.js";
-import huntingSchedulerPlugin from "./plugins/hunting-scheduler.js";
-import insightsDigestSchedulerPlugin from "./plugins/insights-digest-scheduler.js";
-import libraryCleanupSchedulerPlugin from "./plugins/library-cleanup-scheduler.js";
-import librarySyncSchedulerPlugin from "./plugins/library-sync-scheduler.js";
-import lifecyclePlugin from "./plugins/lifecycle.js";
-import notificationServicePlugin from "./plugins/notification-service.js";
-import { prismaPlugin } from "./plugins/prisma.js";
-import queueCleanerSchedulerPlugin from "./plugins/queue-cleaner-scheduler.js";
-import { securityPlugin } from "./plugins/security.js";
-import seerrCachePlugin from "./plugins/seerr-cache.js";
-import seerrCircuitBreakerPlugin from "./plugins/seerr-circuit-breaker.js";
-import seerrHealthSchedulerPlugin from "./plugins/seerr-health-scheduler.js";
-import sessionCleanupPlugin from "./plugins/session-cleanup.js";
-import trashBackupCleanupPlugin from "./plugins/trash-backup-cleanup.js";
-import jellyfinCacheSchedulerPlugin from "./plugins/jellyfin-cache-scheduler.js";
-import jellyfinEpisodeCacheSchedulerPlugin from "./plugins/jellyfin-episode-cache-scheduler.js";
-import plexCacheSchedulerPlugin from "./plugins/plex-cache-scheduler.js";
-import tautulliCacheSchedulerPlugin from "./plugins/tautulli-cache-scheduler.js";
-import plexEpisodeCacheSchedulerPlugin from "./plugins/plex-episode-cache-scheduler.js";
-import sessionSnapshotSchedulerPlugin from "./plugins/session-snapshot-scheduler.js";
-import trashSyncSchedulerPlugin from "./plugins/trash-sync-scheduler.js";
-import trashUpdateSchedulerPlugin from "./plugins/trash-update-scheduler.js";
-import { registerAuthRoutes } from "./routes/auth.js";
-import { registerAuthOidcRoutes } from "./routes/auth-oidc.js";
-import { registerAuthPasskeyRoutes } from "./routes/auth-passkey.js";
-import { registerBackupRoutes } from "./routes/backup.js";
-import { registerDashboardRoutes } from "./routes/dashboard.js";
-import { registerHealthRoutes } from "./routes/health.js";
-import { registerHuntingRoutes } from "./routes/hunting.js";
-import { registerLibraryRoutes } from "./routes/library.js";
-import { registerLibraryCleanupRoutes } from "./routes/library-cleanup.js";
-import { registerManualImportRoutes } from "./routes/manual-import.js";
-import { registerNotificationRoutes } from "./routes/notifications.js";
-import oidcProvidersRoutes from "./routes/oidc-providers.js";
-import { registerQueueCleanerRoutes } from "./routes/queue-cleaner.js";
-import { registerSearchRoutes } from "./routes/search.js";
-import { registerSeerrRoutes } from "./routes/seerr/index.js";
-import { registerServiceRoutes } from "./routes/services.js";
-import { registerSystemRoutes } from "./routes/system.js";
-import { registerTrashGuidesRoutes } from "./routes/trash-guides/index.js";
-import { registerJellyfinRoutes } from "./routes/jellyfin/index.js";
-import { registerPlexRoutes } from "./routes/plex/index.js";
-import { registerPulseRoutes } from "./routes/pulse.js";
-import { registerTautulliRoutes } from "./routes/tautulli/index.js";
 import { logger } from "./lib/logger.js";
 
 function isPrismaKnownError(
@@ -113,32 +72,11 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 		timeWindow: env.API_RATE_LIMIT_WINDOW,
 	});
 
-	// Register Prisma, Security, ARR Client, Lifecycle, and Scheduler plugins
-	app.register(prismaPlugin);
-	app.register(securityPlugin);
-	app.register(arrClientPlugin);
-	app.register(seerrCircuitBreakerPlugin);
-	app.register(seerrCachePlugin);
-	app.register(deploymentExecutorPlugin);
-	app.register(notificationServicePlugin);
-	app.register(lifecyclePlugin);
-	app.register(backupSchedulerPlugin);
-	app.register(librarySyncSchedulerPlugin);
-	app.register(sessionCleanupPlugin);
-	app.register(trashBackupCleanupPlugin);
-	app.register(trashUpdateSchedulerPlugin);
-	app.register(trashSyncSchedulerPlugin);
-	app.register(huntingSchedulerPlugin);
-	app.register(queueCleanerSchedulerPlugin);
-	app.register(libraryCleanupSchedulerPlugin);
-	app.register(insightsDigestSchedulerPlugin);
-	app.register(plexCacheSchedulerPlugin);
-	app.register(plexEpisodeCacheSchedulerPlugin);
-	app.register(jellyfinCacheSchedulerPlugin);
-	app.register(jellyfinEpisodeCacheSchedulerPlugin);
-	app.register(tautulliCacheSchedulerPlugin);
-	app.register(sessionSnapshotSchedulerPlugin);
-	app.register(seerrHealthSchedulerPlugin);
+	// Core infrastructure + background schedulers. Infrastructure must run
+	// before schedulers because schedulers rely on decorations like `app.prisma`
+	// and `app.notificationService`.
+	registerInfrastructure(app);
+	registerSchedulers(app);
 
 	app.decorateRequest("currentUser", null);
 	app.decorateRequest("sessionToken", null);
@@ -228,39 +166,8 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 		});
 	});
 
-	// Public routes — no auth required
-	app.register(registerHealthRoutes, { prefix: "/health" });
-	app.register(registerAuthRoutes, { prefix: "/auth" });
-	app.register(registerAuthOidcRoutes, { prefix: "/auth" });
-	app.register(registerAuthPasskeyRoutes, { prefix: "/auth" });
-
-	// Protected routes — auth enforced by scope-level hook
-	app.register(async (api) => {
-		api.addHook("preHandler", async (request, reply) => {
-			if (!request.currentUser?.id) {
-				return reply.status(401).send({ error: "Authentication required" });
-			}
-		});
-
-		api.register(oidcProvidersRoutes);
-		api.register(registerServiceRoutes, { prefix: "/api" });
-		api.register(registerDashboardRoutes, { prefix: "/api" });
-		api.register(registerLibraryRoutes, { prefix: "/api" });
-		api.register(registerSearchRoutes, { prefix: "/api" });
-		api.register(registerManualImportRoutes, { prefix: "/api" });
-		api.register(registerBackupRoutes, { prefix: "/api/backup" });
-		api.register(registerSystemRoutes, { prefix: "/api/system" });
-		api.register(registerTrashGuidesRoutes, { prefix: "/api/trash-guides" });
-		api.register(registerSeerrRoutes, { prefix: "/api/seerr" });
-		api.register(registerHuntingRoutes, { prefix: "/api" });
-		api.register(registerQueueCleanerRoutes, { prefix: "/api" });
-		api.register(registerNotificationRoutes, { prefix: "/api/notifications" });
-		api.register(registerLibraryCleanupRoutes, { prefix: "/api" });
-		api.register(registerPlexRoutes, { prefix: "/api/plex" });
-		api.register(registerJellyfinRoutes, { prefix: "/api/jellyfin" });
-		api.register(registerPulseRoutes, { prefix: "/api" });
-		api.register(registerTautulliRoutes, { prefix: "/api/tautulli" });
-	});
+	registerPublicRoutes(app);
+	registerProtectedRoutes(app);
 
 	return app;
 };
