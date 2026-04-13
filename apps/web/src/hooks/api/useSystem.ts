@@ -1,21 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-	type LogFilesResponse,
-	type SystemInfoResponse,
-	type SystemSettingsResponse,
-	type UpdateSystemSettingsPayload,
-	type ValidationHealthResponse,
-	type QuarantineResponse,
 	clearValidationQuarantine,
 	fetchLogFiles,
+	fetchSecurityPosture,
 	fetchSystemInfo,
 	fetchSystemSettings,
 	fetchValidationHealth,
 	fetchValidationQuarantine,
+	type LogFilesResponse,
+	type QuarantineResponse,
 	resetValidationHealth,
 	restartSystem,
+	type SecurityPostureResponse,
+	type SystemInfoResponse,
+	type SystemSettingsResponse,
+	type UpdateSystemSettingsPayload,
 	updateSystemSettings,
+	type ValidationHealthResponse,
 } from "../../lib/api-client/system";
 import { getErrorMessage } from "../../lib/error-utils";
 import { POLLING_STANDARD } from "../../lib/polling-intervals";
@@ -121,6 +123,18 @@ export function useValidationQuarantine() {
 	return useQuery<QuarantineResponse>({
 		queryKey: validationKeys.quarantine,
 		queryFn: fetchValidationQuarantine,
+		refetchInterval: POLLING_STANDARD,
+	});
+}
+
+// ============================================================================
+// Security Posture
+// ============================================================================
+
+export function useSecurityPosture() {
+	return useQuery<SecurityPostureResponse>({
+		queryKey: systemKeys.securityPosture,
+		queryFn: fetchSecurityPosture,
 		refetchInterval: POLLING_STANDARD,
 	});
 }
