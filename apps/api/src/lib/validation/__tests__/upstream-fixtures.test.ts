@@ -530,6 +530,23 @@ describe("Upstream fixture regression tests", () => {
 			}
 		});
 
+		it("accepts get_activity with all fields absent (idle server — Tautulli v2.17+)", () => {
+			// When Tautulli has no active streams it omits all activity fields entirely.
+			const idle = {};
+			const result = parseUpstream(idle, tautulliActivityDataSchema, {
+				integration: "tautulli",
+				category: "get_activity",
+			});
+			expect(result.success).toBe(true);
+			if (result.success) {
+				expect(result.data.sessions).toEqual([]);
+				expect(result.data.stream_count).toBe("0");
+				expect(result.data.total_bandwidth).toBe(0);
+				expect(result.data.lan_bandwidth).toBe(0);
+				expect(result.data.wan_bandwidth).toBe(0);
+			}
+		});
+
 		it("accepts get_home_stats with all fields present", () => {
 			const result = parseUpstream(TAUTULLI_HOME_STATS_FULL, z.array(tautulliHomeStatSchema), {
 				integration: "tautulli",
