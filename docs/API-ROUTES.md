@@ -4,6 +4,64 @@
 
 All routes in `apps/api/src/routes/`. Protected routes use preHandler authentication.
 
+## Route Surface Governance
+
+Every top-level route group is registered through a single manifest at
+[`apps/api/src/routes/route-manifest.ts`](../apps/api/src/routes/route-manifest.ts).
+The manifest assigns each group a **maturity tier** that tells contributors
+how careful they need to be when changing it.
+
+| Tier | Audience | Change discipline |
+|---|---|---|
+| **stable** | Bundled web UI **and** potential external scripts/integrations | Preserve request/response shape within a minor version. Breaking changes need a CHANGELOG entry and (if user-visible) a release-notes call-out. |
+| **operator** | Self-hosting operator (single-admin) via the UI or scripted ops | Real-world side effects (restart, restore, configure providers). Treat behavior changes as user-visible; document in CHANGELOG. |
+| **internal** | Bundled dashboard only — frontend ships in lockstep | Free to reshape as long as the matching frontend code is updated in the same PR. No external compatibility promise. |
+| **experimental** | Opt-in / iterating | May move or be removed. Mark loudly in release notes if surfaced in the UI. |
+
+This is **not** a semantic API versioning scheme. The app remains
+single-admin and self-hosted; the tiers exist to set reviewer expectations,
+not to gate routing. See
+[`docs/adr/0004-route-surface-governance.md`](adr/0004-route-surface-governance.md)
+for the full rationale.
+
+### Public route groups
+
+| Path | Maturity | Summary |
+|---|---|---|
+| `/health` | stable | Liveness/readiness probes for orchestrators |
+| `/auth` | stable | Password login, registration, account management |
+| `/auth/oidc` | stable | OIDC initiate + callback |
+| `/auth/passkey` | stable | WebAuthn registration + assertion |
+
+### Protected route groups
+
+| Path | Maturity | Summary |
+|---|---|---|
+| `/api/oidc-providers` | operator | OIDC provider configuration (single-admin) |
+| `/api/system` | operator | Settings, restart, jobs, posture diagnostics |
+| `/api/backup` | operator | Create, download, restore, scheduled backups |
+| `/api/notifications` | stable | Channels, subscriptions, rules, delivery aggregation |
+| `/api/services` | stable | ARR instance CRUD + connection testing |
+| `/api/dashboard` | stable | Queue, history, calendar, statistics aggregates |
+| `/api/library` | stable | Movies/series listing, episodes, monitor, search |
+| `/api/search` | stable | Prowlarr indexer search + grab |
+| `/api/manual-import` | stable | Manual import candidates and submission |
+| `/api/hunting` | internal | Auto-search configuration and execution |
+| `/api/queue-cleaner` | internal | Queue cleanup rules, strikes, dry-run preview |
+| `/api/library-cleanup` | internal | Library cleanup rules, approvals, execution |
+| `/api/plex` | stable | Now playing, on-deck, history, analytics, forecasts |
+| `/api/jellyfin` | stable | Jellyfin activity and library data |
+| `/api/tautulli` | stable | Activity, watch history enrichment, statistics |
+| `/api/pulse` | internal | System Pulse health signals + attention items |
+| `/api/seerr` | stable | Request management, discovery, library enrichment |
+| `/api/trash-guides` | internal | TRaSH cache, templates, deployment, profiles |
+
+> When you add a new route group, add a manifest entry **and** a row above.
+> A contract test (`apps/api/src/routes/__tests__/route-manifest.test.ts`)
+> will fail loudly if either is missing.
+
+## Per-group route detail
+
 ## Authentication Routes (`/auth`)
 
 | Method | Route | Auth | Purpose |
