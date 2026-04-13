@@ -127,11 +127,17 @@ export async function refreshJellyfinCache(
 						if (item.played) {
 							agg.watchedByUsers.add(user.name);
 							agg.watchCount = Math.max(agg.watchCount, item.playCount);
-							if (item.lastPlayedDate) {
-								const playDate = new Date(item.lastPlayedDate);
-								if (!agg.lastWatchedAt || playDate > agg.lastWatchedAt) {
-									agg.lastWatchedAt = playDate;
-								}
+						}
+						// Capture lastPlayedDate even for partially-watched items (e.g. a series
+						// where some but not all episodes are watched). Jellyfin sets
+						// UserData.LastPlayedDate on a Series whenever any episode is played, not
+						// only when the whole series is finished. Recording it here ensures the
+						// episode-cache refresher picks up in-progress series, which is required
+						// for the per-episode progress bar to populate on library cards.
+						if (item.lastPlayedDate) {
+							const playDate = new Date(item.lastPlayedDate);
+							if (!agg.lastWatchedAt || playDate > agg.lastWatchedAt) {
+								agg.lastWatchedAt = playDate;
 							}
 						}
 
