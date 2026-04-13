@@ -7,6 +7,7 @@
 
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
+import { runSchedulerInit } from "../lib/scheduler-registry/init-helpers.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 import { TrashSyncScheduler } from "../lib/trash-guides/sync-scheduler.js";
 
@@ -19,20 +20,27 @@ declare module "fastify" {
 const trashSyncSchedulerPlugin = fastifyPlugin(
 	async (app: FastifyInstance) => {
 		app.addHook("onReady", async () => {
-			app.log.info("Initializing TRaSH sync scheduler");
+			await runSchedulerInit(
+				{ registry: app.schedulerRegistry, log: app.log },
+				JOB_ID.trashSync,
+				"TRaSH sync",
+				async () => {
+					app.log.info("Initializing TRaSH sync scheduler");
 
-			const scheduler = new TrashSyncScheduler(
-				app.prisma,
-				app.log,
-				app.deploymentExecutor,
-				app.arrClientFactory,
-				(payload) => app.notificationService.notify(payload),
-				{ trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.trashSync, fn) },
+					const scheduler = new TrashSyncScheduler(
+						app.prisma,
+						app.log,
+						app.deploymentExecutor,
+						app.arrClientFactory,
+						(payload) => app.notificationService.notify(payload),
+						{ trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.trashSync, fn) },
+					);
+
+					app.decorate("trashSyncScheduler", scheduler);
+					scheduler.start();
+					app.log.info("TRaSH sync scheduler started successfully");
+				},
 			);
-
-			app.decorate("trashSyncScheduler", scheduler);
-			scheduler.start();
-			app.log.info("TRaSH sync scheduler started successfully");
 		});
 
 		app.addHook("onClose", async () => {
