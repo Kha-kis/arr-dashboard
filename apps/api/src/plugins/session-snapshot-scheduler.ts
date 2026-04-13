@@ -523,10 +523,28 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 
 		// Combined tick: both Plex and Jellyfin captures form one scheduler tick
 		// from the operator's perspective. The registry sees one run per interval.
+		//
+		// Behavior preservation: the prior implementation fired the two captures
+		// independently (`captureSnapshots().catch(...); captureJellyfinSnapshots().catch(...)`)
+		// so a Plex failure never prevented the Jellyfin capture from running.
+		// We keep that "both always run" semantic by using Promise.allSettled, then
+		// re-throw an aggregate error if either side rejected so the registry still
+		// observes a failed tick.
 		const runSnapshotTick = () =>
 			app.schedulerRegistry.track(JOB_ID.sessionSnapshot, async () => {
-				await captureSnapshots();
-				await captureJellyfinSnapshots();
+				const results = await Promise.allSettled([
+					captureSnapshots(),
+					captureJellyfinSnapshots(),
+				]);
+				const failures = results.filter(
+					(r): r is PromiseRejectedResult => r.status === "rejected",
+				);
+				if (failures.length > 0) {
+					throw new AggregateError(
+						failures.map((f) => f.reason),
+						"session snapshot tick: one or more captures failed",
+					);
+				}
 			});
 
 		app.addHook("onReady", async () => {
