@@ -260,12 +260,12 @@ const RULE_TYPES: Array<{ value: CleanupRuleType; label: string; desc: string }>
 	{
 		value: "seerr_requester_watched",
 		label: "Requester Watched",
-		desc: "Matches when the Seerr requester has watched the item in Plex",
+		desc: "Matches when the Seerr requester has watched the item (Plex, Emby, or Jellyfin)",
 	},
 	{
 		value: "seerr_requester_not_watched",
 		label: "Requester Not Watched",
-		desc: "Matches when the Seerr requester has not watched the item in Plex",
+		desc: "Matches when the Seerr requester has not watched the item (Plex, Emby, or Jellyfin)",
 	},
 ];
 
