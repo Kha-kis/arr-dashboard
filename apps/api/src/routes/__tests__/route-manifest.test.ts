@@ -3,15 +3,20 @@
  *
  * The manifest in `routes/route-manifest.ts` is the single source of truth
  * for both route registration and the governance section in
- * `docs/API-ROUTES.md`. This test pins three properties:
+ * `docs/API-ROUTES.md`. This test pins two properties:
  *
- *   1. Every entry is well-formed (valid maturity, non-empty fields,
- *      no duplicate `path`s).
- *   2. Every documented `path` actually appears in `docs/API-ROUTES.md` —
+ *   1. Every entry is well-formed (valid maturity tier, non-empty
+ *      summary, function-typed `register`, unique `path`).
+ *   2. Every manifest `path` actually appears in `docs/API-ROUTES.md`
  *      so the doc and the code cannot drift apart silently.
- *   3. The set of registered Fastify route prefixes matches the union of
- *      manifest paths — i.e., nothing slipped past the manifest into the
- *      bootstrap files.
+ *
+ * What this test does NOT cover: it does not boot Fastify and compare
+ * the registered route prefixes against the manifest. The structural
+ * guarantee that registration cannot bypass the manifest comes from
+ * `bootstrap/{public,protected}-routes.ts` iterating the manifest
+ * directly — a reviewer enforces that, not this test. If a future
+ * change reintroduces inline route registration in the bootstrap files,
+ * add a Fastify-boot assertion here.
  *
  * If you add a route, add a manifest entry AND a row to the governance
  * table in `docs/API-ROUTES.md`. This test will tell you exactly which
