@@ -30,9 +30,9 @@ export interface SchedulerInitContext {
  * the registry is marked `disabled` with a human-readable
  * `disabledReason` (`"Init failed: <message>"`), and the helper returns
  * `false`. The job appears as `state: "disabled"` on `/api/system/jobs`
- * with the reason exposed to operators. The error is NOT re-thrown — a
- * single scheduler's init failure must not crash other schedulers'
- * `onReady` hooks or block server startup.
+ * with the reason exposed to operators. The error is NOT re-thrown into
+ * the `onReady` chain (which, given Fastify's hook semantics, would
+ * otherwise abort sibling `onReady` hooks).
  *
  * Plugins that need to gate routes on a feature flag (e.g. setting
  * `app.foobarSchedulerEnabled = true` only on success) should branch on

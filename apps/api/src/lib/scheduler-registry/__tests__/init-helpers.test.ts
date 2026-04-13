@@ -77,11 +77,12 @@ describe("runSchedulerInit", () => {
 		);
 	});
 
-	it("does NOT re-throw — sibling scheduler init must keep running", async () => {
-		// This is the key invariant: a single scheduler's init failure must
-		// not propagate up the onReady hook chain and abort startup. The
-		// caller awaits us; if we re-threw, the next plugin's onReady would
-		// never run.
+	it("does NOT re-throw — preserves Fastify's onReady chain semantics", async () => {
+		// Pins the helper-level invariant: the helper itself must swallow
+		// the error so it isn't re-thrown into the onReady chain. Whether
+		// Fastify subsequently keeps invoking sibling onReady hooks is its
+		// own well-established behavior; this test only locks down the
+		// helper's contribution to that contract.
 		const registry = new SchedulerRegistry();
 		registry.register(NOOP_DEFINITION);
 		const log = createFakeLogger();
