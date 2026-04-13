@@ -576,6 +576,9 @@ function formatBytes(bytes: number): string {
 // Exported: all collectors
 // ============================================================================
 
+// Exported for testing
+export { collectArrSignals };
+
 export const pulseCollectors: Collector[] = [
 	collectArrSignals,
 	collectSeerrCircuitBreaker,
