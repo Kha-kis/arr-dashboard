@@ -5,7 +5,10 @@
 # ===== BUILD BASE =====
 FROM node:22-alpine3.21 AS build-base
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN corepack enable && corepack prepare pnpm@10.28.1 --activate
+# python3, make, and g++ are required for native module compilation (better-sqlite3 node-gyp)
+# Alpine has no prebuilt musl binaries for better-sqlite3, so it must compile from source
+RUN apk add --no-cache python3 make g++ && \
+    corepack enable && corepack prepare pnpm@10.28.1 --activate
 
 # ===== DEPENDENCIES STAGE =====
 FROM build-base AS deps

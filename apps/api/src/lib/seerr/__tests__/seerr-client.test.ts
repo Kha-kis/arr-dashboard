@@ -537,7 +537,64 @@ describe("circuit breaker integration", () => {
 });
 
 // ===========================================================================
-// 13. Timeout handling
+// 13. getNotificationAgents
+// ===========================================================================
+
+describe("getNotificationAgents", () => {
+	function makeAgentResponse(overrides?: Record<string, unknown>) {
+		return { enabled: true, types: 30, options: {}, ...overrides };
+	}
+
+	it("returns agents with all fields present", async () => {
+		// 11 known agents → 11 requests; return a valid payload for each
+		factory.rawRequest.mockResolvedValue(mockResponse(makeAgentResponse()));
+		cache.get.mockReturnValue(undefined);
+
+		const agents = await client.getNotificationAgents();
+
+		expect(agents.length).toBe(11);
+		expect(agents[0]!.types).toBe(30);
+		expect(agents[0]!.enabled).toBe(true);
+	});
+
+	it("defaults types to 0 when the field is absent in the API response (#301)", async () => {
+		// Simulate Seerr returning an agent without the `types` field
+		factory.rawRequest.mockResolvedValue(mockResponse(makeAgentResponse({ types: undefined })));
+		cache.get.mockReturnValue(undefined);
+
+		const agents = await client.getNotificationAgents();
+
+		expect(agents.length).toBe(11);
+		for (const agent of agents) {
+			expect(agent.types).toBe(0);
+		}
+	});
+
+	it("skips agents that return 404 silently", async () => {
+		const notFound = mockResponse({}, 404);
+		factory.rawRequest.mockResolvedValue(notFound);
+		cache.get.mockReturnValue(undefined);
+
+		const agents = await client.getNotificationAgents();
+
+		// All 11 agents 404 → all skipped, empty array returned
+		expect(agents).toHaveLength(0);
+		expect(log.warn).not.toHaveBeenCalled();
+	});
+
+	it("returns cached result without fetching", async () => {
+		const cached = [{ id: "discord", name: "Discord", enabled: true, types: 10, options: {} }];
+		cache.get.mockReturnValue(cached);
+
+		const agents = await client.getNotificationAgents();
+
+		expect(agents).toBe(cached);
+		expect(factory.rawRequest).not.toHaveBeenCalled();
+	});
+});
+
+// ===========================================================================
+// 14. Timeout handling
 // ===========================================================================
 
 describe("timeout handling", () => {
