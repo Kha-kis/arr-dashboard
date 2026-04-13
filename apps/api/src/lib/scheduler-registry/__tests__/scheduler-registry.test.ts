@@ -242,6 +242,71 @@ describe("SchedulerRegistry", () => {
 		expect(registry.list().map((j) => j.id)).toEqual(["alpha-job", "zeta-job"]);
 	});
 
+	it("trackTick wrapper plumbed into a class surfaces success state on the registry", async () => {
+		// Exercises the pattern plugins use to instrument delegate scheduler classes:
+		// the class accepts an optional trackTick wrapper; the plugin supplies one
+		// that forwards to registry.track(). This verifies a successful tick bumps
+		// lastSuccessAt + lastDurationMs on the registry side.
+		const start = new Date("2026-01-01T00:00:00.000Z");
+		const end = new Date("2026-01-01T00:00:00.750Z");
+		const registry = new SchedulerRegistry(scriptedClock([start, end]));
+		registry.register(BASE_DEFINITION);
+
+		// Simulate a delegate class that accepts a TickWrapper.
+		class MiniScheduler {
+			constructor(private trackTick: <T>(fn: () => Promise<T>) => Promise<T>) {}
+			async runOnce(): Promise<void> {
+				await this.trackTick(async () => {
+					// Imagine the real tick body here.
+				});
+			}
+		}
+
+		const scheduler = new MiniScheduler((fn) => registry.track("example-job", fn));
+		await scheduler.runOnce();
+
+		expect(registry.getStatus("example-job")).toMatchObject({
+			state: "idle",
+			lastSuccessAt: end.toISOString(),
+			lastFailureAt: null,
+			lastDurationMs: 750,
+			totalRuns: 1,
+			totalFailures: 0,
+			consecutiveFailures: 0,
+		});
+	});
+
+	it("trackTick wrapper plumbed into a class surfaces failure state on the registry", async () => {
+		const start = new Date("2026-01-01T00:00:00.000Z");
+		const end = new Date("2026-01-01T00:00:00.200Z");
+		const registry = new SchedulerRegistry(scriptedClock([start, end]));
+		registry.register(BASE_DEFINITION);
+
+		class MiniScheduler {
+			constructor(private trackTick: <T>(fn: () => Promise<T>) => Promise<T>) {}
+			async runOnce(): Promise<void> {
+				await this.trackTick(async () => {
+					throw new Error("tick blew up");
+				});
+			}
+		}
+
+		const scheduler = new MiniScheduler((fn) => registry.track("example-job", fn));
+
+		// The wrapper re-throws so the class's existing error path still fires.
+		await expect(scheduler.runOnce()).rejects.toThrow("tick blew up");
+
+		expect(registry.getStatus("example-job")).toMatchObject({
+			state: "idle",
+			lastSuccessAt: null,
+			lastFailureAt: end.toISOString(),
+			lastError: "tick blew up",
+			consecutiveFailures: 1,
+			totalRuns: 1,
+			totalFailures: 1,
+		});
+	});
+
 	it("re-registering a job preserves accumulated stats", async () => {
 		const registry = new SchedulerRegistry(
 			scriptedClock([new Date("2026-01-01T00:00:00.000Z"), new Date("2026-01-01T00:00:01.000Z")]),

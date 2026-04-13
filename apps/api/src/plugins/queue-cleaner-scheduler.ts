@@ -32,6 +32,7 @@ const queueCleanerSchedulerPlugin = fastifyPlugin(
 
 				const scheduler = getQueueCleanerScheduler();
 				scheduler.initialize(app);
+				scheduler.setTrackTick((fn) => app.schedulerRegistry.track(JOB_ID.queueCleaner, fn));
 
 				// Use hasDecorator check to prevent potential double-decoration errors
 				if (!app.hasDecorator("queueCleanerScheduler")) {

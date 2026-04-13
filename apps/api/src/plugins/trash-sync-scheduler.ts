@@ -7,6 +7,7 @@
 
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
+import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 import { TrashSyncScheduler } from "../lib/trash-guides/sync-scheduler.js";
 
 declare module "fastify" {
@@ -26,6 +27,7 @@ const trashSyncSchedulerPlugin = fastifyPlugin(
 				app.deploymentExecutor,
 				app.arrClientFactory,
 				(payload) => app.notificationService.notify(payload),
+				{ trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.trashSync, fn) },
 			);
 
 			app.decorate("trashSyncScheduler", scheduler);
@@ -42,7 +44,7 @@ const trashSyncSchedulerPlugin = fastifyPlugin(
 	},
 	{
 		name: "trash-sync-scheduler",
-		dependencies: ["prisma", "deployment-executor"],
+		dependencies: ["prisma", "deployment-executor", "scheduler-registry"],
 	},
 );
 

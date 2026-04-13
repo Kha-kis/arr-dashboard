@@ -7,6 +7,7 @@
 
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
+import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 import {
 	createTrashBackupCleanupService,
 	type TrashBackupCleanupService,
@@ -25,7 +26,9 @@ const trashBackupCleanupPlugin = fastifyPlugin(
 			app.log.info("Initializing TRaSH backup cleanup scheduler");
 
 			// Create and register cleanup service
-			const cleanupService = createTrashBackupCleanupService(app.prisma, app.log);
+			const cleanupService = createTrashBackupCleanupService(app.prisma, app.log, {
+				trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.trashBackupCleanup, fn),
+			});
 			app.decorate("trashBackupCleanup", cleanupService);
 
 			// Start scheduler
@@ -43,7 +46,7 @@ const trashBackupCleanupPlugin = fastifyPlugin(
 	},
 	{
 		name: "trash-backup-cleanup",
-		dependencies: ["prisma"],
+		dependencies: ["prisma", "scheduler-registry"],
 	},
 );
 

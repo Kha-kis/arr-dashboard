@@ -24,6 +24,7 @@ const huntingSchedulerPlugin = fastifyPlugin(
 
 				const scheduler = getHuntingScheduler();
 				scheduler.initialize(app);
+				scheduler.setTrackTick((fn) => app.schedulerRegistry.track(JOB_ID.hunting, fn));
 
 				// Check if any instances have hunting enabled
 				const enabledCount = await app.prisma.huntConfig.count({

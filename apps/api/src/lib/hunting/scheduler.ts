@@ -1,5 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import { loggers } from "../logger.js";
+import {
+	passthroughTickWrapper,
+	type TickWrapper,
+} from "../scheduler-registry/scheduler-registry.js";
 import { withTimeout } from "../utils/delay.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import {
@@ -30,6 +34,15 @@ class HuntingScheduler {
 	private app: FastifyInstance | null = null;
 	private running = false;
 	private intervalId: NodeJS.Timeout | null = null;
+	private trackTick: TickWrapper = passthroughTickWrapper;
+
+	/**
+	 * Wire an optional tick wrapper (used by the plugin to route ticks
+	 * through the SchedulerRegistry). Safe to call multiple times.
+	 */
+	setTrackTick(trackTick: TickWrapper): void {
+		this.trackTick = trackTick;
+	}
 	// In-memory cooldown tracking (supplements database timestamps)
 	private instanceHuntTimes: Map<string, InstanceHuntTimes> = new Map();
 
@@ -89,7 +102,7 @@ class HuntingScheduler {
 
 		// Check every minute for hunts that need to run
 		this.intervalId = setInterval(() => {
-			this.tick().catch((error) => {
+			this.trackTick(() => this.tick()).catch((error) => {
 				log.error({ err: error }, "Scheduler tick failed");
 			});
 		}, 60 * 1000);

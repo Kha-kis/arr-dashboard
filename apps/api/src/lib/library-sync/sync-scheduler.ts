@@ -8,6 +8,10 @@
 import { LIBRARY_SERVICES_UPPER } from "@arr/shared";
 import type { FastifyInstance } from "fastify";
 import { createLogger } from "../logger.js";
+import {
+	passthroughTickWrapper,
+	type TickWrapper,
+} from "../scheduler-registry/scheduler-registry.js";
 import { type SyncResult, syncInstance } from "./sync-executor.js";
 
 const log = createLogger("library-sync");
@@ -34,12 +38,21 @@ class LibrarySyncScheduler {
 	private running = false;
 	private intervalId: NodeJS.Timeout | null = null;
 	private activeSyncs: Set<string> = new Set();
+	private trackTick: TickWrapper = passthroughTickWrapper;
 
 	/**
 	 * Initialize the scheduler with the app instance
 	 */
 	initialize(app: FastifyInstance): void {
 		this.app = app;
+	}
+
+	/**
+	 * Wire an optional tick wrapper (used by the plugin to route ticks
+	 * through the SchedulerRegistry). Safe to call multiple times.
+	 */
+	setTrackTick(trackTick: TickWrapper): void {
+		this.trackTick = trackTick;
 	}
 
 	/**
@@ -59,13 +72,13 @@ class LibrarySyncScheduler {
 		log.info("Starting library sync scheduler");
 
 		// Check immediately on start
-		this.tick().catch((error) => {
+		this.trackTick(() => this.tick()).catch((error) => {
 			log.error({ err: error }, "Initial scheduler tick failed");
 		});
 
 		// Then check periodically
 		this.intervalId = setInterval(() => {
-			this.tick().catch((error) => {
+			this.trackTick(() => this.tick()).catch((error) => {
 				log.error({ err: error }, "Scheduler tick failed");
 			});
 		}, SCHEDULER_TICK_INTERVAL_MS);

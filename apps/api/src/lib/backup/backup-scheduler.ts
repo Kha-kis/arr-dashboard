@@ -1,6 +1,10 @@
 import type { FastifyBaseLogger } from "fastify";
 import type { PrismaClient } from "../../lib/prisma.js";
 import type { NotificationPayload } from "../notifications/types.js";
+import {
+	passthroughTickWrapper,
+	type TickWrapper,
+} from "../scheduler-registry/scheduler-registry.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { getAppVersion } from "../utils/version.js";
 import { BackupService } from "./backup-service.js";
@@ -12,15 +16,18 @@ export class BackupScheduler {
 	private backupService: BackupService;
 	private isRunning = false;
 	private notifyFn?: (payload: NotificationPayload) => Promise<void>;
+	private trackTick: TickWrapper;
 
 	constructor(
 		private prisma: PrismaClient,
 		private logger: FastifyBaseLogger,
 		secretsPath: string,
 		notifyFn?: (payload: NotificationPayload) => Promise<void>,
+		options?: { trackTick?: TickWrapper },
 	) {
 		this.backupService = new BackupService(prisma, secretsPath);
 		this.notifyFn = notifyFn;
+		this.trackTick = options?.trackTick ?? passthroughTickWrapper;
 	}
 
 	/**
@@ -35,13 +42,13 @@ export class BackupScheduler {
 		this.logger.info("Starting backup scheduler");
 
 		// Run immediately on startup
-		this.checkAndRunBackup().catch((error) => {
+		this.trackTick(() => this.checkAndRunBackup()).catch((error) => {
 			this.logger.error({ err: error }, "Failed to run initial backup check");
 		});
 
 		// Then check every minute
 		this.intervalId = setInterval(() => {
-			this.checkAndRunBackup().catch((error) => {
+			this.trackTick(() => this.checkAndRunBackup()).catch((error) => {
 				this.logger.error({ err: error }, "Failed to run scheduled backup check");
 			});
 		}, CHECK_INTERVAL_MS);

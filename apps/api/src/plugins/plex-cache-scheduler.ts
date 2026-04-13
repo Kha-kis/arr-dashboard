@@ -9,6 +9,7 @@ import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { refreshPlexCache } from "../lib/plex/plex-cache-refresher.js";
 import { createPlexClient } from "../lib/plex/plex-client.js";
+import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -27,118 +28,133 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 			}
 			isRunning = true;
 			try {
-				const instances = await app.prisma.serviceInstance.findMany({
-					where: { service: "PLEX", enabled: true },
-				});
+				// Route the tick through the scheduler registry so last run / duration /
+				// failure counts surface on /api/system/jobs. The registry re-throws,
+				// so fatal errors reach the outer .catch() handlers below just as before.
+				await app.schedulerRegistry.track(JOB_ID.plexCache, async () => {
+					const instances = await app.prisma.serviceInstance.findMany({
+						where: { service: "PLEX", enabled: true },
+					});
 
-				if (instances.length === 0) {
-					app.log.debug("Plex cache refresh: no enabled Plex instances, skipping");
-					return;
-				}
+					if (instances.length === 0) {
+						app.log.debug("Plex cache refresh: no enabled Plex instances, skipping");
+						return;
+					}
 
-				app.log.info({ count: instances.length }, "Starting Plex cache refresh for all instances");
+					app.log.info(
+						{ count: instances.length },
+						"Starting Plex cache refresh for all instances",
+					);
 
-				for (const instance of instances) {
-					try {
-						const client = createPlexClient(app.encryptor, instance, app.log);
-						const result = await refreshPlexCache(client, app.prisma, instance.id, app.log);
-						app.log.info(
-							{ instanceId: instance.id, label: instance.label, ...result },
-							"Plex cache refresh completed for instance",
-						);
-
-						// Track refresh status — separate try so a DB failure
-						// doesn't masquerade as a refresh failure in the outer catch
+					for (const instance of instances) {
 						try {
-							await app.prisma.cacheRefreshStatus.upsert({
-								where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "plex" } },
-								create: {
-									instanceId: instance.id,
-									cacheType: "plex",
-									lastRefreshedAt: new Date(),
-									lastResult: result.errors > 0 ? "error" : "success",
-									lastErrorMessage: result.errorMessages.length > 0 ? result.errorMessages.slice(0, 3).join("; ").slice(0, 200) : null,
-									itemCount: result.upserted,
-								},
-								update: {
-									lastRefreshedAt: new Date(),
-									lastResult: result.errors > 0 ? "error" : "success",
-									lastErrorMessage: result.errorMessages.length > 0 ? result.errorMessages.slice(0, 3).join("; ").slice(0, 200) : null,
-									itemCount: result.upserted,
-								},
-							});
-						} catch (trackErr) {
-							app.log.warn(
-								{ err: trackErr, instanceId: instance.id },
-								"Plex cache refreshed successfully but failed to record status",
+							const client = createPlexClient(app.encryptor, instance, app.log);
+							const result = await refreshPlexCache(client, app.prisma, instance.id, app.log);
+							app.log.info(
+								{ instanceId: instance.id, label: instance.label, ...result },
+								"Plex cache refresh completed for instance",
 							);
-						}
-					} catch (err) {
-						app.log.error(
-							{ err, instanceId: instance.id, label: instance.label },
-							"Plex cache refresh failed for instance",
-						);
 
-						// Track failure
-						await app.prisma.cacheRefreshStatus
-							.upsert({
-								where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "plex" } },
-								create: {
-									instanceId: instance.id,
-									cacheType: "plex",
-									lastRefreshedAt: new Date(),
-									lastResult: "error",
-									lastErrorMessage: getErrorMessage(err, "Unknown error"),
-									itemCount: 0,
-								},
-								update: {
-									lastRefreshedAt: new Date(),
-									lastResult: "error",
-									lastErrorMessage: getErrorMessage(err, "Unknown error"),
-								},
-							})
-							.catch((trackErr) => {
-								app.log.warn(
-									{
-										err: trackErr,
-										originalErr: getErrorMessage(err, "Unknown error"),
+							// Track refresh status — separate try so a DB failure
+							// doesn't masquerade as a refresh failure in the outer catch
+							try {
+								await app.prisma.cacheRefreshStatus.upsert({
+									where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "plex" } },
+									create: {
 										instanceId: instance.id,
+										cacheType: "plex",
+										lastRefreshedAt: new Date(),
+										lastResult: result.errors > 0 ? "error" : "success",
+										lastErrorMessage:
+											result.errorMessages.length > 0
+												? result.errorMessages.slice(0, 3).join("; ").slice(0, 200)
+												: null,
+										itemCount: result.upserted,
 									},
-									"Failed to record cache refresh failure status",
+									update: {
+										lastRefreshedAt: new Date(),
+										lastResult: result.errors > 0 ? "error" : "success",
+										lastErrorMessage:
+											result.errorMessages.length > 0
+												? result.errorMessages.slice(0, 3).join("; ").slice(0, 200)
+												: null,
+										itemCount: result.upserted,
+									},
+								});
+							} catch (trackErr) {
+								app.log.warn(
+									{ err: trackErr, instanceId: instance.id },
+									"Plex cache refreshed successfully but failed to record status",
 								);
+							}
+						} catch (err) {
+							app.log.error(
+								{ err, instanceId: instance.id, label: instance.label },
+								"Plex cache refresh failed for instance",
+							);
+
+							// Track failure
+							await app.prisma.cacheRefreshStatus
+								.upsert({
+									where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "plex" } },
+									create: {
+										instanceId: instance.id,
+										cacheType: "plex",
+										lastRefreshedAt: new Date(),
+										lastResult: "error",
+										lastErrorMessage: getErrorMessage(err, "Unknown error"),
+										itemCount: 0,
+									},
+									update: {
+										lastRefreshedAt: new Date(),
+										lastResult: "error",
+										lastErrorMessage: getErrorMessage(err, "Unknown error"),
+									},
+								})
+								.catch((trackErr) => {
+									app.log.warn(
+										{
+											err: trackErr,
+											originalErr: getErrorMessage(err, "Unknown error"),
+											instanceId: instance.id,
+										},
+										"Failed to record cache refresh failure status",
+									);
+								});
+						}
+					}
+
+					// Check for stale caches (>12h since last successful refresh)
+					const staleThreshold = new Date(Date.now() - 12 * 60 * 60 * 1000);
+					const staleEntries = await app.prisma.cacheRefreshStatus.findMany({
+						where: {
+							cacheType: "plex",
+							lastRefreshedAt: { lt: staleThreshold },
+						},
+						include: { instance: { select: { label: true } } },
+					});
+					if (staleEntries.length > 0) {
+						const names = staleEntries
+							.map((e) => e.instance.label.replace(/[<>&"']/g, "").slice(0, 50))
+							.join(", ");
+						app.log.warn(
+							{ staleInstances: names },
+							"Plex cache data is stale (>12h since last refresh)",
+						);
+						await app.notificationService
+							.notify({
+								eventType: "CACHE_REFRESH_STALE",
+								title: "Plex cache data is stale",
+								body: `Cache has not refreshed in over 12 hours for: ${names}`,
+								url: "/settings",
+							})
+							.catch((notifyErr) => {
+								app.log.warn({ err: notifyErr }, "Failed to send stale-cache notification");
 							});
 					}
-				}
-
-				// Check for stale caches (>12h since last successful refresh)
-				const staleThreshold = new Date(Date.now() - 12 * 60 * 60 * 1000);
-				const staleEntries = await app.prisma.cacheRefreshStatus.findMany({
-					where: {
-						cacheType: "plex",
-						lastRefreshedAt: { lt: staleThreshold },
-					},
-					include: { instance: { select: { label: true } } },
 				});
-				if (staleEntries.length > 0) {
-					const names = staleEntries
-						.map((e) => e.instance.label.replace(/[<>&"']/g, "").slice(0, 50))
-						.join(", ");
-					app.log.warn(
-						{ staleInstances: names },
-						"Plex cache data is stale (>12h since last refresh)",
-					);
-					await app.notificationService
-						.notify({
-							eventType: "CACHE_REFRESH_STALE",
-							title: "Plex cache data is stale",
-							body: `Cache has not refreshed in over 12 hours for: ${names}`,
-							url: "/settings",
-						})
-						.catch((notifyErr) => {
-							app.log.warn({ err: notifyErr }, "Failed to send stale-cache notification");
-						});
-				}
 			} catch (err) {
+				// Registry already recorded the failure; preserve existing log semantics.
 				app.log.error({ err }, "Plex cache scheduler: failed to query instances");
 			} finally {
 				isRunning = false;
@@ -170,7 +186,7 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 	},
 	{
 		name: "plex-cache-scheduler",
-		dependencies: ["prisma", "security", "notification-service"],
+		dependencies: ["prisma", "security", "notification-service", "scheduler-registry"],
 	},
 );
 

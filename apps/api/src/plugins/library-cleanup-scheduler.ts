@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { CleanupScheduler } from "../lib/library-cleanup/cleanup-scheduler.js";
+import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 
 declare module "fastify" {
 	interface FastifyInstance {
@@ -13,8 +14,12 @@ const libraryCleanupSchedulerPlugin = fastifyPlugin(
 		app.addHook("onReady", async () => {
 			app.log.info("Initializing library cleanup scheduler");
 
-			const scheduler = new CleanupScheduler(app.prisma, app.arrClientFactory, app.log, (payload) =>
-				app.notificationService.notify(payload),
+			const scheduler = new CleanupScheduler(
+				app.prisma,
+				app.arrClientFactory,
+				app.log,
+				(payload) => app.notificationService.notify(payload),
+				{ trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.libraryCleanup, fn) },
 			);
 			app.decorate("cleanupScheduler", scheduler);
 
@@ -31,7 +36,7 @@ const libraryCleanupSchedulerPlugin = fastifyPlugin(
 	},
 	{
 		name: "library-cleanup-scheduler",
-		dependencies: ["prisma", "arr-client"],
+		dependencies: ["prisma", "arr-client", "scheduler-registry"],
 	},
 );
 

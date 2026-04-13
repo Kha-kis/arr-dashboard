@@ -12,6 +12,10 @@ import type { FastifyBaseLogger } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import type { NotificationPayload } from "../notifications/types.js";
 import type { PrismaClient } from "../prisma.js";
+import {
+	passthroughTickWrapper,
+	type TickWrapper,
+} from "../scheduler-registry/scheduler-registry.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { executeCleanupRun } from "./cleanup-executor.js";
 
@@ -21,6 +25,7 @@ export class CleanupScheduler {
 	private intervalId: NodeJS.Timeout | null = null;
 	private _isRunning = false;
 	private notifyFn?: (payload: NotificationPayload) => Promise<void>;
+	private trackTick: TickWrapper;
 
 	/** Whether a cleanup run is currently in progress */
 	get isRunning(): boolean {
@@ -32,8 +37,10 @@ export class CleanupScheduler {
 		private arrClientFactory: ArrClientFactory,
 		private logger: FastifyBaseLogger,
 		notifyFn?: (payload: NotificationPayload) => Promise<void>,
+		options?: { trackTick?: TickWrapper },
 	) {
 		this.notifyFn = notifyFn;
+		this.trackTick = options?.trackTick ?? passthroughTickWrapper;
 	}
 
 	/**
@@ -48,13 +55,13 @@ export class CleanupScheduler {
 		this.logger.info("Starting library cleanup scheduler");
 
 		// Check immediately on startup
-		this.checkAndRun().catch((error) => {
+		this.trackTick(() => this.checkAndRun()).catch((error) => {
 			this.logger.error({ err: error }, "Failed to run initial cleanup check");
 		});
 
 		// Then check every minute
 		this.intervalId = setInterval(() => {
-			this.checkAndRun().catch((error) => {
+			this.trackTick(() => this.checkAndRun()).catch((error) => {
 				this.logger.error({ err: error }, "Failed to run scheduled cleanup check");
 			});
 		}, CHECK_INTERVAL_MS);

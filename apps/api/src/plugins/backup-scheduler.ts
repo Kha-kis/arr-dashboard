@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { BackupScheduler } from "../lib/backup/backup-scheduler.js";
+import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 import { resolveSecretsPath } from "../lib/utils/secrets-path.js";
 
 declare module "fastify" {
@@ -20,8 +21,12 @@ const backupSchedulerPlugin = fastifyPlugin(
 			const secretsPath = resolveSecretsPath(databaseUrl);
 
 			// Create and register backup scheduler (Prisma and config are guaranteed to be ready)
-			const scheduler = new BackupScheduler(app.prisma, app.log, secretsPath, (payload) =>
-				app.notificationService.notify(payload),
+			const scheduler = new BackupScheduler(
+				app.prisma,
+				app.log,
+				secretsPath,
+				(payload) => app.notificationService.notify(payload),
+				{ trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.backup, fn) },
 			);
 			app.decorate("backupScheduler", scheduler);
 
@@ -40,7 +45,7 @@ const backupSchedulerPlugin = fastifyPlugin(
 	},
 	{
 		name: "backup-scheduler",
-		dependencies: ["prisma"],
+		dependencies: ["prisma", "scheduler-registry"],
 	},
 );
 

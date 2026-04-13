@@ -9,6 +9,10 @@
 import type { FastifyBaseLogger } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import type { PrismaClient } from "../prisma.js";
+import {
+	passthroughTickWrapper,
+	type TickWrapper,
+} from "../scheduler-registry/scheduler-registry.js";
 import { SeerrClient } from "../seerr/seerr-client.js";
 import { safeJsonParse } from "../utils/json.js";
 import type { NotificationPayload } from "./types.js";
@@ -23,13 +27,17 @@ export class InsightsDigestScheduler {
 	private intervalId: NodeJS.Timeout | null = null;
 	private lastNotifiedRequestedUnwatched: number = 0;
 	private lastNotifiedWatchedMonitored: number = 0;
+	private trackTick: TickWrapper;
 
 	constructor(
 		private prisma: PrismaClient,
 		private logger: FastifyBaseLogger,
 		private arrClientFactory: ArrClientFactory,
 		private notifyFn?: (payload: NotificationPayload) => Promise<void>,
-	) {}
+		options?: { trackTick?: TickWrapper },
+	) {
+		this.trackTick = options?.trackTick ?? passthroughTickWrapper;
+	}
 
 	start() {
 		if (this.intervalId) {
@@ -40,14 +48,17 @@ export class InsightsDigestScheduler {
 		this.logger.info("Starting insights digest scheduler");
 
 		// First check after 5 minutes (let other services warm up)
-		setTimeout(() => {
-			this.check().catch((err) => {
-				this.logger.error({ err }, "Failed initial insights digest check");
-			});
-		}, 5 * 60 * 1000);
+		setTimeout(
+			() => {
+				this.trackTick(() => this.check()).catch((err) => {
+					this.logger.error({ err }, "Failed initial insights digest check");
+				});
+			},
+			5 * 60 * 1000,
+		);
 
 		this.intervalId = setInterval(() => {
-			this.check().catch((err) => {
+			this.trackTick(() => this.check()).catch((err) => {
 				this.logger.error({ err }, "Failed insights digest check");
 			});
 		}, CHECK_INTERVAL_MS);
@@ -106,7 +117,9 @@ export class InsightsDigestScheduler {
 		if (items.length === 0) return;
 
 		const topItems = items.slice(0, 5);
-		const itemList = topItems.map((i) => `• ${i.title} (${i.watchCount} play${i.watchCount !== 1 ? "s" : ""})`).join("\n");
+		const itemList = topItems
+			.map((i) => `• ${i.title} (${i.watchCount} play${i.watchCount !== 1 ? "s" : ""})`)
+			.join("\n");
 		const moreText = items.length > 5 ? `\n+${items.length - 5} more` : "";
 
 		this.notifyFn!({

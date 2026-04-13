@@ -14,6 +14,20 @@
  * See docs/adr/0001-scheduler-registry.md for the full rationale.
  */
 
+/**
+ * Optional wrapper that delegate scheduler classes accept so callers can
+ * route each tick through the SchedulerRegistry for /api/system/jobs
+ * observability. Default implementation is a passthrough, so a class
+ * constructed without a registry-aware plugin remains fully decoupled.
+ *
+ * Plugins typically wire it as:
+ *   trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.x, fn)
+ */
+export type TickWrapper = <T>(fn: () => Promise<T>) => Promise<T>;
+
+/** Default passthrough used when a class is constructed without a wrapper. */
+export const passthroughTickWrapper: TickWrapper = (fn) => fn();
+
 export type JobConcurrency =
 	/** At most one tick in flight at a time (single-process singleton). */
 	| "singleton"
