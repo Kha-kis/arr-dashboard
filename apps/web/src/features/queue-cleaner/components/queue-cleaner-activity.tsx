@@ -12,8 +12,8 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import {
+	AsyncStateView,
 	FilterSelect,
-	PremiumEmptyState,
 	PremiumSection,
 	ServiceBadge,
 	StatusBadge,
@@ -28,7 +28,7 @@ export const QueueCleanerActivity = () => {
 	const [page, setPage] = useState(1);
 	const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
 
-	const { logs, totalCount, isLoading } = useQueueCleanerLogs({
+	const { logs, totalCount, isLoading, error, refetch } = useQueueCleanerLogs({
 		status: statusFilter !== "all" ? statusFilter : undefined,
 		page,
 		pageSize: 20,
@@ -36,6 +36,7 @@ export const QueueCleanerActivity = () => {
 	});
 
 	const totalPages = Math.ceil(totalCount / 20);
+	const hasFilter = statusFilter !== "all";
 
 	return (
 		<PremiumSection
@@ -65,25 +66,33 @@ export const QueueCleanerActivity = () => {
 			</div>
 
 			{/* Log entries */}
-			{logs.length === 0 && !isLoading && (
-				<PremiumEmptyState
-					icon={Activity}
-					title="No activity yet"
-					description="Queue cleaner activity will appear here once runs begin."
-				/>
-			)}
-
-			<div className="space-y-2">
-				{logs.map((logEntry, index) => (
-					<LogEntryRow
-						key={logEntry.id}
-						log={logEntry}
-						isExpanded={expandedLogId === logEntry.id}
-						onToggle={() => setExpandedLogId(expandedLogId === logEntry.id ? null : logEntry.id)}
-						animationDelay={index * 30}
-					/>
-				))}
-			</div>
+			<AsyncStateView
+				isLoading={isLoading}
+				isError={!!error}
+				error={error}
+				isEmpty={logs.length === 0}
+				onRetry={() => refetch()}
+				errorTitle="Couldn't load activity log"
+				emptyState={{
+					icon: Activity,
+					title: hasFilter ? "No matching activity" : "No activity yet",
+					description: hasFilter
+						? "No runs match the current status filter."
+						: "Queue cleaner activity will appear here once runs begin.",
+				}}
+			>
+				<div className="space-y-2">
+					{logs.map((logEntry, index) => (
+						<LogEntryRow
+							key={logEntry.id}
+							log={logEntry}
+							isExpanded={expandedLogId === logEntry.id}
+							onToggle={() => setExpandedLogId(expandedLogId === logEntry.id ? null : logEntry.id)}
+							animationDelay={index * 30}
+						/>
+					))}
+				</div>
+			</AsyncStateView>
 
 			{/* Pagination */}
 			{totalPages > 1 && (
@@ -234,10 +243,7 @@ const LogEntryRow = ({ log, isExpanded, onToggle, animationDelay }: LogEntryRowP
 					</span>
 					{(log.itemsWarned ?? 0) > 0 && (
 						<span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/50">
-							<AlertTriangle
-								className="h-3 w-3"
-								style={{ color: SEMANTIC_COLORS.warning.text }}
-							/>
+							<AlertTriangle className="h-3 w-3" style={{ color: SEMANTIC_COLORS.warning.text }} />
 							{log.itemsWarned}
 						</span>
 					)}
@@ -266,10 +272,7 @@ const LogEntryRow = ({ log, isExpanded, onToggle, animationDelay }: LogEntryRowP
 						{log.cleanedItems && log.cleanedItems.length > 0 && (
 							<div>
 								<h5 className="flex items-center gap-1.5 text-xs font-medium mb-2">
-									<Trash2
-										className="h-3 w-3"
-										style={{ color: SEMANTIC_COLORS.error.text }}
-									/>
+									<Trash2 className="h-3 w-3" style={{ color: SEMANTIC_COLORS.error.text }} />
 									Removed ({log.cleanedItems.length})
 								</h5>
 								<div className="space-y-1">
@@ -318,15 +321,12 @@ const LogEntryRow = ({ log, isExpanded, onToggle, animationDelay }: LogEntryRowP
 												{incognitoMode ? getLinuxIsoName(item.title) : item.title}
 											</span>
 											<div className="flex items-center gap-2 ml-2 shrink-0">
-												{item.strikeCount !== undefined &&
-													item.maxStrikes !== undefined && (
-														<span className="inline-flex items-center rounded-md bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-medium text-amber-400">
-															Strike {item.strikeCount}/{item.maxStrikes}
-														</span>
-													)}
-												<span className="text-[10px] text-muted-foreground">
-													{item.reason}
-												</span>
+												{item.strikeCount !== undefined && item.maxStrikes !== undefined && (
+													<span className="inline-flex items-center rounded-md bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-medium text-amber-400">
+														Strike {item.strikeCount}/{item.maxStrikes}
+													</span>
+												)}
+												<span className="text-[10px] text-muted-foreground">{item.reason}</span>
 											</div>
 										</div>
 									))}
