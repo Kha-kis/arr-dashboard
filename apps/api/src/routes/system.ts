@@ -554,8 +554,9 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	/**
 	 * GET /system/jobs
 	 * Read-only runtime status of every registered background scheduler.
-	 * Gated by the global protected-routes preHandler — any authenticated
-	 * admin can view. The endpoint never triggers job execution.
+	 *
+	 * Security: Requires authentication (single-admin architecture - all authenticated users are admins)
+	 * The endpoint never triggers job execution.
 	 */
 	app.get("/jobs", async (_request, reply) => {
 		const jobs = app.schedulerRegistry.list();
