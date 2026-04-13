@@ -46,6 +46,13 @@ updates:
       actions:
         patterns:
           - "*"
+    ignore:
+      # pnpm/action-setup major bumps must be coordinated with a pnpm major
+      # version upgrade — action-setup@v6 bootstraps pnpm v11 internally and
+      # breaks projects still on pnpm v10 lockfile format (v9).
+      # Remove this ignore when upgrading pnpm to v11.
+      - dependency-name: "pnpm/action-setup"
+        update-types: ["version-update:semver-major"]
 
   # Docker base images
   - package-ecosystem: "docker"
