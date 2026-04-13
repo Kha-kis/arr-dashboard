@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { getHuntingScheduler } from "../lib/hunting/scheduler.js";
+import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 
 declare module "fastify" {
@@ -49,6 +50,8 @@ const huntingSchedulerPlugin = fastifyPlugin(
 				app.log.error({ err: error }, "Failed to initialize hunting scheduler - feature disabled");
 				// Store error for user visibility in 503 responses
 				app.decorate("huntingSchedulerInitError", errorMsg);
+				// Reflect the disabled state on the operator surface.
+				app.schedulerRegistry.markDisabled(JOB_ID.hunting, errorMsg);
 				// huntingSchedulerEnabled remains false - routes will return 503
 			}
 		});
@@ -64,7 +67,7 @@ const huntingSchedulerPlugin = fastifyPlugin(
 	},
 	{
 		name: "hunting-scheduler",
-		dependencies: ["prisma"],
+		dependencies: ["prisma", "scheduler-registry"],
 	},
 );
 

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { getQueueCleanerScheduler } from "../lib/queue-cleaner/scheduler.js";
+import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { setManualImportLogger } from "../routes/manual-import-utils.js";
 
@@ -50,6 +51,8 @@ const queueCleanerSchedulerPlugin = fastifyPlugin(
 				);
 				// Store error for user visibility in 503 responses
 				app.decorate("queueCleanerInitError", errorMsg);
+				// Reflect the disabled state on the operator surface.
+				app.schedulerRegistry.markDisabled(JOB_ID.queueCleaner, errorMsg);
 				// queueCleanerEnabled remains false - routes will return 503
 			}
 		});
@@ -63,7 +66,7 @@ const queueCleanerSchedulerPlugin = fastifyPlugin(
 	},
 	{
 		name: "queue-cleaner-scheduler",
-		dependencies: ["prisma"],
+		dependencies: ["prisma", "scheduler-registry"],
 	},
 );
 

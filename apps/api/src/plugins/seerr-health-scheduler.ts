@@ -8,6 +8,7 @@
 
 import type { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
+import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 import { SeerrClient } from "../lib/seerr/seerr-client.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 
@@ -27,61 +28,32 @@ const seerrHealthSchedulerPlugin = fp(
 			}
 			isRunning = true;
 			try {
-				// System-level scheduler: queries ALL enabled Seerr instances (no userId filter)
-				// because health checks run as a background system task, not per-user.
-				const instances = await app.prisma.serviceInstance.findMany({
-					where: { service: "SEERR", enabled: true },
-				});
+				// Route the tick through the scheduler registry so last run / duration /
+				// failure counts surface on /api/system/jobs. The registry re-throws,
+				// so fatal errors reach the outer .catch() handlers below just as before.
+				await app.schedulerRegistry.track(JOB_ID.seerrHealth, async () => {
+					// System-level scheduler: queries ALL enabled Seerr instances (no userId filter)
+					// because health checks run as a background system task, not per-user.
+					const instances = await app.prisma.serviceInstance.findMany({
+						where: { service: "SEERR", enabled: true },
+					});
 
-				if (instances.length === 0) {
-					app.log.debug("Seerr health check: no enabled Seerr instances, skipping");
-					return;
-				}
+					if (instances.length === 0) {
+						app.log.debug("Seerr health check: no enabled Seerr instances, skipping");
+						return;
+					}
 
-				for (const instance of instances) {
-					try {
-						const client = new SeerrClient(
-							app.arrClientFactory,
-							instance,
-							app.log,
-							app.seerrCircuitBreaker,
-						);
-						const status = await client.getStatus();
+					for (const instance of instances) {
+						try {
+							const client = new SeerrClient(
+								app.arrClientFactory,
+								instance,
+								app.log,
+								app.seerrCircuitBreaker,
+							);
+							const status = await client.getStatus();
 
-						await app.prisma.cacheRefreshStatus.upsert({
-							where: {
-								instanceId_cacheType: {
-									instanceId: instance.id,
-									cacheType: "seerr_health",
-								},
-							},
-							create: {
-								instanceId: instance.id,
-								cacheType: "seerr_health",
-								lastRefreshedAt: new Date(),
-								lastResult: "success",
-								lastErrorMessage: null,
-								itemCount: 0,
-							},
-							update: {
-								lastRefreshedAt: new Date(),
-								lastResult: "success",
-								lastErrorMessage: null,
-							},
-						});
-
-						app.log.debug(
-							{ instanceId: instance.id, version: status.version },
-							"Seerr health check OK",
-						);
-					} catch (err) {
-						app.log.warn(
-							{ err, instanceId: instance.id, label: instance.label },
-							"Seerr health check failed for instance",
-						);
-
-						await app.prisma.cacheRefreshStatus
-							.upsert({
+							await app.prisma.cacheRefreshStatus.upsert({
 								where: {
 									instanceId_cacheType: {
 										instanceId: instance.id,
@@ -92,25 +64,60 @@ const seerrHealthSchedulerPlugin = fp(
 									instanceId: instance.id,
 									cacheType: "seerr_health",
 									lastRefreshedAt: new Date(),
-									lastResult: "error",
-									lastErrorMessage: getErrorMessage(err, "Unknown error"),
+									lastResult: "success",
+									lastErrorMessage: null,
 									itemCount: 0,
 								},
 								update: {
 									lastRefreshedAt: new Date(),
-									lastResult: "error",
-									lastErrorMessage: getErrorMessage(err, "Unknown error"),
+									lastResult: "success",
+									lastErrorMessage: null,
 								},
-							})
-							.catch((trackErr) => {
-								app.log.warn(
-									{ err: trackErr, instanceId: instance.id },
-									"Failed to record Seerr health check failure status",
-								);
 							});
+
+							app.log.debug(
+								{ instanceId: instance.id, version: status.version },
+								"Seerr health check OK",
+							);
+						} catch (err) {
+							app.log.warn(
+								{ err, instanceId: instance.id, label: instance.label },
+								"Seerr health check failed for instance",
+							);
+
+							await app.prisma.cacheRefreshStatus
+								.upsert({
+									where: {
+										instanceId_cacheType: {
+											instanceId: instance.id,
+											cacheType: "seerr_health",
+										},
+									},
+									create: {
+										instanceId: instance.id,
+										cacheType: "seerr_health",
+										lastRefreshedAt: new Date(),
+										lastResult: "error",
+										lastErrorMessage: getErrorMessage(err, "Unknown error"),
+										itemCount: 0,
+									},
+									update: {
+										lastRefreshedAt: new Date(),
+										lastResult: "error",
+										lastErrorMessage: getErrorMessage(err, "Unknown error"),
+									},
+								})
+								.catch((trackErr) => {
+									app.log.warn(
+										{ err: trackErr, instanceId: instance.id },
+										"Failed to record Seerr health check failure status",
+									);
+								});
+						}
 					}
-				}
+				});
 			} catch (err) {
+				// Registry already recorded the failure; preserve existing log semantics.
 				app.log.error({ err }, "Seerr health scheduler: failed to query instances");
 			} finally {
 				isRunning = false;
@@ -141,7 +148,7 @@ const seerrHealthSchedulerPlugin = fp(
 	},
 	{
 		name: "seerr-health-scheduler",
-		dependencies: ["prisma", "security", "seerr-circuit-breaker"],
+		dependencies: ["prisma", "security", "seerr-circuit-breaker", "scheduler-registry"],
 	},
 );
 
