@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { BackupScheduler } from "../lib/backup/backup-scheduler.js";
+import { runSchedulerInit } from "../lib/scheduler-registry/init-helpers.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 import { resolveSecretsPath } from "../lib/utils/secrets-path.js";
 
@@ -14,25 +15,32 @@ const backupSchedulerPlugin = fastifyPlugin(
 	async (app: FastifyInstance) => {
 		// Use onReady hook to ensure config and Prisma are fully initialized before creating scheduler
 		app.addHook("onReady", async () => {
-			app.log.info("Initializing backup scheduler");
+			await runSchedulerInit(
+				{ registry: app.schedulerRegistry, log: app.log },
+				JOB_ID.backup,
+				"backup",
+				async () => {
+					app.log.info("Initializing backup scheduler");
 
-			// Determine secrets path based on DATABASE_URL from app config (canonical source)
-			const databaseUrl = app.config.DATABASE_URL || "file:./dev.db";
-			const secretsPath = resolveSecretsPath(databaseUrl);
+					// Determine secrets path based on DATABASE_URL from app config (canonical source)
+					const databaseUrl = app.config.DATABASE_URL || "file:./dev.db";
+					const secretsPath = resolveSecretsPath(databaseUrl);
 
-			// Create and register backup scheduler (Prisma and config are guaranteed to be ready)
-			const scheduler = new BackupScheduler(
-				app.prisma,
-				app.log,
-				secretsPath,
-				(payload) => app.notificationService.notify(payload),
-				{ trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.backup, fn) },
+					// Create and register backup scheduler (Prisma and config are guaranteed to be ready)
+					const scheduler = new BackupScheduler(
+						app.prisma,
+						app.log,
+						secretsPath,
+						(payload) => app.notificationService.notify(payload),
+						{ trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.backup, fn) },
+					);
+					app.decorate("backupScheduler", scheduler);
+
+					// Start scheduler
+					scheduler.start();
+					app.log.info("Backup scheduler started successfully");
+				},
 			);
-			app.decorate("backupScheduler", scheduler);
-
-			// Start scheduler
-			scheduler.start();
-			app.log.info("Backup scheduler started successfully");
 		});
 
 		// Stop scheduler on server close

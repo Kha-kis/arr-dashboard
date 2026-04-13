@@ -6,6 +6,7 @@
 
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
+import { runSchedulerInit } from "../lib/scheduler-registry/init-helpers.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 import { createCacheManager } from "../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher } from "../lib/trash-guides/github-fetcher.js";
@@ -27,65 +28,76 @@ const trashUpdateSchedulerPlugin = fastifyPlugin(
 	async (app: FastifyInstance) => {
 		// Use onReady hook to ensure config and Prisma are fully initialized
 		app.addHook("onReady", async () => {
-			app.log.info("Initializing TRaSH Guides update scheduler");
+			await runSchedulerInit(
+				{ registry: app.schedulerRegistry, log: app.log },
+				JOB_ID.trashUpdate,
+				"TRaSH Guides update",
+				async () => {
+					app.log.info("Initializing TRaSH Guides update scheduler");
 
-			// Get configuration from environment or use defaults
-			const DEFAULT_INTERVAL_HOURS = 12;
-			const parsedInterval = Number.parseInt(
-				process.env.TRASH_UPDATE_CHECK_INTERVAL_HOURS || "",
-				10,
-			);
-			const intervalHours =
-				Number.isFinite(parsedInterval) && parsedInterval > 0
-					? Math.floor(parsedInterval)
-					: DEFAULT_INTERVAL_HOURS;
+					// Get configuration from environment or use defaults
+					const DEFAULT_INTERVAL_HOURS = 12;
+					const parsedInterval = Number.parseInt(
+						process.env.TRASH_UPDATE_CHECK_INTERVAL_HOURS || "",
+						10,
+					);
+					const intervalHours =
+						Number.isFinite(parsedInterval) && parsedInterval > 0
+							? Math.floor(parsedInterval)
+							: DEFAULT_INTERVAL_HOURS;
 
-			const config = {
-				enabled: process.env.TRASH_UPDATE_SCHEDULER_ENABLED !== "false", // Enabled by default
-				intervalHours,
-			};
+					const config = {
+						enabled: process.env.TRASH_UPDATE_SCHEDULER_ENABLED !== "false", // Enabled by default
+						intervalHours,
+					};
 
-			// Build initial services from the current repo config.
-			// The resolver is also passed to the scheduler so it re-reads config on each tick,
-			// automatically picking up custom repo changes without requiring a restart.
-			const repoConfigResolver = () => getGlobalRepoConfig(app.prisma);
-			const repoConfig = await repoConfigResolver();
-			app.log.info(
-				{ repoOwner: repoConfig.owner, repoName: repoConfig.name, repoBranch: repoConfig.branch },
-				"Scheduler using repository configuration",
-			);
-			const versionTracker = createVersionTracker(repoConfig);
-			const cacheManager = createCacheManager(app.prisma);
-			const githubFetcher = createTrashFetcher({ repoConfig, logger: app.log });
-			const templateUpdater = createTemplateUpdater(
-				app.prisma,
-				versionTracker,
-				cacheManager,
-				githubFetcher,
-				app.deploymentExecutor,
-			);
+					// Build initial services from the current repo config.
+					// The resolver is also passed to the scheduler so it re-reads config on each tick,
+					// automatically picking up custom repo changes without requiring a restart.
+					const repoConfigResolver = () => getGlobalRepoConfig(app.prisma);
+					const repoConfig = await repoConfigResolver();
+					app.log.info(
+						{
+							repoOwner: repoConfig.owner,
+							repoName: repoConfig.name,
+							repoBranch: repoConfig.branch,
+						},
+						"Scheduler using repository configuration",
+					);
+					const versionTracker = createVersionTracker(repoConfig);
+					const cacheManager = createCacheManager(app.prisma);
+					const githubFetcher = createTrashFetcher({ repoConfig, logger: app.log });
+					const templateUpdater = createTemplateUpdater(
+						app.prisma,
+						versionTracker,
+						cacheManager,
+						githubFetcher,
+						app.deploymentExecutor,
+					);
 
-			// Create and register scheduler
-			const scheduler = createUpdateScheduler(
-				config,
-				templateUpdater,
-				versionTracker,
-				app.prisma,
-				app.log,
-				app.arrClientFactory,
-				{
-					repoConfigResolver,
-					deploymentExecutor: app.deploymentExecutor,
-					notifyFn: (payload) => app.notificationService.notify(payload),
-					trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.trashUpdate, fn),
+					// Create and register scheduler
+					const scheduler = createUpdateScheduler(
+						config,
+						templateUpdater,
+						versionTracker,
+						app.prisma,
+						app.log,
+						app.arrClientFactory,
+						{
+							repoConfigResolver,
+							deploymentExecutor: app.deploymentExecutor,
+							notifyFn: (payload) => app.notificationService.notify(payload),
+							trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.trashUpdate, fn),
+						},
+					);
+
+					app.decorate("trashUpdateScheduler", scheduler);
+
+					// Start scheduler
+					scheduler.start();
+					app.log.info("TRaSH Guides update scheduler started successfully");
 				},
 			);
-
-			app.decorate("trashUpdateScheduler", scheduler);
-
-			// Start scheduler
-			scheduler.start();
-			app.log.info("TRaSH Guides update scheduler started successfully");
 		});
 
 		// Stop scheduler on server close

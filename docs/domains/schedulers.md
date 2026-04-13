@@ -54,6 +54,81 @@ This split is intentional. The registry observes; it does not schedule.
 6. **The `/system/jobs` endpoint never triggers a tick.** It is read-only.
    Pinned by `system-jobs.test.ts`.
 
+## Failure-handling policy
+
+A scheduler can fail at four distinct points. Each has a single, agreed
+behavior so operators see a consistent signal on `/api/system/jobs`.
+
+### 1. Tick body throws
+
+A `setInterval`-driven tick threw mid-flight (network error, DB error,
+unhandled bug in the executor).
+
+- **Required**: the tick body MUST be wrapped in
+  `app.schedulerRegistry.track(JOB_ID.x, …)`. The registry records
+  `lastError` (the error message), increments `consecutiveFailures` and
+  `totalFailures`, and **re-throws** so the plugin's existing logging /
+  notification path still fires.
+- **Operator signal**: `state: "idle"`, `lastError: "…"`,
+  `consecutiveFailures > 0`, `lastFailureAt` populated.
+
+### 2. Tick body returns a structured error result
+
+Currently no scheduler uses this pattern (executors either succeed or
+throw). If we adopt structured error results in the future, the plugin
+MUST translate them into a thrown error inside the `track()` callback so
+the registry records the failure. **Returning success while logging an
+internal error is a contract violation** — silent failures erode operator
+trust.
+
+### 3. Startup initialization failure
+
+The plugin's `onReady` body threw before the scheduler began ticking
+(missing secrets, unreachable DB, malformed config).
+
+- **Required**: every scheduler plugin whose `onReady` body performs I/O
+  or constructs a stateful object MUST run that init through
+  [`runSchedulerInit()`](../../apps/api/src/lib/scheduler-registry/init-helpers.ts).
+  The helper:
+    - logs the error at error level with `{ err, jobId }`
+    - calls `markDisabled(jobId, "Init failed: <message>")`
+    - **does not re-throw** — a single scheduler's init failure must
+      never abort the rest of the `onReady` chain
+    - returns a boolean the caller can use to gate feature flags
+- **Exempt**: cache schedulers whose `onReady` body is purely
+  `setTimeout(...)` with no I/O (e.g. `plex-cache-scheduler`,
+  `tautulli-cache-scheduler`). There is nothing meaningful that can throw
+  at init time.
+- **Operator signal**: `state: "disabled"`, `disabled: true`,
+  `disabledReason: "Init failed: <message>"`, `totalRuns: 0`.
+
+### 4. Serial overlap / busy condition
+
+A `serial` job's tick fires while the previous tick is still running.
+
+- **Required**: the registry throws `SerialJobBusyError` from `track()`.
+  The plugin MUST propagate the rejection (or log + re-throw it) — do NOT
+  swallow it silently. Swallowing hides legitimate overlap problems.
+- For non-`serial` jobs, plugins that need their own concurrency guard
+  (e.g. `isRunning` flag in cache schedulers) should keep it — those
+  guards are informational and the registry does not interfere.
+- **Operator signal**: `lastError: "Job <id> is already running …"` after
+  the next tick records the rejection; `consecutiveFailures` increments.
+
+### Quick reference
+
+| Failure | Helper / API | Operator-visible state |
+|---|---|---|
+| Tick throws | `registry.track()` (re-throws) | `lastError`, failure counters |
+| Tick returns structured error | translate into a throw inside `track()` | same as tick throws |
+| Init throws | `runSchedulerInit()` (does NOT re-throw) | `state: "disabled"`, `disabledReason: "Init failed: …"` |
+| Serial overlap | `SerialJobBusyError` from `track()` (propagate) | `lastError` after next tick |
+
+The unit test for `runSchedulerInit` lives at
+`apps/api/src/lib/scheduler-registry/__tests__/init-helpers.test.ts`; the
+integration test that pins the init-failure surface on `/system/jobs`
+lives in `system-jobs.test.ts`.
+
 ## Major integration points
 
 - **`app.schedulerRegistry`** — the single Fastify decoration every
@@ -77,7 +152,14 @@ This split is intentional. The registry observes; it does not schedule.
   so the rejection shows up in `lastError`.
 - **`disabledReason` not surfaced** — when calling `markDisabled(id, reason)`,
   always pass a human-readable reason. The `/system/jobs` payload exposes
-  it; the UI displays it; debugging without it is painful.
+  it; the UI displays it; debugging without it is painful. Init failures
+  routed through `runSchedulerInit()` always produce a
+  `"Init failed: <message>"` reason for free.
+- **Job appears `idle` but the feature is broken** — almost always means
+  the plugin's `onReady` threw and was not wrapped in
+  `runSchedulerInit()`. The error went to Fastify's default error path
+  and never reached the registry. Fix by wrapping init per the policy
+  above.
 - **Adding a scheduler that should not auto-start in dev** — gate the
   `setInterval` in the plugin, not in the registry. Registry just
   observes; the registration call should still happen so the job appears
@@ -89,7 +171,8 @@ This split is intentional. The registry observes; it does not schedule.
 |---|---|
 | New scheduler | (1) add ID to `JOB_ID` and entry to `KNOWN_JOBS` in `job-definitions.ts`; (2) create `apps/api/src/plugins/<name>-scheduler.ts` registering itself and wrapping the tick in `app.schedulerRegistry.track()`; (3) put the tick body in `apps/api/src/lib/<domain>/<name>-executor.ts`; (4) **register the plugin in `apps/api/src/bootstrap/schedulers.ts`** (without this the plugin never loads and the catalog entry stays at `idle`/`totalRuns: 0` forever) |
 | Adopt `track()` on an existing scheduler | wrap the body of the existing tick function — no other changes needed |
-| Disable a job at startup | call `app.schedulerRegistry.markDisabled(JOB_ID.x, "reason")` from the plugin instead of registering the timer |
+| Disable a job at startup | call `app.schedulerRegistry.markDisabled(JOB_ID.x, "reason")` from the plugin instead of registering the timer (e.g. feature flag off) |
+| Handle init failure | wrap `onReady` body with `runSchedulerInit({ registry: app.schedulerRegistry, log: app.log }, JOB_ID.x, "label", async () => { … })` — see Failure-handling policy above |
 | Add a runtime stat to the API response | extend `JobStatus` in `scheduler-registry.ts` and update `system-jobs.test.ts` (the contract test) |
 | Surface a job in a new UI panel | consume `/api/system/jobs`; do not duplicate the registry on the frontend |
 

@@ -8,6 +8,7 @@
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { InsightsDigestScheduler } from "../lib/notifications/insights-digest.js";
+import { runSchedulerInit } from "../lib/scheduler-registry/init-helpers.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 
 declare module "fastify" {
@@ -19,19 +20,26 @@ declare module "fastify" {
 const insightsDigestSchedulerPlugin = fastifyPlugin(
 	async (app: FastifyInstance) => {
 		app.addHook("onReady", async () => {
-			app.log.info("Initializing insights digest scheduler");
+			await runSchedulerInit(
+				{ registry: app.schedulerRegistry, log: app.log },
+				JOB_ID.insightsDigest,
+				"insights digest",
+				async () => {
+					app.log.info("Initializing insights digest scheduler");
 
-			const scheduler = new InsightsDigestScheduler(
-				app.prisma,
-				app.log,
-				app.arrClientFactory,
-				(payload) => app.notificationService.notify(payload),
-				{ trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.insightsDigest, fn) },
+					const scheduler = new InsightsDigestScheduler(
+						app.prisma,
+						app.log,
+						app.arrClientFactory,
+						(payload) => app.notificationService.notify(payload),
+						{ trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.insightsDigest, fn) },
+					);
+
+					app.decorate("insightsDigestScheduler", scheduler);
+					scheduler.start();
+					app.log.info("Insights digest scheduler started successfully");
+				},
 			);
-
-			app.decorate("insightsDigestScheduler", scheduler);
-			scheduler.start();
-			app.log.info("Insights digest scheduler started successfully");
 		});
 
 		app.addHook("onClose", async () => {

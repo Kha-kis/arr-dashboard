@@ -9,6 +9,7 @@
 
 import Fastify from "fastify";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { runSchedulerInit } from "../../lib/scheduler-registry/init-helpers.js";
 import { JOB_ID } from "../../lib/scheduler-registry/job-definitions.js";
 import schedulerRegistryPlugin from "../../plugins/scheduler-registry.js";
 import { registerSystemRoutes } from "../system.js";
@@ -150,6 +151,34 @@ describe("GET /system/jobs", () => {
 		expect(job.consecutiveFailures).toBe(0);
 		expect(job.totalRuns).toBe(2);
 		expect(job.totalFailures).toBe(1);
+		expect(job.lastError).toBeNull();
+	});
+
+	it("surfaces a scheduler init failure as state=disabled with a human-readable disabledReason", async () => {
+		// Pins the failure-handling contract documented in
+		// docs/domains/schedulers.md: when a scheduler plugin's `onReady`
+		// init fails, runSchedulerInit() must mark the job disabled with a
+		// "Init failed: <message>" reason so operators see the failure on
+		// /system/jobs instead of a misleading idle/totalRuns:0 state.
+		const ok = await runSchedulerInit(
+			{ registry: app.schedulerRegistry, log: app.log },
+			JOB_ID.backup,
+			"backup",
+			async () => {
+				throw new Error("simulated secrets file missing");
+			},
+		);
+		expect(ok).toBe(false);
+
+		const res = await injectAuthenticated("GET", "/system/jobs");
+		const body = JSON.parse(res.payload);
+		const job = body.data.jobs.find((j: any) => j.id === JOB_ID.backup);
+
+		expect(job.state).toBe("disabled");
+		expect(job.disabled).toBe(true);
+		expect(job.disabledReason).toBe("Init failed: simulated secrets file missing");
+		// totalRuns stays at 0 because the failure happened in init, not in a tick.
+		expect(job.totalRuns).toBe(0);
 		expect(job.lastError).toBeNull();
 	});
 

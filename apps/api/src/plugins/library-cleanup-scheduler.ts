@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { CleanupScheduler } from "../lib/library-cleanup/cleanup-scheduler.js";
+import { runSchedulerInit } from "../lib/scheduler-registry/init-helpers.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 
 declare module "fastify" {
@@ -12,19 +13,26 @@ declare module "fastify" {
 const libraryCleanupSchedulerPlugin = fastifyPlugin(
 	async (app: FastifyInstance) => {
 		app.addHook("onReady", async () => {
-			app.log.info("Initializing library cleanup scheduler");
+			await runSchedulerInit(
+				{ registry: app.schedulerRegistry, log: app.log },
+				JOB_ID.libraryCleanup,
+				"library cleanup",
+				async () => {
+					app.log.info("Initializing library cleanup scheduler");
 
-			const scheduler = new CleanupScheduler(
-				app.prisma,
-				app.arrClientFactory,
-				app.log,
-				(payload) => app.notificationService.notify(payload),
-				{ trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.libraryCleanup, fn) },
+					const scheduler = new CleanupScheduler(
+						app.prisma,
+						app.arrClientFactory,
+						app.log,
+						(payload) => app.notificationService.notify(payload),
+						{ trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.libraryCleanup, fn) },
+					);
+					app.decorate("cleanupScheduler", scheduler);
+
+					scheduler.start();
+					app.log.info("Library cleanup scheduler started successfully");
+				},
 			);
-			app.decorate("cleanupScheduler", scheduler);
-
-			scheduler.start();
-			app.log.info("Library cleanup scheduler started successfully");
 		});
 
 		app.addHook("onClose", async () => {
