@@ -7,8 +7,9 @@
 
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
-import { refreshJellyfinEpisodeCache } from "../lib/jellyfin/jellyfin-episode-cache-refresher.js";
 import { createJellyfinClient } from "../lib/jellyfin/jellyfin-client.js";
+import { refreshJellyfinEpisodeCache } from "../lib/jellyfin/jellyfin-episode-cache-refresher.js";
+import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const STARTUP_DELAY_MS = 6 * 60 * 1000; // 6 minutes (after jellyfin-cache populates)
@@ -26,62 +27,64 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 			}
 			isRunning = true;
 			try {
-				const instances = await app.prisma.serviceInstance.findMany({
-					where: { service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-				});
+				await app.schedulerRegistry.track(JOB_ID.jellyfinEpisodeCache, async () => {
+					const instances = await app.prisma.serviceInstance.findMany({
+						where: { service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
+					});
 
-				if (instances.length === 0) return;
+					if (instances.length === 0) return;
 
-				for (const instance of instances) {
-					try {
-						const client = createJellyfinClient(app.encryptor, instance, app.log);
-						const result = await refreshJellyfinEpisodeCache(
-							client,
-							app.prisma,
-							instance.id,
-							app.log,
-						);
-						app.log.info(
-							{ instanceId: instance.id, label: instance.label, ...result },
-							"Jellyfin episode cache refresh completed",
-						);
-
+					for (const instance of instances) {
 						try {
-							await app.prisma.cacheRefreshStatus.upsert({
-								where: {
-									instanceId_cacheType: {
+							const client = createJellyfinClient(app.encryptor, instance, app.log);
+							const result = await refreshJellyfinEpisodeCache(
+								client,
+								app.prisma,
+								instance.id,
+								app.log,
+							);
+							app.log.info(
+								{ instanceId: instance.id, label: instance.label, ...result },
+								"Jellyfin episode cache refresh completed",
+							);
+
+							try {
+								await app.prisma.cacheRefreshStatus.upsert({
+									where: {
+										instanceId_cacheType: {
+											instanceId: instance.id,
+											cacheType: "jellyfin_episode",
+										},
+									},
+									create: {
 										instanceId: instance.id,
 										cacheType: "jellyfin_episode",
+										lastRefreshedAt: new Date(),
+										lastResult: result.errors > 0 ? "error" : "success",
+										lastErrorMessage: null,
+										itemCount: result.upserted,
 									},
-								},
-								create: {
-									instanceId: instance.id,
-									cacheType: "jellyfin_episode",
-									lastRefreshedAt: new Date(),
-									lastResult: result.errors > 0 ? "error" : "success",
-									lastErrorMessage: null,
-									itemCount: result.upserted,
-								},
-								update: {
-									lastRefreshedAt: new Date(),
-									lastResult: result.errors > 0 ? "error" : "success",
-									lastErrorMessage: null,
-									itemCount: result.upserted,
-								},
-							});
-						} catch (statusErr) {
-							app.log.warn(
-								{ err: statusErr, instanceId: instance.id },
-								"Failed to update Jellyfin episode cache refresh status",
+									update: {
+										lastRefreshedAt: new Date(),
+										lastResult: result.errors > 0 ? "error" : "success",
+										lastErrorMessage: null,
+										itemCount: result.upserted,
+									},
+								});
+							} catch (statusErr) {
+								app.log.warn(
+									{ err: statusErr, instanceId: instance.id },
+									"Failed to update Jellyfin episode cache refresh status",
+								);
+							}
+						} catch (err) {
+							app.log.error(
+								{ err, instanceId: instance.id, label: instance.label },
+								"Jellyfin episode cache refresh failed for instance",
 							);
 						}
-					} catch (err) {
-						app.log.error(
-							{ err, instanceId: instance.id, label: instance.label },
-							"Jellyfin episode cache refresh failed for instance",
-						);
 					}
-				}
+				});
 			} finally {
 				isRunning = false;
 			}
@@ -108,7 +111,7 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 			"Jellyfin episode cache scheduler initialized",
 		);
 	},
-	{ name: "jellyfin-episode-cache-scheduler" },
+	{ name: "jellyfin-episode-cache-scheduler", dependencies: ["scheduler-registry"] },
 );
 
 export default jellyfinEpisodeCacheSchedulerPlugin;

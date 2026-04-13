@@ -8,6 +8,7 @@
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { getLibrarySyncScheduler } from "../lib/library-sync/index.js";
+import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 
 declare module "fastify" {
 	interface FastifyInstance {
@@ -22,6 +23,7 @@ const librarySyncSchedulerPlugin = fastifyPlugin(
 			app.log.info("Initializing library sync scheduler");
 
 			const scheduler = getLibrarySyncScheduler();
+			scheduler.setTrackTick((fn) => app.schedulerRegistry.track(JOB_ID.librarySync, fn));
 			app.decorate("librarySyncScheduler", scheduler);
 
 			// Start the scheduler
@@ -39,7 +41,7 @@ const librarySyncSchedulerPlugin = fastifyPlugin(
 	},
 	{
 		name: "library-sync-scheduler",
-		dependencies: ["prisma", "arr-client"],
+		dependencies: ["prisma", "arr-client", "scheduler-registry"],
 	},
 );
 

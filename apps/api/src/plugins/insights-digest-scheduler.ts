@@ -8,6 +8,7 @@
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { InsightsDigestScheduler } from "../lib/notifications/insights-digest.js";
+import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 
 declare module "fastify" {
 	interface FastifyInstance {
@@ -25,6 +26,7 @@ const insightsDigestSchedulerPlugin = fastifyPlugin(
 				app.log,
 				app.arrClientFactory,
 				(payload) => app.notificationService.notify(payload),
+				{ trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.insightsDigest, fn) },
 			);
 
 			app.decorate("insightsDigestScheduler", scheduler);
@@ -41,7 +43,7 @@ const insightsDigestSchedulerPlugin = fastifyPlugin(
 	},
 	{
 		name: "insights-digest-scheduler",
-		dependencies: ["prisma"],
+		dependencies: ["prisma", "scheduler-registry"],
 	},
 );
 

@@ -6,6 +6,7 @@
 
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
+import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 import { createCacheManager } from "../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher } from "../lib/trash-guides/github-fetcher.js";
 import { getGlobalRepoConfig } from "../lib/trash-guides/repo-config.js";
@@ -76,6 +77,7 @@ const trashUpdateSchedulerPlugin = fastifyPlugin(
 					repoConfigResolver,
 					deploymentExecutor: app.deploymentExecutor,
 					notifyFn: (payload) => app.notificationService.notify(payload),
+					trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.trashUpdate, fn),
 				},
 			);
 
@@ -96,7 +98,7 @@ const trashUpdateSchedulerPlugin = fastifyPlugin(
 	},
 	{
 		name: "trash-update-scheduler",
-		dependencies: ["prisma", "deployment-executor"],
+		dependencies: ["prisma", "deployment-executor", "scheduler-registry"],
 	},
 );
 

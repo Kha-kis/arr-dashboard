@@ -7,20 +7,20 @@
 
 import { createHash } from "node:crypto";
 import {
-	TRASH_CONFIG_TYPES,
 	type NamingSelectedPresets,
+	TRASH_CONFIG_TYPES,
 	type TrashNamingData,
 	type TrashQualitySize,
 	type TrashRepoConfig,
 } from "@arr/shared";
-import { z } from "zod";
-import { trashQualitySizeSchema } from "./github-schemas.js";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
+import { z } from "zod";
 import type { PrismaClient } from "../../lib/prisma.js";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { createCacheManager } from "./cache-manager.js";
 import { createTrashFetcher } from "./github-fetcher.js";
+import { trashQualitySizeSchema } from "./github-schemas.js";
 import { computeNamingHash, resolvePayload } from "./naming-deployer.js";
 import { applyQualitySizeToDefinitions } from "./quality-size-matcher.js";
 import type {
@@ -100,6 +100,7 @@ export class UpdateScheduler {
 	private notifyFn?: (
 		payload: import("../notifications/types.js").NotificationPayload,
 	) => Promise<void>;
+	private trackTick: import("../scheduler-registry/scheduler-registry.js").TickWrapper;
 
 	constructor(
 		config: SchedulerConfig,
@@ -114,6 +115,7 @@ export class UpdateScheduler {
 			notifyFn?: (
 				payload: import("../notifications/types.js").NotificationPayload,
 			) => Promise<void>;
+			trackTick?: import("../scheduler-registry/scheduler-registry.js").TickWrapper;
 		},
 	) {
 		this.config = {
@@ -129,6 +131,7 @@ export class UpdateScheduler {
 		this.repoConfigResolver = options?.repoConfigResolver;
 		this.deploymentExecutor = options?.deploymentExecutor;
 		this.notifyFn = options?.notifyFn;
+		this.trackTick = options?.trackTick ?? (<T>(fn: () => Promise<T>) => fn());
 	}
 
 	/**
@@ -182,7 +185,7 @@ export class UpdateScheduler {
 		);
 
 		// Run immediately on start
-		this.checkForUpdates().catch((error) => {
+		this.trackTick(() => this.checkForUpdates()).catch((error) => {
 			this.logger.error(
 				{ err: error instanceof Error ? error : new Error(String(error)) },
 				"Initial update check failed",
@@ -192,7 +195,7 @@ export class UpdateScheduler {
 		// Schedule periodic checks
 		const intervalMs = this.config.intervalHours * 60 * 60 * 1000;
 		this.intervalId = setInterval(() => {
-			this.checkForUpdates().catch((error) => {
+			this.trackTick(() => this.checkForUpdates()).catch((error) => {
 				this.logger.error(
 					{ err: error instanceof Error ? error : new Error(String(error)) },
 					"Scheduled update check failed",
@@ -977,6 +980,7 @@ export function createUpdateScheduler(
 		repoConfigResolver?: RepoConfigResolver;
 		deploymentExecutor?: import("./deployment-executor.js").DeploymentExecutorService;
 		notifyFn?: (payload: import("../notifications/types.js").NotificationPayload) => Promise<void>;
+		trackTick?: import("../scheduler-registry/scheduler-registry.js").TickWrapper;
 	},
 ): UpdateScheduler {
 	return new UpdateScheduler(
