@@ -452,6 +452,7 @@ export const systemKeys = {
 	settings: ["system-settings"] as const,
 	info: ["system-info"] as const,
 	logs: ["system-logs"] as const,
+	securityPosture: ["system-security-posture"] as const,
 };
 
 /* -------------------------------------------------------------------------- */

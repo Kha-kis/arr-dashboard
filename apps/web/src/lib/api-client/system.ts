@@ -91,7 +91,9 @@ export function fetchLogFiles(): Promise<LogFilesResponse> {
 	return apiRequest<LogFilesResponse>("/api/system/logs");
 }
 
-export function updateSystemSettings(data: UpdateSystemSettingsPayload): Promise<SystemSettingsResponse> {
+export function updateSystemSettings(
+	data: UpdateSystemSettingsPayload,
+): Promise<SystemSettingsResponse> {
 	return apiRequest<SystemSettingsResponse>("/api/system/settings", {
 		method: "PUT",
 		json: data,
@@ -120,6 +122,50 @@ export function fetchValidationQuarantine(): Promise<QuarantineResponse> {
 
 export function clearValidationQuarantine(): Promise<unknown> {
 	return apiRequest("/api/system/validation-quarantine", { method: "DELETE" });
+}
+
+export function fetchSecurityPosture(): Promise<SecurityPostureResponse> {
+	return apiRequest<SecurityPostureResponse>("/api/system/security-posture");
+}
+
+// ============================================================================
+// Security Posture Types
+// ============================================================================
+
+export type SecuritySeverity = "healthy" | "warning" | "misconfigured";
+
+export interface SecurityCheck {
+	id: string;
+	label: string;
+	detail: string;
+	severity: SecuritySeverity;
+	remediation?: string;
+}
+
+export interface SecurityPosture {
+	overall: SecuritySeverity;
+	checks: SecurityCheck[];
+	effective: {
+		nodeEnv: "development" | "test" | "production";
+		trustProxy: boolean;
+		secureCookies: boolean;
+		sessionTtlHours: number;
+		sessionCookieName: string;
+		passwordPolicy: "strict" | "relaxed";
+		appUrl: string;
+	};
+	auth: {
+		passwordEnabled: boolean;
+		passwordUserCount: number;
+		oidcEnabled: boolean;
+		passkeyCount: number;
+	};
+	capturedAt: string;
+}
+
+export interface SecurityPostureResponse {
+	success: boolean;
+	data: SecurityPosture;
 }
 
 // ============================================================================
