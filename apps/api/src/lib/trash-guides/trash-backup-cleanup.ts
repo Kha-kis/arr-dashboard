@@ -14,6 +14,10 @@
 
 import type { FastifyBaseLogger } from "fastify";
 import type { PrismaClient } from "../../lib/prisma.js";
+import {
+	passthroughTickWrapper,
+	type TickWrapper,
+} from "../scheduler-registry/scheduler-registry.js";
 
 // Run cleanup every hour
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
@@ -27,11 +31,15 @@ export interface CleanupStats {
 export class TrashBackupCleanupService {
 	private intervalId: NodeJS.Timeout | null = null;
 	private isRunning = false;
+	private trackTick: TickWrapper;
 
 	constructor(
 		private prisma: PrismaClient,
 		private logger: FastifyBaseLogger,
-	) {}
+		options?: { trackTick?: TickWrapper },
+	) {
+		this.trackTick = options?.trackTick ?? passthroughTickWrapper;
+	}
 
 	/**
 	 * Start the cleanup scheduler
@@ -45,13 +53,13 @@ export class TrashBackupCleanupService {
 		this.logger.info("Starting trash backup cleanup scheduler");
 
 		// Run immediately on startup
-		this.runCleanup().catch((error) => {
+		this.trackTick(() => this.runCleanup()).catch((error) => {
 			this.logger.error({ err: error }, "Failed to run initial trash backup cleanup");
 		});
 
 		// Then run periodically
 		this.intervalId = setInterval(() => {
-			this.runCleanup().catch((error) => {
+			this.trackTick(() => this.runCleanup()).catch((error) => {
 				this.logger.error({ err: error }, "Failed to run scheduled trash backup cleanup");
 			});
 		}, CLEANUP_INTERVAL_MS);
@@ -255,6 +263,7 @@ export class TrashBackupCleanupService {
 export function createTrashBackupCleanupService(
 	prisma: PrismaClient,
 	logger: FastifyBaseLogger,
+	options?: { trackTick?: TickWrapper },
 ): TrashBackupCleanupService {
-	return new TrashBackupCleanupService(prisma, logger);
+	return new TrashBackupCleanupService(prisma, logger, options);
 }

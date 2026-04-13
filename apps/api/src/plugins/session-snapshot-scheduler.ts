@@ -17,17 +17,18 @@
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { createJellyfinClient } from "../lib/jellyfin/jellyfin-client.js";
-import type { TautulliSessionItem } from "../lib/tautulli/tautulli-client.js";
 import { createPlexClient } from "../lib/plex/plex-client.js";
+import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
+import type { TautulliSessionItem } from "../lib/tautulli/tautulli-client.js";
 import { createTautulliClient } from "../lib/tautulli/tautulli-client.js";
-import {
-	classifySessionDecisions,
-	computeLanWanAttribution,
-} from "./lib/session-snapshot-helpers.js";
 import {
 	buildTautulliSessionMap,
 	enrichSessionsWithTautulli,
 } from "./lib/session-enrichment-helpers.js";
+import {
+	classifySessionDecisions,
+	computeLanWanAttribution,
+} from "./lib/session-snapshot-helpers.js";
 
 const INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const STARTUP_DELAY_MS = 60_000; // 60 seconds
@@ -345,7 +346,10 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 						url: "/statistics",
 					})
 					.catch((err) =>
-						app.log.warn({ err, eventType: "JELLYFIN_CONCURRENT_PEAK" }, "Non-fatal: notification delivery failed"),
+						app.log.warn(
+							{ err, eventType: "JELLYFIN_CONCURRENT_PEAK" },
+							"Non-fatal: notification delivery failed",
+						),
 					);
 			}
 
@@ -359,7 +363,10 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 						url: "/statistics",
 					})
 					.catch((err) =>
-						app.log.warn({ err, eventType: "JELLYFIN_TRANSCODE_HEAVY" }, "Non-fatal: notification delivery failed"),
+						app.log.warn(
+							{ err, eventType: "JELLYFIN_TRANSCODE_HEAVY" },
+							"Non-fatal: notification delivery failed",
+						),
 					);
 			}
 
@@ -374,7 +381,10 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 							url: "/statistics",
 						})
 						.catch((err) =>
-							app.log.warn({ err, eventType: "JELLYFIN_NEW_DEVICE" }, "Non-fatal: notification delivery failed"),
+							app.log.warn(
+								{ err, eventType: "JELLYFIN_NEW_DEVICE" },
+								"Non-fatal: notification delivery failed",
+							),
 						);
 				}
 			}
@@ -431,15 +441,20 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 							return {
 								user: s.userName ?? "Unknown",
 								title: s.nowPlayingItem?.name ?? "Unknown",
-								videoDecision: s.transcodingInfo && !s.transcodingInfo.isVideoDirect ? "transcode" : s.playMethod ?? "direct play",
+								videoDecision:
+									s.transcodingInfo && !s.transcodingInfo.isVideoDirect
+										? "transcode"
+										: (s.playMethod ?? "direct play"),
 								bandwidth: bw,
 								state: s.isPaused ? "paused" : "playing",
-								audioDecision: s.transcodingInfo && !s.transcodingInfo.isAudioDirect ? "transcode" : "direct",
+								audioDecision:
+									s.transcodingInfo && !s.transcodingInfo.isAudioDirect ? "transcode" : "direct",
 								videoCodec: s.transcodingInfo?.videoCodec ?? null,
 								audioCodec: s.transcodingInfo?.audioCodec ?? null,
-								videoResolution: s.transcodingInfo?.width && s.transcodingInfo?.height
-									? `${s.transcodingInfo.width}x${s.transcodingInfo.height}`
-									: null,
+								videoResolution:
+									s.transcodingInfo?.width && s.transcodingInfo?.height
+										? `${s.transcodingInfo.width}x${s.transcodingInfo.height}`
+										: null,
 								platform,
 								player: s.deviceName ?? null,
 							};
@@ -478,7 +493,9 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 						tickTotalSessions,
 						tickPlatforms,
 						cachedKnownPlatforms ?? new Set(),
-					).catch((err) => app.log.warn({ err }, "Jellyfin session snapshot: notification check failed"));
+					).catch((err) =>
+						app.log.warn({ err }, "Jellyfin session snapshot: notification check failed"),
+					);
 
 					// Merge current platforms into known cache
 					if (cachedKnownPlatforms) {
@@ -504,23 +521,25 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 			}
 		}
 
+		// Combined tick: both Plex and Jellyfin captures form one scheduler tick
+		// from the operator's perspective. The registry sees one run per interval.
+		const runSnapshotTick = () =>
+			app.schedulerRegistry.track(JOB_ID.sessionSnapshot, async () => {
+				await captureSnapshots();
+				await captureJellyfinSnapshots();
+			});
+
 		app.addHook("onReady", async () => {
 			app.log.info("Session snapshot scheduler initialized (5m interval, 60s startup delay)");
 
 			timeoutHandle = setTimeout(() => {
-				captureSnapshots().catch((err) => {
+				runSnapshotTick().catch((err) => {
 					app.log.error({ err }, "Failed during initial session snapshot capture");
-				});
-				captureJellyfinSnapshots().catch((err) => {
-					app.log.error({ err }, "Failed during initial Jellyfin session snapshot capture");
 				});
 
 				snapshotIntervalHandle = setInterval(() => {
-					captureSnapshots().catch((err) => {
+					runSnapshotTick().catch((err) => {
 						app.log.error({ err }, "Failed during scheduled session snapshot capture");
-					});
-					captureJellyfinSnapshots().catch((err) => {
-						app.log.error({ err }, "Failed during scheduled Jellyfin session snapshot capture");
 					});
 				}, INTERVAL_MS);
 
@@ -542,7 +561,7 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 	},
 	{
 		name: "session-snapshot-scheduler",
-		dependencies: ["prisma", "security"],
+		dependencies: ["prisma", "security", "scheduler-registry"],
 	},
 );
 

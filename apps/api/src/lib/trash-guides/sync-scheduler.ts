@@ -7,11 +7,15 @@
 
 import type { FastifyBaseLogger } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
-import type { DeploymentExecutorService } from "./deployment-executor.js";
 import type { NotificationPayload } from "../notifications/types.js";
 import type { PrismaClient } from "../prisma.js";
+import {
+	passthroughTickWrapper,
+	type TickWrapper,
+} from "../scheduler-registry/scheduler-registry.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { createCacheManager } from "./cache-manager.js";
+import type { DeploymentExecutorService } from "./deployment-executor.js";
 import { createTrashFetcher } from "./github-fetcher.js";
 import { getGlobalRepoConfig } from "./repo-config.js";
 import { createSyncEngine } from "./sync-engine.js";
@@ -23,6 +27,7 @@ const CHECK_INTERVAL_MS = 60 * 1000; // Check every minute
 export class TrashSyncScheduler {
 	private intervalId: NodeJS.Timeout | null = null;
 	private isRunning = false;
+	private trackTick: TickWrapper;
 
 	constructor(
 		private prisma: PrismaClient,
@@ -30,7 +35,10 @@ export class TrashSyncScheduler {
 		private deploymentExecutor: DeploymentExecutorService,
 		private arrClientFactory: ArrClientFactory,
 		private notifyFn?: (payload: NotificationPayload) => Promise<void>,
-	) {}
+		options?: { trackTick?: TickWrapper },
+	) {
+		this.trackTick = options?.trackTick ?? passthroughTickWrapper;
+	}
 
 	start() {
 		if (this.intervalId) {
@@ -41,13 +49,13 @@ export class TrashSyncScheduler {
 		this.logger.info("Starting TRaSH sync scheduler");
 
 		// Run immediately on startup (catches overdue schedules after restart)
-		this.checkAndRunSchedules().catch((error) => {
+		this.trackTick(() => this.checkAndRunSchedules()).catch((error) => {
 			this.logger.error({ err: error }, "Failed initial TRaSH sync schedule check");
 		});
 
 		// Then check every minute
 		this.intervalId = setInterval(() => {
-			this.checkAndRunSchedules().catch((error) => {
+			this.trackTick(() => this.checkAndRunSchedules()).catch((error) => {
 				this.logger.error({ err: error }, "Failed TRaSH sync schedule check");
 			});
 		}, CHECK_INTERVAL_MS);
@@ -85,10 +93,7 @@ export class TrashSyncScheduler {
 
 			if (dueSchedules.length === 0) return;
 
-			this.logger.info(
-				{ count: dueSchedules.length },
-				"Processing due TRaSH sync schedules",
-			);
+			this.logger.info({ count: dueSchedules.length }, "Processing due TRaSH sync schedules");
 
 			for (const schedule of dueSchedules) {
 				await this.executeSchedule(schedule);

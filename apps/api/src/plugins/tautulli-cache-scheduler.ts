@@ -11,6 +11,7 @@
 
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
+import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 import { refreshTautulliCache } from "../lib/tautulli/tautulli-cache-refresher.js";
 import { createTautulliClient } from "../lib/tautulli/tautulli-client.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
@@ -31,120 +32,132 @@ const tautulliCacheSchedulerPlugin = fastifyPlugin(
 			}
 			isRunning = true;
 			try {
-				const instances = await app.prisma.serviceInstance.findMany({
-					where: { service: "TAUTULLI", enabled: true },
-				});
+				await app.schedulerRegistry.track(JOB_ID.tautulliCache, async () => {
+					const instances = await app.prisma.serviceInstance.findMany({
+						where: { service: "TAUTULLI", enabled: true },
+					});
 
-				if (instances.length === 0) {
-					app.log.debug("Tautulli cache refresh: no enabled Tautulli instances, skipping");
-					return;
-				}
+					if (instances.length === 0) {
+						app.log.debug("Tautulli cache refresh: no enabled Tautulli instances, skipping");
+						return;
+					}
 
-				app.log.info(
-					{ count: instances.length },
-					"Starting Tautulli cache refresh for all instances",
-				);
+					app.log.info(
+						{ count: instances.length },
+						"Starting Tautulli cache refresh for all instances",
+					);
 
-				for (const instance of instances) {
-					try {
-						const client = createTautulliClient(app.encryptor, instance, app.log);
-						const result = await refreshTautulliCache(client, app.prisma, instance.id, app.log);
-						app.log.info(
-							{ instanceId: instance.id, label: instance.label, ...result },
-							"Tautulli cache refresh completed for instance",
-						);
-
-						// Track refresh status — separate try so a DB failure
-						// doesn't masquerade as a refresh failure in the outer catch
+					for (const instance of instances) {
 						try {
-							await app.prisma.cacheRefreshStatus.upsert({
-								where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "tautulli" } },
-								create: {
-									instanceId: instance.id,
-									cacheType: "tautulli",
-									lastRefreshedAt: new Date(),
-									lastResult: result.errors > 0 ? "error" : "success",
-									lastErrorMessage: result.errorMessages.length > 0 ? result.errorMessages.slice(0, 3).join("; ").slice(0, 200) : null,
-									itemCount: result.upserted,
-								},
-								update: {
-									lastRefreshedAt: new Date(),
-									lastResult: result.errors > 0 ? "error" : "success",
-									lastErrorMessage: result.errorMessages.length > 0 ? result.errorMessages.slice(0, 3).join("; ").slice(0, 200) : null,
-									itemCount: result.upserted,
-								},
-							});
-						} catch (trackErr) {
-							app.log.warn(
-								{ err: trackErr, instanceId: instance.id },
-								"Tautulli cache refreshed successfully but failed to record status",
+							const client = createTautulliClient(app.encryptor, instance, app.log);
+							const result = await refreshTautulliCache(client, app.prisma, instance.id, app.log);
+							app.log.info(
+								{ instanceId: instance.id, label: instance.label, ...result },
+								"Tautulli cache refresh completed for instance",
 							);
-						}
-					} catch (err) {
-						app.log.error(
-							{ err, instanceId: instance.id, label: instance.label },
-							"Tautulli cache refresh failed for instance",
-						);
 
-						// Track failure
-						await app.prisma.cacheRefreshStatus
-							.upsert({
-								where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "tautulli" } },
-								create: {
-									instanceId: instance.id,
-									cacheType: "tautulli",
-									lastRefreshedAt: new Date(),
-									lastResult: "error",
-									lastErrorMessage: getErrorMessage(err, "Unknown error"),
-									itemCount: 0,
-								},
-								update: {
-									lastRefreshedAt: new Date(),
-									lastResult: "error",
-									lastErrorMessage: getErrorMessage(err, "Unknown error"),
-								},
-							})
-							.catch((trackErr) => {
-								app.log.warn(
-									{
-										err: trackErr,
-										originalErr: getErrorMessage(err, "Unknown error"),
-										instanceId: instance.id,
+							// Track refresh status — separate try so a DB failure
+							// doesn't masquerade as a refresh failure in the outer catch
+							try {
+								await app.prisma.cacheRefreshStatus.upsert({
+									where: {
+										instanceId_cacheType: { instanceId: instance.id, cacheType: "tautulli" },
 									},
-									"Failed to record cache refresh failure status",
+									create: {
+										instanceId: instance.id,
+										cacheType: "tautulli",
+										lastRefreshedAt: new Date(),
+										lastResult: result.errors > 0 ? "error" : "success",
+										lastErrorMessage:
+											result.errorMessages.length > 0
+												? result.errorMessages.slice(0, 3).join("; ").slice(0, 200)
+												: null,
+										itemCount: result.upserted,
+									},
+									update: {
+										lastRefreshedAt: new Date(),
+										lastResult: result.errors > 0 ? "error" : "success",
+										lastErrorMessage:
+											result.errorMessages.length > 0
+												? result.errorMessages.slice(0, 3).join("; ").slice(0, 200)
+												: null,
+										itemCount: result.upserted,
+									},
+								});
+							} catch (trackErr) {
+								app.log.warn(
+									{ err: trackErr, instanceId: instance.id },
+									"Tautulli cache refreshed successfully but failed to record status",
 								);
+							}
+						} catch (err) {
+							app.log.error(
+								{ err, instanceId: instance.id, label: instance.label },
+								"Tautulli cache refresh failed for instance",
+							);
+
+							// Track failure
+							await app.prisma.cacheRefreshStatus
+								.upsert({
+									where: {
+										instanceId_cacheType: { instanceId: instance.id, cacheType: "tautulli" },
+									},
+									create: {
+										instanceId: instance.id,
+										cacheType: "tautulli",
+										lastRefreshedAt: new Date(),
+										lastResult: "error",
+										lastErrorMessage: getErrorMessage(err, "Unknown error"),
+										itemCount: 0,
+									},
+									update: {
+										lastRefreshedAt: new Date(),
+										lastResult: "error",
+										lastErrorMessage: getErrorMessage(err, "Unknown error"),
+									},
+								})
+								.catch((trackErr) => {
+									app.log.warn(
+										{
+											err: trackErr,
+											originalErr: getErrorMessage(err, "Unknown error"),
+											instanceId: instance.id,
+										},
+										"Failed to record cache refresh failure status",
+									);
+								});
+						}
+					}
+
+					// Check for stale caches (>12h since last successful refresh)
+					const staleThreshold = new Date(Date.now() - 12 * 60 * 60 * 1000);
+					const staleEntries = await app.prisma.cacheRefreshStatus.findMany({
+						where: {
+							cacheType: "tautulli",
+							lastRefreshedAt: { lt: staleThreshold },
+						},
+						include: { instance: { select: { label: true } } },
+					});
+					if (staleEntries.length > 0) {
+						const names = staleEntries
+							.map((e) => e.instance.label.replace(/[<>&"']/g, "").slice(0, 50))
+							.join(", ");
+						app.log.warn(
+							{ staleInstances: names },
+							"Tautulli cache data is stale (>12h since last refresh)",
+						);
+						await app.notificationService
+							.notify({
+								eventType: "CACHE_REFRESH_STALE",
+								title: "Tautulli cache data is stale",
+								body: `Cache has not refreshed in over 12 hours for: ${names}`,
+								url: "/settings",
+							})
+							.catch((notifyErr) => {
+								app.log.warn({ err: notifyErr }, "Failed to send stale-cache notification");
 							});
 					}
-				}
-
-				// Check for stale caches (>12h since last successful refresh)
-				const staleThreshold = new Date(Date.now() - 12 * 60 * 60 * 1000);
-				const staleEntries = await app.prisma.cacheRefreshStatus.findMany({
-					where: {
-						cacheType: "tautulli",
-						lastRefreshedAt: { lt: staleThreshold },
-					},
-					include: { instance: { select: { label: true } } },
 				});
-				if (staleEntries.length > 0) {
-					const names = staleEntries
-						.map((e) => e.instance.label.replace(/[<>&"']/g, "").slice(0, 50))
-						.join(", ");
-					app.log.warn(
-						{ staleInstances: names },
-						"Tautulli cache data is stale (>12h since last refresh)",
-					);
-					await app.notificationService
-						.notify({
-							eventType: "CACHE_REFRESH_STALE",
-							title: "Tautulli cache data is stale",
-							body: `Cache has not refreshed in over 12 hours for: ${names}`,
-							url: "/settings",
-						})
-						.catch((notifyErr) => {
-							app.log.warn({ err: notifyErr }, "Failed to send stale-cache notification");
-						});
-				}
 			} catch (err) {
 				app.log.error({ err }, "Tautulli cache scheduler: failed to query instances");
 			} finally {
@@ -177,7 +190,7 @@ const tautulliCacheSchedulerPlugin = fastifyPlugin(
 	},
 	{
 		name: "tautulli-cache-scheduler",
-		dependencies: ["prisma", "security", "notification-service"],
+		dependencies: ["prisma", "security", "notification-service", "scheduler-registry"],
 	},
 );
 

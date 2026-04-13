@@ -1,5 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import { loggers } from "../logger.js";
+import {
+	passthroughTickWrapper,
+	type TickWrapper,
+} from "../scheduler-registry/scheduler-registry.js";
 import { withTimeout } from "../utils/delay.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import {
@@ -37,6 +41,15 @@ class QueueCleanerScheduler {
 	private app: FastifyInstance | null = null;
 	private running = false;
 	private intervalId: NodeJS.Timeout | null = null;
+	private trackTick: TickWrapper = passthroughTickWrapper;
+
+	/**
+	 * Wire an optional tick wrapper (used by the plugin to route ticks
+	 * through the SchedulerRegistry). Safe to call multiple times.
+	 */
+	setTrackTick(trackTick: TickWrapper): void {
+		this.trackTick = trackTick;
+	}
 	private lastCleanTimes: Map<string, Date> = new Map();
 	// Track instances currently being cleaned to prevent race conditions
 	private cleaningInProgress: Set<string> = new Set();
@@ -112,7 +125,7 @@ class QueueCleanerScheduler {
 		this.running = true;
 
 		this.intervalId = setInterval(() => {
-			this.tick()
+			this.trackTick(() => this.tick())
 				.then(() => {
 					// Success - reset failure tracking
 					this.consecutiveTickFailures = 0;
