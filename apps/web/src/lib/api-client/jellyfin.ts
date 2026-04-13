@@ -33,6 +33,8 @@ export interface JellyfinServerIdentity {
 	version: string;
 	serverName: string;
 	operatingSystem: string;
+	baseUrl: string;
+	service: "jellyfin" | "emby";
 }
 
 /** Identity route returns a flat array (not wrapped in { servers }) */

@@ -68,9 +68,9 @@ export function WatchedMonitoredPanel({
 	const items = isDismissed
 		? allItems.filter((i) => !isDismissed(i.instanceId, i.arrItemId))
 		: allItems;
-	const hasPlexData = data?.data?.hasPlexData ?? false;
+	const hasWatchData = data?.data?.hasWatchData ?? data?.data?.hasPlexData ?? false;
 
-	if (isLoading || items.length === 0 || !hasPlexData) return null;
+	if (isLoading || items.length === 0 || !hasWatchData) return null;
 
 	return (
 		<div ref={panelRef} className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-sm overflow-hidden">
@@ -103,7 +103,7 @@ export function WatchedMonitoredPanel({
 			{expanded && (
 				<div className="border-t border-border/20 px-4 py-3 space-y-2">
 					<p className="text-xs text-muted-foreground mb-3">
-						Movies and ended series with Plex plays that are still monitored. Continuing series are excluded. Sorted by watch count.
+						Movies and ended series with watch history that are still monitored. Continuing series are excluded. Sorted by watch count.
 					</p>
 					{items.map((item) => (
 						<WatchedRow

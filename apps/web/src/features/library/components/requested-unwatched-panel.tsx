@@ -47,9 +47,9 @@ export function RequestedUnwatchedPanel({
 		? allItems.filter((i) => !isDismissed(i.instanceId, i.arrItemId))
 		: allItems;
 	const hasSeerrData = data?.data?.hasSeerrData ?? false;
-	const hasPlexData = data?.data?.hasPlexData ?? false;
+	const hasWatchData = data?.data?.hasWatchData ?? data?.data?.hasPlexData ?? false;
 
-	if (isLoading || items.length === 0 || !hasSeerrData || !hasPlexData) return null;
+	if (isLoading || items.length === 0 || !hasSeerrData || !hasWatchData) return null;
 
 	return (
 		<div ref={panelRef} className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-sm overflow-hidden">
@@ -82,7 +82,7 @@ export function RequestedUnwatchedPanel({
 			{expanded && (
 				<div className="border-t border-border/20 px-4 py-3 space-y-2">
 					<p className="text-xs text-muted-foreground mb-3">
-						Items requested via Seerr that are available but have zero Plex plays after 7+ days.
+						Items requested via Seerr that are available but have never been watched after 7+ days.
 					</p>
 					{items.map((item) => (
 						<RequestedRow

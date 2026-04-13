@@ -20,6 +20,7 @@ interface RequestedUnwatchedResponse {
 		items: RequestedUnwatchedItem[];
 		hasSeerrData: boolean;
 		hasPlexData: boolean;
+		hasWatchData: boolean;
 	};
 }
 
