@@ -10,7 +10,7 @@ import type {
 import { Library as LibraryIcon } from "lucide-react";
 import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
 import { Pagination } from "../../../components/ui";
-import { buildPlexUrl } from "../lib/library-utils";
+import { buildJellyfinUrl, buildPlexUrl } from "../lib/library-utils";
 
 /**
  * Props for LibraryCard component (passthrough)
@@ -41,6 +41,8 @@ interface LibraryCardProps {
 	plexUserRating?: number | null;
 	seriesProgress?: { watched: number; total: number; percent: number } | null;
 	plexUrl?: string | null;
+	/** Label for the media server link (e.g., "Plex", "Jellyfin", "Emby") */
+	mediaServerLabel?: string;
 }
 
 /**
@@ -108,12 +110,14 @@ interface LibraryContentProps {
 	isSyncing?: boolean;
 	/** Seerr enrichment map keyed by "movie:{tmdbId}" or "tv:{tmdbId}" */
 	enrichmentMap?: Record<string, LibraryEnrichmentItem> | null;
-	/** Plex watch enrichment map keyed by "movie:{tmdbId}" or "series:{tmdbId}" */
+	/** Watch enrichment map keyed by "movie:{tmdbId}" or "series:{tmdbId}" (merged from Plex + Jellyfin/Emby) */
 	watchEnrichmentMap?: Record<string, WatchEnrichmentItem> | null;
-	/** Plex series progress map keyed by TMDB ID */
+	/** Series progress map keyed by TMDB ID (merged from Plex + Jellyfin/Emby) */
 	seriesProgressMap?: Record<number, SeriesProgressItem> | null;
 	/** Map of Plex instanceId → machineId for building deep links */
 	plexMachineIdMap?: Map<string, string>;
+	/** Map of Jellyfin/Emby instanceId → server info for building deep links */
+	jellyfinServerMap?: Map<string, { baseUrl: string; service: "jellyfin" | "emby"; serverId: string }>;
 }
 
 /**
@@ -158,6 +162,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 	watchEnrichmentMap,
 	seriesProgressMap,
 	plexMachineIdMap,
+	jellyfinServerMap,
 }) => {
 	/** Lookup enrichment for a library item by its tmdbId + type */
 	const getEnrichment = (item: LibraryItem) => {
@@ -173,14 +178,35 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 		return watchEnrichmentMap[key];
 	};
 
-	/** Build a Plex deep link URL for a library item (if Plex data available) */
-	const getPlexUrl = (item: LibraryItem): string | null => {
-		if (!plexMachineIdMap || plexMachineIdMap.size === 0) return null;
+	/** Build a media server deep link URL for a library item (Plex or Jellyfin/Emby) */
+	const getMediaServerUrl = (item: LibraryItem): string | null => {
 		const watchData = getWatchEnrichment(item);
-		if (!watchData?.ratingKey || !watchData.instanceId) return null;
-		const machineId = plexMachineIdMap.get(watchData.instanceId);
-		if (!machineId) return null;
-		return buildPlexUrl(machineId, watchData.ratingKey);
+		if (!watchData?.instanceId) return null;
+		// Try Plex
+		if (watchData.ratingKey && plexMachineIdMap && plexMachineIdMap.size > 0) {
+			const machineId = plexMachineIdMap.get(watchData.instanceId);
+			if (machineId) return buildPlexUrl(machineId, watchData.ratingKey);
+		}
+		// Try Jellyfin/Emby
+		if (watchData.jellyfinId && jellyfinServerMap && jellyfinServerMap.size > 0) {
+			const jfServer = jellyfinServerMap.get(watchData.instanceId);
+			if (jfServer) return buildJellyfinUrl(jfServer.baseUrl, watchData.jellyfinId, jfServer.service, jfServer.serverId);
+		}
+		return null;
+	};
+
+	/** Get the media server label for a library item's watch source */
+	const getMediaServerLabel = (item: LibraryItem): string | undefined => {
+		const watchData = getWatchEnrichment(item);
+		if (!watchData?.instanceId) return undefined;
+		// Check Jellyfin/Emby first (distinguish by service type)
+		if (jellyfinServerMap && jellyfinServerMap.has(watchData.instanceId)) {
+			const jf = jellyfinServerMap.get(watchData.instanceId)!;
+			return jf.service === "emby" ? "Emby" : "Jellyfin";
+		}
+		// Plex
+		if (plexMachineIdMap && plexMachineIdMap.has(watchData.instanceId)) return "Plex";
+		return undefined;
 	};
 
 	/** Lookup Plex series progress for a library item */
@@ -276,7 +302,8 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 								watchedByUsers={watchData?.watchedByUsers}
 								plexUserRating={watchData?.userRating}
 								seriesProgress={getSeriesProgress(item)}
-								plexUrl={getPlexUrl(item)}
+								plexUrl={getMediaServerUrl(item)}
+								mediaServerLabel={getMediaServerLabel(item)}
 							/>
 						);
 					})}
@@ -311,7 +338,8 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											watchedByUsers={watchData?.watchedByUsers}
 											plexUserRating={watchData?.userRating}
 											seriesProgress={getSeriesProgress(item)}
-											plexUrl={getPlexUrl(item)}
+											plexUrl={getMediaServerUrl(item)}
+											mediaServerLabel={getMediaServerLabel(item)}
 										/>
 									);
 								})}
@@ -347,7 +375,8 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											watchedByUsers={watchData?.watchedByUsers}
 											plexUserRating={watchData?.userRating}
 											seriesProgress={getSeriesProgress(item)}
-											plexUrl={getPlexUrl(item)}
+											plexUrl={getMediaServerUrl(item)}
+											mediaServerLabel={getMediaServerLabel(item)}
 										/>
 									);
 								})}
@@ -384,7 +413,8 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											watchedByUsers={watchData?.watchedByUsers}
 											plexUserRating={watchData?.userRating}
 											seriesProgress={getSeriesProgress(item)}
-											plexUrl={getPlexUrl(item)}
+											plexUrl={getMediaServerUrl(item)}
+											mediaServerLabel={getMediaServerLabel(item)}
 										/>
 									);
 								})}
@@ -421,7 +451,8 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											watchedByUsers={watchData?.watchedByUsers}
 											plexUserRating={watchData?.userRating}
 											seriesProgress={getSeriesProgress(item)}
-											plexUrl={getPlexUrl(item)}
+											plexUrl={getMediaServerUrl(item)}
+											mediaServerLabel={getMediaServerLabel(item)}
 										/>
 									);
 								})}

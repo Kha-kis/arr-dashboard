@@ -59,7 +59,7 @@ export function DiskWastePanel({
 		? allItems.filter((i) => !isDismissed(i.instanceId, i.arrItemId))
 		: allItems;
 	const totalWasted = items.reduce((sum, r) => sum + r.sizeOnDisk, 0);
-	const hasPlexData = data?.data?.hasPlexData ?? false;
+	const hasWatchData = data?.data?.hasWatchData ?? data?.data?.hasPlexData ?? false;
 
 	const handleUnmonitor = async (item: DiskWasteItem) => {
 		if (!item.monitored) return;
@@ -80,8 +80,8 @@ export function DiskWastePanel({
 		}
 	};
 
-	// Don't render if no items or still loading
-	if (isLoading || items.length === 0) return null;
+	// Don't render if no items, still loading, or no watch server connected
+	if (isLoading || items.length === 0 || !hasWatchData) return null;
 
 	return (
 		<div ref={panelRef} className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-sm overflow-hidden">
@@ -105,8 +105,8 @@ export function DiskWastePanel({
 							{items.length} unwatched item{items.length !== 1 ? "s" : ""} using{" "}
 							{formatSize(totalWasted)}
 						</span>
-						{!hasPlexData && (
-							<span className="text-xs text-muted-foreground ml-2">(no Plex connected)</span>
+						{!hasWatchData && (
+							<span className="text-xs text-muted-foreground ml-2">(no media server connected)</span>
 						)}
 					</div>
 				</div>
@@ -122,7 +122,7 @@ export function DiskWastePanel({
 			{expanded && (
 				<div className="border-t border-border/20 px-4 py-3 space-y-2">
 					<p className="text-xs text-muted-foreground mb-3">
-						Largest library items ({">"}1 GB) added over 30 days ago with zero Plex plays. Sorted by size.
+						Largest library items ({">"}1 GB) added over 30 days ago that have never been watched. Sorted by size.
 					</p>
 					{items.map((item) => (
 						<DiskWasteRow

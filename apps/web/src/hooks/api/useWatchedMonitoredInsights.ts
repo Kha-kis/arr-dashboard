@@ -19,6 +19,7 @@ interface WatchedMonitoredResponse {
 	data: {
 		items: WatchedMonitoredItem[];
 		hasPlexData: boolean;
+		hasWatchData: boolean;
 	};
 }
 

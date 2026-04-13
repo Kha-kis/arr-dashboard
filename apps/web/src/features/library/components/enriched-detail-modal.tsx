@@ -84,8 +84,10 @@ export interface EnrichedDetailModalProps {
 	} | null;
 	/** Plex user rating (0-10 scale, null if not rated) */
 	userRating?: number | null;
-	/** Plex deep link URL for "Watch in Plex" */
+	/** Media server deep link URL */
 	plexUrl?: string | null;
+	/** Label for the media server link (e.g., "Plex", "Jellyfin", "Emby") */
+	mediaServerLabel?: string;
 }
 
 export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
@@ -99,6 +101,7 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 	plexData,
 	userRating,
 	plexUrl,
+	mediaServerLabel,
 }) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const focusTrapRef = useFocusTrap<HTMLDivElement>(true, onClose);
@@ -385,7 +388,7 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 									<span className="text-sm font-semibold" style={{ color: RATING_COLOR }}>
 										{userRating.toFixed(1)}
 									</span>
-									<span className="text-xs text-muted-foreground">Your Plex Rating</span>
+									<span className="text-xs text-muted-foreground">Your Rating</span>
 								</div>
 							)}
 
@@ -1012,6 +1015,7 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 						tvdbId={item.remoteIds?.tvdbId}
 						mediaType={isMovie ? "movie" : "tv"}
 						plexUrl={plexUrl}
+						mediaServerLabel={mediaServerLabel}
 					/>
 
 					{/* Recommendations */}

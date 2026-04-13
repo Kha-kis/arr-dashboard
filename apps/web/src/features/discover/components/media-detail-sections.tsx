@@ -232,6 +232,7 @@ interface ExternalLinksSectionProps {
 	tvdbId?: number | string | null;
 	mediaType: "movie" | "tv";
 	plexUrl?: string | null;
+	mediaServerLabel?: string;
 }
 
 /**
@@ -245,10 +246,12 @@ export const ExternalLinksSection: React.FC<ExternalLinksSectionProps> = ({
 	tvdbId,
 	mediaType,
 	plexUrl,
+	mediaServerLabel,
 }) => {
 	const { gradient: themeGradient } = useThemeGradient();
 
 	if (!tmdbId && !imdbId && !tvdbId && !plexUrl) return null;
+	const watchLabel = mediaServerLabel ?? "Plex";
 
 	const btnClass =
 		"inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:opacity-80";
@@ -304,21 +307,28 @@ export const ExternalLinksSection: React.FC<ExternalLinksSectionProps> = ({
 						TVDB
 					</button>
 				)}
-				{plexUrl && (
-					<button
-						type="button"
-						className={btnClass}
-						style={{
-							backgroundColor: "rgba(229, 160, 13, 0.1)",
-							border: "1px solid rgba(229, 160, 13, 0.3)",
-							color: "#e5a00d",
-						}}
-						onClick={() => safeOpenUrl(plexUrl)}
-					>
-						<ExternalLink className="h-3.5 w-3.5" />
-						Watch in Plex
-					</button>
-				)}
+				{plexUrl && (() => {
+					const watchColors = watchLabel === "Jellyfin"
+						? { bg: "rgba(0, 164, 220, 0.1)", border: "rgba(0, 164, 220, 0.3)", text: "#00a4dc" }
+						: watchLabel === "Emby"
+							? { bg: "rgba(82, 181, 75, 0.1)", border: "rgba(82, 181, 75, 0.3)", text: "#52b54b" }
+							: { bg: "rgba(229, 160, 13, 0.1)", border: "rgba(229, 160, 13, 0.3)", text: "#e5a00d" };
+					return (
+						<button
+							type="button"
+							className={btnClass}
+							style={{
+								backgroundColor: watchColors.bg,
+								border: `1px solid ${watchColors.border}`,
+								color: watchColors.text,
+							}}
+							onClick={() => safeOpenUrl(plexUrl)}
+						>
+							<ExternalLink className="h-3.5 w-3.5" />
+							Watch in {watchLabel}
+						</button>
+					);
+				})()}
 			</div>
 		</div>
 	);

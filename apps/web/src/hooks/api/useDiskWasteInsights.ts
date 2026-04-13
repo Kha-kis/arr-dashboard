@@ -20,6 +20,7 @@ interface DiskWasteResponse {
 		items: DiskWasteItem[];
 		totalWastedBytes: number;
 		hasPlexData: boolean;
+		hasWatchData: boolean;
 	};
 }
 

@@ -30,22 +30,22 @@ export function LibraryInsightsSection() {
 	const diskWasteCount = diskWaste.data?.data?.items?.length ?? 0;
 	const watchedMonitoredCount = watchedMonitored.data?.data?.items?.length ?? 0;
 	const requestedUnwatchedCount = requestedUnwatched.data?.data?.items?.length ?? 0;
-	const hasPlexData = watchedMonitored.data?.data?.hasPlexData ?? false;
+	const hasWatchData = watchedMonitored.data?.data?.hasWatchData ?? watchedMonitored.data?.data?.hasPlexData ?? false;
 	const hasSeerrData = requestedUnwatched.data?.data?.hasSeerrData ?? false;
-	const hasRequestedPlexData = requestedUnwatched.data?.data?.hasPlexData ?? false;
+	const hasRequestedWatchData = requestedUnwatched.data?.data?.hasWatchData ?? requestedUnwatched.data?.data?.hasPlexData ?? false;
 	const isLoading = diskWaste.isLoading || watchedMonitored.isLoading || requestedUnwatched.isLoading;
 
 	// Don't render the section if all panels are empty and done loading
 	const hasContent =
 		diskWasteCount > 0 ||
-		(watchedMonitoredCount > 0 && hasPlexData) ||
-		(requestedUnwatchedCount > 0 && hasSeerrData && hasRequestedPlexData);
+		(watchedMonitoredCount > 0 && hasWatchData) ||
+		(requestedUnwatchedCount > 0 && hasSeerrData && hasRequestedWatchData);
 	if (!isLoading && !hasContent) return null;
 	if (isLoading) return null; // Don't flash the heading before data arrives
 
 	// Effective counts — only count signals where the required services are configured
-	const effectiveWatchedCount = hasPlexData ? watchedMonitoredCount : 0;
-	const effectiveRequestedCount = hasSeerrData && hasRequestedPlexData ? requestedUnwatchedCount : 0;
+	const effectiveWatchedCount = hasWatchData ? watchedMonitoredCount : 0;
+	const effectiveRequestedCount = hasSeerrData && hasRequestedWatchData ? requestedUnwatchedCount : 0;
 	const totalCount = diskWasteCount + effectiveWatchedCount + effectiveRequestedCount;
 
 	// Build breakdown segments (only non-zero)

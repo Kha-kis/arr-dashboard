@@ -26,6 +26,8 @@ export async function registerIdentityRoutes(app: FastifyInstance, _opts: Fastif
 				version: info.version,
 				serverName: info.serverName,
 				operatingSystem: info.operatingSystem,
+				baseUrl: instance.baseUrl,
+				service: instance.service.toLowerCase() as "jellyfin" | "emby",
 			};
 		});
 

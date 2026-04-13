@@ -14,12 +14,14 @@ export interface WatchEnrichmentItem {
 	watchedByUsers: string[];
 	onDeck: boolean;
 	userRating: number | null;
-	source: "plex" | "tautulli" | "both";
+	source: "plex" | "tautulli" | "both" | "jellyfin";
 	/** Plex ratingKey for write-back operations (null if not available) */
 	ratingKey: string | null;
-	/** Instance ID of the Plex instance this item belongs to */
+	/** Jellyfin/Emby item ID for deep links (null if source is Plex) */
+	jellyfinId?: string | null;
+	/** Instance ID of the media server instance this item belongs to */
 	instanceId: string | null;
-	/** Plex collections this item belongs to */
+	/** Collections this item belongs to */
 	collections: string[];
 	/** Plex labels applied to this item */
 	labels: string[];
