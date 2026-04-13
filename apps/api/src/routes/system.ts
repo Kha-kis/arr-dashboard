@@ -3,14 +3,15 @@ import { readdir, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import type { FastifyPluginCallback } from "fastify";
 import { LOG_DIR, LOG_LEVEL, LOG_MAX_FILES, LOG_MAX_SIZE } from "../lib/logger.js";
+import { evaluateSecurityPosture } from "../lib/security/security-posture.js";
 import { getAppVersionInfo } from "../lib/utils/version.js";
+import { KNOWN_INTEGRATIONS } from "../lib/validation/index.js";
 import { integrationHealth } from "../lib/validation/integration-health.js";
 import { schemaFingerprints } from "../lib/validation/schema-fingerprint.js";
-import { KNOWN_INTEGRATIONS } from "../lib/validation/index.js";
 import {
-	type ValidationMode,
 	getAllValidationModes,
 	setValidationMode,
+	type ValidationMode,
 } from "../lib/validation/validate-batch.js";
 import { validationQuarantine } from "../lib/validation/validation-quarantine.js";
 
@@ -565,6 +566,52 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			data: {
 				jobs,
 				count: jobs.length,
+				capturedAt: new Date().toISOString(),
+			},
+		});
+	});
+
+	/**
+	 * GET /system/security-posture
+	 * Read-only snapshot of the effective security configuration plus a list
+	 * of derived posture checks (healthy / warning / misconfigured).
+	 *
+	 * Inputs gathered: app.config (effective env), enabled OIDC providers,
+	 * total passkey credentials, count of users with a password set.
+	 *
+	 * Security: Requires authentication (single-admin architecture).
+	 */
+	app.get("/security-posture", async (_request, reply) => {
+		const [oidcProvider, passkeyCount, passwordUserCount, totalUserCount] = await Promise.all([
+			app.prisma.oIDCProvider.findFirst({
+				where: { enabled: true },
+				select: { id: true },
+			}),
+			app.prisma.webAuthnCredential.count(),
+			app.prisma.user.count({ where: { hashedPassword: { not: null } } }),
+			app.prisma.user.count(),
+		]);
+
+		const result = evaluateSecurityPosture({
+			env: {
+				NODE_ENV: app.config.NODE_ENV,
+				TRUST_PROXY: app.config.TRUST_PROXY,
+				COOKIE_SECURE: app.config.COOKIE_SECURE,
+				SESSION_TTL_HOURS: app.config.SESSION_TTL_HOURS,
+				SESSION_COOKIE_NAME: app.config.SESSION_COOKIE_NAME,
+				PASSWORD_POLICY: app.config.PASSWORD_POLICY,
+				APP_URL: app.config.APP_URL,
+			},
+			oidcEnabled: oidcProvider !== null,
+			passkeyCount,
+			passwordUserCount,
+			totalUserCount,
+		});
+
+		return reply.send({
+			success: true,
+			data: {
+				...result,
 				capturedAt: new Date().toISOString(),
 			},
 		});

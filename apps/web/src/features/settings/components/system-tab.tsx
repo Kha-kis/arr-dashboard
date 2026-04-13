@@ -22,7 +22,6 @@ import {
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { PremiumSection, PremiumSkeleton } from "../../../components/layout";
-import { useIncognitoMode } from "../../../lib/incognito";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Switch } from "../../../components/ui/switch";
@@ -30,14 +29,17 @@ import {
 	useLogFiles,
 	useResetValidationHealth,
 	useRestartSystem,
+	useSecurityPosture,
 	useSystemInfo,
 	useSystemSettings,
 	useUpdateSystemSettings,
 	useValidationHealth,
 } from "../../../hooks/api/useSystem";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
+import { SecurityPostureSection } from "./security-posture-section";
 import { ValidationHealthSection } from "./validation-health-section";
 
 function formatUptime(seconds: number): string {
@@ -59,7 +61,6 @@ function formatFileSize(bytes: number): string {
 	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
 	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
-
 
 /**
  * Premium System Info Card
@@ -123,6 +124,7 @@ export function SystemTab() {
 	const { data: systemInfo } = useSystemInfo();
 	const { data: logFiles, refetch: refetchLogs, isError: logFilesError } = useLogFiles();
 	const { data: validationHealth } = useValidationHealth();
+	const { data: securityPosture, isLoading: isSecurityPostureLoading } = useSecurityPosture();
 	const resetHealthMutation = useResetValidationHealth();
 	const updateMutation = useUpdateSystemSettings();
 	const restartMutation = useRestartSystem();
@@ -296,7 +298,7 @@ export function SystemTab() {
 							}
 							label="Database"
 							value={systemInfo.data.database.type}
-							subtitle={incognitoMode ? "••••••••" : (systemInfo.data.database.host || undefined)}
+							subtitle={incognitoMode ? "••••••••" : systemInfo.data.database.host || undefined}
 							animationDelay={50}
 						/>
 
@@ -336,6 +338,12 @@ export function SystemTab() {
 					</div>
 				</PremiumSection>
 			)}
+
+			{/* Security Posture Section */}
+			<SecurityPostureSection
+				posture={securityPosture?.data}
+				isLoading={isSecurityPostureLoading}
+			/>
 
 			{/* Validation Health Section */}
 			{validationHealth?.data && (
@@ -470,7 +478,9 @@ export function SystemTab() {
 													}}
 												>
 													<td className="px-4 py-2.5">
-														<span className="font-mono text-xs text-foreground">{incognitoMode ? "arr-dashboard.log" : file.name}</span>
+														<span className="font-mono text-xs text-foreground">
+															{incognitoMode ? "arr-dashboard.log" : file.name}
+														</span>
 													</td>
 													<td className="px-4 py-2.5 text-muted-foreground text-xs">
 														{formatFileSize(file.size)}
