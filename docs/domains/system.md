@@ -117,9 +117,9 @@ For the full route table, see [`docs/API-ROUTES.md`](../API-ROUTES.md).
 
 | Change | Goes in |
 |---|---|
-| New `/system/X` GET diagnostic | (1) handler in `routes/system.ts`; (2) optional pure evaluator under `lib/<area>/`; (3) types + `fetch*` in `lib/api-client/system.ts`; (4) `use*` hook in `hooks/api/useSystem.ts`; (5) section component under `features/settings/components/`; (6) render in `system-tab.tsx` |
+| New `/system/X` GET diagnostic | (1) handler in `routes/system.ts`; (2) optional pure evaluator under `lib/<area>/`; (3) types + `fetch*` in `lib/api-client/system.ts`; (4) query-key entry in `apps/web/src/lib/query-keys.ts` under `systemKeys`; (5) `use*` hook in `hooks/api/useSystem.ts`; (6) section component under `features/settings/components/`; (7) render in `system-tab.tsx`; (8) add a row to [`docs/API-ROUTES.md`](../API-ROUTES.md) |
 | New mutating `/system/X` route | same as above + a real justification + rate limit + an audit log line via `request.log.info(…)` including `userId` |
-| New `SystemSettings` field | add to `prisma/schema.prisma`; thread through GET + PUT handlers; decide and document whether it needs restart |
+| New `SystemSettings` field | add to `prisma/schema.prisma`; run `pnpm --filter @arr/api run db:push`; thread through GET + PUT handlers; if env-driven, also expose an `effective<Field>` twin per the stored-vs-effective pattern; decide and document whether it needs restart |
 | New posture check | extend `lib/security/security-posture.ts` (pure) + a unit test; choose severity per ADR-0002; UI updates automatically |
 | New validation integration | wire into `integrationHealth` in `lib/validation/`; it surfaces in `/validation-health` automatically |
 

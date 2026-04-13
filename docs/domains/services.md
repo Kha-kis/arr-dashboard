@@ -106,20 +106,33 @@ A new ARR-style service (rare, since the SDK covers them):
 3. Reuse `routes/services.ts` — no new route file.
 
 A new media or request service (more common):
-1. `prisma/schema.prisma` — extend `ServiceType`.
-2. `apps/api/src/lib/<service>/<service>-client.ts` — factory
-   `create<Service>Client(encryptor, instance, log)` with the right
-   auth model. Sanitize tokens before logging.
+1. `prisma/schema.prisma` — extend `ServiceType`. Then run
+   `pnpm --filter @arr/api run db:push` to sync the schema and
+   regenerate the Prisma client.
+2. `apps/api/src/lib/<service>/<service>-client.ts` — mirror an existing
+   peer rather than inventing a signature: `plex-client.ts` for simple
+   token-header auth, `tautulli-client.ts` for query-param API keys,
+   `seerr-client.ts` for resilient (retry + circuit breaker) clients
+   over `ArrClientFactory.rawRequest()`. Sanitize tokens before logging
+   in all cases.
 3. Routes:
    - if it slots into the generic CRUD shape → reuse `routes/services.ts`
      and only add a connection-test branch.
    - if it has feature endpoints (discover, stats, request, …) → new
      `apps/api/src/routes/<service>/` with one file per feature.
-4. Normalizers in `apps/api/src/lib/<service>/<service>-normalizer.ts`
-   when the upstream shape doesn't match the existing typed contract.
+4. Normalizers — the dominant convention is `apps/api/src/lib/library/<thing>-normalizer.ts`
+   for library-shaped data shared across services, and
+   `apps/api/src/lib/<service>/` only when the shape is genuinely
+   service-specific. Look at `lib/library/` and `lib/search/` before
+   creating a new directory.
 5. `packages/shared/src/types/<service>.ts` — Zod schema + TS type.
-6. Frontend: `apps/web/src/lib/api-client/<service>.ts` and
-   `apps/web/src/hooks/api/use<Service>.ts` (mirror the existing pairs).
+6. Frontend: `apps/web/src/lib/api-client/<service>.ts`,
+   `apps/web/src/hooks/api/use<Service>.ts`, and a query-key entry in
+   `apps/web/src/lib/query-keys.ts` (mirror the existing pairs;
+   inline string arrays are forbidden by `CLAUDE.md`).
+7. If the integration emits validation stats, wire them into
+   `lib/validation/integration-health.ts` so they surface in
+   `/system/validation-health` automatically.
 
 ## When to update this doc
 

@@ -57,10 +57,12 @@ These are load-bearing. Breaking any of them is a security regression.
 5. **Passkeys require a password as prerequisite, and the last passkey can
    only be deleted if another method exists.** The user must always have a
    working way back in.
-6. **Counter-on-replay**: WebAuthn responses with non-incrementing counters
-   are rejected. This is enforced in `passkey-service.ts`; do not weaken it.
-7. **Cookies are HttpOnly + SameSite=Lax always.** The `Secure` flag is the
-   only one that varies with environment (`COOKIE_SECURE ?? TRUST_PROXY`).
+6. **Counter-on-replay** for WebAuthn must not be weakened. See
+   [`docs/AUTH.md`](../AUTH.md) §Passkey Authentication for the exact
+   predicate; the rule lives in `passkey-service.ts`.
+7. **Cookies are HttpOnly + SameSite=Lax always.** Only the `Secure` flag
+   varies with environment; see [`docs/AUTH.md`](../AUTH.md) §Session
+   Management for the fallback chain.
 
 ## Major integration points
 
@@ -76,8 +78,9 @@ These are load-bearing. Breaking any of them is a security regression.
 
 ## Common failure modes / operational notes
 
-- **Account lockout** — 5 failed logins ⇒ 15-minute lock. Cleared on
-  successful login. Visible to operators only via DB inspection right now.
+- **Account lockout** — triggers after repeated failed logins (see
+  [`docs/AUTH.md`](../AUTH.md) for thresholds), cleared on successful
+  login. Visible to operators only via DB inspection right now.
 - **OIDC discovery flake** — provider metadata fetch can time out. The
   callback handler returns 502; the user re-clicks "Sign in with OIDC."
   Do not auto-retry server-side, it amplifies provider downtime.
@@ -97,7 +100,7 @@ These are load-bearing. Breaking any of them is a security regression.
 | Change | Goes in |
 |---|---|
 | New password rule | `packages/shared/src/types/password.ts` (Zod schema) |
-| New auth method (e.g., magic link) | new `apps/api/src/routes/auth-<method>.ts` + helper in `apps/api/src/lib/auth/` + Posture check in `lib/security/security-posture.ts` |
+| New auth method (e.g., magic link) | (1) new `apps/api/src/routes/auth-<method>.ts` registered in `apps/api/src/server.ts` (public surface) — *not* in `bootstrap/protected-routes.ts`, since the route must work pre-login; (2) helper in `apps/api/src/lib/auth/`; (3) Zod schema in `packages/shared/src/types/`; (4) posture check in `lib/security/security-posture.ts`; (5) frontend hook in `apps/web/src/hooks/api/useAuth.ts` + section in the Settings auth tab |
 | Tightening lockout / rate-limit | `apps/api/src/routes/auth.ts` (constants at top of file) |
 | Surfacing auth state in UI | extend `SecurityPostureSection` in `apps/web/src/features/settings/components/security-posture-section.tsx` (don't create parallel surface) |
 | New session-invalidation trigger | call `app.sessionService.invalidateAllUserSessions()` from the route that performs the credential change |

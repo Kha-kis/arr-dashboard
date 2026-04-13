@@ -29,6 +29,7 @@ This split is intentional. The registry observes; it does not schedule.
 | Registry class (state + invariants) | `apps/api/src/lib/scheduler-registry/scheduler-registry.ts` |
 | Static catalog of known job IDs + metadata | `apps/api/src/lib/scheduler-registry/job-definitions.ts` |
 | Fastify plugin (decorates `app.schedulerRegistry`) | `apps/api/src/plugins/scheduler-registry.ts` |
+| Where every scheduler plugin gets registered | `apps/api/src/bootstrap/schedulers.ts` |
 | HTTP surface | `apps/api/src/routes/system.ts` (`GET /system/jobs`) |
 | Job plugins (one per scheduler) | `apps/api/src/plugins/*-scheduler.ts` (e.g. `hunting-scheduler.ts`, `backup-scheduler.ts`, `queue-cleaner-scheduler.ts`) |
 | Job tick implementations | `apps/api/src/lib/<domain>/*-executor.ts` (e.g. `lib/hunting/hunt-executor.ts`) |
@@ -86,7 +87,7 @@ This split is intentional. The registry observes; it does not schedule.
 
 | Change | Goes in |
 |---|---|
-| New scheduler | (1) add ID to `JOB_ID` and entry to `KNOWN_JOBS` in `job-definitions.ts`; (2) create `apps/api/src/plugins/<name>-scheduler.ts` registering itself and wrapping the tick in `app.schedulerRegistry.track()`; (3) put the tick body in `apps/api/src/lib/<domain>/<name>-executor.ts` |
+| New scheduler | (1) add ID to `JOB_ID` and entry to `KNOWN_JOBS` in `job-definitions.ts`; (2) create `apps/api/src/plugins/<name>-scheduler.ts` registering itself and wrapping the tick in `app.schedulerRegistry.track()`; (3) put the tick body in `apps/api/src/lib/<domain>/<name>-executor.ts`; (4) **register the plugin in `apps/api/src/bootstrap/schedulers.ts`** (without this the plugin never loads and the catalog entry stays at `idle`/`totalRuns: 0` forever) |
 | Adopt `track()` on an existing scheduler | wrap the body of the existing tick function — no other changes needed |
 | Disable a job at startup | call `app.schedulerRegistry.markDisabled(JOB_ID.x, "reason")` from the plugin instead of registering the timer |
 | Add a runtime stat to the API response | extend `JobStatus` in `scheduler-registry.ts` and update `system-jobs.test.ts` (the contract test) |
