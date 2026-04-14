@@ -15,9 +15,22 @@
 import { describe, expect, it, vi } from "vitest";
 import {
 	evictStaleRows,
+	refreshPlexCache,
 	STALE_EVICTION_CHUNK_SIZE,
 } from "../plex-cache-refresher.js";
+import type { PlexClient } from "../plex-client.js";
 import type { PrismaClient } from "../../prisma.js";
+import type { FastifyBaseLogger } from "fastify";
+
+const silentLog = {
+	warn: vi.fn(),
+	info: vi.fn(),
+	error: vi.fn(),
+	debug: vi.fn(),
+	trace: vi.fn(),
+	fatal: vi.fn(),
+	child: vi.fn(),
+} as unknown as FastifyBaseLogger;
 
 /**
  * Build a minimal Prisma stub that records every `deleteMany` call so tests
@@ -99,6 +112,101 @@ describe("evictStaleRows", () => {
 		// Sanity: we actually did issue multiple statements (i.e. we chunked,
 		// not just "happened to send one small query"). ceil(5000 / 500) = 10.
 		expect(deleteCalls.length).toBe(Math.ceil(TOTAL_EXISTING / STALE_EVICTION_CHUNK_SIZE));
+	});
+
+	it("large-library end-to-end: refreshPlexCache completes with zero errors and no oversized DELETE (#323 regression)", async () => {
+		// Stands in for "manual smoke on a Docker + SQLite deployment with a large
+		// Plex library" — runs the full refreshPlexCache path with >1,000 items
+		// and 1,500 pre-existing stale rows, then asserts:
+		//   1. the refresh returns errors: 0 (i.e. no P2029 leaked through)
+		//   2. every DELETE stays under the SQLite 999-parameter ceiling
+		//   3. upserts are actually issued (we didn't silently short-circuit)
+		const LIBRARY_SIZE = 1_200;
+		const STALE_COUNT = 1_500;
+
+		const libraryItems = Array.from({ length: LIBRARY_SIZE }, (_, i) => ({
+			ratingKey: `rk-${i}`,
+			title: `Movie ${i}`,
+			type: "movie",
+			Guid: [{ id: `tmdb://${10_000 + i}` }],
+			userRating: null,
+			addedAt: 1_700_000_000,
+			thumb: null,
+			Collection: [],
+			Label: [],
+		}));
+
+		const mockClient = {
+			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+			getLibrarySections: vi
+				.fn()
+				.mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
+			getLibraryItems: vi.fn().mockResolvedValue(libraryItems),
+			getHistory: vi.fn().mockResolvedValue([]),
+			getOnDeck: vi.fn().mockResolvedValue([]),
+		} as unknown as PlexClient;
+
+		// Pre-populate the "existing rows" list with the fresh upsert ids plus
+		// a large stale tail — enough that the old `notIn: upsertedIds` path
+		// would have been >999 params and tripped P2029.
+		const upsertedIds: string[] = [];
+		const existingIds: string[] = Array.from(
+			{ length: STALE_COUNT },
+			(_, i) => `stale-${i}`,
+		);
+
+		const deleteCalls: Array<{ idsInFilter: string[] }> = [];
+
+		const mockPrisma = {
+			plexCache: {
+				upsert: vi.fn(async () => {
+					const id = `fresh-${upsertedIds.length}`;
+					upsertedIds.push(id);
+					return { id };
+				}),
+				findMany: vi.fn(async () =>
+					// Reflects state after upserts: the original stale rows + the
+					// freshly-upserted rows. Eviction should keep the fresh set.
+					[...existingIds, ...upsertedIds].map((id) => ({ id })),
+				),
+				deleteMany: vi.fn(
+					async (args: { where: { id?: { in?: string[]; notIn?: string[] } } }) => {
+						const inList = args.where.id?.in;
+						if (!inList) {
+							throw new Error(
+								"Regression: DELETE used something other than `id: { in: [...] }` — likely a reintroduced notIn.",
+							);
+						}
+						deleteCalls.push({ idsInFilter: inList });
+						return { count: inList.length };
+					},
+				),
+			},
+			$transaction: vi.fn(async (ops: Promise<unknown>[] | unknown[]) => {
+				const results: unknown[] = [];
+				for (const op of ops) results.push(await op);
+				return results;
+			}),
+		} as unknown as PrismaClient;
+
+		const result = await refreshPlexCache(mockClient, mockPrisma, "inst-1", silentLog);
+
+		expect(result.errors).toBe(0);
+		expect(result.errorMessages).toEqual([]);
+		expect(result.upserted).toBe(LIBRARY_SIZE);
+
+		// Every eviction DELETE must stay safely under SQLite's parameter ceiling.
+		const SQLITE_PARAM_CEILING = 999;
+		expect(deleteCalls.length).toBeGreaterThan(0);
+		for (const call of deleteCalls) {
+			expect(call.idsInFilter.length).toBeLessThanOrEqual(STALE_EVICTION_CHUNK_SIZE);
+			expect(call.idsInFilter.length).toBeLessThan(SQLITE_PARAM_CEILING);
+		}
+
+		// Chunks should together wipe exactly the stale set, nothing more.
+		const deletedIds = deleteCalls.flatMap((c) => c.idsInFilter);
+		expect(deletedIds.length).toBe(STALE_COUNT);
+		expect(new Set(deletedIds)).toEqual(new Set(existingIds));
 	});
 
 	it("never uses `notIn` — the original P2029 trigger", async () => {
