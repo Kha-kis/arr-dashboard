@@ -81,7 +81,7 @@ describe("<NeedsAttentionPanel />", () => {
 			screen.getByTestId("needs-attention-panel-loading"),
 		).toBeInTheDocument();
 		// The loading state must NOT claim "all clear" or show any item rows.
-		expect(screen.queryByText(/All systems operational/i)).not.toBeInTheDocument();
+		expect(screen.queryByText(/No actionable items right now/i)).not.toBeInTheDocument();
 	});
 
 	it("shows an honest error state (not 'all clear') when the query errors with no cached data", () => {
@@ -97,7 +97,7 @@ describe("<NeedsAttentionPanel />", () => {
 		expect(screen.getByText(/Couldn't load attention items/i)).toBeInTheDocument();
 		// Critical trust requirement: a failed fetch must never render the
 		// "all clear" empty state.
-		expect(screen.queryByText(/All systems operational/i)).not.toBeInTheDocument();
+		expect(screen.queryByText(/No actionable items right now/i)).not.toBeInTheDocument();
 	});
 
 	it("shows the 'all clear' empty state ONLY when the fetch succeeded with zero items", () => {
@@ -110,7 +110,7 @@ describe("<NeedsAttentionPanel />", () => {
 		render(<NeedsAttentionPanel />, { wrapper: createWrapper() });
 
 		expect(screen.getByTestId("needs-attention-panel-empty")).toBeInTheDocument();
-		expect(screen.getByText(/All systems operational/i)).toBeInTheDocument();
+		expect(screen.getByText(/No actionable items right now/i)).toBeInTheDocument();
 	});
 
 	it("renders each attention item with title, detail, and action link to its actionUrl", () => {

@@ -528,8 +528,11 @@ const collectSchedulerHealth: Collector = async (app) => {
 				category: "operations",
 				title: `${job.label} is disabled`,
 				detail: truncate(job.disabledReason),
-				actionUrl: "/settings",
-				actionLabel: "View system",
+				// /settings has no scheduler surface, so linking there was a
+				// dead-end. /pulse renders this same item in the full feed
+				// where the operator can read the detail and adjacent signals.
+				actionUrl: "/pulse",
+				actionLabel: "View in Pulse",
 				source: "system",
 				timestamp: job.lastFailureAt ?? now(),
 			});
@@ -545,8 +548,8 @@ const collectSchedulerHealth: Collector = async (app) => {
 				category: "operations",
 				title: `${job.label} is failing`,
 				detail: truncate(`${job.consecutiveFailures} consecutive failures${errorHint}`),
-				actionUrl: "/settings",
-				actionLabel: "View system",
+				actionUrl: "/pulse",
+				actionLabel: "View in Pulse",
 				source: "system",
 				timestamp: job.lastFailureAt ?? now(),
 			});
