@@ -3,11 +3,15 @@
  *
  * Proactive hardening to match the Plex fix from PR #328 / issue #323.
  *
- * The original `deleteMany({ id: { notIn: upsertedIds } })` shape would
- * exceed SQLite's SQLITE_MAX_VARIABLE_NUMBER (default 999) whenever the
- * upsert set is large, surfacing as Prisma P2029. These tests pin the
- * replacement read-then-diff-then-chunked-`in`-delete contract so the
- * Tautulli refresher cannot regress into the same failure mode.
+ * The original `deleteMany({ id: { notIn: upsertedIds } })` shape binds one
+ * parameter per kept id, so the query overflows SQLite's SQLITE_MAX_VARIABLE_NUMBER
+ * (default 999) — and for Tautulli specifically, the unbounded dimension is
+ * the *accumulated table size* (i.e. the stale diff), not the per-refresh
+ * upsert set. A single refresh is capped by `MAX_METADATA_LOOKUPS`, but the
+ * cache keeps growing over time, so the keep-list that would be passed into
+ * `notIn` grows with cache age regardless of how small any one refresh is.
+ * These tests pin the replacement read-then-diff-then-chunked-`in`-delete
+ * contract so the Tautulli refresher cannot regress into that failure mode.
  */
 
 import { describe, expect, it, vi } from "vitest";
