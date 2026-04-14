@@ -280,10 +280,10 @@ export function NeedsAttentionPanel() {
 					/>
 					<div className="min-w-0 flex-1">
 						<h3 className="text-sm font-semibold text-foreground">
-							All systems operational
+							No actionable items right now
 						</h3>
 						<p className="mt-0.5 text-xs text-muted-foreground">
-							No critical or warning signals from Pulse right now.
+							Open Pulse to view the full signal list.
 						</p>
 					</div>
 				</div>

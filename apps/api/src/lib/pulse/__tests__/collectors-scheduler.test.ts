@@ -132,7 +132,7 @@ describe("collectSchedulerHealth — failing jobs", () => {
 			category: "operations",
 			title: "Queue Cleaner is failing",
 			source: "system",
-			actionUrl: "/settings",
+			actionUrl: "/pulse",
 			timestamp: "2026-04-14T09:30:00.000Z",
 		});
 		expect(items[0]!.detail).toContain("2 consecutive failures");
@@ -220,7 +220,7 @@ describe("collectSchedulerHealth — disabled jobs", () => {
 			title: "Hunting is disabled",
 			detail: "Init failed: cannot reach hunting config table",
 			source: "system",
-			actionUrl: "/settings",
+			actionUrl: "/pulse",
 		});
 	});
 
