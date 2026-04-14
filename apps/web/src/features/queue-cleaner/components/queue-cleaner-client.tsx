@@ -60,7 +60,10 @@ export const QueueCleanerClient = () => {
 		return <PremiumPageLoading showHeader cardCount={4} />;
 	}
 
-	if (error) {
+	// Only replace the whole UI when we have nothing to show. A refetch error
+	// with cached status keeps rendering — the DataFreshness indicator in the
+	// header communicates "Couldn't refresh · showing last result from N ago".
+	if (error && !status) {
 		return (
 			<Alert variant="danger">
 				<AlertDescription>

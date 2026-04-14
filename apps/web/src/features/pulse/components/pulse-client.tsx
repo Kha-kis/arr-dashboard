@@ -303,7 +303,10 @@ export const PulseClient: React.FC = () => {
 		);
 	}
 
-	if (isError || !data) {
+	// Only replace the whole UI when we have nothing to show. A refetch error
+	// with cached data keeps rendering — the DataFreshness indicator in the
+	// header communicates "Couldn't refresh · showing last result from N ago".
+	if (!data) {
 		return (
 			<PremiumEmptyState
 				icon={AlertTriangle}

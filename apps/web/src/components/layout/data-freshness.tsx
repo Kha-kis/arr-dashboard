@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, Clock, RefreshCw } from "lucide-react";
-import type { HTMLAttributes } from "react";
+import { type HTMLAttributes, useEffect, useState } from "react";
 import { cn } from "../../lib/utils";
 
 /* =============================================================================
@@ -208,6 +208,16 @@ const STATE_CLASSES: Record<FreshnessState, string> = {
  *     pollIntervalMs={POLLING_STANDARD}
  *   />
  */
+/**
+ * How often the indicator re-evaluates the relative-time label when the
+ * caller hasn't pinned `now`. Every 5s is enough: our formatter's finest
+ * granularity is seconds, and label text only changes at 5s / 60s / 60min /
+ * 24h boundaries, so faster ticks would burn renders without changing output.
+ *
+ * The ticker is scoped to this component only — parent panels don't re-render.
+ */
+const FRESHNESS_TICK_MS = 5_000;
+
 export function DataFreshness({
 	dataUpdatedAt,
 	isFetching,
@@ -218,12 +228,22 @@ export function DataFreshness({
 	hideWhenIdle = true,
 	...rest
 }: DataFreshnessProps) {
+	// Local tick so the relative label keeps advancing between React Query
+	// refetches. If the caller pinned `now` (tests, SSR snapshot), skip the
+	// ticker so output stays deterministic.
+	const [tick, setTick] = useState(() => Date.now());
+	useEffect(() => {
+		if (now !== undefined) return;
+		const id = setInterval(() => setTick(Date.now()), FRESHNESS_TICK_MS);
+		return () => clearInterval(id);
+	}, [now]);
+
 	const descriptor = describeFreshness({
 		dataUpdatedAt,
 		isFetching,
 		isError,
 		pollIntervalMs,
-		now,
+		now: now ?? tick,
 	});
 
 	if (descriptor.label === null) {
