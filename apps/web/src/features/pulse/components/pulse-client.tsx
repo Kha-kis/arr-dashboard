@@ -321,6 +321,13 @@ export const PulseClient: React.FC = () => {
 	const infoItems = data.items.filter((i) => i.severity === "info");
 	const totalItems = data.items.length;
 
+	// When the most recent refresh failed we're looking at a cached snapshot.
+	// A zero-item cached snapshot does NOT mean "healthy right now" — it means
+	// "healthy as of the last successful fetch". Treat that as unknown-state so
+	// the big green "All clear" doesn't overclaim. DataFreshness already shows
+	// "Couldn't refresh · showing last result from N ago" in the header.
+	const canAssertHealthy = !isError;
+
 	return (
 		<div className="space-y-6">
 			{/* Page header */}
@@ -339,7 +346,9 @@ export const PulseClient: React.FC = () => {
 						<div className="flex flex-wrap items-center gap-x-3 gap-y-1">
 							<p className="text-sm text-muted-foreground">
 								{totalItems === 0
-									? "Everything looks good"
+									? canAssertHealthy
+										? "Everything looks good"
+										: "No signals in last successful check"
 									: `${totalItems} signal${totalItems === 1 ? "" : "s"} across your stack`}
 							</p>
 							{/* Pulse polls every 2min — operators otherwise have no way to tell
@@ -361,14 +370,23 @@ export const PulseClient: React.FC = () => {
 				/>
 			</div>
 
-			{/* Empty state */}
-			{totalItems === 0 && (
-				<PremiumEmptyState
-					icon={CheckCircle2}
-					title="All clear"
-					description="No issues detected across your connected services. Everything is running smoothly."
-				/>
-			)}
+			{/* Empty state — only claim "all clear" when the refresh actually succeeded.
+			    On a failed refresh we still render the card (so the freshness badge in the
+			    header stays anchored) but swap the copy so we don't overclaim health. */}
+			{totalItems === 0 &&
+				(canAssertHealthy ? (
+					<PremiumEmptyState
+						icon={CheckCircle2}
+						title="All clear"
+						description="No issues detected across your connected services. Everything is running smoothly."
+					/>
+				) : (
+					<PremiumEmptyState
+						icon={AlertTriangle}
+						title="Couldn't refresh signals"
+						description="Showing the last successful check, which found no issues. Current status is unknown until the next refresh succeeds."
+					/>
+				))}
 
 			{/* Severity sections */}
 			<div className="space-y-4">
