@@ -108,7 +108,7 @@ describe("GET /pulse — scheduler health signals", () => {
 		expect(item.title).toBe("Hunting is disabled");
 		expect(item.detail).toContain("Init failed");
 		expect(item.source).toBe("system");
-		expect(item.actionUrl).toBe("/settings");
+		expect(item.actionUrl).toBe("/pulse");
 
 		expect(body.summary.warning).toBeGreaterThanOrEqual(1);
 	});
