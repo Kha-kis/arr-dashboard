@@ -50,6 +50,7 @@ const COLLECTOR_LABELS: Record<string, string> = {
 	collectHuntFailures: "hunt failures",
 	collectQueueCleanerFailures: "queue cleaner",
 	collectTrashSyncFailures: "TRaSH sync",
+	collectSchedulerHealth: "scheduler health",
 	collectCleanupOpportunities: "cleanup opportunities",
 };
 
