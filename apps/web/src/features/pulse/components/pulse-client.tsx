@@ -18,13 +18,19 @@ import {
 import Link from "next/link";
 import { useState } from "react";
 import {
+	DataFreshness,
 	GlassmorphicCard,
 	PremiumEmptyState,
 } from "../../../components/layout/premium-components";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { usePulseQuery } from "../../../hooks/api/usePulse";
-import { anonymizeHealthMessage, getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
-import { SEMANTIC_COLORS, getServiceGradient } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import {
+	anonymizeHealthMessage,
+	getLinuxInstanceName,
+	useIncognitoMode,
+} from "../../../lib/incognito";
+import { POLLING_STATS } from "../../../lib/polling-intervals";
+import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
 
 // ============================================================================
@@ -94,7 +100,15 @@ const CATEGORY_ICONS: Record<string, typeof Activity> = {
 // PulseItemRow
 // ============================================================================
 
-function PulseItemRow({ item, index, incognito }: { item: PulseItem; index: number; incognito: boolean }) {
+function PulseItemRow({
+	item,
+	index,
+	incognito,
+}: {
+	item: PulseItem;
+	index: number;
+	incognito: boolean;
+}) {
 	const serviceGradient = getServiceGradient(item.source);
 	const CategoryIcon = CATEGORY_ICONS[item.category] ?? Activity;
 	const title = incognito ? anonymizePulseText(item.title) : item.title;
@@ -120,11 +134,7 @@ function PulseItemRow({ item, index, incognito }: { item: PulseItem; index: numb
 
 			<div className="min-w-0 flex-1">
 				<p className="text-sm font-medium text-foreground">{title}</p>
-				{detail && (
-					<p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
-						{detail}
-					</p>
-				)}
+				{detail && <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{detail}</p>}
 			</div>
 
 			{item.actionUrl && (
@@ -178,9 +188,7 @@ function SeveritySection({
 				</div>
 
 				<div className="flex-1">
-					<span className="text-sm font-semibold text-foreground">
-						{config.label}
-					</span>
+					<span className="text-sm font-semibold text-foreground">{config.label}</span>
 					<span
 						className="ml-2 inline-flex items-center justify-center rounded-full px-2 py-0.5 text-xs font-medium"
 						style={{
@@ -278,7 +286,7 @@ function PulseSummary({
 // ============================================================================
 
 export const PulseClient: React.FC = () => {
-	const { data, isLoading, isError } = usePulseQuery();
+	const { data, isLoading, isError, isFetching, dataUpdatedAt } = usePulseQuery();
 	const { gradient: themeGradient } = useThemeGradient();
 	const [incognito] = useIncognitoMode();
 
@@ -325,11 +333,21 @@ export const PulseClient: React.FC = () => {
 					</div>
 					<div>
 						<h1 className="text-xl font-bold text-foreground">System Pulse</h1>
-						<p className="text-sm text-muted-foreground">
-							{totalItems === 0
-								? "Everything looks good"
-								: `${totalItems} signal${totalItems === 1 ? "" : "s"} across your stack`}
-						</p>
+						<div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+							<p className="text-sm text-muted-foreground">
+								{totalItems === 0
+									? "Everything looks good"
+									: `${totalItems} signal${totalItems === 1 ? "" : "s"} across your stack`}
+							</p>
+							{/* Pulse polls every 2min — operators otherwise have no way to tell
+							    whether they're looking at fresh or 90s-old health data. */}
+							<DataFreshness
+								dataUpdatedAt={dataUpdatedAt}
+								isFetching={isFetching}
+								isError={isError}
+								pollIntervalMs={POLLING_STATS}
+							/>
+						</div>
 					</div>
 				</div>
 

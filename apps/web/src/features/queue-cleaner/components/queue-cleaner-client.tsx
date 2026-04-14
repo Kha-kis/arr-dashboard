@@ -2,17 +2,19 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { Activity, BarChart3, RefreshCw, Settings, Trash2 } from "lucide-react";
-import { queueCleanerKeys } from "../../../lib/query-keys";
 import { useCallback, useState } from "react";
-import { useRefreshState } from "../../../hooks/useRefreshState";
 import {
+	DataFreshness,
 	PremiumPageHeader,
 	PremiumPageLoading,
 	type PremiumTab,
 	PremiumTabs,
 } from "../../../components/layout";
 import { Alert, AlertDescription, Button } from "../../../components/ui";
+import { useRefreshState } from "../../../hooks/useRefreshState";
+import { queueCleanerKeys } from "../../../lib/query-keys";
 import { useQueueCleanerStatus } from "../hooks/useQueueCleanerStatus";
+import { STATUS_REFRESH_INTERVAL } from "../lib/constants";
 import { QueueCleanerActivity } from "./queue-cleaner-activity";
 import { QueueCleanerConfig } from "./queue-cleaner-config";
 import { QueueCleanerOverview } from "./queue-cleaner-overview";
@@ -22,7 +24,7 @@ export type CleanerTab = "overview" | "activity" | "statistics" | "config";
 
 export const QueueCleanerClient = () => {
 	const [activeTab, setActiveTab] = useState<CleanerTab>("overview");
-	const { status, isLoading, error } = useQueueCleanerStatus();
+	const { status, isLoading, error, isFetching, isError, dataUpdatedAt } = useQueueCleanerStatus();
 	const queryClient = useQueryClient();
 
 	const refetchCleaner = useCallback(
@@ -77,17 +79,28 @@ export const QueueCleanerClient = () => {
 				gradientTitle
 				description="Automatically clean stuck, failed, and slow downloads from your Sonarr and Radarr queues"
 				actions={
-					<Button
-						variant="secondary"
-						onClick={handleRefresh}
-						disabled={isRefreshing}
-						className="gap-2 border-border/50 bg-card/50 backdrop-blur-xs hover:bg-card/80"
-					>
-						<RefreshCw
-							className={`h-4 w-4 transition-transform ${isRefreshing ? "animate-spin" : ""}`}
+					<div className="flex flex-col items-end gap-1">
+						<Button
+							variant="secondary"
+							onClick={handleRefresh}
+							disabled={isRefreshing}
+							className="gap-2 border-border/50 bg-card/50 backdrop-blur-xs hover:bg-card/80"
+						>
+							<RefreshCw
+								className={`h-4 w-4 transition-transform ${isRefreshing ? "animate-spin" : ""}`}
+							/>
+							Refresh
+						</Button>
+						{/* Sits under the Refresh button so operators can see whether the
+						    numbers on the page are freshly polled or from a background
+						    refresh that hasn't landed yet. */}
+						<DataFreshness
+							dataUpdatedAt={dataUpdatedAt}
+							isFetching={isFetching}
+							isError={isError}
+							pollIntervalMs={STATUS_REFRESH_INTERVAL}
 						/>
-						Refresh
-					</Button>
+					</div>
 				}
 			/>
 
