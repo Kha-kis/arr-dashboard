@@ -8,7 +8,12 @@ export default defineConfig({
 		environment: "jsdom",
 		globals: true,
 		setupFiles: ["./vitest.setup.ts"],
-		include: ["src/**/*.{test,spec}.{ts,tsx}"],
+		include: [
+			"src/**/*.{test,spec}.{ts,tsx}",
+			// `app/` route tests live next to their route components (e.g.
+			// `app/__tests__/page.test.tsx` for the root `/` route).
+			"app/**/*.{test,spec}.{ts,tsx}",
+		],
 		coverage: {
 			provider: "v8",
 			reporter: ["text", "json", "html"],

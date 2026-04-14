@@ -47,8 +47,11 @@ const NAV_GROUPS: NavGroup[] = [
 		id: "overview",
 		label: "Overview",
 		items: [
-			{ href: "/pulse", label: "Pulse", icon: Activity },
+			// Dashboard first — it is the product's primary landing surface
+			// (/ redirects here post-auth) and hosts the Needs Attention panel.
+			// Pulse remains the deep-inspection view below it.
 			{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+			{ href: "/pulse", label: "Pulse", icon: Activity },
 			{ href: "/calendar", label: "Calendar", icon: Calendar },
 			{ href: "/statistics", label: "Statistics", icon: BarChart3 },
 		],
