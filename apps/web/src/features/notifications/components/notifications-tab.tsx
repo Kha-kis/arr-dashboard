@@ -15,13 +15,13 @@ import {
 	Trash2,
 	X,
 } from "lucide-react";
-import { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import {
+	DomainStatusBadge,
+	deriveNotificationChannelStatus,
 	GradientButton,
-	StatusBadge,
 } from "@/components/layout/premium-components";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
-import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import {
 	useChannelTypes,
 	useDeleteChannel,
@@ -29,6 +29,7 @@ import {
 	useTestChannel,
 } from "../../../hooks/api/useNotifications";
 import type { NotificationChannel } from "../../../lib/api-client/notifications";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { ChannelForm } from "./channel-form";
 import { NotificationLogTable } from "./notification-log-table";
 import { SubscriptionGrid as SubscriptionGridView } from "./subscription-grid";
@@ -276,10 +277,16 @@ function ChannelRow({
 
 				<div className="min-w-0 flex-1">
 					<div className="flex items-center gap-2">
-						<span className="font-medium truncate">{incognitoMode ? getLinuxInstanceName(channel.name) : channel.name}</span>
-						<StatusBadge status={channel.enabled ? "success" : "warning"}>
-							{channel.enabled ? "Active" : "Disabled"}
-						</StatusBadge>
+						<span className="font-medium truncate">
+							{incognitoMode ? getLinuxInstanceName(channel.name) : channel.name}
+						</span>
+						<DomainStatusBadge
+							status={deriveNotificationChannelStatus({
+								enabled: channel.enabled,
+								lastTestedAt: channel.lastTestedAt,
+								lastTestResult: channel.lastTestResult,
+							})}
+						/>
 						<span className="text-xs text-muted-foreground">{typeInfo.label}</span>
 					</div>
 					{channel.lastTestedAt && (
