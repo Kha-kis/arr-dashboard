@@ -348,13 +348,17 @@ export async function refreshPlexCache(
 			}
 		}
 
-		// Evict stale rows: items that were in a previous refresh but no longer exist in Plex
+		// Evict stale rows: items that were in a previous refresh but no longer exist in Plex.
+		//
+		// NOTE: We cannot do `deleteMany({ id: { notIn: upsertedIds } })` here — Prisma binds
+		// each id as a separate parameter, and libraries with >999 cached items blow past
+		// SQLite's default SQLITE_MAX_VARIABLE_NUMBER, surfacing as Prisma P2029 (issue #323).
+		// Instead we read the existing ids, compute the stale diff in memory, and delete in
+		// bounded chunks using `id: { in: chunk }` so each statement stays well under the limit.
 		if (upsertedIds.length > 0) {
-			const evicted = await prisma.plexCache.deleteMany({
-				where: { instanceId, id: { notIn: upsertedIds } },
-			});
-			if (evicted.count > 0) {
-				log.info({ instanceId, evicted: evicted.count }, "Plex cache: evicted stale rows");
+			const evictedCount = await evictStaleRows(prisma, instanceId, upsertedIds);
+			if (evictedCount > 0) {
+				log.info({ instanceId, evicted: evictedCount }, "Plex cache: evicted stale rows");
 			}
 		} else if (aggregationsArray.length > 0) {
 			log.warn(
@@ -382,4 +386,55 @@ export async function refreshPlexCache(
 	}
 
 	return { upserted, errors, errorMessages };
+}
+
+// ============================================================================
+// Stale Row Eviction
+// ============================================================================
+
+/**
+ * Chunk size for `id: { in: ... }` deletes. Stays well below SQLite's
+ * historical SQLITE_MAX_VARIABLE_NUMBER (999) so no single DELETE statement
+ * can exceed the parameter limit, regardless of library size or SQLite build.
+ *
+ * Exported for tests.
+ */
+export const STALE_EVICTION_CHUNK_SIZE = 500;
+
+/**
+ * Evict rows for `instanceId` whose `id` is not in `keepIds`.
+ *
+ * Reads existing row ids, diffs in memory, then issues bounded `id: { in: chunk }`
+ * deletes. This avoids Prisma P2029 on SQLite when `keepIds` would have been a
+ * giant `notIn` parameter list (issue #323).
+ *
+ * Exported for tests.
+ */
+export async function evictStaleRows(
+	prisma: PrismaClient,
+	instanceId: string,
+	keepIds: string[],
+): Promise<number> {
+	const existing = await prisma.plexCache.findMany({
+		where: { instanceId },
+		select: { id: true },
+	});
+
+	const keepSet = new Set(keepIds);
+	const staleIds: string[] = [];
+	for (const row of existing) {
+		if (!keepSet.has(row.id)) staleIds.push(row.id);
+	}
+
+	if (staleIds.length === 0) return 0;
+
+	let totalDeleted = 0;
+	for (let i = 0; i < staleIds.length; i += STALE_EVICTION_CHUNK_SIZE) {
+		const chunk = staleIds.slice(i, i + STALE_EVICTION_CHUNK_SIZE);
+		const { count } = await prisma.plexCache.deleteMany({
+			where: { instanceId, id: { in: chunk } },
+		});
+		totalDeleted += count;
+	}
+	return totalDeleted;
 }
