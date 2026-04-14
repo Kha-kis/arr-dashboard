@@ -96,11 +96,18 @@ export function ValidationHealthSection({
 	themeGradient,
 	onReset,
 	isResetting,
+	freshness,
 }: {
 	data: ValidationHealthResponse["data"];
 	themeGradient: { from: string; to: string; glow: string };
 	onReset: () => void;
 	isResetting: boolean;
+	/**
+	 * Optional freshness indicator rendered next to the "Stats since…" line.
+	 * Injected from the parent (system-tab) so the query signals stay owned
+	 * where the query is called.
+	 */
+	freshness?: React.ReactNode;
 }) {
 	const { overallTotals, integrations, validationModes, resetAt, fingerprints } = data;
 	const integrationNames = Object.keys(integrations);
@@ -145,12 +152,15 @@ export function ValidationHealthSection({
 		>
 			<div className="space-y-4">
 				{/* Reset Controls */}
-				<div className="flex items-center justify-between">
-					<p className="text-xs text-muted-foreground">
-						{resetAt
-							? `Stats since: ${new Date(resetAt).toLocaleString()}`
-							: "Stats since app start"}
-					</p>
+				<div className="flex items-center justify-between gap-3">
+					<div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
+						<p className="text-xs text-muted-foreground">
+							{resetAt
+								? `Stats since: ${new Date(resetAt).toLocaleString()}`
+								: "Stats since app start"}
+						</p>
+						{freshness}
+					</div>
 					<Button
 						variant="outline"
 						size="sm"

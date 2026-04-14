@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { PremiumSection, PremiumSkeleton } from "../../../components/layout";
+import { DataFreshness, PremiumSection, PremiumSkeleton } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Switch } from "../../../components/ui/switch";
@@ -37,6 +37,7 @@ import {
 } from "../../../hooks/api/useSystem";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useIncognitoMode } from "../../../lib/incognito";
+import { POLLING_STANDARD } from "../../../lib/polling-intervals";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
 import { SecurityPostureSection } from "./security-posture-section";
@@ -123,7 +124,12 @@ export function SystemTab() {
 	const { data: settings, isLoading } = useSystemSettings();
 	const { data: systemInfo } = useSystemInfo();
 	const { data: logFiles, refetch: refetchLogs, isError: logFilesError } = useLogFiles();
-	const { data: validationHealth } = useValidationHealth();
+	const {
+		data: validationHealth,
+		isFetching: isValidationHealthFetching,
+		isError: isValidationHealthError,
+		dataUpdatedAt: validationHealthUpdatedAt,
+	} = useValidationHealth();
 	const { data: securityPosture, isLoading: isSecurityPostureLoading } = useSecurityPosture();
 	const resetHealthMutation = useResetValidationHealth();
 	const updateMutation = useUpdateSystemSettings();
@@ -352,6 +358,14 @@ export function SystemTab() {
 					themeGradient={themeGradient}
 					onReset={() => resetHealthMutation.mutate()}
 					isResetting={resetHealthMutation.isPending}
+					freshness={
+						<DataFreshness
+							dataUpdatedAt={validationHealthUpdatedAt}
+							isFetching={isValidationHealthFetching}
+							isError={isValidationHealthError}
+							pollIntervalMs={POLLING_STANDARD}
+						/>
+					}
 				/>
 			)}
 
