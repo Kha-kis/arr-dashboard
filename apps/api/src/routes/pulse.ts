@@ -55,20 +55,29 @@ export const registerPulseRoutes: FastifyPluginCallback = (app, _opts, done) => 
 			return reply.send(cached.data);
 		}
 
-		// Run all collectors in parallel, each wrapped in try/catch
+		// Run all collectors in parallel, each wrapped in try/catch.
+		//
+		// On failure we emit a warning pulse item so the operator knows a signal
+		// is missing — never swallow silently, that's the whole trust model.
+		//
+		// Identify the collector by its function name (e.g. `collectArrSignals`)
+		// so (a) the id is stable across refreshes — React Query and the row
+		// animation see the same item instead of a new one each poll, and (b)
+		// the operator can tell *which* signal is missing from the feed.
 		const collectorResults = await Promise.all(
-			pulseCollectors.map(async (collector) => {
+			pulseCollectors.map(async (collector, index) => {
+				const collectorName = collector.name || `collector-${index}`;
 				try {
 					return await collector(app, userId, request.log);
 				} catch (error) {
-					request.log.warn({ err: error }, "pulse: collector failed");
+					request.log.warn({ err: error, collector: collectorName }, "pulse: collector failed");
 					return [
 						{
-							id: `collector-error-${Date.now()}`,
+							id: `collector-error-${collectorName}`,
 							severity: "warning" as const,
 							category: "health" as const,
 							title: "Could not check some signals",
-							detail: "A pulse collector encountered an error",
+							detail: `The ${collectorName} check encountered an error — results may be incomplete.`,
 							source: "system",
 							timestamp: new Date().toISOString(),
 						},
