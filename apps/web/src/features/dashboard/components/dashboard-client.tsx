@@ -49,6 +49,7 @@ import { useDashboardData } from "../hooks/useDashboardData";
 import { useDashboardFilters } from "../hooks/useDashboardFilters";
 import { useDashboardQueue } from "../hooks/useDashboardQueue";
 import { CacheHealthBanner } from "./cache-health-banner";
+import { NeedsAttentionPanel } from "./needs-attention-panel";
 import { type DashboardTab, DashboardTabs } from "./dashboard-tabs";
 import { NowPlayingWidget } from "./now-playing-widget";
 import { OnDeckWidget } from "./on-deck-widget";
@@ -566,7 +567,23 @@ export const DashboardClient = () => {
 				</div>
 			</header>
 
-			{/* Cache Health Banner */}
+			{/* Needs Attention — curated subset of /pulse. Rendered above other
+			    widgets so actionable critical/warning items are the first thing
+			    an operator sees on load.
+
+			    Note on overlap with <CacheHealthBanner />: the Pulse cache
+			    collectors emit `cache-error-*` / `cache-stale-*` items with
+			    severity=warning and actionUrl=/settings, so those will also
+			    show in this panel. The banner is kept because it offers a
+			    different affordance — a one-click inline refresh mutation —
+			    that the panel deliberately doesn't duplicate. Reconciling the
+			    two surfaces (e.g. banner-as-inline-row-action inside the
+			    panel) is a follow-up for a later PR so this one stays small. */}
+			<NeedsAttentionPanel />
+
+			{/* Cache Health Banner — offers inline one-click cache refresh.
+			    Overlap with NeedsAttentionPanel is intentional and documented
+			    above. */}
 			<CacheHealthBanner enabled={hasMediaServer} />
 
 			{/* Tabs */}

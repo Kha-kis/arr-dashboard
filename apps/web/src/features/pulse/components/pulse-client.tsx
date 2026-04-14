@@ -26,34 +26,12 @@ import { usePulseQuery } from "../../../hooks/api/usePulse";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import {
 	anonymizeHealthMessage,
-	getLinuxInstanceName,
+	anonymizePulseText,
 	useIncognitoMode,
 } from "../../../lib/incognito";
 import { POLLING_STATS } from "../../../lib/polling-intervals";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
-
-// ============================================================================
-// Incognito helper — anonymize "InstanceLabel: health message" titles
-// ============================================================================
-
-function anonymizePulseText(text: string): string {
-	// Pulse titles follow "Label: message" or "Label is unreachable/recovering"
-	const colonIdx = text.indexOf(": ");
-	if (colonIdx > 0) {
-		const label = text.slice(0, colonIdx);
-		const message = text.slice(colonIdx + 2);
-		return `${getLinuxInstanceName(label)}: ${anonymizeHealthMessage(message)}`;
-	}
-	// "Label is unreachable" pattern
-	const isIdx = text.indexOf(" is ");
-	if (isIdx > 0) {
-		const label = text.slice(0, isIdx);
-		const rest = text.slice(isIdx);
-		return `${getLinuxInstanceName(label)}${rest}`;
-	}
-	return anonymizeHealthMessage(text);
-}
 
 // ============================================================================
 // Severity config

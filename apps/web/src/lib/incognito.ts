@@ -228,6 +228,34 @@ export function anonymizeHealthMessage(message: string): string {
 	return anonymized;
 }
 
+/**
+ * Anonymize a Pulse item title.
+ *
+ * Pulse titles follow one of two shapes:
+ *   - "InstanceLabel: health message"  (e.g. "Sonarr Prod: Indexer X failed")
+ *   - "InstanceLabel is unreachable"   (status strings)
+ *
+ * We split off the label, replace it with a Linux-themed placeholder via
+ * `getLinuxInstanceName`, and run the message half through
+ * `anonymizeHealthMessage`. Titles with neither shape fall through to
+ * `anonymizeHealthMessage` alone.
+ */
+export function anonymizePulseText(text: string): string {
+	const colonIdx = text.indexOf(": ");
+	if (colonIdx > 0) {
+		const label = text.slice(0, colonIdx);
+		const message = text.slice(colonIdx + 2);
+		return `${getLinuxInstanceName(label)}: ${anonymizeHealthMessage(message)}`;
+	}
+	const isIdx = text.indexOf(" is ");
+	if (isIdx > 0) {
+		const label = text.slice(0, isIdx);
+		const rest = text.slice(isIdx);
+		return `${getLinuxInstanceName(label)}${rest}`;
+	}
+	return anonymizeHealthMessage(text);
+}
+
 // Anonymize queue status/error messages
 export function anonymizeStatusMessage(message: string): string {
 	let anonymized = message;
