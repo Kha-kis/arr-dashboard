@@ -5,6 +5,59 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.15.0] - 2026-04-14
+
+Operability and trust release — a scheduler jobs surface for operators, a Security Posture diagnostic panel, route surface governance, shared UX primitives for consistent trust signals across panels, and targeted cache-refresh hardening for Plex and Tautulli. No new end-user feature modules; every change is aimed at making the existing app more legible, more trustworthy, and easier to ship.
+
+### Added
+
+#### Reliability & Observability
+- **Scheduler jobs surface** — New `SchedulerRegistry` centralizes every background job (session snapshot, Plex/Tautulli/Jellyfin cache refresh, hunt, cleaner, TRaSH sync, backups, notifications, etc.) behind a single `/api/system/jobs` operability surface. Operators can inspect last run, next run, last error, and failure isolation per job (#294, #295)
+- **Explicit scheduler init failure-handling policy** — New `runSchedulerInit` helper makes scheduler startup failures a deliberate, testable decision per job rather than silent boot-time drift. Pinned by tests that lock the init-failure operator surface (#319)
+- **Session-snapshot tick isolation** — A failure in one snapshot collector no longer short-circuits the remaining collectors in the same tick (#303)
+- **Integration test coverage** — Risk-based integration tests cover auth, services, scheduler, queue cleaner, and route auth / service lifecycle gaps — reducing the chance a regression in these critical paths ships unnoticed (#315, #316)
+
+#### Security & Trust
+- **Security Posture panel** — New diagnostic surface under System → Security Posture flags configuration that weakens the deployment (missing `SESSION_COOKIE_SECRET`, weak `ENCRYPTION_KEY`, lax cookie flags, etc.). Advisory only; nothing is auto-changed. Distinguishes true misconfiguration from opinionated hardening to avoid false alarms (#317)
+- **Route surface governance** — Lightweight manifest-driven tier system (`stable` / `operator` / `internal` / `experimental`) classifies every backend route and is enforced in tests. Documented in ADR-0004 (#320)
+
+#### UX Consistency
+- **Shared async state presentation** — New `AsyncStateView` primitive standardizes loading / error / empty states across data panels so operators see the same shapes and wording for the same states everywhere (#321, #326)
+- **Domain status badges** — Shared `DomainStatusBadge` + 5-state taxonomy (healthy / degraded / offline / configured / disabled) replaces ad-hoc badge variants across Services and Integrations (#324)
+- **Data freshness indicator** — Shared `<DataFreshness>` + `describeFreshness()` wired into Pulse, Queue Cleaner, and Validation Health, driven by a scoped ticker so every polling panel reports age consistently (#325)
+
+#### Contributor Experience
+- **Domain operating manuals + ADRs** — New per-domain operating manuals plus ADRs covering security posture and route auth, giving contributors and operators a durable reference beyond code comments (#318)
+
+### Fixed
+
+#### Cache Refresh Hardening
+- **Plex stale-cache eviction hits Prisma parameter limit** — Bulk stale-cache evictions are now chunked, eliminating sporadic SQLite `P2029` "too many bind variables" failures on larger libraries (#323, #328)
+- **Tautulli stale-cache eviction hits Prisma parameter limit** — Same chunking fix applied to the Tautulli eviction path (#329)
+
+#### Pulse Trust
+- **Truthful empty state on refresh error** — Pulse no longer shows a misleadingly-clean "all healthy" view after a failed refresh; collector errors now produce a stable, visible failure state with consistent collector-error IDs (#330)
+- **Truthful errors + domain-correct tooltips** — Trust surfaces (Pulse, Validation Health, Rules) now surface real error text instead of generic placeholders, and tooltips describe the domain rather than the underlying transport (#327)
+
+#### Service Integrations
+- **Lidarr falsely reported unreachable in System Pulse** — Reachability probe now matches Lidarr's response shape (#300, #307)
+- **Seerr notification agent types** — Default to `0` when absent rather than erroring out on the requests page (#309)
+- **Tautulli activity fields** — Default to empty values when absent rather than breaking the activity view (#302, #310)
+- **Jellyfin/Emby partial-watch enrichment** — Populate `lastWatchedAt` for partially-watched series instead of leaving the field null (#311)
+- **Jellyfin cleanup rule copy** — Corrected rule description and backfilled the missing Jellyfin test (#314)
+- **Queue instance links use `externalUrl`** — Queue item links now respect the configured external URL per instance (#297, #306)
+- **Service type buttons overflow in narrow panels** — Settings service-type selector now wraps cleanly in narrow layouts (#291, #305)
+
+### Changed
+
+#### Architecture
+- **Plugin/route registration extracted into domain bundles** — `server.ts` now composes domain bundles rather than inlining every `register()` call, making the startup surface easier to audit and extend (#293)
+- **Library watch enrichment extended to Jellyfin/Emby** — Watch state enrichment (now-playing, last-watched, episode completion) parity across Plex / Jellyfin / Emby (#304)
+
+#### Tooling
+- **pnpm 10.33.0** — Bumped and guarded `action-setup` major bumps in CI (#312)
+- **Dependency updates** — Production-dependencies group (17 updates, #298) and dev-dependencies group (3 updates, #299), plus a follow-up production group bump (#313)
+
 ## [2.14.0] - 2026-04-09
 
 Media server expansion and setup experience overhaul — full Jellyfin and Emby support with Plex feature parity, OAuth-assisted setup for Plex and Seerr, notification quiet hours, TRaSH Custom Format conflict detection, and a host of UX refinements.
