@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.14.0** — Jellyfin & Emby integration, OAuth-assisted setup, notification quiet hours
+> **Version 2.15.0** — Operability & trust: scheduler jobs surface, security posture diagnostics, route governance, shared UX primitives, cache refresh hardening
 
 A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, **Lidarr**, **Readarr**, **Plex**, **Tautulli**, **Jellyfin**, **Emby**, and **Seerr** instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -210,6 +210,7 @@ docker-compose up -d
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.15.0` | Scheduler jobs surface, Security Posture, route governance, shared UX primitives, Plex/Tautulli cache hardening |
 | `2.14.0` | Jellyfin & Emby integration, OAuth-assisted setup, notification quiet hours |
 | `2.13.0` | Codebase hardening, TypeScript 6, security audit, CI optimization |
 | `2.12.0` | Seerr Requests Experience, API stability, security sweep |

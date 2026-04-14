@@ -180,4 +180,4 @@ For deep dives, see these files (create as needed):
 
 ---
 
-**Version:** 2.14.0 | **Node:** 22+ | **pnpm:** 10+
+**Version:** 2.15.0 | **Node:** 22+ | **pnpm:** 10+
