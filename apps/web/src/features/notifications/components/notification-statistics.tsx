@@ -1,7 +1,8 @@
 "use client";
 
-import { BarChart3, Loader2 } from "lucide-react";
+import { BarChart3, Inbox } from "lucide-react";
 import { useState } from "react";
+import { AsyncStateView } from "@/components/layout/premium-components";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 import { useNotificationStatistics } from "../../../hooks/api/useNotifications";
 
@@ -44,31 +45,10 @@ const EVENT_LABELS: Record<string, string> = {
 export function NotificationStatistics() {
 	const { gradient } = useThemeGradient();
 	const [days, setDays] = useState(30);
-	const { data: stats, isLoading } = useNotificationStatistics(days);
+	const { data: stats, isLoading, isError, error, refetch } = useNotificationStatistics(days);
 
-	if (isLoading) {
-		return (
-			<div className="flex items-center justify-center py-12">
-				<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-			</div>
-		);
-	}
-
-	if (!stats) {
-		return (
-			<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
-				<p className="text-center text-muted-foreground py-8">
-					No statistics available yet. Statistics appear after notifications are sent.
-				</p>
-			</div>
-		);
-	}
-
-	const { totals, perChannel, perEventType, dailyTrend } = stats;
-
-	// Find max for scaling the bar chart
-	const trendMax = Math.max(...dailyTrend.map((d) => d.sent + d.failed), 1);
-	const channelMax = Math.max(...perChannel.map((c) => c.sent + c.failed), 1);
+	const trendMax = stats ? Math.max(...stats.dailyTrend.map((d) => d.sent + d.failed), 1) : 1;
+	const channelMax = stats ? Math.max(...stats.perChannel.map((c) => c.sent + c.failed), 1) : 1;
 
 	return (
 		<div className="space-y-5">
@@ -96,6 +76,44 @@ export function NotificationStatistics() {
 				</div>
 			</div>
 
+			<AsyncStateView
+				isLoading={isLoading}
+				isError={isError}
+				error={error}
+				isEmpty={!stats}
+				onRetry={() => refetch()}
+				errorTitle="Couldn't load notification statistics"
+				emptyState={{
+					icon: Inbox,
+					title: "No statistics yet",
+					description: "Statistics appear after notifications are sent.",
+				}}
+			>
+				{stats && (
+					<StatisticsContent
+						stats={stats}
+						trendMax={trendMax}
+						channelMax={channelMax}
+						gradient={gradient}
+					/>
+				)}
+			</AsyncStateView>
+		</div>
+	);
+}
+
+interface StatisticsContentProps {
+	stats: NonNullable<ReturnType<typeof useNotificationStatistics>["data"]>;
+	trendMax: number;
+	channelMax: number;
+	gradient: ReturnType<typeof useThemeGradient>["gradient"];
+}
+
+function StatisticsContent({ stats, trendMax, channelMax, gradient }: StatisticsContentProps) {
+	const { totals, perChannel, perEventType, dailyTrend } = stats;
+
+	return (
+		<div className="space-y-5">
 			{/* Summary cards */}
 			<div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
 				<SummaryCard label="Total Sent" value={totals.sent} color="text-emerald-400" />
