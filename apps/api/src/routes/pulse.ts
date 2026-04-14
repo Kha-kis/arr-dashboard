@@ -75,6 +75,32 @@ function sortPulseItems(items: PulseItem[]): PulseItem[] {
 }
 
 // ============================================================================
+// Attention-only filter
+// ============================================================================
+//
+// An item is "attention-worthy" iff it is critical/warning AND ships with an
+// actionUrl the operator can click through. Informational items and warnings
+// without a resolution path are excluded — the filter's contract is
+// "actionable attention", not "everything non-info".
+function isAttentionItem(item: PulseItem): boolean {
+	if (item.severity !== "critical" && item.severity !== "warning") return false;
+	return typeof item.actionUrl === "string" && item.actionUrl.length > 0;
+}
+
+function applyAttentionFilter(response: PulseResponse): PulseResponse {
+	const items = response.items.filter(isAttentionItem);
+	return {
+		items,
+		summary: {
+			critical: items.filter((i) => i.severity === "critical").length,
+			warning: items.filter((i) => i.severity === "warning").length,
+			info: 0,
+		},
+		generatedAt: response.generatedAt,
+	};
+}
+
+// ============================================================================
 // Route
 // ============================================================================
 
@@ -82,10 +108,16 @@ export const registerPulseRoutes: FastifyPluginCallback = (app, _opts, done) => 
 	app.get("/pulse", async (request, reply) => {
 		const userId = request.currentUser!.id;
 
+		// `attentionOnly=true` is a view over the same collector output — we
+		// filter the cached/fresh response rather than running a parallel
+		// pipeline, so both views stay consistent and cheap.
+		const query = request.query as { attentionOnly?: string } | undefined;
+		const attentionOnly = query?.attentionOnly === "true";
+
 		// Check cache
 		const cached = pulseCache.get(userId);
 		if (cached && Date.now() < cached.expiresAt) {
-			return reply.send(cached.data);
+			return reply.send(attentionOnly ? applyAttentionFilter(cached.data) : cached.data);
 		}
 
 		// Run all collectors in parallel, each wrapped in try/catch.
@@ -133,7 +165,7 @@ export const registerPulseRoutes: FastifyPluginCallback = (app, _opts, done) => 
 
 		pulseCache.set(userId, { data: response, expiresAt: Date.now() + CACHE_TTL_MS });
 
-		return reply.send(response);
+		return reply.send(attentionOnly ? applyAttentionFilter(response) : response);
 	});
 
 	done();

@@ -461,6 +461,7 @@ export const systemKeys = {
 
 export const pulseKeys = {
 	all: ["pulse"] as const,
+	attention: () => ["pulse", "attentionOnly"] as const,
 };
 
 /* -------------------------------------------------------------------------- */

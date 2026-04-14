@@ -1,6 +1,11 @@
 import type { PulseResponse } from "@arr/shared";
 import { apiRequest } from "./base";
 
-export async function fetchPulse(): Promise<PulseResponse> {
-	return apiRequest<PulseResponse>("/api/pulse");
+export interface FetchPulseParams {
+	attentionOnly?: boolean;
+}
+
+export async function fetchPulse(params: FetchPulseParams = {}): Promise<PulseResponse> {
+	const path = params.attentionOnly ? "/api/pulse?attentionOnly=true" : "/api/pulse";
+	return apiRequest<PulseResponse>(path);
 }
