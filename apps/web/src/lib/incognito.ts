@@ -188,8 +188,18 @@ export function getLinuxEmail(email: string): string {
 
 // Anonymize health messages by replacing indexer names and show/movie names
 export function anonymizeHealthMessage(message: string): string {
+	// Strip absolute URLs first — scheduler `lastError` strings and generic
+	// upstream errors routinely embed instance URLs like
+	// `http://sonarr.local:8989/api/v3/...`. Replace before the narrower
+	// patterns below so we don't leave a dangling hostname once path segments
+	// are stripped.
+	let anonymized = message.replace(/https?:\/\/\S+/gi, "http://linux-host");
+
+	// Strip IPv4 addresses (bare or with ports) in the same spirit.
+	anonymized = anonymized.replace(/\b\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?\b/g, "10.0.0.1");
+
 	// Replace patterns like "IndexerName (Prowlarr), OtherIndexer (Prowlarr)" with "LinuxTracker, LinuxTracker"
-	let anonymized = message.replace(/[A-Za-z0-9._-]+\s*\(Prowlarr\)/gi, "LinuxTracker");
+	anonymized = anonymized.replace(/[A-Za-z0-9._-]+\s*\(Prowlarr\)/gi, "LinuxTracker");
 
 	// Replace standalone indexer names (without Prowlarr suffix) in lists
 	// Pattern: "Indexers unavailable...hours: IndexerA, IndexerB"
@@ -231,16 +241,29 @@ export function anonymizeHealthMessage(message: string): string {
 /**
  * Anonymize a Pulse item title.
  *
- * Pulse titles follow one of two shapes:
+ * Pulse titles for *instance-sourced* items follow one of two shapes:
  *   - "InstanceLabel: health message"  (e.g. "Sonarr Prod: Indexer X failed")
  *   - "InstanceLabel is unreachable"   (status strings)
  *
- * We split off the label, replace it with a Linux-themed placeholder via
- * `getLinuxInstanceName`, and run the message half through
- * `anonymizeHealthMessage`. Titles with neither shape fall through to
- * `anonymizeHealthMessage` alone.
+ * For those we split off the label, replace it with a Linux-themed
+ * placeholder via `getLinuxInstanceName`, and run the message half through
+ * `anonymizeHealthMessage`.
+ *
+ * **System-sourced** items (scheduler jobs, cache health, etc.) emit titles
+ * like `"Library Sync is disabled"` where the prefix is a *system job name*,
+ * not an ARR instance label. Blindly applying the " is "-split branch would
+ * map `"Library Sync"` → a Linux hostname placeholder, which actively
+ * misleads the reader. Callers pass `source` (from `PulseItem.source`) so we
+ * can skip the instance-label split for system items and run the full text
+ * through `anonymizeHealthMessage` only.
  */
-export function anonymizePulseText(text: string): string {
+export function anonymizePulseText(text: string, source?: string): string {
+	// System-sourced titles never have an ARR instance label to hide. Masking
+	// them as instances would invent a false signal; just run the existing
+	// health-message sanitizer over the whole string.
+	if (source === "system") {
+		return anonymizeHealthMessage(text);
+	}
 	const colonIdx = text.indexOf(": ");
 	if (colonIdx > 0) {
 		const label = text.slice(0, colonIdx);

@@ -16,7 +16,7 @@ import {
 	XCircle,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
 	DataFreshness,
 	GlassmorphicCard,
@@ -89,12 +89,20 @@ function PulseItemRow({
 }) {
 	const serviceGradient = getServiceGradient(item.source);
 	const CategoryIcon = CATEGORY_ICONS[item.category] ?? Activity;
-	const title = incognito ? anonymizePulseText(item.title) : item.title;
+	// Pass `item.source` so system-sourced titles (scheduler jobs, cache health)
+	// aren't mis-anonymized as ARR instance labels by the " is "-split branch.
+	const title = incognito ? anonymizePulseText(item.title, item.source) : item.title;
 	const detail = incognito && item.detail ? anonymizeHealthMessage(item.detail) : item.detail;
 
 	return (
+		// `id={item.id}` anchors deep-links from curated surfaces (e.g. the
+		// dashboard Needs Attention panel) that use `/pulse#<item.id>` to
+		// land the operator on the specific row — see the hash-scroll effect
+		// in PulseClient below.
 		<div
-			className="flex items-start gap-3 rounded-lg border border-border/30 bg-card/20 px-4 py-3 transition-colors hover:bg-card/40 animate-in fade-in slide-in-from-bottom-2"
+			id={item.id}
+			data-pulse-item-id={item.id}
+			className="flex items-start gap-3 rounded-lg border border-border/30 bg-card/20 px-4 py-3 transition-colors hover:bg-card/40 animate-in fade-in slide-in-from-bottom-2 scroll-mt-24"
 			style={{
 				animationDelay: `${index * 30}ms`,
 				animationFillMode: "backwards",
@@ -267,6 +275,34 @@ export const PulseClient: React.FC = () => {
 	const { data, isLoading, isError, isFetching, dataUpdatedAt } = usePulseQuery();
 	const { gradient: themeGradient } = useThemeGradient();
 	const [incognito] = useIncognitoMode();
+
+	// Deep-link hash support: curated surfaces (the dashboard Needs Attention
+	// panel, scheduler collector items) route to `/pulse#<item.id>`. We wait
+	// until data is present, then scroll to the matching row and apply a
+	// short-lived ring highlight so the operator can see where they landed.
+	// The effect is intentionally one-shot per hash — we don't loop on
+	// re-renders or compete with browser-native hash scrolling beyond the
+	// initial load.
+	useEffect(() => {
+		if (!data || typeof window === "undefined") return;
+		const hash = window.location.hash.slice(1);
+		if (!hash) return;
+		const target = document.getElementById(hash);
+		if (!target) return;
+		target.scrollIntoView({ behavior: "smooth", block: "center" });
+		// Transient ring highlight. Using inline style keeps this independent
+		// of the theme gradient system and guarantees the color is visible on
+		// both light and dark backgrounds.
+		const prevOutline = target.style.outline;
+		const prevOffset = target.style.outlineOffset;
+		target.style.outline = `2px solid ${SEMANTIC_COLORS.warning.border}`;
+		target.style.outlineOffset = "2px";
+		const timer = window.setTimeout(() => {
+			target.style.outline = prevOutline;
+			target.style.outlineOffset = prevOffset;
+		}, 2000);
+		return () => window.clearTimeout(timer);
+	}, [data]);
 
 	if (isLoading) {
 		return (

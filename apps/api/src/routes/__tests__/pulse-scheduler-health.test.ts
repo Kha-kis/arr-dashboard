@@ -108,7 +108,9 @@ describe("GET /pulse — scheduler health signals", () => {
 		expect(item.title).toBe("Hunting is disabled");
 		expect(item.detail).toContain("Init failed");
 		expect(item.source).toBe("system");
-		expect(item.actionUrl).toBe("/pulse");
+		// Deep-link includes the item id as a hash so /pulse can scroll + highlight
+		// the matching row for operators arriving from the Needs Attention panel.
+		expect(item.actionUrl).toBe("/pulse#scheduler-disabled-hunting");
 
 		expect(body.summary.warning).toBeGreaterThanOrEqual(1);
 	});

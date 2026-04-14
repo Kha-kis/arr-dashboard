@@ -82,6 +82,14 @@ function sortPulseItems(items: PulseItem[]): PulseItem[] {
 // actionUrl the operator can click through. Informational items and warnings
 // without a resolution path are excluded — the filter's contract is
 // "actionable attention", not "everything non-info".
+//
+// **Collector contract** — any collector emitting `severity: "critical"` or
+// `severity: "warning"` should also set `actionUrl`. Omit `actionUrl` *only*
+// when the item is informational-only and you explicitly want it hidden from
+// the dashboard Needs Attention panel (the collector-error fallback below is
+// the canonical example — there is no operator action for "a collector
+// crashed"). A collector that forgets `actionUrl` silently vanishes from
+// Needs Attention, which is a foot-gun worth knowing about.
 function isAttentionItem(item: PulseItem): boolean {
 	if (item.severity !== "critical" && item.severity !== "warning") return false;
 	return typeof item.actionUrl === "string" && item.actionUrl.length > 0;
