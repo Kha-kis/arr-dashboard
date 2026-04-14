@@ -32,6 +32,38 @@ const SEVERITY_ORDER: Record<string, number> = {
 	info: 2,
 };
 
+// ============================================================================
+// Operator-friendly labels for collector failures
+// ============================================================================
+//
+// The collector's function name (e.g. `collectArrSignals`) is used to build a
+// stable id so React Query / row animations see the same failure item across
+// refreshes. That name is jargon to operators, so we translate it to a plain
+// label for the visible `detail` string. Unknown names fall back to a
+// humanized camelCase form so a future collector never leaks raw source names.
+const COLLECTOR_LABELS: Record<string, string> = {
+	collectArrSignals: "ARR health and disk space",
+	collectSeerrCircuitBreaker: "Seerr circuit breaker",
+	collectCacheStaleness: "cache freshness",
+	collectValidationHealth: "validation health",
+	collectLibraryInsightCounts: "library insights",
+	collectHuntFailures: "hunt failures",
+	collectQueueCleanerFailures: "queue cleaner",
+	collectTrashSyncFailures: "TRaSH sync",
+	collectCleanupOpportunities: "cleanup opportunities",
+};
+
+export function labelForCollector(name: string): string {
+	const known = COLLECTOR_LABELS[name];
+	if (known) return known;
+	const humanized = name
+		.replace(/^collect/, "")
+		.replace(/([A-Z])/g, " $1")
+		.trim()
+		.toLowerCase();
+	return humanized || "signal";
+}
+
 function sortPulseItems(items: PulseItem[]): PulseItem[] {
 	return items.sort((a, b) => {
 		const severityDiff = (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9);
@@ -77,7 +109,7 @@ export const registerPulseRoutes: FastifyPluginCallback = (app, _opts, done) => 
 							severity: "warning" as const,
 							category: "health" as const,
 							title: "Could not check some signals",
-							detail: `The ${collectorName} check encountered an error — results may be incomplete.`,
+							detail: `The ${labelForCollector(collectorName)} check encountered an error — results may be incomplete.`,
 							source: "system",
 							timestamp: new Date().toISOString(),
 						},
