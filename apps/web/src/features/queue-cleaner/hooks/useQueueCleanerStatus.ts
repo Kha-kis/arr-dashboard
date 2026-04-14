@@ -13,6 +13,12 @@ interface UseQueueCleanerStatusResult {
 	status: QueueCleanerStatus | null;
 	isLoading: boolean;
 	error: Error | null;
+	/** True when a fetch is in flight (includes background refreshes). */
+	isFetching: boolean;
+	/** Whether the most recent fetch failed — needed for the freshness indicator to show an error while keeping the last good data visible. */
+	isError: boolean;
+	/** Timestamp (ms since epoch) of the most recent successful fetch, or 0 if never. */
+	dataUpdatedAt: number;
 }
 
 /**
@@ -30,5 +36,8 @@ export function useQueueCleanerStatus(): UseQueueCleanerStatusResult {
 		status: query.data ?? null,
 		isLoading: query.isLoading,
 		error: query.error,
+		isFetching: query.isFetching,
+		isError: query.isError,
+		dataUpdatedAt: query.dataUpdatedAt,
 	};
 }
