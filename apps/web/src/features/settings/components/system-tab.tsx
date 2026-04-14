@@ -134,6 +134,7 @@ export function SystemTab() {
 		data: securityPosture,
 		isLoading: isSecurityPostureLoading,
 		isError: isSecurityPostureError,
+		error: securityPostureError,
 		refetch: refetchSecurityPosture,
 	} = useSecurityPosture();
 	const resetHealthMutation = useResetValidationHealth();
@@ -355,6 +356,7 @@ export function SystemTab() {
 				posture={securityPosture?.data}
 				isLoading={isSecurityPostureLoading}
 				isError={isSecurityPostureError}
+				error={securityPostureError}
 				onRetry={() => {
 					void refetchSecurityPosture();
 				}}

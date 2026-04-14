@@ -47,6 +47,31 @@ function pushStateLabel(state: PushState): string {
 }
 
 /**
+ * Tooltip copy specific to browser-push states. We override the default
+ * `DomainStatusBadge` tooltips because the shared taxonomy describes network
+ * reachability — wrong for user-permission and browser-capability states
+ * (e.g. `denied` is an intentional user action, not "the last check failed";
+ * `unsupported` means the browser can't do push *at all*, not "configured
+ * but not yet validated").
+ */
+function pushStateTooltip(state: PushState): string {
+	switch (state) {
+		case "enabled":
+			return "Browser push is active — notifications will be delivered to this device.";
+		case "denied":
+			return "You blocked notifications for this site in your browser. Re-enable them in your browser's site settings to receive pushes.";
+		case "loading":
+			return "Checking browser push permission state…";
+		case "error":
+			return "Something went wrong while registering for browser push. See the message below for details.";
+		case "disabled":
+			return "Browser push is not yet enabled for this device. Click subscribe to turn it on.";
+		case "unsupported":
+			return "This browser does not support the Web Push API. Browser push notifications cannot be used here.";
+	}
+}
+
+/**
  * Convert a base64 URL-safe string to a Uint8Array for the applicationServerKey.
  */
 function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
@@ -170,6 +195,7 @@ export function BrowserPushCard() {
 						<DomainStatusBadge
 							status={pushStateToDomainStatus(state)}
 							label={pushStateLabel(state)}
+							title={pushStateTooltip(state)}
 						/>
 					</div>
 					<p className="text-xs text-muted-foreground mt-0.5">

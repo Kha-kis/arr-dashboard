@@ -41,6 +41,12 @@ interface Props {
 	posture: SecurityPosture | undefined;
 	isLoading: boolean;
 	isError?: boolean;
+	/**
+	 * The underlying React Query error, when `isError` is true. Threaded into
+	 * `AsyncStateView` so the operator sees the real failure reason (e.g.
+	 * "503 Service Unavailable") instead of the generic fallback.
+	 */
+	error?: unknown;
 	onRetry?: () => void;
 }
 
@@ -76,7 +82,7 @@ const OVERALL_ICON: Record<SecuritySeverity, typeof ShieldCheck> = {
 	misconfigured: ShieldX,
 };
 
-export function SecurityPostureSection({ posture, isLoading, isError, onRetry }: Props) {
+export function SecurityPostureSection({ posture, isLoading, isError, error, onRetry }: Props) {
 	// Defer loading / error / empty to AsyncStateView so the wording + retry
 	// affordance match the rest of the app. The section chrome (title, icon,
 	// description) always renders so the operator can still see what the panel
@@ -90,15 +96,24 @@ export function SecurityPostureSection({ posture, isLoading, isError, onRetry }:
 			>
 				<AsyncStateView
 					isLoading={isLoading}
-					isError={Boolean(isError)}
-					isEmpty={!isLoading && !isError}
+					// The "no posture, no loading, no error" case is a contract
+					// violation (the API should always return a posture object).
+					// Treat it as an error so the operator sees a retry button
+					// instead of a misleading "empty" state that implies success.
+					isError={Boolean(isError) || (!isLoading && !posture)}
+					error={error}
 					onRetry={onRetry}
-					errorTitle="Couldn't load security posture"
+					errorTitle={isError ? "Couldn't load security posture" : "Security posture unavailable"}
+					errorDescription={
+						!isError && !posture
+							? "The server didn't return any posture data. This is unexpected — try refreshing, and if it persists, check server logs."
+							: undefined
+					}
 					emptyState={{
+						// Never reached: the isError branch above always wins when posture
+						// is missing. Kept for AsyncStateView type completeness.
 						icon: ShieldOff,
 						title: "Security posture unavailable",
-						description:
-							"We couldn't evaluate your current security configuration. Try refreshing the page.",
 					}}
 					loadingFallback={
 						<div className="space-y-3">

@@ -72,9 +72,37 @@ describe("SecurityPostureSection", () => {
 		expect(onRetry).toHaveBeenCalledTimes(1);
 	});
 
-	it("renders the empty branch with a shield icon when the request finished but returned nothing", () => {
-		renderWithTheme(<SecurityPostureSection posture={undefined} isLoading={false} />);
-		expect(screen.getByText(/Security posture unavailable/i)).toBeInTheDocument();
+	it("renders the real error message instead of the generic fallback when one is passed", () => {
+		const realError = new Error("503 Service Unavailable");
+		renderWithTheme(
+			<SecurityPostureSection
+				posture={undefined}
+				isLoading={false}
+				isError={true}
+				error={realError}
+				onRetry={vi.fn()}
+			/>,
+		);
+		expect(screen.getByText("Couldn't load security posture")).toBeInTheDocument();
+		// The operator-facing error description should be the real message,
+		// not AsyncStateView's default fallback ("Something went wrong…").
+		expect(screen.getByText("503 Service Unavailable")).toBeInTheDocument();
+		expect(screen.queryByText(/something went wrong while loading/i)).not.toBeInTheDocument();
+	});
+
+	it("surfaces the contract-violation no-data case as an error (with retry), not as an empty state", () => {
+		// The "loaded but posture missing" path used to render as 'empty', which
+		// implied success. It's actually a bug state — the API always returns
+		// a posture. This test pins that the operator sees an error + retry.
+		const onRetry = vi.fn();
+		renderWithTheme(
+			<SecurityPostureSection posture={undefined} isLoading={false} onRetry={onRetry} />,
+		);
+		expect(screen.getByText("Security posture unavailable")).toBeInTheDocument();
+		expect(screen.getByText(/didn't return any posture data/i)).toBeInTheDocument();
+		const retry = screen.getByRole("button", { name: /try again/i });
+		fireEvent.click(retry);
+		expect(onRetry).toHaveBeenCalledTimes(1);
 	});
 
 	it("renders the full posture content when data is present (AsyncStateView does not take over)", () => {
