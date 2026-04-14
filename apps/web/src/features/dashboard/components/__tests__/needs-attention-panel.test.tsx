@@ -10,10 +10,16 @@
 
 import type { PulseItem, PulseResponse } from "@arr/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
+
+// IncognitoProvider reads this key on mount; pre-populating flips the
+// provider into incognito mode before the first consumer render tick
+// completes, which is what the live app does after the user toggles the
+// header switch.
+const INCOGNITO_STORAGE_KEY = "arr-dashboard-incognito-mode";
 
 // ---------------------------------------------------------------------------
 // Mock the Pulse query hook
@@ -65,6 +71,9 @@ function makeResponse(items: PulseItem[]): PulseResponse {
 
 beforeEach(() => {
 	mockUsePulseQuery.mockReset();
+	// Reset incognito state between tests — otherwise a test that flips it
+	// on would leak into subsequent cases.
+	localStorage.removeItem(INCOGNITO_STORAGE_KEY);
 });
 
 describe("<NeedsAttentionPanel />", () => {
@@ -206,6 +215,75 @@ describe("<NeedsAttentionPanel />", () => {
 		expect(
 			panel.querySelector(".lucide-alert-triangle, .lucide-triangle-alert"),
 		).not.toBeNull();
+	});
+
+	// ---------------------------------------------------------------------
+	// Incognito regression coverage — v2.16 trust-check findings #1 + #2.
+	// ---------------------------------------------------------------------
+	describe("incognito mode", () => {
+		it("leaves system-sourced scheduler titles intact (not mis-mapped to a Linux hostname)", async () => {
+			// Trust-check finding #1: before source-awareness, a title like
+			// "Library Sync is disabled" would split on " is " and the prefix
+			// would be anonymized to a Linux hostname, turning a scheduler job
+			// into what looks like an ARR instance. The fix: system-sourced
+			// items skip the instance-label split entirely.
+			localStorage.setItem(INCOGNITO_STORAGE_KEY, "true");
+			mockUsePulseQuery.mockReturnValue({
+				data: makeResponse([
+					makeItem({
+						id: "scheduler-disabled-library-sync",
+						severity: "warning",
+						source: "system",
+						title: "Library Sync is disabled",
+						detail: "Init failed: cannot reach library config table",
+					}),
+				]),
+				isLoading: false,
+				isError: false,
+			});
+
+			render(<NeedsAttentionPanel />, { wrapper: createWrapper() });
+
+			// The title must render verbatim — no Linux-hostname substitution.
+			const titleNode = await screen.findByText("Library Sync is disabled");
+			expect(titleNode).toBeInTheDocument();
+			// Sanity: no arbitrary hostname placeholder snuck in.
+			expect(screen.queryByText(/^[a-z]+-[a-z0-9]+ is disabled$/)).not.toBeInTheDocument();
+		});
+
+		it("strips URLs and IPv4 addresses from item details in incognito", async () => {
+			// Trust-check finding #2: scheduler `lastError` strings routinely
+			// embed instance URLs; anonymizeHealthMessage must mask them.
+			localStorage.setItem(INCOGNITO_STORAGE_KEY, "true");
+			mockUsePulseQuery.mockReturnValue({
+				data: makeResponse([
+					makeItem({
+						id: "scheduler-failing-backup",
+						severity: "warning",
+						source: "system",
+						title: "Backup is failing",
+						detail:
+							"2 consecutive failures — last error: GET http://sonarr.local:8989/api/v3/system/status timed out after 192.168.1.42",
+					}),
+				]),
+				isLoading: false,
+				isError: false,
+			});
+
+			const { container } = render(<NeedsAttentionPanel />, {
+				wrapper: createWrapper(),
+			});
+
+			// Wait for the incognito useEffect tick + re-render.
+			await waitFor(() => {
+				expect(container.textContent ?? "").not.toContain("sonarr.local");
+			});
+			expect(container.textContent ?? "").not.toContain("8989");
+			expect(container.textContent ?? "").not.toContain("192.168.1.42");
+			// Masked substitutions from anonymizeHealthMessage:
+			expect(container.textContent ?? "").toContain("http://linux-host");
+			expect(container.textContent ?? "").toContain("10.0.0.1");
+		});
 	});
 
 	it("caps rendered rows at 10 and shows a 'View all N items in Pulse' footer link when truncated", () => {
