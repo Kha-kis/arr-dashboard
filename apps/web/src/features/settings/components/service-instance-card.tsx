@@ -13,7 +13,11 @@ import {
 	Zap,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { ServiceBadge, StatusBadge } from "../../../components/layout";
+import {
+	DomainStatusBadge,
+	deriveServiceInstanceStatus,
+	ServiceBadge,
+} from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getLinuxInstanceName, getLinuxUrl, useIncognitoMode } from "../../../lib/incognito";
@@ -102,6 +106,15 @@ export const ServiceInstanceCard = ({
 	const testSuccess = hasTestResult && testResult.success;
 	const _testFailed = hasTestResult && !testResult.success;
 
+	// Derive runtime health for the shared badge. Prefer the transient test
+	// result when present; otherwise fall back to `configured` so we don't
+	// overclaim health before any round-trip has happened.
+	const domainStatus = deriveServiceInstanceStatus({
+		enabled: instance.enabled,
+		hasApiKey: instance.hasApiKey,
+		testResult: hasTestResult ? { success: testResult.success } : null,
+	});
+
 	return (
 		<div
 			className={cn(
@@ -148,7 +161,7 @@ export const ServiceInstanceCard = ({
 									Default
 								</div>
 							)}
-							{!instance.enabled && <StatusBadge status="default">Disabled</StatusBadge>}
+							<DomainStatusBadge status={domainStatus} />
 						</div>
 
 						{/* URL */}
