@@ -483,7 +483,81 @@ const collectTrashSyncFailures: Collector = async (app, userId) => {
 };
 
 // ============================================================================
-// 9. Cleanup Opportunities
+// 10. Scheduler Health
+// ============================================================================
+//
+// Surfaces background jobs that genuinely need operator attention.
+//
+// Two rules:
+//   - `disabled: true` with a non-empty `disabledReason` → warning. Today the
+//     registry only receives `markDisabled(...)` from real failure paths
+//     (`runSchedulerInit` prefix "Init failed: ..." or legacy plugin catches),
+//     so a disabled job is always an actionable problem. If future code ever
+//     introduces an intentional-opt-out `markDisabled`, this rule needs to
+//     learn to distinguish intent — today it cannot, and pretending otherwise
+//     would overclaim.
+//   - `consecutiveFailures >= 2` → warning. A single failure may be a
+//     transient blip (network hiccup, momentary ARR restart); two in a row
+//     is a pattern worth surfacing.
+//
+// When a job is both disabled and failing, we emit only the disabled item —
+// it's the root cause; showing both would be duplicate noise.
+//
+// Healthy / idle jobs emit nothing. Severity stays at `warning`: the registry
+// does not track whether a job is operationally critical vs nice-to-have, so
+// escalating to `critical` would invent intent the data cannot support.
+
+const FAILING_THRESHOLD = 2;
+const DETAIL_MAX_LENGTH = 140;
+
+function truncate(text: string, max = DETAIL_MAX_LENGTH): string {
+	return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+const collectSchedulerHealth: Collector = async (app) => {
+	const jobs = app.schedulerRegistry.list();
+	const items: PulseItem[] = [];
+
+	for (const job of jobs) {
+		// Rule 1: disabled with a meaningful reason takes precedence.
+		if (job.disabled) {
+			if (!job.disabledReason) continue; // Defensive: no reason → nothing actionable to say.
+			items.push({
+				id: `scheduler-disabled-${job.id}`,
+				severity: "warning",
+				category: "operations",
+				title: `${job.label} is disabled`,
+				detail: truncate(job.disabledReason),
+				actionUrl: "/settings",
+				actionLabel: "View system",
+				source: "system",
+				timestamp: job.lastFailureAt ?? now(),
+			});
+			continue;
+		}
+
+		// Rule 2: repeated recent failures.
+		if (job.consecutiveFailures >= FAILING_THRESHOLD) {
+			const errorHint = job.lastError ? ` — last error: ${job.lastError}` : "";
+			items.push({
+				id: `scheduler-failing-${job.id}`,
+				severity: "warning",
+				category: "operations",
+				title: `${job.label} is failing`,
+				detail: truncate(`${job.consecutiveFailures} consecutive failures${errorHint}`),
+				actionUrl: "/settings",
+				actionLabel: "View system",
+				source: "system",
+				timestamp: job.lastFailureAt ?? now(),
+			});
+		}
+	}
+
+	return items;
+};
+
+// ============================================================================
+// 11. Cleanup Opportunities
 // ============================================================================
 
 const collectCleanupOpportunities: Collector = async (app, userId, _log) => {
@@ -577,7 +651,7 @@ function formatBytes(bytes: number): string {
 // ============================================================================
 
 // Exported for testing
-export { collectArrSignals };
+export { collectArrSignals, collectSchedulerHealth };
 
 export const pulseCollectors: Collector[] = [
 	collectArrSignals,
@@ -588,5 +662,6 @@ export const pulseCollectors: Collector[] = [
 	collectHuntFailures,
 	collectQueueCleanerFailures,
 	collectTrashSyncFailures,
+	collectSchedulerHealth,
 	collectCleanupOpportunities,
 ];
