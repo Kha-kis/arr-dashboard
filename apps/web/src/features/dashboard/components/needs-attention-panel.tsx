@@ -94,9 +94,11 @@ function PanelShell({
 function PanelHeader({
 	visibleCount,
 	totalCount,
+	hasCritical,
 }: {
 	visibleCount: number;
 	totalCount: number;
+	hasCritical: boolean;
 }) {
 	const subtitle =
 		totalCount === 0
@@ -105,19 +107,22 @@ function PanelHeader({
 				? "1 actionable item"
 				: `${totalCount} actionable items${totalCount > visibleCount ? ` (showing ${visibleCount})` : ""}`;
 
+	// Match the accent to the highest-severity item in the feed. A
+	// warning-colored header above a list topped with a critical item would
+	// under-read the urgency — the icon/color is the first thing the eye hits.
+	const accent = hasCritical ? SEMANTIC_COLORS.error : SEMANTIC_COLORS.warning;
+	const Icon = hasCritical ? XCircle : AlertTriangle;
+
 	return (
 		<div className="flex items-center gap-3 border-b border-border/50 px-6 py-4">
 			<div
 				className="flex h-8 w-8 items-center justify-center rounded-lg"
 				style={{
-					backgroundColor: SEMANTIC_COLORS.warning.bg,
-					border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
+					backgroundColor: accent.bg,
+					border: `1px solid ${accent.border}`,
 				}}
 			>
-				<AlertTriangle
-					className="h-4 w-4"
-					style={{ color: SEMANTIC_COLORS.warning.text }}
-				/>
+				<Icon className="h-4 w-4" style={{ color: accent.text }} />
 			</div>
 			<div className="min-w-0 flex-1">
 				<h3 className="text-sm font-semibold text-foreground">Needs Attention</h3>
@@ -155,7 +160,9 @@ function AttentionRow({
 	if (!visual) return null;
 
 	const Icon = visual.icon;
-	const title = incognito ? anonymizePulseText(item.title) : item.title;
+	// Pass `item.source` so system-sourced titles (scheduler jobs, cache health)
+	// aren't mis-anonymized as ARR instance labels by the " is "-split branch.
+	const title = incognito ? anonymizePulseText(item.title, item.source) : item.title;
 	const detail =
 		incognito && item.detail ? anonymizeHealthMessage(item.detail) : item.detail;
 
@@ -292,9 +299,14 @@ export function NeedsAttentionPanel() {
 	}
 
 	// State: populated.
+	const hasCritical = visible.some((item) => item.severity === "critical");
 	return (
 		<PanelShell testId="needs-attention-panel" ariaLabel="Needs Attention">
-			<PanelHeader visibleCount={visible.length} totalCount={items.length} />
+			<PanelHeader
+				visibleCount={visible.length}
+				totalCount={items.length}
+				hasCritical={hasCritical}
+			/>
 			<ul>
 				{visible.map((item) => (
 					<AttentionRow key={item.id} item={item} incognito={incognito} />

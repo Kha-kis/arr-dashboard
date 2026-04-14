@@ -515,6 +515,11 @@ function truncate(text: string, max = DETAIL_MAX_LENGTH): string {
 }
 
 const collectSchedulerHealth: Collector = async (app) => {
+	// Scheduler state is a process-global registry — all jobs are system-wide
+	// (backup, library-sync, trash-sync, etc.), not per-user. arr-dashboard is
+	// a single-admin self-hosted app (see CLAUDE.md), so the one operator
+	// should see every job's health. If this ever becomes multi-user, this
+	// collector needs per-user gating or the registry needs userId tracking.
 	const jobs = app.schedulerRegistry.list();
 	const items: PulseItem[] = [];
 
@@ -522,16 +527,18 @@ const collectSchedulerHealth: Collector = async (app) => {
 		// Rule 1: disabled with a meaningful reason takes precedence.
 		if (job.disabled) {
 			if (!job.disabledReason) continue; // Defensive: no reason → nothing actionable to say.
+			const id = `scheduler-disabled-${job.id}`;
 			items.push({
-				id: `scheduler-disabled-${job.id}`,
+				id,
 				severity: "warning",
 				category: "operations",
 				title: `${job.label} is disabled`,
 				detail: truncate(job.disabledReason),
-				// /settings has no scheduler surface, so linking there was a
-				// dead-end. /pulse renders this same item in the full feed
-				// where the operator can read the detail and adjacent signals.
-				actionUrl: "/pulse",
+				// /settings has no scheduler surface. Deep-link to /pulse with
+				// the item id as a hash so the operator lands directly on the
+				// matching row (pulse-client.tsx scrolls + highlights on hash)
+				// instead of having to hunt in the full feed.
+				actionUrl: `/pulse#${id}`,
 				actionLabel: "View in Pulse",
 				source: "system",
 				timestamp: job.lastFailureAt ?? now(),
@@ -542,13 +549,14 @@ const collectSchedulerHealth: Collector = async (app) => {
 		// Rule 2: repeated recent failures.
 		if (job.consecutiveFailures >= FAILING_THRESHOLD) {
 			const errorHint = job.lastError ? ` — last error: ${job.lastError}` : "";
+			const id = `scheduler-failing-${job.id}`;
 			items.push({
-				id: `scheduler-failing-${job.id}`,
+				id,
 				severity: "warning",
 				category: "operations",
 				title: `${job.label} is failing`,
 				detail: truncate(`${job.consecutiveFailures} consecutive failures${errorHint}`),
-				actionUrl: "/pulse",
+				actionUrl: `/pulse#${id}`,
 				actionLabel: "View in Pulse",
 				source: "system",
 				timestamp: job.lastFailureAt ?? now(),

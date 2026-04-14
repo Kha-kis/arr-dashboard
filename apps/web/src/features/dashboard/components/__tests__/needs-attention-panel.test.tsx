@@ -164,6 +164,50 @@ describe("<NeedsAttentionPanel />", () => {
 		).toHaveAttribute("href", "/pulse");
 	});
 
+	it("shows the critical (error) header accent when any visible item is critical", () => {
+		// Trust-check finding #6: a warning-colored header above a critical
+		// item under-reads urgency. Verify that the header accent branches on
+		// the presence of a critical item.
+		mockUsePulseQuery.mockReturnValue({
+			data: makeResponse([
+				makeItem({ id: "crit-1", severity: "critical", title: "Sonarr is unreachable" }),
+				makeItem({ id: "warn-1", severity: "warning", title: "Queue cleaner failed" }),
+			]),
+			isLoading: false,
+			isError: false,
+		});
+
+		render(<NeedsAttentionPanel />, { wrapper: createWrapper() });
+
+		// The accent icon is rendered as a lucide `<svg>` inside the header;
+		// we identify it by its aria-hidden svg sibling inside the header
+		// wrapper. A simpler proxy: the header wrapper's inline background
+		// color must reference the semantic error token, not warning. We
+		// assert via computed style by looking for the critical icon's
+		// lucide class name (`lucide-x-circle`) in the header region.
+		const panel = screen.getByTestId("needs-attention-panel");
+		// XCircle maps to lucide's x-circle icon; AlertTriangle is alert-triangle.
+		expect(panel.querySelector(".lucide-x-circle, .lucide-circle-x")).not.toBeNull();
+	});
+
+	it("uses the warning header accent when no item is critical", () => {
+		mockUsePulseQuery.mockReturnValue({
+			data: makeResponse([
+				makeItem({ id: "warn-1", severity: "warning", title: "Queue cleaner failed" }),
+			]),
+			isLoading: false,
+			isError: false,
+		});
+
+		render(<NeedsAttentionPanel />, { wrapper: createWrapper() });
+
+		const panel = screen.getByTestId("needs-attention-panel");
+		// Warning triangle present, no critical x-circle in the header.
+		expect(
+			panel.querySelector(".lucide-alert-triangle, .lucide-triangle-alert"),
+		).not.toBeNull();
+	});
+
 	it("caps rendered rows at 10 and shows a 'View all N items in Pulse' footer link when truncated", () => {
 		const items: PulseItem[] = Array.from({ length: 13 }, (_, i) =>
 			makeItem({

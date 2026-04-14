@@ -132,7 +132,9 @@ describe("collectSchedulerHealth — failing jobs", () => {
 			category: "operations",
 			title: "Queue Cleaner is failing",
 			source: "system",
-			actionUrl: "/pulse",
+			// Deep-link includes the item id as a hash so the row is
+			// focused/scrolled on arrival in /pulse.
+			actionUrl: "/pulse#scheduler-failing-queue-cleaner",
 			timestamp: "2026-04-14T09:30:00.000Z",
 		});
 		expect(items[0]!.detail).toContain("2 consecutive failures");
@@ -220,7 +222,7 @@ describe("collectSchedulerHealth — disabled jobs", () => {
 			title: "Hunting is disabled",
 			detail: "Init failed: cannot reach hunting config table",
 			source: "system",
-			actionUrl: "/pulse",
+			actionUrl: "/pulse#scheduler-disabled-hunting",
 		});
 	});
 
