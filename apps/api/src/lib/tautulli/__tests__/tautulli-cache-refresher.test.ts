@@ -13,9 +13,27 @@
 import { describe, expect, it, vi } from "vitest";
 import {
 	evictStaleRows,
+	refreshTautulliCache,
 	STALE_EVICTION_CHUNK_SIZE,
 } from "../tautulli-cache-refresher.js";
 import type { PrismaClient } from "../../prisma.js";
+import type { TautulliClient } from "../tautulli-client.js";
+import type { FastifyBaseLogger } from "fastify";
+
+// Neutralise the inter-lookup rate-limit delay so the end-to-end test runs fast.
+vi.mock("../../utils/delay.js", () => ({
+	delay: vi.fn(async () => {}),
+}));
+
+const silentLog = {
+	warn: vi.fn(),
+	info: vi.fn(),
+	error: vi.fn(),
+	debug: vi.fn(),
+	trace: vi.fn(),
+	fatal: vi.fn(),
+	child: vi.fn(),
+} as unknown as FastifyBaseLogger;
 
 /**
  * Build a minimal Prisma stub that records every `deleteMany` call so tests
@@ -101,5 +119,104 @@ describe("evictStaleRows (tautulli)", () => {
 
 		// Sanity: we actually issued multiple chunked statements.
 		expect(deleteCalls.length).toBe(Math.ceil(TOTAL_EXISTING / STALE_EVICTION_CHUNK_SIZE));
+	});
+});
+
+// ---------------------------------------------------------------------------
+// End-to-end: refreshTautulliCache against a realistic "large stale tail" shape
+// ---------------------------------------------------------------------------
+
+describe("refreshTautulliCache (end-to-end)", () => {
+	it("large stale-tail regression: refresh succeeds with only bounded DELETEs", async () => {
+		// Models the real failure mode: a cache that accumulated many rows over
+		// previous refreshes, where one refresh returns a smaller fresh set. The
+		// stale diff is what blows past SQLite's parameter limit, not the upsert
+		// set — so we use a small fresh set and a large pre-existing tail.
+		const FRESH_COUNT = 10;
+		const STALE_TAIL = 2_000;
+
+		// Tautulli history: one entry per fresh item, all movies.
+		const libraries = [
+			{ section_id: "1", section_name: "Movies", section_type: "movie", count: "10" },
+		];
+		const history = Array.from({ length: FRESH_COUNT }, (_, i) => ({
+			rating_key: `rk-${i}`,
+			parent_rating_key: "",
+			grandparent_rating_key: "",
+			title: `Movie ${i}`,
+			grandparent_title: "",
+			media_type: "movie",
+			user: "alice",
+			date: 1_700_000_000 + i,
+			play_count: 1,
+		}));
+
+		const mockClient = {
+			getLibraries: vi.fn().mockResolvedValue(libraries),
+			// First page fills below HISTORY_PAGE_SIZE (50) so the pagination loop
+			// exits after one call. Subsequent pages would return empty.
+			getHistory: vi.fn().mockResolvedValue({
+				data: history,
+				recordsFiltered: FRESH_COUNT,
+				recordsTotal: FRESH_COUNT,
+			}),
+			getMetadata: vi.fn(async (ratingKey: string) => {
+				const i = Number.parseInt(ratingKey.replace("rk-", ""), 10);
+				return {
+					guids: [`tmdb://${20_000 + i}`],
+					media_type: "movie",
+					title: `Movie ${i}`,
+					rating_key: ratingKey,
+				};
+			}),
+		} as unknown as TautulliClient;
+
+		const upsertedIds: string[] = [];
+		const existingStaleIds = Array.from({ length: STALE_TAIL }, (_, i) => `stale-${i}`);
+		const deleteCalls: Array<{ idsInFilter: string[] }> = [];
+
+		const mockPrisma = {
+			tautulliCache: {
+				upsert: vi.fn(async () => {
+					const id = `fresh-${upsertedIds.length}`;
+					upsertedIds.push(id);
+					return { id };
+				}),
+				findMany: vi.fn(async () =>
+					[...existingStaleIds, ...upsertedIds].map((id) => ({ id })),
+				),
+				deleteMany: vi.fn(
+					async (args: { where: { id?: { in?: string[]; notIn?: string[] } } }) => {
+						const inList = args.where.id?.in;
+						if (!inList) {
+							throw new Error(
+								"Regression: Tautulli eviction used something other than `id: { in: [...] }` — likely a reintroduced notIn.",
+							);
+						}
+						deleteCalls.push({ idsInFilter: inList });
+						return { count: inList.length };
+					},
+				),
+			},
+		} as unknown as PrismaClient;
+
+		const result = await refreshTautulliCache(mockClient, mockPrisma, "inst-1", silentLog);
+
+		expect(result.errors).toBe(0);
+		expect(result.errorMessages).toEqual([]);
+		expect(result.upserted).toBe(FRESH_COUNT);
+
+		// Every eviction DELETE stays under SQLite's 999-parameter ceiling.
+		const SQLITE_PARAM_CEILING = 999;
+		expect(deleteCalls.length).toBeGreaterThan(0);
+		for (const call of deleteCalls) {
+			expect(call.idsInFilter.length).toBeLessThanOrEqual(STALE_EVICTION_CHUNK_SIZE);
+			expect(call.idsInFilter.length).toBeLessThan(SQLITE_PARAM_CEILING);
+		}
+
+		// Chunks together wipe exactly the stale tail, nothing more.
+		const deletedIds = deleteCalls.flatMap((c) => c.idsInFilter);
+		expect(deletedIds.length).toBe(STALE_TAIL);
+		expect(new Set(deletedIds)).toEqual(new Set(existingStaleIds));
 	});
 });
