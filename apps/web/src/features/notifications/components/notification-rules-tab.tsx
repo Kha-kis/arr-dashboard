@@ -77,7 +77,7 @@ function conditionsFromRule(rule: NotificationRuleResponse): RuleCondition[] {
 
 export function NotificationRulesTab() {
 	const { gradient } = useThemeGradient();
-	const { data: rules = [], isLoading, isError, refetch } = useNotificationRules();
+	const { data: rules = [], isLoading, isError, error, refetch } = useNotificationRules();
 	const { data: channels = [] } = useNotificationChannels();
 	const createRule = useCreateRule();
 	const updateRule = useUpdateRule();
@@ -210,6 +210,7 @@ export function NotificationRulesTab() {
 		<AsyncStateView
 			isLoading={isLoading}
 			isError={isError}
+			error={error}
 			isEmpty={rules.length === 0 && !showForm}
 			onRetry={() => {
 				void refetch();

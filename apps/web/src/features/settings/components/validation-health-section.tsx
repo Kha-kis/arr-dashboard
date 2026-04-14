@@ -43,6 +43,24 @@ function healthStateToDomainStatus(state: HealthState): DomainStatus {
 	}
 }
 
+/**
+ * Validation-specific tooltip copy. The default `DomainStatusBadge` tooltips
+ * describe *network reachability* ("Reachable and last check succeeded") —
+ * which is the wrong frame here: a validation row describes whether upstream
+ * payloads conform to schema, not whether the service is reachable. (We
+ * already got the data back; that's a reachability success by definition.)
+ */
+function healthStateTooltip(state: HealthState): string {
+	switch (state) {
+		case "healthy":
+			return "All recent payloads from this integration conformed to the expected schema.";
+		case "degraded":
+			return "Some payloads from this integration failed validation — see the rejection rate for severity.";
+		case "failing":
+			return "A significant share of payloads from this integration failed validation. Check the schema drift and quarantine sections for details.";
+	}
+}
+
 // ============================================================================
 // Helper Components
 // ============================================================================
@@ -335,6 +353,7 @@ export function ValidationHealthSection({
 																		? "Degraded"
 																		: "Failing"
 															}
+															title={healthStateTooltip(health.state)}
 														/>
 													</td>
 													<td className="p-3 text-right font-mono text-foreground">
