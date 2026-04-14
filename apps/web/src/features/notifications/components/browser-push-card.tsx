@@ -2,11 +2,49 @@
 
 import { Bell, BellOff, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { StatusBadge } from "@/components/layout/premium-components";
+import { type DomainStatus, DomainStatusBadge } from "@/components/layout/premium-components";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 import { notificationsApi } from "../../../lib/api-client/notifications";
 
 type PushState = "loading" | "unsupported" | "denied" | "enabled" | "disabled" | "error";
+
+/**
+ * Collapse the 6 push states into the shared domain status taxonomy so this
+ * card uses the same colors/semantics as the services and channels lists.
+ * `loading` maps to `configured` (not yet validated) rather than a bespoke
+ * shade — matches the "configured but never validated" meaning.
+ */
+function pushStateToDomainStatus(state: PushState): DomainStatus {
+	switch (state) {
+		case "enabled":
+			return "healthy";
+		case "denied":
+		case "error":
+			return "offline";
+		case "disabled":
+			return "disabled";
+		case "loading":
+		case "unsupported":
+			return "configured";
+	}
+}
+
+function pushStateLabel(state: PushState): string {
+	switch (state) {
+		case "enabled":
+			return "Active";
+		case "denied":
+			return "Blocked";
+		case "loading":
+			return "Checking…";
+		case "error":
+			return "Error";
+		case "disabled":
+			return "Inactive";
+		case "unsupported":
+			return "Unsupported";
+	}
+}
 
 /**
  * Convert a base64 URL-safe string to a Uint8Array for the applicationServerKey.
@@ -129,17 +167,10 @@ export function BrowserPushCard() {
 				<div className="min-w-0 flex-1">
 					<div className="flex items-center gap-2">
 						<span className="font-medium">Browser Push Notifications</span>
-						<StatusBadge
-							status={state === "enabled" ? "success" : state === "denied" ? "error" : "info"}
-						>
-							{state === "enabled"
-								? "Active"
-								: state === "denied"
-									? "Blocked"
-									: state === "loading"
-										? "Checking..."
-										: "Inactive"}
-						</StatusBadge>
+						<DomainStatusBadge
+							status={pushStateToDomainStatus(state)}
+							label={pushStateLabel(state)}
+						/>
 					</div>
 					<p className="text-xs text-muted-foreground mt-0.5">
 						{state === "denied"

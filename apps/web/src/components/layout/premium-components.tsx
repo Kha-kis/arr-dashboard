@@ -7,9 +7,17 @@
  * - premium-interactive.tsx:   Tabs, Selects, Buttons, Skeletons
  */
 
+export type { AsyncStateEmptyConfig, AsyncStateViewProps } from "./async-state-view";
 // Async State Composer
 export { AsyncErrorCard, AsyncStateView } from "./async-state-view";
-export type { AsyncStateEmptyConfig, AsyncStateViewProps } from "./async-state-view";
+export type { DomainStatus } from "./domain-status";
+// Domain Status (shared service/integration health taxonomy)
+export {
+	DomainStatusBadge,
+	deriveNotificationChannelStatus,
+	deriveServiceInstanceStatus,
+	getDomainStatusMeta,
+} from "./domain-status";
 export type { GlassmorphicCardProps } from "./premium-containers";
 // Containers & Layout
 export {
