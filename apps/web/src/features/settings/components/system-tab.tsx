@@ -130,7 +130,12 @@ export function SystemTab() {
 		isError: isValidationHealthError,
 		dataUpdatedAt: validationHealthUpdatedAt,
 	} = useValidationHealth();
-	const { data: securityPosture, isLoading: isSecurityPostureLoading } = useSecurityPosture();
+	const {
+		data: securityPosture,
+		isLoading: isSecurityPostureLoading,
+		isError: isSecurityPostureError,
+		refetch: refetchSecurityPosture,
+	} = useSecurityPosture();
 	const resetHealthMutation = useResetValidationHealth();
 	const updateMutation = useUpdateSystemSettings();
 	const restartMutation = useRestartSystem();
@@ -349,6 +354,10 @@ export function SystemTab() {
 			<SecurityPostureSection
 				posture={securityPosture?.data}
 				isLoading={isSecurityPostureLoading}
+				isError={isSecurityPostureError}
+				onRetry={() => {
+					void refetchSecurityPosture();
+				}}
 			/>
 
 			{/* Validation Health Section */}

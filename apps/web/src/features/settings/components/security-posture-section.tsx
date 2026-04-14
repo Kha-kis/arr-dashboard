@@ -19,11 +19,17 @@ import {
 	KeyRound,
 	ShieldAlert,
 	ShieldCheck,
+	ShieldOff,
 	ShieldX,
 	UserCheck,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { PremiumSection, PremiumSkeleton, StatusBadge } from "../../../components/layout";
+import {
+	AsyncStateView,
+	PremiumSection,
+	PremiumSkeleton,
+	StatusBadge,
+} from "../../../components/layout";
 import type {
 	SecurityCheck,
 	SecurityPosture,
@@ -34,6 +40,8 @@ import { cn } from "../../../lib/utils";
 interface Props {
 	posture: SecurityPosture | undefined;
 	isLoading: boolean;
+	isError?: boolean;
+	onRetry?: () => void;
 }
 
 const SEVERITY_BADGE: Record<
@@ -68,24 +76,11 @@ const OVERALL_ICON: Record<SecuritySeverity, typeof ShieldCheck> = {
 	misconfigured: ShieldX,
 };
 
-export function SecurityPostureSection({ posture, isLoading }: Props) {
-	if (isLoading && !posture) {
-		return (
-			<PremiumSection
-				title="Security Posture"
-				description="Effective runtime security configuration and warnings"
-				icon={ShieldCheck}
-			>
-				<div className="space-y-3">
-					<PremiumSkeleton className="h-20" />
-					<PremiumSkeleton className="h-12" />
-					<PremiumSkeleton className="h-12" />
-					<PremiumSkeleton className="h-12" />
-				</div>
-			</PremiumSection>
-		);
-	}
-
+export function SecurityPostureSection({ posture, isLoading, isError, onRetry }: Props) {
+	// Defer loading / error / empty to AsyncStateView so the wording + retry
+	// affordance match the rest of the app. The section chrome (title, icon,
+	// description) always renders so the operator can still see what the panel
+	// *is* while it's loading or broken.
 	if (!posture) {
 		return (
 			<PremiumSection
@@ -93,7 +88,29 @@ export function SecurityPostureSection({ posture, isLoading }: Props) {
 				description="Effective runtime security configuration and warnings"
 				icon={ShieldCheck}
 			>
-				<p className="text-sm text-muted-foreground">Unable to load security posture.</p>
+				<AsyncStateView
+					isLoading={isLoading}
+					isError={Boolean(isError)}
+					isEmpty={!isLoading && !isError}
+					onRetry={onRetry}
+					errorTitle="Couldn't load security posture"
+					emptyState={{
+						icon: ShieldOff,
+						title: "Security posture unavailable",
+						description:
+							"We couldn't evaluate your current security configuration. Try refreshing the page.",
+					}}
+					loadingFallback={
+						<div className="space-y-3">
+							<PremiumSkeleton className="h-20" />
+							<PremiumSkeleton className="h-12" />
+							<PremiumSkeleton className="h-12" />
+							<PremiumSkeleton className="h-12" />
+						</div>
+					}
+				>
+					{null}
+				</AsyncStateView>
 			</PremiumSection>
 		);
 	}

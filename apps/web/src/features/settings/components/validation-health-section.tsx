@@ -12,7 +12,8 @@ import {
 	XCircle,
 } from "lucide-react";
 import { useState } from "react";
-import { PremiumSection } from "../../../components/layout";
+import { DomainStatusBadge, PremiumSection } from "../../../components/layout";
+import type { DomainStatus } from "../../../components/layout/domain-status";
 import { Button } from "../../../components/ui/button";
 import { useClearQuarantine, useValidationQuarantine } from "../../../hooks/api/useSystem";
 import type {
@@ -22,6 +23,25 @@ import type {
 	ValidationHealthResponse,
 } from "../../../lib/api-client/system";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+
+/**
+ * Map validation-health state onto the shared domain-status taxonomy.
+ *
+ * `failing` → `offline` because the domain vocabulary reserves `offline` for
+ * "last check failed". `degraded` matches 1:1. There is no validation-side
+ * equivalent of `configured`/`disabled` (those only make sense at the
+ * integration-setup layer), so no other states are reachable here.
+ */
+function healthStateToDomainStatus(state: HealthState): DomainStatus {
+	switch (state) {
+		case "healthy":
+			return "healthy";
+		case "degraded":
+			return "degraded";
+		case "failing":
+			return "offline";
+	}
+}
 
 // ============================================================================
 // Helper Components
@@ -57,33 +77,6 @@ function SystemInfoCard({
 				)}
 			</div>
 		</div>
-	);
-}
-
-function HealthStateBadge({ state }: { state: HealthState }) {
-	const colors = {
-		healthy: SEMANTIC_COLORS.success,
-		degraded: SEMANTIC_COLORS.warning,
-		failing: SEMANTIC_COLORS.error,
-	};
-	const labels = {
-		healthy: "Healthy",
-		degraded: "Degraded",
-		failing: "Failing",
-	};
-	const color = colors[state];
-
-	return (
-		<span
-			className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium"
-			style={{
-				backgroundColor: `${color.from}20`,
-				color: color.from,
-			}}
-		>
-			<span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color.from }} />
-			{labels[state]}
-		</span>
 	);
 }
 
@@ -333,7 +326,16 @@ export function ValidationHealthSection({
 														)}
 													</td>
 													<td className="p-3 text-center">
-														<HealthStateBadge state={health.state} />
+														<DomainStatusBadge
+															status={healthStateToDomainStatus(health.state)}
+															label={
+																health.state === "healthy"
+																	? "Healthy"
+																	: health.state === "degraded"
+																		? "Degraded"
+																		: "Failing"
+															}
+														/>
 													</td>
 													<td className="p-3 text-right font-mono text-foreground">
 														{health.totals.total.toLocaleString()}
