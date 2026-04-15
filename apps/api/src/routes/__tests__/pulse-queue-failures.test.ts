@@ -270,4 +270,113 @@ describe("GET /pulse — collectArrQueueFailures emission", () => {
 		expect(queueRows).toHaveLength(1);
 		expect(queueRows[0].id).toBe("queue-failed-inst-ok-99");
 	});
+
+	it("caps each instance independently — 2 instances × 15 items → 22 rows (10 + 1 per instance)", async () => {
+		// Automated equivalent of the multi-instance manual check: the
+		// fan-out cap is per-instance, so a fleet with two unhealthy ARRs
+		// produces 2 × (10 visible + 1 rollup) = 22 rows, never the full
+		// 30. Cross-instance bleed (one instance's cap eating another's
+		// quota) would surface here as a wrong row count.
+		instanceRows = [
+			makeInstance({ id: "inst-sonarr", service: "SONARR", label: "Sonarr" }),
+			makeInstance({ id: "inst-radarr", service: "RADARR", label: "Radarr" }),
+		];
+		const makeFailedItems = (count: number) =>
+			Array.from({ length: count }, (_, idx) =>
+				makeQueueItem({
+					id: idx + 1,
+					title: `Failed.${idx}`,
+					trackedDownloadState: "importFailed",
+					trackedDownloadStatus: "error",
+					errorMessage: `Error ${idx}`,
+				}),
+			);
+		queueByInstanceId.set("inst-sonarr", makeFailedItems(15));
+		queueByInstanceId.set("inst-radarr", makeFailedItems(15));
+
+		const res = await injectAuthenticated("GET", "/pulse");
+		const body = JSON.parse(res.payload);
+		const queueRows = body.items.filter((i: { id: string }) => i.id.startsWith("queue-"));
+
+		const sonarrVisible = queueRows.filter((i: { id: string }) =>
+			i.id.startsWith("queue-failed-inst-sonarr-"),
+		);
+		const radarrVisible = queueRows.filter((i: { id: string }) =>
+			i.id.startsWith("queue-failed-inst-radarr-"),
+		);
+		const sonarrRollup = queueRows.find(
+			(i: { id: string }) => i.id === "queue-overflow-inst-sonarr",
+		);
+		const radarrRollup = queueRows.find(
+			(i: { id: string }) => i.id === "queue-overflow-inst-radarr",
+		);
+
+		// Each instance capped at exactly 10 visible items
+		expect(sonarrVisible).toHaveLength(10);
+		expect(radarrVisible).toHaveLength(10);
+		// Each has its own rollup
+		expect(sonarrRollup?.title).toContain("+5 more failed items");
+		expect(radarrRollup?.title).toContain("+5 more failed items");
+		// Total: 10 + 10 + 2 rollups = 22 rows, no cross-instance bleed
+		expect(queueRows).toHaveLength(22);
+	});
+
+	it("cap selection prioritizes failed items over stuck items when total > cap", async () => {
+		// Automated equivalent of "order is correct" — but specifically the
+		// operationally-important invariant: when the 10-row cap forces a
+		// choice between failed and stuck items, FAILED items win. Operators
+		// care more about a permanent failure than a transient warning, so
+		// sacrificing stuck rows to the rollup is the right call.
+		//
+		// Setup: 8 failed + 8 stuck = 16 total. Cap is 10. Expected: all 8
+		// failed survive + 2 of the 8 stuck. Reversed priority would leave
+		// only 2 failed items visible, a trust regression.
+		instanceRows = [makeInstance()];
+		const base = Date.now();
+		const items: ReturnType<typeof makeQueueItem>[] = [];
+		for (let i = 0; i < 8; i += 1) {
+			items.push(
+				makeQueueItem({
+					id: 100 + i,
+					title: `Failed.${i}`,
+					// Failed items given NEWER timestamps — would lose to
+					// stuck on a "newest first" or "by timestamp" sort. If
+					// they still win the cap, we've proved the collector
+					// prioritizes classification over recency.
+					added: new Date(base - i * 60 * 60 * 1000).toISOString(),
+					trackedDownloadState: "importFailed",
+					trackedDownloadStatus: "error",
+					errorMessage: `failed ${i}`,
+				}),
+			);
+		}
+		for (let i = 0; i < 8; i += 1) {
+			items.push(
+				makeQueueItem({
+					id: 200 + i,
+					title: `Stuck.${i}`,
+					added: new Date(base - (10 + i) * 60 * 60 * 1000).toISOString(),
+					trackedDownloadStatus: "warning",
+					errorMessage: `stuck ${i}`,
+				}),
+			);
+		}
+		queueByInstanceId.set("inst-sonarr-1", items);
+
+		const res = await injectAuthenticated("GET", "/pulse");
+		const body = JSON.parse(res.payload);
+		const queueRows = body.items.filter((i: { id: string }) => i.id.startsWith("queue-"));
+		const failedCount = queueRows.filter((i: { id: string }) =>
+			i.id.startsWith("queue-failed-"),
+		).length;
+		const stuckCount = queueRows.filter((i: { id: string }) =>
+			i.id.startsWith("queue-stuck-"),
+		).length;
+		const rollup = queueRows.find((i: { id: string }) => i.id === "queue-overflow-inst-sonarr-1");
+
+		expect(failedCount).toBe(8); // all failed survived
+		expect(stuckCount).toBe(2); // only 2 of 8 stuck survived
+		expect(rollup).toBeDefined();
+		expect(rollup.title).toContain("+6 more"); // 16 total - 10 visible = 6 overflow
+	});
 });

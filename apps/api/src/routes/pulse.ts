@@ -91,7 +91,11 @@ function isQueueRow(item: PulseItem): boolean {
 	return item.id.startsWith("queue-");
 }
 
-function sortPulseItems(items: PulseItem[]): PulseItem[] {
+// Exported for focused unit testing. The behavior under test is:
+//   (a) severity bucket ordering (critical > warning > info)
+//   (b) queue-row deprioritization within a severity bucket
+//   (c) newest-first within the same severity + row class
+export function sortPulseItems(items: PulseItem[]): PulseItem[] {
 	return items.sort((a, b) => {
 		const severityDiff = (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9);
 		if (severityDiff !== 0) return severityDiff;
