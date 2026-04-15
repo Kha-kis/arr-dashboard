@@ -96,7 +96,7 @@ export const SeasonEpisodeList = ({
 	if (isError) {
 		return (
 			<div className="py-4 text-center text-sm text-red-400">
-				Failed to load episodes. The Sonarr instance may be unreachable.
+				Failed to load episodes. Try again, or check Pulse if this persists.
 			</div>
 		);
 	}

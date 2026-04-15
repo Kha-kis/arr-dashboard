@@ -42,13 +42,22 @@ const STATUS_META: Record<DomainStatus, DomainStatusMeta> = {
 		badge: "warning",
 		label: "Degraded",
 		icon: AlertTriangle,
-		description: "Reachable but the last check reported issues",
+		// Explicitly frames the badge as a point-in-time snapshot and
+		// defers the "is it broken right now?" question to Pulse, which
+		// is the canonical live-health surface. Avoids the framing
+		// conflict where a cached "Degraded" badge contradicted a
+		// fresh Pulse state.
+		description: "Last check reported issues. See Pulse for live health.",
 	},
 	offline: {
 		badge: "error",
 		label: "Offline",
 		icon: XCircle,
-		description: "Configured but the last check failed",
+		// Same framing discipline as `degraded`: the label "Offline" is
+		// a snapshot of the last test, not a live claim. Pointing at
+		// Pulse keeps the operator from reading "Offline" as a live
+		// diagnosis when it may be stale.
+		description: "Last check failed. See Pulse for live health.",
 	},
 	configured: {
 		badge: "info",
