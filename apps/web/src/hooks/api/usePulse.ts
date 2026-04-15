@@ -8,7 +8,13 @@ import {
 } from "../../lib/api-client/pulse";
 import { getErrorMessage } from "../../lib/error-utils";
 import { POLLING_STATS } from "../../lib/polling-intervals";
-import { huntingKeys, pulseKeys, queueCleanerKeys } from "../../lib/query-keys";
+import {
+	huntingKeys,
+	plexKeys,
+	pulseKeys,
+	queueCleanerKeys,
+	tautulliKeys,
+} from "../../lib/query-keys";
 
 export interface UsePulseQueryOptions {
 	attentionOnly?: boolean;
@@ -57,9 +63,18 @@ export const usePulseActionMutation = () => {
 					toast.success(successCopyForAction(action));
 					break;
 				case "cache.refresh":
-					// No cache.refresh collector emits yet (PR 3), but keep
-					// the success toast generic so the mutation hook is
-					// future-ready without extra code churn.
+					// The cache health banner (/api/plex/cache/health) is
+					// shared across plex + tautulli, so plexKeys.cacheHealth
+					// is the right key for both branches. Also drop the
+					// domain root key so downstream Plex/Tautulli widgets
+					// that depend on the refreshed cache repaint on next
+					// mount without waiting for their own stale window.
+					queryClient.invalidateQueries({ queryKey: plexKeys.cacheHealth() });
+					if (action.target.cacheType === "plex") {
+						queryClient.invalidateQueries({ queryKey: plexKeys.all });
+					} else {
+						queryClient.invalidateQueries({ queryKey: tautulliKeys.all });
+					}
 					toast.success(successCopyForAction(action));
 					break;
 			}
@@ -77,6 +92,8 @@ function successCopyForAction(action: PulseAction): string {
 				? "Hunt scheduler enabled"
 				: "Queue cleaner scheduler enabled";
 		case "cache.refresh":
-			return "Cache refresh triggered";
+			return action.target.cacheType === "plex"
+				? "Plex cache refresh triggered"
+				: "Tautulli cache refresh triggered";
 	}
 }
