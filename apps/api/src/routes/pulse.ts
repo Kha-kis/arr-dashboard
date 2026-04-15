@@ -5,9 +5,12 @@
  * from all connected services. Results are cached per-user for 60 seconds.
  */
 
-import type { PulseItem, PulseResponse } from "@arr/shared";
+import { type PulseItem, type PulseResponse, pulseActionSchema } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
+import { z } from "zod";
+import { dispatchPulseAction } from "../lib/pulse/actions.js";
 import { pulseCollectors } from "../lib/pulse/collectors.js";
+import { validateRequest } from "../lib/utils/validate.js";
 
 // ============================================================================
 // In-memory cache (per user, 60s TTL)
@@ -21,6 +24,16 @@ interface CacheEntry {
 }
 
 const pulseCache = new Map<string, CacheEntry>();
+
+/**
+ * Drop the cached Pulse response for a user so the next GET /pulse call
+ * refetches from collectors. Called after a successful action so the row
+ * the operator just resolved disappears on the next poll instead of
+ * waiting out the 60s TTL.
+ */
+export function invalidatePulseCache(userId: string): void {
+	pulseCache.delete(userId);
+}
 
 // ============================================================================
 // Severity ordering for sort
@@ -174,6 +187,44 @@ export const registerPulseRoutes: FastifyPluginCallback = (app, _opts, done) => 
 		pulseCache.set(userId, { data: response, expiresAt: Date.now() + CACHE_TTL_MS });
 
 		return reply.send(attentionOnly ? applyAttentionFilter(response) : response);
+	});
+
+	// ============================================================================
+	// POST /pulse/:id/action — dispatch an operator action for a Pulse signal
+	// ============================================================================
+	//
+	// The `:id` path param is the Pulse signal id (for logging/audit context).
+	// Signals are stateless — regenerated every poll — so the server does NOT
+	// look the id up. Authorization derives from the action's target fields:
+	//   - scheduler.enable: global (single-admin)
+	//   - cache.refresh:    per-instance, via require*Client ownership check
+	//
+	// On success the per-user cache is invalidated so the row the operator
+	// just resolved drops from /pulse on the next poll instead of waiting
+	// out the 60s TTL.
+
+	const pulseIdParams = z.object({ id: z.string().min(1) });
+
+	app.post("/pulse/:id/action", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const { id: signalId } = validateRequest(pulseIdParams, request.params);
+		const action = validateRequest(pulseActionSchema, request.body);
+
+		const result = await dispatchPulseAction(app, userId, action, request.log);
+
+		invalidatePulseCache(userId);
+
+		request.log.info(
+			{
+				action: action.kind,
+				target: action.target,
+				signalId,
+				userId,
+			},
+			"pulse-action: dispatched",
+		);
+
+		return reply.send(result);
 	});
 
 	done();
