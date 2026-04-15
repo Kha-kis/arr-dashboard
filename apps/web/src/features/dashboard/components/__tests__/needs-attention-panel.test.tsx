@@ -314,4 +314,32 @@ describe("<NeedsAttentionPanel />", () => {
 		});
 		expect(footer).toHaveAttribute("href", "/pulse");
 	});
+
+	it("preserves /pulse#<id> deep-links on Needs Attention rows (paired with PulseClient self-link suppression)", () => {
+		// Counterpart to the suppression added in pulse-client.tsx: items
+		// with `actionUrl: "/pulse#..."` (e.g. from collectSchedulerHealth)
+		// MUST keep their link here on the dashboard, because clicking it
+		// is the whole point — it deep-links to the full Pulse feed and
+		// scrolls/highlights the matching row. Only the /pulse page itself
+		// is allowed to drop the self-link.
+		mockUsePulseQuery.mockReturnValue({
+			data: makeResponse([
+				makeItem({
+					id: "scheduler-failing-queue-cleaner",
+					title: "Queue Cleaner is failing",
+					actionUrl: "/pulse#scheduler-failing-queue-cleaner",
+					actionLabel: "View in Pulse",
+				}),
+			]),
+			isLoading: false,
+			isError: false,
+		});
+
+		render(<NeedsAttentionPanel />, { wrapper: createWrapper() });
+		const link = screen.getByRole("link", { name: /View in Pulse/i });
+		expect(link).toHaveAttribute(
+			"href",
+			"/pulse#scheduler-failing-queue-cleaner",
+		);
+	});
 });
