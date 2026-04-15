@@ -88,7 +88,6 @@ describe("GET /pulse — cache.refresh action emission", () => {
 			kind: "cache.refresh",
 			target: { instanceId: "inst-plex", cacheType: "plex" },
 			label: "Refresh now",
-			confirmLabel: "Click again to refresh",
 			destructive: false,
 		});
 	});

@@ -53,7 +53,6 @@ export const pulseActionSchema = z.discriminatedUnion("kind", [
 		kind: z.literal("scheduler.enable"),
 		target: z.object({ jobId: schedulerJobIdSchema }),
 		label: z.string().min(1),
-		confirmLabel: z.string().min(1),
 		destructive: z.boolean(),
 	}),
 	z.object({
@@ -63,7 +62,6 @@ export const pulseActionSchema = z.discriminatedUnion("kind", [
 			cacheType: pulseCacheTypeSchema,
 		}),
 		label: z.string().min(1),
-		confirmLabel: z.string().min(1),
 		destructive: z.boolean(),
 	}),
 	z.object({
@@ -76,7 +74,6 @@ export const pulseActionSchema = z.discriminatedUnion("kind", [
 			service: queueRetryServiceSchema,
 		}),
 		label: z.string().min(1),
-		confirmLabel: z.string().min(1),
 		destructive: z.boolean(),
 	}),
 ]);

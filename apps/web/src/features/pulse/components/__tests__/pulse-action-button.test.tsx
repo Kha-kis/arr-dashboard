@@ -29,7 +29,6 @@ const ACTION: PulseAction = {
 	kind: "scheduler.enable",
 	target: { jobId: "hunting" },
 	label: "Enable",
-	confirmLabel: "Click again to enable",
 	destructive: false,
 };
 

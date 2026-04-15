@@ -159,7 +159,6 @@ describe("GET /pulse — scheduler health signals", () => {
 			kind: "scheduler.enable",
 			target: { jobId: "hunting" },
 			label: "Enable",
-			confirmLabel: "Click again to enable",
 			destructive: false,
 		});
 	});
