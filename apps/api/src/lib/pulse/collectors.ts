@@ -27,12 +27,15 @@ import {
 	isReadarrClient,
 	isSonarrClient,
 } from "../arr/client-helpers.js";
+import { createJellyfinClient } from "../jellyfin/jellyfin-client.js";
+import { createPlexClient } from "../plex/plex-client.js";
 import {
 	calculateDiskTotals,
 	type InstanceInfo,
 	processHealthIssues,
 	safeRequest,
 } from "../statistics/statistics-utils.js";
+import { createTautulliClient } from "../tautulli/tautulli-client.js";
 import { integrationHealth } from "../validation/integration-health.js";
 
 // ============================================================================
@@ -200,6 +203,88 @@ const collectArrSignals: Collector = async (app, userId, log) => {
 					category: "health",
 					title: `${instance.label} is unreachable`,
 					detail: `Could not connect to ${service.charAt(0).toUpperCase() + service.slice(1)} instance`,
+					actionUrl: "/settings",
+					actionLabel: "Check connection",
+					source: service,
+					timestamp: now(),
+				});
+			}
+		}),
+	);
+
+	return items;
+};
+
+// ============================================================================
+// 2a. Media-Server Reachability (Plex / Jellyfin / Tautulli)
+// ============================================================================
+//
+// Mirrors the `arr-unreachable-*` pattern in collectArrSignals above, but
+// for the three non-ARR media services. Without this collector, an
+// unreachable Plex/Jellyfin/Tautulli surfaces to operators only as a
+// "cache refresh errors" row — which is technically accurate (the cache
+// refresh did fail) but misdirects the operator toward retrying a cache
+// refresh when the actual fix is to restore the upstream connection.
+//
+// Design choices:
+//   - **Critical severity** matches `arr-unreachable-*`. An unreachable
+//     media server means the operator sees stale or missing data in
+//     downstream surfaces (/statistics, recently-added, now-playing) —
+//     that's trust-breaking and deserves the highest severity.
+//   - **Cheap ping endpoints** — `getPublicInfo()` on Jellyfin
+//     (unauthenticated, no data returned), `getIdentity()` on Plex
+//     (unauthenticated), `getInfo()` on Tautulli. Each uses the
+//     client's built-in 10–15s AbortSignal.timeout so a dead instance
+//     fails fast without hanging the /pulse response.
+//   - **DB filter by service type** — fetching instances already
+//     filtered to PLEX/JELLYFIN/TAUTULLI means we don't risk an
+//     AppValidationError from the require*Client helpers (which would
+//     look like "unreachable" when it's actually a data-integrity
+//     issue). We use the plain `create*Client()` factories instead.
+//   - **Per-instance parallelism + per-instance try/catch** — matches
+//     collectArrSignals. One bad instance doesn't silence the others.
+
+const collectMediaServerReachability: Collector = async (app, userId, log) => {
+	const instances = await app.prisma.serviceInstance.findMany({
+		where: {
+			enabled: true,
+			userId,
+			service: { in: ["PLEX", "JELLYFIN", "TAUTULLI"] },
+		},
+	});
+
+	if (instances.length === 0) return [];
+
+	const items: PulseItem[] = [];
+
+	await Promise.all(
+		instances.map(async (instance) => {
+			const service = instance.service.toLowerCase() as "plex" | "jellyfin" | "tautulli";
+			const serviceLabel =
+				service === "plex" ? "Plex" : service === "jellyfin" ? "Jellyfin" : "Tautulli";
+			try {
+				if (service === "plex") {
+					const client = createPlexClient(app.encryptor, instance, app.log);
+					await client.getIdentity();
+				} else if (service === "jellyfin") {
+					const client = createJellyfinClient(app.encryptor, instance, app.log);
+					await client.getPublicInfo();
+				} else {
+					const client = createTautulliClient(app.encryptor, instance, app.log);
+					await client.getInfo();
+				}
+				// Reachable — no row emitted.
+			} catch (error) {
+				log.warn(
+					{ err: error, instanceId: instance.id, service },
+					"pulse: media server unreachable",
+				);
+				items.push({
+					id: `${service}-unreachable-${instance.id}`,
+					severity: "critical",
+					category: "health",
+					title: `${instance.label} is unreachable`,
+					detail: `Could not connect to ${serviceLabel} instance`,
 					actionUrl: "/settings",
 					actionLabel: "Check connection",
 					source: service,
@@ -970,11 +1055,13 @@ export {
 	collectArrQueueFailures,
 	collectArrSignals,
 	collectCacheStaleness,
+	collectMediaServerReachability,
 	collectSchedulerHealth,
 };
 
 export const pulseCollectors: Collector[] = [
 	collectArrSignals,
+	collectMediaServerReachability,
 	collectArrQueueFailures,
 	collectSeerrCircuitBreaker,
 	collectCacheStaleness,
