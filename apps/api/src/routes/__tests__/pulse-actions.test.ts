@@ -126,6 +126,14 @@ beforeEach(async () => {
 
 	app = Fastify({ logger: false });
 	setupAuthGate(app);
+	// Stubs for the write-through surfaces the dispatcher touches post-PR.
+	// Not the focus of this file (see pulse-action-e2e.test.ts for the
+	// behavioral assertions) — we only need them to exist so the dispatcher
+	// doesn't throw on .markEnabled / .cacheRefreshStatus.upsert.
+	app.decorate("schedulerRegistry", { list: () => [], markEnabled: () => {} } as unknown as never);
+	app.decorate("prisma", {
+		cacheRefreshStatus: { upsert: async () => ({}) },
+	} as unknown as never);
 	registerTestErrorHandler(app);
 	await app.register(registerPulseRoutes);
 	await app.ready();
