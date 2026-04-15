@@ -92,7 +92,7 @@ afterEach(() => {
 describe("dispatchPulseAction — scheduler.enable", () => {
 	const huntAction: PulseAction = {
 		kind: "scheduler.enable",
-		target: { jobId: "hunt" },
+		target: { jobId: "hunting" },
 		label: "Enable scheduler",
 		confirmLabel: "Click again to enable",
 		destructive: false,
@@ -129,7 +129,7 @@ describe("dispatchPulseAction — scheduler.enable", () => {
 			{
 				name: "ConflictError",
 				statusCode: 409,
-				message: expect.stringContaining("hunt"),
+				message: expect.stringContaining("hunting"),
 			},
 		);
 
