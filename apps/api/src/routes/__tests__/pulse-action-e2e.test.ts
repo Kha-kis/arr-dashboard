@@ -126,7 +126,19 @@ beforeEach(async () => {
 
 	app = Fastify({ logger: false });
 	setupAuthGate(app, `e2e-user-${userCounter}`);
-	app.decorate("schedulerRegistry", { list: () => jobs } as unknown as never);
+	// Live registry stub: `markEnabled` mutates the `jobs` array in place so
+	// a subsequent call to `list()` reflects the post-action state. This is
+	// what proves the dispatcher's write-through genuinely lets the
+	// collector drop the row on the next poll — without the markEnabled
+	// call in the dispatcher, the row would persist forever.
+	app.decorate("schedulerRegistry", {
+		list: () => jobs,
+		markEnabled: (jobId: string) => {
+			jobs = jobs.map((j) =>
+				j.id === jobId ? { ...j, disabled: false, disabledReason: null, state: "idle" } : j,
+			);
+		},
+	} as unknown as never);
 	registerTestErrorHandler(app);
 	await app.register(registerPulseRoutes);
 	await app.ready();
@@ -182,22 +194,13 @@ describe("Pulse actionability — end-to-end (PR 1 + PR 2)", () => {
 
 		// -------------------------------------------------------------------
 		// 3. Next GET /pulse after invalidation should see the new state.
-		//    Simulate the scheduler actually starting by flipping isRunning
-		//    (matches what the live dispatcher would cause) and flipping
-		//    the registry to an enabled job. If the cache had survived, we
-		//    would still see the stale disabled item — that's the
-		//    regression this step guards against.
+		//    The registry stub's markEnabled callback already flipped the
+		//    job to enabled=false when the dispatcher wrote through — no
+		//    manual setup here. We flip isRunning on the scheduler class to
+		//    match what a real running scheduler would report for step 4's
+		//    double-click assertion.
 		// -------------------------------------------------------------------
 		huntingScheduler.isRunning.mockReturnValue(true);
-		jobs = [
-			makeJob({
-				id: "hunting",
-				label: "Hunting",
-				state: "idle",
-				disabled: false,
-				disabledReason: null,
-			}),
-		];
 
 		const secondPulse = await injectGet("/pulse");
 		const secondBody = JSON.parse(secondPulse.payload);

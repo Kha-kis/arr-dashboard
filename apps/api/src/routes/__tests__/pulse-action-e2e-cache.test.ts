@@ -116,9 +116,33 @@ beforeEach(async () => {
 
 	app = Fastify({ logger: false });
 	setupAuthGate(app, `e2e-cache-user-${userCounter}`);
+	// Live Prisma stub: `upsert` mutates the `cacheStatuses` array in place
+	// so a subsequent `findMany` reflects the post-action state (fresh
+	// lastRefreshedAt). This is what proves the dispatcher's write-through
+	// genuinely lets the staleness collector drop the row on the next poll
+	// — without the upsert, the row would persist indefinitely.
 	app.decorate("prisma", {
 		cacheRefreshStatus: {
 			findMany: async () => cacheStatuses,
+			upsert: async (args: {
+				where: { instanceId_cacheType: { instanceId: string; cacheType: string } };
+				create: CacheStatusRow;
+				update: Partial<CacheStatusRow>;
+			}) => {
+				const { instanceId, cacheType } = args.where.instanceId_cacheType;
+				const idx = cacheStatuses.findIndex(
+					(s) => s.instanceId === instanceId && s.cacheType === cacheType,
+				);
+				if (idx >= 0) {
+					cacheStatuses[idx] = {
+						...cacheStatuses[idx]!,
+						...args.update,
+					};
+				} else {
+					cacheStatuses.push(args.create);
+				}
+				return cacheStatuses[idx >= 0 ? idx : cacheStatuses.length - 1]!;
+			},
 		},
 	} as unknown as never);
 	registerTestErrorHandler(app);
@@ -165,11 +189,10 @@ describe("Pulse actionability — cache.refresh end-to-end", () => {
 		);
 		expect(refreshPlexCache).toHaveBeenCalledTimes(1);
 
-		// 3. Drop the row from the stub to model the post-refresh state
-		//    (lastRefreshedAt would now be recent → no longer stale). If the
-		//    per-user Pulse cache had survived, we'd still see the stale item.
-		cacheStatuses = [];
-
+		// 3. The live Prisma stub's upsert callback already mutated
+		//    cacheStatuses[0].lastRefreshedAt to `now` when the dispatcher
+		//    wrote through — no manual setup here. The collector should
+		//    read the fresh timestamp and not emit the stale row.
 		const second = await injectGet("/pulse");
 		const secondBody = JSON.parse(second.payload);
 		const stillStale = secondBody.items.find(

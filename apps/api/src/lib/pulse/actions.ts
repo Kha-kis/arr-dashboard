@@ -77,6 +77,16 @@ async function dispatchSchedulerEnable(
 	}
 
 	scheduler.start(app);
+
+	// Write through to the source-of-truth collectSchedulerHealth reads from.
+	// The scheduler class's `start()` flips its own `running` flag but does
+	// not touch the registry — so without this call the collector would keep
+	// emitting scheduler-disabled-<jobId> on the next poll and a second click
+	// would 409 against a registry still marked disabled. The scheduler row
+	// on the Pulse surface would never drop, which breaks the whole
+	// "click action → issue resolves → row disappears" promise.
+	app.schedulerRegistry.markEnabled(jobId);
+
 	log.info({ jobId }, "pulse-action: scheduler enabled");
 	return { status: "ok" };
 }
@@ -100,6 +110,7 @@ async function dispatchCacheRefresh(
 	if (cacheType === "plex") {
 		const { client } = await requirePlexClient(app, userId, instanceId);
 		const result = await refreshPlexCache(client, app.prisma, instanceId, log);
+		await recordCacheRefreshSuccess(app, instanceId, "plex", result, log);
 		log.info(
 			{ instanceId, cacheType, upserted: result.upserted, errors: result.errors },
 			"pulse-action: plex cache refreshed",
@@ -113,6 +124,7 @@ async function dispatchCacheRefresh(
 	// tautulli
 	const { client } = await requireTautulliClient(app, userId, instanceId);
 	const result = await refreshTautulliCache(client, app.prisma, instanceId, log);
+	await recordCacheRefreshSuccess(app, instanceId, "tautulli", result, log);
 	log.info(
 		{ instanceId, cacheType, upserted: result.upserted, errors: result.errors },
 		"pulse-action: tautulli cache refreshed",
@@ -121,4 +133,65 @@ async function dispatchCacheRefresh(
 		status: "ok",
 		detail: `${result.upserted} item(s) refreshed`,
 	};
+}
+
+// ---------------------------------------------------------------------------
+// CacheRefreshStatus write-through
+// ---------------------------------------------------------------------------
+//
+// Bumps the `lastRefreshedAt` timestamp (and result metadata) on the
+// `CacheRefreshStatus` row the collector reads from. Without this, a
+// successful dispatcher run would leave the row stale on the next GET
+// /pulse poll — the collector determines staleness from this table, not
+// from the refresher's return value.
+//
+// Mirrors the upsert already performed by the inline manual-refresh
+// route at apps/api/src/routes/plex/cache-routes.ts so the two paths
+// behave identically for operators. The status upsert is best-effort
+// (`.catch(...)`): a failure here must not fail the action itself, since
+// the refresh already succeeded.
+
+interface CacheRefreshResult {
+	upserted: number;
+	errors: number;
+	errorMessages?: readonly string[];
+}
+
+async function recordCacheRefreshSuccess(
+	app: FastifyInstance,
+	instanceId: string,
+	cacheType: "plex" | "tautulli",
+	result: CacheRefreshResult,
+	log: FastifyBaseLogger,
+): Promise<void> {
+	const now = new Date();
+	const errorMessages = result.errorMessages ?? [];
+	const lastErrorMessage =
+		errorMessages.length > 0 ? errorMessages.slice(0, 3).join("; ").slice(0, 200) : null;
+	const lastResult = result.errors > 0 ? "error" : "success";
+
+	await app.prisma.cacheRefreshStatus
+		.upsert({
+			where: { instanceId_cacheType: { instanceId, cacheType } },
+			create: {
+				instanceId,
+				cacheType,
+				lastRefreshedAt: now,
+				lastResult,
+				lastErrorMessage,
+				itemCount: result.upserted,
+			},
+			update: {
+				lastRefreshedAt: now,
+				lastResult,
+				lastErrorMessage,
+				itemCount: result.upserted,
+			},
+		})
+		.catch((err: unknown) => {
+			log.warn(
+				{ err, instanceId, cacheType },
+				"pulse-action: cache refreshed but failed to record status",
+			);
+		});
 }

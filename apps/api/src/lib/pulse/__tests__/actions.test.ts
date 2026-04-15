@@ -68,7 +68,19 @@ const fakeLog = {
 	child: vi.fn(() => fakeLog),
 } as unknown as FastifyBaseLogger;
 
-const fakeApp = { prisma: {} } as unknown as FastifyInstance;
+const markEnabled = vi.fn();
+const cacheStatusUpsert = vi.fn();
+
+const fakeApp = {
+	prisma: {
+		cacheRefreshStatus: {
+			upsert: (...args: unknown[]) => cacheStatusUpsert(...args),
+		},
+	},
+	schedulerRegistry: {
+		markEnabled: (jobId: string) => markEnabled(jobId),
+	},
+} as unknown as FastifyInstance;
 
 beforeEach(() => {
 	huntingScheduler.isRunning.mockReset();
@@ -79,6 +91,9 @@ beforeEach(() => {
 	refreshTautulliCache.mockReset();
 	requirePlexClient.mockReset();
 	requireTautulliClient.mockReset();
+	markEnabled.mockReset();
+	cacheStatusUpsert.mockReset();
+	cacheStatusUpsert.mockResolvedValue({});
 });
 
 afterEach(() => {
@@ -110,6 +125,10 @@ describe("dispatchPulseAction — scheduler.enable", () => {
 		expect(result).toEqual({ status: "ok" });
 		expect(huntingScheduler.start).toHaveBeenCalledWith(fakeApp);
 		expect(queueCleanerScheduler.start).not.toHaveBeenCalled();
+		// Write-through: collectSchedulerHealth reads from the registry, not
+		// from the scheduler class — so markEnabled must fire for the row
+		// to actually drop on the next poll.
+		expect(markEnabled).toHaveBeenCalledWith("hunting");
 	});
 
 	it("starts the queue-cleaner scheduler when it is not running", async () => {
@@ -120,6 +139,20 @@ describe("dispatchPulseAction — scheduler.enable", () => {
 		expect(result).toEqual({ status: "ok" });
 		expect(queueCleanerScheduler.start).toHaveBeenCalledWith(fakeApp);
 		expect(huntingScheduler.start).not.toHaveBeenCalled();
+		expect(markEnabled).toHaveBeenCalledWith("queue-cleaner");
+	});
+
+	it("does NOT call markEnabled when the dispatcher short-circuits on already-running (409)", async () => {
+		// Protects against a regression where a 409 inadvertently still wrote
+		// to the registry — which would reset disabledReason audit data we
+		// may want to preserve in future.
+		huntingScheduler.isRunning.mockReturnValue(true);
+
+		await expect(dispatchPulseAction(fakeApp, "user-1", huntAction, fakeLog)).rejects.toMatchObject(
+			{ statusCode: 409 },
+		);
+
+		expect(markEnabled).not.toHaveBeenCalled();
 	});
 
 	it("throws ConflictError (statusCode 409) when the hunt scheduler is already running", async () => {
@@ -181,6 +214,21 @@ describe("dispatchPulseAction — cache.refresh", () => {
 			fakeLog,
 		);
 		expect(requireTautulliClient).not.toHaveBeenCalled();
+		// Write-through: collectCacheStaleness reads lastRefreshedAt from
+		// CacheRefreshStatus. Without this upsert the row stays stale and
+		// re-emits on the next poll.
+		expect(cacheStatusUpsert).toHaveBeenCalledTimes(1);
+		const upsertArgs = cacheStatusUpsert.mock.calls[0]?.[0] as {
+			where: { instanceId_cacheType: { instanceId: string; cacheType: string } };
+			update: { lastRefreshedAt: Date; lastResult: string; itemCount: number };
+		};
+		expect(upsertArgs.where.instanceId_cacheType).toEqual({
+			instanceId: "inst-plex-1",
+			cacheType: "plex",
+		});
+		expect(upsertArgs.update.lastResult).toBe("success");
+		expect(upsertArgs.update.itemCount).toBe(42);
+		expect(upsertArgs.update.lastRefreshedAt).toBeInstanceOf(Date);
 	});
 
 	it("refreshes the tautulli cache via requireTautulliClient + refreshTautulliCache", async () => {
@@ -198,6 +246,28 @@ describe("dispatchPulseAction — cache.refresh", () => {
 			"inst-tautulli-1",
 			fakeLog,
 		);
+		// Same write-through contract for the tautulli branch.
+		expect(cacheStatusUpsert).toHaveBeenCalledTimes(1);
+		const upsertArgs = cacheStatusUpsert.mock.calls[0]?.[0] as {
+			where: { instanceId_cacheType: { instanceId: string; cacheType: string } };
+		};
+		expect(upsertArgs.where.instanceId_cacheType).toEqual({
+			instanceId: "inst-tautulli-1",
+			cacheType: "tautulli",
+		});
+	});
+
+	it("does NOT call cacheRefreshStatus.upsert when the refresher rejects before completing", async () => {
+		// Regression guard: a thrown ownership error (404) should short-circuit
+		// before any write-through. Writing status on a failed refresh would
+		// advance lastRefreshedAt dishonestly.
+		requirePlexClient.mockRejectedValue(new InstanceNotFoundError("inst-plex-1"));
+
+		await expect(dispatchPulseAction(fakeApp, "user-1", plexAction, fakeLog)).rejects.toMatchObject(
+			{ statusCode: 404 },
+		);
+
+		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
 
 	it("propagates InstanceNotFoundError from requirePlexClient (ownership failure)", async () => {
