@@ -23,6 +23,7 @@ import {
 	PremiumEmptyState,
 } from "../../../components/layout/premium-components";
 import { usePulseQuery } from "../../../hooks/api/usePulse";
+import { PulseActionButton } from "./pulse-action-button";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import {
 	anonymizeHealthMessage,
@@ -122,6 +123,8 @@ function PulseItemRow({
 				<p className="text-sm font-medium text-foreground">{title}</p>
 				{detail && <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{detail}</p>}
 			</div>
+
+			{item.action && <PulseActionButton signalId={item.id} action={item.action} />}
 
 			{item.actionUrl && (
 				<Link

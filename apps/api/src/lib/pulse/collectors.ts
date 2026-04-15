@@ -9,16 +9,16 @@
  * warning-level PulseItems so partial failures don't block the response.
  */
 
-import type { PulseItem } from "@arr/shared";
+import type { PulseAction, PulseItem, SchedulerJobId } from "@arr/shared";
 import { ARR_SERVICES_UPPER } from "@arr/shared";
-import { LidarrClient, ProwlarrClient } from "arr-sdk";
 import type { SonarrClient } from "arr-sdk";
+import { LidarrClient, ProwlarrClient } from "arr-sdk";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import {
 	calculateDiskTotals,
+	type InstanceInfo,
 	processHealthIssues,
 	safeRequest,
-	type InstanceInfo,
 } from "../statistics/statistics-utils.js";
 import { integrationHealth } from "../validation/integration-health.js";
 
@@ -279,7 +279,9 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 				timestamp: status.lastRefreshedAt.toISOString(),
 			});
 		} else if (status.lastRefreshedAt.getTime() < staleThreshold) {
-			const hoursAgo = Math.round((Date.now() - status.lastRefreshedAt.getTime()) / (60 * 60 * 1000));
+			const hoursAgo = Math.round(
+				(Date.now() - status.lastRefreshedAt.getTime()) / (60 * 60 * 1000),
+			);
 			items.push({
 				id: `cache-stale-${status.id}`,
 				severity: "warning",
@@ -474,7 +476,9 @@ const collectTrashSyncFailures: Collector = async (app, userId) => {
 			severity: "warning" as const,
 			category: "operations" as const,
 			title: `${s.instance.label}: TRaSH sync failed`,
-			detail: s.errorLog ? s.errorLog.slice(0, 120) : "Profile sync failed — check TRaSH guide settings",
+			detail: s.errorLog
+				? s.errorLog.slice(0, 120)
+				: "Profile sync failed — check TRaSH guide settings",
 			actionUrl: "/trash-guides",
 			actionLabel: "View TRaSH guides",
 			source: "trash",
@@ -514,6 +518,23 @@ function truncate(text: string, max = DETAIL_MAX_LENGTH): string {
 	return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
+// Schedulers the pulse-action dispatcher knows how to re-enable. Must stay
+// in sync with `schedulerJobIdSchema` in @arr/shared and with the dispatcher
+// branch in apps/api/src/lib/pulse/actions.ts. A disabled scheduler whose
+// id is not in this set still emits a warning — just without an action.
+const ENABLEABLE_JOB_IDS = new Set<SchedulerJobId>(["hunting", "queue-cleaner"]);
+
+function actionForDisabledScheduler(jobId: string): PulseAction | undefined {
+	if (!ENABLEABLE_JOB_IDS.has(jobId as SchedulerJobId)) return undefined;
+	return {
+		kind: "scheduler.enable",
+		target: { jobId: jobId as SchedulerJobId },
+		label: "Enable",
+		confirmLabel: "Click again to enable",
+		destructive: false,
+	};
+}
+
 const collectSchedulerHealth: Collector = async (app) => {
 	// Scheduler state is a process-global registry — all jobs are system-wide
 	// (backup, library-sync, trash-sync, etc.), not per-user. arr-dashboard is
@@ -528,6 +549,13 @@ const collectSchedulerHealth: Collector = async (app) => {
 		if (job.disabled) {
 			if (!job.disabledReason) continue; // Defensive: no reason → nothing actionable to say.
 			const id = `scheduler-disabled-${job.id}`;
+			// Inline re-enable action — only for schedulers the dispatcher
+			// supports. Today `markDisabled` is only called from init/failure
+			// paths (see comment above), so a disabled hunting/queue-cleaner
+			// job is always auto-suspended and safely re-enableable. Other
+			// job ids emit the warning without an action so we don't ship a
+			// button the backend can't fulfil.
+			const action = actionForDisabledScheduler(job.id);
 			items.push({
 				id,
 				severity: "warning",
@@ -542,6 +570,7 @@ const collectSchedulerHealth: Collector = async (app) => {
 				actionLabel: "View in Pulse",
 				source: "system",
 				timestamp: job.lastFailureAt ?? now(),
+				...(action ? { action } : {}),
 			});
 			continue;
 		}

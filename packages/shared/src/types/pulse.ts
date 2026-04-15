@@ -28,7 +28,10 @@ export type PulseCategory = z.infer<typeof pulseCategorySchema>;
 export const pulseActionKindSchema = z.enum(["scheduler.enable", "cache.refresh"]);
 export type PulseActionKind = z.infer<typeof pulseActionKindSchema>;
 
-export const schedulerJobIdSchema = z.enum(["hunt", "queue-cleaner"]);
+// Canonical scheduler job ids — match `JOB_ID` in
+// apps/api/src/lib/scheduler-registry/job-definitions.ts so collector
+// emission and dispatcher lookup share one string, no translation layer.
+export const schedulerJobIdSchema = z.enum(["hunting", "queue-cleaner"]);
 export type SchedulerJobId = z.infer<typeof schedulerJobIdSchema>;
 
 export const pulseCacheTypeSchema = z.enum(["plex", "tautulli"]);
