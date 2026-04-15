@@ -9,7 +9,7 @@
  * warning-level PulseItems so partial failures don't block the response.
  */
 
-import type { PulseAction, PulseItem, SchedulerJobId } from "@arr/shared";
+import type { PulseAction, PulseCacheType, PulseItem, SchedulerJobId } from "@arr/shared";
 import { ARR_SERVICES_UPPER } from "@arr/shared";
 import type { SonarrClient } from "arr-sdk";
 import { LidarrClient, ProwlarrClient } from "arr-sdk";
@@ -246,6 +246,25 @@ const collectSeerrCircuitBreaker: Collector = async (app, userId) => {
 // 4. Cache Staleness (Plex / Tautulli)
 // ============================================================================
 
+// Cache types the pulse-action dispatcher knows how to refresh. Must stay
+// in sync with `pulseCacheTypeSchema` in @arr/shared and with the dispatcher
+// branch in apps/api/src/lib/pulse/actions.ts. Stale cache rows for other
+// cacheType values (e.g. "plex_episode") still emit a warning — just
+// without an action button, so we don't ship a click the backend can't
+// fulfil.
+const REFRESHABLE_CACHE_TYPES = new Set<PulseCacheType>(["plex", "tautulli"]);
+
+function actionForStaleCache(instanceId: string, cacheType: string): PulseAction | undefined {
+	if (!REFRESHABLE_CACHE_TYPES.has(cacheType as PulseCacheType)) return undefined;
+	return {
+		kind: "cache.refresh",
+		target: { instanceId, cacheType: cacheType as PulseCacheType },
+		label: "Refresh now",
+		confirmLabel: "Click again to refresh",
+		destructive: false,
+	};
+}
+
 const collectCacheStaleness: Collector = async (app, userId) => {
 	const cacheStatuses = await app.prisma.cacheRefreshStatus.findMany({
 		where: { instance: { userId } },
@@ -267,6 +286,9 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 		const cacheLabel = cacheLabels[status.cacheType] ?? status.cacheType;
 
 		if (status.lastResult === "error") {
+			// Error items intentionally do NOT carry an inline action — a
+			// failed refresh likely fails again on the same network/config
+			// issue, so the "Check settings" link remains the right affordance.
 			items.push({
 				id: `cache-error-${status.id}`,
 				severity: "warning",
@@ -282,6 +304,7 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 			const hoursAgo = Math.round(
 				(Date.now() - status.lastRefreshedAt.getTime()) / (60 * 60 * 1000),
 			);
+			const action = actionForStaleCache(status.instanceId, status.cacheType);
 			items.push({
 				id: `cache-stale-${status.id}`,
 				severity: "warning",
@@ -292,6 +315,7 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 				actionLabel: "Check settings",
 				source: status.cacheType === "tautulli" ? "tautulli" : "plex",
 				timestamp: status.lastRefreshedAt.toISOString(),
+				...(action ? { action } : {}),
 			});
 		}
 	}
@@ -691,7 +715,7 @@ function formatBytes(bytes: number): string {
 // ============================================================================
 
 // Exported for testing
-export { collectArrSignals, collectSchedulerHealth };
+export { collectArrSignals, collectCacheStaleness, collectSchedulerHealth };
 
 export const pulseCollectors: Collector[] = [
 	collectArrSignals,
