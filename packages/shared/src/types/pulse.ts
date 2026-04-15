@@ -16,6 +16,45 @@ export const pulseCategorySchema = z.enum([
 ]);
 export type PulseCategory = z.infer<typeof pulseCategorySchema>;
 
+// ---------------------------------------------------------------------------
+// Pulse Action — optional side-effect the operator can invoke on a signal
+// ---------------------------------------------------------------------------
+//
+// The union is closed to known kinds so the frontend can exhaustively switch
+// on `kind` and so the backend dispatcher rejects unknown variants at the
+// boundary. New kinds land by extending this union — schema drift between
+// client and server surfaces as a Zod parse failure, not a silent no-op.
+
+export const pulseActionKindSchema = z.enum(["scheduler.enable", "cache.refresh"]);
+export type PulseActionKind = z.infer<typeof pulseActionKindSchema>;
+
+export const schedulerJobIdSchema = z.enum(["hunt", "queue-cleaner"]);
+export type SchedulerJobId = z.infer<typeof schedulerJobIdSchema>;
+
+export const pulseCacheTypeSchema = z.enum(["plex", "tautulli"]);
+export type PulseCacheType = z.infer<typeof pulseCacheTypeSchema>;
+
+export const pulseActionSchema = z.discriminatedUnion("kind", [
+	z.object({
+		kind: z.literal("scheduler.enable"),
+		target: z.object({ jobId: schedulerJobIdSchema }),
+		label: z.string().min(1),
+		confirmLabel: z.string().min(1),
+		destructive: z.boolean(),
+	}),
+	z.object({
+		kind: z.literal("cache.refresh"),
+		target: z.object({
+			instanceId: z.string().min(1),
+			cacheType: pulseCacheTypeSchema,
+		}),
+		label: z.string().min(1),
+		confirmLabel: z.string().min(1),
+		destructive: z.boolean(),
+	}),
+]);
+export type PulseAction = z.infer<typeof pulseActionSchema>;
+
 export const pulseItemSchema = z.object({
 	id: z.string(),
 	severity: pulseSeveritySchema,
@@ -26,6 +65,10 @@ export const pulseItemSchema = z.object({
 	actionLabel: z.string().optional(),
 	source: z.string(),
 	timestamp: z.string(),
+	// Optional. Present only when a collector has proved it can produce a
+	// precise, safe action for this signal. Collectors that cannot populate
+	// the union's `target` fields at the type level simply omit the field.
+	action: pulseActionSchema.optional(),
 });
 export type PulseItem = z.infer<typeof pulseItemSchema>;
 
