@@ -205,27 +205,39 @@ export const registerPulseRoutes: FastifyPluginCallback = (app, _opts, done) => 
 
 	const pulseIdParams = z.object({ id: z.string().min(1) });
 
-	app.post("/pulse/:id/action", async (request, reply) => {
-		const userId = request.currentUser!.id;
-		const { id: signalId } = validateRequest(pulseIdParams, request.params);
-		const action = validateRequest(pulseActionSchema, request.body);
+	// Rate limit the action route so a runaway script (or an overeager
+	// operator mashing "Refresh now") can't hammer upstream Plex/Tautulli
+	// via cache.refresh. 10/min is generous for real operator use — a
+	// human clicking one button per row per minute stays well under the
+	// cap, but bot-scale abuse trips 429. Aligns with the {max:2, 5m}
+	// limit on the dedicated manual-refresh routes.
+	app.post(
+		"/pulse/:id/action",
+		{
+			config: { rateLimit: { max: 10, timeWindow: "1m" } },
+		},
+		async (request, reply) => {
+			const userId = request.currentUser!.id;
+			const { id: signalId } = validateRequest(pulseIdParams, request.params);
+			const action = validateRequest(pulseActionSchema, request.body);
 
-		const result = await dispatchPulseAction(app, userId, action, request.log);
+			const result = await dispatchPulseAction(app, userId, action, request.log);
 
-		invalidatePulseCache(userId);
+			invalidatePulseCache(userId);
 
-		request.log.info(
-			{
-				action: action.kind,
-				target: action.target,
-				signalId,
-				userId,
-			},
-			"pulse-action: dispatched",
-		);
+			request.log.info(
+				{
+					action: action.kind,
+					target: action.target,
+					signalId,
+					userId,
+				},
+				"pulse-action: dispatched",
+			);
 
-		return reply.send(result);
-	});
+			return reply.send(result);
+		},
+	);
 
 	done();
 };
