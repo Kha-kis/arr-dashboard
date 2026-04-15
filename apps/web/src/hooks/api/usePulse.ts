@@ -7,6 +7,7 @@ import {
 	type PulseActionResponse,
 } from "../../lib/api-client/pulse";
 import { getErrorMessage } from "../../lib/error-utils";
+import { anonymizeHealthMessage, useIncognitoMode } from "../../lib/incognito";
 import { POLLING_STATS } from "../../lib/polling-intervals";
 import {
 	dashboardKeys,
@@ -44,6 +45,7 @@ export interface PulseActionVariables {
 
 export const usePulseActionMutation = () => {
 	const queryClient = useQueryClient();
+	const [incognito] = useIncognitoMode();
 
 	return useMutation<PulseActionResponse, Error, PulseActionVariables>({
 		mutationFn: ({ signalId, action }) => dispatchPulseAction(signalId, action),
@@ -90,7 +92,16 @@ export const usePulseActionMutation = () => {
 			}
 		},
 		onError: (error) => {
-			toast.error(getErrorMessage(error, "Action failed"));
+			// In incognito mode, run the toast text through the same sanitizer
+			// that Pulse rows use (anonymizeHealthMessage strips URLs + IPs;
+			// see lib/incognito.ts). Backend error messages routinely embed
+			// hostnames ("ECONNREFUSED 192.168.1.50:32400", "fetch failed:
+			// http://sonarr.local/api/v3/...") which would otherwise leak
+			// through verbatim. Generic messages ("Action failed", "Bad
+			// Request", "Internal Server Error") have no URLs/IPs to strip
+			// and pass through unchanged.
+			const raw = getErrorMessage(error, "Action failed");
+			toast.error(incognito ? anonymizeHealthMessage(raw) : raw);
 		},
 	});
 };
