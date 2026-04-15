@@ -505,7 +505,6 @@ const collectArrQueueFailures: Collector = async (app, userId, log) => {
 							service,
 						},
 						label: "Retry",
-						confirmLabel: "Click again to retry",
 						destructive: false,
 					},
 				});
@@ -596,7 +595,6 @@ function actionForStaleCache(instanceId: string, cacheType: string): PulseAction
 		kind: "cache.refresh",
 		target: { instanceId, cacheType: cacheType as PulseCacheType },
 		label: "Refresh now",
-		confirmLabel: "Click again to refresh",
 		destructive: false,
 	};
 }
@@ -890,7 +888,6 @@ function actionForDisabledScheduler(jobId: string): PulseAction | undefined {
 		kind: "scheduler.enable",
 		target: { jobId: jobId as SchedulerJobId },
 		label: "Enable",
-		confirmLabel: "Click again to enable",
 		destructive: false,
 	};
 }

@@ -155,7 +155,6 @@ describe("POST /pulse/:id/action — auth", () => {
 				kind: "scheduler.enable",
 				target: { jobId: "hunting" },
 				label: "Enable scheduler",
-				confirmLabel: "Click again",
 				destructive: false,
 			},
 		});
@@ -169,7 +168,6 @@ describe("POST /pulse/:id/action — scheduler.enable", () => {
 		kind: "scheduler.enable",
 		target: { jobId: "hunting" },
 		label: "Enable scheduler",
-		confirmLabel: "Click again to enable",
 		destructive: false,
 	};
 
@@ -208,7 +206,6 @@ describe("POST /pulse/:id/action — cache.refresh", () => {
 		kind: "cache.refresh",
 		target: { instanceId: "inst-plex-1", cacheType: "plex" },
 		label: "Refresh now",
-		confirmLabel: "Click again",
 		destructive: false,
 	};
 

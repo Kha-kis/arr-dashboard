@@ -109,7 +109,6 @@ describe("dispatchPulseAction — scheduler.enable", () => {
 		kind: "scheduler.enable",
 		target: { jobId: "hunting" },
 		label: "Enable scheduler",
-		confirmLabel: "Click again to enable",
 		destructive: false,
 	};
 	const cleanerAction: PulseAction = {
@@ -190,7 +189,6 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		kind: "cache.refresh",
 		target: { instanceId: "inst-plex-1", cacheType: "plex" },
 		label: "Refresh now",
-		confirmLabel: "Click again to refresh",
 		destructive: false,
 	};
 	const tautulliAction: PulseAction = {
@@ -396,7 +394,6 @@ describe("dispatchPulseAction — queue.retry", () => {
 			service: "sonarr",
 		},
 		label: "Retry",
-		confirmLabel: "Click again to retry",
 		destructive: false,
 	};
 

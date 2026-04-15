@@ -152,7 +152,6 @@ describe("Pulse actionability — queue.retry end-to-end", () => {
 				service: "sonarr",
 			},
 			label: "Retry",
-			confirmLabel: "Click again to retry",
 			destructive: false,
 		});
 

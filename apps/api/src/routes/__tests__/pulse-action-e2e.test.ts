@@ -176,7 +176,6 @@ describe("Pulse actionability — end-to-end (PR 1 + PR 2)", () => {
 			kind: "scheduler.enable",
 			target: { jobId: "hunting" },
 			label: "Enable",
-			confirmLabel: "Click again to enable",
 			destructive: false,
 		});
 

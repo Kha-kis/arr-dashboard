@@ -129,7 +129,6 @@ describe("GET /pulse — collectArrQueueFailures emission", () => {
 			kind: "queue.retry",
 			target: { instanceId: "inst-sonarr-1", queueItemId: "7", service: "sonarr" },
 			label: "Retry",
-			confirmLabel: "Click again to retry",
 			destructive: false,
 		});
 	});
