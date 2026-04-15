@@ -66,7 +66,6 @@ import {
 	useCleanupLogs,
 	useCleanupPreview,
 	useCleanupStatistics,
-	useCleanupStatus,
 	useCreateCleanupRule,
 	useDeleteCleanupRule,
 	useRejectCleanupItem,
@@ -75,7 +74,6 @@ import {
 	useUpdateCleanupRule,
 } from "../../../hooks/api/useLibraryCleanup";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
-import { CleanupHealthBanner } from "./cleanup-health-banner";
 import { CleanupRuleDialog } from "./cleanup-rule-dialog";
 import { CleanupRuleTemplates } from "./cleanup-rule-templates";
 
@@ -98,7 +96,6 @@ export function LibraryCleanupClient() {
 	const { gradient } = useThemeGradient();
 	const [activeTab, setActiveTab] = useState<Tab>("config");
 	const { data: config, isLoading } = useCleanupConfig();
-	const { data: healthStatus } = useCleanupStatus();
 	const updateConfig = useUpdateCleanupConfig();
 	const preview = useCleanupPreview();
 	const execute = useCleanupExecute();
@@ -124,12 +121,6 @@ export function LibraryCleanupClient() {
 				activeTab={activeTab}
 				onTabChange={(id) => setActiveTab(id as Tab)}
 			/>
-
-			{healthStatus && (
-				<div className="mt-4">
-					<CleanupHealthBanner status={healthStatus} />
-				</div>
-			)}
 
 			<div className="mt-6 space-y-6">
 				{activeTab === "config" && config && (
