@@ -32,6 +32,7 @@ import {
 	useIncognitoMode,
 } from "../../../lib/incognito";
 import { usePulseQuery } from "../../../hooks/api/usePulse";
+import { PulseActionButton } from "../../pulse/components/pulse-action-button";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
 
@@ -186,6 +187,7 @@ function AttentionRow({
 					<p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{detail}</p>
 				)}
 			</div>
+			{item.action && <PulseActionButton signalId={item.id} action={item.action} />}
 			{item.actionUrl && (
 				<Link
 					href={item.actionUrl}

@@ -70,7 +70,7 @@ async function dispatchSchedulerEnable(
 	jobId: SchedulerJobId,
 	log: FastifyBaseLogger,
 ): Promise<PulseActionResult> {
-	const scheduler = jobId === "hunt" ? getHuntingScheduler() : getQueueCleanerScheduler();
+	const scheduler = jobId === "hunting" ? getHuntingScheduler() : getQueueCleanerScheduler();
 
 	if (scheduler.isRunning()) {
 		throw new ConflictError(`Scheduler "${jobId}" is already running`);

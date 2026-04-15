@@ -22,10 +22,9 @@ import type { JobStatus } from "../../lib/scheduler-registry/scheduler-registry.
 // function under test) while isolating us from the other collectors' DB
 // dependencies.
 vi.mock("../../lib/pulse/collectors.js", async () => {
-	const actual =
-		await vi.importActual<typeof import("../../lib/pulse/collectors.js")>(
-			"../../lib/pulse/collectors.js",
-		);
+	const actual = await vi.importActual<typeof import("../../lib/pulse/collectors.js")>(
+		"../../lib/pulse/collectors.js",
+	);
 	return { pulseCollectors: [actual.collectSchedulerHealth] };
 });
 
@@ -98,9 +97,7 @@ describe("GET /pulse — scheduler health signals", () => {
 		expect(res.statusCode).toBe(200);
 
 		const body = JSON.parse(res.payload);
-		const item = body.items.find(
-			(i: { id: string }) => i.id === "scheduler-disabled-hunting",
-		);
+		const item = body.items.find((i: { id: string }) => i.id === "scheduler-disabled-hunting");
 
 		expect(item).toBeDefined();
 		expect(item.severity).toBe("warning");
@@ -130,9 +127,7 @@ describe("GET /pulse — scheduler health signals", () => {
 		expect(res.statusCode).toBe(200);
 
 		const body = JSON.parse(res.payload);
-		const item = body.items.find(
-			(i: { id: string }) => i.id === "scheduler-failing-queue-cleaner",
-		);
+		const item = body.items.find((i: { id: string }) => i.id === "scheduler-failing-queue-cleaner");
 
 		expect(item).toBeDefined();
 		expect(item.severity).toBe("warning");
@@ -145,6 +140,94 @@ describe("GET /pulse — scheduler health signals", () => {
 		expect(body.summary.warning).toBeGreaterThanOrEqual(1);
 	});
 
+	it("emits a scheduler.enable action on a disabled hunting scheduler", async () => {
+		jobs = [
+			makeJob({
+				id: "hunting",
+				label: "Hunting",
+				state: "disabled",
+				disabled: true,
+				disabledReason: "Init failed: cannot reach hunting config table",
+			}),
+		];
+
+		const res = await injectAuthenticated("GET", "/pulse");
+		const body = JSON.parse(res.payload);
+		const item = body.items.find((i: { id: string }) => i.id === "scheduler-disabled-hunting");
+
+		expect(item.action).toEqual({
+			kind: "scheduler.enable",
+			target: { jobId: "hunting" },
+			label: "Enable",
+			confirmLabel: "Click again to enable",
+			destructive: false,
+		});
+	});
+
+	it("emits a scheduler.enable action on a disabled queue-cleaner scheduler", async () => {
+		jobs = [
+			makeJob({
+				id: "queue-cleaner",
+				label: "Queue Cleaner",
+				state: "disabled",
+				disabled: true,
+				disabledReason: "Init failed: config table unreachable",
+			}),
+		];
+
+		const res = await injectAuthenticated("GET", "/pulse");
+		const body = JSON.parse(res.payload);
+		const item = body.items.find(
+			(i: { id: string }) => i.id === "scheduler-disabled-queue-cleaner",
+		);
+
+		expect(item.action?.kind).toBe("scheduler.enable");
+		expect(item.action?.target.jobId).toBe("queue-cleaner");
+	});
+
+	it("does NOT emit an action for a disabled scheduler the dispatcher cannot handle", async () => {
+		// `backup`, `library-sync`, etc. are registered in JOB_ID but are NOT
+		// in `schedulerJobIdSchema`. The row must still render (so the operator
+		// sees the problem) but without a button they can't usefully click.
+		jobs = [
+			makeJob({
+				id: "backup",
+				label: "Backup",
+				state: "disabled",
+				disabled: true,
+				disabledReason: "Init failed: no write permission",
+			}),
+		];
+
+		const res = await injectAuthenticated("GET", "/pulse");
+		const body = JSON.parse(res.payload);
+		const item = body.items.find((i: { id: string }) => i.id === "scheduler-disabled-backup");
+
+		expect(item).toBeDefined();
+		expect(item.action).toBeUndefined();
+	});
+
+	it("does NOT emit an action for a merely failing scheduler (Rule 2 is not a disabled state)", async () => {
+		// Rule 2 emits scheduler-failing-<jobId>, which is a "flaky runs"
+		// signal — not a disabled state. scheduler.enable wouldn't fix it,
+		// so no button should render.
+		jobs = [
+			makeJob({
+				id: "hunting",
+				label: "Hunting",
+				consecutiveFailures: 3,
+				lastError: "timeout",
+			}),
+		];
+
+		const res = await injectAuthenticated("GET", "/pulse");
+		const body = JSON.parse(res.payload);
+		const item = body.items.find((i: { id: string }) => i.id === "scheduler-failing-hunting");
+
+		expect(item).toBeDefined();
+		expect(item.action).toBeUndefined();
+	});
+
 	it("does not surface a scheduler item when all jobs are healthy", async () => {
 		jobs = [
 			makeJob({ id: "backup", label: "Backup", totalRuns: 42 }),
@@ -155,9 +238,7 @@ describe("GET /pulse — scheduler health signals", () => {
 		expect(res.statusCode).toBe(200);
 
 		const body = JSON.parse(res.payload);
-		const schedulerItems = body.items.filter((i: { id: string }) =>
-			i.id.startsWith("scheduler-"),
-		);
+		const schedulerItems = body.items.filter((i: { id: string }) => i.id.startsWith("scheduler-"));
 
 		expect(schedulerItems).toEqual([]);
 		expect(body.summary.critical + body.summary.warning).toBe(0);

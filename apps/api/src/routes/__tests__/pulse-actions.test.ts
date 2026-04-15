@@ -145,7 +145,7 @@ describe("POST /pulse/:id/action — auth", () => {
 			authed: false,
 			body: {
 				kind: "scheduler.enable",
-				target: { jobId: "hunt" },
+				target: { jobId: "hunting" },
 				label: "Enable scheduler",
 				confirmLabel: "Click again",
 				destructive: false,
@@ -159,7 +159,7 @@ describe("POST /pulse/:id/action — auth", () => {
 describe("POST /pulse/:id/action — scheduler.enable", () => {
 	const body = {
 		kind: "scheduler.enable",
-		target: { jobId: "hunt" },
+		target: { jobId: "hunting" },
 		label: "Enable scheduler",
 		confirmLabel: "Click again to enable",
 		destructive: false,
