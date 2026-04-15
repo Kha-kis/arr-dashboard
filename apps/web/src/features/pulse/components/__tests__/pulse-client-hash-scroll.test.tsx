@@ -178,3 +178,81 @@ describe("<PulseClient /> hash-scroll effect", () => {
 		expect(scrollIntoViewSpy).not.toHaveBeenCalled();
 	});
 });
+
+describe("<PulseClient /> tautological self-link suppression", () => {
+	// PulseItemRow only renders on /pulse, so any actionUrl pointing back at
+	// /pulse (e.g. `/pulse#scheduler-failing-...` from collectSchedulerHealth)
+	// is a useless self-link in this context. The Needs Attention panel uses
+	// a different row component (AttentionRow) and is unaffected — its tests
+	// in needs-attention-panel.test.tsx still verify the link renders there.
+
+	function setupQueryWithMixedActionUrls(): PulseResponse {
+		return {
+			items: [
+				{
+					id: "scheduler-failing-queue-cleaner",
+					severity: "warning",
+					category: "operations",
+					title: "Queue Cleaner is failing",
+					detail: "2 consecutive failures",
+					source: "system",
+					timestamp: "2026-04-14T09:30:00.000Z",
+					// Tautological — points at /pulse from /pulse.
+					actionUrl: "/pulse#scheduler-failing-queue-cleaner",
+					actionLabel: "View in Pulse",
+				},
+				{
+					id: "arr-unreachable-inst-1",
+					severity: "critical",
+					category: "health",
+					title: "Sonarr is unreachable",
+					detail: "Could not connect",
+					source: "sonarr",
+					timestamp: "2026-04-14T09:30:00.000Z",
+					// Useful — navigates off /pulse to a different page.
+					actionUrl: "/settings",
+					actionLabel: "Check connection",
+				},
+			],
+			summary: { critical: 1, warning: 1, info: 0 },
+			generatedAt: "2026-04-14T09:30:00.000Z",
+		};
+	}
+
+	it("does NOT render a /pulse self-link on a row whose actionUrl points back at /pulse", () => {
+		mockUsePulseQuery.mockReturnValue({
+			data: setupQueryWithMixedActionUrls(),
+			isLoading: false,
+			isError: false,
+			isFetching: false,
+			dataUpdatedAt: Date.now(),
+		});
+
+		const { container } = render(<PulseClient />, { wrapper: Wrapper });
+		const row = container.querySelector("#scheduler-failing-queue-cleaner");
+		expect(row).not.toBeNull();
+		// The "View in Pulse" anchor must not appear inside this row — it
+		// would just scroll to the same row already in view.
+		const selfLink = row?.querySelector('a[href="/pulse#scheduler-failing-queue-cleaner"]');
+		expect(selfLink).toBeNull();
+	});
+
+	it("DOES render non-/pulse links normally on the same page", () => {
+		mockUsePulseQuery.mockReturnValue({
+			data: setupQueryWithMixedActionUrls(),
+			isLoading: false,
+			isError: false,
+			isFetching: false,
+			dataUpdatedAt: Date.now(),
+		});
+
+		const { container } = render(<PulseClient />, { wrapper: Wrapper });
+		const row = container.querySelector("#arr-unreachable-inst-1");
+		expect(row).not.toBeNull();
+		// Non-/pulse links must keep working — they navigate off-page to
+		// where the operator can actually fix the problem.
+		const offPageLink = row?.querySelector('a[href="/settings"]');
+		expect(offPageLink).not.toBeNull();
+		expect(offPageLink?.textContent).toContain("Check connection");
+	});
+});
