@@ -55,7 +55,6 @@ function defaultMutation(overrides: Record<string, unknown> = {}) {
 // ---------------------------------------------------------------------------
 
 const mockUseCleanupConfig = vi.fn();
-const mockUseCleanupStatus = vi.fn();
 const mockUseUpdateCleanupConfig = vi.fn();
 const mockUseCleanupPreview = vi.fn();
 const mockUseCleanupExecute = vi.fn();
@@ -74,7 +73,6 @@ const mockUseCleanupStatistics = vi.fn();
 
 vi.mock("../../../../hooks/api/useLibraryCleanup", () => ({
 	useCleanupConfig: () => mockUseCleanupConfig(),
-	useCleanupStatus: () => mockUseCleanupStatus(),
 	useUpdateCleanupConfig: () => mockUseUpdateCleanupConfig(),
 	useCleanupPreview: () => mockUseCleanupPreview(),
 	useCleanupExecute: () => mockUseCleanupExecute(),
@@ -195,7 +193,6 @@ function setupDefaultMocks(configOverrides: Partial<CleanupConfigResponse> = {})
 		data: makeConfig(configOverrides),
 		isLoading: false,
 	});
-	mockUseCleanupStatus.mockReturnValue({ data: null });
 	mockUseUpdateCleanupConfig.mockReturnValue(defaultMutation());
 	mockUseCleanupPreview.mockReturnValue(defaultMutation());
 	mockUseCleanupExecute.mockReturnValue(defaultMutation());
