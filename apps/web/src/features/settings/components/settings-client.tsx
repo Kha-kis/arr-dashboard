@@ -1,7 +1,7 @@
 "use client";
 
 import { Archive, Bell, Cpu, Palette, Server, Settings, Shield, Tags, User } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
 	PremiumPageHeader,
 	PremiumPageLoading,
@@ -19,7 +19,7 @@ import {
 	useServicesManagement,
 	useTagsManagement,
 } from "../hooks";
-import type { TabType } from "../lib/settings-constants";
+import { TABS, type TabType } from "../lib/settings-constants";
 import { AccountTab } from "./account-tab";
 import { AppearanceTab } from "./appearance-tab";
 import { BackupTab } from "./backup-tab";
@@ -51,6 +51,16 @@ export const SettingsClient = () => {
 
 	// Local state
 	const [activeTab, setActiveTab] = useState<TabType>("services");
+
+	// Deep-link support: `/settings#system` (and other tab ids) selects that
+	// tab on mount. Mirrors the hash-scroll pattern used by /pulse#<item-id>.
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		const hash = window.location.hash.slice(1);
+		if ((TABS as readonly string[]).includes(hash)) {
+			setActiveTab(hash as TabType);
+		}
+	}, []);
 
 	// Custom hooks
 	const serviceFormState = useServiceFormState();

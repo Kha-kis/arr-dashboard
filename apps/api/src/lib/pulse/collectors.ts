@@ -135,7 +135,7 @@ const collectArrSignals: Collector = async (app, userId, log) => {
 						title: `${instance.label}: ${issue.message}`,
 						detail: issue.source ? `Source: ${issue.source}` : "",
 						actionUrl: "/statistics",
-						actionLabel: "View statistics",
+						actionLabel: "View health issues",
 						source: service,
 						timestamp: now(),
 					});
@@ -287,7 +287,7 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 				title: `${label}: ${cacheLabel} cache is stale`,
 				detail: `Last refreshed ${hoursAgo} hours ago`,
 				actionUrl: "/settings",
-				actionLabel: "Refresh cache",
+				actionLabel: "Check settings",
 				source: status.cacheType === "tautulli" ? "tautulli" : "plex",
 				timestamp: status.lastRefreshedAt.toISOString(),
 			});
@@ -316,8 +316,8 @@ const collectValidationHealth: Collector = async () => {
 				category: "health",
 				title: `${displayName} validation failing`,
 				detail: `${integration.consecutiveFailures} consecutive failures`,
-				actionUrl: "/settings",
-				actionLabel: "View health",
+				actionUrl: "/settings#system",
+				actionLabel: "View validation health",
 				source: "system",
 				timestamp: integration.lastFailureAt ?? now(),
 			});
@@ -328,8 +328,8 @@ const collectValidationHealth: Collector = async () => {
 				category: "health",
 				title: `${displayName} validation degraded`,
 				detail: `${integration.consecutiveFailures} recent failure(s)`,
-				actionUrl: "/settings",
-				actionLabel: "View health",
+				actionUrl: "/settings#system",
+				actionLabel: "View validation health",
 				source: "system",
 				timestamp: integration.lastFailureAt ?? now(),
 			});
