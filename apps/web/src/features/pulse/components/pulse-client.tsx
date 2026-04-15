@@ -126,7 +126,20 @@ function PulseItemRow({
 
 			{item.action && <PulseActionButton signalId={item.id} action={item.action} />}
 
-			{item.actionUrl && (
+			{/*
+			 * Suppress tautological self-links. Some collectors (e.g.
+			 * collectSchedulerHealth) emit `actionUrl: "/pulse#<id>"` so
+			 * operators arriving from the dashboard Needs Attention panel
+			 * land on the matching row. On the /pulse page itself, that
+			 * link just scrolls to the row already in view — useless
+			 * decoration. PulseItemRow only ever renders on /pulse, so a
+			 * simple prefix check is sufficient; no router hook needed.
+			 *
+			 * Other actionUrls (/settings, /statistics, /dashboard) still
+			 * render normally — they navigate the operator off /pulse to
+			 * a useful destination.
+			 */}
+			{item.actionUrl && !item.actionUrl.startsWith("/pulse") && (
 				<Link
 					href={item.actionUrl}
 					className="shrink-0 flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
