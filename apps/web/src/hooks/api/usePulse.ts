@@ -9,6 +9,7 @@ import {
 import { getErrorMessage } from "../../lib/error-utils";
 import { POLLING_STATS } from "../../lib/polling-intervals";
 import {
+	dashboardKeys,
 	huntingKeys,
 	plexKeys,
 	pulseKeys,
@@ -77,6 +78,15 @@ export const usePulseActionMutation = () => {
 					}
 					toast.success(successCopyForAction(action));
 					break;
+				case "queue.retry":
+					// Drop the whole dashboard queue key — the retried item's
+					// state changed on the ARR side, so the next poll from
+					// GET /dashboard/queue will reflect the new queue
+					// contents (most likely: the item is gone from the list
+					// entirely, which is the success signal we want).
+					queryClient.invalidateQueries({ queryKey: dashboardKeys.queue });
+					toast.success(successCopyForAction(action));
+					break;
 			}
 		},
 		onError: (error) => {
@@ -95,5 +105,7 @@ function successCopyForAction(action: PulseAction): string {
 			return action.target.cacheType === "plex"
 				? "Plex cache refresh triggered"
 				: "Tautulli cache refresh triggered";
+		case "queue.retry":
+			return "Retry queued";
 	}
 }

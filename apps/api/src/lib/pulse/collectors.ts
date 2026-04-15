@@ -9,11 +9,24 @@
  * warning-level PulseItems so partial failures don't block the response.
  */
 
-import type { PulseAction, PulseCacheType, PulseItem, SchedulerJobId } from "@arr/shared";
-import { ARR_SERVICES_UPPER } from "@arr/shared";
+import type {
+	PulseAction,
+	PulseCacheType,
+	PulseItem,
+	QueueRetryService,
+	SchedulerJobId,
+} from "@arr/shared";
+import { ARR_SERVICES_UPPER, LIBRARY_SERVICES_UPPER } from "@arr/shared";
 import type { SonarrClient } from "arr-sdk";
 import { LidarrClient, ProwlarrClient } from "arr-sdk";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
+import type { ArrClient } from "../arr/client-factory.js";
+import {
+	isLidarrClient,
+	isRadarrClient,
+	isReadarrClient,
+	isSonarrClient,
+} from "../arr/client-helpers.js";
 import {
 	calculateDiskTotals,
 	type InstanceInfo,
@@ -189,6 +202,244 @@ const collectArrSignals: Collector = async (app, userId, log) => {
 					detail: `Could not connect to ${service.charAt(0).toUpperCase() + service.slice(1)} instance`,
 					actionUrl: "/settings",
 					actionLabel: "Check connection",
+					source: service,
+					timestamp: now(),
+				});
+			}
+		}),
+	);
+
+	return items;
+};
+
+// ============================================================================
+// 2b. ARR Queue Failures (Sonarr / Radarr / Lidarr / Readarr)
+// ============================================================================
+//
+// Surfaces per-queue-item failures — failed or stuck downloads — from each
+// ARR instance the user owns, so operators can retry directly from the
+// Pulse surface via the queue.retry action. Classification is intentionally
+// tight: we flag only items the ARR app itself has reported as failed
+// (trackedDownloadState=importFailed / status=failed / trackedDownloadStatus=error)
+// or warned about *with an attached errorMessage* (trackedDownloadStatus=warning
+// + non-empty errorMessage). Generic "warning" items without a concrete cause
+// are deliberately left out — they risk emitting for items that just take
+// longer than the ARR app's comfort threshold.
+//
+// **Fan-out control**: capped at QUEUE_FAILURE_CAP_PER_INSTANCE rows per
+// instance. An instance with more matching items emits the capped set
+// (prioritized failed-before-stuck, oldest-first) plus a single rollup
+// row — with **no action** — pointing at the queue page. This keeps a bad
+// download-client day from drowning Needs Attention with dozens of rows
+// that push more-important system issues below the visible fold.
+//
+// **Performance**: relies entirely on the existing 60s per-user Pulse
+// cache. One queue fetch per ARR instance per cache miss. Per-instance
+// try/catch so one unreachable instance doesn't silence the others —
+// collectArrSignals already emits the "unreachable" row separately, so we
+// don't duplicate.
+
+const QUEUE_FAILURE_CAP_PER_INSTANCE = 10;
+const QUEUE_TITLE_MAX_LENGTH = 70;
+
+type QueueItemRecord = Record<string, unknown>;
+type QueueClassification = "failed" | "stuck";
+
+interface ClassifiedQueueItem {
+	id: string | number;
+	title: string;
+	added: string | null;
+	classification: QueueClassification;
+	errorMessage: string | null;
+}
+
+/** Exported for focused unit testing; pure function over the raw item fields. */
+export function classifyQueueItem(item: QueueItemRecord): QueueClassification | null {
+	const state = toLower(item.trackedDownloadState);
+	const status = toLower(item.trackedDownloadStatus);
+	const topStatus = toLower(item.status);
+	const errorMessage = toStringField(item.errorMessage ?? item.error);
+
+	// Failed: ARR explicitly declares the download failed. No ambiguity.
+	if (state === "importfailed" || status === "error" || topStatus === "failed") {
+		return "failed";
+	}
+
+	// Stuck: ARR flagged a warning AND attached a concrete error message.
+	// Requiring the errorMessage keeps us out of the "this download is just
+	// slow" false-positive trap — we only emit when ARR is actually
+	// describing a problem.
+	if (status === "warning" && errorMessage.length > 0) {
+		return "stuck";
+	}
+
+	return null;
+}
+
+function toLower(v: unknown): string {
+	return typeof v === "string" ? v.toLowerCase() : "";
+}
+
+function toStringField(v: unknown): string {
+	return typeof v === "string" ? v : "";
+}
+
+function extractQueueTitle(item: QueueItemRecord, fallback: string): string {
+	const direct = toStringField(item.title);
+	if (direct) return direct;
+	const series = (item.series as QueueItemRecord | undefined)?.title;
+	const movie = (item.movie as QueueItemRecord | undefined)?.title;
+	const artist = (item.artist as QueueItemRecord | undefined)?.artistName;
+	const album = (item.album as QueueItemRecord | undefined)?.title;
+	const author = (item.author as QueueItemRecord | undefined)?.authorName;
+	const book = (item.book as QueueItemRecord | undefined)?.title;
+	return toStringField(series ?? movie ?? artist ?? album ?? author ?? book) || fallback;
+}
+
+function truncateTitle(title: string): string {
+	return title.length > QUEUE_TITLE_MAX_LENGTH
+		? `${title.slice(0, QUEUE_TITLE_MAX_LENGTH - 1)}…`
+		: title;
+}
+
+async function fetchRawQueue(client: ArrClient): Promise<QueueItemRecord[]> {
+	if (isSonarrClient(client)) {
+		const res = await client.queue.get({
+			pageSize: 1000,
+			includeUnknownSeriesItems: true,
+		});
+		return (res.records ?? []) as QueueItemRecord[];
+	}
+	if (isRadarrClient(client)) {
+		const res = await client.queue.get({ pageSize: 1000 });
+		return (res.records ?? []) as QueueItemRecord[];
+	}
+	if (isLidarrClient(client)) {
+		const res = await client.queue.get({
+			pageSize: 1000,
+			includeUnknownArtistItems: true,
+		});
+		return (res.records ?? []) as QueueItemRecord[];
+	}
+	if (isReadarrClient(client)) {
+		const res = await client.queue.get({
+			pageSize: 1000,
+			includeUnknownAuthorItems: true,
+		});
+		return (res.records ?? []) as QueueItemRecord[];
+	}
+	return [];
+}
+
+const collectArrQueueFailures: Collector = async (app, userId, log) => {
+	const instances = await app.prisma.serviceInstance.findMany({
+		where: {
+			enabled: true,
+			userId,
+			service: { in: [...LIBRARY_SERVICES_UPPER] },
+		},
+	});
+
+	if (instances.length === 0) return [];
+
+	const items: PulseItem[] = [];
+
+	await Promise.all(
+		instances.map(async (instance) => {
+			const service = instance.service.toLowerCase() as QueueRetryService;
+			// Runtime-safe: we filtered `service: { in: LIBRARY_SERVICES_UPPER }`
+			// above, so the factory returns a Sonarr/Radarr/Lidarr/Readarr client.
+			// TS can't narrow the generic across the Prisma boundary, hence the cast.
+			const client = app.arrClientFactory.create(instance) as ArrClient;
+
+			let raw: QueueItemRecord[];
+			try {
+				raw = await fetchRawQueue(client);
+			} catch (error) {
+				// collectArrSignals emits the unreachable signal separately —
+				// don't duplicate here.
+				log.warn({ err: error, instanceId: instance.id, service }, "pulse: queue fetch failed");
+				return;
+			}
+
+			const classified: ClassifiedQueueItem[] = [];
+			for (const r of raw) {
+				const classification = classifyQueueItem(r);
+				if (!classification) continue;
+				const rawId = r.id ?? r.queueId ?? r.queueItemId;
+				if (typeof rawId !== "number" && typeof rawId !== "string") continue;
+				classified.push({
+					id: rawId,
+					title: extractQueueTitle(r, "Unknown download"),
+					added: typeof r.added === "string" ? r.added : null,
+					classification,
+					errorMessage: toStringField(r.errorMessage ?? r.error) || null,
+				});
+			}
+
+			if (classified.length === 0) return;
+
+			// Priority ordering: failed first (higher severity signal), then
+			// stuck; within each group, oldest first (items that have been
+			// sitting longest are more likely to genuinely need attention).
+			classified.sort((a, b) => {
+				if (a.classification !== b.classification) {
+					return a.classification === "failed" ? -1 : 1;
+				}
+				return (a.added ?? "").localeCompare(b.added ?? "");
+			});
+
+			const visible = classified.slice(0, QUEUE_FAILURE_CAP_PER_INSTANCE);
+			const overflow = classified.length - visible.length;
+
+			for (const item of visible) {
+				const titleStr = truncateTitle(item.title);
+				const tag = item.classification === "failed" ? "failed" : "stuck";
+				const suffix = item.classification === "failed" ? "failed" : "warning";
+				const detail =
+					item.errorMessage ??
+					(item.classification === "failed"
+						? "Download failed"
+						: "Download has a tracked-download warning");
+
+				items.push({
+					id: `queue-${tag}-${instance.id}-${item.id}`,
+					severity: "warning",
+					category: "operations",
+					title: `${instance.label}: ${titleStr} (${suffix})`,
+					detail: truncate(detail),
+					actionUrl: "/dashboard",
+					actionLabel: "View in queue",
+					source: service,
+					timestamp: item.added ?? now(),
+					action: {
+						kind: "queue.retry",
+						target: {
+							instanceId: instance.id,
+							queueItemId: String(item.id),
+							service,
+						},
+						label: "Retry",
+						confirmLabel: "Click again to retry",
+						destructive: false,
+					},
+				});
+			}
+
+			if (overflow > 0) {
+				// Rollup row — intentionally NO `action` field. Exposing a
+				// Retry button here would have to be ambiguous ("retry
+				// which one?") and the whole point of the cap is to keep
+				// the row count honest. Operators navigate to the queue
+				// page to deal with the overflow in batch.
+				items.push({
+					id: `queue-overflow-${instance.id}`,
+					severity: "warning",
+					category: "operations",
+					title: `${instance.label}: +${overflow} more failed items`,
+					detail: "Open the queue to retry or clean them up",
+					actionUrl: "/dashboard",
+					actionLabel: "View queue",
 					source: service,
 					timestamp: now(),
 				});
@@ -715,10 +966,16 @@ function formatBytes(bytes: number): string {
 // ============================================================================
 
 // Exported for testing
-export { collectArrSignals, collectCacheStaleness, collectSchedulerHealth };
+export {
+	collectArrQueueFailures,
+	collectArrSignals,
+	collectCacheStaleness,
+	collectSchedulerHealth,
+};
 
 export const pulseCollectors: Collector[] = [
 	collectArrSignals,
+	collectArrQueueFailures,
 	collectSeerrCircuitBreaker,
 	collectCacheStaleness,
 	collectValidationHealth,

@@ -25,7 +25,11 @@ export type PulseCategory = z.infer<typeof pulseCategorySchema>;
 // boundary. New kinds land by extending this union — schema drift between
 // client and server surfaces as a Zod parse failure, not a silent no-op.
 
-export const pulseActionKindSchema = z.enum(["scheduler.enable", "cache.refresh"]);
+export const pulseActionKindSchema = z.enum([
+	"scheduler.enable",
+	"cache.refresh",
+	"queue.retry",
+]);
 export type PulseActionKind = z.infer<typeof pulseActionKindSchema>;
 
 // Canonical scheduler job ids — match `JOB_ID` in
@@ -36,6 +40,13 @@ export type SchedulerJobId = z.infer<typeof schedulerJobIdSchema>;
 
 export const pulseCacheTypeSchema = z.enum(["plex", "tautulli"]);
 export type PulseCacheType = z.infer<typeof pulseCacheTypeSchema>;
+
+// ARR services whose queues the dispatcher can retry. Prowlarr has no
+// queue and Plex/Tautulli are out-of-scope. Keep this list in sync with
+// the dispatcher branch in apps/api/src/lib/pulse/actions.ts and the
+// collector's eligible set.
+export const queueRetryServiceSchema = z.enum(["sonarr", "radarr", "lidarr", "readarr"]);
+export type QueueRetryService = z.infer<typeof queueRetryServiceSchema>;
 
 export const pulseActionSchema = z.discriminatedUnion("kind", [
 	z.object({
@@ -50,6 +61,19 @@ export const pulseActionSchema = z.discriminatedUnion("kind", [
 		target: z.object({
 			instanceId: z.string().min(1),
 			cacheType: pulseCacheTypeSchema,
+		}),
+		label: z.string().min(1),
+		confirmLabel: z.string().min(1),
+		destructive: z.boolean(),
+	}),
+	z.object({
+		kind: z.literal("queue.retry"),
+		target: z.object({
+			instanceId: z.string().min(1),
+			// Queue ids are strings on the envelope so they round-trip cleanly;
+			// the dispatcher coerces to the numeric form the ARR SDK expects.
+			queueItemId: z.string().min(1),
+			service: queueRetryServiceSchema,
 		}),
 		label: z.string().min(1),
 		confirmLabel: z.string().min(1),
