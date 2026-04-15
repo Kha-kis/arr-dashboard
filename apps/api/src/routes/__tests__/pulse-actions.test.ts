@@ -212,14 +212,21 @@ describe("POST /pulse/:id/action — cache.refresh", () => {
 		destructive: false,
 	};
 
-	it("200 + triggers refresh on success", async () => {
+	it("200 immediately on dispatch; refresh runs in background (fire-and-forget)", async () => {
 		requirePlexClient.mockResolvedValue({ client: {}, instance: {} });
 		refreshPlexCache.mockResolvedValue({ upserted: 12, errors: 0, errorMessages: [] });
 
 		const res = await inject("POST", "/pulse/signal-1/action", { body });
 
 		expect(res.statusCode).toBe(200);
-		expect(JSON.parse(res.payload)).toEqual({ status: "ok", detail: "12 item(s) refreshed" });
+		// Wire shape: only `status`. `backgroundTask` is stripped by the
+		// route handler (it's a Promise — not JSON-serializable), and
+		// `detail` is no longer populated since we don't yet know the
+		// upsert count at return time.
+		expect(JSON.parse(res.payload)).toEqual({ status: "ok" });
+		// Flush the microtask queue so the background task's await of the
+		// refresh mock resolves within this test's lifetime.
+		await new Promise((resolve) => setTimeout(resolve, 10));
 		expect(refreshPlexCache).toHaveBeenCalledTimes(1);
 	});
 
