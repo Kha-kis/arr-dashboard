@@ -5,6 +5,54 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.16.0] - 2026-04-15
+
+**From monitoring to guided action.** This release turns the attention surface — System Pulse and the new dashboard Needs Attention panel — from a *report* of what's wrong into a place where operators can *fix* the problem in one click. Pulse / Needs Attention is now the canonical issue surface: pre-existing banners that duplicated its signals have been removed, misleading diagnostic copy has been reworded to defer to Pulse as the single source of truth, and three safe actions — Enable a disabled scheduler, Refresh a stale cache, Retry a failed queue item — land inline on their respective rows.
+
+Scope was deliberately limited to **safe, idempotent, easily-reversible** operations. Destructive actions (remove, blocklist), automation/rules engines, and bulk/batch flows are explicitly deferred to future releases; this release establishes the pattern and trust foundation those later surfaces will build on.
+
+### Added
+
+#### Dashboard & Needs Attention
+- **Needs Attention panel** — New curated subset of `/pulse` on the dashboard, showing the top 10 actionable warning/critical items with stable deep-links to the full Pulse feed. The same row renderer is reused on both surfaces so operators see one consistent presentation (#335)
+- **Dashboard as the primary Overview item** — The sidebar navigation now treats Dashboard as the default Overview landing page, with a pinned root-route test to prevent regression (#337)
+- **Scheduler items route to `/pulse`** — Needs Attention rows that surface disabled/failing schedulers deep-link into the full Pulse feed with hash-scroll + highlight, so operators land directly on the row rather than at the top of an unfiltered list (#336)
+
+#### System Pulse
+- **Media-server reachability collector** — New `collectMediaServerReachability` emits critical `plex-unreachable-<id>` / `jellyfin-unreachable-<id>` / `tautulli-unreachable-<id>` rows on a cheap identity ping failure, mirroring the existing `arr-unreachable-*` pattern. Closes the gap where an unreachable media server was only surfacing as a misleading "cache refresh error" banner (#346)
+
+#### Operator Actions (Actionability V1 + V1.1)
+- **Pulse action envelope + dispatcher** — New optional `action` field on Pulse items carries a discriminated-union payload (`kind: "scheduler.enable" | "cache.refresh" | "queue.retry"`); new `POST /api/pulse/:id/action` route dispatches to existing service calls. No new backend capability is introduced — every action reuses the plumbing that already powered Settings-page manual triggers (#340)
+- **`scheduler.enable`** — Inline "Enable" button on disabled hunting and queue-cleaner scheduler rows. One click re-enables the scheduler; the row drops on the next Pulse poll (#341, #343)
+- **`cache.refresh`** — Inline "Refresh now" button on stale Plex and Tautulli cache rows. Fires the refresh in the background and returns immediately so slow library refreshes don't trip the HTTP proxy timeout (#342, #343, #345)
+- **`queue.retry`** — Inline "Retry" button on failed or stuck ARR queue items (Sonarr / Radarr / Lidarr / Readarr). Reuses the exact SDK call the dashboard queue page already uses, with tight classification (only ARR-reported failures, never speculative), per-instance fan-out cap of 10 rows plus a no-action rollup row for overflow, and sort deprioritization so a bad download-client day can't drown out scheduler/ARR system warnings (#344)
+
+### Changed
+
+#### Trust & Reliability
+- **Source-of-truth write-through after every action** — Actions now explicitly update the state collectors read from (`schedulerRegistry.markEnabled`, `CacheRefreshStatus.lastRefreshedAt` upsert), so the "click action → row drops on next poll" contract holds end-to-end (#343)
+- **Rate limit on the action route** — `POST /api/pulse/:id/action` is rate-limited at 10/min to guard against runaway clicks or misbehaving scripts hammering upstream Plex/Tautulli (#343)
+- **Fire-and-forget `cache.refresh`** — The dispatcher no longer waits for the (potentially 30–60 second) upstream refresh before returning 200, avoiding false "Internal Server Error" toasts when Next.js's proxy timeout trips before the backend finishes. Ownership checks remain synchronous; errors during the background refresh do NOT bump `lastRefreshedAt`, so a failing refresh correctly keeps surfacing (#345)
+- **Incognito-safe error toasts** — `usePulseActionMutation` now routes toast error text through the same anonymization helper that Pulse rows use, stripping hostnames, URLs, and IPs before display. Normal-mode output is byte-identical; generic messages ("Rate limit exceeded", "Internal Server Error", "Bad Request") pass through unchanged (#349)
+- **Tightened Pulse action labels** — Scheduler-health rows deep-link to `/pulse` with hash anchors rather than generic `/settings`, so the follow-through lands operators on the specific row (#338, #339)
+
+### Removed
+
+#### UX / Cleanup
+- **`CacheHealthBanner` removed** — The pre-Pulse dashboard cache-refresh banner duplicated signals Pulse already covers with better severity and actionable deep links. Removed in favor of the canonical attention surface (#346)
+- **`CleanupHealthBanner` removed** — Same pattern as `CacheHealthBanner`: the library-cleanup page banner's three signals (scheduler enabled, last-run error, prefetch source health) are all now covered by Pulse collectors. Removed; the one deliberate sensitivity change — Pulse waits for two consecutive failures vs the banner's one — is the correct attention-surface bias and is documented in the PR (#351)
+- **Tautological `/pulse` self-links suppressed** — Scheduler-health rows emit `actionUrl: "/pulse#<id>"` so operators deep-link from the dashboard Needs Attention panel; on the `/pulse` page itself, that link just scrolls to the already-visible row and has been suppressed. `/settings`, `/statistics`, `/dashboard` and other cross-page links render unchanged (#347)
+- **Unused `confirmLabel` field dropped from the Pulse action envelope** — Originally added as forward-fitting for a possible destructive-action two-tap confirm UX that didn't ship in V1. Audit confirmed zero production consumers. Removed; a future destructive variant can add a kind-specific confirm field with the right scope (#348)
+- **Speculative diagnostic copy reworded** — `season-episode-list.tsx` no longer says "may be unreachable" (the component can't know why a fetch failed); `DomainStatusBadge` tooltips for `degraded` and `offline` states now explicitly frame the badge as a last-check snapshot and defer live health to Pulse. Regression guards pin the framing against future drift (#352)
+
+### Deferred (explicit non-scope)
+
+- **No destructive actions.** `queue.remove`, blocklist, and other one-way operations are not in V1. When they arrive they'll use a two-tap confirm UX; the envelope schema is ready for that extension
+- **No automation / rules engine.** Every action is a deliberate operator click; nothing retries or remediates on its own
+- **No bulk or batch actions.** One row, one click, one action. The `queue.retry` rollup row (+N more) intentionally carries no action — operators handle overflow by navigating to the queue page
+- **Scheduler manual-vs-system distinction is not yet modeled.** Today every `markDisabled` call site is a system/init-failure path, so every disabled-scheduler Pulse row is safely re-enableable. If a future code path introduces an intentional-opt-out manual disable, the `scheduler.enable` gate needs to learn the distinction; the collector comment flags this for the implementer who adds it
+- **Queue fan-out is intentionally capped at 10 per instance.** Instances with more failed items emit a no-action rollup row pointing at the queue page rather than flooding Needs Attention. Bulk retry UX is explicitly deferred
+
 ## [2.15.0] - 2026-04-14
 
 Operability and trust release — a scheduler jobs surface for operators, a Security Posture diagnostic panel, route surface governance, shared UX primitives for consistent trust signals across panels, and targeted cache-refresh hardening for Plex and Tautulli. No new end-user feature modules; every change is aimed at making the existing app more legible, more trustworthy, and easier to ship.
