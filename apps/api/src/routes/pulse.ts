@@ -254,7 +254,12 @@ export const registerPulseRoutes: FastifyPluginCallback = (app, _opts, done) => 
 				"pulse-action: dispatched",
 			);
 
-			return reply.send(result);
+			// Strip `backgroundTask` — it's a Promise (not JSON-serializable)
+			// used only by the dispatcher's internal fire-and-forget contract.
+			// The client cares about `{ status, detail? }` only.
+			const { backgroundTask: _bg, ...wireResult } = result;
+			void _bg; // silence no-unused-vars; we deliberately don't await
+			return reply.send(wireResult);
 		},
 	);
 

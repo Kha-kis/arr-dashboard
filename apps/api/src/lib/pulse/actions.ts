@@ -36,6 +36,16 @@ import { requireTautulliClient } from "../tautulli/tautulli-helpers.js";
 export interface PulseActionResult {
 	status: "ok";
 	detail?: string;
+	/**
+	 * Optional promise resolving when any fire-and-forget background task
+	 * kicked off by the dispatcher completes. The HTTP route handler
+	 * **ignores** this — it returns 200 as soon as the dispatcher returns.
+	 * Tests await it to verify post-refresh state without polling.
+	 *
+	 * Only populated by cache.refresh today; scheduler.enable and
+	 * queue.retry complete synchronously within the request.
+	 */
+	backgroundTask?: Promise<void>;
 }
 
 /**
@@ -112,10 +122,30 @@ async function dispatchSchedulerEnable(
 // cache.refresh
 // ---------------------------------------------------------------------------
 //
-// Delegates ownership + service-type validation to the existing
-// require*Client helpers, which throw InstanceNotFoundError (→ 404) for
-// missing/unowned instances and AppValidationError (→ 400) when the
-// instance exists but is the wrong service.
+// **Fire-and-forget semantics.** Ownership validation is synchronous (the
+// require*Client helpers throw InstanceNotFoundError → 404 for
+// missing/unowned instances and AppValidationError → 400 for wrong
+// service type), but the actual refresh runs in the background. We return
+// 200 as soon as the refresh is *accepted* — not when it completes —
+// because:
+//
+//   1. Plex/Tautulli refreshes can run 30-60+ seconds on large libraries
+//      (observed: 1082 Tautulli history items = ~43s).
+//   2. Next.js dev-server's proxy (and most reverse proxies) time out
+//      around 30s, returning a misleading 500 to the client even though
+//      the backend work is succeeding.
+//   3. The user-visible contract is already eventually-consistent:
+//      "row drops on next poll" depends on recordCacheRefreshSuccess
+//      bumping lastRefreshedAt, which happens when the background task
+//      resolves — no need to block the HTTP response on that.
+//
+// Errors during background refresh are logged but **do not** write
+// through to CacheRefreshStatus, so the stale row correctly re-emits
+// on the next poll (trust invariant: failure → row stays).
+//
+// The optional `backgroundTask` on the return is unused by the route
+// handler (fire-and-forget) but awaited by tests that want to verify
+// post-refresh state without polling.
 
 async function dispatchCacheRefresh(
 	app: FastifyInstance,
@@ -126,30 +156,53 @@ async function dispatchCacheRefresh(
 ): Promise<PulseActionResult> {
 	if (cacheType === "plex") {
 		const { client } = await requirePlexClient(app, userId, instanceId);
-		const result = await refreshPlexCache(client, app.prisma, instanceId, log);
-		await recordCacheRefreshSuccess(app, instanceId, "plex", result, log);
-		log.info(
-			{ instanceId, cacheType, upserted: result.upserted, errors: result.errors },
-			"pulse-action: plex cache refreshed",
-		);
-		return {
-			status: "ok",
-			detail: `${result.upserted} item(s) refreshed`,
-		};
+		const backgroundTask = runBackgroundCacheRefresh({
+			app,
+			log,
+			instanceId,
+			cacheType: "plex",
+			refresh: () => refreshPlexCache(client, app.prisma, instanceId, log),
+		});
+		log.info({ instanceId, cacheType }, "pulse-action: plex cache refresh dispatched");
+		return { status: "ok", backgroundTask };
 	}
 
 	// tautulli
 	const { client } = await requireTautulliClient(app, userId, instanceId);
-	const result = await refreshTautulliCache(client, app.prisma, instanceId, log);
-	await recordCacheRefreshSuccess(app, instanceId, "tautulli", result, log);
-	log.info(
-		{ instanceId, cacheType, upserted: result.upserted, errors: result.errors },
-		"pulse-action: tautulli cache refreshed",
-	);
-	return {
-		status: "ok",
-		detail: `${result.upserted} item(s) refreshed`,
-	};
+	const backgroundTask = runBackgroundCacheRefresh({
+		app,
+		log,
+		instanceId,
+		cacheType: "tautulli",
+		refresh: () => refreshTautulliCache(client, app.prisma, instanceId, log),
+	});
+	log.info({ instanceId, cacheType }, "pulse-action: tautulli cache refresh dispatched");
+	return { status: "ok", backgroundTask };
+}
+
+function runBackgroundCacheRefresh(opts: {
+	app: FastifyInstance;
+	log: FastifyBaseLogger;
+	instanceId: string;
+	cacheType: "plex" | "tautulli";
+	refresh: () => Promise<CacheRefreshResult>;
+}): Promise<void> {
+	const { app, log, instanceId, cacheType, refresh } = opts;
+	return (async () => {
+		try {
+			const result = await refresh();
+			await recordCacheRefreshSuccess(app, instanceId, cacheType, result, log);
+			log.info(
+				{ instanceId, cacheType, upserted: result.upserted, errors: result.errors },
+				"pulse-action: cache refresh completed (background)",
+			);
+		} catch (err) {
+			// Do NOT write through on failure — the stale row must keep
+			// emitting so the operator sees the problem persists. The
+			// caller has already received 200; this error is logged only.
+			log.error({ err, instanceId, cacheType }, "pulse-action: cache refresh failed (background)");
+		}
+	})();
 }
 
 // ---------------------------------------------------------------------------
