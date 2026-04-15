@@ -115,4 +115,30 @@ describe("getDomainStatusMeta", () => {
 		expect(getDomainStatusMeta("configured").badge).toBe("info");
 		expect(getDomainStatusMeta("disabled").badge).toBe("default");
 	});
+
+	it("frames problem-state descriptions as snapshots and defers live status to Pulse", () => {
+		// Regression guard against diagnostic language creeping back in.
+		// The badge reflects the last check only; Pulse is the canonical
+		// live-health surface. Callers should not read a cached "Offline"
+		// as a live reachability claim.
+		const offline = getDomainStatusMeta("offline").description;
+		expect(offline).toMatch(/last check/i);
+		expect(offline).toMatch(/See Pulse/);
+		// Must NOT claim the service IS unreachable — that's Pulse's job.
+		expect(offline).not.toMatch(/is unreachable/i);
+		expect(offline).not.toMatch(/may be unreachable/i);
+
+		const degraded = getDomainStatusMeta("degraded").description;
+		expect(degraded).toMatch(/last check/i);
+		expect(degraded).toMatch(/See Pulse/);
+	});
+
+	it("leaves benign states (healthy/configured/disabled) without a Pulse CTA", () => {
+		// Adding "See Pulse" to every tooltip would be noise. The CTA
+		// belongs only where the badge could otherwise be mistaken for a
+		// live diagnosis.
+		expect(getDomainStatusMeta("healthy").description).not.toMatch(/See Pulse/);
+		expect(getDomainStatusMeta("configured").description).not.toMatch(/See Pulse/);
+		expect(getDomainStatusMeta("disabled").description).not.toMatch(/See Pulse/);
+	});
 });
