@@ -293,3 +293,120 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		expect(refreshTautulliCache).not.toHaveBeenCalled();
 	});
 });
+
+// -----------------------------------------------------------------------------
+// queue.retry
+// -----------------------------------------------------------------------------
+
+// These tests exercise the dispatcher through a stubbed `prisma.serviceInstance`
+// + a stubbed `arrClientFactory` that hands back a queue-bearing client whose
+// `queue.delete` we can observe. Mirrors the stubbing pattern used elsewhere in
+// this file.
+
+// We need to re-mock client-helpers to make the isSonarrClient guard return
+// true for our stub. vi.mock is hoisted to the top of the file, but we can
+// inject guards via a partial stub later. Simpler: inject a literal instance
+// that satisfies `instanceof SonarrClient` by mocking arr-sdk's class check.
+vi.mock("../../arr/client-helpers.js", () => ({
+	isSonarrClient: (client: unknown): boolean =>
+		typeof client === "object" &&
+		client !== null &&
+		(client as { __kind?: string }).__kind === "sonarr",
+	isRadarrClient: (client: unknown): boolean =>
+		typeof client === "object" &&
+		client !== null &&
+		(client as { __kind?: string }).__kind === "radarr",
+	isLidarrClient: () => false,
+	isReadarrClient: () => false,
+}));
+
+describe("dispatchPulseAction — queue.retry", () => {
+	const retryAction: PulseAction = {
+		kind: "queue.retry",
+		target: {
+			instanceId: "inst-sonarr-1",
+			queueItemId: "42",
+			service: "sonarr",
+		},
+		label: "Retry",
+		confirmLabel: "Click again to retry",
+		destructive: false,
+	};
+
+	// Minimal fakeApp override: the global fakeApp doesn't include
+	// `arrClientFactory` or `prisma.serviceInstance`. We build a tighter
+	// fake per-test to avoid leaking state.
+	function buildRetryApp(opts: {
+		instance?: { id: string; service: string; enabled: boolean } | null;
+		deleteImpl?: (id: number) => Promise<void>;
+	}): FastifyInstance {
+		const queueDelete = vi.fn(opts.deleteImpl ?? (async () => {}));
+		const client = { __kind: "sonarr", queue: { delete: queueDelete } };
+		return {
+			prisma: {
+				serviceInstance: {
+					findFirst: vi.fn(async () => opts.instance ?? null),
+				},
+			},
+			arrClientFactory: {
+				create: () => client,
+			},
+			// Not used by queue.retry path but needs to exist since the
+			// same app will flow through the top-level dispatcher.
+			schedulerRegistry: { markEnabled: () => {} },
+		} as unknown as FastifyInstance;
+	}
+
+	it("200s and calls queue.delete with retry options when the item exists", async () => {
+		const deleteImpl = vi.fn(async () => {});
+		const app = buildRetryApp({
+			instance: { id: "inst-sonarr-1", service: "SONARR", enabled: true },
+			deleteImpl,
+		});
+
+		const result = await dispatchPulseAction(app, "user-1", retryAction, fakeLog);
+
+		expect(result).toEqual({ status: "ok" });
+		// Exact options match the /dashboard/queue/action retry path — we must
+		// not silently drift to a destructive variant (e.g. blocklist: true).
+		expect(deleteImpl).toHaveBeenCalledWith(42, {
+			removeFromClient: true,
+			blocklist: false,
+			changeCategory: false,
+		});
+	});
+
+	it("throws InstanceNotFoundError (404) when the instance is missing or unowned", async () => {
+		const app = buildRetryApp({ instance: null });
+
+		await expect(dispatchPulseAction(app, "user-1", retryAction, fakeLog)).rejects.toMatchObject({
+			name: "InstanceNotFoundError",
+			statusCode: 404,
+		});
+	});
+
+	it("throws AppValidationError (400) when the envelope's service mismatches the instance", async () => {
+		const app = buildRetryApp({
+			instance: { id: "inst-sonarr-1", service: "RADARR", enabled: true },
+		});
+
+		await expect(dispatchPulseAction(app, "user-1", retryAction, fakeLog)).rejects.toMatchObject({
+			name: "AppValidationError",
+			statusCode: 400,
+		});
+	});
+
+	it("throws AppValidationError when queueItemId is not a valid queue id", async () => {
+		const app = buildRetryApp({
+			instance: { id: "inst-sonarr-1", service: "SONARR", enabled: true },
+		});
+		const badAction: PulseAction = {
+			...retryAction,
+			target: { ...retryAction.target, queueItemId: "not-a-number" },
+		};
+
+		await expect(dispatchPulseAction(app, "user-1", badAction, fakeLog)).rejects.toMatchObject({
+			name: "AppValidationError",
+		});
+	});
+});

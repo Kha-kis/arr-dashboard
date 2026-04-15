@@ -15,9 +15,17 @@
  * error handler in `server.ts`, so the route handler just re-throws.
  */
 
-import type { PulseAction, PulseCacheType, SchedulerJobId } from "@arr/shared";
+import type { PulseAction, PulseCacheType, QueueRetryService, SchedulerJobId } from "@arr/shared";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
-import { ConflictError } from "../errors.js";
+import {
+	isLidarrClient,
+	isRadarrClient,
+	isReadarrClient,
+	isSonarrClient,
+} from "../arr/client-helpers.js";
+import { requireEnabledInstance } from "../arr/instance-helpers.js";
+import { parseQueueId } from "../dashboard/queue-utils.js";
+import { AppValidationError, ConflictError } from "../errors.js";
 import { getHuntingScheduler } from "../hunting/scheduler.js";
 import { refreshPlexCache } from "../plex/plex-cache-refresher.js";
 import { requirePlexClient } from "../plex/plex-helpers.js";
@@ -52,6 +60,15 @@ export async function dispatchPulseAction(
 				userId,
 				action.target.instanceId,
 				action.target.cacheType,
+				log,
+			);
+		case "queue.retry":
+			return dispatchQueueRetry(
+				app,
+				userId,
+				action.target.instanceId,
+				action.target.queueItemId,
+				action.target.service,
 				log,
 			);
 	}
@@ -133,6 +150,73 @@ async function dispatchCacheRefresh(
 		status: "ok",
 		detail: `${result.upserted} item(s) refreshed`,
 	};
+}
+
+// ---------------------------------------------------------------------------
+// queue.retry
+// ---------------------------------------------------------------------------
+//
+// Retry a single failed/stuck ARR queue item. Reuses the exact SDK call
+// the /dashboard/queue/action route uses: `client.queue.delete(id, {
+// removeFromClient: true, blocklist: false, changeCategory: false })`.
+// That semantics = "take the item out of the download client queue
+// without blocklisting the release; the ARR app will search for it
+// again on its next tick." Idempotent at the ARR layer — a retry of an
+// already-retried item either succeeds or 404s on the SDK side, both
+// of which surface honestly to the operator.
+//
+// No local DB writeback: queue state is not persisted here. The next
+// GET /pulse poll re-fetches from the ARR queue and the retried item
+// has already been removed from the queue listing — so the Pulse row
+// drops naturally.
+
+async function dispatchQueueRetry(
+	app: FastifyInstance,
+	userId: string,
+	instanceId: string,
+	queueItemId: string,
+	service: QueueRetryService,
+	log: FastifyBaseLogger,
+): Promise<PulseActionResult> {
+	// Ownership + enabled check — mirrors requirePlexClient/requireTautulliClient
+	// semantics (InstanceNotFoundError → 404 for both missing and unowned).
+	const instance = await requireEnabledInstance(app, userId, instanceId);
+
+	if (instance.service.toLowerCase() !== service) {
+		throw new AppValidationError(`Instance is not a ${service} service (got ${instance.service})`);
+	}
+
+	const queueId = parseQueueId(queueItemId);
+	if (queueId === null) {
+		throw new AppValidationError("Invalid queue item id");
+	}
+
+	const client = app.arrClientFactory.create(instance);
+	const deleteOptions = {
+		removeFromClient: true,
+		blocklist: false,
+		changeCategory: false,
+	};
+
+	if (isSonarrClient(client)) {
+		await client.queue.delete(queueId, deleteOptions);
+	} else if (isRadarrClient(client)) {
+		await client.queue.delete(queueId, deleteOptions);
+	} else if (isLidarrClient(client)) {
+		await client.queue.delete(queueId, deleteOptions);
+	} else if (isReadarrClient(client)) {
+		await client.queue.delete(queueId, deleteOptions);
+	} else {
+		// Service enum and instance.service drifted apart. Surface it honestly
+		// rather than silently no-opping the retry.
+		throw new AppValidationError(`No queue retry path for service ${instance.service}`);
+	}
+
+	log.info(
+		{ action: "queue.retry", instanceId, queueItemId: queueId, service },
+		"pulse-action: queue item retried",
+	);
+	return { status: "ok" };
 }
 
 // ---------------------------------------------------------------------------
