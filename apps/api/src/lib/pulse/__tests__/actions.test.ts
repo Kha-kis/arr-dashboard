@@ -205,15 +205,26 @@ describe("dispatchPulseAction — cache.refresh", () => {
 
 		const result = await dispatchPulseAction(fakeApp, "user-1", plexAction, fakeLog);
 
-		expect(result).toEqual({ status: "ok", detail: "42 item(s) refreshed" });
+		// Dispatch returns immediately with `status: "ok"` — the refresh runs
+		// in the background to avoid blowing through the HTTP proxy timeout
+		// on large libraries. `detail` is no longer populated because we
+		// don't yet know the upsert count at return time.
+		expect(result.status).toBe("ok");
+		expect(result.detail).toBeUndefined();
 		expect(requirePlexClient).toHaveBeenCalledWith(fakeApp, "user-1", "inst-plex-1");
+		expect(requireTautulliClient).not.toHaveBeenCalled();
+
+		// Await the background task so the rest of the assertions see the
+		// post-refresh state. In production the route handler does NOT await
+		// this; the HTTP client has already received 200.
+		await result.backgroundTask;
+
 		expect(refreshPlexCache).toHaveBeenCalledWith(
 			fakeClient,
 			fakeApp.prisma,
 			"inst-plex-1",
 			fakeLog,
 		);
-		expect(requireTautulliClient).not.toHaveBeenCalled();
 		// Write-through: collectCacheStaleness reads lastRefreshedAt from
 		// CacheRefreshStatus. Without this upsert the row stays stale and
 		// re-emits on the next poll.
@@ -238,8 +249,14 @@ describe("dispatchPulseAction — cache.refresh", () => {
 
 		const result = await dispatchPulseAction(fakeApp, "user-1", tautulliAction, fakeLog);
 
-		expect(result).toEqual({ status: "ok", detail: "7 item(s) refreshed" });
+		expect(result.status).toBe("ok");
+		expect(result.detail).toBeUndefined();
 		expect(requireTautulliClient).toHaveBeenCalledWith(fakeApp, "user-1", "inst-tautulli-1");
+
+		// Wait for the fire-and-forget background refresh + write-through
+		// before asserting they ran.
+		await result.backgroundTask;
+
 		expect(refreshTautulliCache).toHaveBeenCalledWith(
 			fakeClient,
 			fakeApp.prisma,
@@ -255,6 +272,56 @@ describe("dispatchPulseAction — cache.refresh", () => {
 			instanceId: "inst-tautulli-1",
 			cacheType: "tautulli",
 		});
+	});
+
+	it("returns 200 immediately even when the refresher is slow — fire-and-forget contract", async () => {
+		// Regression guard for the Next.js proxy timeout issue. If this
+		// test times out or returns after the refresher resolves, someone
+		// has re-introduced the `await refreshPlexCache(...)` in the main
+		// code path.
+		requirePlexClient.mockResolvedValue({ client: {}, instance: {} });
+		let resolveRefresh: (v: unknown) => void = () => {};
+		const pendingRefresh = new Promise((r) => {
+			resolveRefresh = r;
+		});
+		refreshPlexCache.mockReturnValue(pendingRefresh);
+
+		const dispatchStart = Date.now();
+		const result = await dispatchPulseAction(fakeApp, "user-1", plexAction, fakeLog);
+		const dispatchElapsed = Date.now() - dispatchStart;
+
+		// Must return well under the proxy's 30s timeout — we target < 100ms
+		// even on loaded CI boxes. In practice dispatch returns in <10ms
+		// because the only `await` is requirePlexClient (stubbed).
+		expect(dispatchElapsed).toBeLessThan(100);
+		expect(result.status).toBe("ok");
+		// The refresher has NOT completed yet — upsert should not have fired.
+		expect(cacheStatusUpsert).not.toHaveBeenCalled();
+
+		// Let the slow refresh complete, then the background task should
+		// run the write-through.
+		resolveRefresh({ upserted: 999, errors: 0, errorMessages: [] });
+		await result.backgroundTask;
+
+		expect(cacheStatusUpsert).toHaveBeenCalledTimes(1);
+	});
+
+	it("does NOT write through when the BACKGROUND refresher throws — stale row must keep emitting", async () => {
+		// If the refresher throws mid-refresh, lastRefreshedAt must stay
+		// unchanged so the staleness collector re-emits the row on the next
+		// poll. Writing on failure would tell operators "it's fresh" when
+		// it isn't — trust regression.
+		requirePlexClient.mockResolvedValue({ client: {}, instance: {} });
+		refreshPlexCache.mockRejectedValue(new Error("upstream Plex timeout"));
+
+		const result = await dispatchPulseAction(fakeApp, "user-1", plexAction, fakeLog);
+		expect(result.status).toBe("ok");
+
+		// Background task runs; it should swallow the error (logged) and
+		// deliberately NOT call cacheStatusUpsert.
+		await result.backgroundTask;
+
+		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
 
 	it("does NOT call cacheRefreshStatus.upsert when the refresher rejects before completing", async () => {

@@ -178,20 +178,26 @@ describe("Pulse actionability — cache.refresh end-to-end", () => {
 			staleItem.action,
 		);
 		expect(actionRes.statusCode).toBe(200);
-		expect(JSON.parse(actionRes.payload)).toEqual({
-			status: "ok",
-			detail: "42 item(s) refreshed",
-		});
+		// Wire shape (post fire-and-forget fix): only `status`. The route
+		// returns before the refresh completes so we don't know the upsert
+		// count yet — `detail` is intentionally absent.
+		expect(JSON.parse(actionRes.payload)).toEqual({ status: "ok" });
 		expect(requirePlexClient).toHaveBeenCalledWith(
 			expect.any(Object), // app
 			`e2e-cache-user-${userCounter}`,
 			"inst-plex",
 		);
+
+		// Flush microtasks + give the refresh mock (synchronously resolved)
+		// a tick to run its continuation + upsert the fresh lastRefreshedAt
+		// into our stubbed cacheStatuses. In production this is what takes
+		// time; in the test it's essentially instant — but we still have
+		// to yield the event loop.
+		await new Promise((resolve) => setTimeout(resolve, 20));
 		expect(refreshPlexCache).toHaveBeenCalledTimes(1);
 
-		// 3. The live Prisma stub's upsert callback already mutated
-		//    cacheStatuses[0].lastRefreshedAt to `now` when the dispatcher
-		//    wrote through — no manual setup here. The collector should
+		// 3. After the background task ran, the upsert callback has mutated
+		//    cacheStatuses[0].lastRefreshedAt to `now`. The collector should
 		//    read the fresh timestamp and not emit the stale row.
 		const second = await injectGet("/pulse");
 		const secondBody = JSON.parse(second.payload);
