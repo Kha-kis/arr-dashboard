@@ -78,11 +78,30 @@ export function labelForCollector(name: string): string {
 	return humanized || "signal";
 }
 
-function sortPulseItems(items: PulseItem[]): PulseItem[] {
+/**
+ * Queue-failure rows (`queue-failed-*`, `queue-stuck-*`, `queue-overflow-*`)
+ * can fan out per instance — a bad download-client day could produce 10+
+ * items per ARR instance. Without a secondary sort, those rows would push
+ * genuinely more-important system issues (a disabled scheduler, an
+ * unreachable ARR) below the visible fold of the 10-row Needs Attention
+ * panel. So within a severity bucket we rank non-queue items first; queue
+ * items still show up, just after the system signals.
+ */
+function isQueueRow(item: PulseItem): boolean {
+	return item.id.startsWith("queue-");
+}
+
+// Exported for focused unit testing. The behavior under test is:
+//   (a) severity bucket ordering (critical > warning > info)
+//   (b) queue-row deprioritization within a severity bucket
+//   (c) newest-first within the same severity + row class
+export function sortPulseItems(items: PulseItem[]): PulseItem[] {
 	return items.sort((a, b) => {
 		const severityDiff = (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9);
 		if (severityDiff !== 0) return severityDiff;
-		// Newest first within same severity
+		const queueDiff = (isQueueRow(a) ? 1 : 0) - (isQueueRow(b) ? 1 : 0);
+		if (queueDiff !== 0) return queueDiff;
+		// Newest first within same severity + row class
 		return b.timestamp.localeCompare(a.timestamp);
 	});
 }
