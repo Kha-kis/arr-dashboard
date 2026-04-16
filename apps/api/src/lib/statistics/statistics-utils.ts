@@ -18,6 +18,7 @@ export interface InstanceInfo {
 	instanceId: string;
 	instanceName: string;
 	instanceBaseUrl: string;
+	instanceExternalUrl?: string;
 }
 
 /**
@@ -50,6 +51,7 @@ export interface HealthIssue {
 	instanceId: string;
 	instanceName: string;
 	instanceBaseUrl: string;
+	instanceExternalUrl?: string;
 	service: "sonarr" | "radarr" | "prowlarr" | "lidarr" | "readarr";
 }
 
@@ -270,6 +272,7 @@ export const processHealthIssues = <T extends HealthEntry>(
 			instanceId: instanceInfo.instanceId,
 			instanceName: instanceInfo.instanceName,
 			instanceBaseUrl: instanceInfo.instanceBaseUrl,
+			instanceExternalUrl: instanceInfo.instanceExternalUrl,
 			service,
 		}));
 };

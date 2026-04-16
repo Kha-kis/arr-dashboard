@@ -166,8 +166,14 @@ export const fetchSonarrStatisticsWithSdk = async (
 	instanceId: string,
 	instanceName: string,
 	instanceBaseUrl: string,
+	instanceExternalUrl?: string,
 ): Promise<SonarrStatistics> => {
-	const instanceInfo: InstanceInfo = { instanceId, instanceName, instanceBaseUrl };
+	const instanceInfo: InstanceInfo = {
+		instanceId,
+		instanceName,
+		instanceBaseUrl,
+		instanceExternalUrl,
+	};
 
 	// Fetch all data in parallel
 	const [series, diskspace, health, cutoffUnmet, qualityProfiles, tags] = await Promise.all([
@@ -283,8 +289,14 @@ export const fetchRadarrStatisticsWithSdk = async (
 	instanceId: string,
 	instanceName: string,
 	instanceBaseUrl: string,
+	instanceExternalUrl?: string,
 ): Promise<RadarrStatistics> => {
-	const instanceInfo: InstanceInfo = { instanceId, instanceName, instanceBaseUrl };
+	const instanceInfo: InstanceInfo = {
+		instanceId,
+		instanceName,
+		instanceBaseUrl,
+		instanceExternalUrl,
+	};
 
 	const [movies, diskspace, health, cutoffUnmet, qualityProfiles, tags] = await Promise.all([
 		safeRequest(() => client.movie.getAll()).then((r) => r ?? []),
@@ -373,8 +385,14 @@ export const fetchProwlarrStatisticsWithSdk = async (
 	instanceId: string,
 	instanceName: string,
 	instanceBaseUrl: string,
+	instanceExternalUrl?: string,
 ): Promise<ProwlarrStatistics> => {
-	const instanceInfo: InstanceInfo = { instanceId, instanceName, instanceBaseUrl };
+	const instanceInfo: InstanceInfo = {
+		instanceId,
+		instanceName,
+		instanceBaseUrl,
+		instanceExternalUrl,
+	};
 
 	const [indexers, health, indexerStats] = await Promise.all([
 		safeRequest(() => client.indexer.getAll()).then((r) => r ?? []),
@@ -471,8 +489,14 @@ export const fetchLidarrStatisticsWithSdk = async (
 	instanceId: string,
 	instanceName: string,
 	instanceBaseUrl: string,
+	instanceExternalUrl?: string,
 ): Promise<LidarrStatistics> => {
-	const instanceInfo: InstanceInfo = { instanceId, instanceName, instanceBaseUrl };
+	const instanceInfo: InstanceInfo = {
+		instanceId,
+		instanceName,
+		instanceBaseUrl,
+		instanceExternalUrl,
+	};
 
 	const [artists, diskspace, health, cutoffUnmetResult, qualityProfiles, tags] = await Promise.all([
 		safeRequest(() => client.artist.getAll()).then((r) => r ?? []),
@@ -582,8 +606,14 @@ export const fetchReadarrStatisticsWithSdk = async (
 	instanceId: string,
 	instanceName: string,
 	instanceBaseUrl: string,
+	instanceExternalUrl?: string,
 ): Promise<ReadarrStatistics> => {
-	const instanceInfo: InstanceInfo = { instanceId, instanceName, instanceBaseUrl };
+	const instanceInfo: InstanceInfo = {
+		instanceId,
+		instanceName,
+		instanceBaseUrl,
+		instanceExternalUrl,
+	};
 
 	const [authors, diskspace, health, cutoffUnmetResult, qualityProfiles, tags] = await Promise.all([
 		safeRequest(() => client.author.getAll()).then((r) => r ?? []),

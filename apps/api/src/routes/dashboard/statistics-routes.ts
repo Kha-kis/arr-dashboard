@@ -1,5 +1,8 @@
-import { ARR_SERVICES_UPPER, type DashboardStatisticsResponse } from "@arr/shared";
-import { dashboardStatisticsResponseSchema } from "@arr/shared";
+import {
+	ARR_SERVICES_UPPER,
+	type DashboardStatisticsResponse,
+	dashboardStatisticsResponseSchema,
+} from "@arr/shared";
 import { LidarrClient, ProwlarrClient, RadarrClient, ReadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyPluginCallback } from "fastify";
 import {
@@ -51,6 +54,7 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							instance.id,
 							instance.label,
 							instance.baseUrl,
+							instance.externalUrl ?? undefined,
 						);
 						return {
 							service: "sonarr" as const,
@@ -83,6 +87,7 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							instance.id,
 							instance.label,
 							instance.baseUrl,
+							instance.externalUrl ?? undefined,
 						);
 						return {
 							service: "radarr" as const,
@@ -115,6 +120,7 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							instance.id,
 							instance.label,
 							instance.baseUrl,
+							instance.externalUrl ?? undefined,
 						);
 						return {
 							service: "prowlarr" as const,
@@ -145,6 +151,7 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							instance.id,
 							instance.label,
 							instance.baseUrl,
+							instance.externalUrl ?? undefined,
 						);
 						return {
 							service: "lidarr" as const,
@@ -177,6 +184,7 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							instance.id,
 							instance.label,
 							instance.baseUrl,
+							instance.externalUrl ?? undefined,
 						);
 						return {
 							service: "readarr" as const,

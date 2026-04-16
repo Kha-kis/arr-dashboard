@@ -123,8 +123,14 @@ export const groupHistoryItems = (
 		if (item.service === "sonarr" || item.service === "radarr") {
 			const downloadId = item.downloadId?.trim();
 			const date = item.date ? new Date(item.date) : new Date();
-			const qualityRecord = item.quality && typeof item.quality === "object" ? item.quality as Record<string, unknown> : null;
-			const qualityInner = qualityRecord?.quality && typeof qualityRecord.quality === "object" ? qualityRecord.quality as Record<string, unknown> : null;
+			const qualityRecord =
+				item.quality && typeof item.quality === "object"
+					? (item.quality as Record<string, unknown>)
+					: null;
+			const qualityInner =
+				qualityRecord?.quality && typeof qualityRecord.quality === "object"
+					? (qualityRecord.quality as Record<string, unknown>)
+					: null;
 			const quality = typeof qualityInner?.name === "string" ? qualityInner.name : "unknown";
 			let groupKey = "";
 
@@ -261,7 +267,9 @@ export const buildHistoryExternalLink = (
 		return null;
 	}
 
-	const baseUrl = normalizeBaseUrl(instance.baseUrl);
+	// Prefer externalUrl so links resolve behind reverse proxies (#354);
+	// baseUrl is only reachable from inside the LAN/container network.
+	const baseUrl = normalizeBaseUrl(instance.externalUrl ?? instance.baseUrl);
 
 	// For Sonarr: link to series page if we have the slug/ID
 	if (item.service === "sonarr") {
@@ -369,18 +377,26 @@ export { formatBytes } from "../../../lib/format-utils";
 export const getDisplayTitle = (item: HistoryItem): string => {
 	// For Prowlarr, try to extract meaningful info from data field
 	if (item.service === "prowlarr") {
-		const data = item.data && typeof item.data === "object" ? item.data as Record<string, unknown> : null;
+		const data =
+			item.data && typeof item.data === "object" ? (item.data as Record<string, unknown>) : null;
 		const eventType = (item.eventType ?? "").toLowerCase();
 
 		// For release grabbed events, prioritize release title
 		if (eventType.includes("grab") || eventType.includes("release")) {
-			const release = (typeof data?.releaseTitle === "string" && data.releaseTitle) || (typeof data?.title === "string" && data.title) || item.title || item.sourceTitle;
+			const release =
+				(typeof data?.releaseTitle === "string" && data.releaseTitle) ||
+				(typeof data?.title === "string" && data.title) ||
+				item.title ||
+				item.sourceTitle;
 			if (release && release !== "Untitled" && release) return release;
 		}
 
 		// For query/RSS events, show the search term or category
 		if (eventType.includes("query") || eventType.includes("rss")) {
-			const query = (typeof data?.query === "string" && data.query) || (typeof data?.searchTerm === "string" && data.searchTerm) || (typeof data?.term === "string" && data.term);
+			const query =
+				(typeof data?.query === "string" && data.query) ||
+				(typeof data?.searchTerm === "string" && data.searchTerm) ||
+				(typeof data?.term === "string" && data.term);
 			if (query) return `Search: "${query}"`;
 
 			// For RSS with no query, show categories or "RSS Feed Sync"
@@ -393,10 +409,14 @@ export const getDisplayTitle = (item: HistoryItem): string => {
 		}
 
 		// Fallback: try release title, then query
-		const release = (typeof data?.releaseTitle === "string" && data.releaseTitle) || (typeof data?.title === "string" && data.title);
+		const release =
+			(typeof data?.releaseTitle === "string" && data.releaseTitle) ||
+			(typeof data?.title === "string" && data.title);
 		if (release && release !== "Untitled" && release) return release;
 
-		const query = (typeof data?.query === "string" && data.query) || (typeof data?.searchTerm === "string" && data.searchTerm);
+		const query =
+			(typeof data?.query === "string" && data.query) ||
+			(typeof data?.searchTerm === "string" && data.searchTerm);
 		if (query) return `Search: "${query}"`;
 
 		// If we still have nothing useful, show the event type context
@@ -404,7 +424,9 @@ export const getDisplayTitle = (item: HistoryItem): string => {
 		if (eventType.includes("query")) return "Indexer Query";
 
 		// Last resort: show application
-		const app = (typeof data?.application === "string" && data.application) || (typeof data?.source === "string" && data.source);
+		const app =
+			(typeof data?.application === "string" && data.application) ||
+			(typeof data?.source === "string" && data.source);
 		if (app) return `${eventType} - ${app}`;
 	}
 
@@ -466,13 +488,19 @@ export const getEventTypeStatusBadge = (
 export const getSourceClient = (item: HistoryItem): string => {
 	const eventType = (item.eventType ?? item.status ?? "").toLowerCase();
 	const isProwlarr = item.service === "prowlarr";
-	const prowlarrData = isProwlarr && item.data && typeof item.data === "object" ? item.data as Record<string, unknown> : null;
+	const prowlarrData =
+		isProwlarr && item.data && typeof item.data === "object"
+			? (item.data as Record<string, unknown>)
+			: null;
 
 	let result = "";
 
 	if (eventType.includes("grab") || eventType.includes("query") || eventType.includes("rss")) {
 		result = isProwlarr
-			? (typeof prowlarrData?.indexer === "string" && prowlarrData.indexer) || (typeof prowlarrData?.indexerName === "string" && prowlarrData.indexerName) || item.indexer || ""
+			? (typeof prowlarrData?.indexer === "string" && prowlarrData.indexer) ||
+				(typeof prowlarrData?.indexerName === "string" && prowlarrData.indexerName) ||
+				item.indexer ||
+				""
 			: item.indexer || "";
 	} else if (eventType.includes("download") || eventType.includes("import")) {
 		result = item.downloadClient || "";
