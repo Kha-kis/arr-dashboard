@@ -37,9 +37,12 @@ jobs:
           fi
           echo "Tag is on main (${GITHUB_SHA::7}) — proceeding with release."
 
-  # Build each platform in parallel for speed
+  # Build each platform in parallel for speed.
+  # Each matrix leg runs on a native runner for its target architecture to
+  # avoid QEMU user-mode emulation (previously SIGILL'd during pnpm install
+  # on arm64 legs; see v2.16.0 release postmortem).
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     needs: [validate-tag]
     # Always run after validate-tag succeeds, or when validate-tag is skipped (workflow_dispatch)
     if: always() && (needs.validate-tag.result == 'success' || needs.validate-tag.result == 'skipped')
@@ -49,16 +52,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform:
-          - linux/amd64
-          - linux/arm64
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
