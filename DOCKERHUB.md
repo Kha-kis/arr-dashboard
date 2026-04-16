@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.16.0** — From monitoring to guided action: Needs Attention panel, Actionability V1 (Enable / Refresh now / Retry), media-server reachability signals, duplicate banner cleanup, trust/microcopy alignment
+> **Version 2.16.1** — Patch: reverse-proxy link resolution across Statistics → Health Issues and Calendar / History / Library deep links; Calendar layout stability on month navigation
 
 A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, **Lidarr**, **Readarr**, **Plex**, **Tautulli**, **Jellyfin**, **Emby**, and **Seerr** instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -93,6 +93,7 @@ services:
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.16.1` | Reverse-proxy link resolution in Statistics / Calendar / History / Library; Calendar layout stability |
 | `2.16.0` | Needs Attention, inline Pulse actions (Enable / Refresh now / Retry), media-server reachability, duplicate banner cleanup |
 | `2.15.0` | Scheduler jobs surface, Security Posture, route governance, shared UX primitives, Plex/Tautulli cache hardening |
 | `2.14.0` | Jellyfin & Emby integration, OAuth-assisted setup, notification quiet hours |
