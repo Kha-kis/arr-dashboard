@@ -5,6 +5,17 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.16.1] - 2026-04-16
+
+**Patch release — reverse-proxy link correctness and calendar layout stability.**
+
+Two user-facing bug fixes on top of 2.16.0. No new features, no schema/API breaking changes — both fixes are transparent to existing installs.
+
+### Fixed
+
+- **Calendar narrows on month navigation** — `PageLayout`'s `<main>` was collapsing to its intrinsic content width because `mx-auto` cancels the default `align-items: stretch` when the parent is `flex flex-col`. When a month's content (loading skeleton, dense event chips, sparse weeks) had a different intrinsic width than the previous month, `main` resized and the calendar appeared to grow or shrink between clicks. Pinning `main` to `w-full` keeps it at parent width regardless of content — the grid, filters, and navigation controls now stay anchored across months. Completes the fix for #272 (the earlier #279 addressed only the vertical 6-week grid; this one was the missed horizontal axis).
+- **Instance deep links now prefer `externalUrl` everywhere** — Statistics → Overview → Health Issues "View" link, plus the Calendar event card, History row, and Library card "open in Sonarr/Radarr/etc." links were building hrefs from `baseUrl` — the internal container URL that isn't reachable when the instance sits behind a reverse proxy. All four sites now use `instance.externalUrl ?? instance.baseUrl`, matching the pattern introduced for the dashboard Active Queue in #306. To make this bug harder to reintroduce, `HealthIssue` records now carry `instanceExternalUrl` end-to-end from the API down to the render site, so any future consumer inherits correct URL resolution without a frontend service lookup. Closes #354.
+
 ## [2.16.0] - 2026-04-15
 
 **From monitoring to guided action.** This release turns the attention surface — System Pulse and the new dashboard Needs Attention panel — from a *report* of what's wrong into a place where operators can *fix* the problem in one click. Pulse / Needs Attention is now the canonical issue surface: pre-existing banners that duplicated its signals have been removed, misleading diagnostic copy has been reworded to defer to Pulse as the single source of truth, and three safe actions — Enable a disabled scheduler, Refresh a stale cache, Retry a failed queue item — land inline on their respective rows.
