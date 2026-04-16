@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { StatCard } from "../../../components/layout";
+import { useTautulliPlaysByDate, useTautulliStats } from "../../../hooks/api/useTautulli";
 import {
 	anonymizeHealthMessage,
 	getLinuxInstanceName,
@@ -24,7 +25,6 @@ import {
 	useIncognitoMode,
 } from "../../../lib/incognito";
 import { getServiceGradient, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
-import { useTautulliPlaysByDate, useTautulliStats } from "../../../hooks/api/useTautulli";
 import type { useStatisticsData } from "../hooks/useStatisticsData";
 import { formatBytes, formatPercent } from "../lib/formatters";
 import { ServiceQuickCard } from "./service-quick-card";
@@ -132,9 +132,7 @@ export const OverviewTab = ({
 							<span className="text-sm font-semibold text-amber-400">
 								{allHealthIssues.length} Health {allHealthIssues.length === 1 ? "Issue" : "Issues"}
 							</span>
-							<span className="text-xs text-muted-foreground/50 ml-2">
-								across your instances
-							</span>
+							<span className="text-xs text-muted-foreground/50 ml-2">across your instances</span>
 						</div>
 						{healthExpanded ? (
 							<ChevronUp className="h-4 w-4 text-muted-foreground/50 shrink-0" />
@@ -172,15 +170,22 @@ export const OverviewTab = ({
 													: issue.instanceName}
 											</span>
 										</div>
-										<a
-											href={`${incognitoMode ? getLinuxUrl(issue.instanceBaseUrl) : issue.instanceBaseUrl}/system/status`}
-											target="_blank"
-											rel="noopener noreferrer"
-											className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border/50 bg-background/50 hover:bg-background transition-colors shrink-0"
-										>
-											View
-											<ExternalLink className="h-3 w-3" />
-										</a>
+										{(() => {
+											// Prefer externalUrl so links resolve behind reverse proxies (#354);
+											// baseUrl is only reachable from inside the LAN/container network.
+											const instanceUrl = issue.instanceExternalUrl ?? issue.instanceBaseUrl;
+											return (
+												<a
+													href={`${incognitoMode ? getLinuxUrl(instanceUrl) : instanceUrl}/system/status`}
+													target="_blank"
+													rel="noopener noreferrer"
+													className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border/50 bg-background/50 hover:bg-background transition-colors shrink-0"
+												>
+													View
+													<ExternalLink className="h-3 w-3" />
+												</a>
+											);
+										})()}
 									</div>
 									<p className="text-sm">
 										{incognitoMode ? anonymizeHealthMessage(issue.message) : issue.message}

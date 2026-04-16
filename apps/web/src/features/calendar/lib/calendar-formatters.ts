@@ -146,7 +146,9 @@ export const buildExternalLink = (
 		return null;
 	}
 
-	const baseUrl = normalizeBaseUrl(instance.baseUrl);
+	// Prefer externalUrl so links resolve behind reverse proxies (#354);
+	// baseUrl is only reachable from inside the LAN/container network.
+	const baseUrl = normalizeBaseUrl(instance.externalUrl ?? instance.baseUrl);
 
 	if (event.service === "sonarr" && (event.seriesSlug || event.seriesId)) {
 		const seriesSegment = event.seriesSlug ?? String(event.seriesId);

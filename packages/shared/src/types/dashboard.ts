@@ -287,6 +287,7 @@ export const healthIssueSchema = z.object({
 	instanceId: z.string(),
 	instanceName: z.string(),
 	instanceBaseUrl: z.string(),
+	instanceExternalUrl: z.string().optional(),
 	service: z.enum(["sonarr", "radarr", "prowlarr", "lidarr", "readarr"]),
 });
 

@@ -59,7 +59,9 @@ export const buildLibraryExternalLink = (
 		return null;
 	}
 
-	const baseUrl = normalizeBaseUrl(instance.baseUrl);
+	// Prefer externalUrl so links resolve behind reverse proxies (#354);
+	// baseUrl is only reachable from inside the LAN/container network.
+	const baseUrl = normalizeBaseUrl(instance.externalUrl ?? instance.baseUrl);
 	const slugSegment = item.titleSlug ? encodeURIComponent(item.titleSlug) : null;
 
 	if (item.service === "sonarr") {
@@ -105,4 +107,3 @@ export const buildJellyfinUrl = (
 	}
 	return `${base}/web/#/details?id=${encodeURIComponent(jellyfinId)}`;
 };
-
