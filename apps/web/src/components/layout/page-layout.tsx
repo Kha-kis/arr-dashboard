@@ -56,7 +56,11 @@ export const PageLayout = ({
 	return (
 		<main
 			className={cn(
-				"mx-auto flex flex-col px-3 py-8 sm:px-4 sm:py-12 md:px-6 md:py-16",
+				// w-full pins main to the template's flex-col parent width; without it,
+				// mx-auto cancels align-items:stretch and main collapses to its intrinsic
+				// content width, so brief loading skeletons or content-width changes cause
+				// visible layout shifts (e.g. calendar narrowing on month nav — issue #272).
+				"mx-auto w-full flex flex-col px-3 py-8 sm:px-4 sm:py-12 md:px-6 md:py-16",
 				MAX_WIDTH_CLASSES[maxWidth],
 				GAP_CLASSES[gap],
 				className,
