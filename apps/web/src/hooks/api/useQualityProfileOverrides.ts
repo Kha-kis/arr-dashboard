@@ -10,9 +10,9 @@ import {
 	promoteOverrideToTemplate,
 } from "../../lib/api-client/trash-guides";
 import {
-	TEMPLATES_QUERY_KEY,
 	bulkScoreKeys,
 	qualityProfileKeys,
+	TEMPLATES_QUERY_KEY,
 	trashGuidesKeys,
 } from "../../lib/query-keys";
 
@@ -95,7 +95,6 @@ export function useDeleteOverride() {
 			}
 		},
 		onError: (error) => {
-			console.error("Failed to delete override:", error);
 			toast.error("Failed to delete override", {
 				description: error.message,
 			});
@@ -134,7 +133,6 @@ export function useBulkDeleteOverrides() {
 			}
 		},
 		onError: (error) => {
-			console.error("Failed to bulk delete overrides:", error);
 			toast.error("Failed to delete overrides", {
 				description: error.message,
 			});

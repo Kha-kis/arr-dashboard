@@ -19,7 +19,7 @@ import {
 	unlinkTemplateFromInstance,
 	updateSyncStrategy,
 } from "../../lib/api-client/trash-guides";
-import { TEMPLATES_QUERY_KEY, deploymentHistoryKeys, trashGuidesKeys } from "../../lib/query-keys";
+import { deploymentHistoryKeys, TEMPLATES_QUERY_KEY, trashGuidesKeys } from "../../lib/query-keys";
 
 export type InstancePreviewResult = {
 	instanceId: string;
@@ -151,7 +151,6 @@ export function useUpdateSyncStrategy() {
 			});
 		},
 		onError: (error) => {
-			console.error("Failed to update sync strategy:", error);
 			toast.error("Failed to update sync strategy", {
 				description: error.message,
 			});
@@ -178,7 +177,6 @@ export function useBulkUpdateSyncStrategy() {
 			});
 		},
 		onError: (error) => {
-			console.error("Failed to bulk update sync strategy:", error);
 			toast.error("Failed to update sync strategy", {
 				description: error.message,
 			});
@@ -214,7 +212,6 @@ export function useUnlinkTemplateFromInstance() {
 			});
 		},
 		onError: (error) => {
-			console.error("Unlink failed:", error);
 			toast.error("Failed to unlink template from instance", {
 				description: error.message,
 			});

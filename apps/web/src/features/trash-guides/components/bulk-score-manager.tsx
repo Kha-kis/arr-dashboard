@@ -157,7 +157,6 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 				if (error instanceof Error && error.name === "AbortError") {
 					return;
 				}
-				console.error("Error fetching bulk overrides:", error);
 				toast.error("Failed to fetch quality profile overrides");
 			}
 		},
@@ -272,7 +271,7 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 			setModifiedScores(new Map());
 			onOperationComplete?.();
 		} catch (error) {
-			console.error("Error saving scores:", error);
+			// error surfaced through mutation state
 		}
 	};
 
@@ -389,7 +388,6 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 				`Successfully reset ${totalDeleted} override${totalDeleted === 1 ? "" : "s"} to template defaults`,
 			);
 		} catch (error) {
-			console.error("Failed to bulk reset:", error);
 			const errorMessage = getErrorMessage(error, "Unknown error occurred");
 			toast.error(
 				`Failed to reset overrides: ${errorMessage}. Some overrides may have been reset. Please refresh to see the current state.`,

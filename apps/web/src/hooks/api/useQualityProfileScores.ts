@@ -138,9 +138,7 @@ export function useBulkUpdateScores() {
 					.join(", ");
 
 				const error = Object.assign(
-					new Error(
-						`Failed to update ${failureCount} quality profile(s): ${errorMessages}`,
-					),
+					new Error(`Failed to update ${failureCount} quality profile(s): ${errorMessages}`),
 					{
 						results: {
 							totalProfiles: entries.length,
@@ -184,7 +182,6 @@ export function useBulkUpdateScores() {
 			}
 		},
 		onError: (error) => {
-			console.error("Failed to bulk update scores:", error);
 			toast.error("Failed to update custom format scores", {
 				description: error.message,
 			});

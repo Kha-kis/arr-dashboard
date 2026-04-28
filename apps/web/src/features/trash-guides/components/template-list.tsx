@@ -124,7 +124,6 @@ export const TemplateList = ({
 			await deleteMutation.mutateAsync(templateId);
 			dispatch({ type: "CLOSE_DELETE" });
 		} catch (error) {
-			console.error("Delete failed:", error);
 			const errorMessage = getErrorMessage(error, "Unknown error occurred");
 			toast.error("Failed to delete template", { description: errorMessage });
 		}
@@ -143,7 +142,6 @@ export const TemplateList = ({
 			});
 			dispatch({ type: "CLOSE_DUPLICATE" });
 		} catch (error) {
-			console.error("Duplicate failed:", error);
 			const errorMessage = getErrorMessage(error, "Unknown error occurred");
 			toast.error("Failed to duplicate template", { description: errorMessage });
 		}
@@ -169,7 +167,6 @@ export const TemplateList = ({
 				},
 			});
 		} catch (error) {
-			console.error("Sync execution failed:", error);
 			const errorMessage = getErrorMessage(error, "Unknown error occurred");
 			toast.error("Failed to start sync operation", { description: errorMessage });
 		}
@@ -669,7 +666,11 @@ export const TemplateList = ({
 							</h3>
 							<p className="text-sm text-muted-foreground">
 								Are you sure you want to unlink template &quot;{modals.unlinkConfirm.templateName}
-								&quot; from instance &quot;{incognitoMode ? getLinuxInstanceName(modals.unlinkConfirm.instanceName) : modals.unlinkConfirm.instanceName}&quot;?
+								&quot; from instance &quot;
+								{incognitoMode
+									? getLinuxInstanceName(modals.unlinkConfirm.instanceName)
+									: modals.unlinkConfirm.instanceName}
+								&quot;?
 							</p>
 							<p className="text-xs text-muted-foreground">
 								This will remove the deployment mapping. Custom Formats already on the instance will

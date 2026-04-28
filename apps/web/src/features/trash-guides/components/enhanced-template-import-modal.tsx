@@ -68,7 +68,6 @@ export function EnhancedTemplateImportModal({
 			setJsonData(text);
 			await validateTemplate(text);
 		} catch (error) {
-			console.error("Failed to read file:", error);
 			alert("Failed to read template file");
 		}
 	};
@@ -91,7 +90,6 @@ export function EnhancedTemplateImportModal({
 			setValidation(result.data.validation);
 			setCompatibility(result.data.compatibility);
 		} catch (error) {
-			console.error("Failed to validate template:", error);
 			alert("Failed to validate template");
 		} finally {
 			setIsValidating(false);

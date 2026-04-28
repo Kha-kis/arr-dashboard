@@ -214,7 +214,6 @@ export const TemplateDiffModal = ({
 			onSyncSuccess?.();
 			onClose();
 		} catch (err) {
-			console.error("Sync failed:", err);
 			toast.error("Sync failed", {
 				description: getErrorMessage(err, "An unexpected error occurred"),
 			});

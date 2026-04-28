@@ -72,7 +72,7 @@ export function QualityProfileImporter({
 			});
 			setImportedProfile(result.profile);
 		} catch (error) {
-			console.error("Failed to import profile:", error);
+			// error surfaced through mutation state
 		}
 	};
 
