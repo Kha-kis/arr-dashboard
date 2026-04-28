@@ -41,10 +41,7 @@ describe("validateAndCollect", () => {
 	});
 
 	it("returns empty array and logs error when all items fail", () => {
-		const items = [
-			{ id: "bad" },
-			{ name: 123 },
-		];
+		const items = [{ id: "bad" }, { name: 123 }];
 		const { items: result, stats } = validateAndCollect(items, itemSchema, "all-bad.json", log);
 		expect(result).toHaveLength(0);
 		expect(stats).toEqual({ total: 2, validated: 0, rejected: 2 });
@@ -71,12 +68,7 @@ describe("validateAndCollect", () => {
 	});
 
 	it("logs high rejection rate warning when >50% items fail", () => {
-		const items = [
-			{ id: 1, name: "ok" },
-			{ id: "bad" },
-			{ name: 123 },
-			{ what: "nope" },
-		];
+		const items = [{ id: 1, name: "ok" }, { id: "bad" }, { name: 123 }, { what: "nope" }];
 		const { items: result, stats } = validateAndCollect(items, itemSchema, "high-reject.json", log);
 		expect(result).toHaveLength(1);
 		expect(stats.rejected).toBe(3);
@@ -90,5 +82,26 @@ describe("validateAndCollect", () => {
 		const items = [{ id: 1, name: "test", extraField: "preserved" }];
 		const { items: result } = validateAndCollect(items, itemSchema, "extra.json", log);
 		expect(result[0]).toHaveProperty("extraField", "preserved");
+	});
+
+	it("records drift when integration+category are passed without skipFingerprint", () => {
+		const { drift } = validateAndCollect([{ id: 1, name: "a" }], itemSchema, "f.json", log, {
+			integration: "test-fp",
+			category: "fpA",
+		});
+		expect(drift).toBeDefined();
+	});
+
+	it("skips drift recording when skipFingerprint is true (per-item iteration mode)", () => {
+		// Simulates the trash-guides per-file iteration: a sparse-field upstream
+		// where a single item lacks an optional field would generate spurious drift
+		// warnings on every call. With skipFingerprint, the caller takes
+		// responsibility for one batch fingerprint at the end.
+		const { drift } = validateAndCollect([{ id: 1, name: "a" }], itemSchema, "f.json", log, {
+			integration: "test-fp",
+			category: "fpB",
+			skipFingerprint: true,
+		});
+		expect(drift).toBeUndefined();
 	});
 });

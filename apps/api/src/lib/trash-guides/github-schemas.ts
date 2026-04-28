@@ -10,12 +10,12 @@ import { z } from "zod";
 
 // Re-export for backward compatibility — existing callers import from here
 export {
-	validateAndCollect,
+	type Logger,
+	type ValidateOptions,
+	type ValidationMode,
 	type ValidationResult,
 	type ValidationStats,
-	type ValidationMode,
-	type ValidateOptions,
-	type Logger,
+	validateAndCollect,
 } from "../validation/validate-batch.js";
 
 // Local import for use in this file
@@ -248,7 +248,9 @@ export const trashConflictsFileSchema = z.looseObject({
 // Validation Stats Accumulator (delegates to IntegrationHealthRegistry)
 // ============================================================================
 
-import { integrationHealth, type IntegrationHealth } from "../validation/integration-health.js";
+import { type IntegrationHealth, integrationHealth } from "../validation/integration-health.js";
+import { type DriftReport, schemaFingerprints } from "../validation/schema-fingerprint.js";
+import type { Logger } from "../validation/types.js";
 
 const TRASH_INTEGRATION = "trash-guides";
 
@@ -263,6 +265,23 @@ export function resetValidationHealth(): void {
 /** Record stats for a data category (e.g., "customFormats", "qualityProfiles") */
 export function recordValidationStats(category: string, stats: ValidationStats): void {
 	integrationHealth.record(TRASH_INTEGRATION, category, stats);
+}
+
+/**
+ * Record a batch schema fingerprint for drift detection.
+ *
+ * Use this after a per-file iteration loop (e.g., fetchCustomFormats) to
+ * record the union of fields across the full collected batch. Per-item
+ * fingerprinting in such loops misreports sparse upstream fields as drift —
+ * see ValidateOptions.skipFingerprint.
+ */
+export function recordSchemaFingerprint(
+	category: string,
+	items: unknown[],
+	log: Logger,
+): DriftReport | undefined {
+	if (items.length === 0) return undefined;
+	return schemaFingerprints.record(TRASH_INTEGRATION, category, items, log);
 }
 
 /** Get current validation health snapshot */
