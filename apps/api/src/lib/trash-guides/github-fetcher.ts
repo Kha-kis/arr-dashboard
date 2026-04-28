@@ -8,8 +8,8 @@
 import type {
 	TrashCFDescription,
 	TrashCFInclude,
-	TrashConflictGroup,
 	TrashConfigType,
+	TrashConflictGroup,
 	TrashCustomFormat,
 	TrashCustomFormatGroup,
 	TrashNamingData,
@@ -22,21 +22,22 @@ import type {
 import { DEFAULT_TRASH_REPO } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
 import DOMPurify from "isomorphic-dompurify";
-import { z } from "zod";
 import { marked } from "marked";
-import { parseUpstreamOrThrow, UpstreamValidationError } from "../validation/parse-upstream.js";
+import { z } from "zod";
 import { loggers } from "../logger.js";
+import { parseUpstreamOrThrow, UpstreamValidationError } from "../validation/parse-upstream.js";
 import {
 	radarrNamingSchema,
+	recordSchemaFingerprint,
+	recordValidationStats,
 	sonarrNamingSchema,
+	trashConflictsFileSchema,
 	trashCustomFormatGroupSchema,
 	trashCustomFormatSchema,
 	trashNamingSchemeSchema,
 	trashQualityProfileGroupSchema,
 	trashQualityProfileSchema,
 	trashQualitySizeSchema,
-	recordValidationStats,
-	trashConflictsFileSchema,
 	validateAndCollect,
 } from "./github-schemas.js";
 
@@ -569,6 +570,7 @@ export class TrashGitHubFetcher {
 					const result = validateAndCollect(rawData, trashCustomFormatSchema, file, this.log, {
 						integration: "trash-guides",
 						category: "customFormats",
+						skipFingerprint: true,
 					});
 					formats.push(...result.items);
 					recordValidationStats("customFormats", result.stats);
@@ -579,6 +581,7 @@ export class TrashGitHubFetcher {
 			}
 		}
 
+		recordSchemaFingerprint("customFormats", formats, this.log);
 		return formats;
 	}
 
@@ -603,6 +606,7 @@ export class TrashGitHubFetcher {
 					const result = validateAndCollect(rawData, trashCustomFormatGroupSchema, file, this.log, {
 						integration: "trash-guides",
 						category: "customFormatGroups",
+						skipFingerprint: true,
 					});
 					groups.push(...result.items);
 					recordValidationStats("customFormatGroups", result.stats);
@@ -612,6 +616,7 @@ export class TrashGitHubFetcher {
 			}
 		}
 
+		recordSchemaFingerprint("customFormatGroups", groups, this.log);
 		return groups;
 	}
 
@@ -634,6 +639,7 @@ export class TrashGitHubFetcher {
 					const result = validateAndCollect(rawData, trashQualitySizeSchema, file, this.log, {
 						integration: "trash-guides",
 						category: "qualitySize",
+						skipFingerprint: true,
 					});
 					settings.push(...result.items);
 					recordValidationStats("qualitySize", result.stats);
@@ -643,6 +649,7 @@ export class TrashGitHubFetcher {
 			}
 		}
 
+		recordSchemaFingerprint("qualitySize", settings, this.log);
 		return settings;
 	}
 
@@ -665,6 +672,7 @@ export class TrashGitHubFetcher {
 					const result = validateAndCollect(rawData, trashNamingSchemeSchema, file, this.log, {
 						integration: "trash-guides",
 						category: "namingSchemes",
+						skipFingerprint: true,
 					});
 					schemes.push(...result.items);
 					recordValidationStats("namingSchemes", result.stats);
@@ -674,6 +682,7 @@ export class TrashGitHubFetcher {
 			}
 		}
 
+		recordSchemaFingerprint("namingSchemes", schemes, this.log);
 		return schemes;
 	}
 
@@ -696,6 +705,7 @@ export class TrashGitHubFetcher {
 					const result = validateAndCollect(rawData, trashQualityProfileSchema, file, this.log, {
 						integration: "trash-guides",
 						category: "qualityProfiles",
+						skipFingerprint: true,
 					});
 					profiles.push(...result.items);
 					recordValidationStats("qualityProfiles", result.stats);
@@ -705,6 +715,7 @@ export class TrashGitHubFetcher {
 			}
 		}
 
+		recordSchemaFingerprint("qualityProfiles", profiles, this.log);
 		return profiles;
 	}
 

@@ -47,6 +47,15 @@ export interface ValidateOptions {
 	category?: string;
 	/** Validation mode override. Defaults to "tolerant". */
 	mode?: ValidationMode;
+	/**
+	 * When true, skip the per-call schema fingerprint recording while still
+	 * applying integration/category for quarantine. Use when iterating individual
+	 * items in a loop — the caller should record a single batch fingerprint at
+	 * the end so the union-growth semantics work correctly. Without this, a
+	 * sparse-field upstream (where some items lack optional fields) generates
+	 * spurious drift warnings on every per-item call.
+	 */
+	skipFingerprint?: boolean;
 }
 
 // ============================================================================
@@ -134,9 +143,11 @@ export function validateAndCollect<T>(
 		}
 	}
 
-	// Schema fingerprinting (when integration + category are specified and items exist)
+	// Schema fingerprinting (when integration + category are specified and items exist).
+	// Callers iterating individual items should pass skipFingerprint and record a
+	// single batch fingerprint after the loop — see recordSchemaFingerprint.
 	let drift: DriftReport | undefined;
-	if (options?.integration && options?.category && results.length > 0) {
+	if (options?.integration && options?.category && results.length > 0 && !options.skipFingerprint) {
 		drift = schemaFingerprints.record(options.integration, options.category, results, log);
 	}
 
