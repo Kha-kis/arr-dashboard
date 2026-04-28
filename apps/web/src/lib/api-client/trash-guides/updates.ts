@@ -223,6 +223,13 @@ export type SuggestedScoreChange = {
 	scoreSet: string;
 };
 
+export type TemplateMigrationNotice = {
+	id: string;
+	title: string;
+	body: string;
+	severity: "info" | "warning";
+};
+
 export type TemplateDiffResult = {
 	templateId: string;
 	templateName: string;
@@ -234,6 +241,7 @@ export type TemplateDiffResult = {
 	hasUserModifications: boolean;
 	suggestedAdditions?: SuggestedCFAddition[];
 	suggestedScoreChanges?: SuggestedScoreChange[];
+	migrationNotices?: TemplateMigrationNotice[];
 	/**
 	 * True when the template is already at the target version and
 	 * the diff was reconstructed from historical changelog data.
