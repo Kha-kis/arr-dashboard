@@ -113,7 +113,6 @@ export function EnhancedTemplateExportModal({
 				}
 			}
 		} catch (error) {
-			console.error("Failed to export template:", error);
 			alert("Failed to export template");
 		} finally {
 			setIsExporting(false);

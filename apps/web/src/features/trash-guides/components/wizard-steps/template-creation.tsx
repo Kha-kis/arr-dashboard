@@ -283,7 +283,8 @@ export const TemplateCreation = ({
 				editingTemplate?.config.customFormatGroups.map((g) => ({
 					trash_id: g.trashId,
 					name: g.name || "",
-					custom_formats: (g.originalConfig?.custom_formats as WizardCFGroup["custom_formats"]) || [],
+					custom_formats:
+						(g.originalConfig?.custom_formats as WizardCFGroup["custom_formats"]) || [],
 				})) ||
 				[]
 			: data?.cfGroups || [];
@@ -366,14 +367,6 @@ export const TemplateCreation = ({
 			onComplete();
 		} catch (error) {
 			// Error will be displayed through mutation state
-			console.error(
-				isEditMode
-					? "Update failed:"
-					: isCloned
-						? "Cloned template creation failed:"
-						: "Import failed:",
-				error,
-			);
 		}
 	};
 
