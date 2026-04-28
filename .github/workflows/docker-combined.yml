@@ -86,17 +86,21 @@ jobs:
 
       - name: Extract version metadata
         id: version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          GH_SHA: ${{ github.sha }}
         run: |
           # Extract version from tag (strip 'v' prefix) or use 'dev' for manual runs
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            VERSION="${{ github.ref_name }}"
+          if [[ "$REF_TYPE" == "tag" ]]; then
+            VERSION="$REF_NAME"
             VERSION="${VERSION#v}"  # Remove 'v' prefix
           else
             VERSION="dev"
           fi
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "commit_sha=${{ github.sha }}" >> $GITHUB_OUTPUT
-          echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=${GH_SHA}" >> "$GITHUB_OUTPUT"
+          echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Verify commit SHA is available
         run: |
@@ -221,12 +225,13 @@ jobs:
         id: scan-tag
         env:
           REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
         run: |
           # Use exact version tag (strip 'v' prefix) for tag pushes, 'latest' for manual runs
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            echo "tag=${REF_NAME#v}" >> $GITHUB_OUTPUT
+          if [[ "$REF_TYPE" == "tag" ]]; then
+            echo "tag=${REF_NAME#v}" >> "$GITHUB_OUTPUT"
           else
-            echo "tag=latest" >> $GITHUB_OUTPUT
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Run Trivy vulnerability scanner
