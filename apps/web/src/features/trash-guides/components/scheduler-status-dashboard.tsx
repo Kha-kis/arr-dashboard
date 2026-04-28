@@ -107,7 +107,6 @@ export const SchedulerStatusDashboard = () => {
 		try {
 			await triggerCheck.mutateAsync();
 		} catch (error) {
-			console.error("Failed to trigger update check:", error);
 			alert("Failed to trigger update check. Please try again.");
 		}
 	};
@@ -193,7 +192,9 @@ export const SchedulerStatusDashboard = () => {
 			/>
 			<div
 				className="absolute left-0 top-0 bottom-0 w-[3px]"
-				style={{ background: `linear-gradient(180deg, ${themeGradient.from}, ${themeGradient.fromLight})` }}
+				style={{
+					background: `linear-gradient(180deg, ${themeGradient.from}, ${themeGradient.fromLight})`,
+				}}
 			/>
 			<div className="relative p-6 space-y-6">
 				{/* Header */}

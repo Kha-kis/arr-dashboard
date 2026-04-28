@@ -183,7 +183,6 @@ export const TemplateScheduleModal = ({
 			});
 			onClose();
 		} catch (err) {
-			console.error("Failed to save schedule:", err);
 			setError(getErrorMessage(err, "Failed to save schedule. Please try again."));
 		} finally {
 			setIsSaving(false);
@@ -555,30 +554,30 @@ export const TemplateScheduleModal = ({
 						)}
 					</div>
 					<div className="flex gap-3">
-					<Button variant="outline" onClick={onClose} className="rounded-xl">
-						Cancel
-					</Button>
-					<Button
-						onClick={handleSave}
-						disabled={isSaving}
-						className="gap-2 rounded-xl font-medium"
-						style={{
-							background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
-							boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,
-						}}
-					>
-						{isSaving ? (
-							<>
-								<Loader2 className="h-4 w-4 animate-spin" />
-								Saving...
-							</>
-						) : (
-							<>
-								<Clock className="h-4 w-4" />
-								{existingSchedule ? "Update Schedule" : "Create Schedule"}
-							</>
-						)}
-					</Button>
+						<Button variant="outline" onClick={onClose} className="rounded-xl">
+							Cancel
+						</Button>
+						<Button
+							onClick={handleSave}
+							disabled={isSaving}
+							className="gap-2 rounded-xl font-medium"
+							style={{
+								background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+								boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,
+							}}
+						>
+							{isSaving ? (
+								<>
+									<Loader2 className="h-4 w-4 animate-spin" />
+									Saving...
+								</>
+							) : (
+								<>
+									<Clock className="h-4 w-4" />
+									{existingSchedule ? "Update Schedule" : "Create Schedule"}
+								</>
+							)}
+						</Button>
 					</div>
 				</div>
 			</div>
