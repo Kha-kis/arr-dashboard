@@ -19,6 +19,7 @@ import {
 	Edit,
 	GitCompare,
 	History,
+	Info,
 	Lightbulb,
 	List,
 	Loader2,
@@ -411,6 +412,37 @@ export const TemplateDiffModal = ({
 								</p>
 							</div>
 						)}
+
+						{/* Migration Notices — upstream restructures we want to narrate */}
+						{data.data.migrationNotices?.map((notice) => {
+							const palette =
+								notice.severity === "warning" ? SEMANTIC_COLORS.warning : SEMANTIC_COLORS.info;
+							return (
+								<div
+									key={notice.id}
+									className="rounded-xl p-4"
+									style={{
+										backgroundColor: palette.bg,
+										border: `1px solid ${palette.border}`,
+									}}
+								>
+									<div className="flex items-start gap-2">
+										<Info className="h-4 w-4 shrink-0 mt-0.5" style={{ color: palette.from }} />
+										<div className="space-y-1">
+											<p className="text-sm font-medium" style={{ color: palette.text }}>
+												{notice.title}
+											</p>
+											<p
+												className="text-xs leading-relaxed opacity-90"
+												style={{ color: palette.text }}
+											>
+												{notice.body}
+											</p>
+										</div>
+									</div>
+								</div>
+							);
+						})}
 
 						{/* Summary Statistics */}
 						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">

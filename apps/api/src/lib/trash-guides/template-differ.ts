@@ -16,6 +16,7 @@ import type {
 	TemplateCustomFormat,
 	TemplateCustomFormatGroup,
 	TemplateDiffResult,
+	TemplateMigrationNotice,
 	TrashConfigType,
 	TrashCustomFormat,
 	TrashCustomFormatGroup,
@@ -26,6 +27,7 @@ import { loggers } from "../logger.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import type { TrashCacheManager } from "./cache-manager.js";
 import type { TrashGitHubFetcher } from "./github-fetcher.js";
+import { getMigrationNotices } from "./migration-notices.js";
 import {
 	getCurrentScore,
 	getRecommendedScore,
@@ -73,7 +75,12 @@ export async function computeTemplateDiff(
 		const recentAutoSync = getRecentAutoSyncEntry(template.changeLog, targetCommitHash);
 
 		if (recentAutoSync) {
-			return transformAutoSyncToHistoricalDiff(template, targetCommitHash, recentAutoSync);
+			return transformAutoSyncToHistoricalDiff(
+				template,
+				targetCommitHash,
+				recentAutoSync,
+				collectMigrationNoticesFromTemplate(template),
+			);
 		}
 
 		// No changelog entry — return empty diff with metadata
@@ -93,6 +100,7 @@ export async function computeTemplateDiff(
 			customFormatGroupDiffs: [],
 			hasUserModifications: template.hasUserModifications,
 			isHistorical: true,
+			migrationNotices: collectMigrationNoticesFromTemplate(template),
 		};
 	}
 
@@ -318,6 +326,8 @@ export async function computeTemplateDiff(
 		}
 	}
 
+	const migrationNotices = getMigrationNotices(serviceType, new Set(currentGroups.keys()));
+
 	return {
 		templateId: template.id,
 		templateName: template.name,
@@ -335,7 +345,26 @@ export async function computeTemplateDiff(
 		hasUserModifications: template.hasUserModifications,
 		suggestedAdditions: suggestedAdditions.length > 0 ? suggestedAdditions : undefined,
 		suggestedScoreChanges: suggestedScoreChanges.length > 0 ? suggestedScoreChanges : undefined,
+		migrationNotices: migrationNotices.length > 0 ? migrationNotices : undefined,
 	};
+}
+
+/**
+ * Best-effort migration notice collection from the template's stored config.
+ * Used on the historical/up-to-date branch where we don't reach the live cache.
+ * Returns undefined on parse failure so the field stays absent in the response.
+ */
+function collectMigrationNoticesFromTemplate(template: DiffTemplateInput) {
+	try {
+		const config = JSON.parse(template.configData) as {
+			customFormatGroups?: TemplateCustomFormatGroup[];
+		};
+		const groupIds = new Set((config.customFormatGroups ?? []).map((g) => g.trashId));
+		const notices = getMigrationNotices(template.serviceType as "RADARR" | "SONARR", groupIds);
+		return notices.length > 0 ? notices : undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 // ============================================================================
@@ -354,6 +383,7 @@ function transformAutoSyncToHistoricalDiff(
 	},
 	targetCommitHash: string,
 	entry: AutoSyncChangeLogEntry,
+	migrationNotices: TemplateMigrationNotice[] | undefined,
 ): TemplateDiffResult {
 	const addedDiffs: CustomFormatDiff[] = entry.customFormatsAdded.map((cf) => ({
 		trashId: cf.trashId,
@@ -406,6 +436,7 @@ function transformAutoSyncToHistoricalDiff(
 		customFormatGroupDiffs: [],
 		hasUserModifications: template.hasUserModifications,
 		suggestedScoreChanges: historicalScoreChanges.length > 0 ? historicalScoreChanges : undefined,
+		migrationNotices,
 		isHistorical: true,
 		historicalSyncTimestamp: entry.timestamp,
 	};
