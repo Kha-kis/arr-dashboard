@@ -1356,6 +1356,19 @@ export interface SuggestedScoreChange {
 }
 
 /**
+ * Advisory notice surfaced when an upstream TRaSH Guides restructure
+ * (rename, split, or regrouping) affects the user's template. Lets the
+ * diff UI explain what's about to happen rather than letting users
+ * discover the rearrangement after the fact.
+ */
+export interface TemplateMigrationNotice {
+	id: string;
+	title: string;
+	body: string;
+	severity: "info" | "warning";
+}
+
+/**
  * Template diff comparison result
  */
 export interface TemplateDiffResult {
@@ -1376,6 +1389,7 @@ export interface TemplateDiffResult {
 	// Suggested additions (Option 2) - shown separately from main diff
 	suggestedAdditions?: SuggestedCFAddition[];
 	suggestedScoreChanges?: SuggestedScoreChange[];
+	migrationNotices?: TemplateMigrationNotice[];
 	/**
 	 * True when the template is already at the target version and
 	 * the diff was reconstructed from historical changelog data.
