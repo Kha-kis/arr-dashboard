@@ -51,6 +51,8 @@ export const trashCustomFormatSchema = z.looseObject({
 	trash_scores: z.record(z.string(), z.number()).optional(),
 	trash_description: z.string().optional(),
 	trash_url: z.string().optional(),
+	// regex101.com URL documenting the spec regex — not a regex pattern itself
+	trash_regex: z.string().optional(),
 	includeCustomFormatWhenRenaming: z.boolean().optional(),
 	specifications: z.array(customFormatSpecificationSchema),
 });
