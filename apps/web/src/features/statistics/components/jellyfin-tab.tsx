@@ -7,6 +7,7 @@ import {
 	useJellyfinBandwidthForecast,
 	useJellyfinCodecAnalytics,
 	useJellyfinDeviceAnalytics,
+	useJellyfinPopularMedia,
 	useJellyfinQualityScore,
 	useJellyfinTopMedia,
 	useJellyfinTranscodeAnalytics,
@@ -44,6 +45,9 @@ export const JellyfinTab = () => {
 	const topMoviesQuery = useJellyfinTopMedia("movie", timeRange);
 	const topShowsQuery = useJellyfinTopMedia("series", timeRange);
 	const topMusicQuery = useJellyfinTopMedia("music", timeRange);
+	const popularMoviesQuery = useJellyfinPopularMedia("movie", timeRange);
+	const popularShowsQuery = useJellyfinPopularMedia("series", timeRange);
+	const popularMusicQuery = useJellyfinPopularMedia("music", timeRange);
 
 	return (
 		<div className="space-y-6 animate-in fade-in duration-300">
@@ -100,6 +104,32 @@ export const JellyfinTab = () => {
 				isLoading={topMusicQuery.isLoading}
 				isError={topMusicQuery.isError}
 				mediaType="music"
+				service="jellyfin"
+			/>
+
+			{/* Popular Media (sorted by distinct watcher count) */}
+			<TopMediaChart
+				data={popularMoviesQuery.data}
+				isLoading={popularMoviesQuery.isLoading}
+				isError={popularMoviesQuery.isError}
+				mediaType="movie"
+				metric="popularity"
+				service="jellyfin"
+			/>
+			<TopMediaChart
+				data={popularShowsQuery.data}
+				isLoading={popularShowsQuery.isLoading}
+				isError={popularShowsQuery.isError}
+				mediaType="series"
+				metric="popularity"
+				service="jellyfin"
+			/>
+			<TopMediaChart
+				data={popularMusicQuery.data}
+				isLoading={popularMusicQuery.isLoading}
+				isError={popularMusicQuery.isError}
+				mediaType="music"
+				metric="popularity"
 				service="jellyfin"
 			/>
 

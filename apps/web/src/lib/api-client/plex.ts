@@ -283,6 +283,17 @@ export async function fetchTopMedia(
 	);
 }
 
+/** Fetch the top-N titles ranked by distinct watcher count from SessionSnapshot. */
+export async function fetchPopularMedia(
+	mediaType: TopMediaType,
+	days = 30,
+	limit = 10,
+): Promise<TopMediaResponse> {
+	return apiRequest(
+		`/api/plex/analytics/popular-media?mediaType=${mediaType}&days=${days}&limit=${limit}`,
+	);
+}
+
 // ============================================================================
 // OAuth Setup Assistance
 // ============================================================================

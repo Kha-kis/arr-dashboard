@@ -15,7 +15,7 @@ import { aggregateCodecAnalytics } from "../plex/lib/codec-analytics-helpers.js"
 import { aggregateDeviceAnalytics } from "../plex/lib/device-analytics-helpers.js";
 import { computeForecast } from "../plex/lib/forecast-helpers.js";
 import { computeQualityScore } from "../plex/lib/quality-score-helpers.js";
-import { aggregateTopMedia } from "../plex/lib/top-media-helpers.js";
+import { aggregatePopularMedia, aggregateTopMedia } from "../plex/lib/top-media-helpers.js";
 import { aggregateTranscodeAnalytics } from "../plex/lib/transcode-analytics-helpers.js";
 import { aggregateUserAnalytics } from "../plex/lib/user-analytics-helpers.js";
 import { aggregateUserEpisodeCompletion } from "../plex/lib/user-episode-helpers.js";
@@ -449,6 +449,47 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, _opts: Fasti
 		if (parseFailures > 0) {
 			request.log.warn(
 				{ parseFailures, totalSnapshots, failedPreviews, route: "jellyfin/top-media", mediaType },
+				"Session snapshot JSON parse failures detected",
+			);
+		}
+		return reply.send(response);
+	});
+
+	// ── Popular Media Leaderboard (sorted by distinct watcher count) ──
+	app.get("/popular-media", async (request, reply) => {
+		const { mediaType, days, limit } = validateRequest(topMediaQuery, request.query);
+		const userId = request.currentUser!.id;
+
+		const instances = await app.prisma.serviceInstance.findMany({
+			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
+			select: { id: true },
+		});
+
+		if (instances.length === 0) {
+			return reply.send({ items: [] });
+		}
+
+		const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+		const snapshots = await app.prisma.sessionSnapshot.findMany({
+			where: { instanceId: { in: instances.map((i) => i.id) }, capturedAt: { gte: cutoff } },
+			select: { capturedAt: true, sessionsJson: true },
+			orderBy: { capturedAt: "asc" },
+			take: 50000,
+		});
+
+		const { parseFailures, totalSnapshots, failedPreviews, ...response } = aggregatePopularMedia(
+			snapshots,
+			{ mediaType, limit },
+		);
+		if (parseFailures > 0) {
+			request.log.warn(
+				{
+					parseFailures,
+					totalSnapshots,
+					failedPreviews,
+					route: "jellyfin/popular-media",
+					mediaType,
+				},
 				"Session snapshot JSON parse failures detected",
 			);
 		}

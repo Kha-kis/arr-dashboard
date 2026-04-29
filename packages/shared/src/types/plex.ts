@@ -390,6 +390,8 @@ export interface TopMediaItem {
 	mediaType: TopMediaType;
 	/** Number of distinct user×title viewing sessions (deduplicated across consecutive 5-min ticks) */
 	playCount: number;
+	/** Number of distinct users who watched this title at least once in the window */
+	distinctUserCount: number;
 	/** Approximate total time (in minutes) the title was actively streaming, summed across users */
 	totalDurationMinutes: number;
 	/** ISO timestamp of the most recent watch event */
