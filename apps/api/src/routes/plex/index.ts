@@ -21,6 +21,7 @@ import { registerMostConcurrentRoutes } from "./most-concurrent-routes.js";
 import { registerNowPlayingRoutes } from "./now-playing-routes.js";
 import { registerOAuthRoutes } from "./oauth-routes.js";
 import { registerOnDeckRoutes } from "./on-deck-routes.js";
+import { registerPlaysByDateRoutes } from "./plays-by-date-routes.js";
 import { registerPopularMediaRoutes } from "./popular-media-routes.js";
 import { registerQualityScoreRoutes } from "./quality-score-routes.js";
 import { registerRecentlyAddedRoutes } from "./recently-added-routes.js";
@@ -61,6 +62,7 @@ export async function registerPlexRoutes(app: FastifyInstance, _opts: FastifyPlu
 	app.register(registerPopularMediaRoutes, { prefix: "/analytics/popular-media" });
 	app.register(registerLastWatchedRoutes, { prefix: "/analytics/last-watched" });
 	app.register(registerMostConcurrentRoutes, { prefix: "/analytics/most-concurrent" });
+	app.register(registerPlaysByDateRoutes, { prefix: "/analytics/plays-by-date" });
 	app.register(registerImageProxyRoutes, { prefix: "/thumb" });
 	app.register(registerOAuthRoutes, { prefix: "/oauth" });
 }
