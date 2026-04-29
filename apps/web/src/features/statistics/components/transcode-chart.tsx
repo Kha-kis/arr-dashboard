@@ -1,11 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { useTranscodeAnalytics } from "../../../hooks/api/usePlex";
-import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
-import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
+import type { TranscodeAnalytics } from "@arr/shared";
 import { Cpu, MonitorPlay, Play, Radio } from "lucide-react";
+import { useMemo } from "react";
+import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 
 // ============================================================================
 // Donut Chart Component
@@ -140,21 +140,28 @@ const StackedBarChart = ({
 // ============================================================================
 
 interface TranscodeChartProps {
-	days: number;
-	enabled: boolean;
+	data: TranscodeAnalytics | undefined;
+	isLoading: boolean;
+	isError: boolean;
+	service?: "plex" | "jellyfin";
 }
 
-export const TranscodeChart = ({ days, enabled }: TranscodeChartProps) => {
+export const TranscodeChart = ({
+	data,
+	isLoading,
+	isError,
+	service = "plex",
+}: TranscodeChartProps) => {
 	const { gradient } = useThemeGradient();
-	const { data, isLoading, isError } = useTranscodeAnalytics(days, enabled);
+	const serviceLabel = service === "jellyfin" ? "Jellyfin" : "Plex";
 
 	const colors = useMemo(
 		() => ({
 			directPlay: SEMANTIC_COLORS.success.text,
 			transcode: SEMANTIC_COLORS.warning.text,
-			directStream: SERVICE_GRADIENTS.plex.from,
+			directStream: SERVICE_GRADIENTS[service].from,
 		}),
-		[],
+		[service],
 	);
 
 	const segments: DonutSegment[] = useMemo(() => {
@@ -183,7 +190,7 @@ export const TranscodeChart = ({ days, enabled }: TranscodeChartProps) => {
 			<PremiumEmptyState
 				icon={Cpu}
 				title="Failed to Load Transcode Data"
-				description="Could not fetch transcode analytics. Check your Plex connection and try again."
+				description={`Could not fetch transcode analytics. Check your ${serviceLabel} connection and try again.`}
 			/>
 		);
 	}
@@ -193,7 +200,7 @@ export const TranscodeChart = ({ days, enabled }: TranscodeChartProps) => {
 			<PremiumEmptyState
 				icon={Cpu}
 				title="No Transcode Data Yet"
-				description="Session data is collected every 5 minutes while streams are active. Check back once Plex has been in use."
+				description={`Session data is collected every 5 minutes while streams are active. Check back once ${serviceLabel} has been in use.`}
 			/>
 		);
 	}

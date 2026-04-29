@@ -5,13 +5,14 @@ import { useMemo, useState } from "react";
 import { PremiumSkeleton } from "../../../components/layout";
 import { Alert, AlertDescription } from "../../../components/ui";
 import { Button } from "../../../components/ui/button";
+import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useRefreshState } from "../../../hooks/useRefreshState";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
 import { useStatisticsData } from "../hooks/useStatisticsData";
-import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { ArrServiceTab } from "./arr-service-tab";
+import { JellyfinTab } from "./jellyfin-tab";
 import { OverviewTab } from "./overview-tab";
 import { PlexTab } from "./plex-tab";
 import { ProwlarrTab } from "./prowlarr-tab";
@@ -25,6 +26,14 @@ export const StatisticsClient = () => {
 	const { data: services = [] } = useServicesQuery();
 	const hasTautulli = useMemo(
 		() => services.some((s) => s.service.toLowerCase() === "tautulli" && s.enabled),
+		[services],
+	);
+	const hasJellyfin = useMemo(
+		() =>
+			services.some((s) => {
+				const svc = s.service.toLowerCase();
+				return (svc === "jellyfin" || svc === "emby") && s.enabled;
+			}),
 		[services],
 	);
 
@@ -98,6 +107,16 @@ export const StatisticsClient = () => {
 						label: "Plex",
 						icon: Activity,
 						gradient: SERVICE_GRADIENTS.plex,
+					},
+				]
+			: []),
+		...(hasJellyfin
+			? [
+					{
+						id: "jellyfin" as const,
+						label: "Jellyfin",
+						icon: Activity,
+						gradient: SERVICE_GRADIENTS.jellyfin,
 					},
 				]
 			: []),
@@ -316,6 +335,8 @@ export const StatisticsClient = () => {
 			)}
 
 			{activeTab === "plex" && <PlexTab />}
+
+			{activeTab === "jellyfin" && <JellyfinTab />}
 		</>
 	);
 };
