@@ -1,0 +1,208 @@
+"use client";
+
+import type { PlexLabelSyncRule } from "@arr/shared";
+import { CheckCircle2, Pencil, Plus, Tag, Trash2, XCircle } from "lucide-react";
+import { useState } from "react";
+import { GlassmorphicCard, PageLayout } from "../../../components/layout";
+import { Button } from "../../../components/ui/button";
+import {
+	useDeletePlexLabelSyncRule,
+	usePlexLabelSyncRules,
+} from "../../../hooks/api/usePlexLabelSync";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { RuleDialog } from "./rule-dialog";
+
+export const PlexLabelSyncClient = () => {
+	const { gradient } = useThemeGradient();
+	const { data: rules = [], isLoading } = usePlexLabelSyncRules();
+	const deleteMutation = useDeletePlexLabelSyncRule();
+
+	const [dialogOpen, setDialogOpen] = useState(false);
+	const [editingRule, setEditingRule] = useState<PlexLabelSyncRule | null>(null);
+
+	const openCreate = () => {
+		setEditingRule(null);
+		setDialogOpen(true);
+	};
+
+	const openEdit = (rule: PlexLabelSyncRule) => {
+		setEditingRule(rule);
+		setDialogOpen(true);
+	};
+
+	const handleDelete = async (rule: PlexLabelSyncRule) => {
+		if (!confirm(`Delete rule "${rule.name}"? This cannot be undone.`)) return;
+		await deleteMutation.mutateAsync(rule.id);
+	};
+
+	return (
+		<PageLayout>
+			<div className="space-y-6 animate-in fade-in duration-300">
+				{/* Header */}
+				<header className="flex items-start justify-between gap-4">
+					<div className="space-y-1">
+						<div className="flex items-center gap-2 text-sm text-muted-foreground">
+							<Tag className="h-4 w-4" />
+							<span>Automation</span>
+						</div>
+						<h1 className="text-3xl font-bold tracking-tight">
+							<span
+								style={{
+									background: `linear-gradient(135deg, ${gradient.from}, ${gradient.to})`,
+									WebkitBackgroundClip: "text",
+									WebkitTextFillColor: "transparent",
+									backgroundClip: "text",
+								}}
+							>
+								Plex Label Sync
+							</span>
+						</h1>
+						<p className="text-muted-foreground max-w-xl">
+							Auto-apply Plex labels based on Sonarr/Radarr tags. When a rule runs, every *arr item
+							carrying the configured tag gets the Plex label applied to its matching item.
+						</p>
+					</div>
+					<Button onClick={openCreate} className="shrink-0">
+						<Plus className="h-4 w-4 mr-2" /> New Rule
+					</Button>
+				</header>
+
+				{/* Rules list */}
+				<GlassmorphicCard>
+					{isLoading ? (
+						<div className="p-6 text-sm text-muted-foreground">Loading rules…</div>
+					) : rules.length === 0 ? (
+						<EmptyState onCreateClick={openCreate} />
+					) : (
+						<RuleTable rules={rules} onEdit={openEdit} onDelete={handleDelete} />
+					)}
+				</GlassmorphicCard>
+			</div>
+
+			{/* Create/Edit dialog */}
+			{dialogOpen && (
+				<RuleDialog
+					rule={editingRule}
+					onClose={() => {
+						setDialogOpen(false);
+						setEditingRule(null);
+					}}
+				/>
+			)}
+		</PageLayout>
+	);
+};
+
+const EmptyState = ({ onCreateClick }: { onCreateClick: () => void }) => (
+	<div className="p-12 flex flex-col items-center text-center gap-3">
+		<div className="h-12 w-12 rounded-xl bg-muted/30 flex items-center justify-center">
+			<Tag className="h-5 w-5 text-muted-foreground" />
+		</div>
+		<h3 className="text-base font-semibold">No label-sync rules yet</h3>
+		<p className="text-sm text-muted-foreground max-w-sm">
+			Create a rule to map a Sonarr or Radarr tag to a Plex label. Useful for kid-safe collections,
+			user-specific labels, or surfacing requested content.
+		</p>
+		<Button onClick={onCreateClick} variant="secondary" className="mt-2">
+			<Plus className="h-4 w-4 mr-2" /> Create your first rule
+		</Button>
+	</div>
+);
+
+const RuleTable = ({
+	rules,
+	onEdit,
+	onDelete,
+}: {
+	rules: PlexLabelSyncRule[];
+	onEdit: (rule: PlexLabelSyncRule) => void;
+	onDelete: (rule: PlexLabelSyncRule) => void;
+}) => (
+	<div className="overflow-x-auto">
+		<table className="w-full text-sm">
+			<thead className="border-b border-border/50">
+				<tr className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide">
+					<th className="px-4 py-3">Name</th>
+					<th className="px-4 py-3">Source</th>
+					<th className="px-4 py-3">Mapping</th>
+					<th className="px-4 py-3">Status</th>
+					<th className="px-4 py-3">Last Run</th>
+					<th className="px-4 py-3 text-right">Actions</th>
+				</tr>
+			</thead>
+			<tbody className="divide-y divide-border/30">
+				{rules.map((rule) => (
+					<tr key={rule.id} className="hover:bg-muted/10 transition-colors">
+						<td className="px-4 py-3">
+							<div className="flex items-center gap-2">
+								{rule.enabled ? (
+									<CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+								) : (
+									<XCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />
+								)}
+								<span className="font-medium">{rule.name}</span>
+							</div>
+						</td>
+						<td className="px-4 py-3 text-muted-foreground">
+							<span className="capitalize">{rule.arrService}</span>
+							{rule.arrInstanceId ? (
+								<span className="text-xs ml-1">(instance)</span>
+							) : (
+								<span className="text-xs text-muted-foreground/60 ml-1">(all instances)</span>
+							)}
+						</td>
+						<td className="px-4 py-3 font-mono text-xs">
+							<span className="text-muted-foreground">{rule.arrTagName}</span>
+							<span className="text-muted-foreground/50 mx-1.5">→</span>
+							<span>{rule.plexLabel}</span>
+						</td>
+						<td className="px-4 py-3">
+							{rule.lastRunStatus ? (
+								<span className={statusClass(rule.lastRunStatus)}>{rule.lastRunStatus}</span>
+							) : (
+								<span className="text-muted-foreground/50 text-xs">never run</span>
+							)}
+						</td>
+						<td className="px-4 py-3 text-xs text-muted-foreground">
+							{rule.lastRunAt ? new Date(rule.lastRunAt).toLocaleString() : "—"}
+						</td>
+						<td className="px-4 py-3 text-right">
+							<div className="inline-flex gap-1">
+								<button
+									type="button"
+									onClick={() => onEdit(rule)}
+									className="p-1.5 rounded-md hover:bg-muted/30 transition-colors"
+									title="Edit rule"
+								>
+									<Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+								</button>
+								<button
+									type="button"
+									onClick={() => onDelete(rule)}
+									className="p-1.5 rounded-md hover:bg-red-500/10 transition-colors"
+									title="Delete rule"
+								>
+									<Trash2 className="h-3.5 w-3.5 text-red-500/70" />
+								</button>
+							</div>
+						</td>
+					</tr>
+				))}
+			</tbody>
+		</table>
+	</div>
+);
+
+function statusClass(status: string): string {
+	const base = "text-xs font-medium px-2 py-0.5 rounded-full";
+	switch (status) {
+		case "success":
+			return `${base} bg-emerald-500/10 text-emerald-500`;
+		case "partial":
+			return `${base} bg-amber-500/10 text-amber-500`;
+		case "failed":
+			return `${base} bg-red-500/10 text-red-500`;
+		default:
+			return `${base} bg-muted/30 text-muted-foreground`;
+	}
+}
