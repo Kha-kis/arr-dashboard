@@ -22,10 +22,13 @@ export const StatisticsClient = () => {
 	const [activeTab, setActiveTab] = useState<StatisticsTab>("overview");
 	const { gradient: themeGradient } = useThemeGradient();
 
-	// Detect Tautulli instances for Plex/Tautulli stats tab
+	// Detect media-server instances. Tautulli is no longer required for the
+	// Plex tab — once Option 3 landed all analytics flow from SessionSnapshot
+	// rows, which Plex instances populate directly. Tautulli stays optional
+	// as an enrichment source.
 	const { data: services = [] } = useServicesQuery();
-	const hasTautulli = useMemo(
-		() => services.some((s) => s.service.toLowerCase() === "tautulli" && s.enabled),
+	const hasPlex = useMemo(
+		() => services.some((s) => s.service.toLowerCase() === "plex" && s.enabled),
 		[services],
 	);
 	const hasJellyfin = useMemo(
@@ -34,6 +37,10 @@ export const StatisticsClient = () => {
 				const svc = s.service.toLowerCase();
 				return (svc === "jellyfin" || svc === "emby") && s.enabled;
 			}),
+		[services],
+	);
+	const hasTautulli = useMemo(
+		() => services.some((s) => s.service.toLowerCase() === "tautulli" && s.enabled),
 		[services],
 	);
 
@@ -100,7 +107,7 @@ export const StatisticsClient = () => {
 			count: prowlarrRows.length,
 			gradient: SERVICE_GRADIENTS.prowlarr,
 		},
-		...(hasTautulli
+		...(hasPlex
 			? [
 					{
 						id: "plex" as const,
