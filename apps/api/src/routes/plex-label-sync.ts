@@ -16,6 +16,7 @@ import type {
 } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import { executeLabelSyncRule } from "../lib/plex-label-sync/execute-rule.js";
 import { validateRequest } from "../lib/utils/validate.js";
 
 const arrServiceSchema = z.enum(["sonarr", "radarr"]);
@@ -227,5 +228,56 @@ export async function registerPlexLabelSyncRoutes(
 
 		await app.prisma.plexLabelSyncRule.delete({ where: { id } });
 		return reply.status(204).send();
+	});
+
+	/**
+	 * POST /api/plex/label-sync/rules/:id/run — execute a rule on demand.
+	 *
+	 * Walks the rule end-to-end (resolve *arr instances → find tagged items
+	 * → match against PlexCache → apply label) and persists the result on
+	 * the rule's lastRunAt/Status/Message fields.
+	 */
+	app.post("/rules/:id/run", async (request, reply) => {
+		const { id } = validateRequest(ruleParams, request.params);
+		const userId = request.currentUser!.id;
+
+		const rule = await app.prisma.plexLabelSyncRule.findFirst({
+			where: { id, userId },
+		});
+		if (!rule) {
+			return reply.status(404).send({ error: "Rule not found" });
+		}
+
+		if (!rule.enabled) {
+			return reply.status(400).send({ error: "Rule is disabled. Enable it before running." });
+		}
+
+		const result = await executeLabelSyncRule({
+			rule: {
+				id: rule.id,
+				userId: rule.userId,
+				arrService: rule.arrService,
+				arrInstanceId: rule.arrInstanceId,
+				arrTagName: rule.arrTagName,
+				plexInstanceId: rule.plexInstanceId,
+				plexLabel: rule.plexLabel,
+			},
+			prisma: app.prisma,
+			arrClientFactory: app.arrClientFactory,
+			encryptor: app.encryptor,
+			log: request.log,
+		});
+
+		const updated = await app.prisma.plexLabelSyncRule.update({
+			where: { id },
+			data: {
+				lastRunAt: new Date(),
+				lastRunStatus: result.status,
+				lastRunMessage: result.message,
+			},
+		});
+
+		const response: PlexLabelSyncRuleResponse = { rule: toDto(updated) };
+		return reply.send(response);
 	});
 }

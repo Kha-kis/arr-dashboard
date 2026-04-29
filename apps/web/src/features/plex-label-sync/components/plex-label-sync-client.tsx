@@ -1,13 +1,14 @@
 "use client";
 
 import type { PlexLabelSyncRule } from "@arr/shared";
-import { CheckCircle2, Pencil, Plus, Tag, Trash2, XCircle } from "lucide-react";
+import { CheckCircle2, Pencil, Play, Plus, Tag, Trash2, XCircle } from "lucide-react";
 import { useState } from "react";
 import { GlassmorphicCard, PageLayout } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import {
 	useDeletePlexLabelSyncRule,
 	usePlexLabelSyncRules,
+	useRunPlexLabelSyncRule,
 } from "../../../hooks/api/usePlexLabelSync";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { RuleDialog } from "./rule-dialog";
@@ -16,6 +17,8 @@ export const PlexLabelSyncClient = () => {
 	const { gradient } = useThemeGradient();
 	const { data: rules = [], isLoading } = usePlexLabelSyncRules();
 	const deleteMutation = useDeletePlexLabelSyncRule();
+	const runMutation = useRunPlexLabelSyncRule();
+	const [runningId, setRunningId] = useState<string | null>(null);
 
 	const [dialogOpen, setDialogOpen] = useState(false);
 	const [editingRule, setEditingRule] = useState<PlexLabelSyncRule | null>(null);
@@ -33,6 +36,22 @@ export const PlexLabelSyncClient = () => {
 	const handleDelete = async (rule: PlexLabelSyncRule) => {
 		if (!confirm(`Delete rule "${rule.name}"? This cannot be undone.`)) return;
 		await deleteMutation.mutateAsync(rule.id);
+	};
+
+	const handleRun = async (rule: PlexLabelSyncRule) => {
+		if (!rule.enabled) {
+			alert("Rule is disabled. Enable it before running.");
+			return;
+		}
+		setRunningId(rule.id);
+		try {
+			const updated = await runMutation.mutateAsync(rule.id);
+			alert(`${updated.lastRunStatus?.toUpperCase() ?? "DONE"}\n\n${updated.lastRunMessage ?? ""}`);
+		} catch (err) {
+			alert(`Run failed: ${err instanceof Error ? err.message : String(err)}`);
+		} finally {
+			setRunningId(null);
+		}
 	};
 
 	return (
@@ -74,7 +93,13 @@ export const PlexLabelSyncClient = () => {
 					) : rules.length === 0 ? (
 						<EmptyState onCreateClick={openCreate} />
 					) : (
-						<RuleTable rules={rules} onEdit={openEdit} onDelete={handleDelete} />
+						<RuleTable
+							rules={rules}
+							runningId={runningId}
+							onEdit={openEdit}
+							onDelete={handleDelete}
+							onRun={handleRun}
+						/>
 					)}
 				</GlassmorphicCard>
 			</div>
@@ -111,12 +136,16 @@ const EmptyState = ({ onCreateClick }: { onCreateClick: () => void }) => (
 
 const RuleTable = ({
 	rules,
+	runningId,
 	onEdit,
 	onDelete,
+	onRun,
 }: {
 	rules: PlexLabelSyncRule[];
+	runningId: string | null;
 	onEdit: (rule: PlexLabelSyncRule) => void;
 	onDelete: (rule: PlexLabelSyncRule) => void;
+	onRun: (rule: PlexLabelSyncRule) => void;
 }) => (
 	<div className="overflow-x-auto">
 		<table className="w-full text-sm">
@@ -168,6 +197,17 @@ const RuleTable = ({
 						</td>
 						<td className="px-4 py-3 text-right">
 							<div className="inline-flex gap-1">
+								<button
+									type="button"
+									onClick={() => onRun(rule)}
+									disabled={runningId === rule.id || !rule.enabled}
+									className="p-1.5 rounded-md hover:bg-muted/30 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+									title={rule.enabled ? "Run rule now" : "Enable the rule to run it"}
+								>
+									<Play
+										className={`h-3.5 w-3.5 text-muted-foreground ${runningId === rule.id ? "animate-pulse" : ""}`}
+									/>
+								</button>
 								<button
 									type="button"
 									onClick={() => onEdit(rule)}
