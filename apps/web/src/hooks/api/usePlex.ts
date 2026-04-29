@@ -13,6 +13,7 @@ import type {
 	CollectionStats,
 	DeviceAnalytics,
 	LibraryItem,
+	MostConcurrentResponse,
 	PlexAccountsResponse,
 	PlexIdentityResponse,
 	PlexNowPlayingResponse,
@@ -42,6 +43,7 @@ import {
 	fetchDeviceAnalytics,
 	fetchEpisodeWatchStatus,
 	fetchLastWatched,
+	fetchMostConcurrent,
 	fetchNowPlaying,
 	fetchOnDeck,
 	fetchPlexAccounts,
@@ -426,6 +428,15 @@ export const useLastWatched = (mediaType: TopMediaType, days = 30, limit = 10, e
 	return useQuery<TopMediaResponse>({
 		queryKey: plexKeys.lastWatched(mediaType, days, limit),
 		queryFn: () => fetchLastWatched(mediaType, days, limit),
+		staleTime: 5 * 60_000,
+		enabled,
+	});
+};
+
+export const useMostConcurrent = (days = 30, limit = 5, enabled = true) => {
+	return useQuery<MostConcurrentResponse>({
+		queryKey: plexKeys.mostConcurrent(days, limit),
+		queryFn: () => fetchMostConcurrent(days, limit),
 		staleTime: 5 * 60_000,
 		enabled,
 	});

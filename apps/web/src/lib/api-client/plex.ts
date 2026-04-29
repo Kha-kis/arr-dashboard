@@ -12,6 +12,7 @@ import type {
 	CodecAnalytics,
 	CollectionStats,
 	DeviceAnalytics,
+	MostConcurrentResponse,
 	PlexAccountsResponse,
 	PlexDiscoverServersResponse,
 	PlexEpisodeStatusResponse,
@@ -303,6 +304,11 @@ export async function fetchLastWatched(
 	return apiRequest(
 		`/api/plex/analytics/last-watched?mediaType=${mediaType}&days=${days}&limit=${limit}`,
 	);
+}
+
+/** Fetch peak concurrent-stream events from SessionSnapshot. */
+export async function fetchMostConcurrent(days = 30, limit = 5): Promise<MostConcurrentResponse> {
+	return apiRequest(`/api/plex/analytics/most-concurrent?days=${days}&limit=${limit}`);
 }
 
 // ============================================================================
