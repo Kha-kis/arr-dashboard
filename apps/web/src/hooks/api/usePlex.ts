@@ -41,6 +41,7 @@ import {
 	fetchCollectionStats,
 	fetchDeviceAnalytics,
 	fetchEpisodeWatchStatus,
+	fetchLastWatched,
 	fetchNowPlaying,
 	fetchOnDeck,
 	fetchPlexAccounts,
@@ -416,6 +417,15 @@ export const usePopularMedia = (mediaType: TopMediaType, days = 30, limit = 10, 
 	return useQuery<TopMediaResponse>({
 		queryKey: plexKeys.popularMedia(mediaType, days, limit),
 		queryFn: () => fetchPopularMedia(mediaType, days, limit),
+		staleTime: 5 * 60_000,
+		enabled,
+	});
+};
+
+export const useLastWatched = (mediaType: TopMediaType, days = 30, limit = 10, enabled = true) => {
+	return useQuery<TopMediaResponse>({
+		queryKey: plexKeys.lastWatched(mediaType, days, limit),
+		queryFn: () => fetchLastWatched(mediaType, days, limit),
 		staleTime: 5 * 60_000,
 		enabled,
 	});

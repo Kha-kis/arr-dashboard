@@ -41,6 +41,7 @@ import {
 	fetchJellyfinDeviceAnalytics,
 	fetchJellyfinEpisodeWatchStatus,
 	fetchJellyfinIdentity,
+	fetchJellyfinLastWatched,
 	fetchJellyfinNowPlaying,
 	fetchJellyfinOnDeck,
 	fetchJellyfinPopularMedia,
@@ -314,6 +315,20 @@ export const useJellyfinPopularMedia = (
 	return useQuery<TopMediaResponse>({
 		queryKey: jellyfinKeys.popularMedia(mediaType, days, limit),
 		queryFn: () => fetchJellyfinPopularMedia(mediaType, days, limit),
+		staleTime: 5 * 60_000,
+		enabled,
+	});
+};
+
+export const useJellyfinLastWatched = (
+	mediaType: TopMediaType,
+	days = 30,
+	limit = 10,
+	enabled = true,
+) => {
+	return useQuery<TopMediaResponse>({
+		queryKey: jellyfinKeys.lastWatched(mediaType, days, limit),
+		queryFn: () => fetchJellyfinLastWatched(mediaType, days, limit),
 		staleTime: 5 * 60_000,
 		enabled,
 	});

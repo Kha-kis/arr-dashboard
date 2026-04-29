@@ -302,6 +302,8 @@ export const plexKeys = {
 		["plex", "top-media", mediaType, days, limit] as const,
 	popularMedia: (mediaType: string, days: number, limit: number) =>
 		["plex", "popular-media", mediaType, days, limit] as const,
+	lastWatched: (mediaType: string, days: number, limit: number) =>
+		["plex", "last-watched", mediaType, days, limit] as const,
 };
 
 /* -------------------------------------------------------------------------- */
@@ -336,6 +338,8 @@ export const jellyfinKeys = {
 		["jellyfin", "analytics", "top-media", mediaType, days, limit] as const,
 	popularMedia: (mediaType: string, days: number, limit: number) =>
 		["jellyfin", "analytics", "popular-media", mediaType, days, limit] as const,
+	lastWatched: (mediaType: string, days: number, limit: number) =>
+		["jellyfin", "analytics", "last-watched", mediaType, days, limit] as const,
 };
 
 /* -------------------------------------------------------------------------- */
