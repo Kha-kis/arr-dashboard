@@ -81,17 +81,22 @@ export function aggregatePlaysByDate(
 	const ordered = [...snapshots].sort((a, b) => a.capturedAt.getTime() - b.capturedAt.getTime());
 
 	for (const snap of ordered) {
-		let sessions: ParsedSession[];
+		let sessions: unknown;
 		try {
 			sessions = JSON.parse(snap.sessionsJson);
 		} catch {
 			continue;
 		}
 
+		// Guard against valid-but-non-iterable JSON (null, {}, number, ...).
+		// Without this a corrupt row throws TypeError on for-of and aborts
+		// the entire snapshot walk silently.
+		if (!Array.isArray(sessions)) continue;
+
 		const idx = dateIndex.get(dateKey(snap.capturedAt));
 		if (idx === undefined) continue; // outside the window
 
-		for (const session of sessions) {
+		for (const session of sessions as ParsedSession[]) {
 			const mt = session.mediaType;
 			if (mt !== "movie" && mt !== "series" && mt !== "music") continue;
 

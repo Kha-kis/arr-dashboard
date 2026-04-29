@@ -97,16 +97,23 @@ function buildMediaAggregate(
 	const ordered = [...snapshots].sort((a, b) => b.capturedAt.getTime() - a.capturedAt.getTime());
 
 	for (const snap of ordered) {
-		let sessions: ParsedSession[];
+		let sessions: unknown;
 		try {
 			sessions = JSON.parse(snap.sessionsJson);
 		} catch {
 			parseFailures++;
-			if (failedPreviews.length < 5) failedPreviews.push(snap.sessionsJson.slice(0, 100));
 			continue;
 		}
 
-		for (const session of sessions) {
+		// JSON.parse can return any valid JSON value (null, object, number, ...)
+		// — guard against non-iterable shapes so a corrupt row doesn't TypeError
+		// and abort the whole snapshot walk silently.
+		if (!Array.isArray(sessions)) {
+			parseFailures++;
+			continue;
+		}
+
+		for (const session of sessions as ParsedSession[]) {
 			// Skip rows missing the new fields (snapshots written before 2026-04 enrichment)
 			if (session.mediaType === undefined || session.mediaType !== mediaType) continue;
 
