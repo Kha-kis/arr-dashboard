@@ -43,3 +43,10 @@ export async function updatePlexLabelSyncRule(
 export async function deletePlexLabelSyncRule(id: string): Promise<void> {
 	await apiRequest<void>(`/api/plex/label-sync/rules/${id}`, { method: "DELETE" });
 }
+
+export async function runPlexLabelSyncRule(id: string): Promise<PlexLabelSyncRule> {
+	const data = await apiRequest<PlexLabelSyncRuleResponse>(`/api/plex/label-sync/rules/${id}/run`, {
+		method: "POST",
+	});
+	return data.rule;
+}

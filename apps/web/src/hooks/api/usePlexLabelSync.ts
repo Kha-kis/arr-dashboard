@@ -15,6 +15,7 @@ import {
 	createPlexLabelSyncRule,
 	deletePlexLabelSyncRule,
 	fetchPlexLabelSyncRules,
+	runPlexLabelSyncRule,
 	updatePlexLabelSyncRule,
 } from "../../lib/api-client/plex-label-sync";
 import { plexLabelSyncKeys } from "../../lib/query-keys";
@@ -52,6 +53,16 @@ export const useDeletePlexLabelSyncRule = () => {
 	const queryClient = useQueryClient();
 	return useMutation({
 		mutationFn: (id: string) => deletePlexLabelSyncRule(id),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: plexLabelSyncKeys.rules });
+		},
+	});
+};
+
+export const useRunPlexLabelSyncRule = () => {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: (id: string) => runPlexLabelSyncRule(id),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: plexLabelSyncKeys.rules });
 		},
