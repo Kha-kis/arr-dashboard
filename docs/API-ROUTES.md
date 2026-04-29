@@ -52,6 +52,7 @@ for the full rationale.
 | `/api/plex` | stable | Now playing, on-deck, history, analytics, forecasts |
 | `/api/jellyfin` | stable | Jellyfin activity and library data |
 | `/api/tautulli` | stable | Activity, watch history enrichment, statistics |
+| `/api/plex/label-sync` | experimental | Auto-apply Plex labels based on Sonarr/Radarr tags (issue #384) |
 | `/api/pulse` | internal | System Pulse health signals + attention items |
 | `/api/seerr` | stable | Request management, discovery, library enrichment |
 | `/api/trash-guides` | internal | TRaSH cache, templates, deployment, profiles |

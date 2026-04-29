@@ -52,6 +52,7 @@ model User {
   namingDeployHistory   NamingDeployHistory[]
   notificationRules            NotificationRule[]
   notificationAggregationConfigs NotificationAggregationConfig[]
+  plexLabelSyncRules    PlexLabelSyncRule[]
 }
 
 model Session {
@@ -1459,4 +1460,34 @@ model SeerrActionLog {
   @@index([userId, createdAt])
   @@index([createdAt])
   @@map("seerr_action_logs")
+}
+
+// ============================================================================
+// Plex Label Sync — auto-apply Plex labels based on *arr tags (issue #384)
+// ============================================================================
+
+/// Per-user rule mapping a Sonarr/Radarr tag to a Plex label.
+/// When the rule executes, all *arr items carrying `arrTagName` get
+/// `plexLabel` applied to their matching Plex item (matched by tmdbId
+/// against PlexCache).
+model PlexLabelSyncRule {
+  id             String   @id @default(cuid())
+  userId         String
+  name           String
+  enabled        Boolean  @default(true)
+  arrService     String                       // "sonarr" | "radarr"
+  arrInstanceId  String?                      // null = match all instances of arrService
+  arrTagName     String                       // human-readable tag name from the *arr UI
+  plexInstanceId String                       // which Plex instance to apply the label on
+  plexLabel      String                       // Plex label name (created on first apply)
+  lastRunAt      DateTime?
+  lastRunStatus  String?                      // "success" | "partial" | "failed"
+  lastRunMessage String?                      // count summary or failure reason
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("plex_label_sync_rules")
 }

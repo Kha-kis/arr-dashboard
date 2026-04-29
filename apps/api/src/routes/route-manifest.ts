@@ -31,6 +31,7 @@ import { registerManualImportRoutes } from "./manual-import.js";
 import { registerNotificationRoutes } from "./notifications.js";
 import oidcProvidersRoutes from "./oidc-providers.js";
 import { registerPlexRoutes } from "./plex/index.js";
+import { registerPlexLabelSyncRoutes } from "./plex-label-sync.js";
 import { registerPulseRoutes } from "./pulse.js";
 import { registerQueueCleanerRoutes } from "./queue-cleaner.js";
 import { registerSearchRoutes } from "./search.js";
@@ -236,6 +237,13 @@ export const PROTECTED_ROUTE_GROUPS: readonly RouteGroup[] = [
 		register: registerTautulliRoutes,
 		maturity: "stable",
 		summary: "Activity, watch history enrichment, statistics",
+	},
+	{
+		path: "/api/plex/label-sync",
+		prefix: "/api/plex/label-sync",
+		register: registerPlexLabelSyncRoutes,
+		maturity: "experimental",
+		summary: "Auto-apply Plex labels based on Sonarr/Radarr tags (issue #384)",
 	},
 	{
 		path: "/api/pulse",
