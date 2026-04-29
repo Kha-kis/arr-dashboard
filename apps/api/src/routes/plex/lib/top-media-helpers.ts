@@ -192,3 +192,21 @@ export function aggregatePopularMedia(
 
 	return { items: sorted, ...meta };
 }
+
+/**
+ * Most recently watched media (deduped by title). Mirrors Tautulli's
+ * `last_watched` home stat — answers "what did anyone watch most recently?"
+ * Distinct from WatchHistoryResponse, which is event-level (per user×title).
+ */
+export function aggregateLastWatched(
+	snapshots: SnapshotForTopMedia[],
+	opts: { mediaType: TopMediaType; limit: number },
+): TopMediaResponse & AggregationMeta {
+	const { items, meta } = buildMediaAggregate(snapshots, opts.mediaType);
+	const sorted = items
+		.sort((a, b) => b.lastWatchedAt.getTime() - a.lastWatchedAt.getTime())
+		.slice(0, opts.limit)
+		.map(projectItem);
+
+	return { items: sorted, ...meta };
+}
