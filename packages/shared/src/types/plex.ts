@@ -206,7 +206,14 @@ export interface PlexAccountsResponse {
 export interface CacheHealthItem {
 	instanceId: string;
 	instanceName: string;
-	cacheType: "plex" | "tautulli" | "plex_episode" | "jellyfin" | "jellyfin_episode" | "emby" | "emby_episode";
+	cacheType:
+		| "plex"
+		| "tautulli"
+		| "plex_episode"
+		| "jellyfin"
+		| "jellyfin_episode"
+		| "emby"
+		| "emby_episode";
 	lastRefreshedAt: string;
 	lastResult: "success" | "error";
 	lastErrorMessage: string | null;
@@ -369,6 +376,28 @@ export interface QualityScoreAnalytics {
 	};
 	trend: Array<{ date: string; score: number }>;
 	perUser: Array<{ username: string; score: number; sessions: number }>;
+}
+
+// ============================================================================
+// Top Media Leaderboard (Tier 1) — replaces Tautulli home-stats top_*
+// ============================================================================
+
+export type TopMediaType = "movie" | "series" | "music";
+
+export interface TopMediaItem {
+	/** Display title — show name for episodes, movie name for movies, album/track for music */
+	title: string;
+	mediaType: TopMediaType;
+	/** Number of distinct user×title viewing sessions (deduplicated across consecutive 5-min ticks) */
+	playCount: number;
+	/** Approximate total time (in minutes) the title was actively streaming, summed across users */
+	totalDurationMinutes: number;
+	/** ISO timestamp of the most recent watch event */
+	lastWatchedAt: string;
+}
+
+export interface TopMediaResponse {
+	items: TopMediaItem[];
 }
 
 // ============================================================================
