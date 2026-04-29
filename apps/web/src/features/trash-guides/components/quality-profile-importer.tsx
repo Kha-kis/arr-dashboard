@@ -71,7 +71,7 @@ export function QualityProfileImporter({
 				profileId: selectedProfileId,
 			});
 			setImportedProfile(result.profile);
-		} catch (error) {
+		} catch (_error) {
 			// error surfaced through mutation state
 		}
 	};

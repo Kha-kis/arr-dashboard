@@ -365,7 +365,7 @@ export const TemplateCreation = ({
 			}
 
 			onComplete();
-		} catch (error) {
+		} catch (_error) {
 			// Error will be displayed through mutation state
 		}
 	};

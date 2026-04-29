@@ -112,7 +112,7 @@ export function EnhancedTemplateExportModal({
 					document.body.removeChild(a);
 				}
 			}
-		} catch (error) {
+		} catch (_error) {
 			alert("Failed to export template");
 		} finally {
 			setIsExporting(false);

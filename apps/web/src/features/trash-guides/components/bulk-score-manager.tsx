@@ -270,7 +270,7 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 			await bulkUpdateScores.mutateAsync(entries);
 			setModifiedScores(new Map());
 			onOperationComplete?.();
-		} catch (error) {
+		} catch (_error) {
 			// error surfaced through mutation state
 		}
 	};

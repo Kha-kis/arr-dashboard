@@ -67,7 +67,7 @@ export function EnhancedTemplateImportModal({
 			const text = await file.text();
 			setJsonData(text);
 			await validateTemplate(text);
-		} catch (error) {
+		} catch (_error) {
 			alert("Failed to read template file");
 		}
 	};
@@ -89,7 +89,7 @@ export function EnhancedTemplateImportModal({
 			const result = await response.json();
 			setValidation(result.data.validation);
 			setCompatibility(result.data.compatibility);
-		} catch (error) {
+		} catch (_error) {
 			alert("Failed to validate template");
 		} finally {
 			setIsValidating(false);

@@ -186,7 +186,7 @@ export const InstanceOverrideEditor = ({
 			await refetch();
 			setHasChanges(false);
 			toast.success("Instance overrides saved successfully");
-		} catch (err) {
+		} catch (_err) {
 			toast.error("Failed to save instance overrides");
 		}
 	};
@@ -209,7 +209,7 @@ export const InstanceOverrideEditor = ({
 			);
 			setHasChanges(false);
 			toast.success("All instance overrides deleted");
-		} catch (err) {
+		} catch (_err) {
 			toast.error("Failed to delete instance overrides");
 		}
 	};

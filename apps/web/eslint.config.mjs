@@ -69,6 +69,8 @@ const eslintConfig = [
 					varsIgnorePattern: "^_",
 					args: "after-used",
 					argsIgnorePattern: "^_",
+					caughtErrors: "all",
+					caughtErrorsIgnorePattern: "^_",
 				},
 			],
 			"@typescript-eslint/no-unused-vars": "off", // Handled by unused-imports
