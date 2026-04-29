@@ -5,6 +5,39 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+**Statistics overhaul: Jellyfin/Emby parity + Tautulli is now optional.** The Statistics page gains a full Jellyfin/Emby tab matching the Plex feature set, and the Plex tab no longer requires Tautulli — all leaderboards and analytics now flow from the dashboard's own SessionSnapshot capture (every 5 minutes during active streams) rather than Tautulli's pre-aggregated home-stats. Tautulli stays around as an *optional enrichment source* that adds richer codec, LAN/WAN bandwidth, and platform metadata when configured; without it, snapshot-driven data still populates the same charts.
+
+### Added
+
+- **Jellyfin/Emby analytics tab** — Statistics page now has a "Jellyfin" tab matching the Plex feature set: 6 leaderboards (top movies/shows/music + most-popular movies/shows/music), transcode/codec/device breakdowns, user analytics, watch history, quality score, bandwidth forecast. Gates on having any enabled Jellyfin or Emby instance. Source-agnostic chart components were extracted from the existing Plex chart implementations, parameterized by `service` for theming and messaging (#374).
+- **`aggregateTopMedia` helper** — top-N most-played titles per media type, deduped per user×title within a 10-minute window (matches Tautulli's play-counting semantics). Replaces Tautulli `top_movies / top_tv / top_music` (#375).
+- **`aggregatePopularMedia` helper** — top-N titles by distinct watcher count, surfacing broadly-loved titles vs. items one user rewatches obsessively. Replaces Tautulli `popular_*` (#376).
+- **`aggregateLastWatched` helper** — most-recently-watched titles deduped by title, sorted by recency. Replaces Tautulli `last_watched` (#377).
+- **`aggregateMostConcurrent` helper** — peak concurrent-stream events deduped by 30-minute proximity. Works on snapshot top-level fields (no `sessionsJson` parse). Replaces Tautulli `most_concurrent` (#378).
+- **`aggregatePlaysByDate` helper** — per-day play counts segmented by media type with full date-range zero-fill so sparklines render cleanly even for sparse data. Replaces Tautulli `cmd=get_plays_by_date` (#379).
+- **Tautulli enrichment indicator** — when a Tautulli instance is configured, the Plex tab's source banner now shows an explicit "Tautulli enrichment active" line explaining that codec/LAN-WAN/platform metadata is enriched on captured sessions (#380).
+
+### Changed
+
+- **Plex tab no longer requires Tautulli.** Tab visibility gates on `hasPlex` (any enabled Plex instance) instead of `hasTautulli`. Plex-only users — previously locked out of the Statistics tab — now see the full analytics surface (#380).
+- **Plex tab structure now mirrors Jellyfin tab.** Both render 14 cards (3 Top + 3 Most Popular + 8 SessionSnapshot analytics) sourced from the same shared aggregation helpers. The dynamic Tautulli `homeStatSections` rendering loop and Tautulli summary cards are removed in favor of the unified leaderboard shape (#380).
+- **`EnrichedSession` schema extended** with optional `mediaType` and `grandparentTitle` fields so leaderboards can group TV episodes by show name. Backward compatible — pre-extension snapshots are skipped from leaderboards rather than misclassified (#375).
+
+### Behavior matrix
+
+| User has | Plex tab visible | Source banner |
+|---|---|---|
+| Plex only | ✅ (was ❌) | "Captured from Plex session snapshots…" |
+| Plex + Tautulli | ✅ | "…Tautulli enrichment active — codec, LAN/WAN bandwidth, and platform metadata are enriched…" |
+| Jellyfin/Emby only | n/a (Jellyfin tab visible) | unchanged |
+
+### Notes
+
+- `useTautulliStats` and `useTautulliPlaysByDate` hooks remain in the codebase. They're no longer consumed by the Plex tab but stay available for the OverviewTab's optional Tautulli card and any future Tautulli-admin surface.
+- Leaderboards take a few hours to populate after deploy as new SessionSnapshot rows accrue. Pre-deployment snapshots lack the new `mediaType` field and are skipped from leaderboards (the helpers gracefully degrade rather than misclassify).
+
 ## [2.16.2] - 2026-04-28
 
 **Security patch release.** Closes 8 open code-scanning alerts (1 HIGH-severity Fastify body-schema bypass + 4 medium-severity DOMPurify sanitization issues + 1 GitHub Actions shell-injection vector + 2 transitive hono/postcss vulnerabilities) and 6 Dependabot security advisories. Also adds a small TRaSH Guides feature (migration notices for upstream CF-group restructures) and removes a class of spurious diagnostic warnings. No schema or API breaking changes.

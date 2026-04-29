@@ -10,8 +10,8 @@
 
 import type { ServiceInstanceSummary } from "@arr/shared";
 import { ArrowRight, Server } from "lucide-react";
-import { useIncognitoMode } from "../../../lib/incognito";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { useIncognitoMode } from "../../../lib/incognito";
 import { getServiceGradient } from "../../../lib/theme-gradients";
 import type { ServiceType } from "../lib/settings-constants";
 
@@ -55,7 +55,8 @@ const SETUP_STEPS: SetupStep[] = [
 	{
 		service: "tautulli",
 		label: "Tautulli",
-		description: "Plex analytics — API key from Settings > Web Interface",
+		description:
+			"Optional Plex enrichment — adds richer codec/LAN-WAN/platform metadata. Plex analytics work without it.",
 		hasHelper: false,
 	},
 	{

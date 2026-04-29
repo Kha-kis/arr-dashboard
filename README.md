@@ -74,8 +74,8 @@ A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, 
 - **Now Playing** — Real-time view of active Plex streams with user avatars, progress bars, transcode/direct play indicators, and bandwidth metrics
 - **Continue Watching / On Deck** — See what's queued up next across your Plex libraries
 - **Recently Added** — Latest additions to your Plex library with poster thumbnails
-- **Watch History** — Historical watch data enriched with Tautulli analytics
-- **Plex Statistics** — Dedicated stats tab with user analytics, device breakdown, codec distribution, bandwidth forecasting, quality scores, and daily activity charts
+- **Watch History** — Historical watch data captured every 5 minutes from active sessions; enriched with codec/LAN-WAN/platform metadata when Tautulli is configured
+- **Plex Statistics** — Dedicated stats tab with leaderboards (top + most-popular per media type), user analytics, device breakdown, codec distribution, bandwidth forecasting, quality scores, and daily activity charts. **Works without Tautulli** — analytics flow from the dashboard's own session-snapshot capture; Tautulli adds optional enrichment
 - **Library Enrichment** — Watch status, play counts, and last-watched dates shown on library items
 - **Connect with Plex** — OAuth-assisted setup discovers your reachable Plex servers and auto-fills the URL and token
 
@@ -200,7 +200,7 @@ docker-compose up -d
 | **Lidarr** | Full | Queue, calendar, library, history, statistics, hunting |
 | **Readarr** | Full | Queue, calendar, library, history, statistics, hunting |
 | **Plex** | Full | Now playing, on deck, recently added, watch history, library enrichment, OAuth setup |
-| **Tautulli** | Full | Activity monitoring, watch statistics, bandwidth analytics |
+| **Tautulli** | Optional enrichment | Adds richer codec/LAN-WAN/platform metadata to Plex session snapshots. Plex analytics work without it |
 | **Jellyfin** | Full | Now playing, on deck, recently added, watch history, native analytics, library cleanup |
 | **Emby** | Full | Shares Jellyfin backend — same capabilities, same setup flow |
 | **Seerr** | Full | Requests, users, issues, notification agents, optional Plex sign-in auto-setup |
