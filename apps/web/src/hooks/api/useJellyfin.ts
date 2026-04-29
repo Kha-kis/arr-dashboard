@@ -13,6 +13,7 @@ import type {
 	DeviceAnalytics,
 	JellyfinNowPlayingResponse,
 	LibraryItem,
+	MostConcurrentResponse,
 	QualityScoreAnalytics,
 	SeriesProgressResponse,
 	TopMediaResponse,
@@ -42,6 +43,7 @@ import {
 	fetchJellyfinEpisodeWatchStatus,
 	fetchJellyfinIdentity,
 	fetchJellyfinLastWatched,
+	fetchJellyfinMostConcurrent,
 	fetchJellyfinNowPlaying,
 	fetchJellyfinOnDeck,
 	fetchJellyfinPopularMedia,
@@ -329,6 +331,15 @@ export const useJellyfinLastWatched = (
 	return useQuery<TopMediaResponse>({
 		queryKey: jellyfinKeys.lastWatched(mediaType, days, limit),
 		queryFn: () => fetchJellyfinLastWatched(mediaType, days, limit),
+		staleTime: 5 * 60_000,
+		enabled,
+	});
+};
+
+export const useJellyfinMostConcurrent = (days = 30, limit = 5, enabled = true) => {
+	return useQuery<MostConcurrentResponse>({
+		queryKey: jellyfinKeys.mostConcurrent(days, limit),
+		queryFn: () => fetchJellyfinMostConcurrent(days, limit),
 		staleTime: 5 * 60_000,
 		enabled,
 	});
