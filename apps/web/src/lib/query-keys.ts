@@ -304,6 +304,8 @@ export const plexKeys = {
 		["plex", "popular-media", mediaType, days, limit] as const,
 	lastWatched: (mediaType: string, days: number, limit: number) =>
 		["plex", "last-watched", mediaType, days, limit] as const,
+	mostConcurrent: (days: number, limit: number) =>
+		["plex", "most-concurrent", days, limit] as const,
 };
 
 /* -------------------------------------------------------------------------- */
@@ -340,6 +342,8 @@ export const jellyfinKeys = {
 		["jellyfin", "analytics", "popular-media", mediaType, days, limit] as const,
 	lastWatched: (mediaType: string, days: number, limit: number) =>
 		["jellyfin", "analytics", "last-watched", mediaType, days, limit] as const,
+	mostConcurrent: (days: number, limit: number) =>
+		["jellyfin", "analytics", "most-concurrent", days, limit] as const,
 };
 
 /* -------------------------------------------------------------------------- */

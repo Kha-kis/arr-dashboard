@@ -403,6 +403,24 @@ export interface TopMediaResponse {
 }
 
 // ============================================================================
+// Most Concurrent (Tier 1) — replaces Tautulli home-stats most_concurrent
+// ============================================================================
+
+export interface MostConcurrentEntry {
+	/** ISO timestamp of the snapshot tick where this peak was observed */
+	capturedAt: string;
+	concurrentStreams: number;
+	totalBandwidth: number;
+}
+
+export interface MostConcurrentResponse {
+	/** Highest concurrent-stream count seen anywhere in the time window */
+	peakConcurrent: number;
+	/** Top-N peak events, deduped by 30-min proximity so a held peak collapses to one entry */
+	events: MostConcurrentEntry[];
+}
+
+// ============================================================================
 // Bandwidth Forecast (Tier 3)
 // ============================================================================
 

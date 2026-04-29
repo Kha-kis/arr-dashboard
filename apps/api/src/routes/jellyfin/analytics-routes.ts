@@ -14,6 +14,7 @@ import { aggregateBandwidthAnalytics } from "../plex/lib/bandwidth-analytics-hel
 import { aggregateCodecAnalytics } from "../plex/lib/codec-analytics-helpers.js";
 import { aggregateDeviceAnalytics } from "../plex/lib/device-analytics-helpers.js";
 import { computeForecast } from "../plex/lib/forecast-helpers.js";
+import { aggregateMostConcurrent } from "../plex/lib/most-concurrent-helpers.js";
 import { computeQualityScore } from "../plex/lib/quality-score-helpers.js";
 import {
 	aggregateLastWatched,
@@ -539,5 +540,47 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, _opts: Fasti
 			);
 		}
 		return reply.send(response);
+	});
+
+	// ── Most Concurrent Peaks (snapshot-level, no sessionsJson parse) ──
+	const mostConcurrentQuery = z.object({
+		days: z
+			.string()
+			.optional()
+			.transform((val) => {
+				const n = val ? Number.parseInt(val, 10) : 30;
+				return Number.isFinite(n) && n > 0 ? Math.min(n, 90) : 30;
+			}),
+		limit: z
+			.string()
+			.optional()
+			.transform((val) => {
+				const n = val ? Number.parseInt(val, 10) : 5;
+				return Number.isFinite(n) && n > 0 ? Math.min(n, 25) : 5;
+			}),
+	});
+
+	app.get("/most-concurrent", async (request, reply) => {
+		const { days, limit } = validateRequest(mostConcurrentQuery, request.query);
+		const userId = request.currentUser!.id;
+
+		const instances = await app.prisma.serviceInstance.findMany({
+			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
+			select: { id: true },
+		});
+
+		if (instances.length === 0) {
+			return reply.send({ peakConcurrent: 0, events: [] });
+		}
+
+		const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+		const snapshots = await app.prisma.sessionSnapshot.findMany({
+			where: { instanceId: { in: instances.map((i) => i.id) }, capturedAt: { gte: cutoff } },
+			select: { capturedAt: true, concurrentStreams: true, totalBandwidth: true },
+			orderBy: { capturedAt: "asc" },
+			take: 50000,
+		});
+
+		return reply.send(aggregateMostConcurrent(snapshots, { limit }));
 	});
 }

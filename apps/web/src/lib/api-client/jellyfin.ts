@@ -12,6 +12,7 @@ import type {
 	CodecAnalytics,
 	DeviceAnalytics,
 	JellyfinNowPlayingResponse,
+	MostConcurrentResponse,
 	QualityScoreAnalytics,
 	SeriesProgressResponse,
 	TopMediaResponse,
@@ -293,4 +294,11 @@ export async function fetchJellyfinLastWatched(
 	return apiRequest(
 		`/api/jellyfin/analytics/last-watched?mediaType=${mediaType}&days=${days}&limit=${limit}`,
 	);
+}
+
+export async function fetchJellyfinMostConcurrent(
+	days = 30,
+	limit = 5,
+): Promise<MostConcurrentResponse> {
+	return apiRequest(`/api/jellyfin/analytics/most-concurrent?days=${days}&limit=${limit}`);
 }
