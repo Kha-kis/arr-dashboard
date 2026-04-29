@@ -5,7 +5,7 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.17.0] - 2026-04-29
 
 **Statistics overhaul: Jellyfin/Emby parity + Tautulli is now optional.** The Statistics page gains a full Jellyfin/Emby tab matching the Plex feature set, and the Plex tab no longer requires Tautulli — all leaderboards and analytics now flow from the dashboard's own SessionSnapshot capture (every 5 minutes during active streams) rather than Tautulli's pre-aggregated home-stats. Tautulli stays around as an *optional enrichment source* that adds richer codec, LAN/WAN bandwidth, and platform metadata when configured; without it, snapshot-driven data still populates the same charts.
 

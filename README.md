@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.16.2** — Security patch: Fastify HIGH bypass + DOMPurify/hono/postcss vulnerabilities patched; GitHub Actions shell-injection vector closed; TRaSH Guides migration notices for upstream CF-group restructures
+> **Version 2.17.0** — Statistics overhaul: full Jellyfin/Emby analytics tab; Plex tab no longer requires Tautulli; 5 SessionSnapshot-derived leaderboards (top + popular media, last-watched, most-concurrent, plays-by-date) replace Tautulli's pre-aggregations
 
 A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, **Lidarr**, **Readarr**, **Plex**, **Tautulli**, **Jellyfin**, **Emby**, and **Seerr** instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -210,6 +210,7 @@ docker-compose up -d
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.17.0` | Statistics overhaul: Jellyfin/Emby tab + Plex tab decoupled from Tautulli (now optional enrichment); SessionSnapshot-derived leaderboards |
 | `2.16.2` | Security patch — Fastify HIGH bypass + DOMPurify/hono/postcss fixes; workflow shell-injection closed; TRaSH migration notices |
 | `2.16.1` | Reverse-proxy link resolution in Statistics / Calendar / History / Library; Calendar layout stability |
 | `2.16.0` | Needs Attention, inline Pulse actions (Enable / Refresh now / Retry), media-server reachability, duplicate banner cleanup |
