@@ -15,6 +15,8 @@ import type {
 	LibraryItem,
 	QualityScoreAnalytics,
 	SeriesProgressResponse,
+	TopMediaResponse,
+	TopMediaType,
 	TranscodeAnalytics,
 	UserAnalytics,
 	UserEpisodeCompletion,
@@ -22,8 +24,6 @@ import type {
 	WatchHistoryResponse,
 } from "@arr/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { POLLING_BACKGROUND, POLLING_REALTIME } from "../../lib/polling-intervals";
-import { useEnrichableItems } from "../useEnrichableItems";
 import type {
 	JellyfinAccountsResponse,
 	JellyfinEpisodeStatusResponse,
@@ -35,6 +35,7 @@ import type {
 import {
 	fetchJellyfinAccounts,
 	fetchJellyfinBandwidthAnalytics,
+	fetchJellyfinBandwidthForecast,
 	fetchJellyfinCacheHealth,
 	fetchJellyfinCodecAnalytics,
 	fetchJellyfinDeviceAnalytics,
@@ -42,20 +43,22 @@ import {
 	fetchJellyfinIdentity,
 	fetchJellyfinNowPlaying,
 	fetchJellyfinOnDeck,
+	fetchJellyfinQualityScore,
 	fetchJellyfinRecentlyAdded,
 	fetchJellyfinSections,
+	fetchJellyfinSeriesProgress,
+	fetchJellyfinTopMedia,
 	fetchJellyfinTranscodeAnalytics,
 	fetchJellyfinUserAnalytics,
+	fetchJellyfinUserEpisodeCompletion,
 	fetchJellyfinWatchEnrichment,
 	fetchJellyfinWatchHistory,
-	fetchJellyfinQualityScore,
-	fetchJellyfinBandwidthForecast,
-	fetchJellyfinSeriesProgress,
-	fetchJellyfinUserEpisodeCompletion,
 	triggerJellyfinCacheRefresh,
 	triggerJellyfinScan,
 } from "../../lib/api-client/jellyfin";
+import { POLLING_BACKGROUND, POLLING_REALTIME } from "../../lib/polling-intervals";
 import { jellyfinKeys } from "../../lib/query-keys";
+import { useEnrichableItems } from "../useEnrichableItems";
 
 // ============================================================================
 // Server Identity
@@ -282,6 +285,20 @@ export const useJellyfinBandwidthForecast = (days = 30, enabled = true) => {
 	return useQuery<BandwidthForecast>({
 		queryKey: jellyfinKeys.bandwidthForecast(days),
 		queryFn: () => fetchJellyfinBandwidthForecast(days),
+		staleTime: 5 * 60_000,
+		enabled,
+	});
+};
+
+export const useJellyfinTopMedia = (
+	mediaType: TopMediaType,
+	days = 30,
+	limit = 10,
+	enabled = true,
+) => {
+	return useQuery<TopMediaResponse>({
+		queryKey: jellyfinKeys.topMedia(mediaType, days, limit),
+		queryFn: () => fetchJellyfinTopMedia(mediaType, days, limit),
 		staleTime: 5 * 60_000,
 		enabled,
 	});

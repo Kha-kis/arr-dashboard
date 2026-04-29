@@ -5,30 +5,31 @@
  */
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
-import { registerWatchEnrichmentRoutes } from "./watch-enrichment-routes.js";
-import { registerSectionRoutes } from "./section-routes.js";
-import { registerScanRoutes } from "./scan-routes.js";
-import { registerNowPlayingRoutes } from "./now-playing-routes.js";
-import { registerEpisodeRoutes } from "./episode-routes.js";
-import { registerCollectionRoutes } from "./collection-routes.js";
-import { registerCacheRoutes } from "./cache-routes.js";
-import { registerRecentlyAddedRoutes } from "./recently-added-routes.js";
-import { registerIdentityRoutes } from "./identity-routes.js";
-import { registerOnDeckRoutes } from "./on-deck-routes.js";
 import { registerAccountRoutes } from "./account-routes.js";
-import { registerSeriesProgressRoutes } from "./series-progress-routes.js";
-import { registerTranscodeAnalyticsRoutes } from "./transcode-analytics-routes.js";
 import { registerBandwidthAnalyticsRoutes } from "./bandwidth-analytics-routes.js";
-import { registerUserAnalyticsRoutes } from "./user-analytics-routes.js";
-import { registerWatchHistoryRoutes } from "./watch-history-routes.js";
+import { registerCacheRoutes } from "./cache-routes.js";
 import { registerCodecAnalyticsRoutes } from "./codec-analytics-routes.js";
-import { registerDeviceAnalyticsRoutes } from "./device-analytics-routes.js";
+import { registerCollectionRoutes } from "./collection-routes.js";
 import { registerCollectionStatsRoutes } from "./collection-stats-routes.js";
-import { registerUserEpisodeCompletionRoutes } from "./user-episode-completion-routes.js";
-import { registerQualityScoreRoutes } from "./quality-score-routes.js";
+import { registerDeviceAnalyticsRoutes } from "./device-analytics-routes.js";
+import { registerEpisodeRoutes } from "./episode-routes.js";
 import { registerForecastRoutes } from "./forecast-routes.js";
+import { registerIdentityRoutes } from "./identity-routes.js";
 import { registerImageProxyRoutes } from "./image-proxy-routes.js";
+import { registerNowPlayingRoutes } from "./now-playing-routes.js";
 import { registerOAuthRoutes } from "./oauth-routes.js";
+import { registerOnDeckRoutes } from "./on-deck-routes.js";
+import { registerQualityScoreRoutes } from "./quality-score-routes.js";
+import { registerRecentlyAddedRoutes } from "./recently-added-routes.js";
+import { registerScanRoutes } from "./scan-routes.js";
+import { registerSectionRoutes } from "./section-routes.js";
+import { registerSeriesProgressRoutes } from "./series-progress-routes.js";
+import { registerTopMediaRoutes } from "./top-media-routes.js";
+import { registerTranscodeAnalyticsRoutes } from "./transcode-analytics-routes.js";
+import { registerUserAnalyticsRoutes } from "./user-analytics-routes.js";
+import { registerUserEpisodeCompletionRoutes } from "./user-episode-completion-routes.js";
+import { registerWatchEnrichmentRoutes } from "./watch-enrichment-routes.js";
+import { registerWatchHistoryRoutes } from "./watch-history-routes.js";
 
 export async function registerPlexRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	app.register(registerWatchEnrichmentRoutes, { prefix: "/watch-enrichment" });
@@ -53,6 +54,7 @@ export async function registerPlexRoutes(app: FastifyInstance, _opts: FastifyPlu
 	app.register(registerUserEpisodeCompletionRoutes, { prefix: "/analytics/episode-completion" });
 	app.register(registerQualityScoreRoutes, { prefix: "/analytics/quality-score" });
 	app.register(registerForecastRoutes, { prefix: "/analytics/forecast" });
+	app.register(registerTopMediaRoutes, { prefix: "/analytics/top-media" });
 	app.register(registerImageProxyRoutes, { prefix: "/thumb" });
 	app.register(registerOAuthRoutes, { prefix: "/oauth" });
 }
