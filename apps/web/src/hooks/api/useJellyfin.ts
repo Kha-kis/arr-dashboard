@@ -43,6 +43,7 @@ import {
 	fetchJellyfinIdentity,
 	fetchJellyfinNowPlaying,
 	fetchJellyfinOnDeck,
+	fetchJellyfinPopularMedia,
 	fetchJellyfinQualityScore,
 	fetchJellyfinRecentlyAdded,
 	fetchJellyfinSections,
@@ -299,6 +300,20 @@ export const useJellyfinTopMedia = (
 	return useQuery<TopMediaResponse>({
 		queryKey: jellyfinKeys.topMedia(mediaType, days, limit),
 		queryFn: () => fetchJellyfinTopMedia(mediaType, days, limit),
+		staleTime: 5 * 60_000,
+		enabled,
+	});
+};
+
+export const useJellyfinPopularMedia = (
+	mediaType: TopMediaType,
+	days = 30,
+	limit = 10,
+	enabled = true,
+) => {
+	return useQuery<TopMediaResponse>({
+		queryKey: jellyfinKeys.popularMedia(mediaType, days, limit),
+		queryFn: () => fetchJellyfinPopularMedia(mediaType, days, limit),
 		staleTime: 5 * 60_000,
 		enabled,
 	});

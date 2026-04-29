@@ -1,11 +1,13 @@
 "use client";
 
 import type { TopMediaResponse, TopMediaType } from "@arr/shared";
-import { Film, Music, Trophy, Tv } from "lucide-react";
+import { Film, Music, Trophy, Tv, Users } from "lucide-react";
 import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+
+type Metric = "plays" | "popularity";
 
 const ICON_FOR_MEDIA_TYPE: Record<TopMediaType, typeof Film> = {
 	movie: Film,
@@ -13,16 +15,22 @@ const ICON_FOR_MEDIA_TYPE: Record<TopMediaType, typeof Film> = {
 	music: Music,
 };
 
-const HEADING_FOR_MEDIA_TYPE: Record<TopMediaType, string> = {
+const SUBJECT_FOR_MEDIA_TYPE: Record<TopMediaType, string> = {
+	movie: "movies",
+	series: "shows",
+	music: "tracks",
+};
+
+const HEADING_FOR_MEDIA_TYPE_TOP: Record<TopMediaType, string> = {
 	movie: "Top Movies",
 	series: "Top Shows",
 	music: "Top Music",
 };
 
-const SUBJECT_FOR_MEDIA_TYPE: Record<TopMediaType, string> = {
-	movie: "movies",
-	series: "shows",
-	music: "tracks",
+const HEADING_FOR_MEDIA_TYPE_POPULAR: Record<TopMediaType, string> = {
+	movie: "Most Popular Movies",
+	series: "Most Popular Shows",
+	music: "Most Popular Music",
 };
 
 function formatWatchTime(minutes: number): string {
@@ -43,6 +51,12 @@ interface TopMediaChartProps {
 	isError: boolean;
 	mediaType: TopMediaType;
 	service?: "plex" | "jellyfin";
+	/**
+	 * Which metric to surface as the primary number column.
+	 * - "plays" (default): item.playCount, labelled "plays". Use with /top-media endpoint.
+	 * - "popularity": item.distinctUserCount, labelled "viewers". Use with /popular-media endpoint.
+	 */
+	metric?: Metric;
 }
 
 export const TopMediaChart = ({
@@ -51,13 +65,18 @@ export const TopMediaChart = ({
 	isError,
 	mediaType,
 	service = "plex",
+	metric = "plays",
 }: TopMediaChartProps) => {
 	const { gradient } = useThemeGradient();
 	const [incognitoMode] = useIncognitoMode();
 	const accentColor = SERVICE_GRADIENTS[service].from;
 	const Icon = ICON_FOR_MEDIA_TYPE[mediaType];
-	const heading = HEADING_FOR_MEDIA_TYPE[mediaType];
+	const heading =
+		metric === "popularity"
+			? HEADING_FOR_MEDIA_TYPE_POPULAR[mediaType]
+			: HEADING_FOR_MEDIA_TYPE_TOP[mediaType];
 	const subject = SUBJECT_FOR_MEDIA_TYPE[mediaType];
+	const HeaderIcon = metric === "popularity" ? Users : Icon;
 
 	if (isLoading) {
 		return (
@@ -82,7 +101,7 @@ export const TopMediaChart = ({
 			<PremiumEmptyState
 				icon={Trophy}
 				title={`Failed to Load ${heading}`}
-				description={`Could not fetch top ${subject}. Try refreshing.`}
+				description={`Could not fetch ${subject} leaderboard. Try refreshing.`}
 			/>
 		);
 	}
@@ -97,19 +116,23 @@ export const TopMediaChart = ({
 		);
 	}
 
-	const maxPlayCount = Math.max(...data.items.map((item) => item.playCount), 1);
+	const primaryValue = (item: TopMediaResponse["items"][number]): number =>
+		metric === "popularity" ? item.distinctUserCount : item.playCount;
+	const primaryLabel = metric === "popularity" ? "viewers" : "plays";
+	const maxPrimary = Math.max(...data.items.map(primaryValue), 1);
 
 	return (
 		<div className="rounded-xl border border-border/30 bg-card/30 p-6 space-y-4">
 			<h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-				<Icon className="h-4 w-4" style={{ color: gradient.from }} />
+				<HeaderIcon className="h-4 w-4" style={{ color: gradient.from }} />
 				{heading}
 			</h3>
 
 			<div className="space-y-2">
 				{data.items.map((item, i) => {
 					const displayTitle = incognitoMode ? getLinuxIsoName(item.title) : item.title;
-					const widthPercent = (item.playCount / maxPlayCount) * 100;
+					const value = primaryValue(item);
+					const widthPercent = (value / maxPrimary) * 100;
 					return (
 						<div key={`${item.title}-${i}`} className="flex items-center gap-3 text-sm group">
 							<span
@@ -135,8 +158,8 @@ export const TopMediaChart = ({
 								</div>
 							</div>
 							<span className="w-16 text-right font-medium tabular-nums">
-								{item.playCount.toLocaleString()}
-								<span className="text-[10px] text-muted-foreground ml-1">plays</span>
+								{value.toLocaleString()}
+								<span className="text-[10px] text-muted-foreground ml-1">{primaryLabel}</span>
 							</span>
 							<span className="w-20 text-right text-xs text-muted-foreground tabular-nums">
 								{formatWatchTime(item.totalDurationMinutes)}

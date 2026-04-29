@@ -300,6 +300,8 @@ export const plexKeys = {
 	bandwidthForecast: (days: number) => ["plex", "bandwidth-forecast", days] as const,
 	topMedia: (mediaType: string, days: number, limit: number) =>
 		["plex", "top-media", mediaType, days, limit] as const,
+	popularMedia: (mediaType: string, days: number, limit: number) =>
+		["plex", "popular-media", mediaType, days, limit] as const,
 };
 
 /* -------------------------------------------------------------------------- */
@@ -332,6 +334,8 @@ export const jellyfinKeys = {
 		["jellyfin", "analytics", "episode-completion", key] as const,
 	topMedia: (mediaType: string, days: number, limit: number) =>
 		["jellyfin", "analytics", "top-media", mediaType, days, limit] as const,
+	popularMedia: (mediaType: string, days: number, limit: number) =>
+		["jellyfin", "analytics", "popular-media", mediaType, days, limit] as const,
 };
 
 /* -------------------------------------------------------------------------- */

@@ -274,3 +274,13 @@ export async function fetchJellyfinTopMedia(
 		`/api/jellyfin/analytics/top-media?mediaType=${mediaType}&days=${days}&limit=${limit}`,
 	);
 }
+
+export async function fetchJellyfinPopularMedia(
+	mediaType: TopMediaType,
+	days = 30,
+	limit = 10,
+): Promise<TopMediaResponse> {
+	return apiRequest(
+		`/api/jellyfin/analytics/popular-media?mediaType=${mediaType}&days=${days}&limit=${limit}`,
+	);
+}
