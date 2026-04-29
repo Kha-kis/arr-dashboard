@@ -298,6 +298,15 @@ export const plexKeys = {
 	userEpisodeCompletion: (key: string) => ["plex", "user-episode-completion", key] as const,
 	qualityScore: (days: number) => ["plex", "quality-score", days] as const,
 	bandwidthForecast: (days: number) => ["plex", "bandwidth-forecast", days] as const,
+	topMedia: (mediaType: string, days: number, limit: number) =>
+		["plex", "top-media", mediaType, days, limit] as const,
+	popularMedia: (mediaType: string, days: number, limit: number) =>
+		["plex", "popular-media", mediaType, days, limit] as const,
+	lastWatched: (mediaType: string, days: number, limit: number) =>
+		["plex", "last-watched", mediaType, days, limit] as const,
+	mostConcurrent: (days: number, limit: number) =>
+		["plex", "most-concurrent", days, limit] as const,
+	playsByDate: (days: number) => ["plex", "plays-by-date", days] as const,
 };
 
 /* -------------------------------------------------------------------------- */
@@ -319,13 +328,24 @@ export const jellyfinKeys = {
 	transcodeAnalytics: (days: number) => ["jellyfin", "analytics", "transcode", days] as const,
 	bandwidthAnalytics: (days: number) => ["jellyfin", "analytics", "bandwidth", days] as const,
 	userAnalytics: (days: number) => ["jellyfin", "analytics", "users", days] as const,
-	watchHistory: (days: number, limit: number) => ["jellyfin", "analytics", "history", days, limit] as const,
+	watchHistory: (days: number, limit: number) =>
+		["jellyfin", "analytics", "history", days, limit] as const,
 	codecAnalytics: (days: number) => ["jellyfin", "analytics", "codec", days] as const,
 	deviceAnalytics: (days: number) => ["jellyfin", "analytics", "devices", days] as const,
 	qualityScore: (days: number) => ["jellyfin", "analytics", "quality-score", days] as const,
 	bandwidthForecast: (days: number) => ["jellyfin", "analytics", "forecast", days] as const,
 	seriesProgress: (key: string) => ["jellyfin", "series-progress", key] as const,
-	userEpisodeCompletion: (key: string) => ["jellyfin", "analytics", "episode-completion", key] as const,
+	userEpisodeCompletion: (key: string) =>
+		["jellyfin", "analytics", "episode-completion", key] as const,
+	topMedia: (mediaType: string, days: number, limit: number) =>
+		["jellyfin", "analytics", "top-media", mediaType, days, limit] as const,
+	popularMedia: (mediaType: string, days: number, limit: number) =>
+		["jellyfin", "analytics", "popular-media", mediaType, days, limit] as const,
+	lastWatched: (mediaType: string, days: number, limit: number) =>
+		["jellyfin", "analytics", "last-watched", mediaType, days, limit] as const,
+	mostConcurrent: (days: number, limit: number) =>
+		["jellyfin", "analytics", "most-concurrent", days, limit] as const,
+	playsByDate: (days: number) => ["jellyfin", "analytics", "plays-by-date", days] as const,
 };
 
 /* -------------------------------------------------------------------------- */

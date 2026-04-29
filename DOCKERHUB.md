@@ -37,7 +37,7 @@ services:
 ## Features
 
 - **Unified Dashboard** — Queue, calendar, history, and statistics across all Sonarr, Radarr, Prowlarr, Lidarr, and Readarr instances
-- **Plex & Tautulli Integration** — Now playing, watch history, on deck, recently added, and detailed analytics with user/device/codec charts
+- **Plex Integration** — Now playing, watch history, on deck, recently added, and detailed analytics with leaderboards (top + most-popular) and user/device/codec charts. Tautulli is now optional enrichment, not required
 - **Jellyfin & Emby Integration** — Full media server parity with Plex, sourced directly from native APIs (no Tautulli-equivalent required)
 - **Seerr** — Manage media requests, users, issues, and notification agents, with optional auto-setup via Plex sign-in
 - **Global Search** — Search for content across all indexers via Prowlarr

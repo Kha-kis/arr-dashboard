@@ -12,8 +12,12 @@ import type {
 	CodecAnalytics,
 	DeviceAnalytics,
 	JellyfinNowPlayingResponse,
+	MostConcurrentResponse,
+	PlaysByDateResponse,
 	QualityScoreAnalytics,
 	SeriesProgressResponse,
+	TopMediaResponse,
+	TopMediaType,
 	TranscodeAnalytics,
 	UserAnalytics,
 	UserEpisodeCompletion,
@@ -228,7 +232,10 @@ export async function fetchJellyfinUserAnalytics(days = 30): Promise<UserAnalyti
 	return apiRequest(`/api/jellyfin/analytics/users?days=${days}`);
 }
 
-export async function fetchJellyfinWatchHistory(days = 7, limit = 50): Promise<WatchHistoryResponse> {
+export async function fetchJellyfinWatchHistory(
+	days = 7,
+	limit = 50,
+): Promise<WatchHistoryResponse> {
 	return apiRequest(`/api/jellyfin/analytics/history?days=${days}&limit=${limit}`);
 }
 
@@ -248,10 +255,55 @@ export async function fetchJellyfinBandwidthForecast(days = 30): Promise<Bandwid
 	return apiRequest(`/api/jellyfin/analytics/forecast?days=${days}`);
 }
 
-export async function fetchJellyfinSeriesProgress(tmdbIds: number[]): Promise<SeriesProgressResponse> {
+export async function fetchJellyfinSeriesProgress(
+	tmdbIds: number[],
+): Promise<SeriesProgressResponse> {
 	return apiRequest(`/api/jellyfin/series-progress?tmdbIds=${tmdbIds.join(",")}`);
 }
 
-export async function fetchJellyfinUserEpisodeCompletion(tmdbIds: number[]): Promise<UserEpisodeCompletion> {
+export async function fetchJellyfinUserEpisodeCompletion(
+	tmdbIds: number[],
+): Promise<UserEpisodeCompletion> {
 	return apiRequest(`/api/jellyfin/analytics/episode-completion?tmdbIds=${tmdbIds.join(",")}`);
+}
+
+export async function fetchJellyfinTopMedia(
+	mediaType: TopMediaType,
+	days = 30,
+	limit = 10,
+): Promise<TopMediaResponse> {
+	return apiRequest(
+		`/api/jellyfin/analytics/top-media?mediaType=${mediaType}&days=${days}&limit=${limit}`,
+	);
+}
+
+export async function fetchJellyfinPopularMedia(
+	mediaType: TopMediaType,
+	days = 30,
+	limit = 10,
+): Promise<TopMediaResponse> {
+	return apiRequest(
+		`/api/jellyfin/analytics/popular-media?mediaType=${mediaType}&days=${days}&limit=${limit}`,
+	);
+}
+
+export async function fetchJellyfinLastWatched(
+	mediaType: TopMediaType,
+	days = 30,
+	limit = 10,
+): Promise<TopMediaResponse> {
+	return apiRequest(
+		`/api/jellyfin/analytics/last-watched?mediaType=${mediaType}&days=${days}&limit=${limit}`,
+	);
+}
+
+export async function fetchJellyfinMostConcurrent(
+	days = 30,
+	limit = 5,
+): Promise<MostConcurrentResponse> {
+	return apiRequest(`/api/jellyfin/analytics/most-concurrent?days=${days}&limit=${limit}`);
+}
+
+export async function fetchJellyfinPlaysByDate(days = 30): Promise<PlaysByDateResponse> {
+	return apiRequest(`/api/jellyfin/analytics/plays-by-date?days=${days}`);
 }

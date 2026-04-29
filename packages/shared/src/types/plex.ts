@@ -206,7 +206,14 @@ export interface PlexAccountsResponse {
 export interface CacheHealthItem {
 	instanceId: string;
 	instanceName: string;
-	cacheType: "plex" | "tautulli" | "plex_episode" | "jellyfin" | "jellyfin_episode" | "emby" | "emby_episode";
+	cacheType:
+		| "plex"
+		| "tautulli"
+		| "plex_episode"
+		| "jellyfin"
+		| "jellyfin_episode"
+		| "emby"
+		| "emby_episode";
 	lastRefreshedAt: string;
 	lastResult: "success" | "error";
 	lastErrorMessage: string | null;
@@ -369,6 +376,65 @@ export interface QualityScoreAnalytics {
 	};
 	trend: Array<{ date: string; score: number }>;
 	perUser: Array<{ username: string; score: number; sessions: number }>;
+}
+
+// ============================================================================
+// Top Media Leaderboard (Tier 1) — replaces Tautulli home-stats top_*
+// ============================================================================
+
+export type TopMediaType = "movie" | "series" | "music";
+
+export interface TopMediaItem {
+	/** Display title — show name for episodes, movie name for movies, album/track for music */
+	title: string;
+	mediaType: TopMediaType;
+	/** Number of distinct user×title viewing sessions (deduplicated across consecutive 5-min ticks) */
+	playCount: number;
+	/** Number of distinct users who watched this title at least once in the window */
+	distinctUserCount: number;
+	/** Approximate total time (in minutes) the title was actively streaming, summed across users */
+	totalDurationMinutes: number;
+	/** ISO timestamp of the most recent watch event */
+	lastWatchedAt: string;
+}
+
+export interface TopMediaResponse {
+	items: TopMediaItem[];
+}
+
+// ============================================================================
+// Plays By Date (Tier 1) — replaces Tautulli cmd=get_plays_by_date
+// ============================================================================
+
+export interface PlaysByDateSeries {
+	/** Display name — "Movies" | "TV" | "Music". Matches the legacy Tautulli shape. */
+	name: string;
+	/** One entry per date in `categories`, in the same order. */
+	data: number[];
+}
+
+export interface PlaysByDateResponse {
+	/** Date strings (YYYY-MM-DD) covering the full window, ascending. */
+	categories: string[];
+	series: PlaysByDateSeries[];
+}
+
+// ============================================================================
+// Most Concurrent (Tier 1) — replaces Tautulli home-stats most_concurrent
+// ============================================================================
+
+export interface MostConcurrentEntry {
+	/** ISO timestamp of the snapshot tick where this peak was observed */
+	capturedAt: string;
+	concurrentStreams: number;
+	totalBandwidth: number;
+}
+
+export interface MostConcurrentResponse {
+	/** Highest concurrent-stream count seen anywhere in the time window */
+	peakConcurrent: number;
+	/** Top-N peak events, deduped by 30-min proximity so a held peak collapses to one entry */
+	events: MostConcurrentEntry[];
 }
 
 // ============================================================================

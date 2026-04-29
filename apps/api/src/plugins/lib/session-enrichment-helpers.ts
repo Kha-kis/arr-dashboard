@@ -12,16 +12,24 @@ export interface PlexSessionInput {
 	user: { title: string };
 	title: string;
 	grandparentTitle?: string;
+	type?: string;
 	ratingKey: string;
 	videoDecision?: string | null;
 	bandwidth?: number | null;
 	state: string;
 }
 
+/** Normalized media type for leaderboard aggregation */
+export type SessionMediaType = "movie" | "series" | "music" | "other";
+
 /** Enriched session entry stored in sessionsJson */
 export interface EnrichedSession {
 	user: string;
 	title: string;
+	/** Show/album name when applicable; absent for movies */
+	grandparentTitle?: string;
+	/** Normalized media type for cross-service aggregation */
+	mediaType?: SessionMediaType;
 	videoDecision: string | null | undefined;
 	bandwidth: number;
 	state: string;
@@ -31,6 +39,41 @@ export interface EnrichedSession {
 	videoResolution: string | null;
 	platform: string | null;
 	player: string | null;
+}
+
+/** Map a Plex session `type` field to a normalized media type. */
+export function normalizePlexMediaType(type: string | undefined): SessionMediaType {
+	switch (type) {
+		case "movie":
+			return "movie";
+		case "episode":
+		case "show":
+		case "season":
+			return "series";
+		case "track":
+		case "album":
+			return "music";
+		default:
+			return "other";
+	}
+}
+
+/** Map a Jellyfin item `Type` field to a normalized media type. */
+export function normalizeJellyfinMediaType(type: string | undefined): SessionMediaType {
+	switch (type) {
+		case "Movie":
+			return "movie";
+		case "Episode":
+		case "Series":
+		case "Season":
+			return "series";
+		case "Audio":
+		case "MusicAlbum":
+		case "MusicVideo":
+			return "music";
+		default:
+			return "other";
+	}
 }
 
 /**
@@ -66,6 +109,8 @@ export function enrichSessionsWithTautulli(
 		return {
 			user: s.user.title,
 			title: s.grandparentTitle ? `${s.grandparentTitle} - ${s.title}` : s.title,
+			grandparentTitle: s.grandparentTitle,
+			mediaType: normalizePlexMediaType(s.type),
 			videoDecision: s.videoDecision,
 			bandwidth: s.bandwidth ?? 0,
 			state: s.state,

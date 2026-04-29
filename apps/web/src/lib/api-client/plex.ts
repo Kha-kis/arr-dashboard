@@ -12,6 +12,8 @@ import type {
 	CodecAnalytics,
 	CollectionStats,
 	DeviceAnalytics,
+	MostConcurrentResponse,
+	PlaysByDateResponse,
 	PlexAccountsResponse,
 	PlexDiscoverServersResponse,
 	PlexEpisodeStatusResponse,
@@ -27,6 +29,8 @@ import type {
 	PlexTagUpdateRequest,
 	QualityScoreAnalytics,
 	SeriesProgressResponse,
+	TopMediaResponse,
+	TopMediaType,
 	TranscodeAnalytics,
 	UserAnalytics,
 	UserEpisodeCompletion,
@@ -264,6 +268,53 @@ export async function fetchQualityScore(days = 30): Promise<QualityScoreAnalytic
 /** Fetch bandwidth forecast with linear regression projections. */
 export async function fetchBandwidthForecast(days = 30): Promise<BandwidthForecast> {
 	return apiRequest(`/api/plex/analytics/forecast?days=${days}`);
+}
+
+// ============================================================================
+// Top Media Leaderboard (Tier 1) — replaces Tautulli home-stats top_*
+// ============================================================================
+
+/** Fetch the top-N most-watched titles for a given media type from SessionSnapshot. */
+export async function fetchTopMedia(
+	mediaType: TopMediaType,
+	days = 30,
+	limit = 10,
+): Promise<TopMediaResponse> {
+	return apiRequest(
+		`/api/plex/analytics/top-media?mediaType=${mediaType}&days=${days}&limit=${limit}`,
+	);
+}
+
+/** Fetch the top-N titles ranked by distinct watcher count from SessionSnapshot. */
+export async function fetchPopularMedia(
+	mediaType: TopMediaType,
+	days = 30,
+	limit = 10,
+): Promise<TopMediaResponse> {
+	return apiRequest(
+		`/api/plex/analytics/popular-media?mediaType=${mediaType}&days=${days}&limit=${limit}`,
+	);
+}
+
+/** Fetch the most-recently-watched titles (deduped) from SessionSnapshot. */
+export async function fetchLastWatched(
+	mediaType: TopMediaType,
+	days = 30,
+	limit = 10,
+): Promise<TopMediaResponse> {
+	return apiRequest(
+		`/api/plex/analytics/last-watched?mediaType=${mediaType}&days=${days}&limit=${limit}`,
+	);
+}
+
+/** Fetch peak concurrent-stream events from SessionSnapshot. */
+export async function fetchMostConcurrent(days = 30, limit = 5): Promise<MostConcurrentResponse> {
+	return apiRequest(`/api/plex/analytics/most-concurrent?days=${days}&limit=${limit}`);
+}
+
+/** Fetch per-day play counts segmented by media type. */
+export async function fetchPlaysByDate(days = 30): Promise<PlaysByDateResponse> {
+	return apiRequest(`/api/plex/analytics/plays-by-date?days=${days}`);
 }
 
 // ============================================================================

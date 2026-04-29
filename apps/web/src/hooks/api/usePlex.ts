@@ -13,6 +13,8 @@ import type {
 	CollectionStats,
 	DeviceAnalytics,
 	LibraryItem,
+	MostConcurrentResponse,
+	PlaysByDateResponse,
 	PlexAccountsResponse,
 	PlexIdentityResponse,
 	PlexNowPlayingResponse,
@@ -23,6 +25,8 @@ import type {
 	PlexTagUpdateRequest,
 	QualityScoreAnalytics,
 	SeriesProgressResponse,
+	TopMediaResponse,
+	TopMediaType,
 	TranscodeAnalytics,
 	UserAnalytics,
 	UserEpisodeCompletion,
@@ -31,8 +35,6 @@ import type {
 } from "@arr/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { POLLING_REALTIME } from "../../lib/polling-intervals";
-import { useEnrichableItems } from "../useEnrichableItems";
 import {
 	fetchBandwidthAnalytics,
 	fetchBandwidthForecast,
@@ -41,16 +43,21 @@ import {
 	fetchCollectionStats,
 	fetchDeviceAnalytics,
 	fetchEpisodeWatchStatus,
+	fetchLastWatched,
+	fetchMostConcurrent,
 	fetchNowPlaying,
 	fetchOnDeck,
+	fetchPlaysByDate,
 	fetchPlexAccounts,
 	fetchPlexCollections,
 	fetchPlexIdentity,
 	fetchPlexLabels,
 	fetchPlexSections,
+	fetchPopularMedia,
 	fetchQualityScore,
 	fetchRecentlyAdded,
 	fetchSeriesProgress,
+	fetchTopMedia,
 	fetchTranscodeAnalytics,
 	fetchUserAnalytics,
 	fetchUserEpisodeCompletion,
@@ -60,7 +67,9 @@ import {
 	triggerPlexScan,
 	updatePlexTag,
 } from "../../lib/api-client/plex";
+import { POLLING_REALTIME } from "../../lib/polling-intervals";
 import { plexKeys } from "../../lib/query-keys";
+import { useEnrichableItems } from "../useEnrichableItems";
 
 // ============================================================================
 // Watch Enrichment (F1)
@@ -390,6 +399,55 @@ export const useBandwidthForecast = (days = 30, enabled = true) => {
 	return useQuery<BandwidthForecast>({
 		queryKey: plexKeys.bandwidthForecast(days),
 		queryFn: () => fetchBandwidthForecast(days),
+		staleTime: 5 * 60_000,
+		enabled,
+	});
+};
+
+// ============================================================================
+// Top Media Leaderboard (Tier 1)
+// ============================================================================
+
+export const useTopMedia = (mediaType: TopMediaType, days = 30, limit = 10, enabled = true) => {
+	return useQuery<TopMediaResponse>({
+		queryKey: plexKeys.topMedia(mediaType, days, limit),
+		queryFn: () => fetchTopMedia(mediaType, days, limit),
+		staleTime: 5 * 60_000,
+		enabled,
+	});
+};
+
+export const usePopularMedia = (mediaType: TopMediaType, days = 30, limit = 10, enabled = true) => {
+	return useQuery<TopMediaResponse>({
+		queryKey: plexKeys.popularMedia(mediaType, days, limit),
+		queryFn: () => fetchPopularMedia(mediaType, days, limit),
+		staleTime: 5 * 60_000,
+		enabled,
+	});
+};
+
+export const useLastWatched = (mediaType: TopMediaType, days = 30, limit = 10, enabled = true) => {
+	return useQuery<TopMediaResponse>({
+		queryKey: plexKeys.lastWatched(mediaType, days, limit),
+		queryFn: () => fetchLastWatched(mediaType, days, limit),
+		staleTime: 5 * 60_000,
+		enabled,
+	});
+};
+
+export const useMostConcurrent = (days = 30, limit = 5, enabled = true) => {
+	return useQuery<MostConcurrentResponse>({
+		queryKey: plexKeys.mostConcurrent(days, limit),
+		queryFn: () => fetchMostConcurrent(days, limit),
+		staleTime: 5 * 60_000,
+		enabled,
+	});
+};
+
+export const usePlaysByDate = (days = 30, enabled = true) => {
+	return useQuery<PlaysByDateResponse>({
+		queryKey: plexKeys.playsByDate(days),
+		queryFn: () => fetchPlaysByDate(days),
 		staleTime: 5 * 60_000,
 		enabled,
 	});
