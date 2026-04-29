@@ -33,6 +33,7 @@ export const JOB_ID = {
 	jellyfinEpisodeCache: "jellyfin-episode-cache",
 	tautulliCache: "tautulli-cache",
 	seerrHealth: "seerr-health",
+	plexLabelSync: "plex-label-sync",
 } as const;
 
 export const KNOWN_JOBS: readonly JobDefinition[] = [
@@ -151,6 +152,14 @@ export const KNOWN_JOBS: readonly JobDefinition[] = [
 		label: "Seerr health",
 		description:
 			"Pings configured Seerr (Jellyseerr/Overseerr) instances every 5 minutes. Guarded by an in-plugin `isRunning` flag.",
+		concurrency: "singleton",
+		intervalMs: 5 * 60 * 1000,
+	},
+	{
+		id: JOB_ID.plexLabelSync,
+		label: "Plex label sync",
+		description:
+			"Walks enabled PlexLabelSyncRule rows once per hour and applies the configured Plex label to *arr items carrying the matching tag. Per-rule cooldown skips rules that ran in the last hour, so on-demand runs and scheduled ticks don't double-fire.",
 		concurrency: "singleton",
 		intervalMs: 5 * 60 * 1000,
 	},
