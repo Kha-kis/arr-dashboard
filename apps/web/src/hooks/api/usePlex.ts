@@ -14,6 +14,7 @@ import type {
 	DeviceAnalytics,
 	LibraryItem,
 	MostConcurrentResponse,
+	PlaysByDateResponse,
 	PlexAccountsResponse,
 	PlexIdentityResponse,
 	PlexNowPlayingResponse,
@@ -46,6 +47,7 @@ import {
 	fetchMostConcurrent,
 	fetchNowPlaying,
 	fetchOnDeck,
+	fetchPlaysByDate,
 	fetchPlexAccounts,
 	fetchPlexCollections,
 	fetchPlexIdentity,
@@ -437,6 +439,15 @@ export const useMostConcurrent = (days = 30, limit = 5, enabled = true) => {
 	return useQuery<MostConcurrentResponse>({
 		queryKey: plexKeys.mostConcurrent(days, limit),
 		queryFn: () => fetchMostConcurrent(days, limit),
+		staleTime: 5 * 60_000,
+		enabled,
+	});
+};
+
+export const usePlaysByDate = (days = 30, enabled = true) => {
+	return useQuery<PlaysByDateResponse>({
+		queryKey: plexKeys.playsByDate(days),
+		queryFn: () => fetchPlaysByDate(days),
 		staleTime: 5 * 60_000,
 		enabled,
 	});
