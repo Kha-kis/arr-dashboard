@@ -5,4 +5,5 @@ export type StatisticsTab =
 	| "prowlarr"
 	| "lidarr"
 	| "readarr"
-	| "plex";
+	| "plex"
+	| "jellyfin";

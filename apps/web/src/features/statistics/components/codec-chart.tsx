@@ -1,11 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { useCodecAnalytics } from "../../../hooks/api/usePlex";
-import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
-import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
+import type { CodecAnalytics } from "@arr/shared";
 import { FileVideo } from "lucide-react";
+import { useMemo } from "react";
+import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 
 // ============================================================================
 // Donut Chart (reused pattern from transcode-chart)
@@ -16,15 +16,6 @@ interface DonutSegment {
 	value: number;
 	color: string;
 }
-
-const DONUT_COLORS = [
-	SERVICE_GRADIENTS.plex.from,
-	SEMANTIC_COLORS.success.text,
-	SEMANTIC_COLORS.warning.text,
-	SEMANTIC_COLORS.info.text,
-	SERVICE_GRADIENTS.sonarr.from,
-	SERVICE_GRADIENTS.radarr.from,
-];
 
 const DonutChart = ({
 	segments,
@@ -141,31 +132,44 @@ const ResolutionBars = ({
 // ============================================================================
 
 interface CodecChartProps {
-	days: number;
-	enabled: boolean;
+	data: CodecAnalytics | undefined;
+	isLoading: boolean;
+	isError: boolean;
+	service?: "plex" | "jellyfin";
 }
 
-export const CodecChart = ({ days, enabled }: CodecChartProps) => {
+export const CodecChart = ({ data, isLoading, isError, service = "plex" }: CodecChartProps) => {
 	const { gradient } = useThemeGradient();
-	const { data, isLoading, isError } = useCodecAnalytics(days, enabled);
+
+	const donutColors = useMemo(
+		() => [
+			SERVICE_GRADIENTS[service].from,
+			SEMANTIC_COLORS.success.text,
+			SEMANTIC_COLORS.warning.text,
+			SEMANTIC_COLORS.info.text,
+			SERVICE_GRADIENTS.sonarr.from,
+			SERVICE_GRADIENTS.radarr.from,
+		],
+		[service],
+	);
 
 	const videoSegments = useMemo((): DonutSegment[] => {
 		if (!data?.videoCodecs) return [];
 		return data.videoCodecs.slice(0, 6).map((c: { codec: string; count: number }, i: number) => ({
 			label: c.codec,
 			value: c.count,
-			color: DONUT_COLORS[i % DONUT_COLORS.length]!,
+			color: donutColors[i % donutColors.length]!,
 		}));
-	}, [data]);
+	}, [data, donutColors]);
 
 	const audioSegments = useMemo((): DonutSegment[] => {
 		if (!data?.audioCodecs) return [];
 		return data.audioCodecs.slice(0, 6).map((c: { codec: string; count: number }, i: number) => ({
 			label: c.codec,
 			value: c.count,
-			color: DONUT_COLORS[(i + 2) % DONUT_COLORS.length]!,
+			color: donutColors[(i + 2) % donutColors.length]!,
 		}));
-	}, [data]);
+	}, [data, donutColors]);
 
 	if (isLoading) {
 		return (
@@ -194,7 +198,7 @@ export const CodecChart = ({ days, enabled }: CodecChartProps) => {
 			<PremiumEmptyState
 				icon={FileVideo}
 				title="No Codec Data Yet"
-				description="Codec data requires Tautulli enrichment. Ensure Tautulli is connected and sessions are being captured."
+				description="Codec data appears once active sessions are captured by the snapshot scheduler."
 			/>
 		);
 	}

@@ -1,12 +1,12 @@
 "use client";
 
-import { useMemo } from "react";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { useQualityScore } from "../../../hooks/api/usePlex";
-import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
-import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
+import type { QualityScoreAnalytics } from "@arr/shared";
 import { Gauge } from "lucide-react";
-import { useIncognitoMode, getLinuxUsername } from "../../../lib/incognito";
+import { useMemo } from "react";
+import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
+import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 
 // ============================================================================
 // Circular Gauge (0-100)
@@ -126,14 +126,21 @@ const TrendSparkline = ({
 // ============================================================================
 
 interface QualityScoreChartProps {
-	days: number;
-	enabled: boolean;
+	data: QualityScoreAnalytics | undefined;
+	isLoading: boolean;
+	isError: boolean;
+	service?: "plex" | "jellyfin";
 }
 
-export const QualityScoreChart = ({ days, enabled }: QualityScoreChartProps) => {
+export const QualityScoreChart = ({
+	data,
+	isLoading,
+	isError,
+	service = "plex",
+}: QualityScoreChartProps) => {
 	const { gradient } = useThemeGradient();
 	const [incognitoMode] = useIncognitoMode();
-	const { data, isLoading, isError } = useQualityScore(days, enabled);
+	const resolutionScoreColor = SERVICE_GRADIENTS[service].from;
 
 	const scoreColor = useMemo(() => {
 		if (!data) return gradient.from;
@@ -197,7 +204,7 @@ export const QualityScoreChart = ({ days, enabled }: QualityScoreChartProps) => 
 						score={data.breakdown.resolutionScore}
 						size={90}
 						label="Resolution"
-						color={SERVICE_GRADIENTS.plex.from}
+						color={resolutionScoreColor}
 					/>
 					<CircularGauge
 						score={data.breakdown.transcodeScore}
@@ -235,9 +242,13 @@ export const QualityScoreChart = ({ days, enabled }: QualityScoreChartProps) => 
 										className="h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
 										style={{ backgroundColor: `${gradient.from}20`, color: gradient.from }}
 									>
-										{(incognitoMode ? getLinuxUsername(user.username) : user.username).charAt(0).toUpperCase()}
+										{(incognitoMode ? getLinuxUsername(user.username) : user.username)
+											.charAt(0)
+											.toUpperCase()}
 									</div>
-									<span className="w-20 truncate text-muted-foreground">{incognitoMode ? getLinuxUsername(user.username) : user.username}</span>
+									<span className="w-20 truncate text-muted-foreground">
+										{incognitoMode ? getLinuxUsername(user.username) : user.username}
+									</span>
 									<div className="flex-1 h-3 rounded-full bg-muted/30 overflow-hidden">
 										<div
 											className="h-full rounded-full transition-all duration-500"

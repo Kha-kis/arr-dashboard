@@ -1,12 +1,12 @@
 "use client";
 
-import { useMemo } from "react";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { useUserAnalytics } from "../../../hooks/api/usePlex";
-import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
-import { useIncognitoMode, getLinuxUsername } from "../../../lib/incognito";
-import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
+import type { UserAnalytics } from "@arr/shared";
 import { Clock, Users } from "lucide-react";
+import { useMemo } from "react";
+import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
+import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 
 // ============================================================================
 // Bar Chart (reusable horizontal bars)
@@ -160,24 +160,30 @@ function formatWatchTime(minutes: number): string {
 }
 
 interface UserAnalyticsChartProps {
-	days: number;
-	enabled: boolean;
+	data: UserAnalytics | undefined;
+	isLoading: boolean;
+	isError: boolean;
+	service?: "plex" | "jellyfin";
 }
 
-export const UserAnalyticsChart = ({ days, enabled }: UserAnalyticsChartProps) => {
+export const UserAnalyticsChart = ({
+	data,
+	isLoading,
+	isError,
+	service = "plex",
+}: UserAnalyticsChartProps) => {
 	const { gradient } = useThemeGradient();
 	const [incognitoMode] = useIncognitoMode();
-	const { data, isLoading, isError } = useUserAnalytics(days, enabled);
 
 	const userColors = useMemo(
 		() => [
 			gradient.from,
 			gradient.to,
-			SERVICE_GRADIENTS.plex.from,
+			SERVICE_GRADIENTS[service].from,
 			SERVICE_GRADIENTS.sonarr.from,
 			SERVICE_GRADIENTS.radarr.from,
 		],
-		[gradient.from, gradient.to],
+		[gradient.from, gradient.to, service],
 	);
 
 	const barItems = useMemo((): BarItem[] => {

@@ -1,11 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { useBandwidthForecast } from "../../../hooks/api/usePlex";
-import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
-import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
+import type { BandwidthForecast } from "@arr/shared";
 import { TrendingUp } from "lucide-react";
+import { useMemo } from "react";
+import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { formatBandwidth } from "./chart-primitives";
 
 // ============================================================================
@@ -142,13 +142,20 @@ const PeakHoursChart = ({
 // ============================================================================
 
 interface ForecastChartProps {
-	days: number;
-	enabled: boolean;
+	data: BandwidthForecast | undefined;
+	isLoading: boolean;
+	isError: boolean;
+	service?: "plex" | "jellyfin";
 }
 
-export const ForecastChart = ({ days, enabled }: ForecastChartProps) => {
+export const ForecastChart = ({
+	data,
+	isLoading,
+	isError,
+	service = "plex",
+}: ForecastChartProps) => {
 	const { gradient } = useThemeGradient();
-	const { data, isLoading, isError } = useBandwidthForecast(days, enabled);
+	const historicalColor = SERVICE_GRADIENTS[service].from;
 
 	const historicalPeaks = useMemo(
 		() => data?.historicalDaily.map((d: { peakBandwidth: number }) => d.peakBandwidth) ?? [],
@@ -227,10 +234,7 @@ export const ForecastChart = ({ days, enabled }: ForecastChartProps) => {
 			<div>
 				<div className="flex gap-4 text-[10px] text-muted-foreground mb-2">
 					<span className="flex items-center gap-1.5">
-						<div
-							className="h-0.5 w-4 rounded-full"
-							style={{ backgroundColor: SERVICE_GRADIENTS.plex.from }}
-						/>
+						<div className="h-0.5 w-4 rounded-full" style={{ backgroundColor: historicalColor }} />
 						Historical Peak
 					</span>
 					<span className="flex items-center gap-1.5">
@@ -245,7 +249,7 @@ export const ForecastChart = ({ days, enabled }: ForecastChartProps) => {
 					<ForecastLine
 						historicalData={historicalPeaks}
 						forecastData={forecastPeaks}
-						historicalColor={SERVICE_GRADIENTS.plex.from}
+						historicalColor={historicalColor}
 						forecastColor={SEMANTIC_COLORS.info.text}
 					/>
 				</div>

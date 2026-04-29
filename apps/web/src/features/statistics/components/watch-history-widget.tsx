@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { useWatchHistory } from "../../../hooks/api/usePlex";
-import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
+import type { WatchHistoryResponse } from "@arr/shared";
 import { ChevronDown, ChevronUp, Clock, MonitorPlay } from "lucide-react";
-import { useIncognitoMode, getLinuxUsername, getLinuxIsoName } from "../../../lib/incognito";
+import { useState } from "react";
+import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getLinuxIsoName, getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 
 // ============================================================================
 // Time Formatting
@@ -29,14 +29,15 @@ function formatRelativeTime(isoDate: string): string {
 const INITIAL_VISIBLE = 5;
 
 interface WatchHistoryWidgetProps {
-	days: number;
-	enabled: boolean;
+	data: WatchHistoryResponse | undefined;
+	isLoading: boolean;
+	isError: boolean;
+	service?: "plex" | "jellyfin";
 }
 
-export const WatchHistoryWidget = ({ days, enabled }: WatchHistoryWidgetProps) => {
+export const WatchHistoryWidget = ({ data, isLoading, isError }: WatchHistoryWidgetProps) => {
 	const { gradient } = useThemeGradient();
 	const [incognitoMode] = useIncognitoMode();
-	const { data, isLoading, isError } = useWatchHistory(days, 20, enabled);
 	const [expanded, setExpanded] = useState(false);
 
 	if (isLoading) {
@@ -117,12 +118,16 @@ export const WatchHistoryWidget = ({ days, enabled }: WatchHistoryWidgetProps) =
 								className="h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
 								style={{ backgroundColor: `${gradient.from}20`, color: gradient.from }}
 							>
-								{(incognitoMode ? getLinuxUsername(event.user) : event.user).charAt(0).toUpperCase()}
+								{(incognitoMode ? getLinuxUsername(event.user) : event.user)
+									.charAt(0)
+									.toUpperCase()}
 							</div>
 
 							{/* Content */}
 							<div className="flex-1 min-w-0">
-								<p className="text-sm font-medium truncate">{incognitoMode ? getLinuxIsoName(event.title) : event.title}</p>
+								<p className="text-sm font-medium truncate">
+									{incognitoMode ? getLinuxIsoName(event.title) : event.title}
+								</p>
 								<p className="text-[10px] text-muted-foreground flex items-center gap-2">
 									<span>{incognitoMode ? getLinuxUsername(event.user) : event.user}</span>
 									{event.platform && (

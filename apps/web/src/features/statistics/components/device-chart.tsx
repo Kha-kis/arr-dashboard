@@ -1,25 +1,16 @@
 "use client";
 
-import { useMemo } from "react";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { useDeviceAnalytics } from "../../../hooks/api/usePlex";
-import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
-import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
+import type { DeviceAnalytics } from "@arr/shared";
 import { Smartphone } from "lucide-react";
-import { useIncognitoMode, getLinuxDevice } from "../../../lib/incognito";
+import { useMemo } from "react";
+import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getLinuxDevice, useIncognitoMode } from "../../../lib/incognito";
+import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 
 // ============================================================================
 // Donut Chart (consistent with codec-chart)
 // ============================================================================
-
-const DONUT_COLORS = [
-	SERVICE_GRADIENTS.plex.from,
-	SEMANTIC_COLORS.success.text,
-	SEMANTIC_COLORS.warning.text,
-	SEMANTIC_COLORS.info.text,
-	SERVICE_GRADIENTS.sonarr.from,
-	SERVICE_GRADIENTS.radarr.from,
-];
 
 interface DonutSegment {
 	label: string;
@@ -78,14 +69,27 @@ const DonutChart = ({ segments, size = 120 }: { segments: DonutSegment[]; size?:
 // ============================================================================
 
 interface DeviceChartProps {
-	days: number;
-	enabled: boolean;
+	data: DeviceAnalytics | undefined;
+	isLoading: boolean;
+	isError: boolean;
+	service?: "plex" | "jellyfin";
 }
 
-export const DeviceChart = ({ days, enabled }: DeviceChartProps) => {
+export const DeviceChart = ({ data, isLoading, isError, service = "plex" }: DeviceChartProps) => {
 	const { gradient } = useThemeGradient();
 	const [incognitoMode] = useIncognitoMode();
-	const { data, isLoading, isError } = useDeviceAnalytics(days, enabled);
+
+	const donutColors = useMemo(
+		() => [
+			SERVICE_GRADIENTS[service].from,
+			SEMANTIC_COLORS.success.text,
+			SEMANTIC_COLORS.warning.text,
+			SEMANTIC_COLORS.info.text,
+			SERVICE_GRADIENTS.sonarr.from,
+			SERVICE_GRADIENTS.radarr.from,
+		],
+		[service],
+	);
 
 	const platformSegments = useMemo((): DonutSegment[] => {
 		if (!data?.platforms) return [];
@@ -94,9 +98,9 @@ export const DeviceChart = ({ days, enabled }: DeviceChartProps) => {
 			.map((p: { platform: string; sessions: number }, i: number) => ({
 				label: incognitoMode ? "Linux" : p.platform,
 				value: p.sessions,
-				color: DONUT_COLORS[i % DONUT_COLORS.length]!,
+				color: donutColors[i % donutColors.length]!,
 			}));
-	}, [data, incognitoMode]);
+	}, [data, incognitoMode, donutColors]);
 
 	if (isLoading) {
 		return (
@@ -125,7 +129,7 @@ export const DeviceChart = ({ days, enabled }: DeviceChartProps) => {
 			<PremiumEmptyState
 				icon={Smartphone}
 				title="No Device Data Yet"
-				description="Device data requires Tautulli enrichment. Ensure Tautulli is connected and sessions are being captured."
+				description="Device data appears once active sessions are captured by the snapshot scheduler."
 			/>
 		);
 	}
