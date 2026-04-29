@@ -292,3 +292,11 @@ export type NamingDeployHistory = Prisma.NamingDeployHistoryModel
  * 
  */
 export type SeerrActionLog = Prisma.SeerrActionLogModel
+/**
+ * Model PlexLabelSyncRule
+ * Per-user rule mapping a Sonarr/Radarr tag to a Plex label.
+ * When the rule executes, all *arr items carrying `arrTagName` get
+ * `plexLabel` applied to their matching Plex item (matched by tmdbId
+ * against PlexCache).
+ */
+export type PlexLabelSyncRule = Prisma.PlexLabelSyncRuleModel

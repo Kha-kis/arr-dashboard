@@ -100,7 +100,8 @@ export const ModelName = {
   SessionSnapshot: 'SessionSnapshot',
   NamingConfig: 'NamingConfig',
   NamingDeployHistory: 'NamingDeployHistory',
-  SeerrActionLog: 'SeerrActionLog'
+  SeerrActionLog: 'SeerrActionLog',
+  PlexLabelSyncRule: 'PlexLabelSyncRule'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -1038,6 +1039,26 @@ export const SeerrActionLogScalarFieldEnum = {
 } as const
 
 export type SeerrActionLogScalarFieldEnum = (typeof SeerrActionLogScalarFieldEnum)[keyof typeof SeerrActionLogScalarFieldEnum]
+
+
+export const PlexLabelSyncRuleScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  name: 'name',
+  enabled: 'enabled',
+  arrService: 'arrService',
+  arrInstanceId: 'arrInstanceId',
+  arrTagName: 'arrTagName',
+  plexInstanceId: 'plexInstanceId',
+  plexLabel: 'plexLabel',
+  lastRunAt: 'lastRunAt',
+  lastRunStatus: 'lastRunStatus',
+  lastRunMessage: 'lastRunMessage',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type PlexLabelSyncRuleScalarFieldEnum = (typeof PlexLabelSyncRuleScalarFieldEnum)[keyof typeof PlexLabelSyncRuleScalarFieldEnum]
 
 
 export const SortOrder = {

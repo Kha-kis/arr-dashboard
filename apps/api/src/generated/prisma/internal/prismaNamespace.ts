@@ -80,12 +80,12 @@ export type PrismaVersion = {
 }
 
 /**
- * Prisma Client JS version: 7.7.0
- * Query Engine version: 75cbdc1eb7150937890ad5465d861175c6624711
+ * Prisma Client JS version: 7.8.0
+ * Query Engine version: 3c6e192761c0362d496ed980de936e2f3cebcd3a
  */
 export const prismaVersion: PrismaVersion = {
-  client: "7.7.0",
-  engine: "75cbdc1eb7150937890ad5465d861175c6624711"
+  client: "7.8.0",
+  engine: "3c6e192761c0362d496ed980de936e2f3cebcd3a"
 }
 
 /**
@@ -433,7 +433,8 @@ export const ModelName = {
   SessionSnapshot: 'SessionSnapshot',
   NamingConfig: 'NamingConfig',
   NamingDeployHistory: 'NamingDeployHistory',
-  SeerrActionLog: 'SeerrActionLog'
+  SeerrActionLog: 'SeerrActionLog',
+  PlexLabelSyncRule: 'PlexLabelSyncRule'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -449,7 +450,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog"
+    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "plexLabelSyncRule"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -4153,6 +4154,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    PlexLabelSyncRule: {
+      payload: Prisma.$PlexLabelSyncRulePayload<ExtArgs>
+      fields: Prisma.PlexLabelSyncRuleFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.PlexLabelSyncRuleFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexLabelSyncRulePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.PlexLabelSyncRuleFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexLabelSyncRulePayload>
+        }
+        findFirst: {
+          args: Prisma.PlexLabelSyncRuleFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexLabelSyncRulePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.PlexLabelSyncRuleFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexLabelSyncRulePayload>
+        }
+        findMany: {
+          args: Prisma.PlexLabelSyncRuleFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexLabelSyncRulePayload>[]
+        }
+        create: {
+          args: Prisma.PlexLabelSyncRuleCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexLabelSyncRulePayload>
+        }
+        createMany: {
+          args: Prisma.PlexLabelSyncRuleCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.PlexLabelSyncRuleCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexLabelSyncRulePayload>[]
+        }
+        delete: {
+          args: Prisma.PlexLabelSyncRuleDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexLabelSyncRulePayload>
+        }
+        update: {
+          args: Prisma.PlexLabelSyncRuleUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexLabelSyncRulePayload>
+        }
+        deleteMany: {
+          args: Prisma.PlexLabelSyncRuleDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.PlexLabelSyncRuleUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.PlexLabelSyncRuleUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexLabelSyncRulePayload>[]
+        }
+        upsert: {
+          args: Prisma.PlexLabelSyncRuleUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexLabelSyncRulePayload>
+        }
+        aggregate: {
+          args: Prisma.PlexLabelSyncRuleAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregatePlexLabelSyncRule>
+        }
+        groupBy: {
+          args: Prisma.PlexLabelSyncRuleGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.PlexLabelSyncRuleGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.PlexLabelSyncRuleCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.PlexLabelSyncRuleCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -5113,6 +5188,26 @@ export const SeerrActionLogScalarFieldEnum = {
 export type SeerrActionLogScalarFieldEnum = (typeof SeerrActionLogScalarFieldEnum)[keyof typeof SeerrActionLogScalarFieldEnum]
 
 
+export const PlexLabelSyncRuleScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  name: 'name',
+  enabled: 'enabled',
+  arrService: 'arrService',
+  arrInstanceId: 'arrInstanceId',
+  arrTagName: 'arrTagName',
+  plexInstanceId: 'plexInstanceId',
+  plexLabel: 'plexLabel',
+  lastRunAt: 'lastRunAt',
+  lastRunStatus: 'lastRunStatus',
+  lastRunMessage: 'lastRunMessage',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type PlexLabelSyncRuleScalarFieldEnum = (typeof PlexLabelSyncRuleScalarFieldEnum)[keyof typeof PlexLabelSyncRuleScalarFieldEnum]
+
+
 export const SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -5290,6 +5385,21 @@ export type PrismaClientOptions = ({
    * ```
    */
   comments?: runtime.SqlCommenterPlugin[]
+  /**
+   * Optional maximum size for the query plan cache. If not provided, a default size will be used.
+   * A value of `0` can be used to disable the cache entirely. A higher cache size can improve
+   * performance for applications that execute a large number of unique queries, while a smaller
+   * cache size can reduce memory usage.
+   * 
+   * @example
+   * ```
+   * const prisma = new PrismaClient({
+   *   adapter,
+   *   queryPlanCacheMaxSize: 100,
+   * })
+   * ```
+   */
+  queryPlanCacheMaxSize?: number
 }
 export type GlobalOmitConfig = {
   user?: Prisma.UserOmit
@@ -5342,6 +5452,7 @@ export type GlobalOmitConfig = {
   namingConfig?: Prisma.NamingConfigOmit
   namingDeployHistory?: Prisma.NamingDeployHistoryOmit
   seerrActionLog?: Prisma.SeerrActionLogOmit
+  plexLabelSyncRule?: Prisma.PlexLabelSyncRuleOmit
 }
 
 /* Types for Logging */

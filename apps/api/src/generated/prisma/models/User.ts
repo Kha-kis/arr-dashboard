@@ -269,6 +269,7 @@ export type UserWhereInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryListRelationFilter
   notificationRules?: Prisma.NotificationRuleListRelationFilter
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigListRelationFilter
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleListRelationFilter
 }
 
 export type UserOrderByWithRelationInput = {
@@ -295,6 +296,7 @@ export type UserOrderByWithRelationInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryOrderByRelationAggregateInput
   notificationRules?: Prisma.NotificationRuleOrderByRelationAggregateInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigOrderByRelationAggregateInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleOrderByRelationAggregateInput
 }
 
 export type UserWhereUniqueInput = Prisma.AtLeast<{
@@ -324,6 +326,7 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   namingDeployHistory?: Prisma.NamingDeployHistoryListRelationFilter
   notificationRules?: Prisma.NotificationRuleListRelationFilter
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigListRelationFilter
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleListRelationFilter
 }, "id" | "username">
 
 export type UserOrderByWithAggregationInput = {
@@ -384,6 +387,7 @@ export type UserCreateInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateInput = {
@@ -410,6 +414,7 @@ export type UserUncheckedCreateInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserUpdateInput = {
@@ -436,6 +441,7 @@ export type UserUpdateInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateInput = {
@@ -462,6 +468,7 @@ export type UserUncheckedUpdateInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateManyInput = {
@@ -765,6 +772,20 @@ export type UserUpdateOneRequiredWithoutNamingDeployHistoryNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutNamingDeployHistoryInput, Prisma.UserUpdateWithoutNamingDeployHistoryInput>, Prisma.UserUncheckedUpdateWithoutNamingDeployHistoryInput>
 }
 
+export type UserCreateNestedOneWithoutPlexLabelSyncRulesInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutPlexLabelSyncRulesInput, Prisma.UserUncheckedCreateWithoutPlexLabelSyncRulesInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutPlexLabelSyncRulesInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutPlexLabelSyncRulesNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutPlexLabelSyncRulesInput, Prisma.UserUncheckedCreateWithoutPlexLabelSyncRulesInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutPlexLabelSyncRulesInput
+  upsert?: Prisma.UserUpsertWithoutPlexLabelSyncRulesInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutPlexLabelSyncRulesInput, Prisma.UserUpdateWithoutPlexLabelSyncRulesInput>, Prisma.UserUncheckedUpdateWithoutPlexLabelSyncRulesInput>
+}
+
 export type UserCreateWithoutSessionsInput = {
   id?: string
   username: string
@@ -788,6 +809,7 @@ export type UserCreateWithoutSessionsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutSessionsInput = {
@@ -813,6 +835,7 @@ export type UserUncheckedCreateWithoutSessionsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutSessionsInput = {
@@ -854,6 +877,7 @@ export type UserUpdateWithoutSessionsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutSessionsInput = {
@@ -879,6 +903,7 @@ export type UserUncheckedUpdateWithoutSessionsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutServiceInstancesInput = {
@@ -904,6 +929,7 @@ export type UserCreateWithoutServiceInstancesInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutServiceInstancesInput = {
@@ -929,6 +955,7 @@ export type UserUncheckedCreateWithoutServiceInstancesInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutServiceInstancesInput = {
@@ -970,6 +997,7 @@ export type UserUpdateWithoutServiceInstancesInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutServiceInstancesInput = {
@@ -995,6 +1023,7 @@ export type UserUncheckedUpdateWithoutServiceInstancesInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutOidcAccountsInput = {
@@ -1020,6 +1049,7 @@ export type UserCreateWithoutOidcAccountsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutOidcAccountsInput = {
@@ -1045,6 +1075,7 @@ export type UserUncheckedCreateWithoutOidcAccountsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutOidcAccountsInput = {
@@ -1086,6 +1117,7 @@ export type UserUpdateWithoutOidcAccountsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutOidcAccountsInput = {
@@ -1111,6 +1143,7 @@ export type UserUncheckedUpdateWithoutOidcAccountsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutWebauthnCredentialsInput = {
@@ -1136,6 +1169,7 @@ export type UserCreateWithoutWebauthnCredentialsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutWebauthnCredentialsInput = {
@@ -1161,6 +1195,7 @@ export type UserUncheckedCreateWithoutWebauthnCredentialsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutWebauthnCredentialsInput = {
@@ -1202,6 +1237,7 @@ export type UserUpdateWithoutWebauthnCredentialsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutWebauthnCredentialsInput = {
@@ -1227,6 +1263,7 @@ export type UserUncheckedUpdateWithoutWebauthnCredentialsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutTrashSettingsInput = {
@@ -1252,6 +1289,7 @@ export type UserCreateWithoutTrashSettingsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutTrashSettingsInput = {
@@ -1277,6 +1315,7 @@ export type UserUncheckedCreateWithoutTrashSettingsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutTrashSettingsInput = {
@@ -1318,6 +1357,7 @@ export type UserUpdateWithoutTrashSettingsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutTrashSettingsInput = {
@@ -1343,6 +1383,7 @@ export type UserUncheckedUpdateWithoutTrashSettingsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutQualitySizeMappingsInput = {
@@ -1368,6 +1409,7 @@ export type UserCreateWithoutQualitySizeMappingsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutQualitySizeMappingsInput = {
@@ -1393,6 +1435,7 @@ export type UserUncheckedCreateWithoutQualitySizeMappingsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutQualitySizeMappingsInput = {
@@ -1434,6 +1477,7 @@ export type UserUpdateWithoutQualitySizeMappingsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutQualitySizeMappingsInput = {
@@ -1459,6 +1503,7 @@ export type UserUncheckedUpdateWithoutQualitySizeMappingsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutUserCustomFormatsInput = {
@@ -1484,6 +1529,7 @@ export type UserCreateWithoutUserCustomFormatsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutUserCustomFormatsInput = {
@@ -1509,6 +1555,7 @@ export type UserUncheckedCreateWithoutUserCustomFormatsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutUserCustomFormatsInput = {
@@ -1550,6 +1597,7 @@ export type UserUpdateWithoutUserCustomFormatsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutUserCustomFormatsInput = {
@@ -1575,6 +1623,7 @@ export type UserUncheckedUpdateWithoutUserCustomFormatsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutLibraryCleanupConfigsInput = {
@@ -1600,6 +1649,7 @@ export type UserCreateWithoutLibraryCleanupConfigsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutLibraryCleanupConfigsInput = {
@@ -1625,6 +1675,7 @@ export type UserUncheckedCreateWithoutLibraryCleanupConfigsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutLibraryCleanupConfigsInput = {
@@ -1666,6 +1717,7 @@ export type UserUpdateWithoutLibraryCleanupConfigsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutLibraryCleanupConfigsInput = {
@@ -1691,6 +1743,7 @@ export type UserUncheckedUpdateWithoutLibraryCleanupConfigsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutNotificationChannelsInput = {
@@ -1716,6 +1769,7 @@ export type UserCreateWithoutNotificationChannelsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutNotificationChannelsInput = {
@@ -1741,6 +1795,7 @@ export type UserUncheckedCreateWithoutNotificationChannelsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutNotificationChannelsInput = {
@@ -1782,6 +1837,7 @@ export type UserUpdateWithoutNotificationChannelsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutNotificationChannelsInput = {
@@ -1807,6 +1863,7 @@ export type UserUncheckedUpdateWithoutNotificationChannelsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutNotificationRulesInput = {
@@ -1832,6 +1889,7 @@ export type UserCreateWithoutNotificationRulesInput = {
   namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutNotificationRulesInput = {
@@ -1857,6 +1915,7 @@ export type UserUncheckedCreateWithoutNotificationRulesInput = {
   namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutNotificationRulesInput = {
@@ -1898,6 +1957,7 @@ export type UserUpdateWithoutNotificationRulesInput = {
   namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutNotificationRulesInput = {
@@ -1923,6 +1983,7 @@ export type UserUncheckedUpdateWithoutNotificationRulesInput = {
   namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutNotificationAggregationConfigsInput = {
@@ -1948,6 +2009,7 @@ export type UserCreateWithoutNotificationAggregationConfigsInput = {
   namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutNotificationAggregationConfigsInput = {
@@ -1973,6 +2035,7 @@ export type UserUncheckedCreateWithoutNotificationAggregationConfigsInput = {
   namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutNotificationAggregationConfigsInput = {
@@ -2014,6 +2077,7 @@ export type UserUpdateWithoutNotificationAggregationConfigsInput = {
   namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutNotificationAggregationConfigsInput = {
@@ -2039,6 +2103,7 @@ export type UserUncheckedUpdateWithoutNotificationAggregationConfigsInput = {
   namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutNamingConfigsInput = {
@@ -2064,6 +2129,7 @@ export type UserCreateWithoutNamingConfigsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutNamingConfigsInput = {
@@ -2089,6 +2155,7 @@ export type UserUncheckedCreateWithoutNamingConfigsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutNamingConfigsInput = {
@@ -2130,6 +2197,7 @@ export type UserUpdateWithoutNamingConfigsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutNamingConfigsInput = {
@@ -2155,6 +2223,7 @@ export type UserUncheckedUpdateWithoutNamingConfigsInput = {
   namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutNamingDeployHistoryInput = {
@@ -2180,6 +2249,7 @@ export type UserCreateWithoutNamingDeployHistoryInput = {
   namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutNamingDeployHistoryInput = {
@@ -2205,6 +2275,7 @@ export type UserUncheckedCreateWithoutNamingDeployHistoryInput = {
   namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutNamingDeployHistoryInput = {
@@ -2246,6 +2317,7 @@ export type UserUpdateWithoutNamingDeployHistoryInput = {
   namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutNamingDeployHistoryInput = {
@@ -2271,6 +2343,127 @@ export type UserUncheckedUpdateWithoutNamingDeployHistoryInput = {
   namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  plexLabelSyncRules?: Prisma.PlexLabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+}
+
+export type UserCreateWithoutPlexLabelSyncRulesInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutPlexLabelSyncRulesInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutPlexLabelSyncRulesInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutPlexLabelSyncRulesInput, Prisma.UserUncheckedCreateWithoutPlexLabelSyncRulesInput>
+}
+
+export type UserUpsertWithoutPlexLabelSyncRulesInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutPlexLabelSyncRulesInput, Prisma.UserUncheckedUpdateWithoutPlexLabelSyncRulesInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutPlexLabelSyncRulesInput, Prisma.UserUncheckedCreateWithoutPlexLabelSyncRulesInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutPlexLabelSyncRulesInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutPlexLabelSyncRulesInput, Prisma.UserUncheckedUpdateWithoutPlexLabelSyncRulesInput>
+}
+
+export type UserUpdateWithoutPlexLabelSyncRulesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutPlexLabelSyncRulesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
 }
 
 
@@ -2291,6 +2484,7 @@ export type UserCountOutputType = {
   namingDeployHistory: number
   notificationRules: number
   notificationAggregationConfigs: number
+  plexLabelSyncRules: number
 }
 
 export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -2306,6 +2500,7 @@ export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.I
   namingDeployHistory?: boolean | UserCountOutputTypeCountNamingDeployHistoryArgs
   notificationRules?: boolean | UserCountOutputTypeCountNotificationRulesArgs
   notificationAggregationConfigs?: boolean | UserCountOutputTypeCountNotificationAggregationConfigsArgs
+  plexLabelSyncRules?: boolean | UserCountOutputTypeCountPlexLabelSyncRulesArgs
 }
 
 /**
@@ -2402,6 +2597,13 @@ export type UserCountOutputTypeCountNotificationAggregationConfigsArgs<ExtArgs e
   where?: Prisma.NotificationAggregationConfigWhereInput
 }
 
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountPlexLabelSyncRulesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.PlexLabelSyncRuleWhereInput
+}
+
 
 export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -2427,6 +2629,7 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   namingDeployHistory?: boolean | Prisma.User$namingDeployHistoryArgs<ExtArgs>
   notificationRules?: boolean | Prisma.User$notificationRulesArgs<ExtArgs>
   notificationAggregationConfigs?: boolean | Prisma.User$notificationAggregationConfigsArgs<ExtArgs>
+  plexLabelSyncRules?: boolean | Prisma.User$plexLabelSyncRulesArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["user"]>
 
@@ -2484,6 +2687,7 @@ export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
   namingDeployHistory?: boolean | Prisma.User$namingDeployHistoryArgs<ExtArgs>
   notificationRules?: boolean | Prisma.User$notificationRulesArgs<ExtArgs>
   notificationAggregationConfigs?: boolean | Prisma.User$notificationAggregationConfigsArgs<ExtArgs>
+  plexLabelSyncRules?: boolean | Prisma.User$plexLabelSyncRulesArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type UserIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
@@ -2505,6 +2709,7 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     namingDeployHistory: Prisma.$NamingDeployHistoryPayload<ExtArgs>[]
     notificationRules: Prisma.$NotificationRulePayload<ExtArgs>[]
     notificationAggregationConfigs: Prisma.$NotificationAggregationConfigPayload<ExtArgs>[]
+    plexLabelSyncRules: Prisma.$PlexLabelSyncRulePayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -2924,6 +3129,7 @@ export interface Prisma__UserClient<T, Null = never, ExtArgs extends runtime.Typ
   namingDeployHistory<T extends Prisma.User$namingDeployHistoryArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$namingDeployHistoryArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$NamingDeployHistoryPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   notificationRules<T extends Prisma.User$notificationRulesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$notificationRulesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$NotificationRulePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   notificationAggregationConfigs<T extends Prisma.User$notificationAggregationConfigsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$notificationAggregationConfigsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$NotificationAggregationConfigPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  plexLabelSyncRules<T extends Prisma.User$plexLabelSyncRulesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$plexLabelSyncRulesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$PlexLabelSyncRulePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -3658,6 +3864,30 @@ export type User$notificationAggregationConfigsArgs<ExtArgs extends runtime.Type
   take?: number
   skip?: number
   distinct?: Prisma.NotificationAggregationConfigScalarFieldEnum | Prisma.NotificationAggregationConfigScalarFieldEnum[]
+}
+
+/**
+ * User.plexLabelSyncRules
+ */
+export type User$plexLabelSyncRulesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the PlexLabelSyncRule
+   */
+  select?: Prisma.PlexLabelSyncRuleSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the PlexLabelSyncRule
+   */
+  omit?: Prisma.PlexLabelSyncRuleOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.PlexLabelSyncRuleInclude<ExtArgs> | null
+  where?: Prisma.PlexLabelSyncRuleWhereInput
+  orderBy?: Prisma.PlexLabelSyncRuleOrderByWithRelationInput | Prisma.PlexLabelSyncRuleOrderByWithRelationInput[]
+  cursor?: Prisma.PlexLabelSyncRuleWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.PlexLabelSyncRuleScalarFieldEnum | Prisma.PlexLabelSyncRuleScalarFieldEnum[]
 }
 
 /**
