@@ -23,6 +23,8 @@ import type {
 	PlexTagUpdateRequest,
 	QualityScoreAnalytics,
 	SeriesProgressResponse,
+	TopMediaResponse,
+	TopMediaType,
 	TranscodeAnalytics,
 	UserAnalytics,
 	UserEpisodeCompletion,
@@ -31,8 +33,6 @@ import type {
 } from "@arr/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { POLLING_REALTIME } from "../../lib/polling-intervals";
-import { useEnrichableItems } from "../useEnrichableItems";
 import {
 	fetchBandwidthAnalytics,
 	fetchBandwidthForecast,
@@ -51,6 +51,7 @@ import {
 	fetchQualityScore,
 	fetchRecentlyAdded,
 	fetchSeriesProgress,
+	fetchTopMedia,
 	fetchTranscodeAnalytics,
 	fetchUserAnalytics,
 	fetchUserEpisodeCompletion,
@@ -60,7 +61,9 @@ import {
 	triggerPlexScan,
 	updatePlexTag,
 } from "../../lib/api-client/plex";
+import { POLLING_REALTIME } from "../../lib/polling-intervals";
 import { plexKeys } from "../../lib/query-keys";
+import { useEnrichableItems } from "../useEnrichableItems";
 
 // ============================================================================
 // Watch Enrichment (F1)
@@ -390,6 +393,19 @@ export const useBandwidthForecast = (days = 30, enabled = true) => {
 	return useQuery<BandwidthForecast>({
 		queryKey: plexKeys.bandwidthForecast(days),
 		queryFn: () => fetchBandwidthForecast(days),
+		staleTime: 5 * 60_000,
+		enabled,
+	});
+};
+
+// ============================================================================
+// Top Media Leaderboard (Tier 1)
+// ============================================================================
+
+export const useTopMedia = (mediaType: TopMediaType, days = 30, limit = 10, enabled = true) => {
+	return useQuery<TopMediaResponse>({
+		queryKey: plexKeys.topMedia(mediaType, days, limit),
+		queryFn: () => fetchTopMedia(mediaType, days, limit),
 		staleTime: 5 * 60_000,
 		enabled,
 	});

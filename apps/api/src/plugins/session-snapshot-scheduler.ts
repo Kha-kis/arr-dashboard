@@ -24,6 +24,7 @@ import { createTautulliClient } from "../lib/tautulli/tautulli-client.js";
 import {
 	buildTautulliSessionMap,
 	enrichSessionsWithTautulli,
+	normalizeJellyfinMediaType,
 } from "./lib/session-enrichment-helpers.js";
 import {
 	classifySessionDecisions,
@@ -441,6 +442,8 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 							return {
 								user: s.userName ?? "Unknown",
 								title: s.nowPlayingItem?.name ?? "Unknown",
+								grandparentTitle: s.nowPlayingItem?.seriesName,
+								mediaType: normalizeJellyfinMediaType(s.nowPlayingItem?.type),
 								videoDecision:
 									s.transcodingInfo && !s.transcodingInfo.isVideoDirect
 										? "transcode"
@@ -532,13 +535,8 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 		// observes a failed tick.
 		const runSnapshotTick = () =>
 			app.schedulerRegistry.track(JOB_ID.sessionSnapshot, async () => {
-				const results = await Promise.allSettled([
-					captureSnapshots(),
-					captureJellyfinSnapshots(),
-				]);
-				const failures = results.filter(
-					(r): r is PromiseRejectedResult => r.status === "rejected",
-				);
+				const results = await Promise.allSettled([captureSnapshots(), captureJellyfinSnapshots()]);
+				const failures = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
 				if (failures.length > 0) {
 					throw new AggregateError(
 						failures.map((f) => f.reason),

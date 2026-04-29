@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { TautulliSessionItem } from "../../lib/tautulli/tautulli-client.js";
 import {
-	type PlexSessionInput,
 	buildTautulliSessionMap,
 	enrichSessionsWithTautulli,
+	type PlexSessionInput,
 } from "../lib/session-enrichment-helpers.js";
 
 // ============================================================================
@@ -14,6 +14,7 @@ function plexSession(overrides: Partial<PlexSessionInput> = {}): PlexSessionInpu
 	return {
 		user: { title: "alice" },
 		title: "Test Movie",
+		type: "movie",
 		ratingKey: "12345",
 		videoDecision: "direct play",
 		bandwidth: 5000,
@@ -64,10 +65,7 @@ describe("buildTautulliSessionMap", () => {
 	});
 
 	it("skips sessions with empty rating_key", () => {
-		const sessions = [
-			tautulliSession({ rating_key: "" }),
-			tautulliSession({ rating_key: "100" }),
-		];
+		const sessions = [tautulliSession({ rating_key: "" }), tautulliSession({ rating_key: "100" })];
 		const map = buildTautulliSessionMap(sessions);
 		expect(map.size).toBe(1);
 	});
@@ -97,6 +95,8 @@ describe("enrichSessionsWithTautulli", () => {
 		expect(result[0]).toEqual({
 			user: "alice",
 			title: "Test Movie",
+			grandparentTitle: undefined,
+			mediaType: "movie",
 			videoDecision: "direct play",
 			bandwidth: 5000,
 			state: "playing",
@@ -111,9 +111,7 @@ describe("enrichSessionsWithTautulli", () => {
 
 	it("returns null fields when no Tautulli match found", () => {
 		const plex = [plexSession({ ratingKey: "999" })];
-		const map = buildTautulliSessionMap([
-			tautulliSession({ rating_key: "100" }),
-		]);
+		const map = buildTautulliSessionMap([tautulliSession({ rating_key: "100" })]);
 
 		const result = enrichSessionsWithTautulli(plex, map);
 		expect(result[0]?.audioDecision).toBeNull();
@@ -153,9 +151,7 @@ describe("enrichSessionsWithTautulli", () => {
 	});
 
 	it("formats grandparentTitle correctly", () => {
-		const plex = [
-			plexSession({ grandparentTitle: "Breaking Bad", title: "Pilot" }),
-		];
+		const plex = [plexSession({ grandparentTitle: "Breaking Bad", title: "Pilot" })];
 		const map = new Map<string, TautulliSessionItem>();
 
 		const result = enrichSessionsWithTautulli(plex, map);

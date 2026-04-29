@@ -8,6 +8,7 @@ import {
 	useJellyfinCodecAnalytics,
 	useJellyfinDeviceAnalytics,
 	useJellyfinQualityScore,
+	useJellyfinTopMedia,
 	useJellyfinTranscodeAnalytics,
 	useJellyfinUserAnalytics,
 	useJellyfinWatchHistory,
@@ -18,6 +19,7 @@ import { CodecChart } from "./codec-chart";
 import { DeviceChart } from "./device-chart";
 import { ForecastChart } from "./forecast-chart";
 import { QualityScoreChart } from "./quality-score-chart";
+import { TopMediaChart } from "./top-media-chart";
 import { TranscodeChart } from "./transcode-chart";
 import { UserAnalyticsChart } from "./user-analytics-chart";
 import { WatchHistoryWidget } from "./watch-history-widget";
@@ -39,6 +41,9 @@ export const JellyfinTab = () => {
 	const deviceQuery = useJellyfinDeviceAnalytics(timeRange);
 	const qualityQuery = useJellyfinQualityScore(timeRange);
 	const forecastQuery = useJellyfinBandwidthForecast(timeRange);
+	const topMoviesQuery = useJellyfinTopMedia("movie", timeRange);
+	const topShowsQuery = useJellyfinTopMedia("series", timeRange);
+	const topMusicQuery = useJellyfinTopMedia("music", timeRange);
 
 	return (
 		<div className="space-y-6 animate-in fade-in duration-300">
@@ -74,6 +79,29 @@ export const JellyfinTab = () => {
 					streams are active. Data accumulates over time as users watch.
 				</p>
 			</div>
+
+			{/* Top Media Leaderboards (replaces Tautulli home-stats) */}
+			<TopMediaChart
+				data={topMoviesQuery.data}
+				isLoading={topMoviesQuery.isLoading}
+				isError={topMoviesQuery.isError}
+				mediaType="movie"
+				service="jellyfin"
+			/>
+			<TopMediaChart
+				data={topShowsQuery.data}
+				isLoading={topShowsQuery.isLoading}
+				isError={topShowsQuery.isError}
+				mediaType="series"
+				service="jellyfin"
+			/>
+			<TopMediaChart
+				data={topMusicQuery.data}
+				isLoading={topMusicQuery.isLoading}
+				isError={topMusicQuery.isError}
+				mediaType="music"
+				service="jellyfin"
+			/>
 
 			{/* Session Snapshot Analytics */}
 			<TranscodeChart
