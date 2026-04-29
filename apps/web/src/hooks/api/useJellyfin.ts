@@ -14,6 +14,7 @@ import type {
 	JellyfinNowPlayingResponse,
 	LibraryItem,
 	MostConcurrentResponse,
+	PlaysByDateResponse,
 	QualityScoreAnalytics,
 	SeriesProgressResponse,
 	TopMediaResponse,
@@ -46,6 +47,7 @@ import {
 	fetchJellyfinMostConcurrent,
 	fetchJellyfinNowPlaying,
 	fetchJellyfinOnDeck,
+	fetchJellyfinPlaysByDate,
 	fetchJellyfinPopularMedia,
 	fetchJellyfinQualityScore,
 	fetchJellyfinRecentlyAdded,
@@ -340,6 +342,15 @@ export const useJellyfinMostConcurrent = (days = 30, limit = 5, enabled = true) 
 	return useQuery<MostConcurrentResponse>({
 		queryKey: jellyfinKeys.mostConcurrent(days, limit),
 		queryFn: () => fetchJellyfinMostConcurrent(days, limit),
+		staleTime: 5 * 60_000,
+		enabled,
+	});
+};
+
+export const useJellyfinPlaysByDate = (days = 30, enabled = true) => {
+	return useQuery<PlaysByDateResponse>({
+		queryKey: jellyfinKeys.playsByDate(days),
+		queryFn: () => fetchJellyfinPlaysByDate(days),
 		staleTime: 5 * 60_000,
 		enabled,
 	});

@@ -403,6 +403,23 @@ export interface TopMediaResponse {
 }
 
 // ============================================================================
+// Plays By Date (Tier 1) — replaces Tautulli cmd=get_plays_by_date
+// ============================================================================
+
+export interface PlaysByDateSeries {
+	/** Display name — "Movies" | "TV" | "Music". Matches the legacy Tautulli shape. */
+	name: string;
+	/** One entry per date in `categories`, in the same order. */
+	data: number[];
+}
+
+export interface PlaysByDateResponse {
+	/** Date strings (YYYY-MM-DD) covering the full window, ascending. */
+	categories: string[];
+	series: PlaysByDateSeries[];
+}
+
+// ============================================================================
 // Most Concurrent (Tier 1) — replaces Tautulli home-stats most_concurrent
 // ============================================================================
 
