@@ -4,6 +4,19 @@ Step-by-step checklist for publishing a new version of Arr Dashboard.
 
 ## Pre-Release
 
+### 0. Determine Release Scope
+
+Before bumping any version numbers, decide *what* this release contains.
+
+- [ ] List PRs merged since the last tag: `gh pr list --state merged --search "merged:>=$(git log -1 --format=%aI <last-tag>)"`
+- [ ] Verify each PR carries exactly one `release:*` label (see [Release Bucketing](#release-bucketing) below)
+  - Apply labels manually for any unbucketed PRs (notably Dependabot/Renovate, which don't self-label)
+- [ ] Decide which buckets are in scope for this release:
+  - Patch release → `release:patch-now` + (optionally) `release:patch-batch`
+  - Minor release → all of the above + `release:next-minor`
+  - `release:defer` is never in scope without re-labeling first
+- [ ] If nothing is `release:patch-now` and the `release:patch-batch` queue is small, prefer to wait
+
 ### 1. Version & Documentation
 
 - [ ] Bump `version` in root `package.json`
@@ -107,6 +120,28 @@ root package.json ("X.Y.Z")
         ├── GET /api/system/info → { version, commit, database, runtime }
         └── Startup log → "arr-dashboard vX.Y.Z started (commit: abc1234)"
 ```
+
+## Release Bucketing
+
+Merging to `main` does not imply "release now." Every PR should carry exactly
+one `release:*` label at merge time so it is clear what the next tag should
+contain:
+
+| Label | Meaning |
+|---|---|
+| `release:patch-now` | Urgent fix / regression — cut a patch release as soon as this merges. |
+| `release:patch-batch` | Legitimate patch material, but fine to batch with other `patch-batch` PRs. |
+| `release:next-minor` | Feature or non-urgent change — hold until the next minor version. |
+| `release:defer` | Merged but intentionally parked (e.g. behind a flag, awaiting a dependency). Revisit before any release. |
+
+These labels are **forward-looking** (set at merge time to drive future scope
+decisions). They are independent of the existing `vX.Y.Z` "Released in …"
+labels, which are applied *after* a release to record what shipped — keep
+both. When preparing a release, see [Step 0: Determine Release Scope](#0-determine-release-scope).
+
+The `/release-ops` slash command (`.claude/commands/release-ops.md`) automates
+the audit-and-classify pass and produces a release-draft summary; review its
+proposed labels before applying.
 
 ## Hotfix Process
 
