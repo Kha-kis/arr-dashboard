@@ -5,6 +5,35 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.16.2] - 2026-04-28
+
+**Security patch release.** Closes 8 open code-scanning alerts (1 HIGH-severity Fastify body-schema bypass + 4 medium-severity DOMPurify sanitization issues + 1 GitHub Actions shell-injection vector + 2 transitive hono/postcss vulnerabilities) and 6 Dependabot security advisories. Also adds a small TRaSH Guides feature (migration notices for upstream CF-group restructures) and removes a class of spurious diagnostic warnings. No schema or API breaking changes.
+
+### Fixed
+
+- **Fastify body schema validation bypass via leading-space `Content-Type`** — CVE-2026-33806 (HIGH). Fastify 5.3.2–5.8.4 mishandled `Content-Type` headers with leading whitespace, allowing requests to skip body schema validation. Bumped to fastify 5.8.5 via the production-dependencies group (#363).
+- **DOMPurify sanitization bypasses (4 CVEs)** — CVE-2026-41238/41239/41240 + GHSA-39q2-94rc-95cp covered `SAFE_FOR_TEMPLATES` bypass in `RETURN_DOM` mode, `FORBID_TAGS` bypass via function-form `ADD_TAGS`, prototype pollution → XSS via `CUSTOM_ELEMENT_HANDLING` fallback, and `ADD_TAGS` short-circuit evaluation. Bumped to dompurify 3.4.1 via the production-dependencies group (#363).
+- **Hono JSX HTML injection in SSR (transitive)** — GHSA-458j-xx4x-4375. Pulled in via `prisma@7.8.0` → `@prisma/dev` → hono. The existing pnpm override pinned hono to the vulnerable 4.12.12; updated the override to require ≥4.12.14 (#369).
+- **postcss CVE-2026-41305 (transitive)** — Pulled in by `next@16.2.4`, which hardcodes postcss 8.4.31 in its bundled tooling — bumping Next alone wouldn't reach it. Added a `pnpm.overrides` entry pinning all sub-8.5.10 resolutions to 8.5.10 (#369).
+- **GitHub Actions shell-injection vector in release workflow** — Semgrep flagged `${{ github.ref_name }}` used directly inside a `run:` block in `docker-combined.yml`. A maliciously crafted tag could inject arbitrary commands into the runner with access to GHCR/Docker Hub credentials. Refactored both the `Extract version metadata` and `Determine scan tag` steps to read git-context values via `env:` blocks instead of inline `${{...}}` interpolation (#368).
+- **Spurious schema-drift warnings on per-file TRaSH fetch** — When the GitHub fetcher iterates files individually (one cf-group, one custom format, etc.), it was recording a schema fingerprint per item — and sparse upstream fields (present on some items but not others) showed up as "missing fields" drift warnings on every poll. Added a `skipFingerprint` option for per-item validation calls plus a single `recordSchemaFingerprint` call after each loop, so the union-of-fields semantics work correctly (#365).
+
+### Added
+
+- **TRaSH Guides migration notices** — When an upstream CF-group is restructured (e.g., the recent split of `[Optional] Miscellaneous` → `[Unwanted] Unwanted Formats`), the template diff modal now surfaces an informational notice explaining what changed and what the user should do. Notices fire on both the live diff path and the historical-changelog reconstruction path, and are suppressed once both the kept and introduced groups are present in the user's template — so the notice doesn't nag once the migration is complete. Reusable registry mechanism: future upstream restructures only need a registry entry, no code (#364).
+- **`trash_regex` declared in TRaSH custom-format schema** — Long-standing upstream field on ~20 custom formats that was passing through `z.looseObject()` unmodeled. Declaring it as `z.string().optional()` makes the schema match upstream reality and gives consumers proper typing if a future surface needs the regex-documentation URL (#367).
+
+### Changed
+
+- **Removed redundant `console.*` calls in TRaSH Guides web surface** — 22 `console.log/warn/error` calls cleaned up across 13 files (template-list, scheduler-status-dashboard, quality-profile-importer, etc.). Browser-facing code shouldn't ship developer logs by default. Intentional diagnostic calls in `useSync`, `sync-validation-modal`, `pattern-tester`, and `useCFConfiguration` were preserved (#366).
+- **Lint hygiene: 9 unused-imports warnings cleared in trash-guides surface** — Pre-existing `catch (err)` parameters that were never referenced in the catch body have been underscore-prefixed (`_err`) per ESLint convention; ESLint config extended with `caughtErrors: "all"` + `caughtErrorsIgnorePattern: "^_"` so future catch-param hygiene is enforced consistently. No runtime change (#371).
+
+### Dependencies
+
+- **Production dependencies (23 packages)** — `knip` 6.4.1→6.7.0, `@prisma/*` 7.7→7.8 (client/cli/adapter-better-sqlite3/adapter-pg), `nodemailer` 8.0.5→8.0.6, `@tanstack/react-query` 5.99→5.100.5, `lucide-react` 1.8→1.11, `next` 16.2.3→16.2.4, `react-hook-form` 7.72→7.74, `postcss` / `tailwindcss` 4.2.2→4.2.4, `isomorphic-dompurify` 3.8→3.10, `@typescript-eslint/*` 8.58.2→8.59, `eslint` 10.2.0→10.2.1, `eslint-plugin-react-hooks` 7.0.1→7.1.1, `jsdom` 29.0→29.1 (#363).
+- **Dev dependencies (3 packages)** — `@biomejs/biome` 2.4.11→2.4.13, `typescript`, `vitest` (#362).
+- **Trivy scan timeout bumped 5m → 20m** — Default 5-minute timeout consistently failed analyzing `@prisma/config@7.8.0/package.json` after the Prisma 7.8 bump. Applied to both `docker-dev.yml` (post-CI scan) and `docker-combined.yml` (release workflow) so a release tag can't fail at the security gate (#370).
+
 ## [2.16.1] - 2026-04-16
 
 **Patch release — reverse-proxy link correctness and calendar layout stability.**
