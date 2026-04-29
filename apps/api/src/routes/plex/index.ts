@@ -16,6 +16,7 @@ import { registerEpisodeRoutes } from "./episode-routes.js";
 import { registerForecastRoutes } from "./forecast-routes.js";
 import { registerIdentityRoutes } from "./identity-routes.js";
 import { registerImageProxyRoutes } from "./image-proxy-routes.js";
+import { registerLastWatchedRoutes } from "./last-watched-routes.js";
 import { registerNowPlayingRoutes } from "./now-playing-routes.js";
 import { registerOAuthRoutes } from "./oauth-routes.js";
 import { registerOnDeckRoutes } from "./on-deck-routes.js";
@@ -57,6 +58,7 @@ export async function registerPlexRoutes(app: FastifyInstance, _opts: FastifyPlu
 	app.register(registerForecastRoutes, { prefix: "/analytics/forecast" });
 	app.register(registerTopMediaRoutes, { prefix: "/analytics/top-media" });
 	app.register(registerPopularMediaRoutes, { prefix: "/analytics/popular-media" });
+	app.register(registerLastWatchedRoutes, { prefix: "/analytics/last-watched" });
 	app.register(registerImageProxyRoutes, { prefix: "/thumb" });
 	app.register(registerOAuthRoutes, { prefix: "/oauth" });
 }

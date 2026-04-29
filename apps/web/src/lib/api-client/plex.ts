@@ -294,6 +294,17 @@ export async function fetchPopularMedia(
 	);
 }
 
+/** Fetch the most-recently-watched titles (deduped) from SessionSnapshot. */
+export async function fetchLastWatched(
+	mediaType: TopMediaType,
+	days = 30,
+	limit = 10,
+): Promise<TopMediaResponse> {
+	return apiRequest(
+		`/api/plex/analytics/last-watched?mediaType=${mediaType}&days=${days}&limit=${limit}`,
+	);
+}
+
 // ============================================================================
 // OAuth Setup Assistance
 // ============================================================================
