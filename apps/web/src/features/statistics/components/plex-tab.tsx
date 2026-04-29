@@ -15,20 +15,36 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { PremiumSkeleton } from "../../../components/layout";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import {
+	useBandwidthAnalytics,
+	useBandwidthForecast,
+	useCodecAnalytics,
+	useDeviceAnalytics,
+	useQualityScore,
+	useTranscodeAnalytics,
+	useUserAnalytics,
+	useWatchHistory,
+} from "../../../hooks/api/usePlex";
 import { useTautulliPlaysByDate, useTautulliStats } from "../../../hooks/api/useTautulli";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import {
+	getLinuxDevice,
+	getLinuxIsoName,
+	getLinuxSectionName,
+	getLinuxUsername,
+	useIncognitoMode,
+} from "../../../lib/incognito";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
-import { useIncognitoMode, getLinuxUsername, getLinuxIsoName, getLinuxSectionName, getLinuxDevice } from "../../../lib/incognito";
-import { Sparkline, MiniStatCard } from "./chart-primitives";
-import { TranscodeChart } from "./transcode-chart";
 import { BandwidthChart } from "./bandwidth-chart";
+import { MiniStatCard, Sparkline } from "./chart-primitives";
+import { CodecChart } from "./codec-chart";
+import { CollectionStatsChart } from "./collection-stats-chart";
+import { DeviceChart } from "./device-chart";
+import { ForecastChart } from "./forecast-chart";
+import { QualityScoreChart } from "./quality-score-chart";
+import { TranscodeChart } from "./transcode-chart";
 import { UserAnalyticsChart } from "./user-analytics-chart";
 import { WatchHistoryWidget } from "./watch-history-widget";
-import { CodecChart } from "./codec-chart";
-import { DeviceChart } from "./device-chart";
-import { CollectionStatsChart } from "./collection-stats-chart";
-import { QualityScoreChart } from "./quality-score-chart";
-import { ForecastChart } from "./forecast-chart";
 
 // ============================================================================
 // Bar Chart Component
@@ -221,16 +237,16 @@ export const PlexTab = () => {
 					color: style.color,
 					items: s.rows.map((r: TautulliHomeStatRow) => {
 						const isUser = s.statId.includes("user");
-						const rawLabel = isPlatform ? (r.platform || r.title) : r.title;
+						const rawLabel = isPlatform ? r.platform || r.title : r.title;
 						const anonLabel = isPlatform
 							? getLinuxDevice(rawLabel)
 							: isUser
 								? getLinuxUsername(rawLabel)
 								: getLinuxIsoName(rawLabel);
 						return {
-						label: incognitoMode ? anonLabel : rawLabel,
-						value: r.totalPlays,
-						secondaryLabel: r.totalDuration > 0 ? formatDuration(r.totalDuration) : undefined,
+							label: incognitoMode ? anonLabel : rawLabel,
+							value: r.totalPlays,
+							secondaryLabel: r.totalDuration > 0 ? formatDuration(r.totalDuration) : undefined,
 						};
 					}),
 				};
@@ -239,6 +255,18 @@ export const PlexTab = () => {
 
 	const isLoading = statsQuery.isLoading || playsQuery.isLoading;
 	const isError = statsQuery.isError && playsQuery.isError;
+
+	// Session-snapshot analytics — fetch in parallel with Tautulli stats. These
+	// hooks read from SessionSnapshot rows scoped to the user's Plex instances,
+	// so they are independent of Tautulli availability.
+	const transcodeQuery = useTranscodeAnalytics(timeRange);
+	const bandwidthQuery = useBandwidthAnalytics(timeRange);
+	const userAnalyticsQuery = useUserAnalytics(timeRange);
+	const watchHistoryQuery = useWatchHistory(timeRange, 20);
+	const codecQuery = useCodecAnalytics(timeRange);
+	const deviceQuery = useDeviceAnalytics(timeRange);
+	const qualityQuery = useQualityScore(timeRange);
+	const forecastQuery = useBandwidthForecast(timeRange);
 
 	if (isLoading) {
 		return (
@@ -343,10 +371,7 @@ export const PlexTab = () => {
 					{perMediaSeries.map((series) => {
 						const Icon = series.icon;
 						return (
-							<div
-								key={series.name}
-								className="rounded-xl border border-border/30 bg-card/30 p-4"
-							>
+							<div key={series.name} className="rounded-xl border border-border/30 bg-card/30 p-4">
 								<div className="flex items-center justify-between mb-3">
 									<h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
 										<Icon className="h-4 w-4" style={{ color: series.color }} />
@@ -432,25 +457,57 @@ export const PlexTab = () => {
 			)}
 
 			{/* Session Snapshot Analytics */}
-			<TranscodeChart days={timeRange} enabled={!isLoading} />
-			<BandwidthChart days={timeRange} enabled={!isLoading} />
+			<TranscodeChart
+				data={transcodeQuery.data}
+				isLoading={transcodeQuery.isLoading}
+				isError={transcodeQuery.isError}
+			/>
+			<BandwidthChart
+				data={bandwidthQuery.data}
+				isLoading={bandwidthQuery.isLoading}
+				isError={bandwidthQuery.isError}
+			/>
 
 			{/* Tier 1: User Analytics + Watch History */}
-			<UserAnalyticsChart days={timeRange} enabled={!isLoading} />
-			<WatchHistoryWidget days={timeRange} enabled={!isLoading} />
+			<UserAnalyticsChart
+				data={userAnalyticsQuery.data}
+				isLoading={userAnalyticsQuery.isLoading}
+				isError={userAnalyticsQuery.isError}
+			/>
+			<WatchHistoryWidget
+				data={watchHistoryQuery.data}
+				isLoading={watchHistoryQuery.isLoading}
+				isError={watchHistoryQuery.isError}
+			/>
 
 			{/* Tier 1/2: Codec + Device Analytics */}
 			<div className="grid gap-6 md:grid-cols-2">
-				<CodecChart days={timeRange} enabled={!isLoading} />
-				<DeviceChart days={timeRange} enabled={!isLoading} />
+				<CodecChart
+					data={codecQuery.data}
+					isLoading={codecQuery.isLoading}
+					isError={codecQuery.isError}
+				/>
+				<DeviceChart
+					data={deviceQuery.data}
+					isLoading={deviceQuery.isLoading}
+					isError={deviceQuery.isError}
+				/>
 			</div>
 
 			{/* Tier 2: Collection Stats */}
 			<CollectionStatsChart enabled={!isLoading} />
 
 			{/* Tier 3: Quality Score + Forecast */}
-			<QualityScoreChart days={timeRange} enabled={!isLoading} />
-			<ForecastChart days={timeRange} enabled={!isLoading} />
+			<QualityScoreChart
+				data={qualityQuery.data}
+				isLoading={qualityQuery.isLoading}
+				isError={qualityQuery.isError}
+			/>
+			<ForecastChart
+				data={forecastQuery.data}
+				isLoading={forecastQuery.isLoading}
+				isError={forecastQuery.isError}
+			/>
 		</div>
 	);
 };

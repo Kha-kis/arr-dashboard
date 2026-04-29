@@ -1,12 +1,12 @@
 "use client";
 
-import { useMemo } from "react";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { useBandwidthAnalytics } from "../../../hooks/api/usePlex";
-import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
-import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
+import type { BandwidthAnalytics } from "@arr/shared";
 import { Activity, ArrowUpDown, Users, Wifi } from "lucide-react";
-import { Sparkline, MiniStatCard, formatBandwidth } from "./chart-primitives";
+import { useMemo } from "react";
+import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { formatBandwidth, MiniStatCard, Sparkline } from "./chart-primitives";
 
 // LAN/WAN colors — Tautulli-enriched data distinction
 const LAN_COLOR = SEMANTIC_COLORS.success.from;
@@ -17,13 +17,21 @@ const WAN_COLOR = SEMANTIC_COLORS.info.from;
 // ============================================================================
 
 interface BandwidthChartProps {
-	days: number;
-	enabled: boolean;
+	data: BandwidthAnalytics | undefined;
+	isLoading: boolean;
+	isError: boolean;
+	service?: "plex" | "jellyfin";
 }
 
-export const BandwidthChart = ({ days, enabled }: BandwidthChartProps) => {
+export const BandwidthChart = ({
+	data,
+	isLoading,
+	isError,
+	service = "plex",
+}: BandwidthChartProps) => {
 	const { gradient } = useThemeGradient();
-	const { data, isLoading, isError } = useBandwidthAnalytics(days, enabled);
+	const serviceColor = SERVICE_GRADIENTS[service].from;
+	const serviceLabel = service === "jellyfin" ? "Jellyfin" : "Plex";
 
 	const bandwidthSeries = useMemo(() => data?.timeSeries.map((d) => d.bandwidth) ?? [], [data]);
 
@@ -68,7 +76,7 @@ export const BandwidthChart = ({ days, enabled }: BandwidthChartProps) => {
 			<PremiumEmptyState
 				icon={Wifi}
 				title="Failed to Load Bandwidth Data"
-				description="Could not fetch bandwidth analytics. Check your Plex connection and try again."
+				description={`Could not fetch bandwidth analytics. Check your ${serviceLabel} connection and try again.`}
 			/>
 		);
 	}
@@ -104,7 +112,7 @@ export const BandwidthChart = ({ days, enabled }: BandwidthChartProps) => {
 					icon={ArrowUpDown}
 					label="Peak Bandwidth"
 					value={formatBandwidth(data.peakBandwidth)}
-					color={SERVICE_GRADIENTS.plex.from}
+					color={serviceColor}
 				/>
 				<MiniStatCard
 					icon={Activity}
@@ -123,8 +131,8 @@ export const BandwidthChart = ({ days, enabled }: BandwidthChartProps) => {
 							data={bandwidthSeries}
 							width={600}
 							height={60}
-							color={SERVICE_GRADIENTS.plex.from}
-							fillColor={SERVICE_GRADIENTS.plex.from}
+							color={serviceColor}
+							fillColor={serviceColor}
 						/>
 					</div>
 					{dates.length > 1 && (
