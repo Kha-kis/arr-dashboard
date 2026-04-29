@@ -106,7 +106,7 @@ export const SchedulerStatusDashboard = () => {
 
 		try {
 			await triggerCheck.mutateAsync();
-		} catch (error) {
+		} catch (_error) {
 			alert("Failed to trigger update check. Please try again.");
 		}
 	};
