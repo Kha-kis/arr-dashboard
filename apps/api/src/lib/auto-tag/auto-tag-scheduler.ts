@@ -21,6 +21,7 @@ import {
 	type TickWrapper,
 } from "../scheduler-registry/scheduler-registry.js";
 import { executeAutoTagRule } from "./execute-rule.js";
+import { runRuleWithLock } from "./run-with-lock.js";
 
 const TICK_INTERVAL_MS = 5 * 60 * 1000; // Wake every 5 minutes
 const RULE_COOLDOWN_MS = 60 * 60 * 1000; // Skip rules that ran in the last hour
@@ -93,34 +94,50 @@ export class AutoTagScheduler {
 			let succeeded = 0;
 			let partial = 0;
 			let failed = 0;
+			let skipped = 0;
 
 			for (const rule of dueRules) {
 				try {
-					const result = await executeAutoTagRule({
-						rule: {
-							id: rule.id,
-							userId: rule.userId,
-							name: rule.name,
-							ruleType: rule.ruleType,
-							parameters: parseRecord(rule.parameters),
-							operator: rule.operator as "AND" | "OR" | null,
-							conditions: parseArray<{
-								ruleType: string;
-								parameters: Record<string, unknown>;
-							}>(rule.conditions),
-							serviceFilter: parseArray<string>(rule.serviceFilter),
-							instanceFilter: parseArray<string>(rule.instanceFilter),
-							excludeTags: parseArray<number>(rule.excludeTags),
-							excludeTitles: parseArray<string>(rule.excludeTitles),
-							plexLibraryFilter: parseArray<string>(rule.plexLibraryFilter),
-							tagName: rule.tagName,
-						},
-						prisma: this.prisma,
-						arrClientFactory: this.arrClientFactory,
-						encryptor: this.encryptor,
-						log: this.log,
-					});
+					// Skip if an on-demand "Run now" is currently executing this same
+					// rule — prevents two concurrent series/movie.update calls from
+					// racing and dropping each other's tag merges.
+					const lockResult = await runRuleWithLock(rule.id, () =>
+						executeAutoTagRule({
+							rule: {
+								id: rule.id,
+								userId: rule.userId,
+								name: rule.name,
+								ruleType: rule.ruleType,
+								parameters: parseRecord(rule.parameters),
+								operator: rule.operator as "AND" | "OR" | null,
+								conditions: parseArray<{
+									ruleType: string;
+									parameters: Record<string, unknown>;
+								}>(rule.conditions),
+								serviceFilter: parseArray<string>(rule.serviceFilter),
+								instanceFilter: parseArray<string>(rule.instanceFilter),
+								excludeTags: parseArray<number>(rule.excludeTags),
+								excludeTitles: parseArray<string>(rule.excludeTitles),
+								plexLibraryFilter: parseArray<string>(rule.plexLibraryFilter),
+								tagName: rule.tagName,
+							},
+							prisma: this.prisma,
+							arrClientFactory: this.arrClientFactory,
+							encryptor: this.encryptor,
+							log: this.log,
+						}),
+					);
 
+					if (lockResult.status === "skipped") {
+						skipped++;
+						this.log.debug(
+							{ ruleId: rule.id },
+							"Auto-tag rule skipped — already running (on-demand run in flight)",
+						);
+						continue;
+					}
+
+					const result = lockResult.result;
 					await this.prisma.autoTagRule.update({
 						where: { id: rule.id },
 						data: {
@@ -159,7 +176,7 @@ export class AutoTagScheduler {
 			}
 
 			this.log.info(
-				{ ruleCount: dueRules.length, succeeded, partial, failed },
+				{ ruleCount: dueRules.length, succeeded, partial, failed, skipped },
 				"Scheduled auto-tag tick complete",
 			);
 		} finally {
