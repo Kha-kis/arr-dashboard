@@ -1,5 +1,6 @@
 export * from "./api";
 export * from "./arr";
+export * from "./auto-tag";
 export * from "./backup";
 export * from "./dashboard";
 export * from "./jellyfin";

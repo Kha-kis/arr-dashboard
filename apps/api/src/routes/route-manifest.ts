@@ -20,6 +20,7 @@ import type { FastifyInstance, FastifyPluginAsync, FastifyPluginCallback } from 
 import { registerAuthRoutes } from "./auth.js";
 import { registerAuthOidcRoutes } from "./auth-oidc.js";
 import { registerAuthPasskeyRoutes } from "./auth-passkey.js";
+import { registerAutoTagRoutes } from "./auto-tag.js";
 import { registerBackupRoutes } from "./backup.js";
 import { registerDashboardRoutes } from "./dashboard.js";
 import { registerHealthRoutes } from "./health.js";
@@ -245,6 +246,14 @@ export const PROTECTED_ROUTE_GROUPS: readonly RouteGroup[] = [
 		maturity: "experimental",
 		summary:
 			"Generic any-to-any media-service tag/label sync rules (issue #384). Sub-arc 1: Sonarr/Radarr → Plex.",
+	},
+	{
+		path: "/api/auto-tag",
+		prefix: "/api/auto-tag",
+		register: registerAutoTagRoutes,
+		maturity: "experimental",
+		summary:
+			"Criteria-based auto-tagger rules — applies tags to LibraryCache items matching the rule's criteria DSL (genre, year, codec, watch state, …). Companion to Label Sync.",
 	},
 	{
 		path: "/api/pulse",

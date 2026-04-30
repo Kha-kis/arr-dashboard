@@ -454,6 +454,11 @@ export const labelSyncKeys = {
 	rules: ["label-sync", "rules"] as const,
 };
 
+export const autoTagKeys = {
+	all: ["auto-tag"] as const,
+	rules: ["auto-tag", "rules"] as const,
+};
+
 /* -------------------------------------------------------------------------- */
 /*  Validation                                                                 */
 /* -------------------------------------------------------------------------- */
