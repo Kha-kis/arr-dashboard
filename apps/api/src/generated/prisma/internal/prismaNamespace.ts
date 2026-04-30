@@ -435,7 +435,9 @@ export const ModelName = {
   NamingDeployHistory: 'NamingDeployHistory',
   SeerrActionLog: 'SeerrActionLog',
   LabelSyncRule: 'LabelSyncRule',
-  AutoTagRule: 'AutoTagRule'
+  AutoTagRule: 'AutoTagRule',
+  TmdbListCache: 'TmdbListCache',
+  TraktListCache: 'TraktListCache'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -451,7 +453,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "autoTagRule"
+    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "autoTagRule" | "tmdbListCache" | "traktListCache"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -4303,6 +4305,154 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    TmdbListCache: {
+      payload: Prisma.$TmdbListCachePayload<ExtArgs>
+      fields: Prisma.TmdbListCacheFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.TmdbListCacheFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TmdbListCachePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.TmdbListCacheFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TmdbListCachePayload>
+        }
+        findFirst: {
+          args: Prisma.TmdbListCacheFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TmdbListCachePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.TmdbListCacheFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TmdbListCachePayload>
+        }
+        findMany: {
+          args: Prisma.TmdbListCacheFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TmdbListCachePayload>[]
+        }
+        create: {
+          args: Prisma.TmdbListCacheCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TmdbListCachePayload>
+        }
+        createMany: {
+          args: Prisma.TmdbListCacheCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.TmdbListCacheCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TmdbListCachePayload>[]
+        }
+        delete: {
+          args: Prisma.TmdbListCacheDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TmdbListCachePayload>
+        }
+        update: {
+          args: Prisma.TmdbListCacheUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TmdbListCachePayload>
+        }
+        deleteMany: {
+          args: Prisma.TmdbListCacheDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.TmdbListCacheUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.TmdbListCacheUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TmdbListCachePayload>[]
+        }
+        upsert: {
+          args: Prisma.TmdbListCacheUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TmdbListCachePayload>
+        }
+        aggregate: {
+          args: Prisma.TmdbListCacheAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateTmdbListCache>
+        }
+        groupBy: {
+          args: Prisma.TmdbListCacheGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.TmdbListCacheGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.TmdbListCacheCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.TmdbListCacheCountAggregateOutputType> | number
+        }
+      }
+    }
+    TraktListCache: {
+      payload: Prisma.$TraktListCachePayload<ExtArgs>
+      fields: Prisma.TraktListCacheFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.TraktListCacheFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TraktListCachePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.TraktListCacheFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TraktListCachePayload>
+        }
+        findFirst: {
+          args: Prisma.TraktListCacheFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TraktListCachePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.TraktListCacheFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TraktListCachePayload>
+        }
+        findMany: {
+          args: Prisma.TraktListCacheFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TraktListCachePayload>[]
+        }
+        create: {
+          args: Prisma.TraktListCacheCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TraktListCachePayload>
+        }
+        createMany: {
+          args: Prisma.TraktListCacheCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.TraktListCacheCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TraktListCachePayload>[]
+        }
+        delete: {
+          args: Prisma.TraktListCacheDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TraktListCachePayload>
+        }
+        update: {
+          args: Prisma.TraktListCacheUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TraktListCachePayload>
+        }
+        deleteMany: {
+          args: Prisma.TraktListCacheDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.TraktListCacheUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.TraktListCacheUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TraktListCachePayload>[]
+        }
+        upsert: {
+          args: Prisma.TraktListCacheUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TraktListCachePayload>
+        }
+        aggregate: {
+          args: Prisma.TraktListCacheAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateTraktListCache>
+        }
+        groupBy: {
+          args: Prisma.TraktListCacheGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.TraktListCacheGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.TraktListCacheCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.TraktListCacheCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -4350,7 +4500,9 @@ export const UserScalarFieldEnum = {
   tmdbEncryptionIv: 'tmdbEncryptionIv',
   hashedWebhookSecret: 'hashedWebhookSecret',
   createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
+  updatedAt: 'updatedAt',
+  encryptedTraktAccessToken: 'encryptedTraktAccessToken',
+  traktTokenIv: 'traktTokenIv'
 } as const
 
 export type UserScalarFieldEnum = (typeof UserScalarFieldEnum)[keyof typeof UserScalarFieldEnum]
@@ -5310,6 +5462,32 @@ export const AutoTagRuleScalarFieldEnum = {
 export type AutoTagRuleScalarFieldEnum = (typeof AutoTagRuleScalarFieldEnum)[keyof typeof AutoTagRuleScalarFieldEnum]
 
 
+export const TmdbListCacheScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  listId: 'listId',
+  tmdbId: 'tmdbId',
+  mediaType: 'mediaType',
+  title: 'title',
+  refreshedAt: 'refreshedAt'
+} as const
+
+export type TmdbListCacheScalarFieldEnum = (typeof TmdbListCacheScalarFieldEnum)[keyof typeof TmdbListCacheScalarFieldEnum]
+
+
+export const TraktListCacheScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  listSlug: 'listSlug',
+  tmdbId: 'tmdbId',
+  mediaType: 'mediaType',
+  title: 'title',
+  refreshedAt: 'refreshedAt'
+} as const
+
+export type TraktListCacheScalarFieldEnum = (typeof TraktListCacheScalarFieldEnum)[keyof typeof TraktListCacheScalarFieldEnum]
+
+
 export const SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -5556,6 +5734,8 @@ export type GlobalOmitConfig = {
   seerrActionLog?: Prisma.SeerrActionLogOmit
   labelSyncRule?: Prisma.LabelSyncRuleOmit
   autoTagRule?: Prisma.AutoTagRuleOmit
+  tmdbListCache?: Prisma.TmdbListCacheOmit
+  traktListCache?: Prisma.TraktListCacheOmit
 }
 
 /* Types for Logging */

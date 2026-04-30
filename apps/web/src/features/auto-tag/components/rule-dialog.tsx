@@ -114,6 +114,13 @@ const RULE_TYPE_OPTIONS: Array<{ value: SingleRuleType; label: string; group: st
 	{ value: "plex_last_watched", label: "Plex last watched", group: "Plex" },
 	{ value: "plex_watch_count", label: "Plex watch count", group: "Plex" },
 	{ value: "plex_added_at", label: "Plex added (date)", group: "Plex" },
+
+	// Phase 5: external curated lists. Backend foundation only — cache
+	// refresh + evaluator dispatch land in a follow-up PR. Until that
+	// ships, rules using these types will create successfully but match
+	// no items at execution time.
+	{ value: "tmdb_list_member", label: "TMDb list member", group: "Lists" },
+	{ value: "trakt_list_member", label: "Trakt list member", group: "Lists" },
 ];
 
 function makeBlankCondition(): Condition {
