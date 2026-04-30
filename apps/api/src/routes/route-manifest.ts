@@ -253,7 +253,7 @@ export const PROTECTED_ROUTE_GROUPS: readonly RouteGroup[] = [
 		register: registerAutoTagRoutes,
 		maturity: "experimental",
 		summary:
-			"Criteria-based auto-tagger rules — applies tags to LibraryCache items matching the rule's criteria DSL (genre, year, codec, watch state, …). Companion to Label Sync.",
+			"Criteria-based auto-tagger rules — applies tags to LibraryCache items matching the rule's criteria DSL (genre, year, codec, watch state, …). Companion to Label Sync. Includes inbound webhook endpoint at /webhook/:instanceId for real-time tagging via Sonarr/Radarr Connect (auth via per-user Bearer token).",
 	},
 	{
 		path: "/api/pulse",

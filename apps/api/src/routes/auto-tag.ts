@@ -6,6 +6,7 @@
  * See `memory/auto-tagger-arc.md`.
  */
 
+import { randomBytes } from "node:crypto";
 import type {
 	AutoTagRule as AutoTagRuleDto,
 	AutoTagRuleResponse,
@@ -19,6 +20,7 @@ import { createAutoTagRuleSchema, ruleParamSchemaMap, updateAutoTagRuleSchema } 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { executeAutoTagRule } from "../lib/auto-tag/execute-rule.js";
+import { processWebhook, resolveUserFromBearer } from "../lib/auto-tag/webhook-handler.js";
 import { safeJsonParse } from "../lib/utils/json.js";
 import { validateRequest } from "../lib/utils/validate.js";
 
@@ -321,4 +323,83 @@ export async function registerAutoTagRoutes(app: FastifyInstance, _opts: Fastify
 		const response: AutoTagRuleResponse = { rule: toDto(updated) };
 		return reply.send(response);
 	});
+
+	// ========================================================================
+	// Webhook config (read + rotate)
+	//
+	// Returns the user's webhook secret (lazy-generated on first read) plus
+	// instructions for wiring up Sonarr/Radarr Connect. The secret is shown
+	// in plaintext to the authenticated user — they need it to copy into the
+	// Connect webhook header. Rotation invalidates any prior Connect config
+	// using the old secret.
+	// ========================================================================
+
+	app.get("/webhook-config", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		let user = await app.prisma.user.findUnique({ where: { id: userId } });
+		if (!user) return reply.status(404).send({ error: "User not found" });
+
+		if (!user.webhookSecret) {
+			user = await app.prisma.user.update({
+				where: { id: userId },
+				data: { webhookSecret: generateWebhookSecret() },
+			});
+		}
+		return reply.send({ secret: user.webhookSecret });
+	});
+
+	app.post("/webhook-config/regenerate", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const updated = await app.prisma.user.update({
+			where: { id: userId },
+			data: { webhookSecret: generateWebhookSecret() },
+		});
+		return reply.send({ secret: updated.webhookSecret });
+	});
+
+	// ========================================================================
+	// Inbound Connect webhook
+	//
+	// POST /api/auto-tag/webhook/:instanceId — called by Sonarr/Radarr Connect.
+	// Auth via Bearer token (matched against the user's webhookSecret). No
+	// session cookie required. Idempotent — repeated calls reapply the same
+	// tags via the merge-then-update path.
+	// ========================================================================
+
+	app.post("/webhook/:instanceId", async (request, reply) => {
+		const params = validateRequest(z.object({ instanceId: z.string().min(1) }), request.params);
+
+		const authHeader = (request.headers.authorization as string | undefined) ?? undefined;
+		const user = await resolveUserFromBearer(app.prisma, authHeader);
+		if (!user) {
+			return reply.status(401).send({ error: "Invalid or missing webhook secret" });
+		}
+
+		const instance = await app.prisma.serviceInstance.findFirst({
+			where: { id: params.instanceId, userId: user.id, enabled: true },
+		});
+		if (!instance) {
+			return reply.status(404).send({ error: "Instance not found or disabled" });
+		}
+
+		const result = await processWebhook({
+			deps: {
+				prisma: app.prisma,
+				arrClientFactory: app.arrClientFactory,
+				encryptor: app.encryptor,
+				log: request.log,
+			},
+			user,
+			instance,
+			payload: request.body,
+		});
+
+		const code = result.status === "error" ? 400 : result.status === "ignored" ? 202 : 200;
+		return reply.status(code).send(result);
+	});
+}
+
+function generateWebhookSecret(): string {
+	// 32 bytes = 256 bits of entropy, base64url-encoded for URL/header safety.
+	return randomBytes(32).toString("base64url");
 }

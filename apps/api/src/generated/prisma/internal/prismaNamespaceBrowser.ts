@@ -127,6 +127,7 @@ export const UserScalarFieldEnum = {
   lockedUntil: 'lockedUntil',
   encryptedTmdbApiKey: 'encryptedTmdbApiKey',
   tmdbEncryptionIv: 'tmdbEncryptionIv',
+  webhookSecret: 'webhookSecret',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const

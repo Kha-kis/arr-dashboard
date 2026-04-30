@@ -53,7 +53,7 @@ for the full rationale.
 | `/api/jellyfin` | stable | Jellyfin activity and library data |
 | `/api/tautulli` | stable | Activity, watch history enrichment, statistics |
 | `/api/label-sync` | experimental | Generic any-to-any media-service tag/label sync rules (issue #384). Sub-arc 1 ships Sonarr/Radarr → Plex. |
-| `/api/auto-tag` | experimental | Criteria-based auto-tagger — applies tags to LibraryCache items matching the rule's criteria DSL (genre, year, codec, watch state, …). Companion to Label Sync. |
+| `/api/auto-tag` | experimental | Criteria-based auto-tagger — applies tags to LibraryCache items matching the rule's criteria DSL (genre, year, codec, watch state, …). Companion to Label Sync. Includes inbound webhook endpoint at `/webhook/:instanceId` for real-time tagging via Sonarr/Radarr Connect (auth via per-user Bearer token). |
 | `/api/pulse` | internal | System Pulse health signals + attention items |
 | `/api/seerr` | stable | Request management, discovery, library enrichment |
 | `/api/trash-guides` | internal | TRaSH cache, templates, deployment, profiles |

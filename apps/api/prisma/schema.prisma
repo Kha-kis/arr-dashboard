@@ -37,6 +37,9 @@ model User {
   lockedUntil         DateTime?
   encryptedTmdbApiKey String?
   tmdbEncryptionIv    String?
+  /// Secret used to authenticate inbound auto-tagger webhooks from Sonarr/Radarr Connect.
+  /// Lazy-generated on first read via the auto-tagger UI; rotated on demand by the user.
+  webhookSecret       String?               @unique
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
   sessions            Session[]
