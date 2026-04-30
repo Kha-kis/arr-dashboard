@@ -140,3 +140,19 @@ export const jellyfinEpisodesResponseSchema = z.object({
 	Items: z.array(jellyfinItemSchema),
 	TotalRecordCount: z.number(),
 });
+
+// ============================================================================
+// Item detail (for label-sync read-modify-write tag updates)
+//
+// Passthrough schema — we round-trip the entire item back to POST /Items/{id},
+// so we only validate the fields we read or merge (Tags) and let Jellyfin
+// preserve everything else verbatim.
+// ============================================================================
+
+export const jellyfinItemDetailSchema = z
+	.object({
+		Id: z.string(),
+		Name: z.string().optional(),
+		Tags: z.array(z.string()).optional(),
+	})
+	.passthrough();

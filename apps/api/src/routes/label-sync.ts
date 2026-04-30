@@ -13,23 +13,23 @@ import type {
 	LabelSyncRuleResponse,
 	LabelSyncRulesResponse,
 	LabelSyncRunStatus,
+	LabelSyncService,
 	LabelSyncSourceService,
 } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { executeLabelSyncRule } from "../lib/plex-label-sync/execute-rule.js";
+import { executeLabelSyncRule } from "../lib/label-sync/execute-rule.js";
 import { validateRequest } from "../lib/utils/validate.js";
 
-const sourceServiceSchema = z.enum(["sonarr", "radarr"]);
-const destServiceSchema = z.enum(["plex"]);
+const serviceSchema = z.enum(["sonarr", "radarr", "plex", "jellyfin", "emby"]);
 
 const createRuleBody = z.object({
 	name: z.string().trim().min(1).max(120),
 	enabled: z.boolean().optional(),
-	sourceService: sourceServiceSchema,
+	sourceService: serviceSchema,
 	sourceInstanceId: z.string().nullable().optional(),
 	sourceTagName: z.string().trim().min(1).max(120),
-	destService: destServiceSchema.optional(),
+	destService: serviceSchema,
 	destInstanceId: z.string().min(1),
 	destTagName: z.string().trim().min(1).max(120),
 });
@@ -37,10 +37,10 @@ const createRuleBody = z.object({
 const updateRuleBody = z.object({
 	name: z.string().trim().min(1).max(120).optional(),
 	enabled: z.boolean().optional(),
-	sourceService: sourceServiceSchema.optional(),
+	sourceService: serviceSchema.optional(),
 	sourceInstanceId: z.string().nullable().optional(),
 	sourceTagName: z.string().trim().min(1).max(120).optional(),
-	destService: destServiceSchema.optional(),
+	destService: serviceSchema.optional(),
 	destInstanceId: z.string().min(1).optional(),
 	destTagName: z.string().trim().min(1).max(120).optional(),
 });
@@ -85,13 +85,14 @@ function toDto(row: {
 	};
 }
 
-const SOURCE_SERVICE_TO_PRISMA: Record<LabelSyncSourceService, "SONARR" | "RADARR"> = {
+type LabelSyncPrismaService = "SONARR" | "RADARR" | "PLEX" | "JELLYFIN" | "EMBY";
+
+const SERVICE_TO_PRISMA: Record<LabelSyncService, LabelSyncPrismaService> = {
 	sonarr: "SONARR",
 	radarr: "RADARR",
-};
-
-const DEST_SERVICE_TO_PRISMA: Record<LabelSyncDestService, "PLEX"> = {
 	plex: "PLEX",
+	jellyfin: "JELLYFIN",
+	emby: "EMBY",
 };
 
 /**
@@ -114,7 +115,7 @@ async function assertInstanceOwnership(
 			where: {
 				id: opts.sourceInstanceId,
 				userId,
-				service: SOURCE_SERVICE_TO_PRISMA[opts.sourceService],
+				service: SERVICE_TO_PRISMA[opts.sourceService],
 				enabled: true,
 			},
 			select: { id: true },
@@ -132,7 +133,7 @@ async function assertInstanceOwnership(
 		where: {
 			id: opts.destInstanceId,
 			userId,
-			service: DEST_SERVICE_TO_PRISMA[opts.destService],
+			service: SERVICE_TO_PRISMA[opts.destService],
 			enabled: true,
 		},
 		select: { id: true },
@@ -160,12 +161,10 @@ export async function registerLabelSyncRoutes(app: FastifyInstance, _opts: Fasti
 	app.post("/rules", async (request, reply) => {
 		const body = validateRequest(createRuleBody, request.body);
 		const userId = request.currentUser!.id;
-		const destService: LabelSyncDestService = body.destService ?? "plex";
-
 		await assertInstanceOwnership(app, userId, {
 			sourceService: body.sourceService,
 			sourceInstanceId: body.sourceInstanceId ?? null,
-			destService,
+			destService: body.destService,
 			destInstanceId: body.destInstanceId,
 		});
 
@@ -177,7 +176,7 @@ export async function registerLabelSyncRoutes(app: FastifyInstance, _opts: Fasti
 				sourceService: body.sourceService,
 				sourceInstanceId: body.sourceInstanceId ?? null,
 				sourceTagName: body.sourceTagName,
-				destService,
+				destService: body.destService,
 				destInstanceId: body.destInstanceId,
 				destTagName: body.destTagName,
 			},

@@ -12,6 +12,7 @@ import type { Encryptor } from "../auth/encryption.js";
 import { parseUpstreamOrThrow } from "../validation/parse-upstream.js";
 import {
 	jellyfinEpisodesResponseSchema,
+	jellyfinItemDetailSchema,
 	jellyfinItemsResponseSchema,
 	jellyfinLibrariesResponseSchema,
 	jellyfinPublicInfoSchema,
@@ -180,9 +181,12 @@ export class JellyfinClient {
 			params.set("IncludeItemTypes", options.includeItemTypes);
 		}
 
-		const data = await this.request(`/Users/${encodeURIComponent(userId)}/Items?${params.toString()}`, {
-			schema: jellyfinItemsResponseSchema,
-		});
+		const data = await this.request(
+			`/Users/${encodeURIComponent(userId)}/Items?${params.toString()}`,
+			{
+				schema: jellyfinItemsResponseSchema,
+			},
+		);
 		return data.Items.map(mapItem);
 	}
 
@@ -190,9 +194,12 @@ export class JellyfinClient {
 	 * Get resume items (continue watching) for a user.
 	 */
 	async getResumeItems(userId: string): Promise<JellyfinItem[]> {
-		const data = await this.request(`/Users/${encodeURIComponent(userId)}/Items/Resume?Fields=ProviderIds`, {
-			schema: jellyfinItemsResponseSchema,
-		});
+		const data = await this.request(
+			`/Users/${encodeURIComponent(userId)}/Items/Resume?Fields=ProviderIds`,
+			{
+				schema: jellyfinItemsResponseSchema,
+			},
+		);
 		return data.Items.map(mapItem);
 	}
 
@@ -200,9 +207,12 @@ export class JellyfinClient {
 	 * Get next up episodes for a user (TV shows).
 	 */
 	async getNextUp(userId: string): Promise<JellyfinItem[]> {
-		const data = await this.request(`/Shows/NextUp?userId=${encodeURIComponent(userId)}&Fields=ProviderIds`, {
-			schema: jellyfinItemsResponseSchema,
-		});
+		const data = await this.request(
+			`/Shows/NextUp?userId=${encodeURIComponent(userId)}&Fields=ProviderIds`,
+			{
+				schema: jellyfinItemsResponseSchema,
+			},
+		);
 		return data.Items.map(mapItem);
 	}
 
@@ -259,6 +269,53 @@ export class JellyfinClient {
 	 */
 	async refreshLibrary(): Promise<void> {
 		await this.request("/Library/Refresh", { method: "POST" });
+	}
+
+	/**
+	 * Find items across all libraries that carry the given tag. Used by the
+	 * label-sync source reader for Jellyfin/Emby — the JellyfinCache table
+	 * doesn't store per-item tags, so we hit the live API.
+	 */
+	async getItemsByTag(userId: string, tagName: string): Promise<JellyfinItem[]> {
+		const params = new URLSearchParams({
+			Tags: tagName,
+			Recursive: "true",
+			Fields: "ProviderIds,DateCreated,Tags",
+			IncludeItemTypes: "Movie,Series",
+			Limit: "10000",
+		});
+
+		const data = await this.request(
+			`/Users/${encodeURIComponent(userId)}/Items?${params.toString()}`,
+			{ schema: jellyfinItemsResponseSchema },
+		);
+		return data.Items.map(mapItem);
+	}
+
+	/**
+	 * Append a tag to an item. Read-modify-write against
+	 * `POST /Items/{id}` — the canonical update endpoint that Jellyfin and
+	 * Emby both implement. Idempotent: if the tag is already present we
+	 * skip the write.
+	 */
+	async addItemTag(userId: string, itemId: string, tagName: string): Promise<void> {
+		const detail = await this.request(
+			`/Users/${encodeURIComponent(userId)}/Items/${encodeURIComponent(itemId)}?Fields=Tags`,
+			{ schema: jellyfinItemDetailSchema },
+		);
+		const existing = Array.isArray(detail.Tags) ? detail.Tags : [];
+		if (existing.includes(tagName)) {
+			return;
+		}
+
+		const merged = [...existing, tagName];
+		// POST /Items/{id} expects the full BaseItemDto round-tripped back —
+		// the passthrough schema preserves any fields we didn't model.
+		const updatedDetail: Record<string, unknown> = { ...detail, Tags: merged };
+		await this.request(`/Items/${encodeURIComponent(itemId)}`, {
+			method: "POST",
+			body: updatedDetail,
+		});
 	}
 
 	/**

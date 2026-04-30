@@ -33,7 +33,7 @@ export const JOB_ID = {
 	jellyfinEpisodeCache: "jellyfin-episode-cache",
 	tautulliCache: "tautulli-cache",
 	seerrHealth: "seerr-health",
-	plexLabelSync: "plex-label-sync",
+	labelSync: "label-sync",
 } as const;
 
 export const KNOWN_JOBS: readonly JobDefinition[] = [
@@ -156,8 +156,8 @@ export const KNOWN_JOBS: readonly JobDefinition[] = [
 		intervalMs: 5 * 60 * 1000,
 	},
 	{
-		id: JOB_ID.plexLabelSync,
-		label: "Plex label sync",
+		id: JOB_ID.labelSync,
+		label: "Label sync",
 		description:
 			"Walks enabled LabelSyncRule rows once per hour and applies the configured destination label to source items carrying the matching tag. Per-rule cooldown skips rules that ran in the last hour, so on-demand runs and scheduled ticks don't double-fire.",
 		concurrency: "singleton",
