@@ -2,6 +2,7 @@
 
 import type {
 	CreateLabelSyncRuleRequest,
+	LabelSyncDestService,
 	LabelSyncRule,
 	LabelSyncSourceService,
 	ServiceInstanceSummary,
@@ -19,6 +20,7 @@ import {
 import { Input } from "../../../components/ui/input";
 import { useCreateLabelSyncRule, useUpdateLabelSyncRule } from "../../../hooks/api/useLabelSync";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
+import { LABEL_SYNC_SERVICE_OPTIONS } from "../service-registry";
 
 interface RuleDialogProps {
 	rule: LabelSyncRule | null;
@@ -31,6 +33,7 @@ interface FormState {
 	sourceService: LabelSyncSourceService;
 	sourceInstanceId: string; // empty string means "all instances"
 	sourceTagName: string;
+	destService: LabelSyncDestService;
 	destInstanceId: string;
 	destTagName: string;
 }
@@ -41,6 +44,7 @@ const initialForm = (rule: LabelSyncRule | null): FormState => ({
 	sourceService: rule?.sourceService ?? "sonarr",
 	sourceInstanceId: rule?.sourceInstanceId ?? "",
 	sourceTagName: rule?.sourceTagName ?? "",
+	destService: rule?.destService ?? "plex",
 	destInstanceId: rule?.destInstanceId ?? "",
 	destTagName: rule?.destTagName ?? "",
 });
@@ -51,19 +55,33 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 	const [submitError, setSubmitError] = useState<string | null>(null);
 
 	const { data: services = [] } = useServicesQuery();
+
+	// Pre-compute which services have at least one enabled instance so the
+	// dropdowns can disable services the user can't actually pick.
+	const enabledInstanceCountBySlug = useMemo(() => {
+		const counts: Record<string, number> = {};
+		for (const s of services as ServiceInstanceSummary[]) {
+			if (!s.enabled) continue;
+			const slug = s.service.toLowerCase();
+			counts[slug] = (counts[slug] ?? 0) + 1;
+		}
+		return counts;
+	}, [services]);
+
 	const sourceInstances = useMemo(
 		() =>
-			services.filter(
-				(s: ServiceInstanceSummary) => s.service.toLowerCase() === form.sourceService && s.enabled,
+			(services as ServiceInstanceSummary[]).filter(
+				(s) => s.service.toLowerCase() === form.sourceService && s.enabled,
 			),
 		[services, form.sourceService],
 	);
+
 	const destInstances = useMemo(
 		() =>
-			services.filter(
-				(s: ServiceInstanceSummary) => s.service.toLowerCase() === "plex" && s.enabled,
+			(services as ServiceInstanceSummary[]).filter(
+				(s) => s.service.toLowerCase() === form.destService && s.enabled,
 			),
-		[services],
+		[services, form.destService],
 	);
 
 	const createMutation = useCreateLabelSyncRule();
@@ -94,7 +112,7 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 			sourceService: form.sourceService,
 			sourceInstanceId: form.sourceInstanceId || null,
 			sourceTagName: form.sourceTagName.trim(),
-			destService: "plex",
+			destService: form.destService,
 			destInstanceId: form.destInstanceId,
 			destTagName: form.destTagName.trim(),
 		};
@@ -117,8 +135,9 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 				<DialogHeader>
 					<DialogTitle>{isEdit ? "Edit Rule" : "New Label Sync Rule"}</DialogTitle>
 					<DialogDescription>
-						Maps a Sonarr or Radarr tag to a Plex label. Items carrying the source tag get the
-						destination label applied to their matching item (matched by TMDB ID).
+						Apply a destination tag/label to items carrying a source tag/label. Source and
+						destination services can differ or be the same — items are matched across services by
+						TMDB ID.
 					</DialogDescription>
 				</DialogHeader>
 
@@ -163,8 +182,21 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 								}}
 								className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 							>
-								<option value="sonarr">Sonarr</option>
-								<option value="radarr">Radarr</option>
+								{LABEL_SYNC_SERVICE_OPTIONS.map((opt) => {
+									const count = enabledInstanceCountBySlug[opt.matchSlug] ?? 0;
+									const disabled = count === 0;
+									return (
+										<option
+											key={opt.value}
+											value={opt.value}
+											disabled={disabled}
+											title={disabled ? `No enabled ${opt.label} instance configured` : undefined}
+										>
+											{opt.label}
+											{disabled ? " — none configured" : ""}
+										</option>
+									);
+								})}
 							</select>
 						</div>
 						<div className="space-y-1.5">
@@ -178,7 +210,7 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 								className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 							>
 								<option value="">All {form.sourceService} instances</option>
-								{sourceInstances.map((s: ServiceInstanceSummary) => (
+								{sourceInstances.map((s) => (
 									<option key={s.id} value={s.id}>
 										{s.label}
 									</option>
@@ -201,15 +233,45 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 							required
 						/>
 						<p className="text-xs text-muted-foreground">
-							The exact tag name as configured in the source service. Case-sensitive.
+							The exact tag/label name as configured in the source service. Case-sensitive.
 						</p>
 					</div>
 
-					{/* Dest instance + label */}
+					{/* Destination service + instance */}
 					<div className="grid grid-cols-2 gap-3">
 						<div className="space-y-1.5">
+							<label htmlFor="dest-service" className="text-sm font-medium">
+								Destination service
+							</label>
+							<select
+								id="dest-service"
+								value={form.destService}
+								onChange={(e) => {
+									update("destService", e.target.value as LabelSyncDestService);
+									update("destInstanceId", "");
+								}}
+								className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+							>
+								{LABEL_SYNC_SERVICE_OPTIONS.map((opt) => {
+									const count = enabledInstanceCountBySlug[opt.matchSlug] ?? 0;
+									const disabled = count === 0;
+									return (
+										<option
+											key={opt.value}
+											value={opt.value}
+											disabled={disabled}
+											title={disabled ? `No enabled ${opt.label} instance configured` : undefined}
+										>
+											{opt.label}
+											{disabled ? " — none configured" : ""}
+										</option>
+									);
+								})}
+							</select>
+						</div>
+						<div className="space-y-1.5">
 							<label htmlFor="dest-instance" className="text-sm font-medium">
-								Destination (Plex)
+								Destination instance
 							</label>
 							<select
 								id="dest-instance"
@@ -218,27 +280,33 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 								className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 								required
 							>
-								<option value="">Select a Plex instance…</option>
-								{destInstances.map((s: ServiceInstanceSummary) => (
+								<option value="">Select a {form.destService} instance…</option>
+								{destInstances.map((s) => (
 									<option key={s.id} value={s.id}>
 										{s.label}
 									</option>
 								))}
 							</select>
 						</div>
-						<div className="space-y-1.5">
-							<label htmlFor="dest-tag" className="text-sm font-medium">
-								Destination label
-							</label>
-							<Input
-								id="dest-tag"
-								value={form.destTagName}
-								onChange={(e) => update("destTagName", e.target.value)}
-								placeholder="e.g., Kids"
-								maxLength={120}
-								required
-							/>
-						</div>
+					</div>
+
+					{/* Destination tag/label */}
+					<div className="space-y-1.5">
+						<label htmlFor="dest-tag" className="text-sm font-medium">
+							Destination tag/label
+						</label>
+						<Input
+							id="dest-tag"
+							value={form.destTagName}
+							onChange={(e) => update("destTagName", e.target.value)}
+							placeholder="e.g., Kids"
+							maxLength={120}
+							required
+						/>
+						<p className="text-xs text-muted-foreground">
+							The tag/label to apply on the destination service. Created automatically on
+							Sonarr/Radarr if it doesn't already exist.
+						</p>
 					</div>
 
 					{submitError && (

@@ -11,6 +11,7 @@ import {
 	useRunLabelSyncRule,
 } from "../../../hooks/api/useLabelSync";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { SERVICE_LABEL_BY_VALUE } from "../service-registry";
 import { RuleDialog } from "./rule-dialog";
 
 export const LabelSyncClient = () => {
@@ -77,8 +78,10 @@ export const LabelSyncClient = () => {
 							</span>
 						</h1>
 						<p className="text-muted-foreground max-w-xl">
-							Auto-apply tags and labels across services. When a rule runs, every source item
-							carrying the configured tag gets the destination label applied to its matching item.
+							Auto-apply tags and labels across — or within — services. Pick any source service
+							(Sonarr, Radarr, Plex, Jellyfin, Emby) and any destination service. When a rule runs,
+							every source item carrying the configured tag gets the destination label applied to
+							its matching item.
 						</p>
 					</div>
 					<Button onClick={openCreate} className="shrink-0">
@@ -125,8 +128,9 @@ const EmptyState = ({ onCreateClick }: { onCreateClick: () => void }) => (
 		</div>
 		<h3 className="text-base font-semibold">No label-sync rules yet</h3>
 		<p className="text-sm text-muted-foreground max-w-sm">
-			Create a rule to map a Sonarr or Radarr tag to a Plex label. Useful for kid-safe collections,
-			user-specific labels, or surfacing requested content.
+			Create a rule to mirror a tag across services — e.g., a Sonarr/Radarr tag to a Plex label, or
+			a Plex label to a Jellyfin tag. Useful for kid-safe collections, user-specific labels, or
+			surfacing requested content.
 		</p>
 		<Button onClick={onCreateClick} variant="secondary" className="mt-2">
 			<Plus className="h-4 w-4 mr-2" /> Create your first rule
@@ -153,6 +157,7 @@ const RuleTable = ({
 				<tr className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide">
 					<th className="px-4 py-3">Name</th>
 					<th className="px-4 py-3">Source</th>
+					<th className="px-4 py-3">Destination</th>
 					<th className="px-4 py-3">Mapping</th>
 					<th className="px-4 py-3">Status</th>
 					<th className="px-4 py-3">Last Run</th>
@@ -173,12 +178,15 @@ const RuleTable = ({
 							</div>
 						</td>
 						<td className="px-4 py-3 text-muted-foreground">
-							<span className="capitalize">{rule.sourceService}</span>
+							<span>{SERVICE_LABEL_BY_VALUE[rule.sourceService] ?? rule.sourceService}</span>
 							{rule.sourceInstanceId ? (
 								<span className="text-xs ml-1">(instance)</span>
 							) : (
 								<span className="text-xs text-muted-foreground/60 ml-1">(all instances)</span>
 							)}
+						</td>
+						<td className="px-4 py-3 text-muted-foreground">
+							<span>{SERVICE_LABEL_BY_VALUE[rule.destService] ?? rule.destService}</span>
 						</td>
 						<td className="px-4 py-3 font-mono text-xs">
 							<span className="text-muted-foreground">{rule.sourceTagName}</span>
