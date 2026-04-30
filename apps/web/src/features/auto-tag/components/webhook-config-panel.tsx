@@ -5,6 +5,7 @@ import { Copy, RotateCw, Webhook } from "lucide-react";
 import { useState } from "react";
 import { GlassmorphicCard } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
+import { useIncognitoMode } from "../../../contexts/IncognitoContext";
 import {
 	fetchWebhookConfig,
 	regenerateWebhookSecret,
@@ -15,6 +16,7 @@ const QUERY_KEY = ["auto-tag", "webhook-config"] as const;
 
 export const WebhookConfigPanel = () => {
 	const [copied, setCopied] = useState<"url" | "secret" | null>(null);
+	const [incognitoMode] = useIncognitoMode();
 	const queryClient = useQueryClient();
 
 	const { data, isLoading } = useQuery({
@@ -99,15 +101,31 @@ export const WebhookConfigPanel = () => {
 							<input
 								id="webhook-secret"
 								readOnly
-								value={isLoading ? "Loading…" : (data?.secret ?? "")}
+								value={
+									isLoading
+										? "Loading…"
+										: incognitoMode && data?.secret
+											? "•".repeat(43) // mask in incognito mode (43 = base64url length of 32 bytes)
+											: data?.secret
+												? data.secret
+												: data?.configured
+													? "(secret hidden — only shown once at generation; rotate to view a new one)"
+													: ""
+								}
 								className="flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-mono"
 							/>
 							<button
 								type="button"
 								onClick={() => data?.secret && copy(data.secret, "secret")}
-								disabled={!data?.secret}
+								disabled={!data?.secret || incognitoMode}
 								className="px-2 rounded-md border border-input hover:bg-muted/30 text-xs disabled:opacity-50"
-								title="Copy secret"
+								title={
+									incognitoMode
+										? "Disable hide-sensitive-data to copy"
+										: data?.secret
+											? "Copy secret"
+											: "Rotate to view a new secret"
+								}
 							>
 								{copied === "secret" ? "✓" : <Copy className="h-3 w-3" />}
 							</button>

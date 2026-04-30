@@ -34,6 +34,15 @@ const log = {
 	fatal: vi.fn(),
 } as unknown as FastifyBaseLogger;
 
+// Plaintext bearer token used in tests; the user row stores its SHA-256 hash.
+const TEST_BEARER = "secret-abc-123-456-7890-aaaaaaaaaaa";
+
+function hashForTest(plaintext: string): string {
+	// Computed via Node's createHash; mirrored here so tests don't import crypto twice.
+	const { createHash } = require("node:crypto") as typeof import("node:crypto");
+	return createHash("sha256").update(plaintext).digest("hex");
+}
+
 function makeUser(over: Partial<User> = {}): User {
 	return {
 		id: "user-1",
@@ -44,7 +53,7 @@ function makeUser(over: Partial<User> = {}): User {
 		lockedUntil: null,
 		encryptedTmdbApiKey: null,
 		tmdbEncryptionIv: null,
-		webhookSecret: "secret-abc-123-456-7890",
+		hashedWebhookSecret: hashForTest(TEST_BEARER),
 		createdAt: new Date(),
 		updatedAt: new Date(),
 		...over,
@@ -161,14 +170,22 @@ describe("resolveUserFromBearer", () => {
 		expect(prisma.user.findUnique).not.toHaveBeenCalled();
 	});
 
-	it("queries by webhookSecret with valid bearer", async () => {
+	it("queries by hashed bearer (plaintext is hashed before DB lookup)", async () => {
 		const user = makeUser();
 		const prisma = { user: { findUnique: vi.fn().mockResolvedValue(user) } };
-		const r = await resolveUserFromBearer(prisma as never, `Bearer ${user.webhookSecret}`);
+		const r = await resolveUserFromBearer(prisma as never, `Bearer ${TEST_BEARER}`);
 		expect(r).toEqual(user);
 		expect(prisma.user.findUnique).toHaveBeenCalledWith({
-			where: { webhookSecret: user.webhookSecret },
+			where: { hashedWebhookSecret: hashForTest(TEST_BEARER) },
 		});
+	});
+
+	it("does not leak the plaintext token in the DB query", async () => {
+		const user = makeUser();
+		const prisma = { user: { findUnique: vi.fn().mockResolvedValue(user) } };
+		await resolveUserFromBearer(prisma as never, `Bearer ${TEST_BEARER}`);
+		const callArg = prisma.user.findUnique.mock.calls[0]?.[0];
+		expect(JSON.stringify(callArg)).not.toContain(TEST_BEARER);
 	});
 });
 
@@ -380,5 +397,71 @@ describe("processWebhook", () => {
 		expect(result.tagsApplied).toBe(2);
 		// Single update call with both new tags merged
 		expect(arrClient.movie.update).toHaveBeenCalledTimes(1);
+	});
+
+	// ── Coverage for findings #3 + #8 from the code review ─────────────────
+
+	it("non-allowlisted event type with series/movie id → ignored (finding #8)", async () => {
+		const arrClientFactory = { create: vi.fn() };
+		const result = await processWebhook({
+			deps: {
+				prisma: {} as never,
+				arrClientFactory: arrClientFactory as never,
+				encryptor: {} as never,
+				log,
+			},
+			user: makeUser(),
+			instance: makeInstance(),
+			payload: { eventType: "Health", movie: { id: 100 } },
+		});
+		expect(result.status).toBe("ignored");
+		// Critical: arr client must NOT be created for ignored events
+		expect(arrClientFactory.create).not.toHaveBeenCalled();
+	});
+
+	it("idempotency: partially-tagged item — only the missing tag is added, existing ones preserved (finding #3)", async () => {
+		// Item already has tag id 7 (from rule "premium"); rule for "kids" → tag id 8
+		// will be added. Existing [3, 5, 7] must NOT be erased.
+		const arrClient = makeArrClient({ tags: [3, 5, 7] });
+		(arrClient.tag.getAll as ReturnType<typeof vi.fn>)
+			.mockResolvedValueOnce([{ id: 7, label: "premium" }])
+			.mockResolvedValueOnce([
+				{ id: 7, label: "premium" },
+				{ id: 8, label: "kids" },
+			]);
+		const prisma = {
+			autoTagRule: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						makeRule({ id: "r1", tagName: "premium" }),
+						makeRule({ id: "r2", tagName: "kids" }),
+					]),
+			},
+		};
+		const arrClientFactory = { create: vi.fn().mockReturnValue(arrClient) };
+
+		await processWebhook({
+			deps: {
+				prisma: prisma as never,
+				arrClientFactory: arrClientFactory as never,
+				encryptor: {} as never,
+				log,
+			},
+			user: makeUser(),
+			instance: makeInstance(),
+			payload: { eventType: "Download", movie: { id: 100 } },
+		});
+
+		expect(arrClient.movie.update).toHaveBeenCalledTimes(1);
+		// Critical: existing tags (3, 5, 7) preserved, only the missing one (8) added
+		expect(arrClient.movie.update).toHaveBeenCalledWith(100, {
+			id: 100,
+			tags: [3, 5, 7, 8],
+		});
+		// And we must NOT have done a second getById (the prior bug fetched
+		// the item twice with a silent fallback that erased existing tags on
+		// transient failures).
+		expect(arrClient.movie.getById).toHaveBeenCalledTimes(1);
 	});
 });

@@ -6,7 +6,7 @@
  * See `memory/auto-tagger-arc.md`.
  */
 
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type {
 	AutoTagRule as AutoTagRuleDto,
 	AutoTagRuleResponse,
@@ -20,7 +20,6 @@ import { createAutoTagRuleSchema, ruleParamSchemaMap, updateAutoTagRuleSchema } 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { executeAutoTagRule } from "../lib/auto-tag/execute-rule.js";
-import { processWebhook, resolveUserFromBearer } from "../lib/auto-tag/webhook-handler.js";
 import { safeJsonParse } from "../lib/utils/json.js";
 import { validateRequest } from "../lib/utils/validate.js";
 
@@ -98,8 +97,22 @@ function validateRuleParameters(
 	ruleType: string,
 	parameters: Record<string, unknown>,
 	conditions: Array<{ ruleType: string; parameters: Record<string, unknown> }> | null,
+	operator: "AND" | "OR" | null | undefined,
 ): string | null {
-	if (ruleType === "composite" && conditions) {
+	const compositeByShape = operator != null && conditions != null && conditions.length > 0;
+	const compositeByRuleType = ruleType === "composite";
+
+	// Reject mode-mismatch: rule says "composite" but no conditions, or vice-versa.
+	// This catches a PATCH that adds operator+conditions while leaving the leaf
+	// ruleType unchanged (and would otherwise validate against the leaf schema
+	// while the executor evaluates as composite).
+	if (compositeByShape !== compositeByRuleType) {
+		return compositeByShape
+			? 'Composite rules must use ruleType="composite" (got rule type plus operator+conditions — pick one mode)'
+			: 'Rule type "composite" requires operator + conditions';
+	}
+
+	if (compositeByShape && conditions) {
 		for (let i = 0; i < conditions.length; i++) {
 			const cond = conditions[i];
 			if (!cond) continue;
@@ -116,6 +129,7 @@ function validateRuleParameters(
 		}
 		return null;
 	}
+
 	const schema = ruleParamSchemaMap[ruleType];
 	if (schema) {
 		const result = schema.safeParse(parameters);
@@ -151,6 +165,7 @@ export async function registerAutoTagRoutes(app: FastifyInstance, _opts: Fastify
 			body.ruleType,
 			body.parameters,
 			body.conditions ?? null,
+			body.operator ?? null,
 		);
 		if (paramErr) {
 			return reply.status(400).send({ error: paramErr });
@@ -188,7 +203,9 @@ export async function registerAutoTagRoutes(app: FastifyInstance, _opts: Fastify
 			return reply.status(404).send({ error: "Rule not found" });
 		}
 
-		// If rule type or params changed, re-validate
+		// If rule type or params changed, re-validate. We must compute the
+		// post-PATCH `operator` too so `validateRuleParameters` sees the same
+		// composite-vs-leaf shape the executor will eventually evaluate.
 		const nextRuleType = body.ruleType ?? (existing.ruleType as RuleType);
 		const nextParams = body.parameters ?? parseJsonRecord(existing.parameters);
 		const nextConditions =
@@ -197,7 +214,14 @@ export async function registerAutoTagRoutes(app: FastifyInstance, _opts: Fastify
 				: parseJsonArray<{ ruleType: string; parameters: Record<string, unknown> }>(
 						existing.conditions,
 					);
-		const paramErr = validateRuleParameters(nextRuleType, nextParams, nextConditions ?? null);
+		const nextOperator =
+			body.operator !== undefined ? body.operator : (existing.operator as "AND" | "OR" | null);
+		const paramErr = validateRuleParameters(
+			nextRuleType,
+			nextParams,
+			nextConditions ?? null,
+			nextOperator ?? null,
+		);
 		if (paramErr) {
 			return reply.status(400).send({ error: paramErr });
 		}
@@ -334,72 +358,56 @@ export async function registerAutoTagRoutes(app: FastifyInstance, _opts: Fastify
 	// using the old secret.
 	// ========================================================================
 
+	// GET returns the existing secret only if we still have it cached (i.e., it
+	// was generated/rotated *this session*); otherwise we tell the user to
+	// rotate to see a fresh one. We never persist the plaintext, so once it's
+	// lost from the response, only rotation can show it again. This is a small
+	// UX loss for a meaningful security win — a DB dump no longer yields the
+	// auth token.
 	app.get("/webhook-config", async (request, reply) => {
 		const userId = request.currentUser!.id;
-		let user = await app.prisma.user.findUnique({ where: { id: userId } });
+		const user = await app.prisma.user.findUnique({ where: { id: userId } });
 		if (!user) return reply.status(404).send({ error: "User not found" });
 
-		if (!user.webhookSecret) {
-			user = await app.prisma.user.update({
+		if (!user.hashedWebhookSecret) {
+			// First-ever access: generate, persist hash, return plaintext once.
+			const secret = generateWebhookSecret();
+			await app.prisma.user.update({
 				where: { id: userId },
-				data: { webhookSecret: generateWebhookSecret() },
+				data: { hashedWebhookSecret: hashSecret(secret) },
 			});
+			return reply.send({ secret, configured: true, freshlyGenerated: true });
 		}
-		return reply.send({ secret: user.webhookSecret });
+
+		// Secret already configured — we don't store the plaintext, so we can
+		// only confirm "you have one; rotate to view".
+		return reply.send({ secret: null, configured: true, freshlyGenerated: false });
 	});
 
 	app.post("/webhook-config/regenerate", async (request, reply) => {
 		const userId = request.currentUser!.id;
-		const updated = await app.prisma.user.update({
+		const secret = generateWebhookSecret();
+		await app.prisma.user.update({
 			where: { id: userId },
-			data: { webhookSecret: generateWebhookSecret() },
+			data: { hashedWebhookSecret: hashSecret(secret) },
 		});
-		return reply.send({ secret: updated.webhookSecret });
+		return reply.send({ secret, configured: true, freshlyGenerated: true });
 	});
 
-	// ========================================================================
-	// Inbound Connect webhook
-	//
-	// POST /api/auto-tag/webhook/:instanceId — called by Sonarr/Radarr Connect.
-	// Auth via Bearer token (matched against the user's webhookSecret). No
-	// session cookie required. Idempotent — repeated calls reapply the same
-	// tags via the merge-then-update path.
-	// ========================================================================
-
-	app.post("/webhook/:instanceId", async (request, reply) => {
-		const params = validateRequest(z.object({ instanceId: z.string().min(1) }), request.params);
-
-		const authHeader = (request.headers.authorization as string | undefined) ?? undefined;
-		const user = await resolveUserFromBearer(app.prisma, authHeader);
-		if (!user) {
-			return reply.status(401).send({ error: "Invalid or missing webhook secret" });
-		}
-
-		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { id: params.instanceId, userId: user.id, enabled: true },
-		});
-		if (!instance) {
-			return reply.status(404).send({ error: "Instance not found or disabled" });
-		}
-
-		const result = await processWebhook({
-			deps: {
-				prisma: app.prisma,
-				arrClientFactory: app.arrClientFactory,
-				encryptor: app.encryptor,
-				log: request.log,
-			},
-			user,
-			instance,
-			payload: request.body,
-		});
-
-		const code = result.status === "error" ? 400 : result.status === "ignored" ? 202 : 200;
-		return reply.status(code).send(result);
-	});
+	// Note: the inbound Connect webhook (`POST /webhook/:instanceId`) is
+	// mounted in `PUBLIC_ROUTE_GROUPS` via `auto-tag-webhook.ts` so
+	// Sonarr/Radarr can reach it without a session cookie. It authenticates
+	// via Bearer token (the user's hashed webhook secret).
 }
 
 function generateWebhookSecret(): string {
 	// 32 bytes = 256 bits of entropy, base64url-encoded for URL/header safety.
 	return randomBytes(32).toString("base64url");
+}
+
+function hashSecret(plaintext: string): string {
+	// SHA-256 hex. Constant-time comparison happens at the database lookup
+	// (Prisma `findUnique` against an indexed unique column) — there's no
+	// userspace string compare on the auth path.
+	return createHash("sha256").update(plaintext).digest("hex");
 }

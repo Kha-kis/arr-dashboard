@@ -43,7 +43,7 @@ export type UserMinAggregateOutputType = {
   lockedUntil: Date | null
   encryptedTmdbApiKey: string | null
   tmdbEncryptionIv: string | null
-  webhookSecret: string | null
+  hashedWebhookSecret: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -57,7 +57,7 @@ export type UserMaxAggregateOutputType = {
   lockedUntil: Date | null
   encryptedTmdbApiKey: string | null
   tmdbEncryptionIv: string | null
-  webhookSecret: string | null
+  hashedWebhookSecret: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -71,7 +71,7 @@ export type UserCountAggregateOutputType = {
   lockedUntil: number
   encryptedTmdbApiKey: number
   tmdbEncryptionIv: number
-  webhookSecret: number
+  hashedWebhookSecret: number
   createdAt: number
   updatedAt: number
   _all: number
@@ -95,7 +95,7 @@ export type UserMinAggregateInputType = {
   lockedUntil?: true
   encryptedTmdbApiKey?: true
   tmdbEncryptionIv?: true
-  webhookSecret?: true
+  hashedWebhookSecret?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -109,7 +109,7 @@ export type UserMaxAggregateInputType = {
   lockedUntil?: true
   encryptedTmdbApiKey?: true
   tmdbEncryptionIv?: true
-  webhookSecret?: true
+  hashedWebhookSecret?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -123,7 +123,7 @@ export type UserCountAggregateInputType = {
   lockedUntil?: true
   encryptedTmdbApiKey?: true
   tmdbEncryptionIv?: true
-  webhookSecret?: true
+  hashedWebhookSecret?: true
   createdAt?: true
   updatedAt?: true
   _all?: true
@@ -224,7 +224,7 @@ export type UserGroupByOutputType = {
   lockedUntil: Date | null
   encryptedTmdbApiKey: string | null
   tmdbEncryptionIv: string | null
-  webhookSecret: string | null
+  hashedWebhookSecret: string | null
   createdAt: Date
   updatedAt: Date
   _count: UserCountAggregateOutputType | null
@@ -261,7 +261,7 @@ export type UserWhereInput = {
   lockedUntil?: Prisma.DateTimeNullableFilter<"User"> | Date | string | null
   encryptedTmdbApiKey?: Prisma.StringNullableFilter<"User"> | string | null
   tmdbEncryptionIv?: Prisma.StringNullableFilter<"User"> | string | null
-  webhookSecret?: Prisma.StringNullableFilter<"User"> | string | null
+  hashedWebhookSecret?: Prisma.StringNullableFilter<"User"> | string | null
   createdAt?: Prisma.DateTimeFilter<"User"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"User"> | Date | string
   sessions?: Prisma.SessionListRelationFilter
@@ -290,7 +290,7 @@ export type UserOrderByWithRelationInput = {
   lockedUntil?: Prisma.SortOrderInput | Prisma.SortOrder
   encryptedTmdbApiKey?: Prisma.SortOrderInput | Prisma.SortOrder
   tmdbEncryptionIv?: Prisma.SortOrderInput | Prisma.SortOrder
-  webhookSecret?: Prisma.SortOrderInput | Prisma.SortOrder
+  hashedWebhookSecret?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   sessions?: Prisma.SessionOrderByRelationAggregateInput
@@ -313,7 +313,7 @@ export type UserOrderByWithRelationInput = {
 export type UserWhereUniqueInput = Prisma.AtLeast<{
   id?: string
   username?: string
-  webhookSecret?: string
+  hashedWebhookSecret?: string
   AND?: Prisma.UserWhereInput | Prisma.UserWhereInput[]
   OR?: Prisma.UserWhereInput[]
   NOT?: Prisma.UserWhereInput | Prisma.UserWhereInput[]
@@ -340,7 +340,7 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigListRelationFilter
   labelSyncRules?: Prisma.LabelSyncRuleListRelationFilter
   autoTagRules?: Prisma.AutoTagRuleListRelationFilter
-}, "id" | "username" | "webhookSecret">
+}, "id" | "username" | "hashedWebhookSecret">
 
 export type UserOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
@@ -351,7 +351,7 @@ export type UserOrderByWithAggregationInput = {
   lockedUntil?: Prisma.SortOrderInput | Prisma.SortOrder
   encryptedTmdbApiKey?: Prisma.SortOrderInput | Prisma.SortOrder
   tmdbEncryptionIv?: Prisma.SortOrderInput | Prisma.SortOrder
-  webhookSecret?: Prisma.SortOrderInput | Prisma.SortOrder
+  hashedWebhookSecret?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   _count?: Prisma.UserCountOrderByAggregateInput
@@ -373,7 +373,7 @@ export type UserScalarWhereWithAggregatesInput = {
   lockedUntil?: Prisma.DateTimeNullableWithAggregatesFilter<"User"> | Date | string | null
   encryptedTmdbApiKey?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   tmdbEncryptionIv?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
-  webhookSecret?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
+  hashedWebhookSecret?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"User"> | Date | string
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"User"> | Date | string
 }
@@ -387,7 +387,7 @@ export type UserCreateInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
@@ -416,7 +416,7 @@ export type UserUncheckedCreateInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
@@ -445,7 +445,7 @@ export type UserUpdateInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
@@ -474,7 +474,7 @@ export type UserUncheckedUpdateInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
@@ -503,7 +503,7 @@ export type UserCreateManyInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -517,7 +517,7 @@ export type UserUpdateManyMutationInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -531,7 +531,7 @@ export type UserUncheckedUpdateManyInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -545,7 +545,7 @@ export type UserCountOrderByAggregateInput = {
   lockedUntil?: Prisma.SortOrder
   encryptedTmdbApiKey?: Prisma.SortOrder
   tmdbEncryptionIv?: Prisma.SortOrder
-  webhookSecret?: Prisma.SortOrder
+  hashedWebhookSecret?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -563,7 +563,7 @@ export type UserMaxOrderByAggregateInput = {
   lockedUntil?: Prisma.SortOrder
   encryptedTmdbApiKey?: Prisma.SortOrder
   tmdbEncryptionIv?: Prisma.SortOrder
-  webhookSecret?: Prisma.SortOrder
+  hashedWebhookSecret?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -577,7 +577,7 @@ export type UserMinOrderByAggregateInput = {
   lockedUntil?: Prisma.SortOrder
   encryptedTmdbApiKey?: Prisma.SortOrder
   tmdbEncryptionIv?: Prisma.SortOrder
-  webhookSecret?: Prisma.SortOrder
+  hashedWebhookSecret?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -838,7 +838,7 @@ export type UserCreateWithoutSessionsInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
@@ -866,7 +866,7 @@ export type UserUncheckedCreateWithoutSessionsInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
@@ -910,7 +910,7 @@ export type UserUpdateWithoutSessionsInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
@@ -938,7 +938,7 @@ export type UserUncheckedUpdateWithoutSessionsInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
@@ -966,7 +966,7 @@ export type UserCreateWithoutServiceInstancesInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
@@ -994,7 +994,7 @@ export type UserUncheckedCreateWithoutServiceInstancesInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
@@ -1038,7 +1038,7 @@ export type UserUpdateWithoutServiceInstancesInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
@@ -1066,7 +1066,7 @@ export type UserUncheckedUpdateWithoutServiceInstancesInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
@@ -1094,7 +1094,7 @@ export type UserCreateWithoutOidcAccountsInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
@@ -1122,7 +1122,7 @@ export type UserUncheckedCreateWithoutOidcAccountsInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
@@ -1166,7 +1166,7 @@ export type UserUpdateWithoutOidcAccountsInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
@@ -1194,7 +1194,7 @@ export type UserUncheckedUpdateWithoutOidcAccountsInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
@@ -1222,7 +1222,7 @@ export type UserCreateWithoutWebauthnCredentialsInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
@@ -1250,7 +1250,7 @@ export type UserUncheckedCreateWithoutWebauthnCredentialsInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
@@ -1294,7 +1294,7 @@ export type UserUpdateWithoutWebauthnCredentialsInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
@@ -1322,7 +1322,7 @@ export type UserUncheckedUpdateWithoutWebauthnCredentialsInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
@@ -1350,7 +1350,7 @@ export type UserCreateWithoutTrashSettingsInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
@@ -1378,7 +1378,7 @@ export type UserUncheckedCreateWithoutTrashSettingsInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
@@ -1422,7 +1422,7 @@ export type UserUpdateWithoutTrashSettingsInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
@@ -1450,7 +1450,7 @@ export type UserUncheckedUpdateWithoutTrashSettingsInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
@@ -1478,7 +1478,7 @@ export type UserCreateWithoutQualitySizeMappingsInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
@@ -1506,7 +1506,7 @@ export type UserUncheckedCreateWithoutQualitySizeMappingsInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
@@ -1550,7 +1550,7 @@ export type UserUpdateWithoutQualitySizeMappingsInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
@@ -1578,7 +1578,7 @@ export type UserUncheckedUpdateWithoutQualitySizeMappingsInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
@@ -1606,7 +1606,7 @@ export type UserCreateWithoutUserCustomFormatsInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
@@ -1634,7 +1634,7 @@ export type UserUncheckedCreateWithoutUserCustomFormatsInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
@@ -1678,7 +1678,7 @@ export type UserUpdateWithoutUserCustomFormatsInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
@@ -1706,7 +1706,7 @@ export type UserUncheckedUpdateWithoutUserCustomFormatsInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
@@ -1734,7 +1734,7 @@ export type UserCreateWithoutLibraryCleanupConfigsInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
@@ -1762,7 +1762,7 @@ export type UserUncheckedCreateWithoutLibraryCleanupConfigsInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
@@ -1806,7 +1806,7 @@ export type UserUpdateWithoutLibraryCleanupConfigsInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
@@ -1834,7 +1834,7 @@ export type UserUncheckedUpdateWithoutLibraryCleanupConfigsInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
@@ -1862,7 +1862,7 @@ export type UserCreateWithoutNotificationChannelsInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
@@ -1890,7 +1890,7 @@ export type UserUncheckedCreateWithoutNotificationChannelsInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
@@ -1934,7 +1934,7 @@ export type UserUpdateWithoutNotificationChannelsInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
@@ -1962,7 +1962,7 @@ export type UserUncheckedUpdateWithoutNotificationChannelsInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
@@ -1990,7 +1990,7 @@ export type UserCreateWithoutNotificationRulesInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
@@ -2018,7 +2018,7 @@ export type UserUncheckedCreateWithoutNotificationRulesInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
@@ -2062,7 +2062,7 @@ export type UserUpdateWithoutNotificationRulesInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
@@ -2090,7 +2090,7 @@ export type UserUncheckedUpdateWithoutNotificationRulesInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
@@ -2118,7 +2118,7 @@ export type UserCreateWithoutNotificationAggregationConfigsInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
@@ -2146,7 +2146,7 @@ export type UserUncheckedCreateWithoutNotificationAggregationConfigsInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
@@ -2190,7 +2190,7 @@ export type UserUpdateWithoutNotificationAggregationConfigsInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
@@ -2218,7 +2218,7 @@ export type UserUncheckedUpdateWithoutNotificationAggregationConfigsInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
@@ -2246,7 +2246,7 @@ export type UserCreateWithoutNamingConfigsInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
@@ -2274,7 +2274,7 @@ export type UserUncheckedCreateWithoutNamingConfigsInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
@@ -2318,7 +2318,7 @@ export type UserUpdateWithoutNamingConfigsInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
@@ -2346,7 +2346,7 @@ export type UserUncheckedUpdateWithoutNamingConfigsInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
@@ -2374,7 +2374,7 @@ export type UserCreateWithoutNamingDeployHistoryInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
@@ -2402,7 +2402,7 @@ export type UserUncheckedCreateWithoutNamingDeployHistoryInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
@@ -2446,7 +2446,7 @@ export type UserUpdateWithoutNamingDeployHistoryInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
@@ -2474,7 +2474,7 @@ export type UserUncheckedUpdateWithoutNamingDeployHistoryInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
@@ -2502,7 +2502,7 @@ export type UserCreateWithoutLabelSyncRulesInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
@@ -2530,7 +2530,7 @@ export type UserUncheckedCreateWithoutLabelSyncRulesInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
@@ -2574,7 +2574,7 @@ export type UserUpdateWithoutLabelSyncRulesInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
@@ -2602,7 +2602,7 @@ export type UserUncheckedUpdateWithoutLabelSyncRulesInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
@@ -2630,7 +2630,7 @@ export type UserCreateWithoutAutoTagRulesInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
@@ -2658,7 +2658,7 @@ export type UserUncheckedCreateWithoutAutoTagRulesInput = {
   lockedUntil?: Date | string | null
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
-  webhookSecret?: string | null
+  hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
@@ -2702,7 +2702,7 @@ export type UserUpdateWithoutAutoTagRulesInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
@@ -2730,7 +2730,7 @@ export type UserUncheckedUpdateWithoutAutoTagRulesInput = {
   lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  webhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
@@ -2906,7 +2906,7 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   lockedUntil?: boolean
   encryptedTmdbApiKey?: boolean
   tmdbEncryptionIv?: boolean
-  webhookSecret?: boolean
+  hashedWebhookSecret?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   sessions?: boolean | Prisma.User$sessionsArgs<ExtArgs>
@@ -2936,7 +2936,7 @@ export type UserSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   lockedUntil?: boolean
   encryptedTmdbApiKey?: boolean
   tmdbEncryptionIv?: boolean
-  webhookSecret?: boolean
+  hashedWebhookSecret?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }, ExtArgs["result"]["user"]>
@@ -2950,7 +2950,7 @@ export type UserSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   lockedUntil?: boolean
   encryptedTmdbApiKey?: boolean
   tmdbEncryptionIv?: boolean
-  webhookSecret?: boolean
+  hashedWebhookSecret?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }, ExtArgs["result"]["user"]>
@@ -2964,12 +2964,12 @@ export type UserSelectScalar = {
   lockedUntil?: boolean
   encryptedTmdbApiKey?: boolean
   tmdbEncryptionIv?: boolean
-  webhookSecret?: boolean
+  hashedWebhookSecret?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "username" | "hashedPassword" | "mustChangePassword" | "failedLoginAttempts" | "lockedUntil" | "encryptedTmdbApiKey" | "tmdbEncryptionIv" | "webhookSecret" | "createdAt" | "updatedAt", ExtArgs["result"]["user"]>
+export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "username" | "hashedPassword" | "mustChangePassword" | "failedLoginAttempts" | "lockedUntil" | "encryptedTmdbApiKey" | "tmdbEncryptionIv" | "hashedWebhookSecret" | "createdAt" | "updatedAt", ExtArgs["result"]["user"]>
 export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   sessions?: boolean | Prisma.User$sessionsArgs<ExtArgs>
   oidcAccounts?: boolean | Prisma.User$oidcAccountsArgs<ExtArgs>
@@ -3020,10 +3020,12 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     encryptedTmdbApiKey: string | null
     tmdbEncryptionIv: string | null
     /**
-     * Secret used to authenticate inbound auto-tagger webhooks from Sonarr/Radarr Connect.
-     * Lazy-generated on first read via the auto-tagger UI; rotated on demand by the user.
+     * SHA-256 hex hash of the user's auto-tagger webhook secret. Plaintext is
+     * only ever returned to the authenticated user at generation/rotation time;
+     * inbound webhook auth hashes the bearer token and looks it up here. A DB
+     * compromise yields no usable creds.
      */
-    webhookSecret: string | null
+    hashedWebhookSecret: string | null
     createdAt: Date
     updatedAt: Date
   }, ExtArgs["result"]["user"]>
@@ -3472,7 +3474,7 @@ export interface UserFieldRefs {
   readonly lockedUntil: Prisma.FieldRef<"User", 'DateTime'>
   readonly encryptedTmdbApiKey: Prisma.FieldRef<"User", 'String'>
   readonly tmdbEncryptionIv: Prisma.FieldRef<"User", 'String'>
-  readonly webhookSecret: Prisma.FieldRef<"User", 'String'>
+  readonly hashedWebhookSecret: Prisma.FieldRef<"User", 'String'>
   readonly createdAt: Prisma.FieldRef<"User", 'DateTime'>
   readonly updatedAt: Prisma.FieldRef<"User", 'DateTime'>
 }

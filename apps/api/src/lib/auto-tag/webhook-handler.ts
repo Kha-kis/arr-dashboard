@@ -17,6 +17,7 @@
  * the user can verify the wiring without firing a real run.
  */
 
+import { createHash } from "node:crypto";
 import { ArrError } from "arr-sdk";
 import type { FastifyBaseLogger } from "fastify";
 import type { ArrClient, ArrClientFactory } from "../arr/client-factory.js";
@@ -43,7 +44,8 @@ export interface WebhookResult {
 
 /**
  * Resolve a webhook bearer token to a user. Returns null if the token
- * is missing, malformed, or unknown.
+ * is missing, malformed, or unknown. The token is hashed before the DB
+ * lookup so a DB compromise yields no usable creds.
  */
 export async function resolveUserFromBearer(
 	prisma: PrismaClient,
@@ -52,7 +54,8 @@ export async function resolveUserFromBearer(
 	if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
 	const token = authHeader.slice("Bearer ".length).trim();
 	if (token.length < 16) return null;
-	return prisma.user.findUnique({ where: { webhookSecret: token } });
+	const hashed = createHash("sha256").update(token).digest("hex");
+	return prisma.user.findUnique({ where: { hashedWebhookSecret: hashed } });
 }
 
 /**
@@ -156,16 +159,11 @@ export async function processWebhook(opts: {
 	// semantics — same pattern as the scheduled executor.
 	const uniqueTags = [...new Set(tagsToApply)];
 
-	let existingTags: number[] = [];
-	try {
-		const accessor = event.mediaType === "series" ? "series" : "movie";
-		// biome-ignore lint/suspicious/noExplicitAny: SDK union typing requires runtime accessor
-		const resource = (arrClient as any)[accessor];
-		const fullItem = await resource.getById(event.arrItemId);
-		existingTags = Array.isArray(fullItem.tags) ? fullItem.tags : [];
-	} catch {
-		// Already failed once — caller will see the prior error
-	}
+	// `cacheItem.data` is the JSON-stringified full *arr item we already
+	// fetched in `fetchAndAdaptItem` above — reuse it instead of doing a
+	// second `getById` (which on transient failure used to silent-fall-back
+	// to `existingTags = []` and erase the user's existing tags on write).
+	const existingTags = extractItemTags(cacheItem.data);
 
 	const newTagIds: number[] = [];
 	for (const tagName of uniqueTags) {
@@ -222,18 +220,22 @@ function parseConnectEvent(payload: unknown): ConnectEvent {
 
 	if (eventType === "test") return { kind: "test" };
 
-	// We tag on item-level events. Sonarr/Radarr fire several event types;
-	// we accept Download/Grab/Rename/Upgrade/etc. as long as the payload
-	// includes a series.id or movie.id.
-	if (
-		eventType !== "download" &&
-		eventType !== "grab" &&
-		eventType !== "rename" &&
-		eventType !== "upgrade" &&
-		eventType !== "moviefile.import" &&
-		eventType !== "moviefile.download"
-	) {
-		// Even unknown events can match if they have a series/movie id
+	// Allowlist: only item-level events that legitimately carry a single
+	// imported/changed series or movie. Health, ApplicationUpdate, and other
+	// system-level events that *might* still serialize a series/movie object
+	// shouldn't trigger tagging.
+	const ITEM_EVENT_TYPES = new Set([
+		"download",
+		"grab",
+		"rename",
+		"upgrade",
+		"moviefile.import",
+		"moviefile.download",
+		"manualinteraction",
+		"manualinteractionrequired",
+	]);
+	if (!ITEM_EVENT_TYPES.has(eventType)) {
+		return { kind: "unsupported", reason: `eventType=${eventType || "unknown"} not item-level` };
 	}
 
 	const series = p.series as Record<string, unknown> | undefined;
