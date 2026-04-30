@@ -21,6 +21,7 @@ import { registerAuthRoutes } from "./auth.js";
 import { registerAuthOidcRoutes } from "./auth-oidc.js";
 import { registerAuthPasskeyRoutes } from "./auth-passkey.js";
 import { registerAutoTagRoutes } from "./auto-tag.js";
+import { registerAutoTagWebhookRoutes } from "./auto-tag-webhook.js";
 import { registerBackupRoutes } from "./backup.js";
 import { registerDashboardRoutes } from "./dashboard.js";
 import { registerHealthRoutes } from "./health.js";
@@ -117,6 +118,14 @@ export const PUBLIC_ROUTE_GROUPS: readonly RouteGroup[] = [
 		register: registerAuthPasskeyRoutes,
 		maturity: "stable",
 		summary: "WebAuthn registration + assertion",
+	},
+	{
+		path: "/api/auto-tag/webhook",
+		prefix: "/api/auto-tag/webhook",
+		register: registerAutoTagWebhookRoutes,
+		maturity: "experimental",
+		summary:
+			"Inbound Sonarr/Radarr Connect webhook for real-time auto-tagging. Authenticates via per-user Bearer token (user's hashed webhookSecret). Public route — no session cookie required.",
 	},
 ];
 
@@ -253,7 +262,7 @@ export const PROTECTED_ROUTE_GROUPS: readonly RouteGroup[] = [
 		register: registerAutoTagRoutes,
 		maturity: "experimental",
 		summary:
-			"Criteria-based auto-tagger rules — applies tags to LibraryCache items matching the rule's criteria DSL (genre, year, codec, watch state, …). Companion to Label Sync.",
+			"Criteria-based auto-tagger rules — applies tags to LibraryCache items matching the rule's criteria DSL (genre, year, codec, watch state, …). Companion to Label Sync. Webhook config (secret read/rotate) lives here under session auth; the inbound webhook itself is in PUBLIC_ROUTE_GROUPS at /api/auto-tag/webhook so Connect can reach it without a session cookie.",
 	},
 	{
 		path: "/api/pulse",
