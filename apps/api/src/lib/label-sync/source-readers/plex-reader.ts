@@ -21,7 +21,10 @@ export const plexSourceReader: SourceReader = {
 
 		// JSON-quoted form: `"Kids"` rather than `Kids` — defends against the
 		// label name appearing as a substring of another label or the title.
-		const quoted = `"${rule.sourceTagName.replace(/"/g, '\\"')}"`;
+		// `JSON.stringify` handles the full JSON escape grammar (quotes,
+		// backslashes, control chars, unicode), so the resulting substring
+		// matches exactly the token Prisma will see in the labels JSON column.
+		const quoted = JSON.stringify(rule.sourceTagName);
 
 		let rows: Array<{ tmdbId: number; mediaType: string; title: string; labels: string }>;
 		try {
