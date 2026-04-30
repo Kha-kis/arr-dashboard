@@ -53,6 +53,7 @@ model User {
   notificationRules            NotificationRule[]
   notificationAggregationConfigs NotificationAggregationConfig[]
   labelSyncRules    LabelSyncRule[]
+  autoTagRules      AutoTagRule[]
 }
 
 model Session {
@@ -1499,4 +1500,45 @@ model LabelSyncRule {
 
   @@index([userId])
   @@map("label_sync_rules")
+}
+
+/// Auto-tagger rule — applies a tag to LibraryCache items matching the criteria DSL.
+/// Reuses the same rule-criteria types as LibraryCleanupRule (ruleType, parameters,
+/// conditions, operator) so the rule expressiveness is at parity. Differs in action:
+/// instead of delete/unmonitor, it applies `tagName` to the matched items via
+/// the source-side *arr tag-write infrastructure.
+model AutoTagRule {
+  id                String   @id @default(cuid())
+  userId            String
+  name              String
+  enabled           Boolean  @default(true)
+
+  // Criteria DSL (mirrors LibraryCleanupRule)
+  ruleType          String                     // "age" | "size" | "genre" | "composite" | …
+  parameters        String                     // JSON blob, validated against ruleParamSchemaMap
+  operator          String?                    // "AND" | "OR" for composite rules
+  conditions        String?                    // JSON array of sub-conditions when operator set
+
+  // Scope filters (which items the rule sees — same shape as LibraryCleanupRule)
+  serviceFilter     String?                    // JSON array of service types
+  instanceFilter    String?                    // JSON array of instance IDs
+  excludeTags       String?                    // JSON array of arr tag IDs to skip
+  excludeTitles     String?                    // JSON array of title regex patterns to skip
+  plexLibraryFilter String?                    // JSON array of Plex section names
+
+  // Action
+  tagName           String                     // Tag/label to apply on matching items
+
+  // Run telemetry (mirrors LabelSyncRule's run reporting model)
+  lastRunAt         DateTime?
+  lastRunStatus     String?                    // "success" | "partial" | "failed"
+  lastRunMessage    String?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("auto_tag_rules")
 }

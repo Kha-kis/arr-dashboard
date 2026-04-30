@@ -34,6 +34,7 @@ export const JOB_ID = {
 	tautulliCache: "tautulli-cache",
 	seerrHealth: "seerr-health",
 	labelSync: "label-sync",
+	autoTag: "auto-tag",
 } as const;
 
 export const KNOWN_JOBS: readonly JobDefinition[] = [
@@ -160,6 +161,14 @@ export const KNOWN_JOBS: readonly JobDefinition[] = [
 		label: "Label sync",
 		description:
 			"Walks enabled LabelSyncRule rows once per hour and applies the configured destination label to source items carrying the matching tag. Per-rule cooldown skips rules that ran in the last hour, so on-demand runs and scheduled ticks don't double-fire.",
+		concurrency: "singleton",
+		intervalMs: 5 * 60 * 1000,
+	},
+	{
+		id: JOB_ID.autoTag,
+		label: "Auto-tag",
+		description:
+			"Walks enabled AutoTagRule rows once per hour, evaluates each rule's criteria DSL against LibraryCache items, and applies the configured tag to matches via the source *arr's tag-write API. Per-rule cooldown skips rules that ran in the last hour.",
 		concurrency: "singleton",
 		intervalMs: 5 * 60 * 1000,
 	},

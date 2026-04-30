@@ -303,3 +303,12 @@ export type SeerrActionLog = Prisma.SeerrActionLogModel
  * is applied. See lib/plex-label-sync/execute-rule.ts for the engine.
  */
 export type LabelSyncRule = Prisma.LabelSyncRuleModel
+/**
+ * Model AutoTagRule
+ * Auto-tagger rule — applies a tag to LibraryCache items matching the criteria DSL.
+ * Reuses the same rule-criteria types as LibraryCleanupRule (ruleType, parameters,
+ * conditions, operator) so the rule expressiveness is at parity. Differs in action:
+ * instead of delete/unmonitor, it applies `tagName` to the matched items via
+ * the source-side *arr tag-write infrastructure.
+ */
+export type AutoTagRule = Prisma.AutoTagRuleModel
