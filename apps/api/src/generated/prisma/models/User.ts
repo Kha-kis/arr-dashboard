@@ -46,6 +46,8 @@ export type UserMinAggregateOutputType = {
   hashedWebhookSecret: string | null
   createdAt: Date | null
   updatedAt: Date | null
+  encryptedTraktAccessToken: string | null
+  traktTokenIv: string | null
 }
 
 export type UserMaxAggregateOutputType = {
@@ -60,6 +62,8 @@ export type UserMaxAggregateOutputType = {
   hashedWebhookSecret: string | null
   createdAt: Date | null
   updatedAt: Date | null
+  encryptedTraktAccessToken: string | null
+  traktTokenIv: string | null
 }
 
 export type UserCountAggregateOutputType = {
@@ -74,6 +78,8 @@ export type UserCountAggregateOutputType = {
   hashedWebhookSecret: number
   createdAt: number
   updatedAt: number
+  encryptedTraktAccessToken: number
+  traktTokenIv: number
   _all: number
 }
 
@@ -98,6 +104,8 @@ export type UserMinAggregateInputType = {
   hashedWebhookSecret?: true
   createdAt?: true
   updatedAt?: true
+  encryptedTraktAccessToken?: true
+  traktTokenIv?: true
 }
 
 export type UserMaxAggregateInputType = {
@@ -112,6 +120,8 @@ export type UserMaxAggregateInputType = {
   hashedWebhookSecret?: true
   createdAt?: true
   updatedAt?: true
+  encryptedTraktAccessToken?: true
+  traktTokenIv?: true
 }
 
 export type UserCountAggregateInputType = {
@@ -126,6 +136,8 @@ export type UserCountAggregateInputType = {
   hashedWebhookSecret?: true
   createdAt?: true
   updatedAt?: true
+  encryptedTraktAccessToken?: true
+  traktTokenIv?: true
   _all?: true
 }
 
@@ -227,6 +239,8 @@ export type UserGroupByOutputType = {
   hashedWebhookSecret: string | null
   createdAt: Date
   updatedAt: Date
+  encryptedTraktAccessToken: string | null
+  traktTokenIv: string | null
   _count: UserCountAggregateOutputType | null
   _avg: UserAvgAggregateOutputType | null
   _sum: UserSumAggregateOutputType | null
@@ -264,6 +278,8 @@ export type UserWhereInput = {
   hashedWebhookSecret?: Prisma.StringNullableFilter<"User"> | string | null
   createdAt?: Prisma.DateTimeFilter<"User"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"User"> | Date | string
+  encryptedTraktAccessToken?: Prisma.StringNullableFilter<"User"> | string | null
+  traktTokenIv?: Prisma.StringNullableFilter<"User"> | string | null
   sessions?: Prisma.SessionListRelationFilter
   oidcAccounts?: Prisma.OIDCAccountListRelationFilter
   webauthnCredentials?: Prisma.WebAuthnCredentialListRelationFilter
@@ -279,6 +295,8 @@ export type UserWhereInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigListRelationFilter
   labelSyncRules?: Prisma.LabelSyncRuleListRelationFilter
   autoTagRules?: Prisma.AutoTagRuleListRelationFilter
+  tmdbListCacheRows?: Prisma.TmdbListCacheListRelationFilter
+  traktListCacheRows?: Prisma.TraktListCacheListRelationFilter
 }
 
 export type UserOrderByWithRelationInput = {
@@ -293,6 +311,8 @@ export type UserOrderByWithRelationInput = {
   hashedWebhookSecret?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
+  encryptedTraktAccessToken?: Prisma.SortOrderInput | Prisma.SortOrder
+  traktTokenIv?: Prisma.SortOrderInput | Prisma.SortOrder
   sessions?: Prisma.SessionOrderByRelationAggregateInput
   oidcAccounts?: Prisma.OIDCAccountOrderByRelationAggregateInput
   webauthnCredentials?: Prisma.WebAuthnCredentialOrderByRelationAggregateInput
@@ -308,6 +328,8 @@ export type UserOrderByWithRelationInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigOrderByRelationAggregateInput
   labelSyncRules?: Prisma.LabelSyncRuleOrderByRelationAggregateInput
   autoTagRules?: Prisma.AutoTagRuleOrderByRelationAggregateInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheOrderByRelationAggregateInput
+  traktListCacheRows?: Prisma.TraktListCacheOrderByRelationAggregateInput
 }
 
 export type UserWhereUniqueInput = Prisma.AtLeast<{
@@ -325,6 +347,8 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   tmdbEncryptionIv?: Prisma.StringNullableFilter<"User"> | string | null
   createdAt?: Prisma.DateTimeFilter<"User"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"User"> | Date | string
+  encryptedTraktAccessToken?: Prisma.StringNullableFilter<"User"> | string | null
+  traktTokenIv?: Prisma.StringNullableFilter<"User"> | string | null
   sessions?: Prisma.SessionListRelationFilter
   oidcAccounts?: Prisma.OIDCAccountListRelationFilter
   webauthnCredentials?: Prisma.WebAuthnCredentialListRelationFilter
@@ -340,6 +364,8 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigListRelationFilter
   labelSyncRules?: Prisma.LabelSyncRuleListRelationFilter
   autoTagRules?: Prisma.AutoTagRuleListRelationFilter
+  tmdbListCacheRows?: Prisma.TmdbListCacheListRelationFilter
+  traktListCacheRows?: Prisma.TraktListCacheListRelationFilter
 }, "id" | "username" | "hashedWebhookSecret">
 
 export type UserOrderByWithAggregationInput = {
@@ -354,6 +380,8 @@ export type UserOrderByWithAggregationInput = {
   hashedWebhookSecret?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
+  encryptedTraktAccessToken?: Prisma.SortOrderInput | Prisma.SortOrder
+  traktTokenIv?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.UserCountOrderByAggregateInput
   _avg?: Prisma.UserAvgOrderByAggregateInput
   _max?: Prisma.UserMaxOrderByAggregateInput
@@ -376,6 +404,8 @@ export type UserScalarWhereWithAggregatesInput = {
   hashedWebhookSecret?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"User"> | Date | string
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"User"> | Date | string
+  encryptedTraktAccessToken?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
+  traktTokenIv?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
 }
 
 export type UserCreateInput = {
@@ -390,6 +420,8 @@ export type UserCreateInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
@@ -405,6 +437,8 @@ export type UserCreateInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateInput = {
@@ -419,6 +453,8 @@ export type UserUncheckedCreateInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
@@ -434,6 +470,8 @@ export type UserUncheckedCreateInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserUpdateInput = {
@@ -448,6 +486,8 @@ export type UserUpdateInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
@@ -463,6 +503,8 @@ export type UserUpdateInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateInput = {
@@ -477,6 +519,8 @@ export type UserUncheckedUpdateInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
@@ -492,6 +536,8 @@ export type UserUncheckedUpdateInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateManyInput = {
@@ -506,6 +552,8 @@ export type UserCreateManyInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
 }
 
 export type UserUpdateManyMutationInput = {
@@ -520,6 +568,8 @@ export type UserUpdateManyMutationInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type UserUncheckedUpdateManyInput = {
@@ -534,6 +584,8 @@ export type UserUncheckedUpdateManyInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type UserCountOrderByAggregateInput = {
@@ -548,6 +600,8 @@ export type UserCountOrderByAggregateInput = {
   hashedWebhookSecret?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
+  encryptedTraktAccessToken?: Prisma.SortOrder
+  traktTokenIv?: Prisma.SortOrder
 }
 
 export type UserAvgOrderByAggregateInput = {
@@ -566,6 +620,8 @@ export type UserMaxOrderByAggregateInput = {
   hashedWebhookSecret?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
+  encryptedTraktAccessToken?: Prisma.SortOrder
+  traktTokenIv?: Prisma.SortOrder
 }
 
 export type UserMinOrderByAggregateInput = {
@@ -580,6 +636,8 @@ export type UserMinOrderByAggregateInput = {
   hashedWebhookSecret?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
+  encryptedTraktAccessToken?: Prisma.SortOrder
+  traktTokenIv?: Prisma.SortOrder
 }
 
 export type UserSumOrderByAggregateInput = {
@@ -829,6 +887,34 @@ export type UserUpdateOneRequiredWithoutAutoTagRulesNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutAutoTagRulesInput, Prisma.UserUpdateWithoutAutoTagRulesInput>, Prisma.UserUncheckedUpdateWithoutAutoTagRulesInput>
 }
 
+export type UserCreateNestedOneWithoutTmdbListCacheRowsInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutTmdbListCacheRowsInput, Prisma.UserUncheckedCreateWithoutTmdbListCacheRowsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutTmdbListCacheRowsInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutTmdbListCacheRowsNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutTmdbListCacheRowsInput, Prisma.UserUncheckedCreateWithoutTmdbListCacheRowsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutTmdbListCacheRowsInput
+  upsert?: Prisma.UserUpsertWithoutTmdbListCacheRowsInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutTmdbListCacheRowsInput, Prisma.UserUpdateWithoutTmdbListCacheRowsInput>, Prisma.UserUncheckedUpdateWithoutTmdbListCacheRowsInput>
+}
+
+export type UserCreateNestedOneWithoutTraktListCacheRowsInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutTraktListCacheRowsInput, Prisma.UserUncheckedCreateWithoutTraktListCacheRowsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutTraktListCacheRowsInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutTraktListCacheRowsNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutTraktListCacheRowsInput, Prisma.UserUncheckedCreateWithoutTraktListCacheRowsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutTraktListCacheRowsInput
+  upsert?: Prisma.UserUpsertWithoutTraktListCacheRowsInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutTraktListCacheRowsInput, Prisma.UserUpdateWithoutTraktListCacheRowsInput>, Prisma.UserUncheckedUpdateWithoutTraktListCacheRowsInput>
+}
+
 export type UserCreateWithoutSessionsInput = {
   id?: string
   username: string
@@ -841,6 +927,8 @@ export type UserCreateWithoutSessionsInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
@@ -855,6 +943,8 @@ export type UserCreateWithoutSessionsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutSessionsInput = {
@@ -869,6 +959,8 @@ export type UserUncheckedCreateWithoutSessionsInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
@@ -883,6 +975,8 @@ export type UserUncheckedCreateWithoutSessionsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutSessionsInput = {
@@ -913,6 +1007,8 @@ export type UserUpdateWithoutSessionsInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
@@ -927,6 +1023,8 @@ export type UserUpdateWithoutSessionsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutSessionsInput = {
@@ -941,6 +1039,8 @@ export type UserUncheckedUpdateWithoutSessionsInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
@@ -955,6 +1055,8 @@ export type UserUncheckedUpdateWithoutSessionsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutServiceInstancesInput = {
@@ -969,6 +1071,8 @@ export type UserCreateWithoutServiceInstancesInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
@@ -983,6 +1087,8 @@ export type UserCreateWithoutServiceInstancesInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutServiceInstancesInput = {
@@ -997,6 +1103,8 @@ export type UserUncheckedCreateWithoutServiceInstancesInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
@@ -1011,6 +1119,8 @@ export type UserUncheckedCreateWithoutServiceInstancesInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutServiceInstancesInput = {
@@ -1041,6 +1151,8 @@ export type UserUpdateWithoutServiceInstancesInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
@@ -1055,6 +1167,8 @@ export type UserUpdateWithoutServiceInstancesInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutServiceInstancesInput = {
@@ -1069,6 +1183,8 @@ export type UserUncheckedUpdateWithoutServiceInstancesInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
@@ -1083,6 +1199,8 @@ export type UserUncheckedUpdateWithoutServiceInstancesInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutOidcAccountsInput = {
@@ -1097,6 +1215,8 @@ export type UserCreateWithoutOidcAccountsInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
@@ -1111,6 +1231,8 @@ export type UserCreateWithoutOidcAccountsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutOidcAccountsInput = {
@@ -1125,6 +1247,8 @@ export type UserUncheckedCreateWithoutOidcAccountsInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
@@ -1139,6 +1263,8 @@ export type UserUncheckedCreateWithoutOidcAccountsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutOidcAccountsInput = {
@@ -1169,6 +1295,8 @@ export type UserUpdateWithoutOidcAccountsInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
@@ -1183,6 +1311,8 @@ export type UserUpdateWithoutOidcAccountsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutOidcAccountsInput = {
@@ -1197,6 +1327,8 @@ export type UserUncheckedUpdateWithoutOidcAccountsInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
@@ -1211,6 +1343,8 @@ export type UserUncheckedUpdateWithoutOidcAccountsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutWebauthnCredentialsInput = {
@@ -1225,6 +1359,8 @@ export type UserCreateWithoutWebauthnCredentialsInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
@@ -1239,6 +1375,8 @@ export type UserCreateWithoutWebauthnCredentialsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutWebauthnCredentialsInput = {
@@ -1253,6 +1391,8 @@ export type UserUncheckedCreateWithoutWebauthnCredentialsInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
@@ -1267,6 +1407,8 @@ export type UserUncheckedCreateWithoutWebauthnCredentialsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutWebauthnCredentialsInput = {
@@ -1297,6 +1439,8 @@ export type UserUpdateWithoutWebauthnCredentialsInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
@@ -1311,6 +1455,8 @@ export type UserUpdateWithoutWebauthnCredentialsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutWebauthnCredentialsInput = {
@@ -1325,6 +1471,8 @@ export type UserUncheckedUpdateWithoutWebauthnCredentialsInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
@@ -1339,6 +1487,8 @@ export type UserUncheckedUpdateWithoutWebauthnCredentialsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutTrashSettingsInput = {
@@ -1353,6 +1503,8 @@ export type UserCreateWithoutTrashSettingsInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
@@ -1367,6 +1519,8 @@ export type UserCreateWithoutTrashSettingsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutTrashSettingsInput = {
@@ -1381,6 +1535,8 @@ export type UserUncheckedCreateWithoutTrashSettingsInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
@@ -1395,6 +1551,8 @@ export type UserUncheckedCreateWithoutTrashSettingsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutTrashSettingsInput = {
@@ -1425,6 +1583,8 @@ export type UserUpdateWithoutTrashSettingsInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
@@ -1439,6 +1599,8 @@ export type UserUpdateWithoutTrashSettingsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutTrashSettingsInput = {
@@ -1453,6 +1615,8 @@ export type UserUncheckedUpdateWithoutTrashSettingsInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
@@ -1467,6 +1631,8 @@ export type UserUncheckedUpdateWithoutTrashSettingsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutQualitySizeMappingsInput = {
@@ -1481,6 +1647,8 @@ export type UserCreateWithoutQualitySizeMappingsInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
@@ -1495,6 +1663,8 @@ export type UserCreateWithoutQualitySizeMappingsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutQualitySizeMappingsInput = {
@@ -1509,6 +1679,8 @@ export type UserUncheckedCreateWithoutQualitySizeMappingsInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
@@ -1523,6 +1695,8 @@ export type UserUncheckedCreateWithoutQualitySizeMappingsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutQualitySizeMappingsInput = {
@@ -1553,6 +1727,8 @@ export type UserUpdateWithoutQualitySizeMappingsInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
@@ -1567,6 +1743,8 @@ export type UserUpdateWithoutQualitySizeMappingsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutQualitySizeMappingsInput = {
@@ -1581,6 +1759,8 @@ export type UserUncheckedUpdateWithoutQualitySizeMappingsInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
@@ -1595,6 +1775,8 @@ export type UserUncheckedUpdateWithoutQualitySizeMappingsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutUserCustomFormatsInput = {
@@ -1609,6 +1791,8 @@ export type UserCreateWithoutUserCustomFormatsInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
@@ -1623,6 +1807,8 @@ export type UserCreateWithoutUserCustomFormatsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutUserCustomFormatsInput = {
@@ -1637,6 +1823,8 @@ export type UserUncheckedCreateWithoutUserCustomFormatsInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
@@ -1651,6 +1839,8 @@ export type UserUncheckedCreateWithoutUserCustomFormatsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutUserCustomFormatsInput = {
@@ -1681,6 +1871,8 @@ export type UserUpdateWithoutUserCustomFormatsInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
@@ -1695,6 +1887,8 @@ export type UserUpdateWithoutUserCustomFormatsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutUserCustomFormatsInput = {
@@ -1709,6 +1903,8 @@ export type UserUncheckedUpdateWithoutUserCustomFormatsInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
@@ -1723,6 +1919,8 @@ export type UserUncheckedUpdateWithoutUserCustomFormatsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutLibraryCleanupConfigsInput = {
@@ -1737,6 +1935,8 @@ export type UserCreateWithoutLibraryCleanupConfigsInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
@@ -1751,6 +1951,8 @@ export type UserCreateWithoutLibraryCleanupConfigsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutLibraryCleanupConfigsInput = {
@@ -1765,6 +1967,8 @@ export type UserUncheckedCreateWithoutLibraryCleanupConfigsInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
@@ -1779,6 +1983,8 @@ export type UserUncheckedCreateWithoutLibraryCleanupConfigsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutLibraryCleanupConfigsInput = {
@@ -1809,6 +2015,8 @@ export type UserUpdateWithoutLibraryCleanupConfigsInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
@@ -1823,6 +2031,8 @@ export type UserUpdateWithoutLibraryCleanupConfigsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutLibraryCleanupConfigsInput = {
@@ -1837,6 +2047,8 @@ export type UserUncheckedUpdateWithoutLibraryCleanupConfigsInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
@@ -1851,6 +2063,8 @@ export type UserUncheckedUpdateWithoutLibraryCleanupConfigsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutNotificationChannelsInput = {
@@ -1865,6 +2079,8 @@ export type UserCreateWithoutNotificationChannelsInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
@@ -1879,6 +2095,8 @@ export type UserCreateWithoutNotificationChannelsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutNotificationChannelsInput = {
@@ -1893,6 +2111,8 @@ export type UserUncheckedCreateWithoutNotificationChannelsInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
@@ -1907,6 +2127,8 @@ export type UserUncheckedCreateWithoutNotificationChannelsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutNotificationChannelsInput = {
@@ -1937,6 +2159,8 @@ export type UserUpdateWithoutNotificationChannelsInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
@@ -1951,6 +2175,8 @@ export type UserUpdateWithoutNotificationChannelsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutNotificationChannelsInput = {
@@ -1965,6 +2191,8 @@ export type UserUncheckedUpdateWithoutNotificationChannelsInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
@@ -1979,6 +2207,8 @@ export type UserUncheckedUpdateWithoutNotificationChannelsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutNotificationRulesInput = {
@@ -1993,6 +2223,8 @@ export type UserCreateWithoutNotificationRulesInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
@@ -2007,6 +2239,8 @@ export type UserCreateWithoutNotificationRulesInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutNotificationRulesInput = {
@@ -2021,6 +2255,8 @@ export type UserUncheckedCreateWithoutNotificationRulesInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
@@ -2035,6 +2271,8 @@ export type UserUncheckedCreateWithoutNotificationRulesInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutNotificationRulesInput = {
@@ -2065,6 +2303,8 @@ export type UserUpdateWithoutNotificationRulesInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
@@ -2079,6 +2319,8 @@ export type UserUpdateWithoutNotificationRulesInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutNotificationRulesInput = {
@@ -2093,6 +2335,8 @@ export type UserUncheckedUpdateWithoutNotificationRulesInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
@@ -2107,6 +2351,8 @@ export type UserUncheckedUpdateWithoutNotificationRulesInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutNotificationAggregationConfigsInput = {
@@ -2121,6 +2367,8 @@ export type UserCreateWithoutNotificationAggregationConfigsInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
@@ -2135,6 +2383,8 @@ export type UserCreateWithoutNotificationAggregationConfigsInput = {
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutNotificationAggregationConfigsInput = {
@@ -2149,6 +2399,8 @@ export type UserUncheckedCreateWithoutNotificationAggregationConfigsInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
@@ -2163,6 +2415,8 @@ export type UserUncheckedCreateWithoutNotificationAggregationConfigsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutNotificationAggregationConfigsInput = {
@@ -2193,6 +2447,8 @@ export type UserUpdateWithoutNotificationAggregationConfigsInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
@@ -2207,6 +2463,8 @@ export type UserUpdateWithoutNotificationAggregationConfigsInput = {
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutNotificationAggregationConfigsInput = {
@@ -2221,6 +2479,8 @@ export type UserUncheckedUpdateWithoutNotificationAggregationConfigsInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
@@ -2235,6 +2495,8 @@ export type UserUncheckedUpdateWithoutNotificationAggregationConfigsInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutNamingConfigsInput = {
@@ -2249,6 +2511,8 @@ export type UserCreateWithoutNamingConfigsInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
@@ -2263,6 +2527,8 @@ export type UserCreateWithoutNamingConfigsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutNamingConfigsInput = {
@@ -2277,6 +2543,8 @@ export type UserUncheckedCreateWithoutNamingConfigsInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
@@ -2291,6 +2559,8 @@ export type UserUncheckedCreateWithoutNamingConfigsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutNamingConfigsInput = {
@@ -2321,6 +2591,8 @@ export type UserUpdateWithoutNamingConfigsInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
@@ -2335,6 +2607,8 @@ export type UserUpdateWithoutNamingConfigsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutNamingConfigsInput = {
@@ -2349,6 +2623,8 @@ export type UserUncheckedUpdateWithoutNamingConfigsInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
@@ -2363,6 +2639,8 @@ export type UserUncheckedUpdateWithoutNamingConfigsInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutNamingDeployHistoryInput = {
@@ -2377,6 +2655,8 @@ export type UserCreateWithoutNamingDeployHistoryInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
@@ -2391,6 +2671,8 @@ export type UserCreateWithoutNamingDeployHistoryInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutNamingDeployHistoryInput = {
@@ -2405,6 +2687,8 @@ export type UserUncheckedCreateWithoutNamingDeployHistoryInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
@@ -2419,6 +2703,8 @@ export type UserUncheckedCreateWithoutNamingDeployHistoryInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutNamingDeployHistoryInput = {
@@ -2449,6 +2735,8 @@ export type UserUpdateWithoutNamingDeployHistoryInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
@@ -2463,6 +2751,8 @@ export type UserUpdateWithoutNamingDeployHistoryInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutNamingDeployHistoryInput = {
@@ -2477,6 +2767,8 @@ export type UserUncheckedUpdateWithoutNamingDeployHistoryInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
@@ -2491,6 +2783,8 @@ export type UserUncheckedUpdateWithoutNamingDeployHistoryInput = {
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutLabelSyncRulesInput = {
@@ -2505,6 +2799,8 @@ export type UserCreateWithoutLabelSyncRulesInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
@@ -2519,6 +2815,8 @@ export type UserCreateWithoutLabelSyncRulesInput = {
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutLabelSyncRulesInput = {
@@ -2533,6 +2831,8 @@ export type UserUncheckedCreateWithoutLabelSyncRulesInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
@@ -2547,6 +2847,8 @@ export type UserUncheckedCreateWithoutLabelSyncRulesInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutLabelSyncRulesInput = {
@@ -2577,6 +2879,8 @@ export type UserUpdateWithoutLabelSyncRulesInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
@@ -2591,6 +2895,8 @@ export type UserUpdateWithoutLabelSyncRulesInput = {
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutLabelSyncRulesInput = {
@@ -2605,6 +2911,8 @@ export type UserUncheckedUpdateWithoutLabelSyncRulesInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
@@ -2619,6 +2927,8 @@ export type UserUncheckedUpdateWithoutLabelSyncRulesInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutAutoTagRulesInput = {
@@ -2633,6 +2943,8 @@ export type UserCreateWithoutAutoTagRulesInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
@@ -2647,6 +2959,8 @@ export type UserCreateWithoutAutoTagRulesInput = {
   notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutAutoTagRulesInput = {
@@ -2661,6 +2975,8 @@ export type UserUncheckedCreateWithoutAutoTagRulesInput = {
   hashedWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
@@ -2675,6 +2991,8 @@ export type UserUncheckedCreateWithoutAutoTagRulesInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutAutoTagRulesInput = {
@@ -2705,6 +3023,8 @@ export type UserUpdateWithoutAutoTagRulesInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
@@ -2719,6 +3039,8 @@ export type UserUpdateWithoutAutoTagRulesInput = {
   notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutAutoTagRulesInput = {
@@ -2733,6 +3055,8 @@ export type UserUncheckedUpdateWithoutAutoTagRulesInput = {
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
@@ -2747,6 +3071,296 @@ export type UserUncheckedUpdateWithoutAutoTagRulesInput = {
   notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
   notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+}
+
+export type UserCreateWithoutTmdbListCacheRowsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutTmdbListCacheRowsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutTmdbListCacheRowsInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutTmdbListCacheRowsInput, Prisma.UserUncheckedCreateWithoutTmdbListCacheRowsInput>
+}
+
+export type UserUpsertWithoutTmdbListCacheRowsInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutTmdbListCacheRowsInput, Prisma.UserUncheckedUpdateWithoutTmdbListCacheRowsInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutTmdbListCacheRowsInput, Prisma.UserUncheckedCreateWithoutTmdbListCacheRowsInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutTmdbListCacheRowsInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutTmdbListCacheRowsInput, Prisma.UserUncheckedUpdateWithoutTmdbListCacheRowsInput>
+}
+
+export type UserUpdateWithoutTmdbListCacheRowsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutTmdbListCacheRowsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+}
+
+export type UserCreateWithoutTraktListCacheRowsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutTraktListCacheRowsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutTraktListCacheRowsInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutTraktListCacheRowsInput, Prisma.UserUncheckedCreateWithoutTraktListCacheRowsInput>
+}
+
+export type UserUpsertWithoutTraktListCacheRowsInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutTraktListCacheRowsInput, Prisma.UserUncheckedUpdateWithoutTraktListCacheRowsInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutTraktListCacheRowsInput, Prisma.UserUncheckedCreateWithoutTraktListCacheRowsInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutTraktListCacheRowsInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutTraktListCacheRowsInput, Prisma.UserUncheckedUpdateWithoutTraktListCacheRowsInput>
+}
+
+export type UserUpdateWithoutTraktListCacheRowsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutTraktListCacheRowsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
 }
 
 
@@ -2769,6 +3383,8 @@ export type UserCountOutputType = {
   notificationAggregationConfigs: number
   labelSyncRules: number
   autoTagRules: number
+  tmdbListCacheRows: number
+  traktListCacheRows: number
 }
 
 export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -2786,6 +3402,8 @@ export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.I
   notificationAggregationConfigs?: boolean | UserCountOutputTypeCountNotificationAggregationConfigsArgs
   labelSyncRules?: boolean | UserCountOutputTypeCountLabelSyncRulesArgs
   autoTagRules?: boolean | UserCountOutputTypeCountAutoTagRulesArgs
+  tmdbListCacheRows?: boolean | UserCountOutputTypeCountTmdbListCacheRowsArgs
+  traktListCacheRows?: boolean | UserCountOutputTypeCountTraktListCacheRowsArgs
 }
 
 /**
@@ -2896,6 +3514,20 @@ export type UserCountOutputTypeCountAutoTagRulesArgs<ExtArgs extends runtime.Typ
   where?: Prisma.AutoTagRuleWhereInput
 }
 
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountTmdbListCacheRowsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.TmdbListCacheWhereInput
+}
+
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountTraktListCacheRowsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.TraktListCacheWhereInput
+}
+
 
 export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -2909,6 +3541,8 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   hashedWebhookSecret?: boolean
   createdAt?: boolean
   updatedAt?: boolean
+  encryptedTraktAccessToken?: boolean
+  traktTokenIv?: boolean
   sessions?: boolean | Prisma.User$sessionsArgs<ExtArgs>
   oidcAccounts?: boolean | Prisma.User$oidcAccountsArgs<ExtArgs>
   webauthnCredentials?: boolean | Prisma.User$webauthnCredentialsArgs<ExtArgs>
@@ -2924,6 +3558,8 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   notificationAggregationConfigs?: boolean | Prisma.User$notificationAggregationConfigsArgs<ExtArgs>
   labelSyncRules?: boolean | Prisma.User$labelSyncRulesArgs<ExtArgs>
   autoTagRules?: boolean | Prisma.User$autoTagRulesArgs<ExtArgs>
+  tmdbListCacheRows?: boolean | Prisma.User$tmdbListCacheRowsArgs<ExtArgs>
+  traktListCacheRows?: boolean | Prisma.User$traktListCacheRowsArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["user"]>
 
@@ -2939,6 +3575,8 @@ export type UserSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   hashedWebhookSecret?: boolean
   createdAt?: boolean
   updatedAt?: boolean
+  encryptedTraktAccessToken?: boolean
+  traktTokenIv?: boolean
 }, ExtArgs["result"]["user"]>
 
 export type UserSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -2953,6 +3591,8 @@ export type UserSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   hashedWebhookSecret?: boolean
   createdAt?: boolean
   updatedAt?: boolean
+  encryptedTraktAccessToken?: boolean
+  traktTokenIv?: boolean
 }, ExtArgs["result"]["user"]>
 
 export type UserSelectScalar = {
@@ -2967,9 +3607,11 @@ export type UserSelectScalar = {
   hashedWebhookSecret?: boolean
   createdAt?: boolean
   updatedAt?: boolean
+  encryptedTraktAccessToken?: boolean
+  traktTokenIv?: boolean
 }
 
-export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "username" | "hashedPassword" | "mustChangePassword" | "failedLoginAttempts" | "lockedUntil" | "encryptedTmdbApiKey" | "tmdbEncryptionIv" | "hashedWebhookSecret" | "createdAt" | "updatedAt", ExtArgs["result"]["user"]>
+export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "username" | "hashedPassword" | "mustChangePassword" | "failedLoginAttempts" | "lockedUntil" | "encryptedTmdbApiKey" | "tmdbEncryptionIv" | "hashedWebhookSecret" | "createdAt" | "updatedAt" | "encryptedTraktAccessToken" | "traktTokenIv", ExtArgs["result"]["user"]>
 export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   sessions?: boolean | Prisma.User$sessionsArgs<ExtArgs>
   oidcAccounts?: boolean | Prisma.User$oidcAccountsArgs<ExtArgs>
@@ -2986,6 +3628,8 @@ export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
   notificationAggregationConfigs?: boolean | Prisma.User$notificationAggregationConfigsArgs<ExtArgs>
   labelSyncRules?: boolean | Prisma.User$labelSyncRulesArgs<ExtArgs>
   autoTagRules?: boolean | Prisma.User$autoTagRulesArgs<ExtArgs>
+  tmdbListCacheRows?: boolean | Prisma.User$tmdbListCacheRowsArgs<ExtArgs>
+  traktListCacheRows?: boolean | Prisma.User$traktListCacheRowsArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type UserIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
@@ -3009,6 +3653,8 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     notificationAggregationConfigs: Prisma.$NotificationAggregationConfigPayload<ExtArgs>[]
     labelSyncRules: Prisma.$LabelSyncRulePayload<ExtArgs>[]
     autoTagRules: Prisma.$AutoTagRulePayload<ExtArgs>[]
+    tmdbListCacheRows: Prisma.$TmdbListCachePayload<ExtArgs>[]
+    traktListCacheRows: Prisma.$TraktListCachePayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -3028,6 +3674,14 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     hashedWebhookSecret: string | null
     createdAt: Date
     updatedAt: Date
+    /**
+     * Encrypted Trakt access token (per-user). Used by the trakt list cache
+     * refresher to read user-owned lists. Plain Trakt API key + OAuth dance
+     * are encapsulated by the refresher; the dashboard stores only this
+     * encrypted token + IV.
+     */
+    encryptedTraktAccessToken: string | null
+    traktTokenIv: string | null
   }, ExtArgs["result"]["user"]>
   composites: {}
 }
@@ -3437,6 +4091,8 @@ export interface Prisma__UserClient<T, Null = never, ExtArgs extends runtime.Typ
   notificationAggregationConfigs<T extends Prisma.User$notificationAggregationConfigsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$notificationAggregationConfigsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$NotificationAggregationConfigPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   labelSyncRules<T extends Prisma.User$labelSyncRulesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$labelSyncRulesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$LabelSyncRulePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   autoTagRules<T extends Prisma.User$autoTagRulesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$autoTagRulesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$AutoTagRulePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  tmdbListCacheRows<T extends Prisma.User$tmdbListCacheRowsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$tmdbListCacheRowsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$TmdbListCachePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  traktListCacheRows<T extends Prisma.User$traktListCacheRowsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$traktListCacheRowsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$TraktListCachePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -3477,6 +4133,8 @@ export interface UserFieldRefs {
   readonly hashedWebhookSecret: Prisma.FieldRef<"User", 'String'>
   readonly createdAt: Prisma.FieldRef<"User", 'DateTime'>
   readonly updatedAt: Prisma.FieldRef<"User", 'DateTime'>
+  readonly encryptedTraktAccessToken: Prisma.FieldRef<"User", 'String'>
+  readonly traktTokenIv: Prisma.FieldRef<"User", 'String'>
 }
     
 
@@ -4220,6 +4878,54 @@ export type User$autoTagRulesArgs<ExtArgs extends runtime.Types.Extensions.Inter
   take?: number
   skip?: number
   distinct?: Prisma.AutoTagRuleScalarFieldEnum | Prisma.AutoTagRuleScalarFieldEnum[]
+}
+
+/**
+ * User.tmdbListCacheRows
+ */
+export type User$tmdbListCacheRowsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the TmdbListCache
+   */
+  select?: Prisma.TmdbListCacheSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the TmdbListCache
+   */
+  omit?: Prisma.TmdbListCacheOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.TmdbListCacheInclude<ExtArgs> | null
+  where?: Prisma.TmdbListCacheWhereInput
+  orderBy?: Prisma.TmdbListCacheOrderByWithRelationInput | Prisma.TmdbListCacheOrderByWithRelationInput[]
+  cursor?: Prisma.TmdbListCacheWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.TmdbListCacheScalarFieldEnum | Prisma.TmdbListCacheScalarFieldEnum[]
+}
+
+/**
+ * User.traktListCacheRows
+ */
+export type User$traktListCacheRowsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the TraktListCache
+   */
+  select?: Prisma.TraktListCacheSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the TraktListCache
+   */
+  omit?: Prisma.TraktListCacheOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.TraktListCacheInclude<ExtArgs> | null
+  where?: Prisma.TraktListCacheWhereInput
+  orderBy?: Prisma.TraktListCacheOrderByWithRelationInput | Prisma.TraktListCacheOrderByWithRelationInput[]
+  cursor?: Prisma.TraktListCacheWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.TraktListCacheScalarFieldEnum | Prisma.TraktListCacheScalarFieldEnum[]
 }
 
 /**

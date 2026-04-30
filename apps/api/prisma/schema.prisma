@@ -59,6 +59,14 @@ model User {
   notificationAggregationConfigs NotificationAggregationConfig[]
   labelSyncRules    LabelSyncRule[]
   autoTagRules      AutoTagRule[]
+  tmdbListCacheRows TmdbListCache[]
+  traktListCacheRows TraktListCache[]
+  /// Encrypted Trakt access token (per-user). Used by the trakt list cache
+  /// refresher to read user-owned lists. Plain Trakt API key + OAuth dance
+  /// are encapsulated by the refresher; the dashboard stores only this
+  /// encrypted token + IV.
+  encryptedTraktAccessToken String?
+  traktTokenIv             String?
 }
 
 model Session {
@@ -1546,4 +1554,43 @@ model AutoTagRule {
 
   @@index([userId])
   @@map("auto_tag_rules")
+}
+
+/// Cached membership of a TMDb curated list. One row per (userId, listId, tmdbId).
+/// Refreshed by the TMDb list cache scheduler every 4h. Used by the
+/// `tmdb_list_member` rule type's evaluator.
+model TmdbListCache {
+  id          String   @id @default(cuid())
+  userId      String
+  listId      String                       // TMDb list id (stringified for flexibility)
+  tmdbId      Int                          // movie/TV item id from TMDb
+  mediaType   String                       // "movie" | "series"
+  title       String                       // denormalized for display in explain UIs
+  refreshedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, listId, tmdbId])
+  @@index([userId, listId])
+  @@map("tmdb_list_cache")
+}
+
+/// Cached membership of a Trakt curated list. One row per (userId, listSlug, tmdbId).
+/// `listSlug` is the Trakt "username/list-slug" identifier (e.g.,
+/// "trakt-official/oscar-winners"). Refreshed by the Trakt list cache
+/// scheduler every 4h. Used by the `trakt_list_member` rule type's evaluator.
+model TraktListCache {
+  id          String   @id @default(cuid())
+  userId      String
+  listSlug    String                       // Trakt "username/list-slug" form
+  tmdbId      Int                          // resolved from Trakt's tmdbId/imdbId mapping
+  mediaType   String                       // "movie" | "series"
+  title       String
+  refreshedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, listSlug, tmdbId])
+  @@index([userId, listSlug])
+  @@map("trakt_list_cache")
 }
