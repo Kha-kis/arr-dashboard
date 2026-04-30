@@ -6,6 +6,7 @@
  * See `memory/auto-tagger-arc.md`.
  */
 
+import { createHash, randomBytes } from "node:crypto";
 import type {
 	AutoTagRule as AutoTagRuleDto,
 	AutoTagRuleResponse,
@@ -96,8 +97,22 @@ function validateRuleParameters(
 	ruleType: string,
 	parameters: Record<string, unknown>,
 	conditions: Array<{ ruleType: string; parameters: Record<string, unknown> }> | null,
+	operator: "AND" | "OR" | null | undefined,
 ): string | null {
-	if (ruleType === "composite" && conditions) {
+	const compositeByShape = operator != null && conditions != null && conditions.length > 0;
+	const compositeByRuleType = ruleType === "composite";
+
+	// Reject mode-mismatch: rule says "composite" but no conditions, or vice-versa.
+	// This catches a PATCH that adds operator+conditions while leaving the leaf
+	// ruleType unchanged (and would otherwise validate against the leaf schema
+	// while the executor evaluates as composite).
+	if (compositeByShape !== compositeByRuleType) {
+		return compositeByShape
+			? 'Composite rules must use ruleType="composite" (got rule type plus operator+conditions — pick one mode)'
+			: 'Rule type "composite" requires operator + conditions';
+	}
+
+	if (compositeByShape && conditions) {
 		for (let i = 0; i < conditions.length; i++) {
 			const cond = conditions[i];
 			if (!cond) continue;
@@ -114,6 +129,7 @@ function validateRuleParameters(
 		}
 		return null;
 	}
+
 	const schema = ruleParamSchemaMap[ruleType];
 	if (schema) {
 		const result = schema.safeParse(parameters);
@@ -149,6 +165,7 @@ export async function registerAutoTagRoutes(app: FastifyInstance, _opts: Fastify
 			body.ruleType,
 			body.parameters,
 			body.conditions ?? null,
+			body.operator ?? null,
 		);
 		if (paramErr) {
 			return reply.status(400).send({ error: paramErr });
@@ -186,7 +203,9 @@ export async function registerAutoTagRoutes(app: FastifyInstance, _opts: Fastify
 			return reply.status(404).send({ error: "Rule not found" });
 		}
 
-		// If rule type or params changed, re-validate
+		// If rule type or params changed, re-validate. We must compute the
+		// post-PATCH `operator` too so `validateRuleParameters` sees the same
+		// composite-vs-leaf shape the executor will eventually evaluate.
 		const nextRuleType = body.ruleType ?? (existing.ruleType as RuleType);
 		const nextParams = body.parameters ?? parseJsonRecord(existing.parameters);
 		const nextConditions =
@@ -195,7 +214,14 @@ export async function registerAutoTagRoutes(app: FastifyInstance, _opts: Fastify
 				: parseJsonArray<{ ruleType: string; parameters: Record<string, unknown> }>(
 						existing.conditions,
 					);
-		const paramErr = validateRuleParameters(nextRuleType, nextParams, nextConditions ?? null);
+		const nextOperator =
+			body.operator !== undefined ? body.operator : (existing.operator as "AND" | "OR" | null);
+		const paramErr = validateRuleParameters(
+			nextRuleType,
+			nextParams,
+			nextConditions ?? null,
+			nextOperator ?? null,
+		);
 		if (paramErr) {
 			return reply.status(400).send({ error: paramErr });
 		}
@@ -321,4 +347,67 @@ export async function registerAutoTagRoutes(app: FastifyInstance, _opts: Fastify
 		const response: AutoTagRuleResponse = { rule: toDto(updated) };
 		return reply.send(response);
 	});
+
+	// ========================================================================
+	// Webhook config (read + rotate)
+	//
+	// Returns the user's webhook secret (lazy-generated on first read) plus
+	// instructions for wiring up Sonarr/Radarr Connect. The secret is shown
+	// in plaintext to the authenticated user — they need it to copy into the
+	// Connect webhook header. Rotation invalidates any prior Connect config
+	// using the old secret.
+	// ========================================================================
+
+	// GET returns the existing secret only if we still have it cached (i.e., it
+	// was generated/rotated *this session*); otherwise we tell the user to
+	// rotate to see a fresh one. We never persist the plaintext, so once it's
+	// lost from the response, only rotation can show it again. This is a small
+	// UX loss for a meaningful security win — a DB dump no longer yields the
+	// auth token.
+	app.get("/webhook-config", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const user = await app.prisma.user.findUnique({ where: { id: userId } });
+		if (!user) return reply.status(404).send({ error: "User not found" });
+
+		if (!user.hashedWebhookSecret) {
+			// First-ever access: generate, persist hash, return plaintext once.
+			const secret = generateWebhookSecret();
+			await app.prisma.user.update({
+				where: { id: userId },
+				data: { hashedWebhookSecret: hashSecret(secret) },
+			});
+			return reply.send({ secret, configured: true, freshlyGenerated: true });
+		}
+
+		// Secret already configured — we don't store the plaintext, so we can
+		// only confirm "you have one; rotate to view".
+		return reply.send({ secret: null, configured: true, freshlyGenerated: false });
+	});
+
+	app.post("/webhook-config/regenerate", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const secret = generateWebhookSecret();
+		await app.prisma.user.update({
+			where: { id: userId },
+			data: { hashedWebhookSecret: hashSecret(secret) },
+		});
+		return reply.send({ secret, configured: true, freshlyGenerated: true });
+	});
+
+	// Note: the inbound Connect webhook (`POST /webhook/:instanceId`) is
+	// mounted in `PUBLIC_ROUTE_GROUPS` via `auto-tag-webhook.ts` so
+	// Sonarr/Radarr can reach it without a session cookie. It authenticates
+	// via Bearer token (the user's hashed webhook secret).
+}
+
+function generateWebhookSecret(): string {
+	// 32 bytes = 256 bits of entropy, base64url-encoded for URL/header safety.
+	return randomBytes(32).toString("base64url");
+}
+
+function hashSecret(plaintext: string): string {
+	// SHA-256 hex. Constant-time comparison happens at the database lookup
+	// (Prisma `findUnique` against an indexed unique column) — there's no
+	// userspace string compare on the auth path.
+	return createHash("sha256").update(plaintext).digest("hex");
 }

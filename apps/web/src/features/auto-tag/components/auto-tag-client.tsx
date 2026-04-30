@@ -12,6 +12,7 @@ import {
 } from "../../../hooks/api/useAutoTag";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { RuleDialog } from "./rule-dialog";
+import { WebhookConfigPanel } from "./webhook-config-panel";
 
 export const AutoTagClient = () => {
 	const { gradient } = useThemeGradient();
@@ -85,6 +86,8 @@ export const AutoTagClient = () => {
 						<Plus className="h-4 w-4 mr-2" /> New Rule
 					</Button>
 				</header>
+
+				<WebhookConfigPanel />
 
 				<GlassmorphicCard>
 					{isLoading ? (

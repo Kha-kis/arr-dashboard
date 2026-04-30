@@ -37,6 +37,11 @@ model User {
   lockedUntil         DateTime?
   encryptedTmdbApiKey String?
   tmdbEncryptionIv    String?
+  /// SHA-256 hex hash of the user's auto-tagger webhook secret. Plaintext is
+  /// only ever returned to the authenticated user at generation/rotation time;
+  /// inbound webhook auth hashes the bearer token and looks it up here. A DB
+  /// compromise yields no usable creds.
+  hashedWebhookSecret String?               @unique
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
   sessions            Session[]
