@@ -5,11 +5,11 @@ import huntingSchedulerPlugin from "../plugins/hunting-scheduler.js";
 import insightsDigestSchedulerPlugin from "../plugins/insights-digest-scheduler.js";
 import jellyfinCacheSchedulerPlugin from "../plugins/jellyfin-cache-scheduler.js";
 import jellyfinEpisodeCacheSchedulerPlugin from "../plugins/jellyfin-episode-cache-scheduler.js";
+import labelSyncSchedulerPlugin from "../plugins/label-sync-scheduler.js";
 import libraryCleanupSchedulerPlugin from "../plugins/library-cleanup-scheduler.js";
 import librarySyncSchedulerPlugin from "../plugins/library-sync-scheduler.js";
 import plexCacheSchedulerPlugin from "../plugins/plex-cache-scheduler.js";
 import plexEpisodeCacheSchedulerPlugin from "../plugins/plex-episode-cache-scheduler.js";
-import plexLabelSyncSchedulerPlugin from "../plugins/plex-label-sync-scheduler.js";
 import queueCleanerSchedulerPlugin from "../plugins/queue-cleaner-scheduler.js";
 import seerrHealthSchedulerPlugin from "../plugins/seerr-health-scheduler.js";
 import sessionCleanupPlugin from "../plugins/session-cleanup.js";
@@ -37,7 +37,7 @@ export function registerSchedulers(app: FastifyInstance): void {
 	app.register(huntingSchedulerPlugin);
 	app.register(queueCleanerSchedulerPlugin);
 	app.register(libraryCleanupSchedulerPlugin);
-	app.register(plexLabelSyncSchedulerPlugin);
+	app.register(labelSyncSchedulerPlugin);
 	app.register(insightsDigestSchedulerPlugin);
 
 	// TRaSH Guides sync + cleanup

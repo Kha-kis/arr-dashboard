@@ -1,16 +1,15 @@
 /**
  * Label Sync — generic types for the rule-based mapping that auto-applies
- * tags/labels across media services. Source service can be Sonarr/Radarr
- * (sub-arc 1) and will expand to Plex/Jellyfin/Emby in sub-arc 3;
- * destination service is currently Plex with Jellyfin/Emby/*arr coming
- * in sub-arc 2. See issue #384 + memory/label-sync-generalization-arc.md.
+ * tags/labels across media services. Source and destination unions are
+ * intentionally identical: a rule may target the same service on both
+ * sides (e.g., Plex → Plex) as well as cross-service flows. Lidarr is
+ * deferred — see issue #384 + memory/label-sync-generalization-arc.md.
  */
 
-export type LabelSyncSourceService = "sonarr" | "radarr";
-// Will expand to "lidarr" | "plex" | "jellyfin" | "emby" in later sub-arcs
+export type LabelSyncService = "sonarr" | "radarr" | "plex" | "jellyfin" | "emby";
 
-export type LabelSyncDestService = "plex";
-// Will expand to "jellyfin" | "emby" | "sonarr" | "radarr" | "lidarr" in later sub-arcs
+export type LabelSyncSourceService = LabelSyncService;
+export type LabelSyncDestService = LabelSyncService;
 
 export type LabelSyncRunStatus = "success" | "partial" | "failed";
 
@@ -44,7 +43,7 @@ export interface CreateLabelSyncRuleRequest {
 	sourceService: LabelSyncSourceService;
 	sourceInstanceId?: string | null;
 	sourceTagName: string;
-	destService?: LabelSyncDestService;
+	destService: LabelSyncDestService;
 	destInstanceId: string;
 	destTagName: string;
 }
