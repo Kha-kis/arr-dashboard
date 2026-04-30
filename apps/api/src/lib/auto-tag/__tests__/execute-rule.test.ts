@@ -404,4 +404,155 @@ describe("executeAutoTagRule (orchestration)", () => {
 
 		expect(result.totals.itemsMatched).toBe(1);
 	});
+
+	// ── Edge cases (PR C — defensive coverage) ────────────────────────
+
+	it("instanceFilter to a deleted instance → graceful failure, no crash", async () => {
+		// User had `instanceFilter: ["inst-old"]` and then deleted that
+		// instance from settings. The serviceInstance.findMany returns
+		// empty for the (instance-id + userId + enabled) intersection.
+		// Executor must handle this without throwing and report a clear
+		// failure message.
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([]) },
+			libraryCache: { findMany: vi.fn() },
+		};
+
+		const result = await executeAutoTagRule({
+			rule: makeRule({ instanceFilter: ["inst-deleted-and-gone"] }),
+			prisma: prisma as never,
+			arrClientFactory: { create: vi.fn() } as never,
+			encryptor: {} as never,
+			log,
+		});
+
+		expect(result.status).toBe("failed");
+		expect(result.message).toMatch(/no enabled.*instance/i);
+		// Library cache should not be queried — we bailed before that.
+		expect(prisma.libraryCache.findMany).not.toHaveBeenCalled();
+	});
+
+	it("rule referencing a different user's instance is invisible (userId scope)", async () => {
+		// Auto-tagger queries serviceInstance with userId in WHERE — a rule
+		// pointing at instance-X owned by user B will see findMany return []
+		// when run as user A. We assert the executor reports the same
+		// "no instances" failure rather than silently picking up the other
+		// user's instance.
+		const findMany = vi.fn().mockResolvedValue([]); // Prisma WHERE filters out other user's instances
+		const prisma = {
+			serviceInstance: { findMany },
+			libraryCache: { findMany: vi.fn() },
+		};
+
+		const result = await executeAutoTagRule({
+			rule: makeRule({ userId: "user-A", instanceFilter: ["inst-owned-by-user-B"] }),
+			prisma: prisma as never,
+			arrClientFactory: { create: vi.fn() } as never,
+			encryptor: {} as never,
+			log,
+		});
+
+		expect(result.status).toBe("failed");
+		// Verify the WHERE clause includes our userId — proves cross-user leak
+		// would require Prisma itself to fail, not just our code.
+		const callArgs = findMany.mock.calls[0]?.[0];
+		expect(callArgs?.where).toMatchObject({ userId: "user-A" });
+	});
+
+	it("corrupted JSON in rule.parameters → wraps gracefully (executor doesn't see parse errors)", async () => {
+		// The executor's input is `AutoTagRuleInput` (parsed parameters).
+		// Corruption manifests at the route layer when reading the DB row —
+		// `parseJsonRecord` returns {} on bad JSON. So the executor itself
+		// never sees corrupted input; it sees an empty params object.
+		// This test verifies the resulting empty-params rule doesn't crash
+		// the executor — it just won't match anything (the per-rule-type
+		// evaluator handles missing operator/value).
+		mockState.evaluateReason = null; // empty params → no match
+		const arrClient = makeArrClient();
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([makeInstance()]) },
+			libraryCache: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([makeCacheItem({ id: "li-1", arrItemId: 100, itemType: "movie" })]),
+			},
+		};
+		const arrClientFactory = { create: vi.fn().mockReturnValue(arrClient) };
+
+		const result = await executeAutoTagRule({
+			rule: makeRule({ parameters: {} }), // empty params (post-parse-corruption)
+			prisma: prisma as never,
+			arrClientFactory: arrClientFactory as never,
+			encryptor: {} as never,
+			log,
+		});
+
+		// No throw — that's the test. Status is success-with-no-matches.
+		expect(result.status).toBe("success");
+		expect(arrClient.movie.update).not.toHaveBeenCalled();
+	});
+
+	it("ensureTag failure (e.g. tag name length rejected by *arr) → counts as failure for all matched items", async () => {
+		// Sonarr/Radarr APIs reject tags above ~255 chars. The executor's
+		// `ensureTag` does tag.create which throws ArrError. We expect the
+		// rule's per-item write to count as failures (tag id never resolved)
+		// rather than crashing the whole tick.
+		const arrClient = makeArrClient();
+		(arrClient.tag.getAll as ReturnType<typeof vi.fn>).mockResolvedValue([]); // tag not present
+		(arrClient.tag.create as ReturnType<typeof vi.fn>).mockRejectedValue(
+			new Error("Tag name exceeds 255 chars"),
+		);
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([makeInstance()]) },
+			libraryCache: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([makeCacheItem({ id: "li-1", arrItemId: 100, itemType: "movie" })]),
+			},
+		};
+		const arrClientFactory = { create: vi.fn().mockReturnValue(arrClient) };
+
+		const result = await executeAutoTagRule({
+			rule: makeRule({ tagName: "x".repeat(300) }),
+			prisma: prisma as never,
+			arrClientFactory: arrClientFactory as never,
+			encryptor: {} as never,
+			log,
+		});
+
+		expect(result.status).toBe("failed");
+		expect(result.totals.tagsApplied).toBe(0);
+		expect(result.totals.failures).toBeGreaterThan(0);
+		// item.update must NOT have been called — there's no tag id to merge
+		expect(arrClient.movie.update).not.toHaveBeenCalled();
+	});
+
+	it("excludeTitles regex with malformed pattern is silently skipped, not crashed", async () => {
+		// User typed an invalid regex like `[unclosed`. The compileTitlePatterns
+		// helper logs a warn and skips the bad pattern; the rule still runs
+		// against other criteria.
+		const arrClient = makeArrClient();
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([makeInstance()]) },
+			libraryCache: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([makeCacheItem({ id: "li-1", arrItemId: 100, itemType: "movie" })]),
+			},
+		};
+		const arrClientFactory = { create: vi.fn().mockReturnValue(arrClient) };
+
+		const result = await executeAutoTagRule({
+			rule: makeRule({ excludeTitles: ["[unclosed-bracket"] }), // invalid regex
+			prisma: prisma as never,
+			arrClientFactory: arrClientFactory as never,
+			encryptor: {} as never,
+			log,
+		});
+
+		// No throw, executor proceeds normally — the bad pattern is dropped.
+		// Item still matches (mock evaluator returns truthy).
+		expect(result.status).toBe("success");
+		expect(arrClient.movie.update).toHaveBeenCalledTimes(1);
+	});
 });
