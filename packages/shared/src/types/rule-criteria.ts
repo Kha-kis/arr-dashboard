@@ -85,6 +85,9 @@ export const ruleTypeSchema = z.enum([
 	// Phase 4: Requester-aware cross-service rules
 	"seerr_requester_watched",
 	"seerr_requester_not_watched",
+	// Phase 5: External list membership (TMDb / Trakt curated lists)
+	"tmdb_list_member",
+	"trakt_list_member",
 ]);
 
 export type RuleType = z.infer<typeof ruleTypeSchema>;
@@ -378,6 +381,28 @@ export const recentlyActiveParamsSchema = z.object({
 export const seerrRequesterWatchedParamsSchema = z.object({});
 export const seerrRequesterNotWatchedParamsSchema = z.object({});
 
+// ── Phase 5: External list-membership rule params ────────────────────
+//
+// Inspired by tagarr's curated-list workflow. The list contents are
+// resolved out-of-band by a refresh scheduler (TmdbListCache /
+// TraktListCache tables); the evaluator just checks membership of the
+// item's tmdbId in the cached set. See memory/auto-tagger-arc.md for
+// the full implementation plan.
+
+export const tmdbListMemberRuleParamsSchema = z.object({
+	listId: z.string().min(1).max(64), // TMDb list IDs are numeric but we accept strings for flexibility
+	operator: z.enum(["is_in", "not_in"]),
+});
+
+export const traktListMemberRuleParamsSchema = z.object({
+	listSlug: z
+		.string()
+		.min(1)
+		.max(256)
+		.regex(/^[\w.-]+\/[\w.-]+$/, "Use Trakt's username/list-slug format"),
+	operator: z.enum(["is_in", "not_in"]),
+});
+
 // ============================================================================
 // Type Exports — z.infer projections of every params schema
 // ============================================================================
@@ -435,6 +460,8 @@ export type StalenessScoreParams = z.infer<typeof stalenessScoreParamsSchema>;
 export type RecentlyActiveParams = z.infer<typeof recentlyActiveParamsSchema>;
 export type SeerrRequesterWatchedParams = z.infer<typeof seerrRequesterWatchedParamsSchema>;
 export type SeerrRequesterNotWatchedParams = z.infer<typeof seerrRequesterNotWatchedParamsSchema>;
+export type TmdbListMemberRuleParams = z.infer<typeof tmdbListMemberRuleParamsSchema>;
+export type TraktListMemberRuleParams = z.infer<typeof traktListMemberRuleParamsSchema>;
 
 // ============================================================================
 // Rule Parameter Validation Map
@@ -495,6 +522,8 @@ export const ruleParamSchemaMap: Record<string, z.ZodType> = {
 	recently_active: recentlyActiveParamsSchema,
 	seerr_requester_watched: seerrRequesterWatchedParamsSchema,
 	seerr_requester_not_watched: seerrRequesterNotWatchedParamsSchema,
+	tmdb_list_member: tmdbListMemberRuleParamsSchema,
+	trakt_list_member: traktListMemberRuleParamsSchema,
 };
 
 /**
@@ -536,4 +565,10 @@ export const ruleDataSourceMap: Record<string, DataSourceDependency> = {
 	recently_active: "plex",
 	seerr_requester_watched: "seerr",
 	seerr_requester_not_watched: "seerr",
+	// List membership rules don't depend on Plex/Jellyfin/Seerr/Tautulli prefetch.
+	// Their data source is the dedicated cache tables (TmdbListCache /
+	// TraktListCache) refreshed by their own schedulers — `null` here means
+	// the prefetch dispatch ignores them.
+	tmdb_list_member: null,
+	trakt_list_member: null,
 };

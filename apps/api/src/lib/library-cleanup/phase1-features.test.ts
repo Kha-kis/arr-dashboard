@@ -12,11 +12,11 @@
  * Run with: npx vitest run phase1-features.test.ts
  */
 
-import { describe, expect, it } from "vitest";
-import type { CacheItemForEval, EvalContext, PlexWatchInfo, SeerrRequestInfo } from "./types.js";
-import { evaluateItemAgainstRules, explainItemAgainstRules } from "./rule-evaluators.js";
 import { ruleParamSchemaMap } from "@arr/shared";
+import { describe, expect, it } from "vitest";
 import type { LibraryCleanupRule } from "../prisma.js";
+import { evaluateItemAgainstRules, explainItemAgainstRules } from "./rule-evaluators.js";
+import type { CacheItemForEval, EvalContext, PlexWatchInfo, SeerrRequestInfo } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Type stub — same shape as Prisma's LibraryCleanupRule
@@ -418,7 +418,9 @@ describe("explainItemAgainstRules", () => {
 	});
 
 	it("reports disabled rules with filteredBy=disabled", () => {
-		const rules = [makeRule({ id: "r-disabled", name: "Disabled Rule", enabled: false })] as LibraryCleanupRule[];
+		const rules = [
+			makeRule({ id: "r-disabled", name: "Disabled Rule", enabled: false }),
+		] as LibraryCleanupRule[];
 		const results = explainItemAgainstRules(makeCacheItem(), rules, "RADARR", ctx);
 		expect(results[0]!.filteredBy).toBe("disabled");
 		expect(results[0]!.matched).toBe(false);
@@ -506,6 +508,37 @@ describe("write-time parameter validation (ruleParamSchemaMap)", () => {
 		expect(schema).toBeDefined();
 		const result = schema!.safeParse({ operator: "less_than", count: 1 });
 		expect(result.success).toBe(true);
+	});
+
+	// ── Phase 5: external list-membership rules ─────────────────────────
+
+	it("validates tmdb_list_member with correct params", () => {
+		const schema = ruleParamSchemaMap.tmdb_list_member;
+		expect(schema).toBeDefined();
+		const result = schema!.safeParse({ listId: "8068", operator: "is_in" });
+		expect(result.success).toBe(true);
+	});
+
+	it("rejects tmdb_list_member with empty listId", () => {
+		const schema = ruleParamSchemaMap.tmdb_list_member;
+		const result = schema!.safeParse({ listId: "", operator: "is_in" });
+		expect(result.success).toBe(false);
+	});
+
+	it("validates trakt_list_member with username/list-slug format", () => {
+		const schema = ruleParamSchemaMap.trakt_list_member;
+		expect(schema).toBeDefined();
+		const result = schema!.safeParse({
+			listSlug: "trakt-official/oscar-winners",
+			operator: "is_in",
+		});
+		expect(result.success).toBe(true);
+	});
+
+	it("rejects trakt_list_member with malformed slug (no slash)", () => {
+		const schema = ruleParamSchemaMap.trakt_list_member;
+		const result = schema!.safeParse({ listSlug: "no-slash-here", operator: "not_in" });
+		expect(result.success).toBe(false);
 	});
 });
 

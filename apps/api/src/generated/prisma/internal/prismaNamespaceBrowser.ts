@@ -102,7 +102,9 @@ export const ModelName = {
   NamingDeployHistory: 'NamingDeployHistory',
   SeerrActionLog: 'SeerrActionLog',
   LabelSyncRule: 'LabelSyncRule',
-  AutoTagRule: 'AutoTagRule'
+  AutoTagRule: 'AutoTagRule',
+  TmdbListCache: 'TmdbListCache',
+  TraktListCache: 'TraktListCache'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -129,7 +131,9 @@ export const UserScalarFieldEnum = {
   tmdbEncryptionIv: 'tmdbEncryptionIv',
   hashedWebhookSecret: 'hashedWebhookSecret',
   createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
+  updatedAt: 'updatedAt',
+  encryptedTraktAccessToken: 'encryptedTraktAccessToken',
+  traktTokenIv: 'traktTokenIv'
 } as const
 
 export type UserScalarFieldEnum = (typeof UserScalarFieldEnum)[keyof typeof UserScalarFieldEnum]
@@ -1087,6 +1091,32 @@ export const AutoTagRuleScalarFieldEnum = {
 } as const
 
 export type AutoTagRuleScalarFieldEnum = (typeof AutoTagRuleScalarFieldEnum)[keyof typeof AutoTagRuleScalarFieldEnum]
+
+
+export const TmdbListCacheScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  listId: 'listId',
+  tmdbId: 'tmdbId',
+  mediaType: 'mediaType',
+  title: 'title',
+  refreshedAt: 'refreshedAt'
+} as const
+
+export type TmdbListCacheScalarFieldEnum = (typeof TmdbListCacheScalarFieldEnum)[keyof typeof TmdbListCacheScalarFieldEnum]
+
+
+export const TraktListCacheScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  listSlug: 'listSlug',
+  tmdbId: 'tmdbId',
+  mediaType: 'mediaType',
+  title: 'title',
+  refreshedAt: 'refreshedAt'
+} as const
+
+export type TraktListCacheScalarFieldEnum = (typeof TraktListCacheScalarFieldEnum)[keyof typeof TraktListCacheScalarFieldEnum]
 
 
 export const SortOrder = {

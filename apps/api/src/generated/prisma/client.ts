@@ -312,3 +312,18 @@ export type LabelSyncRule = Prisma.LabelSyncRuleModel
  * the source-side *arr tag-write infrastructure.
  */
 export type AutoTagRule = Prisma.AutoTagRuleModel
+/**
+ * Model TmdbListCache
+ * Cached membership of a TMDb curated list. One row per (userId, listId, tmdbId).
+ * Refreshed by the TMDb list cache scheduler every 4h. Used by the
+ * `tmdb_list_member` rule type's evaluator.
+ */
+export type TmdbListCache = Prisma.TmdbListCacheModel
+/**
+ * Model TraktListCache
+ * Cached membership of a Trakt curated list. One row per (userId, listSlug, tmdbId).
+ * `listSlug` is the Trakt "username/list-slug" identifier (e.g.,
+ * "trakt-official/oscar-winners"). Refreshed by the Trakt list cache
+ * scheduler every 4h. Used by the `trakt_list_member` rule type's evaluator.
+ */
+export type TraktListCache = Prisma.TraktListCacheModel

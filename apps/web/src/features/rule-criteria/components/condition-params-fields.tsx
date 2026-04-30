@@ -112,6 +112,10 @@ export function getDefaultConditionParams(ruleType: CleanupRuleType): Record<str
 		case "seerr_requester_watched":
 		case "seerr_requester_not_watched":
 			return {};
+		case "tmdb_list_member":
+			return { listId: "", operator: "is_in" };
+		case "trakt_list_member":
+			return { listSlug: "", operator: "is_in" };
 		default:
 			return {};
 	}
@@ -698,11 +702,7 @@ export function ConditionParamsFields({
 			const is4k = get("is4k", true);
 			return (
 				<div className="space-y-2">
-					<ToggleSwitch
-						label="Flag 4K requests"
-						checked={is4k}
-						onChange={(v) => set("is4k", v)}
-					/>
+					<ToggleSwitch label="Flag 4K requests" checked={is4k} onChange={(v) => set("is4k", v)} />
 					<p className="text-xs text-muted-foreground">
 						{is4k
 							? "Matches items with 4K Seerr requests."
@@ -1463,22 +1463,97 @@ export function ConditionParamsFields({
 		case "seerr_requester_watched":
 			return (
 				<p className="text-xs text-muted-foreground">
-					Matches when the Seerr requester also appears in watch data for the item (Plex, Emby, or Jellyfin).
-					No configuration needed — automatically matches requester names against watch data.
-					Skipped when no watch data is available.
+					Matches when the Seerr requester also appears in watch data for the item (Plex, Emby, or
+					Jellyfin). No configuration needed — automatically matches requester names against watch
+					data. Skipped when no watch data is available.
 				</p>
 			);
 
 		case "seerr_requester_not_watched":
 			return (
 				<p className="text-xs text-muted-foreground">
-					Matches when no Seerr requester has watched the item (Plex, Emby, or Jellyfin).
-					No configuration needed — skipped when no watch data is available for the item.
+					Matches when no Seerr requester has watched the item (Plex, Emby, or Jellyfin). No
+					configuration needed — skipped when no watch data is available for the item.
 				</p>
 			);
 
 		case "composite":
 			return null;
+
+		case "tmdb_list_member":
+			return (
+				<div className="grid grid-cols-2 gap-3">
+					<div className="space-y-1.5">
+						<label htmlFor="cp-tmdb-list-id" className={labelClass}>
+							TMDb list ID
+						</label>
+						<input
+							id="cp-tmdb-list-id"
+							type="text"
+							value={get<string>("listId", "")}
+							onChange={(e) => set("listId", e.target.value)}
+							placeholder="e.g., 8068"
+							maxLength={64}
+							className={inputClass}
+						/>
+						<p className="text-xs text-muted-foreground">
+							From the TMDb list URL: themoviedb.org/list/<strong>8068</strong>.
+						</p>
+					</div>
+					<div className="space-y-1.5">
+						<label htmlFor="cp-tmdb-list-op" className={labelClass}>
+							Operator
+						</label>
+						<select
+							id="cp-tmdb-list-op"
+							value={get<string>("operator", "is_in")}
+							onChange={(e) => set("operator", e.target.value)}
+							className={inputClass}
+						>
+							<option value="is_in">Is in list</option>
+							<option value="not_in">Is not in list</option>
+						</select>
+					</div>
+				</div>
+			);
+
+		case "trakt_list_member":
+			return (
+				<div className="grid grid-cols-2 gap-3">
+					<div className="space-y-1.5">
+						<label htmlFor="cp-trakt-list-slug" className={labelClass}>
+							Trakt list (username/list-slug)
+						</label>
+						<input
+							id="cp-trakt-list-slug"
+							type="text"
+							value={get<string>("listSlug", "")}
+							onChange={(e) => set("listSlug", e.target.value)}
+							placeholder="e.g., trakt-official/oscar-winners"
+							maxLength={256}
+							className={`${inputClass} font-mono text-xs`}
+						/>
+						<p className="text-xs text-muted-foreground">
+							From Trakt list URL: trakt.tv/users/<strong>username</strong>/lists/
+							<strong>list-slug</strong>.
+						</p>
+					</div>
+					<div className="space-y-1.5">
+						<label htmlFor="cp-trakt-list-op" className={labelClass}>
+							Operator
+						</label>
+						<select
+							id="cp-trakt-list-op"
+							value={get<string>("operator", "is_in")}
+							onChange={(e) => set("operator", e.target.value)}
+							className={inputClass}
+						>
+							<option value="is_in">Is in list</option>
+							<option value="not_in">Is not in list</option>
+						</select>
+					</div>
+				</div>
+			);
 
 		default:
 			return null;
