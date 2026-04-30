@@ -20,6 +20,7 @@ import { createAutoTagRuleSchema, ruleParamSchemaMap, updateAutoTagRuleSchema } 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { executeAutoTagRule } from "../lib/auto-tag/execute-rule.js";
+import { runRuleWithLock } from "../lib/auto-tag/run-with-lock.js";
 import { safeJsonParse } from "../lib/utils/json.js";
 import { validateRequest } from "../lib/utils/validate.js";
 
@@ -310,31 +311,44 @@ export async function registerAutoTagRoutes(app: FastifyInstance, _opts: Fastify
 			return reply.status(400).send({ error: "Rule is disabled. Enable it before running." });
 		}
 
-		const result = await executeAutoTagRule({
-			rule: {
-				id: rule.id,
-				userId: rule.userId,
-				name: rule.name,
-				ruleType: rule.ruleType,
-				parameters: parseJsonRecord(rule.parameters),
-				operator: rule.operator as "AND" | "OR" | null,
-				conditions: parseJsonArray<{
-					ruleType: string;
-					parameters: Record<string, unknown>;
-				}>(rule.conditions),
-				serviceFilter: parseJsonArray<string>(rule.serviceFilter),
-				instanceFilter: parseJsonArray<string>(rule.instanceFilter),
-				excludeTags: parseJsonArray<number>(rule.excludeTags),
-				excludeTitles: parseJsonArray<string>(rule.excludeTitles),
-				plexLibraryFilter: parseJsonArray<string>(rule.plexLibraryFilter),
-				tagName: rule.tagName,
-			},
-			prisma: app.prisma,
-			arrClientFactory: app.arrClientFactory,
-			encryptor: app.encryptor,
-			log: request.log,
-		});
+		// Per-rule lock prevents this on-demand run from racing the scheduler
+		// tick (or another concurrent on-demand request) for the same rule.
+		const lockResult = await runRuleWithLock(rule.id, () =>
+			executeAutoTagRule({
+				rule: {
+					id: rule.id,
+					userId: rule.userId,
+					name: rule.name,
+					ruleType: rule.ruleType,
+					parameters: parseJsonRecord(rule.parameters),
+					operator: rule.operator as "AND" | "OR" | null,
+					conditions: parseJsonArray<{
+						ruleType: string;
+						parameters: Record<string, unknown>;
+					}>(rule.conditions),
+					serviceFilter: parseJsonArray<string>(rule.serviceFilter),
+					instanceFilter: parseJsonArray<string>(rule.instanceFilter),
+					excludeTags: parseJsonArray<number>(rule.excludeTags),
+					excludeTitles: parseJsonArray<string>(rule.excludeTitles),
+					plexLibraryFilter: parseJsonArray<string>(rule.plexLibraryFilter),
+					tagName: rule.tagName,
+				},
+				prisma: app.prisma,
+				arrClientFactory: app.arrClientFactory,
+				encryptor: app.encryptor,
+				log: request.log,
+			}),
+		);
 
+		if (lockResult.status === "skipped") {
+			return reply.status(409).send({
+				error: "Rule is currently running",
+				message:
+					"Another execution of this rule is in progress (scheduler tick or concurrent run). Try again in a moment.",
+			});
+		}
+
+		const result = lockResult.result;
 		const updated = await app.prisma.autoTagRule.update({
 			where: { id },
 			data: {
