@@ -52,7 +52,7 @@ model User {
   namingDeployHistory   NamingDeployHistory[]
   notificationRules            NotificationRule[]
   notificationAggregationConfigs NotificationAggregationConfig[]
-  plexLabelSyncRules    PlexLabelSyncRule[]
+  labelSyncRules    LabelSyncRule[]
 }
 
 model Session {
@@ -1463,31 +1463,40 @@ model SeerrActionLog {
 }
 
 // ============================================================================
-// Plex Label Sync — auto-apply Plex labels based on *arr tags (issue #384)
+// Label Sync — generic tag/label rules across media services (issue #384)
 // ============================================================================
 
-/// Per-user rule mapping a Sonarr/Radarr tag to a Plex label.
-/// When the rule executes, all *arr items carrying `arrTagName` get
-/// `plexLabel` applied to their matching Plex item (matched by tmdbId
-/// against PlexCache).
-model PlexLabelSyncRule {
-  id             String   @id @default(cuid())
-  userId         String
-  name           String
-  enabled        Boolean  @default(true)
-  arrService     String                       // "sonarr" | "radarr"
-  arrInstanceId  String?                      // null = match all instances of arrService
-  arrTagName     String                       // human-readable tag name from the *arr UI
-  plexInstanceId String                       // which Plex instance to apply the label on
-  plexLabel      String                       // Plex label name (created on first apply)
-  lastRunAt      DateTime?
-  lastRunStatus  String?                      // "success" | "partial" | "failed"
-  lastRunMessage String?                      // count summary or failure reason
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+/// Per-user rule mapping a tag/label on one media service to a tag/label on
+/// another. Sub-arc 1 ships the generalized schema; sub-arcs 2-3 expand
+/// destinations (Jellyfin/Emby, *arr) and sources (Plex/Jellyfin/Emby).
+///
+/// At rule execution time, source items are enumerated, matched to the
+/// destination's items (by tmdbId for movies/TV), and the destination tag
+/// is applied. See lib/plex-label-sync/execute-rule.ts for the engine.
+model LabelSyncRule {
+  id                String   @id @default(cuid())
+  userId            String
+  name              String
+  enabled           Boolean  @default(true)
+
+  // Source (where to read the tag from)
+  sourceService     String                   // "sonarr" | "radarr" | (future: "lidarr" | "plex" | "jellyfin" | "emby")
+  sourceInstanceId  String?                  // null = match all instances of sourceService
+  sourceTagName     String                   // tag/label name on the source
+
+  // Destination (where to apply the matching tag)
+  destService       String   @default("plex") // "plex" | (future: "jellyfin" | "emby" | "sonarr" | "radarr" | "lidarr")
+  destInstanceId    String                   // which destination instance to apply on
+  destTagName       String                   // tag/label name to apply (created if absent)
+
+  lastRunAt         DateTime?
+  lastRunStatus     String?                  // "success" | "partial" | "failed"
+  lastRunMessage    String?                  // count summary or failure reason
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
-  @@map("plex_label_sync_rules")
+  @@map("label_sync_rules")
 }

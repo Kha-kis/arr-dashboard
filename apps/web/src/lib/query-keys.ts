@@ -446,12 +446,12 @@ export const libraryCleanupKeys = {
 };
 
 /* -------------------------------------------------------------------------- */
-/*  Plex Label Sync (issue #384)                                               */
+/*  Label Sync (issue #384) — generic any-to-any tag/label rules               */
 /* -------------------------------------------------------------------------- */
 
-export const plexLabelSyncKeys = {
-	all: ["plex-label-sync"] as const,
-	rules: ["plex-label-sync", "rules"] as const,
+export const labelSyncKeys = {
+	all: ["label-sync"] as const,
+	rules: ["label-sync", "rules"] as const,
 };
 
 /* -------------------------------------------------------------------------- */

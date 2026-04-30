@@ -1,44 +1,44 @@
 "use client";
 
-import type { PlexLabelSyncRule } from "@arr/shared";
+import type { LabelSyncRule } from "@arr/shared";
 import { CheckCircle2, Pencil, Play, Plus, Tag, Trash2, XCircle } from "lucide-react";
 import { useState } from "react";
 import { GlassmorphicCard, PageLayout } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import {
-	useDeletePlexLabelSyncRule,
-	usePlexLabelSyncRules,
-	useRunPlexLabelSyncRule,
-} from "../../../hooks/api/usePlexLabelSync";
+	useDeleteLabelSyncRule,
+	useLabelSyncRules,
+	useRunLabelSyncRule,
+} from "../../../hooks/api/useLabelSync";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { RuleDialog } from "./rule-dialog";
 
-export const PlexLabelSyncClient = () => {
+export const LabelSyncClient = () => {
 	const { gradient } = useThemeGradient();
-	const { data: rules = [], isLoading } = usePlexLabelSyncRules();
-	const deleteMutation = useDeletePlexLabelSyncRule();
-	const runMutation = useRunPlexLabelSyncRule();
+	const { data: rules = [], isLoading } = useLabelSyncRules();
+	const deleteMutation = useDeleteLabelSyncRule();
+	const runMutation = useRunLabelSyncRule();
 	const [runningId, setRunningId] = useState<string | null>(null);
 
 	const [dialogOpen, setDialogOpen] = useState(false);
-	const [editingRule, setEditingRule] = useState<PlexLabelSyncRule | null>(null);
+	const [editingRule, setEditingRule] = useState<LabelSyncRule | null>(null);
 
 	const openCreate = () => {
 		setEditingRule(null);
 		setDialogOpen(true);
 	};
 
-	const openEdit = (rule: PlexLabelSyncRule) => {
+	const openEdit = (rule: LabelSyncRule) => {
 		setEditingRule(rule);
 		setDialogOpen(true);
 	};
 
-	const handleDelete = async (rule: PlexLabelSyncRule) => {
+	const handleDelete = async (rule: LabelSyncRule) => {
 		if (!confirm(`Delete rule "${rule.name}"? This cannot be undone.`)) return;
 		await deleteMutation.mutateAsync(rule.id);
 	};
 
-	const handleRun = async (rule: PlexLabelSyncRule) => {
+	const handleRun = async (rule: LabelSyncRule) => {
 		if (!rule.enabled) {
 			alert("Rule is disabled. Enable it before running.");
 			return;
@@ -73,12 +73,12 @@ export const PlexLabelSyncClient = () => {
 									backgroundClip: "text",
 								}}
 							>
-								Plex Label Sync
+								Label Sync
 							</span>
 						</h1>
 						<p className="text-muted-foreground max-w-xl">
-							Auto-apply Plex labels based on Sonarr/Radarr tags. When a rule runs, every *arr item
-							carrying the configured tag gets the Plex label applied to its matching item.
+							Auto-apply tags and labels across services. When a rule runs, every source item
+							carrying the configured tag gets the destination label applied to its matching item.
 						</p>
 					</div>
 					<Button onClick={openCreate} className="shrink-0">
@@ -141,11 +141,11 @@ const RuleTable = ({
 	onDelete,
 	onRun,
 }: {
-	rules: PlexLabelSyncRule[];
+	rules: LabelSyncRule[];
 	runningId: string | null;
-	onEdit: (rule: PlexLabelSyncRule) => void;
-	onDelete: (rule: PlexLabelSyncRule) => void;
-	onRun: (rule: PlexLabelSyncRule) => void;
+	onEdit: (rule: LabelSyncRule) => void;
+	onDelete: (rule: LabelSyncRule) => void;
+	onRun: (rule: LabelSyncRule) => void;
 }) => (
 	<div className="overflow-x-auto">
 		<table className="w-full text-sm">
@@ -173,17 +173,17 @@ const RuleTable = ({
 							</div>
 						</td>
 						<td className="px-4 py-3 text-muted-foreground">
-							<span className="capitalize">{rule.arrService}</span>
-							{rule.arrInstanceId ? (
+							<span className="capitalize">{rule.sourceService}</span>
+							{rule.sourceInstanceId ? (
 								<span className="text-xs ml-1">(instance)</span>
 							) : (
 								<span className="text-xs text-muted-foreground/60 ml-1">(all instances)</span>
 							)}
 						</td>
 						<td className="px-4 py-3 font-mono text-xs">
-							<span className="text-muted-foreground">{rule.arrTagName}</span>
+							<span className="text-muted-foreground">{rule.sourceTagName}</span>
 							<span className="text-muted-foreground/50 mx-1.5">→</span>
-							<span>{rule.plexLabel}</span>
+							<span>{rule.destTagName}</span>
 						</td>
 						<td className="px-4 py-3">
 							{rule.lastRunStatus ? (

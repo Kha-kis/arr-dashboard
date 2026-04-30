@@ -1,9 +1,10 @@
 "use client";
 
 import type {
-	ArrServiceForLabelSync,
-	CreatePlexLabelSyncRuleRequest,
-	PlexLabelSyncRule,
+	CreateLabelSyncRuleRequest,
+	LabelSyncRule,
+	LabelSyncSourceService,
+	ServiceInstanceSummary,
 } from "@arr/shared";
 import { useMemo, useState } from "react";
 import { Button } from "../../../components/ui/button";
@@ -16,35 +17,32 @@ import {
 	DialogTitle,
 } from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/input";
-import {
-	useCreatePlexLabelSyncRule,
-	useUpdatePlexLabelSyncRule,
-} from "../../../hooks/api/usePlexLabelSync";
+import { useCreateLabelSyncRule, useUpdateLabelSyncRule } from "../../../hooks/api/useLabelSync";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 
 interface RuleDialogProps {
-	rule: PlexLabelSyncRule | null;
+	rule: LabelSyncRule | null;
 	onClose: () => void;
 }
 
 interface FormState {
 	name: string;
 	enabled: boolean;
-	arrService: ArrServiceForLabelSync;
-	arrInstanceId: string; // empty string means "all instances"
-	arrTagName: string;
-	plexInstanceId: string;
-	plexLabel: string;
+	sourceService: LabelSyncSourceService;
+	sourceInstanceId: string; // empty string means "all instances"
+	sourceTagName: string;
+	destInstanceId: string;
+	destTagName: string;
 }
 
-const initialForm = (rule: PlexLabelSyncRule | null): FormState => ({
+const initialForm = (rule: LabelSyncRule | null): FormState => ({
 	name: rule?.name ?? "",
 	enabled: rule?.enabled ?? true,
-	arrService: rule?.arrService ?? "sonarr",
-	arrInstanceId: rule?.arrInstanceId ?? "",
-	arrTagName: rule?.arrTagName ?? "",
-	plexInstanceId: rule?.plexInstanceId ?? "",
-	plexLabel: rule?.plexLabel ?? "",
+	sourceService: rule?.sourceService ?? "sonarr",
+	sourceInstanceId: rule?.sourceInstanceId ?? "",
+	sourceTagName: rule?.sourceTagName ?? "",
+	destInstanceId: rule?.destInstanceId ?? "",
+	destTagName: rule?.destTagName ?? "",
 });
 
 export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
@@ -53,17 +51,23 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 	const [submitError, setSubmitError] = useState<string | null>(null);
 
 	const { data: services = [] } = useServicesQuery();
-	const arrInstances = useMemo(
-		() => services.filter((s) => s.service.toLowerCase() === form.arrService && s.enabled),
-		[services, form.arrService],
+	const sourceInstances = useMemo(
+		() =>
+			services.filter(
+				(s: ServiceInstanceSummary) => s.service.toLowerCase() === form.sourceService && s.enabled,
+			),
+		[services, form.sourceService],
 	);
-	const plexInstances = useMemo(
-		() => services.filter((s) => s.service.toLowerCase() === "plex" && s.enabled),
+	const destInstances = useMemo(
+		() =>
+			services.filter(
+				(s: ServiceInstanceSummary) => s.service.toLowerCase() === "plex" && s.enabled,
+			),
 		[services],
 	);
 
-	const createMutation = useCreatePlexLabelSyncRule();
-	const updateMutation = useUpdatePlexLabelSyncRule();
+	const createMutation = useCreateLabelSyncRule();
+	const updateMutation = useUpdateLabelSyncRule();
 	const isPending = createMutation.isPending || updateMutation.isPending;
 
 	const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
@@ -75,23 +79,24 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 		event.preventDefault();
 		setSubmitError(null);
 
-		if (!form.name.trim() || !form.arrTagName.trim() || !form.plexLabel.trim()) {
-			setSubmitError("Name, *arr tag, and Plex label are required.");
+		if (!form.name.trim() || !form.sourceTagName.trim() || !form.destTagName.trim()) {
+			setSubmitError("Name, source tag, and destination label are required.");
 			return;
 		}
-		if (!form.plexInstanceId) {
-			setSubmitError("Pick a Plex instance to apply the label on.");
+		if (!form.destInstanceId) {
+			setSubmitError("Pick a destination instance to apply the label on.");
 			return;
 		}
 
-		const payload: CreatePlexLabelSyncRuleRequest = {
+		const payload: CreateLabelSyncRuleRequest = {
 			name: form.name.trim(),
 			enabled: form.enabled,
-			arrService: form.arrService,
-			arrInstanceId: form.arrInstanceId || null,
-			arrTagName: form.arrTagName.trim(),
-			plexInstanceId: form.plexInstanceId,
-			plexLabel: form.plexLabel.trim(),
+			sourceService: form.sourceService,
+			sourceInstanceId: form.sourceInstanceId || null,
+			sourceTagName: form.sourceTagName.trim(),
+			destService: "plex",
+			destInstanceId: form.destInstanceId,
+			destTagName: form.destTagName.trim(),
 		};
 
 		try {
@@ -112,8 +117,8 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 				<DialogHeader>
 					<DialogTitle>{isEdit ? "Edit Rule" : "New Label Sync Rule"}</DialogTitle>
 					<DialogDescription>
-						Maps a Sonarr or Radarr tag to a Plex label. Items carrying the *arr tag get the Plex
-						label applied to their matching item (matched by TMDB ID).
+						Maps a Sonarr or Radarr tag to a Plex label. Items carrying the source tag get the
+						destination label applied to their matching item (matched by TMDB ID).
 					</DialogDescription>
 				</DialogHeader>
 
@@ -143,18 +148,18 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 						<span>Enabled</span>
 					</label>
 
-					{/* Arr service + instance */}
+					{/* Source service + instance */}
 					<div className="grid grid-cols-2 gap-3">
 						<div className="space-y-1.5">
-							<label htmlFor="arr-service" className="text-sm font-medium">
-								*arr service
+							<label htmlFor="source-service" className="text-sm font-medium">
+								Source service
 							</label>
 							<select
-								id="arr-service"
-								value={form.arrService}
+								id="source-service"
+								value={form.sourceService}
 								onChange={(e) => {
-									update("arrService", e.target.value as ArrServiceForLabelSync);
-									update("arrInstanceId", ""); // reset instance when service changes
+									update("sourceService", e.target.value as LabelSyncSourceService);
+									update("sourceInstanceId", ""); // reset instance when service changes
 								}}
 								className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 							>
@@ -163,17 +168,17 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 							</select>
 						</div>
 						<div className="space-y-1.5">
-							<label htmlFor="arr-instance" className="text-sm font-medium">
-								*arr instance
+							<label htmlFor="source-instance" className="text-sm font-medium">
+								Source instance
 							</label>
 							<select
-								id="arr-instance"
-								value={form.arrInstanceId}
-								onChange={(e) => update("arrInstanceId", e.target.value)}
+								id="source-instance"
+								value={form.sourceInstanceId}
+								onChange={(e) => update("sourceInstanceId", e.target.value)}
 								className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 							>
-								<option value="">All {form.arrService} instances</option>
-								{arrInstances.map((s) => (
+								<option value="">All {form.sourceService} instances</option>
+								{sourceInstances.map((s: ServiceInstanceSummary) => (
 									<option key={s.id} value={s.id}>
 										{s.label}
 									</option>
@@ -182,39 +187,39 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 						</div>
 					</div>
 
-					{/* Tag name */}
+					{/* Source tag name */}
 					<div className="space-y-1.5">
-						<label htmlFor="arr-tag" className="text-sm font-medium">
-							*arr tag name
+						<label htmlFor="source-tag" className="text-sm font-medium">
+							Source tag name
 						</label>
 						<Input
-							id="arr-tag"
-							value={form.arrTagName}
-							onChange={(e) => update("arrTagName", e.target.value)}
+							id="source-tag"
+							value={form.sourceTagName}
+							onChange={(e) => update("sourceTagName", e.target.value)}
 							placeholder="e.g., kids"
 							maxLength={120}
 							required
 						/>
 						<p className="text-xs text-muted-foreground">
-							The exact tag name as configured in the *arr UI. Case-sensitive.
+							The exact tag name as configured in the source service. Case-sensitive.
 						</p>
 					</div>
 
-					{/* Plex instance + label */}
+					{/* Dest instance + label */}
 					<div className="grid grid-cols-2 gap-3">
 						<div className="space-y-1.5">
-							<label htmlFor="plex-instance" className="text-sm font-medium">
-								Plex instance
+							<label htmlFor="dest-instance" className="text-sm font-medium">
+								Destination (Plex)
 							</label>
 							<select
-								id="plex-instance"
-								value={form.plexInstanceId}
-								onChange={(e) => update("plexInstanceId", e.target.value)}
+								id="dest-instance"
+								value={form.destInstanceId}
+								onChange={(e) => update("destInstanceId", e.target.value)}
 								className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 								required
 							>
 								<option value="">Select a Plex instance…</option>
-								{plexInstances.map((s) => (
+								{destInstances.map((s: ServiceInstanceSummary) => (
 									<option key={s.id} value={s.id}>
 										{s.label}
 									</option>
@@ -222,13 +227,13 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 							</select>
 						</div>
 						<div className="space-y-1.5">
-							<label htmlFor="plex-label" className="text-sm font-medium">
-								Plex label
+							<label htmlFor="dest-tag" className="text-sm font-medium">
+								Destination label
 							</label>
 							<Input
-								id="plex-label"
-								value={form.plexLabel}
-								onChange={(e) => update("plexLabel", e.target.value)}
+								id="dest-tag"
+								value={form.destTagName}
+								onChange={(e) => update("destTagName", e.target.value)}
 								placeholder="e.g., Kids"
 								maxLength={120}
 								required

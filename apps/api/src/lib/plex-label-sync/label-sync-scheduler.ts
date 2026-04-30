@@ -1,7 +1,7 @@
 /**
  * Plex Label Sync Scheduler
  *
- * Walks enabled PlexLabelSyncRule rows and runs each through the same
+ * Walks enabled LabelSyncRule rows and runs each through the same
  * execution engine that powers the on-demand "Run now" endpoint
  * (`executeLabelSyncRule`). Per-rule cooldown skips rules that already
  * ran in the last hour, so a manually-triggered run and a scheduled
@@ -84,7 +84,7 @@ export class LabelSyncScheduler {
 
 		try {
 			const cooldownThreshold = new Date(Date.now() - RULE_COOLDOWN_MS);
-			const dueRules = await this.prisma.plexLabelSyncRule.findMany({
+			const dueRules = await this.prisma.labelSyncRule.findMany({
 				where: {
 					enabled: true,
 					OR: [{ lastRunAt: null }, { lastRunAt: { lt: cooldownThreshold } }],
@@ -108,11 +108,12 @@ export class LabelSyncScheduler {
 						rule: {
 							id: rule.id,
 							userId: rule.userId,
-							arrService: rule.arrService,
-							arrInstanceId: rule.arrInstanceId,
-							arrTagName: rule.arrTagName,
-							plexInstanceId: rule.plexInstanceId,
-							plexLabel: rule.plexLabel,
+							sourceService: rule.sourceService,
+							sourceInstanceId: rule.sourceInstanceId,
+							sourceTagName: rule.sourceTagName,
+							destService: rule.destService,
+							destInstanceId: rule.destInstanceId,
+							destTagName: rule.destTagName,
 						},
 						prisma: this.prisma,
 						arrClientFactory: this.arrClientFactory,
@@ -120,7 +121,7 @@ export class LabelSyncScheduler {
 						log: this.log,
 					});
 
-					await this.prisma.plexLabelSyncRule.update({
+					await this.prisma.labelSyncRule.update({
 						where: { id: rule.id },
 						data: {
 							lastRunAt: new Date(),
@@ -139,7 +140,7 @@ export class LabelSyncScheduler {
 						{ err, ruleId: rule.id },
 						"Label-sync rule execution threw — recording as failure",
 					);
-					await this.prisma.plexLabelSyncRule
+					await this.prisma.labelSyncRule
 						.update({
 							where: { id: rule.id },
 							data: {
@@ -148,7 +149,7 @@ export class LabelSyncScheduler {
 								lastRunMessage: `Scheduler exception: ${message}`,
 							},
 						})
-						.catch((updateErr) => {
+						.catch((updateErr: unknown) => {
 							this.log.error(
 								{ err: updateErr, ruleId: rule.id },
 								"Failed to persist rule failure status",
