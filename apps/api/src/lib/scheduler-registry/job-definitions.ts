@@ -159,7 +159,7 @@ export const KNOWN_JOBS: readonly JobDefinition[] = [
 		id: JOB_ID.plexLabelSync,
 		label: "Plex label sync",
 		description:
-			"Walks enabled PlexLabelSyncRule rows once per hour and applies the configured Plex label to *arr items carrying the matching tag. Per-rule cooldown skips rules that ran in the last hour, so on-demand runs and scheduled ticks don't double-fire.",
+			"Walks enabled LabelSyncRule rows once per hour and applies the configured destination label to source items carrying the matching tag. Per-rule cooldown skips rules that ran in the last hour, so on-demand runs and scheduled ticks don't double-fire.",
 		concurrency: "singleton",
 		intervalMs: 5 * 60 * 1000,
 	},

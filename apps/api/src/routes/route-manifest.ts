@@ -25,13 +25,13 @@ import { registerDashboardRoutes } from "./dashboard.js";
 import { registerHealthRoutes } from "./health.js";
 import { registerHuntingRoutes } from "./hunting.js";
 import { registerJellyfinRoutes } from "./jellyfin/index.js";
+import { registerLabelSyncRoutes } from "./label-sync.js";
 import { registerLibraryRoutes } from "./library.js";
 import { registerLibraryCleanupRoutes } from "./library-cleanup.js";
 import { registerManualImportRoutes } from "./manual-import.js";
 import { registerNotificationRoutes } from "./notifications.js";
 import oidcProvidersRoutes from "./oidc-providers.js";
 import { registerPlexRoutes } from "./plex/index.js";
-import { registerPlexLabelSyncRoutes } from "./plex-label-sync.js";
 import { registerPulseRoutes } from "./pulse.js";
 import { registerQueueCleanerRoutes } from "./queue-cleaner.js";
 import { registerSearchRoutes } from "./search.js";
@@ -239,11 +239,12 @@ export const PROTECTED_ROUTE_GROUPS: readonly RouteGroup[] = [
 		summary: "Activity, watch history enrichment, statistics",
 	},
 	{
-		path: "/api/plex/label-sync",
-		prefix: "/api/plex/label-sync",
-		register: registerPlexLabelSyncRoutes,
+		path: "/api/label-sync",
+		prefix: "/api/label-sync",
+		register: registerLabelSyncRoutes,
 		maturity: "experimental",
-		summary: "Auto-apply Plex labels based on Sonarr/Radarr tags (issue #384)",
+		summary:
+			"Generic any-to-any media-service tag/label sync rules (issue #384). Sub-arc 1: Sonarr/Radarr → Plex.",
 	},
 	{
 		path: "/api/pulse",
