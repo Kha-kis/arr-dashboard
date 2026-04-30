@@ -2,10 +2,13 @@
 
 import type {
 	AutoTagRule,
+	CompositeOperator,
+	Condition,
 	CreateAutoTagRuleRequest,
 	RuleType,
 	ServiceInstanceSummary,
 } from "@arr/shared";
+import { Plus, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "../../../components/ui/button";
 import {
@@ -30,39 +33,58 @@ interface RuleDialogProps {
 	onClose: () => void;
 }
 
+type Mode = "single" | "composite";
+
+// Single-mode rules can pick any rule type EXCEPT "composite" (which is the
+// nested-rule discriminator, not a leaf criterion). Composite mode uses
+// `Condition[]` whose `ruleType` field has the same exclusion baked in.
+type SingleRuleType = Exclude<RuleType, "composite">;
+
 interface FormState {
 	name: string;
 	enabled: boolean;
 	tagName: string;
-	ruleType: RuleType;
+	mode: Mode;
+	// single-mode
+	ruleType: SingleRuleType;
 	parameters: Record<string, unknown>;
-	instanceFilter: string[]; // empty = all *arr instances
+	// composite-mode
+	operator: CompositeOperator;
+	conditions: Condition[];
+	// shared scope
+	instanceFilter: string[];
 }
 
-const DEFAULT_RULE_TYPE: RuleType = "genre";
+const DEFAULT_RULE_TYPE: SingleRuleType = "genre";
+const DEFAULT_COMPOSITE_OPERATOR: CompositeOperator = "AND";
 
-const initialForm = (rule: AutoTagRule | null): FormState => ({
-	name: rule?.name ?? "",
-	enabled: rule?.enabled ?? true,
-	tagName: rule?.tagName ?? "",
-	ruleType: rule?.ruleType ?? DEFAULT_RULE_TYPE,
-	parameters:
-		rule?.parameters && Object.keys(rule.parameters).length > 0
-			? rule.parameters
-			: getDefaultConditionParams(DEFAULT_RULE_TYPE),
-	instanceFilter: rule?.instanceFilter ?? [],
-});
+const initialForm = (rule: AutoTagRule | null): FormState => {
+	const isComposite = rule != null && rule.operator != null && rule.conditions != null;
+	return {
+		name: rule?.name ?? "",
+		enabled: rule?.enabled ?? true,
+		tagName: rule?.tagName ?? "",
+		mode: isComposite ? "composite" : "single",
+		ruleType:
+			rule && !isComposite
+				? (rule.ruleType as SingleRuleType) // not "composite" since !isComposite
+				: DEFAULT_RULE_TYPE,
+		parameters:
+			rule && !isComposite && Object.keys(rule.parameters).length > 0
+				? rule.parameters
+				: getDefaultConditionParams(DEFAULT_RULE_TYPE),
+		operator: rule?.operator ?? DEFAULT_COMPOSITE_OPERATOR,
+		conditions:
+			rule?.conditions && rule.conditions.length > 0 ? rule.conditions : [makeBlankCondition()],
+		instanceFilter: rule?.instanceFilter ?? [],
+	};
+};
 
 const inputClass =
 	"w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring";
 const labelClass = "text-sm font-medium";
 
-// Curated subset of rule types most useful for auto-tagging *arr items.
-// Full ruleTypeSchema enum has 50+ values; v1 picks the ones that fire
-// against `LibraryCache` rows without needing Plex/Jellyfin/Seerr/Tautulli
-// prefetch. Watch-state and Plex metadata rules will work too — they just
-// require those services to be configured. Added them here for parity.
-const RULE_TYPE_OPTIONS: Array<{ value: RuleType; label: string; group: string }> = [
+const RULE_TYPE_OPTIONS: Array<{ value: SingleRuleType; label: string; group: string }> = [
 	{ value: "genre", label: "Genre", group: "Metadata" },
 	{ value: "year_range", label: "Year (range)", group: "Metadata" },
 	{ value: "rating", label: "TMDB rating", group: "Metadata" },
@@ -94,6 +116,13 @@ const RULE_TYPE_OPTIONS: Array<{ value: RuleType; label: string; group: string }
 	{ value: "plex_added_at", label: "Plex added (date)", group: "Plex" },
 ];
 
+function makeBlankCondition(): Condition {
+	return {
+		ruleType: DEFAULT_RULE_TYPE,
+		parameters: getDefaultConditionParams(DEFAULT_RULE_TYPE),
+	};
+}
+
 export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 	const isEdit = rule !== null;
 	const [form, setForm] = useState<FormState>(initialForm(rule));
@@ -121,13 +150,39 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 		setSubmitError(null);
 	};
 
-	const onRuleTypeChange = (next: RuleType) => {
-		// Replace params with the new rule type's defaults so the backend
-		// validation passes on save.
+	const onSingleRuleTypeChange = (next: SingleRuleType) => {
 		setForm((prev) => ({
 			...prev,
 			ruleType: next,
 			parameters: getDefaultConditionParams(next),
+		}));
+		setSubmitError(null);
+	};
+
+	const updateCondition = (index: number, patch: Partial<Condition>) => {
+		setForm((prev) => ({
+			...prev,
+			conditions: prev.conditions.map((c, i) => (i === index ? { ...c, ...patch } : c)),
+		}));
+		setSubmitError(null);
+	};
+
+	const onConditionRuleTypeChange = (index: number, next: SingleRuleType) => {
+		updateCondition(index, {
+			ruleType: next,
+			parameters: getDefaultConditionParams(next),
+		});
+	};
+
+	const addCondition = () => {
+		setForm((prev) => ({ ...prev, conditions: [...prev.conditions, makeBlankCondition()] }));
+		setSubmitError(null);
+	};
+
+	const removeCondition = (index: number) => {
+		setForm((prev) => ({
+			...prev,
+			conditions: prev.conditions.filter((_, i) => i !== index),
 		}));
 		setSubmitError(null);
 	};
@@ -140,15 +195,33 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 			setSubmitError("Rule name and tag name are required.");
 			return;
 		}
+		if (form.mode === "composite" && form.conditions.length === 0) {
+			setSubmitError("Composite rules must have at least one condition.");
+			return;
+		}
 
-		const payload: CreateAutoTagRuleRequest = {
-			name: form.name.trim(),
-			enabled: form.enabled,
-			tagName: form.tagName.trim(),
-			ruleType: form.ruleType,
-			parameters: form.parameters,
-			instanceFilter: form.instanceFilter.length > 0 ? form.instanceFilter : null,
-		};
+		const payload: CreateAutoTagRuleRequest =
+			form.mode === "composite"
+				? {
+						name: form.name.trim(),
+						enabled: form.enabled,
+						tagName: form.tagName.trim(),
+						ruleType: "composite",
+						parameters: {},
+						operator: form.operator,
+						conditions: form.conditions,
+						instanceFilter: form.instanceFilter.length > 0 ? form.instanceFilter : null,
+					}
+				: {
+						name: form.name.trim(),
+						enabled: form.enabled,
+						tagName: form.tagName.trim(),
+						ruleType: form.ruleType,
+						parameters: form.parameters,
+						operator: null,
+						conditions: null,
+						instanceFilter: form.instanceFilter.length > 0 ? form.instanceFilter : null,
+					};
 
 		try {
 			if (isEdit && rule) {
@@ -174,7 +247,7 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 
 	return (
 		<Dialog open onOpenChange={(open) => !open && onClose()}>
-			<DialogContent className="max-w-2xl">
+			<DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
 				<DialogHeader>
 					<DialogTitle>{isEdit ? "Edit Auto-Tag Rule" : "New Auto-Tag Rule"}</DialogTitle>
 					<DialogDescription>
@@ -184,7 +257,7 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 				</DialogHeader>
 
 				<form onSubmit={handleSubmit} className="space-y-4">
-					{/* Name + enabled */}
+					{/* Name + tag */}
 					<div className="grid grid-cols-2 gap-3">
 						<div className="space-y-1.5">
 							<label htmlFor="rule-name" className={labelClass}>
@@ -253,43 +326,159 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 						</p>
 					</div>
 
-					{/* Rule type selector */}
+					{/* Mode toggle: single vs composite */}
 					<div className="space-y-1.5">
-						<label htmlFor="rule-type" className={labelClass}>
-							Match criteria
-						</label>
-						<select
-							id="rule-type"
-							value={form.ruleType}
-							onChange={(e) => onRuleTypeChange(e.target.value as RuleType)}
-							className={inputClass}
-						>
-							{Object.entries(groupBy(RULE_TYPE_OPTIONS, (o) => o.group)).map(
-								([group, options]) => (
-									<optgroup key={group} label={group}>
-										{options.map((opt) => (
-											<option key={opt.value} value={opt.value}>
-												{opt.label}
-											</option>
-										))}
-									</optgroup>
-								),
-							)}
-						</select>
+						<label className={labelClass}>Match mode</label>
+						<div className="inline-flex rounded-md border border-border/50 p-0.5 text-xs">
+							<button
+								type="button"
+								onClick={() => update("mode", "single")}
+								className={`px-3 py-1 rounded transition-colors ${form.mode === "single" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/30"}`}
+							>
+								Single criterion
+							</button>
+							<button
+								type="button"
+								onClick={() => update("mode", "composite")}
+								className={`px-3 py-1 rounded transition-colors ${form.mode === "composite" ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/30"}`}
+							>
+								Composite (AND / OR)
+							</button>
+						</div>
+						<p className="text-xs text-muted-foreground">
+							Composite rules combine multiple criteria.{" "}
+							{form.mode === "composite"
+								? "All conditions are evaluated against each item and combined with the chosen operator."
+								: "Switch to composite mode to combine multiple criteria with AND or OR."}
+						</p>
 					</div>
 
-					{/* Per-rule-type params */}
-					<div className="rounded-md border border-border/50 bg-muted/10 p-3 space-y-3">
-						<ConditionParamsFields
-							ruleType={form.ruleType}
-							params={form.parameters}
-							onParamsChange={(p) => update("parameters", p)}
-							fieldOptions={fieldOptionsQuery.data}
-							fieldOptionsLoading={fieldOptionsQuery.isLoading}
-							inputClass={inputClass}
-							labelClass={labelClass}
-						/>
-					</div>
+					{form.mode === "single" ? (
+						<>
+							{/* Single rule-type selector */}
+							<div className="space-y-1.5">
+								<label htmlFor="rule-type" className={labelClass}>
+									Match criteria
+								</label>
+								<select
+									id="rule-type"
+									value={form.ruleType}
+									onChange={(e) => onSingleRuleTypeChange(e.target.value as SingleRuleType)}
+									className={inputClass}
+								>
+									{Object.entries(groupBy(RULE_TYPE_OPTIONS, (o) => o.group)).map(
+										([group, options]) => (
+											<optgroup key={group} label={group}>
+												{options.map((opt) => (
+													<option key={opt.value} value={opt.value}>
+														{opt.label}
+													</option>
+												))}
+											</optgroup>
+										),
+									)}
+								</select>
+							</div>
+
+							{/* Per-rule-type params */}
+							<div className="rounded-md border border-border/50 bg-muted/10 p-3 space-y-3">
+								<ConditionParamsFields
+									ruleType={form.ruleType}
+									params={form.parameters}
+									onParamsChange={(p) => update("parameters", p)}
+									fieldOptions={fieldOptionsQuery.data}
+									fieldOptionsLoading={fieldOptionsQuery.isLoading}
+									inputClass={inputClass}
+									labelClass={labelClass}
+								/>
+							</div>
+						</>
+					) : (
+						<>
+							{/* Composite operator */}
+							<div className="space-y-1.5">
+								<label htmlFor="composite-operator" className={labelClass}>
+									Combine conditions with
+								</label>
+								<select
+									id="composite-operator"
+									value={form.operator}
+									onChange={(e) => update("operator", e.target.value as CompositeOperator)}
+									className={inputClass}
+								>
+									<option value="AND">AND — every condition must match</option>
+									<option value="OR">OR — any condition matches</option>
+								</select>
+							</div>
+
+							{/* Composite conditions list */}
+							<div className="space-y-2">
+								<label className={labelClass}>Conditions</label>
+								{form.conditions.map((cond, index) => (
+									<div
+										key={index}
+										className="rounded-md border border-border/50 bg-muted/10 p-3 space-y-3 relative"
+									>
+										<div className="flex items-start justify-between gap-2">
+											<div className="flex-1 space-y-1.5">
+												<label htmlFor={`cond-rt-${index}`} className="text-xs font-medium">
+													Condition {index + 1} — match criteria
+												</label>
+												<select
+													id={`cond-rt-${index}`}
+													value={cond.ruleType}
+													onChange={(e) =>
+														onConditionRuleTypeChange(index, e.target.value as SingleRuleType)
+													}
+													className={inputClass}
+												>
+													{Object.entries(groupBy(RULE_TYPE_OPTIONS, (o) => o.group)).map(
+														([group, options]) => (
+															<optgroup key={group} label={group}>
+																{options.map((opt) => (
+																	<option key={opt.value} value={opt.value}>
+																		{opt.label}
+																	</option>
+																))}
+															</optgroup>
+														),
+													)}
+												</select>
+											</div>
+											{form.conditions.length > 1 && (
+												<button
+													type="button"
+													onClick={() => removeCondition(index)}
+													className="mt-6 p-1.5 rounded-md hover:bg-red-500/10 transition-colors"
+													title="Remove condition"
+												>
+													<X className="h-3.5 w-3.5 text-red-500/70" />
+												</button>
+											)}
+										</div>
+										<ConditionParamsFields
+											ruleType={cond.ruleType}
+											params={cond.parameters}
+											onParamsChange={(p) => updateCondition(index, { parameters: p })}
+											fieldOptions={fieldOptionsQuery.data}
+											fieldOptionsLoading={fieldOptionsQuery.isLoading}
+											inputClass={inputClass}
+											labelClass="text-xs font-medium"
+										/>
+									</div>
+								))}
+								<Button
+									type="button"
+									variant="ghost"
+									onClick={addCondition}
+									className="w-full justify-center"
+								>
+									<Plus className="h-3.5 w-3.5 mr-1.5" />
+									Add condition
+								</Button>
+							</div>
+						</>
+					)}
 
 					{submitError && (
 						<div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-500">
