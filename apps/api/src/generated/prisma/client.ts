@@ -293,10 +293,13 @@ export type NamingDeployHistory = Prisma.NamingDeployHistoryModel
  */
 export type SeerrActionLog = Prisma.SeerrActionLogModel
 /**
- * Model PlexLabelSyncRule
- * Per-user rule mapping a Sonarr/Radarr tag to a Plex label.
- * When the rule executes, all *arr items carrying `arrTagName` get
- * `plexLabel` applied to their matching Plex item (matched by tmdbId
- * against PlexCache).
+ * Model LabelSyncRule
+ * Per-user rule mapping a tag/label on one media service to a tag/label on
+ * another. Sub-arc 1 ships the generalized schema; sub-arcs 2-3 expand
+ * destinations (Jellyfin/Emby, *arr) and sources (Plex/Jellyfin/Emby).
+ * 
+ * At rule execution time, source items are enumerated, matched to the
+ * destination's items (by tmdbId for movies/TV), and the destination tag
+ * is applied. See lib/plex-label-sync/execute-rule.ts for the engine.
  */
-export type PlexLabelSyncRule = Prisma.PlexLabelSyncRuleModel
+export type LabelSyncRule = Prisma.LabelSyncRuleModel
