@@ -173,7 +173,14 @@ const RuleTable = ({
 						</td>
 						<td className="px-4 py-3 font-mono text-xs">{rule.tagName}</td>
 						<td className="px-4 py-3 text-muted-foreground text-xs">
-							<span className="capitalize">{rule.ruleType.replace(/_/g, " ")}</span>
+							{rule.ruleType === "composite" && rule.operator ? (
+								<span>
+									<span className="font-medium">{rule.operator}</span> of{" "}
+									{rule.conditions?.length ?? 0} conditions
+								</span>
+							) : (
+								<span className="capitalize">{rule.ruleType.replace(/_/g, " ")}</span>
+							)}
 						</td>
 						<td className="px-4 py-3">
 							{rule.lastRunStatus ? (
