@@ -434,7 +434,8 @@ export const ModelName = {
   NamingConfig: 'NamingConfig',
   NamingDeployHistory: 'NamingDeployHistory',
   SeerrActionLog: 'SeerrActionLog',
-  LabelSyncRule: 'LabelSyncRule'
+  LabelSyncRule: 'LabelSyncRule',
+  AutoTagRule: 'AutoTagRule'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -450,7 +451,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule"
+    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "autoTagRule"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -4228,6 +4229,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    AutoTagRule: {
+      payload: Prisma.$AutoTagRulePayload<ExtArgs>
+      fields: Prisma.AutoTagRuleFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.AutoTagRuleFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AutoTagRulePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.AutoTagRuleFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AutoTagRulePayload>
+        }
+        findFirst: {
+          args: Prisma.AutoTagRuleFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AutoTagRulePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.AutoTagRuleFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AutoTagRulePayload>
+        }
+        findMany: {
+          args: Prisma.AutoTagRuleFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AutoTagRulePayload>[]
+        }
+        create: {
+          args: Prisma.AutoTagRuleCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AutoTagRulePayload>
+        }
+        createMany: {
+          args: Prisma.AutoTagRuleCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.AutoTagRuleCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AutoTagRulePayload>[]
+        }
+        delete: {
+          args: Prisma.AutoTagRuleDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AutoTagRulePayload>
+        }
+        update: {
+          args: Prisma.AutoTagRuleUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AutoTagRulePayload>
+        }
+        deleteMany: {
+          args: Prisma.AutoTagRuleDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.AutoTagRuleUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.AutoTagRuleUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AutoTagRulePayload>[]
+        }
+        upsert: {
+          args: Prisma.AutoTagRuleUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AutoTagRulePayload>
+        }
+        aggregate: {
+          args: Prisma.AutoTagRuleAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateAutoTagRule>
+        }
+        groupBy: {
+          args: Prisma.AutoTagRuleGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AutoTagRuleGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.AutoTagRuleCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AutoTagRuleCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -5209,6 +5284,31 @@ export const LabelSyncRuleScalarFieldEnum = {
 export type LabelSyncRuleScalarFieldEnum = (typeof LabelSyncRuleScalarFieldEnum)[keyof typeof LabelSyncRuleScalarFieldEnum]
 
 
+export const AutoTagRuleScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  name: 'name',
+  enabled: 'enabled',
+  ruleType: 'ruleType',
+  parameters: 'parameters',
+  operator: 'operator',
+  conditions: 'conditions',
+  serviceFilter: 'serviceFilter',
+  instanceFilter: 'instanceFilter',
+  excludeTags: 'excludeTags',
+  excludeTitles: 'excludeTitles',
+  plexLibraryFilter: 'plexLibraryFilter',
+  tagName: 'tagName',
+  lastRunAt: 'lastRunAt',
+  lastRunStatus: 'lastRunStatus',
+  lastRunMessage: 'lastRunMessage',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type AutoTagRuleScalarFieldEnum = (typeof AutoTagRuleScalarFieldEnum)[keyof typeof AutoTagRuleScalarFieldEnum]
+
+
 export const SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -5454,6 +5554,7 @@ export type GlobalOmitConfig = {
   namingDeployHistory?: Prisma.NamingDeployHistoryOmit
   seerrActionLog?: Prisma.SeerrActionLogOmit
   labelSyncRule?: Prisma.LabelSyncRuleOmit
+  autoTagRule?: Prisma.AutoTagRuleOmit
 }
 
 /* Types for Logging */

@@ -101,7 +101,8 @@ export const ModelName = {
   NamingConfig: 'NamingConfig',
   NamingDeployHistory: 'NamingDeployHistory',
   SeerrActionLog: 'SeerrActionLog',
-  LabelSyncRule: 'LabelSyncRule'
+  LabelSyncRule: 'LabelSyncRule',
+  AutoTagRule: 'AutoTagRule'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -1060,6 +1061,31 @@ export const LabelSyncRuleScalarFieldEnum = {
 } as const
 
 export type LabelSyncRuleScalarFieldEnum = (typeof LabelSyncRuleScalarFieldEnum)[keyof typeof LabelSyncRuleScalarFieldEnum]
+
+
+export const AutoTagRuleScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  name: 'name',
+  enabled: 'enabled',
+  ruleType: 'ruleType',
+  parameters: 'parameters',
+  operator: 'operator',
+  conditions: 'conditions',
+  serviceFilter: 'serviceFilter',
+  instanceFilter: 'instanceFilter',
+  excludeTags: 'excludeTags',
+  excludeTitles: 'excludeTitles',
+  plexLibraryFilter: 'plexLibraryFilter',
+  tagName: 'tagName',
+  lastRunAt: 'lastRunAt',
+  lastRunStatus: 'lastRunStatus',
+  lastRunMessage: 'lastRunMessage',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type AutoTagRuleScalarFieldEnum = (typeof AutoTagRuleScalarFieldEnum)[keyof typeof AutoTagRuleScalarFieldEnum]
 
 
 export const SortOrder = {
