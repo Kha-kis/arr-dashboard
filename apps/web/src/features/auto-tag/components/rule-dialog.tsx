@@ -26,7 +26,7 @@ import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import {
 	ConditionParamsFields,
 	getDefaultConditionParams,
-} from "../../library-cleanup/components/condition-params-fields";
+} from "../../rule-criteria/components/condition-params-fields";
 
 interface RuleDialogProps {
 	rule: AutoTagRule | null;

@@ -6,6 +6,7 @@ import type {
 	CleanupRuleType,
 	CreateCleanupRule,
 } from "@arr/shared";
+import type { LucideIcon } from "lucide-react";
 import {
 	BarChart3,
 	Brain,
@@ -21,7 +22,6 @@ import {
 	Target,
 	Tv,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
 	Dialog,
@@ -36,12 +36,15 @@ import { useServicesQuery } from "@/hooks/api/useServicesQuery";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 import { getServiceGradient } from "@/lib/theme-gradients";
 import { getInputStyles } from "@/lib/theme-input-styles";
-import { ConditionParamsFields, getDefaultConditionParams } from "./condition-params-fields";
-import { MultiSelectField } from "./multi-select-field";
 import {
+	ConditionParamsFields,
+	getDefaultConditionParams,
+} from "../../rule-criteria/components/condition-params-fields";
+import { MultiSelectField } from "../../rule-criteria/components/multi-select-field";
+import {
+	type BuildParamsState,
 	buildParams as buildParamsPure,
 	splitCsv,
-	type BuildParamsState,
 } from "../lib/rule-dialog-logic";
 
 // ============================================================================
@@ -921,9 +924,7 @@ export function CleanupRuleDialog({
 				} else if (templateData.ruleType && templateData.ruleType !== "composite") {
 					// Single-rule template
 					setRuleType(templateData.ruleType);
-					const activeCat = RULE_CATEGORIES.find((c) =>
-						c.types.includes(templateData.ruleType),
-					);
+					const activeCat = RULE_CATEGORIES.find((c) => c.types.includes(templateData.ruleType));
 					if (activeCat) {
 						setExpandedCategories(new Set([activeCat.id]));
 					}
@@ -1117,9 +1118,7 @@ export function CleanupRuleDialog({
 
 				{!isEdit && templateData && (
 					<div className="rounded-lg border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-xs text-blue-400">
-						{templateData.conditions?.some((c) =>
-							"userNames" in (c.parameters ?? {}),
-						)
+						{templateData.conditions?.some((c) => "userNames" in (c.parameters ?? {}))
 							? "Template applied. Fill in the usernames in each condition below, then save."
 							: "Template applied. Review the settings below and save when ready."}
 					</div>
@@ -3581,4 +3580,3 @@ function ExcludeTagsPicker({
 		</div>
 	);
 }
-
