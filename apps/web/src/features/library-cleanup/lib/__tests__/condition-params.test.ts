@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { cleanupRuleTypeSchema } from "@arr/shared";
 import type { CleanupRuleType } from "@arr/shared";
-import { getDefaultConditionParams } from "../../components/condition-params-fields";
+import { cleanupRuleTypeSchema } from "@arr/shared";
+import { describe, expect, it } from "vitest";
+import { getDefaultConditionParams } from "../../../rule-criteria/components/condition-params-fields";
 
 // All rule types defined in the Zod schema
 const ALL_RULE_TYPES = cleanupRuleTypeSchema.options;
@@ -121,12 +121,12 @@ describe("getDefaultConditionParams", () => {
 			["user_retention", { operator: "watched_by_none", source: "plex" }],
 			["staleness_score", { operator: "greater_than", threshold: 70 }],
 			["recently_active", { protectionDays: 30, requireActivity: true }],
-		] as [CleanupRuleType, Record<string, unknown>][])(
-			"%s → returns correct defaults",
-			(ruleType, expected) => {
-				expect(getDefaultConditionParams(ruleType)).toEqual(expected);
-			},
-		);
+		] as [
+			CleanupRuleType,
+			Record<string, unknown>,
+		][])("%s → returns correct defaults", (ruleType, expected) => {
+			expect(getDefaultConditionParams(ruleType)).toEqual(expected);
+		});
 	});
 
 	// Document the intentional default divergence between getDefaultConditionParams
