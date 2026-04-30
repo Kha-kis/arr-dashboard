@@ -73,7 +73,7 @@ export const WebhookConfigPanel = () => {
 				<div className="space-y-2">
 					<div className="space-y-1">
 						<label htmlFor="webhook-url" className="text-xs font-medium text-muted-foreground">
-							Webhook URL (replace &lt;instance-id&gt; with each instance's ID from Settings)
+							Webhook URL (replace &lt;instance-id&gt; with each instance&rsquo;s ID from Settings)
 						</label>
 						<div className="flex gap-1">
 							<input

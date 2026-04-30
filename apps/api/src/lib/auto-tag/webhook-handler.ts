@@ -51,7 +51,7 @@ export async function resolveUserFromBearer(
 	prisma: PrismaClient,
 	authHeader: string | undefined,
 ): Promise<User | null> {
-	if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
+	if (!authHeader?.startsWith("Bearer ")) return null;
 	const token = authHeader.slice("Bearer ".length).trim();
 	if (token.length < 16) return null;
 	const hashed = createHash("sha256").update(token).digest("hex");
