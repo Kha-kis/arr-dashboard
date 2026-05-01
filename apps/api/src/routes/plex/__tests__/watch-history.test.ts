@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { deduplicateWatchEvents, type SnapshotForHistory } from "../lib/watch-history-helpers.js";
 
-function snapshot(capturedAt: string, sessions: Array<Record<string, unknown>>): SnapshotForHistory {
+function snapshot(
+	capturedAt: string,
+	sessions: Array<Record<string, unknown>>,
+): SnapshotForHistory {
 	return {
 		capturedAt: new Date(capturedAt),
 		sessionsJson: JSON.stringify(sessions),
@@ -62,10 +65,19 @@ describe("deduplicateWatchEvents", () => {
 	});
 
 	it("handles malformed sessionsJson", () => {
-		const snapshots: SnapshotForHistory[] = [
-			{ capturedAt: new Date(), sessionsJson: "not-json" },
-		];
+		const snapshots: SnapshotForHistory[] = [{ capturedAt: new Date(), sessionsJson: "not-json" }];
 		const result = deduplicateWatchEvents(snapshots, 50);
+		expect(result.events).toEqual([]);
+	});
+
+	it.each([
+		["null", "null"],
+		["empty object", "{}"],
+		["number", "42"],
+	])("treats valid-but-non-iterable JSON (%s) as a parse failure", (_label, sessionsJson) => {
+		const result = deduplicateWatchEvents([{ capturedAt: new Date(), sessionsJson }], 50);
+		expect(result.parseFailures).toBe(1);
+		expect(result.failedPreviews).toEqual([]);
 		expect(result.events).toEqual([]);
 	});
 });

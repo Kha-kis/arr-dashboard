@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { aggregateUserAnalytics, type SnapshotWithSessions } from "../lib/user-analytics-helpers.js";
+import {
+	aggregateUserAnalytics,
+	type SnapshotWithSessions,
+} from "../lib/user-analytics-helpers.js";
 
-function snapshot(overrides: Partial<SnapshotWithSessions> & { sessionsJson: string }): SnapshotWithSessions {
+function snapshot(
+	overrides: Partial<SnapshotWithSessions> & { sessionsJson: string },
+): SnapshotWithSessions {
 	return {
 		capturedAt: new Date("2025-01-15T10:00:00Z"),
 		...overrides,
@@ -39,7 +44,9 @@ describe("aggregateUserAnalytics", () => {
 		const snapshots = [
 			snapshot({
 				capturedAt: new Date("2025-01-15T10:00:00Z"),
-				sessionsJson: JSON.stringify([{ user: "alice", title: "X", bandwidth: 0, state: "playing" }]),
+				sessionsJson: JSON.stringify([
+					{ user: "alice", title: "X", bandwidth: 0, state: "playing" },
+				]),
 			}),
 			snapshot({
 				capturedAt: new Date("2025-01-16T10:00:00Z"),
@@ -61,9 +68,18 @@ describe("aggregateUserAnalytics", () => {
 	});
 
 	it("handles malformed sessionsJson gracefully", () => {
-		const result = aggregateUserAnalytics([
-			snapshot({ sessionsJson: "not-json" }),
-		]);
+		const result = aggregateUserAnalytics([snapshot({ sessionsJson: "not-json" })]);
+		expect(result.users).toEqual([]);
+	});
+
+	it.each([
+		["null", "null"],
+		["empty object", "{}"],
+		["number", "42"],
+	])("treats valid-but-non-iterable JSON (%s) as a parse failure", (_label, sessionsJson) => {
+		const result = aggregateUserAnalytics([snapshot({ sessionsJson })]);
+		expect(result.parseFailures).toBe(1);
+		expect(result.failedPreviews).toEqual([]);
 		expect(result.users).toEqual([]);
 	});
 
@@ -86,11 +102,15 @@ describe("aggregateUserAnalytics", () => {
 		const snapshots = [
 			snapshot({
 				capturedAt: new Date("2025-01-10T10:00:00Z"),
-				sessionsJson: JSON.stringify([{ user: "alice", title: "X", bandwidth: 0, state: "playing" }]),
+				sessionsJson: JSON.stringify([
+					{ user: "alice", title: "X", bandwidth: 0, state: "playing" },
+				]),
 			}),
 			snapshot({
 				capturedAt: new Date("2025-01-15T18:00:00Z"),
-				sessionsJson: JSON.stringify([{ user: "alice", title: "Y", bandwidth: 0, state: "playing" }]),
+				sessionsJson: JSON.stringify([
+					{ user: "alice", title: "Y", bandwidth: 0, state: "playing" },
+				]),
 			}),
 		];
 
