@@ -150,6 +150,16 @@ export interface EvalContext {
 	jellyfinMap?: JellyfinWatchMap;
 	/** Reuses PlexEpisodeMap shape — same total/watched/seasons structure */
 	jellyfinEpisodeMap?: PlexEpisodeMap;
+	/**
+	 * Auto-tagger external list memberships (used by `tmdb_list_member` and
+	 * `trakt_list_member` rules). Map key is the list identifier (TMDb listId
+	 * or Trakt listSlug); value is the set of tmdbIds in that list.
+	 *
+	 * Populated by the auto-tagger's per-rule prefetch — undefined when
+	 * called from the cleanup executor (which doesn't use these rule types).
+	 */
+	tmdbListMemberships?: Map<string, Set<number>>;
+	traktListMemberships?: Map<string, Set<number>>;
 }
 
 /** Tracks the outcome of each data source prefetch */
@@ -219,4 +229,3 @@ export interface CleanupRunResult {
 	prefetchHealth?: PrefetchResults;
 	warnings?: string[];
 }
-

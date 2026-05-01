@@ -35,6 +35,8 @@ export const JOB_ID = {
 	seerrHealth: "seerr-health",
 	labelSync: "label-sync",
 	autoTag: "auto-tag",
+	tmdbListCache: "tmdb-list-cache",
+	traktListCache: "trakt-list-cache",
 } as const;
 
 export const KNOWN_JOBS: readonly JobDefinition[] = [
@@ -171,5 +173,21 @@ export const KNOWN_JOBS: readonly JobDefinition[] = [
 			"Walks enabled AutoTagRule rows once per hour, evaluates each rule's criteria DSL against LibraryCache items, and applies the configured tag to matches via the source *arr's tag-write API. Per-rule cooldown skips rules that ran in the last hour.",
 		concurrency: "singleton",
 		intervalMs: 5 * 60 * 1000,
+	},
+	{
+		id: JOB_ID.tmdbListCache,
+		label: "TMDb list cache",
+		description:
+			"Refreshes cached membership of TMDb lists referenced by enabled tmdb_list_member auto-tag rules. Scoped to lists actually in use; orphaned cache rows are GC'd at the end of each tick.",
+		concurrency: "singleton",
+		intervalMs: 4 * 60 * 60 * 1000,
+	},
+	{
+		id: JOB_ID.traktListCache,
+		label: "Trakt list cache",
+		description:
+			"Refreshes cached membership of Trakt lists referenced by enabled trakt_list_member auto-tag rules. Requires a per-user Trakt PAT + an app-level TRAKT_CLIENT_ID env var; no-op when either is missing.",
+		concurrency: "singleton",
+		intervalMs: 4 * 60 * 60 * 1000,
 	},
 ] as const;

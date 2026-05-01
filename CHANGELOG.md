@@ -5,6 +5,30 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.18.0] - Unreleased
+
+**Auto-Tagger: criteria-based tagging for Sonarr/Radarr — companion to Label Sync.** A new automation feature that applies tags to *arr items when they match a rule's criteria DSL. Same expressiveness as Library Cleanup (50+ rule types: genre, year, codec, watch state, Plex labels/collections, custom format score, audio channels, runtime, file path regex, etc.) plus full composite (AND/OR) rules and real-time tagging via Sonarr/Radarr Connect webhooks. Pair with Label Sync to mirror the tag onto Plex/Jellyfin/Emby labels — Auto-Tagger seeds the source tag, Label Sync propagates it. New `/auto-tag` page in the Maintenance section.
+
+### Added
+
+- **Auto-Tagger feature** at `/auto-tag` — schedule-driven (5min ticks, 60min per-rule cooldown) and on-demand "Run now" against Sonarr/Radarr. Reuses Library Cleanup's evaluator + 50+ rule types, so rule expressiveness is at parity with cleanup from day one (#394).
+- **Composite (AND/OR) rule builder UI** — toggle between single criterion and composite mode in the rule dialog, add/remove condition rows independently, each row picks its own rule type with type-specific params via the shared `ConditionParamsFields` (#395).
+- **Sonarr/Radarr Connect webhook** at `POST /api/auto-tag/webhook/:instanceId` — fires within seconds of an import event for sub-second tagging vs. the 5-minute scheduled tick. Per-user Bearer-token auth (token's SHA-256 hash stored at rest; plaintext shown once at generation/rotation, never persisted). Webhook config panel on the Auto-Tagger page with copy-secret, rotate-secret, and incognito-mode redaction (#396).
+- **Per-rule execution lock** — prevents the scheduler tick and on-demand "Run now" from racing on the same rule's `series.update`/`movie.update` and dropping each other's tag merges. Skipped runs return HTTP 409 with a clear message (#398).
+- **List-membership rule type** — `tmdb_list_member` and `trakt_list_member` rule types in the criteria DSL, with backing `TmdbListCache` / `TraktListCache` schema. Rules can be created and edited via the new "Lists" optgroup in the rule dialog (#399).
+- **List-membership runtime: TMDb v3 + Trakt PAT integration** — list-membership rules now match items at execution time. TMDb lookups reuse the per-user TMDb v3 read-access token already configured in Settings → Account (the same key Discover uses). Trakt lookups use a new per-user Trakt personal access token field in Settings → Account, paired with the operator-supplied `TRAKT_CLIENT_ID` env var. Both list caches refresh every 4 hours (offset startup delays: TMDb +60s, Trakt +90s) and orphan-collect rows for unreferenced lists at the end of each tick. Membership maps are prefetched into the `EvalContext` and dispatched through `evaluateSingleCondition`, so list-membership conditions compose freely with all other rule types in AND/OR rules.
+
+### Changed
+
+- **Generic rule-criteria types extracted from `library-cleanup` into a neutral shared module** — `RuleType`, `Condition`, `CompositeOperator`, all `*RuleParams` schemas, the validation map, and the data-source-dependency map now live in `packages/shared/src/types/rule-criteria.ts`. Both Auto-Tagger and Library Cleanup consume from there. Legacy export names (`cleanupRuleTypeSchema`, `CleanupRuleType`) preserved as aliases — every existing import resolves unchanged (#393).
+- **`ConditionParamsFields` and `MultiSelectField` hoisted out of `library-cleanup/components/`** into a shared `features/rule-criteria/components/` module. Both Library Cleanup and Auto-Tagger import the same UI primitive — no more cross-feature reaching into another feature's `components/` folder (#397).
+
+### Notes for operators
+
+- The Auto-Tagger writes to the **source-side *arr** (Sonarr/Radarr); pair with a Label Sync rule if you want the tag mirrored to Plex/Jellyfin/Emby labels.
+- The webhook is exposed at `/api/auto-tag/webhook/:instanceId` as a **public route** (no session cookie required); auth is the per-user Bearer token. Rotate the secret via the panel if you suspect leakage — old token is invalidated immediately.
+- **Trakt list-membership rules require `TRAKT_CLIENT_ID`** to be set in the API process env (issued from `trakt.tv/oauth/applications`). Without it, the Trakt scheduler logs a one-line "skipped — TRAKT_CLIENT_ID not configured" notice and trakt rules will not match. TMDb list-membership has no operator-side env requirement — it uses the user's TMDb v3 read-access token from Settings → Account.
+
 ## [2.17.0] - 2026-04-29
 
 **Statistics overhaul: Jellyfin/Emby parity + Tautulli is now optional.** The Statistics page gains a full Jellyfin/Emby tab matching the Plex feature set, and the Plex tab no longer requires Tautulli — all leaderboards and analytics now flow from the dashboard's own SessionSnapshot capture (every 5 minutes during active streams) rather than Tautulli's pre-aggregated home-stats. Tautulli stays around as an *optional enrichment source* that adds richer codec, LAN/WAN bandwidth, and platform metadata when configured; without it, snapshot-driven data still populates the same charts.

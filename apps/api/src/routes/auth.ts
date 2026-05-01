@@ -34,6 +34,11 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		currentPassword: z.string().min(8).max(128).optional(),
 		newPassword: passwordSchema.optional(),
 		tmdbApiKey: z.string().max(255).optional(),
+		// Trakt personal access token — used by the auto-tagger's Trakt list
+		// cache refresher. User generates one in their Trakt account
+		// (settings → API access → applications → personal access token).
+		// Empty string clears the stored token.
+		traktAccessToken: z.string().max(512).optional(),
 	});
 
 	app.get("/setup-required", async (_request, reply) => {
@@ -306,10 +311,15 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		const user = await app.prisma.user.findUnique({
 			where: { id: request.currentUser.id },
-			select: { encryptedTmdbApiKey: true, hashedPassword: true },
+			select: {
+				encryptedTmdbApiKey: true,
+				encryptedTraktAccessToken: true,
+				hashedPassword: true,
+			},
 		});
 
 		const hasTmdbApiKey = !!user?.encryptedTmdbApiKey;
+		const hasTraktAccessToken = !!user?.encryptedTraktAccessToken;
 		const hasPassword = !!user?.hashedPassword;
 
 		return reply.send({
@@ -319,6 +329,7 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				mustChangePassword: request.currentUser.mustChangePassword,
 				createdAt: request.currentUser.createdAt,
 				hasTmdbApiKey,
+				hasTraktAccessToken,
 				hasPassword,
 			},
 		});
@@ -414,10 +425,8 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(401).send({ error: "Unauthorized" });
 		}
 
-		const { username, currentPassword, newPassword, tmdbApiKey } = validateRequest(
-			updateAccountSchema,
-			request.body,
-		);
+		const { username, currentPassword, newPassword, tmdbApiKey, traktAccessToken } =
+			validateRequest(updateAccountSchema, request.body);
 
 		// Check if OIDC provider is enabled - if so, password changes are disabled
 		if (newPassword) {
@@ -434,7 +443,7 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		// Check if at least one field is being updated
-		if (!username && !newPassword && tmdbApiKey === undefined) {
+		if (!username && !newPassword && tmdbApiKey === undefined && traktAccessToken === undefined) {
 			return reply.status(400).send({ error: "No updates provided" });
 		}
 
@@ -483,6 +492,8 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			hashedPassword?: string;
 			encryptedTmdbApiKey?: string;
 			tmdbEncryptionIv?: string;
+			encryptedTraktAccessToken?: string;
+			traktTokenIv?: string;
 		} = {};
 		if (username) {
 			updateData.username = username.trim();
@@ -500,6 +511,16 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				// Clear the TMDB API key if empty string provided
 				updateData.encryptedTmdbApiKey = undefined;
 				updateData.tmdbEncryptionIv = undefined;
+			}
+		}
+		if (traktAccessToken !== undefined) {
+			if (traktAccessToken) {
+				const { value, iv } = app.encryptor.encrypt(traktAccessToken);
+				updateData.encryptedTraktAccessToken = value;
+				updateData.traktTokenIv = iv;
+			} else {
+				updateData.encryptedTraktAccessToken = undefined;
+				updateData.traktTokenIv = undefined;
 			}
 		}
 

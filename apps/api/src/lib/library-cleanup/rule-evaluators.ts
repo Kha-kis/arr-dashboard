@@ -18,25 +18,26 @@ import type {
 	GenreRuleParams,
 	HdrTypeRuleParams,
 	ImdbRatingRuleParams,
+	JellyfinAddedAtParams,
+	JellyfinEpisodeCompletionParams,
+	JellyfinLastWatchedParams,
+	JellyfinOnDeckParams,
+	JellyfinUserRatingParams,
+	JellyfinWatchCountParams,
+	JellyfinWatchedByParams,
 	LanguageRuleParams,
 	PlexAddedAtParams,
 	PlexCollectionRuleParams,
+	PlexEpisodeCompletionParams,
 	PlexLabelRuleParams,
 	PlexLastWatchedParams,
 	PlexOnDeckParams,
 	PlexUserRatingParams,
 	PlexWatchCountParams,
-	PlexEpisodeCompletionParams,
 	PlexWatchedByParams,
-	JellyfinLastWatchedParams,
-	JellyfinWatchCountParams,
-	JellyfinOnDeckParams,
-	JellyfinUserRatingParams,
-	JellyfinWatchedByParams,
-	JellyfinAddedAtParams,
-	JellyfinEpisodeCompletionParams,
 	QualityProfileRuleParams,
 	RatingRuleParams,
+	RecentlyActiveParams,
 	ReleaseGroupRuleParams,
 	ResolutionRuleParams,
 	RuntimeRuleParams,
@@ -49,23 +50,24 @@ import type {
 	SeerrRequestModifiedAgeParams,
 	SeerrRequestStatusParams,
 	SizeRuleParams,
-	RecentlyActiveParams,
 	StalenessScoreParams,
 	StatusRuleParams,
 	TagMatchRuleParams,
-	UserRetentionParams,
 	TautulliLastWatchedParams,
 	TautulliWatchCountParams,
 	TautulliWatchedByParams,
+	UserRetentionParams,
 	VideoCodecRuleParams,
 	YearRangeRuleParams,
 } from "@arr/shared";
-import { isRegexSafe, ruleDataSourceMap, type DataSourceDependency } from "@arr/shared";
+import { type DataSourceDependency, isRegexSafe, ruleDataSourceMap } from "@arr/shared";
 import type { LibraryCleanupRule } from "../prisma.js";
 import { safeJsonParse } from "../utils/json.js";
 import type {
 	CacheItemForEval,
 	EvalContext,
+	JellyfinWatchInfo,
+	JellyfinWatchMap,
 	PlexWatchInfo,
 	PlexWatchMap,
 	RuleAction,
@@ -73,8 +75,6 @@ import type {
 	SeerrRequestInfo,
 	SeerrRequestMap,
 	TautulliWatchMap,
-	JellyfinWatchInfo,
-	JellyfinWatchMap,
 } from "./types.js";
 
 // ============================================================================
@@ -1342,20 +1342,38 @@ function evaluateJellyfinWatchCount(
 ): string | null {
 	const watch = lookupJellyfinWatch(item, ctx.jellyfinMap);
 	if (!watch) {
-		if (ctx.jellyfinMap && ctx.jellyfinMap.size > 0 && params.operator === "less_than" && params.count > 0 && item.hasFile && item.arrAddedAt) {
-			const ageDays = Math.floor((ctx.now.getTime() - item.arrAddedAt.getTime()) / (1000 * 60 * 60 * 24));
+		if (
+			ctx.jellyfinMap &&
+			ctx.jellyfinMap.size > 0 &&
+			params.operator === "less_than" &&
+			params.count > 0 &&
+			item.hasFile &&
+			item.arrAddedAt
+		) {
+			const ageDays = Math.floor(
+				(ctx.now.getTime() - item.arrAddedAt.getTime()) / (1000 * 60 * 60 * 24),
+			);
 			return `Not tracked by Jellyfin, in library for ${ageDays} days (threshold: < ${params.count} plays)`;
 		}
 		return null;
 	}
 	const count = watch.watchCount;
-	const ageCtx = count === 0 && watch.addedAt ? `, added ${Math.floor((ctx.now.getTime() - watch.addedAt.getTime()) / (1000 * 60 * 60 * 24))} days ago` : "";
-	if (params.operator === "less_than" && count < params.count) return `Jellyfin play count: ${count}${ageCtx} (threshold: < ${params.count})`;
-	if (params.operator === "greater_than" && count > params.count) return `Jellyfin play count: ${count} (threshold: > ${params.count})`;
+	const ageCtx =
+		count === 0 && watch.addedAt
+			? `, added ${Math.floor((ctx.now.getTime() - watch.addedAt.getTime()) / (1000 * 60 * 60 * 24))} days ago`
+			: "";
+	if (params.operator === "less_than" && count < params.count)
+		return `Jellyfin play count: ${count}${ageCtx} (threshold: < ${params.count})`;
+	if (params.operator === "greater_than" && count > params.count)
+		return `Jellyfin play count: ${count} (threshold: > ${params.count})`;
 	return null;
 }
 
-function evaluateJellyfinOnDeck(item: CacheItemForEval, params: JellyfinOnDeckParams, ctx: EvalContext): string | null {
+function evaluateJellyfinOnDeck(
+	item: CacheItemForEval,
+	params: JellyfinOnDeckParams,
+	ctx: EvalContext,
+): string | null {
 	const watch = lookupJellyfinWatch(item, ctx.jellyfinMap);
 	if (!watch) return null;
 	if (params.isDeck && watch.onDeck) return "Item is on Jellyfin Continue Watching";
@@ -1363,16 +1381,35 @@ function evaluateJellyfinOnDeck(item: CacheItemForEval, params: JellyfinOnDeckPa
 	return null;
 }
 
-function evaluateJellyfinUserRating(item: CacheItemForEval, params: JellyfinUserRatingParams, ctx: EvalContext): string | null {
+function evaluateJellyfinUserRating(
+	item: CacheItemForEval,
+	params: JellyfinUserRatingParams,
+	ctx: EvalContext,
+): string | null {
 	const watch = lookupJellyfinWatch(item, ctx.jellyfinMap);
-	if (params.operator === "unrated") return !watch || watch.userRating === null ? "Unrated in Jellyfin" : null;
+	if (params.operator === "unrated")
+		return !watch || watch.userRating === null ? "Unrated in Jellyfin" : null;
 	if (!watch || watch.userRating === null) return null;
-	if (params.operator === "less_than" && params.rating !== undefined && watch.userRating < params.rating) return `Jellyfin rating: ${watch.userRating.toFixed(1)} (threshold: < ${params.rating})`;
-	if (params.operator === "greater_than" && params.rating !== undefined && watch.userRating > params.rating) return `Jellyfin rating: ${watch.userRating.toFixed(1)} (threshold: > ${params.rating})`;
+	if (
+		params.operator === "less_than" &&
+		params.rating !== undefined &&
+		watch.userRating < params.rating
+	)
+		return `Jellyfin rating: ${watch.userRating.toFixed(1)} (threshold: < ${params.rating})`;
+	if (
+		params.operator === "greater_than" &&
+		params.rating !== undefined &&
+		watch.userRating > params.rating
+	)
+		return `Jellyfin rating: ${watch.userRating.toFixed(1)} (threshold: > ${params.rating})`;
 	return null;
 }
 
-function evaluateJellyfinWatchedBy(item: CacheItemForEval, params: JellyfinWatchedByParams, ctx: EvalContext): string | null {
+function evaluateJellyfinWatchedBy(
+	item: CacheItemForEval,
+	params: JellyfinWatchedByParams,
+	ctx: EvalContext,
+): string | null {
 	const watch = lookupJellyfinWatch(item, ctx.jellyfinMap);
 	if (!watch) return null;
 	const watchedBy = watch.watchedByUsers.map((u) => u.toLowerCase());
@@ -1381,21 +1418,32 @@ function evaluateJellyfinWatchedBy(item: CacheItemForEval, params: JellyfinWatch
 		const matched = targetNames.filter((n) => watchedBy.includes(n));
 		if (matched.length > 0) return `Watched by Jellyfin user(s): ${matched.join(", ")}`;
 	} else if (params.operator === "excludes_all") {
-		if (targetNames.every((n) => !watchedBy.includes(n))) return `Not watched by Jellyfin user(s): ${params.userNames.join(", ")}`;
+		if (targetNames.every((n) => !watchedBy.includes(n)))
+			return `Not watched by Jellyfin user(s): ${params.userNames.join(", ")}`;
 	}
 	return null;
 }
 
-function evaluateJellyfinAddedAt(item: CacheItemForEval, params: JellyfinAddedAtParams, ctx: EvalContext): string | null {
+function evaluateJellyfinAddedAt(
+	item: CacheItemForEval,
+	params: JellyfinAddedAtParams,
+	ctx: EvalContext,
+): string | null {
 	const watch = lookupJellyfinWatch(item, ctx.jellyfinMap);
 	if (!watch?.addedAt) return null;
 	const ageDays = (ctx.now.getTime() - watch.addedAt.getTime()) / (1000 * 60 * 60 * 24);
-	if (params.operator === "older_than" && ageDays >= params.days) return `Added to Jellyfin ${Math.floor(ageDays)} days ago (threshold: > ${params.days} days)`;
-	if (params.operator === "newer_than" && ageDays < params.days) return `Added to Jellyfin ${Math.floor(ageDays)} days ago (threshold: < ${params.days} days)`;
+	if (params.operator === "older_than" && ageDays >= params.days)
+		return `Added to Jellyfin ${Math.floor(ageDays)} days ago (threshold: > ${params.days} days)`;
+	if (params.operator === "newer_than" && ageDays < params.days)
+		return `Added to Jellyfin ${Math.floor(ageDays)} days ago (threshold: < ${params.days} days)`;
 	return null;
 }
 
-function evaluateJellyfinEpisodeCompletion(item: CacheItemForEval, params: JellyfinEpisodeCompletionParams, ctx: EvalContext): string | null {
+function evaluateJellyfinEpisodeCompletion(
+	item: CacheItemForEval,
+	params: JellyfinEpisodeCompletionParams,
+	ctx: EvalContext,
+): string | null {
 	if (item.itemType !== "series") return null;
 	const parsed = safeJsonParse(item.data);
 	if (!parsed) return null;
@@ -1425,8 +1473,10 @@ function evaluateJellyfinEpisodeCompletion(item: CacheItemForEval, params: Jelly
 
 	const pct = (watched / total) * 100;
 	const seasonSuffix = params.minSeason != null ? ` (seasons >= ${params.minSeason})` : "";
-	if (params.operator === "less_than" && pct < params.percentage) return `Jellyfin episode completion ${pct.toFixed(0)}% (${watched}/${total}) < ${params.percentage}%${seasonSuffix}`;
-	if (params.operator === "greater_than" && pct > params.percentage) return `Jellyfin episode completion ${pct.toFixed(0)}% (${watched}/${total}) > ${params.percentage}%${seasonSuffix}`;
+	if (params.operator === "less_than" && pct < params.percentage)
+		return `Jellyfin episode completion ${pct.toFixed(0)}% (${watched}/${total}) < ${params.percentage}%${seasonSuffix}`;
+	if (params.operator === "greater_than" && pct > params.percentage)
+		return `Jellyfin episode completion ${pct.toFixed(0)}% (${watched}/${total}) > ${params.percentage}%${seasonSuffix}`;
 	return null;
 }
 
@@ -2062,7 +2112,11 @@ export function evaluateSingleCondition(
 		case "jellyfin_added_at":
 			return evaluateJellyfinAddedAt(item, params as JellyfinAddedAtParams, ctx);
 		case "jellyfin_episode_completion":
-			return evaluateJellyfinEpisodeCompletion(item, params as JellyfinEpisodeCompletionParams, ctx);
+			return evaluateJellyfinEpisodeCompletion(
+				item,
+				params as JellyfinEpisodeCompletionParams,
+				ctx,
+			);
 
 		// ── Phase C: New rule types ─────────────────────────────────
 		case "imdb_rating":
@@ -2086,22 +2140,67 @@ export function evaluateSingleCondition(
 
 		// ── Phase 4: Requester-aware cross-service rules ─────────────
 		case "seerr_requester_watched":
-			return evaluateSeerrRequesterWatched(
-				item,
-				ctx.seerrMap,
-				ctx.plexMap,
-				plexLibFilter,
-			);
+			return evaluateSeerrRequesterWatched(item, ctx.seerrMap, ctx.plexMap, plexLibFilter);
 		case "seerr_requester_not_watched":
-			return evaluateSeerrRequesterNotWatched(
+			return evaluateSeerrRequesterNotWatched(item, ctx.seerrMap, ctx.plexMap, plexLibFilter);
+
+		case "tmdb_list_member":
+			return evaluateListMembership(item, params, ctx.tmdbListMemberships, "listId", "TMDb list");
+
+		case "trakt_list_member":
+			return evaluateListMembership(
 				item,
-				ctx.seerrMap,
-				ctx.plexMap,
-				plexLibFilter,
+				params,
+				ctx.traktListMemberships,
+				"listSlug",
+				"Trakt list",
 			);
 
 		default:
 			return null;
+	}
+}
+
+/**
+ * Shared evaluator for tmdb_list_member + trakt_list_member.
+ *
+ * Operator semantics:
+ *   - `is_in`: tmdbId must be present in the cached membership set
+ *   - `not_in`: tmdbId must be absent
+ *
+ * If the cache map is undefined (e.g., the auto-tagger didn't pre-populate
+ * `tmdbListMemberships` because no rule needs it, or the prefetch failed),
+ * we conservatively return null — better to not match than to match
+ * incorrectly with stale/missing data.
+ */
+function evaluateListMembership(
+	item: CacheItemForEval,
+	params: Record<string, unknown>,
+	memberships: Map<string, Set<number>> | undefined,
+	identifierKey: "listId" | "listSlug",
+	displayLabel: string,
+): string | null {
+	if (!memberships) return null;
+	const id = params[identifierKey];
+	if (typeof id !== "string" || id.length === 0) return null;
+	const op = params.operator;
+	if (op !== "is_in" && op !== "not_in") return null;
+
+	const tmdbId = extractTmdbId(item.data);
+	if (tmdbId === null) return null; // item has no tmdbId — can't match against a tmdb-keyed list
+
+	const inList = memberships.get(id)?.has(tmdbId) ?? false;
+	if (op === "is_in" && inList) return `In ${displayLabel} ${id}`;
+	if (op === "not_in" && !inList) return `Not in ${displayLabel} ${id}`;
+	return null;
+}
+
+function extractTmdbId(data: string): number | null {
+	try {
+		const parsed = JSON.parse(data) as { remoteIds?: { tmdbId?: number }; tmdbId?: number };
+		return parsed.remoteIds?.tmdbId ?? parsed.tmdbId ?? null;
+	} catch {
+		return null;
 	}
 }
 

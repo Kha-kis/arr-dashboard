@@ -15,6 +15,8 @@ import seerrHealthSchedulerPlugin from "../plugins/seerr-health-scheduler.js";
 import sessionCleanupPlugin from "../plugins/session-cleanup.js";
 import sessionSnapshotSchedulerPlugin from "../plugins/session-snapshot-scheduler.js";
 import tautulliCacheSchedulerPlugin from "../plugins/tautulli-cache-scheduler.js";
+import tmdbListCacheSchedulerPlugin from "../plugins/tmdb-list-cache-scheduler.js";
+import traktListCacheSchedulerPlugin from "../plugins/trakt-list-cache-scheduler.js";
 import trashBackupCleanupPlugin from "../plugins/trash-backup-cleanup.js";
 import trashSyncSchedulerPlugin from "../plugins/trash-sync-scheduler.js";
 import trashUpdateSchedulerPlugin from "../plugins/trash-update-scheduler.js";
@@ -39,6 +41,8 @@ export function registerSchedulers(app: FastifyInstance): void {
 	app.register(libraryCleanupSchedulerPlugin);
 	app.register(labelSyncSchedulerPlugin);
 	app.register(autoTagSchedulerPlugin);
+	app.register(tmdbListCacheSchedulerPlugin);
+	app.register(traktListCacheSchedulerPlugin);
 	app.register(insightsDigestSchedulerPlugin);
 
 	// TRaSH Guides sync + cleanup
