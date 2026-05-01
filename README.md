@@ -212,6 +212,14 @@ docker-compose up -d
 | **Emby** | Full | Shares Jellyfin backend — same capabilities, same setup flow |
 | **Seerr** | Full | Requests, users, issues, notification agents, optional Plex sign-in auto-setup |
 
+### Compatible Services
+
+Some newer *arr-style projects (for example Sportarr, or future Readarr-replacement projects like Chaptarr) expose APIs that closely mirror Sonarr or Radarr. These can be added to arr-dashboard today by creating a Sonarr or Radarr instance and pointing it at the compatible service. Most surfaces (queue, calendar, library, history) will work as long as the third-party project stays compatible with the upstream Sonarr or Radarr API contract.
+
+This is a best-effort path rather than a supported integration. arr-dashboard does not test against these services, and behavior outside the documented Servarr API surface is not guaranteed. If a service diverges from the upstream API, expect breakage and treat it as a known limitation rather than a bug.
+
+First-class support is reserved for services listed in the table above.
+
 ## Version Tags
 
 | Tag | Description |
