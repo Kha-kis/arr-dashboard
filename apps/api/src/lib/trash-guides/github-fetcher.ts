@@ -869,7 +869,7 @@ export class TrashGitHubFetcher {
 				fetchedAt: new Date().toISOString(),
 			};
 		} catch (error) {
-			this.log.error(`Failed to fetch CF description for ${cfName}:`, error);
+			this.log.error({ err: error, cfName }, `Failed to fetch CF description for ${cfName}`);
 			return null;
 		}
 	}

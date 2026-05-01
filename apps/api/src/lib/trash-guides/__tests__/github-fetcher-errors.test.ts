@@ -71,8 +71,9 @@ describe("TrashGitHubFetcher error diagnosability (issue #406 follow-up)", () =>
 	});
 
 	it("includes the metadata URL and HTTP status in fetchMetadata errors", async () => {
-		// Make the fetch return 404 for two attempts (default retry count) so
-		// the request resolves rather than throwing inside fetchWithRetry.
+		// 404 short-circuits fetchWithRetry's retry loop (only 5xx is retried),
+		// so the response is returned immediately and the !response.ok branch
+		// in fetchMetadata is what throws.
 		fetchSpy.mockResolvedValue(buildJsonResponse({}, 404));
 
 		const fetcher = new TrashGitHubFetcher({ logger: createCapturingLogger([]) as any });
