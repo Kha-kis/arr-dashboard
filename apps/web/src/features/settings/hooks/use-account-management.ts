@@ -16,6 +16,7 @@ export const useAccountManagement = (
 	const [accountForm, setAccountForm] = useState<AccountFormState>({
 		username: "",
 		tmdbApiKey: "",
+		traktAccessToken: "",
 	});
 	const [accountUpdateResult, setAccountUpdateResult] = useState<{
 		success: boolean;
@@ -34,6 +35,9 @@ export const useAccountManagement = (
 		if (accountForm.tmdbApiKey && accountForm.tmdbApiKey.trim()) {
 			payload.tmdbApiKey = accountForm.tmdbApiKey.trim();
 		}
+		if (accountForm.traktAccessToken && accountForm.traktAccessToken.trim()) {
+			payload.traktAccessToken = accountForm.traktAccessToken.trim();
+		}
 
 		if (Object.keys(payload).length === 0) {
 			setAccountUpdateResult({
@@ -49,10 +53,11 @@ export const useAccountManagement = (
 				success: true,
 				message: "Account updated successfully",
 			});
-			// Clear TMDB field on success
+			// Clear sensitive fields on success
 			setAccountForm((prev) => ({
 				...prev,
 				tmdbApiKey: "",
+				traktAccessToken: "",
 			}));
 		} catch (error: unknown) {
 			setAccountUpdateResult({

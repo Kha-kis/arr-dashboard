@@ -122,6 +122,24 @@ export async function executeAutoTagRule(opts: ExecuteOpts): Promise<AutoTagRunR
 		evalCtx = { now: new Date() };
 	}
 
+	// Layer in TMDb/Trakt list-membership prefetch — these aren't part of
+	// `buildEvalContext` (which is owned by library-cleanup) so we add
+	// them here for any rule that uses tmdb_list_member / trakt_list_member.
+	evalCtx.tmdbListMemberships = await prefetchListMemberships(
+		prisma,
+		rule,
+		"tmdb_list_member",
+		"listId",
+		"tmdb",
+	);
+	evalCtx.traktListMemberships = await prefetchListMemberships(
+		prisma,
+		rule,
+		"trakt_list_member",
+		"listSlug",
+		"trakt",
+	);
+
 	const compiledTitleRegexes = compileTitlePatterns(rule.excludeTitles, childLog);
 
 	let totalScanned = 0;
@@ -370,6 +388,79 @@ async function ensureTag(client: ArrClient, label: string): Promise<number> {
 	// biome-ignore lint/suspicious/noExplicitAny: SDK Tag union typing requires the cast
 	const created = (await (client.tag as any).create({ label })) as { id: number; label: string };
 	return created.id;
+}
+
+/**
+ * Read the cached membership of every TMDb / Trakt list this rule
+ * references and return a Map<listIdentifier, Set<tmdbId>> for the
+ * evaluator to consult. Returns an empty map (not null) so the
+ * evaluator can distinguish "no rule wants this" from "the prefetch
+ * failed and we're in degraded mode."
+ *
+ * The cache itself is refreshed by the dedicated tmdb-list-cache /
+ * trakt-list-cache schedulers every 4 hours; this read is just the
+ * lookup half of that flow.
+ */
+async function prefetchListMemberships(
+	prisma: PrismaClient,
+	rule: AutoTagRuleInput,
+	targetRuleType: "tmdb_list_member" | "trakt_list_member",
+	identifierKey: "listId" | "listSlug",
+	cacheKind: "tmdb" | "trakt",
+): Promise<Map<string, Set<number>>> {
+	const identifiers = collectListIdentifiersFromRule(rule, targetRuleType, identifierKey);
+	if (identifiers.length === 0) return new Map();
+
+	const out = new Map<string, Set<number>>();
+	if (cacheKind === "tmdb") {
+		const rows = await prisma.tmdbListCache.findMany({
+			where: { userId: rule.userId, listId: { in: identifiers } },
+			select: { listId: true, tmdbId: true },
+		});
+		for (const row of rows) {
+			let bucket = out.get(row.listId);
+			if (!bucket) {
+				bucket = new Set();
+				out.set(row.listId, bucket);
+			}
+			bucket.add(row.tmdbId);
+		}
+	} else {
+		const rows = await prisma.traktListCache.findMany({
+			where: { userId: rule.userId, listSlug: { in: identifiers } },
+			select: { listSlug: true, tmdbId: true },
+		});
+		for (const row of rows) {
+			let bucket = out.get(row.listSlug);
+			if (!bucket) {
+				bucket = new Set();
+				out.set(row.listSlug, bucket);
+			}
+			bucket.add(row.tmdbId);
+		}
+	}
+	return out;
+}
+
+function collectListIdentifiersFromRule(
+	rule: AutoTagRuleInput,
+	targetRuleType: "tmdb_list_member" | "trakt_list_member",
+	identifierKey: "listId" | "listSlug",
+): string[] {
+	const identifiers: string[] = [];
+	if (rule.ruleType === targetRuleType) {
+		const id = rule.parameters[identifierKey];
+		if (typeof id === "string" && id.length > 0) identifiers.push(id);
+	}
+	if (rule.ruleType === "composite" && rule.conditions) {
+		for (const cond of rule.conditions) {
+			if (cond.ruleType === targetRuleType) {
+				const id = cond.parameters[identifierKey];
+				if (typeof id === "string" && id.length > 0) identifiers.push(id);
+			}
+		}
+	}
+	return identifiers;
 }
 
 function failure(message: string): AutoTagRunResult {

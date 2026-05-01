@@ -14,6 +14,7 @@ import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 export type AccountFormState = {
 	username: string;
 	tmdbApiKey: string;
+	traktAccessToken: string;
 };
 
 /**
@@ -25,6 +26,7 @@ interface AccountTabProps {
 		username: string;
 		createdAt: string;
 		hasTmdbApiKey?: boolean;
+		hasTraktAccessToken?: boolean;
 	} | null;
 	/** Account form state */
 	accountForm: AccountFormState;
@@ -82,14 +84,23 @@ export const AccountTab = ({
 									username: event.target.value,
 								}))
 							}
-							placeholder={incognitoMode ? getLinuxUsername(currentUser?.username ?? "") : (currentUser?.username ?? "")}
+							placeholder={
+								incognitoMode
+									? getLinuxUsername(currentUser?.username ?? "")
+									: (currentUser?.username ?? "")
+							}
 							className="bg-card/30 border-border/50 focus:border-primary"
 							style={{
 								["--tw-ring-color" as string]: themeGradient.from,
 							}}
 						/>
 						<p className="text-xs text-muted-foreground">
-							Current: <span className="text-foreground">{incognitoMode ? getLinuxUsername(currentUser?.username ?? "") : currentUser?.username}</span>
+							Current:{" "}
+							<span className="text-foreground">
+								{incognitoMode
+									? getLinuxUsername(currentUser?.username ?? "")
+									: currentUser?.username}
+							</span>
 						</p>
 					</div>
 
@@ -159,6 +170,53 @@ export const AccountTab = ({
 											themoviedb.org/settings/api
 											<ExternalLink className="h-3 w-3" />
 										</a>
+									</>
+								)}
+							</p>
+						</div>
+
+						{/* Trakt personal access token (used by auto-tagger trakt_list_member rules) */}
+						<div className="space-y-2 pt-3 border-t border-border/30">
+							<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+								Trakt Access Token (optional)
+							</label>
+							<Input
+								type="password"
+								value={accountForm.traktAccessToken}
+								onChange={(event) =>
+									onAccountFormChange((prev) => ({
+										...prev,
+										traktAccessToken: event.target.value,
+									}))
+								}
+								placeholder={
+									currentUser?.hasTraktAccessToken
+										? "••••••••••••••••"
+										: "Enter your Trakt personal access token"
+								}
+								className="bg-card/30 border-border/50"
+							/>
+							<p className="text-xs text-muted-foreground">
+								{currentUser?.hasTraktAccessToken ? (
+									<span className="flex items-center gap-1">
+										<Check className="h-3 w-3 text-green-500" />
+										Trakt token configured — enter a new value to rotate, leave blank to keep.
+									</span>
+								) : (
+									<>
+										Optional — used only by auto-tagger Trakt list rules. Generate a personal access
+										token at{" "}
+										<a
+											href="https://trakt.tv/oauth/applications"
+											target="_blank"
+											rel="noopener noreferrer"
+											className="inline-flex items-center gap-1 transition-colors"
+											style={{ color: themeGradient.from }}
+										>
+											trakt.tv/oauth/applications
+											<ExternalLink className="h-3 w-3" />
+										</a>
+										.
 									</>
 								)}
 							</p>
