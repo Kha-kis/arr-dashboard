@@ -411,7 +411,10 @@ async function fetchWithRetry(
 			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 		} catch (error) {
 			lastError = error instanceof Error ? error : new Error(String(error));
-			log.error(`Fetch attempt ${attempt}/${retries} failed:`, lastError.message);
+			log.error(
+				{ err: lastError, url, attempt, retries },
+				`Fetch attempt ${attempt}/${retries} failed for ${url}`,
+			);
 
 			if (attempt < retries) {
 				await delay(retryDelay * attempt); // Exponential backoff
@@ -534,7 +537,9 @@ export class TrashGitHubFetcher {
 		const response = await fetchWithRetry(this.metadataUrl, this.fetchOptions, this.log);
 
 		if (!response.ok) {
-			throw new Error(`Failed to fetch metadata: ${response.statusText}`);
+			throw new Error(
+				`Failed to fetch metadata from ${this.metadataUrl}: HTTP ${response.status} ${response.statusText}`,
+			);
 		}
 
 		const raw = await response.json();
@@ -1133,7 +1138,14 @@ export class TrashGitHubFetcher {
 					"GitHub directory listing schema drift",
 				);
 			} else {
-				this.log.error(`Failed to discover config files at ${baseUrl}:`, error);
+				// Name the URL we actually fetched (apiUrl, on api.github.com),
+				// not the raw URL the caller passed in — the original message
+				// pointed users at raw.githubusercontent.com when the failure
+				// was actually on the GitHub API.
+				this.log.error(
+					{ err: error, apiUrl, baseUrl },
+					`Failed to discover config files via ${apiUrl}`,
+				);
 			}
 			return [];
 		}
