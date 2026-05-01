@@ -73,18 +73,25 @@ export function computeQualityScore(snapshots: SnapshotForQuality[]): QualitySco
 	const userMap = new Map<string, { dp: number; tc: number; resScore: number; count: number }>();
 
 	for (const snap of snapshots) {
-		let sessions: SessionEntry[];
+		let sessions: unknown;
 		try {
 			sessions = JSON.parse(snap.sessionsJson);
 		} catch {
 			parseFailures++;
-			if (failedPreviews.length < 5) failedPreviews.push(snap.sessionsJson.slice(0, 100));
+			continue;
+		}
+
+		// JSON.parse can return any valid JSON value (null, object, number, ...)
+		// — guard against non-iterable shapes so a corrupt row doesn't TypeError
+		// and abort the whole snapshot walk silently.
+		if (!Array.isArray(sessions)) {
+			parseFailures++;
 			continue;
 		}
 
 		const dateKey = snap.capturedAt.toISOString().split("T")[0]!;
 
-		for (const session of sessions) {
+		for (const session of sessions as SessionEntry[]) {
 			totalSessions++;
 			const resScore = getResolutionScore(session.videoResolution);
 			totalResolutionScore += resScore;

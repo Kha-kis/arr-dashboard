@@ -12,9 +12,7 @@ describe("aggregateCodecAnalytics", () => {
 				{ videoCodec: "h264", audioCodec: "aac", videoResolution: "1080" },
 				{ videoCodec: "hevc", audioCodec: "eac3", videoResolution: "2160" },
 			]),
-			snapshot([
-				{ videoCodec: "h264", audioCodec: "aac", videoResolution: "1080" },
-			]),
+			snapshot([{ videoCodec: "h264", audioCodec: "aac", videoResolution: "1080" }]),
 		];
 
 		const result = aggregateCodecAnalytics(snapshots);
@@ -43,6 +41,17 @@ describe("aggregateCodecAnalytics", () => {
 
 	it("handles malformed sessionsJson", () => {
 		const result = aggregateCodecAnalytics([{ sessionsJson: "bad" }]);
+		expect(result.totalSessions).toBe(0);
+	});
+
+	it.each([
+		["null", "null"],
+		["empty object", "{}"],
+		["number", "42"],
+	])("treats valid-but-non-iterable JSON (%s) as a parse failure", (_label, sessionsJson) => {
+		const result = aggregateCodecAnalytics([{ sessionsJson }]);
+		expect(result.parseFailures).toBe(1);
+		expect(result.failedPreviews).toEqual([]);
 		expect(result.totalSessions).toBe(0);
 	});
 

@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { computeQualityScore, type SnapshotForQuality } from "../lib/quality-score-helpers.js";
 
-function snapshot(capturedAt: string, sessions: Array<Record<string, unknown>>): SnapshotForQuality {
+function snapshot(
+	capturedAt: string,
+	sessions: Array<Record<string, unknown>>,
+): SnapshotForQuality {
 	return {
 		capturedAt: new Date(capturedAt),
 		sessionsJson: JSON.stringify(sessions),
@@ -77,9 +80,7 @@ describe("computeQualityScore", () => {
 
 	it("treats missing videoDecision as unknown (not direct play)", () => {
 		const snapshots = [
-			snapshot("2025-01-15T10:00:00Z", [
-				{ user: "alice", videoResolution: "1080" },
-			]),
+			snapshot("2025-01-15T10:00:00Z", [{ user: "alice", videoResolution: "1080" }]),
 		];
 
 		const result = computeQualityScore(snapshots);
@@ -90,10 +91,19 @@ describe("computeQualityScore", () => {
 	});
 
 	it("handles malformed sessionsJson", () => {
-		const snapshots: SnapshotForQuality[] = [
-			{ capturedAt: new Date(), sessionsJson: "bad" },
-		];
+		const snapshots: SnapshotForQuality[] = [{ capturedAt: new Date(), sessionsJson: "bad" }];
 		const result = computeQualityScore(snapshots);
+		expect(result.overallScore).toBe(0);
+	});
+
+	it.each([
+		["null", "null"],
+		["empty object", "{}"],
+		["number", "42"],
+	])("treats valid-but-non-iterable JSON (%s) as a parse failure", (_label, sessionsJson) => {
+		const result = computeQualityScore([{ capturedAt: new Date(), sessionsJson }]);
+		expect(result.parseFailures).toBe(1);
+		expect(result.failedPreviews).toEqual([]);
 		expect(result.overallScore).toBe(0);
 	});
 });

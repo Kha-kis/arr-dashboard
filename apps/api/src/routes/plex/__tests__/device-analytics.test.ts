@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { aggregateDeviceAnalytics, type SnapshotForDevice } from "../lib/device-analytics-helpers.js";
+import {
+	aggregateDeviceAnalytics,
+	type SnapshotForDevice,
+} from "../lib/device-analytics-helpers.js";
 
 function snapshot(sessions: Array<Record<string, unknown>>): SnapshotForDevice {
 	return { sessionsJson: JSON.stringify(sessions) };
@@ -12,9 +15,7 @@ describe("aggregateDeviceAnalytics", () => {
 				{ platform: "Roku", player: "Roku Ultra" },
 				{ platform: "iOS", player: "Plex for iOS" },
 			]),
-			snapshot([
-				{ platform: "Roku", player: "Roku Ultra" },
-			]),
+			snapshot([{ platform: "Roku", player: "Roku Ultra" }]),
 		];
 
 		const result = aggregateDeviceAnalytics(snapshots);
@@ -47,5 +48,16 @@ describe("aggregateDeviceAnalytics", () => {
 
 		const result = aggregateDeviceAnalytics(snapshots);
 		expect(result.players).toHaveLength(2);
+	});
+
+	it.each([
+		["null", "null"],
+		["empty object", "{}"],
+		["number", "42"],
+	])("treats valid-but-non-iterable JSON (%s) as a parse failure", (_label, sessionsJson) => {
+		const result = aggregateDeviceAnalytics([{ sessionsJson }]);
+		expect(result.parseFailures).toBe(1);
+		expect(result.failedPreviews).toEqual([]);
+		expect(result.totalSessions).toBe(0);
 	});
 });

@@ -36,16 +36,23 @@ export function aggregateDeviceAnalytics(snapshots: SnapshotForDevice[]): Device
 	const failedPreviews: string[] = [];
 
 	for (const snap of snapshots) {
-		let sessions: SessionEntry[];
+		let sessions: unknown;
 		try {
 			sessions = JSON.parse(snap.sessionsJson);
 		} catch {
 			parseFailures++;
-			if (failedPreviews.length < 5) failedPreviews.push(snap.sessionsJson.slice(0, 100));
 			continue;
 		}
 
-		for (const session of sessions) {
+		// JSON.parse can return any valid JSON value (null, object, number, ...)
+		// — guard against non-iterable shapes so a corrupt row doesn't TypeError
+		// and abort the whole snapshot walk silently.
+		if (!Array.isArray(sessions)) {
+			parseFailures++;
+			continue;
+		}
+
+		for (const session of sessions as SessionEntry[]) {
 			totalSessions++;
 
 			const platform = session.platform || "unknown";
