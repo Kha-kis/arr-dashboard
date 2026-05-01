@@ -10,6 +10,7 @@ const STARTUP_DELAY_MS = 90 * 1000; // offset from TMDb scheduler so they don't 
 const traktListCacheSchedulerPlugin = fastifyPlugin(
 	async (app: FastifyInstance) => {
 		let timer: NodeJS.Timeout | null = null;
+		let startupTimer: NodeJS.Timeout | null = null;
 		let inFlight = false;
 
 		const tick = async () => {
@@ -38,7 +39,8 @@ const traktListCacheSchedulerPlugin = fastifyPlugin(
 				async () => {
 					app.log.info({ intervalMs: TICK_INTERVAL_MS }, "Starting Trakt list cache scheduler");
 
-					setTimeout(() => {
+					startupTimer = setTimeout(() => {
+						startupTimer = null;
 						app.schedulerRegistry
 							.track(JOB_ID.traktListCache, tick)
 							.catch((err: unknown) =>
@@ -58,6 +60,10 @@ const traktListCacheSchedulerPlugin = fastifyPlugin(
 		});
 
 		app.addHook("onClose", async () => {
+			if (startupTimer) {
+				clearTimeout(startupTimer);
+				startupTimer = null;
+			}
 			if (timer) {
 				clearInterval(timer);
 				timer = null;

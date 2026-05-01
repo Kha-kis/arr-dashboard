@@ -10,6 +10,7 @@ const STARTUP_DELAY_MS = 60 * 1000; // 1 minute after boot
 const tmdbListCacheSchedulerPlugin = fastifyPlugin(
 	async (app: FastifyInstance) => {
 		let timer: NodeJS.Timeout | null = null;
+		let startupTimer: NodeJS.Timeout | null = null;
 		let inFlight = false;
 
 		const tick = async () => {
@@ -39,7 +40,8 @@ const tmdbListCacheSchedulerPlugin = fastifyPlugin(
 				async () => {
 					app.log.info({ intervalMs: TICK_INTERVAL_MS }, "Starting TMDb list cache scheduler");
 
-					setTimeout(() => {
+					startupTimer = setTimeout(() => {
+						startupTimer = null;
 						app.schedulerRegistry
 							.track(JOB_ID.tmdbListCache, tick)
 							.catch((err) => app.log.error({ err }, "Initial TMDb list cache tick failed"));
@@ -55,6 +57,10 @@ const tmdbListCacheSchedulerPlugin = fastifyPlugin(
 		});
 
 		app.addHook("onClose", async () => {
+			if (startupTimer) {
+				clearTimeout(startupTimer);
+				startupTimer = null;
+			}
 			if (timer) {
 				clearInterval(timer);
 				timer = null;
