@@ -45,6 +45,7 @@ services:
 - **TRaSH Guides** — Quality profiles, custom formats, naming schemes with auto-sync and profile cloning
 - **Notification System** — Discord, Telegram, Email, Pushover, Gotify, Ntfy, Pushbullet, Browser Push
 - **Library Cleanup** — Rule-based cleanup with 20+ condition types, approval queue, and audit logging
+- **Auto-Tagger** — Criteria-based Sonarr/Radarr tagging across 50+ rule types with composite (AND/OR) rules and real-time Sonarr/Radarr Connect webhooks
 - **Automated Hunting** — Auto-search for missing content and quality upgrades with per-instance config
 - **Queue Cleaner** — Automated queue management with strike system and dry-run mode
 - **Multi-Auth** — Password, OIDC (Authelia/Authentik), or Passkeys (WebAuthn)

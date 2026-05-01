@@ -118,6 +118,13 @@ A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, 
 - **Scheduled Execution** — Automated runs with configurable intervals
 - **Audit Logging** — Complete history of cleanup actions with item details and rule matches
 
+### Auto-Tagger
+- **Criteria-Based Tagging** — Apply tags to Sonarr/Radarr items automatically based on rules across 50+ condition types (genre, year, codec, audio channels, watch state, Plex labels/collections, custom format score, file path regex, …) — same DSL as Library Cleanup
+- **Composite Rules** — Combine multiple criteria with AND/OR (e.g., "tag any 4K release from a premium release group as `premium`")
+- **Real-Time via Connect Webhooks** — Sub-second tagging on import via Sonarr/Radarr Connect webhook handler with per-user Bearer-token auth (token is SHA-256 hashed at rest, shown once at generation)
+- **Pairs With Label Sync** — Auto-Tagger seeds the source-side tag; Label Sync optionally mirrors it to Plex/Jellyfin/Emby labels
+- **Per-Rule Lock** — Scheduled tick and on-demand "Run now" can't race for the same rule
+
 ### Automated Hunting
 - **Missing Content Search** — Automatically search for missing movies, episodes, albums, and books
 - **Quality Upgrades** — Find better quality versions of existing content
