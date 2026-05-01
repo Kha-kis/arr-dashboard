@@ -492,7 +492,9 @@ export class TrashGitHubFetcher {
 		// Build URLs from repo config (custom fork or official)
 		this.repoConfig = options.repoConfig ?? DEFAULT_TRASH_REPO;
 		const { owner, name, branch } = this.repoConfig;
-		this.rawBaseUrl = `https://raw.githubusercontent.com/${owner}/${name}/${branch}`;
+		// GitHub now requires the canonical `refs/heads/{branch}` path for raw content.
+		// The legacy `…/{branch}/…` form returns 404 for many repos (issue #406).
+		this.rawBaseUrl = `https://raw.githubusercontent.com/${owner}/${name}/refs/heads/${branch}`;
 		this.baseUrl = `${this.rawBaseUrl}/docs/json`;
 		this.metadataUrl = `${this.rawBaseUrl}/metadata.json`;
 		this.cfDescriptionsBaseUrl = `${this.rawBaseUrl}/includes/cf-descriptions`;
@@ -1090,10 +1092,10 @@ export class TrashGitHubFetcher {
 	 * Discover available config files in a directory using GitHub API
 	 */
 	private async discoverConfigFiles(baseUrl: string): Promise<string[]> {
-		// Extract the path after the branch segment in the raw URL
-		// baseUrl format: https://raw.githubusercontent.com/{owner}/{name}/{branch}/docs/json/{service}/{type}
+		// Extract the repo-relative path from the raw URL.
+		// baseUrl format: https://raw.githubusercontent.com/{owner}/{name}/refs/heads/{branch}/docs/json/{service}/{type}
 		const branchEscaped = this.repoConfig.branch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-		const pathMatch = baseUrl.match(new RegExp(`/${branchEscaped}/(.+)$`));
+		const pathMatch = baseUrl.match(new RegExp(`/refs/heads/${branchEscaped}/(.+)$`));
 		if (!pathMatch) {
 			this.log.warn(`Could not extract path from URL: ${baseUrl}`);
 			return [];
