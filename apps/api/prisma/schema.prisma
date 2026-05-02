@@ -18,6 +18,7 @@ enum ServiceType {
   PLEX
   JELLYFIN
   EMBY
+  QUI
 }
 
 // Library item type enum - uses lowercase to match Zod schema in shared package
@@ -767,6 +768,10 @@ model LibraryCache {
   qualityProfileName String?
   sizeOnDisk      BigInt   @default(0)
   cutoffUnmet     Boolean  @default(false)
+
+  // qBittorrent info hash for the active grab; nullable because manual imports
+  // and items predating download-history retention won't have one.
+  infoHash        String?
 
   // Full normalized data as JSON (for API response)
   data            String   // JSON blob of full LibraryItem
