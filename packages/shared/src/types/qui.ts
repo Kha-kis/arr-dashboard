@@ -72,6 +72,7 @@ export const quiTorrentSchema = z.object({
 	savePath: z.string(),
 	addedOn: z.number().int(),
 	completedOn: z.number().int().nullable(),
+	seedingTime: z.number().int().default(0),
 	eta: z.number().int(),
 	dlSpeed: z.number().int(),
 	upSpeed: z.number().int(),
@@ -105,7 +106,8 @@ export type QuiTorrentProperties = z.infer<typeof quiTorrentPropertiesSchema>;
 
 /**
  * Tracker entry for a torrent. `status` is the raw qBit int (kept for diagnostics);
- * `health` is the friendly mapping the UI renders.
+ * `health` is the friendly mapping the UI renders. `tier` is optional because
+ * qui omits it for pseudo-trackers like DHT/PeX/LSD.
  */
 export const quiTrackerSchema = z.object({
 	url: z.string(),
@@ -115,7 +117,7 @@ export const quiTrackerSchema = z.object({
 	numSeeds: z.number().int().default(0),
 	numLeeches: z.number().int().default(0),
 	numPeers: z.number().int().default(0),
-	tier: z.number().int(),
+	tier: z.number().int().optional(),
 });
 
 export type QuiTracker = z.infer<typeof quiTrackerSchema>;
