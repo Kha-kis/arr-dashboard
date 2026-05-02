@@ -11,7 +11,14 @@ export const ARR_SERVICES = ["sonarr", "radarr", "prowlarr", "lidarr", "readarr"
 export const LIBRARY_SERVICES = ["sonarr", "radarr", "lidarr", "readarr"] as const;
 
 /** Non-arr integration services (different APIs, used as data sources) */
-export const INTEGRATION_SERVICES = ["seerr", "tautulli", "plex", "jellyfin", "emby"] as const;
+export const INTEGRATION_SERVICES = [
+	"seerr",
+	"tautulli",
+	"plex",
+	"jellyfin",
+	"emby",
+	"qui",
+] as const;
 
 /** All supported service types */
 export const ALL_SERVICES = [...ARR_SERVICES, ...INTEGRATION_SERVICES] as const;
