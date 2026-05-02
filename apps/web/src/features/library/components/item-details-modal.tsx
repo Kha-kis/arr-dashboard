@@ -20,7 +20,6 @@ import { getLinuxInstanceName, getLinuxIsoName, useIncognitoMode } from "../../.
 import { ExternalLinksSection } from "../../discover/components/media-detail-sections";
 import { formatBytes, formatRuntime, SERVICE_COLORS } from "../lib/library-utils";
 import { PosterImage } from "./poster-image";
-import { TorrentHealthPanel } from "./torrent-health-panel";
 
 export interface ItemDetailsModalProps {
 	item: LibraryItem;
@@ -100,10 +99,7 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 		icon?: React.ComponentType<{ className?: string }>;
 	}> = [];
 	if (!isMovie) {
-		seriesMetadata.push({
-			label: "Instance",
-			value: incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName,
-		});
+		seriesMetadata.push({ label: "Instance", value: incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName });
 		seriesMetadata.push({ label: "Service", value: serviceLabel });
 		if (resolvedQualityProfileName) {
 			seriesMetadata.push({ label: "Quality profile", value: resolvedQualityProfileName });
@@ -214,9 +210,7 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 										{item.year}
 									</span>
 								)}
-								<span>
-									{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}
-								</span>
+								<span>{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}</span>
 							</div>
 						</div>
 					</div>
@@ -302,9 +296,7 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 								<div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 text-sm">
 									<div>
 										<p className="text-xs text-muted-foreground">Instance</p>
-										<p className="font-medium text-foreground">
-											{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}
-										</p>
+										<p className="font-medium text-foreground">{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}</p>
 									</div>
 									{resolvedQualityProfileName && (
 										<div>
@@ -434,15 +426,6 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 								))}
 							</div>
 						</div>
-					)}
-
-					{/* qui Torrent Health (movies only in v1; series support is per-episode and lands later) */}
-					{isMovie && item.instanceId && typeof item.id === "number" && (
-						<TorrentHealthPanel
-							arrInstanceId={item.instanceId}
-							arrItemId={item.id}
-							itemType={item.type}
-						/>
 					)}
 				</div>
 			</div>
