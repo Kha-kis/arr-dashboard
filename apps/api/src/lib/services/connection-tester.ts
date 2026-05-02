@@ -84,13 +84,6 @@ export async function testServiceConnection(
 			return await testJellyfinConnection(normalizedBaseUrl, apiKey);
 		}
 
-		// qui uses X-API-Key header and exposes /api/instances as an
-		// authenticated probe; testQuiConnection wraps the same client
-		// helper used by route handlers so test + runtime stay in sync.
-		if (service === "qui") {
-			return await testQuiConnection(normalizedBaseUrl, apiKey);
-		}
-
 		// Seerr uses its own status endpoint; Prowlarr/Lidarr/Readarr use v1; Sonarr/Radarr use v3
 		const apiPath =
 			service === "seerr"
@@ -214,81 +207,6 @@ function handleHttpError(response: Response, baseUrl: string): ConnectionTestRes
 		success: false,
 		error: `HTTP ${status}: ${response.statusText}`,
 		details: "Check your base URL and API key are correct.",
-	};
-}
-
-/**
- * Tests connection to a qui (autobrr/qui) instance.
- *
- * Two-step probe: hit `/api/instances` with `X-API-Key` to confirm both
- * reachability and authentication in one call. qui returns an array of
- * qBittorrent instances under management — empty array is still a
- * success (qui is reachable and the key is valid; the operator just
- * hasn't added qBit instances yet).
- */
-async function testQuiConnection(baseUrl: string, apiKey: string): Promise<ConnectionTestResult> {
-	const testUrl = `${baseUrl}/api/instances`;
-
-	let response: Response;
-	try {
-		response = await fetch(testUrl, {
-			headers: {
-				"X-API-Key": apiKey,
-				Accept: "application/json",
-			},
-			signal: AbortSignal.timeout(5000),
-		});
-	} catch (error) {
-		return handleConnectionError(error);
-	}
-
-	const proxyDetected = detectAuthProxy(response, testUrl);
-	if (proxyDetected) {
-		return {
-			success: false,
-			error: "Authentication proxy detected",
-			details: `${proxyDetected}\n\n${AUTH_PROXY_ADVICE}`,
-		};
-	}
-
-	if (!response.ok) {
-		return handleHttpError(response, baseUrl);
-	}
-
-	const contentType = response.headers.get("content-type");
-	if (!contentType?.includes("application/json")) {
-		return {
-			success: false,
-			error: "Invalid response format",
-			details:
-				"Received non-JSON response from qui. Check the base URL points at a qui instance (default: http://localhost:7476). If qui sits behind a reverse proxy on a subpath, include that subpath in the base URL (e.g. https://example.com/qui).",
-		};
-	}
-
-	const data = (await response.json()) as Array<{ name?: string; connected?: boolean }>;
-	if (!Array.isArray(data)) {
-		return {
-			success: false,
-			error: "Unexpected qui response",
-			details: "Expected an array of qBittorrent instances. Check the base URL is correct.",
-		};
-	}
-
-	const connectedCount = data.filter((i) => i.connected).length;
-	const totalCount = data.length;
-
-	let message = "Successfully connected to qui";
-	if (totalCount === 0) {
-		message = "Connected to qui (no qBittorrent instances configured yet)";
-	} else if (connectedCount < totalCount) {
-		message = `Connected to qui (${connectedCount}/${totalCount} qBit instances reachable)`;
-	} else {
-		message = `Connected to qui (${totalCount} qBit instance${totalCount === 1 ? "" : "s"})`;
-	}
-
-	return {
-		success: true,
-		message,
 	};
 }
 
