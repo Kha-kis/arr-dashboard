@@ -106,7 +106,17 @@ function createWriter(config: ArrWriterConfig): DestWriter {
 				try {
 					// biome-ignore lint/suspicious/noExplicitAny: SDK union typing requires runtime accessor
 					const resource = (arrClient as any)[config.itemsAccessor];
-					await resource.update(item.id, { id: item.id, tags: mergedTags });
+					// Radarr/Sonarr PUT endpoints require the full resource —
+					// validators reject partial bodies with errors like
+					// "'Quality Profile Id' must be greater than '0'". Fetch the
+					// current item so the update preserves every field the *arr
+					// expects.
+					const fullItem = await resource.getById(item.id);
+					await resource.update(item.id, {
+						...fullItem,
+						id: item.id,
+						tags: mergedTags,
+					});
 					labelsApplied++;
 				} catch (err) {
 					const reason = err instanceof ArrError ? err.message : String(err);

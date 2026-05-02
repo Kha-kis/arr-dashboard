@@ -122,12 +122,41 @@ interface MockArrClient {
 		create: ReturnType<typeof vi.fn>;
 	};
 	movie: {
+		getById: ReturnType<typeof vi.fn>;
 		update: ReturnType<typeof vi.fn>;
 	};
 	series: {
+		getById: ReturnType<typeof vi.fn>;
 		update: ReturnType<typeof vi.fn>;
 	};
 }
+
+// Minimal full-resource shapes for getById mocks. Fields chosen to mirror
+// what Radarr/Sonarr's strict PUT validators check — qualityProfileId>0
+// is the field that broke production (see issue #384).
+const fullMovie = (id: number, tags: number[] = []) => ({
+	id,
+	title: `Movie ${id}`,
+	tmdbId: id,
+	qualityProfileId: 1,
+	monitored: true,
+	hasFile: true,
+	tags,
+	rootFolderPath: "/movies",
+	minimumAvailability: "released",
+});
+
+const fullSeries = (id: number, tags: number[] = []) => ({
+	id,
+	title: `Series ${id}`,
+	tvdbId: id,
+	qualityProfileId: 1,
+	monitored: true,
+	tags,
+	rootFolderPath: "/tv",
+	seasonFolder: true,
+	languageProfileId: 1,
+});
 
 function makeArrClient(): MockArrClient {
 	return {
@@ -135,8 +164,14 @@ function makeArrClient(): MockArrClient {
 			getAll: vi.fn().mockResolvedValue([{ id: 7, label: "premium" }]),
 			create: vi.fn().mockResolvedValue({ id: 7, label: "premium" }),
 		},
-		movie: { update: vi.fn().mockResolvedValue({}) },
-		series: { update: vi.fn().mockResolvedValue({}) },
+		movie: {
+			getById: vi.fn((id: number) => Promise.resolve(fullMovie(id))),
+			update: vi.fn().mockResolvedValue({}),
+		},
+		series: {
+			getById: vi.fn((id: number) => Promise.resolve(fullSeries(id))),
+			update: vi.fn().mockResolvedValue({}),
+		},
 	};
 }
 
@@ -179,7 +214,19 @@ describe("executeAutoTagRule (orchestration)", () => {
 		expect(result.status).toBe("success");
 		expect(result.totals.itemsMatched).toBe(1);
 		expect(result.totals.tagsApplied).toBe(1);
-		expect(arrClient.movie.update).toHaveBeenCalledWith(100, { id: 100, tags: [7] });
+		// Update body must include the full Radarr/Sonarr resource — Radarr's
+		// PUT validator rejects partial bodies with "'Quality Profile Id' must
+		// be greater than '0'" (issue #384). Spreading the getById result
+		// preserves qualityProfileId, rootFolderPath, etc.
+		expect(arrClient.movie.getById).toHaveBeenCalledWith(100);
+		expect(arrClient.movie.update).toHaveBeenCalledWith(
+			100,
+			expect.objectContaining({
+				id: 100,
+				tags: [7],
+				qualityProfileId: 1,
+			}),
+		);
 	});
 
 	it("idempotent: item that already has the tag counts as applied without re-update", async () => {
@@ -234,10 +281,14 @@ describe("executeAutoTagRule (orchestration)", () => {
 			log,
 		});
 
-		expect(arrClient.movie.update).toHaveBeenCalledWith(100, {
-			id: 100,
-			tags: [3, 5, 7],
-		});
+		expect(arrClient.movie.update).toHaveBeenCalledWith(
+			100,
+			expect.objectContaining({
+				id: 100,
+				tags: [3, 5, 7],
+				qualityProfileId: 1,
+			}),
+		);
 	});
 
 	it("non-matching item: no write, status success with 'no items matched' message", async () => {
