@@ -301,7 +301,16 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 			const accessor = item.itemType === "series" ? "series" : "movie";
 			// biome-ignore lint/suspicious/noExplicitAny: SDK union typing requires runtime accessor
 			const resource = (arrClient as any)[accessor];
-			await resource.update(item.arrItemId, { id: item.arrItemId, tags: merged });
+			// Radarr/Sonarr PUT endpoints require the full resource — validators
+			// reject partial bodies with errors like "'Quality Profile Id' must
+			// be greater than '0'". Fetch the current item so the update preserves
+			// every field the *arr expects.
+			const fullItem = await resource.getById(item.arrItemId);
+			await resource.update(item.arrItemId, {
+				...fullItem,
+				id: item.arrItemId,
+				tags: merged,
+			});
 			applied++;
 		} catch (err) {
 			const reason = err instanceof ArrError ? err.message : String(err);
