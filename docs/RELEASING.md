@@ -36,6 +36,14 @@ Before bumping any version numbers, decide *what* this release contains.
 - [ ] `pnpm run test` passes (Vitest unit tests)
 - [ ] `pnpm run build` passes (production build)
 - [ ] No leftover `console.log` in `apps/api/src/` (use structured `app.log` / `request.log`)
+- [ ] **Live integration test for *arr write paths** (covers the issue #384 regression class — partial PUT bodies rejected by Radarr/Sonarr's strict validators):
+      ```
+      INTEGRATION_TESTS=1 \
+        RADARR_INTEGRATION_URL=... RADARR_INTEGRATION_API_KEY=... RADARR_INTEGRATION_MOVIE_ID=... \
+        SONARR_INTEGRATION_URL=... SONARR_INTEGRATION_API_KEY=... SONARR_INTEGRATION_SERIES_ID=... \
+        pnpm --filter @arr/api exec vitest run arr-write-pattern.integration
+      ```
+      The test creates a unique tag, applies it via `getById → spread → update`, verifies it landed without losing fields, then reverts. CI does NOT run this — it's an operator-side gate before each tagged release.
 
 ### 3. Database
 
