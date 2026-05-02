@@ -53,6 +53,17 @@ interface ExecuteOpts {
 	arrClientFactory: ArrClientFactory;
 	encryptor: Encryptor;
 	log: FastifyBaseLogger;
+	/**
+	 * When set, the executor only writes labels to the destination item with
+	 * this tmdbId. Used by event-driven triggers (auto-tagger chain, library
+	 * sync delta detection, per-item "Sync now" button) to scope a rule run
+	 * to a single item rather than scanning the full library each time.
+	 *
+	 * Source-side reads still happen (we need to know whether the source
+	 * actually has the tag applied before writing) but candidates with other
+	 * tmdbIds are filtered out before reaching the destination writer.
+	 */
+	targetTmdbId?: number;
 }
 
 const ZERO_TOTALS: LabelSyncRunResult["totals"] = {
@@ -155,11 +166,37 @@ export async function executeLabelSyncRule(opts: ExecuteOpts): Promise<LabelSync
 		};
 	}
 
+	// Targeted execution: when a caller (event-driven trigger) only wants to
+	// sync ONE item, filter the candidate list to that tmdbId before writing.
+	// Source reads stay unchanged because the readers don't know about
+	// tmdbId-level filtering — cheap to filter here instead.
+	const candidatesForWriter =
+		opts.targetTmdbId !== undefined
+			? allCandidates.filter((c) => c.tmdbId === opts.targetTmdbId)
+			: allCandidates;
+
+	if (opts.targetTmdbId !== undefined && candidatesForWriter.length === 0) {
+		// The targeted item doesn't have the source tag — rule simply
+		// doesn't apply to this item. Not an error; not a success worth
+		// counting either. Return a neutral "no-op" result.
+		return {
+			status: "success",
+			message: `Item (tmdbId ${opts.targetTmdbId}) does not carry tag "${rule.sourceTagName}" on ${rule.sourceService}.`,
+			totals: {
+				sourceInstancesScanned: sourceInstances.length,
+				taggedItemsFound: allCandidates.length,
+				destMatchesFound: 0,
+				labelsApplied: 0,
+				failures: sourceFailures,
+			},
+		};
+	}
+
 	// Pass 2: destination-side writes
 	const writeResult = await destWriter.applyLabels({
 		rule,
 		destInstance,
-		candidates: allCandidates,
+		candidates: candidatesForWriter,
 		prisma,
 		arrClientFactory,
 		encryptor,

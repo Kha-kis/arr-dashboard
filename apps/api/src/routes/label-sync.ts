@@ -19,6 +19,7 @@ import type {
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { executeLabelSyncRule } from "../lib/label-sync/execute-rule.js";
+import { triggerLabelSyncForItem } from "../lib/label-sync/trigger-for-item.js";
 import { validateRequest } from "../lib/utils/validate.js";
 
 const serviceSchema = z.enum(["sonarr", "radarr", "plex", "jellyfin", "emby"]);
@@ -297,5 +298,60 @@ export async function registerLabelSyncRoutes(app: FastifyInstance, _opts: Fasti
 
 		const response: LabelSyncRuleResponse = { rule: toDto(updated) };
 		return reply.send(response);
+	});
+
+	// Per-item event-driven trigger (Phase D — issue #384 follow-up).
+	// Used by the "Sync labels now" button on the library item detail modal.
+	// Fires every enabled Label Sync rule whose source matches this *arr
+	// instance, scoped to the single item via tmdbId. Idempotent — already-
+	// applied labels no-op at the writer layer.
+	app.post("/run-for-item", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const body = validateRequest(
+			z.object({
+				instanceId: z.string().min(1),
+				arrItemId: z.number().int().positive(),
+				itemType: z.enum(["movie", "series", "artist", "author"]),
+			}),
+			request.body,
+		);
+
+		const instance = await app.prisma.serviceInstance.findFirst({
+			where: { id: body.instanceId, userId },
+		});
+		if (!instance) {
+			return reply.status(404).send({ error: "Instance not found or access denied" });
+		}
+		if (instance.service !== "SONARR" && instance.service !== "RADARR") {
+			return reply.status(400).send({
+				error: "Per-item Label Sync is only supported for Sonarr/Radarr instances today.",
+			});
+		}
+
+		const result = await triggerLabelSyncForItem({
+			userId,
+			sourceService: instance.service,
+			sourceInstanceId: instance.id,
+			arrItemId: body.arrItemId,
+			itemType: body.itemType,
+			// No tagName filter — fire every rule sourcing from this instance.
+			prisma: app.prisma,
+			arrClientFactory: app.arrClientFactory,
+			encryptor: app.encryptor,
+			log: request.log,
+		});
+
+		return reply.send({
+			rulesFired: result.rulesFired,
+			labelsApplied: result.totals.labelsApplied,
+			failures: result.totals.failures,
+			outcomes: result.results.map((r) => ({
+				ruleId: r.ruleId,
+				ruleName: r.ruleName,
+				status: r.outcome.status,
+				message: r.outcome.message,
+				labelsApplied: r.outcome.totals.labelsApplied,
+			})),
+		});
 	});
 }

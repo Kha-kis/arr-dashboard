@@ -370,4 +370,69 @@ describe("executeLabelSyncRule (orchestration)", () => {
 		// reader called once per source instance
 		expect(mockState.sourceReaderSpy).toHaveBeenCalledTimes(2);
 	});
+
+	// ─────────────────────────────────────────────────────────────────────
+	// Targeted execution (issue #384 follow-up — Phases B/C/D foundation)
+	// ─────────────────────────────────────────────────────────────────────
+
+	it("targetTmdbId: filters source candidates to the target item before invoking writer", async () => {
+		mockState.sonarrReadResult = {
+			matches: [makeMatch(100), makeMatch(200), makeMatch(300)],
+			failed: false,
+		};
+		mockState.plexWriteResult = { matchesFound: 1, labelsApplied: 1, failures: 0 };
+
+		const prisma = {
+			serviceInstance: {
+				findMany: vi.fn().mockResolvedValue([makeInstance()]),
+				findFirst: vi
+					.fn()
+					.mockResolvedValue(makeInstance({ id: "inst-dest", service: "PLEX", label: "Plex" })),
+			},
+		};
+
+		const result = await executeLabelSyncRule({
+			rule: makeRule(),
+			prisma: prisma as never,
+			arrClientFactory: {} as never,
+			encryptor: {} as never,
+			log: fakeLogger,
+			targetTmdbId: 100,
+		});
+
+		expect(result.status).toBe("success");
+		// The writer should have received ONLY the candidate matching tmdbId 100
+		const writerCall = mockState.destWriterSpy.mock.calls[0]?.[0] as
+			| { candidates: MatchCandidate[] }
+			| undefined;
+		expect(writerCall?.candidates).toHaveLength(1);
+		expect(writerCall?.candidates[0]?.tmdbId).toBe(100);
+	});
+
+	it("targetTmdbId: returns no-op success when source has no match for the target tmdbId", async () => {
+		mockState.sonarrReadResult = { matches: [makeMatch(999)], failed: false };
+
+		const prisma = {
+			serviceInstance: {
+				findMany: vi.fn().mockResolvedValue([makeInstance()]),
+				findFirst: vi
+					.fn()
+					.mockResolvedValue(makeInstance({ id: "inst-dest", service: "PLEX", label: "Plex" })),
+			},
+		};
+
+		const result = await executeLabelSyncRule({
+			rule: makeRule(),
+			prisma: prisma as never,
+			arrClientFactory: {} as never,
+			encryptor: {} as never,
+			log: fakeLogger,
+			targetTmdbId: 100, // not in candidates
+		});
+
+		expect(result.status).toBe("success");
+		expect(result.message).toContain("does not carry tag");
+		expect(result.totals.labelsApplied).toBe(0);
+		expect(mockState.destWriterSpy).not.toHaveBeenCalled();
+	});
 });
