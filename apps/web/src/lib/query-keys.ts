@@ -498,6 +498,12 @@ export const pulseKeys = {
 	attention: () => ["pulse", "attentionOnly"] as const,
 };
 
+export const quiKeys = {
+	all: ["qui"] as const,
+	torrentState: (arrInstanceId: string, arrItemId: number, itemType: string) =>
+		["qui", "torrent-state", arrInstanceId, arrItemId, itemType] as const,
+};
+
 /* -------------------------------------------------------------------------- */
 /*  Backward-compatible constants                                              */
 /*  These match the old per-file `const X_QUERY_KEY` pattern.                  */

@@ -16,6 +16,11 @@ const TEST_BODY = z.object({
 	baseUrl: z.string().url(),
 	apiKey: z.string().min(8),
 });
+const TORRENT_STATE_BODY = z.object({
+	arrInstanceId: z.string().min(1),
+	arrItemId: z.number().int().positive(),
+	itemType: z.enum(["movie", "series", "artist", "author"]),
+});
 
 /**
  * qui integration routes — read-only torrent observability for the
@@ -147,6 +152,126 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const client = createQuiClient(stubApp as any, stubInstance as any);
 		const result = await client.testConnection();
 		return reply.send(result);
+	});
+
+	app.post("/qui/library-item/torrent-state", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const { arrInstanceId, arrItemId, itemType } = validateRequest(
+			TORRENT_STATE_BODY,
+			request.body,
+		);
+
+		// v1 supports movies only — series infoHash is per-episode and the
+		// detail modal renders the series, not an episode. Phase 2 work.
+		if (itemType !== "movie") {
+			return reply.send({
+				supported: false,
+				reason: "Per-item torrent health is currently movies-only.",
+			});
+		}
+
+		const cached = await app.prisma.libraryCache.findFirst({
+			where: { instanceId: arrInstanceId, arrItemId, itemType: "movie" },
+		});
+		if (!cached) {
+			return reply.send({
+				supported: true,
+				infoHash: null,
+				torrent: null,
+				siblings: [],
+				reason: "Item not in library cache yet — try refreshing the library.",
+			});
+		}
+
+		let infoHash = cached.infoHash;
+
+		// Lazy backfill: when we don't already have the hash, query *arr
+		// history for this specific item. One small request that pays off
+		// forever — subsequent panel opens hit the cache.
+		if (!infoHash) {
+			const arrInstance = await app.prisma.serviceInstance.findFirst({
+				where: { id: arrInstanceId, userId, service: "RADARR" },
+			});
+			if (arrInstance) {
+				try {
+					const response = await app.arrClientFactory.rawRequest(
+						{
+							id: arrInstance.id,
+							baseUrl: arrInstance.baseUrl,
+							encryptedApiKey: arrInstance.encryptedApiKey,
+							encryptionIv: arrInstance.encryptionIv,
+							service: arrInstance.service,
+							label: arrInstance.label,
+						},
+						// No eventType filter — the integer values vary across *arr
+						// versions. We grab the latest records and pick the first one
+						// that carries a downloadId (grab/import both preserve it).
+						`/api/v3/history?movieId=${arrItemId}&pageSize=10&sortKey=date&sortDirection=descending`,
+					);
+					if (response.ok) {
+						const data = (await response.json()) as {
+							records?: Array<{ downloadId?: string }>;
+						};
+						const found = data.records?.find(
+							(r) => typeof r.downloadId === "string" && r.downloadId.length >= 32,
+						);
+						if (found?.downloadId) {
+							infoHash = found.downloadId.toLowerCase();
+							await app.prisma.libraryCache.update({
+								where: { id: cached.id },
+								data: { infoHash },
+							});
+						}
+					}
+				} catch (error) {
+					app.log.warn(
+						{ err: error, arrInstanceId, arrItemId },
+						"infoHash backfill from *arr history failed",
+					);
+				}
+			}
+		}
+
+		if (!infoHash) {
+			return reply.send({
+				supported: true,
+				infoHash: null,
+				torrent: null,
+				siblings: [],
+				reason: "No download record found in *arr history for this item.",
+			});
+		}
+
+		// Pick the user's qui instance — default first, otherwise oldest.
+		const quiInstance = await app.prisma.serviceInstance.findFirst({
+			where: { userId, service: "QUI", enabled: true },
+			orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+		});
+		if (!quiInstance) {
+			return reply.send({
+				supported: true,
+				infoHash,
+				torrent: null,
+				siblings: [],
+				reason: "No qui instance configured.",
+			});
+		}
+
+		const client = createQuiClient(app, quiInstance);
+		const torrent = await client.getTorrentByHash(infoHash);
+		let siblings: Awaited<ReturnType<typeof client.getCrossSeedMatches>> = [];
+		if (torrent?.instanceId) {
+			siblings = await client.getCrossSeedMatches(torrent.instanceId, infoHash);
+		}
+
+		return reply.send({
+			supported: true,
+			infoHash,
+			torrent,
+			siblings,
+			quiInstanceId: quiInstance.id,
+			quiInstanceLabel: quiInstance.label,
+		});
 	});
 
 	done();
