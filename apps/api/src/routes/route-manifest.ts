@@ -36,7 +36,6 @@ import oidcProvidersRoutes from "./oidc-providers.js";
 import { registerPlexRoutes } from "./plex/index.js";
 import { registerPulseRoutes } from "./pulse.js";
 import { registerQueueCleanerRoutes } from "./queue-cleaner.js";
-import { registerQuiRoutes } from "./qui.js";
 import { registerSearchRoutes } from "./search.js";
 import { registerSeerrRoutes } from "./seerr/index.js";
 import { registerServiceRoutes } from "./services.js";
@@ -271,14 +270,6 @@ export const PROTECTED_ROUTE_GROUPS: readonly RouteGroup[] = [
 		register: registerPulseRoutes,
 		maturity: "internal",
 		summary: "System Pulse health signals + attention items",
-	},
-	{
-		path: "/api/qui",
-		prefix: "/api",
-		register: registerQuiRoutes,
-		maturity: "experimental",
-		summary:
-			"Federated peer integration with autobrr/qui (qBittorrent UI) — read-only torrent state, trackers, cross-seed siblings; powers the Torrent Health panel on library item detail pages.",
 	},
 
 	// --- External integrations (Seerr / TRaSH Guides) ---

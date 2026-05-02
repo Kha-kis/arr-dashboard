@@ -56,7 +56,6 @@ for the full rationale.
 | `/api/auto-tag` | experimental | Criteria-based auto-tagger — applies tags to LibraryCache items matching the rule's criteria DSL (genre, year, codec, watch state, …). Companion to Label Sync. Webhook config (secret read/rotate) lives here under session auth. |
 | `/api/auto-tag/webhook` | experimental | Inbound Sonarr/Radarr Connect webhook for real-time auto-tagging. **Public route** (no session cookie); authenticates via per-user Bearer token (SHA-256 hash of the user's webhook secret). |
 | `/api/pulse` | internal | System Pulse health signals + attention items |
-| `/api/qui` | experimental | Federated peer integration with autobrr/qui (qBittorrent UI) — read-only torrent state, trackers, cross-seed siblings; powers the Torrent Health panel. |
 | `/api/seerr` | stable | Request management, discovery, library enrichment |
 | `/api/trash-guides` | internal | TRaSH cache, templates, deployment, profiles |
 

@@ -28,8 +28,7 @@ export type CreateServicePayload = {
 		| "tautulli"
 		| "plex"
 		| "jellyfin"
-		| "emby"
-		| "qui";
+		| "emby";
 	enabled?: boolean;
 	isDefault?: boolean;
 	tags?: string[];
@@ -92,8 +91,7 @@ export async function testConnectionBeforeAdd(
 		| "tautulli"
 		| "plex"
 		| "jellyfin"
-		| "emby"
-		| "qui",
+		| "emby",
 ): Promise<TestConnectionResponse> {
 	return await apiRequest<TestConnectionResponse>("/api/services/test-connection", {
 		method: "POST",

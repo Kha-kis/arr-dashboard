@@ -35,65 +35,6 @@ export class AppValidationError extends Error {
 }
 
 /**
- * Thrown when a qui API call fails. Maps the upstream HTTP status to a
- * client-facing status using the same convention the centralised error
- * handler in server.ts already understands (statusCode property).
- *
- * - 401/403 from qui pass through (auth misconfiguration is the user's
- *   problem to fix in their qui settings).
- * - 404 means the torrent or instance isn't in qui — surfaced to the UI.
- * - 5xx from qui collapses to 502 Bad Gateway — qui is unhealthy, not us.
- * - Network/timeout errors come through QuiInstanceUnreachableError instead.
- */
-export class QuiApiError extends Error {
-	readonly statusCode: number;
-	readonly upstreamStatus: number;
-
-	constructor(
-		message: string,
-		opts: { upstreamStatus: number; statusCodeOverride?: number; cause?: unknown },
-	) {
-		super(message);
-		this.name = "QuiApiError";
-		this.upstreamStatus = opts.upstreamStatus;
-		if (opts.cause !== undefined) {
-			this.cause = opts.cause;
-		}
-
-		if (opts.statusCodeOverride !== undefined) {
-			this.statusCode = opts.statusCodeOverride;
-		} else if ([401, 403, 404, 429].includes(opts.upstreamStatus)) {
-			this.statusCode = opts.upstreamStatus;
-		} else if (opts.upstreamStatus >= 500) {
-			this.statusCode = 502;
-		} else {
-			this.statusCode = opts.upstreamStatus;
-		}
-	}
-}
-
-/**
- * Thrown when a qui instance can't be reached (timeout, connection refused,
- * DNS failure). Distinct from QuiApiError because there's no upstream HTTP
- * status to map. Maps to HTTP 503 — operator action ("is qui running?")
- * rather than auth or config.
- */
-export class QuiInstanceUnreachableError extends Error {
-	readonly statusCode = 503;
-
-	constructor(
-		public readonly instanceId: string,
-		opts?: { reason?: string; cause?: unknown },
-	) {
-		super(opts?.reason ?? `qui instance ${instanceId} is unreachable`);
-		this.name = "QuiInstanceUnreachableError";
-		if (opts?.cause !== undefined) {
-			this.cause = opts.cause;
-		}
-	}
-}
-
-/**
  * Thrown when a Seerr API call fails.
  * - `seerrStatus`: the HTTP status returned by the Seerr instance
  * - `retryable`: true for 429 and 5xx; false for 4xx
