@@ -21,6 +21,7 @@ import { ExternalLinksSection } from "../../discover/components/media-detail-sec
 import { formatBytes, formatRuntime, SERVICE_COLORS } from "../lib/library-utils";
 import { PosterImage } from "./poster-image";
 import { SyncLabelsNowButton } from "./sync-labels-now-button";
+import { TorrentHealthPanel } from "./torrent-health-panel";
 
 export interface ItemDetailsModalProps {
 	item: LibraryItem;
@@ -452,6 +453,15 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 								/>
 							</div>
 						)}
+
+					{/* qui Torrent Health (movies only in v1; series support is per-episode and lands later) */}
+					{isMovie && item.instanceId && typeof item.id === "number" && (
+						<TorrentHealthPanel
+							arrInstanceId={item.instanceId}
+							arrItemId={item.id}
+							itemType={item.type}
+						/>
+					)}
 				</div>
 			</div>
 		</div>
