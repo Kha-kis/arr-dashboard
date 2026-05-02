@@ -15,6 +15,7 @@ import { ArrError } from "arr-sdk";
 import type { FastifyBaseLogger } from "fastify";
 import type { ArrClient, ArrClientFactory } from "../arr/client-factory.js";
 import type { Encryptor } from "../auth/encryption.js";
+import { triggerLabelSyncForItem } from "../label-sync/trigger-for-item.js";
 import { buildEvalContext } from "../library-cleanup/cleanup-executor.js";
 import { evaluateSingleCondition } from "../library-cleanup/rule-evaluators.js";
 import type { CacheItemForEval, EvalContext } from "../library-cleanup/types.js";
@@ -69,12 +70,7 @@ const SERVICE_TYPE_MAP: Record<string, "SONARR" | "RADARR"> = {
  * decoupled from the engine.
  */
 export async function executeAutoTagRule(opts: ExecuteOpts): Promise<AutoTagRunResult> {
-	const { rule, prisma, arrClientFactory, log } = opts;
-	// `encryptor` is accepted for executor-signature symmetry with Label Sync but
-	// not used directly here — `arrClientFactory.create` handles api-key
-	// decryption internally for the tag-write phase, and the read phase comes
-	// from `LibraryCache` which is already populated.
-	void opts.encryptor;
+	const { rule, prisma, arrClientFactory, encryptor, log } = opts;
 	const childLog = log.child({ ruleId: rule.id, ruleName: rule.name });
 
 	// Resolve scoped instances. Rule scope = (serviceFilter ∩ instanceFilter)
@@ -153,6 +149,7 @@ export async function executeAutoTagRule(opts: ExecuteOpts): Promise<AutoTagRunR
 			instance,
 			prisma,
 			arrClientFactory,
+			encryptor,
 			evalCtx,
 			compiledTitleRegexes,
 			log: childLog.child({ instanceId: instance.id }),
@@ -207,6 +204,7 @@ interface ProcessInstanceArgs {
 	instance: ServiceInstance;
 	prisma: PrismaClient;
 	arrClientFactory: ArrClientFactory;
+	encryptor: Encryptor;
 	evalCtx: EvalContext;
 	compiledTitleRegexes: RegExp[];
 	log: FastifyBaseLogger;
@@ -220,7 +218,16 @@ interface ProcessInstanceResult {
 }
 
 async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstanceResult> {
-	const { rule, instance, prisma, arrClientFactory, evalCtx, compiledTitleRegexes, log } = args;
+	const {
+		rule,
+		instance,
+		prisma,
+		arrClientFactory,
+		encryptor,
+		evalCtx,
+		compiledTitleRegexes,
+		log,
+	} = args;
 
 	const items = await prisma.libraryCache.findMany({
 		where: { instanceId: instance.id },
@@ -312,6 +319,34 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 				tags: merged,
 			});
 			applied++;
+
+			// Chain into Label Sync (Phase B): if any rules source from this
+			// (instance, tagName), fire them inline so the destination service
+			// (Plex/Jellyfin/Emby/etc.) gets the matching label without
+			// waiting for the next scheduled Label Sync run.
+			//
+			// Failures here are non-fatal — auto-tagger's job (apply the tag)
+			// already succeeded. Label Sync chain failures get logged but
+			// don't change auto-tagger's per-item outcome.
+			try {
+				await triggerLabelSyncForItem({
+					userId: rule.userId,
+					sourceService: instance.service,
+					sourceInstanceId: instance.id,
+					arrItemId: item.arrItemId,
+					itemType: item.itemType,
+					tagName: rule.tagName,
+					prisma,
+					arrClientFactory,
+					encryptor,
+					log,
+				});
+			} catch (chainErr) {
+				log.warn(
+					{ err: chainErr, arrItemId: item.arrItemId, tagName: rule.tagName },
+					"Label Sync chain trigger threw after auto-tag write (non-fatal)",
+				);
+			}
 		} catch (err) {
 			const reason = err instanceof ArrError ? err.message : String(err);
 			log.warn({ err: reason, arrItemId: item.arrItemId }, "Failed to apply tag to item");

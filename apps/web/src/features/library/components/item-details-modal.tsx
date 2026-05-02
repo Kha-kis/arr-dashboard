@@ -20,6 +20,7 @@ import { getLinuxInstanceName, getLinuxIsoName, useIncognitoMode } from "../../.
 import { ExternalLinksSection } from "../../discover/components/media-detail-sections";
 import { formatBytes, formatRuntime, SERVICE_COLORS } from "../lib/library-utils";
 import { PosterImage } from "./poster-image";
+import { SyncLabelsNowButton } from "./sync-labels-now-button";
 
 export interface ItemDetailsModalProps {
 	item: LibraryItem;
@@ -99,7 +100,10 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 		icon?: React.ComponentType<{ className?: string }>;
 	}> = [];
 	if (!isMovie) {
-		seriesMetadata.push({ label: "Instance", value: incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName });
+		seriesMetadata.push({
+			label: "Instance",
+			value: incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName,
+		});
 		seriesMetadata.push({ label: "Service", value: serviceLabel });
 		if (resolvedQualityProfileName) {
 			seriesMetadata.push({ label: "Quality profile", value: resolvedQualityProfileName });
@@ -210,7 +214,9 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 										{item.year}
 									</span>
 								)}
-								<span>{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}</span>
+								<span>
+									{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}
+								</span>
 							</div>
 						</div>
 					</div>
@@ -296,7 +302,9 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 								<div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 text-sm">
 									<div>
 										<p className="text-xs text-muted-foreground">Instance</p>
-										<p className="font-medium text-foreground">{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}</p>
+										<p className="font-medium text-foreground">
+											{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}
+										</p>
 									</div>
 									{resolvedQualityProfileName && (
 										<div>
@@ -427,6 +435,23 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 							</div>
 						</div>
 					)}
+
+					{/* Per-item Label Sync trigger (Sonarr/Radarr only). Fires every
+					    enabled rule sourcing from this instance, scoped to this item. */}
+					{(item.service === "sonarr" || item.service === "radarr") &&
+						(item.type === "movie" || item.type === "series") && (
+							<div>
+								<h3 className="text-xs uppercase tracking-wider font-medium text-muted-foreground mb-3">
+									Label Sync
+								</h3>
+								<SyncLabelsNowButton
+									instanceId={item.instanceId}
+									arrItemId={typeof item.id === "string" ? Number.parseInt(item.id, 10) : item.id}
+									itemType={item.type}
+									service={item.service}
+								/>
+							</div>
+						)}
 				</div>
 			</div>
 		</div>
