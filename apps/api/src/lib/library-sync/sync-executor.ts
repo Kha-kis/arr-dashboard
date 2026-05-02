@@ -64,11 +64,29 @@ function parseTagsFromCacheData(data: string | null | undefined): number[] {
 	if (!data) return [];
 	try {
 		const parsed = JSON.parse(data) as { tags?: unknown };
-		if (!Array.isArray(parsed.tags)) return [];
-		return parsed.tags.filter((t): t is number => typeof t === "number");
+		return coerceTagIds(parsed.tags);
 	} catch {
 		return [];
 	}
+}
+
+/**
+ * The shared `LibraryItem.tags` schema is `z.array(z.string())` (each tag id
+ * stored as a string), but the *arr-sdk's raw movie/series resource returns
+ * `tags: number[]`. The library item builder may pass either through
+ * depending on the path. Normalize both to a number list for diffing.
+ */
+function coerceTagIds(value: unknown): number[] {
+	if (!Array.isArray(value)) return [];
+	const out: number[] = [];
+	for (const v of value) {
+		if (typeof v === "number" && Number.isFinite(v)) out.push(v);
+		else if (typeof v === "string" && v.length > 0) {
+			const n = Number.parseInt(v, 10);
+			if (Number.isFinite(n)) out.push(n);
+		}
+	}
+	return out;
 }
 
 /** Diff old vs new tag ids; returns added + removed (set arithmetic). */
@@ -326,9 +344,22 @@ export async function syncInstance(
 							const newTags = parseTagsFromCacheData(JSON.stringify(item));
 							const { added, removed } = diffTags(oldTags, newTags);
 							if (added.length > 0 || removed.length > 0) {
-								const itemAny = item as { tmdbId?: unknown };
-								const tmdbId =
-									typeof itemAny.tmdbId === "number" && itemAny.tmdbId > 0 ? itemAny.tmdbId : null;
+								// LibraryItem stores tmdbId nested under remoteIds.tmdbId per
+								// the shared schema; some normalizers also surface a top-level
+								// tmdbId. Check both. If neither resolves, the trigger will
+								// fall back to a cache lookup (which uses the same logic).
+								const itemAny = item as {
+									tmdbId?: unknown;
+									remoteIds?: { tmdbId?: unknown } | null;
+								};
+								const tmdbCandidates: unknown[] = [itemAny.remoteIds?.tmdbId, itemAny.tmdbId];
+								let tmdbId: number | null = null;
+								for (const v of tmdbCandidates) {
+									if (typeof v === "number" && v > 0) {
+										tmdbId = v;
+										break;
+									}
+								}
 								tagDeltas.push({
 									arrItemId,
 									itemType: item.type,

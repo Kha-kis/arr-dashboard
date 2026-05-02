@@ -91,9 +91,19 @@ async function resolveTmdbId(
 	});
 	if (!cache?.data) return null;
 	try {
-		const parsed = JSON.parse(cache.data) as { tmdbId?: unknown };
-		const tmdbId = typeof parsed.tmdbId === "number" ? parsed.tmdbId : null;
-		return tmdbId && tmdbId > 0 ? tmdbId : null;
+		// LibraryItem stores tmdbId nested under `remoteIds.tmdbId` per the
+		// shared schema (some normalizers also surface a top-level `tmdbId`
+		// for movies — check both for robustness).
+		const parsed = JSON.parse(cache.data) as {
+			tmdbId?: unknown;
+			remoteIds?: { tmdbId?: unknown } | null;
+		};
+		const candidates: unknown[] = [parsed.remoteIds?.tmdbId, parsed.tmdbId];
+		for (const value of candidates) {
+			const tmdbId = typeof value === "number" ? value : null;
+			if (tmdbId && tmdbId > 0) return tmdbId;
+		}
+		return null;
 	} catch (err) {
 		log.warn({ err, arrItemId }, "Failed to parse LibraryCache.data while resolving tmdbId");
 		return null;
