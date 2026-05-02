@@ -50,3 +50,31 @@ export async function runLabelSyncRule(id: string): Promise<LabelSyncRule> {
 	});
 	return data.rule;
 }
+
+export interface RunLabelSyncForItemRequest {
+	instanceId: string;
+	arrItemId: number;
+	itemType: "movie" | "series" | "artist" | "author";
+}
+
+export interface RunLabelSyncForItemResponse {
+	rulesFired: number;
+	labelsApplied: number;
+	failures: number;
+	outcomes: Array<{
+		ruleId: string;
+		ruleName: string;
+		status: "success" | "partial" | "failed";
+		message: string;
+		labelsApplied: number;
+	}>;
+}
+
+export async function runLabelSyncForItem(
+	payload: RunLabelSyncForItemRequest,
+): Promise<RunLabelSyncForItemResponse> {
+	return apiRequest<RunLabelSyncForItemResponse>("/api/label-sync/run-for-item", {
+		method: "POST",
+		json: payload,
+	});
+}

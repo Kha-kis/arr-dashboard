@@ -10,6 +10,8 @@ import { LidarrClient, RadarrClient, ReadarrClient, SonarrClient } from "arr-sdk
 import type { FastifyBaseLogger } from "fastify";
 import type { Prisma, PrismaClient, ServiceInstance } from "../../lib/prisma.js";
 import type { ArrClientFactory } from "../arr/client-factory.js";
+import type { Encryptor } from "../auth/encryption.js";
+import { triggerLabelSyncForItem } from "../label-sync/trigger-for-item.js";
 import { buildLibraryItem } from "../library/library-item-builder.js";
 import { getErrorMessage } from "../utils/error-message.js";
 
@@ -39,7 +41,63 @@ export interface SyncResult {
 export interface SyncExecutorDeps {
 	prisma: PrismaClient;
 	arrClientFactory: ArrClientFactory;
+	encryptor: Encryptor;
 	log: FastifyBaseLogger;
+}
+
+/**
+ * One tag-list change detected during a sync run. We collect these inside
+ * the per-batch transaction (cheap — just a JSON parse + array diff) and
+ * process them AFTER all transactions complete, so Label Sync's external
+ * HTTP calls don't hold DB connections open.
+ */
+interface TagDelta {
+	arrItemId: number;
+	itemType: "movie" | "series" | "artist" | "author";
+	tmdbId: number | null;
+	addedTagIds: number[];
+	removedTagIds: number[];
+}
+
+/** Parse the tag id list out of a LibraryCache.data blob. Tolerant of malformed JSON. */
+function parseTagsFromCacheData(data: string | null | undefined): number[] {
+	if (!data) return [];
+	try {
+		const parsed = JSON.parse(data) as { tags?: unknown };
+		return coerceTagIds(parsed.tags);
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * The shared `LibraryItem.tags` schema is `z.array(z.string())` (each tag id
+ * stored as a string), but the *arr-sdk's raw movie/series resource returns
+ * `tags: number[]`. The library item builder may pass either through
+ * depending on the path. Normalize both to a number list for diffing.
+ */
+function coerceTagIds(value: unknown): number[] {
+	if (!Array.isArray(value)) return [];
+	const out: number[] = [];
+	for (const v of value) {
+		if (typeof v === "number" && Number.isFinite(v)) out.push(v);
+		else if (typeof v === "string" && v.length > 0) {
+			const n = Number.parseInt(v, 10);
+			if (Number.isFinite(n)) out.push(n);
+		}
+	}
+	return out;
+}
+
+/** Diff old vs new tag ids; returns added + removed (set arithmetic). */
+function diffTags(oldTags: number[], newTags: number[]): { added: number[]; removed: number[] } {
+	const oldSet = new Set(oldTags);
+	const newSet = new Set(newTags);
+	const added: number[] = [];
+	const removed: number[] = [];
+	for (const t of newTags) if (!oldSet.has(t)) added.push(t);
+	for (const t of oldTags) if (!newSet.has(t)) removed.push(t);
+	return { added, removed };
 }
 
 // ============================================================================
@@ -113,7 +171,7 @@ export async function syncInstance(
 	deps: SyncExecutorDeps,
 	instance: ServiceInstance,
 ): Promise<SyncResult> {
-	const { prisma, arrClientFactory, log } = deps;
+	const { prisma, arrClientFactory, encryptor, log } = deps;
 	const startTime = Date.now();
 
 	const result: SyncResult = {
@@ -203,18 +261,44 @@ export async function syncInstance(
 			}
 		}
 
-		// Get existing cached items for this instance (include hasFile for download detection)
+		// Get existing cached items for this instance. We pull `data` so we can
+		// diff the previous tag list against the fresh one for Label Sync's
+		// event-driven trigger (Phase C — issue #384 follow-up).
 		const existingItems = await prisma.libraryCache.findMany({
 			where: { instanceId: instance.id },
-			select: { id: true, arrItemId: true, itemType: true, hasFile: true },
+			select: { id: true, arrItemId: true, itemType: true, hasFile: true, data: true },
 		});
 
 		const existingMap = new Map(
 			existingItems.map((item) => [
 				`${item.arrItemId}-${item.itemType}`,
-				{ id: item.id, hasFile: item.hasFile },
+				{ id: item.id, hasFile: item.hasFile, data: item.data },
 			]),
 		);
+
+		// Pre-fetch tag id→name map for Label Sync delta detection. Only
+		// Sonarr/Radarr support tag-write rules today; Lidarr/Readarr skip.
+		// One call per sync amortizes across every item we examine.
+		const tagIdToName = new Map<number, string>();
+		if (client instanceof SonarrClient || client instanceof RadarrClient) {
+			try {
+				const tags = (await client.tag.getAll()) as Array<{ id?: number; label?: string }>;
+				for (const t of tags) {
+					if (typeof t.id === "number" && typeof t.label === "string" && t.label.length > 0) {
+						tagIdToName.set(t.id, t.label);
+					}
+				}
+			} catch (err) {
+				log.warn(
+					{ err, instanceId: instance.id },
+					"Tag list fetch failed — Label Sync delta detection will be skipped this run",
+				);
+			}
+		}
+
+		// Tag deltas collected during the transaction; processed afterward
+		// so external HTTP calls in Label Sync don't hold DB connections.
+		const tagDeltas: TagDelta[] = [];
 
 		// Track which items we've seen
 		const seenKeys = new Set<string>();
@@ -250,6 +334,41 @@ export async function syncInstance(
 						if (!existing.hasFile && fields.hasFile) {
 							result.newDownloads.push({ title: item.title, itemType: item.type });
 						}
+
+						// Phase C: detect tag-list change vs the previously cached
+						// data, queue Label Sync triggers for processing after the
+						// transaction. Only meaningful for instances where we
+						// successfully pulled the tag id→name map.
+						if (tagIdToName.size > 0) {
+							const oldTags = parseTagsFromCacheData(existing.data);
+							const newTags = parseTagsFromCacheData(JSON.stringify(item));
+							const { added, removed } = diffTags(oldTags, newTags);
+							if (added.length > 0 || removed.length > 0) {
+								// LibraryItem stores tmdbId nested under remoteIds.tmdbId per
+								// the shared schema; some normalizers also surface a top-level
+								// tmdbId. Check both. If neither resolves, the trigger will
+								// fall back to a cache lookup (which uses the same logic).
+								const itemAny = item as {
+									tmdbId?: unknown;
+									remoteIds?: { tmdbId?: unknown } | null;
+								};
+								const tmdbCandidates: unknown[] = [itemAny.remoteIds?.tmdbId, itemAny.tmdbId];
+								let tmdbId: number | null = null;
+								for (const v of tmdbCandidates) {
+									if (typeof v === "number" && v > 0) {
+										tmdbId = v;
+										break;
+									}
+								}
+								tagDeltas.push({
+									arrItemId,
+									itemType: item.type,
+									tmdbId,
+									addedTagIds: added,
+									removedTagIds: removed,
+								});
+							}
+						}
 					} else {
 						// Create new item
 						await tx.libraryCache.create({
@@ -274,6 +393,68 @@ export async function syncInstance(
 				},
 			});
 			result.itemsRemoved = idsToRemove.length;
+		}
+
+		// Phase C: process collected tag deltas — fire Label Sync triggers for
+		// items where tags were added or removed. Done OUTSIDE the per-batch
+		// transaction so external HTTP calls don't hold DB connections open.
+		// Failures are isolated per item — one bad delta doesn't abort the rest.
+		if (
+			tagDeltas.length > 0 &&
+			tagIdToName.size > 0 &&
+			(instance.service === "SONARR" || instance.service === "RADARR")
+		) {
+			let triggeredCount = 0;
+			for (const delta of tagDeltas) {
+				if (delta.itemType !== "movie" && delta.itemType !== "series") continue;
+				// Build the union of changed tag names — added OR removed both
+				// warrant re-evaluating Label Sync rules for that tag.
+				const changedNames = new Set<string>();
+				for (const id of delta.addedTagIds) {
+					const name = tagIdToName.get(id);
+					if (name) changedNames.add(name);
+				}
+				for (const id of delta.removedTagIds) {
+					const name = tagIdToName.get(id);
+					if (name) changedNames.add(name);
+				}
+				if (changedNames.size === 0) continue;
+
+				for (const tagName of changedNames) {
+					try {
+						const triggerResult = await triggerLabelSyncForItem({
+							userId: instance.userId,
+							sourceService: instance.service,
+							sourceInstanceId: instance.id,
+							arrItemId: delta.arrItemId,
+							itemType: delta.itemType,
+							tagName,
+							tmdbId: delta.tmdbId ?? undefined,
+							prisma,
+							arrClientFactory,
+							encryptor,
+							log,
+						});
+						if (triggerResult.rulesFired > 0) triggeredCount++;
+					} catch (chainErr) {
+						log.warn(
+							{
+								err: chainErr,
+								arrItemId: delta.arrItemId,
+								tagName,
+								instanceId: instance.id,
+							},
+							"Label Sync trigger threw during library-sync delta processing (non-fatal)",
+						);
+					}
+				}
+			}
+			if (triggeredCount > 0) {
+				log.info(
+					{ instanceId: instance.id, triggeredCount },
+					"Library sync delta fired Label Sync rule triggers",
+				);
+			}
 		}
 
 		// Update sync status
@@ -332,4 +513,3 @@ export async function syncInstance(
 
 	return result;
 }
-

@@ -257,6 +257,7 @@ class LibrarySyncScheduler {
 				{
 					prisma: this.app.prisma,
 					arrClientFactory: this.app.arrClientFactory,
+					encryptor: this.app.encryptor,
 					log: this.app.log,
 				},
 				instance as Parameters<typeof syncInstance>[1],
