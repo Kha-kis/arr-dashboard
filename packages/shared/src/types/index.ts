@@ -14,7 +14,6 @@ export * from "./password";
 export * from "./plex";
 export * from "./pulse";
 export * from "./queue-cleaner";
-export * from "./qui";
 export * from "./regex-safety";
 export * from "./rule-criteria";
 export * from "./search";
