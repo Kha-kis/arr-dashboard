@@ -5,6 +5,20 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.18.1] - 2026-05-03
+
+**Labels & tagging — bug fix + event-driven triggers (issue #384).** Two follow-ups to the Label Sync / Auto-Tagger features that shipped in 2.18.0: a Radarr/Sonarr validator error that broke tag application is fixed, and Label Sync rules now fire within seconds of a tag change instead of waiting for the hourly schedule.
+
+### Fixed
+
+- **Tag application no longer fails with `'Quality Profile Id' must be greater than '0'`.** The auto-tagger and the Label Sync arr-writer were sending partial PUT bodies (`{ id, tags }`) to Radarr/Sonarr, but stricter validator releases require the full resource. Both writers now fetch the existing item via `getById` and spread it into the update body, matching the canonical pattern in `library-cleanup/cleanup-executor.ts` (#418).
+
+### Added
+
+- **Event-driven Label Sync triggers.** Rules used to wait up to an hour for the scheduled run; now they fire on every relevant change. Three triggers shipped: (1) auto-tagger chain — when the auto-tagger applies a tag matched by a Label Sync rule, the rule fires inline; (2) library-sync delta detection — when an external tag change is observed during the existing library-sync poll, matching rules fire (5–15 min latency); (3) per-item "Sync labels now" button on the library item detail modal for instant manual propagation. End-to-end "Radarr import → Plex label" lands in seconds when the Sonarr/Radarr Connect webhook is configured (Settings → Auto-Tagger → Webhook Config); the scheduler-only fallback is bounded by the auto-tagger schedule. Currently *arr-source rules only — Plex-source rules continue to rely on the scheduler; the 1-hour scheduled run remains as the self-healing safety net (#420).
+
+- **Live-integration test for the *arr tag-write pattern.** Gated on `INTEGRATION_TESTS=1` plus per-service env vars; runs the full `getById → spread → update` round-trip against a real Radarr/Sonarr instance to catch regressions of the validator-rejection class shipped in this release. CI never runs it; documented as an operator pre-release step in `docs/RELEASING.md` §2 (#419).
+
 ## [2.18.0] - 2026-05-01
 
 **Auto-Tagger: criteria-based tagging for Sonarr/Radarr — companion to Label Sync.** A new automation feature that applies tags to *arr items when they match a rule's criteria DSL. Same expressiveness as Library Cleanup (50+ rule types: genre, year, codec, watch state, Plex labels/collections, custom format score, audio channels, runtime, file path regex, etc.) plus full composite (AND/OR) rules and real-time tagging via Sonarr/Radarr Connect webhooks. Pair with Label Sync to mirror the tag onto Plex/Jellyfin/Emby labels — Auto-Tagger seeds the source tag, Label Sync propagates it. New `/auto-tag` page in the Maintenance section.
