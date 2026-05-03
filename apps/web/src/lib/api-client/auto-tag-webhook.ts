@@ -27,3 +27,57 @@ export async function regenerateWebhookSecret(): Promise<WebhookConfig> {
 		method: "POST",
 	});
 }
+
+// ─── Programmatic install (issue #422) ──────────────────────────────────
+
+export interface WebhookInstallStatusEntry {
+	instanceId: string;
+	label: string;
+	service: "SONARR" | "RADARR";
+	installed: boolean;
+	notificationId: number | null;
+	error: string | null;
+}
+
+export interface WebhookInstallStatusResponse {
+	instances: WebhookInstallStatusEntry[];
+}
+
+export async function fetchWebhookInstallStatus(): Promise<WebhookInstallStatusResponse> {
+	return apiRequest<WebhookInstallStatusResponse>("/api/auto-tag/webhook/install/status");
+}
+
+export interface WebhookInstallEvents {
+	onDownload?: boolean;
+	onUpgrade?: boolean;
+	onGrab?: boolean;
+}
+
+export interface WebhookInstallRequest {
+	secret: string;
+	instanceIds: string[];
+	events?: WebhookInstallEvents;
+}
+
+export interface WebhookInstallResultEntry {
+	instanceId: string;
+	label: string;
+	service: "SONARR" | "RADARR";
+	status: "installed" | "updated" | "skipped" | "failed";
+	notificationId: number | null;
+	error: string | null;
+}
+
+export interface WebhookInstallResponse {
+	results: WebhookInstallResultEntry[];
+	summary: { total: number; installed: number; failed: number };
+}
+
+export async function installWebhookOnInstances(
+	body: WebhookInstallRequest,
+): Promise<WebhookInstallResponse> {
+	return apiRequest<WebhookInstallResponse>("/api/auto-tag/webhook/install", {
+		method: "POST",
+		json: body,
+	});
+}

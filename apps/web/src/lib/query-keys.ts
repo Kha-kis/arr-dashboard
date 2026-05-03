@@ -457,6 +457,8 @@ export const labelSyncKeys = {
 export const autoTagKeys = {
 	all: ["auto-tag"] as const,
 	rules: ["auto-tag", "rules"] as const,
+	webhookConfig: ["auto-tag", "webhook-config"] as const,
+	webhookInstallStatus: ["auto-tag", "webhook-install-status"] as const,
 };
 
 /* -------------------------------------------------------------------------- */
