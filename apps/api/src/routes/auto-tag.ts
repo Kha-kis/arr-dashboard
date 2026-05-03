@@ -483,15 +483,17 @@ export async function registerAutoTagRoutes(app: FastifyInstance, _opts: Fastify
 			});
 		}
 
-		// Resolve the public-facing URL the *arr will POST to. The Connect
-		// webhook mount path is /api/auto-tag/webhook/:instanceId. We build
-		// it from the request's own host so reverse-proxy setups work.
-		const protocol = (request.headers["x-forwarded-proto"] as string) ?? request.protocol;
-		const host =
-			(request.headers["x-forwarded-host"] as string) ??
-			(request.headers.host as string | undefined) ??
-			"";
-		const externalBase = `${protocol}://${host}`;
+		// Resolve the public-facing URL the *arr will POST to. Precedence:
+		//   1. SystemSettings.externalUrl — admin-configured canonical URL
+		//   2. Fastify-managed request.protocol/hostname — already respects
+		//      the trustProxy flag (set in server.ts), so X-Forwarded-* are
+		//      only honoured behind a real reverse proxy
+		// Reading X-Forwarded-* directly would bypass that trust gate and
+		// let a forged Host header redirect the bearer secret to an attacker.
+		const settings = await app.prisma.systemSettings.findUnique({ where: { id: 1 } });
+		const externalBase = settings?.externalUrl
+			? settings.externalUrl.replace(/\/$/, "")
+			: `${request.protocol}://${request.hostname}`;
 		const events = { ...DEFAULT_EVENTS, ...(eventsOverride ?? {}) };
 
 		// Resolve instances scoped to this user and the eligible service set.

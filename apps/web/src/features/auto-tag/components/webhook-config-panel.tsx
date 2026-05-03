@@ -14,8 +14,7 @@ import {
 	type WebhookConfig,
 	type WebhookInstallResponse,
 } from "../../../lib/api-client/auto-tag-webhook";
-
-const QUERY_KEY = ["auto-tag", "webhook-config"] as const;
+import { autoTagKeys } from "../../../lib/query-keys";
 
 export const WebhookConfigPanel = () => {
 	const [copied, setCopied] = useState<"url" | "secret" | null>(null);
@@ -23,14 +22,14 @@ export const WebhookConfigPanel = () => {
 	const queryClient = useQueryClient();
 
 	const { data, isLoading } = useQuery({
-		queryKey: QUERY_KEY,
+		queryKey: autoTagKeys.webhookConfig,
 		queryFn: fetchWebhookConfig,
 	});
 
 	const regenerate = useMutation({
 		mutationFn: regenerateWebhookSecret,
 		onSuccess: (next: WebhookConfig) => {
-			queryClient.setQueryData<WebhookConfig>(QUERY_KEY, next);
+			queryClient.setQueryData<WebhookConfig>(autoTagKeys.webhookConfig, next);
 		},
 	});
 
@@ -167,8 +166,6 @@ export const WebhookConfigPanel = () => {
 // exists in the browser session after a recent generation/rotation, so
 // the install button is gated on that.
 
-const INSTALL_STATUS_QUERY_KEY = ["auto-tag", "webhook-install-status"] as const;
-
 const AutoInstallSection = ({ plaintextSecret }: { plaintextSecret: string | null }) => {
 	const queryClient = useQueryClient();
 	const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -176,7 +173,7 @@ const AutoInstallSection = ({ plaintextSecret }: { plaintextSecret: string | nul
 	const [lastResults, setLastResults] = useState<WebhookInstallResponse["results"] | null>(null);
 
 	const statusQuery = useQuery({
-		queryKey: INSTALL_STATUS_QUERY_KEY,
+		queryKey: autoTagKeys.webhookInstallStatus,
 		queryFn: fetchWebhookInstallStatus,
 	});
 
@@ -189,7 +186,7 @@ const AutoInstallSection = ({ plaintextSecret }: { plaintextSecret: string | nul
 			}),
 		onSuccess: (response) => {
 			setLastResults(response.results);
-			queryClient.invalidateQueries({ queryKey: INSTALL_STATUS_QUERY_KEY });
+			queryClient.invalidateQueries({ queryKey: autoTagKeys.webhookInstallStatus });
 		},
 	});
 

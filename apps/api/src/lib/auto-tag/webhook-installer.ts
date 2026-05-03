@@ -11,9 +11,10 @@
  * API. We never log the secret and never echo it in error messages.
  */
 
-import type { ArrError } from "arr-sdk";
+import { ArrError } from "arr-sdk";
 import type { ArrClient, ArrClientFactory } from "../arr/client-factory.js";
 import type { PrismaClient, ServiceInstance } from "../prisma.js";
+import { getErrorMessage } from "../utils/error-message.js";
 
 /** Notification name used to identify arr-dashboard's webhook in *arr's UI. */
 export const ARR_DASHBOARD_NOTIFICATION_NAME = "arr-dashboard auto-tagger";
@@ -148,8 +149,7 @@ export async function probeInstallStatus(
 			error: null,
 		};
 	} catch (err) {
-		const reason = err instanceof Error ? err.message : String(err);
-		return { ...base, installed: false, notificationId: null, error: reason };
+		return { ...base, installed: false, notificationId: null, error: getErrorMessage(err) };
 	}
 }
 
@@ -200,12 +200,10 @@ export async function installOnInstance(
 			error: null,
 		};
 	} catch (err) {
-		// Best effort error message — the *arr-sdk's ArrError has a `.message`
-		// already; for unknown failure modes we fall back to String(err).
-		const reason =
-			err instanceof Error
-				? `${(err as ArrError).statusCode ?? ""} ${err.message}`.trim()
-				: String(err);
+		// Prefix the HTTP status code only when the error is an ArrError —
+		// avoids the unsafe `as ArrError` cast that hid type-narrowing.
+		const message = getErrorMessage(err);
+		const reason = err instanceof ArrError ? `${err.statusCode} ${message}`.trim() : message;
 		return { ...base, status: "failed", notificationId: null, error: reason };
 	}
 }
