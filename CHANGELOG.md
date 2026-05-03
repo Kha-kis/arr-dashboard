@@ -5,6 +5,14 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.18.2] - 2026-05-03
+
+**Auto-Tagger — one-click Connect webhook auto-install (issue #422).** A follow-up to the real-time webhook plumbing that shipped in 2.18.0: instead of hand-pasting the URL and `Authorization: Bearer …` header into every Sonarr/Radarr's Connect settings, you can now select your enabled instances inside the Auto-Tagger settings panel and push the canonical webhook to all of them in a single click.
+
+### Added
+
+- **One-click webhook auto-install for Sonarr/Radarr Connect.** The Auto-Tagger settings panel grew an **Auto-install** sub-section that lists every enabled Sonarr/Radarr instance with its current install state (Installed / Not installed / Probe failed). Selecting one or more instances and clicking "Install / Update on N instances" pushes the `arr-dashboard auto-tagger` notification (URL + Bearer secret + event flags) to each *arr's `/api/v3/notification` endpoint. Idempotent — re-running updates the existing notification by name match. Per-instance failures (auth error, *arr offline) surface individually without blocking the rest of the batch. The install URL is derived from `SystemSettings.externalUrl` when configured, falling back to Fastify's `trustProxy`-aware request fields, so a forged `Host` header cannot redirect Connect traffic to an attacker. Backed by `GET /api/auto-tag/webhook/install/status` and `POST /api/auto-tag/webhook/install`. Closes #422 (#423).
+
 ## [2.18.1] - 2026-05-03
 
 **Labels & tagging — bug fix + event-driven triggers (issue #384).** Two follow-ups to the Label Sync / Auto-Tagger features that shipped in 2.18.0: a Radarr/Sonarr validator error that broke tag application is fixed, and Label Sync rules now fire within seconds of a tag change instead of waiting for the hourly schedule.

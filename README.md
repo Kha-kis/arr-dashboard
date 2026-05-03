@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.18.1** — Labels & tagging follow-up to 2.18.0: fixes a Radarr/Sonarr partial-PUT validator rejection (`'Quality Profile Id' must be greater than '0'`) that broke tag application on stricter releases, plus event-driven Label Sync triggers (auto-tagger chain, library-sync delta detection, per-item "Sync labels now" button) so rules fire within seconds of a tag change instead of waiting for the hourly schedule.
+> **Version 2.18.2** — Auto-Tagger follow-up to 2.18.1: one-click Connect webhook auto-install. The Auto-Tagger settings now discover your enabled Sonarr/Radarr instances and push the `arr-dashboard auto-tagger` Connect notification (URL + Bearer secret + event flags) to each one in a single click — no more hand-pasting into every *arr's Connect settings. Idempotent re-runs update the existing webhook by name match; per-instance failures surface individually without blocking the rest.
 
 A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, **Lidarr**, **Readarr**, **Plex**, **Tautulli**, **Jellyfin**, **Emby**, and **Seerr** instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -225,6 +225,7 @@ First-class support is reserved for services listed in the table above.
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.18.2` | Auto-Tagger: one-click Sonarr/Radarr Connect webhook auto-install (#423) — discover enabled instances and push the canonical webhook in a single click |
 | `2.18.1` | Labels & tagging fixes: Radarr/Sonarr partial-PUT validator rejection (#418) + event-driven Label Sync triggers (#420) so rules fire seconds after a tag change |
 | `2.18.0` | Auto-Tagger: criteria-based Sonarr/Radarr tagging with composite (AND/OR) rules, Connect webhooks, and TMDb/Trakt list-membership; library deep-link fix; TRaSH cache empty-result fix; Plex log-leak hardening |
 | `2.17.0` | Statistics overhaul: Jellyfin/Emby tab + Plex tab decoupled from Tautulli (now optional enrichment); SessionSnapshot-derived leaderboards |
