@@ -21,6 +21,12 @@ import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { executeAutoTagRule } from "../lib/auto-tag/execute-rule.js";
 import { runRuleWithLock } from "../lib/auto-tag/run-with-lock.js";
+import {
+	DEFAULT_EVENTS,
+	installOnInstance,
+	listEligibleInstances,
+	probeInstallStatus,
+} from "../lib/auto-tag/webhook-installer.js";
 import { safeJsonParse } from "../lib/utils/json.js";
 import { validateRequest } from "../lib/utils/validate.js";
 
@@ -412,6 +418,116 @@ export async function registerAutoTagRoutes(app: FastifyInstance, _opts: Fastify
 	// mounted in `PUBLIC_ROUTE_GROUPS` via `auto-tag-webhook.ts` so
 	// Sonarr/Radarr can reach it without a session cookie. It authenticates
 	// via Bearer token (the user's hashed webhook secret).
+
+	// ─────────────────────────────────────────────────────────────────────
+	// Programmatic Connect webhook auto-install (issue #422).
+	//
+	// Auto-discovers the user's enabled Sonarr/Radarr instances and
+	// installs/updates the arr-dashboard webhook in each via *arr's
+	// notification API. The plaintext webhook secret is passed in the
+	// install request body (the frontend has it from a recent rotation/
+	// generation) — we never persist plaintext.
+	// ─────────────────────────────────────────────────────────────────────
+
+	app.get("/webhook/install/status", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const instances = await listEligibleInstances(app.prisma, userId);
+		const probes = await Promise.all(
+			instances.map((instance) =>
+				probeInstallStatus(
+					{ prisma: app.prisma, arrClientFactory: app.arrClientFactory },
+					instance,
+				),
+			),
+		);
+		return reply.send({ instances: probes });
+	});
+
+	const installBody = z.object({
+		// The plaintext webhook secret. We never read this from the DB —
+		// frontend gets it via /webhook-config (which only returns it on
+		// freshly-generated/rotated requests) and passes it through here.
+		secret: z.string().min(16),
+		instanceIds: z.array(z.string().min(1)).min(1).max(20),
+		events: z
+			.object({
+				onDownload: z.boolean().optional(),
+				onUpgrade: z.boolean().optional(),
+				onGrab: z.boolean().optional(),
+			})
+			.optional(),
+	});
+
+	app.post("/webhook/install", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const {
+			secret,
+			instanceIds,
+			events: eventsOverride,
+		} = validateRequest(installBody, request.body);
+
+		// Verify the supplied secret matches the user's stored hash. This is
+		// the same fast-path check the inbound Connect webhook handler uses,
+		// just inverted (we have plaintext + hash, want to confirm match).
+		const user = await app.prisma.user.findUnique({ where: { id: userId } });
+		if (!user || !user.hashedWebhookSecret) {
+			return reply
+				.status(412)
+				.send({ error: "Webhook secret not configured. Generate one first." });
+		}
+		const supplied = createHash("sha256").update(secret).digest("hex");
+		if (supplied !== user.hashedWebhookSecret) {
+			return reply.status(401).send({
+				error:
+					"Supplied webhook secret does not match the stored value. Rotate via the Webhook Config panel and try again.",
+			});
+		}
+
+		// Resolve the public-facing URL the *arr will POST to. The Connect
+		// webhook mount path is /api/auto-tag/webhook/:instanceId. We build
+		// it from the request's own host so reverse-proxy setups work.
+		const protocol = (request.headers["x-forwarded-proto"] as string) ?? request.protocol;
+		const host =
+			(request.headers["x-forwarded-host"] as string) ??
+			(request.headers.host as string | undefined) ??
+			"";
+		const externalBase = `${protocol}://${host}`;
+		const events = { ...DEFAULT_EVENTS, ...(eventsOverride ?? {}) };
+
+		// Resolve instances scoped to this user and the eligible service set.
+		const instances = await app.prisma.serviceInstance.findMany({
+			where: {
+				userId,
+				id: { in: instanceIds },
+				service: { in: ["SONARR", "RADARR"] },
+				enabled: true,
+			},
+		});
+		if (instances.length === 0) {
+			return reply.status(404).send({ error: "No matching enabled Sonarr/Radarr instances" });
+		}
+
+		const results = await Promise.all(
+			instances.map((instance) =>
+				installOnInstance(
+					{ prisma: app.prisma, arrClientFactory: app.arrClientFactory },
+					instance,
+					{
+						webhookUrl: `${externalBase}/api/auto-tag/webhook/${instance.id}`,
+						bearerSecret: secret,
+						events,
+					},
+				),
+			),
+		);
+
+		const installed = results.filter(
+			(r) => r.status === "installed" || r.status === "updated",
+		).length;
+		const failed = results.filter((r) => r.status === "failed").length;
+
+		return reply.send({ results, summary: { total: results.length, installed, failed } });
+	});
 }
 
 function generateWebhookSecret(): string {
