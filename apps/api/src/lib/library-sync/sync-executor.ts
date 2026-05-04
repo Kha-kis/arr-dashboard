@@ -100,6 +100,11 @@ function diffTags(oldTags: number[], newTags: number[]): { added: number[]; remo
 	return { added, removed };
 }
 
+/** Returns true for service types that need tag-delta detection + a stored data blob. */
+function isTagDeltaService(service: string): boolean {
+	return service === "SONARR" || service === "RADARR";
+}
+
 // ============================================================================
 // Utility Functions
 // ============================================================================
@@ -144,9 +149,13 @@ function extractCacheFields(
 }
 
 /**
- * Builds cache entry data from a LibraryItem
+ * Builds cache entry create data from a LibraryItem.
+ * Always includes the full normalized JSON in `data` for /library response serving.
  */
-function buildCacheEntry(instanceId: string, item: LibraryItem): Prisma.LibraryCacheCreateInput {
+function buildCacheCreate(
+	instanceId: string,
+	item: LibraryItem,
+): Omit<Prisma.LibraryCacheCreateInput, "data"> & { data: string } {
 	const arrItemId = typeof item.id === "string" ? Number.parseInt(item.id, 10) : item.id;
 	const fields = extractCacheFields(item);
 
@@ -157,6 +166,24 @@ function buildCacheEntry(instanceId: string, item: LibraryItem): Prisma.LibraryC
 		...fields,
 		data: JSON.stringify(item),
 	};
+}
+
+/**
+ * Logs process memory usage at debug level for monitoring heap during sync phases.
+ */
+function logMemoryPhase(log: FastifyBaseLogger, instanceId: string, phase: string): void {
+	if (!log.level || log.level === "silent") return;
+	const mem = process.memoryUsage();
+	log.debug(
+		{
+			instanceId,
+			phase,
+			heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
+			heapTotalMB: Math.round(mem.heapTotal / 1024 / 1024),
+			rssMB: Math.round(mem.rss / 1024 / 1024),
+		},
+		"Library sync memory usage",
+	);
 }
 
 // ============================================================================
@@ -173,6 +200,7 @@ export async function syncInstance(
 ): Promise<SyncResult> {
 	const { prisma, arrClientFactory, encryptor, log } = deps;
 	const startTime = Date.now();
+	const tagDeltaService = isTagDeltaService(instance.service);
 
 	const result: SyncResult = {
 		instanceId: instance.id,
@@ -187,7 +215,6 @@ export async function syncInstance(
 	};
 
 	try {
-		// Mark sync as in progress
 		await prisma.librarySyncStatus.upsert({
 			where: { instanceId: instance.id },
 			create: {
@@ -200,10 +227,10 @@ export async function syncInstance(
 			},
 		});
 
-		// Create ARR client and fetch items
 		const client = arrClientFactory.create(instance);
 		const service = instance.service.toLowerCase() as LibraryService;
-		let rawItems: unknown[] = [];
+
+		let rawItems: unknown[];
 
 		if (client instanceof SonarrClient) {
 			rawItems = await client.series.getAll();
@@ -221,13 +248,8 @@ export async function syncInstance(
 			{ instanceId: instance.id, itemCount: rawItems.length },
 			"Fetched items from ARR instance",
 		);
+		logMemoryPhase(log, instance.id, "after-fetch");
 
-		// Build LibraryItems from raw data
-		const items = rawItems.map((raw) =>
-			buildLibraryItem(instance, service, raw as Record<string, unknown>),
-		);
-
-		// Fetch cutoff-unmet item IDs for Sonarr/Radarr (quality upgrade candidates)
 		const cutoffUnmetIds = new Set<number>();
 		if (client instanceof SonarrClient || client instanceof RadarrClient) {
 			try {
@@ -242,7 +264,6 @@ export async function syncInstance(
 					const records = cutoffResult.records ?? [];
 					for (const record of records) {
 						const recordAny = record as Record<string, unknown>;
-						// Sonarr cutoff returns episodes with seriesId; Radarr returns movies with id
 						const itemId = (recordAny.seriesId ?? recordAny.id) as number | undefined;
 						if (itemId) cutoffUnmetIds.add(itemId);
 					}
@@ -261,24 +282,26 @@ export async function syncInstance(
 			}
 		}
 
-		// Get existing cached items for this instance. We pull `data` so we can
-		// diff the previous tag list against the fresh one for Label Sync's
-		// event-driven trigger (Phase C — issue #384 follow-up).
+		// Only pull the `data` column for Sonarr/Radarr (tag-delta detection).
+		// Readarr/Lidarr skip it to avoid loading every cached JSON blob.
 		const existingItems = await prisma.libraryCache.findMany({
 			where: { instanceId: instance.id },
-			select: { id: true, arrItemId: true, itemType: true, hasFile: true, data: true },
+			select: {
+				id: true,
+				arrItemId: true,
+				itemType: true,
+				hasFile: true,
+				...(tagDeltaService ? { data: true } : {}),
+			},
 		});
 
 		const existingMap = new Map(
 			existingItems.map((item) => [
 				`${item.arrItemId}-${item.itemType}`,
-				{ id: item.id, hasFile: item.hasFile, data: item.data },
+				{ id: item.id, hasFile: item.hasFile, data: "data" in item ? (item.data as string | null) : null },
 			]),
 		);
 
-		// Pre-fetch tag id→name map for Label Sync delta detection. Only
-		// Sonarr/Radarr support tag-write rules today; Lidarr/Readarr skip.
-		// One call per sync amortizes across every item we examine.
 		const tagIdToName = new Map<number, string>();
 		if (client instanceof SonarrClient || client instanceof RadarrClient) {
 			try {
@@ -296,22 +319,20 @@ export async function syncInstance(
 			}
 		}
 
-		// Tag deltas collected during the transaction; processed afterward
-		// so external HTTP calls in Label Sync don't hold DB connections.
 		const tagDeltas: TagDelta[] = [];
-
-		// Track which items we've seen
 		const seenKeys = new Set<string>();
-
-		// Process items in batches for efficiency
 		const BATCH_SIZE = 100;
 
-		for (let i = 0; i < items.length; i += BATCH_SIZE) {
-			const batch = items.slice(i, i + BATCH_SIZE);
+		// Process items in batches directly from rawItems — avoids building
+		// a full parallel normalized array in memory.
+		for (let i = 0; i < rawItems.length; i += BATCH_SIZE) {
+			const rawBatch = rawItems.slice(i, i + BATCH_SIZE) as Record<string, unknown>[];
 
 			await prisma.$transaction(async (tx) => {
-				for (const item of batch) {
-					const arrItemId = typeof item.id === "string" ? Number.parseInt(item.id, 10) : item.id;
+				for (const raw of rawBatch) {
+					const item = buildLibraryItem(instance, service, raw);
+					const arrItemId =
+						typeof item.id === "string" ? Number.parseInt(item.id, 10) : item.id;
 					const key = `${arrItemId}-${item.type}`;
 					seenKeys.add(key);
 
@@ -319,40 +340,35 @@ export async function syncInstance(
 					const fields = extractCacheFields(item, cutoffUnmetIds);
 
 					if (existing) {
-						// Update existing item
+						const updateData: Prisma.LibraryCacheUpdateInput = {
+							...fields,
+							data: JSON.stringify(item),
+							updatedAt: new Date(),
+						};
+
 						await tx.libraryCache.update({
 							where: { id: existing.id },
-							data: {
-								...fields,
-								data: JSON.stringify(item),
-								updatedAt: new Date(),
-							},
+							data: updateData,
 						});
 						result.itemsUpdated++;
 
-						// Detect newly downloaded: hasFile went from false → true
 						if (!existing.hasFile && fields.hasFile) {
 							result.newDownloads.push({ title: item.title, itemType: item.type });
 						}
 
-						// Phase C: detect tag-list change vs the previously cached
-						// data, queue Label Sync triggers for processing after the
-						// transaction. Only meaningful for instances where we
-						// successfully pulled the tag id→name map.
 						if (tagIdToName.size > 0) {
 							const oldTags = parseTagsFromCacheData(existing.data);
-							const newTags = parseTagsFromCacheData(JSON.stringify(item));
+							const newTags = coerceTagIds((item.tags as unknown) ?? []);
 							const { added, removed } = diffTags(oldTags, newTags);
 							if (added.length > 0 || removed.length > 0) {
-								// LibraryItem stores tmdbId nested under remoteIds.tmdbId per
-								// the shared schema; some normalizers also surface a top-level
-								// tmdbId. Check both. If neither resolves, the trigger will
-								// fall back to a cache lookup (which uses the same logic).
 								const itemAny = item as {
 									tmdbId?: unknown;
 									remoteIds?: { tmdbId?: unknown } | null;
 								};
-								const tmdbCandidates: unknown[] = [itemAny.remoteIds?.tmdbId, itemAny.tmdbId];
+								const tmdbCandidates: unknown[] = [
+									itemAny.remoteIds?.tmdbId,
+									itemAny.tmdbId,
+								];
 								let tmdbId: number | null = null;
 								for (const v of tmdbCandidates) {
 									if (typeof v === "number" && v > 0) {
@@ -370,9 +386,8 @@ export async function syncInstance(
 							}
 						}
 					} else {
-						// Create new item
 						await tx.libraryCache.create({
-							data: buildCacheEntry(instance.id, item),
+							data: buildCacheCreate(instance.id, item),
 						});
 						result.itemsAdded++;
 					}
@@ -381,7 +396,8 @@ export async function syncInstance(
 			});
 		}
 
-		// Remove items that no longer exist in ARR
+		logMemoryPhase(log, instance.id, "after-batch-writes");
+
 		const idsToRemove = existingItems
 			.filter((item) => !seenKeys.has(`${item.arrItemId}-${item.itemType}`))
 			.map((item) => item.id);
@@ -395,10 +411,6 @@ export async function syncInstance(
 			result.itemsRemoved = idsToRemove.length;
 		}
 
-		// Phase C: process collected tag deltas — fire Label Sync triggers for
-		// items where tags were added or removed. Done OUTSIDE the per-batch
-		// transaction so external HTTP calls don't hold DB connections open.
-		// Failures are isolated per item — one bad delta doesn't abort the rest.
 		if (
 			tagDeltas.length > 0 &&
 			tagIdToName.size > 0 &&
@@ -407,8 +419,6 @@ export async function syncInstance(
 			let triggeredCount = 0;
 			for (const delta of tagDeltas) {
 				if (delta.itemType !== "movie" && delta.itemType !== "series") continue;
-				// Build the union of changed tag names — added OR removed both
-				// warrant re-evaluating Label Sync rules for that tag.
 				const changedNames = new Set<string>();
 				for (const id of delta.addedTagIds) {
 					const name = tagIdToName.get(id);
@@ -457,7 +467,6 @@ export async function syncInstance(
 			}
 		}
 
-		// Update sync status
 		const durationMs = Date.now() - startTime;
 		await prisma.librarySyncStatus.update({
 			where: { instanceId: instance.id },
@@ -492,7 +501,6 @@ export async function syncInstance(
 		result.durationMs = durationMs;
 		result.error = errorMessage;
 
-		// Update sync status with error
 		await prisma.librarySyncStatus
 			.update({
 				where: { instanceId: instance.id },
