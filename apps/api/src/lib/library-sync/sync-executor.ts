@@ -150,12 +150,11 @@ function extractCacheFields(
 
 /**
  * Builds cache entry create data from a LibraryItem.
- * @param includeData include the full JSON data blob (only needed for tag-delta services)
+ * Always includes the full normalized JSON in `data` for /library response serving.
  */
 function buildCacheCreate(
 	instanceId: string,
 	item: LibraryItem,
-	includeData: boolean,
 ): Omit<Prisma.LibraryCacheCreateInput, "data"> & { data: string } {
 	const arrItemId = typeof item.id === "string" ? Number.parseInt(item.id, 10) : item.id;
 	const fields = extractCacheFields(item);
@@ -165,7 +164,7 @@ function buildCacheCreate(
 		arrItemId,
 		itemType: item.type,
 		...fields,
-		data: includeData ? JSON.stringify(item) : "",
+		data: JSON.stringify(item),
 	};
 }
 
@@ -343,8 +342,8 @@ export async function syncInstance(
 					if (existing) {
 						const updateData: Prisma.LibraryCacheUpdateInput = {
 							...fields,
+							data: JSON.stringify(item),
 							updatedAt: new Date(),
-							...(tagDeltaService ? { data: JSON.stringify(item) } : {}),
 						};
 
 						await tx.libraryCache.update({
@@ -388,7 +387,7 @@ export async function syncInstance(
 						}
 					} else {
 						await tx.libraryCache.create({
-							data: buildCacheCreate(instance.id, item, tagDeltaService),
+							data: buildCacheCreate(instance.id, item),
 						});
 						result.itemsAdded++;
 					}
