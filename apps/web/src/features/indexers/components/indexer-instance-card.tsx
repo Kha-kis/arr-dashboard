@@ -49,7 +49,7 @@ export const IndexerInstanceCard = ({
 	const [incognitoMode] = useIncognitoMode();
 
 	return (
-		<article className="rounded-xl border border-border/30 bg-card/15 overflow-hidden">
+		<article className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-sm overflow-hidden">
 			{/* Slim header */}
 			<header className="flex items-center justify-between px-4 py-3 border-b border-border/20">
 				<div className="flex items-center gap-3">
@@ -81,7 +81,7 @@ export const IndexerInstanceCard = ({
 			{/* Indexer rows */}
 			{indexers.length === 0 ? (
 				<div className="px-4 py-10 text-center">
-					<Globe className="h-8 w-8 mx-auto mb-2 text-muted-foreground/30" />
+					<Globe className="h-8 w-8 mx-auto mb-2 text-muted-foreground/40" />
 					<p className="text-xs text-muted-foreground/50">No indexers configured</p>
 				</div>
 			) : (

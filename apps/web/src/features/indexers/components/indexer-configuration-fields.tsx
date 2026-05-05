@@ -50,10 +50,10 @@ const FieldRow = ({
 
 				{/* Value */}
 				<div className="flex-1 min-w-0 flex items-center gap-2">
-					{sensitive && <Lock className="h-3 w-3 text-muted-foreground/30 shrink-0" />}
+					{sensitive && <Lock className="h-3 w-3 text-muted-foreground/45 shrink-0" />}
 					<p className={`text-[13px] font-medium leading-tight min-w-0 ${masked ? "select-none" : ""}`}>
 						{masked ? (
-							<span className="text-muted-foreground/30 tracking-[0.2em] font-mono text-xs">
+							<span className="text-muted-foreground/45 tracking-[0.2em] font-mono text-xs">
 								{"●".repeat(Math.min(displayValue.length, 20))}
 							</span>
 						) : (
@@ -64,7 +64,7 @@ const FieldRow = ({
 						<button
 							type="button"
 							onClick={handleCopy}
-							className="shrink-0 rounded-md p-1 text-muted-foreground/30 hover:text-foreground hover:bg-card/60 transition-all opacity-0 group-hover:opacity-100"
+							className="shrink-0 rounded-md p-1 text-muted-foreground/45 hover:text-foreground hover:bg-card/60 transition-all opacity-0 group-hover:opacity-100"
 							title={copied ? "Copied!" : "Copy value"}
 						>
 							{copied ? (
@@ -79,7 +79,7 @@ const FieldRow = ({
 
 			{/* Help text — full description below the key-value row */}
 			{field.helpText && (
-				<p className="text-[10px] text-muted-foreground/40 leading-relaxed mt-1 ml-[152px] sm:ml-[192px]">
+				<p className="text-[10px] text-muted-foreground/55 leading-relaxed mt-1 ml-[152px] sm:ml-[192px]">
 					{field.helpText}
 				</p>
 			)}
@@ -116,17 +116,17 @@ export const IndexerConfigurationFields = ({ fields }: { fields: ProwlarrIndexer
 
 	return (
 		<div
-			className="rounded-lg border border-border/20 bg-card/20 p-4 animate-in fade-in duration-300"
+			className="rounded-lg border border-border/20 bg-card/30 backdrop-blur-sm p-4 animate-in fade-in duration-300"
 			style={{ animationDelay: "250ms", animationFillMode: "backwards" }}
 		>
 			{/* Header */}
 			<div className="flex items-center justify-between mb-1">
 				<div className="flex items-center gap-2">
 					<Settings className="h-3.5 w-3.5" style={{ color: themeGradient.from }} />
-					<span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/50">
+					<span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/65">
 						Configuration
 					</span>
-					<span className="text-[10px] text-muted-foreground/30 font-mono">
+					<span className="text-[10px] text-muted-foreground/45 font-mono">
 						{normalFields.length + sensitiveFields.length}
 					</span>
 				</div>
@@ -174,7 +174,7 @@ export const IndexerConfigurationFields = ({ fields }: { fields: ProwlarrIndexer
 			{showSensitive && sensitiveFields.length > 0 && (
 				<div className="mt-2 pt-2 border-t border-border/15 animate-in fade-in slide-in-from-top-1 duration-200">
 					<div className="flex items-center gap-1.5 mb-1 px-0.5">
-						<Lock className="h-2.5 w-2.5 text-muted-foreground/30" />
+						<Lock className="h-2.5 w-2.5 text-muted-foreground/45" />
 						<span className="text-[10px] text-muted-foreground/35">
 							Hover to copy — these values are read-only in the dashboard
 						</span>
