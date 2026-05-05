@@ -43,6 +43,7 @@ export class NotificationService {
 	private retryHandler: RetryHandler;
 	private ruleEngine: RuleEngine | null;
 	private aggregationBuffer: AggregationBuffer | null;
+	private baseUrl: string;
 	private deferredQueue: Array<{ payload: NotificationPayload; deliverAt: number }> = [];
 	private deferFlushTimer: ReturnType<typeof setInterval> | null = null;
 	private static readonly MAX_DEFERRED_QUEUE_SIZE = 200;
@@ -54,6 +55,7 @@ export class NotificationService {
 		logger: NotificationLogger,
 		dedupGate: DedupGate,
 		retryHandler: RetryHandler,
+		baseUrl: string,
 		ruleEngine?: RuleEngine,
 		aggregationBuffer?: AggregationBuffer,
 	) {
@@ -63,6 +65,7 @@ export class NotificationService {
 		this.logger = logger;
 		this.dedupGate = dedupGate;
 		this.retryHandler = retryHandler;
+		this.baseUrl = baseUrl.replace(/\/$/, "");
 		this.ruleEngine = ruleEngine ?? null;
 		this.aggregationBuffer = aggregationBuffer ?? null;
 
@@ -79,7 +82,11 @@ export class NotificationService {
 	}
 
 	/** Queue a notification for delivery after quiet hours end. */
-	private deferNotification(payload: NotificationPayload, deferUntil: string, ruleId: string): void {
+	private deferNotification(
+		payload: NotificationPayload,
+		deferUntil: string,
+		ruleId: string,
+	): void {
 		// Cap queue to prevent unbounded growth
 		if (this.deferredQueue.length >= NotificationService.MAX_DEFERRED_QUEUE_SIZE) {
 			this.logger.warn(
@@ -204,6 +211,12 @@ export class NotificationService {
 				this.logger.debug({ eventType: payload.eventType }, "Notification queued for aggregation");
 				return;
 			}
+		}
+
+		// Resolve relative URLs to absolute so external notification clients
+		// (Telegram, Discord, Pushover, etc.) can generate clickable links
+		if (payload.url) {
+			payload = { ...payload, url: resolveUrl(payload.url, this.baseUrl) };
 		}
 
 		this.logger.info(
@@ -506,4 +519,14 @@ export class NotificationService {
 			}),
 		]);
 	}
+}
+
+/**
+ * Resolve a potentially relative URL against a base URL.
+ * Returns absolute URLs unchanged; resolves relative paths against baseUrl.
+ */
+function resolveUrl(url: string, baseUrl: string): string {
+	if (/^https?:\/\//i.test(url)) return url;
+	if (url.startsWith("/")) return `${baseUrl}${url}`;
+	return `${baseUrl}/${url}`;
 }

@@ -55,6 +55,12 @@ const notificationServicePlugin = fastifyPlugin(
 			await service.notify(digest);
 		});
 
+		// Resolve the public-facing base URL for notification links.
+		// Prefer admin-configured externalUrl so links resolve behind reverse proxies;
+		// fall back to APP_URL env var (defaults to http://localhost:3000).
+		const settings = await app.prisma.systemSettings.findUnique({ where: { id: 1 } });
+		const baseUrl = settings?.externalUrl?.replace(/\/$/, "") ?? app.config.APP_URL;
+
 		service = new NotificationService(
 			app.prisma,
 			app.encryptor,
@@ -62,6 +68,7 @@ const notificationServicePlugin = fastifyPlugin(
 			app.log,
 			dedupGate,
 			retryHandler,
+			baseUrl,
 			ruleEngine,
 			aggregationBuffer,
 		);
