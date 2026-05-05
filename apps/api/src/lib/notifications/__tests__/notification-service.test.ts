@@ -70,6 +70,7 @@ describe("NotificationService", () => {
 			mockLogger,
 			mockDedupGate as any,
 			mockRetryHandler as any,
+			"http://localhost:3000",
 		);
 	});
 
