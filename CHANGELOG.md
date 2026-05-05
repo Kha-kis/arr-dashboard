@@ -5,6 +5,14 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.18.3] - 2026-05-05
+
+### Fixed
+
+- **Notification "View Details" links broken in all external channels.** Notification payloads sent to Telegram, Discord, Pushover, Gotify, Email, etc. contained relative URLs (`/statistics`, `/library`) that external clients could not resolve. URLs are now resolved to absolute form (preferring `SystemSettings.externalUrl`, falling back to `APP_URL`) before dispatch (#430).
+- **Indexer page text hard to read.** Card backgrounds on the indexer page used very low opacity (`bg-card/15-20`) rendering text near-invisible on the light theme. Raised background opacity and fixed hardcoded `text-white` in the pagination component to use theme-aware semantic classes (#428).
+- **Excessive memory usage during Readarr/Lidarr library sync.** Sync was loading the full normalized item array into memory for Readarr/Lidarr services that don't need tag-delta diffing. Now skips the `data` column in cache reads and processes items in batches, reducing peak heap usage. JSON blobs are still written on create/update so `/library` responses stay complete (#427).
+
 ## [2.18.2] - 2026-05-03
 
 **Auto-Tagger — one-click Connect webhook auto-install (issue #422).** A follow-up to the real-time webhook plumbing that shipped in 2.18.0: instead of hand-pasting the URL and `Authorization: Bearer …` header into every Sonarr/Radarr's Connect settings, you can now select your enabled instances inside the Auto-Tagger settings panel and push the canonical webhook to all of them in a single click.
