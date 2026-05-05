@@ -82,11 +82,11 @@ export const Pagination = ({
 	return (
 		<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 			{/* Items info and page size selector */}
-			<div className="flex flex-wrap items-center gap-4 text-sm text-white/70">
+			<div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
 				<span>
-					Showing <span className="font-medium text-white">{startItem}</span> to{" "}
-					<span className="font-medium text-white">{endItem}</span> of{" "}
-					<span className="font-medium text-white">{totalItems}</span> items
+					Showing <span className="font-medium text-foreground">{startItem}</span> to{" "}
+					<span className="font-medium text-foreground">{endItem}</span> of{" "}
+					<span className="font-medium text-foreground">{totalItems}</span> items
 				</span>
 				<div className="flex items-center gap-2">
 					<label htmlFor="page-size" className="text-sm">
@@ -144,7 +144,9 @@ export const Pagination = ({
 						>
 							1
 						</Button>
-						{(pageNumbers[0] ?? 1) > 2 && <span className="px-2 text-white/50">...</span>}
+						{(pageNumbers[0] ?? 1) > 2 && (
+							<span className="px-2 text-muted-foreground/50">...</span>
+						)}
 					</>
 				)}
 
@@ -165,7 +167,7 @@ export const Pagination = ({
 				{showLastPage && (
 					<>
 						{(pageNumbers[pageNumbers.length - 1] ?? totalPages) < totalPages - 1 && (
-							<span className="px-2 text-white/50">...</span>
+							<span className="px-2 text-muted-foreground/50">...</span>
 						)}
 						<Button
 							variant="ghost"

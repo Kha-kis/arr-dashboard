@@ -523,7 +523,7 @@ export const IndexersClient = () => {
 						<div className="flex flex-col gap-3 sm:flex-row sm:items-center">
 							{/* Search */}
 							<div className="relative flex-1">
-								<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40" />
+								<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/55" />
 								<Input
 									placeholder="Search indexers..."
 									value={searchTerm}
@@ -557,7 +557,7 @@ export const IndexersClient = () => {
 											{activeFilterCount}
 										</span>
 									)}
-									<kbd className="hidden sm:inline-flex h-4 items-center rounded border border-border/30 bg-muted/20 px-1 text-[9px] font-mono text-muted-foreground/40">
+									<kbd className="hidden sm:inline-flex h-4 items-center rounded border border-border/30 bg-muted/20 px-1 text-[9px] font-mono text-muted-foreground/55">
 										F
 									</kbd>
 								</button>
@@ -686,7 +686,7 @@ export const IndexersClient = () => {
 						</div>
 					) : (
 						<div className="text-center py-16">
-							<Search className="h-6 w-6 mx-auto mb-2 text-muted-foreground/30" />
+							<Search className="h-6 w-6 mx-auto mb-2 text-muted-foreground/45" />
 							<p className="text-xs text-muted-foreground/50">No indexers match your filters</p>
 						</div>
 					)}

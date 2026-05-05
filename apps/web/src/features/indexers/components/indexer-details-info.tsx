@@ -52,7 +52,7 @@ const StatTile = ({
 				</div>
 			)}
 			<div className="min-w-0">
-				<p className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground/50 leading-none mb-1">
+				<p className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground/60 leading-none mb-1">
 					{label}
 				</p>
 				<p
@@ -91,7 +91,7 @@ const SuccessGauge = ({ rate }: { rate?: number }) => {
 							strokeWidth="4"
 						/>
 					</svg>
-					<span className="absolute text-xs font-medium text-muted-foreground/30">N/A</span>
+					<span className="absolute text-xs font-medium text-muted-foreground/45">N/A</span>
 				</div>
 				<span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground/40">
 					Success Rate
@@ -188,7 +188,7 @@ const PerfMetric = ({
 					{label}
 				</p>
 				<p
-					className={`text-[13px] font-medium leading-tight tabular-nums ${hasValue ? "text-foreground" : "text-muted-foreground/25"}`}
+					className={`text-[13px] font-medium leading-tight tabular-nums ${hasValue ? "text-foreground" : "text-muted-foreground/40"}`}
 				>
 					{hasValue ? value : "N/A"}
 				</p>
@@ -242,7 +242,7 @@ export const IndexerDetailsInfo = ({
 		<div className="space-y-0">
 			{/* Zone 1: Info ribbon */}
 			<div
-				className="rounded-lg border border-border/20 bg-card/20 p-4 animate-in fade-in duration-300"
+				className="rounded-lg border border-border/20 bg-card/30 backdrop-blur-sm p-4 animate-in fade-in duration-300"
 				style={{ animationDelay: "50ms", animationFillMode: "backwards" }}
 			>
 				<div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
@@ -296,7 +296,7 @@ export const IndexerDetailsInfo = ({
 			{/* Zone 2: Performance panel */}
 			{stats && (
 				<div
-					className="mt-3 rounded-lg border border-border/20 bg-card/20 p-4 animate-in fade-in duration-300"
+					className="mt-3 rounded-lg border border-border/20 bg-card/30 backdrop-blur-sm p-4 animate-in fade-in duration-300"
 					style={{ animationDelay: "120ms", animationFillMode: "backwards" }}
 				>
 					<div className="flex items-center gap-1.5 mb-4">

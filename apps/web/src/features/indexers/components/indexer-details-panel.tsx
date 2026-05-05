@@ -239,7 +239,7 @@ export const IndexerDetailsPanel = ({
 					<>
 						{/* Floating action bar */}
 						<div className="flex items-center justify-between gap-3">
-							<div className="flex items-center gap-2 text-[11px] text-muted-foreground/45">
+							<div className="flex items-center gap-2 text-[11px] text-muted-foreground/55">
 								<ChevronDown className="h-3 w-3" />
 								{isEditing ? (
 									<span style={{ color: themeGradient.from }}>Editing configuration</span>

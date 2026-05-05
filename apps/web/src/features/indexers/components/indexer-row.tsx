@@ -119,7 +119,7 @@ const HealthMiniBar = ({
 				</span>
 			)}
 			{/* Last checked */}
-			{lastCheck && <span className="text-muted-foreground/50">{lastCheck}</span>}
+			{lastCheck && <span className="text-muted-foreground/65">{lastCheck}</span>}
 		</div>
 	);
 };
@@ -278,7 +278,7 @@ export const IndexerRow = ({
 
 					{/* Priority badge — only when non-default */}
 					{typeof indexer.priority === "number" && indexer.priority > 0 && (
-						<span className="text-[10px] font-mono text-muted-foreground/50 shrink-0">
+						<span className="text-[10px] font-mono text-muted-foreground/65 shrink-0">
 							P{indexer.priority}
 						</span>
 					)}
@@ -313,7 +313,7 @@ export const IndexerRow = ({
 
 					{/* Expand chevron */}
 					<ChevronRight
-						className={`h-4 w-4 text-muted-foreground/40 transition-transform duration-200 ${
+						className={`h-4 w-4 text-muted-foreground/55 transition-transform duration-200 ${
 							expanded ? "rotate-90" : "group-hover:text-muted-foreground"
 						}`}
 					/>
