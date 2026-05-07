@@ -607,3 +607,121 @@ describe("executeAutoTagRule (orchestration)", () => {
 		expect(arrClient.movie.update).toHaveBeenCalledTimes(1);
 	});
 });
+
+describe("executeAutoTagRule (cursor pagination — v2.18.4 OOM fix)", () => {
+	beforeEach(async () => {
+		mockState.evaluateReason = "matched";
+		mockState.evaluateCalls = 0;
+		mockState.buildContextThrows = false;
+
+		const evalMod = await import("../../library-cleanup/rule-evaluators.js");
+		(evalMod.evaluateSingleCondition as ReturnType<typeof vi.fn>).mockImplementation(() => {
+			mockState.evaluateCalls++;
+			return mockState.evaluateReason;
+		});
+	});
+
+	/**
+	 * Pagination contract: when libraryCache returns a full batch (500 rows),
+	 * `executeAutoTagRule` must continue paging via cursor until a short batch
+	 * tells it to stop. Mocks return 500 rows for the first call and a
+	 * 1-row tail for the second; we assert both batches were processed and
+	 * the cursor was advanced (skip:1, cursor:{id:<lastIdOfBatch1>}).
+	 */
+	it("paginates libraryCache via cursor and continues until a short batch terminates the loop", async () => {
+		const arrClient = makeArrClient();
+		const BATCH_SIZE = 500;
+
+		// Build a batch of 500 cache items + a 1-item tail.
+		const firstBatch = Array.from({ length: BATCH_SIZE }, (_, i) =>
+			makeCacheItem({ id: `li-${i}`, arrItemId: 1000 + i, itemType: "movie" }),
+		);
+		const tail = [makeCacheItem({ id: `li-tail`, arrItemId: 9999, itemType: "movie" })];
+
+		const findManySpy = vi.fn().mockResolvedValueOnce(firstBatch).mockResolvedValueOnce(tail);
+
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([makeInstance()]) },
+			libraryCache: { findMany: findManySpy },
+		};
+		const arrClientFactory = { create: vi.fn().mockReturnValue(arrClient) };
+
+		const result = await executeAutoTagRule({
+			rule: makeRule(),
+			prisma: prisma as never,
+			arrClientFactory: arrClientFactory as never,
+			encryptor: {} as never,
+			log,
+		});
+
+		// Two findMany calls — initial + cursor follow-up.
+		expect(findManySpy).toHaveBeenCalledTimes(2);
+
+		// First call has no cursor; second call carries the last id from batch 1
+		// and the skip:1 hop required by Prisma cursor pagination.
+		const firstCall = findManySpy.mock.calls[0]?.[0];
+		const secondCall = findManySpy.mock.calls[1]?.[0];
+		expect(firstCall).toMatchObject({ take: BATCH_SIZE, orderBy: { id: "asc" } });
+		expect(firstCall).not.toHaveProperty("cursor");
+		expect(secondCall).toMatchObject({
+			take: BATCH_SIZE,
+			orderBy: { id: "asc" },
+			skip: 1,
+			cursor: { id: `li-${BATCH_SIZE - 1}` },
+		});
+
+		// totalScanned must aggregate across batches (501), and every matched
+		// item must have triggered a tag-write.
+		expect(result.totals.itemsScanned).toBe(BATCH_SIZE + 1);
+		expect(result.totals.itemsMatched).toBe(BATCH_SIZE + 1);
+		expect(arrClient.movie.update).toHaveBeenCalledTimes(BATCH_SIZE + 1);
+	});
+
+	it("stops after the first batch when it returns fewer than BATCH_SIZE rows (no extra fetch)", async () => {
+		const arrClient = makeArrClient();
+		const findManySpy = vi
+			.fn()
+			.mockResolvedValueOnce([makeCacheItem({ id: "li-1", arrItemId: 100, itemType: "movie" })]);
+
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([makeInstance()]) },
+			libraryCache: { findMany: findManySpy },
+		};
+		const arrClientFactory = { create: vi.fn().mockReturnValue(arrClient) };
+
+		const result = await executeAutoTagRule({
+			rule: makeRule(),
+			prisma: prisma as never,
+			arrClientFactory: arrClientFactory as never,
+			encryptor: {} as never,
+			log,
+		});
+
+		// One short batch ends the loop — no second findMany call.
+		expect(findManySpy).toHaveBeenCalledTimes(1);
+		expect(result.totals.itemsScanned).toBe(1);
+	});
+
+	it("returns scanned: 0 when the first batch is empty (no instances or empty cache)", async () => {
+		const arrClient = makeArrClient();
+		const findManySpy = vi.fn().mockResolvedValueOnce([]);
+
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([makeInstance()]) },
+			libraryCache: { findMany: findManySpy },
+		};
+		const arrClientFactory = { create: vi.fn().mockReturnValue(arrClient) };
+
+		const result = await executeAutoTagRule({
+			rule: makeRule(),
+			prisma: prisma as never,
+			arrClientFactory: arrClientFactory as never,
+			encryptor: {} as never,
+			log,
+		});
+
+		expect(findManySpy).toHaveBeenCalledTimes(1);
+		expect(result.totals.itemsScanned).toBe(0);
+		expect(result.totals.itemsMatched).toBe(0);
+	});
+});

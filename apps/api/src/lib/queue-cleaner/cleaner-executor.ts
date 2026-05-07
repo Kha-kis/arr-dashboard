@@ -14,6 +14,7 @@ import { loggers } from "../logger.js";
 import type { QueueCleanerConfig, ServiceInstance } from "../prisma.js";
 import { delay } from "../utils/delay.js";
 import { getErrorMessage } from "../utils/error-message.js";
+import { validateAndCollect } from "../validation/validate-batch.js";
 import { attemptAutoImport, evaluateAutoImportEligibility } from "./auto-import-handler.js";
 import { calculateQueueSummary, generateDetailedReason } from "./cleaner-formatters.js";
 import {
@@ -26,18 +27,17 @@ import {
 	type WhitelistPattern,
 } from "./constants.js";
 import {
+	checkWhitelist,
+	collectStatusTexts,
+	isFutureEpisode,
+	parseDate,
 	type RawQueueItem,
 	rawQueueItemSchema,
-	parseDate,
-	collectStatusTexts,
-	checkWhitelist,
-	isFutureEpisode,
 } from "./queue-item-utils.js";
-import { validateAndCollect } from "../validation/validate-batch.js";
 import {
 	evaluateQueueItem,
-	shouldSkipByTagFilter,
 	shouldSkipByProfileFilter,
+	shouldSkipByTagFilter,
 } from "./rule-evaluators.js";
 
 const log = loggers.queueCleaner;
