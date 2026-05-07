@@ -72,10 +72,11 @@ function makeRealisticDetailsBlob(seed: number): string {
 		let testDbPath: string;
 
 		beforeAll(async () => {
-			testBackupsDir = path.join(os.tmpdir(), `backup-heap-${Date.now()}`);
+			// fs.mkdtemp atomically creates a unique directory with mode 0o700 —
+			// avoids the symlink race that path.join+mkdir is vulnerable to (CWE-377/378).
+			testBackupsDir = await fs.mkdtemp(path.join(os.tmpdir(), "backup-heap-"));
 			testSecretsPath = path.join(testBackupsDir, "secrets.json");
 			testDbPath = path.join(testBackupsDir, "heap-test.db");
-			await fs.mkdir(testBackupsDir, { recursive: true });
 
 			// Copy the pre-seeded test DB (which has the schema applied) to a
 			// dedicated heap-test DB file so we don't pollute test-integration.db

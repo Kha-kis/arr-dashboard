@@ -422,8 +422,9 @@ describe("BackupService - createBackup type-based defaulting (Unit)", () => {
 		vi.resetModules();
 		const { BackupService } = await import("../backup-service.js");
 
-		const tempDir = path.join(os.tmpdir(), `bs-default-test-${Date.now()}`);
-		await fs.mkdir(tempDir, { recursive: true });
+		// fs.mkdtemp atomically creates a unique directory with mode 0o700 —
+		// avoids the symlink race that path.join+mkdir is vulnerable to (CWE-377/378).
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "bs-default-test-"));
 		const secretsPath = path.join(tempDir, "secrets.json");
 		await fs.writeFile(secretsPath, JSON.stringify({ backupPassword: "x".repeat(32) }));
 
@@ -465,8 +466,9 @@ describe("BackupService - createBackup type-based defaulting (Unit)", () => {
 		vi.resetModules();
 		const { BackupService } = await import("../backup-service.js");
 
-		const tempDir = path.join(os.tmpdir(), `bs-default-test-${Date.now()}`);
-		await fs.mkdir(tempDir, { recursive: true });
+		// fs.mkdtemp atomically creates a unique directory with mode 0o700 —
+		// avoids the symlink race that path.join+mkdir is vulnerable to (CWE-377/378).
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "bs-default-test-"));
 		const secretsPath = path.join(tempDir, "secrets.json");
 		await fs.writeFile(secretsPath, JSON.stringify({ backupPassword: "x".repeat(32) }));
 
@@ -508,8 +510,9 @@ describe("BackupService - createBackup type-based defaulting (Unit)", () => {
 		vi.resetModules();
 		const { BackupService } = await import("../backup-service.js");
 
-		const tempDir = path.join(os.tmpdir(), `bs-default-test-${Date.now()}`);
-		await fs.mkdir(tempDir, { recursive: true });
+		// fs.mkdtemp atomically creates a unique directory with mode 0o700 —
+		// avoids the symlink race that path.join+mkdir is vulnerable to (CWE-377/378).
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "bs-default-test-"));
 		const secretsPath = path.join(tempDir, "secrets.json");
 		await fs.writeFile(secretsPath, JSON.stringify({ backupPassword: "x".repeat(32) }));
 
@@ -549,8 +552,9 @@ describe("BackupService - createBackup type-based defaulting (Unit)", () => {
 		vi.resetModules();
 		const { BackupService } = await import("../backup-service.js");
 
-		const tempDir = path.join(os.tmpdir(), `bs-default-test-${Date.now()}`);
-		await fs.mkdir(tempDir, { recursive: true });
+		// fs.mkdtemp atomically creates a unique directory with mode 0o700 —
+		// avoids the symlink race that path.join+mkdir is vulnerable to (CWE-377/378).
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "bs-default-test-"));
 		const secretsPath = path.join(tempDir, "secrets.json");
 		await fs.writeFile(secretsPath, JSON.stringify({ backupPassword: "x".repeat(32) }));
 
