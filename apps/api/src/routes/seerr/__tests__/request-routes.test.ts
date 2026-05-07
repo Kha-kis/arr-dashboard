@@ -349,15 +349,22 @@ describe("POST /:instanceId/:requestId/approve", () => {
 		expect(mockClient.approveRequest).not.toHaveBeenCalled();
 	});
 
-	it("rejects serverId of 0 (Jellyseerr server IDs are positive)", async () => {
+	it("accepts serverId of 0 (Jellyseerr uses 0-based server ids)", async () => {
+		mockClient.getRequest.mockResolvedValueOnce({ id: 1, type: "movie" });
+		mockClient.updateRequest.mockResolvedValueOnce({ id: 1 });
+		mockClient.approveRequest.mockResolvedValueOnce({ id: 1, status: 2 });
+
 		const res = await app.inject({
 			method: "POST",
 			url: "/api/seerr/requests/inst-1/1/approve",
 			payload: { serverId: 0 },
 		});
 
-		expect(res.statusCode).toBe(400);
-		expect(mockClient.approveRequest).not.toHaveBeenCalled();
+		expect(res.statusCode).toBe(200);
+		expect(mockClient.updateRequest).toHaveBeenCalledWith(1, {
+			mediaType: "movie",
+			serverId: 0,
+		});
 	});
 
 	it("treats empty body object as no overrides", async () => {
@@ -373,6 +380,50 @@ describe("POST /:instanceId/:requestId/approve", () => {
 		expect(mockClient.updateRequest).not.toHaveBeenCalled();
 		expect(mockClient.getRequest).not.toHaveBeenCalled();
 		expect(mockClient.approveRequest).toHaveBeenCalledWith(1);
+	});
+
+	it("includes seasons in updateRequest payload when overriding a TV request (Jellyseerr requires it)", async () => {
+		mockClient.getRequest.mockResolvedValueOnce({
+			id: 1,
+			type: "tv",
+			seasons: [
+				{ id: 100, seasonNumber: 1, status: 1 },
+				{ id: 101, seasonNumber: 2, status: 1 },
+			],
+		});
+		mockClient.updateRequest.mockResolvedValueOnce({ id: 1 });
+		mockClient.approveRequest.mockResolvedValueOnce({ id: 1, status: 2 });
+
+		const res = await app.inject({
+			method: "POST",
+			url: "/api/seerr/requests/inst-1/1/approve",
+			payload: { profileId: 15 },
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(mockClient.updateRequest).toHaveBeenCalledWith(1, {
+			mediaType: "tv",
+			profileId: 15,
+			seasons: [1, 2],
+		});
+	});
+
+	it("does not include seasons in updateRequest payload for movie requests", async () => {
+		mockClient.getRequest.mockResolvedValueOnce({ id: 1, type: "movie", seasons: [] });
+		mockClient.updateRequest.mockResolvedValueOnce({ id: 1 });
+		mockClient.approveRequest.mockResolvedValueOnce({ id: 1, status: 2 });
+
+		const res = await app.inject({
+			method: "POST",
+			url: "/api/seerr/requests/inst-1/1/approve",
+			payload: { profileId: 9 },
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(mockClient.updateRequest).toHaveBeenCalledWith(1, {
+			mediaType: "movie",
+			profileId: 9,
+		});
 	});
 
 	it("aborts approval and logs failure when getRequest fails before override PUT", async () => {

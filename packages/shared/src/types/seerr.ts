@@ -417,6 +417,10 @@ export interface SeerrCreateRequestPayload {
  * Payload for PUT /api/v1/request/:id — admin overrides applied before approval.
  * Jellyseerr/Overseerr require `mediaType` so the server knows which *arr backend to target.
  *
+ * For TV requests Jellyseerr also requires `seasons` (array of season numbers); omitting
+ * them produces a 500 "Missing seasons" response. The approve route re-uses the existing
+ * request's seasons when calling this so the override doesn't change what was requested.
+ *
  * `userId` (Jellyseerr-side requester reassignment) is part of the upstream shape but
  * intentionally not exposed by the dashboard's approve route — see request-routes.ts.
  */
@@ -427,6 +431,7 @@ export interface SeerrUpdateRequestPayload {
 	rootFolder?: string;
 	languageProfileId?: number;
 	tags?: number[];
+	seasons?: number[];
 	userId?: number;
 }
 
@@ -482,7 +487,8 @@ export interface SeerrServerWithDetails {
 	server: SeerrServiceServer;
 	profiles: SeerrQualityProfile[];
 	rootFolders: SeerrRootFolder[];
-	languageProfiles?: { id: number; name: string }[];
+	/** Jellyseerr returns `null` (not undefined) for Sonarr servers without language profiles. */
+	languageProfiles?: { id: number; name: string }[] | null;
 	tags: SeerrTag[];
 }
 
@@ -873,7 +879,9 @@ export const seerrServerWithDetailsSchema = z.looseObject({
 	server: seerrServiceServerSchema,
 	profiles: z.array(seerrQualityProfileSchema),
 	rootFolders: z.array(seerrRootFolderSchema),
-	languageProfiles: z.array(z.looseObject({ id: z.number(), name: z.string() })).optional(),
+	// Jellyseerr returns `null` for Sonarr servers without language profiles configured —
+	// `.nullish()` accepts both `null` and `undefined`/missing.
+	languageProfiles: z.array(z.looseObject({ id: z.number(), name: z.string() })).nullish(),
 	tags: z.array(seerrTagSchema),
 });
 

@@ -4,7 +4,7 @@
  * Endpoints for managing media requests: list, approve, decline, delete, retry.
  */
 
-import type { SeerrAttentionItem } from "@arr/shared";
+import type { SeerrAttentionItem, SeerrUpdateRequestPayload } from "@arr/shared";
 import { SEERR_MEDIA_STATUS, SEERR_REQUEST_STATUS } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
@@ -41,7 +41,8 @@ const requestIdParams = z.object({
  */
 const approveBody = z
 	.object({
-		serverId: z.number().int().positive().optional(),
+		// serverId can be 0 — Jellyseerr/Overseerr use 0-based ids for the first registered server
+		serverId: z.number().int().nonnegative().optional(),
 		profileId: z.number().int().positive().optional(),
 		rootFolder: z.string().min(1).optional(),
 		languageProfileId: z.number().int().positive().optional(),
@@ -166,11 +167,18 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 		try {
 			if (hasOverrides) {
 				// Jellyseerr PUT requires mediaType — fetch the request to learn it.
+				// For TV it also requires `seasons` (array of season numbers) — without it
+				// Jellyseerr returns 500 "Missing seasons". We pass through the existing
+				// request's seasons so overrides don't accidentally narrow what was requested.
 				const existing = await client.getRequest(requestId);
-				await client.updateRequest(requestId, {
+				const updatePayload: SeerrUpdateRequestPayload = {
 					mediaType: existing.type,
 					...overrides,
-				});
+				};
+				if (existing.type === "tv" && existing.seasons && existing.seasons.length > 0) {
+					updatePayload.seasons = existing.seasons.map((s) => s.seasonNumber);
+				}
+				await client.updateRequest(requestId, updatePayload);
 			}
 			const result = await client.approveRequest(requestId);
 			logSeerrAction(app, request.log, {
