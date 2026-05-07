@@ -10,7 +10,7 @@
  * Supports three actions per rule: delete, unmonitor, delete_files.
  */
 
-import { ruleDataSourceMap, type DataSourceDependency } from "@arr/shared";
+import { type DataSourceDependency, ruleDataSourceMap } from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { LibraryCleanupConfig, LibraryCleanupRule, ServiceInstance } from "../prisma.js";
 import { SeerrClient } from "../seerr/seerr-client.js";
@@ -24,10 +24,10 @@ import type {
 	DetailAction,
 	EvalContext,
 	FlaggedItem,
-	PlexSectionWatchInfo,
-	PlexEpisodeMap,
-	PlexWatchMap,
 	JellyfinWatchMap,
+	PlexEpisodeMap,
+	PlexSectionWatchInfo,
+	PlexWatchMap,
 	PrefetchResults,
 	SeerrRequestInfo,
 	SeerrRequestMap,
@@ -487,26 +487,55 @@ async function prefetchTautulliData(
 	if (!tautulliInstance) return undefined;
 
 	try {
-		const cacheRows = await prisma.tautulliCache.findMany({
-			where: { instanceId: tautulliInstance.id },
-		});
-
 		const map: TautulliWatchMap = new Map();
-		for (const row of cacheRows) {
-			try {
-				const key = `${row.mediaType}:${row.tmdbId}`;
-				const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
-				map.set(key, {
-					lastWatchedAt: row.lastWatchedAt,
-					watchCount: row.watchCount,
-					watchedByUsers,
-				});
-			} catch (rowErr) {
-				log.warn({ err: rowErr, tmdbId: row.tmdbId }, "Skipping Tautulli cache row with bad data");
+		let cursor: string | undefined;
+		let totalRows = 0;
+
+		// Cursor-paginate to bound peak heap.
+		while (true) {
+			const batch = await prisma.tautulliCache.findMany({
+				where: { instanceId: tautulliInstance.id },
+				select: {
+					id: true,
+					tmdbId: true,
+					mediaType: true,
+					lastWatchedAt: true,
+					watchCount: true,
+					watchedByUsers: true,
+				},
+				take: CACHE_QUERY_BATCH_SIZE,
+				...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+				orderBy: { id: "asc" },
+			});
+
+			if (batch.length === 0) break;
+			totalRows += batch.length;
+
+			for (const row of batch) {
+				try {
+					const key = `${row.mediaType}:${row.tmdbId}`;
+					const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
+					map.set(key, {
+						lastWatchedAt: row.lastWatchedAt,
+						watchCount: row.watchCount,
+						watchedByUsers,
+					});
+				} catch (rowErr) {
+					log.warn(
+						{ err: rowErr, tmdbId: row.tmdbId },
+						"Skipping Tautulli cache row with bad data",
+					);
+				}
 			}
+
+			cursor = batch[batch.length - 1]!.id;
+			if (batch.length < CACHE_QUERY_BATCH_SIZE) break;
 		}
 
-		log.info({ totalEntries: map.size }, "Tautulli watch data prefetch complete for cleanup");
+		log.info(
+			{ totalRows, totalEntries: map.size },
+			"Tautulli watch data prefetch complete for cleanup",
+		);
 		return map;
 	} catch (error) {
 		log.warn(
@@ -524,7 +553,7 @@ async function prefetchTautulliData(
  * Also includes collections and labels from the PlexCache table.
  * Returns undefined if no Plex instance is configured.
  */
-async function prefetchPlexData(
+export async function prefetchPlexData(
 	deps: CleanupExecutorDeps,
 	userId: string,
 ): Promise<PlexWatchMap | undefined> {
@@ -538,85 +567,120 @@ async function prefetchPlexData(
 	if (plexInstances.length === 0) return undefined;
 
 	try {
-		const cacheRows = await prisma.plexCache.findMany({
-			where: { instanceId: { in: plexInstances.map((i) => i.id) } },
-		});
-
 		const map: PlexWatchMap = new Map();
-		for (const row of cacheRows) {
-			try {
-				// Key is mediaType:tmdbId (aggregating across sections)
-				const key = `${row.mediaType}:${row.tmdbId}`;
-				const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
-				const collections = (safeJsonParse(row.collections) as string[]) ?? [];
-				const labels = (safeJsonParse(row.labels) as string[]) ?? [];
+		const instanceIds = plexInstances.map((i) => i.id);
+		let cursor: string | undefined;
+		let totalRows = 0;
 
-				const sectionInfo: PlexSectionWatchInfo = {
-					sectionId: row.sectionId,
-					sectionTitle: row.sectionTitle,
-					lastWatchedAt: row.lastWatchedAt,
-					watchCount: row.watchCount,
-					watchedByUsers,
-					onDeck: row.onDeck,
-					userRating: row.userRating,
-					collections,
-					labels,
-					addedAt: row.addedAt,
-				};
+		// Cursor-paginate to bound peak heap. Project only columns the watch-map
+		// builder reads — skipping ratingKey/thumb/title and the per-row instanceId.
+		while (true) {
+			const batch = await prisma.plexCache.findMany({
+				where: { instanceId: { in: instanceIds } },
+				select: {
+					id: true,
+					tmdbId: true,
+					mediaType: true,
+					sectionId: true,
+					sectionTitle: true,
+					lastWatchedAt: true,
+					watchCount: true,
+					watchedByUsers: true,
+					onDeck: true,
+					userRating: true,
+					collections: true,
+					labels: true,
+					addedAt: true,
+				},
+				take: CACHE_QUERY_BATCH_SIZE,
+				...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+				orderBy: { id: "asc" },
+			});
 
-				const existing = map.get(key);
-				if (existing) {
-					existing.sections.push(sectionInfo);
-					// Update aggregates: merge across sections
-					if (
-						row.lastWatchedAt &&
-						(!existing.lastWatchedAt || row.lastWatchedAt > existing.lastWatchedAt)
-					) {
-						existing.lastWatchedAt = row.lastWatchedAt;
-					}
-					existing.watchCount += row.watchCount;
-					for (const user of watchedByUsers) {
-						if (!existing.watchedByUsers.includes(user)) {
-							existing.watchedByUsers.push(user);
-						}
-					}
-					existing.onDeck = existing.onDeck || row.onDeck;
-					if (row.userRating != null) {
-						existing.userRating =
-							existing.userRating != null
-								? Math.max(existing.userRating, row.userRating)
-								: row.userRating;
-					}
-					// Merge collections and labels
-					for (const c of collections) {
-						if (!existing.collections.includes(c)) existing.collections.push(c);
-					}
-					for (const l of labels) {
-						if (!existing.labels.includes(l)) existing.labels.push(l);
-					}
-					// Merge addedAt: take earliest (first appearance in any library)
-					if (row.addedAt && (!existing.addedAt || row.addedAt < existing.addedAt)) {
-						existing.addedAt = row.addedAt;
-					}
-				} else {
-					map.set(key, {
+			if (batch.length === 0) break;
+			totalRows += batch.length;
+
+			for (const row of batch) {
+				try {
+					// Key is mediaType:tmdbId (aggregating across sections)
+					const key = `${row.mediaType}:${row.tmdbId}`;
+					const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
+					const collections = (safeJsonParse(row.collections) as string[]) ?? [];
+					const labels = (safeJsonParse(row.labels) as string[]) ?? [];
+
+					const sectionInfo: PlexSectionWatchInfo = {
+						sectionId: row.sectionId,
+						sectionTitle: row.sectionTitle,
 						lastWatchedAt: row.lastWatchedAt,
 						watchCount: row.watchCount,
-						watchedByUsers: [...watchedByUsers],
+						watchedByUsers,
 						onDeck: row.onDeck,
 						userRating: row.userRating,
-						collections: [...collections],
-						labels: [...labels],
+						collections,
+						labels,
 						addedAt: row.addedAt,
-						sections: [sectionInfo],
-					});
+					};
+
+					const existing = map.get(key);
+					if (existing) {
+						existing.sections.push(sectionInfo);
+						// Update aggregates: merge across sections
+						if (
+							row.lastWatchedAt &&
+							(!existing.lastWatchedAt || row.lastWatchedAt > existing.lastWatchedAt)
+						) {
+							existing.lastWatchedAt = row.lastWatchedAt;
+						}
+						existing.watchCount += row.watchCount;
+						for (const user of watchedByUsers) {
+							if (!existing.watchedByUsers.includes(user)) {
+								existing.watchedByUsers.push(user);
+							}
+						}
+						existing.onDeck = existing.onDeck || row.onDeck;
+						if (row.userRating != null) {
+							existing.userRating =
+								existing.userRating != null
+									? Math.max(existing.userRating, row.userRating)
+									: row.userRating;
+						}
+						// Merge collections and labels
+						for (const c of collections) {
+							if (!existing.collections.includes(c)) existing.collections.push(c);
+						}
+						for (const l of labels) {
+							if (!existing.labels.includes(l)) existing.labels.push(l);
+						}
+						// Merge addedAt: take earliest (first appearance in any library)
+						if (row.addedAt && (!existing.addedAt || row.addedAt < existing.addedAt)) {
+							existing.addedAt = row.addedAt;
+						}
+					} else {
+						map.set(key, {
+							lastWatchedAt: row.lastWatchedAt,
+							watchCount: row.watchCount,
+							watchedByUsers: [...watchedByUsers],
+							onDeck: row.onDeck,
+							userRating: row.userRating,
+							collections: [...collections],
+							labels: [...labels],
+							addedAt: row.addedAt,
+							sections: [sectionInfo],
+						});
+					}
+				} catch (rowErr) {
+					log.warn({ err: rowErr, tmdbId: row.tmdbId }, "Skipping Plex cache row with bad data");
 				}
-			} catch (rowErr) {
-				log.warn({ err: rowErr, tmdbId: row.tmdbId }, "Skipping Plex cache row with bad data");
 			}
+
+			cursor = batch[batch.length - 1]!.id;
+			if (batch.length < CACHE_QUERY_BATCH_SIZE) break;
 		}
 
-		log.info({ totalEntries: map.size }, "Plex watch data prefetch complete for cleanup");
+		log.info(
+			{ totalRows, totalEntries: map.size },
+			"Plex watch data prefetch complete for cleanup",
+		);
 		return map;
 	} catch (error) {
 		log.warn(
@@ -645,56 +709,89 @@ async function prefetchJellyfinData(
 	if (jellyfinInstances.length === 0) return undefined;
 
 	try {
-		const cacheRows = await prisma.jellyfinCache.findMany({
-			where: { instanceId: { in: jellyfinInstances.map((i) => i.id) } },
-		});
-
 		const map: JellyfinWatchMap = new Map();
-		for (const row of cacheRows) {
-			try {
-				const key = `${row.mediaType}:${row.tmdbId}`;
-				const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
+		const instanceIds = jellyfinInstances.map((i) => i.id);
+		let cursor: string | undefined;
+		let totalRows = 0;
 
-				const existing = map.get(key);
-				if (existing) {
-					if (
-						row.lastWatchedAt &&
-						(!existing.lastWatchedAt || row.lastWatchedAt > existing.lastWatchedAt)
-					) {
-						existing.lastWatchedAt = row.lastWatchedAt;
-					}
-					existing.watchCount += row.watchCount;
-					for (const user of watchedByUsers) {
-						if (!existing.watchedByUsers.includes(user)) {
-							existing.watchedByUsers.push(user);
+		// Cursor-paginate. Project only columns the watch-map reader uses.
+		while (true) {
+			const batch = await prisma.jellyfinCache.findMany({
+				where: { instanceId: { in: instanceIds } },
+				select: {
+					id: true,
+					tmdbId: true,
+					mediaType: true,
+					lastWatchedAt: true,
+					watchCount: true,
+					watchedByUsers: true,
+					onDeck: true,
+					userRating: true,
+					addedAt: true,
+				},
+				take: CACHE_QUERY_BATCH_SIZE,
+				...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+				orderBy: { id: "asc" },
+			});
+
+			if (batch.length === 0) break;
+			totalRows += batch.length;
+
+			for (const row of batch) {
+				try {
+					const key = `${row.mediaType}:${row.tmdbId}`;
+					const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
+
+					const existing = map.get(key);
+					if (existing) {
+						if (
+							row.lastWatchedAt &&
+							(!existing.lastWatchedAt || row.lastWatchedAt > existing.lastWatchedAt)
+						) {
+							existing.lastWatchedAt = row.lastWatchedAt;
 						}
+						existing.watchCount += row.watchCount;
+						for (const user of watchedByUsers) {
+							if (!existing.watchedByUsers.includes(user)) {
+								existing.watchedByUsers.push(user);
+							}
+						}
+						existing.onDeck = existing.onDeck || row.onDeck;
+						if (row.userRating != null) {
+							existing.userRating =
+								existing.userRating != null
+									? Math.max(existing.userRating, row.userRating)
+									: row.userRating;
+						}
+						if (row.addedAt && (!existing.addedAt || row.addedAt < existing.addedAt)) {
+							existing.addedAt = row.addedAt;
+						}
+					} else {
+						map.set(key, {
+							lastWatchedAt: row.lastWatchedAt,
+							watchCount: row.watchCount,
+							watchedByUsers: [...watchedByUsers],
+							onDeck: row.onDeck,
+							userRating: row.userRating,
+							addedAt: row.addedAt,
+						});
 					}
-					existing.onDeck = existing.onDeck || row.onDeck;
-					if (row.userRating != null) {
-						existing.userRating =
-							existing.userRating != null
-								? Math.max(existing.userRating, row.userRating)
-								: row.userRating;
-					}
-					if (row.addedAt && (!existing.addedAt || row.addedAt < existing.addedAt)) {
-						existing.addedAt = row.addedAt;
-					}
-				} else {
-					map.set(key, {
-						lastWatchedAt: row.lastWatchedAt,
-						watchCount: row.watchCount,
-						watchedByUsers: [...watchedByUsers],
-						onDeck: row.onDeck,
-						userRating: row.userRating,
-						addedAt: row.addedAt,
-					});
+				} catch (rowErr) {
+					log.warn(
+						{ err: rowErr, tmdbId: row.tmdbId },
+						"Skipping Jellyfin cache row with bad data",
+					);
 				}
-			} catch (rowErr) {
-				log.warn({ err: rowErr, tmdbId: row.tmdbId }, "Skipping Jellyfin cache row with bad data");
 			}
+
+			cursor = batch[batch.length - 1]!.id;
+			if (batch.length < CACHE_QUERY_BATCH_SIZE) break;
 		}
 
-		log.info({ totalEntries: map.size }, "Jellyfin watch data prefetch complete for cleanup");
+		log.info(
+			{ totalRows, totalEntries: map.size },
+			"Jellyfin watch data prefetch complete for cleanup",
+		);
 		return map;
 	} catch (error) {
 		log.warn(
@@ -1015,7 +1112,15 @@ async function evaluateAllItems(
 	}
 
 	// Build evaluation context
-	const ctx: EvalContext = { now, seerrMap, tautulliMap, plexMap, plexEpisodeMap, jellyfinMap, jellyfinEpisodeMap };
+	const ctx: EvalContext = {
+		now,
+		seerrMap,
+		tautulliMap,
+		plexMap,
+		plexEpisodeMap,
+		jellyfinMap,
+		jellyfinEpisodeMap,
+	};
 
 	const flagged: FlaggedItem[] = [];
 	let totalEvaluated = 0;

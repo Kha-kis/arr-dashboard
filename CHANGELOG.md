@@ -5,6 +5,24 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.18.4] - 2026-05-07
+
+### Fixed
+
+- **Out-of-memory crash during scheduled backup (closes #427 follow-up).** v2.18.3 fixed Readarr/Lidarr library-sync OOM, but a separate report showed scheduled backups still hitting the 768 MB heap cap. Root cause: `exportDatabase` ran 21 `findMany()` calls in parallel and the encryption chain (`JSON.stringify` → buffer → buffer → base64 → stringify) held ~5–6× row data simultaneously. Fixes:
+  - **Non-manual backups** (scheduled + auto-update) now skip operational history tables (`huntLog`, `huntSearchHistory`, `trashSyncHistory`, `templateDeploymentHistory`) by default — these grow unbounded over time and are not needed to restore working configuration. Manual UI-triggered backups preserve full history. An info log records when exclusion fires so operators can correlate "empty huntLog after restore" to backup type.
+  - When operational history *is* included, each table is capped to the most recent 1000 rows (ordered by timestamp DESC). A `count()` pre-check logs a warn whenever rows are dropped so truncation is never silent.
+  - Tables are fetched sequentially instead of in parallel, and the JSON plaintext is built inside a block scope so V8 can reclaim the row data + JSON string before the base64 ciphertext is allocated, halving peak heap during encryption.
+  - The size estimator now samples up to three rows per table (first / middle / last) and uses the **max** stringified size — single-row sampling silently underestimated when the first row was sparse (e.g., a `huntLog` with `details: null`). Non-serializable rows (`undefined`) no longer crash the estimator.
+  - Envelope JSON is no longer pretty-printed (saves ~33% of envelope-stringify peak).
+- **Heap pressure during library cleanup runs.** `prefetchPlexData`, `prefetchJellyfinData`, and `prefetchTautulliData` were loading every cache row for the user with no column projection — for a 50k-item Plex library, ~200 MB of in-memory objects per cleanup run. All three prefetchers now cursor-paginate at 500 rows and project only the columns the watch-map builder actually reads (skipping `ratingKey`, `thumb`, `title`, etc.). Cross-batch Map merging is preserved (same `tmdbId` appearing in batch 1 and batch 2 still aggregates into one entry with summed watchCount and unioned collections/labels).
+- **Heap pressure during auto-tag rule execution.** `executeAutoTagRule` was loading the entire `libraryCache` for the instance — including the per-row `data` JSON blob — at once. Under webhook concurrency (Connect events firing in rapid succession), this could stack heap pressure and trip the cap. Now cursor-paginates at 500 rows.
+
+### Notes
+
+- This patch went through code review, silent-failure analysis, test-coverage analysis, and security review before release. Two `take`-cap "defensive" limits proposed during initial implementation (`take: 10000` on queueCleanerStrike and `take: 50000` on plexCache) were *removed* before merge — review found the strike cap could silently break strike-threshold semantics by truncating rows non-deterministically (no `orderBy`), and the plexCache cap targeted a non-issue given the small column projection.
+- Test additions: 15 new tests covering the new behaviors — exportDatabase history-exclusion + retention-truncation contract, createBackup type-based defaulting (manual / scheduled / update / explicit override), estimateBackupBytes (sparse-row + multi-sample), auto-tag cursor pagination, and prefetchPlexData cross-batch Map merge.
+
 ## [2.18.3] - 2026-05-05
 
 ### Fixed
