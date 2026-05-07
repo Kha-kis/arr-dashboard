@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.18.4] - 2026-05-07
 
+### Added
+
+- **Admin quality-profile override on Seerr request approval (closes #434).** A new "Options" button next to each pending request opens a profile-picker dialog where admins can pick a non-default quality profile, root folder, or server before approval — useful when a specific requester's content should land in a different profile than the server default (e.g. a "trash shows" profile for a user who watches everything). Jellyseerr/Overseerr stamps the override onto the request before handing off to Sonarr/Radarr. The one-click Approve path is unchanged — overrides are opt-in. Audit log records `{ overridden: true, profileId, rootFolder, ... }` for accountability. Live-tested end-to-end against a real Jellyseerr v3.2.0 + Sonarr instance, which surfaced three real-data bugs that mocked unit tests didn't catch: `serverId: 0` is valid (Jellyseerr is 0-indexed), `languageProfiles: null` is valid (was strict `.optional()`), and TV PUT requires `seasons` (Jellyseerr 500s otherwise). Lazy-loaded modal, dropdowns reuse the existing `/request-options` endpoint (#436).
+
 ### Fixed
 
 - **Out-of-memory crash during scheduled backup (closes #427 follow-up).** v2.18.3 fixed Readarr/Lidarr library-sync OOM, but a separate report showed scheduled backups still hitting the 768 MB heap cap. Root cause: `exportDatabase` ran 21 `findMany()` calls in parallel and the encryption chain (`JSON.stringify` → buffer → buffer → base64 → stringify) held ~5–6× row data simultaneously. Fixes:
