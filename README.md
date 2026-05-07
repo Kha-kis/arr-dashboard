@@ -9,6 +9,8 @@ A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, 
 [![Docker Pulls](https://img.shields.io/docker/pulls/khak1s/arr-dashboard)](https://hub.docker.com/r/khak1s/arr-dashboard)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/khak1s)
+
 ## Screenshots
 
 <details>
