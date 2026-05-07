@@ -773,6 +773,15 @@ model LibraryCache {
   // and items predating download-history retention won't have one.
   infoHash        String?
 
+  // qui torrent state snapshot (Phase 2.1). Normalized vocabulary
+  // (`seeding`, `stalled_dl`, `downloading`, `paused`, `queued`, `checking`,
+  // `moving`, `error`, `unknown`) — never raw qBit strings. Null when no
+  // qui sync has run for this item or no qui instance is configured.
+  // Indexed because filter dropdown queries against it on every page change.
+  torrentState    String?
+  torrentRatio    Float?
+  torrentSyncedAt DateTime?
+
   // Full normalized data as JSON (for API response)
   data            String   // JSON blob of full LibraryItem
 
@@ -795,6 +804,7 @@ model LibraryCache {
   @@index([qualityProfileId])
   @@index([sizeOnDisk])
   @@index([cutoffUnmet])
+  @@index([torrentState])
   @@map("library_cache")
 }
 
@@ -1039,6 +1049,13 @@ model LibraryCleanupConfig {
   dryRunMode        Boolean   @default(true)
   maxRemovalsPerRun Int       @default(50)
   requireApproval   Boolean   @default(false)
+  /// When true, cleanup proposals exclude items currently seeding via qui
+  /// (LibraryCache.torrentState IN ['seeding', 'downloading']). Default false
+  /// for backward compatibility — existing rules don't silently change
+  /// behavior. Operators with qui configured can opt in to honor seeding
+  /// obligations (private trackers, ratio targets, community seeding norms).
+  /// No-op when the user has no qui instance configured.
+  respectQuiSeeding Boolean   @default(false)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 

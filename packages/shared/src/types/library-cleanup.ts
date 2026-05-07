@@ -98,6 +98,13 @@ export const updateCleanupConfigSchema = z.object({
 	dryRunMode: z.boolean().optional(),
 	maxRemovalsPerRun: z.number().int().min(1).max(100).optional(),
 	requireApproval: z.boolean().optional(),
+	/**
+	 * Phase 2.2: when true, cleanup proposals exclude items currently seeding
+	 * via qui (LibraryCache.torrentState IN ['seeding', 'downloading']).
+	 * Default false for backward compatibility — operators with qui can opt in
+	 * to honor seeding obligations. No-op when no qui instance is configured.
+	 */
+	respectQuiSeeding: z.boolean().optional(),
 });
 
 export type CreateCleanupRule = z.infer<typeof createCleanupRuleSchema>;
@@ -153,6 +160,7 @@ export interface CleanupConfigResponse {
 	dryRunMode: boolean;
 	maxRemovalsPerRun: number;
 	requireApproval: boolean;
+	respectQuiSeeding: boolean;
 	rules: CleanupRuleResponse[];
 }
 

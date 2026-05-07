@@ -1,6 +1,6 @@
 "use client";
 
-import type { LibraryService } from "@arr/shared";
+import type { LibraryService, TorrentStateCounts } from "@arr/shared";
 import {
 	ArrowDownAZ,
 	ArrowUpAZ,
@@ -22,7 +22,13 @@ import { getLinuxInstanceName, getLinuxUsername, useIncognitoMode } from "../../
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
 import type { SyncStatus } from "../hooks/use-library-data";
-import type { QualityFilterValue, SortByValue, SortOrderValue } from "../hooks/use-library-filters";
+import {
+	type QualityFilterValue,
+	type SortByValue,
+	type SortOrderValue,
+	TORRENT_STATE_FILTERS,
+	type TorrentStateFilterValue,
+} from "../hooks/use-library-filters";
 
 /**
  * Service filter options for the library
@@ -65,9 +71,11 @@ const QUALITY_FILTERS = [
 ] as const;
 
 /**
- * Sort options for the library
+ * Sort options for the library. The qui-specific `torrentRatio` option is
+ * appended at render time when `hasQui` is true — sorting by ratio without
+ * any qui-correlated rows would just put NULLs everywhere.
  */
-const SORT_OPTIONS: Array<{ value: SortByValue; label: string }> = [
+const BASE_SORT_OPTIONS: Array<{ value: SortByValue; label: string }> = [
 	{ value: "sortTitle", label: "Title" },
 	{ value: "year", label: "Year" },
 	{ value: "sizeOnDisk", label: "Size" },
@@ -98,6 +106,14 @@ interface LibraryHeaderProps {
 	qualityFilter: QualityFilterValue;
 	/** Handler for quality filter changes */
 	onQualityFilterChange: (value: QualityFilterValue) => void;
+	/** Currently selected qui torrent-state filter */
+	torrentStateFilter: TorrentStateFilterValue;
+	/** Handler for torrent-state filter changes */
+	onTorrentStateFilterChange: (value: TorrentStateFilterValue) => void;
+	/** Whether at least one qui instance is configured (gates the dropdown) */
+	hasQui?: boolean;
+	/** Per-state counts surfaced in the dropdown labels */
+	torrentStateCounts?: TorrentStateCounts;
 	/** Current search term */
 	searchTerm: string;
 	/** Handler for search term changes */
@@ -160,6 +176,10 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 	onFileFilterChange,
 	qualityFilter,
 	onQualityFilterChange,
+	torrentStateFilter,
+	onTorrentStateFilterChange,
+	hasQui = false,
+	torrentStateCounts,
 	searchTerm,
 	onSearchTermChange,
 	sortBy,
@@ -414,15 +434,79 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 						<FilterSelect
 							label="Quality"
 							value={qualityFilter}
-							onChange={(value) =>
-								onQualityFilterChange(value as QualityFilterValue)
-							}
+							onChange={(value) => onQualityFilterChange(value as QualityFilterValue)}
 							options={QUALITY_FILTERS.map((option) => ({
 								value: option.value,
 								label: option.label,
 							}))}
 							className="min-w-[140px]"
 						/>
+
+						{/* Torrent state filter (qui) — hidden when no qui instance configured.
+							Also hidden when qui IS configured but every matched-state bucket
+							is empty (only `none` has data) — that means qui was just added
+							and the backfill hasn't covered anything yet. Showing a useless
+							dropdown in that state would confuse new qui users. */}
+						{hasQui &&
+							(() => {
+								const counts = torrentStateCounts;
+								const hasAnyMatchedState = counts
+									? counts.seeding +
+											counts.downloading +
+											counts.stalled_dl +
+											counts.paused +
+											counts.queued +
+											counts.checking +
+											counts.moving +
+											counts.error +
+											counts.unknown >
+										0
+									: false;
+								if (counts && !hasAnyMatchedState) {
+									return (
+										<span
+											className="text-xs italic text-muted-foreground"
+											title="Items haven't been correlated with qui torrents yet — the periodic backfill job is still running. Check back in a few minutes."
+										>
+											Torrent state: correlating…
+										</span>
+									);
+								}
+								// When the "not correlated" bucket is the dominant share, surface
+								// a one-line operator hint so the high count doesn't read as
+								// "the integration is broken." Most common cause is *arr's
+								// history pruning, not anything fixable on the qui side.
+								const noneShare = counts && counts.all > 0 ? (counts.none ?? 0) / counts.all : 0;
+								return (
+									<>
+										<FilterSelect
+											label="Torrent state"
+											value={torrentStateFilter}
+											onChange={(value) =>
+												onTorrentStateFilterChange(value as TorrentStateFilterValue)
+											}
+											options={TORRENT_STATE_FILTERS.map((option) => {
+												const count =
+													option.value === "all"
+														? counts?.all
+														: counts?.[option.value as keyof TorrentStateCounts];
+												const label =
+													typeof count === "number" ? `${option.label} (${count})` : option.label;
+												return { value: option.value, label };
+											})}
+											className="min-w-[200px]"
+										/>
+										{noneShare > 0.3 && (
+											<span
+												className="text-xs italic text-muted-foreground"
+												title="Items can't be correlated when *arr's grab history no longer contains the original downloadId — usually because *arr's history retention is shorter than the item's age. Increase Settings → General → History Retention in Sonarr/Radarr to grow coverage over time."
+											>
+												(uncorrelated items mostly have pruned *arr history)
+											</span>
+										)}
+									</>
+								);
+							})()}
 
 						{/* Watched By filter (Plex) */}
 						{plexUsers.length > 0 && onWatchedByFilterChange && (
@@ -441,13 +525,19 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 							/>
 						)}
 
-						{/* Sort Controls */}
+						{/* Sort Controls — append the qui-only "Torrent ratio" option
+							when qui is configured (NULLs go last regardless of asc/desc) */}
 						<div className="flex items-end gap-2 ml-auto">
 							<FilterSelect
 								label="Sort By"
 								value={sortBy}
 								onChange={(value) => onSortByChange(value as SortByValue)}
-								options={SORT_OPTIONS.map((option) => ({
+								options={[
+									...BASE_SORT_OPTIONS,
+									...(hasQui
+										? [{ value: "torrentRatio" as SortByValue, label: "Torrent ratio" }]
+										: []),
+								].map((option) => ({
 									value: option.value,
 									label: option.label,
 								}))}

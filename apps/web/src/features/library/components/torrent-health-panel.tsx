@@ -1,11 +1,12 @@
 "use client";
 
-import type { LibraryItemType, QuiCrossSeedMatch, QuiTorrent } from "@arr/shared";
+import type { LibraryItemType, QuiCrossSeedMatch } from "@arr/shared";
 import { Activity, AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { GlassmorphicCard } from "../../../components/layout/premium-containers";
 import { useTorrentState } from "../../../hooks/api/useQui";
 import { getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
+import { describeQuiState } from "../lib/qui-display";
 
 interface Props {
 	arrInstanceId: string;
@@ -36,44 +37,6 @@ const formatDuration = (seconds: number): string => {
 	if (days > 0) return `${days}d ${hours}h`;
 	if (hours > 0) return `${hours}h ${minutes}m`;
 	return `${minutes}m`;
-};
-
-const stateLabel = (state: QuiTorrent["state"]): { label: string; tone: string } => {
-	switch (state) {
-		case "uploading":
-		case "forcedUP":
-			return { label: "Seeding", tone: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" };
-		case "stalledUP":
-			return {
-				label: "Seeding (stalled)",
-				tone: "bg-amber-500/15 text-amber-300 border-amber-500/30",
-			};
-		case "downloading":
-		case "forcedDL":
-		case "metaDL":
-			return { label: "Downloading", tone: "bg-sky-500/15 text-sky-300 border-sky-500/30" };
-		case "stalledDL":
-			return {
-				label: "Downloading (stalled)",
-				tone: "bg-amber-500/15 text-amber-300 border-amber-500/30",
-			};
-		case "pausedUP":
-		case "pausedDL":
-			return { label: "Paused", tone: "bg-slate-500/15 text-slate-300 border-slate-500/30" };
-		case "queuedUP":
-		case "queuedDL":
-			return { label: "Queued", tone: "bg-slate-500/15 text-slate-300 border-slate-500/30" };
-		case "checkingUP":
-		case "checkingDL":
-			return { label: "Checking", tone: "bg-violet-500/15 text-violet-300 border-violet-500/30" };
-		case "moving":
-			return { label: "Moving", tone: "bg-violet-500/15 text-violet-300 border-violet-500/30" };
-		case "error":
-		case "missingFiles":
-			return { label: "Error", tone: "bg-rose-500/15 text-rose-300 border-rose-500/30" };
-		default:
-			return { label: "Unknown", tone: "bg-slate-500/15 text-slate-300 border-slate-500/30" };
-	}
 };
 
 const Metric = ({ label, value }: { label: string; value: React.ReactNode }) => (
@@ -175,7 +138,7 @@ export const TorrentHealthPanel = ({ arrInstanceId, arrItemId, itemType }: Props
 
 	const torrent = data.torrent;
 	const siblings = data.siblings ?? [];
-	const { label: stateLbl, tone: stateTone } = stateLabel(torrent.state);
+	const { label: stateLbl, tone: stateTone } = describeQuiState(torrent.state);
 	const displayName = incognitoMode ? getLinuxIsoName(torrent.hash) : torrent.name;
 	const displayInstance = incognitoMode ? "qbit" : (torrent.instanceName ?? data.quiInstanceLabel);
 

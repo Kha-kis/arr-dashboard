@@ -43,6 +43,8 @@ interface LibraryCardProps {
 	plexUrl?: string | null;
 	/** Label for the media server link (e.g., "Plex", "Jellyfin", "Emby") */
 	mediaServerLabel?: string;
+	/** qui torrent state (seeding/ratio) for at-a-glance card pill */
+	quiState?: { state: string; ratio: number } | null;
 }
 
 /**
@@ -117,7 +119,10 @@ interface LibraryContentProps {
 	/** Map of Plex instanceId → machineId for building deep links */
 	plexMachineIdMap?: Map<string, string>;
 	/** Map of Jellyfin/Emby instanceId → server info for building deep links */
-	jellyfinServerMap?: Map<string, { baseUrl: string; service: "jellyfin" | "emby"; serverId: string }>;
+	jellyfinServerMap?: Map<
+		string,
+		{ baseUrl: string; service: "jellyfin" | "emby"; serverId: string }
+	>;
 }
 
 /**
@@ -190,7 +195,13 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 		// Try Jellyfin/Emby
 		if (watchData.jellyfinId && jellyfinServerMap && jellyfinServerMap.size > 0) {
 			const jfServer = jellyfinServerMap.get(watchData.instanceId);
-			if (jfServer) return buildJellyfinUrl(jfServer.baseUrl, watchData.jellyfinId, jfServer.service, jfServer.serverId);
+			if (jfServer)
+				return buildJellyfinUrl(
+					jfServer.baseUrl,
+					watchData.jellyfinId,
+					jfServer.service,
+					jfServer.serverId,
+				);
 		}
 		return null;
 	};
@@ -213,6 +224,21 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 	const getSeriesProgress = (item: LibraryItem) => {
 		if (!seriesProgressMap || item.type !== "series" || !item.remoteIds?.tmdbId) return undefined;
 		return seriesProgressMap[item.remoteIds.tmdbId];
+	};
+
+	/**
+	 * Derive qui torrent state for a library item from the item's own
+	 * `torrentState`/`torrentRatio` fields (stamped by the server from
+	 * `LibraryCache.torrentState`). Returns null when the row hasn't been
+	 * correlated yet — caller skips the badge.
+	 *
+	 * No per-card polling: the same data is already in the page-level
+	 * `/library` response, so this is a synchronous projection over the
+	 * already-loaded item.
+	 */
+	const getQuiState = (item: LibraryItem) => {
+		if (!item.torrentState || item.torrentRatio == null) return null;
+		return { state: item.torrentState, ratio: item.torrentRatio };
 	};
 
 	const allItems = [...grouped.movies, ...grouped.series, ...grouped.artists, ...grouped.authors];
@@ -304,6 +330,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 								seriesProgress={getSeriesProgress(item)}
 								plexUrl={getMediaServerUrl(item)}
 								mediaServerLabel={getMediaServerLabel(item)}
+								quiState={getQuiState(item)}
 							/>
 						);
 					})}
@@ -340,6 +367,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											seriesProgress={getSeriesProgress(item)}
 											plexUrl={getMediaServerUrl(item)}
 											mediaServerLabel={getMediaServerLabel(item)}
+											quiState={getQuiState(item)}
 										/>
 									);
 								})}
@@ -377,6 +405,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											seriesProgress={getSeriesProgress(item)}
 											plexUrl={getMediaServerUrl(item)}
 											mediaServerLabel={getMediaServerLabel(item)}
+											quiState={getQuiState(item)}
 										/>
 									);
 								})}
@@ -415,6 +444,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											seriesProgress={getSeriesProgress(item)}
 											plexUrl={getMediaServerUrl(item)}
 											mediaServerLabel={getMediaServerLabel(item)}
+											quiState={getQuiState(item)}
 										/>
 									);
 								})}
@@ -453,6 +483,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											seriesProgress={getSeriesProgress(item)}
 											plexUrl={getMediaServerUrl(item)}
 											mediaServerLabel={getMediaServerLabel(item)}
+											quiState={getQuiState(item)}
 										/>
 									);
 								})}

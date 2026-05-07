@@ -1,5 +1,7 @@
+import { normalizeTorrentState } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
+import { backfillInfoHashForRow } from "../lib/library-sync/infohash-backfill.js";
 import { createQuiClient } from "../lib/qui/client-factory.js";
 import { listQuiInstances, requireQuiInstance } from "../lib/qui/instance-helpers.js";
 import { validateRequest } from "../lib/utils/validate.js";
@@ -161,17 +163,19 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 			request.body,
 		);
 
-		// v1 supports movies only — series infoHash is per-episode and the
-		// detail modal renders the series, not an episode. Phase 2 work.
-		if (itemType !== "movie") {
+		if (itemType !== "movie" && itemType !== "series") {
 			return reply.send({
 				supported: false,
-				reason: "Per-item torrent health is currently movies-only.",
+				reason: "Per-item torrent health supports movies and series only.",
 			});
 		}
 
+		// SECURITY: scope the cache lookup by userId via the instance relation.
+		// Without this, a caller passing a different user's arrInstanceId could
+		// read that user's `infoHash` AND trigger a write-through `update`
+		// against their row. CLAUDE.md "Critical Rules" #2: ownership scoping.
 		const cached = await app.prisma.libraryCache.findFirst({
-			where: { instanceId: arrInstanceId, arrItemId, itemType: "movie" },
+			where: { instanceId: arrInstanceId, arrItemId, itemType, instance: { userId } },
 		});
 		if (!cached) {
 			return reply.send({
@@ -186,50 +190,18 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 		let infoHash = cached.infoHash;
 
 		// Lazy backfill: when we don't already have the hash, query *arr
-		// history for this specific item. One small request that pays off
-		// forever — subsequent panel opens hit the cache.
+		// history for this specific item. The shared util is also used by
+		// the periodic backfill scheduler so behavior stays in lockstep.
 		if (!infoHash) {
-			const arrInstance = await app.prisma.serviceInstance.findFirst({
-				where: { id: arrInstanceId, userId, service: "RADARR" },
+			infoHash = await backfillInfoHashForRow({
+				app,
+				cacheRowId: cached.id,
+				userId,
+				arrInstanceId,
+				itemType,
+				arrItemId,
+				log: app.log,
 			});
-			if (arrInstance) {
-				try {
-					const response = await app.arrClientFactory.rawRequest(
-						{
-							id: arrInstance.id,
-							baseUrl: arrInstance.baseUrl,
-							encryptedApiKey: arrInstance.encryptedApiKey,
-							encryptionIv: arrInstance.encryptionIv,
-							service: arrInstance.service,
-							label: arrInstance.label,
-						},
-						// No eventType filter — the integer values vary across *arr
-						// versions. We grab the latest records and pick the first one
-						// that carries a downloadId (grab/import both preserve it).
-						`/api/v3/history?movieId=${arrItemId}&pageSize=10&sortKey=date&sortDirection=descending`,
-					);
-					if (response.ok) {
-						const data = (await response.json()) as {
-							records?: Array<{ downloadId?: string }>;
-						};
-						const found = data.records?.find(
-							(r) => typeof r.downloadId === "string" && r.downloadId.length >= 32,
-						);
-						if (found?.downloadId) {
-							infoHash = found.downloadId.toLowerCase();
-							await app.prisma.libraryCache.update({
-								where: { id: cached.id },
-								data: { infoHash },
-							});
-						}
-					}
-				} catch (error) {
-					app.log.warn(
-						{ err: error, arrInstanceId, arrItemId },
-						"infoHash backfill from *arr history failed",
-					);
-				}
-			}
 		}
 
 		if (!infoHash) {
@@ -262,6 +234,38 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 		let siblings: Awaited<ReturnType<typeof client.getCrossSeedMatches>> = [];
 		if (torrent?.instanceId) {
 			siblings = await client.getCrossSeedMatches(torrent.instanceId, infoHash);
+		}
+
+		// Write-through: persist the freshly-fetched state into LibraryCache so
+		// the Library filter sees recently-viewed items immediately, instead of
+		// waiting for the 10-minute periodic sync. Failures here are non-fatal
+		// — the user still gets the live response.
+		if (torrent) {
+			await app.prisma.libraryCache
+				.update({
+					where: { id: cached.id },
+					data: {
+						torrentState: normalizeTorrentState(torrent.state),
+						torrentRatio: Number.isFinite(torrent.ratio) ? torrent.ratio : null,
+						torrentSyncedAt: new Date(),
+					},
+				})
+				.catch((err) => {
+					// Surface the Prisma error code so log analysis can distinguish
+					// expected races (P2025 — row deleted between findFirst+update)
+					// from operational issues (P1001 — DB unreachable, P2002 —
+					// constraint violation indicating schema drift). Use ERROR
+					// level for non-P2025 codes so they're visible in standard
+					// alerting; P2025 stays at warn since it's benign.
+					const code = (err as { code?: string })?.code;
+					const isBenignRace = code === "P2025";
+					const logFn = isBenignRace ? app.log.warn : app.log.error;
+					logFn.call(
+						app.log,
+						{ err, code, libraryCacheId: cached.id, infoHash },
+						"failed to write-through torrent state to LibraryCache",
+					);
+				});
 		}
 
 		return reply.send({

@@ -17,6 +17,12 @@ export interface QuiClient {
 	getTrackers(instanceId: number, hash: string): Promise<QuiTracker[]>;
 	getCrossSeedMatches(instanceId: number, hash: string): Promise<QuiCrossSeedMatch[]>;
 	listInstances(): Promise<QuiInstance[]>;
+	/**
+	 * List every torrent qui knows about, aggregated across every qBit
+	 * instance behind this qui. Used by the periodic state-snapshot job;
+	 * NOT for per-page UI calls (qui returns large payloads here).
+	 */
+	listAllTorrents(): Promise<QuiTorrent[]>;
 	testConnection(): Promise<{ ok: true } | { ok: false; reason: string }>;
 }
 
@@ -181,6 +187,20 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 			);
 			const torrents = data.cross_instance_torrents ?? [];
 			return torrents.find((t) => t.hash.toLowerCase() === hash.toLowerCase()) ?? null;
+		},
+
+		async listAllTorrents() {
+			// Cross-instance endpoint without `search` returns every torrent across
+			// every qBit instance behind this qui. The high `limit` is a guard: if
+			// users have >10k torrents the sync will only catch the first page —
+			// pagination follow-up is tracked for v2 of the sync job.
+			const data = await quiRequest(
+				ctx,
+				"/api/torrents/cross-instance",
+				wireCrossInstanceResponseSchema,
+				{ query: { limit: "10000" } },
+			);
+			return data.cross_instance_torrents ?? [];
 		},
 
 		async getTrackers(instanceId, hash) {

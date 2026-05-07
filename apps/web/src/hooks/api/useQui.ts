@@ -18,6 +18,11 @@ export interface UseTorrentStateArgs {
  * The backend handles all the wiring: cache lookup, lazy *arr-history backfill
  * for the infoHash, qui torrent + cross-seed lookup. The hook is just a thin
  * React Query wrapper.
+ *
+ * Used by the deep `TorrentHealthPanel` modal — single-item, on-demand.
+ * The previous batch variant has been retired: per-card data now ships
+ * inside the page-level `/library` response (`LibraryItem.torrentState` /
+ * `torrentRatio`), so the badge no longer needs to poll per item.
  */
 export const useTorrentState = ({
 	arrInstanceId,

@@ -87,6 +87,11 @@ export const getServicePlaceholders = (service: ServiceType) => {
 				label: "Primary Emby",
 				baseUrl: "http://localhost:8096",
 			};
+		case "qui":
+			return {
+				label: "Primary QUI",
+				baseUrl: "http://localhost:7476",
+			};
 		default:
 			return {
 				label: "Primary Instance",

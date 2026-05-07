@@ -5,6 +5,38 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — qui Integration (Phase 1.4 + 2.1)
+
+### Added
+
+- **qui integration — torrent-layer observability for the *arr stack.** Federated peer integration with [autobrr/qui](https://github.com/autobrr/qui) (qBittorrent UI) — surfaces seed health, ratio, and cross-seed siblings alongside existing *arr/library data. Add a qui instance from Settings → Services (port 7476 by default).
+  - **Per-card Torrent Health badge** on the Library page — at-a-glance pill showing seeding state + ratio for every cached item correlated with a qui torrent.
+  - **Server-side Torrent state filter** on the Library page with per-bucket counts (`Seeding (150) | Stalled download (3) | Not correlated with qui (1962) …`). Pagination is honest under the filter — totals reflect the filtered universe.
+  - **Sort by torrent ratio** added to the Library sort dropdown.
+  - **TorrentHealthPanel modal** on each library item showing full torrent state, cross-seed siblings, tracker health, and ratio details. Uses qui's cross-seed `/local-matches` endpoint internally.
+  - **Pulse Seeding Health domain** with a dedicated status badge in the dashboard footer following the standard 5-state taxonomy (healthy/degraded/offline/configured/disabled).
+  - **Library Cleanup gate** — cleanup proposals respect active seeding obligations and skip items currently uploading.
+
+### Schema
+
+- `LibraryCache` gained three columns:
+  - `torrentState String?` (normalized: `seeding`/`downloading`/`stalled_dl`/`paused`/`queued`/`checking`/`moving`/`error`/`unknown`)
+  - `torrentRatio Float?`
+  - `torrentSyncedAt DateTime?`
+- New index on `torrentState` (powers the filter dropdown query). One new enum value `ServiceType.QUI`.
+- **Migration**: `pnpm --filter @arr/api run db:push` (existing rows start NULL and populate as the backfill scheduler walks them).
+
+### Background jobs
+
+- `qui-torrent-state-sync` (10min interval) — snapshots torrent state from every enabled qui instance into `LibraryCache`. No-op when no qui instance is configured.
+- `infohash-backfill` (catch-up at startup → 6h steady-state) — walks `LibraryCache` rows missing `infoHash`, queries each *arr's `/api/v3/history/movie` or `/api/v3/history/series` to populate the hash, then qui sync correlates. Catch-up loop drains existing libraries in ~5 min for typical sizes; hard-capped at 10k rows per startup.
+
+### Notes for operators
+
+- **Coverage ceiling depends on *arr history retention.** The backfill scheduler can only correlate items whose original grab record is still in *arr's history. Items whose history has been pruned (Sonarr/Radarr default retention is finite) will never match a torrent and will sit in the "Not correlated with qui" bucket forever. To grow coverage, increase Settings → General → History Retention in your *arr instances.
+- **Cross-host setups** — definitive hardlink-based correlation isn't currently possible because qui doesn't expose a path-lookup API. arr-dashboard correlates via *arr-history `downloadId`. An upstream qui feature request (`POST /api/torrents/find-by-content-signature`) would close this gap; status tracked separately.
+- **Privacy mode** — qui's per-instance label and the qBit instance name are anonymized in incognito mode just like other ARR instance labels.
+
 ## [2.18.6] - 2026-05-09
 
 ### Fixed

@@ -74,6 +74,9 @@ export const multiInstanceConfigSchema = z.object({
 	seerr: z.array(serviceInstanceSchema).default([]),
 	tautulli: z.array(serviceInstanceSchema).default([]),
 	plex: z.array(serviceInstanceSchema).default([]),
+	jellyfin: z.array(serviceInstanceSchema).default([]),
+	emby: z.array(serviceInstanceSchema).default([]),
+	qui: z.array(serviceInstanceSchema).default([]),
 });
 
 export type MultiInstanceConfig = z.infer<typeof multiInstanceConfigSchema>;

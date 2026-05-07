@@ -383,6 +383,7 @@ const COMPANION_PORTS: Record<string, number> = {
 	readarr: 8787,
 	jellyfin: 8096,
 	emby: 8096,
+	qui: 7476,
 };
 
 /**

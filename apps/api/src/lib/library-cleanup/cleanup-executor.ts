@@ -1126,12 +1126,26 @@ async function evaluateAllItems(
 	let totalEvaluated = 0;
 	let cursor: string | undefined;
 
+	// Phase 2.2: when `respectQuiSeeding` is enabled in the cleanup config,
+	// exclude items currently seeding/downloading via qui from the candidate
+	// set. This honors seeding obligations (private trackers, ratio targets).
+	// `OR` semantics: items without qui state (NULL) remain candidates — the
+	// gate only filters items qui has actively confirmed are seeding. No-op
+	// for users without qui (their LibraryCache rows all have NULL state).
+	const baseWhere: { instanceId: { in: string[] }; OR?: object[] } = {
+		instanceId: { in: instances.map((i) => i.id) },
+	};
+	if (config.respectQuiSeeding) {
+		baseWhere.OR = [
+			{ torrentState: null },
+			{ torrentState: { notIn: ["seeding", "downloading"] } },
+		];
+	}
+
 	// Paginate through LibraryCache with cursor-based pagination
 	while (true) {
 		const batch: CacheItemForEval[] = await prisma.libraryCache.findMany({
-			where: {
-				instanceId: { in: instances.map((i) => i.id) },
-			},
+			where: baseWhere,
 			select: {
 				id: true,
 				instanceId: true,

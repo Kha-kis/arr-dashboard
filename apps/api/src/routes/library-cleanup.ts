@@ -49,6 +49,7 @@ function serializeConfig(config: Record<string, unknown>) {
 		dryRunMode: config.dryRunMode,
 		maxRemovalsPerRun: config.maxRemovalsPerRun,
 		requireApproval: config.requireApproval,
+		respectQuiSeeding: config.respectQuiSeeding,
 		rules: rules.map(serializeRule),
 	};
 }

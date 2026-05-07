@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import autoTagSchedulerPlugin from "../plugins/auto-tag-scheduler.js";
 import backupSchedulerPlugin from "../plugins/backup-scheduler.js";
 import huntingSchedulerPlugin from "../plugins/hunting-scheduler.js";
+import infoHashBackfillSchedulerPlugin from "../plugins/infohash-backfill-scheduler.js";
 import insightsDigestSchedulerPlugin from "../plugins/insights-digest-scheduler.js";
 import jellyfinCacheSchedulerPlugin from "../plugins/jellyfin-cache-scheduler.js";
 import jellyfinEpisodeCacheSchedulerPlugin from "../plugins/jellyfin-episode-cache-scheduler.js";
@@ -11,6 +12,7 @@ import librarySyncSchedulerPlugin from "../plugins/library-sync-scheduler.js";
 import plexCacheSchedulerPlugin from "../plugins/plex-cache-scheduler.js";
 import plexEpisodeCacheSchedulerPlugin from "../plugins/plex-episode-cache-scheduler.js";
 import queueCleanerSchedulerPlugin from "../plugins/queue-cleaner-scheduler.js";
+import quiTorrentStateSchedulerPlugin from "../plugins/qui-torrent-state-scheduler.js";
 import seerrHealthSchedulerPlugin from "../plugins/seerr-health-scheduler.js";
 import sessionCleanupPlugin from "../plugins/session-cleanup.js";
 import sessionSnapshotSchedulerPlugin from "../plugins/session-snapshot-scheduler.js";
@@ -59,4 +61,12 @@ export function registerSchedulers(app: FastifyInstance): void {
 
 	// Seerr health monitoring
 	app.register(seerrHealthSchedulerPlugin);
+
+	// qui torrent-state snapshot (powers Library page filter + per-card badge)
+	app.register(quiTorrentStateSchedulerPlugin);
+
+	// infoHash backfill (eager — fills LibraryCache.infoHash from *arr history
+	// so the qui sync above has something to correlate against beyond items
+	// the user has actively viewed in the modal)
+	app.register(infoHashBackfillSchedulerPlugin);
 }

@@ -1,9 +1,9 @@
 "use client";
 
+import type { NotificationEventType } from "@arr/shared";
 import { AlertTriangle, ChevronDown, ChevronRight, Loader2, Save } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import type { NotificationEventType } from "@arr/shared";
 import { GradientButton } from "@/components/layout/premium-components";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 import {

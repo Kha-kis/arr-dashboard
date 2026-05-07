@@ -35,6 +35,67 @@ export const quiTorrentStateSchema = z
 export type QuiTorrentState = z.infer<typeof quiTorrentStateSchema>;
 
 /**
+ * Normalized torrent state vocabulary surfaced to operators (Phase 2.1).
+ * Persisted to `LibraryCache.torrentState` and used by the library filter.
+ * Decoupled from qBit's raw vocabulary so the schema doesn't have to evolve
+ * when qBit adds states, and so UX collapses (`stalledUP` → `seeding`) live
+ * in one place.
+ */
+export const normalizedTorrentStateSchema = z.enum([
+	"seeding",
+	"downloading",
+	"stalled_dl",
+	"paused",
+	"queued",
+	"checking",
+	"moving",
+	"error",
+	"unknown",
+]);
+
+export type NormalizedTorrentState = z.infer<typeof normalizedTorrentStateSchema>;
+
+/**
+ * Map raw qBit torrent state to the normalized vocabulary.
+ *
+ * Why `stalledUP` → `seeding`: qBit's `stalledUP` means "complete + in seed
+ * pool, no peer actively pulling right now" — the resting state of any
+ * well-seeded torrent. Calling it "stalled" misleads media-stack operators
+ * into thinking something's broken. `stalledDL`, however, IS a real problem
+ * (download stuck) so it stays distinct as `stalled_dl`.
+ */
+export const normalizeTorrentState = (raw: string | null | undefined): NormalizedTorrentState => {
+	switch (raw) {
+		case "uploading":
+		case "forcedUP":
+		case "stalledUP":
+			return "seeding";
+		case "downloading":
+		case "forcedDL":
+		case "metaDL":
+			return "downloading";
+		case "stalledDL":
+			return "stalled_dl";
+		case "pausedUP":
+		case "pausedDL":
+			return "paused";
+		case "queuedUP":
+		case "queuedDL":
+			return "queued";
+		case "checkingUP":
+		case "checkingDL":
+			return "checking";
+		case "moving":
+			return "moving";
+		case "error":
+		case "missingFiles":
+			return "error";
+		default:
+			return "unknown";
+	}
+};
+
+/**
  * Friendly tracker health, derived in the backend mapper from qBit's int status (0–4).
  * 0 = disabled, 1 = not contacted, 2 = working, 3 = updating, 4 = not working.
  */

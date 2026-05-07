@@ -163,6 +163,7 @@ function makeConfig(overrides: Partial<CleanupConfigResponse> = {}): CleanupConf
 		dryRunMode: false,
 		maxRemovalsPerRun: 50,
 		requireApproval: false,
+		respectQuiSeeding: false,
 		rules: [
 			{
 				id: "rule-1",
@@ -299,9 +300,7 @@ describe("LibraryCleanupClient", () => {
 			// Click cancel in the dialog
 			const cancelButtons = screen.getAllByText("Cancel");
 			// The dialog's Cancel button (not any other Cancel)
-			const dialogCancel = cancelButtons.find((btn) =>
-				btn.closest("[role='dialog']"),
-			);
+			const dialogCancel = cancelButtons.find((btn) => btn.closest("[role='dialog']"));
 			fireEvent.click(dialogCancel!);
 
 			// Dialog should close

@@ -11,8 +11,8 @@ import {
 	AlertTriangle,
 	ArrowUpCircle,
 	Clock,
-	Eye,
 	ExternalLink,
+	Eye,
 	Film,
 	Info,
 	ListTree,
@@ -37,6 +37,7 @@ import { safeOpenUrl } from "../../../lib/utils/url-validation";
 import { formatBytes, formatRuntime } from "../lib/library-utils";
 import { LibraryBadge } from "./library-badge";
 import { PosterImage } from "./poster-image";
+import { TorrentStateBadge } from "./torrent-state-badge";
 
 function formatRelativeTime(isoDate: string): string {
 	const diff = Date.now() - new Date(isoDate).getTime();
@@ -106,6 +107,14 @@ interface LibraryCardProps {
 	plexUrl?: string | null;
 	/** Label for the media server link (e.g., "Plex", "Jellyfin", "Emby") */
 	mediaServerLabel?: string;
+	/**
+	 * qui torrent state for this item — adds an at-a-glance pill in the badge
+	 * cluster. Null when no qui instance is configured, the item type isn't
+	 * supported (artists/authors), or no infoHash has been backfilled yet.
+	 * Sourced from `LibraryItem.torrentState`/`torrentRatio` (cached column
+	 * stamped by the server) — no per-card polling.
+	 */
+	quiState?: { state: string; ratio: number } | null;
 }
 
 /**
@@ -156,6 +165,7 @@ export const LibraryCard = memo(function LibraryCard({
 	seriesProgress,
 	plexUrl,
 	mediaServerLabel,
+	quiState,
 }: LibraryCardProps) {
 	const [incognitoMode] = useIncognitoMode();
 	const monitored = item.monitored ?? false;
@@ -279,7 +289,10 @@ export const LibraryCard = memo(function LibraryCard({
 	}
 
 	const metadata: Array<{ label: string; value: React.ReactNode }> = [
-		{ label: "Instance", value: incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName },
+		{
+			label: "Instance",
+			value: incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName,
+		},
 	];
 
 	if (item.qualityProfileName) {
@@ -322,7 +335,8 @@ export const LibraryCard = memo(function LibraryCard({
 	} else if (item.type === "artist") {
 		const albumCount = item.statistics?.albumCount ?? 0;
 		const trackFileCount = item.statistics?.trackFileCount ?? 0;
-		const monitoredTrackCount = item.statistics?.trackCount ?? item.statistics?.totalTrackCount ?? 0;
+		const monitoredTrackCount =
+			item.statistics?.trackCount ?? item.statistics?.totalTrackCount ?? 0;
 		if (albumCount > 0) {
 			metadata.push({ label: "Albums", value: albumCount });
 		}
@@ -516,6 +530,7 @@ export const LibraryCard = memo(function LibraryCard({
 									)}
 								</>
 							)}
+							{quiState && <TorrentStateBadge state={quiState.state} ratio={quiState.ratio} />}
 							{typeof tmdbRating === "number" && tmdbRating > 0 && (
 								<span
 									className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold"
@@ -565,7 +580,9 @@ export const LibraryCard = memo(function LibraryCard({
 										color: SEMANTIC_COLORS.info.text,
 									}}
 									title={
-										!incognitoMode && watchedByUsers?.length ? `Watched by: ${watchedByUsers.join(", ")}` : undefined
+										!incognitoMode && watchedByUsers?.length
+											? `Watched by: ${watchedByUsers.join(", ")}`
+											: undefined
 									}
 								>
 									<Eye className="h-3 w-3" />

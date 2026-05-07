@@ -4,8 +4,12 @@ import type { LibraryItem } from "@arr/shared";
 import { useSearchParams } from "next/navigation";
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "../../../components/ui";
+import {
+	useJellyfinIdentity,
+	useJellyfinSeriesProgress,
+	useJellyfinWatchEnrichment,
+} from "../../../hooks/api/useJellyfin";
 import { useLibraryMonitorMutation } from "../../../hooks/api/useLibrary";
-import { useJellyfinIdentity, useJellyfinSeriesProgress, useJellyfinWatchEnrichment } from "../../../hooks/api/useJellyfin";
 import { usePlexIdentity, useSeriesProgress, useWatchEnrichment } from "../../../hooks/api/usePlex";
 import { useLibraryEnrichment } from "../../../hooks/api/useSeerr";
 import { fetchLibraryItemByTmdbId } from "../../../lib/api-client/library";
@@ -72,6 +76,7 @@ export const LibraryClient: React.FC = () => {
 		statusFilter: filters.statusFilter,
 		fileFilter: filters.fileFilter,
 		qualityFilter: filters.qualityFilter,
+		torrentStateFilter: filters.torrentStateFilter,
 		sortBy: filters.sortBy,
 		sortOrder: filters.sortOrder,
 		page: filters.page,
@@ -109,7 +114,10 @@ export const LibraryClient: React.FC = () => {
 	// Jellyfin/Emby identity — needed to build "Watch in Jellyfin/Emby" deep links
 	const jellyfinIdentityQuery = useJellyfinIdentity();
 	const jellyfinServerMap = useMemo(() => {
-		const map = new Map<string, { baseUrl: string; service: "jellyfin" | "emby"; serverId: string }>();
+		const map = new Map<
+			string,
+			{ baseUrl: string; service: "jellyfin" | "emby"; serverId: string }
+		>();
 		if (jellyfinIdentityQuery.data) {
 			for (const server of jellyfinIdentityQuery.data) {
 				map.set(server.instanceId, {
@@ -138,6 +146,16 @@ export const LibraryClient: React.FC = () => {
 		if (!plexProgress && !jfProgress) return null;
 		return { ...jfProgress, ...plexProgress };
 	}, [plexProgressQuery.data, jellyfinProgressQuery.data]);
+
+	// hasQui gates UI surfaces that only make sense with a qui instance configured
+	// (Torrent state filter dropdown, per-card badge). Each card now reads its
+	// torrentState/torrentRatio directly from `LibraryItem` (stamped by the server
+	// from the cached LibraryCache column) — no per-card polling.
+	const hasQui = useMemo(
+		() =>
+			Object.values(data.serviceLookup).some((s) => s.service.toLowerCase() === "qui" && s.enabled),
+		[data.serviceLookup],
+	);
 
 	// Notify user if Seerr enrichment fails (one-time per error transition)
 	useEffect(() => {
@@ -245,7 +263,13 @@ export const LibraryClient: React.FC = () => {
 		// Try Jellyfin/Emby
 		if (wd.jellyfinId) {
 			const jfServer = jellyfinServerMap.get(wd.instanceId);
-			if (jfServer) return buildJellyfinUrl(jfServer.baseUrl, wd.jellyfinId, jfServer.service, jfServer.serverId);
+			if (jfServer)
+				return buildJellyfinUrl(
+					jfServer.baseUrl,
+					wd.jellyfinId,
+					jfServer.service,
+					jfServer.serverId,
+				);
 		}
 		return undefined;
 	}, [itemDetail, watchEnrichmentMap, plexMachineIdMap, jellyfinServerMap]);
@@ -263,6 +287,10 @@ export const LibraryClient: React.FC = () => {
 				onFileFilterChange={filters.setFileFilter}
 				qualityFilter={filters.qualityFilter}
 				onQualityFilterChange={filters.setQualityFilter}
+				torrentStateFilter={filters.torrentStateFilter}
+				onTorrentStateFilterChange={filters.setTorrentStateFilter}
+				hasQui={hasQui}
+				torrentStateCounts={data.torrentStateCounts}
 				searchTerm={filters.searchTerm}
 				onSearchTermChange={filters.setSearchTerm}
 				sortBy={filters.sortBy}

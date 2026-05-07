@@ -29,18 +29,49 @@ export const QUALITY_FILTERS = [
 ] as const;
 
 /**
- * Sort options for library items
+ * qui torrent-state filter options (Phase 2.1).
+ * `none` surfaces items the qui sync hasn't reached yet — useful for triaging
+ * coverage. The list mirrors `normalizedTorrentStateSchema` in @arr/shared,
+ * sorted by likely operator priority (problems first, healthy last).
+ */
+export const TORRENT_STATE_FILTERS = [
+	{ value: "all", label: "All torrent states" },
+	{ value: "stalled_dl", label: "Stalled download" },
+	{ value: "error", label: "Error" },
+	{ value: "downloading", label: "Downloading" },
+	{ value: "seeding", label: "Seeding" },
+	{ value: "paused", label: "Paused" },
+	{ value: "queued", label: "Queued" },
+	{ value: "checking", label: "Checking" },
+	{ value: "moving", label: "Moving" },
+	{ value: "unknown", label: "Unknown" },
+	// "Not correlated" is the honest label: this bucket includes BOTH items
+	// where qui has no torrent matching our infoHash AND items whose infoHash
+	// hasn't been backfilled (most common cause: *arr's grab history was
+	// pruned before backfill could capture the downloadId). The previous
+	// label "No qui data" suggested the gap was on qui's side; the truth is
+	// it's a missing audit trail, not a qui issue.
+	{ value: "none", label: "Not correlated with qui" },
+] as const;
+
+/**
+ * Sort options for library items.
+ * `torrentRatio` is qui-only and only meaningful when qui is configured —
+ * the LibraryHeader gates it behind `hasQui` to avoid offering an option
+ * that would always sort to NULLs-last for users without qui data.
  */
 export const SORT_OPTIONS = [
 	{ value: "sortTitle", label: "Title" },
 	{ value: "year", label: "Year" },
 	{ value: "sizeOnDisk", label: "Size" },
 	{ value: "added", label: "Date Added" },
+	{ value: "torrentRatio", label: "Torrent ratio" },
 ] as const;
 
 export type StatusFilterValue = (typeof STATUS_FILTERS)[number]["value"];
 export type FileFilterValue = (typeof FILE_FILTERS)[number]["value"];
 export type QualityFilterValue = (typeof QUALITY_FILTERS)[number]["value"];
+export type TorrentStateFilterValue = (typeof TORRENT_STATE_FILTERS)[number]["value"];
 export type SortByValue = (typeof SORT_OPTIONS)[number]["value"];
 export type SortOrderValue = "asc" | "desc";
 
@@ -87,6 +118,8 @@ export interface LibraryFilters {
 	setFileFilter: (value: FileFilterValue) => void;
 	qualityFilter: QualityFilterValue;
 	setQualityFilter: (value: QualityFilterValue) => void;
+	torrentStateFilter: TorrentStateFilterValue;
+	setTorrentStateFilter: (value: TorrentStateFilterValue) => void;
 
 	// Sorting
 	sortBy: SortByValue;
@@ -141,6 +174,7 @@ export function useLibraryFilters(): LibraryFilters {
 	const [qualityFilter, setQualityFilterState] = useState<QualityFilterValue>(() =>
 		parseQualityFilterParam(initialQualityParam),
 	);
+	const [torrentStateFilter, setTorrentStateFilterState] = useState<TorrentStateFilterValue>("all");
 	const [sortBy, setSortByState] = useState<SortByValue>("sortTitle");
 	const [sortOrder, setSortOrderState] = useState<SortOrderValue>("asc");
 	const [page, setPage] = useState(1);
@@ -198,6 +232,11 @@ export function useLibraryFilters(): LibraryFilters {
 		setPage(1);
 	}, []);
 
+	const setTorrentStateFilter = useCallback((value: TorrentStateFilterValue) => {
+		setTorrentStateFilterState(value);
+		setPage(1);
+	}, []);
+
 	const setSortBy = useCallback((value: SortByValue) => {
 		setSortByState(value);
 		setPage(1);
@@ -220,6 +259,7 @@ export function useLibraryFilters(): LibraryFilters {
 		setStatusFilterState("all");
 		setFileFilterState("all");
 		setQualityFilterState("all");
+		setTorrentStateFilterState("all");
 		setSortByState("sortTitle");
 		setSortOrderState("asc");
 		setPage(1);
@@ -246,6 +286,8 @@ export function useLibraryFilters(): LibraryFilters {
 		setFileFilter,
 		qualityFilter,
 		setQualityFilter,
+		torrentStateFilter,
+		setTorrentStateFilter,
 		sortBy,
 		setSortBy,
 		sortOrder,

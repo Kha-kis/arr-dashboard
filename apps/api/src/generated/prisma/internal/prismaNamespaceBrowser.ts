@@ -560,6 +560,9 @@ export const LibraryCacheScalarFieldEnum = {
   sizeOnDisk: 'sizeOnDisk',
   cutoffUnmet: 'cutoffUnmet',
   infoHash: 'infoHash',
+  torrentState: 'torrentState',
+  torrentRatio: 'torrentRatio',
+  torrentSyncedAt: 'torrentSyncedAt',
   data: 'data',
   arrAddedAt: 'arrAddedAt',
   arrUpdatedAt: 'arrUpdatedAt',
@@ -712,6 +715,7 @@ export const LibraryCleanupConfigScalarFieldEnum = {
   dryRunMode: 'dryRunMode',
   maxRemovalsPerRun: 'maxRemovalsPerRun',
   requireApproval: 'requireApproval',
+  respectQuiSeeding: 'respectQuiSeeding',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const

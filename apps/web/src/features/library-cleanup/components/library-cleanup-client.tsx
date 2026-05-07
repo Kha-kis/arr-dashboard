@@ -17,18 +17,18 @@ import {
 	ChevronUp,
 	Eraser,
 	Eye,
+	Film,
 	HelpCircle,
 	ListChecks,
 	Loader2,
 	Pencil,
-	Film,
 	Play,
 	Plus,
 	RefreshCw,
-	Tv,
 	ScrollText,
 	Settings2,
 	Shield,
+	Tv,
 	X,
 } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -43,7 +43,6 @@ import {
 	StatusBadge,
 } from "@/components/layout";
 import { ToggleRow } from "@/components/layout/config-primitives";
-import { Input } from "@/components/ui/input";
 import {
 	Dialog,
 	DialogContent,
@@ -52,6 +51,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 import { getLinuxIsoName, useIncognitoMode } from "@/lib/incognito";
 import { INPUT_BASE_CLASSES } from "@/lib/theme-input-styles";
@@ -339,6 +339,12 @@ function ConfigTab({
 							checked={config.requireApproval}
 							onChange={(v) => onUpdateConfig({ requireApproval: v })}
 						/>
+						<ToggleRow
+							label="Respect qui Seeding"
+							description="Skip items currently seeding via qui (honors private-tracker ratio obligations). No-op without a qui instance configured."
+							checked={config.respectQuiSeeding ?? false}
+							onChange={(v) => onUpdateConfig({ respectQuiSeeding: v })}
+						/>
 					</div>
 					<div className="grid gap-4 sm:grid-cols-2 mt-4">
 						<label className="block">
@@ -484,108 +490,112 @@ function ConfigTab({
 					/>
 					<div
 						className="absolute left-0 top-0 bottom-0 w-[3px]"
-						style={{ background: `linear-gradient(180deg, ${gradient.from}, ${gradient.fromLight})` }}
+						style={{
+							background: `linear-gradient(180deg, ${gradient.from}, ${gradient.fromLight})`,
+						}}
 					/>
 					<div className="relative p-5">
-					<h4 className="text-h4 mb-3">
-						Preview Results ({previewData.totalFlagged} of {previewData.totalEvaluated} items
-						flagged)
-					</h4>
-					{previewData.prefetchHealth &&
-						Object.entries(previewData.prefetchHealth).some(([, s]) => s === "failed") && (
-							<div className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
-								<span className="font-medium">Data source issues:</span>{" "}
-								{Object.entries(previewData.prefetchHealth)
-									.filter(([, s]) => s === "failed")
-									.map(([k]) => k)
-									.join(", ")}{" "}
-								failed to load. Some rules may have been skipped.
+						<h4 className="text-h4 mb-3">
+							Preview Results ({previewData.totalFlagged} of {previewData.totalEvaluated} items
+							flagged)
+						</h4>
+						{previewData.prefetchHealth &&
+							Object.entries(previewData.prefetchHealth).some(([, s]) => s === "failed") && (
+								<div className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
+									<span className="font-medium">Data source issues:</span>{" "}
+									{Object.entries(previewData.prefetchHealth)
+										.filter(([, s]) => s === "failed")
+										.map(([k]) => k)
+										.join(", ")}{" "}
+									failed to load. Some rules may have been skipped.
+								</div>
+							)}
+						{previewData.warnings && previewData.warnings.length > 0 && (
+							<div className="mb-3 space-y-1">
+								{previewData.warnings.map((w, i) => (
+									<div
+										key={i}
+										className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400"
+									>
+										{w}
+									</div>
+								))}
 							</div>
 						)}
-					{previewData.warnings && previewData.warnings.length > 0 && (
-						<div className="mb-3 space-y-1">
-							{previewData.warnings.map((w, i) => (
-								<div
-									key={i}
-									className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400"
-								>
-									{w}
-								</div>
-							))}
-						</div>
-					)}
-					{actionCounts && previewData.items.length > 0 && (
-						<div className="flex flex-wrap gap-2 mb-3">
-							{actionCounts.delete > 0 && (
-								<StatusBadge status="error">{actionCounts.delete} Delete</StatusBadge>
-							)}
-							{actionCounts.unmonitor > 0 && (
-								<StatusBadge status="warning">{actionCounts.unmonitor} Unmonitor</StatusBadge>
-							)}
-							{actionCounts.delete_files > 0 && (
-								<StatusBadge status="info">{actionCounts.delete_files} Delete Files</StatusBadge>
-							)}
-						</div>
-					)}
-					{previewData.items.length === 0 ? (
-						<p className="text-sm text-muted-foreground">
-							No items would be flagged with current rules.
-						</p>
-					) : (
-						<div className="max-h-80 overflow-y-auto space-y-2">
-							{previewData.items.map((item, i) => {
-								const score = extractStalenessScore(item.reason);
-								return (
-									<div
-										key={`${item.title}-${i}`}
-										className="flex items-center justify-between rounded-md bg-card/20 px-3 py-2 text-sm"
-									>
-										<span className="truncate">{incognitoMode ? getLinuxIsoName(item.title) : item.title}</span>
-										<div className="flex items-center gap-2 shrink-0 ml-3">
-											<button
-												type="button"
-												onClick={() =>
-													onExplain({
-														instanceId: item.instanceId,
-														arrItemId: item.arrItemId,
-														title: item.title,
-													})
-												}
-												className="rounded-md p-1 text-muted-foreground hover:text-foreground transition-colors"
-												title="Explain why this item was flagged"
-											>
-												<HelpCircle className="h-3.5 w-3.5" />
-											</button>
-											{item.action !== "delete" && (
-												<StatusBadge status={item.action === "unmonitor" ? "warning" : "info"}>
-													{item.action === "unmonitor" ? "Unmonitor" : "Delete Files"}
-												</StatusBadge>
-											)}
-											{score != null ? (
-												<div className="flex items-center gap-2 min-w-[160px]">
-													<PremiumProgress
-														value={score}
-														max={100}
-														variant={stalenessVariant(score)}
-														size="sm"
-														className="w-20"
-													/>
-													<span className="text-xs text-muted-foreground whitespace-nowrap">
-														{score.toFixed(0)}%
+						{actionCounts && previewData.items.length > 0 && (
+							<div className="flex flex-wrap gap-2 mb-3">
+								{actionCounts.delete > 0 && (
+									<StatusBadge status="error">{actionCounts.delete} Delete</StatusBadge>
+								)}
+								{actionCounts.unmonitor > 0 && (
+									<StatusBadge status="warning">{actionCounts.unmonitor} Unmonitor</StatusBadge>
+								)}
+								{actionCounts.delete_files > 0 && (
+									<StatusBadge status="info">{actionCounts.delete_files} Delete Files</StatusBadge>
+								)}
+							</div>
+						)}
+						{previewData.items.length === 0 ? (
+							<p className="text-sm text-muted-foreground">
+								No items would be flagged with current rules.
+							</p>
+						) : (
+							<div className="max-h-80 overflow-y-auto space-y-2">
+								{previewData.items.map((item, i) => {
+									const score = extractStalenessScore(item.reason);
+									return (
+										<div
+											key={`${item.title}-${i}`}
+											className="flex items-center justify-between rounded-md bg-card/20 px-3 py-2 text-sm"
+										>
+											<span className="truncate">
+												{incognitoMode ? getLinuxIsoName(item.title) : item.title}
+											</span>
+											<div className="flex items-center gap-2 shrink-0 ml-3">
+												<button
+													type="button"
+													onClick={() =>
+														onExplain({
+															instanceId: item.instanceId,
+															arrItemId: item.arrItemId,
+															title: item.title,
+														})
+													}
+													className="rounded-md p-1 text-muted-foreground hover:text-foreground transition-colors"
+													title="Explain why this item was flagged"
+												>
+													<HelpCircle className="h-3.5 w-3.5" />
+												</button>
+												{item.action !== "delete" && (
+													<StatusBadge status={item.action === "unmonitor" ? "warning" : "info"}>
+														{item.action === "unmonitor" ? "Unmonitor" : "Delete Files"}
+													</StatusBadge>
+												)}
+												{score != null ? (
+													<div className="flex items-center gap-2 min-w-[160px]">
+														<PremiumProgress
+															value={score}
+															max={100}
+															variant={stalenessVariant(score)}
+															size="sm"
+															className="w-20"
+														/>
+														<span className="text-xs text-muted-foreground whitespace-nowrap">
+															{score.toFixed(0)}%
+														</span>
+													</div>
+												) : (
+													<span className="text-xs text-muted-foreground">
+														{item.matchedRuleName}: {item.reason}
 													</span>
-												</div>
-											) : (
-												<span className="text-xs text-muted-foreground">
-													{item.matchedRuleName}: {item.reason}
-												</span>
-											)}
+												)}
+											</div>
 										</div>
-									</div>
-								);
-							})}
-						</div>
-					)}
-				</div>
+									);
+								})}
+							</div>
+						)}
+					</div>
 				</div>
 			)}
 
@@ -611,126 +621,128 @@ function ConfigTab({
 					style={{ background: `linear-gradient(180deg, ${gradient.from}, ${gradient.fromLight})` }}
 				/>
 				<div className="relative p-5">
-				<div className="flex items-center justify-between mb-4">
-					<h3 className="text-h4">Cleanup Rules</h3>
-					<GradientButton onClick={handleCreate}>
-						<Plus className="mr-2 h-4 w-4" />
-						Add Rule
-					</GradientButton>
-				</div>
+					<div className="flex items-center justify-between mb-4">
+						<h3 className="text-h4">Cleanup Rules</h3>
+						<GradientButton onClick={handleCreate}>
+							<Plus className="mr-2 h-4 w-4" />
+							Add Rule
+						</GradientButton>
+					</div>
 
-				{config.rules.length === 0 ? (
-					<p className="text-sm text-muted-foreground py-4 text-center">
-						No rules configured. Add a rule to start cleaning up your library.
-					</p>
-				) : (
-					<div className="space-y-2">
-						{config.rules.map((rule, index) => (
-							<div
-								key={rule.id}
-								className="flex items-center gap-3 rounded-lg border border-border/30 bg-card/20 px-4 py-3 animate-in fade-in slide-in-from-bottom-2 duration-300"
-								style={{
-									animationDelay: `${index * 30}ms`,
-									animationFillMode: "backwards",
-								}}
-							>
-								<div className="flex flex-col -my-1">
-									<button
-										type="button"
-										disabled={index === 0 || reorderRules.isPending}
-										onClick={() => handleMoveRule(index, "up")}
-										className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-default transition-colors"
-										aria-label="Move rule up"
-									>
-										<ChevronUp className="h-3.5 w-3.5" />
-									</button>
-									<button
-										type="button"
-										disabled={index === config.rules.length - 1 || reorderRules.isPending}
-										onClick={() => handleMoveRule(index, "down")}
-										className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-default transition-colors"
-										aria-label="Move rule down"
-									>
-										<ChevronDown className="h-3.5 w-3.5" />
-									</button>
-								</div>
+					{config.rules.length === 0 ? (
+						<p className="text-sm text-muted-foreground py-4 text-center">
+							No rules configured. Add a rule to start cleaning up your library.
+						</p>
+					) : (
+						<div className="space-y-2">
+							{config.rules.map((rule, index) => (
 								<div
-									className="h-2 w-2 rounded-full shrink-0"
+									key={rule.id}
+									className="flex items-center gap-3 rounded-lg border border-border/30 bg-card/20 px-4 py-3 animate-in fade-in slide-in-from-bottom-2 duration-300"
 									style={{
-										backgroundColor: rule.enabled ? gradient.from : "var(--color-muted-foreground)",
+										animationDelay: `${index * 30}ms`,
+										animationFillMode: "backwards",
 									}}
-								/>
-								<div className="flex-1 min-w-0">
-									<span className="font-medium text-sm">{rule.name}</span>
-									<span className="text-xs text-muted-foreground ml-2">
-										{rule.operator
-											? `${rule.operator} (${(rule.conditions as unknown[])?.length ?? 0} conditions)`
-											: rule.ruleType}
-									</span>
-									{rule.serviceFilter && rule.serviceFilter.length > 0 && (
-										<span className="text-xs text-muted-foreground ml-2">
-											({rule.serviceFilter.join(", ")})
-										</span>
-									)}
-								</div>
-								{rule.retentionMode && (
-									<span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-400 border border-emerald-500/20">
-										<Shield className="h-3 w-3" />
-										Protection
-									</span>
-								)}
-								{rule.action && rule.action !== "delete" && !rule.retentionMode && (
-									<StatusBadge status={rule.action === "unmonitor" ? "warning" : "info"}>
-										{rule.action === "unmonitor" ? "Unmonitor" : "Delete Files"}
-									</StatusBadge>
-								)}
-								<StatusBadge status={rule.enabled ? "success" : "default"}>
-									{rule.enabled ? "Active" : "Off"}
-								</StatusBadge>
-								<button
-									type="button"
-									onClick={() => handleEdit(rule)}
-									className="rounded-md p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-									aria-label={`Edit rule: ${rule.name}`}
 								>
-									<Pencil className="h-3.5 w-3.5" />
-								</button>
-								{deleteTarget === rule.id ? (
-									<div className="flex items-center gap-1.5">
-										<span className="text-xs text-muted-foreground">Confirm?</span>
+									<div className="flex flex-col -my-1">
 										<button
 											type="button"
-											onClick={() => {
-												deleteRule.mutate(rule.id);
-												setDeleteTarget(null);
-											}}
-											className="text-xs font-medium text-red-400 hover:text-red-300 transition-colors"
+											disabled={index === 0 || reorderRules.isPending}
+											onClick={() => handleMoveRule(index, "up")}
+											className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-default transition-colors"
+											aria-label="Move rule up"
 										>
-											Yes
+											<ChevronUp className="h-3.5 w-3.5" />
 										</button>
 										<button
 											type="button"
-											onClick={() => setDeleteTarget(null)}
-											className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+											disabled={index === config.rules.length - 1 || reorderRules.isPending}
+											onClick={() => handleMoveRule(index, "down")}
+											className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-default transition-colors"
+											aria-label="Move rule down"
 										>
-											No
+											<ChevronDown className="h-3.5 w-3.5" />
 										</button>
 									</div>
-								) : (
+									<div
+										className="h-2 w-2 rounded-full shrink-0"
+										style={{
+											backgroundColor: rule.enabled
+												? gradient.from
+												: "var(--color-muted-foreground)",
+										}}
+									/>
+									<div className="flex-1 min-w-0">
+										<span className="font-medium text-sm">{rule.name}</span>
+										<span className="text-xs text-muted-foreground ml-2">
+											{rule.operator
+												? `${rule.operator} (${(rule.conditions as unknown[])?.length ?? 0} conditions)`
+												: rule.ruleType}
+										</span>
+										{rule.serviceFilter && rule.serviceFilter.length > 0 && (
+											<span className="text-xs text-muted-foreground ml-2">
+												({rule.serviceFilter.join(", ")})
+											</span>
+										)}
+									</div>
+									{rule.retentionMode && (
+										<span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-400 border border-emerald-500/20">
+											<Shield className="h-3 w-3" />
+											Protection
+										</span>
+									)}
+									{rule.action && rule.action !== "delete" && !rule.retentionMode && (
+										<StatusBadge status={rule.action === "unmonitor" ? "warning" : "info"}>
+											{rule.action === "unmonitor" ? "Unmonitor" : "Delete Files"}
+										</StatusBadge>
+									)}
+									<StatusBadge status={rule.enabled ? "success" : "default"}>
+										{rule.enabled ? "Active" : "Off"}
+									</StatusBadge>
 									<button
 										type="button"
-										onClick={() => setDeleteTarget(rule.id)}
-										className="text-xs text-muted-foreground hover:text-red-400 transition-colors"
-										aria-label={`Delete rule: ${rule.name}`}
+										onClick={() => handleEdit(rule)}
+										className="rounded-md p-1.5 text-muted-foreground hover:text-foreground transition-colors"
+										aria-label={`Edit rule: ${rule.name}`}
 									>
-										Delete
+										<Pencil className="h-3.5 w-3.5" />
 									</button>
-								)}
-							</div>
-						))}
-					</div>
-				)}
-			</div>
+									{deleteTarget === rule.id ? (
+										<div className="flex items-center gap-1.5">
+											<span className="text-xs text-muted-foreground">Confirm?</span>
+											<button
+												type="button"
+												onClick={() => {
+													deleteRule.mutate(rule.id);
+													setDeleteTarget(null);
+												}}
+												className="text-xs font-medium text-red-400 hover:text-red-300 transition-colors"
+											>
+												Yes
+											</button>
+											<button
+												type="button"
+												onClick={() => setDeleteTarget(null)}
+												className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+											>
+												No
+											</button>
+										</div>
+									) : (
+										<button
+											type="button"
+											onClick={() => setDeleteTarget(rule.id)}
+											className="text-xs text-muted-foreground hover:text-red-400 transition-colors"
+											aria-label={`Delete rule: ${rule.name}`}
+										>
+											Delete
+										</button>
+									)}
+								</div>
+							))}
+						</div>
+					)}
+				</div>
 			</div>
 
 			{/* Rule Dialog */}
@@ -903,19 +915,23 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 							>
 								<div
 									className="absolute inset-0 pointer-events-none"
-									style={{ background: `linear-gradient(135deg, ${gradient.from}04, transparent 60%)` }}
+									style={{
+										background: `linear-gradient(135deg, ${gradient.from}04, transparent 60%)`,
+									}}
 								/>
 								<div
 									className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-									style={{ background: `radial-gradient(ellipse at top left, ${gradient.from}06, transparent 50%)` }}
+									style={{
+										background: `radial-gradient(ellipse at top left, ${gradient.from}06, transparent 50%)`,
+									}}
 								/>
 								<div
 									className="absolute left-0 top-0 bottom-0 w-[3px]"
-									style={{ background: `linear-gradient(180deg, ${gradient.from}, ${gradient.fromLight})` }}
+									style={{
+										background: `linear-gradient(180deg, ${gradient.from}, ${gradient.fromLight})`,
+									}}
 								/>
-								<div
-									className="relative flex items-center gap-4 py-3 pl-5 pr-4"
-								>
+								<div className="relative flex items-center gap-4 py-3 pl-5 pr-4">
 									{/* Checkbox (pending only) */}
 									{showCheckboxes && (
 										<button
@@ -944,7 +960,9 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 											) : (
 												<Film className="h-3.5 w-3.5 text-orange-400 shrink-0" aria-label="Movie" />
 											)}
-											<span className="font-medium truncate">{incognitoMode ? getLinuxIsoName(item.title) : item.title}</span>
+											<span className="font-medium truncate">
+												{incognitoMode ? getLinuxIsoName(item.title) : item.title}
+											</span>
 											{item.year && (
 												<span className="text-xs text-muted-foreground">({item.year})</span>
 											)}
@@ -1599,7 +1617,10 @@ function ExplainDialog({
 		>
 			<DialogContent className="max-w-lg">
 				<DialogHeader>
-					<DialogTitle>Rule Evaluation — {target?.title ? (incognitoMode ? getLinuxIsoName(target.title) : target.title) : ""}</DialogTitle>
+					<DialogTitle>
+						Rule Evaluation —{" "}
+						{target?.title ? (incognitoMode ? getLinuxIsoName(target.title) : target.title) : ""}
+					</DialogTitle>
 					<DialogDescription>How each cleanup rule evaluated this item.</DialogDescription>
 				</DialogHeader>
 
