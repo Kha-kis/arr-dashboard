@@ -50,10 +50,10 @@ const mockEncryptor = {
 			// Create a new Prisma client for each test
 			prisma = createTestPrismaClient(TEST_DB_PATH);
 
-			// Create temp directories for backups and secrets
-			testBackupsDir = path.join(os.tmpdir(), `backup-test-${Date.now()}`);
+			// fs.mkdtemp atomically creates a unique directory with mode 0o700 —
+			// avoids the symlink race that path.join+mkdir is vulnerable to (CWE-377/378).
+			testBackupsDir = await fs.mkdtemp(path.join(os.tmpdir(), "backup-test-"));
 			testSecretsPath = path.join(testBackupsDir, "secrets.json");
-			await fs.mkdir(testBackupsDir, { recursive: true });
 
 			// Write mock secrets file
 			await fs.writeFile(
@@ -127,9 +127,10 @@ const mockEncryptor = {
 
 		beforeEach(async () => {
 			prisma = createTestPrismaClient(TEST_DB_PATH);
-			testBackupsDir = path.join(os.tmpdir(), `backup-test-${Date.now()}`);
+			// fs.mkdtemp atomically creates a unique directory with mode 0o700 —
+			// avoids the symlink race that path.join+mkdir is vulnerable to (CWE-377/378).
+			testBackupsDir = await fs.mkdtemp(path.join(os.tmpdir(), "backup-test-"));
 			testSecretsPath = path.join(testBackupsDir, "secrets.json");
-			await fs.mkdir(testBackupsDir, { recursive: true });
 			await fs.writeFile(
 				testSecretsPath,
 				JSON.stringify({
@@ -196,9 +197,10 @@ const mockEncryptor = {
 
 	beforeEach(async () => {
 		prisma = createTestPrismaClient(TEST_DB_PATH);
-		testBackupsDir = path.join(os.tmpdir(), `backup-test-${Date.now()}`);
+		// fs.mkdtemp atomically creates a unique directory with mode 0o700 —
+		// avoids the symlink race that path.join+mkdir is vulnerable to (CWE-377/378).
+		testBackupsDir = await fs.mkdtemp(path.join(os.tmpdir(), "backup-test-"));
 		testSecretsPath = path.join(testBackupsDir, "secrets.json");
-		await fs.mkdir(testBackupsDir, { recursive: true });
 		await fs.writeFile(
 			testSecretsPath,
 			JSON.stringify({
