@@ -63,6 +63,10 @@ const SERVICE_TYPE_MAP: Record<string, "SONARR" | "RADARR"> = {
 	radarr: "RADARR",
 };
 
+// Cursor-pagination batch size for libraryCache reads. Mirrors
+// CACHE_QUERY_BATCH_SIZE in library-cleanup/cleanup-executor.ts.
+const AUTO_TAG_BATCH_SIZE = 500;
+
 /**
  * Execute an auto-tagger rule. Pure-execution function — does NOT persist
  * the result. Callers should write `lastRunAt` / `lastRunStatus` /
@@ -229,46 +233,62 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 		log,
 	} = args;
 
-	const items = await prisma.libraryCache.findMany({
-		where: { instanceId: instance.id },
-		select: {
-			id: true,
-			instanceId: true,
-			arrItemId: true,
-			itemType: true,
-			title: true,
-			year: true,
-			monitored: true,
-			hasFile: true,
-			status: true,
-			qualityProfileId: true,
-			qualityProfileName: true,
-			sizeOnDisk: true,
-			arrAddedAt: true,
-			data: true,
-		},
-	});
-
 	const matched: Array<{ item: CacheItemForEval; existingTags: number[] }> = [];
+	let totalScanned = 0;
+	let cursor: string | undefined;
 
-	for (const item of items) {
-		if (compiledTitleRegexes.some((re) => re.test(item.title))) continue;
+	// Cursor-paginate to bound peak heap. The full library can be 100k+ items
+	// with each row's `data` JSON blob 10–50 KB; loading all at once trips
+	// the 768 MB container heap cap, especially under webhook concurrency.
+	while (true) {
+		const batch = await prisma.libraryCache.findMany({
+			where: { instanceId: instance.id },
+			select: {
+				id: true,
+				instanceId: true,
+				arrItemId: true,
+				itemType: true,
+				title: true,
+				year: true,
+				monitored: true,
+				hasFile: true,
+				status: true,
+				qualityProfileId: true,
+				qualityProfileName: true,
+				sizeOnDisk: true,
+				arrAddedAt: true,
+				data: true,
+			},
+			take: AUTO_TAG_BATCH_SIZE,
+			...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+			orderBy: { id: "asc" },
+		});
 
-		// Parse the data blob once per item — needed for excludeTags + tag merge.
-		const dataParsed = safeJsonParse(item.data);
-		const existingTags = extractTagIds(dataParsed);
+		if (batch.length === 0) break;
+		totalScanned += batch.length;
 
-		if (rule.excludeTags && rule.excludeTags.length > 0) {
-			if (existingTags.some((t) => rule.excludeTags?.includes(t))) continue;
+		for (const item of batch) {
+			if (compiledTitleRegexes.some((re) => re.test(item.title))) continue;
+
+			// Parse the data blob once per item — needed for excludeTags + tag merge.
+			const dataParsed = safeJsonParse(item.data);
+			const existingTags = extractTagIds(dataParsed);
+
+			if (rule.excludeTags && rule.excludeTags.length > 0) {
+				if (existingTags.some((t) => rule.excludeTags?.includes(t))) continue;
+			}
+
+			const cacheItem = item as CacheItemForEval;
+			const matches = evaluateAgainstRule(cacheItem, rule, instance.service, evalCtx);
+			if (matches) matched.push({ item: cacheItem, existingTags });
 		}
 
-		const cacheItem = item as CacheItemForEval;
-		const matches = evaluateAgainstRule(cacheItem, rule, instance.service, evalCtx);
-		if (matches) matched.push({ item: cacheItem, existingTags });
+		cursor = batch[batch.length - 1]!.id;
+		if (batch.length < AUTO_TAG_BATCH_SIZE) break;
 	}
 
 	if (matched.length === 0) {
-		return { scanned: items.length, matched: 0, applied: 0, failures: 0 };
+		return { scanned: totalScanned, matched: 0, applied: 0, failures: 0 };
 	}
 
 	// Group write phase: build one ArrClient + ensureTag once for the whole instance.
@@ -284,7 +304,12 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 		});
 	} catch (err) {
 		log.warn({ err }, "Failed to create *arr client; skipping instance writes");
-		return { scanned: items.length, matched: matched.length, applied: 0, failures: matched.length };
+		return {
+			scanned: totalScanned,
+			matched: matched.length,
+			applied: 0,
+			failures: matched.length,
+		};
 	}
 
 	let tagId: number;
@@ -293,7 +318,12 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 	} catch (err) {
 		const reason = err instanceof ArrError ? err.message : String(err);
 		log.warn({ err: reason, tag: rule.tagName }, "Failed to get-or-create tag");
-		return { scanned: items.length, matched: matched.length, applied: 0, failures: matched.length };
+		return {
+			scanned: totalScanned,
+			matched: matched.length,
+			applied: 0,
+			failures: matched.length,
+		};
 	}
 
 	let applied = 0;
@@ -354,7 +384,7 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 		}
 	}
 
-	return { scanned: items.length, matched: matched.length, applied, failures };
+	return { scanned: totalScanned, matched: matched.length, applied, failures };
 }
 
 /**

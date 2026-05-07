@@ -8,11 +8,11 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "../../../lib/prisma.js";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BackupService } from "../backup-service.js";
 import { generateBackupId } from "../backup-file-utils.js";
+import { BackupService, estimateBackupBytes } from "../backup-service.js";
 import {
 	isEncryptedBackupEnvelope,
 	isPlaintextBackup,
@@ -21,6 +21,10 @@ import {
 
 // Check if we should run integration tests (requires writable test database)
 const RUN_DB_TESTS = process.env.TEST_DB === "true";
+
+// Use the pre-initialized test database with full schema
+// (matches the pattern used by routes/library/__tests__/queryraw-migration.test.ts)
+const TEST_DB_PATH = path.resolve(import.meta.dirname, "../../../../prisma/test-integration.db");
 
 // Mock encryptor for tests
 const mockEncryptor = {
@@ -44,7 +48,7 @@ const mockEncryptor = {
 
 		beforeEach(async () => {
 			// Create a new Prisma client for each test
-			prisma = createTestPrismaClient();
+			prisma = createTestPrismaClient(TEST_DB_PATH);
 
 			// Create temp directories for backups and secrets
 			testBackupsDir = path.join(os.tmpdir(), `backup-test-${Date.now()}`);
@@ -122,7 +126,7 @@ const mockEncryptor = {
 		let testSecretsPath: string;
 
 		beforeEach(async () => {
-			prisma = createTestPrismaClient();
+			prisma = createTestPrismaClient(TEST_DB_PATH);
 			testBackupsDir = path.join(os.tmpdir(), `backup-test-${Date.now()}`);
 			testSecretsPath = path.join(testBackupsDir, "secrets.json");
 			await fs.mkdir(testBackupsDir, { recursive: true });
@@ -191,7 +195,7 @@ const mockEncryptor = {
 	let testSecretsPath: string;
 
 	beforeEach(async () => {
-		prisma = createTestPrismaClient();
+		prisma = createTestPrismaClient(TEST_DB_PATH);
 		testBackupsDir = path.join(os.tmpdir(), `backup-test-${Date.now()}`);
 		testSecretsPath = path.join(testBackupsDir, "secrets.json");
 		await fs.mkdir(testBackupsDir, { recursive: true });
@@ -267,9 +271,7 @@ describe("BackupService - Backup Validation (Unit)", () => {
 			secrets: {},
 		};
 
-		expect(() => validateBackup(invalidBackup)).toThrow(
-			"Unsupported backup version: 999.0",
-		);
+		expect(() => validateBackup(invalidBackup)).toThrow("Unsupported backup version: 999.0");
 	});
 
 	it("should reject backup missing required data", () => {
@@ -386,5 +388,247 @@ describe("BackupService - Encryption Detection (Unit)", () => {
 		};
 
 		expect(isPlaintextBackup(encryptedEnvelope)).toBe(false);
+	});
+});
+
+/**
+ * Regression-pinning tests for the `createBackup → exportDatabase` defaulting
+ * wiring (the v2.18.4 OOM fix's actual contract). These verify that:
+ *  - manual backups preserve full history (operational tables included)
+ *  - scheduled + update backups skip operational history by default
+ *  - explicit `excludeOperationalHistory: false` overrides the type-based default
+ *
+ * If a future refactor flips the operator precedence (e.g.
+ * `(options.excludeOperationalHistory ?? type) === "scheduled"`) the OOM fix
+ * regresses silently for nightly cron — these tests are the safety net.
+ */
+describe("BackupService - createBackup type-based defaulting (Unit)", () => {
+	it("manual: defaults excludeOperationalHistory to false (full history preserved)", async () => {
+		// Mock exportDatabase to capture the options it receives.
+		const exportSpy = vi.fn().mockResolvedValue({
+			users: [],
+			sessions: [],
+			serviceInstances: [],
+			serviceTags: [],
+			serviceInstanceTags: [],
+			oidcAccounts: [],
+			webAuthnCredentials: [],
+		});
+		vi.doMock("../backup-database.js", () => ({
+			exportDatabase: exportSpy,
+			restoreDatabase: vi.fn(),
+		}));
+		// Reload the BackupService module so it picks up the mock.
+		vi.resetModules();
+		const { BackupService } = await import("../backup-service.js");
+
+		const tempDir = path.join(os.tmpdir(), `bs-default-test-${Date.now()}`);
+		await fs.mkdir(tempDir, { recursive: true });
+		const secretsPath = path.join(tempDir, "secrets.json");
+		await fs.writeFile(secretsPath, JSON.stringify({ backupPassword: "x".repeat(32) }));
+
+		const fakePrisma = {
+			backupSettings: { findUnique: vi.fn().mockResolvedValue(null) },
+		} as never;
+		const svc = new BackupService(fakePrisma, secretsPath);
+		(svc as unknown as { backupsDir: string }).backupsDir = tempDir;
+
+		try {
+			await svc.createBackup("test", "manual");
+		} catch (_err) {
+			// Encryption may fail because of mocked deps — we only care about the
+			// captured exportDatabase options.
+		}
+
+		expect(exportSpy).toHaveBeenCalled();
+		const opts = exportSpy.mock.calls[0]?.[1];
+		expect(opts).toMatchObject({ excludeOperationalHistory: false });
+
+		await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+		vi.doUnmock("../backup-database.js");
+	});
+
+	it("scheduled: defaults excludeOperationalHistory to true (heavy tables skipped)", async () => {
+		const exportSpy = vi.fn().mockResolvedValue({
+			users: [],
+			sessions: [],
+			serviceInstances: [],
+			serviceTags: [],
+			serviceInstanceTags: [],
+			oidcAccounts: [],
+			webAuthnCredentials: [],
+		});
+		vi.doMock("../backup-database.js", () => ({
+			exportDatabase: exportSpy,
+			restoreDatabase: vi.fn(),
+		}));
+		vi.resetModules();
+		const { BackupService } = await import("../backup-service.js");
+
+		const tempDir = path.join(os.tmpdir(), `bs-default-test-${Date.now()}`);
+		await fs.mkdir(tempDir, { recursive: true });
+		const secretsPath = path.join(tempDir, "secrets.json");
+		await fs.writeFile(secretsPath, JSON.stringify({ backupPassword: "x".repeat(32) }));
+
+		const fakePrisma = {
+			backupSettings: { findUnique: vi.fn().mockResolvedValue(null) },
+		} as never;
+		const svc = new BackupService(fakePrisma, secretsPath);
+		(svc as unknown as { backupsDir: string }).backupsDir = tempDir;
+
+		try {
+			await svc.createBackup("test", "scheduled");
+		} catch (_err) {
+			// ignore — we only assert the captured options
+		}
+
+		const opts = exportSpy.mock.calls[0]?.[1];
+		expect(opts).toMatchObject({ excludeOperationalHistory: true });
+
+		await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+		vi.doUnmock("../backup-database.js");
+	});
+
+	it("update: defaults excludeOperationalHistory to true (covers auto-update backups)", async () => {
+		// Pre-fix, only "scheduled" was excluded; auto-update backups went through
+		// the unbounded path. This test pins the broader `type !== "manual"` default.
+		const exportSpy = vi.fn().mockResolvedValue({
+			users: [],
+			sessions: [],
+			serviceInstances: [],
+			serviceTags: [],
+			serviceInstanceTags: [],
+			oidcAccounts: [],
+			webAuthnCredentials: [],
+		});
+		vi.doMock("../backup-database.js", () => ({
+			exportDatabase: exportSpy,
+			restoreDatabase: vi.fn(),
+		}));
+		vi.resetModules();
+		const { BackupService } = await import("../backup-service.js");
+
+		const tempDir = path.join(os.tmpdir(), `bs-default-test-${Date.now()}`);
+		await fs.mkdir(tempDir, { recursive: true });
+		const secretsPath = path.join(tempDir, "secrets.json");
+		await fs.writeFile(secretsPath, JSON.stringify({ backupPassword: "x".repeat(32) }));
+
+		const fakePrisma = {
+			backupSettings: { findUnique: vi.fn().mockResolvedValue(null) },
+		} as never;
+		const svc = new BackupService(fakePrisma, secretsPath);
+		(svc as unknown as { backupsDir: string }).backupsDir = tempDir;
+
+		try {
+			await svc.createBackup("test", "update");
+		} catch (_err) {
+			// ignore
+		}
+
+		const opts = exportSpy.mock.calls[0]?.[1];
+		expect(opts).toMatchObject({ excludeOperationalHistory: true });
+
+		await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+		vi.doUnmock("../backup-database.js");
+	});
+
+	it("explicit override: caller-passed false beats the type-based default", async () => {
+		const exportSpy = vi.fn().mockResolvedValue({
+			users: [],
+			sessions: [],
+			serviceInstances: [],
+			serviceTags: [],
+			serviceInstanceTags: [],
+			oidcAccounts: [],
+			webAuthnCredentials: [],
+		});
+		vi.doMock("../backup-database.js", () => ({
+			exportDatabase: exportSpy,
+			restoreDatabase: vi.fn(),
+		}));
+		vi.resetModules();
+		const { BackupService } = await import("../backup-service.js");
+
+		const tempDir = path.join(os.tmpdir(), `bs-default-test-${Date.now()}`);
+		await fs.mkdir(tempDir, { recursive: true });
+		const secretsPath = path.join(tempDir, "secrets.json");
+		await fs.writeFile(secretsPath, JSON.stringify({ backupPassword: "x".repeat(32) }));
+
+		const fakePrisma = {
+			backupSettings: { findUnique: vi.fn().mockResolvedValue(null) },
+		} as never;
+		const svc = new BackupService(fakePrisma, secretsPath);
+		(svc as unknown as { backupsDir: string }).backupsDir = tempDir;
+
+		try {
+			await svc.createBackup("test", "scheduled", { excludeOperationalHistory: false });
+		} catch (_err) {
+			// ignore
+		}
+
+		const opts = exportSpy.mock.calls[0]?.[1];
+		expect(opts).toMatchObject({ excludeOperationalHistory: false });
+
+		await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+		vi.doUnmock("../backup-database.js");
+	});
+});
+
+describe("BackupService - estimateBackupBytes (Unit)", () => {
+	it("returns 0 for empty data", () => {
+		expect(estimateBackupBytes({})).toBe(0);
+	});
+
+	it("returns 0 when all tables are empty arrays", () => {
+		expect(estimateBackupBytes({ users: [], sessions: [] })).toBe(0);
+	});
+
+	it("samples first row and multiplies by row count", () => {
+		// One row of `{"id":"a"}` is 10 chars; 5 rows = 50.
+		const data = {
+			users: [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }, { id: "e" }],
+		};
+		expect(estimateBackupBytes(data)).toBe(50);
+	});
+
+	it("scales with per-row size — large rows produce proportionally larger estimates", () => {
+		// Verifies the estimator picks up byte-size differences that the old
+		// flat 1KB-per-record heuristic missed. A row with a JSON blob should
+		// dominate the estimate over a row with just an id.
+		const small = { users: [{ id: "a" }, { id: "b" }] };
+		const large = {
+			users: [
+				{
+					id: "a",
+					data: "x".repeat(1000),
+				},
+				{
+					id: "b",
+					data: "x".repeat(1000),
+				},
+			],
+		};
+		const smallEstimate = estimateBackupBytes(small);
+		const largeEstimate = estimateBackupBytes(large);
+		expect(largeEstimate).toBeGreaterThan(smallEstimate * 50);
+	});
+
+	it("ignores non-array values (e.g., the `secrets` block)", () => {
+		const data = {
+			users: [{ id: "a" }],
+			secrets: { encryptionKey: "long-secret-string" },
+		};
+		// Only `users` contributes; `secrets` is an object, not an array.
+		expect(estimateBackupBytes(data)).toBe(JSON.stringify({ id: "a" }).length);
+	});
+
+	it("sums across multiple tables", () => {
+		const data = {
+			users: [{ id: "u1" }],
+			sessions: [{ id: "s1" }],
+			trashTemplates: [{ id: "t1" }],
+		};
+		// Each row stringifies as `{"id":"u1"}` (11 chars).
+		expect(estimateBackupBytes(data)).toBe(33);
 	});
 });

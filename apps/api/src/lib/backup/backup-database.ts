@@ -6,81 +6,115 @@
  */
 
 import type { BackupData } from "@arr/shared";
+import { loggers } from "../logger.js";
 import type { Prisma, PrismaClient } from "../prisma.js";
 import { validateRecords } from "./backup-validation.js";
 
+const log = loggers.backup;
+
+export interface ExportDatabaseOptions {
+	/** Include TRaSH ARR config snapshots (can be large) */
+	includeTrashBackups?: boolean;
+	/**
+	 * Skip operational history tables (huntLog, huntSearchHistory, trashSyncHistory,
+	 * templateDeploymentHistory). These grow unbounded over time and are not needed
+	 * for restoring a working configuration — losing them on restore is expected.
+	 * Defaults to true for scheduled backups (set by caller).
+	 */
+	excludeOperationalHistory?: boolean;
+	/**
+	 * When operational history IS included, cap each history table to the most
+	 * recent N rows (ordered by timestamp DESC). Prevents a single user with
+	 * months of accumulated history from blowing the heap. Default: 1000.
+	 */
+	historyRetentionLimit?: number;
+}
+
 /**
- * Export all database tables
+ * Export all database tables.
  *
- * CURRENT IMPLEMENTATION: In-memory bulk export
- * - Loads all table data into memory at once using findMany()
- * - Efficient for typical installations (< 50 MB of data)
- * - Size checks in createBackup() prevent excessive memory usage
- *
- * @param options.includeTrashBackups - Include TRaSH ARR config snapshots (can be large)
+ * Tables are fetched sequentially (not in parallel) so each table's row data
+ * lives only as long as needed before being assigned into the result object.
+ * For scheduled backups, operational history tables are skipped by default to
+ * keep peak heap bounded — those tables grow unbounded over time and are not
+ * essential for restore.
  */
-export async function exportDatabase(
-	prisma: PrismaClient,
-	options: { includeTrashBackups?: boolean } = {},
-) {
-	// Export all core tables in parallel
-	const [
-		// Core authentication & services
-		users,
-		sessions,
-		serviceInstances,
-		serviceTags,
-		serviceInstanceTags,
-		oidcProviders,
-		oidcAccounts,
-		webAuthnCredentials,
-		// System settings
-		systemSettings,
-		// TRaSH Guides configuration
-		trashTemplates,
-		trashSettings,
-		trashSyncSchedules,
-		templateQualityProfileMappings,
-		instanceQualityProfileOverrides,
-		standaloneCFDeployments,
-		// Quality size preset mappings
-		qualitySizeMappings,
-		// TRaSH Guides history/audit
-		trashSyncHistory,
-		templateDeploymentHistory,
-		// Hunting feature
-		huntConfigs,
-		huntLogs,
-		huntSearchHistory,
-	] = await Promise.all([
-		// Core authentication & services
-		prisma.user.findMany(),
-		prisma.session.findMany(),
-		prisma.serviceInstance.findMany(),
-		prisma.serviceTag.findMany(),
-		prisma.serviceInstanceTag.findMany(),
-		prisma.oIDCProvider.findMany(),
-		prisma.oIDCAccount.findMany(),
-		prisma.webAuthnCredential.findMany(),
-		// System settings
-		prisma.systemSettings.findMany(),
-		// TRaSH Guides configuration
-		prisma.trashTemplate.findMany(),
-		prisma.trashSettings.findMany(),
-		prisma.trashSyncSchedule.findMany(),
-		prisma.templateQualityProfileMapping.findMany(),
-		prisma.instanceQualityProfileOverride.findMany(),
-		prisma.standaloneCFDeployment.findMany(),
-		// Quality size preset mappings
-		prisma.qualitySizeMapping.findMany(),
-		// TRaSH Guides history/audit
-		prisma.trashSyncHistory.findMany(),
-		prisma.templateDeploymentHistory.findMany(),
-		// Hunting feature
-		prisma.huntConfig.findMany(),
-		prisma.huntLog.findMany(),
-		prisma.huntSearchHistory.findMany(),
-	]);
+export async function exportDatabase(prisma: PrismaClient, options: ExportDatabaseOptions = {}) {
+	const skipHistory = options.excludeOperationalHistory ?? false;
+	const historyLimit = options.historyRetentionLimit ?? 1000;
+
+	// Core authentication & services (always full)
+	const users = await prisma.user.findMany();
+	const sessions = await prisma.session.findMany();
+	const serviceInstances = await prisma.serviceInstance.findMany();
+	const serviceTags = await prisma.serviceTag.findMany();
+	const serviceInstanceTags = await prisma.serviceInstanceTag.findMany();
+	const oidcProviders = await prisma.oIDCProvider.findMany();
+	const oidcAccounts = await prisma.oIDCAccount.findMany();
+	const webAuthnCredentials = await prisma.webAuthnCredential.findMany();
+
+	// System settings (singleton-ish)
+	const systemSettings = await prisma.systemSettings.findMany();
+
+	// TRaSH Guides configuration (always full — these are config, not history)
+	const trashTemplates = await prisma.trashTemplate.findMany();
+	const trashSettings = await prisma.trashSettings.findMany();
+	const trashSyncSchedules = await prisma.trashSyncSchedule.findMany();
+	const templateQualityProfileMappings = await prisma.templateQualityProfileMapping.findMany();
+	const instanceQualityProfileOverrides = await prisma.instanceQualityProfileOverride.findMany();
+	const standaloneCFDeployments = await prisma.standaloneCFDeployment.findMany();
+	const qualitySizeMappings = await prisma.qualitySizeMapping.findMany();
+
+	// TRaSH Guides history/audit — operational, capped or skipped.
+	// When capped, log a warn so operators can correlate restore-time gaps to
+	// the retention limit rather than silently losing the older history.
+	const fetchCappedHistory = async <T>(
+		tableName: string,
+		count: () => Promise<number>,
+		find: (take: number) => Promise<T[]>,
+	): Promise<T[]> => {
+		const total = await count();
+		if (total > historyLimit) {
+			log.warn(
+				{ tableName, totalRows: total, kept: historyLimit, dropped: total - historyLimit },
+				"Backup truncated history table to retention limit — older rows excluded",
+			);
+		}
+		return find(historyLimit);
+	};
+
+	const trashSyncHistory = skipHistory
+		? []
+		: await fetchCappedHistory(
+				"trashSyncHistory",
+				() => prisma.trashSyncHistory.count(),
+				(take) => prisma.trashSyncHistory.findMany({ take, orderBy: { startedAt: "desc" } }),
+			);
+	const templateDeploymentHistory = skipHistory
+		? []
+		: await fetchCappedHistory(
+				"templateDeploymentHistory",
+				() => prisma.templateDeploymentHistory.count(),
+				(take) =>
+					prisma.templateDeploymentHistory.findMany({ take, orderBy: { deployedAt: "desc" } }),
+			);
+
+	// Hunting feature: configs are config (always full); logs/history are operational
+	const huntConfigs = await prisma.huntConfig.findMany();
+	const huntLogs = skipHistory
+		? []
+		: await fetchCappedHistory(
+				"huntLog",
+				() => prisma.huntLog.count(),
+				(take) => prisma.huntLog.findMany({ take, orderBy: { startedAt: "desc" } }),
+			);
+	const huntSearchHistory = skipHistory
+		? []
+		: await fetchCappedHistory(
+				"huntSearchHistory",
+				() => prisma.huntSearchHistory.count(),
+				(take) => prisma.huntSearchHistory.findMany({ take, orderBy: { searchedAt: "desc" } }),
+			);
 
 	// Optionally include TRaSH instance backups (ARR config snapshots)
 	// Limited to non-expired backups from the last 7 days to control size

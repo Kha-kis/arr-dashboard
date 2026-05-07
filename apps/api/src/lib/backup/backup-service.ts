@@ -57,6 +57,48 @@ const MAX_RESTORE_SIZE_MB = 200; // Maximum size for restore operations (defense
 type BackupType = "manual" | "scheduled" | "update";
 
 /**
+ * Estimate the byte size of a backup payload by sampling rows per table.
+ *
+ * The previous estimator used a flat `recordCount × 1KB` assumption, which
+ * silently underestimated tables with JSON blobs (huntLog, trashSyncHistory,
+ * templateDeploymentHistory, trashBackup) by 10–100× and never tripped its
+ * own warn/fail thresholds even when peak heap was near the container limit.
+ *
+ * Samples up to 3 evenly-spaced rows per table (first / middle / last) and
+ * uses the **max** stringified size as the per-row estimate. Single-row
+ * sampling fails badly when row[0] is sparse (e.g., a `huntLog` whose
+ * `details` JSON is null) but later rows carry full payloads. Rows that
+ * stringify to non-strings (`undefined`) are skipped — we never throw.
+ */
+export function estimateBackupBytes(data: Record<string, unknown>): number {
+	let total = 0;
+	for (const value of Object.values(data)) {
+		if (!Array.isArray(value) || value.length === 0) continue;
+
+		const sampleIndices =
+			value.length === 1
+				? [0]
+				: value.length === 2
+					? [0, 1]
+					: [0, Math.floor(value.length / 2), value.length - 1];
+
+		let maxSampleBytes = 0;
+		for (const idx of sampleIndices) {
+			const row = value[idx];
+			if (row === null || row === undefined) continue;
+			const json = JSON.stringify(row);
+			// `JSON.stringify` returns `undefined` for `undefined` and certain
+			// non-serializable values. Skip those rather than throwing.
+			if (typeof json !== "string") continue;
+			if (json.length > maxSampleBytes) maxSampleBytes = json.length;
+		}
+
+		total += maxSampleBytes * value.length;
+	}
+	return total;
+}
+
+/**
  * Service for creating and restoring encrypted database backups.
  * Supports manual, scheduled, and auto-update backup types.
  */
@@ -295,63 +337,63 @@ export class BackupService {
 	 * @param appVersion - Application version string
 	 * @param type - Backup type (manual, scheduled, update)
 	 * @param options.includeTrashBackups - Include TRaSH ARR config snapshots (can be large)
+	 * @param options.excludeOperationalHistory - Skip huntLog/huntSearchHistory/trashSyncHistory/
+	 *   templateDeploymentHistory. These are operational logs that grow unbounded — losing them
+	 *   on restore is expected. Defaults to true for non-manual backups (scheduled + update),
+	 *   false for manual.
+	 * @param options.historyRetentionLimit - When operational history IS included, cap each
+	 *   table to last N rows (default 1000).
 	 */
 	async createBackup(
 		appVersion: string,
 		type: BackupType = "manual",
-		options: { includeTrashBackups?: boolean } = {},
+		options: {
+			includeTrashBackups?: boolean;
+			excludeOperationalHistory?: boolean;
+			historyRetentionLimit?: number;
+		} = {},
 	): Promise<BackupFileInfo> {
 		// 1. Ensure backups directory exists
 		await ensureBackupsDirectory(this.backupsDir);
 
-		// 2. Export all database data
+		// 2. Export all database data. Non-manual backups (scheduled + update) skip
+		// operational history by default — those tables grow unbounded and can blow
+		// the 768 MB container heap cap. Manual backups preserve full history unless
+		// the caller explicitly opts in.
+		const excludeOperationalHistory = options.excludeOperationalHistory ?? type !== "manual";
+
 		const data = await exportDatabase(this.prisma, {
 			includeTrashBackups: options.includeTrashBackups,
+			excludeOperationalHistory,
+			historyRetentionLimit: options.historyRetentionLimit,
 		});
+
+		// Operator visibility: log when history was excluded so a user inspecting a
+		// restore that has empty huntLog/etc. can correlate it to the backup type.
+		if (excludeOperationalHistory) {
+			log.info(
+				{
+					backupType: type,
+					skippedTables: [
+						"huntLog",
+						"huntSearchHistory",
+						"trashSyncHistory",
+						"templateDeploymentHistory",
+					],
+				},
+				"Backup excluded operational history tables (config + state still preserved)",
+			);
+		}
 
 		// 3. Read secrets file
 		const secrets = await readSecrets(this.secretsPath);
 
-		// 4. Create backup structure
-		const backup: BackupData = {
-			version: BACKUP_VERSION,
-			appVersion,
-			timestamp: new Date().toISOString(),
-			data,
-			secrets,
-		};
-
-		// 5. Estimate backup size before stringification to detect potential memory issues
-		// This is a rough estimate based on record counts to fail fast before JSON.stringify
-		const estimatedRecordCount =
-			// Core tables
-			data.users.length +
-			data.sessions.length +
-			data.serviceInstances.length +
-			data.serviceTags.length +
-			data.serviceInstanceTags.length +
-			(data.oidcProviders?.length || 0) +
-			data.oidcAccounts.length +
-			data.webAuthnCredentials.length +
-			// System settings
-			(data.systemSettings?.length || 0) +
-			// TRaSH Guides
-			(data.trashTemplates?.length || 0) +
-			(data.trashSettings?.length || 0) +
-			(data.trashSyncSchedules?.length || 0) +
-			(data.templateQualityProfileMappings?.length || 0) +
-			(data.instanceQualityProfileOverrides?.length || 0) +
-			(data.standaloneCFDeployments?.length || 0) +
-			(data.trashSyncHistory?.length || 0) +
-			(data.templateDeploymentHistory?.length || 0) +
-			(data.trashBackups?.length || 0) +
-			// Hunting
-			(data.huntConfigs?.length || 0) +
-			(data.huntLogs?.length || 0) +
-			(data.huntSearchHistory?.length || 0);
-
-		// Average ~1KB per record (conservative estimate including encrypted fields)
-		const estimatedSizeMB = (estimatedRecordCount * 1024) / (1024 * 1024);
+		// 4. Estimate backup size by sampling rows per table and multiplying by row count.
+		// The previous estimator used a flat 1KB-per-record assumption, which silently
+		// underestimated tables with JSON blobs (huntLog, trashSyncHistory, etc.) by 10–100×
+		// and never fired even when actual peak heap was near the container limit.
+		const estimatedBytes = estimateBackupBytes(data);
+		const estimatedSizeMB = estimatedBytes / (1024 * 1024);
 
 		if (estimatedSizeMB > RECOMMENDED_MAX_BACKUP_SIZE_MB) {
 			const message = `Backup size estimate (${estimatedSizeMB.toFixed(2)} MB) exceeds recommended limit (${RECOMMENDED_MAX_BACKUP_SIZE_MB} MB). This may cause memory issues or timeouts. Consider implementing backup streaming or pruning old data.`;
@@ -368,18 +410,34 @@ export class BackupService {
 			);
 		}
 
-		// 6. Convert to JSON
-		const backupJson = JSON.stringify(backup);
-
-		// 7. Encrypt the backup data
+		// 5+6+7. Build the backup object, JSON-stringify, encrypt, and let the whole
+		// `backup` go out of scope as soon as possible. Block-scoping `backup` lets V8
+		// reclaim the row data + JSON string before we allocate the base64 cipherText
+		// — roughly halves peak heap during encryption. Capture `timestamp` first so
+		// it survives the scope exit for filename generation downstream.
 		const password = await this.getBackupPassword();
-		const encryptedEnvelope = await encryptBackupData(backupJson, password);
+		const timestamp = new Date().toISOString();
+		let encryptedEnvelope: Awaited<ReturnType<typeof encryptBackupData>>;
+		{
+			const backup: BackupData = {
+				version: BACKUP_VERSION,
+				appVersion,
+				timestamp,
+				data,
+				secrets,
+			};
+			const backupJson = JSON.stringify(backup);
+			encryptedEnvelope = await encryptBackupData(backupJson, password);
+			// Both `backup` and `backupJson` go out of scope here, eligible for GC
+			// before the envelope JSON allocation below.
+		}
 
-		// 8. Convert encrypted envelope to JSON (pretty-printed for storage)
-		const envelopeJson = JSON.stringify(encryptedEnvelope, null, 2);
+		// 8. Convert encrypted envelope to JSON (compact — pretty-printing would
+		// add ~33% to peak heap during stringification).
+		const envelopeJson = JSON.stringify(encryptedEnvelope);
 
-		// 9. Generate filename using the same timestamp from backup payload to avoid drift
-		const filename = `arr-dashboard-backup-${backup.timestamp.replace(/[:.]/g, "-")}.json`;
+		// 9. Generate filename from the captured timestamp.
+		const filename = `arr-dashboard-backup-${timestamp.replace(/[:.]/g, "-")}.json`;
 
 		// 10. Determine backup path (organized by type)
 		const typeDir = path.join(this.backupsDir, type);
@@ -427,7 +485,7 @@ export class BackupService {
 			id: generateBackupId(backupPath),
 			filename,
 			type,
-			timestamp: backup.timestamp,
+			timestamp,
 			size: stats.size,
 		};
 
