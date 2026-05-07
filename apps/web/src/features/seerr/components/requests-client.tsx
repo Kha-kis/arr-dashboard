@@ -11,8 +11,8 @@ import {
 	Users,
 	WifiOff,
 } from "lucide-react";
-import { lazy, Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
 	PremiumEmptyState,
@@ -45,6 +45,12 @@ const RequestDetailModal = lazy(() =>
 	import("./request-detail-modal").then((m) => ({ default: m.RequestDetailModal })),
 );
 
+const ApproveWithOptionsDialog = lazy(() =>
+	import("./approve-with-options-dialog").then((m) => ({
+		default: m.ApproveWithOptionsDialog,
+	})),
+);
+
 const AuditLogTab = lazy(() => import("./audit-log-tab").then((m) => ({ default: m.AuditLogTab })));
 
 export type RequestsTab = "approval" | "all" | "users" | "issues" | "notifications" | "history";
@@ -55,6 +61,7 @@ export const RequestsClient = () => {
 	const [activeTab, setActiveTab] = useState<RequestsTab>("approval");
 	const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
 	const [selectedRequest, setSelectedRequest] = useState<SeerrRequest | null>(null);
+	const [approveOptionsRequest, setApproveOptionsRequest] = useState<SeerrRequest | null>(null);
 
 	// Deep-link: ?tab=<id> pre-selects a tab, ?user=<id> pre-selects requester filter on "All Requests" tab
 	const searchParams = useSearchParams();
@@ -63,7 +70,10 @@ export const RequestsClient = () => {
 	const [initialUserFilter, setInitialUserFilter] = useState<string | undefined>(undefined);
 
 	useEffect(() => {
-		if (deepLinkTab && ["approval", "all", "users", "issues", "notifications", "history"].includes(deepLinkTab)) {
+		if (
+			deepLinkTab &&
+			["approval", "all", "users", "issues", "notifications", "history"].includes(deepLinkTab)
+		) {
 			setActiveTab(deepLinkTab);
 		}
 		if (deepLinkUserId) {
@@ -238,6 +248,7 @@ export const RequestsClient = () => {
 							<ApprovalQueueTab
 								instanceId={currentInstanceId}
 								onSelectRequest={setSelectedRequest}
+								onOpenApproveOptions={setApproveOptionsRequest}
 							/>
 						)}
 						{activeTab === "all" && (
@@ -278,6 +289,10 @@ export const RequestsClient = () => {
 								},
 							)
 						}
+						onApproveWithOptions={(req) => {
+							setApproveOptionsRequest(req);
+							setSelectedRequest(null);
+						}}
 						onDecline={(requestId) =>
 							declineMutation.mutate(
 								{ instanceId: currentInstanceId, requestId },
@@ -314,6 +329,19 @@ export const RequestsClient = () => {
 								},
 							)
 						}
+					/>
+				</Suspense>
+			)}
+
+			{approveOptionsRequest && (
+				<Suspense>
+					<ApproveWithOptionsDialog
+						request={approveOptionsRequest}
+						instanceId={currentInstanceId}
+						open={!!approveOptionsRequest}
+						onOpenChange={(open) => {
+							if (!open) setApproveOptionsRequest(null);
+						}}
 					/>
 				</Suspense>
 			)}

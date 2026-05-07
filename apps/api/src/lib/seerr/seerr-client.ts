@@ -33,6 +33,7 @@ import {
 	type SeerrServiceServer,
 	type SeerrStatus,
 	type SeerrTvDetails,
+	type SeerrUpdateRequestPayload,
 	type SeerrUser,
 	type SeerrUserParams,
 	type SeerrUserUpdateData,
@@ -60,11 +61,11 @@ import { requireInstance } from "../arr/instance-helpers.js";
 import { AppValidationError, SeerrApiError } from "../errors.js";
 import { parseUpstreamOrThrow } from "../validation/parse-upstream.js";
 import {
-	type SeerrCache,
 	GENRE_TTL_MS,
-	ISSUE_COUNT_TTL_MS,
 	genreCacheKey,
+	ISSUE_COUNT_TTL_MS,
 	issueCountCacheKey,
+	type SeerrCache,
 } from "./seerr-cache.js";
 import type { SeerrCircuitBreaker } from "./seerr-circuit-breaker.js";
 import { withSeerrRetry } from "./seerr-retry.js";
@@ -359,11 +360,7 @@ export class SeerrClient {
 			return result;
 		} catch (error) {
 			// On 403 for mutating requests, try refreshing the CSRF token once
-			if (
-				isMutating &&
-				error instanceof SeerrApiError &&
-				error.seerrStatus === 403
-			) {
+			if (isMutating && error instanceof SeerrApiError && error.seerrStatus === 403) {
 				this.log.debug("Got 403 on mutating request, refreshing CSRF token and retrying");
 				this.csrfData = null;
 				await this.ensureCsrfData();
@@ -441,6 +438,22 @@ export class SeerrClient {
 	async approveRequest(requestId: number): Promise<SeerrRequest> {
 		const raw = await this.post(`/api/v1/request/${requestId}/approve`, undefined, TIMEOUT_ACTION);
 		return this.parseAndRecord(raw, seerrRequestSchema, "approveRequest");
+	}
+
+	/**
+	 * Update an existing request's quality profile, root folder, server, tags, etc.
+	 * Used by admins to override request settings before approving — e.g. to send
+	 * a request to a "trash" profile instead of the server's default.
+	 *
+	 * Maps to Jellyseerr/Overseerr `PUT /api/v1/request/:id`, which requires `mediaType`
+	 * so the server knows which *arr backend to validate the override against.
+	 */
+	async updateRequest(
+		requestId: number,
+		payload: SeerrUpdateRequestPayload,
+	): Promise<SeerrRequest> {
+		const raw = await this.put(`/api/v1/request/${requestId}`, payload, TIMEOUT_ACTION);
+		return this.parseAndRecord(raw, seerrRequestSchema, "updateRequest");
 	}
 
 	async declineRequest(requestId: number): Promise<SeerrRequest> {

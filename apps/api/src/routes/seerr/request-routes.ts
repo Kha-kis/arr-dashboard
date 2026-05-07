@@ -4,7 +4,7 @@
  * Endpoints for managing media requests: list, approve, decline, delete, retry.
  */
 
-import type { SeerrAttentionItem } from "@arr/shared";
+import type { SeerrAttentionItem, SeerrUpdateRequestPayload } from "@arr/shared";
 import { SEERR_MEDIA_STATUS, SEERR_REQUEST_STATUS } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
@@ -27,6 +27,28 @@ const requestIdParams = z.object({
 	instanceId: z.string().min(1),
 	requestId: z.coerce.number().int().positive(),
 });
+
+/**
+ * Optional admin overrides applied via PUT before approval.
+ * Empty/undefined = approve without modifying the request.
+ *
+ * `mediaType` is required by Jellyseerr's PUT endpoint, but we re-fetch the
+ * request to learn it instead of trusting the client.
+ *
+ * Jellyseerr's PUT also accepts a `userId` (request reassignment) — intentionally
+ * omitted here: the dashboard UI doesn't surface it, and approval-time
+ * reassignment is an edge case we'd rather force through Jellyseerr's own UI.
+ */
+const approveBody = z
+	.object({
+		// serverId can be 0 — Jellyseerr/Overseerr use 0-based ids for the first registered server
+		serverId: z.number().int().nonnegative().optional(),
+		profileId: z.number().int().positive().optional(),
+		rootFolder: z.string().min(1).optional(),
+		languageProfileId: z.number().int().positive().optional(),
+		tags: z.array(z.number().int().nonnegative()).optional(),
+	})
+	.optional();
 
 const listRequestsQuery = z.object({
 	take: z.coerce.number().int().min(1).max(100).default(20),
@@ -125,11 +147,39 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 	});
 
 	// POST /api/seerr/requests/:instanceId/:requestId/approve
+	// Optional body: { serverId?, profileId?, rootFolder?, languageProfileId?, tags?, userId? }
+	// When any override field is present, the request is updated (PUT) before approval —
+	// useful for admins who want to send a request to a non-default quality profile.
 	app.post("/:instanceId/:requestId/approve", async (request) => {
 		const { instanceId, requestId } = validateRequest(requestIdParams, request.params);
+		const overrides = validateRequest(approveBody, request.body ?? undefined);
 		const userId = request.currentUser!.id;
 		const client = await requireSeerrClient(app, userId, instanceId);
+
+		const hasOverrides =
+			!!overrides &&
+			(overrides.serverId !== undefined ||
+				overrides.profileId !== undefined ||
+				overrides.rootFolder !== undefined ||
+				overrides.languageProfileId !== undefined ||
+				overrides.tags !== undefined);
+
 		try {
+			if (hasOverrides) {
+				// Jellyseerr PUT requires mediaType — fetch the request to learn it.
+				// For TV it also requires `seasons` (array of season numbers) — without it
+				// Jellyseerr returns 500 "Missing seasons". We pass through the existing
+				// request's seasons so overrides don't accidentally narrow what was requested.
+				const existing = await client.getRequest(requestId);
+				const updatePayload: SeerrUpdateRequestPayload = {
+					mediaType: existing.type,
+					...overrides,
+				};
+				if (existing.type === "tv" && existing.seasons && existing.seasons.length > 0) {
+					updatePayload.seasons = existing.seasons.map((s) => s.seasonNumber);
+				}
+				await client.updateRequest(requestId, updatePayload);
+			}
 			const result = await client.approveRequest(requestId);
 			logSeerrAction(app, request.log, {
 				instanceId,
@@ -137,6 +187,7 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 				action: "approve_request",
 				targetType: "request",
 				targetId: String(requestId),
+				detail: hasOverrides ? { overridden: true, ...overrides } : undefined,
 			});
 			return result;
 		} catch (err) {

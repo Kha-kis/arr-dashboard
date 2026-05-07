@@ -1,10 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { FastifyBaseLogger } from "fastify";
-import { SeerrClient } from "../seerr-client.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ArrClientFactory, ClientInstanceData } from "../../arr/client-factory.js";
 import { SeerrApiError } from "../../errors.js";
 import { GENRE_TTL_MS, type SeerrCache } from "../seerr-cache.js";
 import type { SeerrCircuitBreaker } from "../seerr-circuit-breaker.js";
-import type { ArrClientFactory, ClientInstanceData } from "../../arr/client-factory.js";
+import { SeerrClient } from "../seerr-client.js";
 
 // Mock retry to just call the function directly (no actual retry/delay)
 vi.mock("../seerr-retry.js", () => ({
@@ -180,7 +180,15 @@ describe("getRequests", () => {
 				media: { id: 1, tmdbId: 123, status: 1, createdAt: "x", updatedAt: "x" },
 				createdAt: "x",
 				updatedAt: "x",
-				requestedBy: { id: 1, displayName: "u", createdAt: "x", updatedAt: "x", permissions: 0, requestCount: 0, userType: 1 },
+				requestedBy: {
+					id: 1,
+					displayName: "u",
+					createdAt: "x",
+					updatedAt: "x",
+					permissions: 0,
+					requestCount: 0,
+					userType: 1,
+				},
 				seasons: [],
 			},
 		]);
@@ -250,9 +258,7 @@ describe("getRequest", () => {
 	});
 
 	it("propagates error when rawRequest returns non-ok response", async () => {
-		factory.rawRequest.mockResolvedValue(
-			mockResponse({ error: "Not Found" }, 404),
-		);
+		factory.rawRequest.mockResolvedValue(mockResponse({ error: "Not Found" }, 404));
 
 		await expect(client.getRequest(999)).rejects.toThrow(SeerrApiError);
 	});
@@ -280,6 +286,32 @@ describe("approveRequest", () => {
 		factory.rawRequest.mockResolvedValue(mockResponse({ error: "Forbidden" }, 403));
 
 		await expect(client.approveRequest(1)).rejects.toThrow(SeerrApiError);
+	});
+});
+
+// ===========================================================================
+// 4b. updateRequest (admin profile/folder override)
+// ===========================================================================
+
+describe("updateRequest", () => {
+	it("PUTs to /api/v1/request/:id with the override payload", async () => {
+		const req = makeRequest({ profileId: 7, rootFolder: "/trash" });
+		factory.rawRequest.mockResolvedValue(mockResponse(req));
+
+		const result = await client.updateRequest(1, {
+			mediaType: "movie",
+			profileId: 7,
+			rootFolder: "/trash",
+		});
+
+		expect(result.profileId).toBe(7);
+		expect(result.rootFolder).toBe("/trash");
+		const call = factory.rawRequest.mock.calls[1]!;
+		expect(call[1]).toBe("/api/v1/request/1");
+		expect(call[2]).toMatchObject({
+			method: "PUT",
+			body: { mediaType: "movie", profileId: 7, rootFolder: "/trash" },
+		});
 	});
 });
 
@@ -479,8 +511,14 @@ describe("enrichRequestsWithMedia", () => {
 	});
 
 	it("handles partial failures (one lookup fails, others succeed)", async () => {
-		const req1 = makeRequest({ id: 1, media: { id: 1, tmdbId: 100, status: 1, createdAt: "x", updatedAt: "x" } });
-		const req2 = makeRequest({ id: 2, media: { id: 2, tmdbId: 200, status: 1, createdAt: "x", updatedAt: "x" } });
+		const req1 = makeRequest({
+			id: 1,
+			media: { id: 1, tmdbId: 100, status: 1, createdAt: "x", updatedAt: "x" },
+		});
+		const req2 = makeRequest({
+			id: 2,
+			media: { id: 2, tmdbId: 200, status: 1, createdAt: "x", updatedAt: "x" },
+		});
 		const pageResult = makePageResult([req1, req2]);
 
 		// First lookup succeeds, second fails
