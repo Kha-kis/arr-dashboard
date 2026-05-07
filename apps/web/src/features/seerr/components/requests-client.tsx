@@ -35,7 +35,6 @@ import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useSeerrInstances } from "../hooks/use-seerr-instances";
 import { isSeerrCircuitBreakerError } from "../lib/seerr-utils";
 import { ApprovalQueueTab } from "./approval-queue-tab";
-import { ApproveWithOptionsDialog } from "./approve-with-options-dialog";
 import { InstanceSelector } from "./instance-selector";
 import { IssuesTab } from "./issues-tab";
 import { NotificationsTab } from "./notifications-tab";
@@ -44,6 +43,12 @@ import { UsersTab } from "./users-tab";
 
 const RequestDetailModal = lazy(() =>
 	import("./request-detail-modal").then((m) => ({ default: m.RequestDetailModal })),
+);
+
+const ApproveWithOptionsDialog = lazy(() =>
+	import("./approve-with-options-dialog").then((m) => ({
+		default: m.ApproveWithOptionsDialog,
+	})),
 );
 
 const AuditLogTab = lazy(() => import("./audit-log-tab").then((m) => ({ default: m.AuditLogTab })));
@@ -243,6 +248,7 @@ export const RequestsClient = () => {
 							<ApprovalQueueTab
 								instanceId={currentInstanceId}
 								onSelectRequest={setSelectedRequest}
+								onOpenApproveOptions={setApproveOptionsRequest}
 							/>
 						)}
 						{activeTab === "all" && (
@@ -328,14 +334,16 @@ export const RequestsClient = () => {
 			)}
 
 			{approveOptionsRequest && (
-				<ApproveWithOptionsDialog
-					request={approveOptionsRequest}
-					instanceId={currentInstanceId}
-					open={!!approveOptionsRequest}
-					onOpenChange={(open) => {
-						if (!open) setApproveOptionsRequest(null);
-					}}
-				/>
+				<Suspense>
+					<ApproveWithOptionsDialog
+						request={approveOptionsRequest}
+						instanceId={currentInstanceId}
+						open={!!approveOptionsRequest}
+						onOpenChange={(open) => {
+							if (!open) setApproveOptionsRequest(null);
+						}}
+					/>
+				</Suspense>
 			)}
 		</>
 	);

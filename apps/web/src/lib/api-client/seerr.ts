@@ -65,6 +65,10 @@ export async function fetchSeerrRequest(
 /**
  * Optional admin overrides applied to a request before approval.
  * When omitted, the request is approved with whatever profile/server it already has.
+ *
+ * Note: Jellyseerr's PUT also accepts `userId` (request reassignment), but the
+ * dashboard intentionally doesn't surface it — approval-time reassignment goes
+ * through Jellyseerr's own UI.
  */
 export interface ApproveSeerrRequestOverrides {
 	serverId?: number;
@@ -72,7 +76,6 @@ export interface ApproveSeerrRequestOverrides {
 	rootFolder?: string;
 	languageProfileId?: number;
 	tags?: number[];
-	userId?: number;
 }
 
 export async function approveSeerrRequest(

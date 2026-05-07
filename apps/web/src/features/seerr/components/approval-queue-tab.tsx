@@ -31,7 +31,6 @@ import {
 } from "../../../hooks/api/useSeerr";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
-import { ApproveWithOptionsDialog } from "./approve-with-options-dialog";
 import { RequestCard } from "./request-card";
 import { RequestStatusTimeline } from "./request-status-timeline";
 
@@ -45,11 +44,17 @@ const SORT_OPTIONS: { value: RequestSort; label: string }[] = [
 interface ApprovalQueueTabProps {
 	instanceId: string;
 	onSelectRequest?: (request: SeerrRequest) => void;
+	/** Open the profile-override dialog for the given request (state owned by parent). */
+	onOpenApproveOptions?: (request: SeerrRequest) => void;
 }
 
 const PAGE_SIZE = 50;
 
-export const ApprovalQueueTab = ({ instanceId, onSelectRequest }: ApprovalQueueTabProps) => {
+export const ApprovalQueueTab = ({
+	instanceId,
+	onSelectRequest,
+	onOpenApproveOptions,
+}: ApprovalQueueTabProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const [incognitoMode] = useIncognitoMode();
 	const [sort, setSort] = useState<RequestSort>("added");
@@ -71,7 +76,6 @@ export const ApprovalQueueTab = ({ instanceId, onSelectRequest }: ApprovalQueueT
 	const bulkMutation = useBulkSeerrRequestAction();
 	const [confirmingDeclineId, setConfirmingDeclineId] = useState<number | null>(null);
 	const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null);
-	const [approveOptionsRequest, setApproveOptionsRequest] = useState<SeerrRequest | null>(null);
 
 	const requests = useMemo(() => data?.results ?? [], [data?.results]);
 	const allSelected = requests.length > 0 && requests.every((r) => selectedIds.has(r.id));
@@ -249,17 +253,19 @@ export const ApprovalQueueTab = ({ instanceId, onSelectRequest }: ApprovalQueueT
 										>
 											Approve
 										</GradientButton>
-										<Button
-											variant="secondary"
-											size="sm"
-											disabled={approveMutation.isPending}
-											onClick={() => setApproveOptionsRequest(request)}
-											title="Approve with quality profile options"
-											className="gap-1.5 border-border/50 bg-card/50 text-xs"
-										>
-											<SlidersHorizontal className="h-3 w-3" />
-											<span className="hidden sm:inline">Options</span>
-										</Button>
+										{onOpenApproveOptions && (
+											<Button
+												variant="secondary"
+												size="sm"
+												disabled={approveMutation.isPending}
+												onClick={() => onOpenApproveOptions(request)}
+												title="Approve with quality profile options"
+												className="gap-1.5 border-border/50 bg-card/50 text-xs"
+											>
+												<SlidersHorizontal className="h-3 w-3" />
+												<span className="hidden sm:inline">Options</span>
+											</Button>
+										)}
 										{confirmingDeclineId === request.id ? (
 											<>
 												<Button
@@ -426,17 +432,6 @@ export const ApprovalQueueTab = ({ instanceId, onSelectRequest }: ApprovalQueueT
 						</Button>
 					</div>
 				</div>
-			)}
-
-			{approveOptionsRequest && (
-				<ApproveWithOptionsDialog
-					request={approveOptionsRequest}
-					instanceId={instanceId}
-					open={!!approveOptionsRequest}
-					onOpenChange={(open) => {
-						if (!open) setApproveOptionsRequest(null);
-					}}
-				/>
 			)}
 		</div>
 	);

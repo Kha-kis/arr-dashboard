@@ -416,6 +416,9 @@ export interface SeerrCreateRequestPayload {
 /**
  * Payload for PUT /api/v1/request/:id — admin overrides applied before approval.
  * Jellyseerr/Overseerr require `mediaType` so the server knows which *arr backend to target.
+ *
+ * `userId` (Jellyseerr-side requester reassignment) is part of the upstream shape but
+ * intentionally not exposed by the dashboard's approve route — see request-routes.ts.
  */
 export interface SeerrUpdateRequestPayload {
 	mediaType: "movie" | "tv";

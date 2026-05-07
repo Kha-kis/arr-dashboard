@@ -32,18 +32,20 @@ const requestIdParams = z.object({
  * Optional admin overrides applied via PUT before approval.
  * Empty/undefined = approve without modifying the request.
  *
- * `mediaType` is required by Jellyseerr's PUT endpoint, but we accept it as
- * optional here and re-fetch the request when needed so the client doesn't
- * have to send it for a plain approve.
+ * `mediaType` is required by Jellyseerr's PUT endpoint, but we re-fetch the
+ * request to learn it instead of trusting the client.
+ *
+ * Jellyseerr's PUT also accepts a `userId` (request reassignment) — intentionally
+ * omitted here: the dashboard UI doesn't surface it, and approval-time
+ * reassignment is an edge case we'd rather force through Jellyseerr's own UI.
  */
 const approveBody = z
 	.object({
-		serverId: z.number().int().nonnegative().optional(),
+		serverId: z.number().int().positive().optional(),
 		profileId: z.number().int().positive().optional(),
 		rootFolder: z.string().min(1).optional(),
 		languageProfileId: z.number().int().positive().optional(),
 		tags: z.array(z.number().int().nonnegative()).optional(),
-		userId: z.number().int().positive().optional(),
 	})
 	.optional();
 
@@ -159,8 +161,7 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 				overrides.profileId !== undefined ||
 				overrides.rootFolder !== undefined ||
 				overrides.languageProfileId !== undefined ||
-				overrides.tags !== undefined ||
-				overrides.userId !== undefined);
+				overrides.tags !== undefined);
 
 		try {
 			if (hasOverrides) {

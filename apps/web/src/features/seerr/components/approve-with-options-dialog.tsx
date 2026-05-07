@@ -105,15 +105,21 @@ export const ApproveWithOptionsDialog = ({
 			profileId?: number;
 			rootFolder?: string;
 		} = {};
-		// Only send fields that differ from the request's current values — avoids
-		// pointless PUTs and keeps the audit log clean.
-		if (serverId !== undefined && serverId !== request.serverId) {
+		// Compare against the *effective* current values — the request's own fields
+		// when set, otherwise the selected server's defaults. This way a confirm
+		// without changes doesn't fire a pointless PUT or write `overridden: true`
+		// to the audit log for first-time-routed requests.
+		const effectiveServerId = request.serverId ?? selectedServer?.server.id;
+		const effectiveProfileId = request.profileId ?? selectedServer?.server.activeProfileId;
+		const effectiveRootFolder = request.rootFolder ?? selectedServer?.server.activeDirectory;
+
+		if (serverId !== undefined && serverId !== effectiveServerId) {
 			overrides.serverId = serverId;
 		}
-		if (profileId !== undefined && profileId !== request.profileId) {
+		if (profileId !== undefined && profileId !== effectiveProfileId) {
 			overrides.profileId = profileId;
 		}
-		if (rootFolder && rootFolder !== request.rootFolder) {
+		if (rootFolder && rootFolder !== effectiveRootFolder) {
 			overrides.rootFolder = rootFolder;
 		}
 

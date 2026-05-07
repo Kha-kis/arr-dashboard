@@ -348,6 +348,80 @@ describe("POST /:instanceId/:requestId/approve", () => {
 		expect(res.statusCode).toBe(400);
 		expect(mockClient.approveRequest).not.toHaveBeenCalled();
 	});
+
+	it("rejects serverId of 0 (Jellyseerr server IDs are positive)", async () => {
+		const res = await app.inject({
+			method: "POST",
+			url: "/api/seerr/requests/inst-1/1/approve",
+			payload: { serverId: 0 },
+		});
+
+		expect(res.statusCode).toBe(400);
+		expect(mockClient.approveRequest).not.toHaveBeenCalled();
+	});
+
+	it("treats empty body object as no overrides", async () => {
+		mockClient.approveRequest.mockResolvedValueOnce({ id: 1, status: 2 });
+
+		const res = await app.inject({
+			method: "POST",
+			url: "/api/seerr/requests/inst-1/1/approve",
+			payload: {},
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(mockClient.updateRequest).not.toHaveBeenCalled();
+		expect(mockClient.getRequest).not.toHaveBeenCalled();
+		expect(mockClient.approveRequest).toHaveBeenCalledWith(1);
+	});
+
+	it("aborts approval and logs failure when getRequest fails before override PUT", async () => {
+		const error = Object.assign(new Error("Not found"), { statusCode: 404 });
+		mockClient.getRequest.mockRejectedValueOnce(error);
+
+		const res = await app.inject({
+			method: "POST",
+			url: "/api/seerr/requests/inst-1/1/approve",
+			payload: { profileId: 9 },
+		});
+
+		expect(res.statusCode).toBe(404);
+		expect(mockClient.updateRequest).not.toHaveBeenCalled();
+		expect(mockClient.approveRequest).not.toHaveBeenCalled();
+		expect(logSeerrAction).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.objectContaining({
+				action: "approve_request",
+				targetId: "1",
+				success: false,
+			}),
+		);
+	});
+
+	it("aborts approval and logs failure when updateRequest fails", async () => {
+		mockClient.getRequest.mockResolvedValueOnce({ id: 1, type: "movie" });
+		const error = Object.assign(new Error("Bad profile"), { statusCode: 400 });
+		mockClient.updateRequest.mockRejectedValueOnce(error);
+
+		const res = await app.inject({
+			method: "POST",
+			url: "/api/seerr/requests/inst-1/1/approve",
+			payload: { profileId: 9 },
+		});
+
+		expect(res.statusCode).toBe(400);
+		expect(mockClient.approveRequest).not.toHaveBeenCalled();
+		expect(logSeerrAction).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.objectContaining({
+				action: "approve_request",
+				targetId: "1",
+				success: false,
+			}),
+		);
+	});
 });
 
 // ===========================================================================
