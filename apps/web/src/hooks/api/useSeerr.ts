@@ -26,13 +26,13 @@ import type {
 	SeerrUser,
 } from "@arr/shared";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { POLLING_ACTIVE, POLLING_BACKGROUND, POLLING_STANDARD } from "../../lib/polling-intervals";
-import { useEnrichableItems } from "../useEnrichableItems";
 import {
+	type ApproveSeerrRequestOverrides,
 	addSeerrIssueComment,
 	approveSeerrRequest,
 	type BulkRequestResult,
 	bulkSeerrRequestAction,
+	clearSeerrCache,
 	createSeerrRequest,
 	declineSeerrRequest,
 	deleteSeerrRequest,
@@ -40,18 +40,15 @@ import {
 	type FetchSeerrRequestsParams,
 	type FetchSeerrUsersParams,
 	fetchLibraryEnrichment,
+	fetchSeerrAttention,
+	fetchSeerrAuditLog,
 	fetchSeerrDiscoverByGenre,
 	fetchSeerrDiscoverMovies,
 	fetchSeerrDiscoverMoviesUpcoming,
 	fetchSeerrDiscoverTrending,
 	fetchSeerrDiscoverTv,
 	fetchSeerrDiscoverTvUpcoming,
-	clearSeerrCache,
-	fetchSeerrAttention,
-	fetchSeerrAuditLog,
 	fetchSeerrGenres,
-	type SeerrAuditLogEntry,
-	type SeerrHealthResponse,
 	fetchSeerrHealth,
 	fetchSeerrIssues,
 	fetchSeerrMovieDetails,
@@ -66,13 +63,17 @@ import {
 	fetchSeerrUserQuota,
 	fetchSeerrUsers,
 	retrySeerrRequest,
+	type SeerrAuditLogEntry,
+	type SeerrHealthResponse,
 	testSeerrNotification,
 	type UpdateSeerrUserPayload,
 	updateSeerrIssueStatus,
 	updateSeerrNotification,
 	updateSeerrUser,
 } from "../../lib/api-client/seerr";
+import { POLLING_ACTIVE, POLLING_BACKGROUND, POLLING_STANDARD } from "../../lib/polling-intervals";
 import { seerrKeys } from "../../lib/query-keys";
+import { useEnrichableItems } from "../useEnrichableItems";
 
 // ============================================================================
 // Request Hooks
@@ -112,8 +113,13 @@ export const useSeerrAttention = (instanceId: string) =>
 
 export const useApproveSeerrRequest = () => {
 	const queryClient = useQueryClient();
-	return useMutation<SeerrRequest, Error, { instanceId: string; requestId: number }>({
-		mutationFn: ({ instanceId, requestId }) => approveSeerrRequest(instanceId, requestId),
+	return useMutation<
+		SeerrRequest,
+		Error,
+		{ instanceId: string; requestId: number; overrides?: ApproveSeerrRequestOverrides }
+	>({
+		mutationFn: ({ instanceId, requestId, overrides }) =>
+			approveSeerrRequest(instanceId, requestId, overrides),
 		onSuccess: (_, { instanceId }) => {
 			queryClient.invalidateQueries({ queryKey: ["seerr", "requests", instanceId] });
 			queryClient.invalidateQueries({ queryKey: seerrKeys.requestCount(instanceId) });

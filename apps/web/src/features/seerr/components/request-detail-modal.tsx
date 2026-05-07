@@ -10,6 +10,7 @@ import {
 	Layers,
 	Loader2,
 	RotateCcw,
+	SlidersHorizontal,
 	Star,
 	Trash2,
 	Tv,
@@ -36,8 +37,8 @@ import {
 	getRequestStatusLabel,
 	getRequestStatusVariant,
 } from "../lib/seerr-utils";
-import { RequesterProfilePopover } from "./requester-profile-popover";
 import { RequestStatusTimeline } from "./request-status-timeline";
+import { RequesterProfilePopover } from "./requester-profile-popover";
 
 // ============================================================================
 // Types
@@ -48,6 +49,8 @@ interface RequestDetailModalProps {
 	instanceId: string;
 	onClose: () => void;
 	onApprove?: (requestId: number) => void;
+	/** Opens the profile-override dialog. Optional — when omitted the secondary button is hidden. */
+	onApproveWithOptions?: (request: SeerrRequest) => void;
 	onDecline?: (requestId: number) => void;
 	onRetry?: (requestId: number) => void;
 	onDelete?: (requestId: number) => void;
@@ -92,6 +95,7 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 	instanceId,
 	onClose,
 	onApprove,
+	onApproveWithOptions,
 	onDecline,
 	onRetry,
 	onDelete,
@@ -123,7 +127,9 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 	const year = releaseDate ? new Date(releaseDate).getFullYear() : null;
 
 	const backdropUrl = incognitoMode ? null : getSeerrImageUrl(details?.backdropPath, "w1280");
-	const posterUrl = incognitoMode ? null : getSeerrImageUrl(details?.posterPath ?? request.media.posterPath, "w342");
+	const posterUrl = incognitoMode
+		? null
+		: getSeerrImageUrl(details?.posterPath ?? request.media.posterPath, "w342");
 
 	const voteAverage = details
 		? (isMovie
@@ -297,7 +303,11 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 							<div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
 								<RequesterProfilePopover
 									seerrUser={request.requestedBy}
-									displayName={incognitoMode ? getLinuxUsername(request.requestedBy.displayName) : request.requestedBy.displayName}
+									displayName={
+										incognitoMode
+											? getLinuxUsername(request.requestedBy.displayName)
+											: request.requestedBy.displayName
+									}
 									instanceId={instanceId}
 									isIncognito={incognitoMode}
 								>
@@ -317,7 +327,9 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 											<User className="h-3.5 w-3.5" aria-hidden="true" />
 										)}
 										<span className="font-medium text-foreground/80">
-											{incognitoMode ? getLinuxUsername(request.requestedBy.displayName) : request.requestedBy.displayName}
+											{incognitoMode
+												? getLinuxUsername(request.requestedBy.displayName)
+												: request.requestedBy.displayName}
 										</span>
 									</button>
 								</RequesterProfilePopover>
@@ -330,7 +342,10 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 											: request.status === SEERR_REQUEST_STATUS.DECLINED
 												? "Declined"
 												: "Modified"}{" "}
-										by {incognitoMode ? getLinuxUsername(request.modifiedBy.displayName) : request.modifiedBy.displayName}
+										by{" "}
+										{incognitoMode
+											? getLinuxUsername(request.modifiedBy.displayName)
+											: request.modifiedBy.displayName}
 									</span>
 								)}
 							</div>
@@ -359,6 +374,17 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 								<GradientButton size="sm" icon={Check} onClick={() => onApprove(request.id)}>
 									Approve
 								</GradientButton>
+							)}
+							{isPending && onApproveWithOptions && (
+								<Button
+									variant="secondary"
+									size="sm"
+									onClick={() => onApproveWithOptions(request)}
+									className="gap-1.5 border-border/50 bg-card/50"
+								>
+									<SlidersHorizontal className="h-3.5 w-3.5" />
+									Approve with profile…
+								</Button>
 							)}
 							{isPending && onDecline && (
 								<Button
@@ -412,8 +438,16 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 
 					{/* Loading state for details */}
 					{isDetailsLoading && (
-						<div role="status" aria-label="Loading media details" className="flex items-center justify-center py-8">
-							<Loader2 className="h-6 w-6 animate-spin" aria-hidden="true" style={{ color: themeGradient.from }} />
+						<div
+							role="status"
+							aria-label="Loading media details"
+							className="flex items-center justify-center py-8"
+						>
+							<Loader2
+								className="h-6 w-6 animate-spin"
+								aria-hidden="true"
+								style={{ color: themeGradient.from }}
+							/>
 						</div>
 					)}
 
@@ -455,7 +489,11 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 													<span
 														className={`inline-block h-2 w-2 shrink-0 rounded-full ${getSeasonStatusColor(requestSeason.status)}`}
 														role="img"
-														aria-label={SEERR_MEDIA_STATUS_LABEL[requestSeason.status as keyof typeof SEERR_MEDIA_STATUS_LABEL] ?? "Unknown"}
+														aria-label={
+															SEERR_MEDIA_STATUS_LABEL[
+																requestSeason.status as keyof typeof SEERR_MEDIA_STATUS_LABEL
+															] ?? "Unknown"
+														}
 														title={`Season ${season.seasonNumber}: ${SEERR_MEDIA_STATUS_LABEL[requestSeason.status as keyof typeof SEERR_MEDIA_STATUS_LABEL] ?? "Unknown"}`}
 													/>
 												)}
