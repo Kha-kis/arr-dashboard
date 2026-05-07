@@ -1,8 +1,13 @@
+import type {
+	LibraryEnrichmentResponse,
+	SeerrPageResult,
+	SeerrRequest,
+	SeerrRequestCount,
+} from "@arr/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { renderHook, waitFor, act } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import type { SeerrRequest, SeerrRequestCount, SeerrPageResult, LibraryEnrichmentResponse } from "@arr/shared";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock the entire API client module
 vi.mock("../../../lib/api-client/seerr");
@@ -10,16 +15,16 @@ vi.mock("../../../lib/api-client/seerr");
 // Import after mock declaration
 import * as seerrApi from "../../../lib/api-client/seerr";
 import {
-	useSeerrRequests,
-	useSeerrRequest,
-	useSeerrRequestCount,
 	useApproveSeerrRequest,
 	useBulkSeerrRequestAction,
-	useSeerrSearch,
-	useSeerrDiscoverMovies,
-	useSeerrGenres,
 	useClearSeerrCache,
 	useLibraryEnrichment,
+	useSeerrDiscoverMovies,
+	useSeerrGenres,
+	useSeerrRequest,
+	useSeerrRequestCount,
+	useSeerrRequests,
+	useSeerrSearch,
 } from "../useSeerr";
 
 // ============================================================================
@@ -140,10 +145,7 @@ describe("useSeerrRequests", () => {
 		vi.mocked(seerrApi.fetchSeerrRequests).mockResolvedValue(samplePageResult);
 
 		const { wrapper } = createWrapper();
-		const { result } = renderHook(
-			() => useSeerrRequests({ instanceId: "inst-1" }),
-			{ wrapper },
-		);
+		const { result } = renderHook(() => useSeerrRequests({ instanceId: "inst-1" }), { wrapper });
 
 		await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
@@ -246,7 +248,23 @@ describe("useApproveSeerrRequest", () => {
 
 		await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-		expect(seerrApi.approveSeerrRequest).toHaveBeenCalledWith("inst-1", 1);
+		expect(seerrApi.approveSeerrRequest).toHaveBeenCalledWith("inst-1", 1, undefined);
+	});
+
+	it("forwards profile overrides to approveSeerrRequest", async () => {
+		vi.mocked(seerrApi.approveSeerrRequest).mockResolvedValue(sampleRequest);
+
+		const { wrapper } = createWrapper();
+		const { result } = renderHook(() => useApproveSeerrRequest(), { wrapper });
+
+		const overrides = { profileId: 7, rootFolder: "/trash" };
+		await act(async () => {
+			result.current.mutate({ instanceId: "inst-1", requestId: 1, overrides });
+		});
+
+		await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+		expect(seerrApi.approveSeerrRequest).toHaveBeenCalledWith("inst-1", 1, overrides);
 	});
 
 	it("invalidates request queries on success", async () => {
@@ -308,11 +326,7 @@ describe("useBulkSeerrRequestAction", () => {
 
 		await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-		expect(seerrApi.bulkSeerrRequestAction).toHaveBeenCalledWith(
-			"inst-1",
-			"approve",
-			[1, 2, 3],
-		);
+		expect(seerrApi.bulkSeerrRequestAction).toHaveBeenCalledWith("inst-1", "approve", [1, 2, 3]);
 		expect(result.current.data).toEqual(bulkResult);
 	});
 
@@ -354,9 +368,7 @@ describe("useBulkSeerrRequestAction", () => {
 
 describe("useSeerrSearch", () => {
 	it("returns infinite query with search results", async () => {
-		vi.mocked(seerrApi.fetchSeerrSearch).mockResolvedValue(
-			sampleDiscoverResponse,
-		);
+		vi.mocked(seerrApi.fetchSeerrSearch).mockResolvedValue(sampleDiscoverResponse);
 
 		const { wrapper } = createWrapper();
 		const { result } = renderHook(() => useSeerrSearch("inst-1", "matrix"), {
@@ -365,11 +377,7 @@ describe("useSeerrSearch", () => {
 
 		await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-		expect(seerrApi.fetchSeerrSearch).toHaveBeenCalledWith(
-			"inst-1",
-			"matrix",
-			1,
-		);
+		expect(seerrApi.fetchSeerrSearch).toHaveBeenCalledWith("inst-1", "matrix", 1);
 		expect(result.current.data!.pages).toHaveLength(1);
 		expect(result.current.data!.pages[0]).toEqual(sampleDiscoverResponse);
 		expect(result.current.hasNextPage).toBe(true);
@@ -392,22 +400,14 @@ describe("useSeerrSearch", () => {
 
 describe("useSeerrDiscoverMovies", () => {
 	it("returns infinite query with pagination", async () => {
-		vi.mocked(seerrApi.fetchSeerrDiscoverMovies).mockResolvedValue(
-			sampleDiscoverResponse,
-		);
+		vi.mocked(seerrApi.fetchSeerrDiscoverMovies).mockResolvedValue(sampleDiscoverResponse);
 
 		const { wrapper } = createWrapper();
-		const { result } = renderHook(
-			() => useSeerrDiscoverMovies("inst-1"),
-			{ wrapper },
-		);
+		const { result } = renderHook(() => useSeerrDiscoverMovies("inst-1"), { wrapper });
 
 		await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-		expect(seerrApi.fetchSeerrDiscoverMovies).toHaveBeenCalledWith(
-			"inst-1",
-			1,
-		);
+		expect(seerrApi.fetchSeerrDiscoverMovies).toHaveBeenCalledWith("inst-1", 1);
 		expect(result.current.data!.pages[0]!.results).toHaveLength(1);
 		expect(result.current.hasNextPage).toBe(true);
 	});
@@ -433,10 +433,7 @@ describe("useSeerrGenres", () => {
 		vi.mocked(seerrApi.fetchSeerrGenres).mockResolvedValue(genres);
 
 		const { wrapper } = createWrapper();
-		const { result } = renderHook(
-			() => useSeerrGenres("inst-1", "movie"),
-			{ wrapper },
-		);
+		const { result } = renderHook(() => useSeerrGenres("inst-1", "movie"), { wrapper });
 
 		await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
@@ -509,9 +506,7 @@ describe("useLibraryEnrichment", () => {
 				},
 			},
 		};
-		vi.mocked(seerrApi.fetchLibraryEnrichment).mockResolvedValue(
-			enrichmentResponse,
-		);
+		vi.mocked(seerrApi.fetchLibraryEnrichment).mockResolvedValue(enrichmentResponse);
 
 		const items = [
 			{
@@ -541,10 +536,9 @@ describe("useLibraryEnrichment", () => {
 		];
 
 		const { wrapper } = createWrapper();
-		const { result } = renderHook(
-			() => useLibraryEnrichment("seerr-inst", items as any),
-			{ wrapper },
-		);
+		const { result } = renderHook(() => useLibraryEnrichment("seerr-inst", items as any), {
+			wrapper,
+		});
 
 		await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
@@ -573,10 +567,7 @@ describe("useLibraryEnrichment", () => {
 		];
 
 		const { wrapper } = createWrapper();
-		const { result } = renderHook(
-			() => useLibraryEnrichment(null, items as any),
-			{ wrapper },
-		);
+		const { result } = renderHook(() => useLibraryEnrichment(null, items as any), { wrapper });
 
 		expect(result.current.fetchStatus).toBe("idle");
 		expect(seerrApi.fetchLibraryEnrichment).not.toHaveBeenCalled();

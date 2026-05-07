@@ -28,6 +28,25 @@ const requestIdParams = z.object({
 	requestId: z.coerce.number().int().positive(),
 });
 
+/**
+ * Optional admin overrides applied via PUT before approval.
+ * Empty/undefined = approve without modifying the request.
+ *
+ * `mediaType` is required by Jellyseerr's PUT endpoint, but we accept it as
+ * optional here and re-fetch the request when needed so the client doesn't
+ * have to send it for a plain approve.
+ */
+const approveBody = z
+	.object({
+		serverId: z.number().int().nonnegative().optional(),
+		profileId: z.number().int().positive().optional(),
+		rootFolder: z.string().min(1).optional(),
+		languageProfileId: z.number().int().positive().optional(),
+		tags: z.array(z.number().int().nonnegative()).optional(),
+		userId: z.number().int().positive().optional(),
+	})
+	.optional();
+
 const listRequestsQuery = z.object({
 	take: z.coerce.number().int().min(1).max(100).default(20),
 	skip: z.coerce.number().int().min(0).default(0),
@@ -125,11 +144,33 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 	});
 
 	// POST /api/seerr/requests/:instanceId/:requestId/approve
+	// Optional body: { serverId?, profileId?, rootFolder?, languageProfileId?, tags?, userId? }
+	// When any override field is present, the request is updated (PUT) before approval —
+	// useful for admins who want to send a request to a non-default quality profile.
 	app.post("/:instanceId/:requestId/approve", async (request) => {
 		const { instanceId, requestId } = validateRequest(requestIdParams, request.params);
+		const overrides = validateRequest(approveBody, request.body ?? undefined);
 		const userId = request.currentUser!.id;
 		const client = await requireSeerrClient(app, userId, instanceId);
+
+		const hasOverrides =
+			!!overrides &&
+			(overrides.serverId !== undefined ||
+				overrides.profileId !== undefined ||
+				overrides.rootFolder !== undefined ||
+				overrides.languageProfileId !== undefined ||
+				overrides.tags !== undefined ||
+				overrides.userId !== undefined);
+
 		try {
+			if (hasOverrides) {
+				// Jellyseerr PUT requires mediaType — fetch the request to learn it.
+				const existing = await client.getRequest(requestId);
+				await client.updateRequest(requestId, {
+					mediaType: existing.type,
+					...overrides,
+				});
+			}
 			const result = await client.approveRequest(requestId);
 			logSeerrAction(app, request.log, {
 				instanceId,
@@ -137,6 +178,7 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 				action: "approve_request",
 				targetType: "request",
 				targetId: String(requestId),
+				detail: hasOverrides ? { overridden: true, ...overrides } : undefined,
 			});
 			return result;
 		} catch (err) {

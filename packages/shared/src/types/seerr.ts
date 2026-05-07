@@ -413,6 +413,20 @@ export interface SeerrCreateRequestPayload {
 	userId?: number;
 }
 
+/**
+ * Payload for PUT /api/v1/request/:id — admin overrides applied before approval.
+ * Jellyseerr/Overseerr require `mediaType` so the server knows which *arr backend to target.
+ */
+export interface SeerrUpdateRequestPayload {
+	mediaType: "movie" | "tv";
+	serverId?: number;
+	profileId?: number;
+	rootFolder?: string;
+	languageProfileId?: number;
+	tags?: number[];
+	userId?: number;
+}
+
 /** Response from POST /api/v1/request */
 export interface SeerrCreateRequestResponse {
 	id: number;

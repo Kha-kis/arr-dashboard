@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach, afterAll } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Module-level mocks — vi.hoisted ensures these exist before vi.mock factories
@@ -10,6 +10,7 @@ const { mockClient } = vi.hoisted(() => ({
 		getRequestCount: vi.fn(),
 		getRequest: vi.fn(),
 		approveRequest: vi.fn(),
+		updateRequest: vi.fn(),
 		declineRequest: vi.fn(),
 		deleteRequest: vi.fn(),
 		retryRequest: vi.fn(),
@@ -30,9 +31,9 @@ vi.mock("../../../lib/seerr/seerr-action-logger.js", () => ({
 // ---------------------------------------------------------------------------
 
 import Fastify from "fastify";
-import { registerRequestRoutes } from "../request-routes.js";
-import { requireSeerrClient } from "../../../lib/seerr/seerr-client.js";
 import { logSeerrAction } from "../../../lib/seerr/seerr-action-logger.js";
+import { requireSeerrClient } from "../../../lib/seerr/seerr-client.js";
+import { registerRequestRoutes } from "../request-routes.js";
 
 // ---------------------------------------------------------------------------
 // Shared test data
@@ -189,7 +190,10 @@ describe("GET /:instanceId/count", () => {
 
 describe("GET /:instanceId/:requestId", () => {
 	it("returns enriched single request", async () => {
-		const enrichedRequest = { ...sampleRequest, media: { ...sampleRequest.media, title: "Test Movie" } };
+		const enrichedRequest = {
+			...sampleRequest,
+			media: { ...sampleRequest.media, title: "Test Movie" },
+		};
 		mockClient.getRequest.mockResolvedValueOnce(sampleRequest);
 		mockClient.enrichRequestsWithMedia.mockResolvedValueOnce({
 			pageInfo: { pages: 1, pageSize: 1, results: 1, page: 1 },
@@ -291,6 +295,54 @@ describe("POST /:instanceId/:requestId/approve", () => {
 		const res = await app.inject({
 			method: "POST",
 			url: "/api/seerr/requests/inst-1/abc/approve",
+		});
+
+		expect(res.statusCode).toBe(400);
+		expect(mockClient.approveRequest).not.toHaveBeenCalled();
+	});
+
+	it("calls updateRequest with mediaType from existing request before approving when overrides are provided", async () => {
+		const approveResult = { id: 1, status: 2 };
+		mockClient.getRequest.mockResolvedValueOnce({ id: 1, type: "movie" });
+		mockClient.updateRequest.mockResolvedValueOnce({ id: 1, profileId: 9 });
+		mockClient.approveRequest.mockResolvedValueOnce(approveResult);
+
+		const res = await app.inject({
+			method: "POST",
+			url: "/api/seerr/requests/inst-1/1/approve",
+			payload: { profileId: 9, rootFolder: "/trash" },
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(JSON.parse(res.payload)).toEqual(approveResult);
+		expect(mockClient.getRequest).toHaveBeenCalledWith(1);
+		expect(mockClient.updateRequest).toHaveBeenCalledWith(1, {
+			mediaType: "movie",
+			profileId: 9,
+			rootFolder: "/trash",
+		});
+		expect(mockClient.approveRequest).toHaveBeenCalledWith(1);
+	});
+
+	it("skips updateRequest when no overrides are provided", async () => {
+		mockClient.approveRequest.mockResolvedValueOnce({ id: 1, status: 2 });
+
+		const res = await app.inject({
+			method: "POST",
+			url: "/api/seerr/requests/inst-1/1/approve",
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(mockClient.updateRequest).not.toHaveBeenCalled();
+		expect(mockClient.getRequest).not.toHaveBeenCalled();
+		expect(mockClient.approveRequest).toHaveBeenCalledWith(1);
+	});
+
+	it("rejects negative profileId", async () => {
+		const res = await app.inject({
+			method: "POST",
+			url: "/api/seerr/requests/inst-1/1/approve",
+			payload: { profileId: -1 },
 		});
 
 		expect(res.statusCode).toBe(400);

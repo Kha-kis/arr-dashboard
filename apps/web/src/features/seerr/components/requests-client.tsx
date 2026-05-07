@@ -11,8 +11,8 @@ import {
 	Users,
 	WifiOff,
 } from "lucide-react";
-import { lazy, Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
 	PremiumEmptyState,
@@ -35,6 +35,7 @@ import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useSeerrInstances } from "../hooks/use-seerr-instances";
 import { isSeerrCircuitBreakerError } from "../lib/seerr-utils";
 import { ApprovalQueueTab } from "./approval-queue-tab";
+import { ApproveWithOptionsDialog } from "./approve-with-options-dialog";
 import { InstanceSelector } from "./instance-selector";
 import { IssuesTab } from "./issues-tab";
 import { NotificationsTab } from "./notifications-tab";
@@ -55,6 +56,7 @@ export const RequestsClient = () => {
 	const [activeTab, setActiveTab] = useState<RequestsTab>("approval");
 	const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
 	const [selectedRequest, setSelectedRequest] = useState<SeerrRequest | null>(null);
+	const [approveOptionsRequest, setApproveOptionsRequest] = useState<SeerrRequest | null>(null);
 
 	// Deep-link: ?tab=<id> pre-selects a tab, ?user=<id> pre-selects requester filter on "All Requests" tab
 	const searchParams = useSearchParams();
@@ -63,7 +65,10 @@ export const RequestsClient = () => {
 	const [initialUserFilter, setInitialUserFilter] = useState<string | undefined>(undefined);
 
 	useEffect(() => {
-		if (deepLinkTab && ["approval", "all", "users", "issues", "notifications", "history"].includes(deepLinkTab)) {
+		if (
+			deepLinkTab &&
+			["approval", "all", "users", "issues", "notifications", "history"].includes(deepLinkTab)
+		) {
 			setActiveTab(deepLinkTab);
 		}
 		if (deepLinkUserId) {
@@ -278,6 +283,10 @@ export const RequestsClient = () => {
 								},
 							)
 						}
+						onApproveWithOptions={(req) => {
+							setApproveOptionsRequest(req);
+							setSelectedRequest(null);
+						}}
 						onDecline={(requestId) =>
 							declineMutation.mutate(
 								{ instanceId: currentInstanceId, requestId },
@@ -316,6 +325,17 @@ export const RequestsClient = () => {
 						}
 					/>
 				</Suspense>
+			)}
+
+			{approveOptionsRequest && (
+				<ApproveWithOptionsDialog
+					request={approveOptionsRequest}
+					instanceId={currentInstanceId}
+					open={!!approveOptionsRequest}
+					onOpenChange={(open) => {
+						if (!open) setApproveOptionsRequest(null);
+					}}
+				/>
 			)}
 		</>
 	);

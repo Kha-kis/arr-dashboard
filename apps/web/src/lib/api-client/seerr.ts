@@ -62,11 +62,28 @@ export async function fetchSeerrRequest(
 	return apiRequest(`/api/seerr/requests/${instanceId}/${requestId}`);
 }
 
+/**
+ * Optional admin overrides applied to a request before approval.
+ * When omitted, the request is approved with whatever profile/server it already has.
+ */
+export interface ApproveSeerrRequestOverrides {
+	serverId?: number;
+	profileId?: number;
+	rootFolder?: string;
+	languageProfileId?: number;
+	tags?: number[];
+	userId?: number;
+}
+
 export async function approveSeerrRequest(
 	instanceId: string,
 	requestId: number,
+	overrides?: ApproveSeerrRequestOverrides,
 ): Promise<SeerrRequest> {
-	return apiRequest(`/api/seerr/requests/${instanceId}/${requestId}/approve`, { method: "POST" });
+	return apiRequest(`/api/seerr/requests/${instanceId}/${requestId}/approve`, {
+		method: "POST",
+		json: overrides && Object.keys(overrides).length > 0 ? overrides : undefined,
+	});
 }
 
 export async function declineSeerrRequest(

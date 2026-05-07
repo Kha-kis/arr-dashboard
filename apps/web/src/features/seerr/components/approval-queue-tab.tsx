@@ -2,7 +2,17 @@
 
 import type { SeerrMediaStatus, SeerrRequest, SeerrSeason } from "@arr/shared";
 import { SEERR_MEDIA_STATUS, SEERR_MEDIA_STATUS_LABEL } from "@arr/shared";
-import { AlertCircle, Check, Eye, EyeOff, ExternalLink, Loader2, Trash2, X } from "lucide-react";
+import {
+	AlertCircle,
+	Check,
+	ExternalLink,
+	Eye,
+	EyeOff,
+	Loader2,
+	SlidersHorizontal,
+	Trash2,
+	X,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -21,6 +31,7 @@ import {
 } from "../../../hooks/api/useSeerr";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
+import { ApproveWithOptionsDialog } from "./approve-with-options-dialog";
 import { RequestCard } from "./request-card";
 import { RequestStatusTimeline } from "./request-status-timeline";
 
@@ -60,6 +71,7 @@ export const ApprovalQueueTab = ({ instanceId, onSelectRequest }: ApprovalQueueT
 	const bulkMutation = useBulkSeerrRequestAction();
 	const [confirmingDeclineId, setConfirmingDeclineId] = useState<number | null>(null);
 	const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null);
+	const [approveOptionsRequest, setApproveOptionsRequest] = useState<SeerrRequest | null>(null);
 
 	const requests = useMemo(() => data?.results ?? [], [data?.results]);
 	const allSelected = requests.length > 0 && requests.every((r) => selectedIds.has(r.id));
@@ -237,6 +249,17 @@ export const ApprovalQueueTab = ({ instanceId, onSelectRequest }: ApprovalQueueT
 										>
 											Approve
 										</GradientButton>
+										<Button
+											variant="secondary"
+											size="sm"
+											disabled={approveMutation.isPending}
+											onClick={() => setApproveOptionsRequest(request)}
+											title="Approve with quality profile options"
+											className="gap-1.5 border-border/50 bg-card/50 text-xs"
+										>
+											<SlidersHorizontal className="h-3 w-3" />
+											<span className="hidden sm:inline">Options</span>
+										</Button>
 										{confirmingDeclineId === request.id ? (
 											<>
 												<Button
@@ -403,6 +426,17 @@ export const ApprovalQueueTab = ({ instanceId, onSelectRequest }: ApprovalQueueT
 						</Button>
 					</div>
 				</div>
+			)}
+
+			{approveOptionsRequest && (
+				<ApproveWithOptionsDialog
+					request={approveOptionsRequest}
+					instanceId={instanceId}
+					open={!!approveOptionsRequest}
+					onOpenChange={(open) => {
+						if (!open) setApproveOptionsRequest(null);
+					}}
+				/>
 			)}
 		</div>
 	);
