@@ -44,7 +44,7 @@ export async function registerQualityScoreRoutes(
 			},
 			select: { capturedAt: true, sessionsJson: true },
 			orderBy: { capturedAt: "asc" },
-			take: 50000,
+			take: 20000,
 		});
 
 		const { parseFailures, totalSnapshots, failedPreviews, ...analytics } =

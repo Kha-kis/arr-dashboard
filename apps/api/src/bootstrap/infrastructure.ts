@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 
 import { arrClientPlugin } from "../plugins/arr-client.js";
 import deploymentExecutorPlugin from "../plugins/deployment-executor.js";
+import heapMonitorPlugin from "../plugins/heap-monitor.js";
 import lifecyclePlugin from "../plugins/lifecycle.js";
 import notificationServicePlugin from "../plugins/notification-service.js";
 import { prismaPlugin } from "../plugins/prisma.js";
@@ -25,6 +26,7 @@ import seerrCircuitBreakerPlugin from "../plugins/seerr-circuit-breaker.js";
  *  - notificationService → `app.notificationService`
  *  - schedulerRegistry → `app.schedulerRegistry` (must precede scheduler plugins)
  *  - lifecycle         → graceful shutdown + health wiring
+ *  - heapMonitor       → periodic process.memoryUsage() samples (issue #427 follow-up)
  */
 export function registerInfrastructure(app: FastifyInstance): void {
 	app.register(prismaPlugin);
@@ -36,4 +38,5 @@ export function registerInfrastructure(app: FastifyInstance): void {
 	app.register(notificationServicePlugin);
 	app.register(schedulerRegistryPlugin);
 	app.register(lifecyclePlugin);
+	app.register(heapMonitorPlugin);
 }

@@ -76,22 +76,6 @@ export const useLibraryQuery = (options: UseLibraryQueryOptions = {}) => {
 };
 
 // ============================================================================
-// Library Query Hook for Filtering (fetches ALL items)
-// Used by discover page to filter out items already in library
-// ============================================================================
-
-export const useLibraryForFiltering = (options: { enabled?: boolean } = {}) => {
-	return useQuery<PaginatedLibraryResponse>({
-		queryKey: ["library", "all-for-filtering"],
-		queryFn: () => fetchLibrary({ limit: 0 }), // limit=0 means fetch all
-		enabled: options.enabled ?? true,
-		staleTime: 2 * 60 * 1000, // 2 minutes - slightly longer since it's expensive
-		gcTime: 3 * 60 * 1000, // 3 minutes - cleanup when leaving discover page
-		refetchInterval: POLLING_BACKGROUND,
-	});
-};
-
-// ============================================================================
 // Library Sync Hooks
 // ============================================================================
 

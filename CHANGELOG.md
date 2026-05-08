@@ -5,6 +5,39 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.18.5] - 2026-05-08
+
+### Fixed
+
+- **Out-of-memory crash triggered by `/api/dashboard/calendar` (closes #427 follow-up).** A new OOM trace on v2.18.4 showed the calendar request as the trigger, but the trace shape (766 MB live heap after Mark-Compact freed only ~0.4 MB) pointed at retention/peak across multiple paths the prior fixes didn't cover. This release sweeps the remaining unbounded `findMany` reads on tables with large JSON blob columns (`LibraryCache.data`, plex/jellyfin/tautulli cache rows) and reduces transient peaks on the heaviest dashboard request paths:
+  - **Library cleanup field-options endpoint** (`GET /api/library-cleanup/field-options`) was loading every `LibraryCache.data` JSON blob for the user with no `take:` cap — for a 50k-item Sonarr-heavy library, ~1 GB transient just to populate codec/resolution dropdowns. Now cursor-paginates at 500 rows. Three formerly-separate full-table scans of `plexCache` (one each for users, libraries, collections+labels) are now a single merged cursor walk that selects the four columns together.
+  - **Library sync existing-items load** for Sonarr/Radarr (`syncInstance` in `library-sync/sync-executor.ts`) was loading every cached row with the `data` JSON column for tag-delta detection. For a 100k-item library the unbounded read peaked over the heap cap. Now cursor-paginates at 500 rows; the post-sync deletion-id diff is collected in the same walk.
+  - **Plex collection-routes** (`GET /api/plex/:instanceId/{collections,labels}`) ran unbounded `plexCache.findMany` per request. Cursor-paginated at 1000 rows.
+  - **Insights digest scheduler** (`requested-unwatched` and `watched-monitored` checks, every 6h) ran unbounded `plexCache.findMany`. Cursor-paginated at 1000 rows.
+  - **Calendar + history dashboard handlers** held both raw upstream payloads AND normalized copies in memory simultaneously (Sonarr's `includeSeries: true, includeEpisodeFile: true` payloads are 5–10 KB per row). Refactored to drop each raw item as it's normalized, halving peak heap during the iteration.
+  - **Plex/Jellyfin analytics queries** that select `sessionsJson` lowered `take: 50000` → `take: 20000` (queries selecting only scalar columns are unchanged). With session captures every 5 min, 20000 rows = ~70 days of single-instance history — preserves typical-case behavior. Heavy multi-instance + 30-day-window users hit the cap as before but at lower memory.
+- **`last-watched` analytics dropped recent watch events when the snapshot cap was hit.** Both `GET /api/jellyfin/analytics/last-watched` and `GET /api/plex/last-watched` ordered `sessionSnapshot.findMany` by `capturedAt asc`, so when the `take` cap was reached the OLDEST rows were kept and the most recent watch events the panel exists to surface were silently dropped. Now uses `desc` to match the `history` endpoint's pattern. Pre-existing bug, surfaced by code review during the issue #427 sweep.
+
+### Added
+
+- **Heap-monitor plugin** logs `process.memoryUsage()` every 5 minutes via pino, including deltas vs. the previous sample. Severity escalates with pressure: `info` at heap > 80%, `warn` at heap > 90% with a copy-paste manual-snapshot command in the warning. A slow leak now shows up as monotonic `heapDeltaMB` growth instead of an opaque OOM.
+- **`--heapsnapshot-signal=SIGUSR2`** added to default `NODE_OPTIONS`. Cost = zero (only writes when the signal is received). Operators who notice climbing baseline in heap-monitor logs can capture a snapshot on demand:
+  ```
+  docker exec <container> sh -c 'kill -USR2 $(pgrep -f "node /app/api/dist/index.js")'
+  ```
+  Snapshots land on `/config/heap-snapshots/` (persisted volume, owned by `PUID:PGID`).
+- **`HEAP_AUTO_SNAPSHOT=1` env var (opt-in)** appends `--heapsnapshot-near-heap-limit=1` so V8 auto-captures a snapshot just before OOM. Off by default — each snapshot is ~3x the heap (~2.3 GB at the 768 MB cap), too much to write to a `/config` volume that may be a small partition. Set in compose / Unraid template alongside other env vars.
+
+### Changed
+
+- **`GET /api/library?limit=0` now returns 400 Bad Request.** Previously this signaled "fetch all" for an internal `useLibraryForFiltering` hook that has been removed. The fetch-all path mass-loaded every `LibraryCache.data` blob and trivially OOM'd the 768 MB heap on any large library — a foot-gun for any future caller (or external API user) who happened to pass `limit=0`. Schema now requires `limit >= 1`. External callers hitting `/api/library?limit=0` directly will need to use a positive limit value.
+
+### Notes
+
+- This patch went through a multi-file fix sweep, an automated heap-retainer audit, an independent code review pass (which caught the `last-watched` ordering bug), and end-to-end Docker smoke testing (heap-monitor logs verified, SIGUSR2 snapshot capture verified end-to-end producing a 157 MB `.heapsnapshot` file in `/config/heap-snapshots/`). Test additions: 4 new tests — cursor-pagination integration test for `field-options`, library-sync deletion-set equivalence under cursor pagination across multiple batches.
+- Memory peak reductions (estimated for a 50k-item library, 5 instances, 30-day window): field-options 1 GB → 10 MB; library-sync 250 MB → 10 MB; plex collection-routes 30 MB → 5 MB; calendar/history 2× peak → 1× peak; sessionsJson analytics 500 MB max → 200 MB max.
+- If you hit a future OOM, set `HEAP_AUTO_SNAPSHOT=1` and reproduce. Share the resulting `.heapsnapshot` file in your bug report so we can identify the actual retainer instead of guessing.
+
 ## [2.18.4] - 2026-05-07
 
 ### Added

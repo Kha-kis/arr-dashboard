@@ -284,23 +284,52 @@ export async function syncInstance(
 
 		// Only pull the `data` column for Sonarr/Radarr (tag-delta detection).
 		// Readarr/Lidarr skip it to avoid loading every cached JSON blob.
-		const existingItems = await prisma.libraryCache.findMany({
-			where: { instanceId: instance.id },
-			select: {
-				id: true,
-				arrItemId: true,
-				itemType: true,
-				hasFile: true,
-				...(tagDeltaService ? { data: true } : {}),
-			},
-		});
-
-		const existingMap = new Map(
-			existingItems.map((item) => [
-				`${item.arrItemId}-${item.itemType}`,
-				{ id: item.id, hasFile: item.hasFile, data: "data" in item ? (item.data as string | null) : null },
-			]),
-		);
+		//
+		// Cursor-paginate at SYNC_QUERY_BATCH_SIZE rows. The previous shape
+		// loaded every row at once; for a 100k Sonarr/Radarr library with
+		// the data JSON column included that easily exceeds the 768 MB
+		// container heap (issue #427). Used both for the existing-item map
+		// AND the deletion-id list at end of sync, so we collect the minimal
+		// fields for both passes here.
+		const SYNC_QUERY_BATCH_SIZE = 500;
+		const existingMap = new Map<string, { id: string; hasFile: boolean; data: string | null }>();
+		// Mirrors `existingItems` from the prior shape — the post-sync
+		// deletion pass at the bottom of this function reads
+		// (id, arrItemId, itemType) to compute the stale-row diff.
+		const existingForDeletion: Array<{ id: string; arrItemId: number; itemType: string }> = [];
+		{
+			let cursor: string | undefined;
+			while (true) {
+				const batch = await prisma.libraryCache.findMany({
+					where: { instanceId: instance.id },
+					select: {
+						id: true,
+						arrItemId: true,
+						itemType: true,
+						hasFile: true,
+						...(tagDeltaService ? { data: true } : {}),
+					},
+					take: SYNC_QUERY_BATCH_SIZE,
+					...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+					orderBy: { id: "asc" },
+				});
+				if (batch.length === 0) break;
+				for (const item of batch) {
+					existingMap.set(`${item.arrItemId}-${item.itemType}`, {
+						id: item.id,
+						hasFile: item.hasFile,
+						data: "data" in item ? ((item as { data: string | null }).data ?? null) : null,
+					});
+					existingForDeletion.push({
+						id: item.id,
+						arrItemId: item.arrItemId,
+						itemType: item.itemType,
+					});
+				}
+				cursor = batch[batch.length - 1]!.id;
+				if (batch.length < SYNC_QUERY_BATCH_SIZE) break;
+			}
+		}
 
 		const tagIdToName = new Map<number, string>();
 		if (client instanceof SonarrClient || client instanceof RadarrClient) {
@@ -331,8 +360,7 @@ export async function syncInstance(
 			await prisma.$transaction(async (tx) => {
 				for (const raw of rawBatch) {
 					const item = buildLibraryItem(instance, service, raw);
-					const arrItemId =
-						typeof item.id === "string" ? Number.parseInt(item.id, 10) : item.id;
+					const arrItemId = typeof item.id === "string" ? Number.parseInt(item.id, 10) : item.id;
 					const key = `${arrItemId}-${item.type}`;
 					seenKeys.add(key);
 
@@ -365,10 +393,7 @@ export async function syncInstance(
 									tmdbId?: unknown;
 									remoteIds?: { tmdbId?: unknown } | null;
 								};
-								const tmdbCandidates: unknown[] = [
-									itemAny.remoteIds?.tmdbId,
-									itemAny.tmdbId,
-								];
+								const tmdbCandidates: unknown[] = [itemAny.remoteIds?.tmdbId, itemAny.tmdbId];
 								let tmdbId: number | null = null;
 								for (const v of tmdbCandidates) {
 									if (typeof v === "number" && v > 0) {
@@ -398,7 +423,7 @@ export async function syncInstance(
 
 		logMemoryPhase(log, instance.id, "after-batch-writes");
 
-		const idsToRemove = existingItems
+		const idsToRemove = existingForDeletion
 			.filter((item) => !seenKeys.has(`${item.arrItemId}-${item.itemType}`))
 			.map((item) => item.id);
 

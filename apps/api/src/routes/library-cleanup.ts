@@ -171,7 +171,15 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		});
 		const instanceIds = instances.map((i) => i.id);
 
-		// Extract distinct file metadata from library cache
+		// Extract distinct file metadata from library cache.
+		//
+		// Cursor-paginate the LibraryCache.data scan to bound peak heap.
+		// A naive `findMany({ select: { data: true } })` over the full table
+		// loads every JSON blob into memory at once — for a Sonarr-heavy
+		// library with full series payloads, that easily peaks past the
+		// 768 MB container cap (issue #427 follow-up). Same pattern PR #435
+		// applied to prefetchPlexData / prefetchJellyfinData / prefetchTautulliData.
+		const FIELD_OPTIONS_BATCH_SIZE = 500;
 		const videoCodecs = new Set<string>();
 		const audioCodecs = new Set<string>();
 		const resolutions = new Set<string>();
@@ -179,113 +187,124 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		const releaseGroups = new Set<string>();
 
 		if (instanceIds.length > 0) {
-			const cacheItems = await app.prisma.libraryCache.findMany({
-				where: { instanceId: { in: instanceIds } },
-				select: { data: true },
-			});
+			let cursor: string | undefined;
+			while (true) {
+				const batch = await app.prisma.libraryCache.findMany({
+					where: { instanceId: { in: instanceIds } },
+					select: { id: true, data: true },
+					take: FIELD_OPTIONS_BATCH_SIZE,
+					...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+					orderBy: { id: "asc" },
+				});
 
-			for (const item of cacheItems) {
-				const parsed = safeJsonParse(item.data);
-				if (!parsed) continue;
-				const data = parsed as Record<string, unknown>;
+				if (batch.length === 0) break;
 
-				// Try movieFile (Radarr) then episodeFile (Sonarr)
-				const fileObj = (data.movieFile ?? data.episodeFile) as Record<string, unknown> | undefined;
-				if (!fileObj || typeof fileObj !== "object") continue;
+				for (const item of batch) {
+					const parsed = safeJsonParse(item.data);
+					if (!parsed) continue;
+					const data = parsed as Record<string, unknown>;
 
-				if (typeof fileObj.videoCodec === "string" && fileObj.videoCodec)
-					videoCodecs.add(fileObj.videoCodec);
-				if (typeof fileObj.audioCodec === "string" && fileObj.audioCodec)
-					audioCodecs.add(fileObj.audioCodec);
-				if (typeof fileObj.resolution === "string" && fileObj.resolution)
-					resolutions.add(fileObj.resolution);
-				if (typeof fileObj.videoDynamicRange === "string" && fileObj.videoDynamicRange)
-					hdrTypes.add(fileObj.videoDynamicRange);
-				if (typeof fileObj.releaseGroup === "string" && fileObj.releaseGroup)
-					releaseGroups.add(fileObj.releaseGroup);
+					// Try movieFile (Radarr) then episodeFile (Sonarr)
+					const fileObj = (data.movieFile ?? data.episodeFile) as
+						| Record<string, unknown>
+						| undefined;
+					if (!fileObj || typeof fileObj !== "object") continue;
+
+					if (typeof fileObj.videoCodec === "string" && fileObj.videoCodec)
+						videoCodecs.add(fileObj.videoCodec);
+					if (typeof fileObj.audioCodec === "string" && fileObj.audioCodec)
+						audioCodecs.add(fileObj.audioCodec);
+					if (typeof fileObj.resolution === "string" && fileObj.resolution)
+						resolutions.add(fileObj.resolution);
+					if (typeof fileObj.videoDynamicRange === "string" && fileObj.videoDynamicRange)
+						hdrTypes.add(fileObj.videoDynamicRange);
+					if (typeof fileObj.releaseGroup === "string" && fileObj.releaseGroup)
+						releaseGroups.add(fileObj.releaseGroup);
+				}
+
+				cursor = batch[batch.length - 1]!.id;
+				if (batch.length < FIELD_OPTIONS_BATCH_SIZE) break;
 			}
 		}
 
-		// Extract distinct Tautulli users (from Tautulli instances owned by the user)
+		// All cache-table scans below cursor-paginate (issue #427 follow-up).
+		// Watch-cache rows are small per-row but a 50k+ Plex/Jellyfin library
+		// loaded in one shot still allocates tens of MB before GC, and the
+		// previous shape ran 3 separate full-table scans of plexCache. Single
+		// merged cursor walk per cache type instead.
+		const collectStrings = (raw: string | null | undefined, sink: Set<string>): void => {
+			const parsed = safeJsonParse(raw);
+			if (!Array.isArray(parsed)) return;
+			for (const v of parsed) {
+				if (typeof v === "string" && v) sink.add(v);
+			}
+		};
+
+		// Extract distinct Tautulli users (cursor-paginated)
 		const tautulliUsers = new Set<string>();
 		const tautulliInstances = await app.prisma.serviceInstance.findMany({
 			where: { userId, service: "TAUTULLI" },
 			select: { id: true },
 		});
 		if (tautulliInstances.length > 0) {
-			const tautulliRows = await app.prisma.tautulliCache.findMany({
-				where: { instanceId: { in: tautulliInstances.map((i) => i.id) } },
-				select: { watchedByUsers: true },
-			});
-			for (const row of tautulliRows) {
-				const users = safeJsonParse(row.watchedByUsers);
-				if (Array.isArray(users)) {
-					for (const u of users) {
-						if (typeof u === "string" && u) tautulliUsers.add(u);
-					}
-				}
+			const tautulliInstanceIds = tautulliInstances.map((i) => i.id);
+			let cursor: string | undefined;
+			while (true) {
+				const batch = await app.prisma.tautulliCache.findMany({
+					where: { instanceId: { in: tautulliInstanceIds } },
+					select: { id: true, watchedByUsers: true },
+					take: FIELD_OPTIONS_BATCH_SIZE,
+					...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+					orderBy: { id: "asc" },
+				});
+				if (batch.length === 0) break;
+				for (const row of batch) collectStrings(row.watchedByUsers, tautulliUsers);
+				cursor = batch[batch.length - 1]!.id;
+				if (batch.length < FIELD_OPTIONS_BATCH_SIZE) break;
 			}
 		}
 
-		// Extract distinct Plex users (from Plex instances owned by the user)
+		// Extract distinct Plex users / libraries / collections / labels in
+		// ONE cursor-paginated scan. The previous shape did three separate
+		// full-table scans of plexCache for the same instance set.
 		const plexUsers = new Set<string>();
+		const plexLibraries = new Set<string>();
+		const plexCollections = new Set<string>();
+		const plexLabels = new Set<string>();
 		const plexInstances = await app.prisma.serviceInstance.findMany({
 			where: { userId, service: "PLEX" },
 			select: { id: true },
 		});
 		if (plexInstances.length > 0) {
-			const plexRows = await app.prisma.plexCache.findMany({
-				where: { instanceId: { in: plexInstances.map((i) => i.id) } },
-				select: { watchedByUsers: true },
-			});
-			for (const row of plexRows) {
-				const users = safeJsonParse(row.watchedByUsers);
-				if (Array.isArray(users)) {
-					for (const u of users) {
-						if (typeof u === "string" && u) plexUsers.add(u);
-					}
+			const plexInstanceIds = plexInstances.map((i) => i.id);
+			let cursor: string | undefined;
+			while (true) {
+				const batch = await app.prisma.plexCache.findMany({
+					where: { instanceId: { in: plexInstanceIds } },
+					select: {
+						id: true,
+						sectionTitle: true,
+						watchedByUsers: true,
+						collections: true,
+						labels: true,
+					},
+					take: FIELD_OPTIONS_BATCH_SIZE,
+					...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+					orderBy: { id: "asc" },
+				});
+				if (batch.length === 0) break;
+				for (const row of batch) {
+					if (row.sectionTitle) plexLibraries.add(row.sectionTitle);
+					collectStrings(row.watchedByUsers, plexUsers);
+					collectStrings(row.collections, plexCollections);
+					collectStrings(row.labels, plexLabels);
 				}
+				cursor = batch[batch.length - 1]!.id;
+				if (batch.length < FIELD_OPTIONS_BATCH_SIZE) break;
 			}
 		}
 
-		// Extract distinct Plex library names
-		const plexLibraries = new Set<string>();
-		if (plexInstances.length > 0) {
-			const sections = await app.prisma.plexCache.findMany({
-				where: { instanceId: { in: plexInstances.map((i) => i.id) } },
-				select: { sectionTitle: true },
-				distinct: ["sectionTitle"],
-			});
-			for (const s of sections) {
-				if (s.sectionTitle) plexLibraries.add(s.sectionTitle);
-			}
-		}
-
-		// Extract distinct Plex collections and labels
-		const plexCollections = new Set<string>();
-		const plexLabels = new Set<string>();
-		if (plexInstances.length > 0) {
-			const plexMetaRows = await app.prisma.plexCache.findMany({
-				where: { instanceId: { in: plexInstances.map((i) => i.id) } },
-				select: { collections: true, labels: true },
-			});
-			for (const row of plexMetaRows) {
-				const cols = safeJsonParse(row.collections);
-				if (Array.isArray(cols)) {
-					for (const c of cols) {
-						if (typeof c === "string" && c) plexCollections.add(c);
-					}
-				}
-				const lbls = safeJsonParse(row.labels);
-				if (Array.isArray(lbls)) {
-					for (const l of lbls) {
-						if (typeof l === "string" && l) plexLabels.add(l);
-					}
-				}
-			}
-		}
-
-		// Extract distinct Jellyfin users and libraries
+		// Extract distinct Jellyfin users + libraries (cursor-paginated)
 		const jellyfinUsers = new Set<string>();
 		const jellyfinLibraries = new Set<string>();
 		const jellyfinInstances = await app.prisma.serviceInstance.findMany({
@@ -293,18 +312,23 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			select: { id: true },
 		});
 		if (jellyfinInstances.length > 0) {
-			const jfRows = await app.prisma.jellyfinCache.findMany({
-				where: { instanceId: { in: jellyfinInstances.map((i) => i.id) } },
-				select: { watchedByUsers: true, libraryName: true },
-			});
-			for (const row of jfRows) {
-				if (row.libraryName) jellyfinLibraries.add(row.libraryName);
-				const users = safeJsonParse(row.watchedByUsers);
-				if (Array.isArray(users)) {
-					for (const u of users) {
-						if (typeof u === "string" && u) jellyfinUsers.add(u);
-					}
+			const jellyfinInstanceIds = jellyfinInstances.map((i) => i.id);
+			let cursor: string | undefined;
+			while (true) {
+				const batch = await app.prisma.jellyfinCache.findMany({
+					where: { instanceId: { in: jellyfinInstanceIds } },
+					select: { id: true, watchedByUsers: true, libraryName: true },
+					take: FIELD_OPTIONS_BATCH_SIZE,
+					...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+					orderBy: { id: "asc" },
+				});
+				if (batch.length === 0) break;
+				for (const row of batch) {
+					if (row.libraryName) jellyfinLibraries.add(row.libraryName);
+					collectStrings(row.watchedByUsers, jellyfinUsers);
 				}
+				cursor = batch[batch.length - 1]!.id;
+				if (batch.length < FIELD_OPTIONS_BATCH_SIZE) break;
 			}
 		}
 

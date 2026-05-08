@@ -1,4 +1,4 @@
-import { LIBRARY_SERVICES_UPPER, calendarItemSchema } from "@arr/shared";
+import { calendarItemSchema, LIBRARY_SERVICES_UPPER } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import {
@@ -20,10 +20,9 @@ import { validateAndCollect } from "../../lib/validation/validate-batch.js";
 const calendarQuerySchema = z.object({
 	start: z.string().optional(),
 	end: z.string().optional(),
-	unmonitored: z.preprocess(
-		(val) => val === true || val === "true" || val === "1",
-		z.boolean(),
-	).optional(),
+	unmonitored: z
+		.preprocess((val) => val === true || val === "true" || val === "1", z.boolean())
+		.optional(),
 });
 
 /**
@@ -99,12 +98,23 @@ export const calendarRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					});
 				}
 
-				// Normalize and enrich items, then validate in tolerant mode
-				const normalized = rawItems.map((raw) => ({
-					...normalizeCalendarItem(raw, service),
-					instanceId: instance.id,
-					instanceName: instance.label,
-				}));
+				// Reduce peak heap (issue #427 follow-up). Sonarr's calendar
+				// payload with includeSeries+includeEpisodeFile inlines full
+				// series metadata + episode files per item — easily 5–10 KB
+				// per row. Drop each raw entry as soon as it's normalized so
+				// only one copy of the data is alive at a time, instead of
+				// raw + normalized for the duration of the closure.
+				const normalized: ReturnType<typeof normalizeCalendarItem>[] = [];
+				for (let i = 0; i < rawItems.length; i++) {
+					normalized.push({
+						...normalizeCalendarItem(rawItems[i], service),
+						instanceId: instance.id,
+						instanceName: instance.label,
+					});
+					rawItems[i] = null;
+				}
+				rawItems = [];
+
 				const { items } = validateAndCollect(
 					normalized,
 					calendarItemSchema,

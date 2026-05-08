@@ -44,7 +44,7 @@ export async function registerPlaysByDateRoutes(app: FastifyInstance, _opts: Fas
 			},
 			select: { capturedAt: true, sessionsJson: true },
 			orderBy: { capturedAt: "asc" },
-			take: 50000,
+			take: 20000,
 		});
 
 		return reply.send(aggregatePlaysByDate(snapshots, { days }));
