@@ -9,12 +9,12 @@
  * - Memory instrumentation at debug level
  */
 
-import { describe, it, expect, vi } from "vitest";
+import type { FastifyBaseLogger } from "fastify";
+import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient, ServiceType } from "../../../lib/prisma.js";
 import type { ArrClientFactory } from "../../arr/client-factory.js";
 import type { Encryptor } from "../../auth/encryption.js";
-import type { FastifyBaseLogger } from "fastify";
-import { syncInstance, type SyncExecutorDeps } from "../sync-executor.js";
+import { type SyncExecutorDeps, syncInstance } from "../sync-executor.js";
 
 const MOCK_USER_ID = "user-1";
 const INSTANCE_ID = "instance-1";
@@ -174,30 +174,31 @@ function createMockPrisma(
 			update: vi.fn().mockResolvedValue({}),
 			deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
 		},
-		$transaction: vi
-			.fn()
-			.mockImplementation(
-				async (
-					fn: (tx: {
-						libraryCache: {
-							update: (args: { where: { id: string }; data: Record<string, unknown> }) => Promise<unknown>;
-							create: (args: { data: Record<string, unknown> }) => Promise<unknown>;
-						};
-					}) => Promise<void>,
-				) => {
-					const tx = {
-						libraryCache: {
-							update: async (args: { where: { id: string }; data: Record<string, unknown> }) => {
-								txUpdates.push(args);
-							},
-							create: async (args: { data: Record<string, unknown> }) => {
-								txCreates.push(args);
-							},
-						},
+		$transaction: vi.fn().mockImplementation(
+			async (
+				fn: (tx: {
+					libraryCache: {
+						update: (args: {
+							where: { id: string };
+							data: Record<string, unknown>;
+						}) => Promise<unknown>;
+						create: (args: { data: Record<string, unknown> }) => Promise<unknown>;
 					};
-					await fn(tx);
-				},
-			),
+				}) => Promise<void>,
+			) => {
+				const tx = {
+					libraryCache: {
+						update: async (args: { where: { id: string }; data: Record<string, unknown> }) => {
+							txUpdates.push(args);
+						},
+						create: async (args: { data: Record<string, unknown> }) => {
+							txCreates.push(args);
+						},
+					},
+				};
+				await fn(tx);
+			},
+		),
 	} as unknown as PrismaClient & {
 		_selectCalls: unknown[];
 		_txCreates: Array<{ data: Record<string, unknown> }>;
@@ -411,10 +412,10 @@ describe("syncInstance", () => {
 		});
 
 		it("Readarr update: writes updated JSON data with current title", async () => {
-			const rawItems = [makeRawItem({ id: 1, title: "Updated Author", authorName: "Updated Author" })];
-			const existingItems = [
-				{ id: "cache-1", arrItemId: 1, itemType: "author", hasFile: false },
+			const rawItems = [
+				makeRawItem({ id: 1, title: "Updated Author", authorName: "Updated Author" }),
 			];
+			const existingItems = [{ id: "cache-1", arrItemId: 1, itemType: "author", hasFile: false }];
 
 			const { deps, instance, mockPrisma } = setupSync("READARR", rawItems, existingItems);
 
@@ -435,9 +436,7 @@ describe("syncInstance", () => {
 
 		it("Lidarr update: writes updated JSON data with current title", async () => {
 			const rawItems = [makeRawItem({ id: 1, artistName: "Updated Artist" })];
-			const existingItems = [
-				{ id: "cache-1", arrItemId: 1, itemType: "artist", hasFile: false },
-			];
+			const existingItems = [{ id: "cache-1", arrItemId: 1, itemType: "artist", hasFile: false }];
 
 			const { deps, instance, mockPrisma } = setupSync("LIDARR", rawItems, existingItems);
 
@@ -447,9 +446,10 @@ describe("syncInstance", () => {
 			expect(result.itemsUpdated).toBe(1);
 			expect(mockPrisma._txUpdates.length).toBe(1);
 
-			const parsed = JSON.parse(
-				mockPrisma._txUpdates[0]!.data.data as string,
-			) as Record<string, unknown>;
+			const parsed = JSON.parse(mockPrisma._txUpdates[0]!.data.data as string) as Record<
+				string,
+				unknown
+			>;
 			expect(parsed.type).toBe("artist");
 			expect(parsed.title).toBe("Updated Artist");
 		});
@@ -464,9 +464,10 @@ describe("syncInstance", () => {
 			expect(result.itemsAdded).toBe(1);
 			expect(mockPrisma._txCreates.length).toBe(1);
 
-			const parsed = JSON.parse(
-				mockPrisma._txCreates[0]!.data.data as string,
-			) as Record<string, unknown>;
+			const parsed = JSON.parse(mockPrisma._txCreates[0]!.data.data as string) as Record<
+				string,
+				unknown
+			>;
 			expect(parsed.type).toBe("series");
 			expect(parsed.title).toBe("New Series");
 		});
@@ -500,9 +501,7 @@ describe("syncInstance", () => {
 
 		it("Lidarr: processes a single-item batch correctly", async () => {
 			const rawItems = [makeRawItem()];
-			const existingItems = [
-				{ id: "cache-1", arrItemId: 1, itemType: "artist", hasFile: false },
-			];
+			const existingItems = [{ id: "cache-1", arrItemId: 1, itemType: "artist", hasFile: false }];
 
 			const { deps, instance } = setupSync("LIDARR", rawItems, existingItems);
 
@@ -554,9 +553,7 @@ describe("syncInstance", () => {
 			expect(result.success).toBe(true);
 			expect(result.itemsUpdated).toBe(1);
 
-			const { triggerLabelSyncForItem } = await import(
-				"../../label-sync/trigger-for-item.js"
-			);
+			const { triggerLabelSyncForItem } = await import("../../label-sync/trigger-for-item.js");
 			expect(triggerLabelSyncForItem).toHaveBeenCalledWith(
 				expect.objectContaining({
 					sourceService: "RADARR",
@@ -569,8 +566,7 @@ describe("syncInstance", () => {
 
 			const infoCalls = (log.info as ReturnType<typeof vi.fn>).mock.calls.filter(
 				(call: unknown[]) =>
-					typeof call[1] === "string" &&
-					(call[1] as string).includes("Library sync delta fired"),
+					typeof call[1] === "string" && (call[1] as string).includes("Library sync delta fired"),
 			);
 			expect(infoCalls.length).toBe(1);
 		});
@@ -601,9 +597,7 @@ describe("syncInstance", () => {
 			expect(result.success).toBe(true);
 			expect(result.itemsUpdated).toBe(1);
 
-			const { triggerLabelSyncForItem } = await import(
-				"../../label-sync/trigger-for-item.js"
-			);
+			const { triggerLabelSyncForItem } = await import("../../label-sync/trigger-for-item.js");
 			expect(triggerLabelSyncForItem).toHaveBeenCalledWith(
 				expect.objectContaining({
 					sourceService: "SONARR",
@@ -617,9 +611,7 @@ describe("syncInstance", () => {
 
 		it("Readarr: does NOT fire label sync triggers", async () => {
 			const rawItems = [makeRawItem({ id: 1, tags: [1, 2], authorName: "Author" })];
-			const existingItems = [
-				{ id: "cache-1", arrItemId: 1, itemType: "author", hasFile: false },
-			];
+			const existingItems = [{ id: "cache-1", arrItemId: 1, itemType: "author", hasFile: false }];
 
 			const { deps, instance } = setupSync("READARR", rawItems, existingItems);
 
@@ -627,12 +619,8 @@ describe("syncInstance", () => {
 
 			expect(result.success).toBe(true);
 
-			const { triggerLabelSyncForItem } = await import(
-				"../../label-sync/trigger-for-item.js"
-			);
-			const relevantCalls = (
-				triggerLabelSyncForItem as ReturnType<typeof vi.fn>
-			).mock.calls.filter(
+			const { triggerLabelSyncForItem } = await import("../../label-sync/trigger-for-item.js");
+			const relevantCalls = (triggerLabelSyncForItem as ReturnType<typeof vi.fn>).mock.calls.filter(
 				(call: unknown[]) => (call[0] as { itemType?: string }).itemType === "author",
 			);
 			expect(relevantCalls).toHaveLength(0);
@@ -681,9 +669,7 @@ describe("syncInstance", () => {
 					statistics: { bookFileCount: 1 },
 				}),
 			];
-			const existingItems = [
-				{ id: "cache-1", arrItemId: 1, itemType: "author", hasFile: false },
-			];
+			const existingItems = [{ id: "cache-1", arrItemId: 1, itemType: "author", hasFile: false }];
 
 			const { deps, instance } = setupSync("READARR", rawItems, existingItems);
 
@@ -718,6 +704,92 @@ describe("syncInstance", () => {
 				where: { id: { in: ["cache-2"] } },
 			});
 		});
+
+		// Pins the v2.18.5 cursor-paginated existing-items load (issue #427
+		// follow-up). The pre-refactor shape held a single `existingItems`
+		// array used for both the upsert map AND the post-sync deletion-id
+		// diff. The new shape walks libraryCache in cursor batches, collecting
+		// (id, arrItemId, itemType) into `existingForDeletion` as it goes.
+		// Verify the deletion set is identical when input is delivered across
+		// MULTIPLE cursor batches, not just one — without this, a refactor
+		// that resets `existingForDeletion` per batch would silently leak
+		// zombie cache rows.
+		it("cursor-paginates existing-items load and computes the SAME deletion set across batches", async () => {
+			// 600 existing rows → 2 cursor batches at SYNC_QUERY_BATCH_SIZE=500.
+			const TOTAL = 600;
+			const existingItems = Array.from({ length: TOTAL }, (_, i) => ({
+				id: `cache-${String(i).padStart(4, "0")}`,
+				arrItemId: i + 1,
+				itemType: "series" as const,
+				hasFile: false,
+				data: null as string | null,
+			}));
+
+			// ARR returns the first 200 items; the remaining 400 should be
+			// flagged for deletion.
+			const KEPT = 200;
+			const rawItems = Array.from({ length: KEPT }, (_, i) =>
+				makeRawItem({ id: i + 1, title: `Series ${i + 1}` }),
+			);
+
+			const { deps, instance, mockPrisma } = setupSync(
+				"SONARR",
+				rawItems,
+				// Pass a placeholder so the default mock doesn't deliver all rows
+				// in a single call — we override findMany below to simulate Prisma's
+				// cursor-pagination semantics. The placeholder is just a type hint
+				// for createMockPrisma.
+				existingItems.slice(0, 1),
+			);
+
+			// Override findMany to mimic Prisma's cursor-pagination behavior:
+			// without a cursor, return rows starting at index 0; with a cursor,
+			// return rows AFTER the cursor row (skip:1). Bound by `take`.
+			const findManySpy = vi
+				.fn()
+				.mockImplementation((args: { cursor?: { id: string }; skip?: number; take?: number }) => {
+					const take = args.take ?? existingItems.length;
+					if (!args.cursor) {
+						return Promise.resolve(existingItems.slice(0, take));
+					}
+					const cursorIdx = existingItems.findIndex((row) => row.id === args.cursor!.id);
+					const startIdx = cursorIdx === -1 ? 0 : cursorIdx + (args.skip ?? 0);
+					return Promise.resolve(existingItems.slice(startIdx, startIdx + take));
+				});
+			mockPrisma.libraryCache.findMany = findManySpy;
+
+			const result = await syncInstance(deps, instance);
+
+			expect(result.success).toBe(true);
+			// The 400 rows whose arrItemId falls outside the kept set must be deleted.
+			expect(result.itemsRemoved).toBe(TOTAL - KEPT);
+
+			// Cursor walk must have made >= 2 calls — proves the pagination loop
+			// actually advanced past batch 1 instead of degenerating to a single read.
+			expect(findManySpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+
+			// Second call must carry cursor + skip:1, matching the proven
+			// pattern from cleanup-executor.ts's prefetch helpers.
+			const secondCallArgs = findManySpy.mock.calls[1]?.[0] as
+				| { cursor?: { id: string }; skip?: number }
+				| undefined;
+			expect(secondCallArgs?.cursor).toBeDefined();
+			expect(secondCallArgs?.skip).toBe(1);
+
+			// The deleted ids must be EXACTLY the 400 stale rows — not a subset
+			// (would mean missed evictions / zombies) and not a superset
+			// (would mean live rows wrongly deleted).
+			const deleteCall = (mockPrisma.libraryCache.deleteMany as ReturnType<typeof vi.fn>).mock
+				.calls[0]?.[0];
+			const deletedIds = (deleteCall?.where?.id?.in ?? []) as string[];
+			expect(deletedIds).toHaveLength(TOTAL - KEPT);
+			// Stale rows are arrItemIds 201..600 → cache ids cache-0200..cache-0599.
+			expect(deletedIds).toContain("cache-0200");
+			expect(deletedIds).toContain("cache-0599");
+			// Kept rows must NOT appear in the deletion set.
+			expect(deletedIds).not.toContain("cache-0000");
+			expect(deletedIds).not.toContain("cache-0199");
+		});
 	});
 
 	// --- Memory instrumentation ---------------------------------------------
@@ -731,8 +803,7 @@ describe("syncInstance", () => {
 			const debugCalls = (log.debug as ReturnType<typeof vi.fn>).mock.calls;
 			const memCalls = debugCalls.filter(
 				(call: unknown[]) =>
-					typeof call[1] === "string" &&
-					(call[1] as string) === "Library sync memory usage",
+					typeof call[1] === "string" && (call[1] as string) === "Library sync memory usage",
 			);
 			expect(memCalls.length).toBeGreaterThanOrEqual(1);
 
@@ -751,8 +822,7 @@ describe("syncInstance", () => {
 			const debugCalls = (log.debug as ReturnType<typeof vi.fn>).mock.calls;
 			const memCalls = debugCalls.filter(
 				(call: unknown[]) =>
-					typeof call[1] === "string" &&
-					(call[1] as string) === "Library sync memory usage",
+					typeof call[1] === "string" && (call[1] as string) === "Library sync memory usage",
 			);
 			expect(memCalls.length).toBe(0);
 		});
@@ -865,8 +935,7 @@ describe("syncInstance", () => {
 			const debugCalls = (log.debug as ReturnType<typeof vi.fn>).mock.calls;
 			const memCalls = debugCalls.filter(
 				(call: unknown[]) =>
-					typeof call[1] === "string" &&
-					(call[1] as string) === "Library sync memory usage",
+					typeof call[1] === "string" && (call[1] as string) === "Library sync memory usage",
 			);
 			expect(memCalls.length).toBe(0);
 		});

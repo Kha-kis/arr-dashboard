@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.18.4** — New: admin quality-profile override on Seerr request approval (closes #434) — pick a non-default profile / root folder / server in a one-click "Options" dialog before approving. Plus a backup OOM fix and broader memory sweep: scheduled backups now skip and cap operational history tables, encryption holds ~50% less peak heap, and library-cleanup + auto-tag now cursor-paginate cache reads to keep large Plex/Jellyfin libraries under the 768 MB container cap (#427 follow-up).
+> **Version 2.18.5** — Comprehensive heap-pressure sweep + diagnostic instrumentation closing out issue #427. Cursor-paginates every remaining unbounded `LibraryCache.data` / `plexCache` / `jellyfinCache` / `tautulliCache` read (library-cleanup, library-sync, plex collection-routes, insights-digest), drops raw-payload references mid-loop on calendar + history dashboard handlers, lowers `take` caps on `sessionsJson` analytics queries, and rejects the `/api/library?limit=0` foot-gun. Ships an always-on heap-monitor plugin (5-min `process.memoryUsage()` samples with deltas) and an opt-in `HEAP_AUTO_SNAPSHOT=1` env var so the next OOM (if any) ships actual evidence. Also fixes a pre-existing `last-watched` ordering bug surfaced by review.
 
 A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, **Lidarr**, **Readarr**, **Plex**, **Tautulli**, **Jellyfin**, **Emby**, and **Seerr** instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -231,6 +231,7 @@ First-class support is reserved for services listed in the table above.
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.18.5` | Comprehensive heap-pressure sweep closing out issue #427 — cursor-paginates remaining unbounded JSON-blob reads (library-cleanup, library-sync, plex collection-routes, insights-digest), reduces calendar/history transient peaks, caps sessionsJson analytics, rejects `/api/library?limit=0`. Adds heap-monitor plugin + opt-in `HEAP_AUTO_SNAPSHOT=1` for diagnostics. Fixes `last-watched` ordering bug |
 | `2.18.4` | Seerr admin profile override on approval (#434) — pick non-default quality profile / root folder / server before approving a request. Plus backup OOM fix and broader memory sweep across cleanup, auto-tag, and history-table reads (#427 follow-up) |
 | `2.18.3` | Patch release — notification URL resolution (#430), indexer readability (#428), Readarr/Lidarr sync memory reduction (#427) |
 | `2.18.2` | Auto-Tagger: one-click Sonarr/Radarr Connect webhook auto-install (#423) — discover enabled instances and push the canonical webhook in a single click |
@@ -302,6 +303,7 @@ The `/config` volume contains critical data that must be preserved:
 | `WEBAUTHN_ORIGIN` | `http://localhost:3000` | Passkey origin URL (full URL with protocol) |
 | `LOG_LEVEL` | `info` | Logging level (`debug`, `info`, `warn`, `error`) |
 | `GITHUB_TOKEN` | - | Optional GitHub token for TRaSH Guides (higher rate limits) |
+| `HEAP_AUTO_SNAPSHOT` | `0` | Set to `1` to capture a V8 heap snapshot just before OOM (lands in `/config/heap-snapshots/`). Off by default — each snapshot is ~3x the heap (~2.3 GB at the 768 MB cap). Manual snapshots via `kill -USR2 <pid>` are always available regardless of this setting. |
 
 > **Note:** Two modes are supported for running as a non-root user:
 >

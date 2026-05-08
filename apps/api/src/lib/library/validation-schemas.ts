@@ -11,9 +11,14 @@ export const libraryQuerySchema = z.object({
 	instanceId: z.string().optional(),
 
 	// Pagination
-	// Note: limit=0 means "fetch all" for internal use cases like discover filtering
+	// Note: limit must be >= 1. Earlier revisions allowed `limit=0` as a
+	// "fetch all" affordance for an internal discover-filtering hook
+	// (`useLibraryForFiltering`). That hook is no longer used and the
+	// fetch-all path mass-loads every LibraryCache row's data JSON blob —
+	// trivially OOMs the 768 MB container heap on a 50k+ item library
+	// (issue #427 follow-up). Reject the request instead.
 	page: z.coerce.number().int().min(1).default(1),
-	limit: z.coerce.number().int().min(0).max(10000).default(50),
+	limit: z.coerce.number().int().min(1).max(10000).default(50),
 
 	// Search
 	search: z.string().optional(),
@@ -31,4 +36,3 @@ export const libraryQuerySchema = z.object({
 	sortBy: z.enum(["title", "sortTitle", "year", "sizeOnDisk", "added"]).default("sortTitle"),
 	sortOrder: z.enum(["asc", "desc"]).default("asc"),
 });
-

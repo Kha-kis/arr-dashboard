@@ -59,7 +59,7 @@ export async function registerTopMediaRoutes(app: FastifyInstance, _opts: Fastif
 			},
 			select: { capturedAt: true, sessionsJson: true },
 			orderBy: { capturedAt: "asc" },
-			take: 50000,
+			take: 20000,
 		});
 
 		const { parseFailures, totalSnapshots, failedPreviews, ...response } = aggregateTopMedia(

@@ -35,8 +35,8 @@ import { buildMovieFile } from "../../lib/library/movie-normalizer.js";
 import { normalizeTrack } from "../../lib/library/track-normalizer.js";
 import { libraryQuerySchema } from "../../lib/library/validation-schemas.js";
 import { getLibrarySyncScheduler } from "../../lib/library-sync/index.js";
-import { validateRequest } from "../../lib/utils/validate.js";
 import { Prisma, type LibraryItemType as PrismaLibraryItemType } from "../../lib/prisma.js";
+import { validateRequest } from "../../lib/utils/validate.js";
 
 /**
  * Register data fetching routes for library
@@ -236,17 +236,14 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 				orderBy.sortTitle = "asc";
 		}
 
-		// Fetch items (limit=0 means fetch all for internal use like discover filtering)
-		const fetchAll = parsed.limit === 0;
+		// Schema enforces `limit >= 1`; an earlier `limit=0` "fetch all" path
+		// existed for an internal hook that has since been removed (issue #427
+		// follow-up — the unbounded read trivially OOM'd big libraries).
 		const cachedItems = await app.prisma.libraryCache.findMany({
 			where,
 			orderBy,
-			...(fetchAll
-				? {}
-				: {
-						skip: (parsed.page - 1) * parsed.limit,
-						take: parsed.limit,
-					}),
+			skip: (parsed.page - 1) * parsed.limit,
+			take: parsed.limit,
 		});
 
 		// Parse JSON data back to LibraryItem, injecting cache-only fields
@@ -308,10 +305,10 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 		const response: PaginatedLibraryResponse = {
 			items,
 			pagination: {
-				page: fetchAll ? 1 : parsed.page,
-				limit: fetchAll ? totalItems : parsed.limit,
+				page: parsed.page,
+				limit: parsed.limit,
 				totalItems,
-				totalPages: fetchAll ? 1 : Math.ceil(totalItems / parsed.limit),
+				totalPages: Math.ceil(totalItems / parsed.limit),
 			},
 			appliedFilters: {
 				search: parsed.search,

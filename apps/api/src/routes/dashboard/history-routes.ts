@@ -101,12 +101,22 @@ export const historyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					totalRecords = result.totalRecords ?? rawRecords.length;
 				}
 
-				// Normalize and enrich items, then validate in tolerant mode
-				const normalized = rawRecords.map((raw) => ({
-					...normalizeHistoryItem(raw, service),
-					instanceId: instance.id,
-					instanceName: instance.label,
-				}));
+				// Reduce peak heap (issue #427 follow-up). With recordLimit=2500
+				// per instance × N enabled instances, the parallel fan-out inside
+				// executeOnInstances can hold all raw history payloads (each
+				// 1–2 KB) AND their normalized copies simultaneously. Drop each
+				// raw entry as it's normalized so only one copy is alive at a time.
+				const normalized: ReturnType<typeof normalizeHistoryItem>[] = [];
+				for (let i = 0; i < rawRecords.length; i++) {
+					normalized.push({
+						...normalizeHistoryItem(rawRecords[i], service),
+						instanceId: instance.id,
+						instanceName: instance.label,
+					});
+					rawRecords[i] = null;
+				}
+				rawRecords = [];
+
 				const { items } = validateAndCollect(
 					normalized,
 					historyItemSchema,

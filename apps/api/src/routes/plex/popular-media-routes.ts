@@ -62,7 +62,7 @@ export async function registerPopularMediaRoutes(
 			},
 			select: { capturedAt: true, sessionsJson: true },
 			orderBy: { capturedAt: "asc" },
-			take: 50000,
+			take: 20000,
 		});
 
 		const { parseFailures, totalSnapshots, failedPreviews, ...response } = aggregatePopularMedia(

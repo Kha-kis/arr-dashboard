@@ -46,14 +46,17 @@ export async function registerLastWatchedRoutes(app: FastifyInstance, _opts: Fas
 		}
 
 		const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+		// `last-watched` is a "most recent activity" feed — when the take cap is
+		// hit (heavy users with >20k snapshots in the cutoff window), `asc` would
+		// silently drop the recent rows the panel exists to surface.
 		const snapshots = await app.prisma.sessionSnapshot.findMany({
 			where: {
 				instanceId: { in: plexInstances.map((i) => i.id) },
 				capturedAt: { gte: cutoff },
 			},
 			select: { capturedAt: true, sessionsJson: true },
-			orderBy: { capturedAt: "asc" },
-			take: 50000,
+			orderBy: { capturedAt: "desc" },
+			take: 20000,
 		});
 
 		const { parseFailures, totalSnapshots, failedPreviews, ...response } = aggregateLastWatched(
