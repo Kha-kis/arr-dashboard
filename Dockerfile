@@ -138,7 +138,23 @@ ENV DATABASE_URL="file:/config/prod.db" \
     PGID=911 \
     # Node.js memory optimization for containers (can be overridden)
     # 768MB accommodates users with many service instances (3+ Plex/Tautulli)
-    NODE_OPTIONS="--max-old-space-size=768 --dns-result-order=ipv4first"
+    #
+    # Heap diagnostics (issue #427 follow-up):
+    #   --heapsnapshot-signal=SIGUSR2  Always on. Cost = zero (only writes
+    #     when the signal is received). If periodic heap-monitor logs show
+    #     a climbing baseline, an operator can capture a snapshot:
+    #       docker exec <container> sh -c 'kill -USR2 $(pgrep -f "node /app/api/dist/index.js")'
+    #     Snapshots land on the persisted volume (/config/heap-snapshots/).
+    #
+    #   Auto-capture on near-OOM is OPT-IN via the HEAP_AUTO_SNAPSHOT env
+    #   var (read by start-combined.sh). Set HEAP_AUTO_SNAPSHOT=1 in your
+    #   compose / Unraid template to have V8 write a single .heapsnapshot
+    #   file just before OOM. Default off because each snapshot is ~3x the
+    #   heap (~2.3 GB at the 768 MB cap) — a lot for small /config volumes.
+    NODE_OPTIONS="--max-old-space-size=768 --dns-result-order=ipv4first --heapsnapshot-signal=SIGUSR2" \
+    # Set to "1" to auto-capture a heap snapshot just before OOM (issue #427).
+    # Off by default — see NODE_OPTIONS comment above.
+    HEAP_AUTO_SNAPSHOT=0
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD wget -q --spider http://127.0.0.1:${PORT:-3000}/health || exit 1

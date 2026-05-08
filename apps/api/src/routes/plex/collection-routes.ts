@@ -34,6 +34,11 @@ const ratingKeyParams = z.object({
 // Routes
 // ============================================================================
 
+// Cursor-paginate plexCache scans (issue #427 follow-up). collections/labels
+// are JSON arrays per row; even with small per-row footprint a 50k-item
+// library can transient-peak well past 10 MB without bounds.
+const PLEX_TAG_QUERY_BATCH_SIZE = 1000;
+
 export async function registerCollectionRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	/**
 	 * GET /api/plex/:instanceId/collections
@@ -54,22 +59,32 @@ export async function registerCollectionRoutes(app: FastifyInstance, _opts: Fast
 			return reply.status(404).send({ error: "Instance not found or access denied" });
 		}
 
-		// Get all PlexCache rows with non-empty collections for this instance
-		const cacheRows = await app.prisma.plexCache.findMany({
-			where: { instanceId },
-			select: { collections: true },
-		});
-
-		// Count occurrences of each collection name
+		// Get all PlexCache rows with non-empty collections for this instance.
+		// Cursor-paginated to bound peak heap.
 		const collectionCounts = new Map<string, number>();
-		for (const row of cacheRows) {
-			try {
-				const parsed = JSON.parse(row.collections) as string[];
-				for (const name of parsed) {
-					if (name) collectionCounts.set(name, (collectionCounts.get(name) ?? 0) + 1);
+		{
+			let cursor: string | undefined;
+			while (true) {
+				const batch = await app.prisma.plexCache.findMany({
+					where: { instanceId },
+					select: { id: true, collections: true },
+					take: PLEX_TAG_QUERY_BATCH_SIZE,
+					...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+					orderBy: { id: "asc" },
+				});
+				if (batch.length === 0) break;
+				for (const row of batch) {
+					try {
+						const parsed = JSON.parse(row.collections) as string[];
+						for (const name of parsed) {
+							if (name) collectionCounts.set(name, (collectionCounts.get(name) ?? 0) + 1);
+						}
+					} catch {
+						// Skip malformed JSON
+					}
 				}
-			} catch {
-				// Skip malformed JSON
+				cursor = batch[batch.length - 1]!.id;
+				if (batch.length < PLEX_TAG_QUERY_BATCH_SIZE) break;
 			}
 		}
 
@@ -99,20 +114,30 @@ export async function registerCollectionRoutes(app: FastifyInstance, _opts: Fast
 			return reply.status(404).send({ error: "Instance not found or access denied" });
 		}
 
-		const cacheRows = await app.prisma.plexCache.findMany({
-			where: { instanceId },
-			select: { labels: true },
-		});
-
 		const labelCounts = new Map<string, number>();
-		for (const row of cacheRows) {
-			try {
-				const parsed = JSON.parse(row.labels) as string[];
-				for (const name of parsed) {
-					if (name) labelCounts.set(name, (labelCounts.get(name) ?? 0) + 1);
+		{
+			let cursor: string | undefined;
+			while (true) {
+				const batch = await app.prisma.plexCache.findMany({
+					where: { instanceId },
+					select: { id: true, labels: true },
+					take: PLEX_TAG_QUERY_BATCH_SIZE,
+					...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+					orderBy: { id: "asc" },
+				});
+				if (batch.length === 0) break;
+				for (const row of batch) {
+					try {
+						const parsed = JSON.parse(row.labels) as string[];
+						for (const name of parsed) {
+							if (name) labelCounts.set(name, (labelCounts.get(name) ?? 0) + 1);
+						}
+					} catch {
+						// Skip malformed JSON
+					}
 				}
-			} catch {
-				// Skip malformed JSON
+				cursor = batch[batch.length - 1]!.id;
+				if (batch.length < PLEX_TAG_QUERY_BATCH_SIZE) break;
 			}
 		}
 

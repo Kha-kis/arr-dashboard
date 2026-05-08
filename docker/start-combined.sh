@@ -33,8 +33,11 @@ if [ "$(id -u)" -ne 0 ]; then
     echo "  - Skipping PUID/PGID user management"
     echo "  - Skipping ownership changes"
 
-    # Ensure config directory exists (may fail if parent isn't writable)
-    mkdir -p /config /config/logs 2>/dev/null || true
+    # Ensure config directory exists (may fail if parent isn't writable).
+    # /config/heap-snapshots is the CWD for the node process so V8's
+    # --heapsnapshot-near-heap-limit and --heapsnapshot-signal writes land
+    # on the persisted volume (see API launch below + Dockerfile NODE_OPTIONS).
+    mkdir -p /config /config/logs /config/heap-snapshots 2>/dev/null || true
 
     # Verify /config is writable — fail fast with actionable message
     if [ ! -d /config ] || ! touch /config/.startup-check 2>/dev/null; then
@@ -84,9 +87,13 @@ else
     echo ""
     echo "Setting up directories and permissions..."
 
-    # Ensure config directory exists (LinuxServer convention)
+    # Ensure config directory exists (LinuxServer convention).
+    # /config/heap-snapshots is the CWD for the node process so V8's
+    # --heapsnapshot-near-heap-limit and --heapsnapshot-signal writes land
+    # on the persisted volume (see API launch below + Dockerfile NODE_OPTIONS).
     mkdir -p /config
     mkdir -p /config/logs
+    mkdir -p /config/heap-snapshots
 
     # Set ownership of writable directories using numeric IDs
     # This ensures correct permissions even when mounting pre-existing directories
@@ -332,11 +339,28 @@ echo "  - Web Port: $PORT"
 echo ""
 echo "Starting API server on $HOST:$API_PORT..."
 cd /app/api
+
+# Heap diagnostics (issue #427 follow-up).
+#
+# CWD = /config/heap-snapshots so V8's --heapsnapshot-signal writes land on
+# the persisted volume instead of the ephemeral /app/api inside the image.
+# Using the absolute /app/api/dist/index.js lets us change CWD without
+# breaking module resolution for the bundled API.
+#
+# HEAP_AUTO_SNAPSHOT=1 appends --heapsnapshot-near-heap-limit=1 so V8
+# captures a snapshot just before OOM. Off by default because the snapshot
+# is ~3x the heap (~2.3 GB at the 768 MB cap). The manual SIGUSR2 trigger
+# in NODE_OPTIONS works regardless of this flag.
+if [ "${HEAP_AUTO_SNAPSHOT:-0}" = "1" ]; then
+    export NODE_OPTIONS="${NODE_OPTIONS} --heapsnapshot-near-heap-limit=1"
+    echo "  - HEAP_AUTO_SNAPSHOT enabled — V8 will write up to 1 snapshot to /config/heap-snapshots/ on near-OOM"
+fi
+
 # Let stdout/stderr flow directly to the container — Pino handles file logging
 # via its pino-roll transport (writes to /config/logs/arr-dashboard.log).
 # Previous approach redirected stdout to api.log, which conflicted with Pino's
 # worker-thread transport and caused both log files to remain empty.
-run_as_user sh -c "API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node dist/index.js" &
+run_as_user sh -c "cd /config/heap-snapshots && API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node /app/api/dist/index.js" &
 API_PID=$!
 echo "API started with PID $API_PID"
 
@@ -353,10 +377,15 @@ if ! kill -0 "$API_PID" 2>/dev/null; then
     set -e
     echo "  API exit code: $API_EXIT" >&2
 
-    # Re-run the API in the foreground with a timeout to capture the actual error
+    # Re-run the API in the foreground with a timeout to capture the actual error.
+    # Mirror the backgrounded launch above (cd into /config/heap-snapshots,
+    # use the absolute path to dist/index.js) so any heap snapshot V8 writes
+    # during the diagnostic re-run also lands on the persisted volume — and
+    # so this branch doesn't silently break if a future edit changes the
+    # outer shell's CWD between the two launch sites.
     echo "=== Re-running API in foreground (10s timeout) ===" >&2
     set +e
-    timeout 10 run_as_user sh -c "API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node dist/index.js" 2>&1
+    timeout 10 run_as_user sh -c "cd /config/heap-snapshots && API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node /app/api/dist/index.js" 2>&1
     RERUN_EXIT=$?
     set -e
     echo "=== Foreground API exit code: $RERUN_EXIT ===" >&2

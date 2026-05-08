@@ -55,7 +55,7 @@ export async function registerWatchHistoryRoutes(
 			},
 			select: { capturedAt: true, sessionsJson: true },
 			orderBy: { capturedAt: "desc" },
-			take: 50000,
+			take: 20000,
 		});
 
 		const { events, parseFailures, totalSnapshots, failedPreviews } = deduplicateWatchEvents(

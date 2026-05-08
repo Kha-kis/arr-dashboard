@@ -43,7 +43,7 @@ export async function registerCodecAnalyticsRoutes(
 			},
 			select: { sessionsJson: true },
 			orderBy: { capturedAt: "asc" },
-			take: 50000,
+			take: 20000,
 		});
 
 		const { parseFailures, totalSnapshots, failedPreviews, ...analytics } =
