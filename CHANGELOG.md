@@ -5,6 +5,16 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.18.6] - 2026-05-09
+
+### Fixed
+
+- **Sonarr hunt requests skipping while Radarr worked normally (closes #438).** The queue-threshold pre-flight check counted *every* queue entry against the default threshold of 25 — including items in `completed` (downloaded, waiting for import), `failed`, `warning`, and other stuck states that don't actually consume download-client capacity. Sonarr's queue accumulates these (one entry per episode plus stuck imports), so the threshold was easily exceeded and every hunt skipped. Radarr (one entry per movie, faster import lifecycle) rarely hit this. Live verification on a real Sonarr 4.0.16 instance reproduced the bug exactly: 31 stuck `completed` items, 0 actively downloading — every hunt skipped before fix, hunts proceed after.
+  - `checkQueueThresholdWithSdk` now passes `status: ['queued','downloading','paused','delay']` to `client.queue.get` on Sonarr/Radarr/Lidarr so the threshold reflects items genuinely competing for download slots. Readarr's arr-sdk `QueueResource.get` enumerates known fields and silently drops unknown keys, so the filter cannot be applied there — Readarr's behavior is unchanged from pre-fix and the message is labeled "Queue" (vs "Active queue") to keep the wording honest.
+  - **Connectivity failures now surface as errors, not silent throttle.** The catch branch previously returned `status: "skipped"` with the same shape as a healthy threshold-skip, so an offline Sonarr or rotated API key would silently stop hunting with no notification (the scheduler's `HUNT_FAILED` dispatch only fired from thrown errors, not returned ones). The function now returns a discriminated outcome (`pass` / `threshold-exceeded` / `check-failed`); the caller maps `check-failed` to `status: "error"`, and the scheduler now dispatches `HUNT_FAILED` for returned errors as well.
+  - **Fail-safe on malformed queue responses.** A reverse-proxy returning HTML, a future SDK field rename, or any response missing `totalRecords` previously coalesced to `0` and proceeded as if the queue were empty. Now treated as `check-failed` with an explicit "unexpected response shape" message.
+  - **UI**: the skip/error message is shown inline in the collapsed activity row (instead of only after expanding) with a `title` tooltip for full text on hover, so operators see *why* a hunt was skipped at a glance.
+
 ## [2.18.5] - 2026-05-08
 
 ### Fixed

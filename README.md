@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.18.5** — Comprehensive heap-pressure sweep + diagnostic instrumentation closing out issue #427. Cursor-paginates every remaining unbounded `LibraryCache.data` / `plexCache` / `jellyfinCache` / `tautulliCache` read (library-cleanup, library-sync, plex collection-routes, insights-digest), drops raw-payload references mid-loop on calendar + history dashboard handlers, lowers `take` caps on `sessionsJson` analytics queries, and rejects the `/api/library?limit=0` foot-gun. Ships an always-on heap-monitor plugin (5-min `process.memoryUsage()` samples with deltas) and an opt-in `HEAP_AUTO_SNAPSHOT=1` env var so the next OOM (if any) ships actual evidence. Also fixes a pre-existing `last-watched` ordering bug surfaced by review.
+> **Version 2.18.6** — Fixes Sonarr hunts being silently skipped when the queue contains stuck/import-waiting items (closes #438). The queue-threshold check now counts only items actively consuming download capacity (`queued`/`downloading`/`paused`/`delay`), not stuck `completed`/`failed` entries. Live-verified against a real Sonarr 4.0.16 instance: 31 stuck items → 0 active → hunts now proceed where they previously skipped indefinitely. Also distinguishes connectivity failures from healthy throttles (returned errors now fire `HUNT_FAILED` notifications instead of silent skips), fail-safes on malformed queue responses, and surfaces the skip/error message inline in the activity log.
 
 A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, **Lidarr**, **Readarr**, **Plex**, **Tautulli**, **Jellyfin**, **Emby**, and **Seerr** instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -231,6 +231,7 @@ First-class support is reserved for services listed in the table above.
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.18.6` | Fixes Sonarr hunts being silently skipped when the queue contains stuck/import-waiting items (#438). Queue threshold now counts only items actively consuming download capacity. Distinguishes connectivity failures from healthy throttles (returned errors fire `HUNT_FAILED` notifications). Fail-safes on malformed queue responses. Inline message + tooltip in activity log |
 | `2.18.5` | Comprehensive heap-pressure sweep closing out issue #427 — cursor-paginates remaining unbounded JSON-blob reads (library-cleanup, library-sync, plex collection-routes, insights-digest), reduces calendar/history transient peaks, caps sessionsJson analytics, rejects `/api/library?limit=0`. Adds heap-monitor plugin + opt-in `HEAP_AUTO_SNAPSHOT=1` for diagnostics. Fixes `last-watched` ordering bug |
 | `2.18.4` | Seerr admin profile override on approval (#434) — pick non-default quality profile / root folder / server before approving a request. Plus backup OOM fix and broader memory sweep across cleanup, auto-tag, and history-table reads (#427 follow-up) |
 | `2.18.3` | Patch release — notification URL resolution (#430), indexer readability (#428), Readarr/Lidarr sync memory reduction (#427) |
