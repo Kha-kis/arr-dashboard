@@ -275,6 +275,14 @@ const ActivityLogEntry = ({ log, animationDelay = 0 }: ActivityLogEntryProps) =>
 								{isRunning ? "In Progress" : log.status}
 							</StatusBadge>
 						</div>
+						{!isRunning && log.message && (log.status === "skipped" || log.status === "error") && (
+							<p
+								className="mt-1 text-[11.5px] text-muted-foreground/60 truncate"
+								title={log.message}
+							>
+								{log.message}
+							</p>
+						)}
 					</div>
 				</div>
 
