@@ -179,7 +179,17 @@ export async function executeHuntWithSdk(
 }
 
 /**
+ * Statuses that count toward the queue threshold — items actively consuming
+ * download capacity. Excludes "completed" (waiting to import), "failed",
+ * "warning", and other stuck states which don't gate further searches.
+ */
+const ACTIVE_QUEUE_STATUSES = ["queued", "downloading", "paused", "delay"] as const;
+
+/**
  * Check queue threshold using SDK.
+ * Counts only items in active states so the threshold reflects actual download
+ * client load, not stuck imports/failed items. (Issue #438.)
+ *
  * Returns ok: false if check fails to prevent overloading queue on connectivity issues.
  */
 async function checkQueueThresholdWithSdk(
@@ -194,17 +204,29 @@ async function checkQueueThresholdWithSdk(
 
 	try {
 		counter.count++;
-		const queue = await client.queue.get({ pageSize: 1 });
+		// `client.queue.get` is a method-union across SDK clients, so calling it
+		// directly requires the intersection of param types. Bind through a
+		// permissive signature — Lidarr/Readarr accept extra keys via index sig.
+		const queueGet = client.queue.get.bind(client.queue) as (
+			options: Record<string, unknown>,
+		) => Promise<{ totalRecords?: number }>;
+		const queue = await queueGet({
+			pageSize: 1,
+			status: [...ACTIVE_QUEUE_STATUSES],
+		});
 		const queueCount = queue.totalRecords ?? 0;
 
 		if (queueCount >= threshold) {
 			return {
 				ok: false,
-				message: `Queue (${queueCount}) exceeds threshold (${threshold})`,
+				message: `Active queue (${queueCount}) exceeds threshold (${threshold})`,
 			};
 		}
 
-		return { ok: true, message: `Queue (${queueCount}) below threshold (${threshold})` };
+		return {
+			ok: true,
+			message: `Active queue (${queueCount}) below threshold (${threshold})`,
+		};
 	} catch (error) {
 		// Fail safely - if we can't check the queue, don't proceed to avoid overloading
 		logger.warn(
