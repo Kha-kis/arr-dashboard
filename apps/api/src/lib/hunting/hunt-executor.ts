@@ -86,18 +86,21 @@ export async function executeHuntWithSdk(
 	// Check queue threshold first
 	const queueCheck = await checkQueueThresholdWithSdk(
 		client,
+		service,
 		config.queueThreshold,
 		apiCallCounter,
 		logger,
 	);
-	if (!queueCheck.ok) {
+	if (queueCheck.outcome !== "pass") {
 		return {
 			itemsSearched: 0,
 			itemsGrabbed: 0,
 			searchedItems: [],
 			grabbedItems: [],
 			message: queueCheck.message,
-			status: "skipped",
+			// Distinguish a healthy throttle from an actionable failure so the
+			// status badge and notification routing are accurate. (Issue #438.)
+			status: queueCheck.outcome === "threshold-exceeded" ? "skipped" : "error",
 			apiCallsMade: apiCallCounter.count,
 		};
 	}
@@ -179,40 +182,102 @@ export async function executeHuntWithSdk(
 }
 
 /**
+ * Statuses that count toward the queue threshold — items actively consuming
+ * download capacity. Excludes "completed" (waiting to import), "failed",
+ * "warning", and other stuck states which don't gate further searches.
+ */
+const ACTIVE_QUEUE_STATUSES = ["queued", "downloading", "paused", "delay"] as const;
+
+type QueueCheckOutcome =
+	| { outcome: "pass"; message: string }
+	| { outcome: "threshold-exceeded"; message: string }
+	| { outcome: "check-failed"; message: string };
+
+/**
  * Check queue threshold using SDK.
- * Returns ok: false if check fails to prevent overloading queue on connectivity issues.
+ *
+ * Counts only items in active states (queued/downloading/paused/delay) so the
+ * threshold reflects actual download client load, not stuck imports or failed
+ * items. (Issue #438.)
+ *
+ * Filter applicability by service:
+ * - Sonarr/Radarr: native `status` query param, fully filtered.
+ * - Lidarr: SDK forwards unknown options to the server.
+ * - Readarr: arr-sdk's `QueueResource.get` enumerates known fields and DROPS
+ *   unknown keys, so the `status` filter cannot be applied. We skip it there
+ *   and use the unfiltered count to keep the threshold message honest;
+ *   Readarr's behavior is unchanged from pre-fix.
+ *
+ * Outcomes:
+ * - `pass` → hunt proceeds.
+ * - `threshold-exceeded` → operator's queue is genuinely busy; map to "skipped".
+ * - `check-failed` → connectivity / response-shape failure; map to "error" so
+ *   the operator surface (status badge, notifications) reflects an actionable
+ *   condition rather than a healthy throttle.
  */
 async function checkQueueThresholdWithSdk(
 	client: QueueCapableClient,
+	service: HuntService,
 	threshold: number,
 	counter: ApiCallCounter,
 	logger: HuntLogger,
-): Promise<{ ok: boolean; message: string }> {
+): Promise<QueueCheckOutcome> {
 	if (threshold <= 0) {
-		return { ok: true, message: "Queue threshold check disabled" };
+		return { outcome: "pass", message: "Queue threshold check disabled" };
 	}
+
+	const filterApplicable = service !== "readarr";
+	const label = filterApplicable ? "Active queue" : "Queue";
 
 	try {
 		counter.count++;
-		const queue = await client.queue.get({ pageSize: 1 });
-		const queueCount = queue.totalRecords ?? 0;
+		// `client.queue.get` is a method-union across the 4 SDK clients, so
+		// calling it directly requires intersected param types. Bind through a
+		// permissive signature; per-service field handling happens in arr-sdk.
+		const queueGet = client.queue.get.bind(client.queue) as (
+			options: Record<string, unknown>,
+		) => Promise<{ totalRecords?: number }>;
+		const options: Record<string, unknown> = { pageSize: 1 };
+		if (filterApplicable) {
+			options.status = [...ACTIVE_QUEUE_STATUSES];
+		}
+		const queue = await queueGet(options);
 
-		if (queueCount >= threshold) {
+		// Fail safe on a malformed response (HTML body from a misconfigured
+		// reverse proxy, future SDK field rename, etc.) rather than coalescing
+		// missing `totalRecords` to 0 and proceeding as if the queue were empty.
+		if (typeof queue.totalRecords !== "number") {
+			logger.warn(
+				{ threshold, response: queue },
+				"Queue check returned unexpected shape — failing safe",
+			);
 			return {
-				ok: false,
-				message: `Queue (${queueCount}) exceeds threshold (${threshold})`,
+				outcome: "check-failed",
+				message:
+					"Queue check returned unexpected response shape. Verify SDK / instance compatibility.",
 			};
 		}
 
-		return { ok: true, message: `Queue (${queueCount}) below threshold (${threshold})` };
+		const queueCount = queue.totalRecords;
+
+		if (queueCount >= threshold) {
+			return {
+				outcome: "threshold-exceeded",
+				message: `${label} (${queueCount}) exceeds threshold (${threshold})`,
+			};
+		}
+
+		return {
+			outcome: "pass",
+			message: `${label} (${queueCount}) below threshold (${threshold})`,
+		};
 	} catch (error) {
-		// Fail safely - if we can't check the queue, don't proceed to avoid overloading
 		logger.warn(
 			{ err: error, threshold },
-			"Queue threshold check failed - skipping hunt to prevent potential queue overload",
+			"Queue threshold check failed — surfacing as hunt error",
 		);
 		return {
-			ok: false,
+			outcome: "check-failed",
 			message: `Queue check failed: ${getErrorMessage(error, "Unknown error")}. Please verify instance connectivity.`,
 		};
 	}
