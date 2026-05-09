@@ -1,10 +1,14 @@
 /**
  * Tests for queue threshold check in executeHuntWithSdk.
  *
- * Regression test for issue #438: Sonarr hunts were being skipped because the
- * queue threshold counted ALL queue records (including stuck/failed/completed-
- * waiting items). The fix filters to only "active" statuses so the threshold
- * reflects items genuinely consuming download slots.
+ * Regression coverage for issue #438:
+ *  - Sonarr hunts were being skipped because the queue threshold counted ALL
+ *    queue records (stuck/failed/completed-waiting items). The fix filters to
+ *    "active" statuses only.
+ *
+ * Also pins the post-review distinction between two skip paths:
+ *  - threshold-exceeded → status "skipped" (operator's queue is busy, healthy throttle).
+ *  - check-failed (connectivity, malformed response) → status "error" (actionable).
  */
 
 import type { FastifyInstance } from "fastify";
@@ -49,6 +53,12 @@ const sonarrInstance = {
 	label: "Test Sonarr",
 };
 
+const readarrInstance = {
+	id: "instance-2",
+	service: "READARR",
+	label: "Test Readarr",
+};
+
 const baseConfig = {
 	id: "config-1",
 	queueThreshold: 25,
@@ -63,10 +73,11 @@ const callExecute = (
 	app: Partial<FastifyInstance>,
 	type: "missing" | "upgrade",
 	overrides: Partial<typeof baseConfig> = {},
+	instance: typeof sonarrInstance = sonarrInstance,
 ) =>
 	executeHuntWithSdk(
 		app as FastifyInstance,
-		sonarrInstance as unknown as Parameters<typeof executeHuntWithSdk>[1],
+		instance as unknown as Parameters<typeof executeHuntWithSdk>[1],
 		{ ...baseConfig, ...overrides } as unknown as Parameters<typeof executeHuntWithSdk>[2],
 		type,
 	);
@@ -101,9 +112,6 @@ describe("executeHuntWithSdk — queue threshold (issue #438)", () => {
 	});
 
 	it("does NOT skip when active queue is below threshold even if many stuck items would have totaled higher", async () => {
-		// Sonarr returns totalRecords for the filtered query — only ACTIVE items
-		// counted. Without the filter, the user's full queue (stuck imports, failed
-		// downloads, etc.) could exceed threshold even when downloads aren't busy.
 		const queueGet = vi.fn().mockResolvedValue({ totalRecords: 5 });
 		const seriesGetAll = vi.fn().mockResolvedValue([]);
 		const wantedMissing = vi.fn().mockResolvedValue({ records: [], totalRecords: 0 });
@@ -154,7 +162,7 @@ describe("executeHuntWithSdk — queue threshold (issue #438)", () => {
 		expect(queueGet).not.toHaveBeenCalled();
 	});
 
-	it("queue.get throwing yields skipped (fail-safe) without proceeding to series fetch", async () => {
+	it("queue.get throwing yields status:error (not skipped) so connectivity failures are actionable", async () => {
 		const queueGet = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
 		const seriesGetAll = vi.fn();
 
@@ -167,8 +175,51 @@ describe("executeHuntWithSdk — queue threshold (issue #438)", () => {
 
 		const result = await callExecute(app, "missing");
 
-		expect(result.status).toBe("skipped");
+		expect(result.status).toBe("error");
 		expect(result.message).toMatch(/Queue check failed/);
 		expect(seriesGetAll).not.toHaveBeenCalled();
+	});
+
+	it("malformed response (missing totalRecords) yields status:error to fail safe", async () => {
+		// Reverse-proxy returning HTML, future SDK field rename, etc. — the
+		// queue-check should refuse to interpret a missing field as "empty queue".
+		const queueGet = vi.fn().mockResolvedValue({ records: [] });
+		const seriesGetAll = vi.fn();
+
+		const client = {
+			queue: { get: queueGet },
+			series: { getAll: seriesGetAll },
+			wanted: { missing: vi.fn(), cutoff: vi.fn() },
+		};
+		const app = makeMockApp(client);
+
+		const result = await callExecute(app, "missing");
+
+		expect(result.status).toBe("error");
+		expect(result.message).toMatch(/unexpected response shape/);
+		expect(seriesGetAll).not.toHaveBeenCalled();
+	});
+
+	it("Readarr does NOT receive the status filter (SDK enumerates fields and would drop it)", async () => {
+		// Readarr's arr-sdk QueueResource.get only forwards a known set of fields
+		// — `status` is not among them. Sending it would be a silent no-op, so
+		// we suppress it here and use the unfiltered count, with the message
+		// reflecting that ("Queue" not "Active queue"). Pre-fix behavior is
+		// preserved on Readarr.
+		const queueGet = vi.fn().mockResolvedValue({ totalRecords: 30 });
+		const client = {
+			queue: { get: queueGet },
+			author: { getAll: vi.fn().mockResolvedValue([]) },
+			wanted: { missing: vi.fn(), cutoff: vi.fn() },
+		};
+		const app = makeMockApp(client);
+
+		const result = await callExecute(app, "missing", {}, readarrInstance);
+
+		const callArgs = queueGet.mock.calls[0]?.[0] as Record<string, unknown>;
+		expect(callArgs).not.toHaveProperty("status");
+		expect(callArgs.pageSize).toBe(1);
+		expect(result.status).toBe("skipped");
+		expect(result.message).toMatch(/^Queue \(30\) exceeds threshold \(25\)$/);
 	});
 });

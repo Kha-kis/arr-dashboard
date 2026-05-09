@@ -446,6 +446,25 @@ class HuntingScheduler {
 							"Hunt notification dispatch failed",
 						);
 					});
+			} else if (result.status === "error") {
+				// A returned error result (e.g., queue-check connectivity failure)
+				// does not throw, so the outer catch below never fires for it.
+				// Surface it explicitly so an offline instance doesn't silently
+				// stop hunting. (Issue #438 follow-up.)
+				this.app.notificationService
+					?.notify({
+						eventType: "HUNT_FAILED",
+						title: `Hunt failed on ${config.instance.label}`,
+						body: result.message,
+						url: "/hunting",
+						metadata: huntMeta,
+					})
+					.catch((err) => {
+						log.warn(
+							{ err, instanceLabel: config.instance.label },
+							"Hunt failure notification dispatch failed",
+						);
+					});
 			}
 
 			// Update config timestamps and API call count (only if we actually made API calls)
