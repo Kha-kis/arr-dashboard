@@ -43,8 +43,8 @@
 		"@playwright/test": "^1.59.1",
 		"dotenv": "^17.4.2",
 		"eslint-plugin-unused-imports": "^4.4.1",
-		"knip": "^6.7.0",
-		"turbo": "^2.9.6",
+		"knip": "^6.12.2",
+		"turbo": "^2.9.12",
 		"typescript": "^6.0.2"
 	}
 }
