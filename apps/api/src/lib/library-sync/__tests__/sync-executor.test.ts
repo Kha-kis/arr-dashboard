@@ -522,6 +522,46 @@ describe("syncInstance", () => {
 			expect(result.itemsAdded).toBe(1);
 			expect(result.itemsProcessed).toBe(1);
 		});
+
+		// Pins the issue #427 pop-based batch drain. Two assertions:
+		// (a) every input id is touched exactly once — sync correctness regardless
+		//     of drain shape.
+		// (b) the FIRST update targets the LAST input id — only true for a
+		//     tail-popping drain (or any other shrinking pattern that consumes
+		//     from the end). A future refactor that re-introduces `slice()` or
+		//     builds a normalized forward copy would process id=1 first and fail
+		//     this assertion, surfacing the regression.
+		it("Lidarr: pop-based drain processes tail-first and touches every arrItemId (issue #427)", async () => {
+			const COUNT = 150; // spans 2 batches at BATCH_SIZE=100
+			const rawItems = Array.from({ length: COUNT }, (_, i) =>
+				makeRawItem({ id: i + 1, artistName: `Artist ${i + 1}` }),
+			);
+			const existingItems = rawItems.map((r) => ({
+				id: `cache-${r.id}`,
+				arrItemId: r.id as number,
+				itemType: "artist",
+				hasFile: false,
+			}));
+
+			const { deps, instance, mockPrisma } = setupSync("LIDARR", rawItems, existingItems);
+
+			const result = await syncInstance(deps, instance);
+
+			expect(result.success).toBe(true);
+			expect(result.itemsProcessed).toBe(COUNT);
+			expect(result.itemsUpdated).toBe(COUNT);
+
+			// (a) Coverage: every cache id touched exactly once.
+			const touchedIds = new Set(mockPrisma._txUpdates.map((u) => u.where.id));
+			expect(touchedIds.size).toBe(COUNT);
+			for (let i = 1; i <= COUNT; i++) {
+				expect(touchedIds.has(`cache-${i}`)).toBe(true);
+			}
+
+			// (b) Order: first update targets the tail (id=150). Re-introducing
+			// slice() would process id=1 first and fail this.
+			expect(mockPrisma._txUpdates[0]?.where.id).toBe(`cache-${COUNT}`);
+		});
 	});
 
 	// --- Tag-delta: Sonarr/Radarr only -------------------------------------
