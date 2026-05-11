@@ -28,9 +28,11 @@
  * Companion runtime knobs:
  *   - `--heapsnapshot-signal=SIGUSR2`  Always on (set in Dockerfile
  *     NODE_OPTIONS). An operator who sees heap climbing in these logs can
- *     capture a snapshot on demand:
- *       docker exec <container> sh -c 'kill -USR2 $(pgrep -f "node /app/api/dist/index.js")'
- *     Snapshots land on /config/heap-snapshots/.
+ *     capture a snapshot on demand via the bundled helper:
+ *       docker exec <container> dump-heap
+ *     The helper walks /proc to find the API process (no pgrep/procps
+ *     required) and sends SIGUSR2. Snapshots land in
+ *     /config/heap-snapshots/.
  *
  *   - `HEAP_AUTO_SNAPSHOT=1` env var  OPT-IN. When set, start-combined.sh
  *     appends --heapsnapshot-near-heap-limit=1 so V8 auto-captures a
@@ -104,7 +106,7 @@ const heapMonitorPlugin = fastifyPlugin(
 			if (heapPct >= WARN_HEAP_PCT) {
 				app.log.warn(
 					payload,
-					"Heap usage above 90% — capture a snapshot before OOM: docker exec <container> sh -c 'kill -USR2 $(pgrep -f \"node /app/api/dist/index.js\")'",
+					"Heap usage above 90% — capture a snapshot before OOM: `docker exec <container> dump-heap` (snapshot lands in /config/heap-snapshots/). Or set HEAP_AUTO_SNAPSHOT=1 in env + restart to auto-capture next near-OOM.",
 				);
 			} else if (heapPct >= INFO_HEAP_PCT) {
 				app.log.info(payload, "Heap usage above 80%");

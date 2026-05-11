@@ -123,9 +123,14 @@ COPY --from=builder --chown=abc:abc /app/apps/web/public ./web/apps/web/public
 COPY --chown=abc:abc docker/start-combined.sh ./
 COPY --chown=abc:abc docker/read-base-path.cjs ./api/
 COPY --chown=abc:abc docker/validate-runtime.sh ./api/
+# Heap-snapshot helper for operators (issue #427). Installed in PATH so
+# users can run `docker exec <container> dump-heap` without needing to
+# know the API's internal process layout.
+COPY --chown=root:root docker/dump-heap.sh /usr/local/bin/dump-heap
 RUN sed -i 's/\r$//' ./start-combined.sh && chmod +x ./start-combined.sh \
     && mv start-combined.sh start.sh \
-    && chmod +x ./api/validate-runtime.sh
+    && chmod +x ./api/validate-runtime.sh \
+    && sed -i 's/\r$//' /usr/local/bin/dump-heap && chmod +x /usr/local/bin/dump-heap
 
 # Configuration
 EXPOSE 3000 3001
@@ -142,8 +147,11 @@ ENV DATABASE_URL="file:/config/prod.db" \
     # Heap diagnostics (issue #427 follow-up):
     #   --heapsnapshot-signal=SIGUSR2  Always on. Cost = zero (only writes
     #     when the signal is received). If periodic heap-monitor logs show
-    #     a climbing baseline, an operator can capture a snapshot:
-    #       docker exec <container> sh -c 'kill -USR2 $(pgrep -f "node /app/api/dist/index.js")'
+    #     a climbing baseline, an operator can capture a snapshot with the
+    #     `dump-heap` helper that ships in the image:
+    #       docker exec <container> dump-heap
+    #     The helper walks /proc to find the API process and sends SIGUSR2
+    #     (no pgrep / procps required — keeps the base image minimal).
     #     Snapshots land on the persisted volume (/config/heap-snapshots/).
     #
     #   Auto-capture on near-OOM is OPT-IN via the HEAP_AUTO_SNAPSHOT env
