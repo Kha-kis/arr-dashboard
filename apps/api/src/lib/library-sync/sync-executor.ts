@@ -230,6 +230,11 @@ export async function syncInstance(
 		const client = arrClientFactory.create(instance);
 		const service = instance.service.toLowerCase() as LibraryService;
 
+		// Sample heap BEFORE the full-library fetch so heap-monitor data can
+		// distinguish the parse-spike contribution (issue #427) from the
+		// batch-loop retention window.
+		logMemoryPhase(log, instance.id, "before-fetch");
+
 		let rawItems: unknown[];
 
 		if (client instanceof SonarrClient) {
@@ -354,8 +359,22 @@ export async function syncInstance(
 
 		// Process items in batches directly from rawItems — avoids building
 		// a full parallel normalized array in memory.
-		for (let i = 0; i < rawItems.length; i += BATCH_SIZE) {
-			const rawBatch = rawItems.slice(i, i + BATCH_SIZE) as Record<string, unknown>[];
+		//
+		// Pop-based drain (issue #427): the previous `for (i ... slice)` shape
+		// kept `rawItems` fully alive until the loop completed because every
+		// slice held an implicit reference back to the source array's
+		// elements. For a 1.5M-track Lidarr library (~50k artist objects,
+		// 200-500 MB parsed) the retention window spanned the entire batch
+		// transaction chain. Pop-draining shrinks the array as we go, so each
+		// processed batch is eligible for GC during the next transaction's
+		// await. Reverse processing order is safe: every item still gets
+		// exactly one create/update and sync is order-independent.
+		while (rawItems.length > 0) {
+			const rawBatch: Array<Record<string, unknown>> = [];
+			const batchSize = Math.min(BATCH_SIZE, rawItems.length);
+			for (let j = 0; j < batchSize; j++) {
+				rawBatch.push(rawItems.pop() as Record<string, unknown>);
+			}
 
 			await prisma.$transaction(async (tx) => {
 				for (const raw of rawBatch) {
@@ -420,6 +439,11 @@ export async function syncInstance(
 				}
 			});
 		}
+
+		// Defensive: pop-drain already empties rawItems, but reassign to a
+		// fresh array so any retained closure reference (current or future)
+		// can release the original buffer immediately.
+		rawItems = [];
 
 		logMemoryPhase(log, instance.id, "after-batch-writes");
 
