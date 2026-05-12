@@ -74,25 +74,135 @@ interface StreamingDeps {
 }
 
 /**
- * Collect items from a JSON-array endpoint into an in-memory array via
- * streaming parse. Same semantics as `await client.X.getAll()` but the
- * HTTP body never sits fully buffered in memory at once.
- *
- * Returns an array so the caller's existing Map.from(...) / filter / etc.
- * patterns work unchanged. For very large libraries (Lidarr 50k+ artists)
- * the returned array is still large, but the *peak* during the fetch is
- * halved because the raw HTTP body bytes are released as they're parsed
- * rather than held for a `response.json()` call.
+ * Slim projection of a Sonarr series resource. Only the fields the hunting
+ * filter / search / synthetic-record code actually reads — see audit in
+ * issue #427 follow-up. Keeping this shape tight is what bounds the
+ * seriesMap memory on large libraries (50 MB → ~3 MB for 10k series).
  */
-async function collectFromStream(
+interface SlimSeries {
+	id: number;
+	title: string;
+	monitored: boolean;
+	tags: number[];
+	qualityProfileId: number;
+	status: string;
+	year: number;
+	/** Flattened from `series.statistics.episodeFileCount`. */
+	episodeFileCount: number;
+}
+
+/** Slim projection of a Lidarr artist resource. */
+interface SlimArtist {
+	id: number;
+	monitored: boolean;
+	tags: number[];
+	qualityProfileId: number;
+	status: string;
+	artistName: string;
+}
+
+/** Slim projection of a Readarr author resource. */
+interface SlimAuthor {
+	id: number;
+	monitored: boolean;
+	tags: number[];
+	qualityProfileId: number;
+	status: string;
+	authorName: string;
+}
+
+/**
+ * Stream-build a lookup Map keyed by `id` with each value projected to the
+ * fields actually read downstream. Peak memory while building is bounded by
+ * the parser buffer (~tens of KB) plus the slim Map itself — the full raw
+ * record is dropped as soon as the projection fn runs.
+ *
+ * For Drewskieza's 50k-artist Lidarr (issue #427) this means the artistMap
+ * stays at ~10 MB instead of the 200-500 MB the SDK's `getAll() + new Map`
+ * pattern allocated.
+ */
+async function streamIntoSlimMap<TSlim>(
 	deps: StreamingDeps,
+	project: (raw: Record<string, unknown>) => TSlim | null,
 	options?: { path?: string },
-): Promise<Array<Record<string, unknown>>> {
-	const items: Array<Record<string, unknown>> = [];
-	for await (const item of streamLibraryItems(deps.factory, deps.instance, deps.log, options)) {
-		items.push(item);
+): Promise<Map<number, TSlim>> {
+	const map = new Map<number, TSlim>();
+	for await (const raw of streamLibraryItems(deps.factory, deps.instance, deps.log, options)) {
+		const slim = project(raw);
+		if (slim === null) continue;
+		const id = (raw.id as number | undefined) ?? 0;
+		if (id > 0) {
+			map.set(id, slim);
+		}
 	}
-	return items;
+	return map;
+}
+
+/**
+ * SDK-fallback adapter: build the same slim Map from `await client.X.getAll()`.
+ * Used when streamingDeps isn't provided (legacy callers / queue-threshold
+ * tests that mock the SDK directly). Doesn't get the memory benefit, but
+ * keeps the downstream code working with a uniform slim-Map shape.
+ */
+function buildSlimMapFromSdkArray<TSlim>(
+	raw: ReadonlyArray<Record<string, unknown>>,
+	project: (item: Record<string, unknown>) => TSlim | null,
+): Map<number, TSlim> {
+	const map = new Map<number, TSlim>();
+	for (const item of raw) {
+		const slim = project(item);
+		if (slim === null) continue;
+		const id = (item.id as number | undefined) ?? 0;
+		if (id > 0) {
+			map.set(id, slim);
+		}
+	}
+	return map;
+}
+
+/** Project a raw series resource → SlimSeries; returns null when fields are missing. */
+function projectSeries(raw: Record<string, unknown>): SlimSeries | null {
+	const id = (raw.id as number | undefined) ?? 0;
+	if (id <= 0) return null;
+	const stats = raw.statistics as { episodeFileCount?: number } | undefined;
+	return {
+		id,
+		title: (raw.title as string | undefined) ?? "",
+		monitored: (raw.monitored as boolean | undefined) ?? false,
+		tags: (raw.tags as number[] | undefined) ?? [],
+		qualityProfileId: (raw.qualityProfileId as number | undefined) ?? 0,
+		status: (raw.status as string | undefined) ?? "",
+		year: (raw.year as number | undefined) ?? 0,
+		episodeFileCount: stats?.episodeFileCount ?? 0,
+	};
+}
+
+/** Project a raw artist resource → SlimArtist. */
+function projectArtist(raw: Record<string, unknown>): SlimArtist | null {
+	const id = (raw.id as number | undefined) ?? 0;
+	if (id <= 0) return null;
+	return {
+		id,
+		monitored: (raw.monitored as boolean | undefined) ?? false,
+		tags: (raw.tags as number[] | undefined) ?? [],
+		qualityProfileId: (raw.qualityProfileId as number | undefined) ?? 0,
+		status: (raw.status as string | undefined) ?? "",
+		artistName: (raw.artistName as string | undefined) ?? "",
+	};
+}
+
+/** Project a raw author resource → SlimAuthor. */
+function projectAuthor(raw: Record<string, unknown>): SlimAuthor | null {
+	const id = (raw.id as number | undefined) ?? 0;
+	if (id <= 0) return null;
+	return {
+		id,
+		monitored: (raw.monitored as boolean | undefined) ?? false,
+		tags: (raw.tags as number[] | undefined) ?? [],
+		qualityProfileId: (raw.qualityProfileId as number | undefined) ?? 0,
+		status: (raw.status as string | undefined) ?? "",
+		authorName: (raw.authorName as string | undefined) ?? "",
+	};
 }
 
 // ============================================================================
@@ -350,17 +460,23 @@ async function executeSonarrHuntWithSdk(
 	streamingDeps?: StreamingDeps,
 ): Promise<HuntResultWithoutApiCount> {
 	try {
-		// Stream the full series list rather than buffering the HTTP body
-		// (issue #427). Fall back to the SDK's buffered getAll() when no
-		// streamingDeps is provided — keeps the function testable without
-		// a fetch mock.
+		// Stream the series list into a slim-projection Map (issue #427).
+		// Each series is reduced to the 8 fields the downstream filter /
+		// synthetic-record code reads — drops seasons[], images[], and the
+		// rest of the heavy fields. For anime / long-running-show hoarders
+		// with 10k+ series this is the difference between ~50 MB and ~3 MB
+		// resident memory for the catalog.
+		//
+		// Falls back to SDK.getAll() when streamingDeps isn't provided
+		// (queue-threshold tests mock the SDK directly) and rebuilds the
+		// same slim shape from the buffered array.
 		counter.count++;
-		const allSeries = streamingDeps
-			? ((await collectFromStream(streamingDeps)) as unknown as Awaited<
-					ReturnType<typeof client.series.getAll>
-				>)
-			: await client.series.getAll();
-		const seriesMap = new Map(allSeries.map((s) => [s.id ?? 0, s]));
+		const seriesMap: Map<number, SlimSeries> = streamingDeps
+			? await streamIntoSlimMap(streamingDeps, projectSeries)
+			: buildSlimMapFromSdkArray(
+					(await client.series.getAll()) as unknown as Array<Record<string, unknown>>,
+					projectSeries,
+				);
 
 		// Get wanted episodes with page rotation
 		// Fetch missing/cutoff records — the SDK Episode type is inferred via the generic fetcher
@@ -393,25 +509,25 @@ async function executeSonarrHuntWithSdk(
 			if (upgradeSearchAll) {
 				// When upgradeSearchAll is enabled: identify monitored series with episode files
 				// and trigger series-level searches for them (Sonarr will re-evaluate all episodes)
-				const monitoredSeriesWithFiles = allSeries.filter(
-					(s) =>
-						(s.monitored ?? false) &&
-						(((s.statistics as Record<string, unknown> | undefined)?.episodeFileCount as number) ??
-							0) > 0,
-				);
+				const monitoredSeriesWithFiles: SlimSeries[] = [];
+				for (const s of seriesMap.values()) {
+					if (s.monitored && s.episodeFileCount > 0) {
+						monitoredSeriesWithFiles.push(s);
+					}
+				}
 
 				// Build synthetic episode-like records from monitored series so they flow through
 				// the same filter/batch pipeline. We use one record per series.
 				const syntheticRecords: SonarrEpisodeRecord[] = monitoredSeriesWithFiles.map(
 					(s) =>
 						({
-							id: s.id ?? 0,
-							seriesId: s.id ?? 0,
+							id: s.id,
+							seriesId: s.id,
 							seasonNumber: -1, // sentinel: means "search entire series"
 							episodeNumber: 0,
-							title: s.title ?? "Unknown",
+							title: s.title,
 							airDateUtc: undefined as string | undefined,
-							monitored: s.monitored ?? false,
+							monitored: s.monitored,
 							hasFile: true,
 						}) as SonarrEpisodeRecord,
 				);
@@ -1004,15 +1120,17 @@ async function executeLidarrHuntWithSdk(
 		// Stream the full artist list. For users with 50k+ artists (issue #427)
 		// this is the single biggest heap consumer on hunt-executor — the SDK's
 		// buffer-then-parse `getAll()` allocated 200-500 MB just to build the
-		// catalog. Streaming halves the peak by releasing HTTP body bytes as
-		// they're parsed.
+		// catalog. The slim-projection Map drops the heavy fields (statistics,
+		// links, links[], images, etc.) and keeps only the 5 fields the
+		// downstream filter / search-history code actually reads. For 50k
+		// artists this is the difference between ~250 MB and ~10 MB resident.
 		counter.count++;
-		const allArtists = streamingDeps
-			? ((await collectFromStream(streamingDeps)) as unknown as Awaited<
-					ReturnType<typeof client.artist.getAll>
-				>)
-			: await client.artist.getAll();
-		const artistMap = new Map(allArtists.map((a) => [(a as { id?: number }).id ?? 0, a]));
+		const artistMap: Map<number, SlimArtist> = streamingDeps
+			? await streamIntoSlimMap(streamingDeps, projectArtist)
+			: buildSlimMapFromSdkArray(
+					(await client.artist.getAll()) as unknown as Array<Record<string, unknown>>,
+					projectArtist,
+				);
 
 		const fetchLidarrWanted = (endpoint: "missing" | "cutoff") =>
 			fetchWantedWithWrapAround(
@@ -1106,14 +1224,13 @@ async function executeLidarrHuntWithSdk(
 			const artist = artistMap.get((albumAny.artistId as number) ?? 0);
 			if (!artist) return false;
 
-			const artistAny = artist as Record<string, unknown>;
 			return passesFilters(
 				{
-					tags: (artistAny.tags as number[]) ?? [],
-					qualityProfileId: (artistAny.qualityProfileId as number) ?? 0,
-					status: (artistAny.status as string) ?? "",
+					tags: artist.tags,
+					qualityProfileId: artist.qualityProfileId,
+					status: artist.status,
 					year: Number((releaseDate ?? "").slice(0, 4)) || 0,
-					monitored: Boolean(albumAny.monitored) && Boolean(artistAny.monitored),
+					monitored: Boolean(albumAny.monitored) && artist.monitored,
 					releaseDate,
 				},
 				filters,
@@ -1142,10 +1259,8 @@ async function executeLidarrHuntWithSdk(
 
 		const notRecentlySearched = historyManager.filterRecentlySearched(eligibleAlbums, (album) => {
 			const albumAny = album as Record<string, unknown>;
-			const artist = artistMap.get((albumAny.artistId as number) ?? 0) as
-				| Record<string, unknown>
-				| undefined;
-			const artistName = (artist?.artistName as string) ?? "Unknown Artist";
+			const artist = artistMap.get((albumAny.artistId as number) ?? 0);
+			const artistName = artist?.artistName ?? "Unknown Artist";
 			return {
 				mediaType: "album",
 				mediaId: album.id,
@@ -1171,10 +1286,8 @@ async function executeLidarrHuntWithSdk(
 		const albumsToSearch = notRecentlySearched.slice(0, batchSize);
 		const searchedItemNames = albumsToSearch.map((album) => {
 			const albumAny = album as Record<string, unknown>;
-			const artist = artistMap.get((albumAny.artistId as number) ?? 0) as
-				| Record<string, unknown>
-				| undefined;
-			const artistName = (artist?.artistName as string) ?? "Unknown Artist";
+			const artist = artistMap.get((albumAny.artistId as number) ?? 0);
+			const artistName = artist?.artistName ?? "Unknown Artist";
 			return `${artistName} - ${album.title}`;
 		});
 
@@ -1266,16 +1379,17 @@ async function executeReadarrHuntWithSdk(
 	streamingDeps?: StreamingDeps,
 ): Promise<HuntResultWithoutApiCount> {
 	try {
-		// Stream the full author list. Mirror of the Lidarr artist path —
-		// for Readarr installs with thousands of authors this avoids the
-		// 200+ MB heap spike from buffer-then-parse `getAll()` (issue #427).
+		// Stream the full author list into a slim-projection Map. Mirror of
+		// the Lidarr artist path — same memory profile (5 fields per entry
+		// vs the full author resource with its embedded statistics, links,
+		// images, etc.). Issue #427 follow-up.
 		counter.count++;
-		const allAuthors = streamingDeps
-			? ((await collectFromStream(streamingDeps)) as unknown as Awaited<
-					ReturnType<typeof client.author.getAll>
-				>)
-			: await client.author.getAll();
-		const authorMap = new Map(allAuthors.map((a) => [(a as { id?: number }).id ?? 0, a]));
+		const authorMap: Map<number, SlimAuthor> = streamingDeps
+			? await streamIntoSlimMap(streamingDeps, projectAuthor)
+			: buildSlimMapFromSdkArray(
+					(await client.author.getAll()) as unknown as Array<Record<string, unknown>>,
+					projectAuthor,
+				);
 
 		const fetchReadarrWanted = (endpoint: "missing" | "cutoff") =>
 			fetchWantedWithWrapAround(
@@ -1369,14 +1483,13 @@ async function executeReadarrHuntWithSdk(
 			const author = authorMap.get((bookAny.authorId as number) ?? 0);
 			if (!author) return false;
 
-			const authorAny = author as Record<string, unknown>;
 			return passesFilters(
 				{
-					tags: (authorAny.tags as number[]) ?? [],
-					qualityProfileId: (authorAny.qualityProfileId as number) ?? 0,
-					status: (authorAny.status as string) ?? "",
+					tags: author.tags,
+					qualityProfileId: author.qualityProfileId,
+					status: author.status,
 					year: Number((releaseDate ?? "").slice(0, 4)) || 0,
-					monitored: Boolean(bookAny.monitored) && Boolean(authorAny.monitored),
+					monitored: Boolean(bookAny.monitored) && author.monitored,
 					releaseDate,
 				},
 				filters,
@@ -1405,10 +1518,8 @@ async function executeReadarrHuntWithSdk(
 
 		const notRecentlySearched = historyManager.filterRecentlySearched(eligibleBooks, (book) => {
 			const bookAny = book as Record<string, unknown>;
-			const author = authorMap.get((bookAny.authorId as number) ?? 0) as
-				| Record<string, unknown>
-				| undefined;
-			const authorName = (author?.authorName as string) ?? "Unknown Author";
+			const author = authorMap.get((bookAny.authorId as number) ?? 0);
+			const authorName = author?.authorName ?? "Unknown Author";
 			return {
 				mediaType: "book",
 				mediaId: book.id,
@@ -1434,10 +1545,8 @@ async function executeReadarrHuntWithSdk(
 		const booksToSearch = notRecentlySearched.slice(0, batchSize);
 		const searchedItemNames = booksToSearch.map((book) => {
 			const bookAny = book as Record<string, unknown>;
-			const author = authorMap.get((bookAny.authorId as number) ?? 0) as
-				| Record<string, unknown>
-				| undefined;
-			const authorName = (author?.authorName as string) ?? "Unknown Author";
+			const author = authorMap.get((bookAny.authorId as number) ?? 0);
+			const authorName = author?.authorName ?? "Unknown Author";
 			return `${authorName} - ${book.title}`;
 		});
 
