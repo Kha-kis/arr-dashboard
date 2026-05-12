@@ -268,32 +268,47 @@ function projectMovie(raw: Record<string, unknown>): SlimMovie | null {
 	};
 }
 
-/** Project a raw album record → SlimAlbum. */
+/** Project a raw album record → SlimAlbum. Returns null when id or artistId
+ *  is missing — both are required to do anything useful with the record
+ *  downstream (artistMap.get(0) returns undefined and the album is silently
+ *  filtered out, which conflates "orphan record" with "filter miss"). */
 function projectAlbum(raw: Record<string, unknown>): SlimAlbum | null {
 	const id = (raw.id as number | undefined) ?? 0;
 	if (id <= 0) return null;
+	const artistId = (raw.artistId as number | undefined) ?? 0;
+	if (artistId <= 0) return null;
 	const stats = raw.statistics as { trackFileCount?: number } | undefined;
+	// Normalize releaseDate: Lidarr can return `null` for un-released albums;
+	// the slim type says `string | undefined`, so coerce null to undefined to
+	// keep the type contract honest.
+	const releaseDateRaw = raw.releaseDate;
+	const releaseDate = typeof releaseDateRaw === "string" ? releaseDateRaw : undefined;
 	return {
 		id,
 		title: (raw.title as string | undefined) ?? "",
 		monitored: (raw.monitored as boolean | undefined) ?? false,
-		releaseDate: raw.releaseDate as string | undefined,
-		artistId: (raw.artistId as number | undefined) ?? 0,
+		releaseDate,
+		artistId,
 		trackFileCount: stats?.trackFileCount ?? 0,
 	};
 }
 
-/** Project a raw book record → SlimBook. */
+/** Project a raw book record → SlimBook. Same FK-required invariant as
+ *  projectAlbum — without `authorId`, the book is unjoinable to authorMap. */
 function projectBook(raw: Record<string, unknown>): SlimBook | null {
 	const id = (raw.id as number | undefined) ?? 0;
 	if (id <= 0) return null;
+	const authorId = (raw.authorId as number | undefined) ?? 0;
+	if (authorId <= 0) return null;
 	const stats = raw.statistics as { bookFileCount?: number } | undefined;
+	const releaseDateRaw = raw.releaseDate;
+	const releaseDate = typeof releaseDateRaw === "string" ? releaseDateRaw : undefined;
 	return {
 		id,
 		title: (raw.title as string | undefined) ?? "",
 		monitored: (raw.monitored as boolean | undefined) ?? false,
-		releaseDate: raw.releaseDate as string | undefined,
-		authorId: (raw.authorId as number | undefined) ?? 0,
+		releaseDate,
+		authorId,
 		bookFileCount: stats?.bookFileCount ?? 0,
 	};
 }
