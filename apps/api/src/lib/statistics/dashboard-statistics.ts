@@ -46,6 +46,44 @@ import {
 	updateTagBreakdown,
 } from "./statistics-utils.js";
 
+/**
+ * Optional injection for streaming the bulk library list (issue #427).
+ *
+ * Production callers (routes/dashboard/statistics-routes.ts) bind this to
+ * `streamLibraryItems(arrClientFactory, instance, log)` from
+ * lib/arr/library-stream.ts so peak memory during stats is bounded by what
+ * the aggregation loop holds, not by library size.
+ *
+ * When not provided, the function falls back to the SDK's buffer-then-parse
+ * `getAll()` — preserves the existing test API (tests inject mock clients,
+ * not factories).
+ */
+export type StatsStreamItems = () => AsyncIterable<Record<string, unknown>>;
+
+export interface StatsOptions {
+	/** Stream the bulk library list — overrides the SDK's getAll() path. */
+	streamItems?: StatsStreamItems;
+}
+
+/** Adapt an existing array to the AsyncIterable contract used by streaming. */
+async function* asAsyncIterable<T>(items: T[]): AsyncIterable<T> {
+	for (const item of items) yield item;
+}
+
+/**
+ * Pick the iterable for the bulk library list: streamed if injected, else
+ * fall back to a buffered `getAll()` wrapped in `asAsyncIterable`. Both paths
+ * feed the same aggregation loop downstream.
+ */
+async function chooseBulkIterable<T>(
+	streamItems: StatsStreamItems | undefined,
+	fetchAll: () => Promise<T[]>,
+): Promise<AsyncIterable<Record<string, unknown>>> {
+	if (streamItems) return streamItems();
+	const items = (await safeRequest(fetchAll).then((r) => r ?? [])) as Record<string, unknown>[];
+	return asAsyncIterable(items);
+}
+
 // ============================================================================
 // Empty Statistics Templates
 // ============================================================================
@@ -167,6 +205,7 @@ export const fetchSonarrStatisticsWithSdk = async (
 	instanceName: string,
 	instanceBaseUrl: string,
 	instanceExternalUrl?: string,
+	options?: StatsOptions,
 ): Promise<SonarrStatistics> => {
 	const instanceInfo: InstanceInfo = {
 		instanceId,
@@ -175,9 +214,11 @@ export const fetchSonarrStatisticsWithSdk = async (
 		instanceExternalUrl,
 	};
 
-	// Fetch all data in parallel
-	const [series, diskspace, health, cutoffUnmet, qualityProfiles, tags] = await Promise.all([
-		safeRequest(() => client.series.getAll()).then((r) => r ?? []),
+	// Small ancillary calls — these endpoints return small payloads so the
+	// buffer-then-parse pattern is fine. Series goes through the streaming
+	// path when `options.streamItems` is provided (production) so peak
+	// memory is bounded by the aggregation state, not library size.
+	const [diskspace, health, cutoffUnmet, qualityProfiles, tags] = await Promise.all([
 		safeRequest(() => client.diskSpace.getAll()).then((r) => r ?? []),
 		safeRequest(() => client.health.getAll()).then((r) => r ?? []),
 		safeRequest(() => client.wanted.cutoff({ page: 1, pageSize: 1 })).then(
@@ -207,43 +248,68 @@ export const fetchSonarrStatisticsWithSdk = async (
 	const qualityBreakdown: Record<string, number> = {};
 	const tagBreakdown: Record<string, number> = {};
 
-	for (const entry of series) {
-		if (!entry) continue;
-		totalSeries += 1;
-		if (entry.monitored !== false) monitoredSeries += 1;
+	const seriesIterable = await chooseBulkIterable(options?.streamItems, () =>
+		client.series.getAll(),
+	);
+	try {
+		for await (const entryRaw of seriesIterable) {
+			if (!entryRaw) continue;
+			// The fields read here are present on both the SDK-typed series
+			// resource and the streamed raw record. Cast to a permissive view —
+			// downstream readers tolerate missing fields via `??` defaults.
+			const entry = entryRaw as {
+				monitored?: boolean;
+				status?: string;
+				added?: string;
+				tags?: number[];
+				qualityProfileId?: number;
+				statistics?: {
+					totalEpisodeCount?: number;
+					episodeCount?: number;
+					episodeFileCount?: number;
+					sizeOnDisk?: number;
+				};
+			};
+			totalSeries += 1;
+			if (entry.monitored !== false) monitoredSeries += 1;
 
-		if (entry.status === "continuing") continuingSeries += 1;
-		else if (entry.status === "ended") endedSeries += 1;
+			if (entry.status === "continuing") continuingSeries += 1;
+			else if (entry.status === "ended") endedSeries += 1;
 
-		const { within7Days, within30Days } = checkRecentlyAdded(entry.added, thresholds);
-		if (within7Days) recentlyAdded7Days += 1;
-		if (within30Days) recentlyAdded30Days += 1;
+			const { within7Days, within30Days } = checkRecentlyAdded(entry.added, thresholds);
+			if (within7Days) recentlyAdded7Days += 1;
+			if (within30Days) recentlyAdded30Days += 1;
 
-		updateTagBreakdown(entry.tags, tagIdToLabel, tagBreakdown);
+			updateTagBreakdown(entry.tags, tagIdToLabel, tagBreakdown);
 
-		const stats = entry.statistics;
-		const episodesTotal = stats?.totalEpisodeCount ?? stats?.episodeCount ?? 0;
-		// episodeCount = monitored episodes only (excludes unaired/unmonitored/specials)
-		// totalEpisodeCount = ALL episodes including unaired and unmonitored
-		// For "missing" we must use episodeCount to match Sonarr's own missing count (#131)
-		const monitoredEpisodes = stats?.episodeCount ?? episodesTotal;
-		const episodesWithFile = stats?.episodeFileCount ?? 0;
-		const sizeOnDisk = stats?.sizeOnDisk ?? 0;
+			const stats = entry.statistics;
+			const episodesTotal = stats?.totalEpisodeCount ?? stats?.episodeCount ?? 0;
+			// episodeCount = monitored episodes only (excludes unaired/unmonitored/specials)
+			// totalEpisodeCount = ALL episodes including unaired and unmonitored
+			// For "missing" we must use episodeCount to match Sonarr's own missing count (#131)
+			const monitoredEpisodes = stats?.episodeCount ?? episodesTotal;
+			const episodesWithFile = stats?.episodeFileCount ?? 0;
+			const sizeOnDisk = stats?.sizeOnDisk ?? 0;
 
-		totalEpisodes += monitoredEpisodes;
-		episodeFileCount += episodesWithFile;
-		downloadedEpisodes += episodesWithFile;
-		missingEpisodes += Math.max(0, monitoredEpisodes - episodesWithFile);
-		totalFileSize += sizeOnDisk;
+			totalEpisodes += monitoredEpisodes;
+			episodeFileCount += episodesWithFile;
+			downloadedEpisodes += episodesWithFile;
+			missingEpisodes += Math.max(0, monitoredEpisodes - episodesWithFile);
+			totalFileSize += sizeOnDisk;
 
-		if (episodesWithFile > 0) {
-			updateQualityBreakdown(
-				entry.qualityProfileId,
-				profileIdToName,
-				episodesWithFile,
-				qualityBreakdown,
-			);
+			if (episodesWithFile > 0) {
+				updateQualityBreakdown(
+					entry.qualityProfileId,
+					profileIdToName,
+					episodesWithFile,
+					qualityBreakdown,
+				);
+			}
 		}
+	} catch {
+		// Match the legacy `safeRequest` behavior — degrade gracefully on
+		// fetch / stream errors. Counters stay at whatever was accumulated
+		// before the failure (0 if the stream errored before the first item).
 	}
 
 	const diskTotals = calculateDiskTotals(diskspace);
@@ -290,6 +356,7 @@ export const fetchRadarrStatisticsWithSdk = async (
 	instanceName: string,
 	instanceBaseUrl: string,
 	instanceExternalUrl?: string,
+	options?: StatsOptions,
 ): Promise<RadarrStatistics> => {
 	const instanceInfo: InstanceInfo = {
 		instanceId,
@@ -298,8 +365,7 @@ export const fetchRadarrStatisticsWithSdk = async (
 		instanceExternalUrl,
 	};
 
-	const [movies, diskspace, health, cutoffUnmet, qualityProfiles, tags] = await Promise.all([
-		safeRequest(() => client.movie.getAll()).then((r) => r ?? []),
+	const [diskspace, health, cutoffUnmet, qualityProfiles, tags] = await Promise.all([
 		safeRequest(() => client.diskSpace.getAll()).then((r) => r ?? []),
 		safeRequest(() => client.health.getAll()).then((r) => r ?? []),
 		safeRequest(() => client.wanted.cutoff({ page: 1, pageSize: 1 })).then(
@@ -313,6 +379,7 @@ export const fetchRadarrStatisticsWithSdk = async (
 	const tagIdToLabel = buildTagIdToLabelMap(tags);
 	const thresholds = getTimeThresholds();
 
+	let totalMovies = 0;
 	let monitoredMovies = 0;
 	let downloadedMovies = 0;
 	let totalFileSize = 0;
@@ -322,29 +389,45 @@ export const fetchRadarrStatisticsWithSdk = async (
 	const qualityBreakdown: Record<string, number> = {};
 	const tagBreakdown: Record<string, number> = {};
 
-	for (const movie of movies) {
-		if (!movie) continue;
+	const moviesIterable = await chooseBulkIterable(options?.streamItems, () =>
+		client.movie.getAll(),
+	);
+	try {
+		for await (const movieRaw of moviesIterable) {
+			if (!movieRaw) continue;
+			const movie = movieRaw as {
+				monitored?: boolean;
+				hasFile?: boolean;
+				runtime?: number;
+				added?: string;
+				tags?: number[];
+				qualityProfileId?: number;
+				sizeOnDisk?: number;
+			};
+			totalMovies += 1;
 
-		const { within7Days, within30Days } = checkRecentlyAdded(movie.added, thresholds);
-		if (within7Days) recentlyAdded7Days += 1;
-		if (within30Days) recentlyAdded30Days += 1;
+			const { within7Days, within30Days } = checkRecentlyAdded(movie.added, thresholds);
+			if (within7Days) recentlyAdded7Days += 1;
+			if (within30Days) recentlyAdded30Days += 1;
 
-		updateTagBreakdown(movie.tags, tagIdToLabel, tagBreakdown);
+			updateTagBreakdown(movie.tags, tagIdToLabel, tagBreakdown);
 
-		if (typeof movie.runtime === "number" && movie.runtime > 0) {
-			totalRuntime += movie.runtime;
+			if (typeof movie.runtime === "number" && movie.runtime > 0) {
+				totalRuntime += movie.runtime;
+			}
+
+			if (movie.monitored !== false) monitoredMovies += 1;
+
+			if (movie.hasFile) {
+				downloadedMovies += 1;
+				totalFileSize += movie.sizeOnDisk ?? 0;
+				updateQualityBreakdown(movie.qualityProfileId, profileIdToName, 1, qualityBreakdown);
+			}
 		}
-
-		if (movie.monitored !== false) monitoredMovies += 1;
-
-		if (movie.hasFile) {
-			downloadedMovies += 1;
-			totalFileSize += movie.sizeOnDisk ?? 0;
-			updateQualityBreakdown(movie.qualityProfileId, profileIdToName, 1, qualityBreakdown);
-		}
+	} catch {
+		// Match legacy safeRequest behavior — degrade gracefully on error.
 	}
 
-	const totalMovies = movies.length;
 	const diskTotals = calculateDiskTotals(diskspace);
 	const healthIssuesList = processHealthIssues(health, instanceInfo, "radarr");
 
@@ -490,6 +573,7 @@ export const fetchLidarrStatisticsWithSdk = async (
 	instanceName: string,
 	instanceBaseUrl: string,
 	instanceExternalUrl?: string,
+	options?: StatsOptions,
 ): Promise<LidarrStatistics> => {
 	const instanceInfo: InstanceInfo = {
 		instanceId,
@@ -498,8 +582,7 @@ export const fetchLidarrStatisticsWithSdk = async (
 		instanceExternalUrl,
 	};
 
-	const [artists, diskspace, health, cutoffUnmetResult, qualityProfiles, tags] = await Promise.all([
-		safeRequest(() => client.artist.getAll()).then((r) => r ?? []),
+	const [diskspace, health, cutoffUnmetResult, qualityProfiles, tags] = await Promise.all([
 		safeRequest(() => client.diskSpace.get()).then((r) => r ?? []),
 		safeRequest(() => client.health.get()).then((r) => r ?? []),
 		safeRequest(() => client.wanted.getCutoffUnmet({ page: 1, pageSize: 1 })),
@@ -524,43 +607,63 @@ export const fetchLidarrStatisticsWithSdk = async (
 	const qualityBreakdown: Record<string, number> = {};
 	const tagBreakdown: Record<string, number> = {};
 
-	for (const artist of artists) {
-		if (!artist) continue;
-		totalArtists += 1;
-		if (artist.monitored !== false) monitoredArtists += 1;
+	const artistsIterable = await chooseBulkIterable(options?.streamItems, () =>
+		client.artist.getAll(),
+	);
+	try {
+		for await (const artistRaw of artistsIterable) {
+			if (!artistRaw) continue;
+			const artist = artistRaw as {
+				monitored?: boolean;
+				added?: string;
+				tags?: number[];
+				qualityProfileId?: number;
+				statistics?: {
+					albumCount?: number;
+					trackCount?: number;
+					totalTrackCount?: number;
+					trackFileCount?: number;
+					sizeOnDisk?: number;
+				};
+			};
+			totalArtists += 1;
+			if (artist.monitored !== false) monitoredArtists += 1;
 
-		const { within7Days, within30Days } = checkRecentlyAdded(artist.added, thresholds);
-		if (within7Days) recentlyAdded7Days += 1;
-		if (within30Days) recentlyAdded30Days += 1;
+			const { within7Days, within30Days } = checkRecentlyAdded(artist.added, thresholds);
+			if (within7Days) recentlyAdded7Days += 1;
+			if (within30Days) recentlyAdded30Days += 1;
 
-		updateTagBreakdown(artist.tags, tagIdToLabel, tagBreakdown);
+			updateTagBreakdown(artist.tags, tagIdToLabel, tagBreakdown);
 
-		const stats = artist.statistics;
-		const albumCount = stats?.albumCount ?? 0;
-		// trackCount = monitored album tracks only (excludes unmonitored albums)
-		// totalTrackCount = ALL tracks including unmonitored albums
-		const monitoredTrackCount = stats?.trackCount ?? stats?.totalTrackCount ?? 0;
-		const trackFileCount = stats?.trackFileCount ?? 0;
-		const sizeOnDisk = stats?.sizeOnDisk ?? 0;
+			const stats = artist.statistics;
+			const albumCount = stats?.albumCount ?? 0;
+			// trackCount = monitored album tracks only (excludes unmonitored albums)
+			// totalTrackCount = ALL tracks including unmonitored albums
+			const monitoredTrackCount = stats?.trackCount ?? stats?.totalTrackCount ?? 0;
+			const trackFileCount = stats?.trackFileCount ?? 0;
+			const sizeOnDisk = stats?.sizeOnDisk ?? 0;
 
-		totalAlbums += albumCount;
-		totalFileSize += sizeOnDisk;
+			totalAlbums += albumCount;
+			totalFileSize += sizeOnDisk;
 
-		// Only count tracks from monitored artists, using monitored album track count
-		if (artist.monitored !== false) {
-			totalTracks += monitoredTrackCount;
-			downloadedTracks += trackFileCount;
-			missingTracks += Math.max(0, monitoredTrackCount - trackFileCount);
+			// Only count tracks from monitored artists, using monitored album track count
+			if (artist.monitored !== false) {
+				totalTracks += monitoredTrackCount;
+				downloadedTracks += trackFileCount;
+				missingTracks += Math.max(0, monitoredTrackCount - trackFileCount);
+			}
+
+			if (trackFileCount > 0) {
+				updateQualityBreakdown(
+					artist.qualityProfileId,
+					profileIdToName,
+					trackFileCount,
+					qualityBreakdown,
+				);
+			}
 		}
-
-		if (trackFileCount > 0) {
-			updateQualityBreakdown(
-				artist.qualityProfileId,
-				profileIdToName,
-				trackFileCount,
-				qualityBreakdown,
-			);
-		}
+	} catch {
+		// Match legacy safeRequest behavior — degrade gracefully on error.
 	}
 
 	const monitoredAlbums = Math.round(totalAlbums * (monitoredArtists / Math.max(totalArtists, 1)));
@@ -607,6 +710,7 @@ export const fetchReadarrStatisticsWithSdk = async (
 	instanceName: string,
 	instanceBaseUrl: string,
 	instanceExternalUrl?: string,
+	options?: StatsOptions,
 ): Promise<ReadarrStatistics> => {
 	const instanceInfo: InstanceInfo = {
 		instanceId,
@@ -615,8 +719,7 @@ export const fetchReadarrStatisticsWithSdk = async (
 		instanceExternalUrl,
 	};
 
-	const [authors, diskspace, health, cutoffUnmetResult, qualityProfiles, tags] = await Promise.all([
-		safeRequest(() => client.author.getAll()).then((r) => r ?? []),
+	const [diskspace, health, cutoffUnmetResult, qualityProfiles, tags] = await Promise.all([
 		safeRequest(() => client.diskSpace.getAll()).then((r) => r ?? []),
 		safeRequest(() => client.health.getAll()).then((r) => r ?? []),
 		safeRequest(() => client.wanted.getCutoffUnmet({ page: 1, pageSize: 1 })),
@@ -641,37 +744,55 @@ export const fetchReadarrStatisticsWithSdk = async (
 	const qualityBreakdown: Record<string, number> = {};
 	const tagBreakdown: Record<string, number> = {};
 
-	for (const author of authors) {
-		if (!author) continue;
-		totalAuthors += 1;
-		if (author.monitored !== false) monitoredAuthors += 1;
+	const authorsIterable = await chooseBulkIterable(options?.streamItems, () =>
+		client.author.getAll(),
+	);
+	try {
+		for await (const authorRaw of authorsIterable) {
+			if (!authorRaw) continue;
+			const author = authorRaw as {
+				monitored?: boolean;
+				added?: string;
+				tags?: number[];
+				qualityProfileId?: number;
+				statistics?: {
+					bookCount?: number;
+					bookFileCount?: number;
+					sizeOnDisk?: number;
+				};
+			};
+			totalAuthors += 1;
+			if (author.monitored !== false) monitoredAuthors += 1;
 
-		const { within7Days, within30Days } = checkRecentlyAdded(author.added, thresholds);
-		if (within7Days) recentlyAdded7Days += 1;
-		if (within30Days) recentlyAdded30Days += 1;
+			const { within7Days, within30Days } = checkRecentlyAdded(author.added, thresholds);
+			if (within7Days) recentlyAdded7Days += 1;
+			if (within30Days) recentlyAdded30Days += 1;
 
-		updateTagBreakdown(author.tags, tagIdToLabel, tagBreakdown);
+			updateTagBreakdown(author.tags, tagIdToLabel, tagBreakdown);
 
-		const stats = author.statistics;
-		const bookCount = stats?.bookCount ?? 0;
-		const bookFileCount = stats?.bookFileCount ?? 0;
-		const sizeOnDisk = stats?.sizeOnDisk ?? 0;
+			const stats = author.statistics;
+			const bookCount = stats?.bookCount ?? 0;
+			const bookFileCount = stats?.bookFileCount ?? 0;
+			const sizeOnDisk = stats?.sizeOnDisk ?? 0;
 
-		totalBooks += bookCount;
-		downloadedBooks += bookFileCount;
-		missingBooks += Math.max(0, bookCount - bookFileCount);
-		totalFileSize += sizeOnDisk;
+			totalBooks += bookCount;
+			downloadedBooks += bookFileCount;
+			missingBooks += Math.max(0, bookCount - bookFileCount);
+			totalFileSize += sizeOnDisk;
 
-		if (author.monitored !== false) monitoredBooks += bookCount;
+			if (author.monitored !== false) monitoredBooks += bookCount;
 
-		if (bookFileCount > 0) {
-			updateQualityBreakdown(
-				author.qualityProfileId,
-				profileIdToName,
-				bookFileCount,
-				qualityBreakdown,
-			);
+			if (bookFileCount > 0) {
+				updateQualityBreakdown(
+					author.qualityProfileId,
+					profileIdToName,
+					bookFileCount,
+					qualityBreakdown,
+				);
+			}
 		}
+	} catch {
+		// Match legacy safeRequest behavior — degrade gracefully on error.
 	}
 
 	const diskTotals = calculateDiskTotals(diskspace);
