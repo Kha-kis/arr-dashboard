@@ -5,6 +5,7 @@ import {
 } from "@arr/shared";
 import { LidarrClient, ProwlarrClient, RadarrClient, ReadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyPluginCallback } from "fastify";
+import { streamLibraryItems } from "../../lib/arr/library-stream.js";
 import {
 	aggregateLidarrStatistics,
 	aggregateProwlarrStatistics,
@@ -55,6 +56,9 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							instance.label,
 							instance.baseUrl,
 							instance.externalUrl ?? undefined,
+							{
+								streamItems: () => streamLibraryItems(app.arrClientFactory, instance, request.log),
+							},
 						);
 						return {
 							service: "sonarr" as const,
@@ -88,6 +92,9 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							instance.label,
 							instance.baseUrl,
 							instance.externalUrl ?? undefined,
+							{
+								streamItems: () => streamLibraryItems(app.arrClientFactory, instance, request.log),
+							},
 						);
 						return {
 							service: "radarr" as const,
@@ -152,6 +159,9 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							instance.label,
 							instance.baseUrl,
 							instance.externalUrl ?? undefined,
+							{
+								streamItems: () => streamLibraryItems(app.arrClientFactory, instance, request.log),
+							},
 						);
 						return {
 							service: "lidarr" as const,
@@ -185,6 +195,9 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							instance.label,
 							instance.baseUrl,
 							instance.externalUrl ?? undefined,
+							{
+								streamItems: () => streamLibraryItems(app.arrClientFactory, instance, request.log),
+							},
 						);
 						return {
 							service: "readarr" as const,
