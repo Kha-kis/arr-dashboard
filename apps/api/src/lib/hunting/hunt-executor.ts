@@ -79,7 +79,7 @@ interface StreamingDeps {
  * issue #427 follow-up. Keeping this shape tight is what bounds the
  * seriesMap memory on large libraries (50 MB → ~3 MB for 10k series).
  */
-interface SlimSeries {
+export interface SlimSeries {
 	id: number;
 	title: string;
 	monitored: boolean;
@@ -92,7 +92,7 @@ interface SlimSeries {
 }
 
 /** Slim projection of a Lidarr artist resource. */
-interface SlimArtist {
+export interface SlimArtist {
 	id: number;
 	monitored: boolean;
 	tags: number[];
@@ -102,7 +102,7 @@ interface SlimArtist {
 }
 
 /** Slim projection of a Readarr author resource. */
-interface SlimAuthor {
+export interface SlimAuthor {
 	id: number;
 	monitored: boolean;
 	tags: number[];
@@ -161,7 +161,7 @@ function buildSlimMapFromSdkArray<TSlim>(
 }
 
 /** Project a raw series resource → SlimSeries; returns null when fields are missing. */
-function projectSeries(raw: Record<string, unknown>): SlimSeries | null {
+export function projectSeries(raw: Record<string, unknown>): SlimSeries | null {
 	const id = (raw.id as number | undefined) ?? 0;
 	if (id <= 0) return null;
 	const stats = raw.statistics as { episodeFileCount?: number } | undefined;
@@ -178,7 +178,7 @@ function projectSeries(raw: Record<string, unknown>): SlimSeries | null {
 }
 
 /** Project a raw artist resource → SlimArtist. */
-function projectArtist(raw: Record<string, unknown>): SlimArtist | null {
+export function projectArtist(raw: Record<string, unknown>): SlimArtist | null {
 	const id = (raw.id as number | undefined) ?? 0;
 	if (id <= 0) return null;
 	return {
@@ -192,7 +192,7 @@ function projectArtist(raw: Record<string, unknown>): SlimArtist | null {
 }
 
 /** Project a raw author resource → SlimAuthor. */
-function projectAuthor(raw: Record<string, unknown>): SlimAuthor | null {
+export function projectAuthor(raw: Record<string, unknown>): SlimAuthor | null {
 	const id = (raw.id as number | undefined) ?? 0;
 	if (id <= 0) return null;
 	return {
@@ -212,7 +212,7 @@ function projectAuthor(raw: Record<string, unknown>): SlimAuthor | null {
  * dropping the rest (overview, images[], runtime, languages, etc.) is the
  * memory win for users with 5k+ movie libraries.
  */
-interface SlimMovie {
+export interface SlimMovie {
 	id: number;
 	title: string;
 	year: number;
@@ -227,7 +227,7 @@ interface SlimMovie {
 }
 
 /** Slim projection of a Lidarr album resource. */
-interface SlimAlbum {
+export interface SlimAlbum {
 	id: number;
 	title: string;
 	monitored: boolean;
@@ -238,7 +238,7 @@ interface SlimAlbum {
 }
 
 /** Slim projection of a Readarr book resource. */
-interface SlimBook {
+export interface SlimBook {
 	id: number;
 	title: string;
 	monitored: boolean;
@@ -249,7 +249,7 @@ interface SlimBook {
 }
 
 /** Project a raw movie record → SlimMovie. Returns null only when the id is missing. */
-function projectMovie(raw: Record<string, unknown>): SlimMovie | null {
+export function projectMovie(raw: Record<string, unknown>): SlimMovie | null {
 	const id = (raw.id as number | undefined) ?? 0;
 	if (id <= 0) return null;
 	const digital = raw.digitalRelease as string | undefined;
@@ -272,7 +272,7 @@ function projectMovie(raw: Record<string, unknown>): SlimMovie | null {
  *  is missing — both are required to do anything useful with the record
  *  downstream (artistMap.get(0) returns undefined and the album is silently
  *  filtered out, which conflates "orphan record" with "filter miss"). */
-function projectAlbum(raw: Record<string, unknown>): SlimAlbum | null {
+export function projectAlbum(raw: Record<string, unknown>): SlimAlbum | null {
 	const id = (raw.id as number | undefined) ?? 0;
 	if (id <= 0) return null;
 	const artistId = (raw.artistId as number | undefined) ?? 0;
@@ -295,7 +295,7 @@ function projectAlbum(raw: Record<string, unknown>): SlimAlbum | null {
 
 /** Project a raw book record → SlimBook. Same FK-required invariant as
  *  projectAlbum — without `authorId`, the book is unjoinable to authorMap. */
-function projectBook(raw: Record<string, unknown>): SlimBook | null {
+export function projectBook(raw: Record<string, unknown>): SlimBook | null {
 	const id = (raw.id as number | undefined) ?? 0;
 	if (id <= 0) return null;
 	const authorId = (raw.authorId as number | undefined) ?? 0;

@@ -66,7 +66,7 @@ const MIN_SYNC_INTERVAL_MINS = 5;
 // Scheduler Class
 // ============================================================================
 
-class LibrarySyncScheduler {
+export class LibrarySyncScheduler {
 	private app: FastifyInstance | null = null;
 	private running = false;
 	private intervalId: NodeJS.Timeout | null = null;
