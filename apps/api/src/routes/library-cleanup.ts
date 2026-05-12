@@ -649,22 +649,80 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 					? result.details.slice(0, MAX_PREVIEW_ITEMS)
 					: result.details;
 
+				// qui-derived safety hint (Phase 3.3). Single bulk query joins
+				// LibraryCache for every previewed item so operators see
+				// "qui says: safe to delete" / "still seeding" inline. Failure
+				// of this enrichment is non-fatal — items fall back to
+				// `no_signal` (renders no badge).
+				const quiStatusByKey = new Map<string, "seeding" | "paused_or_error" | "not_in_qui">();
+				try {
+					if (previewDetails.length > 0) {
+						const instanceIds = [...new Set(previewDetails.map((d) => d.instanceId))];
+						const itemIds = [...new Set(previewDetails.map((d) => d.arrItemId))];
+						const rows = await app.prisma.libraryCache.findMany({
+							where: {
+								instance: { userId },
+								instanceId: { in: instanceIds },
+								arrItemId: { in: itemIds },
+							},
+							select: {
+								instanceId: true,
+								arrItemId: true,
+								itemType: true,
+								infoHash: true,
+								torrentState: true,
+							},
+						});
+						for (const row of rows) {
+							// Only items with a backfilled infoHash can have a meaningful
+							// "not in qui" signal — without infoHash we don't know whether
+							// qui would or wouldn't recognize the torrent.
+							if (!row.infoHash) continue;
+							const key = `${row.instanceId}|${row.arrItemId}|${row.itemType.toLowerCase()}`;
+							let status: "seeding" | "paused_or_error" | "not_in_qui";
+							if (!row.torrentState) {
+								status = "not_in_qui";
+							} else if (row.torrentState === "seeding") {
+								status = "seeding";
+							} else if (row.torrentState === "paused" || row.torrentState === "error") {
+								status = "paused_or_error";
+							} else {
+								// downloading/stalled_dl/queued/checking/moving/unknown —
+								// no strong cleanup signal either way.
+								continue;
+							}
+							quiStatusByKey.set(key, status);
+						}
+					}
+				} catch (err) {
+					// Non-fatal. Surface in logs only; items render with no qui badge.
+					request.log.warn(
+						{ err },
+						"library-cleanup preview: qui-status enrichment failed (continuing without badge)",
+					);
+				}
+
 				return reply.send({
 					totalEvaluated: result.itemsEvaluated,
 					totalFlagged: result.itemsFlagged,
-					items: previewDetails.map((d) => ({
-						instanceId: d.instanceId,
-						instanceLabel: instanceLabelMap.get(d.instanceId) ?? null,
-						arrItemId: d.arrItemId,
-						itemType: d.itemType ?? "movie",
-						title: d.title,
-						matchedRuleName: d.rule,
-						reason: d.reason,
-						action: d.action ?? "delete",
-						sizeOnDisk: d.sizeOnDisk ?? "0",
-						year: d.year ?? null,
-						rating: d.rating ?? null,
-					})),
+					items: previewDetails.map((d) => {
+						const itemType = d.itemType ?? "movie";
+						const key = `${d.instanceId}|${d.arrItemId}|${itemType.toLowerCase()}`;
+						return {
+							instanceId: d.instanceId,
+							instanceLabel: instanceLabelMap.get(d.instanceId) ?? null,
+							arrItemId: d.arrItemId,
+							itemType,
+							title: d.title,
+							matchedRuleName: d.rule,
+							reason: d.reason,
+							action: d.action ?? "delete",
+							sizeOnDisk: d.sizeOnDisk ?? "0",
+							year: d.year ?? null,
+							rating: d.rating ?? null,
+							quiStatus: quiStatusByKey.get(key) ?? "no_signal",
+						};
+					}),
 					prefetchHealth: result.prefetchHealth,
 					warnings: [
 						...(result.warnings ?? []),

@@ -76,6 +76,7 @@ import {
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { CleanupRuleDialog } from "./cleanup-rule-dialog";
 import { CleanupRuleTemplates } from "./cleanup-rule-templates";
+import { QuiStatusBadge } from "./qui-status-badge";
 
 type Tab = "config" | "approvals" | "logs" | "statistics";
 
@@ -548,8 +549,11 @@ function ConfigTab({
 											key={`${item.title}-${i}`}
 											className="flex items-center justify-between rounded-md bg-card/20 px-3 py-2 text-sm"
 										>
-											<span className="truncate">
-												{incognitoMode ? getLinuxIsoName(item.title) : item.title}
+											<span className="truncate flex items-center gap-2">
+												<span className="truncate">
+													{incognitoMode ? getLinuxIsoName(item.title) : item.title}
+												</span>
+												<QuiStatusBadge status={item.quiStatus} />
 											</span>
 											<div className="flex items-center gap-2 shrink-0 ml-3">
 												<button
