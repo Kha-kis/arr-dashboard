@@ -28,6 +28,7 @@
 		"@prisma/adapter-pg": "^7.8.0",
 		"@prisma/client": "^7.8.0",
 		"@simplewebauthn/server": "^13.3.0",
+		"@streamparser/json": "^0.0.22",
 		"argon2": "^0.44.0",
 		"arr-sdk": "^0.6.0",
 		"better-sqlite3": "^12.9.0",
