@@ -23,8 +23,41 @@ const log = createLogger("library-sync");
 /** How often to check for instances needing sync (in ms) */
 const SCHEDULER_TICK_INTERVAL_MS = 60_000; // 1 minute
 
-/** Maximum concurrent syncs to prevent overwhelming the system */
+/**
+ * Delay before the FIRST tick fires after start().
+ *
+ * Issue #427 follow-up: container startup has half a dozen schedulers
+ * firing in the first ~5 minutes (seerr-health at 20s, plex-cache at 30s,
+ * jellyfin-cache at 45s, session-snapshot at 60s, tmdb-list at 60s,
+ * trakt-list at 90s, tautulli-cache at 2min, plex-episode-cache at 5min).
+ * Library-sync previously fired AT 0s — every fresh container with a
+ * large Lidarr would co-spike its 50k-artist fetch alongside the Plex /
+ * Tautulli warm-ups.
+ *
+ * 60s pushes library-sync's first tick out past the Plex/Jellyfin cache
+ * warmup window, giving the heap time to settle from container startup
+ * before the heaviest catalog fetches begin.
+ */
+const FIRST_TICK_DELAY_MS = 60_000;
+
+/**
+ * Maximum concurrent syncs to prevent overwhelming the system.
+ *
+ * Used as the default cap. Adaptive logic in tick() lowers this to 1 when
+ * the next sync candidate's last-known itemCount exceeds LARGE_LIBRARY_THRESHOLD
+ * — prevents two big libraries (e.g. Sonarr + Lidarr) from co-syncing and
+ * busting the heap on large-collection users.
+ */
 const MAX_CONCURRENT_SYNCS = 2;
+
+/**
+ * Item-count cutoff above which an instance counts as "large" for concurrency
+ * purposes. Tuned roughly to the size where a single sync allocates ~50 MB
+ * of slim records during streaming, so two of them would push past 100 MB
+ * concurrent — comfortable on the 768 MB heap cap when combined with
+ * everything else firing in the same window.
+ */
+const LARGE_LIBRARY_THRESHOLD = 10_000;
 
 /** Minimum interval between syncs for any instance (in minutes) */
 const MIN_SYNC_INTERVAL_MINS = 5;
@@ -37,6 +70,7 @@ class LibrarySyncScheduler {
 	private app: FastifyInstance | null = null;
 	private running = false;
 	private intervalId: NodeJS.Timeout | null = null;
+	private firstTickTimeoutId: NodeJS.Timeout | null = null;
 	private activeSyncs: Set<string> = new Set();
 	private trackTick: TickWrapper = passthroughTickWrapper;
 
@@ -69,19 +103,25 @@ class LibrarySyncScheduler {
 		}
 
 		this.running = true;
-		log.info("Starting library sync scheduler");
+		log.info(
+			{ firstTickDelayMs: FIRST_TICK_DELAY_MS, intervalMs: SCHEDULER_TICK_INTERVAL_MS },
+			"Starting library sync scheduler (first tick delayed to avoid startup co-spike)",
+		);
 
-		// Check immediately on start
-		this.trackTick(() => this.tick()).catch((error) => {
-			log.error({ err: error }, "Initial scheduler tick failed");
-		});
-
-		// Then check periodically
-		this.intervalId = setInterval(() => {
+		// Delay the first tick — see FIRST_TICK_DELAY_MS comment for why.
+		this.firstTickTimeoutId = setTimeout(() => {
+			this.firstTickTimeoutId = null;
 			this.trackTick(() => this.tick()).catch((error) => {
-				log.error({ err: error }, "Scheduler tick failed");
+				log.error({ err: error }, "Initial scheduler tick failed");
 			});
-		}, SCHEDULER_TICK_INTERVAL_MS);
+
+			// Then check periodically
+			this.intervalId = setInterval(() => {
+				this.trackTick(() => this.tick()).catch((error) => {
+					log.error({ err: error }, "Scheduler tick failed");
+				});
+			}, SCHEDULER_TICK_INTERVAL_MS);
+		}, FIRST_TICK_DELAY_MS);
 	}
 
 	/**
@@ -93,6 +133,13 @@ class LibrarySyncScheduler {
 		}
 
 		log.info("Stopping library sync scheduler");
+
+		// Cancel a pending first-tick if stop() fires inside FIRST_TICK_DELAY_MS
+		// (e.g., onClose during graceful shutdown immediately after start()).
+		if (this.firstTickTimeoutId) {
+			clearTimeout(this.firstTickTimeoutId);
+			this.firstTickTimeoutId = null;
+		}
 
 		if (this.intervalId) {
 			clearInterval(this.intervalId);
@@ -124,9 +171,11 @@ class LibrarySyncScheduler {
 			return null;
 		}
 
-		// Get instance
+		// Get instance + its sync status (so adaptive concurrency in
+		// concurrent tick()s sees this manual sync's known size).
 		const instance = await this.app.prisma.serviceInstance.findUnique({
 			where: { id: instanceId },
+			include: { librarySyncStatus: true },
 		});
 
 		if (!instance) {
@@ -140,7 +189,34 @@ class LibrarySyncScheduler {
 			return null;
 		}
 
+		// Mirror tick()'s pre-runSync bookkeeping so adaptive concurrency works
+		// even when a manual trigger races with a scheduled tick.
+		this.activeSyncItemCounts.set(instance.id, instance.librarySyncStatus?.itemCount ?? 0);
 		return this.runSync(instance);
+	}
+
+	/**
+	 * Track each active sync's last-known itemCount so the tick can apply the
+	 * adaptive concurrency rule without re-querying the DB. Populated when a
+	 * sync is launched, cleared in runSync's finally.
+	 */
+	private activeSyncItemCounts: Map<string, number> = new Map();
+
+	/**
+	 * Decide the effective max-concurrent-syncs for this tick. If any active
+	 * sync OR any candidate at the head of the list is "large" (issue #427:
+	 * large libraries are the catalog-fetch + Map-build memory peak), cap at
+	 * 1 so two big syncs don't co-spike the heap.
+	 *
+	 * `candidateItemCount` is the next instance we're considering starting.
+	 */
+	private effectiveMaxConcurrent(candidateItemCount: number): number {
+		const largeActive = Array.from(this.activeSyncItemCounts.values()).some(
+			(n) => n >= LARGE_LIBRARY_THRESHOLD,
+		);
+		const largeCandidate = candidateItemCount >= LARGE_LIBRARY_THRESHOLD;
+		if (largeActive || largeCandidate) return 1;
+		return MAX_CONCURRENT_SYNCS;
 	}
 
 	/**
@@ -151,7 +227,8 @@ class LibrarySyncScheduler {
 			return;
 		}
 
-		// Don't start new syncs if we're at capacity
+		// Don't start new syncs if we're at the absolute cap (covers the
+		// default-2 ceiling). Adaptive lowering happens per-candidate below.
 		if (this.activeSyncs.size >= MAX_CONCURRENT_SYNCS) {
 			log.debug(
 				{ activeCount: this.activeSyncs.size },
@@ -177,8 +254,27 @@ class LibrarySyncScheduler {
 			});
 
 			for (const instance of instances) {
-				// Check if we're at capacity
-				if (this.activeSyncs.size >= MAX_CONCURRENT_SYNCS) {
+				// Check sync status
+				const status = instance.librarySyncStatus;
+
+				// Apply adaptive concurrency cap based on the candidate's last-known
+				// size + currently-active syncs. Done BEFORE the "skip if already
+				// syncing" check so a large candidate gates additional starts even
+				// when this iteration's instance is already running.
+				const candidateItemCount = status?.itemCount ?? 0;
+				const effectiveCap = this.effectiveMaxConcurrent(candidateItemCount);
+				if (this.activeSyncs.size >= effectiveCap) {
+					if (effectiveCap < MAX_CONCURRENT_SYNCS) {
+						log.debug(
+							{
+								activeCount: this.activeSyncs.size,
+								effectiveCap,
+								candidateItemCount,
+								instanceId: instance.id,
+							},
+							"Adaptive concurrency cap reached (large library) — deferring sync",
+						);
+					}
 					break;
 				}
 
@@ -186,9 +282,6 @@ class LibrarySyncScheduler {
 				if (this.activeSyncs.has(instance.id)) {
 					continue;
 				}
-
-				// Check sync status
-				const status = instance.librarySyncStatus;
 
 				// Skip if sync is in progress (from previous interrupted run)
 				if (status?.syncInProgress) {
@@ -222,6 +315,10 @@ class LibrarySyncScheduler {
 					!lastSync || now.getTime() - lastSync.getTime() >= Math.max(intervalMs, minIntervalMs);
 
 				if (needsSync) {
+					// Record the candidate's last-known size so other instances
+					// evaluated later in this tick see it as an active large sync.
+					// Cleared in runSync's finally.
+					this.activeSyncItemCounts.set(instance.id, candidateItemCount);
 					// Run sync in background (don't await to allow parallel processing)
 					this.runSync(instance).catch((error) => {
 						log.error({ err: error, instanceId: instance.id }, "Background sync failed");
@@ -297,6 +394,7 @@ class LibrarySyncScheduler {
 			return result;
 		} finally {
 			this.activeSyncs.delete(instance.id);
+			this.activeSyncItemCounts.delete(instance.id);
 		}
 	}
 
