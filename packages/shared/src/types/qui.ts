@@ -232,3 +232,88 @@ export const quiConnectionTestResultSchema = z.discriminatedUnion("ok", [
 ]);
 
 export type QuiConnectionTestResult = z.infer<typeof quiConnectionTestResultSchema>;
+
+// ── Phase 3.1 — Cross-Seed Discovery ────────────────────────────────
+// Shapes for the Cross-Seed Discovery page. The backend walks the user's
+// LibraryCache rows with infoHash, joins against qui's torrent list once
+// per batch, then resolves cross-seed siblings per item. Each response
+// represents a single scan batch; the frontend stitches batches via the
+// returned `nextCursor`.
+
+/** One library item that has at least one cross-seed sibling in qui. */
+export const crossSeedDiscoveryItemSchema = z.object({
+	/** LibraryCache row id (frontend uses this as React key + nextCursor anchor) */
+	libraryCacheId: z.string(),
+	/** *arr instance owning the library item */
+	arrInstanceId: z.string(),
+	arrInstanceLabel: z.string(),
+	arrService: z.enum(["sonarr", "radarr", "lidarr", "readarr"]),
+	/** Library item display fields — kept minimal to keep the payload small */
+	itemType: z.enum(["movie", "series", "artist", "author"]),
+	arrItemId: z.number().int(),
+	title: z.string(),
+	year: z.number().int().nullable(),
+	/** Primary torrent (the one *arr grabbed) — null when qui no longer knows it */
+	primary: z
+		.object({
+			hash: z.string(),
+			qbitInstanceId: z.number().int(),
+			qbitInstanceName: z.string(),
+			state: quiTorrentStateSchema,
+			ratio: z.number(),
+			tracker: z.string().nullable(),
+		})
+		.nullable(),
+	/** Cross-seed siblings — sorted by qui in match-confidence order */
+	siblings: z.array(quiCrossSeedMatchSchema),
+});
+
+export type CrossSeedDiscoveryItem = z.infer<typeof crossSeedDiscoveryItemSchema>;
+
+/**
+ * Single batch of the cross-seed discovery scan. Scan honesty: we report
+ * how many rows we scanned this batch and how many had siblings, so the
+ * frontend can show "scanned 200 items, 12 with siblings" — operators can
+ * judge coverage without hidden surprises.
+ */
+export const crossSeedDiscoveryResponseSchema = z.object({
+	/** Items found in THIS batch (empty array is valid; not all batches find siblings) */
+	items: z.array(crossSeedDiscoveryItemSchema),
+	/** LibraryCache.id of the last scanned row — pass back as cursor for the next batch */
+	nextCursor: z.string().nullable(),
+	/** Number of LibraryCache rows scanned in this batch (≤ scanBatchSize) */
+	scannedThisBatch: z.number().int(),
+	/** Number of items in this batch that had ≥1 sibling */
+	foundThisBatch: z.number().int(),
+	/** Total scanned across this scan session — frontend accumulates */
+	totalScanned: z.number().int(),
+	/** Total found across this scan session — frontend accumulates */
+	totalFound: z.number().int(),
+	/** True when no more rows remain to scan */
+	exhausted: z.boolean(),
+	/** Display name of the qui instance the scan used */
+	quiInstanceLabel: z.string(),
+});
+
+export type CrossSeedDiscoveryResponse = z.infer<typeof crossSeedDiscoveryResponseSchema>;
+
+/**
+ * Service-availability response for the discovery page. When `available`
+ * is false, the page renders an empty state with `reason` instead of
+ * attempting a scan.
+ */
+export const crossSeedDiscoveryAvailabilitySchema = z.discriminatedUnion("available", [
+	z.object({
+		available: z.literal(true),
+		quiInstanceId: z.string(),
+		quiInstanceLabel: z.string(),
+		/** Total LibraryCache rows with a backfilled infoHash (the scan universe) */
+		scanCandidates: z.number().int(),
+	}),
+	z.object({
+		available: z.literal(false),
+		reason: z.enum(["no_qui_instance", "no_correlated_items"]),
+	}),
+]);
+
+export type CrossSeedDiscoveryAvailability = z.infer<typeof crossSeedDiscoveryAvailabilitySchema>;

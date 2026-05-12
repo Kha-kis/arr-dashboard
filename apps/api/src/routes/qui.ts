@@ -3,6 +3,7 @@ import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { backfillInfoHashForRow } from "../lib/library-sync/infohash-backfill.js";
 import { createQuiClient } from "../lib/qui/client-factory.js";
+import { getDiscoveryAvailability, runDiscoveryBatch } from "../lib/qui/cross-seed-discovery.js";
 import { listQuiInstances, requireQuiInstance } from "../lib/qui/instance-helpers.js";
 import { validateRequest } from "../lib/utils/validate.js";
 
@@ -22,6 +23,16 @@ const TORRENT_STATE_BODY = z.object({
 	arrInstanceId: z.string().min(1),
 	arrItemId: z.number().int().positive(),
 	itemType: z.enum(["movie", "series", "artist", "author"]),
+});
+
+/**
+ * Cross-Seed Discovery scan query (Phase 3.1). Cursor is the LibraryCache.id
+ * of the last row scanned in the previous batch; null/undefined starts from
+ * the beginning. batchSize is clamped server-side to a sane range.
+ */
+const DISCOVERY_QUERY = z.object({
+	cursor: z.string().min(1).optional(),
+	batchSize: z.coerce.number().int().positive().optional(),
 });
 
 /**
@@ -276,6 +287,33 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 			quiInstanceId: quiInstance.id,
 			quiInstanceLabel: quiInstance.label,
 		});
+	});
+
+	// Cross-Seed Discovery (Phase 3.1) — availability probe for empty-state
+	// gating on the frontend page. Cheap: zero qui calls.
+	app.get("/qui/cross-seed/availability", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const availability = await getDiscoveryAvailability(app, userId);
+		return reply.send(availability);
+	});
+
+	// Cross-Seed Discovery (Phase 3.1) — scan one batch of LibraryCache rows
+	// and return any items with cross-seed siblings. Frontend stitches
+	// batches via the returned `nextCursor`. See lib/qui/cross-seed-discovery.ts
+	// for the scan contract.
+	app.get<{
+		Querystring: { cursor?: string; batchSize?: string };
+	}>("/qui/cross-seed/discover", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const { cursor, batchSize } = validateRequest(DISCOVERY_QUERY, request.query);
+		const result = await runDiscoveryBatch({
+			app,
+			userId,
+			cursor: cursor ?? null,
+			batchSize: batchSize ?? 100,
+			log: request.log,
+		});
+		return reply.send(result);
 	});
 
 	done();
