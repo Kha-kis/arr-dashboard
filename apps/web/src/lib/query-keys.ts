@@ -506,6 +506,8 @@ export const quiKeys = {
 		["qui", "torrent-state", arrInstanceId, arrItemId, itemType] as const,
 	crossSeedAvailability: () => ["qui", "cross-seed", "availability"] as const,
 	crossSeedDiscovery: () => ["qui", "cross-seed", "discover"] as const,
+	activity: (eventType?: string) =>
+		eventType ? (["qui", "activity", eventType] as const) : (["qui", "activity"] as const),
 };
 
 /* -------------------------------------------------------------------------- */

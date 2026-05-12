@@ -104,7 +104,8 @@ export const ModelName = {
   LabelSyncRule: 'LabelSyncRule',
   AutoTagRule: 'AutoTagRule',
   TmdbListCache: 'TmdbListCache',
-  TraktListCache: 'TraktListCache'
+  TraktListCache: 'TraktListCache',
+  QuiActivityLog: 'QuiActivityLog'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -1123,6 +1124,18 @@ export const TraktListCacheScalarFieldEnum = {
 } as const
 
 export type TraktListCacheScalarFieldEnum = (typeof TraktListCacheScalarFieldEnum)[keyof typeof TraktListCacheScalarFieldEnum]
+
+
+export const QuiActivityLogScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  eventType: 'eventType',
+  details: 'details',
+  status: 'status',
+  createdAt: 'createdAt'
+} as const
+
+export type QuiActivityLogScalarFieldEnum = (typeof QuiActivityLogScalarFieldEnum)[keyof typeof QuiActivityLogScalarFieldEnum]
 
 
 export const SortOrder = {

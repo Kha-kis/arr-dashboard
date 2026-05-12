@@ -2,6 +2,7 @@ import type {
 	CrossSeedDiscoveryAvailability,
 	CrossSeedDiscoveryResponse,
 	LibraryItemType,
+	QuiActivityFeedResponse,
 	QuiCrossSeedMatch,
 	QuiTorrent,
 } from "@arr/shared";
@@ -51,4 +52,21 @@ export async function fetchCrossSeedDiscoveryBatch(
 	return apiRequest<CrossSeedDiscoveryResponse>(
 		`/api/qui/cross-seed/discover${qs ? `?${qs}` : ""}`,
 	);
+}
+
+export interface QuiActivityFeedParams {
+	cursor?: string | null;
+	limit?: number;
+	eventType?: string;
+}
+
+export async function fetchQuiActivityFeed(
+	params: QuiActivityFeedParams = {},
+): Promise<QuiActivityFeedResponse> {
+	const search = new URLSearchParams();
+	if (params.cursor) search.set("cursor", params.cursor);
+	if (params.limit) search.set("limit", String(params.limit));
+	if (params.eventType) search.set("eventType", params.eventType);
+	const qs = search.toString();
+	return apiRequest<QuiActivityFeedResponse>(`/api/qui/activity${qs ? `?${qs}` : ""}`);
 }

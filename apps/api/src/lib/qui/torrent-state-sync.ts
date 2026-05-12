@@ -1,5 +1,6 @@
 import { normalizeTorrentState } from "@arr/shared";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
+import { logQuiActivity, type QuiSyncCompleteDetails } from "./activity-log.js";
 import { createQuiClient } from "./client-factory.js";
 import { listQuiInstances } from "./instance-helpers.js";
 
@@ -68,6 +69,13 @@ export async function runQuiTorrentStateSync(
 
 	for (const { userId } of usersWithQui) {
 		result.usersScanned++;
+		const userStartedAt = Date.now();
+		// Per-user slice of the run's totals — used for the activity log emit
+		// at the end of the user's loop. Each user gets one row per run.
+		let userInstancesScanned = 0;
+		let userTorrentsSeen = 0;
+		let userRowsUpdated = 0;
+		let userRowsCleared = 0;
 		const instances = await listQuiInstances(app, userId);
 
 		// Track every hash this user's qui instances reported across all of them
@@ -87,12 +95,14 @@ export async function runQuiTorrentStateSync(
 
 		for (const instance of instances) {
 			result.instancesScanned++;
+			userInstancesScanned++;
 			try {
 				const client = createQuiClient(app, instance);
 				// Single qui call returns torrents across every qBit instance behind
 				// this qui — exactly what we need for hash-based correlation.
 				const torrents = await client.listAllTorrents();
 				result.torrentsSeen += torrents.length;
+				userTorrentsSeen += torrents.length;
 
 				if (torrents.length === 0) continue;
 
@@ -114,6 +124,7 @@ export async function runQuiTorrentStateSync(
 						},
 					});
 					result.rowsUpdated += updated.count;
+					userRowsUpdated += updated.count;
 				});
 
 				await Promise.all(updates);
@@ -162,10 +173,31 @@ export async function runQuiTorrentStateSync(
 					},
 				});
 				result.rowsCleared += cleared.count;
+				userRowsCleared += cleared.count;
 			} catch (error) {
 				log.warn({ err: error, userId }, "qui torrent-state sync: stale-state cleanup failed");
 			}
 		}
+
+		// Activity log: one row per user per run. Status reflects this user's
+		// success — global errors from OTHER users shouldn't taint this user's
+		// timeline. Fire-and-forget; logQuiActivity swallows failures.
+		const userDetails: QuiSyncCompleteDetails = {
+			instancesScanned: userInstancesScanned,
+			torrentsSeen: userTorrentsSeen,
+			rowsUpdated: userRowsUpdated,
+			rowsCleared: userRowsCleared,
+			errors: userErrors,
+			durationMs: Date.now() - userStartedAt,
+		};
+		await logQuiActivity({
+			app,
+			userId,
+			eventType: "qui_sync_complete",
+			details: userDetails,
+			status: userErrors > 0 ? "error" : "ok",
+			log,
+		});
 	}
 
 	result.durationMs = Date.now() - startedAt;

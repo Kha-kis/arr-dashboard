@@ -1,10 +1,15 @@
 "use client";
 
-import type { CrossSeedDiscoveryResponse, LibraryItemType } from "@arr/shared";
+import type {
+	CrossSeedDiscoveryResponse,
+	LibraryItemType,
+	QuiActivityFeedResponse,
+} from "@arr/shared";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import {
 	fetchCrossSeedAvailability,
 	fetchCrossSeedDiscoveryBatch,
+	fetchQuiActivityFeed,
 	fetchTorrentState,
 } from "../../lib/api-client/qui";
 import { POLLING_ACTIVE, POLLING_BACKGROUND } from "../../lib/polling-intervals";
@@ -77,6 +82,27 @@ export const useCrossSeedDiscovery = (enabled: boolean = true, batchSize: number
 		// Cross-seed siblings change with user actions in qui, but we don't
 		// auto-refresh during an active scan — operators have a manual rescan
 		// button. Long staleTime keeps the cached scan stable across nav.
+		staleTime: POLLING_BACKGROUND,
+	});
+};
+
+/**
+ * Infinite-scroll qui Activity feed (Phase 3.2). Each fetch returns a page
+ * of recent events; React Query stitches pages via `nextCursor`. Optional
+ * `eventType` filter narrows to a single emitter category.
+ */
+export const useQuiActivityFeed = (eventType?: string, limit: number = 50) => {
+	return useInfiniteQuery<QuiActivityFeedResponse>({
+		queryKey: [...quiKeys.activity(eventType), limit] as const,
+		queryFn: ({ pageParam }) =>
+			fetchQuiActivityFeed({
+				cursor: typeof pageParam === "string" ? pageParam : null,
+				limit,
+				eventType,
+			}),
+		initialPageParam: null as string | null,
+		getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+		// Refresh on focus so operators returning to the page see new events.
 		staleTime: POLLING_BACKGROUND,
 	});
 };

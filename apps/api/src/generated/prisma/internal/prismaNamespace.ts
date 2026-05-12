@@ -437,7 +437,8 @@ export const ModelName = {
   LabelSyncRule: 'LabelSyncRule',
   AutoTagRule: 'AutoTagRule',
   TmdbListCache: 'TmdbListCache',
-  TraktListCache: 'TraktListCache'
+  TraktListCache: 'TraktListCache',
+  QuiActivityLog: 'QuiActivityLog'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -453,7 +454,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "autoTagRule" | "tmdbListCache" | "traktListCache"
+    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "autoTagRule" | "tmdbListCache" | "traktListCache" | "quiActivityLog"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -4453,6 +4454,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    QuiActivityLog: {
+      payload: Prisma.$QuiActivityLogPayload<ExtArgs>
+      fields: Prisma.QuiActivityLogFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.QuiActivityLogFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActivityLogPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.QuiActivityLogFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActivityLogPayload>
+        }
+        findFirst: {
+          args: Prisma.QuiActivityLogFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActivityLogPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.QuiActivityLogFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActivityLogPayload>
+        }
+        findMany: {
+          args: Prisma.QuiActivityLogFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActivityLogPayload>[]
+        }
+        create: {
+          args: Prisma.QuiActivityLogCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActivityLogPayload>
+        }
+        createMany: {
+          args: Prisma.QuiActivityLogCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.QuiActivityLogCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActivityLogPayload>[]
+        }
+        delete: {
+          args: Prisma.QuiActivityLogDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActivityLogPayload>
+        }
+        update: {
+          args: Prisma.QuiActivityLogUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActivityLogPayload>
+        }
+        deleteMany: {
+          args: Prisma.QuiActivityLogDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.QuiActivityLogUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.QuiActivityLogUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActivityLogPayload>[]
+        }
+        upsert: {
+          args: Prisma.QuiActivityLogUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActivityLogPayload>
+        }
+        aggregate: {
+          args: Prisma.QuiActivityLogAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateQuiActivityLog>
+        }
+        groupBy: {
+          args: Prisma.QuiActivityLogGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.QuiActivityLogGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.QuiActivityLogCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.QuiActivityLogCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -5494,6 +5569,18 @@ export const TraktListCacheScalarFieldEnum = {
 export type TraktListCacheScalarFieldEnum = (typeof TraktListCacheScalarFieldEnum)[keyof typeof TraktListCacheScalarFieldEnum]
 
 
+export const QuiActivityLogScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  eventType: 'eventType',
+  details: 'details',
+  status: 'status',
+  createdAt: 'createdAt'
+} as const
+
+export type QuiActivityLogScalarFieldEnum = (typeof QuiActivityLogScalarFieldEnum)[keyof typeof QuiActivityLogScalarFieldEnum]
+
+
 export const SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -5742,6 +5829,7 @@ export type GlobalOmitConfig = {
   autoTagRule?: Prisma.AutoTagRuleOmit
   tmdbListCache?: Prisma.TmdbListCacheOmit
   traktListCache?: Prisma.TraktListCacheOmit
+  quiActivityLog?: Prisma.QuiActivityLogOmit
 }
 
 /* Types for Logging */

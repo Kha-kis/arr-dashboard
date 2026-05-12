@@ -317,3 +317,55 @@ export const crossSeedDiscoveryAvailabilitySchema = z.discriminatedUnion("availa
 ]);
 
 export type CrossSeedDiscoveryAvailability = z.infer<typeof crossSeedDiscoveryAvailabilitySchema>;
+
+// ── Phase 3.2 — qui Activity Log ────────────────────────────────────
+// Discrete events from arr-dashboard's qui-related operations, emitted
+// by scheduler ticks and gate firings. The frontend renders them as a
+// chronological feed on the /qui-activity page.
+
+/** Detail payload for `qui_sync_complete` events. */
+export const quiSyncCompleteDetailsSchema = z.object({
+	instancesScanned: z.number().int(),
+	torrentsSeen: z.number().int(),
+	rowsUpdated: z.number().int(),
+	rowsCleared: z.number().int(),
+	errors: z.number().int(),
+	durationMs: z.number().int(),
+});
+
+export type QuiSyncCompleteDetails = z.infer<typeof quiSyncCompleteDetailsSchema>;
+
+/** Detail payload for `qui_backfill_complete` events. */
+export const quiBackfillCompleteDetailsSchema = z.object({
+	itemsScanned: z.number().int(),
+	itemsUpdated: z.number().int(),
+	itemsWithoutHash: z.number().int(),
+	durationMs: z.number().int(),
+});
+
+export type QuiBackfillCompleteDetails = z.infer<typeof quiBackfillCompleteDetailsSchema>;
+
+/**
+ * One activity log row as surfaced to the frontend. `details` is the
+ * pre-parsed JSON payload — server side stores it as a string column,
+ * the API layer parses before returning. `eventType` is open string so
+ * new emitters can land without a shared-schema bump; the frontend
+ * gracefully degrades to a generic row for unknown types.
+ */
+export const quiActivityEventSchema = z.object({
+	id: z.string(),
+	eventType: z.string(),
+	status: z.enum(["ok", "warn", "error"]),
+	createdAt: z.string(),
+	details: z.unknown(),
+});
+
+export type QuiActivityEvent = z.infer<typeof quiActivityEventSchema>;
+
+/** Paginated response for `GET /api/qui/activity`. */
+export const quiActivityFeedResponseSchema = z.object({
+	events: z.array(quiActivityEventSchema),
+	nextCursor: z.string().nullable(),
+});
+
+export type QuiActivityFeedResponse = z.infer<typeof quiActivityFeedResponseSchema>;

@@ -303,3 +303,19 @@ export type TmdbListCache = Prisma.TmdbListCacheModel
  * scheduler every 4h. Used by the `trakt_list_member` rule type's evaluator.
  */
 export type TraktListCache = Prisma.TraktListCacheModel
+/**
+ * Model QuiActivityLog
+ * One discrete event from arr-dashboard's qui-related operations.
+ * eventType vocabulary (extensible — new types can land alongside future phases):
+ * - "qui_sync_complete"     — torrent-state-sync tick finished (rows touched, errors)
+ * - "qui_backfill_complete" — infohash-backfill tick finished (scanned, found)
+ * - "qui_aware_skip"        — queue-cleaner gate suppressed a strike (Phase 2.3)
+ * - "qui_cleanup_excluded"  — library-cleanup gate filtered an item (Phase 2.2)
+ * - "qui_action_*"          — operator-initiated mutations (Phase 4)
+ * - "qui_event_received"    — webhook push from qui (Phase 5)
+ * 
+ * `details` is event-type-specific JSON. Retention is bounded — the
+ * scheduler that emits an event also trims its own type's tail to keep
+ * the table from growing unboundedly.
+ */
+export type QuiActivityLog = Prisma.QuiActivityLogModel

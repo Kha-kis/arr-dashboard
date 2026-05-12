@@ -36,6 +36,17 @@ const DISCOVERY_QUERY = z.object({
 });
 
 /**
+ * Activity feed query (Phase 3.2). Cursor is the activity log row id
+ * AFTER which to fetch; null starts from the most recent. limit clamped
+ * to keep individual responses bounded.
+ */
+const ACTIVITY_QUERY = z.object({
+	cursor: z.string().min(1).optional(),
+	limit: z.coerce.number().int().positive().max(200).optional(),
+	eventType: z.string().min(1).optional(),
+});
+
+/**
  * qui integration routes — read-only torrent observability for the
  * media-stack dashboard. Each handler:
  *   - resolves the user's qui ServiceInstance via requireQuiInstance
@@ -316,7 +327,67 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 		return reply.send(result);
 	});
 
+	// qui Activity feed (Phase 3.2) — paginated chronological view of every
+	// qui-related event arr-dashboard has emitted for this user. Eventually
+	// joined by mutation events (Phase 4) and webhook events (Phase 5).
+	app.get<{
+		Querystring: { cursor?: string; limit?: string; eventType?: string };
+	}>("/qui/activity", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const { cursor, limit, eventType } = validateRequest(ACTIVITY_QUERY, request.query);
+		const take = limit ?? 50;
+
+		// Cursor convention: pass the id of the LAST event in the previous
+		// page; the next page returns the next N events older than that row.
+		// Empty/null cursor = fetch most-recent N.
+		let cursorCreatedAt: Date | null = null;
+		if (cursor) {
+			const anchor = await app.prisma.quiActivityLog.findUnique({
+				where: { id: cursor },
+				select: { createdAt: true, userId: true },
+			});
+			// SECURITY: refuse cursor lookups that belong to another user, so
+			// the cursor cannot be used to enumerate cross-user event ids.
+			if (anchor && anchor.userId === userId) {
+				cursorCreatedAt = anchor.createdAt;
+			}
+		}
+
+		const events = await app.prisma.quiActivityLog.findMany({
+			where: {
+				userId,
+				...(eventType ? { eventType } : {}),
+				...(cursorCreatedAt ? { createdAt: { lt: cursorCreatedAt } } : {}),
+			},
+			orderBy: { createdAt: "desc" },
+			take: take + 1, // fetch one extra to detect "has next page"
+		});
+
+		const hasMore = events.length > take;
+		const trimmed = hasMore ? events.slice(0, take) : events;
+		const nextCursor = hasMore ? (trimmed[trimmed.length - 1]?.id ?? null) : null;
+
+		return reply.send({
+			events: trimmed.map((e) => ({
+				id: e.id,
+				eventType: e.eventType,
+				status: e.status,
+				createdAt: e.createdAt.toISOString(),
+				details: safeParseJson(e.details),
+			})),
+			nextCursor,
+		});
+	});
+
 	done();
 };
+
+function safeParseJson(raw: string): unknown {
+	try {
+		return JSON.parse(raw);
+	} catch {
+		return null;
+	}
+}
 
 export const registerQuiRoutes = quiRoute;

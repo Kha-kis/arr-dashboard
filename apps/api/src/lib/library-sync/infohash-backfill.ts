@@ -1,5 +1,6 @@
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import type { ServiceInstance } from "../prisma.js";
+import { logQuiActivity, type QuiBackfillCompleteDetails } from "../qui/activity-log.js";
 
 /**
  * Backfill `LibraryCache.infoHash` from *arr download history (Phase 2.1).
@@ -262,6 +263,10 @@ export async function runInfoHashBackfillSweep({
 	for (const { userId } of usersWithQui) {
 		if (result.rowsScanned >= batchSize) break;
 		result.usersScanned++;
+		const userStartedAt = Date.now();
+		const userInitialScanned = result.rowsScanned;
+		const userInitialHashed = result.rowsHashed;
+		const userInitialMissed = result.rowsMissed;
 
 		const remaining = batchSize - result.rowsScanned;
 		// Find LibraryCache rows for this user (joined via ServiceInstance.userId)
@@ -307,6 +312,29 @@ export async function runInfoHashBackfillSweep({
 			if (perRowSleepMs > 0) {
 				await new Promise((resolve) => setTimeout(resolve, perRowSleepMs));
 			}
+		}
+
+		// Activity log: per-user backfill tick. Captures only the slice of this
+		// user's rows scanned in THIS tick (deltas from initial counters), so
+		// the timeline shows one event per user per scheduler tick rather than
+		// the global rolling-up. Fire-and-forget; failures are swallowed.
+		const userRowsScanned = result.rowsScanned - userInitialScanned;
+		// Only emit when this user actually contributed work this tick. Some
+		// users may sit behind earlier users that already exhausted the batch.
+		if (userRowsScanned > 0) {
+			const userDetails: QuiBackfillCompleteDetails = {
+				itemsScanned: userRowsScanned,
+				itemsUpdated: result.rowsHashed - userInitialHashed,
+				itemsWithoutHash: result.rowsMissed - userInitialMissed,
+				durationMs: Date.now() - userStartedAt,
+			};
+			await logQuiActivity({
+				app,
+				userId,
+				eventType: "qui_backfill_complete",
+				details: userDetails,
+				log,
+			});
 		}
 	}
 

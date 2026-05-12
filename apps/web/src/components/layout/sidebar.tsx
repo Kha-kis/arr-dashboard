@@ -76,6 +76,7 @@ const NAV_GROUPS: NavGroup[] = [
 			{ href: "/queue-cleaner", label: "Queue Cleaner", icon: Trash2 },
 			{ href: "/library-cleanup", label: "Cleanup", icon: Eraser },
 			{ href: "/cross-seed", label: "Cross-Seed", icon: Network },
+			{ href: "/qui-activity", label: "qui Activity", icon: History },
 			{ href: "/auto-tag", label: "Auto-Tagger", icon: Tag },
 			{ href: "/label-sync", label: "Label Sync", icon: Tag },
 			{ href: "/history", label: "History", icon: History },
