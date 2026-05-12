@@ -48,10 +48,22 @@ const STREAM_TIMEOUT_MS = 10 * 60_000; // 10 minutes
 export interface StreamLibraryOptions {
 	/** Override the timeout (mostly for tests). */
 	timeoutMs?: number;
+	/**
+	 * Override the endpoint path. Defaults to the service's bulk-list endpoint
+	 * (e.g. `/api/v3/series` for SONARR). Useful for fetching album / book
+	 * lists from Lidarr/Readarr where the default bulk endpoint targets the
+	 * parent resource (artist / author).
+	 */
+	path?: string;
 }
 
 /**
- * Stream items from the ARR service's bulk-list endpoint.
+ * Stream items from an ARR service's JSON-array endpoint.
+ *
+ * Default path is the service's bulk-list endpoint (series/movie/artist/
+ * author). Pass `options.path` to stream a different top-level-array
+ * endpoint on the same instance — e.g. `/api/v1/album` against a Lidarr
+ * instance.
  *
  * @throws if the response is not OK (HTTP 4xx/5xx) or if the parser hits
  *         malformed JSON. Caller is responsible for transaction handling and
@@ -63,7 +75,7 @@ export async function* streamLibraryItems(
 	log: FastifyBaseLogger,
 	options?: StreamLibraryOptions,
 ): AsyncGenerator<Record<string, unknown>, void, undefined> {
-	const path = BULK_LIST_PATH[instance.service];
+	const path = options?.path ?? BULK_LIST_PATH[instance.service];
 	if (!path) {
 		throw new Error(`streamLibraryItems: unsupported service ${instance.service}`);
 	}
