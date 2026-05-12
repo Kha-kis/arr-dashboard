@@ -181,4 +181,21 @@ describe("streamLibraryItems", () => {
 		);
 		expect(items).toEqual([]);
 	});
+
+	it("honors options.path override for non-default endpoints (album/book)", async () => {
+		// Hunt-executor streams /api/v1/album on a LIDARR instance; verify the
+		// path override reaches factory.rawRequest unchanged.
+		const factory = makeFactory(streamingResponse(["[]"]));
+		await collect(
+			streamLibraryItems(factory, makeMockInstance("LIDARR"), makeMockLog(), {
+				path: "/api/v1/album",
+			}),
+		);
+
+		expect(factory.rawRequest).toHaveBeenCalledWith(
+			expect.anything(),
+			"/api/v1/album",
+			expect.objectContaining({ method: "GET" }),
+		);
+	});
 });
