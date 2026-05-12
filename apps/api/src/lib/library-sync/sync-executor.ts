@@ -10,6 +10,7 @@ import { LidarrClient, RadarrClient, ReadarrClient, SonarrClient } from "arr-sdk
 import type { FastifyBaseLogger } from "fastify";
 import type { Prisma, PrismaClient, ServiceInstance } from "../../lib/prisma.js";
 import type { ArrClientFactory } from "../arr/client-factory.js";
+import { streamLibraryItems as defaultStreamLibraryItems } from "../arr/library-stream.js";
 import type { Encryptor } from "../auth/encryption.js";
 import { triggerLabelSyncForItem } from "../label-sync/trigger-for-item.js";
 import { buildLibraryItem } from "../library/library-item-builder.js";
@@ -38,11 +39,32 @@ export interface SyncResult {
 	error?: string;
 }
 
+/**
+ * Signature for the bulk library streamer. Production uses
+ * `streamLibraryItems` from lib/arr/library-stream.ts (streams the raw HTTP
+ * body through @streamparser/json so peak memory is bounded by batch size,
+ * not library size — see issue #427).
+ *
+ * Exposed as a SyncExecutorDeps override so tests can yield from an array
+ * without standing up a fetch mock.
+ */
+export type LibraryStreamFn = (
+	factory: ArrClientFactory,
+	instance: ServiceInstance,
+	log: FastifyBaseLogger,
+) => AsyncGenerator<Record<string, unknown>, void, undefined>;
+
 export interface SyncExecutorDeps {
 	prisma: PrismaClient;
 	arrClientFactory: ArrClientFactory;
 	encryptor: Encryptor;
 	log: FastifyBaseLogger;
+	/**
+	 * Optional override for the bulk library streamer. Defaults to the
+	 * @streamparser/json-backed implementation in lib/arr/library-stream.ts.
+	 * Tests inject an array-yielding async generator to avoid mocking fetch.
+	 */
+	streamLibraryItems?: LibraryStreamFn;
 }
 
 /**
@@ -198,7 +220,14 @@ export async function syncInstance(
 	deps: SyncExecutorDeps,
 	instance: ServiceInstance,
 ): Promise<SyncResult> {
-	const { prisma, arrClientFactory, encryptor, log } = deps;
+	const {
+		prisma,
+		arrClientFactory,
+		encryptor,
+		log,
+		streamLibraryItems: streamLibraryItemsOverride,
+	} = deps;
+	const streamLibraryItems = streamLibraryItemsOverride ?? defaultStreamLibraryItems;
 	const startTime = Date.now();
 	const tagDeltaService = isTagDeltaService(instance.service);
 
@@ -230,30 +259,25 @@ export async function syncInstance(
 		const client = arrClientFactory.create(instance);
 		const service = instance.service.toLowerCase() as LibraryService;
 
-		// Sample heap BEFORE the full-library fetch so heap-monitor data can
-		// distinguish the parse-spike contribution (issue #427) from the
-		// batch-loop retention window.
+		// Sample heap BEFORE the bulk-library stream so heap-monitor data can
+		// distinguish the streamer's working set (issue #427: streaming
+		// JSON parse via @streamparser/json) from the batch retention window.
 		logMemoryPhase(log, instance.id, "before-fetch");
 
-		let rawItems: unknown[];
-
-		if (client instanceof SonarrClient) {
-			rawItems = await client.series.getAll();
-		} else if (client instanceof RadarrClient) {
-			rawItems = await client.movie.getAll();
-		} else if (client instanceof LidarrClient) {
-			rawItems = await client.artist.getAll();
-		} else if (client instanceof ReadarrClient) {
-			rawItems = await client.author.getAll();
-		} else {
+		if (
+			!(client instanceof SonarrClient) &&
+			!(client instanceof RadarrClient) &&
+			!(client instanceof LidarrClient) &&
+			!(client instanceof ReadarrClient)
+		) {
 			throw new Error(`Unsupported service type: ${instance.service}`);
 		}
 
-		log.debug(
-			{ instanceId: instance.id, itemCount: rawItems.length },
-			"Fetched items from ARR instance",
-		);
-		logMemoryPhase(log, instance.id, "after-fetch");
+		// The bulk-list endpoint is consumed via a streaming JSON parser.
+		// Items yield one at a time; we accumulate into per-transaction
+		// batches below. Peak memory during streaming is bounded by the
+		// batch size, not the library size — the win for issue #427.
+		const itemStream = streamLibraryItems(arrClientFactory, instance, log);
 
 		const cutoffUnmetIds = new Set<number>();
 		if (client instanceof SonarrClient || client instanceof RadarrClient) {
@@ -357,27 +381,19 @@ export async function syncInstance(
 		const seenKeys = new Set<string>();
 		const BATCH_SIZE = 100;
 
-		// Process items in batches directly from rawItems — avoids building
-		// a full parallel normalized array in memory.
-		//
-		// Pop-based drain (issue #427): the previous `for (i ... slice)` shape
-		// kept `rawItems` fully alive until the loop completed because every
-		// slice held an implicit reference back to the source array's
-		// elements. For a 1.5M-track Lidarr library (~50k artist objects,
-		// 200-500 MB parsed) the retention window spanned the entire batch
-		// transaction chain. Pop-draining shrinks the array as we go, so each
-		// processed batch is eligible for GC during the next transaction's
-		// await. Reverse processing order is safe: every item still gets
-		// exactly one create/update and sync is order-independent.
-		while (rawItems.length > 0) {
-			const rawBatch: Array<Record<string, unknown>> = [];
-			const batchSize = Math.min(BATCH_SIZE, rawItems.length);
-			for (let j = 0; j < batchSize; j++) {
-				rawBatch.push(rawItems.pop() as Record<string, unknown>);
-			}
+		// Accumulate streamed items into BATCH_SIZE-sized batches and process
+		// each batch in its own transaction. Peak memory during this loop is
+		// one batch plus the streaming parser's small internal buffer —
+		// independent of total library size (issue #427).
+		let rawBatch: Array<Record<string, unknown>> = [];
+		let streamedItemCount = 0;
 
+		// Inline helper so we don't duplicate the transaction body for the
+		// final partial-batch case below.
+		const processBatch = async (batch: Array<Record<string, unknown>>): Promise<void> => {
+			if (batch.length === 0) return;
 			await prisma.$transaction(async (tx) => {
-				for (const raw of rawBatch) {
+				for (const raw of batch) {
 					const item = buildLibraryItem(instance, service, raw);
 					const arrItemId = typeof item.id === "string" ? Number.parseInt(item.id, 10) : item.id;
 					const key = `${arrItemId}-${item.type}`;
@@ -438,12 +454,27 @@ export async function syncInstance(
 					result.itemsProcessed++;
 				}
 			});
+		};
+
+		for await (const raw of itemStream) {
+			rawBatch.push(raw);
+			streamedItemCount++;
+			if (rawBatch.length >= BATCH_SIZE) {
+				const fullBatch = rawBatch;
+				rawBatch = [];
+				await processBatch(fullBatch);
+			}
+		}
+		if (rawBatch.length > 0) {
+			const finalBatch = rawBatch;
+			rawBatch = [];
+			await processBatch(finalBatch);
 		}
 
-		// Defensive: pop-drain already empties rawItems, but reassign to a
-		// fresh array so any retained closure reference (current or future)
-		// can release the original buffer immediately.
-		rawItems = [];
+		log.debug(
+			{ instanceId: instance.id, itemCount: streamedItemCount },
+			"Streamed items from ARR instance",
+		);
 
 		logMemoryPhase(log, instance.id, "after-batch-writes");
 
