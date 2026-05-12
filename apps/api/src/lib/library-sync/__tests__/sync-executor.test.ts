@@ -14,7 +14,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient, ServiceType } from "../../../lib/prisma.js";
 import type { ArrClientFactory } from "../../arr/client-factory.js";
 import type { Encryptor } from "../../auth/encryption.js";
-import { type SyncExecutorDeps, syncInstance } from "../sync-executor.js";
+import { type LibraryStreamFn, type SyncExecutorDeps, syncInstance } from "../sync-executor.js";
 
 const MOCK_USER_ID = "user-1";
 const INSTANCE_ID = "instance-1";
@@ -306,11 +306,22 @@ function setupSync(
 	const mockPrisma = createMockPrisma({ existingItems });
 	const arrClientFactory = buildArrClientFactory(service, items);
 
+	// Inject a stream that yields the same items synchronously — the
+	// SDK's `.getAll()` mocks set in buildArrClientFactory are still
+	// available for non-bulk endpoints (wanted.cutoff, tag.getAll) but
+	// the production bulk-fetch path goes through this stream now.
+	const streamLibraryItems: LibraryStreamFn = async function* () {
+		for (const item of items) {
+			yield item;
+		}
+	};
+
 	const deps: SyncExecutorDeps & { prisma: ReturnType<typeof createMockPrisma> } = {
 		prisma: mockPrisma,
 		arrClientFactory,
 		encryptor: createMockEncryptor(),
 		log,
+		streamLibraryItems,
 	};
 
 	const instance = createMockInstance(service);
@@ -523,15 +534,16 @@ describe("syncInstance", () => {
 			expect(result.itemsProcessed).toBe(1);
 		});
 
-		// Pins the issue #427 pop-based batch drain. Two assertions:
-		// (a) every input id is touched exactly once — sync correctness regardless
-		//     of drain shape.
-		// (b) the FIRST update targets the LAST input id — only true for a
-		//     tail-popping drain (or any other shrinking pattern that consumes
-		//     from the end). A future refactor that re-introduces `slice()` or
-		//     builds a normalized forward copy would process id=1 first and fail
-		//     this assertion, surfacing the regression.
-		it("Lidarr: pop-based drain processes tail-first and touches every arrItemId (issue #427)", async () => {
+		// Pins the issue #427 streaming-batch shape. PR #443 used pop-drain
+		// (tail-first) to release retention during processing; this PR replaces
+		// that with a streaming consumer that accumulates per-batch and yields
+		// in source order. Two assertions:
+		// (a) every input id is touched exactly once — sync correctness
+		//     regardless of consumption order.
+		// (b) the FIRST update targets the HEAD (id=1) — invariant of stream
+		//     consumption. A regression to materializing the whole array and
+		//     processing some other order would fail this.
+		it("Lidarr: streaming consumer processes head-first and touches every arrItemId (issue #427)", async () => {
 			const COUNT = 150; // spans 2 batches at BATCH_SIZE=100
 			const rawItems = Array.from({ length: COUNT }, (_, i) =>
 				makeRawItem({ id: i + 1, artistName: `Artist ${i + 1}` }),
@@ -558,9 +570,10 @@ describe("syncInstance", () => {
 				expect(touchedIds.has(`cache-${i}`)).toBe(true);
 			}
 
-			// (b) Order: first update targets the tail (id=150). Re-introducing
-			// slice() would process id=1 first and fail this.
-			expect(mockPrisma._txUpdates[0]?.where.id).toBe(`cache-${COUNT}`);
+			// (b) Order: first update targets the head (id=1) — invariant of
+			// streaming in source order. A regression that buffers everything
+			// and reverses would fail.
+			expect(mockPrisma._txUpdates[0]?.where.id).toBe("cache-1");
 		});
 	});
 
