@@ -4994,6 +4994,7 @@ export const QueueCleanerConfigScalarFieldEnum = {
   removeFromClient: 'removeFromClient',
   addToBlocklist: 'addToBlocklist',
   searchAfterRemoval: 'searchAfterRemoval',
+  quiAwareMode: 'quiAwareMode',
   changeCategoryEnabled: 'changeCategoryEnabled',
   dryRunMode: 'dryRunMode',
   maxRemovalsPerRun: 'maxRemovalsPerRun',

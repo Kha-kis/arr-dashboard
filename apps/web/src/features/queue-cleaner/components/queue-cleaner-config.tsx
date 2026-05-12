@@ -22,11 +22,7 @@ import {
 	XCircle,
 } from "lucide-react";
 import { useCallback, useState } from "react";
-import {
-	PremiumEmptyState,
-	PremiumSection,
-	ServiceBadge,
-} from "../../../components/layout";
+import { PremiumEmptyState, PremiumSection, ServiceBadge } from "../../../components/layout";
 import { Button, toast } from "../../../components/ui";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
@@ -285,11 +281,7 @@ const UnconfiguredInstanceCard = ({
 					onClick={onAdd}
 					disabled={isCreating}
 				>
-					{isCreating ? (
-						<Loader2 className="h-3 w-3 animate-spin" />
-					) : (
-						<Plus className="h-3 w-3" />
-					)}
+					{isCreating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
 					Configure
 				</Button>
 			</div>
@@ -315,6 +307,7 @@ function configToFormData(config: QueueCleanerConfigWithInstance): QueueCleanerC
 		strikeSystemEnabled: config.strikeSystemEnabled,
 		maxStrikes: config.maxStrikes,
 		strikeDecayHours: config.strikeDecayHours,
+		quiAwareMode: config.quiAwareMode,
 		seedingTimeoutEnabled: config.seedingTimeoutEnabled,
 		seedingTimeoutHours: config.seedingTimeoutHours,
 		estimatedCompletionEnabled: config.estimatedCompletionEnabled,
@@ -373,7 +366,9 @@ const InstanceConfigCard = ({
 		try {
 			await updateConfig(config.instanceId, formData);
 			setIsDirty(false);
-			toast.success(`Config updated for ${incognitoMode ? getLinuxInstanceName(config.instanceName) : config.instanceName}`);
+			toast.success(
+				`Config updated for ${incognitoMode ? getLinuxInstanceName(config.instanceName) : config.instanceName}`,
+			);
 		} catch (error) {
 			toast.error(getErrorMessage(error, "Failed to update config"));
 		}
@@ -391,7 +386,9 @@ const InstanceConfigCard = ({
 		}
 		try {
 			await deleteConfig(config.instanceId);
-			toast.success(`Config deleted for ${incognitoMode ? getLinuxInstanceName(config.instanceName) : config.instanceName}`);
+			toast.success(
+				`Config deleted for ${incognitoMode ? getLinuxInstanceName(config.instanceName) : config.instanceName}`,
+			);
 		} catch (error) {
 			toast.error(getErrorMessage(error, "Failed to delete config"));
 		} finally {
@@ -424,672 +421,686 @@ const InstanceConfigCard = ({
 				}}
 			/>
 
-				<div className="relative p-5 space-y-6">
-					{/* Header */}
-					<div className="flex items-start justify-between">
-						<div className="flex items-center gap-2">
-							<span
-								className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider shrink-0"
-								style={{
-									backgroundColor: `${serviceGradient.from}12`,
-									color: serviceGradient.from,
-								}}
-							>
-								<Settings className="h-2.5 w-2.5" />
-								Config
-							</span>
-							<div>
-								<div className="flex items-center gap-2">
-									<h4 className="font-semibold text-[14px] text-foreground leading-snug">
-										{incognitoMode ? getLinuxInstanceName(config.instanceName) : config.instanceName}
-									</h4>
-									<ServiceBadge service={config.service} />
-								</div>
+			<div className="relative p-5 space-y-6">
+				{/* Header */}
+				<div className="flex items-start justify-between">
+					<div className="flex items-center gap-2">
+						<span
+							className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider shrink-0"
+							style={{
+								backgroundColor: `${serviceGradient.from}12`,
+								color: serviceGradient.from,
+							}}
+						>
+							<Settings className="h-2.5 w-2.5" />
+							Config
+						</span>
+						<div>
+							<div className="flex items-center gap-2">
+								<h4 className="font-semibold text-[14px] text-foreground leading-snug">
+									{incognitoMode ? getLinuxInstanceName(config.instanceName) : config.instanceName}
+								</h4>
+								<ServiceBadge service={config.service} />
 							</div>
 						</div>
-						<ToggleSwitch
-							checked={formData.enabled ?? false}
-							onChange={(v) => updateField("enabled", v)}
-							label="Enabled"
-						/>
 					</div>
-
-					{/* Dry Run Mode — prominently displayed */}
-					<div
-						className="flex items-center justify-between rounded-xl p-3.5 transition-colors duration-200"
-						style={{
-							backgroundColor: formData.dryRunMode
-								? SEMANTIC_COLORS.warning.bg
-								: SEMANTIC_COLORS.error.bg,
-							border: `1px solid ${formData.dryRunMode ? SEMANTIC_COLORS.warning.border : SEMANTIC_COLORS.error.border}`,
-						}}
-					>
-						<div className="flex items-center gap-3">
-							<div
-								className="flex h-8 w-8 items-center justify-center rounded-lg shrink-0"
-								style={{
-									backgroundColor: formData.dryRunMode
-										? "rgba(245, 158, 11, 0.15)"
-										: "rgba(239, 68, 68, 0.15)",
-									border: `1px solid ${formData.dryRunMode ? "rgba(245, 158, 11, 0.2)" : "rgba(239, 68, 68, 0.2)"}`,
-								}}
-							>
-								<ShieldAlert
-									className="h-4 w-4"
-									style={{
-										color: formData.dryRunMode
-											? SEMANTIC_COLORS.warning.text
-											: SEMANTIC_COLORS.error.text,
-									}}
-								/>
-							</div>
-							<div>
-								<span className="text-sm font-medium text-foreground">
-									{formData.dryRunMode ? "Dry Run Mode" : "Live Mode"}
-								</span>
-								<p className="text-[11px] text-muted-foreground/60">
-									{formData.dryRunMode
-										? "Preview what would be removed without actually removing"
-										: "Items matching rules will be removed from the queue"}
-								</p>
-							</div>
-						</div>
-						<ToggleSwitch
-							checked={formData.dryRunMode ?? true}
-							onChange={(v) => updateField("dryRunMode", v)}
-						/>
-					</div>
-
-					{/* Check frequency */}
-					<ConfigInput
-						label="Check Interval"
-						description="How often to check the queue"
-						value={formData.intervalMins ?? 30}
-						onChange={(v) => updateField("intervalMins", v)}
-						min={MIN_INTERVAL_MINS}
-						max={MAX_INTERVAL_MINS}
-						suffix="minutes"
+					<ToggleSwitch
+						checked={formData.enabled ?? false}
+						onChange={(v) => updateField("enabled", v)}
+						label="Enabled"
 					/>
+				</div>
 
-					{/* Skip Future Episodes (Sonarr only) */}
-					{config.service === "sonarr" && (
-						<div className="space-y-1">
-							<ToggleRow
-								label="Skip future episodes"
-								description="Exclude queue items for episodes that haven't aired yet from cleaner evaluation"
-								checked={formData.skipFutureEpisodes ?? true}
-								onChange={(v) => updateField("skipFutureEpisodes", v)}
+				{/* Dry Run Mode — prominently displayed */}
+				<div
+					className="flex items-center justify-between rounded-xl p-3.5 transition-colors duration-200"
+					style={{
+						backgroundColor: formData.dryRunMode
+							? SEMANTIC_COLORS.warning.bg
+							: SEMANTIC_COLORS.error.bg,
+						border: `1px solid ${formData.dryRunMode ? SEMANTIC_COLORS.warning.border : SEMANTIC_COLORS.error.border}`,
+					}}
+				>
+					<div className="flex items-center gap-3">
+						<div
+							className="flex h-8 w-8 items-center justify-center rounded-lg shrink-0"
+							style={{
+								backgroundColor: formData.dryRunMode
+									? "rgba(245, 158, 11, 0.15)"
+									: "rgba(239, 68, 68, 0.15)",
+								border: `1px solid ${formData.dryRunMode ? "rgba(245, 158, 11, 0.2)" : "rgba(239, 68, 68, 0.2)"}`,
+							}}
+						>
+							<ShieldAlert
+								className="h-4 w-4"
+								style={{
+									color: formData.dryRunMode
+										? SEMANTIC_COLORS.warning.text
+										: SEMANTIC_COLORS.error.text,
+								}}
 							/>
-							<p className="text-[10px] text-muted-foreground pl-8">
-								Pre-grabbed episodes waiting for their air date won&apos;t be flagged as stalled or
-								stuck
-							</p>
-						</div>
-					)}
-
-					{/* Rule: Whitelist */}
-					<RuleSection
-						icon={ShieldCheck}
-						title="Whitelist / Ignore Patterns"
-						description="Exclude items matching these patterns from removal"
-						enabled={formData.whitelistEnabled ?? false}
-						onToggle={(v) => updateField("whitelistEnabled", v)}
-					>
-						<WhitelistEditor
-							patterns={formData.whitelistPatterns}
-							onChange={(v) => updateField("whitelistPatterns", v)}
-						/>
-					</RuleSection>
-
-					{/* Rule: Stalled */}
-					<RuleSection
-						icon={Pause}
-						title="Stalled Downloads"
-						description="Remove downloads with no progress"
-						enabled={formData.stalledEnabled ?? true}
-						onToggle={(v) => updateField("stalledEnabled", v)}
-					>
-						<ConfigInput
-							label="Stalled Threshold"
-							description="Consider stalled after this many minutes"
-							value={formData.stalledThresholdMins ?? 60}
-							onChange={(v) => updateField("stalledThresholdMins", v)}
-							min={MIN_STALLED_THRESHOLD_MINS}
-							max={MAX_STALLED_THRESHOLD_MINS}
-							suffix="minutes"
-						/>
-					</RuleSection>
-
-					{/* Rule: Failed */}
-					<RuleSection
-						icon={XCircle}
-						title="Failed Downloads"
-						description="Remove downloads that have failed or errored"
-						enabled={formData.failedEnabled ?? true}
-						onToggle={(v) => updateField("failedEnabled", v)}
-					/>
-
-					{/* Rule: Strike System */}
-					<RuleSection
-						icon={Target}
-						title="Strike System"
-						description="Track warnings before removal (gradual approach)"
-						enabled={formData.strikeSystemEnabled ?? false}
-						onToggle={(v) => updateField("strikeSystemEnabled", v)}
-					>
-						<ConfigInput
-							label="Max Strikes"
-							description="Remove after this many consecutive strikes"
-							value={formData.maxStrikes ?? 3}
-							onChange={(v) => updateField("maxStrikes", v)}
-							min={MIN_MAX_STRIKES}
-							max={MAX_MAX_STRIKES}
-							suffix="strikes"
-						/>
-						<ConfigInput
-							label="Strike Decay"
-							description="Strikes reset after this period of inactivity"
-							value={formData.strikeDecayHours ?? 24}
-							onChange={(v) => updateField("strikeDecayHours", v)}
-							min={MIN_STRIKE_DECAY_HOURS}
-							max={MAX_STRIKE_DECAY_HOURS}
-							suffix="hours"
-						/>
-						<div className="text-[11px] text-muted-foreground/70 p-2.5 rounded-lg bg-card/20 border border-border/15">
-							Items receive strikes instead of immediate removal. After reaching max strikes, they
-							are removed. Strikes decay after the specified period of no new issues.
-						</div>
-					</RuleSection>
-
-					{/* Rule: Slow */}
-					<RuleSection
-						icon={Snail}
-						title="Slow Downloads"
-						description="Remove downloads below a speed threshold"
-						enabled={formData.slowEnabled ?? false}
-						onToggle={(v) => updateField("slowEnabled", v)}
-					>
-						<ConfigInput
-							label="Speed Threshold"
-							description="Remove if average speed is below this"
-							value={formData.slowSpeedThreshold ?? 100}
-							onChange={(v) => updateField("slowSpeedThreshold", v)}
-							min={MIN_SLOW_SPEED_THRESHOLD}
-							max={MAX_SLOW_SPEED_THRESHOLD}
-							suffix="KB/s"
-						/>
-						<ConfigInput
-							label="Grace Period"
-							description="Wait this long before checking speed"
-							value={formData.slowGracePeriodMins ?? 30}
-							onChange={(v) => updateField("slowGracePeriodMins", v)}
-							min={MIN_SLOW_GRACE_PERIOD_MINS}
-							max={MAX_SLOW_GRACE_PERIOD_MINS}
-							suffix="minutes"
-						/>
-					</RuleSection>
-
-					{/* Rule: Error Patterns */}
-					<RuleSection
-						icon={AlertTriangle}
-						title="Download Errors"
-						description="Remove downloads that FAILED during transfer"
-						enabled={formData.errorPatternsEnabled ?? false}
-						onToggle={(v) => updateField("errorPatternsEnabled", v)}
-					>
-						<div className="text-xs p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 mb-3">
-							<p className="text-muted-foreground">
-								<span className="font-medium text-red-400">For broken downloads</span> — matches
-								error messages like &quot;disk space&quot;, &quot;permission denied&quot;,
-								&quot;connection failed&quot;.
-								<span className="text-muted-foreground/70">
-									{" "}
-									(Different from Import Blocked which handles completed downloads that ARR
-									won&apos;t import)
-								</span>
-							</p>
 						</div>
 						<div>
+							<span className="text-sm font-medium text-foreground">
+								{formData.dryRunMode ? "Dry Run Mode" : "Live Mode"}
+							</span>
+							<p className="text-[11px] text-muted-foreground/60">
+								{formData.dryRunMode
+									? "Preview what would be removed without actually removing"
+									: "Items matching rules will be removed from the queue"}
+							</p>
+						</div>
+					</div>
+					<ToggleSwitch
+						checked={formData.dryRunMode ?? true}
+						onChange={(v) => updateField("dryRunMode", v)}
+					/>
+				</div>
+
+				{/* Check frequency */}
+				<ConfigInput
+					label="Check Interval"
+					description="How often to check the queue"
+					value={formData.intervalMins ?? 30}
+					onChange={(v) => updateField("intervalMins", v)}
+					min={MIN_INTERVAL_MINS}
+					max={MAX_INTERVAL_MINS}
+					suffix="minutes"
+				/>
+
+				{/* Skip Future Episodes (Sonarr only) */}
+				{config.service === "sonarr" && (
+					<div className="space-y-1">
+						<ToggleRow
+							label="Skip future episodes"
+							description="Exclude queue items for episodes that haven't aired yet from cleaner evaluation"
+							checked={formData.skipFutureEpisodes ?? true}
+							onChange={(v) => updateField("skipFutureEpisodes", v)}
+						/>
+						<p className="text-[10px] text-muted-foreground pl-8">
+							Pre-grabbed episodes waiting for their air date won&apos;t be flagged as stalled or
+							stuck
+						</p>
+					</div>
+				)}
+
+				{/* Rule: Whitelist */}
+				<RuleSection
+					icon={ShieldCheck}
+					title="Whitelist / Ignore Patterns"
+					description="Exclude items matching these patterns from removal"
+					enabled={formData.whitelistEnabled ?? false}
+					onToggle={(v) => updateField("whitelistEnabled", v)}
+				>
+					<WhitelistEditor
+						patterns={formData.whitelistPatterns}
+						onChange={(v) => updateField("whitelistPatterns", v)}
+					/>
+				</RuleSection>
+
+				{/* Rule: Stalled */}
+				<RuleSection
+					icon={Pause}
+					title="Stalled Downloads"
+					description="Remove downloads with no progress"
+					enabled={formData.stalledEnabled ?? true}
+					onToggle={(v) => updateField("stalledEnabled", v)}
+				>
+					<ConfigInput
+						label="Stalled Threshold"
+						description="Consider stalled after this many minutes"
+						value={formData.stalledThresholdMins ?? 60}
+						onChange={(v) => updateField("stalledThresholdMins", v)}
+						min={MIN_STALLED_THRESHOLD_MINS}
+						max={MAX_STALLED_THRESHOLD_MINS}
+						suffix="minutes"
+					/>
+				</RuleSection>
+
+				{/* Rule: Failed */}
+				<RuleSection
+					icon={XCircle}
+					title="Failed Downloads"
+					description="Remove downloads that have failed or errored"
+					enabled={formData.failedEnabled ?? true}
+					onToggle={(v) => updateField("failedEnabled", v)}
+				/>
+
+				{/* Rule: Strike System */}
+				<RuleSection
+					icon={Target}
+					title="Strike System"
+					description="Track warnings before removal (gradual approach)"
+					enabled={formData.strikeSystemEnabled ?? false}
+					onToggle={(v) => updateField("strikeSystemEnabled", v)}
+				>
+					<ConfigInput
+						label="Max Strikes"
+						description="Remove after this many consecutive strikes"
+						value={formData.maxStrikes ?? 3}
+						onChange={(v) => updateField("maxStrikes", v)}
+						min={MIN_MAX_STRIKES}
+						max={MAX_MAX_STRIKES}
+						suffix="strikes"
+					/>
+					<ConfigInput
+						label="Strike Decay"
+						description="Strikes reset after this period of inactivity"
+						value={formData.strikeDecayHours ?? 24}
+						onChange={(v) => updateField("strikeDecayHours", v)}
+						min={MIN_STRIKE_DECAY_HOURS}
+						max={MAX_STRIKE_DECAY_HOURS}
+						suffix="hours"
+					/>
+					<div className="text-[11px] text-muted-foreground/70 p-2.5 rounded-lg bg-card/20 border border-border/15">
+						Items receive strikes instead of immediate removal. After reaching max strikes, they are
+						removed. Strikes decay after the specified period of no new issues.
+					</div>
+				</RuleSection>
+
+				{/* Rule: qui-aware mode (Phase 2.3) */}
+				<RuleSection
+					icon={ShieldCheck}
+					title="qui-aware mode"
+					description="Skip strikes when qui has paused or errored the torrent"
+					enabled={formData.quiAwareMode ?? false}
+					onToggle={(v) => updateField("quiAwareMode", v)}
+				>
+					<div className="text-[11px] text-muted-foreground/70 p-2.5 rounded-lg bg-card/20 border border-border/15">
+						When a queue item's torrent is in <span className="font-medium">paused</span> or{" "}
+						<span className="font-medium">error</span> state in qui, this gate suppresses the strike
+						and surfaces the item as skipped with a qui-aware reason. Useful when qui automations
+						are already acting on the torrent (e.g., rule-based pause after seed goal). No-op if you
+						haven't added a qui instance.
+					</div>
+				</RuleSection>
+
+				{/* Rule: Slow */}
+				<RuleSection
+					icon={Snail}
+					title="Slow Downloads"
+					description="Remove downloads below a speed threshold"
+					enabled={formData.slowEnabled ?? false}
+					onToggle={(v) => updateField("slowEnabled", v)}
+				>
+					<ConfigInput
+						label="Speed Threshold"
+						description="Remove if average speed is below this"
+						value={formData.slowSpeedThreshold ?? 100}
+						onChange={(v) => updateField("slowSpeedThreshold", v)}
+						min={MIN_SLOW_SPEED_THRESHOLD}
+						max={MAX_SLOW_SPEED_THRESHOLD}
+						suffix="KB/s"
+					/>
+					<ConfigInput
+						label="Grace Period"
+						description="Wait this long before checking speed"
+						value={formData.slowGracePeriodMins ?? 30}
+						onChange={(v) => updateField("slowGracePeriodMins", v)}
+						min={MIN_SLOW_GRACE_PERIOD_MINS}
+						max={MAX_SLOW_GRACE_PERIOD_MINS}
+						suffix="minutes"
+					/>
+				</RuleSection>
+
+				{/* Rule: Error Patterns */}
+				<RuleSection
+					icon={AlertTriangle}
+					title="Download Errors"
+					description="Remove downloads that FAILED during transfer"
+					enabled={formData.errorPatternsEnabled ?? false}
+					onToggle={(v) => updateField("errorPatternsEnabled", v)}
+				>
+					<div className="text-xs p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 mb-3">
+						<p className="text-muted-foreground">
+							<span className="font-medium text-red-400">For broken downloads</span> — matches error
+							messages like &quot;disk space&quot;, &quot;permission denied&quot;, &quot;connection
+							failed&quot;.
+							<span className="text-muted-foreground/70">
+								{" "}
+								(Different from Import Blocked which handles completed downloads that ARR won&apos;t
+								import)
+							</span>
+						</p>
+					</div>
+					<div>
+						<label
+							htmlFor="error-patterns-textarea"
+							className="text-xs font-medium text-foreground block mb-1.5"
+						>
+							Custom error patterns (one per line)
+						</label>
+						<textarea
+							id="error-patterns-textarea"
+							className="w-full rounded-lg border border-border/50 bg-card/50 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 min-h-[80px] resize-y"
+							style={{ focusRingColor: themeGradient.from } as React.CSSProperties}
+							placeholder="disk space&#10;permission denied&#10;tracker error"
+							value={(() => {
+								try {
+									return formData.errorPatterns
+										? JSON.parse(formData.errorPatterns).join("\n")
+										: "";
+								} catch {
+									return formData.errorPatterns ?? "";
+								}
+							})()}
+							onChange={(e) => {
+								const lines = e.target.value.split("\n").filter((l) => l.trim());
+								updateField("errorPatterns", lines.length > 0 ? JSON.stringify(lines) : null);
+							}}
+						/>
+						<p className="text-[10px] text-muted-foreground mt-1">
+							Case-insensitive matching against download client error messages
+						</p>
+					</div>
+				</RuleSection>
+
+				{/* Rule: Seeding Timeout */}
+				<RuleSection
+					icon={Timer}
+					title="Seeding Timeout"
+					description="Remove completed downloads that have been seeding too long"
+					enabled={formData.seedingTimeoutEnabled ?? false}
+					onToggle={(v) => updateField("seedingTimeoutEnabled", v)}
+				>
+					<ConfigInput
+						label="Timeout"
+						description="Remove after seeding for this long"
+						value={formData.seedingTimeoutHours ?? 72}
+						onChange={(v) => updateField("seedingTimeoutHours", v)}
+						min={MIN_SEEDING_TIMEOUT_HOURS}
+						max={MAX_SEEDING_TIMEOUT_HOURS}
+						suffix="hours"
+					/>
+					<div className="text-[11px] text-muted-foreground/70 p-2.5 rounded-lg bg-card/20 border border-border/15">
+						Completed downloads that have been seeding longer than the timeout will be removed.
+						Useful for cleaning up finished torrents.
+					</div>
+				</RuleSection>
+
+				{/* Rule: Estimated Completion */}
+				<RuleSection
+					icon={TrendingUp}
+					title="Estimated Completion Exceeded"
+					description="Flag downloads that take much longer than originally estimated"
+					enabled={formData.estimatedCompletionEnabled ?? false}
+					onToggle={(v) => updateField("estimatedCompletionEnabled", v)}
+				>
+					<ConfigInput
+						label="Multiplier"
+						description="Flag when actual time exceeds estimated time by this factor"
+						value={formData.estimatedCompletionMultiplier ?? 2.0}
+						onChange={(v) => updateField("estimatedCompletionMultiplier", v)}
+						min={MIN_ESTIMATED_MULTIPLIER}
+						max={MAX_ESTIMATED_MULTIPLIER}
+						suffix="x"
+					/>
+					<div className="text-[11px] text-muted-foreground/70 p-2.5 rounded-lg bg-card/20 border border-border/15">
+						Uses the ETA from your download client. If a download was estimated to complete in 1
+						hour but is still downloading after 2 hours (2x multiplier), it will be flagged as
+						stalled.
+					</div>
+				</RuleSection>
+
+				{/* Rule: Import Pending Timeout */}
+				<RuleSection
+					icon={Clock}
+					title="Import Pending / Blocked"
+					description="Handle completed downloads that ARR won't import"
+					enabled={formData.importPendingEnabled ?? true}
+					onToggle={(v) => updateField("importPendingEnabled", v)}
+				>
+					{/* Explanation */}
+					<div className="text-xs p-3 rounded-lg bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/20 space-y-2">
+						<div className="flex items-center gap-2 text-foreground font-medium">
+							<FileText className="h-3.5 w-3.5 text-blue-400" />
+							What this handles:
+						</div>
+						<p className="text-muted-foreground">
+							Downloads that{" "}
+							<span className="text-emerald-400 font-medium">finished successfully</span> but are
+							stuck because ARR won&apos;t import them — duplicates, wrong quality, sample files,
+							etc.
+							<span className="text-muted-foreground/70">
+								{" "}
+								(Different from Download Errors which handles broken/failed transfers)
+							</span>
+						</p>
+						<div className="flex items-center gap-1.5 text-muted-foreground flex-wrap pt-1">
+							<span className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/30 text-emerald-400">
+								Download complete
+							</span>
+							<ArrowRight className="h-3 w-3 text-muted-foreground/50" />
+							<span className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/30 text-amber-400">
+								ARR blocks import
+							</span>
+							<ArrowRight className="h-3 w-3 text-muted-foreground/50" />
+							<span className="px-2 py-0.5 rounded bg-card/50 border border-border/30">
+								Wait timeout
+							</span>
+							<ArrowRight className="h-3 w-3 text-muted-foreground/50" />
+							<span className="px-2 py-0.5 rounded bg-blue-500/20 border border-blue-500/30 text-blue-400">
+								Try import?
+							</span>
+							<ArrowRight className="h-3 w-3 text-muted-foreground/50" />
+							<span className="px-2 py-0.5 rounded bg-red-500/20 border border-red-500/30 text-red-400">
+								Remove
+							</span>
+						</div>
+					</div>
+
+					{/* Step 1: Timeout */}
+					<div className="space-y-2 pt-2">
+						<div className="flex items-center gap-2">
+							<span className="flex items-center justify-center h-5 w-5 rounded-full bg-blue-500/20 text-blue-400 text-[10px] font-bold">
+								1
+							</span>
+							<span className="text-xs font-medium text-foreground">Wait Period</span>
+							<Tooltip text="How long to wait before taking action. Gives time for temporary issues to resolve (e.g., files still being extracted)." />
+						</div>
+						<ConfigInput
+							label=""
+							description="Only act on items stuck for at least this long"
+							value={formData.importPendingThresholdMins ?? 60}
+							onChange={(v) => updateField("importPendingThresholdMins", v)}
+							min={MIN_IMPORT_PENDING_MINS}
+							max={MAX_IMPORT_PENDING_MINS}
+							suffix="mins"
+						/>
+					</div>
+
+					{/* Step 2: Pattern Matching */}
+					<div className="space-y-3 pt-3 border-t border-border/30">
+						<div className="flex items-center gap-2">
+							<span className="flex items-center justify-center h-5 w-5 rounded-full bg-blue-500/20 text-blue-400 text-[10px] font-bold">
+								2
+							</span>
+							<span className="text-xs font-medium text-foreground">Decide What to Clean</span>
+							<Tooltip text="Controls which blocked items get removed. Items not matching the criteria are left alone." />
+						</div>
+
+						<div className="space-y-2">
 							<label
-								htmlFor="error-patterns-textarea"
-								className="text-xs font-medium text-foreground block mb-1.5"
+								htmlFor="cleanup-aggressiveness-select"
+								className="text-xs text-muted-foreground"
 							>
-								Custom error patterns (one per line)
+								Cleanup Level
 							</label>
-							<textarea
-								id="error-patterns-textarea"
-								className="w-full rounded-lg border border-border/50 bg-card/50 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 min-h-[80px] resize-y"
-								style={{ focusRingColor: themeGradient.from } as React.CSSProperties}
-								placeholder="disk space&#10;permission denied&#10;tracker error"
-								value={(() => {
-									try {
-										return formData.errorPatterns
-											? JSON.parse(formData.errorPatterns).join("\n")
-											: "";
-									} catch {
-										return formData.errorPatterns ?? "";
-									}
-								})()}
-								onChange={(e) => {
-									const lines = e.target.value.split("\n").filter((l) => l.trim());
-									updateField("errorPatterns", lines.length > 0 ? JSON.stringify(lines) : null);
-								}}
-							/>
-							<p className="text-[10px] text-muted-foreground mt-1">
-								Case-insensitive matching against download client error messages
-							</p>
-						</div>
-					</RuleSection>
-
-					{/* Rule: Seeding Timeout */}
-					<RuleSection
-						icon={Timer}
-						title="Seeding Timeout"
-						description="Remove completed downloads that have been seeding too long"
-						enabled={formData.seedingTimeoutEnabled ?? false}
-						onToggle={(v) => updateField("seedingTimeoutEnabled", v)}
-					>
-						<ConfigInput
-							label="Timeout"
-							description="Remove after seeding for this long"
-							value={formData.seedingTimeoutHours ?? 72}
-							onChange={(v) => updateField("seedingTimeoutHours", v)}
-							min={MIN_SEEDING_TIMEOUT_HOURS}
-							max={MAX_SEEDING_TIMEOUT_HOURS}
-							suffix="hours"
-						/>
-						<div className="text-[11px] text-muted-foreground/70 p-2.5 rounded-lg bg-card/20 border border-border/15">
-							Completed downloads that have been seeding longer than the timeout will be removed.
-							Useful for cleaning up finished torrents.
-						</div>
-					</RuleSection>
-
-					{/* Rule: Estimated Completion */}
-					<RuleSection
-						icon={TrendingUp}
-						title="Estimated Completion Exceeded"
-						description="Flag downloads that take much longer than originally estimated"
-						enabled={formData.estimatedCompletionEnabled ?? false}
-						onToggle={(v) => updateField("estimatedCompletionEnabled", v)}
-					>
-						<ConfigInput
-							label="Multiplier"
-							description="Flag when actual time exceeds estimated time by this factor"
-							value={formData.estimatedCompletionMultiplier ?? 2.0}
-							onChange={(v) => updateField("estimatedCompletionMultiplier", v)}
-							min={MIN_ESTIMATED_MULTIPLIER}
-							max={MAX_ESTIMATED_MULTIPLIER}
-							suffix="x"
-						/>
-						<div className="text-[11px] text-muted-foreground/70 p-2.5 rounded-lg bg-card/20 border border-border/15">
-							Uses the ETA from your download client. If a download was estimated to complete in 1
-							hour but is still downloading after 2 hours (2x multiplier), it will be flagged as
-							stalled.
-						</div>
-					</RuleSection>
-
-					{/* Rule: Import Pending Timeout */}
-					<RuleSection
-						icon={Clock}
-						title="Import Pending / Blocked"
-						description="Handle completed downloads that ARR won't import"
-						enabled={formData.importPendingEnabled ?? true}
-						onToggle={(v) => updateField("importPendingEnabled", v)}
-					>
-						{/* Explanation */}
-						<div className="text-xs p-3 rounded-lg bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/20 space-y-2">
-							<div className="flex items-center gap-2 text-foreground font-medium">
-								<FileText className="h-3.5 w-3.5 text-blue-400" />
-								What this handles:
-							</div>
-							<p className="text-muted-foreground">
-								Downloads that{" "}
-								<span className="text-emerald-400 font-medium">finished successfully</span> but are
-								stuck because ARR won&apos;t import them — duplicates, wrong quality, sample files,
-								etc.
-								<span className="text-muted-foreground/70">
-									{" "}
-									(Different from Download Errors which handles broken/failed transfers)
-								</span>
-							</p>
-							<div className="flex items-center gap-1.5 text-muted-foreground flex-wrap pt-1">
-								<span className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/30 text-emerald-400">
-									Download complete
-								</span>
-								<ArrowRight className="h-3 w-3 text-muted-foreground/50" />
-								<span className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/30 text-amber-400">
-									ARR blocks import
-								</span>
-								<ArrowRight className="h-3 w-3 text-muted-foreground/50" />
-								<span className="px-2 py-0.5 rounded bg-card/50 border border-border/30">
-									Wait timeout
-								</span>
-								<ArrowRight className="h-3 w-3 text-muted-foreground/50" />
-								<span className="px-2 py-0.5 rounded bg-blue-500/20 border border-blue-500/30 text-blue-400">
-									Try import?
-								</span>
-								<ArrowRight className="h-3 w-3 text-muted-foreground/50" />
-								<span className="px-2 py-0.5 rounded bg-red-500/20 border border-red-500/30 text-red-400">
-									Remove
-								</span>
-							</div>
-						</div>
-
-						{/* Step 1: Timeout */}
-						<div className="space-y-2 pt-2">
-							<div className="flex items-center gap-2">
-								<span className="flex items-center justify-center h-5 w-5 rounded-full bg-blue-500/20 text-blue-400 text-[10px] font-bold">
-									1
-								</span>
-								<span className="text-xs font-medium text-foreground">Wait Period</span>
-								<Tooltip text="How long to wait before taking action. Gives time for temporary issues to resolve (e.g., files still being extracted)." />
-							</div>
-							<ConfigInput
-								label=""
-								description="Only act on items stuck for at least this long"
-								value={formData.importPendingThresholdMins ?? 60}
-								onChange={(v) => updateField("importPendingThresholdMins", v)}
-								min={MIN_IMPORT_PENDING_MINS}
-								max={MAX_IMPORT_PENDING_MINS}
-								suffix="mins"
-							/>
-						</div>
-
-						{/* Step 2: Pattern Matching */}
-						<div className="space-y-3 pt-3 border-t border-border/30">
-							<div className="flex items-center gap-2">
-								<span className="flex items-center justify-center h-5 w-5 rounded-full bg-blue-500/20 text-blue-400 text-[10px] font-bold">
-									2
-								</span>
-								<span className="text-xs font-medium text-foreground">Decide What to Clean</span>
-								<Tooltip text="Controls which blocked items get removed. Items not matching the criteria are left alone." />
-							</div>
-
-							<div className="space-y-2">
-								<label
-									htmlFor="cleanup-aggressiveness-select"
-									className="text-xs text-muted-foreground"
-								>
-									Cleanup Level
-								</label>
-								<select
-									id="cleanup-aggressiveness-select"
-									value={formData.importBlockCleanupLevel ?? "safe"}
-									onChange={(e) =>
-										updateField(
-											"importBlockCleanupLevel",
-											e.target.value as "safe" | "moderate" | "aggressive",
-										)
-									}
-									className="w-full h-9 rounded-md border border-border/50 bg-card/50 px-3 text-sm text-foreground focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
-								>
-									<option value="safe">Safe - Only obvious failures</option>
-									<option value="moderate">Moderate - Include items needing manual action</option>
-									<option value="aggressive">Aggressive - Clean anything stuck</option>
-								</select>
-								<details className="text-xs text-muted-foreground group/details">
-									<summary className="cursor-pointer hover:text-foreground transition-colors py-1.5 flex items-center gap-1.5">
-										<Settings className="h-3 w-3" />
-										What does each level clean?
-									</summary>
-									<div className="mt-2 p-3 rounded-lg bg-card/20 border border-border/20 space-y-2">
-										<div className="flex items-start gap-2">
-											<span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/15 shrink-0 mt-0.5">
-												Safe
-											</span>
-											<span className="text-[11px]">
-												Duplicates, already exists, quality rejected, sample files, no video files
-											</span>
-										</div>
-										<div className="flex items-start gap-2">
-											<span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/15 shrink-0 mt-0.5">
-												Moderate
-											</span>
-											<span className="text-[11px]">
-												+ manual import required, missing expected files
-											</span>
-										</div>
-										<div className="flex items-start gap-2">
-											<span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-500/10 text-red-400 border border-red-500/15 shrink-0 mt-0.5">
-												Aggressive
-											</span>
-											<span className="text-[11px]">
-												+ password protected, unpack/RAR issues
-											</span>
-										</div>
-									</div>
-								</details>
-							</div>
-
-							{/* Advanced: Pattern Mode */}
-							<details className="text-xs">
-								<summary className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors py-1 flex items-center gap-1">
+							<select
+								id="cleanup-aggressiveness-select"
+								value={formData.importBlockCleanupLevel ?? "safe"}
+								onChange={(e) =>
+									updateField(
+										"importBlockCleanupLevel",
+										e.target.value as "safe" | "moderate" | "aggressive",
+									)
+								}
+								className="w-full h-9 rounded-md border border-border/50 bg-card/50 px-3 text-sm text-foreground focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
+							>
+								<option value="safe">Safe - Only obvious failures</option>
+								<option value="moderate">Moderate - Include items needing manual action</option>
+								<option value="aggressive">Aggressive - Clean anything stuck</option>
+							</select>
+							<details className="text-xs text-muted-foreground group/details">
+								<summary className="cursor-pointer hover:text-foreground transition-colors py-1.5 flex items-center gap-1.5">
 									<Settings className="h-3 w-3" />
-									Advanced: Custom pattern rules
+									What does each level clean?
 								</summary>
-								<div className="mt-2 space-y-2 p-2.5 rounded-md bg-card/30 border border-border/30">
-									<select
-										id="pattern-matching-mode-select"
-										value={formData.importBlockPatternMode ?? "defaults"}
-										onChange={(e) =>
-											updateField(
-												"importBlockPatternMode",
-												e.target.value as "defaults" | "include" | "exclude",
-											)
-										}
-										className="w-full h-8 rounded-md border border-border/50 bg-card/50 px-2 text-xs text-foreground focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
-									>
-										<option value="defaults">Use cleanup level defaults</option>
-										<option value="include">Custom: Only clean items matching my patterns</option>
-										<option value="exclude">Custom: Protect items matching my patterns</option>
-									</select>
-
-									{(formData.importBlockPatternMode === "include" ||
-										formData.importBlockPatternMode === "exclude") && (
-										<div className="space-y-1.5 pt-2">
-											<label
-												htmlFor="import-block-patterns-textarea"
-												className="text-muted-foreground"
-											>
-												{formData.importBlockPatternMode === "include"
-													? "Only clean items with these status messages:"
-													: "Never clean items with these status messages:"}
-											</label>
-											<textarea
-												id="import-block-patterns-textarea"
-												value={(() => {
-													try {
-														const patterns = formData.importBlockPatterns
-															? JSON.parse(formData.importBlockPatterns)
-															: [];
-														return Array.isArray(patterns) ? patterns.join("\n") : "";
-													} catch {
-														return "";
-													}
-												})()}
-												onChange={(e) => {
-													const lines = e.target.value.split("\n").filter((l) => l.trim());
-													updateField(
-														"importBlockPatterns",
-														lines.length > 0 ? JSON.stringify(lines) : null,
-													);
-												}}
-												placeholder={
-													formData.importBlockPatternMode === "include"
-														? "quality not wanted\nalready exists\nduplicate"
-														: "unpacking\nextracting"
-												}
-												rows={3}
-												className="w-full rounded-md border border-border/50 bg-card/50 px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/50 focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/30 resize-none font-mono"
-											/>
-											<p className="text-[10px] text-muted-foreground/70">
-												One pattern per line, case-insensitive.
-											</p>
-										</div>
-									)}
+								<div className="mt-2 p-3 rounded-lg bg-card/20 border border-border/20 space-y-2">
+									<div className="flex items-start gap-2">
+										<span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/15 shrink-0 mt-0.5">
+											Safe
+										</span>
+										<span className="text-[11px]">
+											Duplicates, already exists, quality rejected, sample files, no video files
+										</span>
+									</div>
+									<div className="flex items-start gap-2">
+										<span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/15 shrink-0 mt-0.5">
+											Moderate
+										</span>
+										<span className="text-[11px]">
+											+ manual import required, missing expected files
+										</span>
+									</div>
+									<div className="flex items-start gap-2">
+										<span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-500/10 text-red-400 border border-red-500/15 shrink-0 mt-0.5">
+											Aggressive
+										</span>
+										<span className="text-[11px]">+ password protected, unpack/RAR issues</span>
+									</div>
 								</div>
 							</details>
 						</div>
 
-						{/* Step 3: Auto-Import (Optional) */}
-						<div className="space-y-2 pt-3 border-t border-border/30">
-							<div className="flex items-center gap-2">
-								<span className="flex items-center justify-center h-5 w-5 rounded-full bg-amber-500/20 text-amber-400 text-[10px] font-bold">
-									3
-								</span>
-								<span className="text-xs font-medium text-foreground">
-									Before Removing: Try Import?
-								</span>
-								<span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
-									Optional
-								</span>
+						{/* Advanced: Pattern Mode */}
+						<details className="text-xs">
+							<summary className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors py-1 flex items-center gap-1">
+								<Settings className="h-3 w-3" />
+								Advanced: Custom pattern rules
+							</summary>
+							<div className="mt-2 space-y-2 p-2.5 rounded-md bg-card/30 border border-border/30">
+								<select
+									id="pattern-matching-mode-select"
+									value={formData.importBlockPatternMode ?? "defaults"}
+									onChange={(e) =>
+										updateField(
+											"importBlockPatternMode",
+											e.target.value as "defaults" | "include" | "exclude",
+										)
+									}
+									className="w-full h-8 rounded-md border border-border/50 bg-card/50 px-2 text-xs text-foreground focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
+								>
+									<option value="defaults">Use cleanup level defaults</option>
+									<option value="include">Custom: Only clean items matching my patterns</option>
+									<option value="exclude">Custom: Protect items matching my patterns</option>
+								</select>
+
+								{(formData.importBlockPatternMode === "include" ||
+									formData.importBlockPatternMode === "exclude") && (
+									<div className="space-y-1.5 pt-2">
+										<label
+											htmlFor="import-block-patterns-textarea"
+											className="text-muted-foreground"
+										>
+											{formData.importBlockPatternMode === "include"
+												? "Only clean items with these status messages:"
+												: "Never clean items with these status messages:"}
+										</label>
+										<textarea
+											id="import-block-patterns-textarea"
+											value={(() => {
+												try {
+													const patterns = formData.importBlockPatterns
+														? JSON.parse(formData.importBlockPatterns)
+														: [];
+													return Array.isArray(patterns) ? patterns.join("\n") : "";
+												} catch {
+													return "";
+												}
+											})()}
+											onChange={(e) => {
+												const lines = e.target.value.split("\n").filter((l) => l.trim());
+												updateField(
+													"importBlockPatterns",
+													lines.length > 0 ? JSON.stringify(lines) : null,
+												);
+											}}
+											placeholder={
+												formData.importBlockPatternMode === "include"
+													? "quality not wanted\nalready exists\nduplicate"
+													: "unpacking\nextracting"
+											}
+											rows={3}
+											className="w-full rounded-md border border-border/50 bg-card/50 px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/50 focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/30 resize-none font-mono"
+										/>
+										<p className="text-[10px] text-muted-foreground/70">
+											One pattern per line, case-insensitive.
+										</p>
+									</div>
+								)}
 							</div>
-							<p className="text-[11px] text-muted-foreground pl-7">
-								When enabled, attempts to import stuck downloads via ARR&apos;s API before removing
-								them. If import succeeds, the item is saved. If it fails, removal continues as
-								normal.
-							</p>
-						</div>
-
-						{/* Auto-Import Sub-Feature */}
-						<AutoImportSection formData={formData} updateField={updateField} />
-					</RuleSection>
-
-					{/* Removal Options */}
-					<div className="space-y-3 pt-4 border-t border-border/20">
-						<div className="flex items-center gap-2">
-							<div
-								className="flex h-6 w-6 items-center justify-center rounded-md"
-								style={{
-									backgroundColor: `${serviceGradient.from}10`,
-									border: `1px solid ${serviceGradient.from}15`,
-								}}
-							>
-								<Trash2 className="h-3 w-3" style={{ color: serviceGradient.from }} />
-							</div>
-							<h5 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-								Removal Options
-							</h5>
-						</div>
-						<ToggleRow
-							label="Remove from download client"
-							description="Also remove the download from qBittorrent/SABnzbd etc."
-							checked={formData.removeFromClient ?? false}
-							onChange={(v) => updateField("removeFromClient", v)}
-						/>
-						<ToggleRow
-							label="Add to blocklist"
-							description="Prevent re-downloading the same release"
-							checked={formData.addToBlocklist ?? true}
-							onChange={(v) => updateField("addToBlocklist", v)}
-						/>
-						<ToggleRow
-							label="Search for replacement"
-							description="Trigger a new search after removal"
-							checked={formData.searchAfterRemoval ?? false}
-							onChange={(v) => updateField("searchAfterRemoval", v)}
-						/>
-
-						{/* Change Category - Torrent only */}
-						<div className="pt-2 border-t border-border/20">
-							<ToggleRow
-								label="Change category instead of delete"
-								description="Move torrents to Post-Import Category (set in Sonarr/Radarr download client settings)"
-								checked={formData.changeCategoryEnabled ?? false}
-								onChange={(v) => updateField("changeCategoryEnabled", v)}
-							/>
-						</div>
+						</details>
 					</div>
 
-					{/* Safety Settings */}
-					<div className="space-y-3 pt-4 border-t border-border/20">
+					{/* Step 3: Auto-Import (Optional) */}
+					<div className="space-y-2 pt-3 border-t border-border/30">
 						<div className="flex items-center gap-2">
-							<div
-								className="flex h-6 w-6 items-center justify-center rounded-md"
-								style={{
-									backgroundColor: `${serviceGradient.from}10`,
-									border: `1px solid ${serviceGradient.from}15`,
-								}}
-							>
-								<ShieldCheck className="h-3 w-3" style={{ color: serviceGradient.from }} />
-							</div>
-							<h5 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-								Safety Limits
-							</h5>
+							<span className="flex items-center justify-center h-5 w-5 rounded-full bg-amber-500/20 text-amber-400 text-[10px] font-bold">
+								3
+							</span>
+							<span className="text-xs font-medium text-foreground">
+								Before Removing: Try Import?
+							</span>
+							<span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
+								Optional
+							</span>
 						</div>
-						<ConfigInput
-							label="Max Removals Per Run"
-							description="Cap the number of items removed in a single run"
-							value={formData.maxRemovalsPerRun ?? 10}
-							onChange={(v) => updateField("maxRemovalsPerRun", v)}
-							min={MIN_MAX_REMOVALS}
-							max={MAX_MAX_REMOVALS}
-							suffix="items"
-						/>
-						<ConfigInput
-							label="Min Queue Age"
-							description="Only consider items older than this"
-							value={formData.minQueueAgeMins ?? 5}
-							onChange={(v) => updateField("minQueueAgeMins", v)}
-							min={MIN_QUEUE_AGE_MINS}
-							max={MAX_QUEUE_AGE_MINS}
-							suffix="minutes"
-						/>
+						<p className="text-[11px] text-muted-foreground pl-7">
+							When enabled, attempts to import stuck downloads via ARR&apos;s API before removing
+							them. If import succeeds, the item is saved. If it fails, removal continues as normal.
+						</p>
 					</div>
 
-					{/* Save/Reset/Delete buttons */}
-					<div className="flex justify-between gap-2 pt-4 border-t border-border/20">
+					{/* Auto-Import Sub-Feature */}
+					<AutoImportSection formData={formData} updateField={updateField} />
+				</RuleSection>
+
+				{/* Removal Options */}
+				<div className="space-y-3 pt-4 border-t border-border/20">
+					<div className="flex items-center gap-2">
+						<div
+							className="flex h-6 w-6 items-center justify-center rounded-md"
+							style={{
+								backgroundColor: `${serviceGradient.from}10`,
+								border: `1px solid ${serviceGradient.from}15`,
+							}}
+						>
+							<Trash2 className="h-3 w-3" style={{ color: serviceGradient.from }} />
+						</div>
+						<h5 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+							Removal Options
+						</h5>
+					</div>
+					<ToggleRow
+						label="Remove from download client"
+						description="Also remove the download from qBittorrent/SABnzbd etc."
+						checked={formData.removeFromClient ?? false}
+						onChange={(v) => updateField("removeFromClient", v)}
+					/>
+					<ToggleRow
+						label="Add to blocklist"
+						description="Prevent re-downloading the same release"
+						checked={formData.addToBlocklist ?? true}
+						onChange={(v) => updateField("addToBlocklist", v)}
+					/>
+					<ToggleRow
+						label="Search for replacement"
+						description="Trigger a new search after removal"
+						checked={formData.searchAfterRemoval ?? false}
+						onChange={(v) => updateField("searchAfterRemoval", v)}
+					/>
+
+					{/* Change Category - Torrent only */}
+					<div className="pt-2 border-t border-border/20">
+						<ToggleRow
+							label="Change category instead of delete"
+							description="Move torrents to Post-Import Category (set in Sonarr/Radarr download client settings)"
+							checked={formData.changeCategoryEnabled ?? false}
+							onChange={(v) => updateField("changeCategoryEnabled", v)}
+						/>
+					</div>
+				</div>
+
+				{/* Safety Settings */}
+				<div className="space-y-3 pt-4 border-t border-border/20">
+					<div className="flex items-center gap-2">
+						<div
+							className="flex h-6 w-6 items-center justify-center rounded-md"
+							style={{
+								backgroundColor: `${serviceGradient.from}10`,
+								border: `1px solid ${serviceGradient.from}15`,
+							}}
+						>
+							<ShieldCheck className="h-3 w-3" style={{ color: serviceGradient.from }} />
+						</div>
+						<h5 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+							Safety Limits
+						</h5>
+					</div>
+					<ConfigInput
+						label="Max Removals Per Run"
+						description="Cap the number of items removed in a single run"
+						value={formData.maxRemovalsPerRun ?? 10}
+						onChange={(v) => updateField("maxRemovalsPerRun", v)}
+						min={MIN_MAX_REMOVALS}
+						max={MAX_MAX_REMOVALS}
+						suffix="items"
+					/>
+					<ConfigInput
+						label="Min Queue Age"
+						description="Only consider items older than this"
+						value={formData.minQueueAgeMins ?? 5}
+						onChange={(v) => updateField("minQueueAgeMins", v)}
+						min={MIN_QUEUE_AGE_MINS}
+						max={MAX_QUEUE_AGE_MINS}
+						suffix="minutes"
+					/>
+				</div>
+
+				{/* Save/Reset/Delete buttons */}
+				<div className="flex justify-between gap-2 pt-4 border-t border-border/20">
+					<Button
+						variant="secondary"
+						size="sm"
+						className="gap-1.5"
+						onClick={() => void handleDelete()}
+						onBlur={() => setConfirmDelete(false)}
+						disabled={isDeleting}
+						style={{
+							borderColor: confirmDelete ? `${SEMANTIC_COLORS.error.border}` : undefined,
+							color: confirmDelete ? SEMANTIC_COLORS.error.text : undefined,
+						}}
+					>
+						{isDeleting ? (
+							<Loader2 className="h-3.5 w-3.5 animate-spin" />
+						) : (
+							<Trash2 className="h-3.5 w-3.5" />
+						)}
+						{confirmDelete ? "Confirm Delete?" : "Delete"}
+					</Button>
+					<div className="flex gap-2">
 						<Button
 							variant="secondary"
 							size="sm"
 							className="gap-1.5"
-							onClick={() => void handleDelete()}
-							onBlur={() => setConfirmDelete(false)}
-							disabled={isDeleting}
+							onClick={handleReset}
+							disabled={!isDirty}
+						>
+							<RotateCcw className="h-3.5 w-3.5" />
+							Reset
+						</Button>
+						<Button
+							variant="secondary"
+							size="sm"
+							className="gap-1.5"
+							onClick={() => void handleSave()}
+							disabled={!isDirty || isUpdating}
 							style={{
-								borderColor: confirmDelete ? `${SEMANTIC_COLORS.error.border}` : undefined,
-								color: confirmDelete ? SEMANTIC_COLORS.error.text : undefined,
+								borderColor: isDirty ? `${themeGradient.from}40` : undefined,
+								color: isDirty ? themeGradient.from : undefined,
 							}}
 						>
-							{isDeleting ? (
+							{isUpdating ? (
 								<Loader2 className="h-3.5 w-3.5 animate-spin" />
 							) : (
-								<Trash2 className="h-3.5 w-3.5" />
+								<Save className="h-3.5 w-3.5" />
 							)}
-							{confirmDelete ? "Confirm Delete?" : "Delete"}
+							Save
 						</Button>
-						<div className="flex gap-2">
-							<Button
-								variant="secondary"
-								size="sm"
-								className="gap-1.5"
-								onClick={handleReset}
-								disabled={!isDirty}
-							>
-								<RotateCcw className="h-3.5 w-3.5" />
-								Reset
-							</Button>
-							<Button
-								variant="secondary"
-								size="sm"
-								className="gap-1.5"
-								onClick={() => void handleSave()}
-								disabled={!isDirty || isUpdating}
-								style={{
-									borderColor: isDirty ? `${themeGradient.from}40` : undefined,
-									color: isDirty ? themeGradient.from : undefined,
-								}}
-							>
-								{isUpdating ? (
-									<Loader2 className="h-3.5 w-3.5 animate-spin" />
-								) : (
-									<Save className="h-3.5 w-3.5" />
-								)}
-								Save
-							</Button>
-						</div>
 					</div>
 				</div>
 			</div>
+		</div>
 	);
 };

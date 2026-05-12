@@ -77,6 +77,8 @@ export interface QueueCleanerConfig {
 	strikeSystemEnabled: boolean;
 	maxStrikes: number;
 	strikeDecayHours: number;
+	// qui-aware mode (Phase 2.3) — skip strikes when qui has paused/erred the torrent
+	quiAwareMode: boolean;
 	// Seeding timeout (torrent-only)
 	seedingTimeoutEnabled: boolean;
 	seedingTimeoutHours: number;
@@ -143,6 +145,8 @@ export interface QueueCleanerConfigUpdate {
 	strikeSystemEnabled?: boolean;
 	maxStrikes?: number;
 	strikeDecayHours?: number;
+	// qui-aware mode (Phase 2.3)
+	quiAwareMode?: boolean;
 	// Seeding timeout (torrent-only)
 	seedingTimeoutEnabled?: boolean;
 	seedingTimeoutHours?: number;

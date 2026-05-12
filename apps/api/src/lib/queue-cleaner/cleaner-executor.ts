@@ -34,6 +34,7 @@ import {
 	type RawQueueItem,
 	rawQueueItemSchema,
 } from "./queue-item-utils.js";
+import { normalizeDownloadId, resolveGatedItemIds } from "./qui-gate.js";
 import {
 	evaluateQueueItem,
 	shouldSkipByProfileFilter,
@@ -178,6 +179,12 @@ export async function executeQueueCleaner(
 	const skipped: CleanerResultItem[] = [];
 	const queueItemIds = new Set<string>();
 
+	// Map matched queue item id (as string) → lowercase qBit info hash, used
+	// by the Phase 2.3 qui-aware gate below. Only populated for items whose
+	// *arr downloadId looks like a torrent hash (40/64 hex); NZB/magnet IDs
+	// stay absent so the gate naturally no-ops for non-torrent downloads.
+	const matchedHashByItemId = new Map<string, string>();
+
 	const isSonarr = instance.service === "SONARR";
 
 	for (const item of queueRecords) {
@@ -230,6 +237,59 @@ export async function executeQueueCleaner(
 		if (evaluation) {
 			const protocol = typeof item.protocol === "string" ? item.protocol.toLowerCase() : undefined;
 			matched.push({ id, title, reason: evaluation.reason, rule: evaluation.rule, protocol });
+			const normalizedHash = normalizeDownloadId(item.downloadId);
+			if (normalizedHash) {
+				matchedHashByItemId.set(idStr, normalizedHash);
+			}
+		}
+	}
+
+	// qui-aware gate (Phase 2.3): when enabled, partition out matched items
+	// whose torrents qui has marked paused/error and surface them as skipped
+	// with an explicit reason. Runs before the strike system so no strike
+	// state is mutated for gated items.
+	if (config.quiAwareMode && matched.length > 0 && matchedHashByItemId.size > 0) {
+		try {
+			const gatedItemIds = await resolveGatedItemIds(
+				app.prisma,
+				instance.userId,
+				matchedHashByItemId,
+			);
+
+			if (gatedItemIds.size > 0) {
+				const remaining: CleanerResultItem[] = [];
+				for (const item of matched) {
+					if (gatedItemIds.has(String(item.id))) {
+						skipped.push({
+							id: item.id,
+							title: item.title,
+							reason: `${item.reason} — skipped (qui-aware: torrent is paused or errored in qui)`,
+							rule: item.rule,
+						});
+					} else {
+						remaining.push(item);
+					}
+				}
+				matched.length = 0;
+				matched.push(...remaining);
+
+				log.info(
+					{
+						instanceId: instance.id,
+						gatedCount: gatedItemIds.size,
+						remainingMatched: matched.length,
+					},
+					"qui-aware gate skipped strikes for torrents qui is already acting on",
+				);
+			}
+		} catch (error) {
+			// Gate failure is non-fatal — fall through to normal strike behavior
+			// so a transient Prisma blip doesn't paralyze queue cleaning. Log
+			// loudly so operators can correlate.
+			log.warn(
+				{ err: error, instanceId: instance.id },
+				"qui-aware gate lookup failed; proceeding without gating",
+			);
 		}
 	}
 

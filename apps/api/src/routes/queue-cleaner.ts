@@ -176,6 +176,9 @@ const configUpdateSchema = z.object({
 	addToBlocklist: z.boolean().optional(),
 	searchAfterRemoval: z.boolean().optional(),
 
+	// qui-aware mode (Phase 2.3) — skip strikes when qui has paused/erred the torrent
+	quiAwareMode: z.boolean().optional(),
+
 	// Safety settings
 	dryRunMode: z.boolean().optional(),
 	maxRemovalsPerRun: z.number().int().min(MIN_MAX_REMOVALS).max(MAX_MAX_REMOVALS).optional(),
