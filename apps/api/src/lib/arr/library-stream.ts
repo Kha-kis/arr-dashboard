@@ -127,6 +127,15 @@ export async function* streamLibraryItems(
 			const { done, value } = await reader.read();
 			if (done) break;
 			parser.write(value);
+			// Check for parser error BEFORE draining the queue. parser.write can
+			// set parserError synchronously mid-chunk after the parser has
+			// already emitted some valid items earlier in the same chunk —
+			// yielding those items first would let a partial-corruption stream
+			// produce DB writes for items that came from a stream we're about
+			// to reject. Surface the error first; let the caller decide what
+			// to do with the partial items (typically: discard the in-flight
+			// transaction).
+			if (parserError) throw parserError;
 			while (queue.length > 0) {
 				const item = queue.shift();
 				if (item) yield item;

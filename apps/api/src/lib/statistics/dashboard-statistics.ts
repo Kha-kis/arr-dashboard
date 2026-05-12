@@ -25,6 +25,9 @@ import type { RadarrClient } from "arr-sdk/radarr";
 import type { ReadarrClient } from "arr-sdk/readarr";
 import type { SonarrClient } from "arr-sdk/sonarr";
 
+import type { FastifyBaseLogger } from "fastify";
+
+import { getErrorMessage } from "../utils/error-message.js";
 import { parseUpstream } from "../validation/parse-upstream.js";
 
 import {
@@ -63,6 +66,37 @@ export type StatsStreamItems = () => AsyncIterable<Record<string, unknown>>;
 export interface StatsOptions {
 	/** Stream the bulk library list — overrides the SDK's getAll() path. */
 	streamItems?: StatsStreamItems;
+	/**
+	 * Logger for surfacing mid-stream errors. Without this, a network drop
+	 * partway through a 50k-artist stream silently produces zero/partial
+	 * counters and the user sees wildly wrong stats with no operator signal.
+	 * The route handler passes `request.log`; tests omit it (silent).
+	 */
+	log?: FastifyBaseLogger;
+}
+
+/**
+ * Shared error handler for the four streaming-aggregation try/catch blocks.
+ * Logs at warn level with enough context to correlate the partial result
+ * against the failed instance + service. Matches `safeRequest`'s logging
+ * discipline — the legacy SDK-buffered path that this code partly replaced
+ * also logged errors before returning empty results.
+ */
+function logStreamAbort(
+	log: FastifyBaseLogger | undefined,
+	err: unknown,
+	context: { instanceId: string; service: string; itemsAggregated: number },
+): void {
+	log?.warn(
+		{
+			err,
+			message: getErrorMessage(err),
+			instanceId: context.instanceId,
+			service: context.service,
+			itemsAggregated: context.itemsAggregated,
+		},
+		"Stats stream aborted mid-aggregation — returned counters may be incomplete",
+	);
 }
 
 /** Adapt an existing array to the AsyncIterable contract used by streaming. */
@@ -306,10 +340,17 @@ export const fetchSonarrStatisticsWithSdk = async (
 				);
 			}
 		}
-	} catch {
-		// Match the legacy `safeRequest` behavior — degrade gracefully on
-		// fetch / stream errors. Counters stay at whatever was accumulated
-		// before the failure (0 if the stream errored before the first item).
+	} catch (err) {
+		// Mid-stream failure (HTTP drop, parser error, schema mismatch).
+		// Match `safeRequest`'s logging discipline — log at warn so operators
+		// can correlate, then degrade. Counters stay at whatever was
+		// accumulated before the failure (0 if the stream errored before
+		// the first item).
+		logStreamAbort(options?.log, err, {
+			instanceId,
+			service: "sonarr",
+			itemsAggregated: totalSeries,
+		});
 	}
 
 	const diskTotals = calculateDiskTotals(diskspace);
@@ -424,8 +465,12 @@ export const fetchRadarrStatisticsWithSdk = async (
 				updateQualityBreakdown(movie.qualityProfileId, profileIdToName, 1, qualityBreakdown);
 			}
 		}
-	} catch {
-		// Match legacy safeRequest behavior — degrade gracefully on error.
+	} catch (err) {
+		logStreamAbort(options?.log, err, {
+			instanceId,
+			service: "radarr",
+			itemsAggregated: totalMovies,
+		});
 	}
 
 	const diskTotals = calculateDiskTotals(diskspace);
@@ -662,8 +707,12 @@ export const fetchLidarrStatisticsWithSdk = async (
 				);
 			}
 		}
-	} catch {
-		// Match legacy safeRequest behavior — degrade gracefully on error.
+	} catch (err) {
+		logStreamAbort(options?.log, err, {
+			instanceId,
+			service: "lidarr",
+			itemsAggregated: totalArtists,
+		});
 	}
 
 	const monitoredAlbums = Math.round(totalAlbums * (monitoredArtists / Math.max(totalArtists, 1)));
@@ -791,8 +840,12 @@ export const fetchReadarrStatisticsWithSdk = async (
 				);
 			}
 		}
-	} catch {
-		// Match legacy safeRequest behavior — degrade gracefully on error.
+	} catch (err) {
+		logStreamAbort(options?.log, err, {
+			instanceId,
+			service: "readarr",
+			itemsAggregated: totalAuthors,
+		});
 	}
 
 	const diskTotals = calculateDiskTotals(diskspace);

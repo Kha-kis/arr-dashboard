@@ -79,7 +79,7 @@ interface StreamingDeps {
  * issue #427 follow-up. Keeping this shape tight is what bounds the
  * seriesMap memory on large libraries (50 MB → ~3 MB for 10k series).
  */
-interface SlimSeries {
+export interface SlimSeries {
 	id: number;
 	title: string;
 	monitored: boolean;
@@ -92,7 +92,7 @@ interface SlimSeries {
 }
 
 /** Slim projection of a Lidarr artist resource. */
-interface SlimArtist {
+export interface SlimArtist {
 	id: number;
 	monitored: boolean;
 	tags: number[];
@@ -102,7 +102,7 @@ interface SlimArtist {
 }
 
 /** Slim projection of a Readarr author resource. */
-interface SlimAuthor {
+export interface SlimAuthor {
 	id: number;
 	monitored: boolean;
 	tags: number[];
@@ -161,7 +161,7 @@ function buildSlimMapFromSdkArray<TSlim>(
 }
 
 /** Project a raw series resource → SlimSeries; returns null when fields are missing. */
-function projectSeries(raw: Record<string, unknown>): SlimSeries | null {
+export function projectSeries(raw: Record<string, unknown>): SlimSeries | null {
 	const id = (raw.id as number | undefined) ?? 0;
 	if (id <= 0) return null;
 	const stats = raw.statistics as { episodeFileCount?: number } | undefined;
@@ -178,7 +178,7 @@ function projectSeries(raw: Record<string, unknown>): SlimSeries | null {
 }
 
 /** Project a raw artist resource → SlimArtist. */
-function projectArtist(raw: Record<string, unknown>): SlimArtist | null {
+export function projectArtist(raw: Record<string, unknown>): SlimArtist | null {
 	const id = (raw.id as number | undefined) ?? 0;
 	if (id <= 0) return null;
 	return {
@@ -192,7 +192,7 @@ function projectArtist(raw: Record<string, unknown>): SlimArtist | null {
 }
 
 /** Project a raw author resource → SlimAuthor. */
-function projectAuthor(raw: Record<string, unknown>): SlimAuthor | null {
+export function projectAuthor(raw: Record<string, unknown>): SlimAuthor | null {
 	const id = (raw.id as number | undefined) ?? 0;
 	if (id <= 0) return null;
 	return {
@@ -202,6 +202,114 @@ function projectAuthor(raw: Record<string, unknown>): SlimAuthor | null {
 		qualityProfileId: (raw.qualityProfileId as number | undefined) ?? 0,
 		status: (raw.status as string | undefined) ?? "",
 		authorName: (raw.authorName as string | undefined) ?? "",
+	};
+}
+
+/**
+ * Slim projection of a Radarr movie resource. Used for both `wanted.*`
+ * (paginated) and `movie.getAll()` (streamed in upgrade-all mode) sources.
+ * The downstream filter / history / search code reads all of these fields;
+ * dropping the rest (overview, images[], runtime, languages, etc.) is the
+ * memory win for users with 5k+ movie libraries.
+ */
+export interface SlimMovie {
+	id: number;
+	title: string;
+	year: number;
+	monitored: boolean;
+	hasFile: boolean;
+	tags: number[];
+	qualityProfileId: number;
+	status: string;
+	/** First non-empty of digitalRelease/physicalRelease/inCinemas — the
+	 *  pre-flattened release date the filter uses for the released-yet check. */
+	releaseDate: string | undefined;
+}
+
+/** Slim projection of a Lidarr album resource. */
+export interface SlimAlbum {
+	id: number;
+	title: string;
+	monitored: boolean;
+	releaseDate: string | undefined;
+	artistId: number;
+	/** Flattened from `statistics.trackFileCount`. */
+	trackFileCount: number;
+}
+
+/** Slim projection of a Readarr book resource. */
+export interface SlimBook {
+	id: number;
+	title: string;
+	monitored: boolean;
+	releaseDate: string | undefined;
+	authorId: number;
+	/** Flattened from `statistics.bookFileCount`. */
+	bookFileCount: number;
+}
+
+/** Project a raw movie record → SlimMovie. Returns null only when the id is missing. */
+export function projectMovie(raw: Record<string, unknown>): SlimMovie | null {
+	const id = (raw.id as number | undefined) ?? 0;
+	if (id <= 0) return null;
+	const digital = raw.digitalRelease as string | undefined;
+	const physical = raw.physicalRelease as string | undefined;
+	const cinemas = raw.inCinemas as string | undefined;
+	return {
+		id,
+		title: (raw.title as string | undefined) ?? "",
+		year: (raw.year as number | undefined) ?? 0,
+		monitored: (raw.monitored as boolean | undefined) ?? false,
+		hasFile: (raw.hasFile as boolean | undefined) ?? false,
+		tags: (raw.tags as number[] | undefined) ?? [],
+		qualityProfileId: (raw.qualityProfileId as number | undefined) ?? 0,
+		status: (raw.status as string | undefined) ?? "",
+		releaseDate: digital || physical || cinemas,
+	};
+}
+
+/** Project a raw album record → SlimAlbum. Returns null when id or artistId
+ *  is missing — both are required to do anything useful with the record
+ *  downstream (artistMap.get(0) returns undefined and the album is silently
+ *  filtered out, which conflates "orphan record" with "filter miss"). */
+export function projectAlbum(raw: Record<string, unknown>): SlimAlbum | null {
+	const id = (raw.id as number | undefined) ?? 0;
+	if (id <= 0) return null;
+	const artistId = (raw.artistId as number | undefined) ?? 0;
+	if (artistId <= 0) return null;
+	const stats = raw.statistics as { trackFileCount?: number } | undefined;
+	// Normalize releaseDate: Lidarr can return `null` for un-released albums;
+	// the slim type says `string | undefined`, so coerce null to undefined to
+	// keep the type contract honest.
+	const releaseDateRaw = raw.releaseDate;
+	const releaseDate = typeof releaseDateRaw === "string" ? releaseDateRaw : undefined;
+	return {
+		id,
+		title: (raw.title as string | undefined) ?? "",
+		monitored: (raw.monitored as boolean | undefined) ?? false,
+		releaseDate,
+		artistId,
+		trackFileCount: stats?.trackFileCount ?? 0,
+	};
+}
+
+/** Project a raw book record → SlimBook. Same FK-required invariant as
+ *  projectAlbum — without `authorId`, the book is unjoinable to authorMap. */
+export function projectBook(raw: Record<string, unknown>): SlimBook | null {
+	const id = (raw.id as number | undefined) ?? 0;
+	if (id <= 0) return null;
+	const authorId = (raw.authorId as number | undefined) ?? 0;
+	if (authorId <= 0) return null;
+	const stats = raw.statistics as { bookFileCount?: number } | undefined;
+	const releaseDateRaw = raw.releaseDate;
+	const releaseDate = typeof releaseDateRaw === "string" ? releaseDateRaw : undefined;
+	return {
+		id,
+		title: (raw.title as string | undefined) ?? "",
+		monitored: (raw.monitored as boolean | undefined) ?? false,
+		releaseDate,
+		authorId,
+		bookFileCount: stats?.bookFileCount ?? 0,
 	};
 }
 
@@ -915,47 +1023,57 @@ async function executeRadarrHuntWithSdk(
 				{ counter, logger },
 			);
 
-		type RadarrMovieRecord = Awaited<ReturnType<typeof fetchRadarrWanted>>[number];
+		// Both `wanted.*` paginated records and `movie.getAll()` streamed records
+		// project through the same slim shape — uniform downstream consumers,
+		// 10x lower memory per item (~500 B vs ~5 KB). Issue #427 follow-up.
+		const projectIntoSlim = (raw: unknown): SlimMovie | null =>
+			projectMovie(raw as Record<string, unknown>);
 
-		let movies: RadarrMovieRecord[];
+		let movies: SlimMovie[];
 
 		if (type === "missing") {
-			movies = await fetchRadarrWanted("missing");
+			const wanted = await fetchRadarrWanted("missing");
+			movies = wanted.map(projectIntoSlim).filter((m): m is SlimMovie => m !== null);
 		} else {
 			// Upgrade mode — include monitored items if upgradeSearchAll is enabled
-			const wantedMovies = await fetchRadarrWanted("cutoff");
+			const wantedMovies = (await fetchRadarrWanted("cutoff"))
+				.map(projectIntoSlim)
+				.filter((m): m is SlimMovie => m !== null);
 
-			let monitoredMovies: RadarrMovieRecord[] = [];
+			const monitoredMovies: SlimMovie[] = [];
 			if (upgradeSearchAll) {
 				counter.count++;
-				// Stream the movie list and filter inline. The downstream loop
-				// reads many movie fields, so we keep the full record per
-				// matching item — peak memory is bounded by `# of monitored
-				// hasFile movies` rather than the full library size (issue #427).
+				// Stream the movie list, project to slim shape, filter inline.
+				// Peak memory is bounded by `# of monitored+hasFile movies ×
+				// ~500 bytes` — for a 10k-movie library that's 5 MB instead of
+				// the 30-50 MB the full-record version held.
 				if (streamingDeps) {
 					for await (const raw of streamLibraryItems(
 						streamingDeps.factory,
 						streamingDeps.instance,
 						streamingDeps.log,
 					)) {
-						const m = raw as Record<string, unknown>;
-						if ((m.monitored ?? false) && (m.hasFile ?? false)) {
-							monitoredMovies.push(m as unknown as RadarrMovieRecord);
+						const slim = projectMovie(raw);
+						if (slim && slim.monitored && slim.hasFile) {
+							monitoredMovies.push(slim);
 						}
 					}
 				} else {
 					const allMovies = await client.movie.getAll();
-					monitoredMovies = allMovies.filter(
-						(m) => (m.monitored ?? false) && (m.hasFile ?? false),
-					) as RadarrMovieRecord[];
+					for (const raw of allMovies) {
+						const slim = projectMovie(raw as unknown as Record<string, unknown>);
+						if (slim && slim.monitored && slim.hasFile) {
+							monitoredMovies.push(slim);
+						}
+					}
 				}
 			}
 
-			// Merge and deduplicate by movie ID
-			const movieMap = new Map<number, RadarrMovieRecord>();
-			for (const m of wantedMovies) movieMap.set(m.id ?? 0, m);
+			// Merge and deduplicate by movie ID — wanted records win on collision.
+			const movieMap = new Map<number, SlimMovie>();
+			for (const m of wantedMovies) movieMap.set(m.id, m);
 			for (const m of monitoredMovies) {
-				if (!movieMap.has(m.id ?? 0)) movieMap.set(m.id ?? 0, m);
+				if (!movieMap.has(m.id)) movieMap.set(m.id, m);
 			}
 			movies = [...movieMap.values()];
 		}
@@ -972,27 +1090,24 @@ async function executeRadarrHuntWithSdk(
 		}
 
 		const filteredMovies = movies.filter((movie) => {
-			const releaseDate = movie.digitalRelease || movie.physicalRelease || movie.inCinemas;
-			if (!isContentReleased(releaseDate) && !(movie.hasFile ?? false)) return false;
+			if (!isContentReleased(movie.releaseDate) && !movie.hasFile) return false;
 
 			return passesFilters(
 				{
-					tags: movie.tags ?? [],
-					qualityProfileId: movie.qualityProfileId ?? 0,
-					status: movie.status ?? "",
-					year: movie.year ?? 0,
-					monitored: movie.monitored ?? false,
-					releaseDate: releaseDate ?? undefined,
+					tags: movie.tags,
+					qualityProfileId: movie.qualityProfileId,
+					status: movie.status,
+					year: movie.year,
+					monitored: movie.monitored,
+					releaseDate: movie.releaseDate,
 				},
 				filters,
 			);
 		});
 
-		// Filter to only movies with valid id and title (required for search and history tracking)
-		const validMovies = filteredMovies.filter(
-			(movie): movie is typeof movie & { id: number; title: string } =>
-				movie.id !== undefined && movie.title !== undefined && movie.title !== null,
-		);
+		// SlimMovie.id is always > 0 (projectMovie returns null otherwise) and
+		// title defaults to ""; downstream only needs to skip empty titles.
+		const validMovies = filteredMovies.filter((movie) => movie.title.length > 0);
 
 		const eligibleMovies = shuffleArray(validMovies);
 
@@ -1148,22 +1263,30 @@ async function executeLidarrHuntWithSdk(
 				{ counter, logger },
 			);
 
-		type LidarrAlbumRecord = Awaited<ReturnType<typeof fetchLidarrWanted>>[number];
+		// Project both wanted (paginated SDK) and monitored (streamed) records
+		// to SlimAlbum so the downstream filter / merge / search code reads a
+		// uniform shape. Memory saving is modest per-item but compounds when
+		// upgrade-all is enabled against a 50k+ album library (issue #427).
+		const projectAlbumLoose = (raw: unknown): SlimAlbum | null =>
+			projectAlbum(raw as Record<string, unknown>);
 
-		let albums: LidarrAlbumRecord[];
+		let albums: SlimAlbum[];
 
 		if (type === "missing") {
-			albums = await fetchLidarrWanted("missing");
+			const wanted = await fetchLidarrWanted("missing");
+			albums = wanted.map(projectAlbumLoose).filter((a): a is SlimAlbum => a !== null);
 		} else {
 			// Upgrade mode — include monitored items if upgradeSearchAll is enabled
-			const wantedAlbums = await fetchLidarrWanted("cutoff");
+			const wantedAlbums = (await fetchLidarrWanted("cutoff"))
+				.map(projectAlbumLoose)
+				.filter((a): a is SlimAlbum => a !== null);
 
-			let monitoredAlbums: LidarrAlbumRecord[] = [];
+			const monitoredAlbums: SlimAlbum[] = [];
 			if (upgradeSearchAll) {
 				counter.count++;
-				// Stream `/api/v1/album` and filter inline — same shape as the
-				// Radarr movie callsite. The path override is required because
-				// the default LIDARR bulk endpoint is `/api/v1/artist`.
+				// Stream `/api/v1/album`, project to slim, filter inline.
+				// Path override required because the default LIDARR bulk
+				// endpoint is `/api/v1/artist`.
 				if (streamingDeps) {
 					for await (const raw of streamLibraryItems(
 						streamingDeps.factory,
@@ -1171,31 +1294,27 @@ async function executeLidarrHuntWithSdk(
 						streamingDeps.log,
 						{ path: "/api/v1/album" },
 					)) {
-						const albumAny = raw as Record<string, unknown>;
-						const stats = albumAny.statistics as Record<string, unknown> | undefined;
-						if (Boolean(albumAny.monitored) && ((stats?.trackFileCount as number) ?? 0) > 0) {
-							monitoredAlbums.push(albumAny as unknown as LidarrAlbumRecord);
+						const slim = projectAlbum(raw);
+						if (slim && slim.monitored && slim.trackFileCount > 0) {
+							monitoredAlbums.push(slim);
 						}
 					}
 				} else {
 					const allAlbums = await client.album.getAll();
-					monitoredAlbums = allAlbums.filter((a) => {
-						const albumAny = a as Record<string, unknown>;
-						const stats = albumAny.statistics as Record<string, unknown> | undefined;
-						return Boolean(albumAny.monitored) && ((stats?.trackFileCount as number) ?? 0) > 0;
-					}) as LidarrAlbumRecord[];
+					for (const raw of allAlbums) {
+						const slim = projectAlbum(raw as unknown as Record<string, unknown>);
+						if (slim && slim.monitored && slim.trackFileCount > 0) {
+							monitoredAlbums.push(slim);
+						}
+					}
 				}
 			}
 
-			// Merge and deduplicate
-			const albumMap = new Map<number, LidarrAlbumRecord>();
-			for (const a of wantedAlbums) {
-				const id = (a as Record<string, unknown>).id as number | undefined;
-				if (id != null) albumMap.set(id, a);
-			}
+			// Merge and deduplicate — wanted records win on collision.
+			const albumMap = new Map<number, SlimAlbum>();
+			for (const a of wantedAlbums) albumMap.set(a.id, a);
 			for (const a of monitoredAlbums) {
-				const id = ((a as Record<string, unknown>).id as number) ?? 0;
-				if (!albumMap.has(id)) albumMap.set(id, a);
+				if (!albumMap.has(a.id)) albumMap.set(a.id, a);
 			}
 			albums = [...albumMap.values()];
 		}
@@ -1211,17 +1330,13 @@ async function executeLidarrHuntWithSdk(
 			};
 		}
 
-		// Apply filters
+		// Apply filters using the slim shape — artist's filterable fields come
+		// from the slim artistMap (already projected upstream).
 		const filteredAlbums = albums.filter((album) => {
-			const albumAny = album as Record<string, unknown>;
-			const releaseDate = albumAny.releaseDate as string | undefined;
-			const stats = (album as Record<string, unknown>).statistics as
-				| Record<string, unknown>
-				| undefined;
-			const hasFiles = ((stats?.trackFileCount as number) ?? 0) > 0;
-			if (!isContentReleased(releaseDate) && !hasFiles) return false;
+			const hasFiles = album.trackFileCount > 0;
+			if (!isContentReleased(album.releaseDate) && !hasFiles) return false;
 
-			const artist = artistMap.get((albumAny.artistId as number) ?? 0);
+			const artist = artistMap.get(album.artistId);
 			if (!artist) return false;
 
 			return passesFilters(
@@ -1229,20 +1344,15 @@ async function executeLidarrHuntWithSdk(
 					tags: artist.tags,
 					qualityProfileId: artist.qualityProfileId,
 					status: artist.status,
-					year: Number((releaseDate ?? "").slice(0, 4)) || 0,
-					monitored: Boolean(albumAny.monitored) && artist.monitored,
-					releaseDate,
+					year: Number((album.releaseDate ?? "").slice(0, 4)) || 0,
+					monitored: album.monitored && artist.monitored,
+					releaseDate: album.releaseDate,
 				},
 				filters,
 			);
 		});
 
-		const validAlbums = filteredAlbums.filter(
-			(album): album is typeof album & { id: number; title: string } => {
-				const a = album as Record<string, unknown>;
-				return a.id !== undefined && a.title !== undefined;
-			},
-		);
+		const validAlbums = filteredAlbums.filter((album) => album.title.length > 0);
 
 		const eligibleAlbums = shuffleArray(validAlbums);
 
@@ -1258,8 +1368,7 @@ async function executeLidarrHuntWithSdk(
 		}
 
 		const notRecentlySearched = historyManager.filterRecentlySearched(eligibleAlbums, (album) => {
-			const albumAny = album as Record<string, unknown>;
-			const artist = artistMap.get((albumAny.artistId as number) ?? 0);
+			const artist = artistMap.get(album.artistId);
 			const artistName = artist?.artistName ?? "Unknown Artist";
 			return {
 				mediaType: "album",
@@ -1285,8 +1394,7 @@ async function executeLidarrHuntWithSdk(
 
 		const albumsToSearch = notRecentlySearched.slice(0, batchSize);
 		const searchedItemNames = albumsToSearch.map((album) => {
-			const albumAny = album as Record<string, unknown>;
-			const artist = artistMap.get((albumAny.artistId as number) ?? 0);
+			const artist = artistMap.get(album.artistId);
 			const artistName = artist?.artistName ?? "Unknown Artist";
 			return `${artistName} - ${album.title}`;
 		});
@@ -1317,11 +1425,8 @@ async function executeLidarrHuntWithSdk(
 
 		await historyManager.recordSearches(
 			albumsToSearch.map((album) => {
-				const albumAny = album as Record<string, unknown>;
-				const artist = artistMap.get((albumAny.artistId as number) ?? 0) as
-					| Record<string, unknown>
-					| undefined;
-				const artistName = (artist?.artistName as string) ?? "Unknown Artist";
+				const artist = artistMap.get(album.artistId);
+				const artistName = artist?.artistName ?? "Unknown Artist";
 				return {
 					mediaType: "album" as const,
 					mediaId: album.id,
@@ -1407,22 +1512,29 @@ async function executeReadarrHuntWithSdk(
 				{ counter, logger },
 			);
 
-		type ReadarrBookRecord = Awaited<ReturnType<typeof fetchReadarrWanted>>[number];
+		// Project both wanted (paginated SDK) and monitored (streamed) records
+		// to SlimBook so the downstream filter / merge / search code reads a
+		// uniform shape. Mirror of the Lidarr album pattern.
+		const projectBookLoose = (raw: unknown): SlimBook | null =>
+			projectBook(raw as Record<string, unknown>);
 
-		let books: ReadarrBookRecord[];
+		let books: SlimBook[];
 
 		if (type === "missing") {
-			books = await fetchReadarrWanted("missing");
+			const wanted = await fetchReadarrWanted("missing");
+			books = wanted.map(projectBookLoose).filter((b): b is SlimBook => b !== null);
 		} else {
 			// Upgrade mode — include monitored items if upgradeSearchAll is enabled
-			const wantedBooks = await fetchReadarrWanted("cutoff");
+			const wantedBooks = (await fetchReadarrWanted("cutoff"))
+				.map(projectBookLoose)
+				.filter((b): b is SlimBook => b !== null);
 
-			let monitoredBooks: ReadarrBookRecord[] = [];
+			const monitoredBooks: SlimBook[] = [];
 			if (upgradeSearchAll) {
 				counter.count++;
-				// Stream `/api/v1/book` and filter inline. Path override is
-				// required because the default READARR bulk endpoint is
-				// `/api/v1/author`.
+				// Stream `/api/v1/book`, project to slim, filter inline. Path
+				// override required because the default READARR bulk endpoint
+				// is `/api/v1/author`.
 				if (streamingDeps) {
 					for await (const raw of streamLibraryItems(
 						streamingDeps.factory,
@@ -1430,31 +1542,27 @@ async function executeReadarrHuntWithSdk(
 						streamingDeps.log,
 						{ path: "/api/v1/book" },
 					)) {
-						const bookAny = raw as Record<string, unknown>;
-						const stats = bookAny.statistics as Record<string, unknown> | undefined;
-						if (Boolean(bookAny.monitored) && ((stats?.bookFileCount as number) ?? 0) > 0) {
-							monitoredBooks.push(bookAny as unknown as ReadarrBookRecord);
+						const slim = projectBook(raw);
+						if (slim && slim.monitored && slim.bookFileCount > 0) {
+							monitoredBooks.push(slim);
 						}
 					}
 				} else {
 					const allBooks = await client.book.getAll();
-					monitoredBooks = allBooks.filter((b) => {
-						const bookAny = b as Record<string, unknown>;
-						const stats = bookAny.statistics as Record<string, unknown> | undefined;
-						return Boolean(bookAny.monitored) && ((stats?.bookFileCount as number) ?? 0) > 0;
-					}) as ReadarrBookRecord[];
+					for (const raw of allBooks) {
+						const slim = projectBook(raw as unknown as Record<string, unknown>);
+						if (slim && slim.monitored && slim.bookFileCount > 0) {
+							monitoredBooks.push(slim);
+						}
+					}
 				}
 			}
 
-			// Merge and deduplicate
-			const bookMap = new Map<number, ReadarrBookRecord>();
-			for (const b of wantedBooks) {
-				const id = (b as Record<string, unknown>).id as number | undefined;
-				if (id != null) bookMap.set(id, b);
-			}
+			// Merge and deduplicate — wanted records win on collision.
+			const bookMap = new Map<number, SlimBook>();
+			for (const b of wantedBooks) bookMap.set(b.id, b);
 			for (const b of monitoredBooks) {
-				const id = ((b as Record<string, unknown>).id as number) ?? 0;
-				if (!bookMap.has(id)) bookMap.set(id, b);
+				if (!bookMap.has(b.id)) bookMap.set(b.id, b);
 			}
 			books = [...bookMap.values()];
 		}
@@ -1470,17 +1578,13 @@ async function executeReadarrHuntWithSdk(
 			};
 		}
 
-		// Apply filters
+		// Apply filters using the slim shape — author's filterable fields come
+		// from the slim authorMap (already projected upstream).
 		const filteredBooks = books.filter((book) => {
-			const bookAny = book as Record<string, unknown>;
-			const releaseDate = bookAny.releaseDate as string | undefined;
-			const bookStats = (book as Record<string, unknown>).statistics as
-				| Record<string, unknown>
-				| undefined;
-			const bookHasFiles = ((bookStats?.bookFileCount as number) ?? 0) > 0;
-			if (!isContentReleased(releaseDate) && !bookHasFiles) return false;
+			const bookHasFiles = book.bookFileCount > 0;
+			if (!isContentReleased(book.releaseDate) && !bookHasFiles) return false;
 
-			const author = authorMap.get((bookAny.authorId as number) ?? 0);
+			const author = authorMap.get(book.authorId);
 			if (!author) return false;
 
 			return passesFilters(
@@ -1488,20 +1592,15 @@ async function executeReadarrHuntWithSdk(
 					tags: author.tags,
 					qualityProfileId: author.qualityProfileId,
 					status: author.status,
-					year: Number((releaseDate ?? "").slice(0, 4)) || 0,
-					monitored: Boolean(bookAny.monitored) && author.monitored,
-					releaseDate,
+					year: Number((book.releaseDate ?? "").slice(0, 4)) || 0,
+					monitored: book.monitored && author.monitored,
+					releaseDate: book.releaseDate,
 				},
 				filters,
 			);
 		});
 
-		const validBooks = filteredBooks.filter(
-			(book): book is typeof book & { id: number; title: string } => {
-				const b = book as Record<string, unknown>;
-				return b.id !== undefined && b.title !== undefined;
-			},
-		);
+		const validBooks = filteredBooks.filter((book) => book.title.length > 0);
 
 		const eligibleBooks = shuffleArray(validBooks);
 
@@ -1517,8 +1616,7 @@ async function executeReadarrHuntWithSdk(
 		}
 
 		const notRecentlySearched = historyManager.filterRecentlySearched(eligibleBooks, (book) => {
-			const bookAny = book as Record<string, unknown>;
-			const author = authorMap.get((bookAny.authorId as number) ?? 0);
+			const author = authorMap.get(book.authorId);
 			const authorName = author?.authorName ?? "Unknown Author";
 			return {
 				mediaType: "book",
@@ -1544,8 +1642,7 @@ async function executeReadarrHuntWithSdk(
 
 		const booksToSearch = notRecentlySearched.slice(0, batchSize);
 		const searchedItemNames = booksToSearch.map((book) => {
-			const bookAny = book as Record<string, unknown>;
-			const author = authorMap.get((bookAny.authorId as number) ?? 0);
+			const author = authorMap.get(book.authorId);
 			const authorName = author?.authorName ?? "Unknown Author";
 			return `${authorName} - ${book.title}`;
 		});
@@ -1576,11 +1673,8 @@ async function executeReadarrHuntWithSdk(
 
 		await historyManager.recordSearches(
 			booksToSearch.map((book) => {
-				const bookAny = book as Record<string, unknown>;
-				const author = authorMap.get((bookAny.authorId as number) ?? 0) as
-					| Record<string, unknown>
-					| undefined;
-				const authorName = (author?.authorName as string) ?? "Unknown Author";
+				const author = authorMap.get(book.authorId);
+				const authorName = author?.authorName ?? "Unknown Author";
 				return {
 					mediaType: "book" as const,
 					mediaId: book.id,
