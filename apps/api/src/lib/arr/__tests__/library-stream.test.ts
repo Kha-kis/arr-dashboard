@@ -198,4 +198,58 @@ describe("streamLibraryItems", () => {
 			expect.objectContaining({ method: "GET" }),
 		);
 	});
+
+	// ========================================================================
+	// Consumer-abort cleanup (issue #427 review-feedback)
+	// ========================================================================
+	//
+	// streamLibraryItems' finally block calls response.body.cancel() so that
+	// when the caller aborts early (e.g., a sync transaction rolls back after
+	// 100 of 50k items), the HTTP connection to the *arr instance is closed
+	// rather than left dangling. A regression that drops cancel() would leak
+	// connections under partial-consumption — invisible in unit tests, real
+	// pressure on the *arr server under load.
+
+	it("cancels the response body when the consumer breaks out of for-await early", async () => {
+		// Spy on body.cancel directly. The underlying ReadableStream's
+		// `cancel` callback only fires for in-flight streams; once close()
+		// has been signaled the callback no longer runs even though
+		// body.cancel() resolves cleanly. What we care about is whether the
+		// generator's finally CALLS body.cancel() — the signal-of-intent.
+		// Spying on the method captures that intent regardless of underlying
+		// stream state, which is exactly what we want this regression test
+		// to assert.
+		const response = new Response(
+			'[{"id":1,"title":"A"},{"id":2,"title":"B"},{"id":3,"title":"C"}]',
+		);
+		const cancelSpy = vi.spyOn(response.body!, "cancel");
+		const factory = makeFactory(response);
+
+		let yielded = 0;
+		for await (const _ of streamLibraryItems(factory, makeMockInstance("LIDARR"), makeMockLog())) {
+			yielded++;
+			if (yielded === 1) break; // abort after first item
+		}
+
+		expect(yielded).toBe(1);
+		expect(cancelSpy).toHaveBeenCalled();
+	});
+
+	it("cancels the response body when the consumer throws inside for-await", async () => {
+		const response = new Response('[{"id":1},{"id":2},{"id":3}]');
+		const cancelSpy = vi.spyOn(response.body!, "cancel");
+		const factory = makeFactory(response);
+
+		await expect(async () => {
+			for await (const _ of streamLibraryItems(
+				factory,
+				makeMockInstance("LIDARR"),
+				makeMockLog(),
+			)) {
+				throw new Error("consumer-side abort");
+			}
+		}).rejects.toThrow(/consumer-side abort/);
+
+		expect(cancelSpy).toHaveBeenCalled();
+	});
 });

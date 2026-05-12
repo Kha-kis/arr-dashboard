@@ -66,7 +66,7 @@ const MIN_SYNC_INTERVAL_MINS = 5;
 // Scheduler Class
 // ============================================================================
 
-class LibrarySyncScheduler {
+export class LibrarySyncScheduler {
 	private app: FastifyInstance | null = null;
 	private running = false;
 	private intervalId: NodeJS.Timeout | null = null;
@@ -111,6 +111,16 @@ class LibrarySyncScheduler {
 		// Delay the first tick — see FIRST_TICK_DELAY_MS comment for why.
 		this.firstTickTimeoutId = setTimeout(() => {
 			this.firstTickTimeoutId = null;
+			// Guard against stop() racing with the timeout firing. Without
+			// this check: stop() runs (sets `this.running = false` and clears
+			// `firstTickTimeoutId` which is already null here, so its
+			// clearTimeout is a no-op), then this callback continues and
+			// installs an interval that escapes shutdown cleanup. The interval
+			// would then pin the event loop open during graceful shutdown.
+			if (!this.running) {
+				log.debug("First-tick callback fired after stop() — skipping interval install");
+				return;
+			}
 			this.trackTick(() => this.tick()).catch((error) => {
 				log.error({ err: error }, "Initial scheduler tick failed");
 			});
@@ -190,8 +200,12 @@ class LibrarySyncScheduler {
 		}
 
 		// Mirror tick()'s pre-runSync bookkeeping so adaptive concurrency works
-		// even when a manual trigger races with a scheduled tick.
-		this.activeSyncItemCounts.set(instance.id, instance.librarySyncStatus?.itemCount ?? 0);
+		// even when a manual trigger races with a scheduled tick. Cold-start
+		// instances (no lastFullSync yet) are treated as ≥ threshold so they
+		// don't accidentally co-spike with another large sync.
+		const status = instance.librarySyncStatus;
+		const knownItemCount = status?.lastFullSync ? (status.itemCount ?? 0) : LARGE_LIBRARY_THRESHOLD;
+		this.activeSyncItemCounts.set(instance.id, knownItemCount);
 		return this.runSync(instance);
 	}
 
@@ -261,7 +275,18 @@ class LibrarySyncScheduler {
 				// size + currently-active syncs. Done BEFORE the "skip if already
 				// syncing" check so a large candidate gates additional starts even
 				// when this iteration's instance is already running.
-				const candidateItemCount = status?.itemCount ?? 0;
+				//
+				// Cold start: when `lastFullSync` is null (never synced) we have
+				// no size info at all. Treating an unknown instance as "small"
+				// (itemCount=0) was the bug from #427 review — it let two big
+				// libraries co-sync on the very first tick of a fresh container,
+				// exactly the case this cap is supposed to prevent. Be
+				// conservative: assume unknown ≥ threshold so cold-start sync
+				// runs solo. After the first successful sync, itemCount is
+				// persisted and subsequent ticks use the real value.
+				const candidateItemCount = status?.lastFullSync
+					? (status.itemCount ?? 0)
+					: LARGE_LIBRARY_THRESHOLD;
 				const effectiveCap = this.effectiveMaxConcurrent(candidateItemCount);
 				if (this.activeSyncs.size >= effectiveCap) {
 					if (effectiveCap < MAX_CONCURRENT_SYNCS) {

@@ -58,6 +58,7 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							instance.externalUrl ?? undefined,
 							{
 								streamItems: () => streamLibraryItems(app.arrClientFactory, instance, request.log),
+								log: request.log,
 							},
 						);
 						return {
@@ -94,6 +95,7 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							instance.externalUrl ?? undefined,
 							{
 								streamItems: () => streamLibraryItems(app.arrClientFactory, instance, request.log),
+								log: request.log,
 							},
 						);
 						return {
@@ -161,6 +163,7 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							instance.externalUrl ?? undefined,
 							{
 								streamItems: () => streamLibraryItems(app.arrClientFactory, instance, request.log),
+								log: request.log,
 							},
 						);
 						return {
@@ -197,6 +200,7 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							instance.externalUrl ?? undefined,
 							{
 								streamItems: () => streamLibraryItems(app.arrClientFactory, instance, request.log),
+								log: request.log,
 							},
 						);
 						return {

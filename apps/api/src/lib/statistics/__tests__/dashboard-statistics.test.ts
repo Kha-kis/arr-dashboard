@@ -7,14 +7,14 @@
  * (monitored episodes only), inflating missing stats by 100x+.
  */
 
-import { describe, it, expect, vi } from "vitest";
-import {
-	fetchSonarrStatisticsWithSdk,
-	fetchLidarrStatisticsWithSdk,
-	aggregateSonarrStatistics,
-} from "../dashboard-statistics.js";
-import type { SonarrClient } from "arr-sdk/sonarr";
 import type { LidarrClient } from "arr-sdk/lidarr";
+import type { SonarrClient } from "arr-sdk/sonarr";
+import { describe, expect, it, vi } from "vitest";
+import {
+	aggregateSonarrStatistics,
+	fetchLidarrStatisticsWithSdk,
+	fetchSonarrStatisticsWithSdk,
+} from "../dashboard-statistics.js";
 
 // ---------------------------------------------------------------------------
 // Helpers – build mock SonarrClient
@@ -65,9 +65,7 @@ function createMockSonarrClient(
 			cutoff: vi.fn().mockResolvedValue({ totalRecords: cutoffTotalRecords }),
 		},
 		qualityProfile: {
-			getAll: vi
-				.fn()
-				.mockResolvedValue([{ id: 1, name: "HD-1080p" }]),
+			getAll: vi.fn().mockResolvedValue([{ id: 1, name: "HD-1080p" }]),
 		},
 		tag: {
 			getAll: vi.fn().mockResolvedValue([{ id: 1, label: "anime" }]),
@@ -418,12 +416,14 @@ interface MockArtistEntry {
 	};
 }
 
-function createMockLidarrClient(
-	artistList: MockArtistEntry[],
-): LidarrClient {
+function createMockLidarrClient(artistList: MockArtistEntry[]): LidarrClient {
 	return {
 		artist: { getAll: vi.fn().mockResolvedValue(artistList) },
-		diskSpace: { get: vi.fn().mockResolvedValue([{ freeSpace: 500_000_000_000, totalSpace: 1_000_000_000_000 }]) },
+		diskSpace: {
+			get: vi
+				.fn()
+				.mockResolvedValue([{ freeSpace: 500_000_000_000, totalSpace: 1_000_000_000_000 }]),
+		},
 		health: { get: vi.fn().mockResolvedValue([]) },
 		wanted: { getCutoffUnmet: vi.fn().mockResolvedValue({ totalRecords: 0 }) },
 		qualityProfile: { getAll: vi.fn().mockResolvedValue([{ id: 1, name: "Lossless" }]) },
@@ -485,8 +485,28 @@ describe("fetchLidarrStatisticsWithSdk", () => {
 
 	it("excludes unmonitored artists entirely from missing count", async () => {
 		const artists = [
-			makeArtist({ id: 1, monitored: true, statistics: { albumCount: 5, totalTrackCount: 50, trackCount: 40, trackFileCount: 35, sizeOnDisk: 35_000_000_000 } }),
-			makeArtist({ id: 2, monitored: false, statistics: { albumCount: 20, totalTrackCount: 500, trackCount: 400, trackFileCount: 0, sizeOnDisk: 0 } }),
+			makeArtist({
+				id: 1,
+				monitored: true,
+				statistics: {
+					albumCount: 5,
+					totalTrackCount: 50,
+					trackCount: 40,
+					trackFileCount: 35,
+					sizeOnDisk: 35_000_000_000,
+				},
+			}),
+			makeArtist({
+				id: 2,
+				monitored: false,
+				statistics: {
+					albumCount: 20,
+					totalTrackCount: 500,
+					trackCount: 400,
+					trackFileCount: 0,
+					sizeOnDisk: 0,
+				},
+			}),
 		];
 
 		const client = createMockLidarrClient(artists);
@@ -531,5 +551,144 @@ describe("fetchLidarrStatisticsWithSdk", () => {
 		// Falls back to totalTrackCount when trackCount unavailable
 		expect(result.missingTracks).toBe(10);
 		expect(result.totalTracks).toBe(80);
+	});
+});
+
+// ============================================================================
+// Stream-error handling (issue #427 review-feedback fix)
+// ============================================================================
+//
+// The 4 empty catches in dashboard-statistics.ts previously swallowed mid-
+// stream failures silently — a 50k-artist Lidarr fetch that died halfway
+// would render as "15k artists" with no operator signal. These tests verify
+// the post-fix behavior:
+//   (a) Counters reflect what was aggregated BEFORE the throw (not zero,
+//       not stale).
+//   (b) The injected log was called at warn level with itemsAggregated
+//       context, so operators see the failure.
+
+describe("fetchSonarrStatisticsWithSdk — stream-error degradation", () => {
+	const INSTANCE = { id: "inst-1", name: "Sonarr Main", url: "http://sonarr:8989" };
+
+	function makeLog() {
+		const warn = vi.fn();
+		const log = {
+			warn,
+			info: vi.fn(),
+			debug: vi.fn(),
+			error: vi.fn(),
+			fatal: vi.fn(),
+			trace: vi.fn(),
+			silent: vi.fn(),
+			level: "info",
+			child: vi.fn(),
+		};
+		// `as never` lets us pass our mock through `StatsOptions.log?:
+		// FastifyBaseLogger` without rebuilding the full pino surface.
+		// The functions under test only call `.warn()`.
+		return { log: log as never, warn };
+	}
+
+	// Helper: build a streamItems async generator that yields N items then throws.
+	function makeFailingStreamItems<T>(items: T[], throwAfter: number) {
+		return async function* (): AsyncGenerator<Record<string, unknown>, void, undefined> {
+			let i = 0;
+			for (const item of items) {
+				if (i >= throwAfter) throw new Error("simulated mid-stream failure (ECONNRESET)");
+				yield item as unknown as Record<string, unknown>;
+				i++;
+			}
+		};
+	}
+
+	it("preserves partial counters when stream throws after N items", async () => {
+		const client = createMockSonarrClient([]); // SDK path unused — streamItems wins
+		const items = Array.from({ length: 100 }, (_, i) =>
+			makeSeries({
+				id: i + 1,
+				statistics: {
+					totalEpisodeCount: 10,
+					episodeCount: 10,
+					episodeFileCount: 5,
+					sizeOnDisk: 1_000_000,
+				},
+			}),
+		);
+		const { log, warn } = makeLog();
+
+		const result = await fetchSonarrStatisticsWithSdk(
+			client,
+			INSTANCE.id,
+			INSTANCE.name,
+			INSTANCE.url,
+			undefined,
+			{ streamItems: makeFailingStreamItems(items, 30), log },
+		);
+
+		// 30 items aggregated before failure — counters reflect this, not 0,
+		// not 100. The whole point of the fix.
+		expect(result.totalSeries).toBe(30);
+		expect(result.downloadedEpisodes).toBe(150); // 30 × 5 files-per-series
+
+		// Operator gets a signal. Pre-fix this was silent.
+		expect(warn).toHaveBeenCalledWith(
+			expect.objectContaining({
+				instanceId: INSTANCE.id,
+				service: "sonarr",
+				itemsAggregated: 30,
+			}),
+			expect.stringMatching(/Stats stream aborted/),
+		);
+	});
+
+	it("returns zero counters (not NaN) when stream throws before first item", async () => {
+		const client = createMockSonarrClient([]);
+		const { log } = makeLog();
+
+		const result = await fetchSonarrStatisticsWithSdk(
+			client,
+			INSTANCE.id,
+			INSTANCE.name,
+			INSTANCE.url,
+			undefined,
+			{ streamItems: makeFailingStreamItems([], 0), log },
+		);
+
+		expect(result.totalSeries).toBe(0);
+		expect(result.downloadedPercentage).toBe(0);
+		expect(Number.isNaN(result.downloadedPercentage)).toBe(false);
+	});
+
+	it("does NOT log when stream completes successfully", async () => {
+		const client = createMockSonarrClient([]);
+		const items = [
+			makeSeries({
+				id: 1,
+				statistics: {
+					totalEpisodeCount: 10,
+					episodeCount: 10,
+					episodeFileCount: 10,
+					sizeOnDisk: 1_000_000,
+				},
+			}),
+		];
+		const { log, warn } = makeLog();
+
+		await fetchSonarrStatisticsWithSdk(
+			client,
+			INSTANCE.id,
+			INSTANCE.name,
+			INSTANCE.url,
+			undefined,
+			{
+				streamItems: async function* (): AsyncGenerator<Record<string, unknown>, void, undefined> {
+					for (const item of items) yield item as unknown as Record<string, unknown>;
+				},
+				log,
+			},
+		);
+
+		// No warn calls — the happy path stays quiet.
+		expect(warn).not.toHaveBeenCalled();
 	});
 });
