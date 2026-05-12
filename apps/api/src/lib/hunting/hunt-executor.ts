@@ -14,7 +14,8 @@ import type { ReadarrClient } from "arr-sdk/readarr";
 import type { SonarrClient } from "arr-sdk/sonarr";
 import type { FastifyInstance } from "fastify";
 import type { HuntConfig, ServiceInstance } from "../../lib/prisma.js";
-import type { QueueCapableClient } from "../arr/client-factory.js";
+import type { ArrClientFactory, QueueCapableClient } from "../arr/client-factory.js";
+import { streamLibraryItems } from "../arr/library-stream.js";
 import { delay } from "../utils/delay.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { SEARCH_DELAY_MS, SEASON_SEARCH_THRESHOLD } from "./constants.js";
@@ -57,6 +58,42 @@ export interface HuntResult {
 
 // Internal type for sub-functions (apiCallsMade added by executeHunt)
 type HuntResultWithoutApiCount = Omit<HuntResult, "apiCallsMade">;
+
+/**
+ * Plumbing for the streaming JSON path (issue #427). The per-service
+ * functions still take the SDK client for small / paginated endpoints
+ * (queue, wanted, command, etc.) but use `factory + instance` to stream
+ * the bulk-list endpoint (series/movie/artist/author and, for upgrade-all
+ * mode, album/book) directly through @streamparser/json. That avoids the
+ * 200-500 MB heap spike the SDK's `getAll()` triggers on large libraries.
+ */
+interface StreamingDeps {
+	factory: ArrClientFactory;
+	instance: ServiceInstance;
+	log: HuntLogger;
+}
+
+/**
+ * Collect items from a JSON-array endpoint into an in-memory array via
+ * streaming parse. Same semantics as `await client.X.getAll()` but the
+ * HTTP body never sits fully buffered in memory at once.
+ *
+ * Returns an array so the caller's existing Map.from(...) / filter / etc.
+ * patterns work unchanged. For very large libraries (Lidarr 50k+ artists)
+ * the returned array is still large, but the *peak* during the fetch is
+ * halved because the raw HTTP body bytes are released as they're parsed
+ * rather than held for a `response.json()` call.
+ */
+async function collectFromStream(
+	deps: StreamingDeps,
+	options?: { path?: string },
+): Promise<Array<Record<string, unknown>>> {
+	const items: Array<Record<string, unknown>> = [];
+	for await (const item of streamLibraryItems(deps.factory, deps.instance, deps.log, options)) {
+		items.push(item);
+	}
+	return items;
+}
 
 // ============================================================================
 // SDK-based implementations (arr-sdk 0.3.0)
@@ -116,6 +153,16 @@ export async function executeHuntWithSdk(
 	const batchSize = type === "missing" ? config.missingBatchSize : config.upgradeBatchSize;
 	const upgradeSearchAll = config.upgradeSearchAll ?? false;
 
+	// `streamingDeps` carries the inputs needed for the streaming JSON path
+	// to bypass the SDK's buffer-then-parse `getAll()` (issue #427). Passed
+	// uniformly to every per-service function so they can stream the
+	// bulk-list endpoint without rebuilding the client per call.
+	const streamingDeps: StreamingDeps = {
+		factory: app.arrClientFactory,
+		instance,
+		log: logger,
+	};
+
 	if (service === "sonarr") {
 		const result = await executeSonarrHuntWithSdk(
 			client as SonarrClient,
@@ -127,6 +174,7 @@ export async function executeHuntWithSdk(
 			logger,
 			config.preferSeasonPacks,
 			upgradeSearchAll,
+			streamingDeps,
 		);
 		return { ...result, apiCallsMade: apiCallCounter.count };
 	}
@@ -140,6 +188,7 @@ export async function executeHuntWithSdk(
 			apiCallCounter,
 			logger,
 			upgradeSearchAll,
+			streamingDeps,
 		);
 		return { ...result, apiCallsMade: apiCallCounter.count };
 	}
@@ -153,6 +202,7 @@ export async function executeHuntWithSdk(
 			apiCallCounter,
 			logger,
 			upgradeSearchAll,
+			streamingDeps,
 		);
 		return { ...result, apiCallsMade: apiCallCounter.count };
 	}
@@ -166,6 +216,7 @@ export async function executeHuntWithSdk(
 			apiCallCounter,
 			logger,
 			upgradeSearchAll,
+			streamingDeps,
 		);
 		return { ...result, apiCallsMade: apiCallCounter.count };
 	}
@@ -296,11 +347,19 @@ async function executeSonarrHuntWithSdk(
 	logger: HuntLogger,
 	preferSeasonPacks: boolean,
 	upgradeSearchAll = false,
+	streamingDeps?: StreamingDeps,
 ): Promise<HuntResultWithoutApiCount> {
 	try {
-		// First, get all series to have filter data available
+		// Stream the full series list rather than buffering the HTTP body
+		// (issue #427). Fall back to the SDK's buffered getAll() when no
+		// streamingDeps is provided — keeps the function testable without
+		// a fetch mock.
 		counter.count++;
-		const allSeries = await client.series.getAll();
+		const allSeries = streamingDeps
+			? ((await collectFromStream(streamingDeps)) as unknown as Awaited<
+					ReturnType<typeof client.series.getAll>
+				>)
+			: await client.series.getAll();
 		const seriesMap = new Map(allSeries.map((s) => [s.id ?? 0, s]));
 
 		// Get wanted episodes with page rotation
@@ -314,7 +373,9 @@ async function executeSonarrHuntWithSdk(
 						sortKey: "airDateUtc" as const,
 						sortDirection: "descending" as const,
 					};
-					return endpoint === "missing" ? client.wanted.missing(params) : client.wanted.cutoff(params);
+					return endpoint === "missing"
+						? client.wanted.missing(params)
+						: client.wanted.cutoff(params);
 				},
 				{ counter, logger },
 			);
@@ -335,21 +396,25 @@ async function executeSonarrHuntWithSdk(
 				const monitoredSeriesWithFiles = allSeries.filter(
 					(s) =>
 						(s.monitored ?? false) &&
-						((s.statistics as Record<string, unknown> | undefined)?.episodeFileCount as number ?? 0) > 0,
+						(((s.statistics as Record<string, unknown> | undefined)?.episodeFileCount as number) ??
+							0) > 0,
 				);
 
 				// Build synthetic episode-like records from monitored series so they flow through
 				// the same filter/batch pipeline. We use one record per series.
-				const syntheticRecords: SonarrEpisodeRecord[] = monitoredSeriesWithFiles.map((s) => ({
-					id: s.id ?? 0,
-					seriesId: s.id ?? 0,
-					seasonNumber: -1, // sentinel: means "search entire series"
-					episodeNumber: 0,
-					title: s.title ?? "Unknown",
-					airDateUtc: undefined as string | undefined,
-					monitored: s.monitored ?? false,
-					hasFile: true,
-				} as SonarrEpisodeRecord));
+				const syntheticRecords: SonarrEpisodeRecord[] = monitoredSeriesWithFiles.map(
+					(s) =>
+						({
+							id: s.id ?? 0,
+							seriesId: s.id ?? 0,
+							seasonNumber: -1, // sentinel: means "search entire series"
+							episodeNumber: 0,
+							title: s.title ?? "Unknown",
+							airDateUtc: undefined as string | undefined,
+							monitored: s.monitored ?? false,
+							hasFile: true,
+						}) as SonarrEpisodeRecord,
+				);
 
 				// Merge and deduplicate — for "both" mode, wanted records take priority per seriesId
 				const seenSeriesIds = new Set(wantedRecords.map((r) => r.seriesId ?? 0));
@@ -499,7 +564,11 @@ async function executeSonarrHuntWithSdk(
 			}
 		}
 
-		if (seriesLevelSearches.length === 0 && seasonSearches.length === 0 && individualEpisodes.length === 0) {
+		if (
+			seriesLevelSearches.length === 0 &&
+			seasonSearches.length === 0 &&
+			individualEpisodes.length === 0
+		) {
 			const skippedCount = historyManager.getFilteredCount();
 			return {
 				itemsSearched: 0,
@@ -593,10 +662,7 @@ async function executeSonarrHuntWithSdk(
 				});
 			} catch (error) {
 				searchErrors++;
-				logger.error(
-					{ err: error, title: seriesSearch.title },
-					"Failed to execute series search",
-				);
+				logger.error({ err: error, title: seriesSearch.title }, "Failed to execute series search");
 			}
 		}
 
@@ -714,6 +780,7 @@ async function executeRadarrHuntWithSdk(
 	counter: ApiCallCounter,
 	logger: HuntLogger,
 	upgradeSearchAll = false,
+	streamingDeps?: StreamingDeps,
 ): Promise<HuntResultWithoutApiCount> {
 	try {
 		const fetchRadarrWanted = (endpoint: "missing" | "cutoff") =>
@@ -725,7 +792,9 @@ async function executeRadarrHuntWithSdk(
 						sortKey: "digitalRelease" as const,
 						sortDirection: "descending" as const,
 					};
-					return endpoint === "missing" ? client.wanted.missing(params) : client.wanted.cutoff(params);
+					return endpoint === "missing"
+						? client.wanted.missing(params)
+						: client.wanted.cutoff(params);
 				},
 				{ counter, logger },
 			);
@@ -743,10 +812,27 @@ async function executeRadarrHuntWithSdk(
 			let monitoredMovies: RadarrMovieRecord[] = [];
 			if (upgradeSearchAll) {
 				counter.count++;
-				const allMovies = await client.movie.getAll();
-				monitoredMovies = allMovies.filter(
-					(m) => (m.monitored ?? false) && (m.hasFile ?? false),
-				) as RadarrMovieRecord[];
+				// Stream the movie list and filter inline. The downstream loop
+				// reads many movie fields, so we keep the full record per
+				// matching item — peak memory is bounded by `# of monitored
+				// hasFile movies` rather than the full library size (issue #427).
+				if (streamingDeps) {
+					for await (const raw of streamLibraryItems(
+						streamingDeps.factory,
+						streamingDeps.instance,
+						streamingDeps.log,
+					)) {
+						const m = raw as Record<string, unknown>;
+						if ((m.monitored ?? false) && (m.hasFile ?? false)) {
+							monitoredMovies.push(m as unknown as RadarrMovieRecord);
+						}
+					}
+				} else {
+					const allMovies = await client.movie.getAll();
+					monitoredMovies = allMovies.filter(
+						(m) => (m.monitored ?? false) && (m.hasFile ?? false),
+					) as RadarrMovieRecord[];
+				}
 			}
 
 			// Merge and deduplicate by movie ID
@@ -912,11 +998,20 @@ async function executeLidarrHuntWithSdk(
 	counter: ApiCallCounter,
 	logger: HuntLogger,
 	upgradeSearchAll = false,
+	streamingDeps?: StreamingDeps,
 ): Promise<HuntResultWithoutApiCount> {
 	try {
-		// First, get all artists to have filter data available
+		// Stream the full artist list. For users with 50k+ artists (issue #427)
+		// this is the single biggest heap consumer on hunt-executor — the SDK's
+		// buffer-then-parse `getAll()` allocated 200-500 MB just to build the
+		// catalog. Streaming halves the peak by releasing HTTP body bytes as
+		// they're parsed.
 		counter.count++;
-		const allArtists = await client.artist.getAll();
+		const allArtists = streamingDeps
+			? ((await collectFromStream(streamingDeps)) as unknown as Awaited<
+					ReturnType<typeof client.artist.getAll>
+				>)
+			: await client.artist.getAll();
 		const artistMap = new Map(allArtists.map((a) => [(a as { id?: number }).id ?? 0, a]));
 
 		const fetchLidarrWanted = (endpoint: "missing" | "cutoff") =>
@@ -948,22 +1043,40 @@ async function executeLidarrHuntWithSdk(
 			let monitoredAlbums: LidarrAlbumRecord[] = [];
 			if (upgradeSearchAll) {
 				counter.count++;
-				const allAlbums = await client.album.getAll();
-				monitoredAlbums = allAlbums.filter((a) => {
-					const albumAny = a as Record<string, unknown>;
-					const stats = albumAny.statistics as Record<string, unknown> | undefined;
-					return (
-						Boolean(albumAny.monitored) &&
-						((stats?.trackFileCount as number) ?? 0) > 0
-					);
-				}) as LidarrAlbumRecord[];
+				// Stream `/api/v1/album` and filter inline — same shape as the
+				// Radarr movie callsite. The path override is required because
+				// the default LIDARR bulk endpoint is `/api/v1/artist`.
+				if (streamingDeps) {
+					for await (const raw of streamLibraryItems(
+						streamingDeps.factory,
+						streamingDeps.instance,
+						streamingDeps.log,
+						{ path: "/api/v1/album" },
+					)) {
+						const albumAny = raw as Record<string, unknown>;
+						const stats = albumAny.statistics as Record<string, unknown> | undefined;
+						if (Boolean(albumAny.monitored) && ((stats?.trackFileCount as number) ?? 0) > 0) {
+							monitoredAlbums.push(albumAny as unknown as LidarrAlbumRecord);
+						}
+					}
+				} else {
+					const allAlbums = await client.album.getAll();
+					monitoredAlbums = allAlbums.filter((a) => {
+						const albumAny = a as Record<string, unknown>;
+						const stats = albumAny.statistics as Record<string, unknown> | undefined;
+						return Boolean(albumAny.monitored) && ((stats?.trackFileCount as number) ?? 0) > 0;
+					}) as LidarrAlbumRecord[];
+				}
 			}
 
 			// Merge and deduplicate
 			const albumMap = new Map<number, LidarrAlbumRecord>();
-			for (const a of wantedAlbums) { const id = (a as Record<string, unknown>).id as number | undefined; if (id != null) albumMap.set(id, a); }
+			for (const a of wantedAlbums) {
+				const id = (a as Record<string, unknown>).id as number | undefined;
+				if (id != null) albumMap.set(id, a);
+			}
 			for (const a of monitoredAlbums) {
-				const id = (a as Record<string, unknown>).id as number ?? 0;
+				const id = ((a as Record<string, unknown>).id as number) ?? 0;
 				if (!albumMap.has(id)) albumMap.set(id, a);
 			}
 			albums = [...albumMap.values()];
@@ -984,7 +1097,9 @@ async function executeLidarrHuntWithSdk(
 		const filteredAlbums = albums.filter((album) => {
 			const albumAny = album as Record<string, unknown>;
 			const releaseDate = albumAny.releaseDate as string | undefined;
-			const stats = (album as Record<string, unknown>).statistics as Record<string, unknown> | undefined;
+			const stats = (album as Record<string, unknown>).statistics as
+				| Record<string, unknown>
+				| undefined;
 			const hasFiles = ((stats?.trackFileCount as number) ?? 0) > 0;
 			if (!isContentReleased(releaseDate) && !hasFiles) return false;
 
@@ -1148,11 +1263,18 @@ async function executeReadarrHuntWithSdk(
 	counter: ApiCallCounter,
 	logger: HuntLogger,
 	upgradeSearchAll = false,
+	streamingDeps?: StreamingDeps,
 ): Promise<HuntResultWithoutApiCount> {
 	try {
-		// First, get all authors to have filter data available
+		// Stream the full author list. Mirror of the Lidarr artist path —
+		// for Readarr installs with thousands of authors this avoids the
+		// 200+ MB heap spike from buffer-then-parse `getAll()` (issue #427).
 		counter.count++;
-		const allAuthors = await client.author.getAll();
+		const allAuthors = streamingDeps
+			? ((await collectFromStream(streamingDeps)) as unknown as Awaited<
+					ReturnType<typeof client.author.getAll>
+				>)
+			: await client.author.getAll();
 		const authorMap = new Map(allAuthors.map((a) => [(a as { id?: number }).id ?? 0, a]));
 
 		const fetchReadarrWanted = (endpoint: "missing" | "cutoff") =>
@@ -1184,22 +1306,40 @@ async function executeReadarrHuntWithSdk(
 			let monitoredBooks: ReadarrBookRecord[] = [];
 			if (upgradeSearchAll) {
 				counter.count++;
-				const allBooks = await client.book.getAll();
-				monitoredBooks = allBooks.filter((b) => {
-					const bookAny = b as Record<string, unknown>;
-					const stats = bookAny.statistics as Record<string, unknown> | undefined;
-					return (
-						Boolean(bookAny.monitored) &&
-						((stats?.bookFileCount as number) ?? 0) > 0
-					);
-				}) as ReadarrBookRecord[];
+				// Stream `/api/v1/book` and filter inline. Path override is
+				// required because the default READARR bulk endpoint is
+				// `/api/v1/author`.
+				if (streamingDeps) {
+					for await (const raw of streamLibraryItems(
+						streamingDeps.factory,
+						streamingDeps.instance,
+						streamingDeps.log,
+						{ path: "/api/v1/book" },
+					)) {
+						const bookAny = raw as Record<string, unknown>;
+						const stats = bookAny.statistics as Record<string, unknown> | undefined;
+						if (Boolean(bookAny.monitored) && ((stats?.bookFileCount as number) ?? 0) > 0) {
+							monitoredBooks.push(bookAny as unknown as ReadarrBookRecord);
+						}
+					}
+				} else {
+					const allBooks = await client.book.getAll();
+					monitoredBooks = allBooks.filter((b) => {
+						const bookAny = b as Record<string, unknown>;
+						const stats = bookAny.statistics as Record<string, unknown> | undefined;
+						return Boolean(bookAny.monitored) && ((stats?.bookFileCount as number) ?? 0) > 0;
+					}) as ReadarrBookRecord[];
+				}
 			}
 
 			// Merge and deduplicate
 			const bookMap = new Map<number, ReadarrBookRecord>();
-			for (const b of wantedBooks) { const id = (b as Record<string, unknown>).id as number | undefined; if (id != null) bookMap.set(id, b); }
+			for (const b of wantedBooks) {
+				const id = (b as Record<string, unknown>).id as number | undefined;
+				if (id != null) bookMap.set(id, b);
+			}
 			for (const b of monitoredBooks) {
-				const id = (b as Record<string, unknown>).id as number ?? 0;
+				const id = ((b as Record<string, unknown>).id as number) ?? 0;
 				if (!bookMap.has(id)) bookMap.set(id, b);
 			}
 			books = [...bookMap.values()];
@@ -1220,7 +1360,9 @@ async function executeReadarrHuntWithSdk(
 		const filteredBooks = books.filter((book) => {
 			const bookAny = book as Record<string, unknown>;
 			const releaseDate = bookAny.releaseDate as string | undefined;
-			const bookStats = (book as Record<string, unknown>).statistics as Record<string, unknown> | undefined;
+			const bookStats = (book as Record<string, unknown>).statistics as
+				| Record<string, unknown>
+				| undefined;
 			const bookHasFiles = ((bookStats?.bookFileCount as number) ?? 0) > 0;
 			if (!isContentReleased(releaseDate) && !bookHasFiles) return false;
 

@@ -18,6 +18,25 @@ import { executeHuntWithSdk } from "../hunt-executor.js";
 
 const ACTIVE_STATUSES = ["queued", "downloading", "paused", "delay"];
 
+/**
+ * Build an empty JSON-array Response for the streaming-fetch path
+ * (lib/arr/library-stream.ts). The hunt-executor uses factory.rawRequest
+ * to stream the bulk-list endpoint, so these tests need a Response that
+ * parses to zero items. This is the moral equivalent of mocking
+ * `client.series.getAll()` to resolve `[]`.
+ */
+function emptyStreamResponse(): Response {
+	const encoder = new TextEncoder();
+	return new Response(
+		new ReadableStream<Uint8Array>({
+			start(controller) {
+				controller.enqueue(encoder.encode("[]"));
+				controller.close();
+			},
+		}),
+	);
+}
+
 function makeMockApp(client: unknown): Partial<FastifyInstance> {
 	const log = {
 		child: vi.fn().mockReturnValue({
@@ -35,6 +54,11 @@ function makeMockApp(client: unknown): Partial<FastifyInstance> {
 		log: log as unknown as FastifyInstance["log"],
 		arrClientFactory: {
 			create: vi.fn().mockReturnValue(client),
+			// rawRequest is hit by the streaming bulk-fetch path. Default to an
+			// empty array so the queue-threshold tests don't need to wire
+			// per-test streaming bodies — they care about queue gating, not
+			// what the catalog contains.
+			rawRequest: vi.fn().mockImplementation(async () => emptyStreamResponse()),
 		} as unknown as FastifyInstance["arrClientFactory"],
 		prisma: {
 			huntSearchHistory: {
@@ -113,12 +137,15 @@ describe("executeHuntWithSdk — queue threshold (issue #438)", () => {
 
 	it("does NOT skip when active queue is below threshold even if many stuck items would have totaled higher", async () => {
 		const queueGet = vi.fn().mockResolvedValue({ totalRecords: 5 });
-		const seriesGetAll = vi.fn().mockResolvedValue([]);
 		const wantedMissing = vi.fn().mockResolvedValue({ records: [], totalRecords: 0 });
 
 		const client = {
 			queue: { get: queueGet },
-			series: { getAll: seriesGetAll },
+			// series.getAll is unused now — the bulk catalog comes through the
+			// streaming `rawRequest` path on the factory (issue #427). Kept as
+			// a no-op so the SDK fallback in hunt-executor doesn't see undefined
+			// if streaming somehow fails.
+			series: { getAll: vi.fn().mockResolvedValue([]) },
 			wanted: { missing: wantedMissing, cutoff: vi.fn() },
 		};
 		const app = makeMockApp(client);
@@ -126,7 +153,9 @@ describe("executeHuntWithSdk — queue threshold (issue #438)", () => {
 		const result = await callExecute(app, "missing");
 
 		expect(result.status).not.toBe("skipped");
-		expect(seriesGetAll).toHaveBeenCalled();
+		// We proceeded past the queue check and hit the catalog fetch — proof
+		// it didn't short-circuit at the threshold.
+		expect(app.arrClientFactory!.rawRequest).toHaveBeenCalled();
 	});
 
 	it("skips with active-queue message when active queue exceeds threshold", async () => {
