@@ -77,14 +77,6 @@ const trashQualitySizeSchema = z.object({
 	max: z.number().optional(),
 });
 
-// TRaSH Naming Scheme schema
-const trashNamingSchemeSchema = z.object({
-	type: z.enum(["movie", "series"]),
-	standard: z.string().optional(),
-	folder: z.string().optional(),
-	season_folder: z.string().optional(),
-});
-
 // CF Origin type
 const cfOriginSchema = z.enum(["trash_sync", "user_added", "imported"]).optional();
 
@@ -185,7 +177,6 @@ const templateConfigSchema = z.object({
 	),
 	qualityProfile: qualityProfileSchema.optional(),
 	qualitySize: z.array(trashQualitySizeSchema).optional(),
-	naming: z.array(trashNamingSchemeSchema).optional(),
 	namingSelection: z
 		.discriminatedUnion("serviceType", [
 			z.object({
