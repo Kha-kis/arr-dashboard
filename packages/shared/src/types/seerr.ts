@@ -612,10 +612,18 @@ export function seerrPageResultSchema<T extends z.ZodTypeAny>(itemSchema: T) {
 	});
 }
 
-/** Mirrors SeerrDiscoverResult */
+/**
+ * Mirrors SeerrDiscoverResult.
+ *
+ * `mediaType` accepts `"person"` and `"collection"` because Seerr's
+ * `/api/v1/discover/trending` (and occasionally other endpoints) returns
+ * mixed-type items. The server filters non-movie/tv entries at the boundary
+ * before returning to the frontend, so the public {@link SeerrDiscoverResult}
+ * interface stays narrow (`"movie" | "tv"`).
+ */
 export const seerrDiscoverResultSchema = z.looseObject({
 	id: z.number(),
-	mediaType: z.enum(["movie", "tv"]),
+	mediaType: z.enum(["movie", "tv", "person", "collection"]),
 	title: z.string().optional(),
 	name: z.string().optional(),
 	originalTitle: z.string().optional(),
