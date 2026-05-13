@@ -39,7 +39,7 @@ describe("HuntingScheduler - tick overlap protection (#457)", () => {
 	let errorSpy: ReturnType<typeof vi.spyOn>;
 	let mockApp: Partial<FastifyInstance>;
 
-	beforeEach(() => {
+	beforeEach(async () => {
 		warnSpy = vi.spyOn(loggers.hunting, "warn").mockImplementation(() => undefined);
 		infoSpy = vi.spyOn(loggers.hunting, "info").mockImplementation(() => undefined);
 		errorSpy = vi.spyOn(loggers.hunting, "error").mockImplementation(() => undefined);
@@ -61,6 +61,13 @@ describe("HuntingScheduler - tick overlap protection (#457)", () => {
 		};
 
 		getHuntingScheduler().initialize(mockApp as FastifyInstance);
+		// initialize() fires cleanupStuckHunts() as a detached promise. Drain
+		// the microtask queue so that cleanup settles against this test's own
+		// mocks (which resolve `[]` synchronously) before the test body runs.
+		// Without this, the cleanup can interleave with the next test's
+		// beforeEach and pollute mock call counts non-deterministically.
+		await Promise.resolve();
+		await Promise.resolve();
 	});
 
 	afterEach(() => {
@@ -88,10 +95,15 @@ describe("HuntingScheduler - tick overlap protection (#457)", () => {
 			.spyOn(scheduler, "processScheduledHunts")
 			.mockImplementation(() => firstTick.promise);
 
-		// First tick fires and is captured as inFlightTick.
+		// First tick fires and is captured as inFlightTick. Bind a local
+		// reference so the cleanup `await` at the end of the test doesn't
+		// re-read `scheduler.inFlightTick` after the IIFE's finally has
+		// already nulled it — the read happens-before the await yields, so
+		// `await null` would be a no-op without it.
 		scheduler.runTickIfIdle();
+		const inFlight = scheduler.inFlightTick as Promise<void>;
 		expect(tickSpy).toHaveBeenCalledTimes(1);
-		expect(scheduler.inFlightTick).not.toBeNull();
+		expect(inFlight).not.toBeNull();
 
 		// Second tick fires before the first resolves — must be skipped, not
 		// chained, queued, or run in parallel.
@@ -111,9 +123,9 @@ describe("HuntingScheduler - tick overlap protection (#457)", () => {
 			"Skipping hunt scheduler tick — prior tick still in flight",
 		);
 
-		// Release the in-flight tick and let microtasks settle.
+		// Release the in-flight tick and wait for the captured promise.
 		firstTick.resolve();
-		await scheduler.inFlightTick;
+		await inFlight;
 	});
 
 	it("resumes normal cadence after the busy tick completes", async () => {
@@ -127,11 +139,12 @@ describe("HuntingScheduler - tick overlap protection (#457)", () => {
 			.mockImplementationOnce(() => Promise.resolve());
 
 		scheduler.runTickIfIdle();
+		const firstInFlight = scheduler.inFlightTick as Promise<void>;
 		scheduler.runTickIfIdle(); // skipped
 		expect(tickSpy).toHaveBeenCalledTimes(1);
 
 		firstTick.resolve();
-		await scheduler.inFlightTick;
+		await firstInFlight;
 
 		// After completion the recovery log fires summarizing skipped ticks.
 		expect(infoSpy).toHaveBeenCalledWith(
@@ -142,8 +155,9 @@ describe("HuntingScheduler - tick overlap protection (#457)", () => {
 		expect(scheduler.inFlightTick).toBeNull();
 
 		scheduler.runTickIfIdle();
+		const secondInFlight = scheduler.inFlightTick as Promise<void>;
 		expect(tickSpy).toHaveBeenCalledTimes(2);
-		await scheduler.inFlightTick;
+		await secondInFlight;
 	});
 
 	it("does not log skip warnings when ticks fit inside the cadence", async () => {
@@ -153,9 +167,11 @@ describe("HuntingScheduler - tick overlap protection (#457)", () => {
 		const tickSpy = vi.spyOn(scheduler, "processScheduledHunts").mockResolvedValue(undefined);
 
 		scheduler.runTickIfIdle();
-		await scheduler.inFlightTick;
+		const firstInFlight = scheduler.inFlightTick as Promise<void>;
+		await firstInFlight;
 		scheduler.runTickIfIdle();
-		await scheduler.inFlightTick;
+		const secondInFlight = scheduler.inFlightTick as Promise<void>;
+		await secondInFlight;
 
 		expect(tickSpy).toHaveBeenCalledTimes(2);
 		expect(warnSpy).not.toHaveBeenCalled();
@@ -175,7 +191,8 @@ describe("HuntingScheduler - tick overlap protection (#457)", () => {
 		);
 
 		scheduler.runTickIfIdle();
-		await scheduler.inFlightTick;
+		const inFlight = scheduler.inFlightTick as Promise<void>;
+		await inFlight;
 
 		// inFlightTick must clear so the next tick is not permanently blocked.
 		expect(scheduler.inFlightTick).toBeNull();
