@@ -429,6 +429,38 @@ describe("discoverMovies", () => {
 });
 
 // ===========================================================================
+// 9b. Shared discover funnel — getDiscover() filter behavior (issue #454)
+// ===========================================================================
+
+describe("discover funnel (shared)", () => {
+	// Regression: Seerr's trending endpoint returns mixed-type items (movies,
+	// TV, persons, collections). The schema must accept all four, and the
+	// client must filter out non-movie/tv entries so the frontend only sees
+	// `mediaType: "movie" | "tv"`. See issue #454.
+	it("accepts mixed-type results from trending and filters non-movie/tv items", async () => {
+		const mixed = {
+			page: 1,
+			totalPages: 1,
+			totalResults: 4,
+			results: [
+				{ id: 1, mediaType: "movie" as const, title: "Movie A", posterPath: "/a.jpg" },
+				{ id: 2, mediaType: "tv" as const, name: "Show B", posterPath: "/b.jpg" },
+				{ id: 3, mediaType: "person", name: "Person C", profilePath: "/c.jpg" },
+				{ id: 4, mediaType: "collection", name: "Collection D", posterPath: "/d.jpg" },
+			],
+		};
+		factory.rawRequest.mockResolvedValue(mockResponse(mixed));
+
+		const result = await client.discoverTrending();
+
+		expect(result.results).toHaveLength(2);
+		expect(result.results.map((r) => r.mediaType)).toEqual(["movie", "tv"]);
+		// totalResults reflects upstream's count for pagination — not the filtered length
+		expect(result.totalResults).toBe(4);
+	});
+});
+
+// ===========================================================================
 // 10. getMovieGenres
 // ===========================================================================
 

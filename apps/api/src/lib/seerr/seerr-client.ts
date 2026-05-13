@@ -723,10 +723,26 @@ export class SeerrClient {
 		return this.getDiscover(`/api/v1/discover/tv/genre/${genreId}${qs}`);
 	}
 
-	/** Shared discover fetch with schema validation */
+	/**
+	 * Shared discover fetch with schema validation.
+	 *
+	 * Seerr's trending endpoint (and occasionally others) returns mixed-type items
+	 * — movies, TV, persons, and collections. The schema accepts all four, but we
+	 * filter to `movie`/`tv` here so the frontend never has to handle person or
+	 * collection cards. `totalResults` is left untouched because it represents
+	 * upstream's count and drives `hasNextPage` for pagination.
+	 */
 	private async getDiscover(path: string): Promise<SeerrDiscoverResponse> {
 		const raw = await this.get<SeerrDiscoverResponse>(path, TIMEOUT_INTERACTIVE);
-		return this.parseAndRecord<SeerrDiscoverResponse>(raw, seerrDiscoverResponseSchema, "discover");
+		const parsed = this.parseAndRecord<SeerrDiscoverResponse>(
+			raw,
+			seerrDiscoverResponseSchema,
+			"discover",
+		);
+		const filtered = parsed.results.filter(
+			(item) => item.mediaType === "movie" || item.mediaType === "tv",
+		);
+		return { ...parsed, results: filtered };
 	}
 
 	// --- Search ---
