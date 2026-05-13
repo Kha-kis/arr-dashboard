@@ -56,7 +56,6 @@ describe("HuntingScheduler - tick overlap protection (#457)", () => {
 					create: vi.fn(),
 					update: vi.fn(),
 				},
-				// biome-ignore lint/suspicious/noExplicitAny: test fixture
 			} as any,
 		};
 
@@ -78,14 +77,11 @@ describe("HuntingScheduler - tick overlap protection (#457)", () => {
 		vi.clearAllMocks();
 		// Drop any residual in-flight promise from a prior test before the next
 		// runs (the scheduler is a singleton across tests).
-		// biome-ignore lint/suspicious/noExplicitAny: reach into private state for test isolation
 		(getHuntingScheduler() as any).inFlightTick = null;
-		// biome-ignore lint/suspicious/noExplicitAny: reach into private state for test isolation
 		(getHuntingScheduler() as any).skippedTicksWhileBusy = 0;
 	});
 
 	it("skips a second tick while the first is still in flight", async () => {
-		// biome-ignore lint/suspicious/noExplicitAny: access private members under test
 		const scheduler = getHuntingScheduler() as any;
 
 		// Make processScheduledHunts hang on a controllable deferred so we can
@@ -129,7 +125,6 @@ describe("HuntingScheduler - tick overlap protection (#457)", () => {
 	});
 
 	it("resumes normal cadence after the busy tick completes", async () => {
-		// biome-ignore lint/suspicious/noExplicitAny: access private members under test
 		const scheduler = getHuntingScheduler() as any;
 
 		const firstTick = defer<void>();
@@ -161,7 +156,6 @@ describe("HuntingScheduler - tick overlap protection (#457)", () => {
 	});
 
 	it("does not log skip warnings when ticks fit inside the cadence", async () => {
-		// biome-ignore lint/suspicious/noExplicitAny: access private members under test
 		const scheduler = getHuntingScheduler() as any;
 
 		const tickSpy = vi.spyOn(scheduler, "processScheduledHunts").mockResolvedValue(undefined);
@@ -183,7 +177,6 @@ describe("HuntingScheduler - tick overlap protection (#457)", () => {
 	});
 
 	it("clears in-flight state even if the tick throws", async () => {
-		// biome-ignore lint/suspicious/noExplicitAny: access private members under test
 		const scheduler = getHuntingScheduler() as any;
 
 		vi.spyOn(scheduler, "processScheduledHunts").mockRejectedValueOnce(
@@ -200,5 +193,94 @@ describe("HuntingScheduler - tick overlap protection (#457)", () => {
 		// tick() method (not surfaced to trackTick), so the outer error log is
 		// not expected here. The contract this test pins is that the in-flight
 		// flag clears regardless of tick outcome.
+	});
+
+	it("start() wires setInterval to runTickIfIdle and skips overlapping fires", async () => {
+		// Integration test: exercise the full start() → setInterval →
+		// runTickIfIdle → trackTick chain with fake timers, not just
+		// runTickIfIdle in isolation. Pins that the production wiring matches
+		// the unit-level guarantees.
+		vi.useFakeTimers();
+		try {
+			const scheduler = getHuntingScheduler() as any;
+
+			const firstTick = defer<void>();
+			const tickSpy = vi
+				.spyOn(scheduler, "processScheduledHunts")
+				.mockImplementationOnce(() => firstTick.promise)
+				.mockImplementation(() => Promise.resolve());
+
+			// Track that trackTick is invoked exactly once per real tick — this
+			// is what keeps SchedulerRegistry stats accurate.
+			const trackTickSpy = vi.fn((fn: () => Promise<void>) => fn());
+			scheduler.setTrackTick(trackTickSpy);
+
+			scheduler.start(mockApp as FastifyInstance);
+
+			// Before any time advances, no tick has fired.
+			expect(tickSpy).toHaveBeenCalledTimes(0);
+
+			// Advance one cadence (60s). setInterval fires runTickIfIdle, which
+			// invokes trackTick(() => tick()).
+			await vi.advanceTimersByTimeAsync(60 * 1000);
+			expect(tickSpy).toHaveBeenCalledTimes(1);
+			expect(trackTickSpy).toHaveBeenCalledTimes(1);
+
+			// The first tick is still hanging on firstTick.promise. Advance
+			// three more cadences (3 × 60s). Each setInterval fire must be
+			// suppressed because inFlightTick is still set.
+			await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
+			expect(tickSpy).toHaveBeenCalledTimes(1);
+			expect(trackTickSpy).toHaveBeenCalledTimes(1);
+			expect(warnSpy).toHaveBeenCalledTimes(3);
+			expect(warnSpy).toHaveBeenLastCalledWith(
+				{ skippedSinceLastRun: 3 },
+				"Skipping hunt scheduler tick — prior tick still in flight",
+			);
+
+			// Resolve the slow tick. Recovery log fires and the next cadence
+			// runs a normal tick.
+			firstTick.resolve();
+			await vi.advanceTimersByTimeAsync(0); // drain microtasks
+			expect(infoSpy).toHaveBeenCalledWith(
+				{ skippedSinceLastRun: 3 },
+				"Hunt scheduler tick completed; resuming normal cadence",
+			);
+
+			await vi.advanceTimersByTimeAsync(60 * 1000);
+			expect(tickSpy).toHaveBeenCalledTimes(2);
+			expect(trackTickSpy).toHaveBeenCalledTimes(2);
+		} finally {
+			getHuntingScheduler().stop();
+			vi.useRealTimers();
+		}
+	});
+
+	it("triggerManualHunt does not engage the in-flight tick guard", () => {
+		// Regression guard: my fix should not make manual hunts wait on
+		// scheduled-tick state, nor vice versa. The reviewer confirmed manual
+		// hunts call runHunt() directly, bypassing runTickIfIdle — this pins
+		// that contract so a future refactor can't accidentally route manual
+		// hunts through the guard and break the user-action latency.
+		const scheduler = getHuntingScheduler() as any;
+
+		// Simulate a slow scheduled tick in-flight.
+		scheduler.inFlightTick = new Promise<void>(() => {
+			// never resolves
+		});
+
+		// Spy on runHunt to confirm it gets called despite inFlightTick being
+		// set — manual hunts must not be blocked by the scheduler guard.
+		const runHuntSpy = vi.spyOn(scheduler, "runHunt").mockImplementation(() => Promise.resolve());
+
+		const result = scheduler.triggerManualHunt("inst-1", "missing");
+
+		expect(result.queued).toBe(true);
+		expect(runHuntSpy).toHaveBeenCalledTimes(1);
+		expect(runHuntSpy).toHaveBeenCalledWith("inst-1", "missing", true);
+
+		// Manual hunt must NOT touch the scheduled-tick guard.
+		expect(scheduler.inFlightTick).not.toBeNull();
+		expect(scheduler.skippedTicksWhileBusy).toBe(0);
 	});
 });
