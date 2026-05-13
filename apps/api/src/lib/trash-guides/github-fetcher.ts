@@ -762,19 +762,25 @@ export class TrashGitHubFetcher {
 
 				if (response.ok) {
 					const rawData: unknown = await response.json();
-					// Branch by service type — each schema's .transform() injects the _service discriminant
+					// Branch by service type — each schema's .transform() injects the _service
+					// discriminant. The fingerprint/quarantine category MUST be service-scoped:
+					// Radarr and Sonarr ship genuinely different top-level shapes, so a shared
+					// key would oscillate the registry baseline and surface as constant
+					// intermittent-drift in Settings → System → Schema Drift. The exact field
+					// snapshots live in github-fetcher.test.ts so they fail loudly if upstream
+					// changes shape.
 					if (serviceType === "RADARR") {
 						results.push(
 							...validateAndCollect(rawData, radarrNamingSchema, file, this.log, {
 								integration: "trash-guides",
-								category: "namingPresets",
+								category: "radarrNamingPresets",
 							}).items,
 						);
 					} else {
 						results.push(
 							...validateAndCollect(rawData, sonarrNamingSchema, file, this.log, {
 								integration: "trash-guides",
-								category: "namingPresets",
+								category: "sonarrNamingPresets",
 							}).items,
 						);
 					}
