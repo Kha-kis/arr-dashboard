@@ -1007,6 +1007,14 @@ async function executeRadarrHuntWithSdk(
 	streamingDeps?: StreamingDeps,
 ): Promise<HuntResultWithoutApiCount> {
 	try {
+		// Both `wanted.*` paginated records and `movie.getAll()` streamed records
+		// project through the same slim shape — uniform downstream consumers,
+		// 10x lower memory per item (~500 B vs ~5 KB). Issue #427 follow-up.
+		// Projection is pushed into the paginator so each fat page becomes
+		// GC-eligible after slimming, rather than accumulating across pages.
+		const projectIntoSlim = (raw: unknown): SlimMovie | null =>
+			projectMovie(raw as Record<string, unknown>);
+
 		const fetchRadarrWanted = (endpoint: "missing" | "cutoff") =>
 			fetchWantedWithWrapAround(
 				(page, pageSize) => {
@@ -1020,25 +1028,16 @@ async function executeRadarrHuntWithSdk(
 						? client.wanted.missing(params)
 						: client.wanted.cutoff(params);
 				},
-				{ counter, logger },
+				{ counter, logger, project: projectIntoSlim },
 			);
-
-		// Both `wanted.*` paginated records and `movie.getAll()` streamed records
-		// project through the same slim shape — uniform downstream consumers,
-		// 10x lower memory per item (~500 B vs ~5 KB). Issue #427 follow-up.
-		const projectIntoSlim = (raw: unknown): SlimMovie | null =>
-			projectMovie(raw as Record<string, unknown>);
 
 		let movies: SlimMovie[];
 
 		if (type === "missing") {
-			const wanted = await fetchRadarrWanted("missing");
-			movies = wanted.map(projectIntoSlim).filter((m): m is SlimMovie => m !== null);
+			movies = await fetchRadarrWanted("missing");
 		} else {
 			// Upgrade mode — include monitored items if upgradeSearchAll is enabled
-			const wantedMovies = (await fetchRadarrWanted("cutoff"))
-				.map(projectIntoSlim)
-				.filter((m): m is SlimMovie => m !== null);
+			const wantedMovies = await fetchRadarrWanted("cutoff");
 
 			const monitoredMovies: SlimMovie[] = [];
 			if (upgradeSearchAll) {
@@ -1247,6 +1246,15 @@ async function executeLidarrHuntWithSdk(
 					projectArtist,
 				);
 
+		// Project both wanted (paginated SDK) and monitored (streamed) records
+		// to SlimAlbum so the downstream filter / merge / search code reads a
+		// uniform shape. Pushing the projection into the paginator collapses
+		// the per-page heap spike — for issue #427's 92k wanted-missing albums
+		// this is the difference between ~150 MB resident (10 pages of fat
+		// records with embedded artist.links[]) and ~5 MB (slim accumulator).
+		const projectAlbumLoose = (raw: unknown): SlimAlbum | null =>
+			projectAlbum(raw as Record<string, unknown>);
+
 		const fetchLidarrWanted = (endpoint: "missing" | "cutoff") =>
 			fetchWantedWithWrapAround(
 				(page, pageSize) => {
@@ -1260,26 +1268,16 @@ async function executeLidarrHuntWithSdk(
 						? client.wanted.getMissing(params)
 						: client.wanted.getCutoffUnmet(params);
 				},
-				{ counter, logger },
+				{ counter, logger, project: projectAlbumLoose },
 			);
-
-		// Project both wanted (paginated SDK) and monitored (streamed) records
-		// to SlimAlbum so the downstream filter / merge / search code reads a
-		// uniform shape. Memory saving is modest per-item but compounds when
-		// upgrade-all is enabled against a 50k+ album library (issue #427).
-		const projectAlbumLoose = (raw: unknown): SlimAlbum | null =>
-			projectAlbum(raw as Record<string, unknown>);
 
 		let albums: SlimAlbum[];
 
 		if (type === "missing") {
-			const wanted = await fetchLidarrWanted("missing");
-			albums = wanted.map(projectAlbumLoose).filter((a): a is SlimAlbum => a !== null);
+			albums = await fetchLidarrWanted("missing");
 		} else {
 			// Upgrade mode — include monitored items if upgradeSearchAll is enabled
-			const wantedAlbums = (await fetchLidarrWanted("cutoff"))
-				.map(projectAlbumLoose)
-				.filter((a): a is SlimAlbum => a !== null);
+			const wantedAlbums = await fetchLidarrWanted("cutoff");
 
 			const monitoredAlbums: SlimAlbum[] = [];
 			if (upgradeSearchAll) {
@@ -1496,6 +1494,13 @@ async function executeReadarrHuntWithSdk(
 					projectAuthor,
 				);
 
+		// Project both wanted (paginated SDK) and monitored (streamed) records
+		// to SlimBook so the downstream filter / merge / search code reads a
+		// uniform shape. Mirror of the Lidarr album pattern — projection runs
+		// inside the paginator so fat per-page records become GC-eligible.
+		const projectBookLoose = (raw: unknown): SlimBook | null =>
+			projectBook(raw as Record<string, unknown>);
+
 		const fetchReadarrWanted = (endpoint: "missing" | "cutoff") =>
 			fetchWantedWithWrapAround(
 				(page, pageSize) => {
@@ -1509,25 +1514,16 @@ async function executeReadarrHuntWithSdk(
 						? client.wanted.getMissing(params)
 						: client.wanted.getCutoffUnmet(params);
 				},
-				{ counter, logger },
+				{ counter, logger, project: projectBookLoose },
 			);
-
-		// Project both wanted (paginated SDK) and monitored (streamed) records
-		// to SlimBook so the downstream filter / merge / search code reads a
-		// uniform shape. Mirror of the Lidarr album pattern.
-		const projectBookLoose = (raw: unknown): SlimBook | null =>
-			projectBook(raw as Record<string, unknown>);
 
 		let books: SlimBook[];
 
 		if (type === "missing") {
-			const wanted = await fetchReadarrWanted("missing");
-			books = wanted.map(projectBookLoose).filter((b): b is SlimBook => b !== null);
+			books = await fetchReadarrWanted("missing");
 		} else {
 			// Upgrade mode — include monitored items if upgradeSearchAll is enabled
-			const wantedBooks = (await fetchReadarrWanted("cutoff"))
-				.map(projectBookLoose)
-				.filter((b): b is SlimBook => b !== null);
+			const wantedBooks = await fetchReadarrWanted("cutoff");
 
 			const monitoredBooks: SlimBook[] = [];
 			if (upgradeSearchAll) {
