@@ -35,6 +35,12 @@ class HuntingScheduler {
 	private running = false;
 	private intervalId: NodeJS.Timeout | null = null;
 	private trackTick: TickWrapper = passthroughTickWrapper;
+	// Tracks an in-flight scheduler tick so a new tick (fired by setInterval)
+	// is suppressed while the prior one is still paginating. Slow ARR services
+	// can make a single tick span many minutes; without this, hunt rounds stack
+	// up and multiply paginator memory + API-cap pressure. See issue #457.
+	private inFlightTick: Promise<void> | null = null;
+	private skippedTicksWhileBusy = 0;
 
 	/**
 	 * Wire an optional tick wrapper (used by the plugin to route ticks
@@ -100,12 +106,52 @@ class HuntingScheduler {
 		}
 		this.running = true;
 
-		// Check every minute for hunts that need to run
+		// Check every minute for hunts that need to run. Overlap protection
+		// lives in runTickIfIdle so we don't pollute the SchedulerRegistry
+		// stats with zero-work "ticks" when we skip due to a slow prior round.
 		this.intervalId = setInterval(() => {
-			this.trackTick(() => this.tick()).catch((error) => {
-				log.error({ err: error }, "Scheduler tick failed");
-			});
+			this.runTickIfIdle();
 		}, 60 * 1000);
+	}
+
+	/**
+	 * Run a scheduler tick only when no prior tick is in flight.
+	 *
+	 * The default 60s setInterval cadence is shorter than the worst-case tick
+	 * duration on slow services (e.g., a 1.5M-track Lidarr with ~92k wanted
+	 * albums paginated at several seconds per page). Without this guard a
+	 * second tick fires before the first finishes — observed in issue #427
+	 * as 16 concurrent `fetchWantedWithWrapAround` paginators rooted at the
+	 * same scheduler. Skipped ticks are logged with a running counter so the
+	 * condition is visible to operators; the counter is summarized when the
+	 * busy tick finally completes.
+	 */
+	private runTickIfIdle(): void {
+		if (this.inFlightTick) {
+			this.skippedTicksWhileBusy += 1;
+			log.warn(
+				{ skippedSinceLastRun: this.skippedTicksWhileBusy },
+				"Skipping hunt scheduler tick — prior tick still in flight",
+			);
+			return;
+		}
+
+		this.inFlightTick = (async () => {
+			try {
+				await this.trackTick(() => this.tick());
+			} catch (error) {
+				log.error({ err: error }, "Scheduler tick failed");
+			} finally {
+				if (this.skippedTicksWhileBusy > 0) {
+					log.info(
+						{ skippedSinceLastRun: this.skippedTicksWhileBusy },
+						"Hunt scheduler tick completed; resuming normal cadence",
+					);
+					this.skippedTicksWhileBusy = 0;
+				}
+				this.inFlightTick = null;
+			}
+		})();
 	}
 
 	/**
