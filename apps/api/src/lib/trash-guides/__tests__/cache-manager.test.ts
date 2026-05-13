@@ -50,7 +50,7 @@ const RUN_DB_TESTS = process.env.TEST_DB === "true";
 		});
 
 		it("should return null for non-existent cache", async () => {
-			const result = await cacheManager.get("SONARR", "NAMING");
+			const result = await cacheManager.get("SONARR", "NAMING_PRESETS");
 
 			expect(result).toBeNull();
 		});
@@ -95,7 +95,7 @@ const RUN_DB_TESTS = process.env.TEST_DB === "true";
 		});
 
 		it("should return false when deleting non-existent cache", async () => {
-			const deleted = await cacheManager.delete("SONARR", "NAMING");
+			const deleted = await cacheManager.delete("SONARR", "NAMING_PRESETS");
 
 			expect(deleted).toBe(false);
 		});
@@ -112,7 +112,7 @@ const RUN_DB_TESTS = process.env.TEST_DB === "true";
 		});
 
 		it("should report non-existent cache as not fresh", async () => {
-			const isFresh = await cacheManager.isFresh("SONARR", "NAMING");
+			const isFresh = await cacheManager.isFresh("SONARR", "NAMING_PRESETS");
 
 			expect(isFresh).toBe(false);
 		});
@@ -141,7 +141,7 @@ const RUN_DB_TESTS = process.env.TEST_DB === "true";
 		});
 
 		it("should return null status for non-existent cache", async () => {
-			const status = await cacheManager.getStatus("SONARR", "NAMING");
+			const status = await cacheManager.getStatus("SONARR", "NAMING_PRESETS");
 
 			expect(status).toBeNull();
 		});
@@ -167,7 +167,7 @@ const RUN_DB_TESTS = process.env.TEST_DB === "true";
 			const data2 = [{ id: "2" }, { id: "3" }];
 
 			await cacheManager.set("RADARR", "CUSTOM_FORMATS", data1);
-			await cacheManager.set("SONARR", "NAMING", data2);
+			await cacheManager.set("SONARR", "NAMING_PRESETS", data2);
 
 			const stats = await cacheManager.getStats();
 
@@ -227,7 +227,7 @@ const RUN_DB_TESTS = process.env.TEST_DB === "true";
 
 			await cacheManager.set("RADARR", "CUSTOM_FORMATS", data);
 			await cacheManager.set("RADARR", "CF_GROUPS", data);
-			await cacheManager.set("SONARR", "NAMING", data);
+			await cacheManager.set("SONARR", "NAMING_PRESETS", data);
 
 			const count = await cacheManager.clearService("RADARR");
 
@@ -235,7 +235,7 @@ const RUN_DB_TESTS = process.env.TEST_DB === "true";
 
 			// Verify RADARR cache is cleared but SONARR remains
 			const radarrCache = await cacheManager.get("RADARR", "CUSTOM_FORMATS");
-			const sonarrCache = await cacheManager.get("SONARR", "NAMING");
+			const sonarrCache = await cacheManager.get("SONARR", "NAMING_PRESETS");
 
 			expect(radarrCache).toBeNull();
 			expect(sonarrCache).toEqual(data);
@@ -245,7 +245,7 @@ const RUN_DB_TESTS = process.env.TEST_DB === "true";
 			const data = [{ id: "test" }];
 
 			await cacheManager.set("RADARR", "CUSTOM_FORMATS", data);
-			await cacheManager.set("SONARR", "NAMING", data);
+			await cacheManager.set("SONARR", "NAMING_PRESETS", data);
 
 			const count = await cacheManager.clearAll();
 

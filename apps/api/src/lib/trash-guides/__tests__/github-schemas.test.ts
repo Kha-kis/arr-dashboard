@@ -13,7 +13,6 @@ import {
 	sonarrNamingSchema,
 	trashCustomFormatGroupSchema,
 	trashCustomFormatSchema,
-	trashNamingSchemeSchema,
 	trashQualityProfileGroupSchema,
 	trashQualityProfileSchema,
 	trashQualitySizeSchema,
@@ -63,12 +62,6 @@ const VALID_QUALITY_SIZE = {
 		{ quality: "HDTV-720p", min: 2.3, preferred: 14.3, max: 100 },
 		{ quality: "Bluray-1080p", min: 3.3, preferred: 30.3, max: 100 },
 	],
-};
-
-const VALID_NAMING_SCHEME = {
-	type: "movie" as const,
-	standard: "{Movie CleanTitle} {(Release Year)} {imdb-{ImdbId}} {edition-{Edition Tags}} {[Custom Formats]}{[Quality Full]}{[MediaInfo 3D]}{[MediaInfo VideoDynamicRangeType]}{[Mediainfo AudioCodec}{ Mediainfo AudioChannels]}{MediaInfo AudioLanguages}{[Mediainfo VideoCodec]}{-Release Group}",
-	folder: "{Movie CleanTitle} ({Release Year})",
 };
 
 const VALID_RADARR_NAMING = {
@@ -202,7 +195,7 @@ describe("trashCustomFormatGroupSchema", () => {
 		const withExclude = {
 			...VALID_CF_GROUP,
 			quality_profiles: {
-				exclude: { "Anime": "11111111222222223333333344444444" },
+				exclude: { Anime: "11111111222222223333333344444444" },
 			},
 		};
 		const result = trashCustomFormatGroupSchema.safeParse(withExclude);
@@ -228,7 +221,12 @@ describe("trashCustomFormatGroupSchema", () => {
 		const withBoolDefault = {
 			...VALID_CF_GROUP,
 			custom_formats: [
-				{ name: "AMZN", trash_id: "11223344556677889900aabbccddeeff", required: true, default: true },
+				{
+					name: "AMZN",
+					trash_id: "11223344556677889900aabbccddeeff",
+					required: true,
+					default: true,
+				},
 			],
 		};
 		const result = trashCustomFormatGroupSchema.safeParse(withBoolDefault);
@@ -277,34 +275,7 @@ describe("trashQualitySizeSchema", () => {
 });
 
 // ============================================================================
-// Naming Scheme Schema
-// ============================================================================
-
-describe("trashNamingSchemeSchema", () => {
-	it("should accept a valid movie naming scheme", () => {
-		const result = trashNamingSchemeSchema.safeParse(VALID_NAMING_SCHEME);
-		expect(result.success).toBe(true);
-	});
-
-	it("should accept a series naming scheme", () => {
-		const series = { type: "series", standard: "{format}", season_folder: "Season {season:00}" };
-		const result = trashNamingSchemeSchema.safeParse(series);
-		expect(result.success).toBe(true);
-	});
-
-	it("should reject invalid type value", () => {
-		const result = trashNamingSchemeSchema.safeParse({ ...VALID_NAMING_SCHEME, type: "anime" });
-		expect(result.success).toBe(false);
-	});
-
-	it("should accept when optional fields are missing", () => {
-		const result = trashNamingSchemeSchema.safeParse({ type: "movie" });
-		expect(result.success).toBe(true);
-	});
-});
-
-// ============================================================================
-// Radarr / Sonarr Naming Schemas (Feature 2)
+// Radarr / Sonarr Naming Schemas
 // ============================================================================
 
 describe("radarrNamingSchema", () => {
@@ -382,7 +353,10 @@ describe("sonarrNamingSchema", () => {
 	it("should reject when episodes.standard is missing", () => {
 		const badNaming = {
 			...VALID_SONARR_NAMING,
-			episodes: { daily: VALID_SONARR_NAMING.episodes.daily, anime: VALID_SONARR_NAMING.episodes.anime },
+			episodes: {
+				daily: VALID_SONARR_NAMING.episodes.daily,
+				anime: VALID_SONARR_NAMING.episodes.anime,
+			},
 		};
 		const result = sonarrNamingSchema.safeParse(badNaming);
 		expect(result.success).toBe(false);
@@ -464,7 +438,7 @@ describe("trashQualityProfileGroupSchema", () => {
 
 	it("should reject missing name", () => {
 		const result = trashQualityProfileGroupSchema.safeParse({
-			profiles: { "HD": "deadbeef12345678deadbeef12345678" },
+			profiles: { HD: "deadbeef12345678deadbeef12345678" },
 		});
 		expect(result.success).toBe(false);
 	});
@@ -479,7 +453,12 @@ describe("validateAndCollect", () => {
 		const log = createMockLogger();
 		const items = [VALID_CUSTOM_FORMAT, VALID_CUSTOM_FORMAT];
 
-		const { items: results } = validateAndCollect(items, trashCustomFormatSchema, "cf/test.json", log);
+		const { items: results } = validateAndCollect(
+			items,
+			trashCustomFormatSchema,
+			"cf/test.json",
+			log,
+		);
 
 		expect(results).toHaveLength(2);
 		expect(log.warn).not.toHaveBeenCalled();
@@ -489,7 +468,12 @@ describe("validateAndCollect", () => {
 	it("should wrap single item in array", () => {
 		const log = createMockLogger();
 
-		const { items: results } = validateAndCollect(VALID_CUSTOM_FORMAT, trashCustomFormatSchema, "cf/test.json", log);
+		const { items: results } = validateAndCollect(
+			VALID_CUSTOM_FORMAT,
+			trashCustomFormatSchema,
+			"cf/test.json",
+			log,
+		);
 
 		expect(results).toHaveLength(1);
 		expect(results[0]!.name).toBe("BR-DISK");
@@ -503,7 +487,12 @@ describe("validateAndCollect", () => {
 			VALID_CUSTOM_FORMAT,
 		];
 
-		const { items: results } = validateAndCollect(items, trashCustomFormatSchema, "cf/test.json", log);
+		const { items: results } = validateAndCollect(
+			items,
+			trashCustomFormatSchema,
+			"cf/test.json",
+			log,
+		);
 
 		expect(results).toHaveLength(2);
 		expect(log.warn).toHaveBeenCalledTimes(1);
@@ -514,7 +503,12 @@ describe("validateAndCollect", () => {
 		const log = createMockLogger();
 		const items = [{ bad: true }, { also: "bad" }, { nope: 123 }];
 
-		const { items: results } = validateAndCollect(items, trashCustomFormatSchema, "cf/broken.json", log);
+		const { items: results } = validateAndCollect(
+			items,
+			trashCustomFormatSchema,
+			"cf/broken.json",
+			log,
+		);
 
 		expect(results).toHaveLength(0);
 		expect(log.error).toHaveBeenCalledTimes(1);
@@ -527,21 +521,29 @@ describe("validateAndCollect", () => {
 		const log = createMockLogger();
 		const items = [VALID_CUSTOM_FORMAT, { bad: true }, { bad: true }, { bad: true }];
 
-		const { items: results } = validateAndCollect(items, trashCustomFormatSchema, "cf/mixed.json", log);
+		const { items: results } = validateAndCollect(
+			items,
+			trashCustomFormatSchema,
+			"cf/mixed.json",
+			log,
+		);
 
 		expect(results).toHaveLength(1);
 		// 3 individual skip warnings + 1 high rejection warning
 		expect(log.warn).toHaveBeenCalledTimes(4);
-		expect(log.warn).toHaveBeenCalledWith(
-			expect.stringContaining("High rejection rate"),
-		);
+		expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("High rejection rate"));
 	});
 
 	it("should not warn on acceptable rejection rate (<=50%)", () => {
 		const log = createMockLogger();
 		const items = [VALID_CUSTOM_FORMAT, VALID_CUSTOM_FORMAT, { bad: true }];
 
-		const { items: results } = validateAndCollect(items, trashCustomFormatSchema, "cf/ok.json", log);
+		const { items: results } = validateAndCollect(
+			items,
+			trashCustomFormatSchema,
+			"cf/ok.json",
+			log,
+		);
 
 		expect(results).toHaveLength(2);
 		// 1 skip warning, NO high rejection warning
@@ -552,7 +554,12 @@ describe("validateAndCollect", () => {
 	it("should handle empty array input", () => {
 		const log = createMockLogger();
 
-		const { items: results } = validateAndCollect([], trashCustomFormatSchema, "cf/empty.json", log);
+		const { items: results } = validateAndCollect(
+			[],
+			trashCustomFormatSchema,
+			"cf/empty.json",
+			log,
+		);
 
 		expect(results).toHaveLength(0);
 		expect(log.warn).not.toHaveBeenCalled();
@@ -566,7 +573,12 @@ describe("validateAndCollect", () => {
 			trash_id: "ABCDEF1234567890ABCDEF1234567890",
 		};
 
-		const { items: results } = validateAndCollect([cfWithUpperId], trashCustomFormatSchema, "cf/test.json", log);
+		const { items: results } = validateAndCollect(
+			[cfWithUpperId],
+			trashCustomFormatSchema,
+			"cf/test.json",
+			log,
+		);
 
 		expect(results).toHaveLength(1);
 		expect(results[0]!.trash_id).toBe("abcdef1234567890abcdef1234567890");
@@ -575,7 +587,12 @@ describe("validateAndCollect", () => {
 	it("should work with naming schemas that inject _service", () => {
 		const log = createMockLogger();
 
-		const { items: results } = validateAndCollect(VALID_RADARR_NAMING, radarrNamingSchema, "naming/radarr.json", log);
+		const { items: results } = validateAndCollect(
+			VALID_RADARR_NAMING,
+			radarrNamingSchema,
+			"naming/radarr.json",
+			log,
+		);
 
 		expect(results).toHaveLength(1);
 		expect(results[0]!._service).toBe("RADARR");

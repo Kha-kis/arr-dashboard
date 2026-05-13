@@ -109,17 +109,6 @@ export const trashQualitySizeSchema = z.looseObject({
 // ============================================================================
 
 /**
- * Validates the core fields of TrashNamingScheme. Uses looseObject to
- * tolerate additional fields TRaSH may add (Feature 2 will extend this).
- */
-export const trashNamingSchemeSchema = z.looseObject({
-	type: z.enum(["movie", "series"]),
-	standard: z.string().optional(),
-	folder: z.string().optional(),
-	season_folder: z.string().optional(),
-});
-
-/**
  * Radarr naming JSON: { folder: Record<presetName, formatString>, file: Record<presetName, formatString> }
  * The .transform() injects the _service discriminant so z.infer matches TrashRadarrNaming.
  */

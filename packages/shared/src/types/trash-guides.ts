@@ -19,7 +19,6 @@ export const TRASH_CONFIG_TYPES = {
 	CUSTOM_FORMATS: "CUSTOM_FORMATS",
 	CF_GROUPS: "CF_GROUPS",
 	QUALITY_SIZE: "QUALITY_SIZE",
-	NAMING: "NAMING",
 	QUALITY_PROFILES: "QUALITY_PROFILES",
 	CF_DESCRIPTIONS: "CF_DESCRIPTIONS",
 	CF_INCLUDES: "CF_INCLUDES", // MkDocs include files shared across CF descriptions
@@ -202,16 +201,6 @@ export interface TrashQualitySize {
 	trash_id: string; // Unique preset identifier
 	type: string; // e.g., "movie", "series", "anime", "sqp-streaming", "sqp-uhd"
 	qualities: TrashQualitySizeQuality[];
-}
-
-/**
- * Naming Scheme from TRaSH Guides
- */
-export interface TrashNamingScheme {
-	type: "movie" | "series";
-	standard?: string;
-	folder?: string;
-	season_folder?: string;
 }
 
 // ============================================================================
@@ -448,7 +437,6 @@ export interface TrashCacheEntry {
 		| TrashCustomFormat[]
 		| TrashCustomFormatGroup[]
 		| TrashQualitySize[]
-		| TrashNamingScheme[]
 		| TrashQualityProfile[]
 		| TrashCFDescription[]
 		| TrashQualityProfileGroup[]
@@ -751,7 +739,6 @@ export interface TemplateConfig {
 		language?: string; // Language name from TRaSH Guides (e.g., "Original")
 	};
 	qualitySize?: TrashQualitySize[];
-	naming?: TrashNamingScheme[];
 	/** Selected naming presets to deploy alongside this template */
 	namingSelection?: NamingSelectedPresets;
 	// Phase 5.3: Complete quality profile settings (imported from *arr instance)
