@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { DomainStatusBadge, PremiumSection } from "../../../components/layout";
+import { Tooltip } from "../../../components/layout/config-primitives";
 import type { DomainStatus } from "../../../components/layout/domain-status";
 import { Button } from "../../../components/ui/button";
 import { useClearQuarantine, useValidationQuarantine } from "../../../hooks/api/useSystem";
@@ -473,6 +474,14 @@ export function ValidationHealthSection({
 // Schema Drift Section
 // ============================================================================
 
+/**
+ * Plain-language explanation surfaced both as a tooltip on the header and as
+ * a description block inside the expanded panel. Lives in one place so the
+ * two surfaces can't drift apart.
+ */
+const SCHEMA_DRIFT_EXPLANATION =
+	"Schema drift tracks when the field shapes of upstream API responses (Sonarr, Radarr, Plex, etc.) change versus the first response Arr Dashboard observed after start-up. It is a diagnostic for developers — drift is informational, not an error you need to fix. New fields usually mean the upstream service shipped a new release; missing fields can hint at a breaking change. Baselines reset on app restart.";
+
 function SchemaDriftSection({
 	fingerprints,
 	hasDrift,
@@ -487,14 +496,18 @@ function SchemaDriftSection({
 
 	return (
 		<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10">
-			<button
-				type="button"
-				onClick={() => setIsOpen(!isOpen)}
-				className="flex items-center justify-between w-full p-3 text-left hover:bg-card/50 transition-colors"
-			>
-				<div className="flex items-center gap-2">
+			{/* Header row: toggle button is the only interactive child, the help
+			    tooltip is a sibling so hovering it never accidentally collapses
+			    the panel and there are no nested interactive elements. */}
+			<div className="flex items-center justify-between w-full p-3 transition-colors">
+				<button
+					type="button"
+					onClick={() => setIsOpen(!isOpen)}
+					className="flex items-center gap-2 text-left flex-1 min-w-0 hover:opacity-80 transition-opacity"
+					aria-expanded={isOpen}
+				>
 					<ChevronRight
-						className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
+						className={`h-4 w-4 text-muted-foreground transition-transform duration-200 shrink-0 ${isOpen ? "rotate-90" : ""}`}
 					/>
 					<span className="text-sm font-medium text-foreground">Schema Drift</span>
 					{hasDrift ? (
@@ -518,92 +531,151 @@ function SchemaDriftSection({
 							No drift
 						</span>
 					)}
+				</button>
+				<div className="flex items-center gap-3 shrink-0">
+					<Tooltip text={SCHEMA_DRIFT_EXPLANATION} />
+					<span className="text-xs text-muted-foreground">
+						{integrationNames.length} integration(s) tracked
+					</span>
 				</div>
-				<span className="text-xs text-muted-foreground">
-					{integrationNames.length} integration(s) tracked
-				</span>
-			</button>
+			</div>
 
 			{isOpen && (
 				<div className="border-t border-border/30 p-3 space-y-3">
+					{/* Always-visible explanation when the section is expanded — addresses
+					    the "what does this mean?" question without making the user hunt
+					    for a tooltip. */}
+					<p className="text-xs text-muted-foreground leading-relaxed">
+						{SCHEMA_DRIFT_EXPLANATION}
+					</p>
 					{!hasDrift ? (
 						<p className="text-sm text-muted-foreground text-center py-2">
 							No schema drift detected — all upstream field shapes match their baselines.
 						</p>
 					) : (
-						integrationNames.map((integration) => {
-							const categories = fingerprints[integration]!;
-							const driftingCategories = Object.entries(categories).filter(
-								([, fp]) => fp.drift.hasDrift,
-							);
-
-							if (driftingCategories.length === 0) return null;
-
-							return (
-								<div key={integration} className="space-y-2">
-									<p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-										{integration}
-									</p>
-									{driftingCategories.map(([category, fp]) => {
-										// Fields with 1-2 misses (intermittent, not yet flagged as missing)
-										const intermittentFields = Object.entries(fp.fieldMissCounts ?? {})
-											.filter(([, count]) => count >= 1 && count < 3)
-											.map(([field]) => field)
-											.sort();
-
-										return (
-											<div
-												key={`${integration}:${category}`}
-												className="rounded-lg border border-border/30 bg-card/20 p-3 space-y-2"
-											>
-												<p className="text-sm font-mono text-foreground">{category}</p>
-												<div className="flex flex-wrap gap-1.5">
-													{fp.drift.newFields.map((field) => (
-														<span
-															key={field}
-															className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono"
-															style={{
-																backgroundColor: `${SEMANTIC_COLORS.success.from}15`,
-																color: SEMANTIC_COLORS.success.from,
-																border: `1px solid ${SEMANTIC_COLORS.success.from}30`,
-															}}
-														>
-															+ {field}
-														</span>
-													))}
-													{intermittentFields.map((field) => (
-														<span
-															key={field}
-															className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono"
-															style={{
-																backgroundColor: `${SEMANTIC_COLORS.warning.from}15`,
-																color: SEMANTIC_COLORS.warning.from,
-																border: `1px solid ${SEMANTIC_COLORS.warning.from}30`,
-															}}
-														>
-															~ {field}
-														</span>
-													))}
-													{fp.drift.missingFields.map((field) => (
-														<span
-															key={field}
-															className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono"
-															style={{
-																backgroundColor: `${SEMANTIC_COLORS.error.from}15`,
-																color: SEMANTIC_COLORS.error.from,
-																border: `1px solid ${SEMANTIC_COLORS.error.from}30`,
-															}}
-														>
-															- {field}
-														</span>
-													))}
-												</div>
-											</div>
-										);
-									})}
+						<>
+							{/* Legend — explains the +/~/- field badges before the user
+							    sees them. Without this, the symbols are jargon. */}
+							<div className="rounded-lg border border-border/30 bg-card/20 p-3">
+								<p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+									Legend
+								</p>
+								<div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
+									<span className="inline-flex items-center gap-1.5">
+										<span
+											className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-mono"
+											style={{
+												backgroundColor: `${SEMANTIC_COLORS.success.from}15`,
+												color: SEMANTIC_COLORS.success.from,
+												border: `1px solid ${SEMANTIC_COLORS.success.from}30`,
+											}}
+										>
+											+ field
+										</span>
+										New — first seen since baseline
+									</span>
+									<span className="inline-flex items-center gap-1.5">
+										<span
+											className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-mono"
+											style={{
+												backgroundColor: `${SEMANTIC_COLORS.warning.from}15`,
+												color: SEMANTIC_COLORS.warning.from,
+												border: `1px solid ${SEMANTIC_COLORS.warning.from}30`,
+											}}
+										>
+											~ field
+										</span>
+										Intermittent — absent 1–2 runs
+									</span>
+									<span className="inline-flex items-center gap-1.5">
+										<span
+											className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-mono"
+											style={{
+												backgroundColor: `${SEMANTIC_COLORS.error.from}15`,
+												color: SEMANTIC_COLORS.error.from,
+												border: `1px solid ${SEMANTIC_COLORS.error.from}30`,
+											}}
+										>
+											- field
+										</span>
+										Missing — absent 3+ runs (likely removed)
+									</span>
 								</div>
-							);
-						})
+							</div>
+							{integrationNames.map((integration) => {
+								const categories = fingerprints[integration]!;
+								const driftingCategories = Object.entries(categories).filter(
+									([, fp]) => fp.drift.hasDrift,
+								);
+
+								if (driftingCategories.length === 0) return null;
+
+								return (
+									<div key={integration} className="space-y-2">
+										<p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+											{integration}
+										</p>
+										{driftingCategories.map(([category, fp]) => {
+											// Fields with 1-2 misses (intermittent, not yet flagged as missing)
+											const intermittentFields = Object.entries(fp.fieldMissCounts ?? {})
+												.filter(([, count]) => count >= 1 && count < 3)
+												.map(([field]) => field)
+												.sort();
+
+											return (
+												<div
+													key={`${integration}:${category}`}
+													className="rounded-lg border border-border/30 bg-card/20 p-3 space-y-2"
+												>
+													<p className="text-sm font-mono text-foreground">{category}</p>
+													<div className="flex flex-wrap gap-1.5">
+														{fp.drift.newFields.map((field) => (
+															<span
+																key={field}
+																className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono"
+																style={{
+																	backgroundColor: `${SEMANTIC_COLORS.success.from}15`,
+																	color: SEMANTIC_COLORS.success.from,
+																	border: `1px solid ${SEMANTIC_COLORS.success.from}30`,
+																}}
+															>
+																+ {field}
+															</span>
+														))}
+														{intermittentFields.map((field) => (
+															<span
+																key={field}
+																className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono"
+																style={{
+																	backgroundColor: `${SEMANTIC_COLORS.warning.from}15`,
+																	color: SEMANTIC_COLORS.warning.from,
+																	border: `1px solid ${SEMANTIC_COLORS.warning.from}30`,
+																}}
+															>
+																~ {field}
+															</span>
+														))}
+														{fp.drift.missingFields.map((field) => (
+															<span
+																key={field}
+																className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono"
+																style={{
+																	backgroundColor: `${SEMANTIC_COLORS.error.from}15`,
+																	color: SEMANTIC_COLORS.error.from,
+																	border: `1px solid ${SEMANTIC_COLORS.error.from}30`,
+																}}
+															>
+																- {field}
+															</span>
+														))}
+													</div>
+												</div>
+											);
+										})}
+									</div>
+								);
+							})}
+						</>
 					)}
 				</div>
 			)}

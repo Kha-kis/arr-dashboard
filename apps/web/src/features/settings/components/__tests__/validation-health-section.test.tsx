@@ -1,9 +1,8 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { describe, expect, it, vi } from "vitest";
-
-import { ColorThemeProvider } from "../../../../providers/color-theme-provider";
 import type { ValidationHealthResponse } from "../../../../lib/api-client/system";
+import { ColorThemeProvider } from "../../../../providers/color-theme-provider";
 import { ValidationHealthSection } from "../validation-health-section";
 
 /*
@@ -116,5 +115,138 @@ describe("ValidationHealthSection — per-row tooltip override", () => {
 		const title = getRowBadgeTitle("sonarr");
 		expect(title).toMatch(/significant share of payloads/i);
 		expect(title).not.toMatch(/last check failed/i);
+	});
+});
+
+/*
+ * Issue #455: the Schema Drift section confused users because the term and
+ * the +/~/- badges were unexplained. These tests pin the user-facing copy so
+ * the explanation tooltip, expanded description, and legend can't silently
+ * disappear in a future refactor — leaving the section opaque again.
+ */
+function dataWithDrift(): ValidationHealthResponse["data"] {
+	const base = makeData("healthy");
+	return {
+		...base,
+		fingerprints: {
+			sonarr: {
+				series: {
+					baseline: {
+						fields: ["id", "title", "year"],
+						recordedAt: new Date(0).toISOString(),
+						sampleCount: 5,
+					},
+					latest: {
+						fields: ["id", "title", "year", "newField"],
+						recordedAt: new Date(0).toISOString(),
+						sampleCount: 5,
+					},
+					drift: {
+						newFields: ["newField"],
+						missingFields: ["year"],
+						hasDrift: true,
+					},
+					fieldMissCounts: { year: 5, flaky: 2 },
+				},
+			},
+		},
+	};
+}
+
+function dataWithoutDrift(): ValidationHealthResponse["data"] {
+	const base = makeData("healthy");
+	return {
+		...base,
+		fingerprints: {
+			sonarr: {
+				series: {
+					baseline: {
+						fields: ["id", "title"],
+						recordedAt: new Date(0).toISOString(),
+						sampleCount: 5,
+					},
+					latest: {
+						fields: ["id", "title"],
+						recordedAt: new Date(0).toISOString(),
+						sampleCount: 5,
+					},
+					drift: { newFields: [], missingFields: [], hasDrift: false },
+					fieldMissCounts: {},
+				},
+			},
+		},
+	};
+}
+
+describe("ValidationHealthSection — Schema Drift explanation (#455)", () => {
+	// The legend lives in a flex row that nests a styled badge inside a span
+	// alongside descriptive text — testing-library's default text matcher
+	// won't span those boundaries, so match on the container's flat text.
+	const hasLegendText = (substr: RegExp) => (_: string, node: Element | null) =>
+		!!node && substr.test(node.textContent ?? "");
+
+	it("renders a help tooltip that explains what schema drift is", () => {
+		renderWithTheme(
+			<ValidationHealthSection
+				data={dataWithoutDrift()}
+				themeGradient={themeGradient}
+				onReset={vi.fn()}
+				isResetting={false}
+			/>,
+		);
+		// The Tooltip primitive puts the explanation text into a hover popover
+		// that lives in the DOM at all times (CSS toggles visibility). Asserting
+		// on the text presence is enough — without the explanation copy this
+		// query throws and pins the regression.
+		expect(screen.getByText(/diagnostic for developers/i)).toBeTruthy();
+		expect(screen.getByText(/baselines reset on app restart/i)).toBeTruthy();
+	});
+
+	it("hides the legend when no drift is detected", () => {
+		renderWithTheme(
+			<ValidationHealthSection
+				data={dataWithoutDrift()}
+				themeGradient={themeGradient}
+				onReset={vi.fn()}
+				isResetting={false}
+			/>,
+		);
+		// Open the Schema Drift section — the "No drift" branch should *not*
+		// render the legend, because there are no symbols to explain.
+		fireEvent.click(screen.getByRole("button", { name: /schema drift/i }));
+		expect(screen.queryAllByText(hasLegendText(/first seen since baseline/i))).toHaveLength(0);
+		expect(screen.queryAllByText(hasLegendText(/absent 3\+ runs/i))).toHaveLength(0);
+	});
+
+	it("shows the legend with +/~/- semantics when drift is present", () => {
+		renderWithTheme(
+			<ValidationHealthSection
+				data={dataWithDrift()}
+				themeGradient={themeGradient}
+				onReset={vi.fn()}
+				isResetting={false}
+			/>,
+		);
+		fireEvent.click(screen.getByRole("button", { name: /schema drift/i }));
+		expect(
+			screen.queryAllByText(hasLegendText(/first seen since baseline/i)).length,
+		).toBeGreaterThan(0);
+		expect(screen.queryAllByText(hasLegendText(/absent 1.+2 runs/i)).length).toBeGreaterThan(0);
+		expect(screen.queryAllByText(hasLegendText(/absent 3\+ runs/i)).length).toBeGreaterThan(0);
+	});
+
+	it("aria-exposes the collapse state of the Schema Drift toggle", () => {
+		renderWithTheme(
+			<ValidationHealthSection
+				data={dataWithoutDrift()}
+				themeGradient={themeGradient}
+				onReset={vi.fn()}
+				isResetting={false}
+			/>,
+		);
+		const toggle = screen.getByRole("button", { name: /schema drift/i });
+		expect(toggle.getAttribute("aria-expanded")).toBe("false");
+		fireEvent.click(toggle);
+		expect(toggle.getAttribute("aria-expanded")).toBe("true");
 	});
 });
