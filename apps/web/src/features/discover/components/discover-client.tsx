@@ -248,6 +248,7 @@ export const DiscoverClient = () => {
 					data={searchQuery.data}
 					isLoading={searchQuery.isLoading}
 					isError={searchQuery.isError}
+					error={searchQuery.error}
 					isFetchingNextPage={searchQuery.isFetchingNextPage}
 					hasNextPage={searchQuery.hasNextPage}
 					onLoadMore={() => searchQuery.fetchNextPage()}
@@ -265,6 +266,7 @@ export const DiscoverClient = () => {
 					onSelectItem={selectItem}
 					isLoading={genreQuery.isLoading}
 					isError={genreQuery.isError}
+					error={genreQuery.error}
 					isFetchingNextPage={genreQuery.isFetchingNextPage}
 					hasNextPage={genreQuery.hasNextPage}
 					onLoadMore={() => genreQuery.fetchNextPage()}
@@ -282,6 +284,7 @@ export const DiscoverClient = () => {
 							onSelectItem={selectItem}
 							isLoading={trendingQuery.isLoading}
 							isError={trendingQuery.isError}
+							error={trendingQuery.error}
 							isFetchingNextPage={trendingQuery.isFetchingNextPage}
 							hasNextPage={trendingQuery.hasNextPage}
 							onLoadMore={() => trendingQuery.fetchNextPage()}
@@ -296,6 +299,7 @@ export const DiscoverClient = () => {
 							onSelectItem={selectItem}
 							isLoading={popularQuery.isLoading}
 							isError={popularQuery.isError}
+							error={popularQuery.error}
 							isFetchingNextPage={popularQuery.isFetchingNextPage}
 							hasNextPage={popularQuery.hasNextPage}
 							onLoadMore={() => popularQuery.fetchNextPage()}
@@ -312,6 +316,7 @@ export const DiscoverClient = () => {
 							onSelectItem={selectItem}
 							isLoading={upcomingQuery.isLoading}
 							isError={upcomingQuery.isError}
+							error={upcomingQuery.error}
 							isFetchingNextPage={upcomingQuery.isFetchingNextPage}
 							hasNextPage={upcomingQuery.hasNextPage}
 							onLoadMore={() => upcomingQuery.fetchNextPage()}

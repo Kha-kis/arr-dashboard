@@ -52,6 +52,13 @@ interface DiscoverCarouselProps {
 	onSelectItem: (item: SeerrDiscoverResult) => void;
 	isLoading?: boolean;
 	isError?: boolean;
+	/**
+	 * Optional underlying error from the React Query result. When provided,
+	 * its message is rendered inline below the generic "Failed to load…"
+	 * banner so the operator sees the actual upstream reason (Seerr 403,
+	 * network error, etc.) instead of a silent empty state. See issue #465.
+	 */
+	error?: { message?: string } | null;
 	isFetchingNextPage?: boolean;
 	hasNextPage?: boolean;
 	onLoadMore?: () => void;
@@ -66,6 +73,7 @@ export const DiscoverCarousel: React.FC<DiscoverCarouselProps> = ({
 	onSelectItem,
 	isLoading,
 	isError,
+	error,
 	isFetchingNextPage,
 	hasNextPage,
 	onLoadMore,
@@ -151,15 +159,23 @@ export const DiscoverCarousel: React.FC<DiscoverCarouselProps> = ({
 	}
 
 	if (isError) {
+		// Surface the underlying error message when the React Query result
+		// includes one — without this, a Seerr 403 (or any upstream failure)
+		// looked identical to "no results yet" and operators had to dig in
+		// server logs to figure out why a page was empty. Issue #465.
+		const detail = error?.message?.trim();
 		return (
 			<section
 				className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500"
 				style={{ animationDelay: `${animationDelay}ms`, animationFillMode: "backwards" }}
 			>
 				<SectionHeader />
-				<div className="flex items-center gap-3 rounded-xl border border-border/30 bg-muted/10 px-4 py-6 text-sm text-muted-foreground">
-					<AlertCircle className="h-4 w-4 shrink-0" />
-					<span>Failed to load {title.toLowerCase()}</span>
+				<div className="flex items-start gap-3 rounded-xl border border-border/30 bg-muted/10 px-4 py-6 text-sm text-muted-foreground">
+					<AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+					<div className="space-y-1">
+						<p>Failed to load {title.toLowerCase()}</p>
+						{detail && <p className="text-xs opacity-80">{detail}</p>}
+					</div>
 				</div>
 			</section>
 		);
