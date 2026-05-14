@@ -128,6 +128,20 @@ export async function testServiceConnection(
 		const data = (await response.json()) as { version?: string };
 		const version = data.version ?? "unknown";
 
+		// Seerr-specific second probe: `/api/v1/status` is tagged `public` in Seerr's
+		// openapi spec and skips the `isAuthenticated` middleware. That means a Seerr
+		// instance whose API-key-backed user (user ID 1 by default; see
+		// https://github.com/seerr-team/seerr/blob/main/server/middleware/auth.ts)
+		// has no usable permissions still passes the status probe — the connection
+		// check then reports "success" while every real feature call (Discover,
+		// Requests, Users) returns 403. Probe one permission-gated endpoint here so
+		// that under-powered configurations fail at setup time rather than later in
+		// the user's flow. See issue #465.
+		if (service === "seerr") {
+			const permissionProbe = await probeSeerrPermissions(normalizedBaseUrl, apiKey, version);
+			if (permissionProbe) return permissionProbe;
+		}
+
 		return {
 			success: true,
 			message: `Successfully connected to ${service.charAt(0).toUpperCase() + service.slice(1)}`,
@@ -136,6 +150,59 @@ export async function testServiceConnection(
 	} catch (error: unknown) {
 		return handleConnectionError(error);
 	}
+}
+
+/**
+ * Probe a permission-gated Seerr endpoint after `/api/v1/status` has succeeded.
+ * Returns a failing `ConnectionTestResult` when the probe shows the API key's
+ * backing user can't actually exercise the endpoints arr-dashboard relies on,
+ * `null` when the probe passed (the caller continues with its success response).
+ *
+ * `/api/v1/request/count` is the right probe because (a) it's a tiny response,
+ * (b) it requires the same permission class (`Manage Requests` / `Admin`) that
+ * Discover, Requests, and Users surfaces all need, and (c) Seerr returns a
+ * clean 403 with the documented "You do not have permission…" body when the
+ * user lacks permission rather than a noisy empty success. Match the literal
+ * status here so the actionable error copy can be specific.
+ */
+async function probeSeerrPermissions(
+	baseUrl: string,
+	apiKey: string,
+	version: string,
+): Promise<ConnectionTestResult | null> {
+	const probeUrl = `${baseUrl}/api/v1/request/count`;
+	let probeResponse: Response;
+	try {
+		probeResponse = await fetch(probeUrl, {
+			headers: { "X-Api-Key": apiKey, Accept: "application/json" },
+			signal: AbortSignal.timeout(5000),
+		});
+	} catch {
+		// The status probe already succeeded, so a network blip on the second
+		// hop is more likely a transient than a misconfiguration. Don't fail
+		// the connection test on transient probe failures — let the user
+		// proceed and surface errors at feature-call time instead.
+		return null;
+	}
+
+	if (probeResponse.ok) {
+		return null;
+	}
+
+	if (probeResponse.status === 403) {
+		return {
+			success: false,
+			error: "Connected, but Seerr API key lacks required permissions",
+			details:
+				"Reached Seerr successfully, but the API-key-backed user account (user ID 1 — the original administrator — by default) cannot access permission-gated endpoints. Open Seerr → Settings → Users, find the first user listed (user ID 1), and either grant Admin or enable Manage Requests + Manage Users + Request Movies/TV. If user ID 1 has been deleted, a Seerr-side recovery is required.",
+			version,
+		};
+	}
+
+	// Any other non-2xx from the probe is interesting but not necessarily
+	// fatal (could be a partial outage, rate limit, etc.). Fall through to
+	// success — the status probe already proved reachability + key validity.
+	return null;
 }
 
 /**
