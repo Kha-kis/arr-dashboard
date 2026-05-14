@@ -3,19 +3,24 @@
 import type { SeerrDiscoverResponse, SeerrDiscoverResult } from "@arr/shared";
 import type { InfiniteData } from "@tanstack/react-query";
 import { AlertCircle, Loader2, Search } from "lucide-react";
-import { PremiumSkeleton } from "../../../components/layout";
+import { useMemo } from "react";
+import { FilterSelect, PremiumSkeleton } from "../../../components/layout";
 import { Button } from "../../../components/ui";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import type { SearchSortOption } from "../hooks/use-discover-state";
-import { FilterSelect } from "../../../components/layout";
-import { useMemo } from "react";
 import { DiscoverPosterCard } from "./discover-poster-card";
 
 interface DiscoverSearchResultsProps {
 	data: InfiniteData<SeerrDiscoverResponse> | undefined;
 	isLoading: boolean;
 	isError?: boolean;
+	/**
+	 * Optional underlying error from the React Query result. When provided,
+	 * its message is rendered inline below the generic "Search failed" copy
+	 * so the operator sees the actual upstream reason. See issue #465.
+	 */
+	error?: { message?: string } | null;
 	isFetchingNextPage?: boolean;
 	hasNextPage?: boolean;
 	onLoadMore?: () => void;
@@ -35,6 +40,7 @@ export const DiscoverSearchResults: React.FC<DiscoverSearchResultsProps> = ({
 	data,
 	isLoading,
 	isError,
+	error,
 	isFetchingNextPage,
 	hasNextPage,
 	onLoadMore,
@@ -89,6 +95,11 @@ export const DiscoverSearchResults: React.FC<DiscoverSearchResultsProps> = ({
 	}
 
 	if (isError) {
+		// Surface the underlying error message when the React Query result
+		// includes one — without this, a Seerr 403 or any upstream failure
+		// rendered as a generic "Search failed" with no actionable detail.
+		// Issue #465.
+		const detail = error?.message?.trim();
 		return (
 			<div className="flex flex-col items-center justify-center py-16 text-center space-y-4 animate-in fade-in duration-300">
 				<div
@@ -100,11 +111,15 @@ export const DiscoverSearchResults: React.FC<DiscoverSearchResultsProps> = ({
 				>
 					<AlertCircle className="h-6 w-6" style={{ color: SEMANTIC_COLORS.error.text }} />
 				</div>
-				<div className="space-y-1">
+				<div className="space-y-1 max-w-md">
 					<p className="text-sm font-medium text-foreground">Search failed</p>
-					<p className="text-xs text-muted-foreground">
-						Please try again. If the problem persists, check your Seerr connection.
-					</p>
+					{detail ? (
+						<p className="text-xs text-muted-foreground">{detail}</p>
+					) : (
+						<p className="text-xs text-muted-foreground">
+							Please try again. If the problem persists, check your Seerr connection.
+						</p>
+					)}
 				</div>
 			</div>
 		);

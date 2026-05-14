@@ -22,13 +22,13 @@ import type {
 	TrashQualityProfile,
 } from "@arr/shared";
 import { z } from "zod";
-import { trashCustomFormatGroupSchema, trashCustomFormatSchema } from "./github-schemas.js";
 import type { PrismaClient } from "../../lib/prisma.js";
 import { TemplateNotFoundError } from "../errors.js";
 import { loggers } from "../logger.js";
 import { CacheCorruptionError, type TrashCacheManager } from "./cache-manager.js";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
 import type { TrashGitHubFetcher } from "./github-fetcher.js";
+import { trashCustomFormatGroupSchema, trashCustomFormatSchema } from "./github-schemas.js";
 
 const log = loggers.trashGuides;
 
@@ -972,7 +972,6 @@ export class TemplateUpdater {
 			"CUSTOM_FORMATS",
 			"CF_GROUPS",
 			"QUALITY_SIZE",
-			"NAMING",
 			"QUALITY_PROFILES",
 			"CF_DESCRIPTIONS",
 			"CONFLICTS",

@@ -6,9 +6,9 @@
  */
 
 import {
-	TRASH_CONFIG_TYPES,
 	type NamingDeployStatus,
 	type NamingSelectedPresets,
+	TRASH_CONFIG_TYPES,
 	type TrashNamingData,
 } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
@@ -178,7 +178,7 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 
 	/**
 	 * Fetch naming data from cache, auto-refreshing if stale or corrupted.
-	 * Uses NAMING_PRESETS cache key (separate from NAMING used for TrashNamingScheme[]).
+	 * Uses NAMING_PRESETS cache key.
 	 * Returns the first (and typically only) naming data object for the service.
 	 */
 	async function getNamingData(

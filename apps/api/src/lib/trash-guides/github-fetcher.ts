@@ -13,7 +13,6 @@ import type {
 	TrashCustomFormat,
 	TrashCustomFormatGroup,
 	TrashNamingData,
-	TrashNamingScheme,
 	TrashQualityProfile,
 	TrashQualityProfileGroup,
 	TrashQualitySize,
@@ -34,7 +33,6 @@ import {
 	trashConflictsFileSchema,
 	trashCustomFormatGroupSchema,
 	trashCustomFormatSchema,
-	trashNamingSchemeSchema,
 	trashQualityProfileGroupSchema,
 	trashQualityProfileSchema,
 	trashQualitySizeSchema,
@@ -517,8 +515,6 @@ export class TrashGitHubFetcher {
 				return `${this.baseUrl}/${service}/cf-groups`;
 			case "QUALITY_SIZE":
 				return `${this.baseUrl}/${service}/quality-size`;
-			case "NAMING":
-				return `${this.baseUrl}/${service}/naming`;
 			case "QUALITY_PROFILES":
 				return `${this.baseUrl}/${service}/quality-profiles`;
 			case "QUALITY_PROFILE_GROUPS":
@@ -661,39 +657,6 @@ export class TrashGitHubFetcher {
 	}
 
 	/**
-	 * Fetch Naming schemes for a service
-	 */
-	async fetchNaming(serviceType: "RADARR" | "SONARR"): Promise<TrashNamingScheme[]> {
-		const baseUrl = this.buildGitHubUrl(serviceType, "NAMING");
-
-		const schemes: TrashNamingScheme[] = [];
-		const knownFiles = await this.discoverConfigFiles(baseUrl);
-
-		for (const file of knownFiles) {
-			try {
-				const url = `${baseUrl}/${file}`;
-				const response = await fetchWithRetry(url, this.fetchOptions, this.log);
-
-				if (response.ok) {
-					const rawData: unknown = await response.json();
-					const result = validateAndCollect(rawData, trashNamingSchemeSchema, file, this.log, {
-						integration: "trash-guides",
-						category: "namingSchemes",
-						skipFingerprint: true,
-					});
-					schemes.push(...result.items);
-					recordValidationStats("namingSchemes", result.stats);
-				}
-			} catch (error) {
-				this.log.warn({ err: error, file }, "Failed to fetch config file");
-			}
-		}
-
-		recordSchemaFingerprint("namingSchemes", schemes, this.log);
-		return schemes;
-	}
-
-	/**
 	 * Fetch Quality Profiles for a service
 	 */
 	async fetchQualityProfiles(serviceType: "RADARR" | "SONARR"): Promise<TrashQualityProfile[]> {
@@ -787,7 +750,7 @@ export class TrashGitHubFetcher {
 	 * Returns validated naming data objects (one per JSON file in the naming directory).
 	 */
 	async fetchNamingData(serviceType: "RADARR" | "SONARR"): Promise<TrashNamingData[]> {
-		const baseUrl = this.buildGitHubUrl(serviceType, "NAMING");
+		const baseUrl = this.buildGitHubUrl(serviceType, "NAMING_PRESETS");
 
 		const results: TrashNamingData[] = [];
 		const knownFiles = await this.discoverConfigFiles(baseUrl);
@@ -799,19 +762,25 @@ export class TrashGitHubFetcher {
 
 				if (response.ok) {
 					const rawData: unknown = await response.json();
-					// Branch by service type — each schema's .transform() injects the _service discriminant
+					// Branch by service type — each schema's .transform() injects the _service
+					// discriminant. The fingerprint/quarantine category MUST be service-scoped:
+					// Radarr and Sonarr ship genuinely different top-level shapes, so a shared
+					// key would oscillate the registry baseline and surface as constant
+					// intermittent-drift in Settings → System → Schema Drift. The exact field
+					// snapshots live in github-fetcher.test.ts so they fail loudly if upstream
+					// changes shape.
 					if (serviceType === "RADARR") {
 						results.push(
 							...validateAndCollect(rawData, radarrNamingSchema, file, this.log, {
 								integration: "trash-guides",
-								category: "namingPresets",
+								category: "radarrNamingPresets",
 							}).items,
 						);
 					} else {
 						results.push(
 							...validateAndCollect(rawData, sonarrNamingSchema, file, this.log, {
 								integration: "trash-guides",
-								category: "namingPresets",
+								category: "sonarrNamingPresets",
 							}).items,
 						);
 					}
@@ -1074,8 +1043,6 @@ export class TrashGitHubFetcher {
 				return this.fetchCustomFormatGroups(serviceType);
 			case "QUALITY_SIZE":
 				return this.fetchQualitySize(serviceType);
-			case "NAMING":
-				return this.fetchNaming(serviceType);
 			case "QUALITY_PROFILES":
 				return this.fetchQualityProfiles(serviceType);
 			case "CF_DESCRIPTIONS":

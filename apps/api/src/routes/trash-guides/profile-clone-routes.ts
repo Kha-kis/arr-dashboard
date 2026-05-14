@@ -255,10 +255,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Get detailed quality profile with custom formats from an instance
 	 */
 	app.get("/profile-details/:instanceId/:profileId", async (request, reply) => {
-		const { instanceId, profileId } = validateRequest(
-			instanceProfileParams,
-			request.params,
-		);
+		const { instanceId, profileId } = validateRequest(instanceProfileParams, request.params);
 
 		const instance = await requireInstance(app, request.currentUser!.id, instanceId);
 
@@ -340,10 +337,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Used when cloning a profile to identify which CFs match TRaSH Guides
 	 */
 	app.post("/validate-cfs", async (request, reply) => {
-		const { instanceId, profileId, serviceType } = validateRequest(
-			validateCfsSchema,
-			request.body,
-		);
+		const { instanceId, profileId, serviceType } = validateRequest(validateCfsSchema, request.body);
 
 		const instance = await requireInstance(app, request.currentUser!.id, instanceId);
 
@@ -646,7 +640,6 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			customFormats: customFormatsConfig,
 			customFormatGroups: [], // Cloned profiles don't use CF groups
 			qualitySize: [],
-			naming: [],
 			qualityProfile: qualityProfileMetadata,
 			completeQualityProfile,
 		};
