@@ -992,19 +992,26 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 								return;
 							}
 							const category = torrent.category || null;
-							// Role classification:
-							//   - "library" = Sonarr/Radarr imported it (categories like
-							//     `tv`, `movies`, `tv.cross` — the latter being Radarr's
-							//     cross-seed-aware import category).
-							//   - "mirror" = qui's cross-seed automation injected it
-							//     under `cross-seed-link` category.
-							const role: ClusterCopy["role"] = (category ?? "")
-								.toLowerCase()
-								.startsWith("cross-seed-link")
-								? "mirror"
-								: "library";
 							const linksMatch = (torrent.savePath ?? "").match(/\/links\/([^/]+)/);
 							const tracker = linksMatch ? linksMatch[1]! : null;
+							// Role classification:
+							//   - "mirror" = lives under qui's hardlink-mode layout
+							//     (`/data/torrents/links/<tracker>/...`) OR has a
+							//     category that signals cross-seed lineage
+							//     (`cross-seed-link`, `tv.cross`, `movies.cross`, etc.).
+							//   - "library" = direct Sonarr/Radarr-managed copy at the
+							//     primary download path (`/data/torrents/tv/`, etc.).
+							//
+							// Path is the strongest signal because qui's hardlink-mode
+							// ALWAYS uses `/links/<tracker>/` even when *arr re-imports
+							// the cross-seed under a `.cross` category. Without the path
+							// check, every tracker mirror got mislabeled "Library".
+							const lowerCategory = (category ?? "").toLowerCase();
+							const isPathMirror = linksMatch !== null;
+							const isCategoryMirror =
+								lowerCategory.includes("cross-seed") || lowerCategory.endsWith(".cross");
+							const role: ClusterCopy["role"] =
+								isPathMirror || isCategoryMirror ? "mirror" : "library";
 							enrichedCopies.set(hash, {
 								infoHash: hash,
 								name: torrent.name ?? null,
@@ -1220,6 +1227,27 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 					episodes: s.episodes,
 				}))
 				.sort((a, b) => a.seasonNumber - b.seasonNumber);
+
+			// Diagnostic: emit cluster summary at info level so operators can
+			// confirm clustering behavior without enabling debug logs. Compact
+			// shape — one line per cluster with coverage + copy count + first
+			// 8 chars of each hash.
+			request.log.info(
+				{
+					userId,
+					arrSeriesId: arrItemId,
+					totalEpisodes,
+					stuckEpisodes,
+					clusterCount: clusters.length,
+					clusters: clusters.map((c) => ({
+						coverage: c.coverageLabel,
+						episodes: c.episodeCount,
+						copies: c.copies.length,
+						hashes: c.copies.map((cp) => cp.infoHash.slice(0, 8)),
+					})),
+				},
+				"qui series-torrents: cluster summary",
+			);
 
 			return reply.send({
 				seriesTitle: seriesRow.title,
