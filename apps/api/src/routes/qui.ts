@@ -750,6 +750,7 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 				where: { instanceId: arrInstanceId, arrSeriesId: arrItemId },
 				select: {
 					id: true,
+					arrEpisodeFileId: true,
 					seasonNumber: true,
 					relativePath: true,
 					size: true,
@@ -811,7 +812,7 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 				}
 			}
 
-			const torrents = Array.from(torrentMap.values())
+			const baseTorrents = Array.from(torrentMap.values())
 				.map((t) => ({
 					infoHash: t.infoHash,
 					episodeCount: t.episodeCount,
@@ -823,13 +824,188 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 				}))
 				.sort((a, b) => b.episodeCount - a.episodeCount); // biggest pack first
 
+			// Enrich each torrent with live state from qui — category (master
+			// vs cross-seed), state, savePath, name. Parallel per-hash to keep
+			// total latency bounded by the slowest qui call. Cross-seed siblings
+			// (other torrents sharing the same content) is a deeper feature
+			// deferred to a follow-up — it requires a `getCrossSeedMatches`
+			// call per hash + index refactor to track multiple hashes per inode.
+			//
+			// A torrent we can't reach in qui (404 / instance error) renders
+			// with `quiUnreachable: true` and the cached fields only — instead
+			// of failing the whole panel.
+			let quiInstance: Awaited<ReturnType<typeof app.prisma.serviceInstance.findFirst>> = null;
+			if (baseTorrents.length > 0) {
+				quiInstance = await app.prisma.serviceInstance.findFirst({
+					where: { userId, service: "QUI", enabled: true },
+				});
+			}
+
+			interface EnrichedTorrent {
+				infoHash: string;
+				episodeCount: number;
+				seasons: number[];
+				qualityName: string | null;
+				releaseGroup: string | null;
+				inodeVerified: boolean;
+				totalSizeBytes: string;
+				// ── Fields from qui's live torrent data (null when qui unreachable) ──
+				name: string | null;
+				state: string | null;
+				category: string | null;
+				/** Derived: `false` when category starts with "cross-seed". */
+				isPrimary: boolean;
+				/** Best-effort tracker name parsed from savePath; null when ambiguous. */
+				tracker: string | null;
+				ratio: number | null;
+				/** Full qBit savePath (the on-disk directory the torrent's content lives in). */
+				savePath: string | null;
+				/** qui-applied tags (e.g., `noHL`, `issue`, per-tracker tags). */
+				tags: string[];
+				/** Unix-seconds timestamps from qBit (0 in qui's wire shape means "not set"). */
+				addedOn: number | null;
+				completedOn: number | null;
+				/** Seconds in seeding state — how long it's been seeding. */
+				seedingTime: number | null;
+				/** qBit reports torrent size in bytes; useful when our episode-cache total disagrees. */
+				torrentSizeBytes: string | null;
+				/** Current peer counts. */
+				numSeeds: number | null;
+				numLeechs: number | null;
+				/** 0..1 fraction completed (1 = full). */
+				progress: number | null;
+				/** Which qBit instance behind qui holds this torrent. */
+				instanceName: string | null;
+				/** True when we couldn't fetch this hash from qui (404 / unreachable). */
+				quiUnreachable: boolean;
+			}
+
+			// Fallback shape for torrents we can't reach in qui — keeps the
+			// frontend's typing tight by always emitting every field, just
+			// with nulls/empty defaults.
+			const buildUnreachable = (t: (typeof baseTorrents)[number]): EnrichedTorrent => ({
+				...t,
+				name: null,
+				state: null,
+				category: null,
+				isPrimary: true,
+				tracker: null,
+				ratio: null,
+				savePath: null,
+				tags: [],
+				addedOn: null,
+				completedOn: null,
+				seedingTime: null,
+				torrentSizeBytes: null,
+				numSeeds: null,
+				numLeechs: null,
+				progress: null,
+				instanceName: null,
+				quiUnreachable: true,
+			});
+
+			const enrichedTorrents: EnrichedTorrent[] = await Promise.all(
+				baseTorrents.map(async (t): Promise<EnrichedTorrent> => {
+					if (!quiInstance) return buildUnreachable(t);
+					try {
+						const client = createQuiClient(app, quiInstance);
+						const torrent = await client.getTorrentByHash(t.infoHash);
+						if (!torrent) return buildUnreachable(t);
+
+						const category = torrent.category || null;
+						const isPrimary = !(category ?? "").toLowerCase().includes("cross-seed");
+						// Tracker inference: qui's hardlink-mode places cross-seeds
+						// under `/data/torrents/links/<tracker>/...`. Primary
+						// torrents live in `/data/torrents/<category>/`. We parse
+						// the tracker name from the savePath when it matches the
+						// hardlink layout, otherwise null.
+						const linksMatch = (torrent.savePath ?? "").match(/\/links\/([^/]+)/);
+						const tracker = linksMatch ? linksMatch[1]! : null;
+						return {
+							...t,
+							name: torrent.name ?? null,
+							state: torrent.state ?? null,
+							category,
+							isPrimary,
+							tracker,
+							ratio: typeof torrent.ratio === "number" ? torrent.ratio : null,
+							savePath: torrent.savePath ?? null,
+							tags: Array.isArray(torrent.tags) ? torrent.tags : [],
+							// qui's wire shape uses 0 to mean "no value" for timestamps;
+							// normalize to null so the UI doesn't render "1 Jan 1970".
+							addedOn: torrent.addedOn && torrent.addedOn > 0 ? torrent.addedOn : null,
+							completedOn: torrent.completedOn ?? null,
+							seedingTime:
+								typeof torrent.seedingTime === "number" && torrent.seedingTime > 0
+									? torrent.seedingTime
+									: null,
+							torrentSizeBytes: typeof torrent.size === "number" ? torrent.size.toString() : null,
+							numSeeds: typeof torrent.numSeeds === "number" ? torrent.numSeeds : null,
+							numLeechs: typeof torrent.numLeechs === "number" ? torrent.numLeechs : null,
+							progress: typeof torrent.progress === "number" ? torrent.progress : null,
+							instanceName: torrent.instanceName ?? null,
+							quiUnreachable: false,
+						};
+					} catch (err) {
+						request.log.debug(
+							{ err, hash: t.infoHash, quiInstanceId: quiInstance.id },
+							"qui series-torrents: enrichment failed for hash; falling back to cached fields",
+						);
+						return buildUnreachable(t);
+					}
+				}),
+			);
+
+			// Per-season groups for the expandable UI. Same data, different
+			// organization — frontend renders seasons collapsed by default.
+			const seasonMap = new Map<
+				number,
+				{
+					seasonNumber: number;
+					episodes: Array<{
+						arrEpisodeFileId: number;
+						relativePath: string;
+						sizeBytes: string;
+						qualityName: string | null;
+						releaseGroup: string | null;
+						infoHash: string | null;
+						infoHashSource: string | null;
+					}>;
+				}
+			>();
+			for (const ep of episodes) {
+				let bucket = seasonMap.get(ep.seasonNumber);
+				if (!bucket) {
+					bucket = { seasonNumber: ep.seasonNumber, episodes: [] };
+					seasonMap.set(ep.seasonNumber, bucket);
+				}
+				bucket.episodes.push({
+					arrEpisodeFileId: ep.arrEpisodeFileId,
+					relativePath: ep.relativePath,
+					sizeBytes: ep.size.toString(),
+					qualityName: ep.qualityName,
+					releaseGroup: ep.releaseGroup,
+					infoHash: ep.infoHash,
+					infoHashSource: ep.infoHashSource,
+				});
+			}
+			const seasons = Array.from(seasonMap.values())
+				.map((s) => ({
+					seasonNumber: s.seasonNumber,
+					episodeCount: s.episodes.length,
+					correlatedCount: s.episodes.filter((e) => e.infoHash !== null).length,
+					episodes: s.episodes,
+				}))
+				.sort((a, b) => a.seasonNumber - b.seasonNumber);
+
 			return reply.send({
 				seriesTitle: seriesRow.title,
 				totalEpisodes,
 				correlatedEpisodes,
 				viaInodeEpisodes,
 				stuckEpisodes,
-				torrents,
+				torrents: enrichedTorrents,
+				seasons,
 			});
 		},
 	);

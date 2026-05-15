@@ -286,6 +286,50 @@ export interface SeriesTorrent {
 	inodeVerified: boolean;
 	/** BigInt string — total bytes across all episodes covered by this torrent. */
 	totalSizeBytes: string;
+	// ── Live qui state (only present when quiUnreachable is false) ──
+	name: string | null;
+	state: string | null;
+	category: string | null;
+	/** `false` when the torrent's category indicates it's a cross-seed-link. */
+	isPrimary: boolean;
+	/** Tracker name parsed from qui's savePath; null when not in /links/ layout. */
+	tracker: string | null;
+	ratio: number | null;
+	/** Full qBit savePath. */
+	savePath: string | null;
+	/** qui-applied tags (`noHL`, `issue`, per-tracker tags, etc). */
+	tags: string[];
+	/** Unix seconds. Null when qui reports the timestamp as 0 (unset). */
+	addedOn: number | null;
+	completedOn: number | null;
+	/** Seconds in seeding state. */
+	seedingTime: number | null;
+	/** qBit's own size reading (BigInt string). May differ from totalSizeBytes if our cache is stale. */
+	torrentSizeBytes: string | null;
+	numSeeds: number | null;
+	numLeechs: number | null;
+	progress: number | null;
+	/** Which qBit instance behind qui holds this torrent. */
+	instanceName: string | null;
+	/** True when we couldn't fetch live state from qui for this hash. */
+	quiUnreachable: boolean;
+}
+
+export interface SeriesEpisodeFile {
+	arrEpisodeFileId: number;
+	relativePath: string;
+	sizeBytes: string;
+	qualityName: string | null;
+	releaseGroup: string | null;
+	infoHash: string | null;
+	infoHashSource: string | null;
+}
+
+export interface SeriesSeason {
+	seasonNumber: number;
+	episodeCount: number;
+	correlatedCount: number;
+	episodes: SeriesEpisodeFile[];
 }
 
 export interface SeriesTorrentsResponse {
@@ -295,6 +339,7 @@ export interface SeriesTorrentsResponse {
 	viaInodeEpisodes: number;
 	stuckEpisodes: number;
 	torrents: SeriesTorrent[];
+	seasons: SeriesSeason[];
 }
 
 /**
