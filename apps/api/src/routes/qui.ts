@@ -572,6 +572,135 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 		}
 	});
 
+	// Cross-seed search for a stuck library item via qui's dir-scan webhook.
+	//
+	// Flow: caller provides a library_cache row id. We look up the row,
+	// extract its on-disk path, and ask qui to scan that specific path for
+	// cross-seed matches. qui takes over from there — searches configured
+	// indexers via Prowlarr/Jackett, downloads matching .torrent files, and
+	// adds them to qBit pointing at the existing library file (skip-hash-
+	// check or recheck depending on qui's dir-scan settings). The next
+	// inode-backfill sweep picks up the new correlation automatically.
+	//
+	// Prerequisite: qui must have a configured dir-scan directory whose
+	// path is a prefix of the library item's path (e.g., `/data/media/movies`
+	// for a movie at `/data/media/movies/Foo (2024)/...`). If not, qui
+	// returns 404 "No matching directory found" and we relay that.
+	app.post<{
+		Body: {
+			arrInstanceId: string;
+			arrItemId: number;
+			itemType: "movie" | "series" | "artist" | "author";
+			quiInstanceId?: string;
+		};
+	}>("/qui/dirscan/trigger", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const { arrInstanceId, arrItemId, itemType, quiInstanceId } = request.body ?? {};
+		if (!arrInstanceId || typeof arrInstanceId !== "string") {
+			return reply.code(400).send({ error: "arrInstanceId is required" });
+		}
+		if (typeof arrItemId !== "number") {
+			return reply.code(400).send({ error: "arrItemId is required" });
+		}
+
+		// Ownership check: scope by userId via the instance relation so
+		// callers can't probe other users' library rows even by guessing.
+		const row = await app.prisma.libraryCache.findFirst({
+			where: {
+				arrItemId,
+				itemType,
+				instance: { id: arrInstanceId, userId },
+			},
+			select: { id: true, title: true, data: true, itemType: true, infoHash: true },
+		});
+		if (!row) {
+			return reply.code(404).send({ error: "Library item not found" });
+		}
+
+		// Extract the on-disk path from the cached *arr response.
+		// Movies use `data.path + "/" + data.movieFile.relativePath`,
+		// series use `data.path` (folder-level — qui's dir-scan then
+		// recursively scans inside). For per-episode correlation use
+		// the EpisodeFileCache.path directly; this route handles
+		// LibraryCache rows only.
+		let scanPath: string | null = null;
+		try {
+			const parsed = JSON.parse(row.data) as Record<string, unknown>;
+			const rootPath = typeof parsed.path === "string" ? parsed.path : null;
+			if (row.itemType === "movie") {
+				const mf = parsed.movieFile as Record<string, unknown> | null | undefined;
+				const rel = typeof mf?.relativePath === "string" ? mf.relativePath : null;
+				if (rootPath && rel) {
+					scanPath = `${rootPath.replace(/\/+$/, "")}/${rel}`;
+				}
+			} else if (row.itemType === "series") {
+				// qui's dir-scan walks recursively from the scan root, so
+				// passing the series folder triggers a search across every
+				// episode file inside.
+				scanPath = rootPath;
+			}
+		} catch {
+			// fall through — scanPath stays null and we'll 422 below
+		}
+		if (!scanPath) {
+			return reply.code(422).send({
+				error: "Could not determine on-disk path from library data",
+			});
+		}
+
+		// Resolve which qui instance to use. If the caller specified one,
+		// validate ownership. Otherwise, pick the first enabled qui for
+		// this user — matches how the rest of the qui routes behave.
+		const quiInstance = quiInstanceId
+			? await app.prisma.serviceInstance.findFirst({
+					where: { id: quiInstanceId, userId, service: "QUI", enabled: true },
+				})
+			: await app.prisma.serviceInstance.findFirst({
+					where: { userId, service: "QUI", enabled: true },
+				});
+		if (!quiInstance) {
+			return reply.code(404).send({ error: "No qui instance available" });
+		}
+
+		try {
+			const client = createQuiClient(app, quiInstance);
+			const result = await client.triggerDirScan(scanPath);
+			request.log.info(
+				{
+					userId,
+					arrInstanceId,
+					arrItemId,
+					itemType,
+					title: row.title,
+					scanPath,
+					quiInstanceId: quiInstance.id,
+					runId: result.runId,
+					directoryId: result.directoryId,
+				},
+				"qui dir-scan triggered for stuck library item",
+			);
+			return reply.send({ ...result, scanPath });
+		} catch (err) {
+			// qui's webhook endpoint returns:
+			//   404 — no configured dir-scan covers the path
+			//   409 — scan already in progress for this directory
+			//   400 — malformed payload (shouldn't happen)
+			// Surface qui's status code verbatim so the UI can show a
+			// useful message ("Configure dir-scan in qui first" vs
+			// "Scan already running").
+			const status =
+				typeof (err as { statusCode?: number }).statusCode === "number"
+					? (err as { statusCode: number }).statusCode
+					: 502;
+			const message = err instanceof Error ? err.message : "qui dir-scan trigger failed";
+			request.log.warn(
+				{ err, userId, arrInstanceId, arrItemId, scanPath, quiInstanceId: quiInstance.id },
+				"qui dir-scan trigger failed",
+			);
+			return reply.code(status).send({ error: message });
+		}
+	});
+
 	app.post("/qui/backfill/run-now", async (request, reply) => {
 		const userId = request.currentUser!.id;
 		// Three-phase backfill pipeline:

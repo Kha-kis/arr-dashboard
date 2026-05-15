@@ -62,6 +62,7 @@ import {
 	isAnimeFromKeywords,
 } from "../../discover/lib/seerr-image-utils";
 import { formatBytes, formatRuntime, SERVICE_COLORS } from "../lib/library-utils";
+import { CrossSeedSearchPanel } from "./cross-seed-search-panel";
 import { PlexTagsEditor } from "./plex-tags-editor";
 import { PosterImage } from "./poster-image";
 import { SeasonEpisodeList } from "./season-episode-list";
@@ -1032,11 +1033,25 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 								typeof item.id === "string" ? Number.parseInt(item.id, 10) : item.id;
 							if (!Number.isFinite(arrItemId)) return null;
 							return (
-								<TorrentHealthPanel
-									arrInstanceId={item.instanceId}
-									arrItemId={arrItemId}
-									itemType={item.type}
-								/>
+								<>
+									<TorrentHealthPanel
+										arrInstanceId={item.instanceId}
+										arrItemId={arrItemId}
+										itemType={item.type}
+									/>
+									{/* Cross-seed search via qui — for stuck items where no
+									 * torrent is correlated yet OR where the user wants to
+									 * search for additional cross-seeds. Hidden when the item
+									 * has no file (nothing on disk to cross-seed). */}
+									{item.hasFile === true && (
+										<CrossSeedSearchPanel
+											arrInstanceId={item.instanceId as string}
+											arrItemId={arrItemId}
+											itemType={item.type}
+											itemTitle={item.title}
+										/>
+									)}
+								</>
 							);
 						})()}
 

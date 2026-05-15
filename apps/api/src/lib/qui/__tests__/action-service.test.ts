@@ -70,6 +70,12 @@ function makeClient(overrides: Partial<QuiClient> = {}): QuiClient {
 		testConnection: vi.fn().mockResolvedValue({ ok: true }),
 		bulkAction: vi.fn().mockResolvedValue(undefined),
 		createNotificationTarget: vi.fn().mockResolvedValue({ id: 1 }),
+		triggerDirScan: vi.fn().mockResolvedValue({
+			runId: 1,
+			directoryId: 1,
+			directoryPath: "/data/media/movies",
+			scanRoot: "/data/media/movies",
+		}),
 		...overrides,
 	};
 }

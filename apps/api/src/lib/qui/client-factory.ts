@@ -50,6 +50,25 @@ export interface QuiClient {
 		eventTypes?: string[];
 		enabled?: boolean;
 	}): Promise<{ id: number }>;
+	/**
+	 * Trigger a qui dir-scan for a specific path. Maps to qui's
+	 * `POST /api/dirscan/webhook` endpoint, which accepts a simple
+	 * `{"path": "..."}` body. qui finds the longest-prefix-matching
+	 * configured dir-scan directory, starts a scan rooted at the
+	 * provided path, and returns the run id. On match qui auto-injects
+	 * the cross-seed torrent against the existing file.
+	 *
+	 * Throws `QuiApiError` with 404 status when no configured dir-scan
+	 * covers the path (operator hasn't set up dir-scan for this volume).
+	 * Throws with 409 when a scan is already in progress for the
+	 * matching directory.
+	 */
+	triggerDirScan(path: string): Promise<{
+		runId: number;
+		directoryId: number;
+		directoryPath: string;
+		scanRoot: string;
+	}>;
 }
 
 // ── Wire-format schemas ─────────────────────────────────────────────
@@ -307,6 +326,33 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 				{
 					method: "POST",
 					body: { name, url, eventTypes, enabled },
+				},
+			);
+		},
+
+		async triggerDirScan(path) {
+			// qui's webhook endpoint accepts native *arr webhook shapes
+			// OR a simplified `{"path": "..."}` body. We use the latter
+			// (the "simple mode" branch in qui's WebhookTriggerScan
+			// handler). qui responds 202 with the run id when the scan
+			// is queued, 404 if no configured dir-scan covers the path,
+			// 409 if a scan is already in progress for the directory.
+			//
+			// camelCase response shape — qui's dirScanTriggerResponse
+			// already uses camelCase JSON keys, so we don't need a
+			// snake_case → camelCase transform here.
+			return quiRequest(
+				ctx,
+				"/api/dirscan/webhook",
+				z.object({
+					runId: z.number().int(),
+					directoryId: z.number().int(),
+					directoryPath: z.string(),
+					scanRoot: z.string(),
+				}),
+				{
+					method: "POST",
+					body: { path },
 				},
 			);
 		},

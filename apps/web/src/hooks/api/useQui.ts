@@ -25,11 +25,13 @@ import {
 	postQuiBulkAction,
 	postQuiTorrentAction,
 	type QuiActionLogParams,
+	type QuiDirScanTriggerResult,
 	type QuiEventLogParams,
 	type RegisterQuiWebhookArgs,
 	registerQuiWebhook,
 	rotateQuiWebhookSecret,
 	type SingleTorrentActionArgs,
+	triggerQuiCrossSeedSearch,
 } from "../../lib/api-client/qui";
 import { POLLING_ACTIVE, POLLING_BACKGROUND, POLLING_STANDARD } from "../../lib/polling-intervals";
 import { quiKeys } from "../../lib/query-keys";
@@ -240,6 +242,32 @@ export const useRotateQuiWebhookSecret = () => {
 export const useRegisterQuiWebhook = () => {
 	return useMutation({
 		mutationFn: (args: RegisterQuiWebhookArgs) => registerQuiWebhook(args),
+	});
+};
+
+/**
+ * Ask qui to search for a cross-seed of a stuck library item. The
+ * mutation hangs until qui has queued the scan (typically <1s — qui
+ * returns the runId as soon as the scan is accepted, then continues
+ * the actual indexer search asynchronously in the background).
+ *
+ * Successful match → qui injects the .torrent against the existing
+ * file → arr-dashboard's next inode-backfill sweep correlates it.
+ * That delay window is up to 6 hours by default; the user can hit
+ * "Run correlation now" from /qui to short-circuit it.
+ */
+export const useTriggerQuiCrossSeedSearch = () => {
+	return useMutation<
+		QuiDirScanTriggerResult,
+		Error,
+		{
+			arrInstanceId: string;
+			arrItemId: number;
+			itemType: "movie" | "series" | "artist" | "author";
+			quiInstanceId?: string;
+		}
+	>({
+		mutationFn: (args) => triggerQuiCrossSeedSearch(args),
 	});
 };
 

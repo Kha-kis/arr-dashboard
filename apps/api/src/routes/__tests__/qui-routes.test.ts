@@ -25,6 +25,7 @@ const mockQuiClient = vi.hoisted(() => ({
 	testConnection: vi.fn(),
 	bulkAction: vi.fn(),
 	createNotificationTarget: vi.fn(),
+	triggerDirScan: vi.fn(),
 }));
 
 vi.mock("../../lib/qui/client-factory.js", () => ({
@@ -967,5 +968,177 @@ describe("GET /qui/events", () => {
 		// flag that more exist via nextCursor — the LAST returned row's id.
 		expect(body.entries).toHaveLength(50);
 		expect(body.nextCursor).toBe("evt-49");
+	});
+});
+
+/**
+ * Cross-seed search for stuck library items via qui's dir-scan webhook.
+ * The route's job is glue: look up the library row by (arrInstanceId,
+ * arrItemId, itemType), extract the on-disk path, hand it to qui's
+ * triggerDirScan, and relay qui's status/body to the caller. These
+ * tests pin each branch: success path, ownership/lookup failures,
+ * malformed library data, missing qui instance, and qui-side errors.
+ */
+describe("POST /qui/dirscan/trigger", () => {
+	const movieLibraryRow = {
+		id: "lc-1",
+		title: "Some Movie",
+		itemType: "movie",
+		infoHash: null,
+		data: JSON.stringify({
+			path: "/data/media/movies/Some Movie (2024)",
+			movieFile: { relativePath: "Some Movie (2024).mkv" },
+		}),
+	};
+
+	const validBody = {
+		arrInstanceId: "radarr-1",
+		arrItemId: 42,
+		itemType: "movie",
+	};
+
+	it("triggers qui dir-scan and returns the run id on success", async () => {
+		mockPrisma.libraryCache.findFirst.mockResolvedValue(movieLibraryRow);
+		mockPrisma.serviceInstance.findFirst.mockResolvedValue(makeQuiInstance());
+		mockQuiClient.triggerDirScan.mockResolvedValue({
+			runId: 99,
+			directoryId: 1,
+			directoryPath: "/data/media/movies",
+			scanRoot: "/data/media/movies/Some Movie (2024)/Some Movie (2024).mkv",
+		});
+
+		const res = await injectAuthenticated("POST", "/qui/dirscan/trigger", { body: validBody });
+		expect(res.statusCode).toBe(200);
+		const body = JSON.parse(res.payload);
+		expect(body.runId).toBe(99);
+		expect(body.scanRoot).toBe("/data/media/movies/Some Movie (2024)/Some Movie (2024).mkv");
+		// The path qui was given must be derived from movieFile.path + relativePath.
+		expect(mockQuiClient.triggerDirScan).toHaveBeenCalledWith(
+			"/data/media/movies/Some Movie (2024)/Some Movie (2024).mkv",
+		);
+	});
+
+	it("returns 400 when arrInstanceId is missing (input validation)", async () => {
+		const res = await injectAuthenticated("POST", "/qui/dirscan/trigger", {
+			body: {
+				arrItemId: 42,
+				itemType: "movie",
+			},
+		});
+		expect(res.statusCode).toBe(400);
+	});
+
+	it("returns 400 when arrItemId is not a number", async () => {
+		const res = await injectAuthenticated("POST", "/qui/dirscan/trigger", {
+			body: {
+				arrInstanceId: "radarr-1",
+				arrItemId: "not-a-number",
+				itemType: "movie",
+			},
+		});
+		expect(res.statusCode).toBe(400);
+	});
+
+	it("returns 404 when the library row doesn't exist for this user (ownership)", async () => {
+		// findFirst returns null — no library row matches (instance, item, type)
+		// for this user. Critical: the lookup scopes by userId via the
+		// instance.userId clause, so a caller can't probe other users' items.
+		mockPrisma.libraryCache.findFirst.mockResolvedValue(null);
+		const res = await injectAuthenticated("POST", "/qui/dirscan/trigger", { body: validBody });
+		expect(res.statusCode).toBe(404);
+		expect(JSON.parse(res.payload).error).toContain("not found");
+	});
+
+	it("returns 422 when the library row's data lacks the path metadata", async () => {
+		// Library row exists but the cached *arr JSON is malformed or pre-file —
+		// can't derive a path to scan. 422 (unprocessable) rather than 500,
+		// because the data is just incomplete, not an unexpected error.
+		mockPrisma.libraryCache.findFirst.mockResolvedValue({
+			...movieLibraryRow,
+			data: JSON.stringify({
+				/* no path field */
+			}),
+		});
+		mockPrisma.serviceInstance.findFirst.mockResolvedValue(makeQuiInstance());
+		const res = await injectAuthenticated("POST", "/qui/dirscan/trigger", { body: validBody });
+		expect(res.statusCode).toBe(422);
+	});
+
+	it("returns 404 when no qui instance is available for this user", async () => {
+		mockPrisma.libraryCache.findFirst.mockResolvedValue(movieLibraryRow);
+		// No qui instance — user hasn't configured one or has it disabled.
+		mockPrisma.serviceInstance.findFirst.mockResolvedValue(null);
+		const res = await injectAuthenticated("POST", "/qui/dirscan/trigger", { body: validBody });
+		expect(res.statusCode).toBe(404);
+		expect(JSON.parse(res.payload).error).toContain("qui instance");
+	});
+
+	it("relays qui's 404 verbatim when no configured dir-scan covers the path", async () => {
+		mockPrisma.libraryCache.findFirst.mockResolvedValue(movieLibraryRow);
+		mockPrisma.serviceInstance.findFirst.mockResolvedValue(makeQuiInstance());
+		// qui's WebhookTriggerScan returns 404 when no configured dir-scan
+		// directory has a prefix that covers the requested path. We surface
+		// that status code AND the message so the UI can render guidance
+		// ("set up Dir-Scan in qui's UI for this library path").
+		const quiErr = Object.assign(new Error("No matching directory found for the given path"), {
+			statusCode: 404,
+		});
+		mockQuiClient.triggerDirScan.mockRejectedValue(quiErr);
+		const res = await injectAuthenticated("POST", "/qui/dirscan/trigger", { body: validBody });
+		expect(res.statusCode).toBe(404);
+		expect(JSON.parse(res.payload).error).toContain("No matching directory");
+	});
+
+	it("relays qui's 409 verbatim when a scan is already in progress", async () => {
+		mockPrisma.libraryCache.findFirst.mockResolvedValue(movieLibraryRow);
+		mockPrisma.serviceInstance.findFirst.mockResolvedValue(makeQuiInstance());
+		const quiErr = Object.assign(new Error("A scan is already in progress for this directory"), {
+			statusCode: 409,
+		});
+		mockQuiClient.triggerDirScan.mockRejectedValue(quiErr);
+		const res = await injectAuthenticated("POST", "/qui/dirscan/trigger", { body: validBody });
+		expect(res.statusCode).toBe(409);
+	});
+
+	it("falls back to 502 when qui throws without a statusCode (unreachable / unknown)", async () => {
+		mockPrisma.libraryCache.findFirst.mockResolvedValue(movieLibraryRow);
+		mockPrisma.serviceInstance.findFirst.mockResolvedValue(makeQuiInstance());
+		// Plain Error with no statusCode — network error, unknown failure.
+		// We map to 502 (bad gateway) which is the convention for "upstream
+		// service unreachable or returned an unexpected shape".
+		mockQuiClient.triggerDirScan.mockRejectedValue(new Error("connect ECONNREFUSED"));
+		const res = await injectAuthenticated("POST", "/qui/dirscan/trigger", { body: validBody });
+		expect(res.statusCode).toBe(502);
+	});
+
+	it("uses the series folder path for series item types (recursive scan)", async () => {
+		// Sonarr series rows store the show's root folder, not per-episode
+		// paths. qui's dir-scan walks recursively from the scan root, so
+		// passing the series folder triggers a search across every episode
+		// file inside — same outcome as scanning individual episode paths
+		// but with one API call.
+		mockPrisma.libraryCache.findFirst.mockResolvedValue({
+			id: "lc-2",
+			title: "Some Show",
+			itemType: "series",
+			infoHash: null,
+			data: JSON.stringify({ path: "/data/media/tv/Some Show" }),
+		});
+		mockPrisma.serviceInstance.findFirst.mockResolvedValue(makeQuiInstance());
+		mockQuiClient.triggerDirScan.mockResolvedValue({
+			runId: 100,
+			directoryId: 1,
+			directoryPath: "/data/media/tv",
+			scanRoot: "/data/media/tv/Some Show",
+		});
+		const res = await injectAuthenticated("POST", "/qui/dirscan/trigger", {
+			body: {
+				arrInstanceId: "sonarr-1",
+				arrItemId: 7,
+				itemType: "series",
+			},
+		});
+		expect(res.statusCode).toBe(200);
+		expect(mockQuiClient.triggerDirScan).toHaveBeenCalledWith("/data/media/tv/Some Show");
 	});
 });

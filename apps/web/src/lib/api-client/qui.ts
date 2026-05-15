@@ -241,3 +241,38 @@ export async function runQuiBackfillNow(): Promise<QuiBackfillNowResult> {
 		json: {},
 	});
 }
+
+export interface QuiDirScanTriggerResult {
+	runId: number;
+	directoryId: number;
+	directoryPath: string;
+	scanRoot: string;
+	scanPath: string;
+}
+
+/**
+ * Ask qui to search for a cross-seed of a stuck library item. qui matches
+ * the item's on-disk path against its configured dir-scan directories,
+ * starts a scan, and if a tracker has a matching torrent, downloads the
+ * .torrent and adds it to qBit pointing at the existing file. The next
+ * inode-backfill sweep correlates the new torrent automatically.
+ *
+ * Prerequisite: qui must have a dir-scan directory configured that
+ * covers the library item's path (e.g., `/data/media/movies` for a movie
+ * in that subtree). If not, the request returns 404.
+ */
+export interface TriggerCrossSeedSearchArgs {
+	arrInstanceId: string;
+	arrItemId: number;
+	itemType: "movie" | "series" | "artist" | "author";
+	quiInstanceId?: string;
+}
+
+export async function triggerQuiCrossSeedSearch(
+	args: TriggerCrossSeedSearchArgs,
+): Promise<QuiDirScanTriggerResult> {
+	return apiRequest<QuiDirScanTriggerResult>("/api/qui/dirscan/trigger", {
+		method: "POST",
+		json: args,
+	});
+}
