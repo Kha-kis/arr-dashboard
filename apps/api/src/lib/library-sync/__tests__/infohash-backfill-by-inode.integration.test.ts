@@ -240,7 +240,7 @@ describe.skipIf(!isPosix)("inode backfill — real filesystem", () => {
 		// THE PROOF: index contains the file's inode (so library lookup
 		// will hit), NOT the folder's inode.
 		expect(index.byFileId.size).toBe(1);
-		expect(index.byFileId.get(`${fileStat.dev}:${fileStat.ino}`)).toBe("folder-wrapped-hash");
+		expect(index.byFileId.get(`${fileStat.dev}:${fileStat.ino}`)).toEqual(new Set(["folder-wrapped-hash"]));
 		expect(index.byFileId.get(`${folderStat.dev}:${folderStat.ino}`)).toBeUndefined();
 
 		const match = await matchLibraryByFileId(libraryPath, index);
@@ -289,8 +289,8 @@ describe.skipIf(!isPosix)("inode backfill — real filesystem", () => {
 		const e1Stat = statSync(e1Torrent);
 		const e2Stat = statSync(e2Torrent);
 		const e3Stat = statSync(e3Torrent);
-		expect(index.byFileId.get(`${e1Stat.dev}:${e1Stat.ino}`)).toBe("season-pack-hash");
-		expect(index.byFileId.get(`${e2Stat.dev}:${e2Stat.ino}`)).toBe("season-pack-hash");
-		expect(index.byFileId.get(`${e3Stat.dev}:${e3Stat.ino}`)).toBe("season-pack-hash");
+		expect(index.byFileId.get(`${e1Stat.dev}:${e1Stat.ino}`)).toEqual(new Set(["season-pack-hash"]));
+		expect(index.byFileId.get(`${e2Stat.dev}:${e2Stat.ino}`)).toEqual(new Set(["season-pack-hash"]));
+		expect(index.byFileId.get(`${e3Stat.dev}:${e3Stat.ino}`)).toEqual(new Set(["season-pack-hash"]));
 	});
 });

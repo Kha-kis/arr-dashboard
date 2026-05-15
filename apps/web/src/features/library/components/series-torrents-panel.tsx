@@ -383,6 +383,75 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({ arrInstanceId, arrItemId,
 											))}
 										</div>
 									)}
+
+									{/* Cross-seed siblings — other torrents qui knows about that
+									 * share content with this primary. Renders as a nested list
+									 * with a subtle left-border to show parent-child relationship.
+									 * Empty siblings array → row hidden. */}
+									{t.siblings.length > 0 && (
+										<div className="space-y-1 border-l-2 border-purple-500/40 pl-3 pt-1">
+											<div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+												Cross-seed siblings ({t.siblings.length})
+											</div>
+											{t.siblings.map((s) => {
+												const siblingState = friendlyState(s.state);
+												return (
+													<div key={s.hash} className="rounded bg-card/40 px-2 py-1 text-[11px]">
+														<div className="flex flex-wrap items-center gap-1.5">
+															<span className="font-mono text-foreground">
+																{s.hash.slice(0, 12)}
+															</span>
+															<span className="rounded bg-card/60 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+																{s.tracker}
+															</span>
+															{siblingState && (
+																<span
+																	className={`rounded px-1.5 py-0.5 text-[10px] ${stateTone(s.state)}`}
+																>
+																	{siblingState}
+																</span>
+															)}
+															{s.trackerHealth && (
+																<span className="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] text-red-200">
+																	{s.trackerHealth.replace("_", " ")}
+																</span>
+															)}
+															{/* Match-type chip: content_path is strongest (exact shared file),
+															 * name / release are fuzzier qui matches. */}
+															<span
+																className={`rounded px-1.5 py-0.5 text-[10px] ${
+																	s.matchType === "content_path"
+																		? "bg-green-500/20 text-green-200"
+																		: "bg-amber-500/20 text-amber-200"
+																}`}
+															>
+																match: {s.matchType}
+															</span>
+															<span className="text-[10px] text-muted-foreground">
+																{formatBytes(s.sizeBytes)}
+															</span>
+														</div>
+														{s.name && (
+															<div
+																className="break-all pt-0.5 font-mono text-[10px] text-muted-foreground"
+																title={s.name}
+															>
+																{isIncognito ? getLinuxSavePath(s.name) : s.name}
+															</div>
+														)}
+														{s.savePath && (
+															<div
+																className="break-all font-mono text-[10px] text-muted-foreground/80"
+																title={s.savePath}
+															>
+																{isIncognito ? getLinuxSavePath(s.savePath) : s.savePath}
+															</div>
+														)}
+													</div>
+												);
+											})}
+										</div>
+									)}
 								</div>
 							);
 						})}

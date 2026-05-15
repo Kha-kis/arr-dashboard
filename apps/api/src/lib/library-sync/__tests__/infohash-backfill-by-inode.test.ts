@@ -96,6 +96,7 @@ import {
 	applyPathRewrite,
 	buildFileIdIndex,
 	type FileIdIndex,
+	getAllHashesForFileId,
 	matchLibraryByFileId,
 } from "../infohash-backfill-by-inode.js";
 
@@ -215,7 +216,7 @@ describe("buildFileIdIndex — single-file torrents", () => {
 			makeQuiTorrent({ hash: "h1", name: "Foo.mkv", savePath: "/data/torrents" }),
 		]);
 		const index = await buildFileIdIndex(client as never, QUI_INSTANCE);
-		expect(index.byFileId.get("100:42")).toBe("h1");
+		expect(index.byFileId.get("100:42")).toEqual(new Set(["h1"]));
 		expect(index.statted).toBe(1);
 		expect(index.skippedNoLinks).toBe(0);
 		expect(index.skippedUnstatable).toBe(0);
@@ -263,7 +264,7 @@ describe("buildFileIdIndex — folder-wrapped torrents (THE BUG FIX)", () => {
 		const index = await buildFileIdIndex(client as never, QUI_INSTANCE);
 		// THE PROOF: the .mkv's inode (80142) is in the index, NOT the
 		// folder's inode (99999).
-		expect(index.byFileId.get("61:80142")).toBe("atomic");
+		expect(index.byFileId.get("61:80142")).toEqual(new Set(["atomic"]));
 		expect(index.byFileId.get("61:99999")).toBeUndefined();
 		expect(index.statted).toBe(1);
 	});
@@ -285,9 +286,9 @@ describe("buildFileIdIndex — folder-wrapped torrents (THE BUG FIX)", () => {
 		const index = await buildFileIdIndex(client as never, QUI_INSTANCE);
 		// All three episode inodes resolve to the same torrent hash —
 		// any library file hardlinked to any of them correlates to the pack.
-		expect(index.byFileId.get("61:1001")).toBe("seasonpack");
-		expect(index.byFileId.get("61:1002")).toBe("seasonpack");
-		expect(index.byFileId.get("61:1003")).toBe("seasonpack");
+		expect(index.byFileId.get("61:1001")).toEqual(new Set(["seasonpack"]));
+		expect(index.byFileId.get("61:1002")).toEqual(new Set(["seasonpack"]));
+		expect(index.byFileId.get("61:1003")).toEqual(new Set(["seasonpack"]));
 		expect(index.statted).toBe(3);
 	});
 
@@ -307,8 +308,8 @@ describe("buildFileIdIndex — folder-wrapped torrents (THE BUG FIX)", () => {
 			}),
 		]);
 		const index = await buildFileIdIndex(client as never, QUI_INSTANCE);
-		expect(index.byFileId.get("61:2001")).toBe("deepshow");
-		expect(index.byFileId.get("61:2002")).toBe("deepshow");
+		expect(index.byFileId.get("61:2001")).toEqual(new Set(["deepshow"]));
+		expect(index.byFileId.get("61:2002")).toEqual(new Set(["deepshow"]));
 	});
 
 	it("skips nlink==1 files inside a folder while indexing nlink>=2 siblings", async () => {
@@ -330,7 +331,7 @@ describe("buildFileIdIndex — folder-wrapped torrents (THE BUG FIX)", () => {
 			}),
 		]);
 		const index = await buildFileIdIndex(client as never, QUI_INSTANCE);
-		expect(index.byFileId.get("61:3001")).toBe("moviepack");
+		expect(index.byFileId.get("61:3001")).toEqual(new Set(["moviepack"]));
 		expect(index.byFileId.get("61:3002")).toBeUndefined();
 		expect(index.byFileId.get("61:3003")).toBeUndefined();
 		expect(index.statted).toBe(1);
@@ -351,7 +352,7 @@ describe("buildFileIdIndex — folder-wrapped torrents (THE BUG FIX)", () => {
 		]);
 		const index = await buildFileIdIndex(client as never, QUI_INSTANCE);
 		expect(index.byFileId.get("61:400000")).toBeUndefined();
-		expect(index.byFileId.get("61:4001")).toBe("h");
+		expect(index.byFileId.get("61:4001")).toEqual(new Set(["h"]));
 	});
 
 	it("caps the walk at MAX_WALK_ENTRIES_PER_TORRENT entries", async () => {
@@ -413,7 +414,7 @@ describe("buildFileIdIndex — path prefix rewrite", () => {
 			...QUI_INSTANCE,
 			pathPrefix: "/downloads>/qbit-data",
 		});
-		expect(index.byFileId.get("100:1")).toBe("prefixed");
+		expect(index.byFileId.get("100:1")).toEqual(new Set(["prefixed"]));
 	});
 
 	it("applies path prefix rewrite to folder-wrapped torrents", async () => {
@@ -430,13 +431,17 @@ describe("buildFileIdIndex — path prefix rewrite", () => {
 			...QUI_INSTANCE,
 			pathPrefix: "/downloads>/qbit-data",
 		});
-		expect(index.byFileId.get("100:5001")).toBe("prefixed-folder");
+		expect(index.byFileId.get("100:5001")).toEqual(new Set(["prefixed-folder"]));
 	});
 });
 
 describe("matchLibraryByFileId", () => {
 	function makeIndex(entries: Array<[string, string]>): FileIdIndex {
-		const m = new Map<string, string>(entries);
+		// Wrap each scalar hash into a single-element Set — the new
+		// multi-hash index shape. matchLibraryByFileId still returns one
+		// canonical hash per inode (first from the set), so single-element
+		// sets exercise the same behavior as the old single-string map.
+		const m = new Map<string, Set<string>>(entries.map(([key, hash]) => [key, new Set([hash])]));
 		return { byFileId: m, statted: m.size, skippedNoLinks: 0, skippedUnstatable: 0 };
 	}
 
@@ -488,5 +493,102 @@ describe("matchLibraryByFileId", () => {
 		});
 		const index = makeIndex([["100:42", "hash-A"]]);
 		expect(await matchLibraryByFileId("/data/media/somehow-a-dir", index)).toBeNull();
+	});
+});
+
+/**
+ * Multi-hash semantics: the index now tracks EVERY torrent that shares
+ * a given (dev, ino), not just the last one to win Map.set(). This is
+ * the architectural fix that lets the series-torrents panel surface
+ * cross-seed siblings even on single-instance qui setups (where qui's
+ * own local-matches endpoint returns nothing).
+ *
+ * The core invariants pinned here:
+ *   1. Two torrents sharing an inode → both stored.
+ *   2. matchLibraryByFileId still returns ONE canonical hash (first
+ *      from the set) so backfill sweeps writing to single-column
+ *      infoHash continue to work unchanged.
+ *   3. getAllHashesForFileId returns the full array of hashes.
+ *   4. nlink == 1 / stat-fails / not-in-index still return empty.
+ */
+describe("multi-hash per FileID (cross-seed visibility)", () => {
+	it("indexes multiple torrents pointing at the same inode (cross-seed case)", async () => {
+		// Three torrents — primary + 2 cross-seeds at different trackers —
+		// all hardlink-pointing at the same .mkv. Old Map<string, string>
+		// would have stored only the LAST hash; the new Set<string> stores
+		// all three.
+		stageFile("/data/torrents/primary/foo.mkv", 61, 12345, 4);
+		stageFile("/data/torrents/links/PTP/foo.mkv", 61, 12345, 4);
+		stageFile("/data/torrents/links/BHD/foo.mkv", 61, 12345, 4);
+		const client = makeFakeClient([
+			makeQuiTorrent({ hash: "primary-hash", name: "foo.mkv", savePath: "/data/torrents/primary" }),
+			makeQuiTorrent({ hash: "ptp-hash", name: "foo.mkv", savePath: "/data/torrents/links/PTP" }),
+			makeQuiTorrent({ hash: "bhd-hash", name: "foo.mkv", savePath: "/data/torrents/links/BHD" }),
+		]);
+		const index = await buildFileIdIndex(client as never, QUI_INSTANCE);
+		expect(index.byFileId.get("61:12345")).toEqual(
+			new Set(["primary-hash", "ptp-hash", "bhd-hash"]),
+		);
+	});
+
+	it("matchLibraryByFileId still returns ONE canonical hash from a multi-hash set (backfill compat)", async () => {
+		// Backfill sweeps write to single-column episode_file_cache.infoHash.
+		// matchLibraryByFileId must keep returning a single value — the
+		// canonical choice is "first hash in iteration order" (matches
+		// qui's torrent enumeration order). Set iteration is insertion
+		// order in JS, so primary-hash (inserted first) wins.
+		stageFile("/data/media/foo.mkv", 61, 12345, 4);
+		const index: FileIdIndex = {
+			byFileId: new Map([["61:12345", new Set(["primary-hash", "ptp-hash", "bhd-hash"])]]),
+			statted: 3,
+			skippedNoLinks: 0,
+			skippedUnstatable: 0,
+		};
+		expect(await matchLibraryByFileId("/data/media/foo.mkv", index)).toEqual({
+			hash: "primary-hash",
+			source: "inode",
+		});
+	});
+
+	it("getAllHashesForFileId returns the full set as an array (series panel use)", async () => {
+		stageFile("/data/media/foo.mkv", 61, 12345, 4);
+		const index: FileIdIndex = {
+			byFileId: new Map([["61:12345", new Set(["primary-hash", "ptp-hash", "bhd-hash"])]]),
+			statted: 3,
+			skippedNoLinks: 0,
+			skippedUnstatable: 0,
+		};
+		const hashes = await getAllHashesForFileId("/data/media/foo.mkv", index);
+		expect(hashes).toHaveLength(3);
+		// Order matches insertion order. Tests can rely on this for
+		// deterministic snapshot assertions.
+		expect(hashes).toEqual(["primary-hash", "ptp-hash", "bhd-hash"]);
+	});
+
+	it("getAllHashesForFileId returns [] for nlink==1 / stat failure / no match", async () => {
+		// nlink == 1: file is alone on disk, can't be in the index → empty
+		stageFile("/data/media/lonely.mkv", 61, 99, 1);
+		// no stagedStat for /missing.mkv → ENOENT
+		const index: FileIdIndex = {
+			byFileId: new Map([["61:99", new Set(["wouldnt-match-anyway"])]]),
+			statted: 1,
+			skippedNoLinks: 0,
+			skippedUnstatable: 0,
+		};
+		expect(await getAllHashesForFileId("/data/media/lonely.mkv", index)).toEqual([]);
+		expect(await getAllHashesForFileId("/missing.mkv", index)).toEqual([]);
+	});
+
+	it("REJECTS multi-hash matches when ino matches but dev differs (cross-filesystem)", async () => {
+		// Same (dev, ino) check applies regardless of multi-hash. Different
+		// filesystems → different identity → no match.
+		stageFile("/mnt/disk2/foo.mkv", 200, 12345, 2);
+		const index: FileIdIndex = {
+			byFileId: new Map([["61:12345", new Set(["a", "b", "c"])]]),
+			statted: 3,
+			skippedNoLinks: 0,
+			skippedUnstatable: 0,
+		};
+		expect(await getAllHashesForFileId("/mnt/disk2/foo.mkv", index)).toEqual([]);
 	});
 });

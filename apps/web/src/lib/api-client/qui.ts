@@ -313,6 +313,27 @@ export interface SeriesTorrent {
 	instanceName: string | null;
 	/** True when we couldn't fetch live state from qui for this hash. */
 	quiUnreachable: boolean;
+	/**
+	 * Cross-seed siblings — other torrents qui knows about that share
+	 * content with this one. Populated from qui's local-matches endpoint
+	 * per primary torrent. Empty when there are no siblings or qui is
+	 * unreachable.
+	 */
+	siblings: SeriesTorrentSibling[];
+}
+
+export interface SeriesTorrentSibling {
+	hash: string;
+	name: string;
+	tracker: string;
+	trackerHealth?: "unregistered" | "tracker_down";
+	instanceName: string;
+	state: string;
+	category: string;
+	savePath: string;
+	contentPath: string;
+	matchType: "content_path" | "name" | "release";
+	sizeBytes: string;
 }
 
 export interface SeriesEpisodeFile {

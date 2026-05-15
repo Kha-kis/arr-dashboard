@@ -69,13 +69,17 @@ export interface InodeMatchResult {
 
 /**
  * Index built from a qui instance's torrent list. Keys are `"dev:ino"`
- * strings to match Map's structural-equality semantics. We never iterate
- * the index — only `.get()` — so the string key cost is negligible.
+ * strings to match Map's structural-equality semantics. Each key maps
+ * to a SET of torrent hashes — multiple torrents can share the same
+ * inode (cross-seeded content across trackers, qui's hardlink-mode
+ * mirror layout). Pre-2026-05 versions used `Map<string, string>` and
+ * silently dropped all but the last hash per inode; that masked
+ * cross-seed visibility everywhere downstream.
  */
 export interface FileIdIndex {
-	/** Map from `"dev:ino"` → torrent hash. */
-	byFileId: Map<string, string>;
-	/** Number of files successfully stat'd and indexed (with `nlink >= 2`). */
+	/** Map from `"dev:ino"` → set of torrent hashes that share this inode. */
+	byFileId: Map<string, Set<string>>;
+	/** Number of file→hash associations added (one per torrent file). */
 	statted: number;
 	/** Number of files skipped because `nlink == 1` (no hardlinks possible). */
 	skippedNoLinks: number;
@@ -153,11 +157,23 @@ export async function buildFileIdIndex(
 	}
 
 	const torrents = await client.listAllTorrents();
-	const byFileId = new Map<string, string>();
+	const byFileId = new Map<string, Set<string>>();
 	let statted = 0;
 	let skippedNoLinks = 0;
 	let skippedUnstatable = 0;
 	let firstStatErrorLogged = false;
+
+	// Helper: add a hash to the set at this FileID key, creating the set
+	// if needed. Centralized so the single-file and directory branches
+	// stay consistent.
+	const addHash = (key: string, hash: string): void => {
+		const existing = byFileId.get(key);
+		if (existing) {
+			existing.add(hash);
+		} else {
+			byFileId.set(key, new Set([hash]));
+		}
+	};
 
 	for (const torrent of torrents) {
 		const trimmed = torrent.savePath ? torrent.savePath.replace(/\/+$/, "") : "";
@@ -188,11 +204,11 @@ export async function buildFileIdIndex(
 				if (rootInfo.nlink < 2) {
 					skippedNoLinks++;
 				} else {
-					byFileId.set(`${rootInfo.dev}:${rootInfo.ino}`, torrent.hash);
+					addHash(`${rootInfo.dev}:${rootInfo.ino}`, torrent.hash);
 					statted++;
 				}
 			} else if (rootInfo.kind === "directory") {
-				const stats = await indexDirectoryFiles(rootPath, torrent.hash, byFileId);
+				const stats = await indexDirectoryFiles(rootPath, torrent.hash, addHash);
 				statted += stats.statted;
 				skippedNoLinks += stats.skippedNoLinks;
 			}
@@ -248,7 +264,7 @@ export async function buildFileIdIndex(
 async function indexDirectoryFiles(
 	rootPath: string,
 	hash: string,
-	byFileId: Map<string, string>,
+	addHash: (key: string, hash: string) => void,
 ): Promise<{ statted: number; skippedNoLinks: number }> {
 	let statted = 0;
 	let skippedNoLinks = 0;
@@ -279,7 +295,7 @@ async function indexDirectoryFiles(
 			skippedNoLinks++;
 			continue;
 		}
-		byFileId.set(`${info.dev}:${info.ino}`, hash);
+		addHash(`${info.dev}:${info.ino}`, hash);
 		statted++;
 	}
 
@@ -304,9 +320,41 @@ export async function matchLibraryByFileId(
 	const info = await statSafe(libraryPath);
 	if (!info || info.kind !== "file") return null;
 	if (info.nlink < 2) return null;
-	const hash = index.byFileId.get(`${info.dev}:${info.ino}`);
-	if (!hash) return null;
-	return { hash, source: "inode" };
+	const hashes = index.byFileId.get(`${info.dev}:${info.ino}`);
+	if (!hashes || hashes.size === 0) return null;
+	// The index can now hold multiple hashes per inode (cross-seeded
+	// content across trackers). The library_cache.infoHash column is
+	// single-valued, so this matcher returns ONE canonical hash —
+	// iteration-order first, which is the order hashes were inserted
+	// (qui's torrent enumeration order). The series-torrents panel
+	// uses `getAllHashesForFileId` to see the full set; this single-
+	// hash semantics is just for the backfill sweeps.
+	const canonical = hashes.values().next().value;
+	if (!canonical) return null;
+	return { hash: canonical, source: "inode" };
+}
+
+/**
+ * Return EVERY torrent hash that shares an inode with the given path.
+ * Used by the series-torrents panel to surface all cross-seeds of a
+ * library file — not just the one that happened to win the Map.set()
+ * race during indexing.
+ *
+ * Caller is responsible for ordering the returned array if they want
+ * deterministic display; the Set's iteration order matches insertion,
+ * which is qui's torrent enumeration order (typically alphabetical or
+ * by add date, depending on qui's caching).
+ */
+export async function getAllHashesForFileId(
+	libraryPath: string,
+	index: FileIdIndex,
+): Promise<string[]> {
+	const info = await statSafe(libraryPath);
+	if (!info || info.kind !== "file") return [];
+	if (info.nlink < 2) return [];
+	const hashes = index.byFileId.get(`${info.dev}:${info.ino}`);
+	if (!hashes) return [];
+	return Array.from(hashes);
 }
 
 interface StatInfo {
