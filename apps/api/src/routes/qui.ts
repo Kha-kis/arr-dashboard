@@ -707,12 +707,23 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	// Series-level torrent / cross-seed overview.
 	//
-	// Renders the per-series rich panel in the library detail modal:
-	// total episode files, correlation breakdown by source (inode /
-	// heuristic / none), and a list of DISTINCT torrents (grouped by
-	// infoHash) covering those files. For a typical 16-episode series,
-	// this might surface 3-5 distinct torrents — one per season pack
-	// plus any cross-seeds qui has injected.
+	// Renders the per-series rich panel in the library detail modal. The
+	// shape is **content clusters** — each cluster is one set of episodes
+	// covered by 1..N torrent copies (tracker mirrors via qui's hardlink
+	// automation). A 4-tracker S02 pack → 1 cluster with 4 copies, not 4
+	// duplicated rows with a redundant siblings sub-list.
+	//
+	// Three trust-correctness fixes happen here:
+	//   1. **Stale cache healing** — when an episode's cached infoHash
+	//      points at a torrent qui no longer has but a fresh inode lookup
+	//      finds replacement hashes, rewrite the cache canonical so it
+	//      stops appearing as a phantom row.
+	//   2. **Phantom suppression** — cached hashes that aren't in any
+	//      live qui index AND have replacement hashes from the inode set
+	//      are dropped from the response.
+	//   3. **Action items** — surface actionable things (stuck episodes,
+	//      unhealthy trackers, dormant content) at the top instead of
+	//      making the user infer them from the row list.
 	//
 	// Scope-bound to one user via the instance.userId relation, same
 	// ownership pattern as the rest of qui.ts.
@@ -746,10 +757,6 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 			// is one EpisodeFile (multi-ep files like `S01E01-E02.mkv` are
 			// ONE EpisodeFile covering two Episode entities) — see the
 			// EpisodeFileCache schema comment.
-			//
-			// arrSeriesId is the Sonarr-side series id (`library_cache.arrItemId`
-			// for itemType=series). We scope by instanceId too in case a
-			// future multi-Sonarr setup has overlapping series ids.
 			const episodes = await app.prisma.episodeFileCache.findMany({
 				where: { instanceId: arrInstanceId, arrSeriesId: arrItemId },
 				select: {
@@ -767,51 +774,15 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 				orderBy: [{ seasonNumber: "asc" }, { relativePath: "asc" }],
 			});
 
-			// Aggregate counts upfront so the UI doesn't need to recompute.
 			const totalEpisodes = episodes.length;
-			const correlatedEpisodes = episodes.filter((e) => e.infoHash !== null).length;
 			const viaInodeEpisodes = episodes.filter((e) => e.infoHashSource === "inode").length;
-			const stuckEpisodes = totalEpisodes - correlatedEpisodes;
-
-			// Group by infoHash — one row per distinct torrent.
-			//
-			// Pre-2026-05 versions only used `episode.infoHash` (the cached
-			// canonical hash, one per episode). Cross-seeded content was
-			// silently invisible: if 4 trackers carried the same files, our
-			// inode strategy stored only the last hash to win Map.set(),
-			// dropping the other 3. The panel showed "1 torrent covers this
-			// series" when the truth was "4 cross-seeds carry it."
-			//
-			// New flow: also look up the live inode index (Map<key, Set<hash>>)
-			// at request time. For each episode, take the UNION of (cached
-			// canonical hash) ∪ (all hashes the index knows). Every torrent
-			// covering this episode appears in the aggregation.
-			//
-			// Empty hash sets (truly stuck episodes) contribute nothing —
-			// they're still counted in `stuckEpisodes` above.
-			const torrentMap = new Map<
-				string,
-				{
-					infoHash: string;
-					episodeCount: number;
-					seasons: Set<number>;
-					qualityName: string | null;
-					releaseGroup: string | null;
-					inodeVerified: boolean;
-					totalSize: bigint;
-				}
-			>();
 
 			// Look up a single qui instance for index building. FS-enabled
 			// instance preferred (only those have a meaningful inode index).
-			// If no FS instance, we fall back to cache-only aggregation.
 			const fsInstance = await app.prisma.serviceInstance.findFirst({
 				where: { userId, service: "QUI", enabled: true, hasLocalFilesystemAccess: true },
 			});
 
-			// Build (or fetch cached) inode index for the FS-enabled qui.
-			// The 2-min cache means repeat requests are fast; the first
-			// cold-build hits the qui torrent list + stats every file.
 			let inodeIndex: Awaited<ReturnType<typeof buildFileIdIndex>> | null = null;
 			if (fsInstance) {
 				try {
@@ -825,147 +796,174 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 				}
 			}
 
-			for (const ep of episodes) {
-				// Collect hashes for THIS episode from two sources:
-				//   - The cached canonical hash (episode_file_cache.infoHash)
-				//     written by the backfill sweep.
-				//   - All hashes the live inode index has for this file — the
-				//     full set of cross-seeded torrents, not just the canonical.
-				// Union via Set so the canonical (always also in the inode set
-				// when fresh) doesn't double-count.
-				const hashSet = new Set<string>();
-				if (ep.infoHash) hashSet.add(ep.infoHash);
-				if (inodeIndex && ep.path) {
-					const fromIndex = await getAllHashesForFileId(ep.path, inodeIndex);
-					for (const h of fromIndex) hashSet.add(h);
-				}
+			// Per-episode hash collection. For each episode we record:
+			//   - inodeHashes: hashes the live qui inode index knows about
+			//     for this specific file (cross-seeds the user actually has)
+			//   - cachedHash: the canonical written by backfill (may be stale)
+			//
+			// Stale-detection rule: cached hash exists, inode lookup returned
+			// at least one hash, but cached hash isn't in that inode set →
+			// the cached canonical points at a torrent qui no longer has.
+			// We heal those by rewriting cache to inodeHashes[0] AND drop
+			// the stale cached hash from the response.
+			const perEpisode = await Promise.all(
+				episodes.map(async (ep) => {
+					const inodeHashes =
+						inodeIndex && ep.path ? await getAllHashesForFileId(ep.path, inodeIndex) : [];
+					const cachedStale =
+						ep.infoHash !== null &&
+						inodeHashes.length > 0 &&
+						!inodeHashes.some((h) => h.toLowerCase() === ep.infoHash!.toLowerCase());
+					return { ep, inodeHashes, cachedStale };
+				}),
+			);
 
-				const isInodeVerified = ep.infoHashSource === "inode";
-
-				for (const hash of hashSet) {
-					const existing = torrentMap.get(hash);
-					if (existing) {
-						existing.episodeCount += 1;
-						existing.seasons.add(ep.seasonNumber);
-						existing.totalSize += ep.size;
-						if (isInodeVerified) existing.inodeVerified = true;
-					} else {
-						torrentMap.set(hash, {
-							infoHash: hash,
-							episodeCount: 1,
-							seasons: new Set([ep.seasonNumber]),
-							qualityName: ep.qualityName,
-							releaseGroup: ep.releaseGroup,
-							inodeVerified: isInodeVerified,
-							totalSize: ep.size,
-						});
-					}
-				}
+			// Apply healing: for stale episodes, write the canonical inode
+			// hash back so the next page load (and the backfill sweep) see
+			// fresh data. Use individual updates rather than chunked updateMany
+			// because each row gets a different target hash.
+			const healCandidates = perEpisode.filter(
+				(p): p is typeof p & { inodeHashes: [string, ...string[]] } =>
+					p.cachedStale && p.inodeHashes.length > 0,
+			);
+			let healedEpisodes = 0;
+			if (healCandidates.length > 0) {
+				await Promise.all(
+					healCandidates.map(({ ep, inodeHashes }) =>
+						app.prisma.episodeFileCache.update({
+							where: { id: ep.id },
+							data: { infoHash: inodeHashes[0], infoHashSource: "inode" },
+						}),
+					),
+				);
+				healedEpisodes = healCandidates.length;
+				request.log.info(
+					{ userId, arrInstanceId, arrSeriesId: arrItemId, healed: healedEpisodes },
+					"qui series-torrents: healed stale cached infoHashes",
+				);
 			}
 
-			const baseTorrents = Array.from(torrentMap.values())
-				.map((t) => ({
-					infoHash: t.infoHash,
-					episodeCount: t.episodeCount,
-					seasons: Array.from(t.seasons).sort((a, b) => a - b),
-					qualityName: t.qualityName,
-					releaseGroup: t.releaseGroup,
-					inodeVerified: t.inodeVerified,
-					totalSizeBytes: t.totalSize.toString(),
-				}))
-				.sort((a, b) => b.episodeCount - a.episodeCount); // biggest pack first
+			// Effective per-episode hash list — for each episode, prefer
+			// inode hashes when available (they're live); fall back to cached
+			// when no inode data exists (FS-disabled instance). Cached hashes
+			// that are stale and have replacements are excluded.
+			interface EpisodeContext {
+				ep: (typeof episodes)[number];
+				/** Hashes that map to this episode in the response. */
+				effectiveHashes: string[];
+				/** True when at least one hash came from a live inode lookup. */
+				inodeVerified: boolean;
+			}
+			const episodeContexts: EpisodeContext[] = perEpisode.map(
+				({ ep, inodeHashes, cachedStale }) => {
+					const hashes = new Set<string>();
+					for (const h of inodeHashes) hashes.add(h);
+					// Cached hash: include only when not stale. If cachedStale is true
+					// but we have replacements, the cached hash is dropped — that's
+					// what removes the phantom rows.
+					if (ep.infoHash && !cachedStale) hashes.add(ep.infoHash);
+					return {
+						ep,
+						effectiveHashes: Array.from(hashes),
+						inodeVerified: inodeHashes.length > 0 || ep.infoHashSource === "inode",
+					};
+				},
+			);
 
-			// Enrich each torrent with live state from qui — category (master
-			// vs cross-seed), state, savePath, name. Parallel per-hash to keep
-			// total latency bounded by the slowest qui call. Cross-seed siblings
-			// (other torrents sharing the same content) is a deeper feature
-			// deferred to a follow-up — it requires a `getCrossSeedMatches`
-			// call per hash + index refactor to track multiple hashes per inode.
+			// "Stuck" now = episode with zero effective hashes. A previously-
+			// correlated episode whose cache we just healed isn't stuck; an
+			// episode whose only cached hash was stale-with-no-replacement
+			// IS stuck (we couldn't find anything live).
+			const stuckEpisodes = episodeContexts.filter((c) => c.effectiveHashes.length === 0).length;
+			const correlatedEpisodes = totalEpisodes - stuckEpisodes;
+
+			// Group episodes by **coverage signature** — the sorted list of
+			// hashes covering them. Episodes with the same set of hashes
+			// belong to the same cluster (they're all covered by the same
+			// torrent copies).
 			//
-			// A torrent we can't reach in qui (404 / instance error) renders
-			// with `quiUnreachable: true` and the cached fields only — instead
-			// of failing the whole panel.
-			let quiInstance: Awaited<ReturnType<typeof app.prisma.serviceInstance.findFirst>> = null;
-			if (baseTorrents.length > 0) {
+			// Different example: an S02 8-pack covers eps [a,b,...h] with
+			// hashes [H1,H2,H3,H4]; each of those 8 episodes has the same
+			// signature → 1 cluster, 4 copies. Per-episode S03E01 torrent
+			// covers just ep [i] with hashes [H5,H6,H7] → different cluster.
+			interface ClusterAccumulator {
+				episodeFileIds: number[];
+				seasons: Set<number>;
+				totalSize: bigint;
+				qualityName: string | null;
+				releaseGroup: string | null;
+				inodeVerified: boolean;
+				hashes: Set<string>;
+			}
+			const clusterMap = new Map<string, ClusterAccumulator>();
+			for (const ctx of episodeContexts) {
+				if (ctx.effectiveHashes.length === 0) continue; // stuck
+				const signature = [...ctx.effectiveHashes].sort().join("|");
+				let acc = clusterMap.get(signature);
+				if (!acc) {
+					acc = {
+						episodeFileIds: [],
+						seasons: new Set(),
+						totalSize: 0n,
+						qualityName: ctx.ep.qualityName,
+						releaseGroup: ctx.ep.releaseGroup,
+						inodeVerified: ctx.inodeVerified,
+						hashes: new Set(ctx.effectiveHashes),
+					};
+					clusterMap.set(signature, acc);
+				}
+				acc.episodeFileIds.push(ctx.ep.arrEpisodeFileId);
+				acc.seasons.add(ctx.ep.seasonNumber);
+				acc.totalSize += ctx.ep.size;
+				if (ctx.inodeVerified) acc.inodeVerified = true;
+			}
+
+			// Resolve the qui instance once for enrichment. We need one
+			// instance per torrent fetch — fsInstance preferred (it has FS
+			// access for path matching), else any enabled qui.
+			let quiInstance: Awaited<ReturnType<typeof app.prisma.serviceInstance.findFirst>> =
+				fsInstance;
+			if (!quiInstance && clusterMap.size > 0) {
 				quiInstance = await app.prisma.serviceInstance.findFirst({
 					where: { userId, service: "QUI", enabled: true },
 				});
 			}
 
-			interface EnrichedTorrent {
+			interface ClusterCopy {
 				infoHash: string;
-				episodeCount: number;
-				seasons: number[];
-				qualityName: string | null;
-				releaseGroup: string | null;
-				inodeVerified: boolean;
-				totalSizeBytes: string;
-				// ── Fields from qui's live torrent data (null when qui unreachable) ──
 				name: string | null;
 				state: string | null;
 				category: string | null;
-				/** Derived: `false` when category starts with "cross-seed". */
-				isPrimary: boolean;
-				/** Best-effort tracker name parsed from savePath; null when ambiguous. */
+				/** "library" = Sonarr/Radarr-managed; "mirror" = qui's cross-seed-link. */
+				role: "library" | "mirror";
 				tracker: string | null;
+				trackerHealth: "unregistered" | "tracker_down" | null;
 				ratio: number | null;
-				/** Full qBit savePath (the on-disk directory the torrent's content lives in). */
 				savePath: string | null;
-				/** qui-applied tags (e.g., `noHL`, `issue`, per-tracker tags). */
 				tags: string[];
-				/** Unix-seconds timestamps from qBit (0 in qui's wire shape means "not set"). */
 				addedOn: number | null;
-				completedOn: number | null;
-				/** Seconds in seeding state — how long it's been seeding. */
 				seedingTime: number | null;
-				/** qBit reports torrent size in bytes; useful when our episode-cache total disagrees. */
 				torrentSizeBytes: string | null;
-				/** Current peer counts. */
 				numSeeds: number | null;
 				numLeechs: number | null;
-				/** 0..1 fraction completed (1 = full). */
 				progress: number | null;
-				/** Which qBit instance behind qui holds this torrent. */
 				instanceName: string | null;
-				/** True when we couldn't fetch this hash from qui (404 / unreachable). */
+				/** True when qui has no record of this hash (heal-then-drop should remove these). */
 				quiUnreachable: boolean;
-				/**
-				 * Cross-seed siblings — other torrents qui knows about whose
-				 * content matches this one (same files via content_path / name /
-				 * release matching). Populated from qui's local-matches endpoint.
-				 * Empty array when no siblings (single tracker, or unreachable).
-				 */
-				siblings: Array<{
-					hash: string;
-					name: string;
-					tracker: string;
-					trackerHealth?: "unregistered" | "tracker_down";
-					instanceName: string;
-					state: string;
-					category: string;
-					savePath: string;
-					contentPath: string;
-					/** content_path = shared file paths; name / release = qui's looser matchers. */
-					matchType: "content_path" | "name" | "release";
-					sizeBytes: string;
-				}>;
 			}
 
-			// Fallback shape for torrents we can't reach in qui — keeps the
-			// frontend's typing tight by always emitting every field, just
-			// with nulls/empty defaults.
-			const buildUnreachable = (t: (typeof baseTorrents)[number]): EnrichedTorrent => ({
-				...t,
+			const buildUnreachableCopy = (hash: string): ClusterCopy => ({
+				infoHash: hash,
 				name: null,
 				state: null,
 				category: null,
-				isPrimary: true,
+				role: "library",
 				tracker: null,
+				trackerHealth: null,
 				ratio: null,
 				savePath: null,
 				tags: [],
 				addedOn: null,
-				completedOn: null,
 				seedingTime: null,
 				torrentSizeBytes: null,
 				numSeeds: null,
@@ -973,98 +971,211 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 				progress: null,
 				instanceName: null,
 				quiUnreachable: true,
-				siblings: [],
 			});
 
-			const enrichedTorrents: EnrichedTorrent[] = await Promise.all(
-				baseTorrents.map(async (t): Promise<EnrichedTorrent> => {
-					if (!quiInstance) return buildUnreachable(t);
-					try {
-						const client = createQuiClient(app, quiInstance);
-						const torrent = await client.getTorrentByHash(t.infoHash);
-						if (!torrent) return buildUnreachable(t);
+			// Fetch each unique hash from qui ONCE. Multiple clusters might
+			// share a hash if a single torrent covers episodes in different
+			// coverage sets (rare but possible for multi-season packs across
+			// arr-side splits) — caching avoids redundant API calls.
+			const allHashes = new Set<string>();
+			for (const acc of clusterMap.values()) for (const h of acc.hashes) allHashes.add(h);
 
-						const category = torrent.category || null;
-						const isPrimary = !(category ?? "").toLowerCase().includes("cross-seed");
-						// Tracker inference: qui's hardlink-mode places cross-seeds
-						// under `/data/torrents/links/<tracker>/...`. Primary
-						// torrents live in `/data/torrents/<category>/`. We parse
-						// the tracker name from the savePath when it matches the
-						// hardlink layout, otherwise null.
-						const linksMatch = (torrent.savePath ?? "").match(/\/links\/([^/]+)/);
-						const tracker = linksMatch ? linksMatch[1]! : null;
-
-						// Cross-seed siblings: ask qui's local-matches endpoint for
-						// torrents that share content with this one. Works for both
-						// cross-instance setups AND same-instance cross-seeds qui
-						// has injected via its hardlink-mode automation. We filter
-						// out the source hash from the result (qui sometimes
-						// includes the queried hash itself).
-						let siblings: EnrichedTorrent["siblings"] = [];
-						if (typeof torrent.instanceId === "number") {
-							try {
-								const matches = await client.getCrossSeedMatches(torrent.instanceId, t.infoHash);
-								siblings = matches
-									.filter((m) => m.hash.toLowerCase() !== t.infoHash.toLowerCase())
-									.map((m) => ({
-										hash: m.hash,
-										name: m.name,
-										tracker: m.tracker,
-										trackerHealth: m.trackerHealth,
-										instanceName: m.instanceName,
-										state: m.state,
-										category: m.category,
-										savePath: m.savePath,
-										contentPath: m.contentPath,
-										matchType: m.matchType,
-										sizeBytes: m.size.toString(),
-									}));
-							} catch (siblingErr) {
-								request.log.debug(
-									{ err: siblingErr, hash: t.infoHash },
-									"qui series-torrents: sibling fetch failed; continuing without siblings",
-								);
+			const enrichedCopies = new Map<string, ClusterCopy>();
+			if (quiInstance) {
+				await Promise.all(
+					Array.from(allHashes).map(async (hash) => {
+						try {
+							const client = createQuiClient(app, quiInstance!);
+							const torrent = await client.getTorrentByHash(hash);
+							if (!torrent) {
+								enrichedCopies.set(hash, buildUnreachableCopy(hash));
+								return;
 							}
+							const category = torrent.category || null;
+							// Role classification:
+							//   - "library" = Sonarr/Radarr imported it (categories like
+							//     `tv`, `movies`, `tv.cross` — the latter being Radarr's
+							//     cross-seed-aware import category).
+							//   - "mirror" = qui's cross-seed automation injected it
+							//     under `cross-seed-link` category.
+							const role: ClusterCopy["role"] = (category ?? "")
+								.toLowerCase()
+								.startsWith("cross-seed-link")
+								? "mirror"
+								: "library";
+							const linksMatch = (torrent.savePath ?? "").match(/\/links\/([^/]+)/);
+							const tracker = linksMatch ? linksMatch[1]! : null;
+							enrichedCopies.set(hash, {
+								infoHash: hash,
+								name: torrent.name ?? null,
+								state: torrent.state ?? null,
+								category,
+								role,
+								tracker,
+								trackerHealth: null, // populated below if siblings/health surfaces it
+								ratio: typeof torrent.ratio === "number" ? torrent.ratio : null,
+								savePath: torrent.savePath ?? null,
+								tags: Array.isArray(torrent.tags) ? torrent.tags : [],
+								addedOn: torrent.addedOn && torrent.addedOn > 0 ? torrent.addedOn : null,
+								seedingTime:
+									typeof torrent.seedingTime === "number" && torrent.seedingTime > 0
+										? torrent.seedingTime
+										: null,
+								torrentSizeBytes: typeof torrent.size === "number" ? torrent.size.toString() : null,
+								numSeeds: typeof torrent.numSeeds === "number" ? torrent.numSeeds : null,
+								numLeechs: typeof torrent.numLeechs === "number" ? torrent.numLeechs : null,
+								progress: typeof torrent.progress === "number" ? torrent.progress : null,
+								instanceName: torrent.instanceName ?? null,
+								quiUnreachable: false,
+							});
+						} catch (err) {
+							request.log.debug(
+								{ err, hash, quiInstanceId: quiInstance!.id },
+								"qui series-torrents: enrichment failed; using unreachable fallback",
+							);
+							enrichedCopies.set(hash, buildUnreachableCopy(hash));
 						}
+					}),
+				);
+			} else {
+				for (const hash of allHashes) enrichedCopies.set(hash, buildUnreachableCopy(hash));
+			}
 
-						return {
-							...t,
-							name: torrent.name ?? null,
-							state: torrent.state ?? null,
-							category,
-							isPrimary,
-							tracker,
-							ratio: typeof torrent.ratio === "number" ? torrent.ratio : null,
-							savePath: torrent.savePath ?? null,
-							tags: Array.isArray(torrent.tags) ? torrent.tags : [],
-							// qui's wire shape uses 0 to mean "no value" for timestamps;
-							// normalize to null so the UI doesn't render "1 Jan 1970".
-							addedOn: torrent.addedOn && torrent.addedOn > 0 ? torrent.addedOn : null,
-							completedOn: torrent.completedOn ?? null,
-							seedingTime:
-								typeof torrent.seedingTime === "number" && torrent.seedingTime > 0
-									? torrent.seedingTime
-									: null,
-							torrentSizeBytes: typeof torrent.size === "number" ? torrent.size.toString() : null,
-							numSeeds: typeof torrent.numSeeds === "number" ? torrent.numSeeds : null,
-							numLeechs: typeof torrent.numLeechs === "number" ? torrent.numLeechs : null,
-							progress: typeof torrent.progress === "number" ? torrent.progress : null,
-							instanceName: torrent.instanceName ?? null,
-							quiUnreachable: false,
-							siblings,
-						};
-					} catch (err) {
-						request.log.debug(
-							{ err, hash: t.infoHash, quiInstanceId: quiInstance.id },
-							"qui series-torrents: enrichment failed for hash; falling back to cached fields",
-						);
-						return buildUnreachable(t);
+			// Build cluster objects. Sort copies within a cluster: library-role
+			// first (Sonarr/Radarr-managed), then by tracker name for stable
+			// rendering. Drop quiUnreachable copies from the cluster when at
+			// least one reachable copy exists — the cluster already proves
+			// coverage; orphan-hash rows are noise.
+			interface SeriesTorrentCluster {
+				key: string;
+				episodeFileIds: number[];
+				episodeCount: number;
+				seasons: number[];
+				/** "S02 · 8 episodes" / "S03E04 · 1 episode" — for the header. */
+				coverageLabel: string;
+				totalSizeBytes: string;
+				qualityName: string | null;
+				releaseGroup: string | null;
+				inodeVerified: boolean;
+				copies: ClusterCopy[];
+				/** True when every copy has 0 peers — actionable signal. */
+				isDormant: boolean;
+				/** Aggregate state for the cluster header. */
+				primaryState: string | null;
+			}
+
+			const formatCoverageLabel = (seasons: number[], episodeIds: number[]): string => {
+				if (episodeIds.length === 0) return "—";
+				if (seasons.length === 1) {
+					if (episodeIds.length === 1) {
+						// Pull the single episode's "S0xE0y" from the cached path.
+						const ep = episodes.find((e) => e.arrEpisodeFileId === episodeIds[0]);
+						const match = ep?.relativePath.match(/S\d{1,2}E\d{1,3}/i);
+						if (match) return `${match[0]} · 1 episode`;
+						return `S${String(seasons[0]).padStart(2, "0")} · 1 episode`;
 					}
-				}),
-			);
+					return `S${String(seasons[0]).padStart(2, "0")} · ${episodeIds.length} episodes`;
+				}
+				const labels = seasons.map((s) => `S${String(s).padStart(2, "0")}`).join(", ");
+				return `${labels} · ${episodeIds.length} episodes`;
+			};
 
-			// Per-season groups for the expandable UI. Same data, different
-			// organization — frontend renders seasons collapsed by default.
+			const clusters: SeriesTorrentCluster[] = Array.from(clusterMap.entries())
+				.map(([signature, acc]) => {
+					const seasonsArr = Array.from(acc.seasons).sort((a, b) => a - b);
+					const allCopies = Array.from(acc.hashes).map((h) => enrichedCopies.get(h)!);
+					const reachable = allCopies.filter((c) => !c.quiUnreachable);
+					// Keep reachable when any exist; otherwise keep unreachable (so
+					// FS-disabled-instance setups still see something useful).
+					const copies = reachable.length > 0 ? reachable : allCopies;
+					copies.sort((a, b) => {
+						if (a.role !== b.role) return a.role === "library" ? -1 : 1;
+						return (a.tracker ?? "").localeCompare(b.tracker ?? "");
+					});
+
+					// Dormant: all copies report 0 seeds AND 0 leeches AND ratio<1.
+					// Ratio<1 keeps us from flagging well-seeded torrents that just
+					// happen to have a momentary 0-peer reading.
+					const isDormant =
+						copies.length > 0 &&
+						copies.every(
+							(c) => (c.numSeeds ?? 0) === 0 && (c.numLeechs ?? 0) === 0 && (c.ratio ?? 1) < 1,
+						);
+
+					const primaryState = copies.find((c) => c.state !== null)?.state ?? null;
+
+					return {
+						key: signature,
+						episodeFileIds: acc.episodeFileIds.sort((a, b) => a - b),
+						episodeCount: acc.episodeFileIds.length,
+						seasons: seasonsArr,
+						coverageLabel: formatCoverageLabel(seasonsArr, acc.episodeFileIds),
+						totalSizeBytes: acc.totalSize.toString(),
+						qualityName: acc.qualityName,
+						releaseGroup: acc.releaseGroup,
+						inodeVerified: acc.inodeVerified,
+						copies,
+						isDormant,
+						primaryState,
+					};
+				})
+				// Sort: biggest packs first, then by season number ascending.
+				.sort((a, b) => {
+					if (a.episodeCount !== b.episodeCount) return b.episodeCount - a.episodeCount;
+					return (a.seasons[0] ?? 0) - (b.seasons[0] ?? 0);
+				});
+
+			// Action items: surface what the user can do, not just what exists.
+			interface SeriesActionItem {
+				kind: "stuck_episodes" | "stale_cache_healed" | "dormant_content" | "fs_unavailable";
+				severity: "warning" | "info";
+				title: string;
+				detail: string;
+				count?: number;
+			}
+			const actionItems: SeriesActionItem[] = [];
+			if (stuckEpisodes > 0) {
+				actionItems.push({
+					kind: "stuck_episodes",
+					severity: "warning",
+					title: `${stuckEpisodes} episode${stuckEpisodes === 1 ? "" : "s"} not seeding`,
+					detail: "Files have no live torrent. Use cross-seed search above or re-grab via Sonarr.",
+					count: stuckEpisodes,
+				});
+			}
+			if (healedEpisodes > 0) {
+				actionItems.push({
+					kind: "stale_cache_healed",
+					severity: "info",
+					title: `${healedEpisodes} stale cache ${healedEpisodes === 1 ? "entry" : "entries"} healed`,
+					detail:
+						"Old infoHash references were replaced with the current live torrents. Future loads will be accurate.",
+					count: healedEpisodes,
+				});
+			}
+			const dormantClusterCount = clusters.filter((c) => c.isDormant).length;
+			if (dormantClusterCount > 0) {
+				actionItems.push({
+					kind: "dormant_content",
+					severity: "warning",
+					title: `${dormantClusterCount} torrent${dormantClusterCount === 1 ? "" : "s"} with no peers`,
+					detail:
+						"Ratio is below 1.0 and no seeders/leechers are connected. Consider re-seeding or removing.",
+					count: dormantClusterCount,
+				});
+			}
+			if (!fsInstance) {
+				actionItems.push({
+					kind: "fs_unavailable",
+					severity: "info",
+					title: "No FS-enabled qui instance",
+					detail:
+						"Cross-seed coverage relies on cached hashes only. Enable filesystem access on a qui instance for live inode matching.",
+				});
+			}
+
+			// Per-season block — still useful as a drill-down. Same data as
+			// before but trimmed to what the panel actually renders.
 			const seasonMap = new Map<
 				number,
 				{
@@ -1080,20 +1191,25 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 					}>;
 				}
 			>();
+			// Use the HEALED state when emitting per-episode hashes so the
+			// season drill-down reflects what the user sees in clusters.
+			const healedHashById = new Map<string, string>();
+			for (const { ep, inodeHashes } of healCandidates) healedHashById.set(ep.id, inodeHashes[0]);
 			for (const ep of episodes) {
 				let bucket = seasonMap.get(ep.seasonNumber);
 				if (!bucket) {
 					bucket = { seasonNumber: ep.seasonNumber, episodes: [] };
 					seasonMap.set(ep.seasonNumber, bucket);
 				}
+				const healedHash = healedHashById.get(ep.id);
 				bucket.episodes.push({
 					arrEpisodeFileId: ep.arrEpisodeFileId,
 					relativePath: ep.relativePath,
 					sizeBytes: ep.size.toString(),
 					qualityName: ep.qualityName,
 					releaseGroup: ep.releaseGroup,
-					infoHash: ep.infoHash,
-					infoHashSource: ep.infoHashSource,
+					infoHash: healedHash ?? ep.infoHash,
+					infoHashSource: healedHash ? "inode" : ep.infoHashSource,
 				});
 			}
 			const seasons = Array.from(seasonMap.values())
@@ -1111,7 +1227,9 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 				correlatedEpisodes,
 				viaInodeEpisodes,
 				stuckEpisodes,
-				torrents: enrichedTorrents,
+				healedEpisodes,
+				actionItems,
+				clusters,
 				seasons,
 			});
 		},

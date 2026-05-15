@@ -277,63 +277,77 @@ export async function triggerQuiCrossSeedSearch(
 	});
 }
 
-export interface SeriesTorrent {
+/**
+ * One torrent copy inside a cluster. A cluster has 1..N copies (e.g. a
+ * season pack across 4 trackers = 4 copies). Copies are sorted with
+ * `role: "library"` (Sonarr/Radarr-imported) first, then by tracker name.
+ */
+export interface SeriesTorrentCopy {
 	infoHash: string;
-	episodeCount: number;
-	seasons: number[];
-	qualityName: string | null;
-	releaseGroup: string | null;
-	inodeVerified: boolean;
-	/** BigInt string — total bytes across all episodes covered by this torrent. */
-	totalSizeBytes: string;
-	// ── Live qui state (only present when quiUnreachable is false) ──
 	name: string | null;
 	state: string | null;
 	category: string | null;
-	/** `false` when the torrent's category indicates it's a cross-seed-link. */
-	isPrimary: boolean;
-	/** Tracker name parsed from qui's savePath; null when not in /links/ layout. */
+	/**
+	 * "library" — Sonarr/Radarr imported it (categories like `tv`, `movies`,
+	 * `tv.cross`). "mirror" — qui's cross-seed automation injected it
+	 * under the `cross-seed-link` category.
+	 */
+	role: "library" | "mirror";
+	/** Tracker name parsed from qui's hardlink layout savePath; null when not parseable. */
 	tracker: string | null;
+	trackerHealth: "unregistered" | "tracker_down" | null;
 	ratio: number | null;
-	/** Full qBit savePath. */
 	savePath: string | null;
-	/** qui-applied tags (`noHL`, `issue`, per-tracker tags, etc). */
 	tags: string[];
-	/** Unix seconds. Null when qui reports the timestamp as 0 (unset). */
+	/** Unix seconds. Null when qui reports 0 (unset). */
 	addedOn: number | null;
-	completedOn: number | null;
 	/** Seconds in seeding state. */
 	seedingTime: number | null;
-	/** qBit's own size reading (BigInt string). May differ from totalSizeBytes if our cache is stale. */
+	/** qBit's torrent size (BigInt string). */
 	torrentSizeBytes: string | null;
 	numSeeds: number | null;
 	numLeechs: number | null;
 	progress: number | null;
-	/** Which qBit instance behind qui holds this torrent. */
 	instanceName: string | null;
-	/** True when we couldn't fetch live state from qui for this hash. */
 	quiUnreachable: boolean;
-	/**
-	 * Cross-seed siblings — other torrents qui knows about that share
-	 * content with this one. Populated from qui's local-matches endpoint
-	 * per primary torrent. Empty when there are no siblings or qui is
-	 * unreachable.
-	 */
-	siblings: SeriesTorrentSibling[];
 }
 
-export interface SeriesTorrentSibling {
-	hash: string;
-	name: string;
-	tracker: string;
-	trackerHealth?: "unregistered" | "tracker_down";
-	instanceName: string;
-	state: string;
-	category: string;
-	savePath: string;
-	contentPath: string;
-	matchType: "content_path" | "name" | "release";
-	sizeBytes: string;
+/**
+ * A content cluster — one set of episodes covered by N torrent copies
+ * (cross-seeds + the library import all share files via hardlinks).
+ * Replaces the old per-torrent rows with redundant sibling lists.
+ */
+export interface SeriesTorrentCluster {
+	/** Deterministic id for React keys — sorted hash signature of the cluster. */
+	key: string;
+	/** Sonarr episode_file_ids this cluster covers. */
+	episodeFileIds: number[];
+	episodeCount: number;
+	seasons: number[];
+	/** Pre-rendered label: "S02 · 8 episodes" / "S03E04 · 1 episode". */
+	coverageLabel: string;
+	/** Total bytes across episodes (BigInt string). */
+	totalSizeBytes: string;
+	qualityName: string | null;
+	releaseGroup: string | null;
+	inodeVerified: boolean;
+	copies: SeriesTorrentCopy[];
+	/** True when every copy has 0 peers AND ratio<1 — actionable signal. */
+	isDormant: boolean;
+	/** Aggregate state for the cluster header. */
+	primaryState: string | null;
+}
+
+/**
+ * An actionable signal for the panel header. The UI surfaces these as a
+ * compact list at the top so users see what to DO, not just what exists.
+ */
+export interface SeriesActionItem {
+	kind: "stuck_episodes" | "stale_cache_healed" | "dormant_content" | "fs_unavailable";
+	severity: "warning" | "info";
+	title: string;
+	detail: string;
+	count?: number;
 }
 
 export interface SeriesEpisodeFile {
@@ -359,7 +373,10 @@ export interface SeriesTorrentsResponse {
 	correlatedEpisodes: number;
 	viaInodeEpisodes: number;
 	stuckEpisodes: number;
-	torrents: SeriesTorrent[];
+	/** How many stale cached infoHashes were auto-healed during this load. */
+	healedEpisodes: number;
+	actionItems: SeriesActionItem[];
+	clusters: SeriesTorrentCluster[];
 	seasons: SeriesSeason[];
 }
 
