@@ -30,10 +30,15 @@
 import type { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import {
+	runEpisodeBackfillSweep,
+	runEpisodeFileSync,
+} from "../lib/library-sync/episode-file-backfill.js";
+import {
 	type BackfillSweepResult,
 	countBackfillCandidates,
 	runInfoHashBackfillSweep,
 } from "../lib/library-sync/infohash-backfill.js";
+import { runPathBackfillSweep } from "../lib/library-sync/infohash-backfill-by-path.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 
 const INTERVAL_MS = 6 * 60 * 60_000; // 6h steady-state cadence
@@ -65,6 +70,87 @@ const infoHashBackfillSchedulerPlugin = fp(
 						batchSize: BATCH_SIZE,
 						perRowSleepMs: PER_ROW_SLEEP_MS,
 					});
+					// Second pass: anything *arr-history couldn't resolve gets a
+					// shot at matching against qui's torrent list by on-disk
+					// shape (savePath + name, or `(name, size)` fingerprint for
+					// hardlinked files). This bypasses *arr history retention
+					// pruning — a huge coverage gain for older libraries.
+					// Uses its own batch budget so a 500-row history pass + a
+					// 500-row path pass don't compound into a 1000-row tick.
+					// Failures here don't roll back the history-pass results.
+					try {
+						const pathResult = await runPathBackfillSweep({
+							app,
+							log: app.log,
+							batchSize: BATCH_SIZE,
+						});
+						if (pathResult.rowsHashed > 0) {
+							app.log.info(
+								{ pathHashed: pathResult.rowsHashed, pathScanned: pathResult.rowsScanned },
+								"infoHash path-correlation backfill hashed additional rows this tick",
+							);
+						}
+						// Fold path-pass deltas into the captured result so the
+						// scheduler's no-progress probe + activity-log emitter
+						// see the combined work as one tick.
+						if (captured) {
+							captured.rowsScanned += pathResult.rowsScanned;
+							captured.rowsHashed += pathResult.rowsHashed;
+							captured.rowsMissed += pathResult.rowsMissed;
+							captured.errors += pathResult.errors;
+						}
+					} catch (pathErr) {
+						app.log.warn(
+							{ err: pathErr },
+							"infoHash path-correlation pass failed; continuing with history-only results",
+						);
+					}
+
+					// Third pass: Sonarr per-episode pipeline (sync from Sonarr's
+					// API into the EpisodeFileCache table, then inode-match each
+					// episode-file path). Mirrors the movie pipeline's structure
+					// — its own try/catch + budget so a Sonarr API blip or a
+					// single-series persist failure doesn't poison the tick.
+					// The episode sync is the slow part (one Sonarr API call per
+					// series with hasFile=true), so the scheduler runs it as
+					// catch-up rather than asking operators to click manually.
+					try {
+						const episodeSync = await runEpisodeFileSync({
+							app,
+							log: app.log,
+							// 1000 series fits typical libraries in one tick.
+							// On subsequent ticks the upserts are mostly no-ops
+							// (data unchanged), so cost is dominated by the
+							// per-series Sonarr API call latency, not DB writes.
+							seriesCap: BATCH_SIZE * 2,
+						});
+						const episodeSweep = await runEpisodeBackfillSweep({
+							app,
+							log: app.log,
+							// 50k is enough to drain libraries up to ~50k
+							// episodes in one tick. The sweep is fast per row
+							// (single stat + Map lookup); memory stays bounded
+							// because rows aren't buffered — Prisma streams the
+							// findMany via cursor and the loop processes one at
+							// a time.
+							batchSize: BATCH_SIZE * 100,
+						});
+						if (episodeSync.filesUpserted > 0 || episodeSweep.rowsHashed > 0) {
+							app.log.info(
+								{
+									episodeFilesUpserted: episodeSync.filesUpserted,
+									episodeFilesHashed: episodeSweep.rowsHashed,
+									episodeRowsScanned: episodeSweep.rowsScanned,
+								},
+								"infoHash episode-file pipeline produced new state this tick",
+							);
+						}
+					} catch (episodeErr) {
+						app.log.warn(
+							{ err: episodeErr },
+							"infoHash episode-file pipeline failed; movies & series-level results still valid",
+						);
+					}
 				});
 				return captured;
 			} catch (err) {

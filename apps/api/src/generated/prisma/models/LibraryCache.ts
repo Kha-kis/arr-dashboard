@@ -60,6 +60,7 @@ export type LibraryCacheMinAggregateOutputType = {
   sizeOnDisk: bigint | null
   cutoffUnmet: boolean | null
   infoHash: string | null
+  infoHashSource: string | null
   torrentState: string | null
   torrentRatio: number | null
   torrentSyncedAt: Date | null
@@ -87,6 +88,7 @@ export type LibraryCacheMaxAggregateOutputType = {
   sizeOnDisk: bigint | null
   cutoffUnmet: boolean | null
   infoHash: string | null
+  infoHashSource: string | null
   torrentState: string | null
   torrentRatio: number | null
   torrentSyncedAt: Date | null
@@ -114,6 +116,7 @@ export type LibraryCacheCountAggregateOutputType = {
   sizeOnDisk: number
   cutoffUnmet: number
   infoHash: number
+  infoHashSource: number
   torrentState: number
   torrentRatio: number
   torrentSyncedAt: number
@@ -159,6 +162,7 @@ export type LibraryCacheMinAggregateInputType = {
   sizeOnDisk?: true
   cutoffUnmet?: true
   infoHash?: true
+  infoHashSource?: true
   torrentState?: true
   torrentRatio?: true
   torrentSyncedAt?: true
@@ -186,6 +190,7 @@ export type LibraryCacheMaxAggregateInputType = {
   sizeOnDisk?: true
   cutoffUnmet?: true
   infoHash?: true
+  infoHashSource?: true
   torrentState?: true
   torrentRatio?: true
   torrentSyncedAt?: true
@@ -213,6 +218,7 @@ export type LibraryCacheCountAggregateInputType = {
   sizeOnDisk?: true
   cutoffUnmet?: true
   infoHash?: true
+  infoHashSource?: true
   torrentState?: true
   torrentRatio?: true
   torrentSyncedAt?: true
@@ -327,6 +333,7 @@ export type LibraryCacheGroupByOutputType = {
   sizeOnDisk: bigint
   cutoffUnmet: boolean
   infoHash: string | null
+  infoHashSource: string | null
   torrentState: string | null
   torrentRatio: number | null
   torrentSyncedAt: Date | null
@@ -377,6 +384,7 @@ export type LibraryCacheWhereInput = {
   sizeOnDisk?: Prisma.BigIntFilter<"LibraryCache"> | bigint | number
   cutoffUnmet?: Prisma.BoolFilter<"LibraryCache"> | boolean
   infoHash?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
+  infoHashSource?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
   torrentState?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
   torrentRatio?: Prisma.FloatNullableFilter<"LibraryCache"> | number | null
   torrentSyncedAt?: Prisma.DateTimeNullableFilter<"LibraryCache"> | Date | string | null
@@ -405,6 +413,7 @@ export type LibraryCacheOrderByWithRelationInput = {
   sizeOnDisk?: Prisma.SortOrder
   cutoffUnmet?: Prisma.SortOrder
   infoHash?: Prisma.SortOrderInput | Prisma.SortOrder
+  infoHashSource?: Prisma.SortOrderInput | Prisma.SortOrder
   torrentState?: Prisma.SortOrderInput | Prisma.SortOrder
   torrentRatio?: Prisma.SortOrderInput | Prisma.SortOrder
   torrentSyncedAt?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -437,6 +446,7 @@ export type LibraryCacheWhereUniqueInput = Prisma.AtLeast<{
   sizeOnDisk?: Prisma.BigIntFilter<"LibraryCache"> | bigint | number
   cutoffUnmet?: Prisma.BoolFilter<"LibraryCache"> | boolean
   infoHash?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
+  infoHashSource?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
   torrentState?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
   torrentRatio?: Prisma.FloatNullableFilter<"LibraryCache"> | number | null
   torrentSyncedAt?: Prisma.DateTimeNullableFilter<"LibraryCache"> | Date | string | null
@@ -465,6 +475,7 @@ export type LibraryCacheOrderByWithAggregationInput = {
   sizeOnDisk?: Prisma.SortOrder
   cutoffUnmet?: Prisma.SortOrder
   infoHash?: Prisma.SortOrderInput | Prisma.SortOrder
+  infoHashSource?: Prisma.SortOrderInput | Prisma.SortOrder
   torrentState?: Prisma.SortOrderInput | Prisma.SortOrder
   torrentRatio?: Prisma.SortOrderInput | Prisma.SortOrder
   torrentSyncedAt?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -500,6 +511,7 @@ export type LibraryCacheScalarWhereWithAggregatesInput = {
   sizeOnDisk?: Prisma.BigIntWithAggregatesFilter<"LibraryCache"> | bigint | number
   cutoffUnmet?: Prisma.BoolWithAggregatesFilter<"LibraryCache"> | boolean
   infoHash?: Prisma.StringNullableWithAggregatesFilter<"LibraryCache"> | string | null
+  infoHashSource?: Prisma.StringNullableWithAggregatesFilter<"LibraryCache"> | string | null
   torrentState?: Prisma.StringNullableWithAggregatesFilter<"LibraryCache"> | string | null
   torrentRatio?: Prisma.FloatNullableWithAggregatesFilter<"LibraryCache"> | number | null
   torrentSyncedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"LibraryCache"> | Date | string | null
@@ -526,6 +538,7 @@ export type LibraryCacheCreateInput = {
   sizeOnDisk?: bigint | number
   cutoffUnmet?: boolean
   infoHash?: string | null
+  infoHashSource?: string | null
   torrentState?: string | null
   torrentRatio?: number | null
   torrentSyncedAt?: Date | string | null
@@ -554,6 +567,7 @@ export type LibraryCacheUncheckedCreateInput = {
   sizeOnDisk?: bigint | number
   cutoffUnmet?: boolean
   infoHash?: string | null
+  infoHashSource?: string | null
   torrentState?: string | null
   torrentRatio?: number | null
   torrentSyncedAt?: Date | string | null
@@ -580,6 +594,7 @@ export type LibraryCacheUpdateInput = {
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   cutoffUnmet?: Prisma.BoolFieldUpdateOperationsInput | boolean
   infoHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  infoHashSource?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentRatio?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   torrentSyncedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -608,6 +623,7 @@ export type LibraryCacheUncheckedUpdateInput = {
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   cutoffUnmet?: Prisma.BoolFieldUpdateOperationsInput | boolean
   infoHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  infoHashSource?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentRatio?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   torrentSyncedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -635,6 +651,7 @@ export type LibraryCacheCreateManyInput = {
   sizeOnDisk?: bigint | number
   cutoffUnmet?: boolean
   infoHash?: string | null
+  infoHashSource?: string | null
   torrentState?: string | null
   torrentRatio?: number | null
   torrentSyncedAt?: Date | string | null
@@ -661,6 +678,7 @@ export type LibraryCacheUpdateManyMutationInput = {
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   cutoffUnmet?: Prisma.BoolFieldUpdateOperationsInput | boolean
   infoHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  infoHashSource?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentRatio?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   torrentSyncedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -688,6 +706,7 @@ export type LibraryCacheUncheckedUpdateManyInput = {
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   cutoffUnmet?: Prisma.BoolFieldUpdateOperationsInput | boolean
   infoHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  infoHashSource?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentRatio?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   torrentSyncedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -731,6 +750,7 @@ export type LibraryCacheCountOrderByAggregateInput = {
   sizeOnDisk?: Prisma.SortOrder
   cutoffUnmet?: Prisma.SortOrder
   infoHash?: Prisma.SortOrder
+  infoHashSource?: Prisma.SortOrder
   torrentState?: Prisma.SortOrder
   torrentRatio?: Prisma.SortOrder
   torrentSyncedAt?: Prisma.SortOrder
@@ -766,6 +786,7 @@ export type LibraryCacheMaxOrderByAggregateInput = {
   sizeOnDisk?: Prisma.SortOrder
   cutoffUnmet?: Prisma.SortOrder
   infoHash?: Prisma.SortOrder
+  infoHashSource?: Prisma.SortOrder
   torrentState?: Prisma.SortOrder
   torrentRatio?: Prisma.SortOrder
   torrentSyncedAt?: Prisma.SortOrder
@@ -793,6 +814,7 @@ export type LibraryCacheMinOrderByAggregateInput = {
   sizeOnDisk?: Prisma.SortOrder
   cutoffUnmet?: Prisma.SortOrder
   infoHash?: Prisma.SortOrder
+  infoHashSource?: Prisma.SortOrder
   torrentState?: Prisma.SortOrder
   torrentRatio?: Prisma.SortOrder
   torrentSyncedAt?: Prisma.SortOrder
@@ -889,6 +911,7 @@ export type LibraryCacheCreateWithoutInstanceInput = {
   sizeOnDisk?: bigint | number
   cutoffUnmet?: boolean
   infoHash?: string | null
+  infoHashSource?: string | null
   torrentState?: string | null
   torrentRatio?: number | null
   torrentSyncedAt?: Date | string | null
@@ -915,6 +938,7 @@ export type LibraryCacheUncheckedCreateWithoutInstanceInput = {
   sizeOnDisk?: bigint | number
   cutoffUnmet?: boolean
   infoHash?: string | null
+  infoHashSource?: string | null
   torrentState?: string | null
   torrentRatio?: number | null
   torrentSyncedAt?: Date | string | null
@@ -970,6 +994,7 @@ export type LibraryCacheScalarWhereInput = {
   sizeOnDisk?: Prisma.BigIntFilter<"LibraryCache"> | bigint | number
   cutoffUnmet?: Prisma.BoolFilter<"LibraryCache"> | boolean
   infoHash?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
+  infoHashSource?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
   torrentState?: Prisma.StringNullableFilter<"LibraryCache"> | string | null
   torrentRatio?: Prisma.FloatNullableFilter<"LibraryCache"> | number | null
   torrentSyncedAt?: Prisma.DateTimeNullableFilter<"LibraryCache"> | Date | string | null
@@ -996,6 +1021,7 @@ export type LibraryCacheCreateManyInstanceInput = {
   sizeOnDisk?: bigint | number
   cutoffUnmet?: boolean
   infoHash?: string | null
+  infoHashSource?: string | null
   torrentState?: string | null
   torrentRatio?: number | null
   torrentSyncedAt?: Date | string | null
@@ -1022,6 +1048,7 @@ export type LibraryCacheUpdateWithoutInstanceInput = {
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   cutoffUnmet?: Prisma.BoolFieldUpdateOperationsInput | boolean
   infoHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  infoHashSource?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentRatio?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   torrentSyncedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -1048,6 +1075,7 @@ export type LibraryCacheUncheckedUpdateWithoutInstanceInput = {
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   cutoffUnmet?: Prisma.BoolFieldUpdateOperationsInput | boolean
   infoHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  infoHashSource?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentRatio?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   torrentSyncedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -1074,6 +1102,7 @@ export type LibraryCacheUncheckedUpdateManyWithoutInstanceInput = {
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   cutoffUnmet?: Prisma.BoolFieldUpdateOperationsInput | boolean
   infoHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  infoHashSource?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentState?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   torrentRatio?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   torrentSyncedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -1103,6 +1132,7 @@ export type LibraryCacheSelect<ExtArgs extends runtime.Types.Extensions.Internal
   sizeOnDisk?: boolean
   cutoffUnmet?: boolean
   infoHash?: boolean
+  infoHashSource?: boolean
   torrentState?: boolean
   torrentRatio?: boolean
   torrentSyncedAt?: boolean
@@ -1131,6 +1161,7 @@ export type LibraryCacheSelectCreateManyAndReturn<ExtArgs extends runtime.Types.
   sizeOnDisk?: boolean
   cutoffUnmet?: boolean
   infoHash?: boolean
+  infoHashSource?: boolean
   torrentState?: boolean
   torrentRatio?: boolean
   torrentSyncedAt?: boolean
@@ -1159,6 +1190,7 @@ export type LibraryCacheSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.
   sizeOnDisk?: boolean
   cutoffUnmet?: boolean
   infoHash?: boolean
+  infoHashSource?: boolean
   torrentState?: boolean
   torrentRatio?: boolean
   torrentSyncedAt?: boolean
@@ -1187,6 +1219,7 @@ export type LibraryCacheSelectScalar = {
   sizeOnDisk?: boolean
   cutoffUnmet?: boolean
   infoHash?: boolean
+  infoHashSource?: boolean
   torrentState?: boolean
   torrentRatio?: boolean
   torrentSyncedAt?: boolean
@@ -1197,7 +1230,7 @@ export type LibraryCacheSelectScalar = {
   updatedAt?: boolean
 }
 
-export type LibraryCacheOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "arrItemId" | "itemType" | "title" | "titleSlug" | "sortTitle" | "year" | "monitored" | "hasFile" | "status" | "qualityProfileId" | "qualityProfileName" | "sizeOnDisk" | "cutoffUnmet" | "infoHash" | "torrentState" | "torrentRatio" | "torrentSyncedAt" | "data" | "arrAddedAt" | "arrUpdatedAt" | "cachedAt" | "updatedAt", ExtArgs["result"]["libraryCache"]>
+export type LibraryCacheOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "arrItemId" | "itemType" | "title" | "titleSlug" | "sortTitle" | "year" | "monitored" | "hasFile" | "status" | "qualityProfileId" | "qualityProfileName" | "sizeOnDisk" | "cutoffUnmet" | "infoHash" | "infoHashSource" | "torrentState" | "torrentRatio" | "torrentSyncedAt" | "data" | "arrAddedAt" | "arrUpdatedAt" | "cachedAt" | "updatedAt", ExtArgs["result"]["libraryCache"]>
 export type LibraryCacheInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }
@@ -1230,6 +1263,7 @@ export type $LibraryCachePayload<ExtArgs extends runtime.Types.Extensions.Intern
     sizeOnDisk: bigint
     cutoffUnmet: boolean
     infoHash: string | null
+    infoHashSource: string | null
     torrentState: string | null
     torrentRatio: number | null
     torrentSyncedAt: Date | null
@@ -1678,6 +1712,7 @@ export interface LibraryCacheFieldRefs {
   readonly sizeOnDisk: Prisma.FieldRef<"LibraryCache", 'BigInt'>
   readonly cutoffUnmet: Prisma.FieldRef<"LibraryCache", 'Boolean'>
   readonly infoHash: Prisma.FieldRef<"LibraryCache", 'String'>
+  readonly infoHashSource: Prisma.FieldRef<"LibraryCache", 'String'>
   readonly torrentState: Prisma.FieldRef<"LibraryCache", 'String'>
   readonly torrentRatio: Prisma.FieldRef<"LibraryCache", 'Float'>
   readonly torrentSyncedAt: Prisma.FieldRef<"LibraryCache", 'DateTime'>

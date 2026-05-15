@@ -95,7 +95,7 @@ describe("resolveGatedItemIds", () => {
 		expect(Array.from(result).sort()).toEqual(["item-1", "item-3"]);
 	});
 
-	it("filters by userId and the gated states (paused/error)", async () => {
+	it("filters by userId (via instance relation) and the gated states (paused/error)", async () => {
 		const findMany = vi.fn().mockResolvedValue([]);
 		const prisma = {
 			libraryCache: { findMany },
@@ -103,7 +103,14 @@ describe("resolveGatedItemIds", () => {
 
 		await resolveGatedItemIds(prisma, "user-1", new Map([["item-1", "aaaa"]]));
 		const callArgs = findMany.mock.calls[0]?.[0];
-		expect(callArgs.where.userId).toBe("user-1");
+		// Ownership flows through `instance.userId` — `LibraryCache` has no
+		// direct `userId` column. An earlier version of this gate used
+		// `where: { userId, ... }` which raised PrismaClientValidationError
+		// at runtime; the surrounding try/catch in the route swallowed it
+		// and the feature was silently inert in production. Lock the
+		// relation-traversal shape so a regression can't silently re-emerge.
+		expect(callArgs.where.instance).toEqual({ userId: "user-1" });
+		expect(callArgs.where).not.toHaveProperty("userId");
 		expect(callArgs.where.torrentState.in).toEqual(["paused", "error"]);
 		expect(callArgs.where.infoHash.in).toEqual(["aaaa"]);
 	});

@@ -31,7 +31,7 @@ function makeApp() {
 }
 
 describe("logQuiActivity", () => {
-	it("inserts the event with stringified details and default status 'ok'", async () => {
+	it("inserts the event with stringified details and default severity 'ok'", async () => {
 		const app = makeApp();
 		await logQuiActivity({
 			app,
@@ -43,20 +43,37 @@ describe("logQuiActivity", () => {
 		const createArgs = app.__create.mock.calls[0]?.[0];
 		expect(createArgs.data.userId).toBe("user-1");
 		expect(createArgs.data.eventType).toBe("qui_sync_complete");
-		expect(createArgs.data.status).toBe("ok");
+		// `severity` is the canonical Prisma field; the underlying DB column
+		// is `status` (via @map) so existing rows survive. See the qui.ts
+		// schema notes on the rename.
+		expect(createArgs.data.severity).toBe("ok");
 		expect(JSON.parse(createArgs.data.details)).toEqual({ rowsUpdated: 5 });
 	});
 
-	it("honors a passed-in status (warn/error)", async () => {
+	it("honors a passed-in severity (warn/error)", async () => {
 		const app = makeApp();
 		await logQuiActivity({
 			app,
 			userId: "user-1",
 			eventType: "qui_sync_complete",
 			details: {},
-			status: "error",
+			severity: "error",
 		});
-		expect(app.__create.mock.calls[0]?.[0].data.status).toBe("error");
+		expect(app.__create.mock.calls[0]?.[0].data.severity).toBe("error");
+	});
+
+	it("accepts the deprecated `status` alias for one release window", async () => {
+		const app = makeApp();
+		await logQuiActivity({
+			app,
+			userId: "user-1",
+			eventType: "qui_sync_complete",
+			details: {},
+			// biome-ignore lint/suspicious/noExplicitAny: testing the deprecated alias
+			status: "warn" as any,
+		});
+		// The alias should map to the canonical `severity` Prisma field.
+		expect(app.__create.mock.calls[0]?.[0].data.severity).toBe("warn");
 	});
 
 	it("never throws when the prisma insert fails — observability is non-fatal", async () => {

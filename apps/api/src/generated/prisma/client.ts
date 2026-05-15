@@ -168,6 +168,27 @@ export type HuntSearchHistory = Prisma.HuntSearchHistoryModel
  */
 export type LibraryCache = Prisma.LibraryCacheModel
 /**
+ * Model EpisodeFileCache
+ * Per-episode-file cache for Sonarr series, populated alongside library_cache.
+ * 
+ * LibraryCache stores SERIES-level rows for Sonarr (`itemType = "series"`),
+ * but each series has 1..N EpisodeFiles on disk. To run inode-based
+ * correlation on a per-episode granularity, we need per-file metadata
+ * (path, size, hash) keyed by Sonarr's EpisodeFile id. That's what this
+ * table is.
+ * 
+ * Mirrors the qui design pattern: qui's per-file FileID index already
+ * contains every file's `(dev, ino)`, so the only thing missing on
+ * arr-dashboard's side is a queryable list of episode-file paths to
+ * stat. EpisodeFileCache fills that gap.
+ * 
+ * One row per EpisodeFile (NOT per Episode — a multi-ep file like
+ * `S01E01-E02.mkv` is ONE EpisodeFile that covers two Episode entities).
+ * We don't track per-Episode metadata here because the correlation unit
+ * is the file, not the episode number.
+ */
+export type EpisodeFileCache = Prisma.EpisodeFileCacheModel
+/**
  * Model LibrarySyncStatus
  * Tracks sync status per instance for the library cache
  */
@@ -343,3 +364,32 @@ export type TraktListCache = Prisma.TraktListCacheModel
  * the table from growing unboundedly.
  */
 export type QuiActivityLog = Prisma.QuiActivityLogModel
+/**
+ * Model QuiActionLog
+ * Per-user audit log of arr-dashboard-initiated mutations against qui torrents (Phase 4.1).
+ * 
+ * Distinct from QuiActivityLog: that table records *observed* qui automation
+ * events (sync ticks, cleanup gate firings, etc.). This table records *intentional*
+ * mutations the operator triggered through the dashboard — pause, resume, recheck,
+ * reannounce, tag changes — so the operator has a tamper-evident record of every
+ * change arr-dashboard made on their behalf.
+ * 
+ * Each row goes through `pending` → `success` or `failed`. Failed rows keep the
+ * raw error string so the operator can diagnose without re-running. Rows are
+ * indexed by `(userId, requestedAt)` for the My Actions feed and
+ * `(serviceInstanceId, torrentHash)` for per-torrent history drill-downs.
+ */
+export type QuiActionLog = Prisma.QuiActionLogModel
+/**
+ * Model QuiEventLog
+ * Inbound qui webhook event log (Phase 5.1).
+ * 
+ * qui's notification system POSTs to arr-dashboard's `/api/webhooks/qui`
+ * endpoint whenever an event matching the registered target fires. We
+ * store the raw envelope verbatim — schema evolves on qui's side, and
+ * storing the full payload lets us replay or re-interpret events without
+ * re-fetching anything. `serviceInstanceId` is nullable because a future
+ * qui multi-instance setup might post to a user-level webhook before we
+ * can correlate it to a specific instance row.
+ */
+export type QuiEventLog = Prisma.QuiEventLogModel

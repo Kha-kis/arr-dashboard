@@ -1084,6 +1084,43 @@ const collectQuiSignals: Collector = async (app, userId, log) => {
 
 	const items: PulseItem[] = [];
 
+	// Webhook-drop signal: if QuiEventLog insert failed at the receiver, we
+	// 200-suppress to qui so it doesn't retry-storm us, but we still log a
+	// `qui_webhook_dropped` activity row. Surface as Pulse so the operator
+	// sees the gap on their health dashboard, not just in pino logs.
+	// Window: last 24h, matches the activity log retention floor.
+	try {
+		const dropCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+		const droppedCount = await app.prisma.quiActivityLog.count({
+			where: {
+				userId,
+				eventType: "qui_webhook_dropped",
+				createdAt: { gte: dropCutoff },
+			},
+		});
+		if (droppedCount > 0) {
+			items.push({
+				id: "qui-webhook-drops",
+				severity: droppedCount >= 10 ? "critical" : "warning",
+				category: "health",
+				title: `${droppedCount} qui webhook event${droppedCount === 1 ? "" : "s"} dropped in the last 24h`,
+				detail:
+					"The dashboard acknowledged these events to qui (to stop retry storms) but couldn't persist them — usually a disk-full / schema-drift / migration issue. Check arr-dashboard logs for the underlying DB error.",
+				actionUrl: "/qui-activity",
+				actionLabel: "View qui Activity → Activity feed → qui_webhook_dropped",
+				source: "qui",
+				timestamp: new Date().toISOString(),
+			});
+		}
+	} catch (countErr) {
+		// Pulse collectors must be non-fatal — a count failure here just
+		// means the operator won't see the drop signal this tick.
+		log.warn(
+			{ err: countErr, userId },
+			"pulse: qui webhook-drop count failed; continuing without that signal",
+		);
+	}
+
 	await Promise.all(
 		instances.map(async (instance) => {
 			try {

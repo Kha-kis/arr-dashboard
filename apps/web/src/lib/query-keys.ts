@@ -508,6 +508,22 @@ export const quiKeys = {
 	crossSeedDiscovery: () => ["qui", "cross-seed", "discover"] as const,
 	activity: (eventType?: string) =>
 		eventType ? (["qui", "activity", eventType] as const) : (["qui", "activity"] as const),
+	// Phase 4.1 — action audit log feed key. Mirrors `activity` shape so the
+	// frontend can flip between "Activity" (qui's observations) and "My Actions"
+	// (operator-initiated mutations) without entangling cache invalidations.
+	actions: (action?: string, status?: string) =>
+		["qui", "actions", ...(action ? [action] : []), ...(status ? [status] : [])] as const,
+	// Phase 5.1 — webhook config (singleton per user) + raw event log feed.
+	// `events` shares cache between the My Events tab and any future widgets
+	// surfacing webhook-driven activity.
+	webhookConfig: ["qui", "webhook-config"] as const,
+	events: ["qui", "events"] as const,
+	// Phase 6 — qui home page (single-pane-of-glass entry surface). Both keys
+	// invalidate together when scheduled syncs or webhook events land, so the
+	// home page stays in sync with the rest of the qui surfaces.
+	summary: ["qui", "summary"] as const,
+	attention: (limit?: number) =>
+		limit ? (["qui", "attention", limit] as const) : (["qui", "attention"] as const),
 };
 
 /* -------------------------------------------------------------------------- */

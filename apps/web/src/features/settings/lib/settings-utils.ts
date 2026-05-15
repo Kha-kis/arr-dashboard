@@ -15,6 +15,19 @@ export type ServiceFormState = {
 	isDefault: boolean;
 	tags: string;
 	storageGroupId: string;
+	// qui-only — surfaces the inode-strategy toggle to operators. Mirrors
+	// qui's own `HasLocalFilesystemAccess` per-instance toggle. When OFF
+	// (default), arr-dashboard uses filename/size heuristics to correlate
+	// library files to qui torrents. When ON, it stats files directly to
+	// verify hardlink identity via `(st_dev, st_ino)` — much more
+	// accurate, but requires arr-dashboard to have read access to the
+	// shared media + torrent volumes.
+	hasLocalFilesystemAccess: boolean;
+	// qui-only — optional path-rewrite mapping for when qui reports paths
+	// (`/downloads/...`) that arr-dashboard sees at a different mount
+	// point (`/qbit-data/...`). Format: `qui-prefix>local-prefix`.
+	// Stored as empty string in form state; normalized to null at the API.
+	pathPrefix: string;
 };
 
 /**
@@ -30,6 +43,8 @@ export const defaultFormState = (service: ServiceType): ServiceFormState => ({
 	isDefault: false,
 	tags: "",
 	storageGroupId: "",
+	hasLocalFilesystemAccess: false,
+	pathPrefix: "",
 });
 
 /**

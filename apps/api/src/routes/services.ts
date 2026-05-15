@@ -21,6 +21,18 @@ const servicePayloadSchema = z.object({
 	isDefault: z.boolean().default(false),
 	tags: z.array(z.string().min(1).max(64)).default([]),
 	storageGroupId: z.string().min(1).max(64).nullable().optional(),
+	// qui-only: enables inode-based hardlink correlation. When true,
+	// arr-dashboard reads files directly via stat() to verify which
+	// library files are hardlinked to which qui torrents. Requires the
+	// arr-dashboard process to have read access to both the qBit content
+	// tree and the *arr library tree. Mirrors qui's own
+	// `HasLocalFilesystemAccess` per-instance toggle.
+	hasLocalFilesystemAccess: z.boolean().default(false),
+	// qui-only: optional prefix rewrite for paths reported by qui that
+	// arr-dashboard sees at a different mount point. Format:
+	// "qui-prefix>local-prefix" (e.g., "/downloads>/qbit-data"). Empty/null
+	// = no rewrite. Capped at 256 chars to bound config sprawl.
+	pathPrefix: z.string().max(256).nullable().optional(),
 });
 
 const serviceUpdateSchema = servicePayloadSchema
@@ -211,7 +223,10 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			z.object({
 				baseUrl: z.string().min(1),
 				apiKey: z.string().min(1),
-				service: z.string().min(1).transform((s) => s.toLowerCase()),
+				service: z
+					.string()
+					.min(1)
+					.transform((s) => s.toLowerCase()),
 			}),
 			request.body,
 		);

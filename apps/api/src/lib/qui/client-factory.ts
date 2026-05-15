@@ -1,4 +1,5 @@
 import {
+	type QuiAction,
 	type QuiCrossSeedMatch,
 	type QuiInstance,
 	type QuiTorrent,
@@ -24,6 +25,31 @@ export interface QuiClient {
 	 */
 	listAllTorrents(): Promise<QuiTorrent[]>;
 	testConnection(): Promise<{ ok: true } | { ok: false; reason: string }>;
+	/**
+	 * Apply a bulk action to one-or-more torrents on a specific qBit
+	 * instance. Maps to qui's `POST /api/instances/{instanceID}/torrents/bulk-action`
+	 * with the `{ action, hashes, tags? }` body shape from qui's openapi.
+	 *
+	 * Phase 4 supports a narrow subset of qui's bulk-action vocabulary
+	 * (pause/resume/recheck/reannounce/setTags). Other qui actions
+	 * (delete, setCategory, setLocation, tracker edits, …) are
+	 * deliberately not exposed in v1 — they need their own UI affordances,
+	 * audit-log payload schemas, and trust review.
+	 */
+	bulkAction(args: {
+		qbitInstanceId: number;
+		hashes: string[];
+		action: QuiAction;
+		/** Comma-joined tag list; required for `setTags`, ignored otherwise. */
+		tags?: string;
+	}): Promise<void>;
+	/** Create a notification target inside qui. Phase 5.1 — auto-registers arr-dashboard's webhook URL. */
+	createNotificationTarget(args: {
+		name: string;
+		url: string;
+		eventTypes?: string[];
+		enabled?: boolean;
+	}): Promise<{ id: number }>;
 }
 
 // ── Wire-format schemas ─────────────────────────────────────────────
@@ -90,6 +116,8 @@ const wireTorrentSchema = z
 
 const wireCrossInstanceResponseSchema = z.object({
 	cross_instance_torrents: z.array(wireTorrentSchema).nullable(),
+	hasMore: z.boolean().optional(),
+	total: z.number().int().optional(),
 });
 
 const wireTrackerSchema = z
@@ -190,17 +218,30 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 		},
 
 		async listAllTorrents() {
-			// Cross-instance endpoint without `search` returns every torrent across
-			// every qBit instance behind this qui. The high `limit` is a guard: if
-			// users have >10k torrents the sync will only catch the first page —
-			// pagination follow-up is tracked for v2 of the sync job.
-			const data = await quiRequest(
-				ctx,
-				"/api/torrents/cross-instance",
-				wireCrossInstanceResponseSchema,
-				{ query: { limit: "10000" } },
-			);
-			return data.cross_instance_torrents ?? [];
+			// Cross-instance endpoint paginates server-side. qui's openapi
+			// caps `limit` at 2000 per page; `hasMore` flags when more pages
+			// exist. Pre-fix versions sent `limit=10000` once and returned
+			// whatever fit in qui's actual server-side cap (often ~300),
+			// silently truncating the library for users with >300 torrents.
+			//
+			// Hard safety cap on iteration: refuse to loop more than 50 pages
+			// (100k torrents at limit=2000). Bigger libraries are pathological
+			// for this aggregation pattern anyway — they need streaming.
+			const PAGE_SIZE = 2000;
+			const MAX_PAGES = 50;
+			const all: QuiTorrent[] = [];
+			for (let page = 0; page < MAX_PAGES; page++) {
+				const data = await quiRequest(
+					ctx,
+					"/api/torrents/cross-instance",
+					wireCrossInstanceResponseSchema,
+					{ query: { limit: String(PAGE_SIZE), page: String(page) } },
+				);
+				const batch = data.cross_instance_torrents ?? [];
+				all.push(...batch);
+				if (!data.hasMore || batch.length === 0) break;
+			}
+			return all;
 		},
 
 		async getTrackers(instanceId, hash) {
@@ -236,6 +277,38 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 				const reason = error instanceof Error ? error.message : "qui auth check failed";
 				return { ok: false, reason };
 			}
+		},
+
+		async bulkAction({ qbitInstanceId, hashes, action, tags }) {
+			// qui's bulk-action returns 200 with no documented body schema on
+			// success. We surface the call as void; failures throw via
+			// quiRequest's status-mapping pathway (QuiInstanceUnreachableError
+			// / QuiApiError) and the action-service layer translates them into
+			// audit-log `failed` rows. z.unknown() matches "anything 200".
+			await quiRequest(ctx, `/api/instances/${qbitInstanceId}/torrents/bulk-action`, z.unknown(), {
+				method: "POST",
+				body: {
+					action,
+					hashes,
+					...(tags !== undefined ? { tags } : {}),
+				},
+			});
+		},
+
+		async createNotificationTarget({ name, url, eventTypes, enabled = true }) {
+			// qui's `POST /api/notifications/targets` returns the created
+			// target — we only need the id back for arr-dashboard's own
+			// bookkeeping ("we already registered our webhook against this qui").
+			// passthrough() lets future qui fields land without a shared-schema bump.
+			return quiRequest(
+				ctx,
+				"/api/notifications/targets",
+				z.object({ id: z.number().int() }).passthrough(),
+				{
+					method: "POST",
+					body: { name, url, eventTypes, enabled },
+				},
+			);
 		},
 	};
 }

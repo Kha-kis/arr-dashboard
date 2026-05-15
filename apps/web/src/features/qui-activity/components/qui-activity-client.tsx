@@ -1,6 +1,8 @@
 "use client";
 
 import type {
+	QuiAction,
+	QuiActionLogEntry,
 	QuiActivityEvent,
 	QuiBackfillCompleteDetails,
 	QuiSyncCompleteDetails,
@@ -14,6 +16,9 @@ import {
 	History,
 	Loader2,
 	RefreshCw,
+	Webhook,
+	Wrench,
+	XCircle,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
@@ -23,9 +28,18 @@ import {
 	PremiumPageLoading,
 } from "../../../components/layout";
 import { Alert, AlertDescription, Button } from "../../../components/ui";
-import { useQuiActivityFeed } from "../../../hooks/api/useQui";
+import { useIncognitoMode } from "../../../contexts/IncognitoContext";
+import { useQuiStreamStatus } from "../../../contexts/QuiStreamContext";
+import {
+	type QuiEventStreamStatus,
+	useQuiActionLog,
+	useQuiActivityFeed,
+	useQuiEventLog,
+} from "../../../hooks/api/useQui";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { getLinuxInstanceName } from "../../../lib/incognito";
 import { cn } from "../../../lib/utils";
+import { QuiWebhookConfigPanel } from "./webhook-config-panel";
 
 type FilterId = "all" | "qui_sync_complete" | "qui_backfill_complete";
 
@@ -35,34 +49,78 @@ const FILTER_LABELS: Record<FilterId, string> = {
 	qui_backfill_complete: "InfoHash backfill",
 };
 
-const STATUS_TONE: Record<QuiActivityEvent["status"], string> = {
+// Read from `severity` (canonical). `status` is still emitted by the
+// backend as a deprecated alias for one release window — see schema notes.
+type ActivitySeverity = "ok" | "warn" | "error";
+
+const SEVERITY_TONE: Record<ActivitySeverity, string> = {
 	ok: "text-emerald-300 border-emerald-500/30 bg-emerald-500/5",
 	warn: "text-amber-300 border-amber-500/30 bg-amber-500/5",
 	error: "text-red-300 border-red-500/30 bg-red-500/5",
 };
 
-const STATUS_ICON: Record<QuiActivityEvent["status"], typeof Activity> = {
+const SEVERITY_ICON: Record<ActivitySeverity, typeof Activity> = {
 	ok: CheckCircle2,
 	warn: AlertCircle,
 	error: AlertCircle,
 };
 
+function resolveSeverity(event: QuiActivityEvent): ActivitySeverity {
+	// `severity` is the canonical field; `status` is the deprecated alias.
+	// Read both during the transition window so an older API still works.
+	return event.severity ?? event.status ?? "ok";
+}
+
+type TopTab = "activity" | "actions" | "events" | "webhook";
+
+const TAB_LABELS: Record<TopTab, string> = {
+	activity: "Activity feed",
+	actions: "My Actions",
+	events: "My Events",
+	webhook: "Webhook",
+};
+
 /**
- * qui Activity feed (Phase 3.2).
+ * One-line description per tab — surfaces above the tab content so the
+ * three "log" tabs (Activity feed / My Actions / My Events) read as
+ * distinct surfaces instead of looking interchangeable. Without these
+ * captions, operators bounce between tabs trying to figure out which
+ * one contains the data they're looking for.
  *
- * Renders a chronological timeline of qui-related events arr-dashboard
- * has emitted: scheduler runs, gate firings, and (in future phases)
- * mutation audits and webhook-pushed events from qui.
+ * The three logs differ by WHO created the row:
+ *   - Activity feed  → arr-dashboard's schedulers (sync ticks, gate firings)
+ *   - My Actions     → operator-initiated mutations through this dashboard
+ *   - My Events      → qui's webhook receiver (qui pushed it to us)
+ */
+const TAB_DESCRIPTIONS: Record<TopTab, string> = {
+	activity:
+		"Observed events emitted by arr-dashboard's own schedulers — every 10-minute torrent-state sync and every 6-hour infoHash backfill writes a row here.",
+	actions:
+		"Tamper-evident audit log of mutations arr-dashboard initiated against qui on your behalf — pause, resume, recheck, reannounce, setTags. One row per (action, info-hash).",
+	events:
+		"Inbound webhook events qui POSTed to arr-dashboard. Distinct from Activity feed (which is our own scheduler output) and My Actions (which is what WE asked qui to do). Requires the Webhook tab to be configured.",
+	webhook:
+		"Rotate the secret + auto-register arr-dashboard as a NotificationTarget inside qui so torrent state changes push here in real time, instead of the 10-minute polled fallback.",
+};
+
+/**
+ * qui Activity surface — two tabs:
+ *   1. **Activity feed** (Phase 3.2) — observed qui-related events emitted
+ *      by background schedulers and gate firings.
+ *   2. **My Actions** (Phase 4.1) — every mutation arr-dashboard initiated
+ *      against qui on the operator's behalf. Separate tab because the
+ *      audit-log surface has different filtering needs (action vs status)
+ *      and refresh semantics (operator-driven, not scheduler-driven).
  */
 export const QuiActivityClient = () => {
-	const [filter, setFilter] = useState<FilterId>("all");
-	const feed = useQuiActivityFeed(filter === "all" ? undefined : filter, 50);
+	const [tab, setTab] = useState<TopTab>("activity");
 
-	const events = useMemo(() => feed.data?.pages.flatMap((p) => p.events) ?? [], [feed.data]);
-
-	if (feed.isLoading) {
-		return <PremiumPageLoading showHeader cardCount={4} />;
-	}
+	// Phase 5.2 — the EventSource itself lives at the app root via
+	// `QuiStreamProvider`. We just read its status here so the operator
+	// sees the "Live channel offline" pill on this surface when the push
+	// channel is broken (the page is the natural home for it because
+	// that's where they'd come to debug "why isn't my data updating").
+	const { streamStatus, isActive } = useQuiStreamStatus();
 
 	return (
 		<>
@@ -71,19 +129,215 @@ export const QuiActivityClient = () => {
 				labelIcon={History}
 				title="qui Activity"
 				gradientTitle
-				description="Chronological feed of every qui-related operation arr-dashboard has performed for you — scheduler ticks, gate firings, and (later) audited actions + qui-pushed events."
-				actions={
-					<Button variant="secondary" onClick={() => feed.refetch()} disabled={feed.isFetching}>
-						<RefreshCw
-							className={cn("mr-2 h-4 w-4", feed.isFetching ? "animate-spin" : "")}
-							aria-hidden
-						/>
-						Refresh
-					</Button>
-				}
+				description="Chronological feed of every qui-related operation arr-dashboard has performed for you — scheduler ticks, gate firings, and (now) audited mutations from your actions."
 			/>
 
-			<div className="mb-6 flex items-center gap-2 flex-wrap">
+			{/* Only render the badge when the stream is supposed to be active
+			 * for this user. If they have no qui instance configured at all,
+			 * `isActive` is false → no badge → no misleading "offline" pill. */}
+			{isActive ? <StreamStatusBadge status={streamStatus} /> : null}
+
+			<div
+				className="mb-3 flex items-center gap-2 flex-wrap"
+				role="tablist"
+				aria-label="qui activity tabs"
+			>
+				{(Object.keys(TAB_LABELS) as TopTab[]).map((id) => (
+					<button
+						type="button"
+						key={id}
+						role="tab"
+						aria-selected={tab === id}
+						onClick={() => setTab(id)}
+						className={cn(
+							"text-sm font-medium px-4 py-2 rounded-lg border transition-colors",
+							tab === id
+								? "border-foreground/40 bg-foreground/10 text-foreground"
+								: "border-border/40 bg-card/20 text-muted-foreground hover:text-foreground",
+						)}
+					>
+						{TAB_LABELS[id]}
+					</button>
+				))}
+			</div>
+
+			{/* Per-tab caption — orients the operator on WHICH log they're
+			 * looking at. The three logs are easy to confuse without it. */}
+			<p className="mb-6 text-xs text-muted-foreground max-w-3xl">{TAB_DESCRIPTIONS[tab]}</p>
+
+			{tab === "activity" ? (
+				<ActivityFeedView />
+			) : tab === "actions" ? (
+				<MyActionsView />
+			) : tab === "events" ? (
+				<MyEventsView />
+			) : (
+				<QuiWebhookConfigPanel />
+			)}
+		</>
+	);
+};
+
+// ── Stream status pill (Phase 5.2) ─────────────────────────────────────
+
+/**
+ * Small "Live channel" pill that tells the operator whether SSE push is
+ * working. Without this signal, a downed API or expired session would
+ * leave the page silently stale (the browser auto-retries EventSource
+ * forever, but the UI gives no indication).
+ *
+ * The pill is invisible while the connection is healthy ("open"); it
+ * only surfaces during connecting/offline so it doesn't add noise to
+ * the page chrome in the steady state.
+ */
+const StreamStatusBadge = ({ status }: { status: QuiEventStreamStatus }) => {
+	if (status === "open") return null;
+	const tone =
+		status === "offline"
+			? "border-amber-500/40 bg-amber-500/10 text-amber-300"
+			: "border-border/40 bg-card/30 text-muted-foreground";
+	const copy =
+		status === "offline"
+			? "Live channel offline — using polling fallback"
+			: "Connecting to live channel…";
+	return (
+		<div
+			className={cn(
+				"mb-4 inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-xs",
+				tone,
+			)}
+		>
+			<span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden />
+			{copy}
+		</div>
+	);
+};
+
+// ── My Events (Phase 5.1) ──────────────────────────────────────────────
+
+const MyEventsView = () => {
+	const feed = useQuiEventLog({ limit: 50 });
+	const entries = useMemo(() => feed.data?.pages.flatMap((p) => p.entries) ?? [], [feed.data]);
+
+	if (feed.isLoading) {
+		return <PremiumPageLoading cardCount={4} />;
+	}
+
+	if (feed.isError) {
+		return (
+			<Alert variant="danger">
+				<AlertDescription>
+					Failed to load webhook events: {getErrorMessage(feed.error)}
+				</AlertDescription>
+			</Alert>
+		);
+	}
+
+	if (entries.length === 0) {
+		return (
+			<PremiumEmptyState
+				icon={Webhook}
+				title="No webhook events yet"
+				description="Once qui is registered as a NotificationTarget (see Webhook tab), inbound events will appear here within seconds — proving the push pipeline works end-to-end."
+			/>
+		);
+	}
+
+	return (
+		<>
+			<div className="mb-4 flex items-center justify-end">
+				<Button variant="secondary" onClick={() => feed.refetch()} disabled={feed.isFetching}>
+					<RefreshCw
+						className={cn("mr-2 h-4 w-4", feed.isFetching ? "animate-spin" : "")}
+						aria-hidden
+					/>
+					Refresh
+				</Button>
+			</div>
+
+			<ul className="space-y-2">
+				{entries.map((entry, idx) => (
+					<EventLogRow key={entry.id} entry={entry} animationDelay={Math.min(idx, 12) * 30} />
+				))}
+			</ul>
+
+			{feed.hasNextPage ? (
+				<LoadMoreButton
+					isLoading={feed.isFetchingNextPage}
+					onClick={() => void feed.fetchNextPage()}
+					label="Load older events"
+				/>
+			) : null}
+		</>
+	);
+};
+
+interface EventLogRowProps {
+	entry: {
+		id: string;
+		eventType: string;
+		torrentHash: string | null;
+		serviceInstanceId: string | null;
+		receivedAt: string;
+	};
+	animationDelay: number;
+}
+
+const EventLogRow = ({ entry, animationDelay }: EventLogRowProps) => {
+	const [isIncognito] = useIncognitoMode();
+	const instance = isIncognito
+		? getLinuxInstanceName(entry.serviceInstanceId ?? "")
+		: (entry.serviceInstanceId ?? "—");
+
+	return (
+		<li>
+			<GlassmorphicCard padding="sm" animationDelay={animationDelay}>
+				<div className="flex items-start gap-3">
+					<div
+						className="flex-shrink-0 mt-0.5 rounded-full p-1.5 border text-blue-300 border-blue-500/30 bg-blue-500/5"
+						aria-hidden
+					>
+						<Webhook className="h-3.5 w-3.5" />
+					</div>
+					<div className="flex-1 min-w-0">
+						<div className="flex items-baseline justify-between gap-3 flex-wrap">
+							<span className="text-sm font-medium text-foreground">
+								{entry.eventType} · <span className="text-muted-foreground">{instance}</span>
+							</span>
+							<time
+								className="text-xs text-muted-foreground"
+								dateTime={entry.receivedAt}
+								title={new Date(entry.receivedAt).toLocaleString()}
+							>
+								{formatRelative(entry.receivedAt)}
+							</time>
+						</div>
+						{entry.torrentHash ? (
+							<div className="mt-1 text-xs text-muted-foreground font-mono break-all">
+								{shortenHash(entry.torrentHash)}
+							</div>
+						) : null}
+					</div>
+				</div>
+			</GlassmorphicCard>
+		</li>
+	);
+};
+
+// ── Activity feed (Phase 3.2) ──────────────────────────────────────────
+
+const ActivityFeedView = () => {
+	const [filter, setFilter] = useState<FilterId>("all");
+	const feed = useQuiActivityFeed(filter === "all" ? undefined : filter, 50);
+	const events = useMemo(() => feed.data?.pages.flatMap((p) => p.events) ?? [], [feed.data]);
+
+	if (feed.isLoading) {
+		return <PremiumPageLoading cardCount={4} />;
+	}
+
+	return (
+		<>
+			<div className="mb-4 flex items-center gap-2 flex-wrap">
 				{(Object.keys(FILTER_LABELS) as FilterId[]).map((id) => (
 					<button
 						type="button"
@@ -99,6 +353,18 @@ export const QuiActivityClient = () => {
 						{FILTER_LABELS[id]}
 					</button>
 				))}
+				<Button
+					variant="secondary"
+					className="ml-auto"
+					onClick={() => feed.refetch()}
+					disabled={feed.isFetching}
+				>
+					<RefreshCw
+						className={cn("mr-2 h-4 w-4", feed.isFetching ? "animate-spin" : "")}
+						aria-hidden
+					/>
+					Refresh
+				</Button>
 			</div>
 
 			{feed.isError ? (
@@ -122,23 +388,11 @@ export const QuiActivityClient = () => {
 					</ul>
 
 					{feed.hasNextPage ? (
-						<div className="mt-6 flex justify-center">
-							<Button
-								variant="secondary"
-								onClick={() => void feed.fetchNextPage()}
-								disabled={feed.isFetchingNextPage}
-							>
-								{feed.isFetchingNextPage ? (
-									<>
-										<Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden /> Loading…
-									</>
-								) : (
-									<>
-										Load older events <ArrowRight className="ml-2 h-4 w-4" aria-hidden />
-									</>
-								)}
-							</Button>
-						</div>
+						<LoadMoreButton
+							isLoading={feed.isFetchingNextPage}
+							onClick={() => void feed.fetchNextPage()}
+							label="Load older events"
+						/>
 					) : null}
 				</>
 			)}
@@ -146,13 +400,240 @@ export const QuiActivityClient = () => {
 	);
 };
 
+// ── My Actions (Phase 4.1) ─────────────────────────────────────────────
+
+// Derive the filter union from the canonical wire enum so adding a new
+// qui action (or removing one) requires updating exactly one place.
+// Without this, an enum extension lands silently and the dropdown's
+// `Record` keeps a stale value the route would 400 on.
+type ActionFilterId = QuiAction | "all";
+type StatusFilterId = "all" | "pending" | "success" | "failed";
+
+const ACTION_LABELS: Record<ActionFilterId, string> = {
+	all: "All actions",
+	pause: "Pause",
+	resume: "Resume",
+	recheck: "Recheck",
+	reannounce: "Reannounce",
+	setTags: "Set tags",
+};
+
+const STATUS_LABELS: Record<StatusFilterId, string> = {
+	all: "All statuses",
+	pending: "Pending",
+	success: "Success",
+	failed: "Failed",
+};
+
+const ACTION_STATUS_TONE: Record<QuiActionLogEntry["status"], string> = {
+	pending: "text-blue-300 border-blue-500/30 bg-blue-500/5",
+	success: "text-emerald-300 border-emerald-500/30 bg-emerald-500/5",
+	failed: "text-red-300 border-red-500/30 bg-red-500/5",
+};
+
+const ACTION_STATUS_ICON: Record<QuiActionLogEntry["status"], typeof Activity> = {
+	pending: Loader2,
+	success: CheckCircle2,
+	failed: XCircle,
+};
+
+const MyActionsView = () => {
+	const [actionFilter, setActionFilter] = useState<ActionFilterId>("all");
+	const [statusFilter, setStatusFilter] = useState<StatusFilterId>("all");
+
+	const feed = useQuiActionLog({
+		action: actionFilter === "all" ? undefined : actionFilter,
+		status: statusFilter === "all" ? undefined : statusFilter,
+	});
+
+	const entries = useMemo(() => feed.data?.pages.flatMap((p) => p.entries) ?? [], [feed.data]);
+
+	if (feed.isLoading) {
+		return <PremiumPageLoading cardCount={4} />;
+	}
+
+	return (
+		<>
+			<div className="mb-4 flex items-center gap-2 flex-wrap">
+				<select
+					value={actionFilter}
+					onChange={(e) => setActionFilter(e.target.value as ActionFilterId)}
+					className="text-xs font-medium px-3 py-1.5 rounded-lg border border-border/40 bg-card/20 text-foreground"
+					aria-label="Filter by action"
+				>
+					{(Object.keys(ACTION_LABELS) as ActionFilterId[]).map((id) => (
+						<option key={id} value={id}>
+							{ACTION_LABELS[id]}
+						</option>
+					))}
+				</select>
+				<select
+					value={statusFilter}
+					onChange={(e) => setStatusFilter(e.target.value as StatusFilterId)}
+					className="text-xs font-medium px-3 py-1.5 rounded-lg border border-border/40 bg-card/20 text-foreground"
+					aria-label="Filter by status"
+				>
+					{(Object.keys(STATUS_LABELS) as StatusFilterId[]).map((id) => (
+						<option key={id} value={id}>
+							{STATUS_LABELS[id]}
+						</option>
+					))}
+				</select>
+				<Button
+					variant="secondary"
+					className="ml-auto"
+					onClick={() => feed.refetch()}
+					disabled={feed.isFetching}
+				>
+					<RefreshCw
+						className={cn("mr-2 h-4 w-4", feed.isFetching ? "animate-spin" : "")}
+						aria-hidden
+					/>
+					Refresh
+				</Button>
+			</div>
+
+			{feed.isError ? (
+				<Alert variant="danger">
+					<AlertDescription>
+						Failed to load action log: {getErrorMessage(feed.error)}
+					</AlertDescription>
+				</Alert>
+			) : entries.length === 0 ? (
+				<PremiumEmptyState
+					icon={Wrench}
+					title="No torrent actions yet"
+					description="When you pause, resume, recheck, or reannounce a torrent from arr-dashboard, the audit entry will appear here — including the qui instance, the info hash, and any error message qui returned."
+				/>
+			) : (
+				<>
+					<ul className="space-y-2">
+						{entries.map((entry, idx) => (
+							<ActionRow key={entry.id} entry={entry} animationDelay={Math.min(idx, 12) * 30} />
+						))}
+					</ul>
+
+					{feed.hasNextPage ? (
+						<LoadMoreButton
+							isLoading={feed.isFetchingNextPage}
+							onClick={() => void feed.fetchNextPage()}
+							label="Load older actions"
+						/>
+					) : null}
+				</>
+			)}
+		</>
+	);
+};
+
+const LoadMoreButton = ({
+	isLoading,
+	onClick,
+	label,
+}: {
+	isLoading: boolean;
+	onClick: () => void;
+	label: string;
+}) => (
+	<div className="mt-6 flex justify-center">
+		<Button variant="secondary" onClick={onClick} disabled={isLoading}>
+			{isLoading ? (
+				<>
+					<Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden /> Loading…
+				</>
+			) : (
+				<>
+					{label} <ArrowRight className="ml-2 h-4 w-4" aria-hidden />
+				</>
+			)}
+		</Button>
+	</div>
+);
+
+interface ActionRowProps {
+	entry: QuiActionLogEntry;
+	animationDelay: number;
+}
+
+const ActionRow = ({ entry, animationDelay }: ActionRowProps) => {
+	const [isIncognito] = useIncognitoMode();
+	const StatusIcon = ACTION_STATUS_ICON[entry.status];
+	// Incognito guidance per CLAUDE.md rule 6 — anonymize the qui instance
+	// label so screenshots don't leak operator setups. The hash is already
+	// pseudo-anonymous (no PII), but instance labels can be personal.
+	const instanceLabel = isIncognito
+		? getLinuxInstanceName(entry.serviceInstanceLabel)
+		: entry.serviceInstanceLabel;
+	const tags = readTags(entry.payload);
+
+	return (
+		<li>
+			<GlassmorphicCard padding="sm" animationDelay={animationDelay}>
+				<div className="flex items-start gap-3">
+					<div
+						className={cn(
+							"flex-shrink-0 mt-0.5 rounded-full p-1.5 border",
+							ACTION_STATUS_TONE[entry.status],
+						)}
+						aria-hidden
+					>
+						<StatusIcon
+							className={cn("h-3.5 w-3.5", entry.status === "pending" ? "animate-spin" : "")}
+						/>
+					</div>
+					<div className="flex-1 min-w-0">
+						<div className="flex items-baseline justify-between gap-3 flex-wrap">
+							<span className="text-sm font-medium text-foreground">
+								{ACTION_LABELS[entry.action as ActionFilterId] ?? entry.action} ·{" "}
+								<span className="text-muted-foreground">{instanceLabel}</span>
+							</span>
+							<time
+								className="text-xs text-muted-foreground"
+								dateTime={entry.requestedAt}
+								title={new Date(entry.requestedAt).toLocaleString()}
+							>
+								{formatRelative(entry.requestedAt)}
+							</time>
+						</div>
+						<div className="mt-1 text-xs text-muted-foreground font-mono break-all">
+							{shortenHash(entry.torrentHash)}
+							{tags ? <span className="ml-2 font-sans">tags: {tags}</span> : null}
+						</div>
+						{entry.status === "failed" && entry.error ? (
+							<div className="mt-1 text-xs text-red-300">{entry.error}</div>
+						) : null}
+					</div>
+				</div>
+			</GlassmorphicCard>
+		</li>
+	);
+};
+
+function shortenHash(hash: string): string {
+	if (hash.length <= 16) return hash;
+	return `${hash.slice(0, 8)}…${hash.slice(-8)}`;
+}
+
+function readTags(payload: unknown): string | null {
+	if (
+		payload &&
+		typeof payload === "object" &&
+		"tags" in payload &&
+		typeof (payload as Record<string, unknown>).tags === "string"
+	) {
+		return (payload as { tags: string }).tags;
+	}
+	return null;
+}
+
 interface EventRowProps {
 	event: QuiActivityEvent;
 	animationDelay: number;
 }
 
 const EventRow = ({ event, animationDelay }: EventRowProps) => {
-	const StatusIcon = STATUS_ICON[event.status];
+	const severity = resolveSeverity(event);
+	const StatusIcon = SEVERITY_ICON[severity];
 	const title = describeEvent(event);
 	const summary = summarizeEvent(event);
 
@@ -163,7 +644,7 @@ const EventRow = ({ event, animationDelay }: EventRowProps) => {
 					<div
 						className={cn(
 							"flex-shrink-0 mt-0.5 rounded-full p-1.5 border",
-							STATUS_TONE[event.status],
+							SEVERITY_TONE[severity],
 						)}
 						aria-hidden
 					>

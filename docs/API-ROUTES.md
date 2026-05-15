@@ -57,6 +57,7 @@ for the full rationale.
 | `/api/auto-tag/webhook` | experimental | Inbound Sonarr/Radarr Connect webhook for real-time auto-tagging. **Public route** (no session cookie); authenticates via per-user Bearer token (SHA-256 hash of the user's webhook secret). |
 | `/api/pulse` | internal | System Pulse health signals + attention items |
 | `/api/qui` | experimental | Federated peer integration with autobrr/qui (qBittorrent UI) — read-only torrent state, trackers, cross-seed siblings; powers the Torrent Health panel. |
+| `/api/webhooks/qui` | experimental | Inbound qui webhook receiver (Phase 5.1). **Public route** (no session cookie); authenticates via per-user `?secret=…` query param (matches qui's `ApiKeyQuery` scheme). Stores raw events in `QuiEventLog` and publishes to the in-process event bus for SSE fan-out. |
 | `/api/seerr` | stable | Request management, discovery, library enrichment |
 | `/api/trash-guides` | internal | TRaSH cache, templates, deployment, profiles |
 

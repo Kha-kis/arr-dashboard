@@ -20,14 +20,22 @@ import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 /** Per-user retention cap, applied per eventType. */
 const EVENTS_PER_TYPE_PER_USER = 200;
 
-export type QuiActivityStatus = "ok" | "warn" | "error";
+export type QuiActivitySeverity = "ok" | "warn" | "error";
+/** @deprecated Use `QuiActivitySeverity`. Aliased for one release window. */
+export type QuiActivityStatus = QuiActivitySeverity;
 
 export interface LogQuiActivityArgs<TDetails> {
 	app: FastifyInstance;
 	userId: string;
 	eventType: string;
 	details: TDetails;
-	status?: QuiActivityStatus;
+	/** Severity — `ok`/`warn`/`error`. The field used to be called `status`
+	 * but that collides with `QuiActionLog.status` (lifecycle), so it was
+	 * renamed in v2.20. `status` is still accepted as an alias for one
+	 * release window to ease external callers' migration. */
+	severity?: QuiActivitySeverity;
+	/** @deprecated Use `severity`. */
+	status?: QuiActivitySeverity;
 	log?: FastifyBaseLogger;
 }
 
@@ -37,14 +45,15 @@ export interface LogQuiActivityArgs<TDetails> {
  * the caller's work continues regardless.
  */
 export async function logQuiActivity<TDetails>(args: LogQuiActivityArgs<TDetails>): Promise<void> {
-	const { app, userId, eventType, details, status = "ok", log = app.log } = args;
+	const { app, userId, eventType, details, log = app.log } = args;
+	const severity: QuiActivitySeverity = args.severity ?? args.status ?? "ok";
 	try {
 		await app.prisma.quiActivityLog.create({
 			data: {
 				userId,
 				eventType,
 				details: JSON.stringify(details),
-				status,
+				severity,
 			},
 		});
 

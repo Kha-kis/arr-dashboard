@@ -1,5 +1,16 @@
 import { z } from "zod";
 
+/**
+ * Inline copy of the LibraryItemType enum from library.ts. We intentionally
+ * DON'T `import { libraryItemTypeSchema } from "./library.js"` because
+ * library.ts imports `normalizedTorrentStateSchema` from THIS file —
+ * cross-importing would create a circular ESM dependency that tsx-watch
+ * trips on at startup (`Cannot access 'libraryItemTypeSchema' before
+ * initialization`). The enum is tiny + stable; duplicating it costs less
+ * than untangling the circular.
+ */
+const libraryItemTypeSchemaInternal = z.enum(["movie", "series", "artist", "author"]);
+
 // ── qui (autobrr/qui) Shared Types ──────────────────────────────────
 // Wire contract between arr-dashboard's API and frontend for the qui
 // integration. Backend translates raw qui responses into these shapes;
@@ -293,6 +304,15 @@ export const crossSeedDiscoveryResponseSchema = z.object({
 	exhausted: z.boolean(),
 	/** Display name of the qui instance the scan used */
 	quiInstanceLabel: z.string(),
+	/**
+	 * Number of LibraryCache rows we tried to scan in this batch but
+	 * couldn't because qui returned an error for the sibling lookup.
+	 * Surfacing this lets the frontend render "scanned 200, 12 with
+	 * siblings, 3 unreachable" — without it, operators can't tell a
+	 * "no siblings found" from a "we tried and qui errored" answer.
+	 * Optional for one release window to keep older API clients valid.
+	 */
+	siblingFetchErrors: z.number().int().optional(),
 });
 
 export type CrossSeedDiscoveryResponse = z.infer<typeof crossSeedDiscoveryResponseSchema>;
@@ -352,11 +372,28 @@ export type QuiBackfillCompleteDetails = z.infer<typeof quiBackfillCompleteDetai
  * new emitters can land without a shared-schema bump; the frontend
  * gracefully degrades to a generic row for unknown types.
  */
+/**
+ * Activity-event severity. Distinct vocabulary from `quiActionStatusSchema`
+ * (which describes the lifecycle of an operator-initiated mutation —
+ * pending/success/failed). Mixing the two names confuses readers and made
+ * the qui-activity surface ambiguous about which kind of "status" it
+ * displayed in each tab. The wire field is now `severity` everywhere; the
+ * DB column stays `status` via Prisma `@map` so existing rows survive.
+ *
+ * The reply on the wire ALSO exposes the original `status` field for one
+ * release window so any external consumers cutting over have time. Drop
+ * the alias in v3.0+ — tracked in qui-integration-arc.md.
+ */
 export const quiActivityEventSchema = z.object({
 	id: z.string(),
 	eventType: z.string(),
-	status: z.enum(["ok", "warn", "error"]),
+	severity: z.enum(["ok", "warn", "error"]),
+	/** @deprecated Use `severity`. Aliased for one release window. */
+	status: z.enum(["ok", "warn", "error"]).optional(),
 	createdAt: z.string(),
+	/** Canonical timestamp field — same value as `createdAt`. Aliased so
+	 * frontend cursor logic doesn't have to remember per-feed field names. */
+	timestamp: z.string().optional(),
 	details: z.unknown(),
 });
 
@@ -369,3 +406,316 @@ export const quiActivityFeedResponseSchema = z.object({
 });
 
 export type QuiActivityFeedResponse = z.infer<typeof quiActivityFeedResponseSchema>;
+
+// ── Phase 4 — Action audit log (arr-dashboard-initiated mutations) ─────
+// Distinct from QuiActivityEvent above: that surface records *observed*
+// qui automation events (sync ticks, gate firings). The schemas below
+// represent *intentional* mutations the operator triggered through
+// arr-dashboard — pause, resume, recheck, reannounce, tag changes — so
+// the operator has a tamper-evident record of every change arr-dashboard
+// made against their qui instances.
+
+/**
+ * Action vocabulary supported by Phase 4. Maps 1:1 to qui's bulk-action
+ * `action` enum (qui exposes a larger set; we surface the subset that has
+ * clear single-torrent semantics in v1). Phase 4.2 extends to bulk variants
+ * via the same enum + a `hashes[]` payload.
+ */
+export const quiActionSchema = z.enum(["pause", "resume", "recheck", "reannounce", "setTags"]);
+
+export type QuiAction = z.infer<typeof quiActionSchema>;
+
+/** Lifecycle states for a logged action. */
+export const quiActionStatusSchema = z.enum(["pending", "success", "failed"]);
+
+export type QuiActionStatus = z.infer<typeof quiActionStatusSchema>;
+
+/**
+ * Wire format for a qBit info hash — SHA-1 (40 hex) or SHA-256 (64 hex).
+ * Used both in URL params (single-action) AND as a per-element guard for
+ * bulk-action `hashes[]`. Centralizing prevents the asymmetry that earlier
+ * versions had: single-action validated the hash regex, bulk-action only
+ * required `min(1)`, so bulk could pass garbage strings through to qui +
+ * the audit log.
+ */
+export const quiInfoHashSchema = z
+	.string()
+	.regex(/^[a-fA-F0-9]{40,64}$/, "expected 40-64 hex characters (qBit info hash)");
+
+/**
+ * Per-call cap on `hashes[]` for bulk actions. 500 is the documented
+ * scaling boundary for the audit-log `$transaction([create, …])` pattern
+ * — beyond this, one bulk request can stall other DB writes by holding
+ * the write lock too long. The constant is exported so both the route
+ * boundary (Zod) AND the frontend selection toolbar can refuse the
+ * over-quota case with matching copy.
+ */
+export const QUI_BULK_HASH_CAP = 500;
+
+/**
+ * Upper bound on the per-action `tags` string. qui itself accepts an
+ * unbounded `tags` parameter, but our audit log stores the JSON-encoded
+ * payload as a varchar column and we shouldn't let a single setTags call
+ * persist megabytes of operator-supplied data. 2 KiB is comfortably
+ * above any reasonable tag list while bounding worst-case row size.
+ */
+export const QUI_TAGS_MAX_LENGTH = 2_000;
+
+/**
+ * Single-torrent action request body. The route's `hash` URL param
+ * carries the target; this body carries action-specific extras
+ * (currently only `tags` for `setTags`). For `pause`/`resume`/`recheck`/
+ * `reannounce`, the body is allowed to be empty `{}`.
+ *
+ * Note: the linkage between `action === "setTags"` and `tags` presence
+ * lives at the route layer (the action is in URL params, not the body, so
+ * a single `discriminatedUnion` on this schema would be awkward). The
+ * route handler asserts `tags` is present when `action === "setTags"`.
+ */
+export const quiTorrentActionRequestSchema = z.object({
+	/**
+	 * Comma-separated qui tag list for `setTags`. Validated against qui's
+	 * bulk-action wire format (qui takes a single comma-joined string,
+	 * not a JSON array). Ignored for non-tag actions.
+	 */
+	tags: z.string().max(QUI_TAGS_MAX_LENGTH).optional(),
+});
+
+export type QuiTorrentActionRequest = z.infer<typeof quiTorrentActionRequestSchema>;
+
+/**
+ * Bulk-action request body for Phase 4.2. `hashes` is required (length
+ * ≥ 1, ≤ `QUI_BULK_HASH_CAP`); the route's URL param carries the action.
+ * `tags` is only used when action is `setTags`. Each element of `hashes`
+ * must match the qBit info-hash format so we don't persist garbage in
+ * the audit log on a bad client.
+ */
+export const quiBulkActionRequestSchema = z.object({
+	hashes: z.array(quiInfoHashSchema).min(1).max(QUI_BULK_HASH_CAP),
+	tags: z.string().max(QUI_TAGS_MAX_LENGTH).optional(),
+});
+
+export type QuiBulkActionRequest = z.infer<typeof quiBulkActionRequestSchema>;
+
+/**
+ * Defensive coercion helpers — apply when reading an `action`/`status`
+ * back out of the DB. The columns are stored as plain strings (SQLite
+ * has no enum support), so a stray value from an older deploy or a
+ * future enum extension reaching an old client would otherwise type-lie
+ * its way into the response. Falls back to "unknown" with a typed
+ * sentinel so the UI can render a degraded row instead of crashing.
+ */
+export type QuiActionMaybeUnknown = QuiAction | "unknown";
+export type QuiActionStatusMaybeUnknown = QuiActionStatus | "unknown";
+
+const QUI_ACTION_VALUES = new Set<QuiAction>([
+	"pause",
+	"resume",
+	"recheck",
+	"reannounce",
+	"setTags",
+]);
+const QUI_ACTION_STATUS_VALUES = new Set<QuiActionStatus>(["pending", "success", "failed"]);
+
+export function coerceQuiAction(raw: string): QuiActionMaybeUnknown {
+	return QUI_ACTION_VALUES.has(raw as QuiAction) ? (raw as QuiAction) : "unknown";
+}
+
+export function coerceQuiActionStatus(raw: string): QuiActionStatusMaybeUnknown {
+	return QUI_ACTION_STATUS_VALUES.has(raw as QuiActionStatus)
+		? (raw as QuiActionStatus)
+		: "unknown";
+}
+
+/**
+ * One row of the per-user action log surfaced to the frontend "My Actions"
+ * tab. Server side stores `payload` and `error` as nullable string columns;
+ * the API layer parses `payload` JSON before returning if present.
+ */
+export const quiActionLogEntrySchema = z.object({
+	id: z.string(),
+	serviceInstanceId: z.string(),
+	serviceInstanceLabel: z.string(),
+	qbitInstanceId: z.number().int(),
+	torrentHash: z.string(),
+	action: quiActionSchema,
+	status: quiActionStatusSchema,
+	error: z.string().nullable(),
+	payload: z.unknown().nullable(),
+	requestedAt: z.string(),
+	/** Canonical timestamp — alias for `requestedAt` so cursor consumers
+	 * don't need to remember per-feed field names. See note on
+	 * `quiActivityEventSchema.timestamp`. */
+	timestamp: z.string().optional(),
+	completedAt: z.string().nullable(),
+});
+
+export type QuiActionLogEntry = z.infer<typeof quiActionLogEntrySchema>;
+
+/** Paginated response for `GET /api/qui/actions`. */
+export const quiActionLogResponseSchema = z.object({
+	entries: z.array(quiActionLogEntrySchema),
+	nextCursor: z.string().nullable(),
+});
+
+export type QuiActionLogResponse = z.infer<typeof quiActionLogResponseSchema>;
+
+// ── Phase 5 — Webhook receiver + event push ────────────────────────────
+//
+// qui can POST notifications to arr-dashboard. The body shape is opaque to
+// us — qui has its own NotificationEvent envelope per its openapi, which
+// we accept as a passthrough `unknown` and store verbatim in QuiEventLog
+// for replay/debug. The narrower fields we extract (eventType, torrent
+// hash when present) drive the SSE invalidation in Phase 5.2.
+
+/**
+ * Outer shape of a qui webhook POST body. qui's envelope contains an
+ * event type and a payload; we don't lock the payload shape because new
+ * event types land in qui without arr-dashboard schema bumps.
+ */
+export const quiWebhookEnvelopeSchema = z.object({
+	type: z.string(),
+	timestamp: z.string().optional(),
+	payload: z.unknown().optional(),
+});
+
+export type QuiWebhookEnvelope = z.infer<typeof quiWebhookEnvelopeSchema>;
+
+/**
+ * Per-user webhook config surfaced to the Settings UI. `secret` is only
+ * returned at generation/rotation time (write-only thereafter); the
+ * `hasSecret` boolean tells the UI whether to show "rotate" vs "generate".
+ */
+export const quiWebhookConfigSchema = z.object({
+	hasSecret: z.boolean(),
+	/** Public URL operators should paste into qui's NotificationTarget. */
+	webhookUrl: z.string(),
+	/** Plaintext secret — returned ONLY on generate/rotate. */
+	secret: z.string().optional(),
+});
+
+export type QuiWebhookConfig = z.infer<typeof quiWebhookConfigSchema>;
+
+/** Event-log row for `GET /api/qui/events`. */
+export const quiEventLogEntrySchema = z.object({
+	id: z.string(),
+	serviceInstanceId: z.string().nullable(),
+	eventType: z.string(),
+	torrentHash: z.string().nullable(),
+	payload: z.unknown(),
+	receivedAt: z.string(),
+	/** Canonical timestamp — alias for `receivedAt`. See note on
+	 * `quiActivityEventSchema.timestamp`. */
+	timestamp: z.string().optional(),
+});
+
+export type QuiEventLogEntry = z.infer<typeof quiEventLogEntrySchema>;
+
+/** Paginated event-log response. */
+export const quiEventLogResponseSchema = z.object({
+	entries: z.array(quiEventLogEntrySchema),
+	nextCursor: z.string().nullable(),
+});
+
+export type QuiEventLogResponse = z.infer<typeof quiEventLogResponseSchema>;
+
+// ── qui home page — Summary + Attention (single-pane-of-glass surfaces) ─
+
+/**
+ * Per-state torrent count rollup. Mirrors the operator-facing
+ * vocabulary in `normalizeTorrentState`, NOT qBit's raw state strings
+ * (so the frontend doesn't have to map e.g. `stalledUP` → `seeding`).
+ */
+export const quiSummaryByStateSchema = z.object({
+	seeding: z.number().int(),
+	downloading: z.number().int(),
+	paused: z.number().int(),
+	stalled: z.number().int(),
+	error: z.number().int(),
+	other: z.number().int(),
+});
+
+/**
+ * Per-qBit-instance health snapshot. `connected` is the qBit ↔ qui
+ * connection status that qui itself reports. `torrentCount` is the
+ * count of torrents qui has for this qBit instance.
+ */
+export const quiSummaryQbitInstanceSchema = z.object({
+	id: z.number().int(),
+	name: z.string(),
+	connected: z.boolean(),
+	torrentCount: z.number().int(),
+});
+
+/**
+ * Response shape for `GET /api/qui/summary` — drives the KPI strip
+ * on the qui home page. One call, one cheap pass; refreshed on the
+ * same cadence as the torrent-state-sync scheduler (10 min).
+ */
+export const quiSummaryResponseSchema = z.object({
+	totalTorrents: z.number().int(),
+	byState: quiSummaryByStateSchema,
+	/** Mean ratio across all torrents (0 when there are no torrents). */
+	avgRatio: z.number(),
+	/** Count of torrents below the low-ratio threshold (default 1.0). */
+	lowRatioCount: z.number().int(),
+	/** ISO timestamp of the most recent successful sync, or null if
+	 * never run / never succeeded. */
+	lastSyncAt: z.string().nullable(),
+	/** Was the most recent sync successful (errors === 0)? Null if no
+	 * sync has run yet. */
+	lastSyncOk: z.boolean().nullable(),
+	/** Number of qui ServiceInstance rows enabled for this user. */
+	configuredInstances: z.number().int(),
+	/** Per-qBit-instance health. Empty when no qui instance reachable. */
+	qbitInstances: z.array(quiSummaryQbitInstanceSchema),
+});
+
+export type QuiSummaryResponse = z.infer<typeof quiSummaryResponseSchema>;
+
+/**
+ * One row in the Needs Attention feed — a problematic torrent + (when
+ * we have an infoHash match) its *arr library context. The frontend
+ * uses this to render "your movie X has a stalled torrent" with a
+ * one-click jump to the library item.
+ */
+export const quiAttentionItemSchema = z.object({
+	hash: z.string(),
+	name: z.string(),
+	state: quiTorrentStateSchema,
+	ratio: z.number(),
+	size: z.number().int(),
+	qbitInstanceId: z.number().int().nullable(),
+	qbitInstanceName: z.string().nullable(),
+	/** Severity ranks the row for sorting. */
+	severity: z.enum(["critical", "warning"]),
+	/** Short human-readable reason this torrent needs attention. */
+	reason: z.string(),
+	/** *arr context when we can correlate the hash to a library_cache
+	 * row. Null when qui has the torrent but no *arr instance tracks it
+	 * (orphans, manually-added downloads). */
+	libraryContext: z
+		.object({
+			arrInstanceId: z.string(),
+			arrInstanceLabel: z.string(),
+			arrService: z.enum(["sonarr", "radarr", "lidarr", "readarr"]),
+			libraryCacheId: z.string(),
+			arrItemId: z.number().int(),
+			itemType: libraryItemTypeSchemaInternal,
+			title: z.string(),
+			year: z.number().int().nullable(),
+		})
+		.nullable(),
+});
+
+export type QuiAttentionItem = z.infer<typeof quiAttentionItemSchema>;
+
+/** Response shape for `GET /api/qui/attention`. */
+export const quiAttentionResponseSchema = z.object({
+	items: z.array(quiAttentionItemSchema),
+	/** Total count across all severities — may exceed `items.length`
+	 * when the route caps the response. */
+	totalCount: z.number().int(),
+});
+
+export type QuiAttentionResponse = z.infer<typeof quiAttentionResponseSchema>;

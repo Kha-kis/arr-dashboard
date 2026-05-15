@@ -1,7 +1,7 @@
 "use client";
 
 import type { CrossSeedDiscoveryItem, QuiCrossSeedMatch } from "@arr/shared";
-import { ExternalLink, Network } from "lucide-react";
+import { Network } from "lucide-react";
 import { GlassmorphicCard, ServiceBadge } from "../../../components/layout";
 import {
 	getLinuxIndexer,
@@ -15,6 +15,16 @@ interface CrossSeedItemCardProps {
 	item: CrossSeedDiscoveryItem;
 	quiInstanceLabel: string;
 	animationDelay: number;
+	/** Phase 4.2 — selection state for the bulk-action toolbar. */
+	isSelected?: boolean;
+	/** Phase 4.2 — toggle handler; only rendered when defined (selection mode on). */
+	onToggleSelect?: () => void;
+	/**
+	 * Phase 4.2 — disables the checkbox for items without a `primary` torrent
+	 * (qui doesn't know the hash, so we can't target it). The card stays
+	 * visible but is not selectable.
+	 */
+	selectDisabled?: boolean;
 }
 
 const MATCH_TYPE_COPY: Record<QuiCrossSeedMatch["matchType"], { label: string; tone: string }> = {
@@ -27,8 +37,11 @@ export const CrossSeedItemCard = ({
 	item,
 	quiInstanceLabel: _quiInstanceLabel,
 	animationDelay,
+	isSelected = false,
+	onToggleSelect,
+	selectDisabled = false,
 }: CrossSeedItemCardProps) => {
-	const incognito = useIncognitoMode();
+	const [incognito] = useIncognitoMode();
 
 	const displayTitle = incognito ? getLinuxIsoName(item.title) : item.title;
 	const displayInstance = incognito
@@ -41,9 +54,32 @@ export const CrossSeedItemCard = ({
 	return (
 		<GlassmorphicCard padding="md" animationDelay={animationDelay}>
 			<div className="flex items-start gap-3">
-				<div className="flex-shrink-0 mt-1">
-					<Network className="h-5 w-5 text-muted-foreground" aria-hidden />
-				</div>
+				{onToggleSelect ? (
+					// Selection mode (Phase 4.2). The checkbox sits in the icon
+					// slot so the layout doesn't shift when selection mode toggles.
+					// Items without a `primary` torrent can't be targeted by
+					// mutations (no hash for qui), so the box is disabled with
+					// a tooltip explaining why.
+					<label
+						className="flex-shrink-0 mt-1 cursor-pointer"
+						title={
+							selectDisabled ? "qui does not know this torrent — cannot select" : "Toggle selection"
+						}
+					>
+						<input
+							type="checkbox"
+							checked={isSelected}
+							onChange={onToggleSelect}
+							disabled={selectDisabled}
+							className="h-4 w-4 rounded border-border accent-primary"
+							aria-label={`Select ${displayTitle}`}
+						/>
+					</label>
+				) : (
+					<div className="flex-shrink-0 mt-1">
+						<Network className="h-5 w-5 text-muted-foreground" aria-hidden />
+					</div>
+				)}
 				<div className="flex-1 min-w-0">
 					<div className="flex items-center gap-2 flex-wrap">
 						<h3 className="text-base font-semibold truncate" title={displayTitle}>
@@ -106,17 +142,13 @@ export const CrossSeedItemCard = ({
 						</ul>
 					</div>
 				</div>
-				{item.primary ? (
-					<a
-						href="#"
-						onClick={(e) => e.preventDefault()}
-						className="flex-shrink-0 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-						aria-label="Open torrent in qui"
-						title="Open in qui (deep-link will be wired in a follow-up)"
-					>
-						<ExternalLink className="h-3.5 w-3.5" aria-hidden />
-					</a>
-				) : null}
+				{/*
+				 * Deep-link to qui omitted in v1 — qui doesn't expose a stable
+				 * per-torrent URL we can construct without knowing the
+				 * operator's qui webroot. Add the affordance when we resolve a
+				 * canonical deep-link shape (currently tracked in arc doc as
+				 * Phase 6 polish).
+				 */}
 			</div>
 		</GlassmorphicCard>
 	);

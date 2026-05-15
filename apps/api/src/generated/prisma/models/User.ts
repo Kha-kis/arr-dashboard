@@ -44,6 +44,7 @@ export type UserMinAggregateOutputType = {
   encryptedTmdbApiKey: string | null
   tmdbEncryptionIv: string | null
   hashedWebhookSecret: string | null
+  hashedQuiWebhookSecret: string | null
   createdAt: Date | null
   updatedAt: Date | null
   encryptedTraktAccessToken: string | null
@@ -60,6 +61,7 @@ export type UserMaxAggregateOutputType = {
   encryptedTmdbApiKey: string | null
   tmdbEncryptionIv: string | null
   hashedWebhookSecret: string | null
+  hashedQuiWebhookSecret: string | null
   createdAt: Date | null
   updatedAt: Date | null
   encryptedTraktAccessToken: string | null
@@ -76,6 +78,7 @@ export type UserCountAggregateOutputType = {
   encryptedTmdbApiKey: number
   tmdbEncryptionIv: number
   hashedWebhookSecret: number
+  hashedQuiWebhookSecret: number
   createdAt: number
   updatedAt: number
   encryptedTraktAccessToken: number
@@ -102,6 +105,7 @@ export type UserMinAggregateInputType = {
   encryptedTmdbApiKey?: true
   tmdbEncryptionIv?: true
   hashedWebhookSecret?: true
+  hashedQuiWebhookSecret?: true
   createdAt?: true
   updatedAt?: true
   encryptedTraktAccessToken?: true
@@ -118,6 +122,7 @@ export type UserMaxAggregateInputType = {
   encryptedTmdbApiKey?: true
   tmdbEncryptionIv?: true
   hashedWebhookSecret?: true
+  hashedQuiWebhookSecret?: true
   createdAt?: true
   updatedAt?: true
   encryptedTraktAccessToken?: true
@@ -134,6 +139,7 @@ export type UserCountAggregateInputType = {
   encryptedTmdbApiKey?: true
   tmdbEncryptionIv?: true
   hashedWebhookSecret?: true
+  hashedQuiWebhookSecret?: true
   createdAt?: true
   updatedAt?: true
   encryptedTraktAccessToken?: true
@@ -237,6 +243,7 @@ export type UserGroupByOutputType = {
   encryptedTmdbApiKey: string | null
   tmdbEncryptionIv: string | null
   hashedWebhookSecret: string | null
+  hashedQuiWebhookSecret: string | null
   createdAt: Date
   updatedAt: Date
   encryptedTraktAccessToken: string | null
@@ -276,6 +283,7 @@ export type UserWhereInput = {
   encryptedTmdbApiKey?: Prisma.StringNullableFilter<"User"> | string | null
   tmdbEncryptionIv?: Prisma.StringNullableFilter<"User"> | string | null
   hashedWebhookSecret?: Prisma.StringNullableFilter<"User"> | string | null
+  hashedQuiWebhookSecret?: Prisma.StringNullableFilter<"User"> | string | null
   createdAt?: Prisma.DateTimeFilter<"User"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"User"> | Date | string
   encryptedTraktAccessToken?: Prisma.StringNullableFilter<"User"> | string | null
@@ -298,6 +306,8 @@ export type UserWhereInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheListRelationFilter
   traktListCacheRows?: Prisma.TraktListCacheListRelationFilter
   quiActivityLogs?: Prisma.QuiActivityLogListRelationFilter
+  quiActionLogs?: Prisma.QuiActionLogListRelationFilter
+  quiEventLogs?: Prisma.QuiEventLogListRelationFilter
 }
 
 export type UserOrderByWithRelationInput = {
@@ -310,6 +320,7 @@ export type UserOrderByWithRelationInput = {
   encryptedTmdbApiKey?: Prisma.SortOrderInput | Prisma.SortOrder
   tmdbEncryptionIv?: Prisma.SortOrderInput | Prisma.SortOrder
   hashedWebhookSecret?: Prisma.SortOrderInput | Prisma.SortOrder
+  hashedQuiWebhookSecret?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   encryptedTraktAccessToken?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -332,12 +343,15 @@ export type UserOrderByWithRelationInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheOrderByRelationAggregateInput
   traktListCacheRows?: Prisma.TraktListCacheOrderByRelationAggregateInput
   quiActivityLogs?: Prisma.QuiActivityLogOrderByRelationAggregateInput
+  quiActionLogs?: Prisma.QuiActionLogOrderByRelationAggregateInput
+  quiEventLogs?: Prisma.QuiEventLogOrderByRelationAggregateInput
 }
 
 export type UserWhereUniqueInput = Prisma.AtLeast<{
   id?: string
   username?: string
   hashedWebhookSecret?: string
+  hashedQuiWebhookSecret?: string
   AND?: Prisma.UserWhereInput | Prisma.UserWhereInput[]
   OR?: Prisma.UserWhereInput[]
   NOT?: Prisma.UserWhereInput | Prisma.UserWhereInput[]
@@ -369,7 +383,9 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   tmdbListCacheRows?: Prisma.TmdbListCacheListRelationFilter
   traktListCacheRows?: Prisma.TraktListCacheListRelationFilter
   quiActivityLogs?: Prisma.QuiActivityLogListRelationFilter
-}, "id" | "username" | "hashedWebhookSecret">
+  quiActionLogs?: Prisma.QuiActionLogListRelationFilter
+  quiEventLogs?: Prisma.QuiEventLogListRelationFilter
+}, "id" | "username" | "hashedWebhookSecret" | "hashedQuiWebhookSecret">
 
 export type UserOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
@@ -381,6 +397,7 @@ export type UserOrderByWithAggregationInput = {
   encryptedTmdbApiKey?: Prisma.SortOrderInput | Prisma.SortOrder
   tmdbEncryptionIv?: Prisma.SortOrderInput | Prisma.SortOrder
   hashedWebhookSecret?: Prisma.SortOrderInput | Prisma.SortOrder
+  hashedQuiWebhookSecret?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   encryptedTraktAccessToken?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -405,6 +422,7 @@ export type UserScalarWhereWithAggregatesInput = {
   encryptedTmdbApiKey?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   tmdbEncryptionIv?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   hashedWebhookSecret?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
+  hashedQuiWebhookSecret?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"User"> | Date | string
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"User"> | Date | string
   encryptedTraktAccessToken?: Prisma.StringNullableWithAggregatesFilter<"User"> | string | null
@@ -421,6 +439,7 @@ export type UserCreateInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -443,6 +462,8 @@ export type UserCreateInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateInput = {
@@ -455,6 +476,7 @@ export type UserUncheckedCreateInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -477,6 +499,8 @@ export type UserUncheckedCreateInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserUpdateInput = {
@@ -489,6 +513,7 @@ export type UserUpdateInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -511,6 +536,8 @@ export type UserUpdateInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateInput = {
@@ -523,6 +550,7 @@ export type UserUncheckedUpdateInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -545,6 +573,8 @@ export type UserUncheckedUpdateInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateManyInput = {
@@ -557,6 +587,7 @@ export type UserCreateManyInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -573,6 +604,7 @@ export type UserUpdateManyMutationInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -589,6 +621,7 @@ export type UserUncheckedUpdateManyInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -605,6 +638,7 @@ export type UserCountOrderByAggregateInput = {
   encryptedTmdbApiKey?: Prisma.SortOrder
   tmdbEncryptionIv?: Prisma.SortOrder
   hashedWebhookSecret?: Prisma.SortOrder
+  hashedQuiWebhookSecret?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   encryptedTraktAccessToken?: Prisma.SortOrder
@@ -625,6 +659,7 @@ export type UserMaxOrderByAggregateInput = {
   encryptedTmdbApiKey?: Prisma.SortOrder
   tmdbEncryptionIv?: Prisma.SortOrder
   hashedWebhookSecret?: Prisma.SortOrder
+  hashedQuiWebhookSecret?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   encryptedTraktAccessToken?: Prisma.SortOrder
@@ -641,6 +676,7 @@ export type UserMinOrderByAggregateInput = {
   encryptedTmdbApiKey?: Prisma.SortOrder
   tmdbEncryptionIv?: Prisma.SortOrder
   hashedWebhookSecret?: Prisma.SortOrder
+  hashedQuiWebhookSecret?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   encryptedTraktAccessToken?: Prisma.SortOrder
@@ -936,6 +972,34 @@ export type UserUpdateOneRequiredWithoutQuiActivityLogsNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutQuiActivityLogsInput, Prisma.UserUpdateWithoutQuiActivityLogsInput>, Prisma.UserUncheckedUpdateWithoutQuiActivityLogsInput>
 }
 
+export type UserCreateNestedOneWithoutQuiActionLogsInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutQuiActionLogsInput, Prisma.UserUncheckedCreateWithoutQuiActionLogsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutQuiActionLogsInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutQuiActionLogsNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutQuiActionLogsInput, Prisma.UserUncheckedCreateWithoutQuiActionLogsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutQuiActionLogsInput
+  upsert?: Prisma.UserUpsertWithoutQuiActionLogsInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutQuiActionLogsInput, Prisma.UserUpdateWithoutQuiActionLogsInput>, Prisma.UserUncheckedUpdateWithoutQuiActionLogsInput>
+}
+
+export type UserCreateNestedOneWithoutQuiEventLogsInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutQuiEventLogsInput, Prisma.UserUncheckedCreateWithoutQuiEventLogsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutQuiEventLogsInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutQuiEventLogsNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutQuiEventLogsInput, Prisma.UserUncheckedCreateWithoutQuiEventLogsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutQuiEventLogsInput
+  upsert?: Prisma.UserUpsertWithoutQuiEventLogsInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutQuiEventLogsInput, Prisma.UserUpdateWithoutQuiEventLogsInput>, Prisma.UserUncheckedUpdateWithoutQuiEventLogsInput>
+}
+
 export type UserCreateWithoutSessionsInput = {
   id?: string
   username: string
@@ -946,6 +1010,7 @@ export type UserCreateWithoutSessionsInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -967,6 +1032,8 @@ export type UserCreateWithoutSessionsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutSessionsInput = {
@@ -979,6 +1046,7 @@ export type UserUncheckedCreateWithoutSessionsInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -1000,6 +1068,8 @@ export type UserUncheckedCreateWithoutSessionsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutSessionsInput = {
@@ -1028,6 +1098,7 @@ export type UserUpdateWithoutSessionsInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1049,6 +1120,8 @@ export type UserUpdateWithoutSessionsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutSessionsInput = {
@@ -1061,6 +1134,7 @@ export type UserUncheckedUpdateWithoutSessionsInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1082,6 +1156,8 @@ export type UserUncheckedUpdateWithoutSessionsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutServiceInstancesInput = {
@@ -1094,6 +1170,7 @@ export type UserCreateWithoutServiceInstancesInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -1115,6 +1192,8 @@ export type UserCreateWithoutServiceInstancesInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutServiceInstancesInput = {
@@ -1127,6 +1206,7 @@ export type UserUncheckedCreateWithoutServiceInstancesInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -1148,6 +1228,8 @@ export type UserUncheckedCreateWithoutServiceInstancesInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutServiceInstancesInput = {
@@ -1176,6 +1258,7 @@ export type UserUpdateWithoutServiceInstancesInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1197,6 +1280,8 @@ export type UserUpdateWithoutServiceInstancesInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutServiceInstancesInput = {
@@ -1209,6 +1294,7 @@ export type UserUncheckedUpdateWithoutServiceInstancesInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1230,6 +1316,8 @@ export type UserUncheckedUpdateWithoutServiceInstancesInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutOidcAccountsInput = {
@@ -1242,6 +1330,7 @@ export type UserCreateWithoutOidcAccountsInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -1263,6 +1352,8 @@ export type UserCreateWithoutOidcAccountsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutOidcAccountsInput = {
@@ -1275,6 +1366,7 @@ export type UserUncheckedCreateWithoutOidcAccountsInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -1296,6 +1388,8 @@ export type UserUncheckedCreateWithoutOidcAccountsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutOidcAccountsInput = {
@@ -1324,6 +1418,7 @@ export type UserUpdateWithoutOidcAccountsInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1345,6 +1440,8 @@ export type UserUpdateWithoutOidcAccountsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutOidcAccountsInput = {
@@ -1357,6 +1454,7 @@ export type UserUncheckedUpdateWithoutOidcAccountsInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1378,6 +1476,8 @@ export type UserUncheckedUpdateWithoutOidcAccountsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutWebauthnCredentialsInput = {
@@ -1390,6 +1490,7 @@ export type UserCreateWithoutWebauthnCredentialsInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -1411,6 +1512,8 @@ export type UserCreateWithoutWebauthnCredentialsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutWebauthnCredentialsInput = {
@@ -1423,6 +1526,7 @@ export type UserUncheckedCreateWithoutWebauthnCredentialsInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -1444,6 +1548,8 @@ export type UserUncheckedCreateWithoutWebauthnCredentialsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutWebauthnCredentialsInput = {
@@ -1472,6 +1578,7 @@ export type UserUpdateWithoutWebauthnCredentialsInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1493,6 +1600,8 @@ export type UserUpdateWithoutWebauthnCredentialsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutWebauthnCredentialsInput = {
@@ -1505,6 +1614,7 @@ export type UserUncheckedUpdateWithoutWebauthnCredentialsInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1526,6 +1636,8 @@ export type UserUncheckedUpdateWithoutWebauthnCredentialsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutTrashSettingsInput = {
@@ -1538,6 +1650,7 @@ export type UserCreateWithoutTrashSettingsInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -1559,6 +1672,8 @@ export type UserCreateWithoutTrashSettingsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutTrashSettingsInput = {
@@ -1571,6 +1686,7 @@ export type UserUncheckedCreateWithoutTrashSettingsInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -1592,6 +1708,8 @@ export type UserUncheckedCreateWithoutTrashSettingsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutTrashSettingsInput = {
@@ -1620,6 +1738,7 @@ export type UserUpdateWithoutTrashSettingsInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1641,6 +1760,8 @@ export type UserUpdateWithoutTrashSettingsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutTrashSettingsInput = {
@@ -1653,6 +1774,7 @@ export type UserUncheckedUpdateWithoutTrashSettingsInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1674,6 +1796,8 @@ export type UserUncheckedUpdateWithoutTrashSettingsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutQualitySizeMappingsInput = {
@@ -1686,6 +1810,7 @@ export type UserCreateWithoutQualitySizeMappingsInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -1707,6 +1832,8 @@ export type UserCreateWithoutQualitySizeMappingsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutQualitySizeMappingsInput = {
@@ -1719,6 +1846,7 @@ export type UserUncheckedCreateWithoutQualitySizeMappingsInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -1740,6 +1868,8 @@ export type UserUncheckedCreateWithoutQualitySizeMappingsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutQualitySizeMappingsInput = {
@@ -1768,6 +1898,7 @@ export type UserUpdateWithoutQualitySizeMappingsInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1789,6 +1920,8 @@ export type UserUpdateWithoutQualitySizeMappingsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutQualitySizeMappingsInput = {
@@ -1801,6 +1934,7 @@ export type UserUncheckedUpdateWithoutQualitySizeMappingsInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1822,6 +1956,8 @@ export type UserUncheckedUpdateWithoutQualitySizeMappingsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutUserCustomFormatsInput = {
@@ -1834,6 +1970,7 @@ export type UserCreateWithoutUserCustomFormatsInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -1855,6 +1992,8 @@ export type UserCreateWithoutUserCustomFormatsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutUserCustomFormatsInput = {
@@ -1867,6 +2006,7 @@ export type UserUncheckedCreateWithoutUserCustomFormatsInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -1888,6 +2028,8 @@ export type UserUncheckedCreateWithoutUserCustomFormatsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutUserCustomFormatsInput = {
@@ -1916,6 +2058,7 @@ export type UserUpdateWithoutUserCustomFormatsInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1937,6 +2080,8 @@ export type UserUpdateWithoutUserCustomFormatsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutUserCustomFormatsInput = {
@@ -1949,6 +2094,7 @@ export type UserUncheckedUpdateWithoutUserCustomFormatsInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1970,6 +2116,8 @@ export type UserUncheckedUpdateWithoutUserCustomFormatsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutLibraryCleanupConfigsInput = {
@@ -1982,6 +2130,7 @@ export type UserCreateWithoutLibraryCleanupConfigsInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -2003,6 +2152,8 @@ export type UserCreateWithoutLibraryCleanupConfigsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutLibraryCleanupConfigsInput = {
@@ -2015,6 +2166,7 @@ export type UserUncheckedCreateWithoutLibraryCleanupConfigsInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -2036,6 +2188,8 @@ export type UserUncheckedCreateWithoutLibraryCleanupConfigsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutLibraryCleanupConfigsInput = {
@@ -2064,6 +2218,7 @@ export type UserUpdateWithoutLibraryCleanupConfigsInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2085,6 +2240,8 @@ export type UserUpdateWithoutLibraryCleanupConfigsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutLibraryCleanupConfigsInput = {
@@ -2097,6 +2254,7 @@ export type UserUncheckedUpdateWithoutLibraryCleanupConfigsInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2118,6 +2276,8 @@ export type UserUncheckedUpdateWithoutLibraryCleanupConfigsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutNotificationChannelsInput = {
@@ -2130,6 +2290,7 @@ export type UserCreateWithoutNotificationChannelsInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -2151,6 +2312,8 @@ export type UserCreateWithoutNotificationChannelsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutNotificationChannelsInput = {
@@ -2163,6 +2326,7 @@ export type UserUncheckedCreateWithoutNotificationChannelsInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -2184,6 +2348,8 @@ export type UserUncheckedCreateWithoutNotificationChannelsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutNotificationChannelsInput = {
@@ -2212,6 +2378,7 @@ export type UserUpdateWithoutNotificationChannelsInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2233,6 +2400,8 @@ export type UserUpdateWithoutNotificationChannelsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutNotificationChannelsInput = {
@@ -2245,6 +2414,7 @@ export type UserUncheckedUpdateWithoutNotificationChannelsInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2266,6 +2436,8 @@ export type UserUncheckedUpdateWithoutNotificationChannelsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutNotificationRulesInput = {
@@ -2278,6 +2450,7 @@ export type UserCreateWithoutNotificationRulesInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -2299,6 +2472,8 @@ export type UserCreateWithoutNotificationRulesInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutNotificationRulesInput = {
@@ -2311,6 +2486,7 @@ export type UserUncheckedCreateWithoutNotificationRulesInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -2332,6 +2508,8 @@ export type UserUncheckedCreateWithoutNotificationRulesInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutNotificationRulesInput = {
@@ -2360,6 +2538,7 @@ export type UserUpdateWithoutNotificationRulesInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2381,6 +2560,8 @@ export type UserUpdateWithoutNotificationRulesInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutNotificationRulesInput = {
@@ -2393,6 +2574,7 @@ export type UserUncheckedUpdateWithoutNotificationRulesInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2414,6 +2596,8 @@ export type UserUncheckedUpdateWithoutNotificationRulesInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutNotificationAggregationConfigsInput = {
@@ -2426,6 +2610,7 @@ export type UserCreateWithoutNotificationAggregationConfigsInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -2447,6 +2632,8 @@ export type UserCreateWithoutNotificationAggregationConfigsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutNotificationAggregationConfigsInput = {
@@ -2459,6 +2646,7 @@ export type UserUncheckedCreateWithoutNotificationAggregationConfigsInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -2480,6 +2668,8 @@ export type UserUncheckedCreateWithoutNotificationAggregationConfigsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutNotificationAggregationConfigsInput = {
@@ -2508,6 +2698,7 @@ export type UserUpdateWithoutNotificationAggregationConfigsInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2529,6 +2720,8 @@ export type UserUpdateWithoutNotificationAggregationConfigsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutNotificationAggregationConfigsInput = {
@@ -2541,6 +2734,7 @@ export type UserUncheckedUpdateWithoutNotificationAggregationConfigsInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2562,6 +2756,8 @@ export type UserUncheckedUpdateWithoutNotificationAggregationConfigsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutNamingConfigsInput = {
@@ -2574,6 +2770,7 @@ export type UserCreateWithoutNamingConfigsInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -2595,6 +2792,8 @@ export type UserCreateWithoutNamingConfigsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutNamingConfigsInput = {
@@ -2607,6 +2806,7 @@ export type UserUncheckedCreateWithoutNamingConfigsInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -2628,6 +2828,8 @@ export type UserUncheckedCreateWithoutNamingConfigsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutNamingConfigsInput = {
@@ -2656,6 +2858,7 @@ export type UserUpdateWithoutNamingConfigsInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2677,6 +2880,8 @@ export type UserUpdateWithoutNamingConfigsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutNamingConfigsInput = {
@@ -2689,6 +2894,7 @@ export type UserUncheckedUpdateWithoutNamingConfigsInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2710,6 +2916,8 @@ export type UserUncheckedUpdateWithoutNamingConfigsInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutNamingDeployHistoryInput = {
@@ -2722,6 +2930,7 @@ export type UserCreateWithoutNamingDeployHistoryInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -2743,6 +2952,8 @@ export type UserCreateWithoutNamingDeployHistoryInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutNamingDeployHistoryInput = {
@@ -2755,6 +2966,7 @@ export type UserUncheckedCreateWithoutNamingDeployHistoryInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -2776,6 +2988,8 @@ export type UserUncheckedCreateWithoutNamingDeployHistoryInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutNamingDeployHistoryInput = {
@@ -2804,6 +3018,7 @@ export type UserUpdateWithoutNamingDeployHistoryInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2825,6 +3040,8 @@ export type UserUpdateWithoutNamingDeployHistoryInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutNamingDeployHistoryInput = {
@@ -2837,6 +3054,7 @@ export type UserUncheckedUpdateWithoutNamingDeployHistoryInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2858,6 +3076,8 @@ export type UserUncheckedUpdateWithoutNamingDeployHistoryInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutLabelSyncRulesInput = {
@@ -2870,6 +3090,7 @@ export type UserCreateWithoutLabelSyncRulesInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -2891,6 +3112,8 @@ export type UserCreateWithoutLabelSyncRulesInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutLabelSyncRulesInput = {
@@ -2903,6 +3126,7 @@ export type UserUncheckedCreateWithoutLabelSyncRulesInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -2924,6 +3148,8 @@ export type UserUncheckedCreateWithoutLabelSyncRulesInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutLabelSyncRulesInput = {
@@ -2952,6 +3178,7 @@ export type UserUpdateWithoutLabelSyncRulesInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2973,6 +3200,8 @@ export type UserUpdateWithoutLabelSyncRulesInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutLabelSyncRulesInput = {
@@ -2985,6 +3214,7 @@ export type UserUncheckedUpdateWithoutLabelSyncRulesInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3006,6 +3236,8 @@ export type UserUncheckedUpdateWithoutLabelSyncRulesInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutAutoTagRulesInput = {
@@ -3018,6 +3250,7 @@ export type UserCreateWithoutAutoTagRulesInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -3039,6 +3272,8 @@ export type UserCreateWithoutAutoTagRulesInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutAutoTagRulesInput = {
@@ -3051,6 +3286,7 @@ export type UserUncheckedCreateWithoutAutoTagRulesInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -3072,6 +3308,8 @@ export type UserUncheckedCreateWithoutAutoTagRulesInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutAutoTagRulesInput = {
@@ -3100,6 +3338,7 @@ export type UserUpdateWithoutAutoTagRulesInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3121,6 +3360,8 @@ export type UserUpdateWithoutAutoTagRulesInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutAutoTagRulesInput = {
@@ -3133,6 +3374,7 @@ export type UserUncheckedUpdateWithoutAutoTagRulesInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3154,6 +3396,8 @@ export type UserUncheckedUpdateWithoutAutoTagRulesInput = {
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutTmdbListCacheRowsInput = {
@@ -3166,6 +3410,7 @@ export type UserCreateWithoutTmdbListCacheRowsInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -3187,6 +3432,8 @@ export type UserCreateWithoutTmdbListCacheRowsInput = {
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutTmdbListCacheRowsInput = {
@@ -3199,6 +3446,7 @@ export type UserUncheckedCreateWithoutTmdbListCacheRowsInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -3220,6 +3468,8 @@ export type UserUncheckedCreateWithoutTmdbListCacheRowsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutTmdbListCacheRowsInput = {
@@ -3248,6 +3498,7 @@ export type UserUpdateWithoutTmdbListCacheRowsInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3269,6 +3520,8 @@ export type UserUpdateWithoutTmdbListCacheRowsInput = {
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutTmdbListCacheRowsInput = {
@@ -3281,6 +3534,7 @@ export type UserUncheckedUpdateWithoutTmdbListCacheRowsInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3302,6 +3556,8 @@ export type UserUncheckedUpdateWithoutTmdbListCacheRowsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutTraktListCacheRowsInput = {
@@ -3314,6 +3570,7 @@ export type UserCreateWithoutTraktListCacheRowsInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -3335,6 +3592,8 @@ export type UserCreateWithoutTraktListCacheRowsInput = {
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutTraktListCacheRowsInput = {
@@ -3347,6 +3606,7 @@ export type UserUncheckedCreateWithoutTraktListCacheRowsInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -3368,6 +3628,8 @@ export type UserUncheckedCreateWithoutTraktListCacheRowsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutTraktListCacheRowsInput = {
@@ -3396,6 +3658,7 @@ export type UserUpdateWithoutTraktListCacheRowsInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3417,6 +3680,8 @@ export type UserUpdateWithoutTraktListCacheRowsInput = {
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutTraktListCacheRowsInput = {
@@ -3429,6 +3694,7 @@ export type UserUncheckedUpdateWithoutTraktListCacheRowsInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3450,6 +3716,8 @@ export type UserUncheckedUpdateWithoutTraktListCacheRowsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutQuiActivityLogsInput = {
@@ -3462,6 +3730,7 @@ export type UserCreateWithoutQuiActivityLogsInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -3483,6 +3752,8 @@ export type UserCreateWithoutQuiActivityLogsInput = {
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutQuiActivityLogsInput = {
@@ -3495,6 +3766,7 @@ export type UserUncheckedCreateWithoutQuiActivityLogsInput = {
   encryptedTmdbApiKey?: string | null
   tmdbEncryptionIv?: string | null
   hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   encryptedTraktAccessToken?: string | null
@@ -3516,6 +3788,8 @@ export type UserUncheckedCreateWithoutQuiActivityLogsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutQuiActivityLogsInput = {
@@ -3544,6 +3818,7 @@ export type UserUpdateWithoutQuiActivityLogsInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3565,6 +3840,8 @@ export type UserUpdateWithoutQuiActivityLogsInput = {
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutQuiActivityLogsInput = {
@@ -3577,6 +3854,7 @@ export type UserUncheckedUpdateWithoutQuiActivityLogsInput = {
   encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3598,6 +3876,328 @@ export type UserUncheckedUpdateWithoutQuiActivityLogsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+}
+
+export type UserCreateWithoutQuiActionLogsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutQuiActionLogsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutQuiActionLogsInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutQuiActionLogsInput, Prisma.UserUncheckedCreateWithoutQuiActionLogsInput>
+}
+
+export type UserUpsertWithoutQuiActionLogsInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutQuiActionLogsInput, Prisma.UserUncheckedUpdateWithoutQuiActionLogsInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutQuiActionLogsInput, Prisma.UserUncheckedCreateWithoutQuiActionLogsInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutQuiActionLogsInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutQuiActionLogsInput, Prisma.UserUncheckedUpdateWithoutQuiActionLogsInput>
+}
+
+export type UserUpdateWithoutQuiActionLogsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutQuiActionLogsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+}
+
+export type UserCreateWithoutQuiEventLogsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutQuiEventLogsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutQuiEventLogsInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutQuiEventLogsInput, Prisma.UserUncheckedCreateWithoutQuiEventLogsInput>
+}
+
+export type UserUpsertWithoutQuiEventLogsInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutQuiEventLogsInput, Prisma.UserUncheckedUpdateWithoutQuiEventLogsInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutQuiEventLogsInput, Prisma.UserUncheckedCreateWithoutQuiEventLogsInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutQuiEventLogsInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutQuiEventLogsInput, Prisma.UserUncheckedUpdateWithoutQuiEventLogsInput>
+}
+
+export type UserUpdateWithoutQuiEventLogsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutQuiEventLogsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
 }
 
 
@@ -3623,6 +4223,8 @@ export type UserCountOutputType = {
   tmdbListCacheRows: number
   traktListCacheRows: number
   quiActivityLogs: number
+  quiActionLogs: number
+  quiEventLogs: number
 }
 
 export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -3643,6 +4245,8 @@ export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.I
   tmdbListCacheRows?: boolean | UserCountOutputTypeCountTmdbListCacheRowsArgs
   traktListCacheRows?: boolean | UserCountOutputTypeCountTraktListCacheRowsArgs
   quiActivityLogs?: boolean | UserCountOutputTypeCountQuiActivityLogsArgs
+  quiActionLogs?: boolean | UserCountOutputTypeCountQuiActionLogsArgs
+  quiEventLogs?: boolean | UserCountOutputTypeCountQuiEventLogsArgs
 }
 
 /**
@@ -3774,6 +4378,20 @@ export type UserCountOutputTypeCountQuiActivityLogsArgs<ExtArgs extends runtime.
   where?: Prisma.QuiActivityLogWhereInput
 }
 
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountQuiActionLogsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.QuiActionLogWhereInput
+}
+
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountQuiEventLogsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.QuiEventLogWhereInput
+}
+
 
 export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -3785,6 +4403,7 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   encryptedTmdbApiKey?: boolean
   tmdbEncryptionIv?: boolean
   hashedWebhookSecret?: boolean
+  hashedQuiWebhookSecret?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   encryptedTraktAccessToken?: boolean
@@ -3807,6 +4426,8 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   tmdbListCacheRows?: boolean | Prisma.User$tmdbListCacheRowsArgs<ExtArgs>
   traktListCacheRows?: boolean | Prisma.User$traktListCacheRowsArgs<ExtArgs>
   quiActivityLogs?: boolean | Prisma.User$quiActivityLogsArgs<ExtArgs>
+  quiActionLogs?: boolean | Prisma.User$quiActionLogsArgs<ExtArgs>
+  quiEventLogs?: boolean | Prisma.User$quiEventLogsArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["user"]>
 
@@ -3820,6 +4441,7 @@ export type UserSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   encryptedTmdbApiKey?: boolean
   tmdbEncryptionIv?: boolean
   hashedWebhookSecret?: boolean
+  hashedQuiWebhookSecret?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   encryptedTraktAccessToken?: boolean
@@ -3836,6 +4458,7 @@ export type UserSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   encryptedTmdbApiKey?: boolean
   tmdbEncryptionIv?: boolean
   hashedWebhookSecret?: boolean
+  hashedQuiWebhookSecret?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   encryptedTraktAccessToken?: boolean
@@ -3852,13 +4475,14 @@ export type UserSelectScalar = {
   encryptedTmdbApiKey?: boolean
   tmdbEncryptionIv?: boolean
   hashedWebhookSecret?: boolean
+  hashedQuiWebhookSecret?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   encryptedTraktAccessToken?: boolean
   traktTokenIv?: boolean
 }
 
-export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "username" | "hashedPassword" | "mustChangePassword" | "failedLoginAttempts" | "lockedUntil" | "encryptedTmdbApiKey" | "tmdbEncryptionIv" | "hashedWebhookSecret" | "createdAt" | "updatedAt" | "encryptedTraktAccessToken" | "traktTokenIv", ExtArgs["result"]["user"]>
+export type UserOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "username" | "hashedPassword" | "mustChangePassword" | "failedLoginAttempts" | "lockedUntil" | "encryptedTmdbApiKey" | "tmdbEncryptionIv" | "hashedWebhookSecret" | "hashedQuiWebhookSecret" | "createdAt" | "updatedAt" | "encryptedTraktAccessToken" | "traktTokenIv", ExtArgs["result"]["user"]>
 export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   sessions?: boolean | Prisma.User$sessionsArgs<ExtArgs>
   oidcAccounts?: boolean | Prisma.User$oidcAccountsArgs<ExtArgs>
@@ -3878,6 +4502,8 @@ export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
   tmdbListCacheRows?: boolean | Prisma.User$tmdbListCacheRowsArgs<ExtArgs>
   traktListCacheRows?: boolean | Prisma.User$traktListCacheRowsArgs<ExtArgs>
   quiActivityLogs?: boolean | Prisma.User$quiActivityLogsArgs<ExtArgs>
+  quiActionLogs?: boolean | Prisma.User$quiActionLogsArgs<ExtArgs>
+  quiEventLogs?: boolean | Prisma.User$quiEventLogsArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type UserIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
@@ -3904,6 +4530,8 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     tmdbListCacheRows: Prisma.$TmdbListCachePayload<ExtArgs>[]
     traktListCacheRows: Prisma.$TraktListCachePayload<ExtArgs>[]
     quiActivityLogs: Prisma.$QuiActivityLogPayload<ExtArgs>[]
+    quiActionLogs: Prisma.$QuiActionLogPayload<ExtArgs>[]
+    quiEventLogs: Prisma.$QuiEventLogPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -3921,6 +4549,14 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
      * compromise yields no usable creds.
      */
     hashedWebhookSecret: string | null
+    /**
+     * SHA-256 hex hash of the user's qui-webhook secret (Phase 5.1). Distinct
+     * from `hashedWebhookSecret` (auto-tagger uses Bearer header; qui uses a
+     * query-param secret per its openapi `ApiKeyQuery` scheme). Keeping the
+     * columns separate means a leak of one feature's secret can't be used
+     * against the other.
+     */
+    hashedQuiWebhookSecret: string | null
     createdAt: Date
     updatedAt: Date
     /**
@@ -4343,6 +4979,8 @@ export interface Prisma__UserClient<T, Null = never, ExtArgs extends runtime.Typ
   tmdbListCacheRows<T extends Prisma.User$tmdbListCacheRowsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$tmdbListCacheRowsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$TmdbListCachePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   traktListCacheRows<T extends Prisma.User$traktListCacheRowsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$traktListCacheRowsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$TraktListCachePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   quiActivityLogs<T extends Prisma.User$quiActivityLogsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$quiActivityLogsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$QuiActivityLogPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  quiActionLogs<T extends Prisma.User$quiActionLogsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$quiActionLogsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$QuiActionLogPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  quiEventLogs<T extends Prisma.User$quiEventLogsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$quiEventLogsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$QuiEventLogPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -4381,6 +5019,7 @@ export interface UserFieldRefs {
   readonly encryptedTmdbApiKey: Prisma.FieldRef<"User", 'String'>
   readonly tmdbEncryptionIv: Prisma.FieldRef<"User", 'String'>
   readonly hashedWebhookSecret: Prisma.FieldRef<"User", 'String'>
+  readonly hashedQuiWebhookSecret: Prisma.FieldRef<"User", 'String'>
   readonly createdAt: Prisma.FieldRef<"User", 'DateTime'>
   readonly updatedAt: Prisma.FieldRef<"User", 'DateTime'>
   readonly encryptedTraktAccessToken: Prisma.FieldRef<"User", 'String'>
@@ -5200,6 +5839,54 @@ export type User$quiActivityLogsArgs<ExtArgs extends runtime.Types.Extensions.In
   take?: number
   skip?: number
   distinct?: Prisma.QuiActivityLogScalarFieldEnum | Prisma.QuiActivityLogScalarFieldEnum[]
+}
+
+/**
+ * User.quiActionLogs
+ */
+export type User$quiActionLogsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the QuiActionLog
+   */
+  select?: Prisma.QuiActionLogSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the QuiActionLog
+   */
+  omit?: Prisma.QuiActionLogOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.QuiActionLogInclude<ExtArgs> | null
+  where?: Prisma.QuiActionLogWhereInput
+  orderBy?: Prisma.QuiActionLogOrderByWithRelationInput | Prisma.QuiActionLogOrderByWithRelationInput[]
+  cursor?: Prisma.QuiActionLogWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.QuiActionLogScalarFieldEnum | Prisma.QuiActionLogScalarFieldEnum[]
+}
+
+/**
+ * User.quiEventLogs
+ */
+export type User$quiEventLogsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the QuiEventLog
+   */
+  select?: Prisma.QuiEventLogSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the QuiEventLog
+   */
+  omit?: Prisma.QuiEventLogOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.QuiEventLogInclude<ExtArgs> | null
+  where?: Prisma.QuiEventLogWhereInput
+  orderBy?: Prisma.QuiEventLogOrderByWithRelationInput | Prisma.QuiEventLogOrderByWithRelationInput[]
+  cursor?: Prisma.QuiEventLogWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.QuiEventLogScalarFieldEnum | Prisma.QuiEventLogScalarFieldEnum[]
 }
 
 /**

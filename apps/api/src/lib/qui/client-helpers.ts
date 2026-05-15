@@ -139,12 +139,34 @@ async function readErrorMessage(response: Response): Promise<string> {
 			const msg = parsed.message ?? parsed.error;
 			if (typeof msg === "string" && msg.length > 0) return msg;
 		} catch {
-			// Not JSON — fall through to plain text
+			// Not JSON — handle HTML separately, then plaintext fallback.
+		}
+		// Detect HTML responses (nginx error pages, auth proxy challenges,
+		// Cloudflare 403s) and synthesize a clean message rather than
+		// leaking the raw markup into toasts and the qui Activity surface.
+		const trimmed = text.trimStart();
+		if (isHtmlLikeResponse(trimmed)) {
+			const title = extractHtmlTitle(trimmed);
+			return title
+				? `${fallback} — upstream HTML page (title: "${title}"). Likely an auth proxy or reverse-proxy error page in front of qui. Use the service's internal/LAN URL or configure your proxy to bypass /api/*.`
+				: `${fallback} — upstream returned HTML (probable auth proxy fronting qui). Use the internal/LAN URL or bypass /api/* in your proxy.`;
 		}
 		return text.slice(0, 200);
 	} catch {
 		return fallback;
 	}
+}
+
+/** True when `text` begins with a recognizable HTML/XML tag opener. */
+function isHtmlLikeResponse(text: string): boolean {
+	const prefix = text.slice(0, 16).toLowerCase();
+	return prefix.startsWith("<!doctype") || prefix.startsWith("<html") || prefix.startsWith("<?xml");
+}
+
+/** Extract `<title>...</title>` content from an HTML response body. */
+function extractHtmlTitle(html: string): string | null {
+	const match = /<title>\s*([^<]{1,120})\s*<\/title>/i.exec(html);
+	return match?.[1]?.trim() ?? null;
 }
 
 function describeNetworkError(error: unknown): string {

@@ -73,9 +73,15 @@ export async function resolveGatedItemIds(
 	}
 
 	const uniqueHashes = Array.from(new Set(hashesByItemId.values()));
+	// Ownership flows through the parent ServiceInstance — `LibraryCache` has
+	// no direct `userId` column. An earlier version of this gate queried
+	// `where: { userId, ... }` directly, which raised `PrismaClientValidationError`
+	// at runtime; the route wraps this call in a non-fatal try/catch so the
+	// error was silent and `quiAwareMode` was effectively inert in production.
+	// Filter via the relation instead.
 	const rows = await prisma.libraryCache.findMany({
 		where: {
-			userId,
+			instance: { userId },
 			infoHash: { in: uniqueHashes },
 			torrentState: { in: Array.from(GATED_STATES) },
 		},

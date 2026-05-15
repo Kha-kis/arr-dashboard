@@ -16,6 +16,7 @@ import type { LibraryCleanupConfig, LibraryCleanupRule, ServiceInstance } from "
 import { SeerrClient } from "../seerr/seerr-client.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { safeJsonParse } from "../utils/json.js";
+import { applyQuiSeedingFilter } from "./qui-filter.js";
 import { evaluateItemAgainstRules, extractRating } from "./rule-evaluators.js";
 import type {
 	CacheItemForEval,
@@ -1126,21 +1127,17 @@ async function evaluateAllItems(
 	let totalEvaluated = 0;
 	let cursor: string | undefined;
 
-	// Phase 2.2: when `respectQuiSeeding` is enabled in the cleanup config,
-	// exclude items currently seeding/downloading via qui from the candidate
-	// set. This honors seeding obligations (private trackers, ratio targets).
-	// `OR` semantics: items without qui state (NULL) remain candidates — the
-	// gate only filters items qui has actively confirmed are seeding. No-op
-	// for users without qui (their LibraryCache rows all have NULL state).
-	const baseWhere: { instanceId: { in: string[] }; OR?: object[] } = {
-		instanceId: { in: instances.map((i) => i.id) },
-	};
-	if (config.respectQuiSeeding) {
-		baseWhere.OR = [
-			{ torrentState: null },
-			{ torrentState: { notIn: ["seeding", "downloading"] } },
-		];
-	}
+	// Phase 2.2: optionally exclude items qui has confirmed are seeding,
+	// to honor seeding obligations (private trackers, ratio targets). The
+	// actual filter lives in `qui-filter.ts` — sibling pattern to
+	// `lib/queue-cleaner/qui-gate.ts`. Keeping the filter in its own file
+	// gives it a testable seam (see `__tests__/qui-filter.test.ts`) and
+	// keeps cross-feature qui deps next to their consumer rather than
+	// pulled into `lib/qui/` (which stays focused on the qui client).
+	const baseWhere = applyQuiSeedingFilter(
+		{ instanceId: { in: instances.map((i) => i.id) } },
+		Boolean(config.respectQuiSeeding),
+	);
 
 	// Paginate through LibraryCache with cursor-based pagination
 	while (true) {

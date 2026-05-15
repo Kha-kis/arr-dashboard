@@ -76,6 +76,7 @@ export const ModelName = {
   HuntLog: 'HuntLog',
   HuntSearchHistory: 'HuntSearchHistory',
   LibraryCache: 'LibraryCache',
+  EpisodeFileCache: 'EpisodeFileCache',
   LibrarySyncStatus: 'LibrarySyncStatus',
   UserCustomFormat: 'UserCustomFormat',
   QueueCleanerConfig: 'QueueCleanerConfig',
@@ -105,7 +106,9 @@ export const ModelName = {
   AutoTagRule: 'AutoTagRule',
   TmdbListCache: 'TmdbListCache',
   TraktListCache: 'TraktListCache',
-  QuiActivityLog: 'QuiActivityLog'
+  QuiActivityLog: 'QuiActivityLog',
+  QuiActionLog: 'QuiActionLog',
+  QuiEventLog: 'QuiEventLog'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -131,6 +134,7 @@ export const UserScalarFieldEnum = {
   encryptedTmdbApiKey: 'encryptedTmdbApiKey',
   tmdbEncryptionIv: 'tmdbEncryptionIv',
   hashedWebhookSecret: 'hashedWebhookSecret',
+  hashedQuiWebhookSecret: 'hashedQuiWebhookSecret',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt',
   encryptedTraktAccessToken: 'encryptedTraktAccessToken',
@@ -175,6 +179,8 @@ export const ServiceInstanceScalarFieldEnum = {
   isDefault: 'isDefault',
   enabled: 'enabled',
   storageGroupId: 'storageGroupId',
+  hasLocalFilesystemAccess: 'hasLocalFilesystemAccess',
+  pathPrefix: 'pathPrefix',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const
@@ -561,6 +567,7 @@ export const LibraryCacheScalarFieldEnum = {
   sizeOnDisk: 'sizeOnDisk',
   cutoffUnmet: 'cutoffUnmet',
   infoHash: 'infoHash',
+  infoHashSource: 'infoHashSource',
   torrentState: 'torrentState',
   torrentRatio: 'torrentRatio',
   torrentSyncedAt: 'torrentSyncedAt',
@@ -572,6 +579,29 @@ export const LibraryCacheScalarFieldEnum = {
 } as const
 
 export type LibraryCacheScalarFieldEnum = (typeof LibraryCacheScalarFieldEnum)[keyof typeof LibraryCacheScalarFieldEnum]
+
+
+export const EpisodeFileCacheScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  arrEpisodeFileId: 'arrEpisodeFileId',
+  arrSeriesId: 'arrSeriesId',
+  seasonNumber: 'seasonNumber',
+  relativePath: 'relativePath',
+  path: 'path',
+  size: 'size',
+  qualityName: 'qualityName',
+  releaseGroup: 'releaseGroup',
+  infoHash: 'infoHash',
+  infoHashSource: 'infoHashSource',
+  torrentState: 'torrentState',
+  torrentRatio: 'torrentRatio',
+  torrentSyncedAt: 'torrentSyncedAt',
+  cachedAt: 'cachedAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type EpisodeFileCacheScalarFieldEnum = (typeof EpisodeFileCacheScalarFieldEnum)[keyof typeof EpisodeFileCacheScalarFieldEnum]
 
 
 export const LibrarySyncStatusScalarFieldEnum = {
@@ -1131,11 +1161,41 @@ export const QuiActivityLogScalarFieldEnum = {
   userId: 'userId',
   eventType: 'eventType',
   details: 'details',
-  status: 'status',
+  severity: 'severity',
   createdAt: 'createdAt'
 } as const
 
 export type QuiActivityLogScalarFieldEnum = (typeof QuiActivityLogScalarFieldEnum)[keyof typeof QuiActivityLogScalarFieldEnum]
+
+
+export const QuiActionLogScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  serviceInstanceId: 'serviceInstanceId',
+  qbitInstanceId: 'qbitInstanceId',
+  torrentHash: 'torrentHash',
+  action: 'action',
+  payload: 'payload',
+  status: 'status',
+  error: 'error',
+  requestedAt: 'requestedAt',
+  completedAt: 'completedAt'
+} as const
+
+export type QuiActionLogScalarFieldEnum = (typeof QuiActionLogScalarFieldEnum)[keyof typeof QuiActionLogScalarFieldEnum]
+
+
+export const QuiEventLogScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  serviceInstanceId: 'serviceInstanceId',
+  eventType: 'eventType',
+  torrentHash: 'torrentHash',
+  payload: 'payload',
+  receivedAt: 'receivedAt'
+} as const
+
+export type QuiEventLogScalarFieldEnum = (typeof QuiEventLogScalarFieldEnum)[keyof typeof QuiEventLogScalarFieldEnum]
 
 
 export const SortOrder = {

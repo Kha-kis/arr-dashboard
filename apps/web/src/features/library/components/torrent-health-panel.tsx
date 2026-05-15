@@ -7,6 +7,7 @@ import { GlassmorphicCard } from "../../../components/layout/premium-containers"
 import { useTorrentState } from "../../../hooks/api/useQui";
 import { getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
 import { describeQuiState } from "../lib/qui-display";
+import { TorrentActionBar } from "./torrent-action-bar";
 
 interface Props {
 	arrInstanceId: string;
@@ -182,6 +183,23 @@ export const TorrentHealthPanel = ({ arrInstanceId, arrItemId, itemType }: Props
 					{torrent.category && <span>· {torrent.category}</span>}
 					{torrent.tags.length > 0 && <span>· {torrent.tags.join(", ")}</span>}
 				</div>
+
+				{/* Phase 4.1 — operator actions. Only rendered when we have a
+				    confirmed (quiInstanceId, qbitInstanceId, hash) triple from
+				    the backend response; otherwise we'd send to the wrong qui
+				    or get a 400 from the action route. The torrent.instanceId
+				    field comes from qui's cross-instance endpoint and
+				    identifies the qBit instance that owns the torrent. */}
+				{data.quiInstanceId && torrent.instanceId !== undefined ? (
+					<div className="border-t border-border/40 pt-3">
+						<TorrentActionBar
+							quiInstanceId={data.quiInstanceId}
+							qbitInstanceId={torrent.instanceId}
+							hash={torrent.hash}
+							displayName={displayName}
+						/>
+					</div>
+				) : null}
 
 				{siblings.length > 0 && (
 					<div className="border-t border-border/40 pt-3">

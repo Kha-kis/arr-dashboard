@@ -51,6 +51,8 @@ function createMockInstance(service: ServiceType) {
 		externalUrl: null as string | null,
 		isDefault: false,
 		storageGroupId: null as string | null,
+		hasLocalFilesystemAccess: false,
+		pathPrefix: null as string | null,
 		encryptedApiKey: "enc-key",
 		encryptionIv: "iv",
 		enabled: true,

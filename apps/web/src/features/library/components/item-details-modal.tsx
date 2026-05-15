@@ -454,14 +454,28 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 							</div>
 						)}
 
-					{/* qui Torrent Health (movies only in v1; series support is per-episode and lands later) */}
-					{isMovie && item.instanceId && typeof item.id === "number" && (
-						<TorrentHealthPanel
-							arrInstanceId={item.instanceId}
-							arrItemId={item.id}
-							itemType={item.type}
-						/>
-					)}
+					{/* qui Torrent Health (movies only in v1; series support is per-episode and lands later).
+					 * `item.id` arrives as either `number` (the *arr id) or `string`
+					 * (a serialized numeric id from the React Query cache after
+					 * deserialization). The same coercion is applied to
+					 * `SyncLabelsNowButton` above. Pre-fix versions required
+					 * `typeof item.id === "number"` here too, and silently
+					 * refused to render the panel whenever the id arrived as
+					 * a string — which it routinely does in practice. */}
+					{isMovie &&
+						item.instanceId &&
+						(() => {
+							const arrItemId =
+								typeof item.id === "string" ? Number.parseInt(item.id, 10) : item.id;
+							if (!Number.isFinite(arrItemId)) return null;
+							return (
+								<TorrentHealthPanel
+									arrInstanceId={item.instanceId}
+									arrItemId={arrItemId}
+									itemType={item.type}
+								/>
+							);
+						})()}
 				</div>
 			</div>
 		</div>

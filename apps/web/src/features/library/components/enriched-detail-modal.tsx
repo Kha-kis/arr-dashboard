@@ -49,7 +49,6 @@ import {
 import { RATING_COLOR, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { safeOpenUrl } from "../../../lib/utils/url-validation";
 import { DiscoverCarousel } from "../../discover/components/discover-carousel";
-import { PlexTagsEditor } from "./plex-tags-editor";
 import {
 	BackdropHero,
 	CastSection,
@@ -63,8 +62,10 @@ import {
 	isAnimeFromKeywords,
 } from "../../discover/lib/seerr-image-utils";
 import { formatBytes, formatRuntime, SERVICE_COLORS } from "../lib/library-utils";
+import { PlexTagsEditor } from "./plex-tags-editor";
 import { PosterImage } from "./poster-image";
 import { SeasonEpisodeList } from "./season-episode-list";
+import { TorrentHealthPanel } from "./torrent-health-panel";
 
 export interface EnrichedDetailModalProps {
 	item: LibraryItem;
@@ -1017,6 +1018,27 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 						plexUrl={plexUrl}
 						mediaServerLabel={mediaServerLabel}
 					/>
+
+					{/* qui Torrent Health (movies only in v1; series support is per-episode
+					 * and lands later). `item.id` is a `number | string` union per the
+					 * LibraryItem schema — coerce defensively. The sibling
+					 * `item-details-modal.tsx` mounts this panel too but it's used
+					 * by a different entry path; this is the modal users actually
+					 * see when they click into a library item from the main grid. */}
+					{isMovie &&
+						item.instanceId &&
+						(() => {
+							const arrItemId =
+								typeof item.id === "string" ? Number.parseInt(item.id, 10) : item.id;
+							if (!Number.isFinite(arrItemId)) return null;
+							return (
+								<TorrentHealthPanel
+									arrInstanceId={item.instanceId}
+									arrItemId={arrItemId}
+									itemType={item.type}
+								/>
+							);
+						})()}
 
 					{/* Recommendations */}
 					{recommendations.length > 0 && (

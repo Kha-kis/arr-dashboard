@@ -14,8 +14,8 @@ import {
 	SimpleFormField,
 } from "../../../components/ui";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { cn } from "../../../lib/utils";
 import { getLinuxUrl, useIncognitoMode } from "../../../lib/incognito";
+import { cn } from "../../../lib/utils";
 import { SERVICE_TYPES } from "../lib/settings-constants";
 import type { ServiceFormState } from "../lib/settings-utils";
 import { getServicePlaceholders } from "../lib/settings-utils";
@@ -356,6 +356,62 @@ export const ServiceForm = ({
 							</label>
 						)}
 					</div>
+					{/*
+					 * qui-only: inode-based hardlink correlation toggle.
+					 * Mirrors qui's own `HasLocalFilesystemAccess` per-instance
+					 * setting. When ON, arr-dashboard stats library files
+					 * directly to verify hardlink identity via `(st_dev, st_ino)`
+					 * instead of guessing via filename/size heuristics. Requires
+					 * the arr-dashboard process to have read access to both the
+					 * qBit content tree and the *arr library tree.
+					 */}
+					{formState.service === "qui" && (
+						<div className="space-y-3 rounded-md border border-border/60 bg-card/40 p-3">
+							<label className="flex items-start gap-2 text-sm">
+								<input
+									type="checkbox"
+									className="mt-0.5 h-4 w-4 border border-border bg-card"
+									checked={formState.hasLocalFilesystemAccess}
+									onChange={(event) =>
+										onFormStateChange((prev) => ({
+											...prev,
+											hasLocalFilesystemAccess: event.target.checked,
+										}))
+									}
+								/>
+								<span>
+									<span className="font-medium text-foreground">Local filesystem access</span>
+									<span className="block text-xs text-muted-foreground">
+										Verify hardlink correlations by reading file inodes directly. Requires
+										arr-dashboard to have read access to your qBit and *arr media volumes. When off,
+										falls back to filename/size heuristics.
+									</span>
+								</span>
+							</label>
+							{formState.hasLocalFilesystemAccess && (
+								<SimpleFormField
+									label="qui Path Prefix"
+									htmlFor="service-path-prefix"
+									hint={
+										"Optional. Use when qui reports paths at a different mount point than arr-dashboard sees. Format: qui-prefix>local-prefix (e.g., /downloads>/qbit-data)."
+									}
+								>
+									<Input
+										id="service-path-prefix"
+										value={formState.pathPrefix}
+										onChange={(event) =>
+											onFormStateChange((prev) => ({
+												...prev,
+												pathPrefix: event.target.value,
+											}))
+										}
+										placeholder="/downloads>/qbit-data"
+										autoComplete="off"
+									/>
+								</SimpleFormField>
+							)}
+						</div>
+					)}
 					<div className="flex gap-2">
 						<Button type="submit" disabled={isCreating || isUpdating}>
 							{selectedService ? "Save changes" : "Add service"}

@@ -28,6 +28,14 @@ export const useServiceFormState = () => {
 			isDefault: service.isDefault,
 			tags: service.tags.map((tag) => tag.name).join(", "),
 			storageGroupId: service.storageGroupId ?? "",
+			// qui-only fields. Older `ServiceInstanceSummary` shapes (before
+			// these were added to the API response) may not include them —
+			// fall back to safe defaults so editing a pre-existing record
+			// doesn't blank the form.
+			hasLocalFilesystemAccess:
+				(service as Partial<{ hasLocalFilesystemAccess: boolean }>).hasLocalFilesystemAccess ??
+				false,
+			pathPrefix: (service as Partial<{ pathPrefix: string | null }>).pathPrefix ?? "",
 		});
 	};
 

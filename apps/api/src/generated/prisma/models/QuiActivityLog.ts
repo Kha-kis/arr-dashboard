@@ -40,7 +40,7 @@ export type QuiActivityLogMinAggregateOutputType = {
   userId: string | null
   eventType: string | null
   details: string | null
-  status: string | null
+  severity: string | null
   createdAt: Date | null
 }
 
@@ -49,7 +49,7 @@ export type QuiActivityLogMaxAggregateOutputType = {
   userId: string | null
   eventType: string | null
   details: string | null
-  status: string | null
+  severity: string | null
   createdAt: Date | null
 }
 
@@ -58,7 +58,7 @@ export type QuiActivityLogCountAggregateOutputType = {
   userId: number
   eventType: number
   details: number
-  status: number
+  severity: number
   createdAt: number
   _all: number
 }
@@ -69,7 +69,7 @@ export type QuiActivityLogMinAggregateInputType = {
   userId?: true
   eventType?: true
   details?: true
-  status?: true
+  severity?: true
   createdAt?: true
 }
 
@@ -78,7 +78,7 @@ export type QuiActivityLogMaxAggregateInputType = {
   userId?: true
   eventType?: true
   details?: true
-  status?: true
+  severity?: true
   createdAt?: true
 }
 
@@ -87,7 +87,7 @@ export type QuiActivityLogCountAggregateInputType = {
   userId?: true
   eventType?: true
   details?: true
-  status?: true
+  severity?: true
   createdAt?: true
   _all?: true
 }
@@ -169,7 +169,7 @@ export type QuiActivityLogGroupByOutputType = {
   userId: string
   eventType: string
   details: string
-  status: string
+  severity: string
   createdAt: Date
   _count: QuiActivityLogCountAggregateOutputType | null
   _min: QuiActivityLogMinAggregateOutputType | null
@@ -199,7 +199,7 @@ export type QuiActivityLogWhereInput = {
   userId?: Prisma.StringFilter<"QuiActivityLog"> | string
   eventType?: Prisma.StringFilter<"QuiActivityLog"> | string
   details?: Prisma.StringFilter<"QuiActivityLog"> | string
-  status?: Prisma.StringFilter<"QuiActivityLog"> | string
+  severity?: Prisma.StringFilter<"QuiActivityLog"> | string
   createdAt?: Prisma.DateTimeFilter<"QuiActivityLog"> | Date | string
   user?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
 }
@@ -209,7 +209,7 @@ export type QuiActivityLogOrderByWithRelationInput = {
   userId?: Prisma.SortOrder
   eventType?: Prisma.SortOrder
   details?: Prisma.SortOrder
-  status?: Prisma.SortOrder
+  severity?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   user?: Prisma.UserOrderByWithRelationInput
 }
@@ -222,7 +222,7 @@ export type QuiActivityLogWhereUniqueInput = Prisma.AtLeast<{
   userId?: Prisma.StringFilter<"QuiActivityLog"> | string
   eventType?: Prisma.StringFilter<"QuiActivityLog"> | string
   details?: Prisma.StringFilter<"QuiActivityLog"> | string
-  status?: Prisma.StringFilter<"QuiActivityLog"> | string
+  severity?: Prisma.StringFilter<"QuiActivityLog"> | string
   createdAt?: Prisma.DateTimeFilter<"QuiActivityLog"> | Date | string
   user?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
 }, "id">
@@ -232,7 +232,7 @@ export type QuiActivityLogOrderByWithAggregationInput = {
   userId?: Prisma.SortOrder
   eventType?: Prisma.SortOrder
   details?: Prisma.SortOrder
-  status?: Prisma.SortOrder
+  severity?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   _count?: Prisma.QuiActivityLogCountOrderByAggregateInput
   _max?: Prisma.QuiActivityLogMaxOrderByAggregateInput
@@ -247,7 +247,7 @@ export type QuiActivityLogScalarWhereWithAggregatesInput = {
   userId?: Prisma.StringWithAggregatesFilter<"QuiActivityLog"> | string
   eventType?: Prisma.StringWithAggregatesFilter<"QuiActivityLog"> | string
   details?: Prisma.StringWithAggregatesFilter<"QuiActivityLog"> | string
-  status?: Prisma.StringWithAggregatesFilter<"QuiActivityLog"> | string
+  severity?: Prisma.StringWithAggregatesFilter<"QuiActivityLog"> | string
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"QuiActivityLog"> | Date | string
 }
 
@@ -255,7 +255,7 @@ export type QuiActivityLogCreateInput = {
   id?: string
   eventType: string
   details: string
-  status?: string
+  severity?: string
   createdAt?: Date | string
   user: Prisma.UserCreateNestedOneWithoutQuiActivityLogsInput
 }
@@ -265,7 +265,7 @@ export type QuiActivityLogUncheckedCreateInput = {
   userId: string
   eventType: string
   details: string
-  status?: string
+  severity?: string
   createdAt?: Date | string
 }
 
@@ -273,7 +273,7 @@ export type QuiActivityLogUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   eventType?: Prisma.StringFieldUpdateOperationsInput | string
   details?: Prisma.StringFieldUpdateOperationsInput | string
-  status?: Prisma.StringFieldUpdateOperationsInput | string
+  severity?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   user?: Prisma.UserUpdateOneRequiredWithoutQuiActivityLogsNestedInput
 }
@@ -283,7 +283,7 @@ export type QuiActivityLogUncheckedUpdateInput = {
   userId?: Prisma.StringFieldUpdateOperationsInput | string
   eventType?: Prisma.StringFieldUpdateOperationsInput | string
   details?: Prisma.StringFieldUpdateOperationsInput | string
-  status?: Prisma.StringFieldUpdateOperationsInput | string
+  severity?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -292,7 +292,7 @@ export type QuiActivityLogCreateManyInput = {
   userId: string
   eventType: string
   details: string
-  status?: string
+  severity?: string
   createdAt?: Date | string
 }
 
@@ -300,7 +300,7 @@ export type QuiActivityLogUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   eventType?: Prisma.StringFieldUpdateOperationsInput | string
   details?: Prisma.StringFieldUpdateOperationsInput | string
-  status?: Prisma.StringFieldUpdateOperationsInput | string
+  severity?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -309,7 +309,7 @@ export type QuiActivityLogUncheckedUpdateManyInput = {
   userId?: Prisma.StringFieldUpdateOperationsInput | string
   eventType?: Prisma.StringFieldUpdateOperationsInput | string
   details?: Prisma.StringFieldUpdateOperationsInput | string
-  status?: Prisma.StringFieldUpdateOperationsInput | string
+  severity?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -328,7 +328,7 @@ export type QuiActivityLogCountOrderByAggregateInput = {
   userId?: Prisma.SortOrder
   eventType?: Prisma.SortOrder
   details?: Prisma.SortOrder
-  status?: Prisma.SortOrder
+  severity?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
 }
 
@@ -337,7 +337,7 @@ export type QuiActivityLogMaxOrderByAggregateInput = {
   userId?: Prisma.SortOrder
   eventType?: Prisma.SortOrder
   details?: Prisma.SortOrder
-  status?: Prisma.SortOrder
+  severity?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
 }
 
@@ -346,7 +346,7 @@ export type QuiActivityLogMinOrderByAggregateInput = {
   userId?: Prisma.SortOrder
   eventType?: Prisma.SortOrder
   details?: Prisma.SortOrder
-  status?: Prisma.SortOrder
+  severity?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
 }
 
@@ -396,7 +396,7 @@ export type QuiActivityLogCreateWithoutUserInput = {
   id?: string
   eventType: string
   details: string
-  status?: string
+  severity?: string
   createdAt?: Date | string
 }
 
@@ -404,7 +404,7 @@ export type QuiActivityLogUncheckedCreateWithoutUserInput = {
   id?: string
   eventType: string
   details: string
-  status?: string
+  severity?: string
   createdAt?: Date | string
 }
 
@@ -441,7 +441,7 @@ export type QuiActivityLogScalarWhereInput = {
   userId?: Prisma.StringFilter<"QuiActivityLog"> | string
   eventType?: Prisma.StringFilter<"QuiActivityLog"> | string
   details?: Prisma.StringFilter<"QuiActivityLog"> | string
-  status?: Prisma.StringFilter<"QuiActivityLog"> | string
+  severity?: Prisma.StringFilter<"QuiActivityLog"> | string
   createdAt?: Prisma.DateTimeFilter<"QuiActivityLog"> | Date | string
 }
 
@@ -449,7 +449,7 @@ export type QuiActivityLogCreateManyUserInput = {
   id?: string
   eventType: string
   details: string
-  status?: string
+  severity?: string
   createdAt?: Date | string
 }
 
@@ -457,7 +457,7 @@ export type QuiActivityLogUpdateWithoutUserInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   eventType?: Prisma.StringFieldUpdateOperationsInput | string
   details?: Prisma.StringFieldUpdateOperationsInput | string
-  status?: Prisma.StringFieldUpdateOperationsInput | string
+  severity?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -465,7 +465,7 @@ export type QuiActivityLogUncheckedUpdateWithoutUserInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   eventType?: Prisma.StringFieldUpdateOperationsInput | string
   details?: Prisma.StringFieldUpdateOperationsInput | string
-  status?: Prisma.StringFieldUpdateOperationsInput | string
+  severity?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -473,7 +473,7 @@ export type QuiActivityLogUncheckedUpdateManyWithoutUserInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   eventType?: Prisma.StringFieldUpdateOperationsInput | string
   details?: Prisma.StringFieldUpdateOperationsInput | string
-  status?: Prisma.StringFieldUpdateOperationsInput | string
+  severity?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -484,7 +484,7 @@ export type QuiActivityLogSelect<ExtArgs extends runtime.Types.Extensions.Intern
   userId?: boolean
   eventType?: boolean
   details?: boolean
-  status?: boolean
+  severity?: boolean
   createdAt?: boolean
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["quiActivityLog"]>
@@ -494,7 +494,7 @@ export type QuiActivityLogSelectCreateManyAndReturn<ExtArgs extends runtime.Type
   userId?: boolean
   eventType?: boolean
   details?: boolean
-  status?: boolean
+  severity?: boolean
   createdAt?: boolean
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["quiActivityLog"]>
@@ -504,7 +504,7 @@ export type QuiActivityLogSelectUpdateManyAndReturn<ExtArgs extends runtime.Type
   userId?: boolean
   eventType?: boolean
   details?: boolean
-  status?: boolean
+  severity?: boolean
   createdAt?: boolean
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["quiActivityLog"]>
@@ -514,11 +514,11 @@ export type QuiActivityLogSelectScalar = {
   userId?: boolean
   eventType?: boolean
   details?: boolean
-  status?: boolean
+  severity?: boolean
   createdAt?: boolean
 }
 
-export type QuiActivityLogOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "eventType" | "details" | "status" | "createdAt", ExtArgs["result"]["quiActivityLog"]>
+export type QuiActivityLogOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "eventType" | "details" | "severity" | "createdAt", ExtArgs["result"]["quiActivityLog"]>
 export type QuiActivityLogInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
 }
@@ -539,7 +539,14 @@ export type $QuiActivityLogPayload<ExtArgs extends runtime.Types.Extensions.Inte
     userId: string
     eventType: string
     details: string
-    status: string
+    /**
+     * "severity" in the Prisma client and on the wire, "status" in the
+     * DB column (preserved via @map so existing rows don't need migration).
+     * The rename eliminates a vocabulary collision with QuiActionLog.status,
+     * which represents a *lifecycle* state (pending/success/failed) rather
+     * than an *observation severity* (ok/warn/error).
+     */
+    severity: string
     createdAt: Date
   }, ExtArgs["result"]["quiActivityLog"]>
   composites: {}
@@ -969,7 +976,7 @@ export interface QuiActivityLogFieldRefs {
   readonly userId: Prisma.FieldRef<"QuiActivityLog", 'String'>
   readonly eventType: Prisma.FieldRef<"QuiActivityLog", 'String'>
   readonly details: Prisma.FieldRef<"QuiActivityLog", 'String'>
-  readonly status: Prisma.FieldRef<"QuiActivityLog", 'String'>
+  readonly severity: Prisma.FieldRef<"QuiActivityLog", 'String'>
   readonly createdAt: Prisma.FieldRef<"QuiActivityLog", 'DateTime'>
 }
     

@@ -140,6 +140,11 @@ export async function runDiscoveryBatch(
 
 	const items: CrossSeedDiscoveryItem[] = [];
 	let lastScannedId: string | null = cursor;
+	// Per-batch counter for sibling-fetch failures. Without this, the
+	// frontend can't distinguish "we checked everything, no siblings found"
+	// from "we tried but qui errored on N items". Surfaced in the response
+	// so the page can render a "partial results" badge.
+	let siblingFetchErrors = 0;
 
 	// Pre-resolve which rows we can actually scan (in-qui torrents). For rows
 	// whose infoHash qui doesn't know, we don't need a siblings call at all.
@@ -203,8 +208,11 @@ export async function runDiscoveryBatch(
 					siblings,
 				});
 			} catch (err) {
-				// Per-item failure shouldn't abort the whole batch — log and skip.
-				// Operators will see a smaller results set rather than a hard error.
+				// Per-item failure shouldn't abort the whole batch — log + count.
+				// The counter surfaces to the frontend so operators can see "N
+				// items couldn't be checked" rather than silently getting a
+				// smaller result set with no clue that completeness suffered.
+				siblingFetchErrors++;
 				log.warn(
 					{ err, libraryCacheId: row.id, hash, quiInstanceId: quiInstance.id },
 					"cross-seed discovery: sibling fetch failed for item",
@@ -229,6 +237,7 @@ export async function runDiscoveryBatch(
 		totalFound: items.length,
 		exhausted,
 		quiInstanceLabel: quiInstance.label,
+		siblingFetchErrors,
 	};
 }
 
