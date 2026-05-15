@@ -30,15 +30,21 @@ const silentLog: FastifyBaseLogger = {
 
 function makeApp(overrides: Record<string, unknown> = {}) {
 	const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-	const findMany = vi.fn().mockResolvedValue([]);
+	const serviceInstanceFindMany = vi.fn().mockResolvedValue([]);
+	// libraryCache.findMany is used by the chunked stale-state cleanup
+	// (P2029-fix): fetch candidate rows, filter in JS, then updateMany by
+	// id batches. Default empty so tests that don't care about cleanup
+	// behavior keep working.
+	const libraryCacheFindMany = vi.fn().mockResolvedValue([]);
 	return {
 		log: silentLog,
 		prisma: {
-			libraryCache: { updateMany },
-			serviceInstance: { findMany },
+			libraryCache: { updateMany, findMany: libraryCacheFindMany },
+			serviceInstance: { findMany: serviceInstanceFindMany },
 		},
 		__updateMany: updateMany,
-		__findMany: findMany,
+		__findMany: serviceInstanceFindMany,
+		__libraryCacheFindMany: libraryCacheFindMany,
 		...overrides,
 		// biome-ignore lint/suspicious/noExplicitAny: test-shim
 	} as any;
@@ -78,10 +84,11 @@ describe("runQuiTorrentStateSync", () => {
 		const result = await runQuiTorrentStateSync(app);
 
 		expect(result.torrentsSeen).toBe(3);
-		// 3 per-torrent updates + 1 stale-state cleanup updateMany at the end of
-		// the user's loop = 4 total. The cleanup is a single bulk call regardless
-		// of how many stale rows exist.
-		expect(app.__updateMany).toHaveBeenCalledTimes(4);
+		// 3 per-torrent updateMany calls. The stale-state cleanup now uses
+		// findMany-then-chunked-updateMany (P2029 fix); with the default
+		// empty findMany result, no cleanup updateMany fires. So we expect
+		// exactly 3 per-torrent calls.
+		expect(app.__updateMany).toHaveBeenCalledTimes(3);
 		// SECURITY: each per-torrent updateMany must include `instance: { userId }`.
 		// Without this, a torrent shared between users would have its state
 		// overwritten across user boundaries.
@@ -131,41 +138,104 @@ describe("runQuiTorrentStateSync", () => {
 		// torrentState would stay at last-known value forever — the badge would
 		// keep showing "Seeding 1.24×" even though the torrent is gone, which
 		// actively misleads the user.
+		//
+		// Cleanup is now done as findMany-then-chunked-updateMany (P2029 fix):
+		//   1. Find rows with torrentState != null AND torrentSyncedAt < runStart
+		//   2. Filter in JS for rows whose hash isn't in seenHashesThisRun
+		//   3. updateMany by id batches of <=500 to null those rows
 		const app = makeApp();
 		app.prisma.serviceInstance.findMany.mockResolvedValue([{ userId: "user-1" }]);
 		mockListQuiInstances.mockResolvedValue([
 			{ id: "qui-1", userId: "user-1", label: "main", baseUrl: "http://qui" },
 		]);
 		// qui now reports ONE remaining torrent (hash AAAA). The stale row whose
-		// hash was, say, BBBB, must get nulled.
+		// hash was BBBB must get nulled.
 		mockCreateQuiClient.mockReturnValue({
 			listAllTorrents: vi
 				.fn()
 				.mockResolvedValue([{ hash: "AAAA", state: "uploading", ratio: 1.5 }]),
 		});
+		// Two candidate stale rows: one currently-seen (AAAA, must SKIP), one
+		// stale (BBBB, must be cleared). The new code's JS filter must keep
+		// only BBBB; the updateMany must use that exact id list.
+		app.prisma.libraryCache.findMany.mockResolvedValue([
+			{ id: "row-aaaa", infoHash: "aaaa" }, // present in qui — skip
+			{ id: "row-bbbb", infoHash: "bbbb" }, // missing from qui — clear
+		]);
 
 		const result = await runQuiTorrentStateSync(app);
 
-		// updateMany was called twice for this user: once for the present torrent,
-		// once for the stale-state cleanup at the end of the user's loop.
-		const cleanupCall = app.__updateMany.mock.calls.find(
-			(call: [{ where: Record<string, unknown> }]) =>
-				call[0]?.where?.torrentState !== undefined && call[0]?.where?.infoHash !== undefined,
-		);
-		expect(cleanupCall, "expected a stale-state cleanup updateMany call").toBeDefined();
-		// The cleanup must scope to: this user, rows that HAD a state, rows synced
-		// before this run, and rows whose hash is NOT in the seen set.
-		const cleanupWhere = cleanupCall[0].where as {
+		// Stale candidates pulled via findMany scoped to the right user.
+		const findManyCall = app.__libraryCacheFindMany.mock.calls[0];
+		expect(findManyCall).toBeDefined();
+		const findManyWhere = findManyCall[0].where as {
 			instance: { userId: string };
 			torrentState: { not: null };
 			torrentSyncedAt: { lt: Date };
-			infoHash: { notIn: string[] };
 		};
-		expect(cleanupWhere.instance.userId).toBe("user-1");
-		expect(cleanupWhere.torrentState).toEqual({ not: null });
-		expect(cleanupWhere.torrentSyncedAt.lt).toBeInstanceOf(Date);
-		expect(cleanupWhere.infoHash.notIn).toEqual(["aaaa"]); // lower-cased
+		expect(findManyWhere.instance.userId).toBe("user-1");
+		expect(findManyWhere.torrentState).toEqual({ not: null });
+		expect(findManyWhere.torrentSyncedAt.lt).toBeInstanceOf(Date);
+
+		// The cleanup updateMany must use `id: { in: [BBBB-row only] }`. AAAA
+		// is still in qui so it must NOT be cleared. This pins the JS-side
+		// filter (the whole point of the rewrite vs the old notIn).
+		const cleanupCall = app.__updateMany.mock.calls.find(
+			(call: [{ where: Record<string, unknown> }]) =>
+				(call[0]?.where as { id?: { in?: unknown } })?.id?.in !== undefined,
+		);
+		expect(cleanupCall, "expected a chunked-id cleanup updateMany call").toBeDefined();
+		const cleanupWhere = cleanupCall[0].where as { id: { in: string[] } };
+		expect(cleanupWhere.id.in).toEqual(["row-bbbb"]);
 		expect(result.rowsCleared).toBeGreaterThanOrEqual(0);
+	});
+
+	it("chunks the cleanup updateMany when stale-id list exceeds the safe parameter cap (P2029 guard)", async () => {
+		// Production crash repro: this user has thousands of stale rows
+		// after qui prunes a large batch of torrents. The naive
+		// `updateMany({ where: { infoHash: { notIn: [10k hashes] } } })`
+		// crashed with P2029 every scheduler tick. The fix chunks the
+		// id-list into batches of <=500. Pin the chunking behavior here
+		// so future refactors can't silently regress it.
+		const app = makeApp();
+		app.prisma.serviceInstance.findMany.mockResolvedValue([{ userId: "user-1" }]);
+		mockListQuiInstances.mockResolvedValue([
+			{ id: "qui-1", userId: "user-1", label: "main", baseUrl: "http://qui" },
+		]);
+		// The cleanup branch only runs when at least one torrent IS seen
+		// AND there are no instance errors — otherwise we'd skip cleanup
+		// out of "incomplete view" caution. So we report ONE seen torrent
+		// and ensure the 1,072 stale rows have DIFFERENT hashes.
+		mockCreateQuiClient.mockReturnValue({
+			listAllTorrents: vi
+				.fn()
+				.mockResolvedValue([{ hash: "ZZZZ", state: "uploading", ratio: 1.0 }]),
+		});
+		// 1,072 stale rows (One Piece-scale). Old code: single updateMany
+		// crashes. New code: 3 chunked updateMany calls (500+500+72).
+		const staleRows = Array.from({ length: 1072 }, (_, i) => ({
+			id: `stale-${i}`,
+			infoHash: `hash-${i}`.padEnd(40, "0"),
+		}));
+		app.prisma.libraryCache.findMany.mockResolvedValue(staleRows);
+
+		await runQuiTorrentStateSync(app);
+
+		// Three chunks: [500, 500, 72]
+		const idBatchCalls = app.__updateMany.mock.calls.filter(
+			(call: [{ where: Record<string, unknown> }]) =>
+				(call[0]?.where as { id?: { in?: unknown } })?.id?.in !== undefined,
+		);
+		expect(idBatchCalls).toHaveLength(3);
+		expect((idBatchCalls[0][0].where as { id: { in: string[] } }).id.in).toHaveLength(500);
+		expect((idBatchCalls[1][0].where as { id: { in: string[] } }).id.in).toHaveLength(500);
+		expect((idBatchCalls[2][0].where as { id: { in: string[] } }).id.in).toHaveLength(72);
+		// Union of all batches = the full stale-id set, no loss or duplication.
+		const allClearedIds = idBatchCalls.flatMap(
+			(c: [{ where: Record<string, unknown> }]) => (c[0].where as { id: { in: string[] } }).id.in,
+		);
+		expect(allClearedIds).toHaveLength(1072);
+		expect(new Set(allClearedIds).size).toBe(1072);
 	});
 
 	it("isolates the cleanup decision per-user — one user's error does not suppress another user's cleanup", async () => {
@@ -191,20 +261,33 @@ describe("runQuiTorrentStateSync", () => {
 					: vi.fn().mockResolvedValue([{ hash: "BBBB", state: "uploading", ratio: 1.0 }]),
 		}));
 
+		// Make sure user B has a stale candidate to clean — otherwise the
+		// new chunked-update path stays silent and we'd be testing nothing.
+		app.prisma.libraryCache.findMany.mockResolvedValue([
+			{ id: "user-b-stale-1", infoHash: "ffff" }, // not in user-b's seen set (BBBB)
+		]);
+
 		const result = await runQuiTorrentStateSync(app);
 
 		expect(result.errors).toBe(1);
-		// User B should still have their cleanup updateMany called even though
-		// user A's sync errored — both users' decisions are independent.
-		const cleanupCalls = app.__updateMany.mock.calls.filter(
-			(call: [{ where: Record<string, unknown> }]) =>
-				(call[0]?.where as { torrentState?: unknown })?.torrentState !== undefined,
-		);
-		// Exactly one cleanup call expected: user B's. User A is skipped.
-		expect(cleanupCalls).toHaveLength(1);
-		expect((cleanupCalls[0][0].where as { instance: { userId: string } }).instance.userId).toBe(
+		// User A is skipped (errors > 0 → over-clearing risk). User B is NOT
+		// skipped. With the P2029 fix, cleanup is findMany + id-batch
+		// updateMany. We assert: exactly ONE libraryCache.findMany call
+		// (user B's), AND exactly ONE id-batch updateMany call (user B's).
+		expect(app.__libraryCacheFindMany).toHaveBeenCalledTimes(1);
+		const findManyCall = app.__libraryCacheFindMany.mock.calls[0];
+		expect((findManyCall[0].where as { instance: { userId: string } }).instance.userId).toBe(
 			"user-b",
 		);
+
+		const idBatchCalls = app.__updateMany.mock.calls.filter(
+			(call: [{ where: Record<string, unknown> }]) =>
+				(call[0]?.where as { id?: { in?: unknown } })?.id?.in !== undefined,
+		);
+		expect(idBatchCalls).toHaveLength(1);
+		expect((idBatchCalls[0][0].where as { id: { in: string[] } }).id.in).toEqual([
+			"user-b-stale-1",
+		]);
 	});
 
 	it("does NOT null stale rows when the sync run had errors (incomplete view)", async () => {

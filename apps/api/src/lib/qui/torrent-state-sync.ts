@@ -159,21 +159,43 @@ export async function runQuiTorrentStateSync(
 			);
 		} else if (userErrors === 0 && seenHashesThisRun.size > 0) {
 			try {
-				const cleared = await app.prisma.libraryCache.updateMany({
+				// Two-step diff-and-batch-update to avoid SQLite's
+				// IN/NOT-IN parameter cap (P2029). The naive
+				// `updateMany({ where: { infoHash: { notIn: [...10k hashes] } } })`
+				// crashed in production every scheduler tick (silently
+				// suppressed via try/catch, so stale state drifted
+				// indefinitely). Same shape as the fix in
+				// episode-file-backfill.ts.
+				const staleCandidates = await app.prisma.libraryCache.findMany({
 					where: {
 						instance: { userId },
 						torrentState: { not: null },
 						torrentSyncedAt: { lt: runStartedAt },
-						infoHash: { notIn: Array.from(seenHashesThisRun) },
 					},
-					data: {
-						torrentState: null,
-						torrentRatio: null,
-						torrentSyncedAt: null,
-					},
+					select: { id: true, infoHash: true },
 				});
-				result.rowsCleared += cleared.count;
-				userRowsCleared += cleared.count;
+				const staleIds = staleCandidates
+					.filter((r) => r.infoHash && !seenHashesThisRun.has(r.infoHash))
+					.map((r) => r.id);
+
+				// Chunk size matches the episode-file-backfill fix —
+				// well below SQLite's 32K cap and any Prisma quirks.
+				const CHUNK = 500;
+				let userCleared = 0;
+				for (let i = 0; i < staleIds.length; i += CHUNK) {
+					const batch = staleIds.slice(i, i + CHUNK);
+					const cleared = await app.prisma.libraryCache.updateMany({
+						where: { id: { in: batch } },
+						data: {
+							torrentState: null,
+							torrentRatio: null,
+							torrentSyncedAt: null,
+						},
+					});
+					userCleared += cleared.count;
+				}
+				result.rowsCleared += userCleared;
+				userRowsCleared += userCleared;
 			} catch (error) {
 				log.warn({ err: error, userId }, "qui torrent-state sync: stale-state cleanup failed");
 			}
