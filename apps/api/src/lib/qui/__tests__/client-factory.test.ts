@@ -331,4 +331,65 @@ describe("createQuiClient", () => {
 			expect(result.reason).toMatch(/qui request to/i);
 		}
 	});
+
+	/**
+	 * URL-pin tests for triggerDirScan. The previous bug shipped to
+	 * production used `/api/dirscan/webhook` (no hyphen, no trailing /scan)
+	 * which qui's HTTP router rejected with a generic 404, masking the
+	 * issue as "qui dir-scan not configured." The actual route on qui is
+	 *   r.Route("/dir-scan/webhook", ...).Post("/scan", ...)
+	 *   → /api/dir-scan/webhook/scan
+	 * Easy to misremember — these tests pin BOTH the URL and the
+	 * request shape so a future refactor can't reintroduce the typo.
+	 */
+	describe("triggerDirScan URL contract", () => {
+		it("POSTs to qui's `/api/dir-scan/webhook/scan` with {path} body", async () => {
+			fetchSpy.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						runId: 42,
+						directoryId: 7,
+						directoryPath: "/data/media/movies",
+						scanRoot: "/data/media/movies/Foo",
+					}),
+					{ status: 202, headers: { "content-type": "application/json" } },
+				),
+			);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			const result = await client.triggerDirScan("/data/media/movies/Foo");
+
+			expect(result.runId).toBe(42);
+			expect(result.directoryId).toBe(7);
+			expect(result.scanRoot).toBe("/data/media/movies/Foo");
+
+			// Pin BOTH the URL and the body shape.
+			const [url, init] = fetchSpy.mock.calls[0]!;
+			expect(String(url)).toBe("http://qui.test/api/dir-scan/webhook/scan");
+			expect(init?.method).toBe("POST");
+			expect(JSON.parse(String(init?.body))).toEqual({
+				path: "/data/media/movies/Foo",
+			});
+		});
+
+		it("relays qui's 404 with the original message (no configured dir-scan)", async () => {
+			// qui returns 404 when no configured dir-scan directory has a
+			// path prefix covering the requested path. quiRequest wraps this
+			// as QuiApiError with statusCode preserved. The route layer
+			// keys off statusCode to decide whether to surface "configure
+			// dir-scan in qui's UI" guidance to the user.
+			fetchSpy.mockResolvedValueOnce(
+				new Response(JSON.stringify({ error: "No matching directory found for the given path" }), {
+					status: 404,
+					headers: { "content-type": "application/json" },
+				}),
+			);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(client.triggerDirScan("/elsewhere")).rejects.toMatchObject({
+				name: "QuiApiError",
+				statusCode: 404,
+			});
+		});
+	});
 });

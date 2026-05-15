@@ -338,12 +338,18 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 			// is queued, 404 if no configured dir-scan covers the path,
 			// 409 if a scan is already in progress for the directory.
 			//
+			// Path nuances confirmed against qui internal/api/server.go:
+			//   r.Route("/dir-scan/webhook", ...).Post("/scan", ...)
+			// So the full route is `/api/dir-scan/webhook/scan` —
+			// note the HYPHEN in "dir-scan" and the trailing "/scan".
+			// Easy to get wrong; pin tightly.
+			//
 			// camelCase response shape — qui's dirScanTriggerResponse
 			// already uses camelCase JSON keys, so we don't need a
 			// snake_case → camelCase transform here.
 			return quiRequest(
 				ctx,
-				"/api/dirscan/webhook",
+				"/api/dir-scan/webhook/scan",
 				z.object({
 					runId: z.number().int(),
 					directoryId: z.number().int(),
