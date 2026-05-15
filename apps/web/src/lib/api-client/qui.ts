@@ -276,3 +276,37 @@ export async function triggerQuiCrossSeedSearch(
 		json: args,
 	});
 }
+
+export interface SeriesTorrent {
+	infoHash: string;
+	episodeCount: number;
+	seasons: number[];
+	qualityName: string | null;
+	releaseGroup: string | null;
+	inodeVerified: boolean;
+	/** BigInt string — total bytes across all episodes covered by this torrent. */
+	totalSizeBytes: string;
+}
+
+export interface SeriesTorrentsResponse {
+	seriesTitle: string;
+	totalEpisodes: number;
+	correlatedEpisodes: number;
+	viaInodeEpisodes: number;
+	stuckEpisodes: number;
+	torrents: SeriesTorrent[];
+}
+
+/**
+ * Per-series episode-correlation summary + distinct torrents covering
+ * those episodes. Drives the SeriesTorrentsPanel in the library detail
+ * modal — replaces the movies-only TorrentHealthPanel for series rows.
+ */
+export async function fetchSeriesTorrents(args: {
+	arrInstanceId: string;
+	arrItemId: number;
+}): Promise<SeriesTorrentsResponse> {
+	return apiRequest<SeriesTorrentsResponse>(
+		`/api/qui/series/${encodeURIComponent(args.arrInstanceId)}/${args.arrItemId}/torrents`,
+	);
+}

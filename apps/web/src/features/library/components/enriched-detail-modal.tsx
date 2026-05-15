@@ -66,6 +66,7 @@ import { CrossSeedSearchPanel } from "./cross-seed-search-panel";
 import { PlexTagsEditor } from "./plex-tags-editor";
 import { PosterImage } from "./poster-image";
 import { SeasonEpisodeList } from "./season-episode-list";
+import { SeriesTorrentsPanel } from "./series-torrents-panel";
 import { TorrentHealthPanel } from "./torrent-health-panel";
 
 export interface EnrichedDetailModalProps {
@@ -1026,33 +1027,51 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 					 * `item-details-modal.tsx` mounts this panel too but it's used
 					 * by a different entry path; this is the modal users actually
 					 * see when they click into a library item from the main grid. */}
-					{isMovie &&
-						item.instanceId &&
+					{/* Torrent / cross-seed panels — branches by item type:
+					 *   - Movie: single-torrent TorrentHealthPanel + per-movie
+					 *     cross-seed search.
+					 *   - Series: SeriesTorrentsPanel showing per-episode
+					 *     correlation summary, list of distinct torrents
+					 *     covering the series, and a series-level cross-seed
+					 *     search (qui dir-scans the whole series folder
+					 *     recursively).
+					 *   - Other types (artist/author): no panel today;
+					 *     follow-up when Lidarr per-track + Readarr support
+					 *     lands. */}
+					{item.instanceId &&
 						(() => {
 							const arrItemId =
 								typeof item.id === "string" ? Number.parseInt(item.id, 10) : item.id;
 							if (!Number.isFinite(arrItemId)) return null;
-							return (
-								<>
-									<TorrentHealthPanel
-										arrInstanceId={item.instanceId}
-										arrItemId={arrItemId}
-										itemType={item.type}
-									/>
-									{/* Cross-seed search via qui — for stuck items where no
-									 * torrent is correlated yet OR where the user wants to
-									 * search for additional cross-seeds. Hidden when the item
-									 * has no file (nothing on disk to cross-seed). */}
-									{item.hasFile === true && (
-										<CrossSeedSearchPanel
+							if (isMovie) {
+								return (
+									<>
+										<TorrentHealthPanel
 											arrInstanceId={item.instanceId as string}
 											arrItemId={arrItemId}
 											itemType={item.type}
-											itemTitle={item.title}
 										/>
-									)}
-								</>
-							);
+										{item.hasFile === true && (
+											<CrossSeedSearchPanel
+												arrInstanceId={item.instanceId as string}
+												arrItemId={arrItemId}
+												itemType={item.type}
+												itemTitle={item.title}
+											/>
+										)}
+									</>
+								);
+							}
+							if (item.type === "series") {
+								return (
+									<SeriesTorrentsPanel
+										arrInstanceId={item.instanceId as string}
+										arrItemId={arrItemId}
+										seriesTitle={item.title}
+									/>
+								);
+							}
+							return null;
 						})()}
 
 					{/* Recommendations */}

@@ -21,6 +21,7 @@ import {
 	fetchQuiEventLog,
 	fetchQuiSummary,
 	fetchQuiWebhookConfig,
+	fetchSeriesTorrents,
 	fetchTorrentState,
 	postQuiBulkAction,
 	postQuiTorrentAction,
@@ -30,6 +31,7 @@ import {
 	type RegisterQuiWebhookArgs,
 	registerQuiWebhook,
 	rotateQuiWebhookSecret,
+	type SeriesTorrentsResponse,
 	type SingleTorrentActionArgs,
 	triggerQuiCrossSeedSearch,
 } from "../../lib/api-client/qui";
@@ -256,6 +258,36 @@ export const useRegisterQuiWebhook = () => {
  * That delay window is up to 6 hours by default; the user can hit
  * "Run correlation now" from /qui to short-circuit it.
  */
+/**
+ * Per-series torrent + correlation aggregate. Powers the
+ * SeriesTorrentsPanel in the library detail modal: total episode files,
+ * how many are correlated, list of distinct torrents covering them.
+ *
+ * Refetches on focus + after a cross-seed search mutation invalidates
+ * (qui injects a torrent → our backfill correlates new episodes → this
+ * query reflects the new state).
+ */
+export const useSeriesTorrents = (args: {
+	arrInstanceId: string;
+	arrItemId: number;
+	enabled?: boolean;
+}) => {
+	return useQuery<SeriesTorrentsResponse>({
+		queryKey: quiKeys.seriesTorrents(args.arrInstanceId, args.arrItemId),
+		queryFn: () =>
+			fetchSeriesTorrents({
+				arrInstanceId: args.arrInstanceId,
+				arrItemId: args.arrItemId,
+			}),
+		enabled: args.enabled !== false,
+		// Episode correlation state changes slowly (only on backfill
+		// scheduler ticks or after a manual cross-seed trigger). Polling
+		// in the background would just hammer the server.
+		refetchOnWindowFocus: true,
+		staleTime: POLLING_STANDARD,
+	});
+};
+
 export const useTriggerQuiCrossSeedSearch = () => {
 	return useMutation<
 		QuiDirScanTriggerResult,

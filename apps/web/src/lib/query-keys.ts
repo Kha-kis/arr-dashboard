@@ -504,6 +504,11 @@ export const quiKeys = {
 	all: ["qui"] as const,
 	torrentState: (arrInstanceId: string, arrItemId: number, itemType: string) =>
 		["qui", "torrent-state", arrInstanceId, arrItemId, itemType] as const,
+	// Per-series aggregate (episode counts + distinct torrents). Powers
+	// the SeriesTorrentsPanel in the library detail modal. Invalidated
+	// when a cross-seed trigger or manual backfill changes correlation.
+	seriesTorrents: (arrInstanceId: string, arrItemId: number) =>
+		["qui", "series-torrents", arrInstanceId, arrItemId] as const,
 	crossSeedAvailability: () => ["qui", "cross-seed", "availability"] as const,
 	crossSeedDiscovery: () => ["qui", "cross-seed", "discover"] as const,
 	activity: (eventType?: string) =>

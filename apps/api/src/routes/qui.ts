@@ -701,6 +701,139 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 		}
 	});
 
+	// Series-level torrent / cross-seed overview.
+	//
+	// Renders the per-series rich panel in the library detail modal:
+	// total episode files, correlation breakdown by source (inode /
+	// heuristic / none), and a list of DISTINCT torrents (grouped by
+	// infoHash) covering those files. For a typical 16-episode series,
+	// this might surface 3-5 distinct torrents — one per season pack
+	// plus any cross-seeds qui has injected.
+	//
+	// Scope-bound to one user via the instance.userId relation, same
+	// ownership pattern as the rest of qui.ts.
+	app.get<{ Params: { arrInstanceId: string; arrItemId: string } }>(
+		"/qui/series/:arrInstanceId/:arrItemId/torrents",
+		async (request, reply) => {
+			const userId = request.currentUser!.id;
+			const { arrInstanceId } = request.params;
+			const arrItemId = Number.parseInt(request.params.arrItemId, 10);
+			if (!Number.isFinite(arrItemId)) {
+				return reply.code(400).send({ error: "arrItemId must be a number" });
+			}
+
+			// Ownership: confirm the user owns the (instance, series) before
+			// pulling its episode-file cache rows. Without this scoping a
+			// caller could enumerate any user's library by guessing pair ids.
+			const seriesRow = await app.prisma.libraryCache.findFirst({
+				where: {
+					instanceId: arrInstanceId,
+					arrItemId,
+					itemType: "series",
+					instance: { userId },
+				},
+				select: { id: true, title: true },
+			});
+			if (!seriesRow) {
+				return reply.code(404).send({ error: "Series not found" });
+			}
+
+			// Pull all episode files for this series in one query. Each row
+			// is one EpisodeFile (multi-ep files like `S01E01-E02.mkv` are
+			// ONE EpisodeFile covering two Episode entities) — see the
+			// EpisodeFileCache schema comment.
+			//
+			// arrSeriesId is the Sonarr-side series id (`library_cache.arrItemId`
+			// for itemType=series). We scope by instanceId too in case a
+			// future multi-Sonarr setup has overlapping series ids.
+			const episodes = await app.prisma.episodeFileCache.findMany({
+				where: { instanceId: arrInstanceId, arrSeriesId: arrItemId },
+				select: {
+					id: true,
+					seasonNumber: true,
+					relativePath: true,
+					size: true,
+					qualityName: true,
+					releaseGroup: true,
+					infoHash: true,
+					infoHashSource: true,
+				},
+				orderBy: [{ seasonNumber: "asc" }, { relativePath: "asc" }],
+			});
+
+			// Aggregate counts upfront so the UI doesn't need to recompute.
+			const totalEpisodes = episodes.length;
+			const correlatedEpisodes = episodes.filter((e) => e.infoHash !== null).length;
+			const viaInodeEpisodes = episodes.filter((e) => e.infoHashSource === "inode").length;
+			const stuckEpisodes = totalEpisodes - correlatedEpisodes;
+
+			// Group by infoHash — one row per distinct torrent. We emit
+			// quality + releaseGroup of the FIRST episode under each hash
+			// (they're usually consistent within a season pack; if not, the
+			// first-seen value is "good enough" for the summary view).
+			//
+			// Empty-hash rows (stuck) are excluded — they don't represent a
+			// torrent, just an unmatched episode. They're already accounted
+			// for in `stuckEpisodes` above.
+			const torrentMap = new Map<
+				string,
+				{
+					infoHash: string;
+					episodeCount: number;
+					seasons: Set<number>;
+					qualityName: string | null;
+					releaseGroup: string | null;
+					inodeVerified: boolean;
+					totalSize: bigint;
+				}
+			>();
+			for (const ep of episodes) {
+				if (!ep.infoHash) continue;
+				const existing = torrentMap.get(ep.infoHash);
+				if (existing) {
+					existing.episodeCount += 1;
+					existing.seasons.add(ep.seasonNumber);
+					existing.totalSize += ep.size;
+					// If ANY episode under this hash was inode-verified, the
+					// torrent counts as verified — partial verification is
+					// good enough to flag the green badge.
+					if (ep.infoHashSource === "inode") existing.inodeVerified = true;
+				} else {
+					torrentMap.set(ep.infoHash, {
+						infoHash: ep.infoHash,
+						episodeCount: 1,
+						seasons: new Set([ep.seasonNumber]),
+						qualityName: ep.qualityName,
+						releaseGroup: ep.releaseGroup,
+						inodeVerified: ep.infoHashSource === "inode",
+						totalSize: ep.size,
+					});
+				}
+			}
+
+			const torrents = Array.from(torrentMap.values())
+				.map((t) => ({
+					infoHash: t.infoHash,
+					episodeCount: t.episodeCount,
+					seasons: Array.from(t.seasons).sort((a, b) => a - b),
+					qualityName: t.qualityName,
+					releaseGroup: t.releaseGroup,
+					inodeVerified: t.inodeVerified,
+					totalSizeBytes: t.totalSize.toString(),
+				}))
+				.sort((a, b) => b.episodeCount - a.episodeCount); // biggest pack first
+
+			return reply.send({
+				seriesTitle: seriesRow.title,
+				totalEpisodes,
+				correlatedEpisodes,
+				viaInodeEpisodes,
+				stuckEpisodes,
+				torrents,
+			});
+		},
+	);
+
 	app.post("/qui/backfill/run-now", async (request, reply) => {
 		const userId = request.currentUser!.id;
 		// Three-phase backfill pipeline:
