@@ -802,10 +802,18 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 					);
 					return null;
 				});
-				inodeIndex = await Promise.race([
-					buildPromise,
-					new Promise<null>((resolve) => setTimeout(() => resolve(null), 22000)),
-				]);
+				// Clearable timeout — when the build wins the race we don't want
+				// a stray 22s timer sitting in Node's wheel. clearTimeout in
+				// finally fires whether the build won or lost, so no stale handle.
+				let timeoutHandle: NodeJS.Timeout | undefined;
+				const timeoutPromise = new Promise<null>((resolve) => {
+					timeoutHandle = setTimeout(() => resolve(null), 22000);
+				});
+				try {
+					inodeIndex = await Promise.race([buildPromise, timeoutPromise]);
+				} finally {
+					if (timeoutHandle) clearTimeout(timeoutHandle);
+				}
 				if (inodeIndex === null) {
 					request.log.info(
 						{ quiInstanceId: fsInstance.id, arrSeriesId: arrItemId },
@@ -1218,25 +1226,30 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 			// O(N²) over cluster count. N is typically 1-10 for a series, so
 			// this is trivial. If a series had hundreds of clusters we'd switch
 			// to coverage-set bitmap intersections.
+			//
+			// Precompute each cluster's coverage-set ONCE outside the inner
+			// loop. Without this we'd allocate a fresh Set per (cluster, other,
+			// episode) iteration — bounded but unnecessary GC pressure.
+			const clusterEpSets = new Map<string, Set<number>>();
+			for (const cluster of clusters) {
+				clusterEpSets.set(cluster.key, new Set(cluster.episodeFileIds));
+			}
 			for (const cluster of clusters) {
 				if (cluster.episodeCount === 0) continue;
-				const myEpSet = new Set(cluster.episodeFileIds);
 				let bestSuperset: (typeof clusters)[number] | null = null;
 				for (const other of clusters) {
 					if (other === cluster) continue;
 					if (other.episodeCount <= cluster.episodeCount) continue;
+					const otherSet = clusterEpSets.get(other.key)!;
 					// Strict superset check: every episode in `cluster` must be in `other`.
 					let isSuperset = true;
 					for (const id of cluster.episodeFileIds) {
-						if (!new Set(other.episodeFileIds).has(id)) {
+						if (!otherSet.has(id)) {
 							isSuperset = false;
 							break;
 						}
 					}
-					// Optimization: skip if not a superset (re-check via Set above
-					// is cheap, but reusing `myEpSet` makes intent clearer).
 					if (!isSuperset) continue;
-					void myEpSet; // silence unused-var; kept for self-documentation
 					if (!bestSuperset || other.episodeCount < bestSuperset.episodeCount) {
 						bestSuperset = other;
 					}
