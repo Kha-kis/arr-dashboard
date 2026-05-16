@@ -24,7 +24,7 @@ import type {
 	SeriesTorrentCopy,
 } from "../../../lib/api-client/qui";
 import { getLinuxSavePath, useIncognitoMode } from "../../../lib/incognito";
-import { getTrackerBrand } from "../../../lib/tracker-brand";
+import { resolveCopyTrackerBrand } from "../../../lib/tracker-brand";
 
 interface Props {
 	arrInstanceId: string;
@@ -571,13 +571,19 @@ const ClusterCard: React.FC<{
 							</span>
 						)}
 						<span className="ml-auto flex items-center gap-1">
-							{cluster.copies.map((copy) => (
-								<span
-									key={copy.infoHash}
-									className={`inline-block h-2 w-2 rounded-full ${healthDot(copy)}`}
-									title={`${getTrackerBrand(copy.tracker).name} — ${friendlyState(copy.state) ?? "unknown"}`}
-								/>
-							))}
+							{cluster.copies.map((copy) => {
+								const brand = resolveCopyTrackerBrand({
+									tracker: copy.tracker,
+									tags: copy.tags,
+								});
+								return (
+									<span
+										key={copy.infoHash}
+										className={`inline-block h-2 w-2 rounded-full ${healthDot(copy)}`}
+										title={`${brand.name} — ${friendlyState(copy.state) ?? "unknown"}`}
+									/>
+								);
+							})}
 						</span>
 					</div>
 					{/* Sub-row: size + quality + release + tracker pills */}
@@ -587,7 +593,10 @@ const ClusterCard: React.FC<{
 						{cluster.releaseGroup && <span>· {cluster.releaseGroup}</span>}
 						<span className="text-foreground/40">·</span>
 						{cluster.copies.map((copy) => {
-							const brand = getTrackerBrand(copy.tracker);
+							const brand = resolveCopyTrackerBrand({
+								tracker: copy.tracker,
+								tags: copy.tags,
+							});
 							return (
 								<span
 									key={copy.infoHash}
@@ -640,7 +649,7 @@ const CopyRow: React.FC<{ copy: SeriesTorrentCopy; incognito: boolean }> = ({
 }) => {
 	const stateLabel = friendlyState(copy.state);
 	const progressPct = typeof copy.progress === "number" ? Math.round(copy.progress * 100) : null;
-	const brand = getTrackerBrand(copy.tracker);
+	const brand = resolveCopyTrackerBrand({ tracker: copy.tracker, tags: copy.tags });
 	return (
 		<div className="space-y-1 rounded bg-card/40 px-2 py-1.5 text-[11px]">
 			<div className="flex flex-wrap items-center gap-1.5">

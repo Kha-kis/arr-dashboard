@@ -67,3 +67,49 @@ export function getTrackerBrand(raw: string | null | undefined): TrackerBrand {
 		name: raw ?? key,
 	};
 }
+
+/**
+ * Scan a list of candidate strings (typically a torrent's savePath-parsed
+ * tracker name + its tags) and return the first one that maps to a known
+ * brand. Null when none match.
+ *
+ * This is the right shape for the UI's "what tracker is this?" question:
+ * library copies live under `/data/torrents/tv/` with no tracker in the
+ * path, but qui usually tags them with the tracker name. By scanning tags
+ * AFTER the path-derived tracker, we recover the brand for those cases
+ * without misclassifying torrents that legitimately have no tracker tag.
+ *
+ * Filters out generic non-tracker tags like `cross-seed`, `noHL`, `issue`
+ * so they don't poison the search.
+ */
+const NON_TRACKER_TAGS = new Set(["cross-seed", "nohl", "issue", "permaseed"]);
+
+export function findKnownTracker(
+	candidates: Array<string | null | undefined>,
+): TrackerBrand | null {
+	for (const c of candidates) {
+		if (!c) continue;
+		const key = normalizeTrackerName(c);
+		if (!key || NON_TRACKER_TAGS.has(key)) continue;
+		const known = BRANDS[key];
+		if (known) return known;
+	}
+	return null;
+}
+
+/**
+ * Resolve the best brand for a torrent copy given its savePath-parsed
+ * tracker AND its tags. Priority: known brand from any candidate, then
+ * auto-derived 3-letter slug from the tracker name, then "?" when there
+ * is no signal at all.
+ */
+export function resolveCopyTrackerBrand(args: {
+	tracker: string | null;
+	tags: readonly string[];
+}): TrackerBrand {
+	const known = findKnownTracker([args.tracker, ...args.tags]);
+	if (known) return known;
+	// Fallback to auto-derived from path-parsed tracker (preserves the
+	// existing "?" sentinel when even that's null).
+	return getTrackerBrand(args.tracker);
+}
