@@ -55,6 +55,7 @@ export const ModelName = {
   Session: 'Session',
   ServiceTag: 'ServiceTag',
   ServiceInstance: 'ServiceInstance',
+  InodeIndexCache: 'InodeIndexCache',
   ServiceInstanceTag: 'ServiceInstanceTag',
   OIDCProvider: 'OIDCProvider',
   OIDCAccount: 'OIDCAccount',
@@ -186,6 +187,17 @@ export const ServiceInstanceScalarFieldEnum = {
 } as const
 
 export type ServiceInstanceScalarFieldEnum = (typeof ServiceInstanceScalarFieldEnum)[keyof typeof ServiceInstanceScalarFieldEnum]
+
+
+export const InodeIndexCacheScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  builtAt: 'builtAt',
+  filesIndexed: 'filesIndexed',
+  serializedData: 'serializedData'
+} as const
+
+export type InodeIndexCacheScalarFieldEnum = (typeof InodeIndexCacheScalarFieldEnum)[keyof typeof InodeIndexCacheScalarFieldEnum]
 
 
 export const ServiceInstanceTagScalarFieldEnum = {

@@ -62,6 +62,11 @@ export type ServiceTag = Prisma.ServiceTagModel
  */
 export type ServiceInstance = Prisma.ServiceInstanceModel
 /**
+ * Model InodeIndexCache
+ * 
+ */
+export type InodeIndexCache = Prisma.InodeIndexCacheModel
+/**
  * Model ServiceInstanceTag
  * 
  */

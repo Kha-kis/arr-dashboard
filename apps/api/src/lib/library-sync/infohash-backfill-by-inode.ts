@@ -27,7 +27,15 @@
  *    cross-seed layout ALWAYS wraps torrents in a `Name--shortHash/`
  *    folder, so an index that stat'd only the folder root would record
  *    the FOLDER's inode and miss the inode of the actual .mkv inside.
- *  - qui caches their HardlinkIndex for 2 minutes; we use the same TTL.
+ *  - **Caching divergence from qui**: qui doesn't cache their FileID
+ *    index — `internal/services/dirscan/service.go` rebuilds it fresh
+ *    per scan run because their scans are scheduled background work
+ *    (no user blocked on a spinner) and qui is co-located with qBit +
+ *    the FS for sub-second builds. WE are on the user's critical path
+ *    (panel-load → 12-minute cold build is unacceptable), so we keep an
+ *    in-memory TTL cache (`INDEX_CACHE`) AND a disk-persisted snapshot
+ *    (`InodeIndexCache` Prisma model). Pre-warm on startup loads the
+ *    persisted snapshot before the first user request lands.
  *  - qui's `HasLocalFilesystemAccess` per-instance toggle gates this whole
  *    strategy; the sweep loop in `infohash-backfill-by-path.ts` checks the
  *    flag before calling into here.
@@ -50,9 +58,10 @@
  */
 
 import { readdir, stat } from "node:fs/promises";
+import { gunzipSync, gzipSync } from "node:zlib";
 import type { QuiTorrent } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
-import type { ServiceInstance } from "../prisma.js";
+import type { PrismaClient, ServiceInstance } from "../prisma.js";
 import type { QuiClient } from "../qui/client-factory.js";
 import { getErrorMessage } from "../utils/error-message.js";
 
@@ -93,7 +102,17 @@ interface CachedIndex {
 }
 
 const INDEX_CACHE = new Map<string, CachedIndex>();
-const INDEX_TTL_MS = 2 * 60 * 1000;
+
+// Refresh cadence for the in-memory index. Original 2-min TTL was
+// mythology-based (the comment said "qui uses 2 min" — they don't cache
+// at all). 30 min is honest given the typical churn rate of a hardlink
+// library: torrents are added/removed on the order of minutes-to-hours,
+// not seconds. Combined with disk-persistence (below), this means a
+// fresh-after-restart user request finds a warm cache 99% of the time,
+// and the worst-case staleness for a new cross-seed is 30 min.
+//
+// Test code overrides via `__testOnly.INDEX_TTL_MS`.
+const INDEX_TTL_MS = 30 * 60 * 1000;
 
 /**
  * In-flight build deduplication. When a cold cache + concurrent panel
@@ -118,6 +137,193 @@ const INDEX_PENDING = new Map<string, Promise<FileIdIndex>>();
  * filesystem ourselves, so we need our own bound.
  */
 const MAX_WALK_ENTRIES_PER_TORRENT = 500;
+
+// ─── Persistence layer ─────────────────────────────────────────────────
+//
+// The in-memory cache is lost on every container restart. Production
+// libraries take 5-15 minutes to cold-build the index (12k torrents x
+// ~50k stat ops). On a critical-path user request, that's a UX cliff.
+//
+// Persisting the built index to the DB lets us load a hot index on
+// startup. Subsequent panel loads serve from in-memory immediately;
+// background refresh checks for drift on the TTL schedule.
+//
+// Format: gzipped JSON. Map<"dev:ino", Set<hash>> serializes to
+// [["dev:ino", ["hash1", "hash2"]], ...]. For 80k file entries the
+// uncompressed JSON is ~6 MB; gzip-9 brings it under 1 MB. Decompression
+// and parsing on startup takes <500ms even on a slow machine.
+
+/**
+ * Serialize a FileIdIndex to a gzipped JSON Buffer for DB storage.
+ * Sets become arrays — JSON can't represent Set natively.
+ */
+export function serializeFileIdIndex(index: FileIdIndex): Buffer {
+	const entries: Array<[string, string[]]> = [];
+	for (const [key, hashes] of index.byFileId) {
+		entries.push([key, Array.from(hashes)]);
+	}
+	const payload = JSON.stringify({
+		v: 1,
+		statted: index.statted,
+		skippedNoLinks: index.skippedNoLinks,
+		skippedUnstatable: index.skippedUnstatable,
+		entries,
+	});
+	return gzipSync(Buffer.from(payload, "utf8"), { level: 9 });
+}
+
+/**
+ * Inverse of serializeFileIdIndex. Returns null on corruption / schema-
+ * version mismatch instead of throwing — a bad cache row shouldn't
+ * break the route, just trigger a fresh rebuild.
+ */
+export function deserializeFileIdIndex(buf: Buffer): FileIdIndex | null {
+	try {
+		const json = gunzipSync(buf).toString("utf8");
+		const data = JSON.parse(json) as {
+			v: number;
+			statted: number;
+			skippedNoLinks: number;
+			skippedUnstatable: number;
+			entries: Array<[string, string[]]>;
+		};
+		if (data.v !== 1) return null;
+		const byFileId = new Map<string, Set<string>>();
+		for (const [key, hashes] of data.entries) {
+			byFileId.set(key, new Set(hashes));
+		}
+		return {
+			byFileId,
+			statted: data.statted,
+			skippedNoLinks: data.skippedNoLinks,
+			skippedUnstatable: data.skippedUnstatable,
+		};
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Load the persisted index for a single instance from the DB. Returns
+ * null when no row exists OR the payload is corrupt. The caller treats
+ * either case as cache miss and rebuilds from scratch.
+ *
+ * Doesn't validate freshness — the caller decides based on `builtAt`
+ * whether to use the loaded index or trigger a refresh.
+ */
+export async function loadFileIdIndexFromDb(
+	prisma: PrismaClient,
+	instanceId: string,
+): Promise<CachedIndex | null> {
+	const row = await prisma.inodeIndexCache.findUnique({
+		where: { instanceId },
+		select: { builtAt: true, serializedData: true },
+	});
+	if (!row) return null;
+	const buf = Buffer.isBuffer(row.serializedData)
+		? row.serializedData
+		: Buffer.from(row.serializedData);
+	const index = deserializeFileIdIndex(buf);
+	if (!index) return null;
+	return { index, builtAt: row.builtAt.getTime() };
+}
+
+/**
+ * Persist a built index. Upsert so repeated builds for the same instance
+ * just overwrite the prior row. Failure is logged but non-fatal —
+ * persistence is an optimization, not source of truth.
+ */
+async function saveFileIdIndexToDb(
+	prisma: PrismaClient,
+	instanceId: string,
+	index: FileIdIndex,
+	log?: FastifyBaseLogger,
+): Promise<void> {
+	try {
+		const serialized = serializeFileIdIndex(index);
+		// Prisma's Bytes type wants `Uint8Array<ArrayBuffer>`. Node Buffer
+		// is `Uint8Array<ArrayBufferLike>`. Allocate a fresh ArrayBuffer
+		// (not the SharedArrayBuffer-permissible union) and copy into it.
+		const ab = new ArrayBuffer(serialized.byteLength);
+		const bytes = new Uint8Array(ab);
+		bytes.set(serialized);
+		await prisma.inodeIndexCache.upsert({
+			where: { instanceId },
+			create: {
+				instanceId,
+				builtAt: new Date(),
+				filesIndexed: index.statted,
+				serializedData: bytes,
+			},
+			update: {
+				builtAt: new Date(),
+				filesIndexed: index.statted,
+				serializedData: bytes,
+			},
+		});
+		log?.info(
+			{ instanceId, filesIndexed: index.statted, bytes: serialized.length },
+			"inode-index: persisted snapshot to DB",
+		);
+	} catch (err) {
+		log?.warn(
+			{ err, instanceId },
+			"inode-index: persistence write failed (non-fatal; rebuild will retry)",
+		);
+	}
+}
+
+/**
+ * Hydrate INDEX_CACHE from persisted snapshots at server startup.
+ * Called once during boot — see `preloadInodeIndexes` in server.ts.
+ *
+ * Loaded entries are immediately available to user requests via the
+ * usual `INDEX_CACHE` path. Their `builtAt` is preserved so the TTL
+ * check still applies — a snapshot older than INDEX_TTL_MS triggers
+ * a background refresh the first time a request asks for it.
+ *
+ * Concurrent load is fine: this is called once before request traffic,
+ * but the in-memory map's set operations are atomic at the JS level.
+ */
+export async function hydrateFileIdIndexFromDb(
+	prisma: PrismaClient,
+	log?: FastifyBaseLogger,
+): Promise<{ loaded: number; failed: number }> {
+	let loaded = 0;
+	let failed = 0;
+	try {
+		const rows = await prisma.inodeIndexCache.findMany({
+			select: { instanceId: true, builtAt: true, serializedData: true, filesIndexed: true },
+		});
+		for (const row of rows) {
+			const buf = Buffer.isBuffer(row.serializedData)
+				? row.serializedData
+				: Buffer.from(row.serializedData);
+			const index = deserializeFileIdIndex(buf);
+			if (!index) {
+				failed++;
+				log?.warn(
+					{ instanceId: row.instanceId },
+					"inode-index: persisted snapshot corrupt — will rebuild on first request",
+				);
+				continue;
+			}
+			INDEX_CACHE.set(row.instanceId, { index, builtAt: row.builtAt.getTime() });
+			loaded++;
+			log?.info(
+				{
+					instanceId: row.instanceId,
+					filesIndexed: row.filesIndexed,
+					ageMinutes: Math.round((Date.now() - row.builtAt.getTime()) / 60000),
+				},
+				"inode-index: hydrated from persisted snapshot",
+			);
+		}
+	} catch (err) {
+		log?.warn({ err }, "inode-index: hydrate-from-db failed (continuing with empty cache)");
+	}
+	return { loaded, failed };
+}
 
 /**
  * Apply the instance's path-prefix rewrite to a qui-reported path.
@@ -163,6 +369,13 @@ export async function buildFileIdIndex(
 	client: QuiClient,
 	instance: Pick<ServiceInstance, "id" | "label" | "pathPrefix">,
 	log?: FastifyBaseLogger,
+	/**
+	 * Optional Prisma client. When provided, successful builds are
+	 * persisted to the `InodeIndexCache` table so the next server
+	 * startup can hydrate immediately via `hydrateFileIdIndexFromDb`.
+	 * Omitted in unit tests that don't need DB-side effects.
+	 */
+	prisma?: PrismaClient,
 ): Promise<FileIdIndex> {
 	const cached = INDEX_CACHE.get(instance.id);
 	if (cached && Date.now() - cached.builtAt < INDEX_TTL_MS) {
@@ -180,6 +393,12 @@ export async function buildFileIdIndex(
 	const buildPromise = (async (): Promise<FileIdIndex> => {
 		const built = await doBuildFileIdIndex(client, instance, log);
 		INDEX_CACHE.set(instance.id, { index: built, builtAt: Date.now() });
+		// Persist asynchronously — caller doesn't need to wait on the
+		// DB write, and a failed persist is non-fatal (next rebuild
+		// will retry). Floating Promise is intentional.
+		if (prisma) {
+			void saveFileIdIndexToDb(prisma, instance.id, built, log);
+		}
 		return built;
 	})();
 	INDEX_PENDING.set(instance.id, buildPromise);

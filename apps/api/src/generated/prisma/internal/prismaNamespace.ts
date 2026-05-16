@@ -388,6 +388,7 @@ export const ModelName = {
   Session: 'Session',
   ServiceTag: 'ServiceTag',
   ServiceInstance: 'ServiceInstance',
+  InodeIndexCache: 'InodeIndexCache',
   ServiceInstanceTag: 'ServiceInstanceTag',
   OIDCProvider: 'OIDCProvider',
   OIDCAccount: 'OIDCAccount',
@@ -457,7 +458,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "episodeFileCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "autoTagRule" | "tmdbListCache" | "traktListCache" | "quiActivityLog" | "quiActionLog" | "quiEventLog"
+    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "inodeIndexCache" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "episodeFileCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "autoTagRule" | "tmdbListCache" | "traktListCache" | "quiActivityLog" | "quiActionLog" | "quiEventLog"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -754,6 +755,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         count: {
           args: Prisma.ServiceInstanceCountArgs<ExtArgs>
           result: runtime.Types.Utils.Optional<Prisma.ServiceInstanceCountAggregateOutputType> | number
+        }
+      }
+    }
+    InodeIndexCache: {
+      payload: Prisma.$InodeIndexCachePayload<ExtArgs>
+      fields: Prisma.InodeIndexCacheFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.InodeIndexCacheFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$InodeIndexCachePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.InodeIndexCacheFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$InodeIndexCachePayload>
+        }
+        findFirst: {
+          args: Prisma.InodeIndexCacheFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$InodeIndexCachePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.InodeIndexCacheFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$InodeIndexCachePayload>
+        }
+        findMany: {
+          args: Prisma.InodeIndexCacheFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$InodeIndexCachePayload>[]
+        }
+        create: {
+          args: Prisma.InodeIndexCacheCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$InodeIndexCachePayload>
+        }
+        createMany: {
+          args: Prisma.InodeIndexCacheCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.InodeIndexCacheCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$InodeIndexCachePayload>[]
+        }
+        delete: {
+          args: Prisma.InodeIndexCacheDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$InodeIndexCachePayload>
+        }
+        update: {
+          args: Prisma.InodeIndexCacheUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$InodeIndexCachePayload>
+        }
+        deleteMany: {
+          args: Prisma.InodeIndexCacheDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.InodeIndexCacheUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.InodeIndexCacheUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$InodeIndexCachePayload>[]
+        }
+        upsert: {
+          args: Prisma.InodeIndexCacheUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$InodeIndexCachePayload>
+        }
+        aggregate: {
+          args: Prisma.InodeIndexCacheAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateInodeIndexCache>
+        }
+        groupBy: {
+          args: Prisma.InodeIndexCacheGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.InodeIndexCacheGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.InodeIndexCacheCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.InodeIndexCacheCountAggregateOutputType> | number
         }
       }
     }
@@ -4853,6 +4928,17 @@ export const ServiceInstanceScalarFieldEnum = {
 export type ServiceInstanceScalarFieldEnum = (typeof ServiceInstanceScalarFieldEnum)[keyof typeof ServiceInstanceScalarFieldEnum]
 
 
+export const InodeIndexCacheScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  builtAt: 'builtAt',
+  filesIndexed: 'filesIndexed',
+  serializedData: 'serializedData'
+} as const
+
+export type InodeIndexCacheScalarFieldEnum = (typeof InodeIndexCacheScalarFieldEnum)[keyof typeof InodeIndexCacheScalarFieldEnum]
+
+
 export const ServiceInstanceTagScalarFieldEnum = {
   instanceId: 'instanceId',
   tagId: 'tagId',
@@ -5921,6 +6007,13 @@ export type EnumServiceTypeFieldRefInput<$PrismaModel> = FieldRefInputType<$Pris
 
 
 /**
+ * Reference to a field of type 'Bytes'
+ */
+export type BytesFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Bytes'>
+    
+
+
+/**
  * Reference to a field of type 'BackupIntervalType'
  */
 export type EnumBackupIntervalTypeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'BackupIntervalType'>
@@ -6061,6 +6154,7 @@ export type GlobalOmitConfig = {
   session?: Prisma.SessionOmit
   serviceTag?: Prisma.ServiceTagOmit
   serviceInstance?: Prisma.ServiceInstanceOmit
+  inodeIndexCache?: Prisma.InodeIndexCacheOmit
   serviceInstanceTag?: Prisma.ServiceInstanceTagOmit
   oIDCProvider?: Prisma.OIDCProviderOmit
   oIDCAccount?: Prisma.OIDCAccountOmit

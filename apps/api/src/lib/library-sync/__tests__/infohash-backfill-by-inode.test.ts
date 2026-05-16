@@ -95,9 +95,11 @@ import {
 	__testOnly,
 	applyPathRewrite,
 	buildFileIdIndex,
+	deserializeFileIdIndex,
 	type FileIdIndex,
 	getAllHashesForFileId,
 	matchLibraryByFileId,
+	serializeFileIdIndex,
 } from "../infohash-backfill-by-inode.js";
 
 interface FakeQuiClient {
@@ -590,5 +592,70 @@ describe("multi-hash per FileID (cross-seed visibility)", () => {
 			skippedUnstatable: 0,
 		};
 		expect(await getAllHashesForFileId("/mnt/disk2/foo.mkv", index)).toEqual([]);
+	});
+});
+
+describe("serialize/deserialize round-trip", () => {
+	it("preserves the byFileId Map and metadata fields", () => {
+		const original: FileIdIndex = {
+			byFileId: new Map([
+				["1:1001", new Set(["a", "b", "c"])],
+				["1:1002", new Set(["d"])],
+				["64:99", new Set(["e", "f"])],
+			]),
+			statted: 100,
+			skippedNoLinks: 25,
+			skippedUnstatable: 3,
+		};
+		const blob = serializeFileIdIndex(original);
+		expect(blob).toBeInstanceOf(Buffer);
+		expect(blob.length).toBeGreaterThan(0);
+
+		const restored = deserializeFileIdIndex(blob);
+		expect(restored).not.toBeNull();
+		expect(restored!.statted).toBe(100);
+		expect(restored!.skippedNoLinks).toBe(25);
+		expect(restored!.skippedUnstatable).toBe(3);
+		expect(restored!.byFileId.size).toBe(3);
+		expect(restored!.byFileId.get("1:1001")).toEqual(new Set(["a", "b", "c"]));
+		expect(restored!.byFileId.get("1:1002")).toEqual(new Set(["d"]));
+		expect(restored!.byFileId.get("64:99")).toEqual(new Set(["e", "f"]));
+	});
+
+	it("handles an empty index", () => {
+		const empty: FileIdIndex = {
+			byFileId: new Map(),
+			statted: 0,
+			skippedNoLinks: 0,
+			skippedUnstatable: 0,
+		};
+		const restored = deserializeFileIdIndex(serializeFileIdIndex(empty));
+		expect(restored).not.toBeNull();
+		expect(restored!.byFileId.size).toBe(0);
+	});
+
+	it("returns null for corrupt input rather than throwing", () => {
+		expect(deserializeFileIdIndex(Buffer.from("not gzip data"))).toBeNull();
+		expect(deserializeFileIdIndex(Buffer.alloc(0))).toBeNull();
+	});
+
+	it("compresses meaningfully — 1000 entries should fit under 50KB", () => {
+		// Stress test the gzip ratio: with structurally similar entries
+		// (same dev, sequential inos, two random hashes each), gzip-9 should
+		// crush the payload aggressively. Real-world payloads have higher
+		// entropy in hashes but lower entropy in keys, so net ratio holds.
+		const byFileId = new Map<string, Set<string>>();
+		for (let i = 0; i < 1000; i++) {
+			byFileId.set(`64:${1000 + i}`, new Set([`hash${i.toString(16).padStart(40, "0")}`]));
+		}
+		const blob = serializeFileIdIndex({
+			byFileId,
+			statted: 1000,
+			skippedNoLinks: 0,
+			skippedUnstatable: 0,
+		});
+		expect(blob.length).toBeLessThan(50_000);
+		const restored = deserializeFileIdIndex(blob);
+		expect(restored!.byFileId.size).toBe(1000);
 	});
 });

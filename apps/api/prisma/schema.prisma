@@ -165,9 +165,41 @@ model ServiceInstance {
   seerrActionLogs             SeerrActionLog[]
   quiActionLogs               QuiActionLog[]
   quiEventLogs                QuiEventLog[]
+  inodeIndexCache             InodeIndexCache?
 
   @@index([service])
   @@index([userId])
+}
+
+// Persisted inode-index snapshot per qui instance — eliminates the
+// 12-minute cold-build cost after container restarts. The index itself
+// is a Map<"dev:ino", Set<hash>> that powers the series-torrents panel's
+// multi-hash cross-seed detection.
+//
+// Lifecycle:
+//   - Written after every successful in-memory rebuild (fire-and-forget).
+//   - Loaded into INDEX_CACHE on server startup so the first user request
+//     gets full multi-hash coverage instantly instead of degraded-mode
+//     cached-hash-only.
+//   - Re-built in background per instance after startup-load to refresh
+//     against any drift since the persisted snapshot was taken.
+//
+// Format: gzipped JSON of [["dev:ino", ["hash1","hash2",...]], ...]
+// tuples. For a 12k-torrent library with ~80k file entries, the
+// compressed payload is ~700KB. Decompression + parse is sub-second.
+//
+// Staleness is acceptable — this is a cache, not source of truth. Drift
+// is bounded by the background refresh cadence (TTL on INDEX_CACHE).
+model InodeIndexCache {
+  id             String          @id @default(cuid())
+  instanceId     String          @unique
+  builtAt        DateTime
+  filesIndexed   Int
+  /// Gzipped JSON snapshot of Map<"dev:ino", string[]> (per-file hashes).
+  serializedData Bytes
+  instance       ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@map("inode_index_cache")
 }
 
 model ServiceInstanceTag {

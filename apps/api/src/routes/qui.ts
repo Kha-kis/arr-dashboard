@@ -526,6 +526,92 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 	// fully-populated *arr ecosystem (the scheduler uses 500 to stay
 	// gentle; the manual button accepts the larger budget because the
 	// operator initiated it explicitly).
+	// Manual inode-index rebuild — admin convenience endpoint.
+	//
+	// Triggers a fresh rebuild for one (or all) FS-enabled qui instances
+	// owned by the caller. Useful after adding a batch of new torrents
+	// or noticing stale correlations — operator can force a refresh
+	// without waiting for the 30-min TTL.
+	//
+	// Body: { instanceId?: string } — when omitted, rebuilds all FS-
+	// enabled qui instances for this user.
+	//
+	// Returns the build result per instance (file counts, duration).
+	// Honors in-flight dedup, so two concurrent rebuild requests share
+	// one build pass.
+	app.post<{ Body?: { instanceId?: string } }>(
+		"/qui/inode-index/rebuild",
+		async (request, reply) => {
+			const userId = request.currentUser!.id;
+			const targetId = request.body?.instanceId;
+
+			const instances = await app.prisma.serviceInstance.findMany({
+				where: {
+					userId,
+					service: "QUI",
+					enabled: true,
+					hasLocalFilesystemAccess: true,
+					...(targetId ? { id: targetId } : {}),
+				},
+			});
+			if (instances.length === 0) {
+				return reply.code(404).send({
+					error: targetId
+						? "Instance not found, not FS-enabled, or not owned by this user"
+						: "No FS-enabled qui instances configured",
+				});
+			}
+
+			// Invalidate the in-memory cache for these instances so the next
+			// `buildFileIdIndex` call rebuilds instead of returning the
+			// still-fresh cached copy. Mirrors what the TTL expiry would do
+			// naturally, but immediately.
+			const { clearFileIdIndexCache } = await import(
+				"../lib/library-sync/infohash-backfill-by-inode.js"
+			);
+			for (const instance of instances) {
+				clearFileIdIndexCache(instance.id);
+			}
+
+			interface PerInstanceResult {
+				instanceId: string;
+				label: string;
+				durationMs: number;
+				filesIndexed?: number;
+				error?: string;
+			}
+			const results: PerInstanceResult[] = await Promise.all(
+				instances.map(async (instance) => {
+					const start = Date.now();
+					try {
+						const client = createQuiClient(app, instance);
+						const index = await buildFileIdIndex(client, instance, request.log, app.prisma);
+						return {
+							instanceId: instance.id,
+							label: instance.label,
+							durationMs: Date.now() - start,
+							filesIndexed: index.statted,
+						};
+					} catch (err) {
+						return {
+							instanceId: instance.id,
+							label: instance.label,
+							durationMs: Date.now() - start,
+							error: getErrorMessage(err),
+						};
+					}
+				}),
+			);
+
+			const succeeded = results.filter((r) => !r.error).length;
+			request.log.info(
+				{ userId, requested: instances.length, succeeded, results },
+				"qui inode-index: manual rebuild complete",
+			);
+			return reply.send({ instancesProcessed: instances.length, succeeded, results });
+		},
+	);
+
 	// Inode-probe diagnostic for the local-filesystem-access strategy.
 	//
 	// Given a path, returns the (st_dev, st_ino, nlink) tuple that
@@ -795,7 +881,15 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 			let inodeIndex: Awaited<ReturnType<typeof buildFileIdIndex>> | null = null;
 			if (fsInstance) {
 				const indexClient = createQuiClient(app, fsInstance);
-				const buildPromise = buildFileIdIndex(indexClient, fsInstance, request.log).catch((err) => {
+				// Pass `app.prisma` so successful builds are persisted to the
+				// `InodeIndexCache` table. Next startup hydrates from this row
+				// and the panel loads cold-cache-free.
+				const buildPromise = buildFileIdIndex(
+					indexClient,
+					fsInstance,
+					request.log,
+					app.prisma,
+				).catch((err) => {
 					request.log.warn(
 						{ err, quiInstanceId: fsInstance.id },
 						"qui series-torrents: inode index build failed; using cached-hash fallback",
