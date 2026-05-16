@@ -504,3 +504,16 @@ export async function fetchMovieTorrents(args: {
 		`/api/qui/movie/${encodeURIComponent(args.arrInstanceId)}/${args.arrItemId}/torrents`,
 	);
 }
+
+/**
+ * qui's tracker-icon registry — `hostname` → `data:image/png;base64,...`.
+ * Empty when no qui is configured or qui has no icons for this user.
+ * Cached server-side for 1h, so cheap to call.
+ */
+export interface QuiTrackerIconsResponse {
+	icons: Record<string, string>;
+}
+
+export async function fetchTrackerIcons(): Promise<QuiTrackerIconsResponse> {
+	return apiRequest<QuiTrackerIconsResponse>("/api/qui/tracker-icons");
+}

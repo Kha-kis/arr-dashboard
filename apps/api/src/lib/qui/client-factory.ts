@@ -16,6 +16,18 @@ import { mapTrackerHealth } from "./tracker-health-mapper.js";
 export interface QuiClient {
 	getTorrentByHash(hash: string): Promise<QuiTorrent | null>;
 	getTrackers(instanceId: number, hash: string): Promise<QuiTracker[]>;
+	/**
+	 * Fetch qui's per-user tracker-icon map. Returns a record of
+	 * `hostname` → `data:image/png;base64,...` URLs. qui builds this from
+	 * a combination of community-curated favicons (downloaded from the
+	 * tracker site) and user-uploaded custom icons. Empty record when
+	 * qui has nothing configured for the user.
+	 *
+	 * Response is small (~50KB total for a typical user's tracker set)
+	 * but cacheable for an hour — icons change rarely. Callers should
+	 * cache aggressively rather than refetch per panel load.
+	 */
+	getTrackerIcons(): Promise<Record<string, string>>;
 	getCrossSeedMatches(instanceId: number, hash: string): Promise<QuiCrossSeedMatch[]>;
 	listInstances(): Promise<QuiInstance[]>;
 	/**
@@ -269,6 +281,14 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 				`/api/instances/${instanceId}/torrents/${hash}/trackers`,
 				z.array(wireTrackerSchema),
 			);
+		},
+
+		async getTrackerIcons() {
+			// qui returns a flat Record<hostname, dataUrl>. We accept any
+			// object whose values are strings — qui may add new fields here
+			// in future versions (e.g., per-icon `updatedAt`), but at the
+			// data level we only need the data-URL string.
+			return quiRequest(ctx, "/api/tracker-icons", z.record(z.string(), z.string()));
 		},
 
 		async getCrossSeedMatches(instanceId, hash) {

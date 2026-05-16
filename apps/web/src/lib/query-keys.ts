@@ -515,6 +515,10 @@ export const quiKeys = {
 	// collide and React Query can cache each independently.
 	movieTorrents: (arrInstanceId: string, arrItemId: number) =>
 		["qui", "movie-torrents", arrInstanceId, arrItemId] as const,
+	// qui's tracker-icon registry — single global key (one map per user,
+	// no parameters). Cached server-side for 1h; client also caches via
+	// the long staleTime on the hook.
+	trackerIcons: () => ["qui", "tracker-icons"] as const,
 	crossSeedAvailability: () => ["qui", "cross-seed", "availability"] as const,
 	crossSeedDiscovery: () => ["qui", "cross-seed", "discover"] as const,
 	activity: (eventType?: string) =>

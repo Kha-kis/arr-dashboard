@@ -24,6 +24,7 @@ import {
 	fetchQuiWebhookConfig,
 	fetchSeriesTorrents,
 	fetchTorrentState,
+	fetchTrackerIcons,
 	postQuiBulkAction,
 	postQuiTorrentAction,
 	type QuiActionLogParams,
@@ -286,6 +287,29 @@ export const useSeriesTorrents = (args: {
 		// in the background would just hammer the server.
 		refetchOnWindowFocus: true,
 		staleTime: POLLING_STANDARD,
+	});
+};
+
+/**
+ * qui's per-user tracker-icon registry. Hostname → data URL.
+ *
+ * Cached server-side for 1h (the icons themselves rarely change) and
+ * client-side via the long staleTime here. Failures gracefully return
+ * an empty record so the brand pills fall back to text abbreviations
+ * — never breaks the panel.
+ */
+export const useTrackerIcons = () => {
+	return useQuery({
+		queryKey: quiKeys.trackerIcons(),
+		queryFn: fetchTrackerIcons,
+		// 1 hour: matches the backend cache window. Icons are user-curated
+		// per-tracker — they change when the user adds a new tracker or
+		// uploads a custom icon, not on a per-minute basis.
+		staleTime: 60 * 60 * 1000,
+		// Don't refetch on focus — icons aren't volatile state.
+		refetchOnWindowFocus: false,
+		// Soft-fail: hooks render with empty data on error, no toast.
+		retry: 1,
 	});
 };
 

@@ -21,6 +21,14 @@ export interface TrackerBrand {
 	name: string;
 	/** Optional hex color for Ship 3 brand-color visuals. Falls back to gray pill. */
 	color?: string;
+	/**
+	 * Tracker logo as a `data:image/png;base64,...` URL. Populated when
+	 * qui's tracker-icon registry has an entry for this hostname. When
+	 * present, the UI renders the actual logo; otherwise it falls back
+	 * to the text abbreviation. Server-side curated per-user (qui
+	 * downloads favicons + accepts user uploads).
+	 */
+	iconUrl?: string;
 }
 
 const BRANDS: Record<string, TrackerBrand> = {
@@ -155,19 +163,45 @@ export function resolveCopyTrackerBrand(args: {
 	tracker: string | null;
 	/** Announce URL hostnames from qBit (authoritative). First match wins. */
 	trackerHostnames?: readonly string[];
+	/**
+	 * Optional qui-curated icon map (hostname → data URL). When the
+	 * resolver finds a match in this map, the resulting brand carries
+	 * an `iconUrl` so the UI can render the actual logo instead of the
+	 * text abbreviation. Pass `useTrackerIcons().data?.icons` here.
+	 */
+	icons?: Record<string, string>;
 }): TrackerBrand {
+	// Attach an iconUrl from qui's per-user registry when available.
+	// We check ALL trackerHostnames (a torrent can have multiple) and the
+	// path-derived tracker name as a hostname fallback — first match wins.
+	const findIcon = (): string | undefined => {
+		if (!args.icons) return undefined;
+		if (args.trackerHostnames) {
+			for (const host of args.trackerHostnames) {
+				const apex = hostnameToApex(host);
+				if (args.icons[host]) return args.icons[host];
+				if (args.icons[apex]) return args.icons[apex];
+			}
+		}
+		return undefined;
+	};
+
 	// Tier 1: authoritative — first announce URL that maps to a known brand.
 	if (args.trackerHostnames) {
 		for (const host of args.trackerHostnames) {
 			const branded = getTrackerBrandByHostname(host);
-			if (branded) return branded;
+			if (branded) return { ...branded, iconUrl: findIcon() ?? branded.iconUrl };
 		}
 	}
 	// Tier 2: path-derived — also authoritative within qui's hardlink layout.
 	if (args.tracker) {
 		const fromName = getTrackerBrand(args.tracker);
-		if (fromName.abbr !== "?") return fromName;
+		if (fromName.abbr !== "?") return { ...fromName, iconUrl: findIcon() ?? fromName.iconUrl };
 	}
-	// Tier 3: honest unknown. No tag guessing.
+	// Tier 3: honest unknown. Still attach an icon if qui has one for
+	// the hostname — even if we can't name the tracker, the logo speaks
+	// for itself.
+	const icon = findIcon();
+	if (icon) return { abbr: "", name: "Tracker", iconUrl: icon };
 	return { abbr: "?", name: "Unknown" };
 }

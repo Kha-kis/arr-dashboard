@@ -1964,6 +1964,56 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 		},
 	);
 
+	// Tracker-icon registry — proxies qui's per-user icon map so the
+	// frontend can render real tracker logos in brand pills instead of
+	// 3-letter text abbreviations.
+	//
+	// qui maintains the canonical icon registry (community favicons +
+	// user-uploaded custom icons), stored as PNGs in /config/tracker-icons/
+	// and served via its /api/tracker-icons endpoint as a flat record of
+	// `hostname → data:image/png;base64,...` URLs. We pass through the
+	// data URLs verbatim — no separate icon-serving infrastructure on
+	// our side.
+	//
+	// Caching: the map rarely changes (icons are added when a new
+	// tracker appears or the user uploads a custom one). Cache for 1
+	// hour in-memory; the panel refetches once per hour, otherwise hits
+	// the cache. The payload is ~50KB so the memory cost is trivial.
+	const TRACKER_ICONS_TTL_MS = 60 * 60 * 1000;
+	const trackerIconsCache = new Map<string, { icons: Record<string, string>; builtAt: number }>();
+	app.get("/qui/tracker-icons", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const cacheKey = userId;
+		const cached = trackerIconsCache.get(cacheKey);
+		if (cached && Date.now() - cached.builtAt < TRACKER_ICONS_TTL_MS) {
+			return reply.send({ icons: cached.icons });
+		}
+
+		const instance = await app.prisma.serviceInstance.findFirst({
+			where: { userId, service: "QUI", enabled: true },
+		});
+		if (!instance) {
+			// No qui configured — return empty map. Frontend falls back to
+			// the static brand registry / auto-derived abbreviation.
+			return reply.send({ icons: {} });
+		}
+
+		try {
+			const client = createQuiClient(app, instance);
+			const icons = await client.getTrackerIcons();
+			trackerIconsCache.set(cacheKey, { icons, builtAt: Date.now() });
+			return reply.send({ icons });
+		} catch (err) {
+			request.log.warn(
+				{ err, instanceId: instance.id },
+				"qui tracker-icons fetch failed; returning empty map",
+			);
+			// Soft-fail: empty map causes frontend to render text fallbacks.
+			// Better than 500-ing the panel because qui hiccupped.
+			return reply.send({ icons: {} });
+		}
+	});
+
 	app.post("/qui/backfill/run-now", async (request, reply) => {
 		const userId = request.currentUser!.id;
 		// Three-phase backfill pipeline:

@@ -19,6 +19,7 @@ import { Button } from "../../../components/ui/button";
 import {
 	useMovieTorrents,
 	useSeriesTorrents,
+	useTrackerIcons,
 	useTriggerQuiCrossSeedSearch,
 } from "../../../hooks/api/useQui";
 import type {
@@ -134,6 +135,12 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({
 		enabled: itemType === "movie",
 	});
 	const dataQuery = itemType === "series" ? seriesQuery : movieQuery;
+	// qui-curated tracker logo registry. Cached for 1h; empty record on
+	// failure. Passed into `resolveCopyTrackerBrand` everywhere the brand
+	// pill is rendered, so when qui has an icon for a hostname we show
+	// the logo instead of the text abbreviation.
+	const iconsQuery = useTrackerIcons();
+	const trackerIcons = iconsQuery.data?.icons;
 	const mutation = useTriggerQuiCrossSeedSearch();
 	const [searchOutcome, setSearchOutcome] = useState<
 		{ kind: "success"; runId: number; scanRoot: string } | { kind: "error"; message: string } | null
@@ -362,6 +369,7 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({
 								onToggleSeason={toggleSeason}
 								collapsible={collapsibleSeasons}
 								incognito={isIncognito}
+								trackerIcons={trackerIcons}
 								onCrossSeedSearch={handleSearchClick}
 								searchPending={mutation.isPending}
 							/>
@@ -381,6 +389,7 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({
 								expanded={expandedClusters.has(cluster.key)}
 								onToggle={() => toggleCluster(cluster.key)}
 								incognito={isIncognito}
+								trackerIcons={trackerIcons}
 							/>
 						))}
 					</div>
@@ -475,6 +484,7 @@ const SeasonGroupCard: React.FC<{
 	onToggleSeason: (n: number) => void;
 	collapsible: boolean;
 	incognito: boolean;
+	trackerIcons: Record<string, string> | undefined;
 	onCrossSeedSearch: () => void;
 	searchPending: boolean;
 }> = ({
@@ -486,6 +496,7 @@ const SeasonGroupCard: React.FC<{
 	onToggleSeason,
 	collapsible,
 	incognito,
+	trackerIcons,
 	onCrossSeedSearch,
 	searchPending,
 }) => {
@@ -579,6 +590,7 @@ const SeasonGroupCard: React.FC<{
 							expanded={expandedClusters.has(cluster.key)}
 							onToggle={() => onToggleCluster(cluster.key)}
 							incognito={incognito}
+							trackerIcons={trackerIcons}
 						/>
 					))}
 				</div>
@@ -624,7 +636,8 @@ const ClusterCard: React.FC<{
 	expanded: boolean;
 	onToggle: () => void;
 	incognito: boolean;
-}> = ({ cluster, expanded, onToggle, incognito }) => {
+	trackerIcons: Record<string, string> | undefined;
+}> = ({ cluster, expanded, onToggle, incognito, trackerIcons }) => {
 	const stateLabel = friendlyState(cluster.primaryState);
 
 	return (
@@ -667,6 +680,7 @@ const ClusterCard: React.FC<{
 								const brand = resolveCopyTrackerBrand({
 									tracker: copy.tracker,
 									trackerHostnames: copy.trackerHostnames,
+									icons: trackerIcons,
 								});
 								return (
 									<span
@@ -699,35 +713,56 @@ const ClusterCard: React.FC<{
 						 * cover this content" not "how is each copy doing."
 						 */}
 						{(() => {
+							// Dedupe key: prefer iconUrl when available (so two
+							// different display-name variants for the same tracker
+							// merge), else abbr. iconUrl is the most stable identity
+							// signal qui can give us.
 							const byBrand = new Map<
 								string,
-								{ brand: { abbr: string; name: string; color?: string }; count: number }
+								{
+									brand: { abbr: string; name: string; color?: string; iconUrl?: string };
+									count: number;
+								}
 							>();
 							for (const copy of cluster.copies) {
 								const brand = resolveCopyTrackerBrand({
 									tracker: copy.tracker,
 									trackerHostnames: copy.trackerHostnames,
+									icons: trackerIcons,
 								});
-								const existing = byBrand.get(brand.abbr);
+								const key = brand.iconUrl ?? brand.abbr;
+								const existing = byBrand.get(key);
 								if (existing) {
 									existing.count++;
 								} else {
-									byBrand.set(brand.abbr, { brand, count: 1 });
+									byBrand.set(key, { brand, count: 1 });
 								}
 							}
-							return Array.from(byBrand.entries()).map(([abbr, { brand, count }]) => (
+							return Array.from(byBrand.entries()).map(([key, { brand, count }]) => (
 								<span
-									key={abbr}
-									className="rounded bg-card/70 px-1.5 py-0.5 font-mono text-[10px] text-foreground/80"
+									key={key}
+									className="inline-flex items-center gap-1 rounded bg-card/70 px-1.5 py-0.5 font-mono text-[10px] text-foreground/80"
 									title={
 										count > 1
 											? `${brand.name} · ${count} torrent variants at this tracker`
 											: brand.name
 									}
-									style={brand.color ? { borderLeft: `2px solid ${brand.color}` } : undefined}
+									style={
+										brand.color && !brand.iconUrl
+											? { borderLeft: `2px solid ${brand.color}` }
+											: undefined
+									}
 								>
-									{brand.abbr}
-									{count > 1 && <span className="text-foreground/50"> ×{count}</span>}
+									{brand.iconUrl ? (
+										<img
+											src={brand.iconUrl}
+											alt={brand.name}
+											className="h-3 w-3 rounded-sm object-contain"
+										/>
+									) : (
+										<span>{brand.abbr}</span>
+									)}
+									{count > 1 && <span className="text-foreground/50">×{count}</span>}
 								</span>
 							));
 						})()}
@@ -753,7 +788,12 @@ const ClusterCard: React.FC<{
 			{expanded && (
 				<div className="space-y-1 border-t border-border/40 px-3 py-2">
 					{cluster.copies.map((copy) => (
-						<CopyRow key={copy.infoHash} copy={copy} incognito={incognito} />
+						<CopyRow
+							key={copy.infoHash}
+							copy={copy}
+							incognito={incognito}
+							trackerIcons={trackerIcons}
+						/>
 					))}
 				</div>
 			)}
@@ -766,15 +806,17 @@ const ClusterCard: React.FC<{
  * tracker badge + state + ratio + peers, then path + timing as secondary
  * info. Drawer-style full detail comes in Ship 3.
  */
-const CopyRow: React.FC<{ copy: SeriesTorrentCopy; incognito: boolean }> = ({
-	copy,
-	incognito,
-}) => {
+const CopyRow: React.FC<{
+	copy: SeriesTorrentCopy;
+	incognito: boolean;
+	trackerIcons: Record<string, string> | undefined;
+}> = ({ copy, incognito, trackerIcons }) => {
 	const stateLabel = friendlyState(copy.state);
 	const progressPct = typeof copy.progress === "number" ? Math.round(copy.progress * 100) : null;
 	const brand = resolveCopyTrackerBrand({
 		tracker: copy.tracker,
 		trackerHostnames: copy.trackerHostnames,
+		icons: trackerIcons,
 	});
 	return (
 		<div className="space-y-1 rounded bg-card/40 px-2 py-1.5 text-[11px]">
@@ -784,10 +826,21 @@ const CopyRow: React.FC<{ copy: SeriesTorrentCopy; incognito: boolean }> = ({
 					title={friendlyState(copy.state) ?? "unknown"}
 				/>
 				<span
-					className="rounded px-1.5 py-0.5 font-mono text-[10px] text-foreground/90"
-					style={brand.color ? { backgroundColor: `${brand.color}33` } : undefined}
+					className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] text-foreground/90"
+					style={
+						brand.color && !brand.iconUrl ? { backgroundColor: `${brand.color}33` } : undefined
+					}
+					title={brand.name}
 				>
-					{brand.abbr}
+					{brand.iconUrl ? (
+						<img
+							src={brand.iconUrl}
+							alt={brand.name}
+							className="h-3.5 w-3.5 rounded-sm object-contain"
+						/>
+					) : (
+						brand.abbr
+					)}
 				</span>
 				<span
 					className={`rounded px-1.5 py-0.5 text-[10px] ${
@@ -856,6 +909,12 @@ const CopyRow: React.FC<{ copy: SeriesTorrentCopy; incognito: boolean }> = ({
 					<span className="text-muted-foreground">Trackers:</span>
 					{(copy.trackers ?? []).map((t) => {
 						const brand = getTrackerBrandByHostname(t.hostname);
+						// qui's icon registry uses bare-host AND apex keys. Try both —
+						// `tracker.avistaz.to` vs `avistaz.to` may have different
+						// entries depending on what qui downloaded.
+						const iconUrl =
+							trackerIcons?.[t.hostname] ??
+							trackerIcons?.[t.hostname.replace(/^(tracker|announce|t)\./, "")];
 						// Fallback label for unknown trackers: pick the most identifying
 						// segment of the hostname. Strip common boilerplate prefixes
 						// (`tracker.`, `announce.`, `t.`) so `tracker.avistaz.to`
@@ -873,7 +932,7 @@ const CopyRow: React.FC<{ copy: SeriesTorrentCopy; incognito: boolean }> = ({
 						return (
 							<span
 								key={t.hostname}
-								className={`rounded px-1.5 py-0.5 font-mono ${
+								className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono ${
 									isFailed
 										? "bg-red-500/20 text-red-200"
 										: isHealthy
@@ -882,7 +941,16 @@ const CopyRow: React.FC<{ copy: SeriesTorrentCopy; incognito: boolean }> = ({
 								}`}
 								title={`${brand?.name ?? t.hostname} · ${t.health}`}
 							>
-								{label} {t.numPeers}p
+								{iconUrl ? (
+									<img
+										src={iconUrl}
+										alt={brand?.name ?? t.hostname}
+										className="h-3 w-3 rounded-sm object-contain"
+									/>
+								) : (
+									<span>{label}</span>
+								)}
+								<span>{t.numPeers}p</span>
 							</span>
 						);
 					})}
