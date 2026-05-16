@@ -1225,8 +1225,25 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 									const trackers = await client.getTrackers(torrent.instanceId, hash);
 									for (const t of trackers) {
 										if (t.url.startsWith("** ")) {
-											// Pseudo-tracker. qui's convention: `** [DHT]`,
-											// `** [PeX]`, `** [LSD]`. Match case-insensitively.
+											// Pseudo-tracker entries (`** [DHT]`, `** [PeX]`,
+											// `** [LSD]`) are reported in EVERY torrent's
+											// tracker list — they're not optional metadata.
+											// What changes is the `health` field: qBit sets it
+											// to `disabled` when the pseudo-tracker isn't
+											// actually contributing peers for this torrent.
+											//
+											// Causes of `disabled` health on a pseudo-tracker:
+											//   - Global setting off (qBit preferences)
+											//   - Per-torrent disable flag set
+											//   - Torrent has `private: 1` in its .torrent file
+											//     (private-tracker torrents — DHT/PeX/LSD MUST
+											//     be off to avoid tracker bans)
+											//
+											// The old code keyed on URL prefix only, which
+											// gave false-positive "DHT enabled" reads on
+											// every private-tracker torrent. The fix: trust
+											// qBit's health field as the source of truth.
+											if (t.health === "disabled") continue;
 											const lower = t.url.toLowerCase();
 											if (lower.includes("dht")) peerSources.dht = true;
 											if (lower.includes("pex")) peerSources.pex = true;

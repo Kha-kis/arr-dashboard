@@ -759,10 +759,10 @@ const CopyRow: React.FC<{ copy: SeriesTorrentCopy; incognito: boolean }> = ({
 			{/* Per-tracker peer counts — the authoritative breakdown of where
 			 * the torrent has peers, replacing the misleading torrent-level
 			 * sum that hid which trackers were actually working. */}
-			{copy.trackers.length > 0 && (
+			{(copy.trackers?.length ?? 0) > 0 && (
 				<div className="flex flex-wrap items-center gap-1 text-[10px]">
 					<span className="text-muted-foreground">Trackers:</span>
-					{copy.trackers.map((t) => {
+					{(copy.trackers ?? []).map((t) => {
 						const brand = getTrackerBrandByHostname(t.hostname);
 						const label = brand?.abbr ?? t.hostname.split(".")[0]?.toUpperCase() ?? "?";
 						const isHealthy = t.health === "working" || t.health === "updating";
@@ -786,7 +786,7 @@ const CopyRow: React.FC<{ copy: SeriesTorrentCopy; incognito: boolean }> = ({
 					{/* Pseudo-tracker badges — DHT/PeX/LSD as discovery channels
 					 * separate from real trackers. Notable on private-tracker
 					 * torrents where these should typically be off. */}
-					{copy.peerSources.dht && (
+					{copy.peerSources?.dht && (
 						<span
 							className="rounded bg-card/40 px-1.5 py-0.5 font-mono text-muted-foreground"
 							title="Distributed Hash Table — public peer discovery"
@@ -794,7 +794,7 @@ const CopyRow: React.FC<{ copy: SeriesTorrentCopy; incognito: boolean }> = ({
 							DHT
 						</span>
 					)}
-					{copy.peerSources.pex && (
+					{copy.peerSources?.pex && (
 						<span
 							className="rounded bg-card/40 px-1.5 py-0.5 font-mono text-muted-foreground"
 							title="Peer Exchange — peer-to-peer discovery"
@@ -802,7 +802,7 @@ const CopyRow: React.FC<{ copy: SeriesTorrentCopy; incognito: boolean }> = ({
 							PeX
 						</span>
 					)}
-					{copy.peerSources.lsd && (
+					{copy.peerSources?.lsd && (
 						<span
 							className="rounded bg-card/40 px-1.5 py-0.5 font-mono text-muted-foreground"
 							title="Local Service Discovery — LAN peers"
