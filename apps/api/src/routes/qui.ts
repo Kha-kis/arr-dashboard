@@ -100,6 +100,251 @@ const ACTION_LOG_QUERY = z.object({
 	status: z.enum(["pending", "success", "failed"]).optional(),
 });
 
+// ─── Shared types + helpers for the cluster-based panel endpoints ─────
+//
+// The series-torrents and movie-torrents routes both produce the same
+// ClusterCopy shape per torrent (per-tracker peers, role classification,
+// live speeds, etc). Extracting the shared enrichment into a module-scope
+// function avoids duplicating ~140 lines between the two routes — and
+// guarantees both stay in lockstep when we evolve the trust signals.
+
+interface PerTrackerInfo {
+	hostname: string;
+	health: "working" | "updating" | "not_contacted" | "disabled" | "not_working" | "unknown";
+	numSeeds: number;
+	numLeechs: number;
+	numPeers: number;
+	tier: number | null;
+	/** Raw qBit status msg — used for unregistered/banned detection. NOT sent to client. */
+	_msg?: string;
+}
+
+interface PeerSources {
+	dht: boolean;
+	pex: boolean;
+	lsd: boolean;
+}
+
+interface ClusterCopy {
+	infoHash: string;
+	name: string | null;
+	state: string | null;
+	category: string | null;
+	role: "library" | "cross-seed";
+	tracker: string | null;
+	trackerHostnames: string[];
+	trackers: Omit<PerTrackerInfo, "_msg">[];
+	trackerHealth: "unregistered" | "tracker_down" | null;
+	peerSources: PeerSources;
+	ratio: number | null;
+	savePath: string | null;
+	tags: string[];
+	addedOn: number | null;
+	seedingTime: number | null;
+	torrentSizeBytes: string | null;
+	numSeeds: number | null;
+	numLeechs: number | null;
+	progress: number | null;
+	dlSpeedBps: number | null;
+	upSpeedBps: number | null;
+	instanceName: string | null;
+	quiUnreachable: boolean;
+}
+
+/**
+ * Safe hostname extraction from a qBit announce URL.
+ *
+ * Private-tracker announce URLs include a passkey in the path or query
+ * (`tracker.beyond-hd.me:2053/announce/PASSKEY` or
+ * `hdbits.org/announce.php?passkey=PASSKEY`). The passkey is equivalent
+ * to login credentials — leaking it in an API response or log would
+ * compromise the user's tracker account.
+ *
+ * Returns ONLY the hostname; discards path, query, fragment, userinfo.
+ * Empty string on parse failure — better to lose tracker identification
+ * than to risk passkey exposure.
+ */
+function extractHostnameSafe(url: string): string {
+	try {
+		return new URL(url).hostname;
+	} catch {
+		return "";
+	}
+}
+
+function buildUnreachableCopy(hash: string): ClusterCopy {
+	return {
+		infoHash: hash,
+		name: null,
+		state: null,
+		category: null,
+		role: "library",
+		tracker: null,
+		trackerHostnames: [],
+		trackers: [],
+		trackerHealth: null,
+		peerSources: { dht: false, pex: false, lsd: false },
+		ratio: null,
+		savePath: null,
+		tags: [],
+		addedOn: null,
+		seedingTime: null,
+		torrentSizeBytes: null,
+		numSeeds: null,
+		numLeechs: null,
+		progress: null,
+		dlSpeedBps: null,
+		upSpeedBps: null,
+		instanceName: null,
+		quiUnreachable: true,
+	};
+}
+
+/**
+ * Enrich a set of torrent hashes into ClusterCopy[] using the
+ * authoritative qui sources:
+ *   - `getTorrentByHash` for state/category/savePath/speeds/etc.
+ *   - `getTrackers` for per-tracker peer counts, health, and the
+ *     DHT/PeX/LSD discovery-source flags (respecting qBit's
+ *     `health: "disabled"` to avoid false positives on private torrents).
+ *
+ * Each hash is fetched in parallel — Promise.all over `hashes`. Per-hash
+ * failures are caught and emitted as `buildUnreachableCopy` entries so
+ * one bad torrent doesn't fail the whole panel.
+ *
+ * `quiInstance` is optional: when null (no qui instance configured for
+ * the user), every hash returns an unreachable copy. The caller surfaces
+ * an `fs_unavailable` action item in that case.
+ */
+async function enrichTorrentHashes(args: {
+	app: import("fastify").FastifyInstance;
+	quiInstance: Awaited<
+		ReturnType<import("../lib/prisma.js").PrismaClient["serviceInstance"]["findFirst"]>
+	> | null;
+	hashes: Iterable<string>;
+	log: import("fastify").FastifyBaseLogger;
+}): Promise<Map<string, ClusterCopy>> {
+	const { app, quiInstance, hashes, log } = args;
+	const enrichedCopies = new Map<string, ClusterCopy>();
+	const hashArr = Array.from(hashes);
+	if (!quiInstance) {
+		for (const hash of hashArr) enrichedCopies.set(hash, buildUnreachableCopy(hash));
+		return enrichedCopies;
+	}
+	const UNREGISTERED_RX = /unregistered|not registered|not found|banned|forbidden/i;
+	await Promise.all(
+		hashArr.map(async (hash) => {
+			try {
+				const client = createQuiClient(app, quiInstance);
+				const torrent = await client.getTorrentByHash(hash);
+				if (!torrent) {
+					enrichedCopies.set(hash, buildUnreachableCopy(hash));
+					return;
+				}
+
+				const perTrackerInfo: PerTrackerInfo[] = [];
+				let trackerHostnames: string[] = [];
+				const peerSources: PeerSources = { dht: false, pex: false, lsd: false };
+				if (typeof torrent.instanceId === "number") {
+					try {
+						const trackers = await client.getTrackers(torrent.instanceId, hash);
+						for (const t of trackers) {
+							if (t.url.startsWith("** ")) {
+								// Pseudo-tracker entries are always present; check health
+								// to determine actual participation. `disabled` = inert
+								// (private torrent, global setting off, per-torrent off).
+								if (t.health === "disabled") continue;
+								const lower = t.url.toLowerCase();
+								if (lower.includes("dht")) peerSources.dht = true;
+								if (lower.includes("pex")) peerSources.pex = true;
+								if (lower.includes("lsd")) peerSources.lsd = true;
+								continue;
+							}
+							const hostname = extractHostnameSafe(t.url);
+							if (!hostname) continue;
+							perTrackerInfo.push({
+								hostname,
+								health: t.health,
+								numSeeds: t.numSeeds,
+								numLeechs: t.numLeeches,
+								numPeers: t.numPeers,
+								tier: typeof t.tier === "number" ? t.tier : null,
+								_msg: t.msg,
+							});
+						}
+						trackerHostnames = perTrackerInfo.map((t) => t.hostname);
+					} catch (trackerErr) {
+						log.debug(
+							{ err: trackerErr, hash, instanceId: torrent.instanceId },
+							"qui cluster-enrichment: getTrackers failed; tracker fields empty",
+						);
+					}
+				}
+
+				let aggregateHealth: ClusterCopy["trackerHealth"] = null;
+				for (const t of perTrackerInfo) {
+					if (t.health !== "not_working") continue;
+					const looksUnregistered = t._msg ? UNREGISTERED_RX.test(t._msg) : false;
+					if (looksUnregistered) {
+						aggregateHealth = "unregistered";
+						break;
+					}
+					aggregateHealth = "tracker_down";
+				}
+				const publicTrackers = perTrackerInfo.map(({ _msg, ...rest }) => {
+					void _msg;
+					return rest;
+				});
+
+				const category = torrent.category || null;
+				const linksMatch = (torrent.savePath ?? "").match(/\/links\/([^/]+)/);
+				const tracker = linksMatch ? linksMatch[1]! : null;
+				const lowerCategory = (category ?? "").toLowerCase();
+				const isPathCrossSeed = linksMatch !== null;
+				const isCategoryCrossSeed =
+					lowerCategory.includes("cross-seed") || lowerCategory.endsWith(".cross");
+				const role: ClusterCopy["role"] =
+					isPathCrossSeed || isCategoryCrossSeed ? "cross-seed" : "library";
+				enrichedCopies.set(hash, {
+					infoHash: hash,
+					name: torrent.name ?? null,
+					state: torrent.state ?? null,
+					category,
+					role,
+					tracker,
+					trackerHostnames,
+					trackers: publicTrackers,
+					trackerHealth: aggregateHealth,
+					peerSources,
+					ratio: typeof torrent.ratio === "number" ? torrent.ratio : null,
+					savePath: torrent.savePath ?? null,
+					tags: Array.isArray(torrent.tags) ? torrent.tags : [],
+					addedOn: torrent.addedOn && torrent.addedOn > 0 ? torrent.addedOn : null,
+					seedingTime:
+						typeof torrent.seedingTime === "number" && torrent.seedingTime > 0
+							? torrent.seedingTime
+							: null,
+					torrentSizeBytes: typeof torrent.size === "number" ? torrent.size.toString() : null,
+					numSeeds: typeof torrent.numSeeds === "number" ? torrent.numSeeds : null,
+					numLeechs: typeof torrent.numLeechs === "number" ? torrent.numLeechs : null,
+					progress: typeof torrent.progress === "number" ? torrent.progress : null,
+					dlSpeedBps: typeof torrent.dlSpeed === "number" ? torrent.dlSpeed : null,
+					upSpeedBps: typeof torrent.upSpeed === "number" ? torrent.upSpeed : null,
+					instanceName: torrent.instanceName ?? null,
+					quiUnreachable: false,
+				});
+			} catch (err) {
+				log.debug(
+					{ err, hash, quiInstanceId: quiInstance.id },
+					"qui cluster-enrichment: per-hash failure; using unreachable fallback",
+				);
+				enrichedCopies.set(hash, buildUnreachableCopy(hash));
+			}
+		}),
+	);
+	return enrichedCopies;
+}
+
 /**
  * qui integration routes — read-only torrent observability for the
  * media-stack dashboard. Each handler:
@@ -1088,268 +1333,21 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 				});
 			}
 
-			interface PerTrackerInfo {
-				hostname: string;
-				health: "working" | "updating" | "not_contacted" | "disabled" | "not_working" | "unknown";
-				numSeeds: number;
-				numLeechs: number;
-				numPeers: number;
-				tier: number | null;
-				/** Raw qBit status msg — used for unregistered/banned detection. NOT sent to client. */
-				_msg?: string;
-			}
-			interface PeerSources {
-				dht: boolean;
-				pex: boolean;
-				lsd: boolean;
-			}
-			interface ClusterCopy {
-				infoHash: string;
-				name: string | null;
-				state: string | null;
-				category: string | null;
-				/** "library" = Sonarr/Radarr-managed; "cross-seed" = qui's cross-seed automation. */
-				role: "library" | "cross-seed";
-				tracker: string | null;
-				/**
-				 * Announce-URL hostnames from qBit's per-torrent tracker list. ONLY
-				 * the hostname portion — the URL path/query (which contains the
-				 * passkey for private trackers) is stripped before this leaves the
-				 * server. DHT/PeX/LSD pseudo-trackers (qui's `"** "` prefix) are
-				 * excluded. Authoritative source for brand identification.
-				 */
-				trackerHostnames: string[];
-				/** Rich per-tracker entries: peer counts, health, tier. */
-				trackers: PerTrackerInfo[];
-				trackerHealth: "unregistered" | "tracker_down" | null;
-				peerSources: PeerSources;
-				ratio: number | null;
-				savePath: string | null;
-				tags: string[];
-				addedOn: number | null;
-				seedingTime: number | null;
-				torrentSizeBytes: string | null;
-				numSeeds: number | null;
-				numLeechs: number | null;
-				progress: number | null;
-				dlSpeedBps: number | null;
-				upSpeedBps: number | null;
-				instanceName: string | null;
-				/** True when qui has no record of this hash (heal-then-drop should remove these). */
-				quiUnreachable: boolean;
-			}
-
-			const buildUnreachableCopy = (hash: string): ClusterCopy => ({
-				infoHash: hash,
-				name: null,
-				state: null,
-				category: null,
-				role: "library",
-				tracker: null,
-				trackerHostnames: [],
-				trackers: [],
-				trackerHealth: null,
-				peerSources: { dht: false, pex: false, lsd: false },
-				ratio: null,
-				savePath: null,
-				tags: [],
-				addedOn: null,
-				seedingTime: null,
-				torrentSizeBytes: null,
-				numSeeds: null,
-				numLeechs: null,
-				progress: null,
-				dlSpeedBps: null,
-				upSpeedBps: null,
-				instanceName: null,
-				quiUnreachable: true,
-			});
-
-			/**
-			 * Safe hostname extraction from a qBit announce URL.
-			 *
-			 * **Why this is sensitive**: private-tracker announce URLs include a
-			 * passkey in the path or query string, e.g.,
-			 * `https://tracker.beyond-hd.me:2053/announce/PASSKEY_HERE` or
-			 * `https://hdbits.org/announce.php?passkey=PASSKEY_HERE`. That passkey
-			 * is equivalent to login credentials for the tracker — leaking it via
-			 * an API response (or worse, a log) would compromise the user's account.
-			 *
-			 * This helper extracts ONLY the hostname (`tracker.beyond-hd.me`,
-			 * `hdbits.org`) and discards the path, query, fragment, and userinfo
-			 * portions of the URL. Empty string on any parse failure — we'd
-			 * rather lose tracker identification than risk passkey exposure.
-			 *
-			 * Pseudo-trackers (`** [DHT]`, `** [PeX]`, `** [LSD]`) are filtered
-			 * by the caller via the qui-prefix convention before this is called.
-			 */
-			const extractHostnameSafe = (url: string): string => {
-				try {
-					return new URL(url).hostname;
-				} catch {
-					return "";
-				}
-			};
-
-			// Fetch each unique hash from qui ONCE. Multiple clusters might
-			// share a hash if a single torrent covers episodes in different
-			// coverage sets (rare but possible for multi-season packs across
-			// arr-side splits) — caching avoids redundant API calls.
+			// Collect all unique hashes across clusters (one shared fetch
+			// per hash; multi-cluster sharing is rare but happens for
+			// multi-season packs split into per-season clusters).
 			const allHashes = new Set<string>();
 			for (const acc of clusterMap.values()) for (const h of acc.hashes) allHashes.add(h);
 
-			const enrichedCopies = new Map<string, ClusterCopy>();
-			if (quiInstance) {
-				await Promise.all(
-					Array.from(allHashes).map(async (hash) => {
-						try {
-							const client = createQuiClient(app, quiInstance!);
-							const torrent = await client.getTorrentByHash(hash);
-							if (!torrent) {
-								enrichedCopies.set(hash, buildUnreachableCopy(hash));
-								return;
-							}
-
-							// Fetch the authoritative tracker list. qBit's announce
-							// URLs contain passkeys, so `extractHostnameSafe` strips
-							// the path/query before any of this data leaves the
-							// server. Pseudo-trackers (DHT/PeX/LSD — qui prefixes
-							// them with "** ") are split out into peerSources so
-							// the UI can show them as discovery channels distinct
-							// from real trackers.
-							const perTrackerInfo: PerTrackerInfo[] = [];
-							let trackerHostnames: string[] = [];
-							const peerSources: PeerSources = { dht: false, pex: false, lsd: false };
-							if (typeof torrent.instanceId === "number") {
-								try {
-									const trackers = await client.getTrackers(torrent.instanceId, hash);
-									for (const t of trackers) {
-										if (t.url.startsWith("** ")) {
-											// Pseudo-tracker entries (`** [DHT]`, `** [PeX]`,
-											// `** [LSD]`) are reported in EVERY torrent's
-											// tracker list — they're not optional metadata.
-											// What changes is the `health` field: qBit sets it
-											// to `disabled` when the pseudo-tracker isn't
-											// actually contributing peers for this torrent.
-											//
-											// Causes of `disabled` health on a pseudo-tracker:
-											//   - Global setting off (qBit preferences)
-											//   - Per-torrent disable flag set
-											//   - Torrent has `private: 1` in its .torrent file
-											//     (private-tracker torrents — DHT/PeX/LSD MUST
-											//     be off to avoid tracker bans)
-											//
-											// The old code keyed on URL prefix only, which
-											// gave false-positive "DHT enabled" reads on
-											// every private-tracker torrent. The fix: trust
-											// qBit's health field as the source of truth.
-											if (t.health === "disabled") continue;
-											const lower = t.url.toLowerCase();
-											if (lower.includes("dht")) peerSources.dht = true;
-											if (lower.includes("pex")) peerSources.pex = true;
-											if (lower.includes("lsd")) peerSources.lsd = true;
-											continue;
-										}
-										const hostname = extractHostnameSafe(t.url);
-										if (!hostname) continue;
-										perTrackerInfo.push({
-											hostname,
-											health: t.health,
-											numSeeds: t.numSeeds,
-											numLeechs: t.numLeeches,
-											numPeers: t.numPeers,
-											tier: typeof t.tier === "number" ? t.tier : null,
-											_msg: t.msg,
-										});
-									}
-									trackerHostnames = perTrackerInfo.map((t) => t.hostname);
-								} catch (trackerErr) {
-									request.log.debug(
-										{ err: trackerErr, hash, instanceId: torrent.instanceId },
-										"qui series-torrents: getTrackers failed; tracker fields empty",
-									);
-								}
-							}
-
-							// Aggregate tracker health: worst status wins. qui's enum
-							// reports `not_working` as the failure state but lumps
-							// unregistered AND network-down together — we inspect the
-							// `msg` to split them. Common qBit patterns:
-							//   "Torrent is not registered with this tracker"
-							//   "torrent not found"
-							//   "unregistered torrent"
-							//   "banned"
-							// All map to `unregistered`. Other `not_working` causes
-							// (DNS failures, refused connections, timeouts) map to
-							// `tracker_down`.
-							const UNREGISTERED_RX = /unregistered|not registered|not found|banned|forbidden/i;
-							let aggregateHealth: ClusterCopy["trackerHealth"] = null;
-							for (const t of perTrackerInfo) {
-								if (t.health !== "not_working") continue;
-								const looksUnregistered = t._msg ? UNREGISTERED_RX.test(t._msg) : false;
-								if (looksUnregistered) {
-									aggregateHealth = "unregistered";
-									break; // hard-stop, worst possible
-								}
-								aggregateHealth = "tracker_down"; // keep scanning for unregistered
-							}
-							// Strip the internal `_msg` field before emitting — it may
-							// contain tracker-specific diagnostic text we don't need
-							// to leak (and isn't part of the wire shape).
-							const publicTrackers = perTrackerInfo.map(({ _msg, ...rest }) => {
-								void _msg;
-								return rest;
-							});
-
-							const category = torrent.category || null;
-							const linksMatch = (torrent.savePath ?? "").match(/\/links\/([^/]+)/);
-							const tracker = linksMatch ? linksMatch[1]! : null;
-							const lowerCategory = (category ?? "").toLowerCase();
-							const isPathCrossSeed = linksMatch !== null;
-							const isCategoryCrossSeed =
-								lowerCategory.includes("cross-seed") || lowerCategory.endsWith(".cross");
-							const role: ClusterCopy["role"] =
-								isPathCrossSeed || isCategoryCrossSeed ? "cross-seed" : "library";
-							enrichedCopies.set(hash, {
-								infoHash: hash,
-								name: torrent.name ?? null,
-								state: torrent.state ?? null,
-								category,
-								role,
-								tracker,
-								trackerHostnames,
-								trackers: publicTrackers,
-								trackerHealth: aggregateHealth,
-								peerSources,
-								ratio: typeof torrent.ratio === "number" ? torrent.ratio : null,
-								savePath: torrent.savePath ?? null,
-								tags: Array.isArray(torrent.tags) ? torrent.tags : [],
-								addedOn: torrent.addedOn && torrent.addedOn > 0 ? torrent.addedOn : null,
-								seedingTime:
-									typeof torrent.seedingTime === "number" && torrent.seedingTime > 0
-										? torrent.seedingTime
-										: null,
-								torrentSizeBytes: typeof torrent.size === "number" ? torrent.size.toString() : null,
-								numSeeds: typeof torrent.numSeeds === "number" ? torrent.numSeeds : null,
-								numLeechs: typeof torrent.numLeechs === "number" ? torrent.numLeechs : null,
-								progress: typeof torrent.progress === "number" ? torrent.progress : null,
-								dlSpeedBps: typeof torrent.dlSpeed === "number" ? torrent.dlSpeed : null,
-								upSpeedBps: typeof torrent.upSpeed === "number" ? torrent.upSpeed : null,
-								instanceName: torrent.instanceName ?? null,
-								quiUnreachable: false,
-							});
-						} catch (err) {
-							request.log.debug(
-								{ err, hash, quiInstanceId: quiInstance!.id },
-								"qui series-torrents: enrichment failed; using unreachable fallback",
-							);
-							enrichedCopies.set(hash, buildUnreachableCopy(hash));
-						}
-					}),
-				);
-			} else {
-				for (const hash of allHashes) enrichedCopies.set(hash, buildUnreachableCopy(hash));
-			}
+			// Enrich via the shared module-scope helper. Same code path
+			// the /qui/movie/.../torrents route uses — guarantees both
+			// routes stay in lockstep on trust signals.
+			const enrichedCopies = await enrichTorrentHashes({
+				app,
+				quiInstance,
+				hashes: allHashes,
+				log: request.log,
+			});
 
 			// Build cluster objects. Sort copies within a cluster: library-role
 			// first (Sonarr/Radarr-managed), then by tracker name for stable
@@ -1653,6 +1651,304 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 				actionItems,
 				clusters,
 				seasonGroups,
+			});
+		},
+	);
+
+	// Movie-level torrent overview.
+	//
+	// Same response shape as the series-torrents route, but for a single
+	// movie file. There's only ever ONE cluster (the movie file itself,
+	// covered by N tracker copies via qui's cross-seed automation), and
+	// `seasonGroups` is always empty — the frontend uses that as the
+	// signal to render clusters flat instead of season-grouped.
+	//
+	// Same trust-correctness pipeline as series:
+	//   - Inode multi-hash lookup against the *arr-managed file
+	//   - Stale cache healing
+	//   - Per-tracker enrichment via getTrackers (authoritative)
+	//   - DHT/PeX/LSD detection respecting qBit's `health` field
+	//   - Action items (stuck, dormant, fs_unavailable, healed)
+	app.get<{ Params: { arrInstanceId: string; arrItemId: string } }>(
+		"/qui/movie/:arrInstanceId/:arrItemId/torrents",
+		async (request, reply) => {
+			const userId = request.currentUser!.id;
+			const { arrInstanceId } = request.params;
+			const arrItemId = Number.parseInt(request.params.arrItemId, 10);
+			if (!Number.isFinite(arrItemId)) {
+				return reply.code(400).send({ error: "arrItemId must be a number" });
+			}
+
+			// Ownership: confirm the user owns the (instance, movie) pair
+			// before pulling its torrent data. The unique constraint
+			// `(instanceId, arrItemId, itemType)` guarantees one row max.
+			const movieRow = await app.prisma.libraryCache.findFirst({
+				where: {
+					instanceId: arrInstanceId,
+					arrItemId,
+					itemType: "movie",
+					instance: { userId },
+				},
+				select: {
+					id: true,
+					title: true,
+					year: true,
+					infoHash: true,
+					infoHashSource: true,
+					sizeOnDisk: true,
+					qualityProfileName: true,
+					data: true,
+				},
+			});
+			if (!movieRow) {
+				return reply.code(404).send({ error: "Movie not found" });
+			}
+
+			// Extract the on-disk file path from the data blob. Same logic
+			// the inode-backfill uses (`infohash-backfill-by-path.ts`). When
+			// the movie has no file or the blob is malformed, we still emit
+			// a valid response — just with stuckCount = 1 and an empty
+			// cluster list.
+			let libraryPath: string | null = null;
+			let releaseGroup: string | null = null;
+			try {
+				const parsed = JSON.parse(movieRow.data) as Record<string, unknown>;
+				const path = typeof parsed.path === "string" ? parsed.path : null;
+				const movieFile = parsed.movieFile as Record<string, unknown> | null | undefined;
+				const relativePath =
+					movieFile && typeof movieFile === "object" && typeof movieFile.relativePath === "string"
+						? movieFile.relativePath
+						: null;
+				if (path && relativePath) {
+					libraryPath = `${path.replace(/\/+$/, "")}/${relativePath}`;
+				}
+				if (movieFile && typeof movieFile === "object") {
+					const rg = movieFile.releaseGroup;
+					if (typeof rg === "string") releaseGroup = rg;
+				}
+			} catch (err) {
+				request.log.debug(
+					{ err, movieId: movieRow.id },
+					"qui movie-torrents: data blob parse failed; treating movie as having no file",
+				);
+			}
+
+			// Locate the FS-enabled qui instance (preferred for inode lookups)
+			// or fall back to any enabled qui for cached-only mode.
+			const fsInstance = await app.prisma.serviceInstance.findFirst({
+				where: { userId, service: "QUI", enabled: true, hasLocalFilesystemAccess: true },
+			});
+
+			// Build the inode index — same timeout race the series route uses
+			// to avoid blocking on cold cache builds beyond the proxy limit.
+			let inodeIndex: Awaited<ReturnType<typeof buildFileIdIndex>> | null = null;
+			if (fsInstance) {
+				const indexClient = createQuiClient(app, fsInstance);
+				const buildPromise = buildFileIdIndex(
+					indexClient,
+					fsInstance,
+					request.log,
+					app.prisma,
+				).catch((err) => {
+					request.log.warn(
+						{ err, quiInstanceId: fsInstance.id },
+						"qui movie-torrents: inode index build failed; using cached-hash fallback",
+					);
+					return null;
+				});
+				let timeoutHandle: NodeJS.Timeout | undefined;
+				const timeoutPromise = new Promise<null>((resolve) => {
+					timeoutHandle = setTimeout(() => resolve(null), 22000);
+				});
+				try {
+					inodeIndex = await Promise.race([buildPromise, timeoutPromise]);
+				} finally {
+					if (timeoutHandle) clearTimeout(timeoutHandle);
+				}
+			}
+
+			// Multi-hash lookup for the movie file. When the inode index
+			// found multiple hashes (cross-seeded content), all show up in
+			// the cluster. When the cached hash is stale (in DB but not in
+			// the live index), heal it to the canonical inode hash.
+			let inodeHashes: string[] = [];
+			if (inodeIndex && libraryPath) {
+				inodeHashes = await getAllHashesForFileId(libraryPath, inodeIndex);
+			}
+
+			const cachedHashIsStale =
+				movieRow.infoHash !== null &&
+				inodeHashes.length > 0 &&
+				!inodeHashes.some((h) => h.toLowerCase() === movieRow.infoHash!.toLowerCase());
+
+			let healedEpisodes = 0;
+			if (cachedHashIsStale && inodeHashes.length > 0) {
+				await app.prisma.libraryCache.update({
+					where: { id: movieRow.id },
+					data: { infoHash: inodeHashes[0], infoHashSource: "inode" },
+				});
+				healedEpisodes = 1;
+				request.log.info(
+					{ userId, arrInstanceId, arrMovieId: arrItemId },
+					"qui movie-torrents: healed stale cached infoHash",
+				);
+			}
+
+			// Effective hashes for the movie file:
+			//   - Inode hashes when available (preferred — live)
+			//   - Else the cached hash (when not stale)
+			//   - Empty when stuck (no torrent at all)
+			const effectiveHashes = new Set<string>();
+			for (const h of inodeHashes) effectiveHashes.add(h);
+			if (movieRow.infoHash && !cachedHashIsStale) effectiveHashes.add(movieRow.infoHash);
+
+			// Resolve quiInstance for enrichment (fsInstance preferred for path-
+			// based matching; fall back to any enabled qui).
+			let quiInstance: Awaited<ReturnType<typeof app.prisma.serviceInstance.findFirst>> =
+				fsInstance;
+			if (!quiInstance && effectiveHashes.size > 0) {
+				quiInstance = await app.prisma.serviceInstance.findFirst({
+					where: { userId, service: "QUI", enabled: true },
+				});
+			}
+
+			// Enrich via the shared helper. Same trust pipeline as series.
+			const enrichedCopies = await enrichTorrentHashes({
+				app,
+				quiInstance,
+				hashes: effectiveHashes,
+				log: request.log,
+			});
+
+			// Build the single cluster covering this movie file (when correlated).
+			// No subset detection needed — movies have exactly zero or one cluster.
+			interface MovieCluster {
+				key: string;
+				episodeFileIds: number[];
+				episodeCount: number;
+				seasons: number[];
+				coverageLabel: string;
+				totalSizeBytes: string;
+				qualityName: string | null;
+				releaseGroup: string | null;
+				inodeVerified: boolean;
+				copies: ClusterCopy[];
+				isDormant: boolean;
+				primaryState: string | null;
+				coveredBy: null;
+			}
+			const clusters: MovieCluster[] = [];
+			if (effectiveHashes.size > 0) {
+				const allCopies = Array.from(effectiveHashes).map((h) => enrichedCopies.get(h)!);
+				const reachable = allCopies.filter((c) => !c.quiUnreachable);
+				const copies = reachable.length > 0 ? reachable : allCopies;
+				copies.sort((a, b) => {
+					if (a.role !== b.role) return a.role === "library" ? -1 : 1;
+					return (a.tracker ?? "").localeCompare(b.tracker ?? "");
+				});
+				const isDormant =
+					copies.length > 0 &&
+					copies.every(
+						(c) => (c.numSeeds ?? 0) === 0 && (c.numLeechs ?? 0) === 0 && (c.ratio ?? 1) < 1,
+					);
+				const primaryState = copies.find((c) => c.state !== null)?.state ?? null;
+				const movieTitle = movieRow.year ? `${movieRow.title} (${movieRow.year})` : movieRow.title;
+				clusters.push({
+					key: Array.from(effectiveHashes).sort().join("|"),
+					// Movies have no episode_file_id concept — empty array signals
+					// "this cluster has no episode-file granularity." Subset detection
+					// (which keys on episodeFileIds) never picks this up, which is
+					// correct: a movie cluster has no "parent" pack to defer to.
+					episodeFileIds: [],
+					episodeCount: 1,
+					seasons: [],
+					coverageLabel: movieTitle,
+					totalSizeBytes: movieRow.sizeOnDisk.toString(),
+					qualityName: movieRow.qualityProfileName,
+					releaseGroup,
+					inodeVerified: inodeHashes.length > 0 || movieRow.infoHashSource === "inode",
+					copies,
+					isDormant,
+					primaryState,
+					coveredBy: null,
+				});
+			}
+
+			const stuckEpisodes = effectiveHashes.size === 0 ? 1 : 0;
+			const correlatedEpisodes = 1 - stuckEpisodes;
+			const viaInodeEpisodes = inodeHashes.length > 0 ? 1 : 0;
+
+			// Action items — same vocabulary as the series route so the
+			// frontend renders them identically.
+			interface SeriesActionItem {
+				kind: "stuck_episodes" | "stale_cache_healed" | "dormant_content" | "fs_unavailable";
+				severity: "warning" | "info";
+				title: string;
+				detail: string;
+				count?: number;
+			}
+			const actionItems: SeriesActionItem[] = [];
+			if (stuckEpisodes > 0) {
+				actionItems.push({
+					kind: "stuck_episodes",
+					severity: "warning",
+					title: "Movie file not seeding",
+					detail:
+						"This movie has no live torrent. Use cross-seed search above or re-grab via Radarr.",
+					count: 1,
+				});
+			}
+			if (healedEpisodes > 0) {
+				actionItems.push({
+					kind: "stale_cache_healed",
+					severity: "info",
+					title: "Stale cache entry healed",
+					detail:
+						"The old infoHash reference was replaced with the current live torrent. Future loads will be accurate.",
+					count: 1,
+				});
+			}
+			if (clusters[0]?.isDormant) {
+				actionItems.push({
+					kind: "dormant_content",
+					severity: "warning",
+					title: "All copies have no peers",
+					detail:
+						"Ratio is below 1.0 and no seeders/leechers are connected. Consider re-seeding or removing.",
+					count: 1,
+				});
+			}
+			if (!fsInstance) {
+				actionItems.push({
+					kind: "fs_unavailable",
+					severity: "info",
+					title: "No FS-enabled qui instance",
+					detail:
+						"Cross-seed coverage relies on cached hashes only. Enable filesystem access on a qui instance for live inode matching.",
+				});
+			}
+
+			request.log.info(
+				{
+					userId,
+					arrMovieId: arrItemId,
+					stuckEpisodes,
+					clusterCount: clusters.length,
+					copies: clusters[0]?.copies.length ?? 0,
+				},
+				"qui movie-torrents: response summary",
+			);
+
+			return reply.send({
+				seriesTitle: movieRow.title, // shape parity — frontend reuses the same field name
+				totalEpisodes: 1,
+				correlatedEpisodes,
+				viaInodeEpisodes,
+				stuckEpisodes,
+				healedEpisodes,
+				actionItems,
+				clusters,
+				seasonGroups: [], // movies never have season grouping
 			});
 		},
 	);

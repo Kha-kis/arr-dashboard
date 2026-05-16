@@ -20,8 +20,8 @@ import { getLinuxInstanceName, getLinuxIsoName, useIncognitoMode } from "../../.
 import { ExternalLinksSection } from "../../discover/components/media-detail-sections";
 import { formatBytes, formatRuntime, SERVICE_COLORS } from "../lib/library-utils";
 import { PosterImage } from "./poster-image";
+import { SeriesTorrentsPanel } from "./series-torrents-panel";
 import { SyncLabelsNowButton } from "./sync-labels-now-button";
-import { TorrentHealthPanel } from "./torrent-health-panel";
 
 export interface ItemDetailsModalProps {
 	item: LibraryItem;
@@ -469,10 +469,11 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 								typeof item.id === "string" ? Number.parseInt(item.id, 10) : item.id;
 							if (!Number.isFinite(arrItemId)) return null;
 							return (
-								<TorrentHealthPanel
+								<SeriesTorrentsPanel
 									arrInstanceId={item.instanceId}
 									arrItemId={arrItemId}
-									itemType={item.type}
+									seriesTitle={item.title}
+									itemType="movie"
 								/>
 							);
 						})()}

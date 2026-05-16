@@ -509,6 +509,12 @@ export const quiKeys = {
 	// when a cross-seed trigger or manual backfill changes correlation.
 	seriesTorrents: (arrInstanceId: string, arrItemId: number) =>
 		["qui", "series-torrents", arrInstanceId, arrItemId] as const,
+	// Per-movie aggregate — single cluster + tracker copies. Same wire shape
+	// as seriesTorrents but the data path queries Radarr/library_cache
+	// instead of episode_file_cache. Distinct key so invalidations don't
+	// collide and React Query can cache each independently.
+	movieTorrents: (arrInstanceId: string, arrItemId: number) =>
+		["qui", "movie-torrents", arrInstanceId, arrItemId] as const,
 	crossSeedAvailability: () => ["qui", "cross-seed", "availability"] as const,
 	crossSeedDiscovery: () => ["qui", "cross-seed", "discover"] as const,
 	activity: (eventType?: string) =>

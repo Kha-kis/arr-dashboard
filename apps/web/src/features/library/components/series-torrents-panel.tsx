@@ -16,7 +16,11 @@ import {
 import { useState } from "react";
 import { GlassmorphicCard } from "../../../components/layout/premium-containers";
 import { Button } from "../../../components/ui/button";
-import { useSeriesTorrents, useTriggerQuiCrossSeedSearch } from "../../../hooks/api/useQui";
+import {
+	useMovieTorrents,
+	useSeriesTorrents,
+	useTriggerQuiCrossSeedSearch,
+} from "../../../hooks/api/useQui";
 import type {
 	SeriesActionItem,
 	SeriesSeasonGroup,
@@ -29,7 +33,16 @@ import { getTrackerBrandByHostname, resolveCopyTrackerBrand } from "../../../lib
 interface Props {
 	arrInstanceId: string;
 	arrItemId: number;
+	/** Display title for the panel header (series or movie). */
 	seriesTitle: string;
+	/**
+	 * Which kind of library item we're showing. `series` queries the
+	 * per-episode endpoint and renders season-grouped clusters. `movie`
+	 * queries the per-movie endpoint and renders the single cluster flat
+	 * (its response has `seasonGroups: []`). Default is `series` for
+	 * backward compat with existing call sites.
+	 */
+	itemType?: "series" | "movie";
 }
 
 const formatBytes = (raw: string | number | bigint): string => {
@@ -98,9 +111,29 @@ const healthDot = (copy: SeriesTorrentCopy): string => {
  *   - Health-dot strip on every cluster card replaces buried metadata
  *     with a one-glance copy-by-copy health read.
  */
-export const SeriesTorrentsPanel: React.FC<Props> = ({ arrInstanceId, arrItemId, seriesTitle }) => {
+export const SeriesTorrentsPanel: React.FC<Props> = ({
+	arrInstanceId,
+	arrItemId,
+	seriesTitle,
+	itemType = "series",
+}) => {
 	const [isIncognito] = useIncognitoMode();
-	const seriesQuery = useSeriesTorrents({ arrInstanceId, arrItemId });
+	// Pick the right data source. Both hooks return the same wire shape;
+	// the movie response just has `seasonGroups: []` to signal flat rendering.
+	// We call both unconditionally with `enabled` flags to satisfy React's
+	// rules-of-hooks (no conditional hook calls) — the disabled one never
+	// fetches.
+	const seriesQuery = useSeriesTorrents({
+		arrInstanceId,
+		arrItemId,
+		enabled: itemType === "series",
+	});
+	const movieQuery = useMovieTorrents({
+		arrInstanceId,
+		arrItemId,
+		enabled: itemType === "movie",
+	});
+	const dataQuery = itemType === "series" ? seriesQuery : movieQuery;
 	const mutation = useTriggerQuiCrossSeedSearch();
 	const [searchOutcome, setSearchOutcome] = useState<
 		{ kind: "success"; runId: number; scanRoot: string } | { kind: "error"; message: string } | null
@@ -114,14 +147,14 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({ arrInstanceId, arrItemId,
 			const result = await mutation.mutateAsync({
 				arrInstanceId,
 				arrItemId,
-				itemType: "series",
+				itemType,
 			});
 			setSearchOutcome({
 				kind: "success",
 				runId: result.runId,
 				scanRoot: result.scanRoot,
 			});
-			setTimeout(() => seriesQuery.refetch(), 5000);
+			setTimeout(() => dataQuery.refetch(), 5000);
 		} catch (err) {
 			setSearchOutcome({
 				kind: "error",
@@ -148,14 +181,14 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({ arrInstanceId, arrItemId,
 		});
 	};
 
-	const data = seriesQuery.data;
+	const data = dataQuery.data;
 	const total = data?.totalEpisodes ?? 0;
 	const correlated = data?.correlatedEpisodes ?? 0;
 	const viaInode = data?.viaInodeEpisodes ?? 0;
 	const stuck = data?.stuckEpisodes ?? 0;
 	const correlationPct = total > 0 ? Math.round((correlated / total) * 100) : 0;
 
-	if (seriesQuery.isLoading) {
+	if (dataQuery.isLoading) {
 		return (
 			<GlassmorphicCard className="space-y-3 p-4">
 				<div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -166,15 +199,15 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({ arrInstanceId, arrItemId,
 		);
 	}
 
-	if (seriesQuery.isError) {
+	if (dataQuery.isError) {
 		return (
 			<GlassmorphicCard className="space-y-2 p-4">
 				<div className="flex items-center gap-2 text-sm">
 					<HelpCircle className="h-4 w-4 text-amber-500" />
-					Couldn&apos;t load series torrent info.
+					Couldn&apos;t load torrent info.
 				</div>
 				<p className="text-xs text-muted-foreground">
-					{seriesQuery.error instanceof Error ? seriesQuery.error.message : ""}
+					{dataQuery.error instanceof Error ? dataQuery.error.message : ""}
 				</p>
 			</GlassmorphicCard>
 		);
@@ -273,7 +306,13 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({ arrInstanceId, arrItemId,
 			{/* Action items — what the user should DO */}
 			{data.actionItems.length > 0 && <ActionItemList items={data.actionItems} />}
 
-			{/* Season-grouped content clusters */}
+			{/* Content rendering — three branches:
+			 *   1. seasonGroups populated → series mode, group by season.
+			 *   2. seasonGroups empty AND clusters populated → movie mode,
+			 *      render clusters flat under one heading.
+			 *   3. seasonGroups empty AND clusters empty → genuine empty
+			 *      state (no torrent and no file yet).
+			 */}
 			{data.seasonGroups.length > 0 ? (
 				<div className="space-y-2">
 					<h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -297,9 +336,30 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({ arrInstanceId, arrItemId,
 						))}
 					</div>
 				</div>
+			) : data.clusters.length > 0 ? (
+				<div className="space-y-2">
+					<h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+						Content
+					</h4>
+					<div className="space-y-1.5">
+						{data.clusters.map((cluster) => (
+							<ClusterCard
+								key={cluster.key}
+								cluster={cluster}
+								expanded={expandedClusters.has(cluster.key)}
+								onToggle={() => toggleCluster(cluster.key)}
+								incognito={isIncognito}
+							/>
+						))}
+					</div>
+				</div>
 			) : (
 				<div className="rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs">
-					<p className="text-amber-200">No episodes found for this series.</p>
+					<p className="text-amber-200">
+						{itemType === "movie"
+							? "No torrent correlated yet. Use cross-seed search above or trigger a re-grab from Radarr."
+							: "No episodes found for this series."}
+					</p>
 				</div>
 			)}
 		</GlassmorphicCard>

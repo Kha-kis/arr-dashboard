@@ -489,3 +489,18 @@ export async function fetchSeriesTorrents(args: {
 		`/api/qui/series/${encodeURIComponent(args.arrInstanceId)}/${args.arrItemId}/torrents`,
 	);
 }
+
+/**
+ * Per-movie torrent overview. Same wire shape as fetchSeriesTorrents
+ * with `seasonGroups: []` (movies never have season grouping) and
+ * `clusters: [oneOrZero]`. The frontend panel uses the empty
+ * seasonGroups as the signal to render clusters flat.
+ */
+export async function fetchMovieTorrents(args: {
+	arrInstanceId: string;
+	arrItemId: number;
+}): Promise<SeriesTorrentsResponse> {
+	return apiRequest<SeriesTorrentsResponse>(
+		`/api/qui/movie/${encodeURIComponent(args.arrInstanceId)}/${args.arrItemId}/torrents`,
+	);
+}

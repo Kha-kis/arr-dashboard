@@ -62,12 +62,10 @@ import {
 	isAnimeFromKeywords,
 } from "../../discover/lib/seerr-image-utils";
 import { formatBytes, formatRuntime, SERVICE_COLORS } from "../lib/library-utils";
-import { CrossSeedSearchPanel } from "./cross-seed-search-panel";
 import { PlexTagsEditor } from "./plex-tags-editor";
 import { PosterImage } from "./poster-image";
 import { SeasonEpisodeList } from "./season-episode-list";
 import { SeriesTorrentsPanel } from "./series-torrents-panel";
-import { TorrentHealthPanel } from "./torrent-health-panel";
 
 export interface EnrichedDetailModalProps {
 	item: LibraryItem;
@@ -1027,17 +1025,17 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 					 * `item-details-modal.tsx` mounts this panel too but it's used
 					 * by a different entry path; this is the modal users actually
 					 * see when they click into a library item from the main grid. */}
-					{/* Torrent / cross-seed panels — branches by item type:
-					 *   - Movie: single-torrent TorrentHealthPanel + per-movie
-					 *     cross-seed search.
-					 *   - Series: SeriesTorrentsPanel showing per-episode
-					 *     correlation summary, list of distinct torrents
-					 *     covering the series, and a series-level cross-seed
-					 *     search (qui dir-scans the whole series folder
-					 *     recursively).
-					 *   - Other types (artist/author): no panel today;
-					 *     follow-up when Lidarr per-track + Readarr support
-					 *     lands. */}
+					{/* Torrent / cross-seed panels — unified panel for both movies
+					 * and series via the `itemType` prop. The panel switches
+					 * between the per-episode endpoint (series) and the
+					 * per-movie endpoint (movie); the response shape is
+					 * identical apart from `seasonGroups` being empty for
+					 * movies, which makes the panel render clusters flat
+					 * instead of season-grouped.
+					 *
+					 * Other item types (artist/author) don't have a panel
+					 * today — follow-up when Lidarr per-track + Readarr
+					 * support lands. */}
 					{item.instanceId &&
 						(() => {
 							const arrItemId =
@@ -1045,21 +1043,12 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 							if (!Number.isFinite(arrItemId)) return null;
 							if (isMovie) {
 								return (
-									<>
-										<TorrentHealthPanel
-											arrInstanceId={item.instanceId as string}
-											arrItemId={arrItemId}
-											itemType={item.type}
-										/>
-										{item.hasFile === true && (
-											<CrossSeedSearchPanel
-												arrInstanceId={item.instanceId as string}
-												arrItemId={arrItemId}
-												itemType={item.type}
-												itemTitle={item.title}
-											/>
-										)}
-									</>
+									<SeriesTorrentsPanel
+										arrInstanceId={item.instanceId as string}
+										arrItemId={arrItemId}
+										seriesTitle={item.title}
+										itemType="movie"
+									/>
 								);
 							}
 							if (item.type === "series") {
@@ -1068,6 +1057,7 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 										arrInstanceId={item.instanceId as string}
 										arrItemId={arrItemId}
 										seriesTitle={item.title}
+										itemType="series"
 									/>
 								);
 							}

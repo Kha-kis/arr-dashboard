@@ -15,6 +15,7 @@ import {
 	type BulkTorrentActionArgs,
 	fetchCrossSeedAvailability,
 	fetchCrossSeedDiscoveryBatch,
+	fetchMovieTorrents,
 	fetchQuiActionLog,
 	fetchQuiActivityFeed,
 	fetchQuiAttention,
@@ -283,6 +284,30 @@ export const useSeriesTorrents = (args: {
 		// Episode correlation state changes slowly (only on backfill
 		// scheduler ticks or after a manual cross-seed trigger). Polling
 		// in the background would just hammer the server.
+		refetchOnWindowFocus: true,
+		staleTime: POLLING_STANDARD,
+	});
+};
+
+/**
+ * Per-movie torrent panel data. Same wire shape as `useSeriesTorrents`
+ * with `seasonGroups: []` and `clusters: [oneOrZero]`. The shared
+ * LibraryItemTorrentsPanel renders both responses; the empty
+ * seasonGroups signals "render flat" instead of season-grouped.
+ */
+export const useMovieTorrents = (args: {
+	arrInstanceId: string;
+	arrItemId: number;
+	enabled?: boolean;
+}) => {
+	return useQuery<SeriesTorrentsResponse>({
+		queryKey: quiKeys.movieTorrents(args.arrInstanceId, args.arrItemId),
+		queryFn: () =>
+			fetchMovieTorrents({
+				arrInstanceId: args.arrInstanceId,
+				arrItemId: args.arrItemId,
+			}),
+		enabled: args.enabled !== false,
 		refetchOnWindowFocus: true,
 		staleTime: POLLING_STANDARD,
 	});
