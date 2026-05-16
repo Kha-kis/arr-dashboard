@@ -373,6 +373,15 @@ export interface SeriesTorrentCopy {
 	/** Live upload speed in bytes/sec. Null when unavailable, 0 when idle. */
 	upSpeedBps: number | null;
 	instanceName: string | null;
+	/**
+	 * qBit instance ID (numeric) — needed to address this torrent in
+	 * qui actions (pause/resume/etc). Null when qui's response omitted
+	 * it. The corresponding action endpoint is
+	 * `/api/qui/instances/${quiInstanceId}/qbit/${qbitInstanceId}/torrents/${hash}/actions/${action}`.
+	 */
+	qbitInstanceId: number | null;
+	/** qui ServiceInstance ID (cuid) used to fetch this torrent. */
+	quiInstanceId: string | null;
 	quiUnreachable: boolean;
 }
 

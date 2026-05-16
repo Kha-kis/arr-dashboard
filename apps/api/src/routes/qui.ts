@@ -148,6 +148,19 @@ interface ClusterCopy {
 	dlSpeedBps: number | null;
 	upSpeedBps: number | null;
 	instanceName: string | null;
+	/**
+	 * qBit instance ID (numeric) for this torrent — needed to address it
+	 * for qui actions like pause/resume/recheck/reannounce. Null when
+	 * qui's response didn't include an instance ID (rare edge case in
+	 * legacy single-instance setups).
+	 */
+	qbitInstanceId: number | null;
+	/**
+	 * qui ServiceInstance ID (cuid) we used to fetch this torrent's data.
+	 * Combined with qbitInstanceId, this is the addressing tuple for any
+	 * action mutation (`POST /qui/instances/:id/qbit/:instanceId/torrents/:hash/actions/:action`).
+	 */
+	quiInstanceId: string | null;
 	quiUnreachable: boolean;
 }
 
@@ -196,6 +209,8 @@ function buildUnreachableCopy(hash: string): ClusterCopy {
 		dlSpeedBps: null,
 		upSpeedBps: null,
 		instanceName: null,
+		qbitInstanceId: null,
+		quiInstanceId: null,
 		quiUnreachable: true,
 	};
 }
@@ -331,6 +346,8 @@ async function enrichTorrentHashes(args: {
 					dlSpeedBps: typeof torrent.dlSpeed === "number" ? torrent.dlSpeed : null,
 					upSpeedBps: typeof torrent.upSpeed === "number" ? torrent.upSpeed : null,
 					instanceName: torrent.instanceName ?? null,
+					qbitInstanceId: typeof torrent.instanceId === "number" ? torrent.instanceId : null,
+					quiInstanceId: quiInstance.id,
 					quiUnreachable: false,
 				});
 			} catch (err) {

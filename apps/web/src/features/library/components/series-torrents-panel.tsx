@@ -10,12 +10,21 @@ import {
 	HelpCircle,
 	Info,
 	Loader2,
+	MoreHorizontal,
 	Search,
 	Sparkles,
 } from "lucide-react";
 import { useState } from "react";
 import { GlassmorphicCard } from "../../../components/layout/premium-containers";
 import { Button } from "../../../components/ui/button";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+} from "../../../components/ui/dropdown-menu";
+import { toast } from "../../../components/ui/toast";
 import {
 	Tooltip,
 	TooltipContent,
@@ -24,6 +33,7 @@ import {
 } from "../../../components/ui/tooltip";
 import {
 	useMovieTorrents,
+	useQuiTorrentAction,
 	useSeriesTorrents,
 	useTrackerIcons,
 	useTriggerQuiCrossSeedSearch,
@@ -827,6 +837,42 @@ const CopyRow: React.FC<{
 		trackerHostnames: copy.trackerHostnames,
 		icons: trackerIcons,
 	});
+
+	// Action menu mutation. Non-destructive actions (pause/resume/recheck/
+	// reannounce) fire optimistically with toast confirmation. The hook
+	// auto-invalidates torrent-state queries so the badge re-renders
+	// once qui returns.
+	const actionMutation = useQuiTorrentAction();
+	const canAct =
+		!copy.quiUnreachable &&
+		typeof copy.qbitInstanceId === "number" &&
+		typeof copy.quiInstanceId === "string";
+	const runAction = (action: "pause" | "resume" | "recheck" | "reannounce", verb: string) => {
+		if (!canAct) return;
+		actionMutation.mutate(
+			{
+				quiInstanceId: copy.quiInstanceId!,
+				qbitInstanceId: copy.qbitInstanceId!,
+				hash: copy.infoHash,
+				action,
+			},
+			{
+				onSuccess: () => toast.success(`${verb}: ${copy.name ?? copy.infoHash.slice(0, 12)}`),
+				onError: (err) =>
+					toast.error(
+						`${verb} failed: ${err instanceof Error ? err.message : "qui rejected the action"}`,
+					),
+			},
+		);
+	};
+	const copyHash = async () => {
+		try {
+			await navigator.clipboard.writeText(copy.infoHash);
+			toast.success("Hash copied to clipboard");
+		} catch {
+			toast.error("Couldn't copy — clipboard permission denied");
+		}
+	};
 	return (
 		<div className="space-y-1 rounded bg-card/40 px-2 py-1.5 text-[11px]">
 			<div className="flex flex-wrap items-center gap-1.5">
@@ -885,6 +931,41 @@ const CopyRow: React.FC<{
 						not in qui
 					</span>
 				)}
+				<DropdownMenu>
+					<DropdownMenuTrigger asChild>
+						<button
+							type="button"
+							aria-label="Torrent actions"
+							className="ml-auto inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-card/70 hover:text-foreground focus:outline-none focus:ring-1 focus:ring-foreground/40"
+							disabled={actionMutation.isPending}
+						>
+							{actionMutation.isPending ? (
+								<Loader2 className="h-3.5 w-3.5 animate-spin" />
+							) : (
+								<MoreHorizontal className="h-3.5 w-3.5" />
+							)}
+						</button>
+					</DropdownMenuTrigger>
+					<DropdownMenuContent align="end" className="text-[11px]">
+						<DropdownMenuItem onClick={() => runAction("pause", "Paused")} disabled={!canAct}>
+							Pause
+						</DropdownMenuItem>
+						<DropdownMenuItem onClick={() => runAction("resume", "Resumed")} disabled={!canAct}>
+							Resume
+						</DropdownMenuItem>
+						<DropdownMenuItem onClick={() => runAction("recheck", "Rechecked")} disabled={!canAct}>
+							Force recheck
+						</DropdownMenuItem>
+						<DropdownMenuItem
+							onClick={() => runAction("reannounce", "Reannounced")}
+							disabled={!canAct}
+						>
+							Reannounce
+						</DropdownMenuItem>
+						<DropdownMenuSeparator />
+						<DropdownMenuItem onClick={copyHash}>Copy infohash</DropdownMenuItem>
+					</DropdownMenuContent>
+				</DropdownMenu>
 			</div>
 			{copy.name && (
 				<div className="break-all font-mono text-[10px] text-muted-foreground" title={copy.name}>
