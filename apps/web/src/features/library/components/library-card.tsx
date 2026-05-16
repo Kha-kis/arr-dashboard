@@ -530,6 +530,20 @@ export const LibraryCard = memo(function LibraryCard({
 									)}
 								</>
 							)}
+							{/* "Stuck" indicator: the library item has a file on disk but no
+							 * qui torrent state has been correlated. Either the canonical
+							 * infoHash isn't in qui's inventory, or backfill hasn't reached
+							 * this row yet. Surfaces a silently-broken case that's
+							 * otherwise invisible on the card. quiState != null is the
+							 * "we have correlation" path; null + hasFile is "stuck". */}
+							{!quiState && hasFile && (
+								<span
+									className="inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-amber-200"
+									title="File on disk but no torrent in qui. Run cross-seed search or re-grab to fix."
+								>
+									Not seeding
+								</span>
+							)}
 							{quiState && <TorrentStateBadge state={quiState.state} ratio={quiState.ratio} />}
 							{typeof tmdbRating === "number" && tmdbRating > 0 && (
 								<span
