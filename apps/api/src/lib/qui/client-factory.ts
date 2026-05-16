@@ -28,6 +28,21 @@ export interface QuiClient {
 	 * cache aggressively rather than refetch per panel load.
 	 */
 	getTrackerIcons(): Promise<Record<string, string>>;
+	/**
+	 * Fetch qui's per-user tracker display-name customizations. Each entry
+	 * pairs a human-friendly `displayName` ("Beyond-HD") with one or more
+	 * canonical domains. Multiple domains per entry handle tracker
+	 * subdomain aliases (`tracker.foo.me` AND `foo.me` map to the same
+	 * display name). The caller inverts this into a flat
+	 * `Record<hostname, displayName>` for lookup.
+	 */
+	getTrackerCustomizations(): Promise<
+		Array<{
+			id: number;
+			displayName: string;
+			domains: string[];
+		}>
+	>;
 	getCrossSeedMatches(instanceId: number, hash: string): Promise<QuiCrossSeedMatch[]>;
 	listInstances(): Promise<QuiInstance[]>;
 	/**
@@ -289,6 +304,25 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 			// in future versions (e.g., per-icon `updatedAt`), but at the
 			// data level we only need the data-URL string.
 			return quiRequest(ctx, "/api/tracker-icons", z.record(z.string(), z.string()));
+		},
+
+		async getTrackerCustomizations() {
+			// qui returns an array; each entry has displayName + one or more
+			// domain aliases. Other fields (id, createdAt, updatedAt) are
+			// metadata we don't use — passthrough() keeps the schema lenient.
+			return quiRequest(
+				ctx,
+				"/api/tracker-customizations",
+				z.array(
+					z
+						.object({
+							id: z.number(),
+							displayName: z.string(),
+							domains: z.array(z.string()),
+						})
+						.passthrough(),
+				),
+			);
 		},
 
 		async getCrossSeedMatches(instanceId, hash) {

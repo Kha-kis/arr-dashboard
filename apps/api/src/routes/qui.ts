@@ -1964,54 +1964,86 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 		},
 	);
 
-	// Tracker-icon registry — proxies qui's per-user icon map so the
-	// frontend can render real tracker logos in brand pills instead of
-	// 3-letter text abbreviations.
+	// Tracker-meta registry — single source of truth for "what does this
+	// tracker look and read like." Fuses qui's icon map AND display-name
+	// customizations into one merged response so the frontend doesn't
+	// need our own static brand registry anymore.
 	//
-	// qui maintains the canonical icon registry (community favicons +
-	// user-uploaded custom icons), stored as PNGs in /config/tracker-icons/
-	// and served via its /api/tracker-icons endpoint as a flat record of
-	// `hostname → data:image/png;base64,...` URLs. We pass through the
-	// data URLs verbatim — no separate icon-serving infrastructure on
-	// our side.
+	// Two qui endpoints combined per request:
+	//   - GET /api/tracker-icons          → Record<host, dataUrl>
+	//   - GET /api/tracker-customizations → Array<{displayName, domains[]}>
 	//
-	// Caching: the map rarely changes (icons are added when a new
-	// tracker appears or the user uploads a custom one). Cache for 1
-	// hour in-memory; the panel refetches once per hour, otherwise hits
-	// the cache. The payload is ~50KB so the memory cost is trivial.
-	const TRACKER_ICONS_TTL_MS = 60 * 60 * 1000;
-	const trackerIconsCache = new Map<string, { icons: Record<string, string>; builtAt: number }>();
+	// We invert the customizations into Record<host, displayName> (each
+	// alias domain gets its own entry) and merge with the icon map.
+	// Frontend gets: Record<host, { iconUrl?, name? }> — one entry per
+	// host with whatever qui knows about it.
+	//
+	// Caching: per-user, 1-hour TTL. Soft-fail per sub-fetch (one's
+	// failure doesn't block the other's data from reaching the panel).
+	const TRACKER_META_TTL_MS = 60 * 60 * 1000;
+	interface TrackerMetaEntry {
+		iconUrl?: string;
+		name?: string;
+	}
+	const trackerMetaCache = new Map<
+		string,
+		{ meta: Record<string, TrackerMetaEntry>; builtAt: number }
+	>();
+	// Route name kept as /tracker-icons for now to avoid renaming the
+	// deployed frontend hook. The response shape evolves: the old `icons`
+	// field stays for one transition cycle (sets the iconUrl for
+	// compatibility) while the new `trackers` field is the canonical
+	// merged map.
 	app.get("/qui/tracker-icons", async (request, reply) => {
 		const userId = request.currentUser!.id;
-		const cacheKey = userId;
-		const cached = trackerIconsCache.get(cacheKey);
-		if (cached && Date.now() - cached.builtAt < TRACKER_ICONS_TTL_MS) {
-			return reply.send({ icons: cached.icons });
+		const cached = trackerMetaCache.get(userId);
+		if (cached && Date.now() - cached.builtAt < TRACKER_META_TTL_MS) {
+			return reply.send({ trackers: cached.meta });
 		}
 
 		const instance = await app.prisma.serviceInstance.findFirst({
 			where: { userId, service: "QUI", enabled: true },
 		});
 		if (!instance) {
-			// No qui configured — return empty map. Frontend falls back to
-			// the static brand registry / auto-derived abbreviation.
-			return reply.send({ icons: {} });
+			// No qui — empty map. Panel falls back to auto-derived
+			// abbreviations from hostnames.
+			return reply.send({ trackers: {} });
 		}
 
-		try {
-			const client = createQuiClient(app, instance);
-			const icons = await client.getTrackerIcons();
-			trackerIconsCache.set(cacheKey, { icons, builtAt: Date.now() });
-			return reply.send({ icons });
-		} catch (err) {
+		const merged: Record<string, TrackerMetaEntry> = {};
+		const client = createQuiClient(app, instance);
+		const [iconsResult, customsResult] = await Promise.allSettled([
+			client.getTrackerIcons(),
+			client.getTrackerCustomizations(),
+		]);
+		if (iconsResult.status === "fulfilled") {
+			for (const [host, iconUrl] of Object.entries(iconsResult.value)) {
+				merged[host] ??= {};
+				merged[host].iconUrl = iconUrl;
+			}
+		} else {
 			request.log.warn(
-				{ err, instanceId: instance.id },
-				"qui tracker-icons fetch failed; returning empty map",
+				{ err: iconsResult.reason, instanceId: instance.id },
+				"qui tracker-icons fetch failed; merged map will lack icons",
 			);
-			// Soft-fail: empty map causes frontend to render text fallbacks.
-			// Better than 500-ing the panel because qui hiccupped.
-			return reply.send({ icons: {} });
 		}
+		if (customsResult.status === "fulfilled") {
+			// Each customization carries N domain aliases. Splay them so
+			// every alias hostname maps to the same displayName.
+			for (const c of customsResult.value) {
+				for (const host of c.domains) {
+					merged[host] ??= {};
+					merged[host].name = c.displayName;
+				}
+			}
+		} else {
+			request.log.warn(
+				{ err: customsResult.reason, instanceId: instance.id },
+				"qui tracker-customizations fetch failed; merged map will lack names",
+			);
+		}
+		trackerMetaCache.set(userId, { meta: merged, builtAt: Date.now() });
+		return reply.send({ trackers: merged });
 	});
 
 	app.post("/qui/backfill/run-now", async (request, reply) => {

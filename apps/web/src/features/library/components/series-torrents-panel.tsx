@@ -29,7 +29,7 @@ import type {
 	SeriesTorrentCopy,
 } from "../../../lib/api-client/qui";
 import { getLinuxSavePath, useIncognitoMode } from "../../../lib/incognito";
-import { getTrackerBrandByHostname, resolveCopyTrackerBrand } from "../../../lib/tracker-brand";
+import { resolveCopyTrackerBrand, resolveHostnameBrand } from "../../../lib/tracker-brand";
 
 interface Props {
 	arrInstanceId: string;
@@ -140,7 +140,7 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({
 	// pill is rendered, so when qui has an icon for a hostname we show
 	// the logo instead of the text abbreviation.
 	const iconsQuery = useTrackerIcons();
-	const trackerIcons = iconsQuery.data?.icons;
+	const trackerIcons = iconsQuery.data?.trackers;
 	const mutation = useTriggerQuiCrossSeedSearch();
 	const [searchOutcome, setSearchOutcome] = useState<
 		{ kind: "success"; runId: number; scanRoot: string } | { kind: "error"; message: string } | null
@@ -484,7 +484,7 @@ const SeasonGroupCard: React.FC<{
 	onToggleSeason: (n: number) => void;
 	collapsible: boolean;
 	incognito: boolean;
-	trackerIcons: Record<string, string> | undefined;
+	trackerIcons: Record<string, { iconUrl?: string; name?: string }> | undefined;
 	onCrossSeedSearch: () => void;
 	searchPending: boolean;
 }> = ({
@@ -636,7 +636,7 @@ const ClusterCard: React.FC<{
 	expanded: boolean;
 	onToggle: () => void;
 	incognito: boolean;
-	trackerIcons: Record<string, string> | undefined;
+	trackerIcons: Record<string, { iconUrl?: string; name?: string }> | undefined;
 }> = ({ cluster, expanded, onToggle, incognito, trackerIcons }) => {
 	const stateLabel = friendlyState(cluster.primaryState);
 
@@ -720,7 +720,7 @@ const ClusterCard: React.FC<{
 							const byBrand = new Map<
 								string,
 								{
-									brand: { abbr: string; name: string; color?: string; iconUrl?: string };
+									brand: { abbr: string; name: string; iconUrl?: string };
 									count: number;
 								}
 							>();
@@ -747,11 +747,9 @@ const ClusterCard: React.FC<{
 											? `${brand.name} · ${count} torrent variants at this tracker`
 											: brand.name
 									}
-									style={
-										brand.color && !brand.iconUrl
-											? { borderLeft: `2px solid ${brand.color}` }
-											: undefined
-									}
+									// Without static brand colors, the pill itself is uniform —
+									// the icon (or abbreviation) carries identity.
+									style={undefined}
 								>
 									{brand.iconUrl ? (
 										<img
@@ -809,7 +807,7 @@ const ClusterCard: React.FC<{
 const CopyRow: React.FC<{
 	copy: SeriesTorrentCopy;
 	incognito: boolean;
-	trackerIcons: Record<string, string> | undefined;
+	trackerIcons: Record<string, { iconUrl?: string; name?: string }> | undefined;
 }> = ({ copy, incognito, trackerIcons }) => {
 	const stateLabel = friendlyState(copy.state);
 	const progressPct = typeof copy.progress === "number" ? Math.round(copy.progress * 100) : null;
@@ -826,10 +824,7 @@ const CopyRow: React.FC<{
 					title={friendlyState(copy.state) ?? "unknown"}
 				/>
 				<span
-					className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] text-foreground/90"
-					style={
-						brand.color && !brand.iconUrl ? { backgroundColor: `${brand.color}33` } : undefined
-					}
+					className="inline-flex items-center gap-1 rounded bg-card/60 px-1.5 py-0.5 font-mono text-[10px] text-foreground/90"
 					title={brand.name}
 				>
 					{brand.iconUrl ? (
@@ -908,25 +903,11 @@ const CopyRow: React.FC<{
 				<div className="flex flex-wrap items-center gap-1 text-[10px]">
 					<span className="text-muted-foreground">Trackers:</span>
 					{(copy.trackers ?? []).map((t) => {
-						const brand = getTrackerBrandByHostname(t.hostname);
-						// qui's icon registry uses bare-host AND apex keys. Try both —
-						// `tracker.avistaz.to` vs `avistaz.to` may have different
-						// entries depending on what qui downloaded.
-						const iconUrl =
-							trackerIcons?.[t.hostname] ??
-							trackerIcons?.[t.hostname.replace(/^(tracker|announce|t)\./, "")];
-						// Fallback label for unknown trackers: pick the most identifying
-						// segment of the hostname. Strip common boilerplate prefixes
-						// (`tracker.`, `announce.`, `t.`) so `tracker.avistaz.to`
-						// reads as "AVISTAZ" not "TRACKER".
-						const fallbackLabel = (() => {
-							const parts = t.hostname.toLowerCase().split(".").filter(Boolean);
-							const filtered = parts.filter(
-								(p) => p !== "tracker" && p !== "announce" && p !== "t",
-							);
-							return (filtered[0] ?? parts[0] ?? "?").toUpperCase();
-						})();
-						const label = brand?.abbr ?? fallbackLabel;
+						// Resolve identity via qui's meta map; falls back to
+						// auto-derived display name / abbreviation when qui has
+						// no entry for the hostname. Same resolver the cluster
+						// header pills use — guaranteed consistency.
+						const brand = resolveHostnameBrand(t.hostname, trackerIcons);
 						const isHealthy = t.health === "working" || t.health === "updating";
 						const isFailed = t.health === "not_working";
 						return (
@@ -939,16 +920,16 @@ const CopyRow: React.FC<{
 											? "bg-card/70 text-foreground/80"
 											: "bg-card/50 text-muted-foreground"
 								}`}
-								title={`${brand?.name ?? t.hostname} · ${t.health}`}
+								title={`${brand.name} · ${t.health}`}
 							>
-								{iconUrl ? (
+								{brand.iconUrl ? (
 									<img
-										src={iconUrl}
-										alt={brand?.name ?? t.hostname}
+										src={brand.iconUrl}
+										alt={brand.name}
 										className="h-3 w-3 rounded-sm object-contain"
 									/>
 								) : (
-									<span>{label}</span>
+									<span>{brand.abbr}</span>
 								)}
 								<span>{t.numPeers}p</span>
 							</span>

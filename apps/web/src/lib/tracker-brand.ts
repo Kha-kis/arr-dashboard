@@ -1,207 +1,179 @@
 /**
- * Tracker brand registry — maps normalized tracker names (parsed from
- * qui's hardlink-mode savePath layout `/data/torrents/links/<tracker>/`)
- * to compact abbreviations and brand colors used in the cluster panel.
+ * Tracker brand resolver — fully delegated to qui's per-user meta map.
  *
- * Normalization rules (applied in `normalizeTrackerName`):
- *   - Lowercase
- *   - Strip parentheticals (e.g., "Blutopia (API)" → "blutopia")
- *   - Strip whitespace and punctuation
+ * Previous versions maintained a static `BRANDS` table here (BHD/BLU/ATH
+ * etc. with abbreviations, names, and brand colors). That worked but
+ * required manual maintenance as new trackers appeared. qui already
+ * maintains a richer per-user registry (community-curated favicons +
+ * user-uploaded custom icons + per-tracker display name customizations),
+ * so we now route ALL brand identity through qui:
  *
- * Abbreviations are 2-3 characters, chosen to match the tracker community's
- * own conventions where possible (BHD for Beyond-HD, HDB for HDBits,
- * ATH for Aither, etc.).
+ *   - Icon: from qui's `/api/tracker-icons` (data:image/png URLs)
+ *   - Display name: from qui's `/api/tracker-customizations`
+ *   - Abbreviation: derived from the display name (or hostname)
  *
- * Adding a tracker: add a row below with its normalized key + brand metadata.
- * Trackers not in this map fall back to an auto-derived 3-letter slug.
+ * Both qui calls are fused server-side into a single `Record<host,
+ * {iconUrl?, name?}>` and served via `/api/qui/tracker-icons` to the
+ * frontend. This file is purely the resolution layer — no data tables,
+ * no maintenance burden.
+ *
+ * Fallback chain when qui has no entry for a hostname:
+ *   1. Auto-derive a display name from the hostname (strip "tracker.",
+ *      "announce." prefixes, title-case the apex segment).
+ *   2. Auto-derive a 3-letter abbreviation from that display name.
+ *
+ * This means an unknown tracker still gets a sensible-looking pill
+ * (e.g., a brand-new tracker at `tracker.newrelease.io` reads as
+ * "NEW" with the full name "Newrelease" in the tooltip).
  */
 
 export interface TrackerBrand {
 	abbr: string;
 	name: string;
-	/** Optional hex color for Ship 3 brand-color visuals. Falls back to gray pill. */
-	color?: string;
-	/**
-	 * Tracker logo as a `data:image/png;base64,...` URL. Populated when
-	 * qui's tracker-icon registry has an entry for this hostname. When
-	 * present, the UI renders the actual logo; otherwise it falls back
-	 * to the text abbreviation. Server-side curated per-user (qui
-	 * downloads favicons + accepts user uploads).
-	 */
+	/** Tracker logo as a `data:image/png;base64,...` URL when qui has one. */
 	iconUrl?: string;
 }
 
-const BRANDS: Record<string, TrackerBrand> = {
-	"beyond-hd": { abbr: "BHD", name: "Beyond-HD", color: "#9333ea" },
-	hdbits: { abbr: "HDB", name: "HDBits", color: "#dc2626" },
-	aither: { abbr: "ATH", name: "Aither", color: "#84cc16" },
-	blutopia: { abbr: "BLU", name: "Blutopia", color: "#2563eb" },
-	luminarr: { abbr: "LUM", name: "Luminarr", color: "#06b6d4" },
-	privatehd: { abbr: "PHD", name: "PrivateHD", color: "#1e40af" },
-	lst: { abbr: "LST", name: "LST", color: "#f59e0b" },
-	fl: { abbr: "FL", name: "TheFL", color: "#7c3aed" },
-	ptp: { abbr: "PTP", name: "PassThePopcorn", color: "#ea580c" },
-	btn: { abbr: "BTN", name: "BroadcasTheNet", color: "#16a34a" },
-	tl: { abbr: "TL", name: "TorrentLeech", color: "#0ea5e9" },
-	torrentleech: { abbr: "TL", name: "TorrentLeech", color: "#0ea5e9" },
-	avistaz: { abbr: "AVZ", name: "Avistaz", color: "#10b981" },
-	cinemaz: { abbr: "CZ", name: "CinemaZ", color: "#f43f5e" },
-};
-
 /**
- * Apex-domain → brand-registry key. The announce-URL hostname is the
- * authoritative signal — qBit publishes the exact tracker URL per
- * torrent, independent of file paths or user-applied tags.
- *
- * Keyed by the apex domain because announce hosts vary by tracker
- * convention: BHD uses `tracker.beyond-hd.me`, Luminarr uses bare
- * `luminarr.me`, HDBits uses `tracker.hdbits.org`, TheFL uses
- * `reactor.thefl.org` (the user's qui setup paths confirm this).
- * Stripping subdomains and matching apex catches all variants.
- */
-const HOSTNAME_TO_BRAND_KEY: Record<string, string> = {
-	"beyond-hd.me": "beyond-hd",
-	"hdbits.org": "hdbits",
-	"aither.cc": "aither",
-	"blutopia.cc": "blutopia",
-	"luminarr.me": "luminarr",
-	"privatehd.to": "privatehd",
-	"lst.gg": "lst",
-	"thefl.org": "fl",
-	"passthepopcorn.me": "ptp",
-	"broadcasthe.net": "btn",
-	"landof.tv": "btn", // BTN historical
-	"torrentleech.org": "tl",
-	"avistaz.to": "avistaz",
-	"cinemaz.to": "cinemaz",
-};
-
-/**
- * Extract the apex domain from a hostname by dropping subdomains.
- * `tracker.beyond-hd.me` → `beyond-hd.me`. Already-apex hostnames
- * pass through unchanged. Handles `co.uk`-style 2-part TLDs by
- * keeping the last 2 segments unless a 3-part TLD is detected.
+ * Extract the apex domain (last 2 segments) from a hostname. Used to
+ * match `tracker.beyond-hd.me` to `beyond-hd.me`-keyed customizations
+ * and vice versa. Single-segment hostnames pass through.
  */
 function hostnameToApex(hostname: string): string {
 	const parts = hostname.toLowerCase().split(".").filter(Boolean);
 	if (parts.length <= 2) return parts.join(".");
-	// Most tracker domains are 2-part TLDs (.org, .me, .cc, .net, .to, .gg).
-	// Drop everything except the last 2 segments — `tracker.beyond-hd.me`
-	// becomes `beyond-hd.me`. The HOSTNAME_TO_BRAND_KEY map is the
-	// source of truth; unknown apex domains fall through to `null`.
 	return parts.slice(-2).join(".");
 }
 
 /**
- * Resolve a tracker's brand from its announce URL hostname. The
- * authoritative path — independent of file paths and user tags.
- * Returns null for hostnames not in the registry (the UI falls back
- * to a neutral pill or honest `?`).
- */
-export function getTrackerBrandByHostname(
-	hostname: string | null | undefined,
-): TrackerBrand | null {
-	if (!hostname) return null;
-	const apex = hostnameToApex(hostname);
-	const key = HOSTNAME_TO_BRAND_KEY[apex];
-	if (!key) return null;
-	return BRANDS[key] ?? null;
-}
-
-/**
- * Normalize a tracker name from qui's savePath segment to the brand-map key.
- * Idempotent — passing an already-normalized name returns it unchanged.
- */
-export function normalizeTrackerName(raw: string | null | undefined): string {
-	if (!raw) return "";
-	return raw
-		.toLowerCase()
-		.replace(/\([^)]*\)/g, "") // strip parentheticals
-		.replace(/[^a-z0-9-]/g, "") // keep only alphanumerics + hyphen
-		.trim();
-}
-
-/**
- * Look up a tracker's brand info. Falls back to an auto-derived abbreviation
- * (first 3 characters of the normalized name, uppercased) when the tracker
- * isn't in the registry. Color is left undefined for unknown trackers so the
- * UI uses a neutral pill.
- */
-export function getTrackerBrand(raw: string | null | undefined): TrackerBrand {
-	const key = normalizeTrackerName(raw);
-	const known = BRANDS[key];
-	if (known) return known;
-	if (!key) return { abbr: "?", name: "Unknown" };
-	return {
-		abbr: key.slice(0, 3).toUpperCase(),
-		name: raw ?? key,
-	};
-}
-
-/**
- * Resolve a brand for a torrent copy using only **authoritative** signals.
+ * Strip common boilerplate prefixes from a hostname and return the most
+ * identifying segment. Used to derive a fallback display name when qui
+ * has no customization for the host.
  *
- * Priority:
- *   1. **Announce URL hostnames** (from qBit's per-torrent tracker list,
- *      surfaced via qui's `getTrackers(instanceId, hash)` endpoint). This
- *      is the ground truth — qBit publishes exactly which trackers a
- *      torrent is configured to announce to, independent of file paths
- *      or user-applied tags.
- *   2. **Path-derived tracker** (from qui's hardlink-mode `/links/<tracker>/`
- *      layout segment). Authoritative when present, because qui's
- *      cross-seed automation owns this directory structure.
- *   3. `?` fallback when neither signal is available.
+ *   `tracker.avistaz.to`     → `avistaz`
+ *   `announce.beyond-hd.me`  → `beyond-hd`
+ *   `hdbits.org`             → `hdbits`
+ */
+function pickIdentifyingSegment(hostname: string): string {
+	const parts = hostname.toLowerCase().split(".").filter(Boolean);
+	const filtered = parts.filter((p) => p !== "tracker" && p !== "announce" && p !== "t");
+	return filtered[0] ?? parts[0] ?? "";
+}
+
+/**
+ * Title-case a single identifying segment for display.
+ *   `avistaz`    → `Avistaz`
+ *   `beyond-hd`  → `Beyond-Hd`   (qui's customization name overrides
+ *                                 this when present, so we don't try
+ *                                 to be clever about the second cap)
+ */
+function titleCase(s: string): string {
+	if (!s) return "";
+	return s[0]!.toUpperCase() + s.slice(1);
+}
+
+/**
+ * Derive a 3-letter abbreviation from a display name. Strips spaces and
+ * punctuation, uppercases. Tries to pick the first letter of each word
+ * for multi-word names; falls back to the first 3 alphanumerics.
  *
- * **Tags are intentionally NOT consulted.** Tags are user/automation
- * labels — informative for humans, but not authority. A torrent tagged
- * `Beyond-HD` may not actually be announcing to BHD (tracker dropped it,
- * user mis-tagged, autotagger glitch). Showing a brand pill based on a
- * tag would dress up a guess as a fact.
+ *   `Beyond-HD`        → `BHD`
+ *   `PassThePopcorn`   → `PAS`  (no obvious word boundary)
+ *   `BroadcasTheNet`   → `BTN`  (likewise)
+ *   `LST`              → `LST`
+ *   `Avistaz`          → `AVI`
+ *
+ * When qui's display name doesn't yield a clean 3-letter form, the
+ * full name still appears in tooltips and the icon carries the
+ * primary brand signal.
+ */
+function deriveAbbr(name: string): string {
+	if (!name) return "?";
+	// Multi-word: first letter of each segment.
+	const segments = name.split(/[\s\-_/.]+/).filter(Boolean);
+	if (segments.length >= 2) {
+		return segments
+			.slice(0, 3)
+			.map((s) => s[0]!.toUpperCase())
+			.join("");
+	}
+	// Single segment: first 3 alphanumerics.
+	const cleaned = name.replace(/[^a-zA-Z0-9]/g, "");
+	return cleaned.slice(0, 3).toUpperCase();
+}
+
+/**
+ * Resolve a tracker's brand identity using qui's per-user meta map.
+ *
+ * Lookup order:
+ *   1. For each candidate hostname (announce-URL hosts + path-derived
+ *      tracker), check qui's map for both the exact host AND the apex
+ *      domain (covers `tracker.foo.me` vs `foo.me` keying).
+ *   2. If qui has an entry: return it with name from qui (or derived
+ *      from hostname), icon from qui (or undefined), abbr derived.
+ *   3. If qui has no entry: derive name + abbr from the first valid
+ *      hostname's identifying segment.
+ *   4. No hostnames at all: return generic "?" placeholder.
  */
 export function resolveCopyTrackerBrand(args: {
 	/** Path-derived tracker name (from `/links/<tracker>/` savePath segment). */
 	tracker: string | null;
-	/** Announce URL hostnames from qBit (authoritative). First match wins. */
+	/** Announce URL hostnames from qBit (authoritative). */
 	trackerHostnames?: readonly string[];
-	/**
-	 * Optional qui-curated icon map (hostname → data URL). When the
-	 * resolver finds a match in this map, the resulting brand carries
-	 * an `iconUrl` so the UI can render the actual logo instead of the
-	 * text abbreviation. Pass `useTrackerIcons().data?.icons` here.
-	 */
-	icons?: Record<string, string>;
+	/** qui's meta map. Pass `useTrackerIcons().data?.trackers` here. */
+	icons?: Record<string, { iconUrl?: string; name?: string }>;
 }): TrackerBrand {
-	// Attach an iconUrl from qui's per-user registry when available.
-	// We check ALL trackerHostnames (a torrent can have multiple) and the
-	// path-derived tracker name as a hostname fallback — first match wins.
-	const findIcon = (): string | undefined => {
+	const lookupQui = (host: string): { iconUrl?: string; name?: string } | undefined => {
 		if (!args.icons) return undefined;
-		if (args.trackerHostnames) {
-			for (const host of args.trackerHostnames) {
-				const apex = hostnameToApex(host);
-				if (args.icons[host]) return args.icons[host];
-				if (args.icons[apex]) return args.icons[apex];
-			}
-		}
+		const exact = args.icons[host];
+		if (exact && (exact.iconUrl || exact.name)) return exact;
+		const apex = hostnameToApex(host);
+		const apexEntry = args.icons[apex];
+		if (apexEntry && (apexEntry.iconUrl || apexEntry.name)) return apexEntry;
 		return undefined;
 	};
 
-	// Tier 1: authoritative — first announce URL that maps to a known brand.
-	if (args.trackerHostnames) {
-		for (const host of args.trackerHostnames) {
-			const branded = getTrackerBrandByHostname(host);
-			if (branded) return { ...branded, iconUrl: findIcon() ?? branded.iconUrl };
+	// Walk all hostname candidates — first one with a qui hit wins.
+	const hosts = args.trackerHostnames ?? [];
+	for (const host of hosts) {
+		const meta = lookupQui(host);
+		if (meta) {
+			const name = meta.name ?? titleCase(pickIdentifyingSegment(host));
+			return {
+				abbr: deriveAbbr(name),
+				name,
+				iconUrl: meta.iconUrl,
+			};
 		}
 	}
-	// Tier 2: path-derived — also authoritative within qui's hardlink layout.
-	if (args.tracker) {
-		const fromName = getTrackerBrand(args.tracker);
-		if (fromName.abbr !== "?") return { ...fromName, iconUrl: findIcon() ?? fromName.iconUrl };
+
+	// No qui hit — derive everything from the first hostname (if any).
+	const firstHost = hosts[0] ?? args.tracker;
+	if (firstHost) {
+		const name = titleCase(pickIdentifyingSegment(firstHost));
+		return { abbr: deriveAbbr(name), name: name || "Tracker" };
 	}
-	// Tier 3: honest unknown. Still attach an icon if qui has one for
-	// the hostname — even if we can't name the tracker, the logo speaks
-	// for itself.
-	const icon = findIcon();
-	if (icon) return { abbr: "", name: "Tracker", iconUrl: icon };
+
 	return { abbr: "?", name: "Unknown" };
+}
+
+/**
+ * Lookup helper for the per-tracker pill row (separate from cluster
+ * header) — same resolution path but for a single hostname.
+ */
+export function resolveHostnameBrand(
+	hostname: string,
+	icons: Record<string, { iconUrl?: string; name?: string }> | undefined,
+): TrackerBrand {
+	if (icons) {
+		const exact = icons[hostname];
+		const apex = icons[hostnameToApex(hostname)];
+		const meta = exact?.iconUrl || exact?.name ? exact : apex;
+		if (meta && (meta.iconUrl || meta.name)) {
+			const name = meta.name ?? titleCase(pickIdentifyingSegment(hostname));
+			return { abbr: deriveAbbr(name), name, iconUrl: meta.iconUrl };
+		}
+	}
+	const name = titleCase(pickIdentifyingSegment(hostname));
+	return { abbr: deriveAbbr(name), name: name || "Tracker" };
 }

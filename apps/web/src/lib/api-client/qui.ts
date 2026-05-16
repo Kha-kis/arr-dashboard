@@ -506,12 +506,22 @@ export async function fetchMovieTorrents(args: {
 }
 
 /**
- * qui's tracker-icon registry — `hostname` → `data:image/png;base64,...`.
- * Empty when no qui is configured or qui has no icons for this user.
- * Cached server-side for 1h, so cheap to call.
+ * qui's tracker-meta registry — combines per-host icons AND display
+ * names from qui's two customization endpoints into one map. This is
+ * arr-dashboard's single source of truth for tracker identity; we no
+ * longer maintain a separate static brand registry.
+ *
+ * Each entry can have an iconUrl (data URL), a display name, both, or
+ * neither (qui knows about the hostname but hasn't been configured).
+ * Empty record when qui is unreachable or no qui configured.
  */
+export interface QuiTrackerMetaEntry {
+	iconUrl?: string;
+	name?: string;
+}
+
 export interface QuiTrackerIconsResponse {
-	icons: Record<string, string>;
+	trackers: Record<string, QuiTrackerMetaEntry>;
 }
 
 export async function fetchTrackerIcons(): Promise<QuiTrackerIconsResponse> {
