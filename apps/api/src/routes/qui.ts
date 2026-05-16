@@ -783,15 +783,33 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 				where: { userId, service: "QUI", enabled: true, hasLocalFilesystemAccess: true },
 			});
 
+			// Race the inode index build against a 22-second timeout. A cold
+			// build over a large qui library (~12k torrents → ~50k stat ops)
+			// can exceed Next.js's 30s proxy timeout. Rather than letting
+			// the request 504, we return what we have (cached infoHashes
+			// only) and let the build continue in the background — the next
+			// request after it completes gets full multi-hash coverage.
+			//
+			// In-flight dedup inside `buildFileIdIndex` ensures the
+			// background promise isn't restarted by subsequent requests.
 			let inodeIndex: Awaited<ReturnType<typeof buildFileIdIndex>> | null = null;
 			if (fsInstance) {
-				try {
-					const indexClient = createQuiClient(app, fsInstance);
-					inodeIndex = await buildFileIdIndex(indexClient, fsInstance, request.log);
-				} catch (err) {
+				const indexClient = createQuiClient(app, fsInstance);
+				const buildPromise = buildFileIdIndex(indexClient, fsInstance, request.log).catch((err) => {
 					request.log.warn(
 						{ err, quiInstanceId: fsInstance.id },
-						"qui series-torrents: inode index build failed; falling back to cache-only aggregation",
+						"qui series-torrents: inode index build failed; using cached-hash fallback",
+					);
+					return null;
+				});
+				inodeIndex = await Promise.race([
+					buildPromise,
+					new Promise<null>((resolve) => setTimeout(() => resolve(null), 22000)),
+				]);
+				if (inodeIndex === null) {
+					request.log.info(
+						{ quiInstanceId: fsInstance.id, arrSeriesId: arrItemId },
+						"qui series-torrents: inode index not ready yet (cold build); returning cached-hash response. Reload after build completes for full multi-hash coverage.",
 					);
 				}
 			}

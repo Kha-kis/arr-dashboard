@@ -96,6 +96,19 @@ const INDEX_CACHE = new Map<string, CachedIndex>();
 const INDEX_TTL_MS = 2 * 60 * 1000;
 
 /**
+ * In-flight build deduplication. When a cold cache + concurrent panel
+ * loads collide, every request would otherwise kick off its own
+ * `listAllTorrents` + filesystem walk — hammering qui and the FS in
+ * parallel. Storing the in-flight Promise here means all concurrent
+ * callers await the same build and split the cost once.
+ *
+ * Entries are cleared when the build resolves (success or failure) so a
+ * later request can retry. The TTL cache (above) handles the "succeeded
+ * recently" case independently.
+ */
+const INDEX_PENDING = new Map<string, Promise<FileIdIndex>>();
+
+/**
  * Hard safety cap on the recursive directory walk per torrent. Movies and
  * episodes are 1-30 files at most; an album pack might be 20 tracks plus
  * a folder.jpg. Refusing to walk past 500 entries protects against an
@@ -156,6 +169,32 @@ export async function buildFileIdIndex(
 		return cached.index;
 	}
 
+	// In-flight dedup: if a build is already running for this instance,
+	// await it instead of kicking off a parallel one. The previous code
+	// had no dedup, so concurrent panel loads after a cold start would
+	// each spawn their own `listAllTorrents` + ~50k stat ops in parallel
+	// — saturating both qui and the FS until everything timed out.
+	const pending = INDEX_PENDING.get(instance.id);
+	if (pending) return pending;
+
+	const buildPromise = (async (): Promise<FileIdIndex> => {
+		const built = await doBuildFileIdIndex(client, instance, log);
+		INDEX_CACHE.set(instance.id, { index: built, builtAt: Date.now() });
+		return built;
+	})();
+	INDEX_PENDING.set(instance.id, buildPromise);
+	try {
+		return await buildPromise;
+	} finally {
+		INDEX_PENDING.delete(instance.id);
+	}
+}
+
+async function doBuildFileIdIndex(
+	client: QuiClient,
+	instance: Pick<ServiceInstance, "id" | "label" | "pathPrefix">,
+	log?: FastifyBaseLogger,
+): Promise<FileIdIndex> {
 	const torrents = await client.listAllTorrents();
 	const byFileId = new Map<string, Set<string>>();
 	let statted = 0;
@@ -234,8 +273,9 @@ export async function buildFileIdIndex(
 	}
 
 	const index: FileIdIndex = { byFileId, statted, skippedNoLinks, skippedUnstatable };
-	INDEX_CACHE.set(instance.id, { index, builtAt: Date.now() });
-	log?.debug(
+	// Cache write happens in the buildFileIdIndex wrapper (after this
+	// function resolves) so the in-flight Promise dedup stays consistent.
+	log?.info(
 		{
 			quiInstanceId: instance.id,
 			torrents: torrents.length,
