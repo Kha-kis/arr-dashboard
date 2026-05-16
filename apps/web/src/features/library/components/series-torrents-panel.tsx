@@ -237,12 +237,16 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({
 
 	return (
 		<GlassmorphicCard className="space-y-4 p-4">
-			{/* Header: title + cross-seed search button + summary stats */}
+			{/* Header: title + cross-seed search button + summary stats.
+			 * Labels are itemType-aware: series counts episodes (potentially
+			 * dozens), movies count files (always 1) — so the latter shows
+			 * just a status pill instead of "Files 1 / Correlated 1 (100%)"
+			 * which is repetitive noise. */}
 			<div className="space-y-2">
 				<div className="flex items-center justify-between gap-3">
 					<h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
 						<Film className="h-4 w-4" />
-						Series torrent overview
+						{itemType === "movie" ? "Movie torrent overview" : "Series torrent overview"}
 					</h3>
 					<Button
 						type="button"
@@ -264,20 +268,48 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({
 						)}
 					</Button>
 				</div>
-				<div className="grid grid-cols-4 gap-3 text-xs">
-					<Stat label="Episodes" value={total.toString()} />
-					<Stat
-						label="Correlated"
-						value={`${correlated} (${correlationPct}%)`}
-						tone={correlated === total ? "success" : correlated > 0 ? "info" : "warning"}
-					/>
-					<Stat
-						label="Via inode"
-						value={viaInode.toString()}
-						tone={viaInode > 0 ? "success" : "muted"}
-					/>
-					<Stat label="Stuck" value={stuck.toString()} tone={stuck === 0 ? "success" : "warning"} />
-				</div>
+				{itemType === "movie" ? (
+					<div className="grid grid-cols-2 gap-3 text-xs">
+						<Stat
+							label="Status"
+							value={
+								stuck > 0
+									? "Stuck — no torrent"
+									: viaInode > 0
+										? "Correlated via inode"
+										: "Correlated"
+							}
+							tone={stuck === 0 ? "success" : "warning"}
+						/>
+						<Stat
+							label="Size"
+							value={
+								data?.clusters[0]?.totalSizeBytes
+									? formatBytes(data.clusters[0].totalSizeBytes)
+									: "—"
+							}
+						/>
+					</div>
+				) : (
+					<div className="grid grid-cols-4 gap-3 text-xs">
+						<Stat label="Episodes" value={total.toString()} />
+						<Stat
+							label="Correlated"
+							value={`${correlated} (${correlationPct}%)`}
+							tone={correlated === total ? "success" : correlated > 0 ? "info" : "warning"}
+						/>
+						<Stat
+							label="Via inode"
+							value={viaInode.toString()}
+							tone={viaInode > 0 ? "success" : "muted"}
+						/>
+						<Stat
+							label="Stuck"
+							value={stuck.toString()}
+							tone={stuck === 0 ? "success" : "warning"}
+						/>
+					</div>
+				)}
 			</div>
 
 			{/* Cross-seed search outcome banner */}
@@ -824,7 +856,18 @@ const CopyRow: React.FC<{ copy: SeriesTorrentCopy; incognito: boolean }> = ({
 					<span className="text-muted-foreground">Trackers:</span>
 					{(copy.trackers ?? []).map((t) => {
 						const brand = getTrackerBrandByHostname(t.hostname);
-						const label = brand?.abbr ?? t.hostname.split(".")[0]?.toUpperCase() ?? "?";
+						// Fallback label for unknown trackers: pick the most identifying
+						// segment of the hostname. Strip common boilerplate prefixes
+						// (`tracker.`, `announce.`, `t.`) so `tracker.avistaz.to`
+						// reads as "AVISTAZ" not "TRACKER".
+						const fallbackLabel = (() => {
+							const parts = t.hostname.toLowerCase().split(".").filter(Boolean);
+							const filtered = parts.filter(
+								(p) => p !== "tracker" && p !== "announce" && p !== "t",
+							);
+							return (filtered[0] ?? parts[0] ?? "?").toUpperCase();
+						})();
+						const label = brand?.abbr ?? fallbackLabel;
 						const isHealthy = t.health === "working" || t.health === "updating";
 						const isFailed = t.health === "not_working";
 						return (

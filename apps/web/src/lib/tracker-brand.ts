@@ -36,6 +36,8 @@ const BRANDS: Record<string, TrackerBrand> = {
 	btn: { abbr: "BTN", name: "BroadcasTheNet", color: "#16a34a" },
 	tl: { abbr: "TL", name: "TorrentLeech", color: "#0ea5e9" },
 	torrentleech: { abbr: "TL", name: "TorrentLeech", color: "#0ea5e9" },
+	avistaz: { abbr: "AVZ", name: "Avistaz", color: "#10b981" },
+	cinemaz: { abbr: "CZ", name: "CinemaZ", color: "#f43f5e" },
 };
 
 /**
@@ -62,6 +64,8 @@ const HOSTNAME_TO_BRAND_KEY: Record<string, string> = {
 	"broadcasthe.net": "btn",
 	"landof.tv": "btn", // BTN historical
 	"torrentleech.org": "tl",
+	"avistaz.to": "avistaz",
+	"cinemaz.to": "cinemaz",
 };
 
 /**

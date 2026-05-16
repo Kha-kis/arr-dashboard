@@ -1704,13 +1704,16 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 				return reply.code(404).send({ error: "Movie not found" });
 			}
 
-			// Extract the on-disk file path from the data blob. Same logic
-			// the inode-backfill uses (`infohash-backfill-by-path.ts`). When
-			// the movie has no file or the blob is malformed, we still emit
-			// a valid response — just with stuckCount = 1 and an empty
-			// cluster list.
+			// Extract the on-disk file path AND the file's quality tier from
+			// the data blob. Quality tier ≠ user's quality profile:
+			//   - `qualityProfileName` is the user's policy ("Anime Dual Audio")
+			//   - `movieFile.quality.quality.name` is the file's actual
+			//     classification from Radarr's release parser ("WEBDL-1080p")
+			// The panel wants the file's tier — answers "what is this?"
+			// instead of "what did I ask for?"
 			let libraryPath: string | null = null;
 			let releaseGroup: string | null = null;
+			let qualityTier: string | null = null;
 			try {
 				const parsed = JSON.parse(movieRow.data) as Record<string, unknown>;
 				const path = typeof parsed.path === "string" ? parsed.path : null;
@@ -1725,6 +1728,14 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 				if (movieFile && typeof movieFile === "object") {
 					const rg = movieFile.releaseGroup;
 					if (typeof rg === "string") releaseGroup = rg;
+					// Quality is nested as `movieFile.quality.quality.name`
+					// (Radarr's wire shape — outer `quality` is the version
+					// wrapper, inner `quality` is the tier).
+					const qWrap = movieFile.quality as Record<string, unknown> | null | undefined;
+					const qInner = qWrap?.quality as Record<string, unknown> | null | undefined;
+					if (qInner && typeof qInner.name === "string") {
+						qualityTier = qInner.name;
+					}
 				}
 			} catch (err) {
 				request.log.debug(
@@ -1864,7 +1875,7 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 					seasons: [],
 					coverageLabel: movieTitle,
 					totalSizeBytes: movieRow.sizeOnDisk.toString(),
-					qualityName: movieRow.qualityProfileName,
+					qualityName: qualityTier, // tier ("WEBDL-1080p"), not profile name
 					releaseGroup,
 					inodeVerified: inodeHashes.length > 0 || movieRow.infoHashSource === "inode",
 					copies,
