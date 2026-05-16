@@ -1088,6 +1088,21 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 				});
 			}
 
+			interface PerTrackerInfo {
+				hostname: string;
+				health: "working" | "updating" | "not_contacted" | "disabled" | "not_working" | "unknown";
+				numSeeds: number;
+				numLeechs: number;
+				numPeers: number;
+				tier: number | null;
+				/** Raw qBit status msg — used for unregistered/banned detection. NOT sent to client. */
+				_msg?: string;
+			}
+			interface PeerSources {
+				dht: boolean;
+				pex: boolean;
+				lsd: boolean;
+			}
 			interface ClusterCopy {
 				infoHash: string;
 				name: string | null;
@@ -1104,7 +1119,10 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 				 * excluded. Authoritative source for brand identification.
 				 */
 				trackerHostnames: string[];
+				/** Rich per-tracker entries: peer counts, health, tier. */
+				trackers: PerTrackerInfo[];
 				trackerHealth: "unregistered" | "tracker_down" | null;
+				peerSources: PeerSources;
 				ratio: number | null;
 				savePath: string | null;
 				tags: string[];
@@ -1114,6 +1132,8 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 				numSeeds: number | null;
 				numLeechs: number | null;
 				progress: number | null;
+				dlSpeedBps: number | null;
+				upSpeedBps: number | null;
 				instanceName: string | null;
 				/** True when qui has no record of this hash (heal-then-drop should remove these). */
 				quiUnreachable: boolean;
@@ -1127,7 +1147,9 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 				role: "library",
 				tracker: null,
 				trackerHostnames: [],
+				trackers: [],
 				trackerHealth: null,
+				peerSources: { dht: false, pex: false, lsd: false },
 				ratio: null,
 				savePath: null,
 				tags: [],
@@ -1137,6 +1159,8 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 				numSeeds: null,
 				numLeechs: null,
 				progress: null,
+				dlSpeedBps: null,
+				upSpeedBps: null,
 				instanceName: null,
 				quiUnreachable: true,
 			});
@@ -1186,41 +1210,83 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 								return;
 							}
 
-							// Fetch the authoritative tracker list separately. qBit's
-							// announce URLs contain passkeys, so we MUST extract only
-							// the hostname before this data leaves the server. Pseudo-
-							// trackers (DHT/PeX/LSD — qui prefixes them with "** ")
-							// are filtered out via that convention. Empty list when
-							// instanceId is unavailable (would be needed for the API
-							// call) or the call fails.
+							// Fetch the authoritative tracker list. qBit's announce
+							// URLs contain passkeys, so `extractHostnameSafe` strips
+							// the path/query before any of this data leaves the
+							// server. Pseudo-trackers (DHT/PeX/LSD — qui prefixes
+							// them with "** ") are split out into peerSources so
+							// the UI can show them as discovery channels distinct
+							// from real trackers.
+							const perTrackerInfo: PerTrackerInfo[] = [];
 							let trackerHostnames: string[] = [];
+							const peerSources: PeerSources = { dht: false, pex: false, lsd: false };
 							if (typeof torrent.instanceId === "number") {
 								try {
 									const trackers = await client.getTrackers(torrent.instanceId, hash);
-									trackerHostnames = trackers
-										.filter((t) => !t.url.startsWith("** "))
-										.map((t) => extractHostnameSafe(t.url))
-										.filter((h) => h.length > 0);
+									for (const t of trackers) {
+										if (t.url.startsWith("** ")) {
+											// Pseudo-tracker. qui's convention: `** [DHT]`,
+											// `** [PeX]`, `** [LSD]`. Match case-insensitively.
+											const lower = t.url.toLowerCase();
+											if (lower.includes("dht")) peerSources.dht = true;
+											if (lower.includes("pex")) peerSources.pex = true;
+											if (lower.includes("lsd")) peerSources.lsd = true;
+											continue;
+										}
+										const hostname = extractHostnameSafe(t.url);
+										if (!hostname) continue;
+										perTrackerInfo.push({
+											hostname,
+											health: t.health,
+											numSeeds: t.numSeeds,
+											numLeechs: t.numLeeches,
+											numPeers: t.numPeers,
+											tier: typeof t.tier === "number" ? t.tier : null,
+											_msg: t.msg,
+										});
+									}
+									trackerHostnames = perTrackerInfo.map((t) => t.hostname);
 								} catch (trackerErr) {
-									// Non-fatal — fall back to empty list. Brand pill will
-									// render `?` for this copy until the next refresh.
 									request.log.debug(
 										{ err: trackerErr, hash, instanceId: torrent.instanceId },
-										"qui series-torrents: getTrackers failed; trackerHostnames empty",
+										"qui series-torrents: getTrackers failed; tracker fields empty",
 									);
 								}
 							}
 
+							// Aggregate tracker health: worst status wins. qui's enum
+							// reports `not_working` as the failure state but lumps
+							// unregistered AND network-down together — we inspect the
+							// `msg` to split them. Common qBit patterns:
+							//   "Torrent is not registered with this tracker"
+							//   "torrent not found"
+							//   "unregistered torrent"
+							//   "banned"
+							// All map to `unregistered`. Other `not_working` causes
+							// (DNS failures, refused connections, timeouts) map to
+							// `tracker_down`.
+							const UNREGISTERED_RX = /unregistered|not registered|not found|banned|forbidden/i;
+							let aggregateHealth: ClusterCopy["trackerHealth"] = null;
+							for (const t of perTrackerInfo) {
+								if (t.health !== "not_working") continue;
+								const looksUnregistered = t._msg ? UNREGISTERED_RX.test(t._msg) : false;
+								if (looksUnregistered) {
+									aggregateHealth = "unregistered";
+									break; // hard-stop, worst possible
+								}
+								aggregateHealth = "tracker_down"; // keep scanning for unregistered
+							}
+							// Strip the internal `_msg` field before emitting — it may
+							// contain tracker-specific diagnostic text we don't need
+							// to leak (and isn't part of the wire shape).
+							const publicTrackers = perTrackerInfo.map(({ _msg, ...rest }) => {
+								void _msg;
+								return rest;
+							});
+
 							const category = torrent.category || null;
 							const linksMatch = (torrent.savePath ?? "").match(/\/links\/([^/]+)/);
 							const tracker = linksMatch ? linksMatch[1]! : null;
-							// Role classification:
-							//   - "cross-seed" = lives under qui's hardlink-mode layout
-							//     (`/data/torrents/links/<tracker>/...`) OR has a
-							//     category that signals cross-seed lineage
-							//     (`cross-seed-link`, `tv.cross`, `movies.cross`, etc.).
-							//   - "library" = direct Sonarr/Radarr-managed copy at the
-							//     primary download path (`/data/torrents/tv/`, etc.).
 							const lowerCategory = (category ?? "").toLowerCase();
 							const isPathCrossSeed = linksMatch !== null;
 							const isCategoryCrossSeed =
@@ -1235,7 +1301,9 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 								role,
 								tracker,
 								trackerHostnames,
-								trackerHealth: null, // populated below if siblings/health surfaces it
+								trackers: publicTrackers,
+								trackerHealth: aggregateHealth,
+								peerSources,
 								ratio: typeof torrent.ratio === "number" ? torrent.ratio : null,
 								savePath: torrent.savePath ?? null,
 								tags: Array.isArray(torrent.tags) ? torrent.tags : [],
@@ -1248,6 +1316,8 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 								numSeeds: typeof torrent.numSeeds === "number" ? torrent.numSeeds : null,
 								numLeechs: typeof torrent.numLeechs === "number" ? torrent.numLeechs : null,
 								progress: typeof torrent.progress === "number" ? torrent.progress : null,
+								dlSpeedBps: typeof torrent.dlSpeed === "number" ? torrent.dlSpeed : null,
+								upSpeedBps: typeof torrent.upSpeed === "number" ? torrent.upSpeed : null,
 								instanceName: torrent.instanceName ?? null,
 								quiUnreachable: false,
 							});

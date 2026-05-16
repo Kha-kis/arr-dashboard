@@ -24,7 +24,7 @@ import type {
 	SeriesTorrentCopy,
 } from "../../../lib/api-client/qui";
 import { getLinuxSavePath, useIncognitoMode } from "../../../lib/incognito";
-import { resolveCopyTrackerBrand } from "../../../lib/tracker-brand";
+import { getTrackerBrandByHostname, resolveCopyTrackerBrand } from "../../../lib/tracker-brand";
 
 interface Props {
 	arrInstanceId: string;
@@ -713,15 +713,74 @@ const CopyRow: React.FC<{ copy: SeriesTorrentCopy; incognito: boolean }> = ({
 						{incognito ? getLinuxSavePath(copy.savePath) : copy.savePath}
 					</span>
 				)}
-				{(copy.numSeeds !== null || copy.numLeechs !== null) && (
-					<span>
-						{copy.numSeeds ?? 0}↑ {copy.numLeechs ?? 0}↓
-					</span>
+				{/* Live speeds — only render when actively transferring (>0).
+				 * Avoids visual noise on idle seeders. */}
+				{(copy.dlSpeedBps ?? 0) > 0 && (
+					<span className="text-blue-300">↓ {formatRate(copy.dlSpeedBps!)}</span>
+				)}
+				{(copy.upSpeedBps ?? 0) > 0 && (
+					<span className="text-green-300">↑ {formatRate(copy.upSpeedBps!)}</span>
 				)}
 				{copy.addedOn !== null && <span>added {formatRelative(copy.addedOn)}</span>}
 				{copy.seedingTime !== null && <span>seeding {formatDuration(copy.seedingTime)}</span>}
 				{copy.instanceName && <span>· {copy.instanceName}</span>}
 			</div>
+			{/* Per-tracker peer counts — the authoritative breakdown of where
+			 * the torrent has peers, replacing the misleading torrent-level
+			 * sum that hid which trackers were actually working. */}
+			{copy.trackers.length > 0 && (
+				<div className="flex flex-wrap items-center gap-1 text-[10px]">
+					<span className="text-muted-foreground">Trackers:</span>
+					{copy.trackers.map((t) => {
+						const brand = getTrackerBrandByHostname(t.hostname);
+						const label = brand?.abbr ?? t.hostname.split(".")[0]?.toUpperCase() ?? "?";
+						const isHealthy = t.health === "working" || t.health === "updating";
+						const isFailed = t.health === "not_working";
+						return (
+							<span
+								key={t.hostname}
+								className={`rounded px-1.5 py-0.5 font-mono ${
+									isFailed
+										? "bg-red-500/20 text-red-200"
+										: isHealthy
+											? "bg-card/70 text-foreground/80"
+											: "bg-card/50 text-muted-foreground"
+								}`}
+								title={`${brand?.name ?? t.hostname} · ${t.health}`}
+							>
+								{label} {t.numPeers}p
+							</span>
+						);
+					})}
+					{/* Pseudo-tracker badges — DHT/PeX/LSD as discovery channels
+					 * separate from real trackers. Notable on private-tracker
+					 * torrents where these should typically be off. */}
+					{copy.peerSources.dht && (
+						<span
+							className="rounded bg-card/40 px-1.5 py-0.5 font-mono text-muted-foreground"
+							title="Distributed Hash Table — public peer discovery"
+						>
+							DHT
+						</span>
+					)}
+					{copy.peerSources.pex && (
+						<span
+							className="rounded bg-card/40 px-1.5 py-0.5 font-mono text-muted-foreground"
+							title="Peer Exchange — peer-to-peer discovery"
+						>
+							PeX
+						</span>
+					)}
+					{copy.peerSources.lsd && (
+						<span
+							className="rounded bg-card/40 px-1.5 py-0.5 font-mono text-muted-foreground"
+							title="Local Service Discovery — LAN peers"
+						>
+							LSD
+						</span>
+					)}
+				</div>
+			)}
 			{copy.tags.length > 0 && (
 				<div className="flex flex-wrap items-center gap-1">
 					{copy.tags.map((tag) => (
@@ -737,6 +796,22 @@ const CopyRow: React.FC<{ copy: SeriesTorrentCopy; incognito: boolean }> = ({
 		</div>
 	);
 };
+
+/**
+ * Render a bytes-per-second rate as a compact human string ("1.2 MB/s",
+ * "850 KB/s", "120 B/s"). Used for the per-copy live transfer indicators.
+ */
+function formatRate(bytesPerSec: number): string {
+	if (!Number.isFinite(bytesPerSec) || bytesPerSec <= 0) return "0 B/s";
+	const units = ["B/s", "KB/s", "MB/s", "GB/s"];
+	let value = bytesPerSec;
+	let unit = 0;
+	while (value >= 1024 && unit < units.length - 1) {
+		value /= 1024;
+		unit++;
+	}
+	return `${value.toFixed(value >= 100 ? 0 : 1)} ${units[unit]}`;
+}
 
 function formatRelative(unixSeconds: number): string {
 	if (!unixSeconds || unixSeconds <= 0) return "—";

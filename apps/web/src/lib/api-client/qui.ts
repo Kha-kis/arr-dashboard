@@ -282,6 +282,45 @@ export async function triggerQuiCrossSeedSearch(
  * season pack across 4 trackers = 4 copies). Copies are sorted with
  * `role: "library"` (Sonarr/Radarr-imported) first, then by tracker name.
  */
+/**
+ * One tracker entry from qBit's per-torrent tracker list, sanitized for
+ * client display. The hostname is the only URL component retained —
+ * announce URL paths/queries contain passkeys and never leave the server.
+ */
+export interface SeriesTorrentTracker {
+	hostname: string;
+	/**
+	 * qui's tracker health enum (mirrors qBit's tracker status int):
+	 *   - `working`: last announce succeeded
+	 *   - `updating`: announce in progress
+	 *   - `not_contacted`: tracker hasn't been reached yet (fresh)
+	 *   - `disabled`: user-disabled in qBit
+	 *   - `not_working`: last announce failed (network, unregistered, banned)
+	 *   - `unknown`: status couldn't be determined
+	 *
+	 * The richer `SeriesTorrentCopy.trackerHealth` aggregate maps these to
+	 * actionable categories (`unregistered` / `tracker_down`) for the UI chip.
+	 */
+	health: "working" | "updating" | "not_contacted" | "disabled" | "not_working" | "unknown";
+	/** qBit-reported peer counts AT THIS TRACKER. */
+	numSeeds: number;
+	numLeechs: number;
+	numPeers: number;
+	/** Announce tier (priority). Null when the tracker has no tier (pseudo-trackers). */
+	tier: number | null;
+}
+
+/**
+ * Which peer-discovery sources the torrent has enabled. Useful for both
+ * informational display and policy enforcement (some private trackers
+ * forbid DHT/PeX/LSD).
+ */
+export interface SeriesTorrentPeerSources {
+	dht: boolean;
+	pex: boolean;
+	lsd: boolean;
+}
+
 export interface SeriesTorrentCopy {
 	infoHash: string;
 	name: string | null;
@@ -297,12 +336,26 @@ export interface SeriesTorrentCopy {
 	tracker: string | null;
 	/**
 	 * Announce URL hostnames from qBit's per-torrent tracker list (DHT/PeX/LSD
-	 * filtered out). Authoritative for brand identification — independent of
-	 * savePath and tags. Multiple entries when the torrent is multi-tracker;
-	 * first known brand wins for pill rendering.
+	 * filtered out). Convenience array derived from `trackers[].hostname`;
+	 * authoritative for brand identification.
 	 */
 	trackerHostnames: string[];
+	/**
+	 * Rich per-tracker info: peer counts, health, tier. Populated from qui's
+	 * `getTrackers(instanceId, hash)`. Empty when the API call fails.
+	 */
+	trackers: SeriesTorrentTracker[];
+	/**
+	 * Aggregated health across all real trackers. Null when all trackers
+	 * report "working" or "unknown". Reports the WORST status seen so the
+	 * UI can render a single chip without iterating.
+	 */
 	trackerHealth: "unregistered" | "tracker_down" | null;
+	/**
+	 * Peer-discovery sources qBit has enabled for this torrent.
+	 * Useful for spotting policy violations (some private trackers ban these).
+	 */
+	peerSources: SeriesTorrentPeerSources;
 	ratio: number | null;
 	savePath: string | null;
 	tags: string[];
@@ -315,6 +368,10 @@ export interface SeriesTorrentCopy {
 	numSeeds: number | null;
 	numLeechs: number | null;
 	progress: number | null;
+	/** Live download speed in bytes/sec. Null when unavailable, 0 when idle. */
+	dlSpeedBps: number | null;
+	/** Live upload speed in bytes/sec. Null when unavailable, 0 when idle. */
+	upSpeedBps: number | null;
 	instanceName: string | null;
 	quiUnreachable: boolean;
 }
