@@ -15,6 +15,7 @@ import {
 	type BulkTorrentActionArgs,
 	fetchCrossSeedAvailability,
 	fetchCrossSeedDiscoveryBatch,
+	fetchLibrarySeedingSummary,
 	fetchMovieTorrents,
 	fetchQuiActionLog,
 	fetchQuiActivityFeed,
@@ -309,6 +310,38 @@ export const useTrackerIcons = () => {
 		// Don't refetch on focus — icons aren't volatile state.
 		refetchOnWindowFocus: false,
 		// Soft-fail: hooks render with empty data on error, no toast.
+		retry: 1,
+	});
+};
+
+/**
+ * Per-library-page seeding summary. Caller passes the IDs of items
+ * currently visible (or a whole page); the hook returns a map keyed by
+ * `"${itemType}:${itemId}"` with `{trackerCount, topHosts, hashCount}`
+ * per item.
+ *
+ * Cached server-side and client-side for 10 min — the underlying
+ * inode-index and tracker-meta caches have their own longer TTLs;
+ * this hook just aggregates. Disabled when the items list is empty
+ * (avoids a no-op POST on initial mount before library data loads).
+ */
+export const useLibrarySeedingSummary = (args: {
+	items: Array<{ arrInstanceId: string; itemId: number; itemType: "movie" | "series" }>;
+	enabled?: boolean;
+}) => {
+	// Build a stable key for React Query caching — same items in any
+	// order produce the same key, so list re-renders don't refire.
+	// Includes instanceId so multi-instance setups don't collide.
+	const itemKey = [...args.items]
+		.map((i) => `${i.arrInstanceId}|${i.itemType}:${i.itemId}`)
+		.sort()
+		.join(",");
+	return useQuery({
+		queryKey: quiKeys.librarySeedingSummary("multi", itemKey),
+		queryFn: () => fetchLibrarySeedingSummary({ items: args.items }),
+		enabled: args.enabled !== false && args.items.length > 0,
+		staleTime: 10 * 60 * 1000,
+		refetchOnWindowFocus: false,
 		retry: 1,
 	});
 };

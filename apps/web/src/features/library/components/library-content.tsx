@@ -8,8 +8,10 @@ import type {
 	WatchEnrichmentItem,
 } from "@arr/shared";
 import { Library as LibraryIcon } from "lucide-react";
+import { useMemo } from "react";
 import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
 import { Pagination } from "../../../components/ui";
+import { useLibrarySeedingSummary, useTrackerIcons } from "../../../hooks/api/useQui";
 import { buildJellyfinUrl, buildPlexUrl } from "../lib/library-utils";
 
 /**
@@ -45,6 +47,10 @@ interface LibraryCardProps {
 	mediaServerLabel?: string;
 	/** qui torrent state (seeding/ratio) for at-a-glance card pill */
 	quiState?: { state: string; ratio: number } | null;
+	/** Per-item tracker summary (count + top hostnames) from qui correlation */
+	seedingSummary?: { trackerCount: number; topHosts: string[] } | null;
+	/** qui's tracker-meta map (hostname → {iconUrl, name}) for brand icons */
+	trackerIcons?: Record<string, { iconUrl?: string; name?: string }>;
 }
 
 /**
@@ -242,6 +248,43 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 	};
 
 	const allItems = [...grouped.movies, ...grouped.series, ...grouped.artists, ...grouped.authors];
+
+	// Per-card tracker strip data. The hook batches one request for the
+	// entire visible page; the React Query key is stable on the sorted
+	// item set so re-renders don't refire. Only movies and series have
+	// inode-correlatable torrents (artists/authors skip).
+	const seedingSummaryItems = useMemo(
+		() =>
+			allItems
+				.filter(
+					(item): item is LibraryItem & { instanceId: string; id: number } =>
+						(item.type === "movie" || item.type === "series") &&
+						typeof item.instanceId === "string" &&
+						typeof item.id === "number",
+				)
+				.map((item) => ({
+					arrInstanceId: item.instanceId,
+					itemId: item.id,
+					itemType: item.type as "movie" | "series",
+				})),
+		[allItems],
+	);
+	const seedingSummaryQuery = useLibrarySeedingSummary({ items: seedingSummaryItems });
+	const trackerIconsQuery = useTrackerIcons();
+	const summaries = seedingSummaryQuery.data?.summaries ?? {};
+	const trackerIcons = trackerIconsQuery.data?.trackers;
+	// Lookup helper that matches the backend's `arrInstanceId|type:id` key
+	// shape. Returns null when the item isn't correlated (qui doesn't
+	// know about its hashes, or it's an artist/author).
+	const getSeedingSummary = (
+		item: LibraryItem,
+	): { trackerCount: number; topHosts: string[] } | null => {
+		if (!item.instanceId || typeof item.id !== "number") return null;
+		const key = `${item.instanceId}|${item.type}:${item.id}`;
+		const s = summaries[key];
+		if (!s || s.trackerCount === 0) return null;
+		return { trackerCount: s.trackerCount, topHosts: s.topHosts };
+	};
 	const typesPresent = [grouped.movies, grouped.series, grouped.artists, grouped.authors].filter(
 		(g) => g.length > 0,
 	).length;
@@ -331,6 +374,8 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 								plexUrl={getMediaServerUrl(item)}
 								mediaServerLabel={getMediaServerLabel(item)}
 								quiState={getQuiState(item)}
+								seedingSummary={getSeedingSummary(item)}
+								trackerIcons={trackerIcons}
 							/>
 						);
 					})}
@@ -368,6 +413,8 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											plexUrl={getMediaServerUrl(item)}
 											mediaServerLabel={getMediaServerLabel(item)}
 											quiState={getQuiState(item)}
+											seedingSummary={getSeedingSummary(item)}
+											trackerIcons={trackerIcons}
 										/>
 									);
 								})}
@@ -406,6 +453,8 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											plexUrl={getMediaServerUrl(item)}
 											mediaServerLabel={getMediaServerLabel(item)}
 											quiState={getQuiState(item)}
+											seedingSummary={getSeedingSummary(item)}
+											trackerIcons={trackerIcons}
 										/>
 									);
 								})}
@@ -445,6 +494,8 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											plexUrl={getMediaServerUrl(item)}
 											mediaServerLabel={getMediaServerLabel(item)}
 											quiState={getQuiState(item)}
+											seedingSummary={getSeedingSummary(item)}
+											trackerIcons={trackerIcons}
 										/>
 									);
 								})}
@@ -484,6 +535,8 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											plexUrl={getMediaServerUrl(item)}
 											mediaServerLabel={getMediaServerLabel(item)}
 											quiState={getQuiState(item)}
+											seedingSummary={getSeedingSummary(item)}
+											trackerIcons={trackerIcons}
 										/>
 									);
 								})}

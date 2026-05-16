@@ -527,3 +527,32 @@ export interface QuiTrackerIconsResponse {
 export async function fetchTrackerIcons(): Promise<QuiTrackerIconsResponse> {
 	return apiRequest<QuiTrackerIconsResponse>("/api/qui/tracker-icons");
 }
+
+/**
+ * Per-library-item seeding summary — small batch the library grid
+ * uses to render tracker brand icons on each card. Reuses the same
+ * inode-index + qui-tracker pipeline as the detail panel; the batch
+ * shape lets the grid resolve N items in one request instead of
+ * N React Query calls.
+ */
+export interface LibrarySeedingSummary {
+	trackerCount: number;
+	/** Up to 4 hostnames covering this item — used to render brand icons. */
+	topHosts: string[];
+	/** Total unique torrent hashes covering this item (cross-seed redundancy). */
+	hashCount: number;
+}
+
+export interface LibrarySeedingSummaryResponse {
+	/** Keyed by `"${itemType}:${itemId}"`. Missing entries = item not correlated. */
+	summaries: Record<string, LibrarySeedingSummary>;
+}
+
+export async function fetchLibrarySeedingSummary(args: {
+	items: Array<{ arrInstanceId: string; itemId: number; itemType: "movie" | "series" }>;
+}): Promise<LibrarySeedingSummaryResponse> {
+	return apiRequest<LibrarySeedingSummaryResponse>("/api/qui/library-seeding-summary", {
+		method: "POST",
+		json: args,
+	});
+}

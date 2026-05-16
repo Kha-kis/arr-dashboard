@@ -519,6 +519,13 @@ export const quiKeys = {
 	// no parameters). Cached server-side for 1h; client also caches via
 	// the long staleTime on the hook.
 	trackerIcons: () => ["qui", "tracker-icons"] as const,
+	/**
+	 * Per-library-page seeding summary. Keyed by the sorted item set so
+	 * cache hits across re-renders of the same page. Includes arr
+	 * instance to isolate users with multi-instance setups.
+	 */
+	librarySeedingSummary: (arrInstanceId: string, itemKey: string) =>
+		["qui", "library-seeding-summary", arrInstanceId, itemKey] as const,
 	crossSeedAvailability: () => ["qui", "cross-seed", "availability"] as const,
 	crossSeedDiscovery: () => ["qui", "cross-seed", "discover"] as const,
 	activity: (eventType?: string) =>

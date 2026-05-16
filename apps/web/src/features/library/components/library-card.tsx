@@ -115,6 +115,27 @@ interface LibraryCardProps {
 	 * stamped by the server) — no per-card polling.
 	 */
 	quiState?: { state: string; ratio: number } | null;
+	/**
+	 * Per-item tracker summary from qui's inode-correlated multi-hash
+	 * lookup. Lets the card render small brand-icon strip showing which
+	 * trackers cover this content + the total tracker count. Null until
+	 * the batch seeding-summary query resolves; renders nothing in that
+	 * case (the existing TorrentStateBadge still appears).
+	 *
+	 * Sourced from the same `enrichTorrentHashes` pipeline that powers
+	 * the detail-modal panel — single source of truth for "which
+	 * trackers cover this content."
+	 */
+	seedingSummary?: {
+		trackerCount: number;
+		topHosts: string[];
+	} | null;
+	/**
+	 * qui's tracker-meta map (hostname → {iconUrl, name}). Same map the
+	 * detail panel uses. Passed down so the card can render brand icons
+	 * for the `topHosts` returned in seedingSummary.
+	 */
+	trackerIcons?: Record<string, { iconUrl?: string; name?: string }>;
 }
 
 /**
@@ -166,6 +187,8 @@ export const LibraryCard = memo(function LibraryCard({
 	plexUrl,
 	mediaServerLabel,
 	quiState,
+	seedingSummary,
+	trackerIcons,
 }: LibraryCardProps) {
 	const [incognitoMode] = useIncognitoMode();
 	const monitored = item.monitored ?? false;
@@ -531,6 +554,60 @@ export const LibraryCard = memo(function LibraryCard({
 								</>
 							)}
 							{quiState && <TorrentStateBadge state={quiState.state} ratio={quiState.ratio} />}
+							{/* Tracker brand strip: shows up to 4 icons from qui's
+							 * per-user registry, then an overflow chip when more
+							 * trackers cover the content. Renders only when the
+							 * batch summary query has resolved AND the item has any
+							 * tracker correlation — null/zero gracefully renders
+							 * nothing (the existing TorrentStateBadge still appears
+							 * for items qui knows about).
+							 *
+							 * Source: same `enrichTorrentHashes` pipeline that powers
+							 * the detail-modal panel. No duplicate logic, no separate
+							 * registry — single source of truth for tracker identity.
+							 */}
+							{seedingSummary && seedingSummary.trackerCount > 0 && (
+								<span
+									className="inline-flex items-center gap-0.5 rounded-md border border-border/40 bg-card/50 px-1 py-0.5"
+									title={`Seeding at ${seedingSummary.trackerCount} tracker${seedingSummary.trackerCount === 1 ? "" : "s"}`}
+								>
+									{seedingSummary.topHosts.slice(0, 4).map((host) => {
+										const meta = trackerIcons?.[host];
+										const name = meta?.name ?? host;
+										if (meta?.iconUrl) {
+											return (
+												<img
+													key={host}
+													src={meta.iconUrl}
+													alt={name}
+													title={name}
+													className="h-3.5 w-3.5 rounded-sm object-contain"
+												/>
+											);
+										}
+										// Hostname-derived 1-letter fallback when qui has no
+										// icon yet. Keeps the strip dense and visually
+										// consistent even for brand-new trackers.
+										const letter = (
+											host.replace(/^(tracker|announce|t)\./, "")[0] ?? "?"
+										).toUpperCase();
+										return (
+											<span
+												key={host}
+												title={name}
+												className="flex h-3.5 w-3.5 items-center justify-center rounded-sm bg-card/70 font-mono text-[8px] text-foreground/70"
+											>
+												{letter}
+											</span>
+										);
+									})}
+									{seedingSummary.trackerCount > 4 && (
+										<span className="px-0.5 text-[9px] font-mono text-muted-foreground">
+											+{seedingSummary.trackerCount - 4}
+										</span>
+									)}
+								</span>
+							)}
 							{typeof tmdbRating === "number" && tmdbRating > 0 && (
 								<span
 									className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold"

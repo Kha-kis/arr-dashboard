@@ -2046,6 +2046,219 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 		return reply.send({ trackers: merged });
 	});
 
+	// Per-library-item seeding summary — small batch endpoint that feeds
+	// the library grid. Frontend sends the IDs of items currently visible
+	// (or a whole page), gets back `{trackerCount, topHosts}` per item.
+	//
+	// Architectural note: uses the SAME pipeline as the cluster endpoint
+	// (inode multi-hash lookup + qui tracker meta). Reuses the cached
+	// inode index, the cached tracker-meta registry, and the existing
+	// `enrichTorrentHashes` helper. No duplicate signal, no separate
+	// brand registry, no schema column to maintain.
+	//
+	// Caching: per (user, item set) for 10 min. The set hash is
+	// stable for repeat-loads of the same library page. Aggressive
+	// caching is fine because the underlying tracker data already has
+	// its own 1h cache, and this just aggregates over a known item set.
+	//
+	// Cost: the bottleneck is the per-hash `getTrackers` qui call, which
+	// we batch (concurrency cap of 32). For a typical 100-item library
+	// page sharing ~50-150 unique hashes (cross-seeds collapse), first
+	// load is ~1-2s; subsequent loads from cache are instant.
+	const LIBRARY_SUMMARY_TTL_MS = 10 * 60 * 1000;
+	interface LibrarySeedingSummaryEntry {
+		trackerCount: number;
+		topHosts: string[];
+		hashCount: number;
+	}
+	const librarySummaryCache = new Map<
+		string,
+		{ summaries: Record<string, LibrarySeedingSummaryEntry>; builtAt: number }
+	>();
+	const LIBRARY_SUMMARY_BODY = z.object({
+		// Each item carries its own arr instance ID so a single batch can
+		// span multiple Sonarr/Radarr instances (the library page
+		// renders items from all enabled instances when no filter is
+		// applied). The arrInstanceId disambiguates `arrItemId` which
+		// is only unique within an instance.
+		items: z
+			.array(
+				z.object({
+					arrInstanceId: z.string().min(1),
+					itemId: z.number().int().positive(),
+					itemType: z.enum(["movie", "series"]),
+				}),
+			)
+			.min(1)
+			.max(500),
+	});
+	app.post("/qui/library-seeding-summary", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const body = validateRequest(LIBRARY_SUMMARY_BODY, request.body);
+		// Cache key is deterministic on the sorted item set including
+		// instance IDs — different arr instances with the same arrItemId
+		// don't collide. Two calls for the same page produce the same
+		// key → cache hit.
+		const sortedKey = body.items
+			.map((i) => `${i.arrInstanceId}|${i.itemType}:${i.itemId}`)
+			.sort()
+			.join(",");
+		const cacheKey = `${userId}|${sortedKey}`;
+		const cached = librarySummaryCache.get(cacheKey);
+		if (cached && Date.now() - cached.builtAt < LIBRARY_SUMMARY_TTL_MS) {
+			return reply.send({ summaries: cached.summaries });
+		}
+
+		// FS-enabled qui instance is the only thing we strictly need —
+		// per-item arr-instance scoping happens inline below via the
+		// `instance.userId` join. No qui or no FS access → empty
+		// summaries, cards render without the tracker strip.
+		const quiInstance = await app.prisma.serviceInstance.findFirst({
+			where: { userId, service: "QUI", enabled: true, hasLocalFilesystemAccess: true },
+		});
+		if (!quiInstance) {
+			return reply.send({ summaries: {} });
+		}
+
+		// Reuse the cached inode index (built once per qui instance,
+		// 30-min TTL, persisted across restarts). If the index isn't
+		// warm, bail with empty rather than block the library page.
+		const indexClient = createQuiClient(app, quiInstance);
+		const inodeIndex = await Promise.race([
+			buildFileIdIndex(indexClient, quiInstance, request.log, app.prisma).catch(() => null),
+			new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+		]);
+		if (!inodeIndex) {
+			return reply.send({ summaries: {} });
+		}
+
+		// Resolve each item's file paths. Movies → LibraryCache.data.path
+		// + movieFile.relativePath. Series → all EpisodeFileCache rows.
+		// Both done in parallel.
+		interface ItemPaths {
+			key: string; // "type:id"
+			paths: string[];
+		}
+		const itemPaths: ItemPaths[] = await Promise.all(
+			body.items.map(async ({ arrInstanceId, itemId, itemType }) => {
+				// Key includes the *arr instance ID so two instances with
+				// overlapping arrItemIds don't collide in the summary map.
+				const key = `${arrInstanceId}|${itemType}:${itemId}`;
+				if (itemType === "movie") {
+					const row = await app.prisma.libraryCache.findFirst({
+						where: {
+							instanceId: arrInstanceId,
+							arrItemId: itemId,
+							itemType: "movie",
+							instance: { userId },
+						},
+						select: { data: true },
+					});
+					if (!row) return { key, paths: [] };
+					try {
+						const parsed = JSON.parse(row.data) as Record<string, unknown>;
+						const path = typeof parsed.path === "string" ? parsed.path : null;
+						const movieFile = parsed.movieFile as Record<string, unknown> | null | undefined;
+						const relativePath =
+							movieFile &&
+							typeof movieFile === "object" &&
+							typeof movieFile.relativePath === "string"
+								? movieFile.relativePath
+								: null;
+						if (path && relativePath) {
+							return { key, paths: [`${path.replace(/\/+$/, "")}/${relativePath}`] };
+						}
+					} catch {
+						/* fall through */
+					}
+					return { key, paths: [] };
+				}
+				// series: gather all episode files
+				const episodes = await app.prisma.episodeFileCache.findMany({
+					where: {
+						instanceId: arrInstanceId,
+						arrSeriesId: itemId,
+						instance: { userId },
+					},
+					select: { path: true },
+				});
+				return { key, paths: episodes.map((e) => e.path).filter(Boolean) };
+			}),
+		);
+
+		// stat() every path → inode → hash set. All in-memory after
+		// inode index is warm; just a few hundred syscalls.
+		const itemHashes = new Map<string, Set<string>>();
+		const allHashes = new Set<string>();
+		for (const { key, paths } of itemPaths) {
+			const hashes = new Set<string>();
+			await Promise.all(
+				paths.map(async (p) => {
+					const found = await getAllHashesForFileId(p, inodeIndex);
+					for (const h of found) hashes.add(h);
+				}),
+			);
+			itemHashes.set(key, hashes);
+			for (const h of hashes) allHashes.add(h);
+		}
+
+		// Resolve per-hash tracker hostnames. We could call the full
+		// `enrichTorrentHashes` here for symmetry, but for the summary
+		// view we only need hostnames — skip the full torrent metadata
+		// to halve the qui round-trips. Re-use the same hostname-safe
+		// extraction logic.
+		const hashToHosts = new Map<string, string[]>();
+		const hashArr = Array.from(allHashes);
+		// Concurrency cap: qui can typically handle ~50 parallel requests
+		// but we stay conservative at 32 to leave headroom for the
+		// existing cluster endpoint that's running for any open panel.
+		const CONCURRENCY = 32;
+		for (let i = 0; i < hashArr.length; i += CONCURRENCY) {
+			const batch = hashArr.slice(i, i + CONCURRENCY);
+			await Promise.all(
+				batch.map(async (hash) => {
+					try {
+						const client = createQuiClient(app, quiInstance);
+						const torrent = await client.getTorrentByHash(hash);
+						if (!torrent || typeof torrent.instanceId !== "number") {
+							hashToHosts.set(hash, []);
+							return;
+						}
+						const trackers = await client.getTrackers(torrent.instanceId, hash);
+						const hosts = trackers
+							.filter((t) => !t.url.startsWith("** "))
+							.map((t) => extractHostnameSafe(t.url))
+							.filter((h) => h.length > 0);
+						hashToHosts.set(hash, hosts);
+					} catch {
+						hashToHosts.set(hash, []);
+					}
+				}),
+			);
+		}
+
+		// Aggregate per item: union of all hosts across all hashes
+		// covering it. trackerCount = distinct hosts. topHosts = up to
+		// 4, preserving discovery order (qui's enumeration order for
+		// the inode index, which roughly mirrors insertion time).
+		const summaries: Record<string, LibrarySeedingSummaryEntry> = {};
+		for (const [key, hashes] of itemHashes) {
+			const hosts = new Set<string>();
+			for (const h of hashes) {
+				const hostsForHash = hashToHosts.get(h) ?? [];
+				for (const host of hostsForHash) hosts.add(host);
+			}
+			summaries[key] = {
+				trackerCount: hosts.size,
+				topHosts: Array.from(hosts).slice(0, 4),
+				hashCount: hashes.size,
+			};
+		}
+
+		librarySummaryCache.set(cacheKey, { summaries, builtAt: Date.now() });
+		return reply.send({ summaries });
+	});
+
 	app.post("/qui/backfill/run-now", async (request, reply) => {
 		const userId = request.currentUser!.id;
 		// Three-phase backfill pipeline:
