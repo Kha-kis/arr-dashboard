@@ -592,22 +592,53 @@ const ClusterCard: React.FC<{
 						{cluster.qualityName && <span>· {cluster.qualityName}</span>}
 						{cluster.releaseGroup && <span>· {cluster.releaseGroup}</span>}
 						<span className="text-foreground/40">·</span>
-						{cluster.copies.map((copy) => {
-							const brand = resolveCopyTrackerBrand({
-								tracker: copy.tracker,
-								trackerHostnames: copy.trackerHostnames,
-							});
-							return (
+						{/* Dedupe brand pills by abbreviation — when the same tracker
+						 * has multiple .torrent variants (rare but happens when
+						 * an uploader re-uploads identical bytes under a corrected
+						 * name, e.g., adding REPACK tag or "US." prefix), render
+						 * once with a `×N` suffix instead of two visually identical
+						 * pills. Map iteration order preserves insertion order so
+						 * library-role copies still render before cross-seeds.
+						 *
+						 * The health-dot strip above (one dot per copy) is NOT
+						 * deduplicated — each copy has its own state and the dots
+						 * communicate per-copy health. Only the brand pills
+						 * collapse, because the pill answers "which trackers
+						 * cover this content" not "how is each copy doing."
+						 */}
+						{(() => {
+							const byBrand = new Map<
+								string,
+								{ brand: { abbr: string; name: string; color?: string }; count: number }
+							>();
+							for (const copy of cluster.copies) {
+								const brand = resolveCopyTrackerBrand({
+									tracker: copy.tracker,
+									trackerHostnames: copy.trackerHostnames,
+								});
+								const existing = byBrand.get(brand.abbr);
+								if (existing) {
+									existing.count++;
+								} else {
+									byBrand.set(brand.abbr, { brand, count: 1 });
+								}
+							}
+							return Array.from(byBrand.entries()).map(([abbr, { brand, count }]) => (
 								<span
-									key={copy.infoHash}
+									key={abbr}
 									className="rounded bg-card/70 px-1.5 py-0.5 font-mono text-[10px] text-foreground/80"
-									title={brand.name}
+									title={
+										count > 1
+											? `${brand.name} · ${count} torrent variants at this tracker`
+											: brand.name
+									}
 									style={brand.color ? { borderLeft: `2px solid ${brand.color}` } : undefined}
 								>
 									{brand.abbr}
+									{count > 1 && <span className="text-foreground/50"> ×{count}</span>}
 								</span>
-							);
-						})}
+							));
+						})()}
 					</div>
 					{/* Cross-reference: "↳ also covered by S04 pack — 4 trackers" */}
 					{cluster.coveredBy && (
