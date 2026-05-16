@@ -1093,9 +1093,17 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 				name: string | null;
 				state: string | null;
 				category: string | null;
-				/** "library" = Sonarr/Radarr-managed; "mirror" = qui's cross-seed-link. */
-				role: "library" | "mirror";
+				/** "library" = Sonarr/Radarr-managed; "cross-seed" = qui's cross-seed automation. */
+				role: "library" | "cross-seed";
 				tracker: string | null;
+				/**
+				 * Announce-URL hostnames from qBit's per-torrent tracker list. ONLY
+				 * the hostname portion — the URL path/query (which contains the
+				 * passkey for private trackers) is stripped before this leaves the
+				 * server. DHT/PeX/LSD pseudo-trackers (qui's `"** "` prefix) are
+				 * excluded. Authoritative source for brand identification.
+				 */
+				trackerHostnames: string[];
 				trackerHealth: "unregistered" | "tracker_down" | null;
 				ratio: number | null;
 				savePath: string | null;
@@ -1118,6 +1126,7 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 				category: null,
 				role: "library",
 				tracker: null,
+				trackerHostnames: [],
 				trackerHealth: null,
 				ratio: null,
 				savePath: null,
@@ -1131,6 +1140,32 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 				instanceName: null,
 				quiUnreachable: true,
 			});
+
+			/**
+			 * Safe hostname extraction from a qBit announce URL.
+			 *
+			 * **Why this is sensitive**: private-tracker announce URLs include a
+			 * passkey in the path or query string, e.g.,
+			 * `https://tracker.beyond-hd.me:2053/announce/PASSKEY_HERE` or
+			 * `https://hdbits.org/announce.php?passkey=PASSKEY_HERE`. That passkey
+			 * is equivalent to login credentials for the tracker — leaking it via
+			 * an API response (or worse, a log) would compromise the user's account.
+			 *
+			 * This helper extracts ONLY the hostname (`tracker.beyond-hd.me`,
+			 * `hdbits.org`) and discards the path, query, fragment, and userinfo
+			 * portions of the URL. Empty string on any parse failure — we'd
+			 * rather lose tracker identification than risk passkey exposure.
+			 *
+			 * Pseudo-trackers (`** [DHT]`, `** [PeX]`, `** [LSD]`) are filtered
+			 * by the caller via the qui-prefix convention before this is called.
+			 */
+			const extractHostnameSafe = (url: string): string => {
+				try {
+					return new URL(url).hostname;
+				} catch {
+					return "";
+				}
+			};
 
 			// Fetch each unique hash from qui ONCE. Multiple clusters might
 			// share a hash if a single torrent covers episodes in different
@@ -1150,27 +1185,48 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 								enrichedCopies.set(hash, buildUnreachableCopy(hash));
 								return;
 							}
+
+							// Fetch the authoritative tracker list separately. qBit's
+							// announce URLs contain passkeys, so we MUST extract only
+							// the hostname before this data leaves the server. Pseudo-
+							// trackers (DHT/PeX/LSD — qui prefixes them with "** ")
+							// are filtered out via that convention. Empty list when
+							// instanceId is unavailable (would be needed for the API
+							// call) or the call fails.
+							let trackerHostnames: string[] = [];
+							if (typeof torrent.instanceId === "number") {
+								try {
+									const trackers = await client.getTrackers(torrent.instanceId, hash);
+									trackerHostnames = trackers
+										.filter((t) => !t.url.startsWith("** "))
+										.map((t) => extractHostnameSafe(t.url))
+										.filter((h) => h.length > 0);
+								} catch (trackerErr) {
+									// Non-fatal — fall back to empty list. Brand pill will
+									// render `?` for this copy until the next refresh.
+									request.log.debug(
+										{ err: trackerErr, hash, instanceId: torrent.instanceId },
+										"qui series-torrents: getTrackers failed; trackerHostnames empty",
+									);
+								}
+							}
+
 							const category = torrent.category || null;
 							const linksMatch = (torrent.savePath ?? "").match(/\/links\/([^/]+)/);
 							const tracker = linksMatch ? linksMatch[1]! : null;
 							// Role classification:
-							//   - "mirror" = lives under qui's hardlink-mode layout
+							//   - "cross-seed" = lives under qui's hardlink-mode layout
 							//     (`/data/torrents/links/<tracker>/...`) OR has a
 							//     category that signals cross-seed lineage
 							//     (`cross-seed-link`, `tv.cross`, `movies.cross`, etc.).
 							//   - "library" = direct Sonarr/Radarr-managed copy at the
 							//     primary download path (`/data/torrents/tv/`, etc.).
-							//
-							// Path is the strongest signal because qui's hardlink-mode
-							// ALWAYS uses `/links/<tracker>/` even when *arr re-imports
-							// the cross-seed under a `.cross` category. Without the path
-							// check, every tracker mirror got mislabeled "Library".
 							const lowerCategory = (category ?? "").toLowerCase();
-							const isPathMirror = linksMatch !== null;
-							const isCategoryMirror =
+							const isPathCrossSeed = linksMatch !== null;
+							const isCategoryCrossSeed =
 								lowerCategory.includes("cross-seed") || lowerCategory.endsWith(".cross");
 							const role: ClusterCopy["role"] =
-								isPathMirror || isCategoryMirror ? "mirror" : "library";
+								isPathCrossSeed || isCategoryCrossSeed ? "cross-seed" : "library";
 							enrichedCopies.set(hash, {
 								infoHash: hash,
 								name: torrent.name ?? null,
@@ -1178,6 +1234,7 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 								category,
 								role,
 								tracker,
+								trackerHostnames,
 								trackerHealth: null, // populated below if siblings/health surfaces it
 								ratio: typeof torrent.ratio === "number" ? torrent.ratio : null,
 								savePath: torrent.savePath ?? null,

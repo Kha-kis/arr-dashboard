@@ -289,12 +289,19 @@ export interface SeriesTorrentCopy {
 	category: string | null;
 	/**
 	 * "library" — Sonarr/Radarr imported it (categories like `tv`, `movies`,
-	 * `tv.cross`). "mirror" — qui's cross-seed automation injected it
-	 * under the `cross-seed-link` category.
+	 * `tv.cross`). "cross-seed" — qui's cross-seed automation injected it
+	 * under the `cross-seed-link` category (or it lives under `/links/`).
 	 */
-	role: "library" | "mirror";
+	role: "library" | "cross-seed";
 	/** Tracker name parsed from qui's hardlink layout savePath; null when not parseable. */
 	tracker: string | null;
+	/**
+	 * Announce URL hostnames from qBit's per-torrent tracker list (DHT/PeX/LSD
+	 * filtered out). Authoritative for brand identification — independent of
+	 * savePath and tags. Multiple entries when the torrent is multi-tracker;
+	 * first known brand wins for pill rendering.
+	 */
+	trackerHostnames: string[];
 	trackerHealth: "unregistered" | "tracker_down" | null;
 	ratio: number | null;
 	savePath: string | null;

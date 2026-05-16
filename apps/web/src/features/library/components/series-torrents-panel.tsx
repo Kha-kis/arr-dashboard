@@ -574,7 +574,7 @@ const ClusterCard: React.FC<{
 							{cluster.copies.map((copy) => {
 								const brand = resolveCopyTrackerBrand({
 									tracker: copy.tracker,
-									tags: copy.tags,
+									trackerHostnames: copy.trackerHostnames,
 								});
 								return (
 									<span
@@ -595,7 +595,7 @@ const ClusterCard: React.FC<{
 						{cluster.copies.map((copy) => {
 							const brand = resolveCopyTrackerBrand({
 								tracker: copy.tracker,
-								tags: copy.tags,
+								trackerHostnames: copy.trackerHostnames,
 							});
 							return (
 								<span
@@ -649,7 +649,10 @@ const CopyRow: React.FC<{ copy: SeriesTorrentCopy; incognito: boolean }> = ({
 }) => {
 	const stateLabel = friendlyState(copy.state);
 	const progressPct = typeof copy.progress === "number" ? Math.round(copy.progress * 100) : null;
-	const brand = resolveCopyTrackerBrand({ tracker: copy.tracker, tags: copy.tags });
+	const brand = resolveCopyTrackerBrand({
+		tracker: copy.tracker,
+		trackerHostnames: copy.trackerHostnames,
+	});
 	return (
 		<div className="space-y-1 rounded bg-card/40 px-2 py-1.5 text-[11px]">
 			<div className="flex flex-wrap items-center gap-1.5">
@@ -670,7 +673,7 @@ const CopyRow: React.FC<{ copy: SeriesTorrentCopy; incognito: boolean }> = ({
 							: "bg-purple-500/20 text-purple-200"
 					}`}
 				>
-					{copy.role === "library" ? "Library" : "Mirror"}
+					{copy.role === "library" ? "Library" : "Cross-seed"}
 				</span>
 				{stateLabel && (
 					<span className={`rounded px-1.5 py-0.5 text-[10px] ${stateTone(copy.state)}`}>
