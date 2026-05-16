@@ -877,15 +877,56 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 			const stuckEpisodes = episodeContexts.filter((c) => c.effectiveHashes.length === 0).length;
 			const correlatedEpisodes = totalEpisodes - stuckEpisodes;
 
-			// Group episodes by **coverage signature** — the sorted list of
-			// hashes covering them. Episodes with the same set of hashes
-			// belong to the same cluster (they're all covered by the same
-			// torrent copies).
+			// Per-torrent coverage map — invert the per-episode lookup to
+			// produce one entry per unique torrent hash, recording exactly
+			// which episode files in THIS series the torrent covers.
 			//
-			// Different example: an S02 8-pack covers eps [a,b,...h] with
-			// hashes [H1,H2,H3,H4]; each of those 8 episodes has the same
-			// signature → 1 cluster, 4 copies. Per-episode S03E01 torrent
-			// covers just ep [i] with hashes [H5,H6,H7] → different cluster.
+			// The previous primitive (per-episode hash union → cluster by
+			// hash set) double-counted torrents in mixed-coverage scenarios:
+			// a season pack hash would appear in N clusters when N episodes
+			// had per-episode REPACK siblings. Inverting to per-torrent
+			// coverage gives each unique torrent exactly one membership.
+			//
+			// Built from the same `episodeContexts` data — every hash that
+			// covers any episode picks up that episode's id. A torrent NOT
+			// hardlinked to any *arr-managed file in this series never
+			// appears here at all (correct — it doesn't cover the series).
+			interface PerHashCoverage {
+				episodeFileIds: Set<number>;
+				seasons: Set<number>;
+				totalSize: bigint;
+				qualityName: string | null;
+				releaseGroup: string | null;
+				inodeVerified: boolean;
+			}
+			const hashCoverage = new Map<string, PerHashCoverage>();
+			for (const ctx of episodeContexts) {
+				if (ctx.effectiveHashes.length === 0) continue; // stuck
+				for (const hash of ctx.effectiveHashes) {
+					let acc = hashCoverage.get(hash);
+					if (!acc) {
+						acc = {
+							episodeFileIds: new Set(),
+							seasons: new Set(),
+							totalSize: 0n,
+							qualityName: ctx.ep.qualityName,
+							releaseGroup: ctx.ep.releaseGroup,
+							inodeVerified: ctx.inodeVerified,
+						};
+						hashCoverage.set(hash, acc);
+					}
+					acc.episodeFileIds.add(ctx.ep.arrEpisodeFileId);
+					acc.seasons.add(ctx.ep.seasonNumber);
+					acc.totalSize += ctx.ep.size;
+					if (ctx.inodeVerified) acc.inodeVerified = true;
+				}
+			}
+
+			// Cluster torrents by **identical coverage** — same set of
+			// episode files = different tracker copies of the same release.
+			// All hashes with the same coverage share the cluster's size /
+			// quality / release-group fields (provably consistent because
+			// they all hardlink to the same files).
 			interface ClusterAccumulator {
 				episodeFileIds: number[];
 				seasons: Set<number>;
@@ -896,26 +937,24 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 				hashes: Set<string>;
 			}
 			const clusterMap = new Map<string, ClusterAccumulator>();
-			for (const ctx of episodeContexts) {
-				if (ctx.effectiveHashes.length === 0) continue; // stuck
-				const signature = [...ctx.effectiveHashes].sort().join("|");
-				let acc = clusterMap.get(signature);
-				if (!acc) {
-					acc = {
-						episodeFileIds: [],
-						seasons: new Set(),
-						totalSize: 0n,
-						qualityName: ctx.ep.qualityName,
-						releaseGroup: ctx.ep.releaseGroup,
-						inodeVerified: ctx.inodeVerified,
-						hashes: new Set(ctx.effectiveHashes),
+			for (const [hash, cov] of hashCoverage) {
+				const episodeIds = Array.from(cov.episodeFileIds).sort((a, b) => a - b);
+				const signature = episodeIds.join("|");
+				let cluster = clusterMap.get(signature);
+				if (!cluster) {
+					cluster = {
+						episodeFileIds: episodeIds,
+						seasons: new Set(cov.seasons),
+						totalSize: cov.totalSize,
+						qualityName: cov.qualityName,
+						releaseGroup: cov.releaseGroup,
+						inodeVerified: cov.inodeVerified,
+						hashes: new Set(),
 					};
-					clusterMap.set(signature, acc);
+					clusterMap.set(signature, cluster);
 				}
-				acc.episodeFileIds.push(ctx.ep.arrEpisodeFileId);
-				acc.seasons.add(ctx.ep.seasonNumber);
-				acc.totalSize += ctx.ep.size;
-				if (ctx.inodeVerified) acc.inodeVerified = true;
+				cluster.hashes.add(hash);
+				if (cov.inodeVerified) cluster.inodeVerified = true;
 			}
 
 			// Resolve the qui instance once for enrichment. We need one
@@ -1069,6 +1108,25 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 				isDormant: boolean;
 				/** Aggregate state for the cluster header. */
 				primaryState: string | null;
+				/**
+				 * Cross-reference: this cluster's episodes are a STRICT subset of
+				 * another cluster's coverage (i.e., a pack covers a superset of
+				 * episodes). Surfaces redundancy without hiding it — user sees
+				 * "S04E07 REPACK ↳ also covered by S04 pack". Null when this
+				 * cluster's coverage isn't a subset of any other cluster.
+				 *
+				 * Inode-correctness: since clusters are built from per-torrent
+				 * coverage of *arr files (via inode lookups), a cluster only
+				 * appears here if its torrents share an inode with the pack's
+				 * files for those episodes. A "separate single-episode release"
+				 * with its own inode never lands in any cluster's coverage in
+				 * the first place — the cross-ref claim is provably accurate.
+				 */
+				coveredBy: {
+					clusterKey: string;
+					coverageLabel: string;
+					copyCount: number;
+				} | null;
 			}
 
 			const formatCoverageLabel = (seasons: number[], episodeIds: number[]): string => {
@@ -1124,6 +1182,7 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 						copies,
 						isDormant,
 						primaryState,
+						coveredBy: null, // resolved after sort, see subset pass below
 					};
 				})
 				// Sort: biggest packs first, then by season number ascending.
@@ -1131,6 +1190,47 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 					if (a.episodeCount !== b.episodeCount) return b.episodeCount - a.episodeCount;
 					return (a.seasons[0] ?? 0) - (b.seasons[0] ?? 0);
 				});
+
+			// Subset cross-reference pass: for each cluster, find the smallest
+			// STRICT-superset cluster (covers all of its episodes plus more).
+			// "Smallest" is intentional — if both S04 pack and a complete-series
+			// pack cover S04E07-REPACK, we want to surface "covered by S04 pack"
+			// (the closest container) rather than "covered by series pack".
+			//
+			// O(N²) over cluster count. N is typically 1-10 for a series, so
+			// this is trivial. If a series had hundreds of clusters we'd switch
+			// to coverage-set bitmap intersections.
+			for (const cluster of clusters) {
+				if (cluster.episodeCount === 0) continue;
+				const myEpSet = new Set(cluster.episodeFileIds);
+				let bestSuperset: (typeof clusters)[number] | null = null;
+				for (const other of clusters) {
+					if (other === cluster) continue;
+					if (other.episodeCount <= cluster.episodeCount) continue;
+					// Strict superset check: every episode in `cluster` must be in `other`.
+					let isSuperset = true;
+					for (const id of cluster.episodeFileIds) {
+						if (!new Set(other.episodeFileIds).has(id)) {
+							isSuperset = false;
+							break;
+						}
+					}
+					// Optimization: skip if not a superset (re-check via Set above
+					// is cheap, but reusing `myEpSet` makes intent clearer).
+					if (!isSuperset) continue;
+					void myEpSet; // silence unused-var; kept for self-documentation
+					if (!bestSuperset || other.episodeCount < bestSuperset.episodeCount) {
+						bestSuperset = other;
+					}
+				}
+				if (bestSuperset) {
+					cluster.coveredBy = {
+						clusterKey: bestSuperset.key,
+						coverageLabel: bestSuperset.coverageLabel,
+						copyCount: bestSuperset.copies.length,
+					};
+				}
+			}
 
 			// Action items: surface what the user can do, not just what exists.
 			interface SeriesActionItem {
@@ -1181,52 +1281,77 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 				});
 			}
 
-			// Per-season block — still useful as a drill-down. Same data as
-			// before but trimmed to what the panel actually renders.
-			const seasonMap = new Map<
-				number,
-				{
-					seasonNumber: number;
-					episodes: Array<{
-						arrEpisodeFileId: number;
-						relativePath: string;
-						sizeBytes: string;
-						qualityName: string | null;
-						releaseGroup: string | null;
-						infoHash: string | null;
-						infoHashSource: string | null;
-					}>;
-				}
-			>();
-			// Use the HEALED state when emitting per-episode hashes so the
-			// season drill-down reflects what the user sees in clusters.
-			const healedHashById = new Map<string, string>();
-			for (const { ep, inodeHashes } of healCandidates) healedHashById.set(ep.id, inodeHashes[0]);
-			for (const ep of episodes) {
-				let bucket = seasonMap.get(ep.seasonNumber);
-				if (!bucket) {
-					bucket = { seasonNumber: ep.seasonNumber, episodes: [] };
-					seasonMap.set(ep.seasonNumber, bucket);
-				}
-				const healedHash = healedHashById.get(ep.id);
-				bucket.episodes.push({
-					arrEpisodeFileId: ep.arrEpisodeFileId,
-					relativePath: ep.relativePath,
-					sizeBytes: ep.size.toString(),
-					qualityName: ep.qualityName,
-					releaseGroup: ep.releaseGroup,
-					infoHash: healedHash ?? ep.infoHash,
-					infoHashSource: healedHash ? "inode" : ep.infoHashSource,
-				});
+			// Season groups — the top-level navigational structure for the UI.
+			// One group per season number that has episodes in this series.
+			// Each group lists its clusters (by key) so the frontend can
+			// render seasons-first without re-deriving from cluster.seasons.
+			//
+			// Multi-season packs (rare — a torrent spanning S01-S05) appear
+			// in each season group they cover, with a `spansMultipleSeasons:
+			// true` flag on the cluster itself for the UI to badge it.
+			//
+			// Stuck episodes (no live torrent) get a compact per-file list
+			// inside the season group — so a fully-stuck season can render
+			// the "Cross-seed search / Re-grab via Sonarr" CTA strip with
+			// the affected episodes inline.
+			interface SeasonGroup {
+				seasonNumber: number;
+				totalEpisodes: number;
+				correlatedEpisodes: number;
+				stuckEpisodes: number;
+				/** Cluster keys belonging to this season, sorted by coverage desc. */
+				clusterKeys: string[];
+				/** Stuck episode files — for inline "missing release" display. */
+				stuckEpisodeFiles: Array<{
+					arrEpisodeFileId: number;
+					relativePath: string;
+				}>;
 			}
-			const seasons = Array.from(seasonMap.values())
-				.map((s) => ({
-					seasonNumber: s.seasonNumber,
-					episodeCount: s.episodes.length,
-					correlatedCount: s.episodes.filter((e) => e.infoHash !== null).length,
-					episodes: s.episodes,
-				}))
-				.sort((a, b) => a.seasonNumber - b.seasonNumber);
+
+			const seasonGroupMap = new Map<number, SeasonGroup>();
+			// Walk every episode (correlated or stuck) so each season's totals
+			// reflect the actual library, not just the correlated subset.
+			for (const ep of episodes) {
+				let group = seasonGroupMap.get(ep.seasonNumber);
+				if (!group) {
+					group = {
+						seasonNumber: ep.seasonNumber,
+						totalEpisodes: 0,
+						correlatedEpisodes: 0,
+						stuckEpisodes: 0,
+						clusterKeys: [],
+						stuckEpisodeFiles: [],
+					};
+					seasonGroupMap.set(ep.seasonNumber, group);
+				}
+				group.totalEpisodes++;
+			}
+			// Pull correlation from episodeContexts (post-heal, includes inode hits).
+			for (const ctx of episodeContexts) {
+				const group = seasonGroupMap.get(ctx.ep.seasonNumber)!;
+				if (ctx.effectiveHashes.length > 0) {
+					group.correlatedEpisodes++;
+				} else {
+					group.stuckEpisodes++;
+					group.stuckEpisodeFiles.push({
+						arrEpisodeFileId: ctx.ep.arrEpisodeFileId,
+						relativePath: ctx.ep.relativePath,
+					});
+				}
+			}
+			// Wire clusters into their season group(s). A cluster's seasons
+			// array can have more than one entry for multi-season packs;
+			// each gets a reference. The frontend de-dupes by clusterKey
+			// when a cluster is referenced from multiple groups.
+			for (const cluster of clusters) {
+				for (const seasonNum of cluster.seasons) {
+					const group = seasonGroupMap.get(seasonNum);
+					if (group) group.clusterKeys.push(cluster.key);
+				}
+			}
+			const seasonGroups: SeasonGroup[] = Array.from(seasonGroupMap.values()).sort(
+				(a, b) => a.seasonNumber - b.seasonNumber,
+			);
 
 			// Diagnostic: emit cluster summary at info level so operators can
 			// confirm clustering behavior without enabling debug logs. Compact
@@ -1258,7 +1383,7 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 				healedEpisodes,
 				actionItems,
 				clusters,
-				seasons,
+				seasonGroups,
 			});
 		},
 	);

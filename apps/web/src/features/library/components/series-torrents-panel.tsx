@@ -2,6 +2,7 @@
 
 import {
 	AlertTriangle,
+	ArrowUp,
 	CheckCircle2,
 	ChevronDown,
 	ChevronRight,
@@ -18,10 +19,12 @@ import { Button } from "../../../components/ui/button";
 import { useSeriesTorrents, useTriggerQuiCrossSeedSearch } from "../../../hooks/api/useQui";
 import type {
 	SeriesActionItem,
+	SeriesSeasonGroup,
 	SeriesTorrentCluster,
 	SeriesTorrentCopy,
 } from "../../../lib/api-client/qui";
 import { getLinuxSavePath, useIncognitoMode } from "../../../lib/incognito";
+import { getTrackerBrand } from "../../../lib/tracker-brand";
 
 interface Props {
 	arrInstanceId: string;
@@ -42,11 +45,6 @@ const formatBytes = (raw: string | number | bigint): string => {
 	return `${value.toFixed(value >= 100 ? 0 : value >= 10 ? 1 : 2)} ${units[unit]}`;
 };
 
-/**
- * Normalize qui's wire state vocabulary to a tighter set of UI labels.
- * qui returns native qBit states (`uploading`, `stalledUP`, `stalledDL`,
- * `pausedUP`, `error`, etc) — we collapse them for clarity.
- */
 const friendlyState = (state: string | null): string | null => {
 	if (!state) return null;
 	const s = state.toLowerCase();
@@ -71,12 +69,34 @@ const stateTone = (state: string | null): string => {
 };
 
 /**
- * Series torrent panel — clusters torrents by content coverage so a
- * 4-tracker season pack renders as 1 cluster row with 4 inline tracker
- * copies, not 4 separate rows with duplicated sibling lists.
+ * Per-copy health dot — visual at-a-glance signal for cluster health.
+ * Green = actively seeding, amber = stalled-up / paused, red = error,
+ * gray = unknown / unreachable.
+ */
+const healthDot = (copy: SeriesTorrentCopy): string => {
+	if (copy.quiUnreachable) return "bg-gray-500";
+	const f = (copy.state ?? "").toLowerCase();
+	if (f.includes("error")) return "bg-red-500";
+	if (f.includes("uploading") || f === "seeding") return "bg-green-500";
+	if (f === "stalledup" || f === "stalleddl") return "bg-amber-500";
+	if (f.startsWith("paused") || f.startsWith("stopped")) return "bg-gray-400";
+	if (f.startsWith("checking")) return "bg-blue-400";
+	if (f.includes("downloading")) return "bg-blue-500";
+	return "bg-gray-500";
+};
+
+/**
+ * Series torrent panel — season-grouped content clusters with per-copy
+ * health dots, tracker brand pills, and subset cross-references.
  *
- * Top-of-panel "Action items" lead with what the user can DO; the
- * cluster list and per-season drill-down follow as supporting detail.
+ * Ship 1 of the qui-parity redesign:
+ *   - Backend clusters by per-torrent coverage (not per-episode hash
+ *     union), so REPACKs / per-episode releases shadowed by season packs
+ *     are visible-but-deduped via `coveredBy` cross-references.
+ *   - Frontend renders seasons as the top-level navigation. Each season
+ *     header summarizes correlated/stuck counts; clusters live inside.
+ *   - Health-dot strip on every cluster card replaces buried metadata
+ *     with a one-glance copy-by-copy health read.
  */
 export const SeriesTorrentsPanel: React.FC<Props> = ({ arrInstanceId, arrItemId, seriesTitle }) => {
 	const [isIncognito] = useIncognitoMode();
@@ -85,8 +105,8 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({ arrInstanceId, arrItemId,
 	const [searchOutcome, setSearchOutcome] = useState<
 		{ kind: "success"; runId: number; scanRoot: string } | { kind: "error"; message: string } | null
 	>(null);
-	const [expandedSeasons, setExpandedSeasons] = useState<Set<number>>(new Set());
 	const [expandedClusters, setExpandedClusters] = useState<Set<string>>(new Set());
+	const [expandedSeasons, setExpandedSeasons] = useState<Set<number>>(new Set());
 
 	const handleSearchClick = async () => {
 		setSearchOutcome(null);
@@ -110,20 +130,20 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({ arrInstanceId, arrItemId,
 		}
 	};
 
-	const toggleSeason = (n: number) => {
-		setExpandedSeasons((prev) => {
-			const next = new Set(prev);
-			if (next.has(n)) next.delete(n);
-			else next.add(n);
-			return next;
-		});
-	};
-
 	const toggleCluster = (key: string) => {
 		setExpandedClusters((prev) => {
 			const next = new Set(prev);
 			if (next.has(key)) next.delete(key);
 			else next.add(key);
+			return next;
+		});
+	};
+
+	const toggleSeason = (n: number) => {
+		setExpandedSeasons((prev) => {
+			const next = new Set(prev);
+			if (next.has(n)) next.delete(n);
+			else next.add(n);
 			return next;
 		});
 	};
@@ -175,6 +195,13 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({ arrInstanceId, arrItemId,
 		);
 	}
 
+	// Season-collapse threshold: panels with ≥5 seasons render seasons
+	// collapsed by default to keep scroll manageable. ≤4 stays expanded.
+	const collapsibleSeasons = data.seasonGroups.length >= 5;
+
+	// Quick cluster lookup for season-group → cluster resolution.
+	const clusterByKey = new Map<string, SeriesTorrentCluster>(data.clusters.map((c) => [c.key, c]));
+
 	return (
 		<GlassmorphicCard className="space-y-4 p-4">
 			{/* Header: title + cross-seed search button + summary stats */}
@@ -220,7 +247,7 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({ arrInstanceId, arrItemId,
 				</div>
 			</div>
 
-			{/* Cross-seed search outcome banner — full-width informational */}
+			{/* Cross-seed search outcome banner */}
 			{searchOutcome?.kind === "success" && (
 				<div className="flex items-start gap-2 rounded-md border border-green-500/30 bg-green-500/10 px-3 py-2 text-xs">
 					<CheckCircle2 className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-green-500" />
@@ -243,118 +270,36 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({ arrInstanceId, arrItemId,
 				</div>
 			)}
 
-			{/* Action items — what the user should DO. Computed server-side
-			 * from clusters + episode state. Skipped entirely when there's
-			 * nothing actionable. */}
+			{/* Action items — what the user should DO */}
 			{data.actionItems.length > 0 && <ActionItemList items={data.actionItems} />}
 
-			{/* Content clusters — one row per coverage signature (set of
-			 * episodes covered). Each cluster lists its tracker copies
-			 * inline. The redundant "Cross-seed siblings" nested list is
-			 * gone because the cluster itself IS the sibling group. */}
-			{data.clusters.length > 0 ? (
+			{/* Season-grouped content clusters */}
+			{data.seasonGroups.length > 0 ? (
 				<div className="space-y-2">
 					<h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-						Content covering {seriesTitle}
+						{seriesTitle}
 					</h4>
-					<div className="space-y-1.5">
-						{data.clusters.map((cluster) => (
-							<ClusterRow
-								key={cluster.key}
-								cluster={cluster}
-								expanded={expandedClusters.has(cluster.key)}
-								onToggle={() => toggleCluster(cluster.key)}
+					<div className="space-y-2">
+						{data.seasonGroups.map((group) => (
+							<SeasonGroupCard
+								key={group.seasonNumber}
+								group={group}
+								clusterByKey={clusterByKey}
+								expandedClusters={expandedClusters}
+								expandedSeasons={expandedSeasons}
+								onToggleCluster={toggleCluster}
+								onToggleSeason={toggleSeason}
+								collapsible={collapsibleSeasons}
 								incognito={isIncognito}
+								onCrossSeedSearch={handleSearchClick}
+								searchPending={mutation.isPending}
 							/>
 						))}
 					</div>
 				</div>
 			) : (
 				<div className="rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs">
-					<p className="text-amber-200">
-						No torrents currently correlated to any episode. Click{" "}
-						<strong>Cross-seed search</strong> above to ask qui to look for matches.
-					</p>
-				</div>
-			)}
-
-			{/* Per-season drill-down — collapsed by default, still useful for
-			 * inspecting individual episode correlation. */}
-			{data.seasons.length > 0 && (
-				<div className="space-y-2">
-					<h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-						Seasons
-					</h4>
-					<div className="space-y-1">
-						{data.seasons.map((season) => {
-							const isOpen = expandedSeasons.has(season.seasonNumber);
-							const seasonPct =
-								season.episodeCount > 0
-									? Math.round((season.correlatedCount / season.episodeCount) * 100)
-									: 0;
-							return (
-								<div
-									key={season.seasonNumber}
-									className="rounded border border-border/40 bg-card/30 text-xs"
-								>
-									<button
-										type="button"
-										onClick={() => toggleSeason(season.seasonNumber)}
-										className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-card/50"
-									>
-										<div className="flex items-center gap-2">
-											{isOpen ? (
-												<ChevronDown className="h-3.5 w-3.5" />
-											) : (
-												<ChevronRight className="h-3.5 w-3.5" />
-											)}
-											<span className="font-semibold">
-												Season {String(season.seasonNumber).padStart(2, "0")}
-											</span>
-											<span className="text-muted-foreground">
-												{season.correlatedCount}/{season.episodeCount} correlated ({seasonPct}%)
-											</span>
-										</div>
-									</button>
-									{isOpen && (
-										<div className="space-y-0.5 border-t border-border/40 px-3 py-2 font-mono text-[11px]">
-											{season.episodes.map((ep) => {
-												const fname = ep.relativePath.split("/").pop() ?? ep.relativePath;
-												return (
-													<div
-														key={ep.arrEpisodeFileId}
-														className="flex items-center justify-between gap-3 py-0.5"
-													>
-														<span className="truncate text-muted-foreground" title={fname}>
-															{isIncognito ? getLinuxSavePath(fname) : fname}
-														</span>
-														<span className="flex-shrink-0 text-foreground">
-															{ep.infoHash ? (
-																<span
-																	className={
-																		ep.infoHashSource === "inode"
-																			? "text-green-300"
-																			: "text-blue-300"
-																	}
-																>
-																	{ep.infoHash.slice(0, 12)}
-																	{ep.infoHashSource === "inode"
-																		? " (inode)"
-																		: ` (${ep.infoHashSource ?? "?"})`}
-																</span>
-															) : (
-																<span className="text-amber-300">stuck</span>
-															)}
-														</span>
-													</div>
-												);
-											})}
-										</div>
-									)}
-								</div>
-							);
-						})}
-					</div>
+					<p className="text-amber-200">No episodes found for this series.</p>
 				</div>
 			)}
 		</GlassmorphicCard>
@@ -382,11 +327,6 @@ const Stat: React.FC<{
 	);
 };
 
-/**
- * Action-items list — server-computed signals about what the user should
- * do (stuck episodes, dormant content, FS unavailable, cache healed).
- * Renders as a compact pill list with severity-driven coloring.
- */
 const ActionItemList: React.FC<{ items: SeriesActionItem[] }> = ({ items }) => (
 	<div className="space-y-1.5">
 		<h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -417,12 +357,10 @@ const ActionItemRow: React.FC<{ item: SeriesActionItem }> = ({ item }) => {
 			}`}
 		>
 			<Icon
-				className={`mt-0.5 h-3.5 w-3.5 flex-shrink-0 ${
-					isWarn ? "text-amber-400" : "text-blue-400"
-				}`}
+				className={`mt-0.5 h-3.5 w-3.5 flex-shrink-0 ${isWarn ? "text-amber-400" : "text-blue-400"}`}
 			/>
 			<div className="space-y-0.5">
-				<p className={isWarn ? "text-amber-200 font-medium" : "text-blue-200 font-medium"}>
+				<p className={isWarn ? "font-medium text-amber-200" : "font-medium text-blue-200"}>
 					{item.title}
 				</p>
 				<p className="text-[11px] text-muted-foreground">{item.detail}</p>
@@ -432,34 +370,188 @@ const ActionItemRow: React.FC<{ item: SeriesActionItem }> = ({ item }) => {
 };
 
 /**
- * A single cluster: header showing the coverage label (e.g. "S03E04 · 1
- * episode") with the tracker count, then an expandable list of copies.
- * Collapsed by default to keep the panel scannable; one click reveals
- * full per-copy detail (path, peers, ratio, tags, etc).
+ * One season's worth of content — header strip + cluster list. Season is
+ * fully stuck (zero correlated) renders the "Cross-seed search" + (future)
+ * "Re-grab via Sonarr" CTA strip in the header.
  */
-const ClusterRow: React.FC<{
+const SeasonGroupCard: React.FC<{
+	group: SeriesSeasonGroup;
+	clusterByKey: Map<string, SeriesTorrentCluster>;
+	expandedClusters: Set<string>;
+	expandedSeasons: Set<number>;
+	onToggleCluster: (key: string) => void;
+	onToggleSeason: (n: number) => void;
+	collapsible: boolean;
+	incognito: boolean;
+	onCrossSeedSearch: () => void;
+	searchPending: boolean;
+}> = ({
+	group,
+	clusterByKey,
+	expandedClusters,
+	expandedSeasons,
+	onToggleCluster,
+	onToggleSeason,
+	collapsible,
+	incognito,
+	onCrossSeedSearch,
+	searchPending,
+}) => {
+	const isFullyStuck = group.correlatedEpisodes === 0 && group.totalEpisodes > 0;
+	const isFullyCovered =
+		group.correlatedEpisodes === group.totalEpisodes && group.totalEpisodes > 0;
+	const pct =
+		group.totalEpisodes > 0
+			? Math.round((group.correlatedEpisodes / group.totalEpisodes) * 100)
+			: 0;
+	const isOpen = !collapsible || expandedSeasons.has(group.seasonNumber);
+
+	// De-duplicate clusters (multi-season packs can appear in multiple groups).
+	// Resolve cluster keys to actual cluster objects now so we can sort + render.
+	const clusters = group.clusterKeys
+		.map((k) => clusterByKey.get(k))
+		.filter((c): c is SeriesTorrentCluster => c !== undefined);
+
+	return (
+		<div className="overflow-hidden rounded-lg border border-border/40 bg-card/20">
+			{/* Season header strip */}
+			<div className="flex flex-col gap-2 border-b border-border/40 bg-card/40 px-3 py-2.5">
+				<div className="flex items-center gap-2">
+					{collapsible && (
+						<button
+							type="button"
+							onClick={() => onToggleSeason(group.seasonNumber)}
+							className="flex-shrink-0"
+						>
+							{isOpen ? (
+								<ChevronDown className="h-4 w-4 text-muted-foreground" />
+							) : (
+								<ChevronRight className="h-4 w-4 text-muted-foreground" />
+							)}
+						</button>
+					)}
+					<h5 className="text-sm font-semibold text-foreground">
+						Season {String(group.seasonNumber).padStart(2, "0")}
+					</h5>
+					<span
+						className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+							isFullyCovered
+								? "bg-green-500/20 text-green-200"
+								: isFullyStuck
+									? "bg-red-500/20 text-red-200"
+									: "bg-amber-500/20 text-amber-200"
+						}`}
+					>
+						{group.correlatedEpisodes}/{group.totalEpisodes} ({pct}%)
+					</span>
+					{group.stuckEpisodes > 0 && (
+						<span className="text-[11px] text-muted-foreground">{group.stuckEpisodes} stuck</span>
+					)}
+					{clusters.length > 0 && (
+						<span className="ml-auto text-[11px] text-muted-foreground">
+							{clusters.length} {clusters.length === 1 ? "release" : "releases"} ·{" "}
+							{clusters.reduce((sum, c) => sum + c.copies.length, 0)} trackers
+						</span>
+					)}
+				</div>
+				{/* Stuck-season CTAs */}
+				{isFullyStuck && isOpen && (
+					<div className="flex flex-wrap items-center gap-2">
+						<Button
+							type="button"
+							variant="secondary"
+							size="sm"
+							onClick={onCrossSeedSearch}
+							disabled={searchPending}
+						>
+							<Search className="h-3 w-3" />
+							<span className="ml-1.5">Cross-seed search</span>
+						</Button>
+						<span className="text-[10px] text-muted-foreground">
+							Or trigger a re-grab from Sonarr to find a fresh release.
+						</span>
+					</div>
+				)}
+			</div>
+
+			{/* Cluster list (when expanded) */}
+			{isOpen && (
+				<div className="space-y-1.5 p-2">
+					{clusters.length === 0 && group.stuckEpisodes > 0 && (
+						<StuckEpisodeList files={group.stuckEpisodeFiles} incognito={incognito} />
+					)}
+					{clusters.map((cluster) => (
+						<ClusterCard
+							key={cluster.key}
+							cluster={cluster}
+							expanded={expandedClusters.has(cluster.key)}
+							onToggle={() => onToggleCluster(cluster.key)}
+							incognito={incognito}
+						/>
+					))}
+				</div>
+			)}
+		</div>
+	);
+};
+
+/**
+ * Compact list of stuck episode files inline in a season header. Used
+ * when a season has stuck episodes the user might want to identify
+ * before triggering search/re-grab.
+ */
+const StuckEpisodeList: React.FC<{
+	files: Array<{ arrEpisodeFileId: number; relativePath: string }>;
+	incognito: boolean;
+}> = ({ files, incognito }) => (
+	<div className="rounded border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-[11px]">
+		<p className="mb-1 text-amber-200/80">
+			{files.length} stuck file{files.length === 1 ? "" : "s"} — no live torrent:
+		</p>
+		<div className="space-y-0.5 font-mono text-[10px] text-muted-foreground">
+			{files.slice(0, 8).map((f) => {
+				const fname = f.relativePath.split("/").pop() ?? f.relativePath;
+				return (
+					<div key={f.arrEpisodeFileId} className="truncate" title={fname}>
+						{incognito ? getLinuxSavePath(fname) : fname}
+					</div>
+				);
+			})}
+			{files.length > 8 && <div className="text-muted-foreground/70">+{files.length - 8} more</div>}
+		</div>
+	</div>
+);
+
+/**
+ * One content cluster — a release covering N episodes via M tracker copies.
+ * Collapsed header shows coverage label, tracker pills, per-copy health
+ * dot strip, and size/quality. Expanded shows per-copy detail rows.
+ */
+const ClusterCard: React.FC<{
 	cluster: SeriesTorrentCluster;
 	expanded: boolean;
 	onToggle: () => void;
 	incognito: boolean;
 }> = ({ cluster, expanded, onToggle, incognito }) => {
 	const stateLabel = friendlyState(cluster.primaryState);
-	const libraryCopies = cluster.copies.filter((c) => c.role === "library");
-	const mirrorCopies = cluster.copies.filter((c) => c.role === "mirror");
+
 	return (
-		<div className="rounded border border-border/40 bg-card/30 text-xs">
+		<div className="overflow-hidden rounded border border-border/40 bg-card/30 text-xs">
 			<button
 				type="button"
 				onClick={onToggle}
-				className="flex w-full items-start justify-between gap-3 px-3 py-2 text-left hover:bg-card/50"
+				className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-card/50"
 			>
+				<div className="flex-shrink-0 pt-0.5">
+					{expanded ? (
+						<ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+					) : (
+						<ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+					)}
+				</div>
 				<div className="min-w-0 flex-1 space-y-1">
-					<div className="flex flex-wrap items-center gap-1.5">
-						{expanded ? (
-							<ChevronDown className="h-3.5 w-3.5 flex-shrink-0" />
-						) : (
-							<ChevronRight className="h-3.5 w-3.5 flex-shrink-0" />
-						)}
+					{/* Top row: coverage + state + size + health dots */}
+					<div className="flex flex-wrap items-center gap-2">
 						<span className="font-semibold text-foreground">{cluster.coverageLabel}</span>
 						{stateLabel && (
 							<span
@@ -468,38 +560,64 @@ const ClusterRow: React.FC<{
 								{stateLabel}
 							</span>
 						)}
-						{cluster.inodeVerified && (
-							<span className="rounded bg-green-500/20 px-1.5 py-0.5 text-[10px] text-green-200">
-								inode-verified
-							</span>
-						)}
 						{cluster.isDormant && (
 							<span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] text-amber-200">
 								dormant
 							</span>
 						)}
+						{cluster.inodeVerified && (
+							<span className="rounded bg-green-500/20 px-1.5 py-0.5 text-[10px] text-green-200">
+								inode-verified
+							</span>
+						)}
+						<span className="ml-auto flex items-center gap-1">
+							{cluster.copies.map((copy) => (
+								<span
+									key={copy.infoHash}
+									className={`inline-block h-2 w-2 rounded-full ${healthDot(copy)}`}
+									title={`${getTrackerBrand(copy.tracker).name} — ${friendlyState(copy.state) ?? "unknown"}`}
+								/>
+							))}
+						</span>
 					</div>
-					<div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-5 text-[11px] text-muted-foreground">
+					{/* Sub-row: size + quality + release + tracker pills */}
+					<div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
 						<span>{formatBytes(cluster.totalSizeBytes)}</span>
 						{cluster.qualityName && <span>· {cluster.qualityName}</span>}
 						{cluster.releaseGroup && <span>· {cluster.releaseGroup}</span>}
-						<span>
-							· <span className="text-foreground">{cluster.copies.length}</span>{" "}
-							{cluster.copies.length === 1 ? "copy" : "copies"}
-						</span>
-						{libraryCopies.length > 0 && (
-							<span>
-								· <span className="text-blue-300">{libraryCopies.length}</span> library
-							</span>
-						)}
-						{mirrorCopies.length > 0 && (
-							<span>
-								· <span className="text-purple-300">{mirrorCopies.length}</span> mirror
-							</span>
-						)}
+						<span className="text-foreground/40">·</span>
+						{cluster.copies.map((copy) => {
+							const brand = getTrackerBrand(copy.tracker);
+							return (
+								<span
+									key={copy.infoHash}
+									className="rounded bg-card/70 px-1.5 py-0.5 font-mono text-[10px] text-foreground/80"
+									title={brand.name}
+									style={brand.color ? { borderLeft: `2px solid ${brand.color}` } : undefined}
+								>
+									{brand.abbr}
+								</span>
+							);
+						})}
 					</div>
+					{/* Cross-reference: "↳ also covered by S04 pack — 4 trackers" */}
+					{cluster.coveredBy && (
+						<div className="flex items-center gap-1.5 pl-1 text-[10px] text-blue-300/80">
+							<ArrowUp className="h-3 w-3" />
+							<span>
+								Also covered by{" "}
+								<span className="font-semibold text-blue-300">
+									{cluster.coveredBy.coverageLabel}
+								</span>{" "}
+								— {cluster.coveredBy.copyCount} tracker
+								{cluster.coveredBy.copyCount === 1 ? "" : "s"}
+							</span>
+						</div>
+					)}
 				</div>
 			</button>
+
+			{/* Expanded copy detail rows */}
 			{expanded && (
 				<div className="space-y-1 border-t border-border/40 px-3 py-2">
 					{cluster.copies.map((copy) => (
@@ -512,9 +630,9 @@ const ClusterRow: React.FC<{
 };
 
 /**
- * One torrent copy inside an expanded cluster. Compact one-line summary
- * with badges (role, state, tracker, ratio) plus key metadata (peers,
- * added, seeding, path). Skips fields that have no value.
+ * One torrent copy inside an expanded cluster. Compact line with role +
+ * tracker badge + state + ratio + peers, then path + timing as secondary
+ * info. Drawer-style full detail comes in Ship 3.
  */
 const CopyRow: React.FC<{ copy: SeriesTorrentCopy; incognito: boolean }> = ({
 	copy,
@@ -522,10 +640,20 @@ const CopyRow: React.FC<{ copy: SeriesTorrentCopy; incognito: boolean }> = ({
 }) => {
 	const stateLabel = friendlyState(copy.state);
 	const progressPct = typeof copy.progress === "number" ? Math.round(copy.progress * 100) : null;
+	const brand = getTrackerBrand(copy.tracker);
 	return (
 		<div className="space-y-1 rounded bg-card/40 px-2 py-1.5 text-[11px]">
 			<div className="flex flex-wrap items-center gap-1.5">
-				<span className="font-mono text-foreground">{copy.infoHash.slice(0, 12)}</span>
+				<span
+					className={`inline-block h-2 w-2 flex-shrink-0 rounded-full ${healthDot(copy)}`}
+					title={friendlyState(copy.state) ?? "unknown"}
+				/>
+				<span
+					className="rounded px-1.5 py-0.5 font-mono text-[10px] text-foreground/90"
+					style={brand.color ? { backgroundColor: `${brand.color}33` } : undefined}
+				>
+					{brand.abbr}
+				</span>
 				<span
 					className={`rounded px-1.5 py-0.5 text-[10px] ${
 						copy.role === "library"
@@ -535,11 +663,6 @@ const CopyRow: React.FC<{ copy: SeriesTorrentCopy; incognito: boolean }> = ({
 				>
 					{copy.role === "library" ? "Library" : "Mirror"}
 				</span>
-				{copy.tracker && (
-					<span className="rounded bg-card/60 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-						{copy.tracker}
-					</span>
-				)}
 				{stateLabel && (
 					<span className={`rounded px-1.5 py-0.5 text-[10px] ${stateTone(copy.state)}`}>
 						{stateLabel}
@@ -558,6 +681,9 @@ const CopyRow: React.FC<{ copy: SeriesTorrentCopy; incognito: boolean }> = ({
 				{typeof copy.ratio === "number" && (
 					<span className="text-[10px] text-muted-foreground">ratio {copy.ratio.toFixed(2)}×</span>
 				)}
+				<span className="font-mono text-[10px] text-muted-foreground/70">
+					{copy.infoHash.slice(0, 8)}
+				</span>
 				{copy.quiUnreachable && (
 					<span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] text-amber-200">
 						not in qui
@@ -600,9 +726,6 @@ const CopyRow: React.FC<{ copy: SeriesTorrentCopy; incognito: boolean }> = ({
 	);
 };
 
-/**
- * Unix-seconds → relative phrase ("3 days ago"). "—" when missing.
- */
 function formatRelative(unixSeconds: number): string {
 	if (!unixSeconds || unixSeconds <= 0) return "—";
 	const diff = Date.now() / 1000 - unixSeconds;
@@ -622,9 +745,6 @@ function formatRelative(unixSeconds: number): string {
 	return "just now";
 }
 
-/**
- * Seconds → compact duration ("423d 14h", "3h 12m"). Used for seedingTime.
- */
 function formatDuration(seconds: number): string {
 	if (!seconds || seconds <= 0) return "—";
 	const d = Math.floor(seconds / 86400);

@@ -318,7 +318,7 @@ export interface SeriesTorrentCopy {
  * Replaces the old per-torrent rows with redundant sibling lists.
  */
 export interface SeriesTorrentCluster {
-	/** Deterministic id for React keys — sorted hash signature of the cluster. */
+	/** Deterministic id for React keys — sorted episode-file-id signature. */
 	key: string;
 	/** Sonarr episode_file_ids this cluster covers. */
 	episodeFileIds: number[];
@@ -336,6 +336,38 @@ export interface SeriesTorrentCluster {
 	isDormant: boolean;
 	/** Aggregate state for the cluster header. */
 	primaryState: string | null;
+	/**
+	 * Cross-reference: when this cluster's coverage is a STRICT subset of
+	 * another cluster, that superset cluster is referenced here so the UI
+	 * can render "↳ also covered by [superset]" annotations on REPACKs /
+	 * per-episode releases shadowed by a season pack. Null when no
+	 * superset cluster exists (a separate single-episode release with its
+	 * own inode never lands in any cluster's coverage, so the cross-ref
+	 * claim is provably accurate by construction).
+	 */
+	coveredBy: {
+		clusterKey: string;
+		coverageLabel: string;
+		copyCount: number;
+	} | null;
+}
+
+/**
+ * Season-level navigational group — top-level structure for the panel.
+ * Each group lists clusters contributing to this season + stuck episodes
+ * (no torrent at all) for the inline "missing release" display.
+ */
+export interface SeriesSeasonGroup {
+	seasonNumber: number;
+	totalEpisodes: number;
+	correlatedEpisodes: number;
+	stuckEpisodes: number;
+	/** Cluster keys belonging to this season. Multi-season packs appear in multiple groups. */
+	clusterKeys: string[];
+	stuckEpisodeFiles: Array<{
+		arrEpisodeFileId: number;
+		relativePath: string;
+	}>;
 }
 
 /**
@@ -377,7 +409,7 @@ export interface SeriesTorrentsResponse {
 	healedEpisodes: number;
 	actionItems: SeriesActionItem[];
 	clusters: SeriesTorrentCluster[];
-	seasons: SeriesSeason[];
+	seasonGroups: SeriesSeasonGroup[];
 }
 
 /**
