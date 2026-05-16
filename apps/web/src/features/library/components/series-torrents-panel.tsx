@@ -17,6 +17,12 @@ import { useState } from "react";
 import { GlassmorphicCard } from "../../../components/layout/premium-containers";
 import { Button } from "../../../components/ui/button";
 import {
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
+} from "../../../components/ui/tooltip";
+import {
 	useMovieTorrents,
 	useSeriesTorrents,
 	useTrackerIcons,
@@ -243,167 +249,174 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({
 	const clusterByKey = new Map<string, SeriesTorrentCluster>(data.clusters.map((c) => [c.key, c]));
 
 	return (
-		<GlassmorphicCard className="space-y-4 p-4">
-			{/* Header: title + cross-seed search button + summary stats.
-			 * Labels are itemType-aware: series counts episodes (potentially
-			 * dozens), movies count files (always 1) — so the latter shows
-			 * just a status pill instead of "Files 1 / Correlated 1 (100%)"
-			 * which is repetitive noise. */}
-			<div className="space-y-2">
-				<div className="flex items-center justify-between gap-3">
-					<h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-						<Film className="h-4 w-4" />
-						{itemType === "movie" ? "Movie torrent overview" : "Series torrent overview"}
-					</h3>
-					<Button
-						type="button"
-						variant="secondary"
-						size="sm"
-						onClick={handleSearchClick}
-						disabled={mutation.isPending}
-					>
-						{mutation.isPending ? (
-							<>
-								<Loader2 className="h-3.5 w-3.5 animate-spin" />
-								<span className="ml-1.5">Searching</span>
-							</>
-						) : (
-							<>
-								<Search className="h-3.5 w-3.5" />
-								<span className="ml-1.5">Cross-seed search</span>
-							</>
-						)}
-					</Button>
-				</div>
-				{itemType === "movie" ? (
-					<div className="grid grid-cols-2 gap-3 text-xs">
-						<Stat
-							label="Status"
-							value={
-								stuck > 0
-									? "Stuck — no torrent"
-									: viaInode > 0
-										? "Correlated via inode"
-										: "Correlated"
-							}
-							tone={stuck === 0 ? "success" : "warning"}
-						/>
-						<Stat
-							label="Size"
-							value={
-								data?.clusters[0]?.totalSizeBytes
-									? formatBytes(data.clusters[0].totalSizeBytes)
-									: "—"
-							}
-						/>
+		// TooltipProvider with short delay so hovering brand pills surfaces
+		// the tracker display name within ~200ms — discoverable without
+		// being intrusive. delayDuration=200 (default 700) feels snappier
+		// for icon-only pills where hover is the primary way to identify
+		// the tracker.
+		<TooltipProvider delayDuration={200}>
+			<GlassmorphicCard className="space-y-4 p-4">
+				{/* Header: title + cross-seed search button + summary stats.
+				 * Labels are itemType-aware: series counts episodes (potentially
+				 * dozens), movies count files (always 1) — so the latter shows
+				 * just a status pill instead of "Files 1 / Correlated 1 (100%)"
+				 * which is repetitive noise. */}
+				<div className="space-y-2">
+					<div className="flex items-center justify-between gap-3">
+						<h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+							<Film className="h-4 w-4" />
+							{itemType === "movie" ? "Movie torrent overview" : "Series torrent overview"}
+						</h3>
+						<Button
+							type="button"
+							variant="secondary"
+							size="sm"
+							onClick={handleSearchClick}
+							disabled={mutation.isPending}
+						>
+							{mutation.isPending ? (
+								<>
+									<Loader2 className="h-3.5 w-3.5 animate-spin" />
+									<span className="ml-1.5">Searching</span>
+								</>
+							) : (
+								<>
+									<Search className="h-3.5 w-3.5" />
+									<span className="ml-1.5">Cross-seed search</span>
+								</>
+							)}
+						</Button>
 					</div>
-				) : (
-					<div className="grid grid-cols-4 gap-3 text-xs">
-						<Stat label="Episodes" value={total.toString()} />
-						<Stat
-							label="Correlated"
-							value={`${correlated} (${correlationPct}%)`}
-							tone={correlated === total ? "success" : correlated > 0 ? "info" : "warning"}
-						/>
-						<Stat
-							label="Via inode"
-							value={viaInode.toString()}
-							tone={viaInode > 0 ? "success" : "muted"}
-						/>
-						<Stat
-							label="Stuck"
-							value={stuck.toString()}
-							tone={stuck === 0 ? "success" : "warning"}
-						/>
+					{itemType === "movie" ? (
+						<div className="grid grid-cols-2 gap-3 text-xs">
+							<Stat
+								label="Status"
+								value={
+									stuck > 0
+										? "Stuck — no torrent"
+										: viaInode > 0
+											? "Correlated via inode"
+											: "Correlated"
+								}
+								tone={stuck === 0 ? "success" : "warning"}
+							/>
+							<Stat
+								label="Size"
+								value={
+									data?.clusters[0]?.totalSizeBytes
+										? formatBytes(data.clusters[0].totalSizeBytes)
+										: "—"
+								}
+							/>
+						</div>
+					) : (
+						<div className="grid grid-cols-4 gap-3 text-xs">
+							<Stat label="Episodes" value={total.toString()} />
+							<Stat
+								label="Correlated"
+								value={`${correlated} (${correlationPct}%)`}
+								tone={correlated === total ? "success" : correlated > 0 ? "info" : "warning"}
+							/>
+							<Stat
+								label="Via inode"
+								value={viaInode.toString()}
+								tone={viaInode > 0 ? "success" : "muted"}
+							/>
+							<Stat
+								label="Stuck"
+								value={stuck.toString()}
+								tone={stuck === 0 ? "success" : "warning"}
+							/>
+						</div>
+					)}
+				</div>
+
+				{/* Cross-seed search outcome banner */}
+				{searchOutcome?.kind === "success" && (
+					<div className="flex items-start gap-2 rounded-md border border-green-500/30 bg-green-500/10 px-3 py-2 text-xs">
+						<CheckCircle2 className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-green-500" />
+						<div className="space-y-0.5">
+							<p className="text-green-200">
+								Scan queued in qui (run #{searchOutcome.runId}). New matches will inject
+								automatically.
+							</p>
+							<p className="text-[10px] text-muted-foreground">
+								Scan root:{" "}
+								{isIncognito ? getLinuxSavePath(searchOutcome.scanRoot) : searchOutcome.scanRoot}
+							</p>
+						</div>
 					</div>
 				)}
-			</div>
-
-			{/* Cross-seed search outcome banner */}
-			{searchOutcome?.kind === "success" && (
-				<div className="flex items-start gap-2 rounded-md border border-green-500/30 bg-green-500/10 px-3 py-2 text-xs">
-					<CheckCircle2 className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-green-500" />
-					<div className="space-y-0.5">
-						<p className="text-green-200">
-							Scan queued in qui (run #{searchOutcome.runId}). New matches will inject
-							automatically.
-						</p>
-						<p className="text-[10px] text-muted-foreground">
-							Scan root:{" "}
-							{isIncognito ? getLinuxSavePath(searchOutcome.scanRoot) : searchOutcome.scanRoot}
-						</p>
+				{searchOutcome?.kind === "error" && (
+					<div className="flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs">
+						<HelpCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-red-500" />
+						<p className="text-red-200">{searchOutcome.message}</p>
 					</div>
-				</div>
-			)}
-			{searchOutcome?.kind === "error" && (
-				<div className="flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs">
-					<HelpCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-red-500" />
-					<p className="text-red-200">{searchOutcome.message}</p>
-				</div>
-			)}
+				)}
 
-			{/* Action items — what the user should DO */}
-			{data.actionItems.length > 0 && <ActionItemList items={data.actionItems} />}
+				{/* Action items — what the user should DO */}
+				{data.actionItems.length > 0 && <ActionItemList items={data.actionItems} />}
 
-			{/* Content rendering — three branches:
-			 *   1. seasonGroups populated → series mode, group by season.
-			 *   2. seasonGroups empty AND clusters populated → movie mode,
-			 *      render clusters flat under one heading.
-			 *   3. seasonGroups empty AND clusters empty → genuine empty
-			 *      state (no torrent and no file yet).
-			 */}
-			{data.seasonGroups.length > 0 ? (
-				<div className="space-y-2">
-					<h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-						{seriesTitle}
-					</h4>
+				{/* Content rendering — three branches:
+				 *   1. seasonGroups populated → series mode, group by season.
+				 *   2. seasonGroups empty AND clusters populated → movie mode,
+				 *      render clusters flat under one heading.
+				 *   3. seasonGroups empty AND clusters empty → genuine empty
+				 *      state (no torrent and no file yet).
+				 */}
+				{data.seasonGroups.length > 0 ? (
 					<div className="space-y-2">
-						{data.seasonGroups.map((group) => (
-							<SeasonGroupCard
-								key={group.seasonNumber}
-								group={group}
-								clusterByKey={clusterByKey}
-								expandedClusters={expandedClusters}
-								expandedSeasons={expandedSeasons}
-								onToggleCluster={toggleCluster}
-								onToggleSeason={toggleSeason}
-								collapsible={collapsibleSeasons}
-								incognito={isIncognito}
-								trackerIcons={trackerIcons}
-								onCrossSeedSearch={handleSearchClick}
-								searchPending={mutation.isPending}
-							/>
-						))}
+						<h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+							{seriesTitle}
+						</h4>
+						<div className="space-y-2">
+							{data.seasonGroups.map((group) => (
+								<SeasonGroupCard
+									key={group.seasonNumber}
+									group={group}
+									clusterByKey={clusterByKey}
+									expandedClusters={expandedClusters}
+									expandedSeasons={expandedSeasons}
+									onToggleCluster={toggleCluster}
+									onToggleSeason={toggleSeason}
+									collapsible={collapsibleSeasons}
+									incognito={isIncognito}
+									trackerIcons={trackerIcons}
+									onCrossSeedSearch={handleSearchClick}
+									searchPending={mutation.isPending}
+								/>
+							))}
+						</div>
 					</div>
-				</div>
-			) : data.clusters.length > 0 ? (
-				<div className="space-y-2">
-					<h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-						Content
-					</h4>
-					<div className="space-y-1.5">
-						{data.clusters.map((cluster) => (
-							<ClusterCard
-								key={cluster.key}
-								cluster={cluster}
-								expanded={expandedClusters.has(cluster.key)}
-								onToggle={() => toggleCluster(cluster.key)}
-								incognito={isIncognito}
-								trackerIcons={trackerIcons}
-							/>
-						))}
+				) : data.clusters.length > 0 ? (
+					<div className="space-y-2">
+						<h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+							Content
+						</h4>
+						<div className="space-y-1.5">
+							{data.clusters.map((cluster) => (
+								<ClusterCard
+									key={cluster.key}
+									cluster={cluster}
+									expanded={expandedClusters.has(cluster.key)}
+									onToggle={() => toggleCluster(cluster.key)}
+									incognito={isIncognito}
+									trackerIcons={trackerIcons}
+								/>
+							))}
+						</div>
 					</div>
-				</div>
-			) : (
-				<div className="rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs">
-					<p className="text-amber-200">
-						{itemType === "movie"
-							? "No torrent correlated yet. Use cross-seed search above or trigger a re-grab from Radarr."
-							: "No episodes found for this series."}
-					</p>
-				</div>
-			)}
-		</GlassmorphicCard>
+				) : (
+					<div className="rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs">
+						<p className="text-amber-200">
+							{itemType === "movie"
+								? "No torrent correlated yet. Use cross-seed search above or trigger a re-grab from Radarr."
+								: "No episodes found for this series."}
+						</p>
+					</div>
+				)}
+			</GlassmorphicCard>
+		</TooltipProvider>
 	);
 };
 
@@ -739,29 +752,27 @@ const ClusterCard: React.FC<{
 								}
 							}
 							return Array.from(byBrand.entries()).map(([key, { brand, count }]) => (
-								<span
-									key={key}
-									className="inline-flex items-center gap-1 rounded bg-card/70 px-1.5 py-0.5 font-mono text-[10px] text-foreground/80"
-									title={
-										count > 1
+								<Tooltip key={key}>
+									<TooltipTrigger asChild>
+										<span className="inline-flex items-center gap-1 rounded bg-card/70 px-1.5 py-0.5 font-mono text-[10px] text-foreground/80">
+											{brand.iconUrl ? (
+												<img
+													src={brand.iconUrl}
+													alt={brand.name}
+													className="h-3 w-3 rounded-sm object-contain"
+												/>
+											) : (
+												<span>{brand.abbr}</span>
+											)}
+											{count > 1 && <span className="text-foreground/50">×{count}</span>}
+										</span>
+									</TooltipTrigger>
+									<TooltipContent>
+										{count > 1
 											? `${brand.name} · ${count} torrent variants at this tracker`
-											: brand.name
-									}
-									// Without static brand colors, the pill itself is uniform —
-									// the icon (or abbreviation) carries identity.
-									style={undefined}
-								>
-									{brand.iconUrl ? (
-										<img
-											src={brand.iconUrl}
-											alt={brand.name}
-											className="h-3 w-3 rounded-sm object-contain"
-										/>
-									) : (
-										<span>{brand.abbr}</span>
-									)}
-									{count > 1 && <span className="text-foreground/50">×{count}</span>}
-								</span>
+											: brand.name}
+									</TooltipContent>
+								</Tooltip>
 							));
 						})()}
 					</div>
@@ -823,20 +834,22 @@ const CopyRow: React.FC<{
 					className={`inline-block h-2 w-2 flex-shrink-0 rounded-full ${healthDot(copy)}`}
 					title={friendlyState(copy.state) ?? "unknown"}
 				/>
-				<span
-					className="inline-flex items-center gap-1 rounded bg-card/60 px-1.5 py-0.5 font-mono text-[10px] text-foreground/90"
-					title={brand.name}
-				>
-					{brand.iconUrl ? (
-						<img
-							src={brand.iconUrl}
-							alt={brand.name}
-							className="h-3.5 w-3.5 rounded-sm object-contain"
-						/>
-					) : (
-						brand.abbr
-					)}
-				</span>
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<span className="inline-flex items-center gap-1 rounded bg-card/60 px-1.5 py-0.5 font-mono text-[10px] text-foreground/90">
+							{brand.iconUrl ? (
+								<img
+									src={brand.iconUrl}
+									alt={brand.name}
+									className="h-3.5 w-3.5 rounded-sm object-contain"
+								/>
+							) : (
+								brand.abbr
+							)}
+						</span>
+					</TooltipTrigger>
+					<TooltipContent>{brand.name}</TooltipContent>
+				</Tooltip>
 				<span
 					className={`rounded px-1.5 py-0.5 text-[10px] ${
 						copy.role === "library"
@@ -911,28 +924,33 @@ const CopyRow: React.FC<{
 						const isHealthy = t.health === "working" || t.health === "updating";
 						const isFailed = t.health === "not_working";
 						return (
-							<span
-								key={t.hostname}
-								className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono ${
-									isFailed
-										? "bg-red-500/20 text-red-200"
-										: isHealthy
-											? "bg-card/70 text-foreground/80"
-											: "bg-card/50 text-muted-foreground"
-								}`}
-								title={`${brand.name} · ${t.health}`}
-							>
-								{brand.iconUrl ? (
-									<img
-										src={brand.iconUrl}
-										alt={brand.name}
-										className="h-3 w-3 rounded-sm object-contain"
-									/>
-								) : (
-									<span>{brand.abbr}</span>
-								)}
-								<span>{t.numPeers}p</span>
-							</span>
+							<Tooltip key={t.hostname}>
+								<TooltipTrigger asChild>
+									<span
+										className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono ${
+											isFailed
+												? "bg-red-500/20 text-red-200"
+												: isHealthy
+													? "bg-card/70 text-foreground/80"
+													: "bg-card/50 text-muted-foreground"
+										}`}
+									>
+										{brand.iconUrl ? (
+											<img
+												src={brand.iconUrl}
+												alt={brand.name}
+												className="h-3 w-3 rounded-sm object-contain"
+											/>
+										) : (
+											<span>{brand.abbr}</span>
+										)}
+										<span>{t.numPeers}p</span>
+									</span>
+								</TooltipTrigger>
+								<TooltipContent>
+									{brand.name} · {t.numPeers} peer{t.numPeers === 1 ? "" : "s"} · {t.health}
+								</TooltipContent>
+							</Tooltip>
 						);
 					})}
 					{/* Pseudo-tracker badges — DHT/PeX/LSD as discovery channels
