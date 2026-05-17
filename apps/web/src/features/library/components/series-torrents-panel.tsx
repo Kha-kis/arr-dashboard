@@ -38,6 +38,7 @@ import {
 	useTrackerIcons,
 	useTriggerQuiCrossSeedSearch,
 } from "../../../hooks/api/useQui";
+import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import type {
 	SeriesActionItem,
 	SeriesSeasonGroup,
@@ -847,6 +848,15 @@ const CopyRow: React.FC<{
 		!copy.quiUnreachable &&
 		typeof copy.qbitInstanceId === "number" &&
 		typeof copy.quiInstanceId === "string";
+	// Resolve the qui instance's external URL so the "Open in qui" item can
+	// deep-link to the qui webapp. `externalUrl` is what's browser-reachable;
+	// `baseUrl` is the in-cluster container address. Use the former when set.
+	const { data: services } = useServicesQuery();
+	const quiOpenUrl = (() => {
+		if (!copy.quiInstanceId) return null;
+		const inst = services?.find((s) => s.id === copy.quiInstanceId);
+		return inst?.externalUrl ?? inst?.baseUrl ?? null;
+	})();
 	const runAction = (action: "pause" | "resume" | "recheck" | "reannounce", verb: string) => {
 		if (!canAct) return;
 		actionMutation.mutate(
@@ -857,7 +867,23 @@ const CopyRow: React.FC<{
 				action,
 			},
 			{
-				onSuccess: () => toast.success(`${verb}: ${copy.name ?? copy.infoHash.slice(0, 12)}`),
+				onSuccess: () => {
+					const label = copy.name ?? copy.infoHash.slice(0, 12);
+					// Pause is the one mutation where a misclick has a real
+					// cost (a seeder stops contributing). Surface an Undo
+					// affordance via Sonner's action prop — the 5s toast
+					// dwell is the recovery window.
+					if (action === "pause") {
+						toast.success(`${verb}: ${label}`, {
+							action: {
+								label: "Undo",
+								onClick: () => runAction("resume", "Resumed"),
+							},
+						});
+					} else {
+						toast.success(`${verb}: ${label}`);
+					}
+				},
 				onError: (err) =>
 					toast.error(
 						`${verb} failed: ${err instanceof Error ? err.message : "qui rejected the action"}`,
@@ -932,21 +958,34 @@ const CopyRow: React.FC<{
 					</span>
 				)}
 				<DropdownMenu>
-					<DropdownMenuTrigger asChild>
-						<button
-							type="button"
-							aria-label="Torrent actions"
-							className="ml-auto inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-card/70 hover:text-foreground focus:outline-none focus:ring-1 focus:ring-foreground/40"
-							disabled={actionMutation.isPending}
-						>
-							{actionMutation.isPending ? (
-								<Loader2 className="h-3.5 w-3.5 animate-spin" />
-							) : (
-								<MoreHorizontal className="h-3.5 w-3.5" />
-							)}
-						</button>
-					</DropdownMenuTrigger>
+					<Tooltip>
+						<DropdownMenuTrigger asChild>
+							<TooltipTrigger asChild>
+								<button
+									type="button"
+									aria-label="Torrent actions"
+									className="ml-auto inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-card/70 hover:text-foreground focus:outline-none focus:ring-1 focus:ring-foreground/40"
+									disabled={actionMutation.isPending}
+								>
+									{actionMutation.isPending ? (
+										<Loader2 className="h-3.5 w-3.5 animate-spin" />
+									) : (
+										<MoreHorizontal className="h-3.5 w-3.5" />
+									)}
+								</button>
+							</TooltipTrigger>
+						</DropdownMenuTrigger>
+						<TooltipContent>Torrent actions</TooltipContent>
+					</Tooltip>
 					<DropdownMenuContent align="end" className="text-[11px]">
+						{!canAct && (
+							<>
+								<div className="px-2 py-1 text-[10px] italic text-muted-foreground">
+									qui can't reach this torrent
+								</div>
+								<DropdownMenuSeparator />
+							</>
+						)}
 						<DropdownMenuItem onClick={() => runAction("pause", "Paused")} disabled={!canAct}>
 							Pause
 						</DropdownMenuItem>
@@ -963,6 +1002,13 @@ const CopyRow: React.FC<{
 							Reannounce
 						</DropdownMenuItem>
 						<DropdownMenuSeparator />
+						{quiOpenUrl && (
+							<DropdownMenuItem
+								onClick={() => window.open(quiOpenUrl, "_blank", "noopener,noreferrer")}
+							>
+								Open in qui
+							</DropdownMenuItem>
+						)}
 						<DropdownMenuItem onClick={copyHash}>Copy infohash</DropdownMenuItem>
 					</DropdownMenuContent>
 				</DropdownMenu>
