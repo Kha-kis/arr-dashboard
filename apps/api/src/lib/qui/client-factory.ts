@@ -3,8 +3,12 @@ import {
 	type QuiCrossSeedMatch,
 	type QuiInstance,
 	type QuiTorrent,
+	type QuiTorrentFile,
+	type QuiTorrentProperties,
 	type QuiTracker,
 	quiInstanceSchema,
+	quiTorrentFileSchema,
+	quiTorrentPropertiesSchema,
 	quiTorrentStateSchema,
 } from "@arr/shared";
 import type { FastifyInstance } from "fastify";
@@ -77,6 +81,45 @@ export interface QuiClient {
 		/** Action-specific extras spread into qui's POST body. */
 		extras?: Record<string, unknown>;
 	}): Promise<void>;
+	/**
+	 * Fetch extended properties for a single torrent (speeds, limits,
+	 * save path, comment, share-limit settings). Maps to qui's
+	 * `GET /api/instances/:id/torrents/:hash/properties`.
+	 */
+	getTorrentProperties(instanceId: number, hash: string): Promise<QuiTorrentProperties>;
+	/**
+	 * Fetch the file inventory for a single torrent. Maps to qui's
+	 * `GET /api/instances/:id/torrents/:hash/files`. Optional `refresh`
+	 * forces qui to bypass its sync cache and re-query qBit.
+	 */
+	getTorrentFiles(
+		instanceId: number,
+		hash: string,
+		options?: { refresh?: boolean },
+	): Promise<QuiTorrentFile[]>;
+	/**
+	 * Rename a torrent's display name. Maps to qui's
+	 * `POST /api/instances/:id/torrents/:hash/rename`. Per-torrent only —
+	 * qui has no bulk rename.
+	 */
+	renameTorrent(instanceId: number, hash: string, name: string): Promise<void>;
+	/**
+	 * Add one or more tracker URLs to a torrent. Maps to qui's
+	 * `POST /api/instances/:id/torrents/:hash/trackers`. qui takes a
+	 * newline-separated string; we accept an array for caller ergonomics
+	 * and join here.
+	 */
+	addTrackers(instanceId: number, hash: string, urls: string[]): Promise<void>;
+	/**
+	 * Remove tracker URLs from a torrent. Maps to qui's
+	 * `DELETE /api/instances/:id/torrents/:hash/trackers`.
+	 */
+	removeTrackers(instanceId: number, hash: string, urls: string[]): Promise<void>;
+	/**
+	 * Replace a tracker URL. Maps to qui's
+	 * `PUT /api/instances/:id/torrents/:hash/trackers`.
+	 */
+	editTracker(instanceId: number, hash: string, oldURL: string, newURL: string): Promise<void>;
 	/** Create a notification target inside qui. Phase 5.1 — auto-registers arr-dashboard's webhook URL. */
 	createNotificationTarget(args: {
 		name: string;
@@ -357,6 +400,60 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 				const reason = error instanceof Error ? error.message : "qui auth check failed";
 				return { ok: false, reason };
 			}
+		},
+
+		async getTorrentProperties(instanceId, hash) {
+			// qui returns qBit's TorrentProperties shape verbatim. Wire field
+			// names align with our Zod schema (qBit uses snake_case but the
+			// drawer-relevant fields are mostly camelCase already in qBit's
+			// API). qui may evolve to add fields; Zod ignores unknown keys.
+			return quiRequest(
+				ctx,
+				`/api/instances/${instanceId}/torrents/${hash}/properties`,
+				quiTorrentPropertiesSchema,
+			);
+		},
+
+		async getTorrentFiles(instanceId, hash, options) {
+			// `refresh=true` bypasses qui's sync cache and re-queries qBit.
+			// Useful after a file-rename or when qui's last sync is stale.
+			const query = options?.refresh ? "?refresh=true" : "";
+			return quiRequest(
+				ctx,
+				`/api/instances/${instanceId}/torrents/${hash}/files${query}`,
+				z.array(quiTorrentFileSchema),
+			);
+		},
+
+		async renameTorrent(instanceId, hash, name) {
+			await quiRequest(ctx, `/api/instances/${instanceId}/torrents/${hash}/rename`, z.unknown(), {
+				method: "POST",
+				body: { name },
+			});
+		},
+
+		async addTrackers(instanceId, hash, urls) {
+			// qui takes a newline-separated string (mirrors qBit's wire
+			// format). Accept an array from callers and join here so the
+			// drawer doesn't need to know the wire detail.
+			await quiRequest(ctx, `/api/instances/${instanceId}/torrents/${hash}/trackers`, z.unknown(), {
+				method: "POST",
+				body: { urls: urls.join("\n") },
+			});
+		},
+
+		async removeTrackers(instanceId, hash, urls) {
+			await quiRequest(ctx, `/api/instances/${instanceId}/torrents/${hash}/trackers`, z.unknown(), {
+				method: "DELETE",
+				body: { urls: urls.join("\n") },
+			});
+		},
+
+		async editTracker(instanceId, hash, oldURL, newURL) {
+			await quiRequest(ctx, `/api/instances/${instanceId}/torrents/${hash}/trackers`, z.unknown(), {
+				method: "PUT",
+				body: { oldURL, newURL },
+			});
 		},
 
 		async bulkAction({ qbitInstanceId, hashes, action, extras }) {

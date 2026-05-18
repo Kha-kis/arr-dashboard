@@ -24,6 +24,12 @@ const mockQuiClient = vi.hoisted(() => ({
 	getCrossSeedMatches: vi.fn(),
 	testConnection: vi.fn(),
 	bulkAction: vi.fn(),
+	getTorrentProperties: vi.fn(),
+	getTorrentFiles: vi.fn(),
+	renameTorrent: vi.fn(),
+	addTrackers: vi.fn(),
+	removeTrackers: vi.fn(),
+	editTracker: vi.fn(),
 	createNotificationTarget: vi.fn(),
 	triggerDirScan: vi.fn(),
 }));
