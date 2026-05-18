@@ -22,11 +22,17 @@ import {
 	fetchQuiAttention,
 	fetchQuiEventLog,
 	fetchQuiSummary,
+	fetchQuiTorrentFiles,
+	fetchQuiTorrentProperties,
 	fetchQuiWebhookConfig,
 	fetchSeriesTorrents,
 	fetchTorrentState,
 	fetchTrackerIcons,
+	postQuiAddTrackers,
 	postQuiBulkAction,
+	postQuiEditTracker,
+	postQuiRemoveTrackers,
+	postQuiRenameTorrent,
 	postQuiTorrentAction,
 	type QuiActionLogParams,
 	type QuiDirScanTriggerResult,
@@ -201,6 +207,138 @@ export const useQuiBulkAction = () => {
 			});
 			queryClient.invalidateQueries({
 				queryKey: ["qui", "cross-seed"] satisfies readonly string[],
+			});
+		},
+	});
+};
+
+// ── Detail-drawer hooks (Phase 6) — properties, files, rename, trackers ──
+
+/**
+ * Lazy-loaded extended properties for a single torrent. The cluster
+ * panel only needs the lightweight `SeriesTorrentCopy` shape; the drawer
+ * pulls these heavier fields (limits, save path, share-limit settings)
+ * when the user opens it. Disabled until the drawer mounts to avoid
+ * fetching on every cluster expansion.
+ */
+export const useQuiTorrentProperties = (args: {
+	quiInstanceId: string | null;
+	qbitInstanceId: number | null;
+	hash: string;
+	enabled?: boolean;
+}) => {
+	const { quiInstanceId, qbitInstanceId, hash, enabled = true } = args;
+	return useQuery({
+		queryKey: ["qui", "torrent-properties", quiInstanceId, qbitInstanceId, hash] as const,
+		queryFn: () =>
+			fetchQuiTorrentProperties({
+				quiInstanceId: quiInstanceId!,
+				qbitInstanceId: qbitInstanceId!,
+				hash,
+			}),
+		enabled: enabled && quiInstanceId !== null && qbitInstanceId !== null,
+		staleTime: POLLING_STANDARD,
+	});
+};
+
+/**
+ * Lazy-loaded file inventory. Larger payloads — only fetch when the
+ * drawer's Files section is expanded.
+ */
+export const useQuiTorrentFiles = (args: {
+	quiInstanceId: string | null;
+	qbitInstanceId: number | null;
+	hash: string;
+	enabled?: boolean;
+}) => {
+	const { quiInstanceId, qbitInstanceId, hash, enabled = true } = args;
+	return useQuery({
+		queryKey: ["qui", "torrent-files", quiInstanceId, qbitInstanceId, hash] as const,
+		queryFn: () =>
+			fetchQuiTorrentFiles({
+				quiInstanceId: quiInstanceId!,
+				qbitInstanceId: qbitInstanceId!,
+				hash,
+			}),
+		enabled: enabled && quiInstanceId !== null && qbitInstanceId !== null,
+		staleTime: POLLING_STANDARD,
+	});
+};
+
+/**
+ * Rename a torrent. Invalidates torrent-state (which carries the name)
+ * so the cluster panel re-renders with the new name without waiting
+ * for the next polling tick.
+ */
+export const useQuiRenameTorrent = () => {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: (args: {
+			quiInstanceId: string;
+			qbitInstanceId: number;
+			hash: string;
+			name: string;
+		}) => postQuiRenameTorrent(args),
+		onSettled: () => {
+			queryClient.invalidateQueries({ queryKey: ["qui", "torrent-state"] as const });
+		},
+	});
+};
+
+/**
+ * Add tracker URLs to a torrent. Invalidates the per-torrent trackers
+ * cache (used by the cluster panel's tracker pills + the drawer's
+ * Trackers section).
+ */
+export const useQuiAddTrackers = () => {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: (args: {
+			quiInstanceId: string;
+			qbitInstanceId: number;
+			hash: string;
+			urls: string[];
+		}) => postQuiAddTrackers(args),
+		onSettled: (_data, _err, vars) => {
+			queryClient.invalidateQueries({
+				queryKey: ["qui", "torrent-trackers", vars.quiInstanceId, vars.qbitInstanceId, vars.hash],
+			});
+		},
+	});
+};
+
+/** Remove tracker URLs. Same invalidation as add. */
+export const useQuiRemoveTrackers = () => {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: (args: {
+			quiInstanceId: string;
+			qbitInstanceId: number;
+			hash: string;
+			urls: string[];
+		}) => postQuiRemoveTrackers(args),
+		onSettled: (_data, _err, vars) => {
+			queryClient.invalidateQueries({
+				queryKey: ["qui", "torrent-trackers", vars.quiInstanceId, vars.qbitInstanceId, vars.hash],
+			});
+		},
+	});
+};
+
+/** Edit a tracker URL (replace old with new). */
+export const useQuiEditTracker = () => {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: (args: {
+			quiInstanceId: string;
+			qbitInstanceId: number;
+			hash: string;
+			oldURL: string;
+			newURL: string;
+		}) => postQuiEditTracker(args),
+		onSettled: (_data, _err, vars) => {
+			queryClient.invalidateQueries({
+				queryKey: ["qui", "torrent-trackers", vars.quiInstanceId, vars.qbitInstanceId, vars.hash],
 			});
 		},
 	});

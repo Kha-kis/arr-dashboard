@@ -6,12 +6,10 @@ import type {
 	QuiActionLogResponse,
 	QuiActivityFeedResponse,
 	QuiAttentionResponse,
-	QuiBulkActionRequest,
 	QuiCrossSeedMatch,
 	QuiEventLogResponse,
 	QuiSummaryResponse,
 	QuiTorrent,
-	QuiTorrentActionRequest,
 } from "@arr/shared";
 import { apiRequest } from "./base";
 
@@ -99,11 +97,19 @@ export async function fetchQuiActionLog(
 	return apiRequest<QuiActionLogResponse>(`/api/qui/actions${qs ? `?${qs}` : ""}`);
 }
 
-export interface SingleTorrentActionArgs extends QuiTorrentActionRequest {
+export interface SingleTorrentActionArgs {
 	quiInstanceId: string;
 	qbitInstanceId: number;
 	hash: string;
 	action: QuiAction;
+	/**
+	 * Action-specific extras. The backend validates this against
+	 * `quiActionPayloadSchemas[action]` — pass `{}` for actions with no
+	 * extras (pause/resume/recheck/reannounce/forceStart). For setTags,
+	 * setCategory, setShareLimit, setLocation, delete, etc., pass the
+	 * fields the action requires.
+	 */
+	payload?: Record<string, unknown>;
 }
 
 export interface QuiActionResponseShape {
@@ -117,18 +123,21 @@ export async function postQuiTorrentAction({
 	qbitInstanceId,
 	hash,
 	action,
-	tags,
+	payload,
 }: SingleTorrentActionArgs): Promise<QuiActionResponseShape> {
 	return apiRequest<QuiActionResponseShape>(
 		`/api/qui/instances/${quiInstanceId}/qbit/${qbitInstanceId}/torrents/${hash}/actions/${action}`,
-		{ method: "POST", json: { tags } },
+		{ method: "POST", json: payload ?? {} },
 	);
 }
 
-export interface BulkTorrentActionArgs extends QuiBulkActionRequest {
+export interface BulkTorrentActionArgs {
 	quiInstanceId: string;
 	qbitInstanceId: number;
 	action: QuiAction;
+	hashes: string[];
+	/** Same per-action extras as `SingleTorrentActionArgs.payload`. */
+	payload?: Record<string, unknown>;
 }
 
 /** Phase 4.2 — POST a bulk action against many hashes. */
@@ -137,11 +146,126 @@ export async function postQuiBulkAction({
 	qbitInstanceId,
 	action,
 	hashes,
-	tags,
+	payload,
 }: BulkTorrentActionArgs): Promise<QuiActionResponseShape> {
 	return apiRequest<QuiActionResponseShape>(
 		`/api/qui/instances/${quiInstanceId}/qbit/${qbitInstanceId}/torrents/bulk-action/${action}`,
-		{ method: "POST", json: { hashes, tags } },
+		{ method: "POST", json: { hashes, ...(payload ?? {}) } },
+	);
+}
+
+// ── Detail-drawer reads & mutations (Phase 6) ─────────────────────────
+
+export interface QuiTorrentPropertiesResponse {
+	properties: {
+		additionDate: number;
+		completionDate: number;
+		comment: string;
+		totalSize: number;
+		totalDownloaded: number;
+		totalUploaded: number;
+		shareRatio: number;
+		uploadSpeed: number;
+		downloadSpeed: number;
+		uploadLimit: number;
+		downloadLimit: number;
+		seedsActual: number;
+		peersActual: number;
+		eta: number;
+		ratioLimit: number;
+		seedingTimeLimit: number;
+		inactiveSeedingTimeLimit: number;
+		savePath: string;
+	};
+}
+
+export interface QuiTorrentFileEntry {
+	index: number;
+	name: string;
+	size: number;
+	progress: number;
+	priority: number;
+	isSeeding?: boolean;
+}
+
+export interface QuiTorrentFilesResponse {
+	files: QuiTorrentFileEntry[];
+}
+
+export async function fetchQuiTorrentProperties(args: {
+	quiInstanceId: string;
+	qbitInstanceId: number;
+	hash: string;
+}): Promise<QuiTorrentPropertiesResponse> {
+	const { quiInstanceId, qbitInstanceId, hash } = args;
+	return apiRequest<QuiTorrentPropertiesResponse>(
+		`/api/qui/instances/${quiInstanceId}/qbit/${qbitInstanceId}/torrents/${hash}/properties`,
+	);
+}
+
+export async function fetchQuiTorrentFiles(args: {
+	quiInstanceId: string;
+	qbitInstanceId: number;
+	hash: string;
+	refresh?: boolean;
+}): Promise<QuiTorrentFilesResponse> {
+	const { quiInstanceId, qbitInstanceId, hash, refresh } = args;
+	const qs = refresh ? "?refresh=true" : "";
+	return apiRequest<QuiTorrentFilesResponse>(
+		`/api/qui/instances/${quiInstanceId}/qbit/${qbitInstanceId}/torrents/${hash}/files${qs}`,
+	);
+}
+
+export async function postQuiRenameTorrent(args: {
+	quiInstanceId: string;
+	qbitInstanceId: number;
+	hash: string;
+	name: string;
+}): Promise<{ status: "success" }> {
+	const { quiInstanceId, qbitInstanceId, hash, name } = args;
+	return apiRequest<{ status: "success" }>(
+		`/api/qui/instances/${quiInstanceId}/qbit/${qbitInstanceId}/torrents/${hash}/rename`,
+		{ method: "POST", json: { name } },
+	);
+}
+
+export async function postQuiAddTrackers(args: {
+	quiInstanceId: string;
+	qbitInstanceId: number;
+	hash: string;
+	urls: string[];
+}): Promise<{ status: "success" }> {
+	const { quiInstanceId, qbitInstanceId, hash, urls } = args;
+	return apiRequest<{ status: "success" }>(
+		`/api/qui/instances/${quiInstanceId}/qbit/${qbitInstanceId}/torrents/${hash}/trackers/add`,
+		{ method: "POST", json: { urls } },
+	);
+}
+
+export async function postQuiRemoveTrackers(args: {
+	quiInstanceId: string;
+	qbitInstanceId: number;
+	hash: string;
+	urls: string[];
+}): Promise<{ status: "success" }> {
+	const { quiInstanceId, qbitInstanceId, hash, urls } = args;
+	return apiRequest<{ status: "success" }>(
+		`/api/qui/instances/${quiInstanceId}/qbit/${qbitInstanceId}/torrents/${hash}/trackers/remove`,
+		{ method: "POST", json: { urls } },
+	);
+}
+
+export async function postQuiEditTracker(args: {
+	quiInstanceId: string;
+	qbitInstanceId: number;
+	hash: string;
+	oldURL: string;
+	newURL: string;
+}): Promise<{ status: "success" }> {
+	const { quiInstanceId, qbitInstanceId, hash, oldURL, newURL } = args;
+	return apiRequest<{ status: "success" }>(
+		`/api/qui/instances/${quiInstanceId}/qbit/${qbitInstanceId}/torrents/${hash}/trackers/edit`,
+		{ method: "POST", json: { oldURL, newURL } },
 	);
 }
 

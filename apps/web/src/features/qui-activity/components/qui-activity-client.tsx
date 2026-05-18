@@ -416,6 +416,14 @@ const ACTION_LABELS: Record<ActionFilterId, string> = {
 	recheck: "Recheck",
 	reannounce: "Reannounce",
 	setTags: "Set tags",
+	setCategory: "Set category",
+	toggleAutoTMM: "Toggle ATM",
+	forceStart: "Force start",
+	setUploadLimit: "Set upload limit",
+	setDownloadLimit: "Set download limit",
+	setShareLimit: "Set share limit",
+	setLocation: "Set location",
+	delete: "Delete",
 };
 
 const STATUS_LABELS: Record<StatusFilterId, string> = {
