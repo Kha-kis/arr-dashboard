@@ -544,11 +544,12 @@ describe("POST /qui/instances/:id/qbit/:instanceId/torrents/:hash/actions/:actio
 		expect(body.logRowCount).toBe(1);
 		// qui call shape pins the bulk-action contract — if a future refactor
 		// changes field names, the wire format breaks and qui returns 400.
+		// `pause` carries no per-action extras, so `extras` is undefined.
 		expect(mockQuiClient.bulkAction).toHaveBeenCalledWith({
 			qbitInstanceId: 3,
 			hashes: [VALID_HASH],
 			action: "pause",
-			tags: undefined,
+			extras: undefined,
 		});
 	});
 
@@ -619,10 +620,15 @@ describe("POST /qui/instances/:id/qbit/:instanceId/torrents/:hash/actions/:actio
 			{ body: { tags: "verified,seedonly" } },
 		);
 		expect(res.statusCode).toBe(200);
+		// setTags payload travels in `extras` (per-action body). Confirms the
+		// post-refactor wire shape: the route validates body against
+		// `quiActionPayloadSchemas.setTags`, threads the result through
+		// executeQuiAction's `payload`, and the client spreads it under
+		// `extras` into qui's POST body.
 		expect(mockQuiClient.bulkAction).toHaveBeenCalledWith(
 			expect.objectContaining({
 				action: "setTags",
-				tags: "verified,seedonly",
+				extras: { tags: "verified,seedonly" },
 			}),
 		);
 	});
@@ -668,7 +674,7 @@ describe("POST /qui/instances/:id/qbit/:instanceId/torrents/bulk-action/:action"
 			qbitInstanceId: 3,
 			hashes: [HASH_A, HASH_B],
 			action: "pause",
-			tags: undefined,
+			extras: undefined,
 		});
 	});
 

@@ -172,9 +172,33 @@ export const quiTorrentPropertiesSchema = z.object({
 	seedsActual: z.number().int(),
 	peersActual: z.number().int(),
 	eta: z.number().int(),
+	// Share-limit fields. Sentinel values mirror qBit's wire format:
+	//   `-1` = no limit, `-2` = use the global default. Treat both as
+	//   "unset" in UI but persist as-is so the operator can distinguish.
+	ratioLimit: z.number().default(-2),
+	seedingTimeLimit: z.number().int().default(-2),
+	inactiveSeedingTimeLimit: z.number().int().default(-2),
+	savePath: z.string().default(""),
 });
 
 export type QuiTorrentProperties = z.infer<typeof quiTorrentPropertiesSchema>;
+
+/**
+ * One file inside a torrent. Maps to qBit's per-file inventory; surfaced
+ * by qui at `GET /api/instances/:id/torrents/:hash/files`. The `priority`
+ * field uses qBit's int codes (0 = do not download, 1 = normal, 6 = high,
+ * 7 = maximum). `progress` is 0-1.
+ */
+export const quiTorrentFileSchema = z.object({
+	index: z.number().int(),
+	name: z.string(),
+	size: z.number().int(),
+	progress: z.number().min(0).max(1),
+	priority: z.number().int(),
+	isSeeding: z.boolean().optional(),
+});
+
+export type QuiTorrentFile = z.infer<typeof quiTorrentFileSchema>;
 
 /**
  * Tracker entry for a torrent. `status` is the raw qBit int (kept for diagnostics);
@@ -416,14 +440,45 @@ export type QuiActivityFeedResponse = z.infer<typeof quiActivityFeedResponseSche
 // made against their qui instances.
 
 /**
- * Action vocabulary supported by Phase 4. Maps 1:1 to qui's bulk-action
- * `action` enum (qui exposes a larger set; we surface the subset that has
- * clear single-torrent semantics in v1). Phase 4.2 extends to bulk variants
- * via the same enum + a `hashes[]` payload.
+ * Action vocabulary mirroring qui's bulk-action `action` enum. Despite the
+ * name `bulk-action`, qui uses this endpoint as the single transport for
+ * most per-torrent mutations (the `hashes[]` array can be length-1).
+ *
+ * Each action's payload requirements are declared separately via
+ * `quiActionPayloadSchemas` below — the route layer looks up the right
+ * schema by action and validates the body. This keeps "wrong field with
+ * wrong action" a compile-time rather than runtime concern.
  */
-export const quiActionSchema = z.enum(["pause", "resume", "recheck", "reannounce", "setTags"]);
+export const quiActionSchema = z.enum([
+	"pause",
+	"resume",
+	"recheck",
+	"reannounce",
+	"setTags",
+	"setCategory",
+	"toggleAutoTMM",
+	"forceStart",
+	"setUploadLimit",
+	"setDownloadLimit",
+	"setShareLimit",
+	"setLocation",
+	"delete",
+]);
 
 export type QuiAction = z.infer<typeof quiActionSchema>;
+
+/**
+ * Subset of actions that are destructive — mutate state in a way that
+ * either deletes data, moves data on disk, or is otherwise expensive to
+ * undo. The UI uses this to gate confirm prompts; the route layer can
+ * use it to require an explicit "I know what I'm doing" header in
+ * future. Today it's documentation + a single source of truth for the
+ * frontend.
+ */
+export const QUI_DESTRUCTIVE_ACTIONS: ReadonlySet<QuiAction> = new Set<QuiAction>([
+	"delete",
+	"setLocation",
+]);
 
 /** Lifecycle states for a logged action. */
 export const quiActionStatusSchema = z.enum(["pending", "success", "failed"]);
@@ -462,40 +517,98 @@ export const QUI_BULK_HASH_CAP = 500;
 export const QUI_TAGS_MAX_LENGTH = 2_000;
 
 /**
- * Single-torrent action request body. The route's `hash` URL param
- * carries the target; this body carries action-specific extras
- * (currently only `tags` for `setTags`). For `pause`/`resume`/`recheck`/
- * `reannounce`, the body is allowed to be empty `{}`.
+ * Per-action payload schemas. The route layer looks up the right schema
+ * by URL `:action` param and validates the request body against it. Each
+ * schema describes ONLY the action-specific extras — `hashes` (bulk) and
+ * the target hash (single) live on URL params and a separate bulk envelope.
  *
- * Note: the linkage between `action === "setTags"` and `tags` presence
- * lives at the route layer (the action is in URL params, not the body, so
- * a single `discriminatedUnion` on this schema would be awkward). The
- * route handler asserts `tags` is present when `action === "setTags"`.
+ * Empty `z.object({})` is intentional for the "no-extras" actions: it
+ * accepts `{}` and rejects unknown fields when callers paired with
+ * `.strict()`, but here we stay permissive (`.passthrough()`) so a future
+ * extension doesn't reject already-deployed older clients.
  */
-export const quiTorrentActionRequestSchema = z.object({
-	/**
-	 * Comma-separated qui tag list for `setTags`. Validated against qui's
-	 * bulk-action wire format (qui takes a single comma-joined string,
-	 * not a JSON array). Ignored for non-tag actions.
-	 */
-	tags: z.string().max(QUI_TAGS_MAX_LENGTH).optional(),
-});
+const emptyPayload = z.object({}).passthrough();
 
-export type QuiTorrentActionRequest = z.infer<typeof quiTorrentActionRequestSchema>;
+export const quiActionPayloadSchemas = {
+	pause: emptyPayload,
+	resume: emptyPayload,
+	recheck: emptyPayload,
+	reannounce: emptyPayload,
+	forceStart: emptyPayload,
+	setTags: z.object({
+		// Comma-joined tag list (qui's wire format — qui accepts a single
+		// comma-separated string, not a JSON array). Required and non-empty.
+		tags: z.string().min(1).max(QUI_TAGS_MAX_LENGTH),
+	}),
+	setCategory: z.object({
+		// qBit category names accept any string qBit accepts. Empty string
+		// is valid — it clears the category. No length cap here matches
+		// qui's behavior; downstream audit log writes a JSON blob.
+		category: z.string().max(200),
+	}),
+	toggleAutoTMM: z.object({
+		enable: z.boolean(),
+	}),
+	setUploadLimit: z.object({
+		// KB/s. 0 = no limit per qBit convention. Negative values rejected.
+		uploadLimit: z.number().int().nonnegative(),
+	}),
+	setDownloadLimit: z.object({
+		downloadLimit: z.number().int().nonnegative(),
+	}),
+	setShareLimit: z.object({
+		// qBit sentinels: -1 = no limit, -2 = use global. Operator may set
+		// only one at a time, but qui's wire format expects both fields
+		// present, so require both here and let the UI fill `-2` for "leave
+		// alone."
+		ratioLimit: z.number(),
+		seedingTimeLimit: z.number().int(),
+		inactiveSeedingTimeLimit: z.number().int().optional(),
+	}),
+	setLocation: z.object({
+		// Absolute path. qui validates the path internally (must be within
+		// configured safe directories). We don't pre-validate beyond
+		// non-empty + reasonable length.
+		location: z.string().min(1).max(4096),
+	}),
+	delete: z.object({
+		// Explicit because the cost difference between true and false is
+		// catastrophic. Default is omitted — caller MUST decide.
+		deleteFiles: z.boolean(),
+	}),
+} as const satisfies Record<QuiAction, z.ZodTypeAny>;
 
 /**
- * Bulk-action request body for Phase 4.2. `hashes` is required (length
- * ≥ 1, ≤ `QUI_BULK_HASH_CAP`); the route's URL param carries the action.
- * `tags` is only used when action is `setTags`. Each element of `hashes`
- * must match the qBit info-hash format so we don't persist garbage in
- * the audit log on a bad client.
+ * Discriminated union of all action payloads. Used as the audit-log
+ * `payload` column type; the column itself stores `JSON.stringify(payload)`.
  */
-export const quiBulkActionRequestSchema = z.object({
-	hashes: z.array(quiInfoHashSchema).min(1).max(QUI_BULK_HASH_CAP),
-	tags: z.string().max(QUI_TAGS_MAX_LENGTH).optional(),
-});
+export type QuiActionPayload = {
+	[K in QuiAction]: z.infer<(typeof quiActionPayloadSchemas)[K]>;
+}[QuiAction];
+
+/**
+ * Bulk-action request envelope. Combines the `hashes[]` selection with
+ * the action-specific payload validated above. The route handler uses
+ * `quiActionPayloadSchemas[action]` to validate the entire body keyed
+ * on the URL `:action` param.
+ *
+ * Kept as a permissive object on the wire so we can spread the payload
+ * fields alongside `hashes` without nesting (matches qui's flat body
+ * shape and the existing Phase 4 wire format that frontends already use).
+ */
+export const quiBulkActionRequestSchema = z
+	.object({
+		hashes: z.array(quiInfoHashSchema).min(1).max(QUI_BULK_HASH_CAP),
+	})
+	.passthrough();
 
 export type QuiBulkActionRequest = z.infer<typeof quiBulkActionRequestSchema>;
+
+// Legacy aliases kept for the frontend types package while the per-action
+// schema migration lands. Resolves to the union of every per-action
+// payload — callers can narrow once they know the action.
+export const quiTorrentActionRequestSchema = z.unknown();
+export type QuiTorrentActionRequest = QuiActionPayload | Record<string, never>;
 
 /**
  * Defensive coercion helpers — apply when reading an `action`/`status`
@@ -514,6 +627,14 @@ const QUI_ACTION_VALUES = new Set<QuiAction>([
 	"recheck",
 	"reannounce",
 	"setTags",
+	"setCategory",
+	"toggleAutoTMM",
+	"forceStart",
+	"setUploadLimit",
+	"setDownloadLimit",
+	"setShareLimit",
+	"setLocation",
+	"delete",
 ]);
 const QUI_ACTION_STATUS_VALUES = new Set<QuiActionStatus>(["pending", "success", "failed"]);
 

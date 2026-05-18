@@ -1,10 +1,11 @@
+import type { QuiAction, QuiActionPayload } from "@arr/shared";
 import {
 	coerceQuiAction,
 	coerceQuiActionStatus,
 	normalizeTorrentState,
+	quiActionPayloadSchemas,
 	quiActionSchema,
 	quiBulkActionRequestSchema,
-	quiTorrentActionRequestSchema,
 } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
@@ -2543,21 +2544,17 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 		async (request, reply) => {
 			const userId = request.currentUser!.id;
 			const { id, instanceId, hash, action } = validateRequest(ACTION_PARAMS, request.params);
-			const body = validateRequest(quiTorrentActionRequestSchema, request.body ?? {});
 			const qbitInstanceId = Number.parseInt(instanceId, 10);
 			if (!Number.isFinite(qbitInstanceId)) {
 				return reply.status(400).send({ error: "qbit instanceId must be numeric" });
 			}
-			// Discriminated invariant: `setTags` is the only action that
-			// consumes a body. Reject the empty-body case explicitly so qui
-			// doesn't have to (and so we don't write a misleading audit row
-			// with payload: null for a setTags request). Other actions
-			// ignore `tags` when present — that's qui's contract, not ours.
-			if (action === "setTags" && (body.tags === undefined || body.tags.length === 0)) {
-				return reply.status(400).send({
-					error: "setTags requires a non-empty `tags` field in the request body",
-				});
-			}
+			// Per-action payload validation: each action declares its own
+			// required body shape in `quiActionPayloadSchemas`. The route
+			// picks the right schema from URL `:action` and validates the
+			// body against it — wrong-field-with-wrong-action becomes a
+			// 400 with a precise Zod error path instead of "qui rejected it."
+			const payloadSchema = quiActionPayloadSchemas[action as QuiAction];
+			const payload = validateRequest(payloadSchema, request.body ?? {}) as QuiActionPayload;
 
 			// Ownership: requireQuiInstance only returns the row when (userId, id)
 			// match AND service=QUI. Other users' ids surface as 404, not 403.
@@ -2572,7 +2569,7 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 				qbitInstanceId,
 				hashes: [hash],
 				action,
-				tags: body.tags,
+				payload,
 			});
 
 			// Surface failures as 502 (upstream said no) — the audit log row
@@ -2599,17 +2596,25 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 	}>("/qui/instances/:id/qbit/:instanceId/torrents/bulk-action/:action", async (request, reply) => {
 		const userId = request.currentUser!.id;
 		const { id, instanceId, action } = validateRequest(BULK_ACTION_PARAMS, request.params);
-		const body = validateRequest(quiBulkActionRequestSchema, request.body);
+		// First parse the envelope (`hashes[]` cap + format), then validate
+		// the action-specific extras against `quiActionPayloadSchemas[action]`.
+		// Two passes because the envelope and the per-action payload share
+		// the same flat body — the second pass enforces field presence and
+		// types for the action's extras (e.g. `category` for setCategory).
+		const envelope = validateRequest(quiBulkActionRequestSchema, request.body);
 		const qbitInstanceId = Number.parseInt(instanceId, 10);
 		if (!Number.isFinite(qbitInstanceId)) {
 			return reply.status(400).send({ error: "qbit instanceId must be numeric" });
 		}
-		// Same setTags invariant as the single-torrent route.
-		if (action === "setTags" && (body.tags === undefined || body.tags.length === 0)) {
-			return reply.status(400).send({
-				error: "setTags requires a non-empty `tags` field in the request body",
-			});
-		}
+		const payloadSchema = quiActionPayloadSchemas[action as QuiAction];
+		// Strip envelope-level fields (`hashes`) before payload validation —
+		// otherwise emptyPayload's `passthrough()` would let `hashes` leak
+		// into `extras` and qui would receive duplicated arrays in its POST
+		// body. Field-specific payload schemas would reject unknown keys
+		// silently here too without the strip.
+		const rawBody = (request.body ?? {}) as Record<string, unknown>;
+		const { hashes: _omitHashes, ...payloadBody } = rawBody;
+		const payload = validateRequest(payloadSchema, payloadBody) as QuiActionPayload;
 
 		const instance = await requireQuiInstance(app, userId, id);
 		const client = createQuiClient(app, instance);
@@ -2620,9 +2625,9 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 			userId,
 			serviceInstanceId: instance.id,
 			qbitInstanceId,
-			hashes: body.hashes,
+			hashes: envelope.hashes,
 			action,
-			tags: body.tags,
+			payload,
 		});
 
 		if (result.status === "failed") {

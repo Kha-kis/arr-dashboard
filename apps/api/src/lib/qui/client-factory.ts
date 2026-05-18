@@ -57,18 +57,25 @@ export interface QuiClient {
 	 * instance. Maps to qui's `POST /api/instances/{instanceID}/torrents/bulk-action`
 	 * with the `{ action, hashes, tags? }` body shape from qui's openapi.
 	 *
-	 * Phase 4 supports a narrow subset of qui's bulk-action vocabulary
-	 * (pause/resume/recheck/reannounce/setTags). Other qui actions
-	 * (delete, setCategory, setLocation, tracker edits, …) are
-	 * deliberately not exposed in v1 — they need their own UI affordances,
-	 * audit-log payload schemas, and trust review.
+	 * Despite the `bulk-action` name, qui uses this single endpoint as the
+	 * transport for most per-torrent mutations (including settings that
+	 * accept exactly one hash). The per-action body extras live in `extras`
+	 * as a free-form object — the caller has already validated them against
+	 * `quiActionPayloadSchemas[action]`, so we trust the shape here. Each
+	 * extras-key is spread directly into qui's POST body alongside `action`
+	 * + `hashes`. Examples:
+	 *   - setTags:        { tags: "label,foo" }
+	 *   - setCategory:    { category: "media" }
+	 *   - setShareLimit:  { ratioLimit: 2.0, seedingTimeLimit: 86400 }
+	 *   - setLocation:    { location: "/data/torrents/new-path" }
+	 *   - delete:         { deleteFiles: false }
 	 */
 	bulkAction(args: {
 		qbitInstanceId: number;
 		hashes: string[];
 		action: QuiAction;
-		/** Comma-joined tag list; required for `setTags`, ignored otherwise. */
-		tags?: string;
+		/** Action-specific extras spread into qui's POST body. */
+		extras?: Record<string, unknown>;
 	}): Promise<void>;
 	/** Create a notification target inside qui. Phase 5.1 — auto-registers arr-dashboard's webhook URL. */
 	createNotificationTarget(args: {
@@ -352,7 +359,7 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 			}
 		},
 
-		async bulkAction({ qbitInstanceId, hashes, action, tags }) {
+		async bulkAction({ qbitInstanceId, hashes, action, extras }) {
 			// qui's bulk-action returns 200 with no documented body schema on
 			// success. We surface the call as void; failures throw via
 			// quiRequest's status-mapping pathway (QuiInstanceUnreachableError
@@ -363,7 +370,7 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 				body: {
 					action,
 					hashes,
-					...(tags !== undefined ? { tags } : {}),
+					...(extras ?? {}),
 				},
 			});
 		},

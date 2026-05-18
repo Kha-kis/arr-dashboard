@@ -177,7 +177,7 @@ describe("executeQuiAction — per-hash audit granularity", () => {
 			qbitInstanceId: 7,
 			hashes: ["aaa"],
 			action: "setTags",
-			tags: "verified,seedonly",
+			payload: { tags: "verified,seedonly" },
 		});
 		const tagCreateOps = app.__transaction.mock.calls[0]?.[0] as Array<{ then?: unknown }>;
 		// Each operation in the tx is a Prisma create call; the test uses mocks

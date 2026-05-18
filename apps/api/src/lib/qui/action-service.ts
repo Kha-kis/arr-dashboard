@@ -24,7 +24,7 @@
  *     belongs in `client-helpers.ts:readErrorMessage`, not here.
  */
 
-import type { QuiAction } from "@arr/shared";
+import type { QuiAction, QuiActionPayload } from "@arr/shared";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import { getErrorMessage } from "../utils/error-message.js";
 import type { QuiClient } from "./client-factory.js";
@@ -42,8 +42,13 @@ export interface ExecuteQuiActionArgs {
 	hashes: string[];
 	/** Action vocabulary — already validated by route schema. */
 	action: QuiAction;
-	/** Comma-joined tag list for `setTags`; ignored otherwise. */
-	tags?: string;
+	/**
+	 * Action-specific payload. Already validated against
+	 * `quiActionPayloadSchemas[action]` by the caller. Spread directly into
+	 * qui's bulk-action body and stored as `JSON.stringify(payload)` in
+	 * the audit log so the operator can see exactly what was sent.
+	 */
+	payload?: QuiActionPayload;
 	log?: FastifyBaseLogger;
 }
 
@@ -76,7 +81,7 @@ export async function executeQuiAction(
 		qbitInstanceId,
 		hashes,
 		action,
-		tags,
+		payload,
 		log = app.log,
 	} = args;
 
@@ -87,7 +92,12 @@ export async function executeQuiAction(
 		return { logRowCount: 0, status: "success", error: null };
 	}
 
-	const payloadString = tags !== undefined ? JSON.stringify({ tags }) : null;
+	// Audit log captures the entire payload so an operator can reconstruct
+	// exactly what was sent. `null` for actions with no extras (pause/resume
+	// /recheck/reannounce/forceStart) — empty `{}` would also work but null
+	// reads as "no payload" more clearly.
+	const payloadString =
+		payload !== undefined && Object.keys(payload).length > 0 ? JSON.stringify(payload) : null;
 
 	// 1. Create pending audit rows in one batch — atomic so we don't leak
 	//    half-recorded intent if the DB layer fails between rows.
@@ -123,7 +133,17 @@ export async function executeQuiAction(
 	let quiOutcome: "ok" | "fail" = "ok";
 	let quiError: unknown = null;
 	try {
-		await client.bulkAction({ qbitInstanceId, hashes, action, tags });
+		// Pass extras as undefined when payload is empty so the client
+		// doesn't spread `{}` into qui's POST body (cleaner wire shape, and
+		// preserves the existing test contract that a no-extras action
+		// receives `extras: undefined`).
+		const hasExtras = payload !== undefined && Object.keys(payload).length > 0;
+		await client.bulkAction({
+			qbitInstanceId,
+			hashes,
+			action,
+			extras: hasExtras ? (payload as Record<string, unknown>) : undefined,
+		});
 	} catch (error) {
 		quiOutcome = "fail";
 		quiError = error;
