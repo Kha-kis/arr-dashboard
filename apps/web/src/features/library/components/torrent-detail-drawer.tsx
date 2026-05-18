@@ -1,0 +1,838 @@
+"use client";
+
+import {
+	AlertTriangle,
+	ChevronDown,
+	ChevronRight,
+	ExternalLink,
+	Loader2,
+	Trash2,
+} from "lucide-react";
+import { useState } from "react";
+import { Button } from "../../../components/ui/button";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../../../components/ui/sheet";
+import { toast } from "../../../components/ui/toast";
+import { useIncognitoMode } from "../../../contexts/IncognitoContext";
+import {
+	useQuiAddTrackers,
+	useQuiEditTracker,
+	useQuiRemoveTrackers,
+	useQuiRenameTorrent,
+	useQuiTorrentAction,
+	useQuiTorrentFiles,
+	useQuiTorrentProperties,
+} from "../../../hooks/api/useQui";
+import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
+import type { SeriesTorrentCopy } from "../../../lib/api-client/qui";
+import { getLinuxSavePath } from "../../../lib/incognito";
+
+interface TorrentDetailDrawerProps {
+	copy: SeriesTorrentCopy | null;
+	onClose: () => void;
+}
+
+/**
+ * Per-torrent detail drawer — full control surface for one torrent.
+ * Opens as a right-side sheet (480px wide); the user picks a section
+ * to expand and the heavy data (properties, files) lazy-loads on demand.
+ *
+ * Sections are deliberately frequency-ordered: Status + Actions are
+ * always open at the top, Danger Zone always last and collapsed. Each
+ * intermediate section's collapse default reflects expected usage
+ * frequency from the Cold Read survey (2026-05-18): Trackers + Tags
+ * default open, Limits/Behavior/Files default closed.
+ */
+export const TorrentDetailDrawer: React.FC<TorrentDetailDrawerProps> = ({ copy, onClose }) => {
+	const open = copy !== null;
+	return (
+		<Sheet open={open} onOpenChange={(o) => !o && onClose()}>
+			<SheetContent side="right" className="w-[480px] sm:max-w-[480px] overflow-y-auto">
+				{copy && <DrawerBody copy={copy} />}
+			</SheetContent>
+		</Sheet>
+	);
+};
+
+const DrawerBody: React.FC<{ copy: SeriesTorrentCopy }> = ({ copy }) => {
+	const incognito = useIncognitoMode();
+	const canAct =
+		!copy.quiUnreachable &&
+		typeof copy.qbitInstanceId === "number" &&
+		typeof copy.quiInstanceId === "string";
+
+	return (
+		<div className="space-y-4 text-[12px]">
+			<SheetHeader className="space-y-1">
+				<SheetTitle className="break-all font-mono text-[13px] leading-snug">
+					{copy.name
+						? incognito
+							? getLinuxSavePath(copy.name)
+							: copy.name
+						: copy.infoHash.slice(0, 12)}
+				</SheetTitle>
+				<div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
+					<span
+						className={`rounded px-1.5 py-0.5 ${
+							copy.role === "library"
+								? "bg-blue-500/20 text-blue-200"
+								: "bg-purple-500/20 text-purple-200"
+						}`}
+					>
+						{copy.role === "library" ? "Library" : "Cross-seed"}
+					</span>
+					<span className="font-mono">{copy.infoHash.slice(0, 12)}…</span>
+					{typeof copy.ratio === "number" && <span>ratio {copy.ratio.toFixed(2)}×</span>}
+				</div>
+			</SheetHeader>
+
+			<StatusSection copy={copy} />
+			<ActionsSection copy={copy} canAct={canAct} />
+
+			<DrawerSection title="Trackers" defaultOpen={true}>
+				<TrackersSection copy={copy} canAct={canAct} />
+			</DrawerSection>
+
+			<DrawerSection title="Tags & Category" defaultOpen={true}>
+				<TagsCategorySection copy={copy} canAct={canAct} />
+			</DrawerSection>
+
+			<DrawerSection title="Limits & seeding rules" defaultOpen={false}>
+				<LimitsSection copy={copy} canAct={canAct} />
+			</DrawerSection>
+
+			<DrawerSection title="Behavior" defaultOpen={false}>
+				<BehaviorSection copy={copy} canAct={canAct} />
+			</DrawerSection>
+
+			<DrawerSection title="Files" defaultOpen={false}>
+				<FilesSection copy={copy} />
+			</DrawerSection>
+
+			<DrawerSection title="Advanced" defaultOpen={false}>
+				<AdvancedSection copy={copy} canAct={canAct} />
+			</DrawerSection>
+
+			<DrawerSection title="Danger zone" defaultOpen={false} tone="danger">
+				<DangerZoneSection copy={copy} canAct={canAct} />
+			</DrawerSection>
+		</div>
+	);
+};
+
+// ── Reusable collapsible section ──────────────────────────────────────
+
+const DrawerSection: React.FC<{
+	title: string;
+	defaultOpen?: boolean;
+	tone?: "default" | "danger";
+	children: React.ReactNode;
+}> = ({ title, defaultOpen = false, tone = "default", children }) => {
+	const [open, setOpen] = useState(defaultOpen);
+	return (
+		<div
+			className={`rounded border ${
+				tone === "danger" ? "border-red-500/30 bg-red-500/5" : "border-border/40 bg-card/30"
+			}`}
+		>
+			<button
+				type="button"
+				onClick={() => setOpen((o) => !o)}
+				className={`flex w-full items-center justify-between px-3 py-2 text-left text-[11px] font-medium ${
+					tone === "danger" ? "text-red-200" : "text-foreground"
+				}`}
+			>
+				<span className="flex items-center gap-1.5">
+					{tone === "danger" && <AlertTriangle className="h-3.5 w-3.5" />}
+					{title}
+				</span>
+				{open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+			</button>
+			{open && <div className="border-t border-border/30 px-3 py-2">{children}</div>}
+		</div>
+	);
+};
+
+// ── Status (always open) ──────────────────────────────────────────────
+
+const StatusSection: React.FC<{ copy: SeriesTorrentCopy }> = ({ copy }) => {
+	const incognito = useIncognitoMode();
+	const propsQuery = useQuiTorrentProperties({
+		quiInstanceId: copy.quiInstanceId ?? null,
+		qbitInstanceId: copy.qbitInstanceId ?? null,
+		hash: copy.infoHash,
+		enabled: !copy.quiUnreachable,
+	});
+	const props = propsQuery.data?.properties;
+	const fmtBytes = (n: number) => {
+		if (n < 1024) return `${n} B`;
+		if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+		if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+		return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
+	};
+	const fmtSpeed = (bps: number) => (bps > 0 ? `${fmtBytes(bps)}/s` : "—");
+	return (
+		<div className="rounded border border-border/40 bg-card/30 px-3 py-2 text-[11px]">
+			<div className="grid grid-cols-2 gap-x-4 gap-y-1">
+				<div>
+					<span className="text-muted-foreground">State:</span>{" "}
+					<span className="text-foreground">{copy.state ?? "unknown"}</span>
+				</div>
+				<div>
+					<span className="text-muted-foreground">Ratio:</span>{" "}
+					<span className="text-foreground">
+						{typeof copy.ratio === "number" ? `${copy.ratio.toFixed(2)}×` : "—"}
+					</span>
+				</div>
+				<div>
+					<span className="text-muted-foreground">↑ Up:</span>{" "}
+					<span className="text-foreground">{props ? fmtSpeed(props.uploadSpeed) : "—"}</span>
+				</div>
+				<div>
+					<span className="text-muted-foreground">↓ Down:</span>{" "}
+					<span className="text-foreground">{props ? fmtSpeed(props.downloadSpeed) : "—"}</span>
+				</div>
+				<div>
+					<span className="text-muted-foreground">Size:</span>{" "}
+					<span className="text-foreground">{props ? fmtBytes(props.totalSize) : "—"}</span>
+				</div>
+				<div>
+					<span className="text-muted-foreground">Uploaded:</span>{" "}
+					<span className="text-foreground">{props ? fmtBytes(props.totalUploaded) : "—"}</span>
+				</div>
+			</div>
+			{copy.savePath && (
+				<div className="mt-2 break-all font-mono text-[10px] text-muted-foreground">
+					{incognito ? getLinuxSavePath(copy.savePath) : copy.savePath}
+				</div>
+			)}
+		</div>
+	);
+};
+
+// ── Actions (always open) ─────────────────────────────────────────────
+
+const ActionsSection: React.FC<{ copy: SeriesTorrentCopy; canAct: boolean }> = ({
+	copy,
+	canAct,
+}) => {
+	const actionMutation = useQuiTorrentAction();
+	const { data: services } = useServicesQuery();
+	const quiOpenUrl = (() => {
+		if (!copy.quiInstanceId) return null;
+		const inst = services?.find((s) => s.id === copy.quiInstanceId);
+		return inst?.externalUrl ?? inst?.baseUrl ?? null;
+	})();
+	const run = (action: "pause" | "resume" | "recheck" | "reannounce", verb: string) => {
+		if (!canAct) return;
+		actionMutation.mutate(
+			{
+				quiInstanceId: copy.quiInstanceId!,
+				qbitInstanceId: copy.qbitInstanceId!,
+				hash: copy.infoHash,
+				action,
+				payload: {},
+			},
+			{
+				onSuccess: () =>
+					toast.success(`${verb}: ${copy.name ?? copy.infoHash.slice(0, 12)}`, {
+						action:
+							action === "pause"
+								? { label: "Undo", onClick: () => run("resume", "Resumed") }
+								: undefined,
+					}),
+				onError: (err) =>
+					toast.error(
+						`${verb} failed: ${err instanceof Error ? err.message : "qui rejected the action"}`,
+					),
+			},
+		);
+	};
+	return (
+		<div className="flex flex-wrap gap-1.5">
+			<Button
+				size="sm"
+				variant="secondary"
+				disabled={!canAct}
+				onClick={() => run("pause", "Paused")}
+			>
+				Pause
+			</Button>
+			<Button
+				size="sm"
+				variant="secondary"
+				disabled={!canAct}
+				onClick={() => run("resume", "Resumed")}
+			>
+				Resume
+			</Button>
+			<Button
+				size="sm"
+				variant="secondary"
+				disabled={!canAct}
+				onClick={() => run("recheck", "Rechecked")}
+			>
+				Recheck
+			</Button>
+			<Button
+				size="sm"
+				variant="secondary"
+				disabled={!canAct}
+				onClick={() => run("reannounce", "Reannounced")}
+			>
+				Reannounce
+			</Button>
+			{quiOpenUrl && (
+				<Button
+					size="sm"
+					variant="ghost"
+					onClick={() => window.open(quiOpenUrl, "_blank", "noopener,noreferrer")}
+				>
+					<ExternalLink className="mr-1 h-3 w-3" />
+					Open in qui
+				</Button>
+			)}
+		</div>
+	);
+};
+
+// ── Trackers ──────────────────────────────────────────────────────────
+
+const TrackersSection: React.FC<{ copy: SeriesTorrentCopy; canAct: boolean }> = ({
+	copy,
+	canAct,
+}) => {
+	const [addUrl, setAddUrl] = useState("");
+	const addMutation = useQuiAddTrackers();
+	const removeMutation = useQuiRemoveTrackers();
+	const _editMutation = useQuiEditTracker();
+	void _editMutation;
+	const tracks = copy.trackerHostnames ?? [];
+	const handleAdd = () => {
+		if (!canAct || !addUrl.trim()) return;
+		addMutation.mutate(
+			{
+				quiInstanceId: copy.quiInstanceId!,
+				qbitInstanceId: copy.qbitInstanceId!,
+				hash: copy.infoHash,
+				urls: [addUrl.trim()],
+			},
+			{
+				onSuccess: () => {
+					toast.success("Tracker added");
+					setAddUrl("");
+				},
+				onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to add tracker"),
+			},
+		);
+	};
+	const handleRemove = (url: string) => {
+		if (!canAct) return;
+		removeMutation.mutate(
+			{
+				quiInstanceId: copy.quiInstanceId!,
+				qbitInstanceId: copy.qbitInstanceId!,
+				hash: copy.infoHash,
+				urls: [url],
+			},
+			{
+				onSuccess: () => toast.success("Tracker removed"),
+				onError: (err) =>
+					toast.error(err instanceof Error ? err.message : "Failed to remove tracker"),
+			},
+		);
+	};
+	return (
+		<div className="space-y-2 text-[11px]">
+			{tracks.length === 0 && <div className="text-muted-foreground italic">No trackers</div>}
+			{tracks.map((host) => (
+				<div key={host} className="flex items-center justify-between gap-2">
+					<span className="break-all font-mono text-foreground">{host}</span>
+					<button
+						type="button"
+						aria-label={`Remove tracker ${host}`}
+						disabled={!canAct}
+						onClick={() => handleRemove(host)}
+						className="text-muted-foreground hover:text-red-400 disabled:opacity-50"
+					>
+						<Trash2 className="h-3 w-3" />
+					</button>
+				</div>
+			))}
+			<div className="flex gap-1.5 pt-1">
+				<input
+					type="text"
+					value={addUrl}
+					onChange={(e) => setAddUrl(e.target.value)}
+					placeholder="https://tracker.example/announce"
+					className="flex-1 rounded border border-border/60 bg-card/50 px-2 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-foreground/40"
+				/>
+				<Button
+					size="sm"
+					variant="secondary"
+					disabled={!canAct || !addUrl.trim()}
+					onClick={handleAdd}
+				>
+					Add
+				</Button>
+			</div>
+		</div>
+	);
+};
+
+// ── Tags & Category ───────────────────────────────────────────────────
+
+const TagsCategorySection: React.FC<{ copy: SeriesTorrentCopy; canAct: boolean }> = ({
+	copy,
+	canAct,
+}) => {
+	const actionMutation = useQuiTorrentAction();
+	const [tagsValue, setTagsValue] = useState((copy.tags ?? []).join(","));
+	const [categoryValue, setCategoryValue] = useState(copy.category ?? "");
+	const saveTags = () => {
+		if (!canAct) return;
+		actionMutation.mutate(
+			{
+				quiInstanceId: copy.quiInstanceId!,
+				qbitInstanceId: copy.qbitInstanceId!,
+				hash: copy.infoHash,
+				action: "setTags",
+				payload: { tags: tagsValue },
+			},
+			{
+				onSuccess: () => toast.success("Tags updated"),
+				onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to set tags"),
+			},
+		);
+	};
+	const saveCategory = () => {
+		if (!canAct) return;
+		actionMutation.mutate(
+			{
+				quiInstanceId: copy.quiInstanceId!,
+				qbitInstanceId: copy.qbitInstanceId!,
+				hash: copy.infoHash,
+				action: "setCategory",
+				payload: { category: categoryValue },
+			},
+			{
+				onSuccess: () => toast.success("Category updated"),
+				onError: (err) =>
+					toast.error(err instanceof Error ? err.message : "Failed to set category"),
+			},
+		);
+	};
+	return (
+		<div className="space-y-2 text-[11px]">
+			<div className="space-y-1">
+				<label className="text-muted-foreground">Tags (comma-separated)</label>
+				<div className="flex gap-1.5">
+					<input
+						type="text"
+						value={tagsValue}
+						onChange={(e) => setTagsValue(e.target.value)}
+						className="flex-1 rounded border border-border/60 bg-card/50 px-2 py-1 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-foreground/40"
+					/>
+					<Button size="sm" variant="secondary" disabled={!canAct} onClick={saveTags}>
+						Save
+					</Button>
+				</div>
+			</div>
+			<div className="space-y-1">
+				<label className="text-muted-foreground">Category</label>
+				<div className="flex gap-1.5">
+					<input
+						type="text"
+						value={categoryValue}
+						onChange={(e) => setCategoryValue(e.target.value)}
+						className="flex-1 rounded border border-border/60 bg-card/50 px-2 py-1 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-foreground/40"
+					/>
+					<Button size="sm" variant="secondary" disabled={!canAct} onClick={saveCategory}>
+						Save
+					</Button>
+				</div>
+			</div>
+		</div>
+	);
+};
+
+// ── Limits & seeding rules ────────────────────────────────────────────
+
+const LimitsSection: React.FC<{ copy: SeriesTorrentCopy; canAct: boolean }> = ({
+	copy,
+	canAct,
+}) => {
+	const propsQuery = useQuiTorrentProperties({
+		quiInstanceId: copy.quiInstanceId ?? null,
+		qbitInstanceId: copy.qbitInstanceId ?? null,
+		hash: copy.infoHash,
+		enabled: !copy.quiUnreachable,
+	});
+	const props = propsQuery.data?.properties;
+	const actionMutation = useQuiTorrentAction();
+	const [up, setUp] = useState<string>(""); // KB/s string for input
+	const [down, setDown] = useState<string>("");
+	const [ratio, setRatio] = useState<string>("");
+	const [seedTime, setSeedTime] = useState<string>(""); // minutes
+
+	// Initial population from properties
+	useState(() => {
+		if (props) {
+			setUp(props.uploadLimit > 0 ? String(Math.round(props.uploadLimit / 1024)) : "");
+			setDown(props.downloadLimit > 0 ? String(Math.round(props.downloadLimit / 1024)) : "");
+			setRatio(props.ratioLimit >= 0 ? String(props.ratioLimit) : "");
+			setSeedTime(props.seedingTimeLimit >= 0 ? String(props.seedingTimeLimit) : "");
+		}
+	});
+
+	const fire = (
+		action: "setUploadLimit" | "setDownloadLimit" | "setShareLimit",
+		payload: Record<string, unknown>,
+		verb: string,
+	) => {
+		if (!canAct) return;
+		actionMutation.mutate(
+			{
+				quiInstanceId: copy.quiInstanceId!,
+				qbitInstanceId: copy.qbitInstanceId!,
+				hash: copy.infoHash,
+				action,
+				payload,
+			},
+			{
+				onSuccess: () => toast.success(verb),
+				onError: (err) => toast.error(err instanceof Error ? err.message : `${verb} failed`),
+			},
+		);
+	};
+
+	return (
+		<div className="space-y-2 text-[11px]">
+			<LimitRow
+				label="Upload limit (KB/s, 0 = unlimited)"
+				value={up}
+				onChange={setUp}
+				canAct={canAct}
+				onSave={() =>
+					fire("setUploadLimit", { uploadLimit: Number(up) * 1024 || 0 }, "Upload limit set")
+				}
+			/>
+			<LimitRow
+				label="Download limit (KB/s, 0 = unlimited)"
+				value={down}
+				onChange={setDown}
+				canAct={canAct}
+				onSave={() =>
+					fire(
+						"setDownloadLimit",
+						{ downloadLimit: Number(down) * 1024 || 0 },
+						"Download limit set",
+					)
+				}
+			/>
+			<LimitRow
+				label="Ratio limit (-1 unlimited, -2 use global)"
+				value={ratio}
+				onChange={setRatio}
+				canAct={canAct}
+				onSave={() =>
+					fire(
+						"setShareLimit",
+						{
+							ratioLimit: ratio === "" ? -2 : Number(ratio),
+							seedingTimeLimit: seedTime === "" ? -2 : Number(seedTime),
+						},
+						"Share limit set",
+					)
+				}
+			/>
+			<LimitRow
+				label="Seed-time limit (minutes, -1 unlimited, -2 global)"
+				value={seedTime}
+				onChange={setSeedTime}
+				canAct={canAct}
+				onSave={() =>
+					fire(
+						"setShareLimit",
+						{
+							ratioLimit: ratio === "" ? -2 : Number(ratio),
+							seedingTimeLimit: seedTime === "" ? -2 : Number(seedTime),
+						},
+						"Share limit set",
+					)
+				}
+			/>
+		</div>
+	);
+};
+
+const LimitRow: React.FC<{
+	label: string;
+	value: string;
+	onChange: (s: string) => void;
+	canAct: boolean;
+	onSave: () => void;
+}> = ({ label, value, onChange, canAct, onSave }) => (
+	<div className="space-y-1">
+		<label className="text-muted-foreground">{label}</label>
+		<div className="flex gap-1.5">
+			<input
+				type="number"
+				value={value}
+				onChange={(e) => onChange(e.target.value)}
+				className="flex-1 rounded border border-border/60 bg-card/50 px-2 py-1 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-foreground/40"
+			/>
+			<Button size="sm" variant="secondary" disabled={!canAct} onClick={onSave}>
+				Save
+			</Button>
+		</div>
+	</div>
+);
+
+// ── Behavior ──────────────────────────────────────────────────────────
+
+const BehaviorSection: React.FC<{ copy: SeriesTorrentCopy; canAct: boolean }> = ({
+	copy,
+	canAct,
+}) => {
+	const actionMutation = useQuiTorrentAction();
+	const fire = (
+		action: "toggleAutoTMM" | "forceStart",
+		payload: Record<string, unknown>,
+		verb: string,
+	) => {
+		if (!canAct) return;
+		actionMutation.mutate(
+			{
+				quiInstanceId: copy.quiInstanceId!,
+				qbitInstanceId: copy.qbitInstanceId!,
+				hash: copy.infoHash,
+				action,
+				payload,
+			},
+			{
+				onSuccess: () => toast.success(verb),
+				onError: (err) => toast.error(err instanceof Error ? err.message : `${verb} failed`),
+			},
+		);
+	};
+	return (
+		<div className="space-y-2 text-[11px]">
+			<div className="flex flex-wrap gap-1.5">
+				<Button
+					size="sm"
+					variant="secondary"
+					disabled={!canAct}
+					onClick={() => fire("toggleAutoTMM", { enable: true }, "ATM enabled")}
+				>
+					Enable ATM
+				</Button>
+				<Button
+					size="sm"
+					variant="secondary"
+					disabled={!canAct}
+					onClick={() => fire("toggleAutoTMM", { enable: false }, "ATM disabled")}
+				>
+					Disable ATM
+				</Button>
+				<Button
+					size="sm"
+					variant="secondary"
+					disabled={!canAct}
+					onClick={() => fire("forceStart", {}, "Force-start toggled")}
+				>
+					Force start
+				</Button>
+			</div>
+			<div className="text-[10px] italic text-muted-foreground">
+				Super-seeding: not supported by qui (qBit-only feature)
+			</div>
+		</div>
+	);
+};
+
+// ── Files ─────────────────────────────────────────────────────────────
+
+const FilesSection: React.FC<{ copy: SeriesTorrentCopy }> = ({ copy }) => {
+	const incognito = useIncognitoMode();
+	const filesQuery = useQuiTorrentFiles({
+		quiInstanceId: copy.quiInstanceId ?? null,
+		qbitInstanceId: copy.qbitInstanceId ?? null,
+		hash: copy.infoHash,
+		enabled: !copy.quiUnreachable,
+	});
+	if (filesQuery.isLoading) {
+		return (
+			<div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+				<Loader2 className="h-3 w-3 animate-spin" />
+				Loading files…
+			</div>
+		);
+	}
+	const files = filesQuery.data?.files ?? [];
+	if (files.length === 0)
+		return <div className="text-[11px] italic text-muted-foreground">No files</div>;
+	const fmtBytes = (n: number) =>
+		n < 1024 * 1024 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
+	return (
+		<div className="space-y-1 text-[11px]">
+			{files.map((f) => (
+				<div key={f.index} className="flex items-center justify-between gap-2">
+					<span className="break-all font-mono text-foreground/80">
+						{incognito ? getLinuxSavePath(f.name) : f.name}
+					</span>
+					<span className="shrink-0 text-muted-foreground">{fmtBytes(f.size)}</span>
+				</div>
+			))}
+		</div>
+	);
+};
+
+// ── Advanced ──────────────────────────────────────────────────────────
+
+const AdvancedSection: React.FC<{ copy: SeriesTorrentCopy; canAct: boolean }> = ({
+	copy,
+	canAct,
+}) => {
+	const renameMutation = useQuiRenameTorrent();
+	const actionMutation = useQuiTorrentAction();
+	const [renameValue, setRenameValue] = useState(copy.name ?? "");
+	const [locationValue, setLocationValue] = useState(copy.savePath ?? "");
+	const handleRename = () => {
+		if (!canAct || !renameValue.trim()) return;
+		renameMutation.mutate(
+			{
+				quiInstanceId: copy.quiInstanceId!,
+				qbitInstanceId: copy.qbitInstanceId!,
+				hash: copy.infoHash,
+				name: renameValue.trim(),
+			},
+			{
+				onSuccess: () => toast.success("Renamed"),
+				onError: (err) => toast.error(err instanceof Error ? err.message : "Rename failed"),
+			},
+		);
+	};
+	const handleSetLocation = () => {
+		if (!canAct || !locationValue.trim()) return;
+		actionMutation.mutate(
+			{
+				quiInstanceId: copy.quiInstanceId!,
+				qbitInstanceId: copy.qbitInstanceId!,
+				hash: copy.infoHash,
+				action: "setLocation",
+				payload: { location: locationValue.trim() },
+			},
+			{
+				onSuccess: () => toast.success("Location updated — data is being moved by qBit"),
+				onError: (err) => toast.error(err instanceof Error ? err.message : "Set location failed"),
+			},
+		);
+	};
+	return (
+		<div className="space-y-3 text-[11px]">
+			<div className="space-y-1">
+				<label className="text-muted-foreground">Rename torrent</label>
+				<div className="flex gap-1.5">
+					<input
+						type="text"
+						value={renameValue}
+						onChange={(e) => setRenameValue(e.target.value)}
+						className="flex-1 rounded border border-border/60 bg-card/50 px-2 py-1 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-foreground/40"
+					/>
+					<Button size="sm" variant="secondary" disabled={!canAct} onClick={handleRename}>
+						Rename
+					</Button>
+				</div>
+			</div>
+			<div className="space-y-1">
+				<label className="text-muted-foreground">Set location (moves data on disk)</label>
+				<div className="flex gap-1.5">
+					<input
+						type="text"
+						value={locationValue}
+						onChange={(e) => setLocationValue(e.target.value)}
+						className="flex-1 rounded border border-border/60 bg-card/50 px-2 py-1 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-foreground/40"
+					/>
+					<Button size="sm" variant="secondary" disabled={!canAct} onClick={handleSetLocation}>
+						Move
+					</Button>
+				</div>
+			</div>
+		</div>
+	);
+};
+
+// ── Danger zone ───────────────────────────────────────────────────────
+
+const DangerZoneSection: React.FC<{ copy: SeriesTorrentCopy; canAct: boolean }> = ({
+	copy,
+	canAct,
+}) => {
+	const actionMutation = useQuiTorrentAction();
+	const [confirm, setConfirm] = useState<"keep" | "files" | null>(null);
+	const handleDelete = (deleteFiles: boolean) => {
+		if (!canAct) return;
+		actionMutation.mutate(
+			{
+				quiInstanceId: copy.quiInstanceId!,
+				qbitInstanceId: copy.qbitInstanceId!,
+				hash: copy.infoHash,
+				action: "delete",
+				payload: { deleteFiles },
+			},
+			{
+				onSuccess: () => {
+					toast.success(deleteFiles ? "Torrent and files deleted" : "Torrent removed (files kept)");
+					setConfirm(null);
+				},
+				onError: (err) => toast.error(err instanceof Error ? err.message : "Delete failed"),
+			},
+		);
+	};
+	return (
+		<div className="space-y-2 text-[11px]">
+			{confirm === null && (
+				<div className="flex flex-wrap gap-1.5">
+					<Button
+						size="sm"
+						variant="secondary"
+						disabled={!canAct}
+						onClick={() => setConfirm("keep")}
+					>
+						Delete (keep files)
+					</Button>
+					<Button
+						size="sm"
+						variant="destructive"
+						disabled={!canAct}
+						onClick={() => setConfirm("files")}
+					>
+						Delete with files
+					</Button>
+				</div>
+			)}
+			{confirm !== null && (
+				<div className="space-y-2 rounded bg-red-500/10 p-2">
+					<div className="text-red-200">
+						{confirm === "files"
+							? "This will delete the torrent AND all files on disk. Cannot be undone."
+							: "This will remove the torrent from qBit. Files on disk are kept."}
+					</div>
+					<div className="flex gap-1.5">
+						<Button
+							size="sm"
+							variant="destructive"
+							disabled={!canAct}
+							onClick={() => handleDelete(confirm === "files")}
+						>
+							Yes, delete{confirm === "files" ? " everything" : ""}
+						</Button>
+						<Button size="sm" variant="ghost" onClick={() => setConfirm(null)}>
+							Cancel
+						</Button>
+					</div>
+				</div>
+			)}
+		</div>
+	);
+};

@@ -10,21 +10,12 @@ import {
 	HelpCircle,
 	Info,
 	Loader2,
-	MoreHorizontal,
 	Search,
 	Sparkles,
 } from "lucide-react";
 import { useState } from "react";
 import { GlassmorphicCard } from "../../../components/layout/premium-containers";
 import { Button } from "../../../components/ui/button";
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuSeparator,
-	DropdownMenuTrigger,
-} from "../../../components/ui/dropdown-menu";
-import { toast } from "../../../components/ui/toast";
 import {
 	Tooltip,
 	TooltipContent,
@@ -33,12 +24,10 @@ import {
 } from "../../../components/ui/tooltip";
 import {
 	useMovieTorrents,
-	useQuiTorrentAction,
 	useSeriesTorrents,
 	useTrackerIcons,
 	useTriggerQuiCrossSeedSearch,
 } from "../../../hooks/api/useQui";
-import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import type {
 	SeriesActionItem,
 	SeriesSeasonGroup,
@@ -47,6 +36,7 @@ import type {
 } from "../../../lib/api-client/qui";
 import { getLinuxSavePath, useIncognitoMode } from "../../../lib/incognito";
 import { resolveCopyTrackerBrand, resolveHostnameBrand } from "../../../lib/tracker-brand";
+import { TorrentDetailDrawer } from "./torrent-detail-drawer";
 
 interface Props {
 	arrInstanceId: string;
@@ -162,6 +152,11 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({
 	const [searchOutcome, setSearchOutcome] = useState<
 		{ kind: "success"; runId: number; scanRoot: string } | { kind: "error"; message: string } | null
 	>(null);
+	// Single drawer instance for the whole panel. `selectedCopy` is the
+	// torrent the user opened the drawer for; null = closed. Living at the
+	// panel root (instead of per-row) keeps state out of the leaf and
+	// lets the drawer animate cleanly across copy changes.
+	const [selectedCopy, setSelectedCopy] = useState<SeriesTorrentCopy | null>(null);
 	const [expandedClusters, setExpandedClusters] = useState<Set<string>>(new Set());
 	const [expandedSeasons, setExpandedSeasons] = useState<Set<number>>(new Set());
 
@@ -395,6 +390,7 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({
 									trackerIcons={trackerIcons}
 									onCrossSeedSearch={handleSearchClick}
 									searchPending={mutation.isPending}
+									onOpenDrawer={setSelectedCopy}
 								/>
 							))}
 						</div>
@@ -413,6 +409,7 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({
 									onToggle={() => toggleCluster(cluster.key)}
 									incognito={isIncognito}
 									trackerIcons={trackerIcons}
+									onOpenDrawer={setSelectedCopy}
 								/>
 							))}
 						</div>
@@ -427,6 +424,7 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({
 					</div>
 				)}
 			</GlassmorphicCard>
+			<TorrentDetailDrawer copy={selectedCopy} onClose={() => setSelectedCopy(null)} />
 		</TooltipProvider>
 	);
 };
@@ -511,6 +509,7 @@ const SeasonGroupCard: React.FC<{
 	trackerIcons: Record<string, { iconUrl?: string; name?: string }> | undefined;
 	onCrossSeedSearch: () => void;
 	searchPending: boolean;
+	onOpenDrawer: (copy: SeriesTorrentCopy) => void;
 }> = ({
 	group,
 	clusterByKey,
@@ -523,6 +522,7 @@ const SeasonGroupCard: React.FC<{
 	trackerIcons,
 	onCrossSeedSearch,
 	searchPending,
+	onOpenDrawer,
 }) => {
 	const isFullyStuck = group.correlatedEpisodes === 0 && group.totalEpisodes > 0;
 	const isFullyCovered =
@@ -615,6 +615,7 @@ const SeasonGroupCard: React.FC<{
 							onToggle={() => onToggleCluster(cluster.key)}
 							incognito={incognito}
 							trackerIcons={trackerIcons}
+							onOpenDrawer={onOpenDrawer}
 						/>
 					))}
 				</div>
@@ -661,7 +662,8 @@ const ClusterCard: React.FC<{
 	onToggle: () => void;
 	incognito: boolean;
 	trackerIcons: Record<string, { iconUrl?: string; name?: string }> | undefined;
-}> = ({ cluster, expanded, onToggle, incognito, trackerIcons }) => {
+	onOpenDrawer: (copy: SeriesTorrentCopy) => void;
+}> = ({ cluster, expanded, onToggle, incognito, trackerIcons, onOpenDrawer }) => {
 	const stateLabel = friendlyState(cluster.primaryState);
 
 	return (
@@ -813,6 +815,7 @@ const ClusterCard: React.FC<{
 							copy={copy}
 							incognito={incognito}
 							trackerIcons={trackerIcons}
+							onOpenDrawer={onOpenDrawer}
 						/>
 					))}
 				</div>
@@ -824,13 +827,17 @@ const ClusterCard: React.FC<{
 /**
  * One torrent copy inside an expanded cluster. Compact line with role +
  * tracker badge + state + ratio + peers, then path + timing as secondary
- * info. Drawer-style full detail comes in Ship 3.
+ * info. Clicking the row (or its chevron) opens the full detail drawer
+ * — the kebab-menu fast lane was retired after Cold Read showed the
+ * kebab's mutations were rarely used and the drawer carries every
+ * action plus the qui power-tools the menu couldn't.
  */
 const CopyRow: React.FC<{
 	copy: SeriesTorrentCopy;
 	incognito: boolean;
 	trackerIcons: Record<string, { iconUrl?: string; name?: string }> | undefined;
-}> = ({ copy, incognito, trackerIcons }) => {
+	onOpenDrawer: (copy: SeriesTorrentCopy) => void;
+}> = ({ copy, incognito, trackerIcons, onOpenDrawer }) => {
 	const stateLabel = friendlyState(copy.state);
 	const progressPct = typeof copy.progress === "number" ? Math.round(copy.progress * 100) : null;
 	const brand = resolveCopyTrackerBrand({
@@ -838,67 +845,6 @@ const CopyRow: React.FC<{
 		trackerHostnames: copy.trackerHostnames,
 		icons: trackerIcons,
 	});
-
-	// Action menu mutation. Non-destructive actions (pause/resume/recheck/
-	// reannounce) fire optimistically with toast confirmation. The hook
-	// auto-invalidates torrent-state queries so the badge re-renders
-	// once qui returns.
-	const actionMutation = useQuiTorrentAction();
-	const canAct =
-		!copy.quiUnreachable &&
-		typeof copy.qbitInstanceId === "number" &&
-		typeof copy.quiInstanceId === "string";
-	// Resolve the qui instance's external URL so the "Open in qui" item can
-	// deep-link to the qui webapp. `externalUrl` is what's browser-reachable;
-	// `baseUrl` is the in-cluster container address. Use the former when set.
-	const { data: services } = useServicesQuery();
-	const quiOpenUrl = (() => {
-		if (!copy.quiInstanceId) return null;
-		const inst = services?.find((s) => s.id === copy.quiInstanceId);
-		return inst?.externalUrl ?? inst?.baseUrl ?? null;
-	})();
-	const runAction = (action: "pause" | "resume" | "recheck" | "reannounce", verb: string) => {
-		if (!canAct) return;
-		actionMutation.mutate(
-			{
-				quiInstanceId: copy.quiInstanceId!,
-				qbitInstanceId: copy.qbitInstanceId!,
-				hash: copy.infoHash,
-				action,
-			},
-			{
-				onSuccess: () => {
-					const label = copy.name ?? copy.infoHash.slice(0, 12);
-					// Pause is the one mutation where a misclick has a real
-					// cost (a seeder stops contributing). Surface an Undo
-					// affordance via Sonner's action prop — the 5s toast
-					// dwell is the recovery window.
-					if (action === "pause") {
-						toast.success(`${verb}: ${label}`, {
-							action: {
-								label: "Undo",
-								onClick: () => runAction("resume", "Resumed"),
-							},
-						});
-					} else {
-						toast.success(`${verb}: ${label}`);
-					}
-				},
-				onError: (err) =>
-					toast.error(
-						`${verb} failed: ${err instanceof Error ? err.message : "qui rejected the action"}`,
-					),
-			},
-		);
-	};
-	const copyHash = async () => {
-		try {
-			await navigator.clipboard.writeText(copy.infoHash);
-			toast.success("Hash copied to clipboard");
-		} catch {
-			toast.error("Couldn't copy — clipboard permission denied");
-		}
-	};
 	return (
 		<div className="space-y-1 rounded bg-card/40 px-2 py-1.5 text-[11px]">
 			<div className="flex flex-wrap items-center gap-1.5">
@@ -957,61 +903,19 @@ const CopyRow: React.FC<{
 						not in qui
 					</span>
 				)}
-				<DropdownMenu>
-					<Tooltip>
-						<DropdownMenuTrigger asChild>
-							<TooltipTrigger asChild>
-								<button
-									type="button"
-									aria-label="Torrent actions"
-									className="ml-auto inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-card/70 hover:text-foreground focus:outline-none focus:ring-1 focus:ring-foreground/40"
-									disabled={actionMutation.isPending}
-								>
-									{actionMutation.isPending ? (
-										<Loader2 className="h-3.5 w-3.5 animate-spin" />
-									) : (
-										<MoreHorizontal className="h-3.5 w-3.5" />
-									)}
-								</button>
-							</TooltipTrigger>
-						</DropdownMenuTrigger>
-						<TooltipContent>Torrent actions</TooltipContent>
-					</Tooltip>
-					<DropdownMenuContent align="end" className="text-[11px]">
-						{!canAct && (
-							<>
-								<div className="px-2 py-1 text-[10px] italic text-muted-foreground">
-									qui can't reach this torrent
-								</div>
-								<DropdownMenuSeparator />
-							</>
-						)}
-						<DropdownMenuItem onClick={() => runAction("pause", "Paused")} disabled={!canAct}>
-							Pause
-						</DropdownMenuItem>
-						<DropdownMenuItem onClick={() => runAction("resume", "Resumed")} disabled={!canAct}>
-							Resume
-						</DropdownMenuItem>
-						<DropdownMenuItem onClick={() => runAction("recheck", "Rechecked")} disabled={!canAct}>
-							Force recheck
-						</DropdownMenuItem>
-						<DropdownMenuItem
-							onClick={() => runAction("reannounce", "Reannounced")}
-							disabled={!canAct}
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<button
+							type="button"
+							aria-label="Open torrent details"
+							onClick={() => onOpenDrawer(copy)}
+							className="ml-auto inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-card/70 hover:text-foreground focus:outline-none focus:ring-1 focus:ring-foreground/40"
 						>
-							Reannounce
-						</DropdownMenuItem>
-						<DropdownMenuSeparator />
-						{quiOpenUrl && (
-							<DropdownMenuItem
-								onClick={() => window.open(quiOpenUrl, "_blank", "noopener,noreferrer")}
-							>
-								Open in qui
-							</DropdownMenuItem>
-						)}
-						<DropdownMenuItem onClick={copyHash}>Copy infohash</DropdownMenuItem>
-					</DropdownMenuContent>
-				</DropdownMenu>
+							<ChevronRight className="h-3.5 w-3.5" />
+						</button>
+					</TooltipTrigger>
+					<TooltipContent>Open details</TooltipContent>
+				</Tooltip>
 			</div>
 			{copy.name && (
 				<div className="break-all font-mono text-[10px] text-muted-foreground" title={copy.name}>
