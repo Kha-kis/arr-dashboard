@@ -7,8 +7,6 @@ import {
 	type QuiTorrentProperties,
 	type QuiTracker,
 	quiInstanceSchema,
-	quiTorrentFileSchema,
-	quiTorrentPropertiesSchema,
 	quiTorrentStateSchema,
 } from "@arr/shared";
 import type { FastifyInstance } from "fastify";
@@ -403,25 +401,90 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 		},
 
 		async getTorrentProperties(instanceId, hash) {
-			// qui returns qBit's TorrentProperties shape verbatim. Wire field
-			// names align with our Zod schema (qBit uses snake_case but the
-			// drawer-relevant fields are mostly camelCase already in qBit's
-			// API). qui may evolve to add fields; Zod ignores unknown keys.
+			// qui returns qBit's TorrentProperties shape verbatim — snake_case
+			// keys (`addition_date`, `total_size`, `share_ratio`, …). Define a
+			// wire schema that accepts the snake_case fields and transforms
+			// into our canonical camelCase QuiTorrentProperties via .transform.
+			// Defaults handle qBit's "not set" sentinels (-1 / -2) and
+			// optional fields that qui doesn't always emit.
+			const wireSchema = z
+				.object({
+					addition_date: z.number().int(),
+					completion_date: z.number().int(),
+					comment: z.string().default(""),
+					total_size: z.number().int(),
+					total_downloaded: z.number().int(),
+					total_uploaded: z.number().int(),
+					share_ratio: z.number(),
+					up_speed: z.number().int(),
+					dl_speed: z.number().int(),
+					up_limit: z.number().int().default(-1),
+					dl_limit: z.number().int().default(-1),
+					seeds: z.number().int().default(0),
+					peers: z.number().int().default(0),
+					eta: z.number().int().default(-1),
+					ratio_limit: z.number().default(-2),
+					seeding_time_limit: z.number().int().default(-2),
+					inactive_seeding_time_limit: z.number().int().default(-2),
+					save_path: z.string().default(""),
+				})
+				.passthrough()
+				.transform((wire) => ({
+					additionDate: wire.addition_date,
+					completionDate: wire.completion_date,
+					comment: wire.comment,
+					totalSize: wire.total_size,
+					totalDownloaded: wire.total_downloaded,
+					totalUploaded: wire.total_uploaded,
+					shareRatio: wire.share_ratio,
+					uploadSpeed: wire.up_speed,
+					downloadSpeed: wire.dl_speed,
+					uploadLimit: wire.up_limit,
+					downloadLimit: wire.dl_limit,
+					seedsActual: wire.seeds,
+					peersActual: wire.peers,
+					eta: wire.eta,
+					ratioLimit: wire.ratio_limit,
+					seedingTimeLimit: wire.seeding_time_limit,
+					inactiveSeedingTimeLimit: wire.inactive_seeding_time_limit,
+					savePath: wire.save_path,
+				}));
 			return quiRequest(
 				ctx,
 				`/api/instances/${instanceId}/torrents/${hash}/properties`,
-				quiTorrentPropertiesSchema,
+				wireSchema,
 			);
 		},
 
 		async getTorrentFiles(instanceId, hash, options) {
-			// `refresh=true` bypasses qui's sync cache and re-queries qBit.
-			// Useful after a file-rename or when qui's last sync is stale.
+			// qui returns qBit's files-list shape — snake_case keys (`is_seed`,
+			// `progress`, `priority`, `name`, `size`). Map snake → camel and
+			// fall back to array position when qui omits the index.
 			const query = options?.refresh ? "?refresh=true" : "";
+			const wireItemSchema = z
+				.object({
+					index: z.number().int().optional(),
+					name: z.string(),
+					size: z.number().int(),
+					progress: z.number().min(0).max(1),
+					priority: z.number().int(),
+					is_seed: z.boolean().optional(),
+				})
+				.passthrough();
+			const wireArraySchema = z.array(wireItemSchema).transform((arr) =>
+				arr.map((wire, i) => ({
+					index: wire.index ?? i,
+					name: wire.name,
+					size: wire.size,
+					progress: wire.progress,
+					priority: wire.priority,
+					isSeeding: wire.is_seed,
+				})),
+			);
 			return quiRequest(
 				ctx,
 				`/api/instances/${instanceId}/torrents/${hash}/files${query}`,
-				z.array(quiTorrentFileSchema),
+				wireArraySchema,
 			);
 		},
 
