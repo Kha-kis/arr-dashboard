@@ -20,8 +20,10 @@ import {
 	fetchQuiActionLog,
 	fetchQuiActivityFeed,
 	fetchQuiAttention,
+	fetchQuiCategories,
 	fetchQuiEventLog,
 	fetchQuiSummary,
+	fetchQuiTags,
 	fetchQuiTorrentFiles,
 	fetchQuiTorrentProperties,
 	fetchQuiWebhookConfig,
@@ -341,6 +343,44 @@ export const useQuiEditTracker = () => {
 				queryKey: ["qui", "torrent-trackers", vars.quiInstanceId, vars.qbitInstanceId, vars.hash],
 			});
 		},
+	});
+};
+
+/**
+ * qBit categories on this instance, surfaced as drawer-picker suggestions.
+ * 5-minute staleTime — categories change rarely, and the drawer can
+ * reasonably trust a stale list (worst case the user types a new name
+ * and it succeeds anyway).
+ */
+export const useQuiCategories = (args: {
+	quiInstanceId: string | null;
+	qbitInstanceId: number | null;
+	enabled?: boolean;
+}) => {
+	const { quiInstanceId, qbitInstanceId, enabled = true } = args;
+	return useQuery({
+		queryKey: ["qui", "categories", quiInstanceId, qbitInstanceId] as const,
+		queryFn: () =>
+			fetchQuiCategories({ quiInstanceId: quiInstanceId!, qbitInstanceId: qbitInstanceId! }),
+		enabled: enabled && quiInstanceId !== null && qbitInstanceId !== null,
+		staleTime: 5 * 60 * 1000,
+	});
+};
+
+/**
+ * qBit tags on this instance. Same caching rationale as categories.
+ */
+export const useQuiTags = (args: {
+	quiInstanceId: string | null;
+	qbitInstanceId: number | null;
+	enabled?: boolean;
+}) => {
+	const { quiInstanceId, qbitInstanceId, enabled = true } = args;
+	return useQuery({
+		queryKey: ["qui", "tags", quiInstanceId, qbitInstanceId] as const,
+		queryFn: () => fetchQuiTags({ quiInstanceId: quiInstanceId!, qbitInstanceId: qbitInstanceId! }),
+		enabled: enabled && quiInstanceId !== null && qbitInstanceId !== null,
+		staleTime: 5 * 60 * 1000,
 	});
 };
 

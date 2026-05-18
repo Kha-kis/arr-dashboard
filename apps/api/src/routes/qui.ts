@@ -649,6 +649,49 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 		}
 	});
 
+	// ────────────────────────────────────────────────────────────────────
+	// Picker reads — categories & tags lists per qBit instance
+	// ────────────────────────────────────────────────────────────────────
+	//
+	// These power the drawer's Tags + Category section's selectable
+	// pickers (datalists). Power users typically reuse a small set of
+	// tags/categories — surfacing them as suggestions prevents the silent
+	// "user mistypes 'tv' as 'TV' and creates a phantom category" class
+	// of error. Cached at the React Query layer (~5 min) — these change
+	// rarely.
+
+	app.get<{ Params: { id: string; instanceId: string } }>(
+		"/qui/instances/:id/qbit/:instanceId/categories",
+		async (request, reply) => {
+			const userId = request.currentUser!.id;
+			const { id } = validateRequest(QUI_INSTANCE_PARAM, request.params);
+			const qbitInstanceId = Number.parseInt(request.params.instanceId, 10);
+			if (!Number.isFinite(qbitInstanceId)) {
+				return reply.status(400).send({ error: "qbit instanceId must be numeric" });
+			}
+			const instance = await requireQuiInstance(app, userId, id);
+			const client = createQuiClient(app, instance);
+			const categories = await client.listCategories(qbitInstanceId);
+			return reply.send({ categories });
+		},
+	);
+
+	app.get<{ Params: { id: string; instanceId: string } }>(
+		"/qui/instances/:id/qbit/:instanceId/tags",
+		async (request, reply) => {
+			const userId = request.currentUser!.id;
+			const { id } = validateRequest(QUI_INSTANCE_PARAM, request.params);
+			const qbitInstanceId = Number.parseInt(request.params.instanceId, 10);
+			if (!Number.isFinite(qbitInstanceId)) {
+				return reply.status(400).send({ error: "qbit instanceId must be numeric" });
+			}
+			const instance = await requireQuiInstance(app, userId, id);
+			const client = createQuiClient(app, instance);
+			const tags = await client.listTags(qbitInstanceId);
+			return reply.send({ tags });
+		},
+	);
+
 	app.post<{ Params: { id: string } }>("/qui/instances/:id/test", async (request, reply) => {
 		const userId = request.currentUser!.id;
 		const { id } = validateRequest(QUI_INSTANCE_PARAM, request.params);

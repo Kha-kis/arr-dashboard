@@ -8,16 +8,18 @@ import {
 	Loader2,
 	Trash2,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "../../../components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../../../components/ui/sheet";
 import { toast } from "../../../components/ui/toast";
 import { useIncognitoMode } from "../../../contexts/IncognitoContext";
 import {
 	useQuiAddTrackers,
+	useQuiCategories,
 	useQuiEditTracker,
 	useQuiRemoveTrackers,
 	useQuiRenameTorrent,
+	useQuiTags,
 	useQuiTorrentAction,
 	useQuiTorrentFiles,
 	useQuiTorrentProperties,
@@ -64,11 +66,16 @@ const DrawerBody: React.FC<{ copy: SeriesTorrentCopy }> = ({ copy }) => {
 		<div className="space-y-4 text-[12px]">
 			<SheetHeader className="space-y-1">
 				<SheetTitle className="break-all font-mono text-[13px] leading-snug">
-					{copy.name
-						? incognito
-							? getLinuxSavePath(copy.name)
-							: copy.name
-						: copy.infoHash.slice(0, 12)}
+					{/* `copy.name` is qBit's display name. For library copies
+					 * with a folder-style name it can read like a path —
+					 * surface the leaf segment so the title isn't dominated
+					 * by parent directories. Incognito mask still applies. */}
+					{(() => {
+						if (!copy.name) return copy.infoHash.slice(0, 12);
+						const display = incognito ? getLinuxSavePath(copy.name) : copy.name;
+						const leaf = display.includes("/") ? (display.split("/").pop() ?? display) : display;
+						return leaf;
+					})()}
 				</SheetTitle>
 				<div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
 					<span
@@ -386,9 +393,29 @@ const TagsCategorySection: React.FC<{ copy: SeriesTorrentCopy; canAct: boolean }
 	canAct,
 }) => {
 	const actionMutation = useQuiTorrentAction();
-	const [tagsValue, setTagsValue] = useState((copy.tags ?? []).join(","));
+	// Drawer-picker data sources. Categories + tags are tiny lists per
+	// instance; 5-min cache. `enabled` matches the canAct gate — no point
+	// fetching pickers when qui can't reach this torrent anyway.
+	const categoriesQuery = useQuiCategories({
+		quiInstanceId: copy.quiInstanceId ?? null,
+		qbitInstanceId: copy.qbitInstanceId ?? null,
+		enabled: !copy.quiUnreachable,
+	});
+	const tagsQuery = useQuiTags({
+		quiInstanceId: copy.quiInstanceId ?? null,
+		qbitInstanceId: copy.qbitInstanceId ?? null,
+		enabled: !copy.quiUnreachable,
+	});
+	const allCategories = categoriesQuery.data?.categories ?? [];
+	const allTags = tagsQuery.data?.tags ?? [];
+	// Selected tags = local edit state, seeded from the torrent's current
+	// tags. Chip removal mutates this; the picker adds to it; Save fires
+	// setTags with the joined string. The full-replace semantics match
+	// qBit's setTags (it overwrites — not additive).
+	const [currentTags, setCurrentTags] = useState<string[]>(copy.tags ?? []);
+	const [tagPick, setTagPick] = useState("");
 	const [categoryValue, setCategoryValue] = useState(copy.category ?? "");
-	const saveTags = () => {
+	const fireSetTags = (next: string[]) => {
 		if (!canAct) return;
 		actionMutation.mutate(
 			{
@@ -396,13 +423,26 @@ const TagsCategorySection: React.FC<{ copy: SeriesTorrentCopy; canAct: boolean }
 				qbitInstanceId: copy.qbitInstanceId!,
 				hash: copy.infoHash,
 				action: "setTags",
-				payload: { tags: tagsValue },
+				payload: { tags: next.join(",") },
 			},
 			{
 				onSuccess: () => toast.success("Tags updated"),
 				onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to set tags"),
 			},
 		);
+	};
+	const addTag = () => {
+		const trimmed = tagPick.trim();
+		if (!trimmed || currentTags.includes(trimmed)) return;
+		const next = [...currentTags, trimmed];
+		setCurrentTags(next);
+		setTagPick("");
+		fireSetTags(next);
+	};
+	const removeTag = (tag: string) => {
+		const next = currentTags.filter((t) => t !== tag);
+		setCurrentTags(next);
+		fireSetTags(next);
 	};
 	const saveCategory = () => {
 		if (!canAct) return;
@@ -422,18 +462,64 @@ const TagsCategorySection: React.FC<{ copy: SeriesTorrentCopy; canAct: boolean }
 		);
 	};
 	return (
-		<div className="space-y-2 text-[11px]">
-			<div className="space-y-1">
-				<label className="text-muted-foreground">Tags (comma-separated)</label>
+		<div className="space-y-3 text-[11px]">
+			<div className="space-y-1.5">
+				<label className="text-muted-foreground">Tags</label>
+				{/* Current tag chips with X-to-remove. Pickering via datalist:
+				 * typing surfaces existing instance tags but the operator can
+				 * also Enter a brand-new tag. Both create the tag if absent
+				 * in qBit (qBit auto-creates on first setTags). */}
+				<div className="flex flex-wrap gap-1">
+					{currentTags.length === 0 && (
+						<span className="italic text-muted-foreground">No tags</span>
+					)}
+					{currentTags.map((tag) => (
+						<span
+							key={tag}
+							className="inline-flex items-center gap-1 rounded bg-card/60 px-1.5 py-0.5 font-mono text-[10px]"
+						>
+							{tag}
+							<button
+								type="button"
+								aria-label={`Remove tag ${tag}`}
+								disabled={!canAct}
+								onClick={() => removeTag(tag)}
+								className="text-muted-foreground hover:text-red-400 disabled:opacity-50"
+							>
+								×
+							</button>
+						</span>
+					))}
+				</div>
 				<div className="flex gap-1.5">
 					<input
 						type="text"
-						value={tagsValue}
-						onChange={(e) => setTagsValue(e.target.value)}
+						list="qui-tag-suggestions"
+						value={tagPick}
+						onChange={(e) => setTagPick(e.target.value)}
+						onKeyDown={(e) => {
+							if (e.key === "Enter") {
+								e.preventDefault();
+								addTag();
+							}
+						}}
+						placeholder="Pick or type a tag"
 						className="flex-1 rounded border border-border/60 bg-card/50 px-2 py-1 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-foreground/40"
 					/>
-					<Button size="sm" variant="secondary" disabled={!canAct} onClick={saveTags}>
-						Save
+					<datalist id="qui-tag-suggestions">
+						{allTags
+							.filter((t) => !currentTags.includes(t))
+							.map((t) => (
+								<option key={t} value={t} />
+							))}
+					</datalist>
+					<Button
+						size="sm"
+						variant="secondary"
+						disabled={!canAct || !tagPick.trim()}
+						onClick={addTag}
+					>
+						Add
 					</Button>
 				</div>
 			</div>
@@ -442,10 +528,18 @@ const TagsCategorySection: React.FC<{ copy: SeriesTorrentCopy; canAct: boolean }
 				<div className="flex gap-1.5">
 					<input
 						type="text"
+						list="qui-category-suggestions"
 						value={categoryValue}
 						onChange={(e) => setCategoryValue(e.target.value)}
+						placeholder="Pick or type a category"
 						className="flex-1 rounded border border-border/60 bg-card/50 px-2 py-1 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-foreground/40"
 					/>
+					<datalist id="qui-category-suggestions">
+						<option value="" />
+						{allCategories.map((c) => (
+							<option key={c.name} value={c.name} />
+						))}
+					</datalist>
 					<Button size="sm" variant="secondary" disabled={!canAct} onClick={saveCategory}>
 						Save
 					</Button>
@@ -472,17 +566,25 @@ const LimitsSection: React.FC<{ copy: SeriesTorrentCopy; canAct: boolean }> = ({
 	const [up, setUp] = useState<string>(""); // KB/s string for input
 	const [down, setDown] = useState<string>("");
 	const [ratio, setRatio] = useState<string>("");
-	const [seedTime, setSeedTime] = useState<string>(""); // minutes
+	const [seedTime, setSeedTime] = useState<string>(""); // seconds
 
-	// Initial population from properties
-	useState(() => {
-		if (props) {
-			setUp(props.uploadLimit > 0 ? String(Math.round(props.uploadLimit / 1024)) : "");
-			setDown(props.downloadLimit > 0 ? String(Math.round(props.downloadLimit / 1024)) : "");
-			setRatio(props.ratioLimit >= 0 ? String(props.ratioLimit) : "");
-			setSeedTime(props.seedingTimeLimit >= 0 ? String(props.seedingTimeLimit) : "");
-		}
-	});
+	// Seed input state from properties WHEN the query resolves. The
+	// original implementation used `useState(() => fn)` which only runs
+	// once on mount — and at mount time the properties query hasn't
+	// resolved yet, so the inputs stayed empty. useEffect runs when
+	// `props` transitions from undefined to defined, then noop on
+	// subsequent renders as long as the same property object is returned
+	// (it's stable across refetches within React Query's cache).
+	useEffect(() => {
+		if (!props) return;
+		// Wire format: uploadLimit/downloadLimit are bytes/sec, with -1 or 0
+		// meaning unset/unlimited. Display in KB/sec where positive; blank
+		// otherwise. ratioLimit/seedingTimeLimit use qBit's -1/-2 sentinels.
+		setUp(props.uploadLimit > 0 ? String(Math.round(props.uploadLimit / 1024)) : "");
+		setDown(props.downloadLimit > 0 ? String(Math.round(props.downloadLimit / 1024)) : "");
+		setRatio(props.ratioLimit >= 0 ? String(props.ratioLimit) : "");
+		setSeedTime(props.seedingTimeLimit >= 0 ? String(props.seedingTimeLimit) : "");
+	}, [props]);
 
 	const fire = (
 		action: "setUploadLimit" | "setDownloadLimit" | "setShareLimit",

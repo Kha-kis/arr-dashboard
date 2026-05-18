@@ -26,6 +26,8 @@ const mockQuiClient = vi.hoisted(() => ({
 	bulkAction: vi.fn(),
 	getTorrentProperties: vi.fn(),
 	getTorrentFiles: vi.fn(),
+	listCategories: vi.fn(),
+	listTags: vi.fn(),
 	renameTorrent: vi.fn(),
 	addTrackers: vi.fn(),
 	removeTrackers: vi.fn(),

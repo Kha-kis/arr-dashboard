@@ -255,6 +255,34 @@ export async function postQuiRemoveTrackers(args: {
 	);
 }
 
+export interface QuiCategoriesResponse {
+	categories: Array<{ name: string; savePath: string }>;
+}
+
+export interface QuiTagsResponse {
+	tags: string[];
+}
+
+export async function fetchQuiCategories(args: {
+	quiInstanceId: string;
+	qbitInstanceId: number;
+}): Promise<QuiCategoriesResponse> {
+	const { quiInstanceId, qbitInstanceId } = args;
+	return apiRequest<QuiCategoriesResponse>(
+		`/api/qui/instances/${quiInstanceId}/qbit/${qbitInstanceId}/categories`,
+	);
+}
+
+export async function fetchQuiTags(args: {
+	quiInstanceId: string;
+	qbitInstanceId: number;
+}): Promise<QuiTagsResponse> {
+	const { quiInstanceId, qbitInstanceId } = args;
+	return apiRequest<QuiTagsResponse>(
+		`/api/qui/instances/${quiInstanceId}/qbit/${qbitInstanceId}/tags`,
+	);
+}
+
 export async function postQuiEditTracker(args: {
 	quiInstanceId: string;
 	qbitInstanceId: number;

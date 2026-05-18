@@ -96,6 +96,18 @@ export interface QuiClient {
 		options?: { refresh?: boolean },
 	): Promise<QuiTorrentFile[]>;
 	/**
+	 * Fetch all qBit categories configured on this instance. Maps to qui's
+	 * `GET /api/instances/:id/categories`. qBit returns `{ name: {name, savePath} }`
+	 * — we flatten to a `{name, savePath}[]` so callers don't have to undo
+	 * qBit's keyed-by-name shape.
+	 */
+	listCategories(instanceId: number): Promise<Array<{ name: string; savePath: string }>>;
+	/**
+	 * Fetch all tags configured on this instance. Maps to qui's
+	 * `GET /api/instances/:id/tags`. qBit returns a flat string array.
+	 */
+	listTags(instanceId: number): Promise<string[]>;
+	/**
 	 * Rename a torrent's display name. Maps to qui's
 	 * `POST /api/instances/:id/torrents/:hash/rename`. Per-torrent only —
 	 * qui has no bulk rename.
@@ -459,8 +471,36 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 		async getTorrentFiles(instanceId, hash, options) {
 			// qui returns qBit's files-list shape — snake_case keys (`is_seed`,
 			// `progress`, `priority`, `name`, `size`). Map snake → camel and
-			// fall back to array position when qui omits the index.
+			// fall back to array position when qui omits the index. Accept
+			// `z.unknown()` here and do the validation/transform after we
+			// log the raw shape — gives us a runtime trace if qui's wire
+			// format ever drifts (helpful since arr-dashboard has no
+			// integration tests against a live qui).
 			const query = options?.refresh ? "?refresh=true" : "";
+			const raw = await quiRequest(
+				ctx,
+				`/api/instances/${instanceId}/torrents/${hash}/files${query}`,
+				z.unknown(),
+			);
+			// One-time log of the response shape so we can diagnose
+			// "Files showed no files" without further round-trips. Logs the
+			// raw structure (truncated) at debug level — operator can grep
+			// for "qui files raw" to confirm what qBit emitted for an
+			// inspected torrent.
+			ctx.log.info(
+				{
+					instanceId,
+					hash,
+					isArray: Array.isArray(raw),
+					length: Array.isArray(raw) ? raw.length : null,
+					sampleKeys:
+						Array.isArray(raw) && raw.length > 0 && typeof raw[0] === "object"
+							? Object.keys(raw[0] as Record<string, unknown>).slice(0, 12)
+							: null,
+					rawType: typeof raw,
+				},
+				"qui files raw response shape",
+			);
 			const wireItemSchema = z
 				.object({
 					index: z.number().int().optional(),
@@ -471,21 +511,47 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 					is_seed: z.boolean().optional(),
 				})
 				.passthrough();
-			const wireArraySchema = z.array(wireItemSchema).transform((arr) =>
-				arr.map((wire, i) => ({
-					index: wire.index ?? i,
-					name: wire.name,
-					size: wire.size,
-					progress: wire.progress,
-					priority: wire.priority,
-					isSeeding: wire.is_seed,
-				})),
-			);
-			return quiRequest(
+			const arr = z.array(wireItemSchema).parse(raw ?? []);
+			return arr.map((wire, i) => ({
+				index: wire.index ?? i,
+				name: wire.name,
+				size: wire.size,
+				progress: wire.progress,
+				priority: wire.priority,
+				isSeeding: wire.is_seed,
+			}));
+		},
+
+		async listCategories(instanceId) {
+			// qBit returns `{ <name>: { name, savePath } }`. Flatten into an
+			// array sorted by name for stable UI ordering. qui's response
+			// passes the qBit shape through verbatim. `save_path` may be in
+			// snake_case from qBit; tolerate both.
+			const raw = await quiRequest(
 				ctx,
-				`/api/instances/${instanceId}/torrents/${hash}/files${query}`,
-				wireArraySchema,
+				`/api/instances/${instanceId}/categories`,
+				z.record(
+					z.string(),
+					z
+						.object({
+							name: z.string().optional(),
+							savePath: z.string().optional(),
+							save_path: z.string().optional(),
+						})
+						.passthrough(),
+				),
 			);
+			return Object.entries(raw)
+				.map(([key, value]) => ({
+					name: value.name ?? key,
+					savePath: value.savePath ?? value.save_path ?? "",
+				}))
+				.sort((a, b) => a.name.localeCompare(b.name));
+		},
+
+		async listTags(instanceId) {
+			// qBit returns a flat array of tag-name strings.
+			return quiRequest(ctx, `/api/instances/${instanceId}/tags`, z.array(z.string()));
 		},
 
 		async renameTorrent(instanceId, hash, name) {
