@@ -469,38 +469,12 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 		},
 
 		async getTorrentFiles(instanceId, hash, options) {
-			// qui returns qBit's files-list shape — snake_case keys (`is_seed`,
-			// `progress`, `priority`, `name`, `size`). Map snake → camel and
-			// fall back to array position when qui omits the index. Accept
-			// `z.unknown()` here and do the validation/transform after we
-			// log the raw shape — gives us a runtime trace if qui's wire
-			// format ever drifts (helpful since arr-dashboard has no
-			// integration tests against a live qui).
+			// qui returns qBit's files-list shape — direct JSON array, with
+			// snake_case keys per file (`availability`, `index`, `is_seed`,
+			// `name`, `piece_range`, `priority`, `progress`, `size`).
+			// Confirmed via live diagnostic 2026-05-19. Transform inline to
+			// our canonical QuiTorrentFile camelCase shape.
 			const query = options?.refresh ? "?refresh=true" : "";
-			const raw = await quiRequest(
-				ctx,
-				`/api/instances/${instanceId}/torrents/${hash}/files${query}`,
-				z.unknown(),
-			);
-			// One-time log of the response shape so we can diagnose
-			// "Files showed no files" without further round-trips. Logs the
-			// raw structure (truncated) at debug level — operator can grep
-			// for "qui files raw" to confirm what qBit emitted for an
-			// inspected torrent.
-			ctx.log.info(
-				{
-					instanceId,
-					hash,
-					isArray: Array.isArray(raw),
-					length: Array.isArray(raw) ? raw.length : null,
-					sampleKeys:
-						Array.isArray(raw) && raw.length > 0 && typeof raw[0] === "object"
-							? Object.keys(raw[0] as Record<string, unknown>).slice(0, 12)
-							: null,
-					rawType: typeof raw,
-				},
-				"qui files raw response shape",
-			);
 			const wireItemSchema = z
 				.object({
 					index: z.number().int().optional(),
@@ -511,15 +485,21 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 					is_seed: z.boolean().optional(),
 				})
 				.passthrough();
-			const arr = z.array(wireItemSchema).parse(raw ?? []);
-			return arr.map((wire, i) => ({
-				index: wire.index ?? i,
-				name: wire.name,
-				size: wire.size,
-				progress: wire.progress,
-				priority: wire.priority,
-				isSeeding: wire.is_seed,
-			}));
+			const wireArraySchema = z.array(wireItemSchema).transform((arr) =>
+				arr.map((wire, i) => ({
+					index: wire.index ?? i,
+					name: wire.name,
+					size: wire.size,
+					progress: wire.progress,
+					priority: wire.priority,
+					isSeeding: wire.is_seed,
+				})),
+			);
+			return quiRequest(
+				ctx,
+				`/api/instances/${instanceId}/torrents/${hash}/files${query}`,
+				wireArraySchema,
+			);
 		},
 
 		async listCategories(instanceId) {
