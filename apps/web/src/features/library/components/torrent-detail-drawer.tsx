@@ -56,7 +56,7 @@ export const TorrentDetailDrawer: React.FC<TorrentDetailDrawerProps> = ({ copy, 
 };
 
 const DrawerBody: React.FC<{ copy: SeriesTorrentCopy }> = ({ copy }) => {
-	const incognito = useIncognitoMode();
+	const [incognito] = useIncognitoMode();
 	const canAct =
 		!copy.quiUnreachable &&
 		typeof copy.qbitInstanceId === "number" &&
@@ -162,7 +162,7 @@ const DrawerSection: React.FC<{
 // ── Status (always open) ──────────────────────────────────────────────
 
 const StatusSection: React.FC<{ copy: SeriesTorrentCopy }> = ({ copy }) => {
-	const incognito = useIncognitoMode();
+	const [incognito] = useIncognitoMode();
 	const propsQuery = useQuiTorrentProperties({
 		quiInstanceId: copy.quiInstanceId ?? null,
 		qbitInstanceId: copy.qbitInstanceId ?? null,
@@ -755,7 +755,7 @@ const BehaviorSection: React.FC<{ copy: SeriesTorrentCopy; canAct: boolean }> = 
 // ── Files ─────────────────────────────────────────────────────────────
 
 const FilesSection: React.FC<{ copy: SeriesTorrentCopy }> = ({ copy }) => {
-	const incognito = useIncognitoMode();
+	const [incognito] = useIncognitoMode();
 	const filesQuery = useQuiTorrentFiles({
 		quiInstanceId: copy.quiInstanceId ?? null,
 		qbitInstanceId: copy.qbitInstanceId ?? null,
