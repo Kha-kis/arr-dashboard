@@ -1023,6 +1023,22 @@ model QueueCleanerConfig {
   /// instance configured (LibraryCache.torrentState stays NULL across rows).
   quiAwareMode          Boolean         @default(false)
 
+  /// Last-seed protection (Phase 2.4) — when enabled, skip striking a torrent
+  /// whose content has no surviving copy elsewhere. Predicate (all must hold
+  /// to allow the strike, ANY missing condition triggers protection):
+  ///   1. qui returns >= 1 cross-seed sibling for this infohash, AND
+  ///   2. InodeIndexCache shows >= 1 other torrent shares this inode group, AND
+  ///   3. arr-side library (EpisodeFileCache / MovieFileCache / LidarrTrackFile)
+  ///      still references this torrent's hash (i.e. content is still active
+  ///      in *arr's library — protects against accidental deletes of
+  ///      unique content; allows strikes after *arr has already replaced the
+  ///      file (quality upgrade) since condition 3 is then false).
+  /// Fail-closed: any check that throws/times out is treated as "unknown" and
+  /// the item is protected from strike (caution-first; data loss is
+  /// asymmetrically expensive vs. cleanup latency).
+  /// Default on — operator can toggle per-instance.
+  lastSeedProtection    Boolean         @default(true)
+
   // Change category option (torrent only - usenet doesn't support this)
   // Instead of deleting, move torrent to a different category in the client
   // The actual category name is configured in Sonarr/Radarr's download client settings

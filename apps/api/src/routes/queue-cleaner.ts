@@ -179,6 +179,10 @@ const configUpdateSchema = z.object({
 	// qui-aware mode (Phase 2.3) — skip strikes when qui has paused/erred the torrent
 	quiAwareMode: z.boolean().optional(),
 
+	// Last-seed protection (Phase 2.4) — skip strikes when *arr library still
+	// references the torrent (default on). Fail-closed on lookup error.
+	lastSeedProtection: z.boolean().optional(),
+
 	// Safety settings
 	dryRunMode: z.boolean().optional(),
 	maxRemovalsPerRun: z.number().int().min(MIN_MAX_REMOVALS).max(MAX_MAX_REMOVALS).optional(),

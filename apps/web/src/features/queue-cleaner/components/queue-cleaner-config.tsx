@@ -308,6 +308,7 @@ function configToFormData(config: QueueCleanerConfigWithInstance): QueueCleanerC
 		maxStrikes: config.maxStrikes,
 		strikeDecayHours: config.strikeDecayHours,
 		quiAwareMode: config.quiAwareMode,
+		lastSeedProtection: config.lastSeedProtection,
 		seedingTimeoutEnabled: config.seedingTimeoutEnabled,
 		seedingTimeoutHours: config.seedingTimeoutHours,
 		estimatedCompletionEnabled: config.estimatedCompletionEnabled,
@@ -612,6 +613,26 @@ const InstanceConfigCard = ({
 						and surfaces the item as skipped with a qui-aware reason. Useful when qui automations
 						are already acting on the torrent (e.g., rule-based pause after seed goal). No-op if you
 						haven't added a qui instance.
+					</div>
+				</RuleSection>
+
+				{/* Rule: Last-seed protection (Phase 2.4) */}
+				<RuleSection
+					icon={ShieldCheck}
+					title="Last-seed protection"
+					description="Skip strikes when *arr's library still references the torrent (default on)"
+					enabled={formData.lastSeedProtection ?? true}
+					onToggle={(v) => updateField("lastSeedProtection", v)}
+				>
+					<div className="text-[11px] text-muted-foreground/70 p-2.5 rounded-lg bg-card/20 border border-border/15">
+						Protects against accidentally striking a torrent that's still backing an active *arr
+						file. The gate matches a strike candidate's info-hash against{" "}
+						<span className="font-medium">LibraryCache</span> (movies/artists) and{" "}
+						<span className="font-medium">EpisodeFileCache</span> (series) across all your *arr
+						instances; if any row still references the hash, the strike is skipped with a last-seed
+						reason. Strikes proceed normally once *arr has replaced or removed the file (e.g.
+						quality upgrade). Fail-closed: if the lookup errors, candidates are protected rather
+						than struck.
 					</div>
 				</RuleSection>
 

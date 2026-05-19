@@ -26,6 +26,7 @@ import {
 	MAX_AUTO_IMPORTS_PER_RUN,
 	type WhitelistPattern,
 } from "./constants.js";
+import { resolveLibraryReferencedItemIds } from "./last-seed-gate.js";
 import {
 	checkWhitelist,
 	collectStatusTexts,
@@ -289,6 +290,64 @@ export async function executeQueueCleaner(
 			log.warn(
 				{ err: error, instanceId: instance.id },
 				"qui-aware gate lookup failed; proceeding without gating",
+			);
+		}
+	}
+
+	// Last-seed protection (Phase 2.4): when enabled, skip striking any
+	// torrent whose hash is still referenced by *arr's library caches
+	// (LibraryCache for movies/artists/authors, EpisodeFileCache for
+	// series episodes). Allows strikes only on torrents *arr has
+	// orphaned (quality upgrade, manual delete, etc.) — the case where
+	// removal is the operator's stated intent.
+	//
+	// Runs AFTER qui-aware gate, BEFORE strikes — same staging as the
+	// existing gate. Cross-instance scope: queries the user's full
+	// library, not just `instance.userId`'s current *arr instance.
+	if (config.lastSeedProtection && matched.length > 0 && matchedHashByItemId.size > 0) {
+		try {
+			const protectedItemIds = await resolveLibraryReferencedItemIds(
+				app.prisma,
+				instance.userId,
+				matchedHashByItemId,
+			);
+
+			if (protectedItemIds.size > 0) {
+				const remaining: CleanerResultItem[] = [];
+				for (const item of matched) {
+					if (protectedItemIds.has(String(item.id))) {
+						skipped.push({
+							id: item.id,
+							title: item.title,
+							reason: `${item.reason} — skipped (last-seed protection: *arr library still references this torrent)`,
+							rule: item.rule,
+						});
+					} else {
+						remaining.push(item);
+					}
+				}
+				matched.length = 0;
+				matched.push(...remaining);
+
+				log.info(
+					{
+						instanceId: instance.id,
+						protectedCount: protectedItemIds.size,
+						remainingMatched: matched.length,
+					},
+					"last-seed protection skipped strikes for *arr-referenced torrents",
+				);
+			}
+		} catch (error) {
+			// Even though the gate itself fails CLOSED (returns "protect
+			// all"), wrap the call in a defensive try/catch in case the
+			// gate's own try/catch is bypassed by a Prisma re-throw or
+			// unexpected schema mismatch. Surface as a loud warn so the
+			// operator can audit; cleanup continues with the unprotected
+			// behavior as a last resort.
+			log.warn(
+				{ err: error, instanceId: instance.id },
+				"last-seed protection lookup failed unexpectedly; proceeding without protection",
 			);
 		}
 	}

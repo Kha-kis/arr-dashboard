@@ -5408,6 +5408,7 @@ export const QueueCleanerConfigScalarFieldEnum = {
   addToBlocklist: 'addToBlocklist',
   searchAfterRemoval: 'searchAfterRemoval',
   quiAwareMode: 'quiAwareMode',
+  lastSeedProtection: 'lastSeedProtection',
   changeCategoryEnabled: 'changeCategoryEnabled',
   dryRunMode: 'dryRunMode',
   maxRemovalsPerRun: 'maxRemovalsPerRun',

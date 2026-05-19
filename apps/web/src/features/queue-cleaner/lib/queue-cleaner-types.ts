@@ -79,6 +79,10 @@ export interface QueueCleanerConfig {
 	strikeDecayHours: number;
 	// qui-aware mode (Phase 2.3) — skip strikes when qui has paused/erred the torrent
 	quiAwareMode: boolean;
+	// Last-seed protection (Phase 2.4) — skip strikes when *arr library still
+	// references the torrent's hash (protects against accidental deletes of
+	// active content; allows strikes after *arr has replaced/removed the file)
+	lastSeedProtection: boolean;
 	// Seeding timeout (torrent-only)
 	seedingTimeoutEnabled: boolean;
 	seedingTimeoutHours: number;
@@ -147,6 +151,8 @@ export interface QueueCleanerConfigUpdate {
 	strikeDecayHours?: number;
 	// qui-aware mode (Phase 2.3)
 	quiAwareMode?: boolean;
+	// Last-seed protection (Phase 2.4)
+	lastSeedProtection?: boolean;
 	// Seeding timeout (torrent-only)
 	seedingTimeoutEnabled?: boolean;
 	seedingTimeoutHours?: number;
