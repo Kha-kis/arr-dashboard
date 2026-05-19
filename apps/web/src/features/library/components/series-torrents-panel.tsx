@@ -724,19 +724,17 @@ const ClusterCard: React.FC<{
 						{cluster.qualityName && <span>· {cluster.qualityName}</span>}
 						{cluster.releaseGroup && <span>· {cluster.releaseGroup}</span>}
 						<span className="text-foreground/40">·</span>
-						{/* Dedupe brand pills by abbreviation — when the same tracker
-						 * has multiple .torrent variants (rare but happens when
-						 * an uploader re-uploads identical bytes under a corrected
-						 * name, e.g., adding REPACK tag or "US." prefix), render
-						 * once with a `×N` suffix instead of two visually identical
-						 * pills. Map iteration order preserves insertion order so
-						 * library-role copies still render before cross-seeds.
+						{/* Dedupe brand pills by tracker identity — when multiple
+						 * .torrent variants share a tracker (REPACK / corrected
+						 * name / cross-seed), collapse into one pill. The per-
+						 * tracker variant count lives in the tooltip ONLY:
+						 * surfacing it inline as `×N` confused Cold Read users
+						 * (read as "2 of cluster-total" rather than "2 of this
+						 * tracker"). The dot strip above already shows
+						 * per-copy count.
 						 *
-						 * The health-dot strip above (one dot per copy) is NOT
-						 * deduplicated — each copy has its own state and the dots
-						 * communicate per-copy health. Only the brand pills
-						 * collapse, because the pill answers "which trackers
-						 * cover this content" not "how is each copy doing."
+						 * Map iteration order preserves insertion order so
+						 * library-role copies still render before cross-seeds.
 						 */}
 						{(() => {
 							// Dedupe key: prefer iconUrl when available (so two
@@ -777,13 +775,10 @@ const ClusterCard: React.FC<{
 											) : (
 												<span>{brand.abbr}</span>
 											)}
-											{count > 1 && <span className="text-foreground/50">×{count}</span>}
 										</span>
 									</TooltipTrigger>
 									<TooltipContent>
-										{count > 1
-											? `${brand.name} · ${count} torrent variants at this tracker`
-											: brand.name}
+										{count > 1 ? `${brand.name} · ${count} torrents at this tracker` : brand.name}
 									</TooltipContent>
 								</Tooltip>
 							));
@@ -848,10 +843,18 @@ const CopyRow: React.FC<{
 	return (
 		<div className="space-y-1 rounded bg-card/40 px-2 py-1.5 text-[11px]">
 			<div className="flex flex-wrap items-center gap-1.5">
-				<span
-					className={`inline-block h-2 w-2 flex-shrink-0 rounded-full ${healthDot(copy)}`}
-					title={friendlyState(copy.state) ?? "unknown"}
-				/>
+				{/* Per-copy health dot — colored by state (seeding=green, stalled=
+				 * amber, etc.). Radix tooltip surfaces the textual state on
+				 * hover so the color isn't relying on memorization. Cold Read
+				 * confirmed the native `title=` attribute was invisible. */}
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<span
+							className={`inline-block h-2 w-2 flex-shrink-0 rounded-full ${healthDot(copy)}`}
+						/>
+					</TooltipTrigger>
+					<TooltipContent>Health: {friendlyState(copy.state) ?? "unknown"}</TooltipContent>
+				</Tooltip>
 				<Tooltip>
 					<TooltipTrigger asChild>
 						<span className="inline-flex items-center gap-1 rounded bg-card/60 px-1.5 py-0.5 font-mono text-[10px] text-foreground/90">
@@ -895,9 +898,9 @@ const CopyRow: React.FC<{
 				{typeof copy.ratio === "number" && (
 					<span className="text-[10px] text-muted-foreground">ratio {copy.ratio.toFixed(2)}×</span>
 				)}
-				<span className="font-mono text-[10px] text-muted-foreground/70">
-					{copy.infoHash.slice(0, 8)}
-				</span>
+				{/* Inline 8-char hash retired — the drawer's header surfaces the
+				 * full hash + "Copy infohash" affordance. Cold Read showed the
+				 * inline prefix forced users to guess what the string was. */}
 				{copy.quiUnreachable && (
 					<span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] text-amber-200">
 						not in qui
@@ -941,11 +944,12 @@ const CopyRow: React.FC<{
 				{copy.instanceName && <span>· {copy.instanceName}</span>}
 			</div>
 			{/* Per-tracker peer counts — the authoritative breakdown of where
-			 * the torrent has peers, replacing the misleading torrent-level
-			 * sum that hid which trackers were actually working. */}
+			 * the torrent has peers. Header label spells out "peers" so the
+			 * number after each tracker icon reads unambiguously (Cold Read
+			 * showed `0p` was opaque without context). */}
 			{(copy.trackers?.length ?? 0) > 0 && (
 				<div className="flex flex-wrap items-center gap-1 text-[10px]">
-					<span className="text-muted-foreground">Trackers:</span>
+					<span className="text-muted-foreground">Trackers (peers):</span>
 					{(copy.trackers ?? []).map((t) => {
 						// Resolve identity via qui's meta map; falls back to
 						// auto-derived display name / abbreviation when qui has
@@ -975,7 +979,7 @@ const CopyRow: React.FC<{
 										) : (
 											<span>{brand.abbr}</span>
 										)}
-										<span>{t.numPeers}p</span>
+										<span>{t.numPeers}</span>
 									</span>
 								</TooltipTrigger>
 								<TooltipContent>
