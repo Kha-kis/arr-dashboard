@@ -152,11 +152,16 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({
 	const [searchOutcome, setSearchOutcome] = useState<
 		{ kind: "success"; runId: number; scanRoot: string } | { kind: "error"; message: string } | null
 	>(null);
-	// Single drawer instance for the whole panel. `selectedCopy` is the
-	// torrent the user opened the drawer for; null = closed. Living at the
-	// panel root (instead of per-row) keeps state out of the leaf and
-	// lets the drawer animate cleanly across copy changes.
-	const [selectedCopy, setSelectedCopy] = useState<SeriesTorrentCopy | null>(null);
+	// Single drawer instance for the whole panel. `selectedItem` carries
+	// the torrent plus an *arr-side context (series title + cluster
+	// coverage label) so the drawer can anchor its header to "where did
+	// the user launch this from?" — Cold Read v2 surfaced that the drawer
+	// alone (qBit's name field) gave users no clue what content they were
+	// looking at. null = drawer closed.
+	const [selectedItem, setSelectedItem] = useState<{
+		copy: SeriesTorrentCopy;
+		arrContext: { seriesTitle: string; coverageLabel: string };
+	} | null>(null);
 	const [expandedClusters, setExpandedClusters] = useState<Set<string>>(new Set());
 	const [expandedSeasons, setExpandedSeasons] = useState<Set<number>>(new Set());
 
@@ -390,7 +395,10 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({
 									trackerIcons={trackerIcons}
 									onCrossSeedSearch={handleSearchClick}
 									searchPending={mutation.isPending}
-									onOpenDrawer={setSelectedCopy}
+									onOpenDrawer={(copy, coverageLabel) =>
+										setSelectedItem({ copy, arrContext: { seriesTitle, coverageLabel } })
+									}
+									seriesTitle={seriesTitle}
 								/>
 							))}
 						</div>
@@ -409,7 +417,10 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({
 									onToggle={() => toggleCluster(cluster.key)}
 									incognito={isIncognito}
 									trackerIcons={trackerIcons}
-									onOpenDrawer={setSelectedCopy}
+									onOpenDrawer={(copy, coverageLabel) =>
+										setSelectedItem({ copy, arrContext: { seriesTitle, coverageLabel } })
+									}
+									seriesTitle={seriesTitle}
 								/>
 							))}
 						</div>
@@ -424,7 +435,11 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({
 					</div>
 				)}
 			</GlassmorphicCard>
-			<TorrentDetailDrawer copy={selectedCopy} onClose={() => setSelectedCopy(null)} />
+			<TorrentDetailDrawer
+				copy={selectedItem?.copy ?? null}
+				arrContext={selectedItem?.arrContext ?? null}
+				onClose={() => setSelectedItem(null)}
+			/>
 		</TooltipProvider>
 	);
 };
@@ -509,7 +524,8 @@ const SeasonGroupCard: React.FC<{
 	trackerIcons: Record<string, { iconUrl?: string; name?: string }> | undefined;
 	onCrossSeedSearch: () => void;
 	searchPending: boolean;
-	onOpenDrawer: (copy: SeriesTorrentCopy) => void;
+	onOpenDrawer: (copy: SeriesTorrentCopy, coverageLabel: string) => void;
+	seriesTitle: string;
 }> = ({
 	group,
 	clusterByKey,
@@ -523,6 +539,7 @@ const SeasonGroupCard: React.FC<{
 	onCrossSeedSearch,
 	searchPending,
 	onOpenDrawer,
+	seriesTitle,
 }) => {
 	const isFullyStuck = group.correlatedEpisodes === 0 && group.totalEpisodes > 0;
 	const isFullyCovered =
@@ -616,6 +633,7 @@ const SeasonGroupCard: React.FC<{
 							incognito={incognito}
 							trackerIcons={trackerIcons}
 							onOpenDrawer={onOpenDrawer}
+							seriesTitle={seriesTitle}
 						/>
 					))}
 				</div>
@@ -662,8 +680,17 @@ const ClusterCard: React.FC<{
 	onToggle: () => void;
 	incognito: boolean;
 	trackerIcons: Record<string, { iconUrl?: string; name?: string }> | undefined;
-	onOpenDrawer: (copy: SeriesTorrentCopy) => void;
-}> = ({ cluster, expanded, onToggle, incognito, trackerIcons, onOpenDrawer }) => {
+	onOpenDrawer: (copy: SeriesTorrentCopy, coverageLabel: string) => void;
+	seriesTitle: string;
+}> = ({
+	cluster,
+	expanded,
+	onToggle,
+	incognito,
+	trackerIcons,
+	onOpenDrawer,
+	seriesTitle: _seriesTitle,
+}) => {
 	const stateLabel = friendlyState(cluster.primaryState);
 
 	return (
@@ -810,7 +837,11 @@ const ClusterCard: React.FC<{
 							copy={copy}
 							incognito={incognito}
 							trackerIcons={trackerIcons}
-							onOpenDrawer={onOpenDrawer}
+							// Inject the cluster's coverageLabel so the drawer knows
+							// which release the user launched it from ("S03E01 · 1
+							// episode"). The panel root then combines this with
+							// seriesTitle for the drawer's arrContext header.
+							onOpenDrawer={(c) => onOpenDrawer(c, cluster.coverageLabel)}
 						/>
 					))}
 				</div>

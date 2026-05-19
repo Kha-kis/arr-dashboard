@@ -30,6 +30,13 @@ import { getLinuxSavePath } from "../../../lib/incognito";
 
 interface TorrentDetailDrawerProps {
 	copy: SeriesTorrentCopy | null;
+	/**
+	 * *arr-side context the drawer was launched from. Surfaces in the
+	 * header so the user knows what content this torrent belongs to —
+	 * qBit's name field is often unrelated to the *arr item (e.g. a
+	 * generic folder name like "distributions"). Cold Read v2 finding.
+	 */
+	arrContext?: { seriesTitle: string; coverageLabel: string } | null;
 	onClose: () => void;
 }
 
@@ -44,18 +51,25 @@ interface TorrentDetailDrawerProps {
  * frequency from the Cold Read survey (2026-05-18): Trackers + Tags
  * default open, Limits/Behavior/Files default closed.
  */
-export const TorrentDetailDrawer: React.FC<TorrentDetailDrawerProps> = ({ copy, onClose }) => {
+export const TorrentDetailDrawer: React.FC<TorrentDetailDrawerProps> = ({
+	copy,
+	arrContext,
+	onClose,
+}) => {
 	const open = copy !== null;
 	return (
 		<Sheet open={open} onOpenChange={(o) => !o && onClose()}>
 			<SheetContent side="right" className="w-[480px] sm:max-w-[480px] overflow-y-auto">
-				{copy && <DrawerBody copy={copy} />}
+				{copy && <DrawerBody copy={copy} arrContext={arrContext ?? null} />}
 			</SheetContent>
 		</Sheet>
 	);
 };
 
-const DrawerBody: React.FC<{ copy: SeriesTorrentCopy }> = ({ copy }) => {
+const DrawerBody: React.FC<{
+	copy: SeriesTorrentCopy;
+	arrContext: { seriesTitle: string; coverageLabel: string } | null;
+}> = ({ copy, arrContext }) => {
 	const [incognito] = useIncognitoMode();
 	const canAct =
 		!copy.quiUnreachable &&
@@ -65,6 +79,15 @@ const DrawerBody: React.FC<{ copy: SeriesTorrentCopy }> = ({ copy }) => {
 	return (
 		<div className="space-y-4 text-[12px]">
 			<SheetHeader className="space-y-1">
+				{/* *arr-side anchor — surfaces ABOVE the qBit name so the user
+				 * recognizes which content this torrent belongs to (Euphoria
+				 * S03E01) before reading the often-cryptic qBit name. Cold
+				 * Read v2 caught this gap. */}
+				{arrContext && (
+					<div className="text-[10px] uppercase tracking-wider text-muted-foreground/80">
+						From {arrContext.seriesTitle} · {arrContext.coverageLabel}
+					</div>
+				)}
 				<SheetTitle className="break-all font-mono text-[13px] leading-snug">
 					{/* `copy.name` is qBit's display name. For library copies
 					 * with a folder-style name it can read like a path —
@@ -77,6 +100,15 @@ const DrawerBody: React.FC<{ copy: SeriesTorrentCopy }> = ({ copy }) => {
 						return leaf;
 					})()}
 				</SheetTitle>
+				{/* Incognito visibility — when paths/names are masked, surface
+				 * a pill so the user can't mistake masked stubs for real
+				 * data. Cold Read v2 spent 20 minutes confused about
+				 * /media/nas/linux before we realized incognito was on. */}
+				{incognito && (
+					<div className="text-[10px] italic text-amber-300/80">
+						Incognito mode on — names + paths are masked
+					</div>
+				)}
 				<div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
 					<span
 						className={`rounded px-1.5 py-0.5 ${
@@ -159,6 +191,23 @@ const DrawerSection: React.FC<{
 	);
 };
 
+// Mirror of friendlyState() in series-torrents-panel.tsx so the drawer's
+// Status section shows the same normalized vocabulary as the cluster
+// row badge ("Seeding", "Paused", etc.) instead of qBit's raw enum
+// (`stalledUP`, `pausedDL`). Kept locally rather than imported because
+// the panel file owns the helper alongside its sibling helpers.
+const friendlyState = (state: string | null): string | null => {
+	if (!state) return null;
+	const s = state.toLowerCase();
+	if (s.includes("uploading") || s === "seeding" || s === "stalledup") return "Seeding";
+	if (s.includes("downloading") || s === "stalleddl") return "Downloading";
+	if (s.startsWith("paused")) return "Paused";
+	if (s.startsWith("stopped")) return "Stopped";
+	if (s.startsWith("checking")) return "Checking";
+	if (s.includes("error")) return "Error";
+	return state;
+};
+
 // ── Status (always open) ──────────────────────────────────────────────
 
 const StatusSection: React.FC<{ copy: SeriesTorrentCopy }> = ({ copy }) => {
@@ -182,7 +231,9 @@ const StatusSection: React.FC<{ copy: SeriesTorrentCopy }> = ({ copy }) => {
 			<div className="grid grid-cols-2 gap-x-4 gap-y-1">
 				<div>
 					<span className="text-muted-foreground">State:</span>{" "}
-					<span className="text-foreground">{copy.state ?? "unknown"}</span>
+					<span className="text-foreground">
+						{friendlyState(copy.state ?? null) ?? copy.state ?? "unknown"}
+					</span>
 				</div>
 				<div>
 					<span className="text-muted-foreground">Ratio:</span>{" "}
@@ -607,11 +658,28 @@ const LimitsSection: React.FC<{ copy: SeriesTorrentCopy; canAct: boolean }> = ({
 		);
 	};
 
+	// Human-readable description of the current qBit value, used as a
+	// "Currently: …" hint next to the input when the value is a sentinel.
+	// Blank-when-sentinel reads as "no data" without this — the operator
+	// can't tell if the torrent has no override or if the API failed.
+	const currentSpeed = (bytesPerSec: number | undefined): string | null => {
+		if (bytesPerSec === undefined) return null;
+		if (bytesPerSec <= 0) return "unlimited";
+		return `${Math.round(bytesPerSec / 1024)} KB/s`;
+	};
+	const currentShare = (value: number | undefined): string | null => {
+		if (value === undefined) return null;
+		if (value === -1) return "unlimited";
+		if (value === -2) return "use global default";
+		return String(value);
+	};
+
 	return (
 		<div className="space-y-2 text-[11px]">
 			<LimitRow
 				label="Upload limit (KB/s, 0 = unlimited)"
 				value={up}
+				current={currentSpeed(props?.uploadLimit)}
 				onChange={setUp}
 				canAct={canAct}
 				onSave={() =>
@@ -621,6 +689,7 @@ const LimitsSection: React.FC<{ copy: SeriesTorrentCopy; canAct: boolean }> = ({
 			<LimitRow
 				label="Download limit (KB/s, 0 = unlimited)"
 				value={down}
+				current={currentSpeed(props?.downloadLimit)}
 				onChange={setDown}
 				canAct={canAct}
 				onSave={() =>
@@ -634,6 +703,7 @@ const LimitsSection: React.FC<{ copy: SeriesTorrentCopy; canAct: boolean }> = ({
 			<LimitRow
 				label="Ratio limit (-1 unlimited, -2 use global)"
 				value={ratio}
+				current={currentShare(props?.ratioLimit)}
 				onChange={setRatio}
 				canAct={canAct}
 				onSave={() =>
@@ -650,6 +720,7 @@ const LimitsSection: React.FC<{ copy: SeriesTorrentCopy; canAct: boolean }> = ({
 			<LimitRow
 				label="Seed-time limit (minutes, -1 unlimited, -2 global)"
 				value={seedTime}
+				current={currentShare(props?.seedingTimeLimit)}
 				onChange={setSeedTime}
 				canAct={canAct}
 				onSave={() =>
@@ -670,12 +741,22 @@ const LimitsSection: React.FC<{ copy: SeriesTorrentCopy; canAct: boolean }> = ({
 const LimitRow: React.FC<{
 	label: string;
 	value: string;
+	current: string | null;
 	onChange: (s: string) => void;
 	canAct: boolean;
 	onSave: () => void;
-}> = ({ label, value, onChange, canAct, onSave }) => (
+}> = ({ label, value, current, onChange, canAct, onSave }) => (
 	<div className="space-y-1">
-		<label className="text-muted-foreground">{label}</label>
+		<div className="flex flex-wrap items-baseline gap-x-2 gap-y-0">
+			<label className="text-muted-foreground">{label}</label>
+			{/* Surface the qBit-reported current value when the input is at
+			 * a sentinel ("use global", "unlimited") so a blank input doesn't
+			 * read as "no data." Cold Read showed users couldn't tell whether
+			 * blank meant "unset" or "we couldn't fetch it." */}
+			{current && (
+				<span className="text-[10px] italic text-muted-foreground/80">Currently: {current}</span>
+			)}
+		</div>
 		<div className="flex gap-1.5">
 			<input
 				type="number"
@@ -724,17 +805,17 @@ const BehaviorSection: React.FC<{ copy: SeriesTorrentCopy; canAct: boolean }> = 
 					size="sm"
 					variant="secondary"
 					disabled={!canAct}
-					onClick={() => fire("toggleAutoTMM", { enable: true }, "ATM enabled")}
+					onClick={() => fire("toggleAutoTMM", { enable: true }, "Auto-management enabled")}
 				>
-					Enable ATM
+					Enable Auto-management
 				</Button>
 				<Button
 					size="sm"
 					variant="secondary"
 					disabled={!canAct}
-					onClick={() => fire("toggleAutoTMM", { enable: false }, "ATM disabled")}
+					onClick={() => fire("toggleAutoTMM", { enable: false }, "Auto-management disabled")}
 				>
-					Disable ATM
+					Disable Auto-management
 				</Button>
 				<Button
 					size="sm"
