@@ -24,6 +24,7 @@ import { createQuiClient } from "../lib/qui/client-factory.js";
 import { getDiscoveryAvailability, runDiscoveryBatch } from "../lib/qui/cross-seed-discovery.js";
 import { quiEventBus } from "../lib/qui/event-bus.js";
 import { listQuiInstances, requireQuiInstance } from "../lib/qui/instance-helpers.js";
+import { getCachedAllTorrents } from "../lib/qui/torrent-list-cache.js";
 import { generateQuiWebhookSecret } from "../lib/qui/webhook-secret.js";
 import { createSseHandler } from "../lib/sse/sse-handler.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
@@ -936,7 +937,7 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 			}
 
 			try {
-				const torrents = await client.listAllTorrents();
+				const torrents = await getCachedAllTorrents(instance.id, client);
 				totalTorrents += torrents.length;
 				for (const t of torrents) {
 					const normalized = normalizeTorrentState(t.state);
@@ -2600,7 +2601,7 @@ const quiRoute: FastifyPluginCallback = (app, _opts, done) => {
 			}
 			let torrents;
 			try {
-				torrents = await client.listAllTorrents();
+				torrents = await getCachedAllTorrents(instance.id, client);
 			} catch {
 				continue;
 			}
