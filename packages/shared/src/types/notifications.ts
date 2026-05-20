@@ -79,6 +79,11 @@ export const notificationEventTypeSchema = z.enum([
 	"QUEUE_ITEMS_REMOVED",
 	"QUEUE_STRIKES_ISSUED",
 	"QUEUE_CLEANER_FAILED",
+	// qui (torrent layer) — fired on state transitions detected by the
+	// periodic qui torrent-state sync. Only *arr-correlated torrents
+	// (those with a LibraryCache row) trigger these.
+	"QUI_TORRENT_ERRORED",
+	"QUI_DOWNLOAD_STALLED",
 	// TRaSH Guides
 	"TRASH_PROFILE_UPDATED",
 	"TRASH_SYNC_ERROR",

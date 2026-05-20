@@ -3,6 +3,11 @@ import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import { logQuiActivity, type QuiSyncCompleteDetails } from "./activity-log.js";
 import { createQuiClient } from "./client-factory.js";
 import { listQuiInstances } from "./instance-helpers.js";
+import {
+	buildNotificationPayloads,
+	classifyTransition,
+	type ProblemTransition,
+} from "./torrent-state-notifier.js";
 
 /**
  * Periodic snapshot of qui torrent state into LibraryCache (Phase 2.1).
@@ -87,6 +92,33 @@ export async function runQuiTorrentStateSync(
 		// run are candidates for nulling. Rows updated by THIS run, or by the
 		// on-demand write-through path mid-run, are off-limits.
 		const runStartedAt = new Date();
+
+		// Prior-state snapshot for transition detection (Phase 2.5). Captured
+		// BEFORE any updateMany so it reflects the state at the start of this
+		// run. Keyed by lowercase hash → { state, title }. Only *arr-correlated
+		// torrents (those with a LibraryCache row) get an entry, so only
+		// library content can trigger a notification. One findMany per user.
+		const priorStates = new Map<string, { state: string | null; title: string }>();
+		try {
+			const priorRows = await app.prisma.libraryCache.findMany({
+				where: { instance: { userId }, infoHash: { not: null } },
+				select: { infoHash: true, torrentState: true, title: true },
+			});
+			for (const row of priorRows) {
+				if (row.infoHash) {
+					priorStates.set(row.infoHash, { state: row.torrentState, title: row.title });
+				}
+			}
+		} catch (error) {
+			// Non-fatal: without priors we just don't emit notifications this
+			// run. State sync itself proceeds normally.
+			log.warn(
+				{ err: error, userId },
+				"qui torrent-state sync: prior-state snapshot failed; notifications skipped this run",
+			);
+		}
+		// Transitions detected this run, across all of the user's instances.
+		const transitions: ProblemTransition[] = [];
 		// Per-user error count — DRIVES THE CLEANUP DECISION. If we used the
 		// global `result.errors` instead, one user's failed sync would suppress
 		// stale-state cleanup for every user that runs after them in this tick,
@@ -110,6 +142,26 @@ export async function runQuiTorrentStateSync(
 					const normalizedState = normalizeTorrentState(torrent.state);
 					const hashLower = torrent.hash.toLowerCase();
 					seenHashesThisRun.add(hashLower);
+
+					// Transition detection (Phase 2.5): if this torrent has a
+					// prior LibraryCache entry and just crossed into a problem
+					// state, queue a notification. `classifyTransition` returns
+					// null for non-problem and same-state cases, so a torrent
+					// that STAYS errored across runs only notifies once.
+					const prior = priorStates.get(hashLower);
+					if (prior) {
+						const kind = classifyTransition(prior.state, normalizedState);
+						if (kind) {
+							transitions.push({
+								kind,
+								infoHash: hashLower,
+								title: prior.title,
+								instanceLabel: instance.label,
+								oldState: prior.state,
+								newState: normalizedState,
+							});
+						}
+					}
 					// SECURITY: scope by userId via the instance relation. When two
 					// users own the same infoHash (legitimate when they downloaded
 					// the same public torrent), one user's sync would otherwise
@@ -199,6 +251,34 @@ export async function runQuiTorrentStateSync(
 			} catch (error) {
 				log.warn({ err: error, userId }, "qui torrent-state sync: stale-state cleanup failed");
 			}
+		}
+
+		// Emit qui torrent-state notifications (Phase 2.5). Dedup by
+		// (infoHash, kind) first — a cross-seeded hash can surface on more
+		// than one qui instance, but the operator only needs one alert per
+		// content-problem. Fire-and-forget: notification failures must not
+		// abort or slow the sync.
+		if (transitions.length > 0 && app.notificationService) {
+			const seenTransitionKeys = new Set<string>();
+			const deduped = transitions.filter((t) => {
+				const key = `${t.infoHash}:${t.kind}`;
+				if (seenTransitionKeys.has(key)) return false;
+				seenTransitionKeys.add(key);
+				return true;
+			});
+			const payloads = buildNotificationPayloads(deduped);
+			for (const payload of payloads) {
+				app.notificationService.notify(payload).catch((err) => {
+					log.warn(
+						{ err, userId, eventType: payload.eventType },
+						"qui torrent-state notification dispatch failed",
+					);
+				});
+			}
+			log.info(
+				{ userId, transitions: deduped.length, payloads: payloads.length },
+				"qui torrent-state sync emitted torrent-state notifications",
+			);
 		}
 
 		// Activity log: one row per user per run. Status reflects this user's

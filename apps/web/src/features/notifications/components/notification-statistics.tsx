@@ -20,6 +20,8 @@ const EVENT_LABELS: Record<string, string> = {
 	QUEUE_ITEMS_REMOVED: "Queue: Items Removed",
 	QUEUE_STRIKES_ISSUED: "Queue: Strikes Issued",
 	QUEUE_CLEANER_FAILED: "Queue: Cleaner Failed",
+	QUI_TORRENT_ERRORED: "qui: Torrent Errored",
+	QUI_DOWNLOAD_STALLED: "qui: Download Stalled",
 	TRASH_PROFILE_UPDATED: "TRaSH: Profile Updated",
 	TRASH_SYNC_ERROR: "TRaSH: Sync Error",
 	TRASH_DEPLOY_FAILED: "TRaSH: Deploy Failed",

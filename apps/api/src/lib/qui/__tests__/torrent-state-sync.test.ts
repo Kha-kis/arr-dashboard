@@ -166,7 +166,14 @@ describe("runQuiTorrentStateSync", () => {
 		const result = await runQuiTorrentStateSync(app);
 
 		// Stale candidates pulled via findMany scoped to the right user.
-		const findManyCall = app.__libraryCacheFindMany.mock.calls[0];
+		// NB: libraryCache.findMany is now called twice per user — once for
+		// the Phase 2.5 prior-state snapshot (where has `infoHash`, no
+		// `torrentState`) and once for stale-cleanup (where has
+		// `torrentState: { not: null }`). Select the cleanup call by shape.
+		const findManyCall = app.__libraryCacheFindMany.mock.calls.find(
+			(call: [{ where?: Record<string, unknown> }]) =>
+				(call[0]?.where as { torrentState?: unknown })?.torrentState !== undefined,
+		);
 		expect(findManyCall).toBeDefined();
 		const findManyWhere = findManyCall[0].where as {
 			instance: { userId: string };
@@ -271,14 +278,19 @@ describe("runQuiTorrentStateSync", () => {
 
 		expect(result.errors).toBe(1);
 		// User A is skipped (errors > 0 → over-clearing risk). User B is NOT
-		// skipped. With the P2029 fix, cleanup is findMany + id-batch
-		// updateMany. We assert: exactly ONE libraryCache.findMany call
-		// (user B's), AND exactly ONE id-batch updateMany call (user B's).
-		expect(app.__libraryCacheFindMany).toHaveBeenCalledTimes(1);
-		const findManyCall = app.__libraryCacheFindMany.mock.calls[0];
-		expect((findManyCall[0].where as { instance: { userId: string } }).instance.userId).toBe(
-			"user-b",
+		// skipped. Cleanup is findMany + id-batch updateMany. The Phase 2.5
+		// prior-state snapshot also calls libraryCache.findMany (once per
+		// user, before any cleanup), so we filter to the STALE-CLEANUP call
+		// by its `torrentState: { not: null }` shape: exactly one (user B's),
+		// AND exactly one id-batch updateMany call (user B's).
+		const cleanupFindManyCalls = app.__libraryCacheFindMany.mock.calls.filter(
+			(call: [{ where?: Record<string, unknown> }]) =>
+				(call[0]?.where as { torrentState?: unknown })?.torrentState !== undefined,
 		);
+		expect(cleanupFindManyCalls).toHaveLength(1);
+		expect(
+			(cleanupFindManyCalls[0][0].where as { instance: { userId: string } }).instance.userId,
+		).toBe("user-b");
 
 		const idBatchCalls = app.__updateMany.mock.calls.filter(
 			(call: [{ where: Record<string, unknown> }]) =>

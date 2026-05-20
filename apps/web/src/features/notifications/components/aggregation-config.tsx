@@ -1,8 +1,8 @@
 "use client";
 
-import { Clock, Loader2, Layers } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
 import type { NotificationEventType } from "@arr/shared";
+import { Clock, Layers, Loader2 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { GradientButton } from "@/components/layout/premium-components";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 import { INPUT_BASE_CLASSES } from "@/lib/theme-input-styles";
@@ -18,6 +18,8 @@ const EVENT_LABELS: Record<string, string> = {
 	QUEUE_ITEMS_REMOVED: "Queue: Items Removed",
 	QUEUE_STRIKES_ISSUED: "Queue: Strikes Issued",
 	QUEUE_CLEANER_FAILED: "Queue: Cleaner Failed",
+	QUI_TORRENT_ERRORED: "qui: Torrent Errored",
+	QUI_DOWNLOAD_STALLED: "qui: Download Stalled",
 	TRASH_PROFILE_UPDATED: "TRaSH: Profile Updated",
 	TRASH_SYNC_ERROR: "TRaSH: Sync Error",
 	TRASH_DEPLOY_FAILED: "TRaSH: Deploy Failed",
@@ -47,6 +49,8 @@ const AGGREGATABLE_EVENTS: NotificationEventType[] = [
 	"HUNT_FAILED",
 	"QUEUE_ITEMS_REMOVED",
 	"QUEUE_STRIKES_ISSUED",
+	"QUI_TORRENT_ERRORED",
+	"QUI_DOWNLOAD_STALLED",
 	"LIBRARY_NEW_CONTENT",
 	"CLEANUP_ITEMS_FLAGGED",
 	"CLEANUP_ITEMS_REMOVED",
@@ -149,7 +153,10 @@ export function AggregationConfig() {
 
 			<div className="grid gap-2">
 				{localConfigs.map((config) => (
-					<div key={config.eventType} className="rounded-xl border border-border/30 bg-muted/10 p-3">
+					<div
+						key={config.eventType}
+						className="rounded-xl border border-border/30 bg-muted/10 p-3"
+					>
 						<div className="flex items-center gap-4">
 							{/* Toggle */}
 							<button
