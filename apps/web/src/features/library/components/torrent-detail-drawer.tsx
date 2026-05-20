@@ -259,8 +259,18 @@ const StatusSection: React.FC<{ copy: SeriesTorrentCopy }> = ({ copy }) => {
 				</div>
 			</div>
 			{copy.savePath && (
-				<div className="mt-2 break-all font-mono text-[10px] text-muted-foreground">
-					{incognito ? getLinuxSavePath(copy.savePath) : copy.savePath}
+				<div className="mt-2 space-y-0.5">
+					{/* Label the path explicitly — this is qBit's view of the
+					 * location, which in a containerized qBit is the path
+					 * INSIDE qBit's filesystem namespace, not the host's.
+					 * Cold Read v2 had the user confused that the path
+					 * "didn't exist on their system." */}
+					<div className="text-[9px] uppercase tracking-wide text-muted-foreground/60">
+						qBit save path
+					</div>
+					<div className="break-all font-mono text-[10px] text-muted-foreground">
+						{incognito ? getLinuxSavePath(copy.savePath) : copy.savePath}
+					</div>
 				</div>
 			)}
 		</div>

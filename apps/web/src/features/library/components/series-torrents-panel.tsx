@@ -1049,11 +1049,16 @@ const CopyRow: React.FC<{
 				</div>
 			)}
 			{copy.tags.length > 0 && (
-				<div className="flex flex-wrap items-center gap-1">
+				<div className="flex flex-wrap items-center gap-1 text-[10px]">
+					{/* "Tags:" label disambiguates these qBit tag chips from the
+					 * tracker brand pills above — Cold Read v1 showed users
+					 * couldn't tell a tracker name from a tag chip. The
+					 * label-by-row pattern matches "Trackers (peers):". */}
+					<span className="text-muted-foreground">Tags:</span>
 					{copy.tags.map((tag) => (
 						<span
 							key={tag}
-							className="rounded bg-card/60 px-1.5 py-0.5 text-[10px] text-muted-foreground"
+							className="rounded border border-border/40 bg-card/40 px-1.5 py-0.5 text-muted-foreground"
 						>
 							{tag}
 						</span>
