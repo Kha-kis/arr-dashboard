@@ -242,16 +242,21 @@ export async function postQuiAddTrackers(args: {
 	);
 }
 
+/**
+ * Remove trackers by HOSTNAME. The drawer only ever holds passkey-stripped
+ * hostnames; the API resolves each to its full announce URL before calling
+ * qBit (which matches removal by exact URL). See trackers/remove route.
+ */
 export async function postQuiRemoveTrackers(args: {
 	quiInstanceId: string;
 	qbitInstanceId: number;
 	hash: string;
-	urls: string[];
+	hostnames: string[];
 }): Promise<{ status: "success" }> {
-	const { quiInstanceId, qbitInstanceId, hash, urls } = args;
+	const { quiInstanceId, qbitInstanceId, hash, hostnames } = args;
 	return apiRequest<{ status: "success" }>(
 		`/api/qui/instances/${quiInstanceId}/qbit/${qbitInstanceId}/torrents/${hash}/trackers/remove`,
-		{ method: "POST", json: { urls } },
+		{ method: "POST", json: { hostnames } },
 	);
 }
 
@@ -283,17 +288,22 @@ export async function fetchQuiTags(args: {
 	);
 }
 
+/**
+ * Replace a tracker. The tracker to replace is identified by HOSTNAME
+ * (resolved to its full URL server-side); `newURL` is operator-supplied so
+ * it travels whole. See trackers/edit route.
+ */
 export async function postQuiEditTracker(args: {
 	quiInstanceId: string;
 	qbitInstanceId: number;
 	hash: string;
-	oldURL: string;
+	oldHostname: string;
 	newURL: string;
 }): Promise<{ status: "success" }> {
-	const { quiInstanceId, qbitInstanceId, hash, oldURL, newURL } = args;
+	const { quiInstanceId, qbitInstanceId, hash, oldHostname, newURL } = args;
 	return apiRequest<{ status: "success" }>(
 		`/api/qui/instances/${quiInstanceId}/qbit/${qbitInstanceId}/torrents/${hash}/trackers/edit`,
-		{ method: "POST", json: { oldURL, newURL } },
+		{ method: "POST", json: { oldHostname, newURL } },
 	);
 }
 

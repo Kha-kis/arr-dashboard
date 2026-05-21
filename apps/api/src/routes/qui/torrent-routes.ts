@@ -4,7 +4,12 @@ import { createQuiClient } from "../../lib/qui/client-factory.js";
 import { requireQuiInstance } from "../../lib/qui/instance-helpers.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
-import { HASH_PARAM, INSTANCE_HASH_PARAMS, QUI_INSTANCE_PARAM } from "./qui-shared.js";
+import {
+	extractHostnameSafe,
+	HASH_PARAM,
+	INSTANCE_HASH_PARAMS,
+	QUI_INSTANCE_PARAM,
+} from "./qui-shared.js";
 
 export function registerTorrentRoutes(app: FastifyInstance): void {
 	app.get<{ Params: { id: string; hash: string } }>(
@@ -187,9 +192,14 @@ export function registerTorrentRoutes(app: FastifyInstance): void {
 		}
 	});
 
+	// Remove takes HOSTNAMES, not URLs — the panel/drawer only ever holds
+	// passkey-stripped hostnames (extractHostnameSafe in qui-shared.ts), but
+	// qBit matches trackers for removal by exact full announce URL. Resolve
+	// hostname → full URL here so the URL (with its passkey) never leaves
+	// the API process.
 	app.post<{
 		Params: { id: string; instanceId: string; hash: string };
-		Body: { urls?: unknown };
+		Body: { hostnames?: unknown };
 	}>(
 		"/qui/instances/:id/qbit/:instanceId/torrents/:hash/trackers/remove",
 		async (request, reply) => {
@@ -200,7 +210,7 @@ export function registerTorrentRoutes(app: FastifyInstance): void {
 				hash: request.params.hash,
 			});
 			const body = validateRequest(
-				z.object({ urls: z.array(z.string().min(1)).min(1).max(50) }),
+				z.object({ hostnames: z.array(z.string().min(1)).min(1).max(50) }),
 				request.body,
 			);
 			const qbitInstanceId = Number.parseInt(instanceId, 10);
@@ -210,7 +220,15 @@ export function registerTorrentRoutes(app: FastifyInstance): void {
 			const instance = await requireQuiInstance(app, userId, id);
 			const client = createQuiClient(app, instance);
 			try {
-				await client.removeTrackers(qbitInstanceId, hash, body.urls);
+				const wanted = new Set(body.hostnames.map((h) => h.toLowerCase()));
+				const trackers = await client.getTrackers(qbitInstanceId, hash);
+				const urls = trackers
+					.filter((t) => wanted.has(extractHostnameSafe(t.url).toLowerCase()))
+					.map((t) => t.url);
+				if (urls.length === 0) {
+					return reply.status(404).send({ error: "no tracker matches the given hostname" });
+				}
+				await client.removeTrackers(qbitInstanceId, hash, urls);
 				return reply.send({ status: "success" });
 			} catch (error) {
 				return reply.status(502).send({
@@ -221,9 +239,13 @@ export function registerTorrentRoutes(app: FastifyInstance): void {
 		},
 	);
 
+	// Edit identifies the tracker to replace by HOSTNAME (same passkey-safety
+	// constraint as removal — the caller never sees the old full URL). The
+	// new URL is operator-supplied, so it arrives whole. Resolve oldHostname
+	// → old full URL here, then hand both to qui's edit endpoint.
 	app.post<{
 		Params: { id: string; instanceId: string; hash: string };
-		Body: { oldURL?: unknown; newURL?: unknown };
+		Body: { oldHostname?: unknown; newURL?: unknown };
 	}>("/qui/instances/:id/qbit/:instanceId/torrents/:hash/trackers/edit", async (request, reply) => {
 		const userId = request.currentUser!.id;
 		const { id } = validateRequest(QUI_INSTANCE_PARAM, request.params);
@@ -233,7 +255,7 @@ export function registerTorrentRoutes(app: FastifyInstance): void {
 		});
 		const body = validateRequest(
 			z.object({
-				oldURL: z.string().min(1),
+				oldHostname: z.string().min(1),
 				newURL: z.string().min(1),
 			}),
 			request.body,
@@ -245,7 +267,13 @@ export function registerTorrentRoutes(app: FastifyInstance): void {
 		const instance = await requireQuiInstance(app, userId, id);
 		const client = createQuiClient(app, instance);
 		try {
-			await client.editTracker(qbitInstanceId, hash, body.oldURL, body.newURL);
+			const oldHostname = body.oldHostname.toLowerCase();
+			const trackers = await client.getTrackers(qbitInstanceId, hash);
+			const target = trackers.find((t) => extractHostnameSafe(t.url).toLowerCase() === oldHostname);
+			if (!target) {
+				return reply.status(404).send({ error: "no tracker matches the given hostname" });
+			}
+			await client.editTracker(qbitInstanceId, hash, target.url, body.newURL);
 			return reply.send({ status: "success" });
 		} catch (error) {
 			return reply.status(502).send({

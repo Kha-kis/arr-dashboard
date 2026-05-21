@@ -288,10 +288,17 @@ export const useQuiRenameTorrent = () => {
 };
 
 /**
- * Add tracker URLs to a torrent. Invalidates the per-torrent trackers
- * cache (used by the cluster panel's tracker pills + the drawer's
- * Trackers section).
+ * Refresh the series/movie torrent panels after a tracker mutation so the
+ * cluster cards' tracker pills (and a re-opened drawer) reflect the change.
+ * The drawer's Trackers section updates optimistically from local state —
+ * it renders `copy`, a frozen snapshot, so a query refetch can't reach it.
  */
+const invalidateTorrentPanels = (queryClient: ReturnType<typeof useQueryClient>) => {
+	queryClient.invalidateQueries({ queryKey: ["qui", "series-torrents"] });
+	queryClient.invalidateQueries({ queryKey: ["qui", "movie-torrents"] });
+};
+
+/** Add tracker URLs to a torrent. */
 export const useQuiAddTrackers = () => {
 	const queryClient = useQueryClient();
 	return useMutation({
@@ -301,15 +308,11 @@ export const useQuiAddTrackers = () => {
 			hash: string;
 			urls: string[];
 		}) => postQuiAddTrackers(args),
-		onSettled: (_data, _err, vars) => {
-			queryClient.invalidateQueries({
-				queryKey: ["qui", "torrent-trackers", vars.quiInstanceId, vars.qbitInstanceId, vars.hash],
-			});
-		},
+		onSettled: () => invalidateTorrentPanels(queryClient),
 	});
 };
 
-/** Remove tracker URLs. Same invalidation as add. */
+/** Remove trackers by hostname (resolved to full URLs server-side). */
 export const useQuiRemoveTrackers = () => {
 	const queryClient = useQueryClient();
 	return useMutation({
@@ -317,17 +320,13 @@ export const useQuiRemoveTrackers = () => {
 			quiInstanceId: string;
 			qbitInstanceId: number;
 			hash: string;
-			urls: string[];
+			hostnames: string[];
 		}) => postQuiRemoveTrackers(args),
-		onSettled: (_data, _err, vars) => {
-			queryClient.invalidateQueries({
-				queryKey: ["qui", "torrent-trackers", vars.quiInstanceId, vars.qbitInstanceId, vars.hash],
-			});
-		},
+		onSettled: () => invalidateTorrentPanels(queryClient),
 	});
 };
 
-/** Edit a tracker URL (replace old with new). */
+/** Replace a tracker — identified by hostname, swapped for a new full URL. */
 export const useQuiEditTracker = () => {
 	const queryClient = useQueryClient();
 	return useMutation({
@@ -335,14 +334,10 @@ export const useQuiEditTracker = () => {
 			quiInstanceId: string;
 			qbitInstanceId: number;
 			hash: string;
-			oldURL: string;
+			oldHostname: string;
 			newURL: string;
 		}) => postQuiEditTracker(args),
-		onSettled: (_data, _err, vars) => {
-			queryClient.invalidateQueries({
-				queryKey: ["qui", "torrent-trackers", vars.quiInstanceId, vars.qbitInstanceId, vars.hash],
-			});
-		},
+		onSettled: () => invalidateTorrentPanels(queryClient),
 	});
 };
 
