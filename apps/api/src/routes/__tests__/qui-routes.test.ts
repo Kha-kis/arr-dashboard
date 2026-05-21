@@ -31,6 +31,7 @@ const mockQuiClient = vi.hoisted(() => ({
 	getCapabilities: vi.fn(),
 	getTransferInfo: vi.fn(),
 	getFileMediaInfo: vi.fn(),
+	getReannounceCandidates: vi.fn().mockResolvedValue([]),
 	renameTorrent: vi.fn(),
 	addTrackers: vi.fn(),
 	removeTrackers: vi.fn(),

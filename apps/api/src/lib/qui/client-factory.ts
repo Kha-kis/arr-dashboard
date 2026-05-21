@@ -4,6 +4,7 @@ import {
 	type QuiCrossSeedMatch,
 	type QuiInstance,
 	type QuiMediaInfo,
+	type QuiMonitoredTorrent,
 	type QuiTorrent,
 	type QuiTorrentFile,
 	type QuiTorrentProperties,
@@ -12,6 +13,7 @@ import {
 	quiCapabilitiesSchema,
 	quiInstanceSchema,
 	quiMediaInfoSchema,
+	quiMonitoredTorrentSchema,
 	quiTorrentStateSchema,
 } from "@arr/shared";
 import type { FastifyInstance } from "fastify";
@@ -132,6 +134,13 @@ export interface QuiClient {
 	 * filesystem access to the torrent's data.
 	 */
 	getFileMediaInfo(instanceId: number, hash: string, fileIndex: number): Promise<QuiMediaInfo>;
+	/**
+	 * Fetch torrents qui's reannounce monitor currently flags — those with a
+	 * tracker problem or still waiting for their first tracker contact. Maps
+	 * to qui's `GET /api/instances/:id/reannounce/candidates`. Returns an
+	 * empty list when qui's reannounce service is disabled.
+	 */
+	getReannounceCandidates(instanceId: number): Promise<QuiMonitoredTorrent[]>;
 	/**
 	 * Rename a torrent's display name. Maps to qui's
 	 * `POST /api/instances/:id/torrents/:hash/rename`. Per-torrent only —
@@ -598,6 +607,15 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 				ctx,
 				`/api/instances/${instanceId}/torrents/${hash}/files/${fileIndex}/mediainfo`,
 				quiMediaInfoSchema,
+			);
+		},
+
+		async getReannounceCandidates(instanceId) {
+			// camelCase JSON array; a reannounce-disabled instance returns [].
+			return quiRequest(
+				ctx,
+				`/api/instances/${instanceId}/reannounce/candidates`,
+				z.array(quiMonitoredTorrentSchema),
 			);
 		},
 

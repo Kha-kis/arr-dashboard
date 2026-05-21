@@ -226,6 +226,27 @@ export const quiMediaInfoSchema = z.object({
 export type QuiMediaInfo = z.infer<typeof quiMediaInfoSchema>;
 
 /**
+ * One torrent in qui's reannounce monitoring scope, from
+ * `GET /api/instances/:id/reannounce/candidates`. qui watches torrents
+ * that have a tracker problem or are still waiting for their first tracker
+ * contact, and retries their announces. arr-dashboard reads
+ * `hasTrackerProblem` as a precise "stuck at the tracker" signal — a root
+ * cause a generic "stalled" torrent state can't express. `.passthrough()`
+ * keeps the schema lenient toward fields we don't consume.
+ */
+export const quiMonitoredTorrentSchema = z
+	.object({
+		hash: z.string(),
+		torrentName: z.string().default(""),
+		hasTrackerProblem: z.boolean().default(false),
+		waitingForInitial: z.boolean().default(false),
+		timeActiveSeconds: z.number().int().default(0),
+	})
+	.passthrough();
+
+export type QuiMonitoredTorrent = z.infer<typeof quiMonitoredTorrentSchema>;
+
+/**
  * Per-instance feature-support flags. qui derives these from the connected
  * qBittorrent's WebAPI version — older qBit builds lack tracker editing,
  * share-limit actions, etc. Surfaced at `GET /api/instances/:id/capabilities`.

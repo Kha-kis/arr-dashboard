@@ -869,15 +869,39 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 			} catch {
 				continue;
 			}
+			// qui's reannounce monitor flags torrents stuck failing to reach
+			// their tracker — a precise root cause a generic "stalled" state
+			// can't express. Fetch per qBit instance present in this qui's
+			// torrent list; a disabled reannounce service just returns [].
+			const trackerProblemHashes = new Set<string>();
+			const qbitIds = new Set<number>();
+			for (const t of torrents) {
+				if (typeof t.instanceId === "number") qbitIds.add(t.instanceId);
+			}
+			for (const qbitId of qbitIds) {
+				try {
+					const candidates = await client.getReannounceCandidates(qbitId);
+					for (const c of candidates) {
+						if (c.hasTrackerProblem) trackerProblemHashes.add(c.hash.toLowerCase());
+					}
+				} catch (err) {
+					request.log.debug(
+						{ err, instanceId: instance.id, qbitInstanceId: qbitId },
+						"qui attention: reannounce-candidates fetch failed; skipping tracker signal",
+					);
+				}
+			}
 			for (const t of torrents) {
 				const normalized = normalizeTorrentState(t.state);
-				if (!attentionStates.has(normalized)) continue;
-				// Severity heuristic: error → critical, paused/stalled → warning.
+				const hasTrackerProblem = trackerProblemHashes.has(t.hash.toLowerCase());
+				if (!attentionStates.has(normalized) && !hasTrackerProblem) continue;
+				// Severity heuristic: error → critical, paused/stalled/tracker → warning.
 				const severity: "critical" | "warning" = normalized === "error" ? "critical" : "warning";
 				const reasons: string[] = [];
 				if (normalized === "error") reasons.push("Errored");
 				if (normalized === "stalled_dl") reasons.push("Stalled (no peers)");
 				if (normalized === "paused") reasons.push("Paused");
+				if (hasTrackerProblem) reasons.push("Tracker failing");
 				collected.push({
 					hash: t.hash.toLowerCase(),
 					name: t.name,
