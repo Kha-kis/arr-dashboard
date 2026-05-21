@@ -146,8 +146,8 @@ const DrawerBody: React.FC<{
 
 			{unsupported.length > 0 && (
 				<div className="rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
-					Your qBittorrent{caps?.webAPIVersion ? ` (WebAPI ${caps.webAPIVersion})` : ""} doesn't
-					support {unsupported.join(" or ")} — those controls are disabled below.
+					This qBittorrent version doesn't support {unsupported.join(" or ")} — those controls are
+					disabled below.
 				</div>
 			)}
 
