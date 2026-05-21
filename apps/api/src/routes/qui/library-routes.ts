@@ -99,7 +99,7 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 		const perInstanceTorrentCount = new Map<number, number>();
 
 		for (const instance of instances) {
-			let client;
+			let client: ReturnType<typeof createQuiClient>;
 			try {
 				client = createQuiClient(app, instance);
 			} catch (err) {
@@ -857,13 +857,13 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 		const collected: AttentionTorrent[] = [];
 
 		for (const instance of instances) {
-			let client;
+			let client: ReturnType<typeof createQuiClient>;
 			try {
 				client = createQuiClient(app, instance);
 			} catch {
 				continue;
 			}
-			let torrents;
+			let torrents: Awaited<ReturnType<typeof getCachedAllTorrents>>;
 			try {
 				torrents = await getCachedAllTorrents(instance.id, client);
 			} catch {

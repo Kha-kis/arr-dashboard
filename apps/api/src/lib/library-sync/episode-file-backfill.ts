@@ -114,7 +114,7 @@ export async function runEpisodeFileSync({
 		// Build a Sonarr client for this instance. arr-sdk's client factory
 		// decrypts the API key on demand and returns a typed Sonarr client
 		// with an `episodefile.getAll({ seriesId })` method.
-		let client;
+		let client: ReturnType<typeof app.arrClientFactory.create>;
 		try {
 			client = app.arrClientFactory.create(sonarrInstance);
 		} catch (err) {

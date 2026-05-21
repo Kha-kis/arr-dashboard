@@ -57,6 +57,7 @@
  *    built here is already complete.
  */
 
+import type { Dirent } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { gunzipSync, gzipSync } from "node:zlib";
 import type { QuiTorrent } from "@arr/shared";
@@ -528,7 +529,7 @@ async function indexDirectoryFiles(
 	let statted = 0;
 	let skippedNoLinks = 0;
 
-	let entries;
+	let entries: Dirent[];
 	try {
 		entries = await readdir(rootPath, { recursive: true, withFileTypes: true });
 	} catch {
