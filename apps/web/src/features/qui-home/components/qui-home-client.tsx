@@ -210,6 +210,8 @@ interface KpiStripProps {
 		};
 		avgRatio: number;
 		lowRatioCount: number;
+		dlSpeed: number;
+		upSpeed: number;
 		lastSyncAt: string | null;
 		lastSyncOk: boolean | null;
 		configuredInstances: number;
@@ -221,7 +223,7 @@ const KpiStrip = ({ data }: KpiStripProps) => {
 	const [incognito] = useIncognitoMode();
 	const disconnectedInstances = data.qbitInstances.filter((i) => !i.connected);
 	return (
-		<section className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+		<section className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-7">
 			<KpiCard
 				label="Total torrents"
 				value={data.totalTorrents.toLocaleString()}
@@ -255,6 +257,13 @@ const KpiStrip = ({ data }: KpiStripProps) => {
 				sub={data.lowRatioCount > 0 ? `${data.lowRatioCount} below 1.00×` : "all healthy"}
 				icon={Zap}
 				tone={data.lowRatioCount > data.totalTorrents / 2 ? "warning" : "default"}
+			/>
+			<KpiCard
+				label="Throughput"
+				value={`↑ ${formatBytes(data.upSpeed)}/s`}
+				sub={`↓ ${formatBytes(data.dlSpeed)}/s`}
+				icon={Network}
+				tone="default"
 			/>
 			<KpiCard
 				label="qBit instances"

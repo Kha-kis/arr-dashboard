@@ -7,6 +7,7 @@ import {
 	type QuiTorrentFile,
 	type QuiTorrentProperties,
 	type QuiTracker,
+	type QuiTransferInfo,
 	quiCapabilitiesSchema,
 	quiInstanceSchema,
 	quiTorrentStateSchema,
@@ -116,6 +117,12 @@ export interface QuiClient {
 	 * affordances on them so it never offers a control qBit can't honor.
 	 */
 	getCapabilities(instanceId: number): Promise<QuiCapabilities>;
+	/**
+	 * Fetch live transfer stats for one qBittorrent instance. Maps to qui's
+	 * `GET /api/instances/:id/transfer-info` (qBit's `transfer/info`) —
+	 * current up/down speed, session data totals, DHT node count.
+	 */
+	getTransferInfo(instanceId: number): Promise<QuiTransferInfo>;
 	/**
 	 * Rename a torrent's display name. Maps to qui's
 	 * `POST /api/instances/:id/torrents/:hash/rename`. Per-torrent only —
@@ -547,6 +554,32 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 			// qui emits camelCase JSON for this endpoint already — no
 			// snake_case transform needed, parse straight into the schema.
 			return quiRequest(ctx, `/api/instances/${instanceId}/capabilities`, quiCapabilitiesSchema);
+		},
+
+		async getTransferInfo(instanceId) {
+			// qBit's transfer/info is snake_case — transform to canonical
+			// camelCase. These are observed speeds/totals, always >= 0.
+			const wireSchema = z
+				.object({
+					dl_info_speed: z.number().int().default(0),
+					up_info_speed: z.number().int().default(0),
+					dl_info_data: z.number().int().default(0),
+					up_info_data: z.number().int().default(0),
+					dht_nodes: z.number().int().default(0),
+					connection_status: z.string().default("disconnected"),
+				})
+				.passthrough()
+				.transform(
+					(w): QuiTransferInfo => ({
+						dlSpeed: w.dl_info_speed,
+						upSpeed: w.up_info_speed,
+						dlData: w.dl_info_data,
+						upData: w.up_info_data,
+						dhtNodes: w.dht_nodes,
+						connectionStatus: w.connection_status,
+					}),
+				);
+			return quiRequest(ctx, `/api/instances/${instanceId}/transfer-info`, wireSchema);
 		},
 
 		async renameTorrent(instanceId, hash, name) {

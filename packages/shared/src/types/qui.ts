@@ -238,6 +238,22 @@ export const quiCapabilitiesSchema = z
 export type QuiCapabilities = z.infer<typeof quiCapabilitiesSchema>;
 
 /**
+ * Live transfer stats for one qBittorrent instance — qBit's `transfer/info`.
+ * Speeds are bytes/sec; data totals are session bytes. Surfaced (aggregated
+ * across instances) on the qui home KPI strip.
+ */
+export const quiTransferInfoSchema = z.object({
+	dlSpeed: z.number().int(),
+	upSpeed: z.number().int(),
+	dlData: z.number().int(),
+	upData: z.number().int(),
+	dhtNodes: z.number().int(),
+	connectionStatus: z.string(),
+});
+
+export type QuiTransferInfo = z.infer<typeof quiTransferInfoSchema>;
+
+/**
  * Tracker entry for a torrent. `status` is the raw qBit int (kept for diagnostics);
  * `health` is the friendly mapping the UI renders. `tier` is optional because
  * qui omits it for pseudo-trackers like DHT/PeX/LSD.
@@ -817,6 +833,11 @@ export const quiSummaryResponseSchema = z.object({
 	avgRatio: z.number(),
 	/** Count of torrents below the low-ratio threshold (default 1.0). */
 	lowRatioCount: z.number().int(),
+	/** Live aggregate download speed (bytes/sec) summed across every
+	 * connected qBittorrent instance. 0 when none reachable. */
+	dlSpeed: z.number().int(),
+	/** Live aggregate upload speed (bytes/sec), same aggregation. */
+	upSpeed: z.number().int(),
 	/** ISO timestamp of the most recent successful sync, or null if
 	 * never run / never succeeded. */
 	lastSyncAt: z.string().nullable(),

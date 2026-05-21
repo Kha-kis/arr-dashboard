@@ -70,6 +70,8 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 				byState: { seeding: 0, downloading: 0, paused: 0, stalled: 0, error: 0, other: 0 },
 				avgRatio: 0,
 				lowRatioCount: 0,
+				dlSpeed: 0,
+				upSpeed: 0,
 				lastSyncAt: null,
 				lastSyncOk: null,
 				configuredInstances: 0,
@@ -84,6 +86,8 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 		const byState = { seeding: 0, downloading: 0, paused: 0, stalled: 0, error: 0, other: 0 };
 		let totalRatio = 0;
 		let lowRatioCount = 0;
+		let dlSpeed = 0;
+		let upSpeed = 0;
 		const LOW_RATIO_THRESHOLD = 1.0;
 		const qbitInstances: Array<{
 			id: number;
@@ -147,6 +151,21 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 						connected: q.connected,
 						torrentCount: perInstanceTorrentCount.get(q.id) ?? 0,
 					});
+					// Live throughput — one cheap call per connected qBit.
+					// Non-fatal: a failure just omits this instance's slice
+					// rather than failing the whole summary.
+					if (q.connected) {
+						try {
+							const transfer = await client.getTransferInfo(q.id);
+							dlSpeed += transfer.dlSpeed;
+							upSpeed += transfer.upSpeed;
+						} catch (transferErr) {
+							request.log.warn(
+								{ err: transferErr, instanceId: instance.id, qbitInstanceId: q.id },
+								"qui summary: transfer-info failed; throughput excludes this qBit",
+							);
+						}
+					}
 				}
 			} catch (err) {
 				request.log.warn(
@@ -179,6 +198,8 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 			byState,
 			avgRatio: totalTorrents > 0 ? totalRatio / totalTorrents : 0,
 			lowRatioCount,
+			dlSpeed,
+			upSpeed,
 			lastSyncAt: lastSync?.createdAt.toISOString() ?? null,
 			lastSyncOk,
 			configuredInstances: instances.length,
