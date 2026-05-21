@@ -125,9 +125,8 @@ for the full rationale.
 | GET | `/qui/instances/:id/qbit/:instanceId/torrents/:hash/cross-seed` | Yes | Get cross-seed matches for a torrent |
 | POST | `/qui/instances/:id/test` | Yes | Test connection to a saved QUI instance |
 | POST | `/qui/test` | Yes | Test connection with inline credentials (no storage) |
-| POST | `/qui/library-item/torrent-state` | Yes | Get torrent health state for a library item (movies and series; auto-picks default QUI instance, does lazy info-hash backfill from Radarr/Sonarr history; **write-throughs normalized state to LibraryCache so the Library `?torrentState=` filter sees recently-viewed items immediately**) |
 
-The Library route (`GET /api/library`) accepts `?torrentState=` for server-side filtering (Phase 2.1). Allowed values: `all` (default), `none` (rows without qui data yet), `seeding`, `downloading`, `stalled_dl`, `paused`, `queued`, `checking`, `moving`, `error`, `unknown`. State is populated by the periodic `qui-torrent-state-sync` scheduler (10 min) plus the write-through path above. The response also includes a `torrentStateCounts` object (per-state counts honoring every other applied filter) so the UI dropdown can show `Seeding (150)` etc.
+The Library route (`GET /api/library`) accepts `?torrentState=` for server-side filtering (Phase 2.1). Allowed values: `all` (default), `none` (rows without qui data yet), `seeding`, `downloading`, `stalled_dl`, `paused`, `queued`, `checking`, `moving`, `error`, `unknown`. State is populated by the periodic `qui-torrent-state-sync` scheduler (10 min). The response also includes a `torrentStateCounts` object (per-state counts honoring every other applied filter) so the UI dropdown can show `Seeding (150)` etc.
 
 **Backfill coverage**: the `infohash-backfill` scheduler walks LibraryCache rows missing `infoHash`, queries the relevant *arr's dedicated `/api/v3/history/movie` (Radarr) or `/api/v3/history/series` (Sonarr) endpoint for the original grab record, and persists the hash. **Two-phase cadence**:
 

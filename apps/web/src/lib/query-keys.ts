@@ -502,8 +502,6 @@ export const pulseKeys = {
 
 export const quiKeys = {
 	all: ["qui"] as const,
-	torrentState: (arrInstanceId: string, arrItemId: number, itemType: string) =>
-		["qui", "torrent-state", arrInstanceId, arrItemId, itemType] as const,
 	// Per-series aggregate (episode counts + distinct torrents). Powers
 	// the SeriesTorrentsPanel in the library detail modal. Invalidated
 	// when a cross-seed trigger or manual backfill changes correlation.

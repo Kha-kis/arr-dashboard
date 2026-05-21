@@ -5,7 +5,6 @@ import {
 	runEpisodeBackfillSweep,
 	runEpisodeFileSync,
 } from "../../lib/library-sync/episode-file-backfill.js";
-import { backfillInfoHashForRow } from "../../lib/library-sync/infohash-backfill.js";
 import {
 	buildFileIdIndex,
 	getAllHashesForFileId,
@@ -22,132 +21,9 @@ import {
 	DISCOVERY_QUERY,
 	extractHostnameSafe,
 	safeParseJson,
-	TORRENT_STATE_BODY,
 } from "./qui-shared.js";
 
 export function registerLibraryRoutes(app: FastifyInstance): void {
-	app.post("/qui/library-item/torrent-state", async (request, reply) => {
-		const userId = request.currentUser!.id;
-		const { arrInstanceId, arrItemId, itemType } = validateRequest(
-			TORRENT_STATE_BODY,
-			request.body,
-		);
-
-		if (itemType !== "movie" && itemType !== "series") {
-			return reply.send({
-				supported: false,
-				reason: "Per-item torrent health supports movies and series only.",
-			});
-		}
-
-		// SECURITY: scope the cache lookup by userId via the instance relation.
-		// Without this, a caller passing a different user's arrInstanceId could
-		// read that user's `infoHash` AND trigger a write-through `update`
-		// against their row. CLAUDE.md "Critical Rules" #2: ownership scoping.
-		const cached = await app.prisma.libraryCache.findFirst({
-			where: { instanceId: arrInstanceId, arrItemId, itemType, instance: { userId } },
-		});
-		if (!cached) {
-			return reply.send({
-				supported: true,
-				infoHash: null,
-				torrent: null,
-				siblings: [],
-				reason: "Item not in library cache yet — try refreshing the library.",
-			});
-		}
-
-		let infoHash = cached.infoHash;
-
-		// Lazy backfill: when we don't already have the hash, query *arr
-		// history for this specific item. The shared util is also used by
-		// the periodic backfill scheduler so behavior stays in lockstep.
-		if (!infoHash) {
-			infoHash = await backfillInfoHashForRow({
-				app,
-				cacheRowId: cached.id,
-				userId,
-				arrInstanceId,
-				itemType,
-				arrItemId,
-				log: app.log,
-			});
-		}
-
-		if (!infoHash) {
-			return reply.send({
-				supported: true,
-				infoHash: null,
-				torrent: null,
-				siblings: [],
-				reason: "No download record found in *arr history for this item.",
-			});
-		}
-
-		// Pick the user's qui instance — default first, otherwise oldest.
-		const quiInstance = await app.prisma.serviceInstance.findFirst({
-			where: { userId, service: "QUI", enabled: true },
-			orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
-		});
-		if (!quiInstance) {
-			return reply.send({
-				supported: true,
-				infoHash,
-				torrent: null,
-				siblings: [],
-				reason: "No qui instance configured.",
-			});
-		}
-
-		const client = createQuiClient(app, quiInstance);
-		const torrent = await client.getTorrentByHash(infoHash);
-		let siblings: Awaited<ReturnType<typeof client.getCrossSeedMatches>> = [];
-		if (torrent?.instanceId) {
-			siblings = await client.getCrossSeedMatches(torrent.instanceId, infoHash);
-		}
-
-		// Write-through: persist the freshly-fetched state into LibraryCache so
-		// the Library filter sees recently-viewed items immediately, instead of
-		// waiting for the 10-minute periodic sync. Failures here are non-fatal
-		// — the user still gets the live response.
-		if (torrent) {
-			await app.prisma.libraryCache
-				.update({
-					where: { id: cached.id },
-					data: {
-						torrentState: normalizeTorrentState(torrent.state),
-						torrentRatio: Number.isFinite(torrent.ratio) ? torrent.ratio : null,
-						torrentSyncedAt: new Date(),
-					},
-				})
-				.catch((err) => {
-					// Surface the Prisma error code so log analysis can distinguish
-					// expected races (P2025 — row deleted between findFirst+update)
-					// from operational issues (P1001 — DB unreachable, P2002 —
-					// constraint violation indicating schema drift). Use ERROR
-					// level for non-P2025 codes so they're visible in standard
-					// alerting; P2025 stays at warn since it's benign.
-					const code = (err as { code?: string })?.code;
-					const isBenignRace = code === "P2025";
-					const logFn = isBenignRace ? app.log.warn : app.log.error;
-					logFn.call(
-						app.log,
-						{ err, code, libraryCacheId: cached.id, infoHash },
-						"failed to write-through torrent state to LibraryCache",
-					);
-				});
-		}
-
-		return reply.send({
-			supported: true,
-			infoHash,
-			torrent,
-			siblings,
-			quiInstanceId: quiInstance.id,
-			quiInstanceLabel: quiInstance.label,
-		});
-	});
-
 	// Cross-Seed Discovery (Phase 3.1) — availability probe for empty-state
 	// gating on the frontend page. Cheap: zero qui calls.
 	app.get("/qui/cross-seed/availability", async (request, reply) => {

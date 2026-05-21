@@ -14,11 +14,6 @@ export const TEST_BODY = z.object({
 	baseUrl: z.string().url(),
 	apiKey: z.string().min(8),
 });
-export const TORRENT_STATE_BODY = z.object({
-	arrInstanceId: z.string().min(1),
-	arrItemId: z.number().int().positive(),
-	itemType: z.enum(["movie", "series", "artist", "author"]),
-});
 
 /**
  * Cross-Seed Discovery scan query (Phase 3.1). Cursor is the LibraryCache.id

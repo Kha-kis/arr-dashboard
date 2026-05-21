@@ -20,12 +20,3 @@ const TRACKER_HEALTH: Record<number, QuiTrackerHealth> = {
 export function mapTrackerHealth(status: number): QuiTrackerHealth {
 	return TRACKER_HEALTH[status] ?? "unknown";
 }
-
-/**
- * True when the tracker reports a problem. The Library Cleanup gate
- * (Phase 2.2) uses this combined with `unregistered` cross-seed flags
- * to decide whether deletion is safe.
- */
-export function isTrackerUnhealthy(health: QuiTrackerHealth): boolean {
-	return health === "not_working" || health === "disabled";
-}
