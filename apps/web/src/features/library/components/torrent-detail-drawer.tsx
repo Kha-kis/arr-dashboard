@@ -2,7 +2,13 @@
 
 import { AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../../../components/ui/sheet";
+import {
+	Sheet,
+	SheetContent,
+	SheetDescription,
+	SheetHeader,
+	SheetTitle,
+} from "../../../components/ui/sheet";
 import { useIncognitoMode } from "../../../contexts/IncognitoContext";
 import { useQuiCapabilities } from "../../../hooks/api/useQui";
 import type { SeriesTorrentCopy } from "../../../lib/api-client/qui";
@@ -107,6 +113,13 @@ const DrawerBody: React.FC<{
 						return leaf;
 					})()}
 				</SheetTitle>
+				{/* Screen-reader description — satisfies Radix Dialog's
+				 * aria-describedby contract. Visually redundant with the
+				 * section list below, so sr-only. */}
+				<SheetDescription className="sr-only">
+					Full control surface for this torrent — status, actions, trackers, tags, limits, behavior,
+					files, and danger zone.
+				</SheetDescription>
 				{/* Incognito visibility — when paths/names are masked, surface
 				 * a pill so the user can't mistake masked stubs for real
 				 * data. Cold Read v2 spent 20 minutes confused about
