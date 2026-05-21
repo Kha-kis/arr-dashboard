@@ -1,11 +1,13 @@
 import {
 	type QuiAction,
+	type QuiCapabilities,
 	type QuiCrossSeedMatch,
 	type QuiInstance,
 	type QuiTorrent,
 	type QuiTorrentFile,
 	type QuiTorrentProperties,
 	type QuiTracker,
+	quiCapabilitiesSchema,
 	quiInstanceSchema,
 	quiTorrentStateSchema,
 } from "@arr/shared";
@@ -107,6 +109,13 @@ export interface QuiClient {
 	 * `GET /api/instances/:id/tags`. qBit returns a flat string array.
 	 */
 	listTags(instanceId: number): Promise<string[]>;
+	/**
+	 * Fetch per-instance feature-support flags. Maps to qui's
+	 * `GET /api/instances/:id/capabilities`. qui derives these from the
+	 * connected qBittorrent's WebAPI version — the UI gates action
+	 * affordances on them so it never offers a control qBit can't honor.
+	 */
+	getCapabilities(instanceId: number): Promise<QuiCapabilities>;
 	/**
 	 * Rename a torrent's display name. Maps to qui's
 	 * `POST /api/instances/:id/torrents/:hash/rename`. Per-torrent only —
@@ -532,6 +541,12 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 		async listTags(instanceId) {
 			// qBit returns a flat array of tag-name strings.
 			return quiRequest(ctx, `/api/instances/${instanceId}/tags`, z.array(z.string()));
+		},
+
+		async getCapabilities(instanceId) {
+			// qui emits camelCase JSON for this endpoint already — no
+			// snake_case transform needed, parse straight into the schema.
+			return quiRequest(ctx, `/api/instances/${instanceId}/capabilities`, quiCapabilitiesSchema);
 		},
 
 		async renameTorrent(instanceId, hash, name) {

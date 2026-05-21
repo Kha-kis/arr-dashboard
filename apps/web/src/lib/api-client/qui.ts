@@ -5,6 +5,7 @@ import type {
 	QuiActionLogResponse,
 	QuiActivityFeedResponse,
 	QuiAttentionResponse,
+	QuiCapabilities,
 	QuiEventLogResponse,
 	QuiSummaryResponse,
 } from "@arr/shared";
@@ -257,6 +258,20 @@ export async function fetchQuiTags(args: {
 	const { quiInstanceId, qbitInstanceId } = args;
 	return apiRequest<QuiTagsResponse>(
 		`/api/qui/instances/${quiInstanceId}/qbit/${qbitInstanceId}/tags`,
+	);
+}
+
+export interface QuiCapabilitiesResponse {
+	capabilities: QuiCapabilities;
+}
+
+export async function fetchQuiCapabilities(args: {
+	quiInstanceId: string;
+	qbitInstanceId: number;
+}): Promise<QuiCapabilitiesResponse> {
+	const { quiInstanceId, qbitInstanceId } = args;
+	return apiRequest<QuiCapabilitiesResponse>(
+		`/api/qui/instances/${quiInstanceId}/qbit/${qbitInstanceId}/capabilities`,
 	);
 }
 

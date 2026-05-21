@@ -4,6 +4,7 @@ import { AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../../../components/ui/sheet";
 import { useIncognitoMode } from "../../../contexts/IncognitoContext";
+import { useQuiCapabilities } from "../../../hooks/api/useQui";
 import type { SeriesTorrentCopy } from "../../../lib/api-client/qui";
 import { getLinuxSavePath } from "../../../lib/incognito";
 import { ActionsSection } from "./torrent-drawer/actions-section";
@@ -64,6 +65,24 @@ const DrawerBody: React.FC<{
 		typeof copy.qbitInstanceId === "number" &&
 		typeof copy.quiInstanceId === "string";
 
+	// Capability gating — qui reports what the connected qBittorrent's
+	// WebAPI version actually supports. While the query is in flight we
+	// optimistically assume support (`?? true`) so controls don't flash
+	// disabled every time the drawer opens.
+	const capabilitiesQuery = useQuiCapabilities({
+		quiInstanceId: copy.quiInstanceId ?? null,
+		qbitInstanceId: copy.qbitInstanceId ?? null,
+		enabled: !copy.quiUnreachable,
+	});
+	const caps = capabilitiesQuery.data?.capabilities;
+	const trackerEditingOk = caps?.supportsTrackerEditing ?? true;
+	const shareLimitsOk = caps?.supportsShareLimitsAction ?? true;
+	const unsupported: string[] = [];
+	if (caps) {
+		if (!trackerEditingOk) unsupported.push("tracker editing");
+		if (!shareLimitsOk) unsupported.push("share / seeding limits");
+	}
+
 	return (
 		<div className="space-y-4 text-[12px]">
 			<SheetHeader className="space-y-1">
@@ -112,11 +131,18 @@ const DrawerBody: React.FC<{
 				</div>
 			</SheetHeader>
 
+			{unsupported.length > 0 && (
+				<div className="rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
+					Your qBittorrent{caps?.webAPIVersion ? ` (WebAPI ${caps.webAPIVersion})` : ""} doesn't
+					support {unsupported.join(" or ")} — those controls are disabled below.
+				</div>
+			)}
+
 			<StatusSection copy={copy} />
 			<ActionsSection copy={copy} canAct={canAct} />
 
 			<DrawerSection title="Trackers" defaultOpen={true}>
-				<TrackersSection copy={copy} canAct={canAct} />
+				<TrackersSection copy={copy} canAct={canAct && trackerEditingOk} />
 			</DrawerSection>
 
 			<DrawerSection title="Tags & Category" defaultOpen={true}>
@@ -124,7 +150,7 @@ const DrawerBody: React.FC<{
 			</DrawerSection>
 
 			<DrawerSection title="Limits & seeding rules" defaultOpen={false}>
-				<LimitsSection copy={copy} canAct={canAct} />
+				<LimitsSection copy={copy} canAct={canAct && shareLimitsOk} />
 			</DrawerSection>
 
 			<DrawerSection title="Behavior" defaultOpen={false}>

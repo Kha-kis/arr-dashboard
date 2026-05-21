@@ -99,4 +99,20 @@ export function registerInstanceRoutes(app: FastifyInstance): void {
 			return reply.send({ tags });
 		},
 	);
+
+	app.get<{ Params: { id: string; instanceId: string } }>(
+		"/qui/instances/:id/qbit/:instanceId/capabilities",
+		async (request, reply) => {
+			const userId = request.currentUser!.id;
+			const { id } = validateRequest(QUI_INSTANCE_PARAM, request.params);
+			const qbitInstanceId = Number.parseInt(request.params.instanceId, 10);
+			if (!Number.isFinite(qbitInstanceId)) {
+				return reply.status(400).send({ error: "qbit instanceId must be numeric" });
+			}
+			const instance = await requireQuiInstance(app, userId, id);
+			const client = createQuiClient(app, instance);
+			const capabilities = await client.getCapabilities(qbitInstanceId);
+			return reply.send({ capabilities });
+		},
+	);
 }

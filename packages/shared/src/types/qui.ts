@@ -201,6 +201,43 @@ export const quiTorrentFileSchema = z.object({
 export type QuiTorrentFile = z.infer<typeof quiTorrentFileSchema>;
 
 /**
+ * Per-instance feature-support flags. qui derives these from the connected
+ * qBittorrent's WebAPI version — older qBit builds lack tracker editing,
+ * share-limit actions, etc. Surfaced at `GET /api/instances/:id/capabilities`.
+ * The UI gates action affordances on these so it never offers a control the
+ * backend qBit can't honor.
+ *
+ * Every flag defaults to `false`: a missing flag is treated as "unsupported",
+ * the conservative choice — better to hide a usable action than to surface
+ * one that errors on click. `.passthrough()` keeps the schema lenient toward
+ * flags qui adds in future versions.
+ */
+export const quiCapabilitiesSchema = z
+	.object({
+		supportsTorrentCreation: z.boolean().default(false),
+		supportsTorrentExport: z.boolean().default(false),
+		supportsSetTags: z.boolean().default(false),
+		supportsTrackerHealth: z.boolean().default(false),
+		supportsTrackerEditing: z.boolean().default(false),
+		supportsRenameTorrent: z.boolean().default(false),
+		supportsRenameFile: z.boolean().default(false),
+		supportsRenameFolder: z.boolean().default(false),
+		supportsFilePriority: z.boolean().default(false),
+		supportsSubcategories: z.boolean().default(false),
+		subcategoriesAlwaysEnabled: z.boolean().default(false),
+		supportsTorrentTmpPath: z.boolean().default(false),
+		supportsPathAutocomplete: z.boolean().default(false),
+		supportsFreeSpacePathSource: z.boolean().default(false),
+		supportsSetRSSFeedURL: z.boolean().default(false),
+		supportsShareLimitsAction: z.boolean().default(false),
+		supportsShareLimitsMode: z.boolean().default(false),
+		webAPIVersion: z.string().optional(),
+	})
+	.passthrough();
+
+export type QuiCapabilities = z.infer<typeof quiCapabilitiesSchema>;
+
+/**
  * Tracker entry for a torrent. `status` is the raw qBit int (kept for diagnostics);
  * `health` is the friendly mapping the UI renders. `tier` is optional because
  * qui omits it for pseudo-trackers like DHT/PeX/LSD.

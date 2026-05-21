@@ -94,6 +94,7 @@ function makeClient(overrides: Partial<QuiClient> = {}): QuiClient {
 		getTorrentFiles: vi.fn().mockResolvedValue([]),
 		listCategories: vi.fn().mockResolvedValue([]),
 		listTags: vi.fn().mockResolvedValue([]),
+		getCapabilities: vi.fn(),
 		renameTorrent: vi.fn().mockResolvedValue(undefined),
 		addTrackers: vi.fn().mockResolvedValue(undefined),
 		removeTrackers: vi.fn().mockResolvedValue(undefined),

@@ -19,6 +19,7 @@ import {
 	fetchQuiActionLog,
 	fetchQuiActivityFeed,
 	fetchQuiAttention,
+	fetchQuiCapabilities,
 	fetchQuiCategories,
 	fetchQuiEventLog,
 	fetchQuiSummary,
@@ -339,6 +340,26 @@ export const useQuiTags = (args: {
 	return useQuery({
 		queryKey: ["qui", "tags", quiInstanceId, qbitInstanceId] as const,
 		queryFn: () => fetchQuiTags({ quiInstanceId: quiInstanceId!, qbitInstanceId: qbitInstanceId! }),
+		enabled: enabled && quiInstanceId !== null && qbitInstanceId !== null,
+		staleTime: 5 * 60 * 1000,
+	});
+};
+
+/**
+ * Per-instance qBittorrent feature-support flags. Capabilities change only
+ * when the operator upgrades qBittorrent, so cache aggressively (5 min,
+ * matching categories/tags).
+ */
+export const useQuiCapabilities = (args: {
+	quiInstanceId: string | null;
+	qbitInstanceId: number | null;
+	enabled?: boolean;
+}) => {
+	const { quiInstanceId, qbitInstanceId, enabled = true } = args;
+	return useQuery({
+		queryKey: ["qui", "capabilities", quiInstanceId, qbitInstanceId] as const,
+		queryFn: () =>
+			fetchQuiCapabilities({ quiInstanceId: quiInstanceId!, qbitInstanceId: qbitInstanceId! }),
 		enabled: enabled && quiInstanceId !== null && qbitInstanceId !== null,
 		staleTime: 5 * 60 * 1000,
 	});
