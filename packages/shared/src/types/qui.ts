@@ -511,6 +511,11 @@ export const quiActionSchema = z.enum([
 	"setCategory",
 	"toggleAutoTMM",
 	"forceStart",
+	"topPriority",
+	"bottomPriority",
+	"increasePriority",
+	"decreasePriority",
+	"toggleSequentialDownload",
 	"setUploadLimit",
 	"setDownloadLimit",
 	"setShareLimit",
@@ -588,6 +593,14 @@ export const quiActionPayloadSchemas = {
 	recheck: emptyPayload,
 	reannounce: emptyPayload,
 	forceStart: emptyPayload,
+	// Download-queue actions — no extras; qui's bulk-action takes just
+	// `{ action, hashes }`. The drawer surfaces them only for incomplete
+	// torrents (queue priority is moot once a torrent is seeding).
+	topPriority: emptyPayload,
+	bottomPriority: emptyPayload,
+	increasePriority: emptyPayload,
+	decreasePriority: emptyPayload,
+	toggleSequentialDownload: emptyPayload,
 	setTags: z.object({
 		// Comma-joined tag list (qui's wire format — qui accepts a single
 		// comma-separated string, not a JSON array). Required and non-empty.
@@ -683,6 +696,11 @@ const QUI_ACTION_VALUES = new Set<QuiAction>([
 	"setCategory",
 	"toggleAutoTMM",
 	"forceStart",
+	"topPriority",
+	"bottomPriority",
+	"increasePriority",
+	"decreasePriority",
+	"toggleSequentialDownload",
 	"setUploadLimit",
 	"setDownloadLimit",
 	"setShareLimit",
