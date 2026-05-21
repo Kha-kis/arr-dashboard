@@ -272,7 +272,6 @@ export const CrossSeedClient = () => {
 							<CrossSeedItemCard
 								key={item.libraryCacheId}
 								item={item}
-								quiInstanceLabel={quiInstanceLabel}
 								animationDelay={Math.min(idx, 12) * 30}
 								isSelected={selectedIds.has(item.libraryCacheId)}
 								onToggleSelect={

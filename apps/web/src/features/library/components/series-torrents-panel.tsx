@@ -398,7 +398,6 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({
 									onOpenDrawer={(copy, coverageLabel) =>
 										setSelectedItem({ copy, arrContext: { seriesTitle, coverageLabel } })
 									}
-									seriesTitle={seriesTitle}
 								/>
 							))}
 						</div>
@@ -420,7 +419,6 @@ export const SeriesTorrentsPanel: React.FC<Props> = ({
 									onOpenDrawer={(copy, coverageLabel) =>
 										setSelectedItem({ copy, arrContext: { seriesTitle, coverageLabel } })
 									}
-									seriesTitle={seriesTitle}
 								/>
 							))}
 						</div>
@@ -525,7 +523,6 @@ const SeasonGroupCard: React.FC<{
 	onCrossSeedSearch: () => void;
 	searchPending: boolean;
 	onOpenDrawer: (copy: SeriesTorrentCopy, coverageLabel: string) => void;
-	seriesTitle: string;
 }> = ({
 	group,
 	clusterByKey,
@@ -539,7 +536,6 @@ const SeasonGroupCard: React.FC<{
 	onCrossSeedSearch,
 	searchPending,
 	onOpenDrawer,
-	seriesTitle,
 }) => {
 	const isFullyStuck = group.correlatedEpisodes === 0 && group.totalEpisodes > 0;
 	const isFullyCovered =
@@ -633,7 +629,6 @@ const SeasonGroupCard: React.FC<{
 							incognito={incognito}
 							trackerIcons={trackerIcons}
 							onOpenDrawer={onOpenDrawer}
-							seriesTitle={seriesTitle}
 						/>
 					))}
 				</div>
@@ -681,16 +676,7 @@ const ClusterCard: React.FC<{
 	incognito: boolean;
 	trackerIcons: Record<string, { iconUrl?: string; name?: string }> | undefined;
 	onOpenDrawer: (copy: SeriesTorrentCopy, coverageLabel: string) => void;
-	seriesTitle: string;
-}> = ({
-	cluster,
-	expanded,
-	onToggle,
-	incognito,
-	trackerIcons,
-	onOpenDrawer,
-	seriesTitle: _seriesTitle,
-}) => {
+}> = ({ cluster, expanded, onToggle, incognito, trackerIcons, onOpenDrawer }) => {
 	const stateLabel = friendlyState(cluster.primaryState);
 
 	return (

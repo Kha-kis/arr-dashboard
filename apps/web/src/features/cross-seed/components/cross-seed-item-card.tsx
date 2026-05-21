@@ -13,7 +13,6 @@ import { cn } from "../../../lib/utils";
 
 interface CrossSeedItemCardProps {
 	item: CrossSeedDiscoveryItem;
-	quiInstanceLabel: string;
 	animationDelay: number;
 	/** Phase 4.2 — selection state for the bulk-action toolbar. */
 	isSelected?: boolean;
@@ -35,7 +34,6 @@ const MATCH_TYPE_COPY: Record<QuiCrossSeedMatch["matchType"], { label: string; t
 
 export const CrossSeedItemCard = ({
 	item,
-	quiInstanceLabel: _quiInstanceLabel,
 	animationDelay,
 	isSelected = false,
 	onToggleSelect,

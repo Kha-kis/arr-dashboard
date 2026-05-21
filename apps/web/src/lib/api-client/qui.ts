@@ -153,13 +153,13 @@ export interface QuiTorrentPropertiesResponse {
 	};
 }
 
+// Only the fields the drawer's Files section renders. qui's wire response
+// also carries per-file progress / priority / isSeeding, but nothing
+// consumes them — kept out of the type so it doesn't overclaim.
 export interface QuiTorrentFileEntry {
 	index: number;
 	name: string;
 	size: number;
-	progress: number;
-	priority: number;
-	isSeeding?: boolean;
 }
 
 export interface QuiTorrentFilesResponse {
