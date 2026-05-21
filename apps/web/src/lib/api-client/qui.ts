@@ -7,6 +7,7 @@ import type {
 	QuiAttentionResponse,
 	QuiCapabilities,
 	QuiEventLogResponse,
+	QuiMediaInfo,
 	QuiSummaryResponse,
 } from "@arr/shared";
 import { apiRequest } from "./base";
@@ -186,6 +187,22 @@ export async function fetchQuiTorrentFiles(args: {
 	const qs = refresh ? "?refresh=true" : "";
 	return apiRequest<QuiTorrentFilesResponse>(
 		`/api/qui/instances/${quiInstanceId}/qbit/${qbitInstanceId}/torrents/${hash}/files${qs}`,
+	);
+}
+
+export interface QuiMediaInfoResponse {
+	mediaInfo: QuiMediaInfo;
+}
+
+export async function fetchQuiFileMediaInfo(args: {
+	quiInstanceId: string;
+	qbitInstanceId: number;
+	hash: string;
+	fileIndex: number;
+}): Promise<QuiMediaInfoResponse> {
+	const { quiInstanceId, qbitInstanceId, hash, fileIndex } = args;
+	return apiRequest<QuiMediaInfoResponse>(
+		`/api/qui/instances/${quiInstanceId}/qbit/${qbitInstanceId}/torrents/${hash}/files/${fileIndex}/mediainfo`,
 	);
 }
 

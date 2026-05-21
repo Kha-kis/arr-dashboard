@@ -22,6 +22,7 @@ import {
 	fetchQuiCapabilities,
 	fetchQuiCategories,
 	fetchQuiEventLog,
+	fetchQuiFileMediaInfo,
 	fetchQuiSummary,
 	fetchQuiTags,
 	fetchQuiTorrentFiles,
@@ -230,6 +231,34 @@ export const useQuiTorrentFiles = (args: {
 			}),
 		enabled: enabled && quiInstanceId !== null && qbitInstanceId !== null,
 		staleTime: POLLING_STANDARD,
+	});
+};
+
+/**
+ * MediaInfo for one file inside a torrent. Lazy — pass `enabled: false`
+ * until the operator actually opens a file's quality check. The report is
+ * immutable for a given file (its bytes don't change), so cache for an hour.
+ */
+export const useQuiFileMediaInfo = (args: {
+	quiInstanceId: string | null;
+	qbitInstanceId: number | null;
+	hash: string;
+	fileIndex: number | null;
+	enabled?: boolean;
+}) => {
+	const { quiInstanceId, qbitInstanceId, hash, fileIndex, enabled = true } = args;
+	return useQuery({
+		queryKey: ["qui", "file-mediainfo", quiInstanceId, qbitInstanceId, hash, fileIndex] as const,
+		queryFn: () =>
+			fetchQuiFileMediaInfo({
+				quiInstanceId: quiInstanceId!,
+				qbitInstanceId: qbitInstanceId!,
+				hash,
+				fileIndex: fileIndex!,
+			}),
+		enabled: enabled && quiInstanceId !== null && qbitInstanceId !== null && fileIndex !== null,
+		staleTime: 60 * 60 * 1000,
+		retry: false,
 	});
 };
 

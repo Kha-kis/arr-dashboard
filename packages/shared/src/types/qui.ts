@@ -201,6 +201,31 @@ export const quiTorrentFileSchema = z.object({
 export type QuiTorrentFile = z.infer<typeof quiTorrentFileSchema>;
 
 /**
+ * MediaInfo report for one file inside a torrent, from qui's
+ * `GET /api/instances/:id/torrents/:hash/files/:index/mediainfo`. qui runs
+ * MediaInfo against the file on disk, so this only works when qui has local
+ * filesystem access to the torrent's data.
+ *
+ * `streams` is MediaInfo's native shape: each stream has a `kind`
+ * ("General" / "Video" / "Audio" / "Text" / …) and a free-form list of
+ * `{ name, value }` fields ("Width" → "1 920 pixels", "Format" → "AVC", …).
+ * It is deliberately untyped beyond name/value strings — MediaInfo's field
+ * set varies by container/codec, and arr-dashboard only reads a few keys.
+ */
+export const quiMediaInfoStreamSchema = z.object({
+	kind: z.string(),
+	fields: z.array(z.object({ name: z.string(), value: z.string() })),
+});
+
+export const quiMediaInfoSchema = z.object({
+	fileIndex: z.number().int(),
+	relativePath: z.string(),
+	streams: z.array(quiMediaInfoStreamSchema),
+});
+
+export type QuiMediaInfo = z.infer<typeof quiMediaInfoSchema>;
+
+/**
  * Per-instance feature-support flags. qui derives these from the connected
  * qBittorrent's WebAPI version — older qBit builds lack tracker editing,
  * share-limit actions, etc. Surfaced at `GET /api/instances/:id/capabilities`.

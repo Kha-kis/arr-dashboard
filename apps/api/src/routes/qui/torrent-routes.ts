@@ -117,6 +117,42 @@ export function registerTorrentRoutes(app: FastifyInstance): void {
 		return reply.send({ files });
 	});
 
+	// MediaInfo for one file — qui runs MediaInfo against the on-disk file,
+	// so this only works when qui has local filesystem access to the
+	// torrent's data. Lazy: the drawer fetches it per file on demand.
+	app.get<{
+		Params: { id: string; instanceId: string; hash: string; fileIndex: string };
+	}>(
+		"/qui/instances/:id/qbit/:instanceId/torrents/:hash/files/:fileIndex/mediainfo",
+		async (request, reply) => {
+			const userId = request.currentUser!.id;
+			const { id } = validateRequest(QUI_INSTANCE_PARAM, request.params);
+			const { instanceId, hash } = validateRequest(INSTANCE_HASH_PARAMS, {
+				instanceId: request.params.instanceId,
+				hash: request.params.hash,
+			});
+			const qbitInstanceId = Number.parseInt(instanceId, 10);
+			const fileIndex = Number.parseInt(request.params.fileIndex, 10);
+			if (!Number.isFinite(qbitInstanceId)) {
+				return reply.status(400).send({ error: "qbit instanceId must be numeric" });
+			}
+			if (!Number.isInteger(fileIndex) || fileIndex < 0) {
+				return reply.status(400).send({ error: "fileIndex must be a non-negative integer" });
+			}
+			const instance = await requireQuiInstance(app, userId, id);
+			const client = createQuiClient(app, instance);
+			try {
+				const mediaInfo = await client.getFileMediaInfo(qbitInstanceId, hash, fileIndex);
+				return reply.send({ mediaInfo });
+			} catch (error) {
+				return reply.status(502).send({
+					error: "qui mediainfo failed",
+					message: getErrorMessage(error, "qui getFileMediaInfo failed"),
+				});
+			}
+		},
+	);
+
 	// ────────────────────────────────────────────────────────────────────
 	// Detail-drawer mutations (Phase 6) — rename + tracker CRUD
 	// ────────────────────────────────────────────────────────────────────

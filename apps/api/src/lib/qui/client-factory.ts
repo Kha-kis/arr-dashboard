@@ -3,6 +3,7 @@ import {
 	type QuiCapabilities,
 	type QuiCrossSeedMatch,
 	type QuiInstance,
+	type QuiMediaInfo,
 	type QuiTorrent,
 	type QuiTorrentFile,
 	type QuiTorrentProperties,
@@ -10,6 +11,7 @@ import {
 	type QuiTransferInfo,
 	quiCapabilitiesSchema,
 	quiInstanceSchema,
+	quiMediaInfoSchema,
 	quiTorrentStateSchema,
 } from "@arr/shared";
 import type { FastifyInstance } from "fastify";
@@ -123,6 +125,13 @@ export interface QuiClient {
 	 * current up/down speed, session data totals, DHT node count.
 	 */
 	getTransferInfo(instanceId: number): Promise<QuiTransferInfo>;
+	/**
+	 * Fetch the MediaInfo report for one file inside a torrent. Maps to qui's
+	 * `GET /api/instances/:id/torrents/:hash/files/:index/mediainfo`. qui runs
+	 * MediaInfo against the on-disk file — only works when qui has local
+	 * filesystem access to the torrent's data.
+	 */
+	getFileMediaInfo(instanceId: number, hash: string, fileIndex: number): Promise<QuiMediaInfo>;
 	/**
 	 * Rename a torrent's display name. Maps to qui's
 	 * `POST /api/instances/:id/torrents/:hash/rename`. Per-torrent only —
@@ -580,6 +589,16 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 					}),
 				);
 			return quiRequest(ctx, `/api/instances/${instanceId}/transfer-info`, wireSchema);
+		},
+
+		async getFileMediaInfo(instanceId, hash, fileIndex) {
+			// qui returns camelCase JSON already (`fileIndex`, `relativePath`,
+			// `streams`); the heavy `rawJSON` field is dropped by the schema.
+			return quiRequest(
+				ctx,
+				`/api/instances/${instanceId}/torrents/${hash}/files/${fileIndex}/mediainfo`,
+				quiMediaInfoSchema,
+			);
 		},
 
 		async renameTorrent(instanceId, hash, name) {
