@@ -174,6 +174,20 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 		await requireInstance(app, userId, id);
 		await app.prisma.serviceInstance.delete({ where: { id, userId } });
+
+		// Free any process-local qui caches keyed to this instance. Both
+		// the torrent-list cache and the inode index retain heavy entries
+		// (TTL-checked on read only — a stale entry self-heals, but a
+		// deleted instance is never read again, so its entry would linger
+		// for the whole process life). No-op for non-qui services: the id
+		// simply isn't a key in those caches.
+		const [{ invalidateTorrentListCache }, { clearFileIdIndexCache }] = await Promise.all([
+			import("../lib/qui/torrent-list-cache.js"),
+			import("../lib/library-sync/infohash-backfill-by-inode.js"),
+		]);
+		invalidateTorrentListCache(id);
+		clearFileIdIndexCache(id);
+
 		request.log.info({ instanceId: id }, "Service instance deleted");
 		return reply.status(204).send();
 	});
