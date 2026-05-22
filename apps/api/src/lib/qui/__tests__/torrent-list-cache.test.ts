@@ -37,13 +37,42 @@ describe("getCachedAllTorrents", () => {
 		expect(listAllTorrents).toHaveBeenCalledTimes(1);
 	});
 
-	it("re-fetches once the TTL has elapsed", async () => {
-		const listAllTorrents = vi.fn().mockResolvedValue([torrent("a")]);
+	it("serves stale data immediately and refreshes in the background past TTL", async () => {
+		// Stale-while-revalidate: a call past the TTL must NOT block on the
+		// refetch — it returns the stale list right away while a background
+		// refresh runs. Only a later call sees the refreshed data.
+		let resolveRefresh: (v: never[]) => void = () => {};
+		const listAllTorrents = vi
+			.fn()
+			.mockResolvedValueOnce([torrent("a")] as never[])
+			.mockImplementationOnce(
+				() =>
+					new Promise<never[]>((resolve) => {
+						resolveRefresh = resolve;
+					}),
+			);
 		const client = makeClient(listAllTorrents);
 		let clock = 1_000_000;
-		await getCachedAllTorrents("qui-1", client, () => clock);
-		clock += TORRENT_LIST_CACHE_TTL_MS + 1; // past the window
-		await getCachedAllTorrents("qui-1", client, () => clock);
+
+		// Cold fetch — blocks, populates the cache with "a".
+		expect(await getCachedAllTorrents("qui-1", client, () => clock)).toEqual([torrent("a")]);
+
+		// Past the TTL — the call returns the STALE "a" immediately, even
+		// though the background refresh promise has not resolved yet.
+		clock += TORRENT_LIST_CACHE_TTL_MS + 1;
+		const staleResult = await getCachedAllTorrents("qui-1", client, () => clock);
+		expect(staleResult).toEqual([torrent("a")]);
+		expect(listAllTorrents).toHaveBeenCalledTimes(2); // background refresh was kicked
+
+		// Let the background refresh land, then the cache holds "b".
+		resolveRefresh([torrent("b")] as never[]);
+		await vi.waitFor(() => {
+			expect(__torrentListCacheState().pending).toBe(0);
+		});
+
+		// Next call sees the refreshed data without another fetch.
+		const freshResult = await getCachedAllTorrents("qui-1", client, () => clock);
+		expect(freshResult).toEqual([torrent("b")]);
 		expect(listAllTorrents).toHaveBeenCalledTimes(2);
 	});
 
