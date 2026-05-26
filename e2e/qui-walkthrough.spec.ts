@@ -45,6 +45,31 @@ function torrentStateSelect(page: Page) {
  * normally.
  */
 async function setupQuiMocks(page: Page): Promise<void> {
+	// Diagnostic — log every request the page makes. CI captures this in
+	// the test output so we can verify the route matchers are firing and
+	// no unexpected endpoint is breaking the page render. Cheap and only
+	// noisy in CI logs.
+	page.on("request", (req) => {
+		const url = req.url();
+		if (url.includes("/api/")) {
+			// eslint-disable-next-line no-console
+			console.log(`[e2e] ${req.method()} ${url}`);
+		}
+	});
+
+	// `/api/library/sync/status` — quick mock so the sync hook gets a
+	// well-shaped response. Without this the request would fall through
+	// to the real Fastify route and the sync hook might fire repeatedly
+	// (every poll interval) competing with page render. Empty `instances`
+	// is fine for our purposes — the spec doesn't assert sync state.
+	await page.route(/\/api\/library\/sync\/status$/, async (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({ instances: [] }),
+		}),
+	);
+
 	// `/api/services` — inject a qui entry so `hasQui` derives to true.
 	// The library page reads this to decide whether to render the
 	// torrent-state filter dropdown at all.
@@ -95,7 +120,14 @@ async function setupQuiMocks(page: Page): Promise<void> {
 	// torrentStateCounts with realistic numbers so the dropdown renders
 	// `(N)` suffixes per option and the badge tests have something to
 	// click on.
-	await page.route("**/api/library**", async (route) => {
+	//
+	// Regex matcher (not the `**/api/library**` glob) because the glob
+	// would ALSO match sub-paths like `/api/library/sync/status` and
+	// `/api/library/episodes`, intercepting them with the wrong response
+	// shape — that broke the page during the previous fixture attempt.
+	// This regex matches ONLY the bare /api/library endpoint (with
+	// optional query string), nothing else.
+	await page.route(/\/api\/library(\?[^/]*)?$/, async (route) => {
 		if (route.request().method() !== "GET") {
 			return route.continue();
 		}
