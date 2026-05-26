@@ -145,6 +145,32 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			await updateInstanceTags(app.prisma, id, payload.tags);
 		}
 
+		// Drop process-local qui caches when a qui instance becomes
+		// unreachable from this app's perspective — either disabled
+		// (enabled: true → false) or its service type changed away from
+		// QUI. Mirrors the DELETE handler's invalidation but for the
+		// "kept but inert" case. Without this, a disabled instance's
+		// inode index + torrent list would sit in memory for the rest
+		// of the process lifetime (TTL is read-only; nothing reads a
+		// disabled instance, so no self-healing). No-op for non-qui
+		// services because the keys won't be in those caches.
+		const wasQui = existing.service === "QUI";
+		const nowDisabled = payload.enabled === false && existing.enabled === true;
+		const switchedAwayFromQui =
+			payload.service !== undefined && payload.service.toLowerCase() !== "qui";
+		if (wasQui && (nowDisabled || switchedAwayFromQui)) {
+			const [{ invalidateTorrentListCache }, { clearFileIdIndexCache }] = await Promise.all([
+				import("../lib/qui/torrent-list-cache.js"),
+				import("../lib/library-sync/infohash-backfill-by-inode.js"),
+			]);
+			invalidateTorrentListCache(id);
+			clearFileIdIndexCache(id);
+			request.log.info(
+				{ instanceId: id, reason: nowDisabled ? "disabled" : "service-changed" },
+				"qui caches dropped after instance update",
+			);
+		}
+
 		// Fetch updated instance - include userId to ensure we only get owned instances
 		const fresh = await app.prisma.serviceInstance.findFirst({
 			where: {

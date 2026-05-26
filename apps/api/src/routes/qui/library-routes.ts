@@ -721,11 +721,36 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 			for (const h of hashes) allHashes.add(h);
 		}
 
-		// Resolve per-hash tracker hostnames. We could call the full
-		// `enrichTorrentHashes` here for symmetry, but for the summary
-		// view we only need hostnames — skip the full torrent metadata
-		// to halve the qui round-trips. Re-use the same hostname-safe
-		// extraction logic.
+		// Resolve per-hash tracker hostnames. Originally this loop made TWO
+		// qui round-trips per hash: `getTorrentByHash` purely to look up
+		// which qBit instance hosts that hash (so `getTrackers` knows which
+		// instance to query), then `getTrackers` itself. With the SWR cache
+		// in place, the first lookup becomes a Map.get() — we already have
+		// every torrent in memory after a successful `listAllTorrents`. Cuts
+		// the round-trip count from 2N to N (e.g., 300 → 150 on a 150-hash
+		// page). The cached `QuiTorrent` doesn't carry trackers itself, so
+		// the second call is unavoidable without a wider cache redesign.
+		//
+		// Cache miss → fall through to `getTorrentByHash` so behavior is
+		// identical to the pre-cache path. Happens during a cold SWR window
+		// or for hashes added since the cache was last refreshed.
+		const client = createQuiClient(app, quiInstance);
+		let hashToInstance: Map<string, number>;
+		try {
+			const cachedTorrents = await getCachedAllTorrents(quiInstance.id, client);
+			hashToInstance = new Map(
+				cachedTorrents
+					.filter((t): t is typeof t & { instanceId: number } => typeof t.instanceId === "number")
+					.map((t) => [t.hash.toLowerCase(), t.instanceId]),
+			);
+		} catch {
+			// If the cache fetch fails entirely (qui unreachable), every
+			// per-hash request below would fail the same way. Continue with
+			// an empty map; the per-hash try/catch logs zero hosts and the
+			// summary degrades gracefully rather than 500-ing the whole route.
+			hashToInstance = new Map();
+		}
+
 		const hashToHosts = new Map<string, string[]>();
 		const hashArr = Array.from(allHashes);
 		// Concurrency cap: qui can typically handle ~50 parallel requests
@@ -737,13 +762,19 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 			await Promise.all(
 				batch.map(async (hash) => {
 					try {
-						const client = createQuiClient(app, quiInstance);
-						const torrent = await client.getTorrentByHash(hash);
-						if (!torrent || typeof torrent.instanceId !== "number") {
-							hashToHosts.set(hash, []);
-							return;
+						// Look up which qBit instance hosts this hash. The cache
+						// covers the common case in zero round-trips; cache miss
+						// falls back to the original cross-instance search.
+						let instanceId = hashToInstance.get(hash.toLowerCase());
+						if (instanceId === undefined) {
+							const torrent = await client.getTorrentByHash(hash);
+							if (!torrent || typeof torrent.instanceId !== "number") {
+								hashToHosts.set(hash, []);
+								return;
+							}
+							instanceId = torrent.instanceId;
 						}
-						const trackers = await client.getTrackers(torrent.instanceId, hash);
+						const trackers = await client.getTrackers(instanceId, hash);
 						const hosts = trackers
 							.filter((t) => !t.url.startsWith("** "))
 							.map((t) => extractHostnameSafe(t.url))
