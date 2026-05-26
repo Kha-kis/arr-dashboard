@@ -544,6 +544,28 @@ export const quiKeys = {
 	summary: ["qui", "summary"] as const,
 	attention: (limit?: number) =>
 		limit ? (["qui", "attention", limit] as const) : (["qui", "attention"] as const),
+	// Phase 6 — per-torrent drawer caches. `all` is the broad-invalidate
+	// prefix used on mutation settle so the drawer's open queries refetch;
+	// `byHash` keys each individual query so React Query can cache them
+	// independently when the user opens multiple drawers in sequence.
+	torrentProperties: {
+		all: ["qui", "torrent-properties"] as const,
+		// Inputs may be null while the drawer isn't mounted yet — the
+		// `enabled` flag on the query gates the actual fetch, but the key
+		// is still computed each render, so the signature has to accept
+		// the nullable shape rather than asserting at the call site.
+		byHash: (quiInstanceId: string | null, qbitInstanceId: number | null, hash: string) =>
+			["qui", "torrent-properties", quiInstanceId, qbitInstanceId, hash] as const,
+	},
+	torrentFiles: {
+		all: ["qui", "torrent-files"] as const,
+		byHash: (quiInstanceId: string | null, qbitInstanceId: number | null, hash: string) =>
+			["qui", "torrent-files", quiInstanceId, qbitInstanceId, hash] as const,
+	},
+	// Broad cross-seed prefix — covers both crossSeedAvailability and
+	// crossSeedDiscovery via React Query's prefix-match invalidation. Used
+	// after bulk mutations that can promote/demote cross-seed siblings.
+	crossSeed: ["qui", "cross-seed"] as const,
 };
 
 /* -------------------------------------------------------------------------- */

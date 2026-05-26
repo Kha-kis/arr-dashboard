@@ -79,6 +79,10 @@ const QUALITY_FILTER_VALUES = QUALITY_FILTERS.map(
 	(option) => option.value,
 ) as readonly QualityFilterValue[];
 
+const TORRENT_STATE_FILTER_VALUES = TORRENT_STATE_FILTERS.map(
+	(option) => option.value,
+) as readonly TorrentStateFilterValue[];
+
 /**
  * Normalize a deep-link `?quality=` param to a valid filter value.
  * Returns "all" for missing or unknown inputs so untrusted URLs can't widen the union.
@@ -98,6 +102,21 @@ function parseServiceFilterParam(raw: string | null | undefined): "all" | Librar
 	if (!raw || raw === "all") return "all";
 	const result = libraryServiceSchema.safeParse(raw);
 	return result.success ? result.data : "all";
+}
+
+/**
+ * Normalize a deep-link `?torrentState=` param to a valid filter value.
+ * Returns "all" for missing or unknown inputs. The qui home page's Quick
+ * Actions and the Pulse seeding-health card link into this via
+ * `/library?torrentState=<bucket>`; without this parser the link lands
+ * with no filter applied and the user sees the full library, not the
+ * filtered slice they expected.
+ */
+function parseTorrentStateFilterParam(raw: string | null | undefined): TorrentStateFilterValue {
+	if (!raw) return "all";
+	return (TORRENT_STATE_FILTER_VALUES as readonly string[]).includes(raw)
+		? (raw as TorrentStateFilterValue)
+		: "all";
 }
 
 export interface LibraryFilters {
@@ -164,6 +183,7 @@ export function useLibraryFilters(): LibraryFilters {
 	const searchParams = useSearchParams();
 	const initialServiceParam = searchParams.get("service");
 	const initialQualityParam = searchParams.get("quality");
+	const initialTorrentStateParam = searchParams.get("torrentState");
 	const [serviceFilter, setServiceFilterState] = useState<"all" | LibraryService>(() =>
 		parseServiceFilterParam(initialServiceParam),
 	);
@@ -174,7 +194,9 @@ export function useLibraryFilters(): LibraryFilters {
 	const [qualityFilter, setQualityFilterState] = useState<QualityFilterValue>(() =>
 		parseQualityFilterParam(initialQualityParam),
 	);
-	const [torrentStateFilter, setTorrentStateFilterState] = useState<TorrentStateFilterValue>("all");
+	const [torrentStateFilter, setTorrentStateFilterState] = useState<TorrentStateFilterValue>(() =>
+		parseTorrentStateFilterParam(initialTorrentStateParam),
+	);
 	const [sortBy, setSortByState] = useState<SortByValue>("sortTitle");
 	const [sortOrder, setSortOrderState] = useState<SortOrderValue>("asc");
 	const [page, setPage] = useState(1);
@@ -184,6 +206,7 @@ export function useLibraryFilters(): LibraryFilters {
 	// (which don't update the URL) don't get clobbered by re-renders.
 	const lastServiceParam = useRef(initialServiceParam);
 	const lastQualityParam = useRef(initialQualityParam);
+	const lastTorrentStateParam = useRef(initialTorrentStateParam);
 
 	useEffect(() => {
 		const current = searchParams.get("service");
@@ -198,6 +221,14 @@ export function useLibraryFilters(): LibraryFilters {
 		if (current === lastQualityParam.current) return;
 		lastQualityParam.current = current;
 		setQualityFilterState(parseQualityFilterParam(current));
+		setPage(1);
+	}, [searchParams]);
+
+	useEffect(() => {
+		const current = searchParams.get("torrentState");
+		if (current === lastTorrentStateParam.current) return;
+		lastTorrentStateParam.current = current;
+		setTorrentStateFilterState(parseTorrentStateFilterParam(current));
 		setPage(1);
 	}, [searchParams]);
 

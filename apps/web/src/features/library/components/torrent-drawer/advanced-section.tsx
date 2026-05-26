@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { Button } from "../../../../components/ui/button";
 import { toast } from "../../../../components/ui/toast";
+import { useIncognitoMode } from "../../../../contexts/IncognitoContext";
 import { useQuiRenameTorrent, useQuiTorrentAction } from "../../../../hooks/api/useQui";
 import type { SeriesTorrentCopy } from "../../../../lib/api-client/qui";
+import { getLinuxIsoName, getLinuxSavePath } from "../../../../lib/incognito";
 
 // ── Advanced ──────────────────────────────────────────────────────────
 
@@ -12,10 +14,25 @@ export const AdvancedSection: React.FC<{ copy: SeriesTorrentCopy; canAct: boolea
 	copy,
 	canAct,
 }) => {
+	const [incognito] = useIncognitoMode();
 	const renameMutation = useQuiRenameTorrent();
 	const actionMutation = useQuiTorrentAction();
-	const [renameValue, setRenameValue] = useState(copy.name ?? "");
-	const [locationValue, setLocationValue] = useState(copy.savePath ?? "");
+	// Mask the prefilled values when incognito is on — these inputs would
+	// otherwise leak the real torrent name / save path even though the
+	// drawer header masks the title. The user can still type a real value
+	// to submit a rename or move; the mask covers what the screen was
+	// already showing.
+	const initialName = copy.name ?? "";
+	const initialPath = copy.savePath ?? "";
+	// Torrent name → Linux ISO-style alias; save path → Linux ISO-style
+	// directory tree. Mirror the helpers already used in status-section
+	// and files-section so the masking is consistent across the drawer.
+	const [renameValue, setRenameValue] = useState(
+		incognito ? getLinuxIsoName(initialName) : initialName,
+	);
+	const [locationValue, setLocationValue] = useState(
+		incognito ? getLinuxSavePath(initialPath) : initialPath,
+	);
 	const handleRename = () => {
 		if (!canAct || !renameValue.trim()) return;
 		renameMutation.mutate(

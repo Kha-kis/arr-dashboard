@@ -135,9 +135,11 @@ export const useQuiActionLog = (filters: Omit<QuiActionLogParams, "cursor"> = {}
 };
 
 /**
- * Single-torrent mutation hook (Phase 4.1). On success invalidates the
- * action log so the new row appears immediately, plus the per-item
- * torrent-state query so the badge re-renders with qui's new state.
+ * Single-torrent mutation hook (Phase 4.1). On settle (success OR failure)
+ * invalidates the action log so the new row appears immediately, plus the
+ * open drawer's per-torrent properties/files queries so the user sees the
+ * fresh state qui reports — including the "torrent disappeared" case
+ * where qui rejected the call.
  */
 export const useQuiTorrentAction = () => {
 	const queryClient = useQueryClient();
@@ -145,23 +147,22 @@ export const useQuiTorrentAction = () => {
 		mutationFn: (args: SingleTorrentActionArgs) => postQuiTorrentAction(args),
 		// `onSettled` (not `onSuccess`) — the audit log records failures too,
 		// so the My Actions tab must refresh on the failed-mutation path or
-		// the new `failed` row stays invisible. The torrent-state cache also
-		// needs invalidation on failure: if qui rejected the call because the
-		// torrent disappeared from qui, the dashboard's cached state is stale
-		// in a different way and a refetch corrects it.
+		// the new `failed` row stays invisible.
 		onSettled: () => {
 			queryClient.invalidateQueries({ queryKey: quiKeys.actions() });
-			queryClient.invalidateQueries({
-				queryKey: ["qui", "torrent-state"] satisfies readonly string[],
-			});
+			// Broad invalidation across all open drawers' per-torrent
+			// caches — `.all` is a prefix of every `byHash(...)` key so
+			// React Query's prefix matching refetches whichever drawer is
+			// currently mounted.
+			queryClient.invalidateQueries({ queryKey: quiKeys.torrentProperties.all });
+			queryClient.invalidateQueries({ queryKey: quiKeys.torrentFiles.all });
 		},
 	});
 };
 
 /**
  * Bulk-mutation hook (Phase 4.2). Same invalidation semantics as the
- * single-torrent variant — the action log refreshes and any open
- * torrent-state queries re-fetch. Cross-seed invalidates too because a
+ * single-torrent variant. Cross-seed invalidates too because a
  * successful bulk mutation can promote/demote torrents in the
  * "siblings" view.
  */
@@ -171,12 +172,9 @@ export const useQuiBulkAction = () => {
 		mutationFn: (args: BulkTorrentActionArgs) => postQuiBulkAction(args),
 		onSettled: () => {
 			queryClient.invalidateQueries({ queryKey: quiKeys.actions() });
-			queryClient.invalidateQueries({
-				queryKey: ["qui", "torrent-state"] satisfies readonly string[],
-			});
-			queryClient.invalidateQueries({
-				queryKey: ["qui", "cross-seed"] satisfies readonly string[],
-			});
+			queryClient.invalidateQueries({ queryKey: quiKeys.torrentProperties.all });
+			queryClient.invalidateQueries({ queryKey: quiKeys.torrentFiles.all });
+			queryClient.invalidateQueries({ queryKey: quiKeys.crossSeed });
 		},
 	});
 };
@@ -198,7 +196,7 @@ export const useQuiTorrentProperties = (args: {
 }) => {
 	const { quiInstanceId, qbitInstanceId, hash, enabled = true } = args;
 	return useQuery({
-		queryKey: ["qui", "torrent-properties", quiInstanceId, qbitInstanceId, hash] as const,
+		queryKey: quiKeys.torrentProperties.byHash(quiInstanceId, qbitInstanceId, hash),
 		queryFn: () =>
 			fetchQuiTorrentProperties({
 				quiInstanceId: quiInstanceId!,
@@ -222,7 +220,7 @@ export const useQuiTorrentFiles = (args: {
 }) => {
 	const { quiInstanceId, qbitInstanceId, hash, enabled = true } = args;
 	return useQuery({
-		queryKey: ["qui", "torrent-files", quiInstanceId, qbitInstanceId, hash] as const,
+		queryKey: quiKeys.torrentFiles.byHash(quiInstanceId, qbitInstanceId, hash),
 		queryFn: () =>
 			fetchQuiTorrentFiles({
 				quiInstanceId: quiInstanceId!,
