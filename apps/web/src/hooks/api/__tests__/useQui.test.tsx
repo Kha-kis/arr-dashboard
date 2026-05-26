@@ -29,7 +29,14 @@ import { quiKeys } from "../../../lib/query-keys";
 vi.mock("../../../lib/api-client/qui");
 
 import * as quiApi from "../../../lib/api-client/qui";
-import { useQuiBulkAction, useQuiRenameTorrent, useQuiTorrentAction } from "../useQui";
+import {
+	useQuiBulkAction,
+	useQuiCapabilities,
+	useQuiCategories,
+	useQuiRenameTorrent,
+	useQuiTags,
+	useQuiTorrentAction,
+} from "../useQui";
 
 /**
  * Helper — render a hook inside a fresh QueryClient with the
@@ -248,5 +255,83 @@ describe("useQuiRenameTorrent — rename mutation", () => {
 			),
 		).toBe(true);
 		expect(invalidations).not.toContainEqual(["qui", "torrent-state"]);
+	});
+});
+
+describe("useQuiCapabilities / useQuiTags / useQuiCategories — `enabled` gate", () => {
+	// These three hooks share the pattern:
+	//   enabled: enabled && quiInstanceId !== null && qbitInstanceId !== null
+	// A typo from `&&` to `||` would fire requests with `null!` and burn
+	// 401s on every render the drawer is closed. These tests pin the gate.
+
+	function setupClient() {
+		const client = new QueryClient();
+		vi.spyOn(quiApi, "fetchQuiCapabilities").mockResolvedValue({} as never);
+		vi.spyOn(quiApi, "fetchQuiCategories").mockResolvedValue([] as never);
+		vi.spyOn(quiApi, "fetchQuiTags").mockResolvedValue([] as never);
+		return client;
+	}
+
+	it("useQuiCapabilities does NOT fetch when quiInstanceId is null", async () => {
+		const client = setupClient();
+		renderHook(() => useQuiCapabilities({ quiInstanceId: null, qbitInstanceId: 0 }), {
+			wrapper: createWrapper(client),
+		});
+		// Give React Query a tick — if `enabled` was wrong, the fetch
+		// would already have fired by now.
+		await new Promise((r) => setTimeout(r, 20));
+		expect(quiApi.fetchQuiCapabilities).not.toHaveBeenCalled();
+	});
+
+	it("useQuiCapabilities does NOT fetch when qbitInstanceId is null", async () => {
+		const client = setupClient();
+		renderHook(() => useQuiCapabilities({ quiInstanceId: "qui-1", qbitInstanceId: null }), {
+			wrapper: createWrapper(client),
+		});
+		await new Promise((r) => setTimeout(r, 20));
+		expect(quiApi.fetchQuiCapabilities).not.toHaveBeenCalled();
+	});
+
+	it("useQuiCapabilities does NOT fetch when enabled=false", async () => {
+		const client = setupClient();
+		renderHook(
+			() =>
+				useQuiCapabilities({
+					quiInstanceId: "qui-1",
+					qbitInstanceId: 0,
+					enabled: false,
+				}),
+			{ wrapper: createWrapper(client) },
+		);
+		await new Promise((r) => setTimeout(r, 20));
+		expect(quiApi.fetchQuiCapabilities).not.toHaveBeenCalled();
+	});
+
+	it("useQuiCapabilities DOES fetch when both ids present + enabled (default)", async () => {
+		const client = setupClient();
+		renderHook(() => useQuiCapabilities({ quiInstanceId: "qui-1", qbitInstanceId: 0 }), {
+			wrapper: createWrapper(client),
+		});
+		await waitFor(() => {
+			expect(quiApi.fetchQuiCapabilities).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	it("useQuiTags applies the same null-guard", async () => {
+		const client = setupClient();
+		renderHook(() => useQuiTags({ quiInstanceId: null, qbitInstanceId: 0 }), {
+			wrapper: createWrapper(client),
+		});
+		await new Promise((r) => setTimeout(r, 20));
+		expect(quiApi.fetchQuiTags).not.toHaveBeenCalled();
+	});
+
+	it("useQuiCategories applies the same null-guard", async () => {
+		const client = setupClient();
+		renderHook(() => useQuiCategories({ quiInstanceId: "qui-1", qbitInstanceId: null }), {
+			wrapper: createWrapper(client),
+		});
+		await new Promise((r) => setTimeout(r, 20));
+		expect(quiApi.fetchQuiCategories).not.toHaveBeenCalled();
 	});
 });

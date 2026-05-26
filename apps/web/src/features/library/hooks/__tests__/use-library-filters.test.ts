@@ -1,5 +1,7 @@
+import { normalizedTorrentStateSchema } from "@arr/shared";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { TORRENT_STATE_FILTERS } from "../use-library-filters";
 
 // Mock next/navigation so the hook can read URL params under jsdom. We hold the
 // "current params" as a module-scoped object so warm-navigation tests can mutate
@@ -265,5 +267,44 @@ describe("useLibraryFilters — torrentState deep-link param (qui Quick Action t
 		expect(result.current.qualityFilter).toBe("cutoff-unmet");
 		expect(result.current.serviceFilter).toBe("radarr");
 		expect(result.current.torrentStateFilter).toBe("stalled_dl");
+	});
+});
+
+describe("TORRENT_STATE_FILTERS shape (mirror of normalizedTorrentStateSchema)", () => {
+	// Pin the relationship between the UI filter list and the shared Zod
+	// schema. The comment on TORRENT_STATE_FILTERS says it "mirrors
+	// normalizedTorrentStateSchema in @arr/shared" — but nothing enforced
+	// that. If qBit grows a new state and we add it to the schema, the UI
+	// filter list would silently drop it; if we add a new UI bucket, the
+	// schema wouldn't know. This block fails loudly the moment they drift.
+
+	it("includes every normalized-state value from the shared schema", () => {
+		const schemaValues = new Set(normalizedTorrentStateSchema.options);
+		const filterValues = new Set(TORRENT_STATE_FILTERS.map((f) => f.value));
+		for (const schemaValue of schemaValues) {
+			expect(filterValues.has(schemaValue)).toBe(true);
+		}
+	});
+
+	it("only extends the schema with 'all' and 'none' UI buckets", () => {
+		// 'all' = the no-filter placeholder. 'none' = "not correlated with
+		// qui" (rows where infoHash never matched). Any other deviation
+		// from the shared schema is unintentional drift.
+		const schemaValues = new Set<string>(normalizedTorrentStateSchema.options);
+		const filterValues = new Set(TORRENT_STATE_FILTERS.map((f) => f.value));
+		const uiOnly = [...filterValues].filter((v) => !schemaValues.has(v));
+		expect(new Set(uiOnly)).toEqual(new Set(["all", "none"]));
+	});
+
+	it("preserves operator-priority ordering — 'all' first, problems before healthy", () => {
+		// This isn't strictly correctness, but the ordering is intentional
+		// (see the comment in use-library-filters.ts:36-39). A reviewer
+		// re-alphabetizing the list would break the UX without changing
+		// any other behavior — this test surfaces that.
+		expect(TORRENT_STATE_FILTERS[0]?.value).toBe("all");
+		const stalledIdx = TORRENT_STATE_FILTERS.findIndex((f) => f.value === "stalled_dl");
+		const seedingIdx = TORRENT_STATE_FILTERS.findIndex((f) => f.value === "seeding");
+		expect(stalledIdx).toBeGreaterThan(0);
+		expect(stalledIdx).toBeLessThan(seedingIdx);
 	});
 });

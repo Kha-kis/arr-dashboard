@@ -929,3 +929,287 @@ describe("POST /qui/dirscan/trigger", () => {
 		expect(mockQuiClient.triggerDirScan).toHaveBeenCalledWith("/data/media/tv/Some Show");
 	});
 });
+
+// ────────────────────────────────────────────────────────────────────────
+// Phase 6 — torrent mutation routes (rename + tracker CRUD)
+//
+// These bypass the bulk-action transport because qui exposes them as
+// individual endpoints. Audit-log shape uses synthetic `action` values
+// prefixed `nonBulk.` to stay distinct from the bulk-action enum.
+// ────────────────────────────────────────────────────────────────────────
+
+describe("POST /qui/instances/:id/qbit/:instanceId/torrents/:hash/rename", () => {
+	it("calls renameTorrent with the new name and returns success", async () => {
+		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+		mockQuiClient.renameTorrent.mockResolvedValue(undefined);
+		const res = await injectAuthenticated(
+			"POST",
+			`/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/rename`,
+			{ body: { name: "Better Linux ISO Name" } },
+		);
+		expect(res.statusCode).toBe(200);
+		expect(JSON.parse(res.payload).status).toBe("success");
+		expect(mockQuiClient.renameTorrent).toHaveBeenCalledWith(
+			3,
+			VALID_HASH,
+			"Better Linux ISO Name",
+		);
+	});
+
+	it("rejects an empty name (Zod min(1))", async () => {
+		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+		const res = await injectAuthenticated(
+			"POST",
+			`/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/rename`,
+			{ body: { name: "" } },
+		);
+		expect(res.statusCode).toBe(400);
+		expect(mockQuiClient.renameTorrent).not.toHaveBeenCalled();
+	});
+
+	it("rejects a name longer than 1024 chars (Zod max bound)", async () => {
+		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+		const res = await injectAuthenticated(
+			"POST",
+			`/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/rename`,
+			{ body: { name: "x".repeat(1025) } },
+		);
+		expect(res.statusCode).toBe(400);
+		expect(mockQuiClient.renameTorrent).not.toHaveBeenCalled();
+	});
+
+	it("rejects a non-numeric qbit instance id", async () => {
+		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+		const res = await injectAuthenticated(
+			"POST",
+			`/qui/instances/qui-1/qbit/abc/torrents/${VALID_HASH}/rename`,
+			{ body: { name: "ok" } },
+		);
+		expect(res.statusCode).toBe(400);
+		expect(mockQuiClient.renameTorrent).not.toHaveBeenCalled();
+	});
+
+	it("returns 502 with qui error message when qui rejects the rename", async () => {
+		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+		mockQuiClient.renameTorrent.mockRejectedValue(
+			new Error("qui request to /api/torrents/rename failed: 409 Conflict"),
+		);
+		const res = await injectAuthenticated(
+			"POST",
+			`/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/rename`,
+			{ body: { name: "ok" } },
+		);
+		expect(res.statusCode).toBe(502);
+		expect(JSON.parse(res.payload).message).toMatch(/409 Conflict/);
+	});
+
+	it("returns 404 when the qui instance is not found / not owned", async () => {
+		mockRequireQuiInstance.mockRejectedValue(new InstanceNotFoundError("qui-missing"));
+		const res = await injectAuthenticated(
+			"POST",
+			`/qui/instances/qui-missing/qbit/3/torrents/${VALID_HASH}/rename`,
+			{ body: { name: "ok" } },
+		);
+		expect(res.statusCode).toBe(404);
+		expect(mockQuiClient.renameTorrent).not.toHaveBeenCalled();
+	});
+});
+
+describe("POST /qui/instances/:id/qbit/:instanceId/torrents/:hash/trackers/add", () => {
+	it("calls addTrackers with the supplied URLs", async () => {
+		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+		mockQuiClient.addTrackers.mockResolvedValue(undefined);
+		const urls = [
+			"https://tracker.example.com/announce",
+			"https://backup-tracker.example.com/announce",
+		];
+		const res = await injectAuthenticated(
+			"POST",
+			`/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/trackers/add`,
+			{ body: { urls } },
+		);
+		expect(res.statusCode).toBe(200);
+		expect(mockQuiClient.addTrackers).toHaveBeenCalledWith(3, VALID_HASH, urls);
+	});
+
+	it("rejects an empty url list (Zod min(1))", async () => {
+		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+		const res = await injectAuthenticated(
+			"POST",
+			`/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/trackers/add`,
+			{ body: { urls: [] } },
+		);
+		expect(res.statusCode).toBe(400);
+		expect(mockQuiClient.addTrackers).not.toHaveBeenCalled();
+	});
+
+	it("rejects a url list longer than 50 entries (Zod max bound)", async () => {
+		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+		const urls = Array.from({ length: 51 }, (_, i) => `https://t${i}.example.com/announce`);
+		const res = await injectAuthenticated(
+			"POST",
+			`/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/trackers/add`,
+			{ body: { urls } },
+		);
+		expect(res.statusCode).toBe(400);
+		expect(mockQuiClient.addTrackers).not.toHaveBeenCalled();
+	});
+
+	it("returns 502 with qui error when addTrackers throws", async () => {
+		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+		mockQuiClient.addTrackers.mockRejectedValue(new Error("qui addTrackers exploded"));
+		const res = await injectAuthenticated(
+			"POST",
+			`/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/trackers/add`,
+			{ body: { urls: ["https://tracker.example.com/announce"] } },
+		);
+		expect(res.statusCode).toBe(502);
+		expect(JSON.parse(res.payload).message).toMatch(/exploded/);
+	});
+});
+
+describe("POST /qui/instances/:id/qbit/:instanceId/torrents/:hash/trackers/remove", () => {
+	// Remove takes HOSTNAMES, not URLs. The route resolves hostname → full
+	// URL server-side so the URL (with its passkey) never leaves the API
+	// process. This is a load-bearing safety property.
+
+	it("resolves hostname to full URL and removes the matching tracker", async () => {
+		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+		mockQuiClient.getTrackers.mockResolvedValue([
+			{
+				url: "https://tracker.example.com/announce?passkey=SECRET",
+				status: 2,
+				msg: "",
+				numSeeds: 5,
+				numLeeches: 0,
+				numPeers: 0,
+			},
+			{
+				url: "https://other-tracker.example.com/announce",
+				status: 2,
+				msg: "",
+				numSeeds: 1,
+				numLeeches: 0,
+				numPeers: 0,
+			},
+		]);
+		mockQuiClient.removeTrackers.mockResolvedValue(undefined);
+
+		const res = await injectAuthenticated(
+			"POST",
+			`/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/trackers/remove`,
+			{ body: { hostnames: ["tracker.example.com"] } },
+		);
+
+		expect(res.statusCode).toBe(200);
+		// Route should pass the FULL announce URL (passkey and all) to
+		// the qui client — that URL only ever lives in this process.
+		expect(mockQuiClient.removeTrackers).toHaveBeenCalledWith(3, VALID_HASH, [
+			"https://tracker.example.com/announce?passkey=SECRET",
+		]);
+	});
+
+	it("returns 404 when no tracker matches the supplied hostname", async () => {
+		// Trying to remove a hostname that doesn't exist on the torrent —
+		// the route should bail with 404, not silently no-op.
+		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+		mockQuiClient.getTrackers.mockResolvedValue([
+			{
+				url: "https://different.example.com/announce",
+				status: 2,
+				msg: "",
+				numSeeds: 0,
+				numLeeches: 0,
+				numPeers: 0,
+			},
+		]);
+
+		const res = await injectAuthenticated(
+			"POST",
+			`/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/trackers/remove`,
+			{ body: { hostnames: ["tracker.example.com"] } },
+		);
+
+		expect(res.statusCode).toBe(404);
+		expect(mockQuiClient.removeTrackers).not.toHaveBeenCalled();
+	});
+
+	it("rejects an empty hostname list", async () => {
+		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+		const res = await injectAuthenticated(
+			"POST",
+			`/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/trackers/remove`,
+			{ body: { hostnames: [] } },
+		);
+		expect(res.statusCode).toBe(400);
+		expect(mockQuiClient.getTrackers).not.toHaveBeenCalled();
+		expect(mockQuiClient.removeTrackers).not.toHaveBeenCalled();
+	});
+});
+
+describe("POST /qui/instances/:id/qbit/:instanceId/torrents/:hash/trackers/edit", () => {
+	// Edit identifies the old tracker by HOSTNAME (same passkey-safety
+	// pattern as removal). The new URL is operator-supplied and arrives
+	// whole.
+
+	it("resolves oldHostname to full URL and forwards the edit to qui", async () => {
+		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+		mockQuiClient.getTrackers.mockResolvedValue([
+			{
+				url: "https://old-tracker.example.com/announce?passkey=SECRET",
+				status: 2,
+				msg: "",
+				numSeeds: 0,
+				numLeeches: 0,
+				numPeers: 0,
+			},
+		]);
+		mockQuiClient.editTracker.mockResolvedValue(undefined);
+
+		const res = await injectAuthenticated(
+			"POST",
+			`/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/trackers/edit`,
+			{
+				body: {
+					oldHostname: "old-tracker.example.com",
+					newURL: "https://new-tracker.example.com/announce",
+				},
+			},
+		);
+
+		expect(res.statusCode).toBe(200);
+		// Old full URL (with passkey) preserved across the route call.
+		expect(mockQuiClient.editTracker).toHaveBeenCalledWith(
+			3,
+			VALID_HASH,
+			"https://old-tracker.example.com/announce?passkey=SECRET",
+			"https://new-tracker.example.com/announce",
+		);
+	});
+
+	it("returns 404 when oldHostname doesn't match any tracker on the torrent", async () => {
+		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+		mockQuiClient.getTrackers.mockResolvedValue([
+			{
+				url: "https://other.example.com/announce",
+				status: 2,
+				msg: "",
+				numSeeds: 0,
+				numLeeches: 0,
+				numPeers: 0,
+			},
+		]);
+		const res = await injectAuthenticated(
+			"POST",
+			`/qui/instances/qui-1/qbit/3/torrents/${VALID_HASH}/trackers/edit`,
+			{
+				body: {
+					oldHostname: "missing.example.com",
+					newURL: "https://new.example.com/announce",
+				},
+			},
+		);
+		expect(res.statusCode).toBe(404);
+		expect(mockQuiClient.editTracker).not.toHaveBeenCalled();
+	});
+});
