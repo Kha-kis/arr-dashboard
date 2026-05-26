@@ -70,6 +70,21 @@ const SAMPLE_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes — enough resolution to 
 const WARN_HEAP_PCT = 0.9;
 const INFO_HEAP_PCT = 0.8;
 
+// RSS-bloat detection (issue #427 / #471 follow-up).
+//
+// A healthy Node process sits at ~1.3–1.6x heap (libuv, V8 metadata, native
+// deps, TLS buffers). Anything ≥ 2x means non-V8 allocations exceed the V8
+// heap itself — classic external/native memory pressure or glibc arena
+// fragmentation. The V8 heap can look healthy while RSS bloats past the
+// container limit, which is exactly what was observed in #471 (heapTotal
+// 347MB / RSS 1227MB → 3.5x).
+//
+// Skip the first hour to avoid startup-spike false positives, and rate-limit
+// the warning so a sustained-bloat process doesn't spam logs every 5 minutes.
+const RSS_BLOAT_RATIO = 2.0;
+const RSS_BLOAT_MIN_UPTIME_SEC = 60 * 60; // 1 hour warmup window
+const RSS_BLOAT_LOG_INTERVAL_MS = 60 * 60 * 1000; // at most once per hour
+
 /**
  * Resolve the heap-snapshot directory. The /config/* path is the Docker
  * production convention (matches logger.ts and config-dev path layout).
@@ -100,6 +115,10 @@ interface MemorySample {
 
 let lastSnapshotAt: number | null = null;
 let snapshotInFlight = false;
+// Module-level mutable state for the once-per-hour bloat throttle.
+// Held as an object property so the binding itself is `const` (biome) while
+// the field is freely reassigned by the sampler.
+const rssBloatState: { lastLogAt: number | null } = { lastLogAt: null };
 
 /**
  * Stream a heap snapshot to disk. Returns true if a file was written.
@@ -197,11 +216,17 @@ const heapMonitorPlugin = fastifyPlugin(
 			const externalMB = Math.round(m.external / 1024 / 1024);
 			const arrayBuffersMB = Math.round((m.arrayBuffers ?? 0) / 1024 / 1024);
 			const now = Date.now();
+			const uptimeSec = Math.round(process.uptime());
 			// `heapPct` is heap-used relative to the V8-allocated heap, not the
 			// `--max-old-space-size` cap. It still tracks pressure: V8 grows
 			// heapTotal toward the cap, so heapPct climbing toward 1.0 means
 			// V8 is squeezing the live set into all the space it has left.
 			const heapPct = heapTotalMB > 0 ? heapUsedMB / heapTotalMB : 0;
+			// `rssToHeapRatio` discriminates JS-side leaks (≈1.3–1.6x, normal)
+			// from external/native memory pressure or glibc fragmentation (≥2x).
+			// V8's heapPct can be healthy while RSS bloats past the container
+			// cap — that's what bit reporters in #471.
+			const rssToHeapRatio = heapTotalMB > 0 ? Math.round((rssMB / heapTotalMB) * 100) / 100 : 0;
 
 			const payload: Record<string, number | undefined> = {
 				heapUsedMB,
@@ -210,7 +235,8 @@ const heapMonitorPlugin = fastifyPlugin(
 				externalMB,
 				arrayBuffersMB,
 				heapPct: Math.round(heapPct * 100) / 100,
-				uptimeSec: Math.round(process.uptime()),
+				rssToHeapRatio,
+				uptimeSec,
 			};
 
 			if (lastSample) {
@@ -246,6 +272,24 @@ const heapMonitorPlugin = fastifyPlugin(
 				app.log.info(payload, "Heap usage above 80%");
 			} else {
 				app.log.debug(payload, "Heap usage sample");
+			}
+
+			// RSS-bloat detection runs independently of heap pressure: the V8
+			// heap can be healthy (heapPct < INFO_HEAP_PCT) while RSS climbs
+			// past the container limit. Skip the warmup window so startup
+			// spikes don't false-positive, and throttle to once-per-hour so
+			// a sustained-bloat process doesn't spam logs.
+			if (
+				rssToHeapRatio >= RSS_BLOAT_RATIO &&
+				uptimeSec >= RSS_BLOAT_MIN_UPTIME_SEC &&
+				(rssBloatState.lastLogAt === null ||
+					now - rssBloatState.lastLogAt >= RSS_BLOAT_LOG_INTERVAL_MS)
+			) {
+				app.log.warn(
+					payload,
+					"RSS is ≥2x V8 heap — likely external/native memory or glibc arena fragmentation. If RSS keeps climbing, try setting MALLOC_ARENA_MAX=2 (issue #471).",
+				);
+				rssBloatState.lastLogAt = now;
 			}
 		};
 
