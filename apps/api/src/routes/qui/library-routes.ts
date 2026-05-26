@@ -867,7 +867,30 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 			log: request.log,
 			batchSize: 10000,
 		});
-		return reply.send({ movieSweep, episodeSync, episodeSweep });
+		// Flatten the three-phase result into the aggregate the client
+		// expects (`QuiBackfillNowResult`). Previously the route returned
+		// `{ movieSweep, episodeSync, episodeSweep }` while the client
+		// type declared a flat `{ rowsScanned, rowsHashed, ... }`,
+		// causing `data.rowsHashed.toLocaleString()` to TypeError and the
+		// frontend to show a false "Backfill failed" toast even though
+		// the work succeeded. `episodeSync` doesn't contribute row counts
+		// (it does an *arr API fetch + DB upsert, no hashing), so its
+		// fields are folded into the aggregate only via `errors` +
+		// `durationMs`. `usersScanned` takes the max — the three sweeps
+		// scan the same set of qui-enabled users, so summing would
+		// overcount.
+		return reply.send({
+			usersScanned: Math.max(
+				movieSweep.usersScanned,
+				episodeSync.usersScanned,
+				episodeSweep.usersScanned,
+			),
+			rowsScanned: movieSweep.rowsScanned + episodeSweep.rowsScanned,
+			rowsHashed: movieSweep.rowsHashed + episodeSweep.rowsHashed,
+			rowsMissed: movieSweep.rowsMissed + episodeSweep.rowsMissed,
+			errors: movieSweep.errors + episodeSync.errors + episodeSweep.errors,
+			durationMs: movieSweep.durationMs + episodeSync.durationMs + episodeSweep.durationMs,
+		});
 	});
 
 	app.get<{ Querystring: { limit?: string } }>("/qui/attention", async (request, reply) => {

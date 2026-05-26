@@ -44,6 +44,27 @@ vi.mock("../../lib/qui/client-factory.js", () => ({
 	createQuiClient: vi.fn(() => mockQuiClient),
 }));
 
+// Mocked backfill sweeps for the /qui/backfill/run-now route test. Each
+// sweep returns its real result shape so the route's aggregate-flatten
+// logic can be exercised end-to-end. The sweeps themselves are unit-
+// tested elsewhere; here we only care about the response-shape contract
+// between the route and the client.
+const { mockRunPathBackfillSweep, mockRunEpisodeFileSync, mockRunEpisodeBackfillSweep } =
+	vi.hoisted(() => ({
+		mockRunPathBackfillSweep: vi.fn(),
+		mockRunEpisodeFileSync: vi.fn(),
+		mockRunEpisodeBackfillSweep: vi.fn(),
+	}));
+
+vi.mock("../../lib/library-sync/infohash-backfill-by-path.js", () => ({
+	runPathBackfillSweep: (...args: unknown[]) => mockRunPathBackfillSweep(...args),
+}));
+
+vi.mock("../../lib/library-sync/episode-file-backfill.js", () => ({
+	runEpisodeFileSync: (...args: unknown[]) => mockRunEpisodeFileSync(...args),
+	runEpisodeBackfillSweep: (...args: unknown[]) => mockRunEpisodeBackfillSweep(...args),
+}));
+
 import Fastify from "fastify";
 import { InstanceNotFoundError } from "../../lib/errors.js";
 import { registerQuiRoutes } from "../qui.js";
@@ -1211,5 +1232,163 @@ describe("POST /qui/instances/:id/qbit/:instanceId/torrents/:hash/trackers/edit"
 		);
 		expect(res.statusCode).toBe(404);
 		expect(mockQuiClient.editTracker).not.toHaveBeenCalled();
+	});
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// /qui/backfill/run-now — wire-shape regression guard
+//
+// The route runs THREE separate sweeps internally (movie path-backfill,
+// episode-file sync, episode path-backfill) and returns ONE aggregate
+// matching `QuiBackfillNowResult` on the client. An earlier version of
+// the route returned `{ movieSweep, episodeSync, episodeSweep }` while
+// the client type declared the flat aggregate — so
+// `data.rowsHashed.toLocaleString()` on the frontend threw, surfacing as
+// a false "Backfill failed" toast even though the work succeeded. These
+// tests pin the contract so that drift can't return silently.
+// ────────────────────────────────────────────────────────────────────────
+
+describe("POST /qui/backfill/run-now — aggregate response shape", () => {
+	beforeEach(() => {
+		mockRunPathBackfillSweep.mockReset();
+		mockRunEpisodeFileSync.mockReset();
+		mockRunEpisodeBackfillSweep.mockReset();
+	});
+
+	it("returns a flat aggregate with every field QuiBackfillNowResult expects", async () => {
+		mockRunPathBackfillSweep.mockResolvedValue({
+			usersScanned: 1,
+			rowsScanned: 100,
+			rowsHashed: 70,
+			rowsMissed: 30,
+			errors: 1,
+			durationMs: 1200,
+		});
+		mockRunEpisodeFileSync.mockResolvedValue({
+			usersScanned: 1,
+			seriesScanned: 12,
+			filesUpserted: 80,
+			filesDeleted: 5,
+			errors: 0,
+			durationMs: 800,
+		});
+		mockRunEpisodeBackfillSweep.mockResolvedValue({
+			usersScanned: 1,
+			rowsScanned: 200,
+			rowsHashed: 150,
+			rowsMissed: 50,
+			errors: 2,
+			durationMs: 1500,
+		});
+
+		const res = await injectAuthenticated("POST", "/qui/backfill/run-now", { body: {} });
+
+		expect(res.statusCode).toBe(200);
+		const body = JSON.parse(res.payload);
+		// Every required field on QuiBackfillNowResult must be present
+		// AND must be a number. `rowsHashed` is the specific field that
+		// crashed `qui-home-client.tsx:147` when it was missing — this
+		// assertion is the regression guard for that exact bug.
+		for (const key of [
+			"usersScanned",
+			"rowsScanned",
+			"rowsHashed",
+			"rowsMissed",
+			"errors",
+			"durationMs",
+		] as const) {
+			expect(body[key], `field "${key}" must be present and numeric`).toEqual(expect.any(Number));
+		}
+		// The aggregate arithmetic — sums for row counts (movie + episode
+		// sweeps both contribute rows), max for usersScanned (the three
+		// sweeps scan the same set of qui-enabled users, summing would
+		// overcount), sum for errors + durationMs across all three phases.
+		expect(body.rowsScanned).toBe(100 + 200);
+		expect(body.rowsHashed).toBe(70 + 150);
+		expect(body.rowsMissed).toBe(30 + 50);
+		expect(body.usersScanned).toBe(1);
+		expect(body.errors).toBe(1 + 0 + 2);
+		expect(body.durationMs).toBe(1200 + 800 + 1500);
+	});
+
+	it("does NOT return the legacy three-phase shape (regression guard)", async () => {
+		// The pre-fix shape was `{ movieSweep, episodeSync, episodeSweep }`
+		// — these keys must NEVER appear at the top level of the response,
+		// otherwise the client's type-cast would silently consume the
+		// wrong shape again.
+		mockRunPathBackfillSweep.mockResolvedValue({
+			usersScanned: 0,
+			rowsScanned: 0,
+			rowsHashed: 0,
+			rowsMissed: 0,
+			errors: 0,
+			durationMs: 0,
+		});
+		mockRunEpisodeFileSync.mockResolvedValue({
+			usersScanned: 0,
+			seriesScanned: 0,
+			filesUpserted: 0,
+			filesDeleted: 0,
+			errors: 0,
+			durationMs: 0,
+		});
+		mockRunEpisodeBackfillSweep.mockResolvedValue({
+			usersScanned: 0,
+			rowsScanned: 0,
+			rowsHashed: 0,
+			rowsMissed: 0,
+			errors: 0,
+			durationMs: 0,
+		});
+
+		const res = await injectAuthenticated("POST", "/qui/backfill/run-now", { body: {} });
+		const body = JSON.parse(res.payload);
+
+		expect(body.movieSweep).toBeUndefined();
+		expect(body.episodeSync).toBeUndefined();
+		expect(body.episodeSweep).toBeUndefined();
+	});
+
+	it("handles a zero-result run cleanly (no NaN, no missing fields)", async () => {
+		// Empty-library case — every counter is 0, durations 0. The
+		// aggregate must still come back with all six numeric fields,
+		// not undefined or NaN.
+		mockRunPathBackfillSweep.mockResolvedValue({
+			usersScanned: 0,
+			rowsScanned: 0,
+			rowsHashed: 0,
+			rowsMissed: 0,
+			errors: 0,
+			durationMs: 0,
+		});
+		mockRunEpisodeFileSync.mockResolvedValue({
+			usersScanned: 0,
+			seriesScanned: 0,
+			filesUpserted: 0,
+			filesDeleted: 0,
+			errors: 0,
+			durationMs: 0,
+		});
+		mockRunEpisodeBackfillSweep.mockResolvedValue({
+			usersScanned: 0,
+			rowsScanned: 0,
+			rowsHashed: 0,
+			rowsMissed: 0,
+			errors: 0,
+			durationMs: 0,
+		});
+
+		const res = await injectAuthenticated("POST", "/qui/backfill/run-now", { body: {} });
+		expect(res.statusCode).toBe(200);
+		const body = JSON.parse(res.payload);
+		expect(body).toEqual({
+			usersScanned: 0,
+			rowsScanned: 0,
+			rowsHashed: 0,
+			rowsMissed: 0,
+			errors: 0,
+			durationMs: 0,
+		});
+		expect(Number.isNaN(body.rowsHashed)).toBe(false);
 	});
 });
