@@ -377,14 +377,16 @@ describe("retryRequest", () => {
 // ===========================================================================
 
 describe("search", () => {
-	it("forwards query and page params correctly", async () => {
+	it("forwards query and page params with RFC 3986 space encoding", async () => {
 		factory.rawRequest.mockResolvedValue(mockResponse(makeDiscoverResponse()));
 
 		await client.search({ query: "Fight Club", page: 2 });
 
 		const path = factory.rawRequest.mock.calls[0]![1] as string;
 		expect(path).toContain("/api/v1/search");
-		expect(path).toContain("query=Fight+Club");
+		// Issue #470: Jellyseerr/Overseerr reject `+` in query params; spaces must be %20.
+		expect(path).toContain("query=Fight%20Club");
+		expect(path).not.toContain("query=Fight+Club");
 		expect(path).toContain("page=2");
 	});
 

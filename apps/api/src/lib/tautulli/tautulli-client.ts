@@ -219,9 +219,16 @@ export class TautulliClient {
 			}
 		}
 
+		// URL.toString() emits form-urlencoded `+` for spaces in query params.
+		// Strict upstream URL parsers can reject `+` as a reserved character
+		// (see issue #470 for the Seerr equivalent). Normalise to RFC 3986
+		// `%20` in the query portion only — current callers never pass spaces,
+		// so this is preemptive hardening for future ones.
+		const safeUrl = `${url.origin}${url.pathname}${url.search.replace(/\+/g, "%20")}${url.hash}`;
+
 		let response: Response;
 		try {
-			response = await fetch(url.toString(), {
+			response = await fetch(safeUrl, {
 				headers: { Accept: "application/json" },
 				signal: AbortSignal.timeout(this.timeout),
 			});

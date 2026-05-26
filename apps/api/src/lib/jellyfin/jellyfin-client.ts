@@ -285,8 +285,13 @@ export class JellyfinClient {
 			Limit: "10000",
 		});
 
+		// Force RFC 3986 spaces (%20) instead of form-urlencoded `+` because tag
+		// names like "Kids Stuff" carry user-supplied spaces; strict upstream URL
+		// parsers can reject `+` in query values (see issue #470 for the Seerr
+		// equivalent). Jellyfin's parser usually accepts both, but normalising
+		// removes a class of latent failure.
 		const data = await this.request(
-			`/Users/${encodeURIComponent(userId)}/Items?${params.toString()}`,
+			`/Users/${encodeURIComponent(userId)}/Items?${params.toString().replace(/\+/g, "%20")}`,
 			{ schema: jellyfinItemsResponseSchema },
 		);
 		return data.Items.map(mapItem);
