@@ -415,26 +415,17 @@ test.describe("qui walkthrough — modal still works", () => {
 		await dropdown.selectOption("seeding");
 		await page.waitForTimeout(2000);
 
-		// Click the first card to open its detail modal. Library cards use
-		// onClick on the poster image area — find that and click it.
+		// Click the first card to open its detail modal. The library card
+		// root is the `<button>` element wrapping the title + badge — the
+		// older `.glass / .card / .group` ancestor-div pattern this test
+		// used pre-dates a markup refactor and no longer matches.
+		// `closest("button")` finds the actual click target reliably.
 		const firstBadge = page.locator('[aria-label*="Torrent:"]').first();
 		await firstBadge.scrollIntoViewIfNeeded();
-		// The card wrapper has a clickable poster + title. Look for the
-		// title link within the same card root.
-		const cardRoot = firstBadge.locator(
-			"xpath=ancestor::div[contains(@class, 'glass') or contains(@class, 'card') or contains(@class, 'group')][1]",
-		);
-		// Click the first <button> or <a> inside the card root that opens details.
-		const detailsTrigger = cardRoot
-			.locator('button, [role="button"], a, h3, [class*="cursor-pointer"]')
-			.first();
-		const triggerCount = await detailsTrigger.count();
-		if (triggerCount > 0) {
-			await detailsTrigger.click({ force: true });
-		} else {
-			// Fallback: click somewhere visible on the card itself
-			await cardRoot.click({ force: true });
-		}
+		// The badge lives inside the card's `<button>` so xpath-up to the
+		// nearest button ancestor; that button has the click handler.
+		const cardButton = firstBadge.locator("xpath=ancestor::button[1]");
+		await cardButton.click({ force: true });
 
 		await page.waitForTimeout(2500);
 
