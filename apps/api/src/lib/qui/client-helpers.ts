@@ -32,10 +32,22 @@ export async function quiRequest<T>(
 	ctx: QuiRequestContext,
 	path: string,
 	schema: ZodType<T>,
-	init?: { method?: string; query?: Record<string, string>; body?: unknown },
+	init?: {
+		method?: string;
+		query?: Record<string, string>;
+		body?: unknown;
+		/**
+		 * Per-call timeout override. Resolves in this order:
+		 *   init.timeoutMs → ctx.timeoutMs → DEFAULT_QUI_TIMEOUT_MS.
+		 * Used by `listAllTorrents` (which paginates and can legitimately
+		 * exceed the default 10s budget on slow qui responses) without
+		 * widening every other call's timeout.
+		 */
+		timeoutMs?: number;
+	},
 ): Promise<T> {
 	const url = buildUrl(ctx.baseUrl, path, init?.query);
-	const timeoutMs = ctx.timeoutMs ?? DEFAULT_QUI_TIMEOUT_MS;
+	const timeoutMs = init?.timeoutMs ?? ctx.timeoutMs ?? DEFAULT_QUI_TIMEOUT_MS;
 
 	let response: Response;
 	try {

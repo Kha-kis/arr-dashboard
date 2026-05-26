@@ -367,15 +367,27 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 			// Hard safety cap on iteration: refuse to loop more than 50 pages
 			// (100k torrents at limit=2000). Bigger libraries are pathological
 			// for this aggregation pattern anyway — they need streaming.
+			//
+			// Per-page timeout bumped to 30s (vs the 10s default). The cross-
+			// instance pagination endpoint can be slow on large libraries
+			// when qui's own server-side cache is cold — production deploy
+			// observed a 10s+ page response that aborted the entire walk and
+			// left the SWR cache empty. 30s tolerates the slow page without
+			// widening every other qui call's timeout. Still well under the
+			// 60s per-instance budget the pre-warm plugin sets.
 			const PAGE_SIZE = 2000;
 			const MAX_PAGES = 50;
+			const PER_PAGE_TIMEOUT_MS = 30_000;
 			const all: QuiTorrent[] = [];
 			for (let page = 0; page < MAX_PAGES; page++) {
 				const data = await quiRequest(
 					ctx,
 					"/api/torrents/cross-instance",
 					wireCrossInstanceResponseSchema,
-					{ query: { limit: String(PAGE_SIZE), page: String(page) } },
+					{
+						query: { limit: String(PAGE_SIZE), page: String(page) },
+						timeoutMs: PER_PAGE_TIMEOUT_MS,
+					},
 				);
 				const batch = data.cross_instance_torrents ?? [];
 				all.push(...batch);
