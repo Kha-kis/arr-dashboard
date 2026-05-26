@@ -356,11 +356,26 @@ if [ "${HEAP_AUTO_SNAPSHOT:-0}" = "1" ]; then
     echo "  - HEAP_AUTO_SNAPSHOT enabled — V8 will write up to 1 snapshot to /config/heap-snapshots/ on near-OOM"
 fi
 
+# OS-level memory hygiene (issue #427 / #471 follow-up).
+#
+# Node on glibc allocates many small chunks for decoded JSON, Prisma rows,
+# and TLS buffers; glibc's default 8-arena allocator rarely returns those
+# pages to the OS. The result is RSS climbing well past V8's heap cap even
+# when the JS heap itself is healthy — reporters with 2900+ -item libraries
+# see RSS at 3-4x heapTotal (see #471). Capping glibc to 2 arenas typically
+# drops long-run RSS 30-50% with no code changes and is the canonical
+# Node-on-Linux deployment tweak.
+#
+# Override via `MALLOC_ARENA_MAX=N` if you have a specific reason
+# (multi-CPU NUMA tuning, very high request concurrency).
+MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}"
+echo "  - MALLOC_ARENA_MAX: $MALLOC_ARENA_MAX (glibc arena cap — keeps RSS in check on long-running containers)"
+
 # Let stdout/stderr flow directly to the container — Pino handles file logging
 # via its pino-roll transport (writes to /config/logs/arr-dashboard.log).
 # Previous approach redirected stdout to api.log, which conflicted with Pino's
 # worker-thread transport and caused both log files to remain empty.
-run_as_user sh -c "cd /config/heap-snapshots && API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node /app/api/dist/index.js" &
+run_as_user sh -c "cd /config/heap-snapshots && MALLOC_ARENA_MAX=$MALLOC_ARENA_MAX API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node /app/api/dist/index.js" &
 API_PID=$!
 echo "API started with PID $API_PID"
 
