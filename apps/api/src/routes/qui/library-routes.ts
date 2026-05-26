@@ -7,6 +7,7 @@ import {
 } from "../../lib/library-sync/episode-file-backfill.js";
 import {
 	buildFileIdIndex,
+	clearFileIdIndexCache,
 	getAllHashesForFileId,
 } from "../../lib/library-sync/infohash-backfill-by-inode.js";
 import { runPathBackfillSweep } from "../../lib/library-sync/infohash-backfill-by-path.js";
@@ -257,9 +258,6 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 			// `buildFileIdIndex` call rebuilds instead of returning the
 			// still-fresh cached copy. Mirrors what the TTL expiry would do
 			// naturally, but immediately.
-			const { clearFileIdIndexCache } = await import(
-				"../../lib/library-sync/infohash-backfill-by-inode.js"
-			);
 			for (const instance of instances) {
 				clearFileIdIndexCache(instance.id);
 			}

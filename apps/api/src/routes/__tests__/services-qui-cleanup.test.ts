@@ -11,9 +11,10 @@
  * A code-review pass on PR #475 flagged that `services-lifecycle.test.ts`
  * and `services.test.ts` covered the broad lifecycle but never asserted
  * the cleanup wiring actually fires. A future refactor that drops the
- * dynamic-import-and-call (or moves the call out of the qui-type branch)
- * would silently leak megabytes of cached torrent data and inode indexes
- * keyed to dead instances. This file pins the wiring.
+ * `invalidateTorrentListCache` + `clearFileIdIndexCache` calls (or
+ * moves them out of the qui-type branch) would silently leak megabytes
+ * of cached torrent data and inode indexes keyed to dead instances.
+ * This file pins the wiring.
  */
 
 import Fastify from "fastify";

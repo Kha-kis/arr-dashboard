@@ -5,16 +5,28 @@
  * what unit tests can't: rendered layout, dropdown interaction,
  * filter→pagination flow, modal open/close, badge visibility,
  * and the perf regression that the per-card polling has been removed.
+ *
+ * CI fixture strategy: the dropdown only renders when `hasQui` is true
+ * (a qui ServiceInstance exists in the user's serviceLookup) AND
+ * `torrentStateCounts` has at least one non-`none` value. The CI auth
+ * setup creates a fresh user with no services configured — so we use
+ * Playwright's network mocking to intercept `/api/services` (inject a
+ * qui instance) and `/api/library*` (inject realistic torrentStateCounts
+ * + items with `torrentState` populated). This tests the REAL frontend
+ * rendering against the REAL Next.js + API proxy without needing a
+ * real qui server to exist in CI. Local dev runs against a real qui
+ * setup and the mocks are still consistent — they just don't matter
+ * because the real responses already include qui data.
  */
 
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 /**
  * Locator for the Torrent state dropdown — Phase 2.1 added this. Identified
  * by uniquely-shaped option values (`value="seeding"` and `value="stalled_dl"`)
  * that no other dropdown on the page uses.
  */
-function torrentStateSelect(page: import("@playwright/test").Page) {
+function torrentStateSelect(page: Page) {
 	return page
 		.locator("select")
 		.filter({ has: page.locator('option[value="seeding"]') })
@@ -22,7 +34,163 @@ function torrentStateSelect(page: import("@playwright/test").Page) {
 		.first();
 }
 
-async function gotoLibrary(page: import("@playwright/test").Page) {
+/**
+ * Mock services + library endpoints so the qui-walkthrough tests run
+ * against realistic data shapes in CI (which doesn't have a real qui
+ * server). Idempotent — calling more than once is fine.
+ *
+ * Mocks intentionally cover ONLY the endpoints the qui surface
+ * specifically needs — other endpoints fall through to the real Fastify
+ * routes so the rest of the page (sidebar, header, auth) renders
+ * normally.
+ */
+async function setupQuiMocks(page: Page): Promise<void> {
+	// `/api/services` — inject a qui entry so `hasQui` derives to true.
+	// The library page reads this to decide whether to render the
+	// torrent-state filter dropdown at all.
+	await page.route("**/api/services", async (route) => {
+		if (route.request().method() !== "GET") {
+			return route.continue();
+		}
+		const now = new Date().toISOString();
+		return route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({
+				services: [
+					{
+						id: "mock-qui-instance",
+						label: "Mock qui",
+						baseUrl: "http://qui.mock.test:7476",
+						externalUrl: null,
+						service: "QUI",
+						enabled: true,
+						isDefault: false,
+						tags: [],
+						storageGroupId: null,
+						hasLocalFilesystemAccess: false,
+						pathPrefix: null,
+						createdAt: now,
+						updatedAt: now,
+					},
+				],
+			}),
+		});
+	});
+
+	// `/api/library?...` — return items with torrent-state populated +
+	// torrentStateCounts with realistic numbers so the dropdown renders
+	// `(N)` suffixes per option and the badge tests have something to
+	// click on.
+	await page.route("**/api/library**", async (route) => {
+		if (route.request().method() !== "GET") {
+			return route.continue();
+		}
+		// Honor the `?torrentState=seeding` filter so the
+		// "selecting Seeding filter narrows the result set" test sees a
+		// smaller item list when filtered. The dropdown's value-change
+		// assertions don't depend on this, but the per-card-badge test
+		// renders the SEEDING items only after the filter is applied.
+		const url = new URL(route.request().url());
+		const stateFilter = url.searchParams.get("torrentState");
+
+		const allItems = buildMockLibraryItems();
+		const items =
+			stateFilter && stateFilter !== "all"
+				? allItems.filter((item) => item.torrentState === stateFilter)
+				: allItems;
+
+		return route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({
+				items,
+				pagination: {
+					page: 1,
+					limit: 50,
+					totalItems: items.length,
+					totalPages: 1,
+				},
+				appliedFilters: {},
+				syncStatus: {
+					isCached: true,
+					lastSync: new Date().toISOString(),
+					syncInProgress: false,
+					totalCachedItems: allItems.length,
+				},
+				torrentStateCounts: {
+					all: allItems.length,
+					none: 1,
+					seeding: 3,
+					downloading: 1,
+					stalled_dl: 1,
+					paused: 0,
+					queued: 0,
+					checking: 0,
+					moving: 0,
+					error: 1,
+					unknown: 0,
+				},
+			}),
+		});
+	});
+}
+
+/** Mock library item shape — narrow type so the `.filter` on
+ * `torrentState` typechecks. Frontend treats this as a `LibraryItem`
+ * via the route response payload. */
+interface MockLibraryItem {
+	id: number;
+	instanceId: string;
+	instanceName: string;
+	service: string;
+	type: string;
+	title: string;
+	sortTitle: string;
+	year: number;
+	monitored: boolean;
+	hasFile: boolean;
+	status: string;
+	torrentState: string;
+	torrentRatio: number | null;
+	path: string;
+}
+
+/** Build the mock library item list. Each item has `torrentState` set to
+ * one of the buckets the dropdown surfaces; the test assertions count on
+ * at least one item per relevant bucket. */
+function buildMockLibraryItems(): MockLibraryItem[] {
+	const base = (id: number, state: string, ratio: number | null): MockLibraryItem => ({
+		id,
+		instanceId: "mock-sonarr",
+		instanceName: "Mock Sonarr",
+		service: "sonarr",
+		type: "series",
+		title: `Mock Show ${id}`,
+		sortTitle: `mock show ${id}`,
+		year: 2024,
+		monitored: true,
+		hasFile: true,
+		status: "continuing",
+		torrentState: state,
+		torrentRatio: ratio,
+		path: `/data/media/Mock Show ${id}`,
+	});
+	return [
+		base(1, "seeding", 1.42),
+		base(2, "seeding", 2.18),
+		base(3, "seeding", 0.95),
+		base(4, "downloading", 0.0),
+		base(5, "stalled_dl", 0.0),
+		base(6, "error", 0.0),
+		base(7, "none", null),
+	];
+}
+
+async function gotoLibrary(page: Page) {
+	// Set up qui-data mocks BEFORE navigating — Playwright's page.route
+	// matchers must be installed before the page makes the requests.
+	await setupQuiMocks(page);
 	await page.goto("/library");
 	// Wait for the main heading first
 	await expect(page.getByRole("heading", { name: /your collection|library/i }).first()).toBeVisible(
@@ -153,17 +321,51 @@ test.describe("qui walkthrough — no per-card polling (perf regression guard)",
 });
 
 test.describe("qui walkthrough — modal still works", () => {
-	test("opening a card with a badge fires the per-item endpoint at least once", async ({
+	test("opening a card with a badge fires a qui detail endpoint at least once", async ({
 		page,
 	}) => {
+		// Capture ANY qui-domain request after the click. The original
+		// assertion targeted `/qui/library-item/torrent-state` which has
+		// since been removed (page-level data ships in /library response,
+		// modal pulls cluster data from `/qui/series/.../torrents` or
+		// `/qui/movie/.../torrents`). Broadening to "any qui detail call"
+		// makes the test resilient to future architecture changes while
+		// still proving the modal connects to qui.
 		const quiCalls: string[] = [];
 		page.on("request", (req) => {
-			if (req.url().includes("/qui/library-item/torrent-state")) {
-				quiCalls.push(req.url());
+			const url = req.url();
+			// Match the panel/detail endpoints but exclude the page-load
+			// endpoints (services, library-seeding-summary, summary) that
+			// already fired before the click. We want post-click qui
+			// activity only.
+			if (
+				url.includes("/api/qui/series/") ||
+				url.includes("/api/qui/movie/") ||
+				url.includes("/api/qui/library-item/torrent-state")
+			) {
+				quiCalls.push(url);
 			}
 		});
 
 		await gotoLibrary(page);
+		// Mock the panel endpoints so the modal renders mock data without
+		// erroring out on the click. Empty `clusters` is fine — the test
+		// only cares that the request fired.
+		await page.route("**/api/qui/series/**/torrents", (route) =>
+			route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				body: JSON.stringify({ series: { id: 1, title: "Mock Show 1" }, clusters: [] }),
+			}),
+		);
+		await page.route("**/api/qui/movie/**/torrents", (route) =>
+			route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				body: JSON.stringify({ movie: { id: 1, title: "Mock Show 1" }, clusters: [] }),
+			}),
+		);
+
 		const dropdown = torrentStateSelect(page);
 		await dropdown.selectOption("seeding");
 		await page.waitForTimeout(2000);
@@ -191,13 +393,12 @@ test.describe("qui walkthrough — modal still works", () => {
 
 		await page.waitForTimeout(2500);
 
-		// Modal opening should fire the per-item qui endpoint at least once.
-		// If this fails the click target is wrong but the architecture still works
-		// (test 7 already proved the per-item endpoint isn't fired on plain load,
-		// and the modal panel has its own component test elsewhere).
+		// Modal opening should fire at least one qui detail endpoint.
+		// Empty list = the modal opened without ever talking to qui
+		// (regression — the panel relies on qui data to render).
 		expect(
 			quiCalls.length,
-			`expected modal to fire ≥1 qui call on open (got ${quiCalls.length})`,
+			`expected modal to fire ≥1 qui detail call on open (got ${quiCalls.length})`,
 		).toBeGreaterThan(0);
 	});
 });

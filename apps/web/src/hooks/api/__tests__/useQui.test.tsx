@@ -33,6 +33,7 @@ import {
 	useQuiBulkAction,
 	useQuiCapabilities,
 	useQuiCategories,
+	useQuiEventStream,
 	useQuiRenameTorrent,
 	useQuiTags,
 	useQuiTorrentAction,
@@ -333,5 +334,119 @@ describe("useQuiCapabilities / useQuiTags / useQuiCategories — `enabled` gate"
 		});
 		await new Promise((r) => setTimeout(r, 20));
 		expect(quiApi.fetchQuiCategories).not.toHaveBeenCalled();
+	});
+});
+
+describe("useQuiEventStream — SSE handler invalidates the right keys", () => {
+	// The behavioral test the second code-review pass flagged as missing.
+	// The push-freshness story for the open drawer relies on this handler
+	// firing the same broad invalidations as the mutation hooks. A typo
+	// or refactor that breaks it would silently regress drawer freshness
+	// after every qui webhook event.
+	//
+	// We mock `globalThis.EventSource` so the test doesn't need a real
+	// server, then dispatch a "qui-event" event and assert the four
+	// invalidations all fire on the queryClient.
+
+	// Track listeners + provide a dispatch helper so the test can simulate
+	// a real qui-event message arriving from the API.
+	class FakeEventSource {
+		readyState = 0;
+		listeners = new Map<string, Array<(ev: Event) => void>>();
+		static CONNECTING = 0;
+		static OPEN = 1;
+		static CLOSED = 2;
+		// Mirror the instance constant the handler reads on error paths.
+		readonly CLOSED = 2;
+		constructor(
+			public url: string,
+			public init?: EventSourceInit,
+		) {
+			FakeEventSource.last = this;
+		}
+		addEventListener(type: string, cb: (ev: Event) => void) {
+			const list = this.listeners.get(type) ?? [];
+			list.push(cb);
+			this.listeners.set(type, list);
+		}
+		removeEventListener(type: string, cb: (ev: Event) => void) {
+			const list = this.listeners.get(type) ?? [];
+			this.listeners.set(
+				type,
+				list.filter((fn) => fn !== cb),
+			);
+		}
+		dispatch(type: string) {
+			const list = this.listeners.get(type) ?? [];
+			for (const cb of list) cb(new Event(type));
+		}
+		close() {
+			this.readyState = FakeEventSource.CLOSED;
+		}
+		static last: FakeEventSource | null = null;
+	}
+
+	beforeEach(() => {
+		// Replace the global EventSource with our fake before each test.
+		(globalThis as unknown as { EventSource: typeof EventSource }).EventSource =
+			FakeEventSource as unknown as typeof EventSource;
+		FakeEventSource.last = null;
+	});
+
+	it("invalidates events + torrentProperties.all + torrentFiles.all + crossSeed on each qui-event message", async () => {
+		const client = new QueryClient();
+		const invalidations = trackInvalidations(client);
+
+		renderHook(() => useQuiEventStream({ enabled: true }), {
+			wrapper: createWrapper(client),
+		});
+
+		// React commits the effect on the next microtask — wait one tick
+		// so the EventSource is constructed and listeners are attached.
+		await new Promise((r) => setTimeout(r, 0));
+		const source = FakeEventSource.last;
+		expect(source).not.toBeNull();
+
+		// Simulate qui pushing an event.
+		source!.dispatch("qui-event");
+
+		// All four broad invalidations should have fired.
+		const expectedKeys = [
+			[...quiKeys.events],
+			[...quiKeys.torrentProperties.all],
+			[...quiKeys.torrentFiles.all],
+			[...quiKeys.crossSeed],
+		];
+		for (const expected of expectedKeys) {
+			expect(
+				invalidations.some((actual) => JSON.stringify(actual) === JSON.stringify(expected)),
+				`expected invalidation of ${JSON.stringify(expected)} but invalidations were: ${JSON.stringify(invalidations)}`,
+			).toBe(true);
+		}
+	});
+
+	it("does NOT use the legacy dead ['qui','torrent-state'] key on SSE events", async () => {
+		// REGRESSION GUARD: the original bug was that the SSE handler
+		// invalidated this dead key. A copy-paste reintroducing it would
+		// silently break push freshness for every webhook event.
+		const client = new QueryClient();
+		const invalidations = trackInvalidations(client);
+
+		renderHook(() => useQuiEventStream({ enabled: true }), {
+			wrapper: createWrapper(client),
+		});
+		await new Promise((r) => setTimeout(r, 0));
+		FakeEventSource.last!.dispatch("qui-event");
+
+		expect(invalidations).not.toContainEqual(["qui", "torrent-state"]);
+	});
+
+	it("does NOT open the EventSource when enabled is false", async () => {
+		const client = new QueryClient();
+		renderHook(() => useQuiEventStream({ enabled: false }), {
+			wrapper: createWrapper(client),
+		});
+		await new Promise((r) => setTimeout(r, 0));
+		expect(FakeEventSource.last).toBeNull();
 	});
 });
