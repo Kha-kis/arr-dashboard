@@ -415,17 +415,17 @@ test.describe("qui walkthrough — modal still works", () => {
 		await dropdown.selectOption("seeding");
 		await page.waitForTimeout(2000);
 
-		// Click the first card to open its detail modal. The library card
-		// root is the `<button>` element wrapping the title + badge — the
-		// older `.glass / .card / .group` ancestor-div pattern this test
-		// used pre-dates a markup refactor and no longer matches.
-		// `closest("button")` finds the actual click target reliably.
+		// Click the first card's "Details" button to open the modal. The
+		// card markup has the badge as a `generic` element (not inside
+		// any button) — siblings include the title button and the
+		// explicit "Search"/"Details"/"Unmonitor" buttons. "Details" is
+		// the modal trigger; targeting it directly is more reliable than
+		// walking ancestors from the badge.
 		const firstBadge = page.locator('[aria-label*="Torrent:"]').first();
 		await firstBadge.scrollIntoViewIfNeeded();
-		// The badge lives inside the card's `<button>` so xpath-up to the
-		// nearest button ancestor; that button has the click handler.
-		const cardButton = firstBadge.locator("xpath=ancestor::button[1]");
-		await cardButton.click({ force: true });
+		// The Details buttons are aligned to the card root order; clicking
+		// the first one opens the first card's modal.
+		await page.getByRole("button", { name: "Details" }).first().click({ force: true });
 
 		await page.waitForTimeout(2500);
 
