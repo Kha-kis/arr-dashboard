@@ -500,6 +500,74 @@ export const pulseKeys = {
 	attention: () => ["pulse", "attentionOnly"] as const,
 };
 
+export const quiKeys = {
+	all: ["qui"] as const,
+	// Per-series aggregate (episode counts + distinct torrents). Powers
+	// the SeriesTorrentsPanel in the library detail modal. Invalidated
+	// when a cross-seed trigger or manual backfill changes correlation.
+	seriesTorrents: (arrInstanceId: string, arrItemId: number) =>
+		["qui", "series-torrents", arrInstanceId, arrItemId] as const,
+	// Per-movie aggregate — single cluster + tracker copies. Same wire shape
+	// as seriesTorrents but the data path queries Radarr/library_cache
+	// instead of episode_file_cache. Distinct key so invalidations don't
+	// collide and React Query can cache each independently.
+	movieTorrents: (arrInstanceId: string, arrItemId: number) =>
+		["qui", "movie-torrents", arrInstanceId, arrItemId] as const,
+	// qui's tracker-icon registry — single global key (one map per user,
+	// no parameters). Cached server-side for 1h; client also caches via
+	// the long staleTime on the hook.
+	trackerIcons: () => ["qui", "tracker-icons"] as const,
+	/**
+	 * Per-library-page seeding summary. Keyed by the sorted item set so
+	 * cache hits across re-renders of the same page. Includes arr
+	 * instance to isolate users with multi-instance setups.
+	 */
+	librarySeedingSummary: (arrInstanceId: string, itemKey: string) =>
+		["qui", "library-seeding-summary", arrInstanceId, itemKey] as const,
+	crossSeedAvailability: () => ["qui", "cross-seed", "availability"] as const,
+	crossSeedDiscovery: () => ["qui", "cross-seed", "discover"] as const,
+	activity: (eventType?: string) =>
+		eventType ? (["qui", "activity", eventType] as const) : (["qui", "activity"] as const),
+	// Phase 4.1 — action audit log feed key. Mirrors `activity` shape so the
+	// frontend can flip between "Activity" (qui's observations) and "My Actions"
+	// (operator-initiated mutations) without entangling cache invalidations.
+	actions: (action?: string, status?: string) =>
+		["qui", "actions", ...(action ? [action] : []), ...(status ? [status] : [])] as const,
+	// Phase 5.1 — webhook config (singleton per user) + raw event log feed.
+	// `events` shares cache between the My Events tab and any future widgets
+	// surfacing webhook-driven activity.
+	webhookConfig: ["qui", "webhook-config"] as const,
+	events: ["qui", "events"] as const,
+	// Phase 6 — qui home page (single-pane-of-glass entry surface). Both keys
+	// invalidate together when scheduled syncs or webhook events land, so the
+	// home page stays in sync with the rest of the qui surfaces.
+	summary: ["qui", "summary"] as const,
+	attention: (limit?: number) =>
+		limit ? (["qui", "attention", limit] as const) : (["qui", "attention"] as const),
+	// Phase 6 — per-torrent drawer caches. `all` is the broad-invalidate
+	// prefix used on mutation settle so the drawer's open queries refetch;
+	// `byHash` keys each individual query so React Query can cache them
+	// independently when the user opens multiple drawers in sequence.
+	torrentProperties: {
+		all: ["qui", "torrent-properties"] as const,
+		// Inputs may be null while the drawer isn't mounted yet — the
+		// `enabled` flag on the query gates the actual fetch, but the key
+		// is still computed each render, so the signature has to accept
+		// the nullable shape rather than asserting at the call site.
+		byHash: (quiInstanceId: string | null, qbitInstanceId: number | null, hash: string) =>
+			["qui", "torrent-properties", quiInstanceId, qbitInstanceId, hash] as const,
+	},
+	torrentFiles: {
+		all: ["qui", "torrent-files"] as const,
+		byHash: (quiInstanceId: string | null, qbitInstanceId: number | null, hash: string) =>
+			["qui", "torrent-files", quiInstanceId, qbitInstanceId, hash] as const,
+	},
+	// Broad cross-seed prefix — covers both crossSeedAvailability and
+	// crossSeedDiscovery via React Query's prefix-match invalidation. Used
+	// after bulk mutations that can promote/demote cross-seed siblings.
+	crossSeed: ["qui", "cross-seed"] as const,
+};
+
 /* -------------------------------------------------------------------------- */
 /*  Backward-compatible constants                                              */
 /*  These match the old per-file `const X_QUERY_KEY` pattern.                  */

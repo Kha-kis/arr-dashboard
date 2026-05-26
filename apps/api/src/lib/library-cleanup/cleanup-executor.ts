@@ -16,6 +16,7 @@ import type { LibraryCleanupConfig, LibraryCleanupRule, ServiceInstance } from "
 import { SeerrClient } from "../seerr/seerr-client.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { safeJsonParse } from "../utils/json.js";
+import { applyQuiSeedingFilter } from "./qui-filter.js";
 import { evaluateItemAgainstRules, extractRating } from "./rule-evaluators.js";
 import type {
 	CacheItemForEval,
@@ -1126,12 +1127,22 @@ async function evaluateAllItems(
 	let totalEvaluated = 0;
 	let cursor: string | undefined;
 
+	// Phase 2.2: optionally exclude items qui has confirmed are seeding,
+	// to honor seeding obligations (private trackers, ratio targets). The
+	// actual filter lives in `qui-filter.ts` — sibling pattern to
+	// `lib/queue-cleaner/qui-gate.ts`. Keeping the filter in its own file
+	// gives it a testable seam (see `__tests__/qui-filter.test.ts`) and
+	// keeps cross-feature qui deps next to their consumer rather than
+	// pulled into `lib/qui/` (which stays focused on the qui client).
+	const baseWhere = applyQuiSeedingFilter(
+		{ instanceId: { in: instances.map((i) => i.id) } },
+		Boolean(config.respectQuiSeeding),
+	);
+
 	// Paginate through LibraryCache with cursor-based pagination
 	while (true) {
 		const batch: CacheItemForEval[] = await prisma.libraryCache.findMany({
-			where: {
-				instanceId: { in: instances.map((i) => i.id) },
-			},
+			where: baseWhere,
 			select: {
 				id: true,
 				instanceId: true,

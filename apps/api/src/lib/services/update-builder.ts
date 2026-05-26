@@ -13,6 +13,9 @@ export interface UpdatePayload {
 	service?: string;
 	apiKey?: string;
 	storageGroupId?: string | null;
+	// qui-only — see services route schema for semantics.
+	hasLocalFilesystemAccess?: boolean;
+	pathPrefix?: string | null;
 }
 
 export interface EncryptedData {
@@ -30,6 +33,8 @@ export interface UpdateData {
 	encryptedApiKey?: string;
 	encryptionIv?: string;
 	storageGroupId?: string | null;
+	hasLocalFilesystemAccess?: boolean;
+	pathPrefix?: string | null;
 }
 
 /**
@@ -68,6 +73,16 @@ export function buildUpdateData(
 	}
 	if (Object.hasOwn(payload, "storageGroupId")) {
 		updateData.storageGroupId = payload.storageGroupId ?? null;
+	}
+	if (typeof payload.hasLocalFilesystemAccess === "boolean") {
+		updateData.hasLocalFilesystemAccess = payload.hasLocalFilesystemAccess;
+	}
+	if (Object.hasOwn(payload, "pathPrefix")) {
+		// Normalize empty string to null — operators clearing the field in
+		// the UI shouldn't leave behind a "" sentinel that fails the
+		// prefix-rewrite regex.
+		const raw = payload.pathPrefix;
+		updateData.pathPrefix = raw === undefined || raw === null || raw === "" ? null : raw;
 	}
 
 	return updateData;

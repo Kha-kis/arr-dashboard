@@ -81,6 +81,7 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 					monitored: parsed.monitored,
 					hasFile: parsed.hasFile,
 					cutoffUnmet: parsed.cutoffUnmet,
+					torrentState: parsed.torrentState,
 					status: parsed.status,
 					qualityProfileId: parsed.qualityProfileId,
 					yearMin: parsed.yearMin,
@@ -122,6 +123,7 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 					monitored: parsed.monitored,
 					hasFile: parsed.hasFile,
 					cutoffUnmet: parsed.cutoffUnmet,
+					torrentState: parsed.torrentState,
 					status: parsed.status,
 					qualityProfileId: parsed.qualityProfileId,
 					yearMin: parsed.yearMin,
@@ -190,6 +192,25 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 			where.cutoffUnmet = parsed.cutoffUnmet === "true";
 		}
 
+		// Snapshot `where` BEFORE applying the torrentState filter — used for
+		// the per-state counts query so the Torrent state dropdown can show
+		// "Seeding (150)" etc. honoring every OTHER filter but pivoting
+		// between torrent-state buckets. If we counted post-filter, picking
+		// `seeding` would zero out the other buckets and break the dropdown.
+		const whereWithoutTorrentState: Prisma.LibraryCacheWhereInput = { ...where };
+
+		// qui torrent-state filter. `none` matches NULL (rows without qui data
+		// yet — e.g. no qui configured, no infoHash backfilled, or no torrent
+		// in qui for the cached infoHash). Any other value matches the
+		// normalized vocabulary exactly.
+		if (parsed.torrentState !== "all") {
+			if (parsed.torrentState === "none") {
+				where.torrentState = null;
+			} else {
+				where.torrentState = parsed.torrentState;
+			}
+		}
+
 		// Status filter
 		if (parsed.status) {
 			where.status = parsed.status;
@@ -232,6 +253,12 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 			case "added":
 				orderBy.arrAddedAt = parsed.sortOrder;
 				break;
+			case "torrentRatio":
+				// NULLs LAST regardless of asc/desc — without this, "lowest ratio
+				// first" (asc) would put thousands of uncorrelated rows ahead of
+				// the actual lowest-ratio seeders, defeating the sort.
+				orderBy.torrentRatio = { sort: parsed.sortOrder, nulls: "last" };
+				break;
 			default:
 				orderBy.sortTitle = "asc";
 		}
@@ -251,6 +278,12 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 			try {
 				const parsed = JSON.parse(item.data) as LibraryItem;
 				parsed.cutoffUnmet = item.cutoffUnmet;
+				// qui torrent state (Phase 2.1) — surface the cached column on each
+				// item so the per-card badge can render from this single page query
+				// instead of N parallel /qui/library-item/torrent-state polls.
+				// Cast safely: torrentState is a String? in Prisma, schema enforces enum.
+				parsed.torrentState = (item.torrentState as LibraryItem["torrentState"]) ?? null;
+				parsed.torrentRatio = item.torrentRatio ?? null;
 				return parsed;
 			} catch (parseError) {
 				// Log parsing failure for debugging
@@ -302,6 +335,43 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 
 		const anySyncInProgress = syncStatuses.some((s) => s.syncInProgress);
 
+		// Per-state counts for the Torrent state dropdown — only computed when
+		// the user has at least one enabled qui instance. Uses the where clause
+		// BEFORE the torrentState filter was applied, so picking one bucket
+		// from the dropdown doesn't zero out the others.
+		let torrentStateCounts: PaginatedLibraryResponse["torrentStateCounts"];
+		const userHasQui = await app.prisma.serviceInstance.count({
+			where: { userId, service: "QUI", enabled: true },
+		});
+		if (userHasQui > 0) {
+			const grouped = await app.prisma.libraryCache.groupBy({
+				by: ["torrentState"],
+				where: whereWithoutTorrentState,
+				_count: { _all: true },
+			});
+			const totalForCounts = await app.prisma.libraryCache.count({
+				where: whereWithoutTorrentState,
+			});
+			const byState: Record<string, number> = {};
+			for (const row of grouped) {
+				const key = row.torrentState ?? "none";
+				byState[key] = row._count._all;
+			}
+			torrentStateCounts = {
+				all: totalForCounts,
+				none: byState.none ?? 0,
+				seeding: byState.seeding ?? 0,
+				downloading: byState.downloading ?? 0,
+				stalled_dl: byState.stalled_dl ?? 0,
+				paused: byState.paused ?? 0,
+				queued: byState.queued ?? 0,
+				checking: byState.checking ?? 0,
+				moving: byState.moving ?? 0,
+				error: byState.error ?? 0,
+				unknown: byState.unknown ?? 0,
+			};
+		}
+
 		const response: PaginatedLibraryResponse = {
 			items,
 			pagination: {
@@ -316,6 +386,7 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 				instanceId: parsed.instanceId,
 				monitored: parsed.monitored,
 				hasFile: parsed.hasFile,
+				torrentState: parsed.torrentState,
 				status: parsed.status,
 				qualityProfileId: parsed.qualityProfileId,
 				yearMin: parsed.yearMin,
@@ -329,6 +400,7 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 				syncInProgress: anySyncInProgress,
 				totalCachedItems: totalItems,
 			},
+			torrentStateCounts,
 		};
 
 		return paginatedLibraryResponseSchema.parse(response);

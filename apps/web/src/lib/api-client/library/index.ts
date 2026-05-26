@@ -56,7 +56,10 @@ export async function fetchLibrary(
 	if (params.search) search.set("search", params.search);
 	if (params.monitored && params.monitored !== "all") search.set("monitored", params.monitored);
 	if (params.hasFile && params.hasFile !== "all") search.set("hasFile", params.hasFile);
-	if (params.cutoffUnmet && params.cutoffUnmet !== "all") search.set("cutoffUnmet", params.cutoffUnmet);
+	if (params.cutoffUnmet && params.cutoffUnmet !== "all")
+		search.set("cutoffUnmet", params.cutoffUnmet);
+	if (params.torrentState && params.torrentState !== "all")
+		search.set("torrentState", params.torrentState);
 	if (params.status) search.set("status", params.status);
 	if (params.qualityProfileId !== undefined)
 		search.set("qualityProfileId", String(params.qualityProfileId));

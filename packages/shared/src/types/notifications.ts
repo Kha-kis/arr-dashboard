@@ -79,6 +79,17 @@ export const notificationEventTypeSchema = z.enum([
 	"QUEUE_ITEMS_REMOVED",
 	"QUEUE_STRIKES_ISSUED",
 	"QUEUE_CLEANER_FAILED",
+	// qui (torrent layer) — fired on state transitions detected by the
+	// periodic qui torrent-state sync. Only *arr-correlated torrents
+	// (those with a LibraryCache row) trigger these.
+	"QUI_TORRENT_ERRORED",
+	"QUI_DOWNLOAD_STALLED",
+	// `QUI_TORRENT_COMPLETED` fires when a torrent transitions out of
+	// `downloading` or `stalled_dl` and into `seeding` — the precise
+	// signal "this just finished downloading and is now sharing." NOT
+	// fired on `paused`→`seeding` (resume) or unseen→`seeding`
+	// (already-complete at first sync) — those would be noise.
+	"QUI_TORRENT_COMPLETED",
 	// TRaSH Guides
 	"TRASH_PROFILE_UPDATED",
 	"TRASH_SYNC_ERROR",

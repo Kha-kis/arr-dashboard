@@ -707,14 +707,6 @@ export type LibraryCleanupApprovalUncheckedUpdateManyWithoutConfigNestedInput = 
   deleteMany?: Prisma.LibraryCleanupApprovalScalarWhereInput | Prisma.LibraryCleanupApprovalScalarWhereInput[]
 }
 
-export type NullableFloatFieldUpdateOperationsInput = {
-  set?: number | null
-  increment?: number
-  decrement?: number
-  multiply?: number
-  divide?: number
-}
-
 export type LibraryCleanupApprovalCreateWithoutConfigInput = {
   id?: string
   instanceId: string

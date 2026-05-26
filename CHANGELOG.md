@@ -5,6 +5,123 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — qui Integration
+
+This release introduces a deep, federated integration with [autobrr/qui](https://github.com/autobrr/qui)
+(qBittorrent UI) that turns arr-dashboard into a unified surface for the *arr
+stack **and** the torrent layer underneath it. Add a qui instance from
+Settings → Services (port 7476 by default) — the rest of the surfaces light
+up automatically.
+
+### Library — torrent observability (Phase 1.4 + 2.1)
+
+- **Per-card Torrent Health badge** on the Library page — at-a-glance pill showing seeding state + ratio for every cached item correlated with a qui torrent.
+- **Per-card tracker brand icons** — items show the real tracker logo derived from qui's announce-URL data + icon registry.
+- **Server-side Torrent state filter** on the Library page with per-bucket counts (`Seeding (150) | Stalled download (3) | Not correlated with qui (1962) …`). Pagination is honest under the filter — totals reflect the filtered universe.
+- **Deep-link support** — `/library?torrentState=<bucket>` preselects the matching torrent-state filter (used by the qui home page Quick Actions and Pulse seeding-health card).
+- **Sort by torrent ratio** added to the Library sort dropdown.
+- **Pulse Seeding Health domain** with a dedicated status badge in the dashboard footer following the standard 5-state taxonomy (healthy/degraded/offline/configured/disabled).
+- **Library Cleanup gate** — cleanup proposals respect active seeding obligations and skip items currently uploading.
+
+### Per-torrent detail drawer (Phase 6)
+
+A 480 px right sheet replaces the old kebab menu on every library item that
+has a qui correlation. The drawer is **capability-aware** — it reads qBit's
+WebAPI version and visibly disables actions the running qBit doesn't
+support, naming the gap in a banner so the operator knows why.
+
+- **Status section** — torrent state, save path, totals, peer counts, tracker brand pill row.
+- **Actions** — pause/resume, force start, recheck, reannounce, set/remove super-seed (where supported). State-gated so download-queue actions only appear while progress < 1.
+- **Trackers** — per-tracker peers, health aggregation, live speeds, DHT/PeX/LSD status (only reported as enabled when qBit's own health flags agree). Add / edit / remove via hostname (passkey-safe — full announce URLs never leave the API process).
+- **Tags + Category** — type-ahead pickers backed by qBit's existing taxonomy.
+- **Limits** — per-torrent share-limit, ratio cap, seed-time cap (ratio + seed-time are submitted as one share-limit operation).
+- **Behavior** — auto-management, sequential download, first/last piece priority.
+- **Files** — full file inventory with **MediaInfo quality verification**: arr-dashboard cross-checks the file's resolution/codec/container against qBit's claimed quality and flags drift.
+- **Advanced** — rename torrent, set location (move data on disk). Both inputs mask their prefill in incognito mode.
+- **Danger zone** — delete torrent only / delete torrent + data, with a typed confirmation.
+
+The drawer ships with proper Radix tooltips throughout, a SheetDescription
+for accessibility, and incognito masking on titles, paths, and instance
+labels via the same `useIncognitoMode()` machinery the rest of the app
+uses.
+
+### Series + movie torrent panels (Phase 5)
+
+The detail modal on each Sonarr series and Radarr movie now shows the
+torrent layer with the same fidelity the drawer does.
+
+- **Season-grouped per-torrent clustering** with cross-references between episodes that share a torrent.
+- **Inline action menu** on every cluster copy.
+- **Persistent inode index** with startup pre-warm and a manual rebuild button — definitive hardlink correlation when arr-dashboard has filesystem access to both the qBit content tree and the *arr library tree.
+- **Movies** get the same clustering and panel shape as series.
+
+### qui home page (`/qui`)
+
+A new top-level Overview entry — the at-a-glance counterpart of `/dashboard`
+for the torrent layer.
+
+- **Live throughput KPI** — current download/upload rates with a live tick.
+- **Capability banner** that lists qBit feature gaps relevant to the actions arr-dashboard surfaces.
+- **Library correlation card** — how many cached items have qui torrents, with a one-click backfill trigger.
+- **Needs Attention feed** synthesizing stuck-at-tracker torrents and other operator-actionable signals.
+- **Quick Actions** linking into pre-filtered library views.
+
+### qui Activity (`/qui-activity`, Maintenance group)
+
+A drill-down surface with four tabs:
+
+- **Activity feed** — qui's own observation stream (torrent state transitions, etc.).
+- **My Actions** — operator-initiated mutation audit log (every drawer/cluster action records here with hash + instance + outcome, including failures).
+- **My Events** — raw qui webhook event log.
+- **Webhook** — config panel with hashed-secret rotation and a recent-events strip proving the wire is live.
+
+Torrent-state transitions also route into the notification engine, so the
+existing notification rules can fire on qui-observed changes.
+
+### Queue Cleaner — last-seed protection
+
+When *arr is the only known seeder of a torrent, queue-cleaner now skips
+strikes against it. Per-instance toggle in the queue-cleaner config.
+
+### Schema
+
+- `LibraryCache` gained three columns:
+  - `torrentState String?` (normalized: `seeding`/`downloading`/`stalled_dl`/`paused`/`queued`/`checking`/`moving`/`error`/`unknown`)
+  - `torrentRatio Float?`
+  - `torrentSyncedAt DateTime?`
+- New index on `torrentState` (powers the filter dropdown query). One new enum value `ServiceType.QUI`.
+- `ServiceInstance` gained two qui-only columns: `hasLocalFilesystemAccess Boolean` (toggles inode-based correlation) and `pathPrefix String?` (`"qui-prefix>local-prefix"` rewrite for mount-mapped setups).
+- `QuiActionLog` model for the My Actions audit feed.
+- `QuiWebhookConfig` model + `hashedQuiWebhookSecret` for the webhook receiver (plaintext only returned once at rotate time).
+- **Migration**: `pnpm --filter @arr/api run db:push` — existing rows start NULL and populate as the backfill scheduler walks them.
+
+### Background jobs
+
+- `qui-torrent-state-sync` (10min interval) — snapshots torrent state from every enabled qui instance into `LibraryCache`. No-op when no qui instance is configured.
+- `infohash-backfill` (catch-up at startup → 6h steady-state) — walks `LibraryCache` rows missing `infoHash`, queries each *arr's `/api/v3/history/movie` or `/api/v3/history/series` to populate the hash, then qui sync correlates. Catch-up loop drains existing libraries in ~5 min for typical sizes; hard-capped at 10k rows per startup.
+- `infohash-backfill-by-inode` — definitive hardlink correlation when `hasLocalFilesystemAccess` is on. Persistent inode index survives restarts via gzip-serialized snapshot.
+
+### Performance + operability
+
+- **Stale-while-revalidate cache** for qui's full torrent list — first-paint of `/qui` drops from ~3.5s to <100ms once warm; only the first request after a cold process start pays the paginated walk.
+- **In-flight dedup** so concurrent `/qui/summary` + `/qui/attention` requests share one paginated fetch instead of running two.
+- **Container memory ceiling** (`mem_limit: 3g` in `docker-compose.yml`) as a circuit breaker against a runaway. Two Node processes × `--max-old-space-size=768` leaves comfortable headroom; raise if running a very large library or `HEAP_AUTO_SNAPSHOT`.
+- **Cache hygiene** — `DELETE /services/:id` invalidates both the torrent-list cache and the inode index for the deleted instance, so retired qui instances don't linger in memory.
+
+### Architecture
+
+- `routes/qui.ts` split into domain-grouped files: `instance-routes`, `torrent-routes`, `library-routes`, `panel-routes`, `action-routes`, `webhook-routes`.
+- Per-action Zod payload schemas + an extended action allowlist in the action service.
+- `torrent-detail-drawer` decomposed into per-section files under `features/library/components/torrent-drawer/`.
+- New shared types in `packages/shared/src/types/qui.ts` (~960 LOC of Zod schemas including normalized torrent state, transfer info, MediaInfo, monitored torrent).
+
+### Notes for operators
+
+- **Coverage ceiling depends on *arr history retention.** The backfill scheduler can only correlate items whose original grab record is still in *arr's history. Items whose history has been pruned (Sonarr/Radarr default retention is finite) will never match a torrent and will sit in the "Not correlated with qui" bucket forever. To grow coverage, increase Settings → General → History Retention in your *arr instances.
+- **Cross-host setups** — definitive hardlink-based correlation requires arr-dashboard process to have read access to both the qBit content tree and the *arr library tree. Enable per-instance via `Has Local Filesystem Access` in the qui service form; pair with `Path Prefix Rewrite` if mount points differ between qBit and arr-dashboard.
+- **Capability gaps surface explicitly** — old qBit versions get an amber banner in the drawer naming exactly which actions are disabled (super-seed, share-limit, etc.). Upgrade qBit to unlock them.
+- **Privacy mode** — qui's per-instance label, the qBit instance name, torrent titles, file paths, save paths, and drawer rename/move inputs are all anonymized in incognito mode just like other ARR instance labels.
+
 ## [2.19.0] - 2026-05-14
 
 ### Added

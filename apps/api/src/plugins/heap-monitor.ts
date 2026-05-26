@@ -70,7 +70,20 @@ const SAMPLE_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes — enough resolution to 
 const WARN_HEAP_PCT = 0.9;
 const INFO_HEAP_PCT = 0.8;
 
-const SNAPSHOT_DIR = process.env.HEAP_SNAPSHOT_DIR ?? "/config/heap-snapshots";
+/**
+ * Resolve the heap-snapshot directory. The /config/* path is the Docker
+ * production convention (matches logger.ts and config-dev path layout).
+ * In dev mode we fall back to ./config-dev/heap-snapshots so the scheduler
+ * doesn't EACCES every 5 min trying to write to the root-owned /config dir.
+ * Matches the same dev/Docker auto-detection pattern as `lib/logger.ts`.
+ */
+function resolveSnapshotDir(): string {
+	if (process.env.HEAP_SNAPSHOT_DIR) return process.env.HEAP_SNAPSHOT_DIR;
+	const isDev = process.env.NODE_ENV !== "production";
+	const isDocker = !isDev || process.cwd().startsWith("/app");
+	return isDocker ? "/config/heap-snapshots" : "./config-dev/heap-snapshots";
+}
+const SNAPSHOT_DIR = resolveSnapshotDir();
 const AUTO_SNAPSHOT_AT_WARN = process.env.HEAP_AUTO_SNAPSHOT_AT_WARN !== "0";
 const AUTO_SNAPSHOT_MIN_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes between captures
 const AUTO_SNAPSHOT_MAX_RETAINED = 3; // rotate aggressively — files are ~heap-size MB

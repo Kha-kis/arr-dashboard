@@ -4,8 +4,8 @@ import { Bell, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useState } from "react";
 import { AsyncStateView, StatusBadge } from "@/components/layout/premium-components";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
-import { getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
 import { useNotificationLogs } from "../../../hooks/api/useNotifications";
+import { getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
 
 const STATUS_OPTIONS = [
 	{ value: "", label: "All" },
@@ -22,6 +22,9 @@ const EVENT_TYPE_OPTIONS = [
 	{ value: "QUEUE_ITEMS_REMOVED", label: "Queue: Items Removed" },
 	{ value: "QUEUE_STRIKES_ISSUED", label: "Queue: Strikes Issued" },
 	{ value: "QUEUE_CLEANER_FAILED", label: "Queue: Cleaner Failed" },
+	{ value: "QUI_TORRENT_ERRORED", label: "qui: Torrent Errored" },
+	{ value: "QUI_DOWNLOAD_STALLED", label: "qui: Download Stalled" },
+	{ value: "QUI_TORRENT_COMPLETED", label: "qui: Torrent Completed" },
 	{ value: "TRASH_PROFILE_UPDATED", label: "TRaSH: Profile Updated" },
 	{ value: "TRASH_SYNC_ERROR", label: "TRaSH: Sync Error" },
 	{ value: "TRASH_DEPLOY_FAILED", label: "TRaSH: Deploy Failed" },

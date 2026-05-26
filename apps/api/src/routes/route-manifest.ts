@@ -36,6 +36,8 @@ import oidcProvidersRoutes from "./oidc-providers.js";
 import { registerPlexRoutes } from "./plex/index.js";
 import { registerPulseRoutes } from "./pulse.js";
 import { registerQueueCleanerRoutes } from "./queue-cleaner.js";
+import { registerQuiRoutes } from "./qui.js";
+import { registerQuiWebhookRoutes } from "./qui-webhook.js";
 import { registerSearchRoutes } from "./search.js";
 import { registerSeerrRoutes } from "./seerr/index.js";
 import { registerServiceRoutes } from "./services.js";
@@ -126,6 +128,14 @@ export const PUBLIC_ROUTE_GROUPS: readonly RouteGroup[] = [
 		maturity: "experimental",
 		summary:
 			"Inbound Sonarr/Radarr Connect webhook for real-time auto-tagging. Authenticates via per-user Bearer token (user's hashed webhookSecret). Public route — no session cookie required.",
+	},
+	{
+		path: "/api/webhooks/qui",
+		prefix: "/api",
+		register: registerQuiWebhookRoutes,
+		maturity: "experimental",
+		summary:
+			"Inbound qui webhook receiver (Phase 5.1). Authenticates via per-user `?secret=...` query param (matches qui's `ApiKeyQuery` scheme). Stores raw events in QuiEventLog and publishes to the in-process event bus for SSE fan-out.",
 	},
 ];
 
@@ -270,6 +280,14 @@ export const PROTECTED_ROUTE_GROUPS: readonly RouteGroup[] = [
 		register: registerPulseRoutes,
 		maturity: "internal",
 		summary: "System Pulse health signals + attention items",
+	},
+	{
+		path: "/api/qui",
+		prefix: "/api",
+		register: registerQuiRoutes,
+		maturity: "experimental",
+		summary:
+			"Federated peer integration with autobrr/qui (qBittorrent UI) — read-only torrent state, trackers, cross-seed siblings; powers the Torrent Health panel on library item detail pages.",
 	},
 
 	// --- External integrations (Seerr / TRaSH Guides) ---

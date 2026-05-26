@@ -27,8 +27,11 @@ import {
 	isReadarrClient,
 	isSonarrClient,
 } from "../arr/client-helpers.js";
+import { QuiApiError, QuiInstanceUnreachableError } from "../errors.js";
 import { createJellyfinClient } from "../jellyfin/jellyfin-client.js";
 import { createPlexClient } from "../plex/plex-client.js";
+import { createQuiClient } from "../qui/client-factory.js";
+import { listQuiInstances } from "../qui/instance-helpers.js";
 import {
 	calculateDiskTotals,
 	type InstanceInfo,
@@ -1056,6 +1059,155 @@ export {
 	collectSchedulerHealth,
 };
 
+// `collectQuiSignals` is declared after this block; re-exported below.
+
+// ============================================================================
+// 12. qui Seeding Health Domain (Phase 2.1b)
+// ============================================================================
+//
+// Emits a single ROLLUP attention row per qui instance, NOT one row per
+// disconnected qBit. The rollup uses the 5-state domain taxonomy
+// (`domain-status-taxonomy.md`): healthy state emits nothing (Pulse is
+// attention-only), `degraded` emits a warning rollup ("X of Y qBittorrent
+// instances disconnected"), `offline` emits a critical rollup ("qui
+// unreachable"). Settings → Services renders the per-instance
+// `DomainStatusBadge` for the healthy case via `service-instance-card.tsx`.
+//
+// Pre-2.1b this emitted N per-qbit items, which scaled poorly: 3 qui × 5
+// qBit each = 15 individual rows competing for attention with genuinely
+// distinct problems elsewhere in the system. The rollup respects the
+// operator's attention budget.
+const collectQuiSignals: Collector = async (app, userId, log) => {
+	const instances = await listQuiInstances(app, userId);
+
+	if (instances.length === 0) return [];
+
+	const items: PulseItem[] = [];
+
+	// Webhook-drop signal: if QuiEventLog insert failed at the receiver, we
+	// 200-suppress to qui so it doesn't retry-storm us, but we still log a
+	// `qui_webhook_dropped` activity row. Surface as Pulse so the operator
+	// sees the gap on their health dashboard, not just in pino logs.
+	// Window: last 24h, matches the activity log retention floor.
+	try {
+		const dropCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+		const droppedCount = await app.prisma.quiActivityLog.count({
+			where: {
+				userId,
+				eventType: "qui_webhook_dropped",
+				createdAt: { gte: dropCutoff },
+			},
+		});
+		if (droppedCount > 0) {
+			items.push({
+				id: "qui-webhook-drops",
+				severity: droppedCount >= 10 ? "critical" : "warning",
+				category: "health",
+				title: `${droppedCount} qui webhook event${droppedCount === 1 ? "" : "s"} dropped in the last 24h`,
+				detail:
+					"The dashboard acknowledged these events to qui (to stop retry storms) but couldn't persist them — usually a disk-full / schema-drift / migration issue. Check arr-dashboard logs for the underlying DB error.",
+				actionUrl: "/qui-activity",
+				actionLabel: "View qui Activity → Activity feed → qui_webhook_dropped",
+				source: "qui",
+				timestamp: new Date().toISOString(),
+			});
+		}
+	} catch (countErr) {
+		// Pulse collectors must be non-fatal — a count failure here just
+		// means the operator won't see the drop signal this tick.
+		log.warn(
+			{ err: countErr, userId },
+			"pulse: qui webhook-drop count failed; continuing without that signal",
+		);
+	}
+
+	await Promise.all(
+		instances.map(async (instance) => {
+			try {
+				const client = createQuiClient(app, instance);
+				const qbitInstances = await client.listInstances();
+
+				const totalQbit = qbitInstances.length;
+				const disconnected = qbitInstances.filter((q) => !q.connected);
+
+				// Healthy state: don't emit. Pulse is attention-only.
+				if (disconnected.length === 0) return;
+
+				// Degraded: some qBit disconnected, but qui itself is reachable.
+				items.push({
+					id: `qui-degraded-${instance.id}`,
+					severity: "warning",
+					category: "health",
+					title: `${instance.label}: ${disconnected.length} of ${totalQbit} qBittorrent instances disconnected`,
+					detail:
+						disconnected.length === totalQbit
+							? "All qBittorrent instances behind this qui are offline"
+							: `qui itself is reachable; some qBittorrent instances need attention: ${disconnected.map((q) => q.name).join(", ")}`,
+					actionUrl: "/settings#services",
+					actionLabel: "Check connection",
+					source: "qui",
+					timestamp: new Date().toISOString(),
+				});
+			} catch (error) {
+				// Distinguish three error classes so operators don't chase the
+				// wrong rabbit hole during incidents:
+				//
+				// 1. `QuiInstanceUnreachableError` / `QuiApiError` — the documented
+				//    qui transport contract. Real "qui unreachable" attention row.
+				//
+				// 2. Anything else (most importantly `app.encryptor.decrypt()`
+				//    throwing on bad ciphertext or rotated `ENCRYPTION_KEY`) — NOT
+				//    a qui networking issue. Surface as a config attention row so
+				//    operators don't waste time on qui logs / network checks when
+				//    the real fix is local config.
+				const isQuiTransportError =
+					error instanceof QuiInstanceUnreachableError || error instanceof QuiApiError;
+
+				if (isQuiTransportError) {
+					log.warn({ err: error, instanceId: instance.id }, "pulse: qui instance unreachable");
+					items.push({
+						id: `qui-offline-${instance.id}`,
+						severity: "critical",
+						category: "health",
+						title: `${instance.label} is unreachable`,
+						detail: "Could not connect to qui instance",
+						actionUrl: "/settings#services",
+						actionLabel: "Check connection",
+						source: "qui",
+						timestamp: new Date().toISOString(),
+					});
+				} else {
+					// Local-config / programmer-error path. ENCRYPTION_KEY mismatch,
+					// stale ciphertext after a key rotation, Prisma issues calling
+					// listQuiInstances, etc. Distinct attention row + ERROR-level log.
+					log.error(
+						{ err: error, instanceId: instance.id, instanceLabel: instance.label },
+						"pulse: qui collector hit local-config error (not a qui networking issue)",
+					);
+					items.push({
+						id: `qui-config-error-${instance.id}`,
+						severity: "critical",
+						category: "health",
+						title: `${instance.label}: configuration error`,
+						detail:
+							"qui instance config could not be used (likely encryption key mismatch or stale credential). Re-saving the qui API key in Settings → Services usually fixes this.",
+						actionUrl: "/settings#services",
+						actionLabel: "Re-save credentials",
+						source: "qui",
+						timestamp: new Date().toISOString(),
+					});
+				}
+			}
+		}),
+	);
+
+	return items;
+};
+
+export type { Collector };
+// Test re-exports — collectQuiSignals + the Collector type alias.
+export { collectQuiSignals };
+
 export const pulseCollectors: Collector[] = [
 	collectArrSignals,
 	collectMediaServerReachability,
@@ -1069,4 +1221,5 @@ export const pulseCollectors: Collector[] = [
 	collectTrashSyncFailures,
 	collectSchedulerHealth,
 	collectCleanupOpportunities,
+	collectQuiSignals,
 ];

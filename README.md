@@ -4,6 +4,8 @@
 
 A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, **Lidarr**, **Readarr**, **Plex**, **Tautulli**, **Jellyfin**, **Emby**, and **Seerr** instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
+Now integrates with **[autobrr/qui](https://github.com/autobrr/qui)** as a federated peer for torrent-layer observability — surface seed health, ratios, and cross-seed siblings alongside your *arr/library data without arr-dashboard owning torrent-layer logic. See [docs/QUI.md](docs/QUI.md) for setup.
+
 [![CI](https://github.com/Kha-kis/arr-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/Kha-kis/arr-dashboard/actions/workflows/ci.yml)
 [![Dev Build](https://github.com/Kha-kis/arr-dashboard/actions/workflows/docker-dev.yml/badge.svg)](https://github.com/Kha-kis/arr-dashboard/actions/workflows/docker-dev.yml)
 [![Docker Pulls](https://img.shields.io/docker/pulls/khak1s/arr-dashboard)](https://hub.docker.com/r/khak1s/arr-dashboard)

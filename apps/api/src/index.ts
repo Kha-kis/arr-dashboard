@@ -99,6 +99,24 @@ const start = async () => {
 			.catch((err) => {
 				app.log.warn({ err }, "Startup notification failed (non-critical)");
 			});
+
+		// Hydrate the inode index from persisted snapshots so user-facing
+		// panel requests don't pay the cold-build cost. Fire-and-forget —
+		// the route handlers tolerate a cold cache (timeout race in
+		// qui.ts series-torrents falls back to cached-hash-only).
+		const { hydrateFileIdIndexFromDb } = await import(
+			"./lib/library-sync/infohash-backfill-by-inode.js"
+		);
+		hydrateFileIdIndexFromDb(app.prisma, app.log)
+			.then((result) => {
+				app.log.info(
+					{ loaded: result.loaded, failed: result.failed },
+					"inode-index: startup hydration complete",
+				);
+			})
+			.catch((err) => {
+				app.log.warn({ err }, "inode-index: startup hydration failed (non-critical)");
+			});
 	} catch (error) {
 		// Log to both pino (file) and console (stderr). Pino uses an async worker
 		// thread transport, so process.exit() can kill the process before pino

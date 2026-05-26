@@ -6,6 +6,7 @@ import {
 	type LibraryService,
 	type Pagination,
 	type ServiceInstanceSummary,
+	type TorrentStateCounts,
 } from "@arr/shared";
 import { useMemo } from "react";
 import { useLibraryQuery, useLibrarySyncStatus } from "../../../hooks/api/useLibrary";
@@ -16,6 +17,7 @@ import type {
 	SortByValue,
 	SortOrderValue,
 	StatusFilterValue,
+	TorrentStateFilterValue,
 } from "./use-library-filters";
 
 /**
@@ -38,6 +40,7 @@ export interface LibraryDataParams {
 	statusFilter: StatusFilterValue;
 	fileFilter: FileFilterValue;
 	qualityFilter: QualityFilterValue;
+	torrentStateFilter: TorrentStateFilterValue;
 	// Sorting
 	sortBy: SortByValue;
 	sortOrder: SortOrderValue;
@@ -60,6 +63,8 @@ export interface SyncStatus {
 }
 
 export interface LibraryData {
+	/** Per-state counts for the Torrent state dropdown (only present when qui is configured) */
+	torrentStateCounts?: TorrentStateCounts;
 	/** All items from the current page */
 	items: LibraryItem[];
 	/** Items grouped by type */
@@ -109,6 +114,7 @@ export function useLibraryData(params: LibraryDataParams): LibraryData {
 		statusFilter,
 		fileFilter,
 		qualityFilter,
+		torrentStateFilter,
 		sortBy,
 		sortOrder,
 		page,
@@ -121,6 +127,8 @@ export function useLibraryData(params: LibraryDataParams): LibraryData {
 	const hasFileFilter = fileFilter === "all" ? "all" : fileFilter === "has-file" ? "true" : "false";
 	const cutoffUnmetFilter =
 		qualityFilter === "all" ? "all" : qualityFilter === "cutoff-unmet" ? "true" : "false";
+	// torrentStateFilter is already in the API's vocabulary — pass through.
+	const torrentStateApiFilter = torrentStateFilter;
 
 	// Fetch library data with server-side pagination
 	const libraryQuery = useLibraryQuery({
@@ -134,6 +142,7 @@ export function useLibraryData(params: LibraryDataParams): LibraryData {
 		monitored: monitoredFilter,
 		hasFile: hasFileFilter,
 		cutoffUnmet: cutoffUnmetFilter,
+		torrentState: torrentStateApiFilter,
 		// Sorting
 		sortBy,
 		sortOrder,
@@ -219,6 +228,7 @@ export function useLibraryData(params: LibraryDataParams): LibraryData {
 		syncStatus,
 		instanceOptions,
 		serviceLookup,
+		torrentStateCounts: libraryQuery.data?.torrentStateCounts,
 		isLoading: libraryQuery.isLoading,
 		isError: libraryQuery.isError,
 		error: libraryQuery.error as Error | undefined,

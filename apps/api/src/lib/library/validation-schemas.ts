@@ -27,12 +27,32 @@ export const libraryQuerySchema = z.object({
 	monitored: z.enum(["true", "false", "all"]).default("all"),
 	hasFile: z.enum(["true", "false", "all"]).default("all"),
 	cutoffUnmet: z.enum(["true", "false", "all"]).default("all"),
+	// qui torrent-state filter — `all` skips the filter entirely, `none`
+	// matches LibraryCache rows where `torrentState` is NULL (no qui data
+	// yet), other values match the normalized vocab exactly.
+	torrentState: z
+		.enum([
+			"all",
+			"none",
+			"seeding",
+			"downloading",
+			"stalled_dl",
+			"paused",
+			"queued",
+			"checking",
+			"moving",
+			"error",
+			"unknown",
+		])
+		.default("all"),
 	status: z.string().optional(),
 	qualityProfileId: z.coerce.number().int().optional(),
 	yearMin: z.coerce.number().int().optional(),
 	yearMax: z.coerce.number().int().optional(),
 
 	// Sorting
-	sortBy: z.enum(["title", "sortTitle", "year", "sizeOnDisk", "added"]).default("sortTitle"),
+	sortBy: z
+		.enum(["title", "sortTitle", "year", "sizeOnDisk", "added", "torrentRatio"])
+		.default("sortTitle"),
 	sortOrder: z.enum(["asc", "desc"]).default("asc"),
 });

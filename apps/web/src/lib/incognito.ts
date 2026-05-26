@@ -227,10 +227,7 @@ export function anonymizeHealthMessage(message: string): string {
 
 	// Replace download client names in health messages
 	// Pattern: "Download client ClientName is set to..." or "Download client ClientName places..."
-	anonymized = anonymized.replace(
-		/Download client\s+(\S+)/gi,
-		"Download client Transmission",
-	);
+	anonymized = anonymized.replace(/Download client\s+(\S+)/gi, "Download client Transmission");
 
 	// Replace any remaining quoted names with generic alternatives
 	anonymized = anonymized.replace(/"([^"]+)"/g, '"linux-distribution"');
@@ -264,6 +261,27 @@ export function anonymizePulseText(text: string, source?: string): string {
 	if (source === "system") {
 		return anonymizeHealthMessage(text);
 	}
+
+	// qui-sourced titles carry TWO instance names — the qui label AND the
+	// qBittorrent instance name behind it. Shape: `"qui-label: qbit-name is X"`.
+	// The general single-name branch below would only mask the qui label,
+	// leaving the qBit name visible. Handle this dual-name case explicitly.
+	if (source === "qui") {
+		const colonIdx = text.indexOf(": ");
+		if (colonIdx > 0) {
+			const label = text.slice(0, colonIdx);
+			const message = text.slice(colonIdx + 2);
+			const isIdx = message.indexOf(" is ");
+			if (isIdx > 0) {
+				const qbitName = message.slice(0, isIdx);
+				const action = message.slice(isIdx);
+				return `${getLinuxInstanceName(label)}: ${getLinuxInstanceName(qbitName)}${action}`;
+			}
+			return `${getLinuxInstanceName(label)}: ${anonymizeHealthMessage(message)}`;
+		}
+		// Fall through to single-name handling for qui titles without a colon.
+	}
+
 	const colonIdx = text.indexOf(": ");
 	if (colonIdx > 0) {
 		const label = text.slice(0, colonIdx);
@@ -340,7 +358,7 @@ export function anonymizeStatusMessage(message: string): string {
 	// Lidarr: "Couldn't find similar album for [/path/to/Artist - Album (Year) [FLAC]]"
 	// Handle nested brackets by matching [/path...] including any nested [...] groups
 	anonymized = anonymized.replace(
-		/\[\/(?:[^\[\]]|\[[^\]]*\])*\](?:\])?/g,
+		/\[\/(?:[^[\]]|\[[^\]]*\])*\](?:\])?/g,
 		`[${LINUX_SAVE_PATHS[0]}/linux-distribution-v1.0-x86_64]`,
 	);
 

@@ -87,12 +87,20 @@ function buildDestination() {
 const REDACT_PATHS = [
 	"password",
 	"hashedPassword",
+	// Hashed webhook secrets — auto-tag (Bearer-style) and qui (query-param-style).
+	// Hashes alone aren't directly exploitable, but redacting them is defense-in-depth
+	// against a future contributor logging a `user` object verbatim.
+	"hashedWebhookSecret",
+	"hashedQuiWebhookSecret",
 	"apiKey",
 	"access_token",
 	"refresh_token",
 	"id_token",
 	"token",
 	"clientSecret",
+	// Plaintext qui webhook secret (only in flight at rotate/register; redact in case
+	// it lands in a logged response body).
+	"secret",
 	"encryptedApiKey",
 	"encryptionIv",
 	"cookie",
@@ -106,6 +114,36 @@ const REDACT_PATHS = [
 ];
 
 /**
+ * Pino's default request serializer logs `req.url` verbatim, which would
+ * include any query string — including the qui webhook receiver's
+ * `?secret=…` param. A simple `req.url` redaction would replace the whole
+ * URL with `[Redacted]` and we'd lose the request path entirely. Instead,
+ * install a custom request serializer that strips the secret value while
+ * preserving the rest of the URL.
+ */
+function safeReqSerializer(req: {
+	id?: string;
+	method?: string;
+	url?: string;
+	remoteAddress?: string;
+	remotePort?: number;
+	headers?: Record<string, unknown>;
+}) {
+	const url =
+		typeof req.url === "string" ? req.url.replace(/secret=[^&\s"']+/gi, "secret=***") : req.url;
+	return {
+		id: req.id,
+		method: req.method,
+		url,
+		remoteAddress: req.remoteAddress,
+		remotePort: req.remotePort,
+		// `req.headers.cookie` and `req.headers.authorization` are still
+		// redacted by the path-based REDACT_PATHS above; we don't repeat
+		// them here.
+	};
+}
+
+/**
  * Create the base logger with stdout (main thread) + rotating file (worker thread)
  */
 export const logger = pino(
@@ -115,6 +153,12 @@ export const logger = pino(
 			level: (label) => ({ level: label }),
 		},
 		timestamp: pino.stdTimeFunctions.isoTime,
+		serializers: {
+			// Override the default `req` serializer to strip `?secret=...` from
+			// the logged URL before it hits stdout / the log file. See
+			// `safeReqSerializer` above.
+			req: safeReqSerializer,
+		},
 		redact: {
 			paths: REDACT_PATHS,
 			censor: "[Redacted]",
@@ -149,4 +193,3 @@ export const loggers = {
 export function createLogger(module: string) {
 	return logger.child({ module });
 }
-

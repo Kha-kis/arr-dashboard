@@ -11,12 +11,29 @@ export interface LibraryQueryParams {
 	monitored?: "true" | "false" | "all";
 	hasFile?: "true" | "false" | "all";
 	cutoffUnmet?: "true" | "false" | "all";
+	/**
+	 * qui torrent-state filter (Phase 2.1). `all` (or omitted) skips the filter,
+	 * `none` matches items without qui state yet, other values match the
+	 * normalized vocabulary (`seeding`/`stalled_dl`/etc.) exactly.
+	 */
+	torrentState?:
+		| "all"
+		| "none"
+		| "seeding"
+		| "downloading"
+		| "stalled_dl"
+		| "paused"
+		| "queued"
+		| "checking"
+		| "moving"
+		| "error"
+		| "unknown";
 	status?: string;
 	qualityProfileId?: number;
 	yearMin?: number;
 	yearMax?: number;
 	// Sorting
-	sortBy?: "title" | "sortTitle" | "year" | "sizeOnDisk" | "added";
+	sortBy?: "title" | "sortTitle" | "year" | "sizeOnDisk" | "added" | "torrentRatio";
 	sortOrder?: "asc" | "desc";
 }
 

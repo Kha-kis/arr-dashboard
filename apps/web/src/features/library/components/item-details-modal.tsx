@@ -20,6 +20,7 @@ import { getLinuxInstanceName, getLinuxIsoName, useIncognitoMode } from "../../.
 import { ExternalLinksSection } from "../../discover/components/media-detail-sections";
 import { formatBytes, formatRuntime, SERVICE_COLORS } from "../lib/library-utils";
 import { PosterImage } from "./poster-image";
+import { SeriesTorrentsPanel } from "./series-torrents-panel";
 import { SyncLabelsNowButton } from "./sync-labels-now-button";
 
 export interface ItemDetailsModalProps {
@@ -452,6 +453,30 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 								/>
 							</div>
 						)}
+
+					{/* qui Torrent Health (movies only in v1; series support is per-episode and lands later).
+					 * `item.id` arrives as either `number` (the *arr id) or `string`
+					 * (a serialized numeric id from the React Query cache after
+					 * deserialization). The same coercion is applied to
+					 * `SyncLabelsNowButton` above. Pre-fix versions required
+					 * `typeof item.id === "number"` here too, and silently
+					 * refused to render the panel whenever the id arrived as
+					 * a string — which it routinely does in practice. */}
+					{isMovie &&
+						item.instanceId &&
+						(() => {
+							const arrItemId =
+								typeof item.id === "string" ? Number.parseInt(item.id, 10) : item.id;
+							if (!Number.isFinite(arrItemId)) return null;
+							return (
+								<SeriesTorrentsPanel
+									arrInstanceId={item.instanceId}
+									arrItemId={arrItemId}
+									seriesTitle={item.title}
+									itemType="movie"
+								/>
+							);
+						})()}
 				</div>
 			</div>
 		</div>
