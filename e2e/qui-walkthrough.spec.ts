@@ -63,9 +63,22 @@ async function setupQuiMocks(page: Page): Promise<void> {
 						label: "Mock qui",
 						baseUrl: "http://qui.mock.test:7476",
 						externalUrl: null,
-						service: "QUI",
+						// `ArrServiceType` enum values are lowercase in the
+						// Zod schema (`["sonarr","radarr",...,"qui"]`).
+						// Uppercase here was silently rejected by client-
+						// side validation, leaving the services list
+						// empty and `hasQui` false.
+						service: "qui",
 						enabled: true,
 						isDefault: false,
+						// `hasApiKey` is a required field on
+						// ServiceInstanceSummary — surfacing that the
+						// backend has an encrypted key for this row. The
+						// frontend uses it to render the "rotate key"
+						// affordance; the dropdown derivation doesn't read
+						// it, but its absence triggers Zod validation
+						// failure on the response.
+						hasApiKey: true,
 						tags: [],
 						storageGroupId: null,
 						hasLocalFilesystemAccess: false,
