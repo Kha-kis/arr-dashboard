@@ -17,9 +17,12 @@
  * content) trigger notifications. A random torrent erroring that isn't
  * part of the operator's media library is noise.
  *
- * v1 covers the two problem states detectable from the sync's existing
- * data (`torrentState`): `error` and `stalled_dl`. Tracker-health events
- * would need per-torrent tracker fetches and are deferred.
+ * v1 covered the two problem states detectable from the sync's existing
+ * data (`torrentState`): `error` and `stalled_dl`. v2 adds completion
+ * (`downloading`/`stalled_dl` → `seeding`) so the operator can route
+ * completion notifications through their existing channels and rules.
+ * Tracker-health events would still need per-torrent tracker fetches and
+ * remain deferred.
  */
 
 import type { NotificationEventType } from "@arr/shared";
@@ -28,13 +31,14 @@ import type { NotificationEventType } from "@arr/shared";
  * Above this many transitions of the same kind in a single sync run, emit
  * ONE aggregate notification instead of N individual ones. Protects
  * against notification storms when a tracker outage errors many torrents
- * at once.
+ * at once OR when a queue burst completes a batch of torrents
+ * simultaneously.
  */
 export const AGGREGATE_THRESHOLD = 5;
 
-/** A torrent crossing into a problem state during one sync run. */
+/** A torrent crossing into a notable state during one sync run. */
 export interface ProblemTransition {
-	kind: "errored" | "stalled";
+	kind: "errored" | "stalled" | "completed";
 	infoHash: string;
 	/** *arr library title for the correlated item (LibraryCache.title). */
 	title: string;
@@ -53,12 +57,17 @@ export interface QuiNotificationPayload {
 }
 
 /**
- * Classify a (oldState → newState) pair. Returns the problem-transition
- * kind, or null when this isn't a fresh crossing into a problem state.
+ * Classify a (oldState → newState) pair. Returns the transition kind, or
+ * null when this isn't a fresh notable crossing.
  *
  * A null/undefined `oldState` (torrent newly correlated, or state never
  * synced before) is treated as "not previously a problem" — so an
- * unseen→error pair IS a transition worth notifying.
+ * unseen→error pair IS a transition worth notifying. For completion
+ * specifically, we require the previous state to have been actively
+ * downloading or stalled_dl — that's the precise "this just finished
+ * downloading and started seeding" signal. paused→seeding (resume) and
+ * unseen→seeding (already-complete at first sync) are intentionally
+ * excluded; they'd be noise.
  */
 export function classifyTransition(
 	oldState: string | null | undefined,
@@ -66,17 +75,22 @@ export function classifyTransition(
 ): ProblemTransition["kind"] | null {
 	if (newState === "error" && oldState !== "error") return "errored";
 	if (newState === "stalled_dl" && oldState !== "stalled_dl") return "stalled";
+	if (newState === "seeding" && (oldState === "downloading" || oldState === "stalled_dl")) {
+		return "completed";
+	}
 	return null;
 }
 
 const KIND_TO_EVENT: Record<ProblemTransition["kind"], NotificationEventType> = {
 	errored: "QUI_TORRENT_ERRORED",
 	stalled: "QUI_DOWNLOAD_STALLED",
+	completed: "QUI_TORRENT_COMPLETED",
 };
 
 const KIND_TO_VERB: Record<ProblemTransition["kind"], string> = {
 	errored: "errored",
 	stalled: "stalled",
+	completed: "completed",
 };
 
 /**

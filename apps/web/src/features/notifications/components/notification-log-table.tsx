@@ -24,6 +24,7 @@ const EVENT_TYPE_OPTIONS = [
 	{ value: "QUEUE_CLEANER_FAILED", label: "Queue: Cleaner Failed" },
 	{ value: "QUI_TORRENT_ERRORED", label: "qui: Torrent Errored" },
 	{ value: "QUI_DOWNLOAD_STALLED", label: "qui: Download Stalled" },
+	{ value: "QUI_TORRENT_COMPLETED", label: "qui: Torrent Completed" },
 	{ value: "TRASH_PROFILE_UPDATED", label: "TRaSH: Profile Updated" },
 	{ value: "TRASH_SYNC_ERROR", label: "TRaSH: Sync Error" },
 	{ value: "TRASH_DEPLOY_FAILED", label: "TRaSH: Deploy Failed" },
