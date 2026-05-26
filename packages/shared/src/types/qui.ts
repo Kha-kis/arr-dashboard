@@ -838,6 +838,12 @@ export type QuiWebhookConfig = z.infer<typeof quiWebhookConfigSchema>;
 export const quiEventLogEntrySchema = z.object({
 	id: z.string(),
 	serviceInstanceId: z.string().nullable(),
+	/** Human-readable label for the qui instance the event came from,
+	 * hydrated server-side from `ServiceInstance.label`. Nullable when
+	 * the row's `serviceInstanceId` doesn't resolve (e.g., the
+	 * instance was deleted after the event landed). Mirrors the
+	 * `serviceInstanceLabel` field on `quiActionLogEntrySchema`. */
+	serviceInstanceLabel: z.string().nullable().optional(),
 	eventType: z.string(),
 	torrentHash: z.string().nullable(),
 	payload: z.unknown(),

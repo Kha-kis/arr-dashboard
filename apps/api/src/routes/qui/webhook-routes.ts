@@ -171,6 +171,13 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 				},
 				orderBy: { receivedAt: "desc" },
 				take: limit + 1,
+				// Hydrate the instance label so the My Events tab can render
+				// "main qui" instead of a raw cuid. Mirrors the include block
+				// on /qui/actions (action-routes.ts). serviceInstance is null
+				// when the row's instance was deleted after the event landed.
+				include: {
+					serviceInstance: { select: { label: true } },
+				},
 			});
 			const hasMore = rows.length > limit;
 			const trimmed = hasMore ? rows.slice(0, limit) : rows;
@@ -181,6 +188,7 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 					return {
 						id: r.id,
 						serviceInstanceId: r.serviceInstanceId,
+						serviceInstanceLabel: r.serviceInstance?.label ?? null,
 						eventType: r.eventType,
 						torrentHash: r.torrentHash,
 						payload: safeParseJson(r.payload),

@@ -36,6 +36,7 @@ import {
 	useQuiActivityFeed,
 	useQuiEventLog,
 } from "../../../hooks/api/useQui";
+import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { getLinuxInstanceName } from "../../../lib/incognito";
 import { cn } from "../../../lib/utils";
@@ -122,6 +123,18 @@ export const QuiActivityClient = () => {
 	// that's where they'd come to debug "why isn't my data updating").
 	const { streamStatus, isActive } = useQuiStreamStatus();
 
+	// Service-availability gate — surface a single coherent "configure
+	// qui first" panel when no enabled qui instance is configured. The
+	// previous behavior rendered every tab unconditionally, so an
+	// unconfigured operator saw three nearly-identical empty states
+	// ("qui-related events will appear here", "audit entries will
+	// appear here", etc.) without any direction toward Settings. Mirror
+	// the existing Webhook tab's pattern.
+	const services = useServicesQuery();
+	const hasEnabledQui = (services.data ?? []).some(
+		(s) => s.service.toLowerCase() === "qui" && s.enabled,
+	);
+
 	return (
 		<>
 			<PremiumPageHeader
@@ -137,42 +150,58 @@ export const QuiActivityClient = () => {
 			 * `isActive` is false → no badge → no misleading "offline" pill. */}
 			{isActive ? <StreamStatusBadge status={streamStatus} /> : null}
 
-			<div
-				className="mb-3 flex items-center gap-2 flex-wrap"
-				role="tablist"
-				aria-label="qui activity tabs"
-			>
-				{(Object.keys(TAB_LABELS) as TopTab[]).map((id) => (
-					<button
-						type="button"
-						key={id}
-						role="tab"
-						aria-selected={tab === id}
-						onClick={() => setTab(id)}
-						className={cn(
-							"text-sm font-medium px-4 py-2 rounded-lg border transition-colors",
-							tab === id
-								? "border-foreground/40 bg-foreground/10 text-foreground"
-								: "border-border/40 bg-card/20 text-muted-foreground hover:text-foreground",
-						)}
-					>
-						{TAB_LABELS[id]}
-					</button>
-				))}
-			</div>
-
-			{/* Per-tab caption — orients the operator on WHICH log they're
-			 * looking at. The three logs are easy to confuse without it. */}
-			<p className="mb-6 text-xs text-muted-foreground max-w-3xl">{TAB_DESCRIPTIONS[tab]}</p>
-
-			{tab === "activity" ? (
-				<ActivityFeedView />
-			) : tab === "actions" ? (
-				<MyActionsView />
-			) : tab === "events" ? (
-				<MyEventsView />
+			{!services.isLoading && !hasEnabledQui ? (
+				// Replace the tabs entirely when no qui is configured.
+				// Rendering the tabs WITH the empty state above would let
+				// the operator click through three identical-looking
+				// "nothing here yet" panels — confusing rather than
+				// directive. One clear panel pointing at Settings is
+				// strictly better.
+				<PremiumEmptyState
+					icon={Database}
+					title="No qui instance configured"
+					description="Add a qui service in Settings → Services to populate the Activity feed, My Actions, and My Events tabs. Once an instance is enabled, this page becomes the live feed of every qui-related operation arr-dashboard performs for you."
+				/>
 			) : (
-				<QuiWebhookConfigPanel />
+				<>
+					<div
+						className="mb-3 flex items-center gap-2 flex-wrap"
+						role="tablist"
+						aria-label="qui activity tabs"
+					>
+						{(Object.keys(TAB_LABELS) as TopTab[]).map((id) => (
+							<button
+								type="button"
+								key={id}
+								role="tab"
+								aria-selected={tab === id}
+								onClick={() => setTab(id)}
+								className={cn(
+									"text-sm font-medium px-4 py-2 rounded-lg border transition-colors",
+									tab === id
+										? "border-foreground/40 bg-foreground/10 text-foreground"
+										: "border-border/40 bg-card/20 text-muted-foreground hover:text-foreground",
+								)}
+							>
+								{TAB_LABELS[id]}
+							</button>
+						))}
+					</div>
+
+					{/* Per-tab caption — orients the operator on WHICH log they're
+					 * looking at. The three logs are easy to confuse without it. */}
+					<p className="mb-6 text-xs text-muted-foreground max-w-3xl">{TAB_DESCRIPTIONS[tab]}</p>
+
+					{tab === "activity" ? (
+						<ActivityFeedView />
+					) : tab === "actions" ? (
+						<MyActionsView />
+					) : tab === "events" ? (
+						<MyEventsView />
+					) : (
+						<QuiWebhookConfigPanel />
+					)}
+				</>
 			)}
 		</>
 	);
@@ -278,23 +307,64 @@ interface EventLogRowProps {
 		eventType: string;
 		torrentHash: string | null;
 		serviceInstanceId: string | null;
+		serviceInstanceLabel?: string | null;
 		receivedAt: string;
 	};
 	animationDelay: number;
 }
 
+/**
+ * Map event types to a severity tone. The classification is heuristic
+ * (qui's event-type vocabulary isn't a closed enum), so the default
+ * is the neutral "info" tone — only events whose name clearly signals
+ * a problem get tinted. Future event types added by qui fall through
+ * to neutral until someone classifies them here.
+ */
+function eventTypeSeverity(eventType: string): "info" | "warn" | "error" {
+	const lower = eventType.toLowerCase();
+	if (
+		lower.includes("error") ||
+		lower.includes("failed") ||
+		lower.includes("dropped") ||
+		lower.includes("unreachable")
+	) {
+		return "error";
+	}
+	if (
+		lower.includes("warn") ||
+		lower.includes("stalled") ||
+		lower.includes("retry") ||
+		lower.includes("tracker_problem")
+	) {
+		return "warn";
+	}
+	return "info";
+}
+
+const EVENT_SEVERITY_TONE: Record<"info" | "warn" | "error", string> = {
+	info: "text-blue-300 border-blue-500/30 bg-blue-500/5",
+	warn: "text-amber-300 border-amber-500/30 bg-amber-500/5",
+	error: "text-red-300 border-red-500/30 bg-red-500/5",
+};
+
 const EventLogRow = ({ entry, animationDelay }: EventLogRowProps) => {
 	const [isIncognito] = useIncognitoMode();
-	const instance = isIncognito
-		? getLinuxInstanceName(entry.serviceInstanceId ?? "")
-		: (entry.serviceInstanceId ?? "—");
+	// Prefer the human-readable label hydrated server-side. Falls back
+	// through the id (for older payloads pre-CR1) and finally "—" so
+	// the row always shows SOMETHING in the instance slot.
+	const instanceRaw = entry.serviceInstanceLabel ?? entry.serviceInstanceId ?? "—";
+	const instance = isIncognito ? getLinuxInstanceName(instanceRaw) : instanceRaw;
+	const severity = eventTypeSeverity(entry.eventType);
 
 	return (
 		<li>
 			<GlassmorphicCard padding="sm" animationDelay={animationDelay}>
 				<div className="flex items-start gap-3">
 					<div
-						className="flex-shrink-0 mt-0.5 rounded-full p-1.5 border text-blue-300 border-blue-500/30 bg-blue-500/5"
+						className={cn(
+							"flex-shrink-0 mt-0.5 rounded-full p-1.5 border",
+							EVENT_SEVERITY_TONE[severity],
+						)}
 						aria-hidden
 					>
 						<Webhook className="h-3.5 w-3.5" />

@@ -49,7 +49,19 @@ export const QuiWebhookConfigPanel = () => {
 			"Rotating the secret invalidates the URL you previously copied into qui's NotificationTarget. You'll need to re-register or paste the new URL. Continue?",
 		);
 		if (!ok) return;
-		await rotate.mutateAsync();
+		try {
+			await rotate.mutateAsync();
+		} catch (err) {
+			// A failed rotation looks identical to a successful one from
+			// the UI: spinner stops, but the operator has no way to know
+			// the request didn't land. Surface the error so they can
+			// distinguish "secret was rotated" from "rotation failed —
+			// previous secret still valid" — the security model depends
+			// on knowing which state you're in.
+			toast.error("Couldn't rotate the webhook secret. Previous secret is still valid.", {
+				description: getErrorMessage(err),
+			});
+		}
 	};
 
 	const copy = async (value: string, kind: "url" | "secret" | "full") => {
@@ -78,7 +90,7 @@ export const QuiWebhookConfigPanel = () => {
 				<div className="flex items-start gap-2">
 					<Webhook className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
 					<div className="flex-1 space-y-0.5">
-						<h3 className="text-sm font-semibold">qui webhook (Phase 5.1)</h3>
+						<h3 className="text-sm font-semibold">qui webhook</h3>
 						<p className="text-xs text-muted-foreground">
 							Register arr-dashboard as a NotificationTarget in qui so torrent state changes push
 							here in real time instead of waiting for the 10-minute scheduled sync. Events flow
@@ -207,7 +219,11 @@ export const QuiWebhookConfigPanel = () => {
 					hasSecret={Boolean(config.data?.hasSecret)}
 				/>
 
-				<RecentEventsStrip recentEvents={recentEvents} isIncognito={isIncognito} />
+				<RecentEventsStrip
+					recentEvents={recentEvents}
+					isIncognito={isIncognito}
+					isError={eventLog.isError}
+				/>
 			</div>
 		</GlassmorphicCard>
 	);
@@ -372,12 +388,33 @@ interface RecentEventsStripProps {
 		eventType: string;
 		torrentHash: string | null;
 		serviceInstanceId: string | null;
+		serviceInstanceLabel?: string | null;
 		receivedAt: string;
 	}>;
 	isIncognito: boolean;
+	/** True when the underlying `/qui/events` fetch failed. Distinguishes
+	 * "wire genuinely empty" from "we couldn't load events" — without
+	 * this flag the empty state lies, claiming the wire works when it
+	 * may have errored. */
+	isError: boolean;
 }
 
-const RecentEventsStrip = ({ recentEvents, isIncognito }: RecentEventsStripProps) => {
+const RecentEventsStrip = ({ recentEvents, isIncognito, isError }: RecentEventsStripProps) => {
+	if (isError) {
+		// Distinguish "fetch errored" from "fetch succeeded + 0 events".
+		// The default empty-state message claims the wire works; if it's
+		// shown while the fetch is broken, it's actively misleading.
+		return (
+			<div className="border-t border-border/40 pt-3">
+				<h4 className="text-sm font-semibold mb-1">Recent events</h4>
+				<p className="text-xs text-amber-300/80">
+					Couldn't load recent events — the event-log endpoint returned an error. Webhook delivery
+					may still be working; this is a display-side problem. Refresh the page or check the server
+					logs.
+				</p>
+			</div>
+		);
+	}
 	if (recentEvents.length === 0) {
 		return (
 			<div className="border-t border-border/40 pt-3">
@@ -395,9 +432,9 @@ const RecentEventsStrip = ({ recentEvents, isIncognito }: RecentEventsStripProps
 			<h4 className="text-sm font-semibold">Recent events</h4>
 			<ul className="space-y-1">
 				{recentEvents.map((ev) => {
-					const instance = isIncognito
-						? getLinuxInstanceName(ev.serviceInstanceId ?? "")
-						: (ev.serviceInstanceId ?? "—");
+					// Prefer the hydrated label; fall back through id then "—".
+					const instanceRaw = ev.serviceInstanceLabel ?? ev.serviceInstanceId ?? "—";
+					const instance = isIncognito ? getLinuxInstanceName(instanceRaw) : instanceRaw;
 					return (
 						<li
 							key={ev.id}
