@@ -2,7 +2,9 @@ import { ALL_SERVICES, arrServiceTypeSchema } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { requireInstance } from "../lib/arr/instance-helpers.js";
+import { clearFileIdIndexCache } from "../lib/library-sync/infohash-backfill-by-inode.js";
 import type { ServiceType } from "../lib/prisma.js";
+import { invalidateTorrentListCache } from "../lib/qui/torrent-list-cache.js";
 import { testServiceConnection } from "../lib/services/connection-tester.js";
 import { formatServiceInstance } from "../lib/services/service-formatter.js";
 import { updateInstanceTags, upsertTags } from "../lib/services/tag-manager.js";
@@ -21,6 +23,18 @@ const servicePayloadSchema = z.object({
 	isDefault: z.boolean().default(false),
 	tags: z.array(z.string().min(1).max(64)).default([]),
 	storageGroupId: z.string().min(1).max(64).nullable().optional(),
+	// qui-only: enables inode-based hardlink correlation. When true,
+	// arr-dashboard reads files directly via stat() to verify which
+	// library files are hardlinked to which qui torrents. Requires the
+	// arr-dashboard process to have read access to both the qBit content
+	// tree and the *arr library tree. Mirrors qui's own
+	// `HasLocalFilesystemAccess` per-instance toggle.
+	hasLocalFilesystemAccess: z.boolean().default(false),
+	// qui-only: optional prefix rewrite for paths reported by qui that
+	// arr-dashboard sees at a different mount point. Format:
+	// "qui-prefix>local-prefix" (e.g., "/downloads>/qbit-data"). Empty/null
+	// = no rewrite. Capped at 256 chars to bound config sprawl.
+	pathPrefix: z.string().max(256).nullable().optional(),
 });
 
 const serviceUpdateSchema = servicePayloadSchema
@@ -133,6 +147,28 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			await updateInstanceTags(app.prisma, id, payload.tags);
 		}
 
+		// Drop process-local qui caches when a qui instance becomes
+		// unreachable from this app's perspective — either disabled
+		// (enabled: true → false) or its service type changed away from
+		// QUI. Mirrors the DELETE handler's invalidation but for the
+		// "kept but inert" case. Without this, a disabled instance's
+		// inode index + torrent list would sit in memory for the rest
+		// of the process lifetime (TTL is read-only; nothing reads a
+		// disabled instance, so no self-healing). No-op for non-qui
+		// services because the keys won't be in those caches.
+		const wasQui = existing.service === "QUI";
+		const nowDisabled = payload.enabled === false && existing.enabled === true;
+		const switchedAwayFromQui =
+			payload.service !== undefined && payload.service.toLowerCase() !== "qui";
+		if (wasQui && (nowDisabled || switchedAwayFromQui)) {
+			invalidateTorrentListCache(id);
+			clearFileIdIndexCache(id);
+			request.log.info(
+				{ instanceId: id, reason: nowDisabled ? "disabled" : "service-changed" },
+				"qui caches dropped after instance update",
+			);
+		}
+
 		// Fetch updated instance - include userId to ensure we only get owned instances
 		const fresh = await app.prisma.serviceInstance.findFirst({
 			where: {
@@ -162,6 +198,16 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 		await requireInstance(app, userId, id);
 		await app.prisma.serviceInstance.delete({ where: { id, userId } });
+
+		// Free any process-local qui caches keyed to this instance. Both
+		// the torrent-list cache and the inode index retain heavy entries
+		// (TTL-checked on read only — a stale entry self-heals, but a
+		// deleted instance is never read again, so its entry would linger
+		// for the whole process life). No-op for non-qui services: the id
+		// simply isn't a key in those caches.
+		invalidateTorrentListCache(id);
+		clearFileIdIndexCache(id);
+
 		request.log.info({ instanceId: id }, "Service instance deleted");
 		return reply.status(204).send();
 	});
@@ -211,7 +257,10 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			z.object({
 				baseUrl: z.string().min(1),
 				apiKey: z.string().min(1),
-				service: z.string().min(1).transform((s) => s.toLowerCase()),
+				service: z
+					.string()
+					.min(1)
+					.transform((s) => s.toLowerCase()),
 			}),
 			request.body,
 		);

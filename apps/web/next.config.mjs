@@ -1,10 +1,25 @@
 /** @type {import('next').NextConfig} */
 
-// Allow HMR from non-localhost origins in development (e.g., WSL2 IP)
+// Allow HMR from non-localhost origins in development (e.g., WSL2 IP).
 // Set DEV_ALLOWED_ORIGINS in .env.local: DEV_ALLOWED_ORIGINS=172.x.x.x
-const allowedOrigins = process.env.DEV_ALLOWED_ORIGINS
-	? process.env.DEV_ALLOWED_ORIGINS.split(",").map((s) => s.trim())
-	: [];
+// In dev we ALSO accept the active WSL2 IP via `os.networkInterfaces()`
+// so the white-screen-on-cross-origin failure mode doesn't bite operators
+// who access the dev server via the LAN IP instead of localhost.
+import os from "node:os";
+
+function wslAndLocalDevOrigins() {
+	const fromEnv = process.env.DEV_ALLOWED_ORIGINS
+		? process.env.DEV_ALLOWED_ORIGINS.split(",").map((s) => s.trim())
+		: [];
+	if (process.env.NODE_ENV === "production") return fromEnv;
+	const ipv4 = Object.values(os.networkInterfaces())
+		.flat()
+		.filter((iface) => iface && iface.family === "IPv4" && !iface.internal)
+		.map((iface) => iface.address);
+	return [...new Set([...fromEnv, "localhost", "127.0.0.1", ...ipv4])];
+}
+
+const allowedOrigins = wslAndLocalDevOrigins();
 
 const nextConfig = {
 	output: "standalone",

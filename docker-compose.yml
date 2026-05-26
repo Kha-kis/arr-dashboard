@@ -10,3 +10,10 @@ services:
     ports:
       - 3000:3000
     restart: unless-stopped
+    # Memory ceiling — a circuit breaker against a runaway, not a tight
+    # constraint. The container runs two Node processes, each capped at
+    # --max-old-space-size=768 (see Dockerfile), so ~1.5 GB of heap budget
+    # plus runtime overhead. 3 GB leaves comfortable headroom; raise it if
+    # you run a very large library or enable HEAP_AUTO_SNAPSHOT (snapshots
+    # are ~2.3 GB). Without a limit a leak has nothing to stop it.
+    mem_limit: 3g

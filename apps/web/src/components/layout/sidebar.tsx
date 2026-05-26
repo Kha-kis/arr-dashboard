@@ -15,6 +15,7 @@ import {
 	LayoutDashboard,
 	Library,
 	Menu,
+	Network,
 	Search,
 	Settings,
 	Sparkles,
@@ -53,6 +54,12 @@ const NAV_GROUPS: NavGroup[] = [
 			// Pulse remains the deep-inspection view below it.
 			{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
 			{ href: "/pulse", label: "Pulse", icon: Activity },
+			// `/qui` is the at-a-glance entry for the torrent layer — Sonarr/Radarr
+			// equivalent for qui. Belongs in Overview, not Maintenance, because
+			// it answers "what's going on right now" rather than "what do I
+			// need to maintain". The deeper qui-Activity tab and the
+			// Cross-Seed page stay under Maintenance as drill-downs.
+			{ href: "/qui", label: "qui", icon: Network },
 			{ href: "/calendar", label: "Calendar", icon: Calendar },
 			{ href: "/statistics", label: "Statistics", icon: BarChart3 },
 		],
@@ -74,6 +81,8 @@ const NAV_GROUPS: NavGroup[] = [
 			{ href: "/hunting", label: "Hunting", icon: Target },
 			{ href: "/queue-cleaner", label: "Queue Cleaner", icon: Trash2 },
 			{ href: "/library-cleanup", label: "Cleanup", icon: Eraser },
+			{ href: "/cross-seed", label: "Cross-Seed", icon: Network },
+			{ href: "/qui-activity", label: "qui Activity", icon: History },
 			{ href: "/auto-tag", label: "Auto-Tagger", icon: Tag },
 			{ href: "/label-sync", label: "Label Sync", icon: Tag },
 			{ href: "/history", label: "History", icon: History },

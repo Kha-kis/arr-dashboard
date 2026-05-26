@@ -56,6 +56,8 @@ const createMockInstance = (
 	userId: "user-123",
 	isDefault: false,
 	storageGroupId: null,
+	hasLocalFilesystemAccess: false,
+	pathPrefix: null,
 	createdAt: new Date(),
 	updatedAt: new Date(),
 });
@@ -71,10 +73,7 @@ const createMockLogger = () => ({
 });
 
 // Create mock Fastify app
-const createMockApp = (
-	instances: ServiceInstance[],
-	clientFactory?: any,
-): FastifyInstance => {
+const createMockApp = (instances: ServiceInstance[], clientFactory?: any): FastifyInstance => {
 	const mockFindMany = vi.fn().mockResolvedValue(instances);
 
 	return {
@@ -124,19 +123,12 @@ describe("executeOnInstances - Basic Functionality", () => {
 	});
 
 	it("should filter by service type", async () => {
-		const instances = [
-			createMockInstance("1", "SONARR", "Sonarr 1"),
-		];
+		const instances = [createMockInstance("1", "SONARR", "Sonarr 1")];
 
 		const app = createMockApp(instances);
 		const operation = vi.fn().mockResolvedValue({ data: "test" });
 
-		await executeOnInstances(
-			app,
-			"user-123",
-			{ serviceTypes: ["SONARR"] },
-			operation,
-		);
+		await executeOnInstances(app, "user-123", { serviceTypes: ["SONARR"] }, operation);
 
 		expect(app.prisma.serviceInstance.findMany).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -153,12 +145,7 @@ describe("executeOnInstances - Basic Functionality", () => {
 		const app = createMockApp(instances);
 		const operation = vi.fn().mockResolvedValue({ data: "test" });
 
-		await executeOnInstances(
-			app,
-			"user-123",
-			{ instanceIds: ["1", "2"] },
-			operation,
-		);
+		await executeOnInstances(app, "user-123", { instanceIds: ["1", "2"] }, operation);
 
 		expect(app.prisma.serviceInstance.findMany).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -178,12 +165,7 @@ describe("executeOnInstances - Basic Functionality", () => {
 		const app = createMockApp(instances);
 		const operation = vi.fn().mockResolvedValue({ data: "test" });
 
-		await executeOnInstances(
-			app,
-			"user-123",
-			{ enabledOnly: false },
-			operation,
-		);
+		await executeOnInstances(app, "user-123", { enabledOnly: false }, operation);
 
 		// Should NOT include enabled filter in query
 		expect(app.prisma.serviceInstance.findMany).toHaveBeenCalledWith(
@@ -289,11 +271,7 @@ describe("executeOnInstances - Result Aggregation", () => {
 
 		const result = await executeOnInstances(app, "user-123", {}, operation);
 
-		expect(result.aggregated).toEqual([
-			{ count: 10 },
-			{ count: 20 },
-			{ count: 30 },
-		]);
+		expect(result.aggregated).toEqual([{ count: 10 }, { count: 20 }, { count: 30 }]);
 	});
 
 	it("should include instance metadata in results", async () => {
@@ -371,27 +349,25 @@ describe("executeOnInstances - User Isolation", () => {
 
 describe("getClientForInstance - Authentication", () => {
 	// Helper to create mock request
-	const createMockRequest = (
-		currentUser?: { id: string },
-	): FastifyRequest => ({
-		currentUser,
-	} as unknown as FastifyRequest);
+	const createMockRequest = (currentUser?: { id: string }): FastifyRequest =>
+		({
+			currentUser,
+		}) as unknown as FastifyRequest;
 
 	// Helper to create mock app for getClientForInstance tests
-	const createMockAppWithFindFirst = (
-		instance: ServiceInstance | null,
-	): FastifyInstance => ({
-		prisma: {
-			serviceInstance: {
-				findMany: vi.fn(),
-				findFirst: vi.fn().mockResolvedValue(instance),
+	const createMockAppWithFindFirst = (instance: ServiceInstance | null): FastifyInstance =>
+		({
+			prisma: {
+				serviceInstance: {
+					findMany: vi.fn(),
+					findFirst: vi.fn().mockResolvedValue(instance),
+				},
 			},
-		},
-		log: createMockLogger(),
-		arrClientFactory: {
-			create: vi.fn(() => new SonarrClient({ baseUrl: "http://test", apiKey: "key" })),
-		},
-	} as unknown as FastifyInstance);
+			log: createMockLogger(),
+			arrClientFactory: {
+				create: vi.fn(() => new SonarrClient({ baseUrl: "http://test", apiKey: "key" })),
+			},
+		}) as unknown as FastifyInstance;
 
 	it("should return 401 when request.currentUser is undefined", async () => {
 		const app = createMockAppWithFindFirst(null);

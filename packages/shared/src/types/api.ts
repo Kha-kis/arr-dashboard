@@ -15,6 +15,12 @@ export interface ServiceInstanceSummary {
 	isDefault: boolean;
 	hasApiKey: boolean;
 	storageGroupId: string | null;
+	// qui-only — only meaningful when `service === "qui"`. Always present
+	// in the API response shape so the frontend doesn't have to special-
+	// case missing-field handling per service type. Defaults to `false` /
+	// `null` for non-qui instances.
+	hasLocalFilesystemAccess: boolean;
+	pathPrefix: string | null;
 	createdAt: string;
 	updatedAt: string;
 	tags: ServiceTagResponse[];

@@ -334,7 +334,8 @@ export type ServiceType =
 	| "tautulli"
 	| "plex"
 	| "jellyfin"
-	| "emby";
+	| "emby"
+	| "qui";
 
 /**
  * Service-specific gradients for visual distinction
@@ -397,6 +398,11 @@ export const SERVICE_GRADIENTS: Record<ServiceType, ServiceGradient> = {
 		from: "#52b54b", // Emby brand green
 		to: "#2d8a28", // darker green
 		glow: "rgba(82, 181, 75, 0.35)",
+	},
+	qui: {
+		from: "#0891b2", // cyan-600 (deeper than Sonarr's cyan-500)
+		to: "#1e40af", // blue-700 (download / infrastructure tone)
+		glow: "rgba(8, 145, 178, 0.4)",
 	},
 };
 

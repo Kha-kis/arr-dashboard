@@ -56,6 +56,8 @@ for the full rationale.
 | `/api/auto-tag` | experimental | Criteria-based auto-tagger — applies tags to LibraryCache items matching the rule's criteria DSL (genre, year, codec, watch state, …). Companion to Label Sync. Webhook config (secret read/rotate) lives here under session auth. |
 | `/api/auto-tag/webhook` | experimental | Inbound Sonarr/Radarr Connect webhook for real-time auto-tagging. **Public route** (no session cookie); authenticates via per-user Bearer token (SHA-256 hash of the user's webhook secret). |
 | `/api/pulse` | internal | System Pulse health signals + attention items |
+| `/api/qui` | experimental | Federated peer integration with autobrr/qui (qBittorrent UI) — read-only torrent state, trackers, cross-seed siblings; powers the Torrent Health panel. |
+| `/api/webhooks/qui` | experimental | Inbound qui webhook receiver (Phase 5.1). **Public route** (no session cookie); authenticates via per-user `?secret=…` query param (matches qui's `ApiKeyQuery` scheme). Stores raw events in `QuiEventLog` and publishes to the in-process event bus for SSE fan-out. |
 | `/api/seerr` | stable | Request management, discovery, library enrichment |
 | `/api/trash-guides` | internal | TRaSH cache, templates, deployment, profiles |
 
@@ -109,6 +111,29 @@ for the full rationale.
 | DELETE | `/services/:id` | Remove instance |
 | POST | `/services/test-connection` | Test before saving |
 | POST | `/services/:id/test` | Test existing |
+
+## QUI Routes (`/api/qui`) — experimental
+
+> Federated peer integration with autobrr/qui (qBittorrent UI) — read-only torrent state, trackers, cross-seed siblings.
+
+| Method | Route | Auth | Purpose |
+|--------|-------|------|---------|
+| GET | `/qui/instances` | Yes | List QUI instances for current user |
+| GET | `/qui/instances/:id/qbit` | Yes | List qBittorrent instances behind a QUI instance |
+| GET | `/qui/instances/:id/torrents/by-hash/:hash` | Yes | Get torrent by info hash |
+| GET | `/qui/instances/:id/qbit/:instanceId/torrents/:hash/trackers` | Yes | Get trackers for a torrent (filters DHT/PeX/LSD) |
+| GET | `/qui/instances/:id/qbit/:instanceId/torrents/:hash/cross-seed` | Yes | Get cross-seed matches for a torrent |
+| POST | `/qui/instances/:id/test` | Yes | Test connection to a saved QUI instance |
+| POST | `/qui/test` | Yes | Test connection with inline credentials (no storage) |
+
+The Library route (`GET /api/library`) accepts `?torrentState=` for server-side filtering (Phase 2.1). Allowed values: `all` (default), `none` (rows without qui data yet), `seeding`, `downloading`, `stalled_dl`, `paused`, `queued`, `checking`, `moving`, `error`, `unknown`. State is populated by the periodic `qui-torrent-state-sync` scheduler (10 min). The response also includes a `torrentStateCounts` object (per-state counts honoring every other applied filter) so the UI dropdown can show `Seeding (150)` etc.
+
+**Backfill coverage**: the `infohash-backfill` scheduler walks LibraryCache rows missing `infoHash`, queries the relevant *arr's dedicated `/api/v3/history/movie` (Radarr) or `/api/v3/history/series` (Sonarr) endpoint for the original grab record, and persists the hash. **Two-phase cadence**:
+
+- **Catch-up phase** runs at startup whenever the backlog is non-zero — fires batches back-to-back with a 60s gap, capped at 10k rows per startup (~17 min worst-case). Drains an existing library quickly: a 1500-row backlog completes in ~5 minutes.
+- **Steady-state phase** takes over after catch-up, running every 6h to capture any new items that have landed since the last sweep.
+
+Per-row sleep is 100ms regardless of phase — that's the politeness budget against *arr. Without this scheduler, only items grabbed since PR #416 (2026-05-04) ever get correlated with qui. The base `/api/v3/history` endpoint is intentionally NOT used: it accepts `movieIds`/`seriesIds` (plural arrays) and silently ignores the singular form, returning unfiltered global history that would assign the same hash to every item.
 
 ## Dashboard (`/api/dashboard`)
 

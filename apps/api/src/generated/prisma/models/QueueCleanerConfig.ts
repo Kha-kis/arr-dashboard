@@ -78,6 +78,8 @@ export type QueueCleanerConfigMinAggregateOutputType = {
   removeFromClient: boolean | null
   addToBlocklist: boolean | null
   searchAfterRemoval: boolean | null
+  quiAwareMode: boolean | null
+  lastSeedProtection: boolean | null
   changeCategoryEnabled: boolean | null
   dryRunMode: boolean | null
   maxRemovalsPerRun: number | null
@@ -132,6 +134,8 @@ export type QueueCleanerConfigMaxAggregateOutputType = {
   removeFromClient: boolean | null
   addToBlocklist: boolean | null
   searchAfterRemoval: boolean | null
+  quiAwareMode: boolean | null
+  lastSeedProtection: boolean | null
   changeCategoryEnabled: boolean | null
   dryRunMode: boolean | null
   maxRemovalsPerRun: number | null
@@ -186,6 +190,8 @@ export type QueueCleanerConfigCountAggregateOutputType = {
   removeFromClient: number
   addToBlocklist: number
   searchAfterRemoval: number
+  quiAwareMode: number
+  lastSeedProtection: number
   changeCategoryEnabled: number
   dryRunMode: number
   maxRemovalsPerRun: number
@@ -278,6 +284,8 @@ export type QueueCleanerConfigMinAggregateInputType = {
   removeFromClient?: true
   addToBlocklist?: true
   searchAfterRemoval?: true
+  quiAwareMode?: true
+  lastSeedProtection?: true
   changeCategoryEnabled?: true
   dryRunMode?: true
   maxRemovalsPerRun?: true
@@ -332,6 +340,8 @@ export type QueueCleanerConfigMaxAggregateInputType = {
   removeFromClient?: true
   addToBlocklist?: true
   searchAfterRemoval?: true
+  quiAwareMode?: true
+  lastSeedProtection?: true
   changeCategoryEnabled?: true
   dryRunMode?: true
   maxRemovalsPerRun?: true
@@ -386,6 +396,8 @@ export type QueueCleanerConfigCountAggregateInputType = {
   removeFromClient?: true
   addToBlocklist?: true
   searchAfterRemoval?: true
+  quiAwareMode?: true
+  lastSeedProtection?: true
   changeCategoryEnabled?: true
   dryRunMode?: true
   maxRemovalsPerRun?: true
@@ -527,6 +539,8 @@ export type QueueCleanerConfigGroupByOutputType = {
   removeFromClient: boolean
   addToBlocklist: boolean
   searchAfterRemoval: boolean
+  quiAwareMode: boolean
+  lastSeedProtection: boolean
   changeCategoryEnabled: boolean
   dryRunMode: boolean
   maxRemovalsPerRun: number
@@ -604,6 +618,8 @@ export type QueueCleanerConfigWhereInput = {
   removeFromClient?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   addToBlocklist?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   searchAfterRemoval?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
+  quiAwareMode?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
+  lastSeedProtection?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   changeCategoryEnabled?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   dryRunMode?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   maxRemovalsPerRun?: Prisma.IntFilter<"QueueCleanerConfig"> | number
@@ -659,6 +675,8 @@ export type QueueCleanerConfigOrderByWithRelationInput = {
   removeFromClient?: Prisma.SortOrder
   addToBlocklist?: Prisma.SortOrder
   searchAfterRemoval?: Prisma.SortOrder
+  quiAwareMode?: Prisma.SortOrder
+  lastSeedProtection?: Prisma.SortOrder
   changeCategoryEnabled?: Prisma.SortOrder
   dryRunMode?: Prisma.SortOrder
   maxRemovalsPerRun?: Prisma.SortOrder
@@ -717,6 +735,8 @@ export type QueueCleanerConfigWhereUniqueInput = Prisma.AtLeast<{
   removeFromClient?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   addToBlocklist?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   searchAfterRemoval?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
+  quiAwareMode?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
+  lastSeedProtection?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   changeCategoryEnabled?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   dryRunMode?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   maxRemovalsPerRun?: Prisma.IntFilter<"QueueCleanerConfig"> | number
@@ -772,6 +792,8 @@ export type QueueCleanerConfigOrderByWithAggregationInput = {
   removeFromClient?: Prisma.SortOrder
   addToBlocklist?: Prisma.SortOrder
   searchAfterRemoval?: Prisma.SortOrder
+  quiAwareMode?: Prisma.SortOrder
+  lastSeedProtection?: Prisma.SortOrder
   changeCategoryEnabled?: Prisma.SortOrder
   dryRunMode?: Prisma.SortOrder
   maxRemovalsPerRun?: Prisma.SortOrder
@@ -834,6 +856,8 @@ export type QueueCleanerConfigScalarWhereWithAggregatesInput = {
   removeFromClient?: Prisma.BoolWithAggregatesFilter<"QueueCleanerConfig"> | boolean
   addToBlocklist?: Prisma.BoolWithAggregatesFilter<"QueueCleanerConfig"> | boolean
   searchAfterRemoval?: Prisma.BoolWithAggregatesFilter<"QueueCleanerConfig"> | boolean
+  quiAwareMode?: Prisma.BoolWithAggregatesFilter<"QueueCleanerConfig"> | boolean
+  lastSeedProtection?: Prisma.BoolWithAggregatesFilter<"QueueCleanerConfig"> | boolean
   changeCategoryEnabled?: Prisma.BoolWithAggregatesFilter<"QueueCleanerConfig"> | boolean
   dryRunMode?: Prisma.BoolWithAggregatesFilter<"QueueCleanerConfig"> | boolean
   maxRemovalsPerRun?: Prisma.IntWithAggregatesFilter<"QueueCleanerConfig"> | number
@@ -887,6 +911,8 @@ export type QueueCleanerConfigCreateInput = {
   removeFromClient?: boolean
   addToBlocklist?: boolean
   searchAfterRemoval?: boolean
+  quiAwareMode?: boolean
+  lastSeedProtection?: boolean
   changeCategoryEnabled?: boolean
   dryRunMode?: boolean
   maxRemovalsPerRun?: number
@@ -942,6 +968,8 @@ export type QueueCleanerConfigUncheckedCreateInput = {
   removeFromClient?: boolean
   addToBlocklist?: boolean
   searchAfterRemoval?: boolean
+  quiAwareMode?: boolean
+  lastSeedProtection?: boolean
   changeCategoryEnabled?: boolean
   dryRunMode?: boolean
   maxRemovalsPerRun?: number
@@ -995,6 +1023,8 @@ export type QueueCleanerConfigUpdateInput = {
   removeFromClient?: Prisma.BoolFieldUpdateOperationsInput | boolean
   addToBlocklist?: Prisma.BoolFieldUpdateOperationsInput | boolean
   searchAfterRemoval?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  quiAwareMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  lastSeedProtection?: Prisma.BoolFieldUpdateOperationsInput | boolean
   changeCategoryEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   dryRunMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
   maxRemovalsPerRun?: Prisma.IntFieldUpdateOperationsInput | number
@@ -1050,6 +1080,8 @@ export type QueueCleanerConfigUncheckedUpdateInput = {
   removeFromClient?: Prisma.BoolFieldUpdateOperationsInput | boolean
   addToBlocklist?: Prisma.BoolFieldUpdateOperationsInput | boolean
   searchAfterRemoval?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  quiAwareMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  lastSeedProtection?: Prisma.BoolFieldUpdateOperationsInput | boolean
   changeCategoryEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   dryRunMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
   maxRemovalsPerRun?: Prisma.IntFieldUpdateOperationsInput | number
@@ -1104,6 +1136,8 @@ export type QueueCleanerConfigCreateManyInput = {
   removeFromClient?: boolean
   addToBlocklist?: boolean
   searchAfterRemoval?: boolean
+  quiAwareMode?: boolean
+  lastSeedProtection?: boolean
   changeCategoryEnabled?: boolean
   dryRunMode?: boolean
   maxRemovalsPerRun?: number
@@ -1157,6 +1191,8 @@ export type QueueCleanerConfigUpdateManyMutationInput = {
   removeFromClient?: Prisma.BoolFieldUpdateOperationsInput | boolean
   addToBlocklist?: Prisma.BoolFieldUpdateOperationsInput | boolean
   searchAfterRemoval?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  quiAwareMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  lastSeedProtection?: Prisma.BoolFieldUpdateOperationsInput | boolean
   changeCategoryEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   dryRunMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
   maxRemovalsPerRun?: Prisma.IntFieldUpdateOperationsInput | number
@@ -1211,6 +1247,8 @@ export type QueueCleanerConfigUncheckedUpdateManyInput = {
   removeFromClient?: Prisma.BoolFieldUpdateOperationsInput | boolean
   addToBlocklist?: Prisma.BoolFieldUpdateOperationsInput | boolean
   searchAfterRemoval?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  quiAwareMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  lastSeedProtection?: Prisma.BoolFieldUpdateOperationsInput | boolean
   changeCategoryEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   dryRunMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
   maxRemovalsPerRun?: Prisma.IntFieldUpdateOperationsInput | number
@@ -1270,6 +1308,8 @@ export type QueueCleanerConfigCountOrderByAggregateInput = {
   removeFromClient?: Prisma.SortOrder
   addToBlocklist?: Prisma.SortOrder
   searchAfterRemoval?: Prisma.SortOrder
+  quiAwareMode?: Prisma.SortOrder
+  lastSeedProtection?: Prisma.SortOrder
   changeCategoryEnabled?: Prisma.SortOrder
   dryRunMode?: Prisma.SortOrder
   maxRemovalsPerRun?: Prisma.SortOrder
@@ -1342,6 +1382,8 @@ export type QueueCleanerConfigMaxOrderByAggregateInput = {
   removeFromClient?: Prisma.SortOrder
   addToBlocklist?: Prisma.SortOrder
   searchAfterRemoval?: Prisma.SortOrder
+  quiAwareMode?: Prisma.SortOrder
+  lastSeedProtection?: Prisma.SortOrder
   changeCategoryEnabled?: Prisma.SortOrder
   dryRunMode?: Prisma.SortOrder
   maxRemovalsPerRun?: Prisma.SortOrder
@@ -1396,6 +1438,8 @@ export type QueueCleanerConfigMinOrderByAggregateInput = {
   removeFromClient?: Prisma.SortOrder
   addToBlocklist?: Prisma.SortOrder
   searchAfterRemoval?: Prisma.SortOrder
+  quiAwareMode?: Prisma.SortOrder
+  lastSeedProtection?: Prisma.SortOrder
   changeCategoryEnabled?: Prisma.SortOrder
   dryRunMode?: Prisma.SortOrder
   maxRemovalsPerRun?: Prisma.SortOrder
@@ -1507,6 +1551,8 @@ export type QueueCleanerConfigCreateWithoutInstanceInput = {
   removeFromClient?: boolean
   addToBlocklist?: boolean
   searchAfterRemoval?: boolean
+  quiAwareMode?: boolean
+  lastSeedProtection?: boolean
   changeCategoryEnabled?: boolean
   dryRunMode?: boolean
   maxRemovalsPerRun?: number
@@ -1560,6 +1606,8 @@ export type QueueCleanerConfigUncheckedCreateWithoutInstanceInput = {
   removeFromClient?: boolean
   addToBlocklist?: boolean
   searchAfterRemoval?: boolean
+  quiAwareMode?: boolean
+  lastSeedProtection?: boolean
   changeCategoryEnabled?: boolean
   dryRunMode?: boolean
   maxRemovalsPerRun?: number
@@ -1629,6 +1677,8 @@ export type QueueCleanerConfigUpdateWithoutInstanceInput = {
   removeFromClient?: Prisma.BoolFieldUpdateOperationsInput | boolean
   addToBlocklist?: Prisma.BoolFieldUpdateOperationsInput | boolean
   searchAfterRemoval?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  quiAwareMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  lastSeedProtection?: Prisma.BoolFieldUpdateOperationsInput | boolean
   changeCategoryEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   dryRunMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
   maxRemovalsPerRun?: Prisma.IntFieldUpdateOperationsInput | number
@@ -1682,6 +1732,8 @@ export type QueueCleanerConfigUncheckedUpdateWithoutInstanceInput = {
   removeFromClient?: Prisma.BoolFieldUpdateOperationsInput | boolean
   addToBlocklist?: Prisma.BoolFieldUpdateOperationsInput | boolean
   searchAfterRemoval?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  quiAwareMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  lastSeedProtection?: Prisma.BoolFieldUpdateOperationsInput | boolean
   changeCategoryEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   dryRunMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
   maxRemovalsPerRun?: Prisma.IntFieldUpdateOperationsInput | number
@@ -1738,6 +1790,8 @@ export type QueueCleanerConfigSelect<ExtArgs extends runtime.Types.Extensions.In
   removeFromClient?: boolean
   addToBlocklist?: boolean
   searchAfterRemoval?: boolean
+  quiAwareMode?: boolean
+  lastSeedProtection?: boolean
   changeCategoryEnabled?: boolean
   dryRunMode?: boolean
   maxRemovalsPerRun?: boolean
@@ -1793,6 +1847,8 @@ export type QueueCleanerConfigSelectCreateManyAndReturn<ExtArgs extends runtime.
   removeFromClient?: boolean
   addToBlocklist?: boolean
   searchAfterRemoval?: boolean
+  quiAwareMode?: boolean
+  lastSeedProtection?: boolean
   changeCategoryEnabled?: boolean
   dryRunMode?: boolean
   maxRemovalsPerRun?: boolean
@@ -1848,6 +1904,8 @@ export type QueueCleanerConfigSelectUpdateManyAndReturn<ExtArgs extends runtime.
   removeFromClient?: boolean
   addToBlocklist?: boolean
   searchAfterRemoval?: boolean
+  quiAwareMode?: boolean
+  lastSeedProtection?: boolean
   changeCategoryEnabled?: boolean
   dryRunMode?: boolean
   maxRemovalsPerRun?: boolean
@@ -1903,6 +1961,8 @@ export type QueueCleanerConfigSelectScalar = {
   removeFromClient?: boolean
   addToBlocklist?: boolean
   searchAfterRemoval?: boolean
+  quiAwareMode?: boolean
+  lastSeedProtection?: boolean
   changeCategoryEnabled?: boolean
   dryRunMode?: boolean
   maxRemovalsPerRun?: boolean
@@ -1941,7 +2001,7 @@ export type QueueCleanerConfigSelectScalar = {
   updatedAt?: boolean
 }
 
-export type QueueCleanerConfigOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "enabled" | "intervalMins" | "stalledEnabled" | "stalledThresholdMins" | "failedEnabled" | "slowEnabled" | "slowSpeedThreshold" | "slowGracePeriodMins" | "errorPatternsEnabled" | "errorPatterns" | "removeFromClient" | "addToBlocklist" | "searchAfterRemoval" | "changeCategoryEnabled" | "dryRunMode" | "maxRemovalsPerRun" | "minQueueAgeMins" | "strikeSystemEnabled" | "maxStrikes" | "strikeDecayHours" | "seedingTimeoutEnabled" | "seedingTimeoutHours" | "estimatedCompletionEnabled" | "estimatedCompletionMultiplier" | "importPendingEnabled" | "importPendingThresholdMins" | "importBlockCleanupLevel" | "importBlockPatternMode" | "importBlockPatterns" | "autoImportEnabled" | "autoImportMaxAttempts" | "autoImportCooldownMins" | "autoImportSafeOnly" | "autoImportCustomPatterns" | "autoImportNeverPatterns" | "tagFilterEnabled" | "includeTags" | "excludeTags" | "profileFilterEnabled" | "includeProfiles" | "excludeProfiles" | "skipFutureEpisodes" | "whitelistEnabled" | "whitelistPatterns" | "lastRunAt" | "lastRunItemsCleaned" | "lastRunItemsSkipped" | "createdAt" | "updatedAt", ExtArgs["result"]["queueCleanerConfig"]>
+export type QueueCleanerConfigOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "enabled" | "intervalMins" | "stalledEnabled" | "stalledThresholdMins" | "failedEnabled" | "slowEnabled" | "slowSpeedThreshold" | "slowGracePeriodMins" | "errorPatternsEnabled" | "errorPatterns" | "removeFromClient" | "addToBlocklist" | "searchAfterRemoval" | "quiAwareMode" | "lastSeedProtection" | "changeCategoryEnabled" | "dryRunMode" | "maxRemovalsPerRun" | "minQueueAgeMins" | "strikeSystemEnabled" | "maxStrikes" | "strikeDecayHours" | "seedingTimeoutEnabled" | "seedingTimeoutHours" | "estimatedCompletionEnabled" | "estimatedCompletionMultiplier" | "importPendingEnabled" | "importPendingThresholdMins" | "importBlockCleanupLevel" | "importBlockPatternMode" | "importBlockPatterns" | "autoImportEnabled" | "autoImportMaxAttempts" | "autoImportCooldownMins" | "autoImportSafeOnly" | "autoImportCustomPatterns" | "autoImportNeverPatterns" | "tagFilterEnabled" | "includeTags" | "excludeTags" | "profileFilterEnabled" | "includeProfiles" | "excludeProfiles" | "skipFutureEpisodes" | "whitelistEnabled" | "whitelistPatterns" | "lastRunAt" | "lastRunItemsCleaned" | "lastRunItemsSkipped" | "createdAt" | "updatedAt", ExtArgs["result"]["queueCleanerConfig"]>
 export type QueueCleanerConfigInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }
@@ -1973,6 +2033,31 @@ export type $QueueCleanerConfigPayload<ExtArgs extends runtime.Types.Extensions.
     removeFromClient: boolean
     addToBlocklist: boolean
     searchAfterRemoval: boolean
+    /**
+     * qui-aware mode (Phase 2.3): when true, skip strikes on queue items whose
+     * corresponding LibraryCache.torrentState is `paused` or `error` — qui (or
+     * a human via qui) is already acting on the torrent. Opt-in, off by default
+     * to preserve existing strike behavior. No-op when the user has no qui
+     * instance configured (LibraryCache.torrentState stays NULL across rows).
+     */
+    quiAwareMode: boolean
+    /**
+     * Last-seed protection (Phase 2.4) — when enabled, skip striking a torrent
+     * whose content has no surviving copy elsewhere. Predicate (all must hold
+     * to allow the strike, ANY missing condition triggers protection):
+     * 1. qui returns >= 1 cross-seed sibling for this infohash, AND
+     * 2. InodeIndexCache shows >= 1 other torrent shares this inode group, AND
+     * 3. arr-side library (EpisodeFileCache / MovieFileCache / LidarrTrackFile)
+     * still references this torrent's hash (i.e. content is still active
+     * in *arr's library — protects against accidental deletes of
+     * unique content; allows strikes after *arr has already replaced the
+     * file (quality upgrade) since condition 3 is then false).
+     * Fail-closed: any check that throws/times out is treated as "unknown" and
+     * the item is protected from strike (caution-first; data loss is
+     * asymmetrically expensive vs. cleanup latency).
+     * Default on — operator can toggle per-instance.
+     */
+    lastSeedProtection: boolean
     changeCategoryEnabled: boolean
     dryRunMode: boolean
     maxRemovalsPerRun: number
@@ -2448,6 +2533,8 @@ export interface QueueCleanerConfigFieldRefs {
   readonly removeFromClient: Prisma.FieldRef<"QueueCleanerConfig", 'Boolean'>
   readonly addToBlocklist: Prisma.FieldRef<"QueueCleanerConfig", 'Boolean'>
   readonly searchAfterRemoval: Prisma.FieldRef<"QueueCleanerConfig", 'Boolean'>
+  readonly quiAwareMode: Prisma.FieldRef<"QueueCleanerConfig", 'Boolean'>
+  readonly lastSeedProtection: Prisma.FieldRef<"QueueCleanerConfig", 'Boolean'>
   readonly changeCategoryEnabled: Prisma.FieldRef<"QueueCleanerConfig", 'Boolean'>
   readonly dryRunMode: Prisma.FieldRef<"QueueCleanerConfig", 'Boolean'>
   readonly maxRemovalsPerRun: Prisma.FieldRef<"QueueCleanerConfig", 'Int'>

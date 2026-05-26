@@ -37,6 +37,8 @@ export const JOB_ID = {
 	autoTag: "auto-tag",
 	tmdbListCache: "tmdb-list-cache",
 	traktListCache: "trakt-list-cache",
+	quiTorrentStateSync: "qui-torrent-state-sync",
+	infoHashBackfill: "infohash-backfill",
 } as const;
 
 export const KNOWN_JOBS: readonly JobDefinition[] = [
@@ -189,5 +191,21 @@ export const KNOWN_JOBS: readonly JobDefinition[] = [
 			"Refreshes cached membership of Trakt lists referenced by enabled trakt_list_member auto-tag rules. Requires a per-user Trakt PAT + an app-level TRAKT_CLIENT_ID env var; no-op when either is missing.",
 		concurrency: "singleton",
 		intervalMs: 4 * 60 * 60 * 1000,
+	},
+	{
+		id: JOB_ID.quiTorrentStateSync,
+		label: "qui torrent-state sync",
+		description:
+			"Snapshots torrent state (seeding/stalled_dl/etc.) + ratio from every enabled qui instance into LibraryCache. Powers the per-card health badge and the Torrent State filter on the Library page. No-op when no qui instance is configured.",
+		concurrency: "singleton",
+		intervalMs: 10 * 60 * 1000,
+	},
+	{
+		id: JOB_ID.infoHashBackfill,
+		label: "infoHash backfill",
+		description:
+			"Walks LibraryCache rows missing infoHash for users with qui configured, queries *arr history to populate the hash. Required for qui torrent-state coverage; without it, only items grabbed since PR #416 (2026-05-04) get correlated. Two-phase: a startup catch-up loop drains existing backlogs in batches (capped at 10k rows / ~17min worst-case), then transitions to a 6h steady-state cadence to capture newly-landed items.",
+		concurrency: "singleton",
+		intervalMs: 6 * 60 * 60 * 1000,
 	},
 ] as const;

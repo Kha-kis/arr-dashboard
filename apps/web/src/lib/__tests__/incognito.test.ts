@@ -52,13 +52,29 @@ describe("anonymizePulseText — source-aware masking", () => {
 		expect(out).not.toContain("sonarr.local");
 		expect(out).toContain("linux-host");
 	});
+
+	it("masks BOTH the qui label and the qBit instance name in qui-sourced titles", () => {
+		// qui's federation introduces a dual-name title shape that the
+		// general single-name branch can't fully anonymize. Without the
+		// qui-specific branch, `qbit-main` would leak through.
+		const out = anonymizePulseText("Home Qbit: qbit-main is disconnected", "qui");
+		expect(out).not.toContain("Home Qbit");
+		expect(out).not.toContain("qbit-main");
+		expect(out).toMatch(/ is disconnected$/);
+	});
+
+	it("masks the qui label alone in single-name qui titles (no colon)", () => {
+		// "<label> is unreachable" — only one name to hide; falls through to
+		// the general single-name branch.
+		const out = anonymizePulseText("Home Qbit is unreachable", "qui");
+		expect(out).not.toContain("Home Qbit");
+		expect(out).toMatch(/ is unreachable$/);
+	});
 });
 
 describe("anonymizeHealthMessage — URL and IP stripping", () => {
 	it("strips absolute http(s) URLs", () => {
-		const out = anonymizeHealthMessage(
-			"Timed out calling http://sonarr.local:8989/api/v3/health",
-		);
+		const out = anonymizeHealthMessage("Timed out calling http://sonarr.local:8989/api/v3/health");
 		expect(out).not.toContain("sonarr.local");
 		expect(out).not.toContain(":8989");
 		expect(out).toContain("http://linux-host");

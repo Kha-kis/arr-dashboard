@@ -1,9 +1,9 @@
 "use client";
 
+import type { NotificationEventType } from "@arr/shared";
 import { AlertTriangle, ChevronDown, ChevronRight, Loader2, Save } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import type { NotificationEventType } from "@arr/shared";
 import { GradientButton } from "@/components/layout/premium-components";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 import {
@@ -27,6 +27,9 @@ const EVENT_LABELS: Record<string, string> = {
 	QUEUE_ITEMS_REMOVED: "Items Removed",
 	QUEUE_STRIKES_ISSUED: "Strikes Issued",
 	QUEUE_CLEANER_FAILED: "Cleaner Failed",
+	QUI_TORRENT_ERRORED: "Torrent Errored",
+	QUI_DOWNLOAD_STALLED: "Download Stalled",
+	QUI_TORRENT_COMPLETED: "Torrent Completed",
 	TRASH_PROFILE_UPDATED: "Profile Updated",
 	TRASH_SYNC_ERROR: "Sync Error",
 	TRASH_DEPLOY_FAILED: "Deploy Failed",
@@ -59,6 +62,10 @@ const EVENT_GROUPS: Array<{ label: string; events: NotificationEventType[] }> = 
 	{
 		label: "Queue Cleaner",
 		events: ["QUEUE_ITEMS_REMOVED", "QUEUE_STRIKES_ISSUED", "QUEUE_CLEANER_FAILED"],
+	},
+	{
+		label: "qui (torrents)",
+		events: ["QUI_TORRENT_ERRORED", "QUI_DOWNLOAD_STALLED", "QUI_TORRENT_COMPLETED"],
 	},
 	{
 		label: "TRaSH Guides",

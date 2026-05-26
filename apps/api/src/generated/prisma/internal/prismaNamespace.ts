@@ -388,6 +388,7 @@ export const ModelName = {
   Session: 'Session',
   ServiceTag: 'ServiceTag',
   ServiceInstance: 'ServiceInstance',
+  InodeIndexCache: 'InodeIndexCache',
   ServiceInstanceTag: 'ServiceInstanceTag',
   OIDCProvider: 'OIDCProvider',
   OIDCAccount: 'OIDCAccount',
@@ -409,6 +410,7 @@ export const ModelName = {
   HuntLog: 'HuntLog',
   HuntSearchHistory: 'HuntSearchHistory',
   LibraryCache: 'LibraryCache',
+  EpisodeFileCache: 'EpisodeFileCache',
   LibrarySyncStatus: 'LibrarySyncStatus',
   UserCustomFormat: 'UserCustomFormat',
   QueueCleanerConfig: 'QueueCleanerConfig',
@@ -437,7 +439,10 @@ export const ModelName = {
   LabelSyncRule: 'LabelSyncRule',
   AutoTagRule: 'AutoTagRule',
   TmdbListCache: 'TmdbListCache',
-  TraktListCache: 'TraktListCache'
+  TraktListCache: 'TraktListCache',
+  QuiActivityLog: 'QuiActivityLog',
+  QuiActionLog: 'QuiActionLog',
+  QuiEventLog: 'QuiEventLog'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -453,7 +458,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "autoTagRule" | "tmdbListCache" | "traktListCache"
+    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "inodeIndexCache" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "episodeFileCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "autoTagRule" | "tmdbListCache" | "traktListCache" | "quiActivityLog" | "quiActionLog" | "quiEventLog"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -750,6 +755,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         count: {
           args: Prisma.ServiceInstanceCountArgs<ExtArgs>
           result: runtime.Types.Utils.Optional<Prisma.ServiceInstanceCountAggregateOutputType> | number
+        }
+      }
+    }
+    InodeIndexCache: {
+      payload: Prisma.$InodeIndexCachePayload<ExtArgs>
+      fields: Prisma.InodeIndexCacheFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.InodeIndexCacheFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$InodeIndexCachePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.InodeIndexCacheFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$InodeIndexCachePayload>
+        }
+        findFirst: {
+          args: Prisma.InodeIndexCacheFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$InodeIndexCachePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.InodeIndexCacheFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$InodeIndexCachePayload>
+        }
+        findMany: {
+          args: Prisma.InodeIndexCacheFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$InodeIndexCachePayload>[]
+        }
+        create: {
+          args: Prisma.InodeIndexCacheCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$InodeIndexCachePayload>
+        }
+        createMany: {
+          args: Prisma.InodeIndexCacheCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.InodeIndexCacheCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$InodeIndexCachePayload>[]
+        }
+        delete: {
+          args: Prisma.InodeIndexCacheDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$InodeIndexCachePayload>
+        }
+        update: {
+          args: Prisma.InodeIndexCacheUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$InodeIndexCachePayload>
+        }
+        deleteMany: {
+          args: Prisma.InodeIndexCacheDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.InodeIndexCacheUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.InodeIndexCacheUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$InodeIndexCachePayload>[]
+        }
+        upsert: {
+          args: Prisma.InodeIndexCacheUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$InodeIndexCachePayload>
+        }
+        aggregate: {
+          args: Prisma.InodeIndexCacheAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateInodeIndexCache>
+        }
+        groupBy: {
+          args: Prisma.InodeIndexCacheGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.InodeIndexCacheGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.InodeIndexCacheCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.InodeIndexCacheCountAggregateOutputType> | number
         }
       }
     }
@@ -2304,6 +2383,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         count: {
           args: Prisma.LibraryCacheCountArgs<ExtArgs>
           result: runtime.Types.Utils.Optional<Prisma.LibraryCacheCountAggregateOutputType> | number
+        }
+      }
+    }
+    EpisodeFileCache: {
+      payload: Prisma.$EpisodeFileCachePayload<ExtArgs>
+      fields: Prisma.EpisodeFileCacheFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.EpisodeFileCacheFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$EpisodeFileCachePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.EpisodeFileCacheFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$EpisodeFileCachePayload>
+        }
+        findFirst: {
+          args: Prisma.EpisodeFileCacheFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$EpisodeFileCachePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.EpisodeFileCacheFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$EpisodeFileCachePayload>
+        }
+        findMany: {
+          args: Prisma.EpisodeFileCacheFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$EpisodeFileCachePayload>[]
+        }
+        create: {
+          args: Prisma.EpisodeFileCacheCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$EpisodeFileCachePayload>
+        }
+        createMany: {
+          args: Prisma.EpisodeFileCacheCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.EpisodeFileCacheCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$EpisodeFileCachePayload>[]
+        }
+        delete: {
+          args: Prisma.EpisodeFileCacheDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$EpisodeFileCachePayload>
+        }
+        update: {
+          args: Prisma.EpisodeFileCacheUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$EpisodeFileCachePayload>
+        }
+        deleteMany: {
+          args: Prisma.EpisodeFileCacheDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.EpisodeFileCacheUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.EpisodeFileCacheUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$EpisodeFileCachePayload>[]
+        }
+        upsert: {
+          args: Prisma.EpisodeFileCacheUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$EpisodeFileCachePayload>
+        }
+        aggregate: {
+          args: Prisma.EpisodeFileCacheAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateEpisodeFileCache>
+        }
+        groupBy: {
+          args: Prisma.EpisodeFileCacheGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.EpisodeFileCacheGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.EpisodeFileCacheCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.EpisodeFileCacheCountAggregateOutputType> | number
         }
       }
     }
@@ -4453,6 +4606,228 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    QuiActivityLog: {
+      payload: Prisma.$QuiActivityLogPayload<ExtArgs>
+      fields: Prisma.QuiActivityLogFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.QuiActivityLogFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActivityLogPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.QuiActivityLogFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActivityLogPayload>
+        }
+        findFirst: {
+          args: Prisma.QuiActivityLogFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActivityLogPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.QuiActivityLogFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActivityLogPayload>
+        }
+        findMany: {
+          args: Prisma.QuiActivityLogFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActivityLogPayload>[]
+        }
+        create: {
+          args: Prisma.QuiActivityLogCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActivityLogPayload>
+        }
+        createMany: {
+          args: Prisma.QuiActivityLogCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.QuiActivityLogCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActivityLogPayload>[]
+        }
+        delete: {
+          args: Prisma.QuiActivityLogDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActivityLogPayload>
+        }
+        update: {
+          args: Prisma.QuiActivityLogUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActivityLogPayload>
+        }
+        deleteMany: {
+          args: Prisma.QuiActivityLogDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.QuiActivityLogUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.QuiActivityLogUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActivityLogPayload>[]
+        }
+        upsert: {
+          args: Prisma.QuiActivityLogUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActivityLogPayload>
+        }
+        aggregate: {
+          args: Prisma.QuiActivityLogAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateQuiActivityLog>
+        }
+        groupBy: {
+          args: Prisma.QuiActivityLogGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.QuiActivityLogGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.QuiActivityLogCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.QuiActivityLogCountAggregateOutputType> | number
+        }
+      }
+    }
+    QuiActionLog: {
+      payload: Prisma.$QuiActionLogPayload<ExtArgs>
+      fields: Prisma.QuiActionLogFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.QuiActionLogFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActionLogPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.QuiActionLogFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActionLogPayload>
+        }
+        findFirst: {
+          args: Prisma.QuiActionLogFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActionLogPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.QuiActionLogFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActionLogPayload>
+        }
+        findMany: {
+          args: Prisma.QuiActionLogFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActionLogPayload>[]
+        }
+        create: {
+          args: Prisma.QuiActionLogCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActionLogPayload>
+        }
+        createMany: {
+          args: Prisma.QuiActionLogCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.QuiActionLogCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActionLogPayload>[]
+        }
+        delete: {
+          args: Prisma.QuiActionLogDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActionLogPayload>
+        }
+        update: {
+          args: Prisma.QuiActionLogUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActionLogPayload>
+        }
+        deleteMany: {
+          args: Prisma.QuiActionLogDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.QuiActionLogUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.QuiActionLogUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActionLogPayload>[]
+        }
+        upsert: {
+          args: Prisma.QuiActionLogUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiActionLogPayload>
+        }
+        aggregate: {
+          args: Prisma.QuiActionLogAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateQuiActionLog>
+        }
+        groupBy: {
+          args: Prisma.QuiActionLogGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.QuiActionLogGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.QuiActionLogCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.QuiActionLogCountAggregateOutputType> | number
+        }
+      }
+    }
+    QuiEventLog: {
+      payload: Prisma.$QuiEventLogPayload<ExtArgs>
+      fields: Prisma.QuiEventLogFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.QuiEventLogFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiEventLogPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.QuiEventLogFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiEventLogPayload>
+        }
+        findFirst: {
+          args: Prisma.QuiEventLogFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiEventLogPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.QuiEventLogFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiEventLogPayload>
+        }
+        findMany: {
+          args: Prisma.QuiEventLogFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiEventLogPayload>[]
+        }
+        create: {
+          args: Prisma.QuiEventLogCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiEventLogPayload>
+        }
+        createMany: {
+          args: Prisma.QuiEventLogCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.QuiEventLogCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiEventLogPayload>[]
+        }
+        delete: {
+          args: Prisma.QuiEventLogDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiEventLogPayload>
+        }
+        update: {
+          args: Prisma.QuiEventLogUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiEventLogPayload>
+        }
+        deleteMany: {
+          args: Prisma.QuiEventLogDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.QuiEventLogUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.QuiEventLogUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiEventLogPayload>[]
+        }
+        upsert: {
+          args: Prisma.QuiEventLogUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QuiEventLogPayload>
+        }
+        aggregate: {
+          args: Prisma.QuiEventLogAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateQuiEventLog>
+        }
+        groupBy: {
+          args: Prisma.QuiEventLogGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.QuiEventLogGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.QuiEventLogCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.QuiEventLogCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -4499,6 +4874,7 @@ export const UserScalarFieldEnum = {
   encryptedTmdbApiKey: 'encryptedTmdbApiKey',
   tmdbEncryptionIv: 'tmdbEncryptionIv',
   hashedWebhookSecret: 'hashedWebhookSecret',
+  hashedQuiWebhookSecret: 'hashedQuiWebhookSecret',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt',
   encryptedTraktAccessToken: 'encryptedTraktAccessToken',
@@ -4543,11 +4919,24 @@ export const ServiceInstanceScalarFieldEnum = {
   isDefault: 'isDefault',
   enabled: 'enabled',
   storageGroupId: 'storageGroupId',
+  hasLocalFilesystemAccess: 'hasLocalFilesystemAccess',
+  pathPrefix: 'pathPrefix',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const
 
 export type ServiceInstanceScalarFieldEnum = (typeof ServiceInstanceScalarFieldEnum)[keyof typeof ServiceInstanceScalarFieldEnum]
+
+
+export const InodeIndexCacheScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  builtAt: 'builtAt',
+  filesIndexed: 'filesIndexed',
+  serializedData: 'serializedData'
+} as const
+
+export type InodeIndexCacheScalarFieldEnum = (typeof InodeIndexCacheScalarFieldEnum)[keyof typeof InodeIndexCacheScalarFieldEnum]
 
 
 export const ServiceInstanceTagScalarFieldEnum = {
@@ -4928,6 +5317,11 @@ export const LibraryCacheScalarFieldEnum = {
   qualityProfileName: 'qualityProfileName',
   sizeOnDisk: 'sizeOnDisk',
   cutoffUnmet: 'cutoffUnmet',
+  infoHash: 'infoHash',
+  infoHashSource: 'infoHashSource',
+  torrentState: 'torrentState',
+  torrentRatio: 'torrentRatio',
+  torrentSyncedAt: 'torrentSyncedAt',
   data: 'data',
   arrAddedAt: 'arrAddedAt',
   arrUpdatedAt: 'arrUpdatedAt',
@@ -4936,6 +5330,29 @@ export const LibraryCacheScalarFieldEnum = {
 } as const
 
 export type LibraryCacheScalarFieldEnum = (typeof LibraryCacheScalarFieldEnum)[keyof typeof LibraryCacheScalarFieldEnum]
+
+
+export const EpisodeFileCacheScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  arrEpisodeFileId: 'arrEpisodeFileId',
+  arrSeriesId: 'arrSeriesId',
+  seasonNumber: 'seasonNumber',
+  relativePath: 'relativePath',
+  path: 'path',
+  size: 'size',
+  qualityName: 'qualityName',
+  releaseGroup: 'releaseGroup',
+  infoHash: 'infoHash',
+  infoHashSource: 'infoHashSource',
+  torrentState: 'torrentState',
+  torrentRatio: 'torrentRatio',
+  torrentSyncedAt: 'torrentSyncedAt',
+  cachedAt: 'cachedAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type EpisodeFileCacheScalarFieldEnum = (typeof EpisodeFileCacheScalarFieldEnum)[keyof typeof EpisodeFileCacheScalarFieldEnum]
 
 
 export const LibrarySyncStatusScalarFieldEnum = {
@@ -4990,6 +5407,8 @@ export const QueueCleanerConfigScalarFieldEnum = {
   removeFromClient: 'removeFromClient',
   addToBlocklist: 'addToBlocklist',
   searchAfterRemoval: 'searchAfterRemoval',
+  quiAwareMode: 'quiAwareMode',
+  lastSeedProtection: 'lastSeedProtection',
   changeCategoryEnabled: 'changeCategoryEnabled',
   dryRunMode: 'dryRunMode',
   maxRemovalsPerRun: 'maxRemovalsPerRun',
@@ -5080,6 +5499,7 @@ export const LibraryCleanupConfigScalarFieldEnum = {
   dryRunMode: 'dryRunMode',
   maxRemovalsPerRun: 'maxRemovalsPerRun',
   requireApproval: 'requireApproval',
+  respectQuiSeeding: 'respectQuiSeeding',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const
@@ -5488,6 +5908,48 @@ export const TraktListCacheScalarFieldEnum = {
 export type TraktListCacheScalarFieldEnum = (typeof TraktListCacheScalarFieldEnum)[keyof typeof TraktListCacheScalarFieldEnum]
 
 
+export const QuiActivityLogScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  eventType: 'eventType',
+  details: 'details',
+  severity: 'severity',
+  createdAt: 'createdAt'
+} as const
+
+export type QuiActivityLogScalarFieldEnum = (typeof QuiActivityLogScalarFieldEnum)[keyof typeof QuiActivityLogScalarFieldEnum]
+
+
+export const QuiActionLogScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  serviceInstanceId: 'serviceInstanceId',
+  qbitInstanceId: 'qbitInstanceId',
+  torrentHash: 'torrentHash',
+  action: 'action',
+  payload: 'payload',
+  status: 'status',
+  error: 'error',
+  requestedAt: 'requestedAt',
+  completedAt: 'completedAt'
+} as const
+
+export type QuiActionLogScalarFieldEnum = (typeof QuiActionLogScalarFieldEnum)[keyof typeof QuiActionLogScalarFieldEnum]
+
+
+export const QuiEventLogScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  serviceInstanceId: 'serviceInstanceId',
+  eventType: 'eventType',
+  torrentHash: 'torrentHash',
+  payload: 'payload',
+  receivedAt: 'receivedAt'
+} as const
+
+export type QuiEventLogScalarFieldEnum = (typeof QuiEventLogScalarFieldEnum)[keyof typeof QuiEventLogScalarFieldEnum]
+
+
 export const SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -5542,6 +6004,13 @@ export type DateTimeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel
  * Reference to a field of type 'ServiceType'
  */
 export type EnumServiceTypeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'ServiceType'>
+    
+
+
+/**
+ * Reference to a field of type 'Bytes'
+ */
+export type BytesFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Bytes'>
     
 
 
@@ -5686,6 +6155,7 @@ export type GlobalOmitConfig = {
   session?: Prisma.SessionOmit
   serviceTag?: Prisma.ServiceTagOmit
   serviceInstance?: Prisma.ServiceInstanceOmit
+  inodeIndexCache?: Prisma.InodeIndexCacheOmit
   serviceInstanceTag?: Prisma.ServiceInstanceTagOmit
   oIDCProvider?: Prisma.OIDCProviderOmit
   oIDCAccount?: Prisma.OIDCAccountOmit
@@ -5707,6 +6177,7 @@ export type GlobalOmitConfig = {
   huntLog?: Prisma.HuntLogOmit
   huntSearchHistory?: Prisma.HuntSearchHistoryOmit
   libraryCache?: Prisma.LibraryCacheOmit
+  episodeFileCache?: Prisma.EpisodeFileCacheOmit
   librarySyncStatus?: Prisma.LibrarySyncStatusOmit
   userCustomFormat?: Prisma.UserCustomFormatOmit
   queueCleanerConfig?: Prisma.QueueCleanerConfigOmit
@@ -5736,6 +6207,9 @@ export type GlobalOmitConfig = {
   autoTagRule?: Prisma.AutoTagRuleOmit
   tmdbListCache?: Prisma.TmdbListCacheOmit
   traktListCache?: Prisma.TraktListCacheOmit
+  quiActivityLog?: Prisma.QuiActivityLogOmit
+  quiActionLog?: Prisma.QuiActionLogOmit
+  quiEventLog?: Prisma.QuiEventLogOmit
 }
 
 /* Types for Logging */

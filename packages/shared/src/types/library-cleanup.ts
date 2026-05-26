@@ -98,6 +98,13 @@ export const updateCleanupConfigSchema = z.object({
 	dryRunMode: z.boolean().optional(),
 	maxRemovalsPerRun: z.number().int().min(1).max(100).optional(),
 	requireApproval: z.boolean().optional(),
+	/**
+	 * Phase 2.2: when true, cleanup proposals exclude items currently seeding
+	 * via qui (LibraryCache.torrentState IN ['seeding', 'downloading']).
+	 * Default false for backward compatibility — operators with qui can opt in
+	 * to honor seeding obligations. No-op when no qui instance is configured.
+	 */
+	respectQuiSeeding: z.boolean().optional(),
 });
 
 export type CreateCleanupRule = z.infer<typeof createCleanupRuleSchema>;
@@ -153,6 +160,7 @@ export interface CleanupConfigResponse {
 	dryRunMode: boolean;
 	maxRemovalsPerRun: number;
 	requireApproval: boolean;
+	respectQuiSeeding: boolean;
 	rules: CleanupRuleResponse[];
 }
 
@@ -215,6 +223,23 @@ export interface CleanupFieldOptionsResponse {
 }
 
 /** Preview result: items that would be flagged by current rules */
+/**
+ * qui-derived deletion-safety hint (Phase 3.3). Surfaces in the cleanup
+ * preview so operators can see "qui says this is safe to delete" alongside
+ * arr-dashboard's own staleness reasons. Three states:
+ *  - `seeding`         — torrent is currently uploading; deletion will
+ *                        break the seed. Highest "do not delete" weight.
+ *  - `paused_or_error` — torrent state is paused/errored; deletion ends
+ *                        an already-stopped session. Lower priority signal.
+ *  - `not_in_qui`      — qui has no torrent matching this item's infoHash
+ *                        (user removed it from qBit, or it never existed).
+ *                        HIGHEST-trust "safe to delete" signal: the file
+ *                        on disk is not tracked by any active torrent.
+ *  - `no_signal`       — no infoHash backfilled for this item yet, or
+ *                        no qui configured. Render nothing.
+ */
+export type CleanupQuiStatus = "seeding" | "paused_or_error" | "not_in_qui" | "no_signal";
+
 export interface CleanupPreviewItem {
 	instanceId: string;
 	instanceLabel: string | null;
@@ -227,6 +252,8 @@ export interface CleanupPreviewItem {
 	sizeOnDisk: string;
 	year: number | null;
 	rating: number | null;
+	/** qui-derived safety hint (Phase 3.3). See CleanupQuiStatus comment. */
+	quiStatus: CleanupQuiStatus;
 }
 
 export interface CleanupPreviewResponse {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizedTorrentStateSchema } from "./qui.js";
 
 export const libraryServiceSchema = z.enum(["sonarr", "radarr", "lidarr", "readarr"]);
 export type LibraryService = z.infer<typeof libraryServiceSchema>;
@@ -94,6 +95,14 @@ export const libraryItemSchema = z.object({
 	rootFolderPath: z.string().optional(),
 	sizeOnDisk: z.number().optional(),
 	cutoffUnmet: z.boolean().optional(),
+	/**
+	 * qui torrent state for this item, sourced from `LibraryCache.torrentState`
+	 * (Phase 2.1). Server stamps these on the item before returning so the
+	 * client can render the per-card badge without a separate per-item poll.
+	 * Null/absent when the row hasn't been correlated with a qui torrent yet.
+	 */
+	torrentState: normalizedTorrentStateSchema.nullable().optional(),
+	torrentRatio: z.number().nullable().optional(),
 	path: z.string().optional(),
 	overview: z.string().optional(),
 	runtime: z.number().optional(),
@@ -160,11 +169,31 @@ export const libraryFiltersSchema = z
 		monitored: z.enum(["true", "false", "all"]).optional(),
 		hasFile: z.enum(["true", "false", "all"]).optional(),
 		cutoffUnmet: z.enum(["true", "false", "all"]).optional(),
+		// qui torrent-state filter (Phase 2.1). Vocabulary matches
+		// `normalizedTorrentStateSchema` in qui types, plus two convenience
+		// values: `all` (no filter) and `none` (only items missing qui state).
+		torrentState: z
+			.enum([
+				"all",
+				"none",
+				"seeding",
+				"downloading",
+				"stalled_dl",
+				"paused",
+				"queued",
+				"checking",
+				"moving",
+				"error",
+				"unknown",
+			])
+			.optional(),
 		status: z.string().optional(),
 		qualityProfileId: z.number().optional(),
 		yearMin: z.number().optional(),
 		yearMax: z.number().optional(),
-		sortBy: z.enum(["title", "sortTitle", "year", "sizeOnDisk", "added"]).optional(),
+		sortBy: z
+			.enum(["title", "sortTitle", "year", "sizeOnDisk", "added", "torrentRatio"])
+			.optional(),
 		sortOrder: z.enum(["asc", "desc"]).optional(),
 	})
 	.refine(
@@ -179,6 +208,33 @@ export const libraryFiltersSchema = z
 
 export type LibraryFilters = z.infer<typeof libraryFiltersSchema>;
 
+/**
+ * Per-state counts surfaced alongside library page data so the Torrent state
+ * filter dropdown can show "Seeding (150)" etc. Optional because it's only
+ * computed for users with at least one qui instance configured. The `none`
+ * bucket counts rows where `torrentState IS NULL` (qui hasn't covered them
+ * yet — the eager backfill scheduler shrinks this over time).
+ *
+ * Counts honor every other applied filter EXCEPT `torrentState` itself —
+ * otherwise filtering by one bucket would zero out the others, defeating the
+ * purpose of letting users pivot.
+ */
+export const torrentStateCountsSchema = z.object({
+	all: z.number().int().nonnegative(),
+	none: z.number().int().nonnegative(),
+	seeding: z.number().int().nonnegative(),
+	downloading: z.number().int().nonnegative(),
+	stalled_dl: z.number().int().nonnegative(),
+	paused: z.number().int().nonnegative(),
+	queued: z.number().int().nonnegative(),
+	checking: z.number().int().nonnegative(),
+	moving: z.number().int().nonnegative(),
+	error: z.number().int().nonnegative(),
+	unknown: z.number().int().nonnegative(),
+});
+
+export type TorrentStateCounts = z.infer<typeof torrentStateCountsSchema>;
+
 export const paginatedLibraryResponseSchema = z.object({
 	items: z.array(libraryItemSchema),
 	pagination: paginationSchema,
@@ -191,6 +247,7 @@ export const paginatedLibraryResponseSchema = z.object({
 			totalCachedItems: z.number(),
 		})
 		.optional(),
+	torrentStateCounts: torrentStateCountsSchema.optional(),
 });
 
 export type PaginatedLibraryResponse = z.infer<typeof paginatedLibraryResponseSchema>;

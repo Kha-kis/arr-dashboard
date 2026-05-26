@@ -55,6 +55,12 @@ export const useServicesManagement = () => {
 		const trimmedExternalUrl = formState.externalUrl.trim();
 		const externalUrl = trimmedExternalUrl.length > 0 ? trimmedExternalUrl : null;
 
+		// qui-only fields: only persist when the form is for a qui instance,
+		// so toggling these in a Sonarr form (which can't render them, but
+		// could otherwise carry stale state from a previous edit) is a no-op.
+		const trimmedPathPrefix = formState.pathPrefix.trim();
+		const isQui = formState.service === "qui";
+
 		const basePayload = {
 			label: formState.label.trim(),
 			baseUrl: formState.baseUrl.trim(),
@@ -65,6 +71,12 @@ export const useServicesManagement = () => {
 			isDefault: formState.isDefault,
 			tags: trimmedTags,
 			storageGroupId,
+			...(isQui
+				? {
+						hasLocalFilesystemAccess: formState.hasLocalFilesystemAccess,
+						pathPrefix: trimmedPathPrefix.length > 0 ? trimmedPathPrefix : null,
+					}
+				: {}),
 		};
 
 		if (

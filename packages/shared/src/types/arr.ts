@@ -11,7 +11,14 @@ export const ARR_SERVICES = ["sonarr", "radarr", "prowlarr", "lidarr", "readarr"
 export const LIBRARY_SERVICES = ["sonarr", "radarr", "lidarr", "readarr"] as const;
 
 /** Non-arr integration services (different APIs, used as data sources) */
-export const INTEGRATION_SERVICES = ["seerr", "tautulli", "plex", "jellyfin", "emby"] as const;
+export const INTEGRATION_SERVICES = [
+	"seerr",
+	"tautulli",
+	"plex",
+	"jellyfin",
+	"emby",
+	"qui",
+] as const;
 
 /** All supported service types */
 export const ALL_SERVICES = [...ARR_SERVICES, ...INTEGRATION_SERVICES] as const;
@@ -67,6 +74,9 @@ export const multiInstanceConfigSchema = z.object({
 	seerr: z.array(serviceInstanceSchema).default([]),
 	tautulli: z.array(serviceInstanceSchema).default([]),
 	plex: z.array(serviceInstanceSchema).default([]),
+	jellyfin: z.array(serviceInstanceSchema).default([]),
+	emby: z.array(serviceInstanceSchema).default([]),
+	qui: z.array(serviceInstanceSchema).default([]),
 });
 
 export type MultiInstanceConfig = z.infer<typeof multiInstanceConfigSchema>;

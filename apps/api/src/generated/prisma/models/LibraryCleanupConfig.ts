@@ -46,6 +46,7 @@ export type LibraryCleanupConfigMinAggregateOutputType = {
   dryRunMode: boolean | null
   maxRemovalsPerRun: number | null
   requireApproval: boolean | null
+  respectQuiSeeding: boolean | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -60,6 +61,7 @@ export type LibraryCleanupConfigMaxAggregateOutputType = {
   dryRunMode: boolean | null
   maxRemovalsPerRun: number | null
   requireApproval: boolean | null
+  respectQuiSeeding: boolean | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -74,6 +76,7 @@ export type LibraryCleanupConfigCountAggregateOutputType = {
   dryRunMode: number
   maxRemovalsPerRun: number
   requireApproval: number
+  respectQuiSeeding: number
   createdAt: number
   updatedAt: number
   _all: number
@@ -100,6 +103,7 @@ export type LibraryCleanupConfigMinAggregateInputType = {
   dryRunMode?: true
   maxRemovalsPerRun?: true
   requireApproval?: true
+  respectQuiSeeding?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -114,6 +118,7 @@ export type LibraryCleanupConfigMaxAggregateInputType = {
   dryRunMode?: true
   maxRemovalsPerRun?: true
   requireApproval?: true
+  respectQuiSeeding?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -128,6 +133,7 @@ export type LibraryCleanupConfigCountAggregateInputType = {
   dryRunMode?: true
   maxRemovalsPerRun?: true
   requireApproval?: true
+  respectQuiSeeding?: true
   createdAt?: true
   updatedAt?: true
   _all?: true
@@ -229,6 +235,7 @@ export type LibraryCleanupConfigGroupByOutputType = {
   dryRunMode: boolean
   maxRemovalsPerRun: number
   requireApproval: boolean
+  respectQuiSeeding: boolean
   createdAt: Date
   updatedAt: Date
   _count: LibraryCleanupConfigCountAggregateOutputType | null
@@ -266,6 +273,7 @@ export type LibraryCleanupConfigWhereInput = {
   dryRunMode?: Prisma.BoolFilter<"LibraryCleanupConfig"> | boolean
   maxRemovalsPerRun?: Prisma.IntFilter<"LibraryCleanupConfig"> | number
   requireApproval?: Prisma.BoolFilter<"LibraryCleanupConfig"> | boolean
+  respectQuiSeeding?: Prisma.BoolFilter<"LibraryCleanupConfig"> | boolean
   createdAt?: Prisma.DateTimeFilter<"LibraryCleanupConfig"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"LibraryCleanupConfig"> | Date | string
   user?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
@@ -284,6 +292,7 @@ export type LibraryCleanupConfigOrderByWithRelationInput = {
   dryRunMode?: Prisma.SortOrder
   maxRemovalsPerRun?: Prisma.SortOrder
   requireApproval?: Prisma.SortOrder
+  respectQuiSeeding?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   user?: Prisma.UserOrderByWithRelationInput
@@ -305,6 +314,7 @@ export type LibraryCleanupConfigWhereUniqueInput = Prisma.AtLeast<{
   dryRunMode?: Prisma.BoolFilter<"LibraryCleanupConfig"> | boolean
   maxRemovalsPerRun?: Prisma.IntFilter<"LibraryCleanupConfig"> | number
   requireApproval?: Prisma.BoolFilter<"LibraryCleanupConfig"> | boolean
+  respectQuiSeeding?: Prisma.BoolFilter<"LibraryCleanupConfig"> | boolean
   createdAt?: Prisma.DateTimeFilter<"LibraryCleanupConfig"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"LibraryCleanupConfig"> | Date | string
   user?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
@@ -323,6 +333,7 @@ export type LibraryCleanupConfigOrderByWithAggregationInput = {
   dryRunMode?: Prisma.SortOrder
   maxRemovalsPerRun?: Prisma.SortOrder
   requireApproval?: Prisma.SortOrder
+  respectQuiSeeding?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   _count?: Prisma.LibraryCleanupConfigCountOrderByAggregateInput
@@ -345,6 +356,7 @@ export type LibraryCleanupConfigScalarWhereWithAggregatesInput = {
   dryRunMode?: Prisma.BoolWithAggregatesFilter<"LibraryCleanupConfig"> | boolean
   maxRemovalsPerRun?: Prisma.IntWithAggregatesFilter<"LibraryCleanupConfig"> | number
   requireApproval?: Prisma.BoolWithAggregatesFilter<"LibraryCleanupConfig"> | boolean
+  respectQuiSeeding?: Prisma.BoolWithAggregatesFilter<"LibraryCleanupConfig"> | boolean
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"LibraryCleanupConfig"> | Date | string
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"LibraryCleanupConfig"> | Date | string
 }
@@ -358,6 +370,7 @@ export type LibraryCleanupConfigCreateInput = {
   dryRunMode?: boolean
   maxRemovalsPerRun?: number
   requireApproval?: boolean
+  respectQuiSeeding?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
   user: Prisma.UserCreateNestedOneWithoutLibraryCleanupConfigsInput
@@ -376,6 +389,7 @@ export type LibraryCleanupConfigUncheckedCreateInput = {
   dryRunMode?: boolean
   maxRemovalsPerRun?: number
   requireApproval?: boolean
+  respectQuiSeeding?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
   rules?: Prisma.LibraryCleanupRuleUncheckedCreateNestedManyWithoutConfigInput
@@ -392,6 +406,7 @@ export type LibraryCleanupConfigUpdateInput = {
   dryRunMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
   maxRemovalsPerRun?: Prisma.IntFieldUpdateOperationsInput | number
   requireApproval?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  respectQuiSeeding?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   user?: Prisma.UserUpdateOneRequiredWithoutLibraryCleanupConfigsNestedInput
@@ -410,6 +425,7 @@ export type LibraryCleanupConfigUncheckedUpdateInput = {
   dryRunMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
   maxRemovalsPerRun?: Prisma.IntFieldUpdateOperationsInput | number
   requireApproval?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  respectQuiSeeding?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   rules?: Prisma.LibraryCleanupRuleUncheckedUpdateManyWithoutConfigNestedInput
@@ -427,6 +443,7 @@ export type LibraryCleanupConfigCreateManyInput = {
   dryRunMode?: boolean
   maxRemovalsPerRun?: number
   requireApproval?: boolean
+  respectQuiSeeding?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -440,6 +457,7 @@ export type LibraryCleanupConfigUpdateManyMutationInput = {
   dryRunMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
   maxRemovalsPerRun?: Prisma.IntFieldUpdateOperationsInput | number
   requireApproval?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  respectQuiSeeding?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -454,6 +472,7 @@ export type LibraryCleanupConfigUncheckedUpdateManyInput = {
   dryRunMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
   maxRemovalsPerRun?: Prisma.IntFieldUpdateOperationsInput | number
   requireApproval?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  respectQuiSeeding?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -478,6 +497,7 @@ export type LibraryCleanupConfigCountOrderByAggregateInput = {
   dryRunMode?: Prisma.SortOrder
   maxRemovalsPerRun?: Prisma.SortOrder
   requireApproval?: Prisma.SortOrder
+  respectQuiSeeding?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -497,6 +517,7 @@ export type LibraryCleanupConfigMaxOrderByAggregateInput = {
   dryRunMode?: Prisma.SortOrder
   maxRemovalsPerRun?: Prisma.SortOrder
   requireApproval?: Prisma.SortOrder
+  respectQuiSeeding?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -511,6 +532,7 @@ export type LibraryCleanupConfigMinOrderByAggregateInput = {
   dryRunMode?: Prisma.SortOrder
   maxRemovalsPerRun?: Prisma.SortOrder
   requireApproval?: Prisma.SortOrder
+  respectQuiSeeding?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -618,6 +640,7 @@ export type LibraryCleanupConfigCreateWithoutUserInput = {
   dryRunMode?: boolean
   maxRemovalsPerRun?: number
   requireApproval?: boolean
+  respectQuiSeeding?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
   rules?: Prisma.LibraryCleanupRuleCreateNestedManyWithoutConfigInput
@@ -634,6 +657,7 @@ export type LibraryCleanupConfigUncheckedCreateWithoutUserInput = {
   dryRunMode?: boolean
   maxRemovalsPerRun?: number
   requireApproval?: boolean
+  respectQuiSeeding?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
   rules?: Prisma.LibraryCleanupRuleUncheckedCreateNestedManyWithoutConfigInput
@@ -679,6 +703,7 @@ export type LibraryCleanupConfigScalarWhereInput = {
   dryRunMode?: Prisma.BoolFilter<"LibraryCleanupConfig"> | boolean
   maxRemovalsPerRun?: Prisma.IntFilter<"LibraryCleanupConfig"> | number
   requireApproval?: Prisma.BoolFilter<"LibraryCleanupConfig"> | boolean
+  respectQuiSeeding?: Prisma.BoolFilter<"LibraryCleanupConfig"> | boolean
   createdAt?: Prisma.DateTimeFilter<"LibraryCleanupConfig"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"LibraryCleanupConfig"> | Date | string
 }
@@ -692,6 +717,7 @@ export type LibraryCleanupConfigCreateWithoutRulesInput = {
   dryRunMode?: boolean
   maxRemovalsPerRun?: number
   requireApproval?: boolean
+  respectQuiSeeding?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
   user: Prisma.UserCreateNestedOneWithoutLibraryCleanupConfigsInput
@@ -709,6 +735,7 @@ export type LibraryCleanupConfigUncheckedCreateWithoutRulesInput = {
   dryRunMode?: boolean
   maxRemovalsPerRun?: number
   requireApproval?: boolean
+  respectQuiSeeding?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
   approvals?: Prisma.LibraryCleanupApprovalUncheckedCreateNestedManyWithoutConfigInput
@@ -740,6 +767,7 @@ export type LibraryCleanupConfigUpdateWithoutRulesInput = {
   dryRunMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
   maxRemovalsPerRun?: Prisma.IntFieldUpdateOperationsInput | number
   requireApproval?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  respectQuiSeeding?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   user?: Prisma.UserUpdateOneRequiredWithoutLibraryCleanupConfigsNestedInput
@@ -757,6 +785,7 @@ export type LibraryCleanupConfigUncheckedUpdateWithoutRulesInput = {
   dryRunMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
   maxRemovalsPerRun?: Prisma.IntFieldUpdateOperationsInput | number
   requireApproval?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  respectQuiSeeding?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   approvals?: Prisma.LibraryCleanupApprovalUncheckedUpdateManyWithoutConfigNestedInput
@@ -772,6 +801,7 @@ export type LibraryCleanupConfigCreateWithoutApprovalsInput = {
   dryRunMode?: boolean
   maxRemovalsPerRun?: number
   requireApproval?: boolean
+  respectQuiSeeding?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
   user: Prisma.UserCreateNestedOneWithoutLibraryCleanupConfigsInput
@@ -789,6 +819,7 @@ export type LibraryCleanupConfigUncheckedCreateWithoutApprovalsInput = {
   dryRunMode?: boolean
   maxRemovalsPerRun?: number
   requireApproval?: boolean
+  respectQuiSeeding?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
   rules?: Prisma.LibraryCleanupRuleUncheckedCreateNestedManyWithoutConfigInput
@@ -820,6 +851,7 @@ export type LibraryCleanupConfigUpdateWithoutApprovalsInput = {
   dryRunMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
   maxRemovalsPerRun?: Prisma.IntFieldUpdateOperationsInput | number
   requireApproval?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  respectQuiSeeding?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   user?: Prisma.UserUpdateOneRequiredWithoutLibraryCleanupConfigsNestedInput
@@ -837,6 +869,7 @@ export type LibraryCleanupConfigUncheckedUpdateWithoutApprovalsInput = {
   dryRunMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
   maxRemovalsPerRun?: Prisma.IntFieldUpdateOperationsInput | number
   requireApproval?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  respectQuiSeeding?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   rules?: Prisma.LibraryCleanupRuleUncheckedUpdateManyWithoutConfigNestedInput
@@ -852,6 +885,7 @@ export type LibraryCleanupConfigCreateWithoutLogsInput = {
   dryRunMode?: boolean
   maxRemovalsPerRun?: number
   requireApproval?: boolean
+  respectQuiSeeding?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
   user: Prisma.UserCreateNestedOneWithoutLibraryCleanupConfigsInput
@@ -869,6 +903,7 @@ export type LibraryCleanupConfigUncheckedCreateWithoutLogsInput = {
   dryRunMode?: boolean
   maxRemovalsPerRun?: number
   requireApproval?: boolean
+  respectQuiSeeding?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
   rules?: Prisma.LibraryCleanupRuleUncheckedCreateNestedManyWithoutConfigInput
@@ -900,6 +935,7 @@ export type LibraryCleanupConfigUpdateWithoutLogsInput = {
   dryRunMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
   maxRemovalsPerRun?: Prisma.IntFieldUpdateOperationsInput | number
   requireApproval?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  respectQuiSeeding?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   user?: Prisma.UserUpdateOneRequiredWithoutLibraryCleanupConfigsNestedInput
@@ -917,6 +953,7 @@ export type LibraryCleanupConfigUncheckedUpdateWithoutLogsInput = {
   dryRunMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
   maxRemovalsPerRun?: Prisma.IntFieldUpdateOperationsInput | number
   requireApproval?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  respectQuiSeeding?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   rules?: Prisma.LibraryCleanupRuleUncheckedUpdateManyWithoutConfigNestedInput
@@ -932,6 +969,7 @@ export type LibraryCleanupConfigCreateManyUserInput = {
   dryRunMode?: boolean
   maxRemovalsPerRun?: number
   requireApproval?: boolean
+  respectQuiSeeding?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -945,6 +983,7 @@ export type LibraryCleanupConfigUpdateWithoutUserInput = {
   dryRunMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
   maxRemovalsPerRun?: Prisma.IntFieldUpdateOperationsInput | number
   requireApproval?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  respectQuiSeeding?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   rules?: Prisma.LibraryCleanupRuleUpdateManyWithoutConfigNestedInput
@@ -961,6 +1000,7 @@ export type LibraryCleanupConfigUncheckedUpdateWithoutUserInput = {
   dryRunMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
   maxRemovalsPerRun?: Prisma.IntFieldUpdateOperationsInput | number
   requireApproval?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  respectQuiSeeding?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   rules?: Prisma.LibraryCleanupRuleUncheckedUpdateManyWithoutConfigNestedInput
@@ -977,6 +1017,7 @@ export type LibraryCleanupConfigUncheckedUpdateManyWithoutUserInput = {
   dryRunMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
   maxRemovalsPerRun?: Prisma.IntFieldUpdateOperationsInput | number
   requireApproval?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  respectQuiSeeding?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -1040,6 +1081,7 @@ export type LibraryCleanupConfigSelect<ExtArgs extends runtime.Types.Extensions.
   dryRunMode?: boolean
   maxRemovalsPerRun?: boolean
   requireApproval?: boolean
+  respectQuiSeeding?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
@@ -1059,6 +1101,7 @@ export type LibraryCleanupConfigSelectCreateManyAndReturn<ExtArgs extends runtim
   dryRunMode?: boolean
   maxRemovalsPerRun?: boolean
   requireApproval?: boolean
+  respectQuiSeeding?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
@@ -1074,6 +1117,7 @@ export type LibraryCleanupConfigSelectUpdateManyAndReturn<ExtArgs extends runtim
   dryRunMode?: boolean
   maxRemovalsPerRun?: boolean
   requireApproval?: boolean
+  respectQuiSeeding?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
@@ -1089,11 +1133,12 @@ export type LibraryCleanupConfigSelectScalar = {
   dryRunMode?: boolean
   maxRemovalsPerRun?: boolean
   requireApproval?: boolean
+  respectQuiSeeding?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type LibraryCleanupConfigOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "enabled" | "intervalHours" | "lastRunAt" | "nextRunAt" | "dryRunMode" | "maxRemovalsPerRun" | "requireApproval" | "createdAt" | "updatedAt", ExtArgs["result"]["libraryCleanupConfig"]>
+export type LibraryCleanupConfigOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "enabled" | "intervalHours" | "lastRunAt" | "nextRunAt" | "dryRunMode" | "maxRemovalsPerRun" | "requireApproval" | "respectQuiSeeding" | "createdAt" | "updatedAt", ExtArgs["result"]["libraryCleanupConfig"]>
 export type LibraryCleanupConfigInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
   rules?: boolean | Prisma.LibraryCleanupConfig$rulesArgs<ExtArgs>
@@ -1126,6 +1171,15 @@ export type $LibraryCleanupConfigPayload<ExtArgs extends runtime.Types.Extension
     dryRunMode: boolean
     maxRemovalsPerRun: number
     requireApproval: boolean
+    /**
+     * When true, cleanup proposals exclude items currently seeding via qui
+     * (LibraryCache.torrentState IN ['seeding', 'downloading']). Default false
+     * for backward compatibility — existing rules don't silently change
+     * behavior. Operators with qui configured can opt in to honor seeding
+     * obligations (private trackers, ratio targets, community seeding norms).
+     * No-op when the user has no qui instance configured.
+     */
+    respectQuiSeeding: boolean
     createdAt: Date
     updatedAt: Date
   }, ExtArgs["result"]["libraryCleanupConfig"]>
@@ -1564,6 +1618,7 @@ export interface LibraryCleanupConfigFieldRefs {
   readonly dryRunMode: Prisma.FieldRef<"LibraryCleanupConfig", 'Boolean'>
   readonly maxRemovalsPerRun: Prisma.FieldRef<"LibraryCleanupConfig", 'Int'>
   readonly requireApproval: Prisma.FieldRef<"LibraryCleanupConfig", 'Boolean'>
+  readonly respectQuiSeeding: Prisma.FieldRef<"LibraryCleanupConfig", 'Boolean'>
   readonly createdAt: Prisma.FieldRef<"LibraryCleanupConfig", 'DateTime'>
   readonly updatedAt: Prisma.FieldRef<"LibraryCleanupConfig", 'DateTime'>
 }

@@ -46,7 +46,30 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const fetchResults = await Promise.all(
 			arrInstances.map(async (instance) => {
 				const service = instance.service.toLowerCase();
-				const client = app.arrClientFactory.create(instance);
+				// `arrClientFactory.create` decrypts the stored API key. If the
+				// `ENCRYPTION_KEY` has rotated since the row was last written,
+				// or the ciphertext is malformed for any other reason, this
+				// throws. Pre-fix versions left the throw uncaught and the
+				// entire `Promise.all` rejected → 500 on the WHOLE endpoint,
+				// taking every healthy instance's stats down with the one
+				// broken one. Catching here and setting `client = null`
+				// causes the `client instanceof XxxClient` guard in each
+				// per-service branch below to fail naturally, which routes
+				// the request into that branch's existing per-service error
+				// path (the `catch` after each `fetchXxxStatisticsWithSdk`).
+				// Net effect: the dashboard degrades per-instance, not
+				// wholesale, AND the per-service result type narrowing
+				// downstream stays intact (each branch still returns its
+				// own `service: "xxx" as const` literal).
+				let client: ReturnType<typeof app.arrClientFactory.create> | null = null;
+				try {
+					client = app.arrClientFactory.create(instance);
+				} catch (clientErr) {
+					request.log.error(
+						{ err: clientErr, instance: instance.id, service: instance.service },
+						"arr client construction failed (likely encryption key mismatch); per-instance fetch will use the empty-stats fallback",
+					);
+				}
 
 				if (service === "sonarr" && client instanceof SonarrClient) {
 					try {
