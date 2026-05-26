@@ -36,6 +36,12 @@
  *   Opt out via HEAP_AUTO_SNAPSHOT_AT_WARN=0 if you don't want unsolicited
  *   files in /config (e.g., low-disk hosts).
  *
+ *   Setting HEAP_AUTO_SNAPSHOT=0 (the broader opt-in/opt-out var also read by
+ *   start-combined.sh) ALSO disables warn-time snapshots — operators who set
+ *   either var to 0 expect "no surprise snapshots," and the prior split where
+ *   `HEAP_AUTO_SNAPSHOT=0` left warn-time captures running was a footgun
+ *   (issue #471).
+ *
  * Companion runtime knobs:
  *   - `--heapsnapshot-signal=SIGUSR2`  Always on (set in Dockerfile
  *     NODE_OPTIONS). An operator can also capture a snapshot on demand via:
@@ -47,6 +53,7 @@
  *     appends --heapsnapshot-near-heap-limit=1 so V8 auto-captures a
  *     snapshot just before OOM. Off by default because each snapshot is ~3x
  *     the heap (~2.3 GB at the 768 MB cap) — a lot for small /config volumes.
+ *     Setting it to "0" is treated as a global kill switch (see above).
  */
 
 import {
@@ -84,7 +91,13 @@ function resolveSnapshotDir(): string {
 	return isDocker ? "/config/heap-snapshots" : "./config-dev/heap-snapshots";
 }
 const SNAPSHOT_DIR = resolveSnapshotDir();
-const AUTO_SNAPSHOT_AT_WARN = process.env.HEAP_AUTO_SNAPSHOT_AT_WARN !== "0";
+// Warn-time auto snapshots are on by default; disabled if EITHER the precise
+// opt-out (HEAP_AUTO_SNAPSHOT_AT_WARN=0) or the broader kill switch
+// (HEAP_AUTO_SNAPSHOT=0) is set. The broader var matches operator expectations
+// — see issue #471. Note that an unset HEAP_AUTO_SNAPSHOT does NOT disable
+// warn-time captures; only the explicit string "0" does.
+const AUTO_SNAPSHOT_AT_WARN =
+	process.env.HEAP_AUTO_SNAPSHOT_AT_WARN !== "0" && process.env.HEAP_AUTO_SNAPSHOT !== "0";
 const AUTO_SNAPSHOT_MIN_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes between captures
 const AUTO_SNAPSHOT_MAX_RETAINED = 3; // rotate aggressively — files are ~heap-size MB
 
@@ -233,7 +246,7 @@ const heapMonitorPlugin = fastifyPlugin(
 				app.log.warn(
 					payload,
 					AUTO_SNAPSHOT_AT_WARN
-						? "Heap usage above 90% — auto-capturing snapshot to /config/heap-snapshots/ (set HEAP_AUTO_SNAPSHOT_AT_WARN=0 to disable)"
+						? "Heap usage above 90% — auto-capturing snapshot to /config/heap-snapshots/ (set HEAP_AUTO_SNAPSHOT=0 or HEAP_AUTO_SNAPSHOT_AT_WARN=0 to disable)"
 						: "Heap usage above 90% — capture a snapshot before OOM: `docker exec <container> dump-heap`",
 				);
 				if (AUTO_SNAPSHOT_AT_WARN) {
