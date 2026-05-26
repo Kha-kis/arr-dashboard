@@ -938,7 +938,10 @@ function buildQueryString(params?: object): string {
 	for (const [key, value] of entries) {
 		qs.set(key, String(value));
 	}
-	return `?${qs.toString()}`;
+	// Jellyseerr/Overseerr strict-validate `query` params and reject `+`
+	// (form-urlencoded space) as a reserved character — see issue #470.
+	// Force RFC 3986 spaces (%20) so spaces survive the upstream validator.
+	return `?${qs.toString().replace(/\+/g, "%20")}`;
 }
 
 /**
