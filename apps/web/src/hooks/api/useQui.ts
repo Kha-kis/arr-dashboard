@@ -275,7 +275,12 @@ export const useQuiRenameTorrent = () => {
 			name: string;
 		}) => postQuiRenameTorrent(args),
 		onSettled: () => {
-			queryClient.invalidateQueries({ queryKey: ["qui", "torrent-state"] as const });
+			// Same broad-invalidate pattern as useQuiTorrentAction — refetch
+			// the open drawer's properties (carries the name) and files keys
+			// so the rename is visible immediately, not on the next polling
+			// tick.
+			queryClient.invalidateQueries({ queryKey: quiKeys.torrentProperties.all });
+			queryClient.invalidateQueries({ queryKey: quiKeys.torrentFiles.all });
 		},
 	});
 };
@@ -633,13 +638,17 @@ export const useQuiEventStream = ({ enabled = true }: { enabled?: boolean } = {}
 		const source = new EventSource("/api/qui/events/stream", { withCredentials: true });
 		const handleOpen = () => setStreamStatus("open");
 		const handleEvent = () => {
+			// Every qui-side event (state transitions, completions, errors)
+			// is a server-pushed signal that the open drawer's snapshot may
+			// be stale. Invalidate the same broad per-torrent keys the
+			// mutation hooks use so React Query's prefix-match refetches
+			// whichever drawer is currently mounted. The `quiKeys.events`
+			// invalidation refreshes the Activity tab; `crossSeed` covers
+			// the cross-seed siblings view.
 			queryClient.invalidateQueries({ queryKey: quiKeys.events });
-			queryClient.invalidateQueries({
-				queryKey: ["qui", "torrent-state"] satisfies readonly string[],
-			});
-			queryClient.invalidateQueries({
-				queryKey: ["qui", "cross-seed"] satisfies readonly string[],
-			});
+			queryClient.invalidateQueries({ queryKey: quiKeys.torrentProperties.all });
+			queryClient.invalidateQueries({ queryKey: quiKeys.torrentFiles.all });
+			queryClient.invalidateQueries({ queryKey: quiKeys.crossSeed });
 		};
 		const handleError = () => {
 			setStreamStatus("offline");

@@ -2,7 +2,9 @@ import { ALL_SERVICES, arrServiceTypeSchema } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { requireInstance } from "../lib/arr/instance-helpers.js";
+import { clearFileIdIndexCache } from "../lib/library-sync/infohash-backfill-by-inode.js";
 import type { ServiceType } from "../lib/prisma.js";
+import { invalidateTorrentListCache } from "../lib/qui/torrent-list-cache.js";
 import { testServiceConnection } from "../lib/services/connection-tester.js";
 import { formatServiceInstance } from "../lib/services/service-formatter.js";
 import { updateInstanceTags, upsertTags } from "../lib/services/tag-manager.js";
@@ -159,10 +161,6 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const switchedAwayFromQui =
 			payload.service !== undefined && payload.service.toLowerCase() !== "qui";
 		if (wasQui && (nowDisabled || switchedAwayFromQui)) {
-			const [{ invalidateTorrentListCache }, { clearFileIdIndexCache }] = await Promise.all([
-				import("../lib/qui/torrent-list-cache.js"),
-				import("../lib/library-sync/infohash-backfill-by-inode.js"),
-			]);
 			invalidateTorrentListCache(id);
 			clearFileIdIndexCache(id);
 			request.log.info(
@@ -207,10 +205,6 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 		// deleted instance is never read again, so its entry would linger
 		// for the whole process life). No-op for non-qui services: the id
 		// simply isn't a key in those caches.
-		const [{ invalidateTorrentListCache }, { clearFileIdIndexCache }] = await Promise.all([
-			import("../lib/qui/torrent-list-cache.js"),
-			import("../lib/library-sync/infohash-backfill-by-inode.js"),
-		]);
 		invalidateTorrentListCache(id);
 		clearFileIdIndexCache(id);
 

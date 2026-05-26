@@ -644,7 +644,16 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 		// warm, bail with empty rather than block the library page.
 		const indexClient = createQuiClient(app, quiInstance);
 		const inodeIndex = await Promise.race([
-			buildFileIdIndex(indexClient, quiInstance, request.log, app.prisma).catch(() => null),
+			buildFileIdIndex(indexClient, quiInstance, request.log, app.prisma).catch((err) => {
+				// Mirror panel-routes which logs the same failure (used to be
+				// silent here — a regression that breaks seeding badges would
+				// only surface via user reports, not log signal).
+				request.log.warn(
+					{ err, quiInstanceId: quiInstance.id },
+					"qui library-seeding-summary: inode index build failed; returning empty summary",
+				);
+				return null;
+			}),
 			new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
 		]);
 		if (!inodeIndex) {
@@ -743,11 +752,17 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 					.filter((t): t is typeof t & { instanceId: number } => typeof t.instanceId === "number")
 					.map((t) => [t.hash.toLowerCase(), t.instanceId]),
 			);
-		} catch {
+		} catch (err) {
 			// If the cache fetch fails entirely (qui unreachable), every
 			// per-hash request below would fail the same way. Continue with
 			// an empty map; the per-hash try/catch logs zero hosts and the
 			// summary degrades gracefully rather than 500-ing the whole route.
+			// Logged so an operator notices a sustained outage rather than
+			// just seeing a quietly-degraded library page.
+			request.log.warn(
+				{ err, quiInstanceId: quiInstance.id },
+				"qui library-seeding-summary: torrent-list cache fetch failed; falling back to per-hash lookups",
+			);
 			hashToInstance = new Map();
 		}
 
@@ -780,7 +795,17 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 							.map((t) => extractHostnameSafe(t.url))
 							.filter((h) => h.length > 0);
 						hashToHosts.set(hash, hosts);
-					} catch {
+					} catch (err) {
+						// One hash failing is fine (qui returns ENOENT for
+						// torrents removed between cache refresh and now).
+						// `debug` rather than `warn` because this can fire
+						// dozens of times per page; the aggregate "all hashes
+						// failed" case would still be visible via the empty
+						// `hashToInstance` warn above.
+						request.log.debug(
+							{ err, hash },
+							"qui library-seeding-summary: tracker fetch failed for hash",
+						);
 						hashToHosts.set(hash, []);
 					}
 				}),
@@ -891,13 +916,24 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 			let client: ReturnType<typeof createQuiClient>;
 			try {
 				client = createQuiClient(app, instance);
-			} catch {
+			} catch (err) {
+				// Mirror /qui/summary's logging — was silent here, so an
+				// encryption-key mismatch or similar config issue would
+				// silently shrink the attention feed with no signal.
+				request.log.warn(
+					{ err, instanceId: instance.id },
+					"qui attention: client construction failed (likely encryption key mismatch); skipping instance",
+				);
 				continue;
 			}
 			let torrents: Awaited<ReturnType<typeof getCachedAllTorrents>>;
 			try {
 				torrents = await getCachedAllTorrents(instance.id, client);
-			} catch {
+			} catch (err) {
+				request.log.warn(
+					{ err, instanceId: instance.id },
+					"qui attention: listAllTorrents failed; skipping instance",
+				);
 				continue;
 			}
 			// qui's reannounce monitor flags torrents stuck failing to reach

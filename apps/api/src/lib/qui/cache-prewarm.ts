@@ -74,6 +74,16 @@ export async function prewarmInstance(
 		]);
 		// Clear the timer as soon as the real fetch wins the race; on
 		// timeout the rejection handler already fired so this is a no-op.
+		//
+		// Note: `Promise.race` leaves the losing promise in `pending`
+		// state. That's a well-known property of the JavaScript Promise
+		// model — there's no built-in cancellation. Cleaner-looking
+		// "fixes" (e.g., manually rejecting `timeoutPromise` here) would
+		// either need an attached `.catch` (or produce unhandled-rejection
+		// noise) or require an AbortController flowed all the way into
+		// `getCachedAllTorrents`, which is a bigger surface change. In
+		// practice the pending promise is collected within microseconds
+		// when this function returns and its closure falls out of scope.
 		clearTimer(timerHandle);
 		const torrentCount = Array.isArray(result)
 			? result.length
