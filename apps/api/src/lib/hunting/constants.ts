@@ -64,7 +64,6 @@ export const MIN_HOURLY_API_CAP = 10;
  */
 export const MAX_HOURLY_API_CAP = 500;
 
-
 /**
  * Delay between individual search commands within a hunt (30 seconds)
  * Prevents overwhelming indexers with simultaneous requests.
@@ -79,9 +78,7 @@ export const SEARCH_DELAY_MS = 30_000;
  */
 export const MAX_QUEUE_THRESHOLD = 100;
 
-
 // === DEFAULT INTERVALS ===
-
 
 // === SONARR SEARCH OPTIMIZATION ===
 
@@ -93,7 +90,6 @@ export const MAX_QUEUE_THRESHOLD = 100;
 export const SEASON_SEARCH_THRESHOLD = 3;
 
 // === SEARCH HISTORY / RE-SEARCH SETTINGS ===
-
 
 /**
  * Maximum re-search interval (90 days)
@@ -110,9 +106,12 @@ export const MAX_RESEARCH_AFTER_DAYS = 90;
  * - Sonarr/Radarr to evaluate and grab releases
  * - History event to be recorded
  *
- * We use history-based detection (checking /api/v3/history?eventType=grabbed)
- * rather than queue checking, which is more reliable because history persists
- * even after downloads complete, while queue items can disappear quickly.
+ * We use history-based detection (checking /api/v3/history and filtering for
+ * grab events client-side) rather than queue checking, which is more reliable
+ * because history persists even after downloads complete, while queue items
+ * can disappear quickly. The server-side `?eventType=grabbed` filter was
+ * dropped in the #472 fix — current Radarr/Sonarr versions reject it as
+ * "not valid"; client-side filtering is version-agnostic.
  *
  * Default: 10 seconds
  */
@@ -128,4 +127,3 @@ export const GRAB_CHECK_DELAY_MS = 10_000;
  * Default: 10 minutes (should be plenty for even large batch sizes with delays)
  */
 export const MAX_HUNT_DURATION_MS = 10 * 60 * 1000;
-

@@ -48,16 +48,22 @@ export async function detectGrabbedItemsFromHistoryWithSdk(
 		await delay(GRAB_CHECK_DELAY_MS);
 
 		counter.count++;
+		// Issue #472: Radarr 6.x / Sonarr 4.x reject `eventType=grabbed` on the
+		// history endpoint ("The value 'grabbed' is not valid"). Fetch unfiltered
+		// and filter client-side instead — version-agnostic and removes the
+		// dependency on upstream enum encoding entirely. pageSize bumped from
+		// 100 → 250 to keep the same grab-detection window now that the page
+		// contains mixed event types (grabs, imports, deletes, renames).
 		const history = await client.history.get({
-			pageSize: 100,
+			pageSize: 250,
 			sortKey: "date",
 			sortDirection: "descending",
-			eventType: "grabbed",
 		});
 
 		const grabbedItems: GrabbedItem[] = [];
 
 		for (const record of history.records ?? []) {
+			if (record.eventType !== "grabbed") continue;
 			const eventDate = new Date(record.date ?? "");
 			if (eventDate < searchStartTime) continue;
 
@@ -221,16 +227,19 @@ export async function detectLidarrGrabbedItems(
 		await delay(GRAB_CHECK_DELAY_MS);
 
 		counter.count++;
+		// See issue #472 — `eventType=grabbed` is rejected by current Lidarr;
+		// filter client-side instead. pageSize bumped to preserve the window
+		// once non-grab events share the page.
 		const history = await client.history.get({
-			pageSize: 100,
+			pageSize: 250,
 			sortKey: "date",
 			sortDirection: "descending",
-			eventType: "grabbed",
 		});
 
 		const grabbedItems: GrabbedItem[] = [];
 
 		for (const record of history.records ?? []) {
+			if (record.eventType !== "grabbed") continue;
 			const eventDate = new Date(record.date ?? "");
 			if (eventDate < searchStartTime) continue;
 
@@ -297,16 +306,19 @@ export async function detectReadarrGrabbedItems(
 		await delay(GRAB_CHECK_DELAY_MS);
 
 		counter.count++;
+		// See issue #472 — `eventType=grabbed` is rejected by current Readarr;
+		// filter client-side instead. pageSize bumped to preserve the window
+		// once non-grab events share the page.
 		const history = await client.history.get({
-			pageSize: 100,
+			pageSize: 250,
 			sortKey: "date",
 			sortDirection: "descending",
-			eventType: "grabbed",
 		});
 
 		const grabbedItems: GrabbedItem[] = [];
 
 		for (const record of history.records ?? []) {
+			if (record.eventType !== "grabbed") continue;
 			const eventDate = new Date(record.date ?? "");
 			if (eventDate < searchStartTime) continue;
 
