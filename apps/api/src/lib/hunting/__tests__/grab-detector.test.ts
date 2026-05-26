@@ -16,10 +16,16 @@
  *      newer than searchStartTime) are returned in the result.
  */
 
+import type { LidarrClient } from "arr-sdk/lidarr";
 import type { RadarrClient } from "arr-sdk/radarr";
+import type { ReadarrClient } from "arr-sdk/readarr";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { detectGrabbedItemsFromHistoryWithSdk } from "../grab-detector.js";
+import {
+	detectGrabbedItemsFromHistoryWithSdk,
+	detectLidarrGrabbedItems,
+	detectReadarrGrabbedItems,
+} from "../grab-detector.js";
 import type { ApiCallCounter } from "../pagination-helpers.js";
 
 const stubLogger = {
@@ -87,7 +93,10 @@ describe("detectGrabbedItemsFromHistoryWithSdk", () => {
 		// Sanity: still uses the expected sort + paging
 		expect(options.sortKey).toBe("date");
 		expect(options.sortDirection).toBe("descending");
-		expect(options.pageSize).toBeGreaterThanOrEqual(100);
+		// Pin exact pageSize — accidentally reverting to 100 would meaningfully
+		// shrink the grab-detection window now that the page contains mixed
+		// event types (test-analyzer recommendation on PR #479).
+		expect(options.pageSize).toBe(250);
 	});
 
 	it("filters out non-grabbed event types client-side", async () => {
@@ -184,5 +193,169 @@ describe("detectGrabbedItemsFromHistoryWithSdk", () => {
 
 		expect(result.failed).toBe(false);
 		expect(result.items.map((i) => i.title)).toEqual(["Movie 1", "Series 2", "Episode 3"]);
+	});
+
+	it("falls back to queue detection when history.get rejects", async () => {
+		// Simulates network/auth/transient failure on the history call.
+		// Queue fallback must still return matching items so itemsGrabbed is
+		// reported accurately when only the history path is broken.
+		const historyMock = vi.fn().mockRejectedValue(new Error("ECONNRESET"));
+		const queueMock = vi.fn().mockResolvedValue({
+			records: [
+				{
+					movieId: 42,
+					title: "From queue fallback",
+					quality: { quality: { name: "WEBDL-1080p" } },
+				},
+			],
+		});
+		const client = {
+			history: { get: historyMock },
+			queue: { get: queueMock },
+		} as unknown as RadarrClient;
+
+		const result = await detectGrabbedItemsFromHistoryWithSdk(
+			client,
+			PAST,
+			[42],
+			[],
+			[],
+			counter,
+			stubLogger as never,
+		);
+
+		expect(historyMock).toHaveBeenCalledTimes(1);
+		expect(queueMock).toHaveBeenCalledTimes(1);
+		expect(result.failed).toBe(false);
+		expect(result.items).toHaveLength(1);
+		expect(result.items[0]!.title).toBe("From queue fallback");
+	});
+});
+
+// ===========================================================================
+// Lidarr parity tests (issue #472 regression pin across services)
+//
+// The fix was applied identically to Lidarr and Readarr — without service-
+// specific tests, a future contributor "cleaning up" only one branch would
+// silently re-introduce the bug for that service while these tests pass.
+// ===========================================================================
+
+describe("detectLidarrGrabbedItems", () => {
+	let counter: ApiCallCounter;
+
+	beforeEach(() => {
+		counter = { count: 0 };
+		vi.spyOn(global, "setTimeout").mockImplementation(((fn: () => void) => {
+			fn();
+			return 0 as unknown as ReturnType<typeof setTimeout>;
+		}) as typeof setTimeout);
+	});
+
+	it("does NOT send eventType in the history request (issue #472 regression pin)", async () => {
+		const getMock = vi.fn().mockResolvedValue({ records: [] });
+		const client = { history: { get: getMock } } as unknown as LidarrClient;
+
+		await detectLidarrGrabbedItems(client, PAST, [1], counter, stubLogger as never);
+
+		const options = getMock.mock.calls[0]![0] as Record<string, unknown>;
+		expect(options).not.toHaveProperty("eventType");
+		expect(options.pageSize).toBe(250);
+	});
+
+	it("filters out non-grabbed events and matches by albumId", async () => {
+		const getMock = vi.fn().mockResolvedValue({
+			records: [
+				{
+					eventType: "trackFileImported",
+					date: "2026-05-26T12:00:00Z",
+					albumId: 7,
+					sourceTitle: "Should be ignored — import",
+				},
+				{
+					eventType: "grabbed",
+					date: "2026-05-26T12:00:00Z",
+					albumId: 7,
+					sourceTitle: "The actual album grab",
+				},
+				{
+					eventType: "grabbed",
+					date: "2026-05-26T12:00:00Z",
+					albumId: 99,
+					sourceTitle: "Unmatched album",
+				},
+			],
+		});
+		const client = { history: { get: getMock } } as unknown as LidarrClient;
+
+		const result = await detectLidarrGrabbedItems(client, PAST, [7], counter, stubLogger as never);
+
+		expect(result.failed).toBe(false);
+		expect(result.items).toHaveLength(1);
+		expect(result.items[0]!.title).toBe("The actual album grab");
+	});
+});
+
+// ===========================================================================
+// Readarr parity tests (issue #472 regression pin across services)
+// ===========================================================================
+
+describe("detectReadarrGrabbedItems", () => {
+	let counter: ApiCallCounter;
+
+	beforeEach(() => {
+		counter = { count: 0 };
+		vi.spyOn(global, "setTimeout").mockImplementation(((fn: () => void) => {
+			fn();
+			return 0 as unknown as ReturnType<typeof setTimeout>;
+		}) as typeof setTimeout);
+	});
+
+	it("does NOT send eventType in the history request (issue #472 regression pin)", async () => {
+		const getMock = vi.fn().mockResolvedValue({ records: [] });
+		const client = { history: { get: getMock } } as unknown as ReadarrClient;
+
+		await detectReadarrGrabbedItems(client, PAST, [1], counter, stubLogger as never);
+
+		const options = getMock.mock.calls[0]![0] as Record<string, unknown>;
+		expect(options).not.toHaveProperty("eventType");
+		expect(options.pageSize).toBe(250);
+	});
+
+	it("filters out non-grabbed events and matches by bookId", async () => {
+		const getMock = vi.fn().mockResolvedValue({
+			records: [
+				{
+					eventType: "bookFileImported",
+					date: "2026-05-26T12:00:00Z",
+					bookId: 11,
+					sourceTitle: "Should be ignored — import",
+				},
+				{
+					eventType: "grabbed",
+					date: "2026-05-26T12:00:00Z",
+					bookId: 11,
+					sourceTitle: "The actual book grab",
+				},
+				{
+					eventType: "grabbed",
+					date: "2026-05-26T12:00:00Z",
+					bookId: 99,
+					sourceTitle: "Unmatched book",
+				},
+			],
+		});
+		const client = { history: { get: getMock } } as unknown as ReadarrClient;
+
+		const result = await detectReadarrGrabbedItems(
+			client,
+			PAST,
+			[11],
+			counter,
+			stubLogger as never,
+		);
+
+		expect(result.failed).toBe(false);
+		expect(result.items).toHaveLength(1);
+		expect(result.items[0]!.title).toBe("The actual book grab");
 	});
 });
