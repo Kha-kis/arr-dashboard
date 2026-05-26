@@ -158,3 +158,112 @@ describe("useLibraryFilters — warm navigation (URL changes after mount)", () =
 		expect(result.current.page).toBe(1);
 	});
 });
+
+describe("useLibraryFilters — torrentState deep-link param (qui Quick Action target)", () => {
+	// The qui home page's "Library — seeding" Quick Action and the Pulse
+	// seeding-health card both link to `/library?torrentState=<bucket>`.
+	// An earlier commit on this branch shipped that link but the filter
+	// wasn't actually wired to read the URL param, so the deep link landed
+	// on the unfiltered library. This block is the regression guard for
+	// that class of bug.
+	afterEach(() => {
+		setUrlParams({});
+		mockGet.mockClear();
+	});
+
+	it("defaults to 'all' when ?torrentState= is absent", () => {
+		setUrlParams({});
+		const { result } = renderHook(() => useLibraryFilters());
+		expect(result.current.torrentStateFilter).toBe("all");
+	});
+
+	it("seeds torrentStateFilter from each supported bucket on cold mount", () => {
+		const buckets = [
+			"seeding",
+			"downloading",
+			"stalled_dl",
+			"paused",
+			"queued",
+			"checking",
+			"moving",
+			"error",
+			"unknown",
+			"none",
+		] as const;
+		for (const bucket of buckets) {
+			setUrlParams({ torrentState: bucket });
+			const { result } = renderHook(() => useLibraryFilters());
+			expect(result.current.torrentStateFilter).toBe(bucket);
+		}
+	});
+
+	it("falls back to 'all' when ?torrentState= contains an unknown value", () => {
+		// Defends against an untrusted URL widening the type union.
+		setUrlParams({ torrentState: "garbage" });
+		const { result } = renderHook(() => useLibraryFilters());
+		expect(result.current.torrentStateFilter).toBe("all");
+	});
+
+	it("syncs torrentStateFilter when ?torrentState= is added after mount", () => {
+		setUrlParams({});
+		const { result, rerender } = renderHook(() => useLibraryFilters());
+		expect(result.current.torrentStateFilter).toBe("all");
+
+		act(() => {
+			setUrlParams({ torrentState: "seeding" });
+			rerender();
+		});
+
+		expect(result.current.torrentStateFilter).toBe("seeding");
+	});
+
+	it("resets page to 1 when torrentState deep-link arrives mid-session", () => {
+		setUrlParams({});
+		const { result, rerender } = renderHook(() => useLibraryFilters());
+		act(() => {
+			result.current.setPage(3);
+		});
+		expect(result.current.page).toBe(3);
+
+		act(() => {
+			setUrlParams({ torrentState: "error" });
+			rerender();
+		});
+
+		expect(result.current.torrentStateFilter).toBe("error");
+		expect(result.current.page).toBe(1);
+	});
+
+	it("does not clobber a user-driven torrentState change when URL is unchanged", () => {
+		// Mirrors the quality+service tests: warm re-renders that don't
+		// change the URL must not re-apply the URL param over the user's
+		// dropdown choice.
+		setUrlParams({ torrentState: "seeding" });
+		const { result, rerender } = renderHook(() => useLibraryFilters());
+		expect(result.current.torrentStateFilter).toBe("seeding");
+
+		act(() => {
+			result.current.setTorrentStateFilter("all");
+		});
+		expect(result.current.torrentStateFilter).toBe("all");
+
+		act(() => {
+			rerender();
+		});
+		expect(result.current.torrentStateFilter).toBe("all");
+	});
+
+	it("seeds quality, service, and torrentState together when all three params are present", () => {
+		setUrlParams({
+			quality: "cutoff-unmet",
+			service: "radarr",
+			torrentState: "stalled_dl",
+		});
+
+		const { result } = renderHook(() => useLibraryFilters());
+
+		expect(result.current.qualityFilter).toBe("cutoff-unmet");
+		expect(result.current.serviceFilter).toBe("radarr");
+		expect(result.current.torrentStateFilter).toBe("stalled_dl");
+	});
+});
