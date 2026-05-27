@@ -48,13 +48,12 @@ export async function detectGrabbedItemsFromHistoryWithSdk(
 		await delay(GRAB_CHECK_DELAY_MS);
 
 		counter.count++;
-		// Server-side filter by `eventType=grabbed`. Originally broken in
-		// arr-sdk 0.6.0 — Radarr/Sonarr's .NET model binder rejects the string
-		// "grabbed" because it binds eventType as `int[]`, not the enum from
-		// OpenAPI (issue #472). Fixed upstream in arr-sdk 0.7.0 which now
-		// translates string event types to their numeric .NET enum values
-		// inside the SDK before forwarding, so the server-side filter works
-		// again and `pageSize: 100` is enough (page contains only grabs).
+		// Server-side filter by `eventType=grabbed` (primary). Originally broken
+		// in arr-sdk 0.6.0 — Radarr/Sonarr's .NET model binder rejects the
+		// string "grabbed" because it binds eventType as `int[]`, not the enum
+		// from OpenAPI (issue #472). Fixed upstream in arr-sdk 0.7.0 which now
+		// translates string event types to numeric .NET enum values inside the
+		// SDK before forwarding.
 		const history = await client.history.get({
 			pageSize: 100,
 			sortKey: "date",
@@ -65,6 +64,14 @@ export async function detectGrabbedItemsFromHistoryWithSdk(
 		const grabbedItems: GrabbedItem[] = [];
 
 		for (const record of history.records ?? []) {
+			// Defensive guard (belt-and-suspenders with the server-side filter
+			// above). arr-sdk's `encodeEventType` returns `undefined` on
+			// unknown enum keys and `buildQueryParams` strips undefined values
+			// — so a future typo, SDK regression, or upstream rename of the
+			// enum key would silently bypass the server filter, returning
+			// imports/deletes that share IDs with searched items. Without this
+			// guard, those would be over-counted as grabs with no warning.
+			if (record.eventType !== "grabbed") continue;
 			const eventDate = new Date(record.date ?? "");
 			if (eventDate < searchStartTime) continue;
 
@@ -241,6 +248,9 @@ export async function detectLidarrGrabbedItems(
 		const grabbedItems: GrabbedItem[] = [];
 
 		for (const record of history.records ?? []) {
+			// Defensive guard against silent SDK filter-drop (see Sonarr/Radarr
+			// version above for the full rationale).
+			if (record.eventType !== "grabbed") continue;
 			const eventDate = new Date(record.date ?? "");
 			if (eventDate < searchStartTime) continue;
 
@@ -320,6 +330,9 @@ export async function detectReadarrGrabbedItems(
 		const grabbedItems: GrabbedItem[] = [];
 
 		for (const record of history.records ?? []) {
+			// Defensive guard against silent SDK filter-drop (see Sonarr/Radarr
+			// version above for the full rationale).
+			if (record.eventType !== "grabbed") continue;
 			const eventDate = new Date(record.date ?? "");
 			if (eventDate < searchStartTime) continue;
 

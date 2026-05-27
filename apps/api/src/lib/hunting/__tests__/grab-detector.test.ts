@@ -21,10 +21,17 @@
  *      in import/delete/rename events from the same page.
  *   2. `pageSize` stays at 100 (pre-filtered grabs are dense — no need to
  *      widen the window the way the client-side workaround had to).
- *   3. Records older than `searchStartTime` are filtered out client-side.
- *   4. Grab records matching searched IDs (movie/series/episode/album/book)
+ *   3. The per-record `if (record.eventType !== "grabbed") continue;` guard
+ *      stays as defense-in-depth — arr-sdk's encodeEventType returns
+ *      `undefined` on unknown enum keys and buildQueryParams silently
+ *      strips it, so a typo / SDK regression / upstream enum rename could
+ *      bypass the server filter and over-count imports as grabs without
+ *      the JS guard. Each `describe` block has a "rejects non-grabbed
+ *      events client-side" test pinning this.
+ *   4. Records older than `searchStartTime` are filtered out client-side.
+ *   5. Grab records matching searched IDs (movie/series/episode/album/book)
  *      are returned in the result.
- *   5. The catch branch falls back to queue detection on history failures.
+ *   6. The catch branch falls back to queue detection on history failures.
  */
 
 import type { LidarrClient } from "arr-sdk/lidarr";
@@ -171,6 +178,49 @@ describe("detectGrabbedItemsFromHistoryWithSdk", () => {
 		expect(result.items.map((i) => i.title)).toEqual(["Movie 1", "Series 2", "Episode 3"]);
 	});
 
+	it("rejects non-grabbed events client-side even if the server returns them (defense)", async () => {
+		// arr-sdk's encodeEventType returns undefined on unknown enum keys and
+		// buildQueryParams strips undefined — so a typo, SDK regression, or
+		// upstream enum rename could silently bypass the server-side filter
+		// and return ALL event types. The per-record JS guard catches this:
+		// without it, imports/deletes sharing a movieId with a searched item
+		// would be over-counted as grabs.
+		const { client } = makeClient([
+			{
+				eventType: "downloadFolderImported",
+				date: "2026-05-26T12:00:00Z",
+				movieId: 42,
+				sourceTitle: "Should be ignored — import",
+			},
+			{
+				eventType: "movieFileDeleted",
+				date: "2026-05-26T12:00:00Z",
+				movieId: 42,
+				sourceTitle: "Should be ignored — delete",
+			},
+			{
+				eventType: "grabbed",
+				date: "2026-05-26T12:00:00Z",
+				movieId: 42,
+				sourceTitle: "The actual grab",
+			},
+		]);
+
+		const result = await detectGrabbedItemsFromHistoryWithSdk(
+			client,
+			PAST,
+			[42],
+			[],
+			[],
+			counter,
+			stubLogger as never,
+		);
+
+		expect(result.failed).toBe(false);
+		expect(result.items).toHaveLength(1);
+		expect(result.items[0]!.title).toBe("The actual grab");
+	});
+
 	it("falls back to queue detection when history.get rejects", async () => {
 		// Simulates network/auth/transient failure on the history call.
 		// Queue fallback must still return matching items so itemsGrabbed is
@@ -263,6 +313,32 @@ describe("detectLidarrGrabbedItems", () => {
 		expect(result.items).toHaveLength(1);
 		expect(result.items[0]!.title).toBe("The actual album grab");
 	});
+
+	it("rejects non-grabbed events client-side even if the server returns them (defense)", async () => {
+		const getMock = vi.fn().mockResolvedValue({
+			records: [
+				{
+					eventType: "trackFileImported",
+					date: "2026-05-26T12:00:00Z",
+					albumId: 7,
+					sourceTitle: "Should be ignored — import",
+				},
+				{
+					eventType: "grabbed",
+					date: "2026-05-26T12:00:00Z",
+					albumId: 7,
+					sourceTitle: "The actual album grab",
+				},
+			],
+		});
+		const client = { history: { get: getMock } } as unknown as LidarrClient;
+
+		const result = await detectLidarrGrabbedItems(client, PAST, [7], counter, stubLogger as never);
+
+		expect(result.failed).toBe(false);
+		expect(result.items).toHaveLength(1);
+		expect(result.items[0]!.title).toBe("The actual album grab");
+	});
 });
 
 // ===========================================================================
@@ -305,6 +381,38 @@ describe("detectReadarrGrabbedItems", () => {
 					date: "2026-05-26T12:00:00Z",
 					bookId: 99,
 					sourceTitle: "Unmatched book",
+				},
+			],
+		});
+		const client = { history: { get: getMock } } as unknown as ReadarrClient;
+
+		const result = await detectReadarrGrabbedItems(
+			client,
+			PAST,
+			[11],
+			counter,
+			stubLogger as never,
+		);
+
+		expect(result.failed).toBe(false);
+		expect(result.items).toHaveLength(1);
+		expect(result.items[0]!.title).toBe("The actual book grab");
+	});
+
+	it("rejects non-grabbed events client-side even if the server returns them (defense)", async () => {
+		const getMock = vi.fn().mockResolvedValue({
+			records: [
+				{
+					eventType: "bookFileImported",
+					date: "2026-05-26T12:00:00Z",
+					bookId: 11,
+					sourceTitle: "Should be ignored — import",
+				},
+				{
+					eventType: "grabbed",
+					date: "2026-05-26T12:00:00Z",
+					bookId: 11,
+					sourceTitle: "The actual book grab",
 				},
 			],
 		});
