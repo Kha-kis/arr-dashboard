@@ -1,19 +1,30 @@
 /**
  * Tests for grab-detector.
  *
- * Issue #472 driver: Radarr 6.x / Sonarr 4.x reject `eventType=grabbed` as
- * an invalid history-endpoint query value ("The value 'grabbed' is not valid").
- * The fix dropped the server-side filter and moved it to client-side iteration.
+ * Issue #472 history:
+ * - arr-sdk 0.6.0 sent `?eventType=grabbed` (string) to the Sonarr/Radarr/
+ *   Lidarr/Readarr history endpoint. Current Servarr versions reject this
+ *   ("The value 'grabbed' is not valid") because the .NET binder treats
+ *   eventType as `int[]`, not the OpenAPI enum.
+ * - arr-sdk 0.7.0 fixed it upstream by translating string event types to
+ *   their numeric .NET enum value inside the SDK before forwarding the
+ *   request. We pin to ^0.7.1 (which also fixed a union-client TS issue).
+ * - This file's intermediate state (PR #479) used a client-side workaround
+ *   that fetched unfiltered history and dropped non-grab records in JS.
+ *   That workaround has been reverted now that the SDK fix is in place.
  *
- * These tests pin the contract so a future contributor doesn't re-add the
- * broken server-side filter "for performance":
+ * These tests pin the current contract:
  *
- *   1. `client.history.get` is called WITHOUT `eventType` in the request options.
- *   2. Records whose `eventType !== "grabbed"` are filtered out client-side
- *      (otherwise we'd over-count by also matching imports/renames/deletes by ID).
- *   3. Records older than `searchStartTime` are still filtered out.
- *   4. Matching grab records (by movie/series/episode ID, with eventType=grabbed,
- *      newer than searchStartTime) are returned in the result.
+ *   1. `client.history.get` IS called with `eventType: "grabbed"` so the
+ *      SDK can encode it numerically and the server pre-filters. Dropping
+ *      the eventType silently would shrink the detection window by mixing
+ *      in import/delete/rename events from the same page.
+ *   2. `pageSize` stays at 100 (pre-filtered grabs are dense — no need to
+ *      widen the window the way the client-side workaround had to).
+ *   3. Records older than `searchStartTime` are filtered out client-side.
+ *   4. Grab records matching searched IDs (movie/series/episode/album/book)
+ *      are returned in the result.
+ *   5. The catch branch falls back to queue detection on history failures.
  */
 
 import type { LidarrClient } from "arr-sdk/lidarr";
@@ -74,7 +85,7 @@ describe("detectGrabbedItemsFromHistoryWithSdk", () => {
 		}) as typeof setTimeout);
 	});
 
-	it("does NOT send eventType in the history request (issue #472 regression pin)", async () => {
+	it("sends eventType='grabbed' to the history endpoint (issue #472 regression pin)", async () => {
 		const { client, getMock } = makeClient([]);
 
 		await detectGrabbedItemsFromHistoryWithSdk(
@@ -89,54 +100,16 @@ describe("detectGrabbedItemsFromHistoryWithSdk", () => {
 
 		expect(getMock).toHaveBeenCalledTimes(1);
 		const options = getMock.mock.calls[0]![0] as Record<string, unknown>;
-		expect(options).not.toHaveProperty("eventType");
-		// Sanity: still uses the expected sort + paging
+		// arr-sdk 0.7.0+ translates this string to the numeric .NET enum value
+		// before sending; a future revert to client-side filtering would drop
+		// this property and trip this test.
+		expect(options.eventType).toBe("grabbed");
 		expect(options.sortKey).toBe("date");
 		expect(options.sortDirection).toBe("descending");
-		// Pin exact pageSize — accidentally reverting to 100 would meaningfully
-		// shrink the grab-detection window now that the page contains mixed
-		// event types (test-analyzer recommendation on PR #479).
-		expect(options.pageSize).toBe(250);
-	});
-
-	it("filters out non-grabbed event types client-side", async () => {
-		// All three records match the searched movieId but only one is a grab.
-		// Without client-side filtering, an import / delete would be miscounted
-		// as a grab.
-		const { client } = makeClient([
-			{
-				eventType: "downloadFolderImported",
-				date: "2026-05-26T12:00:00Z",
-				movieId: 42,
-				sourceTitle: "Should be ignored — import",
-			},
-			{
-				eventType: "movieFileDeleted",
-				date: "2026-05-26T12:00:00Z",
-				movieId: 42,
-				sourceTitle: "Should be ignored — delete",
-			},
-			{
-				eventType: "grabbed",
-				date: "2026-05-26T12:00:00Z",
-				movieId: 42,
-				sourceTitle: "The actual grab",
-			},
-		]);
-
-		const result = await detectGrabbedItemsFromHistoryWithSdk(
-			client,
-			PAST,
-			[42],
-			[],
-			[],
-			counter,
-			stubLogger as never,
-		);
-
-		expect(result.failed).toBe(false);
-		expect(result.items).toHaveLength(1);
-		expect(result.items[0]!.title).toBe("The actual grab");
+		// pageSize stays tight at 100 because the server pre-filters to grabs
+		// only. An accidental bump to 250 (the old workaround size) would
+		// signal someone restoring the client-side filter.
+		expect(options.pageSize).toBe(100);
 	});
 
 	it("filters out grabbed records older than searchStartTime", async () => {
@@ -164,6 +137,9 @@ describe("detectGrabbedItemsFromHistoryWithSdk", () => {
 	});
 
 	it("returns grabbed records matching any of the searched ID buckets", async () => {
+		// All records carry eventType="grabbed" since the server pre-filters
+		// (post-#472, post-#479-revert). The fourth record's movieId 99 isn't
+		// in any searched bucket and should be dropped by the ID match.
 		const { client } = makeClient([
 			{ eventType: "grabbed", date: "2026-05-26T12:00:00Z", movieId: 1, sourceTitle: "Movie 1" },
 			{ eventType: "grabbed", date: "2026-05-26T12:00:00Z", seriesId: 2, sourceTitle: "Series 2" },
@@ -251,26 +227,20 @@ describe("detectLidarrGrabbedItems", () => {
 		}) as typeof setTimeout);
 	});
 
-	it("does NOT send eventType in the history request (issue #472 regression pin)", async () => {
+	it("sends eventType='grabbed' to the history endpoint (issue #472 regression pin)", async () => {
 		const getMock = vi.fn().mockResolvedValue({ records: [] });
 		const client = { history: { get: getMock } } as unknown as LidarrClient;
 
 		await detectLidarrGrabbedItems(client, PAST, [1], counter, stubLogger as never);
 
 		const options = getMock.mock.calls[0]![0] as Record<string, unknown>;
-		expect(options).not.toHaveProperty("eventType");
-		expect(options.pageSize).toBe(250);
+		expect(options.eventType).toBe("grabbed");
+		expect(options.pageSize).toBe(100);
 	});
 
-	it("filters out non-grabbed events and matches by albumId", async () => {
+	it("matches by albumId on pre-filtered grab records", async () => {
 		const getMock = vi.fn().mockResolvedValue({
 			records: [
-				{
-					eventType: "trackFileImported",
-					date: "2026-05-26T12:00:00Z",
-					albumId: 7,
-					sourceTitle: "Should be ignored — import",
-				},
 				{
 					eventType: "grabbed",
 					date: "2026-05-26T12:00:00Z",
@@ -310,26 +280,20 @@ describe("detectReadarrGrabbedItems", () => {
 		}) as typeof setTimeout);
 	});
 
-	it("does NOT send eventType in the history request (issue #472 regression pin)", async () => {
+	it("sends eventType='grabbed' to the history endpoint (issue #472 regression pin)", async () => {
 		const getMock = vi.fn().mockResolvedValue({ records: [] });
 		const client = { history: { get: getMock } } as unknown as ReadarrClient;
 
 		await detectReadarrGrabbedItems(client, PAST, [1], counter, stubLogger as never);
 
 		const options = getMock.mock.calls[0]![0] as Record<string, unknown>;
-		expect(options).not.toHaveProperty("eventType");
-		expect(options.pageSize).toBe(250);
+		expect(options.eventType).toBe("grabbed");
+		expect(options.pageSize).toBe(100);
 	});
 
-	it("filters out non-grabbed events and matches by bookId", async () => {
+	it("matches by bookId on pre-filtered grab records", async () => {
 		const getMock = vi.fn().mockResolvedValue({
 			records: [
-				{
-					eventType: "bookFileImported",
-					date: "2026-05-26T12:00:00Z",
-					bookId: 11,
-					sourceTitle: "Should be ignored — import",
-				},
 				{
 					eventType: "grabbed",
 					date: "2026-05-26T12:00:00Z",

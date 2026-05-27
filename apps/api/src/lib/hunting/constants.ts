@@ -106,12 +106,13 @@ export const MAX_RESEARCH_AFTER_DAYS = 90;
  * - Sonarr/Radarr to evaluate and grab releases
  * - History event to be recorded
  *
- * We use history-based detection (checking /api/v3/history and filtering for
- * grab events client-side) rather than queue checking, which is more reliable
- * because history persists even after downloads complete, while queue items
- * can disappear quickly. The server-side `?eventType=grabbed` filter was
- * dropped in the #472 fix — current Radarr/Sonarr versions reject it as
- * "not valid"; client-side filtering is version-agnostic.
+ * We use history-based detection (checking /api/v3/history?eventType=grabbed)
+ * rather than queue checking, which is more reliable because history persists
+ * even after downloads complete, while queue items can disappear quickly.
+ * Issue #472 background: arr-sdk 0.6.0 sent the literal string "grabbed",
+ * which current Radarr/Sonarr's .NET binder rejects (it binds eventType as
+ * int[]). Fixed upstream in arr-sdk 0.7.0+ which now translates string event
+ * types to the numeric .NET enum value before forwarding.
  *
  * Default: 10 seconds
  */
