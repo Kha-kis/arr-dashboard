@@ -477,7 +477,12 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 				conditions: data.conditions ? JSON.stringify(data.conditions) : null,
 				retentionMode: data.retentionMode ?? false,
 				useGlobalRejectionMemory: data.useGlobalRejectionMemory ?? true,
-				rejectionMemoryDays: data.rejectionMemoryDays ?? 0,
+				// `?? 0` would collapse a deliberate `null` (forever) to `0` (off),
+				// silently downgrading "Forever" → "Off" on rule creation. The
+				// encoding contract is null=forever, 0=off, N>0=days — so only
+				// substitute the default for `undefined`. PUT path on rule update
+				// uses the same `!== undefined` discipline; keep them symmetric.
+				rejectionMemoryDays: data.rejectionMemoryDays === undefined ? 0 : data.rejectionMemoryDays,
 			},
 		});
 

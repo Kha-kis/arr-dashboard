@@ -17,7 +17,11 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { type RejectionMemoryWindow, resolveRejectionMemoryWindow } from "../cleanup-executor.js";
+import {
+	buildDedupOrClauses,
+	type RejectionMemoryWindow,
+	resolveRejectionMemoryWindow,
+} from "../cleanup-executor.js";
 
 type ConfigSlice = Parameters<typeof resolveRejectionMemoryWindow>[1];
 type RuleSlice = Parameters<typeof resolveRejectionMemoryWindow>[0];
@@ -92,5 +96,70 @@ describe("resolveRejectionMemoryWindow — per-rule override", () => {
 		expect(resolveRejectionMemoryWindow(overrideRule(0), cfg(null))).toEqual({
 			mode: "off",
 		});
+	});
+});
+
+// ============================================================================
+// `buildDedupOrClauses` — the Prisma OR-clause shape that drives the actual
+// dedup query inside executeWithApproval. The helper exists so we can pin the
+// cutoff math + clause structure without mocking Prisma. Per-mode boundaries:
+//   - off:     only the pending-dedup clause, no rejected-skip
+//   - days:    rejected-skip with `reviewedAt: { gt: now - days }`
+//   - forever: rejected-skip with no time bound
+// ============================================================================
+
+describe("buildDedupOrClauses", () => {
+	// Fixed reference instant so the cutoff math is deterministic across runs.
+	const NOW = new Date("2026-05-27T12:00:00.000Z");
+
+	it("mode 'off' → only the pending-dedup clause (no rejection skip)", () => {
+		const clauses = buildDedupOrClauses({ mode: "off" }, NOW);
+		expect(clauses).toEqual([{ status: "pending" }]);
+	});
+
+	it("mode 'forever' → pending + unconditional rejected skip", () => {
+		const clauses = buildDedupOrClauses({ mode: "forever" }, NOW);
+		expect(clauses).toEqual([{ status: "pending" }, { status: "rejected" }]);
+		// No reviewedAt clause on the rejected branch — forever means
+		// "remember this rejection regardless of when it happened."
+		const rejectedClause = clauses[1] as { status: string; reviewedAt?: unknown };
+		expect(rejectedClause.reviewedAt).toBeUndefined();
+	});
+
+	it("mode 'days' → rejected skip with cutoff = now - N days", () => {
+		const clauses = buildDedupOrClauses({ mode: "days", days: 7 }, NOW);
+		expect(clauses).toHaveLength(2);
+		expect(clauses[0]).toEqual({ status: "pending" });
+		const rejectedClause = clauses[1] as { status: string; reviewedAt: { gt: Date } };
+		expect(rejectedClause.status).toBe("rejected");
+		// Cutoff: 7 days before NOW = 2026-05-20T12:00:00Z
+		expect(rejectedClause.reviewedAt.gt.toISOString()).toBe("2026-05-20T12:00:00.000Z");
+	});
+
+	it("mode 'days' with days=1 → cutoff = 24h ago (smallest meaningful window)", () => {
+		const clauses = buildDedupOrClauses({ mode: "days", days: 1 }, NOW);
+		const rejectedClause = clauses[1] as { reviewedAt: { gt: Date } };
+		expect(rejectedClause.reviewedAt.gt.toISOString()).toBe("2026-05-26T12:00:00.000Z");
+	});
+
+	it("mode 'days' with days=365 → cutoff = 1y ago (sanity on large windows)", () => {
+		const clauses = buildDedupOrClauses({ mode: "days", days: 365 }, NOW);
+		const rejectedClause = clauses[1] as { reviewedAt: { gt: Date } };
+		expect(rejectedClause.reviewedAt.gt.toISOString()).toBe("2025-05-27T12:00:00.000Z");
+	});
+
+	it("default `now` argument falls back to Date.now() — production-ready without injection", () => {
+		// The argumentless form is what the executor uses in production. Verify
+		// it doesn't throw and produces a cutoff within ~1s of now (i.e. uses
+		// the system clock rather than e.g. a hard-coded epoch).
+		const before = Date.now();
+		const clauses = buildDedupOrClauses({ mode: "days", days: 30 });
+		const after = Date.now();
+		const rejectedClause = clauses[1] as { reviewedAt: { gt: Date } };
+		const cutoff = rejectedClause.reviewedAt.gt.getTime();
+		const expectedRangeMin = before - 30 * 86400000;
+		const expectedRangeMax = after - 30 * 86400000;
+		expect(cutoff).toBeGreaterThanOrEqual(expectedRangeMin);
+		expect(cutoff).toBeLessThanOrEqual(expectedRangeMax);
 	});
 });

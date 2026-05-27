@@ -1095,7 +1095,13 @@ export function CleanupRuleDialog({
 			action,
 			retentionMode,
 			useGlobalRejectionMemory,
-			rejectionMemoryDays: useGlobalRejectionMemory ? 0 : ruleRejectionDays,
+			// When override is off, omit `rejectionMemoryDays` from the payload
+			// entirely. The PATCH route's `!== undefined` discipline preserves
+			// the stored value, so toggling override off→on later won't have
+			// silently zeroed the user's prior days/forever choice. On create
+			// the route defaults `undefined` to `0`, which is the right
+			// pre-#474 behavior when override is off.
+			...(useGlobalRejectionMemory ? {} : { rejectionMemoryDays: ruleRejectionDays }),
 			serviceFilter: serviceFilter.length > 0 ? serviceFilter : null,
 			instanceFilter: instanceFilter.length > 0 ? instanceFilter : null,
 			excludeTags: excludeTags.length > 0 ? excludeTags : null,

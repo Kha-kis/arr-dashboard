@@ -83,6 +83,27 @@ export function resolveRejectionMemoryWindow(
 	return { mode: "days", days: effectiveDays };
 }
 
+/**
+ * Build the Prisma `OR` clauses for the cleanup-approval dedup query
+ * (issue #474). Always returns the `pending` skip; additionally appends a
+ * `rejected`-skip clause when the memory window is non-off. Exported and
+ * `now`-parameterised so unit tests can pin the cutoff math without
+ * monkey-patching Date.now.
+ */
+export function buildDedupOrClauses(
+	memWindow: RejectionMemoryWindow,
+	now: Date = new Date(),
+): Prisma.LibraryCleanupApprovalWhereInput[] {
+	const clauses: Prisma.LibraryCleanupApprovalWhereInput[] = [{ status: "pending" }];
+	if (memWindow.mode === "forever") {
+		clauses.push({ status: "rejected" });
+	} else if (memWindow.mode === "days") {
+		const cutoff = new Date(now.getTime() - memWindow.days * 24 * 60 * 60 * 1000);
+		clauses.push({ status: "rejected", reviewedAt: { gt: cutoff } });
+	}
+	return clauses;
+}
+
 function buildDetail(
 	item: FlaggedItem,
 	action: DetailAction,
@@ -1276,13 +1297,7 @@ async function executeWithApproval(
 
 			// Dedup query: always skip pending approvals; additionally skip
 			// rejected approvals when the rule's memory window says so (#474).
-			const orClauses: Prisma.LibraryCleanupApprovalWhereInput[] = [{ status: "pending" }];
-			if (memWindow.mode === "forever") {
-				orClauses.push({ status: "rejected" });
-			} else if (memWindow.mode === "days") {
-				const cutoff = new Date(Date.now() - memWindow.days * 24 * 60 * 60 * 1000);
-				orClauses.push({ status: "rejected", reviewedAt: { gt: cutoff } });
-			}
+			const orClauses = buildDedupOrClauses(memWindow);
 
 			const existing = await prisma.libraryCleanupApproval.findFirst({
 				where: {
