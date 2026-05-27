@@ -164,6 +164,7 @@ function makeConfig(overrides: Partial<CleanupConfigResponse> = {}): CleanupConf
 		maxRemovalsPerRun: 50,
 		requireApproval: false,
 		respectQuiSeeding: false,
+		rejectionMemoryDays: 0,
 		rules: [
 			{
 				id: "rule-1",
@@ -181,6 +182,8 @@ function makeConfig(overrides: Partial<CleanupConfigResponse> = {}): CleanupConf
 				operator: null,
 				conditions: null,
 				retentionMode: false,
+				useGlobalRejectionMemory: true,
+				rejectionMemoryDays: 0,
 				createdAt: "2024-01-01T00:00:00Z",
 				updatedAt: "2024-01-01T00:00:00Z",
 			},

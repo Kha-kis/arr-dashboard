@@ -2043,18 +2043,19 @@ export type $QueueCleanerConfigPayload<ExtArgs extends runtime.Types.Extensions.
     quiAwareMode: boolean
     /**
      * Last-seed protection (Phase 2.4) — when enabled, skip striking a torrent
-     * whose content has no surviving copy elsewhere. Predicate (all must hold
-     * to allow the strike, ANY missing condition triggers protection):
-     * 1. qui returns >= 1 cross-seed sibling for this infohash, AND
-     * 2. InodeIndexCache shows >= 1 other torrent shares this inode group, AND
-     * 3. arr-side library (EpisodeFileCache / MovieFileCache / LidarrTrackFile)
-     * still references this torrent's hash (i.e. content is still active
-     * in *arr's library — protects against accidental deletes of
-     * unique content; allows strikes after *arr has already replaced the
-     * file (quality upgrade) since condition 3 is then false).
-     * Fail-closed: any check that throws/times out is treated as "unknown" and
-     * the item is protected from strike (caution-first; data loss is
-     * asymmetrically expensive vs. cleanup latency).
+     * whose content is still referenced by the operator's *arr library. A
+     * strike candidate is PROTECTED when its infoHash appears in either:
+     * - LibraryCache (a row with hasFile = true — movies/artists/authors), or
+     * - EpisodeFileCache (per-episode files for series)
+     * i.e. *arr still points at this torrent's files, so removing it risks
+     * orphaning content the library actively depends on. Once *arr drops the
+     * reference (quality upgrade, manual delete), the strike proceeds normally.
+     * Single-condition v1 by deliberate design — see last-seed-gate.ts for the
+     * rationale and the deferred cross-seed / inode-sibling refinements.
+     * Lookups are scoped to the operator (instance.userId).
+     * Fail-closed: any DB error in the reference lookup protects every hashed
+     * candidate (caution-first; data loss is asymmetrically expensive vs.
+     * cleanup latency).
      * Default on — operator can toggle per-instance.
      */
     lastSeedProtection: boolean

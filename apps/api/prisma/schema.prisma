@@ -1197,6 +1197,14 @@ model LibraryCleanupConfig {
   /// obligations (private trackers, ratio targets, community seeding norms).
   /// No-op when the user has no qui instance configured.
   respectQuiSeeding Boolean   @default(false)
+  /// Global default for how long a "rejected" approval suppresses re-proposal
+  /// of the same item (issue #474). Semantics:
+  ///   0     = off  (no memory — current behavior; rejected items get re-proposed next run)
+  ///   N > 0 = remember rejection for N days, then item can be re-proposed
+  ///   null  = remember forever (never re-propose unless user clears manually)
+  /// Default 0 preserves existing behavior for upgrades. Per-rule overrides
+  /// live on LibraryCleanupRule and take precedence when set.
+  rejectionMemoryDays Int?    @default(0)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -1226,6 +1234,15 @@ model LibraryCleanupRule {
   operator          String?                    // "AND" | "OR" for composite rules
   conditions        String?                    // JSON array of sub-conditions
   retentionMode     Boolean  @default(false)   // true = retention (protect items), false = cleanup (flag items)
+  /// Per-rule override for rejection-memory (issue #474). When true, this rule
+  /// uses the config-level `rejectionMemoryDays`. When false, the rule's own
+  /// `rejectionMemoryDays` field below is used. Default true preserves
+  /// inherit-from-global behavior for any new rule.
+  useGlobalRejectionMemory Boolean @default(true)
+  /// Per-rule rejection-memory value, only consulted when
+  /// `useGlobalRejectionMemory` is false. Same semantics as the config field:
+  ///   0    = off, N>0 = N days, null = forever.
+  rejectionMemoryDays Int? @default(0)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 

@@ -5500,6 +5500,7 @@ export const LibraryCleanupConfigScalarFieldEnum = {
   maxRemovalsPerRun: 'maxRemovalsPerRun',
   requireApproval: 'requireApproval',
   respectQuiSeeding: 'respectQuiSeeding',
+  rejectionMemoryDays: 'rejectionMemoryDays',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const
@@ -5524,6 +5525,8 @@ export const LibraryCleanupRuleScalarFieldEnum = {
   operator: 'operator',
   conditions: 'conditions',
   retentionMode: 'retentionMode',
+  useGlobalRejectionMemory: 'useGlobalRejectionMemory',
+  rejectionMemoryDays: 'rejectionMemoryDays',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const

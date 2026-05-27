@@ -66,6 +66,20 @@ const baseCleanupRuleSchema = z.object({
 	operator: compositeOperatorSchema.nullable().optional(),
 	conditions: z.array(conditionSchema).nullable().optional(),
 	retentionMode: z.boolean().optional().default(false),
+	/**
+	 * When true, this rule inherits the config-level `rejectionMemoryDays`.
+	 * When false, the rule's own `rejectionMemoryDays` field below is used.
+	 * Default true preserves inherit-from-global behavior for new rules.
+	 */
+	useGlobalRejectionMemory: z.boolean().optional().default(true),
+	/**
+	 * Per-rule override for rejection-memory (issue #474). Only consulted
+	 * when `useGlobalRejectionMemory` is false. Semantics:
+	 *   0     = off  (no memory)
+	 *   N > 0 = remember rejection for N days
+	 *   null  = remember forever (until manually cleared)
+	 */
+	rejectionMemoryDays: z.number().int().min(0).max(36500).nullable().optional(),
 });
 
 export const createCleanupRuleSchema = baseCleanupRuleSchema.superRefine((data, ctx) => {
@@ -105,6 +119,15 @@ export const updateCleanupConfigSchema = z.object({
 	 * to honor seeding obligations. No-op when no qui instance is configured.
 	 */
 	respectQuiSeeding: z.boolean().optional(),
+	/**
+	 * Issue #474: Global default for how long a rejected cleanup proposal
+	 * suppresses re-proposal of the same item. Per-rule overrides on
+	 * `LibraryCleanupRule` take precedence when set. Semantics:
+	 *   0     = off  (no memory; rejected items get re-proposed next run — pre-#474 behavior)
+	 *   N > 0 = remember rejection for N days, then item can be re-proposed
+	 *   null  = remember forever (never re-propose unless cleared)
+	 */
+	rejectionMemoryDays: z.number().int().min(0).max(36500).nullable().optional(),
 });
 
 export type CreateCleanupRule = z.infer<typeof createCleanupRuleSchema>;
@@ -147,6 +170,10 @@ export interface CleanupRuleResponse {
 	operator: CompositeOperator | null;
 	conditions: Condition[] | null;
 	retentionMode: boolean;
+	/** Issue #474: when true, rule inherits config's rejectionMemoryDays. */
+	useGlobalRejectionMemory: boolean;
+	/** Issue #474: per-rule override; 0 = off, N>0 = days, null = forever. */
+	rejectionMemoryDays: number | null;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -161,6 +188,8 @@ export interface CleanupConfigResponse {
 	maxRemovalsPerRun: number;
 	requireApproval: boolean;
 	respectQuiSeeding: boolean;
+	/** Issue #474: global default for rejection-memory; 0 = off, N>0 = days, null = forever. */
+	rejectionMemoryDays: number | null;
 	rules: CleanupRuleResponse[];
 }
 

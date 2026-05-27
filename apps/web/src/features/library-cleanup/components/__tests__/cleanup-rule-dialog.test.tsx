@@ -133,6 +133,8 @@ function makeEditRule(overrides: Partial<CleanupRuleResponse> = {}): CleanupRule
 		operator: null,
 		conditions: null,
 		retentionMode: false,
+		useGlobalRejectionMemory: true,
+		rejectionMemoryDays: 0,
 		createdAt: "2024-01-01T00:00:00Z",
 		updatedAt: "2024-01-01T00:00:00Z",
 		...overrides,
@@ -224,9 +226,7 @@ describe("CleanupRuleDialog", () => {
 
 		it("renders edit description", () => {
 			renderDialog({ editRule: makeEditRule() });
-			expect(
-				screen.getByText("Modify the rule settings and click Save."),
-			).toBeInTheDocument();
+			expect(screen.getByText("Modify the rule settings and click Save.")).toBeInTheDocument();
 		});
 
 		it("populates the name input from editRule", () => {
@@ -310,10 +310,10 @@ describe("CleanupRuleDialog", () => {
 					parameters: {},
 					action: "unmonitor",
 					retentionMode: true,
+					useGlobalRejectionMemory: true,
+					rejectionMemoryDays: 0,
 					operator: "AND",
-					conditions: [
-						{ ruleType: "age", parameters: { operator: "older_than", days: 90 } },
-					],
+					conditions: [{ ruleType: "age", parameters: { operator: "older_than", days: 90 } }],
 				} as CreateCleanupRule,
 			});
 			expect(screen.getByText(/Template applied/)).toBeInTheDocument();
@@ -329,6 +329,8 @@ describe("CleanupRuleDialog", () => {
 					parameters: { operator: "older_than", days: 90 },
 					action: "delete",
 					retentionMode: false,
+					useGlobalRejectionMemory: true,
+					rejectionMemoryDays: 0,
 				} as CreateCleanupRule,
 			});
 			const nameInput = screen.getByPlaceholderText("e.g., Old low-rated movies");
@@ -345,6 +347,8 @@ describe("CleanupRuleDialog", () => {
 					parameters: {},
 					action: "unmonitor",
 					retentionMode: false,
+					useGlobalRejectionMemory: true,
+					rejectionMemoryDays: 0,
 				} as CreateCleanupRule,
 			});
 			expect(
@@ -362,6 +366,8 @@ describe("CleanupRuleDialog", () => {
 					parameters: {},
 					action: "delete",
 					retentionMode: false,
+					useGlobalRejectionMemory: true,
+					rejectionMemoryDays: 0,
 					operator: "AND",
 					conditions: [
 						{
@@ -371,9 +377,7 @@ describe("CleanupRuleDialog", () => {
 					],
 				} as CreateCleanupRule,
 			});
-			expect(
-				screen.getByText(/Fill in the usernames in each condition below/),
-			).toBeInTheDocument();
+			expect(screen.getByText(/Fill in the usernames in each condition below/)).toBeInTheDocument();
 		});
 
 		it("uses create mode title (not edit) for template", () => {
@@ -386,6 +390,8 @@ describe("CleanupRuleDialog", () => {
 					parameters: {},
 					action: "delete",
 					retentionMode: false,
+					useGlobalRejectionMemory: true,
+					rejectionMemoryDays: 0,
 				} as CreateCleanupRule,
 			});
 			expect(screen.getByText("New Cleanup Rule")).toBeInTheDocument();
@@ -401,6 +407,8 @@ describe("CleanupRuleDialog", () => {
 					parameters: {},
 					action: "delete",
 					retentionMode: false,
+					useGlobalRejectionMemory: true,
+					rejectionMemoryDays: 0,
 					operator: "OR",
 					conditions: [
 						{ ruleType: "age", parameters: { operator: "older_than", days: 90 } },
@@ -603,6 +611,106 @@ describe("CleanupRuleDialog", () => {
 
 			fireEvent.click(screen.getByText("Cancel"));
 			expect(onOpenChange).toHaveBeenCalledWith(false);
+		});
+	});
+
+	// ================================================================
+	// Issue #474: rejection-memory encoding round-trip
+	//
+	// The dialog dropdown encodes Off/Days/Forever onto the wire shape
+	// (`useGlobalRejectionMemory` boolean + `rejectionMemoryDays` int|null).
+	// These tests pin the encoding so a future contributor renaming or
+	// retyping the wire fields trips the test immediately.
+	// ================================================================
+
+	describe("rejection-memory encoding (issue #474)", () => {
+		function submitMinimalRule() {
+			const nameInput = screen.getByPlaceholderText("e.g., Old low-rated movies");
+			fireEvent.change(nameInput, { target: { value: "Test Rule" } });
+			fireEvent.click(screen.getByText("Add Rule").closest("button") as HTMLElement);
+		}
+
+		it("defaults to inherit-from-config (override off; rejectionMemoryDays omitted from payload)", () => {
+			const onSave = vi.fn();
+			renderDialog({ onSave });
+			submitMinimalRule();
+
+			expect(onSave).toHaveBeenCalledTimes(1);
+			const payload = onSave.mock.calls[0]![0] as Record<string, unknown>;
+			expect(payload.useGlobalRejectionMemory).toBe(true);
+			// When override is off, the dialog deliberately omits
+			// `rejectionMemoryDays` so the PATCH route preserves any stored
+			// override value the user may have saved earlier.
+			expect(payload).not.toHaveProperty("rejectionMemoryDays");
+		});
+
+		it("override on + mode 'Off' → payload sends rejectionMemoryDays: 0", () => {
+			const onSave = vi.fn();
+			renderDialog({ onSave });
+
+			// Turn the override toggle on. The toggle label is "Override
+			// rejection memory" — the surrounding Switch is the closest
+			// interactive element.
+			const overrideLabel = screen.getByText("Override rejection memory");
+			const overrideSwitch = overrideLabel
+				.closest("div.flex.items-center.justify-between")!
+				.querySelector("button[role='switch']") as HTMLButtonElement;
+			fireEvent.click(overrideSwitch);
+
+			// Mode dropdown defaults to "off" — leave it.
+			submitMinimalRule();
+
+			const payload = onSave.mock.calls[0]![0] as Record<string, unknown>;
+			expect(payload.useGlobalRejectionMemory).toBe(false);
+			expect(payload.rejectionMemoryDays).toBe(0);
+		});
+
+		it("override on + mode 'Forever' → payload sends rejectionMemoryDays: null", () => {
+			const onSave = vi.fn();
+			renderDialog({ onSave });
+
+			const overrideLabel = screen.getByText("Override rejection memory");
+			const overrideSwitch = overrideLabel
+				.closest("div.flex.items-center.justify-between")!
+				.querySelector("button[role='switch']") as HTMLButtonElement;
+			fireEvent.click(overrideSwitch);
+
+			// The mode dropdown is the only <select> revealed by the toggle.
+			const modeSelect = screen.getByDisplayValue(
+				"Off — re-propose rejected items",
+			) as HTMLSelectElement;
+			fireEvent.change(modeSelect, { target: { value: "forever" } });
+			submitMinimalRule();
+
+			const payload = onSave.mock.calls[0]![0] as Record<string, unknown>;
+			expect(payload.useGlobalRejectionMemory).toBe(false);
+			expect(payload.rejectionMemoryDays).toBeNull();
+		});
+
+		it("override on + mode 'Days' with N=14 → payload sends rejectionMemoryDays: 14", () => {
+			const onSave = vi.fn();
+			renderDialog({ onSave });
+
+			const overrideLabel = screen.getByText("Override rejection memory");
+			const overrideSwitch = overrideLabel
+				.closest("div.flex.items-center.justify-between")!
+				.querySelector("button[role='switch']") as HTMLButtonElement;
+			fireEvent.click(overrideSwitch);
+
+			const modeSelect = screen.getByDisplayValue(
+				"Off — re-propose rejected items",
+			) as HTMLSelectElement;
+			fireEvent.change(modeSelect, { target: { value: "days" } });
+
+			// Days input only appears when mode = "days".
+			const daysInput = screen.getByDisplayValue("30") as HTMLInputElement;
+			fireEvent.change(daysInput, { target: { value: "14" } });
+
+			submitMinimalRule();
+
+			const payload = onSave.mock.calls[0]![0] as Record<string, unknown>;
+			expect(payload.useGlobalRejectionMemory).toBe(false);
+			expect(payload.rejectionMemoryDays).toBe(14);
 		});
 	});
 });

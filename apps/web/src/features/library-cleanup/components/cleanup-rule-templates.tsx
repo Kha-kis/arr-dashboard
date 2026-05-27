@@ -1,8 +1,8 @@
 "use client";
 
 import type { Condition, CreateCleanupRule } from "@arr/shared";
-import { CheckCheck, Combine, EyeOff, Sparkles, Timer } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { CheckCheck, Combine, EyeOff, Sparkles, Timer } from "lucide-react";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 
 // ============================================================================
@@ -46,6 +46,7 @@ export const RULE_TEMPLATES: RuleTemplate[] = [
 			parameters: {},
 			action: "unmonitor" as const,
 			retentionMode: false,
+			useGlobalRejectionMemory: true,
 		}),
 	},
 	{
@@ -64,6 +65,7 @@ export const RULE_TEMPLATES: RuleTemplate[] = [
 			parameters: {},
 			action: "unmonitor" as const,
 			retentionMode: false,
+			useGlobalRejectionMemory: true,
 		}),
 	},
 
@@ -84,6 +86,7 @@ export const RULE_TEMPLATES: RuleTemplate[] = [
 			parameters: { operator: "greater_than", threshold: 75 },
 			action: "unmonitor" as const,
 			retentionMode: false,
+			useGlobalRejectionMemory: true,
 		}),
 	},
 	{
@@ -114,6 +117,7 @@ export const RULE_TEMPLATES: RuleTemplate[] = [
 				},
 			] satisfies Condition[],
 			retentionMode: false,
+			useGlobalRejectionMemory: true,
 		}),
 	},
 ];
@@ -151,8 +155,7 @@ export function CleanupRuleTemplates({
 	if (availableTemplates.length === 0) return null;
 
 	// Group available templates by category, preserving definition order
-	const categories: Array<{ key: TemplateCategory; label: string; templates: RuleTemplate[] }> =
-		[];
+	const categories: Array<{ key: TemplateCategory; label: string; templates: RuleTemplate[] }> = [];
 	for (const tpl of availableTemplates) {
 		let group = categories.find((c) => c.key === tpl.category);
 		if (!group) {
@@ -186,8 +189,8 @@ export function CleanupRuleTemplates({
 					</span>
 				</div>
 				<p className="text-xs text-muted-foreground mb-4">
-					Rule shortcuts. Each template creates an editable rule that you can customize
-					after creation.
+					Rule shortcuts. Each template creates an editable rule that you can customize after
+					creation.
 				</p>
 
 				<div className="space-y-4">

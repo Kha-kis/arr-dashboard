@@ -50,6 +50,7 @@ function serializeConfig(config: Record<string, unknown>) {
 		maxRemovalsPerRun: config.maxRemovalsPerRun,
 		requireApproval: config.requireApproval,
 		respectQuiSeeding: config.respectQuiSeeding,
+		rejectionMemoryDays: config.rejectionMemoryDays ?? null,
 		rules: rules.map(serializeRule),
 	};
 }
@@ -71,6 +72,8 @@ function serializeRule(rule: Record<string, unknown>) {
 		operator: (rule.operator as string) ?? null,
 		conditions: safeJsonParse(rule.conditions as string | null),
 		retentionMode: rule.retentionMode ?? false,
+		useGlobalRejectionMemory: rule.useGlobalRejectionMemory ?? true,
+		rejectionMemoryDays: rule.rejectionMemoryDays ?? null,
 		createdAt: (rule.createdAt as Date).toISOString(),
 		updatedAt: (rule.updatedAt as Date).toISOString(),
 	};
@@ -473,6 +476,13 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 				operator: data.operator ?? null,
 				conditions: data.conditions ? JSON.stringify(data.conditions) : null,
 				retentionMode: data.retentionMode ?? false,
+				useGlobalRejectionMemory: data.useGlobalRejectionMemory ?? true,
+				// `?? 0` would collapse a deliberate `null` (forever) to `0` (off),
+				// silently downgrading "Forever" → "Off" on rule creation. The
+				// encoding contract is null=forever, 0=off, N>0=days — so only
+				// substitute the default for `undefined`. PUT path on rule update
+				// uses the same `!== undefined` discipline; keep them symmetric.
+				rejectionMemoryDays: data.rejectionMemoryDays === undefined ? 0 : data.rejectionMemoryDays,
 			},
 		});
 
@@ -585,6 +595,10 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		if (data.conditions !== undefined)
 			updateData.conditions = data.conditions ? JSON.stringify(data.conditions) : null;
 		if (data.retentionMode !== undefined) updateData.retentionMode = data.retentionMode;
+		if (data.useGlobalRejectionMemory !== undefined)
+			updateData.useGlobalRejectionMemory = data.useGlobalRejectionMemory;
+		if (data.rejectionMemoryDays !== undefined)
+			updateData.rejectionMemoryDays = data.rejectionMemoryDays;
 
 		const rule = await app.prisma.libraryCleanupRule.update({
 			where: { id },

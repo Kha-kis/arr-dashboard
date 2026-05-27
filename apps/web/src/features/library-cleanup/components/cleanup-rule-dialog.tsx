@@ -549,6 +549,14 @@ export function CleanupRuleDialog({
 	// ── Retention mode ─────────────────────────────────────────────
 	const [retentionMode, setRetentionMode] = useState(false);
 
+	// ── Rejection-memory override (issue #474) ────────────────────
+	// When `useGlobalRejectionMemory` is true the rule inherits the config
+	// default; when false, this rule's own value applies. Encoding mirrors
+	// the config: 0 = off, N>0 = days, null = forever.
+	const [useGlobalRejectionMemory, setUseGlobalRejectionMemory] = useState(true);
+	const [rejectionMode, setRejectionMode] = useState<"off" | "days" | "forever">("off");
+	const [rejectionDays, setRejectionDays] = useState("30");
+
 	// ── Composite validation ────────────────────────────────────────
 	const [compositeError, setCompositeError] = useState<string | null>(null);
 
@@ -568,6 +576,17 @@ export function CleanupRuleDialog({
 			setEnabled(editRule.enabled);
 			setAction((editRule.action as "delete" | "unmonitor" | "delete_files") ?? "delete");
 			setRetentionMode(editRule.retentionMode ?? false);
+			setUseGlobalRejectionMemory(editRule.useGlobalRejectionMemory ?? true);
+			setRejectionMode(
+				editRule.rejectionMemoryDays === null
+					? "forever"
+					: editRule.rejectionMemoryDays === 0 || editRule.rejectionMemoryDays === undefined
+						? "off"
+						: "days",
+			);
+			if (editRule.rejectionMemoryDays && editRule.rejectionMemoryDays > 0) {
+				setRejectionDays(String(editRule.rejectionMemoryDays));
+			}
 			// Composite mode
 			if (editRule.operator && editRule.conditions) {
 				setIsComposite(true);
@@ -1058,6 +1077,15 @@ export function CleanupRuleDialog({
 			}
 		}
 		setCompositeError(null);
+		// Issue #474: encode the per-rule rejection-memory choice. Same scheme
+		// as the config: 0 = off, N>0 = days, null = forever. Only sent when
+		// the override toggle is on; otherwise the rule inherits the config.
+		const ruleRejectionDays =
+			rejectionMode === "forever"
+				? null
+				: rejectionMode === "days"
+					? Math.max(1, Math.min(36500, Number(rejectionDays) || 30))
+					: 0;
 		const base = {
 			name,
 			ruleType: isComposite ? ("composite" as const) : ruleType,
@@ -1066,6 +1094,14 @@ export function CleanupRuleDialog({
 			parameters: isComposite ? {} : buildParams(),
 			action,
 			retentionMode,
+			useGlobalRejectionMemory,
+			// When override is off, omit `rejectionMemoryDays` from the payload
+			// entirely. The PATCH route's `!== undefined` discipline preserves
+			// the stored value, so toggling override off→on later won't have
+			// silently zeroed the user's prior days/forever choice. On create
+			// the route defaults `undefined` to `0`, which is the right
+			// pre-#474 behavior when override is off.
+			...(useGlobalRejectionMemory ? {} : { rejectionMemoryDays: ruleRejectionDays }),
 			serviceFilter: serviceFilter.length > 0 ? serviceFilter : null,
 			instanceFilter: instanceFilter.length > 0 ? instanceFilter : null,
 			excludeTags: excludeTags.length > 0 ? excludeTags : null,
@@ -1185,6 +1221,55 @@ export function CleanupRuleDialog({
 								onCheckedChange={setRetentionMode}
 								style={retentionMode ? { backgroundColor: "rgb(16 185 129)" } : undefined}
 							/>
+						</div>
+
+						{/* ── Rejection-memory override (issue #474) ───── */}
+						<div className="space-y-2">
+							<div className="flex items-center justify-between">
+								<div>
+									<span className="text-sm font-medium">Override rejection memory</span>
+									<p className="text-xs text-muted-foreground">
+										Uses the cleanup-config default unless overridden here (#474).
+									</p>
+								</div>
+								<Switch
+									checked={!useGlobalRejectionMemory}
+									onCheckedChange={(v) => setUseGlobalRejectionMemory(!v)}
+								/>
+							</div>
+							{!useGlobalRejectionMemory && (
+								<div className="grid gap-2 sm:grid-cols-2 pl-1">
+									<label className="block">
+										<span className="text-xs text-muted-foreground block mb-1">
+											Memory mode (this rule)
+										</span>
+										<select
+											value={rejectionMode}
+											onChange={(e) =>
+												setRejectionMode(e.target.value as "off" | "days" | "forever")
+											}
+											className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+										>
+											<option value="off">Off — re-propose rejected items</option>
+											<option value="days">Remember for N days</option>
+											<option value="forever">Remember forever</option>
+										</select>
+									</label>
+									{rejectionMode === "days" && (
+										<label className="block">
+											<span className="text-xs text-muted-foreground block mb-1">Days</span>
+											<input
+												type="number"
+												value={rejectionDays}
+												onChange={(e) => setRejectionDays(e.target.value)}
+												min={1}
+												max={36500}
+												className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+											/>
+										</label>
+									)}
+								</div>
+							)}
 						</div>
 
 						{/* ── Action when matched ───────────────────── */}
