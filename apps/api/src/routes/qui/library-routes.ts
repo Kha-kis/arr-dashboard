@@ -1,3 +1,4 @@
+import path from "node:path";
 import { normalizeTorrentState } from "@arr/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -301,55 +302,134 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 		},
 	);
 
-	// Inode-probe diagnostic for the local-filesystem-access strategy.
+	// Env-gated diagnostic endpoint (CodeQL alerts #197–#200 / js/path-injection).
 	//
-	// Given a path, returns the (st_dev, st_ino, nlink) tuple that
-	// arr-dashboard's process can observe — or the errno when the path
-	// can't be stat'd. Operators use this BEFORE flipping the
-	// `hasLocalFilesystemAccess` toggle on a qui instance to confirm:
+	// The inode-probe takes an operator-supplied path and runs fs.stat()
+	// against it. Three layered defenses:
 	//
-	//   1. arr-dashboard can actually see the path (no ENOENT/EACCES).
-	//   2. The file is hardlinked (nlink >= 2). If nlink == 1, the file
-	//      is isolated from any qui torrent and inode matching can't
-	//      correlate it.
-	//   3. A library path and a torrent path share `(dev, ino)`. If dev
-	//      differs, the two views are on different filesystems and
-	//      hardlinks can't cross — inode matching is impossible.
-	//
-	// Returns a compact JSON shape that's easy to curl from a deployment
-	// shell while verifying bind-mount choices. Authenticated per-user
-	// like every other route in this file; no path-traversal validation
-	// because (a) the operator chose the path, and (b) we only READ the
-	// stat — we don't open the file or expose contents.
-	app.get<{ Querystring: { path?: string } }>("/qui/debug/inode-probe", async (request, reply) => {
-		const path = request.query.path;
-		if (!path || typeof path !== "string") {
-			return reply.code(400).send({ error: "missing required query param: path" });
-		}
-		try {
-			const { stat } = await import("node:fs/promises");
-			const s = await stat(path);
-			return reply.send({
-				path,
-				exists: true,
-				dev: Number(s.dev),
-				ino: Number(s.ino),
-				nlink: Number(s.nlink),
-				size: Number(s.size),
-				isFile: s.isFile(),
-				isDirectory: s.isDirectory(),
-			});
-		} catch (err) {
-			const errno = (err as NodeJS.ErrnoException).code ?? "UNKNOWN";
-			const message = err instanceof Error ? err.message : String(err);
-			return reply.send({
-				path,
-				exists: false,
-				errno,
-				message,
-			});
-		}
-	});
+	//   1. ENABLE_DEBUG_ROUTES gate — route doesn't exist in prod by default
+	//   2. DEBUG_PROBE_ROOT must be explicitly set — no permissive default,
+	//      operator picks the trusted base for this debugging session
+	//   3. CodeQL's canonical path-sanitizer recipe in the handler:
+	//        path.resolve(ROOT, userInput) → fs.realpath → startsWith(ROOT)
+	//      Earlier iterations tried multi-root allowlists with .some(); CodeQL
+	//      doesn't recognize that as a sanitizer regardless of layered defenses
+	//      (the analyzer is template-matching against the single-root shape).
+	//      Single-root + realpath also gives semantic parity with the canonical
+	//      "good" example in the rule's own documentation.
+	const DEBUG_PROBE_ROOT = process.env.DEBUG_PROBE_ROOT
+		? path.resolve(process.env.DEBUG_PROBE_ROOT)
+		: null;
+	if (process.env.ENABLE_DEBUG_ROUTES === "true" && DEBUG_PROBE_ROOT) {
+		// Inode-probe diagnostic for the local-filesystem-access strategy.
+		//
+		// Given a path UNDER DEBUG_PROBE_ROOT, returns the (st_dev, st_ino,
+		// nlink) tuple that arr-dashboard's process can observe — or the
+		// errno when the path can't be stat'd. Operators use this BEFORE
+		// flipping the `hasLocalFilesystemAccess` toggle on a qui instance
+		// to confirm:
+		//
+		//   1. arr-dashboard can actually see the path (no ENOENT/EACCES).
+		//   2. The file is hardlinked (nlink >= 2). If nlink == 1, the file
+		//      is isolated from any qui torrent and inode matching can't
+		//      correlate it.
+		//   3. A library path and a torrent path share `(dev, ino)`. If dev
+		//      differs, the two views are on different filesystems and
+		//      hardlinks can't cross — inode matching is impossible.
+		//
+		// To probe multiple roots in one session, restart with a different
+		// DEBUG_PROBE_ROOT. The single-root restriction is what makes the
+		// security analysis legible.
+		app.get<{ Querystring: { path?: string } }>(
+			"/qui/debug/inode-probe",
+			async (request, reply) => {
+				const userPath = request.query.path;
+				if (!userPath || typeof userPath !== "string") {
+					return reply.code(400).send({ error: "missing required query param: path" });
+				}
+
+				// Pre-validate user input before any filesystem path operation.
+				// Keep probe behavior while preventing absolute/traversal input.
+				if (userPath.includes("\0")) {
+					return reply.code(400).send({ error: "invalid path" });
+				}
+				if (path.isAbsolute(userPath)) {
+					return reply.code(400).send({ error: "path must be relative to DEBUG_PROBE_ROOT" });
+				}
+				// `path.normalize` collapses `./` prefixes and any `..` segments
+				// using the runtime platform's separator, so a single
+				// `${path.sep}` check covers traversal after normalization.
+				const normalizedUserPath = path.normalize(userPath);
+				if (normalizedUserPath === ".." || normalizedUserPath.startsWith(`..${path.sep}`)) {
+					return reply.code(400).send({ error: "path traversal is not allowed" });
+				}
+
+				const candidate = path.resolve(DEBUG_PROBE_ROOT, normalizedUserPath);
+				try {
+					const { stat, realpath } = await import("node:fs/promises");
+					// Canonical CodeQL-recognized pattern (see rule help text):
+					//   1. resolve user input ANCHORED to DEBUG_PROBE_ROOT
+					//      — relative inputs are joined+normalized
+					//   2. realpath to follow symlinks to their concrete targets
+					//   3. startsWith(ROOT + path.sep) — prefix check with the
+					//      separator boundary to stop /media-backup matching /media
+					const real = await realpath(candidate);
+					if (real !== DEBUG_PROBE_ROOT && !real.startsWith(DEBUG_PROBE_ROOT + path.sep)) {
+						return reply.code(403).send({
+							error: "resolved path escapes DEBUG_PROBE_ROOT",
+							candidate,
+							real,
+							root: DEBUG_PROBE_ROOT,
+						});
+					}
+					const s = await stat(real);
+					return reply.send({
+						path: real,
+						exists: true,
+						dev: Number(s.dev),
+						ino: Number(s.ino),
+						nlink: Number(s.nlink),
+						size: Number(s.size),
+						isFile: s.isFile(),
+						isDirectory: s.isDirectory(),
+					});
+				} catch (err) {
+					// Branch on errno so the diagnostic delivers on its stated
+					// purpose — distinguishing "doesn't exist" from "can't read"
+					// from "server-side fault":
+					//   ENOENT          → expected probe-of-missing-path case
+					//   EACCES / EPERM  → operator config issue (filesystem perms)
+					//   everything else → server-side fault (ELOOP, EMFILE, …)
+					const errno = (err as NodeJS.ErrnoException).code ?? "UNKNOWN";
+					const message = err instanceof Error ? err.message : String(err);
+					if (errno === "ENOENT") {
+						return reply.send({
+							path: candidate,
+							exists: false,
+							errno,
+							message,
+						});
+					}
+					if (errno === "EACCES" || errno === "EPERM") {
+						request.log.warn({ err, candidate, errno }, "inode-probe permission denied");
+						return reply.code(403).send({
+							error: "permission denied resolving probe path",
+							path: candidate,
+							errno,
+							message,
+						});
+					}
+					request.log.error({ err, candidate, errno }, "inode-probe unexpected error");
+					return reply.code(500).send({
+						error: "unexpected error resolving probe path",
+						path: candidate,
+						errno,
+						message,
+					});
+				}
+			},
+		);
+	}
 
 	// Cross-seed search for a stuck library item via qui's dir-scan webhook.
 	//
