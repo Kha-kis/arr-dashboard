@@ -301,55 +301,68 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 		},
 	);
 
-	// Inode-probe diagnostic for the local-filesystem-access strategy.
+	// Env-gated diagnostic endpoints (CodeQL alert #197 / js/path-injection).
 	//
-	// Given a path, returns the (st_dev, st_ino, nlink) tuple that
-	// arr-dashboard's process can observe — or the errno when the path
-	// can't be stat'd. Operators use this BEFORE flipping the
-	// `hasLocalFilesystemAccess` toggle on a qui instance to confirm:
-	//
-	//   1. arr-dashboard can actually see the path (no ENOENT/EACCES).
-	//   2. The file is hardlinked (nlink >= 2). If nlink == 1, the file
-	//      is isolated from any qui torrent and inode matching can't
-	//      correlate it.
-	//   3. A library path and a torrent path share `(dev, ino)`. If dev
-	//      differs, the two views are on different filesystems and
-	//      hardlinks can't cross — inode matching is impossible.
-	//
-	// Returns a compact JSON shape that's easy to curl from a deployment
-	// shell while verifying bind-mount choices. Authenticated per-user
-	// like every other route in this file; no path-traversal validation
-	// because (a) the operator chose the path, and (b) we only READ the
-	// stat — we don't open the file or expose contents.
-	app.get<{ Querystring: { path?: string } }>("/qui/debug/inode-probe", async (request, reply) => {
-		const path = request.query.path;
-		if (!path || typeof path !== "string") {
-			return reply.code(400).send({ error: "missing required query param: path" });
-		}
-		try {
-			const { stat } = await import("node:fs/promises");
-			const s = await stat(path);
-			return reply.send({
-				path,
-				exists: true,
-				dev: Number(s.dev),
-				ino: Number(s.ino),
-				nlink: Number(s.nlink),
-				size: Number(s.size),
-				isFile: s.isFile(),
-				isDirectory: s.isDirectory(),
-			});
-		} catch (err) {
-			const errno = (err as NodeJS.ErrnoException).code ?? "UNKNOWN";
-			const message = err instanceof Error ? err.message : String(err);
-			return reply.send({
-				path,
-				exists: false,
-				errno,
-				message,
-			});
-		}
-	});
+	// The inode-probe endpoint takes an operator-supplied path and runs
+	// fs.stat() against it. Even though we only return metadata (never file
+	// contents) and the route is auth-gated, CodeQL correctly flags raw user
+	// input flowing into fs.stat as a structural path-injection risk — a
+	// future refactor to fs.readFile() would silently expand the blast
+	// radius. Hide the route behind an explicit opt-in so it doesn't exist
+	// at all in production by default; ops can set ENABLE_DEBUG_ROUTES=true
+	// in their compose env for a debugging session, then unset it.
+	if (process.env.ENABLE_DEBUG_ROUTES === "true") {
+		// Inode-probe diagnostic for the local-filesystem-access strategy.
+		//
+		// Given a path, returns the (st_dev, st_ino, nlink) tuple that
+		// arr-dashboard's process can observe — or the errno when the path
+		// can't be stat'd. Operators use this BEFORE flipping the
+		// `hasLocalFilesystemAccess` toggle on a qui instance to confirm:
+		//
+		//   1. arr-dashboard can actually see the path (no ENOENT/EACCES).
+		//   2. The file is hardlinked (nlink >= 2). If nlink == 1, the file
+		//      is isolated from any qui torrent and inode matching can't
+		//      correlate it.
+		//   3. A library path and a torrent path share `(dev, ino)`. If dev
+		//      differs, the two views are on different filesystems and
+		//      hardlinks can't cross — inode matching is impossible.
+		//
+		// Returns a compact JSON shape that's easy to curl from a deployment
+		// shell while verifying bind-mount choices. Authenticated per-user
+		// like every other route in this file; stat-only (no file contents).
+		app.get<{ Querystring: { path?: string } }>(
+			"/qui/debug/inode-probe",
+			async (request, reply) => {
+				const path = request.query.path;
+				if (!path || typeof path !== "string") {
+					return reply.code(400).send({ error: "missing required query param: path" });
+				}
+				try {
+					const { stat } = await import("node:fs/promises");
+					const s = await stat(path);
+					return reply.send({
+						path,
+						exists: true,
+						dev: Number(s.dev),
+						ino: Number(s.ino),
+						nlink: Number(s.nlink),
+						size: Number(s.size),
+						isFile: s.isFile(),
+						isDirectory: s.isDirectory(),
+					});
+				} catch (err) {
+					const errno = (err as NodeJS.ErrnoException).code ?? "UNKNOWN";
+					const message = err instanceof Error ? err.message : String(err);
+					return reply.send({
+						path,
+						exists: false,
+						errno,
+						message,
+					});
+				}
+			},
+		);
+	}
 
 	// Cross-seed search for a stuck library item via qui's dir-scan webhook.
 	//
