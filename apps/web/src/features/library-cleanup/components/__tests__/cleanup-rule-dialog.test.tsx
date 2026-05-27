@@ -133,6 +133,8 @@ function makeEditRule(overrides: Partial<CleanupRuleResponse> = {}): CleanupRule
 		operator: null,
 		conditions: null,
 		retentionMode: false,
+		useGlobalRejectionMemory: true,
+		rejectionMemoryDays: 0,
 		createdAt: "2024-01-01T00:00:00Z",
 		updatedAt: "2024-01-01T00:00:00Z",
 		...overrides,
@@ -224,9 +226,7 @@ describe("CleanupRuleDialog", () => {
 
 		it("renders edit description", () => {
 			renderDialog({ editRule: makeEditRule() });
-			expect(
-				screen.getByText("Modify the rule settings and click Save."),
-			).toBeInTheDocument();
+			expect(screen.getByText("Modify the rule settings and click Save.")).toBeInTheDocument();
 		});
 
 		it("populates the name input from editRule", () => {
@@ -310,10 +310,10 @@ describe("CleanupRuleDialog", () => {
 					parameters: {},
 					action: "unmonitor",
 					retentionMode: true,
+					useGlobalRejectionMemory: true,
+					rejectionMemoryDays: 0,
 					operator: "AND",
-					conditions: [
-						{ ruleType: "age", parameters: { operator: "older_than", days: 90 } },
-					],
+					conditions: [{ ruleType: "age", parameters: { operator: "older_than", days: 90 } }],
 				} as CreateCleanupRule,
 			});
 			expect(screen.getByText(/Template applied/)).toBeInTheDocument();
@@ -329,6 +329,8 @@ describe("CleanupRuleDialog", () => {
 					parameters: { operator: "older_than", days: 90 },
 					action: "delete",
 					retentionMode: false,
+					useGlobalRejectionMemory: true,
+					rejectionMemoryDays: 0,
 				} as CreateCleanupRule,
 			});
 			const nameInput = screen.getByPlaceholderText("e.g., Old low-rated movies");
@@ -345,6 +347,8 @@ describe("CleanupRuleDialog", () => {
 					parameters: {},
 					action: "unmonitor",
 					retentionMode: false,
+					useGlobalRejectionMemory: true,
+					rejectionMemoryDays: 0,
 				} as CreateCleanupRule,
 			});
 			expect(
@@ -362,6 +366,8 @@ describe("CleanupRuleDialog", () => {
 					parameters: {},
 					action: "delete",
 					retentionMode: false,
+					useGlobalRejectionMemory: true,
+					rejectionMemoryDays: 0,
 					operator: "AND",
 					conditions: [
 						{
@@ -371,9 +377,7 @@ describe("CleanupRuleDialog", () => {
 					],
 				} as CreateCleanupRule,
 			});
-			expect(
-				screen.getByText(/Fill in the usernames in each condition below/),
-			).toBeInTheDocument();
+			expect(screen.getByText(/Fill in the usernames in each condition below/)).toBeInTheDocument();
 		});
 
 		it("uses create mode title (not edit) for template", () => {
@@ -386,6 +390,8 @@ describe("CleanupRuleDialog", () => {
 					parameters: {},
 					action: "delete",
 					retentionMode: false,
+					useGlobalRejectionMemory: true,
+					rejectionMemoryDays: 0,
 				} as CreateCleanupRule,
 			});
 			expect(screen.getByText("New Cleanup Rule")).toBeInTheDocument();
@@ -401,6 +407,8 @@ describe("CleanupRuleDialog", () => {
 					parameters: {},
 					action: "delete",
 					retentionMode: false,
+					useGlobalRejectionMemory: true,
+					rejectionMemoryDays: 0,
 					operator: "OR",
 					conditions: [
 						{ ruleType: "age", parameters: { operator: "older_than", days: 90 } },

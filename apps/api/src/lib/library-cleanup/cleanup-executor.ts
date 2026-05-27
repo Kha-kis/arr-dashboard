@@ -12,6 +12,7 @@
 
 import { type DataSourceDependency, ruleDataSourceMap } from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
+import type { Prisma } from "../../generated/prisma/client.js";
 import type { LibraryCleanupConfig, LibraryCleanupRule, ServiceInstance } from "../prisma.js";
 import { SeerrClient } from "../seerr/seerr-client.js";
 import { getErrorMessage } from "../utils/error-message.js";
@@ -49,6 +50,39 @@ const CIRCUIT_BREAKER_THRESHOLD = 3;
 // ============================================================================
 
 /** Build a detail entry for the cleanup run log. Ensures ruleId + itemType are always present. */
+/**
+ * Resolved rejection-memory window for a single rule (issue #474).
+ * - `off`     → no memory, current pre-#474 behavior (rejected items re-proposed next run)
+ * - `days`    → remember rejection for N days, then re-propose
+ * - `forever` → remember indefinitely (never re-propose until manually cleared)
+ */
+export type RejectionMemoryWindow =
+	| { mode: "off" }
+	| { mode: "days"; days: number }
+	| { mode: "forever" };
+
+/**
+ * Resolve the effective rejection-memory window for a rule, honoring per-rule
+ * override when present. Semantics for the underlying days field:
+ *   0    = off
+ *   N>0  = remember for N days
+ *   null = remember forever
+ *
+ * Per-rule override takes precedence over the config-level default when
+ * `useGlobalRejectionMemory` is false.
+ */
+export function resolveRejectionMemoryWindow(
+	rule: Pick<LibraryCleanupRule, "useGlobalRejectionMemory" | "rejectionMemoryDays">,
+	config: Pick<LibraryCleanupConfig, "rejectionMemoryDays">,
+): RejectionMemoryWindow {
+	const effectiveDays = rule.useGlobalRejectionMemory
+		? config.rejectionMemoryDays
+		: rule.rejectionMemoryDays;
+	if (effectiveDays === null) return { mode: "forever" };
+	if (effectiveDays === 0) return { mode: "off" };
+	return { mode: "days", days: effectiveDays };
+}
+
 function buildDetail(
 	item: FlaggedItem,
 	action: DetailAction,
@@ -1228,21 +1262,48 @@ async function executeWithApproval(
 	const details: CleanupRunResult["details"] = [];
 	let queued = 0;
 
+	// Precompute rejection-memory window per rule once. The window is the same
+	// for every flagged item that matched the same rule, so resolving once
+	// avoids O(rules × items) lookups inside the queue loop (issue #474).
+	const memoryByRuleId = new Map<string, RejectionMemoryWindow>();
+	for (const rule of config.rules) {
+		memoryByRuleId.set(rule.id, resolveRejectionMemoryWindow(rule, config));
+	}
+
 	for (const item of flagged) {
 		try {
-			// Skip if already pending approval for this item
+			const memWindow = memoryByRuleId.get(item.match.ruleId) ?? { mode: "off" as const };
+
+			// Dedup query: always skip pending approvals; additionally skip
+			// rejected approvals when the rule's memory window says so (#474).
+			const orClauses: Prisma.LibraryCleanupApprovalWhereInput[] = [{ status: "pending" }];
+			if (memWindow.mode === "forever") {
+				orClauses.push({ status: "rejected" });
+			} else if (memWindow.mode === "days") {
+				const cutoff = new Date(Date.now() - memWindow.days * 24 * 60 * 60 * 1000);
+				orClauses.push({ status: "rejected", reviewedAt: { gt: cutoff } });
+			}
+
 			const existing = await prisma.libraryCleanupApproval.findFirst({
 				where: {
 					configId: config.id,
 					instanceId: item.cacheItem.instanceId,
 					arrItemId: item.cacheItem.arrItemId,
 					itemType: item.cacheItem.itemType,
-					status: "pending",
+					OR: orClauses,
 				},
 			});
 
 			if (existing) {
-				details.push(buildDetail(item, "skipped"));
+				const skipReason =
+					existing.status === "rejected"
+						? memWindow.mode === "forever"
+							? "Previously rejected — rejection memory: forever"
+							: memWindow.mode === "days"
+								? `Previously rejected — rejection memory: ${memWindow.days} day${memWindow.days === 1 ? "" : "s"}`
+								: undefined
+						: undefined;
+				details.push(buildDetail(item, "skipped", skipReason));
 				continue;
 			}
 

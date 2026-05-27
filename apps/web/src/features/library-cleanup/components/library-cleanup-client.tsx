@@ -240,12 +240,43 @@ function ConfigTab({
 	// Local state for numeric inputs (onBlur commit pattern — F7)
 	const [localInterval, setLocalInterval] = useState(String(config.intervalHours));
 	const [localMaxRemovals, setLocalMaxRemovals] = useState(String(config.maxRemovalsPerRun ?? 50));
+	// Issue #474: rejection-memory mode + days. Encoding lives in
+	// `config.rejectionMemoryDays`: 0=off, N>0=days, null=forever. UI splits
+	// into a mode selector + a conditional days input.
+	const initialRejectionMode: "off" | "days" | "forever" =
+		config.rejectionMemoryDays === null
+			? "forever"
+			: config.rejectionMemoryDays === 0
+				? "off"
+				: "days";
+	const [localRejectionMode, setLocalRejectionMode] = useState<"off" | "days" | "forever">(
+		initialRejectionMode,
+	);
+	const [localRejectionDays, setLocalRejectionDays] = useState(
+		String(
+			config.rejectionMemoryDays && config.rejectionMemoryDays > 0
+				? config.rejectionMemoryDays
+				: 30,
+		),
+	);
 	useEffect(() => {
 		setLocalInterval(String(config.intervalHours));
 	}, [config.intervalHours]);
 	useEffect(() => {
 		setLocalMaxRemovals(String(config.maxRemovalsPerRun ?? 50));
 	}, [config.maxRemovalsPerRun]);
+	useEffect(() => {
+		setLocalRejectionMode(
+			config.rejectionMemoryDays === null
+				? "forever"
+				: config.rejectionMemoryDays === 0
+					? "off"
+					: "days",
+		);
+		if (config.rejectionMemoryDays && config.rejectionMemoryDays > 0) {
+			setLocalRejectionDays(String(config.rejectionMemoryDays));
+		}
+	}, [config.rejectionMemoryDays]);
 
 	const actionCounts = useMemo(() => {
 		if (!previewData?.items) return null;
@@ -391,6 +422,63 @@ function ConfigTab({
 								className={`${INPUT_BASE_CLASSES.input} py-1.5`}
 							/>
 						</label>
+					</div>
+
+					{/* Issue #474: Rejection memory — control how long rejected proposals are suppressed */}
+					<div className="grid gap-4 sm:grid-cols-2 mt-4">
+						<label className="block">
+							<span className="text-xs text-muted-foreground block mb-1">Rejection memory</span>
+							<select
+								value={localRejectionMode}
+								onChange={(e) => {
+									const mode = e.target.value as "off" | "days" | "forever";
+									setLocalRejectionMode(mode);
+									if (mode === "off") {
+										onUpdateConfig({ rejectionMemoryDays: 0 });
+									} else if (mode === "forever") {
+										onUpdateConfig({ rejectionMemoryDays: null });
+									} else {
+										const v = Number(localRejectionDays);
+										onUpdateConfig({
+											rejectionMemoryDays: Number.isFinite(v) && v > 0 ? v : 30,
+										});
+									}
+								}}
+								className={`${INPUT_BASE_CLASSES.input} py-1.5`}
+							>
+								<option value="off">Off — re-propose rejected items</option>
+								<option value="days">Remember for N days</option>
+								<option value="forever">Remember forever</option>
+							</select>
+							<span className="text-[11px] text-muted-foreground block mt-1">
+								Once you reject a cleanup proposal, suppress it from re-proposal here (issue #474).
+							</span>
+						</label>
+						{localRejectionMode === "days" && (
+							<label className="block">
+								<span className="text-xs text-muted-foreground block mb-1">Days to remember</span>
+								<input
+									type="number"
+									value={localRejectionDays}
+									onChange={(e) => setLocalRejectionDays(e.target.value)}
+									onBlur={() => {
+										const v = Number(localRejectionDays);
+										if (Number.isFinite(v) && v >= 1 && v <= 36500) {
+											onUpdateConfig({ rejectionMemoryDays: v });
+										} else {
+											const fallback =
+												config.rejectionMemoryDays && config.rejectionMemoryDays > 0
+													? config.rejectionMemoryDays
+													: 30;
+											setLocalRejectionDays(String(fallback));
+										}
+									}}
+									min={1}
+									max={36500}
+									className={`${INPUT_BASE_CLASSES.input} py-1.5`}
+								/>
+							</label>
+						)}
 					</div>
 
 					{config.dryRunMode && (
