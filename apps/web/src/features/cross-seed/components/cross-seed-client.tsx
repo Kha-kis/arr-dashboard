@@ -1,5 +1,6 @@
 "use client";
 
+import type { CrossSeedDiscoveryAvailability } from "@arr/shared";
 import {
 	ArrowRight,
 	CheckSquare,
@@ -23,6 +24,22 @@ import { getErrorMessage } from "../../../lib/error-utils";
 import { CrossSeedBulkToolbar } from "./cross-seed-bulk-toolbar";
 import { CrossSeedItemCard } from "./cross-seed-item-card";
 
+/**
+ * Narrowed shape of the `available: true` branch of the discovery union.
+ * Pulled out via `Extract<>` so the narrowing site below carries an explicit
+ * annotation instead of relying on TypeScript's control-flow analysis of the
+ * Zod-inferred discriminated-union type.
+ *
+ * Why this matters: Zod minor bumps occasionally change how `z.discriminatedUnion`
+ * surfaces its TypeScript shape, and patterns like
+ *   `data?.available === true ? data : null`
+ * can silently lose narrowing when the inferred type's discriminator gets
+ * re-wrapped. Stating the result type explicitly removes that exposure.
+ * Observed concretely when dependabot's bump bundle included zod 4.3 → 4.4
+ * (see dependabot PR ignoring zod for that group).
+ */
+type AvailableDiscovery = Extract<CrossSeedDiscoveryAvailability, { available: true }>;
+
 const SCAN_BATCH_SIZE = 100;
 
 /**
@@ -38,7 +55,11 @@ export const CrossSeedClient = () => {
 	const [selectionMode, setSelectionMode] = useState(false);
 	const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-	const isAvailable = availability.data?.available === true ? availability.data : null;
+	// Explicit annotation (rather than relying on TS narrowing the Zod-inferred
+	// union) keeps the call sites below working across Zod minor bumps that
+	// change discriminator inference. See AvailableDiscovery comment above.
+	const isAvailable: AvailableDiscovery | null =
+		availability.data?.available === true ? availability.data : null;
 
 	const discovery = useCrossSeedDiscovery(Boolean(isAvailable), SCAN_BATCH_SIZE);
 
