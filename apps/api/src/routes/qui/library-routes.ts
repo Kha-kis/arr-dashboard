@@ -368,10 +368,28 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 					});
 				}
 				try {
-					const { stat } = await import("node:fs/promises");
-					const s = await stat(resolved);
+					const { stat, realpath } = await import("node:fs/promises");
+					// Resolve symlinks BEFORE re-checking the allowlist — without
+					// this, a symlink like /media/foo → /etc/passwd would pass the
+					// initial string-prefix check (because /media is allowed) but
+					// stat() would silently follow the link and return /etc/passwd's
+					// metadata. The realpath + re-validation closes that gap.
+					// realpath() is also CodeQL's canonical path-sanitizer recipe.
+					const real = await realpath(resolved);
+					const realWithinAllowed = ALLOWED_PROBE_ROOTS.some(
+						(root) => real === root || real.startsWith(root + path.sep),
+					);
+					if (!realWithinAllowed) {
+						return reply.code(403).send({
+							error: "resolved path (after symlink) escapes allowed probe roots",
+							resolved,
+							real,
+							allowedRoots: ALLOWED_PROBE_ROOTS,
+						});
+					}
+					const s = await stat(real);
 					return reply.send({
-						path: resolved,
+						path: real,
 						exists: true,
 						dev: Number(s.dev),
 						ino: Number(s.ino),
@@ -381,6 +399,11 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 						isDirectory: s.isDirectory(),
 					});
 				} catch (err) {
+					// Covers both realpath() and stat() failures. ENOENT is the
+					// expected case when the operator probes a path that doesn't
+					// exist (which is the whole point of the diagnostic). Other
+					// errnos (EACCES, EPERM, etc.) get returned for the operator
+					// to debug.
 					const errno = (err as NodeJS.ErrnoException).code ?? "UNKNOWN";
 					const message = err instanceof Error ? err.message : String(err);
 					return reply.send({
