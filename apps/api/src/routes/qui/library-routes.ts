@@ -347,16 +347,34 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 				if (!userPath || typeof userPath !== "string") {
 					return reply.code(400).send({ error: "missing required query param: path" });
 				}
+
+				// Pre-validate user input before any filesystem path operation.
+				// This keeps probe behavior while preventing absolute/traversal input.
+				if (userPath.includes("\0")) {
+					return reply.code(400).send({ error: "invalid path" });
+				}
+				if (path.isAbsolute(userPath)) {
+					return reply.code(400).send({ error: "path must be relative to DEBUG_PROBE_ROOT" });
+				}
+				const normalizedUserPath = path.normalize(userPath).replace(/^[.][\\/]/, "");
+				if (
+					normalizedUserPath === ".." ||
+					normalizedUserPath.startsWith(`..${path.sep}`) ||
+					normalizedUserPath.startsWith("../") ||
+					normalizedUserPath.startsWith("..\\")
+				) {
+					return reply.code(400).send({ error: "path traversal is not allowed" });
+				}
+
 				try {
 					const { stat, realpath } = await import("node:fs/promises");
 					// Canonical CodeQL-recognized pattern (see rule help text):
 					//   1. resolve user input ANCHORED to DEBUG_PROBE_ROOT
-					//      — absolute inputs replace the root (still validated below)
-					//      — relative inputs (incl. `..`) are joined+normalized
+					//      — relative inputs are joined+normalized
 					//   2. realpath to follow symlinks to their concrete targets
 					//   3. startsWith(ROOT + path.sep) — prefix check with the
 					//      separator boundary to stop /media-backup matching /media
-					const candidate = path.resolve(DEBUG_PROBE_ROOT, userPath);
+					const candidate = path.resolve(DEBUG_PROBE_ROOT, normalizedUserPath);
 					const real = await realpath(candidate);
 					if (real !== DEBUG_PROBE_ROOT && !real.startsWith(DEBUG_PROBE_ROOT + path.sep)) {
 						return reply.code(403).send({
@@ -386,7 +404,7 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 					const errno = (err as NodeJS.ErrnoException).code ?? "UNKNOWN";
 					const message = err instanceof Error ? err.message : String(err);
 					return reply.send({
-						path: path.resolve(DEBUG_PROBE_ROOT, userPath),
+						path: path.resolve(DEBUG_PROBE_ROOT, normalizedUserPath),
 						exists: false,
 						errno,
 						message,
