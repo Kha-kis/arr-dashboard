@@ -1,3 +1,4 @@
+import path from "node:path";
 import { normalizeTorrentState } from "@arr/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -301,17 +302,36 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 		},
 	);
 
-	// Env-gated diagnostic endpoints (CodeQL alert #197 / js/path-injection).
+	// Env-gated diagnostic endpoints (CodeQL alerts #197/#198 / js/path-injection).
 	//
 	// The inode-probe endpoint takes an operator-supplied path and runs
-	// fs.stat() against it. Even though we only return metadata (never file
-	// contents) and the route is auth-gated, CodeQL correctly flags raw user
-	// input flowing into fs.stat as a structural path-injection risk — a
-	// future refactor to fs.readFile() would silently expand the blast
-	// radius. Hide the route behind an explicit opt-in so it doesn't exist
-	// at all in production by default; ops can set ENABLE_DEBUG_ROUTES=true
-	// in their compose env for a debugging session, then unset it.
+	// fs.stat() against it. Two layered defenses below:
+	//
+	//   1. ENABLE_DEBUG_ROUTES gate — the route doesn't exist in prod by
+	//      default. Ops sets the env var for a debugging session.
+	//   2. Path-allowlist sanitizer — `path.resolve()` collapses `..` and
+	//      then we check the result is within one of the configured roots
+	//      (defaults to common media-server bind-mount points; override via
+	//      DEBUG_PROBE_ROOTS=/path1:/path2). This is what CodeQL needs to
+	//      see in the dataflow to clear the alert, and it's real defense in
+	//      depth: even with the route enabled, traversal outside allowed
+	//      roots returns 403.
 	if (process.env.ENABLE_DEBUG_ROUTES === "true") {
+		const DEFAULT_PROBE_ROOTS = [
+			"/config",
+			"/media",
+			"/data",
+			"/downloads",
+			"/tv",
+			"/movies",
+			"/music",
+		];
+		const ALLOWED_PROBE_ROOTS = (
+			process.env.DEBUG_PROBE_ROOTS
+				? process.env.DEBUG_PROBE_ROOTS.split(":").filter(Boolean)
+				: DEFAULT_PROBE_ROOTS
+		).map((r) => path.resolve(r));
+
 		// Inode-probe diagnostic for the local-filesystem-access strategy.
 		//
 		// Given a path, returns the (st_dev, st_ino, nlink) tuple that
@@ -326,22 +346,32 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 		//   3. A library path and a torrent path share `(dev, ino)`. If dev
 		//      differs, the two views are on different filesystems and
 		//      hardlinks can't cross — inode matching is impossible.
-		//
-		// Returns a compact JSON shape that's easy to curl from a deployment
-		// shell while verifying bind-mount choices. Authenticated per-user
-		// like every other route in this file; stat-only (no file contents).
 		app.get<{ Querystring: { path?: string } }>(
 			"/qui/debug/inode-probe",
 			async (request, reply) => {
-				const path = request.query.path;
-				if (!path || typeof path !== "string") {
+				const userPath = request.query.path;
+				if (!userPath || typeof userPath !== "string") {
 					return reply.code(400).send({ error: "missing required query param: path" });
+				}
+				// Resolve to absolute + collapsed form, then require it lives
+				// inside an allowed root. The `+ path.sep` on the prefix check
+				// stops `/media-backup` from matching `/media`.
+				const resolved = path.resolve(userPath);
+				const isWithinAllowed = ALLOWED_PROBE_ROOTS.some(
+					(root) => resolved === root || resolved.startsWith(root + path.sep),
+				);
+				if (!isWithinAllowed) {
+					return reply.code(403).send({
+						error: "path outside allowed probe roots",
+						resolved,
+						allowedRoots: ALLOWED_PROBE_ROOTS,
+					});
 				}
 				try {
 					const { stat } = await import("node:fs/promises");
-					const s = await stat(path);
+					const s = await stat(resolved);
 					return reply.send({
-						path,
+						path: resolved,
 						exists: true,
 						dev: Number(s.dev),
 						ino: Number(s.ino),
@@ -354,7 +384,7 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 					const errno = (err as NodeJS.ErrnoException).code ?? "UNKNOWN";
 					const message = err instanceof Error ? err.message : String(err);
 					return reply.send({
-						path,
+						path: resolved,
 						exists: false,
 						errno,
 						message,
