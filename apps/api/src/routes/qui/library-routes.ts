@@ -349,23 +349,22 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 				}
 
 				// Pre-validate user input before any filesystem path operation.
-				// This keeps probe behavior while preventing absolute/traversal input.
+				// Keep probe behavior while preventing absolute/traversal input.
 				if (userPath.includes("\0")) {
 					return reply.code(400).send({ error: "invalid path" });
 				}
 				if (path.isAbsolute(userPath)) {
 					return reply.code(400).send({ error: "path must be relative to DEBUG_PROBE_ROOT" });
 				}
-				const normalizedUserPath = path.normalize(userPath).replace(/^[.][\\/]/, "");
-				if (
-					normalizedUserPath === ".." ||
-					normalizedUserPath.startsWith(`..${path.sep}`) ||
-					normalizedUserPath.startsWith("../") ||
-					normalizedUserPath.startsWith("..\\")
-				) {
+				// `path.normalize` collapses `./` prefixes and any `..` segments
+				// using the runtime platform's separator, so a single
+				// `${path.sep}` check covers traversal after normalization.
+				const normalizedUserPath = path.normalize(userPath);
+				if (normalizedUserPath === ".." || normalizedUserPath.startsWith(`..${path.sep}`)) {
 					return reply.code(400).send({ error: "path traversal is not allowed" });
 				}
 
+				const candidate = path.resolve(DEBUG_PROBE_ROOT, normalizedUserPath);
 				try {
 					const { stat, realpath } = await import("node:fs/promises");
 					// Canonical CodeQL-recognized pattern (see rule help text):
@@ -374,7 +373,6 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 					//   2. realpath to follow symlinks to their concrete targets
 					//   3. startsWith(ROOT + path.sep) — prefix check with the
 					//      separator boundary to stop /media-backup matching /media
-					const candidate = path.resolve(DEBUG_PROBE_ROOT, normalizedUserPath);
 					const real = await realpath(candidate);
 					if (real !== DEBUG_PROBE_ROOT && !real.startsWith(DEBUG_PROBE_ROOT + path.sep)) {
 						return reply.code(403).send({
@@ -396,16 +394,35 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 						isDirectory: s.isDirectory(),
 					});
 				} catch (err) {
-					// ENOENT from realpath is the expected case when probing a
-					// path that doesn't exist yet (the whole point of the
-					// diagnostic). Other errnos (EACCES/EPERM/etc.) get returned
-					// for the operator to debug. We report the candidate path
-					// pre-realpath since `real` may be undefined here.
+					// Branch on errno so the diagnostic delivers on its stated
+					// purpose — distinguishing "doesn't exist" from "can't read"
+					// from "server-side fault":
+					//   ENOENT          → expected probe-of-missing-path case
+					//   EACCES / EPERM  → operator config issue (filesystem perms)
+					//   everything else → server-side fault (ELOOP, EMFILE, …)
 					const errno = (err as NodeJS.ErrnoException).code ?? "UNKNOWN";
 					const message = err instanceof Error ? err.message : String(err);
-					return reply.send({
-						path: path.resolve(DEBUG_PROBE_ROOT, normalizedUserPath),
-						exists: false,
+					if (errno === "ENOENT") {
+						return reply.send({
+							path: candidate,
+							exists: false,
+							errno,
+							message,
+						});
+					}
+					if (errno === "EACCES" || errno === "EPERM") {
+						request.log.warn({ err, candidate, errno }, "inode-probe permission denied");
+						return reply.code(403).send({
+							error: "permission denied resolving probe path",
+							path: candidate,
+							errno,
+							message,
+						});
+					}
+					request.log.error({ err, candidate, errno }, "inode-probe unexpected error");
+					return reply.code(500).send({
+						error: "unexpected error resolving probe path",
+						path: candidate,
 						errno,
 						message,
 					});
