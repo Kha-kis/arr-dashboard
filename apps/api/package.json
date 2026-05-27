@@ -30,7 +30,7 @@
 		"@simplewebauthn/server": "^13.3.0",
 		"@streamparser/json": "^0.0.22",
 		"argon2": "^0.44.0",
-		"arr-sdk": "^0.6.0",
+		"arr-sdk": "^0.7.1",
 		"better-sqlite3": "^12.9.0",
 		"dequal": "^2.0.3",
 		"dotenv": "^17.4.2",
