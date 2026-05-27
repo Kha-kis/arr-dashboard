@@ -28,10 +28,12 @@ export type AggregateLibraryCleanupRule = {
 
 export type LibraryCleanupRuleAvgAggregateOutputType = {
   priority: number | null
+  rejectionMemoryDays: number | null
 }
 
 export type LibraryCleanupRuleSumAggregateOutputType = {
   priority: number | null
+  rejectionMemoryDays: number | null
 }
 
 export type LibraryCleanupRuleMinAggregateOutputType = {
@@ -51,6 +53,8 @@ export type LibraryCleanupRuleMinAggregateOutputType = {
   operator: string | null
   conditions: string | null
   retentionMode: boolean | null
+  useGlobalRejectionMemory: boolean | null
+  rejectionMemoryDays: number | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -72,6 +76,8 @@ export type LibraryCleanupRuleMaxAggregateOutputType = {
   operator: string | null
   conditions: string | null
   retentionMode: boolean | null
+  useGlobalRejectionMemory: boolean | null
+  rejectionMemoryDays: number | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -93,6 +99,8 @@ export type LibraryCleanupRuleCountAggregateOutputType = {
   operator: number
   conditions: number
   retentionMode: number
+  useGlobalRejectionMemory: number
+  rejectionMemoryDays: number
   createdAt: number
   updatedAt: number
   _all: number
@@ -101,10 +109,12 @@ export type LibraryCleanupRuleCountAggregateOutputType = {
 
 export type LibraryCleanupRuleAvgAggregateInputType = {
   priority?: true
+  rejectionMemoryDays?: true
 }
 
 export type LibraryCleanupRuleSumAggregateInputType = {
   priority?: true
+  rejectionMemoryDays?: true
 }
 
 export type LibraryCleanupRuleMinAggregateInputType = {
@@ -124,6 +134,8 @@ export type LibraryCleanupRuleMinAggregateInputType = {
   operator?: true
   conditions?: true
   retentionMode?: true
+  useGlobalRejectionMemory?: true
+  rejectionMemoryDays?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -145,6 +157,8 @@ export type LibraryCleanupRuleMaxAggregateInputType = {
   operator?: true
   conditions?: true
   retentionMode?: true
+  useGlobalRejectionMemory?: true
+  rejectionMemoryDays?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -166,6 +180,8 @@ export type LibraryCleanupRuleCountAggregateInputType = {
   operator?: true
   conditions?: true
   retentionMode?: true
+  useGlobalRejectionMemory?: true
+  rejectionMemoryDays?: true
   createdAt?: true
   updatedAt?: true
   _all?: true
@@ -274,6 +290,8 @@ export type LibraryCleanupRuleGroupByOutputType = {
   operator: string | null
   conditions: string | null
   retentionMode: boolean
+  useGlobalRejectionMemory: boolean
+  rejectionMemoryDays: number | null
   createdAt: Date
   updatedAt: Date
   _count: LibraryCleanupRuleCountAggregateOutputType | null
@@ -318,6 +336,8 @@ export type LibraryCleanupRuleWhereInput = {
   operator?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   conditions?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   retentionMode?: Prisma.BoolFilter<"LibraryCleanupRule"> | boolean
+  useGlobalRejectionMemory?: Prisma.BoolFilter<"LibraryCleanupRule"> | boolean
+  rejectionMemoryDays?: Prisma.IntNullableFilter<"LibraryCleanupRule"> | number | null
   createdAt?: Prisma.DateTimeFilter<"LibraryCleanupRule"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"LibraryCleanupRule"> | Date | string
   config?: Prisma.XOR<Prisma.LibraryCleanupConfigScalarRelationFilter, Prisma.LibraryCleanupConfigWhereInput>
@@ -340,6 +360,8 @@ export type LibraryCleanupRuleOrderByWithRelationInput = {
   operator?: Prisma.SortOrderInput | Prisma.SortOrder
   conditions?: Prisma.SortOrderInput | Prisma.SortOrder
   retentionMode?: Prisma.SortOrder
+  useGlobalRejectionMemory?: Prisma.SortOrder
+  rejectionMemoryDays?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   config?: Prisma.LibraryCleanupConfigOrderByWithRelationInput
@@ -365,6 +387,8 @@ export type LibraryCleanupRuleWhereUniqueInput = Prisma.AtLeast<{
   operator?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   conditions?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   retentionMode?: Prisma.BoolFilter<"LibraryCleanupRule"> | boolean
+  useGlobalRejectionMemory?: Prisma.BoolFilter<"LibraryCleanupRule"> | boolean
+  rejectionMemoryDays?: Prisma.IntNullableFilter<"LibraryCleanupRule"> | number | null
   createdAt?: Prisma.DateTimeFilter<"LibraryCleanupRule"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"LibraryCleanupRule"> | Date | string
   config?: Prisma.XOR<Prisma.LibraryCleanupConfigScalarRelationFilter, Prisma.LibraryCleanupConfigWhereInput>
@@ -387,6 +411,8 @@ export type LibraryCleanupRuleOrderByWithAggregationInput = {
   operator?: Prisma.SortOrderInput | Prisma.SortOrder
   conditions?: Prisma.SortOrderInput | Prisma.SortOrder
   retentionMode?: Prisma.SortOrder
+  useGlobalRejectionMemory?: Prisma.SortOrder
+  rejectionMemoryDays?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   _count?: Prisma.LibraryCleanupRuleCountOrderByAggregateInput
@@ -416,6 +442,8 @@ export type LibraryCleanupRuleScalarWhereWithAggregatesInput = {
   operator?: Prisma.StringNullableWithAggregatesFilter<"LibraryCleanupRule"> | string | null
   conditions?: Prisma.StringNullableWithAggregatesFilter<"LibraryCleanupRule"> | string | null
   retentionMode?: Prisma.BoolWithAggregatesFilter<"LibraryCleanupRule"> | boolean
+  useGlobalRejectionMemory?: Prisma.BoolWithAggregatesFilter<"LibraryCleanupRule"> | boolean
+  rejectionMemoryDays?: Prisma.IntNullableWithAggregatesFilter<"LibraryCleanupRule"> | number | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"LibraryCleanupRule"> | Date | string
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"LibraryCleanupRule"> | Date | string
 }
@@ -436,6 +464,8 @@ export type LibraryCleanupRuleCreateInput = {
   operator?: string | null
   conditions?: string | null
   retentionMode?: boolean
+  useGlobalRejectionMemory?: boolean
+  rejectionMemoryDays?: number | null
   createdAt?: Date | string
   updatedAt?: Date | string
   config: Prisma.LibraryCleanupConfigCreateNestedOneWithoutRulesInput
@@ -458,6 +488,8 @@ export type LibraryCleanupRuleUncheckedCreateInput = {
   operator?: string | null
   conditions?: string | null
   retentionMode?: boolean
+  useGlobalRejectionMemory?: boolean
+  rejectionMemoryDays?: number | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -478,6 +510,8 @@ export type LibraryCleanupRuleUpdateInput = {
   operator?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   conditions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   retentionMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  useGlobalRejectionMemory?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  rejectionMemoryDays?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   config?: Prisma.LibraryCleanupConfigUpdateOneRequiredWithoutRulesNestedInput
@@ -500,6 +534,8 @@ export type LibraryCleanupRuleUncheckedUpdateInput = {
   operator?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   conditions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   retentionMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  useGlobalRejectionMemory?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  rejectionMemoryDays?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -521,6 +557,8 @@ export type LibraryCleanupRuleCreateManyInput = {
   operator?: string | null
   conditions?: string | null
   retentionMode?: boolean
+  useGlobalRejectionMemory?: boolean
+  rejectionMemoryDays?: number | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -541,6 +579,8 @@ export type LibraryCleanupRuleUpdateManyMutationInput = {
   operator?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   conditions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   retentionMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  useGlobalRejectionMemory?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  rejectionMemoryDays?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -562,6 +602,8 @@ export type LibraryCleanupRuleUncheckedUpdateManyInput = {
   operator?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   conditions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   retentionMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  useGlobalRejectionMemory?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  rejectionMemoryDays?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -593,12 +635,15 @@ export type LibraryCleanupRuleCountOrderByAggregateInput = {
   operator?: Prisma.SortOrder
   conditions?: Prisma.SortOrder
   retentionMode?: Prisma.SortOrder
+  useGlobalRejectionMemory?: Prisma.SortOrder
+  rejectionMemoryDays?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
 
 export type LibraryCleanupRuleAvgOrderByAggregateInput = {
   priority?: Prisma.SortOrder
+  rejectionMemoryDays?: Prisma.SortOrder
 }
 
 export type LibraryCleanupRuleMaxOrderByAggregateInput = {
@@ -618,6 +663,8 @@ export type LibraryCleanupRuleMaxOrderByAggregateInput = {
   operator?: Prisma.SortOrder
   conditions?: Prisma.SortOrder
   retentionMode?: Prisma.SortOrder
+  useGlobalRejectionMemory?: Prisma.SortOrder
+  rejectionMemoryDays?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -639,12 +686,15 @@ export type LibraryCleanupRuleMinOrderByAggregateInput = {
   operator?: Prisma.SortOrder
   conditions?: Prisma.SortOrder
   retentionMode?: Prisma.SortOrder
+  useGlobalRejectionMemory?: Prisma.SortOrder
+  rejectionMemoryDays?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
 
 export type LibraryCleanupRuleSumOrderByAggregateInput = {
   priority?: Prisma.SortOrder
+  rejectionMemoryDays?: Prisma.SortOrder
 }
 
 export type LibraryCleanupRuleCreateNestedManyWithoutConfigInput = {
@@ -705,6 +755,8 @@ export type LibraryCleanupRuleCreateWithoutConfigInput = {
   operator?: string | null
   conditions?: string | null
   retentionMode?: boolean
+  useGlobalRejectionMemory?: boolean
+  rejectionMemoryDays?: number | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -725,6 +777,8 @@ export type LibraryCleanupRuleUncheckedCreateWithoutConfigInput = {
   operator?: string | null
   conditions?: string | null
   retentionMode?: boolean
+  useGlobalRejectionMemory?: boolean
+  rejectionMemoryDays?: number | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -774,6 +828,8 @@ export type LibraryCleanupRuleScalarWhereInput = {
   operator?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   conditions?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   retentionMode?: Prisma.BoolFilter<"LibraryCleanupRule"> | boolean
+  useGlobalRejectionMemory?: Prisma.BoolFilter<"LibraryCleanupRule"> | boolean
+  rejectionMemoryDays?: Prisma.IntNullableFilter<"LibraryCleanupRule"> | number | null
   createdAt?: Prisma.DateTimeFilter<"LibraryCleanupRule"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"LibraryCleanupRule"> | Date | string
 }
@@ -794,6 +850,8 @@ export type LibraryCleanupRuleCreateManyConfigInput = {
   operator?: string | null
   conditions?: string | null
   retentionMode?: boolean
+  useGlobalRejectionMemory?: boolean
+  rejectionMemoryDays?: number | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -814,6 +872,8 @@ export type LibraryCleanupRuleUpdateWithoutConfigInput = {
   operator?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   conditions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   retentionMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  useGlobalRejectionMemory?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  rejectionMemoryDays?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -834,6 +894,8 @@ export type LibraryCleanupRuleUncheckedUpdateWithoutConfigInput = {
   operator?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   conditions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   retentionMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  useGlobalRejectionMemory?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  rejectionMemoryDays?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -854,6 +916,8 @@ export type LibraryCleanupRuleUncheckedUpdateManyWithoutConfigInput = {
   operator?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   conditions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   retentionMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  useGlobalRejectionMemory?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  rejectionMemoryDays?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -877,6 +941,8 @@ export type LibraryCleanupRuleSelect<ExtArgs extends runtime.Types.Extensions.In
   operator?: boolean
   conditions?: boolean
   retentionMode?: boolean
+  useGlobalRejectionMemory?: boolean
+  rejectionMemoryDays?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   config?: boolean | Prisma.LibraryCleanupConfigDefaultArgs<ExtArgs>
@@ -899,6 +965,8 @@ export type LibraryCleanupRuleSelectCreateManyAndReturn<ExtArgs extends runtime.
   operator?: boolean
   conditions?: boolean
   retentionMode?: boolean
+  useGlobalRejectionMemory?: boolean
+  rejectionMemoryDays?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   config?: boolean | Prisma.LibraryCleanupConfigDefaultArgs<ExtArgs>
@@ -921,6 +989,8 @@ export type LibraryCleanupRuleSelectUpdateManyAndReturn<ExtArgs extends runtime.
   operator?: boolean
   conditions?: boolean
   retentionMode?: boolean
+  useGlobalRejectionMemory?: boolean
+  rejectionMemoryDays?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   config?: boolean | Prisma.LibraryCleanupConfigDefaultArgs<ExtArgs>
@@ -943,11 +1013,13 @@ export type LibraryCleanupRuleSelectScalar = {
   operator?: boolean
   conditions?: boolean
   retentionMode?: boolean
+  useGlobalRejectionMemory?: boolean
+  rejectionMemoryDays?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type LibraryCleanupRuleOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "configId" | "name" | "enabled" | "priority" | "ruleType" | "parameters" | "serviceFilter" | "instanceFilter" | "excludeTags" | "excludeTitles" | "plexLibraryFilter" | "action" | "operator" | "conditions" | "retentionMode" | "createdAt" | "updatedAt", ExtArgs["result"]["libraryCleanupRule"]>
+export type LibraryCleanupRuleOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "configId" | "name" | "enabled" | "priority" | "ruleType" | "parameters" | "serviceFilter" | "instanceFilter" | "excludeTags" | "excludeTitles" | "plexLibraryFilter" | "action" | "operator" | "conditions" | "retentionMode" | "useGlobalRejectionMemory" | "rejectionMemoryDays" | "createdAt" | "updatedAt", ExtArgs["result"]["libraryCleanupRule"]>
 export type LibraryCleanupRuleInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   config?: boolean | Prisma.LibraryCleanupConfigDefaultArgs<ExtArgs>
 }
@@ -980,6 +1052,19 @@ export type $LibraryCleanupRulePayload<ExtArgs extends runtime.Types.Extensions.
     operator: string | null
     conditions: string | null
     retentionMode: boolean
+    /**
+     * Per-rule override for rejection-memory (issue #474). When true, this rule
+     * uses the config-level `rejectionMemoryDays`. When false, the rule's own
+     * `rejectionMemoryDays` field below is used. Default true preserves
+     * inherit-from-global behavior for any new rule.
+     */
+    useGlobalRejectionMemory: boolean
+    /**
+     * Per-rule rejection-memory value, only consulted when
+     * `useGlobalRejectionMemory` is false. Same semantics as the config field:
+     * 0    = off, N>0 = N days, null = forever.
+     */
+    rejectionMemoryDays: number | null
     createdAt: Date
     updatedAt: Date
   }, ExtArgs["result"]["libraryCleanupRule"]>
@@ -1422,6 +1507,8 @@ export interface LibraryCleanupRuleFieldRefs {
   readonly operator: Prisma.FieldRef<"LibraryCleanupRule", 'String'>
   readonly conditions: Prisma.FieldRef<"LibraryCleanupRule", 'String'>
   readonly retentionMode: Prisma.FieldRef<"LibraryCleanupRule", 'Boolean'>
+  readonly useGlobalRejectionMemory: Prisma.FieldRef<"LibraryCleanupRule", 'Boolean'>
+  readonly rejectionMemoryDays: Prisma.FieldRef<"LibraryCleanupRule", 'Int'>
   readonly createdAt: Prisma.FieldRef<"LibraryCleanupRule", 'DateTime'>
   readonly updatedAt: Prisma.FieldRef<"LibraryCleanupRule", 'DateTime'>
 }
