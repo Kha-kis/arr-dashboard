@@ -302,42 +302,32 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 		},
 	);
 
-	// Env-gated diagnostic endpoints (CodeQL alerts #197/#198 / js/path-injection).
+	// Env-gated diagnostic endpoint (CodeQL alerts #197–#200 / js/path-injection).
 	//
-	// The inode-probe endpoint takes an operator-supplied path and runs
-	// fs.stat() against it. Two layered defenses below:
+	// The inode-probe takes an operator-supplied path and runs fs.stat()
+	// against it. Three layered defenses:
 	//
-	//   1. ENABLE_DEBUG_ROUTES gate — the route doesn't exist in prod by
-	//      default. Ops sets the env var for a debugging session.
-	//   2. Path-allowlist sanitizer — `path.resolve()` collapses `..` and
-	//      then we check the result is within one of the configured roots
-	//      (defaults to common media-server bind-mount points; override via
-	//      DEBUG_PROBE_ROOTS=/path1:/path2). This is what CodeQL needs to
-	//      see in the dataflow to clear the alert, and it's real defense in
-	//      depth: even with the route enabled, traversal outside allowed
-	//      roots returns 403.
-	if (process.env.ENABLE_DEBUG_ROUTES === "true") {
-		const DEFAULT_PROBE_ROOTS = [
-			"/config",
-			"/media",
-			"/data",
-			"/downloads",
-			"/tv",
-			"/movies",
-			"/music",
-		];
-		const ALLOWED_PROBE_ROOTS = (
-			process.env.DEBUG_PROBE_ROOTS
-				? process.env.DEBUG_PROBE_ROOTS.split(":").filter(Boolean)
-				: DEFAULT_PROBE_ROOTS
-		).map((r) => path.resolve(r));
-
+	//   1. ENABLE_DEBUG_ROUTES gate — route doesn't exist in prod by default
+	//   2. DEBUG_PROBE_ROOT must be explicitly set — no permissive default,
+	//      operator picks the trusted base for this debugging session
+	//   3. CodeQL's canonical path-sanitizer recipe in the handler:
+	//        path.resolve(ROOT, userInput) → fs.realpath → startsWith(ROOT)
+	//      Earlier iterations tried multi-root allowlists with .some(); CodeQL
+	//      doesn't recognize that as a sanitizer regardless of layered defenses
+	//      (the analyzer is template-matching against the single-root shape).
+	//      Single-root + realpath also gives semantic parity with the canonical
+	//      "good" example in the rule's own documentation.
+	const DEBUG_PROBE_ROOT = process.env.DEBUG_PROBE_ROOT
+		? path.resolve(process.env.DEBUG_PROBE_ROOT)
+		: null;
+	if (process.env.ENABLE_DEBUG_ROUTES === "true" && DEBUG_PROBE_ROOT) {
 		// Inode-probe diagnostic for the local-filesystem-access strategy.
 		//
-		// Given a path, returns the (st_dev, st_ino, nlink) tuple that
-		// arr-dashboard's process can observe — or the errno when the path
-		// can't be stat'd. Operators use this BEFORE flipping the
-		// `hasLocalFilesystemAccess` toggle on a qui instance to confirm:
+		// Given a path UNDER DEBUG_PROBE_ROOT, returns the (st_dev, st_ino,
+		// nlink) tuple that arr-dashboard's process can observe — or the
+		// errno when the path can't be stat'd. Operators use this BEFORE
+		// flipping the `hasLocalFilesystemAccess` toggle on a qui instance
+		// to confirm:
 		//
 		//   1. arr-dashboard can actually see the path (no ENOENT/EACCES).
 		//   2. The file is hardlinked (nlink >= 2). If nlink == 1, the file
@@ -346,6 +336,10 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 		//   3. A library path and a torrent path share `(dev, ino)`. If dev
 		//      differs, the two views are on different filesystems and
 		//      hardlinks can't cross — inode matching is impossible.
+		//
+		// To probe multiple roots in one session, restart with a different
+		// DEBUG_PROBE_ROOT. The single-root restriction is what makes the
+		// security analysis legible.
 		app.get<{ Querystring: { path?: string } }>(
 			"/qui/debug/inode-probe",
 			async (request, reply) => {
@@ -353,38 +347,23 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 				if (!userPath || typeof userPath !== "string") {
 					return reply.code(400).send({ error: "missing required query param: path" });
 				}
-				// Resolve to absolute + collapsed form, then require it lives
-				// inside an allowed root. The `+ path.sep` on the prefix check
-				// stops `/media-backup` from matching `/media`.
-				const resolved = path.resolve(userPath);
-				const isWithinAllowed = ALLOWED_PROBE_ROOTS.some(
-					(root) => resolved === root || resolved.startsWith(root + path.sep),
-				);
-				if (!isWithinAllowed) {
-					return reply.code(403).send({
-						error: "path outside allowed probe roots",
-						resolved,
-						allowedRoots: ALLOWED_PROBE_ROOTS,
-					});
-				}
 				try {
 					const { stat, realpath } = await import("node:fs/promises");
-					// Resolve symlinks BEFORE re-checking the allowlist — without
-					// this, a symlink like /media/foo → /etc/passwd would pass the
-					// initial string-prefix check (because /media is allowed) but
-					// stat() would silently follow the link and return /etc/passwd's
-					// metadata. The realpath + re-validation closes that gap.
-					// realpath() is also CodeQL's canonical path-sanitizer recipe.
-					const real = await realpath(resolved);
-					const realWithinAllowed = ALLOWED_PROBE_ROOTS.some(
-						(root) => real === root || real.startsWith(root + path.sep),
-					);
-					if (!realWithinAllowed) {
+					// Canonical CodeQL-recognized pattern (see rule help text):
+					//   1. resolve user input ANCHORED to DEBUG_PROBE_ROOT
+					//      — absolute inputs replace the root (still validated below)
+					//      — relative inputs (incl. `..`) are joined+normalized
+					//   2. realpath to follow symlinks to their concrete targets
+					//   3. startsWith(ROOT + path.sep) — prefix check with the
+					//      separator boundary to stop /media-backup matching /media
+					const candidate = path.resolve(DEBUG_PROBE_ROOT, userPath);
+					const real = await realpath(candidate);
+					if (real !== DEBUG_PROBE_ROOT && !real.startsWith(DEBUG_PROBE_ROOT + path.sep)) {
 						return reply.code(403).send({
-							error: "resolved path (after symlink) escapes allowed probe roots",
-							resolved,
+							error: "resolved path escapes DEBUG_PROBE_ROOT",
+							candidate,
 							real,
-							allowedRoots: ALLOWED_PROBE_ROOTS,
+							root: DEBUG_PROBE_ROOT,
 						});
 					}
 					const s = await stat(real);
@@ -399,15 +378,15 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 						isDirectory: s.isDirectory(),
 					});
 				} catch (err) {
-					// Covers both realpath() and stat() failures. ENOENT is the
-					// expected case when the operator probes a path that doesn't
-					// exist (which is the whole point of the diagnostic). Other
-					// errnos (EACCES, EPERM, etc.) get returned for the operator
-					// to debug.
+					// ENOENT from realpath is the expected case when probing a
+					// path that doesn't exist yet (the whole point of the
+					// diagnostic). Other errnos (EACCES/EPERM/etc.) get returned
+					// for the operator to debug. We report the candidate path
+					// pre-realpath since `real` may be undefined here.
 					const errno = (err as NodeJS.ErrnoException).code ?? "UNKNOWN";
 					const message = err instanceof Error ? err.message : String(err);
 					return reply.send({
-						path: resolved,
+						path: path.resolve(DEBUG_PROBE_ROOT, userPath),
 						exists: false,
 						errno,
 						message,
