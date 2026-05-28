@@ -19,7 +19,12 @@ import {
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { ServiceInstance } from "../prisma.js";
-import { type QuiRequestContext, quiHealthProbe, quiRequest } from "./client-helpers.js";
+import {
+	extractHostnameSafe,
+	type QuiRequestContext,
+	quiHealthProbe,
+	quiRequest,
+} from "./client-helpers.js";
 import { mapTrackerHealth } from "./tracker-health-mapper.js";
 
 export interface QuiClient {
@@ -312,7 +317,7 @@ const wireCrossSeedMatchSchema = z
 			category: w.category,
 			savePath: w.save_path,
 			contentPath: w.content_path,
-			tracker: w.tracker,
+			tracker: extractHostnameSafe(w.tracker),
 			trackerHealth: w.tracker_health,
 			matchType: w.match_type,
 			tags: w.tags,

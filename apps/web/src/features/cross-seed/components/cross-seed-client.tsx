@@ -19,7 +19,11 @@ import {
 	PremiumPageLoading,
 } from "../../../components/layout";
 import { Alert, AlertDescription, Button } from "../../../components/ui";
-import { useCrossSeedAvailability, useCrossSeedDiscovery } from "../../../hooks/api/useQui";
+import {
+	useCrossSeedAvailability,
+	useCrossSeedDiscovery,
+	useTrackerIcons,
+} from "../../../hooks/api/useQui";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { CrossSeedBulkToolbar } from "./cross-seed-bulk-toolbar";
 import { CrossSeedItemCard } from "./cross-seed-item-card";
@@ -62,6 +66,10 @@ export const CrossSeedClient = () => {
 		availability.data?.available === true ? availability.data : null;
 
 	const discovery = useCrossSeedDiscovery(Boolean(isAvailable), SCAN_BATCH_SIZE);
+
+	// Same tracker-identity registry the library grid uses. Soft-fails to
+	// undefined (the card then renders the bare hostname per sibling).
+	const trackerIcons = useTrackerIcons().data?.trackers;
 
 	const aggregate = useMemo(() => {
 		if (!discovery.data) return { items: [], scanned: 0, found: 0, siblingFetchErrors: 0 };
@@ -293,6 +301,7 @@ export const CrossSeedClient = () => {
 							<CrossSeedItemCard
 								key={item.libraryCacheId}
 								item={item}
+								trackerIcons={trackerIcons}
 								animationDelay={Math.min(idx, 12) * 30}
 								isSelected={selectedIds.has(item.libraryCacheId)}
 								onToggleSelect={

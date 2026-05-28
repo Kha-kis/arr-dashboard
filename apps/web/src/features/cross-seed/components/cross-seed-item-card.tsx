@@ -24,6 +24,14 @@ interface CrossSeedItemCardProps {
 	 * visible but is not selectable.
 	 */
 	selectDisabled?: boolean;
+	/**
+	 * qui's tracker-meta map (hostname → {iconUrl, name}) — the same registry
+	 * the library grid uses as the single source of truth for tracker
+	 * identity. Resolves each sibling's hostname to a brand icon + friendly
+	 * name. Undefined until the icons query resolves; falls back to the bare
+	 * hostname per-entry.
+	 */
+	trackerIcons?: Record<string, { iconUrl?: string; name?: string }>;
 }
 
 const MATCH_TYPE_COPY: Record<QuiCrossSeedMatch["matchType"], { label: string; tone: string }> = {
@@ -38,6 +46,7 @@ export const CrossSeedItemCard = ({
 	isSelected = false,
 	onToggleSelect,
 	selectDisabled = false,
+	trackerIcons,
 }: CrossSeedItemCardProps) => {
 	const [incognito] = useIncognitoMode();
 
@@ -109,9 +118,14 @@ export const CrossSeedItemCard = ({
 						<ul className="space-y-1.5">
 							{item.siblings.map((sibling) => {
 								const matchCopy = MATCH_TYPE_COPY[sibling.matchType];
+								// Resolve tracker identity through qui's registry (icon +
+								// friendly name), the same way the library grid does. In
+								// incognito we deliberately skip the registry so neither the
+								// brand name nor its icon leaks — `getLinuxIndexer` masks it.
+								const trackerMeta = incognito ? undefined : trackerIcons?.[sibling.tracker];
 								const trackerLabel = incognito
 									? getLinuxIndexer(sibling.tracker)
-									: sibling.tracker || "unknown tracker";
+									: (trackerMeta?.name ?? sibling.tracker) || "unknown tracker";
 								const siblingInstance = incognito
 									? getLinuxInstanceName(sibling.instanceName)
 									: sibling.instanceName;
@@ -123,7 +137,17 @@ export const CrossSeedItemCard = ({
 											"border border-border/30 bg-card/20 px-2.5 py-1.5",
 										)}
 									>
-										<span className="font-medium text-foreground/90">{trackerLabel}</span>
+										<span className="flex items-center gap-1.5 font-medium text-foreground/90">
+											{trackerMeta?.iconUrl ? (
+												<img
+													src={trackerMeta.iconUrl}
+													alt=""
+													aria-hidden
+													className="h-3.5 w-3.5 rounded-sm object-contain"
+												/>
+											) : null}
+											{trackerLabel}
+										</span>
 										<span className="text-muted-foreground/70">·</span>
 										<span className="text-muted-foreground">{siblingInstance}</span>
 										<span className="text-muted-foreground/70">·</span>

@@ -130,6 +130,31 @@ export async function quiHealthProbe(
 	}
 }
 
+/**
+ * Safe hostname extraction from a qBit announce URL.
+ *
+ * Private-tracker announce URLs include a passkey in the path or query
+ * (`tracker.beyond-hd.me:2053/announce/PASSKEY` or
+ * `hdbits.org/announce.php?passkey=PASSKEY`). The passkey is equivalent
+ * to login credentials — leaking it in an API response or log would
+ * compromise the user's tracker account.
+ *
+ * Returns ONLY the hostname; discards path, query, fragment, userinfo.
+ * Empty string on parse failure — better to lose tracker identification
+ * than to risk passkey exposure.
+ *
+ * Single source of truth for tracker-identity stripping across the qui
+ * integration: the library-seeding summary, torrent trackers list, and
+ * cross-seed match transform all funnel through here.
+ */
+export function extractHostnameSafe(url: string): string {
+	try {
+		return new URL(url).hostname;
+	} catch {
+		return "";
+	}
+}
+
 function buildUrl(baseUrl: string, path: string, query?: Record<string, string>): string {
 	const trimmed = baseUrl.replace(/\/$/, "");
 	const url = new URL(`${trimmed}${path.startsWith("/") ? path : `/${path}`}`);
