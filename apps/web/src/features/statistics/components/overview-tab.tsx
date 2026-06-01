@@ -80,6 +80,17 @@ export const OverviewTab = ({
 	const [incognitoMode] = useIncognitoMode();
 	const [healthExpanded, setHealthExpanded] = useState(false);
 
+	// Transparency for the combined storage figure: when more than one instance
+	// feeds the total, show how many unique disks it collapsed to, so a large
+	// number reads as "N disks across M instances" instead of an unexplained sum.
+	const storageDescription = (() => {
+		const base = `of ${formatBytes(combinedDisk.diskTotal)} available`;
+		const { diskCount, instanceCount } = combinedDisk;
+		if (!diskCount || !instanceCount || instanceCount <= 1) return base;
+		const disks = `${diskCount} disk${diskCount === 1 ? "" : "s"}`;
+		return `${base} · ${disks} across ${instanceCount} instances`;
+	})();
+
 	// Fetch Plex summary data when Tautulli is available
 	const { data: tautulliStats } = useTautulliStats(30, hasTautulli);
 	const { data: tautulliPlays } = useTautulliPlaysByDate(30, hasTautulli);
@@ -273,7 +284,7 @@ export const OverviewTab = ({
 				<StatCard
 					value={formatBytes(combinedDisk.diskUsed)}
 					label="Storage"
-					description={`of ${formatBytes(combinedDisk.diskTotal)} available`}
+					description={storageDescription}
 					icon={HardDrive}
 					animationDelay={550}
 				/>
