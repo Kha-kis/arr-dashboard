@@ -297,6 +297,20 @@ export const tagBreakdownSchema = z.record(z.string(), z.number());
 
 export type TagBreakdown = z.infer<typeof tagBreakdownSchema>;
 
+/**
+ * A single mount/disk as reported by an *arr instance's diskspace endpoint.
+ * Carried per-instance so the combined disk total can de-duplicate disks that
+ * multiple instances report (e.g. several services bind-mounted to one array).
+ * Mount path is intentionally omitted — it isn't used for de-duplication and
+ * shipping raw filesystem paths would leak the operator's layout.
+ */
+export const diskMountSchema = z.object({
+	totalSpace: z.number().optional(),
+	freeSpace: z.number().optional(),
+});
+
+export type DiskMount = z.infer<typeof diskMountSchema>;
+
 export const sonarrStatisticsSchema = z.object({
 	totalSeries: z.number(),
 	monitoredSeries: z.number(),
@@ -317,6 +331,7 @@ export const sonarrStatisticsSchema = z.object({
 	diskFree: z.number().optional(),
 	diskUsed: z.number().optional(),
 	diskUsagePercent: z.number().optional(),
+	diskEntries: z.array(diskMountSchema).optional(),
 	healthIssues: z.number().optional(),
 	healthIssuesList: z.array(healthIssueSchema).optional(),
 });
@@ -340,6 +355,7 @@ export const radarrStatisticsSchema = z.object({
 	diskFree: z.number().optional(),
 	diskUsed: z.number().optional(),
 	diskUsagePercent: z.number().optional(),
+	diskEntries: z.array(diskMountSchema).optional(),
 	healthIssues: z.number().optional(),
 	healthIssuesList: z.array(healthIssueSchema).optional(),
 });
@@ -394,6 +410,7 @@ export const lidarrStatisticsSchema = z.object({
 	diskFree: z.number().optional(),
 	diskUsed: z.number().optional(),
 	diskUsagePercent: z.number().optional(),
+	diskEntries: z.array(diskMountSchema).optional(),
 	healthIssues: z.number().optional(),
 	healthIssuesList: z.array(healthIssueSchema).optional(),
 });
@@ -419,6 +436,7 @@ export const readarrStatisticsSchema = z.object({
 	diskFree: z.number().optional(),
 	diskUsed: z.number().optional(),
 	diskUsagePercent: z.number().optional(),
+	diskEntries: z.array(diskMountSchema).optional(),
 	healthIssues: z.number().optional(),
 	healthIssuesList: z.array(healthIssueSchema).optional(),
 });
@@ -435,6 +453,10 @@ export const combinedDiskStatsSchema = z.object({
 	diskFree: z.number(),
 	diskUsed: z.number(),
 	diskUsagePercent: z.number(),
+	/** Number of unique physical disks counted after de-duplication. */
+	diskCount: z.number().optional(),
+	/** Number of instances that contributed at least one unique disk. */
+	instanceCount: z.number().optional(),
 });
 
 export type CombinedDiskStats = z.infer<typeof combinedDiskStatsSchema>;

@@ -23,6 +23,7 @@ import {
 	fetchReadarrStatisticsWithSdk,
 	fetchSonarrStatisticsWithSdk,
 } from "../../lib/statistics/dashboard-statistics.js";
+import { buildCombinedDiskPayload } from "../../lib/statistics/statistics-utils.js";
 
 /**
  * Statistics-related routes for the dashboard
@@ -303,11 +304,6 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			error?: boolean;
 		}> = [];
 
-		// Track combined disk stats (properly deduplicated across all services)
-		let combinedDiskTotal = 0;
-		let combinedDiskFree = 0;
-		let combinedDiskUsed = 0;
-
 		for (const result of fetchResults) {
 			if (!result) continue;
 
@@ -317,13 +313,6 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				const shouldCountDisk = !storageGroupId || !globalSeenStorageGroups.has(storageGroupId);
 				if (storageGroupId) {
 					globalSeenStorageGroups.add(storageGroupId);
-				}
-
-				// Add to combined disk stats if this instance should count
-				if (shouldCountDisk) {
-					combinedDiskTotal += result.data.diskTotal ?? 0;
-					combinedDiskFree += result.data.diskFree ?? 0;
-					combinedDiskUsed += result.data.diskUsed ?? 0;
 				}
 
 				sonarrInstances.push({
@@ -340,13 +329,6 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				const shouldCountDisk = !storageGroupId || !globalSeenStorageGroups.has(storageGroupId);
 				if (storageGroupId) {
 					globalSeenStorageGroups.add(storageGroupId);
-				}
-
-				// Add to combined disk stats if this instance should count
-				if (shouldCountDisk) {
-					combinedDiskTotal += result.data.diskTotal ?? 0;
-					combinedDiskFree += result.data.diskFree ?? 0;
-					combinedDiskUsed += result.data.diskUsed ?? 0;
 				}
 
 				radarrInstances.push({
@@ -372,13 +354,6 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					globalSeenStorageGroups.add(storageGroupId);
 				}
 
-				// Add to combined disk stats if this instance should count
-				if (shouldCountDisk) {
-					combinedDiskTotal += result.data.diskTotal ?? 0;
-					combinedDiskFree += result.data.diskFree ?? 0;
-					combinedDiskUsed += result.data.diskUsed ?? 0;
-				}
-
 				lidarrInstances.push({
 					instanceId: result.instanceId,
 					instanceName: result.instanceName,
@@ -395,13 +370,6 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					globalSeenStorageGroups.add(storageGroupId);
 				}
 
-				// Add to combined disk stats if this instance should count
-				if (shouldCountDisk) {
-					combinedDiskTotal += result.data.diskTotal ?? 0;
-					combinedDiskFree += result.data.diskFree ?? 0;
-					combinedDiskUsed += result.data.diskUsed ?? 0;
-				}
-
 				readarrInstances.push({
 					instanceId: result.instanceId,
 					instanceName: result.instanceName,
@@ -412,12 +380,6 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				});
 			}
 		}
-
-		// Calculate combined disk usage percentage
-		const combinedDiskUsagePercent =
-			combinedDiskTotal > 0
-				? Math.min(100, Math.max(0, (combinedDiskUsed / combinedDiskTotal) * 100))
-				: 0;
 
 		const payload = {
 			sonarr: {
@@ -440,16 +402,15 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				instances: readarrInstances,
 				aggregate: aggregateReadarrStatistics(readarrInstances),
 			},
-			// Combined disk stats with proper cross-service storage group deduplication
-			combinedDisk:
-				combinedDiskTotal > 0
-					? {
-							diskTotal: combinedDiskTotal,
-							diskFree: combinedDiskFree,
-							diskUsed: combinedDiskUsed,
-							diskUsagePercent: combinedDiskUsagePercent,
-						}
-					: undefined,
+			// Combined disk stats, de-duplicated across services + storage groups.
+			// diskCount/instanceCount drive the transparency line in the UI so a
+			// large total reads as "N disks across M instances", never a silent lie.
+			combinedDisk: buildCombinedDiskPayload({
+				sonarr: sonarrInstances,
+				radarr: radarrInstances,
+				lidarr: lidarrInstances,
+				readarr: readarrInstances,
+			}),
 		};
 
 		return reply.send(dashboardStatisticsResponseSchema.parse(payload));

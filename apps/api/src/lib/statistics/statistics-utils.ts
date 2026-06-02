@@ -247,6 +247,171 @@ export const calculateDiskTotals = <T extends DiskSpaceEntry>(diskspace: T[]): D
 	};
 };
 
+/**
+ * Normalizes raw *arr diskspace entries into a stable mount shape that can be
+ * carried per-instance and later de-duplicated in `combineDiskStats`. Mount
+ * `path` is intentionally dropped: it's never used for de-duplication (see
+ * combineDiskStats) and shipping raw filesystem paths on the wire would leak
+ * the operator's layout, which incognito mode cannot mask in an API body.
+ */
+export const toDiskMounts = <T extends DiskSpaceEntry>(
+	diskspace: T[],
+): Array<{ totalSpace: number; freeSpace: number }> =>
+	diskspace.map((entry) => ({
+		totalSpace: entry?.totalSpace ?? 0,
+		freeSpace: entry?.freeSpace ?? 0,
+	}));
+
+/**
+ * One disk-bearing instance's contribution to the combined disk total.
+ */
+export interface DiskContributor {
+	storageGroupId?: string | null;
+	diskEntries: DiskSpaceEntry[];
+}
+
+/**
+ * Combined disk totals plus transparency counts.
+ */
+export interface CombinedDiskTotals extends DiskTotals {
+	diskCount: number;
+	instanceCount: number;
+}
+
+/**
+ * Combines disk stats across instances while avoiding the classic
+ * "one physical array, many *arr instances" over-count.
+ *
+ * De-duplication uses two signals, in order of trust:
+ *   1. Storage group — an explicit operator declaration that instances share
+ *      storage. Once a group is represented, later instances in the same group
+ *      are skipped entirely (this also absorbs read-timing skew in free space).
+ *   2. Disk fingerprint `${totalSpace}:${freeSpace}` — for instances with no
+ *      group set. `freeSpace` drifts byte-by-byte as data is written, so an
+ *      identical (total, free) pair across two instances is an extremely
+ *      reliable "same filesystem" signal. The only realistic collision is
+ *      near-empty disks of equal size (free ≈ total), where under-counting is
+ *      harmless because the user has abundant space.
+ *
+ * Mount path is deliberately not consulted: under Docker/Unraid the same array
+ * is bind-mounted under different container paths per service (/tv vs /movies),
+ * so it can neither confirm nor split a shared disk — hence it isn't carried at
+ * all (see toDiskMounts).
+ *
+ * `instanceCount` counts every instance that reports storage, regardless of
+ * whether its disks were de-duplicated away by either signal, so the UI can
+ * honestly say "N disks across M instances" — including for the operator who
+ * configured storage groups (the good-citizen path must not read as fewer
+ * instances than the un-configured one).
+ */
+export const combineDiskStats = (contributors: DiskContributor[]): CombinedDiskTotals => {
+	const seenGroups = new Set<string>();
+	const seenDisks = new Set<string>();
+	let total = 0;
+	let free = 0;
+	let diskCount = 0;
+	let instanceCount = 0;
+
+	for (const contributor of contributors) {
+		const usableEntries = (contributor.diskEntries ?? []).filter(
+			(entry) => (entry?.totalSpace ?? 0) > 0,
+		);
+		if (usableEntries.length > 0) instanceCount += 1;
+
+		const group = contributor.storageGroupId?.trim();
+		if (group) {
+			if (seenGroups.has(group)) continue;
+			seenGroups.add(group);
+		}
+
+		for (const entry of usableEntries) {
+			const entryTotal = entry.totalSpace ?? 0;
+			const entryFree = entry.freeSpace ?? 0;
+
+			const key = `${entryTotal}:${entryFree}`;
+			if (seenDisks.has(key)) continue;
+			seenDisks.add(key);
+
+			total += entryTotal;
+			free += entryFree;
+			diskCount += 1;
+		}
+	}
+
+	const used = Math.max(0, total - free);
+	const usagePercent = total > 0 ? clampPercentage((used / total) * 100) : 0;
+
+	return { total, free, used, usagePercent, diskCount, instanceCount };
+};
+
+/**
+ * Minimal per-instance shape needed to compute combined disk stats.
+ * Structurally compatible with the route's per-service instance arrays.
+ */
+export interface DiskBearingInstance {
+	storageGroupId?: string | null;
+	data: { diskEntries?: DiskSpaceEntry[] };
+}
+
+/**
+ * The four *arr services that carry library storage. Prowlarr is intentionally
+ * absent — it has no library storage and its statistics schema does not declare
+ * `diskEntries`, so a future contributor cannot accidentally feed Prowlarr
+ * instances into this helper without a deliberate type change.
+ */
+export interface DiskBearingServiceInstances {
+	sonarr: DiskBearingInstance[];
+	radarr: DiskBearingInstance[];
+	lidarr: DiskBearingInstance[];
+	readarr: DiskBearingInstance[];
+}
+
+/**
+ * Shape returned to the API response under `combinedDisk`.
+ */
+export interface CombinedDiskPayload {
+	diskTotal: number;
+	diskFree: number;
+	diskUsed: number;
+	diskUsagePercent: number;
+	diskCount: number;
+	instanceCount: number;
+}
+
+/**
+ * Assembles every disk-bearing instance into combineDiskStats contributors and
+ * returns the combinedDisk payload, or `undefined` when no instance reports any
+ * storage. This is the route-level assembly previously inlined in the dashboard
+ * statistics handler; extracted so its behavior (Prowlarr exclusion via the
+ * argument type, optional `diskEntries` fallback, empty-state guard) is
+ * directly testable without a Fastify route harness.
+ */
+export const buildCombinedDiskPayload = (
+	instances: DiskBearingServiceInstances,
+): CombinedDiskPayload | undefined => {
+	const contributors: DiskContributor[] = [
+		...instances.sonarr,
+		...instances.radarr,
+		...instances.lidarr,
+		...instances.readarr,
+	].map((entry) => ({
+		storageGroupId: entry.storageGroupId,
+		diskEntries: entry.data.diskEntries ?? [],
+	}));
+
+	const combined = combineDiskStats(contributors);
+	if (combined.total <= 0) return undefined;
+
+	return {
+		diskTotal: combined.total,
+		diskFree: combined.free,
+		diskUsed: combined.used,
+		diskUsagePercent: combined.usagePercent,
+		diskCount: combined.diskCount,
+		instanceCount: combined.instanceCount,
+	};
+};
+
 // ============================================================================
 // Health Issues Utilities
 // ============================================================================

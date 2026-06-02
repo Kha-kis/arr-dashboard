@@ -44,6 +44,7 @@ import {
 	mergeBreakdown,
 	processHealthIssues,
 	safeRequest,
+	toDiskMounts,
 	toNumber,
 	updateQualityBreakdown,
 	updateTagBreakdown,
@@ -377,6 +378,7 @@ export const fetchSonarrStatisticsWithSdk = async (
 		diskFree: diskTotals.free || undefined,
 		diskUsed: diskTotals.used || undefined,
 		diskUsagePercent: diskTotals.usagePercent,
+		diskEntries: toDiskMounts(diskspace),
 		healthIssues: healthIssuesList.length,
 		healthIssuesList,
 	};
@@ -494,6 +496,7 @@ export const fetchRadarrStatisticsWithSdk = async (
 		diskFree: diskTotals.free || undefined,
 		diskUsed: diskTotals.used || undefined,
 		diskUsagePercent: diskTotals.usagePercent,
+		diskEntries: toDiskMounts(diskspace),
 		healthIssues: healthIssuesList.length,
 		healthIssuesList,
 	};
@@ -739,6 +742,7 @@ export const fetchLidarrStatisticsWithSdk = async (
 		diskFree: diskTotals.free || undefined,
 		diskUsed: diskTotals.used || undefined,
 		diskUsagePercent: diskTotals.usagePercent,
+		diskEntries: toDiskMounts(diskspace),
 		healthIssues: healthIssuesList.length,
 		healthIssuesList,
 	};
@@ -870,6 +874,7 @@ export const fetchReadarrStatisticsWithSdk = async (
 		diskFree: diskTotals.free || undefined,
 		diskUsed: diskTotals.used || undefined,
 		diskUsagePercent: diskTotals.usagePercent,
+		diskEntries: toDiskMounts(diskspace),
 		healthIssues: healthIssuesList.length,
 		healthIssuesList,
 	};
