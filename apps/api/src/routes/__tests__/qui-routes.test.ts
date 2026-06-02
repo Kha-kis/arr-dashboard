@@ -266,9 +266,14 @@ describe("GET /qui/instances/:id/qbit/:instanceId/torrents/:hash/trackers", () =
 
 describe("GET /qui/instances/:id/qbit/:instanceId/torrents/:hash/cross-seed", () => {
 	it("returns cross-seed matches", async () => {
+		// The real `getCrossSeedMatches` applies the wire transform that strips
+		// passkeys from tracker URLs (see wireCrossSeedMatchSchema in
+		// client-factory.ts), so by the time the route sees the match the
+		// `tracker` field is already a bare hostname. The mock returns the
+		// post-transform shape — anything URL-shaped here would be a bug.
 		mockQuiClient.getCrossSeedMatches.mockResolvedValue([
 			{
-				tracker: "http://tracker.example/announce",
+				tracker: "tracker.example.com",
 				infoHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 				matchType: "content_path",
 				trackerHealth: "healthy",
@@ -280,6 +285,16 @@ describe("GET /qui/instances/:id/qbit/:instanceId/torrents/:hash/cross-seed", ()
 		);
 		expect(res.statusCode).toBe(200);
 		expect(JSON.parse(res.payload).matches).toHaveLength(1);
+
+		// Defense-in-depth: pin that the route never serializes a tracker URL
+		// with a passkey query param or an `/announce`-shaped path. The pattern
+		// requires URL form (scheme present) so it doesn't collide with the
+		// legitimate 40-hex `hash`/`infoHash` field. If a future change adds a
+		// raw-URL passthrough or someone "fixes" the mock to feed in
+		// pre-transform data, this assertion fires and reopens issue #486-style
+		// silent regression for tracker credentials.
+		expect(res.payload).not.toMatch(/https?:\/\/[^"\s]*?(\/announce|passkey=)/i);
+		expect(res.payload).not.toMatch(/"passkey"/i);
 	});
 });
 
