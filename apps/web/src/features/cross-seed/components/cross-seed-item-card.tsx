@@ -9,6 +9,7 @@ import {
 	getLinuxIsoName,
 	useIncognitoMode,
 } from "../../../lib/incognito";
+import { resolveHostnameBrand } from "../../../lib/tracker-brand";
 import { cn } from "../../../lib/utils";
 
 interface CrossSeedItemCardProps {
@@ -24,12 +25,49 @@ interface CrossSeedItemCardProps {
 	 * visible but is not selectable.
 	 */
 	selectDisabled?: boolean;
+	/**
+	 * qui's tracker-meta map (hostname → {iconUrl, name}) — the same registry
+	 * the library grid uses as the single source of truth for tracker
+	 * identity. Resolves each sibling's hostname to a brand icon + friendly
+	 * name. Undefined until the icons query resolves; falls back to the bare
+	 * hostname per-entry.
+	 */
+	trackerIcons?: Record<string, { iconUrl?: string; name?: string }>;
 }
 
-const MATCH_TYPE_COPY: Record<QuiCrossSeedMatch["matchType"], { label: string; tone: string }> = {
-	release: { label: "release-name match", tone: "text-emerald-300" },
-	content_path: { label: "content-path match", tone: "text-sky-300" },
-	name: { label: "torrent-name match", tone: "text-amber-300" },
+// Match type is *how* qui correlated the sibling — useful provenance, but low
+// signal day-to-day (most matches are `name`). Demoted to a quiet chip; the
+// tone-coded labels were misreading as warnings (amber `name` looked alarming
+// when it's the normal case). Kept with an explanatory tooltip instead.
+const MATCH_TYPE_LABEL: Record<QuiCrossSeedMatch["matchType"], string> = {
+	release: "release match",
+	content_path: "content-path match",
+	name: "name match",
+};
+
+const MATCH_TYPE_HINT: Record<QuiCrossSeedMatch["matchType"], string> = {
+	release: "qui matched these by release name — highest confidence.",
+	content_path: "qui matched these by on-disk content path — the copies share a location.",
+	name: "qui matched these by torrent name. Common when cross-seeds live at different paths.",
+};
+
+// Tracker health is the page's primary signal — surfaced as a prominent badge.
+// `unregistered` is actionable (dead cross-seed); `tracker_down` is usually
+// transient. Remediation happens in qui (siblings are read-only here per D7).
+const HEALTH_COPY: Record<
+	NonNullable<QuiCrossSeedMatch["trackerHealth"]>,
+	{ label: string; className: string; hint: string }
+> = {
+	unregistered: {
+		label: "Unregistered",
+		className: "bg-red-500/15 text-red-300 border-red-500/30",
+		hint: "The tracker no longer recognizes this torrent — likely a dead cross-seed. Remove it from qui to reclaim the entry (your library files stay; they belong to the primary torrent).",
+	},
+	tracker_down: {
+		label: "Tracker down",
+		className: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+		hint: "The tracker is currently unreachable. Usually transient — no action needed unless it persists.",
+	},
 };
 
 export const CrossSeedItemCard = ({
@@ -38,6 +76,7 @@ export const CrossSeedItemCard = ({
 	isSelected = false,
 	onToggleSelect,
 	selectDisabled = false,
+	trackerIcons,
 }: CrossSeedItemCardProps) => {
 	const [incognito] = useIncognitoMode();
 
@@ -49,8 +88,15 @@ export const CrossSeedItemCard = ({
 		? getLinuxInstanceName(item.primary?.qbitInstanceName ?? "")
 		: item.primary?.qbitInstanceName;
 
+	const attentionCount = item.siblings.filter((s) => s.trackerHealth).length;
+	const needsAttention = attentionCount > 0;
+
 	return (
-		<GlassmorphicCard padding="md" animationDelay={animationDelay}>
+		<GlassmorphicCard
+			padding="md"
+			animationDelay={animationDelay}
+			className={cn(needsAttention && "ring-1 ring-amber-500/40")}
+		>
 			<div className="flex items-start gap-3">
 				{onToggleSelect ? (
 					// Selection mode (Phase 4.2). The checkbox sits in the icon
@@ -88,6 +134,14 @@ export const CrossSeedItemCard = ({
 						</h3>
 						<ServiceBadge service={item.arrService} />
 						<span className="text-xs text-muted-foreground">{displayInstance}</span>
+						{needsAttention ? (
+							<span
+								className="rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-300"
+								title={`${attentionCount} cross-seed sibling${attentionCount === 1 ? "" : "s"} need attention`}
+							>
+								Needs attention
+							</span>
+						) : null}
 					</div>
 
 					{item.primary ? (
@@ -108,32 +162,61 @@ export const CrossSeedItemCard = ({
 						</div>
 						<ul className="space-y-1.5">
 							{item.siblings.map((sibling) => {
-								const matchCopy = MATCH_TYPE_COPY[sibling.matchType];
+								// Resolve tracker identity through the canonical helper so apex-
+								// domain customizations (e.g. `beyond-hd.me`) still match a sibling
+								// whose announce host is `tracker.beyond-hd.me`. In incognito we
+								// deliberately skip the registry so neither the brand name nor its
+								// icon leaks — `getLinuxIndexer` masks it.
+								const trackerBrand = incognito
+									? null
+									: resolveHostnameBrand(sibling.tracker, trackerIcons);
 								const trackerLabel = incognito
 									? getLinuxIndexer(sibling.tracker)
-									: sibling.tracker || "unknown tracker";
+									: trackerBrand?.name || "unknown tracker";
 								const siblingInstance = incognito
 									? getLinuxInstanceName(sibling.instanceName)
 									: sibling.instanceName;
+								const health = sibling.trackerHealth ? HEALTH_COPY[sibling.trackerHealth] : null;
 								return (
 									<li
 										key={`${sibling.instanceId}-${sibling.hash}`}
 										className={cn(
-											"flex items-center gap-2 text-xs rounded-lg",
-											"border border-border/30 bg-card/20 px-2.5 py-1.5",
+											"flex items-center gap-2 text-xs rounded-lg px-2.5 py-1.5 border",
+											health ? "border-amber-500/30 bg-amber-500/5" : "border-border/30 bg-card/20",
 										)}
 									>
-										<span className="font-medium text-foreground/90">{trackerLabel}</span>
+										<span className="flex items-center gap-1.5 font-medium text-foreground/90">
+											{trackerBrand?.iconUrl ? (
+												<img
+													src={trackerBrand.iconUrl}
+													alt=""
+													aria-hidden
+													className="h-3.5 w-3.5 rounded-sm object-contain"
+												/>
+											) : null}
+											{trackerLabel}
+										</span>
 										<span className="text-muted-foreground/70">·</span>
 										<span className="text-muted-foreground">{siblingInstance}</span>
-										<span className="text-muted-foreground/70">·</span>
-										<span className={cn("font-medium", matchCopy.tone)}>{matchCopy.label}</span>
-										{sibling.trackerHealth ? (
-											<>
-												<span className="text-muted-foreground/70">·</span>
-												<span className="text-red-300/90">{sibling.trackerHealth}</span>
-											</>
+										{health ? (
+											<span
+												className={cn(
+													"rounded border px-1.5 py-0.5 text-[10px] font-semibold",
+													health.className,
+												)}
+												title={health.hint}
+											>
+												{health.label}
+											</span>
 										) : null}
+										{/* Match type is provenance, not a signal — demoted to a
+										    quiet chip pushed to the row's end, tooltip on hover. */}
+										<span
+											className="ml-auto rounded bg-card/40 px-1.5 py-0.5 text-[10px] text-muted-foreground/60"
+											title={MATCH_TYPE_HINT[sibling.matchType]}
+										>
+											{MATCH_TYPE_LABEL[sibling.matchType]}
+										</span>
 									</li>
 								);
 							})}
@@ -141,11 +224,10 @@ export const CrossSeedItemCard = ({
 					</div>
 				</div>
 				{/*
-				 * Deep-link to qui omitted in v1 — qui doesn't expose a stable
-				 * per-torrent URL we can construct without knowing the
-				 * operator's qui webroot. Add the affordance when we resolve a
-				 * canonical deep-link shape (currently tracked in arc doc as
-				 * Phase 6 polish).
+				 * No per-row "Open in qui": qui exposes no stable per-torrent URL,
+				 * so every link would resolve to the same qui home page. The bridge
+				 * to qui lives once in the page header (CrossSeedClient) instead —
+				 * honest about the grain we actually have.
 				 */}
 			</div>
 		</GlassmorphicCard>

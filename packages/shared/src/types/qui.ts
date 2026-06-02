@@ -333,6 +333,12 @@ export const quiCrossSeedMatchSchema = z.object({
 	category: z.string().default(""),
 	savePath: z.string(),
 	contentPath: z.string(),
+	/**
+	 * Tracker *hostname* only (e.g. `tracker.example.com`). The backend strips
+	 * the path/query from qBittorrent's raw announce URL before sending this,
+	 * because that URL embeds the user's private passkey. Never carries a
+	 * secret; `""` when the host couldn't be derived.
+	 */
 	tracker: z.string(),
 	trackerHealth: z.enum(["unregistered", "tracker_down"]).optional(),
 	matchType: quiCrossSeedMatchTypeSchema,

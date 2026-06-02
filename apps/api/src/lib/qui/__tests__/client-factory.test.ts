@@ -65,6 +65,24 @@ const wireTorrent = (over: Record<string, unknown> = {}) => ({
 	...over,
 });
 
+// qui's cross-seed local-matches wire shape (snake_case, qBit-native fields).
+const wireCrossSeedMatch = (over: Record<string, unknown> = {}) => ({
+	hash: "sibhash",
+	name: "Sibling",
+	instance_id: 2,
+	instance_name: "qb2",
+	state: "uploading",
+	progress: 1,
+	size: 100,
+	category: "",
+	save_path: "/x",
+	content_path: "/x/Sibling",
+	tracker: "https://tracker.example.com/announce",
+	match_type: "release",
+	tags: "",
+	...over,
+});
+
 describe("createQuiClient", () => {
 	const fetchSpy = vi.spyOn(globalThis, "fetch");
 
@@ -224,6 +242,35 @@ describe("createQuiClient", () => {
 		const client = createQuiClient(buildApp(), buildInstance());
 		const matches = await client.getCrossSeedMatches(1, "abc123");
 		expect(matches).toEqual([]);
+	});
+
+	it("getCrossSeedMatches strips tracker passkeys down to the hostname", async () => {
+		fetchSpy.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					matches: [
+						// passkey in the path
+						wireCrossSeedMatch({
+							hash: "sib1",
+							tracker: "https://tracker.beyond-hd.me:2053/announce/SECRETPASSKEY123",
+						}),
+						// passkey in the query string
+						wireCrossSeedMatch({
+							hash: "sib2",
+							tracker: "https://hdbits.org/announce.php?passkey=SECRETPASSKEY456",
+						}),
+					],
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			),
+		);
+
+		const client = createQuiClient(buildApp(), buildInstance());
+		const matches = await client.getCrossSeedMatches(1, "abc123");
+
+		expect(matches.map((m) => m.tracker)).toEqual(["tracker.beyond-hd.me", "hdbits.org"]);
+		// Defense-in-depth: the secret must not survive anywhere in the payload.
+		expect(JSON.stringify(matches)).not.toContain("SECRETPASSKEY");
 	});
 
 	it("throws QuiApiError with mapped status on 4xx", async () => {

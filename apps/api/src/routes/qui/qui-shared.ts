@@ -1,6 +1,7 @@
 import { quiActionSchema } from "@arr/shared";
 import { z } from "zod";
 import { createQuiClient } from "../../lib/qui/client-factory.js";
+import { extractHostnameSafe } from "../../lib/qui/client-helpers.js";
 
 export const HASH_PARAM = z.object({
 	hash: z.string().regex(/^[a-fA-F0-9]{40,64}$/, "Invalid info hash"),
@@ -133,26 +134,10 @@ export interface ClusterCopy {
 	quiUnreachable: boolean;
 }
 
-/**
- * Safe hostname extraction from a qBit announce URL.
- *
- * Private-tracker announce URLs include a passkey in the path or query
- * (`tracker.beyond-hd.me:2053/announce/PASSKEY` or
- * `hdbits.org/announce.php?passkey=PASSKEY`). The passkey is equivalent
- * to login credentials — leaking it in an API response or log would
- * compromise the user's tracker account.
- *
- * Returns ONLY the hostname; discards path, query, fragment, userinfo.
- * Empty string on parse failure — better to lose tracker identification
- * than to risk passkey exposure.
- */
-export function extractHostnameSafe(url: string): string {
-	try {
-		return new URL(url).hostname;
-	} catch {
-		return "";
-	}
-}
+// Canonical home is the lib layer (lib/qui/client-helpers) so the
+// client-factory transform can share it without a routes→lib import.
+// Re-exported here for the route consumers that already import it.
+export { extractHostnameSafe };
 
 export function buildUnreachableCopy(hash: string): ClusterCopy {
 	return {
