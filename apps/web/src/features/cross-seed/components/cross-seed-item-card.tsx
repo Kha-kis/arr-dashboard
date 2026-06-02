@@ -9,6 +9,7 @@ import {
 	getLinuxIsoName,
 	useIncognitoMode,
 } from "../../../lib/incognito";
+import { resolveHostnameBrand } from "../../../lib/tracker-brand";
 import { cn } from "../../../lib/utils";
 
 interface CrossSeedItemCardProps {
@@ -161,14 +162,17 @@ export const CrossSeedItemCard = ({
 						</div>
 						<ul className="space-y-1.5">
 							{item.siblings.map((sibling) => {
-								// Resolve tracker identity through qui's registry (icon +
-								// friendly name), the same way the library grid does. In
-								// incognito we deliberately skip the registry so neither the
-								// brand name nor its icon leaks — `getLinuxIndexer` masks it.
-								const trackerMeta = incognito ? undefined : trackerIcons?.[sibling.tracker];
+								// Resolve tracker identity through the canonical helper so apex-
+								// domain customizations (e.g. `beyond-hd.me`) still match a sibling
+								// whose announce host is `tracker.beyond-hd.me`. In incognito we
+								// deliberately skip the registry so neither the brand name nor its
+								// icon leaks — `getLinuxIndexer` masks it.
+								const trackerBrand = incognito
+									? null
+									: resolveHostnameBrand(sibling.tracker, trackerIcons);
 								const trackerLabel = incognito
 									? getLinuxIndexer(sibling.tracker)
-									: (trackerMeta?.name ?? sibling.tracker) || "unknown tracker";
+									: trackerBrand?.name || "unknown tracker";
 								const siblingInstance = incognito
 									? getLinuxInstanceName(sibling.instanceName)
 									: sibling.instanceName;
@@ -182,9 +186,9 @@ export const CrossSeedItemCard = ({
 										)}
 									>
 										<span className="flex items-center gap-1.5 font-medium text-foreground/90">
-											{trackerMeta?.iconUrl ? (
+											{trackerBrand?.iconUrl ? (
 												<img
-													src={trackerMeta.iconUrl}
+													src={trackerBrand.iconUrl}
 													alt=""
 													aria-hidden
 													className="h-3.5 w-3.5 rounded-sm object-contain"
