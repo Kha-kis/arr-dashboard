@@ -300,9 +300,14 @@ export const quiTransferInfoSchema = z.object({
 export type QuiTransferInfo = z.infer<typeof quiTransferInfoSchema>;
 
 /**
- * Tracker entry for a torrent. `status` is the raw qBit int (kept for diagnostics);
- * `health` is the friendly mapping the UI renders. `tier` is optional because
- * qui omits it for pseudo-trackers like DHT/PeX/LSD.
+ * Tracker entry for a torrent — INTERNAL backend shape. `url` is the raw qBit
+ * announce URL with the user's tracker passkey embedded; the backend keeps it
+ * so the remove/edit mutations can match by exact URL. **Do NOT expose this
+ * shape to the wire as-is** — the GET `/torrents/:hash/trackers` route maps
+ * it to a hostname-only response shape (see torrent-routes.ts) so the passkey
+ * never leaks. `status` is the raw qBit int (kept for diagnostics); `health`
+ * is the friendly mapping the UI renders. `tier` is optional because qui
+ * omits it for pseudo-trackers like DHT/PeX/LSD.
  */
 export const quiTrackerSchema = z.object({
 	url: z.string(),
