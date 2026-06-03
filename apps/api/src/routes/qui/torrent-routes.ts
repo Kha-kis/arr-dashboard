@@ -41,8 +41,16 @@ export function registerTorrentRoutes(app: FastifyInstance): void {
 			const instance = await requireQuiInstance(app, userId, id);
 			const client = createQuiClient(app, instance);
 			const trackers = await client.getTrackers(qbitInstanceId, hash);
-			// Filter pseudo-trackers (DHT/PeX/LSD) from the visible list.
-			const realTrackers = trackers.filter((t) => !t.url.startsWith("** "));
+			// Filter pseudo-trackers (DHT/PeX/LSD) from the visible list, then
+			// strip the raw announce URL — it embeds the user's tracker passkey,
+			// which is effectively a credential and an ejection-worthy leak on
+			// most private trackers (#491). Replace with the hostname so the
+			// response is safe to render, screenshot, or capture in a HAR.
+			// Mutation routes (add/remove/edit) re-fetch the original URL
+			// server-side when qBit needs it, so the wire never carries it.
+			const realTrackers = trackers
+				.filter((t) => !t.url.startsWith("** "))
+				.map(({ url, ...rest }) => ({ ...rest, hostname: extractHostnameSafe(url) }));
 			return reply.send({ trackers: realTrackers });
 		},
 	);

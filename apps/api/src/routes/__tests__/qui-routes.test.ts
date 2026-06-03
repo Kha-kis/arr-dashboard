@@ -234,9 +234,32 @@ describe("GET /qui/instances/:id/torrents/by-hash/:hash", () => {
 });
 
 describe("GET /qui/instances/:id/qbit/:instanceId/torrents/:hash/trackers", () => {
-	it("returns trackers filtered to real trackers only", async () => {
+	it("returns trackers filtered to real trackers only, with passkey URLs stripped to hostnames (#491)", async () => {
+		// Mock the INTERNAL shape `getTrackers` resolves to (carries the raw
+		// announce URL with passkey embedded). The route is responsible for
+		// stripping it before serializing — this test pins that contract end
+		// to end so any future regression to a passthrough trips it.
 		mockQuiClient.getTrackers.mockResolvedValue([
-			{ url: "http://tracker.example:6969/announce", status: 1, health: "healthy" },
+			{
+				url: "https://tracker.example.org/abcdef0123456789abcdef0123456789abcdef01/announce",
+				status: 2,
+				health: "working",
+				msg: "",
+				numSeeds: 1,
+				numLeeches: 0,
+				numPeers: 1,
+				tier: 0,
+			},
+			// Pseudo-tracker (DHT/PeX/LSD) — must be filtered out.
+			{
+				url: "** [DHT] **",
+				status: 0,
+				health: "working",
+				msg: "",
+				numSeeds: 0,
+				numLeeches: 0,
+				numPeers: 0,
+			},
 		]);
 		const res = await injectAuthenticated(
 			"GET",
@@ -245,6 +268,19 @@ describe("GET /qui/instances/:id/qbit/:instanceId/torrents/:hash/trackers", () =
 		expect(res.statusCode).toBe(200);
 		const body = JSON.parse(res.payload);
 		expect(body.trackers).toHaveLength(1);
+
+		// Positive contract: the route exposes hostname, never the raw URL.
+		expect(body.trackers[0].hostname).toBe("tracker.example.org");
+		expect(body.trackers[0]).not.toHaveProperty("url");
+
+		// Defense-in-depth on the whole payload: no URL form, no `/announce`,
+		// no `passkey=` anywhere — catches a regression that re-introduces the
+		// raw URL via a sibling field, error path, or future extension.
+		expect(res.payload).not.toMatch(/https?:\/\//i);
+		expect(res.payload).not.toMatch(/\/announce/);
+		expect(res.payload).not.toMatch(/passkey/i);
+		// The passkey itself (40-hex from the mock) must not appear anywhere.
+		expect(res.payload).not.toContain("abcdef0123456789abcdef0123456789abcdef01");
 	});
 
 	it("returns 400 for invalid hash", async () => {
