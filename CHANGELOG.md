@@ -5,7 +5,7 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — qui Integration
+## [2.20.0] - 2026-06-03 — qui Integration
 
 This release introduces a deep, federated integration with [autobrr/qui](https://github.com/autobrr/qui)
 (qBittorrent UI) that turns arr-dashboard into a unified surface for the *arr
@@ -121,6 +121,39 @@ strikes against it. Per-instance toggle in the queue-cleaner config.
 - **Cross-host setups** — definitive hardlink-based correlation requires arr-dashboard process to have read access to both the qBit content tree and the *arr library tree. Enable per-instance via `Has Local Filesystem Access` in the qui service form; pair with `Path Prefix Rewrite` if mount points differ between qBit and arr-dashboard.
 - **Capability gaps surface explicitly** — old qBit versions get an amber banner in the drawer naming exactly which actions are disabled (super-seed, share-limit, etc.). Upgrade qBit to unlock them.
 - **Privacy mode** — qui's per-instance label, the qBit instance name, torrent titles, file paths, save paths, and drawer rename/move inputs are all anonymized in incognito mode just like other ARR instance labels.
+
+### Cross-seed integrity lens (#492)
+
+The cross-seed page reframes as an **integrity lens** for qui-sourced sibling visibility. Tracker health is now the primary signal — `match-type` was demoted from a tone-coded warning chip (the amber `name`-match was misreading as a problem when it's the normal case) to a quiet provenance chip with hover hint. A header "Open in qui" button bridges to the qui home page; per-row links omitted because qui has no stable per-torrent URL. The card uses the canonical `resolveHostnameBrand` resolver so apex-domain customizations in qui's tracker registry (e.g. `beyond-hd.me`) match siblings whose announce host is `tracker.beyond-hd.me`. Incognito mode skips the qui registry entirely so neither the brand name nor its icon leaks.
+
+### Security
+
+- **qui trackers route now ships hostname-only (#493, closes #491).** The `GET /qui/instances/:id/qbit/:instanceId/torrents/:hash/trackers` endpoint previously returned the raw qBittorrent announce URL — including the user's tracker passkey — in each entry's `url` field. Tracker passkeys are user-identifying tokens that act as credentials and are an ejection-worthy leak on most private trackers. The route now maps each entry to a `hostname` via `extractHostnameSafe` before sending. Mutation routes (remove/edit) re-fetch the original URL server-side so the wire never carries the secret.
+- **Cross-seed sibling display strips tracker passkeys at the wire transform boundary (#492).** The strip is applied inside `wireCrossSeedMatchSchema.transform` so every consumer inherits it automatically; the `tracker` field on `QuiCrossSeedMatch` is documented as hostname-only on the shared schema. `extractHostnameSafe` is now the single source of truth for tracker-identity stripping across the qui integration.
+- **qui inode-probe debug endpoint env-gated (#485, CodeQL alert #197).** The `/qui/debug/inode-probe` path now requires `QUI_DEBUG_INODE_PROBE=1` in addition to admin auth.
+
+### Statistics — Storage Available de-duplication (#490, closes #486)
+
+The overview "Storage available" card now de-duplicates disks shared across *arr instances. On single-array Unraid/Docker setups, every *arr instance reports the *same* physical array's free space, and the dashboard summed them — a #486 reporter saw ~485 TB on a 105 TB array (≈4× the real figure). A new `combineDiskStats` helper folds disks by storage group first, then by a `(totalSpace, freeSpace)` fingerprint for instances without a group set. The card now reads "of X available · N disks across M instances" so a large total is inspectable rather than asserted. Manual Storage Groups remain as the explicit override. Mount paths are deliberately not carried on the wire — they aren't used for dedup and would leak the operator's layout.
+
+### Library Cleanup — rejection memory (#482, closes #474)
+
+Items the operator declined now stay declined across cleanup runs — the cleaner no longer re-proposes the same item every cycle. Per-item audit log records when and why each rejection was registered.
+
+### Bug fixes
+
+- **Hunting detects grabs without the `eventType` filter (#479, closes #472).** Sonarr/Radarr versions that don't surface the field in history no longer silently miss new grabs. Paired with arr-sdk 0.7.1 (#480) which restores the server-side filter where it's available.
+- **Query strings now percent-encode spaces correctly (#476, closes #470)** in Seerr, Jellyfin, and Tautulli integrations.
+- **`HEAP_AUTO_SNAPSHOT=0` is honored as a kill switch (#477, closes #471)** for the heap monitor — previously the snapshotter could fire regardless.
+
+### Performance + memory
+
+- **`MALLOC_ARENA_MAX=2` set as the container default (#478, addresses #427 / #471).** Heap-monitor payload now surfaces `rssMB / heapTotalMB` ratio so users can distinguish a JS leak (heap-driven) from glibc allocator behavior (RSS-driven). See [[rss-vs-heap-discriminator]] for the diagnostic rule of thumb.
+
+### Maintenance
+
+- **Cross-seed discriminated-union narrowing (#484)** future-proofs the match-type switch so adding a new match type doesn't silently fall through.
+- arr-sdk 0.7.0 → 0.7.1 (#480), turbo 2.9.6 → 2.9.14 (#481), production and dev Dependabot sweeps (#469, #483).
 
 ## [2.19.0] - 2026-05-14
 
