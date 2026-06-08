@@ -79,17 +79,6 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				return reply.status(401).send({ error: "Unauthorized" });
 			}
 
-			// Check if OIDC provider is enabled - if so, passkey registration is disabled
-			const oidcProvider = await app.prisma.oIDCProvider.findFirst({
-				where: { enabled: true },
-			});
-
-			if (oidcProvider) {
-				return reply.status(403).send({
-					error: "Passkey authentication is disabled. Please use OIDC authentication.",
-				});
-			}
-
 			// Check if user has a password - passkeys require password authentication
 			const user = await app.prisma.user.findUnique({
 				where: { id: request.currentUser.id },
@@ -185,17 +174,6 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		"/passkey/login/options",
 		{ config: { rateLimit: PASSKEY_LOGIN_RATE_LIMIT } },
 		async (request, reply) => {
-			// Check if OIDC provider is enabled - if so, passkey login is disabled
-			const oidcProvider = await app.prisma.oIDCProvider.findFirst({
-				where: { enabled: true },
-			});
-
-			if (oidcProvider) {
-				return reply.status(403).send({
-					error: "Passkey authentication is disabled. Please use OIDC authentication.",
-				});
-			}
-
 			const options = await passkeyService.generateAuthenticationOptions();
 
 			// Generate temporary session ID for challenge storage

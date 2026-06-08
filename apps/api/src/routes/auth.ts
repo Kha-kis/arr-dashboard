@@ -50,17 +50,6 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.post("/register", { config: { rateLimit: REGISTER_RATE_LIMIT } }, async (request, reply) => {
-		// Check if OIDC provider is enabled - if so, password registration is disabled
-		const oidcProvider = await app.prisma.oIDCProvider.findFirst({
-			where: { enabled: true },
-		});
-
-		if (oidcProvider) {
-			return reply.status(403).send({
-				error: "Password registration is disabled. Please use OIDC authentication.",
-			});
-		}
-
 		const parsed = validateRequest(registerSchema, request.body);
 
 		const username = parsed.username.trim();
@@ -141,17 +130,6 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.post("/login", { config: { rateLimit: LOGIN_RATE_LIMIT } }, async (request, reply) => {
-		// Check if OIDC provider is enabled - if so, password auth is disabled
-		const oidcProvider = await app.prisma.oIDCProvider.findFirst({
-			where: { enabled: true },
-		});
-
-		if (oidcProvider) {
-			return reply.status(403).send({
-				error: "Password authentication is disabled. Please sign in with OIDC.",
-			});
-		}
-
 		const parsed = validateRequest(loginSchema, request.body);
 
 		const username = parsed.username.trim();
@@ -427,20 +405,6 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		const { username, currentPassword, newPassword, tmdbApiKey, traktAccessToken } =
 			validateRequest(updateAccountSchema, request.body);
-
-		// Check if OIDC provider is enabled - if so, password changes are disabled
-		if (newPassword) {
-			const oidcProvider = await app.prisma.oIDCProvider.findFirst({
-				where: { enabled: true },
-			});
-
-			if (oidcProvider) {
-				return reply.status(403).send({
-					error:
-						"Password authentication is disabled. Cannot add or change password while OIDC is enabled.",
-				});
-			}
-		}
 
 		// Check if at least one field is being updated
 		if (!username && !newPassword && tmdbApiKey === undefined && traktAccessToken === undefined) {
