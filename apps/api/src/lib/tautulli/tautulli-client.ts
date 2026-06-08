@@ -37,7 +37,10 @@ export interface TautulliMetadata {
 	guids: string[]; // e.g. ["tmdb://12345", "imdb://tt1234567"]
 	media_type: string;
 	title: string;
-	rating_key: string;
+	// Optional — Tautulli omits this when the rating_key isn't in its database
+	// (e.g., item deleted from Plex). Callers already have the rating_key as
+	// the request arg, so the response copy is informational only.
+	rating_key?: string;
 }
 
 export interface TautulliSessionItem {
