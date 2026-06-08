@@ -49,13 +49,13 @@
 	},
 	"devDependencies": {
 		"@types/better-sqlite3": "^7.6.13",
-		"@types/node": "^25.9.1",
+		"@types/node": "^25.9.2",
 		"@types/nodemailer": "^8.0.0",
 		"@types/pg": "^8.20.0",
 		"@types/web-push": "^3.6.4",
 		"tsup": "^8.5.1",
 		"tsx": "^4.22.3",
 		"typescript": "^6.0.3",
-		"vitest": "^4.1.7"
+		"vitest": "^4.1.8"
 	}
 }
