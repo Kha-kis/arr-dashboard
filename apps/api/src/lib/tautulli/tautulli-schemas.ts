@@ -122,10 +122,17 @@ export const tautulliUserWatchTimeStatsSchema = z.looseObject({
 	total_duration: z.number(),
 });
 
-/** get_metadata — inner data */
+/** get_metadata — inner data
+ *
+ * NOTE: All fields are tolerant of missing/null upstream values. Tautulli's
+ * get_metadata can return a "success" envelope with sparse or empty data when
+ * the rating_key isn't in its database (e.g., item deleted from Plex but still
+ * in watch history). Treat every field as best-effort: callers should not rely
+ * on rating_key being present here — they already have it as the request arg.
+ */
 export const tautulliMetadataSchema = z.looseObject({
-	guids: z.preprocess(v => v ?? [], z.array(z.string())),
-	media_type: z.preprocess(v => v ?? "unknown", z.string()),
-	title: z.preprocess(v => v ?? "", z.string()),
-	rating_key: z.coerce.string(),
+	guids: z.preprocess((v) => v ?? [], z.array(z.string())),
+	media_type: z.preprocess((v) => v ?? "unknown", z.string()),
+	title: z.preprocess((v) => v ?? "", z.string()),
+	rating_key: z.coerce.string().optional(),
 });
