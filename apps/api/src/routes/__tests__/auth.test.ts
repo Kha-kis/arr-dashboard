@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach, afterAll } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Module-level mocks — vi.hoisted for references before vi.mock
@@ -6,7 +6,9 @@ import { vi, describe, it, expect, beforeEach, afterAll } from "vitest";
 
 const { mockSessionService } = vi.hoisted(() => ({
 	mockSessionService: {
-		createSession: vi.fn().mockResolvedValue({ token: "mock-session-token", id: "mock-session-id" }),
+		createSession: vi
+			.fn()
+			.mockResolvedValue({ token: "mock-session-token", id: "mock-session-id" }),
 		attachCookie: vi.fn(),
 		invalidateSession: vi.fn().mockResolvedValue(undefined),
 		clearCookie: vi.fn(),
@@ -42,9 +44,13 @@ vi.mock("../../lib/auth/session-metadata.js", () => ({
 // ---------------------------------------------------------------------------
 
 import Fastify from "fastify";
-import { registerAuthRoutes } from "../auth.js";
 import { hashPassword, verifyPassword } from "../../lib/auth/password.js";
-import { setupAuthInjection, createInjectAuthenticated, createMockEncryptor } from "./test-helpers.js";
+import { registerAuthRoutes } from "../auth.js";
+import {
+	createInjectAuthenticated,
+	createMockEncryptor,
+	setupAuthInjection,
+} from "./test-helpers.js";
 
 // ---------------------------------------------------------------------------
 // Test data factories
@@ -226,7 +232,10 @@ describe("POST /auth/register", () => {
 		expect(mockSessionService.createSession).not.toHaveBeenCalled();
 	});
 
-	it("returns 403 when OIDC provider is enabled", async () => {
+	it("allows initial-setup registration even when an OIDC provider is enabled (#498)", async () => {
+		// Regression: adding an OIDC provider used to disable password registration
+		// globally, which locked admins out if the OIDC config was wrong. Password
+		// registration during initial setup must still succeed regardless of OIDC.
 		mockPrisma.oIDCProvider.findFirst.mockResolvedValue({ id: 1, enabled: true });
 
 		const res = await app.inject({
@@ -235,8 +244,9 @@ describe("POST /auth/register", () => {
 			payload: { username: "admin", password: "StrongPass1!" },
 		});
 
-		expect(res.statusCode).toBe(403);
-		expect(JSON.parse(res.payload).error).toContain("OIDC");
+		expect(res.statusCode).toBe(201);
+		expect(JSON.parse(res.payload).user.username).toBe("admin");
+		expect(mockSessionService.createSession).toHaveBeenCalled();
 	});
 });
 
@@ -318,7 +328,12 @@ describe("POST /auth/login", () => {
 		expect(mockSessionService.createSession).not.toHaveBeenCalled();
 	});
 
-	it("returns 403 when OIDC provider is enabled", async () => {
+	it("allows password login even when an OIDC provider is enabled (#498)", async () => {
+		// Regression: the global "any enabled OIDC provider → password disabled"
+		// gate locked admins out if their OIDC config was wrong. Password login
+		// must still work for users with hashedPassword set, regardless of OIDC.
+		mockPrisma.user.findFirst.mockResolvedValue(makeUser());
+		vi.mocked(verifyPassword).mockResolvedValue(true);
 		mockPrisma.oIDCProvider.findFirst.mockResolvedValue({ id: 1, enabled: true });
 
 		const res = await app.inject({
@@ -327,8 +342,9 @@ describe("POST /auth/login", () => {
 			payload: { username: "admin", password: "correctpassword" },
 		});
 
-		expect(res.statusCode).toBe(403);
-		expect(JSON.parse(res.payload).error).toContain("OIDC");
+		expect(res.statusCode).toBe(200);
+		expect(JSON.parse(res.payload).user.username).toBe("admin");
+		expect(mockSessionService.createSession).toHaveBeenCalled();
 	});
 });
 
@@ -428,5 +444,21 @@ describe("PATCH /auth/account", () => {
 		});
 
 		expect(res.statusCode).toBe(401);
+	});
+
+	it("allows password change even when an OIDC provider is enabled (#498)", async () => {
+		// Regression: the same global OIDC gate blocked authenticated password
+		// changes, so a user who set up OIDC and then noticed their password was
+		// out of date had no way to update it. Password change must still work.
+		mockPrisma.user.findUnique.mockResolvedValue(makeUser());
+		vi.mocked(verifyPassword).mockResolvedValue(true);
+		mockPrisma.oIDCProvider.findFirst.mockResolvedValue({ id: 1, enabled: true });
+
+		const res = await injectAuthenticated("PATCH", "/auth/account", {
+			body: { currentPassword: "oldpassword1", newPassword: "NewPass123!" },
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(hashPassword).toHaveBeenCalledWith("NewPass123!");
 	});
 });

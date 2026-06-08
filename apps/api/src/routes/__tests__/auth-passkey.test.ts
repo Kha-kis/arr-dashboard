@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach, afterAll } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Module-level mocks
@@ -6,7 +6,9 @@ import { vi, describe, it, expect, beforeEach, afterAll } from "vitest";
 
 const { mockSessionService } = vi.hoisted(() => ({
 	mockSessionService: {
-		createSession: vi.fn().mockResolvedValue({ token: "mock-session-token", id: "mock-session-id" }),
+		createSession: vi
+			.fn()
+			.mockResolvedValue({ token: "mock-session-token", id: "mock-session-id" }),
 		attachCookie: vi.fn(),
 		invalidateSession: vi.fn().mockResolvedValue(undefined),
 		clearCookie: vi.fn(),
@@ -65,7 +67,7 @@ vi.mock("../../lib/auth/session-metadata.js", () => ({
 
 import Fastify from "fastify";
 import { registerAuthPasskeyRoutes } from "../auth-passkey.js";
-import { setupAuthInjection, createInjectAuthenticated } from "./test-helpers.js";
+import { createInjectAuthenticated, setupAuthInjection } from "./test-helpers.js";
 
 // ---------------------------------------------------------------------------
 // Test data
@@ -178,15 +180,19 @@ describe("POST /auth/passkey/register/options", () => {
 		expect(mockPasskeyService.generateRegistrationOptions).not.toHaveBeenCalled();
 	});
 
-	it("returns 403 when OIDC provider is enabled", async () => {
+	it("allows passkey registration even when an OIDC provider is enabled (#498)", async () => {
+		// Regression: the global "any enabled OIDC provider → other auth disabled"
+		// gate also blocked passkey registration, so a user setting up MFA with
+		// passkeys after configuring OIDC was rejected. Passkey registration must
+		// still work for users with a password set, regardless of OIDC.
 		mockPrisma.oIDCProvider.findFirst.mockResolvedValue({ id: 1, enabled: true });
 
 		const res = await injectAuthenticated("POST", "/auth/passkey/register/options", {
 			body: {},
 		});
 
-		expect(res.statusCode).toBe(403);
-		expect(JSON.parse(res.payload).error).toContain("OIDC");
+		expect(res.statusCode).toBe(200);
+		expect(JSON.parse(res.payload).challenge).toBe("mock-challenge-base64url");
 	});
 
 	it("returns 403 when user has no password set", async () => {
@@ -206,6 +212,21 @@ describe("POST /auth/passkey/register/options", () => {
 // ===========================================================================
 
 describe("POST /auth/passkey/login/verify", () => {
+	it("issues passkey login options even when an OIDC provider is enabled (#498)", async () => {
+		// Regression: the same OIDC gate blocked /passkey/login/options, locking
+		// passkey users out if OIDC was misconfigured. Login options must still
+		// be issued regardless of OIDC presence.
+		mockPrisma.oIDCProvider.findFirst.mockResolvedValue({ id: 1, enabled: true });
+
+		const res = await app.inject({
+			method: "POST",
+			url: "/auth/passkey/login/options",
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(JSON.parse(res.payload).sessionId).toBeDefined();
+	});
+
 	it("returns 200 with user and session on valid credential", async () => {
 		// First: get login options to populate the challenge store
 		const optionsRes = await app.inject({
@@ -223,7 +244,12 @@ describe("POST /auth/passkey/login/verify", () => {
 			method: "POST",
 			url: "/auth/passkey/login/verify",
 			payload: {
-				response: { id: "cred-1", rawId: "cred-1", type: "public-key", response: { clientDataJSON: "test", authenticatorData: "test", signature: "test" } },
+				response: {
+					id: "cred-1",
+					rawId: "cred-1",
+					type: "public-key",
+					response: { clientDataJSON: "test", authenticatorData: "test", signature: "test" },
+				},
 				sessionId,
 			},
 		});
@@ -247,7 +273,12 @@ describe("POST /auth/passkey/login/verify", () => {
 			method: "POST",
 			url: "/auth/passkey/login/verify",
 			payload: {
-				response: { id: "cred-1", rawId: "cred-1", type: "public-key", response: { clientDataJSON: "test", authenticatorData: "test", signature: "test" } },
+				response: {
+					id: "cred-1",
+					rawId: "cred-1",
+					type: "public-key",
+					response: { clientDataJSON: "test", authenticatorData: "test", signature: "test" },
+				},
 				sessionId: "nonexistent-session-id",
 			},
 		});
@@ -274,7 +305,12 @@ describe("POST /auth/passkey/login/verify", () => {
 			method: "POST",
 			url: "/auth/passkey/login/verify",
 			payload: {
-				response: { id: "cred-1", rawId: "cred-1", type: "public-key", response: { clientDataJSON: "test", authenticatorData: "test", signature: "test" } },
+				response: {
+					id: "cred-1",
+					rawId: "cred-1",
+					type: "public-key",
+					response: { clientDataJSON: "test", authenticatorData: "test", signature: "test" },
+				},
 				sessionId,
 			},
 		});
