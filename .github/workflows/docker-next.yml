@@ -1,9 +1,9 @@
-name: Build and Push Beta Docker Image
+name: Build and Push Next Docker Image
 
 on:
   push:
     branches:
-      - "feat/v2.9"
+      - "next"
   workflow_dispatch:
 
 # Cancel in-progress runs when a new push arrives
@@ -75,7 +75,7 @@ jobs:
         run: |
           echo "short_sha=${FULL_SHA::7}" >> "$GITHUB_OUTPUT"
           echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
-          echo "version=2.9.0-beta.${RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "version=3.0.0-next.${RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           echo "platform_slug=${PLATFORM//\//-}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push by digest (GHCR)
@@ -95,8 +95,8 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.created=${{ steps.meta.outputs.build_date }}
           outputs: type=image,name=${{ env.GHCR_IMAGE }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache-beta-${{ steps.meta.outputs.platform_slug }}
-          cache-to: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache-beta-${{ steps.meta.outputs.platform_slug }},mode=max
+          cache-from: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache-next-${{ steps.meta.outputs.platform_slug }}
+          cache-to: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache-next-${{ steps.meta.outputs.platform_slug }},mode=max
 
       - name: Export GHCR digest
         env:
@@ -144,8 +144,8 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.created=${{ steps.meta.outputs.build_date }}
           outputs: type=image,name=${{ env.DOCKERHUB_IMAGE }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=registry,ref=${{ env.DOCKERHUB_IMAGE }}:buildcache-beta-${{ steps.meta.outputs.platform_slug }}
-          cache-to: type=registry,ref=${{ env.DOCKERHUB_IMAGE }}:buildcache-beta-${{ steps.meta.outputs.platform_slug }},mode=max
+          cache-from: type=registry,ref=${{ env.DOCKERHUB_IMAGE }}:buildcache-next-${{ steps.meta.outputs.platform_slug }}
+          cache-to: type=registry,ref=${{ env.DOCKERHUB_IMAGE }}:buildcache-next-${{ steps.meta.outputs.platform_slug }},mode=max
 
       - name: Export DockerHub digest
         if: steps.dockerhub-check.outputs.available == 'true'
@@ -225,8 +225,7 @@ jobs:
           RUN_NUMBER: ${{ github.run_number }}
         run: |
           TAGS=(
-            "-t" "${GHCR_IMAGE}:v2.9-beta"
-            "-t" "${GHCR_IMAGE}:feat-v2.9"
+            "-t" "${GHCR_IMAGE}:next"
             "-t" "${GHCR_IMAGE}:sha-${SHORT_SHA}"
             "-t" "${GHCR_IMAGE}:build-${RUN_NUMBER}"
           )
@@ -250,8 +249,7 @@ jobs:
           RUN_NUMBER: ${{ github.run_number }}
         run: |
           TAGS=(
-            "-t" "${DOCKERHUB_IMAGE}:v2.9-beta"
-            "-t" "${DOCKERHUB_IMAGE}:feat-v2.9"
+            "-t" "${DOCKERHUB_IMAGE}:next"
             "-t" "${DOCKERHUB_IMAGE}:sha-${SHORT_SHA}"
             "-t" "${DOCKERHUB_IMAGE}:build-${RUN_NUMBER}"
           )
@@ -275,17 +273,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull beta image
-        run: docker pull "${GHCR_IMAGE}:v2.9-beta"
+      - name: Pull next image
+        run: docker pull "${GHCR_IMAGE}:next"
 
       - name: Start container
         run: |
           docker run -d \
-            --name beta-verify \
+            --name next-verify \
             -p 3001:3001 \
             -e PUID=1000 \
             -e PGID=1000 \
-            "${GHCR_IMAGE}:v2.9-beta"
+            "${GHCR_IMAGE}:next"
 
       - name: Wait for /health and validate
         run: |
@@ -327,13 +325,13 @@ jobs:
           done
 
           echo "::error::Health check did not pass within 90 seconds"
-          docker logs beta-verify 2>&1 || true
+          docker logs next-verify 2>&1 || true
           exit 1
 
       - name: Dump container logs on failure
         if: failure()
-        run: docker logs beta-verify 2>&1
+        run: docker logs next-verify 2>&1
 
       - name: Cleanup
         if: always()
-        run: docker rm -f beta-verify 2>/dev/null || true
+        run: docker rm -f next-verify 2>/dev/null || true
