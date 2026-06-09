@@ -75,6 +75,79 @@ describe("OverviewTab — Storage transparency line", () => {
 		expect(screen.getByText(/1 disk across 4 instances/)).toBeInTheDocument();
 	});
 
+	it("does NOT show '(media only)' for dedup-only breakdowns (v2.21.0 review regression)", () => {
+		// The issue-#486 canonical case: 4 *arrs on 1 shared array, no root-folder
+		// exclusions. The breakdown carries 1 "media" + 3 "deduplicated" entries,
+		// so disks.length (4) > diskCount (1) purely from dedup. The "(media
+		// only)" label must NOT fire — it's gated on at least one
+		// "no-matching-root-folder" exclusion, not on a raw count comparison.
+		const sharedDisk = { path: "/data", totalSpace: 120 * TB, freeSpace: 105 * TB };
+		render(
+			<OverviewTab
+				{...baseProps({
+					diskTotal: 120 * TB,
+					diskFree: 105 * TB,
+					diskUsed: 15 * TB,
+					diskUsagePercent: 12.5,
+					diskCount: 1,
+					instanceCount: 4,
+					disks: [
+						{ ...sharedDisk, includedInRollup: true, reason: "media" },
+						{ ...sharedDisk, includedInRollup: false, reason: "deduplicated" },
+						{ ...sharedDisk, includedInRollup: false, reason: "deduplicated" },
+						{ ...sharedDisk, includedInRollup: false, reason: "deduplicated" },
+					],
+				})}
+			/>,
+			{ wrapper: Wrapper },
+		);
+
+		expect(screen.queryByText(/media only/)).not.toBeInTheDocument();
+		expect(screen.getByText(/1 disk across 4 instances/)).toBeInTheDocument();
+	});
+
+	it("shows '(media only)' when the root-folder filter excluded non-media disks", () => {
+		// The issue-#495 case: container `/` and `/config` excluded, `/data` kept.
+		render(
+			<OverviewTab
+				{...baseProps({
+					diskTotal: 131 * TB,
+					diskFree: 37 * TB,
+					diskUsed: 94 * TB,
+					diskUsagePercent: 71.8,
+					diskCount: 1,
+					instanceCount: 1,
+					disks: [
+						{
+							path: "/data",
+							totalSpace: 131 * TB,
+							freeSpace: 37 * TB,
+							includedInRollup: true,
+							reason: "media",
+						},
+						{
+							path: "/",
+							totalSpace: 1.5 * TB,
+							freeSpace: 0.5 * TB,
+							includedInRollup: false,
+							reason: "no-matching-root-folder",
+						},
+						{
+							path: "/config",
+							totalSpace: 0.5 * TB,
+							freeSpace: 0.4 * TB,
+							includedInRollup: false,
+							reason: "no-matching-root-folder",
+						},
+					],
+				})}
+			/>,
+			{ wrapper: Wrapper },
+		);
+
+		expect(screen.getByText(/1 of 3 disks \(media only\)/)).toBeInTheDocument();
+	});
+
 	it("pluralizes 'disks' when more than one unique disk is counted", () => {
 		render(
 			<OverviewTab
