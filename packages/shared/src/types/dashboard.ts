@@ -301,15 +301,48 @@ export type TagBreakdown = z.infer<typeof tagBreakdownSchema>;
  * A single mount/disk as reported by an *arr instance's diskspace endpoint.
  * Carried per-instance so the combined disk total can de-duplicate disks that
  * multiple instances report (e.g. several services bind-mounted to one array).
- * Mount path is intentionally omitted — it isn't used for de-duplication and
- * shipping raw filesystem paths would leak the operator's layout.
+ *
+ * `path` is carried so the #495 root-folder filter can decide which disks
+ * hold media. It IS sensitive (raw filesystem layout) — the frontend must
+ * pass it through `useIncognitoMode()` anonymization before rendering, the
+ * same way it does for instance names and titles. The server ships unredacted
+ * data; the UI gates display.
  */
 export const diskMountSchema = z.object({
+	path: z.string().optional(),
 	totalSpace: z.number().optional(),
 	freeSpace: z.number().optional(),
 });
 
 export type DiskMount = z.infer<typeof diskMountSchema>;
+
+/**
+ * Why a disk did or didn't make it into the combined rollup (issue #495).
+ *
+ *   - `"media"`                    — included; holds at least one *arr root folder
+ *   - `"no-matching-root-folder"`  — excluded; no root folder lives on this disk
+ *   - `"deduplicated"`             — excluded; another contributor already counted
+ *                                    this disk (storage-group or fingerprint match)
+ */
+export const diskFilterReasonSchema = z.enum(["media", "no-matching-root-folder", "deduplicated"]);
+
+export type DiskFilterReason = z.infer<typeof diskFilterReasonSchema>;
+
+/**
+ * Per-disk row used by the "Show all disks" breakdown UI. Mirrors the backend
+ * `DiskBreakdownEntry` produced by `combineDiskStats`. `path` carries the same
+ * sensitivity caveat as `diskMountSchema` — anonymize on the frontend.
+ */
+export const diskBreakdownEntrySchema = z.object({
+	path: z.string().optional(),
+	totalSpace: z.number(),
+	freeSpace: z.number(),
+	includedInRollup: z.boolean(),
+	reason: diskFilterReasonSchema,
+	instanceName: z.string().optional(),
+});
+
+export type DiskBreakdownEntry = z.infer<typeof diskBreakdownEntrySchema>;
 
 export const sonarrStatisticsSchema = z.object({
 	totalSeries: z.number(),
@@ -332,6 +365,13 @@ export const sonarrStatisticsSchema = z.object({
 	diskUsed: z.number().optional(),
 	diskUsagePercent: z.number().optional(),
 	diskEntries: z.array(diskMountSchema).optional(),
+	/**
+	 * Configured *arr root folder paths (#495). Used by the dashboard's
+	 * combined-disk rollup to filter out non-media disks (container `/`,
+	 * config volumes, etc.). Sensitive — frontend renders under incognito
+	 * anonymization.
+	 */
+	rootFolderPaths: z.array(z.string()).optional(),
 	healthIssues: z.number().optional(),
 	healthIssuesList: z.array(healthIssueSchema).optional(),
 });
@@ -356,6 +396,13 @@ export const radarrStatisticsSchema = z.object({
 	diskUsed: z.number().optional(),
 	diskUsagePercent: z.number().optional(),
 	diskEntries: z.array(diskMountSchema).optional(),
+	/**
+	 * Configured *arr root folder paths (#495). Used by the dashboard's
+	 * combined-disk rollup to filter out non-media disks (container `/`,
+	 * config volumes, etc.). Sensitive — frontend renders under incognito
+	 * anonymization.
+	 */
+	rootFolderPaths: z.array(z.string()).optional(),
 	healthIssues: z.number().optional(),
 	healthIssuesList: z.array(healthIssueSchema).optional(),
 });
@@ -411,6 +458,13 @@ export const lidarrStatisticsSchema = z.object({
 	diskUsed: z.number().optional(),
 	diskUsagePercent: z.number().optional(),
 	diskEntries: z.array(diskMountSchema).optional(),
+	/**
+	 * Configured *arr root folder paths (#495). Used by the dashboard's
+	 * combined-disk rollup to filter out non-media disks (container `/`,
+	 * config volumes, etc.). Sensitive — frontend renders under incognito
+	 * anonymization.
+	 */
+	rootFolderPaths: z.array(z.string()).optional(),
 	healthIssues: z.number().optional(),
 	healthIssuesList: z.array(healthIssueSchema).optional(),
 });
@@ -437,6 +491,13 @@ export const readarrStatisticsSchema = z.object({
 	diskUsed: z.number().optional(),
 	diskUsagePercent: z.number().optional(),
 	diskEntries: z.array(diskMountSchema).optional(),
+	/**
+	 * Configured *arr root folder paths (#495). Used by the dashboard's
+	 * combined-disk rollup to filter out non-media disks (container `/`,
+	 * config volumes, etc.). Sensitive — frontend renders under incognito
+	 * anonymization.
+	 */
+	rootFolderPaths: z.array(z.string()).optional(),
 	healthIssues: z.number().optional(),
 	healthIssuesList: z.array(healthIssueSchema).optional(),
 });
@@ -457,6 +518,12 @@ export const combinedDiskStatsSchema = z.object({
 	diskCount: z.number().optional(),
 	/** Number of instances that contributed at least one unique disk. */
 	instanceCount: z.number().optional(),
+	/**
+	 * Per-disk breakdown for the "Show all disks" UI (issue #495). Every
+	 * disk observed across contributors appears here with its final
+	 * include/exclude decision and reason. Defaults to `[]` for empty cases.
+	 */
+	disks: z.array(diskBreakdownEntrySchema).default([]),
 });
 
 export type CombinedDiskStats = z.infer<typeof combinedDiskStatsSchema>;

@@ -27,6 +27,7 @@ import {
 import { getServiceGradient, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import type { useStatisticsData } from "../hooks/useStatisticsData";
 import { formatBytes, formatPercent } from "../lib/formatters";
+import { DiskBreakdownPanel } from "./disk-breakdown-panel";
 import { ServiceQuickCard } from "./service-quick-card";
 import type { StatisticsTab } from "./statistics-tabs";
 
@@ -80,16 +81,25 @@ export const OverviewTab = ({
 	const [incognitoMode] = useIncognitoMode();
 	const [healthExpanded, setHealthExpanded] = useState(false);
 
-	// Transparency for the combined storage figure: when more than one instance
-	// feeds the total, show how many unique disks it collapsed to, so a large
-	// number reads as "N disks across M instances" instead of an unexplained sum.
+	// Transparency for the combined storage figure (#495). When the root-folder
+	// filter has trimmed the rollup from all reported disks down to media-only,
+	// surface that as "N of M disks" so the headline number is auditable from
+	// the card itself; the user can then expand the breakdown for the per-disk
+	// detail. When no filtering was needed (single-instance, no excluded disks),
+	// fall back to the pre-#495 "N disks across M instances" line.
+	const breakdownDisks = combinedDisk.disks ?? [];
+	const reportedDiskCount = breakdownDisks.length;
 	const storageDescription = (() => {
 		const base = `of ${formatBytes(combinedDisk.diskTotal)} available`;
 		const { diskCount, instanceCount } = combinedDisk;
+		if (reportedDiskCount > 0 && diskCount && reportedDiskCount > diskCount) {
+			return `${base} · ${diskCount} of ${reportedDiskCount} disks (media only)`;
+		}
 		if (!diskCount || !instanceCount || instanceCount <= 1) return base;
 		const disks = `${diskCount} disk${diskCount === 1 ? "" : "s"}`;
 		return `${base} · ${disks} across ${instanceCount} instances`;
 	})();
+	const [storageBreakdownOpen, setStorageBreakdownOpen] = useState(false);
 
 	// Fetch Plex summary data when Tautulli is available
 	const { data: tautulliStats } = useTautulliStats(30, hasTautulli);
@@ -289,6 +299,32 @@ export const OverviewTab = ({
 					animationDelay={550}
 				/>
 			</div>
+
+			{/* Per-disk breakdown — explains how the combined storage figure was
+			    computed (#495). Hidden by default; toggleable from the small text
+			    affordance below. Skipped entirely if the backend didn't return any
+			    breakdown entries (e.g. no instances reporting storage). */}
+			{breakdownDisks.length > 0 ? (
+				<div
+					className="animate-in fade-in slide-in-from-bottom-4 duration-500"
+					style={{ animationDelay: "600ms", animationFillMode: "backwards" }}
+				>
+					<button
+						type="button"
+						onClick={() => setStorageBreakdownOpen((v) => !v)}
+						className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+					>
+						{storageBreakdownOpen
+							? "Hide storage breakdown ▴"
+							: `Show storage breakdown (${breakdownDisks.length} disks) ▾`}
+					</button>
+					{storageBreakdownOpen ? (
+						<div className="mt-3">
+							<DiskBreakdownPanel disks={breakdownDisks} />
+						</div>
+					) : null}
+				</div>
+			) : null}
 
 			{/* Service Quick Stats */}
 			<div
