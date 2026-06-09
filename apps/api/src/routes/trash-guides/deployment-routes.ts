@@ -7,7 +7,47 @@
  */
 
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
 import { createDeploymentPreviewService } from "../../lib/trash-guides/deployment-preview.js";
+import { validateRequest } from "../../lib/utils/validate.js";
+
+const syncStrategyEnum = z.enum(["auto", "manual", "notify"]);
+
+const previewSchema = z.object({
+	templateId: z.string().min(1),
+	instanceId: z.string().min(1),
+});
+
+const executeSchema = z.object({
+	templateId: z.string().min(1),
+	instanceId: z.string().min(1),
+	syncStrategy: syncStrategyEnum.optional(),
+	// Map of trashId → resolution
+	conflictResolutions: z.record(z.string(), z.enum(["use_template", "keep_existing"])).optional(),
+});
+
+const syncStrategySchema = z.object({
+	templateId: z.string().min(1),
+	instanceId: z.string().min(1),
+	syncStrategy: syncStrategyEnum,
+});
+
+const syncStrategyBulkSchema = z.object({
+	templateId: z.string().min(1),
+	syncStrategy: syncStrategyEnum,
+});
+
+const unlinkSchema = z.object({
+	templateId: z.string().min(1),
+	instanceId: z.string().min(1),
+});
+
+const executeBulkSchema = z.object({
+	templateId: z.string().min(1),
+	instanceIds: z.array(z.string().min(1)).min(1),
+	syncStrategy: syncStrategyEnum.optional(),
+	instanceSyncStrategies: z.record(z.string(), syncStrategyEnum).optional(),
+});
 
 export async function deploymentRoutes(app: FastifyInstance) {
 	const { prisma, deploymentExecutor } = app;
@@ -17,21 +57,9 @@ export async function deploymentRoutes(app: FastifyInstance) {
 	 * POST /api/trash-guides/deployment/preview
 	 * Generate deployment preview showing what would change
 	 */
-	app.post<{
-		Body: {
-			templateId: string;
-			instanceId: string;
-		};
-	}>("/preview", async (request, reply) => {
-		const { templateId, instanceId } = request.body;
+	app.post("/preview", async (request, reply) => {
+		const { templateId, instanceId } = validateRequest(previewSchema, request.body);
 		const userId = request.currentUser!.id; // preHandler guarantees auth
-
-		if (!templateId || !instanceId) {
-			return reply.status(400).send({
-				success: false,
-				error: "templateId and instanceId are required",
-			});
-		}
 
 		const preview = await deploymentPreview.generatePreview(templateId, instanceId, userId);
 
@@ -64,23 +92,12 @@ export async function deploymentRoutes(app: FastifyInstance) {
 	 * POST /api/trash-guides/deployment/execute
 	 * Execute deployment to instance
 	 */
-	app.post<{
-		Body: {
-			templateId: string;
-			instanceId: string;
-			syncStrategy?: "auto" | "manual" | "notify";
-			conflictResolutions?: Record<string, "use_template" | "keep_existing">; // Map of trashId → resolution
-		};
-	}>("/execute", async (request, reply) => {
-		const { templateId, instanceId, syncStrategy, conflictResolutions } = request.body;
+	app.post("/execute", async (request, reply) => {
+		const { templateId, instanceId, syncStrategy, conflictResolutions } = validateRequest(
+			executeSchema,
+			request.body,
+		);
 		const userId = request.currentUser!.id; // preHandler guarantees auth
-
-		if (!templateId || !instanceId) {
-			return reply.status(400).send({
-				success: false,
-				error: "templateId and instanceId are required",
-			});
-		}
 
 		// Execute deployment with conflict resolutions
 		const result = await deploymentExecutor.deploySingleInstance(
@@ -126,30 +143,12 @@ export async function deploymentRoutes(app: FastifyInstance) {
 	 * PATCH /api/trash-guides/deployment/sync-strategy
 	 * Update sync strategy for an existing deployment (template-instance mapping)
 	 */
-	app.patch<{
-		Body: {
-			templateId: string;
-			instanceId: string;
-			syncStrategy: "auto" | "manual" | "notify";
-		};
-	}>("/sync-strategy", async (request, reply) => {
+	app.patch("/sync-strategy", async (request, reply) => {
 		const userId = request.currentUser!.id; // preHandler guarantees auth
-		const { templateId, instanceId, syncStrategy } = request.body;
-
-		if (!templateId || !instanceId || !syncStrategy) {
-			return reply.status(400).send({
-				success: false,
-				error: "templateId, instanceId, and syncStrategy are required",
-			});
-		}
-
-		// Validate syncStrategy value
-		if (!["auto", "manual", "notify"].includes(syncStrategy)) {
-			return reply.status(400).send({
-				success: false,
-				error: "syncStrategy must be 'auto', 'manual', or 'notify'",
-			});
-		}
+		const { templateId, instanceId, syncStrategy } = validateRequest(
+			syncStrategySchema,
+			request.body,
+		);
 
 		// Find the mapping and verify ownership
 		const mapping = await prisma.templateQualityProfileMapping.findFirst({
@@ -208,29 +207,9 @@ export async function deploymentRoutes(app: FastifyInstance) {
 	 * PATCH /api/trash-guides/deployment/sync-strategy-bulk
 	 * Update sync strategy for all instances of a template at once
 	 */
-	app.patch<{
-		Body: {
-			templateId: string;
-			syncStrategy: "auto" | "manual" | "notify";
-		};
-	}>("/sync-strategy-bulk", async (request, reply) => {
+	app.patch("/sync-strategy-bulk", async (request, reply) => {
 		const userId = request.currentUser!.id; // preHandler guarantees auth
-		const { templateId, syncStrategy } = request.body;
-
-		if (!templateId || !syncStrategy) {
-			return reply.status(400).send({
-				success: false,
-				error: "templateId and syncStrategy are required",
-			});
-		}
-
-		// Validate syncStrategy value
-		if (!["auto", "manual", "notify"].includes(syncStrategy)) {
-			return reply.status(400).send({
-				success: false,
-				error: "syncStrategy must be 'auto', 'manual', or 'notify'",
-			});
-		}
+		const { templateId, syncStrategy } = validateRequest(syncStrategyBulkSchema, request.body);
 
 		// Verify template belongs to user
 		const template = await prisma.trashTemplate.findFirst({
@@ -281,21 +260,9 @@ export async function deploymentRoutes(app: FastifyInstance) {
 	 * Remove a template from a single instance (unlink without deleting the template)
 	 * This removes the TemplateQualityProfileMapping but keeps Custom Formats on the instance
 	 */
-	app.delete<{
-		Body: {
-			templateId: string;
-			instanceId: string;
-		};
-	}>("/unlink", async (request, reply) => {
-		const { templateId, instanceId } = request.body;
+	app.delete("/unlink", async (request, reply) => {
+		const { templateId, instanceId } = validateRequest(unlinkSchema, request.body);
 		const userId = request.currentUser!.id; // preHandler guarantees auth
-
-		if (!templateId || !instanceId) {
-			return reply.status(400).send({
-				success: false,
-				error: "templateId and instanceId are required",
-			});
-		}
 
 		// Find the mapping
 		const mapping = await prisma.templateQualityProfileMapping.findFirst({
@@ -369,23 +336,12 @@ export async function deploymentRoutes(app: FastifyInstance) {
 	 * Execute deployment to multiple instances
 	 * Supports per-instance sync strategies via instanceSyncStrategies map
 	 */
-	app.post<{
-		Body: {
-			templateId: string;
-			instanceIds: string[];
-			syncStrategy?: "auto" | "manual" | "notify";
-			instanceSyncStrategies?: Record<string, "auto" | "manual" | "notify">;
-		};
-	}>("/execute-bulk", async (request, reply) => {
-		const { templateId, instanceIds, syncStrategy, instanceSyncStrategies } = request.body;
+	app.post("/execute-bulk", async (request, reply) => {
+		const { templateId, instanceIds, syncStrategy, instanceSyncStrategies } = validateRequest(
+			executeBulkSchema,
+			request.body,
+		);
 		const userId = request.currentUser!.id; // preHandler guarantees auth
-
-		if (!templateId || !instanceIds || instanceIds.length === 0) {
-			return reply.status(400).send({
-				success: false,
-				error: "templateId and instanceIds are required",
-			});
-		}
 
 		// Execute bulk deployment with per-instance strategies support
 		const result = await deploymentExecutor.deployBulkInstances(

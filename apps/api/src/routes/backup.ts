@@ -10,10 +10,10 @@ import {
 	updateBackupSettingsRequestSchema,
 } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
+import { z } from "zod";
 import { BackupService } from "../lib/backup/backup-service.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { resolveSecretsPath } from "../lib/utils/secrets-path.js";
-import { z } from "zod";
 import { validateRequest } from "../lib/utils/validate.js";
 import { getAppVersion } from "../lib/utils/version.js";
 
@@ -399,18 +399,14 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * PUT /backup/password
 	 * Set or update the backup password
 	 */
-	app.put<{
-		Body: { password: string };
-	}>("/password", async (request, reply) => {
-		const { password } = request.body;
+	const backupPasswordSchema = z.object({
+		password: z
+			.string({ message: "Password is required" })
+			.min(8, "Password must be at least 8 characters"),
+	});
 
-		if (!password || typeof password !== "string") {
-			return reply.status(400).send({ error: "Password is required" });
-		}
-
-		if (password.length < 8) {
-			return reply.status(400).send({ error: "Password must be at least 8 characters" });
-		}
+	app.put("/password", async (request, reply) => {
+		const { password } = validateRequest(backupPasswordSchema, request.body);
 
 		try {
 			const backupService = getBackupService();

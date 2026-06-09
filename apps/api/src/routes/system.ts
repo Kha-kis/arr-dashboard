@@ -2,21 +2,79 @@ import { createReadStream, existsSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import type { FastifyPluginCallback } from "fastify";
+import { z } from "zod";
 import { LOG_DIR, LOG_LEVEL, LOG_MAX_FILES, LOG_MAX_SIZE } from "../lib/logger.js";
 import { evaluateSecurityPosture } from "../lib/security/security-posture.js";
+import { validateRequest } from "../lib/utils/validate.js";
 import { getAppVersionInfo } from "../lib/utils/version.js";
 import { KNOWN_INTEGRATIONS } from "../lib/validation/index.js";
 import { integrationHealth } from "../lib/validation/integration-health.js";
 import { schemaFingerprints } from "../lib/validation/schema-fingerprint.js";
-import {
-	getAllValidationModes,
-	setValidationMode,
-	type ValidationMode,
-} from "../lib/validation/validate-batch.js";
+import { getAllValidationModes, setValidationMode } from "../lib/validation/validate-batch.js";
 import { validationQuarantine } from "../lib/validation/validation-quarantine.js";
 
 const RESTART_RATE_LIMIT = { max: 2, timeWindow: "5 minutes" };
 const LOGS_RATE_LIMIT = { max: 30, timeWindow: "1 minute" };
+
+const portSchema = (label: string) =>
+	z
+		.number({ message: `${label} must be a valid port number (1-65535)` })
+		.int(`${label} must be a valid port number (1-65535)`)
+		.min(1, `${label} must be a valid port number (1-65535)`)
+		.max(65535, `${label} must be a valid port number (1-65535)`);
+
+// Field-shape validation for PUT /system/settings. Cross-field rules (port
+// conflicts, the secure-cookies-without-proxy lockout guard) stay in the
+// handler — they need env defaults and a DB read, which is not Zod's job.
+const systemSettingsSchema = z.object({
+	apiPort: portSchema("API Port").optional(),
+	webPort: portSchema("Web Port").optional(),
+	listenAddress: z
+		.string()
+		.refine(
+			(addr) =>
+				["0.0.0.0", "127.0.0.1", "localhost", "::"].includes(addr) ||
+				/^(\d{1,3}\.){3}\d{1,3}$/.test(addr),
+			"Listen address must be a valid IP address (e.g., 0.0.0.0, 127.0.0.1)",
+		)
+		.optional(),
+	appName: z.string().optional(),
+	externalUrl: z
+		.string()
+		.nullable()
+		.optional()
+		.superRefine((value, ctx) => {
+			if (value === undefined || value === null || value === "") return;
+			try {
+				const url = new URL(value);
+				if (!["http:", "https:"].includes(url.protocol)) {
+					ctx.addIssue({
+						code: "custom",
+						message: "External URL must use http or https protocol",
+					});
+				}
+			} catch {
+				ctx.addIssue({
+					code: "custom",
+					message: "External URL must be a valid URL (e.g., https://arr.example.com)",
+				});
+			}
+		}),
+	trustProxy: z.boolean({ message: "trustProxy must be a boolean" }).optional(),
+	secureCookies: z
+		.boolean({ message: "secureCookies must be a boolean or null" })
+		.nullable()
+		.optional(),
+});
+
+const validationModeSchema = z.object({
+	integration: z.enum(KNOWN_INTEGRATIONS, {
+		message: `Unknown integration. Valid integrations: ${KNOWN_INTEGRATIONS.join(", ")}`,
+	}),
+	mode: z.enum(["strict", "tolerant", "log-only", "disabled"], {
+		message: "Invalid mode. Must be one of: strict, tolerant, log-only, disabled",
+	}),
+});
 
 /**
  * Extract a safe display identifier for the database connection.
@@ -97,79 +155,17 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Update system-wide settings
 	 * Note: Port and listen address changes require container restart to take effect
 	 */
-	app.put<{
-		Body: {
-			apiPort?: number;
-			webPort?: number;
-			listenAddress?: string;
-			appName?: string;
-			externalUrl?: string | null;
-			trustProxy?: boolean;
-			secureCookies?: boolean | null;
-		};
-	}>("/settings", async (request, reply) => {
+	app.put("/settings", async (request, reply) => {
 		const { apiPort, webPort, listenAddress, appName, externalUrl, trustProxy, secureCookies } =
-			request.body;
+			validateRequest(systemSettingsSchema, request.body);
 
-		// Validate port numbers if provided
-		if (apiPort !== undefined) {
-			if (!Number.isInteger(apiPort) || apiPort < 1 || apiPort > 65535) {
-				return reply.status(400).send({
-					success: false,
-					error: "API Port must be a valid port number (1-65535)",
-				});
-			}
-		}
-
-		if (webPort !== undefined) {
-			if (!Number.isInteger(webPort) || webPort < 1 || webPort > 65535) {
-				return reply.status(400).send({
-					success: false,
-					error: "Web Port must be a valid port number (1-65535)",
-				});
-			}
-		}
-
-		// Check for port conflicts
+		// Check for port conflicts (cross-field — stays out of the Zod schema)
 		const effectiveApiPort = apiPort ?? (Number(process.env.API_PORT) || 3001);
 		const effectiveWebPort = webPort ?? (Number(process.env.PORT) || 3000);
 		if (effectiveApiPort === effectiveWebPort) {
 			return reply.status(400).send({
 				success: false,
 				error: "API Port and Web Port cannot be the same",
-			});
-		}
-
-		// Validate listen address if provided
-		if (listenAddress !== undefined) {
-			// Must be a valid IP address or 0.0.0.0 or localhost
-			const validAddresses = ["0.0.0.0", "127.0.0.1", "localhost", "::"];
-			const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
-			const isValidIp = validAddresses.includes(listenAddress) || ipv4Regex.test(listenAddress);
-
-			if (!isValidIp) {
-				return reply.status(400).send({
-					success: false,
-					error: "Listen address must be a valid IP address (e.g., 0.0.0.0, 127.0.0.1)",
-				});
-			}
-		}
-
-		// Validate security settings
-		if (trustProxy !== undefined && typeof trustProxy !== "boolean") {
-			return reply.status(400).send({
-				success: false,
-				error: "trustProxy must be a boolean",
-			});
-		}
-		if (
-			secureCookies !== undefined &&
-			secureCookies !== null &&
-			typeof secureCookies !== "boolean"
-		) {
-			return reply.status(400).send({
-				success: false,
-				error: "secureCookies must be a boolean or null",
 			});
 		}
 
@@ -194,26 +190,8 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			});
 		}
 
-		// Validate external URL if provided (not null - null means clear)
-		if (externalUrl !== undefined && externalUrl !== null && externalUrl !== "") {
-			try {
-				const url = new URL(externalUrl);
-				// Must be http or https
-				if (!["http:", "https:"].includes(url.protocol)) {
-					return reply.status(400).send({
-						success: false,
-						error: "External URL must use http or https protocol",
-					});
-				}
-			} catch {
-				return reply.status(400).send({
-					success: false,
-					error: "External URL must be a valid URL (e.g., https://arr.example.com)",
-				});
-			}
-		}
-
-		// Normalize external URL (empty string becomes null)
+		// URL shape is validated by the schema; only normalize here
+		// (empty string becomes null = "clear the external URL")
 		const normalizedExternalUrl = externalUrl === "" ? null : externalUrl;
 
 		// Update or create settings
@@ -464,29 +442,10 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * PUT /system/validation-modes
 	 * Update validation mode for a specific integration.
 	 */
-	app.put<{
-		Body: { integration: string; mode: string };
-	}>("/validation-modes", async (request, reply) => {
-		const { integration, mode } = request.body;
+	app.put("/validation-modes", async (request, reply) => {
+		const { integration, mode } = validateRequest(validationModeSchema, request.body);
 
-		if (!integration || typeof integration !== "string") {
-			return reply.status(400).send({ error: "integration is required and must be a string" });
-		}
-
-		if (!KNOWN_INTEGRATIONS.includes(integration as (typeof KNOWN_INTEGRATIONS)[number])) {
-			return reply.status(400).send({
-				error: `Unknown integration "${integration}". Valid integrations: ${KNOWN_INTEGRATIONS.join(", ")}`,
-			});
-		}
-
-		const validModes: ValidationMode[] = ["strict", "tolerant", "log-only", "disabled"];
-		if (!validModes.includes(mode as ValidationMode)) {
-			return reply.status(400).send({
-				error: `Invalid mode "${mode}". Must be one of: ${validModes.join(", ")}`,
-			});
-		}
-
-		setValidationMode(integration, mode as ValidationMode);
+		setValidationMode(integration, mode);
 
 		request.log.info({ integration, mode }, "Validation mode updated");
 
