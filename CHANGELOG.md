@@ -5,6 +5,58 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.21.0] - 2026-06-09 — Media-only Storage & Auth Resilience
+
+The storage rollup now tells the truth about *media* space, and a
+misconfigured OIDC provider can no longer lock you out of your own
+dashboard.
+
+### Added
+
+- **Media-only storage rollup** (#504, #505, closes #495) — the combined
+  Storage figure now filters to disks that hold configured *arr root
+  folders, so the container's `/` and config volumes no longer inflate the
+  total. The filter is shape-agnostic (containerized, bare-metal Linux,
+  Windows-native incl. drive roots and UNC paths) and degrades safely:
+  instances with no root folders configured keep their full disk set.
+- **Storage breakdown panel** — a `Show storage breakdown` expansion under
+  the Statistics overview explains exactly how the headline was computed:
+  every disk every instance reported, with a per-row reason (`Media`,
+  `No *arr root folder on this disk`, `Already counted via another
+  instance`), usage bar, and instance attribution. Paths and instance
+  names are masked in incognito mode.
+- The Storage card subtitle now reads `N of M disks (media only)` when the
+  filter excluded non-media disks — keeping the existing
+  `N disks across M instances` line for dedup-only setups.
+
+### Fixed
+
+- **OIDC misconfiguration can no longer lock you out** (#501, closes #498)
+  — adding an OIDC provider used to silently disable password login,
+  password changes, passkey registration, and passkey login via five
+  global gates. A wrong redirect URI meant total lockout with no recovery
+  path. All five gates removed; password, passkey, and OIDC now coexist.
+  OIDC-only accounts are still correctly recognized as passwordless, and
+  the safeguarded "Remove password" flow (Settings → Password) remains the
+  explicit way to go OIDC-only.
+- **Tautulli sparse-metadata log flood** (#502, closes #497) — Tautulli's
+  `get_metadata` returns an empty payload for items deleted from Plex but
+  still in watch history; the strict schema turned each one into an
+  `UpstreamValidationError` warning on Dashboard/Pulse. The schema now
+  tolerates sparse responses; real connectivity failures still warn.
+
+### Security
+
+- Bumped the `hono` override to 4.12.21 (#503), closing CVE-2026-47673
+  through CVE-2026-47676 (transitive via Prisma's dev tooling; arr-dashboard
+  never imports the affected APIs directly).
+
+### Dependencies
+
+- Production group: 35 updates including Radix UI primitives and
+  `isomorphic-dompurify` 3.16.0 (#500); dev group: `vitest` 4.1.8,
+  `@types/node` 25.9.2 (#499).
+
 ## [2.20.0] - 2026-06-03 — qui Integration
 
 This release introduces a deep, federated integration with [autobrr/qui](https://github.com/autobrr/qui)
