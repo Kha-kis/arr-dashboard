@@ -2,7 +2,7 @@ name: Docker Smoke Test
 
 on:
   pull_request:
-    branches: [main, "feat/v2.9"]
+    branches: [main, next]
     paths-ignore:
       - "**.md"
       - "docs/**"
@@ -10,7 +10,7 @@ on:
       - "LICENSE"
       - ".gitignore"
   push:
-    branches: [main, "feat/v2.9"]
+    branches: [main, next]
     paths-ignore:
       - "**.md"
       - "docs/**"

@@ -2,7 +2,7 @@ name: Semgrep
 
 on:
   push:
-    branches: [main]
+    branches: [main, next]
     paths-ignore:
       - "**.md"
       - "docs/**"
@@ -10,7 +10,7 @@ on:
       - "LICENSE"
       - ".gitignore"
   pull_request:
-    branches: [main]
+    branches: [main, next]
     paths-ignore:
       - "**.md"
       - "docs/**"
