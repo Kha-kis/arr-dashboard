@@ -175,6 +175,7 @@ describe("combineDiskStats", () => {
 				diskUsagePercent: combined.usagePercent,
 				diskCount: combined.diskCount,
 				instanceCount: combined.instanceCount,
+				disks: combined.disks,
 			},
 		};
 
@@ -183,6 +184,32 @@ describe("combineDiskStats", () => {
 		expect(parsed.combinedDisk?.diskTotal).toBe(120 * TB); // not the 240 TB naive sum
 		expect(parsed.combinedDisk?.diskCount).toBe(1);
 		expect(parsed.combinedDisk?.instanceCount).toBe(2);
+		// The breakdown survives the parse: both contributors' entries are
+		// present (1 counted + 1 deduplicated), each with its reason intact.
+		expect(parsed.combinedDisk?.disks).toHaveLength(2);
+		expect(parsed.combinedDisk?.disks?.map((d) => d.reason)).toEqual(["media", "deduplicated"]);
+	});
+
+	it("defaults disks to [] when an older payload omits the field", () => {
+		// `combinedDiskStatsSchema` declares `disks` with `.default([])` — pin
+		// that contract so a future schema edit can't silently drop the field
+		// and break the frontend's `combinedDisk.disks ?? []` consumers.
+		const parsed = dashboardStatisticsResponseSchema.parse({
+			sonarr: { instances: [], aggregate: undefined },
+			radarr: { instances: [], aggregate: undefined },
+			prowlarr: { instances: [], aggregate: undefined },
+			lidarr: { instances: [], aggregate: undefined },
+			readarr: { instances: [], aggregate: undefined },
+			combinedDisk: {
+				diskTotal: 1,
+				diskFree: 1,
+				diskUsed: 0,
+				diskUsagePercent: 0,
+				// disks intentionally omitted — legacy shape
+			},
+		});
+
+		expect(parsed.combinedDisk?.disks).toEqual([]);
 	});
 });
 
@@ -377,6 +404,46 @@ describe("filterToRootFolderDisks (#495)", () => {
 		const { included } = filterToRootFolderDisks(entries, ["/data/tv", "/data/movies"]);
 
 		expect(included.map((e) => e.path)).toEqual(["/data"]);
+	});
+
+	it("matches Windows-native *arr paths (backslash separators, drive roots)", () => {
+		// Regression (v2.21.0 pre-release review): isPathPrefix only recognized
+		// "/" as a separator, so a Windows-native Sonarr reporting `C:\` and a
+		// root folder `C:\Media\TV` never matched — the rollup dropped to 0 and
+		// the storage card disappeared entirely. Backslashes are normalized to
+		// forward slashes before comparison, making `C:` a valid path-segment
+		// prefix of `C:/Media/TV`.
+		const entries = [
+			{ path: "C:\\", totalSpace: 1 * TB, freeSpace: 0.2 * TB }, // OS drive
+			{ path: "D:\\", totalSpace: 8 * TB, freeSpace: 3 * TB }, // media drive
+		];
+
+		const { included, excluded } = filterToRootFolderDisks(entries, ["D:\\Media\\TV"]);
+
+		expect(included.map((e) => e.path)).toEqual(["D:\\"]);
+		expect(excluded.map((e) => e.path)).toEqual(["C:\\"]);
+	});
+
+	it("does not let a Windows drive root match a different drive's root folder", () => {
+		// `C:` must not be treated as a prefix of `D:/Media` — the path-segment
+		// rule still applies after slash normalization.
+		const entries = [{ path: "C:\\", totalSpace: 1 * TB, freeSpace: 0.2 * TB }];
+
+		const { included, excluded } = filterToRootFolderDisks(entries, ["D:\\Media"]);
+
+		expect(included).toEqual([]);
+		expect(excluded.map((e) => e.path)).toEqual(["C:\\"]);
+	});
+
+	it("matches UNC paths (\\\\server\\share)", () => {
+		const entries = [
+			{ path: "\\\\nas\\media", totalSpace: 100 * TB, freeSpace: 40 * TB },
+			{ path: "C:\\", totalSpace: 1 * TB, freeSpace: 0.5 * TB },
+		];
+
+		const { included } = filterToRootFolderDisks(entries, ["\\\\nas\\media\\tv"]);
+
+		expect(included.map((e) => e.path)).toEqual(["\\\\nas\\media"]);
 	});
 
 	it("excludes everything when no disk's path is a prefix of any root folder", () => {

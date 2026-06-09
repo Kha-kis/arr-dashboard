@@ -82,17 +82,23 @@ export const OverviewTab = ({
 	const [healthExpanded, setHealthExpanded] = useState(false);
 
 	// Transparency for the combined storage figure (#495). When the root-folder
-	// filter has trimmed the rollup from all reported disks down to media-only,
-	// surface that as "N of M disks" so the headline number is auditable from
-	// the card itself; the user can then expand the breakdown for the per-disk
-	// detail. When no filtering was needed (single-instance, no excluded disks),
-	// fall back to the pre-#495 "N disks across M instances" line.
+	// filter actually EXCLUDED non-media disks, surface that as "N of M disks
+	// (media only)" so the headline number is auditable from the card itself;
+	// the user can then expand the breakdown for the per-disk detail.
+	//
+	// The gate is "at least one no-matching-root-folder exclusion", NOT a raw
+	// count comparison: the breakdown array also contains `deduplicated`
+	// entries (the issue-#486 shared-array case), and for a 4-instances-on-1-
+	// array user with no root-folder filtering, `disks.length (4) > diskCount
+	// (1)` is true purely from dedup — that user must keep seeing the original
+	// "1 disk across 4 instances" line, not a misleading "(media only)".
 	const breakdownDisks = combinedDisk.disks ?? [];
 	const reportedDiskCount = breakdownDisks.length;
+	const hasNonMediaExclusions = breakdownDisks.some((d) => d.reason === "no-matching-root-folder");
 	const storageDescription = (() => {
 		const base = `of ${formatBytes(combinedDisk.diskTotal)} available`;
 		const { diskCount, instanceCount } = combinedDisk;
-		if (reportedDiskCount > 0 && diskCount && reportedDiskCount > diskCount) {
+		if (reportedDiskCount > 0 && diskCount && hasNonMediaExclusions) {
 			return `${base} · ${diskCount} of ${reportedDiskCount} disks (media only)`;
 		}
 		if (!diskCount || !instanceCount || instanceCount <= 1) return base;
