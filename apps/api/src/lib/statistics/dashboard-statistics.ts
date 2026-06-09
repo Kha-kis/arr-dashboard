@@ -253,8 +253,9 @@ export const fetchSonarrStatisticsWithSdk = async (
 	// buffer-then-parse pattern is fine. Series goes through the streaming
 	// path when `options.streamItems` is provided (production) so peak
 	// memory is bounded by the aggregation state, not library size.
-	const [diskspace, health, cutoffUnmet, qualityProfiles, tags] = await Promise.all([
+	const [diskspace, rootFolders, health, cutoffUnmet, qualityProfiles, tags] = await Promise.all([
 		safeRequest(() => client.diskSpace.getAll()).then((r) => r ?? []),
+		safeRequest(() => client.rootFolder.getAll()).then((r) => r ?? []),
 		safeRequest(() => client.health.getAll()).then((r) => r ?? []),
 		safeRequest(() => client.wanted.cutoff({ page: 1, pageSize: 1 })).then(
 			(r) => r ?? { totalRecords: 0 },
@@ -379,6 +380,13 @@ export const fetchSonarrStatisticsWithSdk = async (
 		diskUsed: diskTotals.used || undefined,
 		diskUsagePercent: diskTotals.usagePercent,
 		diskEntries: toDiskMounts(diskspace),
+		// Configured *arr root folders — used by the dashboard's combined-disk
+		// rollup to filter to media disks only (issue #495). We extract just the
+		// path string; the rest of the RootFolder shape (accessible, freeSpace,
+		// etc.) isn't needed for the filter.
+		rootFolderPaths: rootFolders
+			.map((r) => r.path)
+			.filter((p): p is string => typeof p === "string" && p.length > 0),
 		healthIssues: healthIssuesList.length,
 		healthIssuesList,
 	};
@@ -408,8 +416,9 @@ export const fetchRadarrStatisticsWithSdk = async (
 		instanceExternalUrl,
 	};
 
-	const [diskspace, health, cutoffUnmet, qualityProfiles, tags] = await Promise.all([
+	const [diskspace, rootFolders, health, cutoffUnmet, qualityProfiles, tags] = await Promise.all([
 		safeRequest(() => client.diskSpace.getAll()).then((r) => r ?? []),
+		safeRequest(() => client.rootFolder.getAll()).then((r) => r ?? []),
 		safeRequest(() => client.health.getAll()).then((r) => r ?? []),
 		safeRequest(() => client.wanted.cutoff({ page: 1, pageSize: 1 })).then(
 			(r) => r ?? { totalRecords: 0 },
@@ -497,6 +506,13 @@ export const fetchRadarrStatisticsWithSdk = async (
 		diskUsed: diskTotals.used || undefined,
 		diskUsagePercent: diskTotals.usagePercent,
 		diskEntries: toDiskMounts(diskspace),
+		// Configured *arr root folders — used by the dashboard's combined-disk
+		// rollup to filter to media disks only (issue #495). We extract just the
+		// path string; the rest of the RootFolder shape (accessible, freeSpace,
+		// etc.) isn't needed for the filter.
+		rootFolderPaths: rootFolders
+			.map((r) => r.path)
+			.filter((p): p is string => typeof p === "string" && p.length > 0),
 		healthIssues: healthIssuesList.length,
 		healthIssuesList,
 	};
@@ -630,13 +646,15 @@ export const fetchLidarrStatisticsWithSdk = async (
 		instanceExternalUrl,
 	};
 
-	const [diskspace, health, cutoffUnmetResult, qualityProfiles, tags] = await Promise.all([
-		safeRequest(() => client.diskSpace.get()).then((r) => r ?? []),
-		safeRequest(() => client.health.get()).then((r) => r ?? []),
-		safeRequest(() => client.wanted.getCutoffUnmet({ page: 1, pageSize: 1 })),
-		safeRequest(() => client.qualityProfile.getAll()).then((r) => r ?? []),
-		safeRequest(() => client.tag.getAll()).then((r) => r ?? []),
-	]);
+	const [diskspace, rootFolders, health, cutoffUnmetResult, qualityProfiles, tags] =
+		await Promise.all([
+			safeRequest(() => client.diskSpace.get()).then((r) => r ?? []),
+			safeRequest(() => client.rootFolder.getAll()).then((r) => r ?? []),
+			safeRequest(() => client.health.get()).then((r) => r ?? []),
+			safeRequest(() => client.wanted.getCutoffUnmet({ page: 1, pageSize: 1 })),
+			safeRequest(() => client.qualityProfile.getAll()).then((r) => r ?? []),
+			safeRequest(() => client.tag.getAll()).then((r) => r ?? []),
+		]);
 	const cutoffUnmet = cutoffUnmetResult ?? { totalRecords: 0 };
 
 	const profileIdToName = buildProfileIdToNameMap(qualityProfiles);
@@ -743,6 +761,13 @@ export const fetchLidarrStatisticsWithSdk = async (
 		diskUsed: diskTotals.used || undefined,
 		diskUsagePercent: diskTotals.usagePercent,
 		diskEntries: toDiskMounts(diskspace),
+		// Configured *arr root folders — used by the dashboard's combined-disk
+		// rollup to filter to media disks only (issue #495). We extract just the
+		// path string; the rest of the RootFolder shape (accessible, freeSpace,
+		// etc.) isn't needed for the filter.
+		rootFolderPaths: rootFolders
+			.map((r) => r.path)
+			.filter((p): p is string => typeof p === "string" && p.length > 0),
 		healthIssues: healthIssuesList.length,
 		healthIssuesList,
 	};
@@ -772,13 +797,15 @@ export const fetchReadarrStatisticsWithSdk = async (
 		instanceExternalUrl,
 	};
 
-	const [diskspace, health, cutoffUnmetResult, qualityProfiles, tags] = await Promise.all([
-		safeRequest(() => client.diskSpace.getAll()).then((r) => r ?? []),
-		safeRequest(() => client.health.getAll()).then((r) => r ?? []),
-		safeRequest(() => client.wanted.getCutoffUnmet({ page: 1, pageSize: 1 })),
-		safeRequest(() => client.qualityProfile.getAll()).then((r) => r ?? []),
-		safeRequest(() => client.tag.getAll()).then((r) => r ?? []),
-	]);
+	const [diskspace, rootFolders, health, cutoffUnmetResult, qualityProfiles, tags] =
+		await Promise.all([
+			safeRequest(() => client.diskSpace.getAll()).then((r) => r ?? []),
+			safeRequest(() => client.rootFolder.getAll()).then((r) => r ?? []),
+			safeRequest(() => client.health.getAll()).then((r) => r ?? []),
+			safeRequest(() => client.wanted.getCutoffUnmet({ page: 1, pageSize: 1 })),
+			safeRequest(() => client.qualityProfile.getAll()).then((r) => r ?? []),
+			safeRequest(() => client.tag.getAll()).then((r) => r ?? []),
+		]);
 	const cutoffUnmet = cutoffUnmetResult ?? { totalRecords: 0 };
 
 	const profileIdToName = buildProfileIdToNameMap(qualityProfiles);
@@ -875,6 +902,13 @@ export const fetchReadarrStatisticsWithSdk = async (
 		diskUsed: diskTotals.used || undefined,
 		diskUsagePercent: diskTotals.usagePercent,
 		diskEntries: toDiskMounts(diskspace),
+		// Configured *arr root folders — used by the dashboard's combined-disk
+		// rollup to filter to media disks only (issue #495). We extract just the
+		// path string; the rest of the RootFolder shape (accessible, freeSpace,
+		// etc.) isn't needed for the filter.
+		rootFolderPaths: rootFolders
+			.map((r) => r.path)
+			.filter((p): p is string => typeof p === "string" && p.length > 0),
 		healthIssues: healthIssuesList.length,
 		healthIssuesList,
 	};
