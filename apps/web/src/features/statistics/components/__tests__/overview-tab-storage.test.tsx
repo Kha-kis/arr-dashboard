@@ -30,10 +30,15 @@ function Wrapper({ children }: { children: ReactNode }) {
 
 type Props = ComponentProps<typeof OverviewTab>;
 
-const baseProps = (combinedDisk: Props["combinedDisk"]): Props =>
+const baseProps = (
+	combinedDisk: Omit<Props["combinedDisk"], "disks"> &
+		Partial<Pick<Props["combinedDisk"], "disks">>,
+): Props =>
 	({
 		allHealthIssues: [],
-		combinedDisk,
+		// Default `disks` to [] for fixtures that don't care about the breakdown;
+		// individual cases can still override by supplying it.
+		combinedDisk: { disks: [], ...combinedDisk },
 		sonarrRows: [],
 		radarrRows: [],
 		lidarrRows: [],

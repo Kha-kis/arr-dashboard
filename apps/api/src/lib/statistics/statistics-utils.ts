@@ -67,9 +67,16 @@ interface HealthEntry {
 }
 
 /**
- * Generic disk space entry from ARR API
+ * Generic disk space entry from ARR API.
+ *
+ * `path` is optional both because the SDK reports it as nullable and because
+ * pre-#495 call sites carried this shape without it. Newer callers populate
+ * `path` so the root-folder filter (see filterToRootFolderDisks) can decide
+ * which disks belong in the media rollup. Treat `path` as sensitive text on
+ * the wire — the frontend should anonymize it under incognito mode.
  */
 interface DiskSpaceEntry {
+	path?: string | null;
 	totalSpace?: number | null;
 	freeSpace?: number | null;
 }
@@ -249,60 +256,193 @@ export const calculateDiskTotals = <T extends DiskSpaceEntry>(diskspace: T[]): D
 
 /**
  * Normalizes raw *arr diskspace entries into a stable mount shape that can be
- * carried per-instance and later de-duplicated in `combineDiskStats`. Mount
- * `path` is intentionally dropped: it's never used for de-duplication (see
- * combineDiskStats) and shipping raw filesystem paths on the wire would leak
- * the operator's layout, which incognito mode cannot mask in an API body.
+ * carried per-instance and later de-duplicated in `combineDiskStats`.
+ *
+ * `path` is preserved on the wire so the #495 root-folder filter can decide
+ * which disks hold media. Raw mount paths do leak the operator's layout in
+ * principle — the dashboard mitigates this on the frontend by passing `path`
+ * through `useIncognitoMode()`-aware anonymization before render, matching the
+ * pattern used for instance names and titles. Pre-#495 the path was dropped
+ * here to avoid that wire-side leak; the trade-off shifted with the breakdown
+ * UI, which needs to show users what's being included vs excluded by path.
  */
 export const toDiskMounts = <T extends DiskSpaceEntry>(
 	diskspace: T[],
-): Array<{ totalSpace: number; freeSpace: number }> =>
+): Array<{ path?: string; totalSpace: number; freeSpace: number }> =>
 	diskspace.map((entry) => ({
+		path: entry?.path ?? undefined,
 		totalSpace: entry?.totalSpace ?? 0,
 		freeSpace: entry?.freeSpace ?? 0,
 	}));
 
 /**
  * One disk-bearing instance's contribution to the combined disk total.
+ *
+ * `rootFolderPaths` and `instanceName` are optional and additive (issue #495):
+ *   - When `rootFolderPaths` is provided, the contributor's disk entries are
+ *     filtered to those holding media (see filterToRootFolderDisks). When
+ *     absent or empty, the filter degrades to "keep everything" — preserving
+ *     pre-#495 behavior for callers that don't supply root-folder context.
+ *   - `instanceName` is plumbed through the breakdown so the UI can attribute
+ *     each disk row to its source instance. Sensitive text — anonymize under
+ *     incognito mode on the frontend.
  */
 export interface DiskContributor {
 	storageGroupId?: string | null;
 	diskEntries: DiskSpaceEntry[];
+	rootFolderPaths?: readonly string[];
+	instanceName?: string;
 }
 
 /**
- * Combined disk totals plus transparency counts.
+ * Why a disk did or didn't make it into the rollup. Drives the UI breakdown
+ * panel's per-row reason text.
+ *   - `"media"`           — included; holds at least one configured *arr root folder
+ *   - `"no-matching-root-folder"` — excluded; no root folder lives on this disk
+ *   - `"deduplicated"`    — excluded; another contributor already accounted for
+ *                           this disk (via storage-group or fingerprint)
+ */
+export type DiskFilterReason = "media" | "no-matching-root-folder" | "deduplicated";
+
+/**
+ * Per-disk row used by the breakdown UI to explain how the rollup was computed.
+ *
+ * `path` is sensitive text — frontend renderers must use `useIncognitoMode()`
+ * to anonymize it. The wire payload carries it unredacted so a) the breakdown
+ * remains legible when incognito is off, b) the dashboard can compute aggregate
+ * facts without depending on per-request privacy flags.
+ */
+export interface DiskBreakdownEntry {
+	path?: string;
+	totalSpace: number;
+	freeSpace: number;
+	includedInRollup: boolean;
+	reason: DiskFilterReason;
+	instanceName?: string;
+}
+
+/**
+ * Combined disk totals plus transparency counts and the per-disk breakdown
+ * the UI uses for its "Show all disks" expansion.
  */
 export interface CombinedDiskTotals extends DiskTotals {
 	diskCount: number;
 	instanceCount: number;
+	disks: DiskBreakdownEntry[];
 }
 
 /**
+ * Normalize a mount path for prefix comparison: trim whitespace, drop trailing
+ * "/" except when the entire path is "/" (which stays). Keeps "/data" and
+ * "/data/" identical without collapsing the root.
+ */
+const normalizePath = (raw: string): string => {
+	const trimmed = raw.trim();
+	if (trimmed === "" || trimmed === "/") return trimmed;
+	return trimmed.endsWith("/") ? trimmed.slice(0, -1) : trimmed;
+};
+
+/**
+ * True when `diskPath` is a path-segment prefix of `rfPath` (or equal). This
+ * is what makes "/data" match "/data/tv" but not "/dataother" — the next char
+ * after the prefix has to be "/" or end-of-string.
+ *
+ * Both paths must already be normalized via `normalizePath`.
+ */
+const isPathPrefix = (rfPath: string, diskPath: string): boolean => {
+	if (diskPath === rfPath) return true;
+	if (diskPath === "/") return rfPath.startsWith("/");
+	if (!rfPath.startsWith(diskPath)) return false;
+	return rfPath.charAt(diskPath.length) === "/";
+};
+
+/**
+ * Partition a contributor's disk entries into ones holding media (kept) and
+ * ones that don't (excluded) using the **longest matching prefix wins** rule:
+ *
+ *   For each root folder, pick the disk whose normalized path is the longest
+ *   prefix of the root folder's path. That disk is "kept"; everything else is
+ *   "excluded". When more than one root folder lives on the same disk, that
+ *   disk is kept once.
+ *
+ * Why "longest prefix wins"? It mirrors how `df` resolves a file to its mount
+ * point and is shape-agnostic across containerized vs bare-metal deployments:
+ *   - Containerized Sonarr with disks `/` and `/data` + root folder `/data/tv`
+ *     → `/data` wins (longer prefix), `/` is excluded.
+ *   - Bare-metal Sonarr with disk `/` only + root folder `/home/user/Media`
+ *     → `/` wins (only candidate), kept.
+ *
+ * **Fallback when no root folders are supplied** (`rootFolderPaths` undefined,
+ * null, or empty after trimming): degrade to current pre-#495 behavior — keep
+ * everything as `"media"`. This means a misconfigured *arr (no root folders
+ * yet) doesn't suddenly report 0 disks.
+ */
+export const filterToRootFolderDisks = (
+	diskEntries: DiskSpaceEntry[],
+	rootFolderPaths: readonly string[] | undefined,
+): { included: DiskSpaceEntry[]; excluded: DiskSpaceEntry[] } => {
+	const validRootFolderPaths = (rootFolderPaths ?? [])
+		.map(normalizePath)
+		.filter((p) => p.length > 0);
+
+	if (validRootFolderPaths.length === 0) {
+		return { included: [...diskEntries], excluded: [] };
+	}
+
+	const normalizedDiskPaths = diskEntries.map((entry) => normalizePath(entry.path ?? ""));
+	const keptIndexes = new Set<number>();
+
+	for (const rfPath of validRootFolderPaths) {
+		let bestIdx = -1;
+		let bestLen = -1;
+		for (let i = 0; i < normalizedDiskPaths.length; i++) {
+			const diskPath = normalizedDiskPaths[i];
+			if (!diskPath) continue;
+			if (isPathPrefix(rfPath, diskPath) && diskPath.length > bestLen) {
+				bestIdx = i;
+				bestLen = diskPath.length;
+			}
+		}
+		if (bestIdx >= 0) keptIndexes.add(bestIdx);
+	}
+
+	const included: DiskSpaceEntry[] = [];
+	const excluded: DiskSpaceEntry[] = [];
+	diskEntries.forEach((entry, i) => {
+		if (keptIndexes.has(i)) included.push(entry);
+		else excluded.push(entry);
+	});
+	return { included, excluded };
+};
+
+/**
  * Combines disk stats across instances while avoiding the classic
- * "one physical array, many *arr instances" over-count.
+ * "one physical array, many *arr instances" over-count, and (issue #495)
+ * filtering out non-media disks (container `/`, config volumes, etc.) when
+ * each contributor supplies its configured root folders.
  *
- * De-duplication uses two signals, in order of trust:
- *   1. Storage group — an explicit operator declaration that instances share
- *      storage. Once a group is represented, later instances in the same group
- *      are skipped entirely (this also absorbs read-timing skew in free space).
- *   2. Disk fingerprint `${totalSpace}:${freeSpace}` — for instances with no
- *      group set. `freeSpace` drifts byte-by-byte as data is written, so an
- *      identical (total, free) pair across two instances is an extremely
- *      reliable "same filesystem" signal. The only realistic collision is
- *      near-empty disks of equal size (free ≈ total), where under-counting is
- *      harmless because the user has abundant space.
+ * Pipeline per contributor (order matters):
+ *   1. Storage-group dedup — if the operator declared `storageGroupId` and we
+ *      already saw it on a prior contributor, mark every disk as
+ *      `"deduplicated"` and skip the rest. (Existing PR #490 behavior.)
+ *   2. Root-folder filter — partition into media/non-media via
+ *      `filterToRootFolderDisks`. Non-media entries are recorded as
+ *      `"no-matching-root-folder"`.
+ *   3. Fingerprint dedup — for each surviving media entry, check
+ *      `${totalSpace}:${freeSpace}` against `seenDisks`. Duplicates are
+ *      recorded as `"deduplicated"`; first-sightings are summed into the
+ *      rollup and marked `"media"`.
  *
- * Mount path is deliberately not consulted: under Docker/Unraid the same array
- * is bind-mounted under different container paths per service (/tv vs /movies),
- * so it can neither confirm nor split a shared disk — hence it isn't carried at
- * all (see toDiskMounts).
+ * The `disks` array in the return value carries every entry observed (in
+ * encounter order across contributors) with its final include-reason — that
+ * powers the UI's "Show all disks" breakdown without the frontend having to
+ * re-derive the decision.
  *
  * `instanceCount` counts every instance that reports storage, regardless of
- * whether its disks were de-duplicated away by either signal, so the UI can
- * honestly say "N disks across M instances" — including for the operator who
- * configured storage groups (the good-citizen path must not read as fewer
- * instances than the un-configured one).
+ * whether its disks were de-duplicated or filtered away — the UI can honestly
+ * say "N disks across M instances" including for operators who configured
+ * storage groups (the good-citizen path must not read as fewer instances than
+ * the un-configured one).
  */
 export const combineDiskStats = (contributors: DiskContributor[]): CombinedDiskTotals => {
 	const seenGroups = new Set<string>();
@@ -311,6 +451,23 @@ export const combineDiskStats = (contributors: DiskContributor[]): CombinedDiskT
 	let free = 0;
 	let diskCount = 0;
 	let instanceCount = 0;
+	const disks: DiskBreakdownEntry[] = [];
+
+	const recordEntry = (
+		entry: DiskSpaceEntry,
+		includedInRollup: boolean,
+		reason: DiskFilterReason,
+		instanceName: string | undefined,
+	): void => {
+		disks.push({
+			path: entry.path ?? undefined,
+			totalSpace: entry.totalSpace ?? 0,
+			freeSpace: entry.freeSpace ?? 0,
+			includedInRollup,
+			reason,
+			instanceName,
+		});
+	};
 
 	for (const contributor of contributors) {
 		const usableEntries = (contributor.diskEntries ?? []).filter(
@@ -319,38 +476,69 @@ export const combineDiskStats = (contributors: DiskContributor[]): CombinedDiskT
 		if (usableEntries.length > 0) instanceCount += 1;
 
 		const group = contributor.storageGroupId?.trim();
-		if (group) {
-			if (seenGroups.has(group)) continue;
-			seenGroups.add(group);
+		const groupDuplicate = group ? seenGroups.has(group) : false;
+		if (group && !groupDuplicate) seenGroups.add(group);
+
+		if (groupDuplicate) {
+			// Whole contributor is a known duplicate by operator declaration —
+			// record every entry as `"deduplicated"` and move on. Don't bother
+			// running the root-folder filter since the operator already told us
+			// these instances share storage.
+			for (const entry of usableEntries) {
+				recordEntry(entry, false, "deduplicated", contributor.instanceName);
+			}
+			continue;
 		}
 
-		for (const entry of usableEntries) {
+		const { included: mediaEntries, excluded: nonMediaEntries } = filterToRootFolderDisks(
+			usableEntries,
+			contributor.rootFolderPaths,
+		);
+
+		for (const entry of nonMediaEntries) {
+			recordEntry(entry, false, "no-matching-root-folder", contributor.instanceName);
+		}
+
+		for (const entry of mediaEntries) {
 			const entryTotal = entry.totalSpace ?? 0;
 			const entryFree = entry.freeSpace ?? 0;
-
 			const key = `${entryTotal}:${entryFree}`;
-			if (seenDisks.has(key)) continue;
-			seenDisks.add(key);
+			const fingerprintDuplicate = seenDisks.has(key);
 
-			total += entryTotal;
-			free += entryFree;
-			diskCount += 1;
+			if (!fingerprintDuplicate) {
+				seenDisks.add(key);
+				total += entryTotal;
+				free += entryFree;
+				diskCount += 1;
+			}
+			recordEntry(
+				entry,
+				!fingerprintDuplicate,
+				fingerprintDuplicate ? "deduplicated" : "media",
+				contributor.instanceName,
+			);
 		}
 	}
 
 	const used = Math.max(0, total - free);
 	const usagePercent = total > 0 ? clampPercentage((used / total) * 100) : 0;
 
-	return { total, free, used, usagePercent, diskCount, instanceCount };
+	return { total, free, used, usagePercent, diskCount, instanceCount, disks };
 };
 
 /**
  * Minimal per-instance shape needed to compute combined disk stats.
  * Structurally compatible with the route's per-service instance arrays.
+ *
+ * `data.rootFolderPaths` and `instanceName` are optional and additive (#495):
+ * when present, they're plumbed through `buildCombinedDiskPayload` into the
+ * underlying `DiskContributor` so the root-folder filter has the signal it
+ * needs and the breakdown can attribute each disk row to its source instance.
  */
 export interface DiskBearingInstance {
 	storageGroupId?: string | null;
-	data: { diskEntries?: DiskSpaceEntry[] };
+	instanceName?: string;
+	data: { diskEntries?: DiskSpaceEntry[]; rootFolderPaths?: readonly string[] };
 }
 
 /**
@@ -368,6 +556,13 @@ export interface DiskBearingServiceInstances {
 
 /**
  * Shape returned to the API response under `combinedDisk`.
+ *
+ * The four legacy `disk*` fields reflect the **filtered** rollup (post-#495):
+ * they sum only disks that hold *arr root folders (when root folders are
+ * configured) and have passed the storage-group / fingerprint dedup. The
+ * `disks` array carries the per-disk breakdown for the UI's "Show all disks"
+ * expansion — including disks that were excluded from the rollup, with a
+ * machine-readable reason.
  */
 export interface CombinedDiskPayload {
 	diskTotal: number;
@@ -376,6 +571,7 @@ export interface CombinedDiskPayload {
 	diskUsagePercent: number;
 	diskCount: number;
 	instanceCount: number;
+	disks: DiskBreakdownEntry[];
 }
 
 /**
@@ -397,6 +593,8 @@ export const buildCombinedDiskPayload = (
 	].map((entry) => ({
 		storageGroupId: entry.storageGroupId,
 		diskEntries: entry.data.diskEntries ?? [],
+		rootFolderPaths: entry.data.rootFolderPaths,
+		instanceName: entry.instanceName,
 	}));
 
 	const combined = combineDiskStats(contributors);
@@ -409,6 +607,7 @@ export const buildCombinedDiskPayload = (
 		diskUsagePercent: combined.usagePercent,
 		diskCount: combined.diskCount,
 		instanceCount: combined.instanceCount,
+		disks: combined.disks,
 	};
 };
 

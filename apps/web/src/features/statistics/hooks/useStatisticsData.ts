@@ -456,6 +456,10 @@ export const useStatisticsData = () => {
 			diskFree,
 			diskUsed,
 			diskUsagePercent: diskTotal > 0 ? (diskUsed / diskTotal) * 100 : 0,
+			// Fallback path has no breakdown data — backend assembles the disks
+			// array as part of combineDiskStats. Empty here keeps the shape valid
+			// for the UI without inventing entries we don't actually have.
+			disks: [],
 		};
 	}, [data?.combinedDisk, sonarrAggregate, radarrAggregate, lidarrAggregate, readarrAggregate]);
 
