@@ -332,12 +332,21 @@ export interface CombinedDiskTotals extends DiskTotals {
 }
 
 /**
- * Normalize a mount path for prefix comparison: trim whitespace, drop trailing
- * "/" except when the entire path is "/" (which stays). Keeps "/data" and
- * "/data/" identical without collapsing the root.
+ * Normalize a mount path for prefix comparison: trim whitespace, convert
+ * Windows backslashes to forward slashes (so `C:\Media\TV` and UNC
+ * `\\server\share` compare uniformly with Unix paths — *arrs running
+ * natively on Windows report `\`-separated paths from both diskspace and
+ * rootfolder endpoints), then drop the trailing "/" except when the entire
+ * path is "/" (which stays). Keeps "/data" and "/data/" identical without
+ * collapsing the root, and turns `C:\` into `C:`.
+ *
+ * Casing is deliberately NOT folded: disk paths and root-folder paths for a
+ * given contributor come from the same *arr instance, so their casing is
+ * internally consistent — and folding would corrupt comparisons on
+ * case-sensitive Linux filesystems.
  */
 const normalizePath = (raw: string): string => {
-	const trimmed = raw.trim();
+	const trimmed = raw.trim().replace(/\\/g, "/");
 	if (trimmed === "" || trimmed === "/") return trimmed;
 	return trimmed.endsWith("/") ? trimmed.slice(0, -1) : trimmed;
 };
@@ -345,7 +354,9 @@ const normalizePath = (raw: string): string => {
 /**
  * True when `diskPath` is a path-segment prefix of `rfPath` (or equal). This
  * is what makes "/data" match "/data/tv" but not "/dataother" — the next char
- * after the prefix has to be "/" or end-of-string.
+ * after the prefix has to be "/" or end-of-string. Windows paths arrive here
+ * already slash-normalized (see normalizePath), so `C:` is a valid
+ * path-segment prefix of `C:/Media/TV`.
  *
  * Both paths must already be normalized via `normalizePath`.
  */
