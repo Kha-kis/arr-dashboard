@@ -8,6 +8,7 @@ import {
 	bulkApprovalSchema,
 	cleanupExplainRequestSchema,
 	createCleanupRuleSchema,
+	isKindLegalForContext,
 	reorderRulesSchema,
 	ruleParamSchemaMap,
 	updateCleanupConfigSchema,
@@ -20,7 +21,7 @@ import {
 	executeCleanupPreview,
 	executeCleanupRun,
 } from "../lib/library-cleanup/cleanup-executor.js";
-import { explainItemAgainstRules } from "../lib/library-cleanup/rule-evaluators.js";
+import { explainItemAgainstRulesViaEngine } from "../lib/rules/cleanup-adapter.js";
 import type { CacheItemForEval } from "../lib/library-cleanup/types.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { safeJsonParse as utilSafeJsonParse } from "../lib/utils/json.js";
@@ -1059,7 +1060,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			config.rules,
 		);
 
-		const results = explainItemAgainstRules(
+		const results = explainItemAgainstRulesViaEngine(
 			cacheItem as unknown as CacheItemForEval,
 			config.rules,
 			instance.service,
@@ -1219,10 +1220,30 @@ function validateRuleParameters(
 	parameters: Record<string, unknown>,
 	conditions: Array<{ ruleType: string; parameters: Record<string, unknown> }> | null,
 ): string | null {
+	// Reject mode-mismatch: a leaf ruleType carrying operator+conditions
+	// (or ruleType "composite" without them). The evaluator treats any rule
+	// with operator+conditions as composite regardless of ruleType, so a
+	// mixed shape would validate one thing and evaluate another (the same
+	// guard auto-tag.ts has carried; ported per review finding).
+	const compositeByShape = conditions != null && conditions.length > 0;
+	const compositeByRuleType = ruleType === "composite";
+	if (compositeByShape !== compositeByRuleType) {
+		return compositeByShape
+			? 'Composite rules must use ruleType="composite" (got a leaf rule type plus conditions — pick one mode)'
+			: 'Rule type "composite" requires operator + conditions';
+	}
+
 	// For composite rules, validate each condition's parameters
 	if (ruleType === "composite" && conditions) {
 		for (let i = 0; i < conditions.length; i++) {
 			const cond = conditions[i]!;
+			// Tier-1 strict kind legality (unified-rule-grammar §2.2): new
+			// writes cannot author retired/unknown kinds. Stored legacy rows
+			// are unaffected — this runs only when the payload carries
+			// ruleType/parameters/conditions.
+			if (!isKindLegalForContext("library-cleanup", cond.ruleType)) {
+				return `Unknown rule type for condition[${i}]: "${cond.ruleType}"`;
+			}
 			const schema = ruleParamSchemaMap[cond.ruleType];
 			if (schema) {
 				const result = schema.safeParse(cond.parameters);
@@ -1237,7 +1258,11 @@ function validateRuleParameters(
 		return null;
 	}
 
-	// For single rules, validate top-level parameters
+	// For single rules, validate top-level parameters (tier-1 strict
+	// kind legality — see composite branch note)
+	if (!isKindLegalForContext("library-cleanup", ruleType)) {
+		return `Unknown rule type "${ruleType}"`;
+	}
 	const schema = ruleParamSchemaMap[ruleType];
 	if (schema) {
 		const result = schema.safeParse(parameters);

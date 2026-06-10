@@ -285,6 +285,35 @@ describe("parity — composites", () => {
 		expect(legacy).not.toBeNull(); // age sibling still matches on both paths
 	});
 
+	it("REVIEW SHAPE — leaf ruleType + operator+conditions: conditions decide, not leaf params", () => {
+		// The empirical probe from the cutover review: ruleType "age"
+		// (which WOULD match) carrying a non-matching size condition.
+		// Legacy evaluates the conditions → null. The engine path must
+		// agree — keying composite on ruleType instead of operator+
+		// conditions made it evaluate the leaf and DELETE.
+		const { legacy } = assertParity(
+			makeRule({
+				ruleType: "age",
+				parameters: JSON.stringify({ operator: "older_than", days: 30 }), // matches
+				operator: "AND",
+				conditions: JSON.stringify([noMatchCond]), // does not match
+			}),
+		);
+		expect(legacy).toBeNull(); // conditions decide — item is KEPT
+	});
+
+	it("REVIEW SHAPE — leaf ruleType + matching conditions: both paths match via conditions", () => {
+		const { legacy } = assertParity(
+			makeRule({
+				ruleType: "age",
+				parameters: JSON.stringify({ operator: "older_than", days: 99999 }), // would NOT match
+				operator: "OR",
+				conditions: JSON.stringify([sizeCond]), // matches
+			}),
+		);
+		expect(legacy).not.toBeNull(); // conditions decide — matched via size
+	});
+
 	it("legacy quirk — empty composite conditions no-match (NOT vacuous true)", () => {
 		assertParity(makeRule({ ruleType: "composite", operator: "AND", conditions: "[]" }));
 	});
@@ -318,5 +347,187 @@ describe("parity — pre-filters and rule state", () => {
 	it("action passthrough — unmonitor", () => {
 		const { legacy } = assertParity(makeRule({ action: "unmonitor" }));
 		expect(legacy?.action).toBe("unmonitor");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Loop wrappers — evaluateItemAgainstRules / explainItemAgainstRules
+// ---------------------------------------------------------------------------
+
+import {
+	evaluateItemAgainstRules,
+	explainItemAgainstRules,
+} from "../../library-cleanup/rule-evaluators.js";
+import {
+	evaluateItemAgainstRulesViaEngine,
+	explainItemAgainstRulesViaEngine,
+} from "../cleanup-adapter.js";
+
+describe("parity — evaluateItemAgainstRules (two-phase loop)", () => {
+	const matchingRule = (overrides: Partial<LibraryCleanupRule> = {}) =>
+		makeRule({ id: "m1", name: "Matcher", ...overrides });
+	const retentionRule = makeRule({
+		id: "ret1",
+		name: "Protector",
+		retentionMode: true,
+		ruleType: "size",
+		parameters: JSON.stringify({ operator: "greater_than", sizeGb: 2 }),
+	});
+
+	function assertLoopParity(
+		rules: LibraryCleanupRule[],
+		item: CacheItemForEval = makeCacheItem(),
+		failedSources?: Set<"seerr" | "plex" | "jellyfin" | null>,
+	) {
+		const ctx = baseCtx();
+		const legacy = evaluateItemAgainstRules(item, rules, "RADARR", ctx, failedSources);
+		const engine = evaluateItemAgainstRulesViaEngine(item, rules, "RADARR", ctx, failedSources);
+		expect(engine).toEqual(legacy);
+		return legacy;
+	}
+
+	it("retention rule protects the item (both null) even when a cleanup rule matches", () => {
+		const result = assertLoopParity([retentionRule, matchingRule()]);
+		expect(result).toBeNull();
+	});
+
+	it("priority order — first cleanup match wins in caller-provided order", () => {
+		const result = assertLoopParity([
+			matchingRule({ id: "m1", name: "First" }),
+			matchingRule({ id: "m2", name: "Second" }),
+		]);
+		expect(result?.ruleId).toBe("m1");
+	});
+
+	it("failed-source skip — plex-dependent rule skipped when plex prefetch failed", () => {
+		const plexRule = makeRule({
+			id: "p1",
+			ruleType: "plex_last_watched",
+			parameters: JSON.stringify({ operator: "older_than", days: 30 }),
+		});
+		const result = assertLoopParity([plexRule], makeCacheItem(), new Set(["plex"]));
+		expect(result).toBeNull();
+	});
+});
+
+describe("parity — explainItemAgainstRules", () => {
+	it("identical per-rule breakdown: disabled / filtered / matched rows", () => {
+		const rules = [
+			makeRule({ id: "r1", name: "Disabled", enabled: false }),
+			makeRule({ id: "r2", name: "Filtered", serviceFilter: JSON.stringify(["SONARR"]) }),
+			makeRule({ id: "r3", name: "Match" }),
+			makeRule({
+				id: "r4",
+				name: "NoMatch",
+				parameters: JSON.stringify({ operator: "older_than", days: 9999 }),
+			}),
+		];
+		const item = makeCacheItem();
+		const ctx = baseCtx();
+		const legacy = explainItemAgainstRules(item, rules, "RADARR", ctx);
+		const engine = explainItemAgainstRulesViaEngine(item, rules, "RADARR", ctx);
+		expect(engine).toEqual(legacy);
+		expect(legacy.map((r) => r.filteredBy)).toEqual(["disabled", "service_filter", null, null]);
+		expect(legacy.map((r) => r.matched)).toEqual([false, false, true, false]);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Auto-tag adapter parity
+// ---------------------------------------------------------------------------
+
+import { type AutoTagRuleInput, evaluateAgainstRule } from "../../auto-tag/execute-rule.js";
+import { autoTagRuleMatchesViaEngine } from "../auto-tag-adapter.js";
+
+function makeAutoTagRule(overrides: Partial<AutoTagRuleInput> = {}): AutoTagRuleInput {
+	return {
+		id: "at-1",
+		userId: "user-1",
+		name: "Auto-tag parity",
+		ruleType: "age",
+		parameters: { operator: "older_than", days: 30 },
+		operator: null,
+		conditions: null,
+		serviceFilter: null,
+		instanceFilter: null,
+		excludeTags: null,
+		excludeTitles: null,
+		plexLibraryFilter: null,
+		tagName: "stale",
+		...overrides,
+	};
+}
+
+describe("parity — auto-tag adapter (boolean semantics)", () => {
+	function assertAutoTagParity(
+		rule: AutoTagRuleInput,
+		item: CacheItemForEval = makeCacheItem(),
+		ctx: EvalContext = baseCtx(),
+	) {
+		const legacy = evaluateAgainstRule(item, rule, "RADARR", ctx);
+		const engine = autoTagRuleMatchesViaEngine(item, rule, "RADARR", ctx);
+		expect(engine).toBe(legacy);
+		return legacy;
+	}
+
+	it("single rule match", () => {
+		expect(assertAutoTagParity(makeAutoTagRule())).toBe(true);
+	});
+
+	it("single rule no-match", () => {
+		expect(
+			assertAutoTagParity(
+				makeAutoTagRule({ parameters: { operator: "older_than", days: 9999 } }),
+			),
+		).toBe(false);
+	});
+
+	it("AND composite — all must match", () => {
+		expect(
+			assertAutoTagParity(
+				makeAutoTagRule({
+					ruleType: "composite",
+					operator: "AND",
+					conditions: [
+						{ ruleType: "age", parameters: { operator: "older_than", days: 30 } },
+						{ ruleType: "size", parameters: { operator: "greater_than", sizeGb: 2 } },
+					],
+				}),
+			),
+		).toBe(true);
+	});
+
+	it("OR composite — one suffices", () => {
+		expect(
+			assertAutoTagParity(
+				makeAutoTagRule({
+					ruleType: "composite",
+					operator: "OR",
+					conditions: [
+						{ ruleType: "size", parameters: { operator: "greater_than", sizeGb: 500 } },
+						{ ruleType: "age", parameters: { operator: "older_than", days: 30 } },
+					],
+				}),
+			),
+		).toBe(true);
+	});
+
+	it("legacy quirk — composite with EMPTY conditions falls through to single path (no-match)", () => {
+		expect(
+			assertAutoTagParity(
+				makeAutoTagRule({ ruleType: "composite", operator: "AND", conditions: [] }),
+			),
+		).toBe(false);
+	});
+
+	it("retired kind no-matches on both paths", () => {
+		expect(
+			assertAutoTagParity(
+				makeAutoTagRule({
+					ruleType: "tautulli_watched_by",
+					parameters: { operator: "includes_any", userNames: ["x"] },
+				}),
+			),
+		).toBe(false);
 	});
 });

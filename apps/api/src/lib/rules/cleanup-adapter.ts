@@ -24,13 +24,15 @@
  * `evaluateRuleViaEngine` once the differential parity suite is green.
  */
 
-import type { RuleDocument } from "@arr/shared";
+import type { DataSourceDependency, RuleDocument } from "@arr/shared";
 import {
 	evaluateSingleCondition,
+	getFilterReason,
 	passesInstanceFilter,
 	passesServiceFilter,
 	passesTagExclusion,
 	passesTitleExclusion,
+	shouldSkipForFailedSource,
 } from "../library-cleanup/rule-evaluators.js";
 import type {
 	CacheItemForEval,
@@ -89,4 +91,105 @@ export function evaluateRuleViaEngine(
 	return result.matched
 		? { ruleId: rule.id, ruleName: rule.name, reason: result.reason, action }
 		: null;
+}
+
+/**
+ * Engine-backed equivalent of `evaluateItemAgainstRules` — the same
+ * two-phase loop (retention rules protect first, then cleanup rules
+ * first-match-wins by caller-provided order) and the same
+ * failed-source skip (the C1 safety fix), delegating per-rule
+ * evaluation to the engine.
+ */
+export function evaluateItemAgainstRulesViaEngine(
+	item: CacheItemForEval,
+	rules: LibraryCleanupRule[],
+	instanceService: string,
+	ctx: EvalContext,
+	failedSources?: Set<DataSourceDependency>,
+): RuleMatch | null {
+	// Phase 1: retention rules — any match protects the item
+	for (const rule of rules) {
+		if (!rule.retentionMode) continue;
+		if (shouldSkipForFailedSource(rule, failedSources)) continue;
+		const match = evaluateRuleViaEngine(item, rule, instanceService, ctx);
+		if (match) return null;
+	}
+
+	// Phase 2: cleanup rules — first match wins
+	for (const rule of rules) {
+		if (rule.retentionMode) continue;
+		if (shouldSkipForFailedSource(rule, failedSources)) continue;
+		const match = evaluateRuleViaEngine(item, rule, instanceService, ctx);
+		if (match) return match;
+	}
+	return null;
+}
+
+/** Per-rule breakdown row for the explain endpoint. */
+export interface ExplainRuleResult {
+	ruleId: string;
+	ruleName: string;
+	matched: boolean;
+	reason: string | null;
+	filteredBy:
+		| "service_filter"
+		| "instance_filter"
+		| "tag_exclusion"
+		| "title_exclusion"
+		| "disabled"
+		| null;
+	retentionMode: boolean;
+}
+
+/**
+ * Engine-backed equivalent of `explainItemAgainstRules` — identical
+ * per-rule breakdown (disabled / which pre-filter blocked / match with
+ * reason), delegating evaluation to the engine.
+ */
+export function explainItemAgainstRulesViaEngine(
+	item: CacheItemForEval,
+	rules: LibraryCleanupRule[],
+	instanceService: string,
+	ctx: EvalContext,
+): ExplainRuleResult[] {
+	const results: ExplainRuleResult[] = [];
+
+	for (const rule of rules) {
+		if (!rule.enabled) {
+			results.push({
+				ruleId: rule.id,
+				ruleName: rule.name,
+				matched: false,
+				reason: null,
+				filteredBy: "disabled",
+				retentionMode: rule.retentionMode,
+			});
+			continue;
+		}
+
+		const filteredBy = getFilterReason(item, rule, instanceService);
+		if (filteredBy) {
+			results.push({
+				ruleId: rule.id,
+				ruleName: rule.name,
+				matched: false,
+				reason: null,
+				filteredBy,
+				retentionMode: rule.retentionMode,
+			});
+			continue;
+		}
+
+		const match = evaluateRuleViaEngine(item, rule, instanceService, ctx);
+		results.push({
+			ruleId: rule.id,
+			ruleName: rule.name,
+			matched: match !== null,
+			reason: match?.reason ?? null,
+			filteredBy: null,
+			retentionMode: rule.retentionMode,
+		});
+	}
+
+	return results;
 }

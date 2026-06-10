@@ -105,7 +105,16 @@ function parseJsonObject(raw: string, what: string): Record<string, unknown> {
  * crashed boot or a 500'd list.
  */
 export function mapCriteriaV0ToDocument(row: CriteriaV0Row): RuleDocument {
-	if (row.ruleType !== "composite") {
+	// Composite-mode discriminator MUST match legacy `evaluateRule`
+	// (`rule.operator && rule.conditions`), NOT `ruleType === "composite"`.
+	// A stored row with a leaf ruleType plus operator+conditions evaluates
+	// its CONDITIONS on the legacy path (the leaf params are ignored);
+	// keying on ruleType here made the engine evaluate the leaf params
+	// instead — a silent divergence that could delete media the legacy
+	// path keeps (review finding, 2026-06-10). Write-time validation now
+	// rejects the mixed shape, but stored rows predating that guard must
+	// keep their legacy meaning forever.
+	if (!(row.operator && row.conditions)) {
 		const doc: RuleDocument = {
 			version: 1,
 			root: {
