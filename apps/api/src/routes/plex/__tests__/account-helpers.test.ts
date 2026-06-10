@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { deduplicateAccounts } from "../lib/account-helpers.js";
+import { deduplicateAccounts } from "../../../lib/media-stats/account-helpers.js";
 
 describe("deduplicateAccounts", () => {
 	it("deduplicates repeated account names", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aggregateTranscodeAnalytics, type SnapshotForTranscode } from "../lib/transcode-analytics-helpers.js";
+import { aggregateTranscodeAnalytics, type SnapshotForTranscode } from "../../../lib/media-stats/transcode-analytics-helpers.js";
 
 function snapshot(date: string, directPlay: number, transcode: number, directStream: number): SnapshotForTranscode {
 	return { capturedAt: new Date(`${date}T12:00:00Z`), directPlayCount: directPlay, transcodeCount: transcode, directStreamCount: directStream };

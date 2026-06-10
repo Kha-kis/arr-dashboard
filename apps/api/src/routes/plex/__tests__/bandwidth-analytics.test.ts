@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aggregateBandwidthAnalytics, type SnapshotForBandwidth } from "../lib/bandwidth-analytics-helpers.js";
+import { aggregateBandwidthAnalytics, type SnapshotForBandwidth } from "../../../lib/media-stats/bandwidth-analytics-helpers.js";
 
 function snapshot(date: string, concurrent: number, total: number, lan: number, wan: number): SnapshotForBandwidth {
 	return { capturedAt: new Date(`${date}T12:00:00Z`), concurrentStreams: concurrent, totalBandwidth: total, lanBandwidth: lan, wanBandwidth: wan };

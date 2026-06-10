@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { aggregateSeriesProgress, type EpisodeInput } from "../lib/series-progress-helpers.js";
+import { aggregateSeriesProgress, type EpisodeInput } from "../../../lib/media-stats/series-progress-helpers.js";
 
 describe("aggregateSeriesProgress", () => {
 	it("computes correct progress for a single show (3/5 watched)", () => {

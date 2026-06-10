@@ -9,7 +9,7 @@ import type { PlaysByDateResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { validateRequest } from "../../lib/utils/validate.js";
-import { aggregatePlaysByDate } from "./lib/plays-by-date-helpers.js";
+import { aggregatePlaysByDate } from "../../lib/media-stats/plays-by-date-helpers.js";
 
 const playsByDateQuery = z.object({
 	days: z

@@ -9,7 +9,7 @@ import type { MostConcurrentResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { validateRequest } from "../../lib/utils/validate.js";
-import { aggregateMostConcurrent } from "./lib/most-concurrent-helpers.js";
+import { aggregateMostConcurrent } from "../../lib/media-stats/most-concurrent-helpers.js";
 
 const mostConcurrentQuery = z.object({
 	days: z

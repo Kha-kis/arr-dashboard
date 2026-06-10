@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aggregateCollectionStats, type PlexCacheEntry } from "../lib/collection-stats-helpers.js";
+import { aggregateCollectionStats, type PlexCacheEntry } from "../../../lib/media-stats/collection-stats-helpers.js";
 
 function entry(overrides: Partial<PlexCacheEntry> = {}): PlexCacheEntry {
 	return {

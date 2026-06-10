@@ -8,7 +8,7 @@ import type { UserAnalytics } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { analyticsQuery } from "./analytics-schemas.js";
-import { aggregateUserAnalytics } from "./lib/user-analytics-helpers.js";
+import { aggregateUserAnalytics } from "../../lib/media-stats/user-analytics-helpers.js";
 
 export async function registerUserAnalyticsRoutes(
 	app: FastifyInstance,

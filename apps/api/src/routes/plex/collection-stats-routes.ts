@@ -6,7 +6,7 @@
 
 import type { CollectionStats } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
-import { aggregateCollectionStats } from "./lib/collection-stats-helpers.js";
+import { aggregateCollectionStats } from "../../lib/media-stats/collection-stats-helpers.js";
 
 export async function registerCollectionStatsRoutes(
 	app: FastifyInstance,

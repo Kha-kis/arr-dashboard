@@ -9,7 +9,7 @@ import type { SeriesProgressResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { validateRequest } from "../../lib/utils/validate.js";
-import { aggregateSeriesProgress } from "../plex/lib/series-progress-helpers.js";
+import { aggregateSeriesProgress } from "../../lib/media-stats/series-progress-helpers.js";
 
 const progressQuery = z.object({
 	tmdbIds: z.string().min(1),

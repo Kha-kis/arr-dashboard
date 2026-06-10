@@ -9,7 +9,7 @@ import type { BandwidthForecast } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { analyticsQuery } from "./analytics-schemas.js";
-import { computeForecast } from "./lib/forecast-helpers.js";
+import { computeForecast } from "../../lib/media-stats/forecast-helpers.js";
 
 export async function registerForecastRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	app.get("/", async (request, reply) => {

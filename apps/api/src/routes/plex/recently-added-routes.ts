@@ -9,7 +9,7 @@ import type { PlexRecentlyAddedResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { validateRequest } from "../../lib/utils/validate.js";
-import { mapToRecentlyAddedItems } from "./lib/recently-added-helpers.js";
+import { mapToRecentlyAddedItems } from "../../lib/media-stats/recently-added-helpers.js";
 
 const recentlyAddedQuery = z.object({
 	limit: z

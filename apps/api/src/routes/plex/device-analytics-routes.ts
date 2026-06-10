@@ -8,7 +8,7 @@ import type { DeviceAnalytics } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { analyticsQuery } from "./analytics-schemas.js";
-import { aggregateDeviceAnalytics } from "./lib/device-analytics-helpers.js";
+import { aggregateDeviceAnalytics } from "../../lib/media-stats/device-analytics-helpers.js";
 
 export async function registerDeviceAnalyticsRoutes(
 	app: FastifyInstance,

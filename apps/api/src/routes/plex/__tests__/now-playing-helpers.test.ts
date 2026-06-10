@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeTotalBandwidth } from "../lib/now-playing-helpers.js";
+import { computeTotalBandwidth } from "../../../lib/media-stats/now-playing-helpers.js";
 
 describe("computeTotalBandwidth", () => {
 	it("sums bandwidth across sessions", () => {

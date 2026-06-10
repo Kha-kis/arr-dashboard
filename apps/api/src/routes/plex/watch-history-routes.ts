@@ -8,7 +8,7 @@ import type { WatchHistoryResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { validateRequest } from "../../lib/utils/validate.js";
-import { deduplicateWatchEvents } from "./lib/watch-history-helpers.js";
+import { deduplicateWatchEvents } from "../../lib/media-stats/watch-history-helpers.js";
 
 const watchHistoryQuery = z.object({
 	days: z

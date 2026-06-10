@@ -8,7 +8,7 @@
 import type { PlexNowPlayingResponse, PlexSession } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { executeOnPlexInstances } from "../../lib/plex/plex-helpers.js";
-import { computeTotalBandwidth } from "./lib/now-playing-helpers.js";
+import { computeTotalBandwidth } from "../../lib/media-stats/now-playing-helpers.js";
 
 export async function registerNowPlayingRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	/**

@@ -9,7 +9,7 @@ import type { QualityScoreAnalytics } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { analyticsQuery } from "./analytics-schemas.js";
-import { computeQualityScore } from "./lib/quality-score-helpers.js";
+import { computeQualityScore } from "../../lib/media-stats/quality-score-helpers.js";
 
 export async function registerQualityScoreRoutes(
 	app: FastifyInstance,

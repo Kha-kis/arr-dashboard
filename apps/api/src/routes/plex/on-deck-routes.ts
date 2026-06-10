@@ -7,7 +7,7 @@
 
 import type { PlexOnDeckResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
-import { mapToOnDeckItems } from "./lib/on-deck-helpers.js";
+import { mapToOnDeckItems } from "../../lib/media-stats/on-deck-helpers.js";
 
 export async function registerOnDeckRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	/**

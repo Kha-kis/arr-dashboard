@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	aggregateUserAnalytics,
 	type SnapshotWithSessions,
-} from "../lib/user-analytics-helpers.js";
+} from "../../../lib/media-stats/user-analytics-helpers.js";
 
 function snapshot(
 	overrides: Partial<SnapshotWithSessions> & { sessionsJson: string },

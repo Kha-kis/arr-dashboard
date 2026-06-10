@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapToSections } from "../lib/section-helpers.js";
+import { mapToSections } from "../../../lib/media-stats/section-helpers.js";
 
 describe("mapToSections", () => {
 	const instanceNameMap = new Map([

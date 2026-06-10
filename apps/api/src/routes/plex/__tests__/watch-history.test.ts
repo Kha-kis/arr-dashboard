@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deduplicateWatchEvents, type SnapshotForHistory } from "../lib/watch-history-helpers.js";
+import { deduplicateWatchEvents, type SnapshotForHistory } from "../../../lib/media-stats/watch-history-helpers.js";
 
 function snapshot(
 	capturedAt: string,
