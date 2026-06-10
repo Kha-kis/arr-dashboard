@@ -13,7 +13,7 @@ import {
 import { Button } from "../../../components/ui";
 import { useSeerrUserQuota, useSeerrUsers } from "../../../hooks/api/useSeerr";
 import { getLinuxEmail, getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
-import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { BRAND_COLORS, SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { UserSettingsDialog } from "./user-settings-dialog";
 
 type UserSort = "displayname" | "created" | "updated" | "requests";
@@ -30,11 +30,12 @@ const SEERR_GRADIENT = SERVICE_GRADIENTS.seerr;
 function getUserTypeBadge(userType: number): { label: string; color: string } | null {
 	switch (userType) {
 		case 1:
-			return { label: "Local", color: "#38bdf8" }; // sky-400
+			return { label: "Local", color: SEMANTIC_COLORS.info.text };
 		case 2:
-			return { label: "Plex", color: "#e5a00d" }; // plex gold
+			return { label: "Plex", color: BRAND_COLORS.plex.text };
 		case 3:
-			return { label: "Jellyfin", color: "#a78bfa" }; // violet-400
+			// Brand cyan (was violet) — same service, same color everywhere (B2)
+			return { label: "Jellyfin", color: BRAND_COLORS.jellyfin.text };
 		default:
 			return null;
 	}

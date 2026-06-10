@@ -59,7 +59,11 @@ const BookBadge = ({
 		success: SEMANTIC_COLORS.success,
 		warning: SEMANTIC_COLORS.warning,
 		error: SEMANTIC_COLORS.error,
-		muted: { bg: "rgba(100, 116, 139, 0.1)", border: "rgba(100, 116, 139, 0.3)", text: "#94a3b8" },
+		muted: {
+		bg: SEMANTIC_COLORS.neutral.bg,
+		border: SEMANTIC_COLORS.neutral.border,
+		text: SEMANTIC_COLORS.neutral.text,
+	},
 	};
 	const color = colors[tone];
 

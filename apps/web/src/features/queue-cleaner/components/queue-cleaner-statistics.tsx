@@ -19,7 +19,7 @@ import {
 import { PremiumSkeleton } from "../../../components/layout/premium-components";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
-import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { SEMANTIC_COLORS, getServiceGradient } from "../../../lib/theme-gradients";
 import { useQueueCleanerStatistics } from "../hooks/useQueueCleanerStatistics";
 import { DEFAULT_RULE_COLOR, RULE_COLORS, RULE_LABELS } from "../lib/constants";
 import type { InstanceBreakdown, PeriodStats, RecentActivity } from "../lib/queue-cleaner-types";
@@ -382,7 +382,7 @@ const RecentActivityList = ({ activities, incognitoMode }: { activities: RecentA
 							? SEMANTIC_COLORS.error
 							: {
 									bg: "rgba(148, 163, 184, 0.1)",
-									text: "#94a3b8",
+									text: SEMANTIC_COLORS.neutral.text,
 									border: "rgba(148, 163, 184, 0.2)",
 								};
 

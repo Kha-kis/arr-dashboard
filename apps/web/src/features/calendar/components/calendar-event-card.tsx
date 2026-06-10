@@ -363,16 +363,16 @@ export const CalendarEventCard = ({
 								<ExternalBadge
 									label="MusicBrainz"
 									href={details.musicBrainzLink}
-									color="#ba478f"
-									textColor="#ba478f"
+									color={BRAND_COLORS.musicbrainz.border}
+									textColor={BRAND_COLORS.musicbrainz.text}
 								/>
 							)}
 							{details.goodreadsLink && details.goodreadsId && (
 								<ExternalBadge
 									label="Goodreads"
 									href={details.goodreadsLink}
-									color="#553b08"
-									textColor="#8b6914"
+									color={BRAND_COLORS.goodreads.border}
+									textColor={BRAND_COLORS.goodreads.text}
 								/>
 							)}
 						</div>

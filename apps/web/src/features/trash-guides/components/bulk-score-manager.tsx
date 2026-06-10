@@ -626,7 +626,7 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 							onClick={handleBulkResetToTemplate}
 							className="inline-flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-medium text-white transition-all duration-200"
 							style={{
-								background: `linear-gradient(135deg, ${SEMANTIC_COLORS.warning.from}, #d97706)`,
+								background: `linear-gradient(135deg, ${SEMANTIC_COLORS.warning.from}, ${SEMANTIC_COLORS.warning.to})`,
 								boxShadow: `0 4px 12px -4px rgba(245, 158, 11, 0.5)`,
 							}}
 						>

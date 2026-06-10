@@ -259,7 +259,7 @@ export const TemplateDiffModal = ({
 				return {
 					backgroundColor: "rgba(100, 116, 139, 0.1)",
 					borderColor: "rgba(100, 116, 139, 0.3)",
-					color: "#94a3b8",
+					color: SEMANTIC_COLORS.neutral.text,
 				};
 			default:
 				return {};
@@ -690,14 +690,14 @@ export const TemplateDiffModal = ({
 																<SpecificationDisplay
 																	specifications={diff.currentSpecifications}
 																	label="Specifications (will be removed):"
-																	color={styles.color ?? "#94a3b8"}
+																	color={styles.color ?? SEMANTIC_COLORS.neutral.text}
 																/>
 															)}
 															{diff.changeType === "added" && diff.newSpecifications && (
 																<SpecificationDisplay
 																	specifications={diff.newSpecifications}
 																	label="Specifications (will be added):"
-																	color={styles.color ?? "#94a3b8"}
+																	color={styles.color ?? SEMANTIC_COLORS.neutral.text}
 																/>
 															)}
 															{diff.changeType === "modified" && (
@@ -706,14 +706,14 @@ export const TemplateDiffModal = ({
 																		<SpecificationDisplay
 																			specifications={diff.currentSpecifications}
 																			label="Current:"
-																			color={styles.color ?? "#94a3b8"}
+																			color={styles.color ?? SEMANTIC_COLORS.neutral.text}
 																		/>
 																	)}
 																	{diff.newSpecifications && (
 																		<SpecificationDisplay
 																			specifications={diff.newSpecifications}
 																			label="New:"
-																			color={styles.color ?? "#94a3b8"}
+																			color={styles.color ?? SEMANTIC_COLORS.neutral.text}
 																		/>
 																	)}
 																</>

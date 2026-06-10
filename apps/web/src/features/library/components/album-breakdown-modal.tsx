@@ -49,6 +49,8 @@ const LIDARR_COLOR = SERVICE_GRADIENTS.lidarr.from;
 const ALBUM_TYPE_COLORS: Record<string, { bg: string; border: string; text: string }> = {
 	Album: SEMANTIC_COLORS.success,
 	EP: SEMANTIC_COLORS.info,
+	// Categorical format-badge color (B2 carve-out): album types are a data
+	// palette, not semantic status — purple has no SEMANTIC_COLORS meaning.
 	Single: { bg: "rgba(168, 85, 247, 0.1)", border: "rgba(168, 85, 247, 0.3)", text: "#a855f7" },
 };
 
@@ -67,7 +69,11 @@ const AlbumBadge = ({
 		success: SEMANTIC_COLORS.success,
 		warning: SEMANTIC_COLORS.warning,
 		error: SEMANTIC_COLORS.error,
-		muted: { bg: "rgba(100, 116, 139, 0.1)", border: "rgba(100, 116, 139, 0.3)", text: "#94a3b8" },
+		muted: {
+		bg: SEMANTIC_COLORS.neutral.bg,
+		border: SEMANTIC_COLORS.neutral.border,
+		text: SEMANTIC_COLORS.neutral.text,
+	},
 	};
 	const color = colors[tone];
 

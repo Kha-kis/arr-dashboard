@@ -22,7 +22,7 @@ import { ServiceBadge } from "../../../components/layout";
 import { Button, toast } from "../../../components/ui";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getLinuxInstanceName, getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
-import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { SEMANTIC_COLORS, getServiceGradient } from "../../../lib/theme-gradients";
 import { DEFAULT_RULE_COLOR, RULE_COLORS, RULE_LABELS } from "../lib/constants";
 import type { EnhancedPreviewItem, EnhancedPreviewResult } from "../lib/queue-cleaner-types";
 
@@ -235,19 +235,19 @@ export const EnhancedDryRunPreview = ({
 							icon={Download}
 							label="Downloading"
 							value={result.queueSummary.downloading}
-							color="#3b82f6"
+							color={SEMANTIC_COLORS.info.from}
 						/>
 						<StatCard
 							icon={Clock}
 							label="Seeding"
 							value={result.queueSummary.seeding + result.queueSummary.importPending}
-							color="#22c55e"
+							color={SEMANTIC_COLORS.success.from}
 						/>
 						<StatCard
 							icon={AlertTriangle}
 							label="Failed"
 							value={result.queueSummary.failed}
-							color="#ef4444"
+							color={SEMANTIC_COLORS.error.from}
 						/>
 						<StatCard
 							icon={Shield}
@@ -353,7 +353,7 @@ export const EnhancedDryRunPreview = ({
 							title="Would Warn"
 							icon={AlertTriangle}
 							items={itemsByAction.warn}
-							color="#f59e0b"
+							color={SEMANTIC_COLORS.warning.from}
 							expandedItems={expandedItems}
 							onToggle={toggleExpand}
 							incognitoMode={incognitoMode}
@@ -625,9 +625,9 @@ const GroupedItemRow = ({
 							<span
 								className="inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[9px] font-medium"
 								style={{
-									backgroundColor: "rgba(99, 102, 241, 0.1)",
-									color: "#6366f1",
-									border: "1px solid rgba(99, 102, 241, 0.2)",
+									backgroundColor: SEMANTIC_COLORS.info.bg,
+									color: SEMANTIC_COLORS.info.to,
+									border: `1px solid ${SEMANTIC_COLORS.info.border}`,
 								}}
 							>
 								{group.items.length} items

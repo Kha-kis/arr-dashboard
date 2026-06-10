@@ -390,6 +390,7 @@ export function AppearanceTab() {
 										<span
 											className="inline-block h-1.5 w-1.5 rounded-full"
 											style={{
+												// Decorative section-header dot, not a theme/semantic color (B2 carve-out)
 												background: "linear-gradient(135deg, #ff00ff, #00ffff)",
 											}}
 										/>
@@ -470,6 +471,7 @@ export function AppearanceTab() {
 										<span
 											className="inline-block h-1.5 w-1.5 rounded-full"
 											style={{
+												// Decorative section-header dot, not a theme/semantic color (B2 carve-out)
 												background: "linear-gradient(135deg, #ffd700, #ff8c00)",
 											}}
 										/>
