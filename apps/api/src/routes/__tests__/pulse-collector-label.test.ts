@@ -7,12 +7,15 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { labelForCollector } from "../pulse.js";
+import { pulseCollectors } from "../../lib/pulse/collectors.js";
+import { COLLECTOR_LABELS, labelForCollector } from "../pulse.js";
 
 describe("labelForCollector", () => {
 	it("returns the operator label for every known collector", () => {
 		const knownPairs: Array<[string, string]> = [
 			["collectArrSignals", "ARR health and disk space"],
+			["collectMediaServerReachability", "media server reachability"],
+			["collectArrQueueFailures", "queue failures"],
 			["collectSeerrCircuitBreaker", "Seerr circuit breaker"],
 			["collectCacheStaleness", "cache freshness"],
 			["collectValidationHealth", "validation health"],
@@ -26,6 +29,16 @@ describe("labelForCollector", () => {
 		for (const [name, expected] of knownPairs) {
 			expect(labelForCollector(name)).toBe(expected);
 		}
+	});
+
+	it("every registered collector has an EXPLICIT label entry (completeness guard)", () => {
+		// The humanize fallback is a safety net, not a labeling strategy —
+		// new collectors must register explicit operator copy (charter C4;
+		// this guard turns that review rule into a permanent gate).
+		const missing = pulseCollectors
+			.map((c) => c.name)
+			.filter((name) => !(name in COLLECTOR_LABELS));
+		expect(missing).toEqual([]);
 	});
 
 	it("humanizes unknown camelCase names instead of leaking them", () => {
