@@ -1,6 +1,7 @@
 "use client";
 
 import type { CrossSeedDiscoveryAvailability } from "@arr/shared";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import {
 	ArrowRight,
 	CheckCircle2,
@@ -428,8 +429,11 @@ interface HeaderProps {
 }
 
 const Header = ({ quiInstanceLabel, onRefresh, isRefreshing, quiOpenUrl }: HeaderProps) => {
-	const description = quiInstanceLabel
-		? `Cross-seed siblings across your library via ${quiInstanceLabel}, with tracker-health problems surfaced first. Remediate in qui — siblings are read-only here.`
+	const [incognitoMode] = useIncognitoMode();
+	const displayLabel =
+		quiInstanceLabel && incognitoMode ? getLinuxInstanceName(quiInstanceLabel) : quiInstanceLabel;
+	const description = displayLabel
+		? `Cross-seed siblings across your library via ${displayLabel}, with tracker-health problems surfaced first. Remediate in qui — siblings are read-only here.`
 		: "Surface qui's cross-seed sibling graph across your library and flag tracker-health problems.";
 
 	return (

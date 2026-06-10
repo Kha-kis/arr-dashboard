@@ -10,6 +10,7 @@
  */
 
 import type { SeerrRequest, SeerrServerWithDetails } from "@arr/shared";
+import { getLinuxSavePath, getLinuxServerName, useIncognitoMode } from "../../../lib/incognito";
 import { Loader2 } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -53,6 +54,7 @@ export const ApproveWithOptionsDialog = ({
 	open,
 	onOpenChange,
 }: ApproveWithOptionsDialogProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	const profileFieldId = useId();
 	const folderFieldId = useId();
 	const serverFieldId = useId();
@@ -198,7 +200,7 @@ export const ApproveWithOptionsDialog = ({
 								>
 									{filteredServers.map((s) => (
 										<SelectOption key={s.server.id} value={s.server.id}>
-											{s.server.name}
+											{incognitoMode ? getLinuxServerName(s.server.name) : s.server.name}
 											{s.server.isDefault ? " (default)" : ""}
 										</SelectOption>
 									))}
@@ -241,7 +243,7 @@ export const ApproveWithOptionsDialog = ({
 							>
 								{selectedServer.rootFolders.map((f) => (
 									<SelectOption key={f.id} value={f.path}>
-										{f.path}
+										{incognitoMode ? getLinuxSavePath(f.path) : f.path}
 										{f.path === selectedServer.server.activeDirectory ? " (server default)" : ""}
 									</SelectOption>
 								))}

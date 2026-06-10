@@ -10,6 +10,7 @@ import {
 	X,
 	XSquare,
 } from "lucide-react";
+import { getLinuxInstanceName, getLinuxSavePath, useIncognitoMode } from "../../../lib/incognito";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useShallow } from "zustand/shallow";
 import { PremiumSkeleton } from "../../../components/layout/premium-components";
@@ -63,6 +64,7 @@ export const ManualImportModal = ({
 	onOpenChange,
 	onCompleted,
 }: ManualImportModalProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	const { gradient: themeGradient } = useThemeGradient();
 	const serviceColor = SERVICE_COLORS[service] ?? themeGradient.from;
 	const { selections, toggleSelection, clear } = useManualImportStore(
@@ -254,13 +256,13 @@ export const ManualImportModal = ({
 						</div>
 						<div>
 							<h2 id="manual-import-title" className="text-xl font-bold text-foreground">
-								Manual Import - {instanceName}
+								Manual Import - {incognitoMode ? getLinuxInstanceName(instanceName) : instanceName}
 							</h2>
 							<p className="text-sm text-muted-foreground">
 								{downloadId
 									? `Download: ${downloadId}`
 									: folder
-										? `Folder: ${folder}`
+										? `Folder: ${incognitoMode ? getLinuxSavePath(folder) : folder}`
 										: "Interactive manual import"}
 							</p>
 						</div>

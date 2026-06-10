@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import {
 	Play,
 	Search,
@@ -255,10 +256,13 @@ const InstanceStatusCard = ({
 	};
 
 	const isCurrentlyTriggering = isTriggering && triggeringType !== null;
+	const [incognitoMode] = useIncognitoMode();
 
 	return (
 		<InstanceCard
-			instanceName={instance.instanceName}
+			instanceName={
+				incognitoMode ? getLinuxInstanceName(instance.instanceName) : instance.instanceName
+			}
 			service={instance.service}
 			animationDelay={animationDelay}
 			status={
