@@ -1,4 +1,5 @@
 import { Button } from "../../../components/ui/button";
+import { getLinuxIsoName, getLinuxSavePath, useIncognitoMode } from "../../../lib/incognito";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { cn } from "../../../lib/utils";
 import {
@@ -47,6 +48,7 @@ export const CandidateCard = ({
 	onClearEpisodes,
 	disabled = false,
 }: CandidateCardProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	const { gradient: themeGradient } = useThemeGradient();
 	const key = candidateKey(candidate);
 	const rejection = describeRejections(candidate);
@@ -131,9 +133,15 @@ export const CandidateCard = ({
 					/>
 					<div className="min-w-0 space-y-2">
 						<div className="space-y-1">
-							<p className="font-medium text-foreground">{describeCandidate(candidate)}</p>
+							<p className="font-medium text-foreground">
+								{incognitoMode
+									? getLinuxIsoName(describeCandidate(candidate))
+									: describeCandidate(candidate)}
+							</p>
 							<p className="wrap-break-word text-xs text-muted-foreground">
-								{candidateDisplayPath(candidate)}
+								{incognitoMode
+									? getLinuxSavePath(candidateDisplayPath(candidate))
+									: candidateDisplayPath(candidate)}
 							</p>
 						</div>
 						{chips.length > 0 && (
@@ -155,10 +163,10 @@ export const CandidateCard = ({
 						<p className="text-xs uppercase text-muted-foreground">Mapping</p>
 						<p>{mappingSummary}</p>
 						{isLidarrCandidate(candidate) && candidate.album?.title && (
-							<p className="text-xs text-muted-foreground/70">{candidate.album.title}</p>
+							<p className="text-xs text-muted-foreground/70">{incognitoMode ? getLinuxIsoName(candidate.album.title) : candidate.album.title}</p>
 						)}
 						{isReadarrCandidate(candidate) && candidate.book?.title && (
-							<p className="text-xs text-muted-foreground/70">{candidate.book.title}</p>
+							<p className="text-xs text-muted-foreground/70">{incognitoMode ? getLinuxIsoName(candidate.book.title) : candidate.book.title}</p>
 						)}
 					</div>
 					{isSonarrCandidate(candidate) && episodes.length > 0 && (
@@ -211,7 +219,11 @@ export const CandidateCard = ({
 												disabled={disabled || !selected}
 											/>
 											<span className="truncate text-xs">
-												{describeEpisode(episode as Parameters<typeof describeEpisode>[0])}
+												{incognitoMode
+													? getLinuxIsoName(
+															describeEpisode(episode as Parameters<typeof describeEpisode>[0]),
+														)
+													: describeEpisode(episode as Parameters<typeof describeEpisode>[0])}
 											</span>
 										</label>
 									);

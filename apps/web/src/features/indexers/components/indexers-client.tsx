@@ -1,6 +1,7 @@
 "use client";
 
 import type { ProwlarrIndexer, ProwlarrIndexerDetails } from "@arr/shared";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import {
 	AlertCircle,
 	CheckCircle2,
@@ -145,16 +146,20 @@ export const IndexersClient = () => {
 
 	// Data
 	const aggregated = useMemo(() => data?.aggregated ?? [], [data?.aggregated]);
+	const [incognitoMode] = useIncognitoMode();
 	const instances = useMemo(() => data?.instances ?? [], [data?.instances]);
 	const noInstances = !isLoading && instances.length === 0;
 
 	const instanceOptions = useMemo(() => {
 		const opts = [{ value: "all", label: "All instances" }];
 		for (const inst of instances) {
-			opts.push({ value: inst.instanceId, label: inst.instanceName });
+			opts.push({
+				value: inst.instanceId,
+				label: incognitoMode ? getLinuxInstanceName(inst.instanceName) : inst.instanceName,
+			});
 		}
 		return opts;
-	}, [instances]);
+	}, [instances, incognitoMode]);
 
 	// Filter + sort
 	const filtered = useMemo(() => {
