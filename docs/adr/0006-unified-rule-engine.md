@@ -130,11 +130,22 @@ engine.
   rewrite. That is acceptable — the contract is about storage and
   grammar, not internal call paths.
 
+**Amendment note (2026-06-09):** the unified migration gains an explicit
+case from ADR-0007's second amendment — **Tautulli-typed conditions**
+(`tautulli_last_watched`, `tautulli_watch_count`, `tautulli_watched_by`)
+in Library Cleanup (and Auto-Tagger via the shared evaluators) are
+removed/retargeted as part of the unified migration rather than in an
+ad-hoc A2 pass. Consequence: **Bucket A sequencing is A4 → A2** — the
+Tautulli removal rides this migration framework instead of duplicating
+it. The migration report per surface must count and list rules whose
+conditions referenced Tautulli data so the A2 dialog can disclose them.
+
 ## Follow-ups
 
 - Bucket A design pass: grammar schema (typed fields, operators,
   serialization) — review against all five domains' existing rules
-  before freezing.
+  before freezing. The Tautulli-typed condition kinds are an explicit
+  test case for the migration design.
 - A `require-migration-on-rule-schema-change` lint (charter §7) once the
   engine stabilizes.
 - Dry-run preview infrastructure is shared with the Tautulli wizard's

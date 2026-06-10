@@ -153,11 +153,35 @@ successor — are fully preserved in the dialog.
 - AGPL-3.0: arr-dashboard consumes Tracearr's HTTP API only — a normal
   client relationship, no code linkage. No license obligation arises.
 
+**Amendment note 2 (2026-06-09) — A2 is sequenced AFTER A4:** the
+removal inventory found that Tautulli is a *data source*, not just an
+integration: Library Cleanup's rule grammar has three Tautulli-typed
+condition kinds (`tautulli_last_watched`, `tautulli_watch_count`,
+`tautulli_watched_by`) stored in user rules (and reachable from
+Auto-Tagger, which reuses the same evaluators), and the `TautulliCache`
+table feeds the cleanup executor plus the Plex AND Jellyfin
+watch-enrichment routes. Removing Tautulli therefore orphans stored
+user rules — a stored-rule migration, which is exactly what ADR-0006's
+5-point contract exists for. Rather than building one-off migration
+machinery in A2 and rebuilding it properly in A4 (two migration events
+for users), **A2 lands after A4's unified engine + migration framework,
+and the Tautulli rule-type removal ships as one case inside the unified
+migration**. The first-boot dialog additionally discloses how many of
+the user's stored rules referenced Tautulli watch data. Watch-enrichment
+re-pointing (Plex/Jellyfin enrichment reads of TautulliCache → Tracearr
+or SessionSnapshot equivalents) is scoped into A2 alongside the
+Statistics overview-tab migration.
+
 ## Follow-ups
 
 - Bucket C2 (Statistics rewrite on Tracearr) starts only after the
   Tracearr client + routes land.
 - Dialog ships in the same PR as the Tautulli removal — the removal
   must never exist on `next` without its migration path.
+- The `ServiceType.TAUTULLI` Prisma enum value is RETAINED (with a
+  deprecation comment) until 4.0 — removing it would make pre-dialog
+  rows undeserializable and crash boot before the dialog could render.
+  The dialog is the only deleter of rows; the enum value goes when no
+  supported upgrade path can still carry such rows.
 - Schedule Tracearr's `experimental` → graduation review at 3.0-rc
   (per ADR-0005).
