@@ -27,7 +27,7 @@ import { TEMPLATES_QUERY_KEY } from "../../../lib/query-keys";
 import { useTemplateUpdates } from "../../../hooks/api/useTemplateUpdates";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { useTemplateListModals } from "../hooks/use-template-list-modals";
 import { TemplateCardContent } from "./template-card-content";
 import { TemplateInstanceSelector } from "./template-instance-selector";
@@ -261,8 +261,8 @@ export const TemplateList = ({
 						title="Import quality profile from TRaSH Guides for Radarr"
 						className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all duration-200"
 						style={{
-							background: `linear-gradient(135deg, #f97316, #ea580c)`,
-							boxShadow: "0 4px 12px -4px rgba(249, 115, 22, 0.5)",
+							background: `linear-gradient(135deg, ${SERVICE_GRADIENTS.radarr.from}, ${SERVICE_GRADIENTS.radarr.to})`,
+							boxShadow: `0 4px 12px -4px ${SERVICE_GRADIENTS.radarr.glow}`,
 						}}
 					>
 						<Star className="h-4 w-4" />
@@ -274,8 +274,8 @@ export const TemplateList = ({
 						title="Import quality profile from TRaSH Guides for Sonarr"
 						className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all duration-200"
 						style={{
-							background: `linear-gradient(135deg, #06b6d4, #0891b2)`,
-							boxShadow: "0 4px 12px -4px rgba(6, 182, 212, 0.5)",
+							background: `linear-gradient(135deg, ${SERVICE_GRADIENTS.sonarr.from}, ${SERVICE_GRADIENTS.sonarr.to})`,
+							boxShadow: `0 4px 12px -4px ${SERVICE_GRADIENTS.sonarr.glow}`,
 						}}
 					>
 						<Star className="h-4 w-4" />

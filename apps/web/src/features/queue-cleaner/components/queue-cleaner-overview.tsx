@@ -23,7 +23,7 @@ import { Button, toast } from "../../../components/ui";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { POST_CLEAN_REFRESH_DELAY_MS } from "../lib/constants";
-import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { SEMANTIC_COLORS, getServiceGradient } from "../../../lib/theme-gradients";
 import { useEnhancedPreview } from "../hooks/useDryRun";
 import { useManualClean } from "../hooks/useManualClean";
 import type { InstanceCleanerStatus, QueueCleanerStatus } from "../lib/queue-cleaner-types";
@@ -153,7 +153,7 @@ const InstanceStatusCard = ({ instance, onRefresh, animationDelay }: InstanceSta
 
 	const accent = instance.enabled
 		? { from: serviceGradient.from, to: serviceGradient.to }
-		: { from: "#6b7280", to: "#9ca3af" };
+		: { from: SEMANTIC_COLORS.neutral.from, to: SEMANTIC_COLORS.neutral.to };
 
 	return (
 		<>

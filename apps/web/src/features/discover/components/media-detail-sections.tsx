@@ -309,10 +309,10 @@ export const ExternalLinksSection: React.FC<ExternalLinksSectionProps> = ({
 				)}
 				{plexUrl && (() => {
 					const watchColors = watchLabel === "Jellyfin"
-						? { bg: "rgba(0, 164, 220, 0.1)", border: "rgba(0, 164, 220, 0.3)", text: "#00a4dc" }
+						? BRAND_COLORS.jellyfin
 						: watchLabel === "Emby"
-							? { bg: "rgba(82, 181, 75, 0.1)", border: "rgba(82, 181, 75, 0.3)", text: "#52b54b" }
-							: { bg: "rgba(229, 160, 13, 0.1)", border: "rgba(229, 160, 13, 0.3)", text: "#e5a00d" };
+							? BRAND_COLORS.emby
+							: BRAND_COLORS.plex;
 					return (
 						<button
 							type="button"

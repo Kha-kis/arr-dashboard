@@ -163,7 +163,8 @@ export const RecentlyAddedWidget = ({ hasPlexInstances, hasJellyfinInstances, an
 								const MediaIcon = item.mediaType === "movie" ? Film : Tv;
 								const bgGradient =
 									item.mediaType === "movie"
-										? "linear-gradient(160deg, #92400e 0%, #f59e0b 100%)"
+										? // Decorative poster-placeholder art, categorical not semantic (B2 carve-out)
+											"linear-gradient(160deg, #92400e 0%, #f59e0b 100%)"
 										: "linear-gradient(160deg, #164e63 0%, #06b6d4 100%)";
 								const thumbKey = item.key;
 								const hasThumb = item.thumbUrl && !failedThumbs.has(thumbKey);

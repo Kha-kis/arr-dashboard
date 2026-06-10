@@ -69,7 +69,7 @@ export const NotificationsTab = ({ instanceId }: NotificationsTabProps) => {
 				{agents.map((agent, index) => {
 					const ToggleIcon = agent.enabled ? ToggleRight : ToggleLeft;
 					const hasFields = !!AGENT_FIELDS[agent.id];
-					const accent = agent.enabled ? SEMANTIC_COLORS.success : { from: "#6b7280", to: "#9ca3af" };
+					const accent = agent.enabled ? SEMANTIC_COLORS.success : SEMANTIC_COLORS.neutral;
 
 					return (
 						<div
@@ -123,7 +123,7 @@ export const NotificationsTab = ({ instanceId }: NotificationsTabProps) => {
 											style={{
 												backgroundColor: agent.enabled
 													? SEMANTIC_COLORS.success.text
-													: "#6b7280",
+													: SEMANTIC_COLORS.neutral.from,
 											}}
 										/>
 										<span className="text-[11px] text-muted-foreground/40">

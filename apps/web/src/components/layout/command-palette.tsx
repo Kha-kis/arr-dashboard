@@ -1,6 +1,7 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
+import { THEME_GRADIENT_VALUES } from "../../lib/theme-gradients";
 import { Command } from "cmdk";
 import {
 	BarChart3,
@@ -96,17 +97,26 @@ const NAV_ITEMS = [
  * Theme color options with actual hex values for previews
  * (CSS variables can't be used for gradient preview swatches)
  */
+
+const swatch = (theme: keyof typeof THEME_GRADIENT_VALUES) => ({
+	from: THEME_GRADIENT_VALUES[theme].from,
+	to: THEME_GRADIENT_VALUES[theme].to,
+});
+
 const THEME_COLOR_OPTIONS: Array<{ name: ColorTheme; label: string; from: string; to: string }> = [
-	{ name: "blue", label: "Blue Ocean", from: "#3b82f6", to: "#8b5cf6" },
-	{ name: "purple", label: "Purple Haze", from: "#8b5cf6", to: "#ec4899" },
-	{ name: "green", label: "Emerald", from: "#22c55e", to: "#14b8a6" },
-	{ name: "orange", label: "Sunset", from: "#f97316", to: "#eab308" },
-	{ name: "rose", label: "Rose", from: "#f43f5e", to: "#ec4899" },
-	{ name: "slate", label: "Slate", from: "#64748b", to: "#475569" },
-	{ name: "winamp", label: "Winamp", from: "#00ff00", to: "#39ff14" },
-	{ name: "terminal", label: "Terminal", from: "#20c20e", to: "#00ff41" },
-	{ name: "vaporwave", label: "Vaporwave", from: "#ff6ec7", to: "#00ffff" },
-	{ name: "cyber", label: "Cyberpunk", from: "#00d4ff", to: "#ff00ff" },
+	// Swatch colors come from the central static table — preview swatches
+	// must show what each theme WOULD look like, so they can't read the
+	// runtime CSS variables (those reflect the CURRENTLY active theme).
+	{ name: "blue", label: "Blue Ocean", ...swatch("blue") },
+	{ name: "purple", label: "Purple Haze", ...swatch("purple") },
+	{ name: "green", label: "Emerald", ...swatch("green") },
+	{ name: "orange", label: "Sunset", ...swatch("orange") },
+	{ name: "rose", label: "Rose", ...swatch("rose") },
+	{ name: "slate", label: "Slate", ...swatch("slate") },
+	{ name: "winamp", label: "Winamp", ...swatch("winamp") },
+	{ name: "terminal", label: "Terminal", ...swatch("terminal") },
+	{ name: "vaporwave", label: "Vaporwave", ...swatch("vaporwave") },
+	{ name: "cyber", label: "Cyberpunk", ...swatch("cyber") },
 ];
 
 interface CommandPaletteProps {
