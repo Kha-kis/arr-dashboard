@@ -44,12 +44,15 @@ interface PremiumTableRowProps {
 	children: ReactNode;
 	className?: string;
 	isHoverable?: boolean;
+	/** Inline style passthrough (e.g. staggered animationDelay) */
+	style?: React.CSSProperties;
 }
 
 export const PremiumTableRow = ({
 	children,
 	className,
 	isHoverable = true,
+	style,
 }: PremiumTableRowProps) => {
 	return (
 		<tr
@@ -58,6 +61,7 @@ export const PremiumTableRow = ({
 				isHoverable && "hover:bg-muted/20 transition-colors",
 				className,
 			)}
+			style={style}
 		>
 			{children}
 		</tr>
