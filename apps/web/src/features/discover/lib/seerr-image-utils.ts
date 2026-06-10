@@ -57,6 +57,7 @@ export function getMediaStatusInfo(status: SeerrMediaStatus | undefined): MediaS
 				label: "Processing",
 				bg: "rgba(234, 179, 8, 0.1)",
 				border: "rgba(234, 179, 8, 0.3)",
+				// eslint-disable-next-line no-restricted-syntax -- categorical yellow, deliberately distinct from warning amber
 				text: "#facc15",
 			};
 		case SEERR_MEDIA_STATUS.PARTIALLY_AVAILABLE:

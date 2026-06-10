@@ -153,6 +153,7 @@ export const OverviewTab = ({
 						<div
 							className="flex h-8 w-8 items-center justify-center rounded-lg shrink-0"
 							style={{
+								// eslint-disable-next-line no-restricted-syntax -- decorative tile gradient; amber-600 pair has no token
 								background: "linear-gradient(135deg, #f59e0b20, #d9770620)",
 							}}
 						>
@@ -236,6 +237,7 @@ export const OverviewTab = ({
 					<div
 						className="flex h-8 w-8 items-center justify-center rounded-lg shrink-0"
 						style={{
+							// eslint-disable-next-line no-restricted-syntax -- decorative tile gradient; emerald has no token
 							background: "linear-gradient(135deg, #10b98120, #05966920)",
 						}}
 					>
