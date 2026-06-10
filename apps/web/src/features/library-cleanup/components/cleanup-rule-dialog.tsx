@@ -7,6 +7,7 @@ import type {
 	CreateCleanupRule,
 } from "@arr/shared";
 import type { LucideIcon } from "lucide-react";
+import { getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 import {
 	Brain,
 	ChevronDown,
@@ -2028,6 +2029,7 @@ interface ParamsFieldsProps {
 }
 
 function ParamsFields(props: ParamsFieldsProps) {
+	const [incognitoMode] = useIncognitoMode();
 	const {
 		ruleType,
 		days,
@@ -2856,6 +2858,7 @@ function ParamsFields(props: ParamsFieldsProps) {
 					<MultiSelectField
 						label="Plex Users"
 						options={fieldOptions?.plexUsers ?? []}
+						displayValue={incognitoMode ? getLinuxUsername : undefined}
 						selected={selectedPlexUsers}
 						onChange={setSelectedPlexUsers}
 						loading={fieldOptionsLoading}
@@ -3239,6 +3242,7 @@ function ParamsFields(props: ParamsFieldsProps) {
 					<MultiSelectField
 						label="Jellyfin Users"
 						options={fieldOptions?.jellyfinUsers ?? []}
+						displayValue={incognitoMode ? getLinuxUsername : undefined}
 						selected={selectedJellyfinUsers}
 						onChange={setSelectedJellyfinUsers}
 						loading={fieldOptionsLoading}

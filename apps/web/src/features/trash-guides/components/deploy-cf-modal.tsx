@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertCircle, ChevronDown, Download, Loader2, X } from "lucide-react";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
@@ -31,6 +32,7 @@ const DeployCFModal = ({
 	onClose,
 	isPending,
 }: DeployCFModalProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
@@ -141,7 +143,7 @@ const DeployCFModal = ({
 									<option value="">Choose an instance...</option>
 									{availableInstances.map((instance) => (
 										<option key={instance.id} value={instance.id}>
-											{instance.label} ({instance.service})
+											{incognitoMode ? getLinuxInstanceName(instance.label) : instance.label} ({instance.service})
 										</option>
 									))}
 								</select>

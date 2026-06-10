@@ -1,6 +1,7 @@
 "use client";
 
 import type { CustomQualityConfig, TemplateInstanceOverride, TrashTemplate } from "@arr/shared";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import {
 	AlertTriangle,
 	Check,
@@ -48,6 +49,7 @@ export const InstanceOverridesPanel = ({
 	instances,
 	onOverrideChanged,
 }: InstanceOverridesPanelProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	const [isExpanded, setIsExpanded] = useState(false);
 	const [editingInstance, setEditingInstance] = useState<ServiceInstance | null>(null);
 
@@ -192,7 +194,7 @@ export const InstanceOverridesPanel = ({
 										<Server className="h-4 w-4 text-muted-foreground shrink-0" />
 										<div className="min-w-0">
 											<div className="text-sm font-medium text-foreground truncate">
-												{status.instanceLabel}
+												{incognitoMode ? getLinuxInstanceName(status.instanceLabel) : status.instanceLabel}
 											</div>
 											{status.hasQualityOverride && status.qualityOverride ? (
 												<div className="flex items-center gap-2 text-xs text-muted-foreground">

@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertCircle, Check, FileJson, Loader2, Plus, Server, Upload } from "lucide-react";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { useCallback, useState } from "react";
 import { PremiumTabs } from "../../../components/layout/premium-components";
 import { Button } from "../../../components/ui";
@@ -49,6 +50,7 @@ export function UserCFImportDialog({
 	onOpenChange,
 	defaultServiceType = "RADARR",
 }: UserCFImportDialogProps) {
+	const [incognitoMode] = useIncognitoMode();
 	const { gradient } = useThemeGradient();
 	const [activeTab, setActiveTab] = useState("create");
 
@@ -456,6 +458,7 @@ function InstanceImportTab({
 	onSuccess: () => void;
 	gradient: { from: string; fromLight: string };
 }) {
+	const [incognitoMode] = useIncognitoMode();
 	const [selectedInstanceId, setSelectedInstanceId] = useState("");
 	const [instanceCFs, setInstanceCFs] = useState<
 		Array<{ id: number; name: string; checked: boolean }>
@@ -550,7 +553,7 @@ function InstanceImportTab({
 						<option value="">Choose an instance...</option>
 						{arrInstances.map((instance) => (
 							<option key={instance.id} value={instance.id}>
-								{instance.label} ({instance.service})
+								{incognitoMode ? getLinuxInstanceName(instance.label) : instance.label} ({instance.service})
 							</option>
 						))}
 					</select>

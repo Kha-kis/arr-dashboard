@@ -16,6 +16,7 @@ import {
 	Settings,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { PremiumSkeleton } from "../../../components/layout/premium-components";
 import {
 	Button,
@@ -57,6 +58,7 @@ export const DeploymentPreviewModal = ({
 	instanceLabel,
 	onDeploySuccess,
 }: DeploymentPreviewModalProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	const { gradient: themeGradient } = useThemeGradient();
 	const { data, isLoading, error } = useDeploymentPreview(templateId, instanceId);
 	const [expandedConflicts, setExpandedConflicts] = useState<Set<string>>(new Set());
@@ -283,7 +285,7 @@ export const DeploymentPreviewModal = ({
 								<div className="flex-1">
 									<h3 className="text-sm font-medium text-foreground">Target Instance</h3>
 									<p className="text-xs text-muted-foreground">
-										{data.data.instanceLabel} ({data.data.instanceServiceType})
+										{incognitoMode ? getLinuxInstanceName(data.data.instanceLabel) : data.data.instanceLabel} ({data.data.instanceServiceType})
 									</p>
 								</div>
 								<div className="flex items-center gap-2">

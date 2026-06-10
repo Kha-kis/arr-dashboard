@@ -1,6 +1,7 @@
 "use client";
 
 import type { CleanupFieldOptionsResponse, CleanupRuleType } from "@arr/shared";
+import { getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 import { ToggleSwitch } from "@/components/layout/config-primitives";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 import { MultiSelectField } from "./multi-select-field";
@@ -128,6 +129,7 @@ export function ConditionParamsFields({
 	inputClass,
 	labelClass,
 }: ConditionParamsFieldsProps) {
+	const [incognitoMode] = useIncognitoMode();
 	const { gradient } = useThemeGradient();
 	const get = <T,>(key: string, def: T): T => (params[key] as T) ?? def;
 	const set = (key: string, val: unknown) => onParamsChange({ ...params, [key]: val });
@@ -906,6 +908,7 @@ export function ConditionParamsFields({
 					<MultiSelectField
 						label="Plex Users"
 						options={fieldOptions?.plexUsers ?? []}
+						displayValue={incognitoMode ? getLinuxUsername : undefined}
 						selected={get("userNames", []) as string[]}
 						onChange={(v) => set("userNames", v)}
 						loading={fieldOptionsLoading}

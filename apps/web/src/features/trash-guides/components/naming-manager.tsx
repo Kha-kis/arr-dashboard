@@ -1,6 +1,7 @@
 "use client";
 
 import type { ServiceInstanceSummary } from "@arr/shared";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import type { NamingFieldComparison, NamingPresetsResponse } from "@arr/shared";
 import {
 	AlertCircle,
@@ -255,6 +256,7 @@ function PreviewTable({
 // ============================================================================
 
 export function NamingManager() {
+	const [incognitoMode] = useIncognitoMode();
 	const { gradient: themeGradient } = useThemeGradient();
 	const { data: services, isLoading: servicesLoading, error: servicesError } = useServicesQuery();
 
@@ -546,7 +548,7 @@ export function NamingManager() {
 										/>
 										<div className="min-w-0 flex-1">
 											<div className="flex items-center gap-2">
-												<span className="text-sm font-medium truncate">{instance.label}</span>
+												<span className="text-sm font-medium truncate">{incognitoMode ? getLinuxInstanceName(instance.label) : instance.label}</span>
 												<ServiceBadge service={instance.service} />
 											</div>
 											{hasSavedConfig && (
@@ -725,7 +727,7 @@ export function NamingManager() {
 											/>
 											<span className="text-sm">
 												Apply {previewMutation.data.preview.changedCount} naming change(s) to{" "}
-												<strong>{selectedInstance?.label}</strong>? This will overwrite the current
+												<strong>{selectedInstance && (incognitoMode ? getLinuxInstanceName(selectedInstance.label) : selectedInstance.label)}</strong>? This will overwrite the current
 												naming config.
 											</span>
 											<button
