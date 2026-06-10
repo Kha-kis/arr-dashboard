@@ -59,34 +59,58 @@ its end of life.
   `routes/plex/lib/` helpers are renamed to reflect their shared role
   (charter Bucket A3).
 
-### 3. Migration: first-boot blocking wizard, no advance banner
+### 3. Migration: first-boot confirmation dialog, no advance banner
+
+*(Amended 2026-06-09 — originally specified as a three-path wizard; see
+the amendment note below.)*
 
 No 2.x warning banner ships (decision #3 — the 2.x line stays quiet).
 Instead, if any `ServiceInstance` row with `service = TAUTULLI` exists
-at first 3.0 boot, the dashboard presents a **blocking, non-dismissible
-wizard** (decision #4) with three paths (decision #5):
+at first 3.0 boot, the dashboard presents a **blocking confirmation
+dialog** (decision #4) — one screen, two actions:
 
-1. **Set up Tracearr (recommended)** — walks through connection, points
-   at Tracearr's built-in Tautulli import for history carry-over, then
-   removes the Tautulli rows.
-2. **Continue without historical analytics** — removes the Tautulli
-   rows; live sessions keep working; Statistics shows "historical
-   analytics unavailable — set up Tracearr in Settings."
-3. **Stay on 2.x** — exits cleanly; the operator pins the previous
-   Docker tag.
+1. **Remove Tautulli & continue** — deletes the Tautulli rows; live
+   sessions keep working; Statistics shows "historical analytics
+   unavailable — set up Tracearr in Settings" (decision #5's
+   no-analytics path).
+2. **Set up Tracearr →** — navigates to Settings → Services with the
+   add-Tracearr form ready, and notes Tracearr's built-in Tautulli
+   history import. Returning with a Tracearr instance configured (or
+   choosing Remove afterwards) resolves the dialog.
+
+The dialog blocks the dashboard until resolved — it is one click, so no
+"remind me later" state is needed — and copy mentions that staying on
+2.x is a Docker-tag decision documented in the release notes.
 
 **No silent data loss**: Tautulli rows are deleted only by explicit
-choice, and the wizard is the only deleter.
+choice, and the dialog is the only deleter.
+
+**Amendment note (2026-06-09):** the original three-path *wizard* — with
+an embedded Tracearr connection walkthrough and a "stay on 2.x" exit —
+was downscoped after review. The embedded walkthrough would have
+duplicated Settings → Services' add-service flow (a second setup UI to
+maintain forever) and created a hard dependency: the Tautulli removal
+(Bucket A2) could not ship before the Tracearr integration existed.
+As a navigation link, that dependency becomes soft — A2 ships
+independently and the link target improves when Tracearr lands. The
+"stay on 2.x" path needed no UI at all: not upgrading is a decision
+made before boot, owned by release notes. The migration invariants —
+consent before deletion, can't-miss presentation, a pointer to the
+successor — are fully preserved in the dialog.
 
 ## Why this shape
 
 1. **Removal-with-destination beats deprecation-without-one.** The
    earlier plan deprecated Tautulli with nothing to point users at.
    Tracearr's Tautulli import turns a takeaway into a swap.
-2. **The blocking wizard concentrates all migration friction into one
+2. **The blocking dialog concentrates all migration friction into one
    honest moment.** A dismissible banner gets dismissed; a half-broken
    Tautulli tab generates support issues for a year.
-3. **Full write parity from day one** keeps the integration from
+3. **Reuse the real setup flow.** The dialog links to Settings →
+   Services rather than embedding a parallel setup path — one
+   add-service UI, maintained once, and the migration code stays a
+   dialog + a delete.
+4. **Full write parity from day one** keeps the integration from
    shipping as a second-class read-only viewer that needs a follow-up
    release to be useful for operators (kill-stream is the single most
    requested analytics action).
@@ -102,7 +126,7 @@ choice, and the wizard is the only deleter.
   contradicts the charter thesis directly.
 - **A 2.x advance-warning banner.** Adds a coordinated 2.x release to
   the critical path for marginal benefit — users who skip versions
-  would miss it anyway, which is exactly what the first-boot wizard
+  would miss it anyway, which is exactly what the first-boot dialog
   cannot miss.
 - **Auto-deleting Tautulli config on upgrade.** Cheapest to build,
   silently destroys user configuration. Violates the trust thesis.
@@ -114,7 +138,7 @@ choice, and the wizard is the only deleter.
 - Analytics collapses from four maintained paths to two clearly-roled
   ones (Tracearr historical, native live).
 - ~7,000 lines of the least-tested integration leave the codebase.
-- The wizard pattern (blocking, explicit paths, no silent loss) becomes
+- The dialog pattern (blocking, explicit consent, no silent loss) becomes
   the template for any future integration removal.
 
 ### Negative / trade-offs
@@ -123,7 +147,7 @@ choice, and the wizard is the only deleter.
   upstream-validation infrastructure (Zod schemas, quarantine,
   validation-health surface) — drift degrades gracefully and visibly.
 - Users who want neither Tracearr nor data loss have no in-place
-  option; path 3 (stay on 2.x) is honest but is still an exit, not an
+  option; staying on 2.x is honest but is still an exit, not an
   accommodation. Accepted: single-admin self-hosted users control their
   own upgrade timing.
 - AGPL-3.0: arr-dashboard consumes Tracearr's HTTP API only — a normal
@@ -133,7 +157,7 @@ choice, and the wizard is the only deleter.
 
 - Bucket C2 (Statistics rewrite on Tracearr) starts only after the
   Tracearr client + routes land.
-- Wizard ships in the same PR as the Tautulli removal — the removal
+- Dialog ships in the same PR as the Tautulli removal — the removal
   must never exist on `next` without its migration path.
 - Schedule Tracearr's `experimental` → graduation review at 3.0-rc
   (per ADR-0005).
