@@ -16,7 +16,12 @@ import type {
 	Condition,
 	RuleType,
 } from "@arr/shared";
-import { createAutoTagRuleSchema, ruleParamSchemaMap, updateAutoTagRuleSchema } from "@arr/shared";
+import {
+	createAutoTagRuleSchema,
+	isKindLegalForContext,
+	ruleParamSchemaMap,
+	updateAutoTagRuleSchema,
+} from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { executeAutoTagRule } from "../lib/auto-tag/execute-rule.js";
@@ -123,6 +128,10 @@ function validateRuleParameters(
 		for (let i = 0; i < conditions.length; i++) {
 			const cond = conditions[i];
 			if (!cond) continue;
+			// Tier-1 strict kind legality (unified-rule-grammar §2.2)
+			if (!isKindLegalForContext("auto-tag", cond.ruleType)) {
+				return `Unknown rule type for condition[${i}]: "${cond.ruleType}"`;
+			}
 			const schema = ruleParamSchemaMap[cond.ruleType];
 			if (schema) {
 				const result = schema.safeParse(cond.parameters);
@@ -137,6 +146,9 @@ function validateRuleParameters(
 		return null;
 	}
 
+	if (!isKindLegalForContext("auto-tag", ruleType)) {
+		return `Unknown rule type "${ruleType}"`;
+	}
 	const schema = ruleParamSchemaMap[ruleType];
 	if (schema) {
 		const result = schema.safeParse(parameters);

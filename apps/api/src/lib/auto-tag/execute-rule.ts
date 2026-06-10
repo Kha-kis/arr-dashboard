@@ -21,6 +21,7 @@ import { evaluateSingleCondition } from "../library-cleanup/rule-evaluators.js";
 import type { CacheItemForEval, EvalContext } from "../library-cleanup/types.js";
 import type { PrismaClient, ServiceInstance } from "../prisma.js";
 import { safeJsonParse } from "../utils/json.js";
+import { autoTagRuleMatchesViaEngine } from "../rules/auto-tag-adapter.js";
 
 export interface AutoTagRuleInput {
 	id: string;
@@ -279,7 +280,7 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 			}
 
 			const cacheItem = item as CacheItemForEval;
-			const matches = evaluateAgainstRule(cacheItem, rule, instance.service, evalCtx);
+			const matches = autoTagRuleMatchesViaEngine(cacheItem, rule, instance.service, evalCtx);
 			if (matches) matched.push({ item: cacheItem, existingTags });
 		}
 
@@ -393,7 +394,7 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
  * logic from library-cleanup but skips the cleanup-specific pre-filter
  * pass (we do excludeTags/excludeTitles ourselves above).
  */
-function evaluateAgainstRule(
+export function evaluateAgainstRule(
 	item: CacheItemForEval,
 	rule: AutoTagRuleInput,
 	instanceService: string,

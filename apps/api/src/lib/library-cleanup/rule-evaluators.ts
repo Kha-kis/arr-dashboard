@@ -2252,7 +2252,7 @@ export function explainItemAgainstRules(
  * Check if a rule should be skipped because its data source failed.
  * Examines both the top-level ruleType and composite sub-conditions.
  */
-function shouldSkipForFailedSource(
+export function shouldSkipForFailedSource(
 	rule: LibraryCleanupRule,
 	failedSources?: Set<DataSourceDependency>,
 ): boolean {
@@ -2314,7 +2314,7 @@ function shouldSkipRuleType(
 /**
  * Determine which pre-filter (if any) would block this rule from evaluating the item.
  */
-function getFilterReason(
+export function getFilterReason(
 	item: CacheItemForEval,
 	rule: LibraryCleanupRule,
 	instanceService: string,
