@@ -143,52 +143,106 @@ type RuleContext = {
 - **Queue-cleaner / hunting storage** — config columns stay; their UIs
   stay; only the evaluation internals route through the engine.
 
-## 3. Per-surface migration mapping (ADR-0006 5-point contract)
+## 3. Migration strategy: parse-time versioning, no eager rewrites
 
-| Surface | Transform | Risk |
+**Format unification does not rewrite stored rows.** The parser
+version-detects each document at load time:
+
+- JSON with top-level `ruleType` (cleanup/auto-tag) or a bare
+  conditions array (notifications) → **legacy v0**; a small mapper
+  converts to grammar nodes in memory.
+- JSON with `version: 1` → parsed directly.
+
+Rules are written in v1 **only when created or edited** (lazy
+convergence). The v0 mappers live in one quarantined module with
+fixture tests against real 2.x rows.
+
+| Surface | Load path | Eager rewrite? |
 |---|---|---|
-| Library Cleanup | Near-identity: `{ruleType, parameters}` → `{version:1, root:{kind, params}}`; composites → `{all:[…]}`/`{any:[…]}` | Low — shape-preserving envelope |
-| Auto-Tagger | Same as cleanup | Low |
-| Notifications | Each `{field,operator,value}` → `{kind:"field_match", params:{…}}`; array → `{all:[…]}` | Low — lossless and mechanical |
-| Queue Cleaner | **None** (config unchanged; adapter internal) | n/a |
-| Hunting | **None** (config unchanged; adapter internal) | n/a |
+| Library Cleanup | v0 mapper (near-identity) | **No** |
+| Auto-Tagger | same v0 mapper | **No** |
+| Notifications | v0 mapper (`{field,operator,value}` → `field_match`) | **No** |
+| Queue Cleaner | config adapter (not a document) | **No** |
+| Hunting | config adapter (not a document) | **No** |
 
-### 3.1 The Tautulli test case (ADR-0006/0007 amendments)
+Consequences:
 
-During the cleanup/auto-tag migration, conditions with kinds
-`tautulli_last_watched`, `tautulli_watch_count`, `tautulli_watched_by`:
+1. **Notifications' stable-tier promise survives unification** — its
+   stored rows are untouched until the user edits a rule. The breaking
+   change ADR-0006 assumed ("bundle into 3.0 or never") does not exist.
+2. **ADR-0006's 5-point contract is rescoped to semantic changes
+   only** — passes that alter what rules *mean* (the Tautulli
+   retirement, §3.1). Format conversion needs no backup file because
+   the original rows are never touched; the untouched rows ARE the
+   backup.
+3. Mixed v0/v1 documents coexist in the DB indefinitely. Accepted:
+   write-on-edit converges naturally; an optional "migrate all now"
+   maintenance action can be added if mixed-format debugging ever
+   becomes a real cost.
+4. Future format changes add a v1→v2 mapper — the `version` field makes
+   every document self-describing.
 
-1. Are counted and listed per rule in the migration report (feeds the
-   A2 dialog's disclosure: "N of your rules referenced Tautulli watch
-   data").
+### 3.1 The Tautulli pass — the only eager (semantic) migration
+
+Retiring `tautulli_last_watched` / `tautulli_watch_count` /
+`tautulli_watched_by` changes what stored rules *mean*, so it runs as
+an eager pass under the full ADR-0006 5-point contract — and it
+operates on **v0 documents directly** (read JSON, find tautulli kinds,
+transform, write back, report). It does not require the unified engine,
+which restores A2's independence from A4 (see §4).
+
+1. Conditions are counted and listed per rule in the migration report
+   (feeds the A2 dialog's disclosure: "N of your rules referenced
+   Tautulli watch data").
 2. Composite handling: if removing the Tautulli condition leaves the
    composite empty → the rule is **disabled** (not deleted), flagged
    `migration: tautulli-orphaned`. If siblings remain → the condition
    is removed and the rule stays active, flagged
    `migration: tautulli-condition-dropped`.
 3. The backup file (`/config/rules-pre-3.0/<surface>.json`) preserves
-   the original documents regardless.
+   the original documents (warranted here — this pass DOES rewrite
+   rows).
 4. Post-A2 (Tracearr-era), users can re-express watch conditions with
-   the Plex/Jellyfin kinds or future Tracearr kinds; the migration does
-   NOT auto-rewrite `tautulli_*` → `plex_*` (different data sources;
+   the Plex/Jellyfin kinds or future Tracearr kinds; the pass does NOT
+   auto-rewrite `tautulli_*` → `plex_*` (different data sources;
    silent semantic swaps violate the trust thesis).
 
-## 4. Implementation order (A4)
+The v0-parsing utilities this pass builds are reused by A4's lazy
+mappers — nothing here is throwaway.
 
-1. `packages/shared` (or `apps/api/src/lib/rules/`): grammar types +
-   Zod schemas + per-kind param schemas lifted from
-   `ruleParamSchemaMap` (cleanup's existing per-kind validation).
-2. Engine core: parse → validate-against-context → evaluate. Seeded
-   from cleanup's `rule-evaluators.ts` (per ADR-0006); decompose the
+## 4. Implementation order
+
+**Resequencing note (2026-06-09):** with eager format migration
+eliminated (§3), A2 no longer depends on A4 — its Tautulli pass is
+self-contained over v0 documents. **A2 lands first** (it is fully
+specified; ADR-0007), establishing the migration-pass pattern
+(backup / transactional / report / dry-run) in miniature. A4 follows.
+
+A4 itself, gated by **differential parity testing** — the engine's
+acceptance criterion is "identical decisions to the legacy evaluator on
+identical inputs," proven per surface before cutover (strangler
+pattern, not big-bang):
+
+1. `packages/shared`: grammar types + Zod schemas + per-kind param
+   schemas lifted from `ruleParamSchemaMap`, plus the v0 mappers.
+2. Engine core: version-detect → parse → validate-against-context →
+   evaluate. Seeded from cleanup's `rule-evaluators.ts`; decompose the
    82 KB file along kind-category lines as part of the lift.
-3. Cleanup + auto-tag re-pointed at the engine (their evaluators ARE
-   the engine; this step is mostly file moves + context wiring).
-4. Notifications adapter + document migration (the only behavioral
-   risk; ship with fixture tests against real 2.x rule rows).
-5. Queue-cleaner + hunting adapters (internal; can trail).
-6. Migrations per the 5-point contract; Tautulli counting wired for A2.
-7. Composer UI (Operator Console) — after the engine stabilizes;
-   seeded from `features/rule-criteria/`.
+3. **Parity suite**: legacy evaluator vs engine on identical eval
+   contexts — fixtures harvested from real rule rows (the dev DB has
+   live cleanup/auto-tag rules) plus synthetic edge cases (null
+   handling, never-watched inference, case sensitivity). Green parity
+   gates each cutover.
+4. Cleanup cut over → auto-tag cut over (shared evaluators make this
+   nearly one step).
+5. Notifications: v0 mapper + adapter at load; **no storage change**.
+   Parity-tested against its 5 operators and first-match-wins
+   semantics.
+6. Queue-cleaner + hunting adapters (internal; can trail indefinitely
+   without blocking anything).
+7. Composer UI (Operator Console flagship) — after the engine
+   stabilizes; seeded from `features/rule-criteria/`. Writes v1 on
+   save, which is what converges stored documents over time.
 
 ## 5. Open questions for review
 
@@ -196,9 +250,9 @@ During the cleanup/auto-tag migration, conditions with kinds
    composer needs the types + Zod for validation) vs `apps/api/lib`
    (keeps grammar server-private)? Leaning `packages/shared` since the
    composer must validate client-side.
-2. **Version field**: `version: 1` on every document vs schema-level
-   versioning per surface? Leaning per-document — it makes the next
-   migration self-describing.
+2. ~~Version field placement~~ — **resolved by the migration strategy**:
+   per-document `version` is load-bearing for parse-time
+   version-detection (§3); not optional.
 3. **Notifications metadata fields**: the engine supports
    `metadata.*` but the UI never exposed it. Keep API-only in v1, or
    surface it in the composer? Leaning keep API-only (no user demand

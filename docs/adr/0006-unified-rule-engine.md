@@ -140,6 +140,34 @@ Tautulli removal rides this migration framework instead of duplicating
 it. The migration report per surface must count and list rules whose
 conditions referenced Tautulli data so the A2 dialog can disclose them.
 
+**Amendment note 2 (2026-06-09) — eager migration eliminated; 5-point
+contract rescoped; A2 re-unblocked:** the grammar design pass
+(`docs/design/unified-rule-grammar.md`) found that format unification
+needs **no eager row rewrites**: documents version-detect at parse time
+(legacy v0 → tiny mapper; `version: 1` → direct), and rules are written
+in v1 only on create/edit. Three consequences supersede parts of this
+ADR and of amendment 1:
+
+1. **Notifications' stable-tier promise survives unification** — its
+   stored rows are untouched until the user edits a rule. The "bundle
+   into 3.0 or never" forcing premise in Context no longer applies
+   (the unification still ships in 3.0 as planned).
+2. **The 5-point migration contract applies to semantic passes only** —
+   passes that change what stored rules *mean*. In 3.0 that is exactly
+   one pass: the Tautulli-condition retirement. Format conversion needs
+   no backup file; untouched rows are the backup.
+3. **Bucket A sequencing reverts to A2 → A4** (superseding amendment
+   1's ordering): the Tautulli pass operates on v0 documents directly
+   and does not need the engine. It establishes the migration-pass
+   pattern in miniature; its v0-parsing utilities are reused by A4's
+   lazy mappers. Each ordering decision was made on the best evidence
+   available at the time; this trail is the record.
+
+A4's acceptance gate is **differential parity testing**: the engine
+must produce identical decisions to the legacy evaluators on identical
+inputs (fixtures harvested from real rule rows + synthetic edge cases)
+before each surface cuts over.
+
 ## Follow-ups
 
 - Bucket A design pass: grammar schema (typed fields, operators,
