@@ -1,13 +1,9 @@
 "use client";
 
 import { Activity, RefreshCw, Settings, Target } from "lucide-react";
+import { POLLING_ACTIVE } from "../../../lib/polling-intervals";
 import { useState } from "react";
-import {
-	PremiumPageHeader,
-	PremiumPageLoading,
-	type PremiumTab,
-	PremiumTabs,
-} from "../../../components/layout";
+import { DataFreshness, PremiumPageHeader, PremiumPageLoading, PremiumTabs, type PremiumTab } from "../../../components/layout";
 import { Alert, AlertDescription, Button } from "../../../components/ui";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useHuntingStatus } from "../hooks/useHuntingStatus";
@@ -29,7 +25,8 @@ export const HuntingClient = () => {
 	const { gradient: _themeGradient } = useThemeGradient();
 
 	const [activeTab, setActiveTab] = useState<HuntingTab>("overview");
-	const { status, isLoading, error, refetch } = useHuntingStatus();
+	const { status, isLoading, error, refetch, dataUpdatedAt, isFetching, isError } =
+		useHuntingStatus();
 
 	// Tab configuration with gradient styling
 	const tabs: PremiumTab[] = [
@@ -75,7 +72,18 @@ export const HuntingClient = () => {
 				gradientTitle
 				description="Automatically search for missing content and quality upgrades across your Sonarr and Radarr instances"
 				actions={
-					<Button
+					<div className="flex items-center gap-3">
+						{/* Status feed freshness — only honest on the overview tab;
+						    Activity/Config render different (or no) polled data. */}
+						{activeTab === "overview" && (
+							<DataFreshness
+								dataUpdatedAt={dataUpdatedAt}
+								isFetching={isFetching}
+								isError={isError}
+								pollIntervalMs={POLLING_ACTIVE}
+							/>
+						)}
+						<Button
 						variant="secondary"
 						onClick={() => void refetch()}
 						className="gap-2 border-border/50 bg-card/50 backdrop-blur-xs hover:bg-card/80"
@@ -83,6 +91,7 @@ export const HuntingClient = () => {
 						<RefreshCw className="h-4 w-4" />
 						Refresh
 					</Button>
+					</div>
 				}
 			/>
 

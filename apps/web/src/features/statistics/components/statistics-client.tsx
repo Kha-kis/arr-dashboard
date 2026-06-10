@@ -1,8 +1,9 @@
 "use client";
 
 import { Activity, BarChart3, BookOpen, Film, Globe, Music, RefreshCw, Tv } from "lucide-react";
+import { POLLING_STATS } from "../../../lib/polling-intervals";
 import { useMemo, useState } from "react";
-import { PremiumSkeleton } from "../../../components/layout";
+import { DataFreshness, PremiumSkeleton } from "../../../components/layout";
 import { Alert, AlertDescription } from "../../../components/ui";
 import { Button } from "../../../components/ui/button";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
@@ -56,6 +57,8 @@ export const StatisticsClient = () => {
 		readarrTotals,
 		combinedDisk,
 		allHealthIssues,
+		dataUpdatedAt,
+		isError,
 	} = useStatisticsData();
 	const [isRefreshing, handleRefresh] = useRefreshState(refetch);
 
@@ -187,6 +190,17 @@ export const StatisticsClient = () => {
 						</p>
 					</div>
 
+					{/* Freshness of the aggregated statistics feed. Hidden on the
+					    Plex/Jellyfin tabs — their analytics come from separate
+					    non-polled queries, so this timestamp would mislead there. */}
+					{activeTab !== "plex" && activeTab !== "jellyfin" && (
+						<DataFreshness
+							dataUpdatedAt={dataUpdatedAt}
+							isFetching={isFetching}
+							isError={isError}
+							pollIntervalMs={POLLING_STATS}
+						/>
+					)}
 					<Button
 						variant="secondary"
 						onClick={() => void handleRefresh()}

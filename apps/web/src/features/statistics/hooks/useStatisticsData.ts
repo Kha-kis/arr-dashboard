@@ -115,7 +115,8 @@ const buildReadarrRows = (
  * @returns Aggregated statistics and table rows for all service types
  */
 export const useStatisticsData = () => {
-	const { data, isLoading, isFetching, error, refetch } = useDashboardStatisticsQuery();
+	const { data, isLoading, isFetching, error, refetch, dataUpdatedAt, isError } =
+		useDashboardStatisticsQuery();
 
 	// Memoize instance arrays to prevent dependency changes on every render
 	const sonarrInstances = useMemo(() => data?.sonarr.instances ?? [], [data?.sonarr.instances]);
@@ -469,6 +470,8 @@ export const useStatisticsData = () => {
 		isFetching,
 		error,
 		refetch,
+		dataUpdatedAt,
+		isError,
 
 		// Table rows
 		sonarrRows,
