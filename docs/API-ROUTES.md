@@ -46,20 +46,20 @@ for the full rationale.
 | `/api/library` | stable | Movies/series listing, episodes, monitor, search |
 | `/api/search` | stable | Prowlarr indexer search + grab |
 | `/api/manual-import` | stable | Manual import candidates and submission |
-| `/api/hunting` | internal | Auto-search configuration and execution |
-| `/api/queue-cleaner` | internal | Queue cleanup rules, strikes, dry-run preview |
+| `/api/hunting` | operator | Auto-search configuration and execution |
+| `/api/queue-cleaner` | operator | Queue cleanup rules, strikes, dry-run preview |
 | `/api/library-cleanup` | internal | Library cleanup rules, approvals, execution |
 | `/api/plex` | stable | Now playing, on-deck, history, analytics, forecasts |
 | `/api/jellyfin` | stable | Jellyfin activity and library data |
 | `/api/tautulli` | stable | Activity, watch history enrichment, statistics |
-| `/api/label-sync` | experimental | Generic any-to-any media-service tag/label sync rules (issue #384). Sub-arc 1 ships Sonarr/Radarr → Plex. |
-| `/api/auto-tag` | experimental | Criteria-based auto-tagger — applies tags to LibraryCache items matching the rule's criteria DSL (genre, year, codec, watch state, …). Companion to Label Sync. Webhook config (secret read/rotate) lives here under session auth. |
-| `/api/auto-tag/webhook` | experimental | Inbound Sonarr/Radarr Connect webhook for real-time auto-tagging. **Public route** (no session cookie); authenticates via per-user Bearer token (SHA-256 hash of the user's webhook secret). |
+| `/api/label-sync` | operator | Generic any-to-any media-service tag/label sync rules (issue #384). Sub-arc 1 ships Sonarr/Radarr → Plex. |
+| `/api/auto-tag` | operator | Criteria-based auto-tagger — applies tags to LibraryCache items matching the rule's criteria DSL (genre, year, codec, watch state, …). Companion to Label Sync. Webhook config (secret read/rotate) lives here under session auth. |
+| `/api/auto-tag/webhook` | operator | Inbound Sonarr/Radarr Connect webhook for real-time auto-tagging. **Public route** (no session cookie); authenticates via per-user Bearer token (SHA-256 hash of the user's webhook secret). |
 | `/api/pulse` | internal | System Pulse health signals + attention items |
-| `/api/qui` | experimental | Federated peer integration with autobrr/qui (qBittorrent UI) — read-only torrent state, trackers, cross-seed siblings; powers the Torrent Health panel. |
-| `/api/webhooks/qui` | experimental | Inbound qui webhook receiver (Phase 5.1). **Public route** (no session cookie); authenticates via per-user `?secret=…` query param (matches qui's `ApiKeyQuery` scheme). Stores raw events in `QuiEventLog` and publishes to the in-process event bus for SSE fan-out. |
+| `/api/qui` | stable | Federated peer integration with autobrr/qui (qBittorrent UI) — torrent state, trackers, cross-seed siblings, and capability-aware torrent mutations; powers the Torrent Health panel and detail drawer. |
+| `/api/webhooks/qui` | stable | Inbound qui webhook receiver (Phase 5.1). **Public route** (no session cookie); authenticates via per-user `?secret=…` query param (matches qui's `ApiKeyQuery` scheme). Stores raw events in `QuiEventLog` and publishes to the in-process event bus for SSE fan-out. |
 | `/api/seerr` | stable | Request management, discovery, library enrichment |
-| `/api/trash-guides` | internal | TRaSH cache, templates, deployment, profiles |
+| `/api/trash-guides` | operator | TRaSH cache, templates, deployment, profiles |
 
 > When you add a new route group, add a manifest entry **and** a row above.
 > A contract test (`apps/api/src/routes/__tests__/route-manifest.test.ts`)
