@@ -1788,14 +1788,14 @@ export function extractRating(item: CacheItemForEval): number | null {
 /**
  * Parse rule parameters JSON string into a typed object.
  */
-function parseParams(rule: LibraryCleanupRule): Record<string, unknown> | null {
+export function parseParams(rule: LibraryCleanupRule): Record<string, unknown> | null {
 	return safeJsonParse(rule.parameters) as Record<string, unknown> | null;
 }
 
 /**
  * Check if item's service type passes the rule's service filter.
  */
-function passesServiceFilter(instanceService: string, serviceFilter: string | null): boolean {
+export function passesServiceFilter(instanceService: string, serviceFilter: string | null): boolean {
 	if (!serviceFilter) return true;
 	const filter = safeJsonParse(serviceFilter) as string[] | null;
 	if (!filter || filter.length === 0) return true;
@@ -1805,7 +1805,7 @@ function passesServiceFilter(instanceService: string, serviceFilter: string | nu
 /**
  * Check if item's instance passes the rule's instance filter.
  */
-function passesInstanceFilter(instanceId: string, instanceFilter: string | null): boolean {
+export function passesInstanceFilter(instanceId: string, instanceFilter: string | null): boolean {
 	if (!instanceFilter) return true;
 	const filter = safeJsonParse(instanceFilter) as string[] | null;
 	if (!filter || filter.length === 0) return true;
@@ -1815,7 +1815,7 @@ function passesInstanceFilter(instanceId: string, instanceFilter: string | null)
 /**
  * Check if item should be excluded by tag filter.
  */
-function passesTagExclusion(item: CacheItemForEval, excludeTags: string | null): boolean {
+export function passesTagExclusion(item: CacheItemForEval, excludeTags: string | null): boolean {
 	if (!excludeTags) return true;
 	const tagIds = safeJsonParse(excludeTags) as number[] | null;
 	if (!tagIds || tagIds.length === 0) return true;
@@ -1840,7 +1840,7 @@ function passesTagExclusion(item: CacheItemForEval, excludeTags: string | null):
 /**
  * Check if item should be excluded by title regex patterns.
  */
-function passesTitleExclusion(title: string, excludeTitles: string | null): boolean {
+export function passesTitleExclusion(title: string, excludeTitles: string | null): boolean {
 	if (!excludeTitles) return true;
 	const patterns = safeJsonParse(excludeTitles) as string[] | null;
 	if (!patterns || patterns.length === 0) return true;
