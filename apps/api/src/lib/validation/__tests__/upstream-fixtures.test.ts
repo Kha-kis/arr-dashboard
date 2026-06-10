@@ -12,7 +12,7 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import { z } from "zod";
 import { integrationHealth } from "../integration-health.js";
-import { parseUpstream, parseUpstreamOrThrow } from "../parse-upstream.js";
+import { parseUpstream, } from "../parse-upstream.js";
 import {
 	plexIdentityResponseSchema,
 	plexSectionsResponseSchema,

@@ -166,7 +166,7 @@ describe("Auto-Import Integration", () => {
 				action: "remove",
 				autoImportEligible: !neverMatch && !!safeMatch,
 				autoImportReason:
-					!neverMatch && !!safeMatch
+					!neverMatch && safeMatch
 						? "Eligible for auto-import"
 						: neverMatch
 							? `Cannot auto-import: ${neverMatch}`

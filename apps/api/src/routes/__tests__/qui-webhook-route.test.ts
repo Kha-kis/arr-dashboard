@@ -76,7 +76,7 @@ describe("POST /webhooks/qui", () => {
 	it("returns 401 when the secret does not match any user", async () => {
 		const res = await app.inject({
 			method: "POST",
-			url: "/webhooks/qui?secret=" + "z".repeat(43),
+			url: `/webhooks/qui?secret=${"z".repeat(43)}`,
 			payload: { type: "torrent_added", payload: {} },
 		});
 		expect(res.statusCode).toBe(401);

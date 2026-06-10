@@ -550,7 +550,7 @@ async function indexDirectoryFiles(
 		// (Dockerfile uses node:22-alpine3.21), so no fallback needed.
 		const filePath = `${entry.parentPath}/${entry.name}`;
 		const info = await statSafe(filePath);
-		if (!info || info.kind !== "file") continue;
+		if (info?.kind !== "file") continue;
 		if (info.nlink < 2) {
 			skippedNoLinks++;
 			continue;
@@ -578,7 +578,7 @@ export async function matchLibraryByFileId(
 	index: FileIdIndex,
 ): Promise<InodeMatchResult | null> {
 	const info = await statSafe(libraryPath);
-	if (!info || info.kind !== "file") return null;
+	if (info?.kind !== "file") return null;
 	if (info.nlink < 2) return null;
 	const hashes = index.byFileId.get(`${info.dev}:${info.ino}`);
 	if (!hashes || hashes.size === 0) return null;
@@ -610,7 +610,7 @@ export async function getAllHashesForFileId(
 	index: FileIdIndex,
 ): Promise<string[]> {
 	const info = await statSafe(libraryPath);
-	if (!info || info.kind !== "file") return [];
+	if (info?.kind !== "file") return [];
 	if (info.nlink < 2) return [];
 	const hashes = index.byFileId.get(`${info.dev}:${info.ino}`);
 	if (!hashes) return [];

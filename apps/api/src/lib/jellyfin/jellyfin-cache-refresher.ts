@@ -118,7 +118,7 @@ export async function refreshJellyfinCache(
 								userRating: null,
 								collections: [],
 								addedAt: item.dateCreated ? new Date(item.dateCreated) : null,
-								thumb: item.imageTags?.["Primary"] ? `/Items/${item.id}/Images/Primary` : null,
+								thumb: item.imageTags?.Primary ? `/Items/${item.id}/Images/Primary` : null,
 							};
 							aggregations.set(key, agg);
 						}
