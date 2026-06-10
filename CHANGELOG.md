@@ -5,6 +5,48 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0-alpha.1] - 2026-06-10 — Bucket A: the breaking-changes bundle
+
+First 3.0 preview. All breaking changes land together (charter §3) so
+upgraders absorb the disruption once. Ships on the `:next` Docker
+channel; this tag marks the Bucket-A-complete snapshot.
+
+### BREAKING — Tautulli removed (ADR-0007)
+
+- All Tautulli routes, schedulers, settings, and rule kinds are gone.
+  Plex statistics now come directly from session snapshots; Tracearr
+  arrives later in the 3.0 cycle as the analytics successor.
+- **Migration is automatic and consent-gated**: on first boot a
+  blocking dialog discloses exactly what changes (lingering instances,
+  affected cleanup/auto-tag rules) and deletes Tautulli data only when
+  you click through. Rules that depended on Tautulli are disabled —
+  never deleted — with originals backed up to
+  `<config>/rules-pre-3.0/`.
+- **Rollback**: the 2.21.0 image runs against the same database.
+  Re-add your Tautulli instance manually; re-enable any disabled rules.
+
+### Changed
+
+- **Unified rule engine (ADR-0006)**: library-cleanup, auto-tag, and
+  notification rules all evaluate through one grammar-based engine.
+  Behavior-preserving by 48-fixture differential parity against the
+  legacy evaluators; stored rules are NOT rewritten (parse-time
+  versioning — your rows convert in memory and only write the new
+  format when you edit them).
+- Rule writes now reject unknown/retired condition kinds with a clear
+  error instead of silently accepting them.
+- Route-manifest tiers reshuffled per ADR-0005 (Auto-Tagger, Label
+  Sync, Hunting, Queue Cleaner, TRaSH Guides promoted; qui and
+  Cross-Seed `experimental` → `stable`).
+- Internal: `routes/plex/lib/` → `lib/media-stats/` (the helpers were
+  never Plex-only); queue-cleaner dev scripts removed; remaining
+  inline `Body:` typings migrated to `validateRequest`.
+
+### Known issues
+
+- Settings → Notifications → Rules can log a "Maximum update depth
+  exceeded" warning on mount (pre-existing in 2.x, not a regression).
+
 ## [2.21.0] - 2026-06-09 — Media-only Storage & Auth Resilience
 
 The storage rollup now tells the truth about *media* space, and a

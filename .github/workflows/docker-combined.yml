@@ -3,7 +3,13 @@ name: Build and Push Release Docker Image
 on:
   push:
     tags:
+      # Stable release tags only. Prerelease tags (v3.0.0-alpha.1 etc.)
+      # are cut from `next` and must never publish :latest — the
+      # validate-tag ancestry guard below already blocks them, but
+      # excluding them here avoids a red failed run on every prerelease
+      # tag. Preview images ship via docker-next.yml (:next channel).
       - 'v*'
+      - '!v*-*'
   workflow_dispatch:
 
 # Cancel in-progress runs when a new run is triggered

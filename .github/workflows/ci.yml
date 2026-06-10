@@ -10,13 +10,11 @@ on:
       - "LICENSE"
       - ".gitignore"
   pull_request:
+    # No paths-ignore here (push keeps its filter): a required status
+    # check that never reports blocks docs-only PRs forever ("Expected —
+    # waiting"). Running CI on docs PRs costs a few runner minutes;
+    # admin-merging around a deadlocked required check costs more.
     branches: [main, next, "release/**"]
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - ".vscode/**"
-      - "LICENSE"
-      - ".gitignore"
 
 # Cancel in-progress runs when a new push arrives (saves runner minutes)
 concurrency:

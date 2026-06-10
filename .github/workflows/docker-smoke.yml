@@ -2,13 +2,8 @@ name: Docker Smoke Test
 
 on:
   pull_request:
+    # No paths-ignore (see ci.yml note): required checks must always report.
     branches: [main, next]
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - ".vscode/**"
-      - "LICENSE"
-      - ".gitignore"
   push:
     branches: [main, next]
     paths-ignore:
