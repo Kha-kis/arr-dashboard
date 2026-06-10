@@ -107,6 +107,11 @@ export interface BuildParamsState {
 	audioChannelsVal: number;
 	// tag_match
 	tagMatchOp: string;
+	// list membership (C3)
+	tmdbListId: string;
+	tmdbListOp: string;
+	traktListSlug: string;
+	traktListOp: string;
 	selectedTagIds: number[];
 	// plex_collection
 	plexCollectionOp: string;
@@ -228,6 +233,10 @@ export function buildParams(state: BuildParamsState): Record<string, unknown> {
 			return { operator: state.audioChannelsOp, channels: state.audioChannelsVal };
 		case "tag_match":
 			return { operator: state.tagMatchOp, tagIds: state.selectedTagIds };
+		case "tmdb_list_member":
+			return { listId: state.tmdbListId.trim(), operator: state.tmdbListOp };
+		case "trakt_list_member":
+			return { listSlug: state.traktListSlug.trim(), operator: state.traktListOp };
 		case "plex_collection":
 			return { operator: state.plexCollectionOp, collections: state.selectedPlexCollections };
 		case "plex_label":
