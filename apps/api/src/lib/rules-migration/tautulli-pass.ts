@@ -94,13 +94,32 @@ interface SurfacePlan {
 	updates: PlannedUpdate[];
 }
 
+/**
+ * True when a condition's params select Tautulli as the watch-data source
+ * (e.g. user_retention's `source: "tautulli"`). Post-removal these rules
+ * would see an always-empty watch set — for `watched_by_none` semantics
+ * that means MATCHING THE ENTIRE LIBRARY, a destructive flip rather than
+ * graceful degradation. They are disabled exactly like tautulli_* kinds.
+ * (`source: "either"` is safe: Plex still feeds it.)
+ */
+function paramsSourceIsTautulli(rawParams: string | null | undefined): boolean {
+	if (!rawParams) return false;
+	try {
+		const params = JSON.parse(rawParams) as { source?: unknown };
+		return params?.source === "tautulli";
+	} catch {
+		return false; // unparseable params are surfaced via the conditions path
+	}
+}
+
 /** Decide the transform for one rule. Pure — unit-testable without a DB. */
 export function planRuleTransform(rule: RuleRow): {
 	update: PlannedUpdate | null;
 	change: RuleChange | null;
 } {
-	// Single-condition rule with a Tautulli kind → disable, keep document.
-	if (TAUTULLI_RULE_KINDS.has(rule.ruleType)) {
+	// Single-condition rule with a Tautulli kind OR Tautulli-sourced params
+	// → disable, keep document.
+	if (TAUTULLI_RULE_KINDS.has(rule.ruleType) || paramsSourceIsTautulli(rule.parameters)) {
 		if (!rule.enabled) return { update: null, change: null }; // already inert (idempotency)
 		return {
 			update: { id: rule.id, data: { enabled: false } },
@@ -126,15 +145,15 @@ export function planRuleTransform(rule: RuleRow): {
 			};
 		}
 
-		const conditions = parsed as Array<{ ruleType?: unknown }>;
-		const dropped = conditions.filter(
-			(c) => typeof c?.ruleType === "string" && TAUTULLI_RULE_KINDS.has(c.ruleType),
-		);
+		const conditions = parsed as Array<{ ruleType?: unknown; parameters?: unknown }>;
+		const isTautulliCondition = (c: { ruleType?: unknown; parameters?: unknown }): boolean =>
+			(typeof c?.ruleType === "string" && TAUTULLI_RULE_KINDS.has(c.ruleType)) ||
+			(c?.parameters !== undefined &&
+				(c.parameters as { source?: unknown })?.source === "tautulli");
+		const dropped = conditions.filter(isTautulliCondition);
 		if (dropped.length === 0) return { update: null, change: null };
 
-		const remaining = conditions.filter(
-			(c) => !(typeof c?.ruleType === "string" && TAUTULLI_RULE_KINDS.has(c.ruleType)),
-		);
+		const remaining = conditions.filter((c) => !isTautulliCondition(c));
 		const droppedKinds = dropped.map((c) => String(c.ruleType));
 
 		if (remaining.length === 0) {

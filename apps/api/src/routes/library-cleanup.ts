@@ -182,7 +182,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		// loads every JSON blob into memory at once — for a Sonarr-heavy
 		// library with full series payloads, that easily peaks past the
 		// 768 MB container cap (issue #427 follow-up). Same pattern PR #435
-		// applied to prefetchPlexData / prefetchJellyfinData / prefetchTautulliData.
+		// applied to prefetchPlexData / prefetchJellyfinData.
 		const FIELD_OPTIONS_BATCH_SIZE = 500;
 		const videoCodecs = new Set<string>();
 		const audioCodecs = new Set<string>();
@@ -243,30 +243,6 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 				if (typeof v === "string" && v) sink.add(v);
 			}
 		};
-
-		// Extract distinct Tautulli users (cursor-paginated)
-		const tautulliUsers = new Set<string>();
-		const tautulliInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "TAUTULLI" },
-			select: { id: true },
-		});
-		if (tautulliInstances.length > 0) {
-			const tautulliInstanceIds = tautulliInstances.map((i) => i.id);
-			let cursor: string | undefined;
-			while (true) {
-				const batch = await app.prisma.tautulliCache.findMany({
-					where: { instanceId: { in: tautulliInstanceIds } },
-					select: { id: true, watchedByUsers: true },
-					take: FIELD_OPTIONS_BATCH_SIZE,
-					...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
-					orderBy: { id: "asc" },
-				});
-				if (batch.length === 0) break;
-				for (const row of batch) collectStrings(row.watchedByUsers, tautulliUsers);
-				cursor = batch[batch.length - 1]!.id;
-				if (batch.length < FIELD_OPTIONS_BATCH_SIZE) break;
-			}
-		}
 
 		// Extract distinct Plex users / libraries / collections / labels in
 		// ONE cursor-paginated scan. The previous shape did three separate
@@ -366,7 +342,6 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			resolutions: sorted(resolutions),
 			hdrTypes: sorted(hdrTypes),
 			releaseGroups: sorted(releaseGroups),
-			tautulliUsers: sorted(tautulliUsers),
 			plexUsers: sorted(plexUsers),
 			plexLibraries: sorted(plexLibraries),
 			plexCollections: sorted(plexCollections),
@@ -375,7 +350,6 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			jellyfinLibraries: sorted(jellyfinLibraries),
 			arrTags,
 			hasPlex: plexInstances.length > 0,
-			hasTautulli: tautulliInstances.length > 0,
 			hasJellyfin: jellyfinInstances.length > 0,
 		};
 

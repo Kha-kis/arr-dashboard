@@ -102,6 +102,43 @@ describe("planRuleTransform", () => {
 		expect(change).toBeNull();
 	});
 
+	it("disables a rule whose params select tautulli as watch source (flag-everything guard)", () => {
+		// user_retention with source:"tautulli" + watched_by_none would match
+		// the ENTIRE library once the tautulli watch map is gone — must be
+		// disabled like the tautulli_* kinds, not left to degrade.
+		const { update, change } = planRuleTransform(
+			rule({
+				ruleType: "user_retention",
+				parameters: JSON.stringify({ operator: "watched_by_none", source: "tautulli" }),
+			}),
+		);
+		expect(update).toEqual({ id: "r1", data: { enabled: false } });
+		expect(change).toMatchObject({ reason: "tautulli-orphaned" });
+	});
+
+	it("leaves source:'either' rules active (Plex still feeds them)", () => {
+		const { update, change } = planRuleTransform(
+			rule({
+				ruleType: "user_retention",
+				parameters: JSON.stringify({ operator: "watched_by_none", source: "either" }),
+			}),
+		);
+		expect(update).toBeNull();
+		expect(change).toBeNull();
+	});
+
+	it("drops a tautulli-sourced condition from a composite (object params)", () => {
+		const conditions = [
+			{ ruleType: "user_retention", parameters: { operator: "watched_by_none", source: "tautulli" } },
+			{ ruleType: "age", parameters: { field: "arrAddedAt", operator: "older_than", days: 30 } },
+		];
+		const { update, change } = planRuleTransform(
+			rule({ ruleType: "composite", operator: "AND", conditions: JSON.stringify(conditions) }),
+		);
+		expect(JSON.parse(update?.data.conditions ?? "[]")).toHaveLength(1);
+		expect(change).toMatchObject({ reason: "tautulli-condition-dropped" });
+	});
+
 	it("reports unparseable condition JSON without planning an update", () => {
 		const { update, change } = planRuleTransform(
 			rule({ ruleType: "composite", operator: "AND", conditions: "not-json{{{" }),

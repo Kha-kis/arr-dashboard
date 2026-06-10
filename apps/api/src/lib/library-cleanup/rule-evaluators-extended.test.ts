@@ -13,7 +13,6 @@ import type {
 	EvalContext,
 	PlexWatchInfo,
 	SeerrRequestInfo,
-	TautulliWatchInfo,
 } from "./types.js";
 import { evaluateSingleCondition } from "./rule-evaluators.js";
 
@@ -111,7 +110,7 @@ function makeSeerrMap(
 }
 
 // ---------------------------------------------------------------------------
-// Plex/Tautulli test data factories
+// Plex test data factories
 // ---------------------------------------------------------------------------
 
 function makePlexEntry(overrides: Partial<PlexWatchInfo> = {}): PlexWatchInfo {
@@ -132,21 +131,6 @@ function makePlexEntry(overrides: Partial<PlexWatchInfo> = {}): PlexWatchInfo {
 function makePlexMap(entry?: PlexWatchInfo): Map<string, PlexWatchInfo> {
 	const map = new Map<string, PlexWatchInfo>();
 	map.set("movie:12345", entry ?? makePlexEntry());
-	return map;
-}
-
-function makeTautulliEntry(overrides: Partial<TautulliWatchInfo> = {}): TautulliWatchInfo {
-	return {
-		lastWatchedAt: new Date(NOW.getTime() - 15 * 24 * 60 * 60 * 1000), // 15 days ago
-		watchCount: 2,
-		watchedByUsers: ["admin", "alice"],
-		...overrides,
-	};
-}
-
-function makeTautulliMap(entry?: TautulliWatchInfo): Map<string, TautulliWatchInfo> {
-	const map = new Map<string, TautulliWatchInfo>();
-	map.set("movie:12345", entry ?? makeTautulliEntry());
 	return map;
 }
 
@@ -1024,91 +1008,6 @@ describe("seerr_request_count rule", () => {
 			makeCacheItem(),
 			"seerr_request_count",
 			{ operator: "less_than", count: 2 },
-			ctx,
-		);
-		expect(result).toBeNull();
-	});
-});
-
-// ===========================================================================
-// 6. Tautulli Rules
-// ===========================================================================
-
-describe("tautulli_last_watched rule", () => {
-	const ctx = baseCtx({ tautulliMap: makeTautulliMap() });
-
-	it("matches 'older_than' when last watched exceeds threshold", () => {
-		// lastWatchedAt is 15 days ago
-		const result = evaluateSingleCondition(
-			makeCacheItem(),
-			"tautulli_last_watched",
-			{ operator: "older_than", days: 10 },
-			ctx,
-		);
-		expect(result).toContain("days ago per Tautulli");
-	});
-
-	it("does not match 'older_than' when within threshold", () => {
-		const result = evaluateSingleCondition(
-			makeCacheItem(),
-			"tautulli_last_watched",
-			{ operator: "older_than", days: 30 },
-			ctx,
-		);
-		expect(result).toBeNull();
-	});
-
-	it("'never' matches when item is not in tautulli", () => {
-		const data = { ...DEFAULT_DATA, remoteIds: { tmdbId: 99999 } };
-		const result = evaluateSingleCondition(
-			makeCacheItem({ data: JSON.stringify(data) }),
-			"tautulli_last_watched",
-			{ operator: "never" },
-			ctx,
-		);
-		expect(result).toBe("Never watched (per Tautulli)");
-	});
-
-	it("'never' matches when lastWatchedAt is null", () => {
-		const tautulliMap = makeTautulliMap({ lastWatchedAt: null, watchCount: 0, watchedByUsers: [] });
-		const result = evaluateSingleCondition(
-			makeCacheItem(),
-			"tautulli_last_watched",
-			{ operator: "never" },
-			baseCtx({ tautulliMap }),
-		);
-		expect(result).toBe("Never watched (per Tautulli)");
-	});
-});
-
-describe("tautulli_watched_by rule", () => {
-	const ctx = baseCtx({ tautulliMap: makeTautulliMap() });
-
-	it("'includes_any' matches when a target user watched", () => {
-		const result = evaluateSingleCondition(
-			makeCacheItem(),
-			"tautulli_watched_by",
-			{ operator: "includes_any", userNames: ["admin", "charlie"] },
-			ctx,
-		);
-		expect(result).toContain("admin");
-	});
-
-	it("'excludes_all' matches when none of the target users watched", () => {
-		const result = evaluateSingleCondition(
-			makeCacheItem(),
-			"tautulli_watched_by",
-			{ operator: "excludes_all", userNames: ["charlie", "dave"] },
-			ctx,
-		);
-		expect(result).toContain("Not watched by");
-	});
-
-	it("does not match 'includes_any' when no overlap", () => {
-		const result = evaluateSingleCondition(
-			makeCacheItem(),
-			"tautulli_watched_by",
-			{ operator: "includes_any", userNames: ["charlie"] },
 			ctx,
 		);
 		expect(result).toBeNull();

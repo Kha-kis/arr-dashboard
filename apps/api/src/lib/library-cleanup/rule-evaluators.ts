@@ -53,9 +53,6 @@ import type {
 	StalenessScoreParams,
 	StatusRuleParams,
 	TagMatchRuleParams,
-	TautulliLastWatchedParams,
-	TautulliWatchCountParams,
-	TautulliWatchedByParams,
 	UserRetentionParams,
 	VideoCodecRuleParams,
 	YearRangeRuleParams,
@@ -74,7 +71,6 @@ import type {
 	RuleMatch,
 	SeerrRequestInfo,
 	SeerrRequestMap,
-	TautulliWatchMap,
 } from "./types.js";
 
 // ============================================================================
@@ -821,146 +817,6 @@ function evaluateSeerrRequesterNotWatched(
 
 	// No requester has watched this item
 	return `Requested by ${unwatchedRequesters.map((n) => `"${n}"`).join(", ")} but not watched by any requester in Plex`;
-}
-
-// ============================================================================
-// Tautulli Rule Evaluators
-// ============================================================================
-
-/**
- * Look up Tautulli watch data for a cache item via its tmdbId from the data blob.
- */
-function lookupTautulliWatch(
-	item: CacheItemForEval,
-	tautulliMap: TautulliWatchMap | undefined,
-): { lastWatchedAt: Date | null; watchCount: number; watchedByUsers: string[] } | null {
-	if (!tautulliMap || tautulliMap.size === 0) return null;
-
-	const parsed = safeJsonParse(item.data);
-	if (!parsed) return null;
-	const data = parsed as Record<string, unknown>;
-
-	const remoteIds = data.remoteIds as Record<string, unknown> | undefined;
-	const tmdbId = remoteIds?.tmdbId;
-	if (!tmdbId) return null;
-
-	const mediaType = item.itemType === "movie" ? "movie" : "series";
-	const key = `${mediaType}:${tmdbId}`;
-
-	return tautulliMap.get(key) ?? null;
-}
-
-/**
- * Tautulli Last Watched: flag items based on when they were last watched.
- * "never" operator flags items that have never been watched.
- */
-function evaluateTautulliLastWatched(
-	item: CacheItemForEval,
-	params: TautulliLastWatchedParams,
-	ctx: EvalContext,
-): string | null {
-	const watch = lookupTautulliWatch(item, ctx.tautulliMap);
-
-	if (params.operator === "never") {
-		if (!watch || watch.lastWatchedAt === null) {
-			return "Never watched (per Tautulli)";
-		}
-		return null;
-	}
-
-	if (!watch?.lastWatchedAt) {
-		// Never watched — fall back to best available added date
-		if (params.operator === "older_than" && params.days) {
-			// Prefer Plex addedAt (when added to media server), then arrAddedAt (when grabbed by ARR)
-			const plexWatch = lookupPlexWatch(item, ctx.plexMap);
-			const refDate = plexWatch?.addedAt ?? item.arrAddedAt;
-			if (refDate) {
-				const addedDays = (ctx.now.getTime() - refDate.getTime()) / (1000 * 60 * 60 * 24);
-				if (addedDays >= params.days) {
-					const source = plexWatch?.addedAt ? "Plex" : "library";
-					return `Never watched per Tautulli, added to ${source} ${Math.floor(addedDays)} days ago (threshold: > ${params.days} days)`;
-				}
-			}
-		}
-		return null;
-	}
-	const ageDays = (ctx.now.getTime() - watch.lastWatchedAt.getTime()) / (1000 * 60 * 60 * 24);
-
-	if (params.operator === "older_than" && params.days && ageDays >= params.days) {
-		return `Last watched ${Math.floor(ageDays)} days ago per Tautulli (threshold: > ${params.days} days)`;
-	}
-	return null;
-}
-
-/**
- * Tautulli Watch Count: flag items based on play count.
- */
-function evaluateTautulliWatchCount(
-	item: CacheItemForEval,
-	params: TautulliWatchCountParams,
-	ctx: EvalContext,
-): string | null {
-	const watch = lookupTautulliWatch(item, ctx.tautulliMap);
-	if (!watch) {
-		// Not in Tautulli — infer 0 plays when Tautulli is configured and item has a file
-		if (
-			ctx.tautulliMap &&
-			ctx.tautulliMap.size > 0 &&
-			params.operator === "less_than" &&
-			params.count > 0 &&
-			item.hasFile &&
-			item.arrAddedAt
-		) {
-			const ageDays = Math.floor(
-				(ctx.now.getTime() - item.arrAddedAt.getTime()) / (1000 * 60 * 60 * 24),
-			);
-			return `Not tracked by Tautulli, in library for ${ageDays} days (threshold: < ${params.count} plays)`;
-		}
-		return null;
-	}
-	const count = watch.watchCount;
-
-	// Age context for low play counts
-	const ageCtx =
-		count === 0 && item.arrAddedAt
-			? `, in library for ${Math.floor((ctx.now.getTime() - item.arrAddedAt.getTime()) / (1000 * 60 * 60 * 24))} days`
-			: "";
-
-	if (params.operator === "less_than" && count < params.count) {
-		return `Tautulli play count: ${count}${ageCtx} (threshold: < ${params.count})`;
-	}
-	if (params.operator === "greater_than" && count > params.count) {
-		return `Tautulli play count: ${count} (threshold: > ${params.count})`;
-	}
-	return null;
-}
-
-/**
- * Tautulli Watched By: flag items based on which users have watched them.
- */
-function evaluateTautulliWatchedBy(
-	item: CacheItemForEval,
-	params: TautulliWatchedByParams,
-	ctx: EvalContext,
-): string | null {
-	const watch = lookupTautulliWatch(item, ctx.tautulliMap);
-	if (!watch || watch.watchedByUsers.length === 0) return null;
-
-	const users = watch.watchedByUsers.map((u) => u.toLowerCase());
-	const targetNames = params.userNames.map((n) => n.toLowerCase());
-
-	if (params.operator === "includes_any") {
-		const matched = targetNames.filter((n) => users.includes(n));
-		if (matched.length > 0) {
-			return `Watched by: ${matched.join(", ")} (match: includes_any [${params.userNames.join(", ")}])`;
-		}
-	} else if (params.operator === "excludes_all") {
-		const hasNone = targetNames.every((n) => !users.includes(n));
-		if (hasNone) {
-			return `Not watched by any of: ${params.userNames.join(", ")} (watched by: ${watch.watchedByUsers.join(", ")})`;
-		}
-	}
-	return null;
 }
 
 // ============================================================================
@@ -1717,7 +1573,8 @@ function evaluatePlexEpisodeCompletion(
 
 /**
  * User retention: flag based on which users have watched/not watched.
- * Combines Plex and/or Tautulli user data depending on source setting.
+ * Combines watched-user data from the configured source (Plex today;
+ * Tracearr-era sources land with charter C2).
  */
 function evaluateUserRetention(
 	item: CacheItemForEval,
@@ -1742,11 +1599,12 @@ function evaluateUserRetention(
 			for (const u of plex.watchedByUsers) watchedUsers.add(u.toLowerCase());
 		}
 	}
-	if (source === "tautulli" || source === "either") {
-		const tautulli = ctx.tautulliMap?.get(key);
-		if (tautulli?.watchedByUsers) {
-			for (const u of tautulli.watchedByUsers) watchedUsers.add(u.toLowerCase());
-		}
+	// FAIL-SAFE (ADR-0007): `source: "tautulli"` rules are disabled by the
+	// 3.0 migration pass, but if one is ever re-enabled it must NOT evaluate
+	// with an empty watch set — `watched_by_none` over an empty set would
+	// match the entire library. No-match is the only safe answer.
+	if ((source as string) === "tautulli") {
+		return null;
 	}
 
 	if (params.operator === "watched_by_none") {
@@ -2072,13 +1930,6 @@ export function evaluateSingleCondition(
 		case "seerr_request_count":
 			return evaluateSeerrRequestCount(item, params as SeerrRequestCountParams, ctx.seerrMap);
 
-		// ── Tautulli rules ──────────────────────────────────────────
-		case "tautulli_last_watched":
-			return evaluateTautulliLastWatched(item, params as TautulliLastWatchedParams, ctx);
-		case "tautulli_watch_count":
-			return evaluateTautulliWatchCount(item, params as TautulliWatchCountParams, ctx);
-		case "tautulli_watched_by":
-			return evaluateTautulliWatchedBy(item, params as TautulliWatchedByParams, ctx);
 
 		// ── Plex rules ─────────────────────────────────────────────
 		case "plex_last_watched":
@@ -2449,8 +2300,10 @@ function shouldSkipRuleType(
 			: null;
 		const source = (params?.source as string) ?? "plex";
 		if (source === "plex") return failedSources.has("plex");
-		if (source === "tautulli") return failedSources.has("tautulli");
-		if (source === "either") return failedSources.has("plex") && failedSources.has("tautulli");
+		// "tautulli" rules are disabled by the 3.0 migration pass; if one is
+		// re-enabled, evaluateUserRetention's fail-safe handles it (no-match),
+		// so there is nothing to skip here. "either" degrades to plex-only.
+		if (source === "either") return failedSources.has("plex");
 		return false;
 	}
 
