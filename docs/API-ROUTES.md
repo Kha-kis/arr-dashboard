@@ -51,7 +51,6 @@ for the full rationale.
 | `/api/library-cleanup` | internal | Library cleanup rules, approvals, execution |
 | `/api/plex` | stable | Now playing, on-deck, history, analytics, forecasts |
 | `/api/jellyfin` | stable | Jellyfin activity and library data |
-| `/api/tautulli` | stable | Activity, watch history enrichment, statistics |
 | `/api/label-sync` | operator | Generic any-to-any media-service tag/label sync rules (issue #384). Sub-arc 1 ships Sonarr/Radarr → Plex. |
 | `/api/auto-tag` | operator | Criteria-based auto-tagger — applies tags to LibraryCache items matching the rule's criteria DSL (genre, year, codec, watch state, …). Companion to Label Sync. Webhook config (secret read/rotate) lives here under session auth. |
 | `/api/auto-tag/webhook` | operator | Inbound Sonarr/Radarr Connect webhook for real-time auto-tagging. **Public route** (no session cookie); authenticates via per-user Bearer token (SHA-256 hash of the user's webhook secret). |
@@ -180,7 +179,6 @@ Per-row sleep is 100ms regardless of phase — that's the politeness budget agai
 | `/api/notifications` | Channels, subscriptions, rules, delivery, aggregation |
 | `/api/oidc-providers` | OIDC provider admin configuration |
 | `/api/plex` | Now playing, on-deck, watch history, collections, analytics (bandwidth, codec, device, transcode, user), forecasts, episode completion, quality scores |
-| `/api/tautulli` | Activity, watch history enrichment, statistics |
 | `/api/seerr` | Request management, discovery, library enrichment, issues, notifications, user info |
 
 ## System Routes (`/api/system`)

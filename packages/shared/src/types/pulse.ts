@@ -25,11 +25,7 @@ export type PulseCategory = z.infer<typeof pulseCategorySchema>;
 // boundary. New kinds land by extending this union — schema drift between
 // client and server surfaces as a Zod parse failure, not a silent no-op.
 
-export const pulseActionKindSchema = z.enum([
-	"scheduler.enable",
-	"cache.refresh",
-	"queue.retry",
-]);
+export const pulseActionKindSchema = z.enum(["scheduler.enable", "cache.refresh", "queue.retry"]);
 export type PulseActionKind = z.infer<typeof pulseActionKindSchema>;
 
 // Canonical scheduler job ids — match `JOB_ID` in
@@ -38,7 +34,11 @@ export type PulseActionKind = z.infer<typeof pulseActionKindSchema>;
 export const schedulerJobIdSchema = z.enum(["hunting", "queue-cleaner"]);
 export type SchedulerJobId = z.infer<typeof schedulerJobIdSchema>;
 
-export const pulseCacheTypeSchema = z.enum(["plex", "tautulli"]);
+// "tautulli" removed in 3.0 (ADR-0007). Pre-migration CacheRefreshStatus
+// rows with cacheType "tautulli" may linger until the migration dialog
+// deletes their instances; they render as plain warnings without an
+// action button (see REFRESHABLE_CACHE_TYPES in pulse/collectors.ts).
+export const pulseCacheTypeSchema = z.enum(["plex"]);
 export type PulseCacheType = z.infer<typeof pulseCacheTypeSchema>;
 
 // ARR services whose queues the dispatcher can retry. Prowlarr has no

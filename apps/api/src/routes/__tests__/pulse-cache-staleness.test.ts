@@ -92,15 +92,19 @@ describe("GET /pulse — cache.refresh action emission", () => {
 		});
 	});
 
-	it("emits a cache.refresh action on a stale Tautulli cache row", async () => {
+	it("renders a lingering pre-3.0 tautulli cache row WITHOUT an action (ADR-0007)", async () => {
+		// Tautulli was removed in 3.0; CacheRefreshStatus rows with
+		// cacheType "tautulli" can linger until the migration dialog deletes
+		// their instances. They must still render (operator visibility) but
+		// must NOT carry a refresh button the dispatcher can no longer honor.
 		cacheStatuses = [makeRow({ id: "taut-row", cacheType: "tautulli", instanceId: "inst-taut" })];
 
 		const res = await injectAuthenticated("GET", "/pulse");
 		const body = JSON.parse(res.payload);
 		const item = body.items.find((i: { id: string }) => i.id === "cache-stale-taut-row");
 
-		expect(item.action?.kind).toBe("cache.refresh");
-		expect(item.action?.target).toEqual({ instanceId: "inst-taut", cacheType: "tautulli" });
+		expect(item).toBeDefined();
+		expect(item.action).toBeUndefined();
 	});
 
 	it("does NOT emit an action for unsupported cacheType (plex_episode)", async () => {

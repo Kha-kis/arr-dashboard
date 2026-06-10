@@ -1,7 +1,7 @@
 /**
  * Upstream Fixture / Regression Tests
  *
- * Validates that real-world API response shapes from Plex, Tautulli, and Seerr
+ * Validates that real-world API response shapes from Plex and Seerr
  * pass through parseUpstream correctly. These fixtures represent actual upstream
  * payloads (with extra fields) to catch regressions when schemas evolve.
  *
@@ -20,13 +20,6 @@ import {
 	plexHistoryResponseSchema,
 	plexLibraryItemsResponseSchema,
 } from "../../plex/plex-schemas.js";
-import {
-	tautulliResponseWrapperSchema,
-	tautulliInfoSchema,
-	tautulliHistoryDataSchema,
-	tautulliActivityDataSchema,
-	tautulliHomeStatSchema,
-} from "../../tautulli/tautulli-schemas.js";
 
 // ============================================================================
 // Plex Fixtures
@@ -196,132 +189,6 @@ const PLEX_LIBRARY_ITEMS_RESPONSE = {
 	},
 };
 
-// ============================================================================
-// Tautulli Fixtures
-// ============================================================================
-
-const TAUTULLI_WRAPPER_SUCCESS = {
-	response: {
-		result: "success" as const,
-		message: null,
-		data: { tautulli_version: "2.13.4" },
-	},
-};
-
-const TAUTULLI_WRAPPER_ERROR = {
-	response: {
-		result: "error" as const,
-		message: "API key is invalid",
-		data: {},
-	},
-};
-
-const TAUTULLI_HISTORY_DATA = {
-	data: [
-		{
-			rating_key: "100",
-			parent_rating_key: "90",
-			grandparent_rating_key: "80",
-			title: "Pilot",
-			grandparent_title: "Breaking Bad",
-			media_type: "episode",
-			user: "admin",
-			date: 1709900000,
-			play_count: 3,
-			// Extra fields
-			full_title: "Breaking Bad - S01E01 - Pilot",
-			duration: 3500,
-			paused_counter: 120,
-			percent_complete: 100,
-			ip_address: "192.168.1.100",
-		},
-	],
-	recordsFiltered: 1,
-	recordsTotal: 150,
-	// Extra fields
-	draw: 1,
-	filter_duration: "3 hrs 25 mins",
-	total_duration: "250 hrs",
-};
-
-const TAUTULLI_ACTIVITY_DATA = {
-	sessions: [
-		{
-			session_key: "abc",
-			rating_key: "200",
-			title: "Dune",
-			media_type: "movie",
-			user: "admin",
-			friendly_name: "Admin User",
-			player: "Plex Web",
-			platform: "Chrome",
-			product: "Plex Web",
-			state: "playing",
-			progress_percent: "45",
-			transcode_decision: "direct play",
-			stream_video_decision: "direct play",
-			stream_audio_decision: "direct play",
-			video_resolution: "1080",
-			audio_codec: "aac",
-			video_codec: "h264",
-			bandwidth: "20000",
-			location: "lan",
-			thumb: "/library/metadata/200/thumb/123",
-			// Extra fields
-			ip_address: "192.168.1.100",
-			full_title: "Dune (2021)",
-			quality_profile: "Original",
-			stream_container: "mkv",
-		},
-	],
-	stream_count: "1",
-	total_bandwidth: 20000,
-	lan_bandwidth: 20000,
-	wan_bandwidth: 0,
-	// Extra fields
-	stream_count_direct_play: 1,
-	stream_count_direct_stream: 0,
-	stream_count_transcode: 0,
-};
-
-const TAUTULLI_HOME_STATS_FULL = [
-	{
-		stat_id: "top_movies",
-		stat_title: "Most Watched Movies",
-		rows: [
-			{
-				title: "Dune: Part Two",
-				friendly_name: "admin",
-				total_plays: 5,
-				total_duration: 36000,
-				thumb: "/library/metadata/100/thumb/123",
-				// Extra fields
-				users_watched: 3,
-				rating_key: "100",
-			},
-		],
-	},
-];
-
-const TAUTULLI_HOME_STATS_MISSING_DURATION = [
-	{
-		stat_id: "top_platforms",
-		stat_title: "Top Platforms",
-		rows: [
-			{
-				title: "Chrome",
-				platform: "Chrome",
-				// total_plays and total_duration intentionally omitted —
-				// some Tautulli stat types don't include these fields
-			},
-		],
-	},
-];
-
-// ============================================================================
-// Tests
-// ============================================================================
-
 describe("Upstream fixture regression tests", () => {
 	beforeEach(() => {
 		integrationHealth.reset();
@@ -476,119 +343,6 @@ describe("Upstream fixture regression tests", () => {
 		});
 	});
 
-	describe("Tautulli fixtures", () => {
-		it("accepts real response wrapper (success)", () => {
-			const result = parseUpstream(TAUTULLI_WRAPPER_SUCCESS, tautulliResponseWrapperSchema, {
-				integration: "tautulli",
-				category: "wrapper",
-			});
-			expect(result.success).toBe(true);
-		});
-
-		it("accepts real response wrapper (error)", () => {
-			const result = parseUpstream(TAUTULLI_WRAPPER_ERROR, tautulliResponseWrapperSchema, {
-				integration: "tautulli",
-				category: "wrapper",
-			});
-			expect(result.success).toBe(true);
-			if (result.success) {
-				expect(result.data.response.result).toBe("error");
-			}
-		});
-
-		it("accepts real get_tautulli_info data", () => {
-			const data = parseUpstreamOrThrow(
-				TAUTULLI_WRAPPER_SUCCESS.response.data,
-				tautulliInfoSchema,
-				{ integration: "tautulli", category: "get_tautulli_info" },
-			);
-			expect(data.tautulli_version).toBe("2.13.4");
-		});
-
-		it("accepts real get_history data with extra fields", () => {
-			const result = parseUpstream(TAUTULLI_HISTORY_DATA, tautulliHistoryDataSchema, {
-				integration: "tautulli",
-				category: "get_history",
-			});
-			expect(result.success).toBe(true);
-			if (result.success) {
-				expect(result.data.data).toHaveLength(1);
-				expect(result.data.recordsFiltered).toBe(1);
-				expect(result.data.recordsTotal).toBe(150);
-			}
-		});
-
-		it("accepts real get_activity data with extra fields", () => {
-			const result = parseUpstream(TAUTULLI_ACTIVITY_DATA, tautulliActivityDataSchema, {
-				integration: "tautulli",
-				category: "get_activity",
-			});
-			expect(result.success).toBe(true);
-			if (result.success) {
-				expect(result.data.sessions).toHaveLength(1);
-				expect(result.data.sessions[0]!.title).toBe("Dune");
-			}
-		});
-
-		it("accepts get_activity with all fields absent (idle server — Tautulli v2.17+)", () => {
-			// When Tautulli has no active streams it omits all activity fields entirely.
-			const idle = {};
-			const result = parseUpstream(idle, tautulliActivityDataSchema, {
-				integration: "tautulli",
-				category: "get_activity",
-			});
-			expect(result.success).toBe(true);
-			if (result.success) {
-				expect(result.data.sessions).toEqual([]);
-				expect(result.data.stream_count).toBe("0");
-				expect(result.data.total_bandwidth).toBe(0);
-				expect(result.data.lan_bandwidth).toBe(0);
-				expect(result.data.wan_bandwidth).toBe(0);
-			}
-		});
-
-		it("accepts get_home_stats with all fields present", () => {
-			const result = parseUpstream(TAUTULLI_HOME_STATS_FULL, z.array(tautulliHomeStatSchema), {
-				integration: "tautulli",
-				category: "get_home_stats",
-			});
-			expect(result.success).toBe(true);
-			if (result.success) {
-				expect(result.data[0]!.rows[0]!.total_plays).toBe(5);
-				expect(result.data[0]!.rows[0]!.total_duration).toBe(36000);
-			}
-		});
-
-		it("accepts get_home_stats rows missing total_plays/total_duration (defaults to 0)", () => {
-			const result = parseUpstream(TAUTULLI_HOME_STATS_MISSING_DURATION, z.array(tautulliHomeStatSchema), {
-				integration: "tautulli",
-				category: "get_home_stats",
-			});
-			expect(result.success).toBe(true);
-			if (result.success) {
-				const row = result.data[0]!.rows[0]!;
-				expect(row.total_plays).toBe(0);
-				expect(row.total_duration).toBe(0);
-				expect(row.platform).toBe("Chrome");
-			}
-		});
-
-		it("rejects when wrapper has invalid result enum", () => {
-			const broken = {
-				response: {
-					result: "maybe", // not in enum
-					message: null,
-					data: {},
-				},
-			};
-			const result = parseUpstream(broken, tautulliResponseWrapperSchema, {
-				integration: "tautulli",
-				category: "wrapper",
-			});
-			expect(result.success).toBe(false);
-		});
-	});
-
 	describe("Health recording from fixtures", () => {
 		it("accumulates correct stats across multiple fixture validations", () => {
 			// Run several validations
@@ -598,24 +352,18 @@ describe("Upstream fixture regression tests", () => {
 			parseUpstream(PLEX_SECTIONS_RESPONSE, plexSectionsResponseSchema, {
 				integration: "plex", category: "/library/sections",
 			});
-			parseUpstream(TAUTULLI_HISTORY_DATA, tautulliHistoryDataSchema, {
-				integration: "tautulli", category: "get_history",
-			});
 			// One failure
 			parseUpstream({ broken: true }, plexIdentityResponseSchema, {
 				integration: "plex", category: "/identity",
 			});
 
 			const all = integrationHealth.getAll();
-			expect(all.overallTotals).toEqual({ total: 4, validated: 3, rejected: 1 });
+			expect(all.overallTotals).toEqual({ total: 3, validated: 2, rejected: 1 });
 
 			const plex = all.integrations.plex!;
 			expect(plex.totals).toEqual({ total: 3, validated: 2, rejected: 1 });
 			expect(plex.categories["/identity"]).toEqual({ total: 2, validated: 1, rejected: 1 });
 			expect(plex.categories["/library/sections"]).toEqual({ total: 1, validated: 1, rejected: 0 });
-
-			const tautulli = all.integrations.tautulli!;
-			expect(tautulli.totals).toEqual({ total: 1, validated: 1, rejected: 0 });
 		});
 	});
 
