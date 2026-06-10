@@ -13,6 +13,7 @@ import {
 	ChevronDown,
 	Film,
 	HardDrive,
+	ListChecks,
 	Loader2,
 	MessageSquare,
 	Save,
@@ -254,6 +255,17 @@ const RULE_TYPES: Array<{ value: CleanupRuleType; label: string; desc: string }>
 		label: "Requester Not Watched",
 		desc: "Matches when the Seerr requester has not watched the item (Plex, Emby, or Jellyfin)",
 	},
+	// List membership (auto-tagger sub-arc 4 closeout — C3)
+	{
+		value: "tmdb_list_member",
+		label: "TMDb List Member",
+		desc: "Flag items by membership in a TMDb list",
+	},
+	{
+		value: "trakt_list_member",
+		label: "Trakt List Member",
+		desc: "Flag items by membership in a Trakt list",
+	},
 ];
 
 const RULE_CATEGORIES: Array<{
@@ -332,6 +344,12 @@ const RULE_CATEGORIES: Array<{
 			"plex_added_at",
 		],
 		requires: "plex" as const,
+	},
+	{
+		id: "lists",
+		label: "List Membership",
+		icon: ListChecks,
+		types: ["tmdb_list_member", "trakt_list_member"],
 	},
 	{
 		id: "jellyfin",
@@ -502,6 +520,11 @@ export function CleanupRuleDialog({
 	const [seerrRequestCountVal, setSeerrRequestCountVal] = useState(1);
 	const [audioChannelsOp, setAudioChannelsOp] = useState("less_than");
 	const [audioChannelsVal, setAudioChannelsVal] = useState(6);
+	// List membership params (C3)
+	const [tmdbListId, setTmdbListId] = useState("");
+	const [tmdbListOp, setTmdbListOp] = useState("is_in");
+	const [traktListSlug, setTraktListSlug] = useState("");
+	const [traktListOp, setTraktListOp] = useState("is_in");
 	const [tagMatchOp, setTagMatchOp] = useState("includes_any");
 	const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
 
@@ -714,6 +737,14 @@ export function CleanupRuleDialog({
 					setTagMatchOp((p.operator as string) ?? "includes_any");
 					setSelectedTagIds(Array.isArray(p.tagIds) ? (p.tagIds as number[]) : []);
 					break;
+				case "tmdb_list_member":
+					setTmdbListId((p.listId as string) ?? "");
+					setTmdbListOp((p.operator as string) ?? "is_in");
+					break;
+				case "trakt_list_member":
+					setTraktListSlug((p.listSlug as string) ?? "");
+					setTraktListOp((p.operator as string) ?? "is_in");
+					break;
 				// Phase D: Plex collections & labels
 				case "plex_collection":
 					setPlexCollectionOp((p.operator as string) ?? "in");
@@ -854,6 +885,10 @@ export function CleanupRuleDialog({
 			setAudioChannelsOp("less_than");
 			setAudioChannelsVal(6);
 			setTagMatchOp("includes_any");
+			setTmdbListId("");
+			setTmdbListOp("is_in");
+			setTraktListSlug("");
+			setTraktListOp("is_in");
 			setSelectedTagIds([]);
 			setCompositeError(null);
 			// Phase D
@@ -974,6 +1009,10 @@ export function CleanupRuleDialog({
 		audioChannelsVal,
 		tagMatchOp,
 		selectedTagIds,
+		tmdbListId,
+		tmdbListOp,
+		traktListSlug,
+		traktListOp,
 		plexCollectionOp,
 		selectedPlexCollections,
 		plexLabelOp,
@@ -1633,6 +1672,14 @@ export function CleanupRuleDialog({
 								setTagMatchOp={setTagMatchOp}
 								selectedTagIds={selectedTagIds}
 								setSelectedTagIds={setSelectedTagIds}
+								tmdbListId={tmdbListId}
+								setTmdbListId={setTmdbListId}
+								tmdbListOp={tmdbListOp}
+								setTmdbListOp={setTmdbListOp}
+								traktListSlug={traktListSlug}
+								setTraktListSlug={setTraktListSlug}
+								traktListOp={traktListOp}
+								setTraktListOp={setTraktListOp}
 								plexCollectionOp={plexCollectionOp}
 								setPlexCollectionOp={setPlexCollectionOp}
 								selectedPlexCollections={selectedPlexCollections}
@@ -1981,6 +2028,14 @@ interface ParamsFieldsProps {
 	setTagMatchOp: (v: string) => void;
 	selectedTagIds: number[];
 	setSelectedTagIds: (v: number[]) => void;
+	tmdbListId: string;
+	setTmdbListId: (v: string) => void;
+	tmdbListOp: string;
+	setTmdbListOp: (v: string) => void;
+	traktListSlug: string;
+	setTraktListSlug: (v: string) => void;
+	traktListOp: string;
+	setTraktListOp: (v: string) => void;
 	// Phase D
 	plexCollectionOp: string;
 	setPlexCollectionOp: (v: string) => void;
@@ -2150,6 +2205,14 @@ function ParamsFields(props: ParamsFieldsProps) {
 		setTagMatchOp,
 		selectedTagIds,
 		setSelectedTagIds,
+		tmdbListId,
+		setTmdbListId,
+		tmdbListOp,
+		setTmdbListOp,
+		traktListSlug,
+		setTraktListSlug,
+		traktListOp,
+		setTraktListOp,
 		plexCollectionOp,
 		setPlexCollectionOp,
 		selectedPlexCollections,
@@ -3024,6 +3087,68 @@ function ParamsFields(props: ParamsFieldsProps) {
 					inputClass={inputClass}
 					labelClass={labelClass}
 				/>
+			);
+
+		// ── List membership (C3) ────────────────────────────────────
+		case "tmdb_list_member":
+			return (
+				<div className="space-y-2">
+					<label className="block">
+						<span className={labelClass}>Operator</span>
+						<select
+							value={tmdbListOp}
+							onChange={(e) => setTmdbListOp(e.target.value)}
+							className={inputClass}
+						>
+							<option value="is_in">Is in list</option>
+							<option value="not_in">Is not in list</option>
+						</select>
+					</label>
+					<label className="block">
+						<span className={labelClass}>TMDb list ID</span>
+						<input
+							type="text"
+							value={tmdbListId}
+							onChange={(e) => setTmdbListId(e.target.value)}
+							placeholder="8068"
+							className={inputClass}
+						/>
+					</label>
+					<p className="text-xs text-muted-foreground">
+						Numeric TMDb list id. Membership refreshes every 4 hours from your configured TMDb
+						key; an unrefreshed or unknown list matches nothing.
+					</p>
+				</div>
+			);
+		case "trakt_list_member":
+			return (
+				<div className="space-y-2">
+					<label className="block">
+						<span className={labelClass}>Operator</span>
+						<select
+							value={traktListOp}
+							onChange={(e) => setTraktListOp(e.target.value)}
+							className={inputClass}
+						>
+							<option value="is_in">Is in list</option>
+							<option value="not_in">Is not in list</option>
+						</select>
+					</label>
+					<label className="block">
+						<span className={labelClass}>Trakt list slug</span>
+						<input
+							type="text"
+							value={traktListSlug}
+							onChange={(e) => setTraktListSlug(e.target.value)}
+							placeholder="username/oscar-winners"
+							className={inputClass}
+						/>
+					</label>
+					<p className="text-xs text-muted-foreground">
+						Format: username/list-slug. Requires a Trakt access token (Settings → Account);
+						membership refreshes every 4 hours.
+					</p>
+				</div>
 			);
 
 		// ── Phase D: Plex Collections & Labels ───────────────────────

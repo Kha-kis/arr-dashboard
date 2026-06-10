@@ -69,6 +69,10 @@ function makeState(overrides: Partial<BuildParamsState> = {}): BuildParamsState 
 		audioChannelsOp: "less_than",
 		audioChannelsVal: 6,
 		tagMatchOp: "includes_any",
+		tmdbListId: "8068",
+		tmdbListOp: "is_in",
+		traktListSlug: "user/oscar-winners",
+		traktListOp: "is_in",
 		selectedTagIds: [1, 2],
 		plexCollectionOp: "in",
 		selectedPlexCollections: ["Marvel"],
@@ -135,6 +139,22 @@ describe("splitCsv", () => {
 // ============================================================================
 
 describe("buildParams", () => {
+	describe("list membership (C3)", () => {
+		it("tmdb_list_member: trims and passes listId + operator", () => {
+			expect(
+				buildParams(makeState({ ruleType: "tmdb_list_member", tmdbListId: " 8068 " })),
+			).toEqual({ listId: "8068", operator: "is_in" });
+		});
+
+		it("trakt_list_member: trims and passes listSlug + operator", () => {
+			expect(
+				buildParams(
+					makeState({ ruleType: "trakt_list_member", traktListOp: "not_in" }),
+				),
+			).toEqual({ listSlug: "user/oscar-winners", operator: "not_in" });
+		});
+	});
+
 	describe("basic rules", () => {
 		it("age: includes field, operator, and days", () => {
 			expect(buildParams(makeState({ ruleType: "age" }))).toEqual({
