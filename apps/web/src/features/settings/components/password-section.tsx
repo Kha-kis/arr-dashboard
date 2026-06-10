@@ -2,6 +2,7 @@
 
 import type { CurrentUser } from "@arr/shared";
 import { useQuery } from "@tanstack/react-query";
+import { authKeys } from "../../../lib/query-keys";
 import { AlertTriangle, Check, Key, Loader2, Lock, Shield, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { PremiumSection } from "../../../components/layout";
@@ -56,7 +57,7 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 	const { data: setupData } = useSetupRequired();
 	const passwordPolicy = setupData?.passwordPolicy ?? "strict";
 	const { data: passkeys = [] } = useQuery({
-		queryKey: ["passkey-credentials"],
+		queryKey: authKeys.passkeyCredentials,
 		queryFn: getPasskeyCredentials,
 	});
 

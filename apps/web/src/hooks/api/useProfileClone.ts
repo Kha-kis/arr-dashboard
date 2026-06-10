@@ -4,6 +4,7 @@
 
 import type { CompleteQualityProfile } from "@arr/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { qualityProfileKeys } from "../../lib/query-keys";
 
 // ============================================================================
 // Types
@@ -70,7 +71,7 @@ interface ProfilePreview {
  */
 export function useInstanceProfiles(instanceId: string | null) {
 	return useQuery({
-		queryKey: ["profile-clone", "profiles", instanceId],
+		queryKey: qualityProfileKeys.clone.profiles(instanceId),
 		queryFn: async () => {
 			if (!instanceId) return [];
 
@@ -128,7 +129,7 @@ export function useImportProfile() {
 		onSuccess: (data) => {
 			// Invalidate profile list for the affected instance
 			queryClient.invalidateQueries({
-				queryKey: ["profile-clone", "profiles", data.instanceId],
+				queryKey: qualityProfileKeys.clone.profiles(data.instanceId),
 			});
 		},
 	});
@@ -197,7 +198,7 @@ export function useDeployProfile() {
 		onSuccess: (data) => {
 			// Invalidate profile list for the affected instance
 			queryClient.invalidateQueries({
-				queryKey: ["profile-clone", "profiles", data.instanceId],
+				queryKey: qualityProfileKeys.clone.profiles(data.instanceId),
 			});
 		},
 	});

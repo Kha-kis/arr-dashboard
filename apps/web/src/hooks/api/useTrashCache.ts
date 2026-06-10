@@ -22,7 +22,7 @@ import {
 	refreshCache,
 } from "../../lib/api-client/trash-guides";
 import { POLLING_STANDARD } from "../../lib/polling-intervals";
-import { trashCacheKeys } from "../../lib/query-keys";
+import { trashCacheKeys, trashGuidesKeys } from "../../lib/query-keys";
 
 /**
  * Hook to fetch TRaSH Guides cache status
@@ -59,7 +59,7 @@ export const useRefreshTrashCache = () => {
 			void queryClient.invalidateQueries({ queryKey: trashCacheKeys.allEntries });
 			// Also invalidate trash-guides related queries for the specific service type
 			void queryClient.invalidateQueries({
-				queryKey: ["trash-guides", variables.serviceType],
+				queryKey: trashGuidesKeys.byService(variables.serviceType),
 			});
 		},
 	});

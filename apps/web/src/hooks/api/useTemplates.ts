@@ -2,6 +2,7 @@
 
 import type { CreateTemplateRequest, UpdateTemplateRequest } from "@arr/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { TEMPLATES_QUERY_KEY, trashGuidesKeys } from "../../lib/query-keys";
 import {
 	createTemplate,
 	deleteTemplate,
@@ -28,7 +29,6 @@ import {
  * Used for invalidation to match all template queries regardless of params.
  * The actual query key is ["trash-guides", "templates", params], so this prefix will match all variations.
  */
-export const TEMPLATES_QUERY_KEY = ["trash-guides", "templates"] as const;
 
 // ============================================================================
 // Query Hooks
@@ -47,7 +47,7 @@ export const useTemplates = (params?: {
 	offset?: number;
 }) =>
 	useQuery<TemplateListResponse>({
-		queryKey: ["trash-guides", "templates", params],
+		queryKey: trashGuidesKeys.templates.list(params),
 		queryFn: () => fetchTemplates(params),
 		staleTime: 2 * 60 * 1000, // 2 minutes
 		refetchOnMount: true,
@@ -58,7 +58,7 @@ export const useTemplates = (params?: {
  */
 export const useTemplate = (templateId: string | null) =>
 	useQuery<TemplateResponse>({
-		queryKey: ["trash-guides", "template", templateId],
+		queryKey: trashGuidesKeys.templates.detail(templateId),
 		queryFn: () => fetchTemplate(templateId!),
 		enabled: !!templateId,
 		staleTime: 5 * 60 * 1000, // 5 minutes
@@ -69,7 +69,7 @@ export const useTemplate = (templateId: string | null) =>
  */
 export const useTemplateStats = (templateId: string | null) =>
 	useQuery<TemplateStatsResponse>({
-		queryKey: ["template-stats", templateId],
+		queryKey: trashGuidesKeys.templates.stats(templateId),
 		queryFn: () => fetchTemplateStats(templateId!),
 		enabled: !!templateId,
 		staleTime: 1 * 60 * 1000, // 1 minute
@@ -105,7 +105,7 @@ export const useUpdateTemplate = () => {
 		onSuccess: (_, variables) => {
 			void queryClient.invalidateQueries({ queryKey: TEMPLATES_QUERY_KEY });
 			void queryClient.invalidateQueries({
-				queryKey: ["trash-guides", "template", variables.templateId],
+				queryKey: trashGuidesKeys.templates.detail(variables.templateId),
 			});
 		},
 	});

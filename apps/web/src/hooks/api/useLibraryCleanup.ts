@@ -147,9 +147,9 @@ export function useCleanupExecute() {
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.config });
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.status });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-logs"] });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-approvals"] });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-statistics"] });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.logsAll });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.approvalsAll });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.statisticsAll });
 		},
 	});
 }
@@ -159,9 +159,9 @@ export function useApproveCleanupItem() {
 	return useMutation({
 		mutationFn: (id: string): Promise<ApprovalExecuteResult> => libraryCleanupApi.approveItem(id),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-approvals"] });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-logs"] });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-statistics"] });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.approvalsAll });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.logsAll });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.statisticsAll });
 		},
 	});
 }
@@ -171,9 +171,9 @@ export function useRejectCleanupItem() {
 	return useMutation({
 		mutationFn: (id: string) => libraryCleanupApi.rejectItem(id),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-approvals"] });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-logs"] });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-statistics"] });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.approvalsAll });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.logsAll });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.statisticsAll });
 		},
 	});
 }
@@ -184,9 +184,9 @@ export function useBulkCleanupAction() {
 		mutationFn: ({ ids, action }: { ids: string[]; action: "approved" | "rejected" }) =>
 			libraryCleanupApi.bulkAction(ids, action),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-approvals"] });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-logs"] });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-statistics"] });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.approvalsAll });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.logsAll });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.statisticsAll });
 		},
 	});
 }
