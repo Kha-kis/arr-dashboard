@@ -76,42 +76,20 @@ export async function registerWatchEnrichmentRoutes(
 			where: { userId, service: "PLEX", enabled: true },
 			select: { id: true },
 		});
-		const tautulliInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "TAUTULLI", enabled: true },
-			select: { id: true },
-		});
-
 		const plexInstanceIds = plexInstances.map((i) => i.id);
-		const tautulliInstanceIds = tautulliInstances.map((i) => i.id);
 
-		// Query PlexCache and TautulliCache in parallel
-		const [plexEntries, tautulliEntries] = await Promise.all([
+		const plexEntries =
 			plexInstanceIds.length > 0
-				? app.prisma.plexCache.findMany({
+				? await app.prisma.plexCache.findMany({
 						where: {
 							instanceId: { in: plexInstanceIds },
 							tmdbId: { in: tmdbIdList },
 						},
 					})
-				: [],
-			tautulliInstanceIds.length > 0
-				? app.prisma.tautulliCache.findMany({
-						where: {
-							instanceId: { in: tautulliInstanceIds },
-							tmdbId: { in: tmdbIdList },
-						},
-					})
-				: [],
-		]);
+				: [];
 
 		// Aggregate into enrichment items using extracted pure helper
-		const items = aggregateWatchEnrichment(
-			uniqueKeys,
-			plexEntries,
-			tautulliEntries,
-			filterUser,
-			request.log,
-		);
+		const items = aggregateWatchEnrichment(uniqueKeys, plexEntries, filterUser, request.log);
 
 		const response: WatchEnrichmentResponse = { items };
 		return reply.send(response);

@@ -20,10 +20,7 @@ import { createJellyfinClient } from "../lib/jellyfin/jellyfin-client.js";
 import { createPlexClient } from "../lib/plex/plex-client.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 import { normalizeJellyfinMediaType, toEnrichedSessions } from "./lib/session-enrichment-helpers.js";
-import {
-	classifySessionDecisions,
-	computeLanWanAttribution,
-} from "./lib/session-snapshot-helpers.js";
+import { classifySessionDecisions } from "./lib/session-snapshot-helpers.js";
 
 const INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const STARTUP_DELAY_MS = 60_000; // 60 seconds

@@ -14,7 +14,8 @@ export interface WatchEnrichmentItem {
 	watchedByUsers: string[];
 	onDeck: boolean;
 	userRating: number | null;
-	source: "plex" | "tautulli" | "both" | "jellyfin";
+	// "tautulli"/"both" removed in 3.0 (ADR-0007)
+	source: "plex" | "jellyfin";
 	/** Plex ratingKey for write-back operations (null if not available) */
 	ratingKey: string | null;
 	/** Jellyfin/Emby item ID for deep links (null if source is Plex) */
