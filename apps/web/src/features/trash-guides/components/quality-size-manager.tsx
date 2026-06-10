@@ -13,7 +13,13 @@ import {
 	Server,
 } from "lucide-react";
 import { useState } from "react";
-import { ServiceBadge } from "../../../components/layout/premium-components";
+import {
+	GradientButton,
+	PremiumTable,
+	PremiumTableHeader,
+	PremiumTableRow,
+	ServiceBadge,
+} from "../../../components/layout/premium-components";
 import {
 	useApplyQualitySize,
 	useQualitySizeMapping,
@@ -219,7 +225,9 @@ export function QualitySizeManager() {
 										/>
 										<div className="min-w-0 flex-1">
 											<div className="flex items-center gap-2">
-												<span className="text-sm font-medium truncate">{incognitoMode ? getLinuxInstanceName(instance.label) : instance.label}</span>
+												<span className="text-sm font-medium truncate">
+													{incognitoMode ? getLinuxInstanceName(instance.label) : instance.label}
+												</span>
 												<ServiceBadge service={instance.service} />
 											</div>
 										</div>
@@ -341,22 +349,23 @@ export function QualitySizeManager() {
 								<p className="text-sm font-medium">Reset to Factory Defaults</p>
 								<p className="text-sm text-muted-foreground mt-1">
 									This will restore all quality size definitions on{" "}
-									<span className="font-medium text-foreground">{selectedInstance && (incognitoMode ? getLinuxInstanceName(selectedInstance.label) : selectedInstance.label)}</span> to
-									the original values set by{" "}
+									<span className="font-medium text-foreground">
+										{selectedInstance &&
+											(incognitoMode
+												? getLinuxInstanceName(selectedInstance.label)
+												: selectedInstance.label)}
+									</span>{" "}
+									to the original values set by{" "}
 									{selectedInstance?.service === "sonarr" ? "Sonarr" : "Radarr"}. Any previously
 									applied TRaSH preset will be removed.
 								</p>
 							</div>
 						</div>
 					</div>
-					<button
-						type="button"
+					<GradientButton
 						onClick={handleApply}
 						disabled={applyMutation.isPending}
-						className="rounded-xl px-6 py-2.5 text-sm font-medium text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110"
-						style={{
-							background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
-						}}
+						className="px-6 py-2.5"
 					>
 						{applyMutation.isPending ? (
 							<span className="flex items-center gap-2">
@@ -366,7 +375,7 @@ export function QualitySizeManager() {
 						) : (
 							`Reset ${selectedInstance?.label ?? "Instance"} to Defaults`
 						)}
-					</button>
+					</GradientButton>
 					{applyMutation.isError && (
 						<ErrorBanner message={`Reset failed: ${applyMutation.error.message}`} />
 					)}
@@ -435,115 +444,113 @@ export function QualitySizeManager() {
 							Comparing quality definitions...
 						</div>
 					) : previewData?.comparisons ? (
-						<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10">
-							<div className="overflow-x-auto">
-								<table className="w-full text-sm">
-									<thead>
-										<tr className="border-b border-border/50">
-											<th className="px-4 py-3 text-left font-medium text-muted-foreground">
-												Quality
-											</th>
-											<th className="px-4 py-3 text-right font-medium text-muted-foreground">
-												Current Min
-											</th>
-											<th className="px-4 py-3 text-right font-medium text-muted-foreground">
-												Current Preferred
-											</th>
-											<th className="px-4 py-3 text-right font-medium text-muted-foreground">
-												Current Max
-											</th>
-											<th
-												className="px-4 py-3 text-right font-medium"
-												style={{ color: themeGradient.from }}
+						<PremiumTable>
+							<table className="w-full text-sm">
+								<PremiumTableHeader>
+									<tr>
+										<th className="px-4 py-3 text-left font-medium text-muted-foreground">
+											Quality
+										</th>
+										<th className="px-4 py-3 text-right font-medium text-muted-foreground">
+											Current Min
+										</th>
+										<th className="px-4 py-3 text-right font-medium text-muted-foreground">
+											Current Preferred
+										</th>
+										<th className="px-4 py-3 text-right font-medium text-muted-foreground">
+											Current Max
+										</th>
+										<th
+											className="px-4 py-3 text-right font-medium"
+											style={{ color: themeGradient.from }}
+										>
+											TRaSH Min
+										</th>
+										<th
+											className="px-4 py-3 text-right font-medium"
+											style={{ color: themeGradient.from }}
+										>
+											TRaSH Preferred
+										</th>
+										<th
+											className="px-4 py-3 text-right font-medium"
+											style={{ color: themeGradient.from }}
+										>
+											TRaSH Max
+										</th>
+										<th className="px-4 py-3 text-center font-medium text-muted-foreground">
+											Status
+										</th>
+									</tr>
+								</PremiumTableHeader>
+								<tbody>
+									{previewData.comparisons.map((row, idx) => (
+										<PremiumTableRow
+											key={row.qualityName}
+											isHoverable={false}
+											className="animate-in fade-in duration-200"
+											style={{
+												animationDelay: `${idx * 20}ms`,
+												animationFillMode: "backwards",
+											}}
+										>
+											<td className="px-4 py-2.5 font-medium">
+												{row.instanceTitle ?? row.qualityName}
+											</td>
+											<td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
+												{row.current?.min ?? "—"}
+											</td>
+											<td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
+												{row.current?.preferred ?? "—"}
+											</td>
+											<td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
+												{row.current?.max ?? "—"}
+											</td>
+											<td
+												className="px-4 py-2.5 text-right tabular-nums font-medium"
+												style={row.changed ? { color: SEMANTIC_COLORS.warning.text } : undefined}
 											>
-												TRaSH Min
-											</th>
-											<th
-												className="px-4 py-3 text-right font-medium"
-												style={{ color: themeGradient.from }}
+												{row.trash.min}
+											</td>
+											<td
+												className="px-4 py-2.5 text-right tabular-nums font-medium"
+												style={row.changed ? { color: SEMANTIC_COLORS.warning.text } : undefined}
 											>
-												TRaSH Preferred
-											</th>
-											<th
-												className="px-4 py-3 text-right font-medium"
-												style={{ color: themeGradient.from }}
+												{row.trash.preferred}
+											</td>
+											<td
+												className="px-4 py-2.5 text-right tabular-nums font-medium"
+												style={row.changed ? { color: SEMANTIC_COLORS.warning.text } : undefined}
 											>
-												TRaSH Max
-											</th>
-											<th className="px-4 py-3 text-center font-medium text-muted-foreground">
-												Status
-											</th>
-										</tr>
-									</thead>
-									<tbody>
-										{previewData.comparisons.map((row, idx) => (
-											<tr
-												key={row.qualityName}
-												className="border-b border-border/30 last:border-0 animate-in fade-in duration-200"
-												style={{
-													animationDelay: `${idx * 20}ms`,
-													animationFillMode: "backwards",
-												}}
-											>
-												<td className="px-4 py-2.5 font-medium">
-													{row.instanceTitle ?? row.qualityName}
-												</td>
-												<td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
-													{row.current?.min ?? "—"}
-												</td>
-												<td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
-													{row.current?.preferred ?? "—"}
-												</td>
-												<td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
-													{row.current?.max ?? "—"}
-												</td>
-												<td
-													className="px-4 py-2.5 text-right tabular-nums font-medium"
-													style={row.changed ? { color: SEMANTIC_COLORS.warning.text } : undefined}
-												>
-													{row.trash.min}
-												</td>
-												<td
-													className="px-4 py-2.5 text-right tabular-nums font-medium"
-													style={row.changed ? { color: SEMANTIC_COLORS.warning.text } : undefined}
-												>
-													{row.trash.preferred}
-												</td>
-												<td
-													className="px-4 py-2.5 text-right tabular-nums font-medium"
-													style={row.changed ? { color: SEMANTIC_COLORS.warning.text } : undefined}
-												>
-													{row.trash.max}
-												</td>
-												<td className="px-4 py-2.5 text-center">
-													{!row.matched ? (
-														<MinusCircle className="h-4 w-4 mx-auto text-muted-foreground" />
-													) : row.changed ? (
-														<AlertTriangle
-															className="h-4 w-4 mx-auto"
-															style={{ color: SEMANTIC_COLORS.warning.text }}
-														/>
-													) : (
-														<CheckCircle2
-															className="h-4 w-4 mx-auto"
-															style={{ color: SEMANTIC_COLORS.success.text }}
-														/>
-													)}
-												</td>
-											</tr>
-										))}
-									</tbody>
-								</table>
-							</div>
-						</div>
+												{row.trash.max}
+											</td>
+											<td className="px-4 py-2.5 text-center">
+												{!row.matched ? (
+													<MinusCircle className="h-4 w-4 mx-auto text-muted-foreground" />
+												) : row.changed ? (
+													<AlertTriangle
+														className="h-4 w-4 mx-auto"
+														style={{ color: SEMANTIC_COLORS.warning.text }}
+													/>
+												) : (
+													<CheckCircle2
+														className="h-4 w-4 mx-auto"
+														style={{ color: SEMANTIC_COLORS.success.text }}
+													/>
+												)}
+											</td>
+										</PremiumTableRow>
+									))}
+								</tbody>
+							</table>
+						</PremiumTable>
 					) : null}
 
 					{/* Apply Button */}
 					{previewData && (
 						<div className="space-y-3">
 							<div className="flex items-center gap-4">
-								<button
-									type="button"
+								<GradientButton
 									onClick={handleApply}
 									disabled={
 										applyMutation.isPending ||
@@ -551,10 +558,7 @@ export function QualitySizeManager() {
 										(previewData.summary.changed === 0 &&
 											existingMapping?.presetTrashId === selectedPresetId)
 									}
-									className="rounded-xl px-6 py-2.5 text-sm font-medium text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110"
-									style={{
-										background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
-									}}
+									className="px-6 py-2.5"
 								>
 									{applyMutation.isPending ? (
 										<span className="flex items-center gap-2">
@@ -564,7 +568,7 @@ export function QualitySizeManager() {
 									) : (
 										`Apply to ${selectedInstance?.label ?? "Instance"}`
 									)}
-								</button>
+								</GradientButton>
 								{previewData.summary.changed === 0 && previewData.summary.matched > 0 && (
 									<span className="text-sm text-muted-foreground">
 										{existingMapping?.presetTrashId === selectedPresetId

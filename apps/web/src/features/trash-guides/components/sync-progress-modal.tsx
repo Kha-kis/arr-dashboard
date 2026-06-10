@@ -2,6 +2,7 @@
 
 import { AlertCircle, CheckCircle2, Loader2, RefreshCw, XCircle } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
+import { PremiumProgress } from "../../../components/layout";
 import { Button } from "../../../components/ui";
 import { useSyncProgress } from "../../../hooks/api/useSync";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
@@ -215,7 +216,8 @@ export const SyncProgressModal = ({
 								</h2>
 								<p id="sync-progress-description" className="mt-1 text-sm text-muted-foreground">
 									Template: <span className="font-medium text-foreground">{templateName}</span> →
-									Instance: <span className="font-medium text-foreground">{displayInstanceName}</span>
+									Instance:{" "}
+									<span className="font-medium text-foreground">{displayInstanceName}</span>
 								</p>
 							</div>
 						</div>
@@ -342,19 +344,11 @@ export const SyncProgressModal = ({
 									<span className="font-medium text-foreground">{progress.currentStep}</span>
 									<span className="text-muted-foreground">{Math.round(progress.progress)}%</span>
 								</div>
-								<div className="h-3 overflow-hidden rounded-full bg-muted/30">
-									<div
-										className="h-full transition-all duration-500 rounded-full"
-										style={{
-											width: `${progress.progress}%`,
-											background: isFailed
-												? `linear-gradient(90deg, ${SEMANTIC_COLORS.error.from}, ${SEMANTIC_COLORS.error.to})`
-												: isCompleted
-													? `linear-gradient(90deg, ${SEMANTIC_COLORS.success.from}, ${SEMANTIC_COLORS.success.to})`
-													: `linear-gradient(90deg, ${themeGradient.from}, ${themeGradient.to})`,
-										}}
-									/>
-								</div>
+								<PremiumProgress
+									value={progress.progress}
+									size="lg"
+									variant={isFailed ? "danger" : isCompleted ? "success" : "default"}
+								/>
 							</div>
 
 							{/* Statistics */}

@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { PremiumEmptyState } from "../../../components/layout";
+import { GradientButton, PremiumEmptyState } from "../../../components/layout";
 import { useUnlinkTemplateFromInstance } from "../../../hooks/api/useDeploymentPreview";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useExecuteSync } from "../../../hooks/api/useSync";
@@ -430,17 +430,12 @@ export const TemplateList = ({
 											autoFocus
 										/>
 										<div className="flex gap-2">
-											<button
-												type="button"
+											<GradientButton
 												onClick={() => handleDuplicate(template.id)}
 												disabled={duplicateMutation.isPending || !modals.duplicateName.trim()}
-												className="rounded-xl px-4 py-2 text-sm font-medium transition-all disabled:opacity-50"
-												style={{
-													background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
-												}}
 											>
 												{duplicateMutation.isPending ? "Creating..." : "Create"}
-											</button>
+											</GradientButton>
 											<button
 												type="button"
 												onClick={() => dispatch({ type: "CLOSE_DUPLICATE" })}

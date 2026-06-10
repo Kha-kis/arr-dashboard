@@ -13,6 +13,13 @@ import {
 	XCircle,
 } from "lucide-react";
 import { useState } from "react";
+import {
+	PremiumEmptyState,
+	PremiumTable,
+	PremiumTableHeader,
+	PremiumTableRow,
+	StatusBadge,
+} from "../../../components/layout";
 import { useNamingHistory, useRollbackNaming } from "../../../hooks/api/useNaming";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
@@ -22,29 +29,21 @@ import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 // ============================================================================
 
 const STATUS_CONFIG = {
-	PENDING: { label: "Pending", Icon: Clock, color: SEMANTIC_COLORS.warning },
-	SUCCESS: { label: "Success", Icon: CheckCircle2, color: SEMANTIC_COLORS.success },
-	FAILED: { label: "Failed", Icon: XCircle, color: SEMANTIC_COLORS.error },
-	ROLLED_BACK: { label: "Rolled Back", Icon: Undo2, color: SEMANTIC_COLORS.info },
+	PENDING: { label: "Pending", Icon: Clock, variant: "warning" },
+	SUCCESS: { label: "Success", Icon: CheckCircle2, variant: "success" },
+	FAILED: { label: "Failed", Icon: XCircle, variant: "error" },
+	ROLLED_BACK: { label: "Rolled Back", Icon: Undo2, variant: "info" },
 } as const;
 
 function NamingStatusBadge({ status }: { status: keyof typeof STATUS_CONFIG }) {
 	const config = STATUS_CONFIG[status];
 	if (!config) return <span className="text-xs text-muted-foreground">{status}</span>;
 
-	const { label, Icon, color } = config;
+	const { label, Icon, variant } = config;
 	return (
-		<span
-			className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium"
-			style={{
-				backgroundColor: color.bg,
-				borderColor: color.border,
-				color: color.text,
-			}}
-		>
-			<Icon className="h-3.5 w-3.5" />
+		<StatusBadge status={variant} icon={Icon}>
 			{label}
-		</span>
+		</StatusBadge>
 	);
 }
 
@@ -129,21 +128,21 @@ export function NamingHistoryTable({ instanceId }: NamingHistoryTableProps) {
 	// ── Empty ────────────────────────────────────────────────────────────
 	if (history.length === 0) {
 		return (
-			<div className="rounded-2xl border border-dashed border-border/30 bg-muted/10 p-12 text-center">
-				<History className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-				<p className="text-lg font-medium text-foreground mb-2">No deployment history</p>
-				<p className="text-sm text-muted-foreground">Deploy naming presets to see history here</p>
-			</div>
+			<PremiumEmptyState
+				icon={History}
+				title="No deployment history"
+				description="Deploy naming presets to see history here"
+			/>
 		);
 	}
 
 	// ── Table ────────────────────────────────────────────────────────────
 	return (
 		<div className="space-y-4 animate-in fade-in duration-300">
-			<div className="rounded-2xl border border-border/30 bg-muted/10 overflow-hidden">
+			<PremiumTable>
 				<table className="w-full">
-					<thead>
-						<tr className="border-b border-border/50">
+					<PremiumTableHeader>
+						<tr>
 							<th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 								Timestamp
 							</th>
@@ -160,12 +159,12 @@ export function NamingHistoryTable({ instanceId }: NamingHistoryTableProps) {
 								Actions
 							</th>
 						</tr>
-					</thead>
+					</PremiumTableHeader>
 					<tbody>
 						{history.map((entry, index) => (
-							<tr
+							<PremiumTableRow
 								key={entry.id}
-								className="border-b border-border/30 last:border-0 transition-colors hover:bg-card/50 animate-in fade-in"
+								className="animate-in fade-in"
 								style={{
 									animationDelay: `${index * 30}ms`,
 									animationFillMode: "backwards",
@@ -261,11 +260,11 @@ export function NamingHistoryTable({ instanceId }: NamingHistoryTableProps) {
 										</span>
 									) : null}
 								</td>
-							</tr>
+							</PremiumTableRow>
 						))}
 					</tbody>
 				</table>
-			</div>
+			</PremiumTable>
 
 			{/* Rollback error banner */}
 			{rollbackMutation.isError && (

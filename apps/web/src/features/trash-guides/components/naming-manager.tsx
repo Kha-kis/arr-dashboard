@@ -15,7 +15,13 @@ import {
 	Trash2,
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { ServiceBadge } from "../../../components/layout/premium-components";
+import {
+	GradientButton,
+	PremiumTable,
+	PremiumTableHeader,
+	PremiumTableRow,
+	ServiceBadge,
+} from "../../../components/layout/premium-components";
 import {
 	useApplyNaming,
 	useDeleteNamingConfig,
@@ -187,67 +193,66 @@ function PreviewTable({
 	themeGradient: ReturnType<typeof useThemeGradient>["gradient"];
 }) {
 	return (
-		<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10">
-			<div className="overflow-x-auto">
-				<table className="w-full text-sm">
-					<thead>
-						<tr className="border-b border-border/50">
-							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Field</th>
-							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Current</th>
-							<th className="px-4 py-3 text-left font-medium" style={{ color: themeGradient.from }}>
-								TRaSH Preset
-							</th>
-							<th className="px-4 py-3 text-center font-medium text-muted-foreground">Status</th>
-						</tr>
-					</thead>
-					<tbody>
-						{comparisons.map((row, idx) => (
-							<tr
-								key={row.arrApiField}
-								className="border-b border-border/30 last:border-0 animate-in fade-in duration-200"
-								style={{
-									animationDelay: `${idx * 30}ms`,
-									animationFillMode: "backwards",
-								}}
-							>
-								<td className="px-4 py-2.5">
-									<div>
-										<div className="font-medium">{row.fieldGroup}</div>
-										<div className="text-xs text-muted-foreground">{row.presetName}</div>
-									</div>
-								</td>
-								<td className="px-4 py-2.5">
-									<code className="text-xs text-muted-foreground break-all">
-										{row.currentValue || "—"}
-									</code>
-								</td>
-								<td className="px-4 py-2.5">
-									<code
-										className="text-xs break-all font-medium"
-										style={row.changed ? { color: SEMANTIC_COLORS.warning.text } : undefined}
-									>
-										{row.presetValue}
-									</code>
-								</td>
-								<td className="px-4 py-2.5 text-center">
-									{row.changed ? (
-										<AlertTriangle
-											className="h-4 w-4 mx-auto"
-											style={{ color: SEMANTIC_COLORS.warning.text }}
-										/>
-									) : (
-										<CheckCircle2
-											className="h-4 w-4 mx-auto"
-											style={{ color: SEMANTIC_COLORS.success.text }}
-										/>
-									)}
-								</td>
-							</tr>
-						))}
-					</tbody>
-				</table>
-			</div>
-		</div>
+		<PremiumTable>
+			<table className="w-full text-sm">
+				<PremiumTableHeader>
+					<tr>
+						<th className="px-4 py-3 text-left font-medium text-muted-foreground">Field</th>
+						<th className="px-4 py-3 text-left font-medium text-muted-foreground">Current</th>
+						<th className="px-4 py-3 text-left font-medium" style={{ color: themeGradient.from }}>
+							TRaSH Preset
+						</th>
+						<th className="px-4 py-3 text-center font-medium text-muted-foreground">Status</th>
+					</tr>
+				</PremiumTableHeader>
+				<tbody>
+					{comparisons.map((row, idx) => (
+						<PremiumTableRow
+							key={row.arrApiField}
+							isHoverable={false}
+							className="animate-in fade-in duration-200"
+							style={{
+								animationDelay: `${idx * 30}ms`,
+								animationFillMode: "backwards",
+							}}
+						>
+							<td className="px-4 py-2.5">
+								<div>
+									<div className="font-medium">{row.fieldGroup}</div>
+									<div className="text-xs text-muted-foreground">{row.presetName}</div>
+								</div>
+							</td>
+							<td className="px-4 py-2.5">
+								<code className="text-xs text-muted-foreground break-all">
+									{row.currentValue || "—"}
+								</code>
+							</td>
+							<td className="px-4 py-2.5">
+								<code
+									className="text-xs break-all font-medium"
+									style={row.changed ? { color: SEMANTIC_COLORS.warning.text } : undefined}
+								>
+									{row.presetValue}
+								</code>
+							</td>
+							<td className="px-4 py-2.5 text-center">
+								{row.changed ? (
+									<AlertTriangle
+										className="h-4 w-4 mx-auto"
+										style={{ color: SEMANTIC_COLORS.warning.text }}
+									/>
+								) : (
+									<CheckCircle2
+										className="h-4 w-4 mx-auto"
+										style={{ color: SEMANTIC_COLORS.success.text }}
+									/>
+								)}
+							</td>
+						</PremiumTableRow>
+					))}
+				</tbody>
+			</table>
+		</PremiumTable>
 	);
 }
 
@@ -548,7 +553,9 @@ export function NamingManager() {
 										/>
 										<div className="min-w-0 flex-1">
 											<div className="flex items-center gap-2">
-												<span className="text-sm font-medium truncate">{incognitoMode ? getLinuxInstanceName(instance.label) : instance.label}</span>
+												<span className="text-sm font-medium truncate">
+													{incognitoMode ? getLinuxInstanceName(instance.label) : instance.label}
+												</span>
 												<ServiceBadge service={instance.service} />
 											</div>
 											{hasSavedConfig && (
@@ -700,19 +707,15 @@ export function NamingManager() {
 							<div className="space-y-3">
 								<div className="flex items-center gap-4">
 									{!showConfirmApply ? (
-										<button
-											type="button"
+										<GradientButton
 											onClick={() => setShowConfirmApply(true)}
 											disabled={
 												applyMutation.isPending || previewMutation.data.preview.changedCount === 0
 											}
-											className="rounded-xl px-6 py-2.5 text-sm font-medium text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110"
-											style={{
-												background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
-											}}
+											className="px-6 py-2.5"
 										>
 											{`Apply to ${selectedInstance?.label ?? "Instance"}`}
-										</button>
+										</GradientButton>
 									) : (
 										<div
 											className="flex items-center gap-3 rounded-xl border px-4 py-3 animate-in fade-in duration-200"
@@ -727,8 +730,13 @@ export function NamingManager() {
 											/>
 											<span className="text-sm">
 												Apply {previewMutation.data.preview.changedCount} naming change(s) to{" "}
-												<strong>{selectedInstance && (incognitoMode ? getLinuxInstanceName(selectedInstance.label) : selectedInstance.label)}</strong>? This will overwrite the current
-												naming config.
+												<strong>
+													{selectedInstance &&
+														(incognitoMode
+															? getLinuxInstanceName(selectedInstance.label)
+															: selectedInstance.label)}
+												</strong>
+												? This will overwrite the current naming config.
 											</span>
 											<button
 												type="button"
@@ -737,14 +745,11 @@ export function NamingManager() {
 											>
 												Cancel
 											</button>
-											<button
-												type="button"
+											<GradientButton
 												onClick={handleApply}
 												disabled={applyMutation.isPending}
-												className="rounded-lg px-3 py-1.5 text-xs font-medium text-white transition-all hover:brightness-110 disabled:opacity-50"
-												style={{
-													background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
-												}}
+												size="sm"
+												className="text-xs"
 											>
 												{applyMutation.isPending ? (
 													<span className="flex items-center gap-1">
@@ -754,7 +759,7 @@ export function NamingManager() {
 												) : (
 													"Confirm Apply"
 												)}
-											</button>
+											</GradientButton>
 										</div>
 									)}
 									{previewMutation.data.preview.changedCount === 0 && (
