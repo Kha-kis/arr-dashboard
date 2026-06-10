@@ -54,8 +54,10 @@ const SEVERITY_ORDER: Record<string, number> = {
 // refreshes. That name is jargon to operators, so we translate it to a plain
 // label for the visible `detail` string. Unknown names fall back to a
 // humanized camelCase form so a future collector never leaks raw source names.
-const COLLECTOR_LABELS: Record<string, string> = {
+export const COLLECTOR_LABELS: Record<string, string> = {
 	collectArrSignals: "ARR health and disk space",
+	collectMediaServerReachability: "media server reachability",
+	collectArrQueueFailures: "queue failures",
 	collectSeerrCircuitBreaker: "Seerr circuit breaker",
 	collectCacheStaleness: "cache freshness",
 	collectValidationHealth: "validation health",
