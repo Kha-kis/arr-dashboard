@@ -250,7 +250,7 @@ describe("prefetch failure handling", () => {
 			ruleType: "plex_watch_count",
 			parameters: JSON.stringify({ operator: "less_than", count: 1 }),
 		});
-		const failedSources = new Set<"seerr" | "tautulli" | "plex" | null>(["plex"]);
+		const failedSources = new Set<"seerr" | "plex" | null>(["plex"]);
 		const result = evaluateItemAgainstRules(
 			makeCacheItem(),
 			[plexRule] as LibraryCleanupRule[],
@@ -267,7 +267,7 @@ describe("prefetch failure handling", () => {
 			ruleType: "age",
 			parameters: JSON.stringify({ operator: "older_than", days: 30 }),
 		});
-		const failedSources = new Set<"seerr" | "tautulli" | "plex" | null>(["plex"]);
+		const failedSources = new Set<"seerr" | "plex" | null>(["plex"]);
 		const result = evaluateItemAgainstRules(
 			makeCacheItem(),
 			[ageRule] as LibraryCleanupRule[],
@@ -289,7 +289,7 @@ describe("prefetch failure handling", () => {
 			]),
 			parameters: "{}",
 		});
-		const failedSources = new Set<"seerr" | "tautulli" | "plex" | null>(["plex"]);
+		const failedSources = new Set<"seerr" | "plex" | null>(["plex"]);
 		const result = evaluateItemAgainstRules(
 			makeCacheItem(),
 			[compositeRule] as LibraryCleanupRule[],
@@ -313,7 +313,7 @@ describe("prefetch failure handling", () => {
 			]),
 			parameters: "{}",
 		});
-		const failedSources = new Set<"seerr" | "tautulli" | "plex" | null>(["seerr"]);
+		const failedSources = new Set<"seerr" | "plex" | null>(["seerr"]);
 		const result = evaluateItemAgainstRules(
 			makeCacheItem(), // 90 days old, rating 7.5 < 8
 			[compositeRule] as LibraryCleanupRule[],
@@ -339,7 +339,7 @@ describe("prefetch failure handling", () => {
 			ruleType: "age",
 			parameters: JSON.stringify({ operator: "older_than", days: 30 }),
 		});
-		const failedSources = new Set<"seerr" | "tautulli" | "plex" | null>(["plex"]);
+		const failedSources = new Set<"seerr" | "plex" | null>(["plex"]);
 		const result = evaluateItemAgainstRules(
 			makeCacheItem(),
 			[retRule, cleanupRule] as LibraryCleanupRule[],
@@ -652,7 +652,7 @@ describe("retention + prefetch failure interaction", () => {
 			ruleType: "age",
 			parameters: JSON.stringify({ operator: "older_than", days: 30 }),
 		});
-		const failedSources = new Set<"seerr" | "tautulli" | "plex" | null>(["plex"]);
+		const failedSources = new Set<"seerr" | "plex" | null>(["plex"]);
 
 		const result = evaluateItemAgainstRules(
 			makeCacheItem(),
@@ -681,7 +681,7 @@ describe("retention + prefetch failure interaction", () => {
 			ruleType: "age",
 			parameters: JSON.stringify({ operator: "older_than", days: 30 }),
 		});
-		const failedSources = new Set<"seerr" | "tautulli" | "plex" | null>(["plex"]);
+		const failedSources = new Set<"seerr" | "plex" | null>(["plex"]);
 
 		const result = evaluateItemAgainstRules(
 			makeCacheItem(), // rating 7.5 > 5

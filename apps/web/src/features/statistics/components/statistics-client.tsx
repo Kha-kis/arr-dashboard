@@ -22,10 +22,9 @@ export const StatisticsClient = () => {
 	const [activeTab, setActiveTab] = useState<StatisticsTab>("overview");
 	const { gradient: themeGradient } = useThemeGradient();
 
-	// Detect media-server instances. Tautulli is no longer required for the
-	// Plex tab — once Option 3 landed all analytics flow from SessionSnapshot
-	// rows, which Plex instances populate directly. Tautulli stays optional
-	// as an enrichment source.
+	// Detect media-server instances. All analytics flow from SessionSnapshot
+	// rows, which Plex/Jellyfin instances populate directly (Tautulli removed
+	// in 3.0 — ADR-0007).
 	const { data: services = [] } = useServicesQuery();
 	const hasPlex = useMemo(
 		() => services.some((s) => s.service.toLowerCase() === "plex" && s.enabled),
@@ -37,10 +36,6 @@ export const StatisticsClient = () => {
 				const svc = s.service.toLowerCase();
 				return (svc === "jellyfin" || svc === "emby") && s.enabled;
 			}),
-		[services],
-	);
-	const hasTautulli = useMemo(
-		() => services.some((s) => s.service.toLowerCase() === "tautulli" && s.enabled),
 		[services],
 	);
 
@@ -292,7 +287,7 @@ export const StatisticsClient = () => {
 					lidarrTotals={lidarrTotals}
 					readarrTotals={readarrTotals}
 					prowlarrTotals={prowlarrTotals}
-					hasTautulli={hasTautulli}
+					hasPlex={hasPlex}
 					onSwitchTab={setActiveTab}
 				/>
 			)}

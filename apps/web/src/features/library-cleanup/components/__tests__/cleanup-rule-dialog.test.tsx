@@ -32,13 +32,11 @@ if (!Element.prototype.releasePointerCapture) {
 
 const mockFieldOptions = {
 	hasPlex: false,
-	hasTautulli: false,
 	videoCodecs: [],
 	audioCodecs: [],
 	resolutions: [],
 	hdrTypes: [],
 	releaseGroups: [],
-	tautulliUsers: [],
 	plexUsers: [],
 	plexCollections: [],
 	plexLabels: [],

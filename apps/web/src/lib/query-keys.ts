@@ -349,18 +349,6 @@ export const jellyfinKeys = {
 };
 
 /* -------------------------------------------------------------------------- */
-/*  Tautulli                                                                   */
-/* -------------------------------------------------------------------------- */
-
-export const tautulliKeys = {
-	all: ["tautulli"] as const,
-	activity: () => ["tautulli", "activity"] as const,
-	stats: (timeRange: number) => ["tautulli", "stats", timeRange] as const,
-	playsByDate: (timeRange: number) => ["tautulli", "plays-by-date", timeRange] as const,
-	history: (length: number, start: number) => ["tautulli", "history", length, start] as const,
-};
-
-/* -------------------------------------------------------------------------- */
 /*  Seerr                                                                      */
 /* -------------------------------------------------------------------------- */
 

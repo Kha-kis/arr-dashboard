@@ -695,7 +695,6 @@ function ConfigTab({
 			<CleanupRuleTemplates
 				hasPlex={fieldOptions?.hasPlex ?? false}
 				hasSeerr={hasSeerr}
-				hasTautulli={fieldOptions?.hasTautulli ?? false}
 				onSelectTemplate={handleSelectTemplate}
 			/>
 

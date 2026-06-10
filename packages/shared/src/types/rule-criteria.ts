@@ -505,7 +505,7 @@ export const ruleParamSchemaMap: Record<string, z.ZodType> = {
  * Data source each rule type depends on.
  * Rules whose data source fails should be skipped to avoid false matches.
  */
-export type DataSourceDependency = "seerr" | "tautulli" | "plex" | "jellyfin" | null;
+export type DataSourceDependency = "seerr" | "plex" | "jellyfin" | null;
 
 export const ruleDataSourceMap: Record<string, DataSourceDependency> = {
 	seerr_requested_by: "seerr",
@@ -516,9 +516,6 @@ export const ruleDataSourceMap: Record<string, DataSourceDependency> = {
 	seerr_modified_by: "seerr",
 	seerr_is_requested: "seerr",
 	seerr_request_count: "seerr",
-	tautulli_last_watched: "tautulli",
-	tautulli_watch_count: "tautulli",
-	tautulli_watched_by: "tautulli",
 	plex_last_watched: "plex",
 	plex_watch_count: "plex",
 	plex_on_deck: "plex",
@@ -540,7 +537,7 @@ export const ruleDataSourceMap: Record<string, DataSourceDependency> = {
 	recently_active: "plex",
 	seerr_requester_watched: "seerr",
 	seerr_requester_not_watched: "seerr",
-	// List membership rules don't depend on Plex/Jellyfin/Seerr/Tautulli prefetch.
+	// List membership rules don't depend on Plex/Jellyfin/Seerr prefetch.
 	// Their data source is the dedicated cache tables (TmdbListCache /
 	// TraktListCache) refreshed by their own schedulers — `null` here means
 	// the prefetch dispatch ignores them.

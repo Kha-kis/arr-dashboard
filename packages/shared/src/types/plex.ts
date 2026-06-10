@@ -209,6 +209,8 @@ export interface CacheHealthItem {
 	instanceName: string;
 	cacheType:
 		| "plex"
+		// retained for pre-3.0 CacheRefreshStatus rows that linger until the
+		// migration dialog deletes their instances (ADR-0007)
 		| "tautulli"
 		| "plex_episode"
 		| "jellyfin"

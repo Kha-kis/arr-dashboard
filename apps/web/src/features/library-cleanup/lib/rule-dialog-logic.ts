@@ -76,15 +76,6 @@ export interface BuildParamsState {
 	seerrModifiedAgeDays: number;
 	// seerr_modified_by
 	seerrModifiedByUsers: string;
-	// tautulli_last_watched
-	tautulliLastWatchedOp: string;
-	tautulliLastWatchedDays: number;
-	// tautulli_watch_count
-	tautulliWatchCountOp: string;
-	tautulliWatchCount: number;
-	// tautulli_watched_by
-	tautulliWatchedByOp: string;
-	selectedTautulliUsers: string[];
 	// plex_last_watched
 	plexLastWatchedOp: string;
 	plexLastWatchedDays: number;
@@ -205,14 +196,6 @@ export function buildParams(state: BuildParamsState): Record<string, unknown> {
 			return { operator: state.seerrModifiedAgeOp, days: state.seerrModifiedAgeDays };
 		case "seerr_modified_by":
 			return { userNames: splitCsv(state.seerrModifiedByUsers) };
-		case "tautulli_last_watched":
-			return state.tautulliLastWatchedOp === "never"
-				? { operator: "never" }
-				: { operator: state.tautulliLastWatchedOp, days: state.tautulliLastWatchedDays };
-		case "tautulli_watch_count":
-			return { operator: state.tautulliWatchCountOp, count: state.tautulliWatchCount };
-		case "tautulli_watched_by":
-			return { operator: state.tautulliWatchedByOp, userNames: state.selectedTautulliUsers };
 		case "plex_last_watched":
 			return state.plexLastWatchedOp === "never"
 				? { operator: "never" }

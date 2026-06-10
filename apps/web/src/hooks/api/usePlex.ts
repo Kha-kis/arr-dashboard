@@ -76,7 +76,7 @@ import { useEnrichableItems } from "../useEnrichableItems";
 // ============================================================================
 
 /**
- * Hook to fetch Plex/Tautulli watch enrichment for current library page items.
+ * Hook to fetch Plex watch enrichment for current library page items.
  * Follows the same pattern as useLibraryEnrichment in useSeerr.ts.
  */
 export const useWatchEnrichment = (items: LibraryItem[]) => {

@@ -42,7 +42,7 @@ export const pulseCacheTypeSchema = z.enum(["plex"]);
 export type PulseCacheType = z.infer<typeof pulseCacheTypeSchema>;
 
 // ARR services whose queues the dispatcher can retry. Prowlarr has no
-// queue and Plex/Tautulli are out-of-scope. Keep this list in sync with
+// queue and Plex is out-of-scope. Keep this list in sync with
 // the dispatcher branch in apps/api/src/lib/pulse/actions.ts and the
 // collector's eligible set.
 export const queueRetryServiceSchema = z.enum(["sonarr", "radarr", "lidarr", "readarr"]);
