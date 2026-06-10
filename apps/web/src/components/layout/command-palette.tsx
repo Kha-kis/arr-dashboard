@@ -360,6 +360,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 							>
 								<Smartphone
 									className="h-4 w-4"
+									// eslint-disable-next-line no-restricted-syntax -- OLED mode forces pure white over theme color
 									style={{ color: isOLED && isDarkMode ? "#fff" : themeGradient.from }}
 								/>
 							</div>

@@ -221,6 +221,7 @@ export function AppearanceTab() {
 											>
 												<Smartphone
 													className="h-5 w-5 transition-colors duration-300"
+													// eslint-disable-next-line no-restricted-syntax -- OLED mode forces pure white over theme color
 													style={{ color: isOLED ? "#fff" : activeGradient.from }}
 												/>
 											</div>
@@ -391,6 +392,7 @@ export function AppearanceTab() {
 											className="inline-block h-1.5 w-1.5 rounded-full"
 											style={{
 												// Decorative section-header dot, not a theme/semantic color (B2 carve-out)
+												// eslint-disable-next-line no-restricted-syntax -- gradient-picker preview swatch
 												background: "linear-gradient(135deg, #ff00ff, #00ffff)",
 											}}
 										/>
@@ -472,6 +474,7 @@ export function AppearanceTab() {
 											className="inline-block h-1.5 w-1.5 rounded-full"
 											style={{
 												// Decorative section-header dot, not a theme/semantic color (B2 carve-out)
+												// eslint-disable-next-line no-restricted-syntax -- gradient-picker preview swatch
 												background: "linear-gradient(135deg, #ffd700, #ff8c00)",
 											}}
 										/>

@@ -51,6 +51,7 @@ const ALBUM_TYPE_COLORS: Record<string, { bg: string; border: string; text: stri
 	EP: SEMANTIC_COLORS.info,
 	// Categorical format-badge color (B2 carve-out): album types are a data
 	// palette, not semantic status — purple has no SEMANTIC_COLORS meaning.
+	// eslint-disable-next-line no-restricted-syntax -- categorical data palette (B2 carve-out)
 	Single: { bg: "rgba(168, 85, 247, 0.1)", border: "rgba(168, 85, 247, 0.3)", text: "#a855f7" },
 };
 

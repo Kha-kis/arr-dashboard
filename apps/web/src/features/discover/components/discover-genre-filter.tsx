@@ -147,6 +147,7 @@ const GenrePill: React.FC<GenrePillProps> = ({
 				? {
 						background: `linear-gradient(135deg, ${themeFrom}, ${themeTo})`,
 						borderColor: "transparent",
+						// eslint-disable-next-line no-restricted-syntax -- white-on-accent chip text (not semantic)
 						color: "#fff",
 						boxShadow: `0 2px 8px -2px ${themeFrom}60`,
 					}

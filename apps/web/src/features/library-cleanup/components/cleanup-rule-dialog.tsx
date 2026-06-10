@@ -1750,7 +1750,8 @@ export function CleanupRuleDialog({
 													? {
 															borderColor: svcGradient.from,
 															backgroundColor: svcGradient.from,
-															color: "#ffffff", // white-on-accent chip text (B2 carve-out: not semantic)
+															// eslint-disable-next-line no-restricted-syntax -- white-on-accent chip text (B2 carve-out: not semantic)
+															color: "#ffffff",
 														}
 													: {
 															borderColor: `${svcGradient.from}40`,
