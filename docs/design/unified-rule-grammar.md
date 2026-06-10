@@ -128,9 +128,28 @@ type RuleContext = {
 - `queue-cleaner` / `hunting` register internal kinds for their config
   semantics (`stalled`, `tag_membership`, `status_hierarchy`, …) used
   only by their adapters; not exposed in the composer in v1.
-- The engine validates at parse time that every kind in a document is
-  legal for the context — a cleanup rule cannot smuggle a
-  `field_match` on a notification payload and vice versa.
+- Kind-legality is enforced in **three tiers**, not at parse time
+  *(amended 2026-06-10 — see §6 checkpoint note)*:
+  1. **Write time (strict):** the save path rejects kinds not legal for
+     the context — a cleanup rule cannot smuggle a `field_match` and
+     vice versa. This *upgrades* today's behavior, where unknown kinds
+     silently skip validation (`if (schema)` in
+     `validateRuleParameters`).
+  2. **Parse/normalization (permissive):** version mapping is purely
+     structural and never rejects on kind. Stored documents legally
+     contain retired kinds — the Tautulli pass disables rules while
+     deliberately preserving their documents, and users can re-enable
+     them. Strict parse-time legality would break the rules LIST for
+     anyone holding a disabled `tautulli_*` rule. Normalization instead
+     annotates such nodes (`unavailableKind: true`) so the UI can badge
+     "references an unavailable condition" instead of today's silent
+     nothing.
+  3. **Evaluation (permissive null):** unknown/illegal kind → no-match,
+     preserving the shipped `default: return null` dispatch and the
+     `source:"tautulli"` fail-safe. Same for stored params that no
+     longer satisfy the kind's current schema (e.g. `user_retention`
+     `source:"tautulli"` after the 3.0 enum narrowing) — evaluation
+     never starts throwing on rows that were valid when written.
 
 ### 2.3 What deliberately does NOT unify
 
@@ -229,10 +248,13 @@ pattern, not big-bang):
    evaluate. Seeded from cleanup's `rule-evaluators.ts`; decompose the
    82 KB file along kind-category lines as part of the lift.
 3. **Parity suite**: legacy evaluator vs engine on identical eval
-   contexts — fixtures harvested from real rule rows (the dev DB has
-   live cleanup/auto-tag rules) plus synthetic edge cases (null
-   handling, never-watched inference, case sensitivity). Green parity
-   gates each cutover.
+   contexts. Fixture sources *(corrected 2026-06-10 — the dev DB holds
+   no cleanup/auto-tag rules)*: the `RULE_TEMPLATES` factories in
+   `cleanup-rule-templates.tsx` (realistic author-shaped rules), the
+   dialog's `buildParams` outputs, plus synthetic edge cases (null
+   handling, never-watched inference, case sensitivity, retired-kind
+   no-match, `source:"tautulli"` fail-safe). Green parity gates each
+   cutover.
 4. Cleanup cut over → auto-tag cut over (shared evaluators make this
    nearly one step).
 5. Notifications: v0 mapper + adapter at load; **no storage change**.
@@ -300,3 +322,32 @@ materializes for arbitrary user rules on these domains ("remove when
 indexer = X AND age > Y"), the path is a new rule-document table on
 that domain — same engine, same composer — added **alongside** the
 config, never migrating it. No advance commitment; demand decides.
+
+## 6. Implementation checkpoint (2026-06-10, post-A2 merge)
+
+Pre-implementation adversarial re-read against `next` @ `50ed8edf`
+(A2 merged). Deltas found and folded in:
+
+1. **Kind-legality moved out of parse time** (§2.2 rewritten) — strict
+   parse-time validation would have broken the rules list for users
+   holding disabled `tautulli_*` rules, whose documents A2 deliberately
+   preserves. Three-tier model: strict at write, structural at parse
+   (with `unavailableKind` annotation), permissive null at evaluation.
+2. **Vocabulary count is 52, not 47** — `ruleParamSchemaMap` on `next`
+   post-A2. The lift in §4 step 1 takes the map as the source of truth,
+   not the survey's count.
+3. **Parity fixtures re-sourced** (§4 step 3) — the dev DB holds no
+   cleanup/auto-tag rules; `RULE_TEMPLATES` factories replace "real
+   rows harvested from the dev DB".
+4. **The Tautulli pass stays at `lib/rules-migration/`** — it shipped
+   (PR #517) with report-merge + write-before-transaction hardening and
+   an `acknowledgedAt` stamp; moving it under `lib/rules/` (§5.1's
+   original layout) would churn a tested, hardened module for zero
+   behavior. §5.1's "behavior in api" location applies to NEW modules
+   (engine, mappers, eval-input builders). The pass's reusable yield
+   for A4 is its fixtures and shape knowledge, not literal parsing
+   utilities (its parsing is three lines of JSON.parse + kind tests).
+5. **New invariant for the engine lift**: `user_retention`'s evaluator
+   fail-safe (`source:"tautulli"` → null) and the dispatch
+   `default: return null` are load-bearing post-A2 behavior; both join
+   the §1.3 preserved-semantics list and the parity suite.
