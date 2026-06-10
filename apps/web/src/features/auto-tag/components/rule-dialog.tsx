@@ -115,10 +115,9 @@ const RULE_TYPE_OPTIONS: Array<{ value: SingleRuleType; label: string; group: st
 	{ value: "plex_watch_count", label: "Plex watch count", group: "Plex" },
 	{ value: "plex_added_at", label: "Plex added (date)", group: "Plex" },
 
-	// Phase 5: external curated lists. Backend foundation only — cache
-	// refresh + evaluator dispatch land in a follow-up PR. Until that
-	// ships, rules using these types will create successfully but match
-	// no items at execution time.
+	// List membership — runtime shipped in #403 (TMDb v3 + Trakt caches,
+	// 4h refresh schedulers, evaluator dispatch). Cleanup gained the same
+	// kinds + executor prefetch in the C3 closeout.
 	{ value: "tmdb_list_member", label: "TMDb list member", group: "Lists" },
 	{ value: "trakt_list_member", label: "Trakt list member", group: "Lists" },
 ];

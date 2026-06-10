@@ -225,6 +225,19 @@ describe("parity — single rules", () => {
 		expect(legacy).toBeNull();
 	});
 
+	it("tmdb_list_member via ctx membership maps (C3) — both paths agree", () => {
+		const ctx = baseCtx({ tmdbListMemberships: new Map([["8068", new Set([12345])]]) });
+		const matchRule = makeRule({
+			ruleType: "tmdb_list_member",
+			parameters: JSON.stringify({ listId: "8068", operator: "is_in" }),
+		});
+		const { legacy } = assertParity(matchRule, makeCacheItem(), ctx);
+		expect(legacy).not.toBeNull(); // item tmdbId 12345 is in the list
+
+		// absent map (kind active but list unrefreshed) → permissive null on both paths
+		assertParity(matchRule, makeCacheItem(), baseCtx());
+	});
+
 	it("legacy quirk — unparseable parameters JSON no-matches", () => {
 		assertParity(makeRule({ parameters: "not-json{{{" }));
 	});

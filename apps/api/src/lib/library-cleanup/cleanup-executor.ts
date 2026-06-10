@@ -1043,6 +1043,17 @@ async function evaluateAllItems(
 		? await prefetchJellyfinEpisodeData(deps, config.userId)
 		: undefined;
 
+	// Prefetch TMDb/Trakt list memberships when list-membership kinds are
+	// active (C3 closeout). Without this, the evaluator's permissive-null
+	// would make list rules silently never match in cleanup runs — the
+	// same maps auto-tag's executor builds for its own runs.
+	const tmdbListMemberships = activeTypes.has("tmdb_list_member")
+		? await prefetchCleanupListMemberships(deps, config.userId, rules, "tmdb")
+		: undefined;
+	const traktListMemberships = activeTypes.has("trakt_list_member")
+		? await prefetchCleanupListMemberships(deps, config.userId, rules, "trakt")
+		: undefined;
+
 	// Build prefetch health status
 	const prefetchHealth: PrefetchResults = {
 		seerr: hasSeerrRules ? (seerrMap ? "ok" : "failed") : "skipped",
@@ -1082,6 +1093,8 @@ async function evaluateAllItems(
 		plexEpisodeMap,
 		jellyfinMap,
 		jellyfinEpisodeMap,
+		tmdbListMemberships,
+		traktListMemberships,
 	};
 
 	const flagged: FlaggedItem[] = [];
@@ -1645,4 +1658,62 @@ async function createRunLog(
 			"Failed to write cleanup run log — run result is still valid",
 		);
 	}
+}
+
+/**
+ * Collect the list identifiers referenced by cleanup rules (top-level
+ * params and composite sub-conditions) and load their cached memberships
+ * as Map<identifier, Set<tmdbId>> — the shape the shared evaluator's
+ * tmdb_list_member / trakt_list_member cases consume. Mirrors the
+ * auto-tag executor's per-rule prefetch, generalized to a rule set.
+ */
+export async function prefetchCleanupListMemberships(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	rules: LibraryCleanupRule[],
+	cacheKind: "tmdb" | "trakt",
+): Promise<Map<string, Set<number>>> {
+	const targetType = cacheKind === "tmdb" ? "tmdb_list_member" : "trakt_list_member";
+	const identifierKey = cacheKind === "tmdb" ? "listId" : "listSlug";
+
+	const identifiers = new Set<string>();
+	const collectFromParams = (ruleType: string, params: unknown) => {
+		if (ruleType !== targetType) return;
+		if (params === null || typeof params !== "object") return;
+		const value = (params as Record<string, unknown>)[identifierKey];
+		if (typeof value === "string" && value.length > 0) identifiers.add(value);
+	};
+	for (const rule of rules) {
+		collectFromParams(rule.ruleType, safeJsonParse(rule.parameters));
+		const conditions = safeJsonParse(rule.conditions ?? "") as Array<{
+			ruleType: string;
+			parameters: unknown;
+		}> | null;
+		if (Array.isArray(conditions)) {
+			for (const cond of conditions) collectFromParams(cond?.ruleType, cond?.parameters);
+		}
+	}
+	if (identifiers.size === 0) return new Map();
+
+	const out = new Map<string, Set<number>>();
+	if (cacheKind === "tmdb") {
+		const rows = await deps.prisma.tmdbListCache.findMany({
+			where: { userId, listId: { in: [...identifiers] } },
+			select: { listId: true, tmdbId: true },
+		});
+		for (const row of rows) {
+			(out.get(row.listId) ?? out.set(row.listId, new Set()).get(row.listId))!.add(row.tmdbId);
+		}
+	} else {
+		const rows = await deps.prisma.traktListCache.findMany({
+			where: { userId, listSlug: { in: [...identifiers] } },
+			select: { listSlug: true, tmdbId: true },
+		});
+		for (const row of rows) {
+			(out.get(row.listSlug) ?? out.set(row.listSlug, new Set()).get(row.listSlug))!.add(
+				row.tmdbId,
+			);
+		}
+	}
+	return out;
 }
