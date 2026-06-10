@@ -5,6 +5,53 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0-alpha.2] - 2026-06-10 — Bucket B: the coherence sweep
+
+Second 3.0 preview. Every formalized UI/data primitive is now applied
+across all relevant surfaces (charter §3 Bucket B), plus three Bucket C
+arc closeouts. No breaking changes in this tag; it rides on alpha.1's
+foundation. Ships on the `:next` Docker channel.
+
+### Changed — coherence sweeps
+
+- **Centralized query keys (B1, #523)**: 89 inline key literals + 6
+  stray constants across 24 files now flow through the central
+  `query-keys.ts` factory; every shorter-prefix invalidation got an
+  explicit `*All` entry so React Query partial matching stays correct.
+- **Semantic color tokens (B2, #527)**: 39 hex literals replaced with
+  `SEMANTIC_COLORS` / `BRAND_COLORS` tokens (new: `neutral`, plus
+  plex/jellyfin/emby/musicbrainz/goodreads brand entries); 8 carve-outs
+  documented inline. `appearance-preview` remains exempt by design.
+- **Premium components on TRaSH Guides (B3, #530)**: history/preview
+  tables → `PremiumTable` family, duplicated status badges → shared
+  `StatusBadge` (fixing an invisible-border bug in the naming badge),
+  theme-gradient buttons → `GradientButton`, sync progress bar →
+  `PremiumProgress`, empty states → `PremiumEmptyState`. Visual
+  normalizations declared and screenshot-verified per surface.
+- **Data freshness indicators (B4, #528)**: four trust-correct
+  adoptions (Statistics, Calendar, Hunting, qui home) — multi-feed
+  pages deliberately excluded so the indicator never overclaims.
+- **Incognito coverage (B6, #525/#526)**: high-exposure surfaces and
+  deploy flows now anonymize titles, usernames, and instance names;
+  display-only invariant enforced (saves/payloads never transformed).
+
+### Added
+
+- **Cleanup list-membership rules (C3, #529)**: TMDb/Trakt
+  list-membership rule kinds are now available in Library Cleanup, with
+  executor prefetch so evaluations don't fan out per item.
+- **Pulse collector label gate (C4, #524)**: every Pulse collector must
+  declare an explicit label — enforced by a completeness test in CI.
+
+### Closed by analysis (no code needed)
+
+- **DomainStatusBadge sweep (B5)**: the taxonomy's correct surfaces were
+  already wired when the primitive shipped; remaining candidates fail
+  the fit test (feature-enablement ≠ service health).
+- **qui Phase 6 (C1)**: detail-drawer rename + tracker CRUD shipped in
+  the v2.20 era; tier graduation to `stable` shipped in alpha.1's
+  manifest reshuffle. Arc closed.
+
 ## [3.0.0-alpha.1] - 2026-06-10 — Bucket A: the breaking-changes bundle
 
 First 3.0 preview. All breaking changes land together (charter §3) so
