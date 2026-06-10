@@ -80,7 +80,6 @@ export {
  */
 export const KNOWN_INTEGRATIONS = [
 	"plex",
-	"tautulli",
 	"seerr",
 	"trash-guides",
 	"queue-cleaner",

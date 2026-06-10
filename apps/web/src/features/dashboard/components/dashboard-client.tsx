@@ -36,7 +36,6 @@ import {
 import { useDashboardStatisticsQuery } from "../../../hooks/api/useDashboard";
 import { useJellyfinNowPlaying } from "../../../hooks/api/useJellyfin";
 import { useNowPlaying } from "../../../hooks/api/usePlex";
-import { useTautulliActivity } from "../../../hooks/api/useTautulli";
 import { useRefreshState } from "../../../hooks/useRefreshState";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { anonymizeHealthMessage, getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
@@ -366,29 +365,23 @@ export const DashboardClient = () => {
 		() => services.some((s) => s.service.toLowerCase() === "plex" && s.enabled),
 		[services],
 	);
-	const hasTautulliInstances = useMemo(
-		() => services.some((s) => s.service.toLowerCase() === "tautulli" && s.enabled),
-		[services],
-	);
 	const hasJellyfinInstances = useMemo(
 		() => services.some((s) => (s.service.toLowerCase() === "jellyfin" || s.service.toLowerCase() === "emby") && s.enabled),
 		[services],
 	);
-	const hasMediaServer = hasPlexInstances || hasTautulliInstances || hasJellyfinInstances;
+	const hasMediaServer = hasPlexInstances || hasJellyfinInstances;
 
 	// Session count for Activity tab badge
 	const isMediaTab = activeTab === "overview" || activeTab === "activity";
 	const plexNowPlaying = useNowPlaying(hasPlexInstances, isMediaTab ? POLLING_REALTIME : POLLING_STANDARD);
-	const tautulliActivity = useTautulliActivity(hasTautulliInstances, isMediaTab ? POLLING_REALTIME : POLLING_STANDARD);
 	const jellyfinNowPlaying = useJellyfinNowPlaying(hasJellyfinInstances, isMediaTab ? POLLING_REALTIME : POLLING_STANDARD);
 	const sessionCount = useMemo(() => {
 		if (!hasMediaServer) return undefined;
 		const plexCount = plexNowPlaying.data?.sessions?.length ?? 0;
-		const tautulliCount = tautulliActivity.data?.sessions?.length ?? 0;
 		const jellyfinCount = jellyfinNowPlaying.data?.sessions?.length ?? 0;
-		// Use max for Plex/Tautulli (they overlap), then add Jellyfin (separate server)
-		return Math.max(plexCount, tautulliCount) + jellyfinCount;
-	}, [hasMediaServer, plexNowPlaying.data, tautulliActivity.data, jellyfinNowPlaying.data]);
+		// Plex and Jellyfin are separate servers — counts are additive.
+		return plexCount + jellyfinCount;
+	}, [hasMediaServer, plexNowPlaying.data, jellyfinNowPlaying.data]);
 
 	// Build instanceId → externalUrl (or baseUrl fallback) map
 	const instanceUrlMap = useMemo<InstanceUrlMap>(() => {
@@ -721,7 +714,6 @@ export const DashboardClient = () => {
 									{hasMediaServer && sessionCount !== undefined && sessionCount > 0 && (
 										<NowPlayingWidget
 											hasPlexInstances={hasPlexInstances}
-											hasTautulliInstances={hasTautulliInstances}
 											hasJellyfinInstances={hasJellyfinInstances}
 											animationDelay={450}
 											variant="compact"
@@ -976,12 +968,11 @@ export const DashboardClient = () => {
 					<div className="animate-in fade-in duration-300 space-y-6">
 						<NowPlayingWidget
 							hasPlexInstances={hasPlexInstances}
-							hasTautulliInstances={hasTautulliInstances}
 							hasJellyfinInstances={hasJellyfinInstances}
 							variant="full"
 						/>
 						<OnDeckWidget hasPlexInstances={hasPlexInstances} hasJellyfinInstances={hasJellyfinInstances} animationDelay={100} />
-						<WatchHistorySection enabled={hasTautulliInstances} />
+						<WatchHistorySection enabled={hasPlexInstances} />
 					</div>
 				)}
 			</div>

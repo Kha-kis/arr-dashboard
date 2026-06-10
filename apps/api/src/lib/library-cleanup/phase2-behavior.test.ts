@@ -15,7 +15,6 @@ import type {
 	EvalContext,
 	PlexEpisodeStats,
 	PlexWatchInfo,
-	TautulliWatchInfo,
 } from "./types.js";
 import { evaluateSingleCondition } from "./rule-evaluators.js";
 
@@ -191,12 +190,6 @@ describe("user_retention rule", () => {
 		sections: [],
 	});
 
-	const tautulliMap = new Map<string, TautulliWatchInfo>();
-	tautulliMap.set("movie:12345", {
-		lastWatchedAt: new Date("2026-02-10T00:00:00Z"),
-		watchCount: 5,
-		watchedByUsers: ["alice", "charlie"],
-	});
 
 	it("watched_by_none matches when no one has watched", () => {
 		// Empty plexMap — no watch data for this item
@@ -243,16 +236,29 @@ describe("user_retention rule", () => {
 		expect(result).toContain("2 user(s) >= 2");
 	});
 
-	it("either source combines Plex and Tautulli users", () => {
-		const ctx = baseCtx({ plexMap, tautulliMap });
+	it("either source degrades to plex-only since the 3.0 Tautulli removal (ADR-0007)", () => {
+		const ctx = baseCtx({ plexMap });
 		const result = evaluateSingleCondition(
 			makeCacheItem(),
 			"user_retention",
-			{ operator: "watched_by_count", minUsers: 3, source: "either" },
+			{ operator: "watched_by_count", minUsers: 2, source: "either" },
 			ctx,
 		);
-		// alice (both), bob (plex), charlie (tautulli) = 3 unique users
-		expect(result).toContain("3 user(s) >= 3");
+		// alice + bob from plex; no second source exists anymore
+		expect(result).toContain("2 user(s) >= 2");
+	});
+
+	it("source 'tautulli' fail-safes to no-match (flag-everything guard, ADR-0007)", () => {
+		// Disabled by the migration pass; if ever re-enabled it must never
+		// evaluate with an empty watch set (watched_by_none would match all).
+		const ctx = baseCtx({ plexMap });
+		const result = evaluateSingleCondition(
+			makeCacheItem(),
+			"user_retention",
+			{ operator: "watched_by_none", source: "tautulli" },
+			ctx,
+		);
+		expect(result).toBeNull();
 	});
 });
 

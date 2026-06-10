@@ -50,33 +50,3 @@ export function classifySessionDecisions(sessions: SessionInput[]): SessionClass
 }
 
 /** Result of LAN/WAN bandwidth attribution */
-export interface LanWanAttribution {
-	lanBandwidth: number;
-	wanBandwidth: number;
-	attributed: boolean;
-}
-
-/**
- * Compute LAN/WAN bandwidth to attribute to a single snapshot.
- *
- * LAN/WAN is attributed to only one Plex instance per capture tick to prevent
- * double-counting when analytics routes aggregate across instances.
- *
- * @param hasCompleteTautulliData - Whether all Tautulli instances responded successfully
- * @param alreadyAttributed - Whether LAN/WAN has already been attributed this tick
- * @param aggLanBandwidth - Aggregate LAN bandwidth from all Tautulli instances
- * @param aggWanBandwidth - Aggregate WAN bandwidth from all Tautulli instances
- */
-export function computeLanWanAttribution(
-	hasCompleteTautulliData: boolean,
-	alreadyAttributed: boolean,
-	aggLanBandwidth: number,
-	aggWanBandwidth: number,
-): LanWanAttribution {
-	const shouldAttribute = hasCompleteTautulliData && !alreadyAttributed;
-	return {
-		lanBandwidth: shouldAttribute ? aggLanBandwidth : 0,
-		wanBandwidth: shouldAttribute ? aggWanBandwidth : 0,
-		attributed: shouldAttribute,
-	};
-}

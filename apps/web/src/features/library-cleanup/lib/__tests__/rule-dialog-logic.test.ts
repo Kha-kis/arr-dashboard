@@ -49,12 +49,6 @@ function makeState(overrides: Partial<BuildParamsState> = {}): BuildParamsState 
 		seerrModifiedAgeOp: "older_than",
 		seerrModifiedAgeDays: 90,
 		seerrModifiedByUsers: "charlie",
-		tautulliLastWatchedOp: "older_than",
-		tautulliLastWatchedDays: 90,
-		tautulliWatchCountOp: "less_than",
-		tautulliWatchCount: 1,
-		tautulliWatchedByOp: "includes_any",
-		selectedTautulliUsers: ["user1"],
 		plexLastWatchedOp: "older_than",
 		plexLastWatchedDays: 90,
 		plexWatchCountOp: "less_than",
@@ -262,12 +256,6 @@ describe("buildParams", () => {
 			});
 		});
 
-		it("tautulli_watched_by: passes userNames array directly", () => {
-			expect(buildParams(makeState({ ruleType: "tautulli_watched_by" }))).toEqual({
-				operator: "includes_any",
-				userNames: ["user1"],
-			});
-		});
 
 		it("plex_watched_by: passes userNames array directly", () => {
 			expect(buildParams(makeState({ ruleType: "plex_watched_by" }))).toEqual({
@@ -331,24 +319,7 @@ describe("buildParams", () => {
 	});
 
 	describe("operator branch: 'never' omits days", () => {
-		it("tautulli_last_watched: never omits days", () => {
-			const result = buildParams(
-				makeState({ ruleType: "tautulli_last_watched", tautulliLastWatchedOp: "never" }),
-			);
-			expect(result).toEqual({ operator: "never" });
-			expect(result).not.toHaveProperty("days");
-		});
 
-		it("tautulli_last_watched: non-never includes days", () => {
-			const result = buildParams(
-				makeState({
-					ruleType: "tautulli_last_watched",
-					tautulliLastWatchedOp: "older_than",
-					tautulliLastWatchedDays: 60,
-				}),
-			);
-			expect(result).toEqual({ operator: "older_than", days: 60 });
-		});
 
 		it("plex_last_watched: never omits days", () => {
 			const result = buildParams(
@@ -466,12 +437,6 @@ describe("buildParams", () => {
 			});
 		});
 
-		it("tautulli_watch_count", () => {
-			expect(buildParams(makeState({ ruleType: "tautulli_watch_count" }))).toEqual({
-				operator: "less_than",
-				count: 1,
-			});
-		});
 
 		it("plex_watch_count", () => {
 			expect(buildParams(makeState({ ruleType: "plex_watch_count" }))).toEqual({

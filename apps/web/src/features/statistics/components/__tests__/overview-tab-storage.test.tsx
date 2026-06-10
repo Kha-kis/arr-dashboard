@@ -49,7 +49,7 @@ const baseProps = (
 		lidarrTotals: { totalArtists: 0, downloadPercent: 0, missingTracks: 0, diskPercent: 0 },
 		readarrTotals: { totalAuthors: 0, downloadPercent: 0, missingBooks: 0, diskPercent: 0 },
 		prowlarrTotals: { totalIndexers: 0, activeIndexers: 0, totalQueries: 0, grabRate: 0 },
-		hasTautulli: false,
+		hasPlex: false,
 		onSwitchTab: () => {},
 		// Only the fields the component actually reads are populated; cast through
 		// unknown since the real totals types carry many more (untouched) fields.

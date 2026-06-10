@@ -103,7 +103,6 @@ export const useTestConnectionBeforeAdd = () => {
 				| "lidarr"
 				| "readarr"
 				| "seerr"
-				| "tautulli"
 				| "plex"
 				| "jellyfin"
 				| "emby"

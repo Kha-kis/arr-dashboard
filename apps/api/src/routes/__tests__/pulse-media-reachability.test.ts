@@ -20,7 +20,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // clients at call time and only calls one method on each.
 const plexIdentity = vi.fn();
 const jellyfinPublicInfo = vi.fn();
-const tautulliInfo = vi.fn();
 
 vi.mock("../../lib/plex/plex-client.js", () => ({
 	createPlexClient: () => ({ getIdentity: (...args: unknown[]) => plexIdentity(...args) }),
@@ -29,9 +28,6 @@ vi.mock("../../lib/jellyfin/jellyfin-client.js", () => ({
 	createJellyfinClient: () => ({
 		getPublicInfo: (...args: unknown[]) => jellyfinPublicInfo(...args),
 	}),
-}));
-vi.mock("../../lib/tautulli/tautulli-client.js", () => ({
-	createTautulliClient: () => ({ getInfo: (...args: unknown[]) => tautulliInfo(...args) }),
 }));
 
 // Run only the collector under test.
@@ -61,7 +57,6 @@ beforeEach(async () => {
 	instanceRows = [];
 	plexIdentity.mockReset();
 	jellyfinPublicInfo.mockReset();
-	tautulliInfo.mockReset();
 
 	app = Fastify({ logger: false });
 	setupAuthInjection(app, { id: `user-reach-${userCounter}`, username: "admin" });
@@ -124,16 +119,17 @@ describe("GET /pulse — collectMediaServerReachability", () => {
 		expect(item?.source).toBe("jellyfin");
 	});
 
-	it("emits a critical unreachable row when the Tautulli getInfo ping throws", async () => {
+	it("does NOT probe lingering pre-3.0 TAUTULLI instances (ADR-0007)", async () => {
+		// Tautulli was removed in 3.0. Instance rows may linger until the
+		// migration dialog deletes them; the reachability collector must
+		// neither ping them nor emit rows for them.
 		instanceRows = [makeInstance({ id: "inst-ta", service: "TAUTULLI", label: "Tautulli" })];
-		tautulliInfo.mockRejectedValue(new Error("timeout"));
 
 		const res = await injectAuthenticated("GET", "/pulse");
 		const body = JSON.parse(res.payload);
 		const item = body.items.find((i: { id: string }) => i.id === "tautulli-unreachable-inst-ta");
 
-		expect(item?.title).toBe("Tautulli is unreachable");
-		expect(item?.source).toBe("tautulli");
+		expect(item).toBeUndefined();
 	});
 
 	it("emits NO row when all pings succeed", async () => {
@@ -141,11 +137,9 @@ describe("GET /pulse — collectMediaServerReachability", () => {
 		instanceRows = [
 			makeInstance({ id: "inst-plex", service: "PLEX", label: "P" }),
 			makeInstance({ id: "inst-jf", service: "JELLYFIN", label: "J" }),
-			makeInstance({ id: "inst-ta", service: "TAUTULLI", label: "T" }),
 		];
 		plexIdentity.mockResolvedValue({});
 		jellyfinPublicInfo.mockResolvedValue({});
-		tautulliInfo.mockResolvedValue({});
 
 		const res = await injectAuthenticated("GET", "/pulse");
 		const body = JSON.parse(res.payload);
@@ -167,7 +161,6 @@ describe("GET /pulse — collectMediaServerReachability", () => {
 		];
 		plexIdentity.mockResolvedValue({});
 		jellyfinPublicInfo.mockRejectedValue(new Error("ECONNREFUSED"));
-		tautulliInfo.mockResolvedValue({});
 
 		const res = await injectAuthenticated("GET", "/pulse");
 		const body = JSON.parse(res.payload);
@@ -198,6 +191,5 @@ describe("GET /pulse — collectMediaServerReachability", () => {
 		expect(unreachableItems).toEqual([]);
 		expect(plexIdentity).not.toHaveBeenCalled();
 		expect(jellyfinPublicInfo).not.toHaveBeenCalled();
-		expect(tautulliInfo).not.toHaveBeenCalled();
 	});
 });

@@ -1,11 +1,9 @@
 "use client";
 
-import type { TautulliWatchHistoryItem } from "@arr/shared";
-import { Clock, Film, Headphones, History, Tv } from "lucide-react";
-import { useState } from "react";
+import type { WatchHistoryEvent } from "@arr/shared";
+import { Clock, History, Play } from "lucide-react";
 import { PremiumSkeleton } from "../../../components/layout";
-import { Button } from "../../../components/ui";
-import { useWatchHistory } from "../../../hooks/api/useTautulli";
+import { useWatchHistory } from "../../../hooks/api/usePlex";
 import { getLinuxIsoName, getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 
@@ -25,25 +23,17 @@ function formatTimeAgo(isoDate: string): string {
 	return new Date(isoDate).toLocaleDateString();
 }
 
-const MEDIA_ICONS = {
-	movie: Film,
-	episode: Tv,
-	track: Headphones,
-} as const;
-
 const plexGradient = SERVICE_GRADIENTS.plex;
+
+const HISTORY_LIMIT = 25;
 
 // ============================================================================
 // History Item Row
 // ============================================================================
 
-const HistoryRow = ({ item, index }: { item: TautulliWatchHistoryItem; index: number }) => {
+const HistoryRow = ({ item, index }: { item: WatchHistoryEvent; index: number }) => {
 	const [incognitoMode] = useIncognitoMode();
-	const Icon = MEDIA_ICONS[item.mediaType] ?? Film;
-	const rawTitle = item.grandparentTitle
-		? `${item.grandparentTitle} — ${item.title}`
-		: item.title;
-	const displayTitle = incognitoMode ? getLinuxIsoName(rawTitle) : rawTitle;
+	const displayTitle = incognitoMode ? getLinuxIsoName(item.title) : item.title;
 
 	return (
 		<div
@@ -53,7 +43,7 @@ const HistoryRow = ({ item, index }: { item: TautulliWatchHistoryItem; index: nu
 				animationFillMode: "backwards",
 			}}
 		>
-			{/* Media type icon */}
+			{/* Media icon */}
 			<div
 				className="flex h-8 w-8 items-center justify-center rounded-lg shrink-0"
 				style={{
@@ -61,7 +51,7 @@ const HistoryRow = ({ item, index }: { item: TautulliWatchHistoryItem; index: nu
 					border: `1px solid ${plexGradient.from}25`,
 				}}
 			>
-				<Icon className="h-4 w-4" style={{ color: plexGradient.from }} />
+				<Play className="h-4 w-4" style={{ color: plexGradient.from }} />
 			</div>
 
 			{/* Title + metadata */}
@@ -81,8 +71,8 @@ const HistoryRow = ({ item, index }: { item: TautulliWatchHistoryItem; index: nu
 			{/* Time ago */}
 			<div className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
 				<Clock className="h-3 w-3" />
-				<span title={new Date(item.watchedAt).toLocaleString()}>
-					{formatTimeAgo(item.watchedAt)}
+				<span title={new Date(item.timestamp).toLocaleString()}>
+					{formatTimeAgo(item.timestamp)}
 				</span>
 			</div>
 		</div>
@@ -98,10 +88,9 @@ interface WatchHistorySectionProps {
 }
 
 export const WatchHistorySection = ({ enabled }: WatchHistorySectionProps) => {
-	const [pageSize] = useState(25);
-	const query = useWatchHistory(pageSize, 0, enabled);
-	const items = query.data?.history ?? [];
-	const totalCount = query.data?.totalCount ?? 0;
+	// SessionSnapshot-backed history (Tautulli source removed in 3.0 — ADR-0007).
+	const query = useWatchHistory(7, HISTORY_LIMIT, enabled);
+	const items = query.data?.events ?? [];
 
 	if (query.isLoading) {
 		return (
@@ -130,9 +119,6 @@ export const WatchHistorySection = ({ enabled }: WatchHistorySectionProps) => {
 				<div className="flex items-center gap-2">
 					<History className="h-4 w-4" style={{ color: plexGradient.from }} />
 					<span className="text-sm font-semibold text-foreground">Recent Watch History</span>
-					{totalCount > 0 && (
-						<span className="text-xs text-muted-foreground">({totalCount} total)</span>
-					)}
 				</div>
 				{query.isRefetching && (
 					<span className="text-xs text-muted-foreground animate-pulse">Updating...</span>
@@ -141,21 +127,9 @@ export const WatchHistorySection = ({ enabled }: WatchHistorySectionProps) => {
 
 			<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10 divide-y divide-border/30">
 				{items.map((item, index) => (
-					<HistoryRow
-						key={`${item.ratingKey}:${item.watchedAt}:${index}`}
-						item={item}
-						index={index}
-					/>
+					<HistoryRow key={`${item.title}:${item.timestamp}:${index}`} item={item} index={index} />
 				))}
 			</div>
-
-			{totalCount > pageSize && (
-				<div className="flex justify-center mt-3">
-					<Button variant="secondary" size="sm" onClick={() => query.refetch()} className="text-xs">
-						Showing {items.length} of {totalCount}
-					</Button>
-				</div>
-			)}
 		</div>
 	);
 };

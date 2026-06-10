@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { StatCard } from "../../../components/layout";
-import { useTautulliPlaysByDate, useTautulliStats } from "../../../hooks/api/useTautulli";
+import { usePlaysByDate, useUserAnalytics } from "../../../hooks/api/usePlex";
 import {
 	anonymizeHealthMessage,
 	getLinuxInstanceName,
@@ -46,7 +46,7 @@ interface OverviewTabProps {
 	lidarrTotals: StatisticsData["lidarrTotals"];
 	readarrTotals: StatisticsData["readarrTotals"];
 	prowlarrTotals: StatisticsData["prowlarrTotals"];
-	hasTautulli: boolean;
+	hasPlex: boolean;
 	onSwitchTab: (tab: StatisticsTab) => void;
 }
 
@@ -75,7 +75,7 @@ export const OverviewTab = ({
 	lidarrTotals,
 	readarrTotals,
 	prowlarrTotals,
-	hasTautulli,
+	hasPlex,
 	onSwitchTab,
 }: OverviewTabProps) => {
 	const [incognitoMode] = useIncognitoMode();
@@ -107,32 +107,35 @@ export const OverviewTab = ({
 	})();
 	const [storageBreakdownOpen, setStorageBreakdownOpen] = useState(false);
 
-	// Fetch Plex summary data when Tautulli is available
-	const { data: tautulliStats } = useTautulliStats(30, hasTautulli);
-	const { data: tautulliPlays } = useTautulliPlaysByDate(30, hasTautulli);
+	// Plex summary from SessionSnapshot-backed analytics (same aggregators the
+	// Plex tab migrated to in #380; Tautulli source removed in 3.0 — ADR-0007).
+	const { data: playsByDate } = usePlaysByDate(30, hasPlex);
+	const { data: userAnalytics } = useUserAnalytics(30, hasPlex);
 
 	const plexSummary = useMemo(() => {
-		if (!tautulliStats?.userStats && !tautulliPlays?.series) return null;
+		if (!playsByDate?.series && !userAnalytics?.users) return null;
 		// Total plays from plays-by-date (matches Plex tab calculation)
-		const totalPlays = tautulliPlays?.series
-			? tautulliPlays.series.reduce(
+		const totalPlays = playsByDate?.series
+			? playsByDate.series.reduce(
 					(acc: number, s: { data: number[] }) =>
 						acc + s.data.reduce((a: number, b: number) => a + b, 0),
 					0,
 				)
 			: 0;
-		const totalDuration = tautulliStats?.userStats
-			? tautulliStats.userStats.reduce(
-					(acc: number, u: { totalDuration: number }) => acc + u.totalDuration,
+		// UserAnalytics reports minutes; formatDuration expects seconds.
+		const totalDuration = userAnalytics?.users
+			? userAnalytics.users.reduce(
+					(acc: number, u: { estimatedWatchTimeMinutes: number }) =>
+						acc + u.estimatedWatchTimeMinutes * 60,
 					0,
 				)
 			: 0;
 		return {
-			activeUsers: tautulliStats?.userStats?.length ?? 0,
+			activeUsers: userAnalytics?.users?.length ?? 0,
 			totalPlays,
 			totalDuration,
 		};
-	}, [tautulliStats, tautulliPlays]);
+	}, [playsByDate, userAnalytics]);
 
 	return (
 		<div className="flex flex-col gap-8">
@@ -334,7 +337,7 @@ export const OverviewTab = ({
 
 			{/* Service Quick Stats */}
 			<div
-				className={`grid gap-6 md:grid-cols-2 lg:grid-cols-3 ${hasTautulli ? "xl:grid-cols-3" : "xl:grid-cols-5"} animate-in fade-in slide-in-from-bottom-4 duration-500`}
+				className={`grid gap-6 md:grid-cols-2 lg:grid-cols-3 ${hasPlex ? "xl:grid-cols-3" : "xl:grid-cols-5"} animate-in fade-in slide-in-from-bottom-4 duration-500`}
 				style={{ animationDelay: "400ms", animationFillMode: "backwards" }}
 			>
 				<ServiceQuickCard
@@ -413,7 +416,7 @@ export const OverviewTab = ({
 						{ label: "Grab Rate", value: formatPercent(prowlarrTotals.grabRate) },
 					]}
 				/>
-				{hasTautulli && (
+				{hasPlex && (
 					<ServiceQuickCard
 						name="Plex"
 						icon={Activity}

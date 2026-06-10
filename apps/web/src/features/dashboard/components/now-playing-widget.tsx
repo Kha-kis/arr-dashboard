@@ -1,6 +1,6 @@
 "use client";
 
-import type { JellyfinSessionInfo, PlexSession, TautulliSession } from "@arr/shared";
+import type { JellyfinSessionInfo, PlexSession } from "@arr/shared";
 import {
 	Activity,
 	ChevronRight,
@@ -16,11 +16,10 @@ import {
 } from "lucide-react";
 import { useJellyfinNowPlaying } from "../../../hooks/api/useJellyfin";
 import { useNowPlaying } from "../../../hooks/api/usePlex";
-import { useTautulliActivity } from "../../../hooks/api/useTautulli";
 import {
 	getLinuxDevice,
-	getLinuxIsoName,
 	getLinuxInstanceName,
+	getLinuxIsoName,
 	getLinuxUsername,
 	useIncognitoMode,
 } from "../../../lib/incognito";
@@ -50,7 +49,7 @@ interface NowPlayingSession {
 	mediaType: "movie" | "episode" | "track" | "unknown";
 	thumb?: string;
 	instanceName: string;
-	source: "plex" | "tautulli" | "jellyfin";
+	source: "plex" | "jellyfin";
 }
 
 // ============================================================================
@@ -59,7 +58,6 @@ interface NowPlayingSession {
 
 interface NowPlayingWidgetProps {
 	hasPlexInstances: boolean;
-	hasTautulliInstances: boolean;
 	hasJellyfinInstances: boolean;
 	animationDelay?: number;
 	variant?: "compact" | "full";
@@ -99,39 +97,6 @@ function normalizePlexSession(s: PlexSession): NowPlayingSession {
 	};
 }
 
-function normalizeTautulliSession(s: TautulliSession): NowPlayingSession {
-	const mediaType =
-		s.mediaType === "movie"
-			? "movie"
-			: s.mediaType === "episode"
-				? "episode"
-				: s.mediaType === "track"
-					? "track"
-					: "unknown";
-	return {
-		key: `tautulli:${s.instanceId}:${s.sessionKey}`,
-		title: s.grandparentTitle ? `${s.grandparentTitle} — ${s.title}` : s.title,
-		subtitle: s.grandparentTitle ?? undefined,
-		user: s.user,
-		state: s.state,
-		progress: s.progressPercent,
-		duration: 0,
-		viewOffset: 0,
-		player: s.player,
-		platform: s.platform,
-		videoDecision: s.videoDecision,
-		audioDecision: s.audioDecision,
-		videoResolution: s.videoResolution,
-		audioCodec: s.audioCodec,
-		bandwidth: s.bandwidth,
-		location: s.location,
-		mediaType,
-		thumb: s.thumb,
-		instanceName: s.instanceName,
-		source: "tautulli",
-	};
-}
-
 function normalizeJellyfinSession(s: JellyfinSessionInfo): NowPlayingSession {
 	const mediaType =
 		s.type === "Movie"
@@ -166,35 +131,13 @@ function normalizeJellyfinSession(s: JellyfinSessionInfo): NowPlayingSession {
 
 function mergeSessions(
 	plexSessions: PlexSession[],
-	tautulliSessions: TautulliSession[],
 	jellyfinSessions: JellyfinSessionInfo[] = [],
 ): NowPlayingSession[] {
-	// Prefer Tautulli when same session appears in both sources.
-	// Dedup key includes instanceId to avoid collisions across Plex servers.
-	const merged: NowPlayingSession[] = [];
-
-	// Add all Tautulli sessions first (richer data)
-	for (const s of tautulliSessions) {
-		merged.push(normalizeTautulliSession(s));
-	}
-
-	// Add Plex sessions not covered by Tautulli
-	for (const s of plexSessions) {
-		// Match by ratingKey within the same logical server (Tautulli monitors one Plex)
-		const hasMatch = tautulliSessions.some(
-			(t) => t.ratingKey === s.ratingKey && t.sessionKey === s.sessionKey,
-		);
-		if (!hasMatch) {
-			merged.push(normalizePlexSession(s));
-		}
-	}
-
-	// Add Jellyfin sessions (separate server, no overlap with Plex/Tautulli)
-	for (const s of jellyfinSessions) {
-		merged.push(normalizeJellyfinSession(s));
-	}
-
-	return merged;
+	// Plex and Jellyfin are separate servers — no overlap, simple concat.
+	return [
+		...plexSessions.map(normalizePlexSession),
+		...jellyfinSessions.map(normalizeJellyfinSession),
+	];
 }
 
 function formatDuration(ms: number): string {
@@ -352,21 +295,18 @@ const SessionBadges = ({
 
 export const NowPlayingWidget = ({
 	hasPlexInstances,
-	hasTautulliInstances,
 	hasJellyfinInstances,
 	animationDelay = 0,
 	variant = "compact",
 }: NowPlayingWidgetProps) => {
 	const [incognitoMode] = useIncognitoMode();
 	const plexQuery = useNowPlaying(hasPlexInstances);
-	const tautulliQuery = useTautulliActivity(hasTautulliInstances);
 	const jellyfinQuery = useJellyfinNowPlaying(hasJellyfinInstances);
 
 	const plexSessions = plexQuery.data?.sessions ?? [];
-	const tautulliSessions = tautulliQuery.data?.sessions ?? [];
 	const jellyfinSessions = jellyfinQuery.data?.sessions ?? [];
 
-	const rawSessions = mergeSessions(plexSessions, tautulliSessions, jellyfinSessions);
+	const rawSessions = mergeSessions(plexSessions, jellyfinSessions);
 	const sessions = incognitoMode
 		? rawSessions.map((s) => ({
 				...s,
@@ -378,21 +318,18 @@ export const NowPlayingWidget = ({
 				instanceName: getLinuxInstanceName(s.instanceName),
 			}))
 		: rawSessions;
-	// Tautulli provides more accurate bandwidth (LAN/WAN split); prefer it for Plex.
-	// Jellyfin bandwidth is always additive (separate server).
-	const plexBandwidth = tautulliQuery.data?.totalBandwidth ?? plexQuery.data?.totalBandwidth ?? 0;
-	const totalBandwidth = plexBandwidth + (jellyfinQuery.data?.totalBandwidth ?? 0);
-	const lanBandwidth = tautulliQuery.data?.lanBandwidth ?? 0;
-	const wanBandwidth = tautulliQuery.data?.wanBandwidth ?? 0;
+	// Jellyfin bandwidth is additive (separate server). LAN/WAN attribution
+	// was Tautulli-sourced and returns with Tracearr (3.0 charter C2).
+	const totalBandwidth =
+		(plexQuery.data?.totalBandwidth ?? 0) + (jellyfinQuery.data?.totalBandwidth ?? 0);
 
-	const isLoading = plexQuery.isLoading || tautulliQuery.isLoading || jellyfinQuery.isLoading;
+	const isLoading = plexQuery.isLoading || jellyfinQuery.isLoading;
 	// Only consider enabled sources for error state
 	const enabledErrors = [
 		hasPlexInstances && plexQuery.isError,
-		hasTautulliInstances && tautulliQuery.isError,
 		hasJellyfinInstances && jellyfinQuery.isError,
 	].filter(Boolean).length;
-	const enabledSources = [hasPlexInstances, hasTautulliInstances, hasJellyfinInstances].filter(Boolean).length;
+	const enabledSources = [hasPlexInstances, hasJellyfinInstances].filter(Boolean).length;
 	const hasError = enabledSources > 0 && enabledErrors === enabledSources;
 
 	if (isLoading && sessions.length === 0) return null;
@@ -521,16 +458,6 @@ export const NowPlayingWidget = ({
 					<div className="flex items-center gap-2 text-xs text-muted-foreground">
 						<Wifi className="h-3 w-3" />
 						<span>{formatBandwidth(totalBandwidth)}</span>
-						{lanBandwidth > 0 && (
-							<span className="text-muted-foreground/60">
-								(LAN: {formatBandwidth(lanBandwidth)})
-							</span>
-						)}
-						{wanBandwidth > 0 && (
-							<span className="text-muted-foreground/60">
-								(WAN: {formatBandwidth(wanBandwidth)})
-							</span>
-						)}
 					</div>
 				)}
 			</div>

@@ -238,7 +238,6 @@ export interface CleanupFieldOptionsResponse {
 	resolutions: string[];
 	hdrTypes: string[];
 	releaseGroups: string[];
-	tautulliUsers: string[];
 	plexUsers: string[];
 	plexLibraries: string[];
 	plexCollections: string[];
@@ -247,7 +246,6 @@ export interface CleanupFieldOptionsResponse {
 	jellyfinLibraries: string[];
 	arrTags: Array<{ id: number; label: string }>;
 	hasPlex: boolean;
-	hasTautulli: boolean;
 	hasJellyfin: boolean;
 }
 
@@ -301,8 +299,8 @@ export type PrefetchSourceStatus = "ok" | "failed" | "skipped";
 
 export interface PrefetchHealthStatus {
 	seerr: PrefetchSourceStatus;
-	tautulli: PrefetchSourceStatus;
 	plex: PrefetchSourceStatus;
+	jellyfin: PrefetchSourceStatus;
 }
 
 export interface CleanupStatusResponse {

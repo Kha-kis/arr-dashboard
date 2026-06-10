@@ -40,7 +40,7 @@ import type {
 import { apiRequest } from "./base";
 
 /**
- * Fetch watch enrichment data for library items from PlexCache + TautulliCache.
+ * Fetch watch enrichment data for library items from PlexCache.
  */
 export async function fetchWatchEnrichment(
 	tmdbIds: number[],
@@ -156,7 +156,7 @@ export async function fetchPlexAccounts(): Promise<PlexAccountsResponse> {
 // Cache Health (Phase 2)
 // ============================================================================
 
-/** Fetch cache refresh health status for all Plex/Tautulli instances. */
+/** Fetch cache refresh health status for all Plex instances. */
 export async function fetchCacheHealth(): Promise<CacheHealthResponse> {
 	return apiRequest("/api/plex/cache/health");
 }
@@ -271,7 +271,7 @@ export async function fetchBandwidthForecast(days = 30): Promise<BandwidthForeca
 }
 
 // ============================================================================
-// Top Media Leaderboard (Tier 1) — replaces Tautulli home-stats top_*
+// Top Media Leaderboard (Tier 1) — SessionSnapshot-derived
 // ============================================================================
 
 /** Fetch the top-N most-watched titles for a given media type from SessionSnapshot. */

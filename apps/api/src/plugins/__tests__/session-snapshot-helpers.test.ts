@@ -1,7 +1,7 @@
 /**
  * Session Snapshot Helper Tests
  *
- * Tests for the pure classifySessionDecisions and computeLanWanAttribution helpers
+ * Tests for the pure classifySessionDecisions helper
  * extracted from session-snapshot-scheduler.ts.
  *
  * Run with: npx vitest run session-snapshot-helpers.test.ts
@@ -10,7 +10,6 @@
 import { describe, expect, it } from "vitest";
 import {
 	classifySessionDecisions,
-	computeLanWanAttribution,
 	type SessionInput,
 } from "../lib/session-snapshot-helpers.js";
 
@@ -74,30 +73,3 @@ describe("classifySessionDecisions", () => {
 	});
 });
 
-// ---------------------------------------------------------------------------
-// computeLanWanAttribution
-// ---------------------------------------------------------------------------
-
-describe("computeLanWanAttribution", () => {
-	it("attributes LAN/WAN for the first instance when Tautulli data is complete", () => {
-		const result = computeLanWanAttribution(true, false, 5000, 3000);
-		expect(result.lanBandwidth).toBe(5000);
-		expect(result.wanBandwidth).toBe(3000);
-		expect(result.attributed).toBe(true);
-	});
-
-	it("zeroes LAN/WAN for the second instance (already attributed)", () => {
-		const result = computeLanWanAttribution(true, true, 5000, 3000);
-		expect(result.lanBandwidth).toBe(0);
-		expect(result.wanBandwidth).toBe(0);
-		// attributed=false because THIS call did not perform attribution (it was already done)
-		expect(result.attributed).toBe(false);
-	});
-
-	it("zeroes LAN/WAN when Tautulli data is incomplete", () => {
-		const result = computeLanWanAttribution(false, false, 5000, 3000);
-		expect(result.lanBandwidth).toBe(0);
-		expect(result.wanBandwidth).toBe(0);
-		expect(result.attributed).toBe(false);
-	});
-});

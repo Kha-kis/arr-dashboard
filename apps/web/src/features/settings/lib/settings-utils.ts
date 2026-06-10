@@ -82,11 +82,6 @@ export const getServicePlaceholders = (service: ServiceType) => {
 				label: "Primary Seerr",
 				baseUrl: "http://localhost:5055",
 			};
-		case "tautulli":
-			return {
-				label: "Primary Tautulli",
-				baseUrl: "http://localhost:8181",
-			};
 		case "plex":
 			return {
 				label: "Primary Plex",

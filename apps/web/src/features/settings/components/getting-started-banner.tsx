@@ -53,13 +53,6 @@ const SETUP_STEPS: SetupStep[] = [
 		hasHelper: true,
 	},
 	{
-		service: "tautulli",
-		label: "Tautulli",
-		description:
-			"Optional Plex enrichment — adds richer codec/LAN-WAN/platform metadata. Plex analytics work without it.",
-		hasHelper: false,
-	},
-	{
 		service: "jellyfin",
 		label: "Jellyfin",
 		description: "Media server — API key from Dashboard > API Keys",

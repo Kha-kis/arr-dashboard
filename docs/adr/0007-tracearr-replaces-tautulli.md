@@ -98,6 +98,18 @@ made before boot, owned by release notes. The migration invariants —
 consent before deletion, can't-miss presentation, a pointer to the
 successor — are fully preserved in the dialog.
 
+**Implementation note (2026-06-10, shipped with the A2 removal PR):**
+the dialog shipped with a **single** action — "Remove Tautulli &
+continue" — not two. The "Set up Tracearr →" button would have been a
+dead CTA: Tracearr has no service-form entry until charter C2 lands, so
+the link had nowhere truthful to point. The successor pointer is
+informational copy instead ("your watch history remains inside Tautulli
+itself; Tracearr imports it from there"), which upgrades to a deep link
+when Tracearr lands. Endpoints: `GET/POST /api/system/migrations/tautulli`
+(operator tier, under `/api/system`); the GET includes the rules-pass
+report for the disclosure block. All migration invariants hold — the
+POST is the only deleter of Tautulli rows.
+
 ## Why this shape
 
 1. **Removal-with-destination beats deprecation-without-one.** The

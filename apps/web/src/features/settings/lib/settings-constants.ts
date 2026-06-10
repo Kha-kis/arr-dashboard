@@ -9,7 +9,6 @@ export type ServiceType =
 	| "lidarr"
 	| "readarr"
 	| "seerr"
-	| "tautulli"
 	| "plex"
 	| "jellyfin"
 	| "emby"
@@ -22,7 +21,6 @@ export const SERVICE_TYPES: ServiceType[] = [
 	"lidarr",
 	"readarr",
 	"seerr",
-	"tautulli",
 	"plex",
 	"jellyfin",
 	"emby",

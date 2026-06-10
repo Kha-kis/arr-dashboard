@@ -8,7 +8,7 @@ import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { formatBandwidth, MiniStatCard, Sparkline } from "./chart-primitives";
 
-// LAN/WAN colors — Tautulli-enriched data distinction
+// LAN/WAN colors — rendered only when historical snapshots carry the split
 const LAN_COLOR = SEMANTIC_COLORS.success.from;
 const WAN_COLOR = SEMANTIC_COLORS.info.from;
 
@@ -144,7 +144,7 @@ export const BandwidthChart = ({
 				</div>
 			)}
 
-			{/* LAN/WAN overlay when Tautulli data is available */}
+			{/* LAN/WAN overlay — pre-3.0 snapshots only until Tracearr (charter C2) */}
 			{hasLanWan && lanSeries.length > 1 && (
 				<div className="grid gap-4 md:grid-cols-2">
 					<div>

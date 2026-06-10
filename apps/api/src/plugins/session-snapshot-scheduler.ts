@@ -19,17 +19,8 @@ import fastifyPlugin from "fastify-plugin";
 import { createJellyfinClient } from "../lib/jellyfin/jellyfin-client.js";
 import { createPlexClient } from "../lib/plex/plex-client.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
-import type { TautulliSessionItem } from "../lib/tautulli/tautulli-client.js";
-import { createTautulliClient } from "../lib/tautulli/tautulli-client.js";
-import {
-	buildTautulliSessionMap,
-	enrichSessionsWithTautulli,
-	normalizeJellyfinMediaType,
-} from "./lib/session-enrichment-helpers.js";
-import {
-	classifySessionDecisions,
-	computeLanWanAttribution,
-} from "./lib/session-snapshot-helpers.js";
+import { normalizeJellyfinMediaType, toEnrichedSessions } from "./lib/session-enrichment-helpers.js";
+import { classifySessionDecisions } from "./lib/session-snapshot-helpers.js";
 
 const INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const STARTUP_DELAY_MS = 60_000; // 60 seconds
@@ -139,46 +130,9 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 					return;
 				}
 
-				// Aggregate LAN/WAN bandwidth from all enabled Tautulli instances
-				const tautulliInstances = await app.prisma.serviceInstance.findMany({
-					where: { service: "TAUTULLI", enabled: true },
-				});
-				let aggLanBandwidth = 0;
-				let aggWanBandwidth = 0;
-				let tautulliFetchFailures = 0;
-				const allTautulliSessions: TautulliSessionItem[] = [];
-				for (const ti of tautulliInstances) {
-					try {
-						const tc = createTautulliClient(app.encryptor, ti, app.log);
-						const activity = await tc.getActivity();
-						aggLanBandwidth += activity.lan_bandwidth || 0;
-						aggWanBandwidth += activity.wan_bandwidth || 0;
-						allTautulliSessions.push(...activity.sessions);
-					} catch (err) {
-						tautulliFetchFailures++;
-						app.log.warn(
-							{ err, instanceId: ti.id },
-							"Failed to fetch Tautulli activity for LAN/WAN",
-						);
-					}
-				}
-
-				// Build Tautulli session lookup for enriching sessionsJson with codec/resolution/platform
-				const tautulliSessionMap = buildTautulliSessionMap(allTautulliSessions);
-
-				// Only trust LAN/WAN data when all Tautulli instances responded successfully
-				const hasCompleteTautulliData = tautulliInstances.length > 0 && tautulliFetchFailures === 0;
-
-				if (tautulliFetchFailures > 0 && tautulliInstances.length > tautulliFetchFailures) {
-					app.log.warn(
-						{ failed: tautulliFetchFailures, total: tautulliInstances.length },
-						"Partial Tautulli failure: discarding LAN/WAN data to avoid incomplete aggregation",
-					);
-				}
-
-				// Track whether LAN/WAN has been attributed for this capture tick
-				// to avoid double-counting across multiple Plex instances
-				let lanWanAttributed = false;
+				// LAN/WAN bandwidth split was Tautulli-sourced; removed in 3.0
+				// (ADR-0007). lanBandwidth/wanBandwidth persist as null until the
+				// Tracearr-era analytics rewrite (charter C2) re-sources them.
 
 				// Use cached known platforms (rebuilt every 6 hours instead of every 5-min tick)
 				if (!cachedKnownPlatforms || Date.now() - platformCacheBuiltAt > PLATFORM_CACHE_TTL_MS) {
@@ -257,20 +211,7 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 						const { totalBandwidth, directPlayCount, transcodeCount, directStreamCount } =
 							classifySessionDecisions(sessions);
 
-						// Attribute LAN/WAN to only one snapshot per tick to prevent
-						// double-counting when analytics routes aggregate across instances
-						const lanWan = computeLanWanAttribution(
-							hasCompleteTautulliData,
-							lanWanAttributed,
-							aggLanBandwidth,
-							aggWanBandwidth,
-						);
-						// Mark attribution BEFORE the DB write to prevent
-						// double-counting if the write fails and the next instance retries
-						if (lanWan.attributed) lanWanAttributed = true;
-
-						// Enrich Plex sessions with Tautulli codec/resolution/platform data
-						const enrichedSessions = enrichSessionsWithTautulli(sessions, tautulliSessionMap);
+						const enrichedSessions = toEnrichedSessions(sessions);
 
 						// Collect platforms for new-device notification
 						for (const es of enrichedSessions) {
@@ -282,8 +223,9 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 								instanceId: instance.id,
 								concurrentStreams: sessions.length,
 								totalBandwidth,
-								lanBandwidth: lanWan.lanBandwidth,
-								wanBandwidth: lanWan.wanBandwidth,
+								// lanBandwidth/wanBandwidth omitted — Tautulli-sourced split
+								// removed in 3.0 (ADR-0007); columns stay NULL until the
+								// Tracearr-era analytics rewrite re-sources them (charter C2).
 								directPlayCount,
 								transcodeCount,
 								directStreamCount,

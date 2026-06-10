@@ -14,7 +14,8 @@ export interface WatchEnrichmentItem {
 	watchedByUsers: string[];
 	onDeck: boolean;
 	userRating: number | null;
-	source: "plex" | "tautulli" | "both" | "jellyfin";
+	// "tautulli"/"both" removed in 3.0 (ADR-0007)
+	source: "plex" | "jellyfin";
 	/** Plex ratingKey for write-back operations (null if not available) */
 	ratingKey: string | null;
 	/** Jellyfin/Emby item ID for deep links (null if source is Plex) */
@@ -208,6 +209,8 @@ export interface CacheHealthItem {
 	instanceName: string;
 	cacheType:
 		| "plex"
+		// retained for pre-3.0 CacheRefreshStatus rows that linger until the
+		// migration dialog deletes their instances (ADR-0007)
 		| "tautulli"
 		| "plex_episode"
 		| "jellyfin"

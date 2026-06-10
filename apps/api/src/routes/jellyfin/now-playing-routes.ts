@@ -45,7 +45,7 @@ export async function registerNowPlayingRoutes(app: FastifyInstance, _opts: Fast
 						: undefined,
 					videoCodec: s.transcodingInfo?.videoCodec,
 					audioCodec: s.transcodingInfo?.audioCodec,
-					thumb: item?.imageTags?.["Primary"]
+					thumb: item?.imageTags?.Primary
 						? `/Items/${item.id}/Images/Primary`
 						: undefined,
 					instanceId: instance.id,

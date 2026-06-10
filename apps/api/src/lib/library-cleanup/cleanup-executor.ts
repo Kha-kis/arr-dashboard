@@ -33,7 +33,6 @@ import type {
 	PrefetchResults,
 	SeerrRequestInfo,
 	SeerrRequestMap,
-	TautulliWatchMap,
 } from "./types.js";
 
 // Default approval expiry: 7 days
@@ -433,7 +432,7 @@ export async function executeApprovedItems(
 
 /**
  * Collect all rule types from enabled rules, including conditions inside composite rules.
- * Used to decide which external data to prefetch (Seerr, Tautulli, Plex).
+ * Used to decide which external data to prefetch (Seerr, Plex, Jellyfin).
  */
 function collectActiveRuleTypes(
 	rules: Pick<LibraryCleanupRule, "enabled" | "ruleType" | "conditions">[],
@@ -519,84 +518,6 @@ async function prefetchSeerrRequests(
 		log.warn(
 			{ err: error },
 			"Failed to prefetch Seerr requests for cleanup — Seerr rules will be skipped",
-		);
-		return undefined;
-	}
-}
-
-/**
- * Prefetch Tautulli watch data from the TautulliCache table and build a lookup map.
- * Returns undefined if no Tautulli instance is configured.
- */
-async function prefetchTautulliData(
-	deps: CleanupExecutorDeps,
-	userId: string,
-): Promise<TautulliWatchMap | undefined> {
-	const { prisma, log } = deps;
-
-	// Find user's Tautulli instance
-	const tautulliInstance = await prisma.serviceInstance.findFirst({
-		where: { userId, service: "TAUTULLI" },
-		select: { id: true },
-	});
-
-	if (!tautulliInstance) return undefined;
-
-	try {
-		const map: TautulliWatchMap = new Map();
-		let cursor: string | undefined;
-		let totalRows = 0;
-
-		// Cursor-paginate to bound peak heap.
-		while (true) {
-			const batch = await prisma.tautulliCache.findMany({
-				where: { instanceId: tautulliInstance.id },
-				select: {
-					id: true,
-					tmdbId: true,
-					mediaType: true,
-					lastWatchedAt: true,
-					watchCount: true,
-					watchedByUsers: true,
-				},
-				take: CACHE_QUERY_BATCH_SIZE,
-				...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
-				orderBy: { id: "asc" },
-			});
-
-			if (batch.length === 0) break;
-			totalRows += batch.length;
-
-			for (const row of batch) {
-				try {
-					const key = `${row.mediaType}:${row.tmdbId}`;
-					const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
-					map.set(key, {
-						lastWatchedAt: row.lastWatchedAt,
-						watchCount: row.watchCount,
-						watchedByUsers,
-					});
-				} catch (rowErr) {
-					log.warn(
-						{ err: rowErr, tmdbId: row.tmdbId },
-						"Skipping Tautulli cache row with bad data",
-					);
-				}
-			}
-
-			cursor = batch[batch.length - 1]!.id;
-			if (batch.length < CACHE_QUERY_BATCH_SIZE) break;
-		}
-
-		log.info(
-			{ totalRows, totalEntries: map.size },
-			"Tautulli watch data prefetch complete for cleanup",
-		);
-		return map;
-	} catch (error) {
-		log.warn(
-			{ err: error },
-			"Failed to prefetch Tautulli data for cleanup — Tautulli rules will be skipped",
 		);
 		return undefined;
 	}
@@ -1074,19 +995,6 @@ async function evaluateAllItems(
 	const seerrResult = hasSeerrRules ? await prefetchSeerrRequests(deps, config.userId) : undefined;
 	const seerrMap = hasSeerrRules ? seerrResult : undefined;
 
-	// Prefetch Tautulli watch data if any Tautulli rule types are active
-	const TAUTULLI_RULE_TYPES = [
-		"tautulli_last_watched",
-		"tautulli_watch_count",
-		"tautulli_watched_by",
-		"user_retention", // Can use tautulli as source
-	];
-	const hasTautulliRules = TAUTULLI_RULE_TYPES.some((t) => activeTypes.has(t));
-	const tautulliResult = hasTautulliRules
-		? await prefetchTautulliData(deps, config.userId)
-		: undefined;
-	const tautulliMap = hasTautulliRules ? tautulliResult : undefined;
-
 	// Prefetch Plex watch data if any Plex rule types are active
 	const PLEX_RULE_TYPES = [
 		"plex_last_watched",
@@ -1137,7 +1045,6 @@ async function evaluateAllItems(
 	// Build prefetch health status
 	const prefetchHealth: PrefetchResults = {
 		seerr: hasSeerrRules ? (seerrMap ? "ok" : "failed") : "skipped",
-		tautulli: hasTautulliRules ? (tautulliMap ? "ok" : "failed") : "skipped",
 		plex: hasPlexRules ? (plexMap ? "ok" : "failed") : "skipped",
 		jellyfin: hasJellyfinRules ? (jellyfinMap ? "ok" : "failed") : "skipped",
 	};
@@ -1145,7 +1052,6 @@ async function evaluateAllItems(
 	// Check for failed prefetches that have dependent rules — generate warnings
 	const failedSources = new Set<DataSourceDependency>();
 	if (prefetchHealth.seerr === "failed") failedSources.add("seerr");
-	if (prefetchHealth.tautulli === "failed") failedSources.add("tautulli");
 	if (prefetchHealth.plex === "failed") failedSources.add("plex");
 	if (prefetchHealth.jellyfin === "failed") failedSources.add("jellyfin");
 
@@ -1171,7 +1077,6 @@ async function evaluateAllItems(
 	const ctx: EvalContext = {
 		now,
 		seerrMap,
-		tautulliMap,
 		plexMap,
 		plexEpisodeMap,
 		jellyfinMap,
@@ -1667,12 +1572,6 @@ export async function buildEvalContext(
 		"seerr_requester_watched",
 		"seerr_requester_not_watched",
 	];
-	const TAUTULLI_RULE_TYPES = [
-		"tautulli_last_watched",
-		"tautulli_watch_count",
-		"tautulli_watched_by",
-		"user_retention",
-	];
 	const PLEX_RULE_TYPES_LIST = [
 		"plex_last_watched",
 		"plex_watch_count",
@@ -1690,12 +1589,9 @@ export async function buildEvalContext(
 		"seerr_requester_not_watched",
 	];
 
-	const [seerrMap, tautulliMap, plexMap, plexEpisodeMap] = await Promise.all([
+	const [seerrMap, plexMap, plexEpisodeMap] = await Promise.all([
 		SEERR_RULE_TYPES.some((t) => activeTypes.has(t))
 			? prefetchSeerrRequests(deps, userId)
-			: undefined,
-		TAUTULLI_RULE_TYPES.some((t) => activeTypes.has(t))
-			? prefetchTautulliData(deps, userId)
 			: undefined,
 		PLEX_RULE_TYPES_LIST.some((t) => activeTypes.has(t))
 			? prefetchPlexData(deps, userId)
@@ -1706,7 +1602,6 @@ export async function buildEvalContext(
 	return {
 		now: new Date(),
 		seerrMap: seerrMap ?? undefined,
-		tautulliMap: tautulliMap ?? undefined,
 		plexMap: plexMap ?? undefined,
 		plexEpisodeMap: plexEpisodeMap ?? undefined,
 	};

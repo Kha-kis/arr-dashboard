@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { TautulliMigrationDialog } from "../../features/migrations/components/tautulli-migration-dialog";
 import { useThemeGradient } from "../../hooks/useThemeGradient";
 import { useColorTheme } from "../../providers/color-theme-provider";
 import { CommandPalette, useCommandPalette } from "./command-palette";
@@ -37,6 +38,10 @@ export const LayoutWrapper = ({ children }: LayoutWrapperProps) => {
 
 	return (
 		<div className="flex min-h-screen bg-background relative">
+			{/* 3.0 one-shot migration gate — blocks until lingering Tautulli
+			    instances are acknowledged and removed (ADR-0007) */}
+			<TautulliMigrationDialog />
+
 			{/* Command Palette - Cmd+K */}
 			<CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
 

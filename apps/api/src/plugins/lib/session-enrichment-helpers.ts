@@ -1,11 +1,14 @@
 /**
  * Session Enrichment Helpers
  *
- * Pure functions for merging Tautulli session data (codec, resolution, platform)
- * into Plex session snapshots. Extracted for testability.
+ * Pure functions shaping Plex session snapshots into the EnrichedSession
+ * rows stored in sessionsJson. Extracted for testability.
+ *
+ * 3.0 (ADR-0007): Tautulli-sourced enrichment removed. platform/player/
+ * audioDecision now come from Plex natively; videoCodec/audioCodec/
+ * videoResolution are null until the Tracearr-era analytics rewrite
+ * (charter Bucket C2) re-sources them.
  */
-
-import type { TautulliSessionItem } from "../../lib/tautulli/tautulli-client.js";
 
 /** Minimal Plex session shape used during snapshot capture */
 export interface PlexSessionInput {
@@ -15,8 +18,10 @@ export interface PlexSessionInput {
 	type?: string;
 	ratingKey: string;
 	videoDecision?: string | null;
+	audioDecision?: string | null;
 	bandwidth?: number | null;
 	state: string;
+	player?: { title?: string | null; platform?: string | null } | null;
 }
 
 /** Normalized media type for leaderboard aggregation */
@@ -77,49 +82,26 @@ export function normalizeJellyfinMediaType(type: string | undefined): SessionMed
 }
 
 /**
- * Build a lookup map from Tautulli sessions keyed by rating_key.
- * If multiple Tautulli sessions share a rating_key (unlikely but possible),
- * the last one wins — this is acceptable since rating_key is per-item.
+ * Shape Plex sessions into the EnrichedSession rows stored in
+ * sessionsJson. platform/player/audioDecision come from the Plex session
+ * natively; codec/resolution fields are null pending the Tracearr-era
+ * analytics rewrite (the EnrichedSession shape is unchanged, so all
+ * downstream sessionsJson readers keep working).
  */
-export function buildTautulliSessionMap(
-	sessions: TautulliSessionItem[],
-): Map<string, TautulliSessionItem> {
-	const map = new Map<string, TautulliSessionItem>();
-	for (const session of sessions) {
-		if (session.rating_key) {
-			map.set(session.rating_key, session);
-		}
-	}
-	return map;
-}
-
-/**
- * Enrich Plex sessions with Tautulli codec/resolution/platform data.
- *
- * Matches by ratingKey ↔ rating_key. If no Tautulli match is found,
- * the extra fields are set to null for backward compatibility.
- */
-export function enrichSessionsWithTautulli(
-	plexSessions: PlexSessionInput[],
-	tautulliMap: Map<string, TautulliSessionItem>,
-): EnrichedSession[] {
-	return plexSessions.map((s) => {
-		const tautulli = tautulliMap.get(s.ratingKey);
-
-		return {
-			user: s.user.title,
-			title: s.grandparentTitle ? `${s.grandparentTitle} - ${s.title}` : s.title,
-			grandparentTitle: s.grandparentTitle,
-			mediaType: normalizePlexMediaType(s.type),
-			videoDecision: s.videoDecision,
-			bandwidth: s.bandwidth ?? 0,
-			state: s.state,
-			audioDecision: tautulli?.stream_audio_decision ?? null,
-			videoCodec: tautulli?.video_codec ?? null,
-			audioCodec: tautulli?.audio_codec ?? null,
-			videoResolution: tautulli?.video_resolution ?? null,
-			platform: tautulli?.platform ?? null,
-			player: tautulli?.player ?? null,
-		};
-	});
+export function toEnrichedSessions(plexSessions: PlexSessionInput[]): EnrichedSession[] {
+	return plexSessions.map((s) => ({
+		user: s.user.title,
+		title: s.grandparentTitle ? `${s.grandparentTitle} - ${s.title}` : s.title,
+		grandparentTitle: s.grandparentTitle,
+		mediaType: normalizePlexMediaType(s.type),
+		videoDecision: s.videoDecision,
+		bandwidth: s.bandwidth ?? 0,
+		state: s.state,
+		audioDecision: s.audioDecision ?? null,
+		videoCodec: null,
+		audioCodec: null,
+		videoResolution: null,
+		platform: s.player?.platform ?? null,
+		player: s.player?.title ?? null,
+	}));
 }

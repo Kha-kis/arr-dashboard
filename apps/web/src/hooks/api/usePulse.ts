@@ -15,7 +15,6 @@ import {
 	plexKeys,
 	pulseKeys,
 	queueCleanerKeys,
-	tautulliKeys,
 } from "../../lib/query-keys";
 
 export interface UsePulseQueryOptions {
@@ -66,18 +65,13 @@ export const usePulseActionMutation = () => {
 					toast.success(successCopyForAction(action));
 					break;
 				case "cache.refresh":
-					// The cache health banner (/api/plex/cache/health) is
-					// shared across plex + tautulli, so plexKeys.cacheHealth
-					// is the right key for both branches. Also drop the
-					// domain root key so downstream Plex/Tautulli widgets
-					// that depend on the refreshed cache repaint on next
-					// mount without waiting for their own stale window.
+					// Drop the cache health banner key plus the Plex domain
+					// root so downstream widgets that depend on the refreshed
+					// cache repaint on next mount without waiting for their
+					// own stale window. "plex" is the only refreshable cache
+					// type in 3.0 (ADR-0007).
 					queryClient.invalidateQueries({ queryKey: plexKeys.cacheHealth() });
-					if (action.target.cacheType === "plex") {
-						queryClient.invalidateQueries({ queryKey: plexKeys.all });
-					} else {
-						queryClient.invalidateQueries({ queryKey: tautulliKeys.all });
-					}
+					queryClient.invalidateQueries({ queryKey: plexKeys.all });
 					toast.success(successCopyForAction(action));
 					break;
 				case "queue.retry":
@@ -113,9 +107,7 @@ function successCopyForAction(action: PulseAction): string {
 				? "Hunt scheduler enabled"
 				: "Queue cleaner scheduler enabled";
 		case "cache.refresh":
-			return action.target.cacheType === "plex"
-				? "Plex cache refresh triggered"
-				: "Tautulli cache refresh triggered";
+			return "Plex cache refresh triggered";
 		case "queue.retry":
 			return "Retry queued";
 	}

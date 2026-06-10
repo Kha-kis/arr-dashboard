@@ -331,7 +331,6 @@ export type ServiceType =
 	| "lidarr"
 	| "readarr"
 	| "seerr"
-	| "tautulli"
 	| "plex"
 	| "jellyfin"
 	| "emby"
@@ -379,13 +378,8 @@ export const SERVICE_GRADIENTS: Record<ServiceType, ServiceGradient> = {
 		to: "#f43f5e", // rose-500
 		glow: "rgba(225, 29, 72, 0.4)",
 	},
-	tautulli: {
-		from: "#e4a50a", // amber/gold (Tautulli branding)
-		to: "#d97706", // amber-600
-		glow: "rgba(228, 165, 10, 0.4)",
-	},
 	plex: {
-		from: "#cc7b19", // burnt amber (distinct from Tautulli gold and Radarr orange)
+		from: "#cc7b19", // burnt amber (distinct from Radarr orange)
 		to: "#e5a336", // warm amber
 		glow: "rgba(204, 123, 25, 0.35)",
 	},

@@ -30,8 +30,6 @@ import { getHuntingScheduler } from "../hunting/scheduler.js";
 import { refreshPlexCache } from "../plex/plex-cache-refresher.js";
 import { requirePlexClient } from "../plex/plex-helpers.js";
 import { getQueueCleanerScheduler } from "../queue-cleaner/scheduler.js";
-import { refreshTautulliCache } from "../tautulli/tautulli-cache-refresher.js";
-import { requireTautulliClient } from "../tautulli/tautulli-helpers.js";
 
 export interface PulseActionResult {
 	status: "ok";
@@ -154,29 +152,17 @@ async function dispatchCacheRefresh(
 	cacheType: PulseCacheType,
 	log: FastifyBaseLogger,
 ): Promise<PulseActionResult> {
-	if (cacheType === "plex") {
-		const { client } = await requirePlexClient(app, userId, instanceId);
-		const backgroundTask = runBackgroundCacheRefresh({
-			app,
-			log,
-			instanceId,
-			cacheType: "plex",
-			refresh: () => refreshPlexCache(client, app.prisma, instanceId, log),
-		});
-		log.info({ instanceId, cacheType }, "pulse-action: plex cache refresh dispatched");
-		return { status: "ok", backgroundTask };
-	}
-
-	// tautulli
-	const { client } = await requireTautulliClient(app, userId, instanceId);
+	// "plex" is the only refreshable cache type since Tautulli's removal in
+	// 3.0 (ADR-0007); PulseCacheType narrowing keeps this exhaustive.
+	const { client } = await requirePlexClient(app, userId, instanceId);
 	const backgroundTask = runBackgroundCacheRefresh({
 		app,
 		log,
 		instanceId,
-		cacheType: "tautulli",
-		refresh: () => refreshTautulliCache(client, app.prisma, instanceId, log),
+		cacheType: "plex",
+		refresh: () => refreshPlexCache(client, app.prisma, instanceId, log),
 	});
-	log.info({ instanceId, cacheType }, "pulse-action: tautulli cache refresh dispatched");
+	log.info({ instanceId, cacheType }, "pulse-action: plex cache refresh dispatched");
 	return { status: "ok", backgroundTask };
 }
 

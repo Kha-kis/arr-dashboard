@@ -232,9 +232,7 @@ export const ServiceForm = ({
 								? "Leave empty to keep current key"
 								: formState.service === "jellyfin" || formState.service === "emby"
 									? "Found in Dashboard > API Keys"
-									: formState.service === "tautulli"
-										? "Found in Settings > Web Interface"
-										: "Found in Settings > General"
+									: "Found in Settings > General"
 						}
 						required={!selectedService}
 					>
@@ -431,7 +429,6 @@ export const ServiceForm = ({
 /** Default ports for companion services, keyed by service type */
 const COMPANION_PORTS: Record<string, number> = {
 	seerr: 5055,
-	tautulli: 8181,
 	sonarr: 8989,
 	radarr: 7878,
 	prowlarr: 9696,

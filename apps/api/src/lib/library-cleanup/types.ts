@@ -63,18 +63,6 @@ export interface SeerrRequestInfo {
  */
 export type SeerrRequestMap = Map<string, SeerrRequestInfo[]>;
 
-/** Tautulli watch data for a single library item */
-export interface TautulliWatchInfo {
-	lastWatchedAt: Date | null;
-	watchCount: number;
-	watchedByUsers: string[];
-}
-
-/**
- * Tautulli watch data lookup map: "movie:tmdbId" | "series:tmdbId" → TautulliWatchInfo
- */
-export type TautulliWatchMap = Map<string, TautulliWatchInfo>;
-
 /** Per-section Plex watch data */
 export interface PlexSectionWatchInfo {
 	sectionId: string;
@@ -144,7 +132,6 @@ export type PlexEpisodeMap = Map<number, PlexEpisodeStats>;
 export interface EvalContext {
 	now: Date;
 	seerrMap?: SeerrRequestMap;
-	tautulliMap?: TautulliWatchMap;
 	plexMap?: PlexWatchMap;
 	plexEpisodeMap?: PlexEpisodeMap;
 	jellyfinMap?: JellyfinWatchMap;
@@ -165,7 +152,6 @@ export interface EvalContext {
 /** Tracks the outcome of each data source prefetch */
 export interface PrefetchResults {
 	seerr: "ok" | "failed" | "skipped";
-	tautulli: "ok" | "failed" | "skipped";
 	plex: "ok" | "failed" | "skipped";
 	jellyfin: "ok" | "failed" | "skipped";
 }
