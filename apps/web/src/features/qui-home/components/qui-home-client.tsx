@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { POLLING_STANDARD } from "../../../lib/polling-intervals";
 import {
 	AlertCircle,
 	ArrowRight,
@@ -19,12 +20,7 @@ import {
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
-import {
-	GlassmorphicCard,
-	PremiumEmptyState,
-	PremiumPageHeader,
-	PremiumPageLoading,
-} from "../../../components/layout";
+import { DataFreshness, GlassmorphicCard, PremiumEmptyState, PremiumPageHeader, PremiumPageLoading } from "../../../components/layout";
 import { Alert, AlertDescription, Button } from "../../../components/ui";
 import { useIncognitoMode } from "../../../contexts/IncognitoContext";
 import { useQuiAttention, useQuiSummary } from "../../../hooks/api/useQui";
@@ -92,7 +88,11 @@ export const QuiHomeClient = () => {
 
 	return (
 		<>
-			<Header />
+			<Header
+				dataUpdatedAt={summary.dataUpdatedAt}
+				isFetching={summary.isFetching}
+				isError={summary.isError}
+			/>
 			<KpiStrip data={data} />
 			<CorrelationBackfillCard />
 			<AttentionSection
@@ -107,13 +107,30 @@ export const QuiHomeClient = () => {
 	);
 };
 
-const Header = () => (
+const Header = ({
+	dataUpdatedAt,
+	isFetching,
+	isError,
+}: {
+	dataUpdatedAt?: number;
+	isFetching?: boolean;
+	isError?: boolean;
+}) => (
 	<PremiumPageHeader
 		label="qui Integration"
 		labelIcon={Network}
 		title="qui — Torrent Layer"
 		gradientTitle
 		description="Your torrents across every qBittorrent backend qui manages, joined with the *arr library context so you can see at a glance which movies and shows need attention."
+		actions={
+			// Summary feed freshness — the page's panels all derive from it (B4)
+			<DataFreshness
+				dataUpdatedAt={dataUpdatedAt}
+				isFetching={isFetching}
+				isError={isError}
+				pollIntervalMs={POLLING_STANDARD}
+			/>
+		}
 	/>
 );
 

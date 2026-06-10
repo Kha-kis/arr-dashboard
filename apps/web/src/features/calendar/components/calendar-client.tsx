@@ -31,7 +31,8 @@ export const CalendarClient = () => {
 		[calendarStart, calendarEnd, filters.includeUnmonitored],
 	);
 
-	const { data, isLoading, error, refetch } = useMultiInstanceCalendarQuery(queryParams);
+	const { data, isLoading, error, refetch, dataUpdatedAt, isFetching, isError } =
+		useMultiInstanceCalendarQuery(queryParams);
 
 	const { data: services } = useServicesQuery();
 
@@ -141,6 +142,9 @@ export const CalendarClient = () => {
 			<CalendarHeader
 				monthStart={monthStart}
 				isLoading={isLoading}
+				dataUpdatedAt={dataUpdatedAt}
+				isFetching={isFetching}
+				isError={isError}
 				onPreviousMonth={calendarState.handlePreviousMonth}
 				onNextMonth={calendarState.handleNextMonth}
 				onGoToday={calendarState.handleGoToday}

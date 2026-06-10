@@ -34,5 +34,9 @@ export function useHuntingStatus() {
 		isLoading: query.isLoading,
 		error: query.error,
 		refetch: query.refetch,
+		// Freshness inputs for <DataFreshness> (B4)
+		dataUpdatedAt: query.dataUpdatedAt,
+		isFetching: query.isFetching,
+		isError: query.isError,
 	};
 }
