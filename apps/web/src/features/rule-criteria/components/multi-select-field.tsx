@@ -16,6 +16,13 @@ interface MultiSelectFieldProps {
 	loading?: boolean;
 	inputClass: string;
 	labelClass: string;
+	/**
+	 * Optional display transform (e.g. incognito anonymization). Applied to
+	 * the rendered option text ONLY — selection, filtering, select-all and
+	 * the stored values all operate on the real values. Incognito is a
+	 * screenshot mode; filtering still matches the real (hidden) value.
+	 */
+	displayValue?: (value: string) => string;
 }
 
 // ============================================================================
@@ -30,6 +37,7 @@ export function MultiSelectField({
 	loading,
 	inputClass,
 	labelClass,
+	displayValue,
 }: MultiSelectFieldProps) {
 	const { gradient } = useThemeGradient();
 	const [filter, setFilter] = useState("");
@@ -159,7 +167,7 @@ export function MultiSelectField({
 											onChange={() => toggle(value)}
 											className="sr-only"
 										/>
-										<span className="truncate">{value}</span>
+										<span className="truncate">{displayValue ? displayValue(value) : value}</span>
 									</label>
 								);
 							})

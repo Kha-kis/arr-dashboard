@@ -10,6 +10,7 @@
  */
 
 import { useState, useEffect, useMemo } from "react";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { trashGuidesKeys } from "../../../lib/query-keys";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -172,6 +173,7 @@ export const BulkDeploymentModal = ({
 }: BulkDeploymentModalProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const queryClient = useQueryClient();
+	const [incognitoMode] = useIncognitoMode();
 	// Track selection state and sync strategies per instance
 	const [selectedInstances, setSelectedInstances] = useState<Set<string>>(new Set());
 	const [syncStrategies, setSyncStrategies] = useState<Record<string, SyncStrategy>>({});
@@ -420,7 +422,7 @@ export const BulkDeploymentModal = ({
 								{/* Instance info */}
 								<Server className="h-4 w-4 text-muted-foreground shrink-0" />
 								<span className="text-sm font-medium text-foreground flex-1 min-w-0 truncate">
-									{inst.instanceLabel}
+									{incognitoMode ? getLinuxInstanceName(inst.instanceLabel) : inst.instanceLabel}
 								</span>
 
 								{/* Quality config override indicator/button */}

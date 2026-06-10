@@ -1,6 +1,7 @@
 "use client";
 
 import type { ServiceInstanceSummary } from "@arr/shared";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import {
 	AlertCircle,
 	AlertTriangle,
@@ -64,6 +65,7 @@ function ErrorBanner({ message }: { message: string }) {
 // ============================================================================
 
 export function QualitySizeManager() {
+	const [incognitoMode] = useIncognitoMode();
 	const { gradient: themeGradient } = useThemeGradient();
 	const { data: services, isLoading: servicesLoading, error: servicesError } = useServicesQuery();
 
@@ -217,7 +219,7 @@ export function QualitySizeManager() {
 										/>
 										<div className="min-w-0 flex-1">
 											<div className="flex items-center gap-2">
-												<span className="text-sm font-medium truncate">{instance.label}</span>
+												<span className="text-sm font-medium truncate">{incognitoMode ? getLinuxInstanceName(instance.label) : instance.label}</span>
 												<ServiceBadge service={instance.service} />
 											</div>
 										</div>
@@ -339,7 +341,7 @@ export function QualitySizeManager() {
 								<p className="text-sm font-medium">Reset to Factory Defaults</p>
 								<p className="text-sm text-muted-foreground mt-1">
 									This will restore all quality size definitions on{" "}
-									<span className="font-medium text-foreground">{selectedInstance?.label}</span> to
+									<span className="font-medium text-foreground">{selectedInstance && (incognitoMode ? getLinuxInstanceName(selectedInstance.label) : selectedInstance.label)}</span> to
 									the original values set by{" "}
 									{selectedInstance?.service === "sonarr" ? "Sonarr" : "Radarr"}. Any previously
 									applied TRaSH preset will be removed.

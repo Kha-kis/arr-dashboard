@@ -2,6 +2,7 @@
 
 import type { CustomQualityConfig } from "@arr/shared";
 import { AlertCircle, Check, Info, Loader2, RotateCcw, Save, Server, Sliders } from "lucide-react";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "../../../components/ui";
 import {
@@ -48,6 +49,7 @@ export const InstanceQualityOverrideModal = ({
 	templateDefaultConfig,
 	onSaved,
 }: InstanceQualityOverrideModalProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	// State
 	const [config, setConfig] = useState<CustomQualityConfig>({
 		useCustomQualities: false,
@@ -187,11 +189,11 @@ export const InstanceQualityOverrideModal = ({
 				<DialogHeader>
 					<DialogTitle className="flex items-center gap-2">
 						<Server className="h-5 w-5 text-purple-500" />
-						Quality Settings for {instanceLabel}
+						Quality Settings for {incognitoMode ? getLinuxInstanceName(instanceLabel) : instanceLabel}
 					</DialogTitle>
 					<DialogDescription>
 						Customize quality settings for{" "}
-						<strong className="text-foreground">{instanceLabel}</strong> only. Other instances using
+						<strong className="text-foreground">{incognitoMode ? getLinuxInstanceName(instanceLabel) : instanceLabel}</strong> only. Other instances using
 						&ldquo;{templateName}&rdquo; will not be affected.
 					</DialogDescription>
 				</DialogHeader>
@@ -322,7 +324,7 @@ export const InstanceQualityOverrideModal = ({
 												</span>
 											</div>
 											<p className="text-xs text-muted-foreground pl-7">
-												Different settings just for {instanceLabel}.
+												Different settings just for {incognitoMode ? getLinuxInstanceName(instanceLabel) : instanceLabel}.
 											</p>
 										</button>
 									</div>
