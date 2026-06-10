@@ -2,6 +2,7 @@
 
 import type { BulkScoreFilters, CustomFormatScoreEntry } from "@arr/shared";
 import { useQuery } from "@tanstack/react-query";
+import { bulkScoreKeys } from "../../lib/query-keys";
 
 interface BulkScoresResponse {
 	success: boolean;
@@ -46,7 +47,7 @@ async function fetchBulkScores(filters: BulkScoreFilters): Promise<BulkScoresRes
  */
 export function useBulkScores(filters: UseBulkScoresFilters) {
 	return useQuery<BulkScoresResponse>({
-		queryKey: ["bulk-scores", filters],
+		queryKey: bulkScoreKeys.list(filters),
 		queryFn: () =>
 			fetchBulkScores({
 				instanceId: filters.instanceId,

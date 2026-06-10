@@ -52,7 +52,7 @@ import {
 	updateLibrarySyncSettings,
 } from "../../lib/api-client/library";
 import { POLLING_BACKGROUND, POLLING_STANDARD } from "../../lib/polling-intervals";
-import { QUEUE_QUERY_KEY } from "../../lib/query-keys";
+import { discoverKeys, libraryKeys, QUEUE_QUERY_KEY } from "../../lib/query-keys";
 
 // ============================================================================
 // Library Query Hook (with pagination, search, filters)
@@ -66,7 +66,7 @@ export const useLibraryQuery = (options: UseLibraryQueryOptions = {}) => {
 	const { enabled, ...queryParams } = options;
 
 	return useQuery<PaginatedLibraryResponse>({
-		queryKey: ["library", queryParams],
+		queryKey: libraryKeys.list(queryParams),
 		queryFn: () => fetchLibrary(queryParams),
 		enabled: enabled ?? true,
 		staleTime: 60 * 1000,
@@ -81,7 +81,7 @@ export const useLibraryQuery = (options: UseLibraryQueryOptions = {}) => {
 
 export const useLibrarySyncStatus = (options: { enabled?: boolean } = {}) =>
 	useQuery<LibrarySyncStatusResponse>({
-		queryKey: ["library", "sync", "status"],
+		queryKey: libraryKeys.syncStatus,
 		queryFn: fetchLibrarySyncStatus,
 		enabled: options.enabled ?? true,
 		staleTime: 30 * 1000,
@@ -93,10 +93,10 @@ export const useTriggerLibrarySyncMutation = () => {
 	return useMutation<{ success: boolean; message: string; instanceId: string }, unknown, string>({
 		mutationFn: triggerLibrarySync,
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["library", "sync", "status"] });
+			void queryClient.invalidateQueries({ queryKey: libraryKeys.syncStatus });
 			// Invalidate library queries after a short delay to allow sync to start
 			setTimeout(() => {
-				void queryClient.invalidateQueries({ queryKey: ["library"] });
+				void queryClient.invalidateQueries({ queryKey: libraryKeys.all });
 			}, 2000);
 		},
 	});
@@ -111,7 +111,7 @@ export const useUpdateLibrarySyncSettingsMutation = () => {
 	>({
 		mutationFn: ({ instanceId, settings }) => updateLibrarySyncSettings(instanceId, settings),
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["library", "sync", "status"] });
+			void queryClient.invalidateQueries({ queryKey: libraryKeys.syncStatus });
 		},
 	});
 };
@@ -125,8 +125,8 @@ export const useLibraryMonitorMutation = () => {
 	return useMutation<void, unknown, LibraryToggleMonitorRequest>({
 		mutationFn: toggleLibraryMonitoring,
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["library"] });
-			void queryClient.invalidateQueries({ queryKey: ["discover", "search"] });
+			void queryClient.invalidateQueries({ queryKey: libraryKeys.all });
+			void queryClient.invalidateQueries({ queryKey: discoverKeys.searchAll });
 		},
 	});
 };
@@ -136,7 +136,7 @@ export const useLibrarySeasonSearchMutation = () => {
 	return useMutation<void, unknown, LibrarySeasonSearchRequest>({
 		mutationFn: searchLibrarySeason,
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["library"] });
+			void queryClient.invalidateQueries({ queryKey: libraryKeys.all });
 			void queryClient.invalidateQueries({ queryKey: QUEUE_QUERY_KEY });
 		},
 	});
@@ -147,7 +147,7 @@ export const useLibraryMovieSearchMutation = () => {
 	return useMutation<void, unknown, LibraryMovieSearchRequest>({
 		mutationFn: searchLibraryMovie,
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["library"] });
+			void queryClient.invalidateQueries({ queryKey: libraryKeys.all });
 			void queryClient.invalidateQueries({ queryKey: QUEUE_QUERY_KEY });
 		},
 	});
@@ -158,7 +158,7 @@ export const useLibrarySeriesSearchMutation = () => {
 	return useMutation<void, unknown, LibrarySeriesSearchRequest>({
 		mutationFn: searchLibrarySeries,
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["library"] });
+			void queryClient.invalidateQueries({ queryKey: libraryKeys.all });
 			void queryClient.invalidateQueries({ queryKey: QUEUE_QUERY_KEY });
 		},
 	});
@@ -227,8 +227,8 @@ export const useLibraryEpisodeSearchMutation = () => {
 	return useMutation<void, unknown, LibraryEpisodeSearchRequest>({
 		mutationFn: searchLibraryEpisode,
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["library"] });
-			void queryClient.invalidateQueries({ queryKey: ["library", "episodes"] });
+			void queryClient.invalidateQueries({ queryKey: libraryKeys.all });
+			void queryClient.invalidateQueries({ queryKey: libraryKeys.episodesAll });
 			void queryClient.invalidateQueries({ queryKey: QUEUE_QUERY_KEY });
 		},
 	});
@@ -239,8 +239,8 @@ export const useLibraryEpisodeMonitorMutation = () => {
 	return useMutation<void, unknown, LibraryEpisodeMonitorRequest>({
 		mutationFn: toggleEpisodeMonitoring,
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["library"] });
-			void queryClient.invalidateQueries({ queryKey: ["library", "episodes"] });
+			void queryClient.invalidateQueries({ queryKey: libraryKeys.all });
+			void queryClient.invalidateQueries({ queryKey: libraryKeys.episodesAll });
 		},
 	});
 };
@@ -252,7 +252,7 @@ export const useLibraryEpisodeMonitorMutation = () => {
 export const useAlbumsQuery = (options: FetchAlbumsParams & { enabled?: boolean }) => {
 	const { enabled, ...params } = options;
 	return useQuery<LibraryAlbumsResponse>({
-		queryKey: ["library", "albums", { instanceId: params.instanceId, artistId: params.artistId }],
+		queryKey: libraryKeys.albums(params.instanceId, params.artistId),
 		queryFn: () => fetchAlbums(params),
 		enabled: enabled ?? true,
 		staleTime: 60 * 1000,
@@ -264,7 +264,7 @@ export const useLibraryArtistSearchMutation = () => {
 	return useMutation<void, unknown, LibraryArtistSearchRequest>({
 		mutationFn: searchLibraryArtist,
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["library"] });
+			void queryClient.invalidateQueries({ queryKey: libraryKeys.all });
 			void queryClient.invalidateQueries({ queryKey: QUEUE_QUERY_KEY });
 		},
 	});
@@ -275,8 +275,8 @@ export const useLibraryAlbumSearchMutation = () => {
 	return useMutation<void, unknown, LibraryAlbumSearchRequest>({
 		mutationFn: searchLibraryAlbum,
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["library"] });
-			void queryClient.invalidateQueries({ queryKey: ["library", "albums"] });
+			void queryClient.invalidateQueries({ queryKey: libraryKeys.all });
+			void queryClient.invalidateQueries({ queryKey: libraryKeys.albumsAll });
 			void queryClient.invalidateQueries({ queryKey: QUEUE_QUERY_KEY });
 		},
 	});
@@ -287,8 +287,8 @@ export const useLibraryAlbumMonitorMutation = () => {
 	return useMutation<void, unknown, LibraryAlbumMonitorRequest>({
 		mutationFn: toggleAlbumMonitoring,
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["library"] });
-			void queryClient.invalidateQueries({ queryKey: ["library", "albums"] });
+			void queryClient.invalidateQueries({ queryKey: libraryKeys.all });
+			void queryClient.invalidateQueries({ queryKey: libraryKeys.albumsAll });
 		},
 	});
 };
@@ -300,7 +300,7 @@ export const useLibraryAlbumMonitorMutation = () => {
 export const useTracksQuery = (options: FetchTracksParams & { enabled?: boolean }) => {
 	const { enabled, ...params } = options;
 	return useQuery<LibraryTracksResponse>({
-		queryKey: ["library", "tracks", { instanceId: params.instanceId, albumId: params.albumId }],
+		queryKey: libraryKeys.tracks(params.instanceId, params.albumId),
 		queryFn: () => fetchTracks(params),
 		enabled: enabled ?? true,
 		staleTime: 60 * 1000,
@@ -314,7 +314,7 @@ export const useTracksQuery = (options: FetchTracksParams & { enabled?: boolean 
 export const useBooksQuery = (options: FetchBooksParams & { enabled?: boolean }) => {
 	const { enabled, ...params } = options;
 	return useQuery<LibraryBooksResponse>({
-		queryKey: ["library", "books", { instanceId: params.instanceId, authorId: params.authorId }],
+		queryKey: libraryKeys.books(params.instanceId, params.authorId),
 		queryFn: () => fetchBooks(params),
 		enabled: enabled ?? true,
 		staleTime: 60 * 1000,
@@ -326,7 +326,7 @@ export const useLibraryAuthorSearchMutation = () => {
 	return useMutation<void, unknown, LibraryAuthorSearchRequest>({
 		mutationFn: searchLibraryAuthor,
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["library"] });
+			void queryClient.invalidateQueries({ queryKey: libraryKeys.all });
 			void queryClient.invalidateQueries({ queryKey: QUEUE_QUERY_KEY });
 		},
 	});
@@ -337,8 +337,8 @@ export const useLibraryBookSearchMutation = () => {
 	return useMutation<void, unknown, LibraryBookSearchRequest>({
 		mutationFn: searchLibraryBook,
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["library"] });
-			void queryClient.invalidateQueries({ queryKey: ["library", "books"] });
+			void queryClient.invalidateQueries({ queryKey: libraryKeys.all });
+			void queryClient.invalidateQueries({ queryKey: libraryKeys.booksAll });
 			void queryClient.invalidateQueries({ queryKey: QUEUE_QUERY_KEY });
 		},
 	});
@@ -349,8 +349,8 @@ export const useLibraryBookMonitorMutation = () => {
 	return useMutation<void, unknown, LibraryBookMonitorRequest>({
 		mutationFn: toggleBookMonitoring,
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["library"] });
-			void queryClient.invalidateQueries({ queryKey: ["library", "books"] });
+			void queryClient.invalidateQueries({ queryKey: libraryKeys.all });
+			void queryClient.invalidateQueries({ queryKey: libraryKeys.booksAll });
 		},
 	});
 };

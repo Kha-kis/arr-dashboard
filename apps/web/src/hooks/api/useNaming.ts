@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { namingKeys } from "../../lib/query-keys";
 import type {
 	NamingApplyApiResponse,
 	NamingApplyPayload,
@@ -29,9 +30,7 @@ import {
 // Query Keys
 // ============================================================================
 
-export const NAMING_PRESETS_KEY = ["naming-presets"] as const;
-export const NAMING_CONFIG_KEY = ["naming-config"] as const;
-export const NAMING_HISTORY_KEY = ["naming-history"] as const;
+
 
 // ============================================================================
 // Query Hooks
@@ -43,7 +42,7 @@ export const NAMING_HISTORY_KEY = ["naming-history"] as const;
  */
 export const useNamingPresets = (serviceType: "RADARR" | "SONARR", enabled = true) =>
 	useQuery<NamingPresetsApiResponse>({
-		queryKey: [...NAMING_PRESETS_KEY, serviceType],
+		queryKey: [...namingKeys.presets, serviceType],
 		queryFn: () => fetchNamingPresets(serviceType),
 		enabled,
 		staleTime: 10 * 60 * 1000, // 10 minutes — presets from TRaSH cache
@@ -54,7 +53,7 @@ export const useNamingPresets = (serviceType: "RADARR" | "SONARR", enabled = tru
  */
 export const useNamingConfig = (instanceId: string | undefined, enabled = true) =>
 	useQuery<NamingConfigApiResponse>({
-		queryKey: [...NAMING_CONFIG_KEY, instanceId],
+		queryKey: [...namingKeys.config, instanceId],
 		queryFn: () => fetchNamingConfig(instanceId!),
 		enabled: enabled && !!instanceId,
 		staleTime: 5 * 60 * 1000,
@@ -68,7 +67,7 @@ export const useNamingHistory = (
 	options?: { limit?: number; offset?: number },
 ) =>
 	useQuery<NamingHistoryApiResponse>({
-		queryKey: [...NAMING_HISTORY_KEY, instanceId, options?.offset ?? 0],
+		queryKey: [...namingKeys.history, instanceId, options?.offset ?? 0],
 		queryFn: () => fetchNamingHistory(instanceId!, options),
 		enabled: !!instanceId,
 		staleTime: 60_000,
@@ -99,10 +98,10 @@ export const useApplyNaming = () => {
 		mutationFn: (payload) => applyNaming(payload),
 		onSuccess: (_data, variables) => {
 			void queryClient.invalidateQueries({
-				queryKey: [...NAMING_CONFIG_KEY, variables.instanceId],
+				queryKey: [...namingKeys.config, variables.instanceId],
 			});
 			void queryClient.invalidateQueries({
-				queryKey: [...NAMING_HISTORY_KEY, variables.instanceId],
+				queryKey: [...namingKeys.history, variables.instanceId],
 			});
 		},
 	});
@@ -118,7 +117,7 @@ export const useSaveNamingConfig = () => {
 		mutationFn: (payload) => saveNamingConfig(payload),
 		onSuccess: (_data, variables) => {
 			void queryClient.invalidateQueries({
-				queryKey: [...NAMING_CONFIG_KEY, variables.instanceId],
+				queryKey: [...namingKeys.config, variables.instanceId],
 			});
 		},
 	});
@@ -134,7 +133,7 @@ export const useDeleteNamingConfig = () => {
 		mutationFn: (instanceId) => deleteNamingConfig(instanceId),
 		onSuccess: (_data, instanceId) => {
 			void queryClient.invalidateQueries({
-				queryKey: [...NAMING_CONFIG_KEY, instanceId],
+				queryKey: [...namingKeys.config, instanceId],
 			});
 		},
 	});
@@ -151,10 +150,10 @@ export const useRollbackNaming = () => {
 		mutationFn: ({ historyId }) => rollbackNaming(historyId),
 		onSuccess: (_data, variables) => {
 			void queryClient.invalidateQueries({
-				queryKey: [...NAMING_CONFIG_KEY, variables.instanceId],
+				queryKey: [...namingKeys.config, variables.instanceId],
 			});
 			void queryClient.invalidateQueries({
-				queryKey: [...NAMING_HISTORY_KEY, variables.instanceId],
+				queryKey: [...namingKeys.history, variables.instanceId],
 			});
 		},
 	});

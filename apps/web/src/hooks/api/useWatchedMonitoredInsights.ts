@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { libraryKeys } from "../../lib/query-keys";
 import { apiRequest } from "../../lib/api-client/base";
 
 export interface WatchedMonitoredItem {
@@ -37,7 +38,7 @@ export function useWatchedMonitoredInsights(params?: {
 	enabled?: boolean;
 }) {
 	return useQuery<WatchedMonitoredResponse>({
-		queryKey: ["library", "insights", "watched-monitored", params],
+		queryKey: libraryKeys.insights.watchedMonitored(params),
 		queryFn: () => fetchWatchedMonitored({ limit: params?.limit }),
 		enabled: params?.enabled ?? true,
 		staleTime: 5 * 60 * 1000,

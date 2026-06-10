@@ -21,14 +21,14 @@ import {
 	updateQualityProfileTemplate,
 	validateClonedCFs,
 } from "../../lib/api-client/trash-guides";
-import { TEMPLATES_QUERY_KEY } from "./useTemplates";
+import { qualityProfileKeys, TEMPLATES_QUERY_KEY } from "../../lib/query-keys";
 
 /**
  * Hook to fetch TRaSH Guides quality profiles for a service
  */
 export const useQualityProfiles = (serviceType: "RADARR" | "SONARR") =>
 	useQuery<QualityProfilesResponse>({
-		queryKey: ["quality-profiles", serviceType],
+		queryKey: qualityProfileKeys.list(serviceType),
 		queryFn: () => fetchQualityProfiles(serviceType),
 		staleTime: 10 * 60 * 1000, // 10 minutes
 	});
@@ -42,7 +42,7 @@ export const useQualityProfileDetails = (
 	enabled = true,
 ) =>
 	useQuery({
-		queryKey: ["quality-profile-details", serviceType, trashId],
+		queryKey: qualityProfileKeys.details(serviceType, trashId),
 		queryFn: () => fetchQualityProfileDetails(serviceType, trashId),
 		enabled: enabled && !!trashId,
 		staleTime: 10 * 60 * 1000, // 10 minutes
@@ -116,7 +116,7 @@ export const useClonedCFValidation = (
 	enabled = true,
 ) =>
 	useQuery<CFValidationResponse>({
-		queryKey: ["cf-validation", instanceId, profileId, serviceType],
+		queryKey: qualityProfileKeys.cfValidation(instanceId, profileId, serviceType),
 		queryFn: () => validateClonedCFs({ instanceId, profileId, serviceType }),
 		enabled: enabled && !!instanceId && !!profileId,
 		staleTime: 5 * 60 * 1000, // 5 minutes
@@ -142,7 +142,7 @@ export const useProfileMatch = (
 	enabled = true,
 ) =>
 	useQuery<ProfileMatchResult>({
-		queryKey: ["profile-match", profileName, serviceType],
+		queryKey: qualityProfileKeys.profileMatch(profileName, serviceType),
 		queryFn: () => matchProfileToTrash({ profileName, serviceType }),
 		enabled: enabled && !!profileName && !!serviceType,
 		staleTime: 30 * 1000, // 30 seconds - short to pick up TRaSH cache updates

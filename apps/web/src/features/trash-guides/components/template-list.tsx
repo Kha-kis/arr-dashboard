@@ -19,11 +19,11 @@ import { useUnlinkTemplateFromInstance } from "../../../hooks/api/useDeploymentP
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useExecuteSync } from "../../../hooks/api/useSync";
 import {
-	TEMPLATES_QUERY_KEY,
 	useDeleteTemplate,
 	useDuplicateTemplate,
 	useTemplates,
 } from "../../../hooks/api/useTemplates";
+import { TEMPLATES_QUERY_KEY } from "../../../lib/query-keys";
 import { useTemplateUpdates } from "../../../hooks/api/useTemplateUpdates";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";

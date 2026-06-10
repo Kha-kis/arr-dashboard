@@ -2,6 +2,7 @@
 
 import type { ServiceInstanceSummary } from "@arr/shared";
 import { useQuery } from "@tanstack/react-query";
+import { serviceKeys } from "../../lib/query-keys";
 import { fetchServices } from "../../lib/api-client/services";
 
 interface ServicesQueryOptions {
@@ -10,7 +11,7 @@ interface ServicesQueryOptions {
 
 export const useServicesQuery = (options: ServicesQueryOptions = {}) =>
 	useQuery<ServiceInstanceSummary[]>({
-		queryKey: ["services"],
+		queryKey: serviceKeys.all,
 		queryFn: fetchServices,
 		staleTime: 30 * 1000, // 30 seconds - services don't change frequently
 		enabled: options.enabled ?? true,

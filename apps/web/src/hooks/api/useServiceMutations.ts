@@ -2,6 +2,7 @@
 
 import type { ServiceInstanceSummary } from "@arr/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { libraryCleanupKeys, serviceKeys } from "../../lib/query-keys";
 import {
 	type CreateServicePayload,
 	createService,
@@ -10,8 +11,6 @@ import {
 	updateService,
 } from "../../lib/api-client/services";
 
-const SERVICES_QUERY_KEY = ["services"] as const;
-const FIELD_OPTIONS_KEY = ["library-cleanup-field-options"] as const;
 
 type UpdateVariables = {
 	id: string;
@@ -28,8 +27,8 @@ export const useCreateServiceMutation = () => {
 	return useMutation<ServiceInstanceSummary, Error, CreateVariables>({
 		mutationFn: createService,
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: SERVICES_QUERY_KEY });
-			queryClient.invalidateQueries({ queryKey: FIELD_OPTIONS_KEY });
+			queryClient.invalidateQueries({ queryKey: serviceKeys.all });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.fieldOptions });
 		},
 	});
 };
@@ -40,7 +39,7 @@ export const useUpdateServiceMutation = () => {
 	return useMutation<ServiceInstanceSummary, Error, UpdateVariables>({
 		mutationFn: ({ id, payload }) => updateService(id, payload),
 		onSuccess: (updated) => {
-			queryClient.setQueryData<ServiceInstanceSummary[]>(SERVICES_QUERY_KEY, (prev) => {
+			queryClient.setQueryData<ServiceInstanceSummary[]>(serviceKeys.all, (prev) => {
 				if (!prev) {
 					return prev;
 				}
@@ -54,7 +53,7 @@ export const useUpdateServiceMutation = () => {
 					return service;
 				});
 			});
-			queryClient.invalidateQueries({ queryKey: FIELD_OPTIONS_KEY });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.fieldOptions });
 		},
 	});
 };
@@ -65,13 +64,13 @@ export const useDeleteServiceMutation = () => {
 	return useMutation<void, Error, DeleteVariables>({
 		mutationFn: removeService,
 		onSuccess: (_, id) => {
-			queryClient.setQueryData<ServiceInstanceSummary[]>(SERVICES_QUERY_KEY, (prev) => {
+			queryClient.setQueryData<ServiceInstanceSummary[]>(serviceKeys.all, (prev) => {
 				if (!prev) {
 					return prev;
 				}
 				return prev.filter((service) => service.id !== id);
 			});
-			queryClient.invalidateQueries({ queryKey: FIELD_OPTIONS_KEY });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.fieldOptions });
 		},
 	});
 };

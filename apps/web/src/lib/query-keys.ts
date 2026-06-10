@@ -53,12 +53,28 @@ export const libraryKeys = {
 	filtering: ["library", "all-for-filtering"] as const,
 	syncStatus: ["library", "sync", "status"] as const,
 	episodes: (params: Record<string, unknown>) => ["library", "episodes", params] as const,
-	albums: (instanceId: string, artistId: number) =>
+	albums: (instanceId: string, artistId: string | number) =>
 		["library", "albums", { instanceId, artistId }] as const,
-	tracks: (instanceId: string, albumId: number) =>
+	tracks: (instanceId: string, albumId: string | number) =>
 		["library", "tracks", { instanceId, albumId }] as const,
-	books: (instanceId: string, authorId: number) =>
+	books: (instanceId: string, authorId: string | number) =>
 		["library", "books", { instanceId, authorId }] as const,
+	// Prefix statics for invalidation — NOT the parameterized factories
+	// called short (that would append a trailing `undefined` slot and
+	// silently break React Query's partial matching).
+	episodesAll: ["library", "episodes"] as const,
+	albumsAll: ["library", "albums"] as const,
+	booksAll: ["library", "books"] as const,
+	insights: {
+		// `object | undefined` (not Record) — consumers pass typed param
+		// objects without index signatures, and some pass undefined; the
+		// produced arrays stay byte-identical to the old literals.
+		diskWaste: (params?: object) => ["library", "insights", "disk-waste", params] as const,
+		requestedUnwatched: (params?: object) =>
+			["library", "insights", "requested-unwatched", params] as const,
+		watchedMonitored: (params?: object) =>
+			["library", "insights", "watched-monitored", params] as const,
+	},
 };
 
 /* -------------------------------------------------------------------------- */
@@ -71,9 +87,10 @@ export const trashGuidesKeys = {
 	// Templates
 	templates: {
 		all: ["trash-guides", "templates"] as const,
-		list: (params: Record<string, unknown>) => ["trash-guides", "templates", params] as const,
-		detail: (templateId: string) => ["trash-guides", "template", templateId] as const,
-		stats: (templateId: string) => ["template-stats", templateId] as const,
+		list: (params?: object) => ["trash-guides", "templates", params] as const,
+		detail: (templateId: string | null) => ["trash-guides", "template", templateId] as const,
+		stats: (templateId: string | null) => ["template-stats", templateId] as const,
+		statsAll: ["template-stats"] as const,
 	},
 
 	// Updates
@@ -87,7 +104,7 @@ export const trashGuidesKeys = {
 	},
 
 	// Instance overrides
-	instanceOverrides: (templateId: string, instanceId: string) =>
+	instanceOverrides: (templateId: string | null, instanceId: string | null) =>
 		["trash-guides", "instance-overrides", templateId, instanceId] as const,
 
 	// Deployment
@@ -95,6 +112,20 @@ export const trashGuidesKeys = {
 		all: ["trash-guides", "deployment"] as const,
 		preview: (templateId: string, instanceId: string) =>
 			["trash-guides", "deployment", "preview", templateId, instanceId] as const,
+		previewAll: ["trash-guides", "deployment", "preview"] as const,
+	},
+
+	// Per-service prefix used by useTrashCache invalidation. NOTE: this
+	// prefix-matches nothing in this file's standard keys (they nest as
+	// ["trash-guides","<group>",...]) — preserved byte-identically by the
+	// B1 sweep; whether it should target a real group is a follow-up.
+	byService: (serviceType: string) => ["trash-guides", serviceType] as const,
+
+	// Template-creation wizard caches
+	wizard: {
+		cfGroupsCache: (serviceType: string) => ["cf-groups-cache", serviceType] as const,
+		sourceProfileData: (serviceType: string, trashId: string | undefined) =>
+			["source-profile-data", serviceType, trashId] as const,
 	},
 
 	// Schedules
@@ -133,12 +164,12 @@ export const qualityProfileKeys = {
 		["quality-profile-details", serviceType, trashId] as const,
 	overrides: (instanceId: string, qualityProfileId: number) =>
 		["quality-profile-overrides", instanceId, qualityProfileId] as const,
-	cfValidation: (instanceId: string, profileId: string, serviceType: string) =>
+	cfValidation: (instanceId: string, profileId: string | number, serviceType: string) =>
 		["cf-validation", instanceId, profileId, serviceType] as const,
 	profileMatch: (profileName: string, serviceType: string) =>
 		["profile-match", profileName, serviceType] as const,
 	clone: {
-		profiles: (instanceId: string) => ["profile-clone", "profiles", instanceId] as const,
+		profiles: (instanceId: string | null) => ["profile-clone", "profiles", instanceId] as const,
 	},
 };
 
@@ -166,6 +197,7 @@ export const syncKeys = {
 	progress: (syncId: string) => ["sync-progress", syncId] as const,
 	history: (instanceId: string, params?: Record<string, unknown>) =>
 		["sync-history", instanceId, params] as const,
+	historyAll: ["sync-history"] as const,
 	detail: (syncId: string) => ["sync-detail", syncId] as const,
 };
 
@@ -202,7 +234,7 @@ export const customFormatKeys = {
 
 export const bulkScoreKeys = {
 	all: ["bulk-scores"] as const,
-	list: (filters: Record<string, unknown>) => ["bulk-scores", filters] as const,
+	list: (filters: object) => ["bulk-scores", filters] as const,
 };
 
 /* -------------------------------------------------------------------------- */
@@ -234,6 +266,7 @@ export const tmdbKeys = {
 export const discoverKeys = {
 	all: ["discover"] as const,
 	search: (query: string, type: string) => ["discover", "search", { query, type }] as const,
+	searchAll: ["discover", "search"] as const,
 	options: (instanceId: string, type: string) =>
 		["discover", "options", { instanceId, type }] as const,
 	testOptions: (request: Record<string, unknown>) => ["discover", "test-options", request] as const,
@@ -250,7 +283,7 @@ export const discoverKeys = {
 export const searchKeys = {
 	all: ["search"] as const,
 	indexers: ["search", "indexers"] as const,
-	indexerDetails: (instanceId: string, indexerId: number) =>
+	indexerDetails: (instanceId: string | null, indexerId: number | null) =>
 		["search", "indexers", "details", instanceId, indexerId] as const,
 };
 
@@ -356,20 +389,26 @@ export const seerrKeys = {
 	all: ["seerr"] as const,
 	requests: (instanceId: string, params?: object) =>
 		["seerr", "requests", instanceId, params] as const,
+	// Invalidation prefixes — see libraryKeys note on trailing-undefined.
+	requestsAll: (instanceId: string) => ["seerr", "requests", instanceId] as const,
 	request: (instanceId: string, requestId: number) =>
 		["seerr", "request", instanceId, requestId] as const,
 	requestCount: (instanceId: string) => ["seerr", "request-count", instanceId] as const,
 	attention: (instanceId: string) => ["seerr", "attention", instanceId] as const,
 	users: (instanceId: string, params?: object) => ["seerr", "users", instanceId, params] as const,
+	usersAll: (instanceId: string) => ["seerr", "users", instanceId] as const,
 	userQuota: (instanceId: string, userId: number) =>
 		["seerr", "user-quota", instanceId, userId] as const,
+	userQuotaAll: (instanceId: string) => ["seerr", "user-quota", instanceId] as const,
 	issues: (instanceId: string, params?: object) => ["seerr", "issues", instanceId, params] as const,
+	issuesAll: (instanceId: string) => ["seerr", "issues", instanceId] as const,
 	notifications: (instanceId: string) => ["seerr", "notifications", instanceId] as const,
 	status: (instanceId: string) => ["seerr", "status", instanceId] as const,
 	health: (instanceId: string) => ["seerr", "health", instanceId] as const,
 	audit: (instanceId: string) => ["seerr", "audit", instanceId] as const,
 	libraryEnrichment: (instanceId: string, tmdbIdKey: string) =>
 		["seerr", "library-enrichment", instanceId, tmdbIdKey] as const,
+	libraryEnrichmentAll: (instanceId: string) => ["seerr", "library-enrichment", instanceId] as const,
 	discover: {
 		all: ["seerr", "discover"] as const,
 		movies: (instanceId: string) => ["seerr", "discover", "movies", instanceId] as const,
@@ -427,10 +466,13 @@ export const libraryCleanupKeys = {
 	config: ["library-cleanup-config"] as const,
 	status: ["library-cleanup-status"] as const,
 	statistics: (days: number) => ["library-cleanup-statistics", days] as const,
+	statisticsAll: ["library-cleanup-statistics"] as const,
 	approvalQueue: (page: number, status?: string) =>
 		["library-cleanup-approvals", page, status] as const,
+	approvalsAll: ["library-cleanup-approvals"] as const,
 	logs: (page: number, filters?: Record<string, string>) =>
 		["library-cleanup-logs", page, filters] as const,
+	logsAll: ["library-cleanup-logs"] as const,
 };
 
 /* -------------------------------------------------------------------------- */
@@ -496,12 +538,27 @@ export const quiKeys = {
 	// when a cross-seed trigger or manual backfill changes correlation.
 	seriesTorrents: (arrInstanceId: string, arrItemId: number) =>
 		["qui", "series-torrents", arrInstanceId, arrItemId] as const,
+	seriesTorrentsAll: ["qui", "series-torrents"] as const,
 	// Per-movie aggregate — single cluster + tracker copies. Same wire shape
 	// as seriesTorrents but the data path queries Radarr/library_cache
 	// instead of episode_file_cache. Distinct key so invalidations don't
 	// collide and React Query can cache each independently.
 	movieTorrents: (arrInstanceId: string, arrItemId: number) =>
 		["qui", "movie-torrents", arrInstanceId, arrItemId] as const,
+	movieTorrentsAll: ["qui", "movie-torrents"] as const,
+	fileMediainfo: (
+		quiInstanceId: string | null,
+		qbitInstanceId: number | null,
+		hash: string | null,
+		fileIndex: number | null,
+	) =>
+		["qui", "file-mediainfo", quiInstanceId, qbitInstanceId, hash, fileIndex] as const,
+	categories: (quiInstanceId: string | null, qbitInstanceId: number | null) =>
+		["qui", "categories", quiInstanceId, qbitInstanceId] as const,
+	tags: (quiInstanceId: string | null, qbitInstanceId: number | null) =>
+		["qui", "tags", quiInstanceId, qbitInstanceId] as const,
+	capabilities: (quiInstanceId: string | null, qbitInstanceId: number | null) =>
+		["qui", "capabilities", quiInstanceId, qbitInstanceId] as const,
 	// qui's tracker-icon registry — single global key (one map per user,
 	// no parameters). Cached server-side for 1h; client also caches via
 	// the long staleTime on the hook.
@@ -555,6 +612,16 @@ export const quiKeys = {
 	// crossSeedDiscovery via React Query's prefix-match invalidation. Used
 	// after bulk mutations that can promote/demote cross-seed siblings.
 	crossSeed: ["qui", "cross-seed"] as const,
+};
+
+/* -------------------------------------------------------------------------- */
+/*  Naming (TRaSH naming presets/config)                                       */
+/* -------------------------------------------------------------------------- */
+
+export const namingKeys = {
+	presets: ["naming-presets"] as const,
+	config: ["naming-config"] as const,
+	history: ["naming-history"] as const,
 };
 
 /* -------------------------------------------------------------------------- */

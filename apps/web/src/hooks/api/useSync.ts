@@ -371,7 +371,7 @@ export function useRollbackSync() {
 				// Global invalidation when instanceId not available
 				// This may cause cross-instance refetches but ensures data consistency
 				queryClient.invalidateQueries({
-					queryKey: ["sync-history"],
+					queryKey: syncKeys.historyAll,
 				});
 			}
 		},

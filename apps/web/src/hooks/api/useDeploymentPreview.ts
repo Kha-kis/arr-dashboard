@@ -62,7 +62,7 @@ export function useExecuteDeployment() {
 				queryKey: TEMPLATES_QUERY_KEY,
 			});
 			queryClient.invalidateQueries({
-				queryKey: ["template-stats"] as const,
+				queryKey: trashGuidesKeys.templates.statsAll,
 			});
 		},
 	});
@@ -88,7 +88,7 @@ export function useExecuteBulkDeployment() {
 				queryKey: TEMPLATES_QUERY_KEY,
 			});
 			queryClient.invalidateQueries({
-				queryKey: ["template-stats"] as const,
+				queryKey: trashGuidesKeys.templates.statsAll,
 			});
 		},
 	});

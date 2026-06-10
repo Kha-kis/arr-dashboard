@@ -10,6 +10,7 @@
  */
 
 import { useState, useEffect, useMemo } from "react";
+import { trashGuidesKeys } from "../../../lib/query-keys";
 import { useQueryClient } from "@tanstack/react-query";
 import {
 	LegacyDialog,
@@ -676,7 +677,7 @@ export const BulkDeploymentModal = ({
 					onSaved={() => {
 						setEditingQualityOverride(null);
 						queryClient.invalidateQueries({
-							queryKey: ["trash-guides", "deployment", "preview"],
+							queryKey: trashGuidesKeys.deployment.previewAll,
 						});
 					}}
 				/>

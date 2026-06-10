@@ -121,7 +121,7 @@ export const useApproveSeerrRequest = () => {
 		mutationFn: ({ instanceId, requestId, overrides }) =>
 			approveSeerrRequest(instanceId, requestId, overrides),
 		onSuccess: (_, { instanceId }) => {
-			queryClient.invalidateQueries({ queryKey: ["seerr", "requests", instanceId] });
+			queryClient.invalidateQueries({ queryKey: seerrKeys.requestsAll(instanceId) });
 			queryClient.invalidateQueries({ queryKey: seerrKeys.requestCount(instanceId) });
 			queryClient.invalidateQueries({ queryKey: seerrKeys.attention(instanceId) });
 		},
@@ -133,7 +133,7 @@ export const useDeclineSeerrRequest = () => {
 	return useMutation<SeerrRequest, Error, { instanceId: string; requestId: number }>({
 		mutationFn: ({ instanceId, requestId }) => declineSeerrRequest(instanceId, requestId),
 		onSuccess: (_, { instanceId }) => {
-			queryClient.invalidateQueries({ queryKey: ["seerr", "requests", instanceId] });
+			queryClient.invalidateQueries({ queryKey: seerrKeys.requestsAll(instanceId) });
 			queryClient.invalidateQueries({ queryKey: seerrKeys.requestCount(instanceId) });
 			queryClient.invalidateQueries({ queryKey: seerrKeys.attention(instanceId) });
 		},
@@ -145,7 +145,7 @@ export const useDeleteSeerrRequest = () => {
 	return useMutation<void, Error, { instanceId: string; requestId: number }>({
 		mutationFn: ({ instanceId, requestId }) => deleteSeerrRequest(instanceId, requestId),
 		onSuccess: (_, { instanceId }) => {
-			queryClient.invalidateQueries({ queryKey: ["seerr", "requests", instanceId] });
+			queryClient.invalidateQueries({ queryKey: seerrKeys.requestsAll(instanceId) });
 			queryClient.invalidateQueries({ queryKey: seerrKeys.requestCount(instanceId) });
 			queryClient.invalidateQueries({ queryKey: seerrKeys.attention(instanceId) });
 		},
@@ -162,7 +162,7 @@ export const useBulkSeerrRequestAction = () => {
 		mutationFn: ({ instanceId, action, requestIds }) =>
 			bulkSeerrRequestAction(instanceId, action, requestIds),
 		onSuccess: (_, { instanceId }) => {
-			queryClient.invalidateQueries({ queryKey: ["seerr", "requests", instanceId] });
+			queryClient.invalidateQueries({ queryKey: seerrKeys.requestsAll(instanceId) });
 			queryClient.invalidateQueries({ queryKey: seerrKeys.requestCount(instanceId) });
 			queryClient.invalidateQueries({ queryKey: seerrKeys.attention(instanceId) });
 		},
@@ -174,7 +174,7 @@ export const useRetrySeerrRequest = () => {
 	return useMutation<SeerrRequest, Error, { instanceId: string; requestId: number }>({
 		mutationFn: ({ instanceId, requestId }) => retrySeerrRequest(instanceId, requestId),
 		onSuccess: (_, { instanceId }) => {
-			queryClient.invalidateQueries({ queryKey: ["seerr", "requests", instanceId] });
+			queryClient.invalidateQueries({ queryKey: seerrKeys.requestsAll(instanceId) });
 			queryClient.invalidateQueries({ queryKey: seerrKeys.requestCount(instanceId) });
 			queryClient.invalidateQueries({ queryKey: seerrKeys.attention(instanceId) });
 		},
@@ -211,8 +211,8 @@ export const useUpdateSeerrUser = () => {
 		mutationFn: ({ instanceId, seerrUserId, data }) =>
 			updateSeerrUser(instanceId, seerrUserId, data),
 		onSuccess: (_, { instanceId }) => {
-			queryClient.invalidateQueries({ queryKey: ["seerr", "users", instanceId] });
-			queryClient.invalidateQueries({ queryKey: ["seerr", "user-quota", instanceId] });
+			queryClient.invalidateQueries({ queryKey: seerrKeys.usersAll(instanceId) });
+			queryClient.invalidateQueries({ queryKey: seerrKeys.userQuotaAll(instanceId) });
 		},
 	});
 };
@@ -239,7 +239,7 @@ export const useAddSeerrIssueComment = () => {
 		mutationFn: ({ instanceId, issueId, message }) =>
 			addSeerrIssueComment(instanceId, issueId, message),
 		onSuccess: (_, { instanceId }) => {
-			queryClient.invalidateQueries({ queryKey: ["seerr", "issues", instanceId] });
+			queryClient.invalidateQueries({ queryKey: seerrKeys.issuesAll(instanceId) });
 		},
 	});
 };
@@ -254,7 +254,7 @@ export const useUpdateSeerrIssueStatus = () => {
 		mutationFn: ({ instanceId, issueId, status }) =>
 			updateSeerrIssueStatus(instanceId, issueId, status),
 		onSuccess: (_, { instanceId }) => {
-			queryClient.invalidateQueries({ queryKey: ["seerr", "issues", instanceId] });
+			queryClient.invalidateQueries({ queryKey: seerrKeys.issuesAll(instanceId) });
 		},
 	});
 };
@@ -326,8 +326,8 @@ export const useClearSeerrCache = () => {
 		mutationFn: ({ instanceId }) => clearSeerrCache(instanceId),
 		onSuccess: (_, { instanceId }) => {
 			// Invalidate discover queries so they refetch with fresh server-side cache
-			queryClient.invalidateQueries({ queryKey: ["seerr", "discover"] });
-			queryClient.invalidateQueries({ queryKey: ["seerr", "library-enrichment", instanceId] });
+			queryClient.invalidateQueries({ queryKey: seerrKeys.discover.all });
+			queryClient.invalidateQueries({ queryKey: seerrKeys.libraryEnrichmentAll(instanceId) });
 		},
 	});
 };
@@ -469,7 +469,7 @@ export const useCreateSeerrRequest = () => {
 		mutationFn: ({ instanceId, payload }) => createSeerrRequest(instanceId, payload),
 		onSuccess: (_, { instanceId }) => {
 			queryClient.invalidateQueries({ queryKey: seerrKeys.discover.all });
-			queryClient.invalidateQueries({ queryKey: ["seerr", "requests", instanceId] });
+			queryClient.invalidateQueries({ queryKey: seerrKeys.requestsAll(instanceId) });
 			queryClient.invalidateQueries({ queryKey: seerrKeys.requestCount(instanceId) });
 		},
 	});

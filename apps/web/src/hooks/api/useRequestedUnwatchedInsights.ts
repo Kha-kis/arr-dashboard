@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { libraryKeys } from "../../lib/query-keys";
 import { apiRequest } from "../../lib/api-client/base";
 
 export interface RequestedUnwatchedItem {
@@ -41,7 +42,7 @@ export function useRequestedUnwatchedInsights(params?: {
 	enabled?: boolean;
 }) {
 	return useQuery<RequestedUnwatchedResponse>({
-		queryKey: ["library", "insights", "requested-unwatched", params],
+		queryKey: libraryKeys.insights.requestedUnwatched(params),
 		queryFn: () =>
 			fetchRequestedUnwatched({
 				minAgeDays: params?.minAgeDays,

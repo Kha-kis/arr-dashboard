@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { libraryKeys } from "../../lib/query-keys";
 import { apiRequest } from "../../lib/api-client/base";
 
 export interface DiskWasteItem {
@@ -44,7 +45,7 @@ export function useDiskWasteInsights(params?: {
 	enabled?: boolean;
 }) {
 	return useQuery<DiskWasteResponse>({
-		queryKey: ["library", "insights", "disk-waste", params],
+		queryKey: libraryKeys.insights.diskWaste(params),
 		queryFn: () =>
 			fetchDiskWaste({
 				minSizeGb: params?.minSizeGb,
