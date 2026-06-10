@@ -8,7 +8,7 @@
 import type { PlexAccountsResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { executeOnPlexInstances } from "../../lib/plex/plex-helpers.js";
-import { deduplicateAccounts } from "./lib/account-helpers.js";
+import { deduplicateAccounts } from "../../lib/media-stats/account-helpers.js";
 
 export async function registerAccountRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	/**

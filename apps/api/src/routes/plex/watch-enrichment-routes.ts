@@ -9,7 +9,7 @@ import type { WatchEnrichmentResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { validateRequest } from "../../lib/utils/validate.js";
-import { aggregateWatchEnrichment } from "./lib/watch-enrichment-helpers.js";
+import { aggregateWatchEnrichment } from "../../lib/media-stats/watch-enrichment-helpers.js";
 
 const enrichmentQuery = z.object({
 	tmdbIds: z.string().min(1),

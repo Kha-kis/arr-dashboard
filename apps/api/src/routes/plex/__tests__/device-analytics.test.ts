@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	aggregateDeviceAnalytics,
 	type SnapshotForDevice,
-} from "../lib/device-analytics-helpers.js";
+} from "../../../lib/media-stats/device-analytics-helpers.js";
 
 function snapshot(sessions: Array<Record<string, unknown>>): SnapshotForDevice {
 	return { sessionsJson: JSON.stringify(sessions) };

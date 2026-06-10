@@ -10,22 +10,22 @@ import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { analyticsQuery } from "../plex/analytics-schemas.js";
-import { aggregateBandwidthAnalytics } from "../plex/lib/bandwidth-analytics-helpers.js";
-import { aggregateCodecAnalytics } from "../plex/lib/codec-analytics-helpers.js";
-import { aggregateDeviceAnalytics } from "../plex/lib/device-analytics-helpers.js";
-import { computeForecast } from "../plex/lib/forecast-helpers.js";
-import { aggregateMostConcurrent } from "../plex/lib/most-concurrent-helpers.js";
-import { aggregatePlaysByDate } from "../plex/lib/plays-by-date-helpers.js";
-import { computeQualityScore } from "../plex/lib/quality-score-helpers.js";
+import { aggregateBandwidthAnalytics } from "../../lib/media-stats/bandwidth-analytics-helpers.js";
+import { aggregateCodecAnalytics } from "../../lib/media-stats/codec-analytics-helpers.js";
+import { aggregateDeviceAnalytics } from "../../lib/media-stats/device-analytics-helpers.js";
+import { computeForecast } from "../../lib/media-stats/forecast-helpers.js";
+import { aggregateMostConcurrent } from "../../lib/media-stats/most-concurrent-helpers.js";
+import { aggregatePlaysByDate } from "../../lib/media-stats/plays-by-date-helpers.js";
+import { computeQualityScore } from "../../lib/media-stats/quality-score-helpers.js";
 import {
 	aggregateLastWatched,
 	aggregatePopularMedia,
 	aggregateTopMedia,
-} from "../plex/lib/top-media-helpers.js";
-import { aggregateTranscodeAnalytics } from "../plex/lib/transcode-analytics-helpers.js";
-import { aggregateUserAnalytics } from "../plex/lib/user-analytics-helpers.js";
-import { aggregateUserEpisodeCompletion } from "../plex/lib/user-episode-helpers.js";
-import { deduplicateWatchEvents } from "../plex/lib/watch-history-helpers.js";
+} from "../../lib/media-stats/top-media-helpers.js";
+import { aggregateTranscodeAnalytics } from "../../lib/media-stats/transcode-analytics-helpers.js";
+import { aggregateUserAnalytics } from "../../lib/media-stats/user-analytics-helpers.js";
+import { aggregateUserEpisodeCompletion } from "../../lib/media-stats/user-episode-helpers.js";
+import { deduplicateWatchEvents } from "../../lib/media-stats/watch-history-helpers.js";
 
 const watchHistoryQuery = z.object({
 	days: z

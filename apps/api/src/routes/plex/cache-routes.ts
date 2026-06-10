@@ -12,7 +12,7 @@ import { requirePlexClient } from "../../lib/plex/plex-helpers.js";
 import { refreshPlexCache } from "../../lib/plex/plex-cache-refresher.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
-import { buildCacheHealthItems } from "./lib/cache-health-helpers.js";
+import { buildCacheHealthItems } from "../../lib/media-stats/cache-health-helpers.js";
 
 const instanceParams = z.object({
 	instanceId: z.string().min(1),

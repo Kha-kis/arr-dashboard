@@ -8,7 +8,7 @@ import type { CodecAnalytics } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { analyticsQuery } from "./analytics-schemas.js";
-import { aggregateCodecAnalytics } from "./lib/codec-analytics-helpers.js";
+import { aggregateCodecAnalytics } from "../../lib/media-stats/codec-analytics-helpers.js";
 
 export async function registerCodecAnalyticsRoutes(
 	app: FastifyInstance,

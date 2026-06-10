@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aggregateCodecAnalytics, type SnapshotForCodec } from "../lib/codec-analytics-helpers.js";
+import { aggregateCodecAnalytics, type SnapshotForCodec } from "../../../lib/media-stats/codec-analytics-helpers.js";
 
 function snapshot(sessions: Array<Record<string, unknown>>): SnapshotForCodec {
 	return { sessionsJson: JSON.stringify(sessions) };

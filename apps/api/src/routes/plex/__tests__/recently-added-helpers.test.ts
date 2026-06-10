@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { mapToRecentlyAddedItems, type PlexCacheRecentEntry } from "../lib/recently-added-helpers.js";
+import { mapToRecentlyAddedItems, type PlexCacheRecentEntry } from "../../../lib/media-stats/recently-added-helpers.js";
 
 describe("mapToRecentlyAddedItems", () => {
 	it("maps cache entries to correct response shape", () => {
