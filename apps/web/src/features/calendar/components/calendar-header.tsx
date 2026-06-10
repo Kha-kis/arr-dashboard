@@ -1,11 +1,16 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, Dot, RefreshCw } from "lucide-react";
+import { DataFreshness } from "../../../components/layout";
+import { POLLING_STANDARD } from "../../../lib/polling-intervals";
 import { useRefreshState } from "../../../hooks/useRefreshState";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { formatMonthLabel } from "../lib/calendar-formatters";
 
 interface CalendarHeaderProps {
+	dataUpdatedAt?: number;
+	isFetching?: boolean;
+	isError?: boolean;
 	monthStart: Date;
 	isLoading: boolean;
 	onPreviousMonth: () => void;
@@ -15,6 +20,9 @@ interface CalendarHeaderProps {
 }
 
 export const CalendarHeader = ({
+	dataUpdatedAt,
+	isFetching,
+	isError,
 	monthStart,
 	isLoading,
 	onPreviousMonth,
@@ -88,7 +96,14 @@ export const CalendarHeader = ({
 				</div>
 
 				{/* Right: Actions */}
-				<div className="flex items-center gap-1">
+				<div className="flex items-center gap-3">
+					{/* Calendar feed freshness (single polled query drives the grid) */}
+					<DataFreshness
+						dataUpdatedAt={dataUpdatedAt}
+						isFetching={isFetching}
+						isError={isError}
+						pollIntervalMs={POLLING_STANDARD}
+					/>
 					<button
 						type="button"
 						onClick={onGoToday}
