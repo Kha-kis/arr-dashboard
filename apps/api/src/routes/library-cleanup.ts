@@ -8,6 +8,7 @@ import {
 	bulkApprovalSchema,
 	cleanupExplainRequestSchema,
 	createCleanupRuleSchema,
+	isKindLegalForContext,
 	reorderRulesSchema,
 	ruleParamSchemaMap,
 	updateCleanupConfigSchema,
@@ -20,7 +21,7 @@ import {
 	executeCleanupPreview,
 	executeCleanupRun,
 } from "../lib/library-cleanup/cleanup-executor.js";
-import { explainItemAgainstRules } from "../lib/library-cleanup/rule-evaluators.js";
+import { explainItemAgainstRulesViaEngine } from "../lib/rules/cleanup-adapter.js";
 import type { CacheItemForEval } from "../lib/library-cleanup/types.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { safeJsonParse as utilSafeJsonParse } from "../lib/utils/json.js";
@@ -1059,7 +1060,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			config.rules,
 		);
 
-		const results = explainItemAgainstRules(
+		const results = explainItemAgainstRulesViaEngine(
 			cacheItem as unknown as CacheItemForEval,
 			config.rules,
 			instance.service,
@@ -1223,6 +1224,13 @@ function validateRuleParameters(
 	if (ruleType === "composite" && conditions) {
 		for (let i = 0; i < conditions.length; i++) {
 			const cond = conditions[i]!;
+			// Tier-1 strict kind legality (unified-rule-grammar §2.2): new
+			// writes cannot author retired/unknown kinds. Stored legacy rows
+			// are unaffected — this runs only when the payload carries
+			// ruleType/parameters/conditions.
+			if (!isKindLegalForContext("library-cleanup", cond.ruleType)) {
+				return `Unknown rule type for condition[${i}]: "${cond.ruleType}"`;
+			}
 			const schema = ruleParamSchemaMap[cond.ruleType];
 			if (schema) {
 				const result = schema.safeParse(cond.parameters);
@@ -1237,7 +1245,11 @@ function validateRuleParameters(
 		return null;
 	}
 
-	// For single rules, validate top-level parameters
+	// For single rules, validate top-level parameters (tier-1 strict
+	// kind legality — see composite branch note)
+	if (!isKindLegalForContext("library-cleanup", ruleType)) {
+		return `Unknown rule type "${ruleType}"`;
+	}
 	const schema = ruleParamSchemaMap[ruleType];
 	if (schema) {
 		const result = schema.safeParse(parameters);

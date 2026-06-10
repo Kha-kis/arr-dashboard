@@ -18,7 +18,8 @@ import { SeerrClient } from "../seerr/seerr-client.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { safeJsonParse } from "../utils/json.js";
 import { applyQuiSeedingFilter } from "./qui-filter.js";
-import { evaluateItemAgainstRules, extractRating } from "./rule-evaluators.js";
+import { evaluateItemAgainstRulesViaEngine } from "../rules/cleanup-adapter.js";
+import { extractRating } from "./rule-evaluators.js";
 import type {
 	CacheItemForEval,
 	CleanupExecutorDeps,
@@ -1131,7 +1132,7 @@ async function evaluateAllItems(
 			const instanceService = instanceServiceMap.get(item.instanceId);
 			if (!instanceService) continue; // Skip orphaned cache items with no matching instance
 
-			const match = evaluateItemAgainstRules(item, rules, instanceService, ctx, failedSources);
+			const match = evaluateItemAgainstRulesViaEngine(item, rules, instanceService, ctx, failedSources);
 			if (match) {
 				flagged.push({
 					cacheItem: item,
