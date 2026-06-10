@@ -8,9 +8,11 @@
  *   - `contains` is case-INsensitive
  *   - `greater_than` compares numerically after Number() coercion
  *   - `in` matches against a string array
- *   - a missing field coerces via String(undefined) → the literal
- *     "undefined" (documented sharp edge, §5.2 — preserved and
- *     parity-tested; fixing it is a future document-version bump)
+ *   - an ABSENT field fails EVERY operator, including `not_equals`
+ *     (the matcher guards `fieldValue === undefined` before any
+ *     coercion — corrected 2026-06-10; the survey's claimed
+ *     String(undefined)→"undefined" edge never existed). Preserved
+ *     and parity-tested; changing it is a future document-version bump
  */
 
 import { z } from "zod";
