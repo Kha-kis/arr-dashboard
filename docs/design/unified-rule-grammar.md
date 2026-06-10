@@ -244,20 +244,59 @@ pattern, not big-bang):
    stabilizes; seeded from `features/rule-criteria/`. Writes v1 on
    save, which is what converges stored documents over time.
 
-## 5. Open questions for review
+## 5. Decisions (formerly open questions; resolved 2026-06-09)
 
-1. **Where do the shared schemas live** — `packages/shared` (frontend
-   composer needs the types + Zod for validation) vs `apps/api/lib`
-   (keeps grammar server-private)? Leaning `packages/shared` since the
-   composer must validate client-side.
-2. ~~Version field placement~~ — **resolved by the migration strategy**:
-   per-document `version` is load-bearing for parse-time
-   version-detection (§3); not optional.
-3. **Notifications metadata fields**: the engine supports
-   `metadata.*` but the UI never exposed it. Keep API-only in v1, or
-   surface it in the composer? Leaning keep API-only (no user demand
-   signal yet).
-4. **Queue-cleaner/hunting in the composer**: v1 keeps them
-   adapter-only (their config UIs stay). Does the Operator Console
-   eventually edit them through the composer (v1.5/v2), or are flat
-   config UIs the right permanent shape for config-class surfaces?
+### 5.1 Schema placement: data in `packages/shared`, behavior in api
+
+`packages/shared/src/rules/` holds the **data**: grammar types, per-kind
+Zod param schemas, kind metadata (labels, categories), and the
+domain→legal-kinds map — subsuming the existing
+`packages/shared/src/types/rule-criteria.ts` rather than paralleling
+it. `apps/api/src/lib/rules/` holds the **behavior**: evaluators,
+eval-input builders, the v0 mappers, and the Tautulli migration pass.
+
+Load-bearing refinement: **the API normalizes documents to v1 at the
+boundary.** Rule GET endpoints parse stored v0/v1 server-side and serve
+only v1; the composer saves v1. The frontend therefore carries zero
+legacy knowledge, and the mappers stay api-private.
+
+Known costs (pre-existing, managed): rebuild `@arr/shared` dist before
+vitest; turbo typecheck (not per-package tsc) for cross-package changes.
+
+Rejected: api-private schemas — would force a duplicated frontend
+vocabulary for the composer's palette/forms, recreating the drift this
+unification exists to kill. The monorepo ships one image, so the usual
+deploy-coupling argument against shared schemas does not apply.
+
+### 5.2 `metadata.*` conditions: API-only in v1, prerequisite built now
+
+Composer exposure is deferred — but because it is a **schema problem,
+not a UI problem**: event metadata is free-form
+`Record<string, unknown>` populated ad-hoc by six schedulers, so a
+composer field would be a guess-the-key footgun. During the
+notifications adapter work (§4 step 5), event payloads gain a
+**per-event-type metadata schema registry** (built opportunistically;
+valuable for type-safety regardless). With the registry in place,
+composer exposure becomes a small demand-gated UI task.
+
+Documented sharp edge (preserved, per §1.3): a missing field coerces
+via `String(undefined)` → the literal `"undefined"`, so
+`equals "undefined"` can match absent metadata. v1 `field_match`
+replicates this exactly (parity-tested). Fixing it is a semantic change
+reserved for a future document-version bump, considered only if/when
+UI exposure happens.
+
+### 5.3 Queue-cleaner/hunting: flat config UIs are permanent; composer is a non-goal
+
+These surfaces are **settings, not rules**: fixed behavior sets with
+enable/threshold params and no open-ended authoring. Condition trees
+are the right interface for user-authored logic; dedicated controls are
+the right interface for closed behavior sets — replacing purpose-built
+toggles with a generic tree editor is a downgrade dressed as
+consistency.
+
+The adapters keep the interesting future open *additively*: if demand
+materializes for arbitrary user rules on these domains ("remove when
+indexer = X AND age > Y"), the path is a new rule-document table on
+that domain — same engine, same composer — added **alongside** the
+config, never migrating it. No advance commitment; demand decides.
