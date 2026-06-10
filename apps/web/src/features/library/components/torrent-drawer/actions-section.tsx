@@ -1,6 +1,7 @@
 "use client";
 
 import type { QuiAction } from "@arr/shared";
+import { getLinuxIsoName, useIncognitoMode } from "../../../../lib/incognito";
 import { ExternalLink } from "lucide-react";
 import { Button } from "../../../../components/ui/button";
 import { toast } from "../../../../components/ui/toast";
@@ -26,6 +27,7 @@ export const ActionsSection: React.FC<{ copy: SeriesTorrentCopy; canAct: boolean
 	// the priority controls on incompleteness so they never clutter the
 	// drawer for a seeding torrent (an all-seeding library never sees them).
 	const isDownloading = typeof copy.progress === "number" && copy.progress < 1;
+	const [incognitoMode] = useIncognitoMode();
 	const run = (action: QuiAction, verb: string) => {
 		if (!canAct) return;
 		actionMutation.mutate(
@@ -38,7 +40,13 @@ export const ActionsSection: React.FC<{ copy: SeriesTorrentCopy; canAct: boolean
 			},
 			{
 				onSuccess: () =>
-					toast.success(`${verb}: ${copy.name ?? copy.infoHash.slice(0, 12)}`, {
+					toast.success(
+					`${verb}: ${
+						incognitoMode
+							? getLinuxIsoName(copy.name ?? copy.infoHash.slice(0, 12))
+							: (copy.name ?? copy.infoHash.slice(0, 12))
+					}`,
+					{
 						action:
 							action === "pause"
 								? { label: "Undo", onClick: () => run("resume", "Resumed") }

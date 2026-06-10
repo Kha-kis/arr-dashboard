@@ -15,6 +15,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
+import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
 
 // Mock the episodes hook to simulate an error state.
 vi.mock("../../../../hooks/api/useLibrary", () => ({
@@ -27,7 +28,11 @@ import { SeasonEpisodeList } from "../season-episode-list";
 
 function wrapper({ children }: { children: ReactNode }) {
 	const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-	return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+	return (
+		<QueryClientProvider client={qc}>
+			<IncognitoProvider>{children}</IncognitoProvider>
+		</QueryClientProvider>
+	);
 }
 
 describe("<SeasonEpisodeList /> error state microcopy", () => {
