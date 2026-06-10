@@ -5,6 +5,7 @@ import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { LOG_DIR, LOG_LEVEL, LOG_MAX_FILES, LOG_MAX_SIZE } from "../lib/logger.js";
 import {
+	acknowledgeTautulliPassReport,
 	readTautulliPassReport,
 	type TautulliPassReport,
 } from "../lib/rules-migration/tautulli-pass.js";
@@ -585,10 +586,11 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * GET /system/migrations/tautulli
 	 *
 	 * Tautulli removal migration status (3.0, ADR-0007). `needed` is true
-	 * while pre-3.0 TAUTULLI service instances linger; the frontend shows
-	 * a blocking dialog until the user acknowledges. The rules-pass report
-	 * (written at boot by the tautulli-migration plugin) is included for
-	 * disclosure of which cleanup/auto-tag rules were disabled or modified.
+	 * while pre-3.0 TAUTULLI service instances linger, OR while the boot
+	 * rules-pass disabled/modified rules that nobody has acknowledged yet
+	 * (a 2.x user could hold tautulli_* rules with no configured instance —
+	 * their rules stopped firing and that deserves the same disclosure).
+	 * The frontend shows a blocking dialog until acknowledged.
 	 */
 	app.get("/migrations/tautulli", async (request, reply) => {
 		const instances = await app.prisma.serviceInstance.findMany({
@@ -599,16 +601,20 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			select: { id: true, label: true },
 		});
 
-		// Report is disclosure-only — a missing/unreadable report degrades
-		// to "no rule details," never blocks the dialog.
-		let rulesReport: TautulliPassReport | null = null;
-		if (instances.length > 0) {
-			const dataDir = dirname(resolveSecretsPath(app.config.DATABASE_URL || "file:./dev.db"));
-			rulesReport = await readTautulliPassReport(dataDir);
-		}
+		// Report is disclosure-only for instance-holders, but gating for
+		// rules-only users. Missing/unreadable report degrades to "no rule
+		// details" (logged loudly in the reader), never blocks the dialog.
+		const dataDir = dirname(resolveSecretsPath(app.config.DATABASE_URL || "file:./dev.db"));
+		const rulesReport: TautulliPassReport | null = await readTautulliPassReport(
+			dataDir,
+			request.log,
+		);
+
+		const unacknowledgedRules =
+			rulesReport !== null && !rulesReport.acknowledgedAt && rulesReport.totalAffectedRules > 0;
 
 		return reply.send({
-			needed: instances.length > 0,
+			needed: instances.length > 0 || unacknowledgedRules,
 			instances,
 			rulesReport,
 		});
@@ -618,8 +624,10 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * POST /system/migrations/tautulli
 	 *
 	 * Acknowledge the Tautulli removal: deletes the lingering TAUTULLI
-	 * service instances (TautulliCache + CacheRefreshStatus rows cascade).
-	 * Idempotent — a second call removes nothing and still succeeds.
+	 * service instances (TautulliCache + CacheRefreshStatus rows cascade)
+	 * and stamps the rules-pass report acknowledged so rules-only users
+	 * resolve too. Idempotent — a second call removes nothing and still
+	 * succeeds.
 	 */
 	app.post("/migrations/tautulli", async (request, reply) => {
 		const result = await app.prisma.serviceInstance.deleteMany({
@@ -628,6 +636,9 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				service: "TAUTULLI",
 			},
 		});
+
+		const dataDir = dirname(resolveSecretsPath(app.config.DATABASE_URL || "file:./dev.db"));
+		await acknowledgeTautulliPassReport(dataDir, request.log);
 
 		request.log.info(
 			{ removedInstances: result.count },

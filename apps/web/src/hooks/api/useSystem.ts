@@ -22,6 +22,7 @@ import {
 	updateSystemSettings,
 	type ValidationHealthResponse,
 } from "../../lib/api-client/system";
+import { UnauthorizedError } from "../../lib/api-client/base";
 import { getErrorMessage } from "../../lib/error-utils";
 import { POLLING_STANDARD } from "../../lib/polling-intervals";
 import { pulseKeys, serviceKeys, systemKeys, validationKeys } from "../../lib/query-keys";
@@ -168,9 +169,12 @@ export function useTautulliMigrationStatus() {
 		// One-shot gate: no polling. Re-checked on mount and after the
 		// completion mutation invalidates the key.
 		staleTime: Number.POSITIVE_INFINITY,
-		// A 401 (or transient error) must not block the app — the dialog
-		// simply does not render until a successful fetch says it should.
-		retry: false,
+		// A 401 must not block the app, but a transient failure (API still
+		// booting right after the 3.0 upgrade — the likeliest moment) must
+		// not permanently hide a required migration gate either: retry a
+		// few times, then keep probing while errored.
+		retry: (failureCount, error) => !(error instanceof UnauthorizedError) && failureCount < 3,
+		refetchInterval: (query) => (query.state.status === "error" ? POLLING_STANDARD : false),
 	});
 }
 

@@ -44,6 +44,13 @@ export const TautulliMigrationDialog = () => {
 				...report.surfaces["auto-tag"].rulesModified,
 			]
 		: [];
+	const unparseableRules: TautulliRuleChange[] = report
+		? [
+				...report.surfaces["library-cleanup"].rulesUnparseable,
+				...report.surfaces["auto-tag"].rulesUnparseable,
+			]
+		: [];
+	const hasInstances = data.instances.length > 0;
 
 	const displayLabel = (label: string) => (incognitoMode ? getLinuxInstanceName(label) : label);
 	const displayRuleName = (name: string) => (incognitoMode ? getLinuxIsoName(name) : name);
@@ -88,13 +95,22 @@ export const TautulliMigrationDialog = () => {
 						</h2>
 						<p className="text-sm text-muted-foreground">
 							Plex statistics are now captured directly from session snapshots, so the Tautulli
-							integration is no longer used. Your configured instance
-							{data.instances.length > 1 ? "s" : ""} will be removed from arr-dashboard:
+							integration is no longer used.
+							{hasInstances ? (
+								<>
+									{" "}
+									Your configured instance{data.instances.length > 1 ? "s" : ""} will be removed
+									from arr-dashboard:
+								</>
+							) : (
+								" Some of your automation rules referenced Tautulli watch data — review the changes below."
+							)}
 						</p>
 					</div>
 				</div>
 
-				<ul className="space-y-1">
+				{hasInstances && (
+					<ul className="space-y-1">
 					{data.instances.map((instance) => (
 						<li
 							key={instance.id}
@@ -107,9 +123,10 @@ export const TautulliMigrationDialog = () => {
 							{displayLabel(instance.label)}
 						</li>
 					))}
-				</ul>
+					</ul>
+				)}
 
-				{(disabledRules.length > 0 || modifiedRules.length > 0) && (
+				{(disabledRules.length > 0 || modifiedRules.length > 0 || unparseableRules.length > 0) && (
 					<div className="rounded-lg border border-border/30 bg-muted/20 p-3 space-y-2">
 						<div className="flex items-center gap-2 text-sm font-medium text-foreground">
 							<ShieldAlert className="h-4 w-4 text-amber-400" />
@@ -131,6 +148,16 @@ export const TautulliMigrationDialog = () => {
 								</span>{" "}
 								(Tautulli conditions dropped, remaining conditions still active):{" "}
 								{modifiedRules.map((r) => displayRuleName(r.name)).join(", ")}
+							</div>
+						)}
+						{unparseableRules.length > 0 && (
+							<div className="text-xs text-muted-foreground">
+								<span className="font-medium text-foreground">
+									{unparseableRules.length} rule{unparseableRules.length > 1 ? "s" : ""} could not
+									be inspected
+								</span>{" "}
+								(unreadable condition data, left untouched — review manually in Cleanup/Auto-Tagger
+								settings): {unparseableRules.map((r) => displayRuleName(r.name)).join(", ")}
 							</div>
 						)}
 						<p className="text-xs text-muted-foreground">
@@ -157,7 +184,7 @@ export const TautulliMigrationDialog = () => {
 						) : (
 							<ArrowRight className="h-4 w-4" />
 						)}
-						Remove Tautulli &amp; continue
+						{hasInstances ? <>Remove Tautulli &amp; continue</> : <>Acknowledge &amp; continue</>}
 					</Button>
 				</div>
 			</div>

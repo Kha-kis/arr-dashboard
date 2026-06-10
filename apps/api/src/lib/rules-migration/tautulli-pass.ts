@@ -82,6 +82,12 @@ export interface TautulliPassReport {
 		"auto-tag": SurfaceReport;
 	};
 	totalAffectedRules: number;
+	/**
+	 * Set by the migration dialog's POST acknowledge. Once present, the
+	 * report no longer gates the dialog (system.ts uses it alongside the
+	 * lingering-instance check).
+	 */
+	acknowledgedAt?: string;
 }
 
 interface PlannedUpdate {
@@ -211,10 +217,38 @@ async function writeBackupOnce(filePath: string, rows: unknown[]): Promise<void>
 	try {
 		await readFile(filePath);
 		return; // existing backup preserved — true originals win
-	} catch {
-		// not present — write it
+	} catch (error) {
+		// Only "file absent" may fall through to the write. Any other read
+		// failure (permissions, I/O) means an existing backup might be
+		// present but unreadable — writing would clobber the true originals
+		// that the rollback contract depends on. Throw and let the boot
+		// hook log it; the pass re-runs next boot.
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 	}
 	await writeFile(filePath, JSON.stringify(rows, null, 2), "utf-8");
+}
+
+/**
+ * Union two change lists by rule id — entries from a prior run are kept,
+ * new entries appended. Prevents a re-run (where already-migrated rules
+ * plan to zero changes) from erasing earlier disclosure.
+ */
+function mergeChanges(existing: RuleChange[], fresh: RuleChange[]): RuleChange[] {
+	const seen = new Set(existing.map((c) => c.id));
+	return [...existing, ...fresh.filter((c) => !seen.has(c.id))];
+}
+
+function mergeSurfaceReports(
+	existing: SurfaceReport | undefined,
+	fresh: SurfaceReport,
+): SurfaceReport {
+	if (!existing) return fresh;
+	return {
+		rulesScanned: fresh.rulesScanned,
+		rulesDisabled: mergeChanges(existing.rulesDisabled, fresh.rulesDisabled),
+		rulesModified: mergeChanges(existing.rulesModified, fresh.rulesModified),
+		rulesUnparseable: mergeChanges(existing.rulesUnparseable, fresh.rulesUnparseable),
+	};
 }
 
 /**
@@ -261,7 +295,44 @@ export async function runTautulliRulesPass(
 	await writeBackupOnce(path.join(backupDir, "library-cleanup.json"), cleanupRules);
 	await writeBackupOnce(path.join(backupDir, "auto-tag.json"), autoTagRules);
 
-	// 2. Transactional transform, per surface
+	// 2. Report — merged with any prior run's report and written BEFORE the
+	// transactions. Two failure modes this ordering closes (found in review):
+	//   - A partial run (cleanup transaction succeeds, auto-tag throws)
+	//     re-plans zero changes for the migrated surface next boot; without
+	//     the merge, the regenerated report would erase that surface's
+	//     disclosure forever.
+	//   - A report write failure AFTER successful transactions leaves rules
+	//     disabled with no report at all (next boot plans nothing → early
+	//     return). Writing first means worst case is over-disclosure of a
+	//     planned-but-failed change, which the next boot's re-run completes.
+	const existing = await readTautulliPassReport(dataDir, log);
+	const mergedCleanup = mergeSurfaceReports(
+		existing?.surfaces["library-cleanup"],
+		cleanupPlan.report,
+	);
+	const mergedAutoTag = mergeSurfaceReports(existing?.surfaces["auto-tag"], autoTagPlan.report);
+	const report: TautulliPassReport = {
+		ranAt: new Date().toISOString(),
+		surfaces: {
+			"library-cleanup": mergedCleanup,
+			"auto-tag": mergedAutoTag,
+		},
+		totalAffectedRules:
+			mergedCleanup.rulesDisabled.length +
+			mergedCleanup.rulesModified.length +
+			mergedCleanup.rulesUnparseable.length +
+			mergedAutoTag.rulesDisabled.length +
+			mergedAutoTag.rulesModified.length +
+			mergedAutoTag.rulesUnparseable.length,
+		...(existing?.acknowledgedAt ? { acknowledgedAt: existing.acknowledgedAt } : {}),
+	};
+	await writeFile(
+		path.join(backupDir, TAUTULLI_PASS_REPORT_FILE),
+		JSON.stringify(report, null, 2),
+		"utf-8",
+	);
+
+	// 3. Transactional transform, per surface
 	if (cleanupPlan.updates.length > 0) {
 		await prisma.$transaction(
 			cleanupPlan.updates.map((u) =>
@@ -276,22 +347,6 @@ export async function runTautulliRulesPass(
 			),
 		);
 	}
-
-	// 3. Report (clobber is fine here — latest run with changes is the
-	// truthful one; no-op runs return above without touching it)
-	const report: TautulliPassReport = {
-		ranAt: new Date().toISOString(),
-		surfaces: {
-			"library-cleanup": cleanupPlan.report,
-			"auto-tag": autoTagPlan.report,
-		},
-		totalAffectedRules: totalAffected,
-	};
-	await writeFile(
-		path.join(backupDir, TAUTULLI_PASS_REPORT_FILE),
-		JSON.stringify(report, null, 2),
-		"utf-8",
-	);
 
 	log.info(
 		{
@@ -309,15 +364,54 @@ export async function runTautulliRulesPass(
 	return report;
 }
 
-/** Read the persisted report (for the migration dialog's disclosure). */
-export async function readTautulliPassReport(dataDir: string): Promise<TautulliPassReport | null> {
+/**
+ * Read the persisted report (for the migration dialog's disclosure).
+ * Returns null when absent. Degradation stays graceful for any failure
+ * (disclosure-only data must never block the dialog) but a report that
+ * EXISTS and cannot be read is logged loudly — silent null here composes
+ * into permanent disclosure loss once the user acknowledges.
+ */
+export async function readTautulliPassReport(
+	dataDir: string,
+	log?: FastifyBaseLogger,
+): Promise<TautulliPassReport | null> {
+	const reportPath = path.join(dataDir, BACKUP_DIR_NAME, TAUTULLI_PASS_REPORT_FILE);
 	try {
-		const raw = await readFile(
+		const raw = await readFile(reportPath, "utf-8");
+		return JSON.parse(raw) as TautulliPassReport;
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+			log?.warn(
+				{ err: error, reportPath },
+				"Tautulli pass report exists but could not be read — dialog disclosure degraded",
+			);
+		}
+		return null;
+	}
+}
+
+/**
+ * Mark the report acknowledged (called by POST /system/migrations/tautulli).
+ * Best-effort: a missing report is a no-op; an unwritable one is logged
+ * but never fails the acknowledge — the instance deletion is the
+ * authoritative resolution signal for configured-instance users.
+ */
+export async function acknowledgeTautulliPassReport(
+	dataDir: string,
+	log: FastifyBaseLogger,
+): Promise<void> {
+	const report = await readTautulliPassReport(dataDir, log);
+	if (!report || report.acknowledgedAt) return;
+	try {
+		await writeFile(
 			path.join(dataDir, BACKUP_DIR_NAME, TAUTULLI_PASS_REPORT_FILE),
+			JSON.stringify({ ...report, acknowledgedAt: new Date().toISOString() }, null, 2),
 			"utf-8",
 		);
-		return JSON.parse(raw) as TautulliPassReport;
-	} catch {
-		return null;
+	} catch (error) {
+		log.warn(
+			{ err: error },
+			"Could not mark Tautulli pass report acknowledged — dialog may reappear for rules-only users",
+		);
 	}
 }

@@ -11,6 +11,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "../../prisma.js";
 import {
+	acknowledgeTautulliPassReport,
 	planRuleTransform,
 	readTautulliPassReport,
 	runTautulliRulesPass,
@@ -129,7 +130,10 @@ describe("planRuleTransform", () => {
 
 	it("drops a tautulli-sourced condition from a composite (object params)", () => {
 		const conditions = [
-			{ ruleType: "user_retention", parameters: { operator: "watched_by_none", source: "tautulli" } },
+			{
+				ruleType: "user_retention",
+				parameters: { operator: "watched_by_none", source: "tautulli" },
+			},
 			{ ruleType: "age", parameters: { field: "arrAddedAt", operator: "older_than", days: 30 } },
 		];
 		const { update, change } = planRuleTransform(
@@ -237,6 +241,84 @@ describe("runTautulliRulesPass", () => {
 		await expect(
 			readFile(path.join(dataDir, "rules-pre-3.0", TAUTULLI_PASS_REPORT_FILE), "utf-8"),
 		).rejects.toThrow();
+	});
+
+	it("re-run preserves prior disclosure — merge, never clobber (review finding)", async () => {
+		// Run 1: a tautulli rule gets disabled, report records it.
+		const { prisma: p1 } = makePrisma(
+			[rule({ id: "c1", name: "Watched ages ago", ruleType: "tautulli_last_watched" })],
+			[],
+		);
+		await runTautulliRulesPass(p1, dataDir, silentLog);
+
+		// Run 2 (e.g. next boot): c1 is now disabled (plans no change), but a
+		// lingering unparseable rule keeps the pass from early-returning.
+		// Without the merge this rewrite would erase c1's disclosure.
+		const { prisma: p2 } = makePrisma(
+			[
+				rule({
+					id: "c1",
+					name: "Watched ages ago",
+					ruleType: "tautulli_last_watched",
+					enabled: false,
+				}),
+				rule({
+					id: "c9",
+					name: "Corrupt",
+					ruleType: "composite",
+					operator: "AND",
+					conditions: "not-json{{{",
+				}),
+			],
+			[],
+		);
+		const report = await runTautulliRulesPass(p2, dataDir, silentLog);
+
+		expect(report?.surfaces["library-cleanup"].rulesDisabled).toHaveLength(1);
+		expect(report?.surfaces["library-cleanup"].rulesDisabled[0]?.id).toBe("c1");
+		expect(report?.surfaces["library-cleanup"].rulesUnparseable[0]?.id).toBe("c9");
+	});
+
+	it("writes the report BEFORE transactions — a transaction failure cannot lose disclosure", async () => {
+		const { prisma } = makePrisma(
+			[rule({ id: "c1", name: "Watched ages ago", ruleType: "tautulli_last_watched" })],
+			[],
+		);
+		(prisma.$transaction as ReturnType<typeof vi.fn>).mockRejectedValue(
+			new Error("SQLITE_BUSY: database is locked"),
+		);
+
+		await expect(runTautulliRulesPass(prisma, dataDir, silentLog)).rejects.toThrow("SQLITE_BUSY");
+
+		// The disclosure survived the failed run.
+		const persisted = await readTautulliPassReport(dataDir);
+		expect(persisted?.surfaces["library-cleanup"].rulesDisabled[0]?.id).toBe("c1");
+	});
+
+	it("acknowledge round-trip: stamps acknowledgedAt, preserved across re-runs", async () => {
+		const { prisma } = makePrisma([rule({ id: "c1", ruleType: "tautulli_last_watched" })], []);
+		await runTautulliRulesPass(prisma, dataDir, silentLog);
+
+		await acknowledgeTautulliPassReport(dataDir, silentLog);
+		const acked = await readTautulliPassReport(dataDir);
+		expect(typeof acked?.acknowledgedAt).toBe("string");
+
+		// A later run with a lingering unparseable rule must not strip the stamp.
+		const { prisma: p2 } = makePrisma(
+			[
+				rule({ id: "c1", ruleType: "tautulli_last_watched", enabled: false }),
+				rule({ id: "c9", ruleType: "composite", operator: "AND", conditions: "not-json{{{" }),
+			],
+			[],
+		);
+		await runTautulliRulesPass(p2, dataDir, silentLog);
+		const after = await readTautulliPassReport(dataDir);
+		expect(after?.acknowledgedAt).toBe(acked?.acknowledgedAt);
+	});
+
+	it("acknowledge is a no-op when no report exists", async () => {
+		await expect(acknowledgeTautulliPassReport(dataDir, silentLog)).resolves.toBeUndefined();
+		expect(await readTautulliPassReport(dataDir)).toBeNull();
 	});
 
 	it("first-write-wins: a re-run never clobbers the original backup", async () => {

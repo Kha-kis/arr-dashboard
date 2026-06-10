@@ -22,14 +22,18 @@ import { resolveSecretsPath } from "../lib/utils/secrets-path.js";
 const tautulliMigrationPlugin = fastifyPlugin(
 	async (app: FastifyInstance) => {
 		app.addHook("onReady", async () => {
+			const databaseUrl = app.config.DATABASE_URL || "file:./dev.db";
+			const dataDir = path.dirname(resolveSecretsPath(databaseUrl));
 			try {
-				const databaseUrl = app.config.DATABASE_URL || "file:./dev.db";
-				const dataDir = path.dirname(resolveSecretsPath(databaseUrl));
 				await runTautulliRulesPass(app.prisma, dataDir, app.log);
 			} catch (error) {
+				// The pass writes its report BEFORE the transactions, so a
+				// failure here may leave rules partially migrated — never
+				// claim "unchanged". The pass is idempotent and re-runs on
+				// the next boot to complete the remainder.
 				app.log.error(
-					{ err: error },
-					"Tautulli rules pass failed — stored rules unchanged; disclosure will be unavailable in the migration dialog",
+					{ err: error, dataDir },
+					"Tautulli rules pass failed — rules may be partially migrated; originals are backed up under rules-pre-3.0/ and the pass re-runs next boot",
 				);
 			}
 		});

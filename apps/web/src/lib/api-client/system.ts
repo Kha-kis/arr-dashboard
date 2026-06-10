@@ -261,6 +261,7 @@ export interface TautulliPassReport {
 		"auto-tag": TautulliSurfaceReport;
 	};
 	totalAffectedRules: number;
+	acknowledgedAt?: string;
 }
 
 export interface TautulliMigrationStatus {

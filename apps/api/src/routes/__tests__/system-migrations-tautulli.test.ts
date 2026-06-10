@@ -169,7 +169,7 @@ describe("POST /system/migrations/tautulli", () => {
 		expect(JSON.parse(res.payload)).toEqual({ success: true, removedInstances: 0 });
 	});
 
-	it("resolves the migration: GET reports needed=false after POST", async () => {
+	it("resolves the migration: GET reports needed=false after POST (report acknowledged)", async () => {
 		instanceRows = [{ id: "ta-1", label: "My Tautulli", userId: "user-1", service: "TAUTULLI" }];
 		await seedReport();
 
@@ -178,6 +178,30 @@ describe("POST /system/migrations/tautulli", () => {
 
 		const body = JSON.parse(res.payload);
 		expect(body.needed).toBe(false);
-		expect(body.rulesReport).toBeNull(); // report read skipped once resolved
+		// The report persists (acknowledged) — disclosure data is never deleted.
+		expect(typeof body.rulesReport.acknowledgedAt).toBe("string");
+	});
+
+	it("gates rules-only users: needed=true with no instances but an unacknowledged report", async () => {
+		// A 2.x user could hold tautulli_* rules with no configured instance;
+		// the boot pass disabled their rules and that deserves disclosure too.
+		await seedReport();
+
+		const res = await injectAuthenticated("GET", "/system/migrations/tautulli");
+
+		const body = JSON.parse(res.payload);
+		expect(body.needed).toBe(true);
+		expect(body.instances).toEqual([]);
+		expect(body.rulesReport.totalAffectedRules).toBe(1);
+	});
+
+	it("rules-only acknowledge: POST stamps the report so GET resolves", async () => {
+		await seedReport();
+
+		const post = await injectAuthenticated("POST", "/system/migrations/tautulli");
+		expect(JSON.parse(post.payload)).toEqual({ success: true, removedInstances: 0 });
+
+		const res = await injectAuthenticated("GET", "/system/migrations/tautulli");
+		expect(JSON.parse(res.payload).needed).toBe(false);
 	});
 });
