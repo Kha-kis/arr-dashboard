@@ -162,11 +162,14 @@ Auto-Tagger, which reuses the same evaluators), and the `TautulliCache`
 table feeds the cleanup executor plus the Plex AND Jellyfin
 watch-enrichment routes. Removing Tautulli therefore orphans stored
 user rules — a stored-rule migration, which is exactly what ADR-0006's
-5-point contract exists for. Rather than building one-off migration
-machinery in A2 and rebuilding it properly in A4 (two migration events
-for users), **A2 lands after A4's unified engine + migration framework,
-and the Tautulli rule-type removal ships as one case inside the unified
-migration**. The first-boot dialog additionally discloses how many of
+5-point contract exists for. ~~A2 lands after A4's unified engine +
+migration framework~~ **Superseded by ADR-0006 amendment 2
+(2026-06-09): eager format migration was eliminated from A4 entirely
+(parse-time versioning), so the Tautulli pass is self-contained over
+the existing stored-document format and A2 is again independent — and
+sequenced FIRST. The pass still runs under the full 5-point contract
+(it is the one semantic migration in 3.0), and its rule-count report
+feeds this dialog's disclosure.** The first-boot dialog additionally discloses how many of
 the user's stored rules referenced Tautulli watch data. Watch-enrichment
 re-pointing (Plex/Jellyfin enrichment reads of TautulliCache → Tracearr
 or SessionSnapshot equivalents) is scoped into A2 alongside the
