@@ -9,7 +9,15 @@ import globals from "globals";
 /** @type {import('eslint').Linter.Config[]} */
 const eslintConfig = [
 	{
-		ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "coverage/**", "next-env.d.ts", "server.js"],
+		ignores: [
+			"node_modules/**",
+			".next/**",
+			"out/**",
+			"build/**",
+			"coverage/**",
+			"next-env.d.ts",
+			"server.js",
+		],
 	},
 	{
 		files: ["**/*.{js,jsx,ts,tsx}"],
@@ -60,6 +68,26 @@ const eslintConfig = [
 			// Console usage — use structured error handling, not console.log
 			"no-console": ["warn", { allow: ["warn", "error"] }],
 
+			// Hardcoded hex colors — use SEMANTIC_COLORS / BRAND_COLORS /
+			// useThemeGradient() from lib/theme-gradients.ts instead (B2 sweep
+			// follow-up). AST-based so issue numbers in comments (#474) never
+			// false-positive. Palette-definition files are exempted below;
+			// genuine one-offs need an eslint-disable with a reason.
+			"no-restricted-syntax": [
+				"error",
+				{
+					selector: "Literal[value=/#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\\b/]",
+					message:
+						"Hardcoded hex color. Use SEMANTIC_COLORS / BRAND_COLORS or useThemeGradient() from lib/theme-gradients.ts. If this is a genuine carve-out, add an eslint-disable comment with the reason.",
+				},
+				{
+					selector:
+						"TemplateElement[value.raw=/#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\\b/]",
+					message:
+						"Hardcoded hex color in template literal. Use SEMANTIC_COLORS / BRAND_COLORS or useThemeGradient() from lib/theme-gradients.ts. If this is a genuine carve-out, add an eslint-disable comment with the reason.",
+				},
+			],
+
 			// Unused imports - auto-fixable
 			"unused-imports/no-unused-imports": "warn",
 			"unused-imports/no-unused-vars": [
@@ -74,6 +102,27 @@ const eslintConfig = [
 				},
 			],
 			"@typescript-eslint/no-unused-vars": "off", // Handled by unused-imports
+		},
+	},
+	{
+		// Palette-definition files — these ARE the places hex colors belong:
+		// theme-gradients is the token source itself; color-theme-provider
+		// defines the theme palettes; queue-cleaner constants is a categorical
+		// chart palette (9 distinct hues — semantic tokens would lose
+		// distinguishability); appearance-preview fakes browser chrome
+		// (charter carve-out).
+		files: [
+			"tailwind.config.ts",
+			"src/lib/theme-gradients.ts",
+			"src/providers/color-theme-provider.tsx",
+			"src/features/queue-cleaner/lib/constants.ts",
+			"src/features/settings/components/appearance-preview.tsx",
+			// Tests stub theme-gradient objects with literal colors
+			"**/__tests__/**",
+			"**/*.test.{ts,tsx}",
+		],
+		rules: {
+			"no-restricted-syntax": "off",
 		},
 	},
 ];

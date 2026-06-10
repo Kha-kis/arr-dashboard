@@ -164,8 +164,10 @@ export const RecentlyAddedWidget = ({ hasPlexInstances, hasJellyfinInstances, an
 								const bgGradient =
 									item.mediaType === "movie"
 										? // Decorative poster-placeholder art, categorical not semantic (B2 carve-out)
+											// eslint-disable-next-line no-restricted-syntax -- decorative categorical art
 											"linear-gradient(160deg, #92400e 0%, #f59e0b 100%)"
-										: "linear-gradient(160deg, #164e63 0%, #06b6d4 100%)";
+										: // eslint-disable-next-line no-restricted-syntax -- decorative categorical art
+											"linear-gradient(160deg, #164e63 0%, #06b6d4 100%)";
 								const thumbKey = item.key;
 								const hasThumb = item.thumbUrl && !failedThumbs.has(thumbKey);
 								const libraryHref = item.tmdbId ? `/library?tmdbId=${item.tmdbId}` : "/library";
