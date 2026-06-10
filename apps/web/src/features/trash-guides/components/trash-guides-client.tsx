@@ -40,7 +40,7 @@ import { TemplateImportDialog } from "./template-import-dialog";
 import { TemplateList } from "./template-list";
 import { TrashGuidesTabs } from "./trash-guides-tabs";
 
-function PremiumSkeleton() {
+function TrashGuidesPageSkeleton() {
 	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
@@ -139,36 +139,43 @@ function CacheValidationHealthSection() {
 
 			<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{categories.map(([category, stats]) => {
-					const cardColor = stats.rejected > 0 ? SEMANTIC_COLORS.warning.from : SEMANTIC_COLORS.success.from;
+					const cardColor =
+						stats.rejected > 0 ? SEMANTIC_COLORS.warning.from : SEMANTIC_COLORS.success.from;
 					return (
-					<div
-						key={category}
-						className="rounded-xl p-4 transition-all duration-200 hover:-translate-y-[1px] hover:shadow-lg hover:shadow-black/10"
-						style={{
-							backgroundColor: `${cardColor}05`,
-							border: `1px solid ${cardColor}12`,
-						}}
-					>
-						<div className="flex items-center justify-between mb-2">
-							<span className="text-sm font-medium text-foreground capitalize">
-								{category.replace(/([A-Z])/g, " $1").trim()}
-							</span>
-							{stats.rejected > 0 ? (
-								<AlertCircle className="h-4 w-4" style={{ color: SEMANTIC_COLORS.warning.from }} />
-							) : (
-								<CheckCircle2 className="h-4 w-4" style={{ color: SEMANTIC_COLORS.success.from }} />
+						<div
+							key={category}
+							className="rounded-xl p-4 transition-all duration-200 hover:-translate-y-[1px] hover:shadow-lg hover:shadow-black/10"
+							style={{
+								backgroundColor: `${cardColor}05`,
+								border: `1px solid ${cardColor}12`,
+							}}
+						>
+							<div className="flex items-center justify-between mb-2">
+								<span className="text-sm font-medium text-foreground capitalize">
+									{category.replace(/([A-Z])/g, " $1").trim()}
+								</span>
+								{stats.rejected > 0 ? (
+									<AlertCircle
+										className="h-4 w-4"
+										style={{ color: SEMANTIC_COLORS.warning.from }}
+									/>
+								) : (
+									<CheckCircle2
+										className="h-4 w-4"
+										style={{ color: SEMANTIC_COLORS.success.from }}
+									/>
+								)}
+							</div>
+							<div className="flex items-baseline gap-1">
+								<span className="text-2xl font-bold text-foreground">{stats.validated}</span>
+								<span className="text-sm text-muted-foreground">/ {stats.total}</span>
+							</div>
+							{stats.rejected > 0 && (
+								<p className="text-xs mt-1" style={{ color: SEMANTIC_COLORS.warning.text }}>
+									{stats.rejected} rejected
+								</p>
 							)}
 						</div>
-						<div className="flex items-baseline gap-1">
-							<span className="text-2xl font-bold text-foreground">{stats.validated}</span>
-							<span className="text-sm text-muted-foreground">/ {stats.total}</span>
-						</div>
-						{stats.rejected > 0 && (
-							<p className="text-xs mt-1" style={{ color: SEMANTIC_COLORS.warning.text }}>
-								{stats.rejected} rejected
-							</p>
-						)}
-					</div>
 					);
 				})}
 			</div>
@@ -253,11 +260,15 @@ export function TrashGuidesClient() {
 						>
 							<div
 								className="absolute inset-0 pointer-events-none"
-								style={{ background: `linear-gradient(135deg, ${themeGradient.from}04, transparent 60%)` }}
+								style={{
+									background: `linear-gradient(135deg, ${themeGradient.from}04, transparent 60%)`,
+								}}
 							/>
 							<div
 								className="absolute left-0 top-0 bottom-0 w-[3px]"
-								style={{ background: `linear-gradient(180deg, ${themeGradient.from}, ${themeGradient.fromLight})` }}
+								style={{
+									background: `linear-gradient(180deg, ${themeGradient.from}, ${themeGradient.fromLight})`,
+								}}
 							/>
 							<div className="relative p-6">
 								<div className="flex items-start gap-4">
@@ -274,7 +285,10 @@ export function TrashGuidesClient() {
 										<div className="flex items-center gap-2 mb-1">
 											<span
 												className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
-												style={{ backgroundColor: `${themeGradient.from}12`, color: themeGradient.from }}
+												style={{
+													backgroundColor: `${themeGradient.from}12`,
+													color: themeGradient.from,
+												}}
 											>
 												<History className="h-2.5 w-2.5" />
 												History
@@ -309,11 +323,15 @@ export function TrashGuidesClient() {
 					>
 						<div
 							className="absolute inset-0 pointer-events-none"
-							style={{ background: `linear-gradient(135deg, ${themeGradient.from}04, transparent 60%)` }}
+							style={{
+								background: `linear-gradient(135deg, ${themeGradient.from}04, transparent 60%)`,
+							}}
 						/>
 						<div
 							className="absolute left-0 top-0 bottom-0 w-[3px]"
-							style={{ background: `linear-gradient(180deg, ${themeGradient.from}, ${themeGradient.fromLight})` }}
+							style={{
+								background: `linear-gradient(180deg, ${themeGradient.from}, ${themeGradient.fromLight})`,
+							}}
 						/>
 						<div className="relative p-6 space-y-4">
 							<span
@@ -327,7 +345,10 @@ export function TrashGuidesClient() {
 								<div className="flex items-center justify-center py-12">
 									<div
 										className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
-										style={{ borderColor: `${themeGradient.from}40`, borderTopColor: "transparent" }}
+										style={{
+											borderColor: `${themeGradient.from}40`,
+											borderTopColor: "transparent",
+										}}
 									/>
 								</div>
 							) : currentUser?.id ? (
@@ -369,7 +390,7 @@ export function TrashGuidesClient() {
 	}
 
 	if (isLoading) {
-		return <PremiumSkeleton />;
+		return <TrashGuidesPageSkeleton />;
 	}
 
 	if (error) {
