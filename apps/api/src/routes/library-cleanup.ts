@@ -1220,6 +1220,19 @@ function validateRuleParameters(
 	parameters: Record<string, unknown>,
 	conditions: Array<{ ruleType: string; parameters: Record<string, unknown> }> | null,
 ): string | null {
+	// Reject mode-mismatch: a leaf ruleType carrying operator+conditions
+	// (or ruleType "composite" without them). The evaluator treats any rule
+	// with operator+conditions as composite regardless of ruleType, so a
+	// mixed shape would validate one thing and evaluate another (the same
+	// guard auto-tag.ts has carried; ported per review finding).
+	const compositeByShape = conditions != null && conditions.length > 0;
+	const compositeByRuleType = ruleType === "composite";
+	if (compositeByShape !== compositeByRuleType) {
+		return compositeByShape
+			? 'Composite rules must use ruleType="composite" (got a leaf rule type plus conditions — pick one mode)'
+			: 'Rule type "composite" requires operator + conditions';
+	}
+
 	// For composite rules, validate each condition's parameters
 	if (ruleType === "composite" && conditions) {
 		for (let i = 0; i < conditions.length; i++) {

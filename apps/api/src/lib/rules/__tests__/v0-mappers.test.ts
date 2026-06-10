@@ -133,6 +133,21 @@ describe("mapCriteriaV0ToDocument — composites", () => {
 		expect(doc.root).toEqual({ all: [] });
 	});
 
+	it("leaf ruleType carrying operator+conditions maps as COMPOSITE — conditions win (review shape)", () => {
+		// Legacy evaluateRule keys the composite path on operator+conditions,
+		// ignoring the leaf ruleType/parameters entirely. The mapper must
+		// match, or stored pre-guard rows change meaning (Critical finding).
+		const doc = mapCriteriaV0ToDocument(
+			row({
+				ruleType: "age", // leaf — ignored by legacy when conditions present
+				parameters: JSON.stringify({ operator: "older_than", days: 1 }),
+				operator: "AND",
+				conditions: JSON.stringify([sizeCond]),
+			}),
+		);
+		expect(doc.root).toEqual({ all: [{ kind: "size", params: sizeCond.parameters }] });
+	});
+
 	it("throws on invalid operator", () => {
 		expect(() =>
 			mapCriteriaV0ToDocument(row({ ruleType: "composite", operator: "XOR", conditions: "[]" })),

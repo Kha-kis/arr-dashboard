@@ -285,6 +285,35 @@ describe("parity — composites", () => {
 		expect(legacy).not.toBeNull(); // age sibling still matches on both paths
 	});
 
+	it("REVIEW SHAPE — leaf ruleType + operator+conditions: conditions decide, not leaf params", () => {
+		// The empirical probe from the cutover review: ruleType "age"
+		// (which WOULD match) carrying a non-matching size condition.
+		// Legacy evaluates the conditions → null. The engine path must
+		// agree — keying composite on ruleType instead of operator+
+		// conditions made it evaluate the leaf and DELETE.
+		const { legacy } = assertParity(
+			makeRule({
+				ruleType: "age",
+				parameters: JSON.stringify({ operator: "older_than", days: 30 }), // matches
+				operator: "AND",
+				conditions: JSON.stringify([noMatchCond]), // does not match
+			}),
+		);
+		expect(legacy).toBeNull(); // conditions decide — item is KEPT
+	});
+
+	it("REVIEW SHAPE — leaf ruleType + matching conditions: both paths match via conditions", () => {
+		const { legacy } = assertParity(
+			makeRule({
+				ruleType: "age",
+				parameters: JSON.stringify({ operator: "older_than", days: 99999 }), // would NOT match
+				operator: "OR",
+				conditions: JSON.stringify([sizeCond]), // matches
+			}),
+		);
+		expect(legacy).not.toBeNull(); // conditions decide — matched via size
+	});
+
 	it("legacy quirk — empty composite conditions no-match (NOT vacuous true)", () => {
 		assertParity(makeRule({ ruleType: "composite", operator: "AND", conditions: "[]" }));
 	});
