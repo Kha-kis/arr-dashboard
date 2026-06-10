@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { huntingKeys } from "../../../lib/query-keys";
 import { ApiError, apiRequest } from "../../../lib/api-client/base";
 
 interface TriggerHuntResponse {
@@ -39,7 +40,7 @@ export function useManualHunt() {
 		mutationFn: ({ instanceId, type }: { instanceId: string; type: "missing" | "upgrade" }) =>
 			triggerHunt(instanceId, type),
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["hunting"] });
+			void queryClient.invalidateQueries({ queryKey: huntingKeys.all });
 		},
 	});
 

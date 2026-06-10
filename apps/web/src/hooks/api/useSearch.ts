@@ -19,11 +19,11 @@ import {
 	testSearchIndexer,
 	updateSearchIndexer,
 } from "../../lib/api-client/search";
-import { QUEUE_QUERY_KEY } from "../../lib/query-keys";
+import { QUEUE_QUERY_KEY, searchKeys } from "../../lib/query-keys";
 
 export const useSearchIndexersQuery = () =>
 	useQuery<SearchIndexersResponse>({
-		queryKey: ["search", "indexers"],
+		queryKey: searchKeys.indexers,
 		queryFn: fetchSearchIndexers,
 		staleTime: 5 * 60 * 1000,
 	});
@@ -56,7 +56,7 @@ export const useIndexerDetailsQuery = (
 	health?: ProwlarrIndexerHealth,
 ) =>
 	useQuery<ProwlarrIndexerDetails>({
-		queryKey: ["search", "indexers", "details", instanceId, indexerId],
+		queryKey: searchKeys.indexerDetails(instanceId, indexerId),
 		queryFn: () => fetchSearchIndexerDetails(instanceId!, indexerId!, health),
 		enabled: Boolean(enabled && instanceId && indexerId !== null),
 		staleTime: 60 * 1000,

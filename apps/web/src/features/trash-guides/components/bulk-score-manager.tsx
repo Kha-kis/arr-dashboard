@@ -13,6 +13,7 @@
 
 import type { CustomFormatScoreEntry } from "@arr/shared";
 import { useQueryClient } from "@tanstack/react-query";
+import { bulkScoreKeys } from "../../../lib/query-keys";
 import {
 	AlertCircle,
 	CheckSquare,
@@ -281,7 +282,7 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 
 		if (confirm("Are you sure you want to discard all unsaved changes?")) {
 			setModifiedScores(new Map());
-			void queryClient.invalidateQueries({ queryKey: ["bulk-scores"] });
+			void queryClient.invalidateQueries({ queryKey: bulkScoreKeys.all });
 		}
 	};
 

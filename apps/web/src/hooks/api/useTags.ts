@@ -2,9 +2,9 @@
 
 import type { ServiceTagResponse } from "@arr/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { TAGS_QUERY_KEY } from "../../lib/query-keys";
 import { createTag, deleteTag, fetchTags } from "../../lib/api-client/tags";
 
-const TAGS_QUERY_KEY = ["service-tags"] as const;
 
 export const useTagsQuery = () =>
 	useQuery<ServiceTagResponse[]>({

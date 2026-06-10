@@ -2,6 +2,7 @@
 
 import type { CustomQualityConfig, NamingSelectedPresets, TrashTemplate } from "@arr/shared";
 import { useQuery } from "@tanstack/react-query";
+import { trashGuidesKeys } from "../../../../lib/query-keys";
 import {
 	CheckCircle,
 	ChevronLeft,
@@ -233,7 +234,7 @@ export const TemplateCreation = ({
 	// Fetch CF Groups from cache for edit mode categorization
 	// This helps determine which CFs belong to which groups even when template data is incomplete
 	const { data: cfGroupsCache } = useQuery({
-		queryKey: ["cf-groups-cache", serviceType],
+		queryKey: trashGuidesKeys.wizard.cfGroupsCache(serviceType),
 		queryFn: async () => {
 			// API returns array directly, not wrapped in { entries: [...] }
 			const entries = await apiRequest<CacheEntry[]>(
@@ -251,7 +252,7 @@ export const TemplateCreation = ({
 	// The template stores sourceQualityProfileTrashId which we can use to look up the profile
 	const sourceProfileTrashId = editingTemplate?.sourceQualityProfileTrashId;
 	const { data: sourceProfileData } = useQuery({
-		queryKey: ["source-profile-data", serviceType, sourceProfileTrashId],
+		queryKey: trashGuidesKeys.wizard.sourceProfileData(serviceType, sourceProfileTrashId),
 		queryFn: async () => {
 			return await apiRequest<SourceProfileResponse>(
 				`/api/trash-guides/quality-profiles/${serviceType}/${sourceProfileTrashId}`,

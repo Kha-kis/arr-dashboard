@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { trashGuidesKeys } from "../../lib/query-keys";
 import {
 	deleteInstanceOverrides,
 	type GetInstanceOverridesResponse,
@@ -12,7 +13,7 @@ import {
  */
 export function useInstanceOverrides(templateId: string | null, instanceId: string | null) {
 	return useQuery<GetInstanceOverridesResponse>({
-		queryKey: ["trash-guides", "instance-overrides", templateId, instanceId],
+		queryKey: trashGuidesKeys.instanceOverrides(templateId, instanceId),
 		queryFn: () => getInstanceOverrides(templateId!, instanceId!),
 		enabled: !!templateId && !!instanceId,
 		staleTime: 5 * 60 * 1000, // 5 minutes

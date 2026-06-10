@@ -246,7 +246,7 @@ export const useQuiFileMediaInfo = (args: {
 }) => {
 	const { quiInstanceId, qbitInstanceId, hash, fileIndex, enabled = true } = args;
 	return useQuery({
-		queryKey: ["qui", "file-mediainfo", quiInstanceId, qbitInstanceId, hash, fileIndex] as const,
+		queryKey: quiKeys.fileMediainfo(quiInstanceId, qbitInstanceId, hash, fileIndex),
 		queryFn: () =>
 			fetchQuiFileMediaInfo({
 				quiInstanceId: quiInstanceId!,
@@ -292,8 +292,8 @@ export const useQuiRenameTorrent = () => {
  * it renders `copy`, a frozen snapshot, so a query refetch can't reach it.
  */
 const invalidateTorrentPanels = (queryClient: ReturnType<typeof useQueryClient>) => {
-	queryClient.invalidateQueries({ queryKey: ["qui", "series-torrents"] });
-	queryClient.invalidateQueries({ queryKey: ["qui", "movie-torrents"] });
+	queryClient.invalidateQueries({ queryKey: quiKeys.seriesTorrentsAll });
+	queryClient.invalidateQueries({ queryKey: quiKeys.movieTorrentsAll });
 };
 
 /** Add tracker URLs to a torrent. */
@@ -352,7 +352,7 @@ export const useQuiCategories = (args: {
 }) => {
 	const { quiInstanceId, qbitInstanceId, enabled = true } = args;
 	return useQuery({
-		queryKey: ["qui", "categories", quiInstanceId, qbitInstanceId] as const,
+		queryKey: quiKeys.categories(quiInstanceId, qbitInstanceId),
 		queryFn: () =>
 			fetchQuiCategories({ quiInstanceId: quiInstanceId!, qbitInstanceId: qbitInstanceId! }),
 		enabled: enabled && quiInstanceId !== null && qbitInstanceId !== null,
@@ -370,7 +370,7 @@ export const useQuiTags = (args: {
 }) => {
 	const { quiInstanceId, qbitInstanceId, enabled = true } = args;
 	return useQuery({
-		queryKey: ["qui", "tags", quiInstanceId, qbitInstanceId] as const,
+		queryKey: quiKeys.tags(quiInstanceId, qbitInstanceId),
 		queryFn: () => fetchQuiTags({ quiInstanceId: quiInstanceId!, qbitInstanceId: qbitInstanceId! }),
 		enabled: enabled && quiInstanceId !== null && qbitInstanceId !== null,
 		staleTime: 5 * 60 * 1000,
@@ -389,7 +389,7 @@ export const useQuiCapabilities = (args: {
 }) => {
 	const { quiInstanceId, qbitInstanceId, enabled = true } = args;
 	return useQuery({
-		queryKey: ["qui", "capabilities", quiInstanceId, qbitInstanceId] as const,
+		queryKey: quiKeys.capabilities(quiInstanceId, qbitInstanceId),
 		queryFn: () =>
 			fetchQuiCapabilities({ quiInstanceId: quiInstanceId!, qbitInstanceId: qbitInstanceId! }),
 		enabled: enabled && quiInstanceId !== null && qbitInstanceId !== null,
