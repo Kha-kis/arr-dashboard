@@ -8,6 +8,7 @@
  */
 
 import { AlertCircle, Layers, Rocket, X } from "lucide-react";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 
 interface TemplateInstanceSelectorProps {
 	templateName: string;
@@ -25,7 +26,9 @@ export const TemplateInstanceSelector = ({
 	onSelectInstance,
 	onBulkDeploy,
 	onClose,
-}: TemplateInstanceSelectorProps) => (
+}: TemplateInstanceSelectorProps) => {
+	const [incognitoMode] = useIncognitoMode();
+	return (
 	<div
 		className="fixed inset-0 bg-black/80 backdrop-blur-xs flex items-center justify-center z-modal p-4 animate-in fade-in duration-200"
 		role="dialog"
@@ -97,7 +100,7 @@ export const TemplateInstanceSelector = ({
 							>
 								<div>
 									<div className="font-medium text-foreground group-hover:text-foreground transition-colors">
-										{instance.label}
+										{incognitoMode ? getLinuxInstanceName(instance.label) : instance.label}
 									</div>
 									<div className="text-sm text-muted-foreground mt-1">{instance.service}</div>
 								</div>
@@ -132,3 +135,4 @@ export const TemplateInstanceSelector = ({
 		</div>
 	</div>
 );
+};

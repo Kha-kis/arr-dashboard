@@ -1,4 +1,5 @@
 import type { CleanupRuleResponse, CreateCleanupRule } from "@arr/shared";
+import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -96,7 +97,9 @@ function createWrapper() {
 		defaultOptions: { queries: { retry: false, gcTime: 0 } },
 	});
 	return ({ children }: { children: ReactNode }) => (
-		<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+		<QueryClientProvider client={queryClient}>
+			<IncognitoProvider>{children}</IncognitoProvider>
+		</QueryClientProvider>
 	);
 }
 

@@ -12,6 +12,7 @@
 "use client";
 
 import type { CustomFormatScoreEntry } from "@arr/shared";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { useQueryClient } from "@tanstack/react-query";
 import { bulkScoreKeys } from "../../../lib/query-keys";
 import {
@@ -61,6 +62,7 @@ interface BulkScoreManagerProps {
 }
 
 export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkScoreManagerProps) {
+	const [incognitoMode] = useIncognitoMode();
 	const { gradient: themeGradient } = useThemeGradient();
 	const queryClient = useQueryClient();
 
@@ -479,7 +481,7 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 								)
 								.map((instance) => (
 									<option key={instance.id} value={instance.id}>
-										{instance.label} ({instance.service.toUpperCase()})
+										{incognitoMode ? getLinuxInstanceName(instance.label) : instance.label} ({instance.service.toUpperCase()})
 									</option>
 								))}
 						</select>
