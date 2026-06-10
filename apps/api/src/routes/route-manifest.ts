@@ -125,7 +125,7 @@ export const PUBLIC_ROUTE_GROUPS: readonly RouteGroup[] = [
 		path: "/api/auto-tag/webhook",
 		prefix: "/api/auto-tag/webhook",
 		register: registerAutoTagWebhookRoutes,
-		maturity: "experimental",
+		maturity: "operator",
 		summary:
 			"Inbound Sonarr/Radarr Connect webhook for real-time auto-tagging. Authenticates via per-user Bearer token (user's hashed webhookSecret). Public route — no session cookie required.",
 	},
@@ -133,7 +133,7 @@ export const PUBLIC_ROUTE_GROUPS: readonly RouteGroup[] = [
 		path: "/api/webhooks/qui",
 		prefix: "/api",
 		register: registerQuiWebhookRoutes,
-		maturity: "experimental",
+		maturity: "stable",
 		summary:
 			"Inbound qui webhook receiver (Phase 5.1). Authenticates via per-user `?secret=...` query param (matches qui's `ApiKeyQuery` scheme). Stores raw events in QuiEventLog and publishes to the in-process event bus for SSE fan-out.",
 	},
@@ -218,14 +218,14 @@ export const PROTECTED_ROUTE_GROUPS: readonly RouteGroup[] = [
 		path: "/api/hunting",
 		prefix: "/api",
 		register: registerHuntingRoutes,
-		maturity: "internal",
+		maturity: "operator",
 		summary: "Auto-search configuration and execution",
 	},
 	{
 		path: "/api/queue-cleaner",
 		prefix: "/api",
 		register: registerQueueCleanerRoutes,
-		maturity: "internal",
+		maturity: "operator",
 		summary: "Queue cleanup rules, strikes, dry-run preview",
 	},
 	{
@@ -262,7 +262,7 @@ export const PROTECTED_ROUTE_GROUPS: readonly RouteGroup[] = [
 		path: "/api/label-sync",
 		prefix: "/api/label-sync",
 		register: registerLabelSyncRoutes,
-		maturity: "experimental",
+		maturity: "operator",
 		summary:
 			"Generic any-to-any media-service tag/label sync rules (issue #384). Sub-arc 1: Sonarr/Radarr → Plex.",
 	},
@@ -270,7 +270,7 @@ export const PROTECTED_ROUTE_GROUPS: readonly RouteGroup[] = [
 		path: "/api/auto-tag",
 		prefix: "/api/auto-tag",
 		register: registerAutoTagRoutes,
-		maturity: "experimental",
+		maturity: "operator",
 		summary:
 			"Criteria-based auto-tagger rules — applies tags to LibraryCache items matching the rule's criteria DSL (genre, year, codec, watch state, …). Companion to Label Sync. Webhook config (secret read/rotate) lives here under session auth; the inbound webhook itself is in PUBLIC_ROUTE_GROUPS at /api/auto-tag/webhook so Connect can reach it without a session cookie.",
 	},
@@ -285,9 +285,9 @@ export const PROTECTED_ROUTE_GROUPS: readonly RouteGroup[] = [
 		path: "/api/qui",
 		prefix: "/api",
 		register: registerQuiRoutes,
-		maturity: "experimental",
+		maturity: "stable",
 		summary:
-			"Federated peer integration with autobrr/qui (qBittorrent UI) — read-only torrent state, trackers, cross-seed siblings; powers the Torrent Health panel on library item detail pages.",
+			"Federated peer integration with autobrr/qui (qBittorrent UI) — torrent state, trackers, cross-seed siblings, and capability-aware torrent mutations (pause/resume, limits, trackers, tags); powers the Torrent Health panel and detail drawer on library item pages.",
 	},
 
 	// --- External integrations (Seerr / TRaSH Guides) ---
@@ -302,7 +302,7 @@ export const PROTECTED_ROUTE_GROUPS: readonly RouteGroup[] = [
 		path: "/api/trash-guides",
 		prefix: "/api/trash-guides",
 		register: registerTrashGuidesRoutes,
-		maturity: "internal",
+		maturity: "operator",
 		summary: "TRaSH cache, templates, deployment, profiles",
 	},
 ];
