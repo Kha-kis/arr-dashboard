@@ -4,8 +4,10 @@ import {
 	clearValidationQuarantine,
 	fetchLogFiles,
 	fetchSecurityPosture,
+	completeTautulliMigration,
 	fetchSystemInfo,
 	fetchSystemSettings,
+	fetchTautulliMigrationStatus,
 	fetchValidationHealth,
 	fetchValidationQuarantine,
 	type LogFilesResponse,
@@ -15,13 +17,14 @@ import {
 	type SecurityPostureResponse,
 	type SystemInfoResponse,
 	type SystemSettingsResponse,
+	type TautulliMigrationStatus,
 	type UpdateSystemSettingsPayload,
 	updateSystemSettings,
 	type ValidationHealthResponse,
 } from "../../lib/api-client/system";
 import { getErrorMessage } from "../../lib/error-utils";
 import { POLLING_STANDARD } from "../../lib/polling-intervals";
-import { systemKeys, validationKeys } from "../../lib/query-keys";
+import { pulseKeys, serviceKeys, systemKeys, validationKeys } from "../../lib/query-keys";
 
 // ============================================================================
 // System Settings
@@ -150,6 +153,42 @@ export function useClearQuarantine() {
 		},
 		onError: (err) => {
 			toast.error(`Failed to clear quarantine: ${getErrorMessage(err)}`);
+		},
+	});
+}
+
+// ============================================================================
+// Tautulli Removal Migration (3.0 — ADR-0007)
+// ============================================================================
+
+export function useTautulliMigrationStatus() {
+	return useQuery<TautulliMigrationStatus>({
+		queryKey: systemKeys.tautulliMigration,
+		queryFn: fetchTautulliMigrationStatus,
+		// One-shot gate: no polling. Re-checked on mount and after the
+		// completion mutation invalidates the key.
+		staleTime: Number.POSITIVE_INFINITY,
+		// A 401 (or transient error) must not block the app — the dialog
+		// simply does not render until a successful fetch says it should.
+		retry: false,
+	});
+}
+
+export function useCompleteTautulliMigration() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: completeTautulliMigration,
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: systemKeys.tautulliMigration });
+			// Instance rows were deleted (cache rows cascade) — refresh the
+			// services list and any Pulse rows derived from lingering caches.
+			queryClient.invalidateQueries({ queryKey: serviceKeys.all });
+			queryClient.invalidateQueries({ queryKey: pulseKeys.all });
+			toast.success("Tautulli removed — you're all set");
+		},
+		onError: (err) => {
+			toast.error(`Failed to complete migration: ${getErrorMessage(err)}`);
 		},
 	});
 }

@@ -1,10 +1,15 @@
 import { createReadStream, existsSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { LOG_DIR, LOG_LEVEL, LOG_MAX_FILES, LOG_MAX_SIZE } from "../lib/logger.js";
+import {
+	readTautulliPassReport,
+	type TautulliPassReport,
+} from "../lib/rules-migration/tautulli-pass.js";
 import { evaluateSecurityPosture } from "../lib/security/security-posture.js";
+import { resolveSecretsPath } from "../lib/utils/secrets-path.js";
 import { validateRequest } from "../lib/utils/validate.js";
 import { getAppVersionInfo } from "../lib/utils/version.js";
 import { KNOWN_INTEGRATIONS } from "../lib/validation/index.js";
@@ -574,6 +579,62 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				capturedAt: new Date().toISOString(),
 			},
 		});
+	});
+
+	/**
+	 * GET /system/migrations/tautulli
+	 *
+	 * Tautulli removal migration status (3.0, ADR-0007). `needed` is true
+	 * while pre-3.0 TAUTULLI service instances linger; the frontend shows
+	 * a blocking dialog until the user acknowledges. The rules-pass report
+	 * (written at boot by the tautulli-migration plugin) is included for
+	 * disclosure of which cleanup/auto-tag rules were disabled or modified.
+	 */
+	app.get("/migrations/tautulli", async (request, reply) => {
+		const instances = await app.prisma.serviceInstance.findMany({
+			where: {
+				userId: request.currentUser!.id, // preHandler guarantees auth
+				service: "TAUTULLI",
+			},
+			select: { id: true, label: true },
+		});
+
+		// Report is disclosure-only — a missing/unreadable report degrades
+		// to "no rule details," never blocks the dialog.
+		let rulesReport: TautulliPassReport | null = null;
+		if (instances.length > 0) {
+			const dataDir = dirname(resolveSecretsPath(app.config.DATABASE_URL || "file:./dev.db"));
+			rulesReport = await readTautulliPassReport(dataDir);
+		}
+
+		return reply.send({
+			needed: instances.length > 0,
+			instances,
+			rulesReport,
+		});
+	});
+
+	/**
+	 * POST /system/migrations/tautulli
+	 *
+	 * Acknowledge the Tautulli removal: deletes the lingering TAUTULLI
+	 * service instances (TautulliCache + CacheRefreshStatus rows cascade).
+	 * Idempotent — a second call removes nothing and still succeeds.
+	 */
+	app.post("/migrations/tautulli", async (request, reply) => {
+		const result = await app.prisma.serviceInstance.deleteMany({
+			where: {
+				userId: request.currentUser!.id, // preHandler guarantees auth
+				service: "TAUTULLI",
+			},
+		});
+
+		request.log.info(
+			{ removedInstances: result.count },
+			"Tautulli migration acknowledged — lingering instances removed",
+		);
+
+		return reply.send({ success: true, removedInstances: result.count });
 	});
 
 	done();
