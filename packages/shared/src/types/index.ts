@@ -8,6 +8,7 @@ export * from "./label-sync";
 export * from "./library";
 export * from "./library-cleanup";
 export * from "./manual-import";
+export * from "./notification-metadata";
 export * from "./notifications";
 export * from "./oidc-provider";
 export * from "./password";
