@@ -8,7 +8,7 @@ import type { UserEpisodeCompletion } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { validateRequest } from "../../lib/utils/validate.js";
-import { aggregateUserEpisodeCompletion } from "./lib/user-episode-helpers.js";
+import { aggregateUserEpisodeCompletion } from "../../lib/media-stats/user-episode-helpers.js";
 
 const MAX_BATCH_SIZE = 200;
 

@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { sanitizeErrorMessage, buildCacheHealthItems, type CacheRefreshStatusRow } from "../lib/cache-health-helpers.js";
+import { sanitizeErrorMessage, buildCacheHealthItems, type CacheRefreshStatusRow } from "../../../lib/media-stats/cache-health-helpers.js";
 
 describe("sanitizeErrorMessage", () => {
 	it("returns null for null input", () => {

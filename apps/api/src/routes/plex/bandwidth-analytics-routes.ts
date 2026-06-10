@@ -8,7 +8,7 @@ import type { BandwidthAnalytics } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { analyticsQuery } from "./analytics-schemas.js";
-import { aggregateBandwidthAnalytics } from "./lib/bandwidth-analytics-helpers.js";
+import { aggregateBandwidthAnalytics } from "../../lib/media-stats/bandwidth-analytics-helpers.js";
 
 export async function registerBandwidthAnalyticsRoutes(
 	app: FastifyInstance,

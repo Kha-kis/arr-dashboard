@@ -13,7 +13,7 @@ import {
 	type ParseLogger,
 	type PlexCacheEntry,
 	type TautulliCacheEntry,
-} from "../lib/watch-enrichment-helpers.js";
+} from "../../../lib/media-stats/watch-enrichment-helpers.js";
 
 const testLogger: ParseLogger = { warn: () => {} };
 

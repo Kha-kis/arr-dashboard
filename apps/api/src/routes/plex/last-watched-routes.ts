@@ -10,7 +10,7 @@ import type { TopMediaResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { validateRequest } from "../../lib/utils/validate.js";
-import { aggregateLastWatched } from "./lib/top-media-helpers.js";
+import { aggregateLastWatched } from "../../lib/media-stats/top-media-helpers.js";
 
 const lastWatchedQuery = z.object({
 	mediaType: z.enum(["movie", "series", "music"]),

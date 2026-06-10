@@ -8,7 +8,7 @@ import type { TranscodeAnalytics } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { analyticsQuery } from "./analytics-schemas.js";
-import { aggregateTranscodeAnalytics } from "./lib/transcode-analytics-helpers.js";
+import { aggregateTranscodeAnalytics } from "../../lib/media-stats/transcode-analytics-helpers.js";
 
 export async function registerTranscodeAnalyticsRoutes(
 	app: FastifyInstance,

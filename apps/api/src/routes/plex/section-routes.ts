@@ -6,7 +6,7 @@
 
 import type { PlexSectionsResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
-import { mapToSections } from "./lib/section-helpers.js";
+import { mapToSections } from "../../lib/media-stats/section-helpers.js";
 
 export async function registerSectionRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	/**
