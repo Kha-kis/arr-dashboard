@@ -1,160 +1,86 @@
 import { describe, expect, it } from "vitest";
-import type { TautulliSessionItem } from "../../lib/tautulli/tautulli-client.js";
 import {
-	buildTautulliSessionMap,
-	enrichSessionsWithTautulli,
+	normalizeJellyfinMediaType,
+	normalizePlexMediaType,
 	type PlexSessionInput,
+	toEnrichedSessions,
 } from "../lib/session-enrichment-helpers.js";
 
-// ============================================================================
-// Factories
-// ============================================================================
-
-function plexSession(overrides: Partial<PlexSessionInput> = {}): PlexSessionInput {
+function session(overrides: Partial<PlexSessionInput> = {}): PlexSessionInput {
 	return {
 		user: { title: "alice" },
-		title: "Test Movie",
-		type: "movie",
-		ratingKey: "12345",
-		videoDecision: "direct play",
-		bandwidth: 5000,
+		title: "Dune",
+		ratingKey: "rk-1",
 		state: "playing",
+		videoDecision: "directplay",
+		audioDecision: "directplay",
+		bandwidth: 12000,
+		player: { title: "Living Room TV", platform: "Roku" },
 		...overrides,
 	};
 }
 
-function tautulliSession(overrides: Partial<TautulliSessionItem> = {}): TautulliSessionItem {
-	return {
-		session_key: "1",
-		rating_key: "12345",
-		title: "Test Movie",
-		media_type: "movie",
-		user: "alice",
-		friendly_name: "Alice",
-		player: "Roku Ultra",
-		platform: "Roku",
-		product: "Plex for Roku",
-		state: "playing",
-		progress_percent: "50",
-		transcode_decision: "direct play",
-		stream_video_decision: "direct play",
-		stream_audio_decision: "copy",
-		video_resolution: "1080",
-		audio_codec: "aac",
-		video_codec: "h264",
-		bandwidth: "5000",
-		location: "lan",
-		...overrides,
-	};
-}
+describe("toEnrichedSessions", () => {
+	it("sources platform/player/audioDecision from the Plex session natively", () => {
+		const [enriched] = toEnrichedSessions([session()]);
 
-// ============================================================================
-// buildTautulliSessionMap
-// ============================================================================
-
-describe("buildTautulliSessionMap", () => {
-	it("creates a map keyed by rating_key", () => {
-		const sessions = [
-			tautulliSession({ rating_key: "100" }),
-			tautulliSession({ rating_key: "200" }),
-		];
-		const map = buildTautulliSessionMap(sessions);
-		expect(map.size).toBe(2);
-		expect(map.get("100")?.rating_key).toBe("100");
-		expect(map.get("200")?.rating_key).toBe("200");
-	});
-
-	it("skips sessions with empty rating_key", () => {
-		const sessions = [tautulliSession({ rating_key: "" }), tautulliSession({ rating_key: "100" })];
-		const map = buildTautulliSessionMap(sessions);
-		expect(map.size).toBe(1);
-	});
-});
-
-// ============================================================================
-// enrichSessionsWithTautulli
-// ============================================================================
-
-describe("enrichSessionsWithTautulli", () => {
-	it("enriches Plex session when Tautulli match exists", () => {
-		const plex = [plexSession({ ratingKey: "100" })];
-		const map = buildTautulliSessionMap([
-			tautulliSession({
-				rating_key: "100",
-				stream_audio_decision: "transcode",
-				video_codec: "hevc",
-				audio_codec: "eac3",
-				video_resolution: "2160",
-				platform: "Apple TV",
-				player: "Infuse",
-			}),
-		]);
-
-		const result = enrichSessionsWithTautulli(plex, map);
-		expect(result).toHaveLength(1);
-		expect(result[0]).toEqual({
+		expect(enriched).toMatchObject({
 			user: "alice",
-			title: "Test Movie",
-			grandparentTitle: undefined,
-			mediaType: "movie",
-			videoDecision: "direct play",
-			bandwidth: 5000,
+			title: "Dune",
+			platform: "Roku",
+			player: "Living Room TV",
+			audioDecision: "directplay",
+			videoDecision: "directplay",
+			bandwidth: 12000,
 			state: "playing",
-			audioDecision: "transcode",
-			videoCodec: "hevc",
-			audioCodec: "eac3",
-			videoResolution: "2160",
-			platform: "Apple TV",
-			player: "Infuse",
 		});
 	});
 
-	it("returns null fields when no Tautulli match found", () => {
-		const plex = [plexSession({ ratingKey: "999" })];
-		const map = buildTautulliSessionMap([tautulliSession({ rating_key: "100" })]);
+	it("leaves codec/resolution fields null pending the Tracearr-era rewrite (ADR-0007)", () => {
+		const [enriched] = toEnrichedSessions([session()]);
 
-		const result = enrichSessionsWithTautulli(plex, map);
-		expect(result[0]?.audioDecision).toBeNull();
-		expect(result[0]?.videoCodec).toBeNull();
-		expect(result[0]?.audioCodec).toBeNull();
-		expect(result[0]?.videoResolution).toBeNull();
-		expect(result[0]?.platform).toBeNull();
-		expect(result[0]?.player).toBeNull();
+		expect(enriched?.videoCodec).toBeNull();
+		expect(enriched?.audioCodec).toBeNull();
+		expect(enriched?.videoResolution).toBeNull();
 	});
 
-	it("handles multiple sessions with partial Tautulli matches", () => {
-		const plex = [
-			plexSession({ ratingKey: "100", user: { title: "alice" } }),
-			plexSession({ ratingKey: "200", user: { title: "bob" } }),
-			plexSession({ ratingKey: "300", user: { title: "charlie" } }),
-		];
-		const map = buildTautulliSessionMap([
-			tautulliSession({ rating_key: "100", platform: "Roku" }),
-			tautulliSession({ rating_key: "300", platform: "Android" }),
+	it("tolerates sessions with no player block", () => {
+		const [enriched] = toEnrichedSessions([session({ player: null, audioDecision: null })]);
+
+		expect(enriched?.platform).toBeNull();
+		expect(enriched?.player).toBeNull();
+		expect(enriched?.audioDecision).toBeNull();
+	});
+
+	it("formats grandparentTitle as 'Show - Episode' and normalizes media type", () => {
+		const [enriched] = toEnrichedSessions([
+			session({ title: "Part One", grandparentTitle: "Dune: Prophecy", type: "episode" }),
 		]);
 
-		const result = enrichSessionsWithTautulli(plex, map);
-		expect(result).toHaveLength(3);
-		expect(result[0]?.platform).toBe("Roku");
-		expect(result[1]?.platform).toBeNull();
-		expect(result[2]?.platform).toBe("Android");
+		expect(enriched?.title).toBe("Dune: Prophecy - Part One");
+		expect(enriched?.grandparentTitle).toBe("Dune: Prophecy");
+		expect(enriched?.mediaType).toBe("series");
 	});
 
-	it("gracefully handles empty Tautulli map", () => {
-		const plex = [plexSession()];
-		const map = new Map<string, TautulliSessionItem>();
+	it("defaults missing bandwidth to 0", () => {
+		const [enriched] = toEnrichedSessions([session({ bandwidth: null })]);
+		expect(enriched?.bandwidth).toBe(0);
+	});
+});
 
-		const result = enrichSessionsWithTautulli(plex, map);
-		expect(result).toHaveLength(1);
-		expect(result[0]?.platform).toBeNull();
-		expect(result[0]?.videoCodec).toBeNull();
+describe("media type normalization", () => {
+	it("maps Plex types", () => {
+		expect(normalizePlexMediaType("movie")).toBe("movie");
+		expect(normalizePlexMediaType("episode")).toBe("series");
+		expect(normalizePlexMediaType("track")).toBe("music");
+		expect(normalizePlexMediaType("photo")).toBe("other");
+		expect(normalizePlexMediaType(undefined)).toBe("other");
 	});
 
-	it("formats grandparentTitle correctly", () => {
-		const plex = [plexSession({ grandparentTitle: "Breaking Bad", title: "Pilot" })];
-		const map = new Map<string, TautulliSessionItem>();
-
-		const result = enrichSessionsWithTautulli(plex, map);
-		expect(result[0]?.title).toBe("Breaking Bad - Pilot");
+	it("maps Jellyfin types", () => {
+		expect(normalizeJellyfinMediaType("Movie")).toBe("movie");
+		expect(normalizeJellyfinMediaType("Episode")).toBe("series");
+		expect(normalizeJellyfinMediaType("Audio")).toBe("music");
+		expect(normalizeJellyfinMediaType("Photo")).toBe("other");
 	});
 });

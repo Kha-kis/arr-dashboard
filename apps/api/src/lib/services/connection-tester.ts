@@ -69,10 +69,6 @@ export async function testServiceConnection(
 	try {
 		const normalizedBaseUrl = baseUrl.replace(/\/$/, "");
 
-		// Tautulli uses query-param auth instead of X-Api-Key header
-		if (service === "tautulli") {
-			return await testTautulliConnection(normalizedBaseUrl, apiKey);
-		}
 
 		// Plex uses X-Plex-Token header auth
 		if (service === "plex") {
@@ -360,66 +356,6 @@ async function testQuiConnection(baseUrl: string, apiKey: string): Promise<Conne
 }
 
 /**
- * Tests connection to a Tautulli instance using query-param auth.
- */
-async function testTautulliConnection(
-	baseUrl: string,
-	apiKey: string,
-): Promise<ConnectionTestResult> {
-	const testUrlObj = new URL(`${baseUrl}/api/v2`);
-	testUrlObj.searchParams.set("apikey", apiKey);
-	testUrlObj.searchParams.set("cmd", "get_tautulli_info");
-
-	const tautulliUrl = testUrlObj.toString();
-	const response = await fetch(tautulliUrl, {
-		headers: { Accept: "application/json" },
-		signal: AbortSignal.timeout(5000),
-	});
-
-	const proxyDetected = detectAuthProxy(response, tautulliUrl);
-	if (proxyDetected) {
-		return {
-			success: false,
-			error: "Authentication proxy detected",
-			details: `${proxyDetected}\n\n${AUTH_PROXY_ADVICE}`,
-		};
-	}
-
-	if (!response.ok) {
-		return handleHttpError(response, baseUrl);
-	}
-
-	const contentType = response.headers.get("content-type");
-	if (!contentType?.includes("application/json")) {
-		return {
-			success: false,
-			error: "Invalid response format",
-			details:
-				"Received HTML instead of JSON. Check if the base URL is correct (e.g., http://localhost:8181). If behind an auth proxy, use the internal/LAN URL.",
-		};
-	}
-
-	const json = (await response.json()) as {
-		response?: { result?: string; data?: { tautulli_version?: string } };
-	};
-
-	if (json.response?.result !== "success") {
-		return {
-			success: false,
-			error: "Tautulli API returned an error",
-			details: "Check that the API key is correct and Tautulli is running.",
-		};
-	}
-
-	const version = json.response.data?.tautulli_version ?? "unknown";
-	return {
-		success: true,
-		message: "Successfully connected to Tautulli",
-		version,
-	};
-}
-
-/**
  * Tests connection to a Plex Media Server using X-Plex-Token auth.
  */
 async function testPlexConnection(baseUrl: string, token: string): Promise<ConnectionTestResult> {
@@ -546,7 +482,7 @@ async function testJellyfinConnection(
 				details: "Invalid API key. Generate one in Jellyfin Dashboard > API Keys.",
 			};
 		}
-	} catch (authErr) {
+	} catch (_authErr) {
 		return {
 			success: false,
 			error: "API key validation failed",

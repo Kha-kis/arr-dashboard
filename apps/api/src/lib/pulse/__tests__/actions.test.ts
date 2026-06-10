@@ -34,21 +34,13 @@ vi.mock("../../queue-cleaner/scheduler.js", () => ({
 }));
 
 const refreshPlexCache = vi.fn();
-const refreshTautulliCache = vi.fn();
 vi.mock("../../plex/plex-cache-refresher.js", () => ({
 	refreshPlexCache: (...args: unknown[]) => refreshPlexCache(...args),
 }));
-vi.mock("../../tautulli/tautulli-cache-refresher.js", () => ({
-	refreshTautulliCache: (...args: unknown[]) => refreshTautulliCache(...args),
-}));
 
 const requirePlexClient = vi.fn();
-const requireTautulliClient = vi.fn();
 vi.mock("../../plex/plex-helpers.js", () => ({
 	requirePlexClient: (...args: unknown[]) => requirePlexClient(...args),
-}));
-vi.mock("../../tautulli/tautulli-helpers.js", () => ({
-	requireTautulliClient: (...args: unknown[]) => requireTautulliClient(...args),
 }));
 
 import { InstanceNotFoundError } from "../../errors.js";
@@ -88,9 +80,7 @@ beforeEach(() => {
 	queueCleanerScheduler.isRunning.mockReset();
 	queueCleanerScheduler.start.mockReset();
 	refreshPlexCache.mockReset();
-	refreshTautulliCache.mockReset();
 	requirePlexClient.mockReset();
-	requireTautulliClient.mockReset();
 	markEnabled.mockReset();
 	cacheStatusUpsert.mockReset();
 	cacheStatusUpsert.mockResolvedValue({});
@@ -191,10 +181,6 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		label: "Refresh now",
 		destructive: false,
 	};
-	const tautulliAction: PulseAction = {
-		...plexAction,
-		target: { instanceId: "inst-tautulli-1", cacheType: "tautulli" },
-	};
 
 	it("refreshes the plex cache via requirePlexClient + refreshPlexCache", async () => {
 		const fakeClient = { id: "plex-client" };
@@ -210,7 +196,6 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		expect(result.status).toBe("ok");
 		expect(result.detail).toBeUndefined();
 		expect(requirePlexClient).toHaveBeenCalledWith(fakeApp, "user-1", "inst-plex-1");
-		expect(requireTautulliClient).not.toHaveBeenCalled();
 
 		// Await the background task so the rest of the assertions see the
 		// post-refresh state. In production the route handler does NOT await
@@ -238,38 +223,6 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		expect(upsertArgs.update.lastResult).toBe("success");
 		expect(upsertArgs.update.itemCount).toBe(42);
 		expect(upsertArgs.update.lastRefreshedAt).toBeInstanceOf(Date);
-	});
-
-	it("refreshes the tautulli cache via requireTautulliClient + refreshTautulliCache", async () => {
-		const fakeClient = { id: "tautulli-client" };
-		requireTautulliClient.mockResolvedValue({ client: fakeClient, instance: {} });
-		refreshTautulliCache.mockResolvedValue({ upserted: 7, errors: 0 });
-
-		const result = await dispatchPulseAction(fakeApp, "user-1", tautulliAction, fakeLog);
-
-		expect(result.status).toBe("ok");
-		expect(result.detail).toBeUndefined();
-		expect(requireTautulliClient).toHaveBeenCalledWith(fakeApp, "user-1", "inst-tautulli-1");
-
-		// Wait for the fire-and-forget background refresh + write-through
-		// before asserting they ran.
-		await result.backgroundTask;
-
-		expect(refreshTautulliCache).toHaveBeenCalledWith(
-			fakeClient,
-			fakeApp.prisma,
-			"inst-tautulli-1",
-			fakeLog,
-		);
-		// Same write-through contract for the tautulli branch.
-		expect(cacheStatusUpsert).toHaveBeenCalledTimes(1);
-		const upsertArgs = cacheStatusUpsert.mock.calls[0]?.[0] as {
-			where: { instanceId_cacheType: { instanceId: string; cacheType: string } };
-		};
-		expect(upsertArgs.where.instanceId_cacheType).toEqual({
-			instanceId: "inst-tautulli-1",
-			cacheType: "tautulli",
-		});
 	});
 
 	it("returns 200 immediately even when the refresher is slow — fire-and-forget contract", async () => {
@@ -347,16 +300,6 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		expect(refreshPlexCache).not.toHaveBeenCalled();
 	});
 
-	it("propagates InstanceNotFoundError from requireTautulliClient", async () => {
-		requireTautulliClient.mockRejectedValue(new InstanceNotFoundError("inst-tautulli-1"));
-
-		await expect(
-			dispatchPulseAction(fakeApp, "user-1", tautulliAction, fakeLog),
-		).rejects.toMatchObject({
-			statusCode: 404,
-		});
-		expect(refreshTautulliCache).not.toHaveBeenCalled();
-	});
 });
 
 // -----------------------------------------------------------------------------

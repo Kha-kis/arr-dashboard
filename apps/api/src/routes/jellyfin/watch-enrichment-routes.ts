@@ -1,7 +1,7 @@
 /**
  * Jellyfin Watch Enrichment Routes
  *
- * Batch endpoint to fetch watch status for library items from JellyfinCache + TautulliCache.
+ * Batch endpoint to fetch watch status for library items from JellyfinCache.
  * No live API calls — reads exclusively from cached data.
  */
 
@@ -35,7 +35,7 @@ export async function registerWatchEnrichmentRoutes(
 	/**
 	 * GET /api/jellyfin/watch-enrichment?tmdbIds=123,456&types=movie,series
 	 *
-	 * Reads JellyfinCache + optionally TautulliCache to return watch data.
+	 * Reads JellyfinCache to return watch data.
 	 * Keys in response are "movie:123" or "series:456".
 	 */
 	app.get("/", async (request, reply) => {
@@ -68,32 +68,17 @@ export async function registerWatchEnrichmentRoutes(
 			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
 			select: { id: true },
 		});
-		const tautulliInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "TAUTULLI", enabled: true },
-			select: { id: true },
-		});
-
 		const jellyfinInstanceIds = jellyfinInstances.map((i) => i.id);
-		const tautulliInstanceIds = tautulliInstances.map((i) => i.id);
 
-		const [jellyfinEntries, tautulliEntries] = await Promise.all([
+		const jellyfinEntries =
 			jellyfinInstanceIds.length > 0
-				? app.prisma.jellyfinCache.findMany({
+				? await app.prisma.jellyfinCache.findMany({
 						where: {
 							instanceId: { in: jellyfinInstanceIds },
 							tmdbId: { in: tmdbIdList },
 						},
 					})
-				: [],
-			tautulliInstanceIds.length > 0
-				? app.prisma.tautulliCache.findMany({
-						where: {
-							instanceId: { in: tautulliInstanceIds },
-							tmdbId: { in: tmdbIdList },
-						},
-					})
-				: [],
-		]);
+				: [];
 
 		// Aggregate enrichment data
 		const items: Record<
@@ -146,33 +131,6 @@ export async function registerWatchEnrichmentRoutes(
 			}
 		}
 
-		// Supplement with Tautulli data where Jellyfin has no watch info
-		for (const entry of tautulliEntries) {
-			const key = `${entry.mediaType}:${entry.tmdbId}`;
-			if (!uniqueKeys.has(key)) continue;
-
-			const existing = items[key];
-			if (existing && existing.watchCount > 0) continue;
-
-			let watchedByUsers: string[] = [];
-			try {
-				watchedByUsers = JSON.parse(entry.watchedByUsers) as string[];
-			} catch {
-				// Skip malformed JSON
-			}
-
-			items[key] = {
-				lastWatchedAt: entry.lastWatchedAt?.toISOString() ?? null,
-				watchCount: entry.watchCount,
-				watchedByUsers,
-				onDeck: existing?.onDeck ?? false,
-				userRating: existing?.userRating ?? null,
-				source: "tautulli",
-				jellyfinId: existing?.jellyfinId ?? null,
-				instanceId: existing?.instanceId ?? null,
-				collections: existing?.collections ?? [],
-			};
-		}
 
 		return reply.send({ items });
 	});

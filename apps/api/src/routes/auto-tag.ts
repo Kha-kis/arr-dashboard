@@ -470,7 +470,7 @@ export async function registerAutoTagRoutes(app: FastifyInstance, _opts: Fastify
 		// the same fast-path check the inbound Connect webhook handler uses,
 		// just inverted (we have plaintext + hash, want to confirm match).
 		const user = await app.prisma.user.findUnique({ where: { id: userId } });
-		if (!user || !user.hashedWebhookSecret) {
+		if (!user?.hashedWebhookSecret) {
 			return reply
 				.status(412)
 				.send({ error: "Webhook secret not configured. Generate one first." });

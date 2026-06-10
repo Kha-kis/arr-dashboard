@@ -84,7 +84,7 @@ export const JellyfinTab = () => {
 				</p>
 			</div>
 
-			{/* Top Media Leaderboards (replaces Tautulli home-stats) */}
+			{/* Top Media Leaderboards (SessionSnapshot-derived) */}
 			<TopMediaChart
 				data={topMoviesQuery.data}
 				isLoading={topMoviesQuery.isLoading}

@@ -23,7 +23,7 @@ export interface RuleTemplate {
 	icon: LucideIcon;
 	category: TemplateCategory;
 	/** Services that must be configured for this template to be useful */
-	requiredServices: Array<"plex" | "seerr" | "tautulli">;
+	requiredServices: Array<"plex" | "seerr">;
 	/** Builds a CreateCleanupRule with placeholder values the user can customize */
 	buildRule: () => CreateCleanupRule;
 }
@@ -129,22 +129,19 @@ export const RULE_TEMPLATES: RuleTemplate[] = [
 interface CleanupRuleTemplatesProps {
 	hasPlex: boolean;
 	hasSeerr: boolean;
-	hasTautulli: boolean;
 	onSelectTemplate: (rule: CreateCleanupRule) => void;
 }
 
 export function CleanupRuleTemplates({
 	hasPlex,
 	hasSeerr,
-	hasTautulli,
 	onSelectTemplate,
 }: CleanupRuleTemplatesProps) {
 	const { gradient } = useThemeGradient();
 
-	const serviceAvailable = (service: "plex" | "seerr" | "tautulli") => {
+	const serviceAvailable = (service: "plex" | "seerr") => {
 		if (service === "plex") return hasPlex;
 		if (service === "seerr") return hasSeerr;
-		if (service === "tautulli") return hasTautulli;
 		return false;
 	};
 

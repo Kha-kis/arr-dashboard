@@ -1053,7 +1053,7 @@ async function executeRadarrHuntWithSdk(
 						streamingDeps.log,
 					)) {
 						const slim = projectMovie(raw);
-						if (slim && slim.monitored && slim.hasFile) {
+						if (slim?.monitored && slim.hasFile) {
 							monitoredMovies.push(slim);
 						}
 					}
@@ -1061,7 +1061,7 @@ async function executeRadarrHuntWithSdk(
 					const allMovies = await client.movie.getAll();
 					for (const raw of allMovies) {
 						const slim = projectMovie(raw as unknown as Record<string, unknown>);
-						if (slim && slim.monitored && slim.hasFile) {
+						if (slim?.monitored && slim.hasFile) {
 							monitoredMovies.push(slim);
 						}
 					}
@@ -1293,7 +1293,7 @@ async function executeLidarrHuntWithSdk(
 						{ path: "/api/v1/album" },
 					)) {
 						const slim = projectAlbum(raw);
-						if (slim && slim.monitored && slim.trackFileCount > 0) {
+						if (slim?.monitored && slim.trackFileCount > 0) {
 							monitoredAlbums.push(slim);
 						}
 					}
@@ -1301,7 +1301,7 @@ async function executeLidarrHuntWithSdk(
 					const allAlbums = await client.album.getAll();
 					for (const raw of allAlbums) {
 						const slim = projectAlbum(raw as unknown as Record<string, unknown>);
-						if (slim && slim.monitored && slim.trackFileCount > 0) {
+						if (slim?.monitored && slim.trackFileCount > 0) {
 							monitoredAlbums.push(slim);
 						}
 					}
@@ -1539,7 +1539,7 @@ async function executeReadarrHuntWithSdk(
 						{ path: "/api/v1/book" },
 					)) {
 						const slim = projectBook(raw);
-						if (slim && slim.monitored && slim.bookFileCount > 0) {
+						if (slim?.monitored && slim.bookFileCount > 0) {
 							monitoredBooks.push(slim);
 						}
 					}
@@ -1547,7 +1547,7 @@ async function executeReadarrHuntWithSdk(
 					const allBooks = await client.book.getAll();
 					for (const raw of allBooks) {
 						const slim = projectBook(raw as unknown as Record<string, unknown>);
-						if (slim && slim.monitored && slim.bookFileCount > 0) {
+						if (slim?.monitored && slim.bookFileCount > 0) {
 							monitoredBooks.push(slim);
 						}
 					}

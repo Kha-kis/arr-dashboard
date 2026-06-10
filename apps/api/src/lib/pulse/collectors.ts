@@ -38,7 +38,6 @@ import {
 	processHealthIssues,
 	safeRequest,
 } from "../statistics/statistics-utils.js";
-import { createTautulliClient } from "../tautulli/tautulli-client.js";
 import { integrationHealth } from "../validation/integration-health.js";
 
 // ============================================================================
@@ -252,7 +251,7 @@ const collectMediaServerReachability: Collector = async (app, userId, log) => {
 		where: {
 			enabled: true,
 			userId,
-			service: { in: ["PLEX", "JELLYFIN", "TAUTULLI"] },
+			service: { in: ["PLEX", "JELLYFIN"] },
 		},
 	});
 
@@ -262,19 +261,15 @@ const collectMediaServerReachability: Collector = async (app, userId, log) => {
 
 	await Promise.all(
 		instances.map(async (instance) => {
-			const service = instance.service.toLowerCase() as "plex" | "jellyfin" | "tautulli";
-			const serviceLabel =
-				service === "plex" ? "Plex" : service === "jellyfin" ? "Jellyfin" : "Tautulli";
+			const service = instance.service.toLowerCase() as "plex" | "jellyfin";
+			const serviceLabel = service === "plex" ? "Plex" : "Jellyfin";
 			try {
 				if (service === "plex") {
 					const client = createPlexClient(app.encryptor, instance, app.log);
 					await client.getIdentity();
-				} else if (service === "jellyfin") {
+				} else {
 					const client = createJellyfinClient(app.encryptor, instance, app.log);
 					await client.getPublicInfo();
-				} else {
-					const client = createTautulliClient(app.encryptor, instance, app.log);
-					await client.getInfo();
 				}
 				// Reachable — no row emitted.
 			} catch (error) {
@@ -581,16 +576,17 @@ const collectSeerrCircuitBreaker: Collector = async (app, userId) => {
 };
 
 // ============================================================================
-// 4. Cache Staleness (Plex / Tautulli)
+// 4. Cache Staleness (Plex)
 // ============================================================================
 
 // Cache types the pulse-action dispatcher knows how to refresh. Must stay
 // in sync with `pulseCacheTypeSchema` in @arr/shared and with the dispatcher
-// branch in apps/api/src/lib/pulse/actions.ts. Stale cache rows for other
-// cacheType values (e.g. "plex_episode") still emit a warning — just
-// without an action button, so we don't ship a click the backend can't
-// fulfil.
-const REFRESHABLE_CACHE_TYPES = new Set<PulseCacheType>(["plex", "tautulli"]);
+// in apps/api/src/lib/pulse/actions.ts. Stale cache rows for other
+// cacheType values (e.g. "plex_episode", or pre-migration "tautulli" rows
+// that linger until the 3.0 dialog deletes their instances) still emit a
+// warning — just without an action button, so we don't ship a click the
+// backend can't fulfil.
+const REFRESHABLE_CACHE_TYPES = new Set<PulseCacheType>(["plex"]);
 
 function actionForStaleCache(instanceId: string, cacheType: string): PulseAction | undefined {
 	if (!REFRESHABLE_CACHE_TYPES.has(cacheType as PulseCacheType)) return undefined;
@@ -617,7 +613,6 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 		const label = status.instance.label;
 		const cacheLabels: Record<string, string> = {
 			plex: "Plex",
-			tautulli: "Tautulli",
 			plex_episode: "Plex episodes",
 		};
 		const cacheLabel = cacheLabels[status.cacheType] ?? status.cacheType;

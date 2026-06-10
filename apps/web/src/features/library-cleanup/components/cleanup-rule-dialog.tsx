@@ -8,7 +8,6 @@ import type {
 } from "@arr/shared";
 import type { LucideIcon } from "lucide-react";
 import {
-	BarChart3,
 	Brain,
 	ChevronDown,
 	Film,
@@ -144,22 +143,6 @@ const RULE_TYPES: Array<{ value: CleanupRuleType; label: string; desc: string }>
 		label: "Tag Match",
 		desc: "Flag items that have specific ARR tags",
 	},
-	// Tautulli rules
-	{
-		value: "tautulli_last_watched",
-		label: "Tautulli: Last Watched",
-		desc: "Flag items by when last watched",
-	},
-	{
-		value: "tautulli_watch_count",
-		label: "Tautulli: Watch Count",
-		desc: "Flag items by total play count",
-	},
-	{
-		value: "tautulli_watched_by",
-		label: "Tautulli: Watched By",
-		desc: "Flag items by which users watched",
-	},
 	// Plex integration rules
 	{
 		value: "plex_last_watched",
@@ -277,7 +260,7 @@ const RULE_CATEGORIES: Array<{
 	label: string;
 	icon: LucideIcon;
 	types: CleanupRuleType[];
-	requires?: "plex" | "tautulli" | "plex+seerr" | "jellyfin";
+	requires?: "plex" | "plex+seerr" | "jellyfin";
 }> = [
 	{
 		id: "content",
@@ -332,13 +315,6 @@ const RULE_CATEGORIES: Array<{
 			"seerr_is_requested",
 			"seerr_request_count",
 		],
-	},
-	{
-		id: "tautulli",
-		label: "Tautulli Integration",
-		icon: BarChart3,
-		types: ["tautulli_last_watched", "tautulli_watch_count", "tautulli_watched_by"],
-		requires: "tautulli" as const,
 	},
 	{
 		id: "plex",
@@ -479,13 +455,6 @@ export function CleanupRuleDialog({
 	const [seerrModifiedAgeDays, setSeerrModifiedAgeDays] = useState(90);
 	const [seerrModifiedByUsers, setSeerrModifiedByUsers] = useState("");
 
-	// ── Tautulli params ──────────────────────────────────────────────
-	const [tautulliLastWatchedOp, setTautulliLastWatchedOp] = useState("older_than");
-	const [tautulliLastWatchedDays, setTautulliLastWatchedDays] = useState(90);
-	const [tautulliWatchCountOp, setTautulliWatchCountOp] = useState("less_than");
-	const [tautulliWatchCount, setTautulliWatchCount] = useState(1);
-	const [tautulliWatchedByOp, setTautulliWatchedByOp] = useState("includes_any");
-	const [selectedTautulliUsers, setSelectedTautulliUsers] = useState<string[]>([]);
 
 	// ── Plex params ─────────────────────────────────────────────────
 	const [plexLastWatchedOp, setPlexLastWatchedOp] = useState("older_than");
@@ -699,19 +668,6 @@ export function CleanupRuleDialog({
 						Array.isArray(p.userNames) ? (p.userNames as string[]).join(", ") : "",
 					);
 					break;
-				// Tautulli rules
-				case "tautulli_last_watched":
-					setTautulliLastWatchedOp((p.operator as string) ?? "older_than");
-					setTautulliLastWatchedDays((p.days as number) ?? 90);
-					break;
-				case "tautulli_watch_count":
-					setTautulliWatchCountOp((p.operator as string) ?? "less_than");
-					setTautulliWatchCount((p.count as number) ?? 1);
-					break;
-				case "tautulli_watched_by":
-					setTautulliWatchedByOp((p.operator as string) ?? "includes_any");
-					setSelectedTautulliUsers(Array.isArray(p.userNames) ? (p.userNames as string[]) : []);
-					break;
 				// Plex rules
 				case "plex_last_watched":
 					setPlexLastWatchedOp((p.operator as string) ?? "older_than");
@@ -857,13 +813,6 @@ export function CleanupRuleDialog({
 			setSeerrModifiedAgeOp("older_than");
 			setSeerrModifiedAgeDays(90);
 			setSeerrModifiedByUsers("");
-			// Tautulli defaults
-			setTautulliLastWatchedOp("older_than");
-			setTautulliLastWatchedDays(90);
-			setTautulliWatchCountOp("less_than");
-			setTautulliWatchCount(1);
-			setTautulliWatchedByOp("includes_any");
-			setSelectedTautulliUsers([]);
 			// Plex defaults
 			setPlexLastWatchedOp("older_than");
 			setPlexLastWatchedDays(90);
@@ -1003,12 +952,6 @@ export function CleanupRuleDialog({
 		seerrModifiedAgeOp,
 		seerrModifiedAgeDays,
 		seerrModifiedByUsers,
-		tautulliLastWatchedOp,
-		tautulliLastWatchedDays,
-		tautulliWatchCountOp,
-		tautulliWatchCount,
-		tautulliWatchedByOp,
-		selectedTautulliUsers,
 		plexLastWatchedOp,
 		plexLastWatchedDays,
 		plexWatchCountOp,
@@ -1064,7 +1007,6 @@ export function CleanupRuleDialog({
 				if (
 					(cond.ruleType === "seerr_requested_by" ||
 						cond.ruleType === "plex_watched_by" ||
-						cond.ruleType === "tautulli_watched_by" ||
 						cond.ruleType === "seerr_modified_by") &&
 					Array.isArray(p.userNames) &&
 					p.userNames.length === 0
@@ -1484,7 +1426,6 @@ export function CleanupRuleDialog({
 								<div className="space-y-1.5">
 									{RULE_CATEGORIES.filter((cat) => {
 										if (cat.requires === "plex" && !fieldOptions?.hasPlex) return false;
-										if (cat.requires === "tautulli" && !fieldOptions?.hasTautulli) return false;
 										if (cat.requires === "jellyfin" && !fieldOptions?.hasJellyfin) return false;
 										if (cat.requires === "plex+seerr" && (!fieldOptions?.hasPlex || !hasSeerr))
 											return false;
@@ -1649,18 +1590,6 @@ export function CleanupRuleDialog({
 								setSeerrModifiedAgeDays={setSeerrModifiedAgeDays}
 								seerrModifiedByUsers={seerrModifiedByUsers}
 								setSeerrModifiedByUsers={setSeerrModifiedByUsers}
-								tautulliLastWatchedOp={tautulliLastWatchedOp}
-								setTautulliLastWatchedOp={setTautulliLastWatchedOp}
-								tautulliLastWatchedDays={tautulliLastWatchedDays}
-								setTautulliLastWatchedDays={setTautulliLastWatchedDays}
-								tautulliWatchCountOp={tautulliWatchCountOp}
-								setTautulliWatchCountOp={setTautulliWatchCountOp}
-								tautulliWatchCount={tautulliWatchCount}
-								setTautulliWatchCount={setTautulliWatchCount}
-								tautulliWatchedByOp={tautulliWatchedByOp}
-								setTautulliWatchedByOp={setTautulliWatchedByOp}
-								selectedTautulliUsers={selectedTautulliUsers}
-								setSelectedTautulliUsers={setSelectedTautulliUsers}
 								plexLastWatchedOp={plexLastWatchedOp}
 								setPlexLastWatchedOp={setPlexLastWatchedOp}
 								plexLastWatchedDays={plexLastWatchedDays}
@@ -2007,19 +1936,6 @@ interface ParamsFieldsProps {
 	setSeerrModifiedAgeDays: (v: number) => void;
 	seerrModifiedByUsers: string;
 	setSeerrModifiedByUsers: (v: string) => void;
-	// Tautulli
-	tautulliLastWatchedOp: string;
-	setTautulliLastWatchedOp: (v: string) => void;
-	tautulliLastWatchedDays: number;
-	setTautulliLastWatchedDays: (v: number) => void;
-	tautulliWatchCountOp: string;
-	setTautulliWatchCountOp: (v: string) => void;
-	tautulliWatchCount: number;
-	setTautulliWatchCount: (v: number) => void;
-	tautulliWatchedByOp: string;
-	setTautulliWatchedByOp: (v: string) => void;
-	selectedTautulliUsers: string[];
-	setSelectedTautulliUsers: (v: string[]) => void;
 	// Plex
 	plexLastWatchedOp: string;
 	setPlexLastWatchedOp: (v: string) => void;
@@ -2190,18 +2106,6 @@ function ParamsFields(props: ParamsFieldsProps) {
 		setSeerrModifiedAgeDays,
 		seerrModifiedByUsers,
 		setSeerrModifiedByUsers,
-		tautulliLastWatchedOp,
-		setTautulliLastWatchedOp,
-		tautulliLastWatchedDays,
-		setTautulliLastWatchedDays,
-		tautulliWatchCountOp,
-		setTautulliWatchCountOp,
-		tautulliWatchCount,
-		setTautulliWatchCount,
-		tautulliWatchedByOp,
-		setTautulliWatchedByOp,
-		selectedTautulliUsers,
-		setSelectedTautulliUsers,
 		plexLastWatchedOp,
 		setPlexLastWatchedOp,
 		plexLastWatchedDays,
@@ -2814,100 +2718,6 @@ function ParamsFields(props: ParamsFieldsProps) {
 					</label>
 					<p className="text-xs text-muted-foreground">
 						Flag items whose Seerr request was last modified by these users.
-					</p>
-				</div>
-			);
-
-		// ── Tautulli Rules ───────────────────────────────────────────
-		case "tautulli_last_watched":
-			return (
-				<div className="space-y-2">
-					<div className="flex gap-2">
-						<label className="block flex-1">
-							<span className={labelClass}>Operator</span>
-							<select
-								value={tautulliLastWatchedOp}
-								onChange={(e) => setTautulliLastWatchedOp(e.target.value)}
-								className={inputClass}
-							>
-								<option value="older_than">Last watched older than</option>
-								<option value="never">Never watched</option>
-							</select>
-						</label>
-						{tautulliLastWatchedOp !== "never" && (
-							<label className="block w-24">
-								<span className={labelClass}>Days</span>
-								<input
-									type="number"
-									value={tautulliLastWatchedDays}
-									onChange={(e) => setTautulliLastWatchedDays(Number(e.target.value))}
-									min={1}
-									className={inputClass}
-								/>
-							</label>
-						)}
-					</div>
-					<p className="text-xs text-muted-foreground">
-						Requires a Tautulli instance to be configured.
-					</p>
-				</div>
-			);
-		case "tautulli_watch_count":
-			return (
-				<div className="space-y-2">
-					<div className="flex gap-2">
-						<label className="block flex-1">
-							<span className={labelClass}>Operator</span>
-							<select
-								value={tautulliWatchCountOp}
-								onChange={(e) => setTautulliWatchCountOp(e.target.value)}
-								className={inputClass}
-							>
-								<option value="less_than">Less than</option>
-								<option value="greater_than">Greater than</option>
-							</select>
-						</label>
-						<label className="block w-24">
-							<span className={labelClass}>Count</span>
-							<input
-								type="number"
-								value={tautulliWatchCount}
-								onChange={(e) => setTautulliWatchCount(Number(e.target.value))}
-								min={0}
-								className={inputClass}
-							/>
-						</label>
-					</div>
-					<p className="text-xs text-muted-foreground">
-						Flag items by total play count from Tautulli.
-					</p>
-				</div>
-			);
-		case "tautulli_watched_by":
-			return (
-				<div className="space-y-2">
-					<label className="block">
-						<span className={labelClass}>Operator</span>
-						<select
-							value={tautulliWatchedByOp}
-							onChange={(e) => setTautulliWatchedByOp(e.target.value)}
-							className={inputClass}
-						>
-							<option value="includes_any">Watched by any of</option>
-							<option value="excludes_all">Not watched by any of</option>
-						</select>
-					</label>
-					<MultiSelectField
-						label="Tautulli Users"
-						options={fieldOptions?.tautulliUsers ?? []}
-						selected={selectedTautulliUsers}
-						onChange={setSelectedTautulliUsers}
-						loading={fieldOptionsLoading}
-						inputClass={inputClass}
-						labelClass={labelClass}
-					/>
-					<p className="text-xs text-muted-foreground">
-						Flag items based on which Tautulli users have watched them.
 					</p>
 				</div>
 			);

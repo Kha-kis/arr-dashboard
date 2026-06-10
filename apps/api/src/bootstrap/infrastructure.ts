@@ -10,6 +10,7 @@ import schedulerRegistryPlugin from "../plugins/scheduler-registry.js";
 import { securityPlugin } from "../plugins/security.js";
 import seerrCachePlugin from "../plugins/seerr-cache.js";
 import seerrCircuitBreakerPlugin from "../plugins/seerr-circuit-breaker.js";
+import tautulliMigrationPlugin from "../plugins/tautulli-migration.js";
 
 /**
  * Core infrastructure plugins — registered first because every domain depends on them.
@@ -27,6 +28,7 @@ import seerrCircuitBreakerPlugin from "../plugins/seerr-circuit-breaker.js";
  *  - schedulerRegistry → `app.schedulerRegistry` (must precede scheduler plugins)
  *  - lifecycle         → graceful shutdown + health wiring
  *  - heapMonitor       → periodic process.memoryUsage() samples (issue #427 follow-up)
+ *  - tautulliMigration → one-shot 3.0 stored-rule pass (ADR-0007; idempotent)
  */
 export function registerInfrastructure(app: FastifyInstance): void {
 	app.register(prismaPlugin);
@@ -39,4 +41,5 @@ export function registerInfrastructure(app: FastifyInstance): void {
 	app.register(schedulerRegistryPlugin);
 	app.register(lifecyclePlugin);
 	app.register(heapMonitorPlugin);
+	app.register(tautulliMigrationPlugin);
 }

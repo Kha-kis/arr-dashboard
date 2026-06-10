@@ -13,7 +13,6 @@ export const LIBRARY_SERVICES = ["sonarr", "radarr", "lidarr", "readarr"] as con
 /** Non-arr integration services (different APIs, used as data sources) */
 export const INTEGRATION_SERVICES = [
 	"seerr",
-	"tautulli",
 	"plex",
 	"jellyfin",
 	"emby",
@@ -72,7 +71,6 @@ export const multiInstanceConfigSchema = z.object({
 	lidarr: z.array(serviceInstanceSchema).default([]),
 	readarr: z.array(serviceInstanceSchema).default([]),
 	seerr: z.array(serviceInstanceSchema).default([]),
-	tautulli: z.array(serviceInstanceSchema).default([]),
 	plex: z.array(serviceInstanceSchema).default([]),
 	jellyfin: z.array(serviceInstanceSchema).default([]),
 	emby: z.array(serviceInstanceSchema).default([]),

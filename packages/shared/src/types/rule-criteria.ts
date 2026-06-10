@@ -45,10 +45,6 @@ export const ruleTypeSchema = z.enum([
 	"seerr_is_4k",
 	"seerr_request_modified_age",
 	"seerr_modified_by",
-	// Tautulli integration rules
-	"tautulli_last_watched",
-	"tautulli_watch_count",
-	"tautulli_watched_by",
 	// Plex integration rules
 	"plex_last_watched",
 	"plex_watch_count",
@@ -229,23 +225,6 @@ export const seerrModifiedByParamsSchema = z.object({
 	userNames: z.array(z.string().min(1)).min(1),
 });
 
-// ── Tautulli Rule Params ─────────────────────────────────────────────
-
-export const tautulliLastWatchedParamsSchema = z.object({
-	operator: z.enum(["older_than", "never"]),
-	days: z.number().int().min(1).optional(),
-});
-
-export const tautulliWatchCountParamsSchema = z.object({
-	operator: z.enum(["less_than", "greater_than"]),
-	count: z.number().int().min(0),
-});
-
-export const tautulliWatchedByParamsSchema = z.object({
-	operator: z.enum(["includes_any", "excludes_all"]),
-	userNames: z.array(z.string().min(1)).min(1),
-});
-
 // ── Plex Rule Params ────────────────────────────────────────────────
 
 export const plexLastWatchedParamsSchema = z.object({
@@ -351,7 +330,9 @@ export const userRetentionParamsSchema = z.object({
 	operator: z.enum(["watched_by_none", "watched_by_all", "watched_by_count"]),
 	userNames: z.array(z.string().min(1)).optional(),
 	minUsers: z.number().int().min(1).optional(),
-	source: z.enum(["plex", "tautulli", "either"]).default("plex"),
+	// "tautulli" removed in 3.0 (ADR-0007); stored rules carrying it were
+	// disabled by the migration pass — editing one forces a valid choice.
+	source: z.enum(["plex", "either"]).default("plex"),
 });
 
 export const stalenessScoreParamsSchema = z.object({
@@ -430,9 +411,6 @@ export type SeerrRequestStatusParams = z.infer<typeof seerrRequestStatusParamsSc
 export type SeerrIs4kParams = z.infer<typeof seerrIs4kParamsSchema>;
 export type SeerrRequestModifiedAgeParams = z.infer<typeof seerrRequestModifiedAgeParamsSchema>;
 export type SeerrModifiedByParams = z.infer<typeof seerrModifiedByParamsSchema>;
-export type TautulliLastWatchedParams = z.infer<typeof tautulliLastWatchedParamsSchema>;
-export type TautulliWatchCountParams = z.infer<typeof tautulliWatchCountParamsSchema>;
-export type TautulliWatchedByParams = z.infer<typeof tautulliWatchedByParamsSchema>;
 export type PlexLastWatchedParams = z.infer<typeof plexLastWatchedParamsSchema>;
 export type PlexWatchCountParams = z.infer<typeof plexWatchCountParamsSchema>;
 export type PlexOnDeckParams = z.infer<typeof plexOnDeckParamsSchema>;
@@ -494,9 +472,6 @@ export const ruleParamSchemaMap: Record<string, z.ZodType> = {
 	seerr_modified_by: seerrModifiedByParamsSchema,
 	seerr_is_requested: seerrIsRequestedParamsSchema,
 	seerr_request_count: seerrRequestCountParamsSchema,
-	tautulli_last_watched: tautulliLastWatchedParamsSchema,
-	tautulli_watch_count: tautulliWatchCountParamsSchema,
-	tautulli_watched_by: tautulliWatchedByParamsSchema,
 	plex_last_watched: plexLastWatchedParamsSchema,
 	plex_watch_count: plexWatchCountParamsSchema,
 	plex_on_deck: plexOnDeckParamsSchema,
@@ -530,7 +505,7 @@ export const ruleParamSchemaMap: Record<string, z.ZodType> = {
  * Data source each rule type depends on.
  * Rules whose data source fails should be skipped to avoid false matches.
  */
-export type DataSourceDependency = "seerr" | "tautulli" | "plex" | "jellyfin" | null;
+export type DataSourceDependency = "seerr" | "plex" | "jellyfin" | null;
 
 export const ruleDataSourceMap: Record<string, DataSourceDependency> = {
 	seerr_requested_by: "seerr",
@@ -541,9 +516,6 @@ export const ruleDataSourceMap: Record<string, DataSourceDependency> = {
 	seerr_modified_by: "seerr",
 	seerr_is_requested: "seerr",
 	seerr_request_count: "seerr",
-	tautulli_last_watched: "tautulli",
-	tautulli_watch_count: "tautulli",
-	tautulli_watched_by: "tautulli",
 	plex_last_watched: "plex",
 	plex_watch_count: "plex",
 	plex_on_deck: "plex",
@@ -565,7 +537,7 @@ export const ruleDataSourceMap: Record<string, DataSourceDependency> = {
 	recently_active: "plex",
 	seerr_requester_watched: "seerr",
 	seerr_requester_not_watched: "seerr",
-	// List membership rules don't depend on Plex/Jellyfin/Seerr/Tautulli prefetch.
+	// List membership rules don't depend on Plex/Jellyfin/Seerr prefetch.
 	// Their data source is the dedicated cache tables (TmdbListCache /
 	// TraktListCache) refreshed by their own schedulers — `null` here means
 	// the prefetch dispatch ignores them.

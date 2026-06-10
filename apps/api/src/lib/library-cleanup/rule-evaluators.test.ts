@@ -48,7 +48,7 @@ interface TestRule {
 
 const NOW = new Date("2026-03-01T12:00:00Z");
 
-/** Rich default data blob used by rating, genre, seerr/plex/tautulli lookups. */
+/** Rich default data blob used by rating, genre, seerr/plex lookups. */
 const DEFAULT_DATA = {
 	genres: ["Action", "Sci-Fi"],
 	ratings: { tmdb: { value: 7.5 }, imdb: { value: 7.2 } },
@@ -457,70 +457,6 @@ describe("plex_last_watched rule", () => {
 		);
 		expect(result).toContain("Never watched");
 		expect(result).toContain("added to Plex");
-	});
-});
-
-// ---------------------------------------------------------------------------
-// 7. Tautulli watch count rule
-// ---------------------------------------------------------------------------
-
-describe("tautulli_watch_count rule", () => {
-	const tautulliMap = new Map();
-	tautulliMap.set("movie:12345", {
-		lastWatchedAt: new Date("2026-01-01T00:00:00Z"),
-		watchCount: 1,
-		watchedByUsers: ["admin"],
-	});
-
-	const ctx = baseCtx({ tautulliMap });
-
-	it("matches when watch count is less than threshold", () => {
-		const result = evaluateSingleCondition(
-			makeCacheItem(),
-			"tautulli_watch_count",
-			{ operator: "less_than", count: 3 },
-			ctx,
-		);
-		expect(result).toContain("play count: 1");
-		expect(result).toContain("threshold: < 3");
-	});
-
-	it("matches when watch count is greater than threshold", () => {
-		const highCountMap = new Map();
-		highCountMap.set("movie:12345", {
-			lastWatchedAt: new Date(),
-			watchCount: 10,
-			watchedByUsers: ["admin", "bob"],
-		});
-		const result = evaluateSingleCondition(
-			makeCacheItem(),
-			"tautulli_watch_count",
-			{ operator: "greater_than", count: 5 },
-			baseCtx({ tautulliMap: highCountMap }),
-		);
-		expect(result).toContain("play count: 10");
-	});
-
-	it("infers 0 plays for items missing from tautulli when map is populated", () => {
-		// Item with tmdbId 99999 — not in the tautulliMap
-		const missingData = { ...DEFAULT_DATA, remoteIds: { tmdbId: 99999 } };
-		const result = evaluateSingleCondition(
-			makeCacheItem({ data: JSON.stringify(missingData) }),
-			"tautulli_watch_count",
-			{ operator: "less_than", count: 1 },
-			ctx,
-		);
-		expect(result).toContain("Not tracked by Tautulli");
-	});
-
-	it("does not match when count equals threshold for less_than", () => {
-		const result = evaluateSingleCondition(
-			makeCacheItem(),
-			"tautulli_watch_count",
-			{ operator: "less_than", count: 1 },
-			ctx,
-		);
-		expect(result).toBeNull();
 	});
 });
 

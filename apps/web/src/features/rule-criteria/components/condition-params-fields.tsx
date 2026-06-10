@@ -67,12 +67,6 @@ export function getDefaultConditionParams(ruleType: CleanupRuleType): Record<str
 			return { operator: "older_than", days: 90 };
 		case "seerr_modified_by":
 			return { userNames: [] };
-		case "tautulli_last_watched":
-			return { operator: "older_than", days: 90 };
-		case "tautulli_watch_count":
-			return { operator: "less_than", count: 1 };
-		case "tautulli_watched_by":
-			return { operator: "includes_any", userNames: [] };
 		case "plex_last_watched":
 			return { operator: "older_than", days: 90 };
 		case "plex_watch_count":
@@ -771,102 +765,6 @@ export function ConditionParamsFields({
 				</div>
 			);
 
-		case "tautulli_last_watched": {
-			const tautulliOp = get<string>("operator", "older_than");
-			return (
-				<div className="space-y-2">
-					<div className="flex gap-2">
-						<label className="block flex-1">
-							<span className={labelClass}>Operator</span>
-							<select
-								value={tautulliOp}
-								onChange={(e) => set("operator", e.target.value)}
-								className={inputClass}
-							>
-								<option value="older_than">Last watched older than</option>
-								<option value="never">Never watched</option>
-							</select>
-						</label>
-						{tautulliOp !== "never" && (
-							<label className="block w-24">
-								<span className={labelClass}>Days</span>
-								<input
-									type="number"
-									value={get("days", 90)}
-									onChange={(e) => set("days", Number(e.target.value))}
-									min={1}
-									className={inputClass}
-								/>
-							</label>
-						)}
-					</div>
-					<p className="text-xs text-muted-foreground">
-						Requires a Tautulli instance to be configured.
-					</p>
-				</div>
-			);
-		}
-
-		case "tautulli_watch_count":
-			return (
-				<div className="space-y-2">
-					<div className="flex gap-2">
-						<label className="block flex-1">
-							<span className={labelClass}>Operator</span>
-							<select
-								value={get("operator", "less_than")}
-								onChange={(e) => set("operator", e.target.value)}
-								className={inputClass}
-							>
-								<option value="less_than">Less than</option>
-								<option value="greater_than">Greater than</option>
-							</select>
-						</label>
-						<label className="block w-24">
-							<span className={labelClass}>Count</span>
-							<input
-								type="number"
-								value={get("count", 1)}
-								onChange={(e) => set("count", Number(e.target.value))}
-								min={0}
-								className={inputClass}
-							/>
-						</label>
-					</div>
-					<p className="text-xs text-muted-foreground">
-						Flag items by total play count from Tautulli.
-					</p>
-				</div>
-			);
-
-		case "tautulli_watched_by":
-			return (
-				<div className="space-y-2">
-					<label className="block">
-						<span className={labelClass}>Operator</span>
-						<select
-							value={get("operator", "includes_any")}
-							onChange={(e) => set("operator", e.target.value)}
-							className={inputClass}
-						>
-							<option value="includes_any">Watched by any of</option>
-							<option value="excludes_all">Not watched by any of</option>
-						</select>
-					</label>
-					<MultiSelectField
-						label="Tautulli Users"
-						options={fieldOptions?.tautulliUsers ?? []}
-						selected={get("userNames", []) as string[]}
-						onChange={(v) => set("userNames", v)}
-						loading={fieldOptionsLoading}
-						inputClass={inputClass}
-						labelClass={labelClass}
-					/>
-					<p className="text-xs text-muted-foreground">
-						Flag items based on which Tautulli users have watched them.
-					</p>
-				</div>
-			);
 
 		case "plex_last_watched": {
 			const plexLastOp = get<string>("operator", "older_than");
@@ -1328,7 +1226,6 @@ export function ConditionParamsFields({
 								className={inputClass}
 							>
 								<option value="plex">Plex</option>
-								<option value="tautulli">Tautulli</option>
 								<option value="either">Either</option>
 							</select>
 						</label>

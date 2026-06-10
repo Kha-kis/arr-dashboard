@@ -1,7 +1,7 @@
 "use client";
 
-import { Activity, CheckCircle2, TrendingUp } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Activity, TrendingUp } from "lucide-react";
+import { useState } from "react";
 import {
 	useLastWatched as _useLastWatched,
 	useMostConcurrent as _useMostConcurrent,
@@ -17,7 +17,6 @@ import {
 	useUserAnalytics,
 	useWatchHistory,
 } from "../../../hooks/api/usePlex";
-import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { BandwidthChart } from "./bandwidth-chart";
 import { CodecChart } from "./codec-chart";
@@ -43,17 +42,8 @@ export const PlexTab = () => {
 	const [timeRange, setTimeRange] = useState<number>(30);
 	const { gradient } = useThemeGradient();
 
-	// Detect Tautulli presence so we can surface enrichment status. Tautulli
-	// is no longer required for analytics — it's an optional enrichment source
-	// that adds richer codec/LAN-WAN/platform metadata when configured.
-	const { data: services = [] } = useServicesQuery();
-	const hasTautulli = useMemo(
-		() => services.some((s) => s.service.toLowerCase() === "tautulli" && s.enabled),
-		[services],
-	);
-
 	// Session-snapshot analytics — Plex instances write to SessionSnapshot
-	// regardless of Tautulli configuration. These hooks share aggregation
+	// (Tautulli removed in 3.0 — ADR-0007). These hooks share aggregation
 	// logic with the Jellyfin tab via routes/plex/lib/*-helpers.ts.
 	const transcodeQuery = useTranscodeAnalytics(timeRange);
 	const bandwidthQuery = useBandwidthAnalytics(timeRange);
@@ -96,7 +86,7 @@ export const PlexTab = () => {
 				</div>
 			</div>
 
-			{/* Source banner — explain data origin and call out Tautulli enrichment when present */}
+			{/* Source banner — explain data origin */}
 			<div className="rounded-xl border border-border/30 bg-card/30 p-4 flex items-start gap-3">
 				<Activity className="h-4 w-4 mt-0.5 shrink-0" style={{ color: gradient.from }} />
 				<div className="space-y-1.5">
@@ -104,19 +94,10 @@ export const PlexTab = () => {
 						Statistics are captured from Plex session snapshots taken every 5 minutes while streams
 						are active. Data accumulates over time as users watch.
 					</p>
-					{hasTautulli && (
-						<p className="text-xs text-muted-foreground flex items-center gap-1.5">
-							<CheckCircle2 className="h-3 w-3 shrink-0" style={{ color: gradient.from }} />
-							<span>
-								Tautulli enrichment active — codec, LAN/WAN bandwidth, and platform metadata are
-								enriched on captured sessions.
-							</span>
-						</p>
-					)}
 				</div>
 			</div>
 
-			{/* Top Media Leaderboards (replaces Tautulli home-stats top_*) */}
+			{/* Top Media Leaderboards (SessionSnapshot-derived) */}
 			<TopMediaChart
 				data={topMoviesQuery.data}
 				isLoading={topMoviesQuery.isLoading}

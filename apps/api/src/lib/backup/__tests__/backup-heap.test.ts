@@ -1,3 +1,4 @@
+/** biome-ignore-all lint/suspicious/noConsole: skip-by-default diagnostic harness — console progress output is the point */
 /**
  * Heap-measurement test for v2.18.4 OOM fix.
  *

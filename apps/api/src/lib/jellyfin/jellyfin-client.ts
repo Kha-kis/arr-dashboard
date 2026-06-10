@@ -460,7 +460,7 @@ function mapItem(item: {
 	ImageTags?: Record<string, string>;
 }): JellyfinItem {
 	const providerIds = item.ProviderIds ?? {};
-	const tmdbStr = providerIds["Tmdb"] ?? providerIds["tmdb"];
+	const tmdbStr = providerIds.Tmdb ?? providerIds.tmdb;
 	const tmdbId = tmdbStr ? Number.parseInt(tmdbStr, 10) : undefined;
 
 	return {
@@ -473,7 +473,7 @@ function mapItem(item: {
 		seasonNumber: item.ParentIndexNumber,
 		year: item.ProductionYear,
 		tmdbId: tmdbId && !Number.isNaN(tmdbId) ? tmdbId : undefined,
-		imdbId: providerIds["Imdb"] ?? providerIds["imdb"],
+		imdbId: providerIds.Imdb ?? providerIds.imdb,
 		played: item.UserData?.Played ?? false,
 		playCount: item.UserData?.PlayCount ?? 0,
 		lastPlayedDate: item.UserData?.LastPlayedDate ?? null,

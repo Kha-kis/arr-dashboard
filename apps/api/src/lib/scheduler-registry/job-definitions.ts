@@ -31,7 +31,6 @@ export const JOB_ID = {
 	plexEpisodeCache: "plex-episode-cache",
 	jellyfinCache: "jellyfin-cache",
 	jellyfinEpisodeCache: "jellyfin-episode-cache",
-	tautulliCache: "tautulli-cache",
 	seerrHealth: "seerr-health",
 	labelSync: "label-sync",
 	autoTag: "auto-tag",
@@ -144,12 +143,6 @@ export const KNOWN_JOBS: readonly JobDefinition[] = [
 		label: "Jellyfin episode cache",
 		description:
 			"Refreshes Jellyfin/Emby episode metadata cache per instance. Per-instance serial.",
-		concurrency: "per-instance",
-	},
-	{
-		id: JOB_ID.tautulliCache,
-		label: "Tautulli cache",
-		description: "Refreshes Tautulli history + library caches per instance. Per-instance serial.",
 		concurrency: "per-instance",
 	},
 	{
