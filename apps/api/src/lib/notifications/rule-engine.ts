@@ -6,13 +6,11 @@
  * First matching rule wins.
  */
 
+import { notificationConditionsMatchViaEngine } from "../rules/notifications-adapter.js";
+import type { RuleCondition } from "./condition-matcher.js";
 import type { NotificationPayload } from "./types.js";
 
-export interface RuleCondition {
-	field: string;
-	operator: "equals" | "not_equals" | "contains" | "greater_than" | "in";
-	value: string | number | string[];
-}
+export type { RuleCondition } from "./condition-matcher.js";
 
 export interface NotificationRule {
 	id: string;
@@ -87,43 +85,10 @@ export class RuleEngine {
 	}
 
 	private matchesAllConditions(payload: NotificationPayload, conditions: RuleCondition[]): boolean {
-		return conditions.every((cond) => this.matchCondition(payload, cond));
-	}
-
-	private matchCondition(payload: NotificationPayload, condition: RuleCondition): boolean {
-		const fieldValue = this.getFieldValue(payload, condition.field);
-		if (fieldValue === undefined) return false;
-
-		switch (condition.operator) {
-			case "equals":
-				return String(fieldValue) === String(condition.value);
-			case "not_equals":
-				return String(fieldValue) !== String(condition.value);
-			case "contains":
-				return String(fieldValue).toLowerCase().includes(String(condition.value).toLowerCase());
-			case "greater_than":
-				return Number(fieldValue) > Number(condition.value);
-			case "in":
-				if (Array.isArray(condition.value)) {
-					return condition.value.includes(String(fieldValue));
-				}
-				return false;
-			default:
-				return false;
-		}
-	}
-
-	private getFieldValue(payload: NotificationPayload, field: string): unknown {
-		if (field === "eventType") return payload.eventType;
-		if (field === "title") return payload.title;
-		if (field === "body") return payload.body;
-		if (field.startsWith("metadata.") && payload.metadata) {
-			const key = field.slice("metadata.".length);
-			return (payload.metadata as Record<string, unknown>)[key];
-		}
-		return undefined;
+		return notificationConditionsMatchViaEngine(payload, conditions);
 	}
 }
+
 
 /**
  * Check if the current time falls within a quiet hours window.

@@ -301,12 +301,16 @@ notifications adapter work (§4 step 5), event payloads gain a
 valuable for type-safety regardless). With the registry in place,
 composer exposure becomes a small demand-gated UI task.
 
-Documented sharp edge (preserved, per §1.3): a missing field coerces
-via `String(undefined)` → the literal `"undefined"`, so
-`equals "undefined"` can match absent metadata. v1 `field_match`
-replicates this exactly (parity-tested). Fixing it is a semantic change
-reserved for a future document-version bump, considered only if/when
-UI exposure happens.
+Documented sharp edge *(corrected 2026-06-10 at the step-5
+checkpoint — the survey misread the code)*: there is **no**
+`String(undefined)` coercion; the matcher guards
+`fieldValue === undefined` and returns false before any coercion. The
+REAL edge is that an absent field fails **every** operator, including
+`not_equals` — "metadata.instanceName not_equals X" does not match
+events lacking instanceName entirely. v1 `field_match` replicates this
+exactly (parity-tested). Changing it is a semantic change reserved for
+a future document-version bump, considered only if/when UI exposure
+happens.
 
 ### 5.3 Queue-cleaner/hunting: flat config UIs are permanent; composer is a non-goal
 
@@ -351,3 +355,16 @@ Pre-implementation adversarial re-read against `next` @ `50ed8edf`
    fail-safe (`source:"tautulli"` → null) and the dispatch
    `default: return null` are load-bearing post-A2 behavior; both join
    the §1.3 preserved-semantics list and the parity suite.
+6. *(step-4 cutover review, 2026-06-10)* The composite discriminator is
+   `operator && conditions` (legacy-exact), NEVER `ruleType ===
+   "composite"` — the two disagree on API-writable rows and keying on
+   ruleType made the engine evaluate leaf params where legacy evaluates
+   conditions. Both rule routes now reject the mixed shape at write
+   time.
+7. *(step-5 checkpoint, 2026-06-10)* §5.2's documented
+   `String(undefined)` sharp edge never existed — the matcher guards
+   undefined before coercion. The real edge (absent field fails every
+   operator incl. `not_equals`) is now documented at the predicate
+   (`notifications/condition-matcher.ts`) and parity-pinned. The
+   metadata schema registry is re-scoped to its own follow-up PR — it
+   gates only the deferred composer exposure, nothing in step 5.
