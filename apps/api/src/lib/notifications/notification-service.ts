@@ -1,4 +1,4 @@
-import type { NotificationChannelType } from "@arr/shared";
+import { eventMetadataSchemaMap, type NotificationChannelType } from "@arr/shared";
 
 const REDACTED_PLACEHOLDER = "••••••••";
 const SECRET_FIELD_NAMES = new Set([
@@ -20,14 +20,14 @@ function redactSecretFields(config: Record<string, unknown>): Record<string, unk
 		]),
 	);
 }
+
 import type { Encryptor } from "../auth/encryption.js";
 import type { PrismaClient } from "../prisma.js";
 import type { AggregationBuffer, AggregationConfig } from "./aggregation-buffer.js";
 import type { DedupGate } from "./dedup-gate.js";
 import type { NotificationDispatcher } from "./notification-dispatcher.js";
 import type { RetryHandler } from "./retry-handler.js";
-import type { RuleEngine } from "./rule-engine.js";
-import type { NotificationRule } from "./rule-engine.js";
+import type { NotificationRule, RuleEngine } from "./rule-engine.js";
 import type { ChannelFormField, NotificationLogger, NotificationPayload } from "./types.js";
 
 /**
@@ -140,6 +140,30 @@ export class NotificationService {
 	 * Failures on individual channels are logged but do not throw.
 	 */
 	async notify(payload: NotificationPayload, options?: { skipRules?: boolean }): Promise<void> {
+		// Conformance check against the per-event-type metadata schema
+		// registry (@arr/shared notification-metadata). Warn-only: a mismatch
+		// means an emitter and the registry drifted apart — that's a bug to
+		// fix in code, never a reason to drop a user's notification. Skipped
+		// for deferred re-delivery (skipRules), which already validated on
+		// first entry. The lookup is guarded even though the registry Record
+		// is compile-time exhaustive: a non-enum eventType sneaking in at
+		// runtime must not turn this advisory check into a delivery failure.
+		const registrySchema = payload.metadata ? eventMetadataSchemaMap[payload.eventType] : undefined;
+		if (registrySchema && payload.metadata && !options?.skipRules) {
+			const conformance = registrySchema.safeParse(payload.metadata);
+			if (!conformance.success) {
+				this.logger.warn(
+					{
+						eventType: payload.eventType,
+						issues: conformance.error.issues.map(
+							(issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`,
+						),
+					},
+					"Notification metadata does not match the registry schema (registry drift)",
+				);
+			}
+		}
+
 		// Dedup: skip if an identical payload was dispatched within the TTL window
 		if (this.dedupGate.isDuplicate(payload)) {
 			this.logger.debug({ eventType: payload.eventType }, "Duplicate notification suppressed");
