@@ -462,6 +462,20 @@ export const SEMANTIC_COLORS = {
 		border: "rgba(59, 130, 246, 0.3)",
 		text: "#60a5fa",
 	},
+	/**
+	 * Disabled / inactive / muted (B2 sweep): the gray accent pair used by
+	 * disabled-state cards and the slate muted-text used across breakdown
+	 * modals and diff views. Values lifted from the previously-hardcoded
+	 * sites so the sweep is visually identical.
+	 */
+	neutral: {
+		from: "#6b7280",
+		to: "#9ca3af",
+		glow: "rgba(107, 114, 128, 0.3)",
+		bg: "rgba(100, 116, 139, 0.1)",
+		border: "rgba(100, 116, 139, 0.3)",
+		text: "#94a3b8",
+	},
 } as const;
 
 /**
@@ -493,6 +507,35 @@ export const BRAND_COLORS = {
 		bg: "rgba(38, 166, 154, 0.1)",
 		border: "rgba(38, 166, 154, 0.25)",
 		text: "#26a69a",
+	},
+	// Media-server brand identities (B2 sweep). Distinct from
+	// SERVICE_GRADIENTS, whose hues are deliberately shifted for in-app
+	// UI contrast — these are the services' TRUE brand colors, for badges
+	// that identify the external service itself.
+	plex: {
+		bg: "rgba(229, 160, 13, 0.1)",
+		border: "rgba(229, 160, 13, 0.3)",
+		text: "#e5a00d",
+	},
+	jellyfin: {
+		bg: "rgba(0, 164, 220, 0.1)",
+		border: "rgba(0, 164, 220, 0.3)",
+		text: "#00a4dc",
+	},
+	emby: {
+		bg: "rgba(82, 181, 75, 0.1)",
+		border: "rgba(82, 181, 75, 0.3)",
+		text: "#52b54b",
+	},
+	musicbrainz: {
+		bg: "rgba(186, 71, 143, 0.1)",
+		border: "#ba478f",
+		text: "#ba478f",
+	},
+	goodreads: {
+		bg: "rgba(85, 59, 8, 0.1)",
+		border: "#553b08",
+		text: "#8b6914",
 	},
 } as const;
 
