@@ -61,7 +61,7 @@ vi.mock("../../lib/pulse/collectors.js", async () => {
 });
 
 import { registerPulseRoutes } from "../pulse.js";
-import { registerTestErrorHandler } from "./test-helpers.js";
+import { makePulseDismissalStub, registerTestErrorHandler } from "./test-helpers.js";
 
 // Unique user per test — the /pulse route caches per-user for 60s. Without
 // this, scenario (3) can't reliably observe a refetch.
@@ -140,6 +140,7 @@ beforeEach(async () => {
 		},
 	} as unknown as never);
 	registerTestErrorHandler(app);
+	app.decorate("prisma", { pulseDismissal: makePulseDismissalStub() } as unknown as never);
 	await app.register(registerPulseRoutes);
 	await app.ready();
 });

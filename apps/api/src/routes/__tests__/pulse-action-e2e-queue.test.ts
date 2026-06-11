@@ -39,7 +39,7 @@ vi.mock("../../lib/pulse/collectors.js", async () => {
 });
 
 import { registerPulseRoutes } from "../pulse.js";
-import { registerTestErrorHandler } from "./test-helpers.js";
+import { makePulseDismissalStub, registerTestErrorHandler } from "./test-helpers.js";
 
 type QueueItem = Record<string, unknown>;
 let queueRecords: QueueItem[];
@@ -99,6 +99,7 @@ beforeEach(async () => {
 	};
 
 	app.decorate("prisma", {
+		pulseDismissal: makePulseDismissalStub(),
 		serviceInstance: {
 			findMany: async () => [instance],
 			findFirst: async ({ where }: { where: { id: string; userId: string } }) =>

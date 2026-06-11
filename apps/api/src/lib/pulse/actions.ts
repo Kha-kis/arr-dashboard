@@ -16,6 +16,7 @@
  */
 
 import type { PulseAction, PulseCacheType, QueueRetryService, SchedulerJobId } from "@arr/shared";
+import { LIBRARY_SERVICES_UPPER } from "@arr/shared";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import {
 	isLidarrClient,
@@ -27,6 +28,7 @@ import { requireEnabledInstance } from "../arr/instance-helpers.js";
 import { parseQueueId } from "../dashboard/queue-utils.js";
 import { AppValidationError, ConflictError } from "../errors.js";
 import { getHuntingScheduler } from "../hunting/scheduler.js";
+import { getLibrarySyncScheduler } from "../library-sync/index.js";
 import { refreshPlexCache } from "../plex/plex-cache-refresher.js";
 import { requirePlexClient } from "../plex/plex-helpers.js";
 import { getQueueCleanerScheduler } from "../queue-cleaner/scheduler.js";
@@ -40,8 +42,9 @@ export interface PulseActionResult {
 	 * **ignores** this — it returns 200 as soon as the dispatcher returns.
 	 * Tests await it to verify post-refresh state without polling.
 	 *
-	 * Only populated by cache.refresh today; scheduler.enable and
-	 * queue.retry complete synchronously within the request.
+	 * Only populated by cache.refresh and library.sync today;
+	 * scheduler.enable and queue.retry complete synchronously within
+	 * the request.
 	 */
 	backgroundTask?: Promise<void>;
 }
@@ -79,6 +82,8 @@ export async function dispatchPulseAction(
 				action.target.service,
 				log,
 			);
+		case "library.sync":
+			return dispatchLibrarySync(app, userId, action.target.instanceId, log);
 	}
 }
 
@@ -256,6 +261,58 @@ async function dispatchQueueRetry(
 		"pulse-action: queue item retried",
 	);
 	return { status: "ok" };
+}
+
+// ---------------------------------------------------------------------------
+// library.sync
+// ---------------------------------------------------------------------------
+//
+// Trigger a manual library cache sync for one *arr instance. Mirrors the
+// existing `POST /library/sync/:instanceId` route exactly — ownership +
+// enabled check, library-service check, 409 if a sync is already running,
+// then fire-and-forget `scheduler.triggerSync()`. Like cache.refresh, we
+// return 200 when the sync is *accepted*, not completed: large libraries
+// sync for minutes and the Pulse contract is already eventually-consistent
+// (the `library-sync-*` row drops on a later poll once the sync succeeds
+// and clears `lastError` / bumps `lastFullSync`).
+//
+// A failed background sync writes `lastError` via the sync executor, so
+// the signal honestly re-emits — no extra write-through is needed here.
+
+async function dispatchLibrarySync(
+	app: FastifyInstance,
+	userId: string,
+	instanceId: string,
+	log: FastifyBaseLogger,
+): Promise<PulseActionResult> {
+	const instance = await requireEnabledInstance(app, userId, instanceId);
+
+	if (!(LIBRARY_SERVICES_UPPER as readonly string[]).includes(instance.service)) {
+		throw new AppValidationError(
+			`Instance is not a library service (got ${instance.service}) — only Sonarr, Radarr, Lidarr, and Readarr libraries can be synced`,
+		);
+	}
+
+	const scheduler = getLibrarySyncScheduler();
+	if (scheduler.isInstanceSyncing(instanceId)) {
+		throw new ConflictError("Library sync is already in progress for this instance");
+	}
+
+	// Fire-and-forget, mirroring the manual-sync route. `triggerSync` returns
+	// null (instead of throwing) for its internal skip cases — all of which
+	// we've already pre-validated above, except a race where another sync
+	// started between our check and the call, which is fine to lose quietly.
+	const backgroundTask = scheduler
+		.triggerSync(instanceId)
+		.then(() => undefined)
+		.catch((err: unknown) => {
+			// The executor records lastError itself; this catch only guards the
+			// trigger plumbing so an unhandled rejection can't crash the process.
+			log.error({ err, instanceId }, "pulse-action: library sync failed (background)");
+		});
+
+	log.info({ instanceId }, "pulse-action: library sync dispatched");
+	return { status: "ok", backgroundTask };
 }
 
 // ---------------------------------------------------------------------------

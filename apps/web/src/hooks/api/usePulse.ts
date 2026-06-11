@@ -2,9 +2,13 @@ import type { PulseAction, PulseResponse } from "@arr/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
+	dismissPulseSignal,
 	dispatchPulseAction,
 	fetchPulse,
 	type PulseActionResponse,
+	type RestoreAllDismissalsResponse,
+	restoreAllPulseDismissals,
+	restorePulseSignal,
 } from "../../lib/api-client/pulse";
 import { getErrorMessage } from "../../lib/error-utils";
 import { anonymizeHealthMessage, useIncognitoMode } from "../../lib/incognito";
@@ -12,6 +16,7 @@ import { POLLING_STATS } from "../../lib/polling-intervals";
 import {
 	dashboardKeys,
 	huntingKeys,
+	libraryKeys,
 	plexKeys,
 	pulseKeys,
 	queueCleanerKeys,
@@ -83,6 +88,14 @@ export const usePulseActionMutation = () => {
 					queryClient.invalidateQueries({ queryKey: dashboardKeys.queue });
 					toast.success(successCopyForAction(action));
 					break;
+				case "library.sync":
+					// The sync runs in the background (200 = accepted, not
+					// done), but syncInProgress flips immediately — dropping
+					// the sync-status key makes the library header's sync
+					// indicator reflect the in-flight sync on its next fetch.
+					queryClient.invalidateQueries({ queryKey: libraryKeys.syncStatus });
+					toast.success(successCopyForAction(action));
+					break;
 			}
 		},
 		onError: (error) => {
@@ -100,6 +113,78 @@ export const usePulseActionMutation = () => {
 	});
 };
 
+/**
+ * Dismiss a Pulse signal until it recovers (tombstone semantics — see
+ * apps/api/src/lib/pulse/dismissals.ts). The success toast carries an
+ * "Undo" action wired to the restore endpoint, so a misclick is one tap
+ * away from recovery; dismissals that outlive the toast are recoverable
+ * via the restore-all affordance on the Pulse page.
+ *
+ * Only the pulse keys are invalidated — dismissal changes what's *shown*,
+ * not any domain state.
+ */
+export const usePulseDismissMutation = () => {
+	const queryClient = useQueryClient();
+	const [incognito] = useIncognitoMode();
+
+	const invalidatePulse = () => {
+		queryClient.invalidateQueries({ queryKey: pulseKeys.all });
+		queryClient.invalidateQueries({ queryKey: pulseKeys.attention() });
+	};
+
+	// Same sanitizer rationale as usePulseActionMutation's onError: backend
+	// error strings can embed hostnames/IPs that must not leak in incognito.
+	const toastError = (error: unknown, fallback: string) => {
+		const raw = getErrorMessage(error, fallback);
+		toast.error(incognito ? anonymizeHealthMessage(raw) : raw);
+	};
+
+	return useMutation<PulseActionResponse, Error, { signalId: string }>({
+		mutationFn: ({ signalId }) => dismissPulseSignal(signalId),
+		onSuccess: (_result, { signalId }) => {
+			invalidatePulse();
+			toast.success("Signal dismissed until it recovers", {
+				action: {
+					label: "Undo",
+					onClick: () => {
+						restorePulseSignal(signalId)
+							.then(invalidatePulse)
+							.catch((error) => toastError(error, "Could not restore signal"));
+					},
+				},
+			});
+		},
+		onError: (error) => toastError(error, "Could not dismiss signal"),
+	});
+};
+
+/**
+ * Clear every dismissal tombstone for the current user — the management
+ * surface for dismissals whose undo toast is long gone. Toast copy uses
+ * the server's cleared count, not a client-side guess.
+ */
+export const usePulseRestoreAllMutation = () => {
+	const queryClient = useQueryClient();
+	const [incognito] = useIncognitoMode();
+
+	return useMutation<RestoreAllDismissalsResponse, Error, void>({
+		mutationFn: () => restoreAllPulseDismissals(),
+		onSuccess: (result) => {
+			queryClient.invalidateQueries({ queryKey: pulseKeys.all });
+			queryClient.invalidateQueries({ queryKey: pulseKeys.attention() });
+			toast.success(
+				result.cleared === 1
+					? "Restored 1 dismissed signal"
+					: `Restored ${result.cleared} dismissed signals`,
+			);
+		},
+		onError: (error) => {
+			const raw = getErrorMessage(error, "Could not restore signals");
+			toast.error(incognito ? anonymizeHealthMessage(raw) : raw);
+		},
+	});
+};
+
 function successCopyForAction(action: PulseAction): string {
 	switch (action.kind) {
 		case "scheduler.enable":
@@ -110,5 +195,7 @@ function successCopyForAction(action: PulseAction): string {
 			return "Plex cache refresh triggered";
 		case "queue.retry":
 			return "Retry queued";
+		case "library.sync":
+			return "Library sync started";
 	}
 }

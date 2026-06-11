@@ -25,7 +25,12 @@ export type PulseCategory = z.infer<typeof pulseCategorySchema>;
 // boundary. New kinds land by extending this union — schema drift between
 // client and server surfaces as a Zod parse failure, not a silent no-op.
 
-export const pulseActionKindSchema = z.enum(["scheduler.enable", "cache.refresh", "queue.retry"]);
+export const pulseActionKindSchema = z.enum([
+	"scheduler.enable",
+	"cache.refresh",
+	"queue.retry",
+	"library.sync",
+]);
 export type PulseActionKind = z.infer<typeof pulseActionKindSchema>;
 
 // Canonical scheduler job ids — match `JOB_ID` in
@@ -76,6 +81,16 @@ export const pulseActionSchema = z.discriminatedUnion("kind", [
 		label: z.string().min(1),
 		destructive: z.boolean(),
 	}),
+	z.object({
+		kind: z.literal("library.sync"),
+		// Service type is NOT carried on the envelope — the dispatcher
+		// validates the instance is a library service (Sonarr/Radarr/
+		// Lidarr/Readarr) server-side via the ownership lookup, so a
+		// client-supplied service claim would be redundant and untrusted.
+		target: z.object({ instanceId: z.string().min(1) }),
+		label: z.string().min(1),
+		destructive: z.boolean(),
+	}),
 ]);
 export type PulseAction = z.infer<typeof pulseActionSchema>;
 
@@ -111,5 +126,11 @@ export const pulseResponseSchema = z.object({
 	items: z.array(pulseItemSchema),
 	summary: pulseSummarySchema,
 	generatedAt: z.string(),
+	// Count of signals hidden by dismiss-until-recovery tombstones (always
+	// non-critical — critical signals break through dismissal at read time).
+	// Surfaces let the operator see that signals are hidden ("N dismissed")
+	// rather than silently under-reporting — counts on screen must match
+	// reality, and reality includes "you chose to hide N of these".
+	dismissedCount: z.number(),
 });
 export type PulseResponse = z.infer<typeof pulseResponseSchema>;

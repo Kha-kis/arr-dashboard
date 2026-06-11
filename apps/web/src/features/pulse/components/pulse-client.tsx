@@ -8,10 +8,12 @@ import {
 	CheckCircle2,
 	ChevronDown,
 	ChevronRight,
+	EyeOff,
 	HardDrive,
 	HeartPulse,
 	Inbox,
 	Info,
+	Loader2,
 	Settings,
 	XCircle,
 } from "lucide-react";
@@ -22,13 +24,14 @@ import {
 	GlassmorphicCard,
 	PremiumEmptyState,
 } from "../../../components/layout/premium-components";
-import { usePulseQuery } from "../../../hooks/api/usePulse";
+import { usePulseQuery, usePulseRestoreAllMutation } from "../../../hooks/api/usePulse";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { anonymizePulseItemContent, useIncognitoMode } from "../../../lib/incognito";
 import { POLLING_STATS } from "../../../lib/polling-intervals";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
 import { PulseActionButton } from "./pulse-action-button";
+import { PulseDismissButton } from "./pulse-dismiss-button";
 
 // ============================================================================
 // Severity config
@@ -147,6 +150,10 @@ function PulseItemRow({
 					<ChevronRight className="h-3 w-3" />
 				</Link>
 			)}
+
+			{/* Dismiss-until-recovery — never offered on critical rows (and the
+			    backend re-enforces the same gate at read time). */}
+			{item.severity !== "critical" && <PulseDismissButton signalId={item.id} />}
 		</div>
 	);
 }
@@ -290,6 +297,7 @@ export const PulseClient: React.FC = () => {
 	const { data, isLoading, isError, isFetching, dataUpdatedAt } = usePulseQuery();
 	const { gradient: themeGradient } = useThemeGradient();
 	const [incognito] = useIncognitoMode();
+	const restoreAll = usePulseRestoreAllMutation();
 
 	// Deep-link hash support: curated surfaces (the dashboard Needs Attention
 	// panel, scheduler collector items) route to `/pulse#<item.id>`. We wait
@@ -388,6 +396,27 @@ export const PulseClient: React.FC = () => {
 								isError={isError}
 								pollIntervalMs={POLLING_STATS}
 							/>
+							{/* Honest-counting affordance for dismiss-until-recovery: the
+							    operator must be able to SEE that signals are hidden (and
+							    get them back) — a silently shrunken feed would undercut
+							    the whole trust thesis. Doubles as the management surface
+							    for dismissals whose undo toast is long gone. */}
+							{data.dismissedCount > 0 && (
+								<button
+									type="button"
+									onClick={() => restoreAll.mutate()}
+									disabled={restoreAll.isPending}
+									aria-busy={restoreAll.isPending}
+									className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+								>
+									{restoreAll.isPending ? (
+										<Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+									) : (
+										<EyeOff className="h-3 w-3" aria-hidden="true" />
+									)}
+									{data.dismissedCount} dismissed · Restore all
+								</button>
+							)}
 						</div>
 					</div>
 				</div>
@@ -404,11 +433,24 @@ export const PulseClient: React.FC = () => {
 			    header stays anchored) but swap the copy so we don't overclaim health. */}
 			{totalItems === 0 &&
 				(canAssertHealthy ? (
-					<PremiumEmptyState
-						icon={CheckCircle2}
-						title="All clear"
-						description="No issues detected across your connected services. Everything is running smoothly."
-					/>
+					data.dismissedCount > 0 ? (
+						// Not a true "all clear" — signals exist, the operator chose to
+						// hide them. Saying "everything is running smoothly" here would
+						// overclaim; name the hidden signals instead.
+						<PremiumEmptyState
+							icon={EyeOff}
+							title="No active signals"
+							description={`${data.dismissedCount} dismissed signal${
+								data.dismissedCount === 1 ? " is" : "s are"
+							} hidden until they recover. Use "Restore all" above to bring them back.`}
+						/>
+					) : (
+						<PremiumEmptyState
+							icon={CheckCircle2}
+							title="All clear"
+							description="No issues detected across your connected services. Everything is running smoothly."
+						/>
+					)
 				) : (
 					<PremiumEmptyState
 						icon={AlertTriangle}
