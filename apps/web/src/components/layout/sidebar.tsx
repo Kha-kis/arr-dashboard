@@ -9,6 +9,7 @@ import {
 	ChevronRight,
 	Compass,
 	Eraser,
+	Gauge,
 	Globe,
 	History,
 	Inbox,
@@ -53,6 +54,11 @@ const NAV_GROUPS: NavGroup[] = [
 			// (/ redirects here post-auth) and hosts the Needs Attention panel.
 			// Pulse remains the deep-inspection view below it.
 			{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+			// Console is the operator's working surface (3.0 flagship,
+			// charter §2.1): domain health + attention feed + one-click
+			// actions, later the rule composer. Sits between the landing
+			// surface (Dashboard) and the deep-inspection view (Pulse).
+			{ href: "/console", label: "Console", icon: Gauge },
 			{ href: "/pulse", label: "Pulse", icon: Activity },
 			// `/qui` is the at-a-glance entry for the torrent layer — Sonarr/Radarr
 			// equivalent for qui. Belongs in Overview, not Maintenance, because
