@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { UnauthorizedError } from "../../lib/api-client/base";
 import {
 	clearValidationQuarantine,
+	completeTautulliMigration,
 	fetchLogFiles,
 	fetchSecurityPosture,
-	completeTautulliMigration,
 	fetchSystemInfo,
+	fetchSystemJobs,
 	fetchSystemSettings,
 	fetchTautulliMigrationStatus,
 	fetchValidationHealth,
@@ -16,15 +18,15 @@ import {
 	restartSystem,
 	type SecurityPostureResponse,
 	type SystemInfoResponse,
+	type SystemJobsResponse,
 	type SystemSettingsResponse,
 	type TautulliMigrationStatus,
 	type UpdateSystemSettingsPayload,
 	updateSystemSettings,
 	type ValidationHealthResponse,
 } from "../../lib/api-client/system";
-import { UnauthorizedError } from "../../lib/api-client/base";
 import { getErrorMessage } from "../../lib/error-utils";
-import { POLLING_STANDARD } from "../../lib/polling-intervals";
+import { POLLING_STANDARD, POLLING_STATS } from "../../lib/polling-intervals";
 import { pulseKeys, serviceKeys, systemKeys, validationKeys } from "../../lib/query-keys";
 
 // ============================================================================
@@ -62,6 +64,19 @@ export function useSystemInfo() {
 		queryKey: systemKeys.info,
 		queryFn: fetchSystemInfo,
 		refetchInterval: POLLING_STANDARD,
+	});
+}
+
+// ============================================================================
+// Background Jobs (scheduler registry)
+// ============================================================================
+
+export function useSystemJobs() {
+	return useQuery<SystemJobsResponse>({
+		queryKey: systemKeys.jobs,
+		queryFn: fetchSystemJobs,
+		staleTime: 30_000,
+		refetchInterval: POLLING_STATS,
 	});
 }
 
