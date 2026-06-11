@@ -280,3 +280,48 @@ export function completeTautulliMigration(): Promise<{
 }> {
 	return apiRequest("/api/system/migrations/tautulli", { method: "POST" });
 }
+
+// ============================================================================
+// Background Jobs (scheduler registry)
+// ============================================================================
+
+export type SystemJobState = "idle" | "running" | "disabled";
+
+/**
+ * Mirror of the API's `JobStatus` (apps/api/src/lib/scheduler-registry/
+ * scheduler-registry.ts). Read-only runtime telemetry for one registered
+ * background scheduler. Note: there is NO `nextExecution` field — the
+ * registry records facts (last runs, declared cadence), not predictions.
+ */
+export interface SystemJobStatus {
+	id: string;
+	label: string;
+	description: string;
+	concurrency: string;
+	intervalMs?: number;
+	state: SystemJobState;
+	lastStartedAt: string | null;
+	lastFinishedAt: string | null;
+	lastSuccessAt: string | null;
+	lastFailureAt: string | null;
+	lastDurationMs: number | null;
+	lastError: string | null;
+	consecutiveFailures: number;
+	totalRuns: number;
+	totalFailures: number;
+	disabled: boolean;
+	disabledReason: string | null;
+}
+
+export interface SystemJobsResponse {
+	jobs: SystemJobStatus[];
+	count: number;
+	capturedAt: string;
+}
+
+export async function fetchSystemJobs(): Promise<SystemJobsResponse> {
+	const res = await apiRequest<{ success: boolean; data: SystemJobsResponse }>(
+		"/api/system/jobs",
+	);
+	return res.data;
+}

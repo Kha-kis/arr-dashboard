@@ -29,6 +29,17 @@ vi.mock("../../../../hooks/api/usePulse", () => ({
 	usePulseQuery: (args?: { attentionOnly?: boolean }) => mockUsePulseQuery(args),
 }));
 
+// Domain tiles' data sources (system jobs + services for gating).
+const mockUseSystemJobs = vi.fn();
+vi.mock("../../../../hooks/api/useSystem", () => ({
+	useSystemJobs: () => mockUseSystemJobs(),
+}));
+
+const mockUseServicesQuery = vi.fn();
+vi.mock("../../../../hooks/api/useServicesQuery", () => ({
+	useServicesQuery: () => mockUseServicesQuery(),
+}));
+
 // Stub useThemeGradient so we don't have to wire ColorThemeProvider
 // (same idiom as pulse-client-hash-scroll.test.tsx).
 vi.mock("../../../../hooks/useThemeGradient", () => ({
@@ -67,6 +78,28 @@ function makeResponse(): PulseResponse {
 	};
 }
 
+function makeJob(id: string, overrides: Record<string, unknown> = {}) {
+	return {
+		id,
+		label: id,
+		description: "",
+		concurrency: "singleton",
+		state: "idle",
+		lastStartedAt: "2026-06-11T12:00:00.000Z",
+		lastFinishedAt: "2026-06-11T12:00:05.000Z",
+		lastSuccessAt: "2026-06-11T12:00:05.000Z",
+		lastFailureAt: null,
+		lastDurationMs: 5000,
+		lastError: null,
+		consecutiveFailures: 0,
+		totalRuns: 10,
+		totalFailures: 0,
+		disabled: false,
+		disabledReason: null,
+		...overrides,
+	};
+}
+
 function mockQueryState(overrides: Record<string, unknown> = {}) {
 	mockUsePulseQuery.mockReturnValue({
 		data: makeResponse(),
@@ -77,10 +110,28 @@ function mockQueryState(overrides: Record<string, unknown> = {}) {
 		refetch: vi.fn(),
 		...overrides,
 	});
+	mockUseSystemJobs.mockReturnValue({
+		data: {
+			jobs: [makeJob("hunting"), makeJob("backup"), makeJob("qui-torrent-state-sync")],
+			count: 3,
+			capturedAt: "2026-06-11T12:00:10.000Z",
+		},
+		isLoading: false,
+		isError: false,
+		error: null,
+		refetch: vi.fn(),
+	});
+	mockUseServicesQuery.mockReturnValue({
+		data: [],
+		isLoading: false,
+		isError: false,
+	});
 }
 
 beforeEach(() => {
 	mockUsePulseQuery.mockReset();
+	mockUseSystemJobs.mockReset();
+	mockUseServicesQuery.mockReset();
 	window.localStorage.clear();
 });
 
@@ -110,13 +161,44 @@ describe("ConsoleClient shell", () => {
 		expect(screen.queryByRole("button", { name: /overview/i })).not.toBeInTheDocument();
 	});
 
-	it("refetches the attention query from the header refresh action", () => {
+	it("refreshes BOTH overview feeds from the header refresh action", () => {
 		const refetch = vi.fn();
 		mockQueryState({ refetch });
+		const jobsRefetch = vi.fn();
+		mockUseSystemJobs.mockReturnValue({
+			data: { jobs: [makeJob("hunting")], count: 1, capturedAt: "2026-06-11T12:00:10.000Z" },
+			isLoading: false,
+			isError: false,
+			error: null,
+			refetch: jobsRefetch,
+		});
 		render(<ConsoleClient />, { wrapper: createWrapper() });
 
 		fireEvent.click(screen.getByRole("button", { name: /refresh/i }));
 		expect(refetch).toHaveBeenCalledTimes(1);
+		expect(jobsRefetch).toHaveBeenCalledTimes(1);
+	});
+
+	it("renders domain tiles for core domains and OMITS service-gated ones", () => {
+		mockQueryState();
+		render(<ConsoleClient />, { wrapper: createWrapper() });
+
+		const grid = screen.getByTestId("domain-tile-grid");
+		expect(grid).toBeInTheDocument();
+		// hunting + backup jobs are registered → their tiles render.
+		expect(screen.getByText("Hunting")).toBeInTheDocument();
+		expect(screen.getByText("Backup")).toBeInTheDocument();
+		// qui job is registered but NO qui service instance exists → no tile
+		// (service-availability gating by omission, trust rule 1).
+		expect(screen.queryByText("qui")).not.toBeInTheDocument();
+	});
+
+	it("shows honest last-run facts, never a predicted next-run time", () => {
+		mockQueryState();
+		render(<ConsoleClient />, { wrapper: createWrapper() });
+
+		expect(screen.getAllByText(/Last activity /).length).toBeGreaterThan(0);
+		expect(screen.queryByText(/next run/i)).not.toBeInTheDocument();
 	});
 
 	it("requests the attention-only feed, not the full Pulse list", () => {
