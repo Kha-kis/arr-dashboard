@@ -408,7 +408,8 @@ export const seerrKeys = {
 	audit: (instanceId: string) => ["seerr", "audit", instanceId] as const,
 	libraryEnrichment: (instanceId: string, tmdbIdKey: string) =>
 		["seerr", "library-enrichment", instanceId, tmdbIdKey] as const,
-	libraryEnrichmentAll: (instanceId: string) => ["seerr", "library-enrichment", instanceId] as const,
+	libraryEnrichmentAll: (instanceId: string) =>
+		["seerr", "library-enrichment", instanceId] as const,
 	discover: {
 		all: ["seerr", "discover"] as const,
 		movies: (instanceId: string) => ["seerr", "discover", "movies", instanceId] as const,
@@ -520,6 +521,7 @@ export const systemKeys = {
 	info: ["system-info"] as const,
 	logs: ["system-logs"] as const,
 	securityPosture: ["system-security-posture"] as const,
+	jobs: ["system-jobs"] as const,
 };
 
 /* -------------------------------------------------------------------------- */
@@ -551,8 +553,7 @@ export const quiKeys = {
 		qbitInstanceId: number | null,
 		hash: string | null,
 		fileIndex: number | null,
-	) =>
-		["qui", "file-mediainfo", quiInstanceId, qbitInstanceId, hash, fileIndex] as const,
+	) => ["qui", "file-mediainfo", quiInstanceId, qbitInstanceId, hash, fileIndex] as const,
 	categories: (quiInstanceId: string | null, qbitInstanceId: number | null) =>
 		["qui", "categories", quiInstanceId, qbitInstanceId] as const,
 	tags: (quiInstanceId: string | null, qbitInstanceId: number | null) =>

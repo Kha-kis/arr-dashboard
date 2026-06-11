@@ -25,16 +25,12 @@
 
 import { Gauge, RefreshCw } from "lucide-react";
 import { useState } from "react";
-import {
-	DataFreshness,
-	PremiumPageHeader,
-	type PremiumTab,
-	PremiumTabs,
-} from "../../../components/layout";
+import { PremiumPageHeader, type PremiumTab, PremiumTabs } from "../../../components/layout";
 import { Button } from "../../../components/ui";
 import { usePulseQuery } from "../../../hooks/api/usePulse";
-import { POLLING_STATS } from "../../../lib/polling-intervals";
+import { useSystemJobs } from "../../../hooks/api/useSystem";
 import { NeedsAttentionPanel } from "../../dashboard/components/needs-attention-panel";
+import { DomainTileGrid } from "./domain-tile-grid";
 
 export type ConsoleTabId = "overview";
 
@@ -47,12 +43,17 @@ const CONSOLE_TABS: PremiumTab[] = [{ id: "overview", label: "Overview", icon: G
 export const ConsoleClient = () => {
 	const [activeTab, setActiveTab] = useState<ConsoleTabId>("overview");
 
-	// Same query key as NeedsAttentionPanel's internal hook — React Query
-	// dedupes, so this adds no extra fetch; it only feeds the header's
-	// freshness indicator and refresh action.
-	const { refetch, dataUpdatedAt, isFetching, isError } = usePulseQuery({
-		attentionOnly: true,
-	});
+	// Same query keys as the panels' internal hooks — React Query dedupes,
+	// so these add no extra fetches; they only feed the header's Refresh
+	// action. No header DataFreshness: the Overview is now a multi-feed
+	// surface (jobs + attention), and a single indicator tied to one query
+	// would under-report — the B4 sweep's multi-feed exclusion rule.
+	const attentionQuery = usePulseQuery({ attentionOnly: true });
+	const jobsQuery = useSystemJobs();
+	const refreshAll = () => {
+		void attentionQuery.refetch();
+		void jobsQuery.refetch();
+	};
 
 	return (
 		<>
@@ -63,26 +64,14 @@ export const ConsoleClient = () => {
 				gradientTitle
 				description="One view of every domain's health and what needs your attention — with one-click operator actions"
 				actions={
-					<div className="flex items-center gap-3">
-						{/* Freshness of the attention feed — the only polled data on
-						    this surface until the domain tiles land (console PR 3). */}
-						{activeTab === "overview" && (
-							<DataFreshness
-								dataUpdatedAt={dataUpdatedAt}
-								isFetching={isFetching}
-								isError={isError}
-								pollIntervalMs={POLLING_STATS}
-							/>
-						)}
-						<Button
-							variant="secondary"
-							onClick={() => void refetch()}
-							className="gap-2 border-border/50 bg-card/50 backdrop-blur-xs hover:bg-card/80"
-						>
-							<RefreshCw className="h-4 w-4" />
-							Refresh
-						</Button>
-					</div>
+					<Button
+						variant="secondary"
+						onClick={refreshAll}
+						className="gap-2 border-border/50 bg-card/50 backdrop-blur-xs hover:bg-card/80"
+					>
+						<RefreshCw className="h-4 w-4" />
+						Refresh
+					</Button>
 				}
 			/>
 
@@ -104,9 +93,13 @@ export const ConsoleClient = () => {
 				style={{ animationDelay: "200ms", animationFillMode: "backwards" }}
 			>
 				{activeTab === "overview" && (
-					// PR 3 turns this into the two-column split:
-					// grid lg:grid-cols-[2fr_1fr] — domain tiles left, feed right.
-					<NeedsAttentionPanel />
+					// The ratified Overview split: domain tiles (status at a
+					// glance) left, the attention feed (what needs me) right.
+					// Stacks on smaller screens, tiles first.
+					<div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+						<DomainTileGrid />
+						<NeedsAttentionPanel />
+					</div>
 				)}
 			</div>
 		</>
