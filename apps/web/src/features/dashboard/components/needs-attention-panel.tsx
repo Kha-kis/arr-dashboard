@@ -26,15 +26,15 @@
 import type { PulseItem, PulseSeverity } from "@arr/shared";
 import { AlertTriangle, CheckCircle2, ChevronRight, XCircle } from "lucide-react";
 import Link from "next/link";
+import { usePulseQuery } from "../../../hooks/api/usePulse";
 import {
 	anonymizeHealthMessage,
-	anonymizePulseText,
+	anonymizePulseItemContent,
 	useIncognitoMode,
 } from "../../../lib/incognito";
-import { usePulseQuery } from "../../../hooks/api/usePulse";
-import { PulseActionButton } from "../../pulse/components/pulse-action-button";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
+import { PulseActionButton } from "../../pulse/components/pulse-action-button";
 
 const MAX_VISIBLE_ITEMS = 10;
 
@@ -82,10 +82,7 @@ function PanelShell({
 		<section
 			data-testid={testId}
 			aria-label={ariaLabel}
-			className={cn(
-				"overflow-hidden rounded-xl border border-border/30 bg-muted/10",
-				className,
-			)}
+			className={cn("overflow-hidden rounded-xl border border-border/30 bg-muted/10", className)}
 		>
 			{children}
 		</section>
@@ -144,13 +141,7 @@ function PanelHeader({
 // AttentionRow — one row per item. No severity logic beyond "pick the visual
 // for critical vs warning". Severity comes from the item verbatim.
 // ---------------------------------------------------------------------------
-function AttentionRow({
-	item,
-	incognito,
-}: {
-	item: PulseItem;
-	incognito: boolean;
-}) {
+function AttentionRow({ item, incognito }: { item: PulseItem; incognito: boolean }) {
 	const visual =
 		item.severity === "critical" || item.severity === "warning"
 			? SEVERITY_VISUAL[item.severity]
@@ -161,11 +152,13 @@ function AttentionRow({
 	if (!visual) return null;
 
 	const Icon = visual.icon;
-	// Pass `item.source` so system-sourced titles (scheduler jobs, cache health)
-	// aren't mis-anonymized as ARR instance labels by the " is "-split branch.
-	const title = incognito ? anonymizePulseText(item.title, item.source) : item.title;
-	const detail =
-		incognito && item.detail ? anonymizeHealthMessage(item.detail) : item.detail;
+	// Anonymize title+detail as a pair: `item.source` keeps system-sourced
+	// titles from being mis-anonymized as ARR instance labels, and `item.id`
+	// lets *arr queue rows mask their embedded RELEASE TITLE — which the
+	// health-message patterns can't catch (see anonymizePulseItemContent).
+	const { title, detail } = incognito
+		? anonymizePulseItemContent(item)
+		: { title: item.title, detail: item.detail };
 
 	return (
 		<li className="flex items-start gap-3 border-b border-border/30 px-6 py-3 last:border-b-0">
@@ -183,9 +176,7 @@ function AttentionRow({
 			</div>
 			<div className="min-w-0 flex-1">
 				<p className="truncate text-sm font-medium text-foreground">{title}</p>
-				{detail && (
-					<p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{detail}</p>
-				)}
+				{detail && <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{detail}</p>}
 			</div>
 			{item.action && <PulseActionButton signalId={item.id} action={item.action} />}
 			{item.actionUrl && (
@@ -218,10 +209,7 @@ export function NeedsAttentionPanel() {
 	// State: loading (no cached data yet).
 	if (isLoading) {
 		return (
-			<PanelShell
-				testId="needs-attention-panel-loading"
-				ariaLabel="Needs Attention — loading"
-			>
+			<PanelShell testId="needs-attention-panel-loading" ariaLabel="Needs Attention — loading">
 				<div className="flex items-center gap-3 border-b border-border/50 px-6 py-4">
 					<div className="h-8 w-8 animate-pulse rounded-lg bg-muted/30" />
 					<div className="flex-1 space-y-1.5">
@@ -241,10 +229,7 @@ export function NeedsAttentionPanel() {
 	// State: error with no cached data — NEVER imply "all clear" here.
 	if (isError && !data) {
 		return (
-			<PanelShell
-				testId="needs-attention-panel-error"
-				ariaLabel="Needs Attention — unavailable"
-			>
+			<PanelShell testId="needs-attention-panel-error" ariaLabel="Needs Attention — unavailable">
 				<div className="flex items-start gap-3 px-6 py-4">
 					<XCircle
 						className="mt-0.5 h-5 w-5 shrink-0"
@@ -255,8 +240,8 @@ export function NeedsAttentionPanel() {
 							Couldn&apos;t load attention items
 						</h3>
 						<p className="mt-0.5 text-xs text-muted-foreground">
-							The attention feed is unavailable right now — other dashboard signals may
-							still be accurate.{" "}
+							The attention feed is unavailable right now — other dashboard signals may still be
+							accurate.{" "}
 							<Link
 								href="/pulse"
 								className="underline underline-offset-2 transition-colors hover:text-foreground"
@@ -278,19 +263,14 @@ export function NeedsAttentionPanel() {
 	// State: empty — only shown when fetch succeeded.
 	if (visible.length === 0) {
 		return (
-			<PanelShell
-				testId="needs-attention-panel-empty"
-				ariaLabel="Needs Attention — all clear"
-			>
+			<PanelShell testId="needs-attention-panel-empty" ariaLabel="Needs Attention — all clear">
 				<div className="flex items-start gap-3 px-6 py-4">
 					<CheckCircle2
 						className="mt-0.5 h-5 w-5 shrink-0"
 						style={{ color: SEMANTIC_COLORS.success.text }}
 					/>
 					<div className="min-w-0 flex-1">
-						<h3 className="text-sm font-semibold text-foreground">
-							No actionable items right now
-						</h3>
+						<h3 className="text-sm font-semibold text-foreground">No actionable items right now</h3>
 						<p className="mt-0.5 text-xs text-muted-foreground">
 							Open Pulse to view the full signal list.
 						</p>
