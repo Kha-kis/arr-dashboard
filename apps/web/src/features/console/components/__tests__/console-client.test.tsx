@@ -193,6 +193,21 @@ describe("ConsoleClient shell", () => {
 		expect(screen.queryByText("qui")).not.toBeInTheDocument();
 	});
 
+	it("degrades honestly when the SERVICES feed fails: core tiles render, omission disclosed", () => {
+		// Reviewer-caught trust issue: blocking all tiles on a services
+		// failure rendered a false "No domain schedulers registered" while
+		// the jobs feed was demonstrably fine. Core domains need no service
+		// data; only gated tiles are omitted, and the omission is disclosed.
+		mockQueryState();
+		mockUseServicesQuery.mockReturnValue({ data: undefined, isLoading: false, isError: true });
+		render(<ConsoleClient />, { wrapper: createWrapper() });
+
+		expect(screen.getByText("Hunting")).toBeInTheDocument();
+		expect(screen.getByText("Backup")).toBeInTheDocument();
+		expect(screen.queryByText("No domain schedulers registered")).not.toBeInTheDocument();
+		expect(screen.getByTestId("services-gating-degraded")).toBeInTheDocument();
+	});
+
 	it("shows honest last-run facts, never a predicted next-run time", () => {
 		mockQueryState();
 		render(<ConsoleClient />, { wrapper: createWrapper() });

@@ -79,10 +79,16 @@ export function DomainTileGrid() {
 	const servicesQuery = useServicesQuery();
 	const [incognito] = useIncognitoMode();
 
-	const tiles =
-		jobsQuery.data && servicesQuery.data
-			? buildDomainTiles(jobsQuery.data.jobs, servicesQuery.data)
-			: [];
+	// Tiles are built from the JOBS feed alone; the services feed only
+	// drives gating. If services fails, degrade to "no enabled services
+	// known" — core domains still render, gated tiles are omitted (the
+	// same outcome as genuinely having no such service) and the omission
+	// is disclosed below rather than silently swallowed. Blocking ALL
+	// tiles on a services failure would render a false "nothing
+	// registered" empty state while the schedulers are demonstrably fine.
+	const tiles = jobsQuery.data
+		? buildDomainTiles(jobsQuery.data.jobs, servicesQuery.data ?? [])
+		: [];
 
 	return (
 		<AsyncStateView
@@ -118,6 +124,12 @@ export function DomainTileGrid() {
 					<DomainTile key={tile.domain.id} tile={tile} index={index} incognito={incognito} />
 				))}
 			</ul>
+			{servicesQuery.isError && (
+				<p className="mt-3 text-xs text-muted-foreground" data-testid="services-gating-degraded">
+					Couldn't load the service list — tiles for service-linked domains (qui, Requests, Media
+					Caches) are hidden until it recovers.
+				</p>
+			)}
 		</AsyncStateView>
 	);
 }
