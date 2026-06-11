@@ -655,6 +655,109 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 };
 
 // ============================================================================
+// 4b. Library Sync Health (Sonarr / Radarr / Lidarr / Readarr)
+// ============================================================================
+//
+// Surfaces failures and staleness of the library cache sync — the pipeline
+// that keeps LibraryCache rows current for the /library page, insights,
+// auto-tagger, and cleanup. A failing or stale sync silently degrades all
+// of those surfaces, so it earns a Pulse signal.
+//
+// Staleness is computed against the instance's OWN pollingIntervalMins
+// (the scheduler re-syncs whenever now - lastFullSync >= interval), so the
+// threshold is precise rather than a one-size guess: 3 missed cycles, with
+// a 1-hour floor so short intervals don't flap. Instances with polling
+// disabled are gated by omission — the operator opted out of automatic
+// sync, so "stale" is not a signal for them. In-flight syncs are skipped
+// (a first sync on a large library can legitimately run a while).
+//
+// Unlike stale-cache *error* rows above (which deliberately omit the inline
+// action), sync-failure rows DO carry "Sync now": *arr sync errors are
+// frequently transient (instance restarting, momentary network blip) and a
+// manual retry is the canonical first response. The dispatcher 409s if a
+// sync is already running, so the worst case is honest feedback.
+
+const STALE_SYNC_INTERVAL_MULTIPLIER = 3;
+const STALE_SYNC_FLOOR_MS = 60 * 60 * 1000; // 1 hour
+
+function librarySyncAction(instanceId: string): PulseAction {
+	return {
+		kind: "library.sync",
+		target: { instanceId },
+		label: "Sync now",
+		destructive: false,
+	};
+}
+
+const collectLibrarySyncHealth: Collector = async (app, userId) => {
+	const statuses = await app.prisma.librarySyncStatus.findMany({
+		where: {
+			instance: {
+				userId,
+				enabled: true,
+				service: { in: [...LIBRARY_SERVICES_UPPER] },
+			},
+		},
+		include: { instance: { select: { label: true, service: true } } },
+	});
+
+	const items: PulseItem[] = [];
+
+	for (const status of statuses) {
+		const label = status.instance.label;
+		const source = status.instance.service.toLowerCase();
+
+		if (status.lastError) {
+			items.push({
+				id: `library-sync-error-${status.instanceId}`,
+				severity: "warning",
+				category: "health",
+				title: `${label}: library sync failing`,
+				detail: status.lastError,
+				actionUrl: "/library",
+				actionLabel: "Open library",
+				source,
+				timestamp: status.updatedAt.toISOString(),
+				action: librarySyncAction(status.instanceId),
+			});
+			// Don't ALSO emit a stale row for the same instance — the error row
+			// already says "sync is broken"; two rows would double-count it.
+			continue;
+		}
+
+		if (!status.pollingEnabled || status.syncInProgress) continue;
+
+		// Reference falls back to the row's createdAt for never-synced
+		// instances: a brand-new instance stays quiet until it has had
+		// `staleMs` to complete a first sync, then surfaces honestly.
+		const reference = status.lastFullSync ?? status.createdAt;
+		const staleMs = Math.max(
+			status.pollingIntervalMins * STALE_SYNC_INTERVAL_MULTIPLIER * 60 * 1000,
+			STALE_SYNC_FLOOR_MS,
+		);
+		if (Date.now() - reference.getTime() < staleMs) continue;
+
+		const hoursAgo = Math.round((Date.now() - reference.getTime()) / (60 * 60 * 1000));
+		items.push({
+			id: `library-sync-stale-${status.instanceId}`,
+			severity: "warning",
+			category: "health",
+			title: `${label}: library sync is stale`,
+			detail: status.lastFullSync
+				? `Last synced ${hoursAgo} hours ago — polling is enabled, so a sync should have run by now.`
+				: "This instance has never completed a library sync.",
+			actionUrl: "/library",
+			actionLabel: "Open library",
+			source,
+			timestamp: reference.toISOString(),
+			action: librarySyncAction(status.instanceId),
+		});
+	}
+
+	return items;
+};
+
+// ============================================================================
 // 5. Validation Health
 // ============================================================================
 
@@ -1050,6 +1153,7 @@ export {
 	collectArrQueueFailures,
 	collectArrSignals,
 	collectCacheStaleness,
+	collectLibrarySyncHealth,
 	collectMediaServerReachability,
 	collectSchedulerHealth,
 };
@@ -1209,6 +1313,7 @@ export const pulseCollectors: Collector[] = [
 	collectArrQueueFailures,
 	collectSeerrCircuitBreaker,
 	collectCacheStaleness,
+	collectLibrarySyncHealth,
 	collectValidationHealth,
 	collectLibraryInsightCounts,
 	collectHuntFailures,

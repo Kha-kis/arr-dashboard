@@ -27,6 +27,9 @@ const mockUsePulseQuery = vi.fn();
 
 vi.mock("../../../../hooks/api/usePulse", () => ({
 	usePulseQuery: (args?: { attentionOnly?: boolean }) => mockUsePulseQuery(args),
+	// The console feed (NeedsAttentionPanel) renders PulseDismissButton on
+	// non-critical rows — stub its mutation from the same mocked module.
+	usePulseDismissMutation: () => ({ mutate: () => {}, isPending: false }),
 }));
 
 // Domain tiles' data sources (system jobs + services for gating).
@@ -75,6 +78,7 @@ function makeResponse(): PulseResponse {
 		],
 		summary: { critical: 0, warning: 1, info: 0 },
 		generatedAt: "2026-06-10T12:00:00.000Z",
+		dismissedCount: 0,
 	};
 }
 

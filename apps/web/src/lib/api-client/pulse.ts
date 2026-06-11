@@ -27,8 +27,42 @@ export async function dispatchPulseAction(
 	signalId: string,
 	action: PulseAction,
 ): Promise<PulseActionResponse> {
-	return apiRequest<PulseActionResponse>(
-		`/api/pulse/${encodeURIComponent(signalId)}/action`,
-		{ json: action },
-	);
+	return apiRequest<PulseActionResponse>(`/api/pulse/${encodeURIComponent(signalId)}/action`, {
+		json: action,
+	});
+}
+
+// ---------------------------------------------------------------------------
+// Dismiss-until-recovery
+// ---------------------------------------------------------------------------
+//
+// Dismissing tombstones a signal until it stops firing (the backend sweeps
+// the tombstone once the signal recovers, so a recurrence resurfaces).
+// Critical signals are never suppressed — the backend filter enforces this
+// at read time regardless of what the client sends.
+
+/** Hide a non-critical signal until it recovers. */
+export async function dismissPulseSignal(signalId: string): Promise<PulseActionResponse> {
+	return apiRequest<PulseActionResponse>(`/api/pulse/${encodeURIComponent(signalId)}/dismiss`, {
+		method: "POST",
+	});
+}
+
+/** Undo a single dismissal (toast "Undo" path). No-op if already swept. */
+export async function restorePulseSignal(signalId: string): Promise<PulseActionResponse> {
+	return apiRequest<PulseActionResponse>(`/api/pulse/${encodeURIComponent(signalId)}/dismiss`, {
+		method: "DELETE",
+	});
+}
+
+export interface RestoreAllDismissalsResponse {
+	status: "ok";
+	cleared: number;
+}
+
+/** Clear every dismissal tombstone for the current user. */
+export async function restoreAllPulseDismissals(): Promise<RestoreAllDismissalsResponse> {
+	return apiRequest<RestoreAllDismissalsResponse>("/api/pulse/dismissals", {
+		method: "DELETE",
+	});
 }

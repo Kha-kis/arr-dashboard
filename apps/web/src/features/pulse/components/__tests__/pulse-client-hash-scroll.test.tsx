@@ -28,6 +28,10 @@ import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
 const mockUsePulseQuery = vi.fn();
 vi.mock("../../../../hooks/api/usePulse", () => ({
 	usePulseQuery: (args?: unknown) => mockUsePulseQuery(args),
+	// PulseClient renders PulseDismissButton on non-critical rows and the
+	// restore-all pill — stub both mutations from the same mocked module.
+	usePulseDismissMutation: () => ({ mutate: () => {}, isPending: false }),
+	usePulseRestoreAllMutation: () => ({ mutate: () => {}, isPending: false }),
 }));
 
 // Stub useThemeGradient so we don't have to wire ColorThemeProvider.
@@ -74,6 +78,7 @@ function makeResponse(): PulseResponse {
 		],
 		summary: { critical: 0, warning: 1, info: 1 },
 		generatedAt: "2026-04-14T09:30:00.000Z",
+		dismissedCount: 0,
 	};
 }
 
@@ -216,6 +221,7 @@ describe("<PulseClient /> tautological self-link suppression", () => {
 			],
 			summary: { critical: 1, warning: 1, info: 0 },
 			generatedAt: "2026-04-14T09:30:00.000Z",
+		dismissedCount: 0,
 		};
 	}
 

@@ -35,6 +35,7 @@ import {
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
 import { PulseActionButton } from "../../pulse/components/pulse-action-button";
+import { PulseDismissButton } from "../../pulse/components/pulse-dismiss-button";
 
 const MAX_VISIBLE_ITEMS = 10;
 
@@ -195,6 +196,10 @@ function AttentionRow({ item, incognito }: { item: PulseItem; incognito: boolean
 					<ChevronRight className="h-3 w-3" />
 				</Link>
 			)}
+			{/* Dismiss-until-recovery — this panel only renders critical/warning
+			    rows, so the gate effectively means "warnings are dismissable".
+			    The backend re-enforces the critical rule at read time. */}
+			{item.severity !== "critical" && <PulseDismissButton signalId={item.id} />}
 		</li>
 	);
 }

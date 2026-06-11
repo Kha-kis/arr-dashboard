@@ -50,7 +50,7 @@ vi.mock("../../lib/pulse/collectors.js", async () => {
 
 import { InstanceNotFoundError } from "../../lib/errors.js";
 import { registerPulseRoutes } from "../pulse.js";
-import { registerTestErrorHandler } from "./test-helpers.js";
+import { makePulseDismissalStub, registerTestErrorHandler } from "./test-helpers.js";
 
 type CacheStatusRow = {
 	id: string;
@@ -122,6 +122,7 @@ beforeEach(async () => {
 	// genuinely lets the staleness collector drop the row on the next poll
 	// — without the upsert, the row would persist indefinitely.
 	app.decorate("prisma", {
+		pulseDismissal: makePulseDismissalStub(),
 		cacheRefreshStatus: {
 			findMany: async () => cacheStatuses,
 			upsert: async (args: {
