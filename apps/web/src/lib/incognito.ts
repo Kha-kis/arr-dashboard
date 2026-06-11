@@ -297,6 +297,83 @@ export function anonymizePulseText(text: string, source?: string): string {
 	return anonymizeHealthMessage(text);
 }
 
+// *arr queue rows (collectArrQueueFailures) — the only Pulse rows whose
+// title embeds a MEDIA RELEASE TITLE rather than a health message. Their
+// stable ids are part of the Pulse contract (used for /pulse hash-scroll).
+const QUEUE_ROW_ID_PREFIXES = ["queue-failed-", "queue-stuck-"] as const;
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Anonymize a Pulse item's title and detail as a pair.
+ *
+ * Most Pulse rows carry health messages, which `anonymizePulseText` /
+ * `anonymizeHealthMessage` already handle. *arr queue rows are different:
+ * their title is `"InstanceLabel: Release.Title (failed|warning)"` and
+ * their detail is the raw *arr error message, which frequently embeds the
+ * same release title. Health-message patterns can't catch a bare release
+ * name (no tvdbid suffix, no quotes, no URL), so with incognito on those
+ * rows leaked media titles on /pulse, the dashboard attention panel, and
+ * the Operator Console feed (found 2026-06-11).
+ *
+ * This helper detects queue rows by their stable id prefix, swaps the
+ * release title for a Linux ISO placeholder (keeping the instance mask and
+ * the "(failed)"/"(warning)" state suffix), and excises the release name
+ * from the detail before the standard health-message pass. The row title
+ * may be server-truncated with a trailing "…", in which case the detail
+ * holds the FULL name — excision therefore matches from the truncated
+ * prefix through the rest of the embedded name.
+ */
+export function anonymizePulseItemContent(item: {
+	id: string;
+	source?: string;
+	title: string;
+	detail?: string;
+}): { title: string; detail?: string } {
+	const isQueueRow = QUEUE_ROW_ID_PREFIXES.some((prefix) => item.id.startsWith(prefix));
+	if (!isQueueRow) {
+		return {
+			title: anonymizePulseText(item.title, item.source),
+			detail: item.detail ? anonymizeHealthMessage(item.detail) : item.detail,
+		};
+	}
+
+	let releaseTitle: string | null = null;
+	let title: string;
+	const colonIdx = item.title.indexOf(": ");
+	if (colonIdx > 0) {
+		const label = item.title.slice(0, colonIdx);
+		const message = item.title.slice(colonIdx + 2);
+		const suffixMatch = message.match(/ \((failed|warning)\)$/);
+		releaseTitle = suffixMatch ? message.slice(0, suffixMatch.index) : message;
+		const suffix = suffixMatch ? message.slice(suffixMatch.index) : "";
+		title = `${getLinuxInstanceName(label)}: ${getLinuxIsoName(releaseTitle)}${suffix}`;
+	} else {
+		// Unexpected shape for a queue row — fall back to the generic path
+		// rather than render it raw.
+		title = anonymizePulseText(item.title, item.source);
+	}
+
+	let detail = item.detail;
+	if (detail) {
+		// Strip the server-side truncation marker so a shortened row title
+		// still matches the full name embedded in the error message, then
+		// consume the rest of the embedded name up to a natural delimiter.
+		const prefix = releaseTitle?.replace(/…$/, "") ?? "";
+		if (prefix.length >= 3) {
+			detail = detail.replace(
+				new RegExp(`${escapeRegExp(prefix)}[^,\n]*`, "g"),
+				getLinuxIsoName(prefix),
+			);
+		}
+		detail = anonymizeHealthMessage(detail);
+	}
+
+	return { title, detail };
+}
+
 // Anonymize queue status/error messages
 export function anonymizeStatusMessage(message: string): string {
 	let anonymized = message;
