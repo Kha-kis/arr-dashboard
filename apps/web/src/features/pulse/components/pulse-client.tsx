@@ -23,16 +23,12 @@ import {
 	PremiumEmptyState,
 } from "../../../components/layout/premium-components";
 import { usePulseQuery } from "../../../hooks/api/usePulse";
-import { PulseActionButton } from "./pulse-action-button";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import {
-	anonymizeHealthMessage,
-	anonymizePulseText,
-	useIncognitoMode,
-} from "../../../lib/incognito";
+import { anonymizePulseItemContent, useIncognitoMode } from "../../../lib/incognito";
 import { POLLING_STATS } from "../../../lib/polling-intervals";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
+import { PulseActionButton } from "./pulse-action-button";
 
 // ============================================================================
 // Severity config
@@ -90,10 +86,13 @@ function PulseItemRow({
 }) {
 	const serviceGradient = getServiceGradient(item.source);
 	const CategoryIcon = CATEGORY_ICONS[item.category] ?? Activity;
-	// Pass `item.source` so system-sourced titles (scheduler jobs, cache health)
-	// aren't mis-anonymized as ARR instance labels by the " is "-split branch.
-	const title = incognito ? anonymizePulseText(item.title, item.source) : item.title;
-	const detail = incognito && item.detail ? anonymizeHealthMessage(item.detail) : item.detail;
+	// Anonymize title+detail as a pair: `item.source` keeps system-sourced
+	// titles from being mis-anonymized as ARR instance labels, and `item.id`
+	// lets *arr queue rows mask their embedded RELEASE TITLE — which the
+	// health-message patterns can't catch (see anonymizePulseItemContent).
+	const { title, detail } = incognito
+		? anonymizePulseItemContent(item)
+		: { title: item.title, detail: item.detail };
 
 	return (
 		// `id={item.id}` anchors deep-links from curated surfaces (e.g. the

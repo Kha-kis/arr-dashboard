@@ -15,7 +15,11 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { anonymizeHealthMessage, anonymizePulseText } from "../incognito";
+import {
+	anonymizeHealthMessage,
+	anonymizePulseItemContent,
+	anonymizePulseText,
+} from "../incognito";
 
 describe("anonymizePulseText — source-aware masking", () => {
 	it("leaves system-sourced titles un-split (no instance-label substitution)", () => {
@@ -102,5 +106,102 @@ describe("anonymizeHealthMessage — URL and IP stripping", () => {
 		expect(out).toContain("http://linux-host");
 		expect(out).not.toContain("MyIndexer");
 		expect(out).not.toContain("proxy.local");
+	});
+});
+
+describe("anonymizePulseItemContent — *arr queue rows mask release titles", () => {
+	// The leak this pins (found 2026-06-11 during the Operator Console
+	// live-verify): queue-failure rows embed a bare media release title,
+	// which none of the health-message patterns catch. Shape comes from
+	// collectArrQueueFailures: title `"Label: Release (failed|warning)"`,
+	// stable id `queue-failed-*` / `queue-stuck-*`, detail = *arr error
+	// message that often embeds the same release name.
+
+	it("masks the release title in a queue-failed row, preserving the state suffix", () => {
+		const { title } = anonymizePulseItemContent({
+			id: "queue-failed-inst1-42",
+			source: "lidarr",
+			title: "Primary Lidarr: Jimmy Eat World - 2001 - Bleed American [2008 Remaster] (failed)",
+		});
+		expect(title).not.toContain("Jimmy Eat World");
+		expect(title).not.toContain("Bleed American");
+		expect(title).not.toContain("Primary Lidarr");
+		expect(title).toMatch(/ \(failed\)$/);
+	});
+
+	it("masks queue-stuck rows with the (warning) suffix", () => {
+		const { title } = anonymizePulseItemContent({
+			id: "queue-stuck-inst1-7",
+			source: "sonarr",
+			title: "Sonarr Prod: Some.Show.S01E01.1080p.WEB-GROUP (warning)",
+		});
+		expect(title).not.toContain("Some.Show");
+		expect(title).toMatch(/ \(warning\)$/);
+	});
+
+	it("excises the release name embedded in the detail (error message)", () => {
+		const { detail } = anonymizePulseItemContent({
+			id: "queue-failed-inst1-42",
+			source: "lidarr",
+			title: "Primary Lidarr: Jimmy Eat World - Bleed American (failed)",
+			detail:
+				"No files eligible for import in Jimmy Eat World - Bleed American, manual import required",
+		});
+		expect(detail).not.toContain("Jimmy Eat World");
+		expect(detail).not.toContain("Bleed American");
+		expect(detail).toContain("manual import required");
+	});
+
+	it("excises the FULL name from detail when the row title was server-truncated", () => {
+		// collectors.ts shortens long titles with a trailing "…"; the detail
+		// keeps the full name. Excision must match from the prefix onward.
+		const { detail } = anonymizePulseItemContent({
+			id: "queue-failed-inst1-42",
+			source: "lidarr",
+			title: "Primary Lidarr: Jimmy Eat World - 2001 - Bleed Ameri… (failed)",
+			detail:
+				"Stalled in queue: Jimmy Eat World - 2001 - Bleed American [2008 Remastered Deluxe Edition]",
+		});
+		expect(detail).not.toContain("Jimmy Eat World");
+		expect(detail).not.toContain("Remastered Deluxe");
+		expect(detail).toContain("Stalled in queue:");
+	});
+
+	it("handles regex-special characters in release titles without throwing", () => {
+		const { title, detail } = anonymizePulseItemContent({
+			id: "queue-failed-inst1-9",
+			source: "radarr",
+			title: "Radarr 4K: Movie (2024) [Remux-2160p] {Edition} (failed)",
+			detail: "Download Movie (2024) [Remux-2160p] {Edition} failed",
+		});
+		expect(title).not.toContain("Remux-2160p");
+		expect(detail).not.toContain("Remux-2160p");
+	});
+
+	it("delegates non-queue rows to the existing source-aware behavior", () => {
+		const system = anonymizePulseItemContent({
+			id: "scheduler-disabled-hunting",
+			source: "system",
+			title: "Library Sync is disabled",
+			detail: "Enable it in settings",
+		});
+		expect(system.title).toBe("Library Sync is disabled");
+		expect(system.detail).toBe("Enable it in settings");
+
+		const instance = anonymizePulseItemContent({
+			id: "arr-health-inst1",
+			source: "sonarr",
+			title: "Sonarr Prod: Indexer X failed",
+		});
+		expect(instance.title).not.toContain("Sonarr Prod");
+	});
+
+	it("leaves detail undefined when the item has none", () => {
+		const { detail } = anonymizePulseItemContent({
+			id: "queue-failed-inst1-1",
+			source: "sonarr",
+			title: "Sonarr Prod: Show Name (failed)",
+		});
+		expect(detail).toBeUndefined();
 	});
 });
