@@ -38,7 +38,7 @@
 		"fastify-plugin": "^5.1.0",
 		"isomorphic-dompurify": "^3.16.0",
 		"marked": "^17.0.6",
-		"nodemailer": "^8.0.10",
+		"nodemailer": "^9.0.1",
 		"oauth4webapi": "^3.8.6",
 		"pg": "^8.21.0",
 		"pino": "^10.3.1",
