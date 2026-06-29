@@ -713,7 +713,10 @@ const collectLibrarySyncHealth: Collector = async (app, userId) => {
 				severity: "warning",
 				category: "health",
 				title: `${label}: library sync failing`,
-				detail: status.lastError,
+				// Bound the raw *arr error string the same way peer collectors do
+				// (queue failures, scheduler health) — a pathologically long
+				// lastError shouldn't blow out the row.
+				detail: truncate(status.lastError),
 				actionUrl: "/library",
 				actionLabel: "Open library",
 				source,

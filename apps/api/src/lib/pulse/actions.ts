@@ -268,9 +268,10 @@ async function dispatchQueueRetry(
 // ---------------------------------------------------------------------------
 //
 // Trigger a manual library cache sync for one *arr instance. Mirrors the
-// existing `POST /library/sync/:instanceId` route exactly — ownership +
-// enabled check, library-service check, 409 if a sync is already running,
-// then fire-and-forget `scheduler.triggerSync()`. Like cache.refresh, we
+// existing `POST /library/sync/:instanceId` route — ownership + enabled
+// check, library-service check, 409 if the scheduler is down or a sync is
+// already running, then fire-and-forget `scheduler.triggerSync()`. Like
+// cache.refresh, we
 // return 200 when the sync is *accepted*, not completed: large libraries
 // sync for minutes and the Pulse contract is already eventually-consistent
 // (the `library-sync-*` row drops on a later poll once the sync succeeds
@@ -294,14 +295,33 @@ async function dispatchLibrarySync(
 	}
 
 	const scheduler = getLibrarySyncScheduler();
+
+	// Degraded-boot guard. The library-sync scheduler is started inside an
+	// onReady hook wrapped in runSchedulerInit, which by policy CATCHES init
+	// failures and lets the server keep serving. In that state `start()` was
+	// never called, so `triggerSync()` would short-circuit on its `!this.app`
+	// branch and return null — and our fire-and-forget `.then()` below would
+	// treat that "nothing ran" as success, returning 200 + a "Library sync
+	// started" toast while no sync happened (the silent no-op the trust model
+	// forbids). `isRunning()` is the precise signal: `start()` sets `app` and
+	// `running` together, so a not-running scheduler is exactly the case
+	// triggerSync can't honor. Surface it as a real error instead.
+	if (!scheduler.isRunning()) {
+		throw new ConflictError(
+			"Library sync scheduler is not running — sync cannot be triggered right now",
+		);
+	}
+
 	if (scheduler.isInstanceSyncing(instanceId)) {
 		throw new ConflictError("Library sync is already in progress for this instance");
 	}
 
-	// Fire-and-forget, mirroring the manual-sync route. `triggerSync` returns
-	// null (instead of throwing) for its internal skip cases — all of which
-	// we've already pre-validated above, except a race where another sync
-	// started between our check and the call, which is fine to lose quietly.
+	// Fire-and-forget, mirroring the manual-sync route. With the not-running
+	// and already-syncing cases pre-checked above (and the service check
+	// earlier), the only remaining `null` returns from `triggerSync` are
+	// benign races — the instance was deleted, or another sync started,
+	// between our checks and the call. Those are safe to lose quietly: the
+	// operator can retry and the next poll reflects reality.
 	const backgroundTask = scheduler
 		.triggerSync(instanceId)
 		.then(() => undefined)

@@ -19,6 +19,7 @@ import Fastify from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const librarySyncScheduler = {
+	isRunning: vi.fn<() => boolean>(),
 	isInstanceSyncing: vi.fn<(instanceId: string) => boolean>(),
 	triggerSync: vi.fn<(instanceId: string) => Promise<unknown>>(),
 };
@@ -93,6 +94,7 @@ const ACTION_BODY = {
 
 beforeEach(async () => {
 	userCounter += 1;
+	librarySyncScheduler.isRunning.mockReset().mockReturnValue(true);
 	librarySyncScheduler.isInstanceSyncing.mockReset().mockReturnValue(false);
 	librarySyncScheduler.triggerSync.mockReset().mockResolvedValue(null);
 
@@ -175,6 +177,18 @@ describe("library.sync action — end to end", () => {
 
 	it("409s when a sync is already in progress", async () => {
 		librarySyncScheduler.isInstanceSyncing.mockReturnValue(true);
+
+		const res = await injectPost("/pulse/sig/action", ACTION_BODY);
+		expect(res.statusCode).toBe(409);
+		expect(librarySyncScheduler.triggerSync).not.toHaveBeenCalled();
+	});
+
+	it("409s (not a silent 200) when the scheduler is not running — degraded boot", async () => {
+		// runSchedulerInit catches init failures and lets the server keep
+		// serving, so `start()` may never have run. triggerSync would return
+		// null in that state; without the isRunning guard the route would 200
+		// with a "Library sync started" toast while nothing ran.
+		librarySyncScheduler.isRunning.mockReturnValue(false);
 
 		const res = await injectPost("/pulse/sig/action", ACTION_BODY);
 		expect(res.statusCode).toBe(409);
