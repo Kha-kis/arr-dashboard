@@ -14,7 +14,7 @@ import { collectAutomationRules } from "../lib/automation/collect-rules.js";
 export const registerAutomationRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	app.get("/automation/rules", async (request) => {
 		const userId = request.currentUser!.id;
-		const rules = await collectAutomationRules(app.prisma, userId);
+		const rules = await collectAutomationRules(app.prisma, userId, request.log);
 		return { rules } satisfies AutomationRulesResponse;
 	});
 

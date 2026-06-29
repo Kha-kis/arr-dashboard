@@ -18,6 +18,7 @@
 
 import type { AutomationRuleSummary, RuleContextId, RuleDocument } from "@arr/shared";
 import { CONTEXT_KINDS } from "@arr/shared";
+import type { FastifyBaseLogger } from "fastify";
 import type { PrismaClient } from "../prisma.js";
 import { listUnavailableKinds, normalizeDocument } from "../rules/engine.js";
 import { mapCriteriaV0ToDocument, mapNotificationsV0ToDocument } from "../rules/v0-mappers.js";
@@ -47,6 +48,7 @@ function summarize(
 	context: RuleContextId,
 	base: RuleBase,
 	build: () => RuleDocument,
+	log: FastifyBaseLogger,
 ): AutomationRuleSummary {
 	const legalKinds = CONTEXT_KINDS[context];
 	try {
@@ -60,7 +62,11 @@ function summarize(
 			unavailableKinds: listUnavailableKinds(doc, legalKinds),
 			unparseable: false,
 		};
-	} catch {
+	} catch (err) {
+		// The `unparseable` flag is the operator-facing signal; log the
+		// underlying error too so "why is this rule broken?" is diagnosable
+		// server-side (the row is surfaced, never silently dropped).
+		log.warn({ err, ruleId: base.id, context }, "automation: rule could not be parsed to v1");
 		return {
 			id: base.id,
 			name: base.name,
@@ -76,6 +82,7 @@ function summarize(
 export async function collectAutomationRules(
 	prisma: PrismaClient,
 	userId: string,
+	log: FastifyBaseLogger,
 ): Promise<AutomationRuleSummary[]> {
 	const [cleanupRules, autoTagRules, notificationRules] = await Promise.all([
 		// Cleanup rules are owned through their config (no direct userId column).
@@ -99,15 +106,20 @@ export async function collectAutomationRules(
 	const summaries: AutomationRuleSummary[] = [];
 
 	for (const r of cleanupRules) {
-		summaries.push(summarize("library-cleanup", r, () => mapCriteriaV0ToDocument(r)));
+		summaries.push(summarize("library-cleanup", r, () => mapCriteriaV0ToDocument(r), log));
 	}
 	for (const r of autoTagRules) {
-		summaries.push(summarize("auto-tag", r, () => mapCriteriaV0ToDocument(r)));
+		summaries.push(summarize("auto-tag", r, () => mapCriteriaV0ToDocument(r), log));
 	}
 	for (const r of notificationRules) {
 		// conditions is a JSON array string; JSON.parse may throw → unparseable.
 		summaries.push(
-			summarize("notifications", r, () => mapNotificationsV0ToDocument(JSON.parse(r.conditions))),
+			summarize(
+				"notifications",
+				r,
+				() => mapNotificationsV0ToDocument(JSON.parse(r.conditions)),
+				log,
+			),
 		);
 	}
 
