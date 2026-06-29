@@ -86,6 +86,21 @@ const eslintConfig = [
 					message:
 						"Hardcoded hex color in template literal. Use SEMANTIC_COLORS / BRAND_COLORS or useThemeGradient() from lib/theme-gradients.ts. If this is a genuine carve-out, add an eslint-disable comment with the reason.",
 				},
+				// Charter §7 L4 — no arbitrary z-index. The semantic z-index scale
+				// (z-dropdown..z-tooltip, 1000–2100 in globals.css) owns all GLOBAL
+				// layering. A Tailwind `z-[100]`+ arbitrary value brute-forces its way
+				// into that territory instead of using a semantic class. Scoped to 3+
+				// digits so benign local stacking (z-[1], z-[2]) stays free.
+				{
+					selector: "Literal[value=/z-\\[\\d{3,}\\]/]",
+					message:
+						"Arbitrary z-index. Use a semantic z-index class (z-modal, z-toast, z-dropdown, …) instead of a hardcoded high value. Low local-stacking values (z-[1], z-[2]) are fine; if this large value is a genuine carve-out, add an eslint-disable comment with the reason.",
+				},
+				{
+					selector: "TemplateElement[value.raw=/z-\\[\\d{3,}\\]/]",
+					message:
+						"Arbitrary z-index in template literal. Use a semantic z-index class (z-modal, z-toast, z-dropdown, …) instead of a hardcoded high value. Low local-stacking values (z-[1], z-[2]) are fine; if this large value is a genuine carve-out, add an eslint-disable comment with the reason.",
+				},
 			],
 
 			// Unused imports - auto-fixable
