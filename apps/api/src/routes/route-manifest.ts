@@ -22,6 +22,7 @@ import { registerAuthOidcRoutes } from "./auth-oidc.js";
 import { registerAuthPasskeyRoutes } from "./auth-passkey.js";
 import { registerAutoTagRoutes } from "./auto-tag.js";
 import { registerAutoTagWebhookRoutes } from "./auto-tag-webhook.js";
+import { registerAutomationRoutes } from "./automation.js";
 import { registerBackupRoutes } from "./backup.js";
 import { registerDashboardRoutes } from "./dashboard.js";
 import { registerHealthRoutes } from "./health.js";
@@ -272,6 +273,14 @@ export const PROTECTED_ROUTE_GROUPS: readonly RouteGroup[] = [
 		register: registerPulseRoutes,
 		maturity: "internal",
 		summary: "System Pulse health signals + attention items",
+	},
+	{
+		path: "/api/automation",
+		prefix: "/api",
+		register: registerAutomationRoutes,
+		maturity: "experimental",
+		summary:
+			"Unified Automation Engine — composer read surface: every domain's stored rules (library-cleanup / auto-tag / notifications) normalized to the v1 grammar (charter §5.1). Read-only in this phase; authoring + cross-domain rules follow.",
 	},
 	{
 		path: "/api/qui",
