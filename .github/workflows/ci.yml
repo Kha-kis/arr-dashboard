@@ -35,7 +35,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v5
@@ -47,7 +47,7 @@ jobs:
           cache: "pnpm"
 
       - name: Cache Turbo build
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: node_modules/.cache/turbo
           key: turbo-lint-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -94,7 +94,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v5
@@ -106,7 +106,7 @@ jobs:
           cache: "pnpm"
 
       - name: Cache Turbo build
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: node_modules/.cache/turbo
           key: turbo-e2e-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -123,7 +123,7 @@ jobs:
         run: pnpm run build
 
       - name: Cache Playwright Browsers
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         id: playwright-cache
         with:
           path: ~/.cache/ms-playwright
@@ -207,7 +207,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
