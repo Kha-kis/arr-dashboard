@@ -10,6 +10,7 @@ import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { dispatchPulseAction } from "../lib/pulse/actions.js";
 import { pulseCollectors } from "../lib/pulse/collectors.js";
+import { applyDismissals } from "../lib/pulse/dismissals.js";
 import { validateRequest } from "../lib/utils/validate.js";
 
 // ============================================================================
@@ -60,6 +61,7 @@ export const COLLECTOR_LABELS: Record<string, string> = {
 	collectArrQueueFailures: "queue failures",
 	collectSeerrCircuitBreaker: "Seerr circuit breaker",
 	collectCacheStaleness: "cache freshness",
+	collectLibrarySyncHealth: "library sync",
 	collectValidationHealth: "validation health",
 	collectLibraryInsightCounts: "library insights",
 	collectHuntFailures: "hunt failures",
@@ -140,6 +142,10 @@ function applyAttentionFilter(response: PulseResponse): PulseResponse {
 			info: 0,
 		},
 		generatedAt: response.generatedAt,
+		// Carried through verbatim: the count describes the whole feed (the
+		// tombstones hide items before this view is derived), and curated
+		// surfaces simply don't render it.
+		dismissedCount: response.dismissedCount,
 	};
 }
 
@@ -196,14 +202,27 @@ export const registerPulseRoutes: FastifyPluginCallback = (app, _opts, done) => 
 
 		const allItems = sortPulseItems(collectorResults.flat());
 
+		// Dismiss-until-recovery happens on the fresh-compute path ONLY (the
+		// cached response below is already filtered): sweep tombstones whose
+		// signal stopped firing, hide non-critical tombstoned items, and count
+		// what was hidden. Summary counts are computed AFTER filtering so the
+		// badge numbers always match the rows an operator can actually see.
+		const { visibleItems, dismissedCount } = await applyDismissals(
+			app,
+			userId,
+			allItems,
+			request.log,
+		);
+
 		const response: PulseResponse = {
-			items: allItems,
+			items: visibleItems,
 			summary: {
-				critical: allItems.filter((i) => i.severity === "critical").length,
-				warning: allItems.filter((i) => i.severity === "warning").length,
-				info: allItems.filter((i) => i.severity === "info").length,
+				critical: visibleItems.filter((i) => i.severity === "critical").length,
+				warning: visibleItems.filter((i) => i.severity === "warning").length,
+				info: visibleItems.filter((i) => i.severity === "info").length,
 			},
 			generatedAt: new Date().toISOString(),
+			dismissedCount,
 		};
 
 		pulseCache.set(userId, { data: response, expiresAt: Date.now() + CACHE_TTL_MS });
@@ -265,6 +284,70 @@ export const registerPulseRoutes: FastifyPluginCallback = (app, _opts, done) => 
 			return reply.send(wireResult);
 		},
 	);
+
+	// ============================================================================
+	// Dismiss-until-recovery — POST /pulse/:id/dismiss, DELETE …/dismiss,
+	// DELETE /pulse/dismissals
+	// ============================================================================
+	//
+	// Tombstone semantics live in lib/pulse/dismissals.ts (applyDismissals on
+	// the GET path). These routes only manage tombstone rows. Notes:
+	//
+	//   - No write-time validation that the signal id exists or is
+	//     non-critical: signals are stateless, so verifying either would cost
+	//     a full collector run per dismiss. The GET-path filter enforces the
+	//     critical-breakthrough rule at read time (strictly stronger — it
+	//     also covers post-dismiss escalation), and the recovery sweep
+	//     deletes tombstones for ids that never fire.
+	//   - Every mutation invalidates the per-user pulse cache so the next
+	//     poll reflects the change instead of waiting out the 60s TTL.
+	//   - Rate limited like the action route — these are cheap DB writes,
+	//     but a runaway client mashing dismiss shouldn't churn the cache.
+
+	const dismissRateLimit = { config: { rateLimit: { max: 30, timeWindow: "1m" } } };
+
+	app.post("/pulse/:id/dismiss", dismissRateLimit, async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const { id: signalId } = validateRequest(pulseIdParams, request.params);
+
+		// Idempotent: re-dismissing keeps the original dismissedAt.
+		await app.prisma.pulseDismissal.upsert({
+			where: { userId_signalId: { userId, signalId } },
+			create: { userId, signalId },
+			update: {},
+		});
+
+		invalidatePulseCache(userId);
+		request.log.info({ signalId, userId }, "pulse-dismiss: signal dismissed");
+		return reply.send({ status: "ok" });
+	});
+
+	// Undo a single dismissal (the toast's "Undo" path). deleteMany (not
+	// delete) so undoing an already-swept tombstone is a quiet no-op
+	// instead of a P2025 throw.
+	app.delete("/pulse/:id/dismiss", dismissRateLimit, async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const { id: signalId } = validateRequest(pulseIdParams, request.params);
+
+		await app.prisma.pulseDismissal.deleteMany({ where: { userId, signalId } });
+
+		invalidatePulseCache(userId);
+		request.log.info({ signalId, userId }, "pulse-dismiss: signal restored");
+		return reply.send({ status: "ok" });
+	});
+
+	// Restore-all — the management surface for dismissals that outlived
+	// their undo toast. Returns the cleared count so the UI can toast
+	// "Restored N signals" honestly.
+	app.delete("/pulse/dismissals", dismissRateLimit, async (request, reply) => {
+		const userId = request.currentUser!.id;
+
+		const { count } = await app.prisma.pulseDismissal.deleteMany({ where: { userId } });
+
+		invalidatePulseCache(userId);
+		request.log.info({ cleared: count, userId }, "pulse-dismiss: all signals restored");
+		return reply.send({ status: "ok", cleared: count });
+	});
 
 	done();
 };

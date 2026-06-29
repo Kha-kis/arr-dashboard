@@ -86,3 +86,18 @@ export function registerTestErrorHandler(app: FastifyInstance) {
 		return reply.status(500).send({ error: "Internal Server Error" });
 	});
 }
+
+/**
+ * Minimal PulseDismissal model stub for tests that exercise GET /pulse.
+ * The route's dismiss-until-recovery pass (applyDismissals) reads
+ * tombstones on every fresh compute, so any test hitting GET /pulse needs
+ * this on its prisma stub. Defaults model "no dismissals": findMany
+ * returns [] (which short-circuits before deleteMany is ever called).
+ */
+export function makePulseDismissalStub() {
+	return {
+		findMany: async () => [] as Array<{ signalId: string }>,
+		deleteMany: async () => ({ count: 0 }),
+		upsert: async () => ({}),
+	};
+}

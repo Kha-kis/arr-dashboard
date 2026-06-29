@@ -66,6 +66,7 @@ function makeApp(): FastifyInstance {
 			trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
 			libraryCache: { count: vi.fn().mockResolvedValue(0) },
 			libraryCleanupConfig: { findFirst: vi.fn().mockResolvedValue(null) },
+			librarySyncStatus: { findMany: vi.fn().mockResolvedValue([]) },
 		},
 		seerrCircuitBreaker: { getState: vi.fn().mockReturnValue("CLOSED") },
 		schedulerRegistry: { list: vi.fn().mockReturnValue([]) },

@@ -442,7 +442,8 @@ export const ModelName = {
   TraktListCache: 'TraktListCache',
   QuiActivityLog: 'QuiActivityLog',
   QuiActionLog: 'QuiActionLog',
-  QuiEventLog: 'QuiEventLog'
+  QuiEventLog: 'QuiEventLog',
+  PulseDismissal: 'PulseDismissal'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -458,7 +459,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "inodeIndexCache" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "episodeFileCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "autoTagRule" | "tmdbListCache" | "traktListCache" | "quiActivityLog" | "quiActionLog" | "quiEventLog"
+    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "inodeIndexCache" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "episodeFileCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "autoTagRule" | "tmdbListCache" | "traktListCache" | "quiActivityLog" | "quiActionLog" | "quiEventLog" | "pulseDismissal"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -4828,6 +4829,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    PulseDismissal: {
+      payload: Prisma.$PulseDismissalPayload<ExtArgs>
+      fields: Prisma.PulseDismissalFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.PulseDismissalFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PulseDismissalPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.PulseDismissalFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PulseDismissalPayload>
+        }
+        findFirst: {
+          args: Prisma.PulseDismissalFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PulseDismissalPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.PulseDismissalFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PulseDismissalPayload>
+        }
+        findMany: {
+          args: Prisma.PulseDismissalFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PulseDismissalPayload>[]
+        }
+        create: {
+          args: Prisma.PulseDismissalCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PulseDismissalPayload>
+        }
+        createMany: {
+          args: Prisma.PulseDismissalCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.PulseDismissalCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PulseDismissalPayload>[]
+        }
+        delete: {
+          args: Prisma.PulseDismissalDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PulseDismissalPayload>
+        }
+        update: {
+          args: Prisma.PulseDismissalUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PulseDismissalPayload>
+        }
+        deleteMany: {
+          args: Prisma.PulseDismissalDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.PulseDismissalUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.PulseDismissalUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PulseDismissalPayload>[]
+        }
+        upsert: {
+          args: Prisma.PulseDismissalUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PulseDismissalPayload>
+        }
+        aggregate: {
+          args: Prisma.PulseDismissalAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregatePulseDismissal>
+        }
+        groupBy: {
+          args: Prisma.PulseDismissalGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.PulseDismissalGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.PulseDismissalCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.PulseDismissalCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -5953,6 +6028,16 @@ export const QuiEventLogScalarFieldEnum = {
 export type QuiEventLogScalarFieldEnum = (typeof QuiEventLogScalarFieldEnum)[keyof typeof QuiEventLogScalarFieldEnum]
 
 
+export const PulseDismissalScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  signalId: 'signalId',
+  dismissedAt: 'dismissedAt'
+} as const
+
+export type PulseDismissalScalarFieldEnum = (typeof PulseDismissalScalarFieldEnum)[keyof typeof PulseDismissalScalarFieldEnum]
+
+
 export const SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -6213,6 +6298,7 @@ export type GlobalOmitConfig = {
   quiActivityLog?: Prisma.QuiActivityLogOmit
   quiActionLog?: Prisma.QuiActionLogOmit
   quiEventLog?: Prisma.QuiEventLogOmit
+  pulseDismissal?: Prisma.PulseDismissalOmit
 }
 
 /* Types for Logging */

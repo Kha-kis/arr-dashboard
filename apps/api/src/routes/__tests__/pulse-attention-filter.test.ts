@@ -14,9 +14,9 @@
  * pure assertion on the route's filter, not on real-world collector output.
  */
 
+import type { PulseItem } from "@arr/shared";
 import Fastify from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { PulseItem } from "@arr/shared";
 
 let items: PulseItem[] = [];
 
@@ -28,7 +28,11 @@ vi.mock("../../lib/pulse/collectors.js", () => ({
 }));
 
 import { registerPulseRoutes } from "../pulse.js";
-import { createInjectAuthenticated, setupAuthInjection } from "./test-helpers.js";
+import {
+	createInjectAuthenticated,
+	makePulseDismissalStub,
+	setupAuthInjection,
+} from "./test-helpers.js";
 
 let app: ReturnType<typeof Fastify>;
 let injectAuthenticated: ReturnType<typeof createInjectAuthenticated>;
@@ -55,6 +59,7 @@ beforeEach(async () => {
 	userCounter += 1;
 	app = Fastify({ logger: false });
 	setupAuthInjection(app, { id: `user-attn-${userCounter}`, username: "admin" });
+	app.decorate("prisma", { pulseDismissal: makePulseDismissalStub() } as unknown as never);
 	await app.register(registerPulseRoutes);
 	await app.ready();
 	injectAuthenticated = createInjectAuthenticated(app);
@@ -114,8 +119,9 @@ describe("GET /pulse — attentionOnly filter", () => {
 		// Summary reflects only the filtered items — info always 0 in this view.
 		expect(body.summary).toEqual({ critical: 1, warning: 1, info: 0 });
 
-		// Shape unchanged: same top-level keys.
-		expect(Object.keys(body).sort()).toEqual(["generatedAt", "items", "summary"]);
+		// Shape unchanged: same top-level keys (dismissedCount carried through
+		// from the full feed — curated surfaces just don't render it).
+		expect(Object.keys(body).sort()).toEqual(["dismissedCount", "generatedAt", "items", "summary"]);
 	});
 
 	it("returns an empty feed when no item is both severe and actionable", async () => {
