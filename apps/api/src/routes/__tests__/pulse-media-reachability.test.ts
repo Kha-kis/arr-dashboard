@@ -39,7 +39,11 @@ vi.mock("../../lib/pulse/collectors.js", async () => {
 });
 
 import { registerPulseRoutes } from "../pulse.js";
-import { createInjectAuthenticated, setupAuthInjection } from "./test-helpers.js";
+import {
+	createInjectAuthenticated,
+	makePulseDismissalStub,
+	setupAuthInjection,
+} from "./test-helpers.js";
 
 type InstanceRow = { id: string; service: string; label: string; enabled: boolean };
 
@@ -62,6 +66,7 @@ beforeEach(async () => {
 	setupAuthInjection(app, { id: `user-reach-${userCounter}`, username: "admin" });
 
 	app.decorate("prisma", {
+		pulseDismissal: makePulseDismissalStub(),
 		serviceInstance: {
 			findMany: async ({ where }: { where: { service: { in: string[] } } }) =>
 				instanceRows.filter((r) => where.service.in.includes(r.service)),

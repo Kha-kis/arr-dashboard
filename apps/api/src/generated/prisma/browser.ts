@@ -374,3 +374,18 @@ export type QuiActionLog = Prisma.QuiActionLogModel
  * can correlate it to a specific instance row.
  */
 export type QuiEventLog = Prisma.QuiEventLogModel
+/**
+ * Model PulseDismissal
+ * Dismiss-until-recovery tombstone for a Pulse signal (Console PR 4).
+ * 
+ * Pulse signals are stateless — recomputed from collectors on every poll —
+ * so "dismiss" is persisted as a tombstone keyed by the signal's stable id.
+ * Semantics (enforced in routes/pulse.ts, not here):
+ * - A tombstoned signal is hidden from GET /pulse while it keeps firing.
+ * - Recovery sweep: when the signal stops appearing in a fresh compute,
+ * the tombstone is deleted — so a recurrence resurfaces immediately.
+ * - Critical breakthrough: the filter only suppresses non-critical items,
+ * so a dismissed warning that escalates to critical reappears without
+ * any write — severity is evaluated at read time.
+ */
+export type PulseDismissal = Prisma.PulseDismissalModel

@@ -25,9 +25,13 @@ const INCOGNITO_STORAGE_KEY = "arr-dashboard-incognito-mode";
 // Mock the Pulse query hook
 // ---------------------------------------------------------------------------
 const mockUsePulseQuery = vi.fn();
+const mockDismissMutate = vi.fn();
 
 vi.mock("../../../../hooks/api/usePulse", () => ({
 	usePulseQuery: (args?: { attentionOnly?: boolean }) => mockUsePulseQuery(args),
+	// PulseDismissButton (rendered on non-critical rows) consumes this from
+	// the same module — stub it so rows render without a live mutation.
+	usePulseDismissMutation: () => ({ mutate: mockDismissMutate, isPending: false }),
 }));
 
 // Import after mocks so the component picks up the mocked hook.
@@ -66,11 +70,12 @@ function makeResponse(items: PulseItem[]): PulseResponse {
 		warning: items.filter((i) => i.severity === "warning").length,
 		info: items.filter((i) => i.severity === "info").length,
 	};
-	return { items, summary, generatedAt: "2026-04-14T12:00:00.000Z" };
+	return { items, summary, generatedAt: "2026-04-14T12:00:00.000Z", dismissedCount: 0 };
 }
 
 beforeEach(() => {
 	mockUsePulseQuery.mockReset();
+	mockDismissMutate.mockReset();
 	// Reset incognito state between tests — otherwise a test that flips it
 	// on would leak into subsequent cases.
 	localStorage.removeItem(INCOGNITO_STORAGE_KEY);
@@ -86,9 +91,7 @@ describe("<NeedsAttentionPanel />", () => {
 
 		render(<NeedsAttentionPanel />, { wrapper: createWrapper() });
 
-		expect(
-			screen.getByTestId("needs-attention-panel-loading"),
-		).toBeInTheDocument();
+		expect(screen.getByTestId("needs-attention-panel-loading")).toBeInTheDocument();
 		// The loading state must NOT claim "all clear" or show any item rows.
 		expect(screen.queryByText(/No actionable items right now/i)).not.toBeInTheDocument();
 	});
@@ -160,17 +163,39 @@ describe("<NeedsAttentionPanel />", () => {
 		// Action links land on the exact actionUrl from the item, and respect
 		// actionLabel when provided (else "Resolve" default).
 		const openService = screen.getByRole("link", { name: /Open service/i });
-		expect(openService).toHaveAttribute(
-			"href",
-			"/settings/services?instance=sonarr-1",
-		);
+		expect(openService).toHaveAttribute("href", "/settings/services?instance=sonarr-1");
 		const resolve = screen.getByRole("link", { name: /Resolve/i });
 		expect(resolve).toHaveAttribute("href", "/queue-cleaner");
 
 		// Header shows a "View all in Pulse" link regardless.
-		expect(
-			screen.getByRole("link", { name: /View all in Pulse/i }),
-		).toHaveAttribute("href", "/pulse");
+		expect(screen.getByRole("link", { name: /View all in Pulse/i })).toHaveAttribute(
+			"href",
+			"/pulse",
+		);
+	});
+
+	it("offers dismiss only on non-critical rows, wired to the row's signal id", () => {
+		mockUsePulseQuery.mockReturnValue({
+			data: makeResponse([
+				makeItem({ id: "crit-1", severity: "critical", title: "Sonarr is unreachable" }),
+				makeItem({ id: "warn-1", severity: "warning", title: "Queue cleaner failed" }),
+			]),
+			isLoading: false,
+			isError: false,
+		});
+
+		render(<NeedsAttentionPanel />, { wrapper: createWrapper() });
+
+		// Exactly ONE dismiss affordance: the warning row. Critical rows must
+		// never offer dismissal (the backend re-enforces this at read time,
+		// but the affordance shouldn't exist at all).
+		const dismissButtons = screen.getAllByRole("button", {
+			name: /Dismiss signal until it recovers/i,
+		});
+		expect(dismissButtons).toHaveLength(1);
+
+		dismissButtons[0]?.click();
+		expect(mockDismissMutate).toHaveBeenCalledWith({ signalId: "warn-1" });
 	});
 
 	it("shows the critical (error) header accent when any visible item is critical", () => {
@@ -212,9 +237,7 @@ describe("<NeedsAttentionPanel />", () => {
 
 		const panel = screen.getByTestId("needs-attention-panel");
 		// Warning triangle present, no critical x-circle in the header.
-		expect(
-			panel.querySelector(".lucide-alert-triangle, .lucide-triangle-alert"),
-		).not.toBeNull();
+		expect(panel.querySelector(".lucide-alert-triangle, .lucide-triangle-alert")).not.toBeNull();
 	});
 
 	// ---------------------------------------------------------------------
@@ -337,9 +360,6 @@ describe("<NeedsAttentionPanel />", () => {
 
 		render(<NeedsAttentionPanel />, { wrapper: createWrapper() });
 		const link = screen.getByRole("link", { name: /View in Pulse/i });
-		expect(link).toHaveAttribute(
-			"href",
-			"/pulse#scheduler-failing-queue-cleaner",
-		);
+		expect(link).toHaveAttribute("href", "/pulse#scheduler-failing-queue-cleaner");
 	});
 });

@@ -23,7 +23,11 @@ vi.mock("../../lib/pulse/collectors.js", async () => {
 });
 
 import { registerPulseRoutes } from "../pulse.js";
-import { createInjectAuthenticated, setupAuthInjection } from "./test-helpers.js";
+import {
+	createInjectAuthenticated,
+	makePulseDismissalStub,
+	setupAuthInjection,
+} from "./test-helpers.js";
 
 let app: ReturnType<typeof Fastify>;
 let injectAuthenticated: ReturnType<typeof createInjectAuthenticated>;
@@ -62,6 +66,7 @@ beforeEach(async () => {
 	app = Fastify({ logger: false });
 	setupAuthInjection(app, { id: `user-cache-${userCounter}`, username: "admin" });
 	app.decorate("prisma", {
+		pulseDismissal: makePulseDismissalStub(),
 		cacheRefreshStatus: {
 			findMany: async () => cacheStatuses,
 		},
