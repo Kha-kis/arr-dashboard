@@ -55,6 +55,7 @@ for the full rationale.
 | `/api/auto-tag` | operator | Criteria-based auto-tagger — applies tags to LibraryCache items matching the rule's criteria DSL (genre, year, codec, watch state, …). Companion to Label Sync. Webhook config (secret read/rotate) lives here under session auth. |
 | `/api/auto-tag/webhook` | operator | Inbound Sonarr/Radarr Connect webhook for real-time auto-tagging. **Public route** (no session cookie); authenticates via per-user Bearer token (SHA-256 hash of the user's webhook secret). |
 | `/api/pulse` | internal | System Pulse health signals + attention items |
+| `/api/automation` | experimental | Unified Automation Engine — composer read surface: every domain's stored rules (library-cleanup / auto-tag / notifications) normalized to the v1 grammar (charter §5.1). Read-only in this phase; authoring + cross-domain rules follow. |
 | `/api/qui` | stable | Federated peer integration with autobrr/qui (qBittorrent UI) — torrent state, trackers, cross-seed siblings, and capability-aware torrent mutations; powers the Torrent Health panel and detail drawer. |
 | `/api/webhooks/qui` | stable | Inbound qui webhook receiver (Phase 5.1). **Public route** (no session cookie); authenticates via per-user `?secret=…` query param (matches qui's `ApiKeyQuery` scheme). Stores raw events in `QuiEventLog` and publishes to the in-process event bus for SSE fan-out. |
 | `/api/seerr` | stable | Request management, discovery, library enrichment |
