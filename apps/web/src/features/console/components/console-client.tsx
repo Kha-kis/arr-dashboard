@@ -11,10 +11,9 @@
  * Layout (ratified with the charter, refined 2026-06-10): PremiumTabs as
  * primary navigation; the Overview tab becomes a two-column split (domain
  * tiles left, attention feed right) once the tiles land. Console arc:
- *   PR 2 (this) — shell + live attention feed
- *   PR 3 — per-domain tiles (Overview becomes the split)
- *   PR 4 — Pulse rollup refinements / operator actions
- *   PR 6 — rule composer (registers the Automation tab)
+ *   shell + live attention feed (#535) · per-domain tiles (#537) ·
+ *   operator actions (#538) · composer read surface = the Automation tab
+ *   (this; authoring follows in later composer PRs).
  *
  * The attention feed is the SAME component the dashboard renders
  * (NeedsAttentionPanel) — charter §2.1 names the rollup as the console's
@@ -23,22 +22,26 @@
  * in one place instead of forking them.
  */
 
-import { Gauge, RefreshCw } from "lucide-react";
+import { Gauge, RefreshCw, Workflow } from "lucide-react";
 import { useState } from "react";
 import { PremiumPageHeader, type PremiumTab, PremiumTabs } from "../../../components/layout";
 import { Button } from "../../../components/ui";
 import { usePulseQuery } from "../../../hooks/api/usePulse";
 import { useSystemJobs } from "../../../hooks/api/useSystem";
 import { NeedsAttentionPanel } from "../../dashboard/components/needs-attention-panel";
+import { AutomationPanel } from "./automation-panel";
 import { DomainTileGrid } from "./domain-tile-grid";
 
-export type ConsoleTabId = "overview";
+export type ConsoleTabId = "overview" | "automation";
 
-// The Automation tab registers here when the rule composer lands.
-// PremiumTabs renders only when there is more than one tab: a lone tab is
-// chrome without a choice, and shipping a dead "Automation" stub before
-// the composer exists would violate the no-misleading-surfaces trust rule.
-const CONSOLE_TABS: PremiumTab[] = [{ id: "overview", label: "Overview", icon: Gauge }];
+// The Automation tab hosts the rule composer's read surface (PR-2: cross-domain
+// viewer). PremiumTabs renders only at >1 tab, so adding this is what surfaces
+// the tab bar — and the tab is real (it shows your normalized rules), not a
+// dead stub, satisfying the no-misleading-surfaces trust rule.
+const CONSOLE_TABS: PremiumTab[] = [
+	{ id: "overview", label: "Overview", icon: Gauge },
+	{ id: "automation", label: "Automation", icon: Workflow },
+];
 
 export const ConsoleClient = () => {
 	const [activeTab, setActiveTab] = useState<ConsoleTabId>("overview");
@@ -101,6 +104,8 @@ export const ConsoleClient = () => {
 						<NeedsAttentionPanel />
 					</div>
 				)}
+
+				{activeTab === "automation" && <AutomationPanel />}
 			</div>
 		</>
 	);
