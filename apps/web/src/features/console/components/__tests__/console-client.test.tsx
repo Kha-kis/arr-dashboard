@@ -6,9 +6,9 @@
  *   - the attention feed is mounted and driven by the shared
  *     NeedsAttentionPanel (its own states are pinned in
  *     needs-attention-panel.test.tsx — not re-tested here)
- *   - NO tab bar renders while the console has a single tab (the
- *     Automation tab registers with the composer; a dead stub tab would
- *     be a misleading surface)
+ *   - the tab bar renders now that the Automation tab is registered
+ *     (Overview + Automation = >1 tab; the Automation tab shows real
+ *     normalized rules, not a dead stub)
  *   - the header refresh action refetches the attention query
  */
 
@@ -156,13 +156,14 @@ describe("ConsoleClient shell", () => {
 		expect(screen.getByText("Hunt failing on Radarr Main")).toBeInTheDocument();
 	});
 
-	it("renders NO tab bar while the console has a single tab", () => {
+	it("renders the tab bar now that the Automation tab is registered", () => {
 		mockQueryState();
 		render(<ConsoleClient />, { wrapper: createWrapper() });
 
-		// The only "Overview" affordance would come from a rendered tab bar —
-		// the header itself never says Overview.
-		expect(screen.queryByRole("button", { name: /overview/i })).not.toBeInTheDocument();
+		// Two tabs (Overview + Automation) → PremiumTabs renders (the >1-tab rule).
+		// Both tab affordances appear; Overview is the default active tab.
+		expect(screen.getByRole("button", { name: /overview/i })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: /automation/i })).toBeInTheDocument();
 	});
 
 	it("refreshes BOTH overview feeds from the header refresh action", () => {

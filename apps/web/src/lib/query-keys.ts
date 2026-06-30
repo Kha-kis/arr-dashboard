@@ -533,6 +533,11 @@ export const pulseKeys = {
 	attention: () => ["pulse", "attentionOnly"] as const,
 };
 
+export const automationKeys = {
+	all: ["automation"] as const,
+	rules: () => ["automation", "rules"] as const,
+};
+
 export const quiKeys = {
 	all: ["qui"] as const,
 	// Per-series aggregate (episode counts + distinct torrents). Powers
