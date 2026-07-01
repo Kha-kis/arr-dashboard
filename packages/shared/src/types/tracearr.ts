@@ -303,6 +303,48 @@ export const tracearrStreamsResponseSchema = z.object({
 });
 export type TracearrStreamsResponse = z.infer<typeof tracearrStreamsResponseSchema>;
 
+// ── Aggregate live-sessions view (arr-dashboard console tile, Tracearr-2) ──
+// NOTE: unlike the schemas above (which model Tracearr's tolerant wire
+// format), the three schemas below are OUR API → OUR frontend contract for
+// the Console "Live Sessions" card, so they are strict. The backend derives
+// them by aggregating each enabled Tracearr instance's `/streams` summary.
+
+/**
+ * Aggregate stream counts across every reachable Tracearr instance. Counts
+ * sum cleanly; `totalBitrate` is a passthrough of the single reachable
+ * instance's pre-formatted string and is `null` when there are zero or more
+ * than one reachable instances (formatted strings can't be summed).
+ */
+export const tracearrLiveSessionsSummarySchema = z.object({
+	total: z.number().int(),
+	transcodes: z.number().int(),
+	directStreams: z.number().int(),
+	directPlays: z.number().int(),
+	totalBitrate: z.string().nullable(),
+});
+export type TracearrLiveSessionsSummary = z.infer<typeof tracearrLiveSessionsSummarySchema>;
+
+/** Per-instance reachability, so the card can honestly disclose a down instance. */
+export const tracearrLiveSessionsInstanceSchema = z.object({
+	id: z.string(),
+	label: z.string(),
+	reachable: z.boolean(),
+});
+export type TracearrLiveSessionsInstance = z.infer<typeof tracearrLiveSessionsInstanceSchema>;
+
+/**
+ * `GET /api/tracearr/streams` — aggregate live-session view for the console.
+ * `configured` is false when the user has no enabled Tracearr instance (the
+ * card is omitted). `summary` is null when configured but no instance is
+ * currently reachable (the card shows an unreachable state, never a fake 0).
+ */
+export const tracearrLiveSessionsResponseSchema = z.object({
+	configured: z.boolean(),
+	instances: z.array(tracearrLiveSessionsInstanceSchema),
+	summary: tracearrLiveSessionsSummarySchema.nullable(),
+});
+export type TracearrLiveSessionsResponse = z.infer<typeof tracearrLiveSessionsResponseSchema>;
+
 // ── POST /streams/{id}/terminate (wired in Tracearr-3; type here now) ─
 
 export const tracearrTerminateResponseSchema = z.object({
