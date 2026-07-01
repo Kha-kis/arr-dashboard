@@ -1,5 +1,6 @@
 import type { FastifyPluginCallback } from "fastify";
 import { registerTracearrInstanceRoutes } from "./tracearr/instance-routes.js";
+import { registerTracearrStreamsRoutes } from "./tracearr/streams-routes.js";
 
 /**
  * Tracearr integration routes — self-hosted media-analytics peer that
@@ -18,6 +19,7 @@ import { registerTracearrInstanceRoutes } from "./tracearr/instance-routes.js";
  */
 const tracearrRoute: FastifyPluginCallback = (app, _opts, done) => {
 	registerTracearrInstanceRoutes(app);
+	registerTracearrStreamsRoutes(app);
 	done();
 };
 

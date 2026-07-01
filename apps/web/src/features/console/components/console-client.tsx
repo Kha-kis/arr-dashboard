@@ -31,6 +31,7 @@ import { useSystemJobs } from "../../../hooks/api/useSystem";
 import { NeedsAttentionPanel } from "../../dashboard/components/needs-attention-panel";
 import { AutomationPanel } from "./automation-panel";
 import { DomainTileGrid } from "./domain-tile-grid";
+import { LiveSessionsCard } from "./live-sessions-card";
 
 export type ConsoleTabId = "overview" | "automation";
 
@@ -100,7 +101,13 @@ export const ConsoleClient = () => {
 					// glance) left, the attention feed (what needs me) right.
 					// Stacks on smaller screens, tiles first.
 					<div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-						<DomainTileGrid />
+						{/* Left column: the live-session card (cross-server "what's
+						    playing now", service-gated — renders nothing without
+						    Tracearr) sits above the per-domain status tiles. */}
+						<div className="flex flex-col gap-6">
+							<LiveSessionsCard />
+							<DomainTileGrid />
+						</div>
 						<NeedsAttentionPanel />
 					</div>
 				)}
