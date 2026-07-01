@@ -94,6 +94,61 @@ export class QuiInstanceUnreachableError extends Error {
 }
 
 /**
+ * Thrown when a Tracearr Public API call fails. Same status-mapping
+ * convention as QuiApiError — the centralised handler in server.ts reads
+ * `statusCode`. Tracearr auth is a Bearer key the operator manages in
+ * Tracearr's own settings, so 401/403 pass through for the user to fix;
+ * 5xx collapses to 502 (Tracearr is unhealthy, not us).
+ */
+export class TracearrApiError extends Error {
+	readonly statusCode: number;
+	readonly upstreamStatus: number;
+
+	constructor(
+		message: string,
+		opts: { upstreamStatus: number; statusCodeOverride?: number; cause?: unknown },
+	) {
+		super(message);
+		this.name = "TracearrApiError";
+		this.upstreamStatus = opts.upstreamStatus;
+		if (opts.cause !== undefined) {
+			this.cause = opts.cause;
+		}
+
+		if (opts.statusCodeOverride !== undefined) {
+			this.statusCode = opts.statusCodeOverride;
+		} else if ([401, 403, 404, 429].includes(opts.upstreamStatus)) {
+			this.statusCode = opts.upstreamStatus;
+		} else if (opts.upstreamStatus >= 500) {
+			this.statusCode = 502;
+		} else {
+			this.statusCode = opts.upstreamStatus;
+		}
+	}
+}
+
+/**
+ * Thrown when a Tracearr instance can't be reached (timeout, connection
+ * refused, DNS failure). Distinct from TracearrApiError because there's no
+ * upstream HTTP status to map. Maps to HTTP 503 — an operator/reachability
+ * problem ("is Tracearr running?") rather than auth or config.
+ */
+export class TracearrInstanceUnreachableError extends Error {
+	readonly statusCode = 503;
+
+	constructor(
+		public readonly instanceId: string,
+		opts?: { reason?: string; cause?: unknown },
+	) {
+		super(opts?.reason ?? `Tracearr instance ${instanceId} is unreachable`);
+		this.name = "TracearrInstanceUnreachableError";
+		if (opts?.cause !== undefined) {
+			this.cause = opts.cause;
+		}
+	}
+}
+
+/**
  * Thrown when a Seerr API call fails.
  * - `seerrStatus`: the HTTP status returned by the Seerr instance
  * - `retryable`: true for 429 and 5xx; false for 4xx
