@@ -12,7 +12,8 @@ export type ServiceType =
 	| "plex"
 	| "jellyfin"
 	| "emby"
-	| "qui";
+	| "qui"
+	| "tracearr";
 
 export const SERVICE_TYPES: ServiceType[] = [
 	"sonarr",
@@ -25,6 +26,7 @@ export const SERVICE_TYPES: ServiceType[] = [
 	"jellyfin",
 	"emby",
 	"qui",
+	"tracearr",
 ];
 
 export const OPTION_STYLE = {

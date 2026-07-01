@@ -5,11 +5,8 @@
  * both legacy `exclude` semantics and new `include` semantics (TRaSH Guides PR #2590)
  */
 
-import { describe, it, expect } from "vitest";
-import {
-	isCFGroupApplicableToProfile,
-	type TrashCustomFormatGroup,
-} from "../trash-guides.js";
+import { describe, expect, it } from "vitest";
+import { isCFGroupApplicableToProfile, type TrashCustomFormatGroup } from "../trash-guides.js";
 
 // ============================================================================
 // Helper factories for test data
@@ -160,10 +157,10 @@ describe("isCFGroupApplicableToProfile", () => {
 				custom_formats: [],
 				quality_profiles: {
 					include: {
-						"included": PROFILE_HD_BLURAY,
+						included: PROFILE_HD_BLURAY,
 					},
 					exclude: {
-						"excluded": PROFILE_HD_BLURAY, // Same profile in both!
+						excluded: PROFILE_HD_BLURAY, // Same profile in both!
 					},
 				},
 			};
@@ -216,7 +213,7 @@ describe("isCFGroupApplicableToProfile", () => {
 
 		it("should be case-sensitive for profile IDs", () => {
 			const group = createGroupWithInclude("group-1", {
-				"included": "Profile-ID",
+				included: "Profile-ID",
 			});
 
 			expect(isCFGroupApplicableToProfile(group, "Profile-ID")).toBe(true);

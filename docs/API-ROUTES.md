@@ -58,6 +58,7 @@ for the full rationale.
 | `/api/automation` | experimental | Unified Automation Engine — composer read surface: every domain's stored rules (library-cleanup / auto-tag / notifications) normalized to the v1 grammar (charter §5.1). Read-only in this phase; authoring + cross-domain rules follow. |
 | `/api/qui` | stable | Federated peer integration with autobrr/qui (qBittorrent UI) — torrent state, trackers, cross-seed siblings, and capability-aware torrent mutations; powers the Torrent Health panel and detail drawer. |
 | `/api/webhooks/qui` | stable | Inbound qui webhook receiver (Phase 5.1). **Public route** (no session cookie); authenticates via per-user `?secret=…` query param (matches qui's `ApiKeyQuery` scheme). Stores raw events in `QuiEventLog` and publishes to the in-process event bus for SSE fan-out. |
+| `/api/tracearr` | experimental | Tracearr integration (charter §2.2 / ADR-0007) — self-hosted media-analytics peer replacing Tautulli in 3.0. Foundation phase: typed reads against Tracearr's Public API (health, live streams, watch history, stats, users, violations). Instance CRUD + connection testing runs through `/api/services`; live-session tiles, kill-session, and Statistics-on-Tracearr follow. |
 | `/api/seerr` | stable | Request management, discovery, library enrichment |
 | `/api/trash-guides` | operator | TRaSH cache, templates, deployment, profiles |
 

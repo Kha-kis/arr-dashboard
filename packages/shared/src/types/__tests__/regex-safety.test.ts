@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isRegexSafe, getRegexSafetyError, REGEX_MAX_LENGTH } from "../regex-safety.js";
+import { getRegexSafetyError, isRegexSafe, REGEX_MAX_LENGTH } from "../regex-safety.js";
 
 describe("isRegexSafe", () => {
 	describe("valid safe patterns", () => {
