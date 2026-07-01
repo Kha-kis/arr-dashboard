@@ -22,4 +22,5 @@ export * from "./rule-criteria";
 export * from "./search";
 export * from "./seerr";
 export * from "./template-sharing";
+export * from "./tracearr";
 export * from "./trash-guides";

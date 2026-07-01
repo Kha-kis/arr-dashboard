@@ -17,6 +17,7 @@ export const INTEGRATION_SERVICES = [
 	"jellyfin",
 	"emby",
 	"qui",
+	"tracearr",
 ] as const;
 
 /** All supported service types */

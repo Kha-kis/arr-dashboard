@@ -334,7 +334,8 @@ export type ServiceType =
 	| "plex"
 	| "jellyfin"
 	| "emby"
-	| "qui";
+	| "qui"
+	| "tracearr";
 
 /**
  * Service-specific gradients for visual distinction
@@ -397,6 +398,11 @@ export const SERVICE_GRADIENTS: Record<ServiceType, ServiceGradient> = {
 		from: "#0891b2", // cyan-600 (deeper than Sonarr's cyan-500)
 		to: "#1e40af", // blue-700 (download / infrastructure tone)
 		glow: "rgba(8, 145, 178, 0.4)",
+	},
+	tracearr: {
+		from: "#d946ef", // fuchsia-500 (analytics / insight — distinct from the blues)
+		to: "#6366f1", // indigo-500 (long magenta→indigo sweep, unused elsewhere)
+		glow: "rgba(217, 70, 239, 0.4)",
 	},
 };
 

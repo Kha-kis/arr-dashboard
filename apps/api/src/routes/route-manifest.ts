@@ -43,6 +43,7 @@ import { registerSearchRoutes } from "./search.js";
 import { registerSeerrRoutes } from "./seerr/index.js";
 import { registerServiceRoutes } from "./services.js";
 import { registerSystemRoutes } from "./system.js";
+import { registerTracearrRoutes } from "./tracearr.js";
 import { registerTrashGuidesRoutes } from "./trash-guides/index.js";
 
 /**
@@ -289,6 +290,14 @@ export const PROTECTED_ROUTE_GROUPS: readonly RouteGroup[] = [
 		maturity: "stable",
 		summary:
 			"Federated peer integration with autobrr/qui (qBittorrent UI) — torrent state, trackers, cross-seed siblings, and capability-aware torrent mutations (pause/resume, limits, trackers, tags); powers the Torrent Health panel and detail drawer on library item pages.",
+	},
+	{
+		path: "/api/tracearr",
+		prefix: "/api",
+		register: registerTracearrRoutes,
+		maturity: "experimental",
+		summary:
+			"Tracearr integration (charter §2.2 / ADR-0007) — self-hosted media-analytics peer replacing Tautulli in 3.0. Foundation phase: typed reads against Tracearr's Public API (health, live streams, watch history, stats, users, violations). Instance CRUD + connection testing runs through /api/services; live-session tiles, kill-session, and Statistics-on-Tracearr follow.",
 	},
 
 	// --- External integrations (Seerr / TRaSH Guides) ---

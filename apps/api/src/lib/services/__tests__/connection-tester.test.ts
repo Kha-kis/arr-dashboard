@@ -140,3 +140,81 @@ describe("testServiceConnection — Seerr permission probe (#465)", () => {
 		expect(fetchSpy).toHaveBeenCalledTimes(1);
 	});
 });
+
+describe("testServiceConnection — Tracearr health probe", () => {
+	let fetchSpy: FetchSpy;
+
+	beforeEach(() => {
+		fetchSpy = vi.fn();
+		vi.stubGlobal("fetch", fetchSpy);
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		vi.restoreAllMocks();
+	});
+
+	it("probes /api/v1/public/health with an Authorization: Bearer key", async () => {
+		fetchSpy.mockResolvedValueOnce(jsonResponse({ status: "ok", version: "v1.4.28", servers: [] }));
+
+		const result = await testServiceConnection("http://tracearr:3000", "trr_pub_key", "tracearr");
+
+		expect(result.success).toBe(true);
+		// URL must carry the /api/v1/public prefix the operator never types.
+		expect(fetchSpy.mock.calls[0]?.[0]).toBe("http://tracearr:3000/api/v1/public/health");
+		const init = fetchSpy.mock.calls[0]?.[1] as RequestInit;
+		expect((init.headers as Record<string, string>).Authorization).toBe("Bearer trr_pub_key");
+	});
+
+	it("reports 'no media servers attached yet' for an empty servers array", async () => {
+		fetchSpy.mockResolvedValueOnce(jsonResponse({ status: "ok", version: "v1.4.28", servers: [] }));
+
+		const result = await testServiceConnection("http://tracearr:3000", "k", "tracearr");
+
+		expect(result.success).toBe(true);
+		expect(result.message).toMatch(/no media servers attached/i);
+		expect(result.version).toBe("v1.4.28");
+	});
+
+	it("reports the attached-server count when servers are present", async () => {
+		fetchSpy.mockResolvedValueOnce(
+			jsonResponse({
+				status: "ok",
+				version: "v1.4.28",
+				servers: [
+					{ id: "a", name: "Plex", type: "plex", online: true, activeStreams: 0 },
+					{ id: "b", name: "JF", type: "jellyfin", online: true, activeStreams: 1 },
+				],
+			}),
+		);
+
+		const result = await testServiceConnection("http://tracearr:3000", "k", "tracearr");
+
+		expect(result.success).toBe(true);
+		expect(result.message).toMatch(/2 media servers/i);
+	});
+
+	it("returns an auth error on 401", async () => {
+		fetchSpy.mockResolvedValueOnce(
+			new Response("unauthorized", {
+				status: 401,
+				headers: { "Content-Type": "application/json" },
+			}),
+		);
+
+		const result = await testServiceConnection("http://tracearr:3000", "bad", "tracearr");
+
+		expect(result.success).toBe(false);
+		expect(result.error).toMatch(/authentication failed/i);
+	});
+
+	it("rejects a 200 body that doesn't look like Tracearr's health payload", async () => {
+		// Reached *something* JSON, but no `status` field → wrong URL / not Tracearr.
+		fetchSpy.mockResolvedValueOnce(jsonResponse({ hello: "world" }));
+
+		const result = await testServiceConnection("http://tracearr:3000", "k", "tracearr");
+
+		expect(result.success).toBe(false);
+		expect(result.error).toMatch(/unexpected tracearr response/i);
+	});
+});

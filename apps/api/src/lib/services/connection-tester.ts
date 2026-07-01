@@ -69,7 +69,6 @@ export async function testServiceConnection(
 	try {
 		const normalizedBaseUrl = baseUrl.replace(/\/$/, "");
 
-
 		// Plex uses X-Plex-Token header auth
 		if (service === "plex") {
 			return await testPlexConnection(normalizedBaseUrl, apiKey);
@@ -85,6 +84,12 @@ export async function testServiceConnection(
 		// helper used by route handlers so test + runtime stay in sync.
 		if (service === "qui") {
 			return await testQuiConnection(normalizedBaseUrl, apiKey);
+		}
+
+		// Tracearr uses an Authorization: Bearer key against its Public API.
+		// `/api/v1/public/health` validates both reachability and the key.
+		if (service === "tracearr") {
+			return await testTracearrConnection(normalizedBaseUrl, apiKey);
 		}
 
 		// Seerr uses its own status endpoint; Prowlarr/Lidarr/Readarr use v1; Sonarr/Radarr use v3
@@ -353,6 +358,90 @@ async function testQuiConnection(baseUrl: string, apiKey: string): Promise<Conne
 		success: true,
 		message,
 	};
+}
+
+/**
+ * Tests connection to a Tracearr instance via its Public API.
+ *
+ * Probes `GET /api/v1/public/health` with an `Authorization: Bearer` key —
+ * a single call that confirms reachability AND that the Public API key is
+ * valid (the endpoint 401s without it). A 2xx JSON `{ status, servers[] }`
+ * body means success; the attached-server count enriches the message so the
+ * operator sees at a glance whether Tracearr has media servers wired up yet
+ * (empty is fine — Tracearr is reachable, they just haven't added one).
+ *
+ * NOTE: `baseUrl` is the host origin only (e.g. http://tracearr:3000). The
+ * `/api/v1/public` prefix is owned here + in the client, never typed by the
+ * operator — mirroring how the *arr clients own their `/api/v3` prefix.
+ */
+async function testTracearrConnection(
+	baseUrl: string,
+	apiKey: string,
+): Promise<ConnectionTestResult> {
+	const testUrl = `${baseUrl}/api/v1/public/health`;
+
+	let response: Response;
+	try {
+		response = await fetch(testUrl, {
+			headers: {
+				Authorization: `Bearer ${apiKey}`,
+				Accept: "application/json",
+			},
+			signal: AbortSignal.timeout(5000),
+		});
+	} catch (error) {
+		return handleConnectionError(error);
+	}
+
+	const proxyDetected = detectAuthProxy(response, testUrl);
+	if (proxyDetected) {
+		return {
+			success: false,
+			error: "Authentication proxy detected",
+			details: `${proxyDetected}\n\n${AUTH_PROXY_ADVICE}`,
+		};
+	}
+
+	if (!response.ok) {
+		return handleHttpError(response, baseUrl);
+	}
+
+	const contentType = response.headers.get("content-type");
+	if (!contentType?.includes("application/json")) {
+		return {
+			success: false,
+			error: "Invalid response format",
+			details:
+				"Received a non-JSON response from Tracearr. Check the base URL points at a Tracearr instance's host origin (e.g. http://localhost:3000) WITHOUT the /api/v1/public suffix. If Tracearr sits behind a reverse proxy on a subpath, include that subpath in the base URL.",
+		};
+	}
+
+	const data = (await response.json()) as {
+		status?: unknown;
+		version?: unknown;
+		servers?: unknown;
+	};
+
+	// Tracearr's health payload always carries a `status` field; its absence
+	// means we reached something else (wrong URL, a different service).
+	if (typeof data.status !== "string") {
+		return {
+			success: false,
+			error: "Unexpected Tracearr response",
+			details:
+				"Reached the URL, but the response didn't look like Tracearr's health endpoint. Check the base URL points at a Tracearr instance.",
+		};
+	}
+
+	const version = typeof data.version === "string" ? data.version : undefined;
+	const serverCount = Array.isArray(data.servers) ? data.servers.length : 0;
+
+	const message =
+		serverCount === 0
+			? "Connected to Tracearr (no media servers attached yet)"
+			: `Connected to Tracearr (${serverCount} media server${serverCount === 1 ? "" : "s"})`;
+
+	return { success: true, message, version };
 }
 
 /**
