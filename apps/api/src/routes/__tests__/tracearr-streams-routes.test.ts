@@ -105,6 +105,7 @@ describe("GET /tracearr/streams", () => {
 			configured: false,
 			instances: [],
 			summary: null,
+			sessions: [],
 		});
 		expect(mockGetStreams).not.toHaveBeenCalled();
 	});
@@ -217,5 +218,38 @@ describe("GET /tracearr/streams", () => {
 			{ id: "trr-1", label: "A", reachable: true },
 			{ id: "trr-2", label: "B", reachable: false },
 		]);
+	});
+
+	it("flattens per-session rows tagged with their owning instance", async () => {
+		mockListTracearrInstances.mockResolvedValue([
+			makeTracearrInstance({ id: "trr-1", label: "A" }),
+		]);
+		mockGetStreams.mockResolvedValue({
+			data: [
+				{ id: "sess-1", username: "alice", mediaTitle: "Movie A", state: "playing" },
+				{ id: "sess-2", username: "bob", mediaTitle: "Movie B", state: "paused" },
+			],
+			summary: {
+				total: 2,
+				transcodes: 0,
+				directStreams: 2,
+				directPlays: 0,
+				totalBitrate: "—",
+				byServer: [],
+			},
+		});
+
+		const res = await injectAuthenticated("GET", "/tracearr/streams");
+		const body = JSON.parse(res.payload);
+		expect(body.sessions).toHaveLength(2);
+		expect(body.sessions[0]).toMatchObject({
+			id: "sess-1",
+			instanceId: "trr-1",
+			instanceLabel: "A",
+			username: "alice",
+			mediaTitle: "Movie A",
+		});
+		// A session from a dropped/unreachable instance never appears here.
+		expect(body.sessions.every((s: { instanceId: string }) => s.instanceId === "trr-1")).toBe(true);
 	});
 });

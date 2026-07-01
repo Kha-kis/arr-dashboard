@@ -333,19 +333,57 @@ export const tracearrLiveSessionsInstanceSchema = z.object({
 export type TracearrLiveSessionsInstance = z.infer<typeof tracearrLiveSessionsInstanceSchema>;
 
 /**
+ * A single live playback session shaped for the console rows + kill action
+ * (Tracearr-3). `id` is Tracearr's stream id (the terminate target) and
+ * `instanceId`/`instanceLabel` identify WHICH Tracearr owns it — the kill
+ * route needs both to route + ownership-check. The rest is the partial media
+ * enrichment the row displays (title/user/progress/transcode); every media
+ * field is optional because media-server data is structurally partial.
+ */
+export const tracearrLiveSessionSchema = z.object({
+	id: z.string(),
+	instanceId: z.string(),
+	instanceLabel: z.string(),
+	serverName: z.string().optional(),
+	username: z.string().optional(),
+	mediaTitle: z.string().optional(),
+	showTitle: z.string().optional(),
+	mediaType: tracearrMediaTypeSchema.optional(),
+	seasonNumber: z.number().int().optional(),
+	episodeNumber: z.number().int().optional(),
+	state: tracearrPlaybackStateSchema.optional(),
+	progressMs: z.number().optional(),
+	durationMs: z.number().optional(),
+	isTranscode: z.boolean().optional(),
+	videoDecision: z.enum(["directplay", "copy", "transcode"]).nullable().optional(),
+	player: z.string().optional(),
+	platform: z.string().optional(),
+});
+export type TracearrLiveSession = z.infer<typeof tracearrLiveSessionSchema>;
+
+/**
  * `GET /api/tracearr/streams` — aggregate live-session view for the console.
  * `configured` is false when the user has no enabled Tracearr instance (the
  * card is omitted). `summary` is null when configured but no instance is
  * currently reachable (the card shows an unreachable state, never a fake 0).
+ * `sessions` is the flat per-session list across all reachable instances
+ * (each tagged with its owning instance) that the card renders + kills.
  */
 export const tracearrLiveSessionsResponseSchema = z.object({
 	configured: z.boolean(),
 	instances: z.array(tracearrLiveSessionsInstanceSchema),
 	summary: tracearrLiveSessionsSummarySchema.nullable(),
+	sessions: z.array(tracearrLiveSessionSchema),
 });
 export type TracearrLiveSessionsResponse = z.infer<typeof tracearrLiveSessionsResponseSchema>;
 
-// ── POST /streams/{id}/terminate (wired in Tracearr-3; type here now) ─
+// ── POST /streams/{id}/terminate (Tracearr-3) ───────────────────────
+
+/** Optional reason surfaced to the terminated user (Tracearr forwards it). */
+export const tracearrTerminateRequestSchema = z.object({
+	reason: z.string().trim().max(500).optional(),
+});
+export type TracearrTerminateRequest = z.infer<typeof tracearrTerminateRequestSchema>;
 
 export const tracearrTerminateResponseSchema = z.object({
 	success: z.literal(true),
