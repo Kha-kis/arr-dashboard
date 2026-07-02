@@ -5,8 +5,15 @@
  * All requests are proxied through Next.js rewrites → Fastify backend.
  */
 
-import type { TracearrLiveSessionsResponse, TracearrTerminateResponse } from "@arr/shared";
+import type {
+	TracearrActivityBundle,
+	TracearrLiveSessionsResponse,
+	TracearrStatsBundle,
+	TracearrTerminateResponse,
+} from "@arr/shared";
 import { apiRequest } from "./base";
+
+type ActivityPeriod = "week" | "month" | "year";
 
 /**
  * Aggregate live-session view for the Console "Live Sessions" card. Sums the
@@ -32,4 +39,19 @@ export async function terminateTracearrSession(args: {
 		`/api/tracearr/instances/${encodeURIComponent(instanceId)}/streams/${encodeURIComponent(streamId)}/terminate`,
 		{ method: "POST", json: reason ? { reason } : {} },
 	);
+}
+
+/**
+ * All-time + today's rollup counters from the user's Tracearr hub instance
+ * (charter C2 Statistics tab).
+ */
+export async function fetchTracearrStats(): Promise<TracearrStatsBundle> {
+	return apiRequest("/api/tracearr/stats");
+}
+
+/** Aggregated play/quality/platform time-series for the given period. */
+export async function fetchTracearrActivity(
+	period: ActivityPeriod,
+): Promise<TracearrActivityBundle> {
+	return apiRequest(`/api/tracearr/activity?period=${encodeURIComponent(period)}`);
 }

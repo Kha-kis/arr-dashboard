@@ -36,3 +36,27 @@ export async function listTracearrInstances(
 		orderBy: { createdAt: "asc" },
 	});
 }
+
+/**
+ * Resolve the single Tracearr instance a statistics query should target.
+ * Unlike the live-session aggregate (which fans out across instances),
+ * paginated analytics (history / activity / stats) don't merge cleanly, so
+ * these surfaces run against ONE hub instance: the caller-specified
+ * `instanceId` when given (ownership-checked), otherwise the user's first
+ * enabled Tracearr. Throws InstanceNotFoundError (→ 404) when none exists —
+ * the frontend gates the tab on configuration, so that's a defensive path.
+ */
+export async function resolveTracearrInstance(
+	app: FastifyInstance,
+	userId: string,
+	instanceId?: string,
+): Promise<ServiceInstance> {
+	if (instanceId) {
+		return requireTracearrInstance(app, userId, instanceId);
+	}
+	const [first] = await listTracearrInstances(app, userId);
+	if (!first) {
+		throw new InstanceNotFoundError("tracearr");
+	}
+	return first;
+}
