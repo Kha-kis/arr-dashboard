@@ -9,6 +9,7 @@ import {
 	type TracearrStatsToday,
 	type TracearrStreamsQuery,
 	type TracearrStreamsResponse,
+	type TracearrTerminateResponse,
 	type TracearrUsersQuery,
 	type TracearrUsersResponse,
 	type TracearrViolationsQuery,
@@ -19,6 +20,7 @@ import {
 	tracearrStatsSchema,
 	tracearrStatsTodaySchema,
 	tracearrStreamsResponseSchema,
+	tracearrTerminateResponseSchema,
 	tracearrUsersResponseSchema,
 	tracearrViolationsResponseSchema,
 } from "@arr/shared";
@@ -31,10 +33,9 @@ import {
 } from "./client-helpers.js";
 
 /**
- * Request-scoped client for a single Tracearr instance. Read-only in this
- * foundation phase: the 8 GET endpoints of the Public API are wired here;
- * the one mutating endpoint (`POST /streams/{id}/terminate`) lands with the
- * kill-session operator action in Tracearr-3.
+ * Request-scoped client for a single Tracearr instance. The 8 GET endpoints
+ * of the Public API plus the one mutating endpoint (`POST
+ * /streams/{id}/terminate`, the kill-session action) are wired here.
  *
  * Every method returns a Zod-validated shape from `@arr/shared` — handlers
  * never see Tracearr's raw wire format. Query params are optional filter
@@ -57,6 +58,14 @@ export interface TracearrClient {
 	getViolations(query?: TracearrViolationsQuery): Promise<TracearrViolationsResponse>;
 	/** `GET /history` — paginated watch history (Statistics / C2 source). */
 	getHistory(query?: TracearrHistoryQuery): Promise<TracearrHistoryResponse>;
+	/**
+	 * `POST /streams/{id}/terminate` — the kill-session action. Terminates a
+	 * live playback session by Tracearr stream id. `reason`, when given, is
+	 * forwarded by Tracearr to the terminated user's player. Resolves to the
+	 * validated success payload; a non-2xx (e.g. the session already ended)
+	 * throws TracearrApiError with the mapped status.
+	 */
+	terminateStream(streamId: string, opts?: { reason?: string }): Promise<TracearrTerminateResponse>;
 	/**
 	 * Probe `/health` without throwing. Returns a discriminated result for
 	 * the connection-tester surface where unreachable is expected, not an error.
@@ -100,6 +109,13 @@ export function createTracearrClient(
 			tracearrRequest(ctx, "/violations", tracearrViolationsResponseSchema, { query }),
 		getHistory: (query) =>
 			tracearrRequest(ctx, "/history", tracearrHistoryResponseSchema, { query }),
+		terminateStream: (streamId, opts) =>
+			tracearrRequest(
+				ctx,
+				`/streams/${encodeURIComponent(streamId)}/terminate`,
+				tracearrTerminateResponseSchema,
+				{ method: "POST", body: opts?.reason ? { reason: opts.reason } : {} },
+			),
 		testConnection: async () => {
 			const probe = await tracearrHealthProbe(ctx);
 			if (!probe.ok) return { ok: false, reason: probe.reason };
