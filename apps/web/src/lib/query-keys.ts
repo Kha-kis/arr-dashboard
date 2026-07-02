@@ -349,6 +349,8 @@ export const plexKeys = {
 export const tracearrKeys = {
 	all: ["tracearr"] as const,
 	liveSessions: () => ["tracearr", "live-sessions"] as const,
+	stats: () => ["tracearr", "stats"] as const,
+	activity: (period: string) => ["tracearr", "activity", period] as const,
 };
 
 /* -------------------------------------------------------------------------- */

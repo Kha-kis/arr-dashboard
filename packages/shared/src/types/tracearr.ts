@@ -90,6 +90,20 @@ export const tracearrStatsTodaySchema = z.object({
 });
 export type TracearrStatsToday = z.infer<typeof tracearrStatsTodaySchema>;
 
+/**
+ * `GET /api/tracearr/stats` — OUR API bundles the all-time rollup and today's
+ * counters in one response so the Statistics tab's summary cards need a
+ * single fetch. `instanceId`/`instanceLabel` disclose which Tracearr backs
+ * the figures (statistics target a single hub instance, not an aggregate).
+ */
+export const tracearrStatsBundleSchema = z.object({
+	instanceId: z.string(),
+	instanceLabel: z.string(),
+	stats: tracearrStatsSchema,
+	today: tracearrStatsTodaySchema,
+});
+export type TracearrStatsBundle = z.infer<typeof tracearrStatsBundleSchema>;
+
 // ── /activity ───────────────────────────────────────────────────────
 
 export const tracearrQualityBreakdownSchema = z.object({
@@ -125,6 +139,17 @@ export const tracearrActivitySchema = z.object({
 	quality: tracearrQualityBreakdownSchema,
 });
 export type TracearrActivity = z.infer<typeof tracearrActivitySchema>;
+
+/**
+ * `GET /api/tracearr/activity` — OUR API wraps the time-series with the
+ * source instance so the Statistics tab can disclose which Tracearr backs it.
+ */
+export const tracearrActivityBundleSchema = z.object({
+	instanceId: z.string(),
+	instanceLabel: z.string(),
+	activity: tracearrActivitySchema,
+});
+export type TracearrActivityBundle = z.infer<typeof tracearrActivityBundleSchema>;
 
 // ── Shared media-detail sub-objects (Stream + SessionHistory) ───────
 // Partial by nature; every field optional. Shared between live streams and

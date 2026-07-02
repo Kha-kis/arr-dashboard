@@ -1,7 +1,16 @@
 "use client";
 
-import { Activity, BarChart3, BookOpen, Film, Globe, Music, RefreshCw, Tv } from "lucide-react";
-import { POLLING_STATS } from "../../../lib/polling-intervals";
+import {
+	Activity,
+	BarChart3,
+	BookOpen,
+	Film,
+	Globe,
+	Music,
+	RefreshCw,
+	TrendingUp,
+	Tv,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { DataFreshness, PremiumSkeleton } from "../../../components/layout";
 import { Alert, AlertDescription } from "../../../components/ui";
@@ -9,6 +18,7 @@ import { Button } from "../../../components/ui/button";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useRefreshState } from "../../../hooks/useRefreshState";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { POLLING_STATS } from "../../../lib/polling-intervals";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
 import { useStatisticsData } from "../hooks/useStatisticsData";
@@ -18,6 +28,7 @@ import { OverviewTab } from "./overview-tab";
 import { PlexTab } from "./plex-tab";
 import { ProwlarrTab } from "./prowlarr-tab";
 import type { StatisticsTab } from "./statistics-tabs";
+import { TracearrTab } from "./tracearr-tab";
 
 export const StatisticsClient = () => {
 	const [activeTab, setActiveTab] = useState<StatisticsTab>("overview");
@@ -37,6 +48,10 @@ export const StatisticsClient = () => {
 				const svc = s.service.toLowerCase();
 				return (svc === "jellyfin" || svc === "emby") && s.enabled;
 			}),
+		[services],
+	);
+	const hasTracearr = useMemo(
+		() => services.some((s) => s.service.toLowerCase() === "tracearr" && s.enabled),
 		[services],
 	);
 
@@ -122,6 +137,16 @@ export const StatisticsClient = () => {
 						label: "Jellyfin",
 						icon: Activity,
 						gradient: SERVICE_GRADIENTS.jellyfin,
+					},
+				]
+			: []),
+		...(hasTracearr
+			? [
+					{
+						id: "tracearr" as const,
+						label: "Tracearr",
+						icon: TrendingUp,
+						gradient: SERVICE_GRADIENTS.tracearr,
 					},
 				]
 			: []),
@@ -353,6 +378,8 @@ export const StatisticsClient = () => {
 			{activeTab === "plex" && <PlexTab />}
 
 			{activeTab === "jellyfin" && <JellyfinTab />}
+
+			{activeTab === "tracearr" && hasTracearr && <TracearrTab />}
 		</>
 	);
 };

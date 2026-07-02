@@ -1,4 +1,5 @@
 import type { FastifyPluginCallback } from "fastify";
+import { registerTracearrAnalyticsRoutes } from "./tracearr/analytics-routes.js";
 import { registerTracearrInstanceRoutes } from "./tracearr/instance-routes.js";
 import { registerTracearrSessionRoutes } from "./tracearr/session-routes.js";
 import { registerTracearrStreamsRoutes } from "./tracearr/streams-routes.js";
@@ -22,6 +23,7 @@ const tracearrRoute: FastifyPluginCallback = (app, _opts, done) => {
 	registerTracearrInstanceRoutes(app);
 	registerTracearrStreamsRoutes(app);
 	registerTracearrSessionRoutes(app);
+	registerTracearrAnalyticsRoutes(app);
 	done();
 };
 
