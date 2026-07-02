@@ -1,12 +1,12 @@
 "use client";
 
 /**
- * Operator Console — Tracearr live-session card (charter §2.1, Tracearr-2).
+ * Operator Console — Tracearr live-session card (charter §2.1).
  *
- * A cross-server aggregate of what's playing RIGHT NOW, from Tracearr (which
- * itself unifies Plex/Jellyfin/Emby). Complementary to the dashboard's
- * per-server NowPlayingWidget: this is the operator's single at-a-glance
- * "how loaded is my stack, and how much is transcoding" signal.
+ * A cross-server view of what's playing RIGHT NOW, from Tracearr (which
+ * itself unifies Plex/Jellyfin/Emby): an aggregate header (count + transcode
+ * load) plus per-session rows, each with a kill-session action (Tracearr-3).
+ * Complementary to the dashboard's per-server NowPlayingWidget.
  *
  * Trust rules enforced at render:
  * - Service-gated: renders nothing unless the user has an enabled Tracearr
@@ -15,15 +15,45 @@
  *   never a proxy or estimate.
  * - Unreachable ≠ zero: when Tracearr can't be reached we say so, rather
  *   than showing a misleading "0 active".
- * - Aggregate-only: no titles/usernames are shown, so there is no incognito
- *   surface here. Per-session detail (with incognito) lands with the
- *   kill-session action in Tracearr-3.
+ * - Incognito: session rows show media titles / usernames / devices, so they
+ *   are masked via the shared Linux-ISO helpers when incognito is on (the
+ *   ACTION still targets the real, unmasked ids).
  */
 
-import { AudioLines, MonitorPlay, Zap } from "lucide-react";
+import type { TracearrLiveSession } from "@arr/shared";
+import { AudioLines, Ban, MonitorPlay, Pause, Play, Zap } from "lucide-react";
+import { useState } from "react";
 import { AsyncStateView } from "../../../components/layout";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useTracearrLiveSessions } from "../../../hooks/api/useTracearr";
+import {
+	getLinuxDevice,
+	getLinuxInstanceName,
+	getLinuxIsoName,
+	getLinuxUsername,
+	useIncognitoMode,
+} from "../../../lib/incognito";
+import { TerminateSessionDialog } from "./terminate-session-dialog";
+
+/** Max session rows shown inline; the rest are summarized as "+N more". */
+const SESSION_ROW_CAP = 5;
+
+/** Resolve a session's display strings, masked when incognito is on. The
+ *  action never uses these — only session.id / session.instanceId. */
+function maskSession(session: TracearrLiveSession, incognito: boolean) {
+	const rawTitle = session.mediaTitle || session.showTitle || "Untitled";
+	const rawUser = session.username || "Unknown user";
+	const rawPlayer = session.player || "";
+	const rawServer = session.serverName || "";
+	return {
+		title: incognito ? getLinuxIsoName(rawTitle) : rawTitle,
+		user: incognito ? getLinuxUsername(rawUser) : rawUser,
+		player: rawPlayer ? (incognito ? getLinuxDevice(rawPlayer) : rawPlayer) : "",
+		// serverName is a user-named media server (e.g. "John's Home Plex") —
+		// sensitive per CLAUDE.md rule 6, so mask it too (the dialog shows it).
+		serverName: rawServer ? (incognito ? getLinuxInstanceName(rawServer) : rawServer) : "",
+	};
+}
 
 function Stat({ label, value }: { label: string; value: string | number }) {
 	return (
@@ -34,8 +64,68 @@ function Stat({ label, value }: { label: string; value: string | number }) {
 	);
 }
 
+function SessionRow({
+	session,
+	incognito,
+	onKill,
+}: {
+	session: TracearrLiveSession;
+	incognito: boolean;
+	onKill: (session: TracearrLiveSession) => void;
+}) {
+	const { title, user, player } = maskSession(session, incognito);
+	const isTranscode = session.isTranscode || session.videoDecision === "transcode";
+	const paused = session.state === "paused";
+	const StateIcon = paused ? Pause : Play;
+	const pct =
+		session.progressMs && session.durationMs && session.durationMs > 0
+			? Math.min(100, Math.round((session.progressMs / session.durationMs) * 100))
+			: null;
+
+	return (
+		<li className="flex items-center gap-3 rounded-lg border border-border/40 bg-card/40 p-2.5">
+			<StateIcon
+				className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+				aria-label={paused ? "paused" : "playing"}
+			/>
+			<div className="min-w-0 flex-1">
+				<p className="truncate text-sm font-medium text-foreground">{title}</p>
+				<p className="truncate text-xs text-muted-foreground">
+					{user}
+					{player ? ` · ${player}` : ""}
+				</p>
+				{pct !== null && (
+					<div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-muted/30">
+						<div
+							className="h-full rounded-full bg-muted-foreground/50"
+							style={{ width: `${pct}%` }}
+						/>
+					</div>
+				)}
+			</div>
+			{isTranscode && (
+				<span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+					<Zap className="h-3 w-3" aria-hidden="true" />
+					Transcode
+				</span>
+			)}
+			<button
+				type="button"
+				onClick={() => onKill(session)}
+				aria-label={`Terminate session: ${title}`}
+				className="flex shrink-0 items-center gap-1 rounded-md border border-border/50 px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-red-500/50 hover:text-red-400"
+			>
+				<Ban className="h-3.5 w-3.5" aria-hidden="true" />
+				Kill
+			</button>
+		</li>
+	);
+}
+
 export function LiveSessionsCard() {
 	const servicesQuery = useServicesQuery();
+	const [incognito] = useIncognitoMode();
+	const [selected, setSelected] = useState<TracearrLiveSession | null>(null);
 	const hasTracearr = (servicesQuery.data ?? []).some(
 		(s) => s.service.toLowerCase() === "tracearr" && s.enabled,
 	);
@@ -52,6 +142,12 @@ export function LiveSessionsCard() {
 
 	const data = query.data;
 	const unreachableCount = data?.instances.filter((i) => !i.reachable).length ?? 0;
+	const sessions = data?.sessions ?? [];
+	const shown = sessions.slice(0, SESSION_ROW_CAP);
+	const overflow = sessions.length - shown.length;
+
+	// The dialog needs the display strings for the currently-selected session.
+	const selectedMasked = selected ? maskSession(selected, incognito) : null;
 
 	return (
 		<section
@@ -119,6 +215,25 @@ export function LiveSessionsCard() {
 							</div>
 						)}
 
+						{shown.length > 0 && (
+							<ul className="space-y-2" data-testid="live-sessions-rows">
+								{shown.map((session) => (
+									<SessionRow
+										key={`${session.instanceId}:${session.id}`}
+										session={session}
+										incognito={incognito}
+										onKill={setSelected}
+									/>
+								))}
+							</ul>
+						)}
+
+						{overflow > 0 && (
+							<p className="text-xs text-muted-foreground" data-testid="live-sessions-overflow">
+								+{overflow} more session{overflow === 1 ? "" : "s"} not shown
+							</p>
+						)}
+
 						{unreachableCount > 0 && (
 							// Partial aggregate — disclose that a count is incomplete rather
 							// than silently under-reporting.
@@ -131,6 +246,16 @@ export function LiveSessionsCard() {
 					</div>
 				) : null}
 			</AsyncStateView>
+
+			{selected && selectedMasked && (
+				<TerminateSessionDialog
+					session={selected}
+					title={selectedMasked.title}
+					user={selectedMasked.user}
+					serverName={selectedMasked.serverName}
+					onClose={() => setSelected(null)}
+				/>
+			)}
 		</section>
 	);
 }
