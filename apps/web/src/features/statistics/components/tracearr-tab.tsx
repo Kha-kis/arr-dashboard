@@ -20,6 +20,11 @@ import { AsyncStateView } from "../../../components/layout";
 import { useTracearrActivity, useTracearrStats } from "../../../hooks/api/useTracearr";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { MiniStatCard, Sparkline } from "./chart-primitives";
+import {
+	TracearrHistoryPanel,
+	TracearrUsersPanel,
+	TracearrViolationsPanel,
+} from "./tracearr-panels";
 
 const PERIODS = ["week", "month", "year"] as const;
 type Period = (typeof PERIODS)[number];
@@ -223,6 +228,16 @@ export const TracearrTab = () => {
 					</div>
 				)}
 			</AsyncStateView>
+
+			{/* Detail panels (C2b): the deep dimensions SessionSnapshot can't give —
+			    complete watch history, per-user trust, account-sharing violations. */}
+			<div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+				<div className="lg:col-span-2">
+					<TracearrHistoryPanel />
+				</div>
+				<TracearrUsersPanel />
+				<TracearrViolationsPanel />
+			</div>
 
 			{stats && (
 				<p className="text-xs text-muted-foreground">Source: Tracearr · {stats.instanceLabel}</p>

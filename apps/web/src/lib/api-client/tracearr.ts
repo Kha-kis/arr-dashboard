@@ -7,9 +7,12 @@
 
 import type {
 	TracearrActivityBundle,
+	TracearrHistoryBundle,
 	TracearrLiveSessionsResponse,
 	TracearrStatsBundle,
 	TracearrTerminateResponse,
+	TracearrUsersBundle,
+	TracearrViolationsBundle,
 } from "@arr/shared";
 import { apiRequest } from "./base";
 
@@ -54,4 +57,19 @@ export async function fetchTracearrActivity(
 	period: ActivityPeriod,
 ): Promise<TracearrActivityBundle> {
 	return apiRequest(`/api/tracearr/activity?period=${encodeURIComponent(period)}`);
+}
+
+/** Paginated watch history (C2b). Fixed pageSize; `page` is 1-based. */
+export async function fetchTracearrHistory(page: number): Promise<TracearrHistoryBundle> {
+	return apiRequest(`/api/tracearr/history?page=${page}&pageSize=25`);
+}
+
+/** Paginated Tracearr users with trust scores + violation counts (C2b). */
+export async function fetchTracearrUsers(page: number): Promise<TracearrUsersBundle> {
+	return apiRequest(`/api/tracearr/users?page=${page}&pageSize=25`);
+}
+
+/** Paginated account-sharing violations (C2b). */
+export async function fetchTracearrViolations(page: number): Promise<TracearrViolationsBundle> {
+	return apiRequest(`/api/tracearr/violations?page=${page}&pageSize=25`);
 }
