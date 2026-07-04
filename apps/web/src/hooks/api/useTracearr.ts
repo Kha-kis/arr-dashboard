@@ -2,16 +2,22 @@
 
 import type {
 	TracearrActivityBundle,
+	TracearrHistoryBundle,
 	TracearrLiveSessionsResponse,
 	TracearrStatsBundle,
 	TracearrTerminateResponse,
+	TracearrUsersBundle,
+	TracearrViolationsBundle,
 } from "@arr/shared";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
 	fetchTracearrActivity,
+	fetchTracearrHistory,
 	fetchTracearrLiveSessions,
 	fetchTracearrStats,
+	fetchTracearrUsers,
+	fetchTracearrViolations,
 	terminateTracearrSession,
 } from "../../lib/api-client/tracearr";
 import { getErrorMessage } from "../../lib/error-utils";
@@ -101,4 +107,37 @@ export const useTracearrActivity = (
 		queryFn: () => fetchTracearrActivity(period),
 		enabled: options.enabled ?? true,
 		staleTime: POLLING_STATS,
+	});
+
+/**
+ * Paginated watch history for the Tracearr tab (C2b). `keepPreviousData`
+ * keeps the current page on screen while the next loads (no flicker/jump).
+ */
+export const useTracearrHistory = (page: number, options: TracearrAnalyticsOptions = {}) =>
+	useQuery<TracearrHistoryBundle>({
+		queryKey: tracearrKeys.history(page),
+		queryFn: () => fetchTracearrHistory(page),
+		enabled: options.enabled ?? true,
+		staleTime: POLLING_STATS,
+		placeholderData: keepPreviousData,
+	});
+
+/** Paginated Tracearr users (trust scores + violation counts) — C2b. */
+export const useTracearrUsers = (page: number, options: TracearrAnalyticsOptions = {}) =>
+	useQuery<TracearrUsersBundle>({
+		queryKey: tracearrKeys.users(page),
+		queryFn: () => fetchTracearrUsers(page),
+		enabled: options.enabled ?? true,
+		staleTime: POLLING_STATS,
+		placeholderData: keepPreviousData,
+	});
+
+/** Paginated account-sharing violations — C2b. */
+export const useTracearrViolations = (page: number, options: TracearrAnalyticsOptions = {}) =>
+	useQuery<TracearrViolationsBundle>({
+		queryKey: tracearrKeys.violations(page),
+		queryFn: () => fetchTracearrViolations(page),
+		enabled: options.enabled ?? true,
+		staleTime: POLLING_STATS,
+		placeholderData: keepPreviousData,
 	});

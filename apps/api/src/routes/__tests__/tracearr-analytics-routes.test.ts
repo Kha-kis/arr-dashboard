@@ -19,10 +19,20 @@ vi.mock("../../lib/tracearr/instance-helpers.js", () => ({
 	listTracearrInstances: vi.fn().mockResolvedValue([]),
 }));
 
-const { mockGetStats, mockGetStatsToday, mockGetActivity } = vi.hoisted(() => ({
+const {
+	mockGetStats,
+	mockGetStatsToday,
+	mockGetActivity,
+	mockGetHistory,
+	mockGetUsers,
+	mockGetViolations,
+} = vi.hoisted(() => ({
 	mockGetStats: vi.fn(),
 	mockGetStatsToday: vi.fn(),
 	mockGetActivity: vi.fn(),
+	mockGetHistory: vi.fn(),
+	mockGetUsers: vi.fn(),
+	mockGetViolations: vi.fn(),
 }));
 
 vi.mock("../../lib/tracearr/client-factory.js", () => ({
@@ -30,8 +40,13 @@ vi.mock("../../lib/tracearr/client-factory.js", () => ({
 		getStats: mockGetStats,
 		getStatsToday: mockGetStatsToday,
 		getActivity: mockGetActivity,
+		getHistory: mockGetHistory,
+		getUsers: mockGetUsers,
+		getViolations: mockGetViolations,
 	})),
 }));
+
+const emptyPage = { data: [], meta: { total: 0, page: 1, pageSize: 25 } };
 
 import Fastify, { type FastifyInstance } from "fastify";
 import { InstanceNotFoundError } from "../../lib/errors.js";
@@ -99,6 +114,9 @@ beforeEach(async () => {
 			transcodePercent: 0,
 		},
 	});
+	mockGetHistory.mockResolvedValue(emptyPage);
+	mockGetUsers.mockResolvedValue(emptyPage);
+	mockGetViolations.mockResolvedValue(emptyPage);
 
 	app = Fastify();
 	app.decorate("prisma", {} as never);
@@ -155,5 +173,54 @@ describe("GET /tracearr/activity", () => {
 		const res = await injectAuthenticated("GET", "/tracearr/activity?period=decade");
 		expect(res.statusCode).toBe(400);
 		expect(mockGetActivity).not.toHaveBeenCalled();
+	});
+});
+
+describe("GET /tracearr/history", () => {
+	it("wraps the paginated history with the source instance", async () => {
+		const res = await injectAuthenticated("GET", "/tracearr/history?page=2");
+		expect(res.statusCode).toBe(200);
+		const body = JSON.parse(res.payload);
+		expect(body.instanceId).toBe("trr-1");
+		expect(body.history.meta).toBeDefined();
+		expect(mockGetHistory).toHaveBeenCalledWith({
+			page: 2,
+			pageSize: undefined,
+			mediaType: undefined,
+		});
+	});
+
+	it("passes pageSize + mediaType filters through", async () => {
+		await injectAuthenticated("GET", "/tracearr/history?page=1&pageSize=25&mediaType=movie");
+		expect(mockGetHistory).toHaveBeenCalledWith({ page: 1, pageSize: 25, mediaType: "movie" });
+	});
+});
+
+describe("GET /tracearr/users", () => {
+	it("wraps the paginated users with the source instance", async () => {
+		const res = await injectAuthenticated("GET", "/tracearr/users");
+		expect(res.statusCode).toBe(200);
+		expect(JSON.parse(res.payload).users.meta).toBeDefined();
+		expect(mockGetUsers).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe("GET /tracearr/violations", () => {
+	it("forwards severity + acknowledged filters", async () => {
+		await injectAuthenticated("GET", "/tracearr/violations?severity=high&acknowledged=false");
+		// acknowledged=false must parse to boolean false, NOT true.
+		expect(mockGetViolations).toHaveBeenCalledWith({
+			page: undefined,
+			pageSize: undefined,
+			severity: "high",
+			acknowledged: false,
+		});
+	});
+
+	it("404s when no Tracearr instance exists", async () => {
+		mockResolveTracearrInstance.mockRejectedValue(new InstanceNotFoundError("tracearr"));
+		const res = await injectAuthenticated("GET", "/tracearr/violations");
+		expect(res.statusCode).toBe(404);
+		expect(mockGetViolations).not.toHaveBeenCalled();
 	});
 });

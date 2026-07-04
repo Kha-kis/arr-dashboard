@@ -3,13 +3,27 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
 import { ColorThemeProvider } from "../../../../providers/color-theme-provider";
 
 const mockUseTracearrStats = vi.fn();
 const mockUseTracearrActivity = vi.fn();
+// The tab renders the C2b detail panels too; stub their hooks with empty
+// paginated pages so those panels render their empty states without erroring.
+const emptyPage = (key: "history" | "users" | "violations") => ({
+	data: {
+		instanceId: "trr-1",
+		instanceLabel: "Dev Tracearr",
+		[key]: { data: [], meta: { total: 0, page: 1, pageSize: 25 } },
+	},
+	isFetching: false,
+});
 vi.mock("../../../../hooks/api/useTracearr", () => ({
 	useTracearrStats: () => mockUseTracearrStats(),
 	useTracearrActivity: (period: string) => mockUseTracearrActivity(period),
+	useTracearrHistory: () => emptyPage("history"),
+	useTracearrUsers: () => emptyPage("users"),
+	useTracearrViolations: () => emptyPage("violations"),
 }));
 
 import { TracearrTab } from "../tracearr-tab";
@@ -18,7 +32,9 @@ function createWrapper() {
 	const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
 	return ({ children }: { children: ReactNode }) => (
 		<QueryClientProvider client={qc}>
-			<ColorThemeProvider>{children}</ColorThemeProvider>
+			<ColorThemeProvider>
+				<IncognitoProvider>{children}</IncognitoProvider>
+			</ColorThemeProvider>
 		</QueryClientProvider>
 	);
 }

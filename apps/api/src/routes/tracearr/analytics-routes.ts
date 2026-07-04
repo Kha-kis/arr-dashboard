@@ -1,4 +1,9 @@
-import type { TracearrStatsBundle } from "@arr/shared";
+import type {
+	TracearrHistoryBundle,
+	TracearrStatsBundle,
+	TracearrUsersBundle,
+	TracearrViolationsBundle,
+} from "@arr/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { createTracearrClient } from "../../lib/tracearr/client-factory.js";
@@ -13,6 +18,35 @@ const ACTIVITY_QUERY = z.object({
 	instanceId: z.string().min(1).optional(),
 	period: z.enum(["week", "month", "year"]).optional(),
 	timezone: z.string().min(1).max(64).optional(),
+});
+
+const page = z.coerce.number().int().min(1).optional();
+const pageSize = z.coerce.number().int().min(1).max(100).optional();
+
+const HISTORY_QUERY = z.object({
+	instanceId: z.string().min(1).optional(),
+	page,
+	pageSize,
+	mediaType: z.enum(["movie", "episode", "track", "live", "photo", "unknown"]).optional(),
+});
+
+const USERS_QUERY = z.object({
+	instanceId: z.string().min(1).optional(),
+	page,
+	pageSize,
+});
+
+const VIOLATIONS_QUERY = z.object({
+	instanceId: z.string().min(1).optional(),
+	page,
+	pageSize,
+	severity: z.enum(["low", "warning", "high"]).optional(),
+	// Query strings are text — z.coerce.boolean() would turn "false" into true
+	// (Boolean("false") === true), so parse the literal instead.
+	acknowledged: z
+		.enum(["true", "false"])
+		.transform((v) => v === "true")
+		.optional(),
 });
 
 /**
@@ -52,5 +86,53 @@ export function registerTracearrAnalyticsRoutes(app: FastifyInstance): void {
 
 		const activity = await client.getActivity({ period, timezone });
 		return reply.send({ instanceId: instance.id, instanceLabel: instance.label, activity });
+	});
+
+	app.get("/tracearr/history", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const { instanceId, page, pageSize, mediaType } = validateRequest(HISTORY_QUERY, request.query);
+		const instance = await resolveTracearrInstance(app, userId, instanceId);
+		const client = createTracearrClient(app, instance);
+
+		const history = await client.getHistory({ page, pageSize, mediaType });
+		const bundle: TracearrHistoryBundle = {
+			instanceId: instance.id,
+			instanceLabel: instance.label,
+			history,
+		};
+		return reply.send(bundle);
+	});
+
+	app.get("/tracearr/users", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const { instanceId, page, pageSize } = validateRequest(USERS_QUERY, request.query);
+		const instance = await resolveTracearrInstance(app, userId, instanceId);
+		const client = createTracearrClient(app, instance);
+
+		const users = await client.getUsers({ page, pageSize });
+		const bundle: TracearrUsersBundle = {
+			instanceId: instance.id,
+			instanceLabel: instance.label,
+			users,
+		};
+		return reply.send(bundle);
+	});
+
+	app.get("/tracearr/violations", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const { instanceId, page, pageSize, severity, acknowledged } = validateRequest(
+			VIOLATIONS_QUERY,
+			request.query,
+		);
+		const instance = await resolveTracearrInstance(app, userId, instanceId);
+		const client = createTracearrClient(app, instance);
+
+		const violations = await client.getViolations({ page, pageSize, severity, acknowledged });
+		const bundle: TracearrViolationsBundle = {
+			instanceId: instance.id,
+			instanceLabel: instance.label,
+			violations,
+		};
+		return reply.send(bundle);
 	});
 }

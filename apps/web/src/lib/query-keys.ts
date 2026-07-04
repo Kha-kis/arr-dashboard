@@ -351,6 +351,9 @@ export const tracearrKeys = {
 	liveSessions: () => ["tracearr", "live-sessions"] as const,
 	stats: () => ["tracearr", "stats"] as const,
 	activity: (period: string) => ["tracearr", "activity", period] as const,
+	history: (page: number) => ["tracearr", "history", page] as const,
+	users: (page: number) => ["tracearr", "users", page] as const,
+	violations: (page: number) => ["tracearr", "violations", page] as const,
 };
 
 /* -------------------------------------------------------------------------- */

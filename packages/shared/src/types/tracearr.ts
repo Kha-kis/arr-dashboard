@@ -523,6 +523,32 @@ export const tracearrHistoryResponseSchema = z.object({
 });
 export type TracearrHistoryResponse = z.infer<typeof tracearrHistoryResponseSchema>;
 
+// ── OUR-API bundles for the Statistics tab (C2b) ────────────────────
+// Each wraps a paginated Tracearr response with the source instance, so the
+// tab can disclose which Tracearr hub backs the figures (statistics target a
+// single instance, not an aggregate).
+
+export const tracearrHistoryBundleSchema = z.object({
+	instanceId: z.string(),
+	instanceLabel: z.string(),
+	history: tracearrHistoryResponseSchema,
+});
+export type TracearrHistoryBundle = z.infer<typeof tracearrHistoryBundleSchema>;
+
+export const tracearrUsersBundleSchema = z.object({
+	instanceId: z.string(),
+	instanceLabel: z.string(),
+	users: tracearrUsersResponseSchema,
+});
+export type TracearrUsersBundle = z.infer<typeof tracearrUsersBundleSchema>;
+
+export const tracearrViolationsBundleSchema = z.object({
+	instanceId: z.string(),
+	instanceLabel: z.string(),
+	violations: tracearrViolationsResponseSchema,
+});
+export type TracearrViolationsBundle = z.infer<typeof tracearrViolationsBundleSchema>;
+
 // ── Query-param option bags (for typed client methods) ──────────────
 //
 // Each carries an index signature so it's assignable to the request
