@@ -196,6 +196,12 @@ describe("CleanupRuleComposerDialog — edit", () => {
 			enabled: true,
 			action: "unmonitor",
 			retentionMode: true,
+			// Defaulted fields the composer doesn't edit are ECHOED from the loaded
+			// rule — base.partial() re-injects their defaults, so omitting them would
+			// clobber the stored values (priority reset to 0, useGlobalRejectionMemory
+			// to true). Echoing preserves them.
+			priority: 0,
+			useGlobalRejectionMemory: true,
 			ruleType: "composite",
 			parameters: {},
 			operator: "AND",
@@ -204,9 +210,21 @@ describe("CleanupRuleComposerDialog — edit", () => {
 				{ ruleType: "plex_watch_count", parameters: { operator: "less_than", count: 1 } },
 			],
 		});
-		// Advanced filters are NOT in the payload → route preserves them.
+		// Fields WITHOUT a schema default are omitted → the route's !== undefined
+		// discipline preserves them (no clobber risk).
 		expect(arg.data).not.toHaveProperty("serviceFilter");
 		expect(arg.data).not.toHaveProperty("excludeTitles");
 		expect(arg.data).not.toHaveProperty("rejectionMemoryDays");
+	});
+
+	it("shows a loading state and blocks save until the config join resolves (no default-clobber)", async () => {
+		// automation summary present, but config not yet loaded → editDataReady false.
+		configData = undefined;
+		wrapper(<CleanupRuleComposerDialog open onOpenChange={() => {}} editRuleId="rule-1" />);
+		expect(await screen.findByText(/loading rule/i)).toBeTruthy();
+		// The form (and its Save button) isn't rendered yet, so no default-seeded
+		// payload can be submitted.
+		expect(screen.queryByRole("button", { name: /save changes/i })).toBeNull();
+		expect(updateMutate).not.toHaveBeenCalled();
 	});
 });

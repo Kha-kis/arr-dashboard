@@ -110,6 +110,14 @@ export function CleanupRuleComposerDialog({
 		[config, editRuleId],
 	);
 
+	// Edit mode needs BOTH joined sources before the form is meaningful: the
+	// automation summary (conditions) AND the config rule (action + the defaulted
+	// fields we must echo back — see the save comment). Initializing or saving
+	// before configRule resolves would prefill composer DEFAULTS (action:"delete",
+	// retentionMode:false) and write them over the stored values — on a media-
+	// deletion rule, silently flipping e.g. "unmonitor" → "delete". So we gate.
+	const editDataReady = !isEdit || (Boolean(summary) && Boolean(configRule));
+
 	const [name, setName] = useState("");
 	const [enabled, setEnabled] = useState(true);
 	const [action, setAction] = useState<CleanupAction>("delete");
@@ -119,9 +127,13 @@ export function CleanupRuleComposerDialog({
 
 	const legalKinds = useMemo(() => [...CONTEXT_KINDS["library-cleanup"]], []);
 
-	// Prefill on open. In edit mode this re-runs when the joined rule resolves.
+	// Prefill on open. In edit mode this runs once the joined rule resolves
+	// (editDataReady) — never with partial data, so it can't seed defaults that a
+	// later save would persist, and can't wipe in-progress edits on late load
+	// (the form isn't shown until ready).
 	useEffect(() => {
 		if (!open) return;
+		if (isEdit && !editDataReady) return;
 		setError(null);
 		if (isEdit) {
 			setName(summary?.name ?? configRule?.name ?? "");
@@ -141,7 +153,7 @@ export function CleanupRuleComposerDialog({
 			setRetentionMode(false);
 			setEditorState(freshEditorState());
 		}
-	}, [open, isEdit, summary, configRule]);
+	}, [open, isEdit, editDataReady, summary, configRule]);
 
 	const inputStyles = getInputStyles(gradient);
 	const inputClass = `${inputStyles.base} focus:outline-hidden`;
@@ -173,18 +185,23 @@ export function CleanupRuleComposerDialog({
 		setError(null);
 
 		// The composer owns name/enabled/action/retentionMode + the full condition
-		// quartet from the serializer. Every OTHER cleanup field is omitted: create
-		// applies the schema defaults, and the PUT route's `!== undefined`
-		// discipline PRESERVES the stored advanced filters + rejection-memory.
-		// Cast mirrors the per-domain dialog (cleanup-rule-dialog.tsx): the
-		// serializer types ruleType/conditions as `string` (v0 payload shape) and
-		// the schema output type demands its defaulted fields — validation already
-		// proved the kind legal, so the cast is sound.
-		const domainBase = {
-			name: name.trim(),
-			enabled,
-			action,
-			retentionMode,
+		// quartet from the serializer.
+		//
+		// Preservation of the fields the composer does NOT edit is subtle:
+		//  - Fields WITHOUT a schema default (serviceFilter, instanceFilter,
+		//    excludeTags, excludeTitles, plexLibraryFilter, rejectionMemoryDays)
+		//    can be omitted — the PUT route's `!== undefined` discipline keeps the
+		//    stored value.
+		//  - Fields WITH a `.default()` CANNOT simply be omitted: updateCleanup-
+		//    RuleSchema = base.partial(), and `.partial()` does NOT strip
+		//    `.default()`, so an absent `priority` (default 0) or
+		//    `useGlobalRejectionMemory` (default true) is RE-INJECTED by Zod and
+		//    would overwrite the stored value. So on edit we echo those two back
+		//    from the loaded rule (editDataReady guarantees it's present).
+		// Cast mirrors the per-domain dialog: the serializer types ruleType/
+		// conditions as `string` (v0 payload shape) and the schema output type
+		// demands its defaulted fields — validation proved the kind legal.
+		const conditionHalf = {
 			ruleType: payload.ruleType,
 			parameters: payload.parameters,
 			operator: payload.operator,
@@ -192,10 +209,28 @@ export function CleanupRuleComposerDialog({
 		};
 
 		try {
-			if (isEdit && editRuleId) {
-				await updateRule.mutateAsync({ id: editRuleId, data: domainBase as UpdateCleanupRule });
+			if (isEdit && editRuleId && configRule) {
+				const update = {
+					name: name.trim(),
+					enabled,
+					action,
+					retentionMode,
+					// Echo back the defaulted fields the composer doesn't edit, so
+					// base.partial()'s re-injected defaults can't clobber them.
+					priority: configRule.priority,
+					useGlobalRejectionMemory: configRule.useGlobalRejectionMemory,
+					...conditionHalf,
+				};
+				await updateRule.mutateAsync({ id: editRuleId, data: update as UpdateCleanupRule });
 			} else {
-				await createRule.mutateAsync(domainBase as CreateCleanupRule);
+				const create = {
+					name: name.trim(),
+					enabled,
+					action,
+					retentionMode,
+					...conditionHalf,
+				};
+				await createRule.mutateAsync(create as CreateCleanupRule);
 			}
 			// The mutation hooks invalidate the cleanup config; the Automation tab
 			// reads its own key, so refresh it too.
@@ -216,151 +251,162 @@ export function CleanupRuleComposerDialog({
 					</DialogDescription>
 				</DialogHeader>
 
-				<form
-					onSubmit={handleSubmit}
-					className="mt-2 space-y-5"
-					onFocus={(e) => {
-						const t = e.target;
-						if (
-							(t instanceof HTMLInputElement && t.type !== "checkbox") ||
-							t instanceof HTMLSelectElement
-						) {
-							inputStyles.applyFocus(t);
-						}
-					}}
-					onBlur={(e) => {
-						const t = e.target;
-						if (
-							(t instanceof HTMLInputElement && t.type !== "checkbox") ||
-							t instanceof HTMLSelectElement
-						) {
-							inputStyles.removeFocus(t);
-						}
-					}}
-				>
-					{/* Name */}
-					<label className="block">
-						<span className={labelClass}>Rule name</span>
-						<input
-							type="text"
-							value={name}
-							onChange={(e) => setName(e.target.value)}
-							placeholder="e.g., Old low-rated movies"
-							required
-							className={inputClass}
-						/>
-					</label>
-
-					{/* Enabled */}
-					<div className="flex items-center justify-between">
-						<span className="text-sm font-medium">Enabled</span>
-						<Switch
-							checked={enabled}
-							onCheckedChange={setEnabled}
-							style={enabled ? { backgroundColor: gradient.from } : undefined}
-						/>
+				{isEdit && !editDataReady ? (
+					// Don't render the form until the joined rule data has loaded —
+					// otherwise the fields would show composer defaults, not the rule.
+					<div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+						<Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+						Loading rule…
 					</div>
-
-					{/* Retention mode */}
-					<div className="flex items-center justify-between">
-						<div className="flex items-center gap-2">
-							<ShieldOff className="h-4 w-4 text-emerald-400" />
-							<div>
-								<span className="text-sm font-medium">Retention rule</span>
-								<p className="text-xs text-muted-foreground">
-									Protects matching items from other rules
-								</p>
-							</div>
-						</div>
-						<Switch
-							checked={retentionMode}
-							onCheckedChange={setRetentionMode}
-							style={retentionMode ? { backgroundColor: "rgb(16 185 129)" } : undefined}
-						/>
-					</div>
-
-					{/* Action */}
-					<div>
-						<span className={labelClass}>Action when matched</span>
-						<div className="mt-1.5 flex gap-2">
-							{ACTIONS.map((a) => (
-								<button
-									key={a.value}
-									type="button"
-									onClick={() => setAction(a.value)}
-									className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-all duration-200"
-									style={
-										action === a.value
-											? {
-													borderColor: gradient.from,
-													backgroundColor: gradient.fromLight,
-													color: gradient.from,
-												}
-											: { borderColor: "var(--color-border)" }
-									}
-								>
-									{a.label}
-								</button>
-							))}
-						</div>
-						<p className="mt-1 text-xs text-muted-foreground">
-							{ACTIONS.find((a) => a.value === action)?.hint}
-						</p>
-					</div>
-
-					{/* Conditions */}
-					<div className="space-y-3 rounded-xl border border-border/50 bg-card/30 p-4 backdrop-blur-sm">
-						<span className="text-sm font-medium">Conditions</span>
-						<CriteriaConditionEditor
-							state={editorState}
-							onChange={setEditorState}
-							legalKinds={legalKinds}
-							fieldOptions={fieldOptions}
-							fieldOptionsLoading={fieldOptionsLoading}
-							inputClass={inputClass}
-							labelClass={labelClass}
-						/>
-					</div>
-
-					{/* Advanced-filters disclosure (they live in the full surface) */}
-					<Link
-						href="/library-cleanup"
-						className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+				) : (
+					<form
+						onSubmit={handleSubmit}
+						className="mt-2 space-y-5"
+						onFocus={(e) => {
+							const t = e.target;
+							if (
+								(t instanceof HTMLInputElement && t.type !== "checkbox") ||
+								t instanceof HTMLSelectElement
+							) {
+								inputStyles.applyFocus(t);
+							}
+						}}
+						onBlur={(e) => {
+							const t = e.target;
+							if (
+								(t instanceof HTMLInputElement && t.type !== "checkbox") ||
+								t instanceof HTMLSelectElement
+							) {
+								inputStyles.removeFocus(t);
+							}
+						}}
 					>
-						<ExternalLink className="h-3 w-3" aria-hidden="true" />
-						Advanced filters (services, instances, tags, titles, Plex libraries) and rejection
-						memory are managed in Library Cleanup
-					</Link>
+						{/* Name */}
+						<label className="block">
+							<span className={labelClass}>Rule name</span>
+							<input
+								type="text"
+								value={name}
+								onChange={(e) => setName(e.target.value)}
+								placeholder="e.g., Old low-rated movies"
+								required
+								className={inputClass}
+							/>
+						</label>
 
-					{error && (
-						<div className="rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-400">
-							{error}
+						{/* Enabled */}
+						<div className="flex items-center justify-between">
+							<span className="text-sm font-medium">Enabled</span>
+							<Switch
+								checked={enabled}
+								onCheckedChange={setEnabled}
+								style={enabled ? { backgroundColor: gradient.from } : undefined}
+							/>
 						</div>
-					)}
 
-					<div className="flex justify-end gap-2">
-						<button
-							type="button"
-							onClick={() => onOpenChange(false)}
-							className="rounded-lg border border-border/50 px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+						{/* Retention mode */}
+						<div className="flex items-center justify-between">
+							<div className="flex items-center gap-2">
+								<ShieldOff className="h-4 w-4 text-emerald-400" />
+								<div>
+									<span className="text-sm font-medium">Retention rule</span>
+									<p className="text-xs text-muted-foreground">
+										Protects matching items from other rules
+									</p>
+								</div>
+							</div>
+							<Switch
+								checked={retentionMode}
+								onCheckedChange={setRetentionMode}
+								style={retentionMode ? { backgroundColor: "rgb(16 185 129)" } : undefined}
+							/>
+						</div>
+
+						{/* Action */}
+						<div>
+							<span className={labelClass}>Action when matched</span>
+							<div className="mt-1.5 flex gap-2">
+								{ACTIONS.map((a) => (
+									<button
+										key={a.value}
+										type="button"
+										onClick={() => setAction(a.value)}
+										className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-all duration-200"
+										style={
+											action === a.value
+												? {
+														borderColor: gradient.from,
+														backgroundColor: gradient.fromLight,
+														color: gradient.from,
+													}
+												: { borderColor: "var(--color-border)" }
+										}
+									>
+										{a.label}
+									</button>
+								))}
+							</div>
+							<p className="mt-1 text-xs text-muted-foreground">
+								{ACTIONS.find((a) => a.value === action)?.hint}
+							</p>
+						</div>
+
+						{/* Conditions */}
+						<div className="space-y-3 rounded-xl border border-border/50 bg-card/30 p-4 backdrop-blur-sm">
+							<span className="text-sm font-medium">Conditions</span>
+							<CriteriaConditionEditor
+								state={editorState}
+								onChange={setEditorState}
+								legalKinds={legalKinds}
+								fieldOptions={fieldOptions}
+								fieldOptionsLoading={fieldOptionsLoading}
+								inputClass={inputClass}
+								labelClass={labelClass}
+							/>
+						</div>
+
+						{/* Advanced-filters disclosure (they live in the full surface) */}
+						<Link
+							href="/library-cleanup"
+							className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
 						>
-							Cancel
-						</button>
-						<button
-							type="submit"
-							disabled={isSaving}
-							className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-60"
-							style={{ background: `linear-gradient(to right, ${gradient.from}, ${gradient.to})` }}
-						>
-							{isSaving ? (
-								<Loader2 className="h-4 w-4 animate-spin" />
-							) : (
-								<Save className="h-4 w-4" />
-							)}
-							{isEdit ? "Save changes" : "Create rule"}
-						</button>
-					</div>
-				</form>
+							<ExternalLink className="h-3 w-3" aria-hidden="true" />
+							Advanced filters (services, instances, tags, titles, Plex libraries) and rejection
+							memory are managed in Library Cleanup
+						</Link>
+
+						{error && (
+							<div className="rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+								{error}
+							</div>
+						)}
+
+						<div className="flex justify-end gap-2">
+							<button
+								type="button"
+								onClick={() => onOpenChange(false)}
+								className="rounded-lg border border-border/50 px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+							>
+								Cancel
+							</button>
+							<button
+								type="submit"
+								disabled={isSaving}
+								className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-60"
+								style={{
+									background: `linear-gradient(to right, ${gradient.from}, ${gradient.to})`,
+								}}
+							>
+								{isSaving ? (
+									<Loader2 className="h-4 w-4 animate-spin" />
+								) : (
+									<Save className="h-4 w-4" />
+								)}
+								{isEdit ? "Save changes" : "Create rule"}
+							</button>
+						</div>
+					</form>
+				)}
 			</DialogContent>
 		</Dialog>
 	);

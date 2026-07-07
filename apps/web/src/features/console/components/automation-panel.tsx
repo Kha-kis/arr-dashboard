@@ -171,7 +171,15 @@ export function AutomationPanel() {
 										rule={rule}
 										incognito={incognito}
 										onEdit={
-											rule.context === "library-cleanup" ? () => openEdit(rule.id) : undefined
+											// Composer-editable only for library-cleanup rules whose kinds
+											// are ALL still available. A rule referencing a retired kind
+											// (unavailableKinds non-empty) is parseable but the composer's
+											// kind picker can't represent it — editing would be a dead-end
+											// (picker shows a wrong kind, save is blocked). Route those to
+											// the Library Cleanup surface to repair instead.
+											rule.context === "library-cleanup" && rule.unavailableKinds.length === 0
+												? () => openEdit(rule.id)
+												: undefined
 										}
 									/>
 								))}
