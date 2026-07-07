@@ -25,6 +25,35 @@ describe("describePredicate — generic kinds", () => {
 		);
 		expect(result.summary).toBe("Action, Drama");
 	});
+
+	// Fix (a): multi-value kinds get keyed summaries to remove ambiguity.
+	it("keys each value when a kind has more than one value-bearing param", () => {
+		const result = describePredicate(
+			{ kind: "year_range", params: { operator: "between", yearFrom: 2020, yearTo: 2024 } },
+			false,
+		);
+		// Not the ambiguous bare "2020 · 2024".
+		expect(result.summary).toBe("between · year from 2020 · year to 2024");
+	});
+
+	it("keeps the clean value-only form for single-value kinds", () => {
+		const result = describePredicate(
+			{ kind: "year_range", params: { operator: "before", year: 2020 } },
+			false,
+		);
+		expect(result.summary).toBe("before · 2020");
+	});
+
+	it("keys still show in incognito while values stay masked", () => {
+		const result = describePredicate(
+			{ kind: "file_path", params: { operator: "matches", pattern: "/mnt/x", field: "path" } },
+			true,
+		);
+		// Two string values → keyed; keys structural (shown), values masked.
+		expect(result.summary).toContain("pattern •••");
+		expect(result.summary).toContain("field •••");
+		expect(result.summary).not.toContain("/mnt/x");
+	});
 });
 
 describe("describePredicate — field_match (notifications)", () => {
