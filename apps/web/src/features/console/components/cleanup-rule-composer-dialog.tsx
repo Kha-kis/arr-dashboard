@@ -1,0 +1,367 @@
+"use client";
+
+/**
+ * Composer — create/edit dialog for a library-cleanup rule (charter §5.2, the
+ * flagship WRITE path — it authors live media-deletion rules).
+ *
+ * Flow: author the CONDITION half as a v1 document ({@link CriteriaConditionEditor})
+ * plus the core action fields, then on save validate strictly, down-convert the
+ * document to the v0 payload the EXISTING route accepts (`serializeCriteria
+ * DocumentToV0`), and POST/PUT via the existing cleanup api-client. The live
+ * evaluator keeps reading v0 — the composer writes the SAME rows the per-domain
+ * dialog would (round-trip parity, PR-3a).
+ *
+ * Action scope (ratified 2026-07-07): core action only — action + retentionMode
+ * + name + enabled. Advanced filters (service/instance/tag/title/plex-library)
+ * and rejection-memory are managed in the full Library Cleanup surface; the PUT
+ * route's `!== undefined` discipline PRESERVES them across a composer edit, and
+ * create defaults them. Hence the note + deep link below.
+ */
+
+import type { CleanupAction, CreateCleanupRule, UpdateCleanupRule } from "@arr/shared";
+import { CONTEXT_KINDS } from "@arr/shared";
+import { useQueryClient } from "@tanstack/react-query";
+import { ExternalLink, Loader2, Save, ShieldOff } from "lucide-react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
+import {
+	useCleanupConfig,
+	useCleanupFieldOptions,
+	useCreateCleanupRule,
+	useUpdateCleanupRule,
+} from "@/hooks/api/useLibraryCleanup";
+import { useThemeGradient } from "@/hooks/useThemeGradient";
+import { getErrorMessage } from "@/lib/error-utils";
+import { automationKeys } from "@/lib/query-keys";
+import { getInputStyles } from "@/lib/theme-input-styles";
+import { useAutomationRules } from "../../../hooks/api/useAutomation";
+import { getDefaultConditionParams } from "../../rule-criteria/components/condition-params-fields";
+import {
+	type CriteriaEditorState,
+	decomposeCriteriaDocument,
+	toCriteriaV0Payload,
+} from "../lib/rule-document-editor";
+import { CriteriaConditionEditor } from "./criteria-condition-editor";
+
+interface CleanupRuleComposerDialogProps {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	/** Rule id to edit; omit/null for create mode. */
+	editRuleId?: string | null;
+}
+
+const ACTIONS: Array<{ value: CleanupAction; label: string; hint: string }> = [
+	{ value: "delete", label: "Delete", hint: "Remove the item entirely from the ARR instance." },
+	{
+		value: "unmonitor",
+		label: "Unmonitor",
+		hint: "Set the item unmonitored (keeps files and data).",
+	},
+	{
+		value: "delete_files",
+		label: "Delete Files",
+		hint: "Delete files but keep the item in the library.",
+	},
+];
+
+function freshEditorState(): CriteriaEditorState {
+	return {
+		mode: "single",
+		operator: "all",
+		conditions: [{ id: "seed-0", kind: "age", params: getDefaultConditionParams("age") }],
+	};
+}
+
+export function CleanupRuleComposerDialog({
+	open,
+	onOpenChange,
+	editRuleId,
+}: CleanupRuleComposerDialogProps) {
+	const { gradient } = useThemeGradient();
+	const queryClient = useQueryClient();
+	const isEdit = !!editRuleId;
+
+	const { data: automation } = useAutomationRules();
+	const { data: config } = useCleanupConfig();
+	const { data: fieldOptions, isLoading: fieldOptionsLoading } = useCleanupFieldOptions();
+	const createRule = useCreateCleanupRule();
+	const updateRule = useUpdateCleanupRule();
+
+	// The two edit data sources, joined by id: the automation read API supplies
+	// the normalized v1 document (conditions); the cleanup config supplies the
+	// action half the read API deliberately omits (name/enabled come from either).
+	const summary = useMemo(
+		() =>
+			editRuleId
+				? automation?.rules.find((r) => r.context === "library-cleanup" && r.id === editRuleId)
+				: undefined,
+		[automation, editRuleId],
+	);
+	const configRule = useMemo(
+		() => (editRuleId ? config?.rules.find((r) => r.id === editRuleId) : undefined),
+		[config, editRuleId],
+	);
+
+	const [name, setName] = useState("");
+	const [enabled, setEnabled] = useState(true);
+	const [action, setAction] = useState<CleanupAction>("delete");
+	const [retentionMode, setRetentionMode] = useState(false);
+	const [editorState, setEditorState] = useState<CriteriaEditorState>(freshEditorState);
+	const [error, setError] = useState<string | null>(null);
+
+	const legalKinds = useMemo(() => [...CONTEXT_KINDS["library-cleanup"]], []);
+
+	// Prefill on open. In edit mode this re-runs when the joined rule resolves.
+	useEffect(() => {
+		if (!open) return;
+		setError(null);
+		if (isEdit) {
+			setName(summary?.name ?? configRule?.name ?? "");
+			setEnabled(summary?.enabled ?? configRule?.enabled ?? true);
+			setAction((configRule?.action as CleanupAction) ?? "delete");
+			setRetentionMode(configRule?.retentionMode ?? false);
+			// The document is the v1 source of truth for conditions; if the stored
+			// rule was unparseable (document null) we fall back to a fresh editor so
+			// the operator can re-author rather than see a broken form.
+			setEditorState(
+				summary?.document ? decomposeCriteriaDocument(summary.document) : freshEditorState(),
+			);
+		} else {
+			setName("");
+			setEnabled(true);
+			setAction("delete");
+			setRetentionMode(false);
+			setEditorState(freshEditorState());
+		}
+	}, [open, isEdit, summary, configRule]);
+
+	const inputStyles = getInputStyles(gradient);
+	const inputClass = `${inputStyles.base} focus:outline-hidden`;
+	const labelClass = "mb-1 block text-xs text-muted-foreground";
+
+	const isSaving = createRule.isPending || updateRule.isPending;
+
+	const handleSubmit = async (e: React.FormEvent) => {
+		e.preventDefault();
+		if (isSaving) return;
+
+		if (!name.trim()) {
+			setError("Give the rule a name.");
+			return;
+		}
+
+		// Validate + down-convert the v1 document to the v0 route payload. The
+		// full condition quartet (ruleType/parameters/operator/conditions) is
+		// ALWAYS sent together so switching single↔composite clears any stale
+		// operator/conditions the engine's composite discriminator would honor.
+		// Not destructured: reading `.error`/`.payload` off the result preserves
+		// the discriminated-union narrowing (payload is defined after the guard).
+		const result = toCriteriaV0Payload(editorState, "library-cleanup");
+		if (!result.payload) {
+			setError(result.error ?? "This rule isn't valid yet.");
+			return;
+		}
+		const payload = result.payload;
+		setError(null);
+
+		// The composer owns name/enabled/action/retentionMode + the full condition
+		// quartet from the serializer. Every OTHER cleanup field is omitted: create
+		// applies the schema defaults, and the PUT route's `!== undefined`
+		// discipline PRESERVES the stored advanced filters + rejection-memory.
+		// Cast mirrors the per-domain dialog (cleanup-rule-dialog.tsx): the
+		// serializer types ruleType/conditions as `string` (v0 payload shape) and
+		// the schema output type demands its defaulted fields — validation already
+		// proved the kind legal, so the cast is sound.
+		const domainBase = {
+			name: name.trim(),
+			enabled,
+			action,
+			retentionMode,
+			ruleType: payload.ruleType,
+			parameters: payload.parameters,
+			operator: payload.operator,
+			conditions: payload.conditions,
+		};
+
+		try {
+			if (isEdit && editRuleId) {
+				await updateRule.mutateAsync({ id: editRuleId, data: domainBase as UpdateCleanupRule });
+			} else {
+				await createRule.mutateAsync(domainBase as CreateCleanupRule);
+			}
+			// The mutation hooks invalidate the cleanup config; the Automation tab
+			// reads its own key, so refresh it too.
+			await queryClient.invalidateQueries({ queryKey: automationKeys.all });
+			onOpenChange(false);
+		} catch (err) {
+			setError(getErrorMessage(err, "Could not save the rule."));
+		}
+	};
+
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+				<DialogHeader>
+					<DialogTitle>{isEdit ? "Edit Cleanup Rule" : "New Cleanup Rule"}</DialogTitle>
+					<DialogDescription>
+						Author the matching conditions and action. This writes a real Library Cleanup rule.
+					</DialogDescription>
+				</DialogHeader>
+
+				<form
+					onSubmit={handleSubmit}
+					className="mt-2 space-y-5"
+					onFocus={(e) => {
+						const t = e.target;
+						if (
+							(t instanceof HTMLInputElement && t.type !== "checkbox") ||
+							t instanceof HTMLSelectElement
+						) {
+							inputStyles.applyFocus(t);
+						}
+					}}
+					onBlur={(e) => {
+						const t = e.target;
+						if (
+							(t instanceof HTMLInputElement && t.type !== "checkbox") ||
+							t instanceof HTMLSelectElement
+						) {
+							inputStyles.removeFocus(t);
+						}
+					}}
+				>
+					{/* Name */}
+					<label className="block">
+						<span className={labelClass}>Rule name</span>
+						<input
+							type="text"
+							value={name}
+							onChange={(e) => setName(e.target.value)}
+							placeholder="e.g., Old low-rated movies"
+							required
+							className={inputClass}
+						/>
+					</label>
+
+					{/* Enabled */}
+					<div className="flex items-center justify-between">
+						<span className="text-sm font-medium">Enabled</span>
+						<Switch
+							checked={enabled}
+							onCheckedChange={setEnabled}
+							style={enabled ? { backgroundColor: gradient.from } : undefined}
+						/>
+					</div>
+
+					{/* Retention mode */}
+					<div className="flex items-center justify-between">
+						<div className="flex items-center gap-2">
+							<ShieldOff className="h-4 w-4 text-emerald-400" />
+							<div>
+								<span className="text-sm font-medium">Retention rule</span>
+								<p className="text-xs text-muted-foreground">
+									Protects matching items from other rules
+								</p>
+							</div>
+						</div>
+						<Switch
+							checked={retentionMode}
+							onCheckedChange={setRetentionMode}
+							style={retentionMode ? { backgroundColor: "rgb(16 185 129)" } : undefined}
+						/>
+					</div>
+
+					{/* Action */}
+					<div>
+						<span className={labelClass}>Action when matched</span>
+						<div className="mt-1.5 flex gap-2">
+							{ACTIONS.map((a) => (
+								<button
+									key={a.value}
+									type="button"
+									onClick={() => setAction(a.value)}
+									className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-all duration-200"
+									style={
+										action === a.value
+											? {
+													borderColor: gradient.from,
+													backgroundColor: gradient.fromLight,
+													color: gradient.from,
+												}
+											: { borderColor: "var(--color-border)" }
+									}
+								>
+									{a.label}
+								</button>
+							))}
+						</div>
+						<p className="mt-1 text-xs text-muted-foreground">
+							{ACTIONS.find((a) => a.value === action)?.hint}
+						</p>
+					</div>
+
+					{/* Conditions */}
+					<div className="space-y-3 rounded-xl border border-border/50 bg-card/30 p-4 backdrop-blur-sm">
+						<span className="text-sm font-medium">Conditions</span>
+						<CriteriaConditionEditor
+							state={editorState}
+							onChange={setEditorState}
+							legalKinds={legalKinds}
+							fieldOptions={fieldOptions}
+							fieldOptionsLoading={fieldOptionsLoading}
+							inputClass={inputClass}
+							labelClass={labelClass}
+						/>
+					</div>
+
+					{/* Advanced-filters disclosure (they live in the full surface) */}
+					<Link
+						href="/library-cleanup"
+						className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+					>
+						<ExternalLink className="h-3 w-3" aria-hidden="true" />
+						Advanced filters (services, instances, tags, titles, Plex libraries) and rejection
+						memory are managed in Library Cleanup
+					</Link>
+
+					{error && (
+						<div className="rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+							{error}
+						</div>
+					)}
+
+					<div className="flex justify-end gap-2">
+						<button
+							type="button"
+							onClick={() => onOpenChange(false)}
+							className="rounded-lg border border-border/50 px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+						>
+							Cancel
+						</button>
+						<button
+							type="submit"
+							disabled={isSaving}
+							className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-60"
+							style={{ background: `linear-gradient(to right, ${gradient.from}, ${gradient.to})` }}
+						>
+							{isSaving ? (
+								<Loader2 className="h-4 w-4 animate-spin" />
+							) : (
+								<Save className="h-4 w-4" />
+							)}
+							{isEdit ? "Save changes" : "Create rule"}
+						</button>
+					</div>
+				</form>
+			</DialogContent>
+		</Dialog>
+	);
+}
