@@ -29,6 +29,14 @@ function humanizeToken(token: string): string {
 	return token.replace(/_/g, " ");
 }
 
+/** Param key → readable label: "yearFrom" → "year from", "size_gb" → "size gb". */
+function humanizeKey(key: string): string {
+	return key
+		.replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+		.replace(/_/g, " ")
+		.toLowerCase();
+}
+
 function formatValue(value: unknown, incognito: boolean): string {
 	if (value === null || value === undefined) return "";
 	if (typeof value === "number") return String(value);
@@ -74,11 +82,22 @@ export function describePredicate(
 	}
 
 	// Generic: operator first (structural, always shown), then the rest.
+	//
+	// Fix (a): when a kind carries more than ONE value-bearing param, prefix each
+	// with its humanized key so the summary is unambiguous — "before · 2020" is
+	// clear, but a bare "2020 · 2024" (year_range between) or "10 · 0"
+	// (episode_completion percentage/minSeason) is not. Single-value kinds keep
+	// the clean value-only form. Keys are structural, so they show in incognito;
+	// only VALUES are masked.
 	const operator = typeof params.operator === "string" ? humanizeToken(params.operator) : null;
-	const rest = Object.entries(params)
+	const valued = Object.entries(params)
 		.filter(([key]) => key !== "operator")
-		.map(([, value]) => formatValue(value, incognito))
-		.filter((part) => part.length > 0);
+		.map(([key, value]) => ({ key, text: formatValue(value, incognito) }))
+		.filter((entry) => entry.text.length > 0);
+	const keyed = valued.length > 1;
+	const rest = valued.map((entry) =>
+		keyed ? `${humanizeKey(entry.key)} ${entry.text}` : entry.text,
+	);
 
 	return {
 		label: humanizeKind(kind),
