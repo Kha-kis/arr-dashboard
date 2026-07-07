@@ -30,6 +30,15 @@ const CleanupRuleComposerDialog = lazy(() =>
 	})),
 );
 
+const AutoTagRuleComposerDialog = lazy(() =>
+	import("./auto-tag-rule-composer-dialog").then((m) => ({
+		default: m.AutoTagRuleComposerDialog,
+	})),
+);
+
+/** Contexts this composer can author (grows as slices land). */
+type AuthorableContext = "library-cleanup" | "auto-tag";
+
 const CONTEXT_LABELS: Record<RuleContextId, string> = {
 	"library-cleanup": "Library Cleanup",
 	"auto-tag": "Auto-Tag",
@@ -112,10 +121,12 @@ export function AutomationPanel() {
 	const { data, isLoading, isError, error, refetch } = useAutomationRules();
 	const [incognito] = useIncognitoMode();
 	// { open, editRuleId } — editRuleId null = create mode.
-	const [composer, setComposer] = useState<{ open: boolean; editRuleId: string | null }>({
-		open: false,
-		editRuleId: null,
-	});
+	// context selects which per-domain composer dialog opens; editRuleId null = create.
+	const [composer, setComposer] = useState<{
+		open: boolean;
+		context: AuthorableContext;
+		editRuleId: string | null;
+	}>({ open: false, context: "library-cleanup", editRuleId: null });
 
 	const rules = data?.rules ?? [];
 	const groups = CONTEXT_ORDER.map((context) => ({
@@ -123,21 +134,35 @@ export function AutomationPanel() {
 		rules: rules.filter((rule) => rule.context === context),
 	})).filter((group) => group.rules.length > 0);
 
-	const openCreate = () => setComposer({ open: true, editRuleId: null });
-	const openEdit = (id: string) => setComposer({ open: true, editRuleId: id });
+	const openCreate = (context: AuthorableContext) =>
+		setComposer({ open: true, context, editRuleId: null });
+	const openEdit = (context: AuthorableContext, id: string) =>
+		setComposer({ open: true, context, editRuleId: id });
+
+	// Only these contexts have a composer authoring dialog in this slice.
+	const editableContext = (context: RuleContextId): AuthorableContext | null =>
+		context === "library-cleanup" || context === "auto-tag" ? context : null;
 
 	return (
 		<div className="space-y-4">
-			{/* Authoring entry point. Scoped to library-cleanup this slice; the
-			    button grows a context selector as auto-tag / notifications land. */}
-			<div className="flex items-center justify-end">
+			{/* Authoring entry points — one per composer-capable context (grows as
+			    notifications lands). */}
+			<div className="flex flex-wrap items-center justify-end gap-2">
 				<button
 					type="button"
-					onClick={openCreate}
+					onClick={() => openCreate("library-cleanup")}
 					className="inline-flex items-center gap-1.5 rounded-lg border border-border/50 bg-card/50 px-3 py-1.5 text-sm font-medium backdrop-blur-xs transition-colors hover:bg-card/80"
 				>
 					<Plus className="h-4 w-4" aria-hidden="true" />
 					New cleanup rule
+				</button>
+				<button
+					type="button"
+					onClick={() => openCreate("auto-tag")}
+					className="inline-flex items-center gap-1.5 rounded-lg border border-border/50 bg-card/50 px-3 py-1.5 text-sm font-medium backdrop-blur-xs transition-colors hover:bg-card/80"
+				>
+					<Plus className="h-4 w-4" aria-hidden="true" />
+					New auto-tag rule
 				</button>
 			</div>
 
@@ -152,7 +177,7 @@ export function AutomationPanel() {
 					icon: Workflow,
 					title: "No automation rules yet",
 					description:
-						"Create a cleanup rule here, or add rules in Auto-Tag and Notifications — they all appear here, unified.",
+						"Create a cleanup or auto-tag rule here, or add notification rules — they all appear here, unified.",
 				}}
 			>
 				<div className="space-y-6">
@@ -170,17 +195,18 @@ export function AutomationPanel() {
 										key={`${rule.context}-${rule.id}`}
 										rule={rule}
 										incognito={incognito}
-										onEdit={
-											// Composer-editable only for library-cleanup rules whose kinds
-											// are ALL still available. A rule referencing a retired kind
-											// (unavailableKinds non-empty) is parseable but the composer's
-											// kind picker can't represent it — editing would be a dead-end
-											// (picker shows a wrong kind, save is blocked). Route those to
-											// the Library Cleanup surface to repair instead.
-											rule.context === "library-cleanup" && rule.unavailableKinds.length === 0
-												? () => openEdit(rule.id)
-												: undefined
-										}
+										onEdit={(() => {
+											// Composer-editable only for contexts with an authoring dialog
+											// AND rules whose kinds are ALL still available. A rule with a
+											// retired kind (unavailableKinds non-empty) is parseable but the
+											// composer's kind picker can't represent it — editing would be a
+											// dead-end (picker shows a wrong kind, save is blocked). Route
+											// those to the domain surface to repair instead.
+											const ctx = editableContext(rule.context);
+											return ctx && rule.unavailableKinds.length === 0
+												? () => openEdit(ctx, rule.id)
+												: undefined;
+										})()}
 									/>
 								))}
 							</div>
@@ -191,11 +217,19 @@ export function AutomationPanel() {
 
 			{composer.open && (
 				<Suspense>
-					<CleanupRuleComposerDialog
-						open={composer.open}
-						onOpenChange={(open) => setComposer((prev) => ({ ...prev, open }))}
-						editRuleId={composer.editRuleId}
-					/>
+					{composer.context === "library-cleanup" ? (
+						<CleanupRuleComposerDialog
+							open={composer.open}
+							onOpenChange={(open) => setComposer((prev) => ({ ...prev, open }))}
+							editRuleId={composer.editRuleId}
+						/>
+					) : (
+						<AutoTagRuleComposerDialog
+							open={composer.open}
+							onOpenChange={(open) => setComposer((prev) => ({ ...prev, open }))}
+							editRuleId={composer.editRuleId}
+						/>
+					)}
 				</Suspense>
 			)}
 		</div>
