@@ -11,3 +11,4 @@ export * from "./contexts.js";
 export * from "./criteria.js";
 export * from "./field-match.js";
 export * from "./grammar.js";
+export * from "./v1-serializer.js";
