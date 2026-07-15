@@ -49,6 +49,14 @@ describe("SetupPage authenticated stages", () => {
 		expect(mocks.replace).not.toHaveBeenCalled();
 	});
 
+	it("renders the starter configuration stage for an authenticated user", () => {
+		mocks.stage = "starters";
+		render(<SetupPage />);
+
+		expect(screen.getByText("Setup stage: starters")).toBeInTheDocument();
+		expect(mocks.replace).not.toHaveBeenCalled();
+	});
+
 	it("preserves the Console stage when redirecting an expired session to login", async () => {
 		mocks.currentUser = { data: undefined, isLoading: false };
 

@@ -18,11 +18,12 @@ import { OIDCSetup } from "./oidc-setup";
 import { PasskeySetup } from "./passkey-setup";
 import { PasswordSetup } from "./password-setup";
 import { ServiceOnboarding } from "./service-onboarding";
+import { StarterConfiguration } from "./starter-configuration";
 
 type SetupMethod = "password" | "oidc" | "passkey";
 
 interface SetupClientProps {
-	stage: "account" | "services" | "console";
+	stage: "account" | "services" | "starters" | "console";
 }
 
 export const SetupClient = ({ stage }: SetupClientProps) => {
@@ -36,6 +37,9 @@ export const SetupClient = ({ stage }: SetupClientProps) => {
 
 	if (stage === "services") {
 		return <ServiceOnboarding />;
+	}
+	if (stage === "starters") {
+		return <StarterConfiguration />;
 	}
 	if (stage === "console") {
 		return <ConsoleWalkthrough />;
