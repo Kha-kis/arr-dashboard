@@ -206,6 +206,10 @@ jobs:
     name: Create Multi-Arch Manifests
     runs-on: ubuntu-latest
     needs: build
+    # Branch runs intentionally skip validate-prerelease. Override GitHub's
+    # transitive implicit success() gate so a successful build matrix still
+    # reaches manifest creation; failed or cancelled builds remain blocked.
+    if: always() && needs.build.result == 'success'
     permissions:
       contents: read
       packages: write
