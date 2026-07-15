@@ -1,7 +1,8 @@
 "use client";
 
 import type { SetupDiscoveryCandidate } from "@arr/shared";
-import { Check, Loader2, Radar, Server, SkipForward } from "lucide-react";
+import { ArrowRight, Check, Loader2, Radar, Server } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import {
 	Alert,
@@ -46,6 +47,7 @@ const candidateDraft = (candidate: SetupDiscoveryCandidate): ServiceDraft => ({
 });
 
 export const ServiceOnboarding = () => {
+	const router = useRouter();
 	const { gradient } = useThemeGradient();
 	const [incognitoMode] = useIncognitoMode();
 	const discovery = useSetupDiscovery();
@@ -118,7 +120,7 @@ export const ServiceOnboarding = () => {
 	return (
 		<div className="w-full max-w-4xl space-y-6 py-8">
 			<div className="space-y-3 text-center">
-				<p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Step 2 of 2</p>
+				<p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Step 2 of 3</p>
 				<h1
 					className="text-3xl font-bold tracking-tight"
 					style={{
@@ -232,9 +234,10 @@ export const ServiceOnboarding = () => {
 
 					{draft && (
 						<form className="grid gap-4 sm:grid-cols-2" onSubmit={handleSave} autoComplete="off">
-							<label className="space-y-2 text-sm">
+							<label htmlFor="setup-service-label" className="space-y-2 text-sm">
 								Label
 								<Input
+									id="setup-service-label"
 									value={draft.label}
 									onChange={(event) =>
 										setDraft((current) =>
@@ -245,9 +248,10 @@ export const ServiceOnboarding = () => {
 									maxLength={120}
 								/>
 							</label>
-							<label className="space-y-2 text-sm">
+							<label htmlFor="setup-service-url" className="space-y-2 text-sm">
 								Base URL
 								<Input
+									id="setup-service-url"
 									type="url"
 									value={draft.baseUrl}
 									onChange={(event) =>
@@ -260,9 +264,10 @@ export const ServiceOnboarding = () => {
 									data-1p-ignore
 								/>
 							</label>
-							<label className="space-y-2 text-sm sm:col-span-2">
+							<label htmlFor="setup-service-api-key" className="space-y-2 text-sm sm:col-span-2">
 								API key
 								<Input
+									id="setup-service-api-key"
 									type="password"
 									value={draft.apiKey}
 									onChange={(event) =>
@@ -324,15 +329,9 @@ export const ServiceOnboarding = () => {
 			</Card>
 
 			<div className="flex justify-end">
-				<Button
-					type="button"
-					size="lg"
-					onClick={() => {
-						window.location.href = "/console";
-					}}
-				>
-					<SkipForward className="h-4 w-4" />{" "}
-					{services.length > 0 ? "Finish setup" : "Skip for now"}
+				<Button type="button" size="lg" onClick={() => router.push("/setup?stage=console")}>
+					{services.length > 0 ? "Review and continue" : "Continue without services"}
+					<ArrowRight className="h-4 w-4" />
 				</Button>
 			</div>
 		</div>

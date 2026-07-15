@@ -5,6 +5,11 @@ const mocks = vi.hoisted(() => ({
 	refetchDiscovery: vi.fn(),
 	testConnection: vi.fn(),
 	createService: vi.fn(),
+	push: vi.fn(),
+}));
+
+vi.mock("next/navigation", () => ({
+	useRouter: () => ({ push: mocks.push }),
 }));
 
 vi.mock("../../../../hooks/api/useSetupDiscovery", () => ({
@@ -109,5 +114,11 @@ describe("ServiceOnboarding", () => {
 
 		expect(await screen.findByText("Check the API key")).toBeInTheDocument();
 		expect(mocks.createService).not.toHaveBeenCalled();
+	});
+
+	it("continues to the Console walkthrough without requiring a service", () => {
+		render(<ServiceOnboarding />);
+		fireEvent.click(screen.getByRole("button", { name: "Continue without services" }));
+		expect(mocks.push).toHaveBeenCalledWith("/setup?stage=console");
 	});
 });
