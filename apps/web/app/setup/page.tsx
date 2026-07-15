@@ -15,25 +15,29 @@ const SetupLoading = () => (
 const SetupPageContent = () => {
 	const router = useRouter();
 	const searchParams = useSearchParams();
-	const requestedServicesStage = searchParams.get("stage") === "services";
+	const requestedStage = searchParams.get("stage");
+	const requestedAuthenticatedStage = requestedStage === "services" || requestedStage === "console";
+	const requestedSetupPath =
+		requestedStage === "console" ? "/setup?stage=console" : "/setup?stage=services";
 	const { data: setupRequired, isLoading } = useSetupRequired();
-	const shouldVerifySession = setupRequired?.required === false && requestedServicesStage;
+	const shouldVerifySession = setupRequired?.required === false && requestedAuthenticatedStage;
 	const { data: user, isLoading: userLoading } = useCurrentUser(shouldVerifySession);
 
 	useEffect(() => {
 		if (isLoading || userLoading) return;
 
-		if (setupRequired?.required === false && !requestedServicesStage) {
+		if (setupRequired?.required === false && !requestedAuthenticatedStage) {
 			router.replace("/login");
 			return;
 		}
 
 		if (shouldVerifySession && !user) {
-			router.replace("/login?redirectTo=%2Fsetup%3Fstage%3Dservices");
+			router.replace(`/login?redirectTo=${encodeURIComponent(requestedSetupPath)}`);
 		}
 	}, [
 		isLoading,
-		requestedServicesStage,
+		requestedAuthenticatedStage,
+		requestedSetupPath,
 		router,
 		setupRequired,
 		shouldVerifySession,
@@ -47,7 +51,7 @@ const SetupPageContent = () => {
 	}
 
 	// If setup is complete, don't render (will redirect)
-	if (setupRequired?.required === false && (!requestedServicesStage || !user)) {
+	if (setupRequired?.required === false && (!requestedAuthenticatedStage || !user)) {
 		return null;
 	}
 
@@ -55,8 +59,8 @@ const SetupPageContent = () => {
 		<main className="flex min-h-screen items-center justify-center bg-background px-4">
 			<SetupClient
 				stage={
-					requestedServicesStage && setupRequired?.required === false && user
-						? "services"
+					requestedAuthenticatedStage && setupRequired?.required === false && user
+						? requestedStage
 						: "account"
 				}
 			/>

@@ -13,6 +13,7 @@ import {
 import { useSetupRequired } from "../../../hooks/api/useAuth";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { cn } from "../../../lib/utils";
+import { ConsoleWalkthrough } from "./console-walkthrough";
 import { OIDCSetup } from "./oidc-setup";
 import { PasskeySetup } from "./passkey-setup";
 import { PasswordSetup } from "./password-setup";
@@ -21,7 +22,7 @@ import { ServiceOnboarding } from "./service-onboarding";
 type SetupMethod = "password" | "oidc" | "passkey";
 
 interface SetupClientProps {
-	stage: "account" | "services";
+	stage: "account" | "services" | "console";
 }
 
 export const SetupClient = ({ stage }: SetupClientProps) => {
@@ -35,6 +36,9 @@ export const SetupClient = ({ stage }: SetupClientProps) => {
 
 	if (stage === "services") {
 		return <ServiceOnboarding />;
+	}
+	if (stage === "console") {
+		return <ConsoleWalkthrough />;
 	}
 
 	const methods = [
