@@ -5,6 +5,16 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- New Radarr and Sonarr downloads are now detected when an item is added and
+  imported entirely between library polls, and the resulting notification is
+  dispatched only through channels owned by the instance's user.
+- The notification Rules page no longer enters a render loop while aggregation
+  configuration is unavailable.
+
 ## [3.0.0-alpha.2] - 2026-06-10 — Bucket B: the coherence sweep
 
 Second 3.0 preview. Every formalized UI/data primitive is now applied
