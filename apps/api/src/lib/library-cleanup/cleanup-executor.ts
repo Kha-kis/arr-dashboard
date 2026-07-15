@@ -10,7 +10,15 @@
  * Supports three actions per rule: delete, unmonitor, delete_files.
  */
 
-import { type DataSourceDependency, ruleDataSourceMap } from "@arr/shared";
+import {
+	type CrossDomainAction,
+	type CrossDomainRuleScope,
+	type DataSourceDependency,
+	type RuleDocument,
+	ruleDataSourceMap,
+	serializeCriteriaDocumentToV0,
+	walkPredicates,
+} from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { Prisma } from "../../generated/prisma/client.js";
 import type { LibraryCleanupConfig, LibraryCleanupRule, ServiceInstance } from "../prisma.js";
@@ -19,7 +27,8 @@ import { getErrorMessage } from "../utils/error-message.js";
 import { safeJsonParse } from "../utils/json.js";
 import { applyQuiSeedingFilter } from "./qui-filter.js";
 import { evaluateItemAgainstRulesViaEngine } from "../rules/cleanup-adapter.js";
-import { extractRating } from "./rule-evaluators.js";
+import { evaluateDocument } from "../rules/engine.js";
+import { evaluateSingleCondition, extractRating } from "./rule-evaluators.js";
 import type {
 	CacheItemForEval,
 	CleanupExecutorDeps,
@@ -975,9 +984,44 @@ async function evaluateAllItems(
 		select: { id: true, service: true },
 	});
 	const instanceServiceMap = new Map(instances.map((i) => [i.id, i.service]));
+	const exemptionRows = await prisma.crossDomainRule.findMany({
+		where: {
+			userId: config.userId,
+			deployedAt: { not: null },
+			deployedDocument: { not: null },
+			deployedScope: { not: null },
+			deployedActions: { not: null },
+		},
+		select: { id: true, deployedDocument: true, deployedScope: true, deployedActions: true },
+	});
+	const exemptionRules = exemptionRows.flatMap((row) => {
+		try {
+			const actions = JSON.parse(row.deployedActions!) as CrossDomainAction[];
+			if (!actions.some((action) => action.type === "exempt_cleanup")) return [];
+			return [
+				{
+					id: row.id,
+					document: JSON.parse(row.deployedDocument!) as RuleDocument,
+					scope: JSON.parse(row.deployedScope!) as CrossDomainRuleScope,
+				},
+			];
+		} catch (error) {
+			log.warn({ err: error, ruleId: row.id }, "Skipping invalid deployed cleanup exemption");
+			return [];
+		}
+	});
 
 	// Collect all active rule types (including inside composite conditions)
 	const activeTypes = collectActiveRuleTypes(rules);
+	const exemptionPrefetchRules = exemptionRules.map((rule) => {
+		const v0 = serializeCriteriaDocumentToV0(rule.document);
+		for (const predicate of walkPredicates(rule.document.root)) activeTypes.add(predicate.kind);
+		return {
+			ruleType: v0.ruleType,
+			parameters: JSON.stringify(v0.parameters),
+			conditions: v0.conditions ? JSON.stringify(v0.conditions) : null,
+		};
+	});
 
 	// Prefetch Seerr requests if any Seerr rule types are active
 	const SEERR_RULE_TYPES = [
@@ -1048,10 +1092,20 @@ async function evaluateAllItems(
 	// would make list rules silently never match in cleanup runs — the
 	// same maps auto-tag's executor builds for its own runs.
 	const tmdbListMemberships = activeTypes.has("tmdb_list_member")
-		? await prefetchCleanupListMemberships(deps, config.userId, rules, "tmdb")
+		? await prefetchCleanupListMemberships(
+				deps,
+				config.userId,
+				[...rules, ...exemptionPrefetchRules],
+				"tmdb",
+			)
 		: undefined;
 	const traktListMemberships = activeTypes.has("trakt_list_member")
-		? await prefetchCleanupListMemberships(deps, config.userId, rules, "trakt")
+		? await prefetchCleanupListMemberships(
+				deps,
+				config.userId,
+				[...rules, ...exemptionPrefetchRules],
+				"trakt",
+			)
 		: undefined;
 
 	// Build prefetch health status
@@ -1144,8 +1198,33 @@ async function evaluateAllItems(
 			totalEvaluated++;
 			const instanceService = instanceServiceMap.get(item.instanceId);
 			if (!instanceService) continue; // Skip orphaned cache items with no matching instance
+			const exempt = exemptionRules.some((rule) => {
+				if (instanceService !== "SONARR" && instanceService !== "RADARR") return false;
+				if (
+					rule.scope.instanceIds.length > 0 &&
+					!rule.scope.instanceIds.includes(item.instanceId)
+				) {
+					return false;
+				}
+				if (
+					rule.scope.serviceTypes.length > 0 &&
+					!rule.scope.serviceTypes.includes(instanceService as "SONARR" | "RADARR")
+				) {
+					return false;
+				}
+				return evaluateDocument(rule.document, (predicate) =>
+					evaluateSingleCondition(item, predicate.kind, predicate.params, ctx, null),
+				).matched;
+			});
+			if (exempt) continue;
 
-			const match = evaluateItemAgainstRulesViaEngine(item, rules, instanceService, ctx, failedSources);
+			const match = evaluateItemAgainstRulesViaEngine(
+				item,
+				rules,
+				instanceService,
+				ctx,
+				failedSources,
+			);
 			if (match) {
 				flagged.push({
 					cacheItem: item,
@@ -1603,7 +1682,16 @@ export async function buildEvalContext(
 		"seerr_requester_not_watched",
 	];
 
-	const [seerrMap, plexMap, plexEpisodeMap] = await Promise.all([
+	const JELLYFIN_RULE_TYPES = [
+		"jellyfin_last_watched",
+		"jellyfin_watch_count",
+		"jellyfin_on_deck",
+		"jellyfin_user_rating",
+		"jellyfin_watched_by",
+		"jellyfin_added_at",
+	];
+
+	const [seerrMap, plexMap, plexEpisodeMap, jellyfinMap, jellyfinEpisodeMap] = await Promise.all([
 		SEERR_RULE_TYPES.some((t) => activeTypes.has(t))
 			? prefetchSeerrRequests(deps, userId)
 			: undefined,
@@ -1611,13 +1699,29 @@ export async function buildEvalContext(
 			? prefetchPlexData(deps, userId)
 			: undefined,
 		activeTypes.has("plex_episode_completion") ? prefetchPlexEpisodeData(deps, userId) : undefined,
+		JELLYFIN_RULE_TYPES.some((t) => activeTypes.has(t))
+			? prefetchJellyfinData(deps, userId)
+			: undefined,
+		activeTypes.has("jellyfin_episode_completion")
+			? prefetchJellyfinEpisodeData(deps, userId)
+			: undefined,
 	]);
+	const tmdbListMemberships = activeTypes.has("tmdb_list_member")
+		? await prefetchCleanupListMemberships(deps, userId, rules, "tmdb")
+		: undefined;
+	const traktListMemberships = activeTypes.has("trakt_list_member")
+		? await prefetchCleanupListMemberships(deps, userId, rules, "trakt")
+		: undefined;
 
 	return {
 		now: new Date(),
 		seerrMap: seerrMap ?? undefined,
 		plexMap: plexMap ?? undefined,
 		plexEpisodeMap: plexEpisodeMap ?? undefined,
+		jellyfinMap: jellyfinMap ?? undefined,
+		jellyfinEpisodeMap: jellyfinEpisodeMap ?? undefined,
+		tmdbListMemberships,
+		traktListMemberships,
 	};
 }
 
@@ -1670,7 +1774,7 @@ async function createRunLog(
 export async function prefetchCleanupListMemberships(
 	deps: CleanupExecutorDeps,
 	userId: string,
-	rules: LibraryCleanupRule[],
+	rules: Array<{ ruleType: string; parameters?: string; conditions: string | null }>,
 	cacheKind: "tmdb" | "trakt",
 ): Promise<Map<string, Set<number>>> {
 	const targetType = cacheKind === "tmdb" ? "tmdb_list_member" : "trakt_list_member";
@@ -1684,7 +1788,7 @@ export async function prefetchCleanupListMemberships(
 		if (typeof value === "string" && value.length > 0) identifiers.add(value);
 	};
 	for (const rule of rules) {
-		collectFromParams(rule.ruleType, safeJsonParse(rule.parameters));
+		collectFromParams(rule.ruleType, safeJsonParse(rule.parameters ?? ""));
 		const conditions = safeJsonParse(rule.conditions ?? "") as Array<{
 			ruleType: string;
 			parameters: unknown;

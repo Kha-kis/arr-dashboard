@@ -67,6 +67,7 @@ model User {
   notificationAggregationConfigs NotificationAggregationConfig[]
   labelSyncRules    LabelSyncRule[]
   autoTagRules      AutoTagRule[]
+  crossDomainRules  CrossDomainRule[]
   tmdbListCacheRows TmdbListCache[]
   traktListCacheRows TraktListCache[]
   quiActivityLogs   QuiActivityLog[]
@@ -1743,6 +1744,58 @@ model AutoTagRule {
 
   @@index([userId])
   @@map("auto_tag_rules")
+}
+
+/// Composer-authored automation that evaluates cached *arr library items and
+/// fans one match out to actions owned by multiple domains. Draft fields stay
+/// editable while deployed* fields remain the atomic active snapshot.
+model CrossDomainRule {
+  id                  String   @id @default(cuid())
+  userId              String
+  name                String
+  document            String
+  scope               String
+  actions             String
+  deployedName        String?
+  deployedDocument    String?
+  deployedScope       String?
+  deployedActions     String?
+  deploymentVersion   Int      @default(0)
+  deployedAt          DateTime?
+  dryRunFingerprint   String?
+  lastDryRunAt        DateTime?
+  lastRunAt           DateTime?
+  lastRunStatus       String?
+  lastRunMessage      String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  user    User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  matches CrossDomainRuleMatch[]
+
+  @@index([userId])
+  @@index([deployedAt])
+  @@map("cross_domain_rules")
+}
+
+/// Durable once-per-deployment witness for scheduled match actions. A newly
+/// matching item gets one action fan-out; subsequent scans do not re-notify it.
+model CrossDomainRuleMatch {
+  id                String          @id @default(cuid())
+  ruleId            String
+  deploymentVersion Int
+  instanceId        String
+  arrItemId         Int
+  itemType          LibraryItemType
+  completedActions  String          @default("[]")
+  lastError         String?
+  processedAt       DateTime        @default(now())
+
+  rule CrossDomainRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@unique([ruleId, deploymentVersion, instanceId, arrItemId, itemType])
+  @@index([ruleId, deploymentVersion])
+  @@map("cross_domain_rule_matches")
 }
 
 /// Cached membership of a TMDb curated list. One row per (userId, listId, tmdbId).

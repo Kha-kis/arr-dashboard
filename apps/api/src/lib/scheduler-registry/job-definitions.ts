@@ -34,6 +34,7 @@ export const JOB_ID = {
 	seerrHealth: "seerr-health",
 	labelSync: "label-sync",
 	autoTag: "auto-tag",
+	crossDomainAutomation: "cross-domain-automation",
 	tmdbListCache: "tmdb-list-cache",
 	traktListCache: "trakt-list-cache",
 	quiTorrentStateSync: "qui-torrent-state-sync",
@@ -166,6 +167,14 @@ export const KNOWN_JOBS: readonly JobDefinition[] = [
 		label: "Auto-tag",
 		description:
 			"Walks enabled AutoTagRule rows once per hour, evaluates each rule's criteria DSL against LibraryCache items, and applies the configured tag to matches via the source *arr's tag-write API. Per-rule cooldown skips rules that ran in the last hour.",
+		concurrency: "singleton",
+		intervalMs: 5 * 60 * 1000,
+	},
+	{
+		id: JOB_ID.crossDomainAutomation,
+		label: "Cross-domain automation",
+		description:
+			"Evaluates deployed composer rules against cached Sonarr/Radarr library items and fans new matches out to notification, tag, and cleanup-exemption actions. Per-deployment match ledgers prevent repeated one-shot actions.",
 		concurrency: "singleton",
 		intervalMs: 5 * 60 * 1000,
 	},

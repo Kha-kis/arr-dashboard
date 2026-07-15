@@ -67,6 +67,12 @@ beforeEach(async () => {
 				return notificationRules;
 			},
 		},
+		crossDomainRule: {
+			findMany: async (args: { where: unknown }) => {
+				queriedWith.crossDomain = args.where;
+				return [];
+			},
+		},
 	} as unknown as never);
 	await app.register(registerAutomationRoutes);
 	await app.ready();
@@ -90,6 +96,7 @@ describe("GET /api/automation/rules", () => {
 		expect(queriedWith.cleanup).toEqual({ config: { userId: expectedUser } });
 		expect(queriedWith.autoTag).toEqual({ userId: expectedUser });
 		expect(queriedWith.notification).toEqual({ userId: expectedUser });
+		expect(queriedWith.crossDomain).toEqual({ userId: expectedUser });
 	});
 
 	it("maps a single criteria rule to a v1 predicate document", async () => {

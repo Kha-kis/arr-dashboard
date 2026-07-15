@@ -339,6 +339,19 @@ export type LabelSyncRule = Prisma.LabelSyncRuleModel
  */
 export type AutoTagRule = Prisma.AutoTagRuleModel
 /**
+ * Model CrossDomainRule
+ * Composer-authored automation that evaluates cached *arr library items and
+ * fans one match out to actions owned by multiple domains. Draft fields stay
+ * editable while deployed* fields remain the atomic active snapshot.
+ */
+export type CrossDomainRule = Prisma.CrossDomainRuleModel
+/**
+ * Model CrossDomainRuleMatch
+ * Durable once-per-deployment witness for scheduled match actions. A newly
+ * matching item gets one action fan-out; subsequent scans do not re-notify it.
+ */
+export type CrossDomainRuleMatch = Prisma.CrossDomainRuleMatchModel
+/**
  * Model TmdbListCache
  * Cached membership of a TMDb curated list. One row per (userId, listId, tmdbId).
  * Refreshed by the TMDb list cache scheduler every 4h. Used by the

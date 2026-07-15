@@ -49,6 +49,7 @@ export interface AutoTagRunResult {
 		tagsApplied: number;
 		failures: number;
 	};
+	itemOutcomes: Array<{ cacheId: string; success: boolean; error?: string }>;
 }
 
 interface ExecuteOpts {
@@ -57,6 +58,8 @@ interface ExecuteOpts {
 	arrClientFactory: ArrClientFactory;
 	encryptor: Encryptor;
 	log: FastifyBaseLogger;
+	/** Optional exact cache-row target set used by the cross-domain executor. */
+	targetCacheItemIds?: string[];
 }
 
 const SERVICE_TYPE_MAP: Record<string, "SONARR" | "RADARR"> = {
@@ -75,7 +78,7 @@ const AUTO_TAG_BATCH_SIZE = 500;
  * decoupled from the engine.
  */
 export async function executeAutoTagRule(opts: ExecuteOpts): Promise<AutoTagRunResult> {
-	const { rule, prisma, arrClientFactory, encryptor, log } = opts;
+	const { rule, prisma, arrClientFactory, encryptor, log, targetCacheItemIds } = opts;
 	const childLog = log.child({ ruleId: rule.id, ruleName: rule.name });
 
 	// Resolve scoped instances. Rule scope = (serviceFilter ∩ instanceFilter)
@@ -147,6 +150,7 @@ export async function executeAutoTagRule(opts: ExecuteOpts): Promise<AutoTagRunR
 	let totalMatched = 0;
 	let totalApplied = 0;
 	let totalFailures = 0;
+	const itemOutcomes: AutoTagRunResult["itemOutcomes"] = [];
 
 	for (const instance of instances) {
 		const result = await processInstance({
@@ -158,11 +162,13 @@ export async function executeAutoTagRule(opts: ExecuteOpts): Promise<AutoTagRunR
 			evalCtx,
 			compiledTitleRegexes,
 			log: childLog.child({ instanceId: instance.id }),
+			targetCacheItemIds,
 		});
 		totalScanned += result.scanned;
 		totalMatched += result.matched;
 		totalApplied += result.applied;
 		totalFailures += result.failures;
+		itemOutcomes.push(...result.itemOutcomes);
 	}
 
 	const totals = {
@@ -178,6 +184,7 @@ export async function executeAutoTagRule(opts: ExecuteOpts): Promise<AutoTagRunR
 			status: "success",
 			message: `No items matched (${totalScanned} scanned across ${instances.length} instance${instances.length === 1 ? "" : "s"}).`,
 			totals,
+			itemOutcomes,
 		};
 	}
 
@@ -186,6 +193,7 @@ export async function executeAutoTagRule(opts: ExecuteOpts): Promise<AutoTagRunR
 			status: "failed",
 			message: `All ${totalFailures} tag applications failed.`,
 			totals,
+			itemOutcomes,
 		};
 	}
 
@@ -194,6 +202,7 @@ export async function executeAutoTagRule(opts: ExecuteOpts): Promise<AutoTagRunR
 			status: "partial",
 			message: `Applied tag "${rule.tagName}" to ${totalApplied} item${totalApplied === 1 ? "" : "s"}, ${totalFailures} failure${totalFailures === 1 ? "" : "s"}.`,
 			totals,
+			itemOutcomes,
 		};
 	}
 
@@ -201,6 +210,7 @@ export async function executeAutoTagRule(opts: ExecuteOpts): Promise<AutoTagRunR
 		status: "success",
 		message: `Applied tag "${rule.tagName}" to ${totalApplied} item${totalApplied === 1 ? "" : "s"} across ${instances.length} instance${instances.length === 1 ? "" : "s"}.`,
 		totals,
+		itemOutcomes,
 	};
 }
 
@@ -213,6 +223,7 @@ interface ProcessInstanceArgs {
 	evalCtx: EvalContext;
 	compiledTitleRegexes: RegExp[];
 	log: FastifyBaseLogger;
+	targetCacheItemIds?: string[];
 }
 
 interface ProcessInstanceResult {
@@ -220,6 +231,7 @@ interface ProcessInstanceResult {
 	matched: number;
 	applied: number;
 	failures: number;
+	itemOutcomes: AutoTagRunResult["itemOutcomes"];
 }
 
 async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstanceResult> {
@@ -232,6 +244,7 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 		evalCtx,
 		compiledTitleRegexes,
 		log,
+		targetCacheItemIds,
 	} = args;
 
 	const matched: Array<{ item: CacheItemForEval; existingTags: number[] }> = [];
@@ -243,7 +256,10 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 	// the 768 MB container heap cap, especially under webhook concurrency.
 	while (true) {
 		const batch = await prisma.libraryCache.findMany({
-			where: { instanceId: instance.id },
+			where: {
+				instanceId: instance.id,
+				...(targetCacheItemIds ? { id: { in: targetCacheItemIds } } : {}),
+			},
 			select: {
 				id: true,
 				instanceId: true,
@@ -289,7 +305,7 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 	}
 
 	if (matched.length === 0) {
-		return { scanned: totalScanned, matched: 0, applied: 0, failures: 0 };
+		return { scanned: totalScanned, matched: 0, applied: 0, failures: 0, itemOutcomes: [] };
 	}
 
 	// Group write phase: build one ArrClient + ensureTag once for the whole instance.
@@ -310,6 +326,11 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 			matched: matched.length,
 			applied: 0,
 			failures: matched.length,
+			itemOutcomes: matched.map(({ item }) => ({
+				cacheId: item.id,
+				success: false,
+				error: "Failed to create *arr client",
+			})),
 		};
 	}
 
@@ -324,14 +345,21 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 			matched: matched.length,
 			applied: 0,
 			failures: matched.length,
+			itemOutcomes: matched.map(({ item }) => ({
+				cacheId: item.id,
+				success: false,
+				error: reason,
+			})),
 		};
 	}
 
 	let applied = 0;
 	let failures = 0;
+	const itemOutcomes: AutoTagRunResult["itemOutcomes"] = [];
 	for (const { item, existingTags } of matched) {
 		if (existingTags.includes(tagId)) {
 			applied++; // idempotent — already tagged
+			itemOutcomes.push({ cacheId: item.id, success: true });
 			continue;
 		}
 		const merged = [...existingTags, tagId];
@@ -350,6 +378,7 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 				tags: merged,
 			});
 			applied++;
+			itemOutcomes.push({ cacheId: item.id, success: true });
 
 			// Chain into Label Sync (Phase B): if any rules source from this
 			// (instance, tagName), fire them inline so the destination service
@@ -382,10 +411,11 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 			const reason = err instanceof ArrError ? err.message : String(err);
 			log.warn({ err: reason, arrItemId: item.arrItemId }, "Failed to apply tag to item");
 			failures++;
+			itemOutcomes.push({ cacheId: item.id, success: false, error: reason });
 		}
 	}
 
-	return { scanned: totalScanned, matched: matched.length, applied, failures };
+	return { scanned: totalScanned, matched: matched.length, applied, failures, itemOutcomes };
 }
 
 /**
@@ -549,5 +579,6 @@ function failure(message: string): AutoTagRunResult {
 			tagsApplied: 0,
 			failures: 0,
 		},
+		itemOutcomes: [],
 	};
 }

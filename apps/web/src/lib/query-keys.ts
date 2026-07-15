@@ -550,6 +550,7 @@ export const pulseKeys = {
 export const automationKeys = {
 	all: ["automation"] as const,
 	rules: () => ["automation", "rules"] as const,
+	crossDomainRules: () => ["automation", "cross-domain-rules"] as const,
 };
 
 export const quiKeys = {

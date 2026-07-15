@@ -1,4 +1,10 @@
-import type { AutomationRulesResponse } from "@arr/shared";
+import type {
+	AutomationRulesResponse,
+	CrossDomainDryRunResponse,
+	CrossDomainRuleDraft,
+	CrossDomainRuleResponse,
+	CrossDomainRulesResponse,
+} from "@arr/shared";
 import { apiRequest } from "./base";
 
 /**
@@ -8,3 +14,33 @@ import { apiRequest } from "./base";
 export async function fetchAutomationRules(): Promise<AutomationRulesResponse> {
 	return apiRequest<AutomationRulesResponse>("/api/automation/rules");
 }
+
+export const fetchCrossDomainRules = () =>
+	apiRequest<CrossDomainRulesResponse>("/api/automation/cross-domain-rules");
+
+export const createCrossDomainRule = (draft: CrossDomainRuleDraft) =>
+	apiRequest<CrossDomainRuleResponse>("/api/automation/cross-domain-rules", { json: draft });
+
+export const updateCrossDomainRule = (id: string, draft: CrossDomainRuleDraft) =>
+	apiRequest<CrossDomainRuleResponse>(`/api/automation/cross-domain-rules/${id}`, {
+		method: "PATCH",
+		json: draft,
+	});
+
+export const dryRunCrossDomainRule = (id: string) =>
+	apiRequest<CrossDomainDryRunResponse>(`/api/automation/cross-domain-rules/${id}/dry-run`, {
+		method: "POST",
+	});
+
+export const deployCrossDomainRule = (id: string) =>
+	apiRequest<CrossDomainRuleResponse>(`/api/automation/cross-domain-rules/${id}/deploy`, {
+		method: "POST",
+	});
+
+export const deactivateCrossDomainRule = (id: string) =>
+	apiRequest<CrossDomainRuleResponse>(`/api/automation/cross-domain-rules/${id}/deactivate`, {
+		method: "POST",
+	});
+
+export const deleteCrossDomainRule = (id: string) =>
+	apiRequest<void>(`/api/automation/cross-domain-rules/${id}`, { method: "DELETE" });
