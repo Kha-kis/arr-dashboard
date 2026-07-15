@@ -5,8 +5,8 @@
  *
  * The unified rule surface (charter §2.1 / §5.2): every domain's rules in one
  * place, normalized to v1 and rendered with {@link RuleDocumentView}. Authoring
- * lands in slices by context — library-cleanup first (create + edit via the
- * down-convert write path, PR-3b). Auto-tag and notifications authoring follow.
+ * lands in slices by context — library-cleanup, auto-tag, and notifications now
+ * create/edit through their existing domain write paths.
  *
  * Incognito: rule NAMES stay visible (ratified 2026-07-07 — consistent with the
  * rest of the app; usable in a screenshare); sensitive param VALUES are masked
@@ -36,8 +36,14 @@ const AutoTagRuleComposerDialog = lazy(() =>
 	})),
 );
 
+const NotificationRuleComposerDialog = lazy(() =>
+	import("./notification-rule-composer-dialog").then((m) => ({
+		default: m.NotificationRuleComposerDialog,
+	})),
+);
+
 /** Contexts this composer can author (grows as slices land). */
-type AuthorableContext = "library-cleanup" | "auto-tag";
+type AuthorableContext = "library-cleanup" | "auto-tag" | "notifications";
 
 const CONTEXT_LABELS: Record<RuleContextId, string> = {
 	"library-cleanup": "Library Cleanup",
@@ -75,7 +81,7 @@ function RuleCard({
 }: {
 	rule: AutomationRuleSummary;
 	incognito: boolean;
-	/** Provided only for rules this slice can author (parseable cleanup rules). */
+	/** Provided only for parseable rules whose context this composer can author. */
 	onEdit?: () => void;
 }) {
 	// Keyed on `document` (not a derived `broken` const) so the else branch
@@ -141,7 +147,9 @@ export function AutomationPanel() {
 
 	// Only these contexts have a composer authoring dialog in this slice.
 	const editableContext = (context: RuleContextId): AuthorableContext | null =>
-		context === "library-cleanup" || context === "auto-tag" ? context : null;
+		context === "library-cleanup" || context === "auto-tag" || context === "notifications"
+			? context
+			: null;
 
 	return (
 		<div className="space-y-4">
@@ -164,6 +172,14 @@ export function AutomationPanel() {
 					<Plus className="h-4 w-4" aria-hidden="true" />
 					New auto-tag rule
 				</button>
+				<button
+					type="button"
+					onClick={() => openCreate("notifications")}
+					className="inline-flex items-center gap-1.5 rounded-lg border border-border/50 bg-card/50 px-3 py-1.5 text-sm font-medium backdrop-blur-xs transition-colors hover:bg-card/80"
+				>
+					<Plus className="h-4 w-4" aria-hidden="true" />
+					New notification rule
+				</button>
 			</div>
 
 			<AsyncStateView
@@ -177,7 +193,7 @@ export function AutomationPanel() {
 					icon: Workflow,
 					title: "No automation rules yet",
 					description:
-						"Create a cleanup or auto-tag rule here, or add notification rules — they all appear here, unified.",
+						"Create cleanup, auto-tag, and notification rules here — they all appear in one unified view.",
 				}}
 			>
 				<div className="space-y-6">
@@ -223,8 +239,14 @@ export function AutomationPanel() {
 							onOpenChange={(open) => setComposer((prev) => ({ ...prev, open }))}
 							editRuleId={composer.editRuleId}
 						/>
-					) : (
+					) : composer.context === "auto-tag" ? (
 						<AutoTagRuleComposerDialog
+							open={composer.open}
+							onOpenChange={(open) => setComposer((prev) => ({ ...prev, open }))}
+							editRuleId={composer.editRuleId}
+						/>
+					) : (
+						<NotificationRuleComposerDialog
 							open={composer.open}
 							onOpenChange={(open) => setComposer((prev) => ({ ...prev, open }))}
 							editRuleId={composer.editRuleId}

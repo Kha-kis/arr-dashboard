@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { fieldMatchParamsSchema } from "../rules/field-match.js";
 
 // ============================================================================
 // Validation Helpers
@@ -259,11 +260,7 @@ export type PushSubscription = z.infer<typeof pushSubscriptionSchema>;
 // Notification Rules
 // ============================================================================
 
-export const ruleConditionSchema = z.object({
-	field: z.string().min(1), // "eventType", "title", "body", "metadata.*"
-	operator: z.enum(["equals", "not_equals", "contains", "greater_than", "in"]),
-	value: z.union([z.string(), z.number(), z.array(z.string())]),
-});
+export const ruleConditionSchema = fieldMatchParamsSchema;
 
 const timeFormatRegex = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 
