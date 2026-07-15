@@ -16,14 +16,26 @@ import { cn } from "../../../lib/utils";
 import { OIDCSetup } from "./oidc-setup";
 import { PasskeySetup } from "./passkey-setup";
 import { PasswordSetup } from "./password-setup";
+import { ServiceOnboarding } from "./service-onboarding";
 
 type SetupMethod = "password" | "oidc" | "passkey";
 
-export const SetupClient = () => {
+interface SetupClientProps {
+	stage: "account" | "services";
+}
+
+export const SetupClient = ({ stage }: SetupClientProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const { data: setupData } = useSetupRequired();
 	const [activeMethod, setActiveMethod] = useState<SetupMethod>("passkey");
 	const passwordPolicy = setupData?.passwordPolicy ?? "strict";
+	const continueToServices = () => {
+		window.location.href = "/setup?stage=services";
+	};
+
+	if (stage === "services") {
+		return <ServiceOnboarding />;
+	}
 
 	const methods = [
 		{ id: "passkey" as const, label: "Passkey", icon: KeyRound },
@@ -98,8 +110,12 @@ export const SetupClient = () => {
 					</div>
 
 					{/* Method-specific forms */}
-					{activeMethod === "passkey" && <PasskeySetup />}
-					{activeMethod === "password" && <PasswordSetup passwordPolicy={passwordPolicy} />}
+					{activeMethod === "passkey" && (
+						<PasskeySetup onAccountCreated={continueToServices} passwordPolicy={passwordPolicy} />
+					)}
+					{activeMethod === "password" && (
+						<PasswordSetup passwordPolicy={passwordPolicy} onAccountCreated={continueToServices} />
+					)}
 					{activeMethod === "oidc" && <OIDCSetup />}
 				</CardContent>
 			</Card>

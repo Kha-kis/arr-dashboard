@@ -1,9 +1,8 @@
 "use client";
 
-import type { CurrentUser } from "@arr/shared";
+import type { CurrentUser, PasswordPolicy } from "@arr/shared";
 import { startRegistration } from "@simplewebauthn/browser";
 import { KeyRound, Loader2 } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Alert, AlertDescription } from "../../../components/ui";
 import { Button } from "../../../components/ui/button";
@@ -11,15 +10,22 @@ import { Input } from "../../../components/ui/input";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { apiRequest } from "../../../lib/api-client/base";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { validatePassword } from "../../settings/lib/settings-utils";
 
 interface RegisterResponse {
 	user: CurrentUser;
 }
 
-export const PasskeySetup = () => {
-	const { gradient: themeGradient } = useThemeGradient();
+interface PasskeySetupProps {
+	onAccountCreated: () => void;
+	passwordPolicy?: PasswordPolicy;
+}
 
-	const router = useRouter();
+export const PasskeySetup = ({
+	onAccountCreated,
+	passwordPolicy = "strict",
+}: PasskeySetupProps) => {
+	const { gradient: themeGradient } = useThemeGradient();
 	const [formState, setFormState] = useState({
 		username: "",
 		password: "",
@@ -38,24 +44,9 @@ export const PasskeySetup = () => {
 			setError("Username and password are required");
 			return;
 		}
-		if (formState.password.length < 8) {
-			setError("Password must be at least 8 characters");
-			return;
-		}
-		if (!/[a-z]/.test(formState.password)) {
-			setError("Password must contain at least one lowercase letter");
-			return;
-		}
-		if (!/[A-Z]/.test(formState.password)) {
-			setError("Password must contain at least one uppercase letter");
-			return;
-		}
-		if (!/[0-9]/.test(formState.password)) {
-			setError("Password must contain at least one number");
-			return;
-		}
-		if (!/[^a-zA-Z0-9]/.test(formState.password)) {
-			setError("Password must contain at least one special character");
+		const passwordValidation = validatePassword(formState.password, passwordPolicy);
+		if (!passwordValidation.valid) {
+			setError(passwordValidation.message ?? "Password validation failed");
 			return;
 		}
 		if (formState.password !== formState.confirmPassword) {
@@ -79,12 +70,15 @@ export const PasskeySetup = () => {
 			userCreated = true;
 
 			// Step 2: Get passkey registration options
-			const options = await apiRequest<Parameters<typeof startRegistration>[0]>("/auth/passkey/register/options", {
-				method: "POST",
-				json: {
-					friendlyName: formState.passkeyName.trim() || `${formState.username}'s passkey`,
+			const options = await apiRequest<Parameters<typeof startRegistration>[0]>(
+				"/auth/passkey/register/options",
+				{
+					method: "POST",
+					json: {
+						friendlyName: formState.passkeyName.trim() || `${formState.username}'s passkey`,
+					},
 				},
-			});
+			);
 
 			// Step 3: Trigger WebAuthn registration
 			const registrationResponse = await startRegistration(options);
@@ -98,8 +92,7 @@ export const PasskeySetup = () => {
 				},
 			});
 
-			// Registration successful, redirect to dashboard
-			router.push("/dashboard");
+			onAccountCreated();
 		} catch (err: unknown) {
 			// If user was created but passkey registration failed, delete the incomplete account
 			if (userCreated) {
@@ -156,8 +149,9 @@ export const PasskeySetup = () => {
 					className="rounded-xl"
 				/>
 				<p className="text-xs text-muted-foreground">
-					Required as a backup login method. Must include uppercase, lowercase, number, and special
-					character.
+					{passwordPolicy === "relaxed"
+						? "Required as a backup login method. Must be at least 8 characters."
+						: "Required as a backup login method. Must include uppercase, lowercase, number, and special character."}
 				</p>
 			</div>
 			<div className="space-y-2">

@@ -2,7 +2,6 @@
 
 import type { CurrentUser } from "@arr/shared";
 import { Loader2, Lock } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Alert, AlertDescription } from "../../../components/ui";
 import { Button } from "../../../components/ui/button";
@@ -20,12 +19,14 @@ interface RegisterResponse {
 
 interface PasswordSetupProps {
 	passwordPolicy?: PasswordPolicy;
+	onAccountCreated: () => void;
 }
 
-export const PasswordSetup = ({ passwordPolicy = "strict" }: PasswordSetupProps) => {
+export const PasswordSetup = ({
+	passwordPolicy = "strict",
+	onAccountCreated,
+}: PasswordSetupProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
-
-	const router = useRouter();
 	const [formState, setFormState] = useState({
 		username: "",
 		password: "",
@@ -66,8 +67,7 @@ export const PasswordSetup = ({ passwordPolicy = "strict" }: PasswordSetupProps)
 				},
 			});
 
-			// Registration successful, redirect to dashboard
-			router.push("/dashboard");
+			onAccountCreated();
 		} catch (err: unknown) {
 			setError(getErrorMessage(err, "Failed to create admin account"));
 			setIsSubmitting(false);
