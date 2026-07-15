@@ -65,8 +65,8 @@ describe("ConsoleWalkthrough", () => {
 
 		expect(screen.queryByText("Living Room Jellyfin")).not.toBeInTheDocument();
 		expect(screen.getByText("linux-server")).toBeInTheDocument();
-		fireEvent.click(screen.getByRole("button", { name: "Back to starters" }));
-		expect(mocks.push).toHaveBeenCalledWith("/setup?stage=starters");
+		fireEvent.click(screen.getByRole("button", { name: "Back to TRaSH profile" }));
+		expect(mocks.push).toHaveBeenCalledWith("/setup?stage=trash");
 	});
 
 	it("allows the walkthrough to be skipped", () => {

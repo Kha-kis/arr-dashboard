@@ -5,7 +5,7 @@
  * fetching, importing, updating, and profile cloning operations.
  */
 
-import type { NamingSelectedPresets } from "@arr/shared";
+import type { NamingSelectedPresets, TrashTemplate } from "@arr/shared";
 import { apiRequest } from "../base";
 import type {
 	CustomQualityConfig,
@@ -57,9 +57,33 @@ export type UpdateQualityProfileTemplatePayload = {
 };
 
 export type ImportQualityProfileResponse = {
-	template: unknown;
+	template: TrashTemplate;
 	message: string;
 	customFormatsIncluded: number;
+};
+
+export type QualityProfileDetailsResponse = {
+	profile: unknown;
+	mandatoryCFs: Array<{ trash_id: string }>;
+	cfGroups: Array<{
+		trash_id: string;
+		default?: string | boolean;
+		defaultEnabled?: boolean;
+		custom_formats?: Array<
+			| string
+			| {
+					trash_id: string;
+					required?: boolean;
+					default?: string | boolean;
+					defaultChecked?: boolean;
+			  }
+		>;
+	}>;
+	stats?: {
+		mandatoryCount: number;
+		optionalGroupCount: number;
+		totalOptionalCFs: number;
+	};
 };
 
 // ============================================================================
@@ -277,8 +301,8 @@ export async function fetchQualityProfiles(
 export async function fetchQualityProfileDetails(
 	serviceType: ServiceType,
 	trashId: string,
-): Promise<{ profile: unknown }> {
-	return await apiRequest<{ profile: unknown }>(
+): Promise<QualityProfileDetailsResponse> {
+	return await apiRequest<QualityProfileDetailsResponse>(
 		`/api/trash-guides/quality-profiles/${serviceType}/${trashId}`,
 	);
 }

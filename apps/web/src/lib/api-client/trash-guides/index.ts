@@ -89,6 +89,7 @@ export type {
 	ProfileMatchResult,
 	PromoteOverridePayload,
 	PromoteOverrideResponse,
+	QualityProfileDetailsResponse,
 	// Profile matching types
 	RecommendedCF,
 	// Score update types
@@ -334,9 +335,9 @@ export type {
 	NamingConfigCreatePayload,
 	NamingConfigDeleteResponse,
 	NamingConfigSaveResponse,
+	NamingPresetsApiResponse,
 	NamingPreviewApiResponse,
 	NamingPreviewPayload,
-	NamingPresetsApiResponse,
 } from "./naming";
 export {
 	applyNaming,

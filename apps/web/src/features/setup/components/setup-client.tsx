@@ -19,11 +19,12 @@ import { PasskeySetup } from "./passkey-setup";
 import { PasswordSetup } from "./password-setup";
 import { ServiceOnboarding } from "./service-onboarding";
 import { StarterConfiguration } from "./starter-configuration";
+import { TrashProfileSetup } from "./trash-profile-setup";
 
 type SetupMethod = "password" | "oidc" | "passkey";
 
 interface SetupClientProps {
-	stage: "account" | "services" | "starters" | "console";
+	stage: "account" | "services" | "starters" | "trash" | "console";
 }
 
 export const SetupClient = ({ stage }: SetupClientProps) => {
@@ -40,6 +41,9 @@ export const SetupClient = ({ stage }: SetupClientProps) => {
 	}
 	if (stage === "starters") {
 		return <StarterConfiguration />;
+	}
+	if (stage === "trash") {
+		return <TrashProfileSetup />;
 	}
 	if (stage === "console") {
 		return <ConsoleWalkthrough />;
