@@ -26,11 +26,15 @@ import { qualityProfileKeys, TEMPLATES_QUERY_KEY } from "../../lib/query-keys";
 /**
  * Hook to fetch TRaSH Guides quality profiles for a service
  */
-export const useQualityProfiles = (serviceType: "RADARR" | "SONARR") =>
+export const useQualityProfiles = (
+	serviceType: "RADARR" | "SONARR",
+	options?: { enabled?: boolean },
+) =>
 	useQuery<QualityProfilesResponse>({
 		queryKey: qualityProfileKeys.list(serviceType),
 		queryFn: () => fetchQualityProfiles(serviceType),
 		staleTime: 10 * 60 * 1000, // 10 minutes
+		enabled: options?.enabled ?? true,
 	});
 
 /**

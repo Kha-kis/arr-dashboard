@@ -57,6 +57,14 @@ describe("SetupPage authenticated stages", () => {
 		expect(mocks.replace).not.toHaveBeenCalled();
 	});
 
+	it("renders the TRaSH profile stage for an authenticated user", () => {
+		mocks.stage = "trash";
+		render(<SetupPage />);
+
+		expect(screen.getByText("Setup stage: trash")).toBeInTheDocument();
+		expect(mocks.replace).not.toHaveBeenCalled();
+	});
+
 	it("preserves the Console stage when redirecting an expired session to login", async () => {
 		mocks.currentUser = { data: undefined, isLoading: false };
 

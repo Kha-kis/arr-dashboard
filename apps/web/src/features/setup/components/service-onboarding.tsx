@@ -120,7 +120,7 @@ export const ServiceOnboarding = () => {
 	return (
 		<div className="w-full max-w-4xl space-y-6 py-8">
 			<div className="space-y-3 text-center">
-				<p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Step 2 of 4</p>
+				<p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Step 2 of 5</p>
 				<h1
 					className="text-3xl font-bold tracking-tight"
 					style={{

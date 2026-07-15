@@ -17,13 +17,18 @@ const SetupPageContent = () => {
 	const searchParams = useSearchParams();
 	const requestedStage = searchParams.get("stage");
 	const requestedAuthenticatedStage =
-		requestedStage === "services" || requestedStage === "starters" || requestedStage === "console";
+		requestedStage === "services" ||
+		requestedStage === "starters" ||
+		requestedStage === "trash" ||
+		requestedStage === "console";
 	const requestedSetupPath =
 		requestedStage === "console"
 			? "/setup?stage=console"
-			: requestedStage === "starters"
-				? "/setup?stage=starters"
-				: "/setup?stage=services";
+			: requestedStage === "trash"
+				? "/setup?stage=trash"
+				: requestedStage === "starters"
+					? "/setup?stage=starters"
+					: "/setup?stage=services";
 	const { data: setupRequired, isLoading } = useSetupRequired();
 	const shouldVerifySession = setupRequired?.required === false && requestedAuthenticatedStage;
 	const { data: user, isLoading: userLoading } = useCurrentUser(shouldVerifySession);
