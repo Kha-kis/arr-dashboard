@@ -305,7 +305,7 @@ export const PROTECTED_ROUTE_GROUPS: readonly RouteGroup[] = [
 		register: registerTracearrRoutes,
 		maturity: "experimental",
 		summary:
-			"Tracearr integration (charter §2.2 / ADR-0007) — self-hosted media-analytics peer replacing Tautulli in 3.0. Typed reads against Tracearr's Public API (health, live streams + aggregate for the console card, watch history, stats, users, violations) plus the kill-session operator action (POST terminate). Instance CRUD + connection testing runs through /api/services; Statistics-on-Tracearr (C2) follows.",
+			"Tracearr integration (charter §2.2 / ADR-0007) — typed Public API reads for health, streams, history, stats, activity, users, and violations, plus stream termination. Powers the Console live-session card and Statistics analytics; instance CRUD and connection testing run through /api/services.",
 	},
 
 	// --- External integrations (Seerr / TRaSH Guides) ---

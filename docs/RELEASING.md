@@ -2,6 +2,12 @@
 
 Step-by-step checklist for publishing a new version of Arr Dashboard.
 
+> **3.0 cycle:** Use the
+> [3.0 release-readiness audit](3.0-release-readiness.md) for beta/RC entry
+> gates and the `next` → `main` promotion checklist. This document remains the
+> stable-tag checklist; the current Docker workflows do not yet publish
+> immutable images for prerelease tags.
+
 ## Pre-Release
 
 ### 0. Determine Release Scope
