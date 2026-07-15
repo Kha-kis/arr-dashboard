@@ -36,11 +36,7 @@ import { CFConfigurationCloned } from "./cf-configuration-cloned";
 import { CFConfigurationEdit } from "./cf-configuration-edit";
 import type { CFSelectionState, ConditionEditorTarget } from "./cf-configuration-types";
 import type { ResolvedCF } from "./cf-resolution";
-import type {
-	WizardEditingTemplate,
-	ResolveScoreFn,
-} from "../../types/wizard-types";
-
+import type { WizardEditingTemplate, ResolveScoreFn } from "../../types/wizard-types";
 
 /**
  * Wizard-specific profile type that allows undefined trashId for edit mode.
@@ -409,7 +405,9 @@ export const CFConfiguration = ({
 	const resolveScore: ResolveScoreFn = (cf, fallback?) => {
 		const cfRecord = cf as Record<string, unknown>;
 		const originalConfig = cfRecord.originalConfig as Record<string, unknown> | undefined;
-		const trashScores = (originalConfig?.trash_scores ?? cfRecord.trash_scores) as Record<string, number> | undefined;
+		const trashScores = (originalConfig?.trash_scores ?? cfRecord.trash_scores) as
+			| Record<string, number>
+			| undefined;
 		return trashScores?.[scoreSet] ?? trashScores?.default ?? fallback ?? 0;
 	};
 
@@ -432,7 +430,9 @@ export const CFConfiguration = ({
 						default: cf.default,
 						defaultChecked: cf.defaultChecked,
 						source: undefined as string | undefined,
-						includeCustomFormatWhenRenaming: cfRecord.includeCustomFormatWhenRenaming as boolean | undefined,
+						includeCustomFormatWhenRenaming: cfRecord.includeCustomFormatWhenRenaming as
+							| boolean
+							| undefined,
 						specifications: cfRecord.specifications as unknown[] | undefined,
 					};
 				}),
@@ -532,10 +532,7 @@ export const CFConfiguration = ({
 						<AlertDescription>
 							Found{" "}
 							{filteredMandatoryCFs.length +
-								filteredGroupedCFs.reduce(
-									(acc, g) => acc + g.customFormats.length,
-									0,
-								)}{" "}
+								filteredGroupedCFs.reduce((acc, g) => acc + g.customFormats.length, 0)}{" "}
 							custom formats matching &quot;{searchQuery}&quot;
 						</AlertDescription>
 					</Alert>
@@ -967,25 +964,29 @@ export const CFConfiguration = ({
 			)}
 
 			{/* Additional Custom Formats - Selected from Browse */}
-			{data && <AdditionalCFSection
-				data={data}
-				selections={selections}
-				onToggleCF={(trashId) => toggleCF(trashId)}
-				onUpdateSelection={updateSelection}
-				resolveScore={resolveScore}
-			/>}
+			{data && (
+				<AdditionalCFSection
+					data={data}
+					selections={selections}
+					onToggleCF={(trashId) => toggleCF(trashId)}
+					onUpdateSelection={updateSelection}
+					resolveScore={resolveScore}
+				/>
+			)}
 
 			{/* Browse All Custom Formats */}
-			{data && <BrowseCFCatalog
-				data={data}
-				selections={selections}
-				onToggleCF={(trashId) => toggleCF(trashId)}
-				onUpdateSelection={updateSelection}
-				resolveScore={resolveScore}
-				searchQuery={searchQuery}
-				isClonedProfile={isClonedProfile}
-				themeGradient={themeGradient}
-			/>}
+			{data && (
+				<BrowseCFCatalog
+					data={data}
+					selections={selections}
+					onToggleCF={(trashId) => toggleCF(trashId)}
+					onUpdateSelection={updateSelection}
+					resolveScore={resolveScore}
+					searchQuery={searchQuery}
+					isClonedProfile={isClonedProfile}
+					themeGradient={themeGradient}
+				/>
+			)}
 
 			{/* Navigation */}
 			<div

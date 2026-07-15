@@ -3,7 +3,13 @@
 import { Activity, RefreshCw, Settings, Target } from "lucide-react";
 import { POLLING_ACTIVE } from "../../../lib/polling-intervals";
 import { useState } from "react";
-import { DataFreshness, PremiumPageHeader, PremiumPageLoading, PremiumTabs, type PremiumTab } from "../../../components/layout";
+import {
+	DataFreshness,
+	PremiumPageHeader,
+	PremiumPageLoading,
+	PremiumTabs,
+	type PremiumTab,
+} from "../../../components/layout";
 import { Alert, AlertDescription, Button } from "../../../components/ui";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useHuntingStatus } from "../hooks/useHuntingStatus";
@@ -84,13 +90,13 @@ export const HuntingClient = () => {
 							/>
 						)}
 						<Button
-						variant="secondary"
-						onClick={() => void refetch()}
-						className="gap-2 border-border/50 bg-card/50 backdrop-blur-xs hover:bg-card/80"
-					>
-						<RefreshCw className="h-4 w-4" />
-						Refresh
-					</Button>
+							variant="secondary"
+							onClick={() => void refetch()}
+							className="gap-2 border-border/50 bg-card/50 backdrop-blur-xs hover:bg-card/80"
+						>
+							<RefreshCw className="h-4 w-4" />
+							Refresh
+						</Button>
 					</div>
 				}
 			/>
@@ -112,7 +118,13 @@ export const HuntingClient = () => {
 				className="animate-in fade-in slide-in-from-bottom-4 duration-500"
 				style={{ animationDelay: "200ms", animationFillMode: "backwards" }}
 			>
-				{activeTab === "overview" && <HuntingOverview status={status} onRefresh={refetch} onConfigure={() => setActiveTab("config")} />}
+				{activeTab === "overview" && (
+					<HuntingOverview
+						status={status}
+						onRefresh={refetch}
+						onConfigure={() => setActiveTab("config")}
+					/>
+				)}
 				{activeTab === "activity" && <HuntingActivity />}
 				{activeTab === "config" && <HuntingConfig />}
 			</div>

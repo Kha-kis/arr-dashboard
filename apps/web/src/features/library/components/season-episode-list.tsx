@@ -124,7 +124,11 @@ export const SeasonEpisodeList = ({
 							<div className="flex-1 min-w-0">
 								<div className="flex items-center gap-2">
 									<span className="font-medium text-foreground">E{episode.episodeNumber}</span>
-									<span className="text-muted-foreground truncate">{incognitoMode ? getLinuxIsoName(episode.title || "TBA") : episode.title || "TBA"}</span>
+									<span className="text-muted-foreground truncate">
+										{incognitoMode
+											? getLinuxIsoName(episode.title || "TBA")
+											: episode.title || "TBA"}
+									</span>
 									{episode.finaleType && (
 										<span className="text-[10px] uppercase tracking-wider text-amber-400/70 font-medium">
 											{episode.finaleType}

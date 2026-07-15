@@ -4,11 +4,7 @@ import type { SeerrNotificationAgent } from "@arr/shared";
 import { AlertCircle, Bell, Send, Settings, ToggleLeft, ToggleRight } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import {
-	GradientButton,
-	PremiumEmptyState,
-	PremiumSkeleton,
-} from "../../../components/layout";
+import { GradientButton, PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
 import { Button } from "../../../components/ui";
 import {
 	useSeerrNotifications,

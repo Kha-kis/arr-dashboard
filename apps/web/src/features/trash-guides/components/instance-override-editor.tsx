@@ -232,7 +232,8 @@ export const InstanceOverrideEditor = ({
 				<LegacyDialogDescription>
 					Customize Custom Format scores and enable/disable CFs for this instance
 					{templateName && ` - Template: "${templateName}"`}
-					{instanceLabel && ` → Instance: "${incognitoMode ? getLinuxInstanceName(instanceLabel) : instanceLabel}"`}
+					{instanceLabel &&
+						` → Instance: "${incognitoMode ? getLinuxInstanceName(instanceLabel) : instanceLabel}"`}
 				</LegacyDialogDescription>
 			</LegacyDialogHeader>
 

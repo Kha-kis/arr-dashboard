@@ -302,7 +302,8 @@ function JsonImportTab({
 					customFormats: cfs.map((cf) => ({
 						name: cf.name,
 						includeCustomFormatWhenRenaming: cf.includeCustomFormatWhenRenaming,
-						specifications: cf.specifications as ImportUserCFFromJsonRequest["customFormats"][number]["specifications"],
+						specifications:
+							cf.specifications as ImportUserCFFromJsonRequest["customFormats"][number]["specifications"],
 					})),
 					defaultScore,
 				},
@@ -553,7 +554,8 @@ function InstanceImportTab({
 						<option value="">Choose an instance...</option>
 						{arrInstances.map((instance) => (
 							<option key={instance.id} value={instance.id}>
-								{incognitoMode ? getLinuxInstanceName(instance.label) : instance.label} ({instance.service})
+								{incognitoMode ? getLinuxInstanceName(instance.label) : instance.label} (
+								{instance.service})
 							</option>
 						))}
 					</select>

@@ -137,7 +137,9 @@ export async function getPasskeyCredentials(): Promise<PasskeyCredential[]> {
 	return data.credentials;
 }
 
-export async function getPasskeyRegistrationOptions(friendlyName?: string): Promise<WebAuthnOptions> {
+export async function getPasskeyRegistrationOptions(
+	friendlyName?: string,
+): Promise<WebAuthnOptions> {
 	return apiRequest("/auth/passkey/register/options", {
 		method: "POST",
 		json: { friendlyName },
@@ -154,13 +156,19 @@ export async function verifyPasskeyRegistration(
 	});
 }
 
-export async function getPasskeyLoginOptions(): Promise<{ options: WebAuthnOptions; sessionId: string }> {
+export async function getPasskeyLoginOptions(): Promise<{
+	options: WebAuthnOptions;
+	sessionId: string;
+}> {
 	return apiRequest("/auth/passkey/login/options", {
 		method: "POST",
 	});
 }
 
-export async function verifyPasskeyLogin(response: WebAuthnCredentialJSON, sessionId: string): Promise<CurrentUser> {
+export async function verifyPasskeyLogin(
+	response: WebAuthnCredentialJSON,
+	sessionId: string,
+): Promise<CurrentUser> {
 	const data = await apiRequest<CurrentUserResponse>("/auth/passkey/login/verify", {
 		method: "POST",
 		json: { response, sessionId },

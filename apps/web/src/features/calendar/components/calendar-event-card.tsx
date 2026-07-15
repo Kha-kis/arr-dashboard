@@ -92,9 +92,7 @@ const MetaChip = ({
 }) => (
 	<span
 		className={`inline-flex items-center gap-1 text-[11px] ${
-			variant === "muted"
-				? "text-muted-foreground/30"
-				: "text-muted-foreground/50"
+			variant === "muted" ? "text-muted-foreground/30" : "text-muted-foreground/50"
 		}`}
 	>
 		{Icon && <Icon className="h-3 w-3 shrink-0" />}
@@ -122,9 +120,7 @@ export const CalendarEventCard = ({
 	// Plex deep link — lookup by "type:tmdbId" key
 	const plexUrl =
 		event.tmdbId != null && (event.service === "sonarr" || event.service === "radarr")
-			? plexUrlMap.get(
-					`${event.service === "radarr" ? "movie" : "series"}:${event.tmdbId}`,
-				)
+			? plexUrlMap.get(`${event.service === "radarr" ? "movie" : "series"}:${event.tmdbId}`)
 			: undefined;
 
 	const episodeCode =
@@ -134,12 +130,12 @@ export const CalendarEventCard = ({
 
 	const hasMultipleInstances = event.allInstances.length > 1;
 	const instancesDisplay = incognitoMode
-		? (hasMultipleInstances
+		? hasMultipleInstances
 			? event.allInstances.map((inst) => getLinuxInstanceName(inst.instanceName)).join(", ")
-			: getLinuxInstanceName(event.instanceName))
-		: (hasMultipleInstances
+			: getLinuxInstanceName(event.instanceName)
+		: hasMultipleInstances
 			? event.allInstances.map((inst) => inst.instanceName).join(", ")
-			: event.instanceName);
+			: event.instanceName;
 
 	const hasPoster = !incognitoMode && !!event.posterUrl;
 
@@ -206,10 +202,7 @@ export const CalendarEventCard = ({
 							>
 								{instancesDisplay}
 								{hasMultipleInstances && (
-									<span
-										className="ml-1 font-bold"
-										style={{ color: serviceGradient.from }}
-									>
+									<span className="ml-1 font-bold" style={{ color: serviceGradient.from }}>
 										({event.allInstances.length})
 									</span>
 								)}
@@ -225,11 +218,7 @@ export const CalendarEventCard = ({
 
 							{/* Time */}
 							<MetaChip icon={Clock}>
-								{formatTime(
-									event.airDateUtc ??
-										event.airDate ??
-										event.releaseDate,
-								)}
+								{formatTime(event.airDateUtc ?? event.airDate ?? event.releaseDate)}
 							</MetaChip>
 						</div>
 
@@ -257,11 +246,7 @@ export const CalendarEventCard = ({
 								}}
 							>
 								{/* eslint-disable-next-line @next/next/no-img-element -- Remote poster from arr instance */}
-								<img
-									src={event.posterUrl}
-									alt=""
-									className="h-full w-full object-cover"
-								/>
+								<img src={event.posterUrl} alt="" className="h-full w-full object-cover" />
 							</div>
 						)}
 						<div className="flex-1 min-w-0">
@@ -291,21 +276,13 @@ export const CalendarEventCard = ({
 
 					{/* Metadata row */}
 					<div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
-						{details.runtime && (
-							<MetaChip icon={Clock}>{details.runtime} min</MetaChip>
-						)}
+						{details.runtime && <MetaChip icon={Clock}>{details.runtime} min</MetaChip>}
 						{details.network && !incognitoMode && <MetaChip>{details.network}</MetaChip>}
 						{details.status && <MetaChip>{details.status}</MetaChip>}
 						{details.monitoring !== undefined && (
 							<MetaChip
-								icon={
-									details.monitoring === "Monitored" ? Eye : EyeOff
-								}
-								variant={
-									details.monitoring === "Monitored"
-										? "default"
-										: "muted"
-								}
+								icon={details.monitoring === "Monitored" ? Eye : EyeOff}
+								variant={details.monitoring === "Monitored" ? "default" : "muted"}
 							>
 								{details.monitoring}
 							</MetaChip>
@@ -313,19 +290,13 @@ export const CalendarEventCard = ({
 						{details.library !== undefined && (
 							<MetaChip
 								icon={HardDrive}
-								variant={
-									details.library === "In library"
-										? "default"
-										: "muted"
-								}
+								variant={details.library === "In library" ? "default" : "muted"}
 							>
 								{details.library}
 							</MetaChip>
 						)}
 						{details.genres && <MetaChip>{details.genres}</MetaChip>}
-						{details.albumType && (
-							<MetaChip>{details.albumType}</MetaChip>
-						)}
+						{details.albumType && <MetaChip>{details.albumType}</MetaChip>}
 					</div>
 
 					{/* External links */}

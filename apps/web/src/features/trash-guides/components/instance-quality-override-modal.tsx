@@ -189,12 +189,15 @@ export const InstanceQualityOverrideModal = ({
 				<DialogHeader>
 					<DialogTitle className="flex items-center gap-2">
 						<Server className="h-5 w-5 text-purple-500" />
-						Quality Settings for {incognitoMode ? getLinuxInstanceName(instanceLabel) : instanceLabel}
+						Quality Settings for{" "}
+						{incognitoMode ? getLinuxInstanceName(instanceLabel) : instanceLabel}
 					</DialogTitle>
 					<DialogDescription>
 						Customize quality settings for{" "}
-						<strong className="text-foreground">{incognitoMode ? getLinuxInstanceName(instanceLabel) : instanceLabel}</strong> only. Other instances using
-						&ldquo;{templateName}&rdquo; will not be affected.
+						<strong className="text-foreground">
+							{incognitoMode ? getLinuxInstanceName(instanceLabel) : instanceLabel}
+						</strong>{" "}
+						only. Other instances using &ldquo;{templateName}&rdquo; will not be affected.
 					</DialogDescription>
 				</DialogHeader>
 
@@ -324,7 +327,8 @@ export const InstanceQualityOverrideModal = ({
 												</span>
 											</div>
 											<p className="text-xs text-muted-foreground pl-7">
-												Different settings just for {incognitoMode ? getLinuxInstanceName(instanceLabel) : instanceLabel}.
+												Different settings just for{" "}
+												{incognitoMode ? getLinuxInstanceName(instanceLabel) : instanceLabel}.
 											</p>
 										</button>
 									</div>

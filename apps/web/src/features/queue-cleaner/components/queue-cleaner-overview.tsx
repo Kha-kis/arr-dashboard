@@ -206,7 +206,9 @@ const InstanceStatusCard = ({ instance, onRefresh, animationDelay }: InstanceSta
 							<div>
 								<div className="flex items-center gap-2">
 									<h4 className="font-semibold text-[14px] text-foreground leading-snug">
-										{incognitoMode ? getLinuxInstanceName(instance.instanceName) : instance.instanceName}
+										{incognitoMode
+											? getLinuxInstanceName(instance.instanceName)
+											: instance.instanceName}
 									</h4>
 									<ServiceBadge service={instance.service} />
 									{instance.dryRunMode && instance.hasConfig && (
@@ -233,9 +235,7 @@ const InstanceStatusCard = ({ instance, onRefresh, animationDelay }: InstanceSta
 							}}
 						>
 							<div className="text-[10px] text-muted-foreground/50">Cleaned</div>
-							<div className="text-lg font-semibold text-foreground">
-								{instance.cleanedToday}
-							</div>
+							<div className="text-lg font-semibold text-foreground">{instance.cleanedToday}</div>
 						</div>
 						<div
 							className="rounded-lg p-2.5 text-center"
@@ -245,9 +245,7 @@ const InstanceStatusCard = ({ instance, onRefresh, animationDelay }: InstanceSta
 							}}
 						>
 							<div className="text-[10px] text-muted-foreground/50">Skipped</div>
-							<div className="text-lg font-semibold text-foreground">
-								{instance.skippedToday}
-							</div>
+							<div className="text-lg font-semibold text-foreground">{instance.skippedToday}</div>
 						</div>
 						<div
 							className="rounded-lg p-2.5 text-center"

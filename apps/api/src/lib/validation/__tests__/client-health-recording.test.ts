@@ -76,7 +76,11 @@ describe("Client health recording pattern", () => {
 
 			const health = integrationHealth.getByIntegration("plex");
 			expect(health).toBeDefined();
-			expect(health!.categories["/library/sections"]).toEqual({ total: 1, validated: 1, rejected: 0 });
+			expect(health!.categories["/library/sections"]).toEqual({
+				total: 1,
+				validated: 1,
+				rejected: 0,
+			});
 		});
 
 		it("records failure on invalid Plex response", () => {
@@ -87,7 +91,11 @@ describe("Client health recording pattern", () => {
 			).toThrow();
 
 			const health = integrationHealth.getByIntegration("plex");
-			expect(health!.categories["/library/sections"]).toEqual({ total: 1, validated: 0, rejected: 1 });
+			expect(health!.categories["/library/sections"]).toEqual({
+				total: 1,
+				validated: 0,
+				rejected: 1,
+			});
 		});
 	});
 
@@ -118,7 +126,10 @@ describe("Client health recording pattern", () => {
 			const raw = { version: "2.0.0", commitTag: "abc123" };
 
 			const result = parseAndRecord<{ version: string; commitTag: string }>(
-				raw, seerrStatusSchema, "seerr", "getStatus",
+				raw,
+				seerrStatusSchema,
+				"seerr",
+				"getStatus",
 			);
 
 			expect(result.version).toBe("2.0.0");
@@ -144,7 +155,11 @@ describe("Client health recording pattern", () => {
 
 			parseAndRecord(valid, seerrStatusSchema, "seerr", "getStatus");
 			parseAndRecord(valid, seerrStatusSchema, "seerr", "getStatus");
-			try { parseAndRecord(invalid, seerrStatusSchema, "seerr", "getStatus"); } catch { /* expected */ }
+			try {
+				parseAndRecord(invalid, seerrStatusSchema, "seerr", "getStatus");
+			} catch {
+				/* expected */
+			}
 
 			const health = integrationHealth.getByIntegration("seerr");
 			expect(health!.categories.getStatus).toEqual({ total: 3, validated: 2, rejected: 1 });
@@ -155,7 +170,11 @@ describe("Client health recording pattern", () => {
 	describe("Cross-integration aggregation", () => {
 		it("getAll() aggregates health from all three clients", () => {
 			// Simulate typical operation: all three clients reporting health
-			integrationHealth.record("plex", "/library/sections", { total: 1, validated: 1, rejected: 0 });
+			integrationHealth.record("plex", "/library/sections", {
+				total: 1,
+				validated: 1,
+				rejected: 0,
+			});
 			integrationHealth.record("tautulli", "get_history", { total: 5, validated: 5, rejected: 0 });
 			integrationHealth.record("seerr", "getRequests", { total: 3, validated: 2, rejected: 1 });
 

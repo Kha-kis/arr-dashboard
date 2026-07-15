@@ -348,12 +348,10 @@ export class DeploymentExecutorService {
 				}
 
 				if (existingCF?.id) {
-					const specifications = (templateCF.originalConfig?.specifications || []).map(
-						(spec) => ({
-							...spec,
-							fields: transformFieldsToArray(spec.fields),
-						}),
-					);
+					const specifications = (templateCF.originalConfig?.specifications || []).map((spec) => ({
+						...spec,
+						fields: transformFieldsToArray(spec.fields),
+					}));
 
 					const updatedCF = {
 						...existingCF,
@@ -368,12 +366,10 @@ export class DeploymentExecutorService {
 					updated++;
 					details.updated.push(templateCF.name);
 				} else {
-					const specifications = (templateCF.originalConfig?.specifications || []).map(
-						(spec) => ({
-							...spec,
-							fields: transformFieldsToArray(spec.fields),
-						}),
-					);
+					const specifications = (templateCF.originalConfig?.specifications || []).map((spec) => ({
+						...spec,
+						fields: transformFieldsToArray(spec.fields),
+					}));
 
 					const newCF = {
 						name: templateCF.name,
@@ -1045,7 +1041,10 @@ export class DeploymentExecutorService {
 					}
 				}
 			} catch (conflictCheckError) {
-				log.debug({ err: conflictCheckError }, "CF conflict check skipped — data may not be cached");
+				log.debug(
+					{ err: conflictCheckError },
+					"CF conflict check skipped — data may not be cached",
+				);
 			}
 
 			cfResult.details.orphaned = profileResult.orphanedCFs;

@@ -300,10 +300,10 @@ export function AppearanceTab() {
 									</div>
 
 									<div className="flex items-center gap-1 p-1 rounded-lg bg-muted/50">
-										{([
+										{[
 											{ value: 0 as WeekStart, label: "Sun" },
 											{ value: 1 as WeekStart, label: "Mon" },
-										]).map(({ value, label }) => (
+										].map(({ value, label }) => (
 											<button
 												key={value}
 												type="button"

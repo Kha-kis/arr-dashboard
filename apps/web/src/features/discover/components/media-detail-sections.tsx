@@ -307,28 +307,30 @@ export const ExternalLinksSection: React.FC<ExternalLinksSectionProps> = ({
 						TVDB
 					</button>
 				)}
-				{plexUrl && (() => {
-					const watchColors = watchLabel === "Jellyfin"
-						? BRAND_COLORS.jellyfin
-						: watchLabel === "Emby"
-							? BRAND_COLORS.emby
-							: BRAND_COLORS.plex;
-					return (
-						<button
-							type="button"
-							className={btnClass}
-							style={{
-								backgroundColor: watchColors.bg,
-								border: `1px solid ${watchColors.border}`,
-								color: watchColors.text,
-							}}
-							onClick={() => safeOpenUrl(plexUrl)}
-						>
-							<ExternalLink className="h-3.5 w-3.5" />
-							Watch in {watchLabel}
-						</button>
-					);
-				})()}
+				{plexUrl &&
+					(() => {
+						const watchColors =
+							watchLabel === "Jellyfin"
+								? BRAND_COLORS.jellyfin
+								: watchLabel === "Emby"
+									? BRAND_COLORS.emby
+									: BRAND_COLORS.plex;
+						return (
+							<button
+								type="button"
+								className={btnClass}
+								style={{
+									backgroundColor: watchColors.bg,
+									border: `1px solid ${watchColors.border}`,
+									color: watchColors.text,
+								}}
+								onClick={() => safeOpenUrl(plexUrl)}
+							>
+								<ExternalLink className="h-3.5 w-3.5" />
+								Watch in {watchLabel}
+							</button>
+						);
+					})()}
 			</div>
 		</div>
 	);

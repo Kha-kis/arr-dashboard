@@ -687,14 +687,24 @@ describe("golden test — multi-rule priority evaluation", () => {
 	];
 
 	it("first matching rule wins (declined request takes priority)", () => {
-		const result = evaluateItemAgainstRules(declinedRequest, rules as LibraryCleanupRule[], "RADARR", ctx);
+		const result = evaluateItemAgainstRules(
+			declinedRequest,
+			rules as LibraryCleanupRule[],
+			"RADARR",
+			ctx,
+		);
 		expect(result).not.toBeNull();
 		expect(result!.ruleId).toBe("r-declined");
 		expect(result!.action).toBe("delete");
 	});
 
 	it("composite AND rule matches old low-rated item", () => {
-		const result = evaluateItemAgainstRules(oldLowRated, rules as LibraryCleanupRule[], "RADARR", ctx);
+		const result = evaluateItemAgainstRules(
+			oldLowRated,
+			rules as LibraryCleanupRule[],
+			"RADARR",
+			ctx,
+		);
 		// oldLowRated has no seerr request (tmdbId 12345 has declined request, but this item
 		// also has tmdbId 12345 in its data — it WILL match r-declined first)
 		expect(result).not.toBeNull();
@@ -709,7 +719,12 @@ describe("golden test — multi-rule priority evaluation", () => {
 		//   "never" with null watch → "Never watched (per Plex)"... wait
 		//   Actually: watch is null (not in plexMap), so returns null for "never"
 		//   because the function only returns match when watch exists but lastWatchedAt is null
-		const result = evaluateItemAgainstRules(recentHighRated, rules as LibraryCleanupRule[], "RADARR", ctx);
+		const result = evaluateItemAgainstRules(
+			recentHighRated,
+			rules as LibraryCleanupRule[],
+			"RADARR",
+			ctx,
+		);
 		// plex_last_watched with "never": if watch is null (no plex entry), the function returns null
 		// (you need to be IN plex with null lastWatchedAt to match)
 		// But wait — looking at the code: `if (!watch || watch.lastWatchedAt === null)` — so null watch
@@ -723,7 +738,12 @@ describe("golden test — multi-rule priority evaluation", () => {
 		// protectedByGenre has rating 2.0, is old (90 days) — matches r-low-rating conditions
 		// BUT has excludeTitles pattern "Protected" which matches "Protected Film"
 		// So r-low-rating skips. Check if r-never-watched catches it.
-		const result = evaluateItemAgainstRules(protectedByGenre, rules as LibraryCleanupRule[], "RADARR", ctx);
+		const result = evaluateItemAgainstRules(
+			protectedByGenre,
+			rules as LibraryCleanupRule[],
+			"RADARR",
+			ctx,
+		);
 		// protectedByGenre has tmdbId 12345 → seerr has declined request → r-declined matches
 		expect(result).not.toBeNull();
 		expect(result!.ruleId).toBe("r-declined");
@@ -741,7 +761,12 @@ describe("golden test — multi-rule priority evaluation", () => {
 			}),
 		});
 
-		const result = evaluateItemAgainstRules(noSeerrItem, rules as LibraryCleanupRule[], "RADARR", ctx);
+		const result = evaluateItemAgainstRules(
+			noSeerrItem,
+			rules as LibraryCleanupRule[],
+			"RADARR",
+			ctx,
+		);
 		// r-declined: no seerr data → skip
 		// r-low-rating: rating 2.5 < 5 AND age ~90 days > 60 → MATCH
 		expect(result).not.toBeNull();

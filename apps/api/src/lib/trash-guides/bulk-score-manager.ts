@@ -28,7 +28,6 @@ const log = loggers.trashGuides;
 // SDK type aliases
 type SdkCustomFormat = Awaited<ReturnType<SonarrClient["customFormat"]["getAll"]>>[number];
 
-
 // ============================================================================
 // Bulk Score Manager Class
 // ============================================================================

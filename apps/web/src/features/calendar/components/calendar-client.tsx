@@ -40,10 +40,7 @@ export const CalendarClient = () => {
 	const { eventsByDate, serviceMap, instanceOptions, filteredEvents } = calendarData;
 
 	// Plex deep links — only fetched when Plex is configured
-	const hasPlex = useMemo(
-		() => services?.some((s) => s.service === "plex") ?? false,
-		[services],
-	);
+	const hasPlex = useMemo(() => services?.some((s) => s.service === "plex") ?? false, [services]);
 	const plexUrlMap = useCalendarPlexLinks(filteredEvents, hasPlex);
 
 	const handleOpenExternal = useCallback((href: string) => {
@@ -61,22 +58,13 @@ export const CalendarClient = () => {
 				{/* Header skeleton */}
 				<div className="flex items-center gap-5">
 					<PremiumSkeleton className="h-7 w-24 rounded-lg" />
-					<PremiumSkeleton
-						className="h-5 w-px"
-						style={{ animationDelay: "30ms" }}
-					/>
-					<PremiumSkeleton
-						className="h-7 w-44 rounded-lg"
-						style={{ animationDelay: "50ms" }}
-					/>
+					<PremiumSkeleton className="h-5 w-px" style={{ animationDelay: "30ms" }} />
+					<PremiumSkeleton className="h-7 w-44 rounded-lg" style={{ animationDelay: "50ms" }} />
 				</div>
 
 				{/* Filter skeleton */}
 				<div className="flex gap-2">
-					<PremiumSkeleton
-						className="h-9 w-60 rounded-xl"
-						style={{ animationDelay: "80ms" }}
-					/>
+					<PremiumSkeleton className="h-9 w-60 rounded-xl" style={{ animationDelay: "80ms" }} />
 					<PremiumSkeleton
 						className="h-8 w-[140px] rounded-xl"
 						style={{ animationDelay: "100ms" }}
@@ -114,10 +102,7 @@ export const CalendarClient = () => {
 					{/* Panel skeleton */}
 					<div className="mt-6 xl:mt-0 xl:w-[380px] xl:shrink-0">
 						<div className="rounded-2xl border border-border/10 overflow-hidden">
-							<PremiumSkeleton
-								className="h-16"
-								style={{ animationDelay: "520ms" }}
-							/>
+							<PremiumSkeleton className="h-16" style={{ animationDelay: "520ms" }} />
 							<div className="p-4 space-y-2.5">
 								{Array.from({ length: 3 }).map((_, i) => (
 									<PremiumSkeleton
@@ -169,8 +154,7 @@ export const CalendarClient = () => {
 			{error && (
 				<Alert variant="danger">
 					<AlertDescription>
-						Unable to load calendar data. Please refresh and try
-						again.
+						Unable to load calendar data. Please refresh and try again.
 					</AlertDescription>
 				</Alert>
 			)}

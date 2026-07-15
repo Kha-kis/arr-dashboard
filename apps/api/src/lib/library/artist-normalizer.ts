@@ -72,7 +72,10 @@ export const buildArtistItem = (
 			trackFileCount,
 			totalTrackCount: toNumber(stats?.totalTrackCount),
 			// Use trackCount (monitored albums only) for missing calculation; fall back to totalTrackCount
-			missingTrackCount: Math.max((toNumber(stats?.trackCount) ?? toNumber(stats?.totalTrackCount) ?? 0) - trackFileCount, 0),
+			missingTrackCount: Math.max(
+				(toNumber(stats?.trackCount) ?? toNumber(stats?.totalTrackCount) ?? 0) - trackFileCount,
+				0,
+			),
 		},
 	} as LibraryItem;
 };

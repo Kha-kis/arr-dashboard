@@ -16,9 +16,24 @@ const thumbParams = z.object({
 });
 
 const thumbQuery = z.object({
-	itemId: z.string().min(1).refine((v) => !v.includes("..") && !v.includes("/"), "Invalid item ID"),
+	itemId: z
+		.string()
+		.min(1)
+		.refine((v) => !v.includes("..") && !v.includes("/"), "Invalid item ID"),
 	imageType: z
-		.enum(["Primary", "Backdrop", "Thumb", "Logo", "Banner", "Art", "Disc", "Box", "Screenshot", "Chapter", "Profile"])
+		.enum([
+			"Primary",
+			"Backdrop",
+			"Thumb",
+			"Logo",
+			"Banner",
+			"Art",
+			"Disc",
+			"Box",
+			"Screenshot",
+			"Chapter",
+			"Profile",
+		])
 		.optional()
 		.default("Primary"),
 	maxWidth: z

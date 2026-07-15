@@ -111,18 +111,18 @@ export const TautulliMigrationDialog = () => {
 
 				{hasInstances && (
 					<ul className="space-y-1">
-					{data.instances.map((instance) => (
-						<li
-							key={instance.id}
-							className="flex items-center gap-2 rounded-lg border border-border/30 bg-muted/20 px-3 py-2 text-sm text-foreground"
-						>
-							<span
-								className="h-1.5 w-1.5 rounded-full shrink-0"
-								style={{ background: gradient.from }}
-							/>
-							{displayLabel(instance.label)}
-						</li>
-					))}
+						{data.instances.map((instance) => (
+							<li
+								key={instance.id}
+								className="flex items-center gap-2 rounded-lg border border-border/30 bg-muted/20 px-3 py-2 text-sm text-foreground"
+							>
+								<span
+									className="h-1.5 w-1.5 rounded-full shrink-0"
+									style={{ background: gradient.from }}
+								/>
+								{displayLabel(instance.label)}
+							</li>
+						))}
 					</ul>
 				)}
 

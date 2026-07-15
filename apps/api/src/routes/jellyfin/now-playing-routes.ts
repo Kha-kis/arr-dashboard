@@ -35,19 +35,15 @@ export async function registerNowPlayingRoutes(app: FastifyInstance, _opts: Fast
 					state: s.isPaused ? "paused" : "playing",
 					viewOffset: s.positionMs,
 					duration: s.durationMs,
-					videoDecision: isTranscoding ? "Transcode" : s.playMethod ?? "DirectPlay",
+					videoDecision: isTranscoding ? "Transcode" : (s.playMethod ?? "DirectPlay"),
 					audioDecision:
-						s.transcodingInfo && !s.transcodingInfo.isAudioDirect
-							? "Transcode"
-							: "Direct",
+						s.transcodingInfo && !s.transcodingInfo.isAudioDirect ? "Transcode" : "Direct",
 					bandwidth: s.transcodingInfo?.bitrate
 						? Math.round(s.transcodingInfo.bitrate / 1000)
 						: undefined,
 					videoCodec: s.transcodingInfo?.videoCodec,
 					audioCodec: s.transcodingInfo?.audioCodec,
-					thumb: item?.imageTags?.Primary
-						? `/Items/${item.id}/Images/Primary`
-						: undefined,
+					thumb: item?.imageTags?.Primary ? `/Items/${item.id}/Images/Primary` : undefined,
 					instanceId: instance.id,
 					instanceName: instance.label,
 				};

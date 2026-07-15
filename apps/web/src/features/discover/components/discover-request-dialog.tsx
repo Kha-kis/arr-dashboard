@@ -266,16 +266,12 @@ export const DiscoverRequestDialog: React.FC<DiscoverRequestDialogProps> = ({
 								icon={User}
 								label="Request As"
 								value={selectedUserId?.toString() ?? USE_DEFAULT}
-								onChange={(v) =>
-									setSelectedUserId(v === USE_DEFAULT ? undefined : Number(v))
-								}
+								onChange={(v) => setSelectedUserId(v === USE_DEFAULT ? undefined : Number(v))}
 								options={[
 									{ value: USE_DEFAULT, label: "Default request user" },
 									...seerrUsers.map((u) => ({
 										value: u.id.toString(),
-										label: incognitoMode
-											? getLinuxUsername(u.displayName)
-											: u.displayName,
+										label: incognitoMode ? getLinuxUsername(u.displayName) : u.displayName,
 									})),
 								]}
 								themeFrom={themeGradient.from}
@@ -379,20 +375,14 @@ export const DiscoverRequestDialog: React.FC<DiscoverRequestDialogProps> = ({
 														}
 														className="rounded-md border px-2.5 py-1 text-xs font-medium transition-all duration-150"
 														style={{
-															borderColor: isSelected
-																? `${themeGradient.from}60`
-																: "var(--border)",
+															borderColor: isSelected ? `${themeGradient.from}60` : "var(--border)",
 															backgroundColor: isSelected
 																? `${themeGradient.from}12`
 																: "transparent",
-															color: isSelected
-																? themeGradient.from
-																: "var(--muted-foreground)",
+															color: isSelected ? themeGradient.from : "var(--muted-foreground)",
 														}}
 													>
-														{incognitoMode
-															? getLinuxUsername(tag.label)
-															: tag.label}
+														{incognitoMode ? getLinuxUsername(tag.label) : tag.label}
 													</button>
 												);
 											})}

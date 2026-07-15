@@ -221,7 +221,7 @@ describe("<PulseClient /> tautological self-link suppression", () => {
 			],
 			summary: { critical: 1, warning: 1, info: 0 },
 			generatedAt: "2026-04-14T09:30:00.000Z",
-		dismissedCount: 0,
+			dismissedCount: 0,
 		};
 	}
 

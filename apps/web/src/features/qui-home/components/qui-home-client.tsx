@@ -20,7 +20,13 @@ import {
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
-import { DataFreshness, GlassmorphicCard, PremiumEmptyState, PremiumPageHeader, PremiumPageLoading } from "../../../components/layout";
+import {
+	DataFreshness,
+	GlassmorphicCard,
+	PremiumEmptyState,
+	PremiumPageHeader,
+	PremiumPageLoading,
+} from "../../../components/layout";
 import { Alert, AlertDescription, Button } from "../../../components/ui";
 import { useIncognitoMode } from "../../../contexts/IncognitoContext";
 import { useQuiAttention, useQuiSummary } from "../../../hooks/api/useQui";

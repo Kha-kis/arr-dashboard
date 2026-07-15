@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { computeForecast, linearRegression, type SnapshotForForecast } from "../../../lib/media-stats/forecast-helpers.js";
+import {
+	computeForecast,
+	linearRegression,
+	type SnapshotForForecast,
+} from "../../../lib/media-stats/forecast-helpers.js";
 
 function snapshot(capturedAt: string, bandwidth: number, concurrent = 1): SnapshotForForecast {
 	return {

@@ -5,7 +5,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { TAGS_QUERY_KEY } from "../../lib/query-keys";
 import { createTag, deleteTag, fetchTags } from "../../lib/api-client/tags";
 
-
 export const useTagsQuery = () =>
 	useQuery<ServiceTagResponse[]>({
 		queryKey: TAGS_QUERY_KEY,

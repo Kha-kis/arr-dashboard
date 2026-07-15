@@ -194,7 +194,9 @@ export const InstanceOverridesPanel = ({
 										<Server className="h-4 w-4 text-muted-foreground shrink-0" />
 										<div className="min-w-0">
 											<div className="text-sm font-medium text-foreground truncate">
-												{incognitoMode ? getLinuxInstanceName(status.instanceLabel) : status.instanceLabel}
+												{incognitoMode
+													? getLinuxInstanceName(status.instanceLabel)
+													: status.instanceLabel}
 											</div>
 											{status.hasQualityOverride && status.qualityOverride ? (
 												<div className="flex items-center gap-2 text-xs text-muted-foreground">

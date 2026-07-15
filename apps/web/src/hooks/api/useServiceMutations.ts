@@ -11,7 +11,6 @@ import {
 	updateService,
 } from "../../lib/api-client/services";
 
-
 type UpdateVariables = {
 	id: string;
 	payload: UpdateServicePayload;

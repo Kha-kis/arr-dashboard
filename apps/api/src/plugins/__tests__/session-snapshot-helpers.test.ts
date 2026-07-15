@@ -8,10 +8,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import {
-	classifySessionDecisions,
-	type SessionInput,
-} from "../lib/session-snapshot-helpers.js";
+import { classifySessionDecisions, type SessionInput } from "../lib/session-snapshot-helpers.js";
 
 // ---------------------------------------------------------------------------
 // classifySessionDecisions
@@ -72,4 +69,3 @@ describe("classifySessionDecisions", () => {
 		expect(result.directPlayCount).toBe(1);
 	});
 });
-

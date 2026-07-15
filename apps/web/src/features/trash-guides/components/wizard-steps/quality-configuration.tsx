@@ -225,36 +225,38 @@ export const QualityConfiguration = ({
 		}
 
 		// Convert qualityItems to CustomQualityConfig format
-		const items = data.qualityItems.map((item: { name: string; allowed?: boolean; items?: string[] }, index: number) => {
-			const id = `q-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`;
+		const items = data.qualityItems.map(
+			(item: { name: string; allowed?: boolean; items?: string[] }, index: number) => {
+				const id = `q-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`;
 
-			// Check if this is a quality group (has nested items)
-			if (item.items && Array.isArray(item.items) && item.items.length > 0) {
+				// Check if this is a quality group (has nested items)
+				if (item.items && Array.isArray(item.items) && item.items.length > 0) {
+					return {
+						type: "group" as const,
+						group: {
+							id,
+							name: item.name,
+							allowed: item.allowed ?? true,
+							qualities: item.items.map((qualityName: string, qIndex: number) => ({
+								id: `q-${Date.now()}-${index}-${qIndex}-${Math.random().toString(36).slice(2, 7)}`,
+								name: qualityName,
+								allowed: true,
+							})),
+						},
+					};
+				}
+
+				// Single quality item
 				return {
-					type: "group" as const,
-					group: {
+					type: "quality" as const,
+					item: {
 						id,
 						name: item.name,
 						allowed: item.allowed ?? true,
-						qualities: item.items.map((qualityName: string, qIndex: number) => ({
-							id: `q-${Date.now()}-${index}-${qIndex}-${Math.random().toString(36).slice(2, 7)}`,
-							name: qualityName,
-							allowed: true,
-						})),
 					},
 				};
-			}
-
-			// Single quality item
-			return {
-				type: "quality" as const,
-				item: {
-					id,
-					name: item.name,
-					allowed: item.allowed ?? true,
-				},
-			};
-		});
+			},
+		);
 
 		// Find cutoffId
 		let cutoffId: string | undefined;

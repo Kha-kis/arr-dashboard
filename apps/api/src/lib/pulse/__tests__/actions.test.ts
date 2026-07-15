@@ -299,7 +299,6 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		);
 		expect(refreshPlexCache).not.toHaveBeenCalled();
 	});
-
 });
 
 // -----------------------------------------------------------------------------

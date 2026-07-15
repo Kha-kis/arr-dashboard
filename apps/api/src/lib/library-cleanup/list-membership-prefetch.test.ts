@@ -28,7 +28,12 @@ function rule(overrides: Partial<LibraryCleanupRule>): LibraryCleanupRule {
 function makeDeps(tmdbRows: Array<{ listId: string; tmdbId: number }>) {
 	const findMany = vi.fn().mockResolvedValue(tmdbRows);
 	return {
-		deps: { prisma: { tmdbListCache: { findMany }, traktListCache: { findMany: vi.fn().mockResolvedValue([]) } } } as unknown as CleanupExecutorDeps,
+		deps: {
+			prisma: {
+				tmdbListCache: { findMany },
+				traktListCache: { findMany: vi.fn().mockResolvedValue([]) },
+			},
+		} as unknown as CleanupExecutorDeps,
 		findMany,
 	};
 }
@@ -36,7 +41,11 @@ function makeDeps(tmdbRows: Array<{ listId: string; tmdbId: number }>) {
 describe("prefetchCleanupListMemberships", () => {
 	it("collects identifiers from top-level params AND composite conditions", async () => {
 		const rules = [
-			{ ...rule({}), ruleType: "tmdb_list_member", parameters: JSON.stringify({ listId: "8068", operator: "is_in" }) },
+			{
+				...rule({}),
+				ruleType: "tmdb_list_member",
+				parameters: JSON.stringify({ listId: "8068", operator: "is_in" }),
+			},
 			{
 				...rule({}),
 				ruleType: "composite",
@@ -78,7 +87,11 @@ describe("prefetchCleanupListMemberships", () => {
 
 	it("unknown/unrefreshed list yields an absent map entry (evaluator no-match, never a throw)", async () => {
 		const rules = [
-			{ ...rule({}), ruleType: "tmdb_list_member", parameters: JSON.stringify({ listId: "999", operator: "is_in" }) },
+			{
+				...rule({}),
+				ruleType: "tmdb_list_member",
+				parameters: JSON.stringify({ listId: "999", operator: "is_in" }),
+			},
 		] as LibraryCleanupRule[];
 		const { deps } = makeDeps([]); // cache has nothing for list 999
 		const map = await prefetchCleanupListMemberships(deps, "user-1", rules, "tmdb");

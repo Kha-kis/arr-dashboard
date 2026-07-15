@@ -11,7 +11,11 @@ describe("IntegrationHealthRegistry", () => {
 
 		const health = integrationHealth.getByIntegration("plex");
 		expect(health).toBeDefined();
-		expect(health!.categories["/library/sections"]).toEqual({ total: 1, validated: 1, rejected: 0 });
+		expect(health!.categories["/library/sections"]).toEqual({
+			total: 1,
+			validated: 1,
+			rejected: 0,
+		});
 		expect(health!.totals).toEqual({ total: 1, validated: 1, rejected: 0 });
 		expect(health!.lastRefreshAt).toBeDefined();
 	});

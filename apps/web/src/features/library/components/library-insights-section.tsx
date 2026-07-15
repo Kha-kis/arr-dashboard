@@ -30,10 +30,15 @@ export function LibraryInsightsSection() {
 	const diskWasteCount = diskWaste.data?.data?.items?.length ?? 0;
 	const watchedMonitoredCount = watchedMonitored.data?.data?.items?.length ?? 0;
 	const requestedUnwatchedCount = requestedUnwatched.data?.data?.items?.length ?? 0;
-	const hasWatchData = watchedMonitored.data?.data?.hasWatchData ?? watchedMonitored.data?.data?.hasPlexData ?? false;
+	const hasWatchData =
+		watchedMonitored.data?.data?.hasWatchData ?? watchedMonitored.data?.data?.hasPlexData ?? false;
 	const hasSeerrData = requestedUnwatched.data?.data?.hasSeerrData ?? false;
-	const hasRequestedWatchData = requestedUnwatched.data?.data?.hasWatchData ?? requestedUnwatched.data?.data?.hasPlexData ?? false;
-	const isLoading = diskWaste.isLoading || watchedMonitored.isLoading || requestedUnwatched.isLoading;
+	const hasRequestedWatchData =
+		requestedUnwatched.data?.data?.hasWatchData ??
+		requestedUnwatched.data?.data?.hasPlexData ??
+		false;
+	const isLoading =
+		diskWaste.isLoading || watchedMonitored.isLoading || requestedUnwatched.isLoading;
 
 	// Don't render the section if all panels are empty and done loading
 	const hasContent =
@@ -45,7 +50,8 @@ export function LibraryInsightsSection() {
 
 	// Effective counts — only count signals where the required services are configured
 	const effectiveWatchedCount = hasWatchData ? watchedMonitoredCount : 0;
-	const effectiveRequestedCount = hasSeerrData && hasRequestedWatchData ? requestedUnwatchedCount : 0;
+	const effectiveRequestedCount =
+		hasSeerrData && hasRequestedWatchData ? requestedUnwatchedCount : 0;
 	const totalCount = diskWasteCount + effectiveWatchedCount + effectiveRequestedCount;
 
 	// Build breakdown segments (only non-zero)
@@ -75,9 +81,7 @@ export function LibraryInsightsSection() {
 					{totalCount} item{totalCount !== 1 ? "s" : ""} need attention
 				</span>
 				{segments.length > 1 && (
-					<span className="text-xs text-muted-foreground/60">
-						— {segments.join(" · ")}
-					</span>
+					<span className="text-xs text-muted-foreground/60">— {segments.join(" · ")}</span>
 				)}
 			</div>
 			{priorityCue && (
@@ -86,9 +90,21 @@ export function LibraryInsightsSection() {
 
 			{/* Panels — ordered by priority: requests > monitoring > storage */}
 			<div className="space-y-2">
-				<RequestedUnwatchedPanel autoExpand={insightParam === "requested-unwatched"} isDismissed={isDismissed} onDismiss={dismiss} />
-				<WatchedMonitoredPanel autoExpand={insightParam === "watched-monitored"} isDismissed={isDismissed} onDismiss={dismiss} />
-				<DiskWastePanel autoExpand={insightParam === "disk-waste"} isDismissed={isDismissed} onDismiss={dismiss} />
+				<RequestedUnwatchedPanel
+					autoExpand={insightParam === "requested-unwatched"}
+					isDismissed={isDismissed}
+					onDismiss={dismiss}
+				/>
+				<WatchedMonitoredPanel
+					autoExpand={insightParam === "watched-monitored"}
+					isDismissed={isDismissed}
+					onDismiss={dismiss}
+				/>
+				<DiskWastePanel
+					autoExpand={insightParam === "disk-waste"}
+					isDismissed={isDismissed}
+					onDismiss={dismiss}
+				/>
 			</div>
 		</div>
 	);

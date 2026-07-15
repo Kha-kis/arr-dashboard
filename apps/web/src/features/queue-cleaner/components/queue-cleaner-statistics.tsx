@@ -161,7 +161,10 @@ export const QueueCleanerStatistics = () => {
 					icon={Trash2}
 					animationDelay={300}
 				>
-					<InstanceBreakdownList instances={statistics.instanceBreakdown} incognitoMode={incognitoMode} />
+					<InstanceBreakdownList
+						instances={statistics.instanceBreakdown}
+						incognitoMode={incognitoMode}
+					/>
 				</PremiumSection>
 
 				{/* Recent Activity */}
@@ -171,7 +174,10 @@ export const QueueCleanerStatistics = () => {
 					icon={Clock}
 					animationDelay={350}
 				>
-					<RecentActivityList activities={statistics.recentActivity} incognitoMode={incognitoMode} />
+					<RecentActivityList
+						activities={statistics.recentActivity}
+						incognitoMode={incognitoMode}
+					/>
 				</PremiumSection>
 			</div>
 		</div>
@@ -288,7 +294,13 @@ const DailyTrendChart = ({
 };
 
 // Instance Breakdown List
-const InstanceBreakdownList = ({ instances, incognitoMode }: { instances: InstanceBreakdown[]; incognitoMode: boolean }) => {
+const InstanceBreakdownList = ({
+	instances,
+	incognitoMode,
+}: {
+	instances: InstanceBreakdown[];
+	incognitoMode: boolean;
+}) => {
 	if (instances.length === 0) {
 		return (
 			<div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
@@ -342,14 +354,14 @@ const InstanceBreakdownList = ({ instances, incognitoMode }: { instances: Instan
 									{instance.totalRuns} runs
 								</span>
 								<span className="text-[14px] font-semibold text-foreground leading-snug">
-									{incognitoMode ? getLinuxInstanceName(instance.instanceName) : instance.instanceName}
+									{incognitoMode
+										? getLinuxInstanceName(instance.instanceName)
+										: instance.instanceName}
 								</span>
 								<ServiceBadge service={instance.service} />
 							</div>
 							<div className="text-right">
-								<div className="text-lg font-semibold text-foreground">
-									{instance.itemsCleaned}
-								</div>
+								<div className="text-lg font-semibold text-foreground">{instance.itemsCleaned}</div>
 								<div className="text-[10px] text-muted-foreground/40">items cleaned</div>
 							</div>
 						</div>
@@ -361,7 +373,13 @@ const InstanceBreakdownList = ({ instances, incognitoMode }: { instances: Instan
 };
 
 // Recent Activity List
-const RecentActivityList = ({ activities, incognitoMode }: { activities: RecentActivity[]; incognitoMode: boolean }) => {
+const RecentActivityList = ({
+	activities,
+	incognitoMode,
+}: {
+	activities: RecentActivity[];
+	incognitoMode: boolean;
+}) => {
 	if (activities.length === 0) {
 		return (
 			<div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
@@ -411,7 +429,9 @@ const RecentActivityList = ({ activities, incognitoMode }: { activities: RecentA
 						<div className="relative flex items-center justify-between py-3 pl-5 pr-4">
 							<div className="flex items-center gap-2">
 								<span className="text-[14px] font-semibold text-foreground leading-snug">
-									{incognitoMode ? getLinuxInstanceName(activity.instanceName) : activity.instanceName}
+									{incognitoMode
+										? getLinuxInstanceName(activity.instanceName)
+										: activity.instanceName}
 								</span>
 								<span className="text-[11px] text-muted-foreground/40">
 									{date.toLocaleString(undefined, {

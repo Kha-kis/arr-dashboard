@@ -45,10 +45,7 @@ describe("pushoverSender", () => {
 	it("sends to correct Pushover API URL", async () => {
 		mockFetch.mockResolvedValue(okResponse());
 
-		await pushoverSender.send(
-			{ userKey: "ukey123", apiToken: "atoken456" },
-			makePayload(),
-		);
+		await pushoverSender.send({ userKey: "ukey123", apiToken: "atoken456" }, makePayload());
 
 		const call = mockFetch.mock.calls[0]!;
 		expect(call[0]).toBe("https://api.pushover.net/1/messages.json");
@@ -57,10 +54,7 @@ describe("pushoverSender", () => {
 	it("includes token and user in body", async () => {
 		mockFetch.mockResolvedValue(okResponse());
 
-		await pushoverSender.send(
-			{ userKey: "ukey123", apiToken: "atoken456" },
-			makePayload(),
-		);
+		await pushoverSender.send({ userKey: "ukey123", apiToken: "atoken456" }, makePayload());
 
 		const call = mockFetch.mock.calls[0]!;
 		const body = JSON.parse(call[1].body);
@@ -71,10 +65,7 @@ describe("pushoverSender", () => {
 	it("sets html: 1 in body", async () => {
 		mockFetch.mockResolvedValue(okResponse());
 
-		await pushoverSender.send(
-			{ userKey: "ukey123", apiToken: "atoken456" },
-			makePayload(),
-		);
+		await pushoverSender.send({ userKey: "ukey123", apiToken: "atoken456" }, makePayload());
 
 		const call = mockFetch.mock.calls[0]!;
 		const body = JSON.parse(call[1].body);

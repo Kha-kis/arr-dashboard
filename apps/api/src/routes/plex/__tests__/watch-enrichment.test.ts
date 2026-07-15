@@ -36,7 +36,9 @@ function plexEntry(overrides: Partial<PlexCacheEntry> = {}): PlexCacheEntry {
 	};
 }
 
-function makeKeys(...pairs: [string, number][]): Map<string, { tmdbId: number; mediaType: string }> {
+function makeKeys(
+	...pairs: [string, number][]
+): Map<string, { tmdbId: number; mediaType: string }> {
 	const map = new Map<string, { tmdbId: number; mediaType: string }>();
 	for (const [mediaType, tmdbId] of pairs) {
 		map.set(`${mediaType}:${tmdbId}`, { tmdbId, mediaType });
@@ -71,7 +73,12 @@ describe("aggregateWatchEnrichment", () => {
 			keys,
 			[
 				plexEntry({ instanceId: "plex-1", watchCount: 2, watchedByUsers: '["alice"]' }),
-				plexEntry({ instanceId: "plex-2", watchCount: 4, ratingKey: null, watchedByUsers: '["bob"]' }),
+				plexEntry({
+					instanceId: "plex-2",
+					watchCount: 4,
+					ratingKey: null,
+					watchedByUsers: '["bob"]',
+				}),
 			],
 			undefined,
 			testLogger,
@@ -85,7 +92,10 @@ describe("aggregateWatchEnrichment", () => {
 
 	it("omits keys with no matching entries", () => {
 		const keys = makeKeys(["movie", 100], ["series", 200]);
-		const result = aggregateWatchEnrichment(keys, [plexEntry({ tmdbId: 100, mediaType: "movie" })], undefined,
+		const result = aggregateWatchEnrichment(
+			keys,
+			[plexEntry({ tmdbId: 100, mediaType: "movie" })],
+			undefined,
 			testLogger,
 		);
 
@@ -129,13 +139,16 @@ describe("aggregateWatchEnrichment", () => {
 
 	it("gracefully handles malformed JSON in collections/labels/watchedByUsers", () => {
 		const keys = makeKeys(["movie", 100]);
-		const result = aggregateWatchEnrichment(keys, [
+		const result = aggregateWatchEnrichment(
+			keys,
+			[
 				plexEntry({
 					collections: "not-json",
 					labels: "{invalid}",
 					watchedByUsers: "broken",
 				}),
-			], undefined,
+			],
+			undefined,
 			testLogger,
 		);
 
@@ -148,10 +161,13 @@ describe("aggregateWatchEnrichment", () => {
 
 	it("takes the highest userRating across Plex instances", () => {
 		const keys = makeKeys(["movie", 100]);
-		const result = aggregateWatchEnrichment(keys, [
+		const result = aggregateWatchEnrichment(
+			keys,
+			[
 				plexEntry({ instanceId: "plex-1", userRating: 7.0, ratingKey: "a" }),
 				plexEntry({ instanceId: "plex-2", userRating: 9.5, ratingKey: null }),
-			], undefined,
+			],
+			undefined,
 			testLogger,
 		);
 

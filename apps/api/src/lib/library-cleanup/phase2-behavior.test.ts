@@ -10,12 +10,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type {
-	CacheItemForEval,
-	EvalContext,
-	PlexEpisodeStats,
-	PlexWatchInfo,
-} from "./types.js";
+import type { CacheItemForEval, EvalContext, PlexEpisodeStats, PlexWatchInfo } from "./types.js";
 import { evaluateSingleCondition } from "./rule-evaluators.js";
 
 // ---------------------------------------------------------------------------
@@ -189,7 +184,6 @@ describe("user_retention rule", () => {
 		watchedByUsers: ["alice", "bob"],
 		sections: [],
 	});
-
 
 	it("watched_by_none matches when no one has watched", () => {
 		// Empty plexMap — no watch data for this item
