@@ -36,10 +36,7 @@ describe("telegramSender", () => {
 	it("returns success on 2xx response", async () => {
 		mockFetch.mockResolvedValue(okResponse());
 
-		const result = await telegramSender.send(
-			{ botToken: "123:ABC", chatId: "456" },
-			makePayload(),
-		);
+		const result = await telegramSender.send({ botToken: "123:ABC", chatId: "456" }, makePayload());
 
 		expect(result).toEqual({ success: true, retryable: false });
 		expect(mockFetch).toHaveBeenCalledWith(
@@ -69,10 +66,7 @@ describe("telegramSender", () => {
 			),
 		);
 
-		const result = await telegramSender.send(
-			{ botToken: "123:ABC", chatId: "456" },
-			makePayload(),
-		);
+		const result = await telegramSender.send({ botToken: "123:ABC", chatId: "456" }, makePayload());
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(true);
@@ -87,7 +81,7 @@ describe("telegramSender", () => {
 			{ botToken: "123:ABC", chatId: "456" },
 			makePayload({
 				title: '<script>alert("xss")</script>',
-				body: 'Tom & Jerry <> "quotes" \'apos\'',
+				body: "Tom & Jerry <> \"quotes\" 'apos'",
 			}),
 		);
 
@@ -125,10 +119,7 @@ describe("telegramSender", () => {
 			new Response(JSON.stringify({ ok: false }), { status: 502, statusText: "Bad Gateway" }),
 		);
 
-		const result = await telegramSender.send(
-			{ botToken: "123:ABC", chatId: "456" },
-			makePayload(),
-		);
+		const result = await telegramSender.send({ botToken: "123:ABC", chatId: "456" }, makePayload());
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(true);
@@ -136,16 +127,12 @@ describe("telegramSender", () => {
 
 	it("returns non-retryable on 4xx (not 429)", async () => {
 		mockFetch.mockResolvedValue(
-			new Response(
-				JSON.stringify({ ok: false, description: "Bad Request: chat not found" }),
-				{ status: 400 },
-			),
+			new Response(JSON.stringify({ ok: false, description: "Bad Request: chat not found" }), {
+				status: 400,
+			}),
 		);
 
-		const result = await telegramSender.send(
-			{ botToken: "123:ABC", chatId: "456" },
-			makePayload(),
-		);
+		const result = await telegramSender.send({ botToken: "123:ABC", chatId: "456" }, makePayload());
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(false);

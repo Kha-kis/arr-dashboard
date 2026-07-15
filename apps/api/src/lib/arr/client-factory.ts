@@ -221,7 +221,12 @@ export class ArrClientFactory {
 	async rawRequest(
 		instance: ClientInstanceData,
 		path: string,
-		options?: { method?: string; body?: unknown; timeout?: number; headers?: Record<string, string> },
+		options?: {
+			method?: string;
+			body?: unknown;
+			timeout?: number;
+			headers?: Record<string, string>;
+		},
 	): Promise<Response> {
 		const instanceLabel = instance.label ?? instance.id;
 		let apiKey: string;

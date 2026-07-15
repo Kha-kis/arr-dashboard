@@ -19,4 +19,3 @@ export const arrClientPlugin = fp(
 		dependencies: ["prisma", "security"], // Ensure encryptor is available
 	},
 );
-

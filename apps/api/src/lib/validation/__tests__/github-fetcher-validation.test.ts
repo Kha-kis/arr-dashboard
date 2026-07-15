@@ -8,7 +8,10 @@
  */
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { githubDirectoryEntrySchema, trashMetadataSchema } from "../../trash-guides/github-fetcher.js";
+import {
+	githubDirectoryEntrySchema,
+	trashMetadataSchema,
+} from "../../trash-guides/github-fetcher.js";
 import { parseUpstreamOrThrow, UpstreamValidationError } from "../parse-upstream.js";
 
 describe("GitHub directory listing validation", () => {

@@ -33,10 +33,7 @@ describe("webhookSender", () => {
 	it("returns success on 200 response", async () => {
 		mockFetch.mockResolvedValue(okResponse());
 
-		const result = await webhookSender.send(
-			{ url: "https://example.com/webhook" },
-			makePayload(),
-		);
+		const result = await webhookSender.send({ url: "https://example.com/webhook" }, makePayload());
 
 		expect(result).toEqual({ success: true, retryable: false });
 		expect(mockFetch).toHaveBeenCalledOnce();
@@ -45,10 +42,7 @@ describe("webhookSender", () => {
 	it("sends correct JSON payload structure", async () => {
 		mockFetch.mockResolvedValue(okResponse());
 
-		await webhookSender.send(
-			{ url: "https://example.com/webhook" },
-			makePayload("My Title"),
-		);
+		await webhookSender.send({ url: "https://example.com/webhook" }, makePayload("My Title"));
 
 		const call = mockFetch.mock.calls[0]!;
 		const body = JSON.parse(call[1].body);
@@ -80,10 +74,7 @@ describe("webhookSender", () => {
 	it("does not include signature headers when no secret", async () => {
 		mockFetch.mockResolvedValue(okResponse());
 
-		await webhookSender.send(
-			{ url: "https://example.com/webhook" },
-			makePayload(),
-		);
+		await webhookSender.send({ url: "https://example.com/webhook" }, makePayload());
 
 		const call = mockFetch.mock.calls[0]!;
 		const headers: Record<string, string> = call[1].headers;
@@ -102,10 +93,7 @@ describe("webhookSender", () => {
 			headers: responseHeaders,
 		});
 
-		const result = await webhookSender.send(
-			{ url: "https://example.com/webhook" },
-			makePayload(),
-		);
+		const result = await webhookSender.send({ url: "https://example.com/webhook" }, makePayload());
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(true);
@@ -120,10 +108,7 @@ describe("webhookSender", () => {
 			headers: new Headers(),
 		});
 
-		const result = await webhookSender.send(
-			{ url: "https://example.com/webhook" },
-			makePayload(),
-		);
+		const result = await webhookSender.send({ url: "https://example.com/webhook" }, makePayload());
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(true);
@@ -138,10 +123,7 @@ describe("webhookSender", () => {
 			headers: new Headers(),
 		});
 
-		const result = await webhookSender.send(
-			{ url: "https://example.com/webhook" },
-			makePayload(),
-		);
+		const result = await webhookSender.send({ url: "https://example.com/webhook" }, makePayload());
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(false);
@@ -151,10 +133,7 @@ describe("webhookSender", () => {
 	it("returns retryable on network error", async () => {
 		mockFetch.mockRejectedValue(new Error("Network connection refused"));
 
-		const result = await webhookSender.send(
-			{ url: "https://example.com/webhook" },
-			makePayload(),
-		);
+		const result = await webhookSender.send({ url: "https://example.com/webhook" }, makePayload());
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(true);
@@ -164,10 +143,7 @@ describe("webhookSender", () => {
 	it("uses configured HTTP method", async () => {
 		mockFetch.mockResolvedValue(okResponse());
 
-		await webhookSender.send(
-			{ url: "https://example.com/webhook", method: "PUT" },
-			makePayload(),
-		);
+		await webhookSender.send({ url: "https://example.com/webhook", method: "PUT" }, makePayload());
 
 		const call = mockFetch.mock.calls[0]!;
 		expect(call[1].method).toBe("PUT");

@@ -121,7 +121,8 @@ export function QualityProfileImporter({
 					<SelectOption value="">Select an instance...</SelectOption>
 					{instances?.map((instance) => (
 						<SelectOption key={instance.id} value={instance.id}>
-							{incognitoMode ? getLinuxInstanceName(instance.label) : instance.label} ({instance.service})
+							{incognitoMode ? getLinuxInstanceName(instance.label) : instance.label} (
+							{instance.service})
 						</SelectOption>
 					))}
 				</NativeSelect>
@@ -212,7 +213,12 @@ export function QualityProfileImporter({
 							</div>
 							<div>
 								<span className="text-muted-foreground">Source Instance:</span>
-								<div className="font-medium text-foreground">{selectedInstance && (incognitoMode ? getLinuxInstanceName(selectedInstance.label) : selectedInstance.label)}</div>
+								<div className="font-medium text-foreground">
+									{selectedInstance &&
+										(incognitoMode
+											? getLinuxInstanceName(selectedInstance.label)
+											: selectedInstance.label)}
+								</div>
 							</div>
 							<div>
 								<span className="text-muted-foreground">Upgrade Allowed:</span>

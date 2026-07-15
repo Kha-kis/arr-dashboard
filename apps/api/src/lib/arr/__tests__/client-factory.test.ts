@@ -16,7 +16,16 @@ import {
 	isNotFoundError,
 	type ClientInstanceData,
 } from "../client-factory.js";
-import { SonarrClient, RadarrClient, ProwlarrClient, NotFoundError, UnauthorizedError, ValidationError, TimeoutError, NetworkError } from "arr-sdk";
+import {
+	SonarrClient,
+	RadarrClient,
+	ProwlarrClient,
+	NotFoundError,
+	UnauthorizedError,
+	ValidationError,
+	TimeoutError,
+	NetworkError,
+} from "arr-sdk";
 import type { Encryptor } from "../../auth/encryption.js";
 
 // Mock the arr-sdk module to match actual SDK signatures
@@ -48,7 +57,10 @@ vi.mock("arr-sdk", () => {
 
 	class MockValidationError extends MockArrError {
 		readonly validationErrors: Array<{ propertyName: string; errorMessage: string }>;
-		constructor(message: string, validationErrors: Array<{ propertyName: string; errorMessage: string }>) {
+		constructor(
+			message: string,
+			validationErrors: Array<{ propertyName: string; errorMessage: string }>,
+		) {
 			super(message, 400, validationErrors);
 			this.name = "ValidationError";
 			this.validationErrors = validationErrors;
@@ -98,14 +110,15 @@ vi.mock("arr-sdk", () => {
 });
 
 // Create mock encryptor (cast to Encryptor since we only mock the methods we need)
-const createMockEncryptor = () => ({
-	encrypt: vi.fn((value: string) => ({
-		value: `encrypted-${value}`,
-		iv: "test-iv",
-	})),
-	decrypt: vi.fn((_: { value: string; iv: string }) => `decrypted-api-key`),
-	safeCompare: vi.fn((a: string, b: string) => a === b),
-}) as unknown as Encryptor;
+const createMockEncryptor = () =>
+	({
+		encrypt: vi.fn((value: string) => ({
+			value: `encrypted-${value}`,
+			iv: "test-iv",
+		})),
+		decrypt: vi.fn((_: { value: string; iv: string }) => `decrypted-api-key`),
+		safeCompare: vi.fn((a: string, b: string) => a === b),
+	}) as unknown as Encryptor;
 
 // Create mock instance data
 const createMockInstance = (
@@ -300,7 +313,8 @@ describe("ArrClientFactory - Options and Callbacks", () => {
 		const onRequest = vi.fn();
 
 		const client = factory.create(instance, { onRequest });
-		const config = (client as unknown as { config: { onRequest?: (config: unknown) => void } }).config;
+		const config = (client as unknown as { config: { onRequest?: (config: unknown) => void } })
+			.config;
 
 		expect(config.onRequest).toBeDefined();
 	});

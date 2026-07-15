@@ -6,10 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ServiceBadge } from "../../../components/layout";
 import { useLibraryMonitorMutation } from "../../../hooks/api/useLibrary";
-import {
-	type DiskWasteItem,
-	useDiskWasteInsights,
-} from "../../../hooks/api/useDiskWasteInsights";
+import { type DiskWasteItem, useDiskWasteInsights } from "../../../hooks/api/useDiskWasteInsights";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { getLinuxInstanceName, getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
@@ -84,7 +81,10 @@ export function DiskWastePanel({
 	if (isLoading || items.length === 0 || !hasWatchData) return null;
 
 	return (
-		<div ref={panelRef} className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-sm overflow-hidden">
+		<div
+			ref={panelRef}
+			className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-sm overflow-hidden"
+		>
 			{/* Header — always visible */}
 			<button
 				type="button"
@@ -106,7 +106,9 @@ export function DiskWastePanel({
 							{formatSize(totalWasted)}
 						</span>
 						{!hasWatchData && (
-							<span className="text-xs text-muted-foreground ml-2">(no media server connected)</span>
+							<span className="text-xs text-muted-foreground ml-2">
+								(no media server connected)
+							</span>
 						)}
 					</div>
 				</div>
@@ -122,7 +124,8 @@ export function DiskWastePanel({
 			{expanded && (
 				<div className="border-t border-border/20 px-4 py-3 space-y-2">
 					<p className="text-xs text-muted-foreground mb-3">
-						Largest library items ({">"}1 GB) added over 30 days ago that have never been watched. Sorted by size.
+						Largest library items ({">"}1 GB) added over 30 days ago that have never been watched.
+						Sorted by size.
 					</p>
 					{items.map((item) => (
 						<DiskWasteRow
@@ -155,19 +158,14 @@ function DiskWasteRow({
 }) {
 	return (
 		<div className="group flex items-center gap-3 rounded-lg px-3 py-2 bg-muted/5 border border-border/10">
-			<HardDrive
-				className="h-3.5 w-3.5 shrink-0"
-				style={{ color: SEMANTIC_COLORS.warning.from }}
-			/>
+			<HardDrive className="h-3.5 w-3.5 shrink-0" style={{ color: SEMANTIC_COLORS.warning.from }} />
 			<div className="flex-1 min-w-0">
 				<span className="text-sm font-medium text-foreground truncate block">
 					{incognitoMode ? getLinuxIsoName(item.title) : item.title}
 					{item.year ? ` (${item.year})` : ""}
 				</span>
 				<span className="text-xs text-muted-foreground">
-					{incognitoMode
-						? getLinuxInstanceName(item.instanceName)
-						: item.instanceName}
+					{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}
 					{" · "}Added {item.addedDaysAgo}d ago
 				</span>
 			</div>

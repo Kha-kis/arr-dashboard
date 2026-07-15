@@ -338,7 +338,9 @@ export const TemplateStats = ({
 											{/* Top: Instance name + strategy badge */}
 											<div className="flex items-center justify-center gap-2">
 												<span className="text-sm font-medium text-foreground">
-													{incognitoMode ? getLinuxInstanceName(instance.instanceName) : instance.instanceName}
+													{incognitoMode
+														? getLinuxInstanceName(instance.instanceName)
+														: instance.instanceName}
 												</span>
 												<Badge
 													variant={strategyInfo.variant}

@@ -73,7 +73,10 @@ export function WatchedMonitoredPanel({
 	if (isLoading || items.length === 0 || !hasWatchData) return null;
 
 	return (
-		<div ref={panelRef} className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-sm overflow-hidden">
+		<div
+			ref={panelRef}
+			className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-sm overflow-hidden"
+		>
 			<button
 				type="button"
 				onClick={() => setExpanded(!expanded)}
@@ -103,7 +106,8 @@ export function WatchedMonitoredPanel({
 			{expanded && (
 				<div className="border-t border-border/20 px-4 py-3 space-y-2">
 					<p className="text-xs text-muted-foreground mb-3">
-						Movies and ended series with watch history that are still monitored. Continuing series are excluded. Sorted by watch count.
+						Movies and ended series with watch history that are still monitored. Continuing series
+						are excluded. Sorted by watch count.
 					</p>
 					{items.map((item) => (
 						<WatchedRow
@@ -136,10 +140,7 @@ function WatchedRow({
 }) {
 	return (
 		<div className="group flex items-center gap-3 rounded-lg px-3 py-2 bg-muted/5 border border-border/10">
-			<Eye
-				className="h-3.5 w-3.5 shrink-0"
-				style={{ color: SEMANTIC_COLORS.info.from }}
-			/>
+			<Eye className="h-3.5 w-3.5 shrink-0" style={{ color: SEMANTIC_COLORS.info.from }} />
 			<div className="flex-1 min-w-0">
 				<span className="text-sm font-medium text-foreground truncate block">
 					{incognitoMode ? getLinuxIsoName(item.title) : item.title}

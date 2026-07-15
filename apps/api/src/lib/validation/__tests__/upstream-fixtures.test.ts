@@ -12,7 +12,7 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import { z } from "zod";
 import { integrationHealth } from "../integration-health.js";
-import { parseUpstream, } from "../parse-upstream.js";
+import { parseUpstream } from "../parse-upstream.js";
 import {
 	plexIdentityResponseSchema,
 	plexSectionsResponseSchema,
@@ -170,16 +170,9 @@ const PLEX_LIBRARY_ITEMS_RESPONSE = {
 				year: 2014,
 				userRating: 9.5,
 				addedAt: 1600000000,
-				Guid: [
-					{ id: "imdb://tt0816692" },
-					{ id: "tmdb://157336" },
-				],
-				Collection: [
-					{ tag: "Christopher Nolan" },
-				],
-				Label: [
-					{ tag: "4K" },
-				],
+				Guid: [{ id: "imdb://tt0816692" }, { id: "tmdb://157336" }],
+				Collection: [{ tag: "Christopher Nolan" }],
+				Label: [{ tag: "4K" }],
 				// Extra fields
 				summary: "A team of explorers travel through a wormhole...",
 				contentRating: "PG-13",
@@ -347,14 +340,17 @@ describe("Upstream fixture regression tests", () => {
 		it("accumulates correct stats across multiple fixture validations", () => {
 			// Run several validations
 			parseUpstream(PLEX_IDENTITY_RESPONSE, plexIdentityResponseSchema, {
-				integration: "plex", category: "/identity",
+				integration: "plex",
+				category: "/identity",
 			});
 			parseUpstream(PLEX_SECTIONS_RESPONSE, plexSectionsResponseSchema, {
-				integration: "plex", category: "/library/sections",
+				integration: "plex",
+				category: "/library/sections",
 			});
 			// One failure
 			parseUpstream({ broken: true }, plexIdentityResponseSchema, {
-				integration: "plex", category: "/identity",
+				integration: "plex",
+				category: "/identity",
 			});
 
 			const all = integrationHealth.getAll();
@@ -370,7 +366,8 @@ describe("Upstream fixture regression tests", () => {
 	describe("Extra field tolerance (z.looseObject)", () => {
 		it("preserves extra fields in parsed output", () => {
 			const result = parseUpstream(PLEX_IDENTITY_RESPONSE, plexIdentityResponseSchema, {
-				integration: "plex", category: "/identity",
+				integration: "plex",
+				category: "/identity",
 			});
 			expect(result.success).toBe(true);
 			if (result.success) {
@@ -382,15 +379,20 @@ describe("Upstream fixture regression tests", () => {
 		});
 
 		it("would fail with z.object().strict() — confirms looseObject is needed", () => {
-			const strictSchema = z.object({
-				MediaContainer: z.object({
-					machineIdentifier: z.string(),
-					version: z.string(),
-				}).strict(),
-			}).strict();
+			const strictSchema = z
+				.object({
+					MediaContainer: z
+						.object({
+							machineIdentifier: z.string(),
+							version: z.string(),
+						})
+						.strict(),
+				})
+				.strict();
 
 			const result = parseUpstream(PLEX_IDENTITY_RESPONSE, strictSchema, {
-				integration: "test", category: "strict-test",
+				integration: "test",
+				category: "strict-test",
 			});
 			// Should fail because fixture has extra fields
 			expect(result.success).toBe(false);

@@ -78,10 +78,7 @@ describe("emailSender", () => {
 	it("includes metadata fields in email body", async () => {
 		mockSendMail.mockResolvedValue({ messageId: "abc" });
 
-		await emailSender.send(
-			baseConfig,
-			makePayload({ metadata: { instance: "Sonarr", count: 5 } }),
-		);
+		await emailSender.send(baseConfig, makePayload({ metadata: { instance: "Sonarr", count: 5 } }));
 
 		const call = mockSendMail.mock.calls[0]![0];
 		expect(call.html).toContain("Sonarr");
@@ -93,10 +90,7 @@ describe("emailSender", () => {
 	it("includes 'View Details' link when payload has url", async () => {
 		mockSendMail.mockResolvedValue({ messageId: "abc" });
 
-		await emailSender.send(
-			baseConfig,
-			makePayload({ url: "https://example.com/details" }),
-		);
+		await emailSender.send(baseConfig, makePayload({ url: "https://example.com/details" }));
 
 		const call = mockSendMail.mock.calls[0]![0];
 		expect(call.html).toContain("View Details");

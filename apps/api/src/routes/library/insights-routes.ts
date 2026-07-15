@@ -219,7 +219,10 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 		const instanceIds = userInstances.map((i) => i.id);
 
 		if (instanceIds.length === 0) {
-			return reply.send({ success: true, data: { items: [], hasPlexData: false, hasWatchData: false } });
+			return reply.send({
+				success: true,
+				data: { items: [], hasPlexData: false, hasWatchData: false },
+			});
 		}
 
 		// Get media server instances — Plex + Jellyfin/Emby
@@ -235,7 +238,10 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 		]);
 
 		if (plexInstances.length === 0 && jellyfinInstances.length === 0) {
-			return reply.send({ success: true, data: { items: [], hasPlexData: false, hasWatchData: false } });
+			return reply.send({
+				success: true,
+				data: { items: [], hasPlexData: false, hasWatchData: false },
+			});
 		}
 
 		// Build watch data map: mediaType:tmdbId → { watchCount, lastWatchedAt }
@@ -362,7 +368,10 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 		});
 
 		if (!seerrInstance) {
-			return reply.send({ success: true, data: { items: [], hasSeerrData: false, hasPlexData: false, hasWatchData: false } });
+			return reply.send({
+				success: true,
+				data: { items: [], hasSeerrData: false, hasPlexData: false, hasWatchData: false },
+			});
 		}
 
 		// Get media server watch data — Plex + Jellyfin/Emby
@@ -433,14 +442,24 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 			);
 			return reply.send({
 				success: true,
-				data: { items: [], hasSeerrData: false, hasPlexData: plexInstances.length > 0, hasWatchData: plexInstances.length > 0 || jellyfinInstances.length > 0 },
+				data: {
+					items: [],
+					hasSeerrData: false,
+					hasPlexData: plexInstances.length > 0,
+					hasWatchData: plexInstances.length > 0 || jellyfinInstances.length > 0,
+				},
 			});
 		}
 
 		if (seerrRequests.length === 0) {
 			return reply.send({
 				success: true,
-				data: { items: [], hasSeerrData: true, hasPlexData: plexInstances.length > 0, hasWatchData: plexInstances.length > 0 || jellyfinInstances.length > 0 },
+				data: {
+					items: [],
+					hasSeerrData: true,
+					hasPlexData: plexInstances.length > 0,
+					hasWatchData: plexInstances.length > 0 || jellyfinInstances.length > 0,
+				},
 			});
 		}
 
@@ -464,7 +483,12 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 		if (instanceIds.length === 0) {
 			return reply.send({
 				success: true,
-				data: { items: [], hasSeerrData: true, hasPlexData: plexInstances.length > 0, hasWatchData: plexInstances.length > 0 || jellyfinInstances.length > 0 },
+				data: {
+					items: [],
+					hasSeerrData: true,
+					hasPlexData: plexInstances.length > 0,
+					hasWatchData: plexInstances.length > 0 || jellyfinInstances.length > 0,
+				},
 			});
 		}
 

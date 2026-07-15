@@ -258,4 +258,3 @@ export function getSyncMetrics(): SyncMetricsService {
 	}
 	return metricsInstance;
 }
-

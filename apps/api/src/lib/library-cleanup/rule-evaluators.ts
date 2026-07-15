@@ -1795,7 +1795,10 @@ export function parseParams(rule: LibraryCleanupRule): Record<string, unknown> |
 /**
  * Check if item's service type passes the rule's service filter.
  */
-export function passesServiceFilter(instanceService: string, serviceFilter: string | null): boolean {
+export function passesServiceFilter(
+	instanceService: string,
+	serviceFilter: string | null,
+): boolean {
 	if (!serviceFilter) return true;
 	const filter = safeJsonParse(serviceFilter) as string[] | null;
 	if (!filter || filter.length === 0) return true;
@@ -1929,7 +1932,6 @@ export function evaluateSingleCondition(
 			return evaluateSeerrIsRequested(item, params as SeerrIsRequestedParams, ctx.seerrMap);
 		case "seerr_request_count":
 			return evaluateSeerrRequestCount(item, params as SeerrRequestCountParams, ctx.seerrMap);
-
 
 		// ── Plex rules ─────────────────────────────────────────────
 		case "plex_last_watched":

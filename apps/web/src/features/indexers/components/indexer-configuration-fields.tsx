@@ -51,7 +51,9 @@ const FieldRow = ({
 				{/* Value */}
 				<div className="flex-1 min-w-0 flex items-center gap-2">
 					{sensitive && <Lock className="h-3 w-3 text-muted-foreground/45 shrink-0" />}
-					<p className={`text-[13px] font-medium leading-tight min-w-0 ${masked ? "select-none" : ""}`}>
+					<p
+						className={`text-[13px] font-medium leading-tight min-w-0 ${masked ? "select-none" : ""}`}
+					>
 						{masked ? (
 							<span className="text-muted-foreground/45 tracking-[0.2em] font-mono text-xs">
 								{"●".repeat(Math.min(displayValue.length, 20))}
@@ -67,11 +69,7 @@ const FieldRow = ({
 							className="shrink-0 rounded-md p-1 text-muted-foreground/45 hover:text-foreground hover:bg-card/60 transition-all opacity-0 group-hover:opacity-100"
 							title={copied ? "Copied!" : "Copy value"}
 						>
-							{copied ? (
-								<Check className="h-3 w-3 text-green-500" />
-							) : (
-								<Copy className="h-3 w-3" />
-							)}
+							{copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
 						</button>
 					)}
 				</div>
@@ -159,13 +157,7 @@ export const IndexerConfigurationFields = ({ fields }: { fields: ProwlarrIndexer
 			{normalFields.length > 0 && (
 				<div className="divide-y divide-border/10">
 					{normalFields.map((field, index) => (
-						<FieldRow
-							key={field.name}
-							field={field}
-							index={index}
-							sensitive={false}
-							revealed
-						/>
+						<FieldRow key={field.name} field={field} index={index} sensitive={false} revealed />
 					))}
 				</div>
 			)}

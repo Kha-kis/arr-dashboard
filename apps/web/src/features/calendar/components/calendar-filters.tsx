@@ -58,9 +58,7 @@ export const CalendarFilters = ({
 				{SERVICE_TABS.map((tab) => {
 					const isActive = serviceFilter === tab.value;
 					const serviceColor =
-						tab.value !== "all"
-							? getServiceGradient(tab.value).from
-							: themeGradient.from;
+						tab.value !== "all" ? getServiceGradient(tab.value).from : themeGradient.from;
 
 					return (
 						<button
@@ -69,13 +67,9 @@ export const CalendarFilters = ({
 							onClick={() => onServiceFilterChange(tab.value)}
 							className="relative rounded-lg px-2.5 py-1.5 text-[11px] font-semibold tracking-wide transition-all"
 							style={{
-								backgroundColor: isActive
-									? `${serviceColor}12`
-									: "transparent",
+								backgroundColor: isActive ? `${serviceColor}12` : "transparent",
 								color: isActive ? serviceColor : undefined,
-								boxShadow: isActive
-									? `0 0 12px ${serviceColor}08`
-									: "none",
+								boxShadow: isActive ? `0 0 12px ${serviceColor}08` : "none",
 							}}
 						>
 							{tab.label}
@@ -123,9 +117,7 @@ export const CalendarFilters = ({
 					placeholder="Search…"
 					className="h-8 w-[160px] rounded-xl border border-border/10 bg-card/[0.04] pl-7 pr-7 text-[12px] text-foreground placeholder:text-muted-foreground/20 focus:outline-none transition-all"
 					style={{
-						borderColor: searchTerm
-							? `${themeGradient.from}25`
-							: undefined,
+						borderColor: searchTerm ? `${themeGradient.from}25` : undefined,
 						boxShadow: searchTerm
 							? `0 0 0 1px ${themeGradient.from}10, 0 0 12px ${themeGradient.from}06`
 							: undefined,
@@ -152,16 +144,10 @@ export const CalendarFilters = ({
 				className="flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[11px] font-medium transition-all hover:bg-white/[0.04]"
 				style={{
 					color: includeUnmonitored ? themeGradient.from : undefined,
-					boxShadow: includeUnmonitored
-						? `0 0 10px ${themeGradient.from}0c`
-						: undefined,
+					boxShadow: includeUnmonitored ? `0 0 10px ${themeGradient.from}0c` : undefined,
 				}}
 			>
-				{includeUnmonitored ? (
-					<Eye className="h-3 w-3" />
-				) : (
-					<EyeOff className="h-3 w-3" />
-				)}
+				{includeUnmonitored ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
 				Unmonitored
 			</button>
 

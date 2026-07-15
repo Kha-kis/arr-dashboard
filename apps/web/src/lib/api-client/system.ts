@@ -320,8 +320,6 @@ export interface SystemJobsResponse {
 }
 
 export async function fetchSystemJobs(): Promise<SystemJobsResponse> {
-	const res = await apiRequest<{ success: boolean; data: SystemJobsResponse }>(
-		"/api/system/jobs",
-	);
+	const res = await apiRequest<{ success: boolean; data: SystemJobsResponse }>("/api/system/jobs");
 	return res.data;
 }

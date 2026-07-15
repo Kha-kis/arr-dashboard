@@ -24,19 +24,14 @@ interface WatchedMonitoredResponse {
 	};
 }
 
-function fetchWatchedMonitored(params: {
-	limit?: number;
-}): Promise<WatchedMonitoredResponse> {
+function fetchWatchedMonitored(params: { limit?: number }): Promise<WatchedMonitoredResponse> {
 	const search = new URLSearchParams();
 	if (params.limit !== undefined) search.set("limit", String(params.limit));
 	const qs = search.toString();
 	return apiRequest(`/api/library/insights/watched-monitored${qs ? `?${qs}` : ""}`);
 }
 
-export function useWatchedMonitoredInsights(params?: {
-	limit?: number;
-	enabled?: boolean;
-}) {
+export function useWatchedMonitoredInsights(params?: { limit?: number; enabled?: boolean }) {
 	return useQuery<WatchedMonitoredResponse>({
 		queryKey: libraryKeys.insights.watchedMonitored(params),
 		queryFn: () => fetchWatchedMonitored({ limit: params?.limit }),

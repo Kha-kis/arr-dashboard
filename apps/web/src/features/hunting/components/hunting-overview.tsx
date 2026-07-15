@@ -61,7 +61,11 @@ export const HuntingOverview = ({ status, onRefresh, onConfigure }: HuntingOverv
 				description="Configure hunting for your Sonarr, Radarr, Lidarr, and Readarr instances to start finding missing and upgrade content."
 				action={
 					onConfigure ? (
-						<Button variant="secondary" className="gap-2 border-border/50 bg-card/50" onClick={onConfigure}>
+						<Button
+							variant="secondary"
+							className="gap-2 border-border/50 bg-card/50"
+							onClick={onConfigure}
+						>
 							Go to Configuration
 						</Button>
 					) : undefined

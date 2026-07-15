@@ -45,7 +45,10 @@ function jsonResponse(data: unknown, status = 200, cookies: string[] = []) {
 /** Mock the CSRF preflight GET /status call that happens before auth */
 function mockCsrfPreflight() {
 	mockFetch.mockResolvedValueOnce(
-		jsonResponse({ version: "2.0.0" }, 200, ["_csrf=secret; Path=/", "XSRF-TOKEN=token123; Path=/"]),
+		jsonResponse({ version: "2.0.0" }, 200, [
+			"_csrf=secret; Path=/",
+			"XSRF-TOKEN=token123; Path=/",
+		]),
 	);
 }
 
@@ -251,8 +254,12 @@ describe("POST /oauth/fetch-key", () => {
 		mockFetch.mockReset(); // Clear any leftover mocks completely
 		// 4 fetches: CSRF preflight, auth, settings, version (fails)
 		mockFetch
-			.mockResolvedValueOnce(jsonResponse({ version: "2.0.0" }, 200, ["_csrf=s; Path=/", "XSRF-TOKEN=t; Path=/"]))
-			.mockResolvedValueOnce(jsonResponse({ id: 1, permissions: 2 }, 200, ["connect.sid=abc123; Path=/"]))
+			.mockResolvedValueOnce(
+				jsonResponse({ version: "2.0.0" }, 200, ["_csrf=s; Path=/", "XSRF-TOKEN=t; Path=/"]),
+			)
+			.mockResolvedValueOnce(
+				jsonResponse({ id: 1, permissions: 2 }, 200, ["connect.sid=abc123; Path=/"]),
+			)
 			.mockResolvedValueOnce(jsonResponse({ apiKey: "seerr-key-789" }))
 			.mockRejectedValueOnce(new Error("timeout"));
 
@@ -267,8 +274,12 @@ describe("POST /oauth/fetch-key", () => {
 		mockPeekToken.mockReturnValue("plex-token-abc");
 		// 4 fetches: CSRF preflight, auth, settings, version (non-OK)
 		mockFetch
-			.mockResolvedValueOnce(jsonResponse({ version: "2.0.0" }, 200, ["_csrf=s; Path=/", "XSRF-TOKEN=t; Path=/"]))
-			.mockResolvedValueOnce(jsonResponse({ id: 1, permissions: 2 }, 200, ["connect.sid=abc123; Path=/"]))
+			.mockResolvedValueOnce(
+				jsonResponse({ version: "2.0.0" }, 200, ["_csrf=s; Path=/", "XSRF-TOKEN=t; Path=/"]),
+			)
+			.mockResolvedValueOnce(
+				jsonResponse({ id: 1, permissions: 2 }, 200, ["connect.sid=abc123; Path=/"]),
+			)
 			.mockResolvedValueOnce(jsonResponse({ apiKey: "seerr-key-789" }))
 			.mockResolvedValueOnce(jsonResponse({ error: "Internal error" }, 500));
 
@@ -290,7 +301,9 @@ describe("POST /oauth/fetch-key", () => {
 		// 4 fetches: CSRF preflight, auth, settings, version
 		mockFetch
 			.mockResolvedValueOnce(jsonResponse({ version: "1.0.0" }, 200, ["_csrf=s; Path=/"]))
-			.mockResolvedValueOnce(jsonResponse({ id: 1, permissions: 2 }, 200, ["connect.sid=abc123; Path=/"]))
+			.mockResolvedValueOnce(
+				jsonResponse({ id: 1, permissions: 2 }, 200, ["connect.sid=abc123; Path=/"]),
+			)
 			.mockResolvedValueOnce(jsonResponse({ apiKey: "key-123" }))
 			.mockResolvedValueOnce(jsonResponse({ version: "1.0.0" }));
 

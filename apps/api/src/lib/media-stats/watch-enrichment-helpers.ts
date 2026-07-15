@@ -98,7 +98,6 @@ export function aggregateWatchEnrichment(
 			}
 		}
 
-
 		const item: WatchEnrichmentItem = {
 			lastWatchedAt: lastWatchedAt?.toISOString() ?? null,
 			watchCount: plexWatchCount,

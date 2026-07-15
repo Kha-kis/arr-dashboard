@@ -7,7 +7,12 @@ import {
 	type RequestedUnwatchedItem,
 	useRequestedUnwatchedInsights,
 } from "../../../hooks/api/useRequestedUnwatchedInsights";
-import { getLinuxInstanceName, getLinuxIsoName, getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
+import {
+	getLinuxInstanceName,
+	getLinuxIsoName,
+	getLinuxUsername,
+	useIncognitoMode,
+} from "../../../lib/incognito";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
 
@@ -52,7 +57,10 @@ export function RequestedUnwatchedPanel({
 	if (isLoading || items.length === 0 || !hasSeerrData || !hasWatchData) return null;
 
 	return (
-		<div ref={panelRef} className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-sm overflow-hidden">
+		<div
+			ref={panelRef}
+			className="rounded-xl border border-border/30 bg-card/30 backdrop-blur-sm overflow-hidden"
+		>
 			<button
 				type="button"
 				onClick={() => setExpanded(!expanded)}
@@ -102,13 +110,14 @@ function RequestedRow({
 	item,
 	incognitoMode,
 	onDismiss,
-}: { item: RequestedUnwatchedItem; incognitoMode: boolean; onDismiss?: () => void }) {
+}: {
+	item: RequestedUnwatchedItem;
+	incognitoMode: boolean;
+	onDismiss?: () => void;
+}) {
 	return (
 		<div className="group flex items-center gap-3 rounded-lg px-3 py-2 bg-muted/5 border border-border/10">
-			<Inbox
-				className="h-3.5 w-3.5 shrink-0"
-				style={{ color: SEMANTIC_COLORS.error.from }}
-			/>
+			<Inbox className="h-3.5 w-3.5 shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
 			<div className="flex-1 min-w-0">
 				<span className="text-sm font-medium text-foreground truncate block">
 					{incognitoMode ? getLinuxIsoName(item.title) : item.title}

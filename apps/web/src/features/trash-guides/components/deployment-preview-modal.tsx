@@ -285,7 +285,10 @@ export const DeploymentPreviewModal = ({
 								<div className="flex-1">
 									<h3 className="text-sm font-medium text-foreground">Target Instance</h3>
 									<p className="text-xs text-muted-foreground">
-										{incognitoMode ? getLinuxInstanceName(data.data.instanceLabel) : data.data.instanceLabel} ({data.data.instanceServiceType})
+										{incognitoMode
+											? getLinuxInstanceName(data.data.instanceLabel)
+											: data.data.instanceLabel}{" "}
+										({data.data.instanceServiceType})
 									</p>
 								</div>
 								<div className="flex items-center gap-2">

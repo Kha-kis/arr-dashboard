@@ -118,7 +118,14 @@ export function DeploymentHistoryDetailsModal({
 							<div className="grid grid-cols-2 gap-4">
 								{data.data.instance && (
 									<>
-										<InfoField label="Instance" value={incognitoMode ? getLinuxInstanceName(data.data.instance.label) : data.data.instance.label} />
+										<InfoField
+											label="Instance"
+											value={
+												incognitoMode
+													? getLinuxInstanceName(data.data.instance.label)
+													: data.data.instance.label
+											}
+										/>
 										<InfoField label="Instance Service" value={data.data.instance.service} />
 									</>
 								)}

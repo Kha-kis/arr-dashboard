@@ -203,7 +203,11 @@ export const EnhancedDryRunPreview = ({
 						</div>
 						<div>
 							<div className="flex items-center gap-2">
-								<h3 className="font-semibold text-foreground">{incognitoMode ? getLinuxInstanceName(result.instanceLabel) : result.instanceLabel}</h3>
+								<h3 className="font-semibold text-foreground">
+									{incognitoMode
+										? getLinuxInstanceName(result.instanceLabel)
+										: result.instanceLabel}
+								</h3>
 								<ServiceBadge service={result.instanceService} />
 								{result.instanceReachable ? (
 									<span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2 py-0.5 text-[10px] font-medium text-green-500">
@@ -518,7 +522,9 @@ const PreviewItemRow = ({
 					)}
 					<div className="flex-1 min-w-0">
 						<div className="flex items-center gap-2 mb-1">
-							<p className="text-sm font-medium text-foreground truncate">{incognitoMode ? getLinuxIsoName(item.title) : item.title}</p>
+							<p className="text-sm font-medium text-foreground truncate">
+								{incognitoMode ? getLinuxIsoName(item.title) : item.title}
+							</p>
 							<span
 								className="inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[9px] font-medium"
 								style={{
@@ -620,7 +626,9 @@ const GroupedItemRow = ({
 						<div className="flex items-center gap-2 mb-1">
 							<Package className="h-4 w-4 text-muted-foreground shrink-0" />
 							<p className="text-sm font-medium text-foreground truncate">
-								{incognitoMode ? getLinuxIsoName(commonPrefix || "Download Pack") : (commonPrefix || "Download Pack")}
+								{incognitoMode
+									? getLinuxIsoName(commonPrefix || "Download Pack")
+									: commonPrefix || "Download Pack"}
 							</p>
 							<span
 								className="inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[9px] font-medium"
@@ -775,4 +783,3 @@ const ItemSection = ({
 		</div>
 	);
 };
-

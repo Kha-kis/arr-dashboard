@@ -1,15 +1,7 @@
 "use client";
 
 import type { ProwlarrIndexer, ProwlarrIndexerDetails } from "@arr/shared";
-import {
-	AlertCircle,
-	ChevronDown,
-	Loader2,
-	Pencil,
-	RefreshCw,
-	Save,
-	X,
-} from "lucide-react";
+import { AlertCircle, ChevronDown, Loader2, Pencil, RefreshCw, Save, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { PremiumSkeleton } from "../../../components/layout/premium-components";
 import { useIndexerDetailsQuery } from "../../../hooks/api/useSearch";
@@ -183,8 +175,16 @@ export const IndexerDetailsPanel = ({
 					<div className="space-y-3 py-2">
 						<div className="flex items-center gap-3">
 							<PremiumSkeleton variant="line" className="h-4 w-28" />
-							<PremiumSkeleton variant="line" className="h-4 w-20" style={{ animationDelay: "60ms" }} />
-							<PremiumSkeleton variant="line" className="h-4 w-16" style={{ animationDelay: "120ms" }} />
+							<PremiumSkeleton
+								variant="line"
+								className="h-4 w-20"
+								style={{ animationDelay: "60ms" }}
+							/>
+							<PremiumSkeleton
+								variant="line"
+								className="h-4 w-16"
+								style={{ animationDelay: "120ms" }}
+							/>
 						</div>
 						<div className="grid gap-3 sm:grid-cols-3">
 							{["s1", "s2", "s3"].map((id, i) => (
@@ -197,10 +197,22 @@ export const IndexerDetailsPanel = ({
 							))}
 						</div>
 						<div className="flex gap-3">
-							<PremiumSkeleton variant="line" className="h-20 w-20 rounded-full" style={{ animationDelay: "300ms" }} />
+							<PremiumSkeleton
+								variant="line"
+								className="h-20 w-20 rounded-full"
+								style={{ animationDelay: "300ms" }}
+							/>
 							<div className="flex-1 space-y-2">
-								<PremiumSkeleton variant="line" className="h-4 w-3/4" style={{ animationDelay: "360ms" }} />
-								<PremiumSkeleton variant="line" className="h-4 w-1/2" style={{ animationDelay: "420ms" }} />
+								<PremiumSkeleton
+									variant="line"
+									className="h-4 w-3/4"
+									style={{ animationDelay: "360ms" }}
+								/>
+								<PremiumSkeleton
+									variant="line"
+									className="h-4 w-1/2"
+									style={{ animationDelay: "420ms" }}
+								/>
 							</div>
 						</div>
 					</div>
@@ -218,7 +230,10 @@ export const IndexerDetailsPanel = ({
 								className="h-4 w-4 shrink-0"
 								style={{ color: SEMANTIC_COLORS.error.from }}
 							/>
-							<p className="text-sm font-medium flex-1" style={{ color: SEMANTIC_COLORS.error.text }}>
+							<p
+								className="text-sm font-medium flex-1"
+								style={{ color: SEMANTIC_COLORS.error.text }}
+							>
 								{detailError}
 							</p>
 							<button

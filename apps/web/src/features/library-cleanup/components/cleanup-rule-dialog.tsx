@@ -474,7 +474,6 @@ export function CleanupRuleDialog({
 	const [seerrModifiedAgeDays, setSeerrModifiedAgeDays] = useState(90);
 	const [seerrModifiedByUsers, setSeerrModifiedByUsers] = useState("");
 
-
 	// ── Plex params ─────────────────────────────────────────────────
 	const [plexLastWatchedOp, setPlexLastWatchedOp] = useState("older_than");
 	const [plexLastWatchedDays, setPlexLastWatchedDays] = useState(90);
@@ -3116,8 +3115,8 @@ function ParamsFields(props: ParamsFieldsProps) {
 						/>
 					</label>
 					<p className="text-xs text-muted-foreground">
-						Numeric TMDb list id. Membership refreshes every 4 hours from your configured TMDb
-						key; an unrefreshed or unknown list matches nothing.
+						Numeric TMDb list id. Membership refreshes every 4 hours from your configured TMDb key;
+						an unrefreshed or unknown list matches nothing.
 					</p>
 				</div>
 			);

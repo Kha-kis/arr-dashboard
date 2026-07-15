@@ -489,9 +489,7 @@ describe("parity — auto-tag adapter (boolean semantics)", () => {
 
 	it("single rule no-match", () => {
 		expect(
-			assertAutoTagParity(
-				makeAutoTagRule({ parameters: { operator: "older_than", days: 9999 } }),
-			),
+			assertAutoTagParity(makeAutoTagRule({ parameters: { operator: "older_than", days: 9999 } })),
 		).toBe(false);
 	});
 
