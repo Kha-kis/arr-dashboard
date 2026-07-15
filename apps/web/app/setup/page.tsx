@@ -16,9 +16,14 @@ const SetupPageContent = () => {
 	const router = useRouter();
 	const searchParams = useSearchParams();
 	const requestedStage = searchParams.get("stage");
-	const requestedAuthenticatedStage = requestedStage === "services" || requestedStage === "console";
+	const requestedAuthenticatedStage =
+		requestedStage === "services" || requestedStage === "starters" || requestedStage === "console";
 	const requestedSetupPath =
-		requestedStage === "console" ? "/setup?stage=console" : "/setup?stage=services";
+		requestedStage === "console"
+			? "/setup?stage=console"
+			: requestedStage === "starters"
+				? "/setup?stage=starters"
+				: "/setup?stage=services";
 	const { data: setupRequired, isLoading } = useSetupRequired();
 	const shouldVerifySession = setupRequired?.required === false && requestedAuthenticatedStage;
 	const { data: user, isLoading: userLoading } = useCurrentUser(shouldVerifySession);
