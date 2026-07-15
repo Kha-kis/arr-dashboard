@@ -109,3 +109,10 @@ URL field.
   mechanism.
 - The detection module ships with recorded-datagram fixtures so CI
   covers parsing without a live network.
+
+**Implementation note (2026-07-15):** the first Setup rewrite slice
+implements the primary Plex GDM and Jellyfin/Emby UDP probes behind a
+bounded, authenticated endpoint. It returns candidates only, coalesces
+overlapping scans, and treats unavailable UDP networking as an empty
+result. SSDP and mDNS remain fallback mechanisms for the guided-wizard
+slice; they do not broaden discovery to the *arr family.

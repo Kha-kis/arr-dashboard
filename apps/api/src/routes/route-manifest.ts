@@ -42,6 +42,7 @@ import { registerQuiWebhookRoutes } from "./qui-webhook.js";
 import { registerSearchRoutes } from "./search.js";
 import { registerSeerrRoutes } from "./seerr/index.js";
 import { registerServiceRoutes } from "./services.js";
+import { registerSetupRoutes } from "./setup.js";
 import { registerSystemRoutes } from "./system.js";
 import { registerTracearrRoutes } from "./tracearr.js";
 import { registerTrashGuidesRoutes } from "./trash-guides/index.js";
@@ -184,6 +185,13 @@ export const PROTECTED_ROUTE_GROUPS: readonly RouteGroup[] = [
 		register: registerServiceRoutes,
 		maturity: "stable",
 		summary: "ARR instance CRUD + connection testing",
+	},
+	{
+		path: "/api/setup",
+		prefix: "/api",
+		register: registerSetupRoutes,
+		maturity: "experimental",
+		summary: "Guided setup media-server discovery",
 	},
 	{
 		path: "/api/dashboard",

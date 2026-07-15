@@ -22,6 +22,7 @@ export * from "./regex-safety";
 export * from "./rule-criteria";
 export * from "./search";
 export * from "./seerr";
+export * from "./setup-discovery";
 export * from "./template-sharing";
 export * from "./tracearr";
 export * from "./trash-guides";
