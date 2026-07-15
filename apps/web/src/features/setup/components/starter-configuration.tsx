@@ -58,7 +58,7 @@ export const StarterConfiguration = () => {
 	return (
 		<div className="w-full max-w-4xl space-y-6 pb-24 pt-8">
 			<div className="space-y-3 text-center">
-				<p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Step 3 of 4</p>
+				<p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Step 3 of 5</p>
 				<h1
 					className="text-3xl font-bold tracking-tight"
 					style={{
@@ -155,10 +155,10 @@ export const StarterConfiguration = () => {
 				<CardContent className="flex items-start gap-3 p-4">
 					<ShieldCheck className="mt-0.5 h-5 w-5" style={{ color: gradient.to }} />
 					<div>
-						<p className="font-medium">TRaSH quality profiles require a deployment preview</p>
+						<p className="font-medium">TRaSH quality-profile selection is next</p>
 						<p className="mt-1 text-sm text-muted-foreground">
-							Setup will not guess a quality profile or change Sonarr/Radarr settings. TRaSH Guides
-							remains available after setup with a full before-and-after review.
+							Setup will not guess a profile or change Sonarr/Radarr settings. The next optional
+							step lets you choose both, then opens the full deployment preview before any write.
 						</p>
 					</div>
 				</CardContent>
@@ -186,7 +186,7 @@ export const StarterConfiguration = () => {
 							Create {selected.size} disabled {selected.size === 1 ? "draft" : "drafts"}
 						</Button>
 					)}
-					<Button type="button" size="lg" onClick={() => router.push("/setup?stage=console")}>
+					<Button type="button" size="lg" onClick={() => router.push("/setup?stage=trash")}>
 						{selected.size > 0 ? "Continue without creating" : "Continue"}
 						<ArrowRight className="h-4 w-4" />
 					</Button>

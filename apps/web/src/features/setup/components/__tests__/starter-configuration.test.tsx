@@ -98,7 +98,7 @@ describe("StarterConfiguration", () => {
 		expect(screen.queryByText("Family Sonarr", { exact: false })).not.toBeInTheDocument();
 		expect(screen.getAllByText(/linux-server/).length).toBeGreaterThan(0);
 		fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-		expect(mocks.push).toHaveBeenCalledWith("/setup?stage=console");
+		expect(mocks.push).toHaveBeenCalledWith("/setup?stage=trash");
 		expect(mocks.mutateAsync).not.toHaveBeenCalled();
 	});
 
