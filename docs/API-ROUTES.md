@@ -42,7 +42,7 @@ for the full rationale.
 | `/api/backup` | operator | Create, download, restore, scheduled backups |
 | `/api/notifications` | stable | Channels, subscriptions, rules, delivery aggregation |
 | `/api/services` | stable | ARR instance CRUD + connection testing |
-| `/api/setup` | experimental | Guided Setup support — bounded, credential-free media-server discovery. Candidates require explicit operator confirmation and are never connected automatically. |
+| `/api/setup` | experimental | Guided Setup support — bounded media-server discovery plus explicitly selected starter-rule drafts. Candidates are never connected automatically and starter automation is always created disabled. |
 | `/api/dashboard` | stable | Queue, history, calendar, statistics aggregates |
 | `/api/library` | stable | Movies/series listing, episodes, monitor, search |
 | `/api/search` | stable | Prowlarr indexer search + grab |
@@ -74,6 +74,8 @@ for the full rationale.
 | Method | Route | Auth | Purpose |
 |--------|-------|------|---------|
 | POST | `/api/setup/discovery` | Yes | Discover Plex, Jellyfin, and Emby candidates without saving or connecting them |
+| GET | `/api/setup/starters` | Yes | Preview available, disabled starter automation drafts and existing matches |
+| POST | `/api/setup/starters` | Yes | Idempotently create explicitly selected starter drafts in a disabled state |
 
 ## Authentication Routes (`/auth`)
 

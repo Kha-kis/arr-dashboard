@@ -51,7 +51,7 @@ export const ConsoleWalkthrough = () => {
 	return (
 		<div className="w-full max-w-3xl space-y-6 py-8">
 			<div className="space-y-3 text-center">
-				<p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Step 3 of 3</p>
+				<p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Step 4 of 4</p>
 				<h1
 					className="text-3xl font-bold tracking-tight"
 					style={{
@@ -162,11 +162,11 @@ export const ConsoleWalkthrough = () => {
 					variant="ghost"
 					onClick={() =>
 						step === 0
-							? router.push("/setup?stage=services")
+							? router.push("/setup?stage=starters")
 							: setStep((currentStep) => currentStep - 1)
 					}
 				>
-					<ArrowLeft className="h-4 w-4" /> {step === 0 ? "Back to services" : "Back"}
+					<ArrowLeft className="h-4 w-4" /> {step === 0 ? "Back to starters" : "Back"}
 				</Button>
 				<Button
 					type="button"

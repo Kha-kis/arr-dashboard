@@ -119,6 +119,6 @@ describe("ServiceOnboarding", () => {
 	it("continues to the Console walkthrough without requiring a service", () => {
 		render(<ServiceOnboarding />);
 		fireEvent.click(screen.getByRole("button", { name: "Continue without services" }));
-		expect(mocks.push).toHaveBeenCalledWith("/setup?stage=console");
+		expect(mocks.push).toHaveBeenCalledWith("/setup?stage=starters");
 	});
 });

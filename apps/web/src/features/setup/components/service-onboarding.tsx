@@ -120,7 +120,7 @@ export const ServiceOnboarding = () => {
 	return (
 		<div className="w-full max-w-4xl space-y-6 py-8">
 			<div className="space-y-3 text-center">
-				<p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Step 2 of 3</p>
+				<p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Step 2 of 4</p>
 				<h1
 					className="text-3xl font-bold tracking-tight"
 					style={{
@@ -329,7 +329,7 @@ export const ServiceOnboarding = () => {
 			</Card>
 
 			<div className="flex justify-end">
-				<Button type="button" size="lg" onClick={() => router.push("/setup?stage=console")}>
+				<Button type="button" size="lg" onClick={() => router.push("/setup?stage=starters")}>
 					{services.length > 0 ? "Review and continue" : "Continue without services"}
 					<ArrowRight className="h-4 w-4" />
 				</Button>

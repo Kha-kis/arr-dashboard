@@ -191,7 +191,7 @@ export const PROTECTED_ROUTE_GROUPS: readonly RouteGroup[] = [
 		prefix: "/api",
 		register: registerSetupRoutes,
 		maturity: "experimental",
-		summary: "Guided setup media-server discovery",
+		summary: "Guided setup discovery and disabled starter-rule drafts",
 	},
 	{
 		path: "/api/dashboard",

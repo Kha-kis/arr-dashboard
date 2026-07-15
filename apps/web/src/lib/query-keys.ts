@@ -36,6 +36,7 @@ export const authKeys = {
 
 export const setupKeys = {
 	discovery: ["setup", "discovery"] as const,
+	starters: ["setup", "starters"] as const,
 };
 
 /* -------------------------------------------------------------------------- */
