@@ -684,7 +684,7 @@ describe("syncInstance", () => {
 
 	// --- New download detection ---------------------------------------------
 
-	describe("New download detection (hasFile false->true)", () => {
+	describe("New download detection", () => {
 		it("Sonarr: detects when hasFile transitions from false to true", async () => {
 			const rawItems = [
 				makeRawItem({
@@ -736,6 +736,63 @@ describe("syncInstance", () => {
 				title: "Downloaded Book",
 				itemType: "author",
 			});
+		});
+
+		it("detects an item added and imported entirely between completed syncs", async () => {
+			const rawItems = [
+				makeRawItem({
+					id: 7,
+					title: "Between-polls Movie",
+					hasFile: true,
+					added: "2026-07-15T12:00:00Z",
+				}),
+			];
+			const { deps, instance, mockPrisma } = setupSync("RADARR", rawItems, []);
+			(mockPrisma.librarySyncStatus.upsert as ReturnType<typeof vi.fn>).mockResolvedValue({
+				lastFullSync: new Date("2026-07-15T11:00:00Z"),
+			});
+
+			const result = await syncInstance(deps, instance);
+
+			expect(result.newDownloads).toEqual([{ title: "Between-polls Movie", itemType: "movie" }]);
+		});
+
+		it("does not report existing downloaded items during the first baseline sync", async () => {
+			const rawItems = [
+				makeRawItem({
+					id: 7,
+					title: "Existing Movie",
+					hasFile: true,
+					added: "2026-07-15T12:00:00Z",
+				}),
+			];
+			const { deps, instance, mockPrisma } = setupSync("RADARR", rawItems, []);
+			(mockPrisma.librarySyncStatus.upsert as ReturnType<typeof vi.fn>).mockResolvedValue({
+				lastFullSync: null,
+			});
+
+			const result = await syncInstance(deps, instance);
+
+			expect(result.newDownloads).toEqual([]);
+		});
+
+		it("does not report a stale downloaded item that merely reappears", async () => {
+			const rawItems = [
+				makeRawItem({
+					id: 7,
+					title: "Old Movie",
+					hasFile: true,
+					added: "2026-07-14T12:00:00Z",
+				}),
+			];
+			const { deps, instance, mockPrisma } = setupSync("RADARR", rawItems, []);
+			(mockPrisma.librarySyncStatus.upsert as ReturnType<typeof vi.fn>).mockResolvedValue({
+				lastFullSync: new Date("2026-07-15T11:00:00Z"),
+			});
+
+			const result = await syncInstance(deps, instance);
+
+			expect(result.newDownloads).toEqual([]);
 		});
 	});
 
