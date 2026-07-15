@@ -102,6 +102,8 @@ describe("<AutomationPanel />", () => {
 		expect(screen.getByText("Hunt notifier")).toBeInTheDocument();
 		expect(screen.getByText("Enabled")).toBeInTheDocument();
 		expect(screen.getByText("Disabled")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: /new notification rule/i })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: /edit hunt notifier/i })).toBeInTheDocument();
 	});
 
 	it("surfaces an unparseable rule with a warning instead of a document", () => {
