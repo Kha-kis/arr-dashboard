@@ -1,0 +1,6 @@
+HTTP/1.0 200 OK
+Content-Type: plex/media-server
+Name: Cinema Plex
+Port: 32400
+Resource-Identifier: plex-server-123
+Version: 1.41.0

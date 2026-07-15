@@ -42,6 +42,7 @@ for the full rationale.
 | `/api/backup` | operator | Create, download, restore, scheduled backups |
 | `/api/notifications` | stable | Channels, subscriptions, rules, delivery aggregation |
 | `/api/services` | stable | ARR instance CRUD + connection testing |
+| `/api/setup` | experimental | Guided Setup support — bounded, credential-free media-server discovery. Candidates require explicit operator confirmation and are never connected automatically. |
 | `/api/dashboard` | stable | Queue, history, calendar, statistics aggregates |
 | `/api/library` | stable | Movies/series listing, episodes, monitor, search |
 | `/api/search` | stable | Prowlarr indexer search + grab |
@@ -67,6 +68,12 @@ for the full rationale.
 > will fail loudly if either is missing.
 
 ## Per-group route detail
+
+## Guided Setup Routes (`/api/setup`)
+
+| Method | Route | Auth | Purpose |
+|--------|-------|------|---------|
+| POST | `/api/setup/discovery` | Yes | Discover Plex, Jellyfin, and Emby candidates without saving or connecting them |
 
 ## Authentication Routes (`/auth`)
 
