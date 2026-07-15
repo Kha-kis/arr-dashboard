@@ -2,7 +2,11 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { parseMediaBrowserUdpResponse, parsePlexGdmResponse } from "../parsers";
+import {
+	parseMediaBrowserUdpResponse,
+	parsePlexGdmResponse,
+	parsePlexSsdpResponse,
+} from "../parsers";
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 const fixture = (name: string) => readFileSync(join(fixtures, name));
@@ -17,6 +21,18 @@ describe("setup discovery datagram parsers", () => {
 			baseUrl: "http://192.168.1.20:32400",
 			serverId: "plex-server-123",
 			protocol: "plex-gdm",
+		});
+	});
+
+	it("parses a Plex SSDP response into the Plex HTTP endpoint", () => {
+		expect(
+			parsePlexSsdpResponse(fixture("plex-ssdp-response.txt"), { address: "192.168.1.20" }),
+		).toEqual({
+			service: "plex",
+			name: "Plex Media Server",
+			baseUrl: "http://192.168.1.20:32400",
+			serverId: "2b95f4f3-0e2d-4ee4-a05d-3c7eaf30d990",
+			protocol: "plex-ssdp",
 		});
 	});
 
@@ -43,6 +59,12 @@ describe("setup discovery datagram parsers", () => {
 
 	it("rejects malformed, unrelated, and non-HTTP responses", () => {
 		expect(parsePlexGdmResponse("HTTP/1.0 404 Nope", { address: "192.168.1.2" })).toBeNull();
+		expect(
+			parsePlexSsdpResponse(
+				"HTTP/1.1 200 OK\r\nST: urn:schemas-upnp-org:device:MediaServer:1\r\nLOCATION: http://192.168.1.2:8200/description.xml\r\nUSN: uuid:not-plex::urn:schemas-upnp-org:device:MediaServer:1",
+				{ address: "192.168.1.2" },
+			),
+		).toBeNull();
 		expect(
 			parseMediaBrowserUdpResponse(
 				"jellyfin",
