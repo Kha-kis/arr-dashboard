@@ -65,6 +65,8 @@ const AGGREGATABLE_EVENTS: NotificationEventType[] = [
 	"JELLYFIN_NEW_DEVICE",
 ];
 
+const EMPTY_AGGREGATION_CONFIGS: never[] = [];
+
 interface LocalConfig {
 	eventType: NotificationEventType;
 	windowSeconds: number;
@@ -74,7 +76,7 @@ interface LocalConfig {
 
 export function AggregationConfig() {
 	const { gradient } = useThemeGradient();
-	const { data: configs = [], isLoading } = useAggregationConfigs();
+	const { data: configs = EMPTY_AGGREGATION_CONFIGS, isLoading } = useAggregationConfigs();
 	const updateConfigs = useUpdateAggregationConfigs();
 	const [localConfigs, setLocalConfigs] = useState<LocalConfig[]>([]);
 	const [isDirty, setIsDirty] = useState(false);

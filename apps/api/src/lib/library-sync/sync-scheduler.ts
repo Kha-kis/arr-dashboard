@@ -8,6 +8,7 @@
 import { LIBRARY_SERVICES_UPPER } from "@arr/shared";
 import type { FastifyInstance } from "fastify";
 import { createLogger } from "../logger.js";
+import type { NotificationService } from "../notifications/notification-service.js";
 import {
 	passthroughTickWrapper,
 	type TickWrapper,
@@ -360,6 +361,7 @@ export class LibrarySyncScheduler {
 	 */
 	private async runSync(instance: {
 		id: string;
+		userId: string;
 		label: string;
 		service: string;
 		baseUrl: string;
@@ -390,30 +392,16 @@ export class LibrarySyncScheduler {
 				"Library sync completed",
 			);
 
-			// Notify about newly downloaded content (hasFile: false → true transitions)
+			// Notify about newly downloaded content detected by the sync executor.
 			if (result.success && result.newDownloads.length > 0) {
-				const titles = result.newDownloads.slice(0, 5).map((d) => d.title);
-				const remaining = result.newDownloads.length - titles.length;
-
-				this.app.notificationService
-					?.notify({
-						eventType: "LIBRARY_NEW_CONTENT",
-						title: `${result.newDownloads.length} new download(s) on ${instance.label}`,
-						body: remaining > 0 ? `${titles.join(", ")} and ${remaining} more` : titles.join(", "),
-						url: "/library",
-						metadata: {
-							instance: instance.label,
-							service: instance.service,
-							itemCount: result.newDownloads.length,
-							items: titles,
-						},
-					})
-					.catch((err) => {
+				void sendNewDownloadNotification(this.app.notificationService, result, instance).catch(
+					(err) => {
 						log.warn(
 							{ err, instanceLabel: instance.label },
 							"New content notification dispatch failed",
 						);
-					});
+					},
+				);
 			}
 
 			return result;
@@ -436,6 +424,36 @@ export class LibrarySyncScheduler {
 	isInstanceSyncing(instanceId: string): boolean {
 		return this.activeSyncs.has(instanceId);
 	}
+}
+
+/**
+ * Dispatch the library-sync delta through the owning user's notification
+ * pipeline. Exported so the producer-to-channel contract can be tested with
+ * the real notification service and sender registry.
+ */
+export async function sendNewDownloadNotification(
+	notificationService: Pick<NotificationService, "notify">,
+	result: Pick<SyncResult, "newDownloads">,
+	instance: { label: string; service: string; userId: string },
+): Promise<void> {
+	const titles = result.newDownloads.slice(0, 5).map((download) => download.title);
+	const remaining = result.newDownloads.length - titles.length;
+
+	await notificationService.notify(
+		{
+			eventType: "LIBRARY_NEW_CONTENT",
+			title: `${result.newDownloads.length} new download(s) on ${instance.label}`,
+			body: remaining > 0 ? `${titles.join(", ")} and ${remaining} more` : titles.join(", "),
+			url: "/library",
+			metadata: {
+				instance: instance.label,
+				service: instance.service,
+				itemCount: result.newDownloads.length,
+				items: titles,
+			},
+		},
+		{ userId: instance.userId },
+	);
 }
 
 // ============================================================================
