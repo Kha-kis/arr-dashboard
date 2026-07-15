@@ -315,25 +315,36 @@ export async function refreshPlexCache(
 								},
 							},
 							create: {
-								instanceId, tmdbId: agg.tmdbId, mediaType: agg.mediaType,
-								sectionId: agg.sectionId, sectionTitle: agg.sectionTitle,
-								title: agg.title, ratingKey: agg.ratingKey,
-								lastWatchedAt: agg.lastWatchedAt, watchCount: agg.watchCount,
-								watchedByUsers: JSON.stringify([...agg.watchedByUsers]),
-								onDeck: agg.onDeck, userRating: agg.userRating,
-								collections: JSON.stringify(agg.collections),
-								labels: JSON.stringify(agg.labels),
-								addedAt: agg.addedAt, thumb: agg.thumb,
-							},
-							update: {
-								sectionTitle: agg.sectionTitle, title: agg.title,
-								ratingKey: agg.ratingKey, lastWatchedAt: agg.lastWatchedAt,
+								instanceId,
+								tmdbId: agg.tmdbId,
+								mediaType: agg.mediaType,
+								sectionId: agg.sectionId,
+								sectionTitle: agg.sectionTitle,
+								title: agg.title,
+								ratingKey: agg.ratingKey,
+								lastWatchedAt: agg.lastWatchedAt,
 								watchCount: agg.watchCount,
 								watchedByUsers: JSON.stringify([...agg.watchedByUsers]),
-								onDeck: agg.onDeck, userRating: agg.userRating,
+								onDeck: agg.onDeck,
+								userRating: agg.userRating,
 								collections: JSON.stringify(agg.collections),
 								labels: JSON.stringify(agg.labels),
-								addedAt: agg.addedAt, thumb: agg.thumb,
+								addedAt: agg.addedAt,
+								thumb: agg.thumb,
+							},
+							update: {
+								sectionTitle: agg.sectionTitle,
+								title: agg.title,
+								ratingKey: agg.ratingKey,
+								lastWatchedAt: agg.lastWatchedAt,
+								watchCount: agg.watchCount,
+								watchedByUsers: JSON.stringify([...agg.watchedByUsers]),
+								onDeck: agg.onDeck,
+								userRating: agg.userRating,
+								collections: JSON.stringify(agg.collections),
+								labels: JSON.stringify(agg.labels),
+								addedAt: agg.addedAt,
+								thumb: agg.thumb,
 							},
 						});
 						upsertedIds.push(row.id);
@@ -342,7 +353,10 @@ export async function refreshPlexCache(
 						const msg = `Failed to upsert ${agg.mediaType} tmdb:${agg.tmdbId}: ${getErrorMessage(itemError)}`;
 						errors++;
 						errorMessages.push(msg);
-						log.warn({ err: itemError, instanceId, tmdbId: agg.tmdbId, mediaType: agg.mediaType }, msg);
+						log.warn(
+							{ err: itemError, instanceId, tmdbId: agg.tmdbId, mediaType: agg.mediaType },
+							msg,
+						);
 					}
 				}
 			}

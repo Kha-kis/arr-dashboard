@@ -143,7 +143,8 @@ const DeployCFModal = ({
 									<option value="">Choose an instance...</option>
 									{availableInstances.map((instance) => (
 										<option key={instance.id} value={instance.id}>
-											{incognitoMode ? getLinuxInstanceName(instance.label) : instance.label} ({instance.service})
+											{incognitoMode ? getLinuxInstanceName(instance.label) : instance.label} (
+											{instance.service})
 										</option>
 									))}
 								</select>

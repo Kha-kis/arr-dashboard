@@ -224,9 +224,7 @@ describe("POST /preview", () => {
 	});
 
 	it("returns 502 on invalid ARR response (missing required fields)", async () => {
-		mockRawRequest.mockResolvedValueOnce(
-			makeJsonResponse({ notAValidConfig: true }),
-		);
+		mockRawRequest.mockResolvedValueOnce(makeJsonResponse({ notAValidConfig: true }));
 
 		const res = await app.inject({
 			method: "POST",
@@ -268,7 +266,9 @@ describe("POST /apply", () => {
 	it("applies naming presets and creates history", async () => {
 		mockRawRequest
 			.mockResolvedValueOnce(makeJsonResponse(VALID_ARR_NAMING_CONFIG)) // GET
-			.mockResolvedValueOnce(makeJsonResponse({ ...VALID_ARR_NAMING_CONFIG, standardMovieFormat: "new" })); // PUT
+			.mockResolvedValueOnce(
+				makeJsonResponse({ ...VALID_ARR_NAMING_CONFIG, standardMovieFormat: "new" }),
+			); // PUT
 
 		const res = await app.inject({
 			method: "POST",
@@ -329,7 +329,9 @@ describe("POST /apply", () => {
 		mockRawRequest
 			.mockResolvedValueOnce(makeJsonResponse(VALID_ARR_NAMING_CONFIG)) // GET
 			.mockRejectedValueOnce(new Error("ECONNRESET")) // First PUT fails
-			.mockResolvedValueOnce(makeJsonResponse({ ...VALID_ARR_NAMING_CONFIG, standardMovieFormat: "new" })); // Retry succeeds
+			.mockResolvedValueOnce(
+				makeJsonResponse({ ...VALID_ARR_NAMING_CONFIG, standardMovieFormat: "new" }),
+			); // Retry succeeds
 
 		const res = await app.inject({
 			method: "POST",
@@ -379,9 +381,7 @@ describe("POST /apply", () => {
 		expect(res.statusCode).toBe(200);
 
 		// Check that the PUT body includes renameMovies
-		const putCall = mockRawRequest.mock.calls.find(
-			(call: any[]) => call[2]?.method === "PUT",
-		);
+		const putCall = mockRawRequest.mock.calls.find((call: any[]) => call[2]?.method === "PUT");
 		expect(putCall).toBeDefined();
 		expect(putCall![2].body.renameMovies).toBe(true);
 	});
@@ -717,9 +717,7 @@ describe("GET /history", () => {
 
 describe("ARR response validation", () => {
 	it("rejects non-JSON response with 502", async () => {
-		mockRawRequest.mockResolvedValueOnce(
-			new Response("This is not JSON", { status: 200 }),
-		);
+		mockRawRequest.mockResolvedValueOnce(new Response("This is not JSON", { status: 200 }));
 
 		const res = await app.inject({
 			method: "POST",

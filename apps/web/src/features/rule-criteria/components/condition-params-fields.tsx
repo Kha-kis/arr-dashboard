@@ -767,7 +767,6 @@ export function ConditionParamsFields({
 				</div>
 			);
 
-
 		case "plex_last_watched": {
 			const plexLastOp = get<string>("operator", "older_than");
 			return (

@@ -17,7 +17,7 @@ type SdkSpecification = NonNullable<SdkCustomFormat["specifications"]>[number];
 // Helper to create a specification with array-format fields (SDK format)
 const createSpecWithArrayFields = (
 	name: string,
-	fields: Array<{ name: string; value: unknown }>
+	fields: Array<{ name: string; value: unknown }>,
 ): SdkSpecification => ({
 	name,
 	implementation: "test",
@@ -29,7 +29,7 @@ const createSpecWithArrayFields = (
 // Helper to create a specification with object-format fields (TRaSH format, cast for testing)
 const createSpecWithObjectFields = (
 	name: string,
-	fields: Record<string, unknown>
+	fields: Record<string, unknown>,
 ): SdkSpecification => ({
 	name,
 	implementation: "test",
@@ -40,7 +40,6 @@ const createSpecWithObjectFields = (
 });
 
 describe("extractTrashId", () => {
-
 	it("should extract trash_id from array format fields", () => {
 		const cf: SdkCustomFormat = {
 			id: 1,
@@ -78,9 +77,7 @@ describe("extractTrashId", () => {
 			id: 1,
 			name: "Test CF Without Trash ID",
 			specifications: [
-				createSpecWithArrayFields("test", [
-					{ name: "other_field", value: "other_value" },
-				]),
+				createSpecWithArrayFields("test", [{ name: "other_field", value: "other_value" }]),
 			],
 		};
 
@@ -142,15 +139,9 @@ describe("extractTrashId", () => {
 			id: 1,
 			name: "Test CF",
 			specifications: [
-				createSpecWithArrayFields("test1", [
-					{ name: "other_field", value: "value" },
-				]),
-				createSpecWithArrayFields("test2", [
-					{ name: "trash_id", value: "first-uuid" },
-				]),
-				createSpecWithArrayFields("test3", [
-					{ name: "trash_id", value: "second-uuid" },
-				]),
+				createSpecWithArrayFields("test1", [{ name: "other_field", value: "value" }]),
+				createSpecWithArrayFields("test2", [{ name: "trash_id", value: "first-uuid" }]),
+				createSpecWithArrayFields("test3", [{ name: "trash_id", value: "second-uuid" }]),
 			],
 		};
 
@@ -162,11 +153,7 @@ describe("extractTrashId", () => {
 		const cf: SdkCustomFormat = {
 			id: 1,
 			name: "Test CF",
-			specifications: [
-				createSpecWithArrayFields("test", [
-					{ name: "trash_id", value: 12345 },
-				]),
-			],
+			specifications: [createSpecWithArrayFields("test", [{ name: "trash_id", value: 12345 }])],
 		};
 
 		const trashId = extractTrashId(cf);
@@ -179,11 +166,7 @@ describe("extractTrashId", () => {
 		const cfWithoutId: SdkCustomFormat = {
 			id: 1,
 			name: "My Custom Format",
-			specifications: [
-				createSpecWithArrayFields("test", [
-					{ name: "some_field", value: "value" },
-				]),
-			],
+			specifications: [createSpecWithArrayFields("test", [{ name: "some_field", value: "value" }])],
 		};
 
 		const trashId = extractTrashId(cfWithoutId);
@@ -232,35 +215,19 @@ describe("Quality Format Reversal (TRaSH Guides PR #2590)", () => {
 
 		it("should reverse items for API compatibility (PR #2590 merged)", () => {
 			// TRaSH NEW format: low→high (Unknown → Remux)
-			const items = [
-				{ name: "Unknown" },
-				{ name: "DVD" },
-				{ name: "Remux" },
-			];
+			const items = [{ name: "Unknown" }, { name: "DVD" }, { name: "Remux" }];
 			const result = reverseQualityItemsIfNeeded(items);
 
 			// Reversed for API: high→low (Remux → Unknown)
 			expect(result).not.toBe(items);
-			expect(result).toEqual([
-				{ name: "Remux" },
-				{ name: "DVD" },
-				{ name: "Unknown" },
-			]);
+			expect(result).toEqual([{ name: "Remux" }, { name: "DVD" }, { name: "Unknown" }]);
 		});
 
 		it("should reverse items and create a new array", () => {
-			const newFormatItems = [
-				{ name: "Unknown" },
-				{ name: "DVD" },
-				{ name: "Remux" },
-			];
+			const newFormatItems = [{ name: "Unknown" }, { name: "DVD" }, { name: "Remux" }];
 			const result = reverseQualityItemsIfNeeded(newFormatItems);
 
-			expect(result).toEqual([
-				{ name: "Remux" },
-				{ name: "DVD" },
-				{ name: "Unknown" },
-			]);
+			expect(result).toEqual([{ name: "Remux" }, { name: "DVD" }, { name: "Unknown" }]);
 			// New array created, original untouched
 			expect(result).not.toBe(newFormatItems);
 		});
@@ -308,9 +275,7 @@ describe("DeploymentExecutorService - ID-based vs name-based matching", () => {
 			id: 1,
 			name: "CF With ID",
 			specifications: [
-				createSpecWithArrayFields("test", [
-					{ name: "trash_id", value: "uuid-123" },
-				]),
+				createSpecWithArrayFields("test", [{ name: "trash_id", value: "uuid-123" }]),
 			],
 		};
 
@@ -319,9 +284,7 @@ describe("DeploymentExecutorService - ID-based vs name-based matching", () => {
 			id: 2,
 			name: "CF Without ID",
 			specifications: [
-				createSpecWithArrayFields("test", [
-					{ name: "other_field", value: "value" },
-				]),
+				createSpecWithArrayFields("test", [{ name: "other_field", value: "value" }]),
 			],
 		};
 
@@ -329,9 +292,7 @@ describe("DeploymentExecutorService - ID-based vs name-based matching", () => {
 		const mockExtractTrashId = (cf: SdkCustomFormat): string | null => {
 			for (const spec of cf.specifications || []) {
 				if (spec.fields && Array.isArray(spec.fields)) {
-					const trashIdField = spec.fields.find(
-						(f) => f.name === "trash_id"
-					);
+					const trashIdField = spec.fields.find((f) => f.name === "trash_id");
 					if (trashIdField) {
 						return String(trashIdField.value);
 					}

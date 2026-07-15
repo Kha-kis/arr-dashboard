@@ -45,9 +45,17 @@ function createUserCF(overrides: {
 		name: overrides.name,
 		userId: overrides.userId ?? "test-user",
 		serviceType: "RADARR" as const,
-		specifications: overrides.specifications ?? JSON.stringify([
-			{ name: "TestSpec", implementation: "ReleaseTitleSpecification", negate: false, required: false, fields: { value: "test" } },
-		]),
+		specifications:
+			overrides.specifications ??
+			JSON.stringify([
+				{
+					name: "TestSpec",
+					implementation: "ReleaseTitleSpecification",
+					negate: false,
+					required: false,
+					fields: { value: "test" },
+				},
+			]),
 		defaultScore: overrides.defaultScore ?? 100,
 		includeCustomFormatWhenRenaming: overrides.includeCustomFormatWhenRenaming ?? false,
 		createdAt: new Date(),
@@ -56,7 +64,11 @@ function createUserCF(overrides: {
 }
 
 /** Create a selection map entry */
-function sel(selected: boolean, scoreOverride?: number, conditionsEnabled: Record<string, boolean> = {}): CFSelection {
+function sel(
+	selected: boolean,
+	scoreOverride?: number,
+	conditionsEnabled: Record<string, boolean> = {},
+): CFSelection {
 	return { selected, scoreOverride, conditionsEnabled };
 }
 
@@ -259,10 +271,26 @@ describe("resolveUserCustomFormats", () => {
 	describe("specifications parsing", () => {
 		it("parses valid JSON array specifications", async () => {
 			const specs = [
-				{ name: "Spec1", implementation: "ReleaseTitleSpecification", negate: false, required: false, fields: { value: "test" } },
-				{ name: "Spec2", implementation: "SizeSpecification", negate: true, required: true, fields: { min: 0, max: 100 } },
+				{
+					name: "Spec1",
+					implementation: "ReleaseTitleSpecification",
+					negate: false,
+					required: false,
+					fields: { value: "test" },
+				},
+				{
+					name: "Spec2",
+					implementation: "SizeSpecification",
+					negate: true,
+					required: true,
+					fields: { min: 0, max: 100 },
+				},
 			];
-			const userCF = createUserCF({ id: "cf1", name: "My CF", specifications: JSON.stringify(specs) });
+			const userCF = createUserCF({
+				id: "cf1",
+				name: "My CF",
+				specifications: JSON.stringify(specs),
+			});
 			mockPrisma = createMockPrisma([userCF]);
 
 			const result = await resolveUserCustomFormats(
@@ -279,7 +307,11 @@ describe("resolveUserCustomFormats", () => {
 		});
 
 		it("skips CF with malformed JSON and logs warning", async () => {
-			const userCF = createUserCF({ id: "cf1", name: "Bad JSON", specifications: "not-valid-json" });
+			const userCF = createUserCF({
+				id: "cf1",
+				name: "Bad JSON",
+				specifications: "not-valid-json",
+			});
 			mockPrisma = createMockPrisma([userCF]);
 
 			const result = await resolveUserCustomFormats(
@@ -297,7 +329,11 @@ describe("resolveUserCustomFormats", () => {
 		});
 
 		it("skips CF when JSON is an object instead of array", async () => {
-			const userCF = createUserCF({ id: "cf1", name: "Object Specs", specifications: '{"key": "value"}' });
+			const userCF = createUserCF({
+				id: "cf1",
+				name: "Object Specs",
+				specifications: '{"key": "value"}',
+			});
 			mockPrisma = createMockPrisma([userCF]);
 
 			const result = await resolveUserCustomFormats(
@@ -315,7 +351,11 @@ describe("resolveUserCustomFormats", () => {
 		});
 
 		it("skips CF when JSON is a primitive string", async () => {
-			const userCF = createUserCF({ id: "cf1", name: "String Specs", specifications: '"just a string"' });
+			const userCF = createUserCF({
+				id: "cf1",
+				name: "String Specs",
+				specifications: '"just a string"',
+			});
 			mockPrisma = createMockPrisma([userCF]);
 
 			const result = await resolveUserCustomFormats(
@@ -350,13 +390,29 @@ describe("resolveUserCustomFormats", () => {
 
 		it("filters out array elements that don't match specification shape and logs warning", async () => {
 			const mixedSpecs = [
-				{ name: "Valid", implementation: "ReleaseTitleSpecification", negate: false, required: false, fields: {} },
+				{
+					name: "Valid",
+					implementation: "ReleaseTitleSpecification",
+					negate: false,
+					required: false,
+					fields: {},
+				},
 				"not an object",
 				42,
 				null,
-				{ name: "Also Valid", implementation: "SizeSpecification", negate: true, required: true, fields: {} },
+				{
+					name: "Also Valid",
+					implementation: "SizeSpecification",
+					negate: true,
+					required: true,
+					fields: {},
+				},
 			];
-			const userCF = createUserCF({ id: "cf1", name: "Mixed", specifications: JSON.stringify(mixedSpecs) });
+			const userCF = createUserCF({
+				id: "cf1",
+				name: "Mixed",
+				specifications: JSON.stringify(mixedSpecs),
+			});
 			mockPrisma = createMockPrisma([userCF]);
 
 			const result = await resolveUserCustomFormats(
@@ -446,12 +502,14 @@ describe("resolveUserCustomFormats", () => {
 			);
 
 			expect(result[0]!.name).toBe("Premium CF");
-			expect(result[0]!.originalConfig).toEqual(expect.objectContaining({
-				trash_id: "user-cf1",
-				name: "Premium CF",
-				includeCustomFormatWhenRenaming: true,
-				trash_scores: { default: 500 },
-			}));
+			expect(result[0]!.originalConfig).toEqual(
+				expect.objectContaining({
+					trash_id: "user-cf1",
+					name: "Premium CF",
+					includeCustomFormatWhenRenaming: true,
+					trash_scores: { default: 500 },
+				}),
+			);
 		});
 
 		it("uses the synthetic trash_id (user-{id}) in both trashId and originalConfig", async () => {

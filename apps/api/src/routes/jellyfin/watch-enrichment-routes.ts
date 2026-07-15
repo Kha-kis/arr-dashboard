@@ -131,7 +131,6 @@ export async function registerWatchEnrichmentRoutes(
 			}
 		}
 
-
 		return reply.send({ items });
 	});
 }

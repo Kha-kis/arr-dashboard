@@ -55,7 +55,9 @@ const SONARR_NAMING: TrashSonarrNaming = {
 };
 
 // Helpers to build full preset objects (all fields required as string | null)
-function radarrPresets(overrides: Partial<Omit<RadarrSelectedPresets, "serviceType">> = {}): RadarrSelectedPresets {
+function radarrPresets(
+	overrides: Partial<Omit<RadarrSelectedPresets, "serviceType">> = {},
+): RadarrSelectedPresets {
 	return {
 		serviceType: "RADARR",
 		filePreset: null,
@@ -64,7 +66,9 @@ function radarrPresets(overrides: Partial<Omit<RadarrSelectedPresets, "serviceTy
 	};
 }
 
-function sonarrPresets(overrides: Partial<Omit<SonarrSelectedPresets, "serviceType">> = {}): SonarrSelectedPresets {
+function sonarrPresets(
+	overrides: Partial<Omit<SonarrSelectedPresets, "serviceType">> = {},
+): SonarrSelectedPresets {
 	return {
 		serviceType: "SONARR",
 		standardEpisodePreset: null,

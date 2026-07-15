@@ -60,10 +60,10 @@ const BookBadge = ({
 		warning: SEMANTIC_COLORS.warning,
 		error: SEMANTIC_COLORS.error,
 		muted: {
-		bg: SEMANTIC_COLORS.neutral.bg,
-		border: SEMANTIC_COLORS.neutral.border,
-		text: SEMANTIC_COLORS.neutral.text,
-	},
+			bg: SEMANTIC_COLORS.neutral.bg,
+			border: SEMANTIC_COLORS.neutral.border,
+			text: SEMANTIC_COLORS.neutral.text,
+		},
 	};
 	const color = colors[tone];
 
@@ -180,7 +180,9 @@ export const BookBreakdownModal = ({
 								{item.title}
 							</h2>
 							<div className="flex flex-wrap items-center gap-3 mt-1 text-sm text-muted-foreground">
-								<span>{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}</span>
+								<span>
+									{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}
+								</span>
 								<span>•</span>
 								<span className="flex items-center gap-1">
 									<BookOpen className="h-3.5 w-3.5" />

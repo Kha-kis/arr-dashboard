@@ -196,7 +196,8 @@ export const CFConfigurationEdit = ({
 					(c) => (typeof c === "string" ? c : c.trash_id) === trashId,
 				);
 				if (foundCF) {
-					const cfObj = typeof foundCF === "string" ? { trash_id: foundCF, name: foundCF } : foundCF;
+					const cfObj =
+						typeof foundCF === "string" ? { trash_id: foundCF, name: foundCF } : foundCF;
 					return {
 						trash_id: cfObj.trash_id,
 						name: cfObj.name,
@@ -227,7 +228,15 @@ export const CFConfigurationEdit = ({
 				}
 			}
 
-			return { trash_id: trashId, name: trashId, displayName: trashId, description: "", defaultScore: 0, source: "trash", locked: false };
+			return {
+				trash_id: trashId,
+				name: trashId,
+				displayName: trashId,
+				description: "",
+				defaultScore: 0,
+				source: "trash",
+				locked: false,
+			};
 		});
 
 	return (
@@ -491,7 +500,9 @@ export const CFConfigurationEdit = ({
 					const selection = selections[conditionEditorFormat.trashId];
 
 					const format = conditionEditorFormat.format;
-					const specs = (format.originalConfig?.specifications || format.specifications || []) as ConditionSpec[];
+					const specs = (format.originalConfig?.specifications ||
+						format.specifications ||
+						[]) as ConditionSpec[];
 
 					const specificationsWithEnabled = specs.map((spec) => ({
 						...spec,

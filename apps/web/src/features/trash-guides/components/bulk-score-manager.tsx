@@ -481,7 +481,8 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 								)
 								.map((instance) => (
 									<option key={instance.id} value={instance.id}>
-										{incognitoMode ? getLinuxInstanceName(instance.label) : instance.label} ({instance.service.toUpperCase()})
+										{incognitoMode ? getLinuxInstanceName(instance.label) : instance.label} (
+										{instance.service.toUpperCase()})
 									</option>
 								))}
 						</select>

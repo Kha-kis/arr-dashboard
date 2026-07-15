@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { computeQualityScore, type SnapshotForQuality } from "../../../lib/media-stats/quality-score-helpers.js";
+import {
+	computeQualityScore,
+	type SnapshotForQuality,
+} from "../../../lib/media-stats/quality-score-helpers.js";
 
 function snapshot(
 	capturedAt: string,

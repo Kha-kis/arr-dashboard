@@ -80,7 +80,10 @@ const SuccessGauge = ({ rate }: { rate?: number }) => {
 	if (rate === undefined) {
 		return (
 			<div className="flex flex-col items-center gap-2">
-				<div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
+				<div
+					className="relative flex items-center justify-center"
+					style={{ width: size, height: size }}
+				>
 					<svg viewBox={viewBox} width={size} height={size} className="-rotate-90">
 						<circle
 							cx={cx}
@@ -113,7 +116,10 @@ const SuccessGauge = ({ rate }: { rate?: number }) => {
 
 	return (
 		<div className="flex flex-col items-center gap-2">
-			<div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
+			<div
+				className="relative flex items-center justify-center"
+				style={{ width: size, height: size }}
+			>
 				{/* Glow backdrop */}
 				<div
 					className="absolute inset-2 rounded-full"
@@ -149,7 +155,10 @@ const SuccessGauge = ({ rate }: { rate?: number }) => {
 					/>
 				</svg>
 				<div className="absolute flex flex-col items-center">
-					<span className="text-lg font-bold tabular-nums leading-none" style={{ color: gaugeColor }}>
+					<span
+						className="text-lg font-bold tabular-nums leading-none"
+						style={{ color: gaugeColor }}
+					>
 						{pct}
 					</span>
 					<span className="text-[9px] font-medium text-muted-foreground/40 mt-0.5">%</span>
@@ -235,8 +244,7 @@ export const IndexerDetailsInfo = ({
 	const categories = detail.categories ?? [];
 	const protocol = detail.protocol ?? indexer.protocol;
 
-	const protocolColor =
-		protocol === "torrent" ? PROTOCOL_COLORS.torrent : PROTOCOL_COLORS.usenet;
+	const protocolColor = protocol === "torrent" ? PROTOCOL_COLORS.torrent : PROTOCOL_COLORS.usenet;
 
 	return (
 		<div className="space-y-0">
@@ -274,22 +282,12 @@ export const IndexerDetailsInfo = ({
 						icon={Folder}
 						label="App Profile"
 						value={
-							typeof detail.appProfileId === "number"
-								? detail.appProfileId.toString()
-								: "Default"
+							typeof detail.appProfileId === "number" ? detail.appProfileId.toString() : "Default"
 						}
 						mono
 					/>
-					<StatTile
-						icon={Shield}
-						label="Privacy"
-						value={detail.privacy ?? undefined}
-					/>
-					<StatTile
-						icon={Globe}
-						label="Language"
-						value={detail.language ?? undefined}
-					/>
+					<StatTile icon={Shield} label="Privacy" value={detail.privacy ?? undefined} />
+					<StatTile icon={Globe} label="Language" value={detail.language ?? undefined} />
 				</div>
 			</div>
 
@@ -318,20 +316,12 @@ export const IndexerDetailsInfo = ({
 								value={formatResponseTime(stats.averageResponseTime)}
 								color={themeGradient.from}
 							/>
-							<PerfMetric
-								icon={Clock}
-								label="Last Check"
-								value={formatDateTime(stats.lastCheck)}
-							/>
+							<PerfMetric icon={Clock} label="Last Check" value={formatDateTime(stats.lastCheck)} />
 							<PerfMetric
 								icon={AlertTriangle}
 								label="Last Failure"
 								value={formatDateTime(stats.lastFailure)}
-								color={
-									stats.lastFailure
-										? SEMANTIC_COLORS.error.from
-										: undefined
-								}
+								color={stats.lastFailure ? SEMANTIC_COLORS.error.from : undefined}
 							/>
 							{typeof stats.grabs === "number" && (
 								<PerfMetric
@@ -374,9 +364,7 @@ export const IndexerDetailsInfo = ({
 
 					{categories.length > 0 && (
 						<>
-							{capabilities.length > 0 && (
-								<span className="w-px h-4 bg-border/20 mx-1.5" />
-							)}
+							{capabilities.length > 0 && <span className="w-px h-4 bg-border/20 mx-1.5" />}
 							<span className="text-[10px] font-semibold text-muted-foreground/40 mr-1 shrink-0">
 								Categories
 							</span>

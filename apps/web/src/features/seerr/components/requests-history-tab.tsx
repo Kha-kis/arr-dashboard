@@ -53,7 +53,11 @@ interface RequestsHistoryTabProps {
 	initialUserFilter?: string;
 }
 
-export const RequestsHistoryTab = ({ instanceId, onSelectRequest, initialUserFilter }: RequestsHistoryTabProps) => {
+export const RequestsHistoryTab = ({
+	instanceId,
+	onSelectRequest,
+	initialUserFilter,
+}: RequestsHistoryTabProps) => {
 	const [incognitoMode] = useIncognitoMode();
 	const [statusFilter, setStatusFilter] = useState<RequestFilter>("all");
 	const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
@@ -103,7 +107,9 @@ export const RequestsHistoryTab = ({ instanceId, onSelectRequest, initialUserFil
 		for (const user of usersData.results) {
 			base.push({
 				value: String(user.id),
-				label: incognitoMode ? getLinuxUsername(user.displayName || user.email || `User #${user.id}`) : (user.displayName || user.email || `User #${user.id}`),
+				label: incognitoMode
+					? getLinuxUsername(user.displayName || user.email || `User #${user.id}`)
+					: user.displayName || user.email || `User #${user.id}`,
 			});
 		}
 		return base;

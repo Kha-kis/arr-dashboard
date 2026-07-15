@@ -95,9 +95,7 @@ describe("usePulseActionMutation — incognito-mode error toast sanitization", (
 
 	it("strips a hostname URL from a backend error message in incognito mode", async () => {
 		localStorage.setItem(INCOGNITO_STORAGE_KEY, "true");
-		await fireMutationWithError(
-			"fetch failed: http://sonarr.local:8989/api/v3/queue/42",
-		);
+		await fireMutationWithError("fetch failed: http://sonarr.local:8989/api/v3/queue/42");
 
 		const text = toastErrorCalls[0]!;
 		expect(text).not.toContain("sonarr.local");

@@ -163,10 +163,14 @@ export const CandidateCard = ({
 						<p className="text-xs uppercase text-muted-foreground">Mapping</p>
 						<p>{mappingSummary}</p>
 						{isLidarrCandidate(candidate) && candidate.album?.title && (
-							<p className="text-xs text-muted-foreground/70">{incognitoMode ? getLinuxIsoName(candidate.album.title) : candidate.album.title}</p>
+							<p className="text-xs text-muted-foreground/70">
+								{incognitoMode ? getLinuxIsoName(candidate.album.title) : candidate.album.title}
+							</p>
 						)}
 						{isReadarrCandidate(candidate) && candidate.book?.title && (
-							<p className="text-xs text-muted-foreground/70">{incognitoMode ? getLinuxIsoName(candidate.book.title) : candidate.book.title}</p>
+							<p className="text-xs text-muted-foreground/70">
+								{incognitoMode ? getLinuxIsoName(candidate.book.title) : candidate.book.title}
+							</p>
 						)}
 					</div>
 					{isSonarrCandidate(candidate) && episodes.length > 0 && (

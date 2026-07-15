@@ -8,12 +8,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type {
-	CacheItemForEval,
-	EvalContext,
-	PlexWatchInfo,
-	SeerrRequestInfo,
-} from "./types.js";
+import type { CacheItemForEval, EvalContext, PlexWatchInfo, SeerrRequestInfo } from "./types.js";
 import { evaluateSingleCondition } from "./rule-evaluators.js";
 
 // ---------------------------------------------------------------------------

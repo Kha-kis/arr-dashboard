@@ -4,7 +4,14 @@ import { vi, describe, it, expect, beforeEach, afterAll } from "vitest";
 // Module-level mocks
 // ---------------------------------------------------------------------------
 
-const { mockRequireInstance, mockTestConnection, mockBuildUpdateData, mockUpsertTags, mockUpdateInstanceTags, mockFormatServiceInstance } = vi.hoisted(() => ({
+const {
+	mockRequireInstance,
+	mockTestConnection,
+	mockBuildUpdateData,
+	mockUpsertTags,
+	mockUpdateInstanceTags,
+	mockFormatServiceInstance,
+} = vi.hoisted(() => ({
 	mockRequireInstance: vi.fn(),
 	mockTestConnection: vi.fn().mockResolvedValue({ success: true, version: "4.0.0" }),
 	mockBuildUpdateData: vi.fn().mockReturnValue({}),
@@ -51,7 +58,12 @@ vi.mock("../../lib/services/service-formatter.js", () => ({
 import Fastify from "fastify";
 import { registerServiceRoutes } from "../services.js";
 import { InstanceNotFoundError } from "../../lib/errors.js";
-import { setupAuthInjection, createInjectAuthenticated, createMockEncryptor, registerTestErrorHandler } from "./test-helpers.js";
+import {
+	setupAuthInjection,
+	createInjectAuthenticated,
+	createMockEncryptor,
+	registerTestErrorHandler,
+} from "./test-helpers.js";
 
 // ---------------------------------------------------------------------------
 // Test data
@@ -227,7 +239,9 @@ describe("POST /services", () => {
 describe("PUT /services/:id", () => {
 	it("calls buildUpdateData and updates the instance", async () => {
 		mockBuildUpdateData.mockReturnValue({ label: "Updated Label" });
-		mockPrisma.serviceInstance.findFirst.mockResolvedValue(makeInstance({ label: "Updated Label" }));
+		mockPrisma.serviceInstance.findFirst.mockResolvedValue(
+			makeInstance({ label: "Updated Label" }),
+		);
 
 		const res = await injectAuthenticated("PUT", "/services/inst-1", {
 			body: { label: "Updated Label" },
@@ -270,11 +284,7 @@ describe("DELETE /services/:id", () => {
 		const res = await injectAuthenticated("DELETE", "/services/inst-1");
 
 		expect(res.statusCode).toBe(204);
-		expect(mockRequireInstance).toHaveBeenCalledWith(
-			expect.anything(),
-			"user-1",
-			"inst-1",
-		);
+		expect(mockRequireInstance).toHaveBeenCalledWith(expect.anything(), "user-1", "inst-1");
 		expect(mockPrisma.serviceInstance.delete).toHaveBeenCalledWith({
 			where: { id: "inst-1", userId: "user-1" },
 		});
@@ -305,11 +315,7 @@ describe("POST /services/test-connection", () => {
 		});
 
 		expect(res.statusCode).toBe(200);
-		expect(mockTestConnection).toHaveBeenCalledWith(
-			"http://sonarr:8989",
-			"test-key",
-			"sonarr",
-		);
+		expect(mockTestConnection).toHaveBeenCalledWith("http://sonarr:8989", "test-key", "sonarr");
 	});
 
 	it("rejects non-http scheme (SSRF prevention)", async () => {

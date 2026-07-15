@@ -8,7 +8,10 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { mapToOnDeckItems, type PlexCacheOnDeckEntry } from "../../../lib/media-stats/on-deck-helpers.js";
+import {
+	mapToOnDeckItems,
+	type PlexCacheOnDeckEntry,
+} from "../../../lib/media-stats/on-deck-helpers.js";
 
 describe("mapToOnDeckItems", () => {
 	it("maps cache entries to correct PlexOnDeckItem shape", () => {

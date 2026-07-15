@@ -41,17 +41,18 @@ export const ActionsSection: React.FC<{ copy: SeriesTorrentCopy; canAct: boolean
 			{
 				onSuccess: () =>
 					toast.success(
-					`${verb}: ${
-						incognitoMode
-							? getLinuxIsoName(copy.name ?? copy.infoHash.slice(0, 12))
-							: (copy.name ?? copy.infoHash.slice(0, 12))
-					}`,
-					{
-						action:
-							action === "pause"
-								? { label: "Undo", onClick: () => run("resume", "Resumed") }
-								: undefined,
-					}),
+						`${verb}: ${
+							incognitoMode
+								? getLinuxIsoName(copy.name ?? copy.infoHash.slice(0, 12))
+								: (copy.name ?? copy.infoHash.slice(0, 12))
+						}`,
+						{
+							action:
+								action === "pause"
+									? { label: "Undo", onClick: () => run("resume", "Resumed") }
+									: undefined,
+						},
+					),
 				onError: (err) =>
 					toast.error(
 						`${verb} failed: ${err instanceof Error ? err.message : "qui rejected the action"}`,

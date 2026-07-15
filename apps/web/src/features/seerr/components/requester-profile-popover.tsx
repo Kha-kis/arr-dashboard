@@ -94,10 +94,11 @@ export const RequesterProfilePopover = ({
 	const [isOpen, setIsOpen] = useState(false);
 
 	// Fetch quota only when popover is open
-	const { data: quota, isLoading: quotaLoading, isError: quotaError } = useSeerrUserQuota(
-		isOpen ? instanceId : "",
-		seerrUser.id,
-	);
+	const {
+		data: quota,
+		isLoading: quotaLoading,
+		isError: quotaError,
+	} = useSeerrUserQuota(isOpen ? instanceId : "", seerrUser.id);
 
 	const hasMovieQuota = quota?.movie.restricted;
 	const hasTvQuota = quota?.tv.restricted;
@@ -137,8 +138,15 @@ export const RequesterProfilePopover = ({
 				{/* Quota section */}
 				<div className="p-3 space-y-2.5">
 					{quotaLoading && (
-						<div role="status" aria-label="Loading quota" className="flex items-center justify-center py-1">
-							<Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" aria-hidden="true" />
+						<div
+							role="status"
+							aria-label="Loading quota"
+							className="flex items-center justify-center py-1"
+						>
+							<Loader2
+								className="h-3.5 w-3.5 animate-spin text-muted-foreground"
+								aria-hidden="true"
+							/>
 						</div>
 					)}
 					{quotaError && (
@@ -167,7 +175,9 @@ export const RequesterProfilePopover = ({
 						</>
 					)}
 					{quota && !hasAnyQuota && (
-						<p className="text-[11px] text-muted-foreground/60 text-center">No quota restrictions</p>
+						<p className="text-[11px] text-muted-foreground/60 text-center">
+							No quota restrictions
+						</p>
 					)}
 
 					{/* Deep-link action */}

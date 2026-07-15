@@ -3,10 +3,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-	CircuitBreakerOpenError,
-	SeerrCircuitBreaker,
-} from "../seerr-circuit-breaker.js";
+import { CircuitBreakerOpenError, SeerrCircuitBreaker } from "../seerr-circuit-breaker.js";
 
 let breaker: SeerrCircuitBreaker;
 

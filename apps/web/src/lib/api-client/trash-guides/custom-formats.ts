@@ -46,7 +46,6 @@ export interface DeployMultipleCustomFormatsRequest {
 	serviceType: "RADARR" | "SONARR";
 }
 
-
 export interface DeployMultipleCustomFormatsResponse {
 	success: boolean;
 	created: string[];
@@ -199,7 +198,6 @@ export async function createUserCustomFormat(
 		json: request,
 	});
 }
-
 
 /**
  * Delete a user custom format

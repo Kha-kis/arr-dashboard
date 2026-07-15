@@ -26,10 +26,7 @@ export const useCalendarPlexLinks = (
 		const types: string[] = [];
 
 		for (const event of events) {
-			if (
-				event.tmdbId != null &&
-				(event.service === "sonarr" || event.service === "radarr")
-			) {
+			if (event.tmdbId != null && (event.service === "sonarr" || event.service === "radarr")) {
 				const mediaType = event.service === "radarr" ? "movie" : "series";
 				const key = `${mediaType}:${event.tmdbId}`;
 				if (!seen.has(key)) {

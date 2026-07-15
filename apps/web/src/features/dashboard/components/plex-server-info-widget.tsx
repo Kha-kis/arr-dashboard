@@ -85,7 +85,10 @@ export const PlexServerInfoWidget = ({
 	}, [plexQuery.data, jellyfinQuery.data]);
 
 	const isLoading = plexQuery.isLoading || jellyfinQuery.isLoading;
-	const enabledErrors = [hasPlexInstances && plexQuery.isError, hasJellyfinInstances && jellyfinQuery.isError].filter(Boolean).length;
+	const enabledErrors = [
+		hasPlexInstances && plexQuery.isError,
+		hasJellyfinInstances && jellyfinQuery.isError,
+	].filter(Boolean).length;
 	const enabledCount = [hasPlexInstances, hasJellyfinInstances].filter(Boolean).length;
 	const isError = enabledCount > 0 && enabledErrors === enabledCount;
 
@@ -188,7 +191,9 @@ export const PlexServerInfoWidget = ({
 									{server.platform && ` · ${server.platform}`}
 								</p>
 							</div>
-							<span className="text-[10px] text-muted-foreground/60 capitalize">{server.source}</span>
+							<span className="text-[10px] text-muted-foreground/60 capitalize">
+								{server.source}
+							</span>
 							<span className="text-xs text-muted-foreground font-mono">
 								{incognitoMode ? "••••••••" : server.identifier.slice(0, 8)}
 							</span>

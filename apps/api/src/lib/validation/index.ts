@@ -78,10 +78,4 @@ export {
  * 2. Use this name consistently in `parseUpstream`/`validateAndCollect` calls
  * 3. The validation health UI will automatically pick it up
  */
-export const KNOWN_INTEGRATIONS = [
-	"plex",
-	"seerr",
-	"trash-guides",
-	"queue-cleaner",
-] as const;
-
+export const KNOWN_INTEGRATIONS = ["plex", "seerr", "trash-guides", "queue-cleaner"] as const;

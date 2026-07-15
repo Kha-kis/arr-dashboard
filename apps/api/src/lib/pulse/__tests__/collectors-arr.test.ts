@@ -26,13 +26,15 @@ const mockLog = {
 	child: () => mockLog,
 } as unknown as FastifyBaseLogger;
 
-function makeInstance(overrides: Partial<{
-	id: string;
-	label: string;
-	service: string;
-	baseUrl: string;
-	storageGroupId: string | null;
-}> = {}) {
+function makeInstance(
+	overrides: Partial<{
+		id: string;
+		label: string;
+		service: string;
+		baseUrl: string;
+		storageGroupId: string | null;
+	}> = {},
+) {
 	return {
 		id: "inst-lidarr-1",
 		label: "Lidarr",
@@ -76,18 +78,22 @@ function makeLidarrClient(overrides: {
 			: vi.fn().mockResolvedValue(overrides.healthResult ?? []),
 	};
 	(client as unknown as Record<string, unknown>).diskSpace = {
-		get: vi.fn().mockResolvedValue(overrides.diskResult ?? [
-			{ totalSpace: 1_000_000_000_000, freeSpace: 500_000_000_000 },
-		]),
+		get: vi
+			.fn()
+			.mockResolvedValue(
+				overrides.diskResult ?? [{ totalSpace: 1_000_000_000_000, freeSpace: 500_000_000_000 }],
+			),
 	};
 	return client;
 }
 
-function makeSonarrClient(overrides: {
-	healthResult?: Array<{ type: string; message: string; source?: string }>;
-	healthError?: boolean;
-	diskResult?: Array<{ totalSpace: number; freeSpace: number }>;
-} = {}): SonarrClient {
+function makeSonarrClient(
+	overrides: {
+		healthResult?: Array<{ type: string; message: string; source?: string }>;
+		healthError?: boolean;
+		diskResult?: Array<{ totalSpace: number; freeSpace: number }>;
+	} = {},
+): SonarrClient {
 	const client = Object.create(SonarrClient.prototype) as SonarrClient;
 	(client as unknown as Record<string, unknown>).health = {
 		getAll: overrides.healthError
@@ -95,9 +101,11 @@ function makeSonarrClient(overrides: {
 			: vi.fn().mockResolvedValue(overrides.healthResult ?? []),
 	};
 	(client as unknown as Record<string, unknown>).diskSpace = {
-		getAll: vi.fn().mockResolvedValue(overrides.diskResult ?? [
-			{ totalSpace: 1_000_000_000_000, freeSpace: 500_000_000_000 },
-		]),
+		getAll: vi
+			.fn()
+			.mockResolvedValue(
+				overrides.diskResult ?? [{ totalSpace: 1_000_000_000_000, freeSpace: 500_000_000_000 }],
+			),
 	};
 	return client;
 }
@@ -133,14 +141,20 @@ describe("collectArrSignals — Lidarr", () => {
 		const client = makeLidarrClient({
 			healthResult: [
 				{ type: "error", message: "Indexer unavailable", source: "IndexerLongTermStatusCheck" },
-				{ type: "warning", message: "No download client configured", source: "DownloadClientCheck" },
+				{
+					type: "warning",
+					message: "No download client configured",
+					source: "DownloadClientCheck",
+				},
 			],
 		});
 		const app = makeMockApp(makeInstance({ label: "My Lidarr" }), client);
 
 		const items = await collectArrSignals(app, "user-1", mockLog);
 
-		const healthItems = items.filter((i) => i.category === "health" && !i.id.startsWith("arr-unreachable-"));
+		const healthItems = items.filter(
+			(i) => i.category === "health" && !i.id.startsWith("arr-unreachable-"),
+		);
 		expect(healthItems).toHaveLength(2);
 
 		const errorItem = healthItems.find((i) => i.severity === "critical");
@@ -156,7 +170,8 @@ describe("collectArrSignals — Lidarr", () => {
 
 		await collectArrSignals(app, "user-1", mockLog);
 
-		const healthGet = (client as unknown as { health: { get: ReturnType<typeof vi.fn> } }).health.get;
+		const healthGet = (client as unknown as { health: { get: ReturnType<typeof vi.fn> } }).health
+			.get;
 		expect(healthGet).toHaveBeenCalledOnce();
 	});
 });
@@ -168,7 +183,10 @@ describe("collectArrSignals — Lidarr", () => {
 describe("collectArrSignals — Sonarr", () => {
 	it("does NOT emit unreachable signal when Sonarr is healthy", async () => {
 		const client = makeSonarrClient({ healthResult: [] });
-		const app = makeMockApp(makeInstance({ id: "inst-sonarr-1", label: "Sonarr", service: "SONARR" }), client);
+		const app = makeMockApp(
+			makeInstance({ id: "inst-sonarr-1", label: "Sonarr", service: "SONARR" }),
+			client,
+		);
 
 		const items = await collectArrSignals(app, "user-1", mockLog);
 
@@ -178,7 +196,10 @@ describe("collectArrSignals — Sonarr", () => {
 
 	it("emits unreachable signal when Sonarr health.getAll() throws", async () => {
 		const client = makeSonarrClient({ healthError: true });
-		const app = makeMockApp(makeInstance({ id: "inst-sonarr-1", label: "Sonarr Main", service: "SONARR" }), client);
+		const app = makeMockApp(
+			makeInstance({ id: "inst-sonarr-1", label: "Sonarr Main", service: "SONARR" }),
+			client,
+		);
 
 		const items = await collectArrSignals(app, "user-1", mockLog);
 
@@ -191,7 +212,10 @@ describe("collectArrSignals — Sonarr", () => {
 		const client = makeSonarrClient({
 			healthResult: [{ type: "error", message: "Root folder missing" }],
 		});
-		const app = makeMockApp(makeInstance({ id: "inst-sonarr-1", label: "Sonarr", service: "SONARR" }), client);
+		const app = makeMockApp(
+			makeInstance({ id: "inst-sonarr-1", label: "Sonarr", service: "SONARR" }),
+			client,
+		);
 
 		const items = await collectArrSignals(app, "user-1", mockLog);
 
@@ -203,11 +227,15 @@ describe("collectArrSignals — Sonarr", () => {
 
 	it("calls health.getAll() — not health.get() — on SonarrClient", async () => {
 		const client = makeSonarrClient({ healthResult: [] });
-		const app = makeMockApp(makeInstance({ id: "inst-sonarr-1", label: "Sonarr", service: "SONARR" }), client);
+		const app = makeMockApp(
+			makeInstance({ id: "inst-sonarr-1", label: "Sonarr", service: "SONARR" }),
+			client,
+		);
 
 		await collectArrSignals(app, "user-1", mockLog);
 
-		const healthGetAll = (client as unknown as { health: { getAll: ReturnType<typeof vi.fn> } }).health.getAll;
+		const healthGetAll = (client as unknown as { health: { getAll: ReturnType<typeof vi.fn> } })
+			.health.getAll;
 		expect(healthGetAll).toHaveBeenCalledOnce();
 	});
 });

@@ -45,10 +45,7 @@ describe("ntfySender", () => {
 	it("sends to correct URL (serverUrl/topic)", async () => {
 		mockFetch.mockResolvedValue(okResponse());
 
-		await ntfySender.send(
-			{ serverUrl: "https://ntfy.sh", topic: "test" },
-			makePayload(),
-		);
+		await ntfySender.send({ serverUrl: "https://ntfy.sh", topic: "test" }, makePayload());
 
 		const call = mockFetch.mock.calls[0]!;
 		expect(call[0]).toBe("https://ntfy.sh/test");
@@ -71,10 +68,7 @@ describe("ntfySender", () => {
 	it("includes X-Priority header", async () => {
 		mockFetch.mockResolvedValue(okResponse());
 
-		await ntfySender.send(
-			{ serverUrl: "https://ntfy.sh", topic: "test" },
-			makePayload(),
-		);
+		await ntfySender.send({ serverUrl: "https://ntfy.sh", topic: "test" }, makePayload());
 
 		const call = mockFetch.mock.calls[0]!;
 		const headers: Record<string, string> = call[1].headers;
@@ -86,10 +80,7 @@ describe("ntfySender", () => {
 	it("includes X-Tags header", async () => {
 		mockFetch.mockResolvedValue(okResponse());
 
-		await ntfySender.send(
-			{ serverUrl: "https://ntfy.sh", topic: "test" },
-			makePayload(),
-		);
+		await ntfySender.send({ serverUrl: "https://ntfy.sh", topic: "test" }, makePayload());
 
 		const call = mockFetch.mock.calls[0]!;
 		const headers: Record<string, string> = call[1].headers;
@@ -115,10 +106,7 @@ describe("ntfySender", () => {
 	it("does not include Authorization when no token", async () => {
 		mockFetch.mockResolvedValue(okResponse());
 
-		await ntfySender.send(
-			{ serverUrl: "https://ntfy.sh", topic: "test" },
-			makePayload(),
-		);
+		await ntfySender.send({ serverUrl: "https://ntfy.sh", topic: "test" }, makePayload());
 
 		const call = mockFetch.mock.calls[0]!;
 		const headers: Record<string, string> = call[1].headers;
