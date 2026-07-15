@@ -20,16 +20,17 @@ The main development reference is [`CLAUDE.md`](CLAUDE.md) — it covers:
 
 ## Submitting Changes
 
-1. **Fork** the repo and create a branch from `main`
+1. **Fork** the repo and choose the correct base: `next` for 3.0 work, or `main` only for 2.x maintenance
 2. **Follow existing patterns** — check `CLAUDE.md` for conventions
 3. **Test your changes**:
    ```bash
-   pnpm run lint        # Biome (API) + ESLint (Web)
-   pnpm run typecheck   # TypeScript strict mode
+   pnpm run format      # Biome format check
+   pnpm run typecheck   # Turbo TypeScript check (matches CI)
    pnpm run test        # Vitest unit tests
-   pnpm run build       # Production build
+   pnpm run lint        # Biome (API) + ESLint (Web)
+   pnpm run build       # Production build for release-sensitive changes
    ```
-4. **Open a PR** against `main` with a clear description
+4. **Open a PR** against the branch you based the work on (`next` for 3.0; `main` for 2.x maintenance) with a clear description
 
 ## What Makes a Good PR
 

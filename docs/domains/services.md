@@ -1,8 +1,8 @@
 # Domain: Services
 
 Operating manual for external integrations: Sonarr, Radarr, Prowlarr,
-Lidarr, Readarr, Plex, Tautulli, Jellyfin/Emby, Seerr (Jellyseerr /
-Overseerr).
+Lidarr, Readarr, Plex, Jellyfin/Emby, Seerr (Jellyseerr / Overseerr),
+qui, and Tracearr.
 
 ## Purpose
 
@@ -17,12 +17,15 @@ and the UI deal in normalized, typed shapes.
 | Shape | Services | Client style |
 |---|---|---|
 | ARR | Sonarr, Radarr, Prowlarr, Lidarr, Readarr | shared `ArrClientFactory` over `arr-sdk` |
-| Media server | Plex, Jellyfin, Emby, Tautulli | per-service hand-written client (different auth headers) |
+| Media server | Plex, Jellyfin, Emby | per-service hand-written client (different auth headers) |
 | Request | Seerr (Jellyseerr / Overseerr) | hand-written client over `ArrClientFactory.rawRequest()` with retry + circuit breaker |
+| Torrent peer | qui | typed client factory plus capability-aware action service |
+| Analytics | Tracearr | typed Bearer client for its Public API |
 
-All three categories share the same Prisma model (`ServiceInstance`) and
-the same lookup helper (`requireInstance`). The split is in *how to talk
-to them*, not in *how we own them*.
+All categories share the same Prisma model (`ServiceInstance`) and ownership
+invariant. ID-based routes normally use `requireInstance`; aggregate/singleton
+surfaces may use a domain resolver that scopes its query by `userId`. The split
+is in *how to talk to them*, not in *how we own them*.
 
 ## Key files
 
@@ -31,8 +34,10 @@ to them*, not in *how we own them*.
 | CRUD + connection test for any service | `apps/api/src/routes/services.ts` |
 | Ownership-checked instance lookup | `apps/api/src/lib/arr/instance-helpers.ts` (`requireInstance`, `requireEnabledInstance`) |
 | ARR client factory + error types | `apps/api/src/lib/arr/client-factory.ts` |
-| Plex / Tautulli / Jellyfin clients | `apps/api/src/lib/plex/plex-client.ts`, `apps/api/src/lib/tautulli/tautulli-client.ts`, `apps/api/src/lib/jellyfin/*` |
+| Plex / Jellyfin / Emby clients | `apps/api/src/lib/plex/plex-client.ts`, `apps/api/src/lib/jellyfin/*` |
 | Seerr client (resilient) | `apps/api/src/lib/seerr/seerr-client.ts` |
+| qui client + actions | `apps/api/src/lib/qui/client-factory.ts`, `apps/api/src/lib/qui/action-service.ts` |
+| Tracearr client | `apps/api/src/lib/tracearr/client-factory.ts` |
 | Encrypted update helper | `apps/api/src/lib/services/update-builder.ts` |
 | Library/search normalizers | `apps/api/src/lib/library/*-normalizer.ts`, `apps/api/src/lib/search/normalizers.ts` |
 | Centralized error mapping | `apps/api/src/server.ts` (error handler) + `apps/api/src/lib/errors.ts` |
@@ -42,9 +47,11 @@ to them*, not in *how we own them*.
 
 These are the rules every contributor must hold. Most are not type-checkable.
 
-1. **Every instance lookup goes through `requireInstance(app, userId, id)`.**
-   Never query `serviceInstance.findFirst({ where: { id } })` directly —
-   that elides the `userId` filter and creates a cross-tenant read.
+1. **Every instance lookup is ownership-scoped.** Prefer
+   `requireInstance(app, userId, id)` for ID-based reads. A domain resolver
+   may query directly when it aggregates or selects a singleton, but its
+   Prisma `where` must include `userId`; `{ id }` alone creates a cross-tenant
+   read.
 2. **Credentials are encrypted on write through `app.encryptor.encrypt()`,
    stored as `{ encryptedApiKey, encryptionIv }`, and decrypted only at
    the moment of use.** No plaintext on the wire to the DB, no caching
@@ -72,8 +79,9 @@ These are the rules every contributor must hold. Most are not type-checkable.
 - **Validation health** — every external integration emits validation
   stats consumed by `/system/validation-health` (see
   [`docs/domains/system.md`](system.md)).
-- **Centralized error handler** — `ArrError` / `SeerrApiError` /
-  `InstanceNotFoundError` all collapse into clean HTTP responses there.
+- **Centralized error handler** — `ArrError`, `SeerrApiError`,
+  `QuiApiError`, `TracearrApiError`, and `InstanceNotFoundError` all collapse
+  into clean HTTP responses there.
 
 ## Common failure modes / operational notes
 
@@ -87,9 +95,9 @@ These are the rules every contributor must hold. Most are not type-checkable.
   Prowlarr API revisions, Plex schema additions. Absorb in a normalizer
   with defensive type converters (`toNumber`, `toString`, `toBoolean`),
   not in the route or the UI.
-- **Token leakage in logs** — Tautulli's `apikey=…` query param is the
-  most common offender. Sanitize before any `app.log` call. Same rule
-  for Plex's `X-Plex-Token`.
+- **Token leakage in logs** — sanitize Plex's `X-Plex-Token`, Tracearr's
+  Bearer token, qui credentials, and webhook secrets before any `app.log`
+  call. Do not put credentials into URLs.
 - **Seerr/Jellyseerr 5xx storms** — handled by retry + circuit breaker
   in `seerr-client.ts`. Do not add ad-hoc retries on top of that in
   routes.
@@ -111,10 +119,10 @@ A new media or request service (more common):
    regenerate the Prisma client.
 2. `apps/api/src/lib/<service>/<service>-client.ts` — mirror an existing
    peer rather than inventing a signature: `plex-client.ts` for simple
-   token-header auth, `tautulli-client.ts` for query-param API keys,
-   `seerr-client.ts` for resilient (retry + circuit breaker) clients
-   over `ArrClientFactory.rawRequest()`. Sanitize tokens before logging
-   in all cases.
+   token-header auth, Tracearr's `client-factory.ts` for a typed Bearer
+   client, or `seerr-client.ts` for resilient (retry + circuit breaker)
+   clients over `ArrClientFactory.rawRequest()`. Sanitize tokens before
+   logging in all cases.
 3. Routes:
    - if it slots into the generic CRUD shape → reuse `routes/services.ts`
      and only add a connection-test branch.

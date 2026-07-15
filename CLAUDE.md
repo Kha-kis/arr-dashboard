@@ -13,7 +13,7 @@ These cause bugs if ignored:
 1. **API Proxy**: Frontend calls `/api/*` via Next.js rewrites to backend. NEVER use `localhost:3001` directly from frontend code.
 2. **Ownership**: Always include `userId: request.currentUser!.id` in Prisma queries for user-owned resources. Omitting this is a security vulnerability.
 3. **Encryption**: All API keys must be encrypted with `app.encryptor.encrypt()` before storage. Store both `value` and `iv`.
-4. **Auth Check**: Protected routes use preHandler hook checking `request.currentUser?.id`. Every route plugin must add this hook.
+4. **Auth Check**: Protected route groups register through `route-manifest.ts` inside the single protected scope, whose preHandler checks `request.currentUser?.id`. Do not add parallel per-route auth gates.
 5. **Validation**: Use `validateRequest()` from `lib/utils/validate.ts` for request body parsing. Never use `request.body as Type`.
 6. **Incognito Mode**: Any component displaying sensitive data (titles, usernames, URLs, instance names) must use `useIncognitoMode()` hook from `contexts/IncognitoContext.tsx` and anonymize with functions from `lib/incognito.ts`. This includes API response text that embeds instance names (e.g., Pulse titles like `"Label: message"` — split and anonymize both parts). Tests rendering such components need `<IncognitoProvider>` wrapper.
 7. **Query Invalidation**: Always invalidate relevant React Query keys after mutations.
@@ -36,13 +36,13 @@ packages/shared/src/types/ # Shared Zod schemas + TypeScript types
 
 ## Architecture
 
-**Monorepo**: `apps/api` (Fastify 4), `apps/web` (Next.js 16 App Router), `packages/shared` (Zod types). pnpm 10+ with Turbo.
+**Monorepo**: `apps/api` (Fastify 5), `apps/web` (Next.js 16 App Router), `packages/shared` (Zod types). pnpm 10+ with Turbo.
 
-**Stack**: Fastify + Prisma + Zod backend, Next.js + React 18 + TanStack Query frontend, TailwindCSS + shadcn/ui, SQLite default (PostgreSQL supported).
+**Stack**: Fastify + Prisma + Zod backend, Next.js + React 19 + TanStack Query frontend, TailwindCSS + shadcn/ui, SQLite default (PostgreSQL supported).
 
 **Design**: Single-admin, self-hosted. Session-based auth (NOT JWT). Three auth methods: Password, OIDC, Passkeys.
 
-**Services**: Sonarr, Radarr, Prowlarr, Lidarr, Readarr, Plex, Tautulli, Seerr (Jellyseerr/Overseerr).
+**Services**: Sonarr, Radarr, Prowlarr, Lidarr, Readarr, Plex, Jellyfin, Emby, Seerr (Jellyseerr/Overseerr), qui, and Tracearr. Tautulli is removed in 3.0; its Prisma enum value remains only so legacy rows can reach the consent-gated migration dialog.
 
 **Fastify Decorations** (available in route handlers):
 - `request.currentUser` / `request.sessionToken` — populated by auth preHandler
@@ -73,7 +73,7 @@ packages/shared/src/types/ # Shared Zod schemas + TypeScript types
 
 **New API Route:**
 1. Create `apps/api/src/routes/<domain>.ts`
-2. Register in `apps/api/src/server.ts`
+2. Register in `apps/api/src/routes/route-manifest.ts` and document the group in `docs/API-ROUTES.md`
 3. Add Zod types to `packages/shared/src/types/<domain>.ts`
 4. Add API client to `apps/web/src/lib/api-client/<domain>.ts`
 5. Add React Query hook to `apps/web/src/hooks/api/use<Domain>.ts`
@@ -92,7 +92,7 @@ packages/shared/src/types/ # Shared Zod schemas + TypeScript types
 
 When adding features that surface data to users (pages, panels, signals, notifications), verify:
 
-1. **Service-availability gating**: If a signal depends on optional services (Plex, Seerr, Tautulli), guard it — don't show misleading items when the service isn't configured
+1. **Service-availability gating**: If a signal depends on optional services (Plex, Seerr, Tracearr, qui), guard it — don't show misleading items when the service isn't configured
 2. **Signal accuracy**: Every user-facing count or status must be precise, not a proxy. If you can't compute the exact value cheaply, don't show it — overclaiming erodes trust
 3. **Duplicate surface check**: Before adding a signal, check where the same data already appears. Justify the overlap (cross-system synthesis is good, pure duplication is not)
 4. **Action link verification**: Every action link must point to an existing page that shows the relevant data with any required query params
@@ -124,7 +124,7 @@ When adding features that surface data to users (pages, panels, signals, notific
 
 **Data fetching**: API client module -> `useQuery`/`useMutation` hook -> component. All API requests use `credentials: "include"`. Server state must live in shared domain hooks (`hooks/api/`), never inline in components. Components should only render and handle user interaction — keep data transformation and business logic in hooks or utilities.
 
-**Route protection**: No Next.js middleware is used. Auth gating relies on API calls returning 401 for unauthenticated requests — the frontend redirects to `/login` on auth failure. API proxying is handled by Next.js rewrites in `next.config.mjs`.
+**Route protection**: `proxy.ts` performs the frontend redirect preflight, while the API's protected manifest scope is the authoritative auth gate and returns 401 for unauthenticated requests. API proxying is handled by Next.js rewrites in `next.config.mjs`.
 
 **Lazy modals**: Use `React.lazy` + `Suspense` for modals behind `{stateVar && <Modal />}`. Named exports need adapter: `lazy(() => import("./file").then(m => ({ default: m.NamedExport })))`.
 
@@ -153,7 +153,7 @@ pnpm --filter @arr/api exec tsc --noEmit         # Type check backend
 
 ## Patterns & Gotchas
 
-- **API Proxy**: Frontend uses `/api/*` paths via Next.js rewrites in `next.config.mjs`. No middleware exists — auth gating relies on API 401 responses
+- **API Proxy**: Frontend uses `/api/*` paths via Next.js rewrites in `next.config.mjs`; `proxy.ts` only assists navigation, and API 401 responses remain authoritative
 - **Server Components**: Default in Next.js App Router. Add `"use client"` when needed
 - **Docker vs Dev**: Different env vars and paths (`/config/` vs `./`)
 - **Secrets auto-generated**: `ENCRYPTION_KEY` and `SESSION_COOKIE_SECRET` are auto-generated to `secrets.json` if not provided
