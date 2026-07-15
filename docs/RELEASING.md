@@ -4,9 +4,27 @@ Step-by-step checklist for publishing a new version of Arr Dashboard.
 
 > **3.0 cycle:** Use the
 > [3.0 release-readiness audit](3.0-release-readiness.md) for beta/RC entry
-> gates and the `next` → `main` promotion checklist. This document remains the
-> stable-tag checklist; the current Docker workflows do not yet publish
-> immutable images for prerelease tags.
+> gates and the `next` → `main` promotion checklist. Prereleases are cut from
+> `next` using the process below; the remainder of this document is the
+> stable-tag checklist.
+
+## Prerelease Tags (3.0 alpha/beta/RC)
+
+Prerelease tags must match `vX.Y.Z-(alpha|beta|rc).N` and point to a commit
+reachable from `next`.
+
+```bash
+git switch next
+git pull --ff-only origin next
+git tag -a v3.0.0-beta.1 -m "v3.0.0-beta.1"
+git push origin v3.0.0-beta.1
+```
+
+`docker-next.yml` publishes the exact version and moving prerelease channel to
+both registries—for example, `3.0.0-beta.1` and `beta`. It verifies each
+registry's image through `/health`, including the exact version metadata.
+Prereleases never publish `latest`, major, or minor tags; those remain
+exclusive to the stable workflow.
 
 ## Pre-Release
 
