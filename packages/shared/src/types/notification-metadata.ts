@@ -300,6 +300,16 @@ export const NOTIFICATION_EVENT_METADATA: Record<
 		{ key: "itemsUnmonitored", type: "number", description: "Items unmonitored" },
 		{ key: "itemsFilesDeleted", type: "number", description: "Files deleted from disk" },
 	],
+	AUTOMATION_RULE_MATCHED: [
+		{ key: "ruleId", type: "string", description: "Cross-domain rule id" },
+		{ key: "ruleName", type: "string", description: "Cross-domain rule name" },
+		{ key: "instanceId", type: "string", description: "Source *arr instance id" },
+		{ key: "instance", type: "string", description: "Source *arr instance label" },
+		{ key: "itemType", type: "string", description: 'Matched item type: "movie" or "series"' },
+		{ key: "arrItemId", type: "number", description: "Matched item id in the source *arr" },
+		{ key: "year", type: "number", nullable: true, description: "Matched item release year" },
+		{ key: "reason", type: "string", description: "Human-readable condition match reason" },
+	],
 
 	// Security — apps/api/src/routes/auth.ts
 	ACCOUNT_LOCKED: [

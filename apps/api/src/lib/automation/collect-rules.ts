@@ -84,7 +84,7 @@ export async function collectAutomationRules(
 	userId: string,
 	log: FastifyBaseLogger,
 ): Promise<AutomationRuleSummary[]> {
-	const [cleanupRules, autoTagRules, notificationRules] = await Promise.all([
+	const [cleanupRules, autoTagRules, notificationRules, crossDomainRules] = await Promise.all([
 		// Cleanup rules are owned through their config (no direct userId column).
 		prisma.libraryCleanupRule.findMany({
 			where: { config: { userId } },
@@ -99,6 +99,11 @@ export async function collectAutomationRules(
 		prisma.notificationRule.findMany({
 			where: { userId },
 			select: { id: true, name: true, enabled: true, conditions: true },
+			orderBy: { name: "asc" },
+		}),
+		prisma.crossDomainRule.findMany({
+			where: { userId },
+			select: { id: true, name: true, deployedAt: true, document: true },
 			orderBy: { name: "asc" },
 		}),
 	]);
@@ -118,6 +123,16 @@ export async function collectAutomationRules(
 				"notifications",
 				r,
 				() => mapNotificationsV0ToDocument(JSON.parse(r.conditions)),
+				log,
+			),
+		);
+	}
+	for (const r of crossDomainRules) {
+		summaries.push(
+			summarize(
+				"cross-domain",
+				{ id: r.id, name: r.name, enabled: r.deployedAt !== null },
+				() => JSON.parse(r.document) as RuleDocument,
 				log,
 			),
 		);

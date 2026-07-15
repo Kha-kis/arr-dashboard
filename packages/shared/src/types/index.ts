@@ -3,6 +3,7 @@ export * from "./arr";
 export * from "./auto-tag";
 export * from "./automation";
 export * from "./backup";
+export * from "./cross-domain-automation";
 export * from "./dashboard";
 export * from "./jellyfin";
 export * from "./label-sync";

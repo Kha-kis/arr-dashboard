@@ -281,7 +281,7 @@ export const PROTECTED_ROUTE_GROUPS: readonly RouteGroup[] = [
 		register: registerAutomationRoutes,
 		maturity: "experimental",
 		summary:
-			"Unified Automation Engine — composer read surface: every domain's stored rules (library-cleanup / auto-tag / notifications) normalized to the v1 grammar (charter §5.1). Read-only in this phase; authoring + cross-domain rules follow.",
+			"Unified Automation Engine composer: normalized domain rules plus cross-domain draft authoring, mutation-free dry-run, atomic deployment, and scheduled execution.",
 	},
 	{
 		path: "/api/qui",

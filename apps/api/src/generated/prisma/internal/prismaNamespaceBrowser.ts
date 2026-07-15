@@ -105,6 +105,8 @@ export const ModelName = {
   SeerrActionLog: 'SeerrActionLog',
   LabelSyncRule: 'LabelSyncRule',
   AutoTagRule: 'AutoTagRule',
+  CrossDomainRule: 'CrossDomainRule',
+  CrossDomainRuleMatch: 'CrossDomainRuleMatch',
   TmdbListCache: 'TmdbListCache',
   TraktListCache: 'TraktListCache',
   QuiActivityLog: 'QuiActivityLog',
@@ -1145,6 +1147,46 @@ export const AutoTagRuleScalarFieldEnum = {
 } as const
 
 export type AutoTagRuleScalarFieldEnum = (typeof AutoTagRuleScalarFieldEnum)[keyof typeof AutoTagRuleScalarFieldEnum]
+
+
+export const CrossDomainRuleScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  name: 'name',
+  document: 'document',
+  scope: 'scope',
+  actions: 'actions',
+  deployedName: 'deployedName',
+  deployedDocument: 'deployedDocument',
+  deployedScope: 'deployedScope',
+  deployedActions: 'deployedActions',
+  deploymentVersion: 'deploymentVersion',
+  deployedAt: 'deployedAt',
+  dryRunFingerprint: 'dryRunFingerprint',
+  lastDryRunAt: 'lastDryRunAt',
+  lastRunAt: 'lastRunAt',
+  lastRunStatus: 'lastRunStatus',
+  lastRunMessage: 'lastRunMessage',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type CrossDomainRuleScalarFieldEnum = (typeof CrossDomainRuleScalarFieldEnum)[keyof typeof CrossDomainRuleScalarFieldEnum]
+
+
+export const CrossDomainRuleMatchScalarFieldEnum = {
+  id: 'id',
+  ruleId: 'ruleId',
+  deploymentVersion: 'deploymentVersion',
+  instanceId: 'instanceId',
+  arrItemId: 'arrItemId',
+  itemType: 'itemType',
+  completedActions: 'completedActions',
+  lastError: 'lastError',
+  processedAt: 'processedAt'
+} as const
+
+export type CrossDomainRuleMatchScalarFieldEnum = (typeof CrossDomainRuleMatchScalarFieldEnum)[keyof typeof CrossDomainRuleMatchScalarFieldEnum]
 
 
 export const TmdbListCacheScalarFieldEnum = {
