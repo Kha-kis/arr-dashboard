@@ -1,0 +1,7 @@
+HTTP/1.1 200 OK
+CACHE-CONTROL: max-age=1800
+EXT:
+LOCATION: http://10.0.0.20:32469/DeviceDescription.xml
+SERVER: Linux/6.8 UPnP/1.0 DLNADOC/1.50
+ST: urn:schemas-upnp-org:device:MediaServer:1
+USN: uuid:2b95f4f3-0e2d-4ee4-a05d-3c7eaf30d990::urn:schemas-upnp-org:device:MediaServer:1

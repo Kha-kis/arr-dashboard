@@ -14,6 +14,18 @@ describe("setup discovery contracts", () => {
 		).toMatchObject({ service: "plex", protocol: "plex-gdm" });
 	});
 
+	it("accepts Plex SSDP as a discovery fallback", () => {
+		expect(
+			setupDiscoveryCandidateSchema.parse({
+				service: "plex",
+				name: "Plex Media Server",
+				baseUrl: "http://192.168.1.10:32400",
+				serverId: "plex-dlna-id",
+				protocol: "plex-ssdp",
+			}),
+		).toMatchObject({ service: "plex", protocol: "plex-ssdp" });
+	});
+
 	it("rejects unsupported services and non-HTTP URLs", () => {
 		expect(
 			setupDiscoveryCandidateSchema.safeParse({
@@ -42,7 +54,7 @@ describe("setup discovery contracts", () => {
 		expect(
 			setupDiscoveryResponseSchema.parse({
 				candidates: [],
-				scannedProtocols: ["plex-gdm", "jellyfin-udp", "emby-udp"],
+				scannedProtocols: ["plex-gdm", "plex-ssdp", "jellyfin-udp", "emby-udp"],
 				durationMs: 1200,
 			}),
 		).toMatchObject({ candidates: [], durationMs: 1200 });
