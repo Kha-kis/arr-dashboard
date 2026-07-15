@@ -23,7 +23,7 @@ beforeEach(async () => {
 				protocol: "plex-gdm",
 			},
 		],
-		scannedProtocols: ["plex-gdm", "jellyfin-udp", "emby-udp"],
+		scannedProtocols: ["plex-gdm", "plex-ssdp", "jellyfin-udp", "emby-udp"],
 		durationMs: 1200,
 	});
 	app = Fastify({ logger: false });
@@ -49,7 +49,7 @@ describe("POST /setup/discovery", () => {
 	it("coalesces overlapping scans instead of multiplying network broadcasts", async () => {
 		let resolveScan!: (value: {
 			candidates: never[];
-			scannedProtocols: ["plex-gdm", "jellyfin-udp", "emby-udp"];
+			scannedProtocols: ["plex-gdm", "plex-ssdp", "jellyfin-udp", "emby-udp"];
 			durationMs: number;
 		}) => void;
 		discoverMediaServers.mockReturnValueOnce(
@@ -63,7 +63,7 @@ describe("POST /setup/discovery", () => {
 		await vi.waitFor(() => expect(discoverMediaServers).toHaveBeenCalledOnce());
 		resolveScan({
 			candidates: [],
-			scannedProtocols: ["plex-gdm", "jellyfin-udp", "emby-udp"],
+			scannedProtocols: ["plex-gdm", "plex-ssdp", "jellyfin-udp", "emby-udp"],
 			durationMs: 1,
 		});
 

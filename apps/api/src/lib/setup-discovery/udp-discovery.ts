@@ -4,11 +4,16 @@ import type {
 	SetupDiscoveryResponse,
 } from "@arr/shared";
 import { createSocket, type RemoteInfo, type Socket } from "node:dgram";
-import { parseMediaBrowserUdpResponse, parsePlexGdmResponse } from "./parsers.js";
+import {
+	parseMediaBrowserUdpResponse,
+	parsePlexGdmResponse,
+	parsePlexSsdpResponse,
+} from "./parsers.js";
 
 const DEFAULT_TIMEOUT_MS = 1_200;
 export const SETUP_DISCOVERY_PROTOCOLS = [
 	"plex-gdm",
+	"plex-ssdp",
 	"jellyfin-udp",
 	"emby-udp",
 ] as const satisfies readonly SetupDiscoveryProtocol[];
@@ -30,6 +35,15 @@ const PROBES: readonly Probe[] = [
 		port: 32414,
 		broadcast: false,
 		parse: parsePlexGdmResponse,
+	},
+	{
+		protocol: "plex-ssdp",
+		message:
+			'M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: "ssdp:discover"\r\nMX: 1\r\nST: urn:schemas-upnp-org:device:MediaServer:1\r\n\r\n',
+		host: "239.255.255.250",
+		port: 1900,
+		broadcast: false,
+		parse: parsePlexSsdpResponse,
 	},
 	{
 		protocol: "jellyfin-udp",
@@ -144,9 +158,11 @@ export function deduplicateCandidates(
 ): SetupDiscoveryCandidate[] {
 	const seen = new Set<string>();
 	return candidates.filter((candidate) => {
-		const key = `${candidate.service}:${candidate.serverId ?? candidate.baseUrl}`;
-		if (seen.has(key)) return false;
-		seen.add(key);
+		const urlKey = `${candidate.service}:url:${candidate.baseUrl}`;
+		const idKey = candidate.serverId ? `${candidate.service}:id:${candidate.serverId}` : null;
+		if (seen.has(urlKey) || (idKey !== null && seen.has(idKey))) return false;
+		seen.add(urlKey);
+		if (idKey !== null) seen.add(idKey);
 		return true;
 	});
 }

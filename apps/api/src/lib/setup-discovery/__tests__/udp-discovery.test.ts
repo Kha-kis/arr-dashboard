@@ -8,7 +8,7 @@ import {
 
 type Handler = (...args: never[]) => void;
 
-function respondingSocketFactory(): () => Socket {
+function respondingSocketFactory(options?: { gdm?: boolean }): () => Socket {
 	return () => {
 		const handlers = new Map<string, Handler[]>();
 		const socket = {
@@ -28,12 +28,20 @@ function respondingSocketFactory(): () => Socket {
 			},
 			send(message: Buffer, _port: number, _host: string, callback: (error: null) => void) {
 				const query = message.toString();
-				const payload = query.includes("M-SEARCH")
-					? "HTTP/1.0 200 OK\r\nContent-Type: plex/media-server\r\nName: Plex\r\nPort: 32400\r\nResource-Identifier: plex-1"
-					: query.includes("Jellyfin")
-						? '{"Address":"http://10.0.0.2:8096","Id":"jelly-1","Name":"Jellyfin"}'
-						: '{"Address":"http://10.0.0.3:8096","Id":"emby-1","Name":"Emby"}';
+				const isSsdp = query.includes("239.255.255.250");
+				const isGdm = query.includes("M-SEARCH") && !isSsdp;
+				const payload = isSsdp
+					? "HTTP/1.1 200 OK\r\nST: urn:schemas-upnp-org:device:MediaServer:1\r\nLOCATION: http://192.168.1.2:32469/DeviceDescription.xml\r\nUSN: uuid:ssdp-plex-1::urn:schemas-upnp-org:device:MediaServer:1"
+					: query.includes("M-SEARCH")
+						? "HTTP/1.0 200 OK\r\nContent-Type: plex/media-server\r\nName: Plex\r\nPort: 32400\r\nResource-Identifier: plex-1"
+						: query.includes("Jellyfin")
+							? '{"Address":"http://10.0.0.2:8096","Id":"jelly-1","Name":"Jellyfin"}'
+							: '{"Address":"http://10.0.0.3:8096","Id":"emby-1","Name":"Emby"}';
 				queueMicrotask(() => {
+					if (isGdm && options?.gdm === false) {
+						callback(null);
+						return;
+					}
 					for (const handler of handlers.get("message") ?? []) {
 						(handler as (...args: unknown[]) => void)(Buffer.from(payload), {
 							address: query.includes("M-SEARCH") ? "192.168.1.2" : "192.168.1.3",
@@ -66,6 +74,20 @@ describe("bounded UDP setup discovery", () => {
 			"jellyfin",
 			"plex",
 		]);
+		expect(result.candidates.find((candidate) => candidate.service === "plex")?.protocol).toBe(
+			"plex-gdm",
+		);
+	});
+
+	it("returns the SSDP fallback when Plex does not answer GDM", async () => {
+		const result = await discoverMediaServers({
+			timeoutMs: 5,
+			socketFactory: respondingSocketFactory({ gdm: false }),
+		});
+		expect(result.candidates.find((candidate) => candidate.service === "plex")).toMatchObject({
+			baseUrl: "http://192.168.1.2:32400",
+			protocol: "plex-ssdp",
+		});
 	});
 
 	it("deduplicates repeated datagrams by service and stable server identity", () => {
@@ -79,6 +101,23 @@ describe("bounded UDP setup discovery", () => {
 		expect(deduplicateCandidates([candidate, { ...candidate, name: "Duplicate" }])).toEqual([
 			candidate,
 		]);
+	});
+
+	it("deduplicates fallback responses by service URL while preserving the primary result", () => {
+		const primary = {
+			service: "plex" as const,
+			name: "Cinema Plex",
+			baseUrl: "http://192.168.1.2:32400",
+			serverId: "gdm-identity",
+			protocol: "plex-gdm" as const,
+		};
+		const fallback = {
+			...primary,
+			name: "Plex Media Server",
+			serverId: "ssdp-identity",
+			protocol: "plex-ssdp" as const,
+		};
+		expect(deduplicateCandidates([primary, fallback])).toEqual([primary]);
 	});
 
 	it("fails silent-and-fast when UDP sockets are unavailable", async () => {

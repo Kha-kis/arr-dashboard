@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-export const setupDiscoveryProtocolSchema = z.enum(["plex-gdm", "jellyfin-udp", "emby-udp"]);
+export const setupDiscoveryProtocolSchema = z.enum([
+	"plex-gdm",
+	"plex-ssdp",
+	"jellyfin-udp",
+	"emby-udp",
+]);
 export type SetupDiscoveryProtocol = z.infer<typeof setupDiscoveryProtocolSchema>;
 
 function isCredentialFreeHttpUrl(value: string): boolean {

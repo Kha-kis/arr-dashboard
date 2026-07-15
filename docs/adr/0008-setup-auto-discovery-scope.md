@@ -17,8 +17,10 @@ services is the worst part of first-run today.
 arr-dashboard connects to split into two classes:
 
 - **Media servers ship discovery protocols.** Plex answers GDM (UDP
-  broadcast on 32414) and SSDP; Jellyfin and Emby answer a UDP
-  discovery datagram ("Who is JellyfinServer?" on 7359) and mDNS.
+  broadcast on 32414) and, when its DLNA server is enabled, SSDP;
+  Jellyfin and Emby answer a UDP discovery datagram ("Who is
+  JellyfinServer?" on 7359). Upstream verification found no built-in
+  Jellyfin or Emby mDNS publisher.
   Discovery is a supported, documented use of these protocols.
 - **The *arr family ships none.** Sonarr, Radarr, Prowlarr, Lidarr, and
   Readarr have no broadcast/announce mechanism. "Detecting" them means
@@ -34,8 +36,8 @@ Setup auto-detection covers **media servers only**:
 | Service | Mechanism |
 |---|---|
 | Plex | GDM broadcast; SSDP fallback |
-| Jellyfin | UDP discovery (port 7359); mDNS fallback |
-| Emby | UDP discovery (shared lineage with Jellyfin); mDNS fallback |
+| Jellyfin | UDP discovery (port 7359) |
+| Emby | UDP discovery (shared lineage with Jellyfin) |
 | Tracearr | manual entry in 3.0; revisit if upstream adds announce/mDNS |
 
 The *arr services (and qui, Seerr) remain **manual entry**, with the
@@ -110,12 +112,14 @@ URL field.
 - The detection module ships with recorded-datagram fixtures so CI
   covers parsing without a live network.
 
-**Implementation note (2026-07-15):** the first Setup rewrite slice
-implements the primary Plex GDM and Jellyfin/Emby UDP probes behind a
-bounded, authenticated endpoint. It returns candidates only, coalesces
-overlapping scans, and treats unavailable UDP networking as an empty
-result. SSDP and mDNS remain fallback mechanisms for the guided-wizard
-slice; they do not broaden discovery to the *arr family.
+**Implementation note (2026-07-15):** the Setup rewrite implements the
+primary Plex GDM and Jellyfin/Emby UDP probes behind a bounded,
+authenticated endpoint, plus a Plex SSDP fallback for installations
+with DLNA enabled. It returns candidates only, coalesces overlapping
+scans, and treats unavailable UDP networking as an empty result.
+Jellyfin and Emby mDNS fallbacks were removed from the plan after their
+current upstream server implementations were verified not to publish
+those services. Discovery does not broaden to the *arr family.
 
 **Guided-wizard note (2026-07-15):** the first wizard slice carries all
 three bootstrap authentication methods into an authenticated service
