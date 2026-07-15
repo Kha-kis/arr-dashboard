@@ -6,7 +6,9 @@ import { vi, describe, it, expect, beforeEach, afterAll } from "vitest";
 
 const { mockSessionService } = vi.hoisted(() => ({
 	mockSessionService: {
-		createSession: vi.fn().mockResolvedValue({ token: "mock-session-token", id: "mock-session-id" }),
+		createSession: vi
+			.fn()
+			.mockResolvedValue({ token: "mock-session-token", id: "mock-session-id" }),
 		attachCookie: vi.fn(),
 		invalidateSession: vi.fn().mockResolvedValue(undefined),
 		clearCookie: vi.fn(),
@@ -16,9 +18,11 @@ const { mockSessionService } = vi.hoisted(() => ({
 
 // Mock OIDCProvider class — avoid real discovery/HTTP calls
 const { MockOIDCProvider } = vi.hoisted(() => {
-	const mockGetAuthorizationUrl = vi.fn().mockResolvedValue(
-		"https://provider.example.com/authorize?client_id=test&state=mock-state&code_challenge=mock-challenge",
-	);
+	const mockGetAuthorizationUrl = vi
+		.fn()
+		.mockResolvedValue(
+			"https://provider.example.com/authorize?client_id=test&state=mock-state&code_challenge=mock-challenge",
+		);
 	class MockOIDCProvider {
 		config: Record<string, unknown>;
 		static mockGetAuthorizationUrl = mockGetAuthorizationUrl;
@@ -26,6 +30,15 @@ const { MockOIDCProvider } = vi.hoisted(() => {
 			this.config = config;
 		}
 		getAuthorizationUrl = mockGetAuthorizationUrl;
+		exchangeCode = vi.fn().mockResolvedValue({
+			access_token: "mock-access-token",
+			id_token: "mock-id-token",
+		});
+		extractIdTokenClaims = vi.fn().mockReturnValue({ sub: "provider-user-1" });
+		getUserInfo = vi.fn().mockResolvedValue({
+			sub: "provider-user-1",
+			preferred_username: "oidc-admin",
+		});
 	}
 	return { MockOIDCProvider };
 });
@@ -88,6 +101,10 @@ function makeOidcProvider(overrides: Record<string, unknown> = {}) {
 function createMockPrisma() {
 	const userMock = {
 		count: vi.fn().mockResolvedValue(0),
+		create: vi.fn().mockResolvedValue({
+			id: "user-1",
+			username: "oidc-admin",
+		}),
 	};
 
 	const oidcProviderMock = {
@@ -108,7 +125,8 @@ function createMockPrisma() {
 		user: userMock,
 		oIDCProvider: oidcProviderMock,
 		oIDCAccount: {
-			findFirst: vi.fn().mockResolvedValue(null),
+			findUnique: vi.fn().mockResolvedValue(null),
+			create: vi.fn(),
 		},
 		$transaction: vi.fn().mockImplementation(async (fn: any) => {
 			return fn({
@@ -130,8 +148,9 @@ beforeEach(async () => {
 	vi.clearAllMocks();
 
 	// Reset the OIDCProvider mock
-	MockOIDCProvider.mockGetAuthorizationUrl.mockResolvedValue(
-		"https://provider.example.com/authorize?client_id=test&state=mock-state",
+	MockOIDCProvider.mockGetAuthorizationUrl.mockImplementation(
+		(state: string) =>
+			`https://provider.example.com/authorize?client_id=test&state=${encodeURIComponent(state)}`,
 	);
 
 	mockPrisma = createMockPrisma();
@@ -294,6 +313,45 @@ describe("POST /auth/oidc/login", () => {
 // ===========================================================================
 
 describe("GET /auth/oidc/callback", () => {
+	it("continues initial OIDC setup into service onboarding", async () => {
+		mockPrisma.oIDCProvider.findFirst.mockResolvedValue(makeOidcProvider());
+		const login = await app.inject({ method: "POST", url: "/auth/oidc/login" });
+		const authorizationUrl = new URL(JSON.parse(login.payload).authorizationUrl);
+		const state = authorizationUrl.searchParams.get("state");
+
+		const res = await app.inject({
+			method: "GET",
+			url: `/auth/oidc/callback?code=mock-auth-code&state=${encodeURIComponent(state ?? "")}`,
+		});
+
+		expect(res.statusCode).toBe(302);
+		expect(res.headers.location).toBe("/setup?stage=services");
+		expect(mockSessionService.createSession).toHaveBeenCalledWith(
+			"user-1",
+			true,
+			expect.any(Object),
+		);
+	});
+
+	it("keeps normal OIDC logins on the existing root redirect", async () => {
+		mockPrisma.oIDCProvider.findFirst.mockResolvedValue(makeOidcProvider());
+		mockPrisma.oIDCAccount.findUnique.mockResolvedValue({
+			providerUserId: "provider-user-1",
+			user: { id: "existing-user", username: "existing-admin" },
+		});
+		const login = await app.inject({ method: "POST", url: "/auth/oidc/login" });
+		const authorizationUrl = new URL(JSON.parse(login.payload).authorizationUrl);
+		const state = authorizationUrl.searchParams.get("state");
+
+		const res = await app.inject({
+			method: "GET",
+			url: `/auth/oidc/callback?code=mock-auth-code&state=${encodeURIComponent(state ?? "")}`,
+		});
+
+		expect(res.statusCode).toBe(302);
+		expect(res.headers.location).toBe("/");
+	});
+
 	it("returns 400 with invalid state (CSRF protection)", async () => {
 		const res = await app.inject({
 			method: "GET",

@@ -116,3 +116,10 @@ bounded, authenticated endpoint. It returns candidates only, coalesces
 overlapping scans, and treats unavailable UDP networking as an empty
 result. SSDP and mDNS remain fallback mechanisms for the guided-wizard
 slice; they do not broaden discovery to the *arr family.
+
+**Guided-wizard note (2026-07-15):** the first wizard slice carries all
+three bootstrap authentication methods into an authenticated service
+onboarding step. Discovery candidates only pre-fill forms; the operator
+must supply credentials, pass a live connection test, and explicitly
+save each service. Manual entry remains available for every supported
+service, and the flow explains why the *arr family is not scanned.

@@ -361,6 +361,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		});
 
 		try {
+			let createdInitialUser = false;
 			// Convert query object to URLSearchParams for oauth4webapi
 			const queryParams = new URLSearchParams();
 			for (const [key, value] of Object.entries(request.query as Record<string, string>)) {
@@ -466,6 +467,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 						});
 
 						user = newUser;
+						createdInitialUser = true;
 					} catch (error) {
 						if (error instanceof Error && error.message === "SETUP_COMPLETE") {
 							// Setup already completed by concurrent request
@@ -489,12 +491,12 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				request.log.debug({ err }, "Connection warm-up wrapper error (non-critical)");
 			});
 
-			// Redirect to root - Next.js middleware will redirect to dashboard if authenticated
+			const redirectPath = createdInitialUser ? "/setup?stage=services" : "/";
 			request.log.info(
-				{ userId: user.id, username: user.username },
-				"OIDC authentication successful, redirecting to root",
+				{ userId: user.id, username: user.username, redirectPath },
+				"OIDC authentication successful",
 			);
-			return reply.redirect("/", 302);
+			return reply.redirect(redirectPath, 302);
 		} catch (error: unknown) {
 			const errMsg = getErrorMessage(error);
 			const errStack = error instanceof Error ? error.stack : undefined;

@@ -34,6 +34,10 @@ export const authKeys = {
 	passkeyCredentials: ["passkey-credentials"] as const,
 };
 
+export const setupKeys = {
+	discovery: ["setup", "discovery"] as const,
+};
+
 /* -------------------------------------------------------------------------- */
 /*  Services                                                                   */
 /* -------------------------------------------------------------------------- */
