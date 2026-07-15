@@ -102,6 +102,7 @@ export const notificationEventTypeSchema = z.enum([
 	"LIBRARY_NEW_CONTENT",
 	"CLEANUP_ITEMS_FLAGGED",
 	"CLEANUP_ITEMS_REMOVED",
+	"AUTOMATION_RULE_MATCHED",
 	// Security
 	"ACCOUNT_LOCKED",
 	"LOGIN_FAILED",

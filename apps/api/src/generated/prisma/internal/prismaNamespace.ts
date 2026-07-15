@@ -438,6 +438,8 @@ export const ModelName = {
   SeerrActionLog: 'SeerrActionLog',
   LabelSyncRule: 'LabelSyncRule',
   AutoTagRule: 'AutoTagRule',
+  CrossDomainRule: 'CrossDomainRule',
+  CrossDomainRuleMatch: 'CrossDomainRuleMatch',
   TmdbListCache: 'TmdbListCache',
   TraktListCache: 'TraktListCache',
   QuiActivityLog: 'QuiActivityLog',
@@ -459,7 +461,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "inodeIndexCache" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "episodeFileCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "autoTagRule" | "tmdbListCache" | "traktListCache" | "quiActivityLog" | "quiActionLog" | "quiEventLog" | "pulseDismissal"
+    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "inodeIndexCache" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "episodeFileCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "autoTagRule" | "crossDomainRule" | "crossDomainRuleMatch" | "tmdbListCache" | "traktListCache" | "quiActivityLog" | "quiActionLog" | "quiEventLog" | "pulseDismissal"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -4459,6 +4461,154 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    CrossDomainRule: {
+      payload: Prisma.$CrossDomainRulePayload<ExtArgs>
+      fields: Prisma.CrossDomainRuleFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.CrossDomainRuleFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CrossDomainRulePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.CrossDomainRuleFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CrossDomainRulePayload>
+        }
+        findFirst: {
+          args: Prisma.CrossDomainRuleFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CrossDomainRulePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.CrossDomainRuleFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CrossDomainRulePayload>
+        }
+        findMany: {
+          args: Prisma.CrossDomainRuleFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CrossDomainRulePayload>[]
+        }
+        create: {
+          args: Prisma.CrossDomainRuleCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CrossDomainRulePayload>
+        }
+        createMany: {
+          args: Prisma.CrossDomainRuleCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.CrossDomainRuleCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CrossDomainRulePayload>[]
+        }
+        delete: {
+          args: Prisma.CrossDomainRuleDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CrossDomainRulePayload>
+        }
+        update: {
+          args: Prisma.CrossDomainRuleUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CrossDomainRulePayload>
+        }
+        deleteMany: {
+          args: Prisma.CrossDomainRuleDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.CrossDomainRuleUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.CrossDomainRuleUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CrossDomainRulePayload>[]
+        }
+        upsert: {
+          args: Prisma.CrossDomainRuleUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CrossDomainRulePayload>
+        }
+        aggregate: {
+          args: Prisma.CrossDomainRuleAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateCrossDomainRule>
+        }
+        groupBy: {
+          args: Prisma.CrossDomainRuleGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.CrossDomainRuleGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.CrossDomainRuleCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.CrossDomainRuleCountAggregateOutputType> | number
+        }
+      }
+    }
+    CrossDomainRuleMatch: {
+      payload: Prisma.$CrossDomainRuleMatchPayload<ExtArgs>
+      fields: Prisma.CrossDomainRuleMatchFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.CrossDomainRuleMatchFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CrossDomainRuleMatchPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.CrossDomainRuleMatchFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CrossDomainRuleMatchPayload>
+        }
+        findFirst: {
+          args: Prisma.CrossDomainRuleMatchFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CrossDomainRuleMatchPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.CrossDomainRuleMatchFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CrossDomainRuleMatchPayload>
+        }
+        findMany: {
+          args: Prisma.CrossDomainRuleMatchFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CrossDomainRuleMatchPayload>[]
+        }
+        create: {
+          args: Prisma.CrossDomainRuleMatchCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CrossDomainRuleMatchPayload>
+        }
+        createMany: {
+          args: Prisma.CrossDomainRuleMatchCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.CrossDomainRuleMatchCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CrossDomainRuleMatchPayload>[]
+        }
+        delete: {
+          args: Prisma.CrossDomainRuleMatchDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CrossDomainRuleMatchPayload>
+        }
+        update: {
+          args: Prisma.CrossDomainRuleMatchUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CrossDomainRuleMatchPayload>
+        }
+        deleteMany: {
+          args: Prisma.CrossDomainRuleMatchDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.CrossDomainRuleMatchUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.CrossDomainRuleMatchUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CrossDomainRuleMatchPayload>[]
+        }
+        upsert: {
+          args: Prisma.CrossDomainRuleMatchUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CrossDomainRuleMatchPayload>
+        }
+        aggregate: {
+          args: Prisma.CrossDomainRuleMatchAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateCrossDomainRuleMatch>
+        }
+        groupBy: {
+          args: Prisma.CrossDomainRuleMatchGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.CrossDomainRuleMatchGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.CrossDomainRuleMatchCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.CrossDomainRuleMatchCountAggregateOutputType> | number
+        }
+      }
+    }
     TmdbListCache: {
       payload: Prisma.$TmdbListCachePayload<ExtArgs>
       fields: Prisma.TmdbListCacheFieldRefs
@@ -5960,6 +6110,46 @@ export const AutoTagRuleScalarFieldEnum = {
 export type AutoTagRuleScalarFieldEnum = (typeof AutoTagRuleScalarFieldEnum)[keyof typeof AutoTagRuleScalarFieldEnum]
 
 
+export const CrossDomainRuleScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  name: 'name',
+  document: 'document',
+  scope: 'scope',
+  actions: 'actions',
+  deployedName: 'deployedName',
+  deployedDocument: 'deployedDocument',
+  deployedScope: 'deployedScope',
+  deployedActions: 'deployedActions',
+  deploymentVersion: 'deploymentVersion',
+  deployedAt: 'deployedAt',
+  dryRunFingerprint: 'dryRunFingerprint',
+  lastDryRunAt: 'lastDryRunAt',
+  lastRunAt: 'lastRunAt',
+  lastRunStatus: 'lastRunStatus',
+  lastRunMessage: 'lastRunMessage',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type CrossDomainRuleScalarFieldEnum = (typeof CrossDomainRuleScalarFieldEnum)[keyof typeof CrossDomainRuleScalarFieldEnum]
+
+
+export const CrossDomainRuleMatchScalarFieldEnum = {
+  id: 'id',
+  ruleId: 'ruleId',
+  deploymentVersion: 'deploymentVersion',
+  instanceId: 'instanceId',
+  arrItemId: 'arrItemId',
+  itemType: 'itemType',
+  completedActions: 'completedActions',
+  lastError: 'lastError',
+  processedAt: 'processedAt'
+} as const
+
+export type CrossDomainRuleMatchScalarFieldEnum = (typeof CrossDomainRuleMatchScalarFieldEnum)[keyof typeof CrossDomainRuleMatchScalarFieldEnum]
+
+
 export const TmdbListCacheScalarFieldEnum = {
   id: 'id',
   userId: 'userId',
@@ -6293,6 +6483,8 @@ export type GlobalOmitConfig = {
   seerrActionLog?: Prisma.SeerrActionLogOmit
   labelSyncRule?: Prisma.LabelSyncRuleOmit
   autoTagRule?: Prisma.AutoTagRuleOmit
+  crossDomainRule?: Prisma.CrossDomainRuleOmit
+  crossDomainRuleMatch?: Prisma.CrossDomainRuleMatchOmit
   tmdbListCache?: Prisma.TmdbListCacheOmit
   traktListCache?: Prisma.TraktListCacheOmit
   quiActivityLog?: Prisma.QuiActivityLogOmit

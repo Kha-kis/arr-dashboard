@@ -18,6 +18,7 @@ export const RULE_CONTEXT_IDS = [
 	"library-cleanup",
 	"auto-tag",
 	"notifications",
+	"cross-domain",
 	"queue-cleaner",
 	"hunting",
 ] as const;
@@ -47,6 +48,9 @@ export const CONTEXT_KINDS: Record<RuleContextId, ReadonlySet<string>> = {
 	"auto-tag": CRITERIA_KINDS,
 	// Intentionally tiny and event-shaped (§2.2).
 	notifications: new Set([FIELD_MATCH_KIND]),
+	// Cross-domain rules currently evaluate cached Sonarr/Radarr library
+	// items, so they intentionally share the proven criteria vocabulary.
+	"cross-domain": CRITERIA_KINDS,
 	"queue-cleaner": new Set<string>(),
 	hunting: new Set<string>(),
 };

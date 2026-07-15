@@ -44,7 +44,11 @@ export class NotificationService {
 	private ruleEngine: RuleEngine | null;
 	private aggregationBuffer: AggregationBuffer | null;
 	private baseUrl: string;
-	private deferredQueue: Array<{ payload: NotificationPayload; deliverAt: number }> = [];
+	private deferredQueue: Array<{
+		payload: NotificationPayload;
+		deliverAt: number;
+		userId?: string;
+	}> = [];
 	private deferFlushTimer: ReturnType<typeof setInterval> | null = null;
 	private static readonly MAX_DEFERRED_QUEUE_SIZE = 200;
 
@@ -86,6 +90,7 @@ export class NotificationService {
 		payload: NotificationPayload,
 		deferUntil: string,
 		ruleId: string,
+		userId?: string,
 	): void {
 		// Cap queue to prevent unbounded growth
 		if (this.deferredQueue.length >= NotificationService.MAX_DEFERRED_QUEUE_SIZE) {
@@ -96,7 +101,7 @@ export class NotificationService {
 			this.deferredQueue.shift();
 		}
 		const deliverAt = new Date(deferUntil).getTime();
-		this.deferredQueue.push({ payload, deliverAt });
+		this.deferredQueue.push({ payload, deliverAt, userId });
 		this.logger.info(
 			{ eventType: payload.eventType, ruleId, deferUntil, queueSize: this.deferredQueue.length },
 			"Notification deferred until quiet hours end",
@@ -125,7 +130,7 @@ export class NotificationService {
 		const deliveryOptions = { skipRules: true };
 		for (const item of ready) {
 			try {
-				await this.notify(item.payload, deliveryOptions);
+				await this.notify(item.payload, { ...deliveryOptions, userId: item.userId });
 			} catch (err: unknown) {
 				this.logger.warn(
 					{ err, eventType: item.payload.eventType },
@@ -139,7 +144,10 @@ export class NotificationService {
 	 * Send a notification to all channels subscribed to the given event type.
 	 * Failures on individual channels are logged but do not throw.
 	 */
-	async notify(payload: NotificationPayload, options?: { skipRules?: boolean }): Promise<void> {
+	async notify(
+		payload: NotificationPayload,
+		options?: { skipRules?: boolean; userId?: string },
+	): Promise<void> {
 		// Conformance check against the per-event-type metadata schema
 		// registry (@arr/shared notification-metadata). Warn-only: a mismatch
 		// means an emitter and the registry drifted apart — that's a bug to
@@ -171,7 +179,10 @@ export class NotificationService {
 		}
 
 		const subscriptions = await this.prisma.notificationSubscription.findMany({
-			where: { eventType: payload.eventType },
+			where: {
+				eventType: payload.eventType,
+				...(options?.userId ? { channel: { userId: options.userId } } : {}),
+			},
 			include: {
 				channel: true,
 			},
@@ -190,7 +201,7 @@ export class NotificationService {
 
 		// Rule engine: evaluate user-defined rules for suppression, throttling, routing
 		// Deferred notifications skip rules to prevent infinite re-deferral loops
-		const userId = enabledSubs[0]?.channel?.userId;
+		const userId = options?.userId ?? enabledSubs[0]?.channel?.userId;
 		if (userId && this.ruleEngine && !options?.skipRules) {
 			const rules = await this.loadRules(userId);
 			const ruleResult = this.ruleEngine.evaluate(payload, rules);
@@ -203,7 +214,7 @@ export class NotificationService {
 					return;
 				}
 				if (ruleResult.action === "defer" && ruleResult.deferUntil) {
-					this.deferNotification(payload, ruleResult.deferUntil, ruleResult.ruleId);
+					this.deferNotification(payload, ruleResult.deferUntil, ruleResult.ruleId, userId);
 					return;
 				}
 				if (ruleResult.action === "throttle" && ruleResult.throttleMinutes) {

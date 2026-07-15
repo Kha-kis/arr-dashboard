@@ -178,3 +178,14 @@ before each surface cuts over.
   engine stabilizes.
 - Dry-run preview infrastructure is shared with the Tautulli wizard's
   patterns (ADR-0007) where practical.
+
+**Amendment note 3 (2026-07-15) — cross-domain deployment lifecycle:**
+cross-domain rules are authored as drafts. Dry-run evaluates the current
+cached-library matches and proposed actions without mutations. Deploy copies
+the draft into a versioned active snapshot atomically; the executor uses that
+snapshot on future scheduled runs. Deployment neither executes the dry-run
+results immediately nor pushes configuration into external services. Editing
+an active rule changes only its draft, so the last deployed snapshot remains
+active until the next deploy or explicit deactivation (which preserves the
+draft). A per-deployment match ledger prevents recurring
+scans from repeating one-shot actions for the same library item.

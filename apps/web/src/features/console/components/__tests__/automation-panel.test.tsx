@@ -9,8 +9,14 @@ import { ColorThemeProvider } from "../../../../providers/color-theme-provider";
 const INCOGNITO_STORAGE_KEY = "arr-dashboard-incognito-mode";
 
 const mockUseAutomationRules = vi.fn();
+const mockUseCrossDomainRules = vi.fn();
 vi.mock("../../../../hooks/api/useAutomation", () => ({
 	useAutomationRules: () => mockUseAutomationRules(),
+	useCrossDomainRules: () => mockUseCrossDomainRules(),
+	useDryRunCrossDomainRule: () => ({ isPending: false, mutateAsync: vi.fn() }),
+	useDeployCrossDomainRule: () => ({ isPending: false, mutateAsync: vi.fn() }),
+	useDeactivateCrossDomainRule: () => ({ isPending: false, mutateAsync: vi.fn() }),
+	useDeleteCrossDomainRule: () => ({ isPending: false, mutateAsync: vi.fn() }),
 }));
 
 import { AutomationPanel } from "../automation-panel";
@@ -32,6 +38,8 @@ function response(rules: AutomationRulesResponse["rules"]): AutomationRulesRespo
 
 beforeEach(() => {
 	mockUseAutomationRules.mockReset();
+	mockUseCrossDomainRules.mockReset();
+	mockUseCrossDomainRules.mockReturnValue({ data: { rules: [] } });
 	localStorage.removeItem(INCOGNITO_STORAGE_KEY);
 });
 
@@ -123,5 +131,41 @@ describe("<AutomationPanel />", () => {
 		render(<AutomationPanel />, { wrapper: createWrapper() });
 		expect(screen.getByText("Broken rule")).toBeInTheDocument();
 		expect(screen.getByText(/could not be read/i)).toBeInTheDocument();
+	});
+
+	it("shows cross-domain draft lifecycle actions and requires a preview before deploy", () => {
+		mockUseAutomationRules.mockReturnValue({
+			data: response([
+				{
+					id: "x1",
+					name: "Archive workflow",
+					enabled: true,
+					context: "cross-domain",
+					document: { version: 1, root: { kind: "age", params: { days: 30 } } },
+					unavailableKinds: [],
+					unparseable: false,
+				},
+			]),
+		});
+		mockUseCrossDomainRules.mockReturnValue({
+			data: {
+				rules: [
+					{
+						id: "x1",
+						name: "Archive workflow",
+						active: true,
+						hasDraftChanges: true,
+						deploymentVersion: 2,
+						actions: [{ type: "send_notification" }, { type: "exempt_cleanup" }],
+					},
+				],
+			},
+		});
+		render(<AutomationPanel />, { wrapper: createWrapper() });
+
+		expect(screen.getByText("Cross-Domain")).toBeInTheDocument();
+		expect(screen.getByText("Draft changes")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: /dry run/i })).toBeEnabled();
+		expect(screen.getByRole("button", { name: /deploy/i })).toBeDisabled();
 	});
 });
