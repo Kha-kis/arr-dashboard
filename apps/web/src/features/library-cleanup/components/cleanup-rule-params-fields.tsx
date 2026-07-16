@@ -189,8 +189,64 @@ interface ParamsFieldsProps {
 	labelClass: string;
 }
 
-export function ParamsFields(props: ParamsFieldsProps) {
+type DomainFields<Prefix extends string> = Pick<
+	ParamsFieldsProps,
+	{
+		[K in keyof ParamsFieldsProps]: K extends string
+			? K extends `${Prefix}${string}` | `set${Capitalize<Prefix>}${string}`
+				? K
+				: never
+			: never;
+	}[keyof ParamsFieldsProps]
+>;
+
+type ListFields = Pick<
+	ParamsFieldsProps,
+	| "tmdbListId"
+	| "setTmdbListId"
+	| "tmdbListOp"
+	| "setTmdbListOp"
+	| "traktListSlug"
+	| "setTraktListSlug"
+	| "traktListOp"
+	| "setTraktListOp"
+>;
+type BehaviorFields = Pick<ParamsFieldsProps, "behaviorParams" | "setBehaviorParams">;
+type PresentationFields = Pick<
+	ParamsFieldsProps,
+	"fieldOptions" | "fieldOptionsLoading" | "inputClass" | "labelClass"
+>;
+type GroupedFieldKeys =
+	| keyof DomainFields<"seerr">
+	| keyof DomainFields<"plex">
+	| keyof DomainFields<"jellyfin">
+	| keyof ListFields
+	| keyof BehaviorFields
+	| keyof PresentationFields;
+
+export interface ParamsFieldsModel {
+	ruleType: CleanupRuleType;
+	criteria: Omit<ParamsFieldsProps, "ruleType" | GroupedFieldKeys>;
+	seerr: DomainFields<"seerr">;
+	plex: DomainFields<"plex">;
+	jellyfin: DomainFields<"jellyfin">;
+	lists: ListFields;
+	behavior: BehaviorFields;
+	presentation: PresentationFields;
+}
+
+export function ParamsFields({ model }: { model: ParamsFieldsModel }) {
 	const [incognitoMode] = useIncognitoMode();
+	const props: ParamsFieldsProps = {
+		ruleType: model.ruleType,
+		...model.criteria,
+		...model.seerr,
+		...model.plex,
+		...model.jellyfin,
+		...model.lists,
+		...model.behavior,
+		...model.presentation,
+	};
 	const {
 		ruleType,
 		days,
