@@ -35,4 +35,11 @@ describe("Docker schema synchronization contract", () => {
 			'run_as_user sh -c "cd /config/heap-snapshots && MALLOC_ARENA_MAX=',
 		);
 	});
+
+	it("exits the combined container when either tracked service stops", () => {
+		expect(startupScript).toContain(
+			'while kill -0 "$API_PID" 2>/dev/null && kill -0 "$WEB_PID" 2>/dev/null',
+		);
+		expect(startupScript).not.toMatch(/^\s*wait \$API_PID \$WEB_PID\s*$/m);
+	});
 });

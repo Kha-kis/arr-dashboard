@@ -439,9 +439,18 @@ echo "API: http://localhost:$API_PORT"
 echo "Running as UID:$PUID GID:$PGID"
 echo "=========================================="
 
-# Wait for both processes
-wait $API_PID $WEB_PID
+# Supervise both services. POSIX `wait $API_PID $WEB_PID` waits for each PID in
+# sequence, so an API failure could leave the container alive indefinitely while
+# the web process kept running. Poll both tracked PIDs and tear down the sibling
+# as soon as either service exits.
+while kill -0 "$API_PID" 2>/dev/null && kill -0 "$WEB_PID" 2>/dev/null; do
+    sleep 1
+done
 
-# If we get here, one of the processes died
-echo "One of the services stopped unexpectedly"
+echo "One of the services stopped unexpectedly; stopping the remaining service"
+kill -TERM "$WEB_PID" 2>/dev/null || true
+kill -TERM "$API_PID" 2>/dev/null || true
+set +e
+wait "$API_PID" "$WEB_PID" 2>/dev/null
+set -e
 exit 1

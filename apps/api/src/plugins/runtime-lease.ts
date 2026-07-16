@@ -19,7 +19,14 @@ const runtimeLeasePlugin = fastifyPlugin(
 
 		runtimeLease.start(async (error) => {
 			app.log.fatal({ err: error }, "Exclusive API runtime lease lost; shutting down");
-			await app.close();
+			try {
+				await app.close();
+			} finally {
+				// Lease loss means this process must not remain alive in any capacity.
+				// Fastify cleanup runs first; an explicit non-zero exit also handles
+				// optional clients that retain referenced event-loop handles.
+				process.exit(1);
+			}
 		});
 
 		app.addHook("onClose", async () => {
