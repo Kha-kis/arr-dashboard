@@ -31,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and Lodash advisories.
 - Pinned all third-party GitHub Actions to reviewed commit SHAs and hardened
   dependency updates with release-age, provenance, and registry-source policy.
+- Container startup now rejects destructive Prisma schema changes instead of
+  silently approving data loss, and schema-sync failures no longer echo any
+  portion of the database connection URL.
 
 ## [2.21.0] - 2026-06-09 — Media-only Storage & Auth Resilience
 
