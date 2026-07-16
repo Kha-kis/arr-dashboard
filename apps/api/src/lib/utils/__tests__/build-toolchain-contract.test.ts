@@ -21,4 +21,8 @@ describe("Build toolchain contract", () => {
 	it("builds workspace dependencies before package typechecking", () => {
 		expect(turbo.tasks.typecheck.dependsOn).toContain("^build");
 	});
+
+	it("does not advertise the removed Tautulli integration in image metadata", () => {
+		expect(dockerfile).not.toMatch(/image\.description=.*Tautulli/i);
+	});
 });

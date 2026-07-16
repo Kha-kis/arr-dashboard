@@ -14,7 +14,7 @@ import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
-const STARTUP_DELAY_MS = 5 * 60_000; // 5 minutes — staggered well after plex-cache (30s) + tautulli (2min) to avoid overlapping memory peaks
+const STARTUP_DELAY_MS = 5 * 60_000; // Staggered after Plex cache (30s) and session snapshots (60s) to avoid overlapping memory peaks
 
 const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 	async (app: FastifyInstance) => {

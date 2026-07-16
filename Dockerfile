@@ -79,7 +79,7 @@ ARG BUILD_DATE=unknown
 
 # OCI Image Labels (including build-time metadata)
 LABEL org.opencontainers.image.title="Arr Dashboard" \
-      org.opencontainers.image.description="Unified dashboard for managing Sonarr, Radarr, Prowlarr, Lidarr, Readarr, Plex, Tautulli, and Seerr" \
+      org.opencontainers.image.description="Trust-layer dashboard for the ARR and self-hosted media stack, with Tracearr and qui integrations" \
       org.opencontainers.image.source="https://github.com/Kha-kis/arr-dashboard" \
       org.opencontainers.image.url="https://github.com/Kha-kis/arr-dashboard" \
       org.opencontainers.image.documentation="https://github.com/Kha-kis/arr-dashboard#readme" \
@@ -143,7 +143,7 @@ ENV DATABASE_URL="file:/config/prod.db" \
     PUID=911 \
     PGID=911 \
     # Node.js memory optimization for containers (can be overridden)
-    # 768MB accommodates users with many service instances (3+ Plex/Tautulli)
+    # 768MB accommodates users with many ARR, media-server, Tracearr, and qui instances
     #
     # Heap diagnostics (issue #427 follow-up):
     #   --heapsnapshot-signal=SIGUSR2  Always on. Cost = zero (only writes
