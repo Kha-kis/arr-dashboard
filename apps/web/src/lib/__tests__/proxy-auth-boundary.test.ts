@@ -7,8 +7,8 @@ afterEach(() => {
 });
 
 describe("frontend proxy authentication boundary", () => {
-	it("does not add an auth API roundtrip to authenticated RSC navigation", async () => {
-		const fetchMock = vi.fn();
+	it("validates authenticated RSC navigation before allowing it", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
 		vi.stubGlobal("fetch", fetchMock);
 		const request = new NextRequest("http://localhost/dashboard", {
 			headers: { cookie: "arr_session=signed-session", RSC: "1" },
@@ -18,7 +18,22 @@ describe("frontend proxy authentication boundary", () => {
 
 		expect(response.status).toBe(200);
 		expect(response.headers.get("x-middleware-next")).toBe("1");
-		expect(fetchMock).not.toHaveBeenCalled();
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("rejects an invalid cookie during RSC navigation and clears it", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 401 }));
+		vi.stubGlobal("fetch", fetchMock);
+		const request = new NextRequest("http://localhost/console", {
+			headers: { cookie: "arr_session=revoked-session", RSC: "1" },
+		});
+
+		const response = await proxy(request);
+
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(response.status).toBe(307);
+		expect(response.headers.get("location")).toBe("http://localhost/login?redirectTo=%2Fconsole");
+		expect(response.headers.get("set-cookie")).toContain("arr_session=");
 	});
 
 	it("validates a protected document load and clears an invalid cookie", async () => {
@@ -45,12 +60,12 @@ describe("frontend proxy authentication boundary", () => {
 		);
 	});
 
-	it("still rejects unauthenticated RSC navigation without redirecting its wire format", async () => {
+	it("redirects unauthenticated RSC navigation through Next's middleware adapter", async () => {
 		const response = await proxy(
 			new NextRequest("http://localhost/console", { headers: { RSC: "1" } }),
 		);
 
-		expect(response.status).toBe(401);
-		expect(response.headers.get("location")).toBeNull();
+		expect(response.status).toBe(307);
+		expect(response.headers.get("location")).toBe("http://localhost/login?redirectTo=%2Fconsole");
 	});
 });

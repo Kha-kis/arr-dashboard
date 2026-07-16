@@ -77,12 +77,10 @@ export async function proxy(request: NextRequest) {
 		return NextResponse.next();
 	}
 
-	// RSC (React Server Component) requests are client-side navigations.
-	// For these, return 401 instead of redirect on auth failure —
-	// redirects would break the RSC wire format, and the client-side AuthGate
-	// handles redirect logic for unauthenticated users.
-	const isRSC = request.headers.get("RSC") === "1";
-
+	// RSC (React Server Component) requests are client-side navigations. Next's
+	// middleware adapter converts redirects for data/Flight requests into its
+	// internal redirect header, so they can use the same authoritative session
+	// validation and login redirect as document requests.
 	const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME);
 	const hasSessionCookie = Boolean(sessionCookie?.value);
 
@@ -126,18 +124,13 @@ export async function proxy(request: NextRequest) {
 
 	// Protected routes first use the cookie as a cheap navigation preflight.
 	if (!hasSessionCookie) {
-		if (isRSC) return new NextResponse(null, { status: 401 });
 		return clearSessionAndRedirect(request, "/login");
 	}
 
-	// RSC requests are client-side navigations within an already-mounted AuthGate.
-	// Re-validating here adds an API roundtrip to every navigation even though the
-	// API remains authoritative for protected data. Direct document loads still
-	// validate below so stale/forged cookies cannot render a fresh protected shell.
-	if (isRSC) return NextResponse.next();
-
 	const valid = await validateSession(request);
 	if (!valid) {
+		// `clearSessionAndRedirect` is deliberately used for RSC requests too.
+		// The Next adapter preserves the redirect without returning HTML as Flight data.
 		return clearSessionAndRedirect(request, "/login");
 	}
 
