@@ -55,6 +55,7 @@ async function validateSession(request: NextRequest): Promise<boolean> {
 function clearSessionAndRedirect(request: NextRequest, targetPath: string): NextResponse {
 	const url = request.nextUrl.clone();
 	url.pathname = targetPath;
+	url.search = "";
 	if (targetPath === "/login") {
 		const { pathname, search } = request.nextUrl;
 		if (pathname !== "/" && pathname !== "/login") {
@@ -123,15 +124,20 @@ export async function proxy(request: NextRequest) {
 		return NextResponse.next();
 	}
 
-	// Protected routes — validate session
+	// Protected routes first use the cookie as a cheap navigation preflight.
 	if (!hasSessionCookie) {
 		if (isRSC) return new NextResponse(null, { status: 401 });
 		return clearSessionAndRedirect(request, "/login");
 	}
 
+	// RSC requests are client-side navigations within an already-mounted AuthGate.
+	// Re-validating here adds an API roundtrip to every navigation even though the
+	// API remains authoritative for protected data. Direct document loads still
+	// validate below so stale/forged cookies cannot render a fresh protected shell.
+	if (isRSC) return NextResponse.next();
+
 	const valid = await validateSession(request);
 	if (!valid) {
-		if (isRSC) return new NextResponse(null, { status: 401 });
 		return clearSessionAndRedirect(request, "/login");
 	}
 
