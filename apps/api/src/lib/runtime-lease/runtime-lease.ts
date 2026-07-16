@@ -5,6 +5,7 @@ export const API_RUNTIME_LEASE_NAME = "active-api";
 export const DEFAULT_RUNTIME_LEASE_TTL_MS = 90_000;
 export const DEFAULT_RUNTIME_LEASE_HEARTBEAT_MS = 20_000;
 export const DEFAULT_RUNTIME_LEASE_FAILURE_LIMIT = 3;
+export const DEFAULT_RUNTIME_LEASE_OPERATION_TIMEOUT_MS = 10_000;
 
 interface RuntimeLeaseRow {
 	name: string;
@@ -34,6 +35,7 @@ interface RuntimeLeaseOptions {
 	ttlMs?: number;
 	heartbeatMs?: number;
 	failureLimit?: number;
+	operationTimeoutMs?: number;
 	now?: () => Date;
 }
 
@@ -47,12 +49,20 @@ export class RuntimeLeaseConflictError extends Error {
 	}
 }
 
+export class RuntimeLeaseOperationTimeoutError extends Error {
+	constructor(operation: string, timeoutMs: number) {
+		super(`Runtime lease ${operation} did not finish within ${timeoutMs}ms`);
+		this.name = "RuntimeLeaseOperationTimeoutError";
+	}
+}
+
 export class RuntimeLeaseManager {
 	readonly ownerId: string;
 	private readonly leaseName: string;
 	private readonly ttlMs: number;
 	private readonly heartbeatMs: number;
 	private readonly failureLimit: number;
+	private readonly operationTimeoutMs: number;
 	private readonly now: () => Date;
 	private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 	private heartbeatInFlight = false;
@@ -69,19 +79,24 @@ export class RuntimeLeaseManager {
 		this.ttlMs = options.ttlMs ?? DEFAULT_RUNTIME_LEASE_TTL_MS;
 		this.heartbeatMs = options.heartbeatMs ?? DEFAULT_RUNTIME_LEASE_HEARTBEAT_MS;
 		this.failureLimit = options.failureLimit ?? DEFAULT_RUNTIME_LEASE_FAILURE_LIMIT;
+		this.operationTimeoutMs =
+			options.operationTimeoutMs ?? DEFAULT_RUNTIME_LEASE_OPERATION_TIMEOUT_MS;
 		this.now = options.now ?? (() => new Date());
 	}
 
 	async acquire(): Promise<void> {
 		const now = this.now();
 		const staleBefore = new Date(now.getTime() - this.ttlMs);
-		const reclaimed = await this.store.runtimeLease.updateMany({
-			where: {
-				name: this.leaseName,
-				OR: [{ ownerId: this.ownerId }, { heartbeatAt: { lt: staleBefore } }],
-			},
-			data: { ownerId: this.ownerId, acquiredAt: now, heartbeatAt: now },
-		});
+		const reclaimed = await this.withDeadline(
+			this.store.runtimeLease.updateMany({
+				where: {
+					name: this.leaseName,
+					OR: [{ ownerId: this.ownerId }, { heartbeatAt: { lt: staleBefore } }],
+				},
+				data: { ownerId: this.ownerId, acquiredAt: now, heartbeatAt: now },
+			}),
+			"acquisition",
+		);
 
 		if (reclaimed.count === 1) {
 			this.held = true;
@@ -89,14 +104,17 @@ export class RuntimeLeaseManager {
 		}
 
 		try {
-			await this.store.runtimeLease.create({
-				data: {
-					name: this.leaseName,
-					ownerId: this.ownerId,
-					acquiredAt: now,
-					heartbeatAt: now,
-				},
-			});
+			await this.withDeadline(
+				this.store.runtimeLease.create({
+					data: {
+						name: this.leaseName,
+						ownerId: this.ownerId,
+						acquiredAt: now,
+						heartbeatAt: now,
+					},
+				}),
+				"creation",
+			);
 			this.held = true;
 		} catch (error) {
 			if (isUniqueConstraintError(error)) {
@@ -114,7 +132,11 @@ export class RuntimeLeaseManager {
 			void this.renew()
 				.catch(async (error: unknown) => {
 					const normalized = error instanceof Error ? error : new Error(String(error));
-					if (normalized instanceof RuntimeLeaseConflictError) {
+					if (
+						normalized instanceof RuntimeLeaseConflictError ||
+						normalized instanceof RuntimeLeaseOperationTimeoutError
+					) {
+						this.stop();
 						await onLeaseLost(normalized);
 						return;
 					}
@@ -147,9 +169,12 @@ export class RuntimeLeaseManager {
 	async release(): Promise<void> {
 		this.stop();
 		if (!this.held) return;
-		await this.store.runtimeLease.deleteMany({
-			where: { name: this.leaseName, ownerId: this.ownerId },
-		});
+		await this.withDeadline(
+			this.store.runtimeLease.deleteMany({
+				where: { name: this.leaseName, ownerId: this.ownerId },
+			}),
+			"release",
+		);
 		this.held = false;
 	}
 
@@ -161,16 +186,35 @@ export class RuntimeLeaseManager {
 	}
 
 	private async renew(): Promise<void> {
-		const renewed = await this.store.runtimeLease.updateMany({
-			where: { name: this.leaseName, ownerId: this.ownerId },
-			data: { heartbeatAt: this.now() },
-		});
+		const renewed = await this.withDeadline(
+			this.store.runtimeLease.updateMany({
+				where: { name: this.leaseName, ownerId: this.ownerId },
+				data: { heartbeatAt: this.now() },
+			}),
+			"heartbeat",
+		);
 		if (renewed.count !== 1) {
 			this.held = false;
 			this.stop();
 			throw new RuntimeLeaseConflictError();
 		}
 		this.renewalFailures = 0;
+	}
+
+	private async withDeadline<T>(operation: Promise<T>, operationName: string): Promise<T> {
+		let timeout: ReturnType<typeof setTimeout> | undefined;
+		try {
+			return await Promise.race([
+				operation,
+				new Promise<never>((_resolve, reject) => {
+					timeout = setTimeout(() => {
+						reject(new RuntimeLeaseOperationTimeoutError(operationName, this.operationTimeoutMs));
+					}, this.operationTimeoutMs);
+				}),
+			]);
+		} finally {
+			if (timeout) clearTimeout(timeout);
+		}
 	}
 }
 

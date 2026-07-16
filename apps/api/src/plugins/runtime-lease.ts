@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { RuntimeLeaseManager } from "../lib/runtime-lease/runtime-lease.js";
 
+const LEASE_SHUTDOWN_GRACE_MS = 8_000;
+
 declare module "fastify" {
 	interface FastifyInstance {
 		runtimeLease?: RuntimeLeaseManager;
@@ -19,9 +21,11 @@ const runtimeLeasePlugin = fastifyPlugin(
 
 		runtimeLease.start(async (error) => {
 			app.log.fatal({ err: error }, "Exclusive API runtime lease lost; shutting down");
+			const forceExitTimer = setTimeout(() => process.exit(1), LEASE_SHUTDOWN_GRACE_MS);
 			try {
 				await app.close();
 			} finally {
+				clearTimeout(forceExitTimer);
 				// Lease loss means this process must not remain alive in any capacity.
 				// Fastify cleanup runs first; an explicit non-zero exit also handles
 				// optional clients that retain referenced event-loop handles.

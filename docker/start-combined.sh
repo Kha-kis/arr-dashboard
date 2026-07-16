@@ -408,7 +408,14 @@ if ! kill -0 "$API_PID" 2>/dev/null; then
     # outer shell's CWD between the two launch sites.
     echo "=== Re-running API in foreground (10s timeout) ===" >&2
     set +e
-    timeout 10 run_as_user sh -c "cd /config/heap-snapshots && API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node /app/api/dist/index.js" 2>&1
+    # `run_as_user` is a shell function and therefore cannot be executed by
+    # BusyBox `timeout` as an external command. Apply the timeout to the real
+    # rootless/su-exec command instead so this diagnostic reports the API error.
+    if [ "$ROOTLESS" = true ]; then
+        timeout 10 sh -c "cd /config/heap-snapshots && exec env API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node /app/api/dist/index.js" 2>&1
+    else
+        timeout 10 su-exec abc sh -c "cd /config/heap-snapshots && exec env API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node /app/api/dist/index.js" 2>&1
+    fi
     RERUN_EXIT=$?
     set -e
     echo "=== Foreground API exit code: $RERUN_EXIT ===" >&2

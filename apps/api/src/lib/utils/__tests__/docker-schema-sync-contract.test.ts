@@ -36,6 +36,12 @@ describe("Docker schema synchronization contract", () => {
 		);
 	});
 
+	it("runs the failed-start diagnostic through timeout without invoking a shell function", () => {
+		expect(startupScript).not.toContain("timeout 10 run_as_user");
+		expect(startupScript).toContain("timeout 10 sh -c");
+		expect(startupScript).toContain("timeout 10 su-exec abc sh -c");
+	});
+
 	it("exits the combined container when either tracked service stops", () => {
 		expect(startupScript).toContain(
 			'while kill -0 "$API_PID" 2>/dev/null && kill -0 "$WEB_PID" 2>/dev/null',

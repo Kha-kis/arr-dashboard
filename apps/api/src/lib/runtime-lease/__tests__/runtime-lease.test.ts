@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	RuntimeLeaseConflictError,
 	RuntimeLeaseManager,
+	RuntimeLeaseOperationTimeoutError,
 	type RuntimeLeaseStore,
 } from "../runtime-lease.js";
 
@@ -123,5 +124,65 @@ describe("RuntimeLeaseManager", () => {
 		expect(onLeaseLost).toHaveBeenCalledWith(
 			expect.objectContaining({ message: "Runtime lease could not be renewed after 3 attempts" }),
 		);
+	});
+
+	it("fails closed immediately when a heartbeat never settles", async () => {
+		vi.useFakeTimers();
+		const store = createStore();
+		vi.mocked(store.runtimeLease.updateMany)
+			.mockResolvedValueOnce({ count: 0 })
+			.mockImplementationOnce(() => new Promise(() => {}));
+		const onLeaseLost = vi.fn();
+		const lease = new RuntimeLeaseManager(store, log, {
+			ownerId: "owner-a",
+			heartbeatMs: 1_000,
+			operationTimeoutMs: 500,
+		});
+		await lease.acquire();
+		lease.start(onLeaseLost);
+
+		await vi.advanceTimersByTimeAsync(1_500);
+		await vi.advanceTimersByTimeAsync(5_000);
+
+		expect(onLeaseLost).toHaveBeenCalledTimes(1);
+		expect(onLeaseLost).toHaveBeenCalledWith(expect.any(RuntimeLeaseOperationTimeoutError));
+		expect(store.runtimeLease.updateMany).toHaveBeenCalledTimes(2);
+	});
+
+	it("bounds acquisition when the database operation never settles", async () => {
+		vi.useFakeTimers();
+		const store = createStore();
+		vi.mocked(store.runtimeLease.updateMany).mockImplementationOnce(() => new Promise(() => {}));
+		const lease = new RuntimeLeaseManager(store, log, {
+			ownerId: "owner-a",
+			operationTimeoutMs: 500,
+		});
+
+		const acquisition = lease.acquire();
+		const rejected = expect(acquisition).rejects.toBeInstanceOf(RuntimeLeaseOperationTimeoutError);
+		await vi.advanceTimersByTimeAsync(500);
+
+		await rejected;
+		expect(store.runtimeLease.create).not.toHaveBeenCalled();
+	});
+
+	it("reports ownership loss when another process replaces the lease owner", async () => {
+		vi.useFakeTimers();
+		const store = createStore();
+		vi.mocked(store.runtimeLease.updateMany)
+			.mockResolvedValueOnce({ count: 0 })
+			.mockResolvedValueOnce({ count: 0 });
+		const onLeaseLost = vi.fn();
+		const lease = new RuntimeLeaseManager(store, log, {
+			ownerId: "owner-a",
+			heartbeatMs: 1_000,
+		});
+		await lease.acquire();
+		lease.start(onLeaseLost);
+
+		await vi.advanceTimersByTimeAsync(1_000);
+
+		expect(onLeaseLost).toHaveBeenCalledTimes(1);
+		expect(onLeaseLost).toHaveBeenCalledWith(expect.any(RuntimeLeaseConflictError));
 	});
 });
