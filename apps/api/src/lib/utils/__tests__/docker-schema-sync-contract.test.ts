@@ -27,4 +27,12 @@ describe("Docker schema synchronization contract", () => {
 		expect(startupScript).not.toContain("DATABASE_URL%%");
 		expect(startupScript).toContain("Detected database provider: $DB_PROVIDER");
 	});
+
+	it("launches services as the processes tracked by the shutdown trap", () => {
+		expect(startupScript).toContain("exec env MALLOC_ARENA_MAX=$MALLOC_ARENA_MAX API_HOST=$HOST");
+		expect(startupScript).toContain("exec env API_HOST=http://localhost:$API_PORT PORT=$PORT");
+		expect(startupScript).not.toContain(
+			'run_as_user sh -c "cd /config/heap-snapshots && MALLOC_ARENA_MAX=',
+		);
+	});
 });

@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Production APIs now acquire a database-backed runtime lease, so only one API
+  process can run against a database at a time. Container shutdown now reaches
+  Fastify's cleanup hooks and releases that lease for immediate replacement.
+- Container schema synchronization now rejects destructive changes instead of
+  approving data loss, and startup failures no longer print database URLs.
+- Workspace typechecking now builds dependency packages first, and Docker builds
+  use the root manifest's pinned pnpm version through Corepack.
+
+### Fixed
+
+- Removed the inactive duplicate App Router tree and dead client helpers that
+  were unreachable from the production web application.
+- Split the largest Library Cleanup authoring and evaluator modules into focused
+  domain components without changing their public behavior.
+- Avoided a redundant server-side authentication lookup during cookie-bearing
+  React Server Component navigation while preserving direct-load validation.
+
 ## [3.0.0-beta.1] - 2026-07-16 — Trust layer beta
 
 First feature-complete 3.0 beta. This beta completes the Operator Console,

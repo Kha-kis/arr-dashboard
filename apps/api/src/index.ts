@@ -59,6 +59,25 @@ const start = async () => {
 		process.exit(1);
 	}
 
+	let shuttingDown = false;
+	const shutdown = async (signal: NodeJS.Signals) => {
+		if (shuttingDown) return;
+		shuttingDown = true;
+		app.log.info({ signal }, "Shutdown signal received; closing API server");
+		try {
+			await app.close();
+			// Some optional client libraries retain referenced handles after their
+			// Fastify cleanup hooks finish. All application resources are closed at
+			// this point, so terminate deterministically for container stop/restart.
+			process.exit(0);
+		} catch (error) {
+			app.log.error({ err: error, signal }, "Failed to close API server cleanly");
+			process.exit(1);
+		}
+	};
+	process.once("SIGTERM", () => void shutdown("SIGTERM"));
+	process.once("SIGINT", () => void shutdown("SIGINT"));
+
 	try {
 		await app.listen({
 			port: portConfig.apiPort,

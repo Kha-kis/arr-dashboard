@@ -145,7 +145,7 @@ pnpm --filter @arr/api exec tsc --noEmit         # Type check backend
 
 ## Environment & Deployment
 
-**Docker** (single container): Port 3000 exposed, `/config/` volume contains `prod.db` + `secrets.json`. Startup: `docker/start-combined.sh`.
+**Docker** (single container): Port 3000 exposed, `/config/` volume contains `prod.db` + `secrets.json`. Startup: `docker/start-combined.sh`. Production startup acquires a database-backed runtime lease; run exactly one API/container per database. Schema sync is fail-closed and never approves destructive changes automatically.
 
 **Key env vars**: `DATABASE_URL`, `API_PORT` (3001), `PORT` (3000), `HOST` (0.0.0.0), `PUID`/`PGID`, `SESSION_TTL_HOURS` (24), `ENCRYPTION_KEY` (auto-generated), `SESSION_COOKIE_SECRET` (auto-generated), `WEBAUTHN_RP_ID`, `WEBAUTHN_ORIGIN`.
 

@@ -379,7 +379,11 @@ echo "  - MALLOC_ARENA_MAX: $MALLOC_ARENA_MAX (glibc arena cap — keeps RSS in 
 # via its pino-roll transport (writes to /config/logs/arr-dashboard.log).
 # Previous approach redirected stdout to api.log, which conflicted with Pino's
 # worker-thread transport and caused both log files to remain empty.
-run_as_user sh -c "cd /config/heap-snapshots && MALLOC_ARENA_MAX=$MALLOC_ARENA_MAX API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node /app/api/dist/index.js" &
+if [ "$ROOTLESS" = true ]; then
+    sh -c "cd /config/heap-snapshots && exec env MALLOC_ARENA_MAX=$MALLOC_ARENA_MAX API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node /app/api/dist/index.js" &
+else
+    su-exec abc sh -c "cd /config/heap-snapshots && exec env MALLOC_ARENA_MAX=$MALLOC_ARENA_MAX API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node /app/api/dist/index.js" &
+fi
 API_PID=$!
 echo "API started with PID $API_PID"
 
@@ -419,7 +423,11 @@ echo ""
 echo "Starting Web server on $HOST:$PORT..."
 cd /app/web
 # Use custom server wrapper for runtime API_HOST configuration
-run_as_user sh -c "API_HOST=http://localhost:$API_PORT PORT=$PORT HOSTNAME=$HOST HOST=$HOST node server.js" &
+if [ "$ROOTLESS" = true ]; then
+    sh -c "exec env API_HOST=http://localhost:$API_PORT PORT=$PORT HOSTNAME=$HOST HOST=$HOST node server.js" &
+else
+    su-exec abc sh -c "exec env API_HOST=http://localhost:$API_PORT PORT=$PORT HOSTNAME=$HOST HOST=$HOST node server.js" &
+fi
 WEB_PID=$!
 echo "Web started with PID $WEB_PID"
 
