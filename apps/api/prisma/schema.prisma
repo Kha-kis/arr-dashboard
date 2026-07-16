@@ -7,6 +7,19 @@ datasource db {
   provider = "sqlite"
 }
 
+/// Single active API-process lease. arr-dashboard deliberately runs its
+/// schedulers and live event fan-out in process, so multiple API replicas
+/// against one database would duplicate real-world actions. Production API
+/// processes renew this row and refuse to start while another owner is live.
+model RuntimeLease {
+  name        String   @id
+  ownerId     String
+  acquiredAt DateTime
+  heartbeatAt DateTime
+
+  @@map("runtime_leases")
+}
+
 enum ServiceType {
   SONARR
   RADARR

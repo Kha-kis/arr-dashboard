@@ -6,6 +6,7 @@ import heapMonitorPlugin from "../plugins/heap-monitor.js";
 import lifecyclePlugin from "../plugins/lifecycle.js";
 import notificationServicePlugin from "../plugins/notification-service.js";
 import { prismaPlugin } from "../plugins/prisma.js";
+import runtimeLeasePlugin from "../plugins/runtime-lease.js";
 import schedulerRegistryPlugin from "../plugins/scheduler-registry.js";
 import { securityPlugin } from "../plugins/security.js";
 import seerrCachePlugin from "../plugins/seerr-cache.js";
@@ -19,6 +20,7 @@ import tautulliMigrationPlugin from "../plugins/tautulli-migration.js";
  * plugins and by route handlers. Do not reorder without reviewing decorations.
  *
  *  - prisma            → `app.prisma`
+ *  - runtimeLease      → production single-API enforcement
  *  - security          → `app.encryptor`, `app.sessionService`
  *  - arrClient         → `createInstanceFetcher` helpers for ARR services
  *  - seerr circuit     → request breaker for Seerr outbound calls
@@ -32,6 +34,7 @@ import tautulliMigrationPlugin from "../plugins/tautulli-migration.js";
  */
 export function registerInfrastructure(app: FastifyInstance): void {
 	app.register(prismaPlugin);
+	app.register(runtimeLeasePlugin);
 	app.register(securityPlugin);
 	app.register(arrClientPlugin);
 	app.register(seerrCircuitBreakerPlugin);

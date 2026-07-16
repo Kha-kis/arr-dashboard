@@ -9,6 +9,13 @@ API and Web run together in one container for simple deployment:
 - **Easier networking** — No container linking needed
 - **Lower overhead** — Shared resources and dependencies
 
+Run exactly one arr-dashboard API/container against a database. Background
+schedulers, concurrency guards, and live-event fan-out are intentionally
+process-local. Production API processes acquire a database-backed lease and a
+second process pointed at the same database refuses to start. This protects
+external services from duplicate automation; it is not a horizontal-scaling
+mechanism.
+
 ## Files
 
 | File | Purpose |

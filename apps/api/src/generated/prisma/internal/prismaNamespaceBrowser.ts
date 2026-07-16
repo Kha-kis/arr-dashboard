@@ -51,6 +51,7 @@ export const AnyNull = runtime.AnyNull
 
 
 export const ModelName = {
+  RuntimeLease: 'RuntimeLease',
   User: 'User',
   Session: 'Session',
   ServiceTag: 'ServiceTag',
@@ -126,6 +127,16 @@ export const TransactionIsolationLevel = runtime.makeStrictEnum({
 } as const)
 
 export type TransactionIsolationLevel = (typeof TransactionIsolationLevel)[keyof typeof TransactionIsolationLevel]
+
+
+export const RuntimeLeaseScalarFieldEnum = {
+  name: 'name',
+  ownerId: 'ownerId',
+  acquiredAt: 'acquiredAt',
+  heartbeatAt: 'heartbeatAt'
+} as const
+
+export type RuntimeLeaseScalarFieldEnum = (typeof RuntimeLeaseScalarFieldEnum)[keyof typeof RuntimeLeaseScalarFieldEnum]
 
 
 export const UserScalarFieldEnum = {
