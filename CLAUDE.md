@@ -135,17 +135,20 @@ When adding features that surface data to users (pages, panels, signals, notific
 ## Testing
 
 ```bash
-pnpm run test                                    # All tests
-pnpm --filter @arr/web exec tsc --noEmit         # Type check frontend
-pnpm --filter @arr/api exec tsc --noEmit         # Type check backend
+pnpm run format
+pnpm --filter @arr/shared build                  # Required after shared changes
+pnpm run typecheck                               # CI-equivalent Turbo typecheck
+pnpm run test
+pnpm run lint
 ```
 
 - Components using `useIncognitoMode()` require `<IncognitoProvider>` wrapper in tests
-- Stale IDE diagnostics can show errors on deleted lines — trust the full `tsc` run
+- Per-package `tsc` runs can hide stale `@arr/shared` output; only the root Turbo
+  typecheck after building shared matches CI
 
 ## Environment & Deployment
 
-**Docker** (single container): Port 3000 exposed, `/config/` volume contains `prod.db` + `secrets.json`. Startup: `docker/start-combined.sh`. Production startup acquires a database-backed runtime lease; run exactly one API/container per database. Schema sync is fail-closed and never approves destructive changes automatically.
+**Docker** (single container): Port 3000 exposed, `/config/` volume contains `prod.db` + `secrets.json`. Startup: `docker/start-combined.sh`. Production startup acquires a database-backed runtime lease; run exactly one API/container per database. Lease operations are deadline-bound and a process that cannot renew exits fail-closed. Schema sync is fail-closed and never approves destructive changes automatically.
 
 **Key env vars**: `DATABASE_URL`, `API_PORT` (3001), `PORT` (3000), `HOST` (0.0.0.0), `PUID`/`PGID`, `SESSION_TTL_HOURS` (24), `ENCRYPTION_KEY` (auto-generated), `SESSION_COOKIE_SECRET` (auto-generated), `WEBAUTHN_RP_ID`, `WEBAUTHN_ORIGIN`.
 

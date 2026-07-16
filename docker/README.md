@@ -14,7 +14,9 @@ schedulers, concurrency guards, and live-event fan-out are intentionally
 process-local. Production API processes acquire a database-backed lease and a
 second process pointed at the same database refuses to start. This protects
 external services from duplicate automation; it is not a horizontal-scaling
-mechanism.
+mechanism. Lease acquisition and heartbeats have hard deadlines. If ownership
+is lost or the database stops responding during renewal, the API stops serving
+and the container exits even when graceful cleanup cannot complete.
 
 ## Files
 
