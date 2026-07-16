@@ -7,13 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0-beta.1] - 2026-07-16 — Trust layer beta
+
+First feature-complete 3.0 beta. This beta completes the Operator Console,
+unified automation composer, Tracearr integration, and guided Setup rewrite. It
+also includes the beta-readiness fixes, upgrade rehearsal, release-pipeline
+hardening, and dependency security remediation completed after alpha.2.
+
+Users upgrading directly from 2.21 should also review the alpha.1 breaking-change
+notes below, especially the consent-gated Tautulli removal. Beta images publish as
+the immutable `3.0.0-beta.1` tag and the moving `beta` channel; they do not replace
+`latest`.
+
+### Added
+
+- **Operator Console completed** with a live attention feed, per-domain health and
+  freshness tiles, safe operator actions, and Tracearr live-session inspection and
+  termination (#535, #537, #538, #556, #557).
+- **Unified automation composer** for viewing and authoring Library Cleanup,
+  Auto-Tagger, and notification rules, including strict context-aware validation,
+  legacy-v0 round-trip preservation, and retired-kind edit protection
+  (#553, #554, #561–#563, #566).
+- **Cross-domain automation** with draft editing, dry-run previews, versioned
+  deployment snapshots, scheduled execution, deactivation, and a per-deployment
+  match ledger that prevents one-shot actions from repeating (#567).
+- **Tracearr integration** with typed Public API connectivity, health validation,
+  live sessions, session termination, and Statistics panels for activity, history,
+  users, violations, and cross-server analytics (#555–#559).
+- **Guided Setup rewrite** with media-server discovery, authenticated candidate
+  confirmation, Plex SSDP fallback, manual entry, an Operator Console walkthrough,
+  optional disabled starter rules, and explicit TRaSH profile preview
+  (#568–#573).
+- **Notification metadata registry** declaring valid `metadata.*` fields for every
+  notification event type, with compile-time exhaustiveness enforcement (#534).
+
+### Changed
+
+- Added durable governance gates for semantic colors, incognito-sensitive text,
+  request validation, Pulse collector labels, and semantic z-index usage
+  (#532, #533, #551).
+- Restored a repository-wide Biome formatting baseline and enabled Tailwind
+  directive parsing for the web stylesheet (#577).
+- Recorded a realistic v2.21 SQLite combined-container upgrade rehearsal,
+  including migration consent, backup inspection, data-integrity checks, and an
+  idempotent restart (#578).
+
 ### Fixed
 
+- Release titles embedded in *arr queue Pulse messages are now masked in
+  incognito mode (#536).
 - New Radarr and Sonarr downloads are now detected when an item is added and
   imported entirely between library polls, and the resulting notification is
-  dispatched only through channels owned by the instance's user.
+  dispatched only through channels owned by the instance's user (#575; possible
+  cause for #543 pending reporter confirmation).
 - The notification Rules page no longer enters a render loop while aggregation
-  configuration is unavailable.
+  configuration is unavailable (#575).
+- Prerelease publication now runs manifest and registry-health verification only
+  after the required architecture images exist, avoiding skipped or premature
+  verification jobs (#579, #580).
+
+### Security
+
+- Updated DOMPurify/isomorphic-DOMPurify, Nodemailer, Hono, Undici, Vite, Babel,
+  and esbuild to patched versions; hardened SMTP transports against local-file and
+  URL access. GitHub reports no open Dependabot security alerts on the default
+  branch after the corresponding 2.x backports (#581–#584).
+
+### Release engineering
+
+- Prerelease tags now publish immutable exact-version images plus moving
+  `alpha`, `beta`, or `rc` channels to GHCR and Docker Hub, validate tag ancestry,
+  and verify exact `/health` version metadata from both registries (#576, #579,
+  #580).
 
 ## [3.0.0-alpha.2] - 2026-06-10 — Bucket B: the coherence sweep
 
