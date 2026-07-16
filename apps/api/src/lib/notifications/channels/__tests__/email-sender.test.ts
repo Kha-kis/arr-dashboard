@@ -75,6 +75,19 @@ describe("emailSender", () => {
 		expect(call.to).toBe("admin@example.com");
 	});
 
+	it("disables file and URL access on the SMTP transport", async () => {
+		mockSendMail.mockResolvedValue({ messageId: "abc" });
+
+		await emailSender.send(baseConfig, makePayload());
+
+		expect(mockCreateTransport).toHaveBeenCalledWith(
+			expect.objectContaining({
+				disableFileAccess: true,
+				disableUrlAccess: true,
+			}),
+		);
+	});
+
 	it("includes metadata fields in email body", async () => {
 		mockSendMail.mockResolvedValue({ messageId: "abc" });
 
