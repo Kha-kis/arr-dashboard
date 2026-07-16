@@ -23,6 +23,8 @@ function getOrCreateTransporter(config: EmailConfig): nodemailer.Transporter {
 			host: config.host,
 			port: config.port,
 			secure: config.secure,
+			disableFileAccess: true,
+			disableUrlAccess: true,
 			auth: {
 				user: config.user,
 				pass: config.password,
