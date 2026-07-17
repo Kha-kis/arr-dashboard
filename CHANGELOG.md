@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cached user and returns protected pages to login.
 - Fixed the combined container's failed-start diagnostic so its timed foreground
   retry runs as the configured user and reports the real API error.
+- ARR health Pulse dismissals now use an entity-keyed source/URL identity, so
+  changing upstream error text no longer causes a dismissed signal to reappear.
+  Existing message-derived ARR-health dismissals are swept once after upgrade so
+  the active issue resurfaces with its new stable identity.
 
 ## [3.0.0-beta.1] - 2026-07-16 — Trust layer beta
 
