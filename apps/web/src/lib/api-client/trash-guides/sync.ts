@@ -73,53 +73,6 @@ export interface SyncProgress {
 	errors: SyncError[];
 }
 
-export interface SyncHistoryItem {
-	id: string;
-	templateId: string;
-	templateName: string;
-	status: string;
-	syncType: string;
-	startedAt: string;
-	completedAt: string | null;
-	duration: number | null;
-	configsApplied: number;
-	configsFailed: number;
-	configsSkipped: number;
-	backupId: string | null;
-}
-
-export interface SyncHistoryResponse {
-	syncs: SyncHistoryItem[];
-	total: number;
-}
-
-export interface SyncDetail {
-	id: string;
-	templateId: string;
-	templateName: string;
-	instanceId: string;
-	instanceName: string;
-	status: string;
-	syncType: string;
-	startedAt: string;
-	completedAt: string | null;
-	duration: number | null;
-	configsApplied: number;
-	configsFailed: number;
-	configsSkipped: number;
-	appliedConfigs: Array<{ name: string }> | null;
-	failedConfigs: Array<{ name: string; error?: string }> | null;
-	errorLog: string | null;
-	backupId: string | null;
-}
-
-export interface RollbackResult {
-	success: boolean;
-	restoredCount: number;
-	failedCount: number;
-	errors: string[];
-}
-
 // ============================================================================
 // API Functions
 // ============================================================================
@@ -155,35 +108,6 @@ export async function executeSync(request: SyncExecuteRequest): Promise<SyncResu
  */
 export async function getSyncProgress(syncId: string): Promise<SyncProgress> {
 	return await apiRequest<SyncProgress>(`/api/trash-guides/sync/${syncId}/progress`);
-}
-
-/**
- * Get sync history for instance
- */
-export async function getSyncHistory(
-	instanceId: string,
-	params?: { limit?: number; offset?: number },
-): Promise<SyncHistoryResponse> {
-	const queryParams = params ? `?limit=${params.limit || 20}&offset=${params.offset || 0}` : "";
-	return await apiRequest<SyncHistoryResponse>(
-		`/api/trash-guides/sync/history/${instanceId}${queryParams}`,
-	);
-}
-
-/**
- * Get sync details
- */
-export async function getSyncDetail(syncId: string): Promise<SyncDetail> {
-	return await apiRequest<SyncDetail>(`/api/trash-guides/sync/${syncId}`);
-}
-
-/**
- * Rollback sync to backup
- */
-export async function rollbackSync(syncId: string): Promise<RollbackResult> {
-	return await apiRequest<RollbackResult>(`/api/trash-guides/sync/${syncId}/rollback`, {
-		method: "POST",
-	});
 }
 
 /**

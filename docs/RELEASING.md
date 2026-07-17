@@ -75,6 +75,9 @@ Before bumping any version numbers, decide *what* this release contains.
 - [ ] **Fresh PostgreSQL install:** Point `DATABASE_URL` at empty database, run `pnpm run db:push`, verify API starts
 - [ ] **SQLite upgrade:** Start with previous release database, run new version, verify schema migrates
 - [ ] **PostgreSQL upgrade:** Same as above with PostgreSQL
+- [ ] Run both upgrade scenarios **without** Prisma's `--accept-data-loss`; a
+      destructive transition requires a release-specific backup/migration plan
+      and must not be delegated to container startup
 - [ ] New Prisma models (if any) are documented in CHANGELOG
 
 ### 4. Docker Build

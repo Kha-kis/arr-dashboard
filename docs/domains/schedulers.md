@@ -49,8 +49,10 @@ This split is intentional. The registry observes; it does not schedule.
    stats.** Do not write to registry internals from plugins; read via
    `getStatus()`/`list()`, mutate via `track()` / `markDisabled()` /
    `markEnabled()`.
-5. **No cross-process coordination.** This is a single-process app. Any
-   "is anything running anywhere?" check is local to this process.
+5. **Scheduler coordination is process-local.** Production startup first
+   acquires the database-backed `RuntimeLease`; a second API using the same
+   database fails closed. Within the active API, "is anything running?" checks
+   remain local to that process.
 6. **The `/system/jobs` endpoint never triggers a tick.** It is read-only.
    Pinned by `system-jobs.test.ts`.
 

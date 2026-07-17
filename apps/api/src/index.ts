@@ -49,6 +49,7 @@ if (!envResult.success) {
 	process.exit(1);
 }
 const env = envResult.data;
+const SHUTDOWN_GRACE_MS = 8_000;
 
 const start = async () => {
 	let app: ReturnType<typeof buildServer>;
@@ -58,6 +59,28 @@ const start = async () => {
 		console.error("Failed to build server:", error);
 		process.exit(1);
 	}
+
+	let shuttingDown = false;
+	const shutdown = async (signal: NodeJS.Signals) => {
+		if (shuttingDown) return;
+		shuttingDown = true;
+		app.log.info({ signal }, "Shutdown signal received; closing API server");
+		const forceExitTimer = setTimeout(() => process.exit(1), SHUTDOWN_GRACE_MS);
+		try {
+			await app.close();
+			clearTimeout(forceExitTimer);
+			// Some optional client libraries retain referenced handles after their
+			// Fastify cleanup hooks finish. All application resources are closed at
+			// this point, so terminate deterministically for container stop/restart.
+			process.exit(0);
+		} catch (error) {
+			clearTimeout(forceExitTimer);
+			app.log.error({ err: error, signal }, "Failed to close API server cleanly");
+			process.exit(1);
+		}
+	};
+	process.once("SIGTERM", () => void shutdown("SIGTERM"));
+	process.once("SIGINT", () => void shutdown("SIGINT"));
 
 	try {
 		await app.listen({
@@ -123,7 +146,16 @@ const start = async () => {
 		// flushes. console.error is synchronous and guarantees visible output.
 		app.log.error({ err: error }, "Failed to start API server");
 		console.error("Failed to start API server:", error);
-		process.exit(1);
+		const forceExitTimer = setTimeout(() => process.exit(1), SHUTDOWN_GRACE_MS);
+		try {
+			await app.close();
+		} catch (closeError) {
+			app.log.error({ err: closeError }, "Failed to close API after startup failure");
+			console.error("Failed to close API after startup failure:", closeError);
+		} finally {
+			clearTimeout(forceExitTimer);
+			process.exit(1);
+		}
 	}
 };
 

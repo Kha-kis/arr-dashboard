@@ -63,7 +63,9 @@ export const useCurrentUser = (
 		retry: false,
 		enabled,
 		refetchOnMount: false,
-		refetchOnWindowFocus: false,
+		// Revalidate a stale session when an operator returns to the tab. API
+		// request 401s also emit a global signal handled by AuthGate.
+		refetchOnWindowFocus: true,
 	});
 
 	// Handle 401 errors to clear stale cache

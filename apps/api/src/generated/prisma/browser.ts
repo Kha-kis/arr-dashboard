@@ -18,6 +18,14 @@ export { Prisma }
 export * as $Enums from './enums'
 export * from './enums';
 /**
+ * Model RuntimeLease
+ * Single active API-process lease. arr-dashboard deliberately runs its
+ * schedulers and live event fan-out in process, so multiple API replicas
+ * against one database would duplicate real-world actions. Production API
+ * processes renew this row and refuse to start while another owner is live.
+ */
+export type RuntimeLease = Prisma.RuntimeLeaseModel
+/**
  * Model User
  * 
  */

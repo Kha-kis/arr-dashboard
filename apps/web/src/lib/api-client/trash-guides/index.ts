@@ -257,12 +257,8 @@ export {
 
 export type {
 	ConflictInfo,
-	RollbackResult,
-	SyncDetail,
 	SyncError,
 	SyncExecuteRequest,
-	SyncHistoryItem,
-	SyncHistoryResponse,
 	SyncProgress,
 	SyncProgressStatus,
 	SyncResult,
@@ -272,10 +268,7 @@ export type {
 export {
 	createSyncProgressStream,
 	executeSync,
-	getSyncDetail,
-	getSyncHistory,
 	getSyncProgress,
-	rollbackSync,
 	validateSync,
 } from "./sync";
 

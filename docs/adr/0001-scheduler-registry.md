@@ -84,9 +84,12 @@ concurrency value and keep their existing `isRunning` guards.
    catalog is complete from day one. Execution instrumentation (via
    `registry.track()` or `markDisabled()`) is opt-in per scheduler and can
    land in follow-up PRs.
-4. **Process-local.** `arr-dashboard` is a single-process self-hosted app.
-   Cross-process job coordination (e.g., distributed locks) is not required
-   and would be dead weight.
+4. **Process-local.** `arr-dashboard` is a single-process self-hosted app. A
+   database-backed runtime lease rejects a second production API using the same
+   database, so scheduler state and locks can remain process-local without
+   permitting two independent scheduler sets to run concurrently. Acquisition
+   and renewal are deadline-bound; a stalled heartbeat or ownership loss forces
+   the API to stop serving, with a hard-exit fallback if graceful close stalls.
 
 ## Consequences
 

@@ -6,7 +6,7 @@
  * Runs every 5 minutes with a 60-second startup delay.
  * Retains 90 days of data, cleaning up daily.
  *
- * NOTE: Unlike cache schedulers (plex, tautulli, plex-episode), this plugin
+ * NOTE: Unlike cache schedulers (Plex/Jellyfin library and episode caches), this plugin
  * intentionally does NOT track CacheRefreshStatus. Session snapshots are
  * high-frequency telemetry (5min), not cache refreshes (6h). Skipped ticks
  * (no active sessions) are normal — tracking them would create 288+ upserts/day
