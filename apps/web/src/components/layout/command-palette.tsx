@@ -115,8 +115,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 	// Use portal to render at document.body level, escaping all stacking contexts
 	return createPortal(
 		<div
-			className="fixed inset-0 flex items-start justify-center pt-[20vh] animate-in fade-in duration-150"
-			style={{ zIndex: 9999 }}
+			className="fixed inset-0 z-modal flex items-start justify-center pt-[20vh] animate-in fade-in duration-150"
 			onClick={() => onOpenChange(false)}
 		>
 			{/* Backdrop */}
