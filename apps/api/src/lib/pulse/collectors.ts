@@ -34,6 +34,7 @@ import { createQuiClient } from "../qui/client-factory.js";
 import { listQuiInstances } from "../qui/instance-helpers.js";
 import {
 	calculateDiskTotals,
+	type HealthIssue,
 	type InstanceInfo,
 	processHealthIssues,
 	safeRequest,
@@ -56,6 +57,29 @@ type Collector = (
 	userId: string,
 	log: FastifyBaseLogger,
 ) => Promise<PulseItem[]>;
+
+/**
+ * Build a dismissal-safe identity for an ARR health issue.
+ *
+ * Health messages often include changing upstream details (a hostname, count,
+ * or connection text), so they are presentation rather than identity. ARR's
+ * `source` is the stable check/entity key. Older or incomplete upstream
+ * responses may omit it; use their stable wiki URL when available and only
+ * then fall back to severity. Prefixing the key type prevents collisions
+ * between otherwise identical source and URL values.
+ */
+export function arrHealthSignalId(
+	instanceId: string,
+	issue: Pick<HealthIssue, "source" | "wikiUrl" | "type">,
+): string {
+	const source = issue.source?.trim();
+	const identity = source
+		? `source:${source}`
+		: issue.wikiUrl
+			? `wiki:${issue.wikiUrl}`
+			: `type:${issue.type}`;
+	return `arr-health-${instanceId}-${encodeURIComponent(identity)}`;
+}
 
 // ============================================================================
 // 1 & 2. ARR Health Issues + Disk Space (merged — shares client creation)
@@ -147,7 +171,7 @@ const collectArrSignals: Collector = async (app, userId, log) => {
 
 				for (const issue of healthIssues) {
 					items.push({
-						id: `arr-health-${instance.id}-${issue.message.slice(0, 30)}`,
+						id: arrHealthSignalId(instance.id, issue),
 						severity: issue.type === "error" ? "critical" : "warning",
 						category: "health",
 						title: `${instance.label}: ${issue.message}`,
