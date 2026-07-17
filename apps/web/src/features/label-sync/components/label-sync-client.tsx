@@ -3,19 +3,17 @@
 import type { LabelSyncRule } from "@arr/shared";
 import { CheckCircle2, Pencil, Play, Plus, Tag, Trash2, XCircle } from "lucide-react";
 import { useState } from "react";
-import { GlassmorphicCard, PageLayout } from "../../../components/layout";
+import { GlassmorphicCard, PageLayout, PremiumPageHeader } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import {
 	useDeleteLabelSyncRule,
 	useLabelSyncRules,
 	useRunLabelSyncRule,
 } from "../../../hooks/api/useLabelSync";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { SERVICE_LABEL_BY_VALUE } from "../service-registry";
 import { RuleDialog } from "./rule-dialog";
 
 export const LabelSyncClient = () => {
-	const { gradient } = useThemeGradient();
 	const { data: rules = [], isLoading } = useLabelSyncRules();
 	const deleteMutation = useDeleteLabelSyncRule();
 	const runMutation = useRunLabelSyncRule();
@@ -58,36 +56,19 @@ export const LabelSyncClient = () => {
 	return (
 		<PageLayout>
 			<div className="space-y-6 animate-in fade-in duration-300">
-				{/* Header */}
-				<header className="flex items-start justify-between gap-4">
-					<div className="space-y-1">
-						<div className="flex items-center gap-2 text-sm text-muted-foreground">
-							<Tag className="h-4 w-4" />
-							<span>Automation</span>
-						</div>
-						<h1 className="text-3xl font-bold tracking-tight">
-							<span
-								style={{
-									background: `linear-gradient(135deg, ${gradient.from}, ${gradient.to})`,
-									WebkitBackgroundClip: "text",
-									WebkitTextFillColor: "transparent",
-									backgroundClip: "text",
-								}}
-							>
-								Label Sync
-							</span>
-						</h1>
-						<p className="text-muted-foreground max-w-xl">
-							Auto-apply tags and labels across — or within — services. Pick any source service
-							(Sonarr, Radarr, Plex, Jellyfin, Emby) and any destination service. When a rule runs,
-							every source item carrying the configured tag gets the destination label applied to
-							its matching item.
-						</p>
-					</div>
-					<Button onClick={openCreate} className="shrink-0">
-						<Plus className="h-4 w-4 mr-2" /> New Rule
-					</Button>
-				</header>
+				<PremiumPageHeader
+					label="Automation"
+					labelIcon={Tag}
+					title="Label Sync"
+					gradientTitle
+					description="Apply tags and labels across your media services by matching a source tag to its corresponding destination item."
+					actions={
+						<Button onClick={openCreate}>
+							<Plus className="mr-2 h-4 w-4" />
+							New Rule
+						</Button>
+					}
+				/>
 
 				{/* Rules list */}
 				<GlassmorphicCard>
