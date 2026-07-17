@@ -4,25 +4,15 @@ import { useQueryClient } from "@tanstack/react-query";
 import { THEME_GRADIENT_VALUES } from "../../lib/theme-gradients";
 import { Command } from "cmdk";
 import {
-	BarChart3,
-	Calendar,
-	Compass,
 	FileText,
-	Globe,
-	History,
-	LayoutDashboard,
-	Library,
 	LogOut,
 	Monitor,
 	Moon,
 	Palette,
 	RefreshCw,
 	Search,
-	Settings,
 	Smartphone,
-	Sparkles,
 	Sun,
-	Target,
 	User,
 	Zap,
 } from "lucide-react";
@@ -35,63 +25,7 @@ import { useThemeGradient } from "../../hooks/useThemeGradient";
 import { logout } from "../../lib/api-client/auth";
 import { cn } from "../../lib/utils";
 import { type ColorTheme, useColorTheme } from "../../providers/color-theme-provider";
-
-/**
- * Navigation items matching sidebar
- */
-const NAV_ITEMS = [
-	{
-		href: "/dashboard",
-		label: "Dashboard",
-		icon: LayoutDashboard,
-		keywords: ["home", "overview", "queue"],
-	},
-	{
-		href: "/discover",
-		label: "Discover",
-		icon: Compass,
-		keywords: ["tmdb", "trending", "popular", "movies", "shows"],
-	},
-	{
-		href: "/library",
-		label: "Library",
-		icon: Library,
-		keywords: ["movies", "series", "collection"],
-	},
-	{ href: "/search", label: "Search", icon: Search, keywords: ["find", "prowlarr", "indexers"] },
-	{
-		href: "/indexers",
-		label: "Indexers",
-		icon: Globe,
-		keywords: ["prowlarr", "torrent", "usenet"],
-	},
-	{
-		href: "/calendar",
-		label: "Calendar",
-		icon: Calendar,
-		keywords: ["upcoming", "releases", "schedule"],
-	},
-	{
-		href: "/statistics",
-		label: "Statistics",
-		icon: BarChart3,
-		keywords: ["stats", "analytics", "graphs"],
-	},
-	{ href: "/hunting", label: "Hunting", icon: Target, keywords: ["missing", "upgrade", "auto"] },
-	{ href: "/history", label: "History", icon: History, keywords: ["downloads", "log", "activity"] },
-	{
-		href: "/trash-guides",
-		label: "TRaSH Guides",
-		icon: Sparkles,
-		keywords: ["quality", "profiles", "custom formats"],
-	},
-	{
-		href: "/settings",
-		label: "Settings",
-		icon: Settings,
-		keywords: ["config", "preferences", "account"],
-	},
-];
+import { NAVIGATION_ITEMS } from "./navigation";
 
 /**
  * Theme color options with actual hex values for previews
@@ -239,7 +173,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 						}
 						className="mb-2"
 					>
-						{NAV_ITEMS.map((item) => {
+						{NAVIGATION_ITEMS.map((item) => {
 							const Icon = item.icon;
 							return (
 								<Command.Item

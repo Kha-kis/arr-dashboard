@@ -6,7 +6,7 @@ interface PageLayoutProps {
 	/** Maximum width constraint for the content */
 	maxWidth?: "4xl" | "6xl" | "7xl";
 	/** Vertical spacing between child elements (default: 8 = 32px) */
-	gap?: "6" | "8" | "10" | "12";
+	gap?: "5" | "6" | "8" | "10" | "12";
 	/** Additional CSS classes */
 	className?: string;
 }
@@ -18,6 +18,7 @@ const MAX_WIDTH_CLASSES = {
 } as const;
 
 const GAP_CLASSES = {
+	"5": "gap-5",
 	"6": "gap-6",
 	"8": "gap-8",
 	"10": "gap-10",
@@ -50,7 +51,7 @@ const GAP_CLASSES = {
 export const PageLayout = ({
 	children,
 	maxWidth = "6xl",
-	gap = "8",
+	gap = "6",
 	className,
 }: PageLayoutProps) => {
 	return (
@@ -60,7 +61,7 @@ export const PageLayout = ({
 				// mx-auto cancels align-items:stretch and main collapses to its intrinsic
 				// content width, so brief loading skeletons or content-width changes cause
 				// visible layout shifts (e.g. calendar narrowing on month nav — issue #272).
-				"mx-auto w-full flex flex-col px-3 py-8 sm:px-4 sm:py-12 md:px-6 md:py-16",
+				"mx-auto flex w-full flex-col px-0 py-1 sm:py-2",
 				MAX_WIDTH_CLASSES[maxWidth],
 				GAP_CLASSES[gap],
 				className,

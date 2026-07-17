@@ -11,8 +11,10 @@
  * or without any attention-worthy requests — they skip rather than fail.
  */
 
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { ROUTES, TIMEOUTS, waitForLoadingComplete } from "./utils/test-helpers";
+
+const SEERR_WIDGET_DETECTION_TIMEOUT = 5_000;
 
 // ============================================================================
 // Helpers
@@ -22,7 +24,10 @@ import { ROUTES, TIMEOUTS, waitForLoadingComplete } from "./utils/test-helpers";
 async function hasSeerrWidget(page: import("@playwright/test").Page): Promise<boolean> {
 	const widget = page.getByText("Seerr Requests").first();
 	try {
-		await widget.waitFor({ state: "visible", timeout: TIMEOUTS.medium });
+		// A configured widget is rendered once dashboard loading completes. Keep
+		// the optional-instance check short so clean CI databases skip instead of
+		// exhausting the enclosing test timeout.
+		await widget.waitFor({ state: "visible", timeout: SEERR_WIDGET_DETECTION_TIMEOUT });
 		return true;
 	} catch {
 		return false;
@@ -198,7 +203,8 @@ test.describe("Dashboard - Attention Widget Incognito", () => {
 		// Linux distro names (used by getLinuxIsoName) will appear instead
 		// We can't check for specific names without knowing the originals,
 		// but we verify the section is rendered (incognito didn't break rendering)
-		const attentionItems = page.locator('[class*="attention"], [class*="Attention"]')
+		const attentionItems = page
+			.locator('[class*="attention"], [class*="Attention"]')
 			.or(page.getByText(/^failed$/i).or(page.getByText(/^stuck/i)));
 		const itemCount = await attentionItems.count();
 		expect(itemCount).toBeGreaterThan(0);

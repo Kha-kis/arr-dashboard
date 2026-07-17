@@ -56,6 +56,6 @@
 	],
 	"assist": { "actions": { "source": { "organizeImports": "on" } } },
 	"files": {
-		"includes": ["**", "!**/node_modules/**", "!**/dist/**", "!**/generated/**"]
+		"includes": ["**", "!**/node_modules/**", "!**/dist/**", "!**/generated/**", "!**/.next/**"]
 	}
 }
