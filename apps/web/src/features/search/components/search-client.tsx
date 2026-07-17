@@ -2,7 +2,7 @@
 
 import { Globe, Search, Settings } from "lucide-react";
 import Link from "next/link";
-import { PremiumCard, PremiumSkeleton } from "../../../components/layout";
+import { PremiumCard, PremiumPageHeader, PremiumSkeleton } from "../../../components/layout";
 import { Alert, AlertDescription, AlertTitle, Button, Pagination } from "../../../components/ui";
 import { useSearchIndexersQuery } from "../../../hooks/api/useSearch";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
@@ -117,41 +117,13 @@ export const SearchClient = () => {
 
 	return (
 		<>
-			{/* Header */}
-			<header
-				className="relative animate-in fade-in slide-in-from-bottom-4 duration-500"
-				style={{ animationFillMode: "backwards" }}
-			>
-				<div className="flex items-start justify-between gap-4">
-					<div className="space-y-1">
-						{/* Label with icon */}
-						<div className="flex items-center gap-2 text-sm text-muted-foreground">
-							<Search className="h-4 w-4" />
-							<span>Multi-indexer Search</span>
-						</div>
-
-						{/* Gradient title */}
-						<h1 className="text-3xl font-bold tracking-tight">
-							<span
-								style={{
-									background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
-									WebkitBackgroundClip: "text",
-									WebkitTextFillColor: "transparent",
-									backgroundClip: "text",
-								}}
-							>
-								Manual Search
-							</span>
-						</h1>
-
-						{/* Description */}
-						<p className="text-muted-foreground max-w-xl">
-							Query your configured Prowlarr instances and send releases directly to your download
-							clients
-						</p>
-					</div>
-				</div>
-			</header>
+			<PremiumPageHeader
+				label="Multi-indexer search"
+				labelIcon={Search}
+				title="Manual search"
+				gradientTitle
+				description="Query your configured Prowlarr instances and send releases directly to your download clients."
+			/>
 
 			{/* Alerts */}
 			{feedback && (
