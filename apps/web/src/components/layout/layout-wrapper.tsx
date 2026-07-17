@@ -37,7 +37,7 @@ export const LayoutWrapper = ({ children }: LayoutWrapperProps) => {
 	}
 
 	return (
-		<div className="flex min-h-screen bg-background relative">
+		<div className="relative flex min-h-screen bg-background">
 			{/* 3.0 one-shot migration gate — blocks until lingering Tautulli
 			    instances are acknowledged and removed (ADR-0007) */}
 			<TautulliMigrationDialog />
@@ -64,9 +64,9 @@ export const LayoutWrapper = ({ children }: LayoutWrapperProps) => {
 			)}
 
 			<Sidebar />
-			<div className="flex flex-1 flex-col relative z-10 min-w-0">
-				<TopBar />
-				<div className="flex-1 p-6 min-w-0">{children}</div>
+			<div className="relative z-10 flex min-w-0 flex-1 flex-col">
+				<TopBar onOpenCommandPalette={() => setCommandPaletteOpen(true)} />
+				<div className="min-w-0 flex-1 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">{children}</div>
 			</div>
 		</div>
 	);

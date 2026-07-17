@@ -20,20 +20,30 @@ test.describe("Navigation - Sidebar", () => {
 	test("should display sidebar with all navigation links", async ({ page }) => {
 		const expectedLinks = [
 			"Dashboard",
+			"Console",
+			"Pulse",
+			"Statistics",
 			"Discover",
+			"Requests",
+			"Calendar",
 			"Library",
 			"Search",
-			"Indexers",
-			"Calendar",
-			"Statistics",
-			"Hunting",
 			"History",
+			"Hunting",
+			"Queue Cleaner",
+			"Library Cleanup",
+			"Auto-Tagger",
+			"Label Sync",
+			"Cross-Seed",
+			"qui",
+			"qui Activity",
+			"Indexers",
 			"TRaSH Guides",
 			"Settings",
 		];
 
 		for (const linkName of expectedLinks) {
-			const link = page.getByRole("link", { name: new RegExp(linkName, "i") });
+			const link = page.getByRole("link", { name: linkName, exact: true });
 			await expect(link).toBeVisible({ timeout: TIMEOUTS.medium });
 		}
 	});
@@ -61,7 +71,7 @@ test.describe("Navigation - Sidebar", () => {
 		// App title should be visible - check header (h2) which is always visible
 		// The sidebar h1 may be hidden on some viewports due to responsive design
 		const header = page.locator("header, [role='banner']");
-		await expect(header.getByText(/arr control center/i).first()).toBeVisible();
+		await expect(header.getByText(/arr control/i).first()).toBeVisible();
 	});
 });
 
@@ -99,11 +109,19 @@ test.describe("Navigation - Route Changes", () => {
 			// Verify page content loaded - look for heading or page identifier text
 			// Some pages may take longer to load content, so use extended timeout
 			const pageContent = page.locator("main");
-			const textVisible = await pageContent.getByText(heading).first().isVisible({ timeout: TIMEOUTS.long }).catch(() => false);
+			const textVisible = await pageContent
+				.getByText(heading)
+				.first()
+				.isVisible({ timeout: TIMEOUTS.long })
+				.catch(() => false);
 
 			// If main content not found, check the whole page (some pages render differently)
 			if (!textVisible) {
-				const pageTextVisible = await page.getByText(heading).first().isVisible({ timeout: 5000 }).catch(() => false);
+				const pageTextVisible = await page
+					.getByText(heading)
+					.first()
+					.isVisible({ timeout: 5000 })
+					.catch(() => false);
 				expect(pageTextVisible).toBe(true);
 			}
 		});

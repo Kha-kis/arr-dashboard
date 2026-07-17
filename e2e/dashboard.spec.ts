@@ -8,14 +8,8 @@
  * - Refresh functionality
  */
 
-import { test, expect } from "@playwright/test";
-import {
-	ROUTES,
-	TIMEOUTS,
-	waitForLoadingComplete,
-	selectTab,
-	SERVICE_TYPES,
-} from "./utils/test-helpers";
+import { expect, test } from "@playwright/test";
+import { ROUTES, SERVICE_TYPES, TIMEOUTS, waitForLoadingComplete } from "./utils/test-helpers";
 
 // CI auto-generates credentials if not provided (must match auth.setup.ts)
 const CI_TEST_USERNAME = "ci-test-user";
@@ -62,14 +56,25 @@ test.describe("Dashboard - Page Load", () => {
 });
 
 test.describe("Dashboard - Overview Tab", () => {
-	test("should display service stat cards", async ({ page }) => {
+	test("should display stat cards for configured service types", async ({ page }) => {
 		await page.goto(ROUTES.dashboard);
 
 		// Wait for loading to complete
 		await waitForLoadingComplete(page);
 
-		// Should have stat cards for each service type
+		// The dashboard only renders a service card for an enabled instance. CI's
+		// clean database has none, while integration tests exercise configured cards.
+		const servicesResponse = await page.request.get("/api/services");
+		expect(servicesResponse.ok()).toBe(true);
+		const { services } = (await servicesResponse.json()) as {
+			services: Array<{ service: string; enabled: boolean }>;
+		};
+
 		for (const service of SERVICE_TYPES) {
+			if (!services.some((instance) => instance.service === service && instance.enabled)) {
+				continue;
+			}
+
 			const statCard = page.getByText(new RegExp(service, "i")).first();
 			await expect(statCard).toBeVisible({ timeout: TIMEOUTS.medium });
 		}
@@ -271,7 +276,6 @@ test.describe("Dashboard - Refresh Functionality", () => {
 		await refreshButton.click();
 
 		// Should show loading state (spinning icon)
-		const spinningIcon = page.locator('[class*="animate-spin"]');
 		// Either shows spinner or completes quickly
 		await page.waitForTimeout(500);
 
