@@ -1,6 +1,8 @@
 import type { ApiErrorPayload } from "@arr/shared";
 import { getErrorMessage } from "../error-utils";
 
+export const AUTH_UNAUTHORIZED_EVENT = "arr-dashboard:unauthorized";
+
 export class ApiError extends Error {
 	constructor(
 		message: string,
@@ -68,6 +70,9 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 	}
 
 	if (response.status === 401) {
+		if (typeof window !== "undefined") {
+			window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT));
+		}
 		throw new UnauthorizedError();
 	}
 

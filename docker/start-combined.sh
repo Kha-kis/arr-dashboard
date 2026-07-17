@@ -275,19 +275,23 @@ fi
 
 echo ""
 echo "Synchronizing database schema..."
-# Use 'db push' instead of 'migrate deploy' to support multi-provider (SQLite/PostgreSQL)
-# Prisma migrations are provider-specific SQL, but db push generates correct SQL for any provider
-# --accept-data-loss allows dropping unused columns during schema updates (e.g., removed urlBase)
+# Use 'db push' instead of 'migrate deploy' to support multi-provider (SQLite/PostgreSQL).
+# Prisma migrations are provider-specific SQL, but db push generates correct SQL for any provider.
+# Deliberately do NOT pass --accept-data-loss here. A release that needs a destructive
+# schema transition must ship an explicit, reviewed migration/backup path instead of
+# silently discarding operator data merely because a new container started.
 # Note: Prisma 7 removed --skip-generate flag (db push no longer regenerates by default)
-if ! run_as_user ./node_modules/.bin/prisma db push --schema prisma/schema.prisma --accept-data-loss; then
+if ! run_as_user ./node_modules/.bin/prisma db push --schema prisma/schema.prisma; then
     echo "ERROR: Database schema synchronization failed" >&2
     if [ "$ROOTLESS" = true ]; then
         echo "  - In rootless mode, ensure the database file is readable/writable by UID:$PUID" >&2
         echo "  - If switching from root to rootless, run: chown $PUID:$PGID /path/to/config/prod.db" >&2
     fi
+    echo "  - Destructive schema changes are intentionally rejected at startup" >&2
+    echo "  - Restore the previous image and consult the release notes for an explicit upgrade path" >&2
     echo "  - Ensure DATABASE_URL is correct and the database is accessible" >&2
     echo "  - For PostgreSQL: Check that the database exists and user has permissions" >&2
-    echo "  - Current DATABASE_URL: ${DATABASE_URL%%@*}@[REDACTED]" >&2
+    echo "  - Detected database provider: $DB_PROVIDER" >&2
     exit 1
 fi
 echo "  - Database schema synchronized successfully"
@@ -375,7 +379,11 @@ echo "  - MALLOC_ARENA_MAX: $MALLOC_ARENA_MAX (glibc arena cap — keeps RSS in 
 # via its pino-roll transport (writes to /config/logs/arr-dashboard.log).
 # Previous approach redirected stdout to api.log, which conflicted with Pino's
 # worker-thread transport and caused both log files to remain empty.
-run_as_user sh -c "cd /config/heap-snapshots && MALLOC_ARENA_MAX=$MALLOC_ARENA_MAX API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node /app/api/dist/index.js" &
+if [ "$ROOTLESS" = true ]; then
+    sh -c "cd /config/heap-snapshots && exec env MALLOC_ARENA_MAX=$MALLOC_ARENA_MAX API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node /app/api/dist/index.js" &
+else
+    su-exec abc sh -c "cd /config/heap-snapshots && exec env MALLOC_ARENA_MAX=$MALLOC_ARENA_MAX API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node /app/api/dist/index.js" &
+fi
 API_PID=$!
 echo "API started with PID $API_PID"
 
@@ -400,7 +408,14 @@ if ! kill -0 "$API_PID" 2>/dev/null; then
     # outer shell's CWD between the two launch sites.
     echo "=== Re-running API in foreground (10s timeout) ===" >&2
     set +e
-    timeout 10 run_as_user sh -c "cd /config/heap-snapshots && API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node /app/api/dist/index.js" 2>&1
+    # `run_as_user` is a shell function and therefore cannot be executed by
+    # BusyBox `timeout` as an external command. Apply the timeout to the real
+    # rootless/su-exec command instead so this diagnostic reports the API error.
+    if [ "$ROOTLESS" = true ]; then
+        timeout 10 sh -c "cd /config/heap-snapshots && exec env API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node /app/api/dist/index.js" 2>&1
+    else
+        timeout 10 su-exec abc sh -c "cd /config/heap-snapshots && exec env API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node /app/api/dist/index.js" 2>&1
+    fi
     RERUN_EXIT=$?
     set -e
     echo "=== Foreground API exit code: $RERUN_EXIT ===" >&2
@@ -415,7 +430,11 @@ echo ""
 echo "Starting Web server on $HOST:$PORT..."
 cd /app/web
 # Use custom server wrapper for runtime API_HOST configuration
-run_as_user sh -c "API_HOST=http://localhost:$API_PORT PORT=$PORT HOSTNAME=$HOST HOST=$HOST node server.js" &
+if [ "$ROOTLESS" = true ]; then
+    sh -c "exec env API_HOST=http://localhost:$API_PORT PORT=$PORT HOSTNAME=$HOST HOST=$HOST node server.js" &
+else
+    su-exec abc sh -c "exec env API_HOST=http://localhost:$API_PORT PORT=$PORT HOSTNAME=$HOST HOST=$HOST node server.js" &
+fi
 WEB_PID=$!
 echo "Web started with PID $WEB_PID"
 
@@ -427,9 +446,18 @@ echo "API: http://localhost:$API_PORT"
 echo "Running as UID:$PUID GID:$PGID"
 echo "=========================================="
 
-# Wait for both processes
-wait $API_PID $WEB_PID
+# Supervise both services. POSIX `wait $API_PID $WEB_PID` waits for each PID in
+# sequence, so an API failure could leave the container alive indefinitely while
+# the web process kept running. Poll both tracked PIDs and tear down the sibling
+# as soon as either service exits.
+while kill -0 "$API_PID" 2>/dev/null && kill -0 "$WEB_PID" 2>/dev/null; do
+    sleep 1
+done
 
-# If we get here, one of the processes died
-echo "One of the services stopped unexpectedly"
+echo "One of the services stopped unexpectedly; stopping the remaining service"
+kill -TERM "$WEB_PID" 2>/dev/null || true
+kill -TERM "$API_PID" 2>/dev/null || true
+set +e
+wait "$API_PID" "$WEB_PID" 2>/dev/null
+set -e
 exit 1

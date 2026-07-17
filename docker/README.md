@@ -9,6 +9,15 @@ API and Web run together in one container for simple deployment:
 - **Easier networking** — No container linking needed
 - **Lower overhead** — Shared resources and dependencies
 
+Run exactly one arr-dashboard API/container against a database. Background
+schedulers, concurrency guards, and live-event fan-out are intentionally
+process-local. Production API processes acquire a database-backed lease and a
+second process pointed at the same database refuses to start. This protects
+external services from duplicate automation; it is not a horizontal-scaling
+mechanism. Lease acquisition and heartbeats have hard deadlines. If ownership
+is lost or the database stops responding during renewal, the API stops serving
+and the container exits even when graceful cleanup cannot complete.
+
 ## Files
 
 | File | Purpose |
@@ -66,6 +75,13 @@ docker run -d \
 ```
 
 Both `postgresql://` and `postgres://` URL schemes are supported.
+
+At startup, the container synchronizes the Prisma schema for the selected
+provider. Schema additions and other non-destructive changes are applied
+automatically. Destructive changes are rejected: the launcher never passes
+Prisma's `--accept-data-loss` option. If an upgrade requires a destructive
+transition, keep the previous image running and follow that release's explicit
+backup and migration instructions before retrying the upgrade.
 
 ## Environment Variables
 

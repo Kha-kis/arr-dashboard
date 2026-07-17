@@ -31,8 +31,8 @@ export * from "./enums"
  * const prisma = new PrismaClient({
  *   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL })
  * })
- * // Fetch zero or more Users
- * const users = await prisma.user.findMany()
+ * // Fetch zero or more RuntimeLeases
+ * const runtimeLeases = await prisma.runtimeLease.findMany()
  * ```
  * 
  * Read more in our [docs](https://pris.ly/d/client).
@@ -41,6 +41,14 @@ export const PrismaClient = $Class.getPrismaClientClass()
 export type PrismaClient<LogOpts extends Prisma.LogLevel = never, OmitOpts extends Prisma.PrismaClientOptions["omit"] = Prisma.PrismaClientOptions["omit"], ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = $Class.PrismaClient<LogOpts, OmitOpts, ExtArgs>
 export { Prisma }
 
+/**
+ * Model RuntimeLease
+ * Single active API-process lease. arr-dashboard deliberately runs its
+ * schedulers and live event fan-out in process, so multiple API replicas
+ * against one database would duplicate real-world actions. Production API
+ * processes renew this row and refuse to start while another owner is live.
+ */
+export type RuntimeLease = Prisma.RuntimeLeaseModel
 /**
  * Model User
  * 

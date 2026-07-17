@@ -9,14 +9,8 @@ import { useEffect, useRef, useState } from "react";
 import {
 	createSyncProgressStream,
 	executeSync,
-	getSyncDetail,
-	getSyncHistory,
 	getSyncProgress,
-	type RollbackResult,
-	rollbackSync,
-	type SyncDetail,
 	type SyncExecuteRequest,
-	type SyncHistoryResponse,
 	type SyncProgress,
 	type SyncResult,
 	type SyncValidationRequest,
@@ -231,12 +225,7 @@ export function useExecuteSync() {
 
 	return useMutation<SyncResult, Error, SyncExecuteRequest>({
 		mutationFn: executeSync,
-		onSuccess: (data, variables) => {
-			// Invalidate sync history for the instance
-			queryClient.invalidateQueries({
-				queryKey: syncKeys.history(variables.instanceId),
-			});
-
+		onSuccess: (_data, variables) => {
 			// Invalidate template stats
 			queryClient.invalidateQueries({
 				queryKey: trashGuidesKeys.templates.stats(variables.templateId),
@@ -314,66 +303,4 @@ export function useSyncProgress(syncId: string | null, enabled = true) {
 		isLoading: usePolling ? pollingQuery.isLoading : !progress && !error,
 		isPolling: usePolling,
 	};
-}
-
-// ============================================================================
-// Sync History Hook
-// ============================================================================
-
-export function useSyncHistory(instanceId: string, params?: { limit?: number; offset?: number }) {
-	return useQuery<SyncHistoryResponse, Error>({
-		queryKey: syncKeys.history(instanceId, params),
-		queryFn: () => getSyncHistory(instanceId, params),
-		enabled: !!instanceId,
-	});
-}
-
-// ============================================================================
-// Sync Detail Hook
-// ============================================================================
-
-export function useSyncDetail(syncId: string | null) {
-	return useQuery<SyncDetail, Error>({
-		queryKey: syncKeys.detail(syncId!),
-		queryFn: () => getSyncDetail(syncId!),
-		enabled: !!syncId,
-	});
-}
-
-// ============================================================================
-// Rollback Hook
-// ============================================================================
-
-interface RollbackVariables {
-	syncId: string;
-	/** Optional instanceId for targeted cache invalidation. When provided,
-	 * only that instance's sync history is invalidated instead of all instances. */
-	instanceId?: string;
-}
-
-export function useRollbackSync() {
-	const queryClient = useQueryClient();
-
-	return useMutation<RollbackResult, Error, RollbackVariables>({
-		mutationFn: ({ syncId }) => rollbackSync(syncId),
-		onSuccess: (data, variables) => {
-			// Invalidate sync detail
-			queryClient.invalidateQueries({
-				queryKey: syncKeys.detail(variables.syncId),
-			});
-
-			// Invalidate sync history - targeted if instanceId provided
-			if (variables.instanceId) {
-				queryClient.invalidateQueries({
-					queryKey: syncKeys.history(variables.instanceId),
-				});
-			} else {
-				// Global invalidation when instanceId not available
-				// This may cause cross-instance refetches but ensures data consistency
-				queryClient.invalidateQueries({
-					queryKey: syncKeys.historyAll,
-				});
-			}
-		},
-	});
 }
