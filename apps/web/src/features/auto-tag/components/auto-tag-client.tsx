@@ -3,19 +3,17 @@
 import type { AutoTagRule } from "@arr/shared";
 import { CheckCircle2, Pencil, Play, Plus, Tag, Trash2, XCircle } from "lucide-react";
 import { useState } from "react";
-import { GlassmorphicCard, PageLayout } from "../../../components/layout";
+import { GlassmorphicCard, PageLayout, PremiumPageHeader } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import {
 	useAutoTagRules,
 	useDeleteAutoTagRule,
 	useRunAutoTagRule,
 } from "../../../hooks/api/useAutoTag";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { RuleDialog } from "./rule-dialog";
 import { WebhookConfigPanel } from "./webhook-config-panel";
 
 export const AutoTagClient = () => {
-	const { gradient } = useThemeGradient();
 	const { data: rules = [], isLoading } = useAutoTagRules();
 	const deleteMutation = useDeleteAutoTagRule();
 	const runMutation = useRunAutoTagRule();
@@ -58,34 +56,19 @@ export const AutoTagClient = () => {
 	return (
 		<PageLayout>
 			<div className="space-y-6 animate-in fade-in duration-300">
-				<header className="flex items-start justify-between gap-4">
-					<div className="space-y-1">
-						<div className="flex items-center gap-2 text-sm text-muted-foreground">
-							<Tag className="h-4 w-4" />
-							<span>Automation</span>
-						</div>
-						<h1 className="text-3xl font-bold tracking-tight">
-							<span
-								style={{
-									background: `linear-gradient(135deg, ${gradient.from}, ${gradient.to})`,
-									WebkitBackgroundClip: "text",
-									WebkitTextFillColor: "transparent",
-									backgroundClip: "text",
-								}}
-							>
-								Auto-Tagger
-							</span>
-						</h1>
-						<p className="text-muted-foreground max-w-xl">
-							Apply tags to Sonarr/Radarr items automatically based on criteria — genre, year,
-							codec, watch state, and more. Pair with Label Sync to mirror the tag onto Plex,
-							Jellyfin, or Emby labels.
-						</p>
-					</div>
-					<Button onClick={openCreate} className="shrink-0">
-						<Plus className="h-4 w-4 mr-2" /> New Rule
-					</Button>
-				</header>
+				<PremiumPageHeader
+					label="Automation"
+					labelIcon={Tag}
+					title="Auto-Tagger"
+					gradientTitle
+					description="Apply tags to Sonarr and Radarr items by criteria, then mirror them to Plex, Jellyfin, or Emby through Label Sync."
+					actions={
+						<Button onClick={openCreate}>
+							<Plus className="mr-2 h-4 w-4" />
+							New Rule
+						</Button>
+					}
+				/>
 
 				<WebhookConfigPanel />
 
