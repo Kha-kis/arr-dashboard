@@ -3,7 +3,7 @@
 import { SEERR_MEDIA_STATUS, type SeerrDiscoverResult } from "@arr/shared";
 import { Clock, Compass, Eye, EyeOff, Film, Tag, TrendingUp, Tv } from "lucide-react";
 import { lazy, Suspense, useCallback, useMemo, useState } from "react";
-import { PremiumSkeleton } from "../../../components/layout";
+import { PremiumPageHeader, PremiumSkeleton } from "../../../components/layout";
 import {
 	useSeerrDiscoverByGenre,
 	useSeerrDiscoverMovies,
@@ -131,7 +131,7 @@ export const DiscoverClient = () => {
 	if (isLoadingInstances) {
 		return (
 			<div className="space-y-8">
-				<PageHeader themeGradient={themeGradient} />
+				<PageHeader />
 				<div
 					className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500"
 					style={{ animationDelay: "100ms", animationFillMode: "backwards" }}
@@ -166,7 +166,7 @@ export const DiscoverClient = () => {
 	if (seerrInstances.length === 0) {
 		return (
 			<div className="space-y-8">
-				<PageHeader themeGradient={themeGradient} />
+				<PageHeader />
 				<DiscoverEmptyState />
 			</div>
 		);
@@ -178,7 +178,7 @@ export const DiscoverClient = () => {
 	return (
 		<div className="space-y-8 overflow-x-hidden">
 			{/* Page header */}
-			<PageHeader themeGradient={themeGradient} />
+			<PageHeader />
 
 			{/* Search bar + controls */}
 			<div
@@ -357,41 +357,12 @@ export const DiscoverClient = () => {
 // Page Header
 // ============================================================================
 
-interface PageHeaderProps {
-	themeGradient: { from: string; to: string };
-}
-
-const PageHeader: React.FC<PageHeaderProps> = ({ themeGradient }) => (
-	<header className="space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
-		<div className="flex items-center gap-3">
-			<div
-				className="flex h-12 w-12 items-center justify-center rounded-2xl shrink-0"
-				style={{
-					background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
-					border: `1px solid ${themeGradient.from}30`,
-				}}
-			>
-				<Compass className="h-6 w-6" style={{ color: themeGradient.from }} />
-			</div>
-			<div>
-				<p className="text-xs uppercase tracking-[0.3em] text-muted-foreground font-medium">
-					Discover
-				</p>
-				<h1
-					className="text-2xl font-bold"
-					style={{
-						background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
-						WebkitBackgroundClip: "text",
-						WebkitTextFillColor: "transparent",
-					}}
-				>
-					Find New Content
-				</h1>
-			</div>
-		</div>
-		<p className="text-sm text-muted-foreground max-w-2xl">
-			Browse trending movies and TV shows, see what&apos;s available in your library, and submit
-			requests through Seerr.
-		</p>
-	</header>
+const PageHeader = () => (
+	<PremiumPageHeader
+		label="Discover"
+		labelIcon={Compass}
+		title="Find new content"
+		gradientTitle
+		description="Browse trending movies and TV shows, see what is already in your library, and submit requests through Seerr."
+	/>
 );
