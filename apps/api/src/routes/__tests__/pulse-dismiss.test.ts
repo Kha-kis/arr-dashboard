@@ -131,6 +131,32 @@ describe("dismiss-until-recovery", () => {
 		expect(after.summary).toEqual({ critical: 0, warning: 1, info: 0 });
 	});
 
+	it("keeps a dismissal when an ARR health message changes but its stable ID remains", async () => {
+		const signalId = "arr-health-inst-1-source%3ADownloadClientCheck";
+		items = [
+			makeItem({
+				id: signalId,
+				title: "Sonarr: Download client has no connection",
+			}),
+		];
+		await injectAuthenticated("POST", `/pulse/${encodeURIComponent(signalId)}/dismiss`);
+
+		items = [
+			makeItem({
+				id: signalId,
+				title: "Sonarr: Download client timed out after 3 retries",
+			}),
+		];
+		// Bust the per-user cache; the new collector output retains the same
+		// entity-keyed ID, so the dismissal must stay active.
+		await injectAuthenticated("DELETE", "/pulse/unrelated/dismiss");
+
+		const afterMessageChange = await getPulse();
+		expect(afterMessageChange.items).toEqual([]);
+		expect(afterMessageChange.dismissedCount).toBe(1);
+		expect(tombstones).toEqual([{ userId: `user-dismiss-${userCounter}`, signalId }]);
+	});
+
 	it("never suppresses a signal currently firing as critical (breakthrough)", async () => {
 		items = [makeItem({ id: "sig-1", severity: "critical" })];
 

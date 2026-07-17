@@ -9,7 +9,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { LidarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
-import { collectArrSignals } from "../collectors.js";
+import { arrHealthSignalId, collectArrSignals } from "../collectors.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -225,6 +225,38 @@ describe("collectArrSignals — Sonarr", () => {
 		expect(healthItems[0]?.severity).toBe("critical");
 	});
 
+	it("keeps an ARR health signal ID stable when its message changes", async () => {
+		const instance = makeInstance({ id: "inst-sonarr-1", label: "Sonarr", service: "SONARR" });
+		const firstIssue = {
+			type: "warning" as const,
+			message: "Indexer is unavailable at https://old.example",
+			source: "IndexerLongTermStatusCheck",
+		};
+		const changedMessageIssue = {
+			...firstIssue,
+			message: "Indexer is unavailable at https://new.example after 3 retries",
+		};
+
+		const first = await collectArrSignals(
+			makeMockApp(instance, makeSonarrClient({ healthResult: [firstIssue] })),
+			"user-1",
+			mockLog,
+		);
+		const changed = await collectArrSignals(
+			makeMockApp(instance, makeSonarrClient({ healthResult: [changedMessageIssue] })),
+			"user-1",
+			mockLog,
+		);
+
+		expect(first[0]?.id).toBe(changed[0]?.id);
+		expect(first[0]?.id).toBe(
+			arrHealthSignalId(instance.id, {
+				type: "warning",
+				source: "IndexerLongTermStatusCheck",
+			}),
+		);
+	});
+
 	it("calls health.getAll() — not health.get() — on SonarrClient", async () => {
 		const client = makeSonarrClient({ healthResult: [] });
 		const app = makeMockApp(
@@ -245,6 +277,19 @@ describe("collectArrSignals — Sonarr", () => {
 // ---------------------------------------------------------------------------
 
 describe("collectArrSignals — edge cases", () => {
+	it("uses a stable fallback when an upstream health row omits source", () => {
+		expect(
+			arrHealthSignalId("inst-1", {
+				type: "warning",
+				wikiUrl: "https://wiki.example/health-check",
+			}),
+		).toBe("arr-health-inst-1-wiki%3Ahttps%3A%2F%2Fwiki.example%2Fhealth-check");
+
+		expect(arrHealthSignalId("inst-1", { type: "warning" })).toBe(
+			"arr-health-inst-1-type%3Awarning",
+		);
+	});
+
 	it("returns empty array when no ARR instances are configured", async () => {
 		const app = {
 			prisma: {
