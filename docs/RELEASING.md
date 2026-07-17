@@ -71,10 +71,20 @@ Before bumping any version numbers, decide *what* this release contains.
 
 ### 3. Database
 
-- [ ] **Fresh SQLite install:** Delete `dev.db`, run `pnpm run db:push`, verify API starts
-- [ ] **Fresh PostgreSQL install:** Point `DATABASE_URL` at empty database, run `pnpm run db:push`, verify API starts
-- [ ] **SQLite upgrade:** Start with previous release database, run new version, verify schema migrates
-- [ ] **PostgreSQL upgrade:** Same as above with PostgreSQL
+- [ ] Run every database scenario through the candidate **combined container**.
+      Its launcher selects the Prisma provider from `DATABASE_URL`, regenerates
+      the client when needed, and synchronizes the schema. The local
+      `pnpm run db:push` command is SQLite-only and is not a PostgreSQL
+      release-validation procedure.
+- [ ] **Fresh SQLite install:** Start the candidate container with an empty
+      `/config` volume and verify the API starts.
+- [ ] **Fresh PostgreSQL install:** Start the candidate container with
+      `DATABASE_URL` pointed at an empty PostgreSQL database and verify the API
+      starts.
+- [ ] **SQLite upgrade:** Start the candidate container with a previous-release
+      SQLite `/config` database and verify the schema synchronizes.
+- [ ] **PostgreSQL upgrade:** Start the candidate container with a
+      previous-release PostgreSQL database and verify the schema synchronizes.
 - [ ] Run both upgrade scenarios **without** Prisma's `--accept-data-loss`; a
       destructive transition requires a release-specific backup/migration plan
       and must not be delegated to container startup
