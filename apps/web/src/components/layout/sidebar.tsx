@@ -1,30 +1,7 @@
 "use client";
 
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
-import {
-	Activity,
-	BarChart3,
-	Calendar,
-	ChevronDown,
-	ChevronRight,
-	Compass,
-	Eraser,
-	Gauge,
-	Globe,
-	History,
-	Inbox,
-	LayoutDashboard,
-	Library,
-	Menu,
-	Network,
-	Search,
-	Settings,
-	Sparkles,
-	Tag,
-	Target,
-	Trash2,
-	X,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, LayoutDashboard, Menu, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -32,78 +9,7 @@ import { useThemeGradient } from "../../hooks/useThemeGradient";
 import { cn } from "../../lib/utils";
 import { useColorTheme } from "../../providers/color-theme-provider";
 import { springs } from "../motion";
-
-interface NavItem {
-	href: string;
-	label: string;
-	icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
-}
-
-interface NavGroup {
-	id: string;
-	label: string;
-	items: NavItem[];
-}
-
-const NAV_GROUPS: NavGroup[] = [
-	{
-		id: "overview",
-		label: "Overview",
-		items: [
-			// Dashboard first — it is the product's primary landing surface
-			// (/ redirects here post-auth) and hosts the Needs Attention panel.
-			// Pulse remains the deep-inspection view below it.
-			{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-			// Console is the operator's working surface (3.0 flagship,
-			// charter §2.1): domain health + attention feed + one-click
-			// actions, later the rule composer. Sits between the landing
-			// surface (Dashboard) and the deep-inspection view (Pulse).
-			{ href: "/console", label: "Console", icon: Gauge },
-			{ href: "/pulse", label: "Pulse", icon: Activity },
-			// `/qui` is the at-a-glance entry for the torrent layer — Sonarr/Radarr
-			// equivalent for qui. Belongs in Overview, not Maintenance, because
-			// it answers "what's going on right now" rather than "what do I
-			// need to maintain". The deeper qui-Activity tab and the
-			// Cross-Seed page stay under Maintenance as drill-downs.
-			{ href: "/qui", label: "qui", icon: Network },
-			{ href: "/calendar", label: "Calendar", icon: Calendar },
-			{ href: "/statistics", label: "Statistics", icon: BarChart3 },
-		],
-	},
-	{
-		id: "media",
-		label: "Media",
-		items: [
-			{ href: "/discover", label: "Discover", icon: Compass },
-			{ href: "/library", label: "Library", icon: Library },
-			{ href: "/search", label: "Search", icon: Search },
-			{ href: "/requests", label: "Requests", icon: Inbox },
-		],
-	},
-	{
-		id: "maintenance",
-		label: "Maintenance",
-		items: [
-			{ href: "/hunting", label: "Hunting", icon: Target },
-			{ href: "/queue-cleaner", label: "Queue Cleaner", icon: Trash2 },
-			{ href: "/library-cleanup", label: "Cleanup", icon: Eraser },
-			{ href: "/cross-seed", label: "Cross-Seed", icon: Network },
-			{ href: "/qui-activity", label: "qui Activity", icon: History },
-			{ href: "/auto-tag", label: "Auto-Tagger", icon: Tag },
-			{ href: "/label-sync", label: "Label Sync", icon: Tag },
-			{ href: "/history", label: "History", icon: History },
-		],
-	},
-	{
-		id: "configuration",
-		label: "Configuration",
-		items: [
-			{ href: "/indexers", label: "Indexers", icon: Globe },
-			{ href: "/trash-guides", label: "TRaSH Guides", icon: Sparkles },
-			{ href: "/settings", label: "Settings", icon: Settings },
-		],
-	},
-];
+import { NAVIGATION_GROUPS } from "./navigation";
 
 const STORAGE_KEY = "sidebar-collapsed-groups";
 
@@ -132,7 +38,7 @@ function saveCollapsedGroups(collapsed: Set<string>) {
 
 /** Find which group contains a given pathname */
 function findGroupForPath(pathname: string): string | undefined {
-	for (const group of NAV_GROUPS) {
+	for (const group of NAVIGATION_GROUPS) {
 		if (group.items.some((item) => item.href === pathname)) {
 			return group.id;
 		}
@@ -159,7 +65,7 @@ const NavContent = ({
 }: NavContentProps) => (
 	<>
 		{/* Logo/Brand */}
-		<div className="mb-6 relative z-10">
+		<div className="relative z-10 mb-5 border-b border-border/50 pb-5">
 			<div className="flex items-center gap-3">
 				<div
 					className={cn(
@@ -184,8 +90,8 @@ const NavContent = ({
 				<div>
 					<h1
 						className={cn(
-							"font-bold tracking-tight",
-							useFlatStyling ? "text-sm text-foreground" : "text-lg",
+							"font-display font-semibold tracking-tight",
+							useFlatStyling ? "text-sm text-foreground" : "text-base",
 						)}
 						style={
 							useFlatStyling
@@ -200,8 +106,8 @@ const NavContent = ({
 					>
 						Arr Control
 					</h1>
-					<p className="text-[10px] uppercase tracking-widest text-muted-foreground">
-						Media Server
+					<p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+						Media operations
 					</p>
 				</div>
 			</div>
@@ -211,9 +117,9 @@ const NavContent = ({
 		<LayoutGroup>
 			<nav
 				aria-label="Main navigation"
-				className="flex flex-col gap-3 relative z-10 overflow-y-auto flex-1 -mx-2 px-2"
+				className="relative z-10 -mx-2 flex flex-1 flex-col gap-4 overflow-y-auto px-2"
 			>
-				{NAV_GROUPS.map((group) => {
+				{NAVIGATION_GROUPS.map((group) => {
 					const isCollapsed = collapsedGroups.has(group.id);
 					const hasActiveItem = group.items.some((item) => item.href === pathname);
 
@@ -226,7 +132,7 @@ const NavContent = ({
 								aria-expanded={!isCollapsed}
 								aria-controls={`nav-group-${group.id}`}
 								className={cn(
-									"flex w-full items-center gap-2 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-colors duration-200",
+									"flex w-full items-center gap-2 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors duration-200",
 									"text-muted-foreground/70 hover:text-muted-foreground",
 									useFlatStyling && "rounded-none",
 								)}
@@ -274,7 +180,7 @@ const NavContent = ({
 														onClick={() => setMobileMenuOpen(false)}
 														aria-current={isActive ? "page" : undefined}
 														className={cn(
-															"group relative flex items-center gap-3 rounded-xl px-3 py-2 min-h-[40px] text-sm font-medium transition-colors duration-200",
+															"group relative flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-200",
 															isActive && !useFlatStyling && "text-white",
 															useFlatStyling && "rounded-none",
 															!isActive && "text-muted-foreground hover:text-foreground",
@@ -512,7 +418,7 @@ export const Sidebar = () => {
 			{/* Desktop sidebar */}
 			<aside
 				data-sidebar
-				className="hidden w-64 shrink-0 flex-col border-r border-border/30 bg-background/50 backdrop-blur-xl p-6 lg:flex relative overflow-hidden"
+				className="relative hidden w-64 shrink-0 flex-col overflow-hidden border-r border-border/60 bg-background/65 p-5 backdrop-blur-xl lg:flex"
 			>
 				{/* Decorative gradient orb */}
 				<div

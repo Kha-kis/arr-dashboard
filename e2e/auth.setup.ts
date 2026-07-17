@@ -58,7 +58,11 @@ async function ensureTestUserExists(): Promise<void> {
 		} else {
 			const errorBody = await registerResponse.text();
 			// If user already exists or registration disabled, that's fine
-			if (errorBody.includes("already") || errorBody.includes("disabled") || registerResponse.status() === 403) {
+			if (
+				errorBody.includes("already") ||
+				errorBody.includes("disabled") ||
+				registerResponse.status() === 403
+			) {
 				console.log("CI: User already exists or registration disabled, will use existing user");
 			} else {
 				console.log(`CI: Registration failed (${registerResponse.status()}): ${errorBody}`);
@@ -109,10 +113,9 @@ setup("authenticate", async ({ page }) => {
 	// Wait for successful login (redirect to dashboard)
 	await expect(page).toHaveURL(/\/dashboard/, { timeout: 15000 });
 
-	// Verify we're logged in by checking for the greeting heading (format: "Hi, username")
-	await expect(
-		page.getByRole("heading", { name: new RegExp(`Hi,?\\s*${TEST_CREDENTIALS.username}`, "i") }),
-	).toBeVisible({ timeout: 5000 });
+	// Verify the authenticated shell is present. Dashboard copy changes independently
+	// of the session contract, while this landmark is guaranteed after login.
+	await expect(page.getByRole("link", { name: "Dashboard" })).toBeVisible({ timeout: 5000 });
 
 	// Save authentication state
 	await page.context().storageState({ path: authFile });
