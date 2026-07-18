@@ -245,6 +245,85 @@ describe("rating rule", () => {
 		const result = evaluateSingleCondition(makeCacheItem(), "rating", { operator: "unrated" }, ctx);
 		expect(result).toBeNull();
 	});
+
+	it("extractRating handles Sonarr flat format", () => {
+		const item = makeCacheItem({
+			data: JSON.stringify({ ratings: { value: 7.4, votes: 142958 } }),
+		});
+		const rating = extractRating(item);
+		expect(rating).toBe(7.4);
+	});
+
+	it("extractRating prefers Radarr nested format over Sonarr flat", () => {
+		// When both formats exist, Radarr nested should take precedence
+		const item = makeCacheItem({
+			data: JSON.stringify({
+				ratings: {
+					value: 7.4, // Sonarr flat
+					tmdb: { value: 8.2 }, // Radarr nested
+				},
+			}),
+		});
+		const rating = extractRating(item);
+		expect(rating).toBe(8.2);
+	});
+
+	it("rating rule matches Sonarr flat format", () => {
+		const item = makeCacheItem({
+			data: JSON.stringify({ ratings: { value: 4.5, votes: 10000 } }),
+		});
+		const result = evaluateSingleCondition(
+			item,
+			"rating",
+			{ operator: "less_than", score: 5 },
+			ctx,
+		);
+		expect(result).toContain("TMDB rating: 4.5");
+	});
+
+	it("imdb_rating rule handles Sonarr flat format", () => {
+		const item = makeCacheItem({
+			data: JSON.stringify({ ratings: { value: 6.8, votes: 50000 } }),
+		});
+		const result = evaluateSingleCondition(
+			item,
+			"imdb_rating",
+			{ operator: "less_than", score: 7 },
+			ctx,
+		);
+		expect(result).toContain("IMDb rating: 6.8");
+	});
+
+	it("imdb_rating rule handles Radarr nested format", () => {
+		const item = makeCacheItem({
+			data: JSON.stringify({
+				ratings: {
+					imdb: { value: 8.1, votes: 200000 },
+					tmdb: { value: 7.9, votes: 15000 },
+				},
+			}),
+		});
+		const result = evaluateSingleCondition(
+			item,
+			"imdb_rating",
+			{ operator: "greater_than", score: 7 },
+			ctx,
+		);
+		expect(result).toContain("IMDb rating: 8.1");
+	});
+
+	it("imdb_rating rule returns unrated for Sonarr flat format with no value", () => {
+		const item = makeCacheItem({
+			data: JSON.stringify({ ratings: { votes: 0 } }),
+		});
+		const result = evaluateSingleCondition(
+			item,
+			"imdb_rating",
+			{ operator: "unrated" },
+			ctx,
+		);
+		expect(result).toBe("No IMDb rating");
+	});
 });
 
 // ---------------------------------------------------------------------------
