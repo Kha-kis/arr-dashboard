@@ -25,7 +25,21 @@ import { describe, expect, it, vi } from "vitest";
 import type { QueueCleanerConfig, ServiceInstance } from "../../prisma.js";
 import { JOB_ID } from "../../scheduler-registry/job-definitions.js";
 import { SchedulerRegistry } from "../../scheduler-registry/scheduler-registry.js";
-import { executeQueueCleaner } from "../cleaner-executor.js";
+
+const quiMocks = vi.hoisted(() => ({
+	createQuiClient: vi.fn(),
+	listQuiInstances: vi.fn(),
+}));
+
+vi.mock("../../qui/client-factory.js", () => ({
+	createQuiClient: quiMocks.createQuiClient,
+}));
+
+vi.mock("../../qui/instance-helpers.js", () => ({
+	listQuiInstances: quiMocks.listQuiInstances,
+}));
+
+import { executeEnhancedPreview, executeQueueCleaner } from "../cleaner-executor.js";
 
 function makeInstance(overrides: Partial<ServiceInstance> = {}): ServiceInstance {
 	return {
@@ -70,6 +84,8 @@ function makeConfig(overrides: Partial<QueueCleanerConfig> = {}): QueueCleanerCo
 		importBlockPatternMode: "any",
 		errorPatternsEnabled: false,
 		errorPatterns: null,
+		fileExtensionAllowlistEnabled: false,
+		allowedFileExtensions: null,
 		seedingTimeoutEnabled: false,
 		seedingTimeoutHours: 0,
 		estimatedEnabled: false,
@@ -87,6 +103,9 @@ function makeConfig(overrides: Partial<QueueCleanerConfig> = {}): QueueCleanerCo
 		autoImportEnabled: false,
 		blocklistOnRemove: false,
 		removeFromClient: true,
+		addToBlocklist: true,
+		searchAfterRemoval: false,
+		changeCategoryEnabled: false,
 		createdAt: new Date(),
 		updatedAt: new Date(),
 		...overrides,
@@ -222,6 +241,214 @@ describe("executeQueueCleaner — integration", () => {
 		expect(result.message).toContain("Whitelist");
 		expect(result.itemsCleaned).toBe(0);
 		// Under no circumstances should a broken whitelist cause deletions
+		expect(del).not.toHaveBeenCalled();
+	});
+
+	it("an enabled file policy with an empty allowlist aborts before fetching or deleting", async () => {
+		const get = vi.fn().mockResolvedValue({ records: [STALLED_ITEM] });
+		const del = vi.fn();
+		const app = makeApp({ get, del });
+
+		const result = await executeQueueCleaner(
+			app,
+			makeInstance(),
+			makeConfig({
+				fileExtensionAllowlistEnabled: true,
+				allowedFileExtensions: null,
+			}),
+		);
+
+		expect(result.status).toBe("error");
+		expect(result.message).toContain("allowlist");
+		expect(get).not.toHaveBeenCalled();
+		expect(del).not.toHaveBeenCalled();
+	});
+
+	it("deletes the whole torrent payload when a mixed manifest has an unexpected file", async () => {
+		const hash = "b".repeat(40);
+		const del = vi.fn().mockResolvedValue(undefined);
+		const app = makeApp({
+			get: async () => ({
+				records: [
+					{
+						...STALLED_ITEM,
+						id: 55,
+						downloadId: hash,
+						trackedDownloadStatus: "ok",
+						trackedDownloadState: "downloading",
+						statusMessages: [],
+						errorMessage: undefined,
+					},
+				],
+			}),
+			del,
+		});
+		quiMocks.listQuiInstances.mockResolvedValue([
+			{ id: "qui-1", userId: "user-1", service: "QUI", enabled: true },
+		]);
+		quiMocks.createQuiClient.mockReturnValue({
+			getTorrentByHash: vi.fn().mockResolvedValue({ hash, instanceId: 9 }),
+			getTorrentFiles: vi.fn().mockResolvedValue([
+				{ index: 0, name: "Movie.mkv", size: 1, progress: 1, priority: 1 },
+				{ index: 1, name: "unexpected.exe", size: 1, progress: 0, priority: 0 },
+			]),
+		});
+
+		const result = await executeQueueCleaner(
+			app,
+			makeInstance(),
+			makeConfig({
+				stalledEnabled: false,
+				failedEnabled: false,
+				fileExtensionAllowlistEnabled: true,
+				allowedFileExtensions: '["mkv"]',
+				removeFromClient: false,
+				changeCategoryEnabled: true,
+				lastSeedProtection: false,
+			}),
+		);
+
+		expect(result.cleanedItems[0]).toMatchObject({
+			id: 55,
+			rule: "disallowed_file_extension",
+		});
+		expect(del).toHaveBeenCalledWith(55, {
+			removeFromClient: true,
+			blocklist: true,
+			skipRedownload: true,
+			changeCategory: false,
+		});
+	});
+
+	it("does not remove a torrent when every manifest file is allowed", async () => {
+		const hash = "c".repeat(40);
+		const del = vi.fn();
+		const app = makeApp({
+			get: async () => ({
+				records: [
+					{
+						...STALLED_ITEM,
+						downloadId: hash,
+						trackedDownloadStatus: "ok",
+						trackedDownloadState: "downloading",
+						statusMessages: [],
+						errorMessage: undefined,
+					},
+				],
+			}),
+			del,
+		});
+		quiMocks.listQuiInstances.mockResolvedValue([
+			{ id: "qui-1", userId: "user-1", service: "QUI", enabled: true },
+		]);
+		quiMocks.createQuiClient.mockReturnValue({
+			getTorrentByHash: vi.fn().mockResolvedValue({ hash, instanceId: 9 }),
+			getTorrentFiles: vi.fn().mockResolvedValue([
+				{ index: 0, name: "Movie.MKV", size: 1, progress: 1, priority: 1 },
+				{ index: 1, name: "Movie.srt", size: 1, progress: 1, priority: 1 },
+			]),
+		});
+
+		const result = await executeQueueCleaner(
+			app,
+			makeInstance(),
+			makeConfig({
+				stalledEnabled: false,
+				failedEnabled: false,
+				fileExtensionAllowlistEnabled: true,
+				allowedFileExtensions: '["mkv","srt"]',
+			}),
+		);
+
+		expect(result.itemsCleaned).toBe(0);
+		expect(del).not.toHaveBeenCalled();
+	});
+
+	it("defers file-policy removal when qui cannot return a manifest", async () => {
+		const hash = "d".repeat(40);
+		const del = vi.fn();
+		const app = makeApp({
+			get: async () => ({
+				records: [
+					{
+						...STALLED_ITEM,
+						downloadId: hash,
+					},
+				],
+			}),
+			del,
+		});
+		quiMocks.listQuiInstances.mockResolvedValue([
+			{ id: "qui-1", userId: "user-1", service: "QUI", enabled: true },
+		]);
+		quiMocks.createQuiClient.mockReturnValue({
+			getTorrentByHash: vi.fn().mockResolvedValue({ hash, instanceId: 9 }),
+			getTorrentFiles: vi.fn().mockResolvedValue([]),
+		});
+
+		const result = await executeQueueCleaner(
+			app,
+			makeInstance(),
+			makeConfig({
+				failedEnabled: false,
+				fileExtensionAllowlistEnabled: true,
+				allowedFileExtensions: '["mkv"]',
+			}),
+		);
+
+		expect(result.itemsCleaned).toBe(0);
+		expect(result.skippedItems[0]).toMatchObject({ rule: "file_policy_deferred" });
+		expect(del).not.toHaveBeenCalled();
+	});
+
+	it("shows the same mixed-manifest violation in enhanced preview without deleting", async () => {
+		const hash = "e".repeat(40);
+		const del = vi.fn();
+		const app = makeApp({
+			get: async () => ({
+				records: [
+					{
+						...STALLED_ITEM,
+						id: 88,
+						downloadId: hash,
+						trackedDownloadStatus: "ok",
+						trackedDownloadState: "downloading",
+						statusMessages: [],
+						errorMessage: undefined,
+					},
+				],
+			}),
+			del,
+		});
+		quiMocks.listQuiInstances.mockResolvedValue([
+			{ id: "qui-1", userId: "user-1", service: "QUI", enabled: true },
+		]);
+		quiMocks.createQuiClient.mockReturnValue({
+			getTorrentByHash: vi.fn().mockResolvedValue({ hash, instanceId: 9 }),
+			getTorrentFiles: vi.fn().mockResolvedValue([
+				{ index: 0, name: "Movie.mkv", size: 1, progress: 1, priority: 1 },
+				{ index: 1, name: "unexpected.exe", size: 1, progress: 0, priority: 0 },
+			]),
+		});
+
+		const result = await executeEnhancedPreview(
+			app,
+			makeInstance(),
+			makeConfig({
+				stalledEnabled: false,
+				failedEnabled: false,
+				fileExtensionAllowlistEnabled: true,
+				allowedFileExtensions: '["mkv"]',
+				lastSeedProtection: false,
+			}),
+		);
+
+		expect(result.previewItems[0]).toMatchObject({
+			id: 88,
+			action: "remove",
+			rule: "disallowed_file_extension",
+		});
+		expect(result.wouldRemove).toBe(1);
 		expect(del).not.toHaveBeenCalled();
 	});
 
