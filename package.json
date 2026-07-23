@@ -19,11 +19,11 @@
 		"overrides": {
 			"@babel/core@<=7.29.0": "7.29.6",
 			"esbuild@>=0.27.3 <0.28.1": "0.28.1",
-			"lodash@<4.17.23": "4.17.23",
-			"hono@<4.12.25": "4.12.25",
-			"@hono/node-server@<1.19.13": "1.19.13",
-			"fast-uri@<3.1.2": "3.1.2",
-			"postcss@<8.5.10": "8.5.10",
+			"lodash@<4.18.1": "4.18.1",
+			"hono@<4.12.27": "4.12.27",
+			"@hono/node-server@<2.0.5": "2.0.5",
+			"fast-uri@>=3.0.0 <3.1.4": "3.1.4",
+			"postcss@<8.5.12": "8.5.20",
 			"minimatch@<3.1.4": "3.1.4",
 			"minimatch@>=9.0.0 <9.0.7": "9.0.7",
 			"minimatch@>=10.0.0 <10.2.3": "10.2.3",
@@ -35,19 +35,21 @@
 			"picomatch@>=4.0.0 <4.0.4": "4.0.4",
 			"picomatch@>=2.0.0 <2.3.2": "2.3.2",
 			"yaml": "2.8.3",
-			"brace-expansion@>=4.0.0 <5.0.5": "5.0.5",
-			"brace-expansion@>=1.0.0 <1.1.13": "1.1.13",
+			"brace-expansion@>=1.0.0 <1.1.16": "1.1.16",
+			"brace-expansion@>=2.0.0 <2.1.2": "2.1.2",
+			"brace-expansion@>=3.0.0 <5.0.7": "5.0.7",
+			"sharp@<0.35.0": "0.35.3",
 			"defu@<=6.1.4": "6.1.5",
 			"vite": "7.3.5"
 		}
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.4.16",
-		"@playwright/test": "^1.60.0",
+		"@biomejs/biome": "^2.5.5",
+		"@playwright/test": "^1.61.1",
 		"dotenv": "^17.4.2",
 		"eslint-plugin-unused-imports": "^4.4.1",
-		"knip": "^6.16.1",
-		"turbo": "^2.9.16",
+		"knip": "6.27.0",
+		"turbo": "2.10.5",
 		"typescript": "^6.0.3"
 	}
 }

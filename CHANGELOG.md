@@ -26,6 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Workspace typechecking now builds dependency packages first, and Docker builds
   use the root manifest's pinned pnpm version through Corepack.
 
+### Security
+
+- Updated vulnerable production and development dependencies, pinned all
+  third-party GitHub Actions to reviewed commit SHAs, and added package
+  release-age, provenance, exotic-subdependency, and Dependabot cooldown
+  controls.
+
 ### Fixed
 
 - Library Cleanup rating rules now read Sonarr's flat SkyHook rating format,
