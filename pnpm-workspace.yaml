@@ -10,3 +10,9 @@ onlyBuiltDependencies:
   - prisma
   - sharp
   - unrs-resolver
+
+# Delay new releases for one week and reject packages whose provenance
+# degrades or which introduce dependencies from non-registry sources.
+minimumReleaseAge: 10080
+trustPolicy: no-downgrade
+blockExoticSubdeps: true
