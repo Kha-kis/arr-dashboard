@@ -172,16 +172,26 @@ export function createTorrentFilePolicyEvaluator(
 	allowedExtensions: readonly string[],
 ): TorrentFilePolicyEvaluator {
 	const allowed = new Set(allowedExtensions);
-	let clientsPromise: Promise<Array<{ instanceId: string; client: QuiClient }>> | undefined;
+	type ClientEntry = {
+		instanceId: string;
+		client: QuiClient;
+		searchUnavailable: boolean;
+	};
+	let clientsPromise: Promise<ClientEntry[]> | undefined;
 	const resultByHash = new Map<string, Promise<TorrentFilePolicyResult>>();
+	let manifestErrorLogCount = 0;
 
-	const getClients = async (): Promise<Array<{ instanceId: string; client: QuiClient }>> => {
+	const getClients = async (): Promise<ClientEntry[]> => {
 		if (!clientsPromise) {
 			clientsPromise = listQuiInstances(app, userId).then((instances) => {
-				const clients: Array<{ instanceId: string; client: QuiClient }> = [];
+				const clients: ClientEntry[] = [];
 				for (const instance of instances) {
 					try {
-						clients.push({ instanceId: instance.id, client: createQuiClient(app, instance) });
+						clients.push({
+							instanceId: instance.id,
+							client: createQuiClient(app, instance),
+							searchUnavailable: false,
+						});
 					} catch (error) {
 						app.log.warn(
 							{ err: error, quiInstanceId: instance.id },
@@ -196,7 +206,7 @@ export function createTorrentFilePolicyEvaluator(
 	};
 
 	const evaluateHash = async (hash: string): Promise<TorrentFilePolicyResult> => {
-		let clients: Array<{ instanceId: string; client: QuiClient }>;
+		let clients: ClientEntry[];
 		try {
 			clients = await getClients();
 		} catch (error) {
@@ -215,30 +225,55 @@ export function createTorrentFilePolicyEvaluator(
 		}
 
 		let foundTorrent = false;
-		for (const { instanceId: quiInstanceId, client } of clients) {
-			try {
-				const torrent = await client.getTorrentByHash(hash);
-				if (!torrent) continue;
-				foundTorrent = true;
-				if (torrent.instanceId == null) {
-					app.log.warn(
-						{ quiInstanceId },
-						"Queue cleaner file policy received a torrent without a qBittorrent instance id",
-					);
-					continue;
-				}
+		let attemptedSearch = false;
+		for (const entry of clients) {
+			if (entry.searchUnavailable) continue;
+			attemptedSearch = true;
 
-				const files = await client.getTorrentFiles(torrent.instanceId, hash, { refresh: true });
+			let torrent: Awaited<ReturnType<QuiClient["getTorrentByHash"]>>;
+			try {
+				torrent = await entry.client.getTorrentByHash(hash);
+			} catch (error) {
+				const shouldLog = !entry.searchUnavailable;
+				entry.searchUnavailable = true;
+				if (shouldLog) {
+					app.log.warn(
+						{ err: error, quiInstanceId: entry.instanceId },
+						"Queue cleaner disabled an unavailable qui search for the remainder of this run",
+					);
+				}
+				continue;
+			}
+
+			if (!torrent) continue;
+			foundTorrent = true;
+			if (torrent.instanceId == null) {
+				app.log.warn(
+					{ quiInstanceId: entry.instanceId },
+					"Queue cleaner file policy received a torrent without a qBittorrent instance id",
+				);
+				continue;
+			}
+
+			try {
+				const files = await entry.client.getTorrentFiles(torrent.instanceId, hash, {
+					refresh: true,
+				});
 				if (files.length === 0) continue;
 				return inspectTorrentFileNames(
 					files.map((file) => file.name),
 					allowed,
 				);
 			} catch (error) {
-				app.log.warn(
-					{ err: error, quiInstanceId },
-					"Queue cleaner could not inspect a torrent manifest for file policy",
-				);
+				if (manifestErrorLogCount < 10) {
+					app.log.warn(
+						{ err: error, quiInstanceId: entry.instanceId },
+						"Queue cleaner could not inspect a torrent manifest for file policy",
+					);
+				} else if (manifestErrorLogCount === 10) {
+					app.log.warn("Queue cleaner suppressed additional torrent manifest errors for this run");
+				}
+				manifestErrorLogCount++;
 			}
 		}
 
@@ -246,7 +281,9 @@ export function createTorrentFilePolicyEvaluator(
 			status: "deferred",
 			reason: foundTorrent
 				? "File allowlist check deferred because qui returned no torrent file metadata"
-				: "File allowlist check deferred because the torrent was not found in configured qui instances",
+				: attemptedSearch
+					? "File allowlist check deferred because the torrent was not found in configured qui instances"
+					: "File allowlist check deferred because configured qui instances are unavailable",
 		};
 	};
 
