@@ -253,12 +253,15 @@ export function createTorrentFilePolicyEvaluator(
 	const evaluateOne = (input: TorrentFilePolicyInput): Promise<TorrentFilePolicyResult> => {
 		const protocol =
 			typeof input.protocol === "string" ? input.protocol.trim().toLowerCase() : undefined;
-		if (protocol !== "torrent") {
+		if (protocol !== undefined && protocol !== "torrent") {
 			return Promise.resolve({ status: "not_applicable" });
 		}
 
 		const hash = normalizeDownloadId(input.downloadId);
 		if (!hash) {
+			if (protocol === undefined) {
+				return Promise.resolve({ status: "not_applicable" });
+			}
 			return Promise.resolve({
 				status: "deferred",
 				reason: "File allowlist check deferred because the torrent hash is unavailable",

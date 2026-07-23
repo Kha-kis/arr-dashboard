@@ -185,6 +185,20 @@ describe("torrent file policy", () => {
 		expect(getTorrentFiles).toHaveBeenCalledTimes(1);
 	});
 
+	it("inspects a hash-shaped download id when *arr omits the protocol", async () => {
+		mocks.createQuiClient.mockReturnValue({
+			getTorrentByHash: vi.fn().mockResolvedValue({ hash: HASH, instanceId: 7 }),
+			getTorrentFiles: vi
+				.fn()
+				.mockResolvedValue([{ index: 0, name: "payload.exe", size: 1, progress: 0, priority: 0 }]),
+		});
+
+		const evaluator = createTorrentFilePolicyEvaluator(makeApp(), "user-1", ["mkv"]);
+		const [result] = await evaluator.evaluateMany([{ downloadId: HASH }]);
+
+		expect(result?.status).toBe("violation");
+	});
+
 	it("does not inspect non-torrent queue items", async () => {
 		const evaluator = createTorrentFilePolicyEvaluator(makeApp(), "user-1", ["mkv"]);
 		const [result] = await evaluator.evaluateMany([{ protocol: "usenet", downloadId: HASH }]);
