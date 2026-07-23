@@ -3377,9 +3377,9 @@
 	   - Gradient text (elements with background-clip: text)
 	   Using :not() with :where() for broader exclusions */
 	[data-theme="qbittorrent"]
-		[style*="gradient"]:where(
-			:not(.pointer-events-none):not(.fixed):not([data-appearance-settings] *)
-		):not([style*="background-clip"]):not([style*="BackgroundClip"]) {
+	[style*="gradient"]:where(
+		:not(.pointer-events-none):not(.fixed):not([data-appearance-settings] *)
+	):not([style*="background-clip"]):not([style*="BackgroundClip"]) {
 		background: transparent !important;
 	}
 
