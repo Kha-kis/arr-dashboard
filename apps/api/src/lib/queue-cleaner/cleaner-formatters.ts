@@ -105,6 +105,14 @@ export function generateDetailedReason(
 				`Source: ${indexer}`
 			);
 		}
+		case "disallowed_file_extension":
+			return (
+				`The torrent contains at least one file type outside the configured allowlist. ` +
+				`Removal deletes the entire torrent and its payload data through the configured *arr client. ` +
+				`Source: ${indexer}`
+			);
+		case "file_policy_deferred":
+			return "The torrent manifest could not be verified through qui. No file-policy removal will occur until inspection succeeds.";
 		case "whitelisted":
 			return `This download matches a whitelist pattern and will be excluded from cleaning.`;
 		default:

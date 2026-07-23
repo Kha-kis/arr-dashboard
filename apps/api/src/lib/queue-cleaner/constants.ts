@@ -37,6 +37,8 @@ export {
 	type ImportBlockPatternMode,
 	importBlockCleanupLevelSchema,
 	importBlockPatternModeSchema,
+	MAX_ALLOWED_FILE_EXTENSION_LENGTH,
+	MAX_ALLOWED_FILE_EXTENSIONS,
 	MAX_ESTIMATED_MULTIPLIER,
 	MAX_IMPORT_PENDING_MINS,
 	MAX_INTERVAL_MINS,
