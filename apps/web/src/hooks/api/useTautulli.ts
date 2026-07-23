@@ -18,7 +18,11 @@ import {
 	fetchWatchHistory,
 } from "../../lib/api-client/tautulli";
 import { tautulliKeys } from "../../lib/query-keys";
-import { POLLING_BACKGROUND, POLLING_REALTIME, POLLING_STANDARD } from "../../lib/polling-intervals";
+import {
+	POLLING_BACKGROUND,
+	POLLING_REALTIME,
+	POLLING_STANDARD,
+} from "../../lib/polling-intervals";
 
 // ============================================================================
 // Activity (F5)

@@ -185,11 +185,7 @@ export function ChannelForm({ channelId, onSave, onCancel }: ChannelFormProps) {
 			)}
 
 			<div className="flex items-center justify-between pt-2">
-				<ToggleSwitch
-					label="Enabled"
-					checked={enabled}
-					onChange={(v) => setEnabled(v)}
-				/>
+				<ToggleSwitch label="Enabled" checked={enabled} onChange={(v) => setEnabled(v)} />
 
 				<button
 					type="submit"

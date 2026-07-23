@@ -167,15 +167,21 @@ const HistoryTimelineCard = ({
 		>
 			<div
 				className="absolute inset-0 pointer-events-none"
-				style={{ background: `linear-gradient(135deg, ${serviceGradient.from}04, transparent 60%)` }}
+				style={{
+					background: `linear-gradient(135deg, ${serviceGradient.from}04, transparent 60%)`,
+				}}
 			/>
 			<div
 				className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-				style={{ background: `radial-gradient(ellipse at top left, ${serviceGradient.from}06, transparent 50%)` }}
+				style={{
+					background: `radial-gradient(ellipse at top left, ${serviceGradient.from}06, transparent 50%)`,
+				}}
 			/>
 			<div
 				className="absolute left-0 top-0 bottom-0 w-[3px]"
-				style={{ background: `linear-gradient(180deg, ${serviceGradient.from}, ${serviceGradient.to}70)` }}
+				style={{
+					background: `linear-gradient(180deg, ${serviceGradient.from}, ${serviceGradient.to}70)`,
+				}}
 			/>
 			<div className="relative p-4 space-y-2">
 				{/* Header: Title + Relative Time */}

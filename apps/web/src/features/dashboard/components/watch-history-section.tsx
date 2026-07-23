@@ -40,9 +40,7 @@ const plexGradient = SERVICE_GRADIENTS.plex;
 const HistoryRow = ({ item, index }: { item: TautulliWatchHistoryItem; index: number }) => {
 	const [incognitoMode] = useIncognitoMode();
 	const Icon = MEDIA_ICONS[item.mediaType] ?? Film;
-	const rawTitle = item.grandparentTitle
-		? `${item.grandparentTitle} — ${item.title}`
-		: item.title;
+	const rawTitle = item.grandparentTitle ? `${item.grandparentTitle} — ${item.title}` : item.title;
 	const displayTitle = incognitoMode ? getLinuxIsoName(rawTitle) : rawTitle;
 
 	return (

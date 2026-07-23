@@ -432,9 +432,9 @@ export async function registerUserCustomFormatRoutes(
 				// Transform fields from object to array format for the ARR API
 				const transformedSpecs = specs.map((spec) => ({
 					...spec,
-					fields: Object.entries(
-						(spec.fields as Record<string, unknown>) || {},
-					).map(([name, value]) => ({ name, value })),
+					fields: Object.entries((spec.fields as Record<string, unknown>) || {}).map(
+						([name, value]) => ({ name, value }),
+					),
 				}));
 
 				const existing = existingByName.get(userCF.name);

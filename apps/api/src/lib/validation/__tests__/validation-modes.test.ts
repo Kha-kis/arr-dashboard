@@ -45,9 +45,9 @@ describe("Validation Modes", () => {
 				{ name: "invalid" }, // missing score
 			];
 
-			expect(() =>
-				validateAndCollect(data, schema, "test", mockLog, { mode: "strict" }),
-			).toThrow(ValidationError);
+			expect(() => validateAndCollect(data, schema, "test", mockLog, { mode: "strict" })).toThrow(
+				ValidationError,
+			);
 		});
 
 		it("returns all items when all are valid", () => {
@@ -66,7 +66,12 @@ describe("Validation Modes", () => {
 	describe("log-only", () => {
 		it("passes all items through but logs validation issues", () => {
 			const warnings: string[] = [];
-			const log = { warn: (msg: string | object) => { warnings.push(String(msg)); }, error: () => {} };
+			const log = {
+				warn: (msg: string | object) => {
+					warnings.push(String(msg));
+				},
+				error: () => {},
+			};
 
 			const data = [
 				{ name: "valid", score: 10 },
@@ -84,11 +89,7 @@ describe("Validation Modes", () => {
 
 	describe("disabled", () => {
 		it("returns all items without validation", () => {
-			const data = [
-				"not-an-object",
-				42,
-				null,
-			];
+			const data = ["not-an-object", 42, null];
 
 			const result = validateAndCollect(data, schema, "test", mockLog, { mode: "disabled" });
 

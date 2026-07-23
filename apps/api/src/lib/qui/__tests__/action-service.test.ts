@@ -56,7 +56,6 @@ function makeApp(opts: { txReturn?: { id: string }[] } = {}) {
 		__create: create,
 		__updateMany: updateMany,
 		__transaction: $transaction,
-		// biome-ignore lint/suspicious/noExplicitAny: test-shim
 	} as any;
 }
 

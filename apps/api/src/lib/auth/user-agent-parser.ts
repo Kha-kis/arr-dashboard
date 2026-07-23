@@ -151,4 +151,3 @@ function detectDevice(ua: string): "desktop" | "mobile" | "tablet" | "unknown" {
 
 	return "unknown";
 }
-

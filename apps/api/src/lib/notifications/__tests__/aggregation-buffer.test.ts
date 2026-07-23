@@ -96,7 +96,10 @@ describe("AggregationBuffer", () => {
 
 		buffer.push(makePayload(), config);
 		buffer.push(
-			makePayload({ eventType: "BACKUP_COMPLETED" as NotificationPayload["eventType"], title: "Backup done" }),
+			makePayload({
+				eventType: "BACKUP_COMPLETED" as NotificationPayload["eventType"],
+				title: "Backup done",
+			}),
 			configB,
 		);
 

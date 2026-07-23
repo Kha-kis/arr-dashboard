@@ -185,14 +185,11 @@ export class OIDCProvider {
 				// Fetch the discovery doc, extract the canonical issuer, and retry.
 				if (processMsg.includes("OAUTH_JSON_ATTRIBUTE_COMPARISON_FAILED")) {
 					try {
-						const res = await discoveryResponse.clone().json() as { issuer?: string };
+						const res = (await discoveryResponse.clone().json()) as { issuer?: string };
 						if (res.issuer && res.issuer !== this.config.issuer) {
 							issuerUrl = new URL(res.issuer);
 							discoveryResponse = await oauth.discoveryRequest(issuerUrl, insecureOpts);
-							const authServer = await oauth.processDiscoveryResponse(
-								issuerUrl,
-								discoveryResponse,
-							);
+							const authServer = await oauth.processDiscoveryResponse(issuerUrl, discoveryResponse);
 							this.authServer = authServer;
 							return authServer;
 						}

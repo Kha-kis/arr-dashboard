@@ -72,9 +72,7 @@ describe("HuntingScheduler - API Counter Reset", () => {
 
 		// First findMany: find expired configs for reset
 		// Second findMany: get all enabled configs for scheduling
-		mockPrisma.huntConfig.findMany
-			.mockResolvedValueOnce(expiredConfigs)
-			.mockResolvedValueOnce([]);
+		mockPrisma.huntConfig.findMany.mockResolvedValueOnce(expiredConfigs).mockResolvedValueOnce([]);
 
 		const scheduler = getHuntingScheduler() as any;
 		await scheduler.processScheduledHunts();

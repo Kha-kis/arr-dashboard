@@ -17,8 +17,19 @@ const mockLogger = {
 	debug: vi.fn(),
 };
 
-type SendFnType = (type: NotificationChannelType, config: Record<string, unknown>, payload: NotificationPayload) => Promise<SendResult>;
-type LogFnType = (channelId: string, channelType: NotificationChannelType, payload: NotificationPayload, status: "sent" | "failed" | "dead_letter", error?: string, retryCount?: number) => Promise<void>;
+type SendFnType = (
+	type: NotificationChannelType,
+	config: Record<string, unknown>,
+	payload: NotificationPayload,
+) => Promise<SendResult>;
+type LogFnType = (
+	channelId: string,
+	channelType: NotificationChannelType,
+	payload: NotificationPayload,
+	status: "sent" | "failed" | "dead_letter",
+	error?: string,
+	retryCount?: number,
+) => Promise<void>;
 
 let sendFn: ReturnType<typeof vi.fn<SendFnType>>;
 let logDeliveryFn: ReturnType<typeof vi.fn<LogFnType>>;
@@ -73,7 +84,11 @@ describe("RetryHandler", () => {
 	});
 
 	it("dead-letters after max retries (3) are exhausted", async () => {
-		sendFn.mockResolvedValue({ success: false, retryable: true, error: "server error" } satisfies SendResult);
+		sendFn.mockResolvedValue({
+			success: false,
+			retryable: true,
+			error: "server error",
+		} satisfies SendResult);
 		handler = new RetryHandler(sendFn, logDeliveryFn, mockLogger);
 
 		handler.enqueue({

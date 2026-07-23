@@ -7,10 +7,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { purgeOldLogs, purgeOldLogsBatched } from "../log-retention.js";
 
-function createMockPrisma(
-	deleteCount: number,
-	findBatches?: Array<Array<{ id: string }>>,
-) {
+function createMockPrisma(deleteCount: number, findBatches?: Array<Array<{ id: string }>>) {
 	const findManyFn = vi.fn();
 	if (findBatches) {
 		for (const batch of findBatches) {

@@ -176,7 +176,9 @@ export const BookBreakdownModal = ({
 								{item.title}
 							</h2>
 							<div className="flex flex-wrap items-center gap-3 mt-1 text-sm text-muted-foreground">
-								<span>{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}</span>
+								<span>
+									{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}
+								</span>
 								<span>•</span>
 								<span className="flex items-center gap-1">
 									<BookOpen className="h-3.5 w-3.5" />

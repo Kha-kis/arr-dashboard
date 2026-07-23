@@ -780,6 +780,7 @@ const ClusterCard: React.FC<{
 									<TooltipTrigger asChild>
 										<span className="inline-flex items-center gap-1 rounded bg-card/70 px-1.5 py-0.5 font-mono text-[10px] text-foreground/80">
 											{brand.iconUrl ? (
+												// eslint-disable-next-line @next/next/no-img-element -- Tracker icons may come from arbitrary user-configured hosts.
 												<img
 													src={brand.iconUrl}
 													alt={brand.name}
@@ -876,6 +877,7 @@ const CopyRow: React.FC<{
 					<TooltipTrigger asChild>
 						<span className="inline-flex items-center gap-1 rounded bg-card/60 px-1.5 py-0.5 font-mono text-[10px] text-foreground/90">
 							{brand.iconUrl ? (
+								// eslint-disable-next-line @next/next/no-img-element -- Tracker icons may come from arbitrary user-configured hosts.
 								<img
 									src={brand.iconUrl}
 									alt={brand.name}
@@ -988,6 +990,7 @@ const CopyRow: React.FC<{
 										}`}
 									>
 										{brand.iconUrl ? (
+											// eslint-disable-next-line @next/next/no-img-element -- Tracker icons may come from arbitrary user-configured hosts.
 											<img
 												src={brand.iconUrl}
 												alt={brand.name}

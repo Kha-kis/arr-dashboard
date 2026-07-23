@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { aggregateUserEpisodeCompletion, type EpisodeCacheEntry } from "../lib/user-episode-helpers.js";
+import {
+	aggregateUserEpisodeCompletion,
+	type EpisodeCacheEntry,
+} from "../lib/user-episode-helpers.js";
 
 function episode(overrides: Partial<EpisodeCacheEntry> = {}): EpisodeCacheEntry {
 	return {

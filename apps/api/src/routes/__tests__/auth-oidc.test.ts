@@ -6,7 +6,9 @@ import { vi, describe, it, expect, beforeEach, afterAll } from "vitest";
 
 const { mockSessionService } = vi.hoisted(() => ({
 	mockSessionService: {
-		createSession: vi.fn().mockResolvedValue({ token: "mock-session-token", id: "mock-session-id" }),
+		createSession: vi
+			.fn()
+			.mockResolvedValue({ token: "mock-session-token", id: "mock-session-id" }),
 		attachCookie: vi.fn(),
 		invalidateSession: vi.fn().mockResolvedValue(undefined),
 		clearCookie: vi.fn(),
@@ -16,9 +18,11 @@ const { mockSessionService } = vi.hoisted(() => ({
 
 // Mock OIDCProvider class — avoid real discovery/HTTP calls
 const { MockOIDCProvider } = vi.hoisted(() => {
-	const mockGetAuthorizationUrl = vi.fn().mockResolvedValue(
-		"https://provider.example.com/authorize?client_id=test&state=mock-state&code_challenge=mock-challenge",
-	);
+	const mockGetAuthorizationUrl = vi
+		.fn()
+		.mockResolvedValue(
+			"https://provider.example.com/authorize?client_id=test&state=mock-state&code_challenge=mock-challenge",
+		);
 	class MockOIDCProvider {
 		config: Record<string, unknown>;
 		static mockGetAuthorizationUrl = mockGetAuthorizationUrl;

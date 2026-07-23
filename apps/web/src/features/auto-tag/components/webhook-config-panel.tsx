@@ -239,7 +239,7 @@ const AutoInstallSection = ({ plaintextSecret }: { plaintextSecret: string | nul
 					</h4>
 					<p className="text-xs text-muted-foreground mt-0.5">
 						Push the webhook config above to your Sonarr/Radarr instances in one click — no manual
-						copy/paste in each *arr's Connect settings.
+						copy/paste in each *arr’s Connect settings.
 					</p>
 				</div>
 				<div className="flex gap-1 shrink-0">

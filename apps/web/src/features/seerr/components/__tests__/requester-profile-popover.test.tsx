@@ -64,7 +64,9 @@ function createWrapper() {
 	);
 }
 
-function renderPopover(overrides: Partial<React.ComponentProps<typeof RequesterProfilePopover>> = {}) {
+function renderPopover(
+	overrides: Partial<React.ComponentProps<typeof RequesterProfilePopover>> = {},
+) {
 	return render(
 		<RequesterProfilePopover
 			seerrUser={sampleUser}

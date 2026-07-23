@@ -20,10 +20,7 @@ const RUN_DB_TESTS = process.env.TEST_DB === "true";
 const PG_URL = process.env.TEST_PG_URL;
 
 // Use the pre-initialized test database with full schema
-const TEST_DB_PATH = path.resolve(
-	import.meta.dirname,
-	"../../../../prisma/test-integration.db",
-);
+const TEST_DB_PATH = path.resolve(import.meta.dirname, "../../../../prisma/test-integration.db");
 
 /** Shared test data setup */
 async function seedTestData(prisma: PrismaClient) {
@@ -166,53 +163,45 @@ function defineQueryRawTests(
 
 // ─── SQLite Suite ───────────────────────────────────────────────────────────
 
-(RUN_DB_TESTS ? describe : describe.skip)(
-	"$queryRaw migration: SQLite (json_extract)",
-	() => {
-		let prisma: PrismaClient;
+(RUN_DB_TESTS ? describe : describe.skip)("$queryRaw migration: SQLite (json_extract)", () => {
+	let prisma: PrismaClient;
 
-		beforeEach(async () => {
-			prisma = createTestPrismaClient(TEST_DB_PATH);
-			await seedTestData(prisma);
-		});
+	beforeEach(async () => {
+		prisma = createTestPrismaClient(TEST_DB_PATH);
+		await seedTestData(prisma);
+	});
 
-		afterEach(async () => {
-			await cleanupTestData(prisma);
-			await prisma.$disconnect();
-		});
+	afterEach(async () => {
+		await cleanupTestData(prisma);
+		await prisma.$disconnect();
+	});
 
-		defineQueryRawTests(
-			() => prisma,
-			(tmdbId) =>
-				Prisma.sql`CAST(json_extract(data, '$.remoteIds.tmdbId') AS INTEGER) = ${tmdbId}`,
-		);
-	},
-);
+	defineQueryRawTests(
+		() => prisma,
+		(tmdbId) => Prisma.sql`CAST(json_extract(data, '$.remoteIds.tmdbId') AS INTEGER) = ${tmdbId}`,
+	);
+});
 
 // ─── PostgreSQL Suite ───────────────────────────────────────────────────────
 
-(PG_URL ? describe : describe.skip)(
-	"$queryRaw migration: PostgreSQL (JSON ->> operator)",
-	() => {
-		let prisma: PrismaClient;
-		let cleanup: () => Promise<void>;
+(PG_URL ? describe : describe.skip)("$queryRaw migration: PostgreSQL (JSON ->> operator)", () => {
+	let prisma: PrismaClient;
+	let cleanup: () => Promise<void>;
 
-		beforeEach(async () => {
-			const pg = await createTestPgClient(PG_URL!);
-			prisma = pg.prisma;
-			cleanup = pg.cleanup;
-			await seedTestData(prisma);
-		});
+	beforeEach(async () => {
+		const pg = await createTestPgClient(PG_URL!);
+		prisma = pg.prisma;
+		cleanup = pg.cleanup;
+		await seedTestData(prisma);
+	});
 
-		afterEach(async () => {
-			await cleanupTestData(prisma);
-			await cleanup();
-		});
+	afterEach(async () => {
+		await cleanupTestData(prisma);
+		await cleanup();
+	});
 
-		defineQueryRawTests(
-			() => prisma,
-			(tmdbId) =>
-				Prisma.sql`CAST("data"::json->'remoteIds'->>'tmdbId' AS INTEGER) = ${tmdbId}`,
-		);
-	},
-);
+	defineQueryRawTests(
+		() => prisma,
+		(tmdbId) => Prisma.sql`CAST("data"::json->'remoteIds'->>'tmdbId' AS INTEGER) = ${tmdbId}`,
+	);
+});

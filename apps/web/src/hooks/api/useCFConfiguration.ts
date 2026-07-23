@@ -223,9 +223,9 @@ async function fetchCFDescriptionMap(serviceType: string): Promise<{
 	const bySlug = new Map<string, DescEntry>();
 	const byDisplayName = new Map<string, DescEntry>();
 	try {
-		const res = await apiRequest<Record<string, Array<{ cfName: string; description: string; displayName?: string }>>>(
-			`/api/trash-guides/cache/cf-descriptions/list?serviceType=${serviceType}`,
-		);
+		const res = await apiRequest<
+			Record<string, Array<{ cfName: string; description: string; displayName?: string }>>
+		>(`/api/trash-guides/cache/cf-descriptions/list?serviceType=${serviceType}`);
 		const serviceKey = serviceType.toLowerCase();
 		const descriptions = res?.[serviceKey] || [];
 		for (const desc of descriptions) {
@@ -263,7 +263,13 @@ function cfNameToSlug(name: string): string {
  * Mirrors the 4-strategy approach from custom-formats-browser.tsx.
  */
 function enrichWithDescription(
-	cf: { name?: string; originalConfig?: Record<string, unknown>; trash_description?: string; description?: string; displayName?: string },
+	cf: {
+		name?: string;
+		originalConfig?: Record<string, unknown>;
+		trash_description?: string;
+		description?: string;
+		displayName?: string;
+	},
 	descMaps: { bySlug: Map<string, DescEntry>; byDisplayName: Map<string, DescEntry> },
 ): { description: string; displayName: string } {
 	const name = cf.name || (cf.originalConfig?.name as string) || "";
@@ -491,7 +497,10 @@ async function fetchClonedProfileData(trashId: string) {
 	};
 }
 
-async function fetchNormalModeData(serviceType: string, trashId: string): Promise<WizardCFConfigurationResult> {
+async function fetchNormalModeData(
+	serviceType: string,
+	trashId: string,
+): Promise<WizardCFConfigurationResult> {
 	const profileData = await apiRequest<Record<string, unknown>>(
 		`/api/trash-guides/quality-profiles/${serviceType}/${trashId}`,
 	);
@@ -499,16 +508,15 @@ async function fetchNormalModeData(serviceType: string, trashId: string): Promis
 	// Check for error response (quality profile route returns { statusCode, error, message } on error)
 	if (profileData.statusCode || profileData.error) {
 		throw new Error(
-			((profileData.message || profileData.error) as string) || "Failed to fetch quality profile details",
+			((profileData.message || profileData.error) as string) ||
+				"Failed to fetch quality profile details",
 		);
 	}
 
 	const availableFormats = await fetchAvailableFormats(serviceType);
 
 	// Extract quality items from profile for QualityGroupEditor
-	const qualityItems = extractQualityItems(
-		(profileData.profile as Record<string, unknown>) || {},
-	);
+	const qualityItems = extractQualityItems((profileData.profile as Record<string, unknown>) || {});
 
 	// The quality profile endpoint returns cfGroups, mandatoryCFs, stats, profile, etc.
 	// Spread them and add our computed fields

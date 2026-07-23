@@ -8,7 +8,12 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { refreshJellyfinCache } from "../jellyfin-cache-refresher.js";
-import type { JellyfinClient, JellyfinItem, JellyfinLibrary, JellyfinUser } from "../jellyfin-client.js";
+import type {
+	JellyfinClient,
+	JellyfinItem,
+	JellyfinLibrary,
+	JellyfinUser,
+} from "../jellyfin-client.js";
 import type { FastifyBaseLogger } from "fastify";
 
 // ---------------------------------------------------------------------------
@@ -41,7 +46,9 @@ function makeSeriesItem(overrides: Partial<JellyfinItem> = {}): JellyfinItem {
 }
 
 const oneUser: JellyfinUser[] = [{ id: "user-1", name: "Alice" }];
-const oneLibrary: JellyfinLibrary[] = [{ id: "lib-1", name: "TV Shows", collectionType: "tvshows" }];
+const oneLibrary: JellyfinLibrary[] = [
+	{ id: "lib-1", name: "TV Shows", collectionType: "tvshows" },
+];
 
 /**
  * Build a minimal mock JellyfinClient that serves the given library items.
@@ -110,7 +117,8 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
 
 		expect(upserts).toHaveLength(1);
-		const payload = (upserts[0] as { create: { lastWatchedAt: Date | null; watchCount: number } }).create;
+		const payload = (upserts[0] as { create: { lastWatchedAt: Date | null; watchCount: number } })
+			.create;
 		// lastWatchedAt must be set so the episode-cache refresher picks up this series
 		expect(payload.lastWatchedAt).toEqual(new Date("2024-06-15T18:30:00Z"));
 		// watchCount stays 0 — the series wasn't fully watched
@@ -148,7 +156,8 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 			getUsers: vi.fn().mockResolvedValue(twoUsers),
 			getLibraries: vi.fn().mockResolvedValue(oneLibrary),
 			// First call (Alice) returns older, second call (Bob) returns newer
-			getLibraryItems: vi.fn()
+			getLibraryItems: vi
+				.fn()
 				.mockResolvedValueOnce([olderItem])
 				.mockResolvedValueOnce([newerItem]),
 			getResumeItems: vi.fn().mockResolvedValue([]),

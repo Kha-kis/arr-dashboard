@@ -1,11 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { integrationHealth } from "../integration-health.js";
-import {
-	UpstreamValidationError,
-	parseUpstream,
-	parseUpstreamOrThrow,
-} from "../parse-upstream.js";
+import { UpstreamValidationError, parseUpstream, parseUpstreamOrThrow } from "../parse-upstream.js";
 
 const schema = z.looseObject({
 	id: z.number(),

@@ -160,12 +160,22 @@ function isWithinQuietHours(start: string, end: string, timezone: string | null)
 		const endH = endParts[0];
 		const endM = endParts[1];
 		if (
-			startH === undefined || startM === undefined ||
-			endH === undefined || endM === undefined ||
-			!Number.isFinite(startH) || !Number.isFinite(startM) ||
-			!Number.isFinite(endH) || !Number.isFinite(endM) ||
-			startH < 0 || startH > 23 || startM < 0 || startM > 59 ||
-			endH < 0 || endH > 23 || endM < 0 || endM > 59
+			startH === undefined ||
+			startM === undefined ||
+			endH === undefined ||
+			endM === undefined ||
+			!Number.isFinite(startH) ||
+			!Number.isFinite(startM) ||
+			!Number.isFinite(endH) ||
+			!Number.isFinite(endM) ||
+			startH < 0 ||
+			startH > 23 ||
+			startM < 0 ||
+			startM > 59 ||
+			endH < 0 ||
+			endH > 23 ||
+			endM < 0 ||
+			endM > 59
 		) {
 			return true; // Malformed time config — fail closed
 		}
@@ -195,7 +205,12 @@ function computeDeferUntil(endTime: string, timezone: string | null): string {
 		const endParts = endTime.split(":").map(Number);
 		const endH = endParts[0];
 		const endM = endParts[1];
-		if (endH === undefined || endM === undefined || !Number.isFinite(endH) || !Number.isFinite(endM)) {
+		if (
+			endH === undefined ||
+			endM === undefined ||
+			!Number.isFinite(endH) ||
+			!Number.isFinite(endM)
+		) {
 			return new Date(Date.now() + 8 * 60 * 60_000).toISOString();
 		}
 
@@ -234,7 +249,9 @@ function computeDeferUntil(endTime: string, timezone: string | null): string {
 		const utcNow = now.getTime();
 		const localDate = new Date(localYear, localMonth - 1, localDay + dayOffset, endH, endM, 0, 0);
 		const localTimestamp = localDate.getTime();
-		const offset = utcNow - new Date(localYear, localMonth - 1, localDay, localHour, localMinute, 0, 0).getTime();
+		const offset =
+			utcNow -
+			new Date(localYear, localMonth - 1, localDay, localHour, localMinute, 0, 0).getTime();
 
 		return new Date(localTimestamp + offset).toISOString();
 	} catch {

@@ -215,7 +215,8 @@ export const SyncProgressModal = ({
 								</h2>
 								<p id="sync-progress-description" className="mt-1 text-sm text-muted-foreground">
 									Template: <span className="font-medium text-foreground">{templateName}</span> →
-									Instance: <span className="font-medium text-foreground">{displayInstanceName}</span>
+									Instance:{" "}
+									<span className="font-medium text-foreground">{displayInstanceName}</span>
 								</p>
 							</div>
 						</div>
