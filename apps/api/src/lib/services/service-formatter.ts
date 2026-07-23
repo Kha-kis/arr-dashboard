@@ -13,6 +13,8 @@ interface ServiceInstanceWithTags {
 	createdAt: Date;
 	updatedAt: Date;
 	encryptedApiKey: string;
+	encryptedHttpAuthCredentials: string | null;
+	httpAuthEncryptionIv: string | null;
 	storageGroupId: string | null;
 	// qui-only fields — Prisma typings model them as `boolean | null` /
 	// `string | null` because SQLite booleans can be null. We coerce to
@@ -38,6 +40,7 @@ export interface FormattedServiceInstance {
 	createdAt: Date;
 	updatedAt: Date;
 	hasApiKey: boolean;
+	hasHttpAuth: boolean;
 	storageGroupId: string | null;
 	// qui-only — always present in the response for consistency, but
 	// only meaningful when `service === "qui"`. The UI hides these
@@ -62,6 +65,7 @@ export function formatServiceInstance(instance: ServiceInstanceWithTags): Format
 		createdAt: instance.createdAt,
 		updatedAt: instance.updatedAt,
 		hasApiKey: Boolean(instance.encryptedApiKey),
+		hasHttpAuth: Boolean(instance.encryptedHttpAuthCredentials && instance.httpAuthEncryptionIv),
 		storageGroupId: instance.storageGroupId,
 		// Coerce nullable boolean → boolean. Prisma models the column as
 		// `boolean | null` because SQLite has no strict-NOT-NULL on

@@ -25,18 +25,33 @@ import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { getLinuxServerName, getLinuxUrl, useIncognitoMode } from "../../../lib/incognito";
 import { SERVICE_TYPES, type ServiceType } from "../../settings/lib/settings-constants";
-import { getServicePlaceholders } from "../../settings/lib/settings-utils";
+import {
+	getServicePlaceholders,
+	supportsHttpBasicAuth,
+	usesPlainHttp,
+} from "../../settings/lib/settings-utils";
 
 interface ServiceDraft {
 	service: ServiceType;
 	label: string;
 	baseUrl: string;
 	apiKey: string;
+	httpAuthEnabled: boolean;
+	httpAuthUsername: string;
+	httpAuthPassword: string;
 }
 
 const emptyDraft = (service: ServiceType = "sonarr"): ServiceDraft => {
 	const placeholders = getServicePlaceholders(service);
-	return { service, label: placeholders.label, baseUrl: "", apiKey: "" };
+	return {
+		service,
+		label: placeholders.label,
+		baseUrl: "",
+		apiKey: "",
+		httpAuthEnabled: false,
+		httpAuthUsername: "",
+		httpAuthPassword: "",
+	};
 };
 
 const candidateDraft = (candidate: SetupDiscoveryCandidate): ServiceDraft => ({
@@ -44,6 +59,9 @@ const candidateDraft = (candidate: SetupDiscoveryCandidate): ServiceDraft => ({
 	label: candidate.name,
 	baseUrl: candidate.baseUrl,
 	apiKey: "",
+	httpAuthEnabled: false,
+	httpAuthUsername: "",
+	httpAuthPassword: "",
 });
 
 export const ServiceOnboarding = () => {
@@ -83,12 +101,20 @@ export const ServiceOnboarding = () => {
 			label: draft.label.trim(),
 			baseUrl: draft.baseUrl.trim(),
 			apiKey: draft.apiKey.trim(),
+			httpAuth:
+				draft.httpAuthEnabled && supportsHttpBasicAuth(draft.service)
+					? { username: draft.httpAuthUsername.trim(), password: draft.httpAuthPassword }
+					: undefined,
 		};
 		if (!payload.label || !payload.baseUrl || payload.apiKey.length < 8) {
 			setResult({
 				success: false,
 				message: "Enter a label, a full URL, and an API key of at least 8 characters.",
 			});
+			return;
+		}
+		if (draft.httpAuthEnabled && (!payload.httpAuth?.username || !payload.httpAuth.password)) {
+			setResult({ success: false, message: "Enter both HTTP Basic Auth fields." });
 			return;
 		}
 
@@ -281,6 +307,65 @@ export const ServiceOnboarding = () => {
 									data-1p-ignore
 								/>
 							</label>
+							<label className="flex items-center gap-2 text-sm sm:col-span-2">
+								<input
+									type="checkbox"
+									checked={draft.httpAuthEnabled && supportsHttpBasicAuth(draft.service)}
+									disabled={!supportsHttpBasicAuth(draft.service)}
+									onChange={(event) =>
+										setDraft((current) =>
+											current ? { ...current, httpAuthEnabled: event.target.checked } : current,
+										)
+									}
+								/>
+								Reverse proxy HTTP Basic Auth
+							</label>
+							{!supportsHttpBasicAuth(draft.service) && (
+								<p className="text-xs text-muted-foreground sm:col-span-2">
+									{draft.service === "tracearr" ? "Tracearr" : "Jellyfin"} cannot combine Basic Auth
+									with its API authentication. Configure a proxy bypass for arr-dashboard.
+								</p>
+							)}
+							{draft.httpAuthEnabled && supportsHttpBasicAuth(draft.service) && (
+								<>
+									<label htmlFor="setup-http-username" className="space-y-2 text-sm">
+										HTTP username
+										<Input
+											id="setup-http-username"
+											value={draft.httpAuthUsername}
+											onChange={(event) =>
+												setDraft((current) =>
+													current ? { ...current, httpAuthUsername: event.target.value } : current,
+												)
+											}
+										/>
+									</label>
+									<label htmlFor="setup-http-password" className="space-y-2 text-sm">
+										HTTP password
+										<Input
+											id="setup-http-password"
+											type="password"
+											value={draft.httpAuthPassword}
+											onChange={(event) =>
+												setDraft((current) =>
+													current ? { ...current, httpAuthPassword: event.target.value } : current,
+												)
+											}
+											autoComplete="new-password"
+										/>
+									</label>
+								</>
+							)}
+							{draft.httpAuthEnabled &&
+								supportsHttpBasicAuth(draft.service) &&
+								usesPlainHttp(draft.baseUrl) && (
+									<Alert variant="warning" className="sm:col-span-2">
+										<AlertDescription>
+											HTTP Basic credentials are readable on the network when the service URL uses
+											http://. Use HTTPS unless this is a trusted private network.
+										</AlertDescription>
+									</Alert>
+								)}
 							<div className="flex gap-2 sm:col-span-2">
 								<Button type="submit" disabled={isSaving}>
 									{isSaving && <Loader2 className="h-4 w-4 animate-spin" />} Test and add

@@ -6,6 +6,15 @@ import { clearFileIdIndexCache } from "../lib/library-sync/infohash-backfill-by-
 import type { ServiceType } from "../lib/prisma.js";
 import { invalidateTorrentListCache } from "../lib/qui/torrent-list-cache.js";
 import { testServiceConnection } from "../lib/services/connection-tester.js";
+import {
+	decryptHttpAuthCredentials,
+	encryptHttpAuthCredentials,
+} from "../lib/services/http-auth.js";
+import {
+	credentialFreeUrlSchema,
+	getHttpAuthConflict,
+	httpAuthSchema,
+} from "../lib/services/http-auth-validation.js";
 import { formatServiceInstance } from "../lib/services/service-formatter.js";
 import { updateInstanceTags, upsertTags } from "../lib/services/tag-manager.js";
 import { buildUpdateData } from "../lib/services/update-builder.js";
@@ -15,9 +24,10 @@ const idParams = z.object({ id: z.string().min(1) });
 
 const servicePayloadSchema = z.object({
 	label: z.string().min(1).max(120),
-	baseUrl: z.string().url(),
-	externalUrl: z.string().url().nullable().optional(), // Optional browser-accessible URL for reverse proxy setups
+	baseUrl: credentialFreeUrlSchema,
+	externalUrl: credentialFreeUrlSchema.nullable().optional(), // Optional browser-accessible URL for reverse proxy setups
 	apiKey: z.string().min(8),
+	httpAuth: httpAuthSchema.nullable().optional(),
 	service: arrServiceTypeSchema,
 	enabled: z.boolean().default(true),
 	isDefault: z.boolean().default(false),
@@ -42,6 +52,7 @@ const serviceUpdateSchema = servicePayloadSchema
 		label: true,
 		baseUrl: true,
 		apiKey: true,
+		httpAuth: true,
 		service: true,
 		enabled: true,
 		isDefault: true,
@@ -74,12 +85,20 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.post("/services", async (request, reply) => {
-		const { apiKey, service, tags, isDefault, ...rest } = validateRequest(
+		const { apiKey, httpAuth, service, tags, isDefault, ...rest } = validateRequest(
 			servicePayloadSchema,
 			request.body,
 		);
 
 		const encrypted = app.encryptor.encrypt(apiKey);
+		const httpAuthConflict = httpAuth ? getHttpAuthConflict(service) : null;
+		if (httpAuthConflict) {
+			return reply.status(400).send({
+				error: `HTTP Basic Auth is not supported for ${service}`,
+				details: httpAuthConflict,
+			});
+		}
+		const encryptedHttpAuth = httpAuth ? encryptHttpAuthCredentials(app.encryptor, httpAuth) : {};
 
 		const serviceEnum = service.toUpperCase() as ServiceType;
 
@@ -98,6 +117,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 				service: serviceEnum,
 				encryptedApiKey: encrypted.value,
 				encryptionIv: encrypted.iv,
+				...encryptedHttpAuth,
 				isDefault,
 				...rest,
 				tags: {
@@ -125,6 +145,17 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const payload = validateRequest(serviceUpdateSchema, request.body);
 		const userId = request.currentUser!.id;
 		const existing = await requireInstance(app, userId, id);
+		const targetService = payload.service ?? existing.service.toLowerCase();
+		const keepsExistingHttpAuth =
+			payload.httpAuth === undefined && Boolean(existing.encryptedHttpAuthCredentials);
+		const httpAuthConflict =
+			payload.httpAuth || keepsExistingHttpAuth ? getHttpAuthConflict(targetService) : null;
+		if (httpAuthConflict) {
+			return reply.status(400).send({
+				error: `HTTP Basic Auth is not supported for ${targetService}`,
+				details: `${httpAuthConflict} Remove HTTP Basic Auth or configure a proxy bypass.`,
+			});
+		}
 
 		const updateData = buildUpdateData(payload, app.encryptor);
 
@@ -253,10 +284,11 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.post("/services/test-connection", async (request, reply) => {
-		const { baseUrl, apiKey, service } = validateRequest(
+		const { baseUrl, apiKey, service, httpAuth } = validateRequest(
 			z.object({
-				baseUrl: z.string().min(1),
+				baseUrl: credentialFreeUrlSchema,
 				apiKey: z.string().min(1),
+				httpAuth: httpAuthSchema.optional(),
 				service: z
 					.string()
 					.min(1)
@@ -287,8 +319,17 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 				details: `Service must be one of: ${ALL_SERVICES.join(", ")}`,
 			});
 		}
+		const httpAuthConflict = httpAuth ? getHttpAuthConflict(service) : null;
+		if (httpAuthConflict) {
+			return reply.status(400).send({
+				error: `HTTP Basic Auth is not supported for ${service}`,
+				details: httpAuthConflict,
+			});
+		}
 
-		const result = await testServiceConnection(baseUrl, apiKey, service);
+		const result = httpAuth
+			? await testServiceConnection(baseUrl, apiKey, service, httpAuth)
+			: await testServiceConnection(baseUrl, apiKey, service);
 		if (!result.success) {
 			request.log.warn({ service, baseUrl }, "Connection test failed");
 
@@ -320,8 +361,23 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			iv: instance.encryptionIv,
 		});
 		const service = instance.service.toLowerCase();
+		const requestBody = validateRequest(
+			z.object({ httpAuth: httpAuthSchema.nullable().optional() }),
+			request.body ?? {},
+		);
+		const storedHttpAuth = decryptHttpAuthCredentials(app.encryptor, instance);
+		const httpAuth = requestBody.httpAuth === undefined ? storedHttpAuth : requestBody.httpAuth;
+		const httpAuthConflict = httpAuth ? getHttpAuthConflict(service) : null;
+		if (httpAuthConflict) {
+			return reply.status(400).send({
+				error: `HTTP Basic Auth is not supported for ${service}`,
+				details: `${httpAuthConflict} Configure a proxy bypass for arr-dashboard.`,
+			});
+		}
 
-		const result = await testServiceConnection(instance.baseUrl, apiKey, service);
+		const result = httpAuth
+			? await testServiceConnection(instance.baseUrl, apiKey, service, httpAuth)
+			: await testServiceConnection(instance.baseUrl, apiKey, service);
 		return reply.status(200).send(result);
 	});
 

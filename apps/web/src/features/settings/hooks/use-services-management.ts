@@ -10,7 +10,7 @@ import {
 } from "../../../hooks/api/useServiceMutations";
 import type { UpdateServicePayload } from "../../../lib/api-client/services";
 import { getErrorMessage } from "../../../lib/error-utils";
-import type { ServiceFormState } from "../lib/settings-utils";
+import { supportsHttpBasicAuth, type ServiceFormState } from "../lib/settings-utils";
 
 /**
  * Hook for managing service instances
@@ -60,12 +60,30 @@ export const useServicesManagement = () => {
 		// could otherwise carry stale state from a previous edit) is a no-op.
 		const trimmedPathPrefix = formState.pathPrefix.trim();
 		const isQui = formState.service === "qui";
+		const username = formState.httpAuthUsername.trim();
+		const password = formState.httpAuthPassword;
+		let httpAuth: { username: string; password: string } | null | undefined;
+		if (!supportsHttpBasicAuth(formState.service)) {
+			httpAuth = selectedServiceForEdit?.hasHttpAuth ? null : undefined;
+		} else if (!formState.httpAuthEnabled) {
+			httpAuth = selectedServiceForEdit?.hasHttpAuth ? null : undefined;
+		} else if (username || password) {
+			if (!username || !password) {
+				toast.error("Enter both an HTTP Basic Auth username and password");
+				return;
+			}
+			httpAuth = { username, password };
+		} else if (!selectedServiceForEdit?.hasHttpAuth) {
+			toast.error("Enter both an HTTP Basic Auth username and password");
+			return;
+		}
 
 		const basePayload = {
 			label: formState.label.trim(),
 			baseUrl: formState.baseUrl.trim(),
 			externalUrl,
 			apiKey: formState.apiKey.trim(),
+			httpAuth,
 			service: formState.service,
 			enabled: formState.enabled,
 			isDefault: formState.isDefault,
@@ -181,11 +199,20 @@ export const useServicesManagement = () => {
 		}
 	};
 
-	const handleTestFormConnection = async (formState: ServiceFormState) => {
-		if (!formState.baseUrl || !formState.apiKey) {
+	const handleTestFormConnection = async (
+		formState: ServiceFormState,
+		selectedService?: ServiceInstanceSummary | null,
+	) => {
+		const canUseSavedApiKey = Boolean(
+			selectedService &&
+				!formState.apiKey &&
+				formState.service === selectedService.service &&
+				formState.baseUrl.trim() === selectedService.baseUrl,
+		);
+		if (!formState.baseUrl || (!formState.apiKey && !canUseSavedApiKey)) {
 			setFormTestResult({
 				success: false,
-				message: "Base URL and API Key are required to test connection",
+				message: "Base URL and API Key are required to test unsaved connection details",
 			});
 			return;
 		}
@@ -194,10 +221,59 @@ export const useServicesManagement = () => {
 		setFormTestResult(null);
 
 		try {
+			const username = formState.httpAuthUsername.trim();
+			const password = formState.httpAuthPassword;
+			if (formState.httpAuthEnabled && (username || password) && (!username || !password)) {
+				setFormTestResult({
+					success: false,
+					message: "Enter both HTTP Basic Auth fields to test unsaved credentials",
+				});
+				return;
+			}
+			if (canUseSavedApiKey && selectedService) {
+				let savedTestInput:
+					| string
+					| { id: string; httpAuth: { username: string; password: string } | null };
+				if (!formState.httpAuthEnabled || !supportsHttpBasicAuth(formState.service)) {
+					savedTestInput = { id: selectedService.id, httpAuth: null };
+				} else if (username && password) {
+					savedTestInput = { id: selectedService.id, httpAuth: { username, password } };
+				} else if (selectedService.hasHttpAuth) {
+					savedTestInput = selectedService.id;
+				} else {
+					setFormTestResult({
+						success: false,
+						message: "Enter both HTTP Basic Auth fields to test unsaved credentials",
+					});
+					return;
+				}
+				const result = await testServiceConnectionMutation.mutateAsync(savedTestInput);
+				setFormTestResult({
+					success: result.success,
+					message: result.success
+						? (result.message ?? "Connection successful")
+						: (result.error ?? "Connection failed"),
+					version: result.version,
+					error: result.error,
+					details: result.details,
+				});
+				return;
+			}
+			if (formState.httpAuthEnabled && (!username || !password)) {
+				setFormTestResult({
+					success: false,
+					message: "Enter both HTTP Basic Auth fields to test unsaved credentials",
+				});
+				return;
+			}
 			const result = await testConnectionBeforeAddMutation.mutateAsync({
 				baseUrl: formState.baseUrl.trim(),
 				apiKey: formState.apiKey.trim(),
 				service: formState.service,
+				httpAuth:
+					supportsHttpBasicAuth(formState.service) && formState.httpAuthEnabled
+						? { username, password }
+						: undefined,
 			});
 
 			if (result.success) {
