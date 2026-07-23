@@ -55,6 +55,8 @@ function createMockInstance(service: ServiceType) {
 		pathPrefix: null as string | null,
 		encryptedApiKey: "enc-key",
 		encryptionIv: "iv",
+		encryptedHttpAuthCredentials: null,
+		httpAuthEncryptionIv: null,
 		enabled: true,
 		createdAt: new Date(),
 		updatedAt: new Date(),

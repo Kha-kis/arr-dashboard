@@ -14,6 +14,7 @@ export interface ServiceInstanceSummary {
 	enabled: boolean;
 	isDefault: boolean;
 	hasApiKey: boolean;
+	hasHttpAuth?: boolean;
 	storageGroupId: string | null;
 	// qui-only — only meaningful when `service === "qui"`. Always present
 	// in the API response shape so the frontend doesn't have to special-

@@ -18,7 +18,11 @@ import { getLinuxUrl, useIncognitoMode } from "../../../lib/incognito";
 import { cn } from "../../../lib/utils";
 import { SERVICE_TYPES } from "../lib/settings-constants";
 import type { ServiceFormState } from "../lib/settings-utils";
-import { getServicePlaceholders } from "../lib/settings-utils";
+import {
+	getServicePlaceholders,
+	supportsHttpBasicAuth,
+	usesPlainHttp,
+} from "../lib/settings-utils";
 import { PlexOAuthSection } from "./plex-oauth-section";
 import { SeerrAutoSetupSection } from "./seerr-auto-setup-section";
 
@@ -77,6 +81,17 @@ export const ServiceForm = ({
 }: ServiceFormProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const placeholders = getServicePlaceholders(formState.service);
+	const supportsHttpAuth = supportsHttpBasicAuth(formState.service);
+	const stagedHttpAuth =
+		supportsHttpAuth &&
+		formState.httpAuthEnabled &&
+		formState.httpAuthUsername &&
+		formState.httpAuthPassword
+			? {
+					username: formState.httpAuthUsername.trim(),
+					password: formState.httpAuthPassword,
+				}
+			: undefined;
 
 	return (
 		<Card>
@@ -102,6 +117,13 @@ export const ServiceForm = ({
 											...prev,
 											service,
 											isDefault: service === "prowlarr" ? false : prev.isDefault,
+											...(!supportsHttpBasicAuth(service)
+												? {
+														httpAuthEnabled: false,
+														httpAuthUsername: "",
+														httpAuthPassword: "",
+													}
+												: {}),
 										}))
 									}
 									className={cn(
@@ -192,6 +214,7 @@ export const ServiceForm = ({
 					{formState.service === "seerr" && (
 						<SeerrAutoSetupSection
 							seerrUrl={formState.baseUrl}
+							httpAuth={stagedHttpAuth}
 							mode={selectedService ? "edit" : "add"}
 							onApiKeyFetched={(apiKey) =>
 								onFormStateChange((prev) => ({
@@ -254,12 +277,91 @@ export const ServiceForm = ({
 							data-form-type="other"
 						/>
 					</SimpleFormField>
+					<div className="space-y-3 rounded-lg border border-border/50 p-3">
+						<label className="flex items-center gap-2 text-sm">
+							<input
+								type="checkbox"
+								checked={formState.httpAuthEnabled && supportsHttpAuth}
+								disabled={!supportsHttpAuth}
+								onChange={(event) =>
+									onFormStateChange((prev) => ({
+										...prev,
+										httpAuthEnabled: event.target.checked,
+										httpAuthUsername: "",
+										httpAuthPassword: "",
+									}))
+								}
+							/>
+							Reverse proxy HTTP Basic Auth
+						</label>
+						{!supportsHttpAuth && (
+							<p className="text-xs text-muted-foreground">
+								Unavailable for {formState.service === "tracearr" ? "Tracearr" : "Jellyfin"} because
+								its API authentication already uses the Authorization header. Configure a proxy
+								bypass for arr-dashboard instead.
+							</p>
+						)}
+						{formState.httpAuthEnabled && supportsHttpAuth && (
+							<>
+								{selectedService?.hasHttpAuth &&
+									!formState.httpAuthUsername &&
+									!formState.httpAuthPassword && (
+										<p className="text-xs text-muted-foreground">
+											Credentials are configured. Leave both fields blank to keep them.
+										</p>
+									)}
+								<div className="grid gap-3 sm:grid-cols-2">
+									<SimpleFormField label="HTTP username" htmlFor="service-http-username">
+										<Input
+											id="service-http-username"
+											value={formState.httpAuthUsername}
+											onChange={(event) =>
+												onFormStateChange((prev) => ({
+													...prev,
+													httpAuthUsername: event.target.value,
+												}))
+											}
+											autoComplete="off"
+											data-1p-ignore
+										/>
+									</SimpleFormField>
+									<SimpleFormField label="HTTP password" htmlFor="service-http-password">
+										<Input
+											id="service-http-password"
+											type="password"
+											value={formState.httpAuthPassword}
+											onChange={(event) =>
+												onFormStateChange((prev) => ({
+													...prev,
+													httpAuthPassword: event.target.value,
+												}))
+											}
+											autoComplete="new-password"
+											data-1p-ignore
+										/>
+									</SimpleFormField>
+								</div>
+							</>
+						)}
+						{formState.httpAuthEnabled && supportsHttpAuth && usesPlainHttp(formState.baseUrl) && (
+							<Alert variant="warning">
+								<AlertDescription>
+									HTTP Basic credentials are readable on the network when the service URL uses
+									http://. Use HTTPS unless this is a trusted private network.
+								</AlertDescription>
+							</Alert>
+						)}
+					</div>
 					<div className="space-y-2">
 						<Button
 							type="button"
 							variant="secondary"
 							onClick={onTestConnection}
-							disabled={isTesting || !formState.baseUrl || !formState.apiKey}
+							disabled={
+								isTesting ||
+								!formState.baseUrl ||
+								(!formState.apiKey && !selectedService?.hasApiKey)
+							}
 						>
 							{isTesting ? "Testing connection..." : "Test connection"}
 						</Button>

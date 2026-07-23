@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Service instances can now store optional encrypted HTTP Basic Auth credentials
+  for reverse proxies, including connection testing and Seerr-assisted setup.
+  Existing credentials embedded in service URLs are migrated out of the URL at
+  startup. Jellyfin and Tracearr require a proxy bypass because their API
+  authentication already uses the `Authorization` header.
+
 ### Changed
 
 - Production APIs now acquire a database-backed runtime lease, so only one API

@@ -1,3 +1,6 @@
+import { createHttpAuthHeaders, type HttpAuthCredentials } from "./http-auth.js";
+import { getHttpAuthConflict } from "./http-auth-validation.js";
+
 /**
  * Service connection testing utilities
  */
@@ -54,8 +57,9 @@ function detectAuthProxy(response: Response, requestUrl: string): string | null 
 const AUTH_PROXY_ADVICE =
 	"Your reverse proxy's authentication is intercepting API requests before they reach the service. " +
 	"To fix this, either:\n" +
+	"• If the proxy uses HTTP Basic Auth, enable Reverse proxy HTTP Basic Auth and enter its credentials\n" +
 	"• Use the service's internal/LAN URL (e.g., http://192.168.1.x:PORT or http://container-name:PORT) instead of the public URL\n" +
-	"• Configure your auth proxy to bypass authentication for the service's API paths";
+	"• For login-portal or SSO auth, configure the proxy to bypass authentication for the service's API paths";
 
 /**
  * Tests connection to a service instance using the system/status endpoint.
@@ -65,25 +69,34 @@ export async function testServiceConnection(
 	baseUrl: string,
 	apiKey: string,
 	service: string,
+	httpAuth: HttpAuthCredentials | null = null,
 ): Promise<ConnectionTestResult> {
 	try {
 		const normalizedBaseUrl = baseUrl.replace(/\/$/, "");
+		const httpAuthConflict = httpAuth ? getHttpAuthConflict(service) : null;
+		if (httpAuthConflict) {
+			return {
+				success: false,
+				error: `HTTP Basic Auth is not supported for ${service}`,
+				details: httpAuthConflict,
+			};
+		}
 
 		// Plex uses X-Plex-Token header auth
 		if (service === "plex") {
-			return await testPlexConnection(normalizedBaseUrl, apiKey);
+			return await testPlexConnection(normalizedBaseUrl, apiKey, httpAuth);
 		}
 
 		// Jellyfin and Emby use the same MediaBrowser auth header and API
 		if (service === "jellyfin" || service === "emby") {
-			return await testJellyfinConnection(normalizedBaseUrl, apiKey);
+			return await testJellyfinConnection(normalizedBaseUrl, apiKey, httpAuth);
 		}
 
 		// qui uses X-API-Key header and exposes /api/instances as an
 		// authenticated probe; testQuiConnection wraps the same client
 		// helper used by route handlers so test + runtime stay in sync.
 		if (service === "qui") {
-			return await testQuiConnection(normalizedBaseUrl, apiKey);
+			return await testQuiConnection(normalizedBaseUrl, apiKey, httpAuth);
 		}
 
 		// Tracearr uses an Authorization: Bearer key against its Public API.
@@ -105,6 +118,7 @@ export async function testServiceConnection(
 			headers: {
 				"X-Api-Key": apiKey,
 				Accept: "application/json",
+				...createHttpAuthHeaders(httpAuth),
 			},
 			signal: AbortSignal.timeout(5000),
 		});
@@ -129,7 +143,7 @@ export async function testServiceConnection(
 				success: false,
 				error: "Invalid response format",
 				details:
-					"Received HTML instead of JSON. Check if the base URL is correct and includes any URL base if configured in the service (e.g., http://localhost:7878 for root, or http://localhost/radarr if using a URL base). If this service is behind a reverse proxy with authentication (Authelia, Authentik, etc.), use the internal/LAN URL instead.",
+					"Received HTML instead of JSON. Check if the base URL is correct and includes any URL base if configured in the service (e.g., http://localhost:7878 for root, or http://localhost/radarr if using a URL base). For proxy HTTP Basic Auth, configure the dedicated credentials; for login-portal or SSO auth, use an internal URL or proxy bypass.",
 			};
 		}
 
@@ -146,7 +160,12 @@ export async function testServiceConnection(
 		// that under-powered configurations fail at setup time rather than later in
 		// the user's flow. See issue #465.
 		if (service === "seerr") {
-			const permissionProbe = await probeSeerrPermissions(normalizedBaseUrl, apiKey, version);
+			const permissionProbe = await probeSeerrPermissions(
+				normalizedBaseUrl,
+				apiKey,
+				version,
+				httpAuth,
+			);
 			if (permissionProbe) return permissionProbe;
 		}
 
@@ -177,12 +196,17 @@ async function probeSeerrPermissions(
 	baseUrl: string,
 	apiKey: string,
 	version: string,
+	httpAuth: HttpAuthCredentials | null,
 ): Promise<ConnectionTestResult | null> {
 	const probeUrl = `${baseUrl}/api/v1/request/count`;
 	let probeResponse: Response;
 	try {
 		probeResponse = await fetch(probeUrl, {
-			headers: { "X-Api-Key": apiKey, Accept: "application/json" },
+			headers: {
+				"X-Api-Key": apiKey,
+				Accept: "application/json",
+				...createHttpAuthHeaders(httpAuth),
+			},
 			signal: AbortSignal.timeout(5000),
 		});
 	} catch {
@@ -226,7 +250,7 @@ function handleHttpError(response: Response, baseUrl: string): ConnectionTestRes
 			success: false,
 			error: "Authentication failed (401)",
 			details:
-				"Invalid API key, or a reverse proxy is blocking the request. Verify the API key is correct. If this service is behind an auth proxy (Authelia, Authentik, etc.), use the service's internal/LAN URL instead of the public URL.",
+				"Invalid API key or reverse-proxy credentials. Verify both. For proxy HTTP Basic Auth, enable the dedicated fields; for login-portal or SSO auth, use an internal URL or proxy bypass.",
 		};
 	}
 
@@ -244,7 +268,7 @@ function handleHttpError(response: Response, baseUrl: string): ConnectionTestRes
 			success: false,
 			error: "Access forbidden (403)",
 			details:
-				"The API key may lack permissions, or a reverse proxy is denying access. If this service is behind an auth proxy (Authelia, Authentik, etc.), use the service's internal/LAN URL instead of the public URL.",
+				"The API key may lack permissions, or a reverse proxy is denying access. Verify configured HTTP Basic credentials, or use an internal URL or proxy bypass for login-portal and SSO auth.",
 		};
 	}
 
@@ -294,7 +318,11 @@ function handleHttpError(response: Response, baseUrl: string): ConnectionTestRes
  * success (qui is reachable and the key is valid; the operator just
  * hasn't added qBit instances yet).
  */
-async function testQuiConnection(baseUrl: string, apiKey: string): Promise<ConnectionTestResult> {
+async function testQuiConnection(
+	baseUrl: string,
+	apiKey: string,
+	httpAuth: HttpAuthCredentials | null,
+): Promise<ConnectionTestResult> {
 	const testUrl = `${baseUrl}/api/instances`;
 
 	let response: Response;
@@ -303,6 +331,7 @@ async function testQuiConnection(baseUrl: string, apiKey: string): Promise<Conne
 			headers: {
 				"X-API-Key": apiKey,
 				Accept: "application/json",
+				...createHttpAuthHeaders(httpAuth),
 			},
 			signal: AbortSignal.timeout(5000),
 		});
@@ -447,13 +476,18 @@ async function testTracearrConnection(
 /**
  * Tests connection to a Plex Media Server using X-Plex-Token auth.
  */
-async function testPlexConnection(baseUrl: string, token: string): Promise<ConnectionTestResult> {
+async function testPlexConnection(
+	baseUrl: string,
+	token: string,
+	httpAuth: HttpAuthCredentials | null,
+): Promise<ConnectionTestResult> {
 	const testUrl = `${baseUrl}/identity`;
 
 	const response = await fetch(testUrl, {
 		headers: {
 			Accept: "application/json",
 			"X-Plex-Token": token,
+			...createHttpAuthHeaders(httpAuth),
 		},
 		signal: AbortSignal.timeout(5000),
 	});
@@ -477,7 +511,7 @@ async function testPlexConnection(baseUrl: string, token: string): Promise<Conne
 			success: false,
 			error: "Invalid response format",
 			details:
-				"Received HTML instead of JSON. Check if the base URL is correct (e.g., http://localhost:32400). If behind an auth proxy, use the internal/LAN URL.",
+				"Received HTML instead of JSON. Check the base URL. For proxy HTTP Basic Auth, configure the dedicated credentials; for login-portal or SSO auth, use an internal URL or proxy bypass.",
 		};
 	}
 
@@ -508,12 +542,13 @@ async function testPlexConnection(baseUrl: string, token: string): Promise<Conne
 async function testJellyfinConnection(
 	baseUrl: string,
 	apiKey: string,
+	httpAuth: HttpAuthCredentials | null,
 ): Promise<ConnectionTestResult> {
 	// First test with public endpoint (no auth needed)
 	const publicUrl = `${baseUrl}/System/Info/Public`;
 
 	const response = await fetch(publicUrl, {
-		headers: { Accept: "application/json" },
+		headers: { Accept: "application/json", ...createHttpAuthHeaders(httpAuth) },
 		signal: AbortSignal.timeout(5000),
 	});
 
@@ -536,7 +571,7 @@ async function testJellyfinConnection(
 			success: false,
 			error: "Invalid response format",
 			details:
-				"Received HTML instead of JSON. Check if the base URL is correct (e.g., http://localhost:8096). If behind an auth proxy, use the internal/LAN URL.",
+				"Received HTML instead of JSON. Check the base URL. For proxy HTTP Basic Auth, configure the dedicated credentials; for login-portal or SSO auth, use an internal URL or proxy bypass.",
 		};
 	}
 
@@ -557,10 +592,17 @@ async function testJellyfinConnection(
 	// Validate the API key by calling an authenticated endpoint
 	const authUrl = `${baseUrl}/System/Info`;
 	try {
+		const serviceAuthHeaders: Record<string, string> = httpAuth
+			? {
+					"X-Emby-Token": apiKey,
+					"X-Emby-Authorization": `MediaBrowser Token="${apiKey}"`,
+					...createHttpAuthHeaders(httpAuth),
+				}
+			: { Authorization: `MediaBrowser Token="${apiKey}"` };
 		const authResponse = await fetch(authUrl, {
 			headers: {
 				Accept: "application/json",
-				Authorization: `MediaBrowser Token="${apiKey}"`,
+				...serviceAuthHeaders,
 			},
 			signal: AbortSignal.timeout(5000),
 		});

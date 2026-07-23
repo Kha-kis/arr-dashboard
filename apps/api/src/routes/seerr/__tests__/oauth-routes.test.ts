@@ -115,6 +115,31 @@ describe("POST /oauth/fetch-key", () => {
 		expect(mockFetch.mock.calls[3]![0]).toBe("http://seerr:5055/api/v1/status"); // version
 	});
 
+	it("sends HTTP Basic credentials on every Seerr setup request", async () => {
+		mockPeekToken.mockReturnValue("plex-token-abc");
+		mockCsrfPreflight();
+		mockFetch
+			.mockResolvedValueOnce(
+				jsonResponse({ id: 1, permissions: 2 }, 200, ["connect.sid=abc123; Path=/"]),
+			)
+			.mockResolvedValueOnce(jsonResponse({ apiKey: "seerr-key-456" }))
+			.mockResolvedValueOnce(jsonResponse({ version: "2.0.0" }));
+
+		const res = await injectAuthenticated("POST", "/oauth/fetch-key", {
+			body: {
+				...validBody,
+				httpAuth: { username: "proxy", password: "secret" },
+			},
+		});
+
+		expect(res.statusCode).toBe(200);
+		for (const [, options] of mockFetch.mock.calls) {
+			expect(options.headers).toMatchObject({
+				Authorization: "Basic cHJveHk6c2VjcmV0",
+			});
+		}
+	});
+
 	// ================================================================
 	// Token store errors
 	// ================================================================
@@ -243,6 +268,16 @@ describe("POST /oauth/fetch-key", () => {
 		});
 
 		expect(res.statusCode).toBe(400);
+	});
+
+	it("rejects URL-embedded credentials before attempting a request", async () => {
+		const res = await injectAuthenticated("POST", "/oauth/fetch-key", {
+			body: { ...validBody, seerrUrl: "https://user:pass@seerr.example.test" },
+		});
+
+		expect(res.statusCode).toBe(400);
+		expect(res.payload).toMatch(/HTTP Basic Auth fields/i);
+		expect(mockFetch).not.toHaveBeenCalled();
 	});
 
 	// ================================================================

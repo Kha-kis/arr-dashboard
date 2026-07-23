@@ -138,6 +138,8 @@ export async function probeInstallStatus(
 			baseUrl: instance.baseUrl,
 			encryptedApiKey: instance.encryptedApiKey,
 			encryptionIv: instance.encryptionIv,
+			encryptedHttpAuthCredentials: instance.encryptedHttpAuthCredentials,
+			httpAuthEncryptionIv: instance.httpAuthEncryptionIv,
 			service: instance.service,
 			label: instance.label,
 		});
@@ -171,6 +173,8 @@ export async function installOnInstance(
 			baseUrl: instance.baseUrl,
 			encryptedApiKey: instance.encryptedApiKey,
 			encryptionIv: instance.encryptionIv,
+			encryptedHttpAuthCredentials: instance.encryptedHttpAuthCredentials,
+			httpAuthEncryptionIv: instance.httpAuthEncryptionIv,
 			service: instance.service,
 			label: instance.label,
 		});

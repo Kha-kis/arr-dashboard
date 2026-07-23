@@ -334,6 +334,47 @@ describe("POST /services/test-connection", () => {
 		expect(mockTestConnection).not.toHaveBeenCalled();
 	});
 
+	it("rejects URL-embedded credentials with guidance to use dedicated fields", async () => {
+		const res = await injectAuthenticated("POST", "/services/test-connection", {
+			body: {
+				baseUrl: "https://user:pass@sonarr.example.test",
+				apiKey: "test-key",
+				service: "sonarr",
+			},
+		});
+		expect(res.statusCode).toBe(400);
+		expect(res.payload).toMatch(/HTTP Basic Auth fields/i);
+		expect(mockTestConnection).not.toHaveBeenCalled();
+	});
+
+	it("rejects HTTP Basic Auth for Tracearr", async () => {
+		const res = await injectAuthenticated("POST", "/services/test-connection", {
+			body: {
+				baseUrl: "https://tracearr.example.test",
+				apiKey: "trr_pub_key",
+				service: "tracearr",
+				httpAuth: { username: "proxy-user", password: "proxy-pass" },
+			},
+		});
+		expect(res.statusCode).toBe(400);
+		expect(res.payload).toMatch(/not supported for Tracearr/i);
+		expect(mockTestConnection).not.toHaveBeenCalled();
+	});
+
+	it("rejects HTTP Basic Auth for Jellyfin because modern auth uses Authorization", async () => {
+		const res = await injectAuthenticated("POST", "/services/test-connection", {
+			body: {
+				baseUrl: "https://jellyfin.example.test",
+				apiKey: "jellyfin-key",
+				service: "jellyfin",
+				httpAuth: { username: "proxy-user", password: "proxy-pass" },
+			},
+		});
+		expect(res.statusCode).toBe(400);
+		expect(res.payload).toMatch(/not supported for jellyfin/i);
+		expect(mockTestConnection).not.toHaveBeenCalled();
+	});
+
 	it("rejects invalid service type", async () => {
 		const res = await injectAuthenticated("POST", "/services/test-connection", {
 			body: {

@@ -33,6 +33,8 @@ export type ServiceInstanceMinAggregateOutputType = {
   externalUrl: string | null
   encryptedApiKey: string | null
   encryptionIv: string | null
+  encryptedHttpAuthCredentials: string | null
+  httpAuthEncryptionIv: string | null
   isDefault: boolean | null
   enabled: boolean | null
   storageGroupId: string | null
@@ -51,6 +53,8 @@ export type ServiceInstanceMaxAggregateOutputType = {
   externalUrl: string | null
   encryptedApiKey: string | null
   encryptionIv: string | null
+  encryptedHttpAuthCredentials: string | null
+  httpAuthEncryptionIv: string | null
   isDefault: boolean | null
   enabled: boolean | null
   storageGroupId: string | null
@@ -69,6 +73,8 @@ export type ServiceInstanceCountAggregateOutputType = {
   externalUrl: number
   encryptedApiKey: number
   encryptionIv: number
+  encryptedHttpAuthCredentials: number
+  httpAuthEncryptionIv: number
   isDefault: number
   enabled: number
   storageGroupId: number
@@ -89,6 +95,8 @@ export type ServiceInstanceMinAggregateInputType = {
   externalUrl?: true
   encryptedApiKey?: true
   encryptionIv?: true
+  encryptedHttpAuthCredentials?: true
+  httpAuthEncryptionIv?: true
   isDefault?: true
   enabled?: true
   storageGroupId?: true
@@ -107,6 +115,8 @@ export type ServiceInstanceMaxAggregateInputType = {
   externalUrl?: true
   encryptedApiKey?: true
   encryptionIv?: true
+  encryptedHttpAuthCredentials?: true
+  httpAuthEncryptionIv?: true
   isDefault?: true
   enabled?: true
   storageGroupId?: true
@@ -125,6 +135,8 @@ export type ServiceInstanceCountAggregateInputType = {
   externalUrl?: true
   encryptedApiKey?: true
   encryptionIv?: true
+  encryptedHttpAuthCredentials?: true
+  httpAuthEncryptionIv?: true
   isDefault?: true
   enabled?: true
   storageGroupId?: true
@@ -216,6 +228,8 @@ export type ServiceInstanceGroupByOutputType = {
   externalUrl: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials: string | null
+  httpAuthEncryptionIv: string | null
   isDefault: boolean
   enabled: boolean
   storageGroupId: string | null
@@ -255,6 +269,8 @@ export type ServiceInstanceWhereInput = {
   externalUrl?: Prisma.StringNullableFilter<"ServiceInstance"> | string | null
   encryptedApiKey?: Prisma.StringFilter<"ServiceInstance"> | string
   encryptionIv?: Prisma.StringFilter<"ServiceInstance"> | string
+  encryptedHttpAuthCredentials?: Prisma.StringNullableFilter<"ServiceInstance"> | string | null
+  httpAuthEncryptionIv?: Prisma.StringNullableFilter<"ServiceInstance"> | string | null
   isDefault?: Prisma.BoolFilter<"ServiceInstance"> | boolean
   enabled?: Prisma.BoolFilter<"ServiceInstance"> | boolean
   storageGroupId?: Prisma.StringNullableFilter<"ServiceInstance"> | string | null
@@ -304,6 +320,8 @@ export type ServiceInstanceOrderByWithRelationInput = {
   externalUrl?: Prisma.SortOrderInput | Prisma.SortOrder
   encryptedApiKey?: Prisma.SortOrder
   encryptionIv?: Prisma.SortOrder
+  encryptedHttpAuthCredentials?: Prisma.SortOrderInput | Prisma.SortOrder
+  httpAuthEncryptionIv?: Prisma.SortOrderInput | Prisma.SortOrder
   isDefault?: Prisma.SortOrder
   enabled?: Prisma.SortOrder
   storageGroupId?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -356,6 +374,8 @@ export type ServiceInstanceWhereUniqueInput = Prisma.AtLeast<{
   externalUrl?: Prisma.StringNullableFilter<"ServiceInstance"> | string | null
   encryptedApiKey?: Prisma.StringFilter<"ServiceInstance"> | string
   encryptionIv?: Prisma.StringFilter<"ServiceInstance"> | string
+  encryptedHttpAuthCredentials?: Prisma.StringNullableFilter<"ServiceInstance"> | string | null
+  httpAuthEncryptionIv?: Prisma.StringNullableFilter<"ServiceInstance"> | string | null
   isDefault?: Prisma.BoolFilter<"ServiceInstance"> | boolean
   enabled?: Prisma.BoolFilter<"ServiceInstance"> | boolean
   storageGroupId?: Prisma.StringNullableFilter<"ServiceInstance"> | string | null
@@ -405,6 +425,8 @@ export type ServiceInstanceOrderByWithAggregationInput = {
   externalUrl?: Prisma.SortOrderInput | Prisma.SortOrder
   encryptedApiKey?: Prisma.SortOrder
   encryptionIv?: Prisma.SortOrder
+  encryptedHttpAuthCredentials?: Prisma.SortOrderInput | Prisma.SortOrder
+  httpAuthEncryptionIv?: Prisma.SortOrderInput | Prisma.SortOrder
   isDefault?: Prisma.SortOrder
   enabled?: Prisma.SortOrder
   storageGroupId?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -429,6 +451,8 @@ export type ServiceInstanceScalarWhereWithAggregatesInput = {
   externalUrl?: Prisma.StringNullableWithAggregatesFilter<"ServiceInstance"> | string | null
   encryptedApiKey?: Prisma.StringWithAggregatesFilter<"ServiceInstance"> | string
   encryptionIv?: Prisma.StringWithAggregatesFilter<"ServiceInstance"> | string
+  encryptedHttpAuthCredentials?: Prisma.StringNullableWithAggregatesFilter<"ServiceInstance"> | string | null
+  httpAuthEncryptionIv?: Prisma.StringNullableWithAggregatesFilter<"ServiceInstance"> | string | null
   isDefault?: Prisma.BoolWithAggregatesFilter<"ServiceInstance"> | boolean
   enabled?: Prisma.BoolWithAggregatesFilter<"ServiceInstance"> | boolean
   storageGroupId?: Prisma.StringNullableWithAggregatesFilter<"ServiceInstance"> | string | null
@@ -446,6 +470,8 @@ export type ServiceInstanceCreateInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -495,6 +521,8 @@ export type ServiceInstanceUncheckedCreateInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -542,6 +570,8 @@ export type ServiceInstanceUpdateInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -591,6 +621,8 @@ export type ServiceInstanceUncheckedUpdateInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -639,6 +671,8 @@ export type ServiceInstanceCreateManyInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -656,6 +690,8 @@ export type ServiceInstanceUpdateManyMutationInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -674,6 +710,8 @@ export type ServiceInstanceUncheckedUpdateManyInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -702,6 +740,8 @@ export type ServiceInstanceCountOrderByAggregateInput = {
   externalUrl?: Prisma.SortOrder
   encryptedApiKey?: Prisma.SortOrder
   encryptionIv?: Prisma.SortOrder
+  encryptedHttpAuthCredentials?: Prisma.SortOrder
+  httpAuthEncryptionIv?: Prisma.SortOrder
   isDefault?: Prisma.SortOrder
   enabled?: Prisma.SortOrder
   storageGroupId?: Prisma.SortOrder
@@ -720,6 +760,8 @@ export type ServiceInstanceMaxOrderByAggregateInput = {
   externalUrl?: Prisma.SortOrder
   encryptedApiKey?: Prisma.SortOrder
   encryptionIv?: Prisma.SortOrder
+  encryptedHttpAuthCredentials?: Prisma.SortOrder
+  httpAuthEncryptionIv?: Prisma.SortOrder
   isDefault?: Prisma.SortOrder
   enabled?: Prisma.SortOrder
   storageGroupId?: Prisma.SortOrder
@@ -738,6 +780,8 @@ export type ServiceInstanceMinOrderByAggregateInput = {
   externalUrl?: Prisma.SortOrder
   encryptedApiKey?: Prisma.SortOrder
   encryptionIv?: Prisma.SortOrder
+  encryptedHttpAuthCredentials?: Prisma.SortOrder
+  httpAuthEncryptionIv?: Prisma.SortOrder
   isDefault?: Prisma.SortOrder
   enabled?: Prisma.SortOrder
   storageGroupId?: Prisma.SortOrder
@@ -1235,6 +1279,8 @@ export type ServiceInstanceCreateWithoutUserInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -1282,6 +1328,8 @@ export type ServiceInstanceUncheckedCreateWithoutUserInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -1358,6 +1406,8 @@ export type ServiceInstanceScalarWhereInput = {
   externalUrl?: Prisma.StringNullableFilter<"ServiceInstance"> | string | null
   encryptedApiKey?: Prisma.StringFilter<"ServiceInstance"> | string
   encryptionIv?: Prisma.StringFilter<"ServiceInstance"> | string
+  encryptedHttpAuthCredentials?: Prisma.StringNullableFilter<"ServiceInstance"> | string | null
+  httpAuthEncryptionIv?: Prisma.StringNullableFilter<"ServiceInstance"> | string | null
   isDefault?: Prisma.BoolFilter<"ServiceInstance"> | boolean
   enabled?: Prisma.BoolFilter<"ServiceInstance"> | boolean
   storageGroupId?: Prisma.StringNullableFilter<"ServiceInstance"> | string | null
@@ -1375,6 +1425,8 @@ export type ServiceInstanceCreateWithoutInodeIndexCacheInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -1423,6 +1475,8 @@ export type ServiceInstanceUncheckedCreateWithoutInodeIndexCacheInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -1485,6 +1539,8 @@ export type ServiceInstanceUpdateWithoutInodeIndexCacheInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1533,6 +1589,8 @@ export type ServiceInstanceUncheckedUpdateWithoutInodeIndexCacheInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1579,6 +1637,8 @@ export type ServiceInstanceCreateWithoutTagsInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -1627,6 +1687,8 @@ export type ServiceInstanceUncheckedCreateWithoutTagsInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -1689,6 +1751,8 @@ export type ServiceInstanceUpdateWithoutTagsInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1737,6 +1801,8 @@ export type ServiceInstanceUncheckedUpdateWithoutTagsInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1783,6 +1849,8 @@ export type ServiceInstanceCreateWithoutTrashSyncHistoryInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -1831,6 +1899,8 @@ export type ServiceInstanceUncheckedCreateWithoutTrashSyncHistoryInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -1893,6 +1963,8 @@ export type ServiceInstanceUpdateWithoutTrashSyncHistoryInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1941,6 +2013,8 @@ export type ServiceInstanceUncheckedUpdateWithoutTrashSyncHistoryInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1987,6 +2061,8 @@ export type ServiceInstanceCreateWithoutTrashBackupsInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -2035,6 +2111,8 @@ export type ServiceInstanceUncheckedCreateWithoutTrashBackupsInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -2097,6 +2175,8 @@ export type ServiceInstanceUpdateWithoutTrashBackupsInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2145,6 +2225,8 @@ export type ServiceInstanceUncheckedUpdateWithoutTrashBackupsInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2191,6 +2273,8 @@ export type ServiceInstanceCreateWithoutTrashSchedulesInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -2239,6 +2323,8 @@ export type ServiceInstanceUncheckedCreateWithoutTrashSchedulesInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -2301,6 +2387,8 @@ export type ServiceInstanceUpdateWithoutTrashSchedulesInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2349,6 +2437,8 @@ export type ServiceInstanceUncheckedUpdateWithoutTrashSchedulesInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2395,6 +2485,8 @@ export type ServiceInstanceCreateWithoutQualityProfileMappingsInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -2443,6 +2535,8 @@ export type ServiceInstanceUncheckedCreateWithoutQualityProfileMappingsInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -2505,6 +2599,8 @@ export type ServiceInstanceUpdateWithoutQualityProfileMappingsInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2553,6 +2649,8 @@ export type ServiceInstanceUncheckedUpdateWithoutQualityProfileMappingsInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2599,6 +2697,8 @@ export type ServiceInstanceCreateWithoutQualityProfileOverridesInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -2647,6 +2747,8 @@ export type ServiceInstanceUncheckedCreateWithoutQualityProfileOverridesInput = 
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -2709,6 +2811,8 @@ export type ServiceInstanceUpdateWithoutQualityProfileOverridesInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2757,6 +2861,8 @@ export type ServiceInstanceUncheckedUpdateWithoutQualityProfileOverridesInput = 
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2803,6 +2909,8 @@ export type ServiceInstanceCreateWithoutDeploymentHistoryInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -2851,6 +2959,8 @@ export type ServiceInstanceUncheckedCreateWithoutDeploymentHistoryInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -2913,6 +3023,8 @@ export type ServiceInstanceUpdateWithoutDeploymentHistoryInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2961,6 +3073,8 @@ export type ServiceInstanceUncheckedUpdateWithoutDeploymentHistoryInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3007,6 +3121,8 @@ export type ServiceInstanceCreateWithoutStandaloneCFDeploymentsInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -3055,6 +3171,8 @@ export type ServiceInstanceUncheckedCreateWithoutStandaloneCFDeploymentsInput = 
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -3117,6 +3235,8 @@ export type ServiceInstanceUpdateWithoutStandaloneCFDeploymentsInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3165,6 +3285,8 @@ export type ServiceInstanceUncheckedUpdateWithoutStandaloneCFDeploymentsInput = 
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3211,6 +3333,8 @@ export type ServiceInstanceCreateWithoutQualitySizeMappingInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -3259,6 +3383,8 @@ export type ServiceInstanceUncheckedCreateWithoutQualitySizeMappingInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -3321,6 +3447,8 @@ export type ServiceInstanceUpdateWithoutQualitySizeMappingInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3369,6 +3497,8 @@ export type ServiceInstanceUncheckedUpdateWithoutQualitySizeMappingInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3415,6 +3545,8 @@ export type ServiceInstanceCreateWithoutHuntConfigInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -3463,6 +3595,8 @@ export type ServiceInstanceUncheckedCreateWithoutHuntConfigInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -3525,6 +3659,8 @@ export type ServiceInstanceUpdateWithoutHuntConfigInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3573,6 +3709,8 @@ export type ServiceInstanceUncheckedUpdateWithoutHuntConfigInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3619,6 +3757,8 @@ export type ServiceInstanceCreateWithoutHuntLogsInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -3667,6 +3807,8 @@ export type ServiceInstanceUncheckedCreateWithoutHuntLogsInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -3729,6 +3871,8 @@ export type ServiceInstanceUpdateWithoutHuntLogsInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3777,6 +3921,8 @@ export type ServiceInstanceUncheckedUpdateWithoutHuntLogsInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3823,6 +3969,8 @@ export type ServiceInstanceCreateWithoutLibraryCacheInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -3871,6 +4019,8 @@ export type ServiceInstanceUncheckedCreateWithoutLibraryCacheInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -3933,6 +4083,8 @@ export type ServiceInstanceUpdateWithoutLibraryCacheInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -3981,6 +4133,8 @@ export type ServiceInstanceUncheckedUpdateWithoutLibraryCacheInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -4027,6 +4181,8 @@ export type ServiceInstanceCreateWithoutEpisodeFileCacheInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -4075,6 +4231,8 @@ export type ServiceInstanceUncheckedCreateWithoutEpisodeFileCacheInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -4137,6 +4295,8 @@ export type ServiceInstanceUpdateWithoutEpisodeFileCacheInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -4185,6 +4345,8 @@ export type ServiceInstanceUncheckedUpdateWithoutEpisodeFileCacheInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -4231,6 +4393,8 @@ export type ServiceInstanceCreateWithoutLibrarySyncStatusInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -4279,6 +4443,8 @@ export type ServiceInstanceUncheckedCreateWithoutLibrarySyncStatusInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -4341,6 +4507,8 @@ export type ServiceInstanceUpdateWithoutLibrarySyncStatusInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -4389,6 +4557,8 @@ export type ServiceInstanceUncheckedUpdateWithoutLibrarySyncStatusInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -4435,6 +4605,8 @@ export type ServiceInstanceCreateWithoutQueueCleanerConfigInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -4483,6 +4655,8 @@ export type ServiceInstanceUncheckedCreateWithoutQueueCleanerConfigInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -4545,6 +4719,8 @@ export type ServiceInstanceUpdateWithoutQueueCleanerConfigInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -4593,6 +4769,8 @@ export type ServiceInstanceUncheckedUpdateWithoutQueueCleanerConfigInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -4639,6 +4817,8 @@ export type ServiceInstanceCreateWithoutQueueCleanerLogsInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -4687,6 +4867,8 @@ export type ServiceInstanceUncheckedCreateWithoutQueueCleanerLogsInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -4749,6 +4931,8 @@ export type ServiceInstanceUpdateWithoutQueueCleanerLogsInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -4797,6 +4981,8 @@ export type ServiceInstanceUncheckedUpdateWithoutQueueCleanerLogsInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -4843,6 +5029,8 @@ export type ServiceInstanceCreateWithoutQueueCleanerStrikesInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -4891,6 +5079,8 @@ export type ServiceInstanceUncheckedCreateWithoutQueueCleanerStrikesInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -4953,6 +5143,8 @@ export type ServiceInstanceUpdateWithoutQueueCleanerStrikesInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -5001,6 +5193,8 @@ export type ServiceInstanceUncheckedUpdateWithoutQueueCleanerStrikesInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -5047,6 +5241,8 @@ export type ServiceInstanceCreateWithoutPlexCachesInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -5095,6 +5291,8 @@ export type ServiceInstanceUncheckedCreateWithoutPlexCachesInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -5157,6 +5355,8 @@ export type ServiceInstanceUpdateWithoutPlexCachesInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -5205,6 +5405,8 @@ export type ServiceInstanceUncheckedUpdateWithoutPlexCachesInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -5251,6 +5453,8 @@ export type ServiceInstanceCreateWithoutPlexEpisodeCachesInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -5299,6 +5503,8 @@ export type ServiceInstanceUncheckedCreateWithoutPlexEpisodeCachesInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -5361,6 +5567,8 @@ export type ServiceInstanceUpdateWithoutPlexEpisodeCachesInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -5409,6 +5617,8 @@ export type ServiceInstanceUncheckedUpdateWithoutPlexEpisodeCachesInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -5455,6 +5665,8 @@ export type ServiceInstanceCreateWithoutJellyfinCachesInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -5503,6 +5715,8 @@ export type ServiceInstanceUncheckedCreateWithoutJellyfinCachesInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -5565,6 +5779,8 @@ export type ServiceInstanceUpdateWithoutJellyfinCachesInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -5613,6 +5829,8 @@ export type ServiceInstanceUncheckedUpdateWithoutJellyfinCachesInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -5659,6 +5877,8 @@ export type ServiceInstanceCreateWithoutJellyfinEpisodeCachesInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -5707,6 +5927,8 @@ export type ServiceInstanceUncheckedCreateWithoutJellyfinEpisodeCachesInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -5769,6 +5991,8 @@ export type ServiceInstanceUpdateWithoutJellyfinEpisodeCachesInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -5817,6 +6041,8 @@ export type ServiceInstanceUncheckedUpdateWithoutJellyfinEpisodeCachesInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -5863,6 +6089,8 @@ export type ServiceInstanceCreateWithoutTautulliCachesInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -5911,6 +6139,8 @@ export type ServiceInstanceUncheckedCreateWithoutTautulliCachesInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -5973,6 +6203,8 @@ export type ServiceInstanceUpdateWithoutTautulliCachesInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -6021,6 +6253,8 @@ export type ServiceInstanceUncheckedUpdateWithoutTautulliCachesInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -6067,6 +6301,8 @@ export type ServiceInstanceCreateWithoutCacheRefreshStatusesInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -6115,6 +6351,8 @@ export type ServiceInstanceUncheckedCreateWithoutCacheRefreshStatusesInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -6177,6 +6415,8 @@ export type ServiceInstanceUpdateWithoutCacheRefreshStatusesInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -6225,6 +6465,8 @@ export type ServiceInstanceUncheckedUpdateWithoutCacheRefreshStatusesInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -6271,6 +6513,8 @@ export type ServiceInstanceCreateWithoutSessionSnapshotsInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -6319,6 +6563,8 @@ export type ServiceInstanceUncheckedCreateWithoutSessionSnapshotsInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -6381,6 +6627,8 @@ export type ServiceInstanceUpdateWithoutSessionSnapshotsInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -6429,6 +6677,8 @@ export type ServiceInstanceUncheckedUpdateWithoutSessionSnapshotsInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -6475,6 +6725,8 @@ export type ServiceInstanceCreateWithoutNamingConfigInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -6523,6 +6775,8 @@ export type ServiceInstanceUncheckedCreateWithoutNamingConfigInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -6585,6 +6839,8 @@ export type ServiceInstanceUpdateWithoutNamingConfigInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -6633,6 +6889,8 @@ export type ServiceInstanceUncheckedUpdateWithoutNamingConfigInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -6679,6 +6937,8 @@ export type ServiceInstanceCreateWithoutNamingDeployHistoryInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -6727,6 +6987,8 @@ export type ServiceInstanceUncheckedCreateWithoutNamingDeployHistoryInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -6789,6 +7051,8 @@ export type ServiceInstanceUpdateWithoutNamingDeployHistoryInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -6837,6 +7101,8 @@ export type ServiceInstanceUncheckedUpdateWithoutNamingDeployHistoryInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -6883,6 +7149,8 @@ export type ServiceInstanceCreateWithoutSeerrActionLogsInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -6931,6 +7199,8 @@ export type ServiceInstanceUncheckedCreateWithoutSeerrActionLogsInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -6993,6 +7263,8 @@ export type ServiceInstanceUpdateWithoutSeerrActionLogsInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -7041,6 +7313,8 @@ export type ServiceInstanceUncheckedUpdateWithoutSeerrActionLogsInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -7087,6 +7361,8 @@ export type ServiceInstanceCreateWithoutQuiActionLogsInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -7135,6 +7411,8 @@ export type ServiceInstanceUncheckedCreateWithoutQuiActionLogsInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -7197,6 +7475,8 @@ export type ServiceInstanceUpdateWithoutQuiActionLogsInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -7245,6 +7525,8 @@ export type ServiceInstanceUncheckedUpdateWithoutQuiActionLogsInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -7291,6 +7573,8 @@ export type ServiceInstanceCreateWithoutQuiEventLogsInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -7339,6 +7623,8 @@ export type ServiceInstanceUncheckedCreateWithoutQuiEventLogsInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -7401,6 +7687,8 @@ export type ServiceInstanceUpdateWithoutQuiEventLogsInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -7449,6 +7737,8 @@ export type ServiceInstanceUncheckedUpdateWithoutQuiEventLogsInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -7495,6 +7785,8 @@ export type ServiceInstanceCreateManyUserInput = {
   externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: string | null
@@ -7512,6 +7804,8 @@ export type ServiceInstanceUpdateWithoutUserInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -7559,6 +7853,8 @@ export type ServiceInstanceUncheckedUpdateWithoutUserInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -7606,6 +7902,8 @@ export type ServiceInstanceUncheckedUpdateManyWithoutUserInput = {
   externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -7862,6 +8160,8 @@ export type ServiceInstanceSelect<ExtArgs extends runtime.Types.Extensions.Inter
   externalUrl?: boolean
   encryptedApiKey?: boolean
   encryptionIv?: boolean
+  encryptedHttpAuthCredentials?: boolean
+  httpAuthEncryptionIv?: boolean
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: boolean
@@ -7912,6 +8212,8 @@ export type ServiceInstanceSelectCreateManyAndReturn<ExtArgs extends runtime.Typ
   externalUrl?: boolean
   encryptedApiKey?: boolean
   encryptionIv?: boolean
+  encryptedHttpAuthCredentials?: boolean
+  httpAuthEncryptionIv?: boolean
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: boolean
@@ -7931,6 +8233,8 @@ export type ServiceInstanceSelectUpdateManyAndReturn<ExtArgs extends runtime.Typ
   externalUrl?: boolean
   encryptedApiKey?: boolean
   encryptionIv?: boolean
+  encryptedHttpAuthCredentials?: boolean
+  httpAuthEncryptionIv?: boolean
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: boolean
@@ -7950,6 +8254,8 @@ export type ServiceInstanceSelectScalar = {
   externalUrl?: boolean
   encryptedApiKey?: boolean
   encryptionIv?: boolean
+  encryptedHttpAuthCredentials?: boolean
+  httpAuthEncryptionIv?: boolean
   isDefault?: boolean
   enabled?: boolean
   storageGroupId?: boolean
@@ -7959,7 +8265,7 @@ export type ServiceInstanceSelectScalar = {
   updatedAt?: boolean
 }
 
-export type ServiceInstanceOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "service" | "label" | "baseUrl" | "externalUrl" | "encryptedApiKey" | "encryptionIv" | "isDefault" | "enabled" | "storageGroupId" | "hasLocalFilesystemAccess" | "pathPrefix" | "createdAt" | "updatedAt", ExtArgs["result"]["serviceInstance"]>
+export type ServiceInstanceOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "service" | "label" | "baseUrl" | "externalUrl" | "encryptedApiKey" | "encryptionIv" | "encryptedHttpAuthCredentials" | "httpAuthEncryptionIv" | "isDefault" | "enabled" | "storageGroupId" | "hasLocalFilesystemAccess" | "pathPrefix" | "createdAt" | "updatedAt", ExtArgs["result"]["serviceInstance"]>
 export type ServiceInstanceInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
   tags?: boolean | Prisma.ServiceInstance$tagsArgs<ExtArgs>
@@ -8045,6 +8351,8 @@ export type $ServiceInstancePayload<ExtArgs extends runtime.Types.Extensions.Int
     externalUrl: string | null
     encryptedApiKey: string
     encryptionIv: string
+    encryptedHttpAuthCredentials: string | null
+    httpAuthEncryptionIv: string | null
     isDefault: boolean
     enabled: boolean
     storageGroupId: string | null
@@ -8514,6 +8822,8 @@ export interface ServiceInstanceFieldRefs {
   readonly externalUrl: Prisma.FieldRef<"ServiceInstance", 'String'>
   readonly encryptedApiKey: Prisma.FieldRef<"ServiceInstance", 'String'>
   readonly encryptionIv: Prisma.FieldRef<"ServiceInstance", 'String'>
+  readonly encryptedHttpAuthCredentials: Prisma.FieldRef<"ServiceInstance", 'String'>
+  readonly httpAuthEncryptionIv: Prisma.FieldRef<"ServiceInstance", 'String'>
   readonly isDefault: Prisma.FieldRef<"ServiceInstance", 'Boolean'>
   readonly enabled: Prisma.FieldRef<"ServiceInstance", 'Boolean'>
   readonly storageGroupId: Prisma.FieldRef<"ServiceInstance", 'String'>
