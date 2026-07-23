@@ -7,9 +7,8 @@
  * collection plays both roles.
  */
 
-import type { Encryptor } from "../../auth/encryption.js";
-import { JellyfinClient } from "../../jellyfin/jellyfin-client.js";
-import type { ServiceInstance, ServiceType } from "../../prisma.js";
+import { createJellyfinClient, type JellyfinClient } from "../../jellyfin/jellyfin-client.js";
+import type { ServiceType } from "../../prisma.js";
 import type {
 	DestWriteResult,
 	DestWriter,
@@ -93,18 +92,6 @@ function createWriter(config: JellyfinWriterConfig): DestWriter {
 			return { matchesFound: matched.length, labelsApplied, failures };
 		},
 	};
-}
-
-function createJellyfinClient(
-	encryptor: Encryptor,
-	instance: ServiceInstance,
-	log: DestWriterOpts["log"],
-): JellyfinClient {
-	const apiKey = encryptor.decrypt({
-		value: instance.encryptedApiKey,
-		iv: instance.encryptionIv,
-	});
-	return new JellyfinClient(instance.baseUrl, apiKey, log);
 }
 
 async function pickUserId(client: JellyfinClient): Promise<string> {

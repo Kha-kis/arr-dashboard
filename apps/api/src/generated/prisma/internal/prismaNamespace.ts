@@ -5226,6 +5226,8 @@ export const ServiceInstanceScalarFieldEnum = {
   externalUrl: 'externalUrl',
   encryptedApiKey: 'encryptedApiKey',
   encryptionIv: 'encryptionIv',
+  encryptedHttpAuthCredentials: 'encryptedHttpAuthCredentials',
+  httpAuthEncryptionIv: 'httpAuthEncryptionIv',
   isDefault: 'isDefault',
   enabled: 'enabled',
   storageGroupId: 'storageGroupId',

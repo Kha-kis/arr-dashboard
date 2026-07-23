@@ -116,6 +116,31 @@ describe("ServiceOnboarding", () => {
 		expect(mocks.createService).not.toHaveBeenCalled();
 	});
 
+	it("guards incompatible HTTP auth and warns when Basic credentials use plain HTTP", () => {
+		render(<ServiceOnboarding />);
+		fireEvent.click(screen.getByRole("button", { name: "Configure" }));
+
+		const httpAuth = screen.getByRole("checkbox", {
+			name: "Reverse proxy HTTP Basic Auth",
+		});
+		expect(httpAuth).toBeDisabled();
+		expect(
+			screen.getByText(
+				"Jellyfin cannot combine Basic Auth with its API authentication. Configure a proxy bypass for arr-dashboard.",
+			),
+		).toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: "sonarr" }));
+		expect(httpAuth).toBeEnabled();
+		fireEvent.click(httpAuth);
+		fireEvent.change(screen.getByLabelText("Base URL"), {
+			target: { value: "http://sonarr.internal:8989" },
+		});
+		expect(
+			screen.getByText(/HTTP Basic credentials are readable on the network/),
+		).toBeInTheDocument();
+	});
+
 	it("continues to the Console walkthrough without requiring a service", () => {
 		render(<ServiceOnboarding />);
 		fireEvent.click(screen.getByRole("button", { name: "Continue without services" }));

@@ -10,6 +10,9 @@ export type ServiceFormState = {
 	baseUrl: string;
 	externalUrl: string;
 	apiKey: string;
+	httpAuthEnabled: boolean;
+	httpAuthUsername: string;
+	httpAuthPassword: string;
 	service: ServiceType;
 	enabled: boolean;
 	isDefault: boolean;
@@ -30,6 +33,17 @@ export type ServiceFormState = {
 	pathPrefix: string;
 };
 
+export const supportsHttpBasicAuth = (service: ServiceType): boolean =>
+	service !== "tracearr" && service !== "jellyfin";
+
+export const usesPlainHttp = (rawUrl: string): boolean => {
+	try {
+		return new URL(rawUrl).protocol === "http:";
+	} catch {
+		return false;
+	}
+};
+
 /**
  * Returns default form state for a given service type
  */
@@ -38,6 +52,9 @@ export const defaultFormState = (service: ServiceType): ServiceFormState => ({
 	baseUrl: "",
 	externalUrl: "",
 	apiKey: "",
+	httpAuthEnabled: false,
+	httpAuthUsername: "",
+	httpAuthPassword: "",
 	service,
 	enabled: true,
 	isDefault: false,

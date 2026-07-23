@@ -153,6 +153,8 @@ export class InsightsDigestScheduler {
 				baseUrl: true,
 				encryptedApiKey: true,
 				encryptionIv: true,
+				encryptedHttpAuthCredentials: true,
+				httpAuthEncryptionIv: true,
 				service: true,
 				label: true,
 			},

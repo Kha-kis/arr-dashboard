@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { arrClientPlugin } from "../plugins/arr-client.js";
 import deploymentExecutorPlugin from "../plugins/deployment-executor.js";
 import heapMonitorPlugin from "../plugins/heap-monitor.js";
+import httpAuthMigrationPlugin from "../plugins/http-auth-migration.js";
 import lifecyclePlugin from "../plugins/lifecycle.js";
 import notificationServicePlugin from "../plugins/notification-service.js";
 import { prismaPlugin } from "../plugins/prisma.js";
@@ -22,6 +23,7 @@ import tautulliMigrationPlugin from "../plugins/tautulli-migration.js";
  *  - prisma            → `app.prisma`
  *  - runtimeLease      → production single-API enforcement
  *  - security          → `app.encryptor`, `app.sessionService`
+ *  - httpAuthMigration → moves legacy URL credentials into encrypted storage
  *  - arrClient         → `createInstanceFetcher` helpers for ARR services
  *  - seerr circuit     → request breaker for Seerr outbound calls
  *  - seerr cache       → shared response cache for Seerr requests
@@ -36,6 +38,7 @@ export function registerInfrastructure(app: FastifyInstance): void {
 	app.register(prismaPlugin);
 	app.register(runtimeLeasePlugin);
 	app.register(securityPlugin);
+	app.register(httpAuthMigrationPlugin);
 	app.register(arrClientPlugin);
 	app.register(seerrCircuitBreakerPlugin);
 	app.register(seerrCachePlugin);

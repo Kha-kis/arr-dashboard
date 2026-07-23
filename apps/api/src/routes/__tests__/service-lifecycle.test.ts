@@ -149,7 +149,14 @@ function createEncryptorStub() {
 	};
 }
 
-const FORBIDDEN_SECRET_FIELDS = ["encryptedApiKey", "encryptionIv", "apiKey"] as const;
+const FORBIDDEN_SECRET_FIELDS = [
+	"encryptedApiKey",
+	"encryptionIv",
+	"apiKey",
+	"encryptedHttpAuthCredentials",
+	"httpAuthEncryptionIv",
+	"httpAuth",
+] as const;
 const FORBIDDEN_SECRET_VALUES = [
 	PLAINTEXT_KEY_V1,
 	PLAINTEXT_KEY_V2,
@@ -206,6 +213,84 @@ describe("Service instance lifecycle", () => {
 
 	afterEach(async () => {
 		await app?.close();
+	});
+
+	it("encrypts HTTP auth credentials and exposes only a configured flag", async () => {
+		const response = await inject("POST", "/services", {
+			body: {
+				label: "Protected Sonarr",
+				baseUrl: "https://sonarr.example.test",
+				apiKey: PLAINTEXT_KEY_V1,
+				service: "sonarr",
+				httpAuth: { username: "proxy-user", password: "proxy-pass" },
+			},
+		});
+		expect(response.statusCode).toBe(201);
+		const service = JSON.parse(response.payload).service;
+		expect(service.hasHttpAuth).toBe(true);
+		expect(response.payload).not.toContain("proxy-user");
+		expect(response.payload).not.toContain("proxy-pass");
+		const stored = prisma._instances.get(service.id);
+		expect(stored.encryptedHttpAuthCredentials).toContain("enc:");
+		expect(stored.httpAuthEncryptionIv).toBe("iv");
+		expect(encryptor.encrypt).toHaveBeenCalledWith(
+			JSON.stringify({ v: 1, username: "proxy-user", password: "proxy-pass" }),
+		);
+	});
+
+	it("preserves omitted HTTP auth credentials and clears them only when requested", async () => {
+		const create = await inject("POST", "/services", {
+			body: {
+				label: "Protected Sonarr",
+				baseUrl: "https://sonarr.example.test",
+				apiKey: PLAINTEXT_KEY_V1,
+				service: "sonarr",
+				httpAuth: { username: "proxy-user", password: "proxy-pass" },
+			},
+		});
+		const id = JSON.parse(create.payload).service.id;
+		const originalCiphertext = prisma._instances.get(id).encryptedHttpAuthCredentials;
+
+		const preserve = await inject("PUT", `/services/${id}`, {
+			body: { label: "Still Protected" },
+		});
+		expect(preserve.statusCode).toBe(200);
+		expect(JSON.parse(preserve.payload).service.hasHttpAuth).toBe(true);
+		expect(prisma._instances.get(id).encryptedHttpAuthCredentials).toBe(originalCiphertext);
+
+		const clear = await inject("PUT", `/services/${id}`, {
+			body: { httpAuth: null },
+		});
+		expect(clear.statusCode).toBe(200);
+		expect(JSON.parse(clear.payload).service.hasHttpAuth).toBe(false);
+		expect(prisma._instances.get(id).encryptedHttpAuthCredentials).toBeNull();
+		expect(prisma._instances.get(id).httpAuthEncryptionIv).toBeNull();
+	});
+
+	it("tests staged HTTP auth with the stored API key without persisting it", async () => {
+		const create = await inject("POST", "/services", {
+			body: {
+				label: "Sonarr",
+				baseUrl: "https://sonarr.example.test",
+				apiKey: PLAINTEXT_KEY_V1,
+				service: "sonarr",
+			},
+		});
+		const id = JSON.parse(create.payload).service.id;
+		mockTestConnection.mockResolvedValueOnce({ success: true });
+
+		const response = await inject("POST", `/services/${id}/test`, {
+			body: { httpAuth: { username: "new-proxy", password: "new-password" } },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(mockTestConnection).toHaveBeenCalledWith(
+			"https://sonarr.example.test",
+			PLAINTEXT_KEY_V1,
+			"sonarr",
+			{ username: "new-proxy", password: "new-password" },
+		);
+		expect(prisma._instances.get(id).encryptedHttpAuthCredentials).toBeUndefined();
 	});
 
 	it("walks create → list → test(success) → test(failure) → update → delete with correct side effects", async () => {

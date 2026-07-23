@@ -9,6 +9,7 @@ import type { FastifyBaseLogger } from "fastify";
 import type { z } from "zod";
 import type { ClientInstanceData } from "../arr/client-factory.js";
 import type { Encryptor } from "../auth/encryption.js";
+import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 import { parseUpstreamOrThrow } from "../validation/parse-upstream.js";
 import {
 	jellyfinEpisodesResponseSchema,
@@ -100,12 +101,20 @@ export class JellyfinClient {
 	private readonly apiKey: string;
 	private readonly log: FastifyBaseLogger;
 	private readonly timeout: number;
+	private readonly httpAuthHeaders: Record<string, string>;
 
-	constructor(baseUrl: string, apiKey: string, log: FastifyBaseLogger, timeout = DEFAULT_TIMEOUT) {
+	constructor(
+		baseUrl: string,
+		apiKey: string,
+		log: FastifyBaseLogger,
+		timeout = DEFAULT_TIMEOUT,
+		httpAuthHeaders: Record<string, string> = {},
+	) {
 		this.baseUrl = baseUrl.replace(/\/$/, "");
 		this.apiKey = apiKey;
 		this.log = log;
 		this.timeout = timeout;
+		this.httpAuthHeaders = httpAuthHeaders;
 	}
 
 	/**
@@ -350,9 +359,17 @@ export class JellyfinClient {
 	// ========================================================================
 
 	private authHeaders(): Record<string, string> {
+		if (Object.keys(this.httpAuthHeaders).length === 0) {
+			return {
+				Accept: "application/json",
+				Authorization: `MediaBrowser Token="${this.apiKey}", Client="${CLIENT_NAME}", Device="Server", DeviceId="${DEVICE_ID}", Version="1.0"`,
+			};
+		}
 		return {
 			Accept: "application/json",
-			Authorization: `MediaBrowser Token="${this.apiKey}", Client="${CLIENT_NAME}", Device="Server", DeviceId="${DEVICE_ID}", Version="1.0"`,
+			"X-Emby-Token": this.apiKey,
+			"X-Emby-Authorization": `MediaBrowser Token="${this.apiKey}", Client="${CLIENT_NAME}", Device="Server", DeviceId="${DEVICE_ID}", Version="1.0"`,
+			...this.httpAuthHeaders,
 		};
 	}
 
@@ -368,7 +385,7 @@ export class JellyfinClient {
 		const url = `${this.baseUrl}${path}`;
 
 		const headers: Record<string, string> = options?.skipAuth
-			? { Accept: "application/json" }
+			? { Accept: "application/json", ...this.httpAuthHeaders }
 			: this.authHeaders();
 
 		const fetchOptions: RequestInit = {
@@ -432,7 +449,13 @@ export function createJellyfinClient(
 		value: instance.encryptedApiKey,
 		iv: instance.encryptionIv,
 	});
-	return new JellyfinClient(instance.baseUrl, apiKey, log);
+	const httpAuthHeaders = getStoredHttpAuthHeaders(encryptor, instance);
+	if (instance.service === "JELLYFIN" && Object.keys(httpAuthHeaders).length > 0) {
+		throw new Error(
+			"HTTP Basic Auth cannot be combined with modern Jellyfin authentication; configure a proxy bypass",
+		);
+	}
+	return new JellyfinClient(instance.baseUrl, apiKey, log, DEFAULT_TIMEOUT, httpAuthHeaders);
 }
 
 // ============================================================================
