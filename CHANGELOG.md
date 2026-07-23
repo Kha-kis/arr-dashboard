@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated direct and transitive dependencies to patched releases for the
   current Next.js, Sharp, Prisma tooling, Hono, `fast-uri`, `brace-expansion`,
   and Lodash advisories.
+- Pinned all third-party GitHub Actions to reviewed commit SHAs and hardened
+  dependency updates with release-age, provenance, and registry-source policy.
 
 ## [2.21.0] - 2026-06-09 — Media-only Storage & Auth Resilience
 
