@@ -4,6 +4,7 @@ import {
 	AlertTriangle,
 	ArrowRight,
 	Clock,
+	FileWarning,
 	FileText,
 	Loader2,
 	Pause,
@@ -21,7 +22,7 @@ import {
 	TrendingUp,
 	XCircle,
 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PremiumEmptyState, PremiumSection, ServiceBadge } from "../../../components/layout";
 import { Button, toast } from "../../../components/ui";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
@@ -291,6 +292,70 @@ const UnconfiguredInstanceCard = ({
 
 // === Helpers ===
 
+function extensionsToText(value: string | null | undefined): string {
+	if (!value) return "";
+	try {
+		const parsed: unknown = JSON.parse(value);
+		return Array.isArray(parsed) && parsed.every((entry) => typeof entry === "string")
+			? parsed.join("\n")
+			: value;
+	} catch {
+		return value;
+	}
+}
+
+const FileExtensionAllowlistEditor = ({
+	configId,
+	value,
+	onChange,
+}: {
+	configId: string;
+	value: string | null | undefined;
+	onChange: (value: string | null) => void;
+}) => {
+	const [text, setText] = useState(() => extensionsToText(value));
+	const lastEmittedValue = useRef<string | null | undefined>(value);
+
+	useEffect(() => {
+		if (value !== lastEmittedValue.current) {
+			setText(extensionsToText(value));
+			lastEmittedValue.current = value;
+		}
+	}, [value]);
+
+	return (
+		<div>
+			<label
+				htmlFor={`allowed-file-extensions-${configId}`}
+				className="mb-1.5 block text-xs font-medium text-foreground"
+			>
+				Allowed final extensions (one per line)
+			</label>
+			<textarea
+				id={`allowed-file-extensions-${configId}`}
+				className="min-h-[96px] w-full resize-y rounded-lg border border-border/50 bg-card/50 px-3 py-2 font-mono text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
+				placeholder={"mkv\nmp4\nsrt\nnfo"}
+				value={text}
+				onChange={(event) => {
+					const nextText = event.target.value;
+					setText(nextText);
+					const extensions = nextText
+						.split("\n")
+						.map((extension) => extension.trim())
+						.filter(Boolean);
+					const serialized = extensions.length > 0 ? JSON.stringify(extensions) : null;
+					lastEmittedValue.current = serialized;
+					onChange(serialized);
+				}}
+			/>
+			<p className="mt-1 text-[10px] text-muted-foreground">
+				Exact and case-insensitive; a leading dot is optional. The final suffix wins, so
+				“video.mkv.exe” is an EXE. Extensionless files and dotfiles are rejected.
+			</p>
+		</div>
+	);
+};
+
 /** Derives form state from a server config object. Used for both initialization and reset. */
 function configToFormData(config: QueueCleanerConfigWithInstance): QueueCleanerConfigUpdate {
 	return {
@@ -304,6 +369,8 @@ function configToFormData(config: QueueCleanerConfigWithInstance): QueueCleanerC
 		slowGracePeriodMins: config.slowGracePeriodMins,
 		errorPatternsEnabled: config.errorPatternsEnabled,
 		errorPatterns: config.errorPatterns,
+		fileExtensionAllowlistEnabled: config.fileExtensionAllowlistEnabled,
+		allowedFileExtensions: config.allowedFileExtensions,
 		strikeSystemEnabled: config.strikeSystemEnabled,
 		maxStrikes: config.maxStrikes,
 		strikeDecayHours: config.strikeDecayHours,
@@ -365,7 +432,8 @@ const InstanceConfigCard = ({
 
 	const handleSave = async () => {
 		try {
-			await updateConfig(config.instanceId, formData);
+			const updatedConfig = await updateConfig(config.instanceId, formData);
+			setFormData(configToFormData(updatedConfig));
 			setIsDirty(false);
 			toast.success(
 				`Config updated for ${incognitoMode ? getLinuxInstanceName(config.instanceName) : config.instanceName}`,
@@ -537,6 +605,45 @@ const InstanceConfigCard = ({
 						patterns={formData.whitelistPatterns}
 						onChange={(v) => updateField("whitelistPatterns", v)}
 					/>
+				</RuleSection>
+
+				{/* Rule: Torrent payload file-extension allowlist */}
+				<RuleSection
+					icon={FileWarning}
+					title="Torrent File Allowlist"
+					description="Delete torrents containing any file type you did not allow"
+					enabled={formData.fileExtensionAllowlistEnabled ?? false}
+					onToggle={(v) => updateField("fileExtensionAllowlistEnabled", v)}
+				>
+					<div
+						className="rounded-lg border p-3 text-xs"
+						style={{
+							backgroundColor: SEMANTIC_COLORS.error.bg,
+							borderColor: SEMANTIC_COLORS.error.border,
+						}}
+					>
+						<p className="font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
+							Whole-torrent deletion
+						</p>
+						<p className="mt-1 text-muted-foreground">
+							If even one file is outside this allowlist, Queue Cleaner removes the entire torrent
+							and its payload data through *arr. This overrides “Remove from download client” and
+							“Change category instead of delete” for that match. Dry-run, strikes, queue age,
+							whitelists, filters, qui-aware mode, last-seed protection, and per-run limits still
+							apply.
+						</p>
+					</div>
+					<FileExtensionAllowlistEditor
+						configId={config.id}
+						value={formData.allowedFileExtensions}
+						onChange={(value) => updateField("allowedFileExtensions", value)}
+					/>
+					<div className="rounded-lg border border-border/20 bg-card/20 p-2.5 text-[11px] text-muted-foreground">
+						Requires an enabled qui instance. Every manifest entry is checked, including files set
+						to “do not download.” If qui, the torrent hash, or file metadata is unavailable,
+						deletion is deferred and retried later. This polling rule only covers torrents still
+						visible in the *arr queue; it is not a malware scanner or pre-download block.
+					</div>
 				</RuleSection>
 
 				{/* Rule: Stalled */}
