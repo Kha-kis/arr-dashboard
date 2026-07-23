@@ -7,13 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.23.0] - 2026-07-24 — Torrent payload safeguards
+
+This release adds an opt-in Queue Cleaner policy for rejecting torrents whose
+file manifests contain unexpected extensions, and updates PostCSS past a
+source-map information-disclosure advisory.
+
 ### Added
 
-- Queue Cleaner can enforce an opt-in, exact file-extension allowlist for
-  torrents inspected through qui. A mixed torrent with any unexpected file
-  type is removed in full through *arr, including its download-client payload;
-  missing or unavailable manifests block cleanup for that item and are retried
-  later (#565).
+- **Queue Cleaner torrent file allowlist** — Per-instance configurations can
+  enforce an exact, case-insensitive final-extension allowlist using manifests
+  inspected through qui. A mixed torrent with even one unexpected file,
+  including a file set to “do not download,” is rejected as a whole and its
+  payload is removed through Sonarr or Radarr when the existing safety gates
+  permit cleanup. Missing hashes, qui connectivity, torrent matches, or file
+  metadata fail closed and defer cleanup for that item (#565, #612).
+
+### Security
+
+- **PostCSS source-map handling** — Updated the transitive PostCSS override from
+  8.5.10 to 8.5.20, resolving GHSA-6g55-p6wh-862q and converging the web,
+  Next.js, Vite, and tsup dependency paths on the patched version (#611).
 
 ## [2.22.0] - 2026-07-23 — Authenticated services & hardened maintenance
 
