@@ -23,8 +23,10 @@
 
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { NotificationDispatcher } from "../../notifications/notification-dispatcher.js";
+import { NotificationService } from "../../notifications/notification-service.js";
 
-import { LibrarySyncScheduler } from "../sync-scheduler.js";
+import { LibrarySyncScheduler, sendNewDownloadNotification } from "../sync-scheduler.js";
 
 // Match the constants in sync-scheduler.ts. If those change, these test
 // thresholds should too — but keep them in sync intentionally so a change
@@ -239,6 +241,96 @@ describe("LibrarySyncScheduler.activeSyncItemCounts lifecycle", () => {
 		expect(callEffectiveMaxConcurrent(sched, 100)).toBe(1);
 		map.delete("inst-1");
 		expect(callEffectiveMaxConcurrent(sched, 100)).toBe(2);
+	});
+});
+
+// ============================================================================
+// New-download producer → Telegram sender (issue #543)
+// ============================================================================
+
+describe("sendNewDownloadNotification", () => {
+	it("scopes the event to the owner and reaches the real Telegram sender", async () => {
+		const notificationSubscriptionFindMany = vi.fn().mockResolvedValue([
+			{
+				id: "sub-1",
+				channelId: "telegram-1",
+				eventType: "LIBRARY_NEW_CONTENT",
+				channel: {
+					id: "telegram-1",
+					userId: "user-1",
+					name: "Telegram",
+					type: "TELEGRAM",
+					enabled: true,
+					encryptedConfig: "encrypted-config",
+					configIv: "config-iv",
+				},
+			},
+		]);
+		const notificationLogCreate = vi.fn().mockResolvedValue({});
+		const notificationChannelUpdate = vi.fn().mockResolvedValue({});
+		const fetchSpy = vi
+			.spyOn(globalThis, "fetch")
+			.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+		const service = new NotificationService(
+			{
+				notificationSubscription: { findMany: notificationSubscriptionFindMany },
+				notificationLog: { create: notificationLogCreate },
+				notificationChannel: { update: notificationChannelUpdate },
+			} as never,
+			{
+				decrypt: vi
+					.fn()
+					.mockReturnValue(JSON.stringify({ botToken: "telegram-token", chatId: "chat-123" })),
+			} as never,
+			new NotificationDispatcher(),
+			{ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+			{ isDuplicate: vi.fn().mockReturnValue(false) } as never,
+			{ enqueue: vi.fn() } as never,
+			"https://dashboard.example.test",
+		);
+
+		try {
+			await sendNewDownloadNotification(
+				service,
+				{
+					newDownloads: [
+						{ title: "Movie <One>", itemType: "movie" },
+						{ title: "Movie Two", itemType: "movie" },
+					],
+				},
+				{ label: "Radarr", service: "RADARR", userId: "user-1" },
+			);
+
+			expect(notificationSubscriptionFindMany).toHaveBeenCalledWith({
+				where: {
+					eventType: "LIBRARY_NEW_CONTENT",
+					channel: { userId: "user-1" },
+				},
+				include: { channel: true },
+			});
+			expect(fetchSpy).toHaveBeenCalledWith(
+				"https://api.telegram.org/bottelegram-token/sendMessage",
+				expect.objectContaining({
+					method: "POST",
+					body: expect.stringContaining("2 new download(s) on Radarr"),
+				}),
+			);
+			const request = fetchSpy.mock.calls[0]?.[1];
+			const body = JSON.parse(String(request?.body)) as { text: string };
+			expect(body.text).toContain("Movie &lt;One&gt;, Movie Two");
+			expect(body.text).toContain("https://dashboard.example.test/library");
+			expect(notificationLogCreate).toHaveBeenCalledWith({
+				data: expect.objectContaining({
+					channelId: "telegram-1",
+					channelType: "TELEGRAM",
+					eventType: "LIBRARY_NEW_CONTENT",
+					status: "sent",
+				}),
+			});
+		} finally {
+			service.dispose();
+			fetchSpy.mockRestore();
+		}
 	});
 });
 
