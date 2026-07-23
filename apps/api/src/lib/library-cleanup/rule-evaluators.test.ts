@@ -206,7 +206,7 @@ describe("size rule", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 3. Rating rule (TMDB from data blob)
+// 3. Rating rule (available *arr rating from data blob)
 // ---------------------------------------------------------------------------
 
 describe("rating rule", () => {
@@ -222,7 +222,26 @@ describe("rating rule", () => {
 		expect(rating).toBeNull();
 	});
 
-	it("matches item with rating below threshold", () => {
+	it("extractRating handles Sonarr's flat rating format", () => {
+		const item = makeCacheItem({
+			data: JSON.stringify({ ratings: { value: 7.4, votes: 142958 } }),
+		});
+		expect(extractRating(item)).toBe(7.4);
+	});
+
+	it("extractRating prefers Radarr's TMDB rating over a flat rating", () => {
+		const item = makeCacheItem({
+			data: JSON.stringify({
+				ratings: {
+					value: 7.4,
+					tmdb: { value: 8.2 },
+				},
+			}),
+		});
+		expect(extractRating(item)).toBe(8.2);
+	});
+
+	it("matches a Radarr item with a rating below the threshold", () => {
 		const item = makeCacheItem({
 			data: JSON.stringify({ ...DEFAULT_DATA, ratings: { tmdb: { value: 3.2 } } }),
 		});
@@ -235,10 +254,36 @@ describe("rating rule", () => {
 		expect(result).toContain("TMDB rating: 3.2");
 	});
 
+	it("matches a Sonarr item with a flat rating below the threshold", () => {
+		const item = makeCacheItem({
+			data: JSON.stringify({ ratings: { value: 4.5, votes: 10000 } }),
+		});
+		const result = evaluateSingleCondition(
+			item,
+			"rating",
+			{ operator: "less_than", score: 5 },
+			ctx,
+		);
+		expect(result).toContain("Sonarr rating: 4.5");
+	});
+
+	it("does not treat Sonarr's source-less flat rating as an IMDb rating", () => {
+		const item = makeCacheItem({
+			data: JSON.stringify({ ratings: { value: 6.8, votes: 50000 } }),
+		});
+		const result = evaluateSingleCondition(
+			item,
+			"imdb_rating",
+			{ operator: "less_than", score: 7 },
+			ctx,
+		);
+		expect(result).toBeNull();
+	});
+
 	it("matches unrated items", () => {
 		const item = makeCacheItem({ data: JSON.stringify({ genres: ["Drama"] }) });
 		const result = evaluateSingleCondition(item, "rating", { operator: "unrated" }, ctx);
-		expect(result).toBe("No TMDB rating");
+		expect(result).toBe("No rating");
 	});
 
 	it("does not flag rated item as unrated", () => {

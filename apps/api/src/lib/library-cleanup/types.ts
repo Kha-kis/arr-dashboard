@@ -180,7 +180,7 @@ export interface RuleMatch {
 export interface FlaggedItem {
 	cacheItem: CacheItemForEval;
 	match: RuleMatch;
-	/** TMDB rating if available from the data blob */
+	/** Preferred available *arr rating from the data blob */
 	rating: number | null;
 }
 
