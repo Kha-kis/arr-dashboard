@@ -139,23 +139,28 @@ function evaluateSizeRule(item: CacheItemForEval, params: SizeRuleParams): strin
 	return null;
 }
 
+interface ExtractedRating {
+	value: number;
+	label: "TMDB rating" | "Sonarr rating" | "Rating";
+}
+
 /**
- * Rating rule: flag items based on TMDB rating from the data blob.
+ * Rating rule: flag items based on the available *arr rating in the data blob.
  */
 function evaluateRatingRule(item: CacheItemForEval, params: RatingRuleParams): string | null {
-	const rating = extractRating(item);
+	const rating = extractRatingDetails(item);
 
 	if (params.operator === "unrated") {
-		return rating === null ? "No TMDB rating" : null;
+		return rating === null ? "No rating" : null;
 	}
 
 	if (rating === null || params.score === undefined) return null;
 
-	if (params.operator === "less_than" && rating < params.score) {
-		return `TMDB rating: ${rating.toFixed(1)} (threshold: < ${params.score})`;
+	if (params.operator === "less_than" && rating.value < params.score) {
+		return `${rating.label}: ${rating.value.toFixed(1)} (threshold: < ${params.score})`;
 	}
-	if (params.operator === "greater_than" && rating > params.score) {
-		return `TMDB rating: ${rating.toFixed(1)} (threshold: > ${params.score})`;
+	if (params.operator === "greater_than" && rating.value > params.score) {
+		return `${rating.label}: ${rating.value.toFixed(1)} (threshold: > ${params.score})`;
 	}
 
 	return null;
@@ -959,11 +964,11 @@ function evaluateStalenessScore(
 		userRatingScore = Math.max(0, 100 - plex.userRating * 10);
 	}
 
-	// 5. Low TMDB rating
-	let tmdbRatingScore = 100;
-	const tmdbRating = extractRating(item);
-	if (tmdbRating !== null) {
-		tmdbRatingScore = Math.max(0, 100 - tmdbRating * 10);
+	// 5. Low available *arr rating
+	let arrRatingScore = 100;
+	const arrRating = extractRating(item);
+	if (arrRating !== null) {
+		arrRatingScore = Math.max(0, 100 - arrRating * 10);
 	}
 
 	// 6. Size on disk (normalized: 50GB+ = 100)
@@ -978,7 +983,7 @@ function evaluateStalenessScore(
 		watchCountScore * w.inverseWatchCount +
 		onDeckScore * w.notOnDeck +
 		userRatingScore * w.lowUserRating +
-		tmdbRatingScore * w.lowTmdbRating +
+		arrRatingScore * w.lowTmdbRating +
 		sizeScore * w.sizeOnDisk;
 
 	// Normalize by sum of weights to handle incomplete weights
@@ -992,7 +997,7 @@ function evaluateStalenessScore(
 	const score = weightSum > 0 ? total / weightSum : 0;
 
 	if (params.operator === "greater_than" && score > params.threshold) {
-		return `Staleness score ${score.toFixed(1)} > ${params.threshold} (watch: ${daysSinceScore.toFixed(0)}, plays: ${watchCountScore.toFixed(0)}, tmdb: ${tmdbRatingScore.toFixed(0)})`;
+		return `Staleness score ${score.toFixed(1)} > ${params.threshold} (watch: ${daysSinceScore.toFixed(0)}, plays: ${watchCountScore.toFixed(0)}, rating: ${arrRatingScore.toFixed(0)})`;
 	}
 
 	return null;
@@ -1036,33 +1041,44 @@ function evaluateRecentlyActive(
 // ============================================================================
 
 /**
- * Extract TMDB rating from the item's JSON data blob.
- * The data field contains a serialized LibraryItem which may have ratings info
- * from Sonarr/Radarr's API response (stored in the `ratings` or `certification` fields).
+ * Extract the preferred available rating from a serialized Sonarr/Radarr item.
+ * Radarr exposes source-keyed ratings and Sonarr exposes a flat `{ value, votes }`
+ * object populated from SkyHook. Prefer Radarr's TMDB value when it is present.
  */
-export function extractRating(item: CacheItemForEval): number | null {
+function extractRatingDetails(item: CacheItemForEval): ExtractedRating | null {
 	const parsed = safeJsonParse(item.data);
 	if (!parsed) return null;
 
 	const data = parsed as Record<string, unknown>;
 
-	// Radarr stores ratings as { tmdb: { value: 7.5 }, imdb: { value: 7.2 } }
 	if (typeof data.ratings === "object" && data.ratings !== null) {
 		const ratings = data.ratings as Record<string, unknown>;
 		const tmdb = ratings.tmdb as Record<string, unknown> | undefined;
 		if (tmdb && typeof tmdb.value === "number") {
-			return tmdb.value;
+			return { value: tmdb.value, label: "TMDB rating" };
 		}
+
+		// Sonarr stores its SkyHook rating directly as { value, votes }.
+		if (typeof ratings.value === "number") {
+			return { value: ratings.value, label: "Sonarr rating" };
+		}
+
 		// Fallback to any available rating
 		for (const source of Object.values(ratings)) {
 			if (typeof source === "object" && source !== null) {
 				const val = (source as Record<string, unknown>).value;
-				if (typeof val === "number" && val > 0) return val;
+				if (typeof val === "number" && val > 0) {
+					return { value: val, label: "Rating" };
+				}
 			}
 		}
 	}
 
 	return null;
+}
+
+export function extractRating(item: CacheItemForEval): number | null {
+	return extractRatingDetails(item)?.value ?? null;
 }
 
 /**

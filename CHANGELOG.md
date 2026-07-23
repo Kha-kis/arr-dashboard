@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Library Cleanup rating rules now read Sonarr's flat SkyHook rating format,
+  while IMDb-specific rules continue to require an explicitly sourced IMDb
+  value.
 - Removed the inactive duplicate App Router tree and dead client helpers that
   were unreachable from the production web application.
 - Split the largest Library Cleanup authoring and evaluator modules into focused
