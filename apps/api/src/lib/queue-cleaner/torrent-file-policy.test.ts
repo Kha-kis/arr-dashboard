@@ -199,6 +199,24 @@ describe("torrent file policy", () => {
 		expect(result?.status).toBe("violation");
 	});
 
+	it("circuit-breaks a failed qui search for the rest of a large run", async () => {
+		const getTorrentByHash = vi.fn().mockRejectedValue(new Error("connection refused"));
+		mocks.createQuiClient.mockReturnValue({
+			getTorrentByHash,
+			getTorrentFiles: vi.fn(),
+		});
+		const inputs = Array.from({ length: 20 }, (_, index) => ({
+			protocol: "torrent",
+			downloadId: index.toString(16).padStart(40, "0"),
+		}));
+
+		const evaluator = createTorrentFilePolicyEvaluator(makeApp(), "user-1", ["mkv"]);
+		const results = await evaluator.evaluateMany(inputs);
+
+		expect(results.every((result) => result.status === "deferred")).toBe(true);
+		expect(getTorrentByHash.mock.calls.length).toBeLessThanOrEqual(4);
+	});
+
 	it("does not inspect non-torrent queue items", async () => {
 		const evaluator = createTorrentFilePolicyEvaluator(makeApp(), "user-1", ["mkv"]);
 		const [result] = await evaluator.evaluateMany([{ protocol: "usenet", downloadId: HASH }]);
