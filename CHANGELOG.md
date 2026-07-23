@@ -7,33 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.22.0] - 2026-07-23 — Authenticated services & hardened maintenance
+
+This release adds opt-in HTTP Basic Auth for service instances behind
+authenticated reverse proxies, restores notifications for imports completed
+between polling ticks, and closes the 2.x dependency, code-quality, and
+supply-chain hardening backlog.
+
 ### Added
 
 - Service instances can now store optional encrypted HTTP Basic Auth credentials
   for reverse proxies, including connection testing and Seerr-assisted setup.
   Existing credentials embedded in service URLs are migrated out of the URL at
   startup. Jellyfin requires a proxy bypass because its API authentication
-  already uses the `Authorization` header.
+  already uses the `Authorization` header (#600).
+
+### Changed
+
+- Restored an idempotent Biome 2.5 formatting baseline, eliminated API and web
+  lint diagnostics, and stabilized warning-prone React tests (#603).
 
 ### Fixed
 
 - Library Cleanup rating rules now read Sonarr's flat SkyHook rating format,
   while IMDb-specific rules continue to require an explicitly sourced IMDb
-  value.
+  value (#604).
 - New Radarr and Sonarr downloads are now detected when an item is added and
   imported entirely between library polls, and the resulting notification is
-  dispatched only through channels owned by the instance's user.
+  dispatched only through channels owned by the instance's user (#601, #543).
 
 ### Security
 
-- Updated direct and transitive dependencies to patched releases for the
-  current Next.js, Sharp, Prisma tooling, Hono, `fast-uri`, `brace-expansion`,
-  and Lodash advisories.
+- Updated DOMPurify, Nodemailer, Next.js, Sharp, Prisma tooling, Hono, Undici,
+  Vite, Babel, esbuild, `fast-uri`, `brace-expansion`, and Lodash to patched
+  releases; SMTP message content can no longer load local files or remote URLs
+  (#582, #583, #598).
 - Pinned all third-party GitHub Actions to reviewed commit SHAs and hardened
-  dependency updates with release-age, provenance, and registry-source policy.
+  dependency updates with release-age, provenance, and registry-source policy
+  (#605).
 - Container startup now rejects destructive Prisma schema changes instead of
   silently approving data loss, and schema-sync failures no longer echo any
-  portion of the database connection URL.
+  portion of the database connection URL (#607).
+
+### Dependencies
+
+- Updated GitHub Actions, production packages, and development tooling,
+  including Next.js 16.2.11, Prisma 7.9, Biome 2.5.5, Playwright 1.61.1, and
+  Vitest 4.1.10 (#547, #597, #598).
 
 ## [2.21.0] - 2026-06-09 — Media-only Storage & Auth Resilience
 
