@@ -273,10 +273,9 @@ export async function registerQualityProfileRoutes(
 		}
 
 		// Get CF Groups from cache
-		const cfGroups = (await cacheManager.get(
-			serviceType as "RADARR" | "SONARR",
-			"CF_GROUPS",
-		)) as TrashCustomFormatGroup[] | null;
+		const cfGroups = (await cacheManager.get(serviceType as "RADARR" | "SONARR", "CF_GROUPS")) as
+			| TrashCustomFormatGroup[]
+			| null;
 
 		// Get Custom Formats from cache
 		const customFormats = (await cacheManager.get(
@@ -472,7 +471,9 @@ export async function registerQualityProfileRoutes(
 		}
 
 		// Get Custom Formats referenced in the quality profile
-		const customFormats = (await cacheManager.get(serviceType, "CUSTOM_FORMATS")) as TrashCustomFormat[] | null;
+		const customFormats = (await cacheManager.get(serviceType, "CUSTOM_FORMATS")) as
+			| TrashCustomFormat[]
+			| null;
 
 		if (!customFormats) {
 			return reply.status(400).send({
@@ -505,7 +506,9 @@ export async function registerQualityProfileRoutes(
 		};
 
 		// Get CF Groups for reference storage
-		const cfGroups = (await cacheManager.get(serviceType, "CF_GROUPS")) as TrashCustomFormatGroup[] | null;
+		const cfGroups = (await cacheManager.get(serviceType, "CF_GROUPS")) as
+			| TrashCustomFormatGroup[]
+			| null;
 
 		// Add selected CF Groups
 		if (cfGroups) {
@@ -617,7 +620,9 @@ export async function registerQualityProfileRoutes(
 		}
 
 		// Get Custom Formats from cache
-		const customFormats = (await cacheManager.get(serviceType, "CUSTOM_FORMATS")) as TrashCustomFormat[] | null;
+		const customFormats = (await cacheManager.get(serviceType, "CUSTOM_FORMATS")) as
+			| TrashCustomFormat[]
+			| null;
 
 		if (!customFormats) {
 			return reply.status(400).send({
@@ -646,7 +651,9 @@ export async function registerQualityProfileRoutes(
 		};
 
 		// Get CF Groups for reference storage
-		const cfGroups = (await cacheManager.get(serviceType, "CF_GROUPS")) as TrashCustomFormatGroup[] | null;
+		const cfGroups = (await cacheManager.get(serviceType, "CF_GROUPS")) as
+			| TrashCustomFormatGroup[]
+			| null;
 
 		// Build lookup maps from existing template data for fallback
 		const existingGroupMap = new Map(

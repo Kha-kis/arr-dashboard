@@ -16,12 +16,25 @@ import { tautulliHomeStatSchema } from "../../../lib/tautulli/tautulli-schemas.j
  * Simulate the aggregation logic from stats-routes.ts lines 69-92.
  * Extracted here so we can test it in isolation against real parsed data.
  */
-function aggregateHomeStats(
-	homeStats: z.infer<typeof tautulliHomeStatSchema>[],
-): Map<string, { statTitle: string; rows: Map<string, { title: string; totalPlays: number; totalDuration: number; platform?: string }> }> {
+function aggregateHomeStats(homeStats: z.infer<typeof tautulliHomeStatSchema>[]): Map<
+	string,
+	{
+		statTitle: string;
+		rows: Map<
+			string,
+			{ title: string; totalPlays: number; totalDuration: number; platform?: string }
+		>;
+	}
+> {
 	const homeStatsMap = new Map<
 		string,
-		{ statTitle: string; rows: Map<string, { title: string; totalPlays: number; totalDuration: number; platform?: string }> }
+		{
+			statTitle: string;
+			rows: Map<
+				string,
+				{ title: string; totalPlays: number; totalDuration: number; platform?: string }
+			>;
+		}
 	>();
 
 	for (const stat of homeStats) {
@@ -105,9 +118,7 @@ describe("Tautulli stats aggregation (#233)", () => {
 			{
 				stat_id: "top_users",
 				stat_title: "Top Users",
-				rows: [
-					{ title: "admin", friendly_name: "Admin", total_plays: 10, total_duration: 72000 },
-				],
+				rows: [{ title: "admin", friendly_name: "Admin", total_plays: 10, total_duration: 72000 }],
 			},
 		];
 		// Instance 2: missing duration (like some Tautulli configurations)
@@ -115,9 +126,7 @@ describe("Tautulli stats aggregation (#233)", () => {
 			{
 				stat_id: "top_users",
 				stat_title: "Top Users",
-				rows: [
-					{ title: "admin", friendly_name: "Admin" },
-				],
+				rows: [{ title: "admin", friendly_name: "Admin" }],
 			},
 		];
 

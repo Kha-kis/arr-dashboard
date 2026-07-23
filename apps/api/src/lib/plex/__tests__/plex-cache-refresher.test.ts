@@ -138,9 +138,7 @@ describe("evictStaleRows", () => {
 
 		const mockClient = {
 			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
-			getLibrarySections: vi
-				.fn()
-				.mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
+			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
 			getLibraryItems: vi.fn().mockResolvedValue(libraryItems),
 			getHistory: vi.fn().mockResolvedValue([]),
 			getOnDeck: vi.fn().mockResolvedValue([]),
@@ -150,10 +148,7 @@ describe("evictStaleRows", () => {
 		// a large stale tail — enough that the old `notIn: upsertedIds` path
 		// would have been >999 params and tripped P2029.
 		const upsertedIds: string[] = [];
-		const existingIds: string[] = Array.from(
-			{ length: STALE_COUNT },
-			(_, i) => `stale-${i}`,
-		);
+		const existingIds: string[] = Array.from({ length: STALE_COUNT }, (_, i) => `stale-${i}`);
 
 		const deleteCalls: Array<{ idsInFilter: string[] }> = [];
 
@@ -169,18 +164,16 @@ describe("evictStaleRows", () => {
 					// freshly-upserted rows. Eviction should keep the fresh set.
 					[...existingIds, ...upsertedIds].map((id) => ({ id })),
 				),
-				deleteMany: vi.fn(
-					async (args: { where: { id?: { in?: string[]; notIn?: string[] } } }) => {
-						const inList = args.where.id?.in;
-						if (!inList) {
-							throw new Error(
-								"Regression: DELETE used something other than `id: { in: [...] }` — likely a reintroduced notIn.",
-							);
-						}
-						deleteCalls.push({ idsInFilter: inList });
-						return { count: inList.length };
-					},
-				),
+				deleteMany: vi.fn(async (args: { where: { id?: { in?: string[]; notIn?: string[] } } }) => {
+					const inList = args.where.id?.in;
+					if (!inList) {
+						throw new Error(
+							"Regression: DELETE used something other than `id: { in: [...] }` — likely a reintroduced notIn.",
+						);
+					}
+					deleteCalls.push({ idsInFilter: inList });
+					return { count: inList.length };
+				}),
 			},
 			$transaction: vi.fn(async (ops: Promise<unknown>[] | unknown[]) => {
 				const results: unknown[] = [];

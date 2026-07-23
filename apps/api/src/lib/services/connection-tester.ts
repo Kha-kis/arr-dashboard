@@ -589,7 +589,7 @@ async function testJellyfinConnection(
 				details: "Invalid API key. Generate one in Jellyfin Dashboard > API Keys.",
 			};
 		}
-	} catch (authErr) {
+	} catch {
 		return {
 			success: false,
 			error: "API key validation failed",

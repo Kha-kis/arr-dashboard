@@ -1,8 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { aggregateBandwidthAnalytics, type SnapshotForBandwidth } from "../lib/bandwidth-analytics-helpers.js";
+import {
+	aggregateBandwidthAnalytics,
+	type SnapshotForBandwidth,
+} from "../lib/bandwidth-analytics-helpers.js";
 
-function snapshot(date: string, concurrent: number, total: number, lan: number, wan: number): SnapshotForBandwidth {
-	return { capturedAt: new Date(`${date}T12:00:00Z`), concurrentStreams: concurrent, totalBandwidth: total, lanBandwidth: lan, wanBandwidth: wan };
+function snapshot(
+	date: string,
+	concurrent: number,
+	total: number,
+	lan: number,
+	wan: number,
+): SnapshotForBandwidth {
+	return {
+		capturedAt: new Date(`${date}T12:00:00Z`),
+		concurrentStreams: concurrent,
+		totalBandwidth: total,
+		lanBandwidth: lan,
+		wanBandwidth: wan,
+	};
 }
 
 describe("aggregateBandwidthAnalytics", () => {
@@ -19,9 +34,21 @@ describe("aggregateBandwidthAnalytics", () => {
 		expect(result.avgBandwidth).toBe(Math.round(3500 / 3));
 		expect(result.timeSeries).toHaveLength(2);
 		// Day 1: peak concurrent=5, avg bandwidth=1500, avg lan=900, avg wan=600
-		expect(result.timeSeries[0]).toEqual({ date: "2025-01-01", concurrent: 5, bandwidth: 1500, lanBandwidth: 900, wanBandwidth: 600 });
+		expect(result.timeSeries[0]).toEqual({
+			date: "2025-01-01",
+			concurrent: 5,
+			bandwidth: 1500,
+			lanBandwidth: 900,
+			wanBandwidth: 600,
+		});
 		// Day 2: single snapshot
-		expect(result.timeSeries[1]).toEqual({ date: "2025-01-02", concurrent: 2, bandwidth: 500, lanBandwidth: 300, wanBandwidth: 200 });
+		expect(result.timeSeries[1]).toEqual({
+			date: "2025-01-02",
+			concurrent: 2,
+			bandwidth: 500,
+			lanBandwidth: 300,
+			wanBandwidth: 200,
+		});
 		expect(result.parseFailures).toBe(0);
 		expect(result.totalSnapshots).toBe(3);
 	});

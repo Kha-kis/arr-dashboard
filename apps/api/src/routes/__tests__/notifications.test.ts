@@ -7,7 +7,9 @@ import { vi, describe, it, expect, beforeEach, afterAll } from "vitest";
 const { mockNotificationService, mockGetDeliveryStatistics } = vi.hoisted(() => ({
 	mockNotificationService: {
 		testChannel: vi.fn().mockResolvedValue(undefined),
-		getDecryptedConfig: vi.fn().mockResolvedValue({ webhookUrl: "https://discord.com/api/webhooks/123" }),
+		getDecryptedConfig: vi
+			.fn()
+			.mockResolvedValue({ webhookUrl: "https://discord.com/api/webhooks/123" }),
 		getChannelTypes: vi.fn().mockReturnValue([]),
 	},
 	mockGetDeliveryStatistics: vi.fn().mockResolvedValue({ total: 0, sent: 0, failed: 0 }),
@@ -23,7 +25,12 @@ vi.mock("../../lib/notifications/statistics.js", () => ({
 
 import Fastify from "fastify";
 import { registerNotificationRoutes } from "../notifications.js";
-import { setupAuthInjection, createInjectAuthenticated, createMockEncryptor, registerTestErrorHandler } from "./test-helpers.js";
+import {
+	setupAuthInjection,
+	createInjectAuthenticated,
+	createMockEncryptor,
+	registerTestErrorHandler,
+} from "./test-helpers.js";
 
 // ---------------------------------------------------------------------------
 // Test data factories
@@ -59,7 +66,9 @@ function makeRule(overrides: Record<string, unknown> = {}) {
 		enabled: true,
 		priority: 0,
 		action: "suppress",
-		conditions: JSON.stringify([{ field: "eventType", operator: "equals", value: "HUNT_COMPLETED" }]),
+		conditions: JSON.stringify([
+			{ field: "eventType", operator: "equals", value: "HUNT_COMPLETED" },
+		]),
 		targetChannelIds: null,
 		throttleMinutes: null,
 		createdAt: now,
@@ -152,9 +161,12 @@ beforeEach(async () => {
 	app = Fastify();
 
 	app.decorate("prisma", mockPrisma);
-	app.decorate("encryptor", createMockEncryptor(
-		JSON.stringify({ webhookUrl: "https://discord.com/api/webhooks/original" }),
-	));
+	app.decorate(
+		"encryptor",
+		createMockEncryptor(
+			JSON.stringify({ webhookUrl: "https://discord.com/api/webhooks/original" }),
+		),
+	);
 	app.decorate("notificationService", mockNotificationService);
 
 	setupAuthInjection(app);
@@ -342,14 +354,18 @@ describe("POST /rules", () => {
 		const body = JSON.parse(res.payload);
 		expect(body.name).toBe("Suppress Hunt Noise");
 		expect(body.action).toBe("suppress");
-		expect(body.conditions).toEqual([{ field: "eventType", operator: "equals", value: "HUNT_COMPLETED" }]);
+		expect(body.conditions).toEqual([
+			{ field: "eventType", operator: "equals", value: "HUNT_COMPLETED" },
+		]);
 
 		// Conditions should be stored as JSON string in DB
 		expect(mockPrisma.notificationRule.create).toHaveBeenCalledWith(
 			expect.objectContaining({
 				data: expect.objectContaining({
 					userId: "user-1",
-					conditions: JSON.stringify([{ field: "eventType", operator: "equals", value: "HUNT_COMPLETED" }]),
+					conditions: JSON.stringify([
+						{ field: "eventType", operator: "equals", value: "HUNT_COMPLETED" },
+					]),
 				}),
 			}),
 		);
@@ -392,7 +408,9 @@ describe("GET /channels/:id/config", () => {
 	});
 
 	it("returns 404 when channel not found", async () => {
-		mockNotificationService.getDecryptedConfig.mockRejectedValueOnce(new Error("Channel not found"));
+		mockNotificationService.getDecryptedConfig.mockRejectedValueOnce(
+			new Error("Channel not found"),
+		);
 
 		const res = await injectAuthenticated("GET", "/channels/ch-999/config");
 

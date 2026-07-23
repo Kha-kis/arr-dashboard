@@ -63,8 +63,12 @@ export const DiscoverDetailModal: React.FC<DiscoverDetailModalProps> = ({
 						(details as NonNullable<typeof tvQuery.data>)?.firstAirDate ?? item.firstAirDate,
 				},
 	);
-	const backdropUrl = incognitoMode ? null : getSeerrImageUrl(details?.backdropPath ?? item.backdropPath, "w1280");
-	const posterUrl = incognitoMode ? null : getSeerrImageUrl(details?.posterPath ?? item.posterPath, "w342");
+	const backdropUrl = incognitoMode
+		? null
+		: getSeerrImageUrl(details?.backdropPath ?? item.backdropPath, "w1280");
+	const posterUrl = incognitoMode
+		? null
+		: getSeerrImageUrl(details?.posterPath ?? item.posterPath, "w342");
 
 	const mediaStatus = details?.mediaInfo?.status ?? item.mediaInfo?.status;
 	const statusInfo = getMediaStatusInfo(mediaStatus);

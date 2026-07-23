@@ -289,9 +289,7 @@ describe("buildParams", () => {
 		});
 
 		it("rating: non-unrated includes score", () => {
-			const result = buildParams(
-				makeState({ ruleType: "rating", scoreOp: "less_than", score: 7 }),
-			);
+			const result = buildParams(makeState({ ruleType: "rating", scoreOp: "less_than", score: 7 }));
 			expect(result).toEqual({ source: "tmdb", operator: "less_than", score: 7 });
 		});
 
@@ -315,9 +313,7 @@ describe("buildParams", () => {
 		});
 
 		it("imdb_rating: unrated omits score", () => {
-			const result = buildParams(
-				makeState({ ruleType: "imdb_rating", imdbRatingOp: "unrated" }),
-			);
+			const result = buildParams(makeState({ ruleType: "imdb_rating", imdbRatingOp: "unrated" }));
 			expect(result).toEqual({ operator: "unrated" });
 			expect(result).not.toHaveProperty("score");
 		});
@@ -446,9 +442,7 @@ describe("buildParams", () => {
 
 		it("runtime", () => {
 			expect(
-				buildParams(
-					makeState({ ruleType: "runtime", runtimeOp: "less_than", runtimeMinutes: 90 }),
-				),
+				buildParams(makeState({ ruleType: "runtime", runtimeOp: "less_than", runtimeMinutes: 90 })),
 			).toEqual({ operator: "less_than", minutes: 90 });
 		});
 
@@ -520,23 +514,23 @@ describe("buildParams", () => {
 
 		it("user_retention: returns behaviorParams as-is", () => {
 			const bp = { operator: "watched_by_none", source: "plex" };
-			expect(
-				buildParams(makeState({ ruleType: "user_retention", behaviorParams: bp })),
-			).toEqual(bp);
+			expect(buildParams(makeState({ ruleType: "user_retention", behaviorParams: bp }))).toEqual(
+				bp,
+			);
 		});
 
 		it("staleness_score: returns behaviorParams as-is", () => {
 			const bp = { operator: "greater_than", threshold: 70 };
-			expect(
-				buildParams(makeState({ ruleType: "staleness_score", behaviorParams: bp })),
-			).toEqual(bp);
+			expect(buildParams(makeState({ ruleType: "staleness_score", behaviorParams: bp }))).toEqual(
+				bp,
+			);
 		});
 
 		it("recently_active: returns behaviorParams as-is", () => {
 			const bp = { protectionDays: 30, requireActivity: true };
-			expect(
-				buildParams(makeState({ ruleType: "recently_active", behaviorParams: bp })),
-			).toEqual(bp);
+			expect(buildParams(makeState({ ruleType: "recently_active", behaviorParams: bp }))).toEqual(
+				bp,
+			);
 		});
 	});
 

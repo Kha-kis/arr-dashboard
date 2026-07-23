@@ -32,20 +32,14 @@ function wrapper({ children }: { children: ReactNode }) {
 
 describe("<SeasonEpisodeList /> error state microcopy", () => {
 	it("renders the neutral error message pointing at Pulse as the live source", () => {
-		render(
-			<SeasonEpisodeList instanceId="inst-1" seriesId={1} seasonNumber={1} />,
-			{ wrapper },
-		);
+		render(<SeasonEpisodeList instanceId="inst-1" seriesId={1} seasonNumber={1} />, { wrapper });
 		expect(
 			screen.getByText(/Failed to load episodes\. Try again, or check Pulse/i),
 		).toBeInTheDocument();
 	});
 
 	it("does NOT render the old speculative 'may be unreachable' copy", () => {
-		render(
-			<SeasonEpisodeList instanceId="inst-1" seriesId={1} seasonNumber={1} />,
-			{ wrapper },
-		);
+		render(<SeasonEpisodeList instanceId="inst-1" seriesId={1} seasonNumber={1} />, { wrapper });
 		// The component has no way to diagnose the actual cause of a fetch
 		// failure — guessing "may be unreachable" competes with Pulse's
 		// canonical reachability signal. Never bring it back.

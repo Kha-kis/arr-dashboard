@@ -137,19 +137,28 @@ const HealthBar = ({
 			</div>
 			<div className="flex items-center gap-2 text-[10px] font-medium shrink-0">
 				{healthy > 0 && (
-					<span className="inline-flex items-center gap-1" style={{ color: SEMANTIC_COLORS.success.from }}>
+					<span
+						className="inline-flex items-center gap-1"
+						style={{ color: SEMANTIC_COLORS.success.from }}
+					>
 						<HeartPulse className="h-3 w-3" />
 						{healthy}
 					</span>
 				)}
 				{degraded > 0 && (
-					<span className="inline-flex items-center gap-1" style={{ color: SEMANTIC_COLORS.warning.from }}>
+					<span
+						className="inline-flex items-center gap-1"
+						style={{ color: SEMANTIC_COLORS.warning.from }}
+					>
 						<AlertTriangle className="h-3 w-3" />
 						{degraded}
 					</span>
 				)}
 				{failing > 0 && (
-					<span className="inline-flex items-center gap-1" style={{ color: SEMANTIC_COLORS.error.from }}>
+					<span
+						className="inline-flex items-center gap-1"
+						style={{ color: SEMANTIC_COLORS.error.from }}
+					>
 						<XCircle className="h-3 w-3" />
 						{failing}
 					</span>

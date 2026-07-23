@@ -47,9 +47,7 @@ describe("GET /pulse — collector failure detail wording", () => {
 		expect(res.statusCode).toBe(200);
 
 		const body = JSON.parse(res.payload);
-		const errorItem = body.items.find((i: { id: string }) =>
-			i.id.startsWith("collector-error-"),
-		);
+		const errorItem = body.items.find((i: { id: string }) => i.id.startsWith("collector-error-"));
 
 		expect(errorItem).toBeDefined();
 

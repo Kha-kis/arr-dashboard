@@ -46,7 +46,6 @@ function makeApp(overrides: Record<string, unknown> = {}) {
 		__findMany: serviceInstanceFindMany,
 		__libraryCacheFindMany: libraryCacheFindMany,
 		...overrides,
-		// biome-ignore lint/suspicious/noExplicitAny: test-shim
 	} as any;
 }
 

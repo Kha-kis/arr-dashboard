@@ -115,10 +115,7 @@ describe("GET /oauth/pin/:pinId", () => {
 	it("returns null tokenRef when not yet approved", async () => {
 		mockFetch.mockResolvedValueOnce(jsonResponse({ authToken: null }));
 
-		const res = await injectAuthenticated(
-			"GET",
-			`/oauth/pin/12345?clientId=${VALID_CLIENT_ID}`,
-		);
+		const res = await injectAuthenticated("GET", `/oauth/pin/12345?clientId=${VALID_CLIENT_ID}`);
 
 		expect(res.statusCode).toBe(200);
 		expect(res.json()).toEqual({ tokenRef: null });
@@ -127,10 +124,7 @@ describe("GET /oauth/pin/:pinId", () => {
 	it("returns tokenRef when approved", async () => {
 		mockFetch.mockResolvedValueOnce(jsonResponse({ authToken: "plex-token-123" }));
 
-		const res = await injectAuthenticated(
-			"GET",
-			`/oauth/pin/12345?clientId=${VALID_CLIENT_ID}`,
-		);
+		const res = await injectAuthenticated("GET", `/oauth/pin/12345?clientId=${VALID_CLIENT_ID}`);
 
 		expect(res.statusCode).toBe(200);
 		const body = res.json();
@@ -143,10 +137,7 @@ describe("GET /oauth/pin/:pinId", () => {
 	it("returns 502 when plex.tv returns an error", async () => {
 		mockFetch.mockResolvedValueOnce(jsonResponse({}, 500));
 
-		const res = await injectAuthenticated(
-			"GET",
-			`/oauth/pin/12345?clientId=${VALID_CLIENT_ID}`,
-		);
+		const res = await injectAuthenticated("GET", `/oauth/pin/12345?clientId=${VALID_CLIENT_ID}`);
 
 		expect(res.statusCode).toBe(502);
 	});
@@ -154,10 +145,7 @@ describe("GET /oauth/pin/:pinId", () => {
 	it("returns 502 on network error", async () => {
 		mockFetch.mockRejectedValueOnce(new Error("Connection refused"));
 
-		const res = await injectAuthenticated(
-			"GET",
-			`/oauth/pin/12345?clientId=${VALID_CLIENT_ID}`,
-		);
+		const res = await injectAuthenticated("GET", `/oauth/pin/12345?clientId=${VALID_CLIENT_ID}`);
 
 		expect(res.statusCode).toBe(502);
 		expect(res.json().error).toBe("Could not reach plex.tv");
@@ -190,8 +178,22 @@ describe("POST /oauth/servers", () => {
 				platform: "Linux",
 				productVersion: "1.32.0",
 				connections: [
-					{ protocol: "https", address: "192.168.1.10", port: 32400, uri: "https://192.168.1.10:32400", local: true, relay: false },
-					{ protocol: "https", address: "203.0.113.10", port: 32400, uri: "https://203.0.113.10:32400", local: false, relay: false },
+					{
+						protocol: "https",
+						address: "192.168.1.10",
+						port: 32400,
+						uri: "https://192.168.1.10:32400",
+						local: true,
+						relay: false,
+					},
+					{
+						protocol: "https",
+						address: "203.0.113.10",
+						port: 32400,
+						uri: "https://203.0.113.10:32400",
+						local: false,
+						relay: false,
+					},
 				],
 			},
 		];

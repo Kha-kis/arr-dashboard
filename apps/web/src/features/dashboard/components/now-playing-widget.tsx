@@ -392,7 +392,9 @@ export const NowPlayingWidget = ({
 		hasTautulliInstances && tautulliQuery.isError,
 		hasJellyfinInstances && jellyfinQuery.isError,
 	].filter(Boolean).length;
-	const enabledSources = [hasPlexInstances, hasTautulliInstances, hasJellyfinInstances].filter(Boolean).length;
+	const enabledSources = [hasPlexInstances, hasTautulliInstances, hasJellyfinInstances].filter(
+		Boolean,
+	).length;
 	const hasError = enabledSources > 0 && enabledErrors === enabledSources;
 
 	if (isLoading && sessions.length === 0) return null;

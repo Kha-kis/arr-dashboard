@@ -66,75 +66,79 @@ const CacheStatusCard = ({
 			/>
 			<div
 				className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-				style={{ background: `radial-gradient(ellipse at top left, ${cardColor}06, transparent 50%)` }}
+				style={{
+					background: `radial-gradient(ellipse at top left, ${cardColor}06, transparent 50%)`,
+				}}
 			/>
 			<div
 				className="absolute left-0 top-0 bottom-0 w-[3px]"
-				style={{ background: isStale
-					? `linear-gradient(180deg, ${SEMANTIC_COLORS.warning.from}, ${SEMANTIC_COLORS.warning.from}70)`
-					: `linear-gradient(180deg, ${themeGradient.from}, ${themeGradient.fromLight})`
+				style={{
+					background: isStale
+						? `linear-gradient(180deg, ${SEMANTIC_COLORS.warning.from}, ${SEMANTIC_COLORS.warning.from}70)`
+						: `linear-gradient(180deg, ${themeGradient.from}, ${themeGradient.fromLight})`,
 				}}
 			/>
 			<div className="relative p-5">
-			<div className="flex items-start justify-between mb-4">
-				<div className="flex items-center gap-3">
-					<div
-						className="flex h-10 w-10 items-center justify-center rounded-xl"
-						style={{
-							background: isStale
-								? `${SEMANTIC_COLORS.warning.from}20`
-								: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
-							border: isStale
-								? `1px solid ${SEMANTIC_COLORS.warning.border}`
-								: `1px solid ${themeGradient.from}30`,
-						}}
-					>
-						<Package
-							className="h-5 w-5"
-							style={{ color: isStale ? SEMANTIC_COLORS.warning.from : themeGradient.from }}
-						/>
+				<div className="flex items-start justify-between mb-4">
+					<div className="flex items-center gap-3">
+						<div
+							className="flex h-10 w-10 items-center justify-center rounded-xl"
+							style={{
+								background: isStale
+									? `${SEMANTIC_COLORS.warning.from}20`
+									: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+								border: isStale
+									? `1px solid ${SEMANTIC_COLORS.warning.border}`
+									: `1px solid ${themeGradient.from}30`,
+							}}
+						>
+							<Package
+								className="h-5 w-5"
+								style={{ color: isStale ? SEMANTIC_COLORS.warning.from : themeGradient.from }}
+							/>
+						</div>
+						<div>
+							<h3 className="font-semibold text-foreground">{configTypeLabel}</h3>
+							<p className="text-xs text-muted-foreground">Version {version}</p>
+						</div>
 					</div>
-					<div>
-						<h3 className="font-semibold text-foreground">{configTypeLabel}</h3>
-						<p className="text-xs text-muted-foreground">Version {version}</p>
-					</div>
+					{isStale && (
+						<span
+							className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium"
+							style={{
+								backgroundColor: SEMANTIC_COLORS.warning.bg,
+								border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
+								color: SEMANTIC_COLORS.warning.text,
+							}}
+						>
+							<AlertTriangle className="h-3 w-3" />
+							Stale
+						</span>
+					)}
 				</div>
-				{isStale && (
-					<span
-						className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium"
-						style={{
-							backgroundColor: SEMANTIC_COLORS.warning.bg,
-							border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
-							color: SEMANTIC_COLORS.warning.text,
-						}}
-					>
-						<AlertTriangle className="h-3 w-3" />
-						Stale
-					</span>
-				)}
-			</div>
 
-			<div className="space-y-2.5">
-				<div className="flex items-center gap-2.5 text-sm">
-					<Database className="h-4 w-4 text-muted-foreground" />
-					<span className="text-muted-foreground">
-						<span className="font-medium text-foreground">{itemCount}</span> items cached
-						{sourceBreakdown && (
-							<span className="ml-1">
-								({sourceBreakdown.official} official,{" "}
-								<span style={{ color: themeGradient.from }}>{sourceBreakdown.custom} custom</span>)
-							</span>
-						)}
-					</span>
+				<div className="space-y-2.5">
+					<div className="flex items-center gap-2.5 text-sm">
+						<Database className="h-4 w-4 text-muted-foreground" />
+						<span className="text-muted-foreground">
+							<span className="font-medium text-foreground">{itemCount}</span> items cached
+							{sourceBreakdown && (
+								<span className="ml-1">
+									({sourceBreakdown.official} official,{" "}
+									<span style={{ color: themeGradient.from }}>{sourceBreakdown.custom} custom</span>
+									)
+								</span>
+							)}
+						</span>
+					</div>
+					<div className="flex items-center gap-2.5 text-sm">
+						<Clock className="h-4 w-4 text-muted-foreground" />
+						<span className="text-muted-foreground">
+							Last fetched:{" "}
+							<span className="text-foreground">{new Date(lastFetched).toLocaleString()}</span>
+						</span>
+					</div>
 				</div>
-				<div className="flex items-center gap-2.5 text-sm">
-					<Clock className="h-4 w-4 text-muted-foreground" />
-					<span className="text-muted-foreground">
-						Last fetched:{" "}
-						<span className="text-foreground">{new Date(lastFetched).toLocaleString()}</span>
-					</span>
-				</div>
-			</div>
 			</div>
 		</article>
 	);

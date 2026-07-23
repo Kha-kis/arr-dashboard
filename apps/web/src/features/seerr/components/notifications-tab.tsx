@@ -4,11 +4,7 @@ import type { SeerrNotificationAgent } from "@arr/shared";
 import { AlertCircle, Bell, Send, Settings, ToggleLeft, ToggleRight } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import {
-	GradientButton,
-	PremiumEmptyState,
-	PremiumSkeleton,
-} from "../../../components/layout";
+import { GradientButton, PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
 import { Button } from "../../../components/ui";
 import {
 	useSeerrNotifications,
@@ -69,7 +65,9 @@ export const NotificationsTab = ({ instanceId }: NotificationsTabProps) => {
 				{agents.map((agent, index) => {
 					const ToggleIcon = agent.enabled ? ToggleRight : ToggleLeft;
 					const hasFields = !!AGENT_FIELDS[agent.id];
-					const accent = agent.enabled ? SEMANTIC_COLORS.success : { from: "#6b7280", to: "#9ca3af" };
+					const accent = agent.enabled
+						? SEMANTIC_COLORS.success
+						: { from: "#6b7280", to: "#9ca3af" };
 
 					return (
 						<div
@@ -121,9 +119,7 @@ export const NotificationsTab = ({ instanceId }: NotificationsTabProps) => {
 										<span
 											className="h-[5px] w-[5px] rounded-full shrink-0"
 											style={{
-												backgroundColor: agent.enabled
-													? SEMANTIC_COLORS.success.text
-													: "#6b7280",
+												backgroundColor: agent.enabled ? SEMANTIC_COLORS.success.text : "#6b7280",
 											}}
 										/>
 										<span className="text-[11px] text-muted-foreground/40">

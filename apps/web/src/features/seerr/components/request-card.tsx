@@ -41,13 +41,25 @@ const SEERR_GRADIENT = SERVICE_GRADIENTS.seerr;
 function getStatusAccentColor(status: number): { from: string; to: string; glow: string } {
 	switch (status) {
 		case SEERR_REQUEST_STATUS.PENDING:
-			return { from: SEMANTIC_COLORS.warning.from, to: SEMANTIC_COLORS.warning.to, glow: SEMANTIC_COLORS.warning.glow };
+			return {
+				from: SEMANTIC_COLORS.warning.from,
+				to: SEMANTIC_COLORS.warning.to,
+				glow: SEMANTIC_COLORS.warning.glow,
+			};
 		case SEERR_REQUEST_STATUS.APPROVED:
 		case SEERR_REQUEST_STATUS.COMPLETED:
-			return { from: SEMANTIC_COLORS.success.from, to: SEMANTIC_COLORS.success.to, glow: SEMANTIC_COLORS.success.glow };
+			return {
+				from: SEMANTIC_COLORS.success.from,
+				to: SEMANTIC_COLORS.success.to,
+				glow: SEMANTIC_COLORS.success.glow,
+			};
 		case SEERR_REQUEST_STATUS.DECLINED:
 		case SEERR_REQUEST_STATUS.FAILED:
-			return { from: SEMANTIC_COLORS.error.from, to: SEMANTIC_COLORS.error.to, glow: SEMANTIC_COLORS.error.glow };
+			return {
+				from: SEMANTIC_COLORS.error.from,
+				to: SEMANTIC_COLORS.error.to,
+				glow: SEMANTIC_COLORS.error.glow,
+			};
 		default:
 			return { from: SEERR_GRADIENT.from, to: SEERR_GRADIENT.to, glow: SEERR_GRADIENT.glow };
 	}
@@ -129,7 +141,13 @@ const MetaChip = ({
 // Component
 // ============================================================================
 
-export const RequestCard = ({ request, instanceId, actions, index = 0, onClick }: RequestCardProps) => {
+export const RequestCard = ({
+	request,
+	instanceId,
+	actions,
+	index = 0,
+	onClick,
+}: RequestCardProps) => {
 	const [incognitoMode] = useIncognitoMode();
 	const posterUrl = getPosterUrl(request.media.posterPath);
 	const TypeIcon = request.type === "movie" ? Film : Tv;
@@ -234,7 +252,11 @@ export const RequestCard = ({ request, instanceId, actions, index = 0, onClick }
 							{instanceId ? (
 								<RequesterProfilePopover
 									seerrUser={request.requestedBy}
-									displayName={incognitoMode ? getLinuxUsername(request.requestedBy.displayName) : request.requestedBy.displayName}
+									displayName={
+										incognitoMode
+											? getLinuxUsername(request.requestedBy.displayName)
+											: request.requestedBy.displayName
+									}
 									instanceId={instanceId}
 									isIncognito={incognitoMode}
 								>
@@ -246,11 +268,17 @@ export const RequestCard = ({ request, instanceId, actions, index = 0, onClick }
 										onKeyDown={(e) => e.stopPropagation()}
 									>
 										<User className="h-3 w-3 shrink-0" aria-hidden="true" />
-										{incognitoMode ? getLinuxUsername(request.requestedBy.displayName) : request.requestedBy.displayName}
+										{incognitoMode
+											? getLinuxUsername(request.requestedBy.displayName)
+											: request.requestedBy.displayName}
 									</button>
 								</RequesterProfilePopover>
 							) : (
-								<MetaChip icon={User}>{incognitoMode ? getLinuxUsername(request.requestedBy.displayName) : request.requestedBy.displayName}</MetaChip>
+								<MetaChip icon={User}>
+									{incognitoMode
+										? getLinuxUsername(request.requestedBy.displayName)
+										: request.requestedBy.displayName}
+								</MetaChip>
 							)}
 
 							{/* Separator dot */}

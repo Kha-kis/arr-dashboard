@@ -86,8 +86,7 @@ const getQualityLabel = (quality: SearchResult["quality"]): string | null => {
 	if (maybeNested && typeof maybeNested === "object") {
 		const nested = maybeNested as Record<string, unknown>;
 		const name = typeof nested.name === "string" ? nested.name : undefined;
-		const resolution =
-			typeof nested.resolution === "number" ? nested.resolution : undefined;
+		const resolution = typeof nested.resolution === "number" ? nested.resolution : undefined;
 		if (name || resolution) {
 			if (name && resolution && !name.includes(`${resolution}p`)) {
 				return `${name} ${resolution}p`;

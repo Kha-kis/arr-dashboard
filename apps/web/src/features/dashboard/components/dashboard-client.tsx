@@ -371,16 +371,30 @@ export const DashboardClient = () => {
 		[services],
 	);
 	const hasJellyfinInstances = useMemo(
-		() => services.some((s) => (s.service.toLowerCase() === "jellyfin" || s.service.toLowerCase() === "emby") && s.enabled),
+		() =>
+			services.some(
+				(s) =>
+					(s.service.toLowerCase() === "jellyfin" || s.service.toLowerCase() === "emby") &&
+					s.enabled,
+			),
 		[services],
 	);
 	const hasMediaServer = hasPlexInstances || hasTautulliInstances || hasJellyfinInstances;
 
 	// Session count for Activity tab badge
 	const isMediaTab = activeTab === "overview" || activeTab === "activity";
-	const plexNowPlaying = useNowPlaying(hasPlexInstances, isMediaTab ? POLLING_REALTIME : POLLING_STANDARD);
-	const tautulliActivity = useTautulliActivity(hasTautulliInstances, isMediaTab ? POLLING_REALTIME : POLLING_STANDARD);
-	const jellyfinNowPlaying = useJellyfinNowPlaying(hasJellyfinInstances, isMediaTab ? POLLING_REALTIME : POLLING_STANDARD);
+	const plexNowPlaying = useNowPlaying(
+		hasPlexInstances,
+		isMediaTab ? POLLING_REALTIME : POLLING_STANDARD,
+	);
+	const tautulliActivity = useTautulliActivity(
+		hasTautulliInstances,
+		isMediaTab ? POLLING_REALTIME : POLLING_STANDARD,
+	);
+	const jellyfinNowPlaying = useJellyfinNowPlaying(
+		hasJellyfinInstances,
+		isMediaTab ? POLLING_REALTIME : POLLING_STANDARD,
+	);
 	const sessionCount = useMemo(() => {
 		if (!hasMediaServer) return undefined;
 		const plexCount = plexNowPlaying.data?.sessions?.length ?? 0;
@@ -692,7 +706,13 @@ export const DashboardClient = () => {
 											description={description}
 											subtitle={subtitle}
 											warningLine={warningLine}
-											healthWarning={healthWarning ? (incognitoMode ? anonymizeHealthMessage(healthWarning) : healthWarning) : undefined}
+											healthWarning={
+												healthWarning
+													? incognitoMode
+														? anonymizeHealthMessage(healthWarning)
+														: healthWarning
+													: undefined
+											}
 											detail={instanceNote}
 											onClick={cardOnClick}
 											animationDelay={100 + index * 50}
@@ -741,8 +761,16 @@ export const DashboardClient = () => {
 						)}
 
 						{/* Full-width media carousels */}
-						<OnDeckWidget hasPlexInstances={hasPlexInstances} hasJellyfinInstances={hasJellyfinInstances} animationDelay={500} />
-						<RecentlyAddedWidget hasPlexInstances={hasPlexInstances} hasJellyfinInstances={hasJellyfinInstances} animationDelay={525} />
+						<OnDeckWidget
+							hasPlexInstances={hasPlexInstances}
+							hasJellyfinInstances={hasJellyfinInstances}
+							animationDelay={500}
+						/>
+						<RecentlyAddedWidget
+							hasPlexInstances={hasPlexInstances}
+							hasJellyfinInstances={hasJellyfinInstances}
+							animationDelay={525}
+						/>
 
 						{/* Configured Instances Section — collapsible */}
 						<div
@@ -980,7 +1008,11 @@ export const DashboardClient = () => {
 							hasJellyfinInstances={hasJellyfinInstances}
 							variant="full"
 						/>
-						<OnDeckWidget hasPlexInstances={hasPlexInstances} hasJellyfinInstances={hasJellyfinInstances} animationDelay={100} />
+						<OnDeckWidget
+							hasPlexInstances={hasPlexInstances}
+							hasJellyfinInstances={hasJellyfinInstances}
+							animationDelay={100}
+						/>
 						<WatchHistorySection enabled={hasTautulliInstances} />
 					</div>
 				)}

@@ -307,28 +307,42 @@ export const ExternalLinksSection: React.FC<ExternalLinksSectionProps> = ({
 						TVDB
 					</button>
 				)}
-				{plexUrl && (() => {
-					const watchColors = watchLabel === "Jellyfin"
-						? { bg: "rgba(0, 164, 220, 0.1)", border: "rgba(0, 164, 220, 0.3)", text: "#00a4dc" }
-						: watchLabel === "Emby"
-							? { bg: "rgba(82, 181, 75, 0.1)", border: "rgba(82, 181, 75, 0.3)", text: "#52b54b" }
-							: { bg: "rgba(229, 160, 13, 0.1)", border: "rgba(229, 160, 13, 0.3)", text: "#e5a00d" };
-					return (
-						<button
-							type="button"
-							className={btnClass}
-							style={{
-								backgroundColor: watchColors.bg,
-								border: `1px solid ${watchColors.border}`,
-								color: watchColors.text,
-							}}
-							onClick={() => safeOpenUrl(plexUrl)}
-						>
-							<ExternalLink className="h-3.5 w-3.5" />
-							Watch in {watchLabel}
-						</button>
-					);
-				})()}
+				{plexUrl &&
+					(() => {
+						const watchColors =
+							watchLabel === "Jellyfin"
+								? {
+										bg: "rgba(0, 164, 220, 0.1)",
+										border: "rgba(0, 164, 220, 0.3)",
+										text: "#00a4dc",
+									}
+								: watchLabel === "Emby"
+									? {
+											bg: "rgba(82, 181, 75, 0.1)",
+											border: "rgba(82, 181, 75, 0.3)",
+											text: "#52b54b",
+										}
+									: {
+											bg: "rgba(229, 160, 13, 0.1)",
+											border: "rgba(229, 160, 13, 0.3)",
+											text: "#e5a00d",
+										};
+						return (
+							<button
+								type="button"
+								className={btnClass}
+								style={{
+									backgroundColor: watchColors.bg,
+									border: `1px solid ${watchColors.border}`,
+									color: watchColors.text,
+								}}
+								onClick={() => safeOpenUrl(plexUrl)}
+							>
+								<ExternalLink className="h-3.5 w-3.5" />
+								Watch in {watchLabel}
+							</button>
+						);
+					})()}
 			</div>
 		</div>
 	);

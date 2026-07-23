@@ -78,7 +78,10 @@ export class AggregationBuffer {
 
 		const digest = this.buildDigest(bucket.items, key);
 		this.flushCallback(digest).catch((err) => {
-			loggers.notifications.warn({ err }, "Aggregation flush failed — batched notifications may be lost");
+			loggers.notifications.warn(
+				{ err },
+				"Aggregation flush failed — batched notifications may be lost",
+			);
 		});
 	}
 

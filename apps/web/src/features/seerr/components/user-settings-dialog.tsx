@@ -80,10 +80,15 @@ export const UserSettingsDialog = ({
 			{ instanceId, seerrUserId: user.id, data: draft },
 			{
 				onSuccess: () => {
-					toast.success(`Updated quota settings for ${incognitoMode ? getLinuxUsername(user.displayName) : user.displayName}`);
+					toast.success(
+						`Updated quota settings for ${incognitoMode ? getLinuxUsername(user.displayName) : user.displayName}`,
+					);
 					onOpenChange(false);
 				},
-				onError: () => toast.error(`Failed to update quota for ${incognitoMode ? getLinuxUsername(user.displayName) : user.displayName}`),
+				onError: () =>
+					toast.error(
+						`Failed to update quota for ${incognitoMode ? getLinuxUsername(user.displayName) : user.displayName}`,
+					),
 			},
 		);
 	};

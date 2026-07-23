@@ -36,17 +36,12 @@ export const CalendarEventList = ({
 							background: `linear-gradient(135deg, ${themeGradient.from}15, ${themeGradient.to}08)`,
 						}}
 					>
-						<CalendarDays
-							className="h-4 w-4"
-							style={{ color: themeGradient.from }}
-						/>
+						<CalendarDays className="h-4 w-4" style={{ color: themeGradient.from }} />
 					</div>
 
 					<div className="min-w-0 flex-1">
 						<h2 className="text-sm font-semibold text-foreground truncate">
-							{selectedDate
-								? formatLongDate(selectedDate)
-								: "Select a date"}
+							{selectedDate ? formatLongDate(selectedDate) : "Select a date"}
 						</h2>
 						{selectedEvents.length > 0 && (
 							<span className="text-[10px] text-muted-foreground/35 font-medium">
@@ -81,15 +76,10 @@ export const CalendarEventList = ({
 								background: `linear-gradient(135deg, ${themeGradient.from}08, ${themeGradient.to}04)`,
 							}}
 						>
-							<CalendarDays
-								className="h-6 w-6"
-								style={{ color: `${themeGradient.from}25` }}
-							/>
+							<CalendarDays className="h-6 w-6" style={{ color: `${themeGradient.from}25` }} />
 						</div>
 						<p className="text-xs text-muted-foreground/25 font-medium">
-							{selectedDate
-								? "No scheduled items for this date"
-								: "Select a date to view events"}
+							{selectedDate ? "No scheduled items for this date" : "Select a date to view events"}
 						</p>
 					</div>
 				) : (

@@ -9,7 +9,15 @@ import globals from "globals";
 /** @type {import('eslint').Linter.Config[]} */
 const eslintConfig = [
 	{
-		ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "coverage/**", "next-env.d.ts", "server.js"],
+		ignores: [
+			"node_modules/**",
+			".next/**",
+			"out/**",
+			"build/**",
+			"coverage/**",
+			"next-env.d.ts",
+			"server.js",
+		],
 	},
 	{
 		files: ["**/*.{js,jsx,ts,tsx}"],

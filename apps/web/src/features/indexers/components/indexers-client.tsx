@@ -336,22 +336,10 @@ export const IndexersClient = () => {
 			<section className="space-y-6 animate-in fade-in duration-300">
 				<div className="space-y-3">
 					<PremiumSkeleton variant="line" className="h-8 w-48" />
-					<PremiumSkeleton
-						variant="line"
-						className="h-4 w-80"
-						style={{ animationDelay: "50ms" }}
-					/>
+					<PremiumSkeleton variant="line" className="h-4 w-80" style={{ animationDelay: "50ms" }} />
 				</div>
-				<PremiumSkeleton
-					variant="card"
-					className="h-14"
-					style={{ animationDelay: "100ms" }}
-				/>
-				<PremiumSkeleton
-					variant="card"
-					className="h-12"
-					style={{ animationDelay: "150ms" }}
-				/>
+				<PremiumSkeleton variant="card" className="h-14" style={{ animationDelay: "100ms" }} />
+				<PremiumSkeleton variant="card" className="h-12" style={{ animationDelay: "150ms" }} />
 				<div className="space-y-1">
 					{["a", "b", "c", "d", "e"].map((id, i) => (
 						<PremiumSkeleton
@@ -420,7 +408,10 @@ export const IndexersClient = () => {
 					}}
 				>
 					<div className="flex items-center gap-3">
-						<AlertCircle className="h-4 w-4 shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
+						<AlertCircle
+							className="h-4 w-4 shrink-0"
+							style={{ color: SEMANTIC_COLORS.error.from }}
+						/>
 						<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
 							Unable to load indexers. Check your Prowlarr settings.
 						</p>

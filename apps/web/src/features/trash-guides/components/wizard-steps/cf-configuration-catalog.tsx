@@ -10,10 +10,7 @@ import {
 import type { ThemeGradient } from "../../../../lib/theme-gradients";
 import { SanitizedHtml } from "../sanitized-html";
 import type { CFSelectionState } from "./cf-configuration-types";
-import type {
-	WizardCFConfigurationResult,
-	ResolveScoreFn,
-} from "../../types/wizard-types";
+import type { WizardCFConfigurationResult, ResolveScoreFn } from "../../types/wizard-types";
 
 interface CatalogSectionProps {
 	/** The full CF configuration data from the hook */
@@ -189,7 +186,12 @@ export const BrowseCFCatalog = ({
 }: BrowseCFCatalogProps) => {
 	if (!data.availableFormats || data.availableFormats.length === 0) return null;
 
-	const filterCF = (cf: { trash_id: string; name?: string; displayName?: string; description?: string }) => {
+	const filterCF = (cf: {
+		trash_id: string;
+		name?: string;
+		displayName?: string;
+		description?: string;
+	}) => {
 		// Hide formats already in template (mandatory or in groups)
 		const isInMandatory = data.mandatoryCFs?.some(
 			(mandatoryCF) => mandatoryCF.trash_id === cf.trash_id,
@@ -199,8 +201,7 @@ export const BrowseCFCatalog = ({
 		// Hide formats in CF groups
 		const isInGroups = data.cfGroups?.some((group) =>
 			group.custom_formats?.some(
-				(groupCF) =>
-					(typeof groupCF === "string" ? groupCF : groupCF.trash_id) === cf.trash_id,
+				(groupCF) => (typeof groupCF === "string" ? groupCF : groupCF.trash_id) === cf.trash_id,
 			),
 		);
 		if (isInGroups) return false;

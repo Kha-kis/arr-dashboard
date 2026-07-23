@@ -16,11 +16,7 @@ import {
 	X,
 } from "lucide-react";
 import { useState } from "react";
-import {
-	PremiumEmptyState,
-	PremiumSection,
-	PremiumSkeleton,
-} from "../../../components/layout";
+import { PremiumEmptyState, PremiumSection, PremiumSkeleton } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import {
@@ -324,12 +320,12 @@ export const OIDCProviderSection = () => {
 									</div>
 
 									<div className="sm:col-span-2">
-									<ToggleSwitch
-										label="Enable provider"
-										checked={formData.enabled}
-										onChange={(v) => setFormData({ ...formData, enabled: v })}
-									/>
-								</div>
+										<ToggleSwitch
+											label="Enable provider"
+											checked={formData.enabled}
+											onChange={(v) => setFormData({ ...formData, enabled: v })}
+										/>
+									</div>
 								</div>
 
 								<div className="flex gap-3">
@@ -474,12 +470,12 @@ export const OIDCProviderSection = () => {
 									</div>
 
 									<div className="sm:col-span-2">
-									<ToggleSwitch
-										label="Enable provider"
-										checked={editData.enabled}
-										onChange={(v) => setEditData({ ...editData, enabled: v })}
-									/>
-								</div>
+										<ToggleSwitch
+											label="Enable provider"
+											checked={editData.enabled}
+											onChange={(v) => setEditData({ ...editData, enabled: v })}
+										/>
+									</div>
 								</div>
 
 								<div className="flex gap-3">

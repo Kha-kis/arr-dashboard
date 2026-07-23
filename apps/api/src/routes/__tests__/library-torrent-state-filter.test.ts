@@ -67,7 +67,6 @@ afterAll(async () => {
 	await app?.close();
 });
 
-// biome-ignore lint/suspicious/noExplicitAny: typed access into vi.fn().mock.calls would obscure intent
 function findManyCallWhere(call: number = 0): any {
 	const calls = mockPrisma.libraryCache.findMany.mock.calls;
 	if (call >= calls.length)
@@ -175,7 +174,6 @@ describe("GET /library — torrentStateCounts response field", () => {
 	});
 });
 
-// biome-ignore lint/suspicious/noExplicitAny: typed access into vi.fn().mock.calls would obscure intent
 function groupByCallArg(call: number): any {
 	const calls = mockPrisma.libraryCache.groupBy.mock.calls;
 	if (call >= calls.length)

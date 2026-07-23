@@ -96,7 +96,12 @@ export const SeerrRequestsWidget = ({
 
 	const statusStats = [
 		{ icon: Clock, label: "Pending", value: counts.pending, color: SEMANTIC_COLORS.warning.text },
-		{ icon: Loader2, label: "Processing", value: counts.processing, color: SEMANTIC_COLORS.warning.text },
+		{
+			icon: Loader2,
+			label: "Processing",
+			value: counts.processing,
+			color: SEMANTIC_COLORS.warning.text,
+		},
 		{ icon: Check, label: "Approved", value: counts.approved, color: SEMANTIC_COLORS.success.text },
 		{ icon: X, label: "Declined", value: counts.declined, color: SEMANTIC_COLORS.error.text },
 	];
@@ -123,7 +128,9 @@ export const SeerrRequestsWidget = ({
 				tabIndex={0}
 				className="block cursor-pointer"
 				onClick={() => router.push("/requests")}
-				onKeyDown={(e) => { if (e.key === "Enter") router.push("/requests"); }}
+				onKeyDown={(e) => {
+					if (e.key === "Enter") router.push("/requests");
+				}}
 			>
 				<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10 group transition-all hover:border-border/80">
 					{/* Accent line */}
@@ -237,13 +244,7 @@ function NeedsAttentionSection({
 	);
 }
 
-function AttentionItemRow({
-	item,
-	instanceId,
-}: {
-	item: SeerrAttentionItem;
-	instanceId: string;
-}) {
+function AttentionItemRow({ item, instanceId }: { item: SeerrAttentionItem; instanceId: string }) {
 	const [incognitoMode] = useIncognitoMode();
 	const retryMutation = useRetrySeerrRequest();
 	const [isRetrying, setIsRetrying] = useState(false);

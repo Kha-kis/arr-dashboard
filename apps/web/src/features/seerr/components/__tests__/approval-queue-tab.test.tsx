@@ -50,6 +50,7 @@ vi.mock("next/image", () => ({
 	default: (props: Record<string, unknown>) => {
 		// next/image passes non-standard props; just render essential ones
 		const { src, alt, fill: _fill, priority: _priority, ...rest } = props;
+		// eslint-disable-next-line @next/next/no-img-element -- Native img is intentional in the next/image test double.
 		return <img src={src as string} alt={alt as string} {...rest} />;
 	},
 }));

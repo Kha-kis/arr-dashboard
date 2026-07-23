@@ -36,6 +36,9 @@ vi.mock("../../../../hooks/api/useQui", async () => {
 	return {
 		...actual,
 		useQuiCapabilities: (args: unknown) => mockUseQuiCapabilities(args),
+		useQuiTorrentProperties: () => ({ data: undefined }),
+		useQuiCategories: () => ({ data: { categories: [] } }),
+		useQuiTags: () => ({ data: { tags: [] } }),
 	};
 });
 
@@ -102,9 +105,9 @@ describe("TorrentDetailDrawer — capability banner", () => {
 	it("does NOT render the banner while the capability query is in-flight (no caps yet)", () => {
 		mockUseQuiCapabilities.mockReturnValue({ data: undefined });
 		renderDrawer(makeCopy());
-		// The unsupported banner specifically mentions "doesn't support" —
+		// The unsupported banner specifically mentions "doesn’t support" —
 		// it should not appear until caps is loaded.
-		expect(screen.queryByText(/doesn't support/i)).toBeNull();
+		expect(screen.queryByText(/doesn’t support/i)).toBeNull();
 	});
 
 	it("does NOT render the banner when all supported capabilities are true", () => {
@@ -117,7 +120,7 @@ describe("TorrentDetailDrawer — capability banner", () => {
 			},
 		});
 		renderDrawer(makeCopy());
-		expect(screen.queryByText(/doesn't support/i)).toBeNull();
+		expect(screen.queryByText(/doesn’t support/i)).toBeNull();
 	});
 
 	it("renders banner naming 'tracker editing' when supportsTrackerEditing is false", () => {
@@ -130,7 +133,7 @@ describe("TorrentDetailDrawer — capability banner", () => {
 			},
 		});
 		renderDrawer(makeCopy());
-		const banner = screen.getByText(/doesn't support/i);
+		const banner = screen.getByText(/doesn’t support/i);
 		expect(banner.textContent).toMatch(/tracker editing/i);
 		expect(banner.textContent).not.toMatch(/share \/ seeding limits/i);
 	});
@@ -145,7 +148,7 @@ describe("TorrentDetailDrawer — capability banner", () => {
 			},
 		});
 		renderDrawer(makeCopy());
-		const banner = screen.getByText(/doesn't support/i);
+		const banner = screen.getByText(/doesn’t support/i);
 		expect(banner.textContent).toMatch(/share \/ seeding limits/i);
 		expect(banner.textContent).not.toMatch(/tracker editing/i);
 	});
@@ -160,7 +163,7 @@ describe("TorrentDetailDrawer — capability banner", () => {
 			},
 		});
 		renderDrawer(makeCopy());
-		const banner = screen.getByText(/doesn't support/i);
+		const banner = screen.getByText(/doesn’t support/i);
 		expect(banner.textContent).toMatch(/tracker editing/i);
 		expect(banner.textContent).toMatch(/share \/ seeding limits/i);
 		// The joiner is " or " between the two items.

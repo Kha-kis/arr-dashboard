@@ -37,6 +37,7 @@ export type ArrServiceType = "sonarr" | "radarr" | "lidarr" | "readarr";
 // (e.g. t.totalSeries, r.downloadedEpisodes) is compile-time checked.
 // The `any` default is necessary because TypeScript's strict function parameter
 // contravariance prevents narrower parameter types from widening to a union.
+/* eslint-disable @typescript-eslint/no-explicit-any -- Strategy boundary intentionally erases concrete service types. */
 // biome-ignore lint/suspicious/noExplicitAny: Strategy pattern requires type erasure at the component boundary
 interface ServiceVariant<TTotals = any, TRow = any> {
 	/** Primary stat grid: 4 cards across the top */
@@ -61,6 +62,7 @@ interface ServiceVariant<TTotals = any, TRow = any> {
 	/** Primary count field for progress column */
 	progressField: "downloadedPercentage";
 }
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 const SONARR_VARIANT: ServiceVariant<SonarrTotals, SonarrRow> = {
 	primaryStats: (t) => [

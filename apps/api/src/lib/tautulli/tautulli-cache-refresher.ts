@@ -136,7 +136,9 @@ export async function refreshTautulliCache(
 				errors++;
 				log.warn({ err: error, ratingKey }, "Tautulli cache: failed to fetch metadata for item");
 				if (errorMessages.length < 5) {
-					errorMessages.push(`Failed to fetch metadata for ratingKey ${ratingKey}: ${getErrorMessage(error)}`);
+					errorMessages.push(
+						`Failed to fetch metadata for ratingKey ${ratingKey}: ${getErrorMessage(error)}`,
+					);
 				}
 			}
 		}
@@ -179,7 +181,9 @@ export async function refreshTautulliCache(
 					"Tautulli cache: failed to upsert item",
 				);
 				if (errorMessages.length < 5) {
-					errorMessages.push(`Failed to upsert tmdb:${guid.tmdbId} (${guid.mediaType}): ${getErrorMessage(error)}`);
+					errorMessages.push(
+						`Failed to upsert tmdb:${guid.tmdbId} (${guid.mediaType}): ${getErrorMessage(error)}`,
+					);
 				}
 			}
 		}

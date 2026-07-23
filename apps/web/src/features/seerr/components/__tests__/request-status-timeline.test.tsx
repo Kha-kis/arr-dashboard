@@ -84,9 +84,7 @@ function getStageLabels(container: HTMLElement): string[] {
 describe("RequestStatusTimeline — compact", () => {
 	it("shows pending flow: Requested → Pending → Processing → Available", () => {
 		const request = makeRequest({ status: 1 });
-		const { container } = render(
-			<RequestStatusTimeline request={request} variant="compact" />,
-		);
+		const { container } = render(<RequestStatusTimeline request={request} variant="compact" />);
 		const labels = getStageLabels(container);
 		expect(labels).toEqual(["Requested", "Pending", "Processing", "Available"]);
 	});
@@ -118,9 +116,7 @@ describe("RequestStatusTimeline — compact", () => {
 			status: 2,
 			media: { id: 1, tmdbId: 123, status: 3, createdAt: "2024-06-01", updatedAt: "2024-06-01" },
 		});
-		const { container } = render(
-			<RequestStatusTimeline request={request} variant="compact" />,
-		);
+		const { container } = render(<RequestStatusTimeline request={request} variant="compact" />);
 		const labels = getStageLabels(container);
 		expect(labels).toEqual(["Requested", "Approved", "Processing", "Available"]);
 	});
@@ -130,9 +126,7 @@ describe("RequestStatusTimeline — compact", () => {
 			status: 2,
 			media: { id: 1, tmdbId: 123, status: 5, createdAt: "2024-06-01", updatedAt: "2024-06-01" },
 		});
-		const { container } = render(
-			<RequestStatusTimeline request={request} variant="compact" />,
-		);
+		const { container } = render(<RequestStatusTimeline request={request} variant="compact" />);
 		const labels = getStageLabels(container);
 		expect(labels).toEqual(["Requested", "Approved", "Processing", "Available"]);
 	});
@@ -142,9 +136,7 @@ describe("RequestStatusTimeline — compact", () => {
 			status: 2,
 			media: { id: 1, tmdbId: 123, status: 4, createdAt: "2024-06-01", updatedAt: "2024-06-01" },
 		});
-		const { container } = render(
-			<RequestStatusTimeline request={request} variant="compact" />,
-		);
+		const { container } = render(<RequestStatusTimeline request={request} variant="compact" />);
 		const labels = getStageLabels(container);
 		expect(labels).toEqual(["Requested", "Approved", "Processing", "Partial"]);
 	});
@@ -172,9 +164,7 @@ describe("RequestStatusTimeline — compact", () => {
 
 	it("shows failed: Requested → Failed", () => {
 		const request = makeRequest({ status: 4 });
-		const { container } = render(
-			<RequestStatusTimeline request={request} variant="compact" />,
-		);
+		const { container } = render(<RequestStatusTimeline request={request} variant="compact" />);
 		const labels = getStageLabels(container);
 		expect(labels).toEqual(["Requested", "Failed"]);
 	});
@@ -184,9 +174,7 @@ describe("RequestStatusTimeline — compact", () => {
 			status: 2,
 			media: { id: 1, tmdbId: 123, status: 6, createdAt: "2024-06-01", updatedAt: "2024-06-01" },
 		});
-		const { container } = render(
-			<RequestStatusTimeline request={request} variant="compact" />,
-		);
+		const { container } = render(<RequestStatusTimeline request={request} variant="compact" />);
 		const labels = getStageLabels(container);
 		expect(labels).toEqual(["Requested", "Approved", "Processing", "Blocklisted"]);
 	});
@@ -196,9 +184,7 @@ describe("RequestStatusTimeline — compact", () => {
 			status: 2,
 			media: { id: 1, tmdbId: 123, status: 7, createdAt: "2024-06-01", updatedAt: "2024-06-01" },
 		});
-		const { container } = render(
-			<RequestStatusTimeline request={request} variant="compact" />,
-		);
+		const { container } = render(<RequestStatusTimeline request={request} variant="compact" />);
 		const labels = getStageLabels(container);
 		expect(labels).toEqual(["Requested", "Approved", "Processing", "Deleted"]);
 	});
@@ -208,9 +194,7 @@ describe("RequestStatusTimeline — compact", () => {
 			status: 5,
 			media: { id: 1, tmdbId: 123, status: 1, createdAt: "2024-06-01", updatedAt: "2024-06-01" },
 		});
-		const { container } = render(
-			<RequestStatusTimeline request={request} variant="compact" />,
-		);
+		const { container } = render(<RequestStatusTimeline request={request} variant="compact" />);
 		const labels = getStageLabels(container);
 		expect(labels).toEqual(["Requested", "Approved", "Processing", "Available"]);
 	});
@@ -220,18 +204,14 @@ describe("RequestStatusTimeline — compact", () => {
 			status: 2,
 			media: { id: 1, tmdbId: 123, status: 2, createdAt: "2024-06-01", updatedAt: "2024-06-01" },
 		});
-		const { container } = render(
-			<RequestStatusTimeline request={request} variant="compact" />,
-		);
+		const { container } = render(<RequestStatusTimeline request={request} variant="compact" />);
 		const labels = getStageLabels(container);
 		expect(labels).toEqual(["Requested", "Approved", "Processing", "Available"]);
 	});
 
 	it("has role='img' with synthesized aria-label on compact timeline wrapper", () => {
 		const request = makeRequest({ status: 1 });
-		const { container } = render(
-			<RequestStatusTimeline request={request} variant="compact" />,
-		);
+		const { container } = render(<RequestStatusTimeline request={request} variant="compact" />);
 		const wrapper = container.querySelector('[role="img"]');
 		expect(wrapper).toBeTruthy();
 		expect(wrapper?.getAttribute("aria-label")).toBe(
@@ -290,9 +270,7 @@ describe("RequestStatusTimeline — expanded", () => {
 			},
 			media: { id: 1, tmdbId: 123, status: 1, createdAt: "2024-06-01", updatedAt: "2024-06-01" },
 		});
-		render(
-			<RequestStatusTimeline request={request} variant="expanded" modifierName="Admin" />,
-		);
+		render(<RequestStatusTimeline request={request} variant="expanded" modifierName="Admin" />);
 		expect(screen.getByText("by Admin")).toBeTruthy();
 	});
 
@@ -302,9 +280,7 @@ describe("RequestStatusTimeline — expanded", () => {
 			updatedAt: "2024-06-05T12:00:00Z",
 			media: { id: 1, tmdbId: 123, status: 3, createdAt: "2024-06-01", updatedAt: "2024-06-01" },
 		});
-		const { container } = render(
-			<RequestStatusTimeline request={request} variant="expanded" />,
-		);
+		const { container } = render(<RequestStatusTimeline request={request} variant="expanded" />);
 		// The expanded timeline renders timestamps with Clock icon + formatRelativeTime
 		// There should only be 1 timestamp (for "Requested"), not 2
 		const clockIcons = container.querySelectorAll(".h-2\\.5.w-2\\.5");
@@ -317,9 +293,7 @@ describe("RequestStatusTimeline — expanded", () => {
 			updatedAt: "2024-06-05T12:00:00Z",
 			media: { id: 1, tmdbId: 123, status: 1, createdAt: "2024-06-01", updatedAt: "2024-06-01" },
 		});
-		const { container } = render(
-			<RequestStatusTimeline request={request} variant="expanded" />,
-		);
+		const { container } = render(<RequestStatusTimeline request={request} variant="expanded" />);
 		// Should have 2 timestamps (Requested + Approved)
 		const clockIcons = container.querySelectorAll(".h-2\\.5.w-2\\.5");
 		expect(clockIcons.length).toBe(2);

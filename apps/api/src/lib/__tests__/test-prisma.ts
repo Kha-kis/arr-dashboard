@@ -21,7 +21,9 @@ function isPostgresUrl(url: string): boolean {
  * @param databaseUrl - Optional database URL (defaults to in-memory SQLite)
  * @returns Configured PrismaClient instance
  */
-export function createTestPrismaClient(databaseUrl = ":memory:"): InstanceType<typeof PrismaClient> {
+export function createTestPrismaClient(
+	databaseUrl = ":memory:",
+): InstanceType<typeof PrismaClient> {
 	const adapter = new PrismaBetterSqlite3({ url: databaseUrl });
 	return new PrismaClient({ adapter });
 }
