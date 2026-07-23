@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { arrClientPlugin } from "../plugins/arr-client.js";
 import deploymentExecutorPlugin from "../plugins/deployment-executor.js";
 import heapMonitorPlugin from "../plugins/heap-monitor.js";
+import httpAuthMigrationPlugin from "../plugins/http-auth-migration.js";
 import lifecyclePlugin from "../plugins/lifecycle.js";
 import notificationServicePlugin from "../plugins/notification-service.js";
 import { prismaPlugin } from "../plugins/prisma.js";
@@ -20,6 +21,7 @@ import seerrCircuitBreakerPlugin from "../plugins/seerr-circuit-breaker.js";
  *  - prisma            → `app.prisma`
  *  - security          → `app.encryptor`, `app.sessionService`
  *  - arrClient         → `createInstanceFetcher` helpers for ARR services
+ *  - httpAuthMigration → encrypts legacy URL-embedded proxy credentials
  *  - seerr circuit     → request breaker for Seerr outbound calls
  *  - seerr cache       → shared response cache for Seerr requests
  *  - deploymentExecutor→ `app.deploymentExecutor`
@@ -31,6 +33,7 @@ import seerrCircuitBreakerPlugin from "../plugins/seerr-circuit-breaker.js";
 export function registerInfrastructure(app: FastifyInstance): void {
 	app.register(prismaPlugin);
 	app.register(securityPlugin);
+	app.register(httpAuthMigrationPlugin);
 	app.register(arrClientPlugin);
 	app.register(seerrCircuitBreakerPlugin);
 	app.register(seerrCachePlugin);
