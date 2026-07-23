@@ -1,4 +1,5 @@
 import type { ServiceType } from "../../lib/prisma.js";
+import { encryptHttpAuthCredentials, type HttpAuthCredentials } from "./http-auth.js";
 
 /**
  * Service instance update data builder
@@ -12,6 +13,7 @@ export interface UpdatePayload {
 	isDefault?: boolean;
 	service?: string;
 	apiKey?: string;
+	httpAuth?: HttpAuthCredentials | null;
 	storageGroupId?: string | null;
 	// qui-only — see services route schema for semantics.
 	hasLocalFilesystemAccess?: boolean;
@@ -32,6 +34,8 @@ export interface UpdateData {
 	service?: ServiceType;
 	encryptedApiKey?: string;
 	encryptionIv?: string;
+	encryptedHttpAuthCredentials?: string | null;
+	httpAuthEncryptionIv?: string | null;
 	storageGroupId?: string | null;
 	hasLocalFilesystemAccess?: boolean;
 	pathPrefix?: string | null;
@@ -65,6 +69,14 @@ export function buildUpdateData(
 		const encrypted = encryptor.encrypt(payload.apiKey);
 		updateData.encryptedApiKey = encrypted.value;
 		updateData.encryptionIv = encrypted.iv;
+	}
+	if (Object.hasOwn(payload, "httpAuth") && encryptor) {
+		if (payload.httpAuth === null) {
+			updateData.encryptedHttpAuthCredentials = null;
+			updateData.httpAuthEncryptionIv = null;
+		} else if (payload.httpAuth) {
+			Object.assign(updateData, encryptHttpAuthCredentials(encryptor, payload.httpAuth));
+		}
 	}
 
 	// Handle nullable fields explicitly

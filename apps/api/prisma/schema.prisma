@@ -118,6 +118,10 @@ model ServiceInstance {
   externalUrl     String?             // Optional external URL for browser access (reverse proxy)
   encryptedApiKey String
   encryptionIv    String
+  // Optional reverse-proxy HTTP Basic Auth credentials, stored as one
+  // encrypted versioned JSON payload ({ v, username, password }).
+  encryptedHttpAuthCredentials String?
+  httpAuthEncryptionIv         String?
   isDefault       Boolean             @default(false)
   enabled         Boolean             @default(true)
   storageGroupId  String?             // Group instances sharing same storage for accurate disk stats

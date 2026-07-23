@@ -387,8 +387,9 @@ export async function fetchLibraryEnrichment(
 export async function fetchSeerrApiKey(
 	seerrUrl: string,
 	tokenRef: string,
+	httpAuth?: { username: string; password: string },
 ): Promise<SeerrFetchKeyResponse> {
-	return apiRequest("/api/seerr/oauth/fetch-key", { json: { seerrUrl, tokenRef } });
+	return apiRequest("/api/seerr/oauth/fetch-key", { json: { seerrUrl, tokenRef, httpAuth } });
 }
 
 function buildQueryString(params: Record<string, unknown>): string {

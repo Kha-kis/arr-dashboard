@@ -72,7 +72,14 @@ function makeInstanceRow(overrides: Record<string, unknown> = {}) {
  * catches regressions that pass objects through untransformed.
  */
 function assertNoSecretLeakage(body: unknown): void {
-	const FORBIDDEN = ["encryptedApiKey", "encryptionIv", "apiKey"];
+	const FORBIDDEN = [
+		"encryptedApiKey",
+		"encryptionIv",
+		"apiKey",
+		"encryptedHttpAuthCredentials",
+		"httpAuthEncryptionIv",
+		"httpAuth",
+	];
 	const serialized = JSON.stringify(body);
 	for (const field of FORBIDDEN) {
 		expect(serialized).not.toContain(`"${field}"`);
