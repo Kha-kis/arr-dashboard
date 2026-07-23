@@ -62,6 +62,10 @@ describe("torrent file policy", () => {
 		},
 	);
 
+	it("rejects oversized allowlist JSON before parsing it", () => {
+		expect(parseAllowedFileExtensions(`["${"a".repeat(5000)}"]`).ok).toBe(false);
+	});
+
 	it.each([
 		["folder/Movie.MKV", "mkv"],
 		["folder\\subtitle.en.SRT", "srt"],
@@ -69,6 +73,8 @@ describe("torrent file policy", () => {
 		["README", "(no extension)"],
 		[".env", "(no extension)"],
 		["name.", "(no extension)"],
+		[`name.${"x".repeat(1000)}`, "(invalid extension)"],
+		["name.bad\nvalue", "(invalid extension)"],
 	])("uses the exact final extension for %s", (name, expected) => {
 		expect(getFinalFileExtension(name)).toBe(expected);
 	});
@@ -93,6 +99,24 @@ describe("torrent file policy", () => {
 				new Set(["mkv", "nfo", "srt"]),
 			),
 		).toEqual({ status: "compliant" });
+	});
+
+	it("bounds and sanitizes attacker-controlled extension labels in reasons", () => {
+		const result = inspectTorrentFileNames(
+			[
+				...Array.from({ length: 20 }, (_, index) => `file.bad${index}`),
+				`file.${"x".repeat(1000)}`,
+				"file.control\nsuffix",
+			],
+			new Set(["mkv"]),
+		);
+
+		expect(result.status).toBe("violation");
+		if (result.status !== "violation") throw new Error("expected violation");
+		expect(result.offendingExtensions).toHaveLength(10);
+		expect(result.reason).toContain("and additional types");
+		expect(result.reason).not.toContain("x".repeat(100));
+		expect(result.reason).not.toContain("\n");
 	});
 
 	it("inspects every qui file entry, including priority-zero files", async () => {

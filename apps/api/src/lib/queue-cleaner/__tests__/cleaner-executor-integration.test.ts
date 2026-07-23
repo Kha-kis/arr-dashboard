@@ -373,10 +373,6 @@ describe("executeQueueCleaner — integration", () => {
 					{
 						...STALLED_ITEM,
 						downloadId: hash,
-						trackedDownloadStatus: "ok",
-						trackedDownloadState: "downloading",
-						statusMessages: [],
-						errorMessage: undefined,
 					},
 				],
 			}),
@@ -394,7 +390,6 @@ describe("executeQueueCleaner — integration", () => {
 			app,
 			makeInstance(),
 			makeConfig({
-				stalledEnabled: false,
 				failedEnabled: false,
 				fileExtensionAllowlistEnabled: true,
 				allowedFileExtensions: '["mkv"]',
