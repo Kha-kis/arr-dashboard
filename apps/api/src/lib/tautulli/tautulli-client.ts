@@ -10,6 +10,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { z } from "zod";
 import type { ClientInstanceData } from "../arr/client-factory.js";
 import type { Encryptor } from "../auth/encryption.js";
+import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 import { parseUpstreamOrThrow } from "../validation/parse-upstream.js";
 import {
 	tautulliActivityDataSchema,
@@ -114,12 +115,20 @@ export class TautulliClient {
 	private readonly apiKey: string;
 	private readonly log: FastifyBaseLogger;
 	private readonly timeout: number;
+	private readonly httpAuthHeaders: Record<string, string>;
 
-	constructor(baseUrl: string, apiKey: string, log: FastifyBaseLogger, timeout = DEFAULT_TIMEOUT) {
+	constructor(
+		baseUrl: string,
+		apiKey: string,
+		log: FastifyBaseLogger,
+		timeout = DEFAULT_TIMEOUT,
+		httpAuthHeaders: Record<string, string> = {},
+	) {
 		this.baseUrl = baseUrl.replace(/\/$/, "");
 		this.apiKey = apiKey;
 		this.log = log;
 		this.timeout = timeout;
+		this.httpAuthHeaders = httpAuthHeaders;
 	}
 
 	/**
@@ -232,7 +241,7 @@ export class TautulliClient {
 		let response: Response;
 		try {
 			response = await fetch(safeUrl, {
-				headers: { Accept: "application/json" },
+				headers: { Accept: "application/json", ...this.httpAuthHeaders },
 				signal: AbortSignal.timeout(this.timeout),
 			});
 		} catch (err) {
@@ -293,5 +302,11 @@ export function createTautulliClient(
 		iv: instance.encryptionIv,
 	});
 
-	return new TautulliClient(instance.baseUrl, apiKey, log);
+	return new TautulliClient(
+		instance.baseUrl,
+		apiKey,
+		log,
+		DEFAULT_TIMEOUT,
+		getStoredHttpAuthHeaders(encryptor, instance),
+	);
 }

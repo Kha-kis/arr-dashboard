@@ -49,6 +49,8 @@ function createArrReader(config: ArrReaderConfig): SourceReader {
 					baseUrl: sourceInstance.baseUrl,
 					encryptedApiKey: sourceInstance.encryptedApiKey,
 					encryptionIv: sourceInstance.encryptionIv,
+					encryptedHttpAuthCredentials: sourceInstance.encryptedHttpAuthCredentials,
+					httpAuthEncryptionIv: sourceInstance.httpAuthEncryptionIv,
 					service: sourceInstance.service,
 					label: sourceInstance.label,
 				});

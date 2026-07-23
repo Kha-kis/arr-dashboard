@@ -9,6 +9,7 @@ import type { FastifyBaseLogger } from "fastify";
 import type { z } from "zod";
 import type { ClientInstanceData } from "../arr/client-factory.js";
 import type { Encryptor } from "../auth/encryption.js";
+import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 import { parseUpstreamOrThrow } from "../validation/parse-upstream.js";
 import {
 	plexAccountsResponseSchema,
@@ -127,11 +128,19 @@ export class PlexClient {
 	private readonly token: string;
 	private readonly log: FastifyBaseLogger;
 	private readonly timeout: number;
-	constructor(baseUrl: string, token: string, log: FastifyBaseLogger, timeout = DEFAULT_TIMEOUT) {
+	private readonly httpAuthHeaders: Record<string, string>;
+	constructor(
+		baseUrl: string,
+		token: string,
+		log: FastifyBaseLogger,
+		timeout = DEFAULT_TIMEOUT,
+		httpAuthHeaders: Record<string, string> = {},
+	) {
 		this.baseUrl = baseUrl.replace(/\/$/, "");
 		this.token = token;
 		this.log = log;
 		this.timeout = timeout;
+		this.httpAuthHeaders = httpAuthHeaders;
 	}
 
 	/**
@@ -356,7 +365,7 @@ export class PlexClient {
 	async fetchImage(path: string): Promise<Response> {
 		const url = new URL(`${this.baseUrl}${path}`);
 		const response = await fetch(url.toString(), {
-			headers: { "X-Plex-Token": this.token },
+			headers: { "X-Plex-Token": this.token, ...this.httpAuthHeaders },
 			signal: AbortSignal.timeout(this.timeout),
 		});
 		if (!response.ok) {
@@ -378,6 +387,7 @@ export class PlexClient {
 		const headers: Record<string, string> = {
 			Accept: "application/json",
 			"X-Plex-Token": this.token,
+			...this.httpAuthHeaders,
 		};
 
 		const fetchOptions: RequestInit = {
@@ -440,5 +450,11 @@ export function createPlexClient(
 		iv: instance.encryptionIv,
 	});
 
-	return new PlexClient(instance.baseUrl, token, log);
+	return new PlexClient(
+		instance.baseUrl,
+		token,
+		log,
+		DEFAULT_TIMEOUT,
+		getStoredHttpAuthHeaders(encryptor, instance),
+	);
 }

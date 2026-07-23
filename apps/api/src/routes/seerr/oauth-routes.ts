@@ -10,6 +10,11 @@ import type { SeerrFetchKeyResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { peekToken } from "../../lib/plex/token-store.js";
+import { createHttpAuthHeaders } from "../../lib/services/http-auth.js";
+import {
+	credentialFreeUrlSchema,
+	httpAuthSchema,
+} from "../../lib/services/http-auth-validation.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
@@ -35,8 +40,9 @@ async function safeJson(response: Response): Promise<unknown> {
 // ============================================================================
 
 const fetchKeySchema = z.object({
-	seerrUrl: z.string().url(),
+	seerrUrl: credentialFreeUrlSchema,
 	tokenRef: z.string().min(1),
+	httpAuth: httpAuthSchema.optional(),
 });
 
 // ============================================================================
@@ -74,7 +80,8 @@ export async function registerSeerrOAuthRoutes(app: FastifyInstance, _opts: Fast
 		"/fetch-key",
 		{ config: { rateLimit: FETCH_KEY_RATE_LIMIT } },
 		async (request, reply) => {
-			const { seerrUrl, tokenRef } = validateRequest(fetchKeySchema, request.body);
+			const { seerrUrl, tokenRef, httpAuth } = validateRequest(fetchKeySchema, request.body);
+			const httpAuthHeaders = createHttpAuthHeaders(httpAuth ?? null);
 
 			// Look up the stored Plex auth token
 			const plexToken = peekToken(tokenRef);
@@ -103,7 +110,7 @@ export async function registerSeerrOAuthRoutes(app: FastifyInstance, _opts: Fast
 			let csrfToken = "";
 			try {
 				const csrfResponse = await fetch(`${baseUrl}/api/v1/status`, {
-					headers: { Accept: "application/json" },
+					headers: { Accept: "application/json", ...httpAuthHeaders },
 					signal: AbortSignal.timeout(SEERR_TIMEOUT),
 				});
 				const csrfCookies = csrfResponse.headers.getSetCookie?.() ?? [];
@@ -130,6 +137,7 @@ export async function registerSeerrOAuthRoutes(app: FastifyInstance, _opts: Fast
 				const authHeaders: Record<string, string> = {
 					"Content-Type": "application/json",
 					Accept: "application/json",
+					...httpAuthHeaders,
 				};
 				if (csrfCookie) authHeaders.Cookie = csrfCookie;
 				if (csrfToken) authHeaders["x-xsrf-token"] = csrfToken;
@@ -217,6 +225,7 @@ export async function registerSeerrOAuthRoutes(app: FastifyInstance, _opts: Fast
 					headers: {
 						Accept: "application/json",
 						Cookie: sessionCookie,
+						...httpAuthHeaders,
 					},
 					signal: AbortSignal.timeout(SEERR_TIMEOUT),
 				});
@@ -268,7 +277,11 @@ export async function registerSeerrOAuthRoutes(app: FastifyInstance, _opts: Fast
 			let version = "unknown";
 			try {
 				const statusResponse = await fetch(`${baseUrl}/api/v1/status`, {
-					headers: { Accept: "application/json", Cookie: sessionCookie },
+					headers: {
+						Accept: "application/json",
+						Cookie: sessionCookie,
+						...httpAuthHeaders,
+					},
 					signal: AbortSignal.timeout(SEERR_TIMEOUT),
 				});
 				if (statusResponse.ok) {

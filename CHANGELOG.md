@@ -5,6 +5,22 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Service instances can now store optional encrypted HTTP Basic Auth credentials
+  for reverse proxies, including connection testing and Seerr-assisted setup.
+  Existing credentials embedded in service URLs are migrated out of the URL at
+  startup. Jellyfin requires a proxy bypass because its API authentication
+  already uses the `Authorization` header.
+
+### Fixed
+
+- New Radarr and Sonarr downloads are now detected when an item is added and
+  imported entirely between library polls, and the resulting notification is
+  dispatched only through channels owned by the instance's user.
+
 ## [2.21.0] - 2026-06-09 — Media-only Storage & Auth Resilience
 
 The storage rollup now tells the truth about *media* space, and a

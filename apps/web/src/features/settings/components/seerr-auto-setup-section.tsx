@@ -20,6 +20,7 @@ const SEERR_GRADIENT = SERVICE_GRADIENTS.seerr;
 
 interface SeerrAutoSetupSectionProps {
 	seerrUrl: string;
+	httpAuth?: { username: string; password: string };
 	onApiKeyFetched: (apiKey: string) => void;
 	onTestConnection: () => void;
 	mode: "add" | "edit";
@@ -29,6 +30,7 @@ type SetupStatus = "idle" | "plex-auth" | "fetching" | "done" | "error";
 
 export const SeerrAutoSetupSection = ({
 	seerrUrl,
+	httpAuth,
 	onApiKeyFetched,
 	onTestConnection,
 	mode,
@@ -48,7 +50,7 @@ export const SeerrAutoSetupSection = ({
 			setSetupStatus("fetching");
 			setError(null);
 			try {
-				const { apiKey } = await fetchSeerrApiKey(seerrUrl.trim(), ref);
+				const { apiKey } = await fetchSeerrApiKey(seerrUrl.trim(), ref, httpAuth);
 				onApiKeyFetched(apiKey);
 				setSetupStatus("done");
 				setTimeout(onTestConnection, 100);
@@ -57,7 +59,7 @@ export const SeerrAutoSetupSection = ({
 				setError(getErrorMessage(err, "Failed to retrieve Seerr API key"));
 			}
 		},
-		[seerrUrl, onApiKeyFetched, onTestConnection],
+		[seerrUrl, httpAuth, onApiKeyFetched, onTestConnection],
 	);
 
 	const handleConnect = useCallback(() => {

@@ -84,8 +84,15 @@ import {
 } from "../../lib/api-client/services";
 
 export const useTestServiceConnection = () => {
-	return useMutation<TestConnectionResponse, Error, string>({
-		mutationFn: (id: string) => testServiceConnection(id),
+	return useMutation<
+		TestConnectionResponse,
+		Error,
+		string | { id: string; httpAuth: { username: string; password: string } | null }
+	>({
+		mutationFn: (input) =>
+			typeof input === "string"
+				? testServiceConnection(input)
+				: testServiceConnection(input.id, input.httpAuth),
 	});
 };
 
@@ -108,8 +115,10 @@ export const useTestConnectionBeforeAdd = () => {
 				| "jellyfin"
 				| "emby"
 				| "qui";
+			httpAuth?: { username: string; password: string };
 		}
 	>({
-		mutationFn: ({ baseUrl, apiKey, service }) => testConnectionBeforeAdd(baseUrl, apiKey, service),
+		mutationFn: ({ baseUrl, apiKey, service, httpAuth }) =>
+			testConnectionBeforeAdd(baseUrl, apiKey, service, httpAuth),
 	});
 };

@@ -87,6 +87,8 @@ export async function fetchInfoHashFromArrHistory({
 				baseUrl: arrInstance.baseUrl,
 				encryptedApiKey: arrInstance.encryptedApiKey,
 				encryptionIv: arrInstance.encryptionIv,
+				encryptedHttpAuthCredentials: arrInstance.encryptedHttpAuthCredentials,
+				httpAuthEncryptionIv: arrInstance.httpAuthEncryptionIv,
 				service: arrInstance.service,
 				label: arrInstance.label,
 			},
