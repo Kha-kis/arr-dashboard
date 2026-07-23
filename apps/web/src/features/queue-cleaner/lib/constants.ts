@@ -6,6 +6,7 @@
  */
 
 import { POLLING_ACTIVE, POLLING_FAST, POLLING_STANDARD } from "../../../lib/polling-intervals";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 // Re-export all shared constants and types
 export {
@@ -189,6 +190,16 @@ export const RULE_COLORS: Record<string, RuleColorStyle> = {
 		text: "#f43f5e",
 		border: "rgba(244, 63, 94, 0.2)",
 	},
+	disallowed_file_extension: {
+		bg: SEMANTIC_COLORS.error.bg,
+		text: SEMANTIC_COLORS.error.text,
+		border: SEMANTIC_COLORS.error.border,
+	},
+	file_policy_deferred: {
+		bg: SEMANTIC_COLORS.warning.bg,
+		text: SEMANTIC_COLORS.warning.text,
+		border: SEMANTIC_COLORS.warning.border,
+	},
 	whitelisted: { bg: "rgba(34, 197, 94, 0.1)", text: "#22c55e", border: "rgba(34, 197, 94, 0.2)" },
 	healthy: { bg: "rgba(34, 197, 94, 0.1)", text: "#22c55e", border: "rgba(34, 197, 94, 0.2)" },
 	too_young: {
@@ -207,6 +218,8 @@ export const RULE_LABELS: Record<string, string> = {
 	seeding_timeout: "Seeding Timeout",
 	import_pending: "Import Pending",
 	import_blocked: "Import Blocked",
+	disallowed_file_extension: "Disallowed File Type",
+	file_policy_deferred: "File Check Deferred",
 	whitelisted: "Whitelisted",
 	healthy: "Healthy",
 	too_young: "Too New",

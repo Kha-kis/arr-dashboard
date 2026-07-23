@@ -41,8 +41,128 @@ import {
 	shouldSkipByProfileFilter,
 	shouldSkipByTagFilter,
 } from "./rule-evaluators.js";
+import {
+	createTorrentFilePolicyEvaluator,
+	parseAllowedFileExtensions,
+	type TorrentFilePolicyResult,
+} from "./torrent-file-policy.js";
 
 const log = loggers.queueCleaner;
+
+function isEligibleForFilePolicy(
+	item: RawQueueItem,
+	config: QueueCleanerConfig,
+	now: Date,
+	isSonarr: boolean,
+	whitelistPatterns: WhitelistPattern[],
+): boolean {
+	const added = parseDate(item.added);
+	if (added) {
+		const ageMins = (now.getTime() - added.getTime()) / (60 * 1000);
+		if (ageMins < config.minQueueAgeMins) return false;
+	}
+	if (shouldSkipByTagFilter(item, config) || shouldSkipByProfileFilter(item, config)) return false;
+	if (isSonarr && config.skipFutureEpisodes && isFutureEpisode(item, now)) return false;
+	if (whitelistPatterns.length > 0 && checkWhitelist(item, whitelistPatterns).matched) return false;
+	return true;
+}
+
+async function evaluateFilePolicyForEligibleItems(
+	app: FastifyInstance,
+	instance: ServiceInstance,
+	config: QueueCleanerConfig,
+	queueRecords: RawQueueItem[],
+	now: Date,
+	whitelistPatterns: WhitelistPattern[],
+	allowedExtensions: string[],
+): Promise<Map<RawQueueItem, TorrentFilePolicyResult>> {
+	const resultsByItem = new Map<RawQueueItem, TorrentFilePolicyResult>();
+	if (!config.fileExtensionAllowlistEnabled) return resultsByItem;
+
+	const isSonarr = instance.service === "SONARR";
+	const eligible = queueRecords.filter((item) =>
+		isEligibleForFilePolicy(item, config, now, isSonarr, whitelistPatterns),
+	);
+	if (eligible.length === 0) return resultsByItem;
+
+	try {
+		const evaluator = createTorrentFilePolicyEvaluator(app, instance.userId, allowedExtensions);
+		const results = await evaluator.evaluateMany(eligible);
+		for (let index = 0; index < eligible.length; index++) {
+			resultsByItem.set(eligible[index]!, results[index]!);
+		}
+	} catch (error) {
+		log.warn(
+			{ err: error, instanceId: instance.id },
+			"Queue cleaner file policy evaluation failed unexpectedly; deferring all checks",
+		);
+		for (const item of eligible) {
+			resultsByItem.set(item, {
+				status: "deferred",
+				reason: "File allowlist check deferred because qui inspection failed",
+			});
+		}
+	}
+
+	return resultsByItem;
+}
+
+async function resolvePreviewGateReasons(
+	app: FastifyInstance,
+	instance: ServiceInstance,
+	config: QueueCleanerConfig,
+	queueRecords: RawQueueItem[],
+	now: Date,
+	whitelistPatterns: WhitelistPattern[],
+): Promise<Map<string, string>> {
+	const reasons = new Map<string, string>();
+	if (!config.quiAwareMode && !config.lastSeedProtection) return reasons;
+
+	const isSonarr = instance.service === "SONARR";
+	const hashByItemId = new Map<string, string>();
+	for (const item of queueRecords) {
+		if (!isEligibleForFilePolicy(item, config, now, isSonarr, whitelistPatterns)) continue;
+		const hash = normalizeDownloadId(item.downloadId);
+		if (hash) hashByItemId.set(String(item.id), hash);
+	}
+	if (hashByItemId.size === 0) return reasons;
+
+	if (config.quiAwareMode) {
+		try {
+			const gatedIds = await resolveGatedItemIds(app.prisma, instance.userId, hashByItemId);
+			for (const id of gatedIds) {
+				reasons.set(id, "qui-aware: torrent is paused or errored in qui");
+			}
+		} catch (error) {
+			log.warn(
+				{ err: error, instanceId: instance.id },
+				"qui-aware preview lookup failed; preview is proceeding without that gate",
+			);
+		}
+	}
+
+	if (config.lastSeedProtection) {
+		try {
+			const protectedIds = await resolveLibraryReferencedItemIds(
+				app.prisma,
+				instance.userId,
+				hashByItemId,
+			);
+			for (const id of protectedIds) {
+				if (!reasons.has(id)) {
+					reasons.set(id, "last-seed protection: *arr library still references this torrent");
+				}
+			}
+		} catch (error) {
+			log.warn(
+				{ err: error, instanceId: instance.id },
+				"last-seed preview lookup failed unexpectedly; preview is proceeding without that gate",
+			);
+		}
+	}
+
+	return reasons;
+}
 
 // Re-export types for external use
 export type {
@@ -72,6 +192,7 @@ export async function executeQueueCleaner(
 ): Promise<CleanerResult> {
 	const client = app.arrClientFactory.create(instance) as QueueCapableClient;
 	const now = new Date();
+	let allowedFileExtensions: string[] = [];
 
 	// Parse whitelist patterns
 	let whitelistPatterns: WhitelistPattern[] = [];
@@ -123,6 +244,29 @@ export async function executeQueueCleaner(
 					"Error patterns configuration is invalid. Please fix error patterns before running.",
 			};
 		}
+	}
+
+	if (config.fileExtensionAllowlistEnabled) {
+		const parsed = parseAllowedFileExtensions(config.allowedFileExtensions);
+		if (!parsed.ok || parsed.extensions.length === 0) {
+			log.error(
+				{ instanceId: instance.id },
+				"Invalid torrent file allowlist - aborting clean for safety",
+			);
+			return {
+				itemsCleaned: 0,
+				itemsSkipped: 0,
+				itemsWarned: 0,
+				cleanedItems: [],
+				skippedItems: [],
+				warnedItems: [],
+				isDryRun: config.dryRunMode,
+				status: "error",
+				message:
+					"Torrent file allowlist configuration is invalid. Add at least one valid extension before running.",
+			};
+		}
+		allowedFileExtensions = parsed.extensions;
 	}
 
 	// Fetch queue
@@ -179,7 +323,15 @@ export async function executeQueueCleaner(
 	const matched: CleanerResultItem[] = [];
 	const skipped: CleanerResultItem[] = [];
 	const queueItemIds = new Set<string>();
-
+	const filePolicyResults = await evaluateFilePolicyForEligibleItems(
+		app,
+		instance,
+		config,
+		queueRecords,
+		now,
+		whitelistPatterns,
+		allowedFileExtensions,
+	);
 	// Map matched queue item id (as string) → lowercase qBit info hash, used
 	// by the Phase 2.3 qui-aware gate below. Only populated for items whose
 	// *arr downloadId looks like a torrent hash (40/64 hex); NZB/magnet IDs
@@ -234,7 +386,24 @@ export async function executeQueueCleaner(
 			}
 		}
 
-		const evaluation = evaluateQueueItem(item, config, now);
+		const filePolicy = filePolicyResults.get(item);
+		const standardEvaluation = evaluateQueueItem(item, config, now);
+		if (filePolicy?.status === "deferred") {
+			skipped.push({
+				id,
+				title,
+				reason: filePolicy.reason,
+				rule: "file_policy_deferred",
+			});
+			continue;
+		}
+		const evaluation =
+			filePolicy?.status === "violation"
+				? {
+						rule: "disallowed_file_extension" as const,
+						reason: filePolicy.reason,
+					}
+				: standardEvaluation;
 		if (evaluation) {
 			const protocol = typeof item.protocol === "string" ? item.protocol.toLowerCase() : undefined;
 			matched.push({ id, title, reason: evaluation.reason, rule: evaluation.rule, protocol });
@@ -667,10 +836,11 @@ export async function executeQueueCleaner(
 		// Normal removal flow
 		try {
 			const isTorrent = item.protocol === "torrent";
-			const useChangeCategory = config.changeCategoryEnabled && isTorrent;
+			const isFilePolicyRemoval = item.rule === "disallowed_file_extension";
+			const useChangeCategory = !isFilePolicyRemoval && config.changeCategoryEnabled && isTorrent;
 
 			await client.queue.delete(item.id, {
-				removeFromClient: config.removeFromClient,
+				removeFromClient: isFilePolicyRemoval ? true : config.removeFromClient,
 				blocklist: config.addToBlocklist,
 				skipRedownload: !config.searchAfterRemoval,
 				changeCategory: useChangeCategory,
@@ -744,6 +914,7 @@ export async function executeEnhancedPreview(
 ): Promise<EnhancedPreviewResult> {
 	const client = app.arrClientFactory.create(instance) as QueueCapableClient;
 	const now = new Date();
+	let allowedFileExtensions: string[] = [];
 	const instanceService = instance.service.toLowerCase() as
 		| "sonarr"
 		| "radarr"
@@ -836,6 +1007,46 @@ export async function executeEnhancedPreview(
 		}
 	}
 
+	if (config.fileExtensionAllowlistEnabled) {
+		const parsed = parseAllowedFileExtensions(config.allowedFileExtensions);
+		if (!parsed.ok || parsed.extensions.length === 0) {
+			log.error(
+				{ instanceId: instance.id },
+				"Invalid torrent file allowlist - preview aborted for safety",
+			);
+			return {
+				instanceId: instance.id,
+				instanceLabel: instance.label,
+				instanceService,
+				instanceReachable: true,
+				errorMessage:
+					"Torrent file allowlist configuration is invalid. Add at least one valid extension.",
+				queueSummary: {
+					totalItems: 0,
+					downloading: 0,
+					paused: 0,
+					queued: 0,
+					seeding: 0,
+					importPending: 0,
+					failed: 0,
+				},
+				wouldRemove: 0,
+				wouldWarn: 0,
+				wouldSkip: 0,
+				previewItems: [],
+				ruleSummary: {},
+				previewGeneratedAt: now.toISOString(),
+				configSnapshot: {
+					dryRunMode: config.dryRunMode,
+					strikeSystemEnabled: config.strikeSystemEnabled,
+					maxStrikes: config.maxStrikes,
+					maxRemovalsPerRun: config.maxRemovalsPerRun,
+				},
+			};
+		}
+		allowedFileExtensions = parsed.extensions;
+	}
+
 	// Try to fetch queue
 	// For Radarr, include items that can't be matched to a known movie.
 	const isRadarrPreview = instance.service === "RADARR";
@@ -897,6 +1108,23 @@ export async function executeEnhancedPreview(
 	const previewItems: EnhancedPreviewItem[] = [];
 	const ruleSummary: Record<string, number> = {};
 	const isSonarrPreview = instance.service === "SONARR";
+	const filePolicyResults = await evaluateFilePolicyForEligibleItems(
+		app,
+		instance,
+		config,
+		queueRecords,
+		now,
+		whitelistPatterns,
+		allowedFileExtensions,
+	);
+	const previewGateReasons = await resolvePreviewGateReasons(
+		app,
+		instance,
+		config,
+		queueRecords,
+		now,
+		whitelistPatterns,
+	);
 
 	const existingStrikes = await app.prisma.queueCleanerStrike.findMany({
 		where: { instanceId: instance.id },
@@ -1015,11 +1243,68 @@ export async function executeEnhancedPreview(
 			}
 		}
 
-		// Evaluate against rules
-		const evaluation = evaluateQueueItem(item, config, now);
+		// Evaluate against rules. A file-policy violation takes precedence
+		// because its removal semantics must delete the full torrent payload.
+		const filePolicy = filePolicyResults.get(item);
+		const standardEvaluation = evaluateQueueItem(item, config, now);
+		if (filePolicy?.status === "deferred") {
+			ruleSummary.file_policy_deferred = (ruleSummary.file_policy_deferred ?? 0) + 1;
+			previewItems.push({
+				id,
+				title,
+				action: "skip",
+				rule: "file_policy_deferred",
+				reason: filePolicy.reason,
+				detailedReason:
+					`${filePolicy.reason}. No removal decision was made; ` +
+					"the cleaner will retry on a later run.",
+				queueAge: ageMins,
+				size,
+				sizeleft,
+				progress,
+				protocol: typeof item.protocol === "string" ? item.protocol : undefined,
+				indexer: typeof item.indexer === "string" ? item.indexer : undefined,
+				downloadClient: typeof item.downloadClient === "string" ? item.downloadClient : undefined,
+				status:
+					typeof item.trackedDownloadStatus === "string" ? item.trackedDownloadStatus : undefined,
+				downloadId: typeof item.downloadId === "string" ? item.downloadId : undefined,
+			});
+			continue;
+		}
+		const evaluation =
+			filePolicy?.status === "violation"
+				? {
+						rule: "disallowed_file_extension" as const,
+						reason: filePolicy.reason,
+					}
+				: standardEvaluation;
 
 		if (evaluation) {
 			ruleSummary[evaluation.rule] = (ruleSummary[evaluation.rule] ?? 0) + 1;
+			const gateReason = previewGateReasons.get(String(id));
+			if (gateReason) {
+				previewItems.push({
+					id,
+					title,
+					action: "skip",
+					rule: evaluation.rule,
+					reason: `${evaluation.reason} — skipped (${gateReason})`,
+					detailedReason:
+						`${generateDetailedReason(evaluation.rule, item, config, now)} ` +
+						`The action is currently blocked by ${gateReason}.`,
+					queueAge: ageMins,
+					size,
+					sizeleft,
+					progress,
+					protocol: typeof item.protocol === "string" ? item.protocol : undefined,
+					indexer: typeof item.indexer === "string" ? item.indexer : undefined,
+					downloadClient: typeof item.downloadClient === "string" ? item.downloadClient : undefined,
+					status:
+						typeof item.trackedDownloadStatus === "string" ? item.trackedDownloadStatus : undefined,
+					downloadId: typeof item.downloadId === "string" ? item.downloadId : undefined,
+				});
+				continue;
+			}
 
 			const existingStrike = strikeMap.get(String(id));
 			const simulatedStrikeCount = (existingStrike?.strikeCount ?? 0) + 1;

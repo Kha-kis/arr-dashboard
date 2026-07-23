@@ -73,6 +73,9 @@ export interface QueueCleanerConfig {
 	// Error patterns rule
 	errorPatternsEnabled: boolean;
 	errorPatterns: string | null;
+	// Torrent payload file-extension allowlist (requires qui)
+	fileExtensionAllowlistEnabled: boolean;
+	allowedFileExtensions: string | null;
 	// Strike system
 	strikeSystemEnabled: boolean;
 	maxStrikes: number;
@@ -145,6 +148,9 @@ export interface QueueCleanerConfigUpdate {
 	slowGracePeriodMins?: number;
 	errorPatternsEnabled?: boolean;
 	errorPatterns?: string | null;
+	// Torrent payload file-extension allowlist (requires qui)
+	fileExtensionAllowlistEnabled?: boolean;
+	allowedFileExtensions?: string | null;
 	// Strike system
 	strikeSystemEnabled?: boolean;
 	maxStrikes?: number;

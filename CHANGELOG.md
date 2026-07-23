@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Queue Cleaner can enforce an opt-in, exact file-extension allowlist for
+  torrents inspected through qui. A mixed torrent with any unexpected file
+  type is removed in full through *arr, including its download-client payload;
+  missing or unavailable manifests block cleanup for that item and are retried
+  later (#565).
+
 - Service instances can now store optional encrypted HTTP Basic Auth credentials
   for reverse proxies, including connection testing and Seerr-assisted setup.
   Existing credentials embedded in service URLs are migrated out of the URL at

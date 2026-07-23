@@ -33,6 +33,7 @@ import {
 	MIN_STRIKE_DECAY_HOURS,
 } from "../lib/queue-cleaner/constants.js";
 import { getQueueCleanerScheduler } from "../lib/queue-cleaner/scheduler.js";
+import { parseAllowedFileExtensions } from "../lib/queue-cleaner/torrent-file-policy.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { parsePaginationQuery } from "../lib/utils/pagination.js";
 import { validateRequest } from "../lib/utils/validate.js";
@@ -105,6 +106,17 @@ const patternJsonSchema = z
 		}
 	});
 
+const allowedFileExtensionsSchema = z
+	.string()
+	.nullable()
+	.optional()
+	.superRefine((value, ctx) => {
+		const result = parseAllowedFileExtensions(value);
+		if (!result.ok) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: result.error });
+		}
+	});
+
 /**
  * Result of parseJsonSafe - includes data and optional parse error.
  */
@@ -170,6 +182,10 @@ const configUpdateSchema = z.object({
 	// Error patterns rule
 	errorPatternsEnabled: z.boolean().optional(),
 	errorPatterns: patternJsonSchema,
+
+	// Torrent payload file-extension allowlist (requires qui)
+	fileExtensionAllowlistEnabled: z.boolean().optional(),
+	allowedFileExtensions: allowedFileExtensionsSchema,
 
 	// Removal options
 	removeFromClient: z.boolean().optional(),
@@ -439,9 +455,37 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(404).send({ error: "Queue cleaner config not found for this instance" });
 		}
 
+		const filePolicyEnabled =
+			data.fileExtensionAllowlistEnabled ??
+			instance.queueCleanerConfig.fileExtensionAllowlistEnabled;
+		let canonicalAllowedFileExtensions: string | null | undefined;
+		if (data.allowedFileExtensions !== undefined || filePolicyEnabled) {
+			const effectiveAllowedFileExtensions =
+				data.allowedFileExtensions !== undefined
+					? data.allowedFileExtensions
+					: instance.queueCleanerConfig.allowedFileExtensions;
+			const parsedExtensions = parseAllowedFileExtensions(effectiveAllowedFileExtensions);
+			if (!parsedExtensions.ok) {
+				return reply.status(400).send({ error: parsedExtensions.error });
+			}
+			if (filePolicyEnabled && parsedExtensions.extensions.length === 0) {
+				return reply.status(400).send({
+					error: "Add at least one allowed file extension before enabling the file allowlist",
+				});
+			}
+			canonicalAllowedFileExtensions = parsedExtensions.serialized;
+		}
+
+		const updateData = {
+			...data,
+			...(canonicalAllowedFileExtensions !== undefined
+				? { allowedFileExtensions: canonicalAllowedFileExtensions }
+				: {}),
+		};
+
 		const config = await app.prisma.queueCleanerConfig.update({
 			where: { instanceId },
-			data,
+			data: updateData,
 			include: { instance: true },
 		});
 
