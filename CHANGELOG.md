@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   imported entirely between library polls, and the resulting notification is
   dispatched only through channels owned by the instance's user.
 
+### Security
+
+- Updated direct and transitive dependencies to patched releases for the
+  current Next.js, Sharp, Prisma tooling, Hono, `fast-uri`, `brace-expansion`,
+  and Lodash advisories.
+
 ## [2.21.0] - 2026-06-09 — Media-only Storage & Auth Resilience
 
 The storage rollup now tells the truth about *media* space, and a
