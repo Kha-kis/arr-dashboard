@@ -36,7 +36,6 @@ function makeApp(overrides: Record<string, unknown> = {}) {
 			},
 		},
 		...overrides,
-		// biome-ignore lint/suspicious/noExplicitAny: test-shim
 	} as any;
 }
 

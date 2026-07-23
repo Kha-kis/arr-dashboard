@@ -197,7 +197,7 @@ export const QuiWebhookConfigPanel = () => {
 				<div className="flex justify-between items-center pt-1">
 					<p className="text-xs text-muted-foreground">
 						qui → Settings → Notifications → Targets → URL + Method POST. arr-dashboard
-						authenticates the inbound webhook via the <code>?secret=</code> param (qui's
+						authenticates the inbound webhook via the <code>?secret=</code> param (qui’s
 						<code> ApiKeyQuery </code>scheme).
 					</p>
 					<Button
@@ -295,7 +295,7 @@ const AutoRegisterSection = ({
 					Auto-register in qui
 				</h4>
 				<p className="text-xs text-muted-foreground mt-0.5">
-					Push the URL + secret to a qui instance in one click — no manual paste in qui's Settings
+					Push the URL + secret to a qui instance in one click — no manual paste in qui’s Settings
 					UI. Available immediately after rotation; the plaintext secret is held in memory only.
 				</p>
 			</div>
@@ -304,7 +304,7 @@ const AutoRegisterSection = ({
 				<div className="flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
 					<AlertCircle className="h-3.5 w-3.5 shrink-0" />
 					<span>
-						Click <strong>Rotate secret</strong> above to generate the value. arr-dashboard doesn't
+						Click <strong>Rotate secret</strong> above to generate the value. arr-dashboard doesn’t
 						store plaintext, so registration needs a fresh rotation.
 					</span>
 				</div>
@@ -312,7 +312,7 @@ const AutoRegisterSection = ({
 				<div className="flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
 					<AlertCircle className="h-3.5 w-3.5 shrink-0" />
 					<span>
-						A secret exists but isn't visible right now. Click <strong>Rotate secret</strong> to
+						A secret exists but isn’t visible right now. Click <strong>Rotate secret</strong> to
 						display a new one (the old URL stops working when you rotate).
 					</span>
 				</div>
@@ -408,7 +408,7 @@ const RecentEventsStrip = ({ recentEvents, isIncognito, isError }: RecentEventsS
 			<div className="border-t border-border/40 pt-3">
 				<h4 className="text-sm font-semibold mb-1">Recent events</h4>
 				<p className="text-xs text-amber-300/80">
-					Couldn't load recent events — the event-log endpoint returned an error. Webhook delivery
+					Couldn’t load recent events — the event-log endpoint returned an error. Webhook delivery
 					may still be working; this is a display-side problem. Refresh the page or check the server
 					logs.
 				</p>

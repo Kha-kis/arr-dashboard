@@ -50,7 +50,6 @@ export function UserCFImportDialog({
 	onOpenChange,
 	defaultServiceType = "RADARR",
 }: UserCFImportDialogProps) {
-	const [incognitoMode] = useIncognitoMode();
 	const { gradient } = useThemeGradient();
 	const [activeTab, setActiveTab] = useState("create");
 

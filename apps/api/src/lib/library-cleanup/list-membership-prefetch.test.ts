@@ -21,6 +21,7 @@ function rule(overrides: Partial<LibraryCleanupRule>): LibraryCleanupRule {
 		parameters: "{}",
 		operator: null,
 		conditions: null,
+		...overrides,
 	} as unknown as LibraryCleanupRule;
 	// minimal stub; only fields the collector reads
 }

@@ -23,7 +23,6 @@ const silentLog = {
 	info: vi.fn(),
 	warn: vi.fn(),
 	error: vi.fn(),
-	// biome-ignore lint/suspicious/noExplicitAny: minimal logger stub
 } as any;
 
 function rule(overrides: Partial<Parameters<typeof planRuleTransform>[0]> = {}) {
