@@ -24,7 +24,7 @@ jobs:
     if: github.event_name == 'push'
     steps:
       - name: Checkout repository (full history for ancestry check)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -60,7 +60,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -200,7 +200,7 @@ jobs:
             $(printf '${{ env.DOCKERHUB_IMAGE }}@sha256:%s ' *)
 
       - name: Checkout for Docker Hub description
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Update Docker Hub Description
         uses: peter-evans/dockerhub-description@v5
