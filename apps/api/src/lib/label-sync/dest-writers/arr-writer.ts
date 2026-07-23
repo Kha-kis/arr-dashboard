@@ -58,6 +58,8 @@ function createWriter(config: ArrWriterConfig): DestWriter {
 					baseUrl: destInstance.baseUrl,
 					encryptedApiKey: destInstance.encryptedApiKey,
 					encryptionIv: destInstance.encryptionIv,
+					encryptedHttpAuthCredentials: destInstance.encryptedHttpAuthCredentials,
+					httpAuthEncryptionIv: destInstance.httpAuthEncryptionIv,
 					service: destInstance.service,
 					label: destInstance.label,
 				});

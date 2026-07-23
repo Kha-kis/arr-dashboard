@@ -70,6 +70,8 @@ export class BulkScoreManager {
 				baseUrl: true,
 				encryptedApiKey: true,
 				encryptionIv: true,
+				encryptedHttpAuthCredentials: true,
+				httpAuthEncryptionIv: true,
 			},
 		});
 

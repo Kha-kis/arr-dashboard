@@ -13,6 +13,7 @@ export interface QuiRequestContext {
 	instanceId: string;
 	baseUrl: string;
 	apiKey: string;
+	httpAuthHeaders?: Record<string, string>;
 	log: FastifyBaseLogger;
 	timeoutMs?: number;
 }
@@ -57,6 +58,7 @@ export async function quiRequest<T>(
 				"X-API-Key": ctx.apiKey,
 				Accept: "application/json",
 				...(init?.body !== undefined ? { "Content-Type": "application/json" } : {}),
+				...ctx.httpAuthHeaders,
 			},
 			body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
 			signal: AbortSignal.timeout(timeoutMs),
@@ -118,7 +120,11 @@ export async function quiHealthProbe(
 	try {
 		const response = await fetch(url, {
 			method: "GET",
-			headers: { "X-API-Key": ctx.apiKey, Accept: "application/json" },
+			headers: {
+				"X-API-Key": ctx.apiKey,
+				Accept: "application/json",
+				...ctx.httpAuthHeaders,
+			},
 			signal: AbortSignal.timeout(timeoutMs),
 		});
 		if (!response.ok) {
@@ -185,8 +191,8 @@ async function readErrorMessage(response: Response): Promise<string> {
 		if (isHtmlLikeResponse(trimmed)) {
 			const title = extractHtmlTitle(trimmed);
 			return title
-				? `${fallback} — upstream HTML page (title: "${title}"). Likely an auth proxy or reverse-proxy error page in front of qui. Use the service's internal/LAN URL or configure your proxy to bypass /api/*.`
-				: `${fallback} — upstream returned HTML (probable auth proxy fronting qui). Use the internal/LAN URL or bypass /api/* in your proxy.`;
+				? `${fallback} — upstream HTML page (title: "${title}"). Likely an auth proxy or reverse-proxy error page in front of qui. Configure the service's HTTP Basic credentials, or use an internal URL/proxy bypass for login-portal auth.`
+				: `${fallback} — upstream returned HTML (probable auth proxy fronting qui). Configure HTTP Basic credentials, or use an internal URL/proxy bypass for login-portal auth.`;
 		}
 		return text.slice(0, 200);
 	} catch {

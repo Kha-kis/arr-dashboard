@@ -165,7 +165,10 @@ export const SettingsClient = () => {
 								onSubmit={handleServiceFormSubmit}
 								onCancel={() => serviceFormState.resetForm(serviceFormState.formState.service)}
 								onTestConnection={() =>
-									servicesManagement.handleTestFormConnection(serviceFormState.formState)
+									servicesManagement.handleTestFormConnection(
+										serviceFormState.formState,
+										serviceFormState.selectedServiceForEdit,
+									)
 								}
 								selectedService={serviceFormState.selectedServiceForEdit}
 								services={services}

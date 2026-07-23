@@ -110,6 +110,37 @@ describe("createQuiClient", () => {
 		expect(headers["X-API-Key"]).toBe("test-api-key");
 	});
 
+	it("sends stored reverse-proxy Basic Auth alongside the qui API key", async () => {
+		fetchSpy.mockResolvedValueOnce(
+			new Response(JSON.stringify({ cross_instance_torrents: [wireTorrent()] }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			}),
+		);
+		const app = {
+			log: fakeLog,
+			encryptor: {
+				decrypt: ({ value }: { value: string }) =>
+					value === "http-enc"
+						? JSON.stringify({ v: 1, username: "proxy-user", password: "proxy-pass" })
+						: "test-api-key",
+			},
+		} as unknown as FastifyInstance;
+
+		const client = createQuiClient(
+			app,
+			buildInstance({
+				encryptedHttpAuthCredentials: "http-enc",
+				httpAuthEncryptionIv: "http-iv",
+			}),
+		);
+		await client.getTorrentByHash("abc123");
+
+		const headers = fetchSpy.mock.calls[0]?.[1]?.headers as Record<string, string>;
+		expect(headers.Authorization).toBe("Basic cHJveHktdXNlcjpwcm94eS1wYXNz");
+		expect(headers["X-API-Key"]).toBe("test-api-key");
+	});
+
 	it("transforms snake_case wire format into canonical camelCase", async () => {
 		fetchSpy.mockResolvedValueOnce(
 			new Response(

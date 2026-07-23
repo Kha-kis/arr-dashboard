@@ -49,6 +49,9 @@ These are the rules every contributor must hold. Most are not type-checkable.
    stored as `{ encryptedApiKey, encryptionIv }`, and decrypted only at
    the moment of use.** No plaintext on the wire to the DB, no caching
    of decrypted material across requests.
+   Optional reverse-proxy HTTP Basic Auth credentials follow the same
+   rule and are stored as one encrypted versioned payload. Base URLs must
+   never contain URL-embedded credentials.
 3. **`buildUpdateData()` is the only legitimate place that re-encrypts on
    update.** Routes pass through it; they do not call `encryptor` directly
    for service updates.
@@ -83,6 +86,13 @@ These are the rules every contributor must hold. Most are not type-checkable.
 - **Connection test failures** — most user-facing; surfaced via the
   `POST /services/:id/test` route. Use the existing client factory so
   errors map through the same paths as production calls.
+- **Reverse-proxy HTTP Basic Auth** — configure it in the dedicated
+  service fields. It is sent alongside the service's native API key on
+  both connection tests and runtime calls; passwords are never returned
+  by the API. Jellyfin is excluded because its modern API authentication
+  already occupies the `Authorization` header; configure a proxy bypass
+  for arr-dashboard. Prefer HTTPS because Basic credentials are only
+  encoded, not encrypted, on an HTTP connection.
 - **Field-name drift across upstream versions** — Sonarr v3 vs. v4,
   Prowlarr API revisions, Plex schema additions. Absorb in a normalizer
   with defensive type converters (`toNumber`, `toString`, `toBoolean`),

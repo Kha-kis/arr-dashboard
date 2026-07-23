@@ -122,6 +122,34 @@ describe("testServiceConnection — Seerr permission probe (#465)", () => {
 		expect(fetchSpy.mock.calls[0]?.[0]).toBe("http://sonarr:8989/api/v3/system/status");
 	});
 
+	it("sends HTTP Basic Auth alongside the service API key on every Seerr probe", async () => {
+		fetchSpy
+			.mockResolvedValueOnce(jsonResponse({ version: "2.0.0" }))
+			.mockResolvedValueOnce(jsonResponse({ pending: 0 }));
+
+		await testServiceConnection("https://seerr.example.test", "secret", "seerr", {
+			username: "proxy-user",
+			password: "proxy-pass",
+		});
+
+		for (const call of fetchSpy.mock.calls) {
+			const headers = call[1]?.headers as Record<string, string>;
+			expect(headers.Authorization).toBe("Basic cHJveHktdXNlcjpwcm94eS1wYXNz");
+			expect(headers["X-Api-Key"]).toBe("secret");
+		}
+	});
+
+	it("rejects Basic Auth for Jellyfin without falling back to legacy auth headers", async () => {
+		const result = await testServiceConnection("https://jellyfin.test", "api-key", "jellyfin", {
+			username: "proxy-user",
+			password: "proxy-pass",
+		});
+
+		expect(result.success).toBe(false);
+		expect(result.error).toMatch(/not supported for jellyfin/i);
+		expect(fetchSpy).not.toHaveBeenCalled();
+	});
+
 	it("still returns the existing /status error when the first probe fails (no second probe)", async () => {
 		// 401 on the first probe should short-circuit — there's no point
 		// probing a permission-gated endpoint when the API key itself is

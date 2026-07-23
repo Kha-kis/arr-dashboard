@@ -18,6 +18,7 @@ export type CreateServicePayload = {
 	baseUrl: string;
 	externalUrl?: string | null;
 	apiKey: string;
+	httpAuth?: { username: string; password: string } | null;
 	service:
 		| "sonarr"
 		| "radarr"
@@ -73,9 +74,13 @@ export type TestConnectionResponse = {
 	details?: string;
 };
 
-export async function testServiceConnection(id: string): Promise<TestConnectionResponse> {
+export async function testServiceConnection(
+	id: string,
+	httpAuth?: { username: string; password: string } | null,
+): Promise<TestConnectionResponse> {
 	return await apiRequest<TestConnectionResponse>(`/api/services/${id}/test`, {
 		method: "POST",
+		...(httpAuth === undefined ? {} : { json: { httpAuth } }),
 	});
 }
 
@@ -94,9 +99,10 @@ export async function testConnectionBeforeAdd(
 		| "jellyfin"
 		| "emby"
 		| "qui",
+	httpAuth?: { username: string; password: string },
 ): Promise<TestConnectionResponse> {
 	return await apiRequest<TestConnectionResponse>("/api/services/test-connection", {
 		method: "POST",
-		json: { baseUrl, apiKey, service },
+		json: { baseUrl, apiKey, service, httpAuth },
 	});
 }

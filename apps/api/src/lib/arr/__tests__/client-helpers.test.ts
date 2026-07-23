@@ -52,6 +52,8 @@ const createMockInstance = (
 	externalUrl: null,
 	encryptedApiKey: "encrypted-key",
 	encryptionIv: "iv-123",
+	encryptedHttpAuthCredentials: null,
+	httpAuthEncryptionIv: null,
 	enabled,
 	userId: "user-123",
 	isDefault: false,
