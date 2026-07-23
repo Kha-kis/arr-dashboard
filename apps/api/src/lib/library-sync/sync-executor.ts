@@ -244,7 +244,7 @@ export async function syncInstance(
 	};
 
 	try {
-		await prisma.librarySyncStatus.upsert({
+		const syncStatus = await prisma.librarySyncStatus.upsert({
 			where: { instanceId: instance.id },
 			create: {
 				instanceId: instance.id,
@@ -255,6 +255,7 @@ export async function syncInstance(
 				lastError: null,
 			},
 		});
+		const previousFullSync = syncStatus.lastFullSync;
 
 		const client = arrClientFactory.create(instance);
 		const service = instance.service.toLowerCase() as LibraryService;
@@ -450,6 +451,21 @@ export async function syncInstance(
 							data: buildCacheCreate(instance.id, item),
 						});
 						result.itemsAdded++;
+
+						// A complete add + import can happen between polling ticks. In that
+						// case there is no cached hasFile=false row to transition from, so
+						// recognize a newly added ARR item that already has a file. Require a
+						// completed baseline sync and an ARR added timestamp newer than that
+						// baseline; this prevents first-sync floods and stale-row reappearance
+						// from masquerading as new downloads.
+						if (
+							fields.hasFile &&
+							previousFullSync &&
+							fields.arrAddedAt &&
+							fields.arrAddedAt > previousFullSync
+						) {
+							result.newDownloads.push({ title: item.title, itemType: item.type });
+						}
 					}
 					result.itemsProcessed++;
 				}
