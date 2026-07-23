@@ -61,7 +61,6 @@ function makeApp(historyResponse: { ok: boolean; records?: unknown[] }) {
 				count: vi.fn().mockResolvedValue(0),
 			},
 		},
-		// biome-ignore lint/suspicious/noExplicitAny: test shim
 	} as any;
 }
 

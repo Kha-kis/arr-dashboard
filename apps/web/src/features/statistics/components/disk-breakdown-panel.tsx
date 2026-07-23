@@ -55,7 +55,7 @@ export const DiskBreakdownPanel = ({ disks }: DiskBreakdownPanelProps) => {
 				<h3 className="text-sm font-medium text-foreground">Storage Breakdown</h3>
 				<p className="mt-0.5 text-xs text-muted-foreground">
 					Disks included in the rollup hold at least one configured *arr root folder. Disks marked
-					excluded carry config, container OS, or system data that isn't media.
+					excluded carry config, container OS, or system data that isn’t media.
 				</p>
 			</div>
 			<ul className="divide-y divide-border/50">

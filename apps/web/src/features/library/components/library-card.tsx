@@ -576,6 +576,7 @@ export const LibraryCard = memo(function LibraryCard({
 										const name = meta?.name ?? host;
 										if (meta?.iconUrl) {
 											return (
+												// eslint-disable-next-line @next/next/no-img-element -- Tracker icons may come from arbitrary user-configured hosts.
 												<img
 													key={host}
 													src={meta.iconUrl}

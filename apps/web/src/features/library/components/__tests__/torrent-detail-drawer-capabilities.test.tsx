@@ -36,6 +36,9 @@ vi.mock("../../../../hooks/api/useQui", async () => {
 	return {
 		...actual,
 		useQuiCapabilities: (args: unknown) => mockUseQuiCapabilities(args),
+		useQuiTorrentProperties: () => ({ data: undefined }),
+		useQuiCategories: () => ({ data: { categories: [] } }),
+		useQuiTags: () => ({ data: { tags: [] } }),
 	};
 });
 
