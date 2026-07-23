@@ -75,6 +75,8 @@ export type QueueCleanerConfigMinAggregateOutputType = {
   slowGracePeriodMins: number | null
   errorPatternsEnabled: boolean | null
   errorPatterns: string | null
+  fileExtensionAllowlistEnabled: boolean | null
+  allowedFileExtensions: string | null
   removeFromClient: boolean | null
   addToBlocklist: boolean | null
   searchAfterRemoval: boolean | null
@@ -131,6 +133,8 @@ export type QueueCleanerConfigMaxAggregateOutputType = {
   slowGracePeriodMins: number | null
   errorPatternsEnabled: boolean | null
   errorPatterns: string | null
+  fileExtensionAllowlistEnabled: boolean | null
+  allowedFileExtensions: string | null
   removeFromClient: boolean | null
   addToBlocklist: boolean | null
   searchAfterRemoval: boolean | null
@@ -187,6 +191,8 @@ export type QueueCleanerConfigCountAggregateOutputType = {
   slowGracePeriodMins: number
   errorPatternsEnabled: number
   errorPatterns: number
+  fileExtensionAllowlistEnabled: number
+  allowedFileExtensions: number
   removeFromClient: number
   addToBlocklist: number
   searchAfterRemoval: number
@@ -281,6 +287,8 @@ export type QueueCleanerConfigMinAggregateInputType = {
   slowGracePeriodMins?: true
   errorPatternsEnabled?: true
   errorPatterns?: true
+  fileExtensionAllowlistEnabled?: true
+  allowedFileExtensions?: true
   removeFromClient?: true
   addToBlocklist?: true
   searchAfterRemoval?: true
@@ -337,6 +345,8 @@ export type QueueCleanerConfigMaxAggregateInputType = {
   slowGracePeriodMins?: true
   errorPatternsEnabled?: true
   errorPatterns?: true
+  fileExtensionAllowlistEnabled?: true
+  allowedFileExtensions?: true
   removeFromClient?: true
   addToBlocklist?: true
   searchAfterRemoval?: true
@@ -393,6 +403,8 @@ export type QueueCleanerConfigCountAggregateInputType = {
   slowGracePeriodMins?: true
   errorPatternsEnabled?: true
   errorPatterns?: true
+  fileExtensionAllowlistEnabled?: true
+  allowedFileExtensions?: true
   removeFromClient?: true
   addToBlocklist?: true
   searchAfterRemoval?: true
@@ -536,6 +548,8 @@ export type QueueCleanerConfigGroupByOutputType = {
   slowGracePeriodMins: number
   errorPatternsEnabled: boolean
   errorPatterns: string | null
+  fileExtensionAllowlistEnabled: boolean
+  allowedFileExtensions: string | null
   removeFromClient: boolean
   addToBlocklist: boolean
   searchAfterRemoval: boolean
@@ -615,6 +629,8 @@ export type QueueCleanerConfigWhereInput = {
   slowGracePeriodMins?: Prisma.IntFilter<"QueueCleanerConfig"> | number
   errorPatternsEnabled?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   errorPatterns?: Prisma.StringNullableFilter<"QueueCleanerConfig"> | string | null
+  fileExtensionAllowlistEnabled?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
+  allowedFileExtensions?: Prisma.StringNullableFilter<"QueueCleanerConfig"> | string | null
   removeFromClient?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   addToBlocklist?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   searchAfterRemoval?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
@@ -672,6 +688,8 @@ export type QueueCleanerConfigOrderByWithRelationInput = {
   slowGracePeriodMins?: Prisma.SortOrder
   errorPatternsEnabled?: Prisma.SortOrder
   errorPatterns?: Prisma.SortOrderInput | Prisma.SortOrder
+  fileExtensionAllowlistEnabled?: Prisma.SortOrder
+  allowedFileExtensions?: Prisma.SortOrderInput | Prisma.SortOrder
   removeFromClient?: Prisma.SortOrder
   addToBlocklist?: Prisma.SortOrder
   searchAfterRemoval?: Prisma.SortOrder
@@ -732,6 +750,8 @@ export type QueueCleanerConfigWhereUniqueInput = Prisma.AtLeast<{
   slowGracePeriodMins?: Prisma.IntFilter<"QueueCleanerConfig"> | number
   errorPatternsEnabled?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   errorPatterns?: Prisma.StringNullableFilter<"QueueCleanerConfig"> | string | null
+  fileExtensionAllowlistEnabled?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
+  allowedFileExtensions?: Prisma.StringNullableFilter<"QueueCleanerConfig"> | string | null
   removeFromClient?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   addToBlocklist?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   searchAfterRemoval?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
@@ -789,6 +809,8 @@ export type QueueCleanerConfigOrderByWithAggregationInput = {
   slowGracePeriodMins?: Prisma.SortOrder
   errorPatternsEnabled?: Prisma.SortOrder
   errorPatterns?: Prisma.SortOrderInput | Prisma.SortOrder
+  fileExtensionAllowlistEnabled?: Prisma.SortOrder
+  allowedFileExtensions?: Prisma.SortOrderInput | Prisma.SortOrder
   removeFromClient?: Prisma.SortOrder
   addToBlocklist?: Prisma.SortOrder
   searchAfterRemoval?: Prisma.SortOrder
@@ -853,6 +875,8 @@ export type QueueCleanerConfigScalarWhereWithAggregatesInput = {
   slowGracePeriodMins?: Prisma.IntWithAggregatesFilter<"QueueCleanerConfig"> | number
   errorPatternsEnabled?: Prisma.BoolWithAggregatesFilter<"QueueCleanerConfig"> | boolean
   errorPatterns?: Prisma.StringNullableWithAggregatesFilter<"QueueCleanerConfig"> | string | null
+  fileExtensionAllowlistEnabled?: Prisma.BoolWithAggregatesFilter<"QueueCleanerConfig"> | boolean
+  allowedFileExtensions?: Prisma.StringNullableWithAggregatesFilter<"QueueCleanerConfig"> | string | null
   removeFromClient?: Prisma.BoolWithAggregatesFilter<"QueueCleanerConfig"> | boolean
   addToBlocklist?: Prisma.BoolWithAggregatesFilter<"QueueCleanerConfig"> | boolean
   searchAfterRemoval?: Prisma.BoolWithAggregatesFilter<"QueueCleanerConfig"> | boolean
@@ -908,6 +932,8 @@ export type QueueCleanerConfigCreateInput = {
   slowGracePeriodMins?: number
   errorPatternsEnabled?: boolean
   errorPatterns?: string | null
+  fileExtensionAllowlistEnabled?: boolean
+  allowedFileExtensions?: string | null
   removeFromClient?: boolean
   addToBlocklist?: boolean
   searchAfterRemoval?: boolean
@@ -965,6 +991,8 @@ export type QueueCleanerConfigUncheckedCreateInput = {
   slowGracePeriodMins?: number
   errorPatternsEnabled?: boolean
   errorPatterns?: string | null
+  fileExtensionAllowlistEnabled?: boolean
+  allowedFileExtensions?: string | null
   removeFromClient?: boolean
   addToBlocklist?: boolean
   searchAfterRemoval?: boolean
@@ -1020,6 +1048,8 @@ export type QueueCleanerConfigUpdateInput = {
   slowGracePeriodMins?: Prisma.IntFieldUpdateOperationsInput | number
   errorPatternsEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   errorPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  fileExtensionAllowlistEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  allowedFileExtensions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   removeFromClient?: Prisma.BoolFieldUpdateOperationsInput | boolean
   addToBlocklist?: Prisma.BoolFieldUpdateOperationsInput | boolean
   searchAfterRemoval?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -1077,6 +1107,8 @@ export type QueueCleanerConfigUncheckedUpdateInput = {
   slowGracePeriodMins?: Prisma.IntFieldUpdateOperationsInput | number
   errorPatternsEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   errorPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  fileExtensionAllowlistEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  allowedFileExtensions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   removeFromClient?: Prisma.BoolFieldUpdateOperationsInput | boolean
   addToBlocklist?: Prisma.BoolFieldUpdateOperationsInput | boolean
   searchAfterRemoval?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -1133,6 +1165,8 @@ export type QueueCleanerConfigCreateManyInput = {
   slowGracePeriodMins?: number
   errorPatternsEnabled?: boolean
   errorPatterns?: string | null
+  fileExtensionAllowlistEnabled?: boolean
+  allowedFileExtensions?: string | null
   removeFromClient?: boolean
   addToBlocklist?: boolean
   searchAfterRemoval?: boolean
@@ -1188,6 +1222,8 @@ export type QueueCleanerConfigUpdateManyMutationInput = {
   slowGracePeriodMins?: Prisma.IntFieldUpdateOperationsInput | number
   errorPatternsEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   errorPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  fileExtensionAllowlistEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  allowedFileExtensions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   removeFromClient?: Prisma.BoolFieldUpdateOperationsInput | boolean
   addToBlocklist?: Prisma.BoolFieldUpdateOperationsInput | boolean
   searchAfterRemoval?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -1244,6 +1280,8 @@ export type QueueCleanerConfigUncheckedUpdateManyInput = {
   slowGracePeriodMins?: Prisma.IntFieldUpdateOperationsInput | number
   errorPatternsEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   errorPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  fileExtensionAllowlistEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  allowedFileExtensions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   removeFromClient?: Prisma.BoolFieldUpdateOperationsInput | boolean
   addToBlocklist?: Prisma.BoolFieldUpdateOperationsInput | boolean
   searchAfterRemoval?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -1305,6 +1343,8 @@ export type QueueCleanerConfigCountOrderByAggregateInput = {
   slowGracePeriodMins?: Prisma.SortOrder
   errorPatternsEnabled?: Prisma.SortOrder
   errorPatterns?: Prisma.SortOrder
+  fileExtensionAllowlistEnabled?: Prisma.SortOrder
+  allowedFileExtensions?: Prisma.SortOrder
   removeFromClient?: Prisma.SortOrder
   addToBlocklist?: Prisma.SortOrder
   searchAfterRemoval?: Prisma.SortOrder
@@ -1379,6 +1419,8 @@ export type QueueCleanerConfigMaxOrderByAggregateInput = {
   slowGracePeriodMins?: Prisma.SortOrder
   errorPatternsEnabled?: Prisma.SortOrder
   errorPatterns?: Prisma.SortOrder
+  fileExtensionAllowlistEnabled?: Prisma.SortOrder
+  allowedFileExtensions?: Prisma.SortOrder
   removeFromClient?: Prisma.SortOrder
   addToBlocklist?: Prisma.SortOrder
   searchAfterRemoval?: Prisma.SortOrder
@@ -1435,6 +1477,8 @@ export type QueueCleanerConfigMinOrderByAggregateInput = {
   slowGracePeriodMins?: Prisma.SortOrder
   errorPatternsEnabled?: Prisma.SortOrder
   errorPatterns?: Prisma.SortOrder
+  fileExtensionAllowlistEnabled?: Prisma.SortOrder
+  allowedFileExtensions?: Prisma.SortOrder
   removeFromClient?: Prisma.SortOrder
   addToBlocklist?: Prisma.SortOrder
   searchAfterRemoval?: Prisma.SortOrder
@@ -1548,6 +1592,8 @@ export type QueueCleanerConfigCreateWithoutInstanceInput = {
   slowGracePeriodMins?: number
   errorPatternsEnabled?: boolean
   errorPatterns?: string | null
+  fileExtensionAllowlistEnabled?: boolean
+  allowedFileExtensions?: string | null
   removeFromClient?: boolean
   addToBlocklist?: boolean
   searchAfterRemoval?: boolean
@@ -1603,6 +1649,8 @@ export type QueueCleanerConfigUncheckedCreateWithoutInstanceInput = {
   slowGracePeriodMins?: number
   errorPatternsEnabled?: boolean
   errorPatterns?: string | null
+  fileExtensionAllowlistEnabled?: boolean
+  allowedFileExtensions?: string | null
   removeFromClient?: boolean
   addToBlocklist?: boolean
   searchAfterRemoval?: boolean
@@ -1674,6 +1722,8 @@ export type QueueCleanerConfigUpdateWithoutInstanceInput = {
   slowGracePeriodMins?: Prisma.IntFieldUpdateOperationsInput | number
   errorPatternsEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   errorPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  fileExtensionAllowlistEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  allowedFileExtensions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   removeFromClient?: Prisma.BoolFieldUpdateOperationsInput | boolean
   addToBlocklist?: Prisma.BoolFieldUpdateOperationsInput | boolean
   searchAfterRemoval?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -1729,6 +1779,8 @@ export type QueueCleanerConfigUncheckedUpdateWithoutInstanceInput = {
   slowGracePeriodMins?: Prisma.IntFieldUpdateOperationsInput | number
   errorPatternsEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   errorPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  fileExtensionAllowlistEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  allowedFileExtensions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   removeFromClient?: Prisma.BoolFieldUpdateOperationsInput | boolean
   addToBlocklist?: Prisma.BoolFieldUpdateOperationsInput | boolean
   searchAfterRemoval?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -1787,6 +1839,8 @@ export type QueueCleanerConfigSelect<ExtArgs extends runtime.Types.Extensions.In
   slowGracePeriodMins?: boolean
   errorPatternsEnabled?: boolean
   errorPatterns?: boolean
+  fileExtensionAllowlistEnabled?: boolean
+  allowedFileExtensions?: boolean
   removeFromClient?: boolean
   addToBlocklist?: boolean
   searchAfterRemoval?: boolean
@@ -1844,6 +1898,8 @@ export type QueueCleanerConfigSelectCreateManyAndReturn<ExtArgs extends runtime.
   slowGracePeriodMins?: boolean
   errorPatternsEnabled?: boolean
   errorPatterns?: boolean
+  fileExtensionAllowlistEnabled?: boolean
+  allowedFileExtensions?: boolean
   removeFromClient?: boolean
   addToBlocklist?: boolean
   searchAfterRemoval?: boolean
@@ -1901,6 +1957,8 @@ export type QueueCleanerConfigSelectUpdateManyAndReturn<ExtArgs extends runtime.
   slowGracePeriodMins?: boolean
   errorPatternsEnabled?: boolean
   errorPatterns?: boolean
+  fileExtensionAllowlistEnabled?: boolean
+  allowedFileExtensions?: boolean
   removeFromClient?: boolean
   addToBlocklist?: boolean
   searchAfterRemoval?: boolean
@@ -1958,6 +2016,8 @@ export type QueueCleanerConfigSelectScalar = {
   slowGracePeriodMins?: boolean
   errorPatternsEnabled?: boolean
   errorPatterns?: boolean
+  fileExtensionAllowlistEnabled?: boolean
+  allowedFileExtensions?: boolean
   removeFromClient?: boolean
   addToBlocklist?: boolean
   searchAfterRemoval?: boolean
@@ -2001,7 +2061,7 @@ export type QueueCleanerConfigSelectScalar = {
   updatedAt?: boolean
 }
 
-export type QueueCleanerConfigOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "enabled" | "intervalMins" | "stalledEnabled" | "stalledThresholdMins" | "failedEnabled" | "slowEnabled" | "slowSpeedThreshold" | "slowGracePeriodMins" | "errorPatternsEnabled" | "errorPatterns" | "removeFromClient" | "addToBlocklist" | "searchAfterRemoval" | "quiAwareMode" | "lastSeedProtection" | "changeCategoryEnabled" | "dryRunMode" | "maxRemovalsPerRun" | "minQueueAgeMins" | "strikeSystemEnabled" | "maxStrikes" | "strikeDecayHours" | "seedingTimeoutEnabled" | "seedingTimeoutHours" | "estimatedCompletionEnabled" | "estimatedCompletionMultiplier" | "importPendingEnabled" | "importPendingThresholdMins" | "importBlockCleanupLevel" | "importBlockPatternMode" | "importBlockPatterns" | "autoImportEnabled" | "autoImportMaxAttempts" | "autoImportCooldownMins" | "autoImportSafeOnly" | "autoImportCustomPatterns" | "autoImportNeverPatterns" | "tagFilterEnabled" | "includeTags" | "excludeTags" | "profileFilterEnabled" | "includeProfiles" | "excludeProfiles" | "skipFutureEpisodes" | "whitelistEnabled" | "whitelistPatterns" | "lastRunAt" | "lastRunItemsCleaned" | "lastRunItemsSkipped" | "createdAt" | "updatedAt", ExtArgs["result"]["queueCleanerConfig"]>
+export type QueueCleanerConfigOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "enabled" | "intervalMins" | "stalledEnabled" | "stalledThresholdMins" | "failedEnabled" | "slowEnabled" | "slowSpeedThreshold" | "slowGracePeriodMins" | "errorPatternsEnabled" | "errorPatterns" | "fileExtensionAllowlistEnabled" | "allowedFileExtensions" | "removeFromClient" | "addToBlocklist" | "searchAfterRemoval" | "quiAwareMode" | "lastSeedProtection" | "changeCategoryEnabled" | "dryRunMode" | "maxRemovalsPerRun" | "minQueueAgeMins" | "strikeSystemEnabled" | "maxStrikes" | "strikeDecayHours" | "seedingTimeoutEnabled" | "seedingTimeoutHours" | "estimatedCompletionEnabled" | "estimatedCompletionMultiplier" | "importPendingEnabled" | "importPendingThresholdMins" | "importBlockCleanupLevel" | "importBlockPatternMode" | "importBlockPatterns" | "autoImportEnabled" | "autoImportMaxAttempts" | "autoImportCooldownMins" | "autoImportSafeOnly" | "autoImportCustomPatterns" | "autoImportNeverPatterns" | "tagFilterEnabled" | "includeTags" | "excludeTags" | "profileFilterEnabled" | "includeProfiles" | "excludeProfiles" | "skipFutureEpisodes" | "whitelistEnabled" | "whitelistPatterns" | "lastRunAt" | "lastRunItemsCleaned" | "lastRunItemsSkipped" | "createdAt" | "updatedAt", ExtArgs["result"]["queueCleanerConfig"]>
 export type QueueCleanerConfigInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }
@@ -2030,6 +2090,8 @@ export type $QueueCleanerConfigPayload<ExtArgs extends runtime.Types.Extensions.
     slowGracePeriodMins: number
     errorPatternsEnabled: boolean
     errorPatterns: string | null
+    fileExtensionAllowlistEnabled: boolean
+    allowedFileExtensions: string | null
     removeFromClient: boolean
     addToBlocklist: boolean
     searchAfterRemoval: boolean
@@ -2531,6 +2593,8 @@ export interface QueueCleanerConfigFieldRefs {
   readonly slowGracePeriodMins: Prisma.FieldRef<"QueueCleanerConfig", 'Int'>
   readonly errorPatternsEnabled: Prisma.FieldRef<"QueueCleanerConfig", 'Boolean'>
   readonly errorPatterns: Prisma.FieldRef<"QueueCleanerConfig", 'String'>
+  readonly fileExtensionAllowlistEnabled: Prisma.FieldRef<"QueueCleanerConfig", 'Boolean'>
+  readonly allowedFileExtensions: Prisma.FieldRef<"QueueCleanerConfig", 'String'>
   readonly removeFromClient: Prisma.FieldRef<"QueueCleanerConfig", 'Boolean'>
   readonly addToBlocklist: Prisma.FieldRef<"QueueCleanerConfig", 'Boolean'>
   readonly searchAfterRemoval: Prisma.FieldRef<"QueueCleanerConfig", 'Boolean'>

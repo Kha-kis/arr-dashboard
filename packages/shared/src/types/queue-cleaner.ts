@@ -13,6 +13,8 @@ export const cleanerRuleSchema = z.enum([
 	"seeding_timeout",
 	"import_pending",
 	"import_blocked",
+	"disallowed_file_extension",
+	"file_policy_deferred",
 	"whitelisted",
 	"future_episode",
 ]);
@@ -207,6 +209,11 @@ export const DEFAULT_SLOW_SPEED_THRESHOLD = 100;
 export const MIN_SLOW_GRACE_PERIOD_MINS = 5;
 export const MAX_SLOW_GRACE_PERIOD_MINS = 1440;
 export const DEFAULT_SLOW_GRACE_PERIOD_MINS = 30;
+
+// Torrent file-extension allowlist limits
+export const MAX_ALLOWED_FILE_EXTENSIONS = 50;
+export const MAX_ALLOWED_FILE_EXTENSION_LENGTH = 32;
+export const MAX_ALLOWED_FILE_EXTENSIONS_JSON_LENGTH = 4096;
 
 // Safety limits
 export const MIN_MAX_REMOVALS = 1;

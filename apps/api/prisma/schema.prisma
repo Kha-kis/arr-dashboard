@@ -1031,6 +1031,10 @@ model QueueCleanerConfig {
   errorPatternsEnabled  Boolean         @default(false)
   errorPatterns         String?                           // JSON array of pattern strings
 
+  // Torrent payload file-extension allowlist (requires qui)
+  fileExtensionAllowlistEnabled Boolean  @default(false)
+  allowedFileExtensions          String?                   // JSON array: ["mkv", "srt", "nfo"]
+
   // Removal options
   removeFromClient      Boolean         @default(false)
   addToBlocklist        Boolean         @default(true)
