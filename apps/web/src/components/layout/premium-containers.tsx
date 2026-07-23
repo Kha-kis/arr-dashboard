@@ -233,7 +233,9 @@ export const InstanceCard = ({
 				<div className="flex items-start justify-between mb-3">
 					<div>
 						<div className="flex items-center gap-2 mb-1">
-							<h3 className="font-semibold text-foreground">{incognitoMode ? getLinuxInstanceName(instanceName) : instanceName}</h3>
+							<h3 className="font-semibold text-foreground">
+								{incognitoMode ? getLinuxInstanceName(instanceName) : instanceName}
+							</h3>
 							<ServiceBadge service={service} />
 						</div>
 						{status}

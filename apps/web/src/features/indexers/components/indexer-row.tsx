@@ -52,8 +52,7 @@ const relativeTime = (iso: string | undefined): string | null => {
  * Protocol pill — compact colored indicator
  */
 const ProtocolPill = ({ protocol }: { protocol: ProwlarrIndexer["protocol"] }) => {
-	const color =
-		protocol === "torrent" ? PROTOCOL_COLORS.torrent : PROTOCOL_COLORS.usenet;
+	const color = protocol === "torrent" ? PROTOCOL_COLORS.torrent : PROTOCOL_COLORS.usenet;
 	const Icon = protocol === "torrent" ? Download : Wifi;
 
 	return (
@@ -249,9 +248,7 @@ export const IndexerRow = ({
 							backgroundColor: indexer.enable
 								? SEMANTIC_COLORS.success.from
 								: "rgba(var(--border), 0.5)",
-							boxShadow: indexer.enable
-								? `0 0 4px ${SEMANTIC_COLORS.success.from}40`
-								: "none",
+							boxShadow: indexer.enable ? `0 0 4px ${SEMANTIC_COLORS.success.from}40` : "none",
 						}}
 						title={indexer.enable ? "Enabled" : "Disabled"}
 					/>

@@ -305,7 +305,7 @@ export const RuleDialog = ({ rule, onClose }: RuleDialogProps) => {
 						/>
 						<p className="text-xs text-muted-foreground">
 							The tag/label to apply on the destination service. Created automatically on
-							Sonarr/Radarr if it doesn't already exist.
+							Sonarr/Radarr if it doesn’t already exist.
 						</p>
 					</div>
 

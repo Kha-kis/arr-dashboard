@@ -22,7 +22,15 @@ describe("deduplicateAccounts", () => {
 	});
 
 	it("filters out non-string values from aggregated array", () => {
-		const result = deduplicateAccounts(["alice", 42, null, undefined, true, "bob", { name: "eve" }]);
+		const result = deduplicateAccounts([
+			"alice",
+			42,
+			null,
+			undefined,
+			true,
+			"bob",
+			{ name: "eve" },
+		]);
 		expect(result).toEqual(["alice", "bob"]);
 	});
 

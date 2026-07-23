@@ -142,7 +142,9 @@ export const HuntingConfig = () => {
 	return (
 		<div className="flex flex-col gap-8">
 			{/* Global Automation Control */}
-			<div className={`overflow-hidden rounded-xl border border-border/30 bg-muted/10 ${schedulerRunning ? "border-green-500/30" : ""}`}>
+			<div
+				className={`overflow-hidden rounded-xl border border-border/30 bg-muted/10 ${schedulerRunning ? "border-green-500/30" : ""}`}
+			>
 				{/* Status accent line */}
 				<div
 					className="h-1 rounded-t-2xl"
@@ -406,7 +408,9 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 					</div>
 					<div>
 						<div className="flex items-center gap-2">
-							<h3 className="font-semibold">{incognitoMode ? getLinuxInstanceName(config.instanceName) : config.instanceName}</h3>
+							<h3 className="font-semibold">
+								{incognitoMode ? getLinuxInstanceName(config.instanceName) : config.instanceName}
+							</h3>
 							<ServiceBadge service={config.service} />
 						</div>
 						<p className="text-sm text-muted-foreground">
@@ -633,7 +637,12 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 								</DialogTitle>
 								<DialogDescription>
 									Are you sure you want to clear the search history for{" "}
-									<span className="font-medium text-foreground">{incognitoMode ? getLinuxInstanceName(config.instanceName) : config.instanceName}</span>?
+									<span className="font-medium text-foreground">
+										{incognitoMode
+											? getLinuxInstanceName(config.instanceName)
+											: config.instanceName}
+									</span>
+									?
 								</DialogDescription>
 							</DialogHeader>
 							<div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-sm text-muted-foreground">
@@ -763,12 +772,12 @@ const UnconfiguredInstanceCard = ({
 					</span>
 					<div>
 						<div className="flex items-center gap-2">
-							<span className="font-semibold text-[14px] text-foreground">{incognitoMode ? getLinuxInstanceName(instanceName) : instanceName}</span>
+							<span className="font-semibold text-[14px] text-foreground">
+								{incognitoMode ? getLinuxInstanceName(instanceName) : instanceName}
+							</span>
 							<ServiceBadge service={service} />
 						</div>
-						<p className="text-[11px] text-muted-foreground/40 mt-0.5">
-							Click to enable hunting
-						</p>
+						<p className="text-[11px] text-muted-foreground/40 mt-0.5">Click to enable hunting</p>
 					</div>
 				</div>
 				<Button

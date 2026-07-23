@@ -79,12 +79,15 @@ export const PasskeySetup = () => {
 			userCreated = true;
 
 			// Step 2: Get passkey registration options
-			const options = await apiRequest<Parameters<typeof startRegistration>[0]>("/auth/passkey/register/options", {
-				method: "POST",
-				json: {
-					friendlyName: formState.passkeyName.trim() || `${formState.username}'s passkey`,
+			const options = await apiRequest<Parameters<typeof startRegistration>[0]>(
+				"/auth/passkey/register/options",
+				{
+					method: "POST",
+					json: {
+						friendlyName: formState.passkeyName.trim() || `${formState.username}'s passkey`,
+					},
 				},
-			});
+			);
 
 			// Step 3: Trigger WebAuthn registration
 			const registrationResponse = await startRegistration(options);

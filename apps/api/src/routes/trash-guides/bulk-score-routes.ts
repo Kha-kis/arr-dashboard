@@ -172,7 +172,10 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 */
 	app.post("/export", async (request, reply) => {
 		const userId = request.currentUser!.id; // preHandler guarantees authentication
-		const { templateIds, serviceType } = validateRequest(bulkScoreExportRequestSchema, request.body);
+		const { templateIds, serviceType } = validateRequest(
+			bulkScoreExportRequestSchema,
+			request.body,
+		);
 
 		const bulkScoreManager = createBulkScoreManager(app.prisma, app.arrClientFactory);
 		const exportData = await bulkScoreManager.exportScores(userId, templateIds, serviceType);

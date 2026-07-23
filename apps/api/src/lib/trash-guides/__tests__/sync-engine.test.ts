@@ -11,14 +11,16 @@ import type { ArrClientFactory } from "../../arr/client-factory.js";
 import { SyncEngine, type SyncOptions } from "../sync-engine.js";
 
 // Create mock template
-const createMockTemplate = (overrides: Partial<{
-	id: string;
-	userId: string;
-	serviceType: string;
-	hasUserModifications: boolean;
-	configData: string;
-	deletedAt: Date | null;
-}> = {}) => ({
+const createMockTemplate = (
+	overrides: Partial<{
+		id: string;
+		userId: string;
+		serviceType: string;
+		hasUserModifications: boolean;
+		configData: string;
+		deletedAt: Date | null;
+	}> = {},
+) => ({
 	id: "template-123",
 	userId: "user-123",
 	serviceType: "RADARR",
@@ -33,15 +35,17 @@ const createMockTemplate = (overrides: Partial<{
 });
 
 // Create mock instance
-const createMockInstance = (overrides: Partial<{
-	id: string;
-	userId: string;
-	service: string;
-	label: string;
-	baseUrl: string;
-	encryptedApiKey: string;
-	encryptionIv: string;
-}> = {}) => ({
+const createMockInstance = (
+	overrides: Partial<{
+		id: string;
+		userId: string;
+		service: string;
+		label: string;
+		baseUrl: string;
+		encryptedApiKey: string;
+		encryptionIv: string;
+	}> = {},
+) => ({
 	id: "instance-123",
 	userId: "user-123",
 	service: "RADARR",
@@ -56,11 +60,13 @@ const createMockInstance = (overrides: Partial<{
 });
 
 // Create mock quality profile mapping
-const createMockMapping = (overrides: Partial<{
-	templateId: string;
-	instanceId: string;
-	qualityProfileId: number;
-}> = {}) => ({
+const createMockMapping = (
+	overrides: Partial<{
+		templateId: string;
+		instanceId: string;
+		qualityProfileId: number;
+	}> = {},
+) => ({
 	id: "mapping-123",
 	templateId: "template-123",
 	instanceId: "instance-123",
@@ -70,23 +76,28 @@ const createMockMapping = (overrides: Partial<{
 });
 
 // Create mock Prisma client
-const createMockPrisma = (overrides: {
-	template?: ReturnType<typeof createMockTemplate> | null;
-	instance?: ReturnType<typeof createMockInstance> | null;
-	mappings?: ReturnType<typeof createMockMapping>[];
-	cache?: { configData: string; lastModified: Date; updatedAt: Date } | null;
-} = {}): PrismaClient => {
+const createMockPrisma = (
+	overrides: {
+		template?: ReturnType<typeof createMockTemplate> | null;
+		instance?: ReturnType<typeof createMockInstance> | null;
+		mappings?: ReturnType<typeof createMockMapping>[];
+		cache?: { configData: string; lastModified: Date; updatedAt: Date } | null;
+	} = {},
+): PrismaClient => {
 	// Use "in" check to properly handle null values being passed explicitly
 	const template = "template" in overrides ? overrides.template : createMockTemplate();
 	const instance = "instance" in overrides ? overrides.instance : createMockInstance();
 	const mappings = overrides.mappings ?? [createMockMapping()];
-	const cache = "cache" in overrides ? overrides.cache : {
-		configData: JSON.stringify({
-			customFormats: [{ trashId: "cf-1", name: "Test CF" }],
-		}),
-		lastModified: new Date(),
-		updatedAt: new Date(),
-	};
+	const cache =
+		"cache" in overrides
+			? overrides.cache
+			: {
+					configData: JSON.stringify({
+						customFormats: [{ trashId: "cf-1", name: "Test CF" }],
+					}),
+					lastModified: new Date(),
+					updatedAt: new Date(),
+				};
 
 	return {
 		trashTemplate: {
@@ -105,12 +116,14 @@ const createMockPrisma = (overrides: {
 };
 
 // Create mock ARR client factory
-const createMockClientFactory = (overrides: {
-	status?: { version: string };
-	profiles?: Array<{ id: number; name: string }>;
-	connectError?: Error;
-	profileError?: Error;
-} = {}): ArrClientFactory => {
+const createMockClientFactory = (
+	overrides: {
+		status?: { version: string };
+		profiles?: Array<{ id: number; name: string }>;
+		connectError?: Error;
+		profileError?: Error;
+	} = {},
+): ArrClientFactory => {
 	const mockClient = {
 		system: {
 			// Note: SDK uses get() not getStatus()
@@ -298,9 +311,7 @@ describe("SyncEngine - validate()", () => {
 			});
 			const engine = new SyncEngine(prisma);
 
-			const result = await engine.validate(
-				createSyncOptions({ syncType: "SCHEDULED" }),
-			);
+			const result = await engine.validate(createSyncOptions({ syncType: "SCHEDULED" }));
 
 			expect(result.valid).toBe(false);
 			expect(result.errors[0]).toContain("Auto-sync is blocked");
@@ -314,9 +325,7 @@ describe("SyncEngine - validate()", () => {
 			const factory = createMockClientFactory();
 			const engine = new SyncEngine(prisma, undefined, undefined, factory);
 
-			const result = await engine.validate(
-				createSyncOptions({ syncType: "MANUAL" }),
-			);
+			const result = await engine.validate(createSyncOptions({ syncType: "MANUAL" }));
 
 			// Should not have the auto-sync blocking error
 			expect(result.errors.filter((e) => e.includes("Auto-sync is blocked"))).toHaveLength(0);
@@ -331,9 +340,7 @@ describe("SyncEngine - validate()", () => {
 			const factory = createMockClientFactory();
 			const engine = new SyncEngine(prisma, undefined, undefined, factory);
 
-			const result = await engine.validate(
-				createSyncOptions({ syncType: "SCHEDULED" }),
-			);
+			const result = await engine.validate(createSyncOptions({ syncType: "SCHEDULED" }));
 
 			// Should not have modification-related errors
 			expect(result.errors.filter((e) => e.includes("modifications"))).toHaveLength(0);
@@ -364,7 +371,9 @@ describe("SyncEngine - validate()", () => {
 
 			const result = await engine.validate(createSyncOptions());
 
-			expect(result.warnings.some((w) => w.includes("reachable") && w.includes("v4.5.0"))).toBe(true);
+			expect(result.warnings.some((w) => w.includes("reachable") && w.includes("v4.5.0"))).toBe(
+				true,
+			);
 		});
 
 		it("should skip connectivity check when factory is not provided", async () => {
@@ -386,7 +395,9 @@ describe("SyncEngine - validate()", () => {
 
 			const result = await engine.validate(createSyncOptions());
 
-			expect(result.warnings.some((w) => w.includes("Could not fetch quality profiles"))).toBe(true);
+			expect(result.warnings.some((w) => w.includes("Could not fetch quality profiles"))).toBe(
+				true,
+			);
 			// Should still be valid if other checks pass
 		});
 	});
@@ -401,7 +412,9 @@ describe("SyncEngine - validate()", () => {
 
 			const result = await engine.validate(createSyncOptions());
 
-			expect(result.warnings.some((w) => w.includes("older version") && w.includes("v3.2.1"))).toBe(true);
+			expect(result.warnings.some((w) => w.includes("older version") && w.includes("v3.2.1"))).toBe(
+				true,
+			);
 		});
 
 		it("should not warn when instance version is v4 or higher", async () => {
@@ -428,7 +441,9 @@ describe("SyncEngine - validate()", () => {
 			const result = await engine.validate(createSyncOptions());
 
 			expect(result.valid).toBe(false);
-			expect(result.errors.some((e) => e.includes("corrupted") || e.includes("Unexpected token"))).toBe(true);
+			expect(
+				result.errors.some((e) => e.includes("corrupted") || e.includes("Unexpected token")),
+			).toBe(true);
 		});
 
 		it("should return error when configData is missing customFormats", async () => {

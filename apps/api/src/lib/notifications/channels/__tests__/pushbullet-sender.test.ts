@@ -33,10 +33,7 @@ describe("pushbulletSender", () => {
 	it("returns success on 200", async () => {
 		mockFetch.mockResolvedValue(okResponse());
 
-		const result = await pushbulletSender.send(
-			{ apiToken: "o.abc123" },
-			makePayload(),
-		);
+		const result = await pushbulletSender.send({ apiToken: "o.abc123" }, makePayload());
 
 		expect(result).toEqual({ success: true, retryable: false });
 		expect(mockFetch).toHaveBeenCalledOnce();
@@ -45,10 +42,7 @@ describe("pushbulletSender", () => {
 	it("sends correct URL to Pushbullet API", async () => {
 		mockFetch.mockResolvedValue(okResponse());
 
-		await pushbulletSender.send(
-			{ apiToken: "o.abc123" },
-			makePayload(),
-		);
+		await pushbulletSender.send({ apiToken: "o.abc123" }, makePayload());
 
 		const call = mockFetch.mock.calls[0]!;
 		expect(call[0]).toBe("https://api.pushbullet.com/v2/pushes");
@@ -57,10 +51,7 @@ describe("pushbulletSender", () => {
 	it("includes Access-Token header", async () => {
 		mockFetch.mockResolvedValue(okResponse());
 
-		await pushbulletSender.send(
-			{ apiToken: "o.abc123" },
-			makePayload(),
-		);
+		await pushbulletSender.send({ apiToken: "o.abc123" }, makePayload());
 
 		const call = mockFetch.mock.calls[0]!;
 		const headers: Record<string, string> = call[1].headers;
@@ -84,10 +75,7 @@ describe("pushbulletSender", () => {
 	it("sends 'note' type when payload has no url", async () => {
 		mockFetch.mockResolvedValue(okResponse());
 
-		await pushbulletSender.send(
-			{ apiToken: "o.abc123" },
-			makePayload(),
-		);
+		await pushbulletSender.send({ apiToken: "o.abc123" }, makePayload());
 
 		const call = mockFetch.mock.calls[0]!;
 		const body = JSON.parse(call[1].body);
@@ -113,10 +101,7 @@ describe("pushbulletSender", () => {
 			new Response("rate limited", { status: 429, statusText: "Too Many Requests" }),
 		);
 
-		const result = await pushbulletSender.send(
-			{ apiToken: "o.abc123" },
-			makePayload(),
-		);
+		const result = await pushbulletSender.send({ apiToken: "o.abc123" }, makePayload());
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(true);
@@ -128,10 +113,7 @@ describe("pushbulletSender", () => {
 			new Response("Internal Server Error", { status: 500, statusText: "Internal Server Error" }),
 		);
 
-		const result = await pushbulletSender.send(
-			{ apiToken: "o.abc123" },
-			makePayload(),
-		);
+		const result = await pushbulletSender.send({ apiToken: "o.abc123" }, makePayload());
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(true);
@@ -143,10 +125,7 @@ describe("pushbulletSender", () => {
 			new Response("bad request", { status: 400, statusText: "Bad Request" }),
 		);
 
-		const result = await pushbulletSender.send(
-			{ apiToken: "o.abc123" },
-			makePayload(),
-		);
+		const result = await pushbulletSender.send({ apiToken: "o.abc123" }, makePayload());
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(false);
@@ -156,10 +135,7 @@ describe("pushbulletSender", () => {
 	it("returns retryable on network error", async () => {
 		mockFetch.mockRejectedValue(new Error("ECONNREFUSED"));
 
-		const result = await pushbulletSender.send(
-			{ apiToken: "o.abc123" },
-			makePayload(),
-		);
+		const result = await pushbulletSender.send({ apiToken: "o.abc123" }, makePayload());
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(true);

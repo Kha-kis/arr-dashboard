@@ -180,7 +180,9 @@ describe("SchemaFingerprintRegistry", () => {
 	it("logs warning for new fields immediately", () => {
 		const warnings: string[] = [];
 		const logSpy = {
-			warn: (msg: string | object) => { warnings.push(String(msg)); },
+			warn: (msg: string | object) => {
+				warnings.push(String(msg));
+			},
 			error: () => {},
 		};
 
@@ -195,7 +197,9 @@ describe("SchemaFingerprintRegistry", () => {
 	it("logs warning for missing fields only after threshold", () => {
 		const warnings: string[] = [];
 		const logSpy = {
-			warn: (msg: string | object) => { warnings.push(String(msg)); },
+			warn: (msg: string | object) => {
+				warnings.push(String(msg));
+			},
 			error: () => {},
 		};
 

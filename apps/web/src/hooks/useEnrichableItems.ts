@@ -39,9 +39,7 @@ export function useEnrichableItems<M extends string, S extends string>(
 	items: LibraryItem[],
 	typeMapping: EnrichableTypeMapping<M, S>,
 ): EnrichableResult<M | S>;
-export function useEnrichableItems(
-	items: LibraryItem[],
-): EnrichableResult<"movie" | "tv">;
+export function useEnrichableItems(items: LibraryItem[]): EnrichableResult<"movie" | "tv">;
 export function useEnrichableItems<M extends string = "movie", S extends string = "tv">(
 	items: LibraryItem[],
 	typeMapping: EnrichableTypeMapping<M, S> = DEFAULT_TYPE_MAPPING as EnrichableTypeMapping<M, S>,

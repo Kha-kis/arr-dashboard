@@ -247,7 +247,10 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 		return { state: item.torrentState, ratio: item.torrentRatio };
 	};
 
-	const allItems = [...grouped.movies, ...grouped.series, ...grouped.artists, ...grouped.authors];
+	const allItems = useMemo(
+		() => [...grouped.movies, ...grouped.series, ...grouped.artists, ...grouped.authors],
+		[grouped.movies, grouped.series, grouped.artists, grouped.authors],
+	);
 
 	// Per-card tracker strip data. The hook batches one request for the
 	// entire visible page; the React Query key is stable on the sorted

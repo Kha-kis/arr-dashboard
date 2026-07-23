@@ -50,7 +50,9 @@ function tautulliEntry(overrides: Partial<TautulliCacheEntry> = {}): TautulliCac
 	};
 }
 
-function makeKeys(...pairs: [string, number][]): Map<string, { tmdbId: number; mediaType: string }> {
+function makeKeys(
+	...pairs: [string, number][]
+): Map<string, { tmdbId: number; mediaType: string }> {
 	const map = new Map<string, { tmdbId: number; mediaType: string }>();
 	for (const [mediaType, tmdbId] of pairs) {
 		map.set(`${mediaType}:${tmdbId}`, { tmdbId, mediaType });
@@ -120,7 +122,12 @@ describe("aggregateWatchEnrichment", () => {
 			keys,
 			[
 				plexEntry({ instanceId: "plex-1", watchCount: 2, watchedByUsers: '["alice"]' }),
-				plexEntry({ instanceId: "plex-2", watchCount: 4, ratingKey: null, watchedByUsers: '["bob"]' }),
+				plexEntry({
+					instanceId: "plex-2",
+					watchCount: 4,
+					ratingKey: null,
+					watchedByUsers: '["bob"]',
+				}),
 			],
 			[],
 			undefined,

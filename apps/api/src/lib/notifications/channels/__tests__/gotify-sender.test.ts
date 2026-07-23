@@ -154,7 +154,9 @@ describe("gotifySender", () => {
 
 		const call = mockFetch.mock.calls[0]!;
 		const body = JSON.parse(call[1].body);
-		expect(body.extras["client::notification"]).toEqual({ click: { url: "https://example.com/details" } });
+		expect(body.extras["client::notification"]).toEqual({
+			click: { url: "https://example.com/details" },
+		});
 	});
 
 	it("returns retryable on 429", async () => {

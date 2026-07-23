@@ -11,7 +11,7 @@ import {
 	Trash2,
 	XCircle,
 } from "lucide-react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { DomainStatusBadge, PremiumSection } from "../../../components/layout";
 import { Tooltip } from "../../../components/layout/config-primitives";
 import type { DomainStatus } from "../../../components/layout/domain-status";
@@ -319,9 +319,8 @@ export function ValidationHealthSection({
 										const isExpanded = expandedIntegrations.has(name);
 
 										return (
-											<>
+											<Fragment key={name}>
 												<tr
-													key={name}
 													className={`border-b border-border/30 last:border-b-0 transition-colors animate-in fade-in slide-in-from-bottom-1 duration-200 ${isExpandable ? "cursor-pointer hover:bg-card/50" : "hover:bg-card/50"}`}
 													style={{
 														animationDelay: `${i * 30}ms`,
@@ -451,7 +450,7 @@ export function ValidationHealthSection({
 															<td className="p-2" />
 														</tr>
 													))}
-											</>
+											</Fragment>
 										);
 									})}
 								</tbody>

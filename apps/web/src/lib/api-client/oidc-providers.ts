@@ -20,7 +20,6 @@ export async function getOIDCProvider(): Promise<OIDCProviderResponse> {
 	});
 }
 
-
 /**
  * Create a new OIDC provider (admin only)
  */

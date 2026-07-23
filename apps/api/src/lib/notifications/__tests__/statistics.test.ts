@@ -57,10 +57,34 @@ describe("getDeliveryStatistics", () => {
 	it("correctly counts sent/failed/dead_letter totals", async () => {
 		const now = new Date();
 		const prisma = createMockPrisma([
-			{ channelId: "ch-1", channelType: "discord", eventType: "HUNT_COMPLETED", status: "sent", sentAt: now },
-			{ channelId: "ch-1", channelType: "discord", eventType: "HUNT_COMPLETED", status: "sent", sentAt: now },
-			{ channelId: "ch-1", channelType: "discord", eventType: "HUNT_FAILED", status: "failed", sentAt: now },
-			{ channelId: "ch-1", channelType: "discord", eventType: "BACKUP_COMPLETED", status: "dead_letter", sentAt: now },
+			{
+				channelId: "ch-1",
+				channelType: "discord",
+				eventType: "HUNT_COMPLETED",
+				status: "sent",
+				sentAt: now,
+			},
+			{
+				channelId: "ch-1",
+				channelType: "discord",
+				eventType: "HUNT_COMPLETED",
+				status: "sent",
+				sentAt: now,
+			},
+			{
+				channelId: "ch-1",
+				channelType: "discord",
+				eventType: "HUNT_FAILED",
+				status: "failed",
+				sentAt: now,
+			},
+			{
+				channelId: "ch-1",
+				channelType: "discord",
+				eventType: "BACKUP_COMPLETED",
+				status: "dead_letter",
+				sentAt: now,
+			},
 		]);
 
 		const result = await getDeliveryStatistics(prisma, ["ch-1"], 7);
@@ -117,12 +141,48 @@ describe("getDeliveryStatistics", () => {
 	it("aggregates per-event-type counts sorted by frequency", async () => {
 		const now = new Date();
 		const prisma = createMockPrisma([
-			{ channelId: "ch-1", channelType: "discord", eventType: "HUNT_COMPLETED", status: "sent", sentAt: now },
-			{ channelId: "ch-1", channelType: "discord", eventType: "BACKUP_COMPLETED", status: "sent", sentAt: now },
-			{ channelId: "ch-1", channelType: "discord", eventType: "BACKUP_COMPLETED", status: "sent", sentAt: now },
-			{ channelId: "ch-1", channelType: "discord", eventType: "BACKUP_COMPLETED", status: "sent", sentAt: now },
-			{ channelId: "ch-1", channelType: "discord", eventType: "HUNT_FAILED", status: "sent", sentAt: now },
-			{ channelId: "ch-1", channelType: "discord", eventType: "HUNT_FAILED", status: "sent", sentAt: now },
+			{
+				channelId: "ch-1",
+				channelType: "discord",
+				eventType: "HUNT_COMPLETED",
+				status: "sent",
+				sentAt: now,
+			},
+			{
+				channelId: "ch-1",
+				channelType: "discord",
+				eventType: "BACKUP_COMPLETED",
+				status: "sent",
+				sentAt: now,
+			},
+			{
+				channelId: "ch-1",
+				channelType: "discord",
+				eventType: "BACKUP_COMPLETED",
+				status: "sent",
+				sentAt: now,
+			},
+			{
+				channelId: "ch-1",
+				channelType: "discord",
+				eventType: "BACKUP_COMPLETED",
+				status: "sent",
+				sentAt: now,
+			},
+			{
+				channelId: "ch-1",
+				channelType: "discord",
+				eventType: "HUNT_FAILED",
+				status: "sent",
+				sentAt: now,
+			},
+			{
+				channelId: "ch-1",
+				channelType: "discord",
+				eventType: "HUNT_FAILED",
+				status: "sent",
+				sentAt: now,
+			},
 		]);
 
 		const result = await getDeliveryStatistics(prisma, ["ch-1"], 7);
@@ -145,7 +205,13 @@ describe("getDeliveryStatistics", () => {
 		const prisma = createMockPrisma([
 			{ channelId: "ch-1", channelType: "discord", eventType: "E1", status: "sent", sentAt: day3 },
 			{ channelId: "ch-1", channelType: "discord", eventType: "E1", status: "sent", sentAt: day1 },
-			{ channelId: "ch-1", channelType: "discord", eventType: "E1", status: "failed", sentAt: day1 },
+			{
+				channelId: "ch-1",
+				channelType: "discord",
+				eventType: "E1",
+				status: "failed",
+				sentAt: day1,
+			},
 			{ channelId: "ch-1", channelType: "discord", eventType: "E1", status: "sent", sentAt: day2 },
 		]);
 

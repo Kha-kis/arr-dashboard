@@ -25,22 +25,18 @@ describe("withSeerrRetry", () => {
 	});
 
 	it("does NOT retry on 404 (non-retryable)", async () => {
-		const fn = vi
-			.fn()
-			.mockRejectedValue(new SeerrApiError("404", { seerrStatus: 404 }));
-		await expect(
-			withSeerrRetry(fn, { maxAttempts: 3, baseDelayMs: 1 }),
-		).rejects.toThrow(SeerrApiError);
+		const fn = vi.fn().mockRejectedValue(new SeerrApiError("404", { seerrStatus: 404 }));
+		await expect(withSeerrRetry(fn, { maxAttempts: 3, baseDelayMs: 1 })).rejects.toThrow(
+			SeerrApiError,
+		);
 		expect(fn).toHaveBeenCalledTimes(1);
 	});
 
 	it("exhausts max attempts then throws", async () => {
-		const fn = vi
-			.fn()
-			.mockRejectedValue(new SeerrApiError("500", { seerrStatus: 500 }));
-		await expect(
-			withSeerrRetry(fn, { maxAttempts: 3, baseDelayMs: 1 }),
-		).rejects.toThrow(SeerrApiError);
+		const fn = vi.fn().mockRejectedValue(new SeerrApiError("500", { seerrStatus: 500 }));
+		await expect(withSeerrRetry(fn, { maxAttempts: 3, baseDelayMs: 1 })).rejects.toThrow(
+			SeerrApiError,
+		);
 		expect(fn).toHaveBeenCalledTimes(3);
 	});
 
@@ -49,10 +45,7 @@ describe("withSeerrRetry", () => {
 			seerrStatus: 429,
 			retryAfterMs: 50, // 50ms
 		});
-		const fn = vi
-			.fn()
-			.mockRejectedValueOnce(err429)
-			.mockResolvedValue("ok");
+		const fn = vi.fn().mockRejectedValueOnce(err429).mockResolvedValue("ok");
 
 		const start = Date.now();
 		const result = await withSeerrRetry(fn, { maxAttempts: 3, baseDelayMs: 1 });
@@ -64,10 +57,7 @@ describe("withSeerrRetry", () => {
 
 	it("retries on network errors", async () => {
 		const networkErr = new Error("fetch failed: ECONNREFUSED");
-		const fn = vi
-			.fn()
-			.mockRejectedValueOnce(networkErr)
-			.mockResolvedValue("ok");
+		const fn = vi.fn().mockRejectedValueOnce(networkErr).mockResolvedValue("ok");
 		const result = await withSeerrRetry(fn, { maxAttempts: 3, baseDelayMs: 1 });
 		expect(result).toBe("ok");
 		expect(fn).toHaveBeenCalledTimes(2);
@@ -75,9 +65,9 @@ describe("withSeerrRetry", () => {
 
 	it("does not retry non-retryable non-SeerrApiError", async () => {
 		const fn = vi.fn().mockRejectedValue(new Error("something unrelated"));
-		await expect(
-			withSeerrRetry(fn, { maxAttempts: 3, baseDelayMs: 1 }),
-		).rejects.toThrow("something unrelated");
+		await expect(withSeerrRetry(fn, { maxAttempts: 3, baseDelayMs: 1 })).rejects.toThrow(
+			"something unrelated",
+		);
 		expect(fn).toHaveBeenCalledTimes(1);
 	});
 

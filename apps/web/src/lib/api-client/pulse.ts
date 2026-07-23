@@ -27,8 +27,7 @@ export async function dispatchPulseAction(
 	signalId: string,
 	action: PulseAction,
 ): Promise<PulseActionResponse> {
-	return apiRequest<PulseActionResponse>(
-		`/api/pulse/${encodeURIComponent(signalId)}/action`,
-		{ json: action },
-	);
+	return apiRequest<PulseActionResponse>(`/api/pulse/${encodeURIComponent(signalId)}/action`, {
+		json: action,
+	});
 }

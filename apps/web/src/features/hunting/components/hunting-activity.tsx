@@ -25,7 +25,12 @@ import {
 	StatusBadge,
 } from "../../../components/layout";
 import { Pagination } from "../../../components/ui";
-import { getLinuxIndexer, getLinuxInstanceName, getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
+import {
+	getLinuxIndexer,
+	getLinuxInstanceName,
+	getLinuxIsoName,
+	useIncognitoMode,
+} from "../../../lib/incognito";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useHuntingLogs } from "../hooks/useHuntingLogs";
 import type { HuntLog } from "../lib/hunting-types";
@@ -291,10 +296,7 @@ const ActivityLogEntry = ({ log, animationDelay = 0 }: ActivityLogEntryProps) =>
 					<div className="flex items-center gap-3">
 						{isRunning ? (
 							<div className="flex items-center gap-1">
-								<Loader2
-									className="h-3 w-3 animate-spin"
-									style={{ color: serviceGradient.from }}
-								/>
+								<Loader2 className="h-3 w-3 animate-spin" style={{ color: serviceGradient.from }} />
 								<span>Searching...</span>
 							</div>
 						) : (
@@ -305,11 +307,7 @@ const ActivityLogEntry = ({ log, animationDelay = 0 }: ActivityLogEntryProps) =>
 								</span>
 								<span
 									className={`inline-flex items-center gap-1 text-[11px] ${log.itemsGrabbed > 0 ? "" : "text-muted-foreground/50"}`}
-									style={
-										log.itemsGrabbed > 0
-											? { color: SEMANTIC_COLORS.success.text }
-											: undefined
-									}
+									style={log.itemsGrabbed > 0 ? { color: SEMANTIC_COLORS.success.text } : undefined}
 								>
 									<Download className="h-3 w-3 shrink-0" />
 									{log.itemsGrabbed} grabbed
@@ -339,9 +337,7 @@ const ActivityLogEntry = ({ log, animationDelay = 0 }: ActivityLogEntryProps) =>
 			{expanded && (
 				<div className="relative px-5 py-4 border-t border-border/20 text-sm space-y-4">
 					{/* Message */}
-					{log.message && (
-						<p className="text-[11.5px] text-muted-foreground/50">{log.message}</p>
-					)}
+					{log.message && <p className="text-[11.5px] text-muted-foreground/50">{log.message}</p>}
 
 					{/* Metadata */}
 					<div className="flex flex-wrap gap-4 text-xs text-muted-foreground/40">
@@ -377,12 +373,14 @@ const ActivityLogEntry = ({ log, animationDelay = 0 }: ActivityLogEntryProps) =>
 											border: `1px solid ${SEMANTIC_COLORS.success.border}`,
 										}}
 									>
-										<span className="font-medium text-foreground flex-1">{incognitoMode ? getLinuxIsoName(item.title) : item.title}</span>
-										{item.quality && (
-											<StatusBadge status="success">{item.quality}</StatusBadge>
-										)}
+										<span className="font-medium text-foreground flex-1">
+											{incognitoMode ? getLinuxIsoName(item.title) : item.title}
+										</span>
+										{item.quality && <StatusBadge status="success">{item.quality}</StatusBadge>}
 										{item.indexer && (
-											<span className="text-muted-foreground">{incognitoMode ? getLinuxIndexer(item.indexer) : item.indexer}</span>
+											<span className="text-muted-foreground">
+												{incognitoMode ? getLinuxIndexer(item.indexer) : item.indexer}
+											</span>
 										)}
 										{item.size && (
 											<span className="text-muted-foreground flex items-center gap-1">

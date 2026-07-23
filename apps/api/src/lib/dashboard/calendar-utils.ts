@@ -201,8 +201,11 @@ export const normalizeCalendarItem = (item: unknown, service: CalendarService): 
 
 	// Extract poster from series/movie/artist/author images
 	const imageSource =
-		anyItem.series?.images ?? anyItem.movie?.images ?? anyItem.images ??
-		anyItem.artist?.images ?? anyItem.author?.images;
+		anyItem.series?.images ??
+		anyItem.movie?.images ??
+		anyItem.images ??
+		anyItem.artist?.images ??
+		anyItem.author?.images;
 	const { poster: posterUrl } = normalizeImages(imageSource);
 
 	return {

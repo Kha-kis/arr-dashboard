@@ -70,10 +70,21 @@ function createWrapper() {
 	);
 }
 
-function renderSection(onServerSelected = vi.fn(), mode: "add" | "edit" = "add", onTestConnection = vi.fn()) {
-	return render(<PlexOAuthSection onServerSelected={onServerSelected} onTestConnection={onTestConnection} mode={mode} />, {
-		wrapper: createWrapper(),
-	});
+function renderSection(
+	onServerSelected = vi.fn(),
+	mode: "add" | "edit" = "add",
+	onTestConnection = vi.fn(),
+) {
+	return render(
+		<PlexOAuthSection
+			onServerSelected={onServerSelected}
+			onTestConnection={onTestConnection}
+			mode={mode}
+		/>,
+		{
+			wrapper: createWrapper(),
+		},
+	);
 }
 
 const sampleServers: PlexDiscoveredServer[] = [

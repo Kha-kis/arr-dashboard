@@ -86,9 +86,7 @@ describe("<NeedsAttentionPanel />", () => {
 
 		render(<NeedsAttentionPanel />, { wrapper: createWrapper() });
 
-		expect(
-			screen.getByTestId("needs-attention-panel-loading"),
-		).toBeInTheDocument();
+		expect(screen.getByTestId("needs-attention-panel-loading")).toBeInTheDocument();
 		// The loading state must NOT claim "all clear" or show any item rows.
 		expect(screen.queryByText(/No actionable items right now/i)).not.toBeInTheDocument();
 	});
@@ -160,17 +158,15 @@ describe("<NeedsAttentionPanel />", () => {
 		// Action links land on the exact actionUrl from the item, and respect
 		// actionLabel when provided (else "Resolve" default).
 		const openService = screen.getByRole("link", { name: /Open service/i });
-		expect(openService).toHaveAttribute(
-			"href",
-			"/settings/services?instance=sonarr-1",
-		);
+		expect(openService).toHaveAttribute("href", "/settings/services?instance=sonarr-1");
 		const resolve = screen.getByRole("link", { name: /Resolve/i });
 		expect(resolve).toHaveAttribute("href", "/queue-cleaner");
 
 		// Header shows a "View all in Pulse" link regardless.
-		expect(
-			screen.getByRole("link", { name: /View all in Pulse/i }),
-		).toHaveAttribute("href", "/pulse");
+		expect(screen.getByRole("link", { name: /View all in Pulse/i })).toHaveAttribute(
+			"href",
+			"/pulse",
+		);
 	});
 
 	it("shows the critical (error) header accent when any visible item is critical", () => {
@@ -212,9 +208,7 @@ describe("<NeedsAttentionPanel />", () => {
 
 		const panel = screen.getByTestId("needs-attention-panel");
 		// Warning triangle present, no critical x-circle in the header.
-		expect(
-			panel.querySelector(".lucide-alert-triangle, .lucide-triangle-alert"),
-		).not.toBeNull();
+		expect(panel.querySelector(".lucide-alert-triangle, .lucide-triangle-alert")).not.toBeNull();
 	});
 
 	// ---------------------------------------------------------------------
@@ -337,9 +331,6 @@ describe("<NeedsAttentionPanel />", () => {
 
 		render(<NeedsAttentionPanel />, { wrapper: createWrapper() });
 		const link = screen.getByRole("link", { name: /View in Pulse/i });
-		expect(link).toHaveAttribute(
-			"href",
-			"/pulse#scheduler-failing-queue-cleaner",
-		);
+		expect(link).toHaveAttribute("href", "/pulse#scheduler-failing-queue-cleaner");
 	});
 });

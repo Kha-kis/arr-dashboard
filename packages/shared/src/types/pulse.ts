@@ -25,11 +25,7 @@ export type PulseCategory = z.infer<typeof pulseCategorySchema>;
 // boundary. New kinds land by extending this union — schema drift between
 // client and server surfaces as a Zod parse failure, not a silent no-op.
 
-export const pulseActionKindSchema = z.enum([
-	"scheduler.enable",
-	"cache.refresh",
-	"queue.retry",
-]);
+export const pulseActionKindSchema = z.enum(["scheduler.enable", "cache.refresh", "queue.retry"]);
 export type PulseActionKind = z.infer<typeof pulseActionKindSchema>;
 
 // Canonical scheduler job ids — match `JOB_ID` in

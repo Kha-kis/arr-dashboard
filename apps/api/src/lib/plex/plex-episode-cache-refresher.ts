@@ -151,7 +151,9 @@ export async function refreshPlexEpisodeCache(
 						);
 					}
 					if (errorMessages.length < 5) {
-						errorMessages.push(`Failed to upsert S${episode.seasonNumber}E${episode.episodeNumber}: ${getErrorMessage(err)}`);
+						errorMessages.push(
+							`Failed to upsert S${episode.seasonNumber}E${episode.episodeNumber}: ${getErrorMessage(err)}`,
+						);
 					}
 				}
 			}
@@ -159,7 +161,9 @@ export async function refreshPlexEpisodeCache(
 			errors++;
 			log.warn({ err, instanceId, tmdbId, showRatingKey }, "Failed to fetch episodes for show");
 			if (errorMessages.length < 5) {
-				errorMessages.push(`Failed to fetch episodes for show tmdb:${tmdbId}: ${getErrorMessage(err)}`);
+				errorMessages.push(
+					`Failed to fetch episodes for show tmdb:${tmdbId}: ${getErrorMessage(err)}`,
+				);
 			}
 		}
 	}

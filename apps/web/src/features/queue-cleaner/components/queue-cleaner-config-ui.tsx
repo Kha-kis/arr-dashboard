@@ -58,9 +58,7 @@ export const RuleSection = ({
 				<div
 					className="flex h-7 w-7 items-center justify-center rounded-lg shrink-0 transition-colors duration-200"
 					style={{
-						backgroundColor: enabled
-							? "rgba(74, 222, 128, 0.1)"
-							: "rgba(148, 163, 184, 0.08)",
+						backgroundColor: enabled ? "rgba(74, 222, 128, 0.1)" : "rgba(148, 163, 184, 0.08)",
 						border: enabled
 							? "1px solid rgba(74, 222, 128, 0.15)"
 							: "1px solid rgba(148, 163, 184, 0.1)",

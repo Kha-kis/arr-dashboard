@@ -85,4 +85,3 @@ export const KNOWN_INTEGRATIONS = [
 	"trash-guides",
 	"queue-cleaner",
 ] as const;
-

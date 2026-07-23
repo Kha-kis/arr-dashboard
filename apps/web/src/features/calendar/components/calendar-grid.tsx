@@ -48,16 +48,13 @@ const isSameDay = (a: Date | null, b: Date): boolean => {
 };
 
 const isSameMonth = (a: Date, b: Date): boolean =>
-	a.getUTCFullYear() === b.getUTCFullYear() &&
-	a.getUTCMonth() === b.getUTCMonth();
+	a.getUTCFullYear() === b.getUTCFullYear() && a.getUTCMonth() === b.getUTCMonth();
 
 const formatDayNumber = (date: Date): string =>
 	new Intl.DateTimeFormat(undefined, { day: "numeric", timeZone: "UTC" }).format(date);
 
 /** Extract unique service colors from a day's events */
-const getUniqueServiceColors = (
-	events: DeduplicatedCalendarItem[],
-): string[] => {
+const getUniqueServiceColors = (events: DeduplicatedCalendarItem[]): string[] => {
 	const seen = new Set<string>();
 	const colors: string[] = [];
 	for (const e of events) {
@@ -168,10 +165,7 @@ export const CalendarGrid = ({
 	const { gradient: themeGradient } = useThemeGradient();
 	const todayKey = formatDateOnly(new Date());
 
-	const rotatedLabels = [
-		...WEEKDAY_LABELS.slice(weekStart),
-		...WEEKDAY_LABELS.slice(0, weekStart),
-	];
+	const rotatedLabels = [...WEEKDAY_LABELS.slice(weekStart), ...WEEKDAY_LABELS.slice(0, weekStart)];
 	// Weekend column indices after rotation
 	const satIndex = (6 - weekStart + 7) % 7;
 	const sunIndex = (0 - weekStart + 7) % 7;
@@ -211,16 +205,11 @@ export const CalendarGrid = ({
 					const hasEvents = events.length > 0;
 					const isPast = key < todayKey;
 
-					const serviceColors = hasEvents
-						? getUniqueServiceColors(events)
-						: [];
-					const dominantColor =
-						serviceColors[0] ?? themeGradient.from;
+					const serviceColors = hasEvents ? getUniqueServiceColors(events) : [];
+					const dominantColor = serviceColors[0] ?? themeGradient.from;
 
 					// Density-based opacity for heatmap effect (1.5% per event, max 7%)
-					const densityOpacity = hasEvents
-						? Math.min(events.length * 0.015, 0.07)
-						: 0;
+					const densityOpacity = hasEvents ? Math.min(events.length * 0.015, 0.07) : 0;
 
 					// Cell selection/glow style
 					const cellStyle: React.CSSProperties = {};
@@ -337,19 +326,12 @@ export const CalendarGrid = ({
 
 							{/* Event chips */}
 							<div className="flex-1 px-1.5 pb-1.5 space-y-px relative z-10 overflow-y-auto [&::-webkit-scrollbar]:w-0.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/10">
-								{events
-									.slice(0, MAX_VISIBLE_CHIPS)
-									.map((event) => (
-										<EventChip
-											key={`${key}:${String(event.id)}`}
-											event={event}
-										/>
-									))}
+								{events.slice(0, MAX_VISIBLE_CHIPS).map((event) => (
+									<EventChip key={`${key}:${String(event.id)}`} event={event} />
+								))}
 								{events.length > MAX_VISIBLE_CHIPS && (
 									<MoreIndicator
-										hiddenEvents={events.slice(
-											MAX_VISIBLE_CHIPS,
-										)}
+										hiddenEvents={events.slice(MAX_VISIBLE_CHIPS)}
 										dominantColor={dominantColor}
 									/>
 								)}

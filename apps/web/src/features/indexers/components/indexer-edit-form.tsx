@@ -126,10 +126,7 @@ const EditableField = ({
 	if (fieldType === "select" && field.selectOptions && field.selectOptions.length > 0) {
 		return (
 			<div className="space-y-1.5">
-				<label
-					htmlFor={fieldId}
-					className="text-[11px] font-medium text-muted-foreground/60 block"
-				>
+				<label htmlFor={fieldId} className="text-[11px] font-medium text-muted-foreground/60 block">
 					{fieldLabel}
 				</label>
 				<select
@@ -163,10 +160,7 @@ const EditableField = ({
 	if (fieldType === "number" || (typeof value === "number" && fieldType !== "textbox")) {
 		return (
 			<div className="space-y-1.5">
-				<label
-					htmlFor={fieldId}
-					className="text-[11px] font-medium text-muted-foreground/60 block"
-				>
+				<label htmlFor={fieldId} className="text-[11px] font-medium text-muted-foreground/60 block">
 					{fieldLabel}
 				</label>
 				<Input
@@ -196,10 +190,7 @@ const EditableField = ({
 	// Default: text input
 	return (
 		<div className="space-y-1.5">
-			<label
-				htmlFor={fieldId}
-				className="text-[11px] font-medium text-muted-foreground/60 block"
-			>
+			<label htmlFor={fieldId} className="text-[11px] font-medium text-muted-foreground/60 block">
 				{fieldLabel}
 			</label>
 			<Input
@@ -303,9 +294,7 @@ export const IndexerEditForm = ({
 				{/* Priority */}
 				<div className="flex items-center gap-2.5">
 					<Hash className="h-3.5 w-3.5 text-muted-foreground/40" />
-					<span className="text-[11px] font-medium text-muted-foreground/50">
-						Priority
-					</span>
+					<span className="text-[11px] font-medium text-muted-foreground/50">Priority</span>
 					<Input
 						type="number"
 						value={formPriority === undefined ? "" : formPriority.toString()}

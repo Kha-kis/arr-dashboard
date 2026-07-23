@@ -300,7 +300,8 @@ function JsonImportTab({
 					customFormats: cfs.map((cf) => ({
 						name: cf.name,
 						includeCustomFormatWhenRenaming: cf.includeCustomFormatWhenRenaming,
-						specifications: cf.specifications as ImportUserCFFromJsonRequest["customFormats"][number]["specifications"],
+						specifications:
+							cf.specifications as ImportUserCFFromJsonRequest["customFormats"][number]["specifications"],
 					})),
 					defaultScore,
 				},

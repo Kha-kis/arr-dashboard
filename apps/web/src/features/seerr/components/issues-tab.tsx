@@ -278,7 +278,10 @@ export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 												</span>
 											)}
 											<span className="text-[11px] text-muted-foreground/40">
-												by {incognitoMode ? getLinuxUsername(issue.createdBy.displayName) : issue.createdBy.displayName}
+												by{" "}
+												{incognitoMode
+													? getLinuxUsername(issue.createdBy.displayName)
+													: issue.createdBy.displayName}
 											</span>
 											<span className="text-[11px] text-muted-foreground/40">
 												{formatRelativeTime(issue.createdAt)}
@@ -294,7 +297,9 @@ export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 										{/* Title + status */}
 										<div className="flex items-center gap-2 flex-wrap">
 											<h3 className="truncate text-[14px] font-semibold text-foreground leading-snug">
-												{incognitoMode ? getLinuxIsoName(issue.media.title ?? `Issue #${issue.id}`) : (issue.media.title ?? `Issue #${issue.id}`)}
+												{incognitoMode
+													? getLinuxIsoName(issue.media.title ?? `Issue #${issue.id}`)
+													: (issue.media.title ?? `Issue #${issue.id}`)}
 											</h3>
 											<StatusBadge status={getIssueStatusVariant(issue.status)}>
 												{getIssueStatusLabel(issue.status)}
@@ -307,7 +312,9 @@ export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 												{issue.comments.map((comment) => (
 													<div key={comment.id} className="text-xs">
 														<span className="font-medium text-foreground">
-															{incognitoMode ? getLinuxUsername(comment.user.displayName) : comment.user.displayName}
+															{incognitoMode
+																? getLinuxUsername(comment.user.displayName)
+																: comment.user.displayName}
 														</span>
 														<span className="ml-1.5 text-muted-foreground/40">
 															{formatRelativeTime(comment.createdAt)}
@@ -336,9 +343,7 @@ export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 												<button
 													type="button"
 													onClick={() => handleSubmitComment(issue.id)}
-													disabled={
-														!commentInput[issue.id]?.trim() || addCommentMutation.isPending
-													}
+													disabled={!commentInput[issue.id]?.trim() || addCommentMutation.isPending}
 													className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/30 bg-white/[0.03] text-muted-foreground/40 transition-colors hover:bg-white/[0.06] hover:text-foreground disabled:opacity-40 disabled:pointer-events-none"
 													title="Send comment"
 												>

@@ -36,7 +36,11 @@ interface OnDeckWidgetProps {
 	animationDelay?: number;
 }
 
-export const OnDeckWidget = ({ hasPlexInstances, hasJellyfinInstances, animationDelay = 0 }: OnDeckWidgetProps) => {
+export const OnDeckWidget = ({
+	hasPlexInstances,
+	hasJellyfinInstances,
+	animationDelay = 0,
+}: OnDeckWidgetProps) => {
 	const enabled = hasPlexInstances || hasJellyfinInstances;
 	const [incognitoMode] = useIncognitoMode();
 	const plexQuery = useOnDeck(hasPlexInstances);
@@ -71,7 +75,10 @@ export const OnDeckWidget = ({ hasPlexInstances, hasJellyfinInstances, animation
 
 	const isLoading = plexQuery.isLoading || jellyfinQuery.isLoading;
 	// Only error if all enabled sources failed
-	const enabledErrors = [hasPlexInstances && plexQuery.isError, hasJellyfinInstances && jellyfinQuery.isError].filter(Boolean).length;
+	const enabledErrors = [
+		hasPlexInstances && plexQuery.isError,
+		hasJellyfinInstances && jellyfinQuery.isError,
+	].filter(Boolean).length;
 	const enabledCount = [hasPlexInstances, hasJellyfinInstances].filter(Boolean).length;
 	const isError = enabledCount > 0 && enabledErrors === enabledCount;
 	const [failedThumbs, setFailedThumbs] = useState<Set<string>>(new Set());
@@ -153,7 +160,10 @@ export const OnDeckWidget = ({ hasPlexInstances, hasJellyfinInstances, animation
 								const hasThumb = item.thumbUrl && !failedThumbs.has(thumbKey);
 								const libraryHref = item.tmdbId ? `/library?tmdbId=${item.tmdbId}` : "/library";
 								const displayTitle = incognitoMode ? getLinuxIsoName(item.title) : item.title;
-								const displaySection = incognitoMode && item.sectionTitle ? getLinuxSectionName(item.sectionTitle) : item.sectionTitle;
+								const displaySection =
+									incognitoMode && item.sectionTitle
+										? getLinuxSectionName(item.sectionTitle)
+										: item.sectionTitle;
 
 								return (
 									<Link
@@ -180,7 +190,7 @@ export const OnDeckWidget = ({ hasPlexInstances, hasJellyfinInstances, animation
 													height={210}
 													className="absolute inset-0 w-full h-full object-cover"
 													onError={() => setFailedThumbs((prev) => new Set(prev).add(thumbKey))}
-											unoptimized
+													unoptimized
 												/>
 											) : (
 												<MediaIcon className="absolute inset-0 m-auto h-10 w-10 text-white/30" />
