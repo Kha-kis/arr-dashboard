@@ -136,7 +136,7 @@ describe("prewarmAllSequential", () => {
 		// Only "a" should have been pre-warmed. Cancellation prevents
 		// "b" and "c" from being started.
 		expect(prewarmOne).toHaveBeenCalledTimes(1);
-		expect((prewarmOne.mock.calls[0]?.[0] as PrewarmInstance).id).toBe("a");
+		expect(prewarmOne.mock.calls[0]![0].id).toBe("a");
 	});
 
 	it("logs a 'skipping' message and does nothing when no instances are configured", async () => {
