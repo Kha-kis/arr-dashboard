@@ -299,6 +299,8 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 			baseUrl: instance.baseUrl,
 			encryptedApiKey: instance.encryptedApiKey,
 			encryptionIv: instance.encryptionIv,
+			encryptedHttpAuthCredentials: instance.encryptedHttpAuthCredentials,
+			httpAuthEncryptionIv: instance.httpAuthEncryptionIv,
 			service: instance.service,
 			label: instance.label,
 		});

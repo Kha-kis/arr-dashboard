@@ -91,6 +91,8 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 				service: true,
 				encryptedApiKey: true,
 				encryptionIv: true,
+				encryptedHttpAuthCredentials: true,
+				httpAuthEncryptionIv: true,
 			},
 		});
 
@@ -625,6 +627,8 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 					service: true,
 					encryptedApiKey: true,
 					encryptionIv: true,
+					encryptedHttpAuthCredentials: true,
+					httpAuthEncryptionIv: true,
 				},
 			});
 
@@ -774,6 +778,8 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 				service: true,
 				encryptedApiKey: true,
 				encryptionIv: true,
+				encryptedHttpAuthCredentials: true,
+				httpAuthEncryptionIv: true,
 			},
 		});
 

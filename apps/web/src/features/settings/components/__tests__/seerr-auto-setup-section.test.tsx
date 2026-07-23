@@ -65,6 +65,7 @@ function renderSection(
 	onApiKeyFetched = vi.fn(),
 	mode: "add" | "edit" = "add",
 	onTestConnection = vi.fn(),
+	httpAuth?: { username: string; password: string },
 ) {
 	return render(
 		<SeerrAutoSetupSection
@@ -72,6 +73,7 @@ function renderSection(
 			onApiKeyFetched={onApiKeyFetched as (apiKey: string) => void}
 			onTestConnection={onTestConnection as () => void}
 			mode={mode}
+			httpAuth={httpAuth}
 		/>,
 		{ wrapper: createWrapper() },
 	);
@@ -141,7 +143,24 @@ describe("SeerrAutoSetupSection", () => {
 		fireEvent.click(screen.getByText("Sign in to Seerr with Plex"));
 
 		await waitFor(() => {
-			expect(fetchSeerrApiKey).toHaveBeenCalledWith("http://seerr:5055", "existing-ref");
+			expect(fetchSeerrApiKey).toHaveBeenCalledWith("http://seerr:5055", "existing-ref", undefined);
+		});
+	});
+
+	it("passes staged HTTP Basic credentials when fetching the API key", async () => {
+		vi.mocked(usePlexOAuth).mockReturnValue(mockPlexOAuth({ tokenRef: "existing-ref" }));
+
+		renderSection(undefined, undefined, "add", undefined, {
+			username: "proxy",
+			password: "secret",
+		});
+		fireEvent.click(screen.getByText("Sign in to Seerr with Plex"));
+
+		await waitFor(() => {
+			expect(fetchSeerrApiKey).toHaveBeenCalledWith("http://seerr:5055", "existing-ref", {
+				username: "proxy",
+				password: "secret",
+			});
 		});
 	});
 

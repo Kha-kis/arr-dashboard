@@ -103,6 +103,10 @@ const REDACT_PATHS = [
 	"secret",
 	"encryptedApiKey",
 	"encryptionIv",
+	"httpAuth.password",
+	"req.body.httpAuth.password",
+	"encryptedHttpAuthCredentials",
+	"httpAuthEncryptionIv",
 	"cookie",
 	"authorization",
 	// Nested paths (e.g., from req.headers or response objects)

@@ -92,6 +92,8 @@ interface ValidatedDeploymentData {
 		baseUrl: string;
 		encryptedApiKey: string;
 		encryptionIv: string;
+		encryptedHttpAuthCredentials: string | null;
+		httpAuthEncryptionIv: string | null;
 	};
 	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR API config structure
 	templateConfig: Record<string, any>;
@@ -252,6 +254,8 @@ export class DeploymentExecutorService {
 				baseUrl: instance.baseUrl,
 				encryptedApiKey: instance.encryptedApiKey,
 				encryptionIv: instance.encryptionIv,
+				encryptedHttpAuthCredentials: instance.encryptedHttpAuthCredentials,
+				httpAuthEncryptionIv: instance.httpAuthEncryptionIv,
 			},
 			templateConfig,
 			templateCFs,

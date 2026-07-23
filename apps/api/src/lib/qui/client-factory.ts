@@ -19,6 +19,7 @@ import {
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { ServiceInstance } from "../prisma.js";
+import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 import {
 	extractHostnameSafe,
 	type QuiRequestContext,
@@ -347,6 +348,7 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 		instanceId: instance.id,
 		baseUrl: instance.baseUrl,
 		apiKey,
+		httpAuthHeaders: getStoredHttpAuthHeaders(app.encryptor, instance),
 		log: app.log,
 	};
 
