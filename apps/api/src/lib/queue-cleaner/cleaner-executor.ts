@@ -388,6 +388,15 @@ export async function executeQueueCleaner(
 
 		const filePolicy = filePolicyResults.get(item);
 		const standardEvaluation = evaluateQueueItem(item, config, now);
+		if (filePolicy?.status === "deferred") {
+			skipped.push({
+				id,
+				title,
+				reason: filePolicy.reason,
+				rule: "file_policy_deferred",
+			});
+			continue;
+		}
 		const evaluation =
 			filePolicy?.status === "violation"
 				? {
@@ -402,13 +411,6 @@ export async function executeQueueCleaner(
 			if (normalizedHash) {
 				matchedHashByItemId.set(idStr, normalizedHash);
 			}
-		} else if (filePolicy?.status === "deferred") {
-			skipped.push({
-				id,
-				title,
-				reason: filePolicy.reason,
-				rule: "file_policy_deferred",
-			});
 		}
 	}
 
@@ -1245,6 +1247,30 @@ export async function executeEnhancedPreview(
 		// because its removal semantics must delete the full torrent payload.
 		const filePolicy = filePolicyResults.get(item);
 		const standardEvaluation = evaluateQueueItem(item, config, now);
+		if (filePolicy?.status === "deferred") {
+			ruleSummary.file_policy_deferred = (ruleSummary.file_policy_deferred ?? 0) + 1;
+			previewItems.push({
+				id,
+				title,
+				action: "skip",
+				rule: "file_policy_deferred",
+				reason: filePolicy.reason,
+				detailedReason:
+					`${filePolicy.reason}. No removal decision was made; ` +
+					"the cleaner will retry on a later run.",
+				queueAge: ageMins,
+				size,
+				sizeleft,
+				progress,
+				protocol: typeof item.protocol === "string" ? item.protocol : undefined,
+				indexer: typeof item.indexer === "string" ? item.indexer : undefined,
+				downloadClient: typeof item.downloadClient === "string" ? item.downloadClient : undefined,
+				status:
+					typeof item.trackedDownloadStatus === "string" ? item.trackedDownloadStatus : undefined,
+				downloadId: typeof item.downloadId === "string" ? item.downloadId : undefined,
+			});
+			continue;
+		}
 		const evaluation =
 			filePolicy?.status === "violation"
 				? {
@@ -1326,28 +1352,6 @@ export async function executeEnhancedPreview(
 					: undefined,
 				autoImportEligible,
 				autoImportReason,
-			});
-		} else if (filePolicy?.status === "deferred") {
-			ruleSummary.file_policy_deferred = (ruleSummary.file_policy_deferred ?? 0) + 1;
-			previewItems.push({
-				id,
-				title,
-				action: "skip",
-				rule: "file_policy_deferred",
-				reason: filePolicy.reason,
-				detailedReason:
-					`${filePolicy.reason}. No removal decision was made from the file allowlist; ` +
-					"the cleaner will retry on a later run.",
-				queueAge: ageMins,
-				size,
-				sizeleft,
-				progress,
-				protocol: typeof item.protocol === "string" ? item.protocol : undefined,
-				indexer: typeof item.indexer === "string" ? item.indexer : undefined,
-				downloadClient: typeof item.downloadClient === "string" ? item.downloadClient : undefined,
-				status:
-					typeof item.trackedDownloadStatus === "string" ? item.trackedDownloadStatus : undefined,
-				downloadId: typeof item.downloadId === "string" ? item.downloadId : undefined,
 			});
 		} else {
 			previewItems.push({

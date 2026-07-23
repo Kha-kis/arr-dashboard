@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Queue Cleaner can enforce an opt-in, exact file-extension allowlist for
   torrents inspected through qui. A mixed torrent with any unexpected file
   type is removed in full through *arr, including its download-client payload;
-  missing or unavailable manifests fail closed and are retried (#565).
+  missing or unavailable manifests block cleanup for that item and are retried
+  later (#565).
 
 ## [2.22.0] - 2026-07-23 — Authenticated services & hardened maintenance
 

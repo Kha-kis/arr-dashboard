@@ -1,4 +1,8 @@
-import { MAX_ALLOWED_FILE_EXTENSION_LENGTH, MAX_ALLOWED_FILE_EXTENSIONS } from "@arr/shared";
+import {
+	MAX_ALLOWED_FILE_EXTENSION_LENGTH,
+	MAX_ALLOWED_FILE_EXTENSIONS,
+	MAX_ALLOWED_FILE_EXTENSIONS_JSON_LENGTH,
+} from "@arr/shared";
 import type { FastifyInstance } from "fastify";
 import { createQuiClient, type QuiClient } from "../qui/client-factory.js";
 import { listQuiInstances } from "../qui/instance-helpers.js";
@@ -7,6 +11,8 @@ import { normalizeDownloadId } from "./qui-gate.js";
 const EXTENSION_PATTERN = /^[a-z0-9][a-z0-9_+-]*$/;
 const POLICY_CONCURRENCY = 4;
 const NO_EXTENSION = "(no extension)";
+const INVALID_EXTENSION = "(invalid extension)";
+const MAX_REPORTED_OFFENDING_EXTENSIONS = 10;
 
 export type AllowedFileExtensionsParseResult =
 	| { ok: true; extensions: string[]; serialized: string | null }
@@ -35,6 +41,12 @@ export function parseAllowedFileExtensions(
 ): AllowedFileExtensionsParseResult {
 	if (value == null || value.trim() === "") {
 		return { ok: true, extensions: [], serialized: null };
+	}
+	if (value.length > MAX_ALLOWED_FILE_EXTENSIONS_JSON_LENGTH) {
+		return {
+			ok: false,
+			error: `Allowed file extensions exceed ${MAX_ALLOWED_FILE_EXTENSIONS_JSON_LENGTH} characters`,
+		};
 	}
 
 	let parsed: unknown;
@@ -96,7 +108,11 @@ export function getFinalFileExtension(name: string): string {
 	if (lastDot <= 0 || lastDot === basename.length - 1) {
 		return NO_EXTENSION;
 	}
-	return basename.slice(lastDot + 1).toLowerCase();
+	const extension = basename.slice(lastDot + 1).toLowerCase();
+	if (extension.length > MAX_ALLOWED_FILE_EXTENSION_LENGTH || !EXTENSION_PATTERN.test(extension)) {
+		return INVALID_EXTENSION;
+	}
+	return extension;
 }
 
 export function inspectTorrentFileNames(
@@ -110,23 +126,33 @@ export function inspectTorrentFileNames(
 		};
 	}
 
-	const offendingExtensions = [
-		...new Set(
-			names.map(getFinalFileExtension).filter((extension) => !allowedExtensions.has(extension)),
-		),
-	].sort();
+	const offending = new Set<string>();
+	let hasAdditionalOffendingExtensions = false;
+	for (const name of names) {
+		const extension = getFinalFileExtension(name);
+		if (allowedExtensions.has(extension) || offending.has(extension)) continue;
+		if (offending.size < MAX_REPORTED_OFFENDING_EXTENSIONS) {
+			offending.add(extension);
+		} else {
+			hasAdditionalOffendingExtensions = true;
+		}
+	}
+	const offendingExtensions = [...offending].sort();
 
 	if (offendingExtensions.length === 0) {
 		return { status: "compliant" };
 	}
 
 	const display = offendingExtensions
-		.map((extension) => (extension === NO_EXTENSION ? extension : `.${extension}`))
+		.map((extension) =>
+			extension === NO_EXTENSION || extension === INVALID_EXTENSION ? extension : `.${extension}`,
+		)
 		.join(", ");
+	const displaySuffix = hasAdditionalOffendingExtensions ? ", and additional types" : "";
 	return {
 		status: "violation",
 		offendingExtensions,
-		reason: `Torrent contains file types outside the allowlist: ${display}`,
+		reason: `Torrent contains file types outside the allowlist: ${display}${displaySuffix}`,
 	};
 }
 
