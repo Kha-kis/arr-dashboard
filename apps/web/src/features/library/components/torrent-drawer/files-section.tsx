@@ -127,7 +127,7 @@ const FileMediaInfo: React.FC<{
 	if (query.isError || !query.data) {
 		return (
 			<div className="ml-2 text-[10px] italic text-muted-foreground">
-				MediaInfo unavailable — qui needs local filesystem access to the torrent's files.
+				MediaInfo unavailable — qui needs local filesystem access to the torrent’s files.
 			</div>
 		);
 	}

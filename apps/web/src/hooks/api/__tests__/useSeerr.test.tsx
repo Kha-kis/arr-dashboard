@@ -1,5 +1,6 @@
 import type {
 	LibraryEnrichmentResponse,
+	LibraryItem,
 	SeerrPageResult,
 	SeerrRequest,
 	SeerrRequestCount,
@@ -508,12 +509,13 @@ describe("useLibraryEnrichment", () => {
 		};
 		vi.mocked(seerrApi.fetchLibraryEnrichment).mockResolvedValue(enrichmentResponse);
 
-		const items = [
+		const items: LibraryItem[] = [
 			{
 				id: "lib-1",
 				title: "Test Movie",
 				service: "radarr" as const,
 				instanceId: "i-1",
+				instanceName: "Radarr",
 				type: "movie" as const,
 				remoteIds: { tmdbId: 100, imdbId: "tt123" },
 				monitored: true,
@@ -526,6 +528,7 @@ describe("useLibraryEnrichment", () => {
 				title: "Test Series",
 				service: "sonarr" as const,
 				instanceId: "i-2",
+				instanceName: "Sonarr",
 				type: "series" as const,
 				remoteIds: { tmdbId: 200, tvdbId: 999 },
 				monitored: true,
@@ -536,7 +539,7 @@ describe("useLibraryEnrichment", () => {
 		];
 
 		const { wrapper } = createWrapper();
-		const { result } = renderHook(() => useLibraryEnrichment("seerr-inst", items as any), {
+		const { result } = renderHook(() => useLibraryEnrichment("seerr-inst", items), {
 			wrapper,
 		});
 
@@ -551,12 +554,13 @@ describe("useLibraryEnrichment", () => {
 	});
 
 	it("is disabled when seerr instanceId is null", () => {
-		const items = [
+		const items: LibraryItem[] = [
 			{
 				id: "lib-1",
 				title: "Movie",
 				service: "radarr" as const,
 				instanceId: "i-1",
+				instanceName: "Radarr",
 				type: "movie" as const,
 				remoteIds: { tmdbId: 100 },
 				monitored: true,
@@ -567,7 +571,7 @@ describe("useLibraryEnrichment", () => {
 		];
 
 		const { wrapper } = createWrapper();
-		const { result } = renderHook(() => useLibraryEnrichment(null, items as any), { wrapper });
+		const { result } = renderHook(() => useLibraryEnrichment(null, items), { wrapper });
 
 		expect(result.current.fetchStatus).toBe("idle");
 		expect(seerrApi.fetchLibraryEnrichment).not.toHaveBeenCalled();

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -237,7 +237,9 @@ describe("SeerrAutoSetupSection", () => {
 		});
 
 		// Clean up: resolve the pending promise
-		resolvePromise({ apiKey: "key", version: "1.0" });
+		await act(async () => {
+			resolvePromise({ apiKey: "key", version: "1.0" });
+		});
 	});
 
 	// ================================================================

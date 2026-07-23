@@ -26,7 +26,6 @@ function makeApp() {
 		__create: create,
 		__findFirst: findFirst,
 		__deleteMany: deleteMany,
-		// biome-ignore lint/suspicious/noExplicitAny: test-shim
 	} as any;
 }
 
@@ -69,7 +68,6 @@ describe("logQuiActivity", () => {
 			userId: "user-1",
 			eventType: "qui_sync_complete",
 			details: {},
-			// biome-ignore lint/suspicious/noExplicitAny: testing the deprecated alias
 			status: "warn" as any,
 		});
 		// The alias should map to the canonical `severity` Prisma field.

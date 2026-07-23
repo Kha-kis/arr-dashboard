@@ -126,7 +126,7 @@ export function DomainTileGrid() {
 			</ul>
 			{servicesQuery.isError && (
 				<p className="mt-3 text-xs text-muted-foreground" data-testid="services-gating-degraded">
-					Couldn't load the service list — tiles for service-linked domains (qui, Requests, Media
+					Couldn’t load the service list — tiles for service-linked domains (qui, Requests, Media
 					Caches) are hidden until it recovers.
 				</p>
 			)}

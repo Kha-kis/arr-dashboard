@@ -187,6 +187,7 @@ export const CrossSeedItemCard = ({
 									>
 										<span className="flex items-center gap-1.5 font-medium text-foreground/90">
 											{trackerBrand?.iconUrl ? (
+												// eslint-disable-next-line @next/next/no-img-element -- Tracker icons may come from arbitrary user-configured hosts.
 												<img
 													src={trackerBrand.iconUrl}
 													alt=""
