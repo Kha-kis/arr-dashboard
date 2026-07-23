@@ -137,7 +137,7 @@ describe("TrashProfileSetup", () => {
 		await waitFor(() =>
 			expect(mocks.refresh).toHaveBeenCalledWith({ serviceType: "SONARR", force: false }),
 		);
-		fireEvent.change(screen.getByLabelText("Official quality profile"), {
+		fireEvent.change(await screen.findByLabelText("Official quality profile"), {
 			target: { value: "profile-1" },
 		});
 		fireEvent.click(screen.getByRole("button", { name: "Review deployment preview" }));
