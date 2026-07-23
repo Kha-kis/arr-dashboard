@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Library Cleanup rating rules now read Sonarr's flat SkyHook rating format,
+  while IMDb-specific rules continue to require an explicitly sourced IMDb
+  value.
 - New Radarr and Sonarr downloads are now detected when an item is added and
   imported entirely between library polls, and the resulting notification is
   dispatched only through channels owned by the instance's user.

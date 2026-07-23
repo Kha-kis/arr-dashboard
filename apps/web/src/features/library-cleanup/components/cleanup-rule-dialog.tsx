@@ -54,7 +54,11 @@ import {
 const RULE_TYPES: Array<{ value: CleanupRuleType; label: string; desc: string }> = [
 	{ value: "age", label: "Age", desc: "Flag items by age (older/newer than N days)" },
 	{ value: "size", label: "Size", desc: "Flag items based on disk size" },
-	{ value: "rating", label: "Rating", desc: "Flag items by TMDB rating" },
+	{
+		value: "rating",
+		label: "Rating",
+		desc: "Flag items by the available Radarr or Sonarr rating",
+	},
 	{ value: "status", label: "Status", desc: "Flag items with specific statuses" },
 	{ value: "unmonitored", label: "Unmonitored", desc: "Flag unmonitored items" },
 	{ value: "genre", label: "Genre", desc: "Flag items by genre" },
