@@ -681,6 +681,8 @@ export const QueueCleanerConfigScalarFieldEnum = {
   slowGracePeriodMins: 'slowGracePeriodMins',
   errorPatternsEnabled: 'errorPatternsEnabled',
   errorPatterns: 'errorPatterns',
+  fileExtensionAllowlistEnabled: 'fileExtensionAllowlistEnabled',
+  allowedFileExtensions: 'allowedFileExtensions',
   removeFromClient: 'removeFromClient',
   addToBlocklist: 'addToBlocklist',
   searchAfterRemoval: 'searchAfterRemoval',
