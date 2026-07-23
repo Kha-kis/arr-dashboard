@@ -67,6 +67,13 @@ docker run -d \
 
 Both `postgresql://` and `postgres://` URL schemes are supported.
 
+At startup, the container synchronizes the Prisma schema for the selected
+provider. Schema additions and other non-destructive changes are applied
+automatically. Destructive changes are rejected: the launcher never passes
+Prisma's `--accept-data-loss` option. If an upgrade requires a destructive
+transition, keep the previous image running and follow that release's explicit
+backup and migration instructions before retrying the upgrade.
+
 ## Environment Variables
 
 ### Core
