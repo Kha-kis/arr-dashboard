@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.23.0] - 2026-07-24 — Torrent payload safeguards
+## [2.23.0] - 2026-07-23 — Torrent payload safeguards
 
 This release adds an opt-in Queue Cleaner policy for rejecting torrents whose
 file manifests contain unexpected extensions, and updates PostCSS past a
