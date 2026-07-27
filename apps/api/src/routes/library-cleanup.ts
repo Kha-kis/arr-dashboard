@@ -21,6 +21,7 @@ import {
 	executeApprovedItems,
 	executeCleanupPreview,
 	executeCleanupRun,
+	executeRetryItems,
 } from "../lib/library-cleanup/cleanup-executor.js";
 import { explainItemAgainstRules } from "../lib/library-cleanup/rule-evaluators.js";
 import type { CacheItemForEval } from "../lib/library-cleanup/types.js";
@@ -668,9 +669,12 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 				}
 
 				const MAX_PREVIEW_ITEMS = 200;
-				const totalFlagged = Math.max(result.itemsFlagged, result.details.length);
+				const totalPreviewItems = Math.max(
+					result.itemsFlagged + (result.pendingRetryCount ?? 0),
+					result.details.length,
+				);
 				const previewDetails = result.details.slice(0, MAX_PREVIEW_ITEMS);
-				const truncated = totalFlagged > previewDetails.length;
+				const truncated = totalPreviewItems > previewDetails.length;
 
 				// qui-derived safety hint (Phase 3.3). Single bulk query joins
 				// LibraryCache for every previewed item so operators see
@@ -728,6 +732,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 				return reply.send({
 					totalEvaluated: result.itemsEvaluated,
 					totalFlagged: result.itemsFlagged,
+					pendingRetryCount: result.pendingRetryCount ?? 0,
 					items: previewDetails.map((d) => {
 						const itemType = d.itemType ?? "movie";
 						const key = `${d.instanceId}|${d.arrItemId}|${itemType.toLowerCase()}`;
@@ -750,7 +755,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 					warnings: [
 						...(result.warnings ?? []),
 						...(truncated
-							? [`Showing ${previewDetails.length} of ${totalFlagged} flagged items`]
+							? [`Showing ${previewDetails.length} of ${totalPreviewItems} preview items`]
 							: []),
 					],
 				});
@@ -910,6 +915,34 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 
 			// nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Fastify JSON response
 			return reply.send(result);
+		},
+	);
+
+	/** POST /api/library-cleanup/approval-queue/:id/retry */
+	app.post<{ Params: { id: string } }>(
+		"/library-cleanup/approval-queue/:id/retry",
+		async (request, reply) => {
+			const userId = request.currentUser!.id;
+			const { id } = request.params;
+
+			try {
+				const result = await executeRetryItems(
+					{
+						prisma: app.prisma,
+						arrClientFactory: app.arrClientFactory,
+						encryptor: app.encryptor,
+						log: request.log,
+					},
+					userId,
+					[id],
+				);
+				return reply.send(result);
+			} catch (error) {
+				if (error instanceof CleanupRunAlreadyInProgressError) {
+					return reply.status(409).send({ error: error.message });
+				}
+				throw error;
+			}
 		},
 	);
 

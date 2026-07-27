@@ -289,6 +289,8 @@ export interface CleanupPreviewItem {
 export interface CleanupPreviewResponse {
 	totalEvaluated: number;
 	totalFlagged: number;
+	/** Durable mutation retries displayed separately from current rule matches. */
+	pendingRetryCount?: number;
 	items: CleanupPreviewItem[];
 	prefetchHealth?: PrefetchHealthStatus;
 	warnings?: string[];

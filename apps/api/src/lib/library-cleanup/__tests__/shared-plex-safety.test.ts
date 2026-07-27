@@ -5,7 +5,9 @@ import {
 	CleanupRunAlreadyInProgressError,
 	CleanupRunLeaseLostError,
 	executeApprovedItems,
+	executeCleanupPreview,
 	executeDirectRemoval,
+	executeRetryItems,
 	INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
 	selectInspectableCleanupPreviewItems,
 } from "../cleanup-executor.js";
@@ -320,6 +322,7 @@ function makeDeps(options: TestOptions = {}) {
 			libraryCleanupApproval: {
 				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 				findMany: vi.fn().mockResolvedValue([]),
+				count: vi.fn().mockResolvedValue(0),
 				create: vi.fn().mockResolvedValue({}),
 				update: vi.fn().mockResolvedValue({}),
 			},
@@ -500,6 +503,94 @@ describe("shared Plex deletion safety", () => {
 
 		expect(selectInspectableCleanupPreviewItems(flagged)).toHaveLength(200);
 		expect(selectInspectableCleanupPreviewItems(flagged).at(-1)?.cacheItem.arrItemId).toBe(200);
+	});
+
+	it("includes durable retries in a side-effect-free preview when no rules are enabled", async () => {
+		const { deps, deleteMovie, deleteMovieFile, targetClient } = makeDeps({ mediaPartCount: 1 });
+		vi.mocked(deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			id: "config-1",
+			rules: [],
+		} as never);
+		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([
+			{
+				...approvalRecord({
+					status: "retry_pending",
+					lastExecutionError: "Radarr was unavailable",
+				}),
+				matchedRuleId: "rule-1",
+				matchedRuleName: "Cleanup",
+				sizeOnDisk: 2_000n,
+				year: 2024,
+			} as never,
+		]);
+		vi.mocked(deps.prisma.libraryCleanupApproval.count).mockResolvedValue(1);
+
+		const result = await executeCleanupPreview(deps, "user-1");
+
+		expect(result).toMatchObject({
+			isDryRun: true,
+			itemsEvaluated: 0,
+			itemsFlagged: 0,
+			pendingRetryCount: 1,
+			itemsRemoved: 0,
+			details: [
+				expect.objectContaining({
+					arrItemId: 101,
+					action: "delete",
+					reason:
+						"Durable retry pending resume from the Approval Queue or the next live direct cleanup run: Radarr was unavailable",
+				}),
+			],
+			warnings: [expect.stringContaining("next live direct cleanup run")],
+		});
+		expect(deleteMovieFile).not.toHaveBeenCalled();
+		expect(deleteMovie).not.toHaveBeenCalled();
+		expect(targetClient.movie.update).not.toHaveBeenCalled();
+	});
+
+	it("loads Radarr notifications once per instance across multiple safety targets", async () => {
+		const { deps, targetClient } = makeDeps({ mediaPartCount: 1 });
+		const context = createSharedPlexSafetyContext();
+
+		await findSharedPlexDeleteBlocks(
+			deps,
+			"user-1",
+			[target, { ...target, arrItemId: 102 }],
+			undefined,
+			context,
+		);
+
+		expect(targetClient.notification.getAll).toHaveBeenCalledOnce();
+		expect(targetClient.movie.getById).toHaveBeenCalledTimes(2);
+	});
+
+	it("refetches Radarr notifications across separate safety checks", async () => {
+		const { deps, targetClient } = makeDeps({ mediaPartCount: 1 });
+		const context = createSharedPlexSafetyContext();
+		targetClient.notification.getAll.mockResolvedValueOnce([]).mockResolvedValue([
+			{
+				implementation: "MediaBrowser",
+				configContract: "MediaBrowserSettings",
+				onMovieDelete: true,
+				onMovieFileDelete: true,
+				tags: [],
+				fields: [{ name: "updateLibrary", value: true }],
+			},
+		]);
+
+		expect(await findSharedPlexDeleteBlocks(deps, "user-1", [target], undefined, context)).toEqual(
+			new Map(),
+		);
+		const changedBlocks = await findSharedPlexDeleteBlocks(
+			deps,
+			"user-1",
+			[target],
+			undefined,
+			context,
+		);
+
+		expect(changedBlocks.get(cleanupDeleteTargetKey(target))).toContain("Emby/Jellyfin");
+		expect(targetClient.notification.getAll).toHaveBeenCalledTimes(2);
 	});
 
 	it("blocks when the target Radarr refreshes a live multi-part Plex item", async () => {
@@ -2254,6 +2345,47 @@ describe("shared Plex deletion safety", () => {
 		).toBeLessThan(deleteMovie.mock.invocationCallOrder[0]!);
 	});
 
+	it("explicitly resumes a durable retry while safer cleanup modes are enabled", async () => {
+		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
+		const storedRetry = approvalRecord({
+			status: "retry_pending",
+			executionToken: null,
+		}) as Record<string, unknown>;
+		configureApprovalStore(deps, storedRetry);
+		vi.mocked(deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			id: "config-1",
+			dryRunMode: true,
+			requireApproval: true,
+		} as never);
+
+		const result = await executeRetryItems(deps, "user-1", ["approval-1"]);
+
+		expect(result).toEqual({ removed: 1, reconciled: 0, failed: 0, errors: [] });
+		expect(deleteMovieFile).toHaveBeenCalledOnce();
+		expect(deleteMovie).toHaveBeenCalledOnce();
+		expect(storedRetry).toMatchObject({ status: "executed", executionToken: null });
+	});
+
+	it("records an already-absent durable retry as reconciliation without mutation credit", async () => {
+		const { deps, deleteMovie, deleteMovieFile, setLiveMovieExists } = makeDeps({
+			mediaPartCount: 1,
+		});
+		const storedRetry = approvalRecord({
+			status: "retry_pending",
+			executionToken: null,
+			lastExecutionError: "Prior execution outcome is unknown",
+		}) as Record<string, unknown>;
+		configureApprovalStore(deps, storedRetry);
+		setLiveMovieExists(false);
+
+		const result = await executeRetryItems(deps, "user-1", ["approval-1"]);
+
+		expect(result).toEqual({ removed: 0, reconciled: 1, failed: 0, errors: [] });
+		expect(deleteMovieFile).not.toHaveBeenCalled();
+		expect(deleteMovie).not.toHaveBeenCalled();
+		expect(storedRetry).toMatchObject({ status: "executed", executionToken: null });
+	});
+
 	it("does not treat a missing target as success for a normal unexecuted approval", async () => {
 		const { deps, deleteMovie, setLiveMovieExists } = makeDeps({ mediaPartCount: 1 });
 		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([
@@ -2286,7 +2418,7 @@ describe("shared Plex deletion safety", () => {
 
 		const result = await executeApprovedItems(deps, "user-1", ["approval-1"]);
 
-		expect(result).toEqual({ removed: 1, failed: 0, errors: [] });
+		expect(result).toEqual({ removed: 0, failed: 0, errors: [] });
 		expect(deleteMovieFile).not.toHaveBeenCalled();
 		expect(deps.prisma.libraryCache.deleteMany).toHaveBeenCalledWith({
 			where: { instanceId: "radarr-4k", arrItemId: 101, itemType: "movie" },
@@ -2309,7 +2441,7 @@ describe("shared Plex deletion safety", () => {
 
 		const result = await executeApprovedItems(deps, "user-1", ["approval-1"]);
 
-		expect(result).toEqual({ removed: 1, failed: 0, errors: [] });
+		expect(result).toEqual({ removed: 0, failed: 0, errors: [] });
 		expect(targetClient.movie.update).not.toHaveBeenCalled();
 		expect(deps.prisma.libraryCache.deleteMany).toHaveBeenCalledWith({
 			where: { instanceId: "radarr-4k", arrItemId: 101, itemType: "movie" },
@@ -2445,8 +2577,9 @@ describe("shared Plex deletion safety", () => {
 
 		expect(reconciliationResult).toMatchObject({
 			status: "completed",
-			itemsRemoved: 1,
+			itemsRemoved: 0,
 			itemsFlagged: 1,
+			itemsSkipped: 1,
 		});
 		expect(retries[0]).toMatchObject({ status: "executed" });
 		expect(deleteMovieFile).toHaveBeenCalledOnce();

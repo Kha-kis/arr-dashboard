@@ -291,6 +291,51 @@ describe("shared Plex deletion safety for Sonarr", () => {
 		});
 	});
 
+	it("loads Sonarr notifications once per instance across multiple safety targets", async () => {
+		const { deps, targetClient } = makeSonarrDeps();
+		const context = createSharedPlexSafetyContext();
+
+		await findSharedPlexDeleteBlocks(
+			deps,
+			"user-1",
+			[target, { ...target, arrItemId: 202 }],
+			undefined,
+			context,
+		);
+
+		expect(targetClient.notification.getAll).toHaveBeenCalledOnce();
+		expect(targetClient.series.getById).toHaveBeenCalledTimes(2);
+	});
+
+	it("refetches Sonarr notifications across separate safety checks", async () => {
+		const { deps, targetClient } = makeSonarrDeps();
+		const context = createSharedPlexSafetyContext();
+		targetClient.notification.getAll.mockResolvedValueOnce([]).mockResolvedValue([
+			{
+				implementation: "MediaBrowser",
+				configContract: "MediaBrowserSettings",
+				onSeriesDelete: true,
+				onEpisodeFileDelete: true,
+				tags: [],
+				fields: [{ name: "updateLibrary", value: true }],
+			},
+		]);
+
+		expect(await findSharedPlexDeleteBlocks(deps, "user-1", [target], undefined, context)).toEqual(
+			new Map(),
+		);
+		const changedBlocks = await findSharedPlexDeleteBlocks(
+			deps,
+			"user-1",
+			[target],
+			undefined,
+			context,
+		);
+
+		expect(changedBlocks.get(cleanupDeleteTargetKey(target))).toContain("Emby/Jellyfin");
+		expect(targetClient.notification.getAll).toHaveBeenCalledTimes(2);
+	});
+
 	it("blocks a Plex show that also contains files from another ARR root", async () => {
 		const { deps } = makeSonarrDeps({
 			plexSeries: [

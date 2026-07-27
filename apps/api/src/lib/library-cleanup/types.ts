@@ -220,6 +220,8 @@ export interface CleanupRunResult {
 	status: "completed" | "partial" | "error";
 	itemsEvaluated: number;
 	itemsFlagged: number;
+	/** Durable retries shown alongside current rule matches in preview responses. */
+	pendingRetryCount?: number;
 	itemsRemoved: number;
 	itemsUnmonitored: number;
 	itemsFilesDeleted: number;

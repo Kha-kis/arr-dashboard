@@ -11,6 +11,9 @@ const executorMocks = vi.hoisted(() => ({
 	executeApprovedItems: vi.fn().mockResolvedValue({ removed: 1, failed: 0, errors: [] }),
 	executeCleanupPreview: vi.fn(),
 	executeCleanupRun: vi.fn(),
+	executeRetryItems: vi
+		.fn()
+		.mockResolvedValue({ removed: 0, reconciled: 1, failed: 0, errors: [] }),
 }));
 
 vi.mock("../../lib/library-cleanup/cleanup-executor.js", () => executorMocks);
@@ -189,6 +192,25 @@ describe("library cleanup approval compare-and-set routes", () => {
 		},
 	);
 
+	it("explicitly resumes a durable retry independently of cleanup mode", async () => {
+		const response = await createInjectAuthenticated(app)(
+			"POST",
+			"/library-cleanup/approval-queue/retry-1/retry",
+		);
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toEqual({ removed: 0, reconciled: 1, failed: 0, errors: [] });
+		expect(executorMocks.executeRetryItems).toHaveBeenCalledWith(
+			expect.objectContaining({
+				prisma: app.prisma,
+				arrClientFactory: app.arrClientFactory,
+				encryptor: app.encryptor,
+			}),
+			"user-1",
+			["retry-1"],
+		);
+	});
+
 	it("returns a conflict when another process owns the cleanup run lease", async () => {
 		executorMocks.executeCleanupRun.mockRejectedValueOnce(
 			new executorMocks.CleanupRunAlreadyInProgressError(),
@@ -232,7 +254,7 @@ describe("library cleanup approval compare-and-set routes", () => {
 		expect(response.statusCode).toBe(200);
 		expect(response.json()).toMatchObject({
 			totalFlagged: 201,
-			warnings: ["Existing warning", "Showing 200 of 201 flagged items"],
+			warnings: ["Existing warning", "Showing 200 of 201 preview items"],
 		});
 		expect(response.json().items).toHaveLength(200);
 	});

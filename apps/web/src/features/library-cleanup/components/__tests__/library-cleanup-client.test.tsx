@@ -66,6 +66,7 @@ const mockUseReorderCleanupRules = vi.fn();
 const mockUseCleanupFieldOptions = vi.fn();
 const mockUseCleanupApprovalQueue = vi.fn();
 const mockUseApproveCleanupItem = vi.fn();
+const mockUseRetryCleanupItem = vi.fn();
 const mockUseRejectCleanupItem = vi.fn();
 const mockUseBulkCleanupAction = vi.fn();
 const mockUseCleanupLogs = vi.fn();
@@ -84,6 +85,7 @@ vi.mock("../../../../hooks/api/useLibraryCleanup", () => ({
 	useCleanupFieldOptions: () => mockUseCleanupFieldOptions(),
 	useCleanupApprovalQueue: (...args: unknown[]) => mockUseCleanupApprovalQueue(...args),
 	useApproveCleanupItem: () => mockUseApproveCleanupItem(),
+	useRetryCleanupItem: () => mockUseRetryCleanupItem(),
 	useRejectCleanupItem: () => mockUseRejectCleanupItem(),
 	useBulkCleanupAction: () => mockUseBulkCleanupAction(),
 	useCleanupLogs: () => mockUseCleanupLogs(),
@@ -213,6 +215,7 @@ function setupDefaultMocks(configOverrides: Partial<CleanupConfigResponse> = {})
 		refetch: vi.fn(),
 	});
 	mockUseApproveCleanupItem.mockReturnValue(defaultMutation());
+	mockUseRetryCleanupItem.mockReturnValue(defaultMutation());
 	mockUseRejectCleanupItem.mockReturnValue(defaultMutation());
 	mockUseBulkCleanupAction.mockReturnValue(defaultMutation());
 	mockUseCleanupLogs.mockReturnValue({
@@ -459,9 +462,55 @@ describe("LibraryCleanupClient", () => {
 				expect(mockUseCleanupApprovalQueue).toHaveBeenLastCalledWith(1, 20, "retry_executing");
 			});
 		});
+
+		it("allows an operator to explicitly resume a durable pending retry", async () => {
+			setupApprovalTab();
+			const retryMutate = vi.fn();
+			mockUseRetryCleanupItem.mockReturnValue(defaultMutation({ mutate: retryMutate }));
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+
+			fireEvent.click(screen.getByText("Approval Queue"));
+			fireEvent.click(await screen.findByRole("button", { name: "Retry pending" }));
+			fireEvent.click((await screen.findAllByRole("button", { name: "Resume retry" }))[0]!);
+
+			expect(retryMutate).toHaveBeenCalledWith("item-1");
+		});
+
+		it("clears a stale retry error before an approval action", async () => {
+			setupApprovalTab();
+			const retryReset = vi.fn();
+			mockUseRetryCleanupItem.mockReturnValue(
+				defaultMutation({ error: new Error("Retry failed"), reset: retryReset }),
+			);
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+
+			fireEvent.click(screen.getByText("Approval Queue"));
+			fireEvent.click((await screen.findAllByRole("button", { name: "Approve" }))[0]!);
+
+			expect(retryReset).toHaveBeenCalledOnce();
+		});
 	});
 
 	describe("shared Plex safety feedback", () => {
+		it("reports durable retries separately from current rule matches", () => {
+			mockUseCleanupPreview.mockReturnValue(
+				defaultMutation({
+					data: {
+						totalEvaluated: 0,
+						totalFlagged: 0,
+						pendingRetryCount: 1,
+						items: [],
+					},
+				}),
+			);
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+
+			expect(
+				screen.getByText("Preview Results (0 of 0 items flagged · 1 retry pending)"),
+			).toBeInTheDocument();
+		});
+
 		it("renders safety-blocked preview items separately from delete actions", () => {
 			mockUseCleanupPreview.mockReturnValue(
 				defaultMutation({

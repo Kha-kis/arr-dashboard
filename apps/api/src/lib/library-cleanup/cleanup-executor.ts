@@ -461,8 +461,11 @@ function toDeleteTargets(items: FlaggedItem[]): CleanupDeleteTarget[] {
 	}));
 }
 
-export function selectInspectableCleanupPreviewItems(flagged: FlaggedItem[]): FlaggedItem[] {
-	return flagged.slice(0, PREVIEW_SAFETY_INSPECTION_LIMIT);
+export function selectInspectableCleanupPreviewItems(
+	flagged: FlaggedItem[],
+	limit = PREVIEW_SAFETY_INSPECTION_LIMIT,
+): FlaggedItem[] {
+	return flagged.slice(0, Math.max(0, Math.min(PREVIEW_SAFETY_INSPECTION_LIMIT, limit)));
 }
 
 function asExecutableSafetyPlan(
@@ -679,6 +682,64 @@ export function buildCleanupPreviewDetails(
 // Preview (Dry Run)
 // ============================================================================
 
+async function loadDurableRetryPreview(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	configId: string,
+): Promise<{
+	details: CleanupRunResult["details"];
+	total: number;
+	warning?: string;
+}> {
+	try {
+		const where = {
+			configId,
+			config: { userId },
+			status: "retry_pending",
+		} as const;
+		const [retries, count] = await Promise.all([
+			deps.prisma.libraryCleanupApproval.findMany({
+				where,
+				orderBy: { createdAt: "asc" },
+				take: PREVIEW_SAFETY_INSPECTION_LIMIT,
+			}),
+			deps.prisma.libraryCleanupApproval.count({ where }),
+		]);
+		const details = retries.map((retry) => {
+			const action: DetailAction =
+				retry.action === "delete" || retry.action === "delete_files" || retry.action === "unmonitor"
+					? retry.action
+					: "skipped";
+			return buildRetryDetail(
+				retry,
+				action,
+				`Durable retry pending resume from the Approval Queue or the next live direct cleanup run${
+					retry.lastExecutionError ? `: ${retry.lastExecutionError}` : "."
+				}`,
+			);
+		});
+		const total = Math.max(count, details.length);
+		return {
+			details,
+			total,
+			warning:
+				total > 0
+					? `${total} durable cleanup ${total === 1 ? "retry is" : "retries are"} pending resume from the Approval Queue or the next live direct cleanup run.`
+					: undefined,
+		};
+	} catch (error) {
+		deps.log.warn(
+			{ err: error, configId },
+			"Library cleanup preview could not load durable mutation retries",
+		);
+		return {
+			details: [],
+			total: 0,
+			warning: "Durable cleanup retries could not be loaded for this preview.",
+		};
+	}
+}
+
 /**
  * Run a preview evaluation without making any changes.
  * Returns all items that would be flagged by the current rule set.
@@ -695,7 +756,7 @@ export async function executeCleanupPreview(
 		include: { rules: { orderBy: { priority: "asc" } } },
 	});
 
-	if (!config || config.rules.length === 0) {
+	if (!config) {
 		return {
 			isDryRun: true,
 			status: "completed",
@@ -710,12 +771,34 @@ export async function executeCleanupPreview(
 		};
 	}
 
+	const retryPreview = await loadDurableRetryPreview(deps, userId, config.id);
+	if (config.rules.length === 0) {
+		return {
+			isDryRun: true,
+			status: retryPreview.warning ? "partial" : "completed",
+			itemsEvaluated: 0,
+			itemsFlagged: 0,
+			pendingRetryCount: retryPreview.total,
+			itemsRemoved: 0,
+			itemsUnmonitored: 0,
+			itemsFilesDeleted: 0,
+			itemsSkipped: 0,
+			details: retryPreview.details,
+			durationMs: Date.now() - startTime,
+			warnings: retryPreview.warning ? [retryPreview.warning] : undefined,
+		};
+	}
+
 	const { flagged, totalEvaluated, prefetchHealth, warnings } = await evaluateAllItems(
 		deps,
 		config,
 		config.rules,
 	);
-	const inspected = selectInspectableCleanupPreviewItems(flagged);
+	const retryDetails = retryPreview.details.slice(0, PREVIEW_SAFETY_INSPECTION_LIMIT);
+	const inspected = selectInspectableCleanupPreviewItems(
+		flagged,
+		PREVIEW_SAFETY_INSPECTION_LIMIT - retryDetails.length,
+	);
 	const safetyContext = createSharedPlexSafetyContext();
 	const sharedPlexBlocks = await findSharedPlexDeleteBlocks(
 		deps,
@@ -731,15 +814,19 @@ export async function executeCleanupPreview(
 		safetyContext,
 		sharedPlexBlocks,
 	);
-	const allWarnings = withSharedPlexWarning(warnings, sharedPlexBlocks.size);
+	const allWarnings = withSharedPlexWarning(
+		retryPreview.warning ? [...warnings, retryPreview.warning] : warnings,
+		sharedPlexBlocks.size,
+	);
 
-	const details = buildCleanupPreviewDetails(inspected, sharedPlexBlocks);
+	const details = [...retryDetails, ...buildCleanupPreviewDetails(inspected, sharedPlexBlocks)];
 
 	const hasWarnings = allWarnings.length > 0;
 	log.info(
 		{
 			totalEvaluated,
 			totalFlagged: flagged.length,
+			pendingRetryCount: retryPreview.total,
 			sharedPlexBlocks: sharedPlexBlocks.size,
 			hasWarnings,
 		},
@@ -751,6 +838,7 @@ export async function executeCleanupPreview(
 		status: hasWarnings ? ("partial" as const) : ("completed" as const),
 		itemsEvaluated: totalEvaluated,
 		itemsFlagged: flagged.length,
+		pendingRetryCount: retryPreview.total,
 		itemsRemoved: 0,
 		itemsUnmonitored: 0,
 		itemsFilesDeleted: 0,
@@ -964,12 +1052,60 @@ export async function executeApprovedItems(
 	}
 }
 
+/**
+ * Explicitly resume durable mutation intents. This path is intentionally
+ * independent of dry-run and approval configuration: the operator authorizes
+ * only the selected, already-persisted intent, which is revalidated at the
+ * mutation boundary before execution.
+ */
+export async function executeRetryItems(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	retryIds: string[],
+): Promise<{ removed: number; reconciled: number; failed: number; errors: string[] }> {
+	const config = await deps.prisma.libraryCleanupConfig.findUnique({
+		where: { userId },
+		select: { id: true },
+	});
+	if (!config) {
+		return {
+			removed: 0,
+			reconciled: 0,
+			failed: retryIds.length,
+			errors: ["Cleanup retries could not be executed because their configuration was not found."],
+		};
+	}
+
+	const runLease = await startCleanupRunLease(deps, userId, config.id);
+	try {
+		const result = await executeQueuedCleanupItems(deps, userId, retryIds, {
+			claimStatus: "retry_pending",
+			executeStatus: "retry_executing",
+			retryStatus: "retry_pending",
+			enforceExpiry: false,
+			assertExecutionAllowed: runLease.assertOwnership,
+		});
+		const unclaimedErrors = result.unclaimedIds.map(
+			() => "Cleanup retry was not found, was no longer pending, or changed ownership.",
+		);
+		return {
+			removed: result.removed,
+			reconciled: result.reconciledIds.length,
+			failed: result.failed + unclaimedErrors.length,
+			errors: [...result.errors, ...unclaimedErrors],
+		};
+	} finally {
+		await runLease.release();
+	}
+}
+
 interface QueuedCleanupExecutionResult {
 	removed: number;
 	failed: number;
 	errors: string[];
 	expiredIds: string[];
 	recordingFailureIds: string[];
+	reconciledIds: string[];
 	unclaimedIds: string[];
 }
 
@@ -1060,6 +1196,7 @@ async function executeQueuedCleanupItems(
 			errors: claimErrors,
 			expiredIds: [],
 			recordingFailureIds: [],
+			reconciledIds: [],
 			unclaimedIds,
 		};
 	}
@@ -1078,6 +1215,7 @@ async function executeQueuedCleanupItems(
 		const errors: string[] = [...claimErrors];
 		const expiredIds: string[] = [];
 		const recordingFailureIds: string[] = [];
+		const reconciledIds: string[] = [];
 		const sharedPlexSafetyContext = createSharedPlexSafetyContext();
 
 		for (const approval of approvals) {
@@ -1285,7 +1423,8 @@ async function executeQueuedCleanupItems(
 				continue;
 			}
 
-			let arrMutationSucceeded = false;
+			let executionCompleted = false;
+			let reconciledWithoutMutation = false;
 			try {
 				await options.assertExecutionAllowed?.();
 				const ownership = await prisma.libraryCleanupApproval.updateMany({
@@ -1308,7 +1447,8 @@ async function executeQueuedCleanupItems(
 				mutationAttemptedApprovalIds.add(approval.id);
 
 				if (retryTargetAlreadyAbsent) {
-					arrMutationSucceeded = true;
+					executionCompleted = true;
+					reconciledWithoutMutation = true;
 					await reconcileSonarrEpisodeFileCache(prisma, instance, approval.arrItemId, log);
 					await prisma.libraryCache
 						.deleteMany({
@@ -1326,7 +1466,7 @@ async function executeQueuedCleanupItems(
 						});
 				} else if (action === "unmonitor") {
 					await unmonitorInArr(arrClientFactory, instance, approval.arrItemId, safetyPlan!);
-					arrMutationSucceeded = true;
+					executionCompleted = true;
 					await prisma.libraryCache
 						.updateMany({
 							where: {
@@ -1344,7 +1484,7 @@ async function executeQueuedCleanupItems(
 						});
 				} else if (action === "delete_files") {
 					await deleteFilesFromArr(arrClientFactory, instance, approval.arrItemId, safetyPlan!);
-					arrMutationSucceeded = true;
+					executionCompleted = true;
 					await reconcileSonarrEpisodeFileCache(prisma, instance, approval.arrItemId, log);
 					await prisma.libraryCache
 						.updateMany({
@@ -1363,7 +1503,7 @@ async function executeQueuedCleanupItems(
 						});
 				} else {
 					await deleteFromArr(arrClientFactory, instance, approval.arrItemId, safetyPlan!);
-					arrMutationSucceeded = true;
+					executionCompleted = true;
 					await reconcileSonarrEpisodeFileCache(prisma, instance, approval.arrItemId, log);
 					await prisma.libraryCache
 						.deleteMany({
@@ -1395,11 +1535,19 @@ async function executeQueuedCleanupItems(
 					},
 				);
 
-				removed++;
-				log.info(
-					{ title: approval.title, instanceId: approval.instanceId, action },
-					"Approved cleanup item executed",
-				);
+				if (reconciledWithoutMutation) {
+					reconciledIds.push(approval.id);
+					log.info(
+						{ title: approval.title, instanceId: approval.instanceId, action },
+						"Cleanup durable intent reconciled because the ARR record was already absent",
+					);
+				} else {
+					removed++;
+					log.info(
+						{ title: approval.title, instanceId: approval.instanceId, action },
+						"Approved cleanup item executed",
+					);
+				}
 			} catch (error) {
 				if (error instanceof CleanupRunLeaseLostError) {
 					await prisma.libraryCleanupApproval
@@ -1425,7 +1573,7 @@ async function executeQueuedCleanupItems(
 						});
 					throw error;
 				}
-				if (arrMutationSucceeded) {
+				if (executionCompleted) {
 					const recordingError =
 						"Cleanup action completed, but arr-dashboard could not record the executed approval state.";
 					try {
@@ -1442,9 +1590,11 @@ async function executeQueuedCleanupItems(
 								lastExecutionError: null,
 							},
 						);
-						removed++;
+						if (reconciledWithoutMutation) reconciledIds.push(approval.id);
+						else removed++;
 					} catch (retryError) {
-						removed++;
+						if (reconciledWithoutMutation) reconciledIds.push(approval.id);
+						else removed++;
 						failed++;
 						errors.push(recordingError);
 						recordingFailureIds.push(approval.id);
@@ -1526,7 +1676,15 @@ async function executeQueuedCleanupItems(
 			}
 		}
 
-		return { removed, failed, errors, expiredIds, recordingFailureIds, unclaimedIds };
+		return {
+			removed,
+			failed,
+			errors,
+			expiredIds,
+			recordingFailureIds,
+			reconciledIds,
+			unclaimedIds,
+		};
 	} finally {
 		for (const [approvalId, executionToken] of claimedApprovalTokens) {
 			if (mutationAttemptedApprovalIds.has(approvalId)) continue;
@@ -2559,6 +2717,7 @@ export async function executeDirectRemoval(
 	let directRetryLoadFailures = 0;
 	let directRetryExecutionFailures = 0;
 	let directRetryPersistenceFailures = 0;
+	let directRetryReconciled = 0;
 	let retriedRemoved = 0;
 	let retriedUnmonitored = 0;
 	let retriedFilesDeleted = 0;
@@ -2621,6 +2780,20 @@ export async function executeDirectRemoval(
 						retry,
 						"skipped",
 						"Deferred: another cleanup run claimed this durable record-only retry",
+					),
+				);
+			} else if (retryResult.reconciledIds.includes(retry.id)) {
+				directRetryReconciled++;
+				if (retryResult.recordingFailureIds.includes(retry.id)) {
+					directRetryRecordingFailures++;
+				}
+				details.push(
+					buildRetryDetail(
+						retry,
+						"skipped",
+						retryResult.recordingFailureIds.includes(retry.id)
+							? "The ARR record was already absent, but durable reconciliation state could not be recorded."
+							: "Reconciled a durable retry because the ARR record was already absent; no mutation was attributed to this run.",
 					),
 				);
 			} else if (retryResult.removed === 1 && retryResult.failed === 0) {
@@ -3261,7 +3434,8 @@ export async function executeDirectRemoval(
 			budgetDeferredItems +
 			inFlightDeferredItems.length +
 			(directlyEvaluated - directRemoved - directUnmonitored - directFilesDeleted) +
-			accountedUnsuccessfulRetries,
+			accountedUnsuccessfulRetries +
+			directRetryReconciled,
 		details,
 		durationMs: Date.now() - startTime,
 		prefetchHealth,

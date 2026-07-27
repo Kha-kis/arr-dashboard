@@ -147,9 +147,9 @@ export function useCleanupExecute() {
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.config });
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.status });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-logs"] });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-approvals"] });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-statistics"] });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.logsAll });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.approvals });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.statisticsAll });
 		},
 	});
 }
@@ -165,9 +165,27 @@ export function useApproveCleanupItem() {
 			return result;
 		},
 		onSettled: () => {
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-approvals"] });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-logs"] });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-statistics"] });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.approvals });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.logsAll });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.statisticsAll });
+		},
+	});
+}
+
+export function useRetryCleanupItem() {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: async (id: string): Promise<ApprovalExecuteResult> => {
+			const result = await libraryCleanupApi.retryItem(id);
+			if (result.failed > 0) {
+				throw new Error(result.errors.join("\n") || "The cleanup retry could not be completed");
+			}
+			return result;
+		},
+		onSettled: () => {
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.approvals });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.logsAll });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.statisticsAll });
 		},
 	});
 }
@@ -177,9 +195,9 @@ export function useRejectCleanupItem() {
 	return useMutation({
 		mutationFn: (id: string) => libraryCleanupApi.rejectItem(id),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-approvals"] });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-logs"] });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-statistics"] });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.approvals });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.logsAll });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.statisticsAll });
 		},
 	});
 }
@@ -195,9 +213,9 @@ export function useBulkCleanupAction() {
 			return result;
 		},
 		onSettled: () => {
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-approvals"] });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-logs"] });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-statistics"] });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.approvals });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.logsAll });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.statisticsAll });
 		},
 	});
 }

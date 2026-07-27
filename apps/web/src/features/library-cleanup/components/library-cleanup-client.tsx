@@ -71,6 +71,7 @@ import {
 	useDeleteCleanupRule,
 	useRejectCleanupItem,
 	useReorderCleanupRules,
+	useRetryCleanupItem,
 	useUpdateCleanupConfig,
 	useUpdateCleanupRule,
 } from "../../../hooks/api/useLibraryCleanup";
@@ -596,7 +597,13 @@ function ConfigTab({
 					<div className="relative p-5">
 						<h4 className="text-h4 mb-3">
 							Preview Results ({previewData.totalFlagged} of {previewData.totalEvaluated} items
-							flagged)
+							flagged
+							{previewData.pendingRetryCount
+								? ` · ${previewData.pendingRetryCount} ${
+										previewData.pendingRetryCount === 1 ? "retry" : "retries"
+									} pending`
+								: ""}
+							)
 						</h4>
 						{previewData.prefetchHealth &&
 							Object.entries(previewData.prefetchHealth).some(([, s]) => s === "failed") && (
@@ -892,9 +899,10 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 	const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 	const { data, isLoading, isError, refetch } = useCleanupApprovalQueue(page, 20, statusFilter);
 	const approve = useApproveCleanupItem();
+	const retry = useRetryCleanupItem();
 	const reject = useRejectCleanupItem();
 	const bulkAction = useBulkCleanupAction();
-	const actionError = approve.error ?? bulkAction.error;
+	const actionError = approve.error ?? retry.error ?? bulkAction.error;
 
 	const totalPages = data ? Math.ceil(data.total / data.pageSize) : 0;
 
@@ -924,6 +932,7 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 		(action: "approved" | "rejected") => {
 			const ids = [...selectedIds];
 			approve.reset();
+			retry.reset();
 			bulkAction.mutate(
 				{ ids, action },
 				{
@@ -931,7 +940,7 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 				},
 			);
 		},
-		[selectedIds, approve, bulkAction],
+		[selectedIds, approve, retry, bulkAction],
 	);
 
 	const showCheckboxes = statusFilter === "pending" && data && data.items.length > 0;
@@ -1149,6 +1158,7 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 											<button
 												type="button"
 												onClick={() => {
+													retry.reset();
 													bulkAction.reset();
 													approve.mutate(item.id);
 												}}
@@ -1161,6 +1171,7 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 												type="button"
 												onClick={() => {
 													approve.reset();
+													retry.reset();
 													bulkAction.reset();
 													reject.mutate(item.id);
 												}}
@@ -1170,6 +1181,20 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 												Reject
 											</button>
 										</div>
+									)}
+									{statusFilter === "retry_pending" && (
+										<button
+											type="button"
+											onClick={() => {
+												approve.reset();
+												bulkAction.reset();
+												retry.mutate(item.id);
+											}}
+											disabled={retry.isPending}
+											className="rounded-md px-3 py-1 text-xs font-medium bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors disabled:opacity-50"
+										>
+											Resume retry
+										</button>
 									)}
 								</div>
 							</div>

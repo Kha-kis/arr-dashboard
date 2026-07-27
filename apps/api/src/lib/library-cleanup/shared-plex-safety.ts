@@ -1153,6 +1153,8 @@ export async function findSharedPlexDeleteBlocks(
 	const instancesById = new Map(instances.map((instance) => [instance.id, instance]));
 	const radarrClients = new Map<string, InstanceType<typeof RadarrClient>>();
 	const sonarrClients = new Map<string, InstanceType<typeof SonarrClient>>();
+	const radarrNotifications = new Map<string, Promise<RadarrNotification[]>>();
+	const sonarrNotifications = new Map<string, Promise<SonarrNotification[]>>();
 	const plexMovieLookups = new Map<SafetyPlexClient, Map<number, Promise<PlexMovieMediaItem[]>>>();
 	const plexSeriesLookups = new Map<
 		SafetyPlexClient,
@@ -1175,6 +1177,30 @@ export async function findSharedPlexDeleteBlocks(
 			sonarrClients.set(instance.id, client);
 		}
 		return client;
+	};
+
+	const getRadarrNotifications = (
+		instance: ServiceInstance,
+		client: InstanceType<typeof RadarrClient>,
+	): Promise<RadarrNotification[]> => {
+		let notifications = radarrNotifications.get(instance.id);
+		if (!notifications) {
+			notifications = client.notification.getAll();
+			radarrNotifications.set(instance.id, notifications);
+		}
+		return notifications;
+	};
+
+	const getSonarrNotifications = (
+		instance: ServiceInstance,
+		client: InstanceType<typeof SonarrClient>,
+	): Promise<SonarrNotification[]> => {
+		let notifications = sonarrNotifications.get(instance.id);
+		if (!notifications) {
+			notifications = client.notification.getAll();
+			sonarrNotifications.set(instance.id, notifications);
+		}
+		return notifications;
 	};
 
 	for (const target of safetyTargets) {
@@ -1243,8 +1269,8 @@ export async function findSharedPlexDeleteBlocks(
 						),
 					};
 				}
-				const notifications = (await radarr.notification.getAll()).filter((notification) =>
-					radarrNotificationApplies(notification, movie, action),
+				const notifications = (await getRadarrNotifications(targetInstance, radarr)).filter(
+					(notification) => radarrNotificationApplies(notification, movie, action),
 				);
 				if (notifications.length === 0) {
 					if (verifiedPlan.kind === "verified_radarr") {
@@ -1333,8 +1359,8 @@ export async function findSharedPlexDeleteBlocks(
 					sonarrEpisodeFileIdentity(series, file),
 				),
 			};
-			const notifications = (await sonarr.notification.getAll()).filter((notification) =>
-				sonarrNotificationApplies(notification, series, action),
+			const notifications = (await getSonarrNotifications(targetInstance, sonarr)).filter(
+				(notification) => sonarrNotificationApplies(notification, series, action),
 			);
 			if (notifications.length === 0) {
 				context.verifiedSonarrFiles.set(targetKey, verifiedFiles);
