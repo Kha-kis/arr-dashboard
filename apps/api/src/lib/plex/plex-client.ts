@@ -13,10 +13,13 @@ import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 import { parseUpstreamOrThrow } from "../validation/parse-upstream.js";
 import {
 	plexAccountsResponseSchema,
+	plexEpisodeMediaItemsResponseSchema,
 	plexEpisodesResponseSchema,
 	plexHistoryResponseSchema,
 	plexIdentityResponseSchema,
+	plexLibraryGuidItemsResponseSchema,
 	plexLibraryItemsResponseSchema,
+	plexLibraryMediaItemsResponseSchema,
 	plexOnDeckResponseSchema,
 	plexSectionsResponseSchema,
 	plexServerInfoResponseSchema,
@@ -55,6 +58,23 @@ export interface PlexLibraryItem {
 	Guid?: PlexGuid[];
 	Collection?: Array<{ tag: string }>;
 	Label?: Array<{ tag: string }>;
+}
+
+export interface PlexMovieMediaPart {
+	file: string;
+	size: number;
+}
+
+export interface PlexMovieMediaItem {
+	ratingKey: string;
+	parts: PlexMovieMediaPart[];
+}
+
+export type PlexEpisodeMediaItem = PlexMovieMediaItem;
+
+export interface PlexSeriesMediaItem {
+	ratingKey: string;
+	episodes: PlexEpisodeMediaItem[];
 }
 
 export interface PlexHistoryItem {
@@ -111,6 +131,8 @@ export interface PlexEpisodeItem {
 // ============================================================================
 
 const DEFAULT_TIMEOUT = 15_000;
+const SAFETY_PAGE_SIZE = 200;
+const SAFETY_MAX_ITEMS = 100_000;
 
 /**
  * Extract a ratingKey from a Plex path like "/library/metadata/65486".
@@ -210,6 +232,146 @@ export class PlexClient {
 			Collection: m.Collection?.map((c) => ({ tag: c.tag })),
 			Label: m.Label?.map((l) => ({ tag: l.tag })),
 		}));
+	}
+
+	private async getCompleteSafetyMetadata<T>(
+		path: string,
+		schema: z.ZodType<{
+			MediaContainer: {
+				offset: number;
+				size: number;
+				totalSize: number;
+				Metadata?: T[];
+			};
+		}>,
+		keyOf: (item: T) => string,
+	): Promise<T[]> {
+		const allItems: T[] = [];
+		const seenKeys = new Set<string>();
+		let expectedTotal: number | undefined;
+		let offset = 0;
+
+		while (expectedTotal === undefined || offset < expectedTotal) {
+			const pageUrl = new URL(path, "http://plex.invalid");
+			pageUrl.searchParams.set("X-Plex-Container-Start", String(offset));
+			pageUrl.searchParams.set("X-Plex-Container-Size", String(SAFETY_PAGE_SIZE));
+			const page = await this.request(`${pageUrl.pathname}${pageUrl.search}`, { schema });
+			const container = page.MediaContainer;
+			const items = container.Metadata ?? [];
+
+			if (container.offset !== offset || container.size !== items.length) {
+				throw new Error("Plex safety pagination metadata did not match the returned page");
+			}
+			if (expectedTotal === undefined) {
+				expectedTotal = container.totalSize;
+				if (expectedTotal > SAFETY_MAX_ITEMS) {
+					throw new Error("Plex safety result set is too large to verify completely");
+				}
+			} else if (container.totalSize !== expectedTotal) {
+				throw new Error("Plex safety result set changed while it was being paged");
+			}
+			if (offset + items.length > expectedTotal) {
+				throw new Error("Plex safety pagination exceeded its declared total");
+			}
+			if (items.length === 0 && offset < expectedTotal) {
+				throw new Error("Plex safety pagination stopped before the declared total");
+			}
+
+			for (const item of items) {
+				const key = keyOf(item);
+				if (seenKeys.has(key)) {
+					throw new Error("Plex safety pagination returned a duplicate item");
+				}
+				seenKeys.add(key);
+				allItems.push(item);
+			}
+			offset += items.length;
+		}
+
+		if (expectedTotal === undefined || allItems.length !== expectedTotal) {
+			throw new Error("Plex safety result set could not be verified as complete");
+		}
+		return allItems;
+	}
+
+	/**
+	 * Return physical media parts grouped by Plex movie item for an exact TMDb
+	 * match. The caller uses file identity to distinguish the target from other
+	 * items or versions that happen to share the same external ID.
+	 */
+	async getMovieMediaPartsByTmdbId(tmdbId: number): Promise<PlexMovieMediaItem[]> {
+		const params = new URLSearchParams({
+			type: "1",
+			guid: `tmdb://${tmdbId}`,
+			includeGuids: "1",
+			includeMedia: "1",
+		});
+		const completeItems = await this.getCompleteSafetyMetadata(
+			`/library/all?${params.toString()}`,
+			plexLibraryMediaItemsResponseSchema,
+			(item) => item.ratingKey,
+		);
+		const items = completeItems.filter((item) =>
+			item.Guid?.some((guid) => guid.id === `tmdb://${tmdbId}`),
+		);
+		if (items.length === 0) {
+			throw new Error(`Plex returned no movie item for TMDb ${tmdbId}`);
+		}
+
+		return items.map((item) => {
+			const parts = (item.Media ?? []).flatMap((media) =>
+				(media.Part ?? []).map((part) => ({ file: part.file, size: part.size })),
+			);
+			if (parts.length === 0) {
+				throw new Error(`Plex item ${item.ratingKey} returned no media parts`);
+			}
+			return { ratingKey: item.ratingKey, parts };
+		});
+	}
+
+	/**
+	 * Return physical media parts grouped by Plex episode for a TV series with
+	 * the exact TVDB identifier. Plex stores alternate qualities as multiple
+	 * media parts on the episode item, so callers must retain the grouping.
+	 */
+	async getSeriesEpisodeMediaPartsByTvdbId(tvdbId: number): Promise<PlexSeriesMediaItem[]> {
+		const params = new URLSearchParams({
+			type: "2",
+			guid: `tvdb://${tvdbId}`,
+			includeGuids: "1",
+		});
+		const shows = await this.getCompleteSafetyMetadata(
+			`/library/all?${params.toString()}`,
+			plexLibraryGuidItemsResponseSchema,
+			(item) => item.ratingKey,
+		);
+		const exactShows = shows.filter(
+			(item) => item.type === "show" && item.Guid?.some((guid) => guid.id === `tvdb://${tvdbId}`),
+		);
+		if (exactShows.length === 0) {
+			throw new Error(`Plex returned no series item for TVDB ${tvdbId}`);
+		}
+
+		const seriesItems = await Promise.all(
+			exactShows.map(async (show) => {
+				const completeEpisodes = await this.getCompleteSafetyMetadata(
+					`/library/metadata/${encodeURIComponent(show.ratingKey)}/allLeaves?includeMedia=1`,
+					plexEpisodeMediaItemsResponseSchema,
+					(item) => item.ratingKey,
+				);
+				const episodes = completeEpisodes.map((item) => ({
+					ratingKey: item.ratingKey,
+					parts: item.Media.flatMap((media) =>
+						media.Part.map((part) => ({ file: part.file, size: part.size })),
+					),
+				}));
+				if (episodes.length === 0) {
+					throw new Error(`Plex series item ${show.ratingKey} returned no episode media`);
+				}
+				return { ratingKey: show.ratingKey, episodes };
+			}),
+		);
+		return seriesItems;
 	}
 
 	/**

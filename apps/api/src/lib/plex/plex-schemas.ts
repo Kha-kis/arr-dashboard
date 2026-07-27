@@ -62,6 +62,68 @@ export const plexLibraryItemsResponseSchema = z.looseObject({
 	}),
 });
 
+const plexMediaPartSchema = z.looseObject({
+	file: z.string().min(1),
+	size: z.coerce.number().positive().refine(Number.isSafeInteger, "Expected a safe integer"),
+});
+
+const plexMediaSchema = z.looseObject({
+	Part: z.array(plexMediaPartSchema).min(1),
+});
+
+const plexSafetyPaginationFields = {
+	offset: z.coerce.number().int().nonnegative().refine(Number.isSafeInteger),
+	size: z.coerce.number().int().nonnegative().refine(Number.isSafeInteger),
+	totalSize: z.coerce.number().int().nonnegative().refine(Number.isSafeInteger),
+};
+
+/** /library/sections/{id}/all with includeMedia=1 */
+export const plexLibraryMediaItemsResponseSchema = z.looseObject({
+	MediaContainer: z.looseObject({
+		...plexSafetyPaginationFields,
+		Metadata: z
+			.array(
+				z.looseObject({
+					ratingKey: z.string(),
+					Guid: z.array(z.looseObject({ id: z.string() })).optional(),
+					Media: z.array(plexMediaSchema).min(1),
+				}),
+			)
+			.optional(),
+	}),
+});
+
+/** Targeted /library/all show lookup used by deletion-safety checks. */
+export const plexLibraryGuidItemsResponseSchema = z.looseObject({
+	MediaContainer: z.looseObject({
+		...plexSafetyPaginationFields,
+		Metadata: z
+			.array(
+				z.looseObject({
+					ratingKey: z.string(),
+					type: z.string(),
+					Guid: z.array(z.looseObject({ id: z.string() })).optional(),
+				}),
+			)
+			.optional(),
+	}),
+});
+
+/** /library/metadata/{showId}/allLeaves with includeMedia=1 */
+export const plexEpisodeMediaItemsResponseSchema = z.looseObject({
+	MediaContainer: z.looseObject({
+		...plexSafetyPaginationFields,
+		Metadata: z
+			.array(
+				z.looseObject({
+					ratingKey: z.string(),
+					Media: z.array(plexMediaSchema).min(1),
+				}),
+			)
+			.optional(),
+	}),
+});
+
 /** /status/sessions/history/all endpoint (paginated) */
 export const plexHistoryResponseSchema = z.looseObject({
 	MediaContainer: z.looseObject({

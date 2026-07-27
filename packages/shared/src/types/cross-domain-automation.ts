@@ -14,7 +14,7 @@ export const crossDomainActionSchema = z.discriminatedUnion("type", [
 ]);
 export type CrossDomainAction = z.infer<typeof crossDomainActionSchema>;
 
-const crossDomainActionsSchema = z
+export const crossDomainActionsSchema = z
 	.array(crossDomainActionSchema)
 	.min(2, "Choose at least two actions")
 	.max(3)

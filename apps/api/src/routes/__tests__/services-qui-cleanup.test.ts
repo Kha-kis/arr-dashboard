@@ -123,6 +123,10 @@ function makeSonarrInstance(overrides: Record<string, unknown> = {}) {
 
 function createMockPrisma() {
 	return {
+		libraryCleanupConfig: {
+			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
+			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+		},
 		serviceInstance: {
 			findMany: vi.fn().mockResolvedValue([]),
 			findFirst: vi.fn().mockResolvedValue(null),

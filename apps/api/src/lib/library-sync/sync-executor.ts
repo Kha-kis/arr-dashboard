@@ -11,6 +11,7 @@ import type { FastifyBaseLogger } from "fastify";
 import type { Prisma, PrismaClient, ServiceInstance } from "../../lib/prisma.js";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import { streamLibraryItems as defaultStreamLibraryItems } from "../arr/library-stream.js";
+import { createArrServiceFingerprint } from "../arr/service-fingerprint.js";
 import type { Encryptor } from "../auth/encryption.js";
 import { triggerLabelSyncForItem } from "../label-sync/trigger-for-item.js";
 import { buildLibraryItem } from "../library/library-item-builder.js";
@@ -177,6 +178,7 @@ function extractCacheFields(
 function buildCacheCreate(
 	instanceId: string,
 	item: LibraryItem,
+	serializedItem: string,
 ): Omit<Prisma.LibraryCacheCreateInput, "data"> & { data: string } {
 	const arrItemId = typeof item.id === "string" ? Number.parseInt(item.id, 10) : item.id;
 	const fields = extractCacheFields(item);
@@ -186,8 +188,15 @@ function buildCacheCreate(
 		arrItemId,
 		itemType: item.type,
 		...fields,
-		data: JSON.stringify(item),
+		data: serializedItem,
 	};
+}
+
+function serializeCacheItem(item: LibraryItem, serviceFingerprint: string): string {
+	return JSON.stringify({
+		...item,
+		_arrDashboardSource: { serviceFingerprint },
+	});
 }
 
 /**
@@ -229,6 +238,11 @@ export async function syncInstance(
 	} = deps;
 	const streamLibraryItems = streamLibraryItemsOverride ?? defaultStreamLibraryItems;
 	const startTime = Date.now();
+	// This timestamp represents the service configuration/source snapshot used
+	// for the whole sync. Never replace it with a later batch-write timestamp:
+	// a service can be repointed while a long stream is still in flight.
+	const sourceCapturedAt = new Date(startTime);
+	const sourceServiceFingerprint = createArrServiceFingerprint(instance);
 	const tagDeltaService = isTagDeltaService(instance.service);
 
 	const result: SyncResult = {
@@ -402,11 +416,13 @@ export async function syncInstance(
 
 					const existing = existingMap.get(key);
 					const fields = extractCacheFields(item, cutoffUnmetIds);
+					const serializedItem = serializeCacheItem(item, sourceServiceFingerprint);
 
 					if (existing) {
 						const updateData: Prisma.LibraryCacheUpdateInput = {
 							...fields,
-							data: JSON.stringify(item),
+							data: serializedItem,
+							cachedAt: sourceCapturedAt,
 							updatedAt: new Date(),
 						};
 
@@ -448,7 +464,10 @@ export async function syncInstance(
 						}
 					} else {
 						await tx.libraryCache.create({
-							data: buildCacheCreate(instance.id, item),
+							data: {
+								...buildCacheCreate(instance.id, item, serializedItem),
+								cachedAt: sourceCapturedAt,
+							},
 						});
 						result.itemsAdded++;
 

@@ -208,6 +208,7 @@ export interface CleanupApprovalResponse {
 	year: number | null;
 	rating: number | null;
 	status: string;
+	lastExecutionError: string | null;
 	reviewedAt: string | null;
 	executedAt: string | null;
 	createdAt: string;
@@ -286,6 +287,8 @@ export interface CleanupPreviewItem {
 export interface CleanupPreviewResponse {
 	totalEvaluated: number;
 	totalFlagged: number;
+	/** Durable mutation retries displayed separately from current rule matches. */
+	pendingRetryCount?: number;
 	items: CleanupPreviewItem[];
 	prefetchHealth?: PrefetchHealthStatus;
 	warnings?: string[];

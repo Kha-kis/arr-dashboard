@@ -753,7 +753,7 @@ function evaluateAudioChannelsRule(
  * Parse audio channel count from codec string.
  * Common patterns: "5.1" → 6, "7.1" → 8, "Stereo" → 2, "Mono" → 1, "Atmos" → 8
  */
-function parseAudioChannels(codec: string): number | null {
+export function parseAudioChannels(codec: string): number | null {
 	const lower = codec.toLowerCase();
 
 	// Explicit channel patterns: "5.1", "7.1", "2.0"

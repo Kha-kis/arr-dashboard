@@ -924,10 +924,10 @@ export function CleanupRuleDialog({
 							</div>
 							<p className="text-xs text-muted-foreground mt-1">
 								{action === "delete"
-									? "Remove the item entirely from the ARR instance."
+									? "Remove the item and its verified media files from the ARR instance. For Plex library updates, arr-dashboard applies the ARR connection's path mapping and matches exact live paths and sizes. Unverifiable media-server updates are blocked."
 									: action === "unmonitor"
 										? "Set the item as unmonitored (keeps files and data)."
-										: "Delete downloaded files but keep the item in the library."}
+										: "Delete verified media files but keep the item in the ARR library. Exact live Plex matching blocks merged or unverifiable items, and other unverified media-server updates are blocked."}
 							</p>
 						</div>
 

@@ -46,6 +46,7 @@ export interface ExecuteResult {
 
 export interface ApprovalExecuteResult {
 	removed: number;
+	reconciled?: number;
 	failed: number;
 	errors: string[];
 }
@@ -120,6 +121,12 @@ export const libraryCleanupApi = {
 
 	async approveItem(id: string): Promise<ApprovalExecuteResult> {
 		return apiRequest<ApprovalExecuteResult>(`/api/library-cleanup/approval-queue/${id}/approve`, {
+			method: "POST",
+		});
+	},
+
+	async retryItem(id: string): Promise<ApprovalExecuteResult> {
+		return apiRequest<ApprovalExecuteResult>(`/api/library-cleanup/approval-queue/${id}/retry`, {
 			method: "POST",
 		});
 	},
