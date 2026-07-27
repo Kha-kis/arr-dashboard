@@ -668,10 +668,9 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 				}
 
 				const MAX_PREVIEW_ITEMS = 200;
-				const truncated = result.details.length > MAX_PREVIEW_ITEMS;
-				const previewDetails = truncated
-					? result.details.slice(0, MAX_PREVIEW_ITEMS)
-					: result.details;
+				const totalFlagged = Math.max(result.itemsFlagged, result.details.length);
+				const previewDetails = result.details.slice(0, MAX_PREVIEW_ITEMS);
+				const truncated = totalFlagged > previewDetails.length;
 
 				// qui-derived safety hint (Phase 3.3). Single bulk query joins
 				// LibraryCache for every previewed item so operators see
@@ -751,7 +750,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 					warnings: [
 						...(result.warnings ?? []),
 						...(truncated
-							? [`Showing ${MAX_PREVIEW_ITEMS} of ${result.details.length} flagged items`]
+							? [`Showing ${previewDetails.length} of ${totalFlagged} flagged items`]
 							: []),
 					],
 				});

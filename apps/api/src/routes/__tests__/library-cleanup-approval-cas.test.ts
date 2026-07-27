@@ -71,6 +71,9 @@ describe("library cleanup approval compare-and-set routes", () => {
 			serviceInstance: {
 				findMany: vi.fn().mockResolvedValue([{ id: "radarr-1", label: "Radarr" }]),
 			},
+			libraryCache: {
+				findMany: vi.fn().mockResolvedValue([]),
+			},
 		} as never);
 		app.decorate("arrClientFactory", {} as never);
 		app.decorate("encryptor", {} as never);
@@ -195,5 +198,42 @@ describe("library cleanup approval compare-and-set routes", () => {
 
 		expect(response.statusCode).toBe(409);
 		expect(response.json()).toEqual({ error: "A cleanup operation is already in progress" });
+	});
+
+	it("warns when preview details were capped before reaching the route", async () => {
+		const details = Array.from({ length: 200 }, (_, index) => ({
+			instanceId: "radarr-1",
+			arrItemId: index + 1,
+			itemType: "movie",
+			title: `Movie ${index + 1}`,
+			rule: "Cleanup",
+			reason: "Matched",
+			action: "delete",
+			sizeOnDisk: "1000",
+			year: 2024,
+			rating: 8,
+		}));
+		executorMocks.executeCleanupPreview.mockResolvedValueOnce({
+			isDryRun: true,
+			status: "completed",
+			itemsEvaluated: 201,
+			itemsFlagged: 201,
+			itemsRemoved: 0,
+			itemsUnmonitored: 0,
+			itemsFilesDeleted: 0,
+			itemsSkipped: 0,
+			details,
+			durationMs: 1,
+			warnings: ["Existing warning"],
+		});
+
+		const response = await createInjectAuthenticated(app)("POST", "/library-cleanup/preview");
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({
+			totalFlagged: 201,
+			warnings: ["Existing warning", "Showing 200 of 201 flagged items"],
+		});
+		expect(response.json().items).toHaveLength(200);
 	});
 });
