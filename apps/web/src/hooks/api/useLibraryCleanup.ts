@@ -10,8 +10,8 @@ import {
 	type ExecuteResult,
 	libraryCleanupApi,
 } from "../../lib/api-client/library-cleanup";
-import { libraryCleanupKeys } from "../../lib/query-keys";
 import { POLLING_STANDARD } from "../../lib/polling-intervals";
+import { libraryCleanupKeys } from "../../lib/query-keys";
 
 // ============================================================================
 // Queries
@@ -147,9 +147,9 @@ export function useCleanupExecute() {
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.config });
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.status });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-logs"] });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-approvals"] });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-statistics"] });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.logsAll });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.approvals });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.statisticsAll });
 		},
 	});
 }
@@ -157,11 +157,35 @@ export function useCleanupExecute() {
 export function useApproveCleanupItem() {
 	const queryClient = useQueryClient();
 	return useMutation({
-		mutationFn: (id: string): Promise<ApprovalExecuteResult> => libraryCleanupApi.approveItem(id),
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-approvals"] });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-logs"] });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-statistics"] });
+		mutationFn: async (id: string): Promise<ApprovalExecuteResult> => {
+			const result = await libraryCleanupApi.approveItem(id);
+			if (result.failed > 0) {
+				throw new Error(result.errors.join("\n") || "The cleanup item could not be executed");
+			}
+			return result;
+		},
+		onSettled: () => {
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.approvals });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.logsAll });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.statisticsAll });
+		},
+	});
+}
+
+export function useRetryCleanupItem() {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: async (id: string): Promise<ApprovalExecuteResult> => {
+			const result = await libraryCleanupApi.retryItem(id);
+			if (result.failed > 0) {
+				throw new Error(result.errors.join("\n") || "The cleanup retry could not be completed");
+			}
+			return result;
+		},
+		onSettled: () => {
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.approvals });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.logsAll });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.statisticsAll });
 		},
 	});
 }
@@ -171,9 +195,9 @@ export function useRejectCleanupItem() {
 	return useMutation({
 		mutationFn: (id: string) => libraryCleanupApi.rejectItem(id),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-approvals"] });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-logs"] });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-statistics"] });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.approvals });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.logsAll });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.statisticsAll });
 		},
 	});
 }
@@ -181,12 +205,17 @@ export function useRejectCleanupItem() {
 export function useBulkCleanupAction() {
 	const queryClient = useQueryClient();
 	return useMutation({
-		mutationFn: ({ ids, action }: { ids: string[]; action: "approved" | "rejected" }) =>
-			libraryCleanupApi.bulkAction(ids, action),
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-approvals"] });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-logs"] });
-			queryClient.invalidateQueries({ queryKey: ["library-cleanup-statistics"] });
+		mutationFn: async ({ ids, action }: { ids: string[]; action: "approved" | "rejected" }) => {
+			const result = await libraryCleanupApi.bulkAction(ids, action);
+			if ("failed" in result && result.failed > 0) {
+				throw new Error(result.errors.join("\n") || "Some cleanup items could not be executed");
+			}
+			return result;
+		},
+		onSettled: () => {
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.approvals });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.logsAll });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.statisticsAll });
 		},
 	});
 }
