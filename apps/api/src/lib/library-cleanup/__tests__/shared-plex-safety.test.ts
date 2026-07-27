@@ -698,9 +698,7 @@ describe("shared Plex deletion safety", () => {
 					: Promise.resolve([targetInstance, otherInstance])) as never,
 		);
 
-		const blocks = await findSharedPlexDeleteBlocks(deps, "user-1", [target], [
-			targetInstance,
-		] as never);
+		const blocks = await findSharedPlexDeleteBlocks(deps, "user-1", [target]);
 
 		expect(blocks.get(cleanupDeleteTargetKey(target))).toContain(
 			"another configured Radarr instance may access the same storage under a different path",
@@ -777,7 +775,6 @@ describe("shared Plex deletion safety", () => {
 			deps,
 			"user-1",
 			[target, { ...target, arrItemId: 102 }],
-			undefined,
 			context,
 		);
 
@@ -799,16 +796,8 @@ describe("shared Plex deletion safety", () => {
 			},
 		]);
 
-		expect(await findSharedPlexDeleteBlocks(deps, "user-1", [target], undefined, context)).toEqual(
-			new Map(),
-		);
-		const changedBlocks = await findSharedPlexDeleteBlocks(
-			deps,
-			"user-1",
-			[target],
-			undefined,
-			context,
-		);
+		expect(await findSharedPlexDeleteBlocks(deps, "user-1", [target], context)).toEqual(new Map());
+		const changedBlocks = await findSharedPlexDeleteBlocks(deps, "user-1", [target], context);
 
 		expect(changedBlocks.get(cleanupDeleteTargetKey(target))).toContain("Emby/Jellyfin");
 		expect(targetClient.notification.getAll).toHaveBeenCalledTimes(2);
@@ -1055,7 +1044,7 @@ describe("shared Plex deletion safety", () => {
 	it("allows deletion when no applicable Radarr Plex notification exists", async () => {
 		const { deps, plexClientFactory } = makeDeps({ includePlexNotification: false });
 		const context = createSharedPlexSafetyContext();
-		const blocks = await findSharedPlexDeleteBlocks(deps, "user-1", [target], undefined, context);
+		const blocks = await findSharedPlexDeleteBlocks(deps, "user-1", [target], context);
 
 		expect(blocks).toEqual(new Map());
 		expect(plexClientFactory).not.toHaveBeenCalled();
@@ -1155,16 +1144,8 @@ describe("shared Plex deletion safety", () => {
 			.mockRejectedValueOnce(new Error("owner authority revoked"));
 		const context = createSharedPlexSafetyContext();
 
-		expect(await findSharedPlexDeleteBlocks(deps, "user-1", [target], undefined, context)).toEqual(
-			new Map(),
-		);
-		const changedBlocks = await findSharedPlexDeleteBlocks(
-			deps,
-			"user-1",
-			[target],
-			undefined,
-			context,
-		);
+		expect(await findSharedPlexDeleteBlocks(deps, "user-1", [target], context)).toEqual(new Map());
+		const changedBlocks = await findSharedPlexDeleteBlocks(deps, "user-1", [target], context);
 
 		expect(changedBlocks.get(cleanupDeleteTargetKey(target))).toContain(
 			"could not verify the live Radarr and Plex",
@@ -1298,17 +1279,9 @@ describe("shared Plex deletion safety", () => {
 		}));
 		const context = createSharedPlexSafetyContext();
 
-		expect(await findSharedPlexDeleteBlocks(deps, "user-1", [target], undefined, context)).toEqual(
-			new Map(),
-		);
+		expect(await findSharedPlexDeleteBlocks(deps, "user-1", [target], context)).toEqual(new Map());
 		expect(
-			await findSharedPlexDeleteBlocks(
-				deps,
-				"user-1",
-				[{ ...target, arrItemId: 102 }],
-				undefined,
-				context,
-			),
+			await findSharedPlexDeleteBlocks(deps, "user-1", [{ ...target, arrItemId: 102 }], context),
 		).toEqual(new Map());
 
 		expect(deps.plexClientFactory).toHaveBeenCalledTimes(2);
@@ -1374,7 +1347,6 @@ describe("shared Plex deletion safety", () => {
 			deps,
 			"user-1",
 			[{ ...target, action: "unmonitor" }],
-			undefined,
 			context,
 		);
 
@@ -2009,6 +1981,64 @@ describe("shared Plex deletion safety", () => {
 		expect(result.details[0]?.reason).toContain("differs from the cached item");
 		expect(deleteMovieFile).not.toHaveBeenCalled();
 		expect(deleteMovie).not.toHaveBeenCalled();
+	});
+
+	it("expires a direct mutation when Radarr is repointed after live preflight", async () => {
+		const { deps, targetInstance, plexInstance, deleteMovie, deleteMovieFile } = makeDeps({
+			mediaPartCount: 1,
+		});
+		const retries = configureRetryStore(deps);
+		const repointedInstance = {
+			...targetInstance,
+			baseUrl: "http://replacement-radarr.internal:7878",
+			updatedAt: new Date("2026-07-27T13:00:00.000Z"),
+		};
+		let arrInstanceReads = 0;
+		vi.mocked(deps.prisma.serviceInstance.findMany).mockImplementation((args) => {
+			if (args?.where?.service === "PLEX") return Promise.resolve([plexInstance]) as never;
+			if (typeof args?.where?.service === "object" && "in" in args.where.service) {
+				return Promise.resolve([
+					++arrInstanceReads === 1 ? targetInstance : repointedInstance,
+				]) as never;
+			}
+			return Promise.resolve([
+				{ id: targetInstance.id, updatedAt: targetInstance.updatedAt },
+			]) as never;
+		});
+		const flaggedItem = {
+			cacheItem: {
+				instanceId: "radarr-4k",
+				arrItemId: 101,
+				itemType: "movie",
+				title: "Example Movie",
+				year: 2024,
+				...radarrCachedFileIdentity,
+				sizeOnDisk: 2_000n,
+			},
+			match: {
+				ruleId: "rule-1",
+				ruleName: "4K cleanup",
+				reason: "Matched cached file",
+				action: "delete",
+			},
+			rating: 8,
+		};
+
+		const result = await executeDirectRemoval(
+			deps,
+			{ id: "config-1", maxRemovalsPerRun: 10, rules: [] } as never,
+			"user-1",
+			[flaggedItem] as never,
+			1,
+			1,
+			Date.now(),
+		);
+
+		expect(result.details[0]?.reason).toContain("ARR target changed during live verification");
+		expect(deleteMovieFile).not.toHaveBeenCalled();
+		expect(deleteMovie).not.toHaveBeenCalled();
+		expect(retries).toHaveLength(1);
+		expect(retries[0]).toMatchObject({ status: "expired", executionToken: null });
 	});
 
 	it("does not trust cache data sourced from a different ARR service fingerprint", async () => {
@@ -2710,6 +2740,33 @@ describe("shared Plex deletion safety", () => {
 		});
 	});
 
+	it("expires record-absent reconciliation when Radarr is repointed after the absence check", async () => {
+		const { deps, targetInstance, deleteMovieFile, setLiveMovieExists } = makeDeps({
+			action: "delete_files",
+			mediaPartCount: 1,
+		});
+		const storedApproval = approvalRecord({
+			action: "delete_files",
+			lastExecutionError: INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
+		}) as Record<string, unknown>;
+		configureApprovalStore(deps, storedApproval);
+		setLiveMovieExists(false);
+		const repointedInstance = {
+			...targetInstance,
+			baseUrl: "http://replacement-radarr.internal:7878",
+			updatedAt: new Date("2026-07-27T13:00:00.000Z"),
+		};
+		vi.mocked(deps.prisma.serviceInstance.findMany).mockResolvedValue([repointedInstance] as never);
+
+		const result = await executeApprovedItems(deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(result.errors[0]).toContain("ARR target changed during live verification");
+		expect(deleteMovieFile).not.toHaveBeenCalled();
+		expect(deps.prisma.libraryCache.deleteMany).not.toHaveBeenCalled();
+		expect(storedApproval).toMatchObject({ status: "expired", executionToken: null });
+	});
+
 	it("completes an interrupted unmonitor intent when its verified target is already absent", async () => {
 		const { deps, targetClient, setLiveMovieExists } = makeDeps({
 			action: "unmonitor",
@@ -2757,6 +2814,89 @@ describe("shared Plex deletion safety", () => {
 		expect(deleteMovieFile).toHaveBeenCalledOnce();
 		expect(deleteMovie).toHaveBeenCalledTimes(2);
 		expect(storedApproval).toMatchObject({ status: "expired" });
+	});
+
+	it("expires an approved Radarr mutation when the service is repointed after preflight", async () => {
+		const { deps, targetInstance, plexInstance, deleteMovie, deleteMovieFile } = makeDeps({
+			mediaPartCount: 1,
+		});
+		const storedApproval = approvalRecord() as Record<string, unknown>;
+		configureApprovalStore(deps, storedApproval);
+		const repointedInstance = {
+			...targetInstance,
+			baseUrl: "http://replacement-radarr.internal:7878",
+			updatedAt: new Date("2026-07-27T13:00:00.000Z"),
+		};
+		let arrInstanceReads = 0;
+		vi.mocked(deps.prisma.serviceInstance.findMany).mockImplementation(
+			(args) =>
+				(args?.where?.service === "PLEX"
+					? Promise.resolve([plexInstance])
+					: Promise.resolve([
+							++arrInstanceReads === 1 ? targetInstance : repointedInstance,
+						])) as never,
+		);
+
+		const result = await executeApprovedItems(deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(result.errors[0]).toContain("ARR target changed during live verification");
+		expect(deleteMovieFile).not.toHaveBeenCalled();
+		expect(deleteMovie).not.toHaveBeenCalled();
+		expect(storedApproval).toMatchObject({ status: "expired", executionToken: null });
+	});
+
+	it("expires an approved Radarr mutation when the target is disabled after preflight", async () => {
+		const { deps, targetInstance, plexInstance, deleteMovie, deleteMovieFile } = makeDeps({
+			mediaPartCount: 1,
+		});
+		const storedApproval = approvalRecord() as Record<string, unknown>;
+		configureApprovalStore(deps, storedApproval);
+		const disabledInstance = { ...targetInstance, enabled: false };
+		let arrInstanceReads = 0;
+		vi.mocked(deps.prisma.serviceInstance.findMany).mockImplementation(
+			(args) =>
+				(args?.where?.service === "PLEX"
+					? Promise.resolve([plexInstance])
+					: Promise.resolve([
+							++arrInstanceReads === 1 ? targetInstance : disabledInstance,
+						])) as never,
+		);
+
+		const result = await executeApprovedItems(deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(result.errors[0]).toContain("ARR target changed during live verification");
+		expect(deleteMovieFile).not.toHaveBeenCalled();
+		expect(deleteMovie).not.toHaveBeenCalled();
+		expect(storedApproval).toMatchObject({ status: "expired", executionToken: null });
+	});
+
+	it("uses a persisted Radarr repoint instead of the instance loaded by the caller", async () => {
+		const { deps, targetInstance, plexInstance, deleteMovie, deleteMovieFile } = makeDeps({
+			mediaPartCount: 1,
+		});
+		const storedApproval = approvalRecord() as Record<string, unknown>;
+		configureApprovalStore(deps, storedApproval);
+		const repointedInstance = {
+			...targetInstance,
+			baseUrl: "http://replacement-radarr.internal:7878",
+			updatedAt: new Date("2026-07-27T13:00:00.000Z"),
+		};
+		vi.mocked(deps.prisma.serviceInstance.findMany).mockImplementation(
+			(args) =>
+				(args?.where?.service === "PLEX"
+					? Promise.resolve([plexInstance])
+					: Promise.resolve([repointedInstance])) as never,
+		);
+
+		const result = await executeApprovedItems(deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(result.errors[0]).toContain("ARR target or file identity changed");
+		expect(deleteMovieFile).not.toHaveBeenCalled();
+		expect(deleteMovie).not.toHaveBeenCalled();
+		expect(storedApproval).toMatchObject({ status: "expired", executionToken: null });
 	});
 
 	it("durably retries a direct record deletion after exact file removal", async () => {

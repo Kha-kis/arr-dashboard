@@ -345,11 +345,19 @@ export function buildCacheTargetSafetyPlan(
 
 export class ArrFileChangedDuringSafetyCheckError extends Error {}
 
-export class ArrTargetChangedDuringSafetyCheckError extends ArrFileChangedDuringSafetyCheckError {
+export class ArrMutationAuthorityChangedDuringSafetyCheckError extends ArrFileChangedDuringSafetyCheckError {}
+
+export class ArrTargetChangedDuringSafetyCheckError extends ArrMutationAuthorityChangedDuringSafetyCheckError {
 	constructor() {
 		super(
 			"Skipped for safety: the ARR target changed during live verification. Run cleanup again before mutating it.",
 		);
+	}
+}
+
+export class ArrCrossInstanceOwnershipChangedDuringSafetyCheckError extends ArrMutationAuthorityChangedDuringSafetyCheckError {
+	constructor(service: "RADARR" | "SONARR") {
+		super(crossInstanceOwnershipReason(service));
 	}
 }
 
@@ -1114,7 +1122,6 @@ export async function findSharedPlexDeleteBlocks(
 	deps: CleanupExecutorDeps,
 	userId: string,
 	targets: CleanupDeleteTarget[],
-	verifiedInstances?: ServiceInstance[],
 	context: SharedPlexSafetyContext = createSharedPlexSafetyContext(),
 ): Promise<Map<string, string>> {
 	const safetyTargets = targets.filter(isSafetyTarget);
@@ -1125,24 +1132,12 @@ export async function findSharedPlexDeleteBlocks(
 	let instances: ServiceInstance[];
 	let plexInstances: ServiceInstance[];
 	try {
-		const persistedInstances = await deps.prisma.serviceInstance.findMany({
+		instances = await deps.prisma.serviceInstance.findMany({
 			where: {
 				userId,
 				service: { in: ["RADARR", "SONARR"] },
 			},
 		});
-		const verifiedInstancesById = new Map(
-			(verifiedInstances ?? [])
-				.filter(
-					(instance) =>
-						instance.userId === userId &&
-						(instance.service === "RADARR" || instance.service === "SONARR"),
-				)
-				.map((instance) => [instance.id, instance]),
-		);
-		instances = persistedInstances.map(
-			(instance) => verifiedInstancesById.get(instance.id) ?? instance,
-		);
 		plexInstances =
 			deleteTargets.length === 0
 				? []
@@ -1245,6 +1240,12 @@ export async function findSharedPlexDeleteBlocks(
 						: "RADARR";
 		if (!targetInstance) {
 			const reason = verificationFailedReason(service);
+			blocks.set(targetKey, reason);
+			context.plans.set(targetKey, { kind: "blocked", reason });
+			continue;
+		}
+		if (targetInstance.enabled !== true) {
+			const reason = `Skipped for safety: the target ${serviceLabel(service)} instance is disabled. Enable it and run cleanup again before mutating it.`;
 			blocks.set(targetKey, reason);
 			context.plans.set(targetKey, { kind: "blocked", reason });
 			continue;

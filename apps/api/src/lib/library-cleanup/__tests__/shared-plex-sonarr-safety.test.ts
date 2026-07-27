@@ -302,9 +302,7 @@ describe("shared Plex deletion safety for Sonarr", () => {
 					: Promise.resolve([targetInstance, otherInstance])) as never,
 		);
 
-		const blocks = await findSharedPlexDeleteBlocks(deps, "user-1", [target], [
-			targetInstance,
-		] as never);
+		const blocks = await findSharedPlexDeleteBlocks(deps, "user-1", [target]);
 
 		expect(blocks.get(cleanupDeleteTargetKey(target))).toContain(
 			"another configured Sonarr instance may access the same storage under a different path",
@@ -322,9 +320,7 @@ describe("shared Plex deletion safety for Sonarr", () => {
 		const { deps, getSeriesEpisodeMediaPartsByTvdbId } = makeSonarrDeps();
 		const context = createSharedPlexSafetyContext();
 
-		expect(await findSharedPlexDeleteBlocks(deps, "user-1", [target], undefined, context)).toEqual(
-			new Map(),
-		);
+		expect(await findSharedPlexDeleteBlocks(deps, "user-1", [target], context)).toEqual(new Map());
 		expect(getSeriesEpisodeMediaPartsByTvdbId).toHaveBeenCalledWith(123);
 		expect(context.plans.get(cleanupDeleteTargetKey(target))).toMatchObject({
 			kind: "verified_sonarr",
@@ -340,7 +336,6 @@ describe("shared Plex deletion safety for Sonarr", () => {
 			deps,
 			"user-1",
 			[target, { ...target, arrItemId: 202 }],
-			undefined,
 			context,
 		);
 
@@ -362,16 +357,8 @@ describe("shared Plex deletion safety for Sonarr", () => {
 			},
 		]);
 
-		expect(await findSharedPlexDeleteBlocks(deps, "user-1", [target], undefined, context)).toEqual(
-			new Map(),
-		);
-		const changedBlocks = await findSharedPlexDeleteBlocks(
-			deps,
-			"user-1",
-			[target],
-			undefined,
-			context,
-		);
+		expect(await findSharedPlexDeleteBlocks(deps, "user-1", [target], context)).toEqual(new Map());
+		const changedBlocks = await findSharedPlexDeleteBlocks(deps, "user-1", [target], context);
 
 		expect(changedBlocks.get(cleanupDeleteTargetKey(target))).toContain("Emby/Jellyfin");
 		expect(targetClient.notification.getAll).toHaveBeenCalledTimes(2);
@@ -541,9 +528,7 @@ describe("shared Plex deletion safety for Sonarr", () => {
 		});
 		const context = createSharedPlexSafetyContext();
 
-		expect(await findSharedPlexDeleteBlocks(deps, "user-1", [target], undefined, context)).toEqual(
-			new Map(),
-		);
+		expect(await findSharedPlexDeleteBlocks(deps, "user-1", [target], context)).toEqual(new Map());
 		expect(getSeriesEpisodeMediaPartsByTvdbId).not.toHaveBeenCalled();
 		expect(context.plans.get(cleanupDeleteTargetKey(target))).toMatchObject({
 			kind: "verified_sonarr",
@@ -557,9 +542,7 @@ describe("shared Plex deletion safety for Sonarr", () => {
 		});
 		const context = createSharedPlexSafetyContext();
 
-		expect(await findSharedPlexDeleteBlocks(deps, "user-1", [target], undefined, context)).toEqual(
-			new Map(),
-		);
+		expect(await findSharedPlexDeleteBlocks(deps, "user-1", [target], context)).toEqual(new Map());
 		expect(getSeriesEpisodeMediaPartsByTvdbId).not.toHaveBeenCalled();
 		expect(context.plans.get(cleanupDeleteTargetKey(target))).toMatchObject({
 			kind: "verified_sonarr",
@@ -1151,6 +1134,87 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(bulkDelete).toHaveBeenCalledOnce();
 		expect(deleteSeries).toHaveBeenCalledTimes(2);
 		expect(storedApproval).toMatchObject({ status: "expired" });
+	});
+
+	it("expires an approved Sonarr mutation when the service is repointed after preflight", async () => {
+		const { deps, targetInstance, bulkDelete, deleteSeries } = makeSonarrDeps();
+		const storedApproval = approval() as unknown as Record<string, unknown>;
+		configureApprovalStore(deps, storedApproval);
+		const repointedInstance = {
+			...targetInstance,
+			baseUrl: "http://replacement-sonarr.internal:8989",
+			updatedAt: new Date("2026-07-27T13:00:00.000Z"),
+		};
+		let arrInstanceReads = 0;
+		vi.mocked(deps.prisma.serviceInstance.findMany).mockImplementation(
+			(args) =>
+				(args?.where?.service === "PLEX"
+					? Promise.resolve([
+							{
+								id: "plex-1",
+								userId: "user-1",
+								service: "PLEX",
+								label: "Plex",
+								baseUrl: "http://plex.internal:32400",
+								enabled: true,
+								encryptedApiKey: "encrypted",
+								encryptionIv: "iv",
+							},
+						])
+					: Promise.resolve([
+							++arrInstanceReads === 1 ? targetInstance : repointedInstance,
+						])) as never,
+		);
+
+		const result = await executeApprovedItems(deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(result.errors[0]).toContain("ARR target changed during live verification");
+		expect(bulkDelete).not.toHaveBeenCalled();
+		expect(deleteSeries).not.toHaveBeenCalled();
+		expect(storedApproval).toMatchObject({ status: "expired", executionToken: null });
+	});
+
+	it("expires an approved Sonarr mutation when a sibling instance appears after preflight", async () => {
+		const { deps, targetInstance, bulkDelete, deleteSeries } = makeSonarrDeps();
+		const storedApproval = approval() as unknown as Record<string, unknown>;
+		configureApprovalStore(deps, storedApproval);
+		const siblingInstance = {
+			...targetInstance,
+			id: "sonarr-hd",
+			label: "HD Sonarr",
+			baseUrl: "http://sonarr-hd.internal:8989",
+		};
+		let arrInstanceReads = 0;
+		vi.mocked(deps.prisma.serviceInstance.findMany).mockImplementation(
+			(args) =>
+				(args?.where?.service === "PLEX"
+					? Promise.resolve([
+							{
+								id: "plex-1",
+								userId: "user-1",
+								service: "PLEX",
+								label: "Plex",
+								baseUrl: "http://plex.internal:32400",
+								enabled: true,
+								encryptedApiKey: "encrypted",
+								encryptionIv: "iv",
+							},
+						])
+					: Promise.resolve(
+							++arrInstanceReads === 1 ? [targetInstance] : [targetInstance, siblingInstance],
+						)) as never,
+		);
+
+		const result = await executeApprovedItems(deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(result.errors[0]).toContain(
+			"another configured Sonarr instance may access the same storage",
+		);
+		expect(bulkDelete).not.toHaveBeenCalled();
+		expect(deleteSeries).not.toHaveBeenCalled();
+		expect(storedApproval).toMatchObject({ status: "expired", executionToken: null });
 	});
 
 	it("durably retries a direct Sonarr record deletion after exact file removal", async () => {

@@ -22,11 +22,14 @@ import { safeJsonParse } from "../utils/json.js";
 import { applyQuiSeedingFilter } from "./qui-filter.js";
 import { evaluateItemAgainstRules, extractRating } from "./rule-evaluators.js";
 import {
+	ArrCrossInstanceOwnershipChangedDuringSafetyCheckError,
 	ArrFileChangedDuringSafetyCheckError,
+	ArrMutationAuthorityChangedDuringSafetyCheckError,
 	assertVerifiedArrTargetUnchanged,
 	assertVerifiedRadarrEmptyUnchanged,
 	assertVerifiedRadarrFileUnchanged,
 	assertVerifiedSonarrFilesUnchanged,
+	ArrTargetChangedDuringSafetyCheckError,
 	buildCacheTargetSafetyPlan,
 	buildRadarrCacheSafetyPlan,
 	buildSonarrCacheSafetyPlan,
@@ -482,6 +485,45 @@ function asExecutableSafetyPlan(
 	return null;
 }
 
+async function loadCurrentMutationInstance(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	instanceId: string,
+	safetyPlan: SharedMediaSafetyPlan,
+): Promise<ServiceInstance> {
+	const executablePlan = asExecutableSafetyPlan(safetyPlan);
+	const instances = await deps.prisma.serviceInstance.findMany({
+		where: {
+			userId,
+			service: { in: ["RADARR", "SONARR"] },
+		},
+	});
+	const instance = instances.find((candidate) => candidate.id === instanceId);
+	if (
+		instance?.enabled !== true ||
+		(instance.service !== "RADARR" && instance.service !== "SONARR") ||
+		!executablePlan ||
+		createArrServiceFingerprint(instance) !== executablePlan.target.serviceFingerprint
+	) {
+		throw new ArrTargetChangedDuringSafetyCheckError();
+	}
+	const verifiedFileCount =
+		executablePlan.kind === "verified_radarr"
+			? 1
+			: executablePlan.kind === "verified_sonarr"
+				? executablePlan.files.episodeFiles.length
+				: 0;
+	if (
+		verifiedFileCount > 0 &&
+		instances.some(
+			(candidate) => candidate.id !== instance.id && candidate.service === instance.service,
+		)
+	) {
+		throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError(instance.service);
+	}
+	return instance;
+}
+
 async function persistAndClaimDirectMutationIntent(
 	deps: CleanupExecutorDeps,
 	config: LibraryCleanupConfig,
@@ -841,7 +883,6 @@ export async function executeCleanupPreview(
 		deps,
 		userId,
 		toDeleteTargets(inspected),
-		undefined,
 		safetyContext,
 	);
 	await blockPlansThatDifferFromEvaluatedCache(
@@ -952,7 +993,6 @@ export async function executeCleanupRun(
 			deps,
 			userId,
 			toDeleteTargets(limited),
-			undefined,
 			safetyContext,
 		);
 		await blockPlansThatDifferFromEvaluatedCache(
@@ -1011,7 +1051,6 @@ export async function executeCleanupRun(
 				deps,
 				userId,
 				toDeleteTargets(limited),
-				undefined,
 				safetyContext,
 			);
 			await blockPlansThatDifferFromEvaluatedCache(
@@ -1367,8 +1406,8 @@ async function executeQueuedCleanupItems(
 
 			let sharedPlexBlock: string | undefined;
 			let approvalIdentityChanged = false;
-			let safetyPlan: SharedMediaSafetyPlan | undefined;
 			const approvedPlan = parseExecutableSafetyPlan(approval.safetySnapshot);
+			let safetyPlan: SharedMediaSafetyPlan | undefined = approvedPlan ?? undefined;
 			const recoveringInterruptedMutation =
 				options.claimStatus === "retry_pending" ||
 				approval.lastExecutionError === INTERRUPTED_CLEANUP_RECOVERY_MESSAGE;
@@ -1410,7 +1449,6 @@ async function executeQueuedCleanupItems(
 								action,
 							},
 						],
-						[instance],
 						sharedPlexSafetyContext,
 					);
 					sharedPlexBlock = blocks.get(targetKey);
@@ -1519,11 +1557,17 @@ async function executeQueuedCleanupItems(
 					continue;
 				}
 				mutationAttemptedApprovalIds.add(approval.id);
+				const mutationInstance = await loadCurrentMutationInstance(
+					deps,
+					userId,
+					approval.instanceId,
+					safetyPlan!,
+				);
 
 				if (retryTargetAlreadyAbsent) {
 					executionCompleted = true;
 					reconciledWithoutMutation = true;
-					await reconcileSonarrEpisodeFileCache(prisma, instance, approval.arrItemId, log);
+					await reconcileSonarrEpisodeFileCache(prisma, mutationInstance, approval.arrItemId, log);
 					await prisma.libraryCache
 						.deleteMany({
 							where: {
@@ -1539,7 +1583,7 @@ async function executeQueuedCleanupItems(
 							);
 						});
 				} else if (action === "unmonitor") {
-					await unmonitorInArr(arrClientFactory, instance, approval.arrItemId, safetyPlan!);
+					await unmonitorInArr(arrClientFactory, mutationInstance, approval.arrItemId, safetyPlan!);
 					executionCompleted = true;
 					await prisma.libraryCache
 						.updateMany({
@@ -1559,13 +1603,13 @@ async function executeQueuedCleanupItems(
 				} else if (action === "delete_files") {
 					const deletedFiles = await deleteFilesFromArr(
 						arrClientFactory,
-						instance,
+						mutationInstance,
 						approval.arrItemId,
 						safetyPlan!,
 					);
 					executionCompleted = true;
 					reconciledWithoutMutation = !deletedFiles;
-					await reconcileSonarrEpisodeFileCache(prisma, instance, approval.arrItemId, log);
+					await reconcileSonarrEpisodeFileCache(prisma, mutationInstance, approval.arrItemId, log);
 					await prisma.libraryCache
 						.updateMany({
 							where: {
@@ -1582,9 +1626,9 @@ async function executeQueuedCleanupItems(
 							);
 						});
 				} else {
-					await deleteFromArr(arrClientFactory, instance, approval.arrItemId, safetyPlan!);
+					await deleteFromArr(arrClientFactory, mutationInstance, approval.arrItemId, safetyPlan!);
 					executionCompleted = true;
-					await reconcileSonarrEpisodeFileCache(prisma, instance, approval.arrItemId, log);
+					await reconcileSonarrEpisodeFileCache(prisma, mutationInstance, approval.arrItemId, log);
 					await prisma.libraryCache
 						.deleteMany({
 							where: {
@@ -1690,6 +1734,8 @@ async function executeQueuedCleanupItems(
 					error instanceof ArrDeletePartialError
 						? error.message
 						: "Cleanup item could not be executed. Review the API logs for details.";
+				const mutationAuthorityChanged =
+					error instanceof ArrMutationAuthorityChangedDuringSafetyCheckError;
 				errors.push(executionError);
 				failed++;
 				const postPartialRetrySnapshot =
@@ -1709,13 +1755,15 @@ async function executeQueuedCleanupItems(
 						options.executeStatus,
 						claimedExecutionToken,
 						{
-							status: options.retryStatus,
+							status: mutationAuthorityChanged ? "expired" : options.retryStatus,
 							executionToken: null,
 							lastExecutionError: executionError,
+							...(mutationAuthorityChanged ? { reviewedAt: new Date() } : {}),
 							...(postPartialRetrySnapshot ? { safetySnapshot: postPartialRetrySnapshot } : {}),
 						},
 					);
 					retryStatePersisted = true;
+					if (mutationAuthorityChanged) expiredIds.push(approval.id);
 				} catch (revertErr) {
 					errors.push(
 						"Cleanup files changed, but arr-dashboard could not record retry state. Cached file state was left unchanged.",
@@ -3057,7 +3105,6 @@ export async function executeDirectRemoval(
 						action: ruleAction,
 					},
 				],
-				[instance],
 				sharedPlexSafetyContext,
 			);
 			await blockPlansThatDifferFromEvaluatedCache(
@@ -3157,9 +3204,20 @@ export async function executeDirectRemoval(
 				);
 				continue;
 			}
+			const mutationInstance = await loadCurrentMutationInstance(
+				deps,
+				userId,
+				instance.id,
+				safetyPlan!,
+			);
 
 			if (ruleAction === "unmonitor") {
-				await unmonitorInArr(arrClientFactory, instance, item.cacheItem.arrItemId, safetyPlan!);
+				await unmonitorInArr(
+					arrClientFactory,
+					mutationInstance,
+					item.cacheItem.arrItemId,
+					safetyPlan!,
+				);
 				try {
 					await prisma.libraryCache.updateMany({
 						where: {
@@ -3185,11 +3243,16 @@ export async function executeDirectRemoval(
 			} else if (ruleAction === "delete_files") {
 				const deletedFiles = await deleteFilesFromArr(
 					arrClientFactory,
-					instance,
+					mutationInstance,
 					item.cacheItem.arrItemId,
 					safetyPlan!,
 				);
-				await reconcileSonarrEpisodeFileCache(prisma, instance, item.cacheItem.arrItemId, log);
+				await reconcileSonarrEpisodeFileCache(
+					prisma,
+					mutationInstance,
+					item.cacheItem.arrItemId,
+					log,
+				);
 				try {
 					await prisma.libraryCache.updateMany({
 						where: {
@@ -3224,8 +3287,18 @@ export async function executeDirectRemoval(
 				);
 			} else {
 				// Default: delete
-				await deleteFromArr(arrClientFactory, instance, item.cacheItem.arrItemId, safetyPlan!);
-				await reconcileSonarrEpisodeFileCache(prisma, instance, item.cacheItem.arrItemId, log);
+				await deleteFromArr(
+					arrClientFactory,
+					mutationInstance,
+					item.cacheItem.arrItemId,
+					safetyPlan!,
+				);
+				await reconcileSonarrEpisodeFileCache(
+					prisma,
+					mutationInstance,
+					item.cacheItem.arrItemId,
+					log,
+				);
 				try {
 					await prisma.libraryCache.deleteMany({
 						where: {
