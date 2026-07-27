@@ -15,7 +15,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { anonymizeHealthMessage, anonymizePulseText } from "../incognito";
+import { anonymizeCleanupError, anonymizeHealthMessage, anonymizePulseText } from "../incognito";
 
 describe("anonymizePulseText — source-aware masking", () => {
 	it("leaves system-sourced titles un-split (no instance-label substitution)", () => {
@@ -102,5 +102,21 @@ describe("anonymizeHealthMessage — URL and IP stripping", () => {
 		expect(out).toContain("http://linux-host");
 		expect(out).not.toContain("MyIndexer");
 		expect(out).not.toContain("proxy.local");
+	});
+});
+
+describe("anonymizeCleanupError — persisted retry failures", () => {
+	it("fails closed for case-varied identities, paths, URLs, IPv4, and IPv6", () => {
+		const out = anonymizeCleanupError(
+			'Failed for SECRET RADARR while deleting "private movie" from /home/alice/media at http://secret.internal:7878, 192.168.1.42, and [fd00::42]:7878',
+		);
+
+		expect(out).toBe("Cleanup retry failed; details hidden in incognito mode.");
+		expect(out).not.toContain("SECRET RADARR");
+		expect(out).not.toContain("private movie");
+		expect(out).not.toContain("/home/alice");
+		expect(out).not.toContain("secret.internal");
+		expect(out).not.toContain("192.168.1.42");
+		expect(out).not.toContain("fd00::42");
 	});
 });

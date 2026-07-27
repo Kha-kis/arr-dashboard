@@ -53,7 +53,15 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
-import { getLinuxIsoName, useIncognitoMode } from "@/lib/incognito";
+import { getErrorMessage } from "@/lib/error-utils";
+import {
+	anonymizeCleanupError,
+	getIncognitoCleanupReason,
+	getIncognitoCleanupRuleName,
+	getLinuxInstanceName,
+	getLinuxIsoName,
+	useIncognitoMode,
+} from "@/lib/incognito";
 import { INPUT_BASE_CLASSES } from "@/lib/theme-input-styles";
 import {
 	useApproveCleanupItem,
@@ -70,6 +78,7 @@ import {
 	useDeleteCleanupRule,
 	useRejectCleanupItem,
 	useReorderCleanupRules,
+	useRetryCleanupItem,
 	useUpdateCleanupConfig,
 	useUpdateCleanupRule,
 } from "../../../hooks/api/useLibraryCleanup";
@@ -213,7 +222,9 @@ function ConfigTab({
 		itemsFlagged: number;
 		itemsUnmonitored?: number;
 		itemsFilesDeleted?: number;
+		itemsSkipped?: number;
 		status: string;
+		warnings?: string[];
 	};
 	previewError?: Error | null;
 	executeError?: Error | null;
@@ -280,11 +291,12 @@ function ConfigTab({
 
 	const actionCounts = useMemo(() => {
 		if (!previewData?.items) return null;
-		const counts = { delete: 0, unmonitor: 0, delete_files: 0 };
+		const counts = { delete: 0, unmonitor: 0, delete_files: 0, skipped: 0 };
 		for (const item of previewData.items) {
 			const action = item.action ?? "delete";
 			if (action === "unmonitor") counts.unmonitor++;
 			else if (action === "delete_files") counts.delete_files++;
+			else if (action === "skipped") counts.skipped++;
 			else counts.delete++;
 		}
 		return counts;
@@ -548,9 +560,7 @@ function ConfigTab({
 
 				{executeResult && (
 					<span className="text-sm text-muted-foreground">
-						{executeResult.status === "completed"
-							? `Done: ${executeResult.itemsFlagged} flagged, ${executeResult.itemsRemoved} removed${executeResult.itemsUnmonitored ? `, ${executeResult.itemsUnmonitored} unmonitored` : ""}${executeResult.itemsFilesDeleted ? `, ${executeResult.itemsFilesDeleted} files deleted` : ""}`
-							: `Status: ${executeResult.status}`}
+						{`Status: ${executeResult.status}. ${executeResult.itemsFlagged} flagged, ${executeResult.itemsRemoved} removed${executeResult.itemsUnmonitored ? `, ${executeResult.itemsUnmonitored} unmonitored` : ""}${executeResult.itemsFilesDeleted ? `, ${executeResult.itemsFilesDeleted} files deleted` : ""}${executeResult.itemsSkipped ? `, ${executeResult.itemsSkipped} skipped` : ""}`}
 					</span>
 				)}
 			</div>
@@ -566,6 +576,14 @@ function ConfigTab({
 					Execution failed: {executeError.message}
 				</div>
 			)}
+			{executeResult?.warnings?.map((warning) => (
+				<div
+					key={warning}
+					className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-400"
+				>
+					{warning}
+				</div>
+			))}
 
 			{/* Preview results */}
 			{previewData && (
@@ -586,7 +604,13 @@ function ConfigTab({
 					<div className="relative p-5">
 						<h4 className="text-h4 mb-3">
 							Preview Results ({previewData.totalFlagged} of {previewData.totalEvaluated} items
-							flagged)
+							flagged
+							{previewData.pendingRetryCount
+								? ` · ${previewData.pendingRetryCount} ${
+										previewData.pendingRetryCount === 1 ? "retry" : "retries"
+									} pending`
+								: ""}
+							)
 						</h4>
 						{previewData.prefetchHealth &&
 							Object.entries(previewData.prefetchHealth).some(([, s]) => s === "failed") && (
@@ -622,6 +646,9 @@ function ConfigTab({
 								{actionCounts.delete_files > 0 && (
 									<StatusBadge status="info">{actionCounts.delete_files} Delete Files</StatusBadge>
 								)}
+								{actionCounts.skipped > 0 && (
+									<StatusBadge status="warning">{actionCounts.skipped} Safety-blocked</StatusBadge>
+								)}
 							</div>
 						)}
 						{previewData.items.length === 0 ? (
@@ -632,18 +659,26 @@ function ConfigTab({
 							<div className="max-h-80 overflow-y-auto space-y-2">
 								{previewData.items.map((item, i) => {
 									const score = extractStalenessScore(item.reason);
+									const ruleSummary = incognitoMode
+										? `${getIncognitoCleanupRuleName()}: ${getIncognitoCleanupReason()}`
+										: `${item.matchedRuleName}: ${item.reason}`;
 									return (
 										<div
 											key={`${item.title}-${i}`}
-											className="flex items-center justify-between rounded-md bg-card/20 px-3 py-2 text-sm"
+											className="flex items-start justify-between gap-3 rounded-md bg-card/20 px-3 py-2 text-sm"
 										>
-											<span className="truncate flex items-center gap-2">
-												<span className="truncate">
-													{incognitoMode ? getLinuxIsoName(item.title) : item.title}
-												</span>
-												<QuiStatusBadge status={item.quiStatus} />
-											</span>
-											<div className="flex items-center gap-2 shrink-0 ml-3">
+											<div className="min-w-0 flex-1">
+												<div className="flex items-center gap-2">
+													<span className="truncate">
+														{incognitoMode ? getLinuxIsoName(item.title) : item.title}
+													</span>
+													<QuiStatusBadge status={item.quiStatus} />
+												</div>
+												{item.action === "skipped" && (
+													<p className="mt-1 text-xs text-muted-foreground">{ruleSummary}</p>
+												)}
+											</div>
+											<div className="flex shrink-0 items-center gap-2">
 												<button
 													type="button"
 													onClick={() =>
@@ -659,8 +694,18 @@ function ConfigTab({
 													<HelpCircle className="h-3.5 w-3.5" />
 												</button>
 												{item.action !== "delete" && (
-													<StatusBadge status={item.action === "unmonitor" ? "warning" : "info"}>
-														{item.action === "unmonitor" ? "Unmonitor" : "Delete Files"}
+													<StatusBadge
+														status={
+															item.action === "unmonitor" || item.action === "skipped"
+																? "warning"
+																: "info"
+														}
+													>
+														{item.action === "unmonitor"
+															? "Unmonitor"
+															: item.action === "skipped"
+																? "Safety-blocked"
+																: "Delete Files"}
 													</StatusBadge>
 												)}
 												{score != null ? (
@@ -676,11 +721,9 @@ function ConfigTab({
 															{score.toFixed(0)}%
 														</span>
 													</div>
-												) : (
-													<span className="text-xs text-muted-foreground">
-														{item.matchedRuleName}: {item.reason}
-													</span>
-												)}
+												) : item.action !== "skipped" ? (
+													<span className="text-xs text-muted-foreground">{ruleSummary}</span>
+												) : null}
 											</div>
 										</div>
 									);
@@ -862,8 +905,10 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 	const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 	const { data, isLoading, isError, refetch } = useCleanupApprovalQueue(page, 20, statusFilter);
 	const approve = useApproveCleanupItem();
+	const retry = useRetryCleanupItem();
 	const reject = useRejectCleanupItem();
 	const bulkAction = useBulkCleanupAction();
+	const actionError = approve.error ?? retry.error ?? bulkAction.error;
 
 	const totalPages = data ? Math.ceil(data.total / data.pageSize) : 0;
 
@@ -892,14 +937,16 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 	const handleBulkAction = useCallback(
 		(action: "approved" | "rejected") => {
 			const ids = [...selectedIds];
+			approve.reset();
+			retry.reset();
 			bulkAction.mutate(
 				{ ids, action },
 				{
-					onSuccess: () => setSelectedIds(new Set()),
+					onSettled: () => setSelectedIds(new Set()),
 				},
 			);
 		},
-		[selectedIds, bulkAction],
+		[selectedIds, approve, retry, bulkAction],
 	);
 
 	const showCheckboxes = statusFilter === "pending" && data && data.items.length > 0;
@@ -912,23 +959,30 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 		<div className="space-y-4">
 			{/* Status filter + select-all */}
 			<div className="flex items-center gap-3">
-				<div className="flex items-center gap-2">
-					{["pending", "approved", "rejected", "expired"].map((s) => (
+				<div className="flex flex-wrap items-center gap-2">
+					{[
+						{ value: "pending", label: "Pending" },
+						{ value: "retry_pending", label: "Retry pending" },
+						{ value: "retry_executing", label: "Retry running" },
+						{ value: "approved", label: "Approved" },
+						{ value: "rejected", label: "Rejected" },
+						{ value: "expired", label: "Expired" },
+					].map(({ value, label }) => (
 						<button
-							key={s}
+							key={value}
 							type="button"
 							onClick={() => {
-								setStatusFilter(s);
+								setStatusFilter(value);
 								setPage(1);
 							}}
-							aria-pressed={statusFilter === s}
+							aria-pressed={statusFilter === value}
 							className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-								statusFilter === s
+								statusFilter === value
 									? "bg-primary/20 text-primary border border-primary/30"
 									: "bg-card/30 text-muted-foreground hover:bg-card/50 border border-border/30"
 							}`}
 						>
-							{s.charAt(0).toUpperCase() + s.slice(1)}
+							{label}
 						</button>
 					))}
 				</div>
@@ -962,6 +1016,15 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 					onApprove={() => handleBulkAction("approved")}
 					onReject={() => handleBulkAction("rejected")}
 				/>
+			)}
+
+			{actionError && (
+				<div
+					role="alert"
+					className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400 whitespace-pre-line"
+				>
+					{getErrorMessage(actionError)}
+				</div>
 			)}
 
 			{isLoading ? (
@@ -1030,7 +1093,9 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 											type="button"
 											role="checkbox"
 											aria-checked={selectedIds.has(item.id)}
-											aria-label={`Select ${item.title}`}
+											aria-label={`Select ${
+												incognitoMode ? getLinuxIsoName(item.title) : item.title
+											}`}
 											onClick={() => toggleItem(item.id)}
 											className="shrink-0"
 										>
@@ -1060,7 +1125,9 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 											)}
 											{item.instanceLabel && (
 												<span className="inline-flex rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground border border-border/30">
-													{item.instanceLabel}
+													{incognitoMode
+														? getLinuxInstanceName(item.instanceLabel)
+														: item.instanceLabel}
 												</span>
 											)}
 											{item.action && item.action !== "delete" && (
@@ -1070,8 +1137,18 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 											)}
 										</div>
 										<p className="text-xs text-muted-foreground mt-0.5">
-											{item.matchedRuleName}: {item.reason}
+											{incognitoMode
+												? `${getIncognitoCleanupRuleName()}: ${getIncognitoCleanupReason()}`
+												: `${item.matchedRuleName}: ${item.reason}`}
 										</p>
+										{item.lastExecutionError && (
+											<p className="mt-1 text-xs text-red-400">
+												Last execution attempt:{" "}
+												{incognitoMode
+													? anonymizeCleanupError(item.lastExecutionError)
+													: item.lastExecutionError}
+											</p>
+										)}
 									</div>
 									<span className="text-xs text-muted-foreground shrink-0">
 										{(Number(item.sizeOnDisk) / 1073741824).toFixed(1)} GB
@@ -1095,7 +1172,11 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 										<div className="flex gap-2">
 											<button
 												type="button"
-												onClick={() => approve.mutate(item.id)}
+												onClick={() => {
+													retry.reset();
+													bulkAction.reset();
+													approve.mutate(item.id);
+												}}
 												disabled={approve.isPending}
 												className="rounded-md px-3 py-1 text-xs font-medium bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-colors"
 											>
@@ -1103,13 +1184,32 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 											</button>
 											<button
 												type="button"
-												onClick={() => reject.mutate(item.id)}
+												onClick={() => {
+													approve.reset();
+													retry.reset();
+													bulkAction.reset();
+													reject.mutate(item.id);
+												}}
 												disabled={reject.isPending}
 												className="rounded-md px-3 py-1 text-xs font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
 											>
 												Reject
 											</button>
 										</div>
+									)}
+									{statusFilter === "retry_pending" && (
+										<button
+											type="button"
+											onClick={() => {
+												approve.reset();
+												bulkAction.reset();
+												retry.mutate(item.id);
+											}}
+											disabled={retry.isPending}
+											className="rounded-md px-3 py-1 text-xs font-medium bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors disabled:opacity-50"
+										>
+											Resume retry
+										</button>
 									)}
 								</div>
 							</div>

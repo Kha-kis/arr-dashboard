@@ -438,6 +438,9 @@ export const libraryCleanupKeys = {
 	fieldOptions: ["library-cleanup-field-options"] as const,
 	config: ["library-cleanup-config"] as const,
 	status: ["library-cleanup-status"] as const,
+	approvals: ["library-cleanup-approvals"] as const,
+	logsAll: ["library-cleanup-logs"] as const,
+	statisticsAll: ["library-cleanup-statistics"] as const,
 	statistics: (days: number) => ["library-cleanup-statistics", days] as const,
 	approvalQueue: (page: number, status?: string) =>
 		["library-cleanup-approvals", page, status] as const,

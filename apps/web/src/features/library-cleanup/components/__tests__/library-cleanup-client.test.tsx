@@ -66,6 +66,7 @@ const mockUseReorderCleanupRules = vi.fn();
 const mockUseCleanupFieldOptions = vi.fn();
 const mockUseCleanupApprovalQueue = vi.fn();
 const mockUseApproveCleanupItem = vi.fn();
+const mockUseRetryCleanupItem = vi.fn();
 const mockUseRejectCleanupItem = vi.fn();
 const mockUseBulkCleanupAction = vi.fn();
 const mockUseCleanupLogs = vi.fn();
@@ -84,6 +85,7 @@ vi.mock("../../../../hooks/api/useLibraryCleanup", () => ({
 	useCleanupFieldOptions: () => mockUseCleanupFieldOptions(),
 	useCleanupApprovalQueue: (...args: unknown[]) => mockUseCleanupApprovalQueue(...args),
 	useApproveCleanupItem: () => mockUseApproveCleanupItem(),
+	useRetryCleanupItem: () => mockUseRetryCleanupItem(),
 	useRejectCleanupItem: () => mockUseRejectCleanupItem(),
 	useBulkCleanupAction: () => mockUseBulkCleanupAction(),
 	useCleanupLogs: () => mockUseCleanupLogs(),
@@ -213,6 +215,7 @@ function setupDefaultMocks(configOverrides: Partial<CleanupConfigResponse> = {})
 		refetch: vi.fn(),
 	});
 	mockUseApproveCleanupItem.mockReturnValue(defaultMutation());
+	mockUseRetryCleanupItem.mockReturnValue(defaultMutation());
 	mockUseRejectCleanupItem.mockReturnValue(defaultMutation());
 	mockUseBulkCleanupAction.mockReturnValue(defaultMutation());
 	mockUseCleanupLogs.mockReturnValue({
@@ -236,6 +239,7 @@ function setupDefaultMocks(configOverrides: Partial<CleanupConfigResponse> = {})
 describe("LibraryCleanupClient", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		localStorage.clear();
 		setupDefaultMocks();
 	});
 
@@ -441,6 +445,305 @@ describe("LibraryCleanupClient", () => {
 			await waitFor(() => {
 				expect(screen.queryByText("2 items selected")).not.toBeInTheDocument();
 			});
+		});
+
+		it("makes durable pending and executing retries visible", async () => {
+			setupApprovalTab();
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+
+			fireEvent.click(screen.getByText("Approval Queue"));
+			fireEvent.click(await screen.findByRole("button", { name: "Retry pending" }));
+
+			await waitFor(() => {
+				expect(mockUseCleanupApprovalQueue).toHaveBeenLastCalledWith(1, 20, "retry_pending");
+			});
+
+			fireEvent.click(screen.getByRole("button", { name: "Retry running" }));
+			await waitFor(() => {
+				expect(mockUseCleanupApprovalQueue).toHaveBeenLastCalledWith(1, 20, "retry_executing");
+			});
+		});
+
+		it("allows an operator to explicitly resume a durable pending retry", async () => {
+			setupApprovalTab();
+			const retryMutate = vi.fn();
+			mockUseRetryCleanupItem.mockReturnValue(defaultMutation({ mutate: retryMutate }));
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+
+			fireEvent.click(screen.getByText("Approval Queue"));
+			fireEvent.click(await screen.findByRole("button", { name: "Retry pending" }));
+			fireEvent.click((await screen.findAllByRole("button", { name: "Resume retry" }))[0]!);
+
+			expect(retryMutate).toHaveBeenCalledWith("item-1");
+		});
+
+		it("clears a stale retry error before an approval action", async () => {
+			setupApprovalTab();
+			const retryReset = vi.fn();
+			mockUseRetryCleanupItem.mockReturnValue(
+				defaultMutation({ error: new Error("Retry failed"), reset: retryReset }),
+			);
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+
+			fireEvent.click(screen.getByText("Approval Queue"));
+			fireEvent.click((await screen.findAllByRole("button", { name: "Approve" }))[0]!);
+
+			expect(retryReset).toHaveBeenCalledOnce();
+		});
+	});
+
+	describe("shared Plex safety feedback", () => {
+		it("reports durable retries separately from current rule matches", () => {
+			mockUseCleanupPreview.mockReturnValue(
+				defaultMutation({
+					data: {
+						totalEvaluated: 0,
+						totalFlagged: 0,
+						pendingRetryCount: 1,
+						items: [],
+					},
+				}),
+			);
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+
+			expect(
+				screen.getByText("Preview Results (0 of 0 items flagged · 1 retry pending)"),
+			).toBeInTheDocument();
+		});
+
+		it("renders safety-blocked preview items separately from delete actions", () => {
+			mockUseCleanupPreview.mockReturnValue(
+				defaultMutation({
+					data: {
+						totalEvaluated: 1,
+						totalFlagged: 1,
+						items: [
+							{
+								instanceId: "radarr-4k",
+								instanceLabel: "4K Radarr",
+								arrItemId: 101,
+								itemType: "movie",
+								title: "Example Movie",
+								matchedRuleName: "4K cleanup",
+								reason: "Skipped for safety: shared Plex risk",
+								action: "skipped",
+								sizeOnDisk: "1000",
+								year: 2024,
+								rating: 8,
+								quiStatus: "no_signal",
+							},
+						],
+						warnings: ["A deletion was safety-blocked."],
+					},
+				}),
+			);
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+
+			expect(screen.getAllByText("1 Safety-blocked")).toHaveLength(1);
+			expect(screen.queryByText("1 Delete")).not.toBeInTheDocument();
+			expect(screen.getByText(/Skipped for safety: shared Plex risk/)).toBeInTheDocument();
+		});
+
+		it("masks cleanup rule details in preview results in incognito mode", () => {
+			localStorage.setItem("arr-dashboard-incognito-mode", "true");
+			mockUseCleanupPreview.mockReturnValue(
+				defaultMutation({
+					data: {
+						totalEvaluated: 2,
+						totalFlagged: 2,
+						items: [
+							{
+								instanceId: "radarr-secret",
+								instanceLabel: "Secret Radarr",
+								arrItemId: 101,
+								itemType: "movie",
+								title: "Private Movie",
+								matchedRuleName: "Alice Path Cleanup",
+								reason:
+									'Retry failed for "/home/alice/Private Movie" on SECRET RADARR at [fd00::42]:7878',
+								action: "delete",
+								sizeOnDisk: "1000",
+								year: 2024,
+								rating: 8,
+								quiStatus: "no_signal",
+							},
+							{
+								instanceId: "sonarr-secret",
+								instanceLabel: "Secret Sonarr",
+								arrItemId: 202,
+								itemType: "series",
+								title: "Private Series",
+								matchedRuleName: "Bob Safety Rule",
+								reason: "Skipped for safety at /srv/bob/Private Series",
+								action: "skipped",
+								sizeOnDisk: "2000",
+								year: 2023,
+								rating: 7,
+								quiStatus: "no_signal",
+							},
+						],
+					},
+				}),
+			);
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+
+			expect(screen.getAllByText("Cleanup rule: Matched cleanup criteria")).toHaveLength(2);
+			expect(screen.queryByText(/Alice Path Cleanup/)).not.toBeInTheDocument();
+			expect(screen.queryByText(/Bob Safety Rule/)).not.toBeInTheDocument();
+			expect(screen.queryByText(/\/home\/alice/)).not.toBeInTheDocument();
+			expect(screen.queryByText(/\/srv\/bob/)).not.toBeInTheDocument();
+			expect(screen.queryByText(/fd00::42/)).not.toBeInTheDocument();
+		});
+
+		it("shows approval execution errors so a returned-to-pending item is actionable", async () => {
+			const approveMutate = vi.fn();
+			const approveReset = vi.fn();
+			const bulkReset = vi.fn();
+			mockUseCleanupApprovalQueue.mockReturnValue({
+				data: {
+					items: [
+						{
+							id: "item-1",
+							instanceId: "radarr-4k",
+							arrItemId: 101,
+							itemType: "movie",
+							title: "Example Movie",
+							matchedRuleName: "4K cleanup",
+							reason: "Matched 4K profile",
+							action: "delete",
+							sizeOnDisk: "1000",
+							year: 2024,
+							status: "pending",
+							lastExecutionError: "Skipped for safety: saved shared Plex risk",
+						},
+					],
+					total: 1,
+					page: 1,
+					pageSize: 20,
+				},
+				isLoading: false,
+				isError: false,
+				refetch: vi.fn(),
+			});
+			mockUseApproveCleanupItem.mockReturnValue(
+				defaultMutation({
+					mutate: approveMutate,
+					reset: approveReset,
+					error: new Error("Skipped for safety: shared Plex risk"),
+					isError: true,
+				}),
+			);
+			mockUseBulkCleanupAction.mockReturnValue(defaultMutation({ reset: bulkReset }));
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+			fireEvent.click(screen.getByText("Approval Queue"));
+
+			expect(await screen.findByRole("alert")).toHaveTextContent(
+				"Skipped for safety: shared Plex risk",
+			);
+			expect(
+				screen.getByText("Last execution attempt: Skipped for safety: saved shared Plex risk"),
+			).toBeInTheDocument();
+
+			fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+			expect(bulkReset).toHaveBeenCalledOnce();
+			expect(approveMutate).toHaveBeenCalledWith("item-1");
+			expect(approveReset).not.toHaveBeenCalled();
+		});
+
+		it("masks persisted retry errors and instance labels in incognito mode", async () => {
+			localStorage.setItem("arr-dashboard-incognito-mode", "true");
+			mockUseCleanupApprovalQueue.mockReturnValue({
+				data: {
+					items: [
+						{
+							id: "item-1",
+							instanceId: "radarr-secret",
+							instanceLabel: "Secret Radarr",
+							arrItemId: 101,
+							itemType: "movie",
+							title: "Private Movie",
+							matchedRuleName: "Alice Path Cleanup",
+							reason: 'Path "/home/alice/Private Movie" matches cleanup rule',
+							action: "delete",
+							sizeOnDisk: "1000",
+							year: 2024,
+							status: "retry_pending",
+							lastExecutionError: "Failed to decrypt API key for SECRET RADARR at [fd00::42]:7878",
+						},
+					],
+					total: 1,
+					page: 1,
+					pageSize: 20,
+				},
+				isLoading: false,
+				isError: false,
+				refetch: vi.fn(),
+			});
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+			fireEvent.click(screen.getByText("Approval Queue"));
+
+			await waitFor(() => {
+				expect(screen.queryByText(/Secret Radarr/)).not.toBeInTheDocument();
+				expect(screen.queryByText(/Private Movie/)).not.toBeInTheDocument();
+				expect(screen.queryByText(/Alice Path Cleanup/)).not.toBeInTheDocument();
+				expect(screen.queryByText(/\/home\/alice/)).not.toBeInTheDocument();
+				expect(screen.queryByText(/fd00::42/)).not.toBeInTheDocument();
+			});
+			expect(screen.getByText("Radarr 4K")).toBeInTheDocument();
+			expect(screen.getByText("Cleanup rule: Matched cleanup criteria")).toBeInTheDocument();
+			expect(
+				screen.getByText(
+					"Last execution attempt: Cleanup retry failed; details hidden in incognito mode.",
+				),
+			).toBeInTheDocument();
+		});
+
+		it("masks pending approval checkbox labels in incognito mode", async () => {
+			localStorage.setItem("arr-dashboard-incognito-mode", "true");
+			mockUseCleanupApprovalQueue.mockReturnValue({
+				data: {
+					items: [
+						{
+							id: "item-1",
+							instanceId: "radarr-secret",
+							instanceLabel: "Secret Radarr",
+							arrItemId: 101,
+							itemType: "movie",
+							title: "Private Movie",
+							matchedRuleName: "Private cleanup",
+							reason: "Matched private cleanup criteria",
+							action: "delete",
+							sizeOnDisk: "1000",
+							year: 2024,
+							status: "pending",
+						},
+					],
+					total: 1,
+					page: 1,
+					pageSize: 20,
+				},
+				isLoading: false,
+				isError: false,
+				refetch: vi.fn(),
+			});
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+			fireEvent.click(screen.getByText("Approval Queue"));
+
+			const itemCheckbox = await screen.findByRole("checkbox", {
+				name: /^Select .+\.iso$/,
+			});
+			expect(itemCheckbox).not.toHaveAttribute("aria-label", "Select Private Movie");
+			expect(
+				screen.queryByRole("checkbox", { name: "Select Private Movie" }),
+			).not.toBeInTheDocument();
+			expect(screen.queryByText("Private Movie")).not.toBeInTheDocument();
 		});
 	});
 });
