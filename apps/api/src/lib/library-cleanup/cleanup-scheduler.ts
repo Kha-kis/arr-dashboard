@@ -172,6 +172,22 @@ export class CleanupScheduler {
 				.catch((err) => {
 					this.logger.warn({ err }, "Failed to recover stuck executing approvals");
 				});
+			await this.prisma.libraryCleanupApproval
+				.updateMany({
+					where: { status: "retry_executing", reviewedAt: { lt: stuckThreshold } },
+					data: { status: "retry_pending" },
+				})
+				.then((result) => {
+					if (result.count > 0) {
+						this.logger.warn(
+							{ recoveredCount: result.count },
+							"Recovered stuck record-only cleanup retries — returned them to retry pending",
+						);
+					}
+				})
+				.catch((err) => {
+					this.logger.warn({ err }, "Failed to recover stuck record-only cleanup retries");
+				});
 
 			// Find any user's config that is enabled and due for a run.
 			// (Single-admin app, so there's at most one config.)

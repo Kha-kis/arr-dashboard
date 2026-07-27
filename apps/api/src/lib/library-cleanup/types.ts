@@ -47,6 +47,8 @@ export interface CacheItemForEval {
 	qualityProfileName: string | null;
 	sizeOnDisk: bigint;
 	arrAddedAt: Date | null;
+	/** When this ARR cache row was last fully sourced from its service instance. */
+	cachedAt?: Date;
 	/** Full JSON data blob for extended lookups (e.g. tags, ratings) */
 	data: string;
 }

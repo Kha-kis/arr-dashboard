@@ -1275,8 +1275,8 @@ model LibraryCleanupApproval {
   sizeOnDisk      BigInt
   year            Int?
   rating          Float?
-  status          String   @default("pending") // "pending" | "approved" | "rejected" | "executing" | "executed" | "expired"
-  safetySnapshot  String?                      // Canonical JSON file identity approved for destructive execution
+  status          String   @default("pending") // "pending" | "approved" | "retry_pending" | "rejected" | "executing" | "retry_executing" | "executed" | "expired"
+  safetySnapshot  String?                      // Canonical JSON ARR target/file identity approved for mutation
   lastExecutionError String?
   reviewedAt      DateTime?
   executedAt      DateTime?

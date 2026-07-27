@@ -8,6 +8,7 @@ import {
 } from "../cleanup-executor.js";
 import {
 	cleanupDeleteTargetKey,
+	createArrServiceFingerprint,
 	createSharedPlexSafetyContext,
 	findSharedPlexDeleteBlocks,
 	serializeExecutableSafetyPlan,
@@ -19,6 +20,23 @@ const silentLog = {
 	error: vi.fn(),
 	info: vi.fn(),
 } as unknown as CleanupExecutorDeps["log"];
+
+const radarrTargetIdentity = {
+	serviceFingerprint: createArrServiceFingerprint({
+		id: "radarr-4k",
+		service: "RADARR",
+		baseUrl: "http://radarr.internal:7878",
+		encryptedApiKey: "encrypted-radarr-key",
+		encryptionIv: "radarr-iv",
+		encryptedHttpAuthCredentials: null,
+		httpAuthEncryptionIv: null,
+	} as never),
+	externalId: 42,
+	mediaPath: {
+		value: "/movies-4k/Example Movie (2024)",
+		windows: false,
+	},
+};
 
 function radarrSafetySnapshot(
 	file: {
@@ -35,8 +53,17 @@ function radarrSafetySnapshot(
 	},
 ) {
 	return serializeExecutableSafetyPlan(
-		file ? { kind: "verified_radarr", file } : { kind: "verified_radarr_empty" },
+		file
+			? { kind: "verified_radarr", target: radarrTargetIdentity, file }
+			: { kind: "verified_radarr_empty", target: radarrTargetIdentity },
 	);
+}
+
+function radarrTargetOnlySnapshot() {
+	return serializeExecutableSafetyPlan({
+		kind: "verified_arr_target",
+		target: radarrTargetIdentity,
+	});
 }
 
 function approvalRecord(overrides: Record<string, unknown> = {}) {
@@ -55,7 +82,12 @@ function approvalRecord(overrides: Record<string, unknown> = {}) {
 
 const radarrCachedFileIdentity = {
 	hasFile: true,
+	cachedAt: new Date("2026-07-27T12:05:00.000Z"),
 	data: JSON.stringify({
+		_arrDashboardSource: {
+			serviceFingerprint: radarrTargetIdentity.serviceFingerprint,
+		},
+		remoteIds: { tmdbId: 42 },
 		path: "/movies-4k/Example Movie (2024)",
 		movieFile: {
 			id: 1001,
@@ -120,7 +152,13 @@ function makeDeps(options: TestOptions = {}) {
 		userId: "user-1",
 		service: "RADARR",
 		label: "4K Radarr",
+		baseUrl: "http://radarr.internal:7878",
+		encryptedApiKey: "encrypted-radarr-key",
+		encryptionIv: "radarr-iv",
+		encryptedHttpAuthCredentials: null,
+		httpAuthEncryptionIv: null,
 		enabled: true,
+		updatedAt: new Date("2026-07-27T12:00:00.000Z"),
 	};
 	const plexInstance = {
 		id: "plex-1",
@@ -198,6 +236,7 @@ function makeDeps(options: TestOptions = {}) {
 						};
 					}),
 			delete: deleteMovie,
+			update: vi.fn().mockResolvedValue({}),
 		},
 		movieFile: {
 			getById: vi.fn().mockResolvedValue(targetMovieFile),
@@ -252,6 +291,7 @@ function makeDeps(options: TestOptions = {}) {
 			libraryCleanupApproval: {
 				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 				findMany: vi.fn().mockResolvedValue([]),
+				create: vi.fn().mockResolvedValue({}),
 				update: vi.fn().mockResolvedValue({}),
 			},
 			libraryCache: {
@@ -271,6 +311,7 @@ function makeDeps(options: TestOptions = {}) {
 
 	return {
 		deps,
+		targetInstance,
 		deleteMovie,
 		deleteMovieFile,
 		targetClient,
@@ -284,7 +325,69 @@ function makeDeps(options: TestOptions = {}) {
 		setLiveMovieFileId: (movieFileId: number | undefined) => {
 			liveMovieFileId = movieFileId;
 		},
+		setLiveMovieIdentity: (tmdbId: number, path: string) => {
+			targetMovie.tmdbId = tmdbId;
+			targetMovie.path = path;
+		},
 	};
+}
+
+function configureRetryStore(deps: CleanupExecutorDeps) {
+	const retries: Array<Record<string, unknown>> = [];
+	vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockImplementation((async ({
+		where,
+	}: {
+		where: { status?: string };
+	}) => {
+		if (where.status === "retry_pending") {
+			return retries.filter((retry) => retry.status === "retry_pending");
+		}
+		if (where.status === "retry_executing") {
+			return retries.filter((retry) => retry.status === "retry_executing");
+		}
+		return [];
+	}) as never);
+	vi.mocked(deps.prisma.libraryCleanupApproval.updateMany).mockImplementation((async ({
+		where,
+		data,
+	}: {
+		where: { id: string; status: string };
+		data: { status: string };
+	}) => {
+		const retry = retries.find(
+			(candidate) => candidate.id === where.id && candidate.status === where.status,
+		);
+		if (!retry) return { count: 0 };
+		Object.assign(retry, data);
+		return { count: 1 };
+	}) as never);
+	vi.mocked(deps.prisma.libraryCleanupApproval.create).mockImplementation((async ({
+		data,
+	}: {
+		data: Record<string, unknown>;
+	}) => {
+		const existing = retries.find((retry) => retry.id === data.id);
+		if (existing) {
+			const error = new Error("retry already exists") as Error & { code: string };
+			error.code = "P2002";
+			throw error;
+		}
+		const retry = { createdAt: new Date(), ...data };
+		retries.push(retry);
+		return retry;
+	}) as never);
+	vi.mocked(deps.prisma.libraryCleanupApproval.update).mockImplementation((async ({
+		where,
+		data,
+	}: {
+		where: { id: string };
+		data: Record<string, unknown>;
+	}) => {
+		const retry = retries.find((candidate) => candidate.id === where.id);
+		if (retry) Object.assign(retry, data);
+		return retry ?? {};
+	}) as never);
+	return retries;
 }
 
 describe("shared Plex deletion safety", () => {
@@ -652,7 +755,13 @@ describe("shared Plex deletion safety", () => {
 								userId: "user-1",
 								service: "RADARR",
 								label: "4K Radarr",
+								baseUrl: "http://radarr.internal:7878",
+								encryptedApiKey: "encrypted-radarr-key",
+								encryptionIv: "radarr-iv",
+								encryptedHttpAuthCredentials: null,
+								httpAuthEncryptionIv: null,
 								enabled: true,
+								updatedAt: new Date("2026-07-27T12:00:00.000Z"),
 							},
 						])
 			) as never;
@@ -707,7 +816,13 @@ describe("shared Plex deletion safety", () => {
 					userId: "user-1",
 					service: "RADARR",
 					label: "4K Radarr",
+					baseUrl: "http://radarr.internal:7878",
+					encryptedApiKey: "encrypted-radarr-key",
+					encryptionIv: "radarr-iv",
+					encryptedHttpAuthCredentials: null,
+					httpAuthEncryptionIv: null,
 					enabled: true,
+					updatedAt: new Date("2026-07-27T12:00:00.000Z"),
 				},
 			]) as never;
 		});
@@ -805,15 +920,90 @@ describe("shared Plex deletion safety", () => {
 		expect(getMovieMediaPartsByTmdbId).not.toHaveBeenCalled();
 	});
 
-	it("does not inspect non-destructive actions", async () => {
+	it("binds non-destructive actions to the live ARR target without inspecting Plex", async () => {
 		const { deps, plexClientFactory } = makeDeps();
-		const blocks = await findSharedPlexDeleteBlocks(deps, "user-1", [
-			{ ...target, action: "unmonitor" },
-		]);
+		const context = createSharedPlexSafetyContext();
+		const blocks = await findSharedPlexDeleteBlocks(
+			deps,
+			"user-1",
+			[{ ...target, action: "unmonitor" }],
+			undefined,
+			context,
+		);
 
 		expect(blocks).toEqual(new Map());
-		expect(deps.prisma.serviceInstance.findMany).not.toHaveBeenCalled();
+		expect(context.plans.get(cleanupDeleteTargetKey(target))).toEqual({
+			kind: "verified_arr_target",
+			target: radarrTargetIdentity,
+		});
+		expect(deps.prisma.serviceInstance.findMany).toHaveBeenCalled();
 		expect(plexClientFactory).not.toHaveBeenCalled();
+	});
+
+	it("does not unmonitor a replacement movie that appears after live target verification", async () => {
+		const { deps, targetClient } = makeDeps({ action: "unmonitor" });
+		const liveMovie = await targetClient.movie.getById(101);
+		targetClient.movie.getById.mockResolvedValueOnce(liveMovie).mockResolvedValueOnce({
+			...liveMovie,
+			tmdbId: 99,
+			path: "/movies-4k/Different Movie (2024)",
+		});
+		const flaggedItem = {
+			cacheItem: {
+				instanceId: "radarr-4k",
+				arrItemId: 101,
+				itemType: "movie",
+				title: "Example Movie",
+				year: 2024,
+				...radarrCachedFileIdentity,
+				sizeOnDisk: 2_000n,
+			},
+			match: {
+				ruleId: "rule-1",
+				ruleName: "Unmonitor watched movies",
+				reason: "Matched watched rule",
+				action: "unmonitor",
+			},
+			rating: 8,
+		} as never;
+
+		const result = await executeDirectRemoval(
+			deps,
+			{ id: "config-1", maxRemovalsPerRun: 10, rules: [] } as never,
+			"user-1",
+			[flaggedItem],
+			1,
+			1,
+			Date.now(),
+		);
+
+		expect(result.details[0]?.reason).toContain("ARR target changed");
+		expect(targetClient.movie.update).not.toHaveBeenCalled();
+	});
+
+	it("expires an approved unmonitor when its ARR service is repointed", async () => {
+		const { deps, targetInstance, targetClient, setLiveMovieExists } = makeDeps({
+			action: "unmonitor",
+		});
+		setLiveMovieExists(false);
+		targetInstance.baseUrl = "http://different-radarr.internal:7878";
+		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([
+			approvalRecord({
+				action: "unmonitor",
+				safetySnapshot: radarrTargetOnlySnapshot(),
+			}) as never,
+		]);
+
+		const result = await executeApprovedItems(deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(result.errors[0]).toContain("ARR target identity changed");
+		expect(targetClient.movie.getById).not.toHaveBeenCalled();
+		expect(targetClient.movie.update).not.toHaveBeenCalled();
+		expect(deps.prisma.libraryCleanupApproval.update).toHaveBeenCalledWith({
+			where: { id: "approval-1" },
+			data: expect.objectContaining({ status: "expired" }),
+		});
 	});
 
 	it("prevents an approved deletion from reaching Radarr and returns it to pending", async () => {
@@ -827,6 +1017,7 @@ describe("shared Plex deletion safety", () => {
 				title: "Example Movie",
 				reason: "Matched 4K cleanup rule",
 				action: "delete",
+				safetySnapshot: radarrSafetySnapshot(),
 			} as never,
 		]);
 
@@ -906,13 +1097,13 @@ describe("shared Plex deletion safety", () => {
 				action: "delete",
 			},
 			rating: 8,
-		} as never;
+		};
 
 		const result = await executeDirectRemoval(
 			deps,
 			{ id: "config-1", rules: [] } as never,
 			"user-1",
-			[flaggedItem],
+			[flaggedItem] as never,
 			1,
 			1,
 			Date.now(),
@@ -946,13 +1137,13 @@ describe("shared Plex deletion safety", () => {
 				action: "delete",
 			},
 			rating: 8,
-		} as never;
+		};
 
 		const result = await executeDirectRemoval(
 			deps,
 			{ id: "config-1", rules: [] } as never,
 			"user-1",
-			[flaggedItem],
+			[flaggedItem] as never,
 			1,
 			1,
 			Date.now(),
@@ -1228,13 +1419,13 @@ describe("shared Plex deletion safety", () => {
 				action: "delete",
 			},
 			rating: 8,
-		} as never;
+		};
 
 		const result = await executeDirectRemoval(
 			deps,
 			{ id: "config-1", rules: [] } as never,
 			"user-1",
-			[flaggedItem],
+			[flaggedItem] as never,
 			1,
 			1,
 			Date.now(),
@@ -1275,13 +1466,141 @@ describe("shared Plex deletion safety", () => {
 				action: "delete",
 			},
 			rating: 8,
-		} as never;
+		};
 
 		const result = await executeDirectRemoval(
 			deps,
 			{ id: "config-1", rules: [] } as never,
 			"user-1",
+			[flaggedItem] as never,
+			1,
+			1,
+			Date.now(),
+		);
+
+		expect(result.details[0]?.reason).toContain("differs from the cached item");
+		expect(deleteMovieFile).not.toHaveBeenCalled();
+		expect(deleteMovie).not.toHaveBeenCalled();
+	});
+
+	it("does not use cache rows that predate a service configuration change", async () => {
+		const { deps, targetInstance, deleteMovie, deleteMovieFile } = makeDeps({
+			mediaPartCount: 1,
+		});
+		targetInstance.updatedAt = new Date("2026-07-27T12:10:00.000Z");
+		const flaggedItem = {
+			cacheItem: {
+				instanceId: "radarr-4k",
+				arrItemId: 101,
+				itemType: "movie",
+				title: "Example Movie",
+				year: 2024,
+				...radarrCachedFileIdentity,
+				sizeOnDisk: 2_000n,
+			},
+			match: {
+				ruleId: "rule-1",
+				ruleName: "4K cleanup",
+				reason: "Matched stale cache",
+				action: "delete",
+			},
+			rating: 8,
+		};
+
+		const result = await executeDirectRemoval(
+			deps,
+			{ id: "config-1", maxRemovalsPerRun: 10, rules: [] } as never,
+			"user-1",
+			[flaggedItem] as never,
+			1,
+			1,
+			Date.now(),
+		);
+
+		expect(result.details[0]?.reason).toContain("differs from the cached item");
+		expect(deleteMovieFile).not.toHaveBeenCalled();
+		expect(deleteMovie).not.toHaveBeenCalled();
+	});
+
+	it("does not trust cache data sourced from a different ARR service fingerprint", async () => {
+		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
+		const cachedData = JSON.parse(radarrCachedFileIdentity.data) as Record<string, unknown>;
+		cachedData._arrDashboardSource = {
+			serviceFingerprint: "a".repeat(64),
+		};
+		const flaggedItem = {
+			cacheItem: {
+				instanceId: "radarr-4k",
+				arrItemId: 101,
+				itemType: "movie",
+				title: "Example Movie",
+				year: 2024,
+				...radarrCachedFileIdentity,
+				data: JSON.stringify(cachedData),
+				sizeOnDisk: 2_000n,
+			},
+			match: {
+				ruleId: "rule-1",
+				ruleName: "4K cleanup",
+				reason: "Matched stale service cache",
+				action: "delete",
+			},
+			rating: 8,
+		} as never;
+
+		const result = await executeDirectRemoval(
+			deps,
+			{ id: "config-1", maxRemovalsPerRun: 10, rules: [] } as never,
+			"user-1",
 			[flaggedItem],
+			1,
+			1,
+			Date.now(),
+		);
+
+		expect(result.details[0]?.reason).toContain("differs from the cached item");
+		expect(deleteMovieFile).not.toHaveBeenCalled();
+		expect(deleteMovie).not.toHaveBeenCalled();
+	});
+
+	it("does not borrow the live external media identity for cached rule evaluation", async () => {
+		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
+		const flaggedItem = {
+			cacheItem: {
+				instanceId: "radarr-4k",
+				arrItemId: 101,
+				itemType: "movie",
+				title: "Different Cached Movie",
+				year: 2024,
+				...radarrCachedFileIdentity,
+				data: JSON.stringify({
+					_arrDashboardSource: {
+						serviceFingerprint: radarrTargetIdentity.serviceFingerprint,
+					},
+					remoteIds: { tmdbId: 99 },
+					path: "/movies-4k/Example Movie (2024)",
+					movieFile: {
+						id: 1001,
+						path: "/movies-4k/Example Movie (2024)/Example.Movie.2160p.mkv",
+						size: 2_000,
+					},
+				}),
+				sizeOnDisk: 2_000n,
+			},
+			match: {
+				ruleId: "rule-1",
+				ruleName: "4K cleanup",
+				reason: "Matched different cached identity",
+				action: "delete",
+			},
+			rating: 8,
+		};
+
+		const result = await executeDirectRemoval(
+			deps,
+			{ id: "config-1", maxRemovalsPerRun: 10, rules: [] } as never,
+			"user-1",
+			[flaggedItem] as never,
 			1,
 			1,
 			Date.now(),
@@ -1416,6 +1735,270 @@ describe("shared Plex deletion safety", () => {
 		});
 	});
 
+	it("does not rewrite cache state before a direct record-only retry is durable", async () => {
+		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
+		deleteMovie.mockRejectedValue(new Error("Radarr movie delete unavailable"));
+		vi.mocked(deps.prisma.libraryCleanupApproval.create).mockRejectedValue(
+			new Error("database unavailable"),
+		);
+		const flaggedItem = {
+			cacheItem: {
+				instanceId: "radarr-4k",
+				arrItemId: 101,
+				itemType: "movie",
+				title: "Example Movie",
+				year: 2024,
+				...radarrCachedFileIdentity,
+				sizeOnDisk: 2000n,
+			},
+			match: {
+				ruleId: "rule-1",
+				ruleName: "4K cleanup",
+				reason: "Matched 4K profile",
+				action: "delete",
+			},
+			rating: 8,
+		} as never;
+
+		const result = await executeDirectRemoval(
+			deps,
+			{ id: "config-1", maxRemovalsPerRun: 10, rules: [] } as never,
+			"user-1",
+			[flaggedItem],
+			1,
+			1,
+			Date.now(),
+		);
+
+		expect(deleteMovieFile).toHaveBeenCalledOnce();
+		expect(deleteMovie).toHaveBeenCalledTimes(2);
+		expect(deps.prisma.libraryCache.updateMany).not.toHaveBeenCalled();
+		expect(result).toMatchObject({ status: "partial", itemsFilesDeleted: 1 });
+		expect(result.warnings).toContainEqual(expect.stringContaining("not persisted"));
+	});
+
+	it("does not reset a concurrently claimed direct retry to pending", async () => {
+		const { deps, deleteMovie } = makeDeps({ mediaPartCount: 1 });
+		deleteMovie.mockRejectedValue(new Error("Radarr movie delete unavailable"));
+		let concurrentRetry: Record<string, unknown> | undefined;
+		vi.mocked(deps.prisma.libraryCleanupApproval.create).mockImplementation((async ({
+			data,
+		}: {
+			data: Record<string, unknown>;
+		}) => {
+			concurrentRetry = { ...data, status: "retry_executing" };
+			const error = new Error("retry already exists") as Error & { code: string };
+			error.code = "P2002";
+			throw error;
+		}) as never);
+		const flaggedItem = {
+			cacheItem: {
+				instanceId: "radarr-4k",
+				arrItemId: 101,
+				itemType: "movie",
+				title: "Example Movie",
+				year: 2024,
+				...radarrCachedFileIdentity,
+				sizeOnDisk: 2_000n,
+			},
+			match: {
+				ruleId: "rule-1",
+				ruleName: "4K cleanup",
+				reason: "Matched 4K profile",
+				action: "delete",
+			},
+			rating: 8,
+		} as never;
+
+		await executeDirectRemoval(
+			deps,
+			{ id: "config-1", maxRemovalsPerRun: 10, rules: [] } as never,
+			"user-1",
+			[flaggedItem],
+			1,
+			1,
+			Date.now(),
+		);
+
+		expect(concurrentRetry).toMatchObject({ status: "retry_executing" });
+		expect(deps.prisma.libraryCleanupApproval.updateMany).not.toHaveBeenCalled();
+	});
+
+	it("reports a fresh match deferred behind an in-flight direct retry", async () => {
+		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
+		const retries = configureRetryStore(deps);
+		deleteMovie
+			.mockRejectedValueOnce(new Error("Radarr movie delete unavailable"))
+			.mockRejectedValueOnce(new Error("Radarr movie delete unavailable"));
+		const flaggedItem = {
+			cacheItem: {
+				instanceId: "radarr-4k",
+				arrItemId: 101,
+				itemType: "movie",
+				title: "Example Movie",
+				year: 2024,
+				...radarrCachedFileIdentity,
+				sizeOnDisk: 2_000n,
+			},
+			match: {
+				ruleId: "rule-1",
+				ruleName: "4K cleanup",
+				reason: "Matched 4K profile",
+				action: "delete",
+			},
+			rating: 8,
+		} as never;
+		const config = { id: "config-1", maxRemovalsPerRun: 10, rules: [] } as never;
+
+		await executeDirectRemoval(deps, config, "user-1", [flaggedItem], 1, 1, Date.now());
+		retries[0]!.status = "retry_executing";
+
+		const deferredResult = await executeDirectRemoval(
+			deps,
+			config,
+			"user-1",
+			[flaggedItem],
+			1,
+			1,
+			Date.now(),
+		);
+
+		expect(deferredResult).toMatchObject({
+			status: "partial",
+			itemsFlagged: 1,
+			itemsSkipped: 1,
+			details: [expect.objectContaining({ reason: expect.stringContaining("already executing") })],
+		});
+		expect(deleteMovieFile).toHaveBeenCalledOnce();
+		expect(deleteMovie).toHaveBeenCalledTimes(2);
+	});
+
+	it("reports a retry claim lost to another run as concurrently deferred", async () => {
+		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
+		const retries = configureRetryStore(deps);
+		deleteMovie
+			.mockRejectedValueOnce(new Error("Radarr movie delete unavailable"))
+			.mockRejectedValueOnce(new Error("Radarr movie delete unavailable"));
+		const flaggedItem = {
+			cacheItem: {
+				instanceId: "radarr-4k",
+				arrItemId: 101,
+				itemType: "movie",
+				title: "Example Movie",
+				year: 2024,
+				...radarrCachedFileIdentity,
+				sizeOnDisk: 2_000n,
+			},
+			match: {
+				ruleId: "rule-1",
+				ruleName: "4K cleanup",
+				reason: "Matched 4K profile",
+				action: "delete",
+			},
+			rating: 8,
+		} as never;
+		const config = { id: "config-1", maxRemovalsPerRun: 10, rules: [] } as never;
+
+		await executeDirectRemoval(deps, config, "user-1", [flaggedItem], 1, 1, Date.now());
+		vi.mocked(deps.prisma.libraryCleanupApproval.updateMany).mockImplementation((async () => {
+			retries[0]!.status = "retry_executing";
+			return { count: 0 };
+		}) as never);
+
+		const deferredResult = await executeDirectRemoval(
+			deps,
+			config,
+			"user-1",
+			[flaggedItem],
+			1,
+			1,
+			Date.now(),
+		);
+
+		expect(deferredResult).toMatchObject({
+			status: "partial",
+			itemsFlagged: 1,
+			itemsSkipped: 1,
+			details: [
+				expect.objectContaining({ reason: expect.stringContaining("another cleanup run claimed") }),
+			],
+		});
+		expect(deferredResult.warnings).toContainEqual(
+			expect.stringContaining("another cleanup run claimed it first"),
+		);
+		expect(deferredResult.warnings).not.toContainEqual(expect.stringContaining("remains pending"));
+		expect(deleteMovieFile).toHaveBeenCalledOnce();
+		expect(deleteMovie).toHaveBeenCalledTimes(2);
+	});
+
+	it("accounts for a durable retry whose post-claim read fails", async () => {
+		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
+		const retries = configureRetryStore(deps);
+		deleteMovie
+			.mockRejectedValueOnce(new Error("Radarr movie delete unavailable"))
+			.mockRejectedValueOnce(new Error("Radarr movie delete unavailable"));
+		const flaggedItem = {
+			cacheItem: {
+				instanceId: "radarr-4k",
+				arrItemId: 101,
+				itemType: "movie",
+				title: "Example Movie",
+				year: 2024,
+				...radarrCachedFileIdentity,
+				sizeOnDisk: 2_000n,
+			},
+			match: {
+				ruleId: "rule-1",
+				ruleName: "4K cleanup",
+				reason: "Matched 4K profile",
+				action: "delete",
+			},
+			rating: 8,
+		} as never;
+		const config = { id: "config-1", maxRemovalsPerRun: 10, rules: [] } as never;
+
+		await executeDirectRemoval(deps, config, "user-1", [flaggedItem], 1, 1, Date.now());
+		let executingReads = 0;
+		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockImplementation((async ({
+			where,
+		}: {
+			where: { status?: string };
+		}) => {
+			if (where.status === "retry_pending") {
+				return retries.filter((retry) => retry.status === "retry_pending");
+			}
+			if (where.status === "retry_executing") {
+				executingReads++;
+				if (executingReads === 1) return [];
+				throw new Error("database read unavailable");
+			}
+			return [];
+		}) as never);
+
+		const deferredResult = await executeDirectRemoval(
+			deps,
+			config,
+			"user-1",
+			[flaggedItem],
+			1,
+			1,
+			Date.now(),
+		);
+
+		expect(deferredResult).toMatchObject({
+			status: "partial",
+			itemsFlagged: 1,
+			itemsSkipped: 1,
+			details: [expect.objectContaining({ reason: expect.stringContaining("after claiming it") })],
+		});
+		expect(deferredResult.warnings).toContainEqual(
+			expect.stringContaining("post-claim read failure"),
+		);
+		expect(retries[0]).toMatchObject({ status: "retry_executing" });
+		expect(deleteMovieFile).toHaveBeenCalledOnce();
+		expect(deleteMovie).toHaveBeenCalledTimes(2);
+	});
+
 	it("returns a partially completed approval to pending with accurate file state", async () => {
 		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
 		deleteMovie.mockRejectedValue(new Error("Radarr movie delete unavailable"));
@@ -1452,6 +2035,23 @@ describe("shared Plex deletion safety", () => {
 		});
 	});
 
+	it("does not rewrite cache state before an approved partial retry is durable", async () => {
+		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
+		deleteMovie.mockRejectedValue(new Error("Radarr movie delete unavailable"));
+		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([
+			approvalRecord() as never,
+		]);
+		vi.mocked(deps.prisma.libraryCleanupApproval.update).mockRejectedValue(
+			new Error("database unavailable"),
+		);
+
+		const result = await executeApprovedItems(deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(deleteMovieFile).toHaveBeenCalledOnce();
+		expect(deps.prisma.libraryCache.updateMany).not.toHaveBeenCalled();
+	});
+
 	it("retries a verified fileless Radarr approval without deleting files again", async () => {
 		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
 		const storedApproval = approvalRecord();
@@ -1483,6 +2083,180 @@ describe("shared Plex deletion safety", () => {
 			status: "executed",
 			lastExecutionError: null,
 		});
+	});
+
+	it("expires a record-only Radarr retry when the service is repointed", async () => {
+		const { deps, targetInstance, deleteMovie, deleteMovieFile } = makeDeps({
+			mediaPartCount: 1,
+		});
+		const storedApproval = approvalRecord();
+		const approvalFindMany = vi.mocked(deps.prisma.libraryCleanupApproval.findMany);
+		const approvalUpdate = vi.mocked(deps.prisma.libraryCleanupApproval.update);
+		approvalFindMany.mockImplementation((async () => [storedApproval]) as never);
+		approvalUpdate.mockImplementation((async ({ data }: { data: Record<string, unknown> }) => {
+			Object.assign(storedApproval, data);
+			return {};
+		}) as never);
+		deleteMovie
+			.mockRejectedValueOnce(new Error("Radarr movie delete unavailable"))
+			.mockRejectedValueOnce(new Error("Radarr movie delete unavailable"));
+
+		await executeApprovedItems(deps, "user-1", ["approval-1"]);
+		Object.assign(targetInstance, {
+			encryptedHttpAuthCredentials: "different-proxy-credentials",
+			httpAuthEncryptionIv: "different-proxy-iv",
+		});
+
+		const retryResult = await executeApprovedItems(deps, "user-1", ["approval-1"]);
+
+		expect(retryResult).toMatchObject({ removed: 0, failed: 1 });
+		expect(retryResult.errors[0]).toContain("ARR target identity changed");
+		expect(deleteMovieFile).toHaveBeenCalledOnce();
+		expect(deleteMovie).toHaveBeenCalledTimes(2);
+		expect(storedApproval).toMatchObject({ status: "expired" });
+	});
+
+	it("durably retries a direct record deletion after exact file removal", async () => {
+		const { deps, targetClient, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
+		const retries = configureRetryStore(deps);
+		deleteMovie
+			.mockRejectedValueOnce(new Error("Radarr movie delete unavailable"))
+			.mockRejectedValueOnce(new Error("Radarr movie delete unavailable"));
+		const flaggedItem = {
+			cacheItem: {
+				instanceId: "radarr-4k",
+				arrItemId: 101,
+				itemType: "movie",
+				title: "Example Movie",
+				year: 2024,
+				...radarrCachedFileIdentity,
+				sizeOnDisk: 2_000n,
+			},
+			match: {
+				ruleId: "rule-1",
+				ruleName: "Large movie cleanup",
+				reason: "Matched size rule",
+				action: "delete",
+			},
+			rating: 8,
+		};
+		const freshItem = {
+			...flaggedItem,
+			cacheItem: {
+				...flaggedItem.cacheItem,
+				arrItemId: 102,
+				title: "Fresh Movie",
+			},
+			match: {
+				...flaggedItem.match,
+				action: "unmonitor",
+			},
+		};
+		const config = { id: "config-1", maxRemovalsPerRun: 1, rules: [] } as never;
+
+		const firstResult = await executeDirectRemoval(
+			deps,
+			config,
+			"user-1",
+			[flaggedItem] as never,
+			1,
+			1,
+			Date.now(),
+		);
+		vi.mocked(deps.prisma.libraryCleanupApproval.update)
+			.mockRejectedValueOnce(new Error("database unavailable"))
+			.mockRejectedValueOnce(new Error("database unavailable"));
+		const retryResult = await executeDirectRemoval(
+			deps,
+			config,
+			"user-1",
+			[freshItem] as never,
+			1,
+			1,
+			Date.now(),
+		);
+
+		expect(firstResult).toMatchObject({
+			status: "partial",
+			itemsRemoved: 0,
+			itemsFilesDeleted: 1,
+		});
+		expect(retries).toHaveLength(1);
+		expect(retries[0]).toMatchObject({
+			status: "retry_executing",
+			safetySnapshot: radarrSafetySnapshot(null),
+		});
+		expect(retryResult).toMatchObject({
+			status: "partial",
+			itemsRemoved: 1,
+			itemsFlagged: 1,
+			itemsSkipped: 1,
+		});
+		expect(retryResult.warnings).toContainEqual(
+			expect.stringContaining("could not record durable completion state"),
+		);
+		retries[0]!.status = "retry_pending";
+
+		const reconciliationResult = await executeDirectRemoval(
+			deps,
+			config,
+			"user-1",
+			[],
+			0,
+			0,
+			Date.now(),
+		);
+
+		expect(reconciliationResult).toMatchObject({
+			status: "completed",
+			itemsRemoved: 1,
+			itemsFlagged: 1,
+		});
+		expect(retries[0]).toMatchObject({ status: "executed" });
+		expect(deleteMovieFile).toHaveBeenCalledOnce();
+		expect(deleteMovie).toHaveBeenCalledTimes(3);
+		expect(targetClient.movie.update).not.toHaveBeenCalled();
+	});
+
+	it("expires a direct retry before reading a missing target from a repointed service", async () => {
+		const { deps, targetInstance, deleteMovie, deleteMovieFile, setLiveMovieExists } = makeDeps({
+			mediaPartCount: 1,
+		});
+		const retries = configureRetryStore(deps);
+		deleteMovie
+			.mockRejectedValueOnce(new Error("Radarr movie delete unavailable"))
+			.mockRejectedValueOnce(new Error("Radarr movie delete unavailable"));
+		const flaggedItem = {
+			cacheItem: {
+				instanceId: "radarr-4k",
+				arrItemId: 101,
+				itemType: "movie",
+				title: "Example Movie",
+				year: 2024,
+				...radarrCachedFileIdentity,
+				sizeOnDisk: 2_000n,
+			},
+			match: {
+				ruleId: "rule-1",
+				ruleName: "Large movie cleanup",
+				reason: "Matched size rule",
+				action: "delete",
+			},
+			rating: 8,
+		} as never;
+		const config = { id: "config-1", maxRemovalsPerRun: 10, rules: [] } as never;
+
+		await executeDirectRemoval(deps, config, "user-1", [flaggedItem], 1, 1, Date.now());
+		targetInstance.baseUrl = "http://different-radarr.internal:7878";
+		setLiveMovieExists(false);
+
+		const retryResult = await executeDirectRemoval(deps, config, "user-1", [], 0, 0, Date.now());
+
+		expect(retryResult).toMatchObject({ status: "partial", itemsRemoved: 0 });
+		expect(retryResult.warnings).toContainEqual(expect.stringContaining("retry expired"));
+		expect(retries[0]).toMatchObject({ status: "expired" });
+		expect(deleteMovieFile).toHaveBeenCalledOnce();
+		expect(deleteMovie).toHaveBeenCalledTimes(2);
 	});
 
 	it("does not requeue a successful approved delete when its cache cleanup fails", async () => {

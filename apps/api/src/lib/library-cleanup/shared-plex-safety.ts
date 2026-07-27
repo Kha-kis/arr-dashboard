@@ -17,6 +17,8 @@ import {
 	type PlexSeriesMediaItem,
 } from "../plex/plex-client.js";
 import type { ServiceInstance } from "../prisma.js";
+export { createArrServiceFingerprint } from "../arr/service-fingerprint.js";
+import { createArrServiceFingerprint } from "../arr/service-fingerprint.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import type { CleanupExecutorDeps } from "./types.js";
 
@@ -82,6 +84,12 @@ export interface VerifiedSonarrFileIdentity {
 	episodeFiles: VerifiedSonarrEpisodeFileIdentity[];
 }
 
+export interface VerifiedArrTargetIdentity {
+	serviceFingerprint: string;
+	externalId: number;
+	mediaPath: NormalizedMediaPath;
+}
+
 export type VerifiedCleanupFileIdentity =
 	| { service: "RADARR"; file: VerifiedRadarrFileIdentity }
 	| { service: "SONARR"; files: VerifiedSonarrFileIdentity };
@@ -89,13 +97,24 @@ export type VerifiedCleanupFileIdentity =
 export type SharedMediaSafetyPlan =
 	| { kind: "not_required" }
 	| { kind: "blocked"; reason: string }
-	| { kind: "verified_radarr_empty" }
-	| { kind: "verified_radarr"; file: VerifiedRadarrFileIdentity }
-	| { kind: "verified_sonarr"; files: VerifiedSonarrFileIdentity };
+	| { kind: "verified_arr_target"; target: VerifiedArrTargetIdentity }
+	| { kind: "verified_radarr_empty"; target: VerifiedArrTargetIdentity }
+	| {
+			kind: "verified_radarr";
+			target: VerifiedArrTargetIdentity;
+			file: VerifiedRadarrFileIdentity;
+	  }
+	| {
+			kind: "verified_sonarr";
+			target: VerifiedArrTargetIdentity;
+			files: VerifiedSonarrFileIdentity;
+	  };
 
 export type ExecutableSharedMediaSafetyPlan = Extract<
 	SharedMediaSafetyPlan,
-	{ kind: "verified_radarr_empty" | "verified_radarr" | "verified_sonarr" }
+	{
+		kind: "verified_arr_target" | "verified_radarr_empty" | "verified_radarr" | "verified_sonarr";
+	}
 >;
 
 function requiredPositiveSafeInteger(value: unknown, label: string): number {
@@ -105,19 +124,67 @@ function requiredPositiveSafeInteger(value: unknown, label: string): number {
 	return value;
 }
 
+function requiredNonEmptyString(value: unknown, label: string): string {
+	if (typeof value !== "string" || value.trim() === "" || value.includes("\0")) {
+		throw new FileMatchVerificationError(`${label} is unavailable`);
+	}
+	return value.trim();
+}
+
+function canonicalTargetIdentity(value: unknown): VerifiedArrTargetIdentity {
+	if (!value || typeof value !== "object") {
+		throw new FileMatchVerificationError("ARR target identity is invalid");
+	}
+	const target = value as Record<string, unknown>;
+	const serviceFingerprint = requiredNonEmptyString(
+		target.serviceFingerprint,
+		"ARR service fingerprint",
+	);
+	if (!/^[a-f0-9]{64}$/.test(serviceFingerprint)) {
+		throw new FileMatchVerificationError("ARR service fingerprint is invalid");
+	}
+	return {
+		serviceFingerprint,
+		externalId: requiredPositiveSafeInteger(target.externalId, "ARR external media ID"),
+		mediaPath: normalizeMediaPath((target.mediaPath as Record<string, unknown> | undefined)?.value),
+	};
+}
+
+function buildTargetIdentity(
+	instance: ServiceInstance,
+	externalId: unknown,
+	mediaPath: unknown,
+): VerifiedArrTargetIdentity {
+	return canonicalTargetIdentity({
+		serviceFingerprint: createArrServiceFingerprint(instance),
+		externalId,
+		mediaPath: { value: mediaPath },
+	});
+}
+
 function canonicalExecutableSafetyPlan(plan: unknown): ExecutableSharedMediaSafetyPlan {
 	if (!plan || typeof plan !== "object" || !("kind" in plan)) {
 		throw new FileMatchVerificationError("Cleanup safety snapshot is invalid");
 	}
 	const candidate = plan as Record<string, unknown>;
+	if (candidate.kind === "verified_arr_target") {
+		return {
+			kind: "verified_arr_target",
+			target: canonicalTargetIdentity(candidate.target),
+		};
+	}
 	if (candidate.kind === "verified_radarr_empty") {
-		return { kind: "verified_radarr_empty" };
+		return {
+			kind: "verified_radarr_empty",
+			target: canonicalTargetIdentity(candidate.target),
+		};
 	}
 	if (candidate.kind === "verified_radarr") {
 		const file = candidate.file as Record<string, unknown> | undefined;
 		if (!file) throw new FileMatchVerificationError("Radarr safety snapshot is invalid");
 		return {
 			kind: "verified_radarr",
+			target: canonicalTargetIdentity(candidate.target),
 			file: {
 				movieFileId: requiredPositiveSafeInteger(file.movieFileId, "Radarr movie file ID"),
 				fullPath: normalizeMediaPath((file.fullPath as Record<string, unknown> | undefined)?.value),
@@ -148,6 +215,7 @@ function canonicalExecutableSafetyPlan(plan: unknown): ExecutableSharedMediaSafe
 		}
 		return {
 			kind: "verified_sonarr",
+			target: canonicalTargetIdentity(candidate.target),
 			files: {
 				seriesPath: normalizeMediaPath(
 					(files.seriesPath as Record<string, unknown> | undefined)?.value,
@@ -182,14 +250,24 @@ export function executableSafetyPlansEqual(
 export function buildRadarrCacheSafetyPlan(
 	data: unknown,
 	hasFile: boolean,
+	liveTarget: VerifiedArrTargetIdentity,
 ): ExecutableSharedMediaSafetyPlan | null {
 	if (!data || typeof data !== "object") return null;
 	const item = data as Record<string, unknown>;
+	const remoteIds =
+		item.remoteIds && typeof item.remoteIds === "object"
+			? (item.remoteIds as Record<string, unknown>)
+			: undefined;
+	const target: VerifiedArrTargetIdentity = {
+		...liveTarget,
+		externalId: requiredPositiveSafeInteger(remoteIds?.tmdbId, "Cached Radarr TMDb ID"),
+		mediaPath: normalizeMediaPath(item.path),
+	};
 	const movieFile = item.movieFile as Record<string, unknown> | null | undefined;
 	const movieFileId = movieFile?.id;
 	if (!hasFile) {
 		return typeof movieFileId !== "number" || movieFileId <= 0
-			? { kind: "verified_radarr_empty" }
+			? { kind: "verified_radarr_empty", target }
 			: null;
 	}
 	if (!movieFile) return null;
@@ -200,6 +278,7 @@ export function buildRadarrCacheSafetyPlan(
 				: joinMediaPath(item.path, movieFile.relativePath, "RADARR");
 		return canonicalExecutableSafetyPlan({
 			kind: "verified_radarr",
+			target,
 			file: {
 				movieFileId,
 				fullPath: { value: pathValue },
@@ -213,13 +292,21 @@ export function buildRadarrCacheSafetyPlan(
 
 export function buildSonarrCacheSafetyPlan(
 	seriesPath: unknown,
+	externalId: unknown,
 	hasFile: boolean,
 	episodeFiles: Array<{ arrEpisodeFileId: number; path: string; size: bigint | number }>,
+	liveTarget: VerifiedArrTargetIdentity,
 ): ExecutableSharedMediaSafetyPlan | null {
 	if (hasFile !== episodeFiles.length > 0) return null;
 	try {
+		const target: VerifiedArrTargetIdentity = {
+			...liveTarget,
+			externalId: requiredPositiveSafeInteger(externalId, "Cached Sonarr TVDb ID"),
+			mediaPath: normalizeMediaPath(seriesPath),
+		};
 		return canonicalExecutableSafetyPlan({
 			kind: "verified_sonarr",
+			target,
 			files: {
 				seriesPath: { value: seriesPath },
 				episodeFiles: episodeFiles.map((file) => ({
@@ -234,7 +321,39 @@ export function buildSonarrCacheSafetyPlan(
 	}
 }
 
+export function buildCacheTargetSafetyPlan(
+	data: unknown,
+	itemType: "movie" | "series",
+	liveTarget: VerifiedArrTargetIdentity,
+): ExecutableSharedMediaSafetyPlan | null {
+	if (!data || typeof data !== "object") return null;
+	const item = data as Record<string, unknown>;
+	const remoteIds =
+		item.remoteIds && typeof item.remoteIds === "object"
+			? (item.remoteIds as Record<string, unknown>)
+			: undefined;
+	return canonicalExecutableSafetyPlan({
+		kind: "verified_arr_target",
+		target: {
+			...liveTarget,
+			externalId: requiredPositiveSafeInteger(
+				itemType === "movie" ? remoteIds?.tmdbId : remoteIds?.tvdbId,
+				itemType === "movie" ? "Cached Radarr TMDb ID" : "Cached Sonarr TVDb ID",
+			),
+			mediaPath: { value: item.path },
+		},
+	});
+}
+
 export class ArrFileChangedDuringSafetyCheckError extends Error {}
+
+export class ArrTargetChangedDuringSafetyCheckError extends ArrFileChangedDuringSafetyCheckError {
+	constructor() {
+		super(
+			"Skipped for safety: the ARR target changed during live verification. Run cleanup again before mutating it.",
+		);
+	}
+}
 
 export class RadarrFileChangedDuringSafetyCheckError extends ArrFileChangedDuringSafetyCheckError {
 	constructor() {
@@ -354,6 +473,21 @@ function pathsEqual(left: NormalizedMediaPath, right: NormalizedMediaPath): bool
 	return comparablePath(left, left.windows) === comparablePath(right, left.windows);
 }
 
+export function assertVerifiedArrTargetUnchanged(
+	instance: ServiceInstance,
+	externalId: unknown,
+	mediaPath: unknown,
+	expected: VerifiedArrTargetIdentity,
+): void {
+	if (
+		createArrServiceFingerprint(instance) !== expected.serviceFingerprint ||
+		externalId !== expected.externalId ||
+		!pathsEqual(normalizeMediaPath(mediaPath), expected.mediaPath)
+	) {
+		throw new ArrTargetChangedDuringSafetyCheckError();
+	}
+}
+
 function joinMediaPath(parent: unknown, child: unknown, service: "RADARR" | "SONARR"): string {
 	if (typeof parent !== "string" || typeof child !== "string" || child.trim() === "") {
 		throw new FileMatchVerificationError(`${serviceLabel(service)} file path is unavailable`);
@@ -423,10 +557,15 @@ function comparableFile(
 export async function assertVerifiedRadarrFileUnchanged(
 	radarr: InstanceType<typeof RadarrClient>,
 	arrItemId: number,
+	expectedTarget: VerifiedArrTargetIdentity,
 	expected: VerifiedRadarrFileIdentity,
 ): Promise<void> {
 	const currentMovie = await radarr.movie.getById(arrItemId);
-	if (currentMovie.movieFileId !== expected.movieFileId) {
+	if (
+		currentMovie.movieFileId !== expected.movieFileId ||
+		currentMovie.tmdbId !== expectedTarget.externalId ||
+		!pathsEqual(normalizeMediaPath(currentMovie.path), expectedTarget.mediaPath)
+	) {
 		throw new RadarrFileChangedDuringSafetyCheckError();
 	}
 	const currentFile = radarrFileIdentity(
@@ -442,11 +581,14 @@ export async function assertVerifiedRadarrFileUnchanged(
 export async function assertVerifiedRadarrEmptyUnchanged(
 	radarr: InstanceType<typeof RadarrClient>,
 	arrItemId: number,
+	expectedTarget: VerifiedArrTargetIdentity,
 ): Promise<void> {
 	const currentMovie = await radarr.movie.getById(arrItemId);
 	if (
 		currentMovie.hasFile === true ||
-		(typeof currentMovie.movieFileId === "number" && currentMovie.movieFileId > 0)
+		(typeof currentMovie.movieFileId === "number" && currentMovie.movieFileId > 0) ||
+		currentMovie.tmdbId !== expectedTarget.externalId ||
+		!pathsEqual(normalizeMediaPath(currentMovie.path), expectedTarget.mediaPath)
 	) {
 		throw new RadarrFileChangedDuringSafetyCheckError();
 	}
@@ -455,11 +597,16 @@ export async function assertVerifiedRadarrEmptyUnchanged(
 export async function assertVerifiedSonarrFilesUnchanged(
 	sonarr: InstanceType<typeof SonarrClient>,
 	arrItemId: number,
+	expectedTarget: VerifiedArrTargetIdentity,
 	expected: VerifiedSonarrFileIdentity,
 ): Promise<void> {
 	const currentSeries = await sonarr.series.getById(arrItemId);
 	const currentSeriesPath = normalizeMediaPath(currentSeries.path);
-	if (!pathsEqual(currentSeriesPath, expected.seriesPath)) {
+	if (
+		currentSeries.tvdbId !== expectedTarget.externalId ||
+		!pathsEqual(currentSeriesPath, expectedTarget.mediaPath) ||
+		!pathsEqual(currentSeriesPath, expected.seriesPath)
+	) {
 		throw new SonarrFilesChangedDuringSafetyCheckError();
 	}
 
@@ -641,6 +788,10 @@ export function cleanupDeleteTargetKey(
 function isDestructiveTarget(target: CleanupDeleteTarget): boolean {
 	const action = target.action ?? "delete";
 	return (target.itemType === "movie" || target.itemType === "series") && action !== "unmonitor";
+}
+
+function isSafetyTarget(target: CleanupDeleteTarget): boolean {
+	return target.itemType === "movie" || target.itemType === "series";
 }
 
 function notificationIdentityValues(notification: NotificationLike): string[] {
@@ -957,9 +1108,10 @@ export async function findSharedPlexDeleteBlocks(
 	verifiedInstances?: ServiceInstance[],
 	context: SharedPlexSafetyContext = createSharedPlexSafetyContext(),
 ): Promise<Map<string, string>> {
+	const safetyTargets = targets.filter(isSafetyTarget);
 	const deleteTargets = targets.filter(isDestructiveTarget);
 	const blocks = new Map<string, string>();
-	if (deleteTargets.length === 0) return blocks;
+	if (safetyTargets.length === 0) return blocks;
 
 	let instances: ServiceInstance[];
 	let plexInstances: ServiceInstance[];
@@ -972,20 +1124,23 @@ export async function findSharedPlexDeleteBlocks(
 				)
 			: await deps.prisma.serviceInstance.findMany({
 					where: {
-						id: { in: [...new Set(deleteTargets.map((target) => target.instanceId))] },
+						id: { in: [...new Set(safetyTargets.map((target) => target.instanceId))] },
 						userId,
 						service: { in: ["RADARR", "SONARR"] },
 					},
 				});
-		plexInstances = await deps.prisma.serviceInstance.findMany({
-			where: { userId, service: "PLEX" },
-		});
+		plexInstances =
+			deleteTargets.length === 0
+				? []
+				: await deps.prisma.serviceInstance.findMany({
+						where: { userId, service: "PLEX" },
+					});
 	} catch (error) {
 		deps.log.warn(
 			{ err: getErrorMessage(error) },
 			"Cleanup shared-Plex safety check could not load ARR instances",
 		);
-		for (const target of deleteTargets) {
+		for (const target of safetyTargets) {
 			const targetKey = cleanupDeleteTargetKey(target);
 			const service = target.itemType === "series" ? "SONARR" : "RADARR";
 			const reason = verificationFailedReason(service);
@@ -1022,7 +1177,7 @@ export async function findSharedPlexDeleteBlocks(
 		return client;
 	};
 
-	for (const target of deleteTargets) {
+	for (const target of safetyTargets) {
 		const targetKey = cleanupDeleteTargetKey(target);
 		context.verifiedRadarrFiles.delete(targetKey);
 		context.verifiedSonarrFiles.delete(targetKey);
@@ -1051,13 +1206,25 @@ export async function findSharedPlexDeleteBlocks(
 				}
 				const radarr = getRadarrClient(targetInstance);
 				const movie = await radarr.movie.getById(target.arrItemId);
+				const tmdbId = movie.tmdbId;
+				if (typeof tmdbId !== "number" || !Number.isInteger(tmdbId) || tmdbId <= 0) {
+					throw new Error("Target movie has no valid TMDb ID");
+				}
+				const targetIdentity = buildTargetIdentity(targetInstance, tmdbId, movie.path);
+				if (action === "unmonitor") {
+					context.plans.set(targetKey, {
+						kind: "verified_arr_target",
+						target: targetIdentity,
+					});
+					continue;
+				}
 				const movieFileId = movie.movieFileId;
 				let verifiedPlan: Extract<
 					ExecutableSharedMediaSafetyPlan,
 					{ kind: "verified_radarr" | "verified_radarr_empty" }
 				>;
 				if (movie.hasFile === false && (typeof movieFileId !== "number" || movieFileId <= 0)) {
-					verifiedPlan = { kind: "verified_radarr_empty" };
+					verifiedPlan = { kind: "verified_radarr_empty", target: targetIdentity };
 				} else {
 					if (
 						typeof movieFileId !== "number" ||
@@ -1068,6 +1235,7 @@ export async function findSharedPlexDeleteBlocks(
 					}
 					verifiedPlan = {
 						kind: "verified_radarr",
+						target: targetIdentity,
 						file: radarrFileIdentity(
 							movie,
 							await radarr.movieFile.getById(movieFileId),
@@ -1113,10 +1281,6 @@ export async function findSharedPlexDeleteBlocks(
 					context.plans.set(targetKey, verifiedPlan);
 					continue;
 				}
-				const tmdbId = movie.tmdbId;
-				if (typeof tmdbId !== "number" || !Number.isInteger(tmdbId) || tmdbId <= 0) {
-					throw new Error("Target movie has no valid TMDb ID");
-				}
 				const targetFile = verifiedPlan.file;
 				const block = await verifyPlexMediaState(
 					deps,
@@ -1137,7 +1301,11 @@ export async function findSharedPlexDeleteBlocks(
 					context.plans.set(targetKey, { kind: "blocked", reason: block });
 				} else {
 					context.verifiedRadarrFiles.set(targetKey, targetFile);
-					context.plans.set(targetKey, { kind: "verified_radarr", file: targetFile });
+					context.plans.set(targetKey, {
+						kind: "verified_radarr",
+						target: targetIdentity,
+						file: targetFile,
+					});
 				}
 				continue;
 			}
@@ -1147,6 +1315,18 @@ export async function findSharedPlexDeleteBlocks(
 			}
 			const sonarr = getSonarrClient(targetInstance);
 			const series = await sonarr.series.getById(target.arrItemId);
+			const tvdbId = series.tvdbId;
+			if (typeof tvdbId !== "number" || !Number.isInteger(tvdbId) || tvdbId <= 0) {
+				throw new Error("Target series has no valid TVDB ID");
+			}
+			const targetIdentity = buildTargetIdentity(targetInstance, tvdbId, series.path);
+			if (action === "unmonitor") {
+				context.plans.set(targetKey, {
+					kind: "verified_arr_target",
+					target: targetIdentity,
+				});
+				continue;
+			}
 			const verifiedFiles: VerifiedSonarrFileIdentity = {
 				seriesPath: normalizeMediaPath(series.path),
 				episodeFiles: (await sonarr.episodeFile.getBySeries(target.arrItemId)).map((file) =>
@@ -1158,7 +1338,11 @@ export async function findSharedPlexDeleteBlocks(
 			);
 			if (notifications.length === 0) {
 				context.verifiedSonarrFiles.set(targetKey, verifiedFiles);
-				context.plans.set(targetKey, { kind: "verified_sonarr", files: verifiedFiles });
+				context.plans.set(targetKey, {
+					kind: "verified_sonarr",
+					target: targetIdentity,
+					files: verifiedFiles,
+				});
 				continue;
 			}
 			const unsupported = notifications.find(
@@ -1185,10 +1369,6 @@ export async function findSharedPlexDeleteBlocks(
 				context.plans.set(targetKey, { kind: "blocked", reason });
 				continue;
 			}
-			const tvdbId = series.tvdbId;
-			if (typeof tvdbId !== "number" || !Number.isInteger(tvdbId) || tvdbId <= 0) {
-				throw new Error("Target series has no valid TVDB ID");
-			}
 			const block = await verifyPlexMediaState(
 				deps,
 				context,
@@ -1208,7 +1388,11 @@ export async function findSharedPlexDeleteBlocks(
 				context.plans.set(targetKey, { kind: "blocked", reason: block });
 			} else {
 				context.verifiedSonarrFiles.set(targetKey, verifiedFiles);
-				context.plans.set(targetKey, { kind: "verified_sonarr", files: verifiedFiles });
+				context.plans.set(targetKey, {
+					kind: "verified_sonarr",
+					target: targetIdentity,
+					files: verifiedFiles,
+				});
 			}
 		} catch (error) {
 			const reason =

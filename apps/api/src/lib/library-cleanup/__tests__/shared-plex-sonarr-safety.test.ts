@@ -1,8 +1,9 @@
 import { NotFoundError } from "arr-sdk";
 import { describe, expect, it, vi } from "vitest";
-import { executeApprovedItems } from "../cleanup-executor.js";
+import { executeApprovedItems, executeDirectRemoval } from "../cleanup-executor.js";
 import {
 	cleanupDeleteTargetKey,
+	createArrServiceFingerprint,
 	createSharedPlexSafetyContext,
 	findSharedPlexDeleteBlocks,
 	serializeExecutableSafetyPlan,
@@ -14,6 +15,16 @@ const silentLog = {
 	error: vi.fn(),
 	info: vi.fn(),
 } as unknown as CleanupExecutorDeps["log"];
+
+const sonarrServiceFingerprint = createArrServiceFingerprint({
+	id: "sonarr-4k",
+	service: "SONARR",
+	baseUrl: "http://sonarr.internal:8989",
+	encryptedApiKey: "encrypted-sonarr-key",
+	encryptionIv: "sonarr-iv",
+	encryptedHttpAuthCredentials: null,
+	httpAuthEncryptionIv: null,
+} as never);
 
 interface SonarrTestOptions {
 	action?: "delete" | "delete_files";
@@ -64,7 +75,12 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 		service: "SONARR",
 		label: "4K Sonarr",
 		baseUrl: "http://sonarr.internal:8989",
+		encryptedApiKey: "encrypted-sonarr-key",
+		encryptionIv: "sonarr-iv",
+		encryptedHttpAuthCredentials: null,
+		httpAuthEncryptionIv: null,
 		enabled: true,
+		updatedAt: new Date("2026-07-27T12:00:00.000Z"),
 	};
 	const plexInstance = {
 		id: "plex-1",
@@ -178,6 +194,7 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 			libraryCleanupApproval: {
 				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 				findMany: vi.fn().mockResolvedValue([]),
+				create: vi.fn().mockResolvedValue({}),
 				update: approvalUpdate,
 			},
 			libraryCache: {
@@ -185,7 +202,17 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 			},
 			episodeFileCache: {
+				findMany: vi.fn().mockResolvedValue(
+					episodeFiles.map((file) => ({
+						arrEpisodeFileId: file.id,
+						path: file.path,
+						size: BigInt(file.size!),
+					})),
+				),
 				deleteMany: episodeFileCacheDeleteMany,
+			},
+			libraryCleanupLog: {
+				create: vi.fn().mockResolvedValue({}),
 			},
 		} as unknown as CleanupExecutorDeps["prisma"],
 		arrClientFactory: {
@@ -533,6 +560,19 @@ describe("verified Sonarr mutation handoff", () => {
 			title: "Example Series",
 			safetySnapshot: serializeExecutableSafetyPlan({
 				kind: "verified_sonarr",
+				target: {
+					serviceFingerprint: createArrServiceFingerprint({
+						id: "sonarr-4k",
+						service: "SONARR",
+						baseUrl: "http://sonarr.internal:8989",
+						encryptedApiKey: "encrypted-sonarr-key",
+						encryptionIv: "sonarr-iv",
+						encryptedHttpAuthCredentials: null,
+						httpAuthEncryptionIv: null,
+					} as never),
+					externalId: 123,
+					mediaPath: { value: "/tv-4k/Example Series", windows: false },
+				},
 				files: {
 					seriesPath: { value: "/tv-4k/Example Series", windows: false },
 					episodeFiles: episodeFiles.map((file) => ({
@@ -543,6 +583,64 @@ describe("verified Sonarr mutation handoff", () => {
 				},
 			}),
 		};
+	}
+
+	function configureRetryStore(deps: CleanupExecutorDeps) {
+		const retries: Array<Record<string, unknown>> = [];
+		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockImplementation((async ({
+			where,
+		}: {
+			where: { status?: string };
+		}) => {
+			if (where.status === "retry_pending") {
+				return retries.filter((retry) => retry.status === "retry_pending");
+			}
+			if (where.status === "retry_executing") {
+				return retries.filter((retry) => retry.status === "retry_executing");
+			}
+			return [];
+		}) as never);
+		vi.mocked(deps.prisma.libraryCleanupApproval.updateMany).mockImplementation((async ({
+			where,
+			data,
+		}: {
+			where: { id: string; status: string };
+			data: { status: string };
+		}) => {
+			const retry = retries.find(
+				(candidate) => candidate.id === where.id && candidate.status === where.status,
+			);
+			if (!retry) return { count: 0 };
+			retry.status = data.status;
+			return { count: 1 };
+		}) as never);
+		vi.mocked(deps.prisma.libraryCleanupApproval.create).mockImplementation((async ({
+			data,
+		}: {
+			data: Record<string, unknown>;
+		}) => {
+			const existing = retries.find((retry) => retry.id === data.id);
+			if (existing) {
+				const error = new Error("retry already exists") as Error & { code: string };
+				error.code = "P2002";
+				throw error;
+			}
+			const retry = { createdAt: new Date(), ...data };
+			retries.push(retry);
+			return retry;
+		}) as never);
+		vi.mocked(deps.prisma.libraryCleanupApproval.update).mockImplementation((async ({
+			where,
+			data,
+		}: {
+			where: { id: string };
+			data: Record<string, unknown>;
+		}) => {
+			const retry = retries.find((candidate) => candidate.id === where.id);
+			if (retry) Object.assign(retry, data);
+			return retry ?? {};
+		}) as never);
+		return retries;
 	}
 
 	it("still uses exact-file deletion when no media-server notification applies", async () => {
@@ -816,6 +914,97 @@ describe("verified Sonarr mutation handoff", () => {
 			status: "executed",
 			lastExecutionError: null,
 		});
+	});
+
+	it("expires a record-only Sonarr retry when the service is repointed", async () => {
+		const { deps, targetInstance, bulkDelete, deleteSeries, approvalUpdate } = makeSonarrDeps();
+		const storedApproval = approval();
+		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockImplementation((async () => [
+			storedApproval,
+		]) as never);
+		approvalUpdate.mockImplementation(async ({ data }) => {
+			Object.assign(storedApproval, data);
+			return {};
+		});
+		deleteSeries
+			.mockRejectedValueOnce(new Error("series delete unavailable"))
+			.mockRejectedValueOnce(new Error("series delete unavailable"));
+
+		await executeApprovedItems(deps, "user-1", ["approval-1"]);
+		targetInstance.baseUrl = "http://different-sonarr.internal:8989";
+
+		const retryResult = await executeApprovedItems(deps, "user-1", ["approval-1"]);
+
+		expect(retryResult).toMatchObject({ removed: 0, failed: 1 });
+		expect(retryResult.errors[0]).toContain("ARR target identity changed");
+		expect(bulkDelete).toHaveBeenCalledOnce();
+		expect(deleteSeries).toHaveBeenCalledTimes(2);
+		expect(storedApproval).toMatchObject({ status: "expired" });
+	});
+
+	it("durably retries a direct Sonarr record deletion after exact file removal", async () => {
+		const { deps, episodeFiles, bulkDelete, deleteSeries } = makeSonarrDeps();
+		const retries = configureRetryStore(deps);
+		deleteSeries
+			.mockRejectedValueOnce(new Error("series delete unavailable"))
+			.mockRejectedValueOnce(new Error("series delete unavailable"));
+		const flaggedItem = {
+			cacheItem: {
+				instanceId: "sonarr-4k",
+				arrItemId: 201,
+				itemType: "series",
+				title: "Example Series",
+				year: 2024,
+				hasFile: true,
+				cachedAt: new Date("2026-07-27T12:05:00.000Z"),
+				sizeOnDisk: 4_003n,
+				data: JSON.stringify({
+					_arrDashboardSource: {
+						serviceFingerprint: sonarrServiceFingerprint,
+					},
+					path: "/tv-4k/Example Series",
+					remoteIds: { tvdbId: 123 },
+				}),
+			},
+			match: {
+				ruleId: "rule-1",
+				ruleName: "Large series cleanup",
+				reason: "Matched size rule",
+				action: "delete",
+			},
+			rating: 8,
+		} as never;
+		const config = { id: "config-1", rules: [] } as never;
+
+		const firstResult = await executeDirectRemoval(
+			deps,
+			config,
+			"user-1",
+			[flaggedItem],
+			1,
+			1,
+			Date.now(),
+		);
+		const retryResult = await executeDirectRemoval(deps, config, "user-1", [], 0, 0, Date.now());
+
+		expect(firstResult).toMatchObject({
+			status: "partial",
+			itemsRemoved: 0,
+			itemsFilesDeleted: 1,
+		});
+		expect(retries).toHaveLength(1);
+		expect(retries[0]).toMatchObject({
+			status: "executed",
+			safetySnapshot: approval("delete", []).safetySnapshot,
+		});
+		expect(retryResult).toMatchObject({
+			status: "completed",
+			itemsRemoved: 1,
+			itemsFlagged: 1,
+		});
+		expect(bulkDelete).toHaveBeenCalledOnce();
+		expect(bulkDelete).toHaveBeenCalledWith(episodeFiles.map((file) => file.id));
+		expect(deleteSeries).toHaveBeenCalledTimes(3);
 	});
 
 	it("removes an empty verified series without issuing a bulk file deletion", async () => {
