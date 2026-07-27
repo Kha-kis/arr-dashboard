@@ -1,6 +1,10 @@
 import { NotFoundError } from "arr-sdk";
 import { describe, expect, it, vi } from "vitest";
-import { executeApprovedItems, executeDirectRemoval } from "../cleanup-executor.js";
+import {
+	executeApprovedItems,
+	executeDirectRemoval,
+	INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
+} from "../cleanup-executor.js";
 import {
 	cleanupDeleteTargetKey,
 	createArrServiceFingerprint,
@@ -178,11 +182,37 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 		getMovieMediaPartsByTmdbId: vi.fn(),
 		getSeriesEpisodeMediaPartsByTvdbId,
 	}));
-	const approvalUpdate = vi.fn().mockResolvedValue({});
+	const approvalUpdate = vi.fn().mockResolvedValue({ count: 1 });
 	const episodeFileCacheDeleteMany = vi.fn().mockResolvedValue({ count: episodeFiles.length });
+	let cleanupRunLeaseToken: string | null = null;
+	const cleanupConfigUpdateMany = vi.fn(
+		async ({
+			where,
+			data,
+		}: {
+			where: { runClaimToken?: string };
+			data: { runClaimToken?: string | null };
+		}) => {
+			if (data.runClaimToken === null) {
+				if (where.runClaimToken !== cleanupRunLeaseToken) return { count: 0 };
+				cleanupRunLeaseToken = null;
+				return { count: 1 };
+			}
+			if (where.runClaimToken !== undefined) {
+				return { count: where.runClaimToken === cleanupRunLeaseToken ? 1 : 0 };
+			}
+			if (cleanupRunLeaseToken !== null) return { count: 0 };
+			cleanupRunLeaseToken = data.runClaimToken ?? null;
+			return { count: 1 };
+		},
+	);
 
 	const deps: CleanupExecutorDeps = {
 		prisma: {
+			libraryCleanupConfig: {
+				findUnique: vi.fn().mockResolvedValue({ id: "config-1" }),
+				updateMany: cleanupConfigUpdateMany,
+			},
 			serviceInstance: {
 				findMany: vi.fn(({ where }: { where: { service: string } }) =>
 					where.service === "PLEX"
@@ -192,10 +222,10 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 				findFirst: vi.fn().mockResolvedValue(targetInstance),
 			},
 			libraryCleanupApproval: {
-				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				updateMany: approvalUpdate,
 				findMany: vi.fn().mockResolvedValue([]),
 				create: vi.fn().mockResolvedValue({}),
-				update: approvalUpdate,
+				update: vi.fn().mockResolvedValue({}),
 			},
 			libraryCache: {
 				deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -611,7 +641,7 @@ describe("verified Sonarr mutation handoff", () => {
 				(candidate) => candidate.id === where.id && candidate.status === where.status,
 			);
 			if (!retry) return { count: 0 };
-			retry.status = data.status;
+			Object.assign(retry, data);
 			return { count: 1 };
 		}) as never);
 		vi.mocked(deps.prisma.libraryCleanupApproval.create).mockImplementation((async ({
@@ -641,6 +671,39 @@ describe("verified Sonarr mutation handoff", () => {
 			return retry ?? {};
 		}) as never);
 		return retries;
+	}
+
+	function configureApprovalStore(
+		deps: CleanupExecutorDeps,
+		storedApproval: Record<string, unknown>,
+	) {
+		storedApproval.status ??= "approved";
+		storedApproval.executionToken ??= null;
+		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockImplementation((async ({
+			where,
+		}: {
+			where: { status?: string };
+		}) => (storedApproval.status === where.status ? [storedApproval] : [])) as never);
+		const updateMany = vi.mocked(deps.prisma.libraryCleanupApproval.updateMany);
+		updateMany.mockImplementation((async ({
+			where,
+			data,
+		}: {
+			where: { id?: string; status?: string; executionToken?: string };
+			data: Record<string, unknown>;
+		}) => {
+			if (where.id && where.id !== storedApproval.id) return { count: 0 };
+			if (where.status && where.status !== storedApproval.status) return { count: 0 };
+			if (
+				where.executionToken !== undefined &&
+				where.executionToken !== storedApproval.executionToken
+			) {
+				return { count: 0 };
+			}
+			Object.assign(storedApproval, data);
+			return { count: 1 };
+		}) as never);
+		return updateMany;
 	}
 
 	it("still uses exact-file deletion when no media-server notification applies", async () => {
@@ -715,7 +778,7 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(bulkDelete).not.toHaveBeenCalled();
 		expect(deleteSeries).not.toHaveBeenCalled();
 		expect(approvalUpdate).toHaveBeenCalledWith({
-			where: { id: "approval-1" },
+			where: expect.objectContaining({ id: "approval-1", status: "executing" }),
 			data: expect.objectContaining({ status: "pending" }),
 		});
 	});
@@ -753,8 +816,10 @@ describe("verified Sonarr mutation handoff", () => {
 			data: { hasFile: true, sizeOnDisk: 2_002 },
 		});
 		const pendingUpdate = vi
-			.mocked(deps.prisma.libraryCleanupApproval.update)
-			.mock.calls.at(-1)?.[0];
+			.mocked(deps.prisma.libraryCleanupApproval.updateMany)
+			.mock.calls.slice()
+			.reverse()
+			.find((call) => call[0].data.status === "pending")?.[0];
 		expect(pendingUpdate?.data).not.toHaveProperty("safetySnapshot");
 	});
 
@@ -875,7 +940,7 @@ describe("verified Sonarr mutation handoff", () => {
 			},
 		});
 		expect(approvalUpdate).toHaveBeenCalledWith({
-			where: { id: "approval-1" },
+			where: expect.objectContaining({ id: "approval-1", status: "executing" }),
 			data: expect.objectContaining({
 				status: "pending",
 				lastExecutionError: expect.stringContaining("episode files were deleted"),
@@ -884,15 +949,9 @@ describe("verified Sonarr mutation handoff", () => {
 	});
 
 	it("retries a verified fileless Sonarr approval without deleting files again", async () => {
-		const { deps, bulkDelete, deleteSeries, approvalUpdate } = makeSonarrDeps();
-		const storedApproval = approval();
-		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockImplementation((async () => [
-			storedApproval,
-		]) as never);
-		approvalUpdate.mockImplementation(async ({ data }) => {
-			Object.assign(storedApproval, data);
-			return {};
-		});
+		const { deps, bulkDelete, deleteSeries } = makeSonarrDeps();
+		const storedApproval = approval() as unknown as Record<string, unknown>;
+		configureApprovalStore(deps, storedApproval);
 		deleteSeries
 			.mockRejectedValueOnce(new Error("series delete unavailable"))
 			.mockRejectedValueOnce(new Error("series delete unavailable"));
@@ -905,6 +964,7 @@ describe("verified Sonarr mutation handoff", () => {
 			safetySnapshot: approval("delete", []).safetySnapshot,
 		});
 
+		storedApproval.status = "approved";
 		const retryResult = await executeApprovedItems(deps, "user-1", ["approval-1"]);
 
 		expect(retryResult).toEqual({ removed: 1, failed: 0, errors: [] });
@@ -916,16 +976,42 @@ describe("verified Sonarr mutation handoff", () => {
 		});
 	});
 
-	it("expires a record-only Sonarr retry when the service is repointed", async () => {
-		const { deps, targetInstance, bulkDelete, deleteSeries, approvalUpdate } = makeSonarrDeps();
-		const storedApproval = approval();
-		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockImplementation((async () => [
-			storedApproval,
-		]) as never);
-		approvalUpdate.mockImplementation(async ({ data }) => {
-			Object.assign(storedApproval, data);
-			return {};
+	it("reconciles an interrupted approved Sonarr mutation to the unchanged file remainder", async () => {
+		const remainingFile = {
+			id: 3002,
+			path: "/tv-4k/Example Series/Season 01/Example.S01E02.2160p.mkv",
+			relativePath: "Season 01/Example.S01E02.2160p.mkv",
+			size: 2_002,
+		};
+		const { deps, bulkDelete, deleteSeries } = makeSonarrDeps({
+			episodeFiles: [remainingFile],
 		});
+		const storedApproval = approval() as unknown as Record<string, unknown>;
+		Object.assign(storedApproval, {
+			lastExecutionError: INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
+		});
+		const approvalUpdate = configureApprovalStore(deps, storedApproval);
+
+		const result = await executeApprovedItems(deps, "user-1", ["approval-1"]);
+
+		expect(result).toEqual({ removed: 1, failed: 0, errors: [] });
+		expect(bulkDelete).toHaveBeenCalledOnce();
+		expect(bulkDelete).toHaveBeenCalledWith([3002]);
+		expect(deleteSeries).toHaveBeenCalledOnce();
+		expect(storedApproval).toMatchObject({
+			status: "executed",
+			safetySnapshot: approval("delete", [remainingFile]).safetySnapshot,
+			lastExecutionError: null,
+		});
+		expect(approvalUpdate.mock.invocationCallOrder[0]).toBeLessThan(
+			bulkDelete.mock.invocationCallOrder[0]!,
+		);
+	});
+
+	it("expires a record-only Sonarr retry when the service is repointed", async () => {
+		const { deps, targetInstance, bulkDelete, deleteSeries } = makeSonarrDeps();
+		const storedApproval = approval() as unknown as Record<string, unknown>;
+		configureApprovalStore(deps, storedApproval);
 		deleteSeries
 			.mockRejectedValueOnce(new Error("series delete unavailable"))
 			.mockRejectedValueOnce(new Error("series delete unavailable"));
@@ -933,6 +1019,7 @@ describe("verified Sonarr mutation handoff", () => {
 		await executeApprovedItems(deps, "user-1", ["approval-1"]);
 		targetInstance.baseUrl = "http://different-sonarr.internal:8989";
 
+		storedApproval.status = "approved";
 		const retryResult = await executeApprovedItems(deps, "user-1", ["approval-1"]);
 
 		expect(retryResult).toMatchObject({ removed: 0, failed: 1 });

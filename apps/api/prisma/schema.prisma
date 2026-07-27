@@ -1198,6 +1198,10 @@ model LibraryCleanupConfig {
   dryRunMode        Boolean   @default(true)
   maxRemovalsPerRun Int       @default(50)
   requireApproval   Boolean   @default(false)
+  /// Database-backed lease preventing scheduler/manual cleanup overlap across
+  /// app processes. A stale lease may be reclaimed after the executor timeout.
+  runClaimToken     String?
+  runClaimedAt      DateTime?
   /// When true, cleanup proposals exclude items currently seeding via qui
   /// (LibraryCache.torrentState IN ['seeding', 'downloading']). Default false
   /// for backward compatibility — existing rules don't silently change
@@ -1276,6 +1280,7 @@ model LibraryCleanupApproval {
   year            Int?
   rating          Float?
   status          String   @default("pending") // "pending" | "approved" | "retry_pending" | "rejected" | "executing" | "retry_executing" | "executed" | "expired"
+  executionToken  String?                      // Current mutation owner; cleared on recovery/terminal transitions
   safetySnapshot  String?                      // Canonical JSON ARR target/file identity approved for mutation
   lastExecutionError String?
   reviewedAt      DateTime?

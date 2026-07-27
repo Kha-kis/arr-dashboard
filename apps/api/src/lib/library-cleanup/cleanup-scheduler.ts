@@ -18,7 +18,12 @@ import {
 	type TickWrapper,
 } from "../scheduler-registry/scheduler-registry.js";
 import { getErrorMessage } from "../utils/error-message.js";
-import { executeCleanupRun } from "./cleanup-executor.js";
+import {
+	CLEANUP_RUN_LEASE_MS,
+	CleanupRunAlreadyInProgressError,
+	executeCleanupRun,
+	INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
+} from "./cleanup-executor.js";
 import type { CleanupRunResult } from "./types.js";
 
 const CHECK_INTERVAL_MS = 60 * 1000; // Check every minute
@@ -154,18 +159,66 @@ export class CleanupScheduler {
 					this.logger.warn({ err }, "Failed to expire stale approvals");
 				});
 
-			// Recover stuck "executing" items (crash recovery: >1 hour since approval)
+			// Recover stuck "executing" items (crash recovery: >1 hour since approval).
+			// The persisted safety snapshot is reconciled against the live file
+			// remainder when the operator approves it again.
 			const stuckThreshold = new Date(Date.now() - 60 * 60 * 1000);
+			const staleRunLeaseThreshold = new Date(Date.now() - CLEANUP_RUN_LEASE_MS);
 			await this.prisma.libraryCleanupApproval
 				.updateMany({
-					where: { status: "executing", reviewedAt: { lt: stuckThreshold } },
-					data: { status: "expired" },
+					where: {
+						status: "approved",
+						reviewedAt: { lt: stuckThreshold },
+						config: {
+							OR: [
+								{ runClaimToken: null },
+								{ runClaimedAt: null },
+								{ runClaimedAt: { lt: staleRunLeaseThreshold } },
+							],
+						},
+					},
+					data: {
+						status: "pending",
+						executionToken: null,
+						lastExecutionError:
+							"Recovered an interrupted approval request. Review and approve again.",
+					},
 				})
 				.then((result) => {
 					if (result.count > 0) {
 						this.logger.warn(
 							{ recoveredCount: result.count },
-							"Recovered stuck executing approval items — marked as expired",
+							"Recovered stuck approved cleanup items — returned them to pending review",
+						);
+					}
+				})
+				.catch((err) => {
+					this.logger.warn({ err }, "Failed to recover stuck approved cleanup items");
+				});
+			await this.prisma.libraryCleanupApproval
+				.updateMany({
+					where: {
+						status: "executing",
+						reviewedAt: { lt: stuckThreshold },
+						config: {
+							OR: [
+								{ runClaimToken: null },
+								{ runClaimedAt: null },
+								{ runClaimedAt: { lt: staleRunLeaseThreshold } },
+							],
+						},
+					},
+					data: {
+						status: "pending",
+						executionToken: null,
+						lastExecutionError: INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
+					},
+				})
+				.then((result) => {
+					if (result.count > 0) {
+						this.logger.warn(
+							{ recoveredCount: result.count },
+							"Recovered stuck executing approval items — returned them to pending review",
 						);
 					}
 				})
@@ -174,8 +227,18 @@ export class CleanupScheduler {
 				});
 			await this.prisma.libraryCleanupApproval
 				.updateMany({
-					where: { status: "retry_executing", reviewedAt: { lt: stuckThreshold } },
-					data: { status: "retry_pending" },
+					where: {
+						status: "retry_executing",
+						reviewedAt: { lt: stuckThreshold },
+						config: {
+							OR: [
+								{ runClaimToken: null },
+								{ runClaimedAt: null },
+								{ runClaimedAt: { lt: staleRunLeaseThreshold } },
+							],
+						},
+					},
+					data: { status: "retry_pending", executionToken: null },
 				})
 				.then((result) => {
 					if (result.count > 0) {
@@ -247,6 +310,10 @@ export class CleanupScheduler {
 			}
 		} catch (error) {
 			this._isRunning = false;
+			if (error instanceof CleanupRunAlreadyInProgressError) {
+				this.logger.debug("Another app process owns the library-cleanup run lease");
+				return;
+			}
 			this.logger.error({ err: error }, "Error checking/running scheduled cleanup");
 
 			this.notifyFn?.({

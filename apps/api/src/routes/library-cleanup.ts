@@ -14,8 +14,10 @@ import {
 	updateCleanupRuleSchema,
 } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
+import { randomUUID } from "node:crypto";
 import {
 	buildEvalContext,
+	CleanupRunAlreadyInProgressError,
 	executeApprovedItems,
 	executeCleanupPreview,
 	executeCleanupRun,
@@ -788,6 +790,9 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 
 				return reply.send(result);
 			} catch (error) {
+				if (error instanceof CleanupRunAlreadyInProgressError) {
+					return reply.status(409).send({ error: error.message });
+				}
 				request.log.error({ err: error }, "Cleanup execution failed");
 				return reply.status(500).send({ error: getErrorMessage(error) });
 			} finally {
@@ -803,7 +808,16 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		const userId = request.currentUser!.id;
 		const { page, pageSize } = parsePaginationQuery(request.query as Record<string, string>);
 
-		const validStatuses = ["pending", "approved", "rejected", "expired", "executing", "executed"];
+		const validStatuses = [
+			"pending",
+			"approved",
+			"retry_pending",
+			"rejected",
+			"expired",
+			"executing",
+			"retry_executing",
+			"executed",
+		];
 		const rawStatus = (request.query as Record<string, string>).status || "pending";
 		const statusFilter = validStatuses.includes(rawStatus) ? rawStatus : "pending";
 
@@ -855,6 +869,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		async (request, reply) => {
 			const userId = request.currentUser!.id;
 			const { id } = request.params;
+			const approvalRequestToken = randomUUID();
 
 			const transition = await app.prisma.libraryCleanupApproval.updateMany({
 				where: {
@@ -863,23 +878,36 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 					status: "pending",
 					expiresAt: { gt: new Date() },
 				},
-				data: { status: "approved", reviewedAt: new Date() },
+				data: {
+					status: "approved",
+					executionToken: approvalRequestToken,
+					reviewedAt: new Date(),
+				},
 			});
 			if (transition.count !== 1) {
 				return reply.status(404).send({ error: "Approval not found or not pending" });
 			}
 
 			// Execute immediately
-			const result = await executeApprovedItems(
-				{
-					prisma: app.prisma,
-					arrClientFactory: app.arrClientFactory,
-					encryptor: app.encryptor,
-					log: request.log,
-				},
-				userId,
-				[id],
-			);
+			let result: Awaited<ReturnType<typeof executeApprovedItems>>;
+			try {
+				result = await executeApprovedItems(
+					{
+						prisma: app.prisma,
+						arrClientFactory: app.arrClientFactory,
+						encryptor: app.encryptor,
+						log: request.log,
+					},
+					userId,
+					[id],
+					approvalRequestToken,
+				);
+			} catch (error) {
+				if (error instanceof CleanupRunAlreadyInProgressError) {
+					return reply.status(409).send({ error: error.message });
+				}
+				throw error;
+			}
 
 			// nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Fastify JSON response
 			return reply.send(result);
@@ -895,7 +923,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 
 			const transition = await app.prisma.libraryCleanupApproval.updateMany({
 				where: { id, config: { userId }, status: "pending" },
-				data: { status: "rejected", reviewedAt: new Date() },
+				data: { status: "rejected", executionToken: null, reviewedAt: new Date() },
 			});
 			if (transition.count !== 1) {
 				return reply.status(404).send({ error: "Approval not found or not pending" });
@@ -913,12 +941,13 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		if (action === "rejected") {
 			const result = await app.prisma.libraryCleanupApproval.updateMany({
 				where: { id: { in: ids }, config: { userId }, status: "pending" },
-				data: { status: "rejected", reviewedAt: new Date() },
+				data: { status: "rejected", executionToken: null, reviewedAt: new Date() },
 			});
 			return reply.send({ updated: result.count });
 		}
 
 		// Approve and execute
+		const approvalRequestToken = randomUUID();
 		await app.prisma.libraryCleanupApproval.updateMany({
 			where: {
 				id: { in: ids },
@@ -926,19 +955,32 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 				status: "pending",
 				expiresAt: { gt: new Date() },
 			},
-			data: { status: "approved", reviewedAt: new Date() },
+			data: {
+				status: "approved",
+				executionToken: approvalRequestToken,
+				reviewedAt: new Date(),
+			},
 		});
 
-		const result = await executeApprovedItems(
-			{
-				prisma: app.prisma,
-				arrClientFactory: app.arrClientFactory,
-				encryptor: app.encryptor,
-				log: request.log,
-			},
-			userId,
-			ids,
-		);
+		let result: Awaited<ReturnType<typeof executeApprovedItems>>;
+		try {
+			result = await executeApprovedItems(
+				{
+					prisma: app.prisma,
+					arrClientFactory: app.arrClientFactory,
+					encryptor: app.encryptor,
+					log: request.log,
+				},
+				userId,
+				ids,
+				approvalRequestToken,
+			);
+		} catch (error) {
+			if (error instanceof CleanupRunAlreadyInProgressError) {
+				return reply.status(409).send({ error: error.message });
+			}
+			throw error;
+		}
 
 		return reply.send(result);
 	});

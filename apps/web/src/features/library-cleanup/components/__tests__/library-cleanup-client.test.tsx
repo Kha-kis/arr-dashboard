@@ -442,6 +442,23 @@ describe("LibraryCleanupClient", () => {
 				expect(screen.queryByText("2 items selected")).not.toBeInTheDocument();
 			});
 		});
+
+		it("makes durable pending and executing retries visible", async () => {
+			setupApprovalTab();
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+
+			fireEvent.click(screen.getByText("Approval Queue"));
+			fireEvent.click(await screen.findByRole("button", { name: "Retry pending" }));
+
+			await waitFor(() => {
+				expect(mockUseCleanupApprovalQueue).toHaveBeenLastCalledWith(1, 20, "retry_pending");
+			});
+
+			fireEvent.click(screen.getByRole("button", { name: "Retry running" }));
+			await waitFor(() => {
+				expect(mockUseCleanupApprovalQueue).toHaveBeenLastCalledWith(1, 20, "retry_executing");
+			});
+		});
 	});
 
 	describe("shared Plex safety feedback", () => {

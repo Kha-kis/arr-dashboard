@@ -944,23 +944,30 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 		<div className="space-y-4">
 			{/* Status filter + select-all */}
 			<div className="flex items-center gap-3">
-				<div className="flex items-center gap-2">
-					{["pending", "approved", "rejected", "expired"].map((s) => (
+				<div className="flex flex-wrap items-center gap-2">
+					{[
+						{ value: "pending", label: "Pending" },
+						{ value: "retry_pending", label: "Retry pending" },
+						{ value: "retry_executing", label: "Retry running" },
+						{ value: "approved", label: "Approved" },
+						{ value: "rejected", label: "Rejected" },
+						{ value: "expired", label: "Expired" },
+					].map(({ value, label }) => (
 						<button
-							key={s}
+							key={value}
 							type="button"
 							onClick={() => {
-								setStatusFilter(s);
+								setStatusFilter(value);
 								setPage(1);
 							}}
-							aria-pressed={statusFilter === s}
+							aria-pressed={statusFilter === value}
 							className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-								statusFilter === s
+								statusFilter === value
 									? "bg-primary/20 text-primary border border-primary/30"
 									: "bg-card/30 text-muted-foreground hover:bg-card/50 border border-border/30"
 							}`}
 						>
-							{s.charAt(0).toUpperCase() + s.slice(1)}
+							{label}
 						</button>
 					))}
 				</div>

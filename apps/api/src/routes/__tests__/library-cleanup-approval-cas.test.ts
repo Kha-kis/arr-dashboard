@@ -3,6 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const executorMocks = vi.hoisted(() => ({
 	buildEvalContext: vi.fn(),
+	CleanupRunAlreadyInProgressError: class CleanupRunAlreadyInProgressError extends Error {
+		constructor() {
+			super("A cleanup operation is already in progress");
+		}
+	},
 	executeApprovedItems: vi.fn().mockResolvedValue({ removed: 1, failed: 0, errors: [] }),
 	executeCleanupPreview: vi.fn(),
 	executeCleanupRun: vi.fn(),
@@ -37,7 +42,35 @@ describe("library cleanup approval compare-and-set routes", () => {
 		setupAuthInjection(app);
 		registerTestErrorHandler(app);
 		app.decorate("prisma", {
-			libraryCleanupApproval: { updateMany },
+			libraryCleanupApproval: {
+				updateMany,
+				findMany: vi.fn(async ({ where }: { where: { status: string } }) => [
+					{
+						id: "retry-1",
+						instanceId: "radarr-1",
+						arrItemId: 101,
+						itemType: "movie",
+						title: "Example Movie",
+						matchedRuleId: "rule-1",
+						matchedRuleName: "Cleanup",
+						reason: "Matched",
+						action: "delete",
+						sizeOnDisk: 1000n,
+						year: 2024,
+						rating: 8,
+						status: where.status,
+						lastExecutionError: "Radarr is unavailable",
+						reviewedAt: new Date(),
+						executedAt: null,
+						createdAt: new Date(),
+						expiresAt: new Date(Date.now() + 60_000),
+					},
+				]),
+				count: vi.fn().mockResolvedValue(1),
+			},
+			serviceInstance: {
+				findMany: vi.fn().mockResolvedValue([{ id: "radarr-1", label: "Radarr" }]),
+			},
 		} as never);
 		app.decorate("arrClientFactory", {} as never);
 		app.decorate("encryptor", {} as never);
@@ -61,6 +94,20 @@ describe("library cleanup approval compare-and-set routes", () => {
 		expect(updateMany).toHaveBeenCalledTimes(2);
 	});
 
+	it("returns a retryable conflict when another cleanup run owns the database lease", async () => {
+		executorMocks.executeApprovedItems.mockRejectedValueOnce(
+			new executorMocks.CleanupRunAlreadyInProgressError(),
+		);
+
+		const response = await createInjectAuthenticated(app)(
+			"POST",
+			"/library-cleanup/approval-queue/approval-1/approve",
+		);
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json()).toEqual({ error: "A cleanup operation is already in progress" });
+	});
+
 	it("does not transition expired approvals during bulk approval", async () => {
 		const inject = createInjectAuthenticated(app);
 
@@ -76,7 +123,77 @@ describe("library cleanup approval compare-and-set routes", () => {
 				status: "pending",
 				expiresAt: { gt: expect.any(Date) },
 			},
-			data: { status: "approved", reviewedAt: expect.any(Date) },
+			data: {
+				status: "approved",
+				executionToken: expect.any(String),
+				reviewedAt: expect.any(Date),
+			},
 		});
+	});
+
+	it("uses distinct request tokens for overlapping bulk approvals", async () => {
+		let releaseFirst!: (result: { removed: number; failed: number; errors: string[] }) => void;
+		executorMocks.executeApprovedItems
+			.mockImplementationOnce(
+				() =>
+					new Promise((resolve) => {
+						releaseFirst = resolve;
+					}),
+			)
+			.mockRejectedValueOnce(new executorMocks.CleanupRunAlreadyInProgressError());
+		const inject = createInjectAuthenticated(app);
+
+		const firstRequest = inject("POST", "/library-cleanup/approval-queue/bulk", {
+			body: { ids: ["approval-1"], action: "approved" },
+		});
+		await vi.waitFor(() => expect(executorMocks.executeApprovedItems).toHaveBeenCalledOnce());
+		const secondResponse = await inject("POST", "/library-cleanup/approval-queue/bulk", {
+			body: { ids: ["approval-1"], action: "approved" },
+		});
+		releaseFirst({ removed: 1, failed: 0, errors: [] });
+		const firstResponse = await firstRequest;
+
+		expect(firstResponse.statusCode).toBe(200);
+		expect(secondResponse.statusCode).toBe(409);
+		const firstToken = executorMocks.executeApprovedItems.mock.calls[0]?.[3];
+		const secondToken = executorMocks.executeApprovedItems.mock.calls[1]?.[3];
+		expect(firstToken).toEqual(expect.any(String));
+		expect(secondToken).toEqual(expect.any(String));
+		expect(firstToken).not.toBe(secondToken);
+		expect(updateMany.mock.calls[0]?.[0].data.executionToken).toBe(firstToken);
+		expect(updateMany.mock.calls[1]?.[0].data.executionToken).toBe(secondToken);
+	});
+
+	it.each(["retry_pending", "retry_executing"])(
+		"exposes %s durable mutation state to operators",
+		async (retryStatus) => {
+			const response = await createInjectAuthenticated(app)(
+				"GET",
+				`/library-cleanup/approval-queue?status=${retryStatus}`,
+			);
+
+			expect(response.statusCode).toBe(200);
+			expect(response.json()).toMatchObject({
+				items: [
+					{
+						status: retryStatus,
+						lastExecutionError: "Radarr is unavailable",
+						instanceLabel: "Radarr",
+					},
+				],
+				total: 1,
+			});
+		},
+	);
+
+	it("returns a conflict when another process owns the cleanup run lease", async () => {
+		executorMocks.executeCleanupRun.mockRejectedValueOnce(
+			new executorMocks.CleanupRunAlreadyInProgressError(),
+		);
+
+		const response = await createInjectAuthenticated(app)("POST", "/library-cleanup/execute");
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json()).toEqual({ error: "A cleanup operation is already in progress" });
 	});
 });
