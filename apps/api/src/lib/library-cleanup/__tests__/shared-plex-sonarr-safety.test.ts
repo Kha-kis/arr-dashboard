@@ -132,7 +132,7 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 					: { implementation: "PlexServer", configContract: "PlexServerSettings" };
 	const notification = {
 		...notificationIdentity,
-		onSeriesDelete: options.onSeriesDelete ?? true,
+		onSeriesDelete: options.onSeriesDelete ?? false,
 		onEpisodeFileDelete: options.onEpisodeFileDelete ?? true,
 		tags: options.notificationTags ?? [],
 		fields: notificationFields(options),
@@ -277,6 +277,46 @@ const target = {
 };
 
 describe("shared Plex deletion safety for Sonarr", () => {
+	it("blocks at scale when another Sonarr may mount the same storage under a different path", async () => {
+		const targetEpisodeFiles = Array.from({ length: 1_000 }, (_, index) => ({
+			id: 3_001 + index,
+			path: `/tv-4k/Example Series/Season 01/Example.S01E${String(index + 1).padStart(4, "0")}.2160p.mkv`,
+			relativePath: `Season 01/Example.S01E${String(index + 1).padStart(4, "0")}.2160p.mkv`,
+			size: 2_001 + index,
+		}));
+		const { deps, targetInstance, targetClient } = makeSonarrDeps({
+			notificationKind: "none",
+			episodeFiles: targetEpisodeFiles,
+		});
+		const otherInstance = {
+			...targetInstance,
+			id: "sonarr-hd",
+			label: "HD Sonarr",
+			baseUrl: "http://sonarr-hd.internal:8989",
+		};
+		vi.mocked(deps.prisma.serviceInstance.findMany).mockImplementation(
+			(args) =>
+				(args?.where?.service === "PLEX"
+					? Promise.resolve([])
+					: Promise.resolve([targetInstance, otherInstance])) as never,
+		);
+
+		const blocks = await findSharedPlexDeleteBlocks(deps, "user-1", [target], [
+			targetInstance,
+		] as never);
+
+		expect(blocks.get(cleanupDeleteTargetKey(target))).toContain(
+			"another configured Sonarr instance may access the same storage under a different path",
+		);
+		expect(deps.prisma.serviceInstance.findMany).toHaveBeenCalledWith({
+			where: {
+				userId: "user-1",
+				service: { in: ["RADARR", "SONARR"] },
+			},
+		});
+		expect(targetClient.notification.getAll).not.toHaveBeenCalled();
+	});
+
 	it("verifies the complete exact episode-file set for a single-source Plex show", async () => {
 		const { deps, getSeriesEpisodeMediaPartsByTvdbId } = makeSonarrDeps();
 		const context = createSharedPlexSafetyContext();
@@ -549,6 +589,21 @@ describe("shared Plex deletion safety for Sonarr", () => {
 		const blocks = await findSharedPlexDeleteBlocks(deps, "user-1", [target]);
 
 		expect(blocks.get(cleanupDeleteTargetKey(target))).toContain("episode-file-delete");
+		expect(getSeriesEpisodeMediaPartsByTvdbId).not.toHaveBeenCalled();
+	});
+
+	it("blocks a fileless series when full deletion still triggers a Plex refresh", async () => {
+		const { deps, getSeriesEpisodeMediaPartsByTvdbId } = makeSonarrDeps({
+			episodeFiles: [],
+			onSeriesDelete: true,
+			onEpisodeFileDelete: true,
+		});
+
+		const blocks = await findSharedPlexDeleteBlocks(deps, "user-1", [target]);
+
+		expect(blocks.get(cleanupDeleteTargetKey(target))).toContain(
+			"fileless Sonarr series still triggers a Plex refresh",
+		);
 		expect(getSeriesEpisodeMediaPartsByTvdbId).not.toHaveBeenCalled();
 	});
 

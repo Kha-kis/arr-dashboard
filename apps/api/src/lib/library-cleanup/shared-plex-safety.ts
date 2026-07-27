@@ -36,7 +36,6 @@ type SafetyPlexClient = Pick<
 
 export interface SharedPlexSafetyContext {
 	plexClients: Map<string, SafetyPlexClient>;
-	plexOwnerChecks: Map<string, Promise<void>>;
 	failedPlexConnections: Set<string>;
 	verifiedRadarrFiles: Map<string, VerifiedRadarrFileIdentity>;
 	verifiedSonarrFiles: Map<string, VerifiedSonarrFileIdentity>;
@@ -46,7 +45,6 @@ export interface SharedPlexSafetyContext {
 export function createSharedPlexSafetyContext(): SharedPlexSafetyContext {
 	return {
 		plexClients: new Map(),
-		plexOwnerChecks: new Map(),
 		failedPlexConnections: new Set(),
 		verifiedRadarrFiles: new Map(),
 		verifiedSonarrFiles: new Map(),
@@ -412,6 +410,15 @@ function unsupportedMediaServerReason(
 function entityDeleteRefreshReason(service: "RADARR" | "SONARR"): string {
 	const fileEvent = service === "RADARR" ? "movie-file-delete" : "episode-file-delete";
 	return `Skipped for safety: the ${serviceLabel(service)} Plex connection updates on full item deletion but not on ${fileEvent}. Exact-file cleanup cannot preserve that refresh without allowing ARR to delete an unverified replacement file.`;
+}
+
+function filelessEntityDeleteRefreshReason(service: "RADARR" | "SONARR"): string {
+	return `Skipped for safety: the fileless ${serviceLabel(service)} still triggers a Plex refresh on full item deletion. Without an exact file-delete event, arr-dashboard cannot safely correlate that refresh to owner-visible Plex media.`;
+}
+
+function crossInstanceOwnershipReason(service: "RADARR" | "SONARR"): string {
+	const serviceName = service === "RADARR" ? "Radarr" : "Sonarr";
+	return `Skipped for safety: another configured ${serviceName} instance may access the same storage under a different path. arr-dashboard cannot rule out cross-instance ownership without risking a shared file.`;
 }
 
 function normalizeMediaPath(value: unknown): NormalizedMediaPath {
@@ -956,6 +963,7 @@ function plexConnectionFingerprint(instance: ServiceInstance): string {
 async function requirePlexClient(
 	deps: CleanupExecutorDeps,
 	context: SharedPlexSafetyContext,
+	ownerChecks: Map<string, Promise<void>>,
 	instance: ServiceInstance,
 ): Promise<SafetyPlexClient> {
 	const fingerprint = plexConnectionFingerprint(instance);
@@ -977,10 +985,10 @@ async function requirePlexClient(
 		context.plexClients.set(fingerprint, plex);
 	}
 
-	let ownerCheck = context.plexOwnerChecks.get(fingerprint);
+	let ownerCheck = ownerChecks.get(fingerprint);
 	if (!ownerCheck) {
 		ownerCheck = plex.getAccounts().then(() => undefined);
-		context.plexOwnerChecks.set(fingerprint, ownerCheck);
+		ownerChecks.set(fingerprint, ownerCheck);
 	}
 	try {
 		await ownerCheck;
@@ -1002,6 +1010,7 @@ interface PlexVerificationInput {
 async function verifyPlexMediaState(
 	deps: CleanupExecutorDeps,
 	context: SharedPlexSafetyContext,
+	ownerChecks: Map<string, Promise<void>>,
 	plexInstances: ServiceInstance[],
 	movieLookups: Map<SafetyPlexClient, Map<number, Promise<PlexMovieMediaItem[]>>>,
 	seriesLookups: Map<SafetyPlexClient, Map<number, Promise<PlexSeriesMediaItem[]>>>,
@@ -1024,7 +1033,7 @@ async function verifyPlexMediaState(
 		for (const plexInstance of matchingPlexInstances) {
 			let plex: SafetyPlexClient;
 			try {
-				plex = await requirePlexClient(deps, context, plexInstance);
+				plex = await requirePlexClient(deps, context, ownerChecks, plexInstance);
 			} catch (error) {
 				deps.log.warn(
 					{ err: getErrorMessage(error), plexInstanceId: plexInstance.id },
@@ -1116,19 +1125,24 @@ export async function findSharedPlexDeleteBlocks(
 	let instances: ServiceInstance[];
 	let plexInstances: ServiceInstance[];
 	try {
-		instances = verifiedInstances
-			? verifiedInstances.filter(
+		const persistedInstances = await deps.prisma.serviceInstance.findMany({
+			where: {
+				userId,
+				service: { in: ["RADARR", "SONARR"] },
+			},
+		});
+		const verifiedInstancesById = new Map(
+			(verifiedInstances ?? [])
+				.filter(
 					(instance) =>
 						instance.userId === userId &&
 						(instance.service === "RADARR" || instance.service === "SONARR"),
 				)
-			: await deps.prisma.serviceInstance.findMany({
-					where: {
-						id: { in: [...new Set(safetyTargets.map((target) => target.instanceId))] },
-						userId,
-						service: { in: ["RADARR", "SONARR"] },
-					},
-				});
+				.map((instance) => [instance.id, instance]),
+		);
+		instances = persistedInstances.map(
+			(instance) => verifiedInstancesById.get(instance.id) ?? instance,
+		);
 		plexInstances =
 			deleteTargets.length === 0
 				? []
@@ -1155,6 +1169,7 @@ export async function findSharedPlexDeleteBlocks(
 	const sonarrClients = new Map<string, InstanceType<typeof SonarrClient>>();
 	const radarrNotifications = new Map<string, Promise<RadarrNotification[]>>();
 	const sonarrNotifications = new Map<string, Promise<SonarrNotification[]>>();
+	const plexOwnerChecks = new Map<string, Promise<void>>();
 	const plexMovieLookups = new Map<SafetyPlexClient, Map<number, Promise<PlexMovieMediaItem[]>>>();
 	const plexSeriesLookups = new Map<
 		SafetyPlexClient,
@@ -1201,6 +1216,17 @@ export async function findSharedPlexDeleteBlocks(
 			sonarrNotifications.set(instance.id, notifications);
 		}
 		return notifications;
+	};
+
+	const otherInstanceMayOwnFile = (
+		instance: ServiceInstance,
+		service: "RADARR" | "SONARR",
+		targetFileCount: number,
+	): boolean => {
+		if (targetFileCount === 0) return false;
+		return instances.some(
+			(otherInstance) => otherInstance.id !== instance.id && otherInstance.service === service,
+		);
 	};
 
 	for (const target of safetyTargets) {
@@ -1269,6 +1295,15 @@ export async function findSharedPlexDeleteBlocks(
 						),
 					};
 				}
+				if (
+					verifiedPlan.kind === "verified_radarr" &&
+					otherInstanceMayOwnFile(targetInstance, service, 1)
+				) {
+					const reason = crossInstanceOwnershipReason(service);
+					blocks.set(targetKey, reason);
+					context.plans.set(targetKey, { kind: "blocked", reason });
+					continue;
+				}
 				const notifications = (await getRadarrNotifications(targetInstance, radarr)).filter(
 					(notification) => radarrNotificationApplies(notification, movie, action),
 				);
@@ -1293,6 +1328,16 @@ export async function findSharedPlexDeleteBlocks(
 				);
 				if (
 					action === "delete" &&
+					verifiedPlan.kind === "verified_radarr_empty" &&
+					plexNotifications.some((notification) => notification.onMovieDelete === true)
+				) {
+					const reason = filelessEntityDeleteRefreshReason(service);
+					blocks.set(targetKey, reason);
+					context.plans.set(targetKey, { kind: "blocked", reason });
+					continue;
+				}
+				if (
+					action === "delete" &&
 					plexNotifications.some(
 						(notification) =>
 							notification.onMovieDelete === true && notification.onMovieFileDelete !== true,
@@ -1311,6 +1356,7 @@ export async function findSharedPlexDeleteBlocks(
 				const block = await verifyPlexMediaState(
 					deps,
 					context,
+					plexOwnerChecks,
 					plexInstances,
 					plexMovieLookups,
 					plexSeriesLookups,
@@ -1359,6 +1405,12 @@ export async function findSharedPlexDeleteBlocks(
 					sonarrEpisodeFileIdentity(series, file),
 				),
 			};
+			if (otherInstanceMayOwnFile(targetInstance, service, verifiedFiles.episodeFiles.length)) {
+				const reason = crossInstanceOwnershipReason(service);
+				blocks.set(targetKey, reason);
+				context.plans.set(targetKey, { kind: "blocked", reason });
+				continue;
+			}
 			const notifications = (await getSonarrNotifications(targetInstance, sonarr)).filter(
 				(notification) => sonarrNotificationApplies(notification, series, action),
 			);
@@ -1385,6 +1437,16 @@ export async function findSharedPlexDeleteBlocks(
 			);
 			if (
 				action === "delete" &&
+				verifiedFiles.episodeFiles.length === 0 &&
+				plexNotifications.some((notification) => notification.onSeriesDelete === true)
+			) {
+				const reason = filelessEntityDeleteRefreshReason(service);
+				blocks.set(targetKey, reason);
+				context.plans.set(targetKey, { kind: "blocked", reason });
+				continue;
+			}
+			if (
+				action === "delete" &&
 				plexNotifications.some(
 					(notification) =>
 						notification.onSeriesDelete === true && notification.onEpisodeFileDelete !== true,
@@ -1398,6 +1460,7 @@ export async function findSharedPlexDeleteBlocks(
 			const block = await verifyPlexMediaState(
 				deps,
 				context,
+				plexOwnerChecks,
 				plexInstances,
 				plexMovieLookups,
 				plexSeriesLookups,

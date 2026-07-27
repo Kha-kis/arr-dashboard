@@ -223,7 +223,7 @@ function makeDeps(options: TestOptions = {}) {
 				}
 			: {
 					...notificationIdentity,
-					onMovieDelete: options.onMovieDelete ?? true,
+					onMovieDelete: options.onMovieDelete ?? false,
 					onMovieFileDelete: options.onMovieFileDelete ?? true,
 					tags: options.notificationTags ?? [],
 					fields: notificationFields(options),
@@ -495,6 +495,40 @@ describe("shared Plex deletion safety", () => {
 		itemType: "movie",
 		action: "delete",
 	};
+
+	it("blocks when another Radarr instance may mount the same storage under a different path", async () => {
+		const { deps, targetInstance, targetClient } = makeDeps({
+			includePlexNotification: false,
+			mediaPartCount: 1,
+		});
+		const otherInstance = {
+			...targetInstance,
+			id: "radarr-hd",
+			label: "HD Radarr",
+			baseUrl: "http://radarr-hd.internal:7878",
+		};
+		vi.mocked(deps.prisma.serviceInstance.findMany).mockImplementation(
+			(args) =>
+				(args?.where?.service === "PLEX"
+					? Promise.resolve([])
+					: Promise.resolve([targetInstance, otherInstance])) as never,
+		);
+
+		const blocks = await findSharedPlexDeleteBlocks(deps, "user-1", [target], [
+			targetInstance,
+		] as never);
+
+		expect(blocks.get(cleanupDeleteTargetKey(target))).toContain(
+			"another configured Radarr instance may access the same storage under a different path",
+		);
+		expect(deps.prisma.serviceInstance.findMany).toHaveBeenCalledWith({
+			where: {
+				userId: "user-1",
+				service: { in: ["RADARR", "SONARR"] },
+			},
+		});
+		expect(targetClient.notification.getAll).not.toHaveBeenCalled();
+	});
 
 	it("renders only preview items that can receive live safety inspection", () => {
 		const flagged = Array.from({ length: 201 }, (_, index) => ({
@@ -927,6 +961,30 @@ describe("shared Plex deletion safety", () => {
 		expect(blocks.has(cleanupDeleteTargetKey(target))).toBe(true);
 	});
 
+	it("rechecks Plex owner authority across separate safety checks", async () => {
+		const { deps, getAccounts } = makeDeps({ mediaPartCount: 1 });
+		getAccounts
+			.mockResolvedValueOnce([{ id: 1, name: "Owner" }])
+			.mockRejectedValueOnce(new Error("owner authority revoked"));
+		const context = createSharedPlexSafetyContext();
+
+		expect(await findSharedPlexDeleteBlocks(deps, "user-1", [target], undefined, context)).toEqual(
+			new Map(),
+		);
+		const changedBlocks = await findSharedPlexDeleteBlocks(
+			deps,
+			"user-1",
+			[target],
+			undefined,
+			context,
+		);
+
+		expect(changedBlocks.get(cleanupDeleteTargetKey(target))).toContain(
+			"could not verify the live Radarr and Plex",
+		);
+		expect(getAccounts).toHaveBeenCalledTimes(2);
+	});
+
 	it("blocks when any matching owner credential cannot verify media state", async () => {
 		const { deps, plexInstance } = makeDeps({ mediaPartCount: 1 });
 		const secondPlexInstance = { ...plexInstance, id: "plex-2" };
@@ -1097,12 +1155,28 @@ describe("shared Plex deletion safety", () => {
 	it("blocks full deletion when an entity-only Plex trigger could not be preserved", async () => {
 		const { deps, getMovieMediaPartsByTmdbId } = makeDeps({
 			mediaPartCount: 1,
+			onMovieDelete: true,
 			onMovieFileDelete: false,
 		});
 
 		const blocks = await findSharedPlexDeleteBlocks(deps, "user-1", [target]);
 
 		expect(blocks.get(cleanupDeleteTargetKey(target))).toContain("movie-file-delete");
+		expect(getMovieMediaPartsByTmdbId).not.toHaveBeenCalled();
+	});
+
+	it("blocks a fileless movie when full deletion still triggers a Plex refresh", async () => {
+		const { deps, getMovieMediaPartsByTmdbId } = makeDeps({
+			initialMovieFileId: null,
+			onMovieDelete: true,
+			onMovieFileDelete: true,
+		});
+
+		const blocks = await findSharedPlexDeleteBlocks(deps, "user-1", [target]);
+
+		expect(blocks.get(cleanupDeleteTargetKey(target))).toContain(
+			"fileless Radarr movie still triggers a Plex refresh",
+		);
 		expect(getMovieMediaPartsByTmdbId).not.toHaveBeenCalled();
 	});
 

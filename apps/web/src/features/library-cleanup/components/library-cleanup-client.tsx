@@ -54,7 +54,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 import { getErrorMessage } from "@/lib/error-utils";
-import { getLinuxIsoName, useIncognitoMode } from "@/lib/incognito";
+import {
+	anonymizeCleanupError,
+	getIncognitoCleanupReason,
+	getIncognitoCleanupRuleName,
+	getLinuxInstanceName,
+	getLinuxIsoName,
+	useIncognitoMode,
+} from "@/lib/incognito";
 import { INPUT_BASE_CLASSES } from "@/lib/theme-input-styles";
 import {
 	useApproveCleanupItem,
@@ -652,6 +659,9 @@ function ConfigTab({
 							<div className="max-h-80 overflow-y-auto space-y-2">
 								{previewData.items.map((item, i) => {
 									const score = extractStalenessScore(item.reason);
+									const ruleSummary = incognitoMode
+										? `${getIncognitoCleanupRuleName()}: ${getIncognitoCleanupReason()}`
+										: `${item.matchedRuleName}: ${item.reason}`;
 									return (
 										<div
 											key={`${item.title}-${i}`}
@@ -665,9 +675,7 @@ function ConfigTab({
 													<QuiStatusBadge status={item.quiStatus} />
 												</div>
 												{item.action === "skipped" && (
-													<p className="mt-1 text-xs text-muted-foreground">
-														{item.matchedRuleName}: {item.reason}
-													</p>
+													<p className="mt-1 text-xs text-muted-foreground">{ruleSummary}</p>
 												)}
 											</div>
 											<div className="flex shrink-0 items-center gap-2">
@@ -714,9 +722,7 @@ function ConfigTab({
 														</span>
 													</div>
 												) : item.action !== "skipped" ? (
-													<span className="text-xs text-muted-foreground">
-														{item.matchedRuleName}: {item.reason}
-													</span>
+													<span className="text-xs text-muted-foreground">{ruleSummary}</span>
 												) : null}
 											</div>
 										</div>
@@ -1087,7 +1093,9 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 											type="button"
 											role="checkbox"
 											aria-checked={selectedIds.has(item.id)}
-											aria-label={`Select ${item.title}`}
+											aria-label={`Select ${
+												incognitoMode ? getLinuxIsoName(item.title) : item.title
+											}`}
 											onClick={() => toggleItem(item.id)}
 											className="shrink-0"
 										>
@@ -1117,7 +1125,9 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 											)}
 											{item.instanceLabel && (
 												<span className="inline-flex rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground border border-border/30">
-													{item.instanceLabel}
+													{incognitoMode
+														? getLinuxInstanceName(item.instanceLabel)
+														: item.instanceLabel}
 												</span>
 											)}
 											{item.action && item.action !== "delete" && (
@@ -1127,11 +1137,16 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 											)}
 										</div>
 										<p className="text-xs text-muted-foreground mt-0.5">
-											{item.matchedRuleName}: {item.reason}
+											{incognitoMode
+												? `${getIncognitoCleanupRuleName()}: ${getIncognitoCleanupReason()}`
+												: `${item.matchedRuleName}: ${item.reason}`}
 										</p>
 										{item.lastExecutionError && (
 											<p className="mt-1 text-xs text-red-400">
-												Last execution attempt: {item.lastExecutionError}
+												Last execution attempt:{" "}
+												{incognitoMode
+													? anonymizeCleanupError(item.lastExecutionError)
+													: item.lastExecutionError}
 											</p>
 										)}
 									</div>

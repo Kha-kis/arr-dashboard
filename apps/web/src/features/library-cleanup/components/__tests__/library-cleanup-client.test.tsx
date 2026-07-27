@@ -239,6 +239,7 @@ function setupDefaultMocks(configOverrides: Partial<CleanupConfigResponse> = {})
 describe("LibraryCleanupClient", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		localStorage.clear();
 		setupDefaultMocks();
 	});
 
@@ -545,6 +546,58 @@ describe("LibraryCleanupClient", () => {
 			expect(screen.getByText(/Skipped for safety: shared Plex risk/)).toBeInTheDocument();
 		});
 
+		it("masks cleanup rule details in preview results in incognito mode", () => {
+			localStorage.setItem("arr-dashboard-incognito-mode", "true");
+			mockUseCleanupPreview.mockReturnValue(
+				defaultMutation({
+					data: {
+						totalEvaluated: 2,
+						totalFlagged: 2,
+						items: [
+							{
+								instanceId: "radarr-secret",
+								instanceLabel: "Secret Radarr",
+								arrItemId: 101,
+								itemType: "movie",
+								title: "Private Movie",
+								matchedRuleName: "Alice Path Cleanup",
+								reason:
+									'Retry failed for "/home/alice/Private Movie" on SECRET RADARR at [fd00::42]:7878',
+								action: "delete",
+								sizeOnDisk: "1000",
+								year: 2024,
+								rating: 8,
+								quiStatus: "no_signal",
+							},
+							{
+								instanceId: "sonarr-secret",
+								instanceLabel: "Secret Sonarr",
+								arrItemId: 202,
+								itemType: "series",
+								title: "Private Series",
+								matchedRuleName: "Bob Safety Rule",
+								reason: "Skipped for safety at /srv/bob/Private Series",
+								action: "skipped",
+								sizeOnDisk: "2000",
+								year: 2023,
+								rating: 7,
+								quiStatus: "no_signal",
+							},
+						],
+					},
+				}),
+			);
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+
+			expect(screen.getAllByText("Cleanup rule: Matched cleanup criteria")).toHaveLength(2);
+			expect(screen.queryByText(/Alice Path Cleanup/)).not.toBeInTheDocument();
+			expect(screen.queryByText(/Bob Safety Rule/)).not.toBeInTheDocument();
+			expect(screen.queryByText(/\/home\/alice/)).not.toBeInTheDocument();
+			expect(screen.queryByText(/\/srv\/bob/)).not.toBeInTheDocument();
+			expect(screen.queryByText(/fd00::42/)).not.toBeInTheDocument();
+		});
+
 		it("shows approval execution errors so a returned-to-pending item is actionable", async () => {
 			const approveMutate = vi.fn();
 			const approveReset = vi.fn();
@@ -600,6 +653,97 @@ describe("LibraryCleanupClient", () => {
 			expect(bulkReset).toHaveBeenCalledOnce();
 			expect(approveMutate).toHaveBeenCalledWith("item-1");
 			expect(approveReset).not.toHaveBeenCalled();
+		});
+
+		it("masks persisted retry errors and instance labels in incognito mode", async () => {
+			localStorage.setItem("arr-dashboard-incognito-mode", "true");
+			mockUseCleanupApprovalQueue.mockReturnValue({
+				data: {
+					items: [
+						{
+							id: "item-1",
+							instanceId: "radarr-secret",
+							instanceLabel: "Secret Radarr",
+							arrItemId: 101,
+							itemType: "movie",
+							title: "Private Movie",
+							matchedRuleName: "Alice Path Cleanup",
+							reason: 'Path "/home/alice/Private Movie" matches cleanup rule',
+							action: "delete",
+							sizeOnDisk: "1000",
+							year: 2024,
+							status: "retry_pending",
+							lastExecutionError: "Failed to decrypt API key for SECRET RADARR at [fd00::42]:7878",
+						},
+					],
+					total: 1,
+					page: 1,
+					pageSize: 20,
+				},
+				isLoading: false,
+				isError: false,
+				refetch: vi.fn(),
+			});
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+			fireEvent.click(screen.getByText("Approval Queue"));
+
+			await waitFor(() => {
+				expect(screen.queryByText(/Secret Radarr/)).not.toBeInTheDocument();
+				expect(screen.queryByText(/Private Movie/)).not.toBeInTheDocument();
+				expect(screen.queryByText(/Alice Path Cleanup/)).not.toBeInTheDocument();
+				expect(screen.queryByText(/\/home\/alice/)).not.toBeInTheDocument();
+				expect(screen.queryByText(/fd00::42/)).not.toBeInTheDocument();
+			});
+			expect(screen.getByText("Radarr 4K")).toBeInTheDocument();
+			expect(screen.getByText("Cleanup rule: Matched cleanup criteria")).toBeInTheDocument();
+			expect(
+				screen.getByText(
+					"Last execution attempt: Cleanup retry failed; details hidden in incognito mode.",
+				),
+			).toBeInTheDocument();
+		});
+
+		it("masks pending approval checkbox labels in incognito mode", async () => {
+			localStorage.setItem("arr-dashboard-incognito-mode", "true");
+			mockUseCleanupApprovalQueue.mockReturnValue({
+				data: {
+					items: [
+						{
+							id: "item-1",
+							instanceId: "radarr-secret",
+							instanceLabel: "Secret Radarr",
+							arrItemId: 101,
+							itemType: "movie",
+							title: "Private Movie",
+							matchedRuleName: "Private cleanup",
+							reason: "Matched private cleanup criteria",
+							action: "delete",
+							sizeOnDisk: "1000",
+							year: 2024,
+							status: "pending",
+						},
+					],
+					total: 1,
+					page: 1,
+					pageSize: 20,
+				},
+				isLoading: false,
+				isError: false,
+				refetch: vi.fn(),
+			});
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+			fireEvent.click(screen.getByText("Approval Queue"));
+
+			const itemCheckbox = await screen.findByRole("checkbox", {
+				name: /^Select .+\.iso$/,
+			});
+			expect(itemCheckbox).not.toHaveAttribute("aria-label", "Select Private Movie");
+			expect(
+				screen.queryByRole("checkbox", { name: "Select Private Movie" }),
+			).not.toBeInTheDocument();
+			expect(screen.queryByText("Private Movie")).not.toBeInTheDocument();
 		});
 	});
 });
