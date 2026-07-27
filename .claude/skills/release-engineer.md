@@ -53,12 +53,19 @@ It should NOT contain:
 
 ## CI Pipeline
 
-After merging to main:
-1. Create tag: `git tag vX.Y.Z && git push origin vX.Y.Z`
-2. Create release: `gh release create vX.Y.Z --title "..." --notes "..."`
-3. The tag push triggers `Build and Push Release Docker Image` workflow
-4. Verify: `gh run list --limit 3` shows the release build succeeded
-5. Close related Dependabot PRs if their changes are included
+Follow `docs/RELEASING.md`; it is the authoritative checklist. In particular:
+
+1. Merge the reviewed release commit to the correct branch and confirm CI.
+2. Create an annotated tag:
+   `git tag -a vX.Y.Z -m "vX.Y.Z — <tagline>"`.
+3. Push the tag and wait for the release Docker workflow.
+4. Verify both registries and `/health` version/commit metadata.
+5. Create the GitHub Release from the exact tag and explicitly mark the newest
+   stable release as Latest (or mark a 3.0 tag as a prerelease).
+6. Confirm `gh release list` shows the tag; a successful Docker workflow does
+   not create the human-facing GitHub Release automatically.
+7. Close only reproduced/resolved issues, each with an explanatory release
+   comment. Close related dependency PRs if their changes are included.
 
 ## Common Mistakes
 
@@ -66,3 +73,6 @@ After merging to main:
 - Writing changelog entries that describe implementation ("changed X to Y") instead of impact ("fixes incorrect missing count for Lidarr")
 - Not closing Dependabot PRs after their changes are included via overrides
 - Creating the tag before CI passes on the merge commit
+- Publishing images but forgetting the GitHub Release, leaving an older version
+  marked Latest
+- Treating prerelease and stable ancestry/tagging rules as interchangeable

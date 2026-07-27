@@ -1,0 +1,4 @@
+interface:
+  display_name: "Validate arr-dashboard"
+  short_description: "Run the repository verification gauntlet"
+  default_prompt: "Use $arr-validate to run and report the appropriate verification checks."

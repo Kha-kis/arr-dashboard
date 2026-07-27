@@ -131,4 +131,7 @@ After running tests, report:
 - Do not modify `e2e/auth.setup.ts` unless the auth flow itself changed
 - Do not add `test.only` — the CI config (`forbidOnly: true`) will reject it
 - Workers are forced to 1 to prevent session race conditions — do not change this
-- When writing tests for new features, check if the feature has service-availability gating (Plex, Seerr, Tautulli) — tests may need to handle the "service not configured" state
+- When writing tests for new features, check branch-specific
+  service-availability gating (for example Plex/Seerr/Tautulli on 2.x or
+  Plex/Seerr/Tracearr/qui on 3.0) — tests must handle the "service not
+  configured" state

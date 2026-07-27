@@ -1,6 +1,9 @@
 Perform a trust and UX correctness audit on: $ARGUMENTS
 
-If no target specified, audit files changed on the current branch (`git diff --name-only origin/main..HEAD`).
+If no target is specified, resolve the current branch's actual PR base (`main`
+or `next`) and audit files changed in
+`git diff --name-only origin/<base>...HEAD`. If the base is ambiguous, stop and
+ask rather than defaulting to `main`.
 
 This audit focuses on issues that are NOT security vulnerabilities but erode user trust: misleading data, missing privacy masking, overclaiming signals, or broken navigation. These are the issues that make users doubt whether the feature is working correctly.
 
@@ -20,8 +23,12 @@ This audit focuses on issues that are NOT security vulnerabilities but erode use
    - Check: does every signal have a clear "why now" (time-sensitive or state-change) rather than "always true"?
 
 4. **Service-availability gating**:
-   - For each signal/insight that depends on optional services (Plex, Seerr, Tautulli): is there a guard that prevents misleading items when the service isn't configured?
-   - Check: would a user with only Sonarr see any items about Plex/Seerr/Tautulli?
+   - For each signal/insight that depends on optional services configured on
+     the target branch (for example Plex, Seerr, Tautulli on 2.x, or Tracearr
+     and qui on 3.0): is there a guard that prevents misleading items when the
+     service isn't configured?
+   - Check the minimal configured-service case: would a user with only Sonarr
+     see claims about an integration they do not have?
 
 5. **Action link correctness**:
    - List every action link, deep link, or navigation target in the feature

@@ -1,6 +1,8 @@
 Prepare release v$ARGUMENTS
 
-This is the mechanical execution step. Run `/release-patch` first for readiness assessment.
+This is the mechanical execution step for a stable release from `main`. Run
+`/release-patch` first for readiness assessment. For a 3.0 prerelease from
+`next`, use the prerelease section of `docs/RELEASING.md` instead.
 
 Follow the release checklist exactly:
 
@@ -12,9 +14,11 @@ Follow the release checklist exactly:
 6. **Wiki**: Update version in `Home.md` and `Troubleshooting.md` (clone from `arr-dashboard.wiki.git` if not at `/tmp/arr-wiki`)
 
 Then validate (or run `/validate`):
-- `pnpm --filter @arr/web exec tsc --noEmit`
-- `pnpm --filter @arr/api exec tsc --noEmit`
+- `pnpm run format`
+- `pnpm --filter @arr/shared build` if shared changed
+- `pnpm run typecheck`
 - `pnpm run test`
+- `pnpm run lint`
 - `pnpm run build`
 
 Commit as: `chore: v$ARGUMENTS release — changelog and version bump`

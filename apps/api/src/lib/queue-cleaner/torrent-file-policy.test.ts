@@ -55,12 +55,16 @@ describe("torrent file policy", () => {
 		});
 	});
 
-	it.each([["not json"], ['{"mkv":true}'], ['["mkv.exe"]'], ['["../mkv"]'], ['[""]'], ["[42]"]])(
-		"rejects unsafe or ambiguous allowlists: %s",
-		(value) => {
-			expect(parseAllowedFileExtensions(value).ok).toBe(false);
-		},
-	);
+	it.each([
+		["not json"],
+		['{"mkv":true}'],
+		['["mkv.exe"]'],
+		['["../mkv"]'],
+		['[""]'],
+		["[42]"],
+	])("rejects unsafe or ambiguous allowlists: %s", (value) => {
+		expect(parseAllowedFileExtensions(value).ok).toBe(false);
+	});
 
 	it("rejects oversized allowlist JSON before parsing it", () => {
 		expect(parseAllowedFileExtensions(`["${"a".repeat(5000)}"]`).ok).toBe(false);

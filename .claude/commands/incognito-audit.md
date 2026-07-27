@@ -1,6 +1,8 @@
 Audit incognito/privacy coverage for: $ARGUMENTS
 
-If no target specified, audit files changed on the current branch (`git diff --name-only origin/main..HEAD`).
+If no target is specified, resolve the branch's actual PR base (`main` or
+`next`) and audit `git diff --name-only origin/<base>...HEAD`. Stop if the base
+is ambiguous rather than defaulting to `main`.
 
 ---
 

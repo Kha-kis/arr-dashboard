@@ -12,24 +12,31 @@ pnpm install && pnpm run dev  # API (3001) + Web (3000)
 
 ## Development Guide
 
-The main development reference is [`CLAUDE.md`](CLAUDE.md) — it covers:
+Start with [`AGENTS.md`](AGENTS.md) for branch, safety, and verification rules.
+The detailed development reference is [`CLAUDE.md`](CLAUDE.md) — it covers:
 - Architecture (Fastify + Next.js + Prisma monorepo)
 - Code style and conventions (Biome, TypeScript strict mode)
 - Key patterns (auth, encryption, API proxy, theming)
 - How to add features (routes, pages, database changes)
 
+Codex users also get repository-scoped workflows from `.agents/skills/` and
+project reviewers from `.codex/agents/`; no personal installation is required.
+
 ## Submitting Changes
 
-1. **Fork** the repo and create a branch from `main`
+1. **Fork** the repo and choose the correct base: `next` for 3.0 work, or
+   `main` only for stable 2.x maintenance
 2. **Follow existing patterns** — check `CLAUDE.md` for conventions
 3. **Test your changes**:
    ```bash
-   pnpm run lint        # Biome (API) + ESLint (Web)
-   pnpm run typecheck   # TypeScript strict mode
-   pnpm run test        # Vitest unit tests
-   pnpm run build       # Production build
+   pnpm run format
+   pnpm --filter @arr/shared build  # if packages/shared changed
+   pnpm run typecheck               # root Turbo check matching CI
+   pnpm run test
+   pnpm run lint
+   pnpm run build                   # release-sensitive/substantial changes
    ```
-4. **Open a PR** against `main` with a clear description
+4. **Open a PR** against the branch you based the work on
 
 ## What Makes a Good PR
 
