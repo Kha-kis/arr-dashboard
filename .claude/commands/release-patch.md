@@ -1,5 +1,10 @@
 Prepare a patch release from the current branch.
 
+This command is for stable 2.x patches targeting `main`. Confirm the current
+branch is based on the latest `origin/main`; for a 3.0 prerelease, use
+the readiness tracker present on `next` and the prerelease workflow in
+`docs/RELEASING.md`.
+
 1. **Review scope**: Run `git log --oneline origin/main..HEAD` to see all changes. Categorize each commit as:
    - User-facing fix (bug fix, behavior change)
    - Maintenance (dependency update, CI change)

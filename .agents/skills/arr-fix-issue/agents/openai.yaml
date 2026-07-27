@@ -1,0 +1,4 @@
+interface:
+  display_name: "Fix arr-dashboard issue"
+  short_description: "Reproduce and fix a GitHub issue safely"
+  default_prompt: "Use $arr-fix-issue to diagnose and fix this arr-dashboard issue."

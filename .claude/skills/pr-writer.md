@@ -32,7 +32,8 @@ type: skill
 5. Files changed
 6. Notes / risks (only if non-trivial)
 7. Test plan
-8. Issue references (`Closes #NNN`)
+8. Issue references (`Closes #NNN` only after exact-scenario reproduction;
+   otherwise `Related to #NNN`)
 9. Footer
 
 ## Writing Patterns

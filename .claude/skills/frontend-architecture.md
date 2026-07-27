@@ -10,20 +10,24 @@ Load this skill when working on React hooks, data fetching, component structure,
 
 ## Query Infrastructure
 
-**Query keys** are centralized in `apps/web/src/lib/query-keys.ts` (407 lines). Every domain has a key factory:
-- `dashboardKeys`, `libraryKeys`, `plexKeys`, `tautulliKeys`, `seerrKeys`, `huntingKeys`, `queueCleanerKeys`, `libraryCleanupKeys`, `notificationKeys`, `validationKeys`, `authKeys`, `backupKeys`, etc.
+**Query keys** are centralized in `apps/web/src/lib/query-keys.ts`. Every domain has a key factory:
+- Examples include `dashboardKeys`, `libraryKeys`, `plexKeys`, `seerrKeys`,
+  `huntingKeys`, `queueCleanerKeys`, `libraryCleanupKeys`, `notificationKeys`,
+  `validationKeys`, `authKeys`, and `backupKeys`. Tautulli keys are 2.x-only;
+  Tracearr keys are 3.0-only.
 - Key factories return `as const` tuples for type safety
 - Mutations must invalidate using these factories, never raw string arrays
 - Prefix-based invalidation works: invalidating `["seerr"]` clears all seerr queries
 
 **Polling intervals** are in `apps/web/src/lib/polling-intervals.ts`:
 - POLLING_FAST (5s), POLLING_REALTIME (15s), POLLING_ACTIVE (30s), POLLING_STANDARD (60s), POLLING_STATS (120s), POLLING_BACKGROUND (5min)
-- Some hooks accept `refetchInterval` as a parameter (usePlex, useTautulli) — change the call site, not the hook default
+- Some hooks accept `refetchInterval` as a parameter — inspect all call sites
+  before changing the hook default
 
 ## Hook Organization
 
 Two tiers of hooks:
-1. **Domain hooks** (`hooks/api/use*.ts`) — 33 files, each wrapping an API domain's queries and mutations. These are the primary data layer.
+1. **Domain hooks** (`hooks/api/use*.ts`) — each wraps an API domain's queries and mutations. These are the primary data layer.
 2. **Feature hooks** (`features/*/hooks/use*.ts`) — per-feature state management, filter state, derived data. These consume domain hooks.
 
 **Pattern**: API client module → domain hook → feature hook → component. Components should never call `useQuery` or `useMutation` directly.

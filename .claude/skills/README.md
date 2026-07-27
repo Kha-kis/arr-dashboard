@@ -11,9 +11,12 @@ Skills are loaded when Claude needs specialized knowledge that would bloat CLAUD
 |-------|-------------|
 | `frontend-architecture` | Working on hooks, query infrastructure, component patterns, state management |
 | `release-engineer` | Preparing releases, writing changelogs, assessing release scope |
-| `integration-auditor` | Working with *arr service APIs, normalizers, Plex/Tautulli/Seerr data |
+| `integration-auditor` | Working with branch-specific *arr, media, Seerr, qui, Tautulli, or Tracearr APIs and normalizers |
 | `auth-reviewer` | Reviewing auth changes, OIDC flows, session management, encryption |
 | `regression-hunter` | Reviewing diffs, stabilizing branches, assessing merge safety |
+
+The `data-safety-reviewer` under `.claude/agents/` is a mandatory independent
+reviewer for deletion, cleanup, restore, schema, and upstream mutation changes.
 
 ## How skills relate to commands
 
