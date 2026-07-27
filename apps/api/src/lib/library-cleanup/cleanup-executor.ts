@@ -887,55 +887,58 @@ export async function executeCleanupRun(
 		};
 	}
 
-	const runLease = await startCleanupRunLease(deps, userId, config.id);
+	if (config.dryRunMode) {
+		const { flagged, totalEvaluated, prefetchHealth, warnings } = await evaluateAllItems(
+			deps,
+			config,
+			config.rules,
+		);
+		const limited = flagged.slice(0, config.maxRemovalsPerRun);
+		const safetyContext = createSharedPlexSafetyContext();
+		const sharedPlexBlocks = await findSharedPlexDeleteBlocks(
+			deps,
+			userId,
+			toDeleteTargets(limited),
+			undefined,
+			safetyContext,
+		);
+		await blockPlansThatDifferFromEvaluatedCache(
+			deps,
+			userId,
+			limited,
+			safetyContext,
+			sharedPlexBlocks,
+		);
+		const allWarnings = withSharedPlexWarning(warnings, sharedPlexBlocks.size);
+		const details = buildCleanupPreviewDetails(limited, sharedPlexBlocks);
 
+		const result: CleanupRunResult = {
+			isDryRun: true,
+			status: allWarnings.length > 0 ? "partial" : "completed",
+			itemsEvaluated: totalEvaluated,
+			itemsFlagged: limited.length,
+			itemsRemoved: 0,
+			itemsUnmonitored: 0,
+			itemsFilesDeleted: 0,
+			itemsSkipped: flagged.length - limited.length + sharedPlexBlocks.size,
+			details,
+			durationMs: Date.now() - startTime,
+			prefetchHealth,
+			warnings: allWarnings,
+		};
+
+		await createRunLog(prisma, config.id, result, log);
+		return result;
+	}
+
+	const runLease = await startCleanupRunLease(deps, userId, config.id);
 	try {
 		const { flagged, totalEvaluated, prefetchHealth, warnings } = await evaluateAllItems(
 			deps,
 			config,
 			config.rules,
 		);
-
-		// Respect max removals per run
 		const limited = flagged.slice(0, config.maxRemovalsPerRun);
-
-		if (config.dryRunMode) {
-			const safetyContext = createSharedPlexSafetyContext();
-			const sharedPlexBlocks = await findSharedPlexDeleteBlocks(
-				deps,
-				userId,
-				toDeleteTargets(limited),
-				undefined,
-				safetyContext,
-			);
-			await blockPlansThatDifferFromEvaluatedCache(
-				deps,
-				userId,
-				limited,
-				safetyContext,
-				sharedPlexBlocks,
-			);
-			const allWarnings = withSharedPlexWarning(warnings, sharedPlexBlocks.size);
-			const details = buildCleanupPreviewDetails(limited, sharedPlexBlocks);
-
-			const result: CleanupRunResult = {
-				isDryRun: true,
-				status: allWarnings.length > 0 ? "partial" : "completed",
-				itemsEvaluated: totalEvaluated,
-				itemsFlagged: limited.length,
-				itemsRemoved: 0,
-				itemsUnmonitored: 0,
-				itemsFilesDeleted: 0,
-				itemsSkipped: flagged.length - limited.length + sharedPlexBlocks.size,
-				details,
-				durationMs: Date.now() - startTime,
-				prefetchHealth,
-				warnings: allWarnings,
-			};
-
-			await createRunLog(prisma, config.id, result, log);
-			return result;
-		}
 
 		// Real execution
 		if (config.requireApproval) {

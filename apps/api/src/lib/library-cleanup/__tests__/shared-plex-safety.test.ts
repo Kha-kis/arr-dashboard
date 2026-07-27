@@ -6,6 +6,7 @@ import {
 	CleanupRunLeaseLostError,
 	executeApprovedItems,
 	executeCleanupPreview,
+	executeCleanupRun,
 	executeDirectRemoval,
 	executeRetryItems,
 	INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
@@ -327,6 +328,7 @@ function makeDeps(options: TestOptions = {}) {
 				update: vi.fn().mockResolvedValue({}),
 			},
 			libraryCache: {
+				findMany: vi.fn().mockResolvedValue([]),
 				deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
 				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 			},
@@ -495,6 +497,52 @@ describe("shared Plex deletion safety", () => {
 		itemType: "movie",
 		action: "delete",
 	};
+
+	it("does not acquire the mutation lease for a dry run", async () => {
+		const { deps } = makeDeps();
+		vi.mocked(deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			id: "config-1",
+			userId: "user-1",
+			enabled: true,
+			dryRunMode: true,
+			requireApproval: false,
+			maxRemovalsPerRun: 10,
+			respectQuiSeeding: false,
+			rules: [
+				{
+					id: "rule-1",
+					name: "Old media",
+					enabled: true,
+					priority: 1,
+					ruleType: "age",
+					parameters: JSON.stringify({ operator: "older_than", days: 30 }),
+					serviceFilter: null,
+					instanceFilter: null,
+					excludeTags: null,
+					excludeTitles: null,
+					plexLibraryFilter: null,
+					action: "delete",
+					operator: null,
+					conditions: null,
+					configId: "config-1",
+					retentionMode: false,
+					createdAt: new Date("2026-07-27T12:00:00.000Z"),
+					updatedAt: new Date("2026-07-27T12:00:00.000Z"),
+				},
+			],
+		} as never);
+
+		const result = await executeCleanupRun(deps, "user-1");
+
+		expect(result).toMatchObject({
+			isDryRun: true,
+			status: "completed",
+			itemsEvaluated: 0,
+			itemsRemoved: 0,
+		});
+		expect(deps.prisma.libraryCleanupConfig.updateMany).not.toHaveBeenCalled();
+		expect(deps.prisma.libraryCleanupLog.create).toHaveBeenCalledOnce();
+	});
 
 	it("blocks when another Radarr instance may mount the same storage under a different path", async () => {
 		const { deps, targetInstance, targetClient } = makeDeps({
