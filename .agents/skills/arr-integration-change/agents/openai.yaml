@@ -1,0 +1,4 @@
+interface:
+  display_name: "Change an integration"
+  short_description: "Safely modify external service integrations"
+  default_prompt: "Use $arr-integration-change to implement this external service integration change."

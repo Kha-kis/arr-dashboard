@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prepare arr-dashboard PR"
+  short_description: "Prepare a focused and evidence-backed PR"
+  default_prompt: "Use $arr-prepare-pr to assess readiness and draft this pull request."

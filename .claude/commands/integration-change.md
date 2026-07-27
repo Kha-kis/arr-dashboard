@@ -7,10 +7,18 @@ Add or modify an external service integration: $ARGUMENTS
 Before writing any code, read an existing integration that is structurally closest to the target service:
 
 - **Arr services** (Sonarr, Radarr, Lidarr, Readarr): read `apps/api/src/routes/services.ts` and one normalizer in `apps/api/src/lib/library/`
-- **Media server** (Plex): read `apps/web/src/lib/api-client/plex.ts`, `apps/web/src/hooks/api/usePlex.ts`
-- **Enrichment service** (Seerr, Tautulli): read `apps/web/src/lib/api-client/seerr.ts` or `tautulli.ts`
+- **Media server** (Plex/Jellyfin/Emby): read the matching API client, domain
+  hook, backend client, and normalizer
+- **Enrichment/analytics service**: read Seerr on either line; Tautulli is a
+  2.x-only product integration, while Tracearr is the 3.0 replacement
+- **Torrent layer**: read the existing qui client factory, routes, capability
+  gates, and webhook handling
 
 Note the patterns used: how the service is registered, how its API key is stored, how raw data is normalized, and how the frontend consumes it.
+
+Resolve the target release line before changing anything. Do not port a
+Tautulli or Tracearr pattern across `main`/`next` without checking the
+branch-specific product contract.
 
 ---
 
@@ -22,9 +30,9 @@ Note the patterns used: how the service is registered, how its API key is stored
    - `INTEGRATION_SERVICES` for enrichment/media services
    - Update `ARR_SERVICES_UPPER` if the new service is an *arr type
 3. **Prisma push**: Run `pnpm --filter @arr/api run db:push` to sync schema and regenerate client
-4. **Type-check both packages** after shared type changes:
-   - `pnpm --filter @arr/api exec tsc --noEmit`
-   - `pnpm --filter @arr/web exec tsc --noEmit`
+4. **Rebuild shared and run the root typecheck** after shared type changes:
+   - `pnpm --filter @arr/shared build`
+   - `pnpm run typecheck`
 
 If the service uses an API key, confirm that the existing `ServiceInstance` model's `encryptedApiKey`/`encryptionIv` fields are sufficient. If additional credentials are needed, add paired `encryptedX String` + `encryptionIv String` columns.
 
@@ -62,9 +70,10 @@ If the service returns content items that need to appear in the unified library:
    - `app.encryptor.encrypt()` for any new secrets before storage
    - `request.log.info()` for mutation logging
    - Proper status codes: 201 create, 200 update, 204 delete
-3. Register new route files in `apps/api/src/server.ts`
+3. Register new route groups in `apps/api/src/routes/route-manifest.ts` and add
+   the contract row to `docs/API-ROUTES.md`
 4. **Response shaping for privacy**: Keep identifiable data (instance names, URLs, usernames) in separate response fields, not embedded in free-text strings. The frontend needs to be able to anonymize each part independently for incognito mode.
-5. Run `pnpm --filter @arr/api exec tsc --noEmit`
+5. Run `pnpm run typecheck`
 
 ---
 
@@ -94,7 +103,7 @@ If the service returns content items that need to appear in the unified library:
    - Use `POLLING_*` constants from `lib/polling-intervals.ts` for `refetchInterval`
    - Invalidate correct query keys in mutation `onSuccess`
 
-4. Run `pnpm --filter @arr/web exec tsc --noEmit`
+4. Run `pnpm run typecheck`
 
 ---
 
@@ -120,8 +129,9 @@ If the service returns content items that need to appear in the unified library:
 ## Step 10: Validate and report
 
 1. Run the full check:
-   - `pnpm --filter @arr/api exec tsc --noEmit`
-   - `pnpm --filter @arr/web exec tsc --noEmit`
+   - `pnpm run format`
+   - `pnpm --filter @arr/shared build` if shared changed
+   - `pnpm run typecheck`
    - `pnpm run test`
    - `pnpm run lint`
 
@@ -141,5 +151,6 @@ If the service returns content items that need to appear in the unified library:
 - Every request body must go through `validateRequest()` — no `as Type` casts
 - Every API key must be encrypted before storage — store both `value` and `iv`
 - Every user-facing response with identifiable data must be structured for anonymization — no embedded names in free-text fields
-- Shared type changes require type-checking both `@arr/api` and `@arr/web`
+- Shared type changes require rebuilding shared and running the root Turbo
+  typecheck
 - Do not modify unrelated integrations or routes as part of this change

@@ -1,12 +1,24 @@
 ---
 name: integration-auditor
-description: Specialized knowledge for reviewing *arr service integrations — API patterns, normalization, monitoring field semantics, and common drift issues
+description: Specialized knowledge for reviewing *arr and adjacent service integrations — API patterns, normalization, version-line differences, monitoring semantics, and common drift issues
 type: skill
 ---
 
 # Integration Auditor Knowledge
 
-Load this skill when working with Sonarr, Radarr, Prowlarr, Lidarr, Readarr, Plex, Tautulli, or Seerr integrations.
+Load this skill when working with Sonarr, Radarr, Prowlarr, Lidarr,
+Readarr, Plex, Jellyfin, Emby, Tautulli, Seerr, qui, or Tracearr integrations.
+
+## Resolve the release line first
+
+- On stable 2.x (`main`), Tautulli remains a supported integration. Tracearr is
+  not part of the stable contract.
+- On 3.0 (`next`), Tautulli is removed from the product surface; its enum value
+  remains only for migration compatibility. Tracearr is its analytics
+  replacement, and qui is a stable integration.
+- Never forward-port integration code mechanically. Re-evaluate service
+  availability, route maturity, stored rows, migrations, and UI consumers on
+  the target branch.
 
 ## Service Architecture
 
@@ -37,12 +49,17 @@ Each *arr service has different API shapes. The normalizers map them to a unifie
 - Lidarr: `foreignArtistId` (MusicBrainz)
 - Plex: `ratingKey` for items, `machineId` for servers
 
-## Plex/Tautulli Integration
+## Media analytics integrations
 
 - Plex provides: library data, now playing sessions, on-deck, recently added
-- Tautulli enriches: watch history, user analytics, bandwidth stats
-- Session merging: Tautulli sessions are preferred over Plex when both report the same stream (richer data)
-- Cache: `PlexCache`, `TautulliCache`, `SessionSnapshot` models — these are regenerated, not critical data
+- Jellyfin and Emby provide parallel library and playback data through their
+  branch-specific clients and caches.
+- In 2.x, Tautulli enriches watch history, user analytics, and bandwidth
+  statistics.
+- In 3.0, Tracearr provides the replacement analytics surface and live-session
+  actions; do not reintroduce Tautulli consumers.
+- Cache rows are regenerated, but actions derived from cache data are not
+  automatically safe. Re-establish the owned upstream target before mutation.
 
 ## Seerr Integration
 
@@ -58,3 +75,15 @@ Each *arr service has different API shapes. The normalizers map them to a unifie
 3. **Missing monitored filtering**: New aggregate calculations must filter by monitored status — this has caused bugs multiple times (#131, #209).
 4. **Inconsistent error handling**: Some API client modules swallow errors (e.g., `services.ts` returns `[]` on 401), others propagate. Prefer propagation.
 5. **Health message anonymization**: The `anonymizeHealthMessage()` and `anonymizeStatusMessage()` functions in `incognito.ts` need regex patterns updated when new services add new message formats (Lidarr music release patterns were missed initially).
+6. **Proxy/auth drift**: Test service URLs behind reverse proxies and optional
+   Basic Auth. A successful connection test must exercise the same
+   authentication and URL resolution path used by real operations.
+7. **Webhook URL formats**: Distinguish a browser HTTP URL from an integration
+   service URL such as Shoutrrr. Preserve secrets while transforming schemes
+   and forwarding query parameters.
+8. **Shared-library identity**: Plex/Jellyfin media identity can aggregate files
+   managed by different *arr instances. A media-server match does not authorize
+   deletion from every backing instance.
+9. **Upstream status semantics**: Do not label normal pending/unreleased content
+   as failed or stuck solely from request age. Require a state transition or
+   evidence that intervention can help.

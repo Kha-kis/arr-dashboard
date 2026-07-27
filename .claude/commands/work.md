@@ -24,7 +24,9 @@ Inspect the task description, current branch, and git state to determine the wor
 - Route based on the user's answer.
 
 For other ambiguous tasks, check:
-- `git log --oneline origin/main..HEAD` — if there are unreleased commits, lean toward **stabilize**
+- Resolve the intended base (`main` for stable 2.x maintenance, `next` for 3.0)
+  from an existing PR or the task/branch point; never assume `main`
+- `git log --oneline origin/<base>..HEAD` — if there are unreleased commits, lean toward **stabilize**
 - `git branch --show-current` — if branch name contains `fix/`, `feat/`, `release/`, use that hint
 - `gh issue list --assignee @me --state open --limit 3` — if the task loosely matches an open issue, treat as **issue**
 
@@ -37,7 +39,8 @@ State your classification and reasoning in one line, then proceed.
 ### Issue workflow
 1. Run `/fix-issue {issue_number}`
 2. Run `/validate`
-3. If on a feature branch with multiple commits, run `/stabilize-branch`
+3. If on a task branch with multiple commits or a safety-critical mutation,
+   run `/stabilize-branch`
 
 ### PR review workflow (incoming — reviewing a PR)
 1. Run `/review-pr {pr_number}`
@@ -59,10 +62,15 @@ State your classification and reasoning in one line, then proceed.
 6. **Trust gate**: Check if changed files include new pages (`app/*/page.tsx`), new API routes (`routes/*.ts`), new feature panels (`features/*/components/*`), or notification event types. If yes, run `/trust-check` on the affected files before declaring the work done.
 
 ### Release workflow
-1. Run `/release-patch` — assess readiness
-2. If ready: run `/prepare-changelog`
-3. Present changelog for review
-4. If approved: run `/release-prep {version}`
+1. Resolve the release line.
+2. For a stable 2.x patch from `main`, run `/release-patch`.
+3. For a 3.0 alpha/beta/RC from `next`, follow its living readiness tracker and
+   the prerelease section of `docs/RELEASING.md`; do not route it through the
+   stable patch workflow.
+4. If ready, run `/prepare-changelog` with the resolved release base.
+5. Present changelog for review.
+6. If approved, use `/release-prep {version}` only for stable releases; prepare
+   prereleases from the exact reviewed `next` SHA.
 
 ### Stabilize workflow
 1. Run `/stabilize-branch`

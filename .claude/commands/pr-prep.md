@@ -6,11 +6,17 @@ If `$ARGUMENTS` is a PR number, refresh that PR's description to match current b
 
 ## Step 1: Gather context
 
+Resolve the base first:
+- If the branch already has a PR, use its `baseRefName`.
+- Otherwise determine whether the task is stable 2.x maintenance (`main`) or
+  3.0 work (`next`) from the branch point and task intent.
+- Stop if ambiguous. Never default to `main`.
+
 Run these in parallel:
 - `git branch --show-current` — confirm branch name
-- `git log --oneline origin/main..HEAD` — all commits since divergence
-- `git diff --stat origin/main..HEAD` — file change summary
-- `git diff origin/main..HEAD` — full diff for analysis
+- `git log --oneline origin/<base>..HEAD` — all commits since divergence
+- `git diff --stat origin/<base>...HEAD` — file change summary
+- `git diff origin/<base>...HEAD` — full diff for analysis
 - `gh pr list --head $(git branch --show-current) --json number,title,body,url --limit 1` — check if PR already exists
 
 Note whether this is a **new PR** or a **refresh** of an existing one.
@@ -57,7 +63,7 @@ See pr-writer skill for section naming guidance.]
 ## Test plan
 - [ ] Verification steps as checkboxes
 
-Closes #NNN (if applicable)
+Related to #NNN
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 ```
@@ -73,7 +79,7 @@ Closes #NNN (if applicable)
 ## Test plan
 - [ ] Steps to verify the fix
 
-Closes #NNN
+Related to #NNN
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 ```
@@ -121,7 +127,13 @@ Closes #NNN
 
 - Scan commit messages for `#NNN` references
 - Check branch name for issue numbers (e.g., `feat/222-request-as`)
-- If found, include `Closes #NNN` at the bottom of the body
+- Read any linked issue and its comments.
+- Include standalone `Closes #NNN` only when the exact reporter scenario was
+  reproduced before the fix and verified afterward.
+- If the change addresses a plausible cause, partial scenario, or
+  independently discovered problem, use `Related to #NNN`.
+- Check commit messages separately for auto-close language and remove it when
+  the reproduction requirement was not met.
 
 ## Step 6: Handle scope drift (refresh mode)
 
@@ -140,6 +152,9 @@ Surface these as guidance before offering to create/update. Not hard blockers �
 - **Branch pushed?** `git log origin/$(git branch --show-current)..HEAD 2>/dev/null` — note if local commits need pushing
 - **CI status?** `gh pr checks` or `gh run list --branch $(git branch --show-current) --limit 1` — report if known
 - **Trust check needed?** If changed files include new pages (`app/*/page.tsx`), new API routes (`routes/*.ts`), or new feature panels (`features/*/components/*`), suggest running `/trust-check` first
+- **Data-safety review needed?** If the diff mutates or deletes upstream,
+  filesystem, schema, backup, queue, or library state, require the
+  `data-safety-reviewer` agent before PR creation
 
 Format as a short checklist:
 ```

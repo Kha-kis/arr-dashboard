@@ -38,9 +38,9 @@ Only pause for confirmation if the change is destructive (dropping columns/model
 3. Derive TypeScript types via `z.infer<typeof schema>`
 4. Define response types that omit sensitive fields (encrypted keys → `hasApiKey: boolean`)
 5. Export from the barrel `packages/shared/src/types/index.ts` if new file
-6. Type-check both consumers — shared type changes affect both packages:
-   - `pnpm --filter @arr/api exec tsc --noEmit`
-   - `pnpm --filter @arr/web exec tsc --noEmit`
+6. Rebuild shared and run the CI-equivalent typecheck:
+   - `pnpm --filter @arr/shared build`
+   - `pnpm run typecheck`
 
 ---
 
@@ -56,8 +56,9 @@ Only pause for confirmation if the change is destructive (dropping columns/model
 3. For modified fields:
    - Update any Prisma `select` or `include` clauses
    - Update response formatting functions
-4. Register new route files in `apps/api/src/server.ts` if needed
-5. Run `pnpm --filter @arr/api exec tsc --noEmit` to verify
+4. Register new route groups in `apps/api/src/routes/route-manifest.ts` and add
+   the contract row to `docs/API-ROUTES.md`
+5. Run `pnpm run typecheck` to verify the complete workspace
 
 ---
 
@@ -77,7 +78,7 @@ Only pause for confirmation if the change is destructive (dropping columns/model
    - Only update components that render the changed fields
    - If new fields display sensitive data: apply `useIncognitoMode()` + anonymizer
 
-4. Run `pnpm --filter @arr/web exec tsc --noEmit` to verify frontend compiles
+4. Run `pnpm run typecheck` to verify frontend and shared consumers together
 
 ---
 
@@ -93,7 +94,7 @@ Only pause for confirmation if the change is destructive (dropping columns/model
    - Validation failure (invalid input → 400)
    - Ownership enforcement (wrong userId → 404)
    - New fields are included in responses
-3. Run `pnpm run test` to verify all tests pass
+3. Run focused tests, then `/validate`
 
 ---
 
@@ -110,9 +111,14 @@ Summarize:
 
 ## Rules
 
-- Never skip the `db:push` step — the Prisma client must be regenerated before any TypeScript imports will resolve
+- Never run a destructive `db:push` against production data. Inspect the
+  proposed transition first; destructive or transform-requiring changes need a
+  release-specific backup/migration plan.
+- Regenerate the Prisma client after schema changes before TypeScript checks
 - Never create migration files — this project uses `db push` for SQLite/PostgreSQL dual support
-- Always type-check BOTH `@arr/api` and `@arr/web` — shared type changes affect both
+- Use the root Turbo typecheck; per-package `tsc` can hide shared-output drift
 - If removing a field, search for all usages first (grep across the repo)
 - If adding an encrypted field, always add both `encryptedX` and `encryptionIv` columns
 - Do not modify unrelated models or routes as part of this change
+- Run the `data-safety-reviewer` agent for destructive schema changes, restore
+  behavior, or data transformations
