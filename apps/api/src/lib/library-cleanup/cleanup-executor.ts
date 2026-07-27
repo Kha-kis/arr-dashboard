@@ -686,26 +686,32 @@ async function loadDurableRetryPreview(
 	deps: CleanupExecutorDeps,
 	userId: string,
 	configId: string,
-): Promise<{
-	details: CleanupRunResult["details"];
-	total: number;
-	warning?: string;
-}> {
+	take: number = PREVIEW_SAFETY_INSPECTION_LIMIT,
+) {
 	try {
-		const where = {
+		const pendingWhere = {
 			configId,
 			config: { userId },
 			status: "retry_pending",
 		} as const;
-		const [retries, count] = await Promise.all([
+		const executingWhere = {
+			configId,
+			config: { userId },
+			status: "retry_executing",
+		} as const;
+		const [retries, count, inFlightRetries] = await Promise.all([
 			deps.prisma.libraryCleanupApproval.findMany({
-				where,
+				where: pendingWhere,
 				orderBy: { createdAt: "asc" },
-				take: PREVIEW_SAFETY_INSPECTION_LIMIT,
+				take,
 			}),
-			deps.prisma.libraryCleanupApproval.count({ where }),
+			deps.prisma.libraryCleanupApproval.count({ where: pendingWhere }),
+			deps.prisma.libraryCleanupApproval.findMany({
+				where: executingWhere,
+				orderBy: { createdAt: "asc" },
+			}),
 		]);
-		const details = retries.map((retry) => {
+		const retryDetails = retries.map((retry) => {
 			const action: DetailAction =
 				retry.action === "delete" || retry.action === "delete_files" || retry.action === "unmonitor"
 					? retry.action
@@ -718,14 +724,34 @@ async function loadDurableRetryPreview(
 				}`,
 			);
 		});
-		const total = Math.max(count, details.length);
+		const inFlightDetails = inFlightRetries.map((retry) =>
+			buildRetryDetail(
+				retry,
+				"skipped",
+				"Deferred: another cleanup run is already executing this durable retry.",
+			),
+		);
+		const total = Math.max(count, retryDetails.length);
+		const warningParts = [];
+		if (total > 0) {
+			warningParts.push(
+				`${total} durable cleanup ${total === 1 ? "retry is" : "retries are"} pending resume from the Approval Queue or the next live direct cleanup run.`,
+			);
+		}
+		if (inFlightRetries.length > 0) {
+			warningParts.push(
+				`${inFlightRetries.length} durable cleanup ${
+					inFlightRetries.length === 1 ? "retry is" : "retries are"
+				} already executing and ${inFlightRetries.length === 1 ? "is" : "are"} deferred from this preview.`,
+			);
+		}
 		return {
-			details,
+			retries,
+			inFlightRetries,
+			details: [...inFlightDetails, ...retryDetails],
 			total,
-			warning:
-				total > 0
-					? `${total} durable cleanup ${total === 1 ? "retry is" : "retries are"} pending resume from the Approval Queue or the next live direct cleanup run.`
-					: undefined,
+			loaded: true,
+			warning: warningParts.length > 0 ? warningParts.join(" ") : undefined,
 		};
 	} catch (error) {
 		deps.log.warn(
@@ -733,8 +759,11 @@ async function loadDurableRetryPreview(
 			"Library cleanup preview could not load durable mutation retries",
 		);
 		return {
+			retries: [],
+			inFlightRetries: [],
 			details: [],
 			total: 0,
+			loaded: false,
 			warning: "Durable cleanup retries could not be loaded for this preview.",
 		};
 	}
@@ -794,9 +823,17 @@ export async function executeCleanupPreview(
 		config,
 		config.rules,
 	);
+	const retryTargetKeys = new Set(
+		[...retryPreview.retries, ...retryPreview.inFlightRetries].map((retry) =>
+			cleanupDeleteTargetKey(retry),
+		),
+	);
+	const freshCandidates = flagged.filter(
+		(item) => !retryTargetKeys.has(cleanupDeleteTargetKey(item.cacheItem)),
+	);
 	const retryDetails = retryPreview.details.slice(0, PREVIEW_SAFETY_INSPECTION_LIMIT);
 	const inspected = selectInspectableCleanupPreviewItems(
-		flagged,
+		freshCandidates,
 		PREVIEW_SAFETY_INSPECTION_LIMIT - retryDetails.length,
 	);
 	const safetyContext = createSharedPlexSafetyContext();
@@ -893,7 +930,23 @@ export async function executeCleanupRun(
 			config,
 			config.rules,
 		);
-		const limited = flagged.slice(0, config.maxRemovalsPerRun);
+		const configuredRunLimit =
+			Number.isSafeInteger(config.maxRemovalsPerRun) && config.maxRemovalsPerRun > 0
+				? config.maxRemovalsPerRun
+				: Number.MAX_SAFE_INTEGER;
+		const retryPreview = await loadDurableRetryPreview(deps, userId, config.id, configuredRunLimit);
+		const retryTargetKeys = new Set(
+			[...retryPreview.retries, ...retryPreview.inFlightRetries].map((retry) =>
+				cleanupDeleteTargetKey(retry),
+			),
+		);
+		const freshCandidates = flagged.filter(
+			(item) => !retryTargetKeys.has(cleanupDeleteTargetKey(item.cacheItem)),
+		);
+		const freshBudget = retryPreview.loaded
+			? Math.max(0, configuredRunLimit - retryPreview.retries.length)
+			: 0;
+		const limited = freshCandidates.slice(0, freshBudget);
 		const safetyContext = createSharedPlexSafetyContext();
 		const sharedPlexBlocks = await findSharedPlexDeleteBlocks(
 			deps,
@@ -909,18 +962,29 @@ export async function executeCleanupRun(
 			safetyContext,
 			sharedPlexBlocks,
 		);
-		const allWarnings = withSharedPlexWarning(warnings, sharedPlexBlocks.size);
-		const details = buildCleanupPreviewDetails(limited, sharedPlexBlocks);
+		const allWarnings = withSharedPlexWarning(
+			retryPreview.warning ? [...warnings, retryPreview.warning] : warnings,
+			sharedPlexBlocks.size,
+		);
+		const details = [
+			...retryPreview.details,
+			...buildCleanupPreviewDetails(limited, sharedPlexBlocks),
+		];
 
 		const result: CleanupRunResult = {
 			isDryRun: true,
 			status: allWarnings.length > 0 ? "partial" : "completed",
 			itemsEvaluated: totalEvaluated,
-			itemsFlagged: limited.length,
+			itemsFlagged: retryPreview.retries.length + limited.length,
+			pendingRetryCount: retryPreview.total,
 			itemsRemoved: 0,
 			itemsUnmonitored: 0,
 			itemsFilesDeleted: 0,
-			itemsSkipped: flagged.length - limited.length + sharedPlexBlocks.size,
+			itemsSkipped:
+				freshCandidates.length -
+				limited.length +
+				sharedPlexBlocks.size +
+				retryPreview.inFlightRetries.length,
 			details,
 			durationMs: Date.now() - startTime,
 			prefetchHealth,
@@ -1043,7 +1107,14 @@ export async function executeApprovedItems(
 			assertExecutionAllowed: runLease.assertOwnership,
 			claimExecutionToken: approvalRequestToken,
 		});
-		return { removed: result.removed, failed: result.failed, errors: result.errors };
+		const unclaimedErrors = result.unclaimedIds.map(
+			() => "Cleanup approval was not found, expired, no longer approved, or changed ownership.",
+		);
+		return {
+			removed: result.removed,
+			failed: result.failed + unclaimedErrors.length,
+			errors: [...result.errors, ...unclaimedErrors],
+		};
 	} finally {
 		await releaseUnclaimedApprovals().catch((error) => {
 			deps.log.error(
@@ -1486,8 +1557,14 @@ async function executeQueuedCleanupItems(
 							);
 						});
 				} else if (action === "delete_files") {
-					await deleteFilesFromArr(arrClientFactory, instance, approval.arrItemId, safetyPlan!);
+					const deletedFiles = await deleteFilesFromArr(
+						arrClientFactory,
+						instance,
+						approval.arrItemId,
+						safetyPlan!,
+					);
 					executionCompleted = true;
+					reconciledWithoutMutation = !deletedFiles;
 					await reconcileSonarrEpisodeFileCache(prisma, instance, approval.arrItemId, log);
 					await prisma.libraryCache
 						.updateMany({
@@ -1542,7 +1619,7 @@ async function executeQueuedCleanupItems(
 					reconciledIds.push(approval.id);
 					log.info(
 						{ title: approval.title, instanceId: approval.instanceId, action },
-						"Cleanup durable intent reconciled because the ARR record was already absent",
+						"Cleanup durable intent reconciled without another ARR mutation",
 					);
 				} else {
 					removed++;
@@ -2795,8 +2872,8 @@ export async function executeDirectRemoval(
 						retry,
 						"skipped",
 						retryResult.recordingFailureIds.includes(retry.id)
-							? "The ARR record was already absent, but durable reconciliation state could not be recorded."
-							: "Reconciled a durable retry because the ARR record was already absent; no mutation was attributed to this run.",
+							? "The ARR mutation was already reflected in live state, but durable reconciliation state could not be recorded."
+							: "Reconciled a durable retry because its ARR mutation was already reflected in live state; no mutation was attributed to this run.",
 					),
 				);
 			} else if (retryResult.removed === 1 && retryResult.failed === 0) {
@@ -3106,7 +3183,12 @@ export async function executeDirectRemoval(
 					"Cleanup: unmonitored item in ARR instance",
 				);
 			} else if (ruleAction === "delete_files") {
-				await deleteFilesFromArr(arrClientFactory, instance, item.cacheItem.arrItemId, safetyPlan!);
+				const deletedFiles = await deleteFilesFromArr(
+					arrClientFactory,
+					instance,
+					item.cacheItem.arrItemId,
+					safetyPlan!,
+				);
 				await reconcileSonarrEpisodeFileCache(prisma, instance, item.cacheItem.arrItemId, log);
 				try {
 					await prisma.libraryCache.updateMany({
@@ -3123,12 +3205,22 @@ export async function executeDirectRemoval(
 						"Cleanup: ARR action succeeded but cache update failed — cache is now stale",
 					);
 				}
-				details.push(buildDetail(item, "files_deleted"));
-				filesDeleted++;
+				details.push(
+					deletedFiles
+						? buildDetail(item, "files_deleted")
+						: buildDetail(
+								item,
+								"skipped",
+								"Reconciled because the verified ARR file set was already empty",
+							),
+				);
+				if (deletedFiles) filesDeleted++;
 				consecutiveFailures = 0; // Reset on success
 				log.info(
 					{ title: item.cacheItem.title, instanceId: instance.id, rule: item.match.ruleName },
-					"Cleanup: deleted files for item in ARR instance",
+					deletedFiles
+						? "Cleanup: deleted files for item in ARR instance"
+						: "Cleanup: reconciled an already-empty ARR file set",
 				);
 			} else {
 				// Default: delete
@@ -3954,7 +4046,7 @@ async function deleteFilesFromArr(
 	instance: ServiceInstance,
 	arrItemId: number,
 	safetyPlan: SharedMediaSafetyPlan,
-): Promise<void> {
+): Promise<boolean> {
 	const client = arrClientFactory.create(instance);
 
 	switch (instance.service) {
@@ -3966,11 +4058,11 @@ async function deleteFilesFromArr(
 			}
 			if (safetyPlan.kind === "verified_radarr") {
 				await deleteVerifiedRadarrFile(radarr, arrItemId, safetyPlan.target, safetyPlan.file);
-				break;
+				return true;
 			}
 			if (safetyPlan.kind === "verified_radarr_empty") {
 				await assertVerifiedRadarrEmptyUnchanged(radarr, arrItemId, safetyPlan.target);
-				break;
+				return false;
 			}
 			if (safetyPlan.kind === "not_required" || safetyPlan.kind === "verified_arr_target") {
 				throw new Error("A verified Radarr file identity is required for file deletion");
@@ -3986,13 +4078,13 @@ async function deleteFilesFromArr(
 			}
 			if (safetyPlan.kind === "verified_sonarr") {
 				await deleteVerifiedSonarrFiles(sonarr, arrItemId, safetyPlan.target, safetyPlan.files);
-			} else if (safetyPlan.kind === "not_required" || safetyPlan.kind === "verified_arr_target") {
-				throw new Error("A verified Sonarr file identity is required for file deletion");
-			} else {
-				const exhaustivePlan: never = safetyPlan;
-				throw new Error(`Unsupported Sonarr safety plan: ${String(exhaustivePlan)}`);
+				return safetyPlan.files.episodeFiles.length > 0;
 			}
-			break;
+			if (safetyPlan.kind === "not_required" || safetyPlan.kind === "verified_arr_target") {
+				throw new Error("A verified Sonarr file identity is required for file deletion");
+			}
+			const exhaustivePlan: never = safetyPlan;
+			throw new Error(`Unsupported Sonarr safety plan: ${String(exhaustivePlan)}`);
 		}
 		default:
 			throw new Error(`Unsupported service type for delete_files: ${instance.service}`);

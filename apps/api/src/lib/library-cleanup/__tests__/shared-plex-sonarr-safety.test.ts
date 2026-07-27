@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	executeApprovedItems,
 	executeDirectRemoval,
+	executeRetryItems,
 	INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
 } from "../cleanup-executor.js";
 import {
@@ -1106,6 +1107,29 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(approvalUpdate.mock.invocationCallOrder[0]).toBeLessThan(
 			bulkDelete.mock.invocationCallOrder[0]!,
 		);
+	});
+
+	it("reconciles an interrupted Sonarr file-delete retry when no episode files remain", async () => {
+		const { deps, bulkDelete } = makeSonarrDeps({
+			action: "delete_files",
+			episodeFiles: [],
+		});
+		const storedRetry = {
+			...approval("delete_files"),
+			status: "retry_pending",
+			lastExecutionError: INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
+		} as unknown as Record<string, unknown>;
+		configureApprovalStore(deps, storedRetry);
+
+		const result = await executeRetryItems(deps, "user-1", ["approval-1"]);
+
+		expect(result).toEqual({ removed: 0, reconciled: 1, failed: 0, errors: [] });
+		expect(bulkDelete).not.toHaveBeenCalled();
+		expect(deps.prisma.libraryCache.updateMany).toHaveBeenCalledWith({
+			where: { instanceId: "sonarr-4k", arrItemId: 201, itemType: "series" },
+			data: { hasFile: false, sizeOnDisk: 0 },
+		});
+		expect(storedRetry).toMatchObject({ status: "executed", executionToken: null });
 	});
 
 	it("expires a record-only Sonarr retry when the service is repointed", async () => {
