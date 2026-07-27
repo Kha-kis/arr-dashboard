@@ -1126,6 +1126,10 @@ describe("shared Plex deletion safety", () => {
 		expect(result).toMatchObject({ removed: 0, failed: 1 });
 		expect(result.errors[0]).toContain("replacement file appeared");
 		expect(deleteMovie).not.toHaveBeenCalled();
+		const pendingUpdate = vi
+			.mocked(deps.prisma.libraryCleanupApproval.update)
+			.mock.calls.at(-1)?.[0];
+		expect(pendingUpdate?.data).not.toHaveProperty("safetySnapshot");
 	});
 
 	it("accepts a lost Radarr file-delete response only after confirming absence", async () => {
@@ -1443,7 +1447,41 @@ describe("shared Plex deletion safety", () => {
 			data: {
 				status: "pending",
 				lastExecutionError: expect.stringContaining("movie record could not be removed"),
+				safetySnapshot: radarrSafetySnapshot(null),
 			},
+		});
+	});
+
+	it("retries a verified fileless Radarr approval without deleting files again", async () => {
+		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
+		const storedApproval = approvalRecord();
+		const approvalFindMany = vi.mocked(deps.prisma.libraryCleanupApproval.findMany);
+		const approvalUpdate = vi.mocked(deps.prisma.libraryCleanupApproval.update);
+		approvalFindMany.mockImplementation((async () => [storedApproval]) as never);
+		approvalUpdate.mockImplementation((async ({ data }: { data: Record<string, unknown> }) => {
+			Object.assign(storedApproval, data);
+			return {};
+		}) as never);
+		deleteMovie
+			.mockRejectedValueOnce(new Error("Radarr movie delete unavailable"))
+			.mockRejectedValueOnce(new Error("Radarr movie delete unavailable"));
+
+		const firstResult = await executeApprovedItems(deps, "user-1", ["approval-1"]);
+
+		expect(firstResult).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval).toMatchObject({
+			status: "pending",
+			safetySnapshot: radarrSafetySnapshot(null),
+		});
+
+		const retryResult = await executeApprovedItems(deps, "user-1", ["approval-1"]);
+
+		expect(retryResult).toEqual({ removed: 1, failed: 0, errors: [] });
+		expect(deleteMovieFile).toHaveBeenCalledOnce();
+		expect(deleteMovie).toHaveBeenCalledTimes(3);
+		expect(storedApproval).toMatchObject({
+			status: "executed",
+			lastExecutionError: null,
 		});
 	});
 

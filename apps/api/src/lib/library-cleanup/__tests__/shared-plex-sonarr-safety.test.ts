@@ -654,6 +654,10 @@ describe("verified Sonarr mutation handoff", () => {
 			where: { instanceId: "sonarr-4k", arrItemId: 201, itemType: "series" },
 			data: { hasFile: true, sizeOnDisk: 2_002 },
 		});
+		const pendingUpdate = vi
+			.mocked(deps.prisma.libraryCleanupApproval.update)
+			.mock.calls.at(-1)?.[0];
+		expect(pendingUpdate?.data).not.toHaveProperty("safetySnapshot");
 	});
 
 	it("retains the series and deletes only verified IDs for delete_files", async () => {
@@ -778,6 +782,39 @@ describe("verified Sonarr mutation handoff", () => {
 				status: "pending",
 				lastExecutionError: expect.stringContaining("episode files were deleted"),
 			}),
+		});
+	});
+
+	it("retries a verified fileless Sonarr approval without deleting files again", async () => {
+		const { deps, bulkDelete, deleteSeries, approvalUpdate } = makeSonarrDeps();
+		const storedApproval = approval();
+		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockImplementation((async () => [
+			storedApproval,
+		]) as never);
+		approvalUpdate.mockImplementation(async ({ data }) => {
+			Object.assign(storedApproval, data);
+			return {};
+		});
+		deleteSeries
+			.mockRejectedValueOnce(new Error("series delete unavailable"))
+			.mockRejectedValueOnce(new Error("series delete unavailable"));
+
+		const firstResult = await executeApprovedItems(deps, "user-1", ["approval-1"]);
+
+		expect(firstResult).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval).toMatchObject({
+			status: "pending",
+			safetySnapshot: approval("delete", []).safetySnapshot,
+		});
+
+		const retryResult = await executeApprovedItems(deps, "user-1", ["approval-1"]);
+
+		expect(retryResult).toEqual({ removed: 1, failed: 0, errors: [] });
+		expect(bulkDelete).toHaveBeenCalledOnce();
+		expect(deleteSeries).toHaveBeenCalledTimes(3);
+		expect(storedApproval).toMatchObject({
+			status: "executed",
+			lastExecutionError: null,
 		});
 	});
 

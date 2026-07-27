@@ -98,6 +98,42 @@ class ArrDeletePartialError extends Error {
 	}
 }
 
+function buildPostPartialRetrySnapshot(
+	safetyPlan: SharedMediaSafetyPlan | undefined,
+	error: ArrDeletePartialError,
+): string | undefined {
+	if (error.hasRemainingFiles || error.deletedFileIds.length === 0) return undefined;
+
+	if (error.service === "RADARR") {
+		if (
+			safetyPlan?.kind !== "verified_radarr" ||
+			error.deletedFileIds.length !== 1 ||
+			error.deletedFileIds[0] !== safetyPlan.file.movieFileId
+		) {
+			return undefined;
+		}
+		return serializeExecutableSafetyPlan({ kind: "verified_radarr_empty" });
+	}
+
+	if (safetyPlan?.kind !== "verified_sonarr") return undefined;
+	const expectedFileIds = new Set(safetyPlan.files.episodeFiles.map((file) => file.episodeFileId));
+	const deletedFileIds = new Set(error.deletedFileIds);
+	if (
+		expectedFileIds.size !== deletedFileIds.size ||
+		deletedFileIds.size !== error.deletedFileIds.length ||
+		[...deletedFileIds].some((fileId) => !expectedFileIds.has(fileId))
+	) {
+		return undefined;
+	}
+	return serializeExecutableSafetyPlan({
+		kind: "verified_sonarr",
+		files: {
+			seriesPath: safetyPlan.files.seriesPath,
+			episodeFiles: [],
+		},
+	});
+}
+
 const SHARED_PLEX_WARNING =
 	"Some deletions were safety-blocked because a connected media server could mutate a shared library and its live state was unsafe or could not be verified. Review each skipped-item reason before changing the ARR or media-server setup.";
 
@@ -760,7 +796,9 @@ export async function executeApprovedItems(
 					: "Cleanup item could not be executed. Review the API logs for details.";
 			errors.push(executionError);
 			failed++;
+			let postPartialRetrySnapshot: string | undefined;
 			if (error instanceof ArrDeletePartialError) {
+				postPartialRetrySnapshot = buildPostPartialRetrySnapshot(safetyPlan, error);
 				await reconcilePartialFileDeletion(
 					prisma,
 					instance,
@@ -799,6 +837,7 @@ export async function executeApprovedItems(
 					data: {
 						status: "pending",
 						lastExecutionError: executionError,
+						...(postPartialRetrySnapshot ? { safetySnapshot: postPartialRetrySnapshot } : {}),
 					},
 				})
 				.catch((revertErr) => {
