@@ -443,4 +443,97 @@ describe("LibraryCleanupClient", () => {
 			});
 		});
 	});
+
+	describe("shared Plex safety feedback", () => {
+		it("renders safety-blocked preview items separately from delete actions", () => {
+			mockUseCleanupPreview.mockReturnValue(
+				defaultMutation({
+					data: {
+						totalEvaluated: 1,
+						totalFlagged: 1,
+						items: [
+							{
+								instanceId: "radarr-4k",
+								instanceLabel: "4K Radarr",
+								arrItemId: 101,
+								itemType: "movie",
+								title: "Example Movie",
+								matchedRuleName: "4K cleanup",
+								reason: "Skipped for safety: shared Plex risk",
+								action: "skipped",
+								sizeOnDisk: "1000",
+								year: 2024,
+								rating: 8,
+								quiStatus: "no_signal",
+							},
+						],
+						warnings: ["A deletion was safety-blocked."],
+					},
+				}),
+			);
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+
+			expect(screen.getAllByText("1 Safety-blocked")).toHaveLength(1);
+			expect(screen.queryByText("1 Delete")).not.toBeInTheDocument();
+			expect(screen.getByText(/Skipped for safety: shared Plex risk/)).toBeInTheDocument();
+		});
+
+		it("shows approval execution errors so a returned-to-pending item is actionable", async () => {
+			const approveMutate = vi.fn();
+			const approveReset = vi.fn();
+			const bulkReset = vi.fn();
+			mockUseCleanupApprovalQueue.mockReturnValue({
+				data: {
+					items: [
+						{
+							id: "item-1",
+							instanceId: "radarr-4k",
+							arrItemId: 101,
+							itemType: "movie",
+							title: "Example Movie",
+							matchedRuleName: "4K cleanup",
+							reason: "Matched 4K profile",
+							action: "delete",
+							sizeOnDisk: "1000",
+							year: 2024,
+							status: "pending",
+							lastExecutionError: "Skipped for safety: saved shared Plex risk",
+						},
+					],
+					total: 1,
+					page: 1,
+					pageSize: 20,
+				},
+				isLoading: false,
+				isError: false,
+				refetch: vi.fn(),
+			});
+			mockUseApproveCleanupItem.mockReturnValue(
+				defaultMutation({
+					mutate: approveMutate,
+					reset: approveReset,
+					error: new Error("Skipped for safety: shared Plex risk"),
+					isError: true,
+				}),
+			);
+			mockUseBulkCleanupAction.mockReturnValue(defaultMutation({ reset: bulkReset }));
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+			fireEvent.click(screen.getByText("Approval Queue"));
+
+			expect(await screen.findByRole("alert")).toHaveTextContent(
+				"Skipped for safety: shared Plex risk",
+			);
+			expect(
+				screen.getByText("Last execution attempt: Skipped for safety: saved shared Plex risk"),
+			).toBeInTheDocument();
+
+			fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+			expect(bulkReset).toHaveBeenCalledOnce();
+			expect(approveMutate).toHaveBeenCalledWith("item-1");
+			expect(approveReset).not.toHaveBeenCalled();
+		});
+	});
 });

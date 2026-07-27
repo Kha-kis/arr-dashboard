@@ -6,7 +6,9 @@
 
 import type { FastifyBaseLogger } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
-import type { LibraryItemType, PrismaClient } from "../prisma.js";
+import type { Encryptor } from "../auth/encryption.js";
+import type { PlexClient } from "../plex/plex-client.js";
+import type { LibraryItemType, PrismaClient, ServiceInstance } from "../prisma.js";
 
 // ============================================================================
 // Dependencies
@@ -15,6 +17,14 @@ import type { LibraryItemType, PrismaClient } from "../prisma.js";
 export interface CleanupExecutorDeps {
 	prisma: PrismaClient;
 	arrClientFactory: ArrClientFactory;
+	encryptor?: Encryptor;
+	/** Test seam for live deletion-safety checks. */
+	plexClientFactory?: (
+		instance: ServiceInstance,
+	) => Pick<
+		PlexClient,
+		"getAccounts" | "getMovieMediaPartsByTmdbId" | "getSeriesEpisodeMediaPartsByTvdbId"
+	>;
 	log: FastifyBaseLogger;
 }
 
@@ -175,6 +185,7 @@ export type RuleAction = "delete" | "unmonitor" | "delete_files";
 
 /** Action recorded in execution details (what actually happened) */
 export type DetailAction =
+	| RuleAction
 	| "flagged"
 	| "removed"
 	| "files_deleted"

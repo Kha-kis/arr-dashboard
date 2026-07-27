@@ -5566,6 +5566,8 @@ export const LibraryCleanupApprovalScalarFieldEnum = {
   year: 'year',
   rating: 'rating',
   status: 'status',
+  safetySnapshot: 'safetySnapshot',
+  lastExecutionError: 'lastExecutionError',
   reviewedAt: 'reviewedAt',
   executedAt: 'executedAt',
   expiresAt: 'expiresAt',

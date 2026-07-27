@@ -208,6 +208,7 @@ export interface CleanupApprovalResponse {
 	year: number | null;
 	rating: number | null;
 	status: string;
+	lastExecutionError: string | null;
 	reviewedAt: string | null;
 	executedAt: string | null;
 	createdAt: string;

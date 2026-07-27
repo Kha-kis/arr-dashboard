@@ -10,6 +10,7 @@
 
 import type { FastifyBaseLogger } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
+import type { Encryptor } from "../auth/encryption.js";
 import type { NotificationPayload } from "../notifications/types.js";
 import type { PrismaClient } from "../prisma.js";
 import {
@@ -18,8 +19,62 @@ import {
 } from "../scheduler-registry/scheduler-registry.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { executeCleanupRun } from "./cleanup-executor.js";
+import type { CleanupRunResult } from "./types.js";
 
 const CHECK_INTERVAL_MS = 60 * 1000; // Check every minute
+
+export function buildCleanupNotification(
+	result: CleanupRunResult,
+): NotificationPayload | undefined {
+	const hasActions =
+		result.itemsRemoved > 0 || result.itemsUnmonitored > 0 || result.itemsFilesDeleted > 0;
+	if (!hasActions && result.itemsFlagged === 0 && result.itemsSkipped === 0) return undefined;
+
+	if (hasActions) {
+		const needsReview = result.status === "partial" || result.itemsSkipped > 0;
+		const parts: string[] = [];
+		if (result.itemsRemoved > 0) parts.push(`${result.itemsRemoved} removed`);
+		if (result.itemsUnmonitored > 0) parts.push(`${result.itemsUnmonitored} unmonitored`);
+		if (result.itemsFilesDeleted > 0) parts.push(`${result.itemsFilesDeleted} files deleted`);
+		if (result.itemsSkipped > 0) parts.push(`${result.itemsSkipped} skipped`);
+		return {
+			eventType: "CLEANUP_ITEMS_REMOVED",
+			title: needsReview ? "Library cleanup needs review" : "Library cleanup completed",
+			body: parts.join(", "),
+			url: "/library-cleanup",
+			metadata: {
+				itemsRemoved: result.itemsRemoved,
+				itemsUnmonitored: result.itemsUnmonitored,
+				itemsFilesDeleted: result.itemsFilesDeleted,
+				itemsSkipped: result.itemsSkipped,
+			},
+		};
+	}
+
+	const queued = result.details.filter((detail) => detail.action === "queued_for_approval").length;
+	const dryRunMatches = result.details.filter((detail) => detail.action !== "skipped").length;
+	const parts: string[] = [];
+	if (queued > 0) parts.push(`${queued} queued for review`);
+	else if (result.isDryRun && dryRunMatches > 0)
+		parts.push(`${dryRunMatches} actionable matches in dry run`);
+	else if (result.itemsFlagged > 0 && result.itemsSkipped === 0)
+		parts.push(`${result.itemsFlagged} matched`);
+	if (result.itemsSkipped > 0) parts.push(`${result.itemsSkipped} safety-blocked or skipped`);
+
+	return {
+		eventType: "CLEANUP_ITEMS_FLAGGED",
+		title:
+			result.status === "partial" || result.itemsSkipped > 0
+				? "Library cleanup needs review"
+				: "Library cleanup completed",
+		body: parts.join(", "),
+		url: "/library-cleanup",
+		metadata: {
+			itemsFlagged: result.itemsFlagged,
+			itemsSkipped: result.itemsSkipped,
+		},
+	};
+}
 
 export class CleanupScheduler {
 	private intervalId: NodeJS.Timeout | null = null;
@@ -35,6 +90,7 @@ export class CleanupScheduler {
 	constructor(
 		private prisma: PrismaClient,
 		private arrClientFactory: ArrClientFactory,
+		private encryptor: Encryptor,
 		private logger: FastifyBaseLogger,
 		notifyFn?: (payload: NotificationPayload) => Promise<void>,
 		options?: { trackTick?: TickWrapper },
@@ -137,7 +193,12 @@ export class CleanupScheduler {
 
 			try {
 				const result = await executeCleanupRun(
-					{ prisma: this.prisma, arrClientFactory: this.arrClientFactory, log: this.logger },
+					{
+						prisma: this.prisma,
+						arrClientFactory: this.arrClientFactory,
+						encryptor: this.encryptor,
+						log: this.logger,
+					},
 					config.userId,
 				);
 
@@ -159,43 +220,11 @@ export class CleanupScheduler {
 					"Scheduled library cleanup completed",
 				);
 
-				if (result.itemsFlagged > 0 || result.itemsRemoved > 0 || result.itemsUnmonitored > 0) {
-					const hasActions =
-						result.itemsRemoved > 0 || result.itemsUnmonitored > 0 || result.itemsFilesDeleted > 0;
-
-					if (hasActions) {
-						const parts: string[] = [];
-						if (result.itemsRemoved > 0) parts.push(`${result.itemsRemoved} removed`);
-						if (result.itemsUnmonitored > 0) parts.push(`${result.itemsUnmonitored} unmonitored`);
-						if (result.itemsFilesDeleted > 0)
-							parts.push(`${result.itemsFilesDeleted} files deleted`);
-
-						this.notifyFn?.({
-							eventType: "CLEANUP_ITEMS_REMOVED",
-							title: "Library cleanup completed",
-							body: parts.join(", "),
-							url: "/library",
-							metadata: {
-								itemsRemoved: result.itemsRemoved,
-								itemsUnmonitored: result.itemsUnmonitored,
-								itemsFilesDeleted: result.itemsFilesDeleted,
-							},
-						}).catch((err) => {
-							this.logger.warn({ err }, "Failed to send cleanup notification");
-						});
-					} else {
-						this.notifyFn?.({
-							eventType: "CLEANUP_ITEMS_FLAGGED",
-							title: "Library cleanup completed",
-							body: `Flagged ${result.itemsFlagged} items for review`,
-							url: "/library",
-							metadata: {
-								itemsFlagged: result.itemsFlagged,
-							},
-						}).catch((err) => {
-							this.logger.warn({ err }, "Failed to send cleanup notification");
-						});
-					}
+				const notification = buildCleanupNotification(result);
+				if (notification) {
+					this.notifyFn?.(notification).catch((err) => {
+						this.logger.warn({ err }, "Failed to send cleanup notification");
+					});
 				}
 			} finally {
 				this._isRunning = false;

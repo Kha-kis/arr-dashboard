@@ -55,6 +55,8 @@ export type LibraryCleanupApprovalMinAggregateOutputType = {
   year: number | null
   rating: number | null
   status: string | null
+  safetySnapshot: string | null
+  lastExecutionError: string | null
   reviewedAt: Date | null
   executedAt: Date | null
   expiresAt: Date | null
@@ -76,6 +78,8 @@ export type LibraryCleanupApprovalMaxAggregateOutputType = {
   year: number | null
   rating: number | null
   status: string | null
+  safetySnapshot: string | null
+  lastExecutionError: string | null
   reviewedAt: Date | null
   executedAt: Date | null
   expiresAt: Date | null
@@ -97,6 +101,8 @@ export type LibraryCleanupApprovalCountAggregateOutputType = {
   year: number
   rating: number
   status: number
+  safetySnapshot: number
+  lastExecutionError: number
   reviewedAt: number
   executedAt: number
   expiresAt: number
@@ -134,6 +140,8 @@ export type LibraryCleanupApprovalMinAggregateInputType = {
   year?: true
   rating?: true
   status?: true
+  safetySnapshot?: true
+  lastExecutionError?: true
   reviewedAt?: true
   executedAt?: true
   expiresAt?: true
@@ -155,6 +163,8 @@ export type LibraryCleanupApprovalMaxAggregateInputType = {
   year?: true
   rating?: true
   status?: true
+  safetySnapshot?: true
+  lastExecutionError?: true
   reviewedAt?: true
   executedAt?: true
   expiresAt?: true
@@ -176,6 +186,8 @@ export type LibraryCleanupApprovalCountAggregateInputType = {
   year?: true
   rating?: true
   status?: true
+  safetySnapshot?: true
+  lastExecutionError?: true
   reviewedAt?: true
   executedAt?: true
   expiresAt?: true
@@ -284,6 +296,8 @@ export type LibraryCleanupApprovalGroupByOutputType = {
   year: number | null
   rating: number | null
   status: string
+  safetySnapshot: string | null
+  lastExecutionError: string | null
   reviewedAt: Date | null
   executedAt: Date | null
   expiresAt: Date
@@ -328,6 +342,8 @@ export type LibraryCleanupApprovalWhereInput = {
   year?: Prisma.IntNullableFilter<"LibraryCleanupApproval"> | number | null
   rating?: Prisma.FloatNullableFilter<"LibraryCleanupApproval"> | number | null
   status?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
+  safetySnapshot?: Prisma.StringNullableFilter<"LibraryCleanupApproval"> | string | null
+  lastExecutionError?: Prisma.StringNullableFilter<"LibraryCleanupApproval"> | string | null
   reviewedAt?: Prisma.DateTimeNullableFilter<"LibraryCleanupApproval"> | Date | string | null
   executedAt?: Prisma.DateTimeNullableFilter<"LibraryCleanupApproval"> | Date | string | null
   expiresAt?: Prisma.DateTimeFilter<"LibraryCleanupApproval"> | Date | string
@@ -350,6 +366,8 @@ export type LibraryCleanupApprovalOrderByWithRelationInput = {
   year?: Prisma.SortOrderInput | Prisma.SortOrder
   rating?: Prisma.SortOrderInput | Prisma.SortOrder
   status?: Prisma.SortOrder
+  safetySnapshot?: Prisma.SortOrderInput | Prisma.SortOrder
+  lastExecutionError?: Prisma.SortOrderInput | Prisma.SortOrder
   reviewedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   executedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   expiresAt?: Prisma.SortOrder
@@ -375,6 +393,8 @@ export type LibraryCleanupApprovalWhereUniqueInput = Prisma.AtLeast<{
   year?: Prisma.IntNullableFilter<"LibraryCleanupApproval"> | number | null
   rating?: Prisma.FloatNullableFilter<"LibraryCleanupApproval"> | number | null
   status?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
+  safetySnapshot?: Prisma.StringNullableFilter<"LibraryCleanupApproval"> | string | null
+  lastExecutionError?: Prisma.StringNullableFilter<"LibraryCleanupApproval"> | string | null
   reviewedAt?: Prisma.DateTimeNullableFilter<"LibraryCleanupApproval"> | Date | string | null
   executedAt?: Prisma.DateTimeNullableFilter<"LibraryCleanupApproval"> | Date | string | null
   expiresAt?: Prisma.DateTimeFilter<"LibraryCleanupApproval"> | Date | string
@@ -397,6 +417,8 @@ export type LibraryCleanupApprovalOrderByWithAggregationInput = {
   year?: Prisma.SortOrderInput | Prisma.SortOrder
   rating?: Prisma.SortOrderInput | Prisma.SortOrder
   status?: Prisma.SortOrder
+  safetySnapshot?: Prisma.SortOrderInput | Prisma.SortOrder
+  lastExecutionError?: Prisma.SortOrderInput | Prisma.SortOrder
   reviewedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   executedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   expiresAt?: Prisma.SortOrder
@@ -426,6 +448,8 @@ export type LibraryCleanupApprovalScalarWhereWithAggregatesInput = {
   year?: Prisma.IntNullableWithAggregatesFilter<"LibraryCleanupApproval"> | number | null
   rating?: Prisma.FloatNullableWithAggregatesFilter<"LibraryCleanupApproval"> | number | null
   status?: Prisma.StringWithAggregatesFilter<"LibraryCleanupApproval"> | string
+  safetySnapshot?: Prisma.StringNullableWithAggregatesFilter<"LibraryCleanupApproval"> | string | null
+  lastExecutionError?: Prisma.StringNullableWithAggregatesFilter<"LibraryCleanupApproval"> | string | null
   reviewedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"LibraryCleanupApproval"> | Date | string | null
   executedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"LibraryCleanupApproval"> | Date | string | null
   expiresAt?: Prisma.DateTimeWithAggregatesFilter<"LibraryCleanupApproval"> | Date | string
@@ -446,6 +470,8 @@ export type LibraryCleanupApprovalCreateInput = {
   year?: number | null
   rating?: number | null
   status?: string
+  safetySnapshot?: string | null
+  lastExecutionError?: string | null
   reviewedAt?: Date | string | null
   executedAt?: Date | string | null
   expiresAt: Date | string
@@ -468,6 +494,8 @@ export type LibraryCleanupApprovalUncheckedCreateInput = {
   year?: number | null
   rating?: number | null
   status?: string
+  safetySnapshot?: string | null
+  lastExecutionError?: string | null
   reviewedAt?: Date | string | null
   executedAt?: Date | string | null
   expiresAt: Date | string
@@ -488,6 +516,8 @@ export type LibraryCleanupApprovalUpdateInput = {
   year?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   rating?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
+  safetySnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastExecutionError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   reviewedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   executedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -510,6 +540,8 @@ export type LibraryCleanupApprovalUncheckedUpdateInput = {
   year?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   rating?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
+  safetySnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastExecutionError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   reviewedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   executedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -531,6 +563,8 @@ export type LibraryCleanupApprovalCreateManyInput = {
   year?: number | null
   rating?: number | null
   status?: string
+  safetySnapshot?: string | null
+  lastExecutionError?: string | null
   reviewedAt?: Date | string | null
   executedAt?: Date | string | null
   expiresAt: Date | string
@@ -551,6 +585,8 @@ export type LibraryCleanupApprovalUpdateManyMutationInput = {
   year?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   rating?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
+  safetySnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastExecutionError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   reviewedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   executedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -572,6 +608,8 @@ export type LibraryCleanupApprovalUncheckedUpdateManyInput = {
   year?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   rating?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
+  safetySnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastExecutionError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   reviewedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   executedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -603,6 +641,8 @@ export type LibraryCleanupApprovalCountOrderByAggregateInput = {
   year?: Prisma.SortOrder
   rating?: Prisma.SortOrder
   status?: Prisma.SortOrder
+  safetySnapshot?: Prisma.SortOrder
+  lastExecutionError?: Prisma.SortOrder
   reviewedAt?: Prisma.SortOrder
   executedAt?: Prisma.SortOrder
   expiresAt?: Prisma.SortOrder
@@ -631,6 +671,8 @@ export type LibraryCleanupApprovalMaxOrderByAggregateInput = {
   year?: Prisma.SortOrder
   rating?: Prisma.SortOrder
   status?: Prisma.SortOrder
+  safetySnapshot?: Prisma.SortOrder
+  lastExecutionError?: Prisma.SortOrder
   reviewedAt?: Prisma.SortOrder
   executedAt?: Prisma.SortOrder
   expiresAt?: Prisma.SortOrder
@@ -652,6 +694,8 @@ export type LibraryCleanupApprovalMinOrderByAggregateInput = {
   year?: Prisma.SortOrder
   rating?: Prisma.SortOrder
   status?: Prisma.SortOrder
+  safetySnapshot?: Prisma.SortOrder
+  lastExecutionError?: Prisma.SortOrder
   reviewedAt?: Prisma.SortOrder
   executedAt?: Prisma.SortOrder
   expiresAt?: Prisma.SortOrder
@@ -721,6 +765,8 @@ export type LibraryCleanupApprovalCreateWithoutConfigInput = {
   year?: number | null
   rating?: number | null
   status?: string
+  safetySnapshot?: string | null
+  lastExecutionError?: string | null
   reviewedAt?: Date | string | null
   executedAt?: Date | string | null
   expiresAt: Date | string
@@ -741,6 +787,8 @@ export type LibraryCleanupApprovalUncheckedCreateWithoutConfigInput = {
   year?: number | null
   rating?: number | null
   status?: string
+  safetySnapshot?: string | null
+  lastExecutionError?: string | null
   reviewedAt?: Date | string | null
   executedAt?: Date | string | null
   expiresAt: Date | string
@@ -790,6 +838,8 @@ export type LibraryCleanupApprovalScalarWhereInput = {
   year?: Prisma.IntNullableFilter<"LibraryCleanupApproval"> | number | null
   rating?: Prisma.FloatNullableFilter<"LibraryCleanupApproval"> | number | null
   status?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
+  safetySnapshot?: Prisma.StringNullableFilter<"LibraryCleanupApproval"> | string | null
+  lastExecutionError?: Prisma.StringNullableFilter<"LibraryCleanupApproval"> | string | null
   reviewedAt?: Prisma.DateTimeNullableFilter<"LibraryCleanupApproval"> | Date | string | null
   executedAt?: Prisma.DateTimeNullableFilter<"LibraryCleanupApproval"> | Date | string | null
   expiresAt?: Prisma.DateTimeFilter<"LibraryCleanupApproval"> | Date | string
@@ -810,6 +860,8 @@ export type LibraryCleanupApprovalCreateManyConfigInput = {
   year?: number | null
   rating?: number | null
   status?: string
+  safetySnapshot?: string | null
+  lastExecutionError?: string | null
   reviewedAt?: Date | string | null
   executedAt?: Date | string | null
   expiresAt: Date | string
@@ -830,6 +882,8 @@ export type LibraryCleanupApprovalUpdateWithoutConfigInput = {
   year?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   rating?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
+  safetySnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastExecutionError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   reviewedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   executedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -850,6 +904,8 @@ export type LibraryCleanupApprovalUncheckedUpdateWithoutConfigInput = {
   year?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   rating?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
+  safetySnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastExecutionError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   reviewedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   executedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -870,6 +926,8 @@ export type LibraryCleanupApprovalUncheckedUpdateManyWithoutConfigInput = {
   year?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   rating?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
   status?: Prisma.StringFieldUpdateOperationsInput | string
+  safetySnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastExecutionError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   reviewedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   executedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -893,6 +951,8 @@ export type LibraryCleanupApprovalSelect<ExtArgs extends runtime.Types.Extension
   year?: boolean
   rating?: boolean
   status?: boolean
+  safetySnapshot?: boolean
+  lastExecutionError?: boolean
   reviewedAt?: boolean
   executedAt?: boolean
   expiresAt?: boolean
@@ -915,6 +975,8 @@ export type LibraryCleanupApprovalSelectCreateManyAndReturn<ExtArgs extends runt
   year?: boolean
   rating?: boolean
   status?: boolean
+  safetySnapshot?: boolean
+  lastExecutionError?: boolean
   reviewedAt?: boolean
   executedAt?: boolean
   expiresAt?: boolean
@@ -937,6 +999,8 @@ export type LibraryCleanupApprovalSelectUpdateManyAndReturn<ExtArgs extends runt
   year?: boolean
   rating?: boolean
   status?: boolean
+  safetySnapshot?: boolean
+  lastExecutionError?: boolean
   reviewedAt?: boolean
   executedAt?: boolean
   expiresAt?: boolean
@@ -959,13 +1023,15 @@ export type LibraryCleanupApprovalSelectScalar = {
   year?: boolean
   rating?: boolean
   status?: boolean
+  safetySnapshot?: boolean
+  lastExecutionError?: boolean
   reviewedAt?: boolean
   executedAt?: boolean
   expiresAt?: boolean
   createdAt?: boolean
 }
 
-export type LibraryCleanupApprovalOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "configId" | "instanceId" | "arrItemId" | "itemType" | "title" | "matchedRuleId" | "matchedRuleName" | "reason" | "action" | "sizeOnDisk" | "year" | "rating" | "status" | "reviewedAt" | "executedAt" | "expiresAt" | "createdAt", ExtArgs["result"]["libraryCleanupApproval"]>
+export type LibraryCleanupApprovalOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "configId" | "instanceId" | "arrItemId" | "itemType" | "title" | "matchedRuleId" | "matchedRuleName" | "reason" | "action" | "sizeOnDisk" | "year" | "rating" | "status" | "safetySnapshot" | "lastExecutionError" | "reviewedAt" | "executedAt" | "expiresAt" | "createdAt", ExtArgs["result"]["libraryCleanupApproval"]>
 export type LibraryCleanupApprovalInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   config?: boolean | Prisma.LibraryCleanupConfigDefaultArgs<ExtArgs>
 }
@@ -996,6 +1062,8 @@ export type $LibraryCleanupApprovalPayload<ExtArgs extends runtime.Types.Extensi
     year: number | null
     rating: number | null
     status: string
+    safetySnapshot: string | null
+    lastExecutionError: string | null
     reviewedAt: Date | null
     executedAt: Date | null
     expiresAt: Date
@@ -1438,6 +1506,8 @@ export interface LibraryCleanupApprovalFieldRefs {
   readonly year: Prisma.FieldRef<"LibraryCleanupApproval", 'Int'>
   readonly rating: Prisma.FieldRef<"LibraryCleanupApproval", 'Float'>
   readonly status: Prisma.FieldRef<"LibraryCleanupApproval", 'String'>
+  readonly safetySnapshot: Prisma.FieldRef<"LibraryCleanupApproval", 'String'>
+  readonly lastExecutionError: Prisma.FieldRef<"LibraryCleanupApproval", 'String'>
   readonly reviewedAt: Prisma.FieldRef<"LibraryCleanupApproval", 'DateTime'>
   readonly executedAt: Prisma.FieldRef<"LibraryCleanupApproval", 'DateTime'>
   readonly expiresAt: Prisma.FieldRef<"LibraryCleanupApproval", 'DateTime'>

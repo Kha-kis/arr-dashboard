@@ -79,7 +79,7 @@ function serializeRule(rule: Record<string, unknown>) {
 	};
 }
 
-function serializeApproval(a: Record<string, unknown>) {
+export function serializeApproval(a: Record<string, unknown>) {
 	return {
 		id: a.id,
 		instanceId: a.instanceId,
@@ -94,6 +94,7 @@ function serializeApproval(a: Record<string, unknown>) {
 		year: a.year,
 		rating: a.rating,
 		status: a.status,
+		lastExecutionError: (a.lastExecutionError as string | null) ?? null,
 		reviewedAt: a.reviewedAt ? (a.reviewedAt as Date).toISOString() : null,
 		executedAt: a.executedAt ? (a.executedAt as Date).toISOString() : null,
 		createdAt: (a.createdAt as Date).toISOString(),
@@ -642,7 +643,12 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			cleanupRunInProgress = true;
 			try {
 				const result = await executeCleanupPreview(
-					{ prisma: app.prisma, arrClientFactory: app.arrClientFactory, log: request.log },
+					{
+						prisma: app.prisma,
+						arrClientFactory: app.arrClientFactory,
+						encryptor: app.encryptor,
+						log: request.log,
+					},
 					userId,
 				);
 
@@ -771,7 +777,12 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			cleanupRunInProgress = true;
 			try {
 				const result = await executeCleanupRun(
-					{ prisma: app.prisma, arrClientFactory: app.arrClientFactory, log: request.log },
+					{
+						prisma: app.prisma,
+						arrClientFactory: app.arrClientFactory,
+						encryptor: app.encryptor,
+						log: request.log,
+					},
 					userId,
 				);
 
@@ -845,21 +856,27 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			const userId = request.currentUser!.id;
 			const { id } = request.params;
 
-			const approval = await app.prisma.libraryCleanupApproval.findFirst({
-				where: { id, config: { userId }, status: "pending" },
+			const transition = await app.prisma.libraryCleanupApproval.updateMany({
+				where: {
+					id,
+					config: { userId },
+					status: "pending",
+					expiresAt: { gt: new Date() },
+				},
+				data: { status: "approved", reviewedAt: new Date() },
 			});
-			if (!approval) {
+			if (transition.count !== 1) {
 				return reply.status(404).send({ error: "Approval not found or not pending" });
 			}
 
-			await app.prisma.libraryCleanupApproval.update({
-				where: { id },
-				data: { status: "approved", reviewedAt: new Date() },
-			});
-
 			// Execute immediately
 			const result = await executeApprovedItems(
-				{ prisma: app.prisma, arrClientFactory: app.arrClientFactory, log: request.log },
+				{
+					prisma: app.prisma,
+					arrClientFactory: app.arrClientFactory,
+					encryptor: app.encryptor,
+					log: request.log,
+				},
 				userId,
 				[id],
 			);
@@ -876,17 +893,13 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			const userId = request.currentUser!.id;
 			const { id } = request.params;
 
-			const approval = await app.prisma.libraryCleanupApproval.findFirst({
+			const transition = await app.prisma.libraryCleanupApproval.updateMany({
 				where: { id, config: { userId }, status: "pending" },
-			});
-			if (!approval) {
-				return reply.status(404).send({ error: "Approval not found or not pending" });
-			}
-
-			await app.prisma.libraryCleanupApproval.update({
-				where: { id },
 				data: { status: "rejected", reviewedAt: new Date() },
 			});
+			if (transition.count !== 1) {
+				return reply.status(404).send({ error: "Approval not found or not pending" });
+			}
 
 			return reply.status(204).send();
 		},
@@ -907,12 +920,22 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 
 		// Approve and execute
 		await app.prisma.libraryCleanupApproval.updateMany({
-			where: { id: { in: ids }, config: { userId }, status: "pending" },
+			where: {
+				id: { in: ids },
+				config: { userId },
+				status: "pending",
+				expiresAt: { gt: new Date() },
+			},
 			data: { status: "approved", reviewedAt: new Date() },
 		});
 
 		const result = await executeApprovedItems(
-			{ prisma: app.prisma, arrClientFactory: app.arrClientFactory, log: request.log },
+			{
+				prisma: app.prisma,
+				arrClientFactory: app.arrClientFactory,
+				encryptor: app.encryptor,
+				log: request.log,
+			},
 			userId,
 			ids,
 		);

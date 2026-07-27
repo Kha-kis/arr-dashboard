@@ -1276,6 +1276,8 @@ model LibraryCleanupApproval {
   year            Int?
   rating          Float?
   status          String   @default("pending") // "pending" | "approved" | "rejected" | "executing" | "executed" | "expired"
+  safetySnapshot  String?                      // Canonical JSON file identity approved for destructive execution
+  lastExecutionError String?
   reviewedAt      DateTime?
   executedAt      DateTime?
   expiresAt       DateTime
