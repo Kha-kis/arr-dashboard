@@ -2354,7 +2354,7 @@ describe("shared Plex deletion safety", () => {
 
 		const result = await executeDirectRemoval(
 			deps,
-			{ id: "config-1", rules: [] } as never,
+			{ id: "config-1", maxRemovalsPerRun: 10, rules: [] } as never,
 			"user-1",
 			[flaggedItem] as never,
 			1,
@@ -2394,7 +2394,7 @@ describe("shared Plex deletion safety", () => {
 
 		const result = await executeDirectRemoval(
 			deps,
-			{ id: "config-1", rules: [] } as never,
+			{ id: "config-1", maxRemovalsPerRun: 10, rules: [] } as never,
 			"user-1",
 			[flaggedItem] as never,
 			1,
@@ -2678,7 +2678,7 @@ describe("shared Plex deletion safety", () => {
 
 		const result = await executeDirectRemoval(
 			deps,
-			{ id: "config-1", rules: [] } as never,
+			{ id: "config-1", maxRemovalsPerRun: 10, rules: [] } as never,
 			"user-1",
 			[flaggedItem] as never,
 			1,
@@ -2725,7 +2725,7 @@ describe("shared Plex deletion safety", () => {
 
 		const result = await executeDirectRemoval(
 			deps,
-			{ id: "config-1", rules: [] } as never,
+			{ id: "config-1", maxRemovalsPerRun: 10, rules: [] } as never,
 			"user-1",
 			[flaggedItem] as never,
 			1,
@@ -2950,7 +2950,7 @@ describe("shared Plex deletion safety", () => {
 
 		const result = await executeDirectRemoval(
 			deps,
-			{ id: "config-1", rules: [] } as never,
+			{ id: "config-1", maxRemovalsPerRun: 10, rules: [] } as never,
 			"user-1",
 			[flaggedItem],
 			1,
@@ -3021,7 +3021,7 @@ describe("shared Plex deletion safety", () => {
 
 		const result = await executeDirectRemoval(
 			deps,
-			{ id: "config-1", rules: [] } as never,
+			{ id: "config-1", maxRemovalsPerRun: 10, rules: [] } as never,
 			"user-1",
 			[flaggedItem],
 			1,
@@ -3667,6 +3667,50 @@ describe("shared Plex deletion safety", () => {
 		expect(deleteMovieFile).toHaveBeenCalledOnce();
 		expect(deleteMovie).toHaveBeenCalledTimes(2);
 	});
+
+	it.each([0, 101])(
+		"fails closed when the persisted direct cleanup cap is invalid (%i)",
+		async (maxRemovalsPerRun) => {
+			const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
+			const flaggedItem = {
+				cacheItem: {
+					instanceId: "radarr-4k",
+					arrItemId: 101,
+					itemType: "movie",
+					title: "Example Movie",
+					year: 2024,
+					...radarrCachedFileIdentity,
+					sizeOnDisk: 2_000n,
+				},
+				match: {
+					ruleId: "rule-1",
+					ruleName: "Large movie cleanup",
+					reason: "Matched size rule",
+					action: "delete",
+				},
+				rating: 8,
+			} as never;
+
+			const result = await executeDirectRemoval(
+				deps,
+				{ id: "config-1", maxRemovalsPerRun, rules: [] } as never,
+				"user-1",
+				[flaggedItem],
+				1,
+				1,
+				Date.now(),
+			);
+
+			expect(result).toMatchObject({
+				itemsFlagged: 0,
+				itemsRemoved: 0,
+				itemsFilesDeleted: 0,
+				itemsSkipped: 1,
+			});
+			expect(deleteMovieFile).not.toHaveBeenCalled();
+			expect(deleteMovie).not.toHaveBeenCalled();
+		},
+	);
 
 	it("returns a partially completed approval to pending with accurate file state", async () => {
 		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
@@ -4705,7 +4749,7 @@ describe("shared Plex deletion safety", () => {
 
 		const result = await executeDirectRemoval(
 			deps,
-			{ id: "config-1", rules: [] } as never,
+			{ id: "config-1", maxRemovalsPerRun: 10, rules: [] } as never,
 			"user-1",
 			[flaggedItem],
 			1,
@@ -4749,7 +4793,7 @@ describe("shared Plex deletion safety", () => {
 
 		const result = await executeDirectRemoval(
 			deps,
-			{ id: "config-1", rules: [] } as never,
+			{ id: "config-1", maxRemovalsPerRun: 10, rules: [] } as never,
 			"user-1",
 			flaggedItems,
 			2,
@@ -4818,7 +4862,7 @@ describe("shared Plex deletion safety", () => {
 
 		const result = await executeDirectRemoval(
 			deps,
-			{ id: "config-1", rules: [] } as never,
+			{ id: "config-1", maxRemovalsPerRun: 10, rules: [] } as never,
 			"user-1",
 			[flaggedItem],
 			1,
