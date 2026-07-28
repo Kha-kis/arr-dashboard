@@ -18,12 +18,18 @@ import type { FastifyPluginCallback } from "fastify";
 import { randomUUID } from "node:crypto";
 import {
 	buildEvalContext,
+	CleanupPolicyMutationConflictError,
 	CleanupRunAlreadyInProgressError,
 	executeApprovedItems,
 	executeCleanupPreview,
 	executeCleanupRun,
 	executeRetryItems,
+	withCleanupPolicyMutationLease,
 } from "../lib/library-cleanup/cleanup-executor.js";
+import {
+	CleanupMaintenanceConflictError,
+	withCleanupOperationGuard,
+} from "../lib/library-cleanup/cleanup-maintenance-gate.js";
 import { explainItemAgainstRulesViaEngine } from "../lib/rules/cleanup-adapter.js";
 import type { CacheItemForEval } from "../lib/library-cleanup/types.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
@@ -37,6 +43,19 @@ const EXECUTE_RATE_LIMIT = { max: 3, timeWindow: "1 minute" };
 
 // In-memory guard against concurrent execute/preview overlap (single-admin app)
 let cleanupRunInProgress = false;
+
+function isCleanupConflict(
+	error: unknown,
+): error is
+	| CleanupRunAlreadyInProgressError
+	| CleanupMaintenanceConflictError
+	| CleanupPolicyMutationConflictError {
+	return (
+		error instanceof CleanupRunAlreadyInProgressError ||
+		error instanceof CleanupMaintenanceConflictError ||
+		error instanceof CleanupPolicyMutationConflictError
+	);
+}
 
 // ============================================================================
 // Serialization helpers
@@ -381,11 +400,20 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		});
 
 		if (!config) {
-			// Auto-create default config
-			config = await app.prisma.libraryCleanupConfig.create({
-				data: { userId },
-				include: { rules: { orderBy: { priority: "asc" } } },
-			});
+			// Auto-create the coordination row while restore and cleanup-sensitive
+			// writes are excluded.
+			config = await withCleanupPolicyMutationLease(
+				{ prisma: app.prisma, log: request.log },
+				userId,
+				async () => {
+					const initialized = await app.prisma.libraryCleanupConfig.findUnique({
+						where: { userId },
+						include: { rules: { orderBy: { priority: "asc" } } },
+					});
+					if (!initialized) throw new Error("Cleanup configuration could not be initialized");
+					return initialized;
+				},
+			);
 		}
 
 		return reply.send(serializeConfig(config as unknown as Record<string, unknown>));
@@ -396,24 +424,30 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		const userId = request.currentUser!.id;
 		const data = validateRequest(updateCleanupConfigSchema, request.body);
 
-		const config = await app.prisma.libraryCleanupConfig.upsert({
-			where: { userId },
-			update: data,
-			create: { userId, ...data },
-			include: { rules: { orderBy: { priority: "asc" } } },
-		});
+		return await withCleanupPolicyMutationLease(
+			{ prisma: app.prisma, log: request.log },
+			userId,
+			async () => {
+				const config = await app.prisma.libraryCleanupConfig.upsert({
+					where: { userId },
+					update: data,
+					create: { userId, ...data },
+					include: { rules: { orderBy: { priority: "asc" } } },
+				});
 
-		// Recalculate nextRunAt when enabled or intervalHours changes
-		if (config.enabled && (!config.nextRunAt || data.intervalHours != null)) {
-			const newNextRun = new Date(Date.now() + config.intervalHours * 60 * 60 * 1000);
-			await app.prisma.libraryCleanupConfig.update({
-				where: { id: config.id },
-				data: { nextRunAt: newNextRun },
-			});
-			(config as Record<string, unknown>).nextRunAt = newNextRun;
-		}
+				// Recalculate nextRunAt when enabled or intervalHours changes
+				if (config.enabled && (!config.nextRunAt || data.intervalHours != null)) {
+					const newNextRun = new Date(Date.now() + config.intervalHours * 60 * 60 * 1000);
+					await app.prisma.libraryCleanupConfig.update({
+						where: { id: config.id },
+						data: { nextRunAt: newNextRun },
+					});
+					(config as Record<string, unknown>).nextRunAt = newNextRun;
+				}
 
-		return reply.send(serializeConfig(config as unknown as Record<string, unknown>));
+				return reply.send(serializeConfig(config as unknown as Record<string, unknown>));
+			},
+		);
 	});
 
 	// ─── Rules CRUD ───────────────────────────────────────────────────
@@ -440,34 +474,44 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			return reply.status(404).send({ error: "Config not found. Initialize config first." });
 		}
 
-		const rule = await app.prisma.libraryCleanupRule.create({
-			data: {
-				configId: config.id,
-				name: data.name,
-				enabled: data.enabled,
-				priority: data.priority,
-				ruleType: data.ruleType,
-				parameters: JSON.stringify(data.parameters),
-				serviceFilter: data.serviceFilter ? JSON.stringify(data.serviceFilter) : null,
-				instanceFilter: data.instanceFilter ? JSON.stringify(data.instanceFilter) : null,
-				excludeTags: data.excludeTags ? JSON.stringify(data.excludeTags) : null,
-				excludeTitles: data.excludeTitles ? JSON.stringify(data.excludeTitles) : null,
-				plexLibraryFilter: data.plexLibraryFilter ? JSON.stringify(data.plexLibraryFilter) : null,
-				action: data.action ?? "delete",
-				operator: data.operator ?? null,
-				conditions: data.conditions ? JSON.stringify(data.conditions) : null,
-				retentionMode: data.retentionMode ?? false,
-				useGlobalRejectionMemory: data.useGlobalRejectionMemory ?? true,
-				// `?? 0` would collapse a deliberate `null` (forever) to `0` (off),
-				// silently downgrading "Forever" → "Off" on rule creation. The
-				// encoding contract is null=forever, 0=off, N>0=days — so only
-				// substitute the default for `undefined`. PUT path on rule update
-				// uses the same `!== undefined` discipline; keep them symmetric.
-				rejectionMemoryDays: data.rejectionMemoryDays === undefined ? 0 : data.rejectionMemoryDays,
-			},
-		});
+		return await withCleanupPolicyMutationLease(
+			{ prisma: app.prisma, log: request.log },
+			userId,
+			async () => {
+				const rule = await app.prisma.libraryCleanupRule.create({
+					data: {
+						configId: config.id,
+						name: data.name,
+						enabled: data.enabled,
+						priority: data.priority,
+						ruleType: data.ruleType,
+						parameters: JSON.stringify(data.parameters),
+						serviceFilter: data.serviceFilter ? JSON.stringify(data.serviceFilter) : null,
+						instanceFilter: data.instanceFilter ? JSON.stringify(data.instanceFilter) : null,
+						excludeTags: data.excludeTags ? JSON.stringify(data.excludeTags) : null,
+						excludeTitles: data.excludeTitles ? JSON.stringify(data.excludeTitles) : null,
+						plexLibraryFilter: data.plexLibraryFilter
+							? JSON.stringify(data.plexLibraryFilter)
+							: null,
+						action: data.action ?? "delete",
+						operator: data.operator ?? null,
+						conditions: data.conditions ? JSON.stringify(data.conditions) : null,
+						retentionMode: data.retentionMode ?? false,
+						useGlobalRejectionMemory: data.useGlobalRejectionMemory ?? true,
+						// `?? 0` would collapse a deliberate `null` (forever) to `0` (off),
+						// silently downgrading "Forever" → "Off" on rule creation. The
+						// encoding contract is null=forever, 0=off, N>0=days — so only
+						// substitute the default for `undefined`. PUT path on rule update
+						// uses the same `!== undefined` discipline; keep them symmetric.
+						rejectionMemoryDays:
+							data.rejectionMemoryDays === undefined ? 0 : data.rejectionMemoryDays,
+					},
+				});
 
-		return reply.status(201).send(serializeRule(rule as unknown as Record<string, unknown>));
+				return reply.status(201).send(serializeRule(rule as unknown as Record<string, unknown>));
+			},
+			{ configId: config.id },
+		);
 	});
 
 	/** PUT /api/library-cleanup/rules/reorder */
@@ -475,42 +519,57 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		const userId = request.currentUser!.id;
 		const { ruleIds } = validateRequest(reorderRulesSchema, request.body);
 
-		const config = await app.prisma.libraryCleanupConfig.findUnique({
+		const configRef = await app.prisma.libraryCleanupConfig.findUnique({
 			where: { userId },
-			include: { rules: { select: { id: true } } },
+			select: { id: true },
 		});
-		if (!config) {
+		if (!configRef) {
 			return reply.status(404).send({ error: "Config not found" });
 		}
 
-		// Verify all IDs belong to this config and all rules are included
-		const existingIds = new Set(config.rules.map((r) => r.id));
-		if (ruleIds.length !== existingIds.size) {
-			return reply.status(400).send({
-				error: `Expected ${existingIds.size} rule IDs but received ${ruleIds.length}`,
-			});
-		}
-		for (const id of ruleIds) {
-			if (!existingIds.has(id)) {
-				return reply.status(400).send({ error: `Rule ${id} not found in config` });
-			}
-		}
+		return await withCleanupPolicyMutationLease(
+			{ prisma: app.prisma, log: request.log },
+			userId,
+			async () => {
+				const config = await app.prisma.libraryCleanupConfig.findUnique({
+					where: { userId },
+					include: { rules: { select: { id: true } } },
+				});
+				if (!config) {
+					return reply.status(404).send({ error: "Config not found" });
+				}
 
-		// Assign sequential priorities in a transaction
-		await app.prisma.$transaction(
-			ruleIds.map((id, index) =>
-				app.prisma.libraryCleanupRule.update({
-					where: { id },
-					data: { priority: index },
-				}),
-			),
+				// Verify all IDs belong to this config and all rules are included
+				const existingIds = new Set(config.rules.map((r) => r.id));
+				if (ruleIds.length !== existingIds.size) {
+					return reply.status(400).send({
+						error: `Expected ${existingIds.size} rule IDs but received ${ruleIds.length}`,
+					});
+				}
+				for (const id of ruleIds) {
+					if (!existingIds.has(id)) {
+						return reply.status(400).send({ error: `Rule ${id} not found in config` });
+					}
+				}
+
+				// Assign sequential priorities in a transaction
+				await app.prisma.$transaction(
+					ruleIds.map((id, index) =>
+						app.prisma.libraryCleanupRule.update({
+							where: { id },
+							data: { priority: index },
+						}),
+					),
+				);
+
+				const updated = await app.prisma.libraryCleanupConfig.findUnique({
+					where: { userId },
+					include: { rules: { orderBy: { priority: "asc" } } },
+				});
+				return reply.send(serializeConfig(updated as unknown as Record<string, unknown>));
+			},
+			{ configId: configRef.id },
 		);
-
-		const updated = await app.prisma.libraryCleanupConfig.findUnique({
-			where: { userId },
-			include: { rules: { orderBy: { priority: "asc" } } },
-		});
-		return reply.send(serializeConfig(updated as unknown as Record<string, unknown>));
 	});
 
 	/** PUT /api/library-cleanup/rules/:id */
@@ -581,12 +640,19 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		if (data.rejectionMemoryDays !== undefined)
 			updateData.rejectionMemoryDays = data.rejectionMemoryDays;
 
-		const rule = await app.prisma.libraryCleanupRule.update({
-			where: { id },
-			data: updateData,
-		});
+		return await withCleanupPolicyMutationLease(
+			{ prisma: app.prisma, log: request.log },
+			userId,
+			async () => {
+				const rule = await app.prisma.libraryCleanupRule.update({
+					where: { id },
+					data: updateData,
+				});
 
-		return reply.send(serializeRule(rule as unknown as Record<string, unknown>));
+				return reply.send(serializeRule(rule as unknown as Record<string, unknown>));
+			},
+			{ configId: existing.configId },
+		);
 	});
 
 	/** DELETE /api/library-cleanup/rules/:id */
@@ -601,8 +667,15 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			return reply.status(404).send({ error: "Rule not found" });
 		}
 
-		await app.prisma.libraryCleanupRule.delete({ where: { id } });
-		return reply.status(204).send();
+		return await withCleanupPolicyMutationLease(
+			{ prisma: app.prisma, log: request.log },
+			userId,
+			async () => {
+				await app.prisma.libraryCleanupRule.delete({ where: { id } });
+				return reply.status(204).send();
+			},
+			{ configId: existing.configId },
+		);
 	});
 
 	// ─── Preview & Execute ────────────────────────────────────────────
@@ -768,7 +841,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 
 				return reply.send(result);
 			} catch (error) {
-				if (error instanceof CleanupRunAlreadyInProgressError) {
+				if (isCleanupConflict(error)) {
 					return reply.status(409).send({ error: error.message });
 				}
 				request.log.error({ err: error }, "Cleanup execution failed");
@@ -849,46 +922,46 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			const { id } = request.params;
 			const approvalRequestToken = randomUUID();
 
-			const transition = await app.prisma.libraryCleanupApproval.updateMany({
-				where: {
-					id,
-					config: { userId },
-					status: "pending",
-					expiresAt: { gt: new Date() },
-				},
-				data: {
-					status: "approved",
-					executionToken: approvalRequestToken,
-					reviewedAt: new Date(),
-				},
-			});
-			if (transition.count !== 1) {
-				return reply.status(404).send({ error: "Approval not found or not pending" });
-			}
-
-			// Execute immediately
-			let result: Awaited<ReturnType<typeof executeApprovedItems>>;
 			try {
-				result = await executeApprovedItems(
-					{
-						prisma: app.prisma,
-						arrClientFactory: app.arrClientFactory,
-						encryptor: app.encryptor,
-						log: request.log,
-					},
-					userId,
-					[id],
-					approvalRequestToken,
-				);
+				return await withCleanupOperationGuard(async () => {
+					const transition = await app.prisma.libraryCleanupApproval.updateMany({
+						where: {
+							id,
+							config: { userId },
+							status: "pending",
+							expiresAt: { gt: new Date() },
+						},
+						data: {
+							status: "approved",
+							executionToken: approvalRequestToken,
+							reviewedAt: new Date(),
+						},
+					});
+					if (transition.count !== 1) {
+						return reply.status(404).send({ error: "Approval not found or not pending" });
+					}
+
+					const result = await executeApprovedItems(
+						{
+							prisma: app.prisma,
+							arrClientFactory: app.arrClientFactory,
+							encryptor: app.encryptor,
+							log: request.log,
+						},
+						userId,
+						[id],
+						approvalRequestToken,
+					);
+
+					// nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Fastify JSON response
+					return reply.send(result);
+				});
 			} catch (error) {
-				if (error instanceof CleanupRunAlreadyInProgressError) {
+				if (isCleanupConflict(error)) {
 					return reply.status(409).send({ error: error.message });
 				}
 				throw error;
 			}
-
-			// nosemgrep: javascript.express.security.audit.xss.direct-response-write.direct-response-write -- Fastify JSON response
-			return reply.send(result);
 		},
 	);
 
@@ -912,7 +985,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 				);
 				return reply.send(result);
 			} catch (error) {
-				if (error instanceof CleanupRunAlreadyInProgressError) {
+				if (isCleanupConflict(error)) {
 					return reply.status(409).send({ error: error.message });
 				}
 				throw error;
@@ -927,15 +1000,24 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			const userId = request.currentUser!.id;
 			const { id } = request.params;
 
-			const transition = await app.prisma.libraryCleanupApproval.updateMany({
-				where: { id, config: { userId }, status: "pending" },
-				data: { status: "rejected", executionToken: null, reviewedAt: new Date() },
-			});
-			if (transition.count !== 1) {
-				return reply.status(404).send({ error: "Approval not found or not pending" });
-			}
+			try {
+				return await withCleanupOperationGuard(async () => {
+					const transition = await app.prisma.libraryCleanupApproval.updateMany({
+						where: { id, config: { userId }, status: "pending" },
+						data: { status: "rejected", executionToken: null, reviewedAt: new Date() },
+					});
+					if (transition.count !== 1) {
+						return reply.status(404).send({ error: "Approval not found or not pending" });
+					}
 
-			return reply.status(204).send();
+					return reply.status(204).send();
+				});
+			} catch (error) {
+				if (isCleanupConflict(error)) {
+					return reply.status(409).send({ error: error.message });
+				}
+				throw error;
+			}
 		},
 	);
 
@@ -944,51 +1026,53 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		const userId = request.currentUser!.id;
 		const { ids, action } = validateRequest(bulkApprovalSchema, request.body);
 
-		if (action === "rejected") {
-			const result = await app.prisma.libraryCleanupApproval.updateMany({
-				where: { id: { in: ids }, config: { userId }, status: "pending" },
-				data: { status: "rejected", executionToken: null, reviewedAt: new Date() },
-			});
-			return reply.send({ updated: result.count });
-		}
-
-		// Approve and execute
-		const approvalRequestToken = randomUUID();
-		await app.prisma.libraryCleanupApproval.updateMany({
-			where: {
-				id: { in: ids },
-				config: { userId },
-				status: "pending",
-				expiresAt: { gt: new Date() },
-			},
-			data: {
-				status: "approved",
-				executionToken: approvalRequestToken,
-				reviewedAt: new Date(),
-			},
-		});
-
-		let result: Awaited<ReturnType<typeof executeApprovedItems>>;
 		try {
-			result = await executeApprovedItems(
-				{
-					prisma: app.prisma,
-					arrClientFactory: app.arrClientFactory,
-					encryptor: app.encryptor,
-					log: request.log,
-				},
-				userId,
-				ids,
-				approvalRequestToken,
-			);
+			return await withCleanupOperationGuard(async () => {
+				if (action === "rejected") {
+					const result = await app.prisma.libraryCleanupApproval.updateMany({
+						where: { id: { in: ids }, config: { userId }, status: "pending" },
+						data: { status: "rejected", executionToken: null, reviewedAt: new Date() },
+					});
+					return reply.send({ updated: result.count });
+				}
+
+				// Approve and execute under one guard so restore cannot observe
+				// an intermediate approved state.
+				const approvalRequestToken = randomUUID();
+				await app.prisma.libraryCleanupApproval.updateMany({
+					where: {
+						id: { in: ids },
+						config: { userId },
+						status: "pending",
+						expiresAt: { gt: new Date() },
+					},
+					data: {
+						status: "approved",
+						executionToken: approvalRequestToken,
+						reviewedAt: new Date(),
+					},
+				});
+
+				const result = await executeApprovedItems(
+					{
+						prisma: app.prisma,
+						arrClientFactory: app.arrClientFactory,
+						encryptor: app.encryptor,
+						log: request.log,
+					},
+					userId,
+					ids,
+					approvalRequestToken,
+				);
+
+				return reply.send(result);
+			});
 		} catch (error) {
-			if (error instanceof CleanupRunAlreadyInProgressError) {
+			if (isCleanupConflict(error)) {
 				return reply.status(409).send({ error: error.message });
 			}
 			throw error;
 		}
-
-		return reply.send(result);
 	});
 
 	// ─── Logs ─────────────────────────────────────────────────────────
