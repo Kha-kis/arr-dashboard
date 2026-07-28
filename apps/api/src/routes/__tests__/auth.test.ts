@@ -94,10 +94,21 @@ function createMockPrisma() {
 			mustChangePassword: data.mustChangePassword ?? false,
 			createdAt: new Date("2024-01-01T00:00:00Z"),
 		})),
+		delete: vi.fn().mockResolvedValue(undefined),
 	};
 
 	return {
 		user: userMock,
+		libraryCleanupConfig: {
+			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
+			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+		},
+		oIDCAccount: {
+			count: vi.fn().mockResolvedValue(0),
+		},
+		webAuthnCredential: {
+			count: vi.fn().mockResolvedValue(0),
+		},
 		oIDCProvider: {
 			findFirst: vi.fn().mockResolvedValue(null),
 			findUnique: vi.fn().mockResolvedValue(null),
@@ -460,5 +471,27 @@ describe("PATCH /auth/account", () => {
 
 		expect(res.statusCode).toBe(200);
 		expect(hashPassword).toHaveBeenCalledWith("NewPass123!");
+	});
+});
+
+describe("DELETE /auth/account", () => {
+	it("holds the cleanup topology lease while cascading user data", async () => {
+		mockPrisma.user.findUnique.mockResolvedValue(makeUser({ hashedPassword: null }));
+
+		const res = await injectAuthenticated("DELETE", "/auth/account");
+
+		expect(res.statusCode).toBe(200);
+		expect(mockPrisma.user.delete).toHaveBeenCalledWith({ where: { id: "user-1" } });
+		expect(mockPrisma.libraryCleanupConfig.updateMany).toHaveBeenCalledTimes(2);
+	});
+
+	it("returns 409 without deleting the account while cleanup owns the lease", async () => {
+		mockPrisma.user.findUnique.mockResolvedValue(makeUser({ hashedPassword: null }));
+		mockPrisma.libraryCleanupConfig.updateMany.mockResolvedValueOnce({ count: 0 });
+
+		const res = await injectAuthenticated("DELETE", "/auth/account");
+
+		expect(res.statusCode).toBe(409);
+		expect(mockPrisma.user.delete).not.toHaveBeenCalled();
 	});
 });

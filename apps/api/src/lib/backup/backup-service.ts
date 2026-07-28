@@ -28,6 +28,7 @@ import type {
 } from "@arr/shared";
 import type { PrismaClient } from "../../lib/prisma.js";
 import type { Encryptor } from "../auth/encryption.js";
+import { withCleanupMaintenanceGuard } from "../library-cleanup/cleanup-maintenance-gate.js";
 import { loggers } from "../logger.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { decryptBackupData, encryptBackupData } from "./backup-crypto.js";
@@ -708,7 +709,15 @@ export class BackupService {
 		// 1. Validate backup structure (parsed now contains the backup object)
 		const backup = parsed as BackupData;
 		validateBackup(backup);
+		// A successful restore replaces credentials and scheduler state that are
+		// only reloaded on process start. Keep cleanup-sensitive mutations
+		// blocked until the required restart; failures release the guard.
+		return await withCleanupMaintenanceGuard(() => this.restoreValidatedBackup(backup), {
+			holdAfterSuccess: true,
+		});
+	}
 
+	private async restoreValidatedBackup(backup: BackupData): Promise<BackupMetadata> {
 		// 2. Perform atomic restore with two-phase commit pattern to prevent partial restore
 		const secretsBackupPath = `${this.secretsPath}.restore-backup`;
 		let secretsBackedUp = false;

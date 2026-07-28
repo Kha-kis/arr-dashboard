@@ -24,6 +24,10 @@ import {
 	executeCleanupRun,
 	INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
 } from "./cleanup-executor.js";
+import {
+	CleanupMaintenanceConflictError,
+	withCleanupOperationGuard,
+} from "./cleanup-maintenance-gate.js";
 import type { CleanupRunResult } from "./types.js";
 
 const CHECK_INTERVAL_MS = 60 * 1000; // Check every minute
@@ -139,6 +143,22 @@ export class CleanupScheduler {
 		}
 	}
 
+	private async sendNotification(
+		payload: NotificationPayload,
+		failureMessage: string,
+	): Promise<void> {
+		if (!this.notifyFn) return;
+		try {
+			await withCleanupOperationGuard(() => this.notifyFn!(payload));
+		} catch (error) {
+			if (error instanceof CleanupMaintenanceConflictError) {
+				this.logger.debug("Database maintenance skipped a library-cleanup notification");
+				return;
+			}
+			this.logger.warn({ err: error }, failureMessage);
+		}
+	}
+
 	/**
 	 * Check if a cleanup run should execute and run it.
 	 */
@@ -149,181 +169,186 @@ export class CleanupScheduler {
 		}
 
 		try {
-			// Expire stale pending approvals
-			await this.prisma.libraryCleanupApproval
-				.updateMany({
-					where: { status: "pending", expiresAt: { lt: new Date() } },
-					data: { status: "expired" },
-				})
-				.catch((err) => {
-					this.logger.warn({ err }, "Failed to expire stale approvals");
-				});
+			await withCleanupOperationGuard(async () => {
+				// Expire stale pending approvals
+				await this.prisma.libraryCleanupApproval
+					.updateMany({
+						where: { status: "pending", expiresAt: { lt: new Date() } },
+						data: { status: "expired" },
+					})
+					.catch((err) => {
+						this.logger.warn({ err }, "Failed to expire stale approvals");
+					});
 
-			// Recover stuck "executing" items (crash recovery: >1 hour since approval).
-			// The persisted safety snapshot is reconciled against the live file
-			// remainder when the operator approves it again.
-			const stuckThreshold = new Date(Date.now() - 60 * 60 * 1000);
-			const staleRunLeaseThreshold = new Date(Date.now() - CLEANUP_RUN_LEASE_MS);
-			await this.prisma.libraryCleanupApproval
-				.updateMany({
-					where: {
-						status: "approved",
-						reviewedAt: { lt: stuckThreshold },
-						config: {
-							OR: [
-								{ runClaimToken: null },
-								{ runClaimedAt: null },
-								{ runClaimedAt: { lt: staleRunLeaseThreshold } },
-							],
+				// Recover stuck "executing" items (crash recovery: >1 hour since approval).
+				// The persisted safety snapshot is reconciled against the live file
+				// remainder when the operator approves it again.
+				const stuckThreshold = new Date(Date.now() - 60 * 60 * 1000);
+				const staleRunLeaseThreshold = new Date(Date.now() - CLEANUP_RUN_LEASE_MS);
+				await this.prisma.libraryCleanupApproval
+					.updateMany({
+						where: {
+							status: "approved",
+							reviewedAt: { lt: stuckThreshold },
+							config: {
+								OR: [
+									{ runClaimToken: null },
+									{ runClaimedAt: null },
+									{ runClaimedAt: { lt: staleRunLeaseThreshold } },
+								],
+							},
 						},
-					},
-					data: {
-						status: "pending",
-						executionToken: null,
-						lastExecutionError:
-							"Recovered an interrupted approval request. Review and approve again.",
-					},
-				})
-				.then((result) => {
-					if (result.count > 0) {
-						this.logger.warn(
-							{ recoveredCount: result.count },
-							"Recovered stuck approved cleanup items — returned them to pending review",
-						);
-					}
-				})
-				.catch((err) => {
-					this.logger.warn({ err }, "Failed to recover stuck approved cleanup items");
-				});
-			await this.prisma.libraryCleanupApproval
-				.updateMany({
-					where: {
-						status: "executing",
-						reviewedAt: { lt: stuckThreshold },
-						config: {
-							OR: [
-								{ runClaimToken: null },
-								{ runClaimedAt: null },
-								{ runClaimedAt: { lt: staleRunLeaseThreshold } },
-							],
+						data: {
+							status: "pending",
+							executionToken: null,
+							lastExecutionError:
+								"Recovered an interrupted approval request. Review and approve again.",
 						},
-					},
-					data: {
-						status: "pending",
-						executionToken: null,
-						lastExecutionError: INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
-					},
-				})
-				.then((result) => {
-					if (result.count > 0) {
-						this.logger.warn(
-							{ recoveredCount: result.count },
-							"Recovered stuck executing approval items — returned them to pending review",
-						);
-					}
-				})
-				.catch((err) => {
-					this.logger.warn({ err }, "Failed to recover stuck executing approvals");
-				});
-			await this.prisma.libraryCleanupApproval
-				.updateMany({
-					where: {
-						status: "retry_executing",
-						reviewedAt: { lt: stuckThreshold },
-						config: {
-							OR: [
-								{ runClaimToken: null },
-								{ runClaimedAt: null },
-								{ runClaimedAt: { lt: staleRunLeaseThreshold } },
-							],
+					})
+					.then((result) => {
+						if (result.count > 0) {
+							this.logger.warn(
+								{ recoveredCount: result.count },
+								"Recovered stuck approved cleanup items — returned them to pending review",
+							);
+						}
+					})
+					.catch((err) => {
+						this.logger.warn({ err }, "Failed to recover stuck approved cleanup items");
+					});
+				await this.prisma.libraryCleanupApproval
+					.updateMany({
+						where: {
+							status: "executing",
+							reviewedAt: { lt: stuckThreshold },
+							config: {
+								OR: [
+									{ runClaimToken: null },
+									{ runClaimedAt: null },
+									{ runClaimedAt: { lt: staleRunLeaseThreshold } },
+								],
+							},
 						},
-					},
-					data: { status: "retry_pending", executionToken: null },
-				})
-				.then((result) => {
-					if (result.count > 0) {
-						this.logger.warn(
-							{ recoveredCount: result.count },
-							"Recovered stuck record-only cleanup retries — returned them to retry pending",
-						);
-					}
-				})
-				.catch((err) => {
-					this.logger.warn({ err }, "Failed to recover stuck record-only cleanup retries");
+						data: {
+							status: "pending",
+							executionToken: null,
+							lastExecutionError: INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
+						},
+					})
+					.then((result) => {
+						if (result.count > 0) {
+							this.logger.warn(
+								{ recoveredCount: result.count },
+								"Recovered stuck executing approval items — returned them to pending review",
+							);
+						}
+					})
+					.catch((err) => {
+						this.logger.warn({ err }, "Failed to recover stuck executing approvals");
+					});
+				await this.prisma.libraryCleanupApproval
+					.updateMany({
+						where: {
+							status: "retry_executing",
+							reviewedAt: { lt: stuckThreshold },
+							config: {
+								OR: [
+									{ runClaimToken: null },
+									{ runClaimedAt: null },
+									{ runClaimedAt: { lt: staleRunLeaseThreshold } },
+								],
+							},
+						},
+						data: { status: "retry_pending", executionToken: null },
+					})
+					.then((result) => {
+						if (result.count > 0) {
+							this.logger.warn(
+								{ recoveredCount: result.count },
+								"Recovered stuck record-only cleanup retries — returned them to retry pending",
+							);
+						}
+					})
+					.catch((err) => {
+						this.logger.warn({ err }, "Failed to recover stuck record-only cleanup retries");
+					});
+
+				// Find any user's config that is enabled and due for a run.
+				// (Single-admin app, so there's at most one config.)
+				const config = await this.prisma.libraryCleanupConfig.findFirst({
+					where: { enabled: true },
 				});
 
-			// Find any user's config that is enabled and due for a run.
-			// (Single-admin app, so there's at most one config.)
-			const config = await this.prisma.libraryCleanupConfig.findFirst({
-				where: { enabled: true },
-			});
+				if (!config) return;
 
-			if (!config) return;
+				const now = new Date();
+				if (!config.nextRunAt || config.nextRunAt > now) return;
 
-			const now = new Date();
-			if (!config.nextRunAt || config.nextRunAt > now) return;
-
-			this._isRunning = true;
-
-			this.logger.info(
-				{ intervalHours: config.intervalHours, dryRunMode: config.dryRunMode },
-				"Running scheduled library cleanup",
-			);
-
-			try {
-				const result = await executeCleanupRun(
-					{
-						prisma: this.prisma,
-						arrClientFactory: this.arrClientFactory,
-						encryptor: this.encryptor,
-						log: this.logger,
-					},
-					config.userId,
-				);
-
-				// Calculate next run time
-				const nextRunAt = new Date(now.getTime() + config.intervalHours * 60 * 60 * 1000);
-
-				await this.prisma.libraryCleanupConfig.update({
-					where: { id: config.id },
-					data: { lastRunAt: now, nextRunAt },
-				});
+				this._isRunning = true;
 
 				this.logger.info(
-					{
-						itemsEvaluated: result.itemsEvaluated,
-						itemsFlagged: result.itemsFlagged,
-						itemsRemoved: result.itemsRemoved,
-						nextRunAt: nextRunAt.toISOString(),
-					},
-					"Scheduled library cleanup completed",
+					{ intervalHours: config.intervalHours, dryRunMode: config.dryRunMode },
+					"Running scheduled library cleanup",
 				);
 
-				const notification = buildCleanupNotification(result);
-				if (notification) {
-					this.notifyFn?.(notification).catch((err) => {
-						this.logger.warn({ err }, "Failed to send cleanup notification");
+				try {
+					const result = await executeCleanupRun(
+						{
+							prisma: this.prisma,
+							arrClientFactory: this.arrClientFactory,
+							encryptor: this.encryptor,
+							log: this.logger,
+						},
+						config.userId,
+					);
+
+					// Calculate next run time
+					const nextRunAt = new Date(now.getTime() + config.intervalHours * 60 * 60 * 1000);
+
+					await this.prisma.libraryCleanupConfig.update({
+						where: { id: config.id },
+						data: { lastRunAt: now, nextRunAt },
 					});
+
+					this.logger.info(
+						{
+							itemsEvaluated: result.itemsEvaluated,
+							itemsFlagged: result.itemsFlagged,
+							itemsRemoved: result.itemsRemoved,
+							nextRunAt: nextRunAt.toISOString(),
+						},
+						"Scheduled library cleanup completed",
+					);
+
+					const notification = buildCleanupNotification(result);
+					if (notification) {
+						await this.sendNotification(notification, "Failed to send cleanup notification");
+					}
+				} finally {
+					this._isRunning = false;
 				}
-			} finally {
-				this._isRunning = false;
-			}
+			});
 		} catch (error) {
 			this._isRunning = false;
+			if (error instanceof CleanupMaintenanceConflictError) {
+				this.logger.debug("Database maintenance owns the library-cleanup operation guard");
+				return;
+			}
 			if (error instanceof CleanupRunAlreadyInProgressError) {
 				this.logger.debug("Another app process owns the library-cleanup run lease");
 				return;
 			}
 			this.logger.error({ err: error }, "Error checking/running scheduled cleanup");
 
-			this.notifyFn?.({
-				eventType: "SYSTEM_ERROR",
-				title: "Library cleanup failed",
-				body: getErrorMessage(error),
-				url: "/library",
-			}).catch((err) => {
-				this.logger.warn({ err }, "Failed to send cleanup error notification");
-			});
+			await this.sendNotification(
+				{
+					eventType: "SYSTEM_ERROR",
+					title: "Library cleanup failed",
+					body: getErrorMessage(error),
+					url: "/library",
+				},
+				"Failed to send cleanup error notification",
+			);
 		}
 	}
 }

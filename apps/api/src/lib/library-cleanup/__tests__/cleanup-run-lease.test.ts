@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
 	acquireCleanupRunLease,
+	CleanupPolicyMutationConflictError,
+	CleanupTopologyMutationConflictError,
 	releaseCleanupRunLease,
 	renewCleanupRunLease,
+	withCleanupTopologyMutationLease,
+	withCleanupPolicyMutationLease,
 } from "../cleanup-executor.js";
 import type { CleanupExecutorDeps } from "../types.js";
 
@@ -151,5 +155,100 @@ describe("library cleanup database run lease", () => {
 				"owner-2",
 			),
 		).resolves.toBeNull();
+	});
+
+	it("holds the cleanup lease across a service topology mutation", async () => {
+		const calls: string[] = [];
+		const updateMany = vi.fn(async ({ data }: { data: { runClaimToken: string | null } }) => {
+			calls.push(data.runClaimToken === null ? "release" : "acquire");
+			return { count: 1 };
+		});
+		const prisma = {
+			libraryCleanupConfig: {
+				upsert: vi.fn(async () => {
+					calls.push("upsert");
+					return { id: "config-1" };
+				}),
+				updateMany,
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+		const log = {
+			warn: vi.fn(),
+			error: vi.fn(),
+		} as unknown as CleanupExecutorDeps["log"];
+
+		await expect(
+			withCleanupTopologyMutationLease({ prisma, log }, "user-1", async () => {
+				calls.push("mutate");
+				return "created";
+			}),
+		).resolves.toBe("created");
+		expect(calls).toEqual(["upsert", "acquire", "mutate", "release"]);
+	});
+
+	it("rejects a service topology mutation while cleanup owns the lease", async () => {
+		const mutate = vi.fn();
+		const prisma = {
+			libraryCleanupConfig: {
+				upsert: vi.fn().mockResolvedValue({ id: "config-1" }),
+				updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+		const log = {
+			warn: vi.fn(),
+			error: vi.fn(),
+		} as unknown as CleanupExecutorDeps["log"];
+
+		await expect(
+			withCleanupTopologyMutationLease({ prisma, log }, "user-1", mutate),
+		).rejects.toBeInstanceOf(CleanupTopologyMutationConflictError);
+		expect(mutate).not.toHaveBeenCalled();
+	});
+
+	it("releases the topology lease when the service mutation fails", async () => {
+		const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+		const prisma = {
+			libraryCleanupConfig: {
+				upsert: vi.fn().mockResolvedValue({ id: "config-1" }),
+				updateMany,
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+		const log = {
+			warn: vi.fn(),
+			error: vi.fn(),
+		} as unknown as CleanupExecutorDeps["log"];
+
+		await expect(
+			withCleanupTopologyMutationLease({ prisma, log }, "user-1", async () => {
+				throw new Error("write failed");
+			}),
+		).rejects.toThrow("write failed");
+		expect(updateMany).toHaveBeenCalledTimes(2);
+		expect(updateMany.mock.calls[1]![0]).toMatchObject({
+			where: { id: "config-1", userId: "user-1", runClaimToken: expect.any(String) },
+			data: { runClaimToken: null, runClaimedAt: null },
+		});
+	});
+
+	it("rejects cleanup policy writes while a run owns the existing config lease", async () => {
+		const mutate = vi.fn();
+		const prisma = {
+			libraryCleanupConfig: {
+				upsert: vi.fn(),
+				updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+		const log = {
+			warn: vi.fn(),
+			error: vi.fn(),
+		} as unknown as CleanupExecutorDeps["log"];
+
+		await expect(
+			withCleanupPolicyMutationLease({ prisma, log }, "user-1", mutate, {
+				configId: "config-1",
+			}),
+		).rejects.toBeInstanceOf(CleanupPolicyMutationConflictError);
+		expect(prisma.libraryCleanupConfig.upsert).not.toHaveBeenCalled();
+		expect(mutate).not.toHaveBeenCalled();
 	});
 });
