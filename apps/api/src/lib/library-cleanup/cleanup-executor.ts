@@ -3605,12 +3605,11 @@ export async function executeDirectRemoval(
 	const directRetryTargetKeys = new Set<string>();
 	const selectedDirectRetryTargetKeys = new Set<string>();
 	const inFlightDirectRetryTargetKeys = new Set<string>();
-	const configuredRunLimit =
+	const configuredRunLimitIsValid =
 		Number.isSafeInteger(config.maxRemovalsPerRun) &&
 		config.maxRemovalsPerRun > 0 &&
-		config.maxRemovalsPerRun <= 100
-			? config.maxRemovalsPerRun
-			: 0;
+		config.maxRemovalsPerRun <= 100;
+	const configuredRunLimit = configuredRunLimitIsValid ? config.maxRemovalsPerRun : 0;
 
 	let directRetries: Awaited<ReturnType<typeof prisma.libraryCleanupApproval.findMany>> = [];
 	let fairnessDeferredRetries: typeof directRetries = [];
@@ -4359,6 +4358,11 @@ export async function executeDirectRemoval(
 	}
 
 	const allWarnings = withSharedPlexWarning([...(warnings ?? [])], runtimeSafetyBlocks);
+	if (!configuredRunLimitIsValid) {
+		allWarnings.push(
+			"Cleanup did not mutate any items because the stored per-run removal limit is invalid. Set it to a whole number from 1 through 100.",
+		);
+	}
 	if (exemptionPolicyBlocks > 0) {
 		allWarnings.push(
 			`${exemptionPolicyBlocks} cleanup ${

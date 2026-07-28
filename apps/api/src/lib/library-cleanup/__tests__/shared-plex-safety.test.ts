@@ -3702,10 +3702,12 @@ describe("shared Plex deletion safety", () => {
 			);
 
 			expect(result).toMatchObject({
+				status: "partial",
 				itemsFlagged: 0,
 				itemsRemoved: 0,
 				itemsFilesDeleted: 0,
 				itemsSkipped: 1,
+				warnings: [expect.stringContaining("whole number from 1 through 100")],
 			});
 			expect(deleteMovieFile).not.toHaveBeenCalled();
 			expect(deleteMovie).not.toHaveBeenCalled();
