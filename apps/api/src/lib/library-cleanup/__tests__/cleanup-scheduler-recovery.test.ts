@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CleanupScheduler } from "../cleanup-scheduler.js";
+import {
+	CleanupMaintenanceConflictError,
+	withCleanupMaintenanceGuard,
+} from "../cleanup-maintenance-gate.js";
 
 describe("library cleanup scheduler recovery", () => {
 	afterEach(() => {
@@ -104,5 +108,89 @@ describe("library cleanup scheduler recovery", () => {
 			approvalUpdateMany.mock.calls.find(([args]) => args.where.status === "executing")?.[0].where
 				.config,
 		).toBeDefined();
+	});
+
+	it("does not run recovery writes while database maintenance is active", async () => {
+		const updateMany = vi.fn().mockResolvedValue({ count: 0 });
+		const findFirst = vi.fn().mockResolvedValue(null);
+		const log = {
+			debug: vi.fn(),
+			info: vi.fn(),
+			warn: vi.fn(),
+			error: vi.fn(),
+		};
+		const scheduler = new CleanupScheduler(
+			{
+				libraryCleanupApproval: { updateMany },
+				libraryCleanupConfig: { findFirst },
+			} as never,
+			{} as never,
+			{} as never,
+			log as never,
+		);
+		let finishMaintenance!: () => void;
+		const maintenanceBlocked = new Promise<void>((resolve) => {
+			finishMaintenance = resolve;
+		});
+		const maintenance = withCleanupMaintenanceGuard(() => maintenanceBlocked);
+
+		try {
+			await (
+				scheduler as unknown as {
+					checkAndRun: () => Promise<void>;
+				}
+			).checkAndRun();
+
+			expect(updateMany).not.toHaveBeenCalled();
+			expect(findFirst).not.toHaveBeenCalled();
+			expect(log.debug).toHaveBeenCalledWith(
+				"Database maintenance owns the library-cleanup operation guard",
+			);
+		} finally {
+			finishMaintenance();
+			await maintenance;
+		}
+	});
+
+	it("keeps error notification work guarded against backup restore", async () => {
+		const updateMany = vi.fn().mockResolvedValue({ count: 0 });
+		const findFirst = vi.fn().mockRejectedValue(new Error("config read failed"));
+		const log = {
+			debug: vi.fn(),
+			info: vi.fn(),
+			warn: vi.fn(),
+			error: vi.fn(),
+		};
+		let finishNotification!: () => void;
+		const notificationBlocked = new Promise<void>((resolve) => {
+			finishNotification = resolve;
+		});
+		const notify = vi.fn(() => notificationBlocked);
+		const scheduler = new CleanupScheduler(
+			{
+				libraryCleanupApproval: { updateMany },
+				libraryCleanupConfig: { findFirst },
+			} as never,
+			{} as never,
+			{} as never,
+			log as never,
+			notify,
+		);
+
+		const tick = (
+			scheduler as unknown as {
+				checkAndRun: () => Promise<void>;
+			}
+		).checkAndRun();
+
+		try {
+			await vi.waitFor(() => expect(notify).toHaveBeenCalledOnce());
+			await expect(withCleanupMaintenanceGuard(async () => undefined)).rejects.toBeInstanceOf(
+				CleanupMaintenanceConflictError,
+			);
+		} finally {
+			finishNotification();
+			await tick;
+		}
 	});
 });

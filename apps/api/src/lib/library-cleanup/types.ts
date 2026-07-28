@@ -222,6 +222,8 @@ export interface CleanupRunResult {
 	itemsFlagged: number;
 	/** Durable retries shown alongside current rule matches in preview responses. */
 	pendingRetryCount?: number;
+	/** Distinct retry and fresh-candidate targets available to an interactive preview. */
+	previewItemCount?: number;
 	itemsRemoved: number;
 	itemsUnmonitored: number;
 	itemsFilesDeleted: number;

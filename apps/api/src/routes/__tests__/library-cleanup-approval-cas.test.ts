@@ -3,6 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const executorMocks = vi.hoisted(() => ({
 	buildEvalContext: vi.fn(),
+	CleanupPolicyMutationConflictError: class CleanupPolicyMutationConflictError extends Error {
+		constructor() {
+			super("Library cleanup settings cannot be changed while a cleanup operation is in progress");
+		}
+	},
 	CleanupRunAlreadyInProgressError: class CleanupRunAlreadyInProgressError extends Error {
 		constructor() {
 			super("A cleanup operation is already in progress");
@@ -14,10 +19,17 @@ const executorMocks = vi.hoisted(() => ({
 	executeRetryItems: vi
 		.fn()
 		.mockResolvedValue({ removed: 0, reconciled: 1, failed: 0, errors: [] }),
+	withCleanupPolicyMutationLease: vi.fn(
+		async (_deps: unknown, _userId: string, mutate: () => Promise<unknown>) => await mutate(),
+	),
 }));
 
 vi.mock("../../lib/library-cleanup/cleanup-executor.js", () => executorMocks);
 
+import {
+	CleanupMaintenanceConflictError,
+	withCleanupMaintenanceGuard,
+} from "../../lib/library-cleanup/cleanup-maintenance-gate.js";
 import { registerLibraryCleanupRoutes } from "../library-cleanup.js";
 import {
 	createInjectAuthenticated,
@@ -112,6 +124,28 @@ describe("library cleanup approval compare-and-set routes", () => {
 
 		expect(response.statusCode).toBe(409);
 		expect(response.json()).toEqual({ error: "A cleanup operation is already in progress" });
+	});
+
+	it("does not transition an approval while backup restore owns maintenance", async () => {
+		let finishMaintenance!: () => void;
+		const maintenanceBlocked = new Promise<void>((resolve) => {
+			finishMaintenance = resolve;
+		});
+		const maintenance = withCleanupMaintenanceGuard(() => maintenanceBlocked);
+
+		try {
+			const response = await createInjectAuthenticated(app)(
+				"POST",
+				"/library-cleanup/approval-queue/approval-1/approve",
+			);
+
+			expect(response.statusCode).toBe(409);
+			expect(updateMany).not.toHaveBeenCalled();
+			expect(executorMocks.executeApprovedItems).not.toHaveBeenCalled();
+		} finally {
+			finishMaintenance();
+			await maintenance;
+		}
 	});
 
 	it("does not transition expired approvals during bulk approval", async () => {
@@ -222,6 +256,24 @@ describe("library cleanup approval compare-and-set routes", () => {
 		expect(response.json()).toEqual({ error: "A cleanup operation is already in progress" });
 	});
 
+	it("returns a retryable conflict when maintenance blocks manual cleanup", async () => {
+		let finishMaintenance!: () => void;
+		const maintenanceBlocked = new Promise<void>((resolve) => {
+			finishMaintenance = resolve;
+		});
+		const maintenance = withCleanupMaintenanceGuard(() => maintenanceBlocked);
+		executorMocks.executeCleanupRun.mockRejectedValueOnce(new CleanupMaintenanceConflictError());
+
+		try {
+			const response = await createInjectAuthenticated(app)("POST", "/library-cleanup/execute");
+
+			expect(response.statusCode).toBe(409);
+		} finally {
+			finishMaintenance();
+			await maintenance;
+		}
+	});
+
 	it("warns when preview details were capped before reaching the route", async () => {
 		const details = Array.from({ length: 200 }, (_, index) => ({
 			instanceId: "radarr-1",
@@ -255,6 +307,86 @@ describe("library cleanup approval compare-and-set routes", () => {
 		expect(response.json()).toMatchObject({
 			totalFlagged: 201,
 			warnings: ["Existing warning", "Showing 200 of 201 preview items"],
+		});
+		expect(response.json().items).toHaveLength(200);
+	});
+
+	it("does not warn when one retry is the only distinct preview row", async () => {
+		executorMocks.executeCleanupPreview.mockResolvedValueOnce({
+			isDryRun: true,
+			status: "partial",
+			itemsEvaluated: 1,
+			itemsFlagged: 0,
+			pendingRetryCount: 1,
+			previewItemCount: 1,
+			itemsRemoved: 0,
+			itemsUnmonitored: 0,
+			itemsFilesDeleted: 0,
+			itemsSkipped: 0,
+			details: [
+				{
+					instanceId: "radarr-1",
+					arrItemId: 101,
+					itemType: "movie",
+					title: "Example Movie",
+					ruleId: "rule-1",
+					rule: "Cleanup",
+					reason: "Durable retry pending resume",
+					action: "delete",
+					sizeOnDisk: "1000",
+					year: 2024,
+					rating: 8,
+				},
+			],
+			durationMs: 1,
+		});
+
+		const response = await createInjectAuthenticated(app)("POST", "/library-cleanup/preview");
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({
+			totalFlagged: 0,
+			pendingRetryCount: 1,
+			warnings: [],
+		});
+		expect(response.json().items).toHaveLength(1);
+	});
+
+	it("warns when executing retries exceed the rendered preview cap", async () => {
+		const details = Array.from({ length: 200 }, (_, index) => ({
+			instanceId: "radarr-1",
+			arrItemId: index + 1,
+			itemType: "movie",
+			title: `Movie ${index + 1}`,
+			ruleId: "rule-1",
+			rule: "Cleanup",
+			reason: "Durable retry is already executing",
+			action: "skipped" as const,
+			sizeOnDisk: "1000",
+			year: 2024,
+			rating: 8,
+		}));
+		executorMocks.executeCleanupPreview.mockResolvedValueOnce({
+			isDryRun: true,
+			status: "partial",
+			itemsEvaluated: 0,
+			itemsFlagged: 0,
+			pendingRetryCount: 0,
+			previewItemCount: 201,
+			itemsRemoved: 0,
+			itemsUnmonitored: 0,
+			itemsFilesDeleted: 0,
+			itemsSkipped: 201,
+			details,
+			durationMs: 1,
+		});
+
+		const response = await createInjectAuthenticated(app)("POST", "/library-cleanup/preview");
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({
+			pendingRetryCount: 0,
+			warnings: ["Showing 200 of 201 preview items"],
 		});
 		expect(response.json().items).toHaveLength(200);
 	});
