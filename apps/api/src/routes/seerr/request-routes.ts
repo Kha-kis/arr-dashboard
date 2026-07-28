@@ -5,7 +5,6 @@
  */
 
 import type { SeerrAttentionItem, SeerrUpdateRequestPayload } from "@arr/shared";
-import { SEERR_MEDIA_STATUS, SEERR_REQUEST_STATUS } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { logSeerrAction } from "../../lib/seerr/seerr-action-logger.js";
@@ -13,8 +12,6 @@ import { requireSeerrClient } from "../../lib/seerr/seerr-client.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
-/** Requests approved but still processing after this threshold are flagged as stuck */
-const STUCK_THRESHOLD_MS = 48 * 60 * 60 * 1000; // 48 hours
 /** Maximum attention items returned (dashboard signal, not a list page) */
 const ATTENTION_LIMIT = 10;
 
@@ -83,38 +80,21 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
 		const now = Date.now();
 
-		// Fetch failed and processing requests in parallel (graceful degradation)
-		const [failedResult, processingResult] = await Promise.allSettled([
-			client.getRequests({ filter: "failed", take: ATTENTION_LIMIT, sort: "modified" }),
-			client.getRequests({ filter: "processing", take: 50, sort: "modified" }),
-		]);
+		const failedResult = await client.getRequests({
+			filter: "failed",
+			take: ATTENTION_LIMIT,
+			sort: "modified",
+		});
 
 		const allItems: SeerrAttentionItem[] = [];
 
 		// All failed requests need attention
-		if (failedResult.status === "fulfilled") {
-			for (const req of failedResult.value.results) {
-				allItems.push({
-					request: req,
-					reason: "failed",
-					ageMs: now - new Date(req.updatedAt).getTime(),
-				});
-			}
-		}
-
-		// Processing requests are only "stuck" if approved + still processing + older than threshold
-		if (processingResult.status === "fulfilled") {
-			for (const req of processingResult.value.results) {
-				if (
-					req.status === SEERR_REQUEST_STATUS.APPROVED &&
-					req.media.status === SEERR_MEDIA_STATUS.PROCESSING
-				) {
-					const ageMs = now - new Date(req.updatedAt).getTime();
-					if (ageMs >= STUCK_THRESHOLD_MS) {
-						allItems.push({ request: req, reason: "stuck", ageMs });
-					}
-				}
-			}
+		for (const req of failedResult.results) {
+			allItems.push({
+				request: req,
+				reason: "failed",
+				ageMs: now - new Date(req.updatedAt).getTime(),
+			});
 		}
 
 		const total = allItems.length;
