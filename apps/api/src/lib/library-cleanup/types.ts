@@ -6,7 +6,9 @@
 
 import type { FastifyBaseLogger } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
-import type { LibraryItemType, PrismaClient } from "../prisma.js";
+import type { Encryptor } from "../auth/encryption.js";
+import type { PlexClient } from "../plex/plex-client.js";
+import type { LibraryItemType, PrismaClient, ServiceInstance } from "../prisma.js";
 
 // ============================================================================
 // Dependencies
@@ -15,6 +17,14 @@ import type { LibraryItemType, PrismaClient } from "../prisma.js";
 export interface CleanupExecutorDeps {
 	prisma: PrismaClient;
 	arrClientFactory: ArrClientFactory;
+	encryptor?: Encryptor;
+	/** Test seam for live deletion-safety checks. */
+	plexClientFactory?: (
+		instance: ServiceInstance,
+	) => Pick<
+		PlexClient,
+		"getAccounts" | "getMovieMediaPartsByTmdbId" | "getSeriesEpisodeMediaPartsByTvdbId"
+	>;
 	log: FastifyBaseLogger;
 }
 
@@ -37,6 +47,8 @@ export interface CacheItemForEval {
 	qualityProfileName: string | null;
 	sizeOnDisk: bigint;
 	arrAddedAt: Date | null;
+	/** When this ARR cache row was last fully sourced from its service instance. */
+	cachedAt?: Date;
 	/** Full JSON data blob for extended lookups (e.g. tags, ratings) */
 	data: string;
 }
@@ -161,6 +173,7 @@ export type RuleAction = "delete" | "unmonitor" | "delete_files";
 
 /** Action recorded in execution details (what actually happened) */
 export type DetailAction =
+	| RuleAction
 	| "flagged"
 	| "removed"
 	| "files_deleted"
@@ -193,6 +206,10 @@ export interface CleanupRunResult {
 	status: "completed" | "partial" | "error";
 	itemsEvaluated: number;
 	itemsFlagged: number;
+	/** Durable retries shown alongside current rule matches in preview responses. */
+	pendingRetryCount?: number;
+	/** Distinct retry and fresh-candidate targets available to an interactive preview. */
+	previewItemCount?: number;
 	itemsRemoved: number;
 	itemsUnmonitored: number;
 	itemsFilesDeleted: number;

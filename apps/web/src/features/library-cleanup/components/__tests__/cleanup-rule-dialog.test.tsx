@@ -204,7 +204,7 @@ describe("CleanupRuleDialog", () => {
 			const deleteButton = screen.getByText("Delete");
 			// The description for delete action should be visible
 			expect(
-				screen.getByText("Remove the item entirely from the ARR instance."),
+				screen.getByText(/Remove the item and its verified media files from the ARR instance/),
 			).toBeInTheDocument();
 			expect(deleteButton).toBeInTheDocument();
 		});

@@ -2,6 +2,7 @@ import { ALL_SERVICES, arrServiceTypeSchema } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { requireInstance } from "../lib/arr/instance-helpers.js";
+import { withCleanupTopologyMutationLease } from "../lib/library-cleanup/cleanup-executor.js";
 import { clearFileIdIndexCache } from "../lib/library-sync/infohash-backfill-by-inode.js";
 import type { ServiceType } from "../lib/prisma.js";
 import { invalidateTorrentListCache } from "../lib/qui/torrent-list-cache.js";
@@ -101,146 +102,166 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const encryptedHttpAuth = httpAuth ? encryptHttpAuthCredentials(app.encryptor, httpAuth) : {};
 
 		const serviceEnum = service.toUpperCase() as ServiceType;
+		const userId = request.currentUser!.id;
 
-		if (isDefault) {
-			await app.prisma.serviceInstance.updateMany({
-				where: { service: serviceEnum, userId: request.currentUser!.id },
-				data: { isDefault: false },
-			});
-		}
+		return await withCleanupTopologyMutationLease(
+			{ prisma: app.prisma, log: request.log },
+			userId,
+			async () => {
+				if (isDefault) {
+					await app.prisma.serviceInstance.updateMany({
+						where: { service: serviceEnum, userId },
+						data: { isDefault: false },
+					});
+				}
 
-		const tagRecords = await upsertTags(app.prisma, tags);
+				const tagRecords = await upsertTags(app.prisma, tags);
 
-		const created = await app.prisma.serviceInstance.create({
-			data: {
-				userId: request.currentUser!.id, // preHandler guarantees auth
-				service: serviceEnum,
-				encryptedApiKey: encrypted.value,
-				encryptionIv: encrypted.iv,
-				...encryptedHttpAuth,
-				isDefault,
-				...rest,
-				tags: {
-					create: tagRecords,
-				},
-			},
-			include: {
-				tags: {
-					include: {
-						tag: true,
+				const created = await app.prisma.serviceInstance.create({
+					data: {
+						userId, // preHandler guarantees auth
+						service: serviceEnum,
+						encryptedApiKey: encrypted.value,
+						encryptionIv: encrypted.iv,
+						...encryptedHttpAuth,
+						isDefault,
+						...rest,
+						tags: {
+							create: tagRecords,
+						},
 					},
-				},
+					include: {
+						tags: {
+							include: {
+								tag: true,
+							},
+						},
+					},
+				});
+
+				request.log.info({ service, label: rest.label }, "Service instance added");
+
+				return reply.status(201).send({
+					service: formatServiceInstance(created),
+				});
 			},
-		});
-
-		request.log.info({ service, label: rest.label }, "Service instance added");
-
-		return reply.status(201).send({
-			service: formatServiceInstance(created),
-		});
+		);
 	});
 
 	app.put("/services/:id", async (request, reply) => {
 		const { id } = validateRequest(idParams, request.params);
 		const payload = validateRequest(serviceUpdateSchema, request.body);
 		const userId = request.currentUser!.id;
-		const existing = await requireInstance(app, userId, id);
-		const targetService = payload.service ?? existing.service.toLowerCase();
-		const keepsExistingHttpAuth =
-			payload.httpAuth === undefined && Boolean(existing.encryptedHttpAuthCredentials);
-		const httpAuthConflict =
-			payload.httpAuth || keepsExistingHttpAuth ? getHttpAuthConflict(targetService) : null;
-		if (httpAuthConflict) {
-			return reply.status(400).send({
-				error: `HTTP Basic Auth is not supported for ${targetService}`,
-				details: `${httpAuthConflict} Remove HTTP Basic Auth or configure a proxy bypass.`,
-			});
-		}
 
-		const updateData = buildUpdateData(payload, app.encryptor);
+		return await withCleanupTopologyMutationLease(
+			{ prisma: app.prisma, log: request.log },
+			userId,
+			async () => {
+				const existing = await requireInstance(app, userId, id);
+				const targetService = payload.service ?? existing.service.toLowerCase();
+				const keepsExistingHttpAuth =
+					payload.httpAuth === undefined && Boolean(existing.encryptedHttpAuthCredentials);
+				const httpAuthConflict =
+					payload.httpAuth || keepsExistingHttpAuth ? getHttpAuthConflict(targetService) : null;
+				if (httpAuthConflict) {
+					return reply.status(400).send({
+						error: `HTTP Basic Auth is not supported for ${targetService}`,
+						details: `${httpAuthConflict} Remove HTTP Basic Auth or configure a proxy bypass.`,
+					});
+				}
 
-		if (payload.isDefault === true || payload.service) {
-			const targetService = (
-				payload.service ?? existing.service.toLowerCase()
-			).toUpperCase() as ServiceType;
-			await app.prisma.serviceInstance.updateMany({
-				where: { service: targetService, userId, NOT: { id } },
-				data: { isDefault: false },
-			});
-		}
+				const updateData = buildUpdateData(payload, app.encryptor);
 
-		await app.prisma.serviceInstance.updateMany({
-			where: { id, userId },
-			data: updateData,
-		});
+				if (payload.isDefault === true || payload.service) {
+					const targetService = (
+						payload.service ?? existing.service.toLowerCase()
+					).toUpperCase() as ServiceType;
+					await app.prisma.serviceInstance.updateMany({
+						where: { service: targetService, userId, NOT: { id } },
+						data: { isDefault: false },
+					});
+				}
 
-		if (payload.tags) {
-			await updateInstanceTags(app.prisma, id, payload.tags);
-		}
+				await app.prisma.serviceInstance.updateMany({
+					where: { id, userId },
+					data: updateData,
+				});
 
-		// Drop process-local qui caches when a qui instance becomes
-		// unreachable from this app's perspective — either disabled
-		// (enabled: true → false) or its service type changed away from
-		// QUI. Mirrors the DELETE handler's invalidation but for the
-		// "kept but inert" case. Without this, a disabled instance's
-		// inode index + torrent list would sit in memory for the rest
-		// of the process lifetime (TTL is read-only; nothing reads a
-		// disabled instance, so no self-healing). No-op for non-qui
-		// services because the keys won't be in those caches.
-		const wasQui = existing.service === "QUI";
-		const nowDisabled = payload.enabled === false && existing.enabled === true;
-		const switchedAwayFromQui =
-			payload.service !== undefined && payload.service.toLowerCase() !== "qui";
-		if (wasQui && (nowDisabled || switchedAwayFromQui)) {
-			invalidateTorrentListCache(id);
-			clearFileIdIndexCache(id);
-			request.log.info(
-				{ instanceId: id, reason: nowDisabled ? "disabled" : "service-changed" },
-				"qui caches dropped after instance update",
-			);
-		}
+				if (payload.tags) {
+					await updateInstanceTags(app.prisma, id, payload.tags);
+				}
 
-		// Fetch updated instance - include userId to ensure we only get owned instances
-		const fresh = await app.prisma.serviceInstance.findFirst({
-			where: {
-				id,
-				userId,
+				// Drop process-local qui caches when a qui instance becomes
+				// unreachable from this app's perspective — either disabled
+				// (enabled: true → false) or its service type changed away from
+				// QUI. Mirrors the DELETE handler's invalidation but for the
+				// "kept but inert" case. Without this, a disabled instance's
+				// inode index + torrent list would sit in memory for the rest
+				// of the process lifetime (TTL is read-only; nothing reads a
+				// disabled instance, so no self-healing). No-op for non-qui
+				// services because the keys won't be in those caches.
+				const wasQui = existing.service === "QUI";
+				const nowDisabled = payload.enabled === false && existing.enabled === true;
+				const switchedAwayFromQui =
+					payload.service !== undefined && payload.service.toLowerCase() !== "qui";
+				if (wasQui && (nowDisabled || switchedAwayFromQui)) {
+					invalidateTorrentListCache(id);
+					clearFileIdIndexCache(id);
+					request.log.info(
+						{ instanceId: id, reason: nowDisabled ? "disabled" : "service-changed" },
+						"qui caches dropped after instance update",
+					);
+				}
+
+				// Fetch updated instance - include userId to ensure we only get owned instances
+				const fresh = await app.prisma.serviceInstance.findFirst({
+					where: {
+						id,
+						userId,
+					},
+					include: { tags: { include: { tag: true } } },
+				});
+
+				if (!fresh) {
+					return reply.status(404).send({ error: "Service instance not found" });
+				}
+
+				request.log.info(
+					{ service: fresh.service, label: fresh.label, instanceId: id },
+					"Service instance updated",
+				);
+
+				return reply.send({
+					service: formatServiceInstance(fresh),
+				});
 			},
-			include: { tags: { include: { tag: true } } },
-		});
-
-		if (!fresh) {
-			return reply.status(404).send({ error: "Service instance not found" });
-		}
-
-		request.log.info(
-			{ service: fresh.service, label: fresh.label, instanceId: id },
-			"Service instance updated",
 		);
-
-		return reply.send({
-			service: formatServiceInstance(fresh),
-		});
 	});
 
 	app.delete("/services/:id", async (request, reply) => {
 		const { id } = validateRequest(idParams, request.params);
 		const userId = request.currentUser!.id; // preHandler guarantees authentication
 
-		await requireInstance(app, userId, id);
-		await app.prisma.serviceInstance.delete({ where: { id, userId } });
+		return await withCleanupTopologyMutationLease(
+			{ prisma: app.prisma, log: request.log },
+			userId,
+			async () => {
+				await requireInstance(app, userId, id);
+				await app.prisma.serviceInstance.delete({ where: { id, userId } });
 
-		// Free any process-local qui caches keyed to this instance. Both
-		// the torrent-list cache and the inode index retain heavy entries
-		// (TTL-checked on read only — a stale entry self-heals, but a
-		// deleted instance is never read again, so its entry would linger
-		// for the whole process life). No-op for non-qui services: the id
-		// simply isn't a key in those caches.
-		invalidateTorrentListCache(id);
-		clearFileIdIndexCache(id);
+				// Free any process-local qui caches keyed to this instance. Both
+				// the torrent-list cache and the inode index retain heavy entries
+				// (TTL-checked on read only — a stale entry self-heals, but a
+				// deleted instance is never read again, so its entry would linger
+				// for the whole process life). No-op for non-qui services: the id
+				// simply isn't a key in those caches.
+				invalidateTorrentListCache(id);
+				clearFileIdIndexCache(id);
 
-		request.log.info({ instanceId: id }, "Service instance deleted");
-		return reply.status(204).send();
+				request.log.info({ instanceId: id }, "Service instance deleted");
+				return reply.status(204).send();
+			},
+		);
 	});
 
 	app.get("/tags", async (_request, reply) => {

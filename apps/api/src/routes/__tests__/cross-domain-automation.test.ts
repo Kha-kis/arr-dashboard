@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { withCleanupMaintenanceGuard } from "../../lib/library-cleanup/cleanup-maintenance-gate.js";
 import { registerAutomationRoutes } from "../automation.js";
 import { createInjectAuthenticated, setupAuthInjection } from "./test-helpers.js";
 
@@ -39,9 +40,11 @@ type Row = {
 let app: ReturnType<typeof Fastify>;
 let injectAuthenticated: ReturnType<typeof createInjectAuthenticated>;
 let row: Row | null;
+let cleanupLeaseAvailable: boolean;
 
 beforeEach(async () => {
 	row = null;
+	cleanupLeaseAvailable = true;
 	app = Fastify({ logger: false });
 	setupAuthInjection(app, { id: USER_ID, username: "admin" });
 	const crossDomainRule = {
@@ -85,6 +88,12 @@ beforeEach(async () => {
 		deleteMany: vi.fn(async () => ({ count: row ? 1 : 0 })),
 	};
 	const prisma = {
+		libraryCleanupConfig: {
+			upsert: vi.fn(async () => ({ id: "cleanup-config-1" })),
+			updateMany: vi.fn(async ({ data }: { data: { runClaimToken?: string | null } }) => ({
+				count: data.runClaimToken === null || cleanupLeaseAvailable ? 1 : 0,
+			})),
+		},
 		crossDomainRule,
 		crossDomainRuleMatch: {
 			findMany: vi.fn(async () => []),
@@ -185,5 +194,63 @@ describe("cross-domain automation routes", () => {
 		expect(row?.document).toBe(JSON.stringify(draft.document));
 		expect(row?.deployedDocument).toBeNull();
 		expect(JSON.parse(response.payload).rule).toMatchObject({ active: false });
+	});
+
+	it("rejects exemption policy changes while cleanup owns the mutation lease", async () => {
+		await injectAuthenticated("POST", "/automation/cross-domain-rules", { body: draft });
+		await injectAuthenticated("POST", "/automation/cross-domain-rules/cross-1/dry-run");
+		cleanupLeaseAvailable = false;
+
+		const response = await injectAuthenticated(
+			"POST",
+			"/automation/cross-domain-rules/cross-1/deploy",
+		);
+
+		expect(response.statusCode).toBe(409);
+		expect(JSON.parse(response.payload).error).toContain("Library cleanup is running");
+		expect(row?.deployedAt).toBeNull();
+	});
+
+	it("keeps an active exemption deployed while cleanup owns the mutation lease", async () => {
+		await injectAuthenticated("POST", "/automation/cross-domain-rules", { body: draft });
+		await injectAuthenticated("POST", "/automation/cross-domain-rules/cross-1/dry-run");
+		await injectAuthenticated("POST", "/automation/cross-domain-rules/cross-1/deploy");
+		cleanupLeaseAvailable = false;
+
+		const deactivate = await injectAuthenticated(
+			"POST",
+			"/automation/cross-domain-rules/cross-1/deactivate",
+		);
+		const remove = await injectAuthenticated("DELETE", "/automation/cross-domain-rules/cross-1");
+
+		expect(deactivate.statusCode).toBe(409);
+		expect(remove.statusCode).toBe(409);
+		expect(row?.deployedAt).toBeInstanceOf(Date);
+		expect(row?.deployedActions).toBe(row?.actions);
+	});
+
+	it("rejects exemption policy changes while database maintenance is active", async () => {
+		await injectAuthenticated("POST", "/automation/cross-domain-rules", { body: draft });
+		await injectAuthenticated("POST", "/automation/cross-domain-rules/cross-1/dry-run");
+
+		let finishMaintenance!: () => void;
+		const maintenanceBlocked = new Promise<void>((resolve) => {
+			finishMaintenance = resolve;
+		});
+		const maintenance = withCleanupMaintenanceGuard(() => maintenanceBlocked);
+
+		try {
+			const response = await injectAuthenticated(
+				"POST",
+				"/automation/cross-domain-rules/cross-1/deploy",
+			);
+
+			expect(response.statusCode).toBe(409);
+			expect(JSON.parse(response.payload).message).toContain("database maintenance is running");
+			expect(row?.deployedAt).toBeNull();
+		} finally {
+			finishMaintenance();
+			await maintenance;
+		}
 	});
 });

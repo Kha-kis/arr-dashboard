@@ -16,6 +16,8 @@
 
 import { describe, expect, it } from "vitest";
 import {
+	anonymizeCleanupError,
+	anonymizeCleanupWarning,
 	anonymizeHealthMessage,
 	anonymizePulseItemContent,
 	anonymizePulseText,
@@ -203,5 +205,33 @@ describe("anonymizePulseItemContent — *arr queue rows mask release titles", ()
 			title: "Sonarr Prod: Show Name (failed)",
 		});
 		expect(detail).toBeUndefined();
+	});
+});
+
+describe("anonymizeCleanupError — persisted retry failures", () => {
+	it("fails closed for case-varied identities, paths, URLs, IPv4, and IPv6", () => {
+		const out = anonymizeCleanupError(
+			'Failed for SECRET RADARR while deleting "private movie" from /home/alice/media at http://secret.internal:7878, 192.168.1.42, and [fd00::42]:7878',
+		);
+
+		expect(out).toBe("Cleanup retry failed; details hidden in incognito mode.");
+		expect(out).not.toContain("SECRET RADARR");
+		expect(out).not.toContain("private movie");
+		expect(out).not.toContain("/home/alice");
+		expect(out).not.toContain("secret.internal");
+		expect(out).not.toContain("192.168.1.42");
+		expect(out).not.toContain("fd00::42");
+	});
+});
+
+describe("anonymizeCleanupWarning — execution and preview warnings", () => {
+	it("fails closed for configured rule names and upstream details", () => {
+		const out = anonymizeCleanupWarning(
+			"Plex data unavailable — rules affected: Alice's 4K Cleanup",
+		);
+
+		expect(out).toBe("Cleanup warning details hidden in incognito mode.");
+		expect(out).not.toContain("Alice");
+		expect(out).not.toContain("4K Cleanup");
 	});
 });
