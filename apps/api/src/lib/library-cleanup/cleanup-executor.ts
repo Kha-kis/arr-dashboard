@@ -125,6 +125,15 @@ export class CleanupTopologyMutationConflictError extends Error {
 	}
 }
 
+export class CleanupPolicyMutationConflictError extends Error {
+	readonly statusCode = 409;
+
+	constructor() {
+		super("Library cleanup settings cannot be changed while a cleanup operation is in progress");
+		this.name = "CleanupPolicyMutationConflictError";
+	}
+}
+
 class CleanupExemptionAuthorityError extends Error {
 	constructor() {
 		super("Skipped for safety: current deployed cleanup exemption policy covers this ARR target.");
@@ -181,25 +190,28 @@ export async function renewCleanupRunLease(
 	return renewal.count === 1;
 }
 
-export async function withCleanupTopologyMutationLease<T>(
+async function withCleanupMutationLease<T>(
 	deps: Pick<CleanupExecutorDeps, "prisma" | "log">,
 	userId: string,
 	mutate: () => Promise<T>,
-	options: { leaseRowMayBeDeleted?: boolean } = {},
+	conflictError: () => Error,
+	options: { configId?: string; leaseRowMayBeDeleted?: boolean } = {},
 ): Promise<T> {
 	return await withCleanupOperationGuard(async () => {
 		const { prisma, log } = deps;
-		// Ensure the per-user coordination row exists even when the cleanup UI has
-		// never been opened. This closes the config-initialization race between a
-		// service topology write and the first cleanup run.
-		const config = await prisma.libraryCleanupConfig.upsert({
-			where: { userId },
-			update: {},
-			create: { userId },
-			select: { id: true },
-		});
+		// Ensure the per-user coordination row exists when the caller does not
+		// already have its ID. This closes the initialization race between a
+		// cleanup-sensitive write and the first cleanup run.
+		const config = options.configId
+			? { id: options.configId }
+			: await prisma.libraryCleanupConfig.upsert({
+					where: { userId },
+					update: {},
+					create: { userId },
+					select: { id: true },
+				});
 		const runClaimToken = await acquireCleanupRunLease(prisma, userId, config.id);
-		if (!runClaimToken) throw new CleanupTopologyMutationConflictError();
+		if (!runClaimToken) throw conflictError();
 
 		try {
 			return await mutate();
@@ -221,6 +233,36 @@ export async function withCleanupTopologyMutationLease<T>(
 				});
 		}
 	});
+}
+
+export async function withCleanupTopologyMutationLease<T>(
+	deps: Pick<CleanupExecutorDeps, "prisma" | "log">,
+	userId: string,
+	mutate: () => Promise<T>,
+	options: { leaseRowMayBeDeleted?: boolean } = {},
+): Promise<T> {
+	return await withCleanupMutationLease(
+		deps,
+		userId,
+		mutate,
+		() => new CleanupTopologyMutationConflictError(),
+		options,
+	);
+}
+
+export async function withCleanupPolicyMutationLease<T>(
+	deps: Pick<CleanupExecutorDeps, "prisma" | "log">,
+	userId: string,
+	mutate: () => Promise<T>,
+	options: { configId?: string } = {},
+): Promise<T> {
+	return await withCleanupMutationLease(
+		deps,
+		userId,
+		mutate,
+		() => new CleanupPolicyMutationConflictError(),
+		options,
+	);
 }
 
 async function startCleanupRunLease(
@@ -3563,10 +3605,11 @@ export async function executeDirectRemoval(
 	const directRetryTargetKeys = new Set<string>();
 	const selectedDirectRetryTargetKeys = new Set<string>();
 	const inFlightDirectRetryTargetKeys = new Set<string>();
-	const configuredRunLimit =
-		Number.isSafeInteger(config.maxRemovalsPerRun) && config.maxRemovalsPerRun > 0
-			? config.maxRemovalsPerRun
-			: Number.MAX_SAFE_INTEGER;
+	const configuredRunLimitIsValid =
+		Number.isSafeInteger(config.maxRemovalsPerRun) &&
+		config.maxRemovalsPerRun > 0 &&
+		config.maxRemovalsPerRun <= 100;
+	const configuredRunLimit = configuredRunLimitIsValid ? config.maxRemovalsPerRun : 0;
 
 	let directRetries: Awaited<ReturnType<typeof prisma.libraryCleanupApproval.findMany>> = [];
 	let fairnessDeferredRetries: typeof directRetries = [];
@@ -4315,6 +4358,11 @@ export async function executeDirectRemoval(
 	}
 
 	const allWarnings = withSharedPlexWarning([...(warnings ?? [])], runtimeSafetyBlocks);
+	if (!configuredRunLimitIsValid) {
+		allWarnings.push(
+			"Cleanup did not mutate any items because the stored per-run removal limit is invalid. Set it to a whole number from 1 through 100.",
+		);
+	}
 	if (exemptionPolicyBlocks > 0) {
 		allWarnings.push(
 			`${exemptionPolicyBlocks} cleanup ${

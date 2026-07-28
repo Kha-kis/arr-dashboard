@@ -1308,7 +1308,7 @@ describe("verified Sonarr mutation handoff", () => {
 			},
 			rating: 8,
 		} as never;
-		const config = { id: "config-1", rules: [] } as never;
+		const config = { id: "config-1", maxRemovalsPerRun: 10, rules: [] } as never;
 
 		const firstResult = await executeDirectRemoval(
 			deps,

@@ -3,6 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const executorMocks = vi.hoisted(() => ({
 	buildEvalContext: vi.fn(),
+	CleanupPolicyMutationConflictError: class CleanupPolicyMutationConflictError extends Error {
+		constructor() {
+			super("Library cleanup settings cannot be changed while a cleanup operation is in progress");
+		}
+	},
 	CleanupRunAlreadyInProgressError: class CleanupRunAlreadyInProgressError extends Error {
 		constructor() {
 			super("A cleanup operation is already in progress");
@@ -14,10 +19,17 @@ const executorMocks = vi.hoisted(() => ({
 	executeRetryItems: vi
 		.fn()
 		.mockResolvedValue({ removed: 0, reconciled: 1, failed: 0, errors: [] }),
+	withCleanupPolicyMutationLease: vi.fn(
+		async (_deps: unknown, _userId: string, mutate: () => Promise<unknown>) => await mutate(),
+	),
 }));
 
 vi.mock("../../lib/library-cleanup/cleanup-executor.js", () => executorMocks);
 
+import {
+	CleanupMaintenanceConflictError,
+	withCleanupMaintenanceGuard,
+} from "../../lib/library-cleanup/cleanup-maintenance-gate.js";
 import { registerLibraryCleanupRoutes } from "../library-cleanup.js";
 import {
 	createInjectAuthenticated,
@@ -112,6 +124,28 @@ describe("library cleanup approval compare-and-set routes", () => {
 
 		expect(response.statusCode).toBe(409);
 		expect(response.json()).toEqual({ error: "A cleanup operation is already in progress" });
+	});
+
+	it("does not transition an approval while backup restore owns maintenance", async () => {
+		let finishMaintenance!: () => void;
+		const maintenanceBlocked = new Promise<void>((resolve) => {
+			finishMaintenance = resolve;
+		});
+		const maintenance = withCleanupMaintenanceGuard(() => maintenanceBlocked);
+
+		try {
+			const response = await createInjectAuthenticated(app)(
+				"POST",
+				"/library-cleanup/approval-queue/approval-1/approve",
+			);
+
+			expect(response.statusCode).toBe(409);
+			expect(updateMany).not.toHaveBeenCalled();
+			expect(executorMocks.executeApprovedItems).not.toHaveBeenCalled();
+		} finally {
+			finishMaintenance();
+			await maintenance;
+		}
 	});
 
 	it("does not transition expired approvals during bulk approval", async () => {
@@ -220,6 +254,24 @@ describe("library cleanup approval compare-and-set routes", () => {
 
 		expect(response.statusCode).toBe(409);
 		expect(response.json()).toEqual({ error: "A cleanup operation is already in progress" });
+	});
+
+	it("returns a retryable conflict when maintenance blocks manual cleanup", async () => {
+		let finishMaintenance!: () => void;
+		const maintenanceBlocked = new Promise<void>((resolve) => {
+			finishMaintenance = resolve;
+		});
+		const maintenance = withCleanupMaintenanceGuard(() => maintenanceBlocked);
+		executorMocks.executeCleanupRun.mockRejectedValueOnce(new CleanupMaintenanceConflictError());
+
+		try {
+			const response = await createInjectAuthenticated(app)("POST", "/library-cleanup/execute");
+
+			expect(response.statusCode).toBe(409);
+		} finally {
+			finishMaintenance();
+			await maintenance;
+		}
 	});
 
 	it("warns when preview details were capped before reaching the route", async () => {

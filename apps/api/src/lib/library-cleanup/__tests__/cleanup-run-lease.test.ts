@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
 	acquireCleanupRunLease,
+	CleanupPolicyMutationConflictError,
 	CleanupTopologyMutationConflictError,
 	releaseCleanupRunLease,
 	renewCleanupRunLease,
 	withCleanupTopologyMutationLease,
+	withCleanupPolicyMutationLease,
 } from "../cleanup-executor.js";
 import type { CleanupExecutorDeps } from "../types.js";
 
@@ -226,5 +228,27 @@ describe("library cleanup database run lease", () => {
 			where: { id: "config-1", userId: "user-1", runClaimToken: expect.any(String) },
 			data: { runClaimToken: null, runClaimedAt: null },
 		});
+	});
+
+	it("rejects cleanup policy writes while a run owns the existing config lease", async () => {
+		const mutate = vi.fn();
+		const prisma = {
+			libraryCleanupConfig: {
+				upsert: vi.fn(),
+				updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+		const log = {
+			warn: vi.fn(),
+			error: vi.fn(),
+		} as unknown as CleanupExecutorDeps["log"];
+
+		await expect(
+			withCleanupPolicyMutationLease({ prisma, log }, "user-1", mutate, {
+				configId: "config-1",
+			}),
+		).rejects.toBeInstanceOf(CleanupPolicyMutationConflictError);
+		expect(prisma.libraryCleanupConfig.upsert).not.toHaveBeenCalled();
+		expect(mutate).not.toHaveBeenCalled();
 	});
 });
