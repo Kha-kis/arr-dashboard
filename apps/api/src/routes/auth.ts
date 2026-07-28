@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { getPasswordSchema } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
+import { withCleanupTopologyMutationLease } from "../lib/library-cleanup/cleanup-executor.js";
 import { warmConnectionsForUser } from "../lib/arr/connection-warmer.js";
 import { hashPassword, verifyPassword } from "../lib/auth/password.js";
 import { getSessionMetadata } from "../lib/auth/session-metadata.js";
@@ -614,51 +615,60 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		const userId = request.currentUser.id;
 
-		// Check for any authentication methods
-		const user = await app.prisma.user.findUnique({
-			where: { id: userId },
-		});
+		return await withCleanupTopologyMutationLease(
+			{ prisma: app.prisma, log: request.log },
+			userId,
+			async () => {
+				// Check for any authentication methods while cleanup and database
+				// restore are excluded, so the decision cannot go stale before
+				// the cascading topology deletion.
+				const user = await app.prisma.user.findUnique({
+					where: { id: userId },
+				});
 
-		if (!user) {
-			return reply.status(404).send({ error: "User not found" });
-		}
+				if (!user) {
+					return reply.status(404).send({ error: "User not found" });
+				}
 
-		const oidcAccounts = await app.prisma.oIDCAccount.count({
-			where: { userId },
-		});
+				const oidcAccounts = await app.prisma.oIDCAccount.count({
+					where: { userId },
+				});
 
-		const passkeys = await app.prisma.webAuthnCredential.count({
-			where: { userId },
-		});
+				const passkeys = await app.prisma.webAuthnCredential.count({
+					where: { userId },
+				});
 
-		const hasPassword = !!user.hashedPassword;
+				const hasPassword = !!user.hashedPassword;
 
-		// Only allow deletion if user has NO authentication methods
-		if (hasPassword || oidcAccounts > 0 || passkeys > 0) {
-			return reply.status(400).send({
-				error:
-					"Cannot delete account with existing authentication methods. Please remove password, OIDC accounts, and passkeys first.",
-			});
-		}
+				// Only allow deletion if user has NO authentication methods
+				if (hasPassword || oidcAccounts > 0 || passkeys > 0) {
+					return reply.status(400).send({
+						error:
+							"Cannot delete account with existing authentication methods. Please remove password, OIDC accounts, and passkeys first.",
+					});
+				}
 
-		// Log BEFORE deletion since the user record will be gone after
-		request.log.info({ username: request.currentUser!.username }, "Account deleted");
+				// Log BEFORE deletion since the user record will be gone after
+				request.log.info({ username: request.currentUser!.username }, "Account deleted");
 
-		// Delete all user data (cascade will handle related records)
-		await app.prisma.user.delete({
-			where: { id: userId },
-		});
+				// Delete all user data (cascade will handle related records)
+				await app.prisma.user.delete({
+					where: { id: userId },
+				});
 
-		// Invalidate session and clear cookie
-		if (request.sessionToken) {
-			await app.sessionService.invalidateSession(request.sessionToken);
-		}
-		app.sessionService.clearCookie(reply);
+				// Invalidate session and clear cookie
+				if (request.sessionToken) {
+					await app.sessionService.invalidateSession(request.sessionToken);
+				}
+				app.sessionService.clearCookie(reply);
 
-		return reply.send({
-			success: true,
-			message: "Account deleted successfully.",
-		});
+				return reply.send({
+					success: true,
+					message: "Account deleted successfully.",
+				});
+			},
+			{ leaseRowMayBeDeleted: true },
+		);
 	});
 
 	done();

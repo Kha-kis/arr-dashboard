@@ -13,6 +13,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient, ServiceType } from "../../../lib/prisma.js";
 import type { ArrClientFactory } from "../../arr/client-factory.js";
+import { createArrServiceFingerprint } from "../../arr/service-fingerprint.js";
 import type { Encryptor } from "../../auth/encryption.js";
 import { type LibraryStreamFn, type SyncExecutorDeps, syncInstance } from "../sync-executor.js";
 
@@ -443,10 +444,52 @@ describe("syncInstance", () => {
 			const updatePayload = mockPrisma._txUpdates[0]!;
 			expect(updatePayload.where.id).toBe("cache-1");
 			expect(updatePayload.data).toHaveProperty("data");
+			expect(updatePayload.data.cachedAt).toBeInstanceOf(Date);
+			expect(updatePayload.data.updatedAt).toBeInstanceOf(Date);
 
 			const parsed = JSON.parse(updatePayload.data.data as string) as Record<string, unknown>;
 			expect(parsed.type).toBe("author");
 			expect(parsed.title).toBe("Updated Author");
+		});
+
+		it("keeps cache source timestamps pinned before a mid-sync service repoint", async () => {
+			vi.useFakeTimers();
+			try {
+				const syncStartedAt = new Date("2026-07-27T12:00:00.000Z");
+				const serviceRepointedAt = new Date("2026-07-27T12:05:00.000Z");
+				vi.setSystemTime(syncStartedAt);
+				const rawItems = [
+					makeRawItem({ id: 1, title: "Existing Movie" }),
+					makeRawItem({ id: 2, title: "New Movie" }),
+				];
+				const existingItems = [{ id: "cache-1", arrItemId: 1, itemType: "movie", hasFile: false }];
+				const { deps, instance, mockPrisma } = setupSync("RADARR", rawItems, existingItems);
+				const sourceFingerprint = createArrServiceFingerprint(instance);
+				deps.streamLibraryItems = async function* () {
+					vi.setSystemTime(new Date("2026-07-27T12:10:00.000Z"));
+					instance.baseUrl = "http://different-radarr.internal:7878";
+					instance.updatedAt = serviceRepointedAt;
+					for (const item of rawItems) yield item;
+				};
+
+				const result = await syncInstance(deps, instance);
+
+				expect(result.success).toBe(true);
+				expect(mockPrisma._txUpdates[0]?.data.cachedAt).toEqual(syncStartedAt);
+				expect(mockPrisma._txCreates[0]?.data.cachedAt).toEqual(syncStartedAt);
+				const updatedData = JSON.parse(mockPrisma._txUpdates[0]?.data.data as string) as {
+					_arrDashboardSource: { serviceFingerprint: string };
+				};
+				const createdData = JSON.parse(mockPrisma._txCreates[0]?.data.data as string) as {
+					_arrDashboardSource: { serviceFingerprint: string };
+				};
+				expect(updatedData._arrDashboardSource.serviceFingerprint).toBe(sourceFingerprint);
+				expect(createdData._arrDashboardSource.serviceFingerprint).toBe(sourceFingerprint);
+				expect(createArrServiceFingerprint(instance)).not.toBe(sourceFingerprint);
+				expect(syncStartedAt.getTime()).toBeLessThan(instance.updatedAt.getTime());
+			} finally {
+				vi.useRealTimers();
+			}
 		});
 
 		it("Lidarr update: writes updated JSON data with current title", async () => {

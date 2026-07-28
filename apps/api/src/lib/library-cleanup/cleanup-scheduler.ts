@@ -10,6 +10,7 @@
 
 import type { FastifyBaseLogger } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
+import type { Encryptor } from "../auth/encryption.js";
 import type { NotificationPayload } from "../notifications/types.js";
 import type { PrismaClient } from "../prisma.js";
 import {
@@ -17,9 +18,72 @@ import {
 	type TickWrapper,
 } from "../scheduler-registry/scheduler-registry.js";
 import { getErrorMessage } from "../utils/error-message.js";
-import { executeCleanupRun } from "./cleanup-executor.js";
+import {
+	CLEANUP_RUN_LEASE_MS,
+	CleanupRunAlreadyInProgressError,
+	executeCleanupRun,
+	INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
+} from "./cleanup-executor.js";
+import {
+	CleanupMaintenanceConflictError,
+	withCleanupOperationGuard,
+} from "./cleanup-maintenance-gate.js";
+import type { CleanupRunResult } from "./types.js";
 
 const CHECK_INTERVAL_MS = 60 * 1000; // Check every minute
+
+export function buildCleanupNotification(
+	result: CleanupRunResult,
+): NotificationPayload | undefined {
+	const hasActions =
+		result.itemsRemoved > 0 || result.itemsUnmonitored > 0 || result.itemsFilesDeleted > 0;
+	if (!hasActions && result.itemsFlagged === 0 && result.itemsSkipped === 0) return undefined;
+
+	if (hasActions) {
+		const needsReview = result.status === "partial" || result.itemsSkipped > 0;
+		const parts: string[] = [];
+		if (result.itemsRemoved > 0) parts.push(`${result.itemsRemoved} removed`);
+		if (result.itemsUnmonitored > 0) parts.push(`${result.itemsUnmonitored} unmonitored`);
+		if (result.itemsFilesDeleted > 0) parts.push(`${result.itemsFilesDeleted} files deleted`);
+		if (result.itemsSkipped > 0) parts.push(`${result.itemsSkipped} skipped`);
+		return {
+			eventType: "CLEANUP_ITEMS_REMOVED",
+			title: needsReview ? "Library cleanup needs review" : "Library cleanup completed",
+			body: parts.join(", "),
+			url: "/library-cleanup",
+			metadata: {
+				itemsRemoved: result.itemsRemoved,
+				itemsUnmonitored: result.itemsUnmonitored,
+				itemsFilesDeleted: result.itemsFilesDeleted,
+				itemsSkipped: result.itemsSkipped,
+			},
+		};
+	}
+
+	const queued = result.details.filter((detail) => detail.action === "queued_for_approval").length;
+	const dryRunMatches = result.details.filter((detail) => detail.action !== "skipped").length;
+	const parts: string[] = [];
+	if (queued > 0) parts.push(`${queued} queued for review`);
+	else if (result.isDryRun && dryRunMatches > 0)
+		parts.push(`${dryRunMatches} actionable matches in dry run`);
+	else if (result.itemsFlagged > 0 && result.itemsSkipped === 0)
+		parts.push(`${result.itemsFlagged} matched`);
+	if (result.itemsSkipped > 0) parts.push(`${result.itemsSkipped} safety-blocked or skipped`);
+
+	return {
+		eventType: "CLEANUP_ITEMS_FLAGGED",
+		title:
+			result.status === "partial" || result.itemsSkipped > 0
+				? "Library cleanup needs review"
+				: "Library cleanup completed",
+		body: parts.join(", "),
+		url: "/library-cleanup",
+		metadata: {
+			itemsFlagged: result.itemsFlagged,
+			itemsSkipped: result.itemsSkipped,
+		},
+	};
+}
 
 export class CleanupScheduler {
 	private intervalId: NodeJS.Timeout | null = null;
@@ -35,6 +99,7 @@ export class CleanupScheduler {
 	constructor(
 		private prisma: PrismaClient,
 		private arrClientFactory: ArrClientFactory,
+		private encryptor: Encryptor,
 		private logger: FastifyBaseLogger,
 		notifyFn?: (payload: NotificationPayload) => Promise<void>,
 		options?: { trackTick?: TickWrapper },
@@ -78,6 +143,22 @@ export class CleanupScheduler {
 		}
 	}
 
+	private async sendNotification(
+		payload: NotificationPayload,
+		failureMessage: string,
+	): Promise<void> {
+		if (!this.notifyFn) return;
+		try {
+			await withCleanupOperationGuard(() => this.notifyFn!(payload));
+		} catch (error) {
+			if (error instanceof CleanupMaintenanceConflictError) {
+				this.logger.debug("Database maintenance skipped a library-cleanup notification");
+				return;
+			}
+			this.logger.warn({ err: error }, failureMessage);
+		}
+	}
+
 	/**
 	 * Check if a cleanup run should execute and run it.
 	 */
@@ -88,130 +169,186 @@ export class CleanupScheduler {
 		}
 
 		try {
-			// Expire stale pending approvals
-			await this.prisma.libraryCleanupApproval
-				.updateMany({
-					where: { status: "pending", expiresAt: { lt: new Date() } },
-					data: { status: "expired" },
-				})
-				.catch((err) => {
-					this.logger.warn({ err }, "Failed to expire stale approvals");
+			await withCleanupOperationGuard(async () => {
+				// Expire stale pending approvals
+				await this.prisma.libraryCleanupApproval
+					.updateMany({
+						where: { status: "pending", expiresAt: { lt: new Date() } },
+						data: { status: "expired" },
+					})
+					.catch((err) => {
+						this.logger.warn({ err }, "Failed to expire stale approvals");
+					});
+
+				// Recover stuck "executing" items (crash recovery: >1 hour since approval).
+				// The persisted safety snapshot is reconciled against the live file
+				// remainder when the operator approves it again.
+				const stuckThreshold = new Date(Date.now() - 60 * 60 * 1000);
+				const staleRunLeaseThreshold = new Date(Date.now() - CLEANUP_RUN_LEASE_MS);
+				await this.prisma.libraryCleanupApproval
+					.updateMany({
+						where: {
+							status: "approved",
+							reviewedAt: { lt: stuckThreshold },
+							config: {
+								OR: [
+									{ runClaimToken: null },
+									{ runClaimedAt: null },
+									{ runClaimedAt: { lt: staleRunLeaseThreshold } },
+								],
+							},
+						},
+						data: {
+							status: "pending",
+							executionToken: null,
+							lastExecutionError:
+								"Recovered an interrupted approval request. Review and approve again.",
+						},
+					})
+					.then((result) => {
+						if (result.count > 0) {
+							this.logger.warn(
+								{ recoveredCount: result.count },
+								"Recovered stuck approved cleanup items — returned them to pending review",
+							);
+						}
+					})
+					.catch((err) => {
+						this.logger.warn({ err }, "Failed to recover stuck approved cleanup items");
+					});
+				await this.prisma.libraryCleanupApproval
+					.updateMany({
+						where: {
+							status: "executing",
+							reviewedAt: { lt: stuckThreshold },
+							config: {
+								OR: [
+									{ runClaimToken: null },
+									{ runClaimedAt: null },
+									{ runClaimedAt: { lt: staleRunLeaseThreshold } },
+								],
+							},
+						},
+						data: {
+							status: "pending",
+							executionToken: null,
+							lastExecutionError: INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
+						},
+					})
+					.then((result) => {
+						if (result.count > 0) {
+							this.logger.warn(
+								{ recoveredCount: result.count },
+								"Recovered stuck executing approval items — returned them to pending review",
+							);
+						}
+					})
+					.catch((err) => {
+						this.logger.warn({ err }, "Failed to recover stuck executing approvals");
+					});
+				await this.prisma.libraryCleanupApproval
+					.updateMany({
+						where: {
+							status: "retry_executing",
+							reviewedAt: { lt: stuckThreshold },
+							config: {
+								OR: [
+									{ runClaimToken: null },
+									{ runClaimedAt: null },
+									{ runClaimedAt: { lt: staleRunLeaseThreshold } },
+								],
+							},
+						},
+						data: { status: "retry_pending", executionToken: null },
+					})
+					.then((result) => {
+						if (result.count > 0) {
+							this.logger.warn(
+								{ recoveredCount: result.count },
+								"Recovered stuck record-only cleanup retries — returned them to retry pending",
+							);
+						}
+					})
+					.catch((err) => {
+						this.logger.warn({ err }, "Failed to recover stuck record-only cleanup retries");
+					});
+
+				// Find any user's config that is enabled and due for a run.
+				// (Single-admin app, so there's at most one config.)
+				const config = await this.prisma.libraryCleanupConfig.findFirst({
+					where: { enabled: true },
 				});
 
-			// Recover stuck "executing" items (crash recovery: >1 hour since approval)
-			const stuckThreshold = new Date(Date.now() - 60 * 60 * 1000);
-			await this.prisma.libraryCleanupApproval
-				.updateMany({
-					where: { status: "executing", reviewedAt: { lt: stuckThreshold } },
-					data: { status: "expired" },
-				})
-				.then((result) => {
-					if (result.count > 0) {
-						this.logger.warn(
-							{ recoveredCount: result.count },
-							"Recovered stuck executing approval items — marked as expired",
-						);
-					}
-				})
-				.catch((err) => {
-					this.logger.warn({ err }, "Failed to recover stuck executing approvals");
-				});
+				if (!config) return;
 
-			// Find any user's config that is enabled and due for a run.
-			// (Single-admin app, so there's at most one config.)
-			const config = await this.prisma.libraryCleanupConfig.findFirst({
-				where: { enabled: true },
-			});
+				const now = new Date();
+				if (!config.nextRunAt || config.nextRunAt > now) return;
 
-			if (!config) return;
-
-			const now = new Date();
-			if (!config.nextRunAt || config.nextRunAt > now) return;
-
-			this._isRunning = true;
-
-			this.logger.info(
-				{ intervalHours: config.intervalHours, dryRunMode: config.dryRunMode },
-				"Running scheduled library cleanup",
-			);
-
-			try {
-				const result = await executeCleanupRun(
-					{ prisma: this.prisma, arrClientFactory: this.arrClientFactory, log: this.logger },
-					config.userId,
-				);
-
-				// Calculate next run time
-				const nextRunAt = new Date(now.getTime() + config.intervalHours * 60 * 60 * 1000);
-
-				await this.prisma.libraryCleanupConfig.update({
-					where: { id: config.id },
-					data: { lastRunAt: now, nextRunAt },
-				});
+				this._isRunning = true;
 
 				this.logger.info(
-					{
-						itemsEvaluated: result.itemsEvaluated,
-						itemsFlagged: result.itemsFlagged,
-						itemsRemoved: result.itemsRemoved,
-						nextRunAt: nextRunAt.toISOString(),
-					},
-					"Scheduled library cleanup completed",
+					{ intervalHours: config.intervalHours, dryRunMode: config.dryRunMode },
+					"Running scheduled library cleanup",
 				);
 
-				if (result.itemsFlagged > 0 || result.itemsRemoved > 0 || result.itemsUnmonitored > 0) {
-					const hasActions =
-						result.itemsRemoved > 0 || result.itemsUnmonitored > 0 || result.itemsFilesDeleted > 0;
+				try {
+					const result = await executeCleanupRun(
+						{
+							prisma: this.prisma,
+							arrClientFactory: this.arrClientFactory,
+							encryptor: this.encryptor,
+							log: this.logger,
+						},
+						config.userId,
+					);
 
-					if (hasActions) {
-						const parts: string[] = [];
-						if (result.itemsRemoved > 0) parts.push(`${result.itemsRemoved} removed`);
-						if (result.itemsUnmonitored > 0) parts.push(`${result.itemsUnmonitored} unmonitored`);
-						if (result.itemsFilesDeleted > 0)
-							parts.push(`${result.itemsFilesDeleted} files deleted`);
+					// Calculate next run time
+					const nextRunAt = new Date(now.getTime() + config.intervalHours * 60 * 60 * 1000);
 
-						this.notifyFn?.({
-							eventType: "CLEANUP_ITEMS_REMOVED",
-							title: "Library cleanup completed",
-							body: parts.join(", "),
-							url: "/library",
-							metadata: {
-								itemsRemoved: result.itemsRemoved,
-								itemsUnmonitored: result.itemsUnmonitored,
-								itemsFilesDeleted: result.itemsFilesDeleted,
-							},
-						}).catch((err) => {
-							this.logger.warn({ err }, "Failed to send cleanup notification");
-						});
-					} else {
-						this.notifyFn?.({
-							eventType: "CLEANUP_ITEMS_FLAGGED",
-							title: "Library cleanup completed",
-							body: `Flagged ${result.itemsFlagged} items for review`,
-							url: "/library",
-							metadata: {
-								itemsFlagged: result.itemsFlagged,
-							},
-						}).catch((err) => {
-							this.logger.warn({ err }, "Failed to send cleanup notification");
-						});
+					await this.prisma.libraryCleanupConfig.update({
+						where: { id: config.id },
+						data: { lastRunAt: now, nextRunAt },
+					});
+
+					this.logger.info(
+						{
+							itemsEvaluated: result.itemsEvaluated,
+							itemsFlagged: result.itemsFlagged,
+							itemsRemoved: result.itemsRemoved,
+							nextRunAt: nextRunAt.toISOString(),
+						},
+						"Scheduled library cleanup completed",
+					);
+
+					const notification = buildCleanupNotification(result);
+					if (notification) {
+						await this.sendNotification(notification, "Failed to send cleanup notification");
 					}
+				} finally {
+					this._isRunning = false;
 				}
-			} finally {
-				this._isRunning = false;
-			}
+			});
 		} catch (error) {
 			this._isRunning = false;
+			if (error instanceof CleanupMaintenanceConflictError) {
+				this.logger.debug("Database maintenance owns the library-cleanup operation guard");
+				return;
+			}
+			if (error instanceof CleanupRunAlreadyInProgressError) {
+				this.logger.debug("Another app process owns the library-cleanup run lease");
+				return;
+			}
 			this.logger.error({ err: error }, "Error checking/running scheduled cleanup");
 
-			this.notifyFn?.({
-				eventType: "SYSTEM_ERROR",
-				title: "Library cleanup failed",
-				body: getErrorMessage(error),
-				url: "/library",
-			}).catch((err) => {
-				this.logger.warn({ err }, "Failed to send cleanup error notification");
-			});
+			await this.sendNotification(
+				{
+					eventType: "SYSTEM_ERROR",
+					title: "Library cleanup failed",
+					body: getErrorMessage(error),
+					url: "/library",
+				},
+				"Failed to send cleanup error notification",
+			);
 		}
 	}
 }

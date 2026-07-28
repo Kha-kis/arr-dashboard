@@ -99,6 +99,10 @@ beforeEach(async () => {
 	vi.clearAllMocks();
 
 	mockPrisma = {
+		libraryCleanupConfig: {
+			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
+			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+		},
 		serviceInstance: {
 			findMany: vi
 				.fn()

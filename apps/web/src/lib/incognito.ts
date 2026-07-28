@@ -236,6 +236,33 @@ export function anonymizeHealthMessage(message: string): string {
 }
 
 /**
+ * Persisted cleanup failures can contain stale instance labels, paths, URLs,
+ * credentials-adjacent details, or endpoints that are impossible to scrub
+ * reliably after the source instance has been deleted. Incognito mode
+ * therefore renders a fail-closed operator-safe summary.
+ */
+export function anonymizeCleanupError(_message: string): string {
+	return "Cleanup retry failed; details hidden in incognito mode.";
+}
+
+/**
+ * Cleanup warnings can contain configured rule names and upstream details.
+ * Their free-form contents cannot be scrubbed reliably, so incognito mode
+ * renders a fail-closed operator-safe summary.
+ */
+export function anonymizeCleanupWarning(_warning: string): string {
+	return "Cleanup warning details hidden in incognito mode.";
+}
+
+export function getIncognitoCleanupRuleName(): string {
+	return "Cleanup rule";
+}
+
+export function getIncognitoCleanupReason(): string {
+	return "Matched cleanup criteria";
+}
+
+/**
  * Anonymize a Pulse item title.
  *
  * Pulse titles for *instance-sourced* items follow one of two shapes:

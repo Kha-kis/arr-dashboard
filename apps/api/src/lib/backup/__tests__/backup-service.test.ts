@@ -11,6 +11,10 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "../../../lib/prisma.js";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
+import {
+	CleanupMaintenanceConflictError,
+	withCleanupOperationGuard,
+} from "../../library-cleanup/cleanup-maintenance-gate.js";
 import { generateBackupId } from "../backup-file-utils.js";
 import { BackupService, estimateBackupBytes } from "../backup-service.js";
 import {
@@ -300,6 +304,42 @@ describe("BackupService - Backup Validation (Unit)", () => {
 		expect(() => validateBackup(invalidBackup)).toThrow(
 			"Invalid backup format: missing or invalid version",
 		);
+	});
+});
+
+describe("BackupService - cleanup maintenance exclusion", () => {
+	it("rejects a validated restore before changing secrets or database state", async () => {
+		let releaseCleanup!: () => void;
+		const cleanupBlocked = new Promise<void>((resolve) => {
+			releaseCleanup = resolve;
+		});
+		const cleanup = withCleanupOperationGuard(() => cleanupBlocked);
+		const backupService = new BackupService({} as PrismaClient, "/unused/secrets.json");
+		const backup = {
+			version: "1.0",
+			appVersion: "3.0.0",
+			timestamp: new Date().toISOString(),
+			data: {
+				users: [],
+				sessions: [],
+				serviceInstances: [],
+				serviceTags: [],
+				serviceInstanceTags: [],
+				oidcAccounts: [],
+				webAuthnCredentials: [],
+			},
+			secrets: {
+				encryptionKey: "test-encryption-key-32-bytes-hex",
+				sessionCookieSecret: "test-session-cookie-secret",
+			},
+		};
+
+		await expect(backupService.restoreBackup(JSON.stringify(backup))).rejects.toBeInstanceOf(
+			CleanupMaintenanceConflictError,
+		);
+
+		releaseCleanup();
+		await cleanup;
 	});
 });
 
