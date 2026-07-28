@@ -68,7 +68,7 @@ const plexTvResourceSchema = z.object({
 	provides: z.string(),
 	owned: z.boolean().optional(),
 	connections: z.array(plexTvResourceConnectionSchema).optional(),
-	accessToken: z.string().optional(),
+	accessToken: z.string().nullable().optional(),
 	productVersion: z.string().optional(),
 	platform: z.string().optional(),
 });

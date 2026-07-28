@@ -249,6 +249,39 @@ describe("POST /oauth/servers", () => {
 		expect(body.servers[0].name).toBe("My Server");
 	});
 
+	it("ignores player resources with a null access token", async () => {
+		const tokenRef = await getTokenRef();
+		const plexResources = [
+			{
+				name: "My Server",
+				clientIdentifier: "server-1",
+				provides: "server",
+				owned: true,
+				accessToken: "server-token",
+				connections: [],
+			},
+			{
+				name: "Living room",
+				clientIdentifier: "player-1",
+				provides: "player,pubsub-player",
+				owned: true,
+				accessToken: null,
+				connections: [],
+			},
+		];
+
+		mockFetch.mockResolvedValueOnce(jsonResponse(plexResources));
+
+		const res = await injectAuthenticated("POST", "/oauth/servers", {
+			body: { tokenRef, clientId: VALID_CLIENT_ID },
+		});
+
+		expect(res.statusCode).toBe(200);
+		const body = res.json();
+		expect(body.servers).toHaveLength(1);
+		expect(body.servers[0].name).toBe("My Server");
+	});
+
 	it("returns 400 when plex.tv returns 401 (expired token)", async () => {
 		const tokenRef = await getTokenRef();
 		mockFetch.mockResolvedValueOnce(jsonResponse({}, 401));
