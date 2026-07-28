@@ -11,6 +11,7 @@ import {
 } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { BackupService } from "../lib/backup/backup-service.js";
+import { CleanupMaintenanceConflictError } from "../lib/library-cleanup/cleanup-maintenance-gate.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { resolveSecretsPath } from "../lib/utils/secrets-path.js";
 import { z } from "zod";
@@ -145,8 +146,12 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				await app.lifecycle.restart("backup-restore");
 			}
 		} catch (error) {
-			request.log.error({ err: error }, "Failed to restore backup");
+			if (error instanceof CleanupMaintenanceConflictError) {
+				request.log.warn({ err: error }, "Backup restore blocked by active cleanup maintenance");
+				return reply.status(409).send({ error: error.message });
+			}
 
+			request.log.error({ err: error }, "Failed to restore backup");
 			const errorMessage = getErrorMessage(error);
 
 			// Check for specific error types
@@ -200,8 +205,15 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					await app.lifecycle.restart("backup-restore");
 				}
 			} catch (error) {
-				request.log.error({ err: error }, "Failed to restore backup from file");
+				if (error instanceof CleanupMaintenanceConflictError) {
+					request.log.warn(
+						{ err: error },
+						"Backup restore from file blocked by active cleanup maintenance",
+					);
+					return reply.status(409).send({ error: error.message });
+				}
 
+				request.log.error({ err: error }, "Failed to restore backup from file");
 				const errorMessage = getErrorMessage(error);
 
 				// Check for specific error types

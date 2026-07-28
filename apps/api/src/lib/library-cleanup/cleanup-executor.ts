@@ -65,6 +65,7 @@ import type {
 	SeerrRequestMap,
 	TautulliWatchMap,
 } from "./types.js";
+import { withCleanupOperationGuard } from "./cleanup-maintenance-gate.js";
 
 // Default approval expiry: 7 days
 const APPROVAL_EXPIRY_DAYS = 7;
@@ -96,6 +97,24 @@ export class CleanupRunLeaseLostError extends Error {
 	constructor() {
 		super("The cleanup run lost its database execution lease");
 		this.name = "CleanupRunLeaseLostError";
+	}
+}
+
+export class CleanupTopologyMutationConflictError extends Error {
+	readonly statusCode = 409;
+
+	constructor() {
+		super("Service instances cannot be changed while a library cleanup operation is in progress");
+		this.name = "CleanupTopologyMutationConflictError";
+	}
+}
+
+export class CleanupPolicyMutationConflictError extends Error {
+	readonly statusCode = 409;
+
+	constructor() {
+		super("Library cleanup settings cannot be changed while a cleanup operation is in progress");
+		this.name = "CleanupPolicyMutationConflictError";
 	}
 }
 
@@ -146,6 +165,81 @@ export async function renewCleanupRunLease(
 		data: { runClaimedAt: now },
 	});
 	return renewal.count === 1;
+}
+
+async function withCleanupMutationLease<T>(
+	deps: Pick<CleanupExecutorDeps, "prisma" | "log">,
+	userId: string,
+	mutate: () => Promise<T>,
+	conflictError: () => Error,
+	options: { configId?: string; leaseRowMayBeDeleted?: boolean } = {},
+): Promise<T> {
+	return await withCleanupOperationGuard(async () => {
+		const { prisma, log } = deps;
+		// Ensure the per-user coordination row exists when the caller does not
+		// already have its ID. This closes the initialization race between a
+		// cleanup-sensitive write and the first cleanup run.
+		const config = options.configId
+			? { id: options.configId }
+			: await prisma.libraryCleanupConfig.upsert({
+					where: { userId },
+					update: {},
+					create: { userId },
+					select: { id: true },
+				});
+		const runClaimToken = await acquireCleanupRunLease(prisma, userId, config.id);
+		if (!runClaimToken) throw conflictError();
+
+		try {
+			return await mutate();
+		} finally {
+			await releaseCleanupRunLease(prisma, userId, config.id, runClaimToken)
+				.then((released) => {
+					if (!released && !options.leaseRowMayBeDeleted) {
+						log.warn(
+							{ configId: config.id },
+							"Service topology mutation finished after its cleanup lease ownership changed",
+						);
+					}
+				})
+				.catch((error) => {
+					log.error(
+						{ err: error, configId: config.id },
+						"Service topology mutation finished but its cleanup lease could not be released",
+					);
+				});
+		}
+	});
+}
+
+export async function withCleanupTopologyMutationLease<T>(
+	deps: Pick<CleanupExecutorDeps, "prisma" | "log">,
+	userId: string,
+	mutate: () => Promise<T>,
+	options: { leaseRowMayBeDeleted?: boolean } = {},
+): Promise<T> {
+	return await withCleanupMutationLease(
+		deps,
+		userId,
+		mutate,
+		() => new CleanupTopologyMutationConflictError(),
+		options,
+	);
+}
+
+export async function withCleanupPolicyMutationLease<T>(
+	deps: Pick<CleanupExecutorDeps, "prisma" | "log">,
+	userId: string,
+	mutate: () => Promise<T>,
+	options: { configId?: string } = {},
+): Promise<T> {
+	return await withCleanupMutationLease(
+		deps,
+		userId,
+		mutate,
+		() => new CleanupPolicyMutationConflictError(),
+		options,
+	);
 }
 
 async function startCleanupRunLease(
@@ -741,13 +835,16 @@ async function loadDurableRetryPreview(
 			config: { userId },
 			status: "retry_executing",
 		} as const;
-		const [retries, count, inFlightRetries] = await Promise.all([
+		const [retries, pendingRetryTargets, inFlightRetries] = await Promise.all([
 			deps.prisma.libraryCleanupApproval.findMany({
 				where: pendingWhere,
 				orderBy: { createdAt: "asc" },
 				take,
 			}),
-			deps.prisma.libraryCleanupApproval.count({ where: pendingWhere }),
+			deps.prisma.libraryCleanupApproval.findMany({
+				where: pendingWhere,
+				select: { instanceId: true, arrItemId: true, itemType: true },
+			}),
 			deps.prisma.libraryCleanupApproval.findMany({
 				where: executingWhere,
 				orderBy: { createdAt: "asc" },
@@ -773,7 +870,10 @@ async function loadDurableRetryPreview(
 				"Deferred: another cleanup run is already executing this durable retry.",
 			),
 		);
-		const total = Math.max(count, retryDetails.length);
+		const total = Math.max(pendingRetryTargets.length, retryDetails.length);
+		const targetKeys = new Set(
+			[...pendingRetryTargets, ...inFlightRetries].map((retry) => cleanupDeleteTargetKey(retry)),
+		);
 		const warningParts = [];
 		if (total > 0) {
 			warningParts.push(
@@ -790,6 +890,7 @@ async function loadDurableRetryPreview(
 		return {
 			retries,
 			inFlightRetries,
+			targetKeys,
 			details: [...inFlightDetails, ...retryDetails],
 			total,
 			loaded: true,
@@ -803,6 +904,7 @@ async function loadDurableRetryPreview(
 		return {
 			retries: [],
 			inFlightRetries: [],
+			targetKeys: new Set<string>(),
 			details: [],
 			total: 0,
 			loaded: false,
@@ -833,6 +935,7 @@ export async function executeCleanupPreview(
 			status: "completed",
 			itemsEvaluated: 0,
 			itemsFlagged: 0,
+			previewItemCount: 0,
 			itemsRemoved: 0,
 			itemsUnmonitored: 0,
 			itemsFilesDeleted: 0,
@@ -850,6 +953,7 @@ export async function executeCleanupPreview(
 			itemsEvaluated: 0,
 			itemsFlagged: 0,
 			pendingRetryCount: retryPreview.total,
+			previewItemCount: retryPreview.targetKeys.size,
 			itemsRemoved: 0,
 			itemsUnmonitored: 0,
 			itemsFilesDeleted: 0,
@@ -865,13 +969,8 @@ export async function executeCleanupPreview(
 		config,
 		config.rules,
 	);
-	const retryTargetKeys = new Set(
-		[...retryPreview.retries, ...retryPreview.inFlightRetries].map((retry) =>
-			cleanupDeleteTargetKey(retry),
-		),
-	);
 	const freshCandidates = flagged.filter(
-		(item) => !retryTargetKeys.has(cleanupDeleteTargetKey(item.cacheItem)),
+		(item) => !retryPreview.targetKeys.has(cleanupDeleteTargetKey(item.cacheItem)),
 	);
 	const retryDetails = retryPreview.details.slice(0, PREVIEW_SAFETY_INSPECTION_LIMIT);
 	const inspected = selectInspectableCleanupPreviewItems(
@@ -903,7 +1002,8 @@ export async function executeCleanupPreview(
 	log.info(
 		{
 			totalEvaluated,
-			totalFlagged: flagged.length,
+			totalRuleMatches: flagged.length,
+			totalFlagged: freshCandidates.length,
 			pendingRetryCount: retryPreview.total,
 			sharedPlexBlocks: sharedPlexBlocks.size,
 			hasWarnings,
@@ -915,8 +1015,9 @@ export async function executeCleanupPreview(
 		isDryRun: true,
 		status: hasWarnings ? ("partial" as const) : ("completed" as const),
 		itemsEvaluated: totalEvaluated,
-		itemsFlagged: flagged.length,
+		itemsFlagged: freshCandidates.length,
 		pendingRetryCount: retryPreview.total,
+		previewItemCount: retryPreview.targetKeys.size + freshCandidates.length,
 		itemsRemoved: 0,
 		itemsUnmonitored: 0,
 		itemsFilesDeleted: 0,
@@ -939,6 +1040,13 @@ export async function executeCleanupPreview(
  * - Otherwise: Execute actions directly on ARR instances
  */
 export async function executeCleanupRun(
+	deps: CleanupExecutorDeps,
+	userId: string,
+): Promise<CleanupRunResult> {
+	return await withCleanupOperationGuard(() => executeCleanupRunGuarded(deps, userId));
+}
+
+async function executeCleanupRunGuarded(
 	deps: CleanupExecutorDeps,
 	userId: string,
 ): Promise<CleanupRunResult> {
@@ -976,13 +1084,8 @@ export async function executeCleanupRun(
 				? config.maxRemovalsPerRun
 				: Number.MAX_SAFE_INTEGER;
 		const retryPreview = await loadDurableRetryPreview(deps, userId, config.id, configuredRunLimit);
-		const retryTargetKeys = new Set(
-			[...retryPreview.retries, ...retryPreview.inFlightRetries].map((retry) =>
-				cleanupDeleteTargetKey(retry),
-			),
-		);
 		const freshCandidates = flagged.filter(
-			(item) => !retryTargetKeys.has(cleanupDeleteTargetKey(item.cacheItem)),
+			(item) => !retryPreview.targetKeys.has(cleanupDeleteTargetKey(item.cacheItem)),
 		);
 		const freshBudget = retryPreview.loaded
 			? Math.max(0, configuredRunLimit - retryPreview.retries.length)
@@ -1042,10 +1145,34 @@ export async function executeCleanupRun(
 			config,
 			config.rules,
 		);
-		const limited = flagged.slice(0, config.maxRemovalsPerRun);
-
 		// Real execution
 		if (config.requireApproval) {
+			const nonterminalRetryTargets = await prisma.libraryCleanupApproval.findMany({
+				where: {
+					configId: config.id,
+					config: { userId },
+					status: { in: ["retry_pending", "retry_executing"] },
+				},
+				select: {
+					instanceId: true,
+					arrItemId: true,
+					itemType: true,
+				},
+			});
+			const retryTargetKeys = new Set(
+				nonterminalRetryTargets.map((retry) => cleanupDeleteTargetKey(retry)),
+			);
+			const freshCandidates = flagged.filter(
+				(item) => !retryTargetKeys.has(cleanupDeleteTargetKey(item.cacheItem)),
+			);
+			const approvalSelection = await selectApprovalCandidatesBeforeLimit(
+				deps,
+				config,
+				userId,
+				freshCandidates,
+				config.maxRemovalsPerRun,
+			);
+			const limited = approvalSelection.selected;
 			const safetyContext = createSharedPlexSafetyContext();
 			const sharedPlexBlocks = await findSharedPlexDeleteBlocks(
 				deps,
@@ -1072,6 +1199,7 @@ export async function executeCleanupRun(
 				allWarnings,
 				sharedPlexBlocks,
 				safetyContext.plans,
+				approvalSelection.skippedDetails,
 			);
 		}
 
@@ -1079,7 +1207,7 @@ export async function executeCleanupRun(
 			deps,
 			config,
 			userId,
-			limited,
+			flagged,
 			totalEvaluated,
 			flagged.length,
 			startTime,
@@ -1098,6 +1226,17 @@ export async function executeCleanupRun(
  * Dispatches on the stored action (delete, unmonitor, delete_files).
  */
 export async function executeApprovedItems(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	approvalIds: string[],
+	approvalRequestToken?: string,
+): Promise<{ removed: number; failed: number; errors: string[] }> {
+	return await withCleanupOperationGuard(() =>
+		executeApprovedItemsGuarded(deps, userId, approvalIds, approvalRequestToken),
+	);
+}
+
+async function executeApprovedItemsGuarded(
 	deps: CleanupExecutorDeps,
 	userId: string,
 	approvalIds: string[],
@@ -1176,6 +1315,14 @@ export async function executeRetryItems(
 	userId: string,
 	retryIds: string[],
 ): Promise<{ removed: number; reconciled: number; failed: number; errors: string[] }> {
+	return await withCleanupOperationGuard(() => executeRetryItemsGuarded(deps, userId, retryIds));
+}
+
+async function executeRetryItemsGuarded(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	retryIds: string[],
+): Promise<{ removed: number; reconciled: number; failed: number; errors: string[] }> {
 	const config = await deps.prisma.libraryCleanupConfig.findUnique({
 		where: { userId },
 		select: { id: true },
@@ -1220,6 +1367,8 @@ interface QueuedCleanupExecutionResult {
 	recordingFailureIds: string[];
 	reconciledIds: string[];
 	unclaimedIds: string[];
+	mutationBudgetConsumedIds: string[];
+	confirmedPartialFileDeletionIds: string[];
 }
 
 async function retryTargetRecordIsAbsent(
@@ -1278,6 +1427,8 @@ async function executeQueuedCleanupItems(
 	const claimedApprovalIds: string[] = [];
 	const claimedApprovalTokens = new Map<string, string>();
 	const mutationAttemptedApprovalIds = new Set<string>();
+	const mutationBudgetConsumedIds = new Set<string>();
+	const confirmedPartialFileDeletionIds = new Set<string>();
 	const unclaimedIds: string[] = [];
 	const claimErrors: string[] = [];
 	for (const approvalId of [...new Set(approvalIds)]) {
@@ -1311,6 +1462,8 @@ async function executeQueuedCleanupItems(
 			recordingFailureIds: [],
 			reconciledIds: [],
 			unclaimedIds,
+			mutationBudgetConsumedIds: [],
+			confirmedPartialFileDeletionIds: [],
 		};
 	}
 
@@ -1563,6 +1716,10 @@ async function executeQueuedCleanupItems(
 					approval.instanceId,
 					safetyPlan!,
 				);
+				const assertMutationAuthority = async () => {
+					await options.assertExecutionAllowed?.();
+					mutationBudgetConsumedIds.add(approval.id);
+				};
 
 				if (retryTargetAlreadyAbsent) {
 					executionCompleted = true;
@@ -1583,7 +1740,13 @@ async function executeQueuedCleanupItems(
 							);
 						});
 				} else if (action === "unmonitor") {
-					await unmonitorInArr(arrClientFactory, mutationInstance, approval.arrItemId, safetyPlan!);
+					await unmonitorInArr(
+						arrClientFactory,
+						mutationInstance,
+						approval.arrItemId,
+						safetyPlan!,
+						assertMutationAuthority,
+					);
 					executionCompleted = true;
 					await prisma.libraryCache
 						.updateMany({
@@ -1606,6 +1769,7 @@ async function executeQueuedCleanupItems(
 						mutationInstance,
 						approval.arrItemId,
 						safetyPlan!,
+						assertMutationAuthority,
 					);
 					executionCompleted = true;
 					reconciledWithoutMutation = !deletedFiles;
@@ -1626,7 +1790,13 @@ async function executeQueuedCleanupItems(
 							);
 						});
 				} else {
-					await deleteFromArr(arrClientFactory, mutationInstance, approval.arrItemId, safetyPlan!);
+					await deleteFromArr(
+						arrClientFactory,
+						mutationInstance,
+						approval.arrItemId,
+						safetyPlan!,
+						assertMutationAuthority,
+					);
 					executionCompleted = true;
 					await reconcileSonarrEpisodeFileCache(prisma, mutationInstance, approval.arrItemId, log);
 					await prisma.libraryCache
@@ -1742,6 +1912,9 @@ async function executeQueuedCleanupItems(
 					error instanceof ArrDeletePartialError
 						? buildPostPartialRetrySnapshot(safetyPlan, error)
 						: undefined;
+				if (error instanceof ArrDeletePartialError && error.deletedFileIds.length > 0) {
+					confirmedPartialFileDeletionIds.add(approval.id);
+				}
 				log.error(
 					{ err: error, title: approval.title, instanceId: approval.instanceId },
 					"Failed to execute approved cleanup item",
@@ -1812,6 +1985,8 @@ async function executeQueuedCleanupItems(
 			recordingFailureIds,
 			reconciledIds,
 			unclaimedIds,
+			mutationBudgetConsumedIds: [...mutationBudgetConsumedIds],
+			confirmedPartialFileDeletionIds: [...confirmedPartialFileDeletionIds],
 		};
 	} finally {
 		for (const [approvalId, executionToken] of claimedApprovalTokens) {
@@ -2679,6 +2854,107 @@ function getRuleDataSources(rule: LibraryCleanupRule): Set<DataSourceDependency>
 	return sources;
 }
 
+function buildApprovalDedupSkipReason(
+	status: string,
+	memWindow: RejectionMemoryWindow,
+): string | undefined {
+	if (status !== "rejected") return undefined;
+	if (memWindow.mode === "forever") {
+		return "Previously rejected — rejection memory: forever";
+	}
+	if (memWindow.mode === "days") {
+		return `Previously rejected — rejection memory: ${memWindow.days} day${memWindow.days === 1 ? "" : "s"}`;
+	}
+	return undefined;
+}
+
+async function selectApprovalCandidatesBeforeLimit(
+	deps: CleanupExecutorDeps,
+	config: LibraryCleanupConfig & { rules: LibraryCleanupRule[] },
+	userId: string,
+	flagged: FlaggedItem[],
+	limit: number,
+): Promise<{
+	selected: FlaggedItem[];
+	skippedDetails: CleanupRunResult["details"];
+}> {
+	const memoryByRuleId = new Map<string, RejectionMemoryWindow>();
+	for (const rule of config.rules) {
+		memoryByRuleId.set(rule.id, resolveRejectionMemoryWindow(rule, config));
+	}
+
+	const remembersForever = [...memoryByRuleId.values()].some((window) => window.mode === "forever");
+	const maxRememberedDays = Math.max(
+		0,
+		...[...memoryByRuleId.values()]
+			.filter((window): window is Extract<RejectionMemoryWindow, { mode: "days" }> => {
+				return window.mode === "days";
+			})
+			.map((window) => window.days),
+	);
+	const now = new Date();
+	const approvalDedupRows = await deps.prisma.libraryCleanupApproval.findMany({
+		where: {
+			configId: config.id,
+			config: { userId },
+			OR: [
+				{ status: "pending" },
+				...(remembersForever
+					? [{ status: "rejected" }]
+					: maxRememberedDays > 0
+						? [
+								{
+									status: "rejected",
+									reviewedAt: {
+										gt: new Date(now.getTime() - maxRememberedDays * 24 * 60 * 60 * 1000),
+									},
+								},
+							]
+						: []),
+			],
+		},
+		select: {
+			instanceId: true,
+			arrItemId: true,
+			itemType: true,
+			status: true,
+			reviewedAt: true,
+		},
+	});
+	const approvalDedupRowsByTarget = new Map<string, typeof approvalDedupRows>();
+	for (const row of approvalDedupRows) {
+		const targetKey = cleanupDeleteTargetKey(row);
+		const rows = approvalDedupRowsByTarget.get(targetKey);
+		if (rows) rows.push(row);
+		else approvalDedupRowsByTarget.set(targetKey, [row]);
+	}
+
+	const selected: FlaggedItem[] = [];
+	const skippedDetails: CleanupRunResult["details"] = [];
+	for (const item of flagged) {
+		if (selected.length >= limit) break;
+		const memWindow = memoryByRuleId.get(item.match.ruleId) ?? { mode: "off" as const };
+		const targetRows = approvalDedupRowsByTarget.get(cleanupDeleteTargetKey(item.cacheItem)) ?? [];
+		const existing = targetRows.find((row) => {
+			if (row.status === "pending") return true;
+			if (row.status !== "rejected") return false;
+			if (memWindow.mode === "forever") return true;
+			if (memWindow.mode === "days" && row.reviewedAt) {
+				return row.reviewedAt > new Date(now.getTime() - memWindow.days * 24 * 60 * 60 * 1000);
+			}
+			return false;
+		});
+		if (existing) {
+			skippedDetails.push(
+				buildDetail(item, "skipped", buildApprovalDedupSkipReason(existing.status, memWindow)),
+			);
+			continue;
+		}
+		selected.push(item);
+	}
+	return { selected, skippedDetails };
+}
+
 /**
  * Create approval queue entries for flagged items.
  * Stores the action from each rule match on the approval record.
@@ -2694,13 +2970,16 @@ async function executeWithApproval(
 	warnings?: string[],
 	sharedPlexBlocks: Map<string, string> = new Map(),
 	safetyPlans: Map<string, SharedMediaSafetyPlan> = new Map(),
+	preSkippedDetails: CleanupRunResult["details"] = [],
 ): Promise<CleanupRunResult> {
 	const { prisma, log } = deps;
 	const now = new Date();
 	const expiresAt = new Date(now.getTime() + APPROVAL_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
 
-	const details: CleanupRunResult["details"] = [];
+	const details: CleanupRunResult["details"] = [...preSkippedDetails];
 	let queued = 0;
+	let approvalDedupSkipped = 0;
+	let approvalQueueFailures = 0;
 
 	// Precompute rejection-memory window per rule once. The window is the same
 	// for every flagged item that matched the same rule, so resolving once
@@ -2732,6 +3011,7 @@ async function executeWithApproval(
 			const existing = await prisma.libraryCleanupApproval.findFirst({
 				where: {
 					configId: config.id,
+					config: { userId: config.userId },
 					instanceId: item.cacheItem.instanceId,
 					arrItemId: item.cacheItem.arrItemId,
 					itemType: item.cacheItem.itemType,
@@ -2740,15 +3020,10 @@ async function executeWithApproval(
 			});
 
 			if (existing) {
-				const skipReason =
-					existing.status === "rejected"
-						? memWindow.mode === "forever"
-							? "Previously rejected — rejection memory: forever"
-							: memWindow.mode === "days"
-								? `Previously rejected — rejection memory: ${memWindow.days} day${memWindow.days === 1 ? "" : "s"}`
-								: undefined
-						: undefined;
-				details.push(buildDetail(item, "skipped", skipReason));
+				details.push(
+					buildDetail(item, "skipped", buildApprovalDedupSkipReason(existing.status, memWindow)),
+				);
+				approvalDedupSkipped++;
 				continue;
 			}
 
@@ -2785,19 +3060,25 @@ async function executeWithApproval(
 				"Failed to create cleanup approval entry",
 			);
 			details.push(buildDetail(item, "skipped", `Failed to queue: ${getErrorMessage(error)}`));
+			approvalQueueFailures++;
 		}
 	}
 
 	const hasFailedPrefetch = warnings && warnings.length > 0;
 	const result: CleanupRunResult = {
 		isDryRun: false,
-		status: hasFailedPrefetch ? "partial" : "completed",
+		status: hasFailedPrefetch || approvalQueueFailures > 0 ? "partial" : "completed",
 		itemsEvaluated: totalEvaluated,
 		itemsFlagged: queued,
 		itemsRemoved: 0,
 		itemsUnmonitored: 0,
 		itemsFilesDeleted: 0,
-		itemsSkipped: totalFlaggedBeforeLimit - flagged.length + sharedPlexBlocks.size,
+		itemsSkipped:
+			totalFlaggedBeforeLimit -
+			flagged.length +
+			sharedPlexBlocks.size +
+			approvalDedupSkipped +
+			approvalQueueFailures,
 		details,
 		durationMs: Date.now() - startTime,
 		prefetchHealth,
@@ -2846,28 +3127,63 @@ export async function executeDirectRemoval(
 	let directRetryExecutionFailures = 0;
 	let directRetryPersistenceFailures = 0;
 	let directRetryReconciled = 0;
+	let directRetryFairnessDeferred = 0;
 	let retriedRemoved = 0;
 	let retriedUnmonitored = 0;
 	let retriedFilesDeleted = 0;
 	let directRetryCount = 0;
+	let directRetryMutationBudgetConsumed = 0;
 	const sharedPlexSafetyContext = createSharedPlexSafetyContext();
 	const directRetryTargetKeys = new Set<string>();
 	const selectedDirectRetryTargetKeys = new Set<string>();
 	const inFlightDirectRetryTargetKeys = new Set<string>();
 	const configuredRunLimit =
-		Number.isSafeInteger(config.maxRemovalsPerRun) && config.maxRemovalsPerRun > 0
+		Number.isSafeInteger(config.maxRemovalsPerRun) &&
+		config.maxRemovalsPerRun > 0 &&
+		config.maxRemovalsPerRun <= 100
 			? config.maxRemovalsPerRun
-			: Number.MAX_SAFE_INTEGER;
+			: 0;
 
 	let directRetries: Awaited<ReturnType<typeof prisma.libraryCleanupApproval.findMany>> = [];
+	let fairnessDeferredRetries: typeof directRetries = [];
+	let previousRunStartedAt: Date | undefined;
 	try {
+		const previousRun = await prisma.libraryCleanupLog.findFirst({
+			where: {
+				configId: config.id,
+				isDryRun: false,
+				completedAt: { not: null },
+			},
+			orderBy: { startedAt: "desc" },
+			select: { startedAt: true },
+		});
+		previousRunStartedAt = previousRun?.startedAt;
+	} catch (error) {
+		log.warn(
+			{ err: error, configId: config.id },
+			"Cleanup could not load its prior run boundary for retry fairness",
+		);
+	}
+	try {
+		const nonterminalRetryTargets = await prisma.libraryCleanupApproval.findMany({
+			where: {
+				configId: config.id,
+				config: { userId },
+				status: { in: ["retry_pending", "retry_executing"] },
+			},
+			select: {
+				instanceId: true,
+				arrItemId: true,
+				itemType: true,
+			},
+		});
 		const loadedDirectRetries = await prisma.libraryCleanupApproval.findMany({
 			where: {
 				configId: config.id,
 				config: { userId },
 				status: "retry_pending",
 			},
-			orderBy: { createdAt: "asc" },
+			orderBy: [{ reviewedAt: { sort: "asc", nulls: "first" } }, { createdAt: "asc" }],
 			take: configuredRunLimit,
 		});
 		const executingDirectRetries = await prisma.libraryCleanupApproval.findMany({
@@ -2882,16 +3198,41 @@ export async function executeDirectRemoval(
 			directRetryTargetKeys.add(targetKey);
 			inFlightDirectRetryTargetKeys.add(targetKey);
 		}
-		directRetries = loadedDirectRetries;
-		directRetryCount = directRetries.length;
+		for (const retry of loadedDirectRetries) {
+			directRetryTargetKeys.add(cleanupDeleteTargetKey(retry));
+		}
+		for (const retryTarget of nonterminalRetryTargets) {
+			directRetryTargetKeys.add(cleanupDeleteTargetKey(retryTarget));
+		}
+		const hasDistinctFreshCandidate = flagged.some(
+			(item) => !directRetryTargetKeys.has(cleanupDeleteTargetKey(item.cacheItem)),
+		);
+		if (previousRunStartedAt && hasDistinctFreshCandidate) {
+			fairnessDeferredRetries = loadedDirectRetries.filter(
+				(retry) => retry.reviewedAt && retry.reviewedAt >= previousRunStartedAt,
+			);
+		}
+		const fairnessDeferredIds = new Set(fairnessDeferredRetries.map((retry) => retry.id));
+		directRetries = loadedDirectRetries.filter((retry) => !fairnessDeferredIds.has(retry.id));
+		directRetryFairnessDeferred = fairnessDeferredRetries.length;
+		directRetryCount = loadedDirectRetries.length;
 	} catch (error) {
 		directRetryLoadFailures++;
 		log.error({ err: error, configId: config.id }, "Cleanup could not load durable ARR retries");
 	}
 
+	for (const retry of fairnessDeferredRetries) {
+		details.push(
+			buildRetryDetail(
+				retry,
+				"skipped",
+				"Deferred for one run after its previous attempt so fresh cleanup work can make progress",
+			),
+		);
+	}
+
 	for (const retry of directRetries) {
 		const targetKey = cleanupDeleteTargetKey(retry);
-		directRetryTargetKeys.add(targetKey);
 		selectedDirectRetryTargetKeys.add(targetKey);
 		try {
 			const retryResult = await executeQueuedCleanupItems(deps, userId, [retry.id], {
@@ -2901,6 +3242,9 @@ export async function executeDirectRemoval(
 				enforceExpiry: false,
 				assertExecutionAllowed: assertRunLease,
 			});
+			if (retryResult.mutationBudgetConsumedIds.includes(retry.id)) {
+				directRetryMutationBudgetConsumed++;
+			}
 			if (retryResult.unclaimedIds.includes(retry.id)) {
 				directRetryConcurrent++;
 				details.push(
@@ -2972,6 +3316,18 @@ export async function executeDirectRemoval(
 					retriedRemoved++;
 					details.push(buildRetryDetail(retry, "removed", recordingFailureReason));
 				}
+			} else if (retryResult.confirmedPartialFileDeletionIds.includes(retry.id)) {
+				directRetryFailures++;
+				filesDeleted++;
+				retriedFilesDeleted++;
+				details.push(
+					buildRetryDetail(
+						retry,
+						"files_deleted",
+						retryResult.errors[0] ??
+							"Verified ARR files were deleted, but the remaining cleanup mutation is still pending.",
+					),
+				);
 			} else {
 				directRetryFailures++;
 				details.push(
@@ -3019,7 +3375,11 @@ export async function executeDirectRemoval(
 			),
 		);
 	}
-	const freshBudget = Math.max(0, configuredRunLimit - directRetryCount);
+	// Only retries that reached an ARR write consume the current run budget.
+	// Successful, partial, and indeterminate writes all count because ARR may
+	// have changed. reviewedAt plus the prior run boundary defers a just-tried
+	// retry for one later run when distinct fresh work exists.
+	const freshBudget = Math.max(0, configuredRunLimit - directRetryMutationBudgetConsumed);
 	const freshItems = freshCandidates.slice(0, freshBudget);
 	const budgetDeferredItems = freshCandidates.length - freshItems.length;
 
@@ -3217,6 +3577,7 @@ export async function executeDirectRemoval(
 					mutationInstance,
 					item.cacheItem.arrItemId,
 					safetyPlan!,
+					assertRunLease,
 				);
 				try {
 					await prisma.libraryCache.updateMany({
@@ -3246,6 +3607,7 @@ export async function executeDirectRemoval(
 					mutationInstance,
 					item.cacheItem.arrItemId,
 					safetyPlan!,
+					assertRunLease,
 				);
 				await reconcileSonarrEpisodeFileCache(
 					prisma,
@@ -3292,6 +3654,7 @@ export async function executeDirectRemoval(
 					mutationInstance,
 					item.cacheItem.arrItemId,
 					safetyPlan!,
+					assertRunLease,
 				);
 				await reconcileSonarrEpisodeFileCache(
 					prisma,
@@ -3533,6 +3896,13 @@ export async function executeDirectRemoval(
 			} deferred because another cleanup run claimed it first.`,
 		);
 	}
+	if (directRetryFairnessDeferred > 0) {
+		allWarnings.push(
+			`${directRetryFairnessDeferred} durable record-only cleanup ${
+				directRetryFairnessDeferred === 1 ? "retry was" : "retries were"
+			} deferred for one run so distinct fresh cleanup work could make progress.`,
+		);
+	}
 	if (directIntentConcurrent > 0) {
 		allWarnings.push(
 			`${directIntentConcurrent} fresh cleanup ${
@@ -3601,6 +3971,7 @@ export async function executeDirectRemoval(
 			flagged.length +
 			budgetDeferredItems +
 			inFlightDeferredItems.length +
+			directRetryFairnessDeferred +
 			(directlyEvaluated - directRemoved - directUnmonitored - directFilesDeleted) +
 			accountedUnsuccessfulRetries +
 			directRetryReconciled,
@@ -3682,10 +4053,12 @@ async function deleteVerifiedRadarrFile(
 	arrItemId: number,
 	expectedTarget: Extract<ExecutableSharedMediaSafetyPlan, { kind: "verified_radarr" }>["target"],
 	expected: VerifiedRadarrFileIdentity,
+	assertMutationAuthority?: () => Promise<void>,
 ): Promise<void> {
 	await assertVerifiedRadarrFileUnchanged(radarr, arrItemId, expectedTarget, expected);
 	let deleteError: unknown;
 	try {
+		await assertMutationAuthority?.();
 		await radarr.movieFile.delete(expected.movieFileId);
 	} catch (error) {
 		deleteError = error;
@@ -3730,6 +4103,7 @@ async function deleteRadarrRecordWithoutFiles(
 		{ kind: "verified_radarr_empty" }
 	>["target"],
 	deletedFileIds: number[],
+	assertMutationAuthority?: () => Promise<void>,
 ): Promise<void> {
 	let lastDeleteError: unknown;
 	for (let attempt = 0; attempt < 2; attempt++) {
@@ -3758,12 +4132,24 @@ async function deleteRadarrRecordWithoutFiles(
 		}
 
 		try {
+			await assertMutationAuthority?.();
 			await radarr.movie.delete(arrItemId, {
 				deleteFiles: false,
 				addImportExclusion: false,
 			});
 			return;
 		} catch (error) {
+			if (error instanceof CleanupRunLeaseLostError) {
+				if (deletedFileIds.length === 0) throw error;
+				throw new ArrDeletePartialError({
+					cause: error,
+					service: "RADARR",
+					deletedFileIds,
+					hasRemainingFiles: false,
+					message:
+						"Partial cleanup: the verified Radarr movie file was deleted, but execution authority was lost before the movie record could be removed.",
+				});
+			}
 			lastDeleteError = error;
 			try {
 				await radarr.movie.getById(arrItemId);
@@ -3795,6 +4181,7 @@ async function deleteVerifiedSonarrFiles(
 	arrItemId: number,
 	expectedTarget: Extract<ExecutableSharedMediaSafetyPlan, { kind: "verified_sonarr" }>["target"],
 	expected: VerifiedSonarrFileIdentity,
+	assertMutationAuthority?: () => Promise<void>,
 ): Promise<number[]> {
 	await assertVerifiedSonarrFilesUnchanged(sonarr, arrItemId, expectedTarget, expected);
 	const expectedIds = expected.episodeFiles.map((file) => file.episodeFileId);
@@ -3802,6 +4189,7 @@ async function deleteVerifiedSonarrFiles(
 
 	let bulkError: unknown;
 	try {
+		await assertMutationAuthority?.();
 		await sonarr.episodeFile.bulkDelete(expectedIds);
 	} catch (error) {
 		bulkError = error;
@@ -3864,6 +4252,7 @@ async function deleteSonarrRecordWithoutFiles(
 	expectedTarget: Extract<ExecutableSharedMediaSafetyPlan, { kind: "verified_sonarr" }>["target"],
 	expected: VerifiedSonarrFileIdentity,
 	deletedFileIds: number[],
+	assertMutationAuthority?: () => Promise<void>,
 ): Promise<void> {
 	let lastDeleteError: unknown;
 	const emptyExpected: VerifiedSonarrFileIdentity = {
@@ -3906,12 +4295,24 @@ async function deleteSonarrRecordWithoutFiles(
 		}
 
 		try {
+			await assertMutationAuthority?.();
 			await sonarr.series.delete(arrItemId, {
 				deleteFiles: false,
 				addImportListExclusion: false,
 			});
 			return;
 		} catch (error) {
+			if (error instanceof CleanupRunLeaseLostError) {
+				if (deletedFileIds.length === 0) throw error;
+				throw new ArrDeletePartialError({
+					cause: error,
+					service: "SONARR",
+					deletedFileIds,
+					hasRemainingFiles: false,
+					message:
+						"Partial cleanup: the verified Sonarr episode files were deleted, but execution authority was lost before the series record could be removed.",
+				});
+			}
 			lastDeleteError = error;
 			try {
 				await sonarr.series.getById(arrItemId);
@@ -4013,6 +4414,7 @@ async function deleteFromArr(
 	instance: ServiceInstance,
 	arrItemId: number,
 	safetyPlan: SharedMediaSafetyPlan,
+	assertMutationAuthority?: () => Promise<void>,
 ): Promise<void> {
 	const client = arrClientFactory.create(instance);
 
@@ -4024,12 +4426,28 @@ async function deleteFromArr(
 				throw new Error("Sonarr safety plan cannot authorize a Radarr mutation");
 			}
 			if (safetyPlan.kind === "verified_radarr") {
-				await deleteVerifiedRadarrFile(radarr, arrItemId, safetyPlan.target, safetyPlan.file);
-				await deleteRadarrRecordWithoutFiles(radarr, arrItemId, safetyPlan.target, [
-					safetyPlan.file.movieFileId,
-				]);
+				await deleteVerifiedRadarrFile(
+					radarr,
+					arrItemId,
+					safetyPlan.target,
+					safetyPlan.file,
+					assertMutationAuthority,
+				);
+				await deleteRadarrRecordWithoutFiles(
+					radarr,
+					arrItemId,
+					safetyPlan.target,
+					[safetyPlan.file.movieFileId],
+					assertMutationAuthority,
+				);
 			} else if (safetyPlan.kind === "verified_radarr_empty") {
-				await deleteRadarrRecordWithoutFiles(radarr, arrItemId, safetyPlan.target, []);
+				await deleteRadarrRecordWithoutFiles(
+					radarr,
+					arrItemId,
+					safetyPlan.target,
+					[],
+					assertMutationAuthority,
+				);
 			} else if (safetyPlan.kind === "not_required" || safetyPlan.kind === "verified_arr_target") {
 				throw new Error("A verified Radarr file identity is required for deletion");
 			} else {
@@ -4050,6 +4468,7 @@ async function deleteFromArr(
 					arrItemId,
 					safetyPlan.target,
 					safetyPlan.files,
+					assertMutationAuthority,
 				);
 				await deleteSonarrRecordWithoutFiles(
 					sonarr,
@@ -4057,6 +4476,7 @@ async function deleteFromArr(
 					safetyPlan.target,
 					safetyPlan.files,
 					deletedFileIds,
+					assertMutationAuthority,
 				);
 			} else if (safetyPlan.kind === "not_required" || safetyPlan.kind === "verified_arr_target") {
 				throw new Error("A verified Sonarr file identity is required for deletion");
@@ -4080,6 +4500,7 @@ async function unmonitorInArr(
 	instance: ServiceInstance,
 	arrItemId: number,
 	safetyPlan: SharedMediaSafetyPlan,
+	assertMutationAuthority?: () => Promise<void>,
 ): Promise<void> {
 	if (safetyPlan.kind !== "verified_arr_target") {
 		throw new Error("A verified ARR target identity is required before unmonitoring");
@@ -4091,6 +4512,7 @@ async function unmonitorInArr(
 			const radarr = client as InstanceType<typeof RadarrClient>;
 			const movie = await radarr.movie.getById(arrItemId);
 			assertVerifiedArrTargetUnchanged(instance, movie.tmdbId, movie.path, safetyPlan.target);
+			await assertMutationAuthority?.();
 			await radarr.movie.update(arrItemId, { ...movie, id: arrItemId, monitored: false });
 			break;
 		}
@@ -4098,6 +4520,7 @@ async function unmonitorInArr(
 			const sonarr = client as InstanceType<typeof SonarrClient>;
 			const series = await sonarr.series.getById(arrItemId);
 			assertVerifiedArrTargetUnchanged(instance, series.tvdbId, series.path, safetyPlan.target);
+			await assertMutationAuthority?.();
 			await sonarr.series.update(arrItemId, {
 				...series,
 				id: arrItemId,
@@ -4119,6 +4542,7 @@ async function deleteFilesFromArr(
 	instance: ServiceInstance,
 	arrItemId: number,
 	safetyPlan: SharedMediaSafetyPlan,
+	assertMutationAuthority?: () => Promise<void>,
 ): Promise<boolean> {
 	const client = arrClientFactory.create(instance);
 
@@ -4130,7 +4554,13 @@ async function deleteFilesFromArr(
 				throw new Error("Sonarr safety plan cannot authorize a Radarr mutation");
 			}
 			if (safetyPlan.kind === "verified_radarr") {
-				await deleteVerifiedRadarrFile(radarr, arrItemId, safetyPlan.target, safetyPlan.file);
+				await deleteVerifiedRadarrFile(
+					radarr,
+					arrItemId,
+					safetyPlan.target,
+					safetyPlan.file,
+					assertMutationAuthority,
+				);
 				return true;
 			}
 			if (safetyPlan.kind === "verified_radarr_empty") {
@@ -4150,7 +4580,13 @@ async function deleteFilesFromArr(
 				throw new Error("Radarr safety plan cannot authorize a Sonarr mutation");
 			}
 			if (safetyPlan.kind === "verified_sonarr") {
-				await deleteVerifiedSonarrFiles(sonarr, arrItemId, safetyPlan.target, safetyPlan.files);
+				await deleteVerifiedSonarrFiles(
+					sonarr,
+					arrItemId,
+					safetyPlan.target,
+					safetyPlan.files,
+					assertMutationAuthority,
+				);
 				return safetyPlan.files.episodeFiles.length > 0;
 			}
 			if (safetyPlan.kind === "not_required" || safetyPlan.kind === "verified_arr_target") {

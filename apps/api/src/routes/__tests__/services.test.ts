@@ -95,6 +95,10 @@ function makeInstance(overrides: Record<string, unknown> = {}) {
 
 function createMockPrisma() {
 	return {
+		libraryCleanupConfig: {
+			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
+			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+		},
 		serviceInstance: {
 			findMany: vi.fn().mockResolvedValue([]),
 			findFirst: vi.fn().mockResolvedValue(null),
@@ -230,6 +234,25 @@ describe("POST /services", () => {
 
 		expect(mockPrisma.serviceInstance.updateMany).not.toHaveBeenCalled();
 	});
+
+	it("returns 409 without changing topology while cleanup owns the lease", async () => {
+		mockPrisma.libraryCleanupConfig.updateMany.mockResolvedValueOnce({ count: 0 });
+
+		const res = await injectAuthenticated("POST", "/services", {
+			body: {
+				label: "Concurrent Sonarr",
+				baseUrl: "http://sonarr:8989",
+				apiKey: "my-secret-api-key",
+				service: "sonarr",
+			},
+		});
+
+		expect(res.statusCode).toBe(409);
+		expect(JSON.parse(res.payload).message).toContain(
+			"cannot be changed while a library cleanup operation is in progress",
+		);
+		expect(mockPrisma.serviceInstance.create).not.toHaveBeenCalled();
+	});
 });
 
 // ===========================================================================
@@ -261,6 +284,7 @@ describe("PUT /services/:id", () => {
 			expect.objectContaining({ label: "Updated Label" }),
 			expect.objectContaining({ encrypt: expect.any(Function) }),
 		);
+		expect(mockPrisma.libraryCleanupConfig.updateMany).toHaveBeenCalledTimes(2);
 	});
 
 	it("returns 404 for non-owned instance via requireInstance", async () => {
@@ -288,6 +312,7 @@ describe("DELETE /services/:id", () => {
 		expect(mockPrisma.serviceInstance.delete).toHaveBeenCalledWith({
 			where: { id: "inst-1", userId: "user-1" },
 		});
+		expect(mockPrisma.libraryCleanupConfig.updateMany).toHaveBeenCalledTimes(2);
 	});
 
 	it("returns 404 for non-owned instance", async () => {
