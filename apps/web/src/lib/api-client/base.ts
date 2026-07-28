@@ -45,19 +45,27 @@ const resolveUrl = (path: string): string => {
 };
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-	const { json, headers, ...rest } = options;
+	const { json, headers, body, method: requestedMethod, ...rest } = options;
+	const method = requestedMethod ?? (json !== undefined ? "POST" : "GET");
+	// Next.js may forward a body-less POST with chunked transfer encoding. Fastify
+	// then sees a request body without a media type and rejects it before the route
+	// handler runs. Give no-payload POST actions an explicit JSON representation.
+	const sendsEmptyJson =
+		method.toUpperCase() === "POST" && json === undefined && body === undefined;
+	const sendsJson = json !== undefined || sendsEmptyJson;
+	const jsonPayload = json !== undefined ? json : {};
 
 	let response: Response;
 	try {
 		response = await fetch(resolveUrl(path), {
-			method: options.method ?? (json ? "POST" : "GET"),
+			method,
 			credentials: "include",
 			headers: {
 				Accept: "application/json",
-				...(json ? { "Content-Type": "application/json" } : {}),
+				...(sendsJson ? { "Content-Type": "application/json" } : {}),
 				...headers,
 			},
-			body: json ? JSON.stringify(json) : options.body,
+			body: sendsJson ? JSON.stringify(jsonPayload) : body,
 			...rest,
 		});
 	} catch (error) {
