@@ -59,28 +59,30 @@ describe("library cleanup approval compare-and-set routes", () => {
 		app.decorate("prisma", {
 			libraryCleanupApproval: {
 				updateMany,
-				findMany: vi.fn(async ({ where }: { where: { status: string } }) => [
-					{
-						id: "retry-1",
-						instanceId: "radarr-1",
-						arrItemId: 101,
-						itemType: "movie",
-						title: "Example Movie",
-						matchedRuleId: "rule-1",
-						matchedRuleName: "Cleanup",
-						reason: "Matched",
-						action: "delete",
-						sizeOnDisk: 1000n,
-						year: 2024,
-						rating: 8,
-						status: where.status,
-						lastExecutionError: "Radarr is unavailable",
-						reviewedAt: new Date(),
-						executedAt: null,
-						createdAt: new Date(),
-						expiresAt: new Date(Date.now() + 60_000),
-					},
-				]),
+				findMany: vi.fn(
+					async ({ where }: { where: { status?: string; OR?: Array<{ status: string }> } }) => [
+						{
+							id: "retry-1",
+							instanceId: "radarr-1",
+							arrItemId: 101,
+							itemType: "movie",
+							title: "Example Movie",
+							matchedRuleId: "rule-1",
+							matchedRuleName: "Cleanup",
+							reason: "Matched",
+							action: "delete",
+							sizeOnDisk: 1000n,
+							year: 2024,
+							rating: 8,
+							status: where.status ?? "executed",
+							lastExecutionError: "Radarr is unavailable",
+							reviewedAt: new Date(),
+							executedAt: null,
+							createdAt: new Date(),
+							expiresAt: new Date(Date.now() + 60_000),
+						},
+					],
+				),
 				count: vi.fn().mockResolvedValue(1),
 			},
 			serviceInstance: {
@@ -225,6 +227,44 @@ describe("library cleanup approval compare-and-set routes", () => {
 			});
 		},
 	);
+
+	it("shows operator-approved executed rows in the Approved tab query", async () => {
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/library-cleanup/approval-queue?status=approved",
+		);
+
+		expect(response.statusCode).toBe(200);
+		expect(app.prisma.libraryCleanupApproval.findMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: {
+					config: { userId: "user-1" },
+					OR: [
+						{ status: "approved" },
+						{ status: "executed", id: { not: { startsWith: "mutation-intent:" } } },
+					],
+				},
+			}),
+		);
+		expect(app.prisma.libraryCleanupApproval.count).toHaveBeenCalledWith({
+			where: {
+				config: { userId: "user-1" },
+				OR: [
+					{ status: "approved" },
+					{ status: "executed", id: { not: { startsWith: "mutation-intent:" } } },
+				],
+			},
+		});
+		expect(response.json()).toMatchObject({
+			items: [
+				{
+					status: "executed",
+					instanceLabel: "Radarr",
+				},
+			],
+			total: 1,
+		});
+	});
 
 	it("explicitly resumes a durable retry independently of cleanup mode", async () => {
 		const response = await createInjectAuthenticated(app)(

@@ -871,12 +871,21 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		];
 		const rawStatus = (request.query as Record<string, string>).status || "pending";
 		const statusFilter = validStatuses.includes(rawStatus) ? rawStatus : "pending";
+		const statusWhere =
+			statusFilter === "approved"
+				? {
+						OR: [
+							{ status: "approved" },
+							{ status: "executed", id: { not: { startsWith: "mutation-intent:" } } },
+						],
+					}
+				: { status: statusFilter };
 
 		const [approvals, total] = await Promise.all([
 			app.prisma.libraryCleanupApproval.findMany({
 				where: {
 					config: { userId },
-					status: statusFilter,
+					...statusWhere,
 				},
 				orderBy: { createdAt: "desc" },
 				skip: (page - 1) * pageSize,
@@ -885,7 +894,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			app.prisma.libraryCleanupApproval.count({
 				where: {
 					config: { userId },
-					status: statusFilter,
+					...statusWhere,
 				},
 			}),
 		]);
