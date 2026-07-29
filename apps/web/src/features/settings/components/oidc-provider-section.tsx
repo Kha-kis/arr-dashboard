@@ -64,6 +64,7 @@ export const OIDCProviderSection = () => {
 	const [accountAction, setAccountAction] = useState<"link" | "test" | null>(null);
 	const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 	const [replacementPassword, setReplacementPassword] = useState("");
+	const [confirmReplacementPassword, setConfirmReplacementPassword] = useState("");
 	const [deleteError, setDeleteError] = useState<string | null>(null);
 	const isLinking = accountAction !== null;
 
@@ -190,6 +191,10 @@ export const OIDCProviderSection = () => {
 			setDeleteError(validation.error.issues[0]?.message ?? "Enter a valid fallback password.");
 			return;
 		}
+		if (replacementPassword !== confirmReplacementPassword) {
+			setDeleteError("Fallback passwords do not match.");
+			return;
+		}
 
 		setDeleteError(null);
 		try {
@@ -205,6 +210,7 @@ export const OIDCProviderSection = () => {
 		setDeleteDialogOpen(open);
 		if (!open) {
 			setReplacementPassword("");
+			setConfirmReplacementPassword("");
 			setDeleteError(null);
 		}
 	};
@@ -762,6 +768,20 @@ export const OIDCProviderSection = () => {
 								onChange={(event) => setReplacementPassword(event.target.value)}
 								disabled={deleteMutation.isPending}
 							/>
+							<label
+								htmlFor="oidc-confirm-replacement-password"
+								className="block pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground"
+							>
+								Confirm fallback password
+							</label>
+							<Input
+								id="oidc-confirm-replacement-password"
+								type="password"
+								autoComplete="new-password"
+								value={confirmReplacementPassword}
+								onChange={(event) => setConfirmReplacementPassword(event.target.value)}
+								disabled={deleteMutation.isPending}
+							/>
 							{deleteError && (
 								<p className="text-sm" style={{ color: SEMANTIC_COLORS.error.text }}>
 									{deleteError}
@@ -779,7 +799,9 @@ export const OIDCProviderSection = () => {
 							<Button
 								variant="destructive"
 								onClick={handleDelete}
-								disabled={!replacementPassword || deleteMutation.isPending}
+								disabled={
+									!replacementPassword || !confirmReplacementPassword || deleteMutation.isPending
+								}
 							>
 								{deleteMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
 								Delete and sign out
