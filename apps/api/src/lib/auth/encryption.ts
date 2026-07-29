@@ -15,27 +15,37 @@ export interface EncryptResult {
 	iv: string;
 }
 
+function decodeEncryptionKey(secret: string): Buffer {
+	// Detect encoding: hex (64 chars), base64 (43-44 chars), or UTF-8.
+	let keyBuffer: Buffer;
+	if (secret.length === 64 && /^[0-9a-f]+$/i.test(secret)) {
+		keyBuffer = Buffer.from(secret, "hex");
+	} else if (secret.length === 44 || secret.length === 43) {
+		keyBuffer = Buffer.from(secret, "base64");
+	} else {
+		keyBuffer = Buffer.from(secret, "utf-8");
+	}
+
+	if (keyBuffer.length !== 32) {
+		throw new Error("ENCRYPTION_KEY must decode to 32 bytes");
+	}
+	return keyBuffer;
+}
+
+export function isValidEncryptionKey(secret: string): boolean {
+	try {
+		decodeEncryptionKey(secret);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 export class Encryptor {
 	private readonly key: Buffer;
 
 	constructor(secret: string) {
-		// Detect encoding: hex (64 chars), base64 (44 chars with padding), or utf-8
-		let keyBuffer: Buffer;
-		if (secret.length === 64 && /^[0-9a-f]+$/i.test(secret)) {
-			// Hex encoded (32 bytes = 64 hex chars)
-			keyBuffer = Buffer.from(secret, "hex");
-		} else if (secret.length === 44 || secret.length === 43) {
-			// Base64 encoded (32 bytes = 43-44 chars)
-			keyBuffer = Buffer.from(secret, "base64");
-		} else {
-			// UTF-8 string
-			keyBuffer = Buffer.from(secret, "utf-8");
-		}
-
-		if (keyBuffer.length !== 32) {
-			throw new Error("ENCRYPTION_KEY must decode to 32 bytes");
-		}
-		this.key = keyBuffer;
+		this.key = decodeEncryptionKey(secret);
 	}
 
 	encrypt(plaintext: string): EncryptResult {

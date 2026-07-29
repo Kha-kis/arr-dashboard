@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { readSecrets, writeSecrets } from "../../backup/backup-file-utils.js";
+import { Encryptor } from "../encryption.js";
 import { SecretManager } from "../secret-manager.js";
 
 describe("SecretManager installation identity", () => {
@@ -76,6 +77,8 @@ describe("SecretManager installation identity", () => {
 	it("backs up the active environment secrets without dropping local metadata", async () => {
 		const secretsPath = await createSecretsPath();
 		const installationId = "c".repeat(32);
+		const environmentEncryptionKey = "d".repeat(32);
+		const environmentSessionSecret = "e".repeat(32);
 		await writeFile(
 			secretsPath,
 			JSON.stringify({
@@ -85,13 +88,13 @@ describe("SecretManager installation identity", () => {
 		);
 
 		const activeSecrets = new SecretManager(secretsPath).getOrCreateSecrets({
-			encryptionKey: "d".repeat(64),
-			sessionCookieSecret: "e".repeat(64),
+			encryptionKey: environmentEncryptionKey,
+			sessionCookieSecret: environmentSessionSecret,
 		});
 
 		expect(activeSecrets).toMatchObject({
-			encryptionKey: "d".repeat(64),
-			sessionCookieSecret: "e".repeat(64),
+			encryptionKey: environmentEncryptionKey,
+			sessionCookieSecret: environmentSessionSecret,
 			installationId,
 		});
 		const backupSecrets = await readSecrets(secretsPath);
@@ -108,10 +111,16 @@ describe("SecretManager installation identity", () => {
 		const destinationInstallationId = "f".repeat(32);
 		await writeFile(restorePath, JSON.stringify({ installationId: destinationInstallationId }));
 		await writeSecrets(restorePath, backupSecrets);
-		expect(JSON.parse(await readFile(restorePath, "utf8"))).toEqual({
-			encryptionKey: activeSecrets.encryptionKey,
-			sessionCookieSecret: activeSecrets.sessionCookieSecret,
+		const restoredAfterRestart = new SecretManager(restorePath).getOrCreateSecrets();
+		expect(restoredAfterRestart).toEqual({
+			encryptionKey: environmentEncryptionKey,
+			sessionCookieSecret: environmentSessionSecret,
 			installationId: destinationInstallationId,
 		});
+
+		const credential = new Encryptor(environmentEncryptionKey).encrypt("restored-api-key");
+		expect(new Encryptor(restoredAfterRestart.encryptionKey).decrypt(credential)).toBe(
+			"restored-api-key",
+		);
 	});
 });

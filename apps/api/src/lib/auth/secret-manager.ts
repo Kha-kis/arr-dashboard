@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { copyFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { loggers } from "../logger.js";
+import { isValidEncryptionKey } from "./encryption.js";
 
 const log = loggers.auth;
 
@@ -87,13 +88,13 @@ export class SecretManager {
 			encryptionKey:
 				overrides.encryptionKey ??
 				(typeof preservedLocalFields.encryptionKey === "string" &&
-				preservedLocalFields.encryptionKey.length === 64
+				isValidEncryptionKey(preservedLocalFields.encryptionKey)
 					? preservedLocalFields.encryptionKey
 					: randomBytes(32).toString("hex")),
 			sessionCookieSecret:
 				overrides.sessionCookieSecret ??
 				(typeof preservedLocalFields.sessionCookieSecret === "string" &&
-				preservedLocalFields.sessionCookieSecret.length === 64
+				preservedLocalFields.sessionCookieSecret.length >= 32
 					? preservedLocalFields.sessionCookieSecret
 					: randomBytes(32).toString("hex")),
 			installationId:
@@ -203,9 +204,9 @@ export class SecretManager {
 		const s = secrets as Record<string, unknown>;
 		return (
 			typeof s.encryptionKey === "string" &&
-			s.encryptionKey.length === 64 && // 32 bytes in hex
+			isValidEncryptionKey(s.encryptionKey) &&
 			typeof s.sessionCookieSecret === "string" &&
-			s.sessionCookieSecret.length === 64
+			s.sessionCookieSecret.length >= 32
 		);
 	}
 }
