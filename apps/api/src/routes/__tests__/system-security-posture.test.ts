@@ -69,7 +69,7 @@ describe("GET /system/security-posture", () => {
 
 		expect(appUrlCheck).toMatchObject({
 			severity: "healthy",
-			detail: "https://arr.example.com",
+			detail: "External URL uses HTTPS.",
 		});
 		expect(body.data.effective.appUrl).toBe("https://arr.example.com");
 	});
