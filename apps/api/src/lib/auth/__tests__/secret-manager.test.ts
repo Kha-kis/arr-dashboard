@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inspect } from "node:util";
@@ -223,29 +223,25 @@ describe("SecretManager installation identity", () => {
 				installationId: "c".repeat(32),
 			}),
 		);
-		await chmod(directory, 0o555);
+		await mkdir(`${secretsPath}.tmp`);
 
-		try {
-			const manager = new SecretManager(secretsPath);
-			const active = manager.getOrCreateEnvironmentSecrets(
-				{
-					encryptionKey: "d".repeat(32),
-					sessionCookieSecret: "e".repeat(32),
-				},
-				"deployment-a",
-			);
+		const manager = new SecretManager(secretsPath);
+		const active = manager.getOrCreateEnvironmentSecrets(
+			{
+				encryptionKey: "d".repeat(32),
+				sessionCookieSecret: "e".repeat(32),
+			},
+			"deployment-a",
+		);
 
-			expect(active.encryptionKey).toBe("d".repeat(32));
-			expect(active.sessionCookieSecret).toBe("e".repeat(32));
-			expect(active.installationId).toBe("c".repeat(32));
-			expect(manager.secretsSynchronized).toBe(false);
-			expect(manager.installationIdIsPersistent).toBe(true);
-			expect(JSON.parse(await readFile(secretsPath, "utf8"))).toMatchObject({
-				encryptionKey: "a".repeat(64),
-				sessionCookieSecret: "b".repeat(64),
-			});
-		} finally {
-			await chmod(directory, 0o755);
-		}
+		expect(active.encryptionKey).toBe("d".repeat(32));
+		expect(active.sessionCookieSecret).toBe("e".repeat(32));
+		expect(active.installationId).toBe("c".repeat(32));
+		expect(manager.secretsSynchronized).toBe(false);
+		expect(manager.installationIdIsPersistent).toBe(true);
+		expect(JSON.parse(await readFile(secretsPath, "utf8"))).toMatchObject({
+			encryptionKey: "a".repeat(64),
+			sessionCookieSecret: "b".repeat(64),
+		});
 	});
 });
