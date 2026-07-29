@@ -120,12 +120,15 @@ export async function getOIDCProvider(): Promise<{ displayName: string; enabled:
 }
 
 /**
- * Initiate OIDC login flow
+ * Initiate an OIDC login, account-link, or linked-account test flow
  * @returns Authorization URL to redirect user to
  */
-export async function initiateOIDCLogin(): Promise<string> {
+export async function initiateOIDCLogin(
+	intent: "login" | "link" | "test" = "login",
+): Promise<string> {
 	const data = await apiRequest<OIDCLoginResponse>("/auth/oidc/login", {
 		method: "POST",
+		json: { intent },
 	});
 	return data.authorizationUrl;
 }

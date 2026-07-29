@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type { FastifyPluginCallback } from "fastify";
 import * as oauth from "oauth4webapi";
 import { z } from "zod";
@@ -16,12 +16,13 @@ interface OIDCStateData {
 	nonce: string;
 	codeVerifier: string;
 	expiresAt: number;
+	intent: "login" | "link" | "test";
 	/**
 	 * The authenticated admin who explicitly initiated an account-link flow.
-	 * This is server-side state, so the callback does not need to rely on the
-	 * browser session cookie surviving the round trip through the provider.
+	 * The session digest binds the callback to the same still-active session.
 	 */
 	linkUserId?: string;
+	linkSessionDigest?: string;
 }
 
 const oidcStateStore = new Map<string, OIDCStateData>();
@@ -50,6 +51,10 @@ function sanitizeOIDCError(value: unknown, maxLength = 200): string {
 const oidcCallbackSchema = z.object({
 	code: z.string(),
 	state: z.string(),
+});
+
+const oidcLoginSchema = z.object({
+	intent: z.enum(["login", "link", "test"]).default("login"),
 });
 
 const oidcSetupSchema = z.object({
@@ -218,6 +223,15 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		"/oidc/login",
 		{ config: { rateLimit: OIDC_LOGIN_RATE_LIMIT } },
 		async (request, reply) => {
+			const { intent } = validateRequest(oidcLoginSchema, request.body ?? {});
+			const isAccountAction = intent === "link" || intent === "test";
+
+			if (isAccountAction && (!request.currentUser || !request.sessionToken)) {
+				return reply.status(401).send({
+					error: "Authentication is required to link or test an OIDC account.",
+				});
+			}
+
 			// Get OIDC configuration from database
 			const dbProvider = await app.prisma.oIDCProvider.findFirst({
 				where: { enabled: true },
@@ -260,7 +274,11 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				nonce,
 				codeVerifier,
 				expiresAt: Date.now() + 15 * 60 * 1000,
-				linkUserId: request.currentUser?.id,
+				intent,
+				linkUserId: isAccountAction ? request.currentUser!.id : undefined,
+				linkSessionDigest: isAccountAction
+					? createHash("sha256").update(request.sessionToken!).digest("base64url")
+					: undefined,
 			});
 
 			try {
@@ -342,6 +360,21 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		// Remove state to prevent replay attacks
 		oidcStateStore.delete(state);
 
+		if (storedState.intent === "link" || storedState.intent === "test") {
+			const callbackSessionDigest = request.sessionToken
+				? createHash("sha256").update(request.sessionToken).digest("base64url")
+				: undefined;
+			if (
+				request.currentUser?.id !== storedState.linkUserId ||
+				callbackSessionDigest !== storedState.linkSessionDigest
+			) {
+				return reply.status(401).send({
+					error:
+						"The OIDC account action expired because the initiating session is no longer active. Sign in and try again.",
+				});
+			}
+		}
+
 		request.log.info({ hasCode: !!code }, "Processing OIDC callback");
 
 		// Get OIDC configuration from database
@@ -369,7 +402,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		try {
 			let createdInitialUser = false;
-			let linkedExistingUser = false;
+			const isAccountAction = storedState.intent === "link" || storedState.intent === "test";
 			// Convert query object to URLSearchParams for oauth4webapi
 			const queryParams = new URLSearchParams();
 			for (const [key, value] of Object.entries(request.query as Record<string, string>)) {
@@ -427,33 +460,29 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			let user: { id: string; username: string };
 
 			if (oidcAccount) {
-				if (storedState.linkUserId && oidcAccount.user.id !== storedState.linkUserId) {
+				if (isAccountAction && oidcAccount.user.id !== storedState.linkUserId) {
 					return reply.status(409).send({
 						error: "This OIDC identity is already linked to another account.",
 					});
 				}
 				// Existing OIDC account - log them in
 				user = oidcAccount.user;
-				linkedExistingUser = storedState.linkUserId !== undefined;
 			} else {
-				// New OIDC account - check if user is authenticated or if this is setup
-
-				// Prefer the authenticated admin captured when the flow started.
-				// Falling back to the callback session preserves existing behavior
-				// for flows initiated before this linking intent was introduced.
-				const linkUserId = storedState.linkUserId ?? request.currentUser?.id;
-
-				if (linkUserId) {
+				if (storedState.intent === "link") {
 					// Link the provider identity to the admin who initiated the flow.
 					oidcAccount = await app.prisma.oIDCAccount.create({
 						data: {
 							providerUserId: userInfo.sub,
-							userId: linkUserId,
+							userId: storedState.linkUserId!,
 						},
 						include: { user: true },
 					});
 					user = oidcAccount.user;
-					linkedExistingUser = true;
+				} else if (storedState.intent === "test") {
+					return reply.status(401).send({
+						error:
+							"This OIDC identity is not linked to the admin account. Use Link Account to add it explicitly.",
+					});
 				} else {
 					// User is not authenticated - check if this is initial setup
 					// Use transaction to atomically check user count and create user
@@ -490,7 +519,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							// Setup already completed by concurrent request
 							return reply.status(401).send({
 								error:
-									"Cannot sign in with an unlinked OIDC account. Sign in with your password, then use Link or Test Account in Settings > Authentication.",
+									"Cannot sign in with an unlinked OIDC account. Sign in with your password, then use Link Account in Settings > Authentication.",
 							});
 						}
 						throw error;
@@ -510,7 +539,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			const redirectPath = createdInitialUser
 				? "/setup?stage=services"
-				: linkedExistingUser
+				: isAccountAction
 					? "/settings#authentication"
 					: "/";
 			request.log.info(

@@ -181,6 +181,7 @@ beforeEach(async () => {
 				createdAt: new Date(),
 				updatedAt: new Date(),
 			};
+			request.sessionToken = "admin-session-token";
 		}
 	});
 
@@ -374,6 +375,7 @@ describe("GET /auth/oidc/callback", () => {
 			method: "POST",
 			url: "/auth/oidc/login",
 			headers: { "x-test-current-user": "admin-user" },
+			payload: { intent: "link" },
 		});
 		const authorizationUrl = new URL(JSON.parse(login.payload).authorizationUrl);
 		const state = authorizationUrl.searchParams.get("state");
@@ -381,6 +383,7 @@ describe("GET /auth/oidc/callback", () => {
 		const callback = await app.inject({
 			method: "GET",
 			url: `/auth/oidc/callback?code=mock-auth-code&state=${encodeURIComponent(state ?? "")}`,
+			headers: { "x-test-current-user": "admin-user" },
 		});
 
 		expect(callback.statusCode).toBe(302);
@@ -392,6 +395,85 @@ describe("GET /auth/oidc/callback", () => {
 			},
 			include: { user: true },
 		});
+		expect(mockSessionService.createSession).toHaveBeenCalledWith(
+			"admin-user",
+			true,
+			expect.any(Object),
+		);
+	});
+
+	it("invalidates a pending account link when the initiating session is no longer active", async () => {
+		mockPrisma.oIDCProvider.findFirst.mockResolvedValue(makeOidcProvider());
+
+		const login = await app.inject({
+			method: "POST",
+			url: "/auth/oidc/login",
+			headers: { "x-test-current-user": "admin-user" },
+			payload: { intent: "link" },
+		});
+		const authorizationUrl = new URL(JSON.parse(login.payload).authorizationUrl);
+		const state = authorizationUrl.searchParams.get("state");
+
+		const callback = await app.inject({
+			method: "GET",
+			url: `/auth/oidc/callback?code=mock-auth-code&state=${encodeURIComponent(state ?? "")}`,
+		});
+
+		expect(callback.statusCode).toBe(401);
+		expect(JSON.parse(callback.payload).error).toContain("session is no longer active");
+		expect(mockPrisma.oIDCAccount.create).not.toHaveBeenCalled();
+		expect(mockSessionService.createSession).not.toHaveBeenCalled();
+	});
+
+	it("tests only an OIDC identity already linked to the authenticated admin", async () => {
+		mockPrisma.oIDCProvider.findFirst.mockResolvedValue(makeOidcProvider());
+
+		const login = await app.inject({
+			method: "POST",
+			url: "/auth/oidc/login",
+			headers: { "x-test-current-user": "admin-user" },
+			payload: { intent: "test" },
+		});
+		const authorizationUrl = new URL(JSON.parse(login.payload).authorizationUrl);
+		const state = authorizationUrl.searchParams.get("state");
+
+		const callback = await app.inject({
+			method: "GET",
+			url: `/auth/oidc/callback?code=mock-auth-code&state=${encodeURIComponent(state ?? "")}`,
+			headers: { "x-test-current-user": "admin-user" },
+		});
+
+		expect(callback.statusCode).toBe(401);
+		expect(JSON.parse(callback.payload).error).toContain("not linked");
+		expect(mockPrisma.oIDCAccount.create).not.toHaveBeenCalled();
+		expect(mockSessionService.createSession).not.toHaveBeenCalled();
+	});
+
+	it("successfully tests an OIDC identity already linked to the authenticated admin", async () => {
+		mockPrisma.oIDCProvider.findFirst.mockResolvedValue(makeOidcProvider());
+		mockPrisma.oIDCAccount.findUnique.mockResolvedValue({
+			providerUserId: "provider-user-1",
+			user: { id: "admin-user", username: "admin" },
+		});
+
+		const login = await app.inject({
+			method: "POST",
+			url: "/auth/oidc/login",
+			headers: { "x-test-current-user": "admin-user" },
+			payload: { intent: "test" },
+		});
+		const authorizationUrl = new URL(JSON.parse(login.payload).authorizationUrl);
+		const state = authorizationUrl.searchParams.get("state");
+
+		const callback = await app.inject({
+			method: "GET",
+			url: `/auth/oidc/callback?code=mock-auth-code&state=${encodeURIComponent(state ?? "")}`,
+			headers: { "x-test-current-user": "admin-user" },
+		});
+
+		expect(callback.statusCode).toBe(302);
+		expect(callback.headers.location).toBe("/settings#authentication");
+		expect(mockPrisma.oIDCAccount.create).not.toHaveBeenCalled();
 		expect(mockSessionService.createSession).toHaveBeenCalledWith(
 			"admin-user",
 			true,
@@ -433,6 +515,7 @@ describe("GET /auth/oidc/callback", () => {
 			method: "POST",
 			url: "/auth/oidc/login",
 			headers: { "x-test-current-user": "admin-user" },
+			payload: { intent: "link" },
 		});
 		const authorizationUrl = new URL(JSON.parse(login.payload).authorizationUrl);
 		const state = authorizationUrl.searchParams.get("state");
@@ -440,6 +523,7 @@ describe("GET /auth/oidc/callback", () => {
 		const callback = await app.inject({
 			method: "GET",
 			url: `/auth/oidc/callback?code=mock-auth-code&state=${encodeURIComponent(state ?? "")}`,
+			headers: { "x-test-current-user": "admin-user" },
 		});
 
 		expect(callback.statusCode).toBe(409);

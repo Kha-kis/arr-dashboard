@@ -88,7 +88,11 @@ export const passwordSchemaStrict = z.string()
 5. Create/link OIDCAccount, create session
    - With no users, the first OIDC identity creates the initial admin.
    - With an existing admin, a new OIDC identity is linked only from an
-     authenticated, one-time Settings flow. Ordinary unlinked logins are rejected.
+     authenticated, one-time Settings flow bound to the initiating session.
+     Logging out or revoking that session invalidates the pending link.
+   - **Test Account** only verifies an identity that is already linked; it never
+     creates a new link.
+   - Ordinary unlinked logins are rejected.
 
 **Security:**
 - PKCE (Proof Key for Code Exchange)
