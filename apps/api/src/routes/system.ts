@@ -199,7 +199,7 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		// Normalize before validation and persistence so every URL consumer sees
 		// the same canonical value. Empty or whitespace-only input clears it.
 		const normalizedExternalUrl =
-			externalUrl === undefined ? undefined : externalUrl?.trim() || null;
+			externalUrl === undefined ? undefined : externalUrl?.trim().replace(/\/+$/, "") || null;
 
 		// Validate external URL if provided (null means clear)
 		if (normalizedExternalUrl !== undefined && normalizedExternalUrl !== null) {

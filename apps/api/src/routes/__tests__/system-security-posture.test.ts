@@ -82,21 +82,21 @@ afterAll(async () => {
 });
 
 describe("PUT /system/settings", () => {
-	it("trims External URL and updates the live notification base URL", async () => {
+	it("trims External URL, removes trailing slashes, and updates the live base URL", async () => {
 		const res = await injectAuthenticated("PUT", "/system/settings", {
-			body: { externalUrl: "  https://arr.example.com/  " },
+			body: { externalUrl: "  https://arr.example.com///  " },
 		});
 
 		expect(res.statusCode, res.payload).toBe(200);
 		const body = JSON.parse(res.payload);
-		expect(body.data.externalUrl).toBe("https://arr.example.com/");
+		expect(body.data.externalUrl).toBe("https://arr.example.com");
 		expect(mockPrisma.systemSettings.upsert).toHaveBeenCalledWith(
 			expect.objectContaining({
-				update: expect.objectContaining({ externalUrl: "https://arr.example.com/" }),
-				create: expect.objectContaining({ externalUrl: "https://arr.example.com/" }),
+				update: expect.objectContaining({ externalUrl: "https://arr.example.com" }),
+				create: expect.objectContaining({ externalUrl: "https://arr.example.com" }),
 			}),
 		);
-		expect(mockNotificationService.setBaseUrl).toHaveBeenCalledWith("https://arr.example.com/");
+		expect(mockNotificationService.setBaseUrl).toHaveBeenCalledWith("https://arr.example.com");
 	});
 
 	it("clears a whitespace-only External URL and restores the APP_URL fallback", async () => {

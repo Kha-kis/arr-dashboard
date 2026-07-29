@@ -92,14 +92,27 @@ describe("OIDCProviderSection account linking", () => {
 		const submit = screen.getByRole("button", { name: /delete and sign out/i });
 		expect((submit as HTMLButtonElement).disabled).toBe(true);
 
-		fireEvent.change(screen.getByLabelText(/fallback password/i), {
+		fireEvent.change(screen.getByLabelText(/^fallback password$/i), {
+			target: { value: "weak" },
+		});
+		fireEvent.change(screen.getByLabelText(/confirm fallback password/i), {
 			target: { value: "weak" },
 		});
 		fireEvent.click(submit);
 		expect(await screen.findByText("Password must be at least 8 characters")).toBeDefined();
 		expect(deleteOIDCProvider).not.toHaveBeenCalled();
 
-		fireEvent.change(screen.getByLabelText(/fallback password/i), {
+		fireEvent.change(screen.getByLabelText(/^fallback password$/i), {
+			target: { value: "StrongPassword123!" },
+		});
+		fireEvent.change(screen.getByLabelText(/confirm fallback password/i), {
+			target: { value: "StrongPassword123?Typo" },
+		});
+		fireEvent.click(submit);
+		expect(await screen.findByText("Fallback passwords do not match.")).toBeDefined();
+		expect(deleteOIDCProvider).not.toHaveBeenCalled();
+
+		fireEvent.change(screen.getByLabelText(/confirm fallback password/i), {
 			target: { value: "StrongPassword123!" },
 		});
 		fireEvent.click(submit);
