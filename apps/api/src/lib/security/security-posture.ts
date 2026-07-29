@@ -108,6 +108,7 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 		? appUrlProtocol.slice(0, -1).toUpperCase()
 		: "an unrecognized protocol";
 	const appUrlIsHttps = appUrlProtocol === "https:";
+	const appUrlIsValidPublicBase = isValidPublicBaseUrl(appUrl);
 	const oidcRedirectUri = input.oidcRedirectUri?.trim() || input.env.APP_URL;
 	const oidcRedirectUriProtocol = safeProtocol(oidcRedirectUri);
 	const oidcRedirectUriProtocolLabel = oidcRedirectUriProtocol
@@ -262,7 +263,17 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 	// ──────────────────────────────────────────────────────────────────────
 	// 6. App URL consistency
 	// ──────────────────────────────────────────────────────────────────────
-	if (isProduction && !appUrlIsHttps) {
+	if (!appUrlIsValidPublicBase) {
+		checks.push({
+			id: "app-url",
+			label: "App URL",
+			detail: `${appUrlSource} is not a valid public URL.`,
+			severity: "warning",
+			remediation: configuredPublicAppUrl
+				? "Update External URL in Settings → System to an http(s) URL without a query string, fragment, or repeated trailing slashes."
+				: "Set APP_URL to an http(s) URL without a query string, fragment, or repeated trailing slashes.",
+		});
+	} else if (isProduction && !appUrlIsHttps) {
 		checks.push({
 			id: "app-url",
 			label: "App URL",
@@ -341,6 +352,20 @@ function safeProtocol(url: string): string | null {
 		return new URL(url).protocol;
 	} catch {
 		return null;
+	}
+}
+
+function isValidPublicBaseUrl(value: string): boolean {
+	try {
+		const url = new URL(value);
+		return (
+			(url.protocol === "http:" || url.protocol === "https:") &&
+			!value.includes("?") &&
+			!value.includes("#") &&
+			!/\/{2,}$/.test(value)
+		);
+	} catch {
+		return false;
 	}
 }
 
